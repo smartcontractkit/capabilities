@@ -1,4 +1,4 @@
-module github.com/smartcontractkit/capabilities/targets/kv-store
+module github.com/smartcontractkit/capabilities/kv-store/target
 
 go 1.22.5
 
