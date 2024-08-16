@@ -1,13 +1,22 @@
 module github.com/smartcontractkit/capabilities/cron/trigger
 
-go 1.22.5
+go 1.23.0
 
 require (
 	github.com/hashicorp/go-plugin v1.6.1
-	github.com/smartcontractkit/chainlink-common v0.2.2-0.20240815090511-4586e672b8e4
+	github.com/smartcontractkit/chainlink-common v0.2.2-0.20240730173140-c190689abcf0
 )
 
-replace google.golang.org/genproto => google.golang.org/genproto v0.0.0-20240711142825-46eb208f015d
+replace (
+	// until merged upstream: https://github.com/hashicorp/go-plugin/pull/257
+	github.com/hashicorp/go-plugin => github.com/smartcontractkit/go-plugin v0.0.0-20240208201424-b3b91517de16
+
+	// until merged upstream: https://github.com/mitchellh/mapstructure/pull/343
+	github.com/mitchellh/mapstructure v1.5.0 => github.com/nolag/mapstructure v1.5.2-0.20240625151721-90ea83a3f479
+
+	// until merged upstream: https://github.com/mwitkow/grpc-proxy/pull/69
+	github.com/mwitkow/grpc-proxy => github.com/smartcontractkit/grpc-proxy v0.0.0-20230731113816-f1be6620749f
+)
 
 require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect

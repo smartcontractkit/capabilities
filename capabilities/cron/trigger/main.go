@@ -115,13 +115,22 @@ func (c CapabilityService) UnregisterTrigger(ctx context.Context, request capabi
 	return nil
 }
 
-func (c CapabilityService) Initialise(ctx context.Context, config string, telemetryService core.TelemetryService, store core.KeyValueStore,
-	capabilityRegistry core.CapabilitiesRegistry, errorLog core.ErrorLog,
-	pipelineRunner core.PipelineRunnerService, relayerSet core.RelayerSet) error {
+func (c CapabilityService) Initialise(
+	ctx context.Context,
+	config string,
+	telemetryService core.TelemetryService,
+	store core.KeyValueStore,
+	capabilityRegistry core.CapabilitiesRegistry,
+	errorLog core.ErrorLog,
+	pipelineRunner core.PipelineRunnerService,
+	relayerSet core.RelayerSet,
+) error {
 
 	c.telemetryService = telemetryService
 	c.store = store
 	c.config = config
+
+	err := errorLog.SaveError(ctx, "TESTING-DK: not an error, just testing")
 
 	capabilitiesInfo, err := c.Infos(ctx)
 	if err != nil {
