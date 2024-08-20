@@ -88,7 +88,6 @@ func (cs *CapabilitiesService) Initialise(
 ) error {
 	cs.s.Logger.Debugf("Initialising %s", serviceName)
 	cs.trigger = trigger.New(trigger.Params{
-		Store:  store,
 		Logger: cs.s.Logger,
 	})
 

@@ -6,7 +6,6 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 )
 
@@ -17,18 +16,15 @@ type Output struct {
 }
 
 type capability struct {
-	store  core.KeyValueStore
 	logger logger.Logger
 }
 
 type Params struct {
-	Store  core.KeyValueStore
 	Logger logger.Logger
 }
 
 func New(p Params) *capability {
 	return &capability{
-		store:  p.Store,
 		logger: p.Logger,
 	}
 }

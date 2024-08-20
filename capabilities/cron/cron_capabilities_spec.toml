@@ -1,0 +1,5 @@
+type = "standardcapabilities"
+schemaVersion = 1
+name = "cron-capabilities"
+command="/Users/deividas/Documents/github/chainlink/personal/capabilities/cron"
+config=""

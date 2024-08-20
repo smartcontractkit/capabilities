@@ -2,6 +2,6 @@ go 1.22.5
 
 use (
 	./capabilities/cron
-	./capabilities/kv-store/target
+	./capabilities/kvstore
 	./types
 )
