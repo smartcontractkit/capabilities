@@ -40,9 +40,12 @@ func (c *capability) Info(ctx context.Context) (capabilities.CapabilityInfo, err
 func (c *capability) RegisterTrigger(ctx context.Context, request capabilities.CapabilityRequest) (<-chan capabilities.CapabilityResponse, error) {
 	result := make(chan capabilities.CapabilityResponse)
 
+	c.logger.Debugf("Registering trigger to WorkflowID: %s", request.Metadata.WorkflowID)
+
 	go func() {
 		defer close(result)
 		for i := 0; i < 10; i++ {
+			c.logger.Debugf("Producing a response for WorkflowID: %s", request.Metadata.WorkflowID)
 			output := Output{
 				Timestamp: time.Now().Format(time.RFC3339),
 			}

@@ -54,9 +54,12 @@ type Request struct {
 }
 
 func (c *capability) Execute(ctx context.Context, rawRequest capabilities.CapabilityRequest) (<-chan capabilities.CapabilityResponse, error) {
+	c.logger.Debugf("Executing", "WorkflowID", rawRequest.Metadata.WorkflowID, "WorkflowExecutionID", rawRequest.Metadata.WorkflowExecutionID)
 	if err := c.store.Store(ctx, "some", []byte{1, 2, 3}); err != nil {
 		return nil, err
 	}
+	c.logger.Debugf("Value stored", "WorkflowID", rawRequest.Metadata.WorkflowID, "WorkflowExecutionID", rawRequest.Metadata.WorkflowExecutionID)
+
 	return success(), nil
 }
 
