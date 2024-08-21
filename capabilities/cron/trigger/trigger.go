@@ -30,11 +30,8 @@ func New(p Params) *capability {
 }
 
 func (c *capability) Info(ctx context.Context) (capabilities.CapabilityInfo, error) {
-	return capabilities.CapabilityInfo{
-		ID:             "cron-trigger@1.0.0",
-		CapabilityType: capabilities.CapabilityTypeTrigger,
-		Description:    "Trigger based on a CRON schedule",
-	}, nil
+	return capabilities.NewCapabilityInfo("cron-trigger@1.0.0", capabilities.CapabilityTypeTrigger, "Trigger based on a CRON schedule")
+
 }
 
 func (c *capability) RegisterTrigger(ctx context.Context, request capabilities.CapabilityRequest) (<-chan capabilities.CapabilityResponse, error) {
@@ -44,7 +41,7 @@ func (c *capability) RegisterTrigger(ctx context.Context, request capabilities.C
 
 	go func() {
 		defer close(result)
-		for i := 0; i < 10; i++ {
+		for {
 			c.logger.Debugf("Producing a response for WorkflowID: %s", request.Metadata.WorkflowID)
 			output := Output{
 				Timestamp: time.Now().Format(time.RFC3339),

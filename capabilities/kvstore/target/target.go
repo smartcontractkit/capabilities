@@ -28,11 +28,7 @@ func New(p Params) *capability {
 }
 
 func (c *capability) Info(ctx context.Context) (capabilities.CapabilityInfo, error) {
-	return capabilities.CapabilityInfo{
-		ID:             "kv-store-target@1.0.0",
-		CapabilityType: capabilities.CapabilityTypeTarget,
-		Description:    "Writes KV-pairs from a SignedReport to a key-value store",
-	}, nil
+	return capabilities.NewCapabilityInfo("kv-store-target@1.0.0", capabilities.CapabilityTypeTarget, "Writes KV-pairs from a SignedReport to a key-value store")
 }
 
 func success() <-chan capabilities.CapabilityResponse {
@@ -63,10 +59,13 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 	return success(), nil
 }
 
-func (c *capability) RegisterToWorkflow(ctx context.Context, request capabilities.RegisterToWorkflowRequest) error {
+func (c *capability) RegisterToWorkflow(ctx context.Context, rawRequest capabilities.RegisterToWorkflowRequest) error {
+	c.logger.Debugf("Registering to workflow", "WorkflowID", rawRequest.Metadata.WorkflowID, "WorkflowExecutionID")
+
 	return nil
 }
 
-func (c *capability) UnregisterFromWorkflow(ctx context.Context, request capabilities.UnregisterFromWorkflowRequest) error {
+func (c *capability) UnregisterFromWorkflow(ctx context.Context, rawRequest capabilities.UnregisterFromWorkflowRequest) error {
+	c.logger.Debugf("Unregistering from workflow", "WorkflowID", rawRequest.Metadata.WorkflowID, "WorkflowExecutionID")
 	return nil
 }
