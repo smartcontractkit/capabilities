@@ -16,3 +16,11 @@
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
+
+# Build outputs
+dist
+
+# Monorepo tool
+.nx/installation
+.nx/cache
+.nx/workspace-data

@@ -1,10 +1,10 @@
-module github.com/smartcontractkit/capabilities/kvstore
+module github.com/smartcontractkit/capabilities/cron
 
-go 1.22.5
+go 1.23
 
 require (
 	github.com/hashicorp/go-plugin v1.6.1
-	github.com/smartcontractkit/chainlink-common v0.2.2-0.20240815090511-4586e672b8e4
+	github.com/smartcontractkit/chainlink-common v0.2.2-0.20240730173140-c190689abcf0
 )
 
 replace (

@@ -1,0 +1,13 @@
+{
+  "installation": {
+    "version": "19.6.1",
+    "plugins": {
+      "@nx-go/nx-go": "3.2.0"
+    }
+  },
+  "parallel": 4,
+  "plugins": ["@nx-go/nx-go"],
+  "namedInputs": {
+    "sharedGlobals": ["{workspaceRoot}/go.work"]
+  }
+}
