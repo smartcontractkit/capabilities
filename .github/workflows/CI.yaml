@@ -11,21 +11,20 @@ jobs:
   affected:
     runs-on: ubuntu-latest
     outputs:
-      foo: ${{ steps.foo.outputs.foo }}
-      affected: ${{ steps.affected.outputs.affected }}
+      affected: ${{ steps.get-affected.outputs.affected }}
+      base: ${{ steps.get-base.outputs.base }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v3
-        with:
-          node-version: 20
-      - run: npx nx init
-      - id: foo
-        run: echo "foo=bar" >> "$GITHUB_OUTPUT"
+      - name: Set up project environment
+        uses: ./.github/actions/setup
 
+      - name: Get base branch
+        id: get-base
+        run: echo "base=${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }})" >> "$GITHUB_OUTPUT"
       - name: Get affected projects
-        id: affected
+        id: get-affected
         run: echo "affected=$(./nx show projects --affected --json ${{ fromJSON('["--base=origin/main", "--base=origin/main~1"]')[github.ref == 'refs/heads/main'] }})" >> "$GITHUB_OUTPUT"
 
   lint:
@@ -36,11 +35,11 @@ jobs:
         tasks: ["lint", "test"]
         projects: ${{fromJson(needs.affected.outputs.affected)}}
     steps:
-      - name: Tasks
-        run: |
-          echo "The value of MY_ENV_VAR is $MY_ENV_VAR"
-          echo "The value of foo is ${{ needs.affected.outputs.foo }}"
-          echo "The value of affected is ${{ needs.affected.outputs.affected }}"
-      - run: ./nx affected --target=typecheck ${{ fromJSON('["--base=origin/develop", "--base=origin/develop~1"]')[github.ref == 'refs/heads/develop'] }}
-      # - run: |
-      #     echo "Linting project ${{ item }}"
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up project environment
+        uses: ./.github/actions/setup
+
+      - name: ${{ matrix.tasks }} ${{ matrix.projects }}
+        run: ./nx run ${{ matrix.projects }}:${{ matrix.tasks }} --base=${{needs.affected.outputs.base}}

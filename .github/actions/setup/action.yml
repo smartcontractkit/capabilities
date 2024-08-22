@@ -1,0 +1,25 @@
+name: "Set up project environment"
+description: "Sets up Node and installs NX"
+runs:
+  using: "composite"
+  steps:
+    - name: Use Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: "20"
+        registry-url: "https://registry.npmjs.org"
+    - name: Use cache
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.nx
+          ~/.cache
+        key: ${{ runner.os }}-node${{ matrix.node-version }}
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - uses: actions/setup-node@v3
+      with:
+        node-version: 20
+    - run: npx nx init
+      shell: bash
