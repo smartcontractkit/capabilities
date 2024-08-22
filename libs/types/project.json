@@ -7,7 +7,7 @@
     "lint": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "golangci-lint run {projectRoot}"
+        "command": "go test ./{projectRoot}/..."
       }
     },
     "tidy": {

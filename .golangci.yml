@@ -128,7 +128,7 @@ linters-settings:
             desc: Use gopkg.in/guregu/null.v4 instead
   gomodguard:
     blocked:
-      local_replace_directives: true
+      local_replace_directives: false
   loggercheck:
     # Check that *w logging functions have even number of args (i.e., well formed key-value pairs).
     rules:

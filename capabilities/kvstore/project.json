@@ -13,13 +13,13 @@
     "test": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "go test ./{projectRoot}"
+        "command": "go test ./{projectRoot}/..."
       }
     },
     "lint": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "golangci-lint run {projectRoot}"
+        "command": "golangci-lint run ./{projectRoot}/..."
       }
     },
     "tidy": {
