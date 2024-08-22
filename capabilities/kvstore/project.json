@@ -2,6 +2,7 @@
   "name": "kvstore",
   "projectType": "capability",
   "projectRoot": "capabilities/kvstore",
+  "implicitDependencies": ["types"],
   "tags": [],
   "targets": {
     "build": {
