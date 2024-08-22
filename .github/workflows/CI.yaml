@@ -12,7 +12,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       affected: ${{ steps.get-affected.outputs.affected }}
-      base: ${{ steps.get-base.outputs.base }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,7 +36,7 @@ jobs:
     strategy:
       matrix:
         projects: ${{fromJson(needs.affected-projects.outputs.affected)}}
-        tasks: ["lint", "test"]
+        tasks: ["test"]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -45,19 +44,29 @@ jobs:
       - name: Set up project environment
         uses: ./.github/actions/setup
 
-      # Special setup for golangci-lint to make use of their action features
+      # Other tasks
+      - name: ${{ matrix.tasks }} ${{ matrix.projects }}
+        if: ${{ matrix.tasks }} != 'lint'
+        run: ./nx run ${{ matrix.projects }}:${{ matrix.tasks }}
+
+  lint:
+    needs: affected-projects
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        projects: ${{fromJson(needs.affected-projects.outputs.affected)}}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.23
       - name: Get project root
-        if: ${{ matrix.tasks }} == 'lint'
         id: get-root
         run: echo "root=$(./nx show project ${{matrix.projects}} --json)" >> "$GITHUB_OUTPUT"
       - name: golangci-lint
-        if: ${{ matrix.tasks }} == 'lint'
         uses: golangci/golangci-lint-action@v6
         with:
           version: v1.60
           working-directory: ${{fromJson(steps.get-root.outputs.root).root}}
-
-      # Other tasks
-      - name: ${{ matrix.tasks }} ${{ matrix.projects }}
-        if: ${{ matrix.tasks }} != 'lint'
-        run: ./nx run ${{ matrix.projects }}:${{ matrix.tasks }} --base=${{needs.affected-projects.outputs.base}}
