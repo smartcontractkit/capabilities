@@ -40,11 +40,20 @@ jobs:
           fetch-depth: 0
       - name: Set up project environment
         uses: ./.github/actions/setup
+
+      # Special setup for golangci-lint to make use of their action features
+      - name: Get project root
+        if: ${{ matrix.tasks }} == 'lint'
+        id: get-root
+        run: echo "root=$(./nx show project ${{matrix.projects}} --json)" >> "$GITHUB_OUTPUT"
       - name: golangci-lint
         if: ${{ matrix.tasks }} == 'lint'
         uses: golangci/golangci-lint-action@v6
         with:
           version: v1.60
+          working-directory: ${{steps.get-root.outputs.root}}
 
+      # Other tasks
       - name: ${{ matrix.tasks }} ${{ matrix.projects }}
+        if: ${{ matrix.tasks }} != 'lint'
         run: ./nx run ${{ matrix.projects }}:${{ matrix.tasks }} --base=${{needs.affected-projects.outputs.base}}
