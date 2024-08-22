@@ -28,6 +28,7 @@ jobs:
 
   test:
     needs: affected-projects
+    if: ${{ needs.affected-projects.outputs.affected != '[]' && needs.affected-projects.outputs.affected != '' }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -53,6 +54,7 @@ jobs:
 
   lint:
     needs: affected-projects
+    if: ${{ needs.affected-projects.outputs.affected != '[]' && needs.affected-projects.outputs.affected != '' }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -84,8 +86,9 @@ jobs:
       - lint
     if: always()
     steps:
+      - name: All tests ok
+        if: ${{ !(contains(needs.*.result, 'failure')) }}
+        run: exit 0
       - name: Some tests failed
         if: ${{ contains(needs.*.result, 'failure') }}
         run: exit 1
-      - name: All tests ok
-        run: exit 0
