@@ -17,13 +17,16 @@ jobs:
       - uses: actions/setup-node@v3
         with:
           node-version: 20
-          cache: "npm"
-      # This line enables distribution
-      # The "--stop-agents-after" is optional, but allows idle agents to shut down once the "e2e-ci" targets have been requested
-      # - run: npx nx-cloud start-ci-run --distribute-on="3 linux-medium-js" --stop-agents-after="e2e-ci"
-      - run: npm ci
+          cache: "pnpm"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: latest
+      - run: pnpm add --global nx@latest
 
-      - uses: nrwl/nx-set-shas@v4
-
-      - run: npx nx-cloud record -- nx format:check
-      - run: npx nx affected -t lint test build e2e-ci
+      - name: Get affected projects
+        id: get-affected
+        run: |
+          echo "Fetching affected projects..."
+          affected_projects=$(npx nx show projects --affected --json)
+          echo "Affected projects: $affected_projects"
+          echo "::set-output name=affected_projects::$affected_projects"
