@@ -7,16 +7,19 @@
     "lint": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "go test ./{projectRoot}/..."
+        "command": "cd {projectRoot} && golangci-lint run ."
       }
-    },
-    "tidy": {
-      "executor": "@nx-go/nx-go:tidy"
     },
     "test": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "go test ./{projectRoot}"
+        "command": "cd {projectRoot} && go test ./..."
+      }
+    },
+    "tidy": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "cd {projectRoot} && go mod tidy"
       }
     }
   }

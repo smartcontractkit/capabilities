@@ -4,26 +4,23 @@
   "projectRoot": "capabilities/cron",
   "tags": [],
   "targets": {
-    "build": {
-      "executor": "@nx-go/nx-go:build",
+    "lint": {
+      "executor": "nx:run-commands",
       "options": {
-        "main": "{projectRoot}/main.go"
+        "command": "cd {projectRoot} && golangci-lint run ."
       }
     },
     "test": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "go test ./{projectRoot}/..."
-      }
-    },
-    "lint": {
-      "executor": "nx:run-commands",
-      "options": {
-        "command": "golangci-lint run {projectRoot}"
+        "command": "cd {projectRoot} && go test ./..."
       }
     },
     "tidy": {
-      "executor": "@nx-go/nx-go:tidy"
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "cd {projectRoot} && go mod tidy"
+      }
     }
   }
 }
