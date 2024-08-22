@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 jobs:
-  affected:
+  affected-projects:
     runs-on: ubuntu-latest
     outputs:
       affected: ${{ steps.get-affected.outputs.affected }}
@@ -25,14 +25,14 @@ jobs:
         run: echo "base=${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }}" >> "$GITHUB_OUTPUT"
       - name: Get affected projects
         id: get-affected
-        run: echo "affected=$(./nx show projects --affected --json --base=${{steps.get-base.outputs.base}}" >> "$GITHUB_OUTPUT"
+        run: echo "affected=$(./nx show projects --affected --json --base=${{steps.get-base.outputs.base}})" >> "$GITHUB_OUTPUT"
 
   affected-tasks:
-    needs: affected
+    needs: affected-projects
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        projects: ${{fromJson(needs.affected.outputs.affected)}}
+        projects: ${{fromJson(needs.affected-projects.outputs.affected)}}
         tasks: ["lint", "test"]
     steps:
       - uses: actions/checkout@v4
@@ -42,4 +42,4 @@ jobs:
         uses: ./.github/actions/setup
 
       - name: ${{ matrix.tasks }} ${{ matrix.projects }}
-        run: ./nx run ${{ matrix.projects }}:${{ matrix.tasks }} --base=${{needs.affected.outputs.base}}
+        run: ./nx run ${{ matrix.projects }}:${{ matrix.tasks }} --base=${{needs.affected-projects.outputs.base}}
