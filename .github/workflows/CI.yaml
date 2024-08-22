@@ -21,7 +21,8 @@ jobs:
 
       - name: Get affected projects
         id: get-affected
-        run: echo "AFFECTED_PROJECTS=$(nx show projects --affected --json)" >> $GITHUB_ENV
+        run: nx show projects --affected --json
+        # run: echo "AFFECTED_PROJECTS=$(nx show projects --affected --json)" >> $GITHUB_ENV
 
   lint:
     needs: affected-projects
