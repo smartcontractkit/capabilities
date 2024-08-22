@@ -60,16 +60,16 @@ jobs:
         with:
           fetch-depth: 0
       - uses: actions/setup-node@v4
-
         with:
           node-version: 20
       - run: npx nx init
-
+      - id: get-root
+        run: echo "root=$(./nx show project ${{matrix.projects}} --json)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-go@v5
         with:
           go-version: 1.23
-      - id: get-root
-        run: echo "root=$(./nx show project ${{matrix.projects}} --json)" >> "$GITHUB_OUTPUT"
+          cache-dependency-path: ${{fromJson(steps.get-root.outputs.root).root}}/go.sum
+
       - uses: golangci/golangci-lint-action@v6
         with:
           version: v1.60
