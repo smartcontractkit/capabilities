@@ -2,6 +2,9 @@ name: CI
 
 on: [push]
 
+env:
+  GO_VERSION: 1.23
+
 jobs:
   affected-projects:
     runs-on: ubuntu-latest
@@ -45,7 +48,7 @@ jobs:
         run: echo "root=$(./nx show project ${{matrix.projects}} --json)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-go@v5
         with:
-          go-version-file: "go.work"
+          go-version-file: ${{ env.GO_VERSION }}
           cache-dependency-path: ${{fromJson(steps.get-root.outputs.root).root}}/go.sum
 
       # Other tasks
@@ -71,7 +74,7 @@ jobs:
         run: echo "root=$(./nx show project ${{matrix.projects}} --json)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-go@v5
         with:
-          go-version-file: "go.work"
+          go-version-file: ${{ env.GO_VERSION }}
           cache-dependency-path: ${{fromJson(steps.get-root.outputs.root).root}}/go.sum
 
       - uses: golangci/golangci-lint-action@v6
