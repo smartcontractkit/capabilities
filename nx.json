@@ -1,4 +1,5 @@
 {
+  "defaultBase": "main",
   "installation": {
     "version": "19.6.1"
   },
