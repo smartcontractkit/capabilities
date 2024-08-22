@@ -41,12 +41,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Set up project environment
-        uses: ./.github/actions/setup
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.23
 
       # Other tasks
       - name: ${{ matrix.tasks }} ${{ matrix.projects }}
-        if: ${{ matrix.tasks }} != 'lint'
         run: ./nx run ${{ matrix.projects }}:${{ matrix.tasks }}
 
   lint:
@@ -59,6 +59,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 20
+      - run: npx nx init
+        shell: bash
       - uses: actions/setup-go@v5
         with:
           go-version: 1.23
