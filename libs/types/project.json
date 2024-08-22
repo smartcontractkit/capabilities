@@ -1,0 +1,20 @@
+{
+  "name": "types",
+  "projectType": "library",
+  "projectRoot": "libs/types",
+  "tags": [],
+  "targets": {
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "golangci-lint run {projectRoot}"
+      }
+    },
+    "tidy": {
+      "executor": "@nx-go/nx-go:tidy"
+    },
+    "test": {
+      "executor": "@nx-go/nx-go:test"
+    }
+  }
+}

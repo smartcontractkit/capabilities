@@ -1,0 +1,9 @@
+{
+  "installation": {
+    "version": "19.6.1"
+  },
+  "parallel": 4,
+  "namedInputs": {
+    "sharedGlobals": ["{workspaceRoot}/go.work"]
+  }
+}
