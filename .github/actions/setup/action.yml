@@ -8,13 +8,9 @@ runs:
       with:
         node-version: "20"
         registry-url: "https://registry.npmjs.org"
-    - name: Use cache
-      uses: actions/cache@v3
+    - uses: actions/setup-go@v5
       with:
-        path: |
-          ~/.nx
-          ~/.cache
-        key: ${{ runner.os }}-node${{ matrix.node-version }}
+        go-version: 1.23
     - uses: actions/checkout@v4
       with:
         fetch-depth: 0
