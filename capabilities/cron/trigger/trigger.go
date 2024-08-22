@@ -31,7 +31,6 @@ func New(p Params) *capability {
 
 func (c *capability) Info(ctx context.Context) (capabilities.CapabilityInfo, error) {
 	return capabilities.NewCapabilityInfo("cron-trigger@1.0.0", capabilities.CapabilityTypeTrigger, "Trigger based on a CRON schedule")
-
 }
 
 func (c *capability) RegisterTrigger(ctx context.Context, request capabilities.CapabilityRequest) (<-chan capabilities.CapabilityResponse, error) {

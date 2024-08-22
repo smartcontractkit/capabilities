@@ -1,7 +1,7 @@
 {
   "name": "cron",
-  "projectType": "application",
-  "sourceRoot": "apps/cron",
+  "projectType": "capability",
+  "projectRoot": "capabilities/cron",
   "tags": [],
   "targets": {
     "build": {
@@ -14,7 +14,10 @@
       "executor": "@nx-go/nx-go:test"
     },
     "lint": {
-      "executor": "@nx-go/nx-go:lint"
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "golangci-lint run {projectRoot}"
+      }
     },
     "tidy": {
       "executor": "@nx-go/nx-go:tidy"

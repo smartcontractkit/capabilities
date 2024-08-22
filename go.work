@@ -1,6 +1,7 @@
 go 1.23
 
 use (
-	./apps/cron
-	./apps/kvstore
+	./capabilities/cron
+	./capabilities/kvstore
+	./libs/types
 )

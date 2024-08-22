@@ -8,7 +8,6 @@ import (
 )
 
 func TestReportV1Metadata(t *testing.T) {
-
 	t.Run("fails with invalid data", func(t *testing.T) {
 		data := []byte{0, 1, 2, 3}
 

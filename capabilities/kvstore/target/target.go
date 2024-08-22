@@ -2,6 +2,9 @@ package target
 
 import (
 	"context"
+	"fmt"
+
+	"github.com/smartcontractkit/capabilities/libs/types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -41,7 +44,7 @@ func success() <-chan capabilities.CapabilityResponse {
 }
 
 type Inputs struct {
-	SignedReport string
+	SignedReport types.SignedReport
 }
 
 type Request struct {
@@ -49,8 +52,36 @@ type Request struct {
 	Inputs   Inputs
 }
 
+func evaluate(rawRequest capabilities.CapabilityRequest) (r Request, err error) {
+	r.Metadata = rawRequest.Metadata
+
+	if rawRequest.Inputs == nil {
+		return r, fmt.Errorf("missing inputs field")
+	}
+
+	const signedReportField = "signed_report"
+	signedReport, ok := rawRequest.Inputs.Underlying[signedReportField]
+	if !ok {
+		return r, fmt.Errorf("missing required field %s", signedReportField)
+	}
+
+	if err = signedReport.UnwrapTo(&r.Inputs.SignedReport); err != nil {
+		return r, fmt.Errorf("failed to unwrap signed report: %v", err)
+	}
+
+	return r, nil
+}
+
 func (c *capability) Execute(ctx context.Context, rawRequest capabilities.CapabilityRequest) (<-chan capabilities.CapabilityResponse, error) {
 	c.logger.Debugf("Executing", "WorkflowID", rawRequest.Metadata.WorkflowID, "WorkflowExecutionID", rawRequest.Metadata.WorkflowExecutionID)
+
+	request, err := evaluate(rawRequest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode signed report: %v", err)
+	}
+
+	c.logger.Debugf("Decoded signed report", "WorkflowID", request.Metadata.WorkflowID, "WorkflowExecutionID", request.Metadata.WorkflowExecutionID, "ReportVersion", request.Inputs.SignedReport.Version)
+
 	if err := c.store.Store(ctx, "some", []byte{1, 2, 3}); err != nil {
 		return nil, err
 	}

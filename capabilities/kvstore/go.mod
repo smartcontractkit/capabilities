@@ -4,6 +4,7 @@ go 1.23
 
 require (
 	github.com/hashicorp/go-plugin v1.6.1
+	github.com/smartcontractkit/capabilities/libs/types v1.0.0
 	github.com/smartcontractkit/chainlink-common v0.2.2-0.20240815090511-4586e672b8e4
 )
 
@@ -16,6 +17,8 @@ replace (
 
 	// until merged upstream: https://github.com/mwitkow/grpc-proxy/pull/69
 	github.com/mwitkow/grpc-proxy => github.com/smartcontractkit/grpc-proxy v0.0.0-20230731113816-f1be6620749f
+
+	github.com/smartcontractkit/capabilities/libs/types => ../../libs/types
 )
 
 require (
