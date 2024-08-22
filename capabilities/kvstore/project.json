@@ -22,12 +22,6 @@
       "options": {
         "command": "cd {projectRoot} && go mod tidy"
       }
-    },
-    "build": {
-      "executor": "@nx-go/nx-go:build",
-      "options": {
-        "main": "{projectRoot}/main.go"
-      }
     }
   }
 }
