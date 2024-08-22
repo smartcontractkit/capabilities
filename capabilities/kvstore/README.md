@@ -1,4 +1,8 @@
-# KV Store write capability
+# KV Store Capabilities
+
+In-memory KV store read and write capabilities.
+
+## Plan
 
 Inputs: Report
 
