@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 jobs:
-  main:
+  affected-projects:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,8 +21,15 @@ jobs:
 
       - name: Get affected projects
         id: get-affected
-        run: |
-          echo "Fetching affected projects..."
-          affected_projects=$(npx nx show projects --affected --json)
-          echo "Affected projects: $affected_projects"
-          echo "::set-output name=affected_projects::$affected_projects"
+        run: echo "AFFECTED_PROJECTS=$(nx show projects --affected --json)" >> $GITHUB_ENV
+
+  lint:
+    needs: affected-projects
+    runs-on: ubuntu-latest
+    # strategy:
+    #   matrix:
+    #     projects: "$env.AFFECTED_PROJECTS"
+    steps:
+      - run: echo "The value of MY_ENV_VAR is $MY_ENV_VAR"
+      # - run: |
+      #     echo "Linting project ${{ item }}"
