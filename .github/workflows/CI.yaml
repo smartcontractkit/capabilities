@@ -40,6 +40,11 @@ jobs:
           fetch-depth: 0
       - name: Set up project environment
         uses: ./.github/actions/setup
+      - name: golangci-lint
+        if: ${{ matrix.tasks }} == 'lint'
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.60
 
       - name: ${{ matrix.tasks }} ${{ matrix.projects }}
         run: ./nx run ${{ matrix.projects }}:${{ matrix.tasks }} --base=${{needs.affected-projects.outputs.base}}
