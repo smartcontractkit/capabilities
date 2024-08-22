@@ -21,6 +21,12 @@
       "options": {
         "command": "cd {projectRoot} && go mod tidy"
       }
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "cd {projectRoot} && go build -o ./../../bin/{projectName} ."
+      }
     }
   }
 }

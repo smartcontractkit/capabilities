@@ -1,7 +1,6 @@
 # Baku Capabilities
 
-This repo uses [`nx`](https://nx.dev/) to easy monorepo management and implement
-change-detection.
+This repo uses [`nx`](https://nx.dev/) for monorepo management and change-detection.
 
 ## Dependencies
 

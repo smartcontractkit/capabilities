@@ -18,7 +18,7 @@
 # vendor/
 
 # Build outputs
-dist
+bin
 
 # Monorepo tool
 .nx/installation
