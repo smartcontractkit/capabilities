@@ -1,5 +1,5 @@
 type = "standardcapabilities"
 schemaVersion = 1
 name = "kvstore-capabilities"
-command="/Users/deividas/Documents/github/chainlink/personal/capabilities/kvstore" # Binary location
+command="${PATH_TO_BINARY}/kvstore" # Binary location
 config=""
