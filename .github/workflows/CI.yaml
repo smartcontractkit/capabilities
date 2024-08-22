@@ -1,0 +1,97 @@
+name: CI
+
+on: [push]
+
+# Needed for nx-set-shas when run on the main branch
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  affected-projects:
+    runs-on: ubuntu-latest
+    outputs:
+      affected: ${{ steps.get-affected.outputs.affected }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+
+        with:
+          node-version: "20"
+      - run: npx nx init
+        shell: bash
+
+      - name: Get base branch
+        id: get-base
+        run: echo "base=${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }}" >> "$GITHUB_OUTPUT"
+      - name: Get affected projects
+        id: get-affected
+        run: echo "affected=$(./nx show projects --affected --json --base=${{steps.get-base.outputs.base}})" >> "$GITHUB_OUTPUT"
+
+  test:
+    needs: affected-projects
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        projects: ${{fromJson(needs.affected-projects.outputs.affected)}}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npx nx init
+      - id: get-root
+        run: echo "root=$(./nx show project ${{matrix.projects}} --json)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.23
+          cache-dependency-path: ${{fromJson(steps.get-root.outputs.root).root}}/go.sum
+
+      # Other tasks
+      - name: Test ${{ matrix.projects }}
+        run: ./nx run ${{ matrix.projects }}:test
+
+  lint:
+    needs: affected-projects
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        projects: ${{fromJson(needs.affected-projects.outputs.affected)}}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npx nx init
+      - id: get-root
+        run: echo "root=$(./nx show project ${{matrix.projects}} --json)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 1.23
+          cache-dependency-path: ${{fromJson(steps.get-root.outputs.root).root}}/go.sum
+
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: v1.60
+          working-directory: ${{fromJson(steps.get-root.outputs.root).root}}
+
+  checks:
+    runs-on: ubuntu-latest
+    needs:
+      - test
+      - lint
+    if: always()
+    steps:
+      - name: All tests ok
+        if: ${{ !(contains(needs.*.result, 'failure')) }}
+        run: exit 0
+      - name: Some tests failed
+        if: ${{ contains(needs.*.result, 'failure') }}
+        run: exit 1
