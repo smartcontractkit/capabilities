@@ -17,11 +17,11 @@ jobs:
       - uses: actions/setup-node@v3
         with:
           node-version: 20
-      - run: npm add --global nx@latest
+      - run: npx nx init
 
       - name: Get affected projects
         id: get-affected
-        run: nx show projects --affected --json
+        run: ./nx show projects --affected --json
         # run: echo "AFFECTED_PROJECTS=$(nx show projects --affected --json)" >> $GITHUB_ENV
 
   lint:
