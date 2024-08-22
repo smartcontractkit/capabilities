@@ -84,9 +84,8 @@ jobs:
       - lint
     if: always()
     steps:
-      - name: All tests ok
-        if: ${{ !(contains(needs.*.result, 'failure')) }}
-        run: exit 0
       - name: Some tests failed
         if: ${{ contains(needs.*.result, 'failure') }}
         run: exit 1
+      - name: All tests ok
+        run: exit 0
