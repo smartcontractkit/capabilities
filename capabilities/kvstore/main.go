@@ -26,7 +26,7 @@ func main() {
 	s := loop.MustNewStartedServer(serviceName)
 	defer s.Stop()
 
-	s.Logger.Infof("Starting %s", serviceName)
+	s.Logger.Infof("Starting service %s", serviceName)
 
 	stopCh := make(chan struct{})
 	defer close(stopCh)
