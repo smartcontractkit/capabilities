@@ -141,7 +141,8 @@ func (s *Service) RegisterTrigger(ctx context.Context, req capabilities.TriggerR
 
 			trigger, ok := s.triggers[req.TriggerID]
 			if !ok {
-				s.lggr.Errorw("task callback failed: trigger no longer exists", "triggerID", req.TriggerID)
+				// Invariant: The trigger should always exist, as unregistering the trigger removes the job
+				s.lggr.Errorw("task callback invariant: trigger no longer exists", "triggerID", req.TriggerID)
 				return
 			}
 			scheduledExecutionTimeUTC := trigger.nextRun.UTC()
@@ -211,7 +212,7 @@ func createTriggerResponse(workflowID string, scheduledExecutionTime time.Time, 
 	scheduledExecutionTimeFormatted := scheduledExecutionTimeUTC.Format(time.RFC3339)
 	hash := sha256.Sum256([]byte(scheduledExecutionTimeFormatted))
 	triggerEventID := hex.EncodeToString(hash[:])
-	executionID, err := workflows.GenerateExecutionID(workflowID, triggerEventID)
+	executionID, err := workflows.EncodeExecutionID(workflowID, triggerEventID)
 	if err != nil {
 		// Notice: Execution ID will be empty
 		return "", capabilities.TriggerResponse{

@@ -4,7 +4,7 @@ go 1.23
 
 require (
 	github.com/hashicorp/go-plugin v1.6.1
-	github.com/smartcontractkit/chainlink-common v0.2.2-0.20240828152114-571392f2833a
+	github.com/smartcontractkit/chainlink-common v0.2.2-0.20240828171441-5e76e770717f
 )
 
 replace (
