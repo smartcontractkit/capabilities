@@ -184,6 +184,8 @@ func (s *Service) RegisterTrigger(ctx context.Context, req capabilities.TriggerR
 	if err != nil {
 		// errors if job no longer exists on scheduler
 		s.lggr.Errorw("failed to get next run time", "err", err)
+		// ensure that it is out of scheduler
+		err := s.scheduler.RemoveJob(job.ID())
 		return nil, err
 	}
 
