@@ -89,7 +89,6 @@ func (cs *CapabilitiesService) Initialise(
 	cs.s.Logger.Debugf("Initialising %s", serviceName)
 	cs.trigger = trigger.New(trigger.Params{
 		Logger: cs.s.Logger,
-		Clock: nil, 
 	})
 
 	if err := capabilityRegistry.Add(ctx, cs.trigger); err != nil {

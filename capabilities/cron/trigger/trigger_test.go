@@ -72,7 +72,7 @@ func registerTriggerToCronTriggerService(
 func upwrapCronTriggerEvent(t *testing.T, event capabilities.TriggerEvent) Response {
 	response := Response{}
 	response.TriggerType = event.TriggerType
-	assert.Equal(t, cronTriggerID, response.TriggerType)
+	assert.Equal(t, ID, response.TriggerType)
 	response.ID = event.ID
 	err := event.Outputs.UnwrapTo(&response.Payload)
 	require.NoError(t, err)
@@ -201,7 +201,7 @@ func TestCronTrigger_SuccessWithStandardCronIntervals(t *testing.T) {
 				}
 			}
 
-			ts := New(logger.Nop(), fakeClock)
+			ts := New(Params{Logger: logger.Nop(), Clock: fakeClock})
 			ctx := tests.Context(t)
 
 			// Start scheduling
@@ -282,7 +282,7 @@ func TestCronTrigger_Load(t *testing.T) {
 
 	fakeClock := clockwork.NewRealClock()
 
-	ts := New(logger.Nop(), fakeClock)
+	ts := New(Params{Logger: logger.Nop(), Clock: fakeClock})
 	ctx := tests.Context(t)
 
 	var callbacks [numTriggers]<-chan capabilities.TriggerResponse
@@ -370,7 +370,7 @@ func TestCronTrigger_Load(t *testing.T) {
 }
 
 func TestCronTrigger_RegisterTriggerBeforeStart(t *testing.T) {
-	ts := New(logger.Nop(), nil)
+	ts := New(Params{Logger: logger.Nop()})
 	ctx := tests.Context(t)
 
 	// Register trigger
@@ -435,7 +435,7 @@ func TestCronTrigger_TimeWindows(t *testing.T) {
 	fakeClock.Advance(time.Duration(absDiffInt(int32(min), 50)) * time.Minute)
 	fakeClock.Advance(time.Duration(absDiffInt(int32(hour), 8)) * time.Hour)
 
-	ts := New(logger.Nop(), fakeClock)
+	ts := New(Params{Logger: logger.Nop(), Clock: fakeClock})
 	ctx := tests.Context(t)
 
 	// Register trigger
@@ -493,7 +493,7 @@ func TestCronTrigger_TimeWindows(t *testing.T) {
 
 func TestCronTrigger_MultipleRealClock(t *testing.T) {
 	realClock := clockwork.NewRealClock()
-	ts := New(logger.Nop(), realClock)
+	ts := New(Params{Logger: logger.Nop(), Clock: realClock})
 	ctx := tests.Context(t)
 
 	callback1, registerUnregisterRequest1, err := registerTriggerToCronTriggerService(
@@ -596,7 +596,7 @@ func TestCronTrigger_TimeZone(t *testing.T) {
 	fakeClock.Advance(time.Duration(absDiffInt(int32(min), 49)) * time.Minute)
 	fakeClock.Advance(time.Duration(absDiffInt(int32(hour), 23)) * time.Hour)
 
-	ts := New(logger.Nop(), fakeClock)
+	ts := New(Params{Logger: logger.Nop(), Clock: fakeClock})
 	ctx := tests.Context(t)
 
 	// Register trigger
@@ -686,7 +686,7 @@ func TestCronTrigger_RegisterTrigger(t *testing.T) {
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			ts := New(logger.Nop(), nil)
+			ts := New(Params{Logger: logger.Nop()})
 			ctx := tests.Context(t)
 
 			_, _, err := registerTriggerToCronTriggerService(
@@ -712,7 +712,7 @@ func TestCronTrigger_RegisterTrigger(t *testing.T) {
 }
 
 func TestCronTrigger_RegisterTriggerDuplicateError(t *testing.T) {
-	ts := New(logger.Nop(), nil)
+	ts := New(Params{Logger: logger.Nop()})
 	ctx := tests.Context(t)
 
 	config, err := values.NewMap(map[string]interface{}{
@@ -737,7 +737,7 @@ func TestCronTrigger_RegisterTriggerDuplicateError(t *testing.T) {
 }
 
 func TestCronTrigger_UnregisterTriggerError(t *testing.T) {
-	ts := New(logger.Nop(), nil)
+	ts := New(Params{Logger: logger.Nop()})
 	ctx := tests.Context(t)
 
 	config, err := values.NewMap(map[string]interface{}{
@@ -760,7 +760,7 @@ func TestCronTrigger_UnregisterTriggerError(t *testing.T) {
 }
 
 func TestCronTrigger_CloseStartErrors(t *testing.T) {
-	ts := New(logger.Nop(), nil)
+	ts := New(Params{Logger: logger.Nop()})
 	ctx := tests.Context(t)
 
 	err := ts.Start(ctx)
@@ -772,7 +772,7 @@ func TestCronTrigger_CloseStartErrors(t *testing.T) {
 }
 
 func TestCronTrigger_GenerateSchema(t *testing.T) {
-	ts := New(logger.Nop(), nil)
+	ts := New(Params{Logger: logger.Nop()})
 	schema, err := ts.Schema()
 	require.NoError(t, err)
 	var shouldUpdate = false

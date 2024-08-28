@@ -19,13 +19,12 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
 )
 
-const cronTriggerID = "cron-trigger@1.0.0"
+const ID = "cron-trigger@1.0.0"
 
-// TODO pending capabilities configuration implementation - this should be configurable with a sensible default
 const defaultSendChannelBufferSize = 1000
 
 var cronTriggerInfo = capabilities.MustNewCapabilityInfo(
-	cronTriggerID,
+	ID,
 	capabilities.CapabilityTypeTrigger,
 	"A trigger that uses a cron schedule to run periodically at fixed times, dates, or intervals.",
 )
@@ -111,16 +110,19 @@ func New(p Params) *Service {
 
 // Register a new trigger
 // Can register triggers before the service is actively scheduling
-func (cts *Service) RegisterTrigger(ctx context.Context, req capabilities.TriggerRegistrationRequest) (<-chan capabilities.TriggerResponse, error) {
-	cts.mu.Lock()
-	defer cts.mu.Unlock()
+func (s *Service) RegisterTrigger(ctx context.Context, req capabilities.TriggerRegistrationRequest) (<-chan capabilities.TriggerResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	config, err := cts.ValidateConfig(req.Config)
+	if req.Config == nil {
+		return nil, errors.New("config is required to register a cron trigger")
+	}
+	config, err := s.ValidateConfig(req.Config)
 	if err != nil {
 		return nil, err
 	}
 
-	_, ok := cts.triggers[req.TriggerID]
+	_, ok := s.triggers[req.TriggerID]
 	if ok {
 		return nil, fmt.Errorf("triggerId %s already registered", req.TriggerID)
 	}
@@ -134,32 +136,32 @@ func (cts *Service) RegisterTrigger(ctx context.Context, req capabilities.Trigge
 	task := gocron.NewTask(
 		// Task callback, executed at next run time
 		func() {
-			cts.mu.Lock()
-			defer cts.mu.Unlock()
+			s.mu.Lock()
+			defer s.mu.Unlock()
 
-			trigger, ok := cts.triggers[req.TriggerID]
+			trigger, ok := s.triggers[req.TriggerID]
 			if !ok {
-				cts.lggr.Errorw("task callback failed: trigger no longer exists", "triggerID", req.TriggerID)
+				s.lggr.Errorw("task callback failed: trigger no longer exists", "triggerID", req.TriggerID)
 				return
 			}
 			scheduledExecutionTimeUTC := trigger.nextRun.UTC()
-			currentTimeUTC := cts.clock.Now().UTC()
+			currentTimeUTC := s.clock.Now().UTC()
 
 			executionID, response := createTriggerResponse(req.Metadata.WorkflowID, scheduledExecutionTimeUTC, currentTimeUTC)
 
 			if response.Err != nil {
-				cts.lggr.Errorw("task callback failed to create response", "executionID", executionID, "triggerID", req.TriggerID, "err", response.Err)
+				s.lggr.Errorw("task callback failed to create response", "executionID", executionID, "triggerID", req.TriggerID, "err", response.Err)
 			} else {
-				cts.lggr.Debugw("task callback sending trigger response", "executionID", executionID, "triggerID", req.TriggerID, "scheduledExecTimeUTC", scheduledExecutionTimeUTC.Format(time.RFC3339Nano), "actualExecTimeUTC", currentTimeUTC.Format(time.RFC3339Nano))
+				s.lggr.Debugw("task callback sending trigger response", "executionID", executionID, "triggerID", req.TriggerID, "scheduledExecTimeUTC", scheduledExecutionTimeUTC.Format(time.RFC3339Nano), "actualExecTimeUTC", currentTimeUTC.Format(time.RFC3339Nano))
 			}
 
 			nextExecutionTime, nextRunErr := job.NextRun()
 			if nextRunErr != nil {
 				// .NextRun() will error if the job no longer exists
 				// or if there is no next run to schedule, which shouldn't happen with cron jobs
-				cts.lggr.Errorw("task callback failed to schedule next run", "executionID", executionID, "triggerID", req.TriggerID)
+				s.lggr.Errorw("task callback failed to schedule next run", "executionID", executionID, "triggerID", req.TriggerID)
 			}
-			cts.triggers[req.TriggerID] = cronTrigger{
+			s.triggers[req.TriggerID] = cronTrigger{
 				ch:      callbackCh,
 				job:     job,
 				nextRun: nextExecutionTime,
@@ -168,14 +170,14 @@ func (cts *Service) RegisterTrigger(ctx context.Context, req capabilities.Trigge
 			select {
 			case callbackCh <- response:
 			default:
-				cts.lggr.Errorw("channel full, dropping event", "executionID", executionID, "triggerID", req.TriggerID, "eventID", response.Event.ID)
+				s.lggr.Errorw("channel full, dropping event", "executionID", executionID, "triggerID", req.TriggerID, "eventID", response.Event.ID)
 			}
 		})
 
 	// If service has already started, job will be scheduled immediately
-	job, err = cts.scheduler.NewJob(jobDef, task, gocron.WithName(req.TriggerID))
+	job, err = s.scheduler.NewJob(jobDef, task, gocron.WithName(req.TriggerID))
 	if err != nil {
-		cts.lggr.Errorw("failed to create new job", "err", err)
+		s.lggr.Errorw("failed to create new job", "err", err)
 		return nil, err
 	}
 
@@ -183,17 +185,17 @@ func (cts *Service) RegisterTrigger(ctx context.Context, req capabilities.Trigge
 
 	if err != nil {
 		// errors if job no longer exists on scheduler
-		cts.lggr.Errorw("failed to get next run time", "err", err)
+		s.lggr.Errorw("failed to get next run time", "err", err)
 		return nil, err
 	}
 
-	cts.triggers[req.TriggerID] = cronTrigger{
+	s.triggers[req.TriggerID] = cronTrigger{
 		ch:      callbackCh,
 		job:     job,
 		nextRun: firstRunTime,
 	}
 
-	cts.lggr.Debugw("RegisterTrigger", "triggerId", req.TriggerID, "jobId", job.ID())
+	s.lggr.Debugw("RegisterTrigger", "triggerId", req.TriggerID, "jobId", job.ID())
 	PromTotalTriggersCount.Inc()
 	return callbackCh, nil
 }
@@ -231,17 +233,17 @@ func createTriggerResponse(workflowID string, scheduledExecutionTime time.Time, 
 
 	return executionID, capabilities.TriggerResponse{
 		Event: capabilities.TriggerEvent{
-			TriggerType: cronTriggerID,
+			TriggerType: ID,
 			Outputs:     wrappedPayload,
 		},
 	}
 }
 
-func (cts *Service) UnregisterTrigger(ctx context.Context, req capabilities.TriggerRegistrationRequest) error {
-	cts.mu.Lock()
-	defer cts.mu.Unlock()
+func (s *Service) UnregisterTrigger(ctx context.Context, req capabilities.TriggerRegistrationRequest) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	trigger, ok := cts.triggers[req.TriggerID]
+	trigger, ok := s.triggers[req.TriggerID]
 	if !ok {
 		return fmt.Errorf("triggerId %s not found", req.TriggerID)
 	}
@@ -249,7 +251,7 @@ func (cts *Service) UnregisterTrigger(ctx context.Context, req capabilities.Trig
 	jobID := trigger.job.ID()
 
 	// Remove job from scheduler
-	err := cts.scheduler.RemoveJob(jobID)
+	err := s.scheduler.RemoveJob(jobID)
 	if err != nil {
 		return fmt.Errorf("UnregisterTrigger failed to remove job from scheduler: %s", err)
 	}
@@ -257,37 +259,37 @@ func (cts *Service) UnregisterTrigger(ctx context.Context, req capabilities.Trig
 	// Close callback channel
 	close(trigger.ch)
 	// Remove from triggers context
-	delete(cts.triggers, req.TriggerID)
+	delete(s.triggers, req.TriggerID)
 
-	cts.lggr.Debugw("UnregisterTrigger", "triggerId", req.TriggerID, "jobId", jobID)
+	s.lggr.Debugw("UnregisterTrigger", "triggerId", req.TriggerID, "jobId", jobID)
 	PromTotalTriggersCount.Dec()
 	return nil
 }
 
 // Start the service.
-func (cts *Service) Start(ctx context.Context) error {
-	cts.mu.Lock()
-	defer cts.mu.Unlock()
+func (s *Service) Start(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	if cts.scheduler == nil {
+	if s.scheduler == nil {
 		return errors.New("service has shutdown, it must be built again to restart")
 	}
 
-	cts.scheduler.Start()
+	s.scheduler.Start()
 
-	for triggerID, trigger := range cts.triggers {
+	for triggerID, trigger := range s.triggers {
 		nextExecutionTime, err := trigger.job.NextRun()
-		cts.triggers[triggerID] = cronTrigger{
+		s.triggers[triggerID] = cronTrigger{
 			ch:      trigger.ch,
 			job:     trigger.job,
 			nextRun: nextExecutionTime,
 		}
 		if err != nil {
-			cts.lggr.Errorw("Unable to get next run time", "err", err, "triggerID", triggerID)
+			s.lggr.Errorw("Unable to get next run time", "err", err, "triggerID", triggerID)
 		}
 	}
 
-	cts.lggr.Info(cts.Name() + " started")
+	s.lggr.Info(s.Name() + " started")
 
 	PromRunningServices.Inc()
 
@@ -297,34 +299,34 @@ func (cts *Service) Start(ctx context.Context) error {
 // Close stops the Service.
 // After this call the Service cannot be started again,
 // The service will need to be re-built to start scheduling again.
-func (cts *Service) Close() error {
-	cts.mu.Lock()
-	defer cts.mu.Unlock()
+func (s *Service) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 
-	err := cts.scheduler.Shutdown()
+	err := s.scheduler.Shutdown()
 	if err != nil {
 		return fmt.Errorf("scheduler shutdown encountered a problem: %s", err)
 	}
 
 	// After .Shutdown() the scheduler cannot be started again,
 	// but calling .Start() on it will not error. Set to nil to mark closed.
-	cts.scheduler = nil
+	s.scheduler = nil
 
-	cts.lggr.Info(cts.Name() + " closed")
+	s.lggr.Info(s.Name() + " closed")
 
 	PromRunningServices.Dec()
 
 	return nil
 }
 
-func (cts *Service) Ready() error {
+func (s *Service) Ready() error {
 	return nil
 }
 
-func (cts *Service) HealthReport() map[string]error {
-	return map[string]error{cts.Name(): nil}
+func (s *Service) HealthReport() map[string]error {
+	return map[string]error{s.Name(): nil}
 }
 
-func (cts *Service) Name() string {
+func (s *Service) Name() string {
 	return "Service"
 }
