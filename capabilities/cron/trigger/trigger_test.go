@@ -418,7 +418,7 @@ func TestCronTrigger_RegisterTriggerBeforeStart(t *testing.T) {
 	require.False(t, actualExecutionTime2.After(scheduledExecutionTime2.Add(time.Second)))
 }
 
-func absDiffInt(x, y int32) int32 {
+func absDiffInt(x, y int) int {
 	if x < y {
 		return y - x
 	}
@@ -431,9 +431,9 @@ func TestCronTrigger_TimeWindows(t *testing.T) {
 	fakeClock.Advance(fakeClock.Now().Truncate(time.Second).Add(time.Second).Sub(fakeClock.Now()))
 	// Set time to 8:50am UTC
 	hour, min, sec := fakeClock.Now().UTC().Clock()
-	fakeClock.Advance(time.Duration(absDiffInt(int32(sec), 0)) * time.Second)
-	fakeClock.Advance(time.Duration(absDiffInt(int32(min), 50)) * time.Minute)
-	fakeClock.Advance(time.Duration(absDiffInt(int32(hour), 8)) * time.Hour)
+	fakeClock.Advance(time.Duration(absDiffInt(sec, 0)) * time.Second)
+	fakeClock.Advance(time.Duration(absDiffInt(min, 50)) * time.Minute)
+	fakeClock.Advance(time.Duration(absDiffInt(hour, 8)) * time.Hour)
 
 	ts := New(Params{Logger: logger.Nop(), Clock: fakeClock})
 	ctx := tests.Context(t)
@@ -592,9 +592,9 @@ func TestCronTrigger_TimeZone(t *testing.T) {
 	// Set time to 23:50pm Eastern
 	now := fakeClock.Now().In(location)
 	hour, min, sec := now.Clock()
-	fakeClock.Advance(time.Duration(absDiffInt(int32(sec), 60)) * time.Second)
-	fakeClock.Advance(time.Duration(absDiffInt(int32(min), 49)) * time.Minute)
-	fakeClock.Advance(time.Duration(absDiffInt(int32(hour), 23)) * time.Hour)
+	fakeClock.Advance(time.Duration(absDiffInt(sec, 60)) * time.Second)
+	fakeClock.Advance(time.Duration(absDiffInt(min, 49)) * time.Minute)
+	fakeClock.Advance(time.Duration(absDiffInt(hour, 23)) * time.Hour)
 
 	ts := New(Params{Logger: logger.Nop(), Clock: fakeClock})
 	ctx := tests.Context(t)
