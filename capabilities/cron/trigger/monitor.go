@@ -22,7 +22,7 @@ var (
 		prometheus.GaugeOpts{
 			Name: "capability_trigger_cron_total_triggers_count",
 			Help: "Metric representing the number of currently active triggers",
-		}, // TODO: workflowID
+		},
 	)
 	PromExecutionTimeMS = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
