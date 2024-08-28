@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/go-co-op/gocron/v2"
@@ -63,9 +62,8 @@ type Service struct {
 	capabilities.Validator[Config, Input, capabilities.TriggerResponse]
 	clock     clockwork.Clock
 	lggr      logger.Logger
-	mu        sync.Mutex
 	scheduler gocron.Scheduler
-	triggers  map[string]cronTrigger
+	triggers  *cronStore
 }
 
 type Params struct {
@@ -98,11 +96,13 @@ func New(p Params) *Service {
 		return nil
 	}
 
+	cronStore := NewCronStore()
+
 	return &Service{
 		CapabilityInfo: cronTriggerInfo,
 		Validator:      capabilities.NewValidator[Config, Input, capabilities.TriggerResponse](capabilities.ValidatorArgs{Info: cronTriggerInfo}),
 		clock:          p.Clock,
-		triggers:       map[string]cronTrigger{},
+		triggers:       cronStore,
 		lggr:           l,
 		scheduler:      s,
 	}
@@ -111,9 +111,6 @@ func New(p Params) *Service {
 // Register a new trigger
 // Can register triggers before the service is actively scheduling
 func (s *Service) RegisterTrigger(ctx context.Context, req capabilities.TriggerRegistrationRequest) (<-chan capabilities.TriggerResponse, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if req.Config == nil {
 		return nil, errors.New("config is required to register a cron trigger")
 	}
@@ -122,7 +119,7 @@ func (s *Service) RegisterTrigger(ctx context.Context, req capabilities.TriggerR
 		return nil, err
 	}
 
-	_, ok := s.triggers[req.TriggerID]
+	_, ok := s.triggers.Read(req.TriggerID)
 	if ok {
 		return nil, fmt.Errorf("triggerId %s already registered", req.TriggerID)
 	}
@@ -136,10 +133,7 @@ func (s *Service) RegisterTrigger(ctx context.Context, req capabilities.TriggerR
 	task := gocron.NewTask(
 		// Task callback, executed at next run time
 		func() {
-			s.mu.Lock()
-			defer s.mu.Unlock()
-
-			trigger, ok := s.triggers[req.TriggerID]
+			trigger, ok := s.triggers.Read(req.TriggerID)
 			if !ok {
 				// Invariant: The trigger should always exist, as unregistering the trigger removes the job
 				s.lggr.Errorw("task callback invariant: trigger no longer exists", "triggerID", req.TriggerID)
@@ -162,11 +156,11 @@ func (s *Service) RegisterTrigger(ctx context.Context, req capabilities.TriggerR
 				// or if there is no next run to schedule, which shouldn't happen with cron jobs
 				s.lggr.Errorw("task callback failed to schedule next run", "executionID", executionID, "triggerID", req.TriggerID)
 			}
-			s.triggers[req.TriggerID] = cronTrigger{
+			s.triggers.Write(req.TriggerID, cronTrigger{
 				ch:      callbackCh,
 				job:     job,
 				nextRun: nextExecutionTime,
-			}
+			})
 
 			select {
 			case callbackCh <- response:
@@ -174,6 +168,10 @@ func (s *Service) RegisterTrigger(ctx context.Context, req capabilities.TriggerR
 				s.lggr.Errorw("channel full, dropping event", "executionID", executionID, "triggerID", req.TriggerID, "eventID", response.Event.ID)
 			}
 		})
+
+	if s.scheduler == nil {
+		return nil, errors.New("cannot register a new trigger, service has been closed")
+	}
 
 	// If service has already started, job will be scheduled immediately
 	job, err = s.scheduler.NewJob(jobDef, task, gocron.WithName(req.TriggerID))
@@ -183,18 +181,17 @@ func (s *Service) RegisterTrigger(ctx context.Context, req capabilities.TriggerR
 	}
 
 	firstRunTime, err := job.NextRun()
-
 	if err != nil {
 		// errors if job no longer exists on scheduler
 		s.lggr.Errorw("failed to get next run time", "err", err)
 		return nil, err
 	}
 
-	s.triggers[req.TriggerID] = cronTrigger{
+	s.triggers.Write(req.TriggerID, cronTrigger{
 		ch:      callbackCh,
 		job:     job,
 		nextRun: firstRunTime,
-	}
+	})
 
 	s.lggr.Debugw("RegisterTrigger", "triggerId", req.TriggerID, "jobId", job.ID())
 	PromTotalTriggersCount.Inc()
@@ -241,10 +238,7 @@ func createTriggerResponse(workflowID string, scheduledExecutionTime time.Time, 
 }
 
 func (s *Service) UnregisterTrigger(ctx context.Context, req capabilities.TriggerRegistrationRequest) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	trigger, ok := s.triggers[req.TriggerID]
+	trigger, ok := s.triggers.Read(req.TriggerID)
 	if !ok {
 		return fmt.Errorf("triggerId %s not found", req.TriggerID)
 	}
@@ -252,6 +246,9 @@ func (s *Service) UnregisterTrigger(ctx context.Context, req capabilities.Trigge
 	jobID := trigger.job.ID()
 
 	// Remove job from scheduler
+	if s.scheduler == nil {
+		return errors.New("cannot unregister a new trigger, service has been closed")
+	}
 	err := s.scheduler.RemoveJob(jobID)
 	if err != nil {
 		return fmt.Errorf("UnregisterTrigger failed to remove job from scheduler: %s", err)
@@ -260,7 +257,7 @@ func (s *Service) UnregisterTrigger(ctx context.Context, req capabilities.Trigge
 	// Close callback channel
 	close(trigger.ch)
 	// Remove from triggers context
-	delete(s.triggers, req.TriggerID)
+	s.triggers.Delete(req.TriggerID)
 
 	s.lggr.Debugw("UnregisterTrigger", "triggerId", req.TriggerID, "jobId", jobID)
 	PromTotalTriggersCount.Dec()
@@ -269,22 +266,19 @@ func (s *Service) UnregisterTrigger(ctx context.Context, req capabilities.Trigge
 
 // Start the service.
 func (s *Service) Start(ctx context.Context) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if s.scheduler == nil {
 		return errors.New("service has shutdown, it must be built again to restart")
 	}
 
 	s.scheduler.Start()
 
-	for triggerID, trigger := range s.triggers {
+	for triggerID, trigger := range s.triggers.ReadAll() {
 		nextExecutionTime, err := trigger.job.NextRun()
-		s.triggers[triggerID] = cronTrigger{
+		s.triggers.Write(triggerID, cronTrigger{
 			ch:      trigger.ch,
 			job:     trigger.job,
 			nextRun: nextExecutionTime,
-		}
+		})
 		if err != nil {
 			s.lggr.Errorw("Unable to get next run time", "err", err, "triggerID", triggerID)
 		}
@@ -301,8 +295,9 @@ func (s *Service) Start(ctx context.Context) error {
 // After this call the Service cannot be started again,
 // The service will need to be re-built to start scheduling again.
 func (s *Service) Close() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	if s.scheduler == nil {
+		return errors.New("service has shutdown, it must be built again to restart")
+	}
 
 	err := s.scheduler.Shutdown()
 	if err != nil {

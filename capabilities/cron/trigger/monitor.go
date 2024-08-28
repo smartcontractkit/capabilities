@@ -11,6 +11,8 @@ import (
 
 type CronMonitor struct{}
 
+var _ gocron.Monitor = (*CronMonitor)(nil)
+
 var (
 	PromRunningServices = promauto.NewGauge(
 		prometheus.GaugeOpts{

@@ -6,11 +6,11 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
 
-var _ gocron.Logger = (*CronLogger)(nil)
-
 type CronLogger struct {
 	lggr logger.Logger
 }
+
+var _ gocron.Logger = (*CronLogger)(nil)
 
 func NewCronLogger(lggr logger.Logger) gocron.Logger {
 	return &CronLogger{lggr: lggr}
