@@ -418,23 +418,15 @@ func TestCronTrigger_RegisterTriggerBeforeStart(t *testing.T) {
 	require.False(t, actualExecutionTime2.After(scheduledExecutionTime2.Add(time.Second)))
 }
 
-func absDiffInt(x, y int) int {
-	if x < y {
-		return y - x
-	}
-	return x - y
-}
-
 func TestCronTrigger_TimeWindows(t *testing.T) {
 	fakeClock := clockwork.NewFakeClock()
 	// Set time to have 0ms by advancing to next truncated second
 	fakeClock.Advance(fakeClock.Now().Truncate(time.Second).Add(time.Second).Sub(fakeClock.Now()))
 	// Set time to 8:50am UTC
 	hour, min, sec := fakeClock.Now().UTC().Clock()
-	fakeClock.Advance(time.Duration(absDiffInt(sec, 0)) * time.Second)
-	fakeClock.Advance(time.Duration(absDiffInt(min, 50)) * time.Minute)
-	fakeClock.Advance(time.Duration(absDiffInt(hour, 8)) * time.Hour)
-
+	fakeClock.Advance(time.Duration(60-sec) * time.Second)
+	fakeClock.Advance(time.Duration(49-min) * time.Minute)
+	fakeClock.Advance(time.Duration(8-hour) * time.Hour)
 	ts := New(Params{Logger: logger.Nop(), Clock: fakeClock})
 	ctx := tests.Context(t)
 
@@ -453,8 +445,8 @@ func TestCronTrigger_TimeWindows(t *testing.T) {
 	err = ts.Start(ctx)
 	require.NoError(t, err)
 
-	// Advance to 9am
-	fakeClock.Advance(10 * time.Minute)
+	// Advance to 1ms past 9am
+	fakeClock.Advance(10*time.Minute + time.Millisecond)
 
 	// 1st process @ 9am UTC
 	msg := <-callback
@@ -485,7 +477,10 @@ func TestCronTrigger_TimeWindows(t *testing.T) {
 	// Close the service
 	require.NoError(t, ts.Close())
 
-	// Check scheduled execution times are every second
+	// Check scheduled execution times 9am, 10am, then 9am the next day
+	fmt.Println(scheduledExecutionTime1)
+	fmt.Println(scheduledExecutionTime2)
+	fmt.Println(scheduledExecutionTime3)
 	require.True(t, scheduledExecutionTime3.Equal(scheduledExecutionTime2.Add(23*time.Hour)))
 	require.True(t, scheduledExecutionTime3.Equal(scheduledExecutionTime1.Add(24*time.Hour)))
 	require.True(t, scheduledExecutionTime2.Equal(scheduledExecutionTime1.Add(time.Hour)))
@@ -592,9 +587,9 @@ func TestCronTrigger_TimeZone(t *testing.T) {
 	// Set time to 23:50pm Eastern
 	now := fakeClock.Now().In(location)
 	hour, min, sec := now.Clock()
-	fakeClock.Advance(time.Duration(absDiffInt(sec, 60)) * time.Second)
-	fakeClock.Advance(time.Duration(absDiffInt(min, 49)) * time.Minute)
-	fakeClock.Advance(time.Duration(absDiffInt(hour, 23)) * time.Hour)
+	fakeClock.Advance(time.Duration(60-sec) * time.Second)
+	fakeClock.Advance(time.Duration(49-min) * time.Minute)
+	fakeClock.Advance(time.Duration(23-hour) * time.Hour)
 
 	ts := New(Params{Logger: logger.Nop(), Clock: fakeClock})
 	ctx := tests.Context(t)
@@ -777,11 +772,11 @@ func TestCronTrigger_GenerateSchema(t *testing.T) {
 	require.NoError(t, err)
 	var shouldUpdate = false
 	if shouldUpdate {
-		err = os.WriteFile("../testdata/fixtures/cron/schema.json", []byte(schema), 0600)
+		err = os.WriteFile("./schema.json", []byte(schema), 0600)
 		require.NoError(t, err)
 	}
 
-	fixture, err := os.ReadFile("../testdata/fixtures/cron/schema.json")
+	fixture, err := os.ReadFile("./schema.json")
 	require.NoError(t, err)
 
 	utils.AssertJSONEqual(t, fixture, []byte(schema))
