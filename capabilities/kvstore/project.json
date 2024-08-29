@@ -8,19 +8,29 @@
     "lint": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "cd {projectRoot} && golangci-lint run ."
+        "cwd": "{projectRoot}",
+        "command": "golangci-lint run ."
       }
     },
     "test": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "cd {projectRoot} && go test ./..."
+        "cwd": "{projectRoot}",
+        "command": "go test ./..."
       }
     },
     "tidy": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "cd {projectRoot} && go mod tidy"
+        "cwd": "{projectRoot}",
+        "command": "go mod tidy"
+      }
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "{projectRoot}",
+        "command": "go build -o ./../../bin/{projectName} ."
       }
     }
   }
