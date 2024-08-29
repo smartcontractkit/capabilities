@@ -1,4 +1,4 @@
-# KV Store Capabilities
+# Log Event Trigger Capabilities
 
 Log Event Trigger capability. Starts a workflow based on on-chain events.
 
@@ -33,42 +33,3 @@ type Report struct {
 }
 ```
 
-Report needs to have at least one `KVPair` JSON-encoded in the payload. Empty
-
-```go
-type KVPair struct {
-    Key   string `json:"key"`
-    Value string `json:"value"`
-}
-```
-
-Consensus capability:
-
-- Encoder:
-  - type: "JSON"
-  <!-- - schema: ??? -->
-
-Write KV Store inputs:
-
-- Key: decode
-- Value: decode
-
-Write
-=> Node's Write Inbox
-=> OCR observation for writes
-=> Append to previous outcome
-
-1. PreviousOutcome: { key1: foo, key2: bar }
-2. New write comes in with { key3: baz } // This would set.
-3. NewOutcome: { key1: foo, key2: bar, key3: baz }
-
-Read
-=> Node's Read Inbox (check outbox before OCR observation)
-=> OCR observation for reads
-=> All Node's Read Outbox/Callback for WorkflowExecutionID (cached for some time).
-
-- Q: Consensus on the read?
-
-KV Store read:
-Keys is a runtime input.
-Capability verifies sigs and extracts payloads. Output: []byte or [][]byte
