@@ -1,0 +1,28 @@
+{
+    "name": "evmchain",
+    "projectType": "capability",
+    "projectRoot": "capabilities/evmchain",
+    "implicitDependencies": ["types"],
+    "tags": [],
+    "targets": {
+      "lint": {
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "cd {projectRoot} && golangci-lint run ."
+        }
+      },
+      "test": {
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "cd {projectRoot} && go test ./..."
+        }
+      },
+      "tidy": {
+        "executor": "nx:run-commands",
+        "options": {
+          "command": "cd {projectRoot} && go mod tidy"
+        }
+      }
+    }
+  }
+  

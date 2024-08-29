@@ -1,0 +1,5 @@
+type = "standardcapabilities"
+schemaVersion = 1
+name = "evmchain-capabilities"
+command="${PATH_TO_BINARY}/evmchain" # Binary location
+config=""
