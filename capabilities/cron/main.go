@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/hashicorp/go-plugin"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
+	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
 
@@ -17,9 +19,15 @@ const (
 	serviceName = "CronCapabilities"
 )
 
+type TriggerCapabilityService interface {
+	services.Service
+	capabilities.TriggerCapability
+}
+
 type CapabilitiesService struct {
-	trigger capabilities.TriggerCapability
+	trigger TriggerCapabilityService
 	s       *loop.Server
+	srvcs   []services.Service
 }
 
 func main() {
@@ -45,12 +53,17 @@ func main() {
 	})
 }
 
-func (cs *CapabilitiesService) Start(ctx context.Context) error {
+func (cs *CapabilitiesService) Start(ctx context.Context) (err error) {
 	return nil
 }
 
-func (cs *CapabilitiesService) Close() error {
-	return nil
+func (cs *CapabilitiesService) Close() (err error) {
+	for _, service := range cs.srvcs {
+		cs.s.Logger.Debugw("Closing service...", "name", service.Name())
+		err = errors.Join(err, service.Close())
+	}
+
+	return err
 }
 
 func (cs *CapabilitiesService) Ready() error {
@@ -90,9 +103,13 @@ func (cs *CapabilitiesService) Initialise(
 	cs.trigger = trigger.New(trigger.Params{
 		Logger: cs.s.Logger,
 	})
+	if err := cs.trigger.Start(ctx); err != nil {
+		return fmt.Errorf("error when starting trigger: %w", err)
+	}
+	cs.srvcs = append(cs.srvcs, cs.trigger)
 
 	if err := capabilityRegistry.Add(ctx, cs.trigger); err != nil {
-		return fmt.Errorf("error when adding cron trigger to the registry: %w", err)
+		return fmt.Errorf("error when adding trigger to the registry: %w", err)
 	}
 
 	return nil

@@ -15,7 +15,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
-	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
 )
 
 const ID = "cron-trigger@1.0.0"
@@ -142,19 +141,19 @@ func (s *Service) RegisterTrigger(ctx context.Context, req capabilities.TriggerR
 			scheduledExecutionTimeUTC := trigger.nextRun.UTC()
 			currentTimeUTC := s.clock.Now().UTC()
 
-			executionID, response := createTriggerResponse(req.Metadata.WorkflowID, scheduledExecutionTimeUTC, currentTimeUTC)
+			response := createTriggerResponse(scheduledExecutionTimeUTC, currentTimeUTC)
 
 			if response.Err != nil {
-				s.lggr.Errorw("task callback failed to create response", "executionID", executionID, "triggerID", req.TriggerID, "err", response.Err)
+				s.lggr.Errorw("task callback failed to create response", "executionID", req.Metadata.WorkflowExecutionID, "triggerID", req.TriggerID, "err", response.Err)
 			} else {
-				s.lggr.Debugw("task callback sending trigger response", "executionID", executionID, "triggerID", req.TriggerID, "scheduledExecTimeUTC", scheduledExecutionTimeUTC.Format(time.RFC3339Nano), "actualExecTimeUTC", currentTimeUTC.Format(time.RFC3339Nano))
+				s.lggr.Debugw("task callback sending trigger response", "executionID", req.Metadata.WorkflowExecutionID, "triggerID", req.TriggerID, "scheduledExecTimeUTC", scheduledExecutionTimeUTC.Format(time.RFC3339Nano), "actualExecTimeUTC", currentTimeUTC.Format(time.RFC3339Nano))
 			}
 
 			nextExecutionTime, nextRunErr := job.NextRun()
 			if nextRunErr != nil {
 				// .NextRun() will error if the job no longer exists
 				// or if there is no next run to schedule, which shouldn't happen with cron jobs
-				s.lggr.Errorw("task callback failed to schedule next run", "executionID", executionID, "triggerID", req.TriggerID)
+				s.lggr.Errorw("task callback failed to schedule next run", "executionID", req.Metadata.WorkflowExecutionID, "triggerID", req.TriggerID)
 			}
 			s.triggers.Write(req.TriggerID, cronTrigger{
 				ch:      callbackCh,
@@ -165,7 +164,7 @@ func (s *Service) RegisterTrigger(ctx context.Context, req capabilities.TriggerR
 			select {
 			case callbackCh <- response:
 			default:
-				s.lggr.Errorw("channel full, dropping event", "executionID", executionID, "triggerID", req.TriggerID, "eventID", response.Event.ID)
+				s.lggr.Errorw("channel full, dropping event", "executionID", req.Metadata.WorkflowExecutionID, "triggerID", req.TriggerID, "eventID", response.Event.ID)
 			}
 		})
 
@@ -195,12 +194,12 @@ func (s *Service) RegisterTrigger(ctx context.Context, req capabilities.TriggerR
 		nextRun: firstRunTime,
 	})
 
-	s.lggr.Debugw("RegisterTrigger", "triggerId", req.TriggerID, "jobId", job.ID())
+	s.lggr.Debugw("Trigger registered", "workflowId", req.Metadata.WorkflowID, "triggerId", req.TriggerID, "jobId", job.ID())
 	PromTotalTriggersCount.Inc()
 	return callbackCh, nil
 }
 
-func createTriggerResponse(workflowID string, scheduledExecutionTime time.Time, currentTime time.Time) (string, capabilities.TriggerResponse) {
+func createTriggerResponse(scheduledExecutionTime time.Time, currentTime time.Time) capabilities.TriggerResponse {
 	// Ensure UTC time is used for consistency across nodes.
 	scheduledExecutionTimeUTC := scheduledExecutionTime.UTC()
 	currentTimeUTC := currentTime.UTC()
@@ -211,13 +210,6 @@ func createTriggerResponse(workflowID string, scheduledExecutionTime time.Time, 
 	scheduledExecutionTimeFormatted := scheduledExecutionTimeUTC.Format(time.RFC3339)
 	hash := sha256.Sum256([]byte(scheduledExecutionTimeFormatted))
 	triggerEventID := hex.EncodeToString(hash[:])
-	executionID, err := workflows.EncodeExecutionID(workflowID, triggerEventID)
-	if err != nil {
-		// Notice: Execution ID will be empty
-		return "", capabilities.TriggerResponse{
-			Err: fmt.Errorf("task callback could not generate execution ID: %s", err),
-		}
-	}
 
 	// Show difference between scheduled and actual execution by including nanoseconds
 	payload := Payload{
@@ -226,14 +218,15 @@ func createTriggerResponse(workflowID string, scheduledExecutionTime time.Time, 
 	}
 	wrappedPayload, err := values.WrapMap(payload)
 	if err != nil {
-		return executionID, capabilities.TriggerResponse{
+		return capabilities.TriggerResponse{
 			Err: fmt.Errorf("error wrapping trigger event: %s", err),
 		}
 	}
 
-	return executionID, capabilities.TriggerResponse{
+	return capabilities.TriggerResponse{
 		Event: capabilities.TriggerEvent{
 			TriggerType: ID,
+			ID:          triggerEventID,
 			Outputs:     wrappedPayload,
 		},
 	}
@@ -326,5 +319,5 @@ func (s *Service) HealthReport() map[string]error {
 }
 
 func (s *Service) Name() string {
-	return "Service"
+	return "CronTrigger"
 }
