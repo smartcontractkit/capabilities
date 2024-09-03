@@ -487,7 +487,7 @@ func TestCronTrigger_TimeWindows(t *testing.T) {
 }
 
 func TestCronTrigger_MultipleRealClock(t *testing.T) {
-	// This test is flaky and should be skipped
+	// TODO: https://smartcontract-it.atlassian.net/browse/CAPPL-35
 	t.Skip()
 
 	realClock := clockwork.NewRealClock()
