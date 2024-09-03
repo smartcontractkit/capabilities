@@ -53,7 +53,7 @@ func main() {
 	})
 }
 
-func (cs *CapabilitiesService) Start(ctx context.Context) (err error) {
+func (cs *CapabilitiesService) Start(ctx context.Context) error {
 	return nil
 }
 
