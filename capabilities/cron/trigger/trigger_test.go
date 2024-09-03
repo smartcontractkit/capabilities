@@ -486,6 +486,102 @@ func TestCronTrigger_TimeWindows(t *testing.T) {
 	require.True(t, scheduledExecutionTime2.Equal(scheduledExecutionTime1.Add(time.Hour)))
 }
 
+func TestCronTrigger_MultipleRealClock(t *testing.T) {
+	// This test is flaky and should be skipped
+	t.Skip()
+
+	realClock := clockwork.NewRealClock()
+	ts := New(Params{Logger: logger.Nop(), Clock: realClock})
+	ctx := tests.Context(t)
+
+	callback1, registerUnregisterRequest1, err := registerTriggerToCronTriggerService(
+		ctx,
+		t,
+		ts,
+		everySecond,
+		triggerID1,
+	)
+	require.NoError(t, err)
+
+	callback2, registerUnregisterRequest2, err := registerTriggerToCronTriggerService(
+		ctx,
+		t,
+		ts,
+		everySecondSecond,
+		triggerID2,
+	)
+	require.NoError(t, err)
+
+	assert.Equal(t, len(ts.scheduler.Jobs()), 2)
+
+	// Start scheduling
+	err = ts.Start(ctx)
+	require.NoError(t, err)
+
+	// 1st second
+	msg1 := <-callback1
+	response1 := upwrapCronTriggerEvent(t, msg1.Event)
+	scheduledExecutionTime1_1, _ := time.Parse(time.RFC3339, response1.Payload.ScheduledExecutionTime)
+
+	// 2nd second
+	msg1 = <-callback1
+	response1 = upwrapCronTriggerEvent(t, msg1.Event)
+	scheduledExecutionTime1_2, _ := time.Parse(time.RFC3339, response1.Payload.ScheduledExecutionTime)
+	eventID1Run2 := response1.ID
+
+	msg2 := <-callback2
+	response2 := upwrapCronTriggerEvent(t, msg2.Event)
+	scheduledExecutionTime2_1, _ := time.Parse(time.RFC3339, response2.Payload.ScheduledExecutionTime)
+	eventID2Run2 := response2.ID
+
+	// 3rd second
+	msg1 = <-callback1
+	response1 = upwrapCronTriggerEvent(t, msg1.Event)
+	scheduledExecutionTime1_3, _ := time.Parse(time.RFC3339, response1.Payload.ScheduledExecutionTime)
+
+	// 4th second
+	msg1 = <-callback1
+	response1 = upwrapCronTriggerEvent(t, msg1.Event)
+	scheduledExecutionTime1_4, _ := time.Parse(time.RFC3339, response1.Payload.ScheduledExecutionTime)
+	eventID1Run4 := response1.ID
+
+	msg2 = <-callback2
+	response2 = upwrapCronTriggerEvent(t, msg2.Event)
+	scheduledExecutionTime2_2, _ := time.Parse(time.RFC3339, response2.Payload.ScheduledExecutionTime)
+	eventID2Run4 := response2.ID
+
+	// Unregister the trigger and check that events no longer go on the callback
+	require.NoError(t, ts.UnregisterTrigger(ctx, registerUnregisterRequest1))
+	require.NoError(t, ts.UnregisterTrigger(ctx, registerUnregisterRequest2))
+
+	msg1 = <-callback1
+	require.Equal(t, msg1, capabilities.TriggerResponse{})
+	msg2 = <-callback2
+	require.Equal(t, msg2, capabilities.TriggerResponse{})
+	time.Sleep(time.Second)
+	msg1 = <-callback1
+	require.Equal(t, msg1, capabilities.TriggerResponse{})
+	msg2 = <-callback2
+	require.Equal(t, msg2, capabilities.TriggerResponse{})
+
+	// Close the service
+	require.NoError(t, ts.Close())
+
+	// Check scheduled execution times
+	// Trigger 1 happened every second
+	require.True(t, scheduledExecutionTime1_4.Equal(scheduledExecutionTime1_3.Add(time.Second)))
+	require.True(t, scheduledExecutionTime1_4.Equal(scheduledExecutionTime1_2.Add(time.Second*2)))
+	require.True(t, scheduledExecutionTime1_4.Equal(scheduledExecutionTime1_1.Add(time.Second*3)))
+	require.True(t, scheduledExecutionTime1_3.Equal(scheduledExecutionTime1_2.Add(time.Second)))
+	require.True(t, scheduledExecutionTime1_3.Equal(scheduledExecutionTime1_1.Add(time.Second*2)))
+	require.True(t, scheduledExecutionTime1_2.Equal(scheduledExecutionTime1_1.Add(time.Second)))
+	// Trigger 2 happened every second second
+	require.True(t, scheduledExecutionTime2_2.Equal(scheduledExecutionTime2_1.Add(time.Second*2)))
+	// The 2nd and 4th second have the same event ID
+	require.Equal(t, eventID1Run2, eventID2Run2)
+	require.Equal(t, eventID1Run4, eventID2Run4)
+}
+
 func TestCronTrigger_TimeZone(t *testing.T) {
 	fakeClock := clockwork.NewFakeClock()
 	location, _ := time.LoadLocation("America/New_York")
