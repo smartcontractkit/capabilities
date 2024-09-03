@@ -22,6 +22,7 @@ const (
 
 type CapabilitiesService struct {
 	target capabilities.TargetCapability
+	oracle core.Oracle
 	s      *loop.Server
 }
 
@@ -53,7 +54,8 @@ func (cs *CapabilitiesService) Start(ctx context.Context) error {
 }
 
 func (cs *CapabilitiesService) Close() error {
-	return nil
+	// TODO: Close missing context
+	return cs.oracle.Close(context.Background())
 }
 
 func (cs *CapabilitiesService) Ready() error {
@@ -105,9 +107,9 @@ func (cs *CapabilitiesService) Initialise(
 			BlockchainTimeout: time.Second * 10,
 		},
 		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(),
-		// ContractConfigTracker         types.ContractConfigTracker
-		// ContractTransmitter           ocr3types.ContractTransmitter[[]byte]
-		// OffchainConfigDigester        types.OffchainConfigDigester
+		ContractTransmitter:           oracle.NewContractTransmitter(),
+		ContractConfigTracker:         oracle.NewContractConfigTracker(),
+		OffchainConfigDigester:        oracle.NewOffchainConfigDigester(),
 	})
 	if err != nil {
 		return fmt.Errorf("error when creating oracle: %w", err)
@@ -117,6 +119,7 @@ func (cs *CapabilitiesService) Initialise(
 	if err != nil {
 		return fmt.Errorf("error when starting oracle: %w", err)
 	}
+	cs.oracle = oracle
 
 	return nil
 }
