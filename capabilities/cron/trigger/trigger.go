@@ -2,8 +2,6 @@ package trigger
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -208,8 +206,7 @@ func createTriggerResponse(scheduledExecutionTime time.Time, currentTime time.Ti
 	// Since cron schedules only go to second granularity this should never have ms.
 	// Just in case, truncate on seconds by formatting to ensure consistency across nodes.
 	scheduledExecutionTimeFormatted := scheduledExecutionTimeUTC.Format(time.RFC3339)
-	hash := sha256.Sum256([]byte(scheduledExecutionTimeFormatted))
-	triggerEventID := hex.EncodeToString(hash[:])
+	triggerEventID := scheduledExecutionTimeFormatted
 
 	// Show difference between scheduled and actual execution by including nanoseconds
 	payload := Payload{
