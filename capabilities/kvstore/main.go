@@ -3,10 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/hashicorp/go-plugin"
 
+	"github.com/smartcontractkit/capabilities/kvstore/oracle"
 	"github.com/smartcontractkit/capabilities/kvstore/target"
+	"github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
@@ -85,6 +88,7 @@ func (cs *CapabilitiesService) Initialise(
 	errorLog core.ErrorLog,
 	pipelineRunner core.PipelineRunnerService,
 	relayerSet core.RelayerSet,
+	oracleFactory core.OracleFactory,
 ) error {
 	cs.s.Logger.Debugf("Initialising %s", serviceName)
 	cs.target = target.New(target.Params{
@@ -94,6 +98,24 @@ func (cs *CapabilitiesService) Initialise(
 
 	if err := capabilityRegistry.Add(ctx, cs.target); err != nil {
 		return fmt.Errorf("error when adding kv store target to the registry: %w", err)
+	}
+
+	oracle, err := oracleFactory.NewOracle(ctx, core.OracleArgs{
+		LocalConfig: types.LocalConfig{
+			BlockchainTimeout: time.Second * 10,
+		},
+		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(),
+		// ContractConfigTracker         types.ContractConfigTracker
+		// ContractTransmitter           ocr3types.ContractTransmitter[[]byte]
+		// OffchainConfigDigester        types.OffchainConfigDigester
+	})
+	if err != nil {
+		return fmt.Errorf("error when creating oracle: %w", err)
+	}
+
+	err = oracle.Start(ctx)
+	if err != nil {
+		return fmt.Errorf("error when starting oracle: %w", err)
 	}
 
 	return nil
