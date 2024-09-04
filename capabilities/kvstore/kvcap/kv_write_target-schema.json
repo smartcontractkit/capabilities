@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/smartcontractkit/capabilities/targets/kv-store@1.0.0",
+  "$id": "https://github.com/smartcontractkit/capabilities/kvstore/kvcap/kv-store@1.0.0",
   "description": "Key-Value Store Target",
   "type": "object",
   "additionalProperties": false,

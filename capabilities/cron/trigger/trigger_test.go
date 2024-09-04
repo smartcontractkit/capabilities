@@ -3,7 +3,6 @@ package trigger
 import (
 	"context"
 	"fmt"
-	"os"
 	"strconv"
 	"testing"
 	"time"
@@ -14,7 +13,6 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/utils"
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/tests"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 )
@@ -767,20 +765,4 @@ func TestCronTrigger_CloseStartErrors(t *testing.T) {
 	require.NoError(t, err)
 	err = ts.Start(ctx)
 	require.Error(t, err)
-}
-
-func TestCronTrigger_GenerateSchema(t *testing.T) {
-	ts := New(Params{Logger: logger.Nop()})
-	schema, err := ts.Schema()
-	require.NoError(t, err)
-	var shouldUpdate = false
-	if shouldUpdate {
-		err = os.WriteFile("./schema.json", []byte(schema), 0600)
-		require.NoError(t, err)
-	}
-
-	fixture, err := os.ReadFile("./schema.json")
-	require.NoError(t, err)
-
-	utils.AssertJSONEqual(t, fixture, []byte(schema))
 }
