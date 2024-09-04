@@ -2,6 +2,7 @@ package trigger
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -13,6 +14,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
+
+	"github.com/smartcontractkit/capabilities/cron/croncap"
 )
 
 const ID = "cron-trigger@1.0.0"
@@ -25,27 +28,9 @@ var cronTriggerInfo = capabilities.MustNewCapabilityInfo(
 	"A trigger that uses a cron schedule to run periodically at fixed times, dates, or intervals.",
 )
 
-type Config struct {
-	// The cron schedule expression to evaluate for scheduling.
-	// Supports an optional sixth entry for second granularity.
-	Schedule string `json:"schedule"`
-}
-
-type Input struct{}
-
-type Metadata struct{}
-
-type Payload struct {
-	// Time that cron trigger's task execution occurred (RFC3339Nano formatted)
-	ActualExecutionTime string
-	// Time that cron trigger's task execution had been scheduled to occur (RFC3339Nano formatted)
-	ScheduledExecutionTime string
-}
-
 type Response struct {
 	capabilities.TriggerEvent
-	Metadata Metadata
-	Payload  Payload
+	Payload croncap.Payload
 }
 
 type cronTrigger struct {
@@ -56,7 +41,6 @@ type cronTrigger struct {
 
 type Service struct {
 	capabilities.CapabilityInfo
-	capabilities.Validator[Config, Input, capabilities.TriggerResponse]
 	clock     clockwork.Clock
 	lggr      logger.Logger
 	scheduler gocron.Scheduler
@@ -97,7 +81,6 @@ func New(p Params) *Service {
 
 	return &Service{
 		CapabilityInfo: cronTriggerInfo,
-		Validator:      capabilities.NewValidator[Config, Input, capabilities.TriggerResponse](capabilities.ValidatorArgs{Info: cronTriggerInfo}),
 		clock:          p.Clock,
 		triggers:       cronStore,
 		lggr:           l,
@@ -111,8 +94,17 @@ func (s *Service) RegisterTrigger(ctx context.Context, req capabilities.TriggerR
 	if req.Config == nil {
 		return nil, errors.New("config is required to register a cron trigger")
 	}
-	config, err := s.ValidateConfig(req.Config)
+	config := &croncap.Config{}
+	if err := req.Config.UnwrapTo(config); err != nil {
+		return nil, err
+	}
+
+	// validate against the json schema
+	b, err := json.Marshal(config)
 	if err != nil {
+		return nil, err
+	}
+	if err = json.Unmarshal(b, &config); err != nil {
 		return nil, err
 	}
 
@@ -209,7 +201,7 @@ func createTriggerResponse(scheduledExecutionTime time.Time, currentTime time.Ti
 	triggerEventID := scheduledExecutionTimeFormatted
 
 	// Show difference between scheduled and actual execution by including nanoseconds
-	payload := Payload{
+	payload := croncap.Payload{
 		ScheduledExecutionTime: scheduledExecutionTimeUTC.Format(time.RFC3339Nano),
 		ActualExecutionTime:    currentTimeUTC.Format(time.RFC3339Nano),
 	}
