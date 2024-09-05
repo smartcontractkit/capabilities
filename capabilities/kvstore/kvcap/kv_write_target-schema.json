@@ -1,22 +1,25 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/smartcontractkit/capabilities/kvstore/kvcap/kv-store@1.0.0",
-  "description": "Key-Value Store Target",
-  "type": "object",
-  "additionalProperties": false,
-  "properties": {
-    "inputs": {
+  "$defs": {
+    "Inputs": {
       "type": "object",
       "additionalProperties": false,
       "description": "Input parameters for the Key-Value Store Target.",
       "properties": {
         "signedReport": {
-          "type": "string",
-          "contentEncoding": "base64",
-          "description": "Signed report represented as bytes encoded as base64 string. The report must have MetadataV1 prepended to the payload. The payload must be a non-empty array of 'key' and 'value' pairs where 'key' is a string and 'value' is a string, e.g, [{\"key\":\"foo\",\"value\":\"bar\"}]."
+          "$ref": "https://raw.githubusercontent.com/smartcontractkit/chainlink-common/rtinianov_remoterefs/pkg/capabilities/consensus/ocr3/ocr3cap/ocr3cap_common-schema.json#/$defs/SignedReport"
         }
       },
       "required": ["signedReport"]
+    }
+  },
+  "description": "Key-Value Store Target",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "inputs": {
+      "$ref": "#/$defs/Inputs"
     },
     "config": {
       "type": "object",

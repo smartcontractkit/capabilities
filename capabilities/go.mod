@@ -2,7 +2,7 @@ module github.com/smartcontractkit/capabilities/capabilities
 
 go 1.23.0
 
-require github.com/smartcontractkit/chainlink-common v0.2.2-0.20240830194402-e4cf200473ed
+require github.com/smartcontractkit/chainlink-common v0.2.2-0.20240904184438-dcf1f377fdc2
 
 require (
 	github.com/atombender/go-jsonschema v0.16.0 // indirect
@@ -24,7 +24,7 @@ require (
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/smartcontractkit/libocr v0.0.0-20240419185742-fd3cab206b2c // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
-	golang.org/x/exp v0.0.0-20240808152545-0cdaa3abc0fa // indirect
+	golang.org/x/exp v0.0.0-20240904232852-e7e105dedf7e // indirect
 	golang.org/x/mod v0.20.0 // indirect
 	golang.org/x/sync v0.8.0 // indirect
 	golang.org/x/sys v0.24.0 // indirect
@@ -35,4 +35,6 @@ require (
 )
 
 // until merged upstream: https://github.com/omissis/go-jsonschema/pull/264
-replace github.com/atombender/go-jsonschema => github.com/nolag/go-jsonschema v0.16.0-smallSizedInts
+replace github.com/atombender/go-jsonschema => ../../../nolag/go-jsonschema
+
+replace github.com/smartcontractkit/chainlink-common => ../../../smartcontractkit/chainlink-common

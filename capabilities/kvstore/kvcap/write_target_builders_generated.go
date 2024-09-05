@@ -4,6 +4,7 @@ package kvcap
 
 import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	ocr3cap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/ocr3cap"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk"
 )
 
@@ -21,7 +22,7 @@ func (cfg WriteTargetConfig) New(w *sdk.WorkflowSpecFactory, input WriteTargetIn
 }
 
 type WriteTargetInput struct {
-	SignedReport sdk.CapDefinition[string]
+	SignedReport sdk.CapDefinition[ocr3cap.SignedReport]
 }
 
 func (input WriteTargetInput) ToSteps() sdk.StepInputs {

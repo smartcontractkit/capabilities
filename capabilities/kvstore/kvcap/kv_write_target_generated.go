@@ -5,7 +5,33 @@ package kvcap
 import (
 	"encoding/json"
 	"fmt"
+
+	ocr3cap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/ocr3cap"
 )
+
+// Input parameters for the Key-Value Store Target.
+type Inputs struct {
+	// SignedReport corresponds to the JSON schema field "signedReport".
+	SignedReport ocr3cap.SignedReport `json:"signedReport" yaml:"signedReport" mapstructure:"signedReport"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *Inputs) UnmarshalJSON(b []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["signedReport"]; raw != nil && !ok {
+		return fmt.Errorf("field signedReport in Inputs: required")
+	}
+	type Plain Inputs
+	var plain Plain
+	if err := json.Unmarshal(b, &plain); err != nil {
+		return err
+	}
+	*j = Inputs(plain)
+	return nil
+}
 
 // Key-Value Store Target
 type WriteTarget struct {
@@ -13,40 +39,13 @@ type WriteTarget struct {
 	// available at this time.
 	Config WriteTargetConfig `json:"config,omitempty" yaml:"config,omitempty" mapstructure:"config,omitempty"`
 
-	// Input parameters for the Key-Value Store Target.
-	Inputs WriteTargetInputs `json:"inputs" yaml:"inputs" mapstructure:"inputs"`
+	// Inputs corresponds to the JSON schema field "inputs".
+	Inputs Inputs `json:"inputs" yaml:"inputs" mapstructure:"inputs"`
 }
 
 // Configuration for the Key-Value Store Target. No configuration options are
 // available at this time.
 type WriteTargetConfig map[string]interface{}
-
-// Input parameters for the Key-Value Store Target.
-type WriteTargetInputs struct {
-	// Signed report represented as bytes encoded as base64 string. The report must
-	// have MetadataV1 prepended to the payload. The payload must be a non-empty array
-	// of 'key' and 'value' pairs where 'key' is a string and 'value' is a string,
-	// e.g, [{"key":"foo","value":"bar"}].
-	SignedReport string `json:"signedReport" yaml:"signedReport" mapstructure:"signedReport"`
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *WriteTargetInputs) UnmarshalJSON(b []byte) error {
-	var raw map[string]interface{}
-	if err := json.Unmarshal(b, &raw); err != nil {
-		return err
-	}
-	if _, ok := raw["signedReport"]; raw != nil && !ok {
-		return fmt.Errorf("field signedReport in WriteTargetInputs: required")
-	}
-	type Plain WriteTargetInputs
-	var plain Plain
-	if err := json.Unmarshal(b, &plain); err != nil {
-		return err
-	}
-	*j = WriteTargetInputs(plain)
-	return nil
-}
 
 // UnmarshalJSON implements json.Unmarshaler.
 func (j *WriteTarget) UnmarshalJSON(b []byte) error {

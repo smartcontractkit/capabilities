@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/smartcontractkit/capabilities/libs/types"
-
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
+
+	"github.com/smartcontractkit/capabilities/kvstore/kvcap"
 )
 
 var _ capabilities.TargetCapability = (*capability)(nil)
@@ -43,13 +43,9 @@ func success() <-chan capabilities.CapabilityResponse {
 	return callback
 }
 
-type Inputs struct {
-	SignedReport types.SignedReport
-}
-
 type Request struct {
 	Metadata capabilities.RequestMetadata
-	Inputs   Inputs
+	Inputs   kvcap.Inputs
 }
 
 func evaluate(rawRequest capabilities.CapabilityRequest) (r Request, err error) {
@@ -80,7 +76,7 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		return nil, fmt.Errorf("failed to decode signed report: %v", err)
 	}
 
-	c.logger.Debug("Decoded signed report", "WorkflowID", request.Metadata.WorkflowID, "WorkflowExecutionID", request.Metadata.WorkflowExecutionID, "ReportVersion", request.Inputs.SignedReport.Version)
+	c.logger.Debug("Decoded signed report", "WorkflowID", request.Metadata.WorkflowID, "WorkflowExecutionID", request.Metadata.WorkflowExecutionID, "ReportVersion", request.Inputs.SignedReport)
 
 	if err := c.store.Store(ctx, "some", []byte{1, 2, 3}); err != nil {
 		return nil, err
