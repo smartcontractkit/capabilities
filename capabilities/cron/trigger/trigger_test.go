@@ -30,7 +30,7 @@ const (
 	everyHourFrom9To10 = "0 9-10 * * *"
 	everyMinute        = "0 * * * * *"
 	everySecond        = "* * * * * *"
-	everySecondSecond  = "*/2 * * * * *"
+	everyEvenSecond    = "*/2 * * * * *"
 
 	// Workflow IDs
 	workflowID1 = "workflow-id-1"
@@ -486,12 +486,13 @@ func TestCronTrigger_TimeWindows(t *testing.T) {
 	require.True(t, scheduledExecutionTime2.Equal(scheduledExecutionTime1.Add(time.Hour)))
 }
 
-func TestCronTrigger_MultipleRealClock(t *testing.T) {
-	// TODO: https://smartcontract-it.atlassian.net/browse/CAPPL-35
-	t.Skip()
-
-	realClock := clockwork.NewRealClock()
-	ts := New(Params{Logger: logger.Nop(), Clock: realClock})
+func TestCronTrigger_MultipleDifferentSchedules(t *testing.T) {
+	fakeClock := clockwork.NewFakeClock()
+	// Start on an odd numbered second
+	if fakeClock.Now().Second()%2 == 1 {
+		fakeClock.Advance(time.Second)
+	}
+	ts := New(Params{Logger: logger.Nop(), Clock: fakeClock})
 	ctx := tests.Context(t)
 
 	callback1, registerUnregisterRequest1, err := registerTriggerToCronTriggerService(
@@ -507,7 +508,7 @@ func TestCronTrigger_MultipleRealClock(t *testing.T) {
 		ctx,
 		t,
 		ts,
-		everySecondSecond,
+		everyEvenSecond,
 		triggerID2,
 	)
 	require.NoError(t, err)
@@ -518,10 +519,14 @@ func TestCronTrigger_MultipleRealClock(t *testing.T) {
 	err = ts.Start(ctx)
 	require.NoError(t, err)
 
+	fakeClock.Advance(time.Second)
+
 	// 1st second
 	msg1 := <-callback1
 	response1 := upwrapCronTriggerEvent(t, msg1.Event)
 	scheduledExecutionTime1_1, _ := time.Parse(time.RFC3339, response1.Payload.ScheduledExecutionTime)
+
+	fakeClock.Advance(time.Second)
 
 	// 2nd second
 	msg1 = <-callback1
@@ -534,10 +539,14 @@ func TestCronTrigger_MultipleRealClock(t *testing.T) {
 	scheduledExecutionTime2_1, _ := time.Parse(time.RFC3339, response2.Payload.ScheduledExecutionTime)
 	eventID2Run2 := response2.ID
 
+	fakeClock.Advance(time.Second)
+
 	// 3rd second
 	msg1 = <-callback1
 	response1 = upwrapCronTriggerEvent(t, msg1.Event)
 	scheduledExecutionTime1_3, _ := time.Parse(time.RFC3339, response1.Payload.ScheduledExecutionTime)
+
+	fakeClock.Advance(time.Second)
 
 	// 4th second
 	msg1 = <-callback1
@@ -553,6 +562,8 @@ func TestCronTrigger_MultipleRealClock(t *testing.T) {
 	// Unregister the trigger and check that events no longer go on the callback
 	require.NoError(t, ts.UnregisterTrigger(ctx, registerUnregisterRequest1))
 	require.NoError(t, ts.UnregisterTrigger(ctx, registerUnregisterRequest2))
+
+	fakeClock.Advance(time.Second)
 
 	msg1 = <-callback1
 	require.Equal(t, msg1, capabilities.TriggerResponse{})
