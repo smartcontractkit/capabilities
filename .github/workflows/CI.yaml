@@ -112,6 +112,7 @@ jobs:
           git diff --minimal --exit-code
       - name: Ensure "make generate" has been run
         run: |
+          cd capabilities
           make rm-generated
           make generate
           git diff --stat --exit-code
