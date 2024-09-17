@@ -16,7 +16,6 @@ jobs:
           fetch-depth: 0
       - name: Use Node.js
         uses: actions/setup-node@v4
-
         with:
           node-version: "20"
       - run: npx nx init
@@ -95,3 +94,24 @@ jobs:
       - name: Some tests failed
         if: ${{ contains(needs.*.result, 'failure') }}
         run: exit 1
+
+  check-tidy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
+      - name: Set up Go
+        uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
+        with:
+          go-version-file: "capabilities/go.mod"
+      - name: Ensure "make gomodtidy" has been run
+        run: |
+          cd capabilities
+          make gomodtidy
+          git diff --minimal --exit-code
+      - name: Ensure "make generate" has been run
+        run: |
+          cd capabilities
+          make rm-generated
+          make generate
+          git diff --stat --exit-code
