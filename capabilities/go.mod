@@ -1,6 +1,6 @@
 module github.com/smartcontractkit/capabilities
 
-go 1.23.0
+go 1.23
 
 require github.com/smartcontractkit/chainlink-common v0.2.2-0.20240917155953-d6de1326f383
 
