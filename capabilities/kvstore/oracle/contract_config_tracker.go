@@ -19,7 +19,11 @@ func (cct *contractConfigTracker) Notify() <-chan struct{} {
 }
 
 // TODO: Implement the LatestConfigDetails method
-func (cct *contractConfigTracker) LatestConfigDetails(ctx context.Context) (changedInBlock uint64, configDigest types.ConfigDigest, err error) {
+func (cct *contractConfigTracker) LatestConfigDetails(ctx context.Context) (
+	changedInBlock uint64,
+	configDigest types.ConfigDigest,
+	err error,
+) {
 	return 0, types.ConfigDigest{}, nil
 }
 
