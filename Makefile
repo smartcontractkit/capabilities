@@ -4,13 +4,11 @@ gomods: ## Install gomods
 
 .PHONY: gomodtidy
 gomodtidy: gomods
-	# didn't work... gomods tidy
-	cd capabilities && go mod tidy && cd cron && go mod tidy && cd ../kvstore && go mod tidy && cd ../../libs/types && go mod tidy
+	gomods tidy
 
 .PHONY: generate
 generate: gomods
-	# didn't work... gomods -w go generate -x ./...
-	cd capabilities && go generate -x ./... && cd cron && go generate -x ./... && cd ../kvstore && go generate -x ./... && cd ../../libs/types && go generate -x ./...
+	gomods -w go generate -x ./...
 
 .PHONY: rm-generated
 rm-generated:
