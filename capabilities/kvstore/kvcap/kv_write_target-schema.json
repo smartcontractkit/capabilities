@@ -1,5 +1,5 @@
 {
-  "$id": "https://github.com/smartcontractkit/capabilities/kvstore/kvcap/kv-store-target@1.0.0",
+  "$id": "https://github.com/smartcontractkit/capabilities/capabilities/kvstore/kvcap/kv-store-target@1.0.0",
   "$defs": {
     "Inputs": {
       "type": "object",
@@ -7,7 +7,7 @@
       "description": "Input parameters for the Key-Value Store Target.",
       "properties": {
         "signedReport": {
-          "$ref": "https://raw.githubusercontent.com/smartcontractkit/chainlink-common/main/pkg/capabilities/consensus/ocr3/ocr3cap/ocr3cap_common-schema.json#/$defs/SignedReport"
+          "$ref": "https://raw.githubusercontent.com/smartcontractkit/chainlink-common/refs/heads/main/pkg/capabilities/consensus/ocr3/ocr3cap/ocr3cap_common-schema.json#/$defs/SignedReport"
         }
       },
       "required": ["signedReport"]

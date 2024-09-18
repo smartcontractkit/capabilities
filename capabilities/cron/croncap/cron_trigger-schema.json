@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/smartcontractkit/capabilities/cron/croncap/cron-trigger@1.0.0",
+  "$id": "https://github.com/smartcontractkit/capabilities/capabilities/cron/croncap/cron-trigger@1.0.0",
   "$defs": {
     "Payload": {
       "type": "object",

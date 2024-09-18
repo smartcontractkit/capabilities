@@ -1,4 +1,4 @@
-module github.com/smartcontractkit/capabilities/kvstore
+module github.com/smartcontractkit/capabilities/capabilities/kvstore
 
 go 1.23.0
 

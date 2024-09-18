@@ -5,7 +5,7 @@
 package croncaptest
 
 import (
-	"github.com/smartcontractkit/capabilities/cron/croncap"
+	"github.com/smartcontractkit/capabilities/capabilities/cron/croncap"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/testutils"
 )
 

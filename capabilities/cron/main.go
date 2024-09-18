@@ -7,7 +7,7 @@ import (
 
 	"github.com/hashicorp/go-plugin"
 
-	"github.com/smartcontractkit/capabilities/cron/trigger"
+	"github.com/smartcontractkit/capabilities/capabilities/cron/trigger"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"

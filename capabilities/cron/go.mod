@@ -1,4 +1,4 @@
-module github.com/smartcontractkit/capabilities/cron
+module github.com/smartcontractkit/capabilities/capabilities/cron
 
 go 1.23
 

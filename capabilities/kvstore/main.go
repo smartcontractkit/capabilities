@@ -6,7 +6,7 @@ import (
 
 	"github.com/hashicorp/go-plugin"
 
-	"github.com/smartcontractkit/capabilities/kvstore/target"
+	"github.com/smartcontractkit/capabilities/capabilities/kvstore/target"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"

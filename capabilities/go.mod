@@ -1,8 +1,8 @@
-module github.com/smartcontractkit/capabilities
+module github.com/smartcontractkit/capabilities/capabilities
 
 go 1.23
 
-require github.com/smartcontractkit/chainlink-common v0.2.2-0.20240917155953-d6de1326f383
+require github.com/smartcontractkit/chainlink-common v0.2.3-0.20240918103207-e78a0de3f684
 
 require (
 	github.com/atombender/go-jsonschema v0.16.1-0.20240916205339-a74cd4e2851c // indirect
