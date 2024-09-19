@@ -5,7 +5,7 @@
 package kvcaptest
 
 import (
-	"github.com/smartcontractkit/capabilities/capabilities/kvstore/kvcap"
+	"github.com/smartcontractkit/capabilities/kvstore/kvcap"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/testutils"
 )
 

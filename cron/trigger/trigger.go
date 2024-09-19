@@ -15,7 +15,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 
-	"github.com/smartcontractkit/capabilities/capabilities/cron/croncap"
+	"github.com/smartcontractkit/capabilities/cron/croncap"
 )
 
 const ID = "cron-trigger@1.0.0"

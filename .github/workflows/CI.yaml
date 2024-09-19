@@ -102,16 +102,11 @@ jobs:
         uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
       - name: Set up Go
         uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
-        with:
-          go-version-file: "capabilities/go.mod"
       - name: Ensure "make gomodtidy" has been run
         run: |
-          cd capabilities
-          make gomodtidy
-          git diff --minimal --exit-code
+          ./nx run-many -t tidy
       - name: Ensure "make generate" has been run
         run: |
-          cd capabilities
-          make rm-generated
-          make generate
+          ./nx run-many -t rm-generated
+          ./nx run-many -t generate
           git diff --stat --exit-code
