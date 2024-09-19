@@ -8,7 +8,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
-	"github.com/smartcontractkit/capabilities/capabilities/kvstore/kvcap"
+	"github.com/smartcontractkit/capabilities/kvstore/kvcap"
 )
 
 var _ capabilities.TargetCapability = (*capability)(nil)
