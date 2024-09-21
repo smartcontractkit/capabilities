@@ -115,7 +115,7 @@ func (m *MockLibOCR) simulateProtocolRound(ctx context.Context) error {
 
 		observations = append(observations, types.AttributedObservation{
 			Observation: obs,
-			Observer:    commontypes.OracleID(oracleID),
+			Observer:    commontypes.OracleID(uint8(oracleID)),
 		})
 	}
 
@@ -154,7 +154,7 @@ func (m *MockLibOCR) simulateProtocolRound(ctx context.Context) error {
 			}
 
 			signatures = append(signatures, types.AttributedOnchainSignature{
-				Signer:    commontypes.OracleID(i),
+				Signer:    commontypes.OracleID(uint8(i)),
 				Signature: sig,
 			})
 		}

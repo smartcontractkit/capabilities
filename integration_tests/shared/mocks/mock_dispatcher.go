@@ -71,7 +71,7 @@ func (a *TestAsyncMessageBroker) Name() string {
 	return "TestAsyncMessageBroker"
 }
 
-func (a *TestAsyncMessageBroker) registerReceiverNode(nodePeerID p2ptypes.PeerID, capabilityId string, capabilityDonID uint32, receiver remotetypes.Receiver) {
+func (a *TestAsyncMessageBroker) registerReceiverNode(nodePeerID p2ptypes.PeerID, capabilityID string, capabilityDonID uint32, receiver remotetypes.Receiver) {
 	a.mux.Lock()
 	defer a.mux.Unlock()
 
@@ -83,8 +83,8 @@ func (a *TestAsyncMessageBroker) registerReceiverNode(nodePeerID p2ptypes.PeerID
 
 	node.registerReceiverCh <- &registerReceiverRequest{
 		receiverKey: receiverKey{
-			capabilityId: capabilityId,
-			donId:        capabilityDonID,
+			capabilityID: capabilityID,
+			donID:        capabilityDonID,
 		},
 		receiver: receiver,
 	}
@@ -106,8 +106,8 @@ type brokerNode struct {
 }
 
 type receiverKey struct {
-	capabilityId string
-	donId        uint32
+	capabilityID string
+	donID        uint32
 }
 
 type registerReceiverRequest struct {
@@ -131,8 +131,8 @@ func (a *TestAsyncMessageBroker) newNode() *brokerNode {
 				return
 			case msg := <-n.receiveCh:
 				k := receiverKey{
-					capabilityId: msg.CapabilityId,
-					donId:        msg.CapabilityDonId,
+					capabilityID: msg.CapabilityId,
+					donID:        msg.CapabilityDonId,
 				}
 
 				r, ok := receivers[k]
@@ -166,8 +166,8 @@ type brokerDispatcher struct {
 }
 
 type key struct {
-	capId string
-	donId uint32
+	capID string
+	donID uint32
 }
 
 func (t *brokerDispatcher) Send(peerID p2ptypes.PeerID, msgBody *remotetypes.MessageBody) error {

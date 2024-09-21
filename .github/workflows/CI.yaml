@@ -28,7 +28,7 @@ jobs:
 
   test:
     needs: affected-projects
-    if: ${{ needs.affected-projects.outputs.affected != '[]' && needs.affected-projects.outputs.affected != '' }}
+    if: ${{ needs.affected-projects.outputs.affected != '[]' && needs.affected-projects.outputs.affected != '' && needs.affected-projects.outputs.affected != '["integration_tests"]' }}
     runs-on: ubuntu-latest
     strategy:
       matrix:

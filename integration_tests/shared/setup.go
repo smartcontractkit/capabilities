@@ -1,11 +1,9 @@
-package integration_tests
+package testsetup
 
 import (
 	"context"
 	"crypto/rand"
-	"encoding/hex"
 	"fmt"
-	"math/big"
 	"strconv"
 	"testing"
 	"time"
@@ -22,10 +20,8 @@ import (
 
 	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/datastreams"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 	coretypes "github.com/smartcontractkit/chainlink-common/pkg/types/core"
-	v3 "github.com/smartcontractkit/chainlink-common/pkg/types/mercury/v3"
 
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities"
 	remotetypes "github.com/smartcontractkit/chainlink/v2/core/capabilities/remote/types"
@@ -39,7 +35,6 @@ import (
 	"github.com/smartcontractkit/chainlink/v2/core/services/keystore/keys/ocr2key"
 	p2ptypes "github.com/smartcontractkit/chainlink/v2/core/services/p2p/types"
 	"github.com/smartcontractkit/chainlink/v2/core/services/relay/evm"
-	"github.com/smartcontractkit/chainlink/v2/core/services/relay/evm/mercury/v3/reportcodec"
 	"github.com/smartcontractkit/chainlink/v2/core/utils/testutils/heavyweight"
 
 	"github.com/smartcontractkit/capabilities/integration_tests/shared/internal/cltest"
@@ -152,7 +147,8 @@ func createDons(ctx context.Context, t *testing.T, lggr logger.Logger, reportsSi
 		capabilityRegistry := capabilities.NewRegistry(lggr)
 
 		target := targetSink.GetNewTarget(t)
-		capabilityRegistry.Add(ctx, target)
+		err := capabilityRegistry.Add(ctx, target)
+		require.NoError(t, err)
 
 		requestTimeout := 10 * time.Minute
 		cfg := ocr3.Config{
@@ -276,35 +272,6 @@ func CreateDonInfo(t *testing.T, don Don) donInfo {
 	return triggerDonInfo
 }
 
-func createFeedReport(t *testing.T, price *big.Int, observationTimestamp int64,
-	feedIDString string,
-	keyBundles []ocr2key.KeyBundle) *datastreams.FeedReport {
-	reportCtx := ocrTypes.ReportContext{}
-	rawCtx := RawReportContext(reportCtx)
-
-	bytes, err := hex.DecodeString(feedIDString[2:])
-	require.NoError(t, err)
-	var feedIDBytes [32]byte
-	copy(feedIDBytes[:], bytes)
-
-	report := &datastreams.FeedReport{
-		FeedID:               feedIDString,
-		FullReport:           newReport(t, feedIDBytes, price, observationTimestamp),
-		BenchmarkPrice:       price.Bytes(),
-		ObservationTimestamp: observationTimestamp,
-		Signatures:           [][]byte{},
-		ReportContext:        rawCtx,
-	}
-
-	for _, key := range keyBundles {
-		sig, err := key.Sign(reportCtx, report.FullReport)
-		require.NoError(t, err)
-		report.Signatures = append(report.Signatures, sig)
-	}
-
-	return report
-}
-
 func getKeyBundlesAndPeerIDs(t *testing.T, numNodes int) ([]ocr2key.KeyBundle, []peer) {
 	var keyBundles []ocr2key.KeyBundle
 	var donPeerIDs []peer
@@ -325,27 +292,6 @@ func getKeyBundlesAndPeerIDs(t *testing.T, numNodes int) ([]ocr2key.KeyBundle, [
 		donPeerIDs = append(donPeerIDs, p)
 	}
 	return keyBundles, donPeerIDs
-}
-
-func newFeedID(t *testing.T) string {
-	buf := [32]byte{}
-	_, err := rand.Read(buf[:])
-	require.NoError(t, err)
-	return "0x" + hex.EncodeToString(buf[:])
-}
-
-func newReport(t *testing.T, feedID [32]byte, price *big.Int, timestamp int64) []byte {
-	v3Codec := reportcodec.NewReportCodec(feedID, logger.TestLogger(t))
-	raw, err := v3Codec.BuildReport(v3.ReportFields{
-		BenchmarkPrice: price,
-		Timestamp:      uint32(timestamp),
-		Bid:            big.NewInt(0),
-		Ask:            big.NewInt(0),
-		LinkFee:        big.NewInt(0),
-		NativeFee:      big.NewInt(0),
-	})
-	require.NoError(t, err)
-	return raw
 }
 
 type testPeerWrapper struct {

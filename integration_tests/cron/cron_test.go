@@ -1,4 +1,4 @@
-package cron_integration_tests
+package crontest
 
 import (
 	"context"
@@ -37,7 +37,7 @@ func Test_Cron_OneAtATimeTransmissionSchedule(t *testing.T) {
 	_, _, targetSink := shared.SetupDonsWithTransmissionSchedule(ctx, t, workflowDonInfo, triggerDonInfo, targetDonInfo, scheduleEveryOtherSecond, "2s", "oneAtATime")
 
 	quorum := 3 // number of nodes that need to execute the workflow (F+1)
-	runs := 3   // number of rounds to reach quorum
+	runs := 3   // number of rounds to be considered done
 	waitTime := 10 * time.Second
 
 	waitFor(ctx, t, targetSink, quorum, runs, waitTime)
@@ -69,7 +69,7 @@ func waitFor(ctx context.Context, t *testing.T, targetSink *mocks.TargetSink, qu
 			actualTime, _ := time.Parse(time.RFC3339Nano, payload.ActualExecutionTime)
 			idsToActualTime[request.Metadata.WorkflowExecutionID] = append(idsToActualTime[request.Metadata.WorkflowExecutionID], actualTime)
 
-			// Check that actual execution time of trigger is within a second across nodes
+			// Check that the actual execution time of trigger is within a second across nodes
 			if len(idsToActualTime[request.Metadata.WorkflowExecutionID]) > 1 {
 				for i, executionTime := range idsToActualTime[request.Metadata.WorkflowExecutionID] {
 					if i > 0 {
