@@ -18,6 +18,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+      - run: npx nx init
       - name: Get base branch
         id: get-base
         run: echo "base=${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }}" >> "$GITHUB_OUTPUT"
@@ -77,6 +78,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: latest
+      - run: npx nx init
       - id: get-root
         run: echo "root=$(./nx show project ${{matrix.projects}} --json)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
