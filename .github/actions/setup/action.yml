@@ -1,5 +1,5 @@
 name: "Set up project environment"
-description: "Sets up Node, installs PNPM and repository dependencies"
+description: "Sets up nx and Go"
 runs:
   using: "composite"
   steps:
