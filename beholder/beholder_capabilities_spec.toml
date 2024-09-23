@@ -1,0 +1,5 @@
+type = "standardcapabilities"
+schemaVersion = 1
+name = "beholder-capabilities"
+command="${PATH_TO_BINARY}/beholder" # Binary location
+config=""
