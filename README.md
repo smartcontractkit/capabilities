@@ -4,21 +4,21 @@ This repo uses [`nx`](https://nx.dev/) for monorepo management and change-detect
 
 ## Code structure
 
-- Each package in the root folder creates (except `libs`) a binary that instantiates a **capability set** when added to the node through a `type="standardcapabilities"` job spec (**capability spec**). A capability set contains one or more capabilities that are centered around some functionality or shared resource, e.g., KV store, EVM chain, CRON, etc. So a KV store binary would instantiate `kvstore-read` action capability and `kvstore-write` target capability that shares an underlying KV store resource.
+- With the exception of `libs`, each package in the root folder creates a binary that instantiates a **capability set** when added to the node through a `type="standardcapabilities"` job spec (**capability spec**). A capability set contains one or more capabilities that are centered around some functionality or shared resource, e.g., KV store, EVM chain, CRON, etc. So a KV store binary would instantiate `kvstore-read` action capability and `kvstore-write` target capability that shares an underlying KV store resource.
 - `libs` folder contains packages that are shared across capabilities. You should only create a package there if two or more capability sets need to share a dependency.
 
 ## Generating SDKs
 
-Each capability set should have a sub-folder that defines a JSON schema for each function call users can make.  
-They may also contain a JSON schema for common definitions that many function calls use.
+Each new capability requires a corresponding SDK to be generated for it. This SDK can be used by workflow authors to write workflows using that capability in Go.
 
-Having a sub-folder allows the packages to live in isolation from the capabilities themselves.  
-This is important for keeping WASMs small and only including the code that is needed.  
-If the JSON schema is itself not generated from code, then the capabilities should make use of these types.
+The process for generating the SDK is:
+* Define the inputs and outputs of the calls that can be made to the capability set in JSON schema. This JSON schema should be located in the same directory as the relevant capability set. To ensure that any WASM binaries that depend on these SDKs remain small, we recommend placing this in a subdirectory which just contains the generated types. So, assuming a capability set in the `cron` directory, we recommend putting the JSON schema in `cron/croncap` for example.
+* Using the JSON schema, generate some native Go types. This is automated by means of a "gen file", and is described more below.
 
 ### gen file
 
-There must be a file to generate the types.  
+We use a "gen file" to automate generating the Go structs from JSON schema. This will use `go generate` to automate the generation of the Go SDK from the JSON schema.
+
 It's recommended to put it in the JSON schema's directory so it's all together, but it will also work from the root of the capability.
 
 The latter may be useful if you have multiple versions of the capability, as one file can be used for all generations.
@@ -33,29 +33,31 @@ See `kvstore/kvcap/gen.go` for an example.
 ### File naming
 
 The files must follow the regex [CapabilitySchemaFilePattern](https://github.com/smartcontractkit/chainlink-common/blob/main/pkg/capabilities/cli/cmd/generate_types.go#L21).  
+
 If you expose one function to users, your schema should follow:
 
-`name_type-schema.json`, like `cron_trigger-schema.json`.
+`<capability name>_type-schema.json`, like `cron_trigger-schema.json`.
 
 The method on the config file will then be named `Config` that users interact with.
 
-If you have multiple functions, you can name it first with your capability, then the function name.
+If you have multiple capabilities in a capability set, you can use the following naming schema:
+
+`<capability set prefix>_<capability>_<type>-schema.json`
 
 For example:
 
 `kv_write_target-schema.json`
 
-This will generate:
+would define the JSON schema for the KV Write Target that is part of the KV capability set.
 
-`WriteTargetConfig` for users to interact with, allowing for:
+This JSON schema file would generate a `WriteTargetConfig` inside a kv package.
 
-`kv_read_action-schema.json`, `kv_batch_read_action-schema.json`, etc., to generate more types in the same namespace.
+Additional files like `kv_read_action-schema.json`, `kv_batch_read_action-schema.json`, etc., could be used to
+generate more types in the same namespace.
 
 Common methods may live in:
 
-`capability_common-schema.json`
-
-`kv_common-schema.json`
+`<capability set>_common-schema.json`, eg. `kv_common-schema.json` using the previous example.
 
 ### JSON schema requirements
 
@@ -69,7 +71,7 @@ whereas the common type for a chain reader would be similar to
 
 ```"$id": "https://github.com/smartcontractkit/capabilities/chain/chaincap/reader",```
 
-The prior will not require a user to specify which capability to bind to at runtime, whereas the latter will.
+The former will not require a user to specify which capability to bind to at runtime, whereas the latter will.
 
 #### Triggers
 
