@@ -59,6 +59,18 @@ Common methods may live in:
 
 ### JSON schema requirements
 
+All schemas must have a $id, the id must match the package that the folder it is in will resolve to, 
+followed by either the capability's name and version or an interface name. 
+
+For example, the cron trigger is
+```"$id": "https://github.com/smartcontractkit/capabilities/cron/croncap/cron-trigger@1.0.0",```
+
+whereas the common type for a chain reader would be similar to
+
+```"$id": "https://github.com/smartcontractkit/capabilities/chain/chaincap/reader",```
+
+The prior will not require a user to specify which capability to bind to at runtime, whereas the latter will.
+
 #### Triggers
 
 Triggers must contain an output and config types.  
