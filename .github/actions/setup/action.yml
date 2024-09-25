@@ -1,0 +1,18 @@
+name: "Set up project environment"
+description: "Sets up nx and Go"
+runs:
+  using: "composite"
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: "20"
+    - run: npx nx init
+      shell: bash
+    - id: get-root
+      run: echo "root=$(./nx show project ${{matrix.projects}} --json)" >> "$GITHUB_OUTPUT"
+      shell: bash
+    - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
+      with:
+        go-version: ${{ env.GO_VERSION }}
+        cache-dependency-path: ${{fromJson(steps.get-root.outputs.root).root}}/go.sum
