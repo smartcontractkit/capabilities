@@ -2,13 +2,10 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"net/http"
 
-	common "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
-	"github.com/smartcontractkit/chainlink-common/pkg/values"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities"
 	"github.com/smartcontractkit/chainlink/v2/core/logger"
 	"github.com/smartcontractkit/chainlink/v2/plugins"
@@ -44,13 +41,6 @@ func main() {
 	}
 }
 
-type server struct {
-	capabilities       loop.StandardCapabilities
-	capabilityRegistry *capabilities.Registry
-	logger             logger.Logger
-	closeLogger        func() error
-}
-
 func setup() *server {
 	lggr, closeLggr := lggrCfg.New()
 
@@ -74,6 +64,7 @@ func setup() *server {
 		ctx    = context.Background()
 		svc    = loop.NewStandardCapabilitiesService(lggr, opts, cmdFn)
 		capReg = capabilities.NewRegistry(lggr)
+		store  = NewStore(lggr)
 	)
 
 	lggr.Info("starting capabilities service")
@@ -86,7 +77,7 @@ func setup() *server {
 	}
 
 	lggr.Info("initialising capabilities service")
-	if err := svc.Service.Initialise(ctx, "", nil, nil, capReg, nil, nil, nil); err != nil {
+	if err := svc.Service.Initialise(ctx, "", nil, store, capReg, nil, nil, nil); err != nil {
 		lggr.Fatalf("Failed to initialise service: %v", err)
 	}
 
@@ -97,125 +88,4 @@ func setup() *server {
 		logger:             lggr,
 		closeLogger:        closeLggr,
 	}
-}
-
-type capabilityInfo struct {
-	ID             string `json:"id"`
-	CapabilityType string `json:"capability_type"`
-	Description    string `json:"description"`
-}
-
-func (s *server) Infos(w http.ResponseWriter, r *http.Request) {
-	infos, err := s.capabilities.Infos(r.Context())
-	if err != nil {
-		s.logger.Error(err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	s.logger.Info("handling infos request")
-
-	for _, info := range infos {
-		desc, err := json.Marshal(capabilityInfo{
-			ID:             info.ID,
-			CapabilityType: string(info.CapabilityType),
-			Description:    info.Description,
-		})
-		if err != nil {
-			s.logger.Error(err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		w.Write([]byte(desc))
-	}
-}
-
-func (s *server) GetCapabilityInfo(w http.ResponseWriter, r *http.Request) {
-	type body struct {
-		ID string `json:"id"`
-	}
-	var b body
-	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
-		s.logger.Error(err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	cap, err := s.capabilityRegistry.Get(r.Context(), b.ID)
-	if err != nil {
-		s.logger.Error(err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	info, err := cap.Info(r.Context())
-	if err != nil {
-		s.logger.Error(err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	desc, err := json.Marshal(capabilityInfo{
-		ID:             info.ID,
-		CapabilityType: string(info.CapabilityType),
-		Description:    info.Description,
-	})
-	if err != nil {
-		s.logger.Error(err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Write(desc)
-}
-
-// TODO(mstreet3): actually pass input request to the target
-func (s *server) TargetExecute(w http.ResponseWriter, r *http.Request) {
-	type body struct {
-		ID      string `json:"id"`
-		Request string `json:"request"`
-	}
-	var b body
-	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
-		s.logger.Error(err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	cap, err := s.capabilityRegistry.GetTarget(r.Context(), b.ID)
-	if err != nil {
-		s.logger.Error(err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	res, err := cap.Execute(r.Context(), common.CapabilityRequest{
-		Metadata: common.RequestMetadata{},
-		Inputs: &values.Map{
-			Underlying: map[string]values.Value{
-				"signed_report": values.NewString(""), // will fail, not a valid signed report
-			},
-		},
-	})
-	if err != nil {
-		s.logger.Error(err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	var out map[string]interface{}
-	if err := res.Value.UnwrapTo(&out); err != nil {
-		s.logger.Error(err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	desc, err := json.Marshal(out)
-	if err != nil {
-		s.logger.Error(err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	w.Write(desc)
 }
