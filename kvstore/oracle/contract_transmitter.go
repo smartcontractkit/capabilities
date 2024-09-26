@@ -15,7 +15,8 @@ func NewContractTransmitter() *contractTransmitter {
 	return &contractTransmitter{}
 }
 
-// TODO: Implement the Transmit method
+// TODO: Implement the Transmit method - store the values in the report to the KV store
+// Place success message in the outbox
 func (ct *contractTransmitter) Transmit(
 	context.Context,
 	types.ConfigDigest,
@@ -26,7 +27,7 @@ func (ct *contractTransmitter) Transmit(
 	return nil
 }
 
-// TODO: Implement the FromAccount method
+// Unused: No external transmissions
 func (ct *contractTransmitter) FromAccount() (types.Account, error) {
 	return "", nil
 }

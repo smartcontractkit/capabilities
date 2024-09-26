@@ -9,10 +9,11 @@ import (
 
 	"github.com/smartcontractkit/capabilities/kvstore/oracle"
 	"github.com/smartcontractkit/capabilities/kvstore/target"
-	"github.com/smartcontractkit/libocr/offchainreporting2plus/types"
+	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
+	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
 
@@ -102,14 +103,24 @@ func (cs *CapabilitiesService) Initialise(
 		return fmt.Errorf("error when adding kv store target to the registry: %w", err)
 	}
 
+	relayer, err := relayerSet.Get(ctx, types.RelayID{Network: "evm", ChainID: "11155111"})
+	if err != nil {
+		return fmt.Errorf("error when getting relayer: %w", err)
+	}
+
+	pluginProvider, err := relayer.NewPluginProvider(ctx, core.RelayArgs{}, core.PluginArgs{})
+	if err != nil {
+		return fmt.Errorf("error when getting offchain digester: %w", err)
+	}
+
 	oracle, err := oracleFactory.NewOracle(ctx, core.OracleArgs{
-		LocalConfig: types.LocalConfig{
+		LocalConfig: ocrtypes.LocalConfig{
 			BlockchainTimeout: time.Second * 10,
 		},
 		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(),
 		ContractTransmitter:           oracle.NewContractTransmitter(),
-		ContractConfigTracker:         oracle.NewContractConfigTracker(),
-		OffchainConfigDigester:        oracle.NewOffchainConfigDigester(),
+		ContractConfigTracker:         pluginProvider.ContractConfigTracker(),
+		OffchainConfigDigester:        pluginProvider.OffchainConfigDigester(),
 	})
 	if err != nil {
 		return fmt.Errorf("error when creating oracle: %w", err)
