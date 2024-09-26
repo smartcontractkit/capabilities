@@ -9,11 +9,11 @@ import (
 
 	"github.com/smartcontractkit/capabilities/kvstore/oracle"
 	"github.com/smartcontractkit/capabilities/kvstore/target"
-	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
+
+	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2/types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
-	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
 
@@ -99,28 +99,29 @@ func (cs *CapabilitiesService) Initialise(
 		Logger: cs.s.Logger,
 	})
 
+	cs.s.Logger.Debug("config", config)
+
 	if err := capabilityRegistry.Add(ctx, cs.target); err != nil {
 		return fmt.Errorf("error when adding kv store target to the registry: %w", err)
 	}
 
-	relayer, err := relayerSet.Get(ctx, types.RelayID{Network: "evm", ChainID: "11155111"})
+	configTracker, err := oracle.NewContractConfigTracker(cs.s.Logger)
 	if err != nil {
-		return fmt.Errorf("error when getting relayer: %w", err)
-	}
-
-	pluginProvider, err := relayer.NewPluginProvider(ctx, core.RelayArgs{}, core.PluginArgs{})
-	if err != nil {
-		return fmt.Errorf("error when getting offchain digester: %w", err)
+		return fmt.Errorf("error when creating a contract confit tracker: %w", err)
 	}
 
 	oracle, err := oracleFactory.NewOracle(ctx, core.OracleArgs{
 		LocalConfig: ocrtypes.LocalConfig{
-			BlockchainTimeout: time.Second * 10,
+			BlockchainTimeout:                  time.Second * 10,
+			ContractConfigTrackerPollInterval:  time.Second * 10,
+			ContractConfigConfirmations:        1,
+			ContractTransmitterTransmitTimeout: time.Second * 10,
+			DatabaseTimeout:                    time.Second * 10,
 		},
-		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(),
-		ContractTransmitter:           oracle.NewContractTransmitter(),
-		ContractConfigTracker:         pluginProvider.ContractConfigTracker(),
-		OffchainConfigDigester:        pluginProvider.OffchainConfigDigester(),
+		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(cs.s.Logger),
+		ContractTransmitter:           oracle.NewContractTransmitter(cs.s.Logger),
+		ContractConfigTracker:         configTracker,
+		OffchainConfigDigester:        oracle.NewOffchainConfigDigester(cs.s.Logger),
 	})
 	if err != nil {
 		return fmt.Errorf("error when creating oracle: %w", err)

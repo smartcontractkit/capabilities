@@ -2,6 +2,12 @@
 
 In-memory KV store read and write capabilities.
 
+## TODOs
+
+- [ ] Deploy contract on-chain - use relay config tracker.
+- [ ] Hardcode oracle config - allow a single node.
+- [ ] Re-implement config tracker to use capabilities registry.
+
 ## Plan
 
 Inputs: Report

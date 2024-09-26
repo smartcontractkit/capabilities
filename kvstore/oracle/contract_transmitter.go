@@ -5,14 +5,20 @@ import (
 
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/types"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
 
 var _ ocr3types.ContractTransmitter[[]byte] = (*contractTransmitter)(nil)
 
-type contractTransmitter struct{}
+type contractTransmitter struct {
+	logger logger.Logger
+}
 
-func NewContractTransmitter() *contractTransmitter {
-	return &contractTransmitter{}
+func NewContractTransmitter(logger logger.Logger) *contractTransmitter {
+	return &contractTransmitter{
+		logger: logger,
+	}
 }
 
 // TODO: Implement the Transmit method - store the values in the report to the KV store
@@ -24,6 +30,7 @@ func (ct *contractTransmitter) Transmit(
 	ocr3types.ReportWithInfo[[]byte],
 	[]types.AttributedOnchainSignature,
 ) error {
+	ct.logger.Debug("Transmitting report to KV store")
 	return nil
 }
 
