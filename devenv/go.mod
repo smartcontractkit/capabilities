@@ -3,8 +3,10 @@ module github.com/smartcontractkit/capabilities/devenv
 go 1.23.0
 
 require (
+	github.com/go-chi/chi/v5 v5.0.7
 	github.com/smartcontractkit/chainlink-common v0.2.3-0.20240919092417-53e784c2e420
 	github.com/smartcontractkit/chainlink/v2 v2.14.0-mercury-20240807.0.20240920163134-ec585d456580
+	go.uber.org/zap v1.27.0
 
 )
 
@@ -242,7 +244,6 @@ require (
 	go.opentelemetry.io/otel/trace v1.28.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.3.1 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/arch v0.8.0 // indirect
 	golang.org/x/crypto v0.27.0 // indirect
 	golang.org/x/exp v0.0.0-20240909161429-701f63a606c0 // indirect
