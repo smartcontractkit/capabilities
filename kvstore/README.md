@@ -1,12 +1,55 @@
-# KV Store Capabilities
+# KV Store Capabilities Set
 
-In-memory KV store read and write capabilities.
+Enables workflow authors to store and retrieve arbitrary key value pairs from a workflow.
+
+```mermaid
+flowchart TB
+	user(User)
+	subgraph KV Capabilities Set
+		subgraph Action
+			action(KV get)
+		end
+		subgraph Target
+			target(KV set)
+		end
+		requests-inbox[(Node KV: requests+reports)]
+		oracle[[OCR instance: user KV pairs]]
+	end
+
+	user--"#1: ExecutionRequest{
+		id: 'abcd'
+		type: 'set',
+		payload: [
+			['foo', 'bar'],
+			[ 'baz', 'buzz']
+		]}"-->target
+	user--"#1: ExecutionRequest{
+		id: 'bcde'
+		type: 'get',
+		payload: ['foo', 'bar'] }}"-->action
+
+	target--"#2 Store SetRequest"-->requests-inbox
+	target--"#5 Read SetReports"-->requests-inbox
+	target--"#6 ExecutionResponse{ id: 'abcd', status: 'success' }"-->user
+
+	oracle--"#3 Get Requests"-->requests-inbox
+	oracle--"#4 Store Reports"-->requests-inbox
+
+	action--"#2 Store GetRequest"-->requests-inbox
+	action--"#5 Read GetReports"-->requests-inbox
+	action--"#6 ExecutionResponse{ id: 'bcde', payload: {
+		foo: 'bar'
+		bar: nil
+	} }"-->user
+
+```
 
 ## TODOs
 
-- [ ] Deploy contract on-chain - use relay config tracker.
 - [ ] Hardcode oracle config - allow a single node.
-- [ ] Re-implement config tracker to use capabilities registry.
+- [ ] Implement config tracker to use capabilities registry.
+- [ ] Process incoming Target execution requests
+  - [ ] Store messages in the inbox
 
 ## Plan
 

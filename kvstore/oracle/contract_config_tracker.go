@@ -18,17 +18,13 @@ type contractConfigTracker struct {
 
 func NewContractConfigTracker(logger logger.Logger) (*contractConfigTracker, error) {
 	config := Config{
-		ConfigCount: 1,
-		Signers:     nil,
-		// Signers:               []types.OnchainPublicKey{},
-		Transmitters: nil,
-		// Transmitters:          []types.Account{},
-		F:             0,
-		OnchainConfig: nil,
-		// OnchainConfig:         []byte{},
+		ConfigCount:           1,
+		Signers:               nil,
+		Transmitters:          nil,
+		F:                     0,
+		OnchainConfig:         nil,
 		OffchainConfigVersion: 30,
 		OffchainConfig:        nil,
-		// OffchainConfig:        []byte{},
 	}
 	contractConfig, err := config.ContractConfig()
 	if err != nil {
