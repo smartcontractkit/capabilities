@@ -34,12 +34,12 @@ func (c *capability) Info(ctx context.Context) (capabilities.CapabilityInfo, err
 	return capabilities.NewCapabilityInfo("kv-store-target@1.0.0", capabilities.CapabilityTypeTarget, "Writes KV-pairs from a SignedReport to a key-value store")
 }
 
-type Request struct {
+type ExecuteRequest struct {
 	Metadata capabilities.RequestMetadata
 	Inputs   kvcap.Inputs
 }
 
-func evaluate(rawRequest capabilities.CapabilityRequest) (r Request, err error) {
+func evaluate(rawRequest capabilities.CapabilityRequest) (r ExecuteRequest, err error) {
 	r.Metadata = rawRequest.Metadata
 
 	if rawRequest.Inputs == nil {
@@ -66,8 +66,12 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 	if err != nil {
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to decode signed report: %v", err)
 	}
+	c.logger.Debug("Evaluated signed report", "WorkflowID", request.Metadata.WorkflowID, "WorkflowExecutionID", request.Metadata.WorkflowExecutionID, "ReportVersion", request.Inputs.SignedReport)
 
-	c.logger.Debug("Decoded signed report", "WorkflowID", request.Metadata.WorkflowID, "WorkflowExecutionID", request.Metadata.WorkflowExecutionID, "ReportVersion", request.Inputs.SignedReport)
+	// // TODO: Decode request.Inputs.SignedReport.Report into KV pairs
+	// setRequest := NewWriteRequest(request.Metadata.WorkflowExecutionID, map[string][]byte{
+	// 	"for": []byte("bar"),
+	// })
 
 	if err = c.store.Store(ctx, "some", []byte{1, 2, 3}); err != nil {
 		return capabilities.CapabilityResponse{}, err

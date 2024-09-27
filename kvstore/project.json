@@ -2,7 +2,7 @@
   "name": "kvstore",
   "projectType": "capability",
   "projectRoot": "capabilities/kvstore",
-  "implicitDependencies": ["types"],
+  "implicitDependencies": ["types", "testutils"],
   "tags": [],
   "targets": {
     "lint": {

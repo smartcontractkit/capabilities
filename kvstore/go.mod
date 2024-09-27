@@ -4,7 +4,10 @@ go 1.23.0
 
 require (
 	github.com/hashicorp/go-plugin v1.6.2-0.20240829161738-06afb6d7ae99
-	github.com/smartcontractkit/chainlink-common v0.2.3-0.20240925123037-0385cd4a38ad
+	github.com/smartcontractkit/capabilities/libs/testutils v1.0.0
+	github.com/smartcontractkit/chainlink-common v0.2.3-0.20240926094457-238a5afc96ef
+	github.com/smartcontractkit/libocr v0.0.0-20240717100443-f6226e09bee7
+	github.com/stretchr/testify v1.9.0
 )
 
 replace (
@@ -16,8 +19,9 @@ replace (
 
 	// until merged upstream: https://github.com/mwitkow/grpc-proxy/pull/69
 	github.com/mwitkow/grpc-proxy => github.com/smartcontractkit/grpc-proxy v0.0.0-20230731113816-f1be6620749f
+	github.com/smartcontractkit/capabilities/libs/testutils => ../libs/testutils
 
-	github.com/smartcontractkit/capabilities/libs/types => ../../libs/types
+	github.com/smartcontractkit/capabilities/libs/types => ../libs/types
 )
 
 require (
@@ -70,8 +74,6 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v5 v5.2.0 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/smartcontractkit/grpc-proxy v0.0.0-20240830132753-a7e17fec5ab7 // indirect
-	github.com/smartcontractkit/libocr v0.0.0-20240717100443-f6226e09bee7 // indirect
-	github.com/stretchr/testify v1.9.0 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.52.0 // indirect

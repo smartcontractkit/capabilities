@@ -5,10 +5,6 @@
   },
   "parallel": 4,
   "namedInputs": {
-    "sharedGlobals": [
-      "{workspaceRoot}/go.work",
-      "{workspaceRoot}/.github",
-      "{workspaceRoot}/.nx"
-    ]
+    "sharedGlobals": ["{workspaceRoot}/.github", "{workspaceRoot}/.nx"]
   }
 }
