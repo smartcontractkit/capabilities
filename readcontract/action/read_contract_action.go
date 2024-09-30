@@ -31,7 +31,7 @@ type ReadContractConfig struct {
 	Network string `json:"network"`
 }
 
-type RequestConfig struct {
+type Config struct {
 	ContractReaderConfig string `json:"contractReaderConfig"`
 }
 
@@ -86,7 +86,7 @@ type ReadContractAction struct {
 	lggr logger.Logger
 
 	capabilities.CapabilityInfo
-	capabilities.Validator[RequestConfig, Input, capabilities.CapabilityResponse]
+	capabilities.Validator[Config, Input, capabilities.CapabilityResponse]
 
 	relayer Relayer
 
@@ -119,7 +119,7 @@ func NewReadContractAction(lggr logger.Logger, config ReadContractConfig, relaye
 	return &ReadContractAction{
 		lggr:            logger.Named(lggr, id),
 		CapabilityInfo:  info,
-		Validator:       capabilities.NewValidator[RequestConfig, Input, capabilities.CapabilityResponse](capabilities.ValidatorArgs{Info: info}),
+		Validator:       capabilities.NewValidator[Config, Input, capabilities.CapabilityResponse](capabilities.ValidatorArgs{Info: info}),
 		relayer:         relayer,
 		contractReaders: contractReaderCache,
 	}
