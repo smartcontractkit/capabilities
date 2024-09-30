@@ -9,7 +9,9 @@ import (
 	ocr3cap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/ocr3cap"
 )
 
-// Input parameters for the Key-Value Store Target.
+// Input parameters for the Key-Value Store Target. The report must encode the
+// key-value pairs to write. Key must be a string and value must be bytes. Example:
+// { foo: bytes(value1)', bar: bytes(value2) }
 type Inputs struct {
 	// SignedReport corresponds to the JSON schema field "signedReport".
 	SignedReport ocr3cap.SignedReport `json:"signedReport" yaml:"signedReport" mapstructure:"signedReport"`
