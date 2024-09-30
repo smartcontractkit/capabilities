@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -99,13 +100,22 @@ func (cs *CapabilitiesService) Initialise(
 		Logger: cs.s.Logger,
 	})
 
-	cs.s.Logger.Debug("config", config)
+	cs.s.Logger.Debug("config: ", config)
+
+	// var keyBundle ocr2key.KeyBundle
+	// store.Get(ctx, "key_bundle", &keyBundle)
+
+	var oracleIdentity oracle.Identity
+	if err := json.Unmarshal([]byte(config), &oracleIdentity); err != nil {
+		return fmt.Errorf("failed to unmarshal key bundle bytes: %w", err)
+	}
+	cs.s.Logger.Debug("oracleIdentity: ", oracleIdentity)
 
 	if err := capabilityRegistry.Add(ctx, cs.target); err != nil {
 		return fmt.Errorf("error when adding kv store target to the registry: %w", err)
 	}
 
-	configTracker, err := oracle.NewContractConfigTracker(cs.s.Logger)
+	configTracker, err := oracle.NewContractConfigTracker(cs.s.Logger, oracleIdentity)
 	if err != nil {
 		return fmt.Errorf("error when creating a contract confit tracker: %w", err)
 	}

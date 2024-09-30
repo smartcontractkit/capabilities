@@ -15,63 +15,70 @@ import (
 
 var _ types.ContractConfigTracker = (*contractConfigTracker)(nil)
 
-// sharedConfig := ocr3config.SharedConfig{
-// 	ocr3config.PublicConfig{
-// 		deltaProgress,
-// 		deltaResend,
-// 		deltaInitial,
-// 		deltaRound,
-// 		deltaGrace,
-// 		deltaCertifiedCommitRequest,
-// 		deltaStage,
-// 		rMax,
-// 		s,
-// 		identities,
-// 		reportingPluginConfig,
-// 		maxDurationQuery,
-// 		maxDurationObservation,
-// 		maxDurationShouldAcceptAttestedReport,
-// 		maxDurationShouldTransmitAcceptedReport,
-// 		f,
-// 		onchainConfig,
-// 		types.ConfigDigest{},
-// 	},
-// 	&sharedSecret,
-// }
-
 type contractConfigTracker struct {
 	logger logger.Logger
 	config types.ContractConfig
 }
 
-func NewContractConfigTracker(logger logger.Logger) (*contractConfigTracker, error) {
-	var RMax uint64 = 20 // maximum number of rounds that a node can be a leader
-	S := []int{}
-	var F uint8 = 0 // number of faulty nodes
-	N := 1          // number of nodes
-	for i := 0; i < N; i++ {
-		S = append(S, 1)
-	}
+func NewContractConfigTracker(logger logger.Logger, oracleIdentity Identity) (*contractConfigTracker, error) {
+	// Testnet config
+	// {
+	// 	"MaxQueryLengthBytes": 1000000,
+	// 	"MaxObservationLengthBytes": 1000000,
+	// 	"MaxReportLengthBytes": 1000000,
+	// 	"MaxRequestBatchSize": 1000,
+	// 	"UniqueReports": true,
+	// 	"DeltaProgressMillis": 5000,
+	// 	"DeltaResendMillis": 5000,
+	// 	"DeltaInitialMillis": 5000,
+	// 	"DeltaRoundMillis": 2000,
+	// 	"DeltaGraceMillis": 500,
+	// 	"DeltaCertifiedCommitRequestMillis": 1000,
+	// 	"DeltaStageMillis": 30000,
+	// 	"MaxRoundsPerEpoch": 10,
+	// 	"TransmissionSchedule": [
+	// 	  1,
+	// 	  1,
+	// 	  1,
+	// 	  1
+	// 	],
+	// 	"MaxDurationQueryMillis": 1000,
+	// 	"MaxDurationObservationMillis": 1000,
+	// 	"MaxDurationReportMillis": 1000,
+	// 	"MaxDurationAcceptMillis": 1000,
+	// 	"MaxDurationTransmitMillis": 1000,
+	// 	"MaxFaultyOracles": 3
+	//   }
 
-	signers, transmitters, f_, onchainConfig_, offchainConfigVersion, offchainConfig, err := ocr3confighelper.ContractSetConfigArgsForTests(
-		20*time.Millisecond, // DeltaProgress
-		10*time.Millisecond, // DeltaResend
-		20*time.Millisecond, // DeltaInitial
-		2*time.Nanosecond,   // DeltaRound = MaxDurationQuery + MaxDurationObservation
-		0*time.Second,       // DeltaGrace
-		10*time.Millisecond, // DeltaCertifiedCommitRequest
-		0*time.Millisecond,  // DeltaStage
-		RMax,
-		S,
-		[]confighelper.OracleIdentityExtra{}, // these will be filled out later
+	signers, transmitters, f, onchainConfig, offchainConfigVersion, offchainConfig, err := ocr3confighelper.ContractSetConfigArgsForTests(
+		5000*time.Millisecond,  // DeltaProgress
+		5000*time.Millisecond,  // DeltaResend
+		5000*time.Millisecond,  // DeltaInitial
+		2000*time.Millisecond,  // DeltaRound = MaxDurationQuery + MaxDurationObservation
+		500*time.Millisecond,   // DeltaGrace
+		1000*time.Millisecond,  // DeltaCertifiedCommitRequest
+		30000*time.Millisecond, // DeltaStage
+		10,                     // MaxRoundsPerEpoch
+		[]int{1},               // TransmissionSchedule
+		[]confighelper.OracleIdentityExtra{
+			{
+				OracleIdentity: confighelper.OracleIdentity{
+					OnchainPublicKey:  oracleIdentity.PublicKey,
+					OffchainPublicKey: oracleIdentity.OffchainPublicKey,
+					PeerID:            oracleIdentity.PeerID,
+					TransmitAccount:   "",
+				},
+				ConfigEncryptionPublicKey: oracleIdentity.ConfigEncryptionPublicKey,
+			},
+		},
 		nil,
 		// These are timeouts for the execution of plugin methods.
 		// Low timeouts will cause random errors when the plugin is too slow but this shouldn't affect tests.
-		100*time.Nanosecond, // MaxDurationQuery
-		100*time.Nanosecond, // MaxDurationObservation
-		100*time.Nanosecond, // MaxDurationShouldAcceptAttestedReport
-		100*time.Nanosecond, // MaxDurationShouldTransmitAcceptedReport
-		int(F),
+		1000*time.Millisecond, // MaxDurationQuery
+		1000*time.Millisecond, // MaxDurationObservation
+		1000*time.Millisecond, // MaxDurationShouldAcceptAttestedReport
+		1000*time.Millisecond, // MaxDurationShouldTransmitAcceptedReport
+		0,                     // F, number of faulty nodes.
 		nil,
 	)
 	if err != nil {
@@ -82,8 +89,8 @@ func NewContractConfigTracker(logger logger.Logger) (*contractConfigTracker, err
 		ConfigCount:           1,
 		Signers:               signers,
 		Transmitters:          transmitters,
-		F:                     f_,
-		OnchainConfig:         onchainConfig_,
+		F:                     f,
+		OnchainConfig:         onchainConfig,
 		OffchainConfigVersion: offchainConfigVersion,
 		OffchainConfig:        offchainConfig,
 	}
