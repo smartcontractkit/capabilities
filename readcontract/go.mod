@@ -4,7 +4,9 @@ go 1.23
 
 require (
 	github.com/hashicorp/go-plugin v1.6.2-0.20240829161738-06afb6d7ae99
-	github.com/smartcontractkit/chainlink-common v0.2.3-0.20240926083355-bfa9596fe882
+	github.com/jonboulle/clockwork v0.4.0
+	github.com/prometheus/client_golang v1.17.0
+	github.com/smartcontractkit/chainlink-common v0.2.3-0.20240930092529-4cca03442d82
 	github.com/stretchr/testify v1.9.0
 )
 
@@ -44,7 +46,6 @@ require (
 	github.com/pelletier/go-toml/v2 v2.2.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
-	github.com/prometheus/client_golang v1.17.0 // indirect
 	github.com/prometheus/client_model v0.4.1-0.20230718164431-9a2bf3000d16 // indirect
 	github.com/prometheus/common v0.44.0 // indirect
 	github.com/prometheus/procfs v0.11.1 // indirect

@@ -6,11 +6,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
+
+	"github.com/jonboulle/clockwork"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
+	"github.com/smartcontractkit/chainlink-common/pkg/utils/cache"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 )
 
@@ -32,6 +38,40 @@ type Input struct {
 
 const LatestValue = "latestValue"
 
+var (
+	readContractCacheHit = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "readcontract_capability_cache_hit",
+		Help: "hit vs non-hits of the read contract capability cache",
+	}, []string{"hit"})
+	readContractCacheEviction = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "readcontract_capability_cache_eviction",
+		Help: "evictions from the read contract cache",
+	})
+	readContractCacheAddition = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "readcontract_capability_cache_addition",
+		Help: "additions to the read contract cache",
+	})
+)
+
+type readContractCacheStats struct {
+}
+
+func (r readContractCacheStats) OnCacheHit() {
+	readContractCacheHit.WithLabelValues("true").Inc()
+}
+
+func (r readContractCacheStats) OnCacheMiss() {
+	readContractCacheHit.WithLabelValues("false").Inc()
+}
+
+func (r readContractCacheStats) OnCacheEviction(i int) {
+	readContractCacheEviction.Add(float64(i))
+}
+
+func (r readContractCacheStats) OnCacheAddition() {
+	readContractCacheAddition.Inc()
+}
+
 type ReadContractAction struct {
 	lggr logger.Logger
 
@@ -41,7 +81,7 @@ type ReadContractAction struct {
 	relayer Relayer
 
 	mux             sync.Mutex
-	contractReaders map[string]ContractReader
+	contractReaders *cache.ExpirableCache[string, ContractReader]
 }
 
 type Relayer interface {
@@ -62,16 +102,20 @@ func NewReadContractAction(lggr logger.Logger, config ReadContractConfig, relaye
 		"Read Contract Action.  Supports reading from a contract.",
 	)
 
+	contractReaderCache := cache.NewExpirableCache[string, ContractReader](clockwork.NewRealClock(), 1*time.Minute, 1*time.Hour, 100, readContractCacheStats{})
+
 	return &ReadContractAction{
-		lggr:            lggr,
+		lggr:            logger.Named(lggr, id),
 		CapabilityInfo:  info,
 		Validator:       capabilities.NewValidator[RequestConfig, Input, capabilities.CapabilityResponse](capabilities.ValidatorArgs{Info: info}),
 		relayer:         relayer,
-		contractReaders: map[string]ContractReader{},
+		contractReaders: contractReaderCache,
 	}
 }
 
 func (r *ReadContractAction) Execute(ctx context.Context, request capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
+
+	lggr := logger.With(r.lggr, "workflow", request.Metadata)
 
 	config, err := r.ValidateConfig(request.Config)
 	if err != nil {
@@ -97,6 +141,9 @@ func (r *ReadContractAction) Execute(ctx context.Context, request capabilities.C
 		return capabilities.CapabilityResponse{}, fmt.Errorf("error binding read identifier: %w", err)
 	}
 
+	lggr.Info("Getting latest value", "readIdentifier", inputs.ReadIdentifier, "address", inputs.Address,
+		"confidenceLevel", confidenceLevel, "params", inputs.Params)
+
 	var result values.Value
 	if err = reader.GetLatestValue(ctx, inputs.ReadIdentifier, confidenceLevel, inputs.Params, &result); err != nil {
 		return capabilities.CapabilityResponse{}, fmt.Errorf("error getting latest value: %w", err)
@@ -117,7 +164,7 @@ func (r *ReadContractAction) getContractReader(ctx context.Context, contractRead
 	defer r.mux.Unlock()
 
 	contractReaderConfigID := fmt.Sprintf("%x", sha256.Sum256([]byte(contractReaderConfig)))
-	if reader, ok := r.contractReaders[contractReaderConfigID]; ok {
+	if reader, ok := r.contractReaders.Get(contractReaderConfigID); ok {
 		return reader, nil
 	}
 
@@ -131,7 +178,7 @@ func (r *ReadContractAction) getContractReader(ctx context.Context, contractRead
 		return nil, fmt.Errorf("error fetching contract reader: %w", err)
 	}
 
-	r.contractReaders[contractReaderConfigID] = reader
+	r.contractReaders.Add(contractReaderConfigID, reader)
 	return reader, nil
 }
 
