@@ -19,7 +19,7 @@ type StatsCollector interface {
 	OnCacheAddition()
 }
 
-// ServiceCache is a cache that evicts and closes services after a configurable time of inactivity once a minimum size is reached.
+// ServiceCache is a cache that evicts and closes services after a configurable period of inactivity once a minimum size is reached.
 // It is safe for concurrent use.  The ServiceCache is responsible for starting and stopping the services it caches and itself should
 // be closed to ensure all services are stopped.
 type ServiceCache[I comparable, S services.Service] struct {

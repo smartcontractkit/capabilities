@@ -46,8 +46,6 @@ type Output struct {
 	LatestValue values.Value `json:"latestValue"`
 }
 
-const LatestValue = "latestValue"
-
 var (
 	readContractCacheHit = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "readcontract_capability_cache_hit",
