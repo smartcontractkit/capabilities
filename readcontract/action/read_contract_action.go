@@ -42,6 +42,10 @@ type Input struct {
 	Params          map[string]any `json:"params"`
 }
 
+type Output struct {
+	LatestValue values.Value `json:"latestValue"`
+}
+
 const LatestValue = "latestValue"
 
 var (
@@ -157,14 +161,13 @@ func (r *ReadContractAction) Execute(ctx context.Context, request capabilities.C
 		return capabilities.CapabilityResponse{}, fmt.Errorf("error getting latest service: %w", err)
 	}
 
-	resultMap := map[string]any{}
-	resultMap[LatestValue] = result
-	valuesMap, err := values.NewMap(resultMap)
+	output := Output{LatestValue: result}
+	resultValue, err := values.WrapMap(&output)
 	if err != nil {
-		return capabilities.CapabilityResponse{}, fmt.Errorf("error creating result map: %w", err)
+		return capabilities.CapabilityResponse{}, fmt.Errorf("error wrapping output: %w", err)
 	}
 
-	return capabilities.CapabilityResponse{Value: valuesMap}, nil
+	return capabilities.CapabilityResponse{Value: resultValue}, nil
 }
 
 func (r *ReadContractAction) getContractReader(ctx context.Context, contractReaderConfig string) (ContractReader, error) {

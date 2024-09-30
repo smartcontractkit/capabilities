@@ -36,7 +36,7 @@ request := capabilities.CapabilityRequest{
 response, err : readcapabiltiyaction.Execute(ctx, request)
 // check err
 
-latestValue := response.Value.Underlying["latestValue"]
+latestValue := response.Value.Underlying["LatestValue"]
 var result someType
 err = latestValue.UnwrapTo(&result)
 //check err

@@ -52,9 +52,12 @@ func TestReadContractAction_Execute(t *testing.T) {
 	resultMap := map[string]any{}
 	resultMap["latestValue"] = 5
 
-	latestValue := response.Value.Underlying["latestValue"]
+	output := actions.Output{}
+	err = response.Value.UnwrapTo(&output)
+	assert.NoError(t, err)
+
 	var result int
-	err = latestValue.UnwrapTo(&result)
+	err = output.LatestValue.UnwrapTo(&result)
 	assert.NoError(t, err)
 
 	assert.Equal(t, 5, result)
@@ -104,10 +107,12 @@ func TestReadContractAction_ExecuteMultipleTimeWithSameReaderConfigUsesSingleIns
 		assert.NoError(t, err)
 		assert.NotNil(t, response)
 
-		resultMap := map[string]any{}
-		resultMap["latestValue"] = 5
+		output := actions.Output{}
+		val, err := values.Wrap(5)
+		assert.NoError(t, err)
+		output.LatestValue = val
 
-		expectedResult, err := values.WrapMap(resultMap)
+		expectedResult, err := values.WrapMap(output)
 		assert.NoError(t, err)
 
 		assert.Equal(t, expectedResult, response.Value)
@@ -161,10 +166,11 @@ func TestReadContractAction_ExecuteWithDifferentReaderConfigUsesDifferentContrac
 	assert.NoError(t, err)
 	assert.NotNil(t, response1)
 
-	resultMap1 := map[string]any{}
-	resultMap1["latestValue"] = 5
+	val1, err := values.Wrap(5)
+	assert.NoError(t, err)
+	result1 := actions.Output{LatestValue: val1}
 
-	expectedResult1, err := values.WrapMap(resultMap1)
+	expectedResult1, err := values.WrapMap(result1)
 	assert.NoError(t, err)
 
 	assert.Equal(t, expectedResult1, response1.Value)
@@ -176,10 +182,11 @@ func TestReadContractAction_ExecuteWithDifferentReaderConfigUsesDifferentContrac
 	assert.NoError(t, err)
 	assert.NotNil(t, response2)
 
-	resultMap2 := map[string]any{}
-	resultMap2["latestValue"] = 10
+	val2, err := values.Wrap(10)
+	assert.NoError(t, err)
+	result2 := actions.Output{LatestValue: val2}
 
-	expectedResult2, err := values.WrapMap(resultMap2)
+	expectedResult2, err := values.WrapMap(result2)
 	assert.NoError(t, err)
 
 	assert.Equal(t, expectedResult2, response2.Value)
@@ -235,10 +242,11 @@ func TestReadContractAction_ExecuteSameContractDifferentAddresses(t *testing.T) 
 	assert.NoError(t, err)
 	assert.NotNil(t, response1)
 
-	resultMap1 := map[string]any{}
-	resultMap1["latestValue"] = 5
+	val1, err := values.Wrap(5)
+	assert.NoError(t, err)
+	result1 := actions.Output{LatestValue: val1}
 
-	expectedResult1, err := values.WrapMap(resultMap1)
+	expectedResult1, err := values.WrapMap(result1)
 	assert.NoError(t, err)
 
 	assert.Equal(t, expectedResult1, response1.Value)
@@ -248,10 +256,11 @@ func TestReadContractAction_ExecuteSameContractDifferentAddresses(t *testing.T) 
 	assert.NoError(t, err)
 	assert.NotNil(t, response2)
 
-	resultMap2 := map[string]any{}
-	resultMap2["latestValue"] = 5
+	val2, err := values.Wrap(5)
+	assert.NoError(t, err)
+	result2 := actions.Output{LatestValue: val2}
 
-	expectedResult2, err := values.WrapMap(resultMap2)
+	expectedResult2, err := values.WrapMap(result2)
 	assert.NoError(t, err)
 
 	assert.Equal(t, expectedResult2, response2.Value)
