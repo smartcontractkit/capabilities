@@ -14,10 +14,16 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
-	"github.com/smartcontractkit/chainlink-common/pkg/utils/cache"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
+)
+
+const (
+	defaultCacheCleanupInterval          = 1 * time.Minute
+	defaultCacheExpiryTime               = 1 * time.Hour
+	defaultCacheSizeBeforeCleanupEnacted = 100
 )
 
 type ReadContractConfig struct {
@@ -81,7 +87,7 @@ type ReadContractAction struct {
 	relayer Relayer
 
 	mux             sync.Mutex
-	contractReaders *cache.ExpirableCache[string, ContractReader]
+	contractReaders *ServiceCache[string, ContractReader]
 }
 
 type Relayer interface {
@@ -89,6 +95,7 @@ type Relayer interface {
 }
 
 type ContractReader interface {
+	services.Service
 	GetLatestValue(ctx context.Context, readIdentifier string, confidenceLevel primitives.ConfidenceLevel, params, returnVal any) error
 	Bind(ctx context.Context, bindings []types.BoundContract) error
 }
@@ -102,7 +109,8 @@ func NewReadContractAction(lggr logger.Logger, config ReadContractConfig, relaye
 		"Read Contract Action.  Supports reading from a contract.",
 	)
 
-	contractReaderCache := cache.NewExpirableCache[string, ContractReader](clockwork.NewRealClock(), 1*time.Minute, 1*time.Hour, 100, readContractCacheStats{})
+	contractReaderCache := NewServiceCache[string, ContractReader](lggr, "ContractReaderCache",
+		clockwork.NewRealClock(), defaultCacheCleanupInterval, defaultCacheExpiryTime, defaultCacheSizeBeforeCleanupEnacted, readContractCacheStats{})
 
 	return &ReadContractAction{
 		lggr:            logger.Named(lggr, id),
@@ -141,12 +149,12 @@ func (r *ReadContractAction) Execute(ctx context.Context, request capabilities.C
 		return capabilities.CapabilityResponse{}, fmt.Errorf("error binding read identifier: %w", err)
 	}
 
-	lggr.Info("Getting latest value", "readIdentifier", inputs.ReadIdentifier, "address", inputs.Address,
+	lggr.Info("Executing Get Latest Value request", "readIdentifier", inputs.ReadIdentifier, "address", inputs.Address,
 		"confidenceLevel", confidenceLevel, "params", inputs.Params)
 
 	var result values.Value
 	if err = reader.GetLatestValue(ctx, inputs.ReadIdentifier, confidenceLevel, inputs.Params, &result); err != nil {
-		return capabilities.CapabilityResponse{}, fmt.Errorf("error getting latest value: %w", err)
+		return capabilities.CapabilityResponse{}, fmt.Errorf("error getting latest service: %w", err)
 	}
 
 	resultMap := map[string]any{}
@@ -178,16 +186,19 @@ func (r *ReadContractAction) getContractReader(ctx context.Context, contractRead
 		return nil, fmt.Errorf("error fetching contract reader: %w", err)
 	}
 
-	r.contractReaders.Add(contractReaderConfigID, reader)
+	err = r.contractReaders.AddAndStart(ctx, contractReaderConfigID, reader)
+	if err != nil {
+		return nil, fmt.Errorf("error adding contract reader to cache: %w", err)
+	}
 	return reader, nil
 }
 
 func (r *ReadContractAction) RegisterToWorkflow(ctx context.Context, request capabilities.RegisterToWorkflowRequest) error {
-	// Do Nothing
+	// Do Nothing - there are no resources managed by this capability that match the lifecycle of a workflow
 	return nil
 }
 
 func (r *ReadContractAction) UnregisterFromWorkflow(ctx context.Context, request capabilities.UnregisterFromWorkflowRequest) error {
-	// Do Nothing
+	// Do Nothing - there are no resources managed by this capability that match the lifecycle of a workflow
 	return nil
 }

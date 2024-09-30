@@ -312,3 +312,23 @@ func (m *mockContractReader) Bind(ctx context.Context, bindings []types.BoundCon
 	m.allBindings = append(m.allBindings, bindings)
 	return nil
 }
+
+func (m *mockContractReader) Start(ctx context.Context) error {
+	return nil
+}
+
+func (m *mockContractReader) Close() error {
+	return nil
+}
+
+func (m *mockContractReader) Ready() error {
+	return nil
+}
+
+func (m *mockContractReader) HealthReport() map[string]error {
+	return nil
+}
+
+func (m *mockContractReader) Name() string {
+	return "mockContractReader"
+}
