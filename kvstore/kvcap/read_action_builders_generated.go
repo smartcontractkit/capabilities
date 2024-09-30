@@ -7,7 +7,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk"
 )
 
-func (cfg ReadActionConfig) New(w *sdk.WorkflowSpecFactory, ref string, input ReadActionInput) OutputsCap {
+func (cfg ReadActionConfig) New(w *sdk.WorkflowSpecFactory, ref string, input ReadActionInput) ActionOutputsCap {
 
 	def := sdk.StepDefinition{
 		ID: "kv-store-action@1.0.0", Ref: ref,
@@ -16,51 +16,51 @@ func (cfg ReadActionConfig) New(w *sdk.WorkflowSpecFactory, ref string, input Re
 		CapabilityType: capabilities.CapabilityTypeAction,
 	}
 
-	step := sdk.Step[Outputs]{Definition: def}
-	return OutputsCapFromStep(w, step)
+	step := sdk.Step[ActionOutputs]{Definition: def}
+	return ActionOutputsCapFromStep(w, step)
 }
 
-type OutputsCap interface {
-	sdk.CapDefinition[Outputs]
+type ActionOutputsCap interface {
+	sdk.CapDefinition[ActionOutputs]
 	Values() sdk.CapDefinition[[][]uint8]
 	private()
 }
 
-// OutputsCapFromStep should only be called from generated code to assure type safety
-func OutputsCapFromStep(w *sdk.WorkflowSpecFactory, step sdk.Step[Outputs]) OutputsCap {
+// ActionOutputsCapFromStep should only be called from generated code to assure type safety
+func ActionOutputsCapFromStep(w *sdk.WorkflowSpecFactory, step sdk.Step[ActionOutputs]) ActionOutputsCap {
 	raw := step.AddTo(w)
-	return &outputs{CapDefinition: raw}
+	return &actionOutputs{CapDefinition: raw}
 }
 
-type outputs struct {
-	sdk.CapDefinition[Outputs]
+type actionOutputs struct {
+	sdk.CapDefinition[ActionOutputs]
 }
 
-func (*outputs) private() {}
-func (c *outputs) Values() sdk.CapDefinition[[][]uint8] {
-	return sdk.AccessField[Outputs, [][]uint8](c.CapDefinition, "values")
+func (*actionOutputs) private() {}
+func (c *actionOutputs) Values() sdk.CapDefinition[[][]uint8] {
+	return sdk.AccessField[ActionOutputs, [][]uint8](c.CapDefinition, "values")
 }
 
-func NewOutputsFromFields(
-	values sdk.CapDefinition[[][]uint8]) OutputsCap {
-	return &simpleOutputs{
-		CapDefinition: sdk.ComponentCapDefinition[Outputs]{
+func NewActionOutputsFromFields(
+	values sdk.CapDefinition[[][]uint8]) ActionOutputsCap {
+	return &simpleActionOutputs{
+		CapDefinition: sdk.ComponentCapDefinition[ActionOutputs]{
 			"values": values.Ref(),
 		},
 		values: values,
 	}
 }
 
-type simpleOutputs struct {
-	sdk.CapDefinition[Outputs]
+type simpleActionOutputs struct {
+	sdk.CapDefinition[ActionOutputs]
 	values sdk.CapDefinition[[][]uint8]
 }
 
-func (c *simpleOutputs) Values() sdk.CapDefinition[[][]uint8] {
+func (c *simpleActionOutputs) Values() sdk.CapDefinition[[][]uint8] {
 	return c.values
 }
 
-func (c *simpleOutputs) private() {}
+func (c *simpleActionOutputs) private() {}
 
 type ReadActionInput struct {
 	Keys sdk.CapDefinition[[]string]

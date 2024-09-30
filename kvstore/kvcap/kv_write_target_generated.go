@@ -12,26 +12,26 @@ import (
 // Input parameters for the Key-Value Store Target. The report must encode the
 // key-value pairs to write. Key must be a string and value must be bytes. Example:
 // { foo: bytes(value1)', bar: bytes(value2) }
-type Inputs struct {
+type TargetInputs struct {
 	// SignedReport corresponds to the JSON schema field "signedReport".
 	SignedReport ocr3cap.SignedReport `json:"signedReport" yaml:"signedReport" mapstructure:"signedReport"`
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
-func (j *Inputs) UnmarshalJSON(b []byte) error {
+func (j *TargetInputs) UnmarshalJSON(b []byte) error {
 	var raw map[string]interface{}
 	if err := json.Unmarshal(b, &raw); err != nil {
 		return err
 	}
 	if _, ok := raw["signedReport"]; raw != nil && !ok {
-		return fmt.Errorf("field signedReport in Inputs: required")
+		return fmt.Errorf("field signedReport in TargetInputs: required")
 	}
-	type Plain Inputs
+	type Plain TargetInputs
 	var plain Plain
 	if err := json.Unmarshal(b, &plain); err != nil {
 		return err
 	}
-	*j = Inputs(plain)
+	*j = TargetInputs(plain)
 	return nil
 }
 
@@ -42,7 +42,7 @@ type WriteTarget struct {
 	Config WriteTargetConfig `json:"config,omitempty" yaml:"config,omitempty" mapstructure:"config,omitempty"`
 
 	// Inputs corresponds to the JSON schema field "inputs".
-	Inputs Inputs `json:"inputs" yaml:"inputs" mapstructure:"inputs"`
+	Inputs TargetInputs `json:"inputs" yaml:"inputs" mapstructure:"inputs"`
 }
 
 // Configuration for the Key-Value Store Target. No configuration options are

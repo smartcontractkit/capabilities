@@ -1,7 +1,7 @@
 {
   "$id": "https://github.com/smartcontractkit/capabilities/kvstore/kvcap/kv-store-action@1.0.0",
   "$defs": {
-    "Inputs": {
+    "ActionInputs": {
       "type": "object",
       "additionalProperties": false,
       "description": "Input parameters for the Key-Value Store Action.",
@@ -16,7 +16,7 @@
       },
       "required": ["keys"]
     },
-    "Outputs": {
+    "ActionOutputs": {
       "type": "object",
       "additionalProperties": false,
       "description": "Outputs of the Key-Value Store Action.",
@@ -43,10 +43,10 @@
   "additionalProperties": false,
   "properties": {
     "inputs": {
-      "$ref": "#/$defs/Inputs"
+      "$ref": "#/$defs/ActionInputs"
     },
     "outputs": {
-      "$ref": "#/$defs/Outputs"
+      "$ref": "#/$defs/ActionOutputs"
     },
     "config": {
       "type": "object",

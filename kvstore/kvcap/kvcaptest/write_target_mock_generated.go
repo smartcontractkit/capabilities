@@ -10,8 +10,8 @@ import (
 )
 
 // WriteTarget registers a new capability mock with the runner
-func WriteTarget(runner *testutils.Runner, fn func(input kvcap.Inputs) error) *testutils.TargetMock[kvcap.Inputs] {
-	mock := testutils.MockTarget[kvcap.Inputs]("kv-store-target@1.0.0", fn)
+func WriteTarget(runner *testutils.Runner, fn func(input kvcap.TargetInputs) error) *testutils.TargetMock[kvcap.TargetInputs] {
+	mock := testutils.MockTarget[kvcap.TargetInputs]("kv-store-target@1.0.0", fn)
 	runner.MockCapability("kv-store-target@1.0.0", nil, mock)
 	return mock
 }

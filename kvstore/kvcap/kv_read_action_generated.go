@@ -8,50 +8,50 @@ import (
 )
 
 // Input parameters for the Key-Value Store Action.
-type Inputs struct {
+type ActionInputs struct {
 	// Keys to read from the Key-Value Store.
 	Keys []string `json:"keys" yaml:"keys" mapstructure:"keys"`
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
-func (j *Inputs) UnmarshalJSON(b []byte) error {
+func (j *ActionInputs) UnmarshalJSON(b []byte) error {
 	var raw map[string]interface{}
 	if err := json.Unmarshal(b, &raw); err != nil {
 		return err
 	}
 	if _, ok := raw["keys"]; raw != nil && !ok {
-		return fmt.Errorf("field keys in Inputs: required")
+		return fmt.Errorf("field keys in ActionInputs: required")
 	}
-	type Plain Inputs
+	type Plain ActionInputs
 	var plain Plain
 	if err := json.Unmarshal(b, &plain); err != nil {
 		return err
 	}
-	*j = Inputs(plain)
+	*j = ActionInputs(plain)
 	return nil
 }
 
 // Outputs of the Key-Value Store Action.
-type Outputs struct {
+type ActionOutputs struct {
 	// Values read from the Key-Value Store.
 	Values [][]uint8 `json:"values" yaml:"values" mapstructure:"values"`
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
-func (j *Outputs) UnmarshalJSON(b []byte) error {
+func (j *ActionOutputs) UnmarshalJSON(b []byte) error {
 	var raw map[string]interface{}
 	if err := json.Unmarshal(b, &raw); err != nil {
 		return err
 	}
 	if _, ok := raw["values"]; raw != nil && !ok {
-		return fmt.Errorf("field values in Outputs: required")
+		return fmt.Errorf("field values in ActionOutputs: required")
 	}
-	type Plain Outputs
+	type Plain ActionOutputs
 	var plain Plain
 	if err := json.Unmarshal(b, &plain); err != nil {
 		return err
 	}
-	*j = Outputs(plain)
+	*j = ActionOutputs(plain)
 	return nil
 }
 
@@ -62,10 +62,10 @@ type ReadAction struct {
 	Config ReadActionConfig `json:"config,omitempty" yaml:"config,omitempty" mapstructure:"config,omitempty"`
 
 	// Inputs corresponds to the JSON schema field "inputs".
-	Inputs Inputs `json:"inputs" yaml:"inputs" mapstructure:"inputs"`
+	Inputs ActionInputs `json:"inputs" yaml:"inputs" mapstructure:"inputs"`
 
 	// Outputs corresponds to the JSON schema field "outputs".
-	Outputs *Outputs `json:"outputs,omitempty" yaml:"outputs,omitempty" mapstructure:"outputs,omitempty"`
+	Outputs *ActionOutputs `json:"outputs,omitempty" yaml:"outputs,omitempty" mapstructure:"outputs,omitempty"`
 }
 
 // Configuration for the Key-Value Store Action. No configuration options are

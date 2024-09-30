@@ -38,7 +38,7 @@ func (c *capability) Info(ctx context.Context) (capabilities.CapabilityInfo, err
 
 type ExecuteRequest struct {
 	Metadata capabilities.RequestMetadata
-	Inputs   kvcap.Inputs
+	Inputs   kvcap.TargetInputs
 }
 
 func evaluate(rawRequest capabilities.CapabilityRequest) (r ExecuteRequest, err error) {

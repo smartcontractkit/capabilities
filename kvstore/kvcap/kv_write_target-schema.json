@@ -1,7 +1,7 @@
 {
   "$id": "https://github.com/smartcontractkit/capabilities/kvstore/kvcap/kv-store-target@1.0.0",
   "$defs": {
-    "Inputs": {
+    "TargetInputs": {
       "type": "object",
       "additionalProperties": false,
       "description": "Input parameters for the Key-Value Store Target. The report must encode the key-value pairs to write. Key must be a string and value must be bytes. Example: { foo: bytes(value1)', bar: bytes(value2) }",
@@ -18,7 +18,7 @@
   "additionalProperties": false,
   "properties": {
     "inputs": {
-      "$ref": "#/$defs/Inputs"
+      "$ref": "#/$defs/TargetInputs"
     },
     "config": {
       "type": "object",
