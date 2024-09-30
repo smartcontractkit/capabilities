@@ -2,11 +2,13 @@ package target
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
+	"github.com/smartcontractkit/chainlink-common/pkg/values"
 
 	"github.com/smartcontractkit/capabilities/kvstore/kvcap"
 )
@@ -46,7 +48,7 @@ func evaluate(rawRequest capabilities.CapabilityRequest) (r ExecuteRequest, err 
 		return r, fmt.Errorf("missing inputs field")
 	}
 
-	const signedReportField = "signed_report"
+	const signedReportField = "signedReport"
 	signedReport, ok := rawRequest.Inputs.Underlying[signedReportField]
 	if !ok {
 		return r, fmt.Errorf("missing required field %s", signedReportField)
@@ -68,17 +70,43 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 	}
 	c.logger.Debug("Evaluated signed report", "WorkflowID", request.Metadata.WorkflowID, "WorkflowExecutionID", request.Metadata.WorkflowExecutionID, "ReportVersion", request.Inputs.SignedReport)
 
+	// abi.encode to something
+	// Can we do bytes for identical consensus / no-op encoder? protos.Value?
 	// // TODO: Decode request.Inputs.SignedReport.Report into KV pairs
 	// setRequest := NewWriteRequest(request.Metadata.WorkflowExecutionID, map[string][]byte{
 	// 	"for": []byte("bar"),
 	// })
+
+	var keyValuePairs map[string][]byte
+
+	if err = json.Unmarshal(request.Inputs.SignedReport.Report, &keyValuePairs); err != nil {
+		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to unmarshal signed report: %v", err)
+	}
+
+	for k, v := range keyValuePairs {
+		if err = c.store.Store(ctx, k, v); err != nil {
+			return capabilities.CapabilityResponse{}, err
+		}
+		c.logger.Debug("Value stored", "WorkflowID", rawRequest.Metadata.WorkflowID, "WorkflowExecutionID", rawRequest.Metadata.WorkflowExecutionID, "Key", k, "Value", v)
+	}
 
 	if err = c.store.Store(ctx, "some", []byte{1, 2, 3}); err != nil {
 		return capabilities.CapabilityResponse{}, err
 	}
 	c.logger.Debug("Value stored", "WorkflowID", rawRequest.Metadata.WorkflowID, "WorkflowExecutionID", rawRequest.Metadata.WorkflowExecutionID)
 
-	return capabilities.CapabilityResponse{}, nil
+	response, err := values.NewMap(
+		map[string]any{
+			"success": true,
+		},
+	)
+	if err != nil {
+		return capabilities.CapabilityResponse{}, err
+	}
+
+	return capabilities.CapabilityResponse{
+		Value: response,
+	}, nil
 }
 
 func (c *capability) RegisterToWorkflow(ctx context.Context, rawRequest capabilities.RegisterToWorkflowRequest) error {

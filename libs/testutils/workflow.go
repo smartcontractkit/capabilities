@@ -6,6 +6,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/values"
 )
 
 // workflow represents a single workflow and is used to generate capability requests
@@ -21,7 +22,7 @@ func NewWorkflow() *workflow {
 	}
 }
 
-func (w *workflow) NewRequest() capabilities.CapabilityRequest {
+func (w *workflow) NewRequest(inputs *values.Map) capabilities.CapabilityRequest {
 	w.executionCounter++
 
 	return capabilities.CapabilityRequest{
@@ -29,5 +30,6 @@ func (w *workflow) NewRequest() capabilities.CapabilityRequest {
 			WorkflowID:          w.ID,
 			WorkflowExecutionID: fmt.Sprintf("%d-%s", w.executionCounter, w.ID),
 		},
+		Inputs: inputs,
 	}
 }

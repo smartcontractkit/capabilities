@@ -4,7 +4,7 @@
     "Inputs": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Input parameters for the Key-Value Store Target.",
+      "description": "Input parameters for the Key-Value Store Target. The report must encode the key-value pairs to write. Key must be a string and value must be bytes. Example: { foo: bytes(value1)', bar: bytes(value2) }",
       "properties": {
         "signedReport": {
           "$ref": "https://raw.githubusercontent.com/smartcontractkit/chainlink-common/refs/heads/main/pkg/capabilities/consensus/ocr3/ocr3cap/ocr3cap_common-schema.json#/$defs/SignedReport"
