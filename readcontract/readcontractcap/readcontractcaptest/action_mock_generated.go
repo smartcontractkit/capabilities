@@ -11,17 +11,17 @@ import (
 
 // Action registers a new capability mock with the runner
 // if another mock is registered for the same capability with for a step, it will take priority for that step.
-func Action(runner *testutils.Runner, fn func(input readcontractcap.Input) (readcontractcap.Output, error)) *testutils.Mock[readcontractcap.Input, readcontractcap.Output] {
-	mock := testutils.MockCapability[readcontractcap.Input, readcontractcap.Output]("read-contract@1.0.0", fn)
-	runner.MockCapability("read-contract@1.0.0", nil, mock)
+func Action(runner *testutils.Runner, id string, fn func(input readcontractcap.Input) (readcontractcap.Output, error)) *testutils.Mock[readcontractcap.Input, readcontractcap.Output] {
+	mock := testutils.MockCapability[readcontractcap.Input, readcontractcap.Output](id, fn)
+	runner.MockCapability(id, nil, mock)
 	return mock
 }
 
 // ActionForStep registers a new capability mock with the runner, but only for a given step.
 // if another mock was registered for the same capability without a step, this mock will take priority for that step.
-func ActionForStep(runner *testutils.Runner, step string, mockFn func(input readcontractcap.Input) (readcontractcap.Output, error)) *testutils.Mock[readcontractcap.Input, readcontractcap.Output] {
+func ActionForStep(runner *testutils.Runner, id string, step string, mockFn func(input readcontractcap.Input) (readcontractcap.Output, error)) *testutils.Mock[readcontractcap.Input, readcontractcap.Output] {
 	fn := mockFn
-	mock := testutils.MockCapability[readcontractcap.Input, readcontractcap.Output]("read-contract@1.0.0", fn)
-	runner.MockCapability("read-contract@1.0.0", &step, mock)
+	mock := testutils.MockCapability[readcontractcap.Input, readcontractcap.Output](id, fn)
+	runner.MockCapability(id, &step, mock)
 	return mock
 }

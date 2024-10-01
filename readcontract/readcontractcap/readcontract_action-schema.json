@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/smartcontractkit/capabilities/readcontract/readcontractcap/read-contract@1.0.0",
+  "$id": "https://github.com/smartcontractkit/capabilities/readcontract/readcontractcap/read-contract",
   "$defs": {
     "Config": {
       "type": "object",

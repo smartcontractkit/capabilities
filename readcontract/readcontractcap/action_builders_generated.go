@@ -7,10 +7,10 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk"
 )
 
-func (cfg Config) New(w *sdk.WorkflowSpecFactory, ref string, input ActionInput) OutputCap {
+func (cfg Config) New(w *sdk.WorkflowSpecFactory, id string, ref string, input ActionInput) OutputCap {
 
 	def := sdk.StepDefinition{
-		ID: "read-contract@1.0.0", Ref: ref,
+		ID: id, Ref: ref,
 		Inputs: input.ToSteps(),
 		Config: map[string]any{
 			"ContractReaderConfig": cfg.ContractReaderConfig,
