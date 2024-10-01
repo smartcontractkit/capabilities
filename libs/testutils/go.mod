@@ -2,7 +2,10 @@ module github.com/smartcontractkit/capabilities/libs/testutils
 
 go 1.23
 
-require github.com/smartcontractkit/chainlink-common v0.2.3-0.20240926094457-238a5afc96ef
+require (
+	github.com/google/uuid v1.6.0
+	github.com/smartcontractkit/chainlink-common v0.2.3-0.20240926094457-238a5afc96ef
+)
 
 require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
@@ -13,7 +16,6 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-viper/mapstructure/v2 v2.1.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/invopop/jsonschema v0.12.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
