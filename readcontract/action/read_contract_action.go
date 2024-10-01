@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
+	"github.com/smartcontractkit/capabilities/readcontract/readcontractcap"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
@@ -29,17 +30,6 @@ const (
 type ReadContractConfig struct {
 	ChainId uint64 `json:"chainId"`
 	Network string `json:"network"`
-}
-
-type Config struct {
-	ContractReaderConfig string `json:"contractReaderConfig"`
-}
-
-type Input struct {
-	ReadIdentifier  string         `json:"readIdentifier"`
-	Address         string         `json:"address"`
-	ConfidenceLevel string         `json:"confidenceLevel"`
-	Params          map[string]any `json:"params"`
 }
 
 type Output struct {
@@ -84,7 +74,7 @@ type ReadContractAction struct {
 	lggr logger.Logger
 
 	capabilities.CapabilityInfo
-	capabilities.Validator[Config, Input, capabilities.CapabilityResponse]
+	capabilities.Validator[readcontractcap.Config, readcontractcap.Input, capabilities.CapabilityResponse]
 
 	relayer Relayer
 
@@ -117,7 +107,7 @@ func NewReadContractAction(lggr logger.Logger, config ReadContractConfig, relaye
 	return &ReadContractAction{
 		lggr:            logger.Named(lggr, id),
 		CapabilityInfo:  info,
-		Validator:       capabilities.NewValidator[Config, Input, capabilities.CapabilityResponse](capabilities.ValidatorArgs{Info: info}),
+		Validator:       capabilities.NewValidator[readcontractcap.Config, readcontractcap.Input, capabilities.CapabilityResponse](capabilities.ValidatorArgs{Info: info}),
 		relayer:         relayer,
 		contractReaders: contractReaderCache,
 	}

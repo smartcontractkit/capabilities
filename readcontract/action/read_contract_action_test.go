@@ -9,6 +9,7 @@ import (
 
 	actions "github.com/smartcontractkit/capabilities/readcontract/action"
 	"github.com/smartcontractkit/capabilities/readcontract/action/mocks"
+	"github.com/smartcontractkit/capabilities/readcontract/readcontractcap"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -66,10 +67,11 @@ func TestReadContractAction_Execute(t *testing.T) {
 	assert.Equal(t, 1, contractReaderMock.getLatestValueCallCount)
 
 	// Check that the params are passed as expected
-	expectedParams := map[string]any{
+	expectedParams := readcontractcap.InputParams{
 		"param1": "value1",
 		"param2": "value2",
 	}
+
 	assert.Equal(t, expectedParams, contractReaderMock.receivedParams[0])
 }
 
