@@ -2,33 +2,34 @@ package target
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
+	"github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 
 	"github.com/smartcontractkit/capabilities/kvstore/kvcap"
+	"github.com/smartcontractkit/capabilities/kvstore/kvrequests"
+	"google.golang.org/protobuf/proto"
 )
 
 var _ capabilities.TargetCapability = (*capability)(nil)
 
 type capability struct {
-	logger logger.Logger
-	store  core.KeyValueStore
+	logger        logger.Logger
+	requestsStore *kvrequests.RequestsStore
 }
 
 type Params struct {
-	Logger logger.Logger
-	Store  core.KeyValueStore
+	Logger        logger.Logger
+	RequestsStore *kvrequests.RequestsStore
 }
 
 func New(p Params) *capability {
 	return &capability{
-		logger: p.Logger,
-		store:  p.Store,
+		logger:        p.Logger,
+		requestsStore: p.RequestsStore,
 	}
 }
 
@@ -36,12 +37,13 @@ func (c *capability) Info(ctx context.Context) (capabilities.CapabilityInfo, err
 	return capabilities.NewCapabilityInfo("kv-store-target@1.0.0", capabilities.CapabilityTypeTarget, "Writes KV-pairs from a SignedReport to a key-value store")
 }
 
-type ExecuteRequest struct {
-	Metadata capabilities.RequestMetadata
-	Inputs   kvcap.TargetInputs
+type ExecuteCapabilityRequest struct {
+	Metadata      capabilities.RequestMetadata
+	Inputs        kvcap.TargetInputs
+	keyValuePairs map[string][]byte
 }
 
-func evaluate(rawRequest capabilities.CapabilityRequest) (r ExecuteRequest, err error) {
+func evaluate(rawRequest capabilities.CapabilityRequest) (r ExecuteCapabilityRequest, err error) {
 	r.Metadata = rawRequest.Metadata
 
 	if rawRequest.Inputs == nil {
@@ -58,42 +60,48 @@ func evaluate(rawRequest capabilities.CapabilityRequest) (r ExecuteRequest, err 
 		return r, fmt.Errorf("failed to unwrap signed report: %v", err)
 	}
 
+	reportProto := &pb.Value{}
+	err = proto.Unmarshal(r.Inputs.SignedReport.Report, reportProto)
+	if err != nil {
+		return r, fmt.Errorf("failed to unmarshal signed report: %v", err)
+	}
+
+	reportValue, err := values.FromProto(reportProto)
+	if err != nil {
+		return r, fmt.Errorf("failed to convert report proto to report value: %v", err)
+	}
+
+	err = reportValue.UnwrapTo(&r.keyValuePairs)
+	if err != nil {
+		return r, fmt.Errorf("failed to unwrap signed report value: %v", err)
+	}
+
 	return r, nil
 }
 
 func (c *capability) Execute(ctx context.Context, rawRequest capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
-	c.logger.Debug("Executing", "WorkflowID", rawRequest.Metadata.WorkflowID, "WorkflowExecutionID", rawRequest.Metadata.WorkflowExecutionID)
+	c.logger.Debug("Executing",
+		"WorkflowID", rawRequest.Metadata.WorkflowID,
+		"WorkflowExecutionID", rawRequest.Metadata.WorkflowExecutionID,
+	)
 
 	request, err := evaluate(rawRequest)
 	if err != nil {
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to decode signed report: %v", err)
 	}
-	c.logger.Debug("Evaluated signed report", "WorkflowID", request.Metadata.WorkflowID, "WorkflowExecutionID", request.Metadata.WorkflowExecutionID, "ReportVersion", request.Inputs.SignedReport)
+	c.logger.Debug("Evaluated signed report",
+		"WorkflowID", request.Metadata.WorkflowID,
+		"WorkflowExecutionID", request.Metadata.WorkflowExecutionID,
+	)
 
-	// abi.encode to something
-	// Can we do bytes for identical consensus / no-op encoder? protos.Value?
-	// // TODO: Decode request.Inputs.SignedReport.Report into KV pairs
-	// setRequest := NewWriteRequest(request.Metadata.WorkflowExecutionID, map[string][]byte{
-	// 	"for": []byte("bar"),
-	// })
-
-	var keyValuePairs map[string][]byte
-
-	if err = json.Unmarshal(request.Inputs.SignedReport.Report, &keyValuePairs); err != nil {
-		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to unmarshal signed report: %v", err)
+	err = c.requestsStore.AddWriteRequest(ctx, request.Metadata.WorkflowExecutionID, request.keyValuePairs)
+	if err != nil {
+		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to set write request: %v", err)
 	}
-
-	for k, v := range keyValuePairs {
-		if err = c.store.Store(ctx, k, v); err != nil {
-			return capabilities.CapabilityResponse{}, err
-		}
-		c.logger.Debug("Value stored", "WorkflowID", rawRequest.Metadata.WorkflowID, "WorkflowExecutionID", rawRequest.Metadata.WorkflowExecutionID, "Key", k, "Value", v)
-	}
-
-	if err = c.store.Store(ctx, "some", []byte{1, 2, 3}); err != nil {
-		return capabilities.CapabilityResponse{}, err
-	}
-	c.logger.Debug("Value stored", "WorkflowID", rawRequest.Metadata.WorkflowID, "WorkflowExecutionID", rawRequest.Metadata.WorkflowExecutionID)
+	c.logger.Debug("Stored write request",
+		"WorkflowID", request.Metadata.WorkflowID,
+		"WorkflowExecutionID", request.Metadata.WorkflowExecutionID,
+	)
 
 	response, err := values.NewMap(
 		map[string]any{

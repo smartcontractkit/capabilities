@@ -5,29 +5,36 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/smartcontractkit/capabilities/kvstore/kvrequests"
 	"github.com/smartcontractkit/capabilities/kvstore/target"
 	"github.com/smartcontractkit/capabilities/libs/testutils"
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/ocr3cap"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 )
 
-func TestReportV1Metadata(t *testing.T) {
+func TestKVStoreTarget(t *testing.T) {
 	t.Run("succeeds with valid data", func(t *testing.T) {
+		kvStore := testutils.NewStore(t)
+		requestsStore := kvrequests.New(kvStore)
+
 		ctx := context.Background()
 		target := target.New(target.Params{
-			Store:  testutils.NewStore(t),
-			Logger: testutils.NewLogger(t),
+			RequestsStore: requestsStore,
+			Logger:        testutils.NewLogger(t),
 		})
 
 		keyValuePairs := map[string][]byte{
 			"key":  []byte("value"),
 			"key2": []byte("value2"),
 		}
+		wrappedKVPairs, err := values.Wrap(keyValuePairs)
+		assert.NoError(t, err)
 
-		keyValuePairsBytes, err := json.Marshal(keyValuePairs)
+		keyValuePairsBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(values.Proto(wrappedKVPairs))
 		assert.NoError(t, err)
 
 		wrappedSignedReport, err := values.Wrap(
@@ -46,7 +53,8 @@ func TestReportV1Metadata(t *testing.T) {
 		assert.NoError(t, err)
 
 		workflow := testutils.NewWorkflow()
-		capabilityResponse, err := target.Execute(ctx, workflow.NewRequest(inputs))
+		capabilityRequest := workflow.NewRequest(inputs)
+		capabilityResponse, err := target.Execute(ctx, capabilityRequest)
 		assert.NoError(t, err)
 
 		expectedValue, err := values.NewMap(map[string]any{
@@ -57,5 +65,17 @@ func TestReportV1Metadata(t *testing.T) {
 		assert.Equal(t, capabilities.CapabilityResponse{
 			Value: expectedValue,
 		}, capabilityResponse)
+
+		writeRequestsBytes, err := kvStore.Get(ctx, kvrequests.WriteRequestsKey)
+		assert.NoError(t, err)
+		var writeRequests map[string]kvrequests.WriteRequest
+		assert.NoError(t, json.Unmarshal(writeRequestsBytes, &writeRequests))
+
+		assert.Len(t, writeRequests, 1)
+		assert.Equal(t, writeRequests, map[string]kvrequests.WriteRequest{
+			capabilityRequest.Metadata.WorkflowExecutionID: {
+				KVPairs: keyValuePairs,
+			},
+		})
 	})
 }

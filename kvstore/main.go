@@ -8,6 +8,7 @@ import (
 
 	"github.com/hashicorp/go-plugin"
 
+	"github.com/smartcontractkit/capabilities/kvstore/kvrequests"
 	"github.com/smartcontractkit/capabilities/kvstore/oracle"
 	"github.com/smartcontractkit/capabilities/kvstore/target"
 
@@ -23,9 +24,10 @@ const (
 )
 
 type CapabilitiesService struct {
-	target capabilities.TargetCapability
-	oracle core.Oracle
-	s      *loop.Server
+	requestsStore *kvrequests.RequestsStore
+	target        capabilities.TargetCapability
+	oracle        core.Oracle
+	s             *loop.Server
 }
 
 func main() {
@@ -95,9 +97,11 @@ func (cs *CapabilitiesService) Initialise(
 	oracleFactory core.OracleFactory,
 ) error {
 	cs.s.Logger.Debugf("Initialising %s", serviceName)
+
+	cs.requestsStore = kvrequests.New(store)
 	cs.target = target.New(target.Params{
-		Store:  store,
-		Logger: cs.s.Logger,
+		RequestsStore: cs.requestsStore,
+		Logger:        cs.s.Logger,
 	})
 
 	cs.s.Logger.Debug("config: ", config)
