@@ -11,17 +11,17 @@ import (
 
 // ReadAction registers a new capability mock with the runner
 // if another mock is registered for the same capability with for a step, it will take priority for that step.
-func ReadAction(runner *testutils.Runner, fn func(input kvcap.ActionInputs) (kvcap.ActionOutputs, error)) *testutils.Mock[kvcap.ActionInputs, kvcap.ActionOutputs] {
-	mock := testutils.MockCapability[kvcap.ActionInputs, kvcap.ActionOutputs]("kv-store-action@1.0.0", fn)
+func ReadAction(runner *testutils.Runner, fn func(input kvcap.ReadInputs) (kvcap.ReadOutputs, error)) *testutils.Mock[kvcap.ReadInputs, kvcap.ReadOutputs] {
+	mock := testutils.MockCapability[kvcap.ReadInputs, kvcap.ReadOutputs]("kv-store-action@1.0.0", fn)
 	runner.MockCapability("kv-store-action@1.0.0", nil, mock)
 	return mock
 }
 
 // ReadActionForStep registers a new capability mock with the runner, but only for a given step.
 // if another mock was registered for the same capability without a step, this mock will take priority for that step.
-func ReadActionForStep(runner *testutils.Runner, step string, mockFn func(input kvcap.ActionInputs) (kvcap.ActionOutputs, error)) *testutils.Mock[kvcap.ActionInputs, kvcap.ActionOutputs] {
+func ReadActionForStep(runner *testutils.Runner, step string, mockFn func(input kvcap.ReadInputs) (kvcap.ReadOutputs, error)) *testutils.Mock[kvcap.ReadInputs, kvcap.ReadOutputs] {
 	fn := mockFn
-	mock := testutils.MockCapability[kvcap.ActionInputs, kvcap.ActionOutputs]("kv-store-action@1.0.0", fn)
+	mock := testutils.MockCapability[kvcap.ReadInputs, kvcap.ReadOutputs]("kv-store-action@1.0.0", fn)
 	runner.MockCapability("kv-store-action@1.0.0", &step, mock)
 	return mock
 }

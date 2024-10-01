@@ -7,54 +7,6 @@ import (
 	"fmt"
 )
 
-// Input parameters for the Key-Value Store Action.
-type ActionInputs struct {
-	// Keys to read from the Key-Value Store.
-	Keys []string `json:"keys" yaml:"keys" mapstructure:"keys"`
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *ActionInputs) UnmarshalJSON(b []byte) error {
-	var raw map[string]interface{}
-	if err := json.Unmarshal(b, &raw); err != nil {
-		return err
-	}
-	if _, ok := raw["keys"]; raw != nil && !ok {
-		return fmt.Errorf("field keys in ActionInputs: required")
-	}
-	type Plain ActionInputs
-	var plain Plain
-	if err := json.Unmarshal(b, &plain); err != nil {
-		return err
-	}
-	*j = ActionInputs(plain)
-	return nil
-}
-
-// Outputs of the Key-Value Store Action.
-type ActionOutputs struct {
-	// Values read from the Key-Value Store.
-	Values [][]uint8 `json:"values" yaml:"values" mapstructure:"values"`
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *ActionOutputs) UnmarshalJSON(b []byte) error {
-	var raw map[string]interface{}
-	if err := json.Unmarshal(b, &raw); err != nil {
-		return err
-	}
-	if _, ok := raw["values"]; raw != nil && !ok {
-		return fmt.Errorf("field values in ActionOutputs: required")
-	}
-	type Plain ActionOutputs
-	var plain Plain
-	if err := json.Unmarshal(b, &plain); err != nil {
-		return err
-	}
-	*j = ActionOutputs(plain)
-	return nil
-}
-
 // Key-Value Store Action
 type ReadAction struct {
 	// Configuration for the Key-Value Store Action. No configuration options are
@@ -62,10 +14,10 @@ type ReadAction struct {
 	Config ReadActionConfig `json:"config,omitempty" yaml:"config,omitempty" mapstructure:"config,omitempty"`
 
 	// Inputs corresponds to the JSON schema field "inputs".
-	Inputs ActionInputs `json:"inputs" yaml:"inputs" mapstructure:"inputs"`
+	Inputs ReadInputs `json:"inputs" yaml:"inputs" mapstructure:"inputs"`
 
 	// Outputs corresponds to the JSON schema field "outputs".
-	Outputs *ActionOutputs `json:"outputs,omitempty" yaml:"outputs,omitempty" mapstructure:"outputs,omitempty"`
+	Outputs *ReadOutputs `json:"outputs,omitempty" yaml:"outputs,omitempty" mapstructure:"outputs,omitempty"`
 }
 
 // Configuration for the Key-Value Store Action. No configuration options are
@@ -87,5 +39,53 @@ func (j *ReadAction) UnmarshalJSON(b []byte) error {
 		return err
 	}
 	*j = ReadAction(plain)
+	return nil
+}
+
+// Input parameters for the Key-Value Store Action.
+type ReadInputs struct {
+	// Keys to read from the Key-Value Store.
+	Keys []string `json:"keys" yaml:"keys" mapstructure:"keys"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ReadInputs) UnmarshalJSON(b []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["keys"]; raw != nil && !ok {
+		return fmt.Errorf("field keys in ReadInputs: required")
+	}
+	type Plain ReadInputs
+	var plain Plain
+	if err := json.Unmarshal(b, &plain); err != nil {
+		return err
+	}
+	*j = ReadInputs(plain)
+	return nil
+}
+
+// Outputs of the Key-Value Store Action.
+type ReadOutputs struct {
+	// Values read from the Key-Value Store.
+	Values [][]uint8 `json:"values" yaml:"values" mapstructure:"values"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *ReadOutputs) UnmarshalJSON(b []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["values"]; raw != nil && !ok {
+		return fmt.Errorf("field values in ReadOutputs: required")
+	}
+	type Plain ReadOutputs
+	var plain Plain
+	if err := json.Unmarshal(b, &plain); err != nil {
+		return err
+	}
+	*j = ReadOutputs(plain)
 	return nil
 }

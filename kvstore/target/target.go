@@ -39,7 +39,7 @@ func (c *capability) Info(ctx context.Context) (capabilities.CapabilityInfo, err
 
 type ExecuteCapabilityRequest struct {
 	Metadata      capabilities.RequestMetadata
-	Inputs        kvcap.TargetInputs
+	Inputs        kvcap.WriteInputs
 	keyValuePairs map[string][]byte
 }
 
