@@ -57,6 +57,9 @@ jobs:
           fetch-depth: 0
       - name: Set up project environment
         uses: ./.github/actions/setup
+      - name: Install mockery
+        run: go install github.com/vektra/mockery/v2/...@v2.46.1
+
       - name: Run "tidy" and "generate"
         run: |
           ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} tidy

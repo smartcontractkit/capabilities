@@ -1,4 +1,4 @@
-package read_contract
+package main
 
 import (
 	"context"
@@ -7,11 +7,12 @@ import (
 
 	"github.com/hashicorp/go-plugin"
 
-	actions "github.com/smartcontractkit/capabilities/readcontract/action"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
+
+	actions "github.com/smartcontractkit/capabilities/readcontract/action"
 )
 
 const (
@@ -103,10 +104,10 @@ func (cs *ReadContractGRPCService) Initialise(
 		return fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
-	relayID := types.NewRelayID(readContractConfig.Network, fmt.Sprintf("%d", readContractConfig.ChainId))
+	relayID := types.NewRelayID(readContractConfig.Network, fmt.Sprintf("%d", readContractConfig.ChainID))
 	relayer, err := relayerSet.Get(ctx, relayID)
 	if err != nil {
-		return fmt.Errorf("failed to fetch relayer for chainID %d from relayerSet: %w", readContractConfig.ChainId, err)
+		return fmt.Errorf("failed to fetch relayer for chainID %d from relayerSet: %w", readContractConfig.ChainID, err)
 	}
 
 	cs.action = actions.NewReadContractAction(cs.s.Logger, readContractConfig, &readContractRelayer{relayer})

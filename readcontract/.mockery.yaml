@@ -1,7 +1,7 @@
-dir: "{{ .InterfaceDir }}/mocks"
+dir: "{{ .InterfaceDir }}"
 mockname: "{{ .InterfaceName }}"
-outpkg: mocks
-filename: "{{ .InterfaceName | snakecase }}.go"
+outpkg: "{{ .PackageName }}_test"
+filename: "{{ .InterfaceName | snakecase }}_test.go"
 packages:
   github.com/smartcontractkit/capabilities/readcontract/action:
     interfaces:

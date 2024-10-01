@@ -11,7 +11,6 @@ Capability to read a contract on a given chain.  The chain is configured by prov
 To read the latest value of a given contract create and execute a `CapabilityRequest` as follows :
 
 ```go
-
 config := readcontractcap.Config{ContractReaderConfig: "<contract reader config goes here>"}
 
 inputs := readcontractcap.Input{

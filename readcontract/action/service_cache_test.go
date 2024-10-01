@@ -1,4 +1,4 @@
-package actions
+package actions_test
 
 import (
 	"context"
@@ -13,6 +13,8 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
+
+	actions "github.com/smartcontractkit/capabilities/readcontract/action"
 )
 
 type testService struct {
@@ -59,7 +61,8 @@ func TestServiceCache(t *testing.T) {
 	tick := 1 * time.Second
 	timeout := 1 * time.Second
 
-	cache := NewServiceCache[string, services.Service](log, "TestServiceCache", clock, tick, timeout, 0, nil)
+	stats := &mockStatsCollector{}
+	cache := actions.NewServiceCache[string, services.Service](log, "TestServiceCache", clock, tick, timeout, 0, stats)
 	err := cache.Start()
 	require.NoError(t, err)
 	defer func() {
@@ -81,9 +84,11 @@ func TestServiceCache(t *testing.T) {
 
 	assert.Eventually(t, func() bool {
 		clock.Advance(15 * time.Second)
-		_, ok := cache.Get(id)
-		return !ok
+		return stats.Evictions() == 1
 	}, 100*time.Second, 100*time.Millisecond)
+
+	_, ok = cache.Get(id)
+	assert.False(t, ok)
 
 	// Verify the service is stopped
 	assert.False(t, value.IsRunning())
@@ -95,7 +100,7 @@ func TestServiceCache_DoesNotEvictIfBelowMinimumSize(t *testing.T) {
 	tick := 1 * time.Second
 	timeout := 60 * time.Second
 
-	cache := NewServiceCache[string, services.Service](log, "TestServiceCache", clock, tick, timeout, 1, nil)
+	cache := actions.NewServiceCache[string, services.Service](log, "TestServiceCache", clock, tick, timeout, 1, nil)
 	err := cache.Start()
 	require.NoError(t, err)
 	defer func() {
@@ -129,7 +134,9 @@ func TestServiceCache_DoesNotEvictBelowMinimumSize(t *testing.T) {
 	tick := 1 * time.Second
 	timeout := 60 * time.Second
 
-	cache := NewServiceCache[string, services.Service](log, "TestServiceCache", clock, tick, timeout, 1, nil)
+	stats := &mockStatsCollector{}
+
+	cache := actions.NewServiceCache[string, services.Service](log, "TestServiceCache", clock, tick, timeout, 1, stats)
 	err := cache.Start()
 	require.NoError(t, err)
 	defer func() {
@@ -154,10 +161,12 @@ func TestServiceCache_DoesNotEvictBelowMinimumSize(t *testing.T) {
 	// Advance time to check eviction behavior
 	assert.Eventually(t, func() bool {
 		clock.Advance(120 * time.Second)
-		_, ok1 := cache.Get(id1)
-		_, ok2 := cache.Get(id2)
-		return ok1 != ok2
+		return stats.Evictions() == 1
 	}, 100*time.Second, 100*time.Millisecond)
+
+	_, ok1 := cache.Get(id1)
+	_, ok2 := cache.Get(id2)
+	assert.True(t, ok1 != ok2)
 
 	// Verify one service is stopped
 	assert.True(t, value1.IsRunning() != value2.IsRunning())
@@ -169,7 +178,7 @@ func TestServiceCache_ExpiryTimeResetAfterFetch(t *testing.T) {
 	tick := 1 * time.Second
 	timeout := 100 * time.Second
 
-	cache := NewServiceCache[string, services.Service](log, "TestServiceCache", clock, tick, timeout, 0, nil)
+	cache := actions.NewServiceCache[string, services.Service](log, "TestServiceCache", clock, tick, timeout, 0, nil)
 	err := cache.Start()
 	require.NoError(t, err)
 	defer func() {
@@ -206,7 +215,7 @@ func TestServiceCache_CloseClosesAllServices(t *testing.T) {
 	tick := 1 * time.Second
 	timeout := 60 * time.Second
 
-	cache := NewServiceCache[string, services.Service](log, "TestServiceCache", clock, tick, timeout, 0, nil)
+	cache := actions.NewServiceCache[string, services.Service](log, "TestServiceCache", clock, tick, timeout, 0, nil)
 	err := cache.Start()
 	require.NoError(t, err)
 
@@ -240,7 +249,7 @@ func TestServiceCache_StatsCollector(t *testing.T) {
 	timeout := 10 * time.Second
 
 	stats := &mockStatsCollector{}
-	cache := NewServiceCache[string, services.Service](log, "TestServiceCache", clock, tick, timeout, 0, stats)
+	cache := actions.NewServiceCache[string, services.Service](log, "TestServiceCache", clock, tick, timeout, 0, stats)
 	err := cache.Start()
 	require.NoError(t, err)
 	defer func() {
@@ -269,18 +278,16 @@ func TestServiceCache_StatsCollector(t *testing.T) {
 	assert.False(t, ok)
 	assert.Equal(t, 1, stats.Misses())
 
-	// Advance time to trigger eviction
 	assert.Eventually(t, func() bool {
 		clock.Advance(15 * time.Second)
-		_, ok := cache.Get(id)
-		return !ok
+		return stats.Evictions() == 1
 	}, 100*time.Second, 100*time.Millisecond)
+
+	_, ok = cache.Get(id)
+	assert.False(t, ok)
 
 	// Verify the service is stopped
 	assert.False(t, value.IsRunning())
-
-	// Check eviction count
-	assert.Equal(t, 1, stats.Evictions())
 }
 
 type mockStatsCollector struct {

@@ -7,23 +7,23 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 
-	actions "github.com/smartcontractkit/capabilities/readcontract/action"
-	"github.com/smartcontractkit/capabilities/readcontract/action/mocks"
-	"github.com/smartcontractkit/capabilities/readcontract/readcontractcap"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
+
+	actions "github.com/smartcontractkit/capabilities/readcontract/action"
+	"github.com/smartcontractkit/capabilities/readcontract/readcontractcap"
 )
 
 func TestReadContractAction_Execute(t *testing.T) {
 	config := actions.ReadContractConfig{
-		ChainId: 1,
+		ChainID: 1,
 		Network: "testnet",
 	}
 
-	relayerMock := &mocks.Relayer{}
+	relayerMock := NewRelayer(t)
 	returnVal, err := values.Wrap(5)
 	assert.NoError(t, err)
 	contractReaderMock := &mockContractReader{returnVal: returnVal}
@@ -74,11 +74,11 @@ func TestReadContractAction_Execute(t *testing.T) {
 
 func TestReadContractAction_ExecuteMultipleTimeWithSameReaderConfigUsesSingleInstance(t *testing.T) {
 	config := actions.ReadContractConfig{
-		ChainId: 1,
+		ChainID: 1,
 		Network: "testnet",
 	}
 
-	relayerMock := &mocks.Relayer{}
+	relayerMock := NewRelayer(t)
 	returnVal, err := values.Wrap(5)
 	assert.NoError(t, err)
 	contractReaderMock := &mockContractReader{returnVal: returnVal}
@@ -124,11 +124,11 @@ func TestReadContractAction_ExecuteMultipleTimeWithSameReaderConfigUsesSingleIns
 
 func TestReadContractAction_ExecuteWithDifferentReaderConfigUsesDifferentContractReaderInstances(t *testing.T) {
 	config := actions.ReadContractConfig{
-		ChainId: 1,
+		ChainID: 1,
 		Network: "testnet",
 	}
 
-	relayerMock := &mocks.Relayer{}
+	relayerMock := NewRelayer(t)
 	returnVal1, err := values.Wrap(5)
 	assert.NoError(t, err)
 	contractReaderMock1 := &mockContractReader{returnVal: returnVal1}
@@ -199,11 +199,11 @@ func TestReadContractAction_ExecuteWithDifferentReaderConfigUsesDifferentContrac
 
 func TestReadContractAction_ExecuteSameContractDifferentAddresses(t *testing.T) {
 	config := actions.ReadContractConfig{
-		ChainId: 1,
+		ChainID: 1,
 		Network: "testnet",
 	}
 
-	relayerMock := &mocks.Relayer{}
+	relayerMock := NewRelayer(t)
 	returnVal, err := values.Wrap(5)
 	assert.NoError(t, err)
 	contractReaderMock := &mockContractReader{returnVal: returnVal}
@@ -276,7 +276,7 @@ func TestReadContractAction_ExecuteSameContractDifferentAddresses(t *testing.T) 
 	assert.Equal(t, expectedBindings, contractReaderMock.allBindings)
 }
 
-func setupReadContractAction(t *testing.T, config actions.ReadContractConfig, relayerMock *mocks.Relayer) *actions.ReadContractAction {
+func setupReadContractAction(t *testing.T, config actions.ReadContractConfig, relayerMock *Relayer) *actions.ReadContractAction {
 	lggr := logger.Test(t)
 	return actions.NewReadContractAction(lggr, config, relayerMock)
 }

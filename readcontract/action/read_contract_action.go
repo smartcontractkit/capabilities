@@ -12,13 +12,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
-	"github.com/smartcontractkit/capabilities/readcontract/readcontractcap"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
+
+	"github.com/smartcontractkit/capabilities/readcontract/readcontractcap"
 )
 
 const (
@@ -28,7 +29,7 @@ const (
 )
 
 type ReadContractConfig struct {
-	ChainId uint64 `json:"chainId"`
+	ChainID uint64 `json:"chainId"`
 	Network string `json:"network"`
 }
 
@@ -93,7 +94,7 @@ type ContractReader interface {
 }
 
 func NewReadContractAction(lggr logger.Logger, config ReadContractConfig, relayer Relayer) *ReadContractAction {
-	id := fmt.Sprintf("read-contract-%s-%d@1.0.0", config.Network, config.ChainId)
+	id := fmt.Sprintf("read-contract-%s-%d@0.1.0", config.Network, config.ChainID)
 
 	info := capabilities.MustNewCapabilityInfo(
 		id,
@@ -114,7 +115,6 @@ func NewReadContractAction(lggr logger.Logger, config ReadContractConfig, relaye
 }
 
 func (r *ReadContractAction) Execute(ctx context.Context, request capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
-
 	lggr := logger.With(r.lggr, "workflow", request.Metadata)
 
 	config, err := r.ValidateConfig(request.Config)
