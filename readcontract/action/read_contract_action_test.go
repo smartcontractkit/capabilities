@@ -33,11 +33,11 @@ func TestReadContractAction_Execute(t *testing.T) {
 
 	action := setupReadContractAction(t, config, relayerMock)
 
-	inputs := map[string]any{
-		"readIdentifier":  "TestReadIdentifier",
-		"address":         "0x123",
-		"confidenceLevel": "finalized",
-		"params": map[string]any{
+	inputs := readcontractcap.Input{
+		ReadIdentifier:  "TestReadIdentifier",
+		Address:         "0x123",
+		ConfidenceLevel: "finalized",
+		Params: readcontractcap.InputParams{
 			"param1": "value1",
 			"param2": "value2",
 		},
@@ -49,9 +49,6 @@ func TestReadContractAction_Execute(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.NotNil(t, response)
-
-	resultMap := map[string]any{}
-	resultMap["latestValue"] = 5
 
 	output := actions.Output{}
 	err = response.Value.UnwrapTo(&output)
@@ -91,11 +88,11 @@ func TestReadContractAction_ExecuteMultipleTimeWithSameReaderConfigUsesSingleIns
 
 	action := setupReadContractAction(t, config, relayerMock)
 
-	inputs := map[string]any{
-		"readIdentifier":  "TestReadIdentifier",
-		"address":         "0x123",
-		"confidenceLevel": "finalized",
-		"params": map[string]any{
+	inputs := readcontractcap.Input{
+		ReadIdentifier:  "TestReadIdentifier",
+		Address:         "0x123",
+		ConfidenceLevel: "finalized",
+		Params: readcontractcap.InputParams{
 			"param1": "value1",
 			"param2": "value2",
 		},
@@ -151,11 +148,11 @@ func TestReadContractAction_ExecuteWithDifferentReaderConfigUsesDifferentContrac
 
 	action := setupReadContractAction(t, config, relayerMock)
 
-	inputs := map[string]any{
-		"readIdentifier":  "TestReadIdentifier",
-		"address":         "0x123",
-		"confidenceLevel": "finalized",
-		"params": map[string]any{
+	inputs := readcontractcap.Input{
+		ReadIdentifier:  "TestReadIdentifier",
+		Address:         "0x123",
+		ConfidenceLevel: "finalized",
+		Params: readcontractcap.InputParams{
 			"param1": "value1",
 			"param2": "value2",
 		},
@@ -216,21 +213,21 @@ func TestReadContractAction_ExecuteSameContractDifferentAddresses(t *testing.T) 
 
 	action := setupReadContractAction(t, config, relayerMock)
 
-	inputs1 := map[string]any{
-		"readIdentifier":  "TestReadIdentifier",
-		"address":         "0x123",
-		"confidenceLevel": "finalized",
-		"params": map[string]any{
+	inputs1 := readcontractcap.Input{
+		ReadIdentifier:  "TestReadIdentifier",
+		Address:         "0x123",
+		ConfidenceLevel: "finalized",
+		Params: readcontractcap.InputParams{
 			"param1": "value1",
 			"param2": "value2",
 		},
 	}
 
-	inputs2 := map[string]any{
-		"readIdentifier":  "TestReadIdentifier",
-		"address":         "0x456",
-		"confidenceLevel": "finalized",
-		"params": map[string]any{
+	inputs2 := readcontractcap.Input{
+		ReadIdentifier:  "TestReadIdentifier",
+		Address:         "0x456",
+		ConfidenceLevel: "finalized",
+		Params: readcontractcap.InputParams{
 			"param1": "value1",
 			"param2": "value2",
 		},
@@ -284,9 +281,8 @@ func setupReadContractAction(t *testing.T, config actions.ReadContractConfig, re
 	return actions.NewReadContractAction(lggr, config, relayerMock)
 }
 
-func createCapabilityRequest(t *testing.T, contractReaderConfig string, inputs map[string]any) capabilities.CapabilityRequest {
-	config := map[string]any{}
-	config["contractReaderConfig"] = contractReaderConfig
+func createCapabilityRequest(t *testing.T, contractReaderConfig string, inputs readcontractcap.Input) capabilities.CapabilityRequest {
+	config := readcontractcap.Config{ContractReaderConfig: contractReaderConfig}
 	requestConfig, err := values.WrapMap(config)
 	assert.NoError(t, err)
 

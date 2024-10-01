@@ -12,21 +12,22 @@ To read the latest value of a given contract create and execute a `CapabilityReq
 
 ```go
 
-config := map[string]any{}
-config["contractReaderConfig"] = "<contract reader config goes here>"
+config := readcontractcap.Config{ContractReaderConfig: "<contract reader config goes here>"}
 
-inputs := map[string]any{
-	"readIdentifier":    "TestContract",
-	"address": "0x123",
-	"confidenceLevel": "finalized",
-	"params": map[string]any{
-		"param1": "value1",
-		"param2": "value2",
-	},
+inputs := readcontractcap.Input{
+    ReadIdentifier:  "TestReadIdentifier",
+    Address:         "0x123",
+    ConfidenceLevel: "finalized",
+    Params: readcontractcap.InputParams{
+        "param1": "value1",
+        "param2": "value2",
+    },
 }
 
 requestConfig, err := values.WrapMap(config)
+// check err
 requestInputs, err := values.WrapMap(inputs)
+// check err
 
 request := capabilities.CapabilityRequest{
 		Config: requestConfig,
