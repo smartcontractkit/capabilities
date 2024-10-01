@@ -7,7 +7,7 @@ runs:
       uses: actions/setup-node@v4
       with:
         node-version: "20"
-    - run: npx nx init
+    - run: npx nx@19.8.2 init # nx version is 19.8.2
       shell: bash
     - id: get-root
       run: echo "root=$(./nx show project ${{matrix.projects}} --json)" >> "$GITHUB_OUTPUT"
