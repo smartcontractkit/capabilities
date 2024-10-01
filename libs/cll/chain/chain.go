@@ -1,9 +1,8 @@
-package main
+package chain
 
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,12 +11,12 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-// File to store the process ID of the anvil client
-
 const localDir = ".local"
+
+// File to store the process ID of the anvil client
 const chainInfoFile = "chain_info.json"
 
-type ChainInfo struct {
+type chainInfo struct {
 	PID int `json:"pid"`
 }
 
@@ -32,7 +31,7 @@ func startAnvil() error {
 	// Check if anvil is already running
 	if _, err := os.Stat(chainInfoPath); err == nil {
 		data, _ := os.ReadFile(chainInfoPath)
-		var info ChainInfo
+		var info chainInfo
 		if err := json.Unmarshal(data, &info); err == nil {
 			process, err := os.FindProcess(info.PID)
 			if err == nil && process.Signal(syscall.Signal(0)) == nil {
@@ -58,7 +57,7 @@ func startAnvil() error {
 	}
 
 	// Save the process ID to a file
-	info := ChainInfo{PID: cmd.Process.Pid}
+	info := chainInfo{PID: cmd.Process.Pid}
 	data, err := json.Marshal(info)
 	if err != nil {
 		return fmt.Errorf("failed to marshal chain info: %v", err)
@@ -78,7 +77,7 @@ func stopAnvil() error {
 	// Check if chain info file exists
 	if _, err := os.Stat(chainInfoPath); err == nil {
 		data, _ := os.ReadFile(chainInfoPath)
-		var info ChainInfo
+		var info chainInfo
 		if err := json.Unmarshal(data, &info); err == nil {
 			process, err := os.FindProcess(info.PID)
 			if err != nil {
@@ -104,46 +103,35 @@ func stopAnvil() error {
 	return nil
 }
 
-func main() {
-	app := &cli.App{
-		Name:  "cll",
-		Usage: "Run capabilities in a local environment",
-		Commands: []*cli.Command{
+var Commands = []*cli.Command{
+	{
+		Name:  "chain",
+		Usage: "Commands to manage the local chain",
+		Subcommands: []*cli.Command{
 			{
-				Name:  "chain",
-				Usage: "Prints a greeting",
-				Subcommands: []*cli.Command{
-					{
-						Name:  "start",
-						Usage: "Start the anvil client",
-						Action: func(c *cli.Context) error {
-							return startAnvil()
-						},
-					},
-					{
-						Name:  "stop",
-						Usage: "Stop the anvil client",
-						Action: func(c *cli.Context) error {
-							return stopAnvil()
-						},
-					},
-					{
-						Name:  "restart",
-						Usage: "Restart the anvil client",
-						Action: func(c *cli.Context) error {
-							if err := stopAnvil(); err != nil {
-								return err
-							}
-							return startAnvil()
-						},
-					},
+				Name:  "start",
+				Usage: "Start the anvil client",
+				Action: func(c *cli.Context) error {
+					return startAnvil()
+				},
+			},
+			{
+				Name:  "stop",
+				Usage: "Stop the anvil client",
+				Action: func(c *cli.Context) error {
+					return stopAnvil()
+				},
+			},
+			{
+				Name:  "restart",
+				Usage: "Restart the anvil client",
+				Action: func(c *cli.Context) error {
+					if err := stopAnvil(); err != nil {
+						return err
+					}
+					return startAnvil()
 				},
 			},
 		},
-	}
-
-	err := app.Run(os.Args)
-	if err != nil {
-		log.Fatal(err)
-	}
+	},
 }

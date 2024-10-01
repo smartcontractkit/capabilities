@@ -1,0 +1,28 @@
+package main
+
+import (
+	"log"
+	"os"
+
+	"github.com/urfave/cli/v2"
+
+	"github.com/smartcontractkit/capabilities/libs/cli/chain"
+	"github.com/smartcontractkit/capabilities/libs/cli/evmcontracts"
+)
+
+func main() {
+	var commands = make([]*cli.Command, 0)
+	commands = append(commands, chain.Commands...)
+	commands = append(commands, evmcontracts.Commands...)
+
+	app := &cli.App{
+		Name:     "cll",
+		Usage:    "Run capabilities in a local environment",
+		Commands: commands,
+	}
+
+	err := app.Run(os.Args)
+	if err != nil {
+		log.Fatal(err)
+	}
+}

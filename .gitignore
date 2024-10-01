@@ -21,8 +21,14 @@
 # Dependency directories (remove the comment below to include it)
 # vendor/
 
-# CLL outputs
+
+# START - Chainlink Local (CLL) artifacts
 .local
+
+# Solidity compilation artifacts
+cache
+out
+# STOP - Chainlink Local (CLL) artifacts
 
 # Build outputs
 bin
