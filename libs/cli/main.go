@@ -44,6 +44,10 @@ func startAnvil() error {
 		}
 	}
 
+	// SPIKE: Investigate if we can replace `anvil`
+	// TODO: Start and kill anvil with a flag to dump state and info
+	// This way, we can automate copying of anvil variables instead of having to do it manually
+
 	// Start anvil in the background
 	cmd := exec.Command("anvil")
 	cmd.Stdout = os.Stdout
