@@ -8,12 +8,14 @@ import (
 
 	"github.com/smartcontractkit/capabilities/libs/cli/chain"
 	"github.com/smartcontractkit/capabilities/libs/cli/evmcontracts"
+	"github.com/smartcontractkit/capabilities/libs/cli/node"
 )
 
 func main() {
 	var commands = make([]*cli.Command, 0)
 	commands = append(commands, chain.Commands...)
 	commands = append(commands, evmcontracts.Commands...)
+	commands = append(commands, node.Commands...)
 
 	app := &cli.App{
 		Name:     "cll",
