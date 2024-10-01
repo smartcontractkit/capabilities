@@ -15,11 +15,8 @@ output=$(./nx show project "$project" --json)
 
 # Check if the target exists using jq
 if echo "$output" | jq -e ".targets.${target}" > /dev/null; then
-  # If the target exists, run the task and capture the exit code
-  echo "Task '$target' exists in project '$project'. Running it..."
   ./nx run "$project:$target"
 else
-  # If the target doesn't exist, print message and exit with 0
   echo "Task '$target' does not exist in project '$project'. Skipping..."
   exit 0
 fi
