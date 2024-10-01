@@ -41,7 +41,7 @@ jobs:
       - name: Set up project environment
         uses: ./.github/actions/setup
       - name: Test ${{ matrix.projects }}
-        run: ./.github/scripts/nx-run-if-exists.zsh ${{ matrix.projects }} test
+        run: ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} test
 
   tidy-and-generate:
     needs: affected-projects
@@ -59,8 +59,8 @@ jobs:
         uses: ./.github/actions/setup
       - name: Run "tidy" and "generate"
         run: |
-          ./.github/scripts/nx-run-if-exists.zsh ${{ matrix.projects }} tidy
-          ./.github/scripts/nx-run-if-exists.zsh ${{ matrix.projects }} generate
+          ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} tidy
+          ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} generate
       - name: Ensure no diff
         run: git diff --stat --exit-code
 

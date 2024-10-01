@@ -1,4 +1,4 @@
-#!/bin/zsh
+#!/bin/bash
 
 # Check if both a project name and target are provided
 if [[ -z "$1" || -z "$2" ]]; then
