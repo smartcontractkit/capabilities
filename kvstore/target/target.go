@@ -37,15 +37,11 @@ func (c *capability) Info(ctx context.Context) (capabilities.CapabilityInfo, err
 	return capabilities.NewCapabilityInfo("kv-store-target@1.0.0", capabilities.CapabilityTypeTarget, "Writes KV-pairs from a SignedReport to a key-value store")
 }
 
-type ExecuteCapabilityRequest struct {
-	Metadata      capabilities.RequestMetadata
-	Inputs        kvcap.WriteInputs
+type WriteRequest struct {
 	keyValuePairs map[string][]byte
 }
 
-func evaluate(rawRequest capabilities.CapabilityRequest) (r ExecuteCapabilityRequest, err error) {
-	r.Metadata = rawRequest.Metadata
-
+func evaluate(rawRequest capabilities.CapabilityRequest) (r WriteRequest, err error) {
 	if rawRequest.Inputs == nil {
 		return r, fmt.Errorf("missing inputs field")
 	}
@@ -56,12 +52,13 @@ func evaluate(rawRequest capabilities.CapabilityRequest) (r ExecuteCapabilityReq
 		return r, fmt.Errorf("missing required field %s", signedReportField)
 	}
 
-	if err = signedReport.UnwrapTo(&r.Inputs.SignedReport); err != nil {
+	var inputs kvcap.WriteInputs
+	if err = signedReport.UnwrapTo(&inputs.SignedReport); err != nil {
 		return r, fmt.Errorf("failed to unwrap signed report: %v", err)
 	}
 
 	reportProto := &pb.Value{}
-	err = proto.Unmarshal(r.Inputs.SignedReport.Report, reportProto)
+	err = proto.Unmarshal(inputs.SignedReport.Report, reportProto)
 	if err != nil {
 		return r, fmt.Errorf("failed to unmarshal signed report: %v", err)
 	}
@@ -85,22 +82,22 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		"WorkflowExecutionID", rawRequest.Metadata.WorkflowExecutionID,
 	)
 
-	request, err := evaluate(rawRequest)
+	writeRequest, err := evaluate(rawRequest)
 	if err != nil {
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to decode signed report: %v", err)
 	}
-	c.logger.Debug("Evaluated signed report",
-		"WorkflowID", request.Metadata.WorkflowID,
-		"WorkflowExecutionID", request.Metadata.WorkflowExecutionID,
+	c.logger.Debug("Evaluated execute request",
+		"WorkflowID", rawRequest.Metadata.WorkflowID,
+		"WorkflowExecutionID", rawRequest.Metadata.WorkflowExecutionID,
 	)
 
-	err = c.requestsStore.AddWriteRequest(ctx, request.Metadata.WorkflowExecutionID, request.keyValuePairs)
+	err = c.requestsStore.AddWriteRequest(ctx, rawRequest.Metadata.WorkflowExecutionID, writeRequest.keyValuePairs)
 	if err != nil {
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to set write request: %v", err)
 	}
 	c.logger.Debug("Stored write request",
-		"WorkflowID", request.Metadata.WorkflowID,
-		"WorkflowExecutionID", request.Metadata.WorkflowExecutionID,
+		"WorkflowID", rawRequest.Metadata.WorkflowID,
+		"WorkflowExecutionID", rawRequest.Metadata.WorkflowExecutionID,
 	)
 
 	response, err := values.NewMap(
