@@ -6,9 +6,11 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/zap/zapcore"
 
-	shared "github.com/smartcontractkit/capabilities/integration_tests/shared"
-	"github.com/smartcontractkit/capabilities/integration_tests/shared/mocks"
+	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/framework"
+	"github.com/smartcontractkit/chainlink/v2/core/logger"
 )
 
 const (
@@ -25,16 +27,17 @@ type Payload struct {
 	ScheduledExecutionTime string `json:"ScheduledExecutionTime" yaml:"ScheduledExecutionTime" mapstructure:"ScheduledExecutionTime"`
 }
 
-func Test_Cron_OneAtATimeTransmissionSchedule(t *testing.T) {
-	ctx := shared.Context(t)
+func Test_CronTrigger(t *testing.T) {
+	ctx := framework.Context(t)
+	lggr := logger.TestLogger(t)
+	lggr.SetLogLevel(zapcore.InfoLevel)
 
-	// The don IDs set in the below calls are inferred from the order in which the dons are added to the capabilities registry
-	// in the setupCapabilitiesRegistryContract function, should this order change the don IDs will need updating.
-	workflowDonInfo := shared.CreateDonInfo(t, shared.Don{ID: 1, NumNodes: 7, F: 2})
-	triggerDonInfo := shared.CreateDonInfo(t, shared.Don{ID: 2, NumNodes: 7, F: 2})
-	targetDonInfo := shared.CreateDonInfo(t, shared.Don{ID: 3, NumNodes: 4, F: 1})
+	workflowDonConfiguration, err := framework.NewDonConfiguration(framework.NewDonConfigurationParams{Name: "Workflow", NumNodes: 7, F: 2, AcceptsWorkflows: true})
+	require.NoError(t, err)
 
-	_, _, targetSink := shared.SetupDonsWithTransmissionSchedule(ctx, t, workflowDonInfo, triggerDonInfo, targetDonInfo, scheduleEveryOtherSecond, "2s", "oneAtATime")
+	targetSink := framework.NewTargetSink("mock-target", "1.0.0")
+
+	setupCronTestDon(ctx, t, lggr, workflowDonConfiguration, scheduleEveryOtherSecond, targetSink)
 
 	quorum := 3 // number of nodes that need to execute the workflow (F+1)
 	runs := 3   // number of rounds to be considered done
@@ -43,7 +46,7 @@ func Test_Cron_OneAtATimeTransmissionSchedule(t *testing.T) {
 	waitFor(ctx, t, targetSink, quorum, runs, waitTime)
 }
 
-func waitFor(ctx context.Context, t *testing.T, targetSink *mocks.TargetSink, quorum int, expectedNumRuns int, waitTime time.Duration) {
+func waitFor(ctx context.Context, t *testing.T, targetSink *framework.TargetSink, quorum int, expectedNumRuns int, waitTime time.Duration) {
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, waitTime)
 	defer cancel()
 
