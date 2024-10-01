@@ -11,11 +11,11 @@ type Action struct {
 	// Config corresponds to the JSON schema field "Config".
 	Config *Config `json:"Config,omitempty" yaml:"Config,omitempty" mapstructure:"Config,omitempty"`
 
-	// Input corresponds to the JSON schema field "Input".
-	Input *Input `json:"Input,omitempty" yaml:"Input,omitempty" mapstructure:"Input,omitempty"`
+	// Inputs corresponds to the JSON schema field "Inputs".
+	Inputs *Input `json:"Inputs,omitempty" yaml:"Inputs,omitempty" mapstructure:"Inputs,omitempty"`
 
-	// Output corresponds to the JSON schema field "Output".
-	Output *Output `json:"Output,omitempty" yaml:"Output,omitempty" mapstructure:"Output,omitempty"`
+	// Outputs corresponds to the JSON schema field "Outputs".
+	Outputs *Output `json:"Outputs,omitempty" yaml:"Outputs,omitempty" mapstructure:"Outputs,omitempty"`
 }
 
 type Config struct {

@@ -45,10 +45,10 @@
     "Config": {
       "$ref": "#/$defs/Config"
     },
-    "Input": {
+    "Inputs": {
       "$ref": "#/$defs/Input"
     },
-    "Output": {
+    "Outputs": {
       "$ref": "#/$defs/Output"
     }
   }
