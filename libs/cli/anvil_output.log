@@ -1,0 +1,4 @@
+Error: Address already in use (os error 48)
+
+Location:
+    /Users/runner/work/foundry/foundry/crates/anvil/src/cmd.rs:297:33
