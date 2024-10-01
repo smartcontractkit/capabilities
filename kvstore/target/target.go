@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
@@ -11,7 +13,6 @@ import (
 
 	"github.com/smartcontractkit/capabilities/kvstore/kvcap"
 	"github.com/smartcontractkit/capabilities/kvstore/kvrequests"
-	"google.golang.org/protobuf/proto"
 )
 
 var _ capabilities.TargetCapability = (*capability)(nil)

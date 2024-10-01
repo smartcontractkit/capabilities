@@ -5,11 +5,12 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/smartcontractkit/capabilities/kvstore/kvrequests"
 	"github.com/smartcontractkit/capabilities/kvstore/target"
 	"github.com/smartcontractkit/capabilities/libs/testutils"
-	"github.com/stretchr/testify/assert"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/ocr3cap"
