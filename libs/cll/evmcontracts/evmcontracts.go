@@ -1,60 +1,74 @@
 package evmcontracts
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
+	"path/filepath"
 
 	"github.com/urfave/cli/v2"
+
+	"github.com/smartcontractkit/capabilities/libs/cli/chain"
+	"github.com/smartcontractkit/capabilities/libs/cli/constants"
+	"github.com/smartcontractkit/capabilities/libs/cli/utils"
 )
 
-// deployContract deploys the contract using ABI and bytecode
-func deployContract(privateKey string) error {
-	cmd := exec.Command(
-		"forge", "create",
-		"libs/cll/evmcontracts/contracts/keystone/OCR3Capability.sol:OCR3Capability",
-		"--rpc-url", "http://127.0.0.1:8545",
-		"--private-key", privateKey,
-		"--json",
-	)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+var smartContractDir = filepath.Join(constants.LocalDir, "chain", "smartcontracts")
+var ocrContractFilePath = filepath.Join(smartContractDir, "ocr3_contract_info.json")
 
-	err := cmd.Run()
+// deployContract deploys the contract using ABI and bytecode
+func deployContract() error {
+	if err := os.MkdirAll(smartContractDir, os.ModePerm); err != nil {
+		return fmt.Errorf("failed to create smart contracts directory: %v", err)
+	}
+
+	chainInfo := chain.GetInfo()
+	chainConfig, err := chain.GetConfig()
+	if err != nil {
+		return fmt.Errorf("failed to get chain config: %v", err)
+	}
+
+	outputs, err := utils.ExecCommand("forge", "create",
+		"libs/cll/evmcontracts/contracts/keystone/OCR3Capability.sol:OCR3Capability",
+		"--rpc-url", chainInfo.URLs.HTTP,
+		"--private-key", chainConfig.PrivateKeys[0],
+		"--json")
+
 	if err != nil {
 		return fmt.Errorf("failed to deploy contract: %v", err)
 	}
 
-	fmt.Println("Contract deployed successfully")
-	return nil
-}
-
-// setContractValue sends a transaction to set a value in the contract
-func setContractValue(contractAddress string, privateKey string, value int) error {
-	cmd := exec.Command("cast", "send", contractAddress, fmt.Sprintf("set(uint256) %d", value), "--rpc-url", "http://127.0.0.1:8545", "--private-key", privateKey)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	err := cmd.Run()
-	if err != nil {
-		return fmt.Errorf("failed to set value in contract: %v", err)
+	var txReceipt struct {
+		Deployer        string `json:"deployer"`
+		DeployedTo      string `json:"deployedTo"`
+		TransactionHash string `json:"transactionHash"`
+	}
+	if json.Unmarshal(outputs, &txReceipt) != nil {
+		return fmt.Errorf("failed to parse contract deployment output: %v", err)
 	}
 
-	fmt.Printf("Set value %d in contract %s\n", value, contractAddress)
-	return nil
-}
+	var contractInfo struct {
+		Address string `json:"address"`
+	}
+	contractInfo.Address = txReceipt.DeployedTo
 
-// getContractValue reads the stored value from the contract
-func getContractValue(contractAddress string) error {
-	cmd := exec.Command("cast", "call", contractAddress, "get() (uint256)", "--rpc-url", "http://127.0.0.1:8545")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	err := cmd.Run()
+	contractInfoJSON, err := json.Marshal(contractInfo)
 	if err != nil {
-		return fmt.Errorf("failed to get value from contract: %v", err)
+		return fmt.Errorf("failed to marshal contract info: %v", err)
 	}
 
+	if os.WriteFile(ocrContractFilePath, contractInfoJSON, 0600) != nil {
+		return fmt.Errorf("failed to write contract info to file: %v", err)
+	}
+
+	fmt.Printf("Contract deployed to %s (info: %s)\n", txReceipt.DeployedTo, ocrContractFilePath)
+
+	ocrConfig, err := generateOCR3Config([]int{1, 2, 3, 4, 5})
+	if err != nil {
+		return fmt.Errorf("failed to generate OCR3 config: %v", err)
+	}
+
+	fmt.Printf("OCR3 config:\n%x\n", ocrConfig)
 	return nil
 }
 
@@ -65,61 +79,41 @@ var Commands = []*cli.Command{
 		Subcommands: []*cli.Command{
 			{
 				Name:  "deploy-ocr",
-				Usage: "Deploy a smart contract using ABI and bytecode",
-				Flags: []cli.Flag{
-					&cli.StringFlag{
-						Name:     "private-key",
-						Usage:    "Private key to use for contract deployment",
-						Required: true,
-					},
-				},
+				Usage: "Deploy an OCR smart contract",
+
 				Action: func(c *cli.Context) error {
-					privateKey := c.String("private-key")
-					return deployContract(privateKey)
-				},
-			},
-			{
-				Name:  "set-value",
-				Usage: "Set a value in the deployed contract",
-				Flags: []cli.Flag{
-					&cli.StringFlag{
-						Name:     "contract-address",
-						Usage:    "Address of the deployed contract",
-						Required: true,
-					},
-					&cli.StringFlag{
-						Name:     "private-key",
-						Usage:    "Private key to use for sending the transaction",
-						Required: true,
-					},
-					&cli.IntFlag{
-						Name:     "value",
-						Usage:    "Value to set in the contract",
-						Required: true,
-					},
-				},
-				Action: func(c *cli.Context) error {
-					contractAddress := c.String("contract-address")
-					privateKey := c.String("private-key")
-					value := c.Int("value")
-					return setContractValue(contractAddress, privateKey, value)
-				},
-			},
-			{
-				Name:  "get-value",
-				Usage: "Get the stored value from the deployed contract",
-				Flags: []cli.Flag{
-					&cli.StringFlag{
-						Name:     "contract-address",
-						Usage:    "Address of the deployed contract",
-						Required: true,
-					},
-				},
-				Action: func(c *cli.Context) error {
-					contractAddress := c.String("contract-address")
-					return getContractValue(contractAddress)
+					return deployContract()
 				},
 			},
 		},
 	},
 }
+
+// // setContractValue sends a transaction to set a value in the contract
+// func setContractValue(contractAddress string, privateKey string, value int) error {
+// 	cmd := exec.Command("cast", "send", contractAddress, fmt.Sprintf("set(uint256) %d", value), "--rpc-url", "http://127.0.0.1:8545", "--private-key", privateKey)
+// 	cmd.Stdout = os.Stdout
+// 	cmd.Stderr = os.Stderr
+
+// 	err := cmd.Run()
+// 	if err != nil {
+// 		return fmt.Errorf("failed to set value in contract: %v", err)
+// 	}
+
+// 	fmt.Printf("Set value %d in contract %s\n", value, contractAddress)
+// 	return nil
+// }
+
+// // getContractValue reads the stored value from the contract
+// func getContractValue(contractAddress string) error {
+// 	cmd := exec.Command("cast", "call", contractAddress, "get() (uint256)", "--rpc-url", "http://127.0.0.1:8545")
+// 	cmd.Stdout = os.Stdout
+// 	cmd.Stderr = os.Stderr
+
+// 	err := cmd.Run()
+// 	if err != nil {
+// 		return fmt.Errorf("failed to get value from contract: %v", err)
+// 	}
+
+// 	return nil
+// }

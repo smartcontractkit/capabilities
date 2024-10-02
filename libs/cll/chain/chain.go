@@ -1,25 +1,71 @@
 package chain
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 
-	"github.com/smartcontractkit/capabilities/libs/cli/constants"
 	"github.com/urfave/cli/v2"
+
+	"github.com/smartcontractkit/capabilities/libs/cli/constants"
 )
 
-const localDir = ".local/chain"
+var chainDir = filepath.Join(constants.LocalDir, "chain")
+var chainConfigFilePath = filepath.Join(chainDir, "chain_config.json")
+
+type URLs struct {
+	HTTP string `json:"http"`
+	WS   string `json:"ws"`
+}
+
+type Info struct {
+	ChainID string `json:"chainID"`
+	Port    int    `json:"port"`
+	URLs    *URLs
+}
+
+func GetInfo() *Info {
+	port := 8545
+	return &Info{
+		ChainID: "anvil",
+		Port:    port,
+		URLs: &URLs{
+			HTTP: fmt.Sprintf("http://localhost:%d", port),
+			WS:   fmt.Sprintf("ws://localhost:%d", port),
+		},
+	}
+}
+
+type Config struct {
+	Accounts    []string `json:"available_accounts"`
+	PrivateKeys []string `json:"private_keys"`
+}
+
+func GetConfig() (*Config, error) {
+	fileData, err := os.ReadFile(chainConfigFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read chain config file: %v", err)
+	}
+
+	var data Config
+
+	if err := json.Unmarshal(fileData, &data); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal chain config JSON: %v", err)
+	}
+
+	return &data, nil
+}
 
 func startAnvil() error {
 	// Ensure the local directory exists
-	if err := os.MkdirAll(localDir, os.ModePerm); err != nil {
+	if err := os.MkdirAll(chainDir, os.ModePerm); err != nil {
 		return fmt.Errorf("failed to create local directory: %v", err)
 	}
 
-	lockFilePath := filepath.Join(localDir, constants.LockFile)
+	lockFilePath := filepath.Join(chainDir, constants.LockFile)
 	if _, err := os.Stat(lockFilePath); err == nil {
 		data, err := os.ReadFile(lockFilePath)
 		if err != nil {
@@ -30,16 +76,18 @@ func startAnvil() error {
 			return fmt.Errorf("failed to read PID from lock file: %v", err)
 		}
 
-		fmt.Printf("Chain is already started on PID %s (lock file exists)\n", pid)
+		fmt.Printf("Chain is already started on PID %d (lock file exists)\n", pid)
 		return nil
 	}
 
-	// SPIKE: Investigate if we can replace `anvil`
-	// TODO: Start and kill anvil with a flag to dump state and info
-	// This way, we can automate copying of anvil variables instead of having to do it manually
+	// SPIKE: Investigate if we can spin up `anvil` in docker
+	// to avoid the need for a local installation
 
 	// Start anvil in the background
-	cmd := exec.Command("anvil", "--silent")
+	cmd := exec.Command("anvil",
+		"--silent",
+		"--config-out", chainConfigFilePath,
+	)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
@@ -57,7 +105,7 @@ func startAnvil() error {
 }
 
 func stopAnvil() error {
-	lockFilePath := filepath.Join(localDir, constants.LockFile)
+	lockFilePath := filepath.Join(chainDir, constants.LockFile)
 
 	// Check if chain info file exists
 	if _, err := os.Stat(lockFilePath); err == nil {

@@ -117,6 +117,21 @@ type PublicKeys struct {
 	CSAPublicKey       string `json:"csaPublicKey"`
 }
 
+func GetPublicKeys(nodeID int) (*PublicKeys, error) {
+	nodeInfo := utils.GetNodeInfo(nodeID)
+	publicKeysBytes, err := os.ReadFile(nodeInfo.Paths.PublicKeys)
+	if err != nil {
+		return nil, err
+	}
+
+	var publicKeys PublicKeys
+	if json.Unmarshal(publicKeysBytes, &publicKeys) != nil {
+		return nil, fmt.Errorf("failed to unmarshal public keys")
+	}
+
+	return &publicKeys, nil
+}
+
 func FetchKeys(nodes int) error {
 	for i := 0; i < nodes; i++ {
 		nodeID := i + 1
