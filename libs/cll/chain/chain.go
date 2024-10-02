@@ -85,7 +85,6 @@ func startAnvil() error {
 
 	// Start anvil in the background
 	cmd := exec.Command("anvil",
-		"--silent",
 		"--config-out", chainConfigFilePath,
 	)
 	cmd.Stdout = os.Stdout

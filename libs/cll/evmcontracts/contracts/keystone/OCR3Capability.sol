@@ -30,22 +30,6 @@ contract OCR3Capability is ConfirmedOwner, OCR2Abstract {
      * Config logic
      */
 
-    // Reverts transaction if config args are invalid
-    modifier checkConfigValid(
-        uint256 numSigners,
-        uint256 numTransmitters,
-        uint256 f
-    ) {
-        if (numSigners > MAX_NUM_ORACLES)
-            revert InvalidConfig("too many signers");
-        if (f == 0) revert InvalidConfig("f must be positive");
-        if (numSigners != numTransmitters)
-            revert InvalidConfig("oracle addresses out of registration");
-        if (numSigners <= 3 * f)
-            revert InvalidConfig("faulty-oracle f too high");
-        _;
-    }
-
     /// @inheritdoc OCR2Abstract
     function latestConfigDigestAndEpoch()
         external
@@ -75,12 +59,7 @@ contract OCR3Capability is ConfirmedOwner, OCR2Abstract {
         bytes memory _onchainConfig,
         uint64 _offchainConfigVersion,
         bytes memory _offchainConfig
-    )
-        external
-        override
-        checkConfigValid(_signers.length, _transmitters.length, _f)
-        onlyOwner
-    {
+    ) external override onlyOwner {
         // Bounded by MAX_NUM_ORACLES in OCR2Abstract.sol
         for (uint256 i = 0; i < _signers.length; i++) {
             if (_transmitters[i] == address(0))
