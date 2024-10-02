@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	"github.com/smartcontractkit/capabilities/libs/cli/constants"
+	"github.com/smartcontractkit/capabilities/libs/cli/utils"
 )
 
 type nodeProcess struct {
@@ -26,7 +27,7 @@ func startNodes(args startNodesArgs) error {
 
 	for i := 0; i < args.nodes; i++ {
 		nodeID := i + 1
-		nodeDir := getNodeDir(nodeID)
+		nodeDir := utils.GetNodeDir(nodeID)
 		err := os.MkdirAll(nodeDir, os.ModePerm)
 		if err != nil {
 			return fmt.Errorf("failed to create node directory: %v", err)
@@ -38,7 +39,8 @@ func startNodes(args startNodesArgs) error {
 			continue
 		}
 
-		httpPort, prometheusPort := getPorts(nodeID)
+		nodeInfo := utils.GetNodeInfo(nodeID)
+
 		nodeLogsFilepath := filepath.Join(nodeDir, constants.ChainlinkNodeLogsFilename)
 		uiCredentialsFilepath := filepath.Join(nodeDir, constants.ChainlinkNodeUICredentialsFilename)
 		secretsFilepath := filepath.Join(nodeDir, constants.ChainlinkNodeSecretsFilename)
@@ -57,31 +59,24 @@ func startNodes(args startNodesArgs) error {
 		if err != nil {
 			return fmt.Errorf("failed to open log file: %v", err)
 		}
-
-		if args.logs {
-			cmd.Stderr = io.MultiWriter(logFile, os.Stderr)
-		} else {
-			cmd.Stderr = logFile
-		}
 		cmd.Stdout = os.Stdout // Optionally redirect stdout to terminal
 
-		// Output messages
-		fmt.Println("--------------------------------------------------")
-		fmt.Printf("Started Chainlink Node %d\n", nodeID)
-		fmt.Println("--------------------------------------------------")
-		fmt.Printf("Operator UI:\thttp://localhost:%d (credentials: %s)\n", httpPort, uiCredentialsFilepath)
-		fmt.Printf("Prometheus:\thttp://localhost:%d\n", prometheusPort)
-		fmt.Printf("Logs:\t\t%s\n", nodeLogsFilepath)
-
-		if i+1 == args.nodes {
-			fmt.Println("--------------------------------------------------")
-		}
-
-		// Start the Chainlink node process
-		err = cmd.Start()
-		if err != nil {
-			logFile.Close()
-			return fmt.Errorf("failed to start Chainlink node: %v", err)
+		if args.logs {
+			cmd.Stderr = io.MultiWriter(os.Stderr, logFile)
+			// Start the Chainlink node process
+			err = cmd.Run()
+			if err != nil {
+				logFile.Close()
+				return fmt.Errorf("failed to start Chainlink node: %v", err)
+			}
+		} else {
+			cmd.Stderr = logFile
+			// Start the Chainlink node process
+			err = cmd.Start()
+			if err != nil {
+				logFile.Close()
+				return fmt.Errorf("failed to start Chainlink node: %v", err)
+			}
 		}
 
 		// Store the PID in a .lock file
@@ -96,6 +91,18 @@ func startNodes(args startNodesArgs) error {
 			cmd:     cmd,
 			logFile: logFile,
 		})
+
+		// Output messages
+		fmt.Println("--------------------------------------------------")
+		fmt.Printf("Started Chainlink Node %d\n", nodeID)
+		fmt.Println("--------------------------------------------------")
+		fmt.Printf("Operator UI:\t%s (credentials: %s)\n", nodeInfo.URLs.HTTP, uiCredentialsFilepath)
+		fmt.Printf("Prometheus:\t%s\n", nodeInfo.URLs.Prometheus)
+		fmt.Printf("Logs:\t\t%s\n", nodeLogsFilepath)
+
+		if i+1 == args.nodes {
+			fmt.Println("--------------------------------------------------")
+		}
 	}
 
 	return nil

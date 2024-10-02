@@ -8,12 +8,13 @@ import (
 	"syscall"
 
 	"github.com/smartcontractkit/capabilities/libs/cli/constants"
+	"github.com/smartcontractkit/capabilities/libs/cli/utils"
 )
 
 func stopNodes(nodes int) error {
 	for i := 0; i < nodes; i++ {
 		nodeID := i + 1
-		nodeDir := getNodeDir(nodeID)
+		nodeDir := utils.GetNodeDir(nodeID)
 
 		lockFilePath := filepath.Join(nodeDir, constants.LockFile)
 		pidData, err := os.ReadFile(lockFilePath)

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/smartcontractkit/capabilities/libs/cli/constants"
+	"github.com/smartcontractkit/capabilities/libs/cli/utils"
 )
 
 func createNodes(nodes int) error {
@@ -18,7 +19,7 @@ func createNodes(nodes int) error {
 	}
 
 	// Create the user if it does not exist
-	if !contains(userCheckOutput, "1 row") {
+	if !utils.Contains(userCheckOutput, "1 row") {
 		createUserCmd := exec.Command("psql", "-q", "-U", "postgres", "-c", fmt.Sprintf("CREATE USER %s WITH SUPERUSER PASSWORD '%s';", constants.LocalDbUserName, constants.GenericPassword))
 		err = createUserCmd.Run()
 		if err != nil {
@@ -29,14 +30,14 @@ func createNodes(nodes int) error {
 	// Creating the nodes
 	for i := 0; i < nodes; i++ {
 		nodeID := i + 1
-		nodeDir := getNodeDir(nodeID)
+		nodeDir := utils.GetNodeDir(nodeID)
 
 		err := os.MkdirAll(nodeDir, os.ModePerm)
 		if err != nil {
 			return err
 		}
 
-		HTTPPort, P2PPort := getPorts(nodeID)
+		ports := utils.GetPorts(nodeID)
 
 		// Write the config file
 		configContent := fmt.Sprintf(`RootDir = '%s'
@@ -74,7 +75,7 @@ func createNodes(nodes int) error {
 	WSURL = 'ws://127.0.0.1:8545'
 	HTTPURL = 'http://127.0.0.1:8545'
 
-	`, nodeDir, P2PPort, HTTPPort)
+	`, nodeDir, ports.P2P, ports.HTTP)
 
 		configFilePath := filepath.Join(nodeDir, constants.ChainlinkNodeConfigFilename)
 		err = os.WriteFile(configFilePath, []byte(configContent), 0600)
@@ -83,7 +84,7 @@ func createNodes(nodes int) error {
 		}
 
 		// Create the secrets file
-		databaseURL := fmt.Sprintf("postgresql://%s:%s@localhost:5432/%s?sslmode=disable", constants.LocalDbUserName, constants.GenericPassword, getNodeDBName(nodeID))
+		databaseURL := fmt.Sprintf("postgresql://%s:%s@localhost:5432/%s?sslmode=disable", constants.LocalDbUserName, constants.GenericPassword, utils.GetNodeDBName(nodeID))
 		secretsContent := fmt.Sprintf(`[Database]
 	URL = "%s" # Required
 
@@ -113,15 +114,15 @@ func createNodes(nodes int) error {
 		}
 
 		// Check if the database exists
-		checkDBCmd := exec.Command("psql", "-U", "postgres", "-c", fmt.Sprintf("SELECT FROM pg_database WHERE datname = '%s';", getNodeDBName(nodeID)))
+		checkDBCmd := exec.Command("psql", "-U", "postgres", "-c", fmt.Sprintf("SELECT FROM pg_database WHERE datname = '%s';", utils.GetNodeDBName(nodeID)))
 		dbCheckOutput, err := checkDBCmd.Output()
 		if err != nil {
 			return err
 		}
 
 		// Drop the database if it exists
-		if contains(dbCheckOutput, "1 row") {
-			dropDBCmd := exec.Command("psql", "-q", "-U", "postgres", "-c", fmt.Sprintf("DROP DATABASE %s;", getNodeDBName(nodeID)))
+		if utils.Contains(dbCheckOutput, "1 row") {
+			dropDBCmd := exec.Command("psql", "-q", "-U", "postgres", "-c", fmt.Sprintf("DROP DATABASE %s;", utils.GetNodeDBName(nodeID)))
 			err = dropDBCmd.Run()
 			if err != nil {
 				return err
@@ -129,20 +130,20 @@ func createNodes(nodes int) error {
 		}
 
 		// Create the database
-		createDBCmd := exec.Command("psql", "-q", "-U", "postgres", "-c", fmt.Sprintf("CREATE DATABASE %s;", getNodeDBName(nodeID)))
+		createDBCmd := exec.Command("psql", "-q", "-U", "postgres", "-c", fmt.Sprintf("CREATE DATABASE %s;", utils.GetNodeDBName(nodeID)))
 		err = createDBCmd.Run()
 		if err != nil {
 			return err
 		}
 
 		// Grant privileges
-		grantCmd := exec.Command("psql", "-q", "-U", "postgres", "-c", fmt.Sprintf("GRANT ALL ON DATABASE %s TO %s;", getNodeDBName(nodeID), constants.LocalDbUserName))
+		grantCmd := exec.Command("psql", "-q", "-U", "postgres", "-c", fmt.Sprintf("GRANT ALL ON DATABASE %s TO %s;", utils.GetNodeDBName(nodeID), constants.LocalDbUserName))
 		err = grantCmd.Run()
 		if err != nil {
 			return err
 		}
 
-		fmt.Printf("Chainlink Node %d created! (%s directory, %s database)\n", nodeID, nodeDir, getNodeDBName(nodeID))
+		fmt.Printf("Chainlink Node %d created! (%s directory, %s database)\n", nodeID, nodeDir, utils.GetNodeDBName(nodeID))
 	}
 
 	return nil

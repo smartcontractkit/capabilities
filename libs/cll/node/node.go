@@ -93,6 +93,43 @@ var Commands = []*cli.Command{
 					return stopNodes(c.Int("nodes"))
 				},
 			},
+			{
+				Name:  "refresh",
+				Usage: "Refresh local nodes",
+				Flags: []cli.Flag{
+					&cli.IntFlag{
+						Name:  "nodes",
+						Value: 1,
+						Usage: "Number of nodes to start",
+					},
+					&cli.BoolFlag{
+						Aliases: []string{"l"},
+						Name:    "logs",
+						Value:   false,
+						Usage:   "Redirect logs to terminal",
+					},
+				},
+				Action: func(c *cli.Context) error {
+					err := stopNodes(c.Int("nodes"))
+					if err != nil {
+						return err
+					}
+					err = removeNodes(c.Int("nodes"))
+					if err != nil {
+						return err
+					}
+
+					err = createNodes(c.Int("nodes"))
+					if err != nil {
+						return err
+					}
+
+					return startNodes(startNodesArgs{
+						nodes: c.Int("nodes"),
+						logs:  c.Bool("logs"),
+					})
+				},
+			},
 		},
 	},
 }

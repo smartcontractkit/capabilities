@@ -7,12 +7,13 @@ import (
 	"strings"
 
 	"github.com/smartcontractkit/capabilities/libs/cli/constants"
+	"github.com/smartcontractkit/capabilities/libs/cli/utils"
 )
 
 func removeNodes(nodes int) error {
 	for i := 0; i < nodes; i++ {
 		nodeID := i + 1
-		nodeDir := getNodeDir(nodeID)
+		nodeDir := utils.GetNodeDir(nodeID)
 
 		if _, err := os.Stat(nodeDir); !os.IsNotExist(err) {
 			lockFilePath := filepath.Join(nodeDir, constants.LockFile)
@@ -29,9 +30,9 @@ func removeNodes(nodes int) error {
 			// Check if the database exists
 			checkDBCmd := []string{
 				"-U", "postgres",
-				"-tAc", fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname='%s'", getNodeDBName(nodeID)),
+				"-tAc", fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname='%s'", utils.GetNodeDBName(nodeID)),
 			}
-			dbCheckOutput, err := execCommand("psql", checkDBCmd...)
+			dbCheckOutput, err := utils.ExecCommand("psql", checkDBCmd...)
 			if err != nil {
 				return fmt.Errorf("failed to check database: %v", err)
 			}
@@ -42,15 +43,15 @@ func removeNodes(nodes int) error {
 			if dbExists {
 				dropDBCmd := []string{
 					"-U", "postgres",
-					"-c", fmt.Sprintf("DROP DATABASE %s;", getNodeDBName(nodeID)),
+					"-c", fmt.Sprintf("DROP DATABASE %s;", utils.GetNodeDBName(nodeID)),
 				}
-				_, err = execCommand("psql", dropDBCmd...)
+				_, err = utils.ExecCommand("psql", dropDBCmd...)
 				if err != nil {
 					return fmt.Errorf("failed to drop database: %v", err)
 				}
 			}
 
-			fmt.Printf("Chainlink Node %d removed! (%s directory, %s database)\n", nodeID, getNodeDir(nodeID), getNodeDBName(nodeID))
+			fmt.Printf("Chainlink Node %d removed! (%s directory, %s database)\n", nodeID, utils.GetNodeDir(nodeID), utils.GetNodeDBName(nodeID))
 		} else {
 			// Directory does not exist
 			fmt.Printf("Chainlink Node %d not found! (%s directory)\n", nodeID, nodeDir)
