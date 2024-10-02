@@ -1,24 +1,17 @@
 package chain
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"syscall"
+	"strconv"
 
+	"github.com/smartcontractkit/capabilities/libs/cli/constants"
 	"github.com/urfave/cli/v2"
 )
 
-const localDir = ".local"
-
-// File to store the process ID of the anvil client
-const chainInfoFile = "chain_info.json"
-
-type chainInfo struct {
-	PID int `json:"pid"`
-}
+const localDir = ".local/chain"
 
 func startAnvil() error {
 	// Ensure the local directory exists
@@ -26,21 +19,19 @@ func startAnvil() error {
 		return fmt.Errorf("failed to create local directory: %v", err)
 	}
 
-	chainInfoPath := filepath.Join(localDir, chainInfoFile)
-
-	// Check if anvil is already running
-	if _, err := os.Stat(chainInfoPath); err == nil {
-		data, _ := os.ReadFile(chainInfoPath)
-		var info chainInfo
-		if err := json.Unmarshal(data, &info); err == nil {
-			process, err := os.FindProcess(info.PID)
-			if err == nil && process.Signal(syscall.Signal(0)) == nil {
-				fmt.Printf("Anvil is already running with PID %d\n", info.PID)
-				return nil
-			}
-
-			fmt.Println("Found stale PID file. Starting a new instance.")
+	lockFilePath := filepath.Join(localDir, constants.LockFile)
+	if _, err := os.Stat(lockFilePath); err == nil {
+		data, err := os.ReadFile(lockFilePath)
+		if err != nil {
+			return fmt.Errorf("failed to read lock file: %v", err)
 		}
+		pid, err := strconv.Atoi(string(data))
+		if err != nil {
+			return fmt.Errorf("failed to read PID from lock file: %v", err)
+		}
+
+		fmt.Printf("Chain is already started on PID %s (lock file exists)\n", pid)
+		return nil
 	}
 
 	// SPIKE: Investigate if we can replace `anvil`
@@ -48,7 +39,7 @@ func startAnvil() error {
 	// This way, we can automate copying of anvil variables instead of having to do it manually
 
 	// Start anvil in the background
-	cmd := exec.Command("anvil")
+	cmd := exec.Command("anvil", "--silent")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
@@ -56,47 +47,46 @@ func startAnvil() error {
 		return fmt.Errorf("failed to start anvil: %v", err)
 	}
 
-	// Save the process ID to a file
-	info := chainInfo{PID: cmd.Process.Pid}
-	data, err := json.Marshal(info)
+	err := os.WriteFile(lockFilePath, []byte(strconv.Itoa(cmd.Process.Pid)), 0600)
 	if err != nil {
-		return fmt.Errorf("failed to marshal chain info: %v", err)
+		return fmt.Errorf("failed to write lock file: %v", err)
 	}
 
-	if err := os.WriteFile(chainInfoPath, data, 0600); err != nil {
-		return fmt.Errorf("failed to write chain info file: %v", err)
-	}
-
-	fmt.Printf("Anvil started with PID %d\n", info.PID)
+	fmt.Printf("Chain started (PID %d)\n", cmd.Process.Pid)
 	return nil
 }
 
 func stopAnvil() error {
-	chainInfoPath := filepath.Join(localDir, chainInfoFile)
+	lockFilePath := filepath.Join(localDir, constants.LockFile)
 
 	// Check if chain info file exists
-	if _, err := os.Stat(chainInfoPath); err == nil {
-		data, _ := os.ReadFile(chainInfoPath)
-		var info chainInfo
-		if err := json.Unmarshal(data, &info); err == nil {
-			process, err := os.FindProcess(info.PID)
-			if err != nil {
-				return fmt.Errorf("failed to find process: %v", err)
-			}
-
-			// Kill the process
-			if err := process.Kill(); err != nil {
-				return fmt.Errorf("failed to kill anvil: %v", err)
-			}
-
-			// Clean up the chain info file
-			if err := os.Remove(chainInfoPath); err != nil {
-				return fmt.Errorf("failed to remove chain info file: %v", err)
-			}
-
-			fmt.Printf("Anvil stopped (PID %d)\n", info.PID)
-			return nil
+	if _, err := os.Stat(lockFilePath); err == nil {
+		data, err := os.ReadFile(lockFilePath)
+		if err != nil {
+			return fmt.Errorf("failed to read lock file: %v", err)
 		}
+		pid, err := strconv.Atoi(string(data))
+		if err != nil {
+			return fmt.Errorf("failed to read PID from lock file: %v", err)
+		}
+
+		process, err := os.FindProcess(pid)
+		if err != nil {
+			return fmt.Errorf("failed to find process: %v", err)
+		}
+
+		// Kill the process
+		if err := process.Kill(); err != nil {
+			return fmt.Errorf("failed to kill anvil: %v", err)
+		}
+
+		// Clean up the chain info file
+		if err := os.Remove(lockFilePath); err != nil {
+			return fmt.Errorf("failed to remove chain info file: %v", err)
+		}
+
+		fmt.Printf("Chain stopped (PID %d)\n", pid)
+		return nil
 	}
 
 	fmt.Println("Anvil is not running.")

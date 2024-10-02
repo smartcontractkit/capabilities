@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 
 	"github.com/smartcontractkit/capabilities/libs/cli/constants"
 )
@@ -29,6 +30,12 @@ func startNodes(args startNodesArgs) error {
 		err := os.MkdirAll(nodeDir, os.ModePerm)
 		if err != nil {
 			return fmt.Errorf("failed to create node directory: %v", err)
+		}
+
+		lockFilePath := filepath.Join(nodeDir, ".lock")
+		if _, err := os.Stat(lockFilePath); err == nil {
+			fmt.Printf("Node %d is already started (lock file exists)\n", nodeID)
+			continue
 		}
 
 		httpPort, prometheusPort := getPorts(nodeID)
@@ -74,20 +81,18 @@ func startNodes(args startNodesArgs) error {
 			return fmt.Errorf("failed to start Chainlink node: %v", err)
 		}
 
+		// Store the PID in a .lock file
+		err = os.WriteFile(lockFilePath, []byte(strconv.Itoa(cmd.Process.Pid)), 0600)
+		if err != nil {
+			logFile.Close()
+			return fmt.Errorf("failed to write lock file: %v", err)
+		}
+
 		// Keep track of the command and the log file
 		nodeProcesses = append(nodeProcesses, nodeProcess{
 			cmd:     cmd,
 			logFile: logFile,
 		})
-	}
-
-	// Wait for all processes to finish
-	for _, np := range nodeProcesses {
-		err := np.cmd.Wait()
-		np.logFile.Close()
-		if err != nil {
-			return fmt.Errorf("Chainlink node exited with error: %v", err)
-		}
 	}
 
 	return nil
