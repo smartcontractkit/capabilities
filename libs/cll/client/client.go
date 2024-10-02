@@ -22,6 +22,7 @@ var Commands = []*cli.Command{
 						Aliases:  []string{"d"},
 						Name:     "dir",
 						Usage:    "Location of the local Chainlink repository",
+						EnvVars:  []string{"CLL_CHAINLINK_DIRECTORY"},
 						Required: true,
 					},
 					&cli.StringFlag{
