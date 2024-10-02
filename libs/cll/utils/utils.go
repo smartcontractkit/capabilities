@@ -55,6 +55,7 @@ func ExecCommand(name string, args ...string) ([]byte, error) {
 type Paths struct {
 	Dir         string
 	Credentials string
+	PublicKeys  string
 }
 
 type URLs struct {
@@ -74,6 +75,7 @@ func GetNodeInfo(nodeID int) NodeInfo {
 		Paths: Paths{
 			Dir:         GetNodeDir(nodeID),
 			Credentials: filepath.Join(GetNodeDir(nodeID), constants.ChainlinkNodeUICredentialsFilename),
+			PublicKeys:  filepath.Join(GetNodeDir(nodeID), constants.ChainlinkNodePublicKeysFilename),
 		},
 		URLs: URLs{
 			HTTP:       fmt.Sprintf("http://localhost:%d", ports.HTTP),

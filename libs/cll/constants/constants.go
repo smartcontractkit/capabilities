@@ -12,6 +12,7 @@ const (
 	ChainlinkNodeSecretsFilename       = "secrets.toml"
 	ChainlinkNodeUICredentialsFilename = "apicredentials"
 	ChainlinkNodeKeystorePasswordFile  = "password.txt"
+	ChainlinkNodePublicKeysFilename    = "public_keys.json"
 	GenericEmail                       = "user@example.com"
 	GenericPassword                    = "33tBi4m7CFP5gK2jyaManRxcvLVQSHYB"
 	KeystorePassword                   = "eh&Vaj4!dM622VE#Lb$Y7UUzw$NpiJg7"

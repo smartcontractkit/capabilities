@@ -94,6 +94,20 @@ var Commands = []*cli.Command{
 				},
 			},
 			{
+				Name:  "fetch-keys",
+				Usage: "Fetch keys from the local nodes",
+				Flags: []cli.Flag{
+					&cli.IntFlag{
+						Name:  "nodes",
+						Value: 1,
+						Usage: "Number of nodes to stop",
+					},
+				},
+				Action: func(c *cli.Context) error {
+					return FetchKeys(c.Int("nodes"))
+				},
+			},
+			{
 				Name:  "refresh",
 				Usage: "Refresh local nodes",
 				Flags: []cli.Flag{
@@ -124,10 +138,14 @@ var Commands = []*cli.Command{
 						return err
 					}
 
-					return startNodes(startNodesArgs{
+					err = startNodes(startNodesArgs{
 						nodes: c.Int("nodes"),
 						logs:  c.Bool("logs"),
 					})
+					if err != nil {
+						return err
+					}
+					return FetchKeys(c.Int("nodes"))
 				},
 			},
 		},

@@ -13,7 +13,7 @@ func Login(nodeID int) error {
 	nodeInfo := utils.GetNodeInfo(nodeID)
 	var err error
 
-	fmt.Printf("Logging in to Node %d", nodeID)
+	fmt.Printf("Logging in to Node %d.", nodeID)
 
 	for i := 0; i < 5; i++ {
 		// Login to the node
@@ -27,7 +27,7 @@ func Login(nodeID int) error {
 
 		err = cmd.Run()
 		if err == nil {
-			fmt.Printf("\n")
+			fmt.Printf(" Success!\n")
 			return nil
 		}
 
