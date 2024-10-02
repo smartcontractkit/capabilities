@@ -72,7 +72,10 @@ func startNodes(args startNodesArgs) error {
 		fmt.Printf("Operator UI:\thttp://localhost:%d (credentials: %s)\n", httpPort, uiCredentialsFilepath)
 		fmt.Printf("Prometheus:\thttp://localhost:%d\n", prometheusPort)
 		fmt.Printf("Logs:\t\t%s\n", nodeLogsFilepath)
-		fmt.Println("--------------------------------------------------")
+
+		if i+1 == args.nodes {
+			fmt.Println("--------------------------------------------------")
+		}
 
 		// Start the Chainlink node process
 		err = cmd.Start()

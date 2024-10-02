@@ -3,7 +3,10 @@ package node
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
+
+	"github.com/smartcontractkit/capabilities/libs/cli/constants"
 )
 
 func removeNodes(nodes int) error {
@@ -12,7 +15,12 @@ func removeNodes(nodes int) error {
 		nodeDir := getNodeDir(nodeID)
 
 		if _, err := os.Stat(nodeDir); !os.IsNotExist(err) {
-			// Directory exists
+			lockFilePath := filepath.Join(nodeDir, constants.LockFile)
+			if _, err := os.Stat(lockFilePath); err == nil {
+				return fmt.Errorf("node %d is running (lock file exists)", nodeID)
+			}
+
+			// Directory exists and node is not running
 			err = os.RemoveAll(nodeDir)
 			if err != nil {
 				return fmt.Errorf("failed to remove directory %s: %v", nodeDir, err)
