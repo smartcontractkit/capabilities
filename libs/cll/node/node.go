@@ -79,6 +79,20 @@ var Commands = []*cli.Command{
 					})
 				},
 			},
+			{
+				Name:  "stop",
+				Usage: "Stop local nodes",
+				Flags: []cli.Flag{
+					&cli.IntFlag{
+						Name:  "nodes",
+						Value: 1,
+						Usage: "Number of nodes to stop",
+					},
+				},
+				Action: func(c *cli.Context) error {
+					return stopNodes(c.Int("nodes"))
+				},
+			},
 		},
 	},
 }

@@ -32,7 +32,7 @@ func startNodes(args startNodesArgs) error {
 			return fmt.Errorf("failed to create node directory: %v", err)
 		}
 
-		lockFilePath := filepath.Join(nodeDir, ".lock")
+		lockFilePath := filepath.Join(nodeDir, constants.LockFile)
 		if _, err := os.Stat(lockFilePath); err == nil {
 			fmt.Printf("Node %d is already started (lock file exists)\n", nodeID)
 			continue
