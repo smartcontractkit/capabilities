@@ -59,7 +59,7 @@ func GetConfig() (*Config, error) {
 	return &data, nil
 }
 
-func startAnvil() error {
+func startAnvil(silent bool) error {
 	// Ensure the local directory exists
 	if err := os.MkdirAll(chainDir, os.ModePerm); err != nil {
 		return fmt.Errorf("failed to create local directory: %v", err)
@@ -83,10 +83,16 @@ func startAnvil() error {
 	// SPIKE: Investigate if we can spin up `anvil` in docker
 	// to avoid the need for a local installation
 
-	// Start anvil in the background
-	cmd := exec.Command("anvil",
+	args := []string{
 		"--config-out", chainConfigFilePath,
-	)
+	}
+
+	if silent {
+		args = append(args, "--silent")
+	}
+
+	// Start anvil in the background
+	cmd := exec.Command("anvil", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
@@ -148,8 +154,15 @@ var Commands = []*cli.Command{
 			{
 				Name:  "start",
 				Usage: "Start the anvil client",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:  "silent",
+						Usage: "Silent mode",
+						Value: true,
+					},
+				},
 				Action: func(c *cli.Context) error {
-					return startAnvil()
+					return startAnvil(c.Bool("silent"))
 				},
 			},
 			{
@@ -162,11 +175,18 @@ var Commands = []*cli.Command{
 			{
 				Name:  "restart",
 				Usage: "Restart the anvil client",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:  "silent",
+						Usage: "Silent mode",
+						Value: true,
+					},
+				},
 				Action: func(c *cli.Context) error {
 					if err := stopAnvil(); err != nil {
 						return err
 					}
-					return startAnvil()
+					return startAnvil(c.Bool("silent"))
 				},
 			},
 		},
