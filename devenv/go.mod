@@ -4,6 +4,7 @@ go 1.23.0
 
 require (
 	github.com/go-chi/chi/v5 v5.0.7
+	github.com/moby/moby v27.3.1+incompatible
 	github.com/smartcontractkit/chainlink-common v0.2.3-0.20240919092417-53e784c2e420
 	github.com/smartcontractkit/chainlink/v2 v2.14.0-mercury-20240807.0.20240920163134-ec585d456580
 	go.uber.org/zap v1.27.0
