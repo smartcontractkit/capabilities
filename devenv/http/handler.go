@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	common "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities"
@@ -19,8 +20,9 @@ type Handler interface {
 	// GetCapabilitiyInfo returns the capability info for a given capability ID
 	GetCapabilityInfo(w http.ResponseWriter, r *http.Request)
 
-	// TargetExecute calls the Execute method on the target capability for a given capability ID
-	TargetExecute(w http.ResponseWriter, r *http.Request)
+	// Execute calls the Execute method on a capability for a given capability ID.  Fails if the
+	// capability is not executable.
+	Execute(w http.ResponseWriter, r *http.Request)
 }
 
 // handler is a wrapper for a Standard Capabilities Service
@@ -156,7 +158,7 @@ func (h *handler) GetCapabilityInfo(w http.ResponseWriter, r *http.Request) {
 	w.Write(desc)
 }
 
-func (h *handler) TargetExecute(w http.ResponseWriter, r *http.Request) {
+func (h *handler) Execute(w http.ResponseWriter, r *http.Request) {
 	var b body
 	if err := json.NewDecoder(r.Body).Decode(&b); err != nil {
 		h.logger.Error(err)
@@ -171,21 +173,28 @@ func (h *handler) TargetExecute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cap, err := h.capabilityRegistry.GetTarget(r.Context(), b.ID)
+	cap, err := h.capabilityRegistry.Get(r.Context(), b.ID)
 	if err != nil {
 		h.logger.Error(err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	res, err := cap.Execute(r.Context(), req)
+	executable, ok := cap.(common.Executable)
+	if !ok {
+		h.logger.Error("capability is not executable")
+		http.Error(w, "capability is not executable", http.StatusBadRequest)
+		return
+	}
+
+	res, err := executable.Execute(r.Context(), req)
 	if err != nil {
 		h.logger.Error(err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	var out map[string]interface{}
+	var out map[string]any
 	if err := res.Value.UnwrapTo(&out); err != nil {
 		h.logger.Error(err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)

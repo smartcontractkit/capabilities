@@ -28,11 +28,11 @@ $ curl --request POST \
 }'
 ```
 
-### Call Execute on a Target Capability
+### Call Execute on a Capability
 
 ```bash
 $ curl --request POST \
-  --url http://localhost:3000/capability/target/execute \
+  --url http://localhost:3000/capability/execute \
   --header 'Content-Type: application/json' \
 
   --data '{

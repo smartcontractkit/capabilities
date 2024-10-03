@@ -65,6 +65,6 @@ func createRouter(h Handler) *chi.Mux {
 	router := chi.NewRouter()
 	router.Get("/infos", h.Infos)
 	router.Post("/capability/get/info", h.GetCapabilityInfo)
-	router.Post("/capability/target/execute", h.TargetExecute)
+	router.Post("/capability/execute", h.Execute)
 	return router
 }
