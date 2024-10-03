@@ -144,7 +144,7 @@ func (cs *CapabilitiesService) Initialise(
 	}
 
 	pluginProvider, err := relayer.NewPluginProvider(ctx, core.RelayArgs{
-		ContractID:   "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e",
+		ContractID:   "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
 		ProviderType: "plugin",
 		RelayConfig:  relayConfigBytes,
 	}, core.PluginArgs{

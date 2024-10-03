@@ -68,11 +68,16 @@ type URLs struct {
 
 type NodeInfo struct {
 	Paths Paths
+	Ports Ports
 	URLs  URLs
 }
 
 func GetNodeInfo(nodeID int) NodeInfo {
-	ports := GetPorts(nodeID)
+	ports := Ports{
+		HTTP:       6688 + nodeID,
+		P2P:        8000 + nodeID,
+		Prometheus: 5680 + nodeID,
+	}
 	nodeDir := GetNodeDir(nodeID)
 	return NodeInfo{
 		Paths: Paths{
@@ -82,6 +87,7 @@ func GetNodeInfo(nodeID int) NodeInfo {
 			Jobs:         filepath.Join(nodeDir, constants.ChainlinkNodeJobsDir),
 			PublicKeys:   filepath.Join(nodeDir, constants.ChainlinkNodePublicKeysFilename),
 		},
+		Ports: ports,
 		URLs: URLs{
 			HTTP:       fmt.Sprintf("http://localhost:%d", ports.HTTP),
 			P2P:        fmt.Sprintf("http://localhost:%d", ports.P2P),

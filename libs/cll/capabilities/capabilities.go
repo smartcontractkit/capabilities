@@ -21,6 +21,11 @@ var Commands = []*cli.Command{
 				Name:  "add",
 				Usage: "Add capabilities to the local node",
 				Flags: []cli.Flag{
+					&cli.IntFlag{
+						Name:     "bootstrap-node-id",
+						Usage:    "Bootstrap Node ID",
+						Required: true,
+					},
 					&cli.StringSliceFlag{
 						Aliases:  []string{"c"},
 						Name:     "capabilities",
@@ -37,6 +42,13 @@ var Commands = []*cli.Command{
 				Action: func(c *cli.Context) error {
 					capabilities := c.StringSlice("capabilities")
 					nodeIDs := c.IntSlice("nodeIDs")
+					bootstrapNodeID := c.Int("bootstrap-node-id")
+
+					bootstrapNodeInfo := utils.GetNodeInfo(bootstrapNodeID)
+					bootstrapPublicKeys, err := node.GetPublicKeys(bootstrapNodeID)
+					if err != nil {
+						return fmt.Errorf("failed to get public keys for bootstrap node: %w", err)
+					}
 
 					for _, nodeID := range nodeIDs {
 						err := node.Login(nodeID)
@@ -52,8 +64,37 @@ var Commands = []*cli.Command{
 							if err != nil {
 								return fmt.Errorf("failed to get binaries directory: %w", err)
 							}
+
+							// capabilitiesSpecLockPath := filepath.Join(
+							// 	nodeInfo.Paths.Jobs,
+							// 	fmt.Sprintf("%s_job_id.lock", name),
+							// )
+
+							// capabilitiesSpecID, err := os.ReadFile(capabilitiesSpecLockPath)
+							// if err == nil {
+							// 	// Remove an existing job first
+							// 	_, err2 := utils.ExecCommand(
+							// 		constants.ChainlinkBinaryLocation,
+							// 		"--remote-node-url", nodeInfo.URLs.HTTP,
+							// 		"--admin-credentials-file", nodeInfo.Paths.Credentials,
+							// 		"jobs", "delete",
+							// 		string(capabilitiesSpecID),
+							// 	)
+
+							// 	if err2 != nil {
+							// 		return fmt.Errorf("failed to remove %s capabilities from node %d: %w", name, nodeID, err2)
+							// 	}
+
+							// 	fmt.Printf("Removed %s capabilities from node ID %d\n", name, nodeID)
+							// } else {
+							// 	if !os.IsNotExist(err) {
+							// 		return fmt.Errorf("failed to read capabilities ID lock file: %w", err)
+							// 	}
+							// 	// Else progress to adding the capabilities
+							// }
+
 							capabilitiesSpecPath := filepath.Join(
-								nodeInfo.Paths.Dir,
+								nodeInfo.Paths.Capabilities,
 								fmt.Sprintf("%s_capabilities_spec.toml", name),
 							)
 							capabilitiesBinaryPath := filepath.Join(binariesDir, name)
@@ -63,8 +104,8 @@ var Commands = []*cli.Command{
 schemaVersion = 1
 name = "%s-capabilities"
 command="%s"
-config=""`,
-								name, capabilitiesBinaryPath)
+config = '''{"enabled": true, "traceLogging": true, "bootstrapPeers": [ "%s@localhost:%d" ]}'''
+`, name, capabilitiesBinaryPath, bootstrapPublicKeys.P2PPeerID, bootstrapNodeInfo.Ports.P2P)
 
 							err = os.WriteFile(capabilitiesSpecPath, []byte(capabilitiesSpec), 0600)
 							if err != nil {
@@ -81,13 +122,25 @@ config=""`,
 								capabilitiesSpecPath,
 							)
 
-							fmt.Println("output", string(output))
-							// TODO: Correctly handle error responses from CLI
-							// TODO: Store job ID so it is easier to remove
-
 							if err != nil {
 								return fmt.Errorf("failed to add %s capabilities to node %d: %w", name, nodeID, err)
 							}
+
+							// TODO: Bring back once job deletion also removes the capabilities from the registry
+							// newJobID, err := jobs.ParseJobID(string(output))
+							// if err != nil {
+							// 	fmt.Println("output: ", string(output))
+							// 	return fmt.Errorf("failed to parse job ID: %w", err)
+							// }
+							// fmt.Println("newJobID", newJobID)
+
+							// if err = os.WriteFile(capabilitiesSpecLockPath, []byte(newJobID), 0600); err != nil {
+							// 	return fmt.Errorf("failed to write job ID to lock file: %w", err)
+							// }
+
+							fmt.Println("output", string(output))
+							// TODO: Correctly handle error responses from CLI
+							// TODO: Store job ID so it is easier to remove
 
 							fmt.Printf("Added %s capabilities to node %d\n", name, nodeID)
 						}
