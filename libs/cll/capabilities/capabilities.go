@@ -3,7 +3,6 @@ package capabilities
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 
 	"github.com/urfave/cli/v2"
@@ -74,7 +73,7 @@ config=""`,
 
 							nodeInfo := utils.GetNodeInfo(nodeID)
 							// Login to the node
-							cmd := exec.Command(
+							output, err := utils.ExecCommand(
 								constants.ChainlinkBinaryLocation,
 								"--remote-node-url", nodeInfo.URLs.HTTP,
 								"--admin-credentials-file", nodeInfo.Paths.Credentials,
@@ -82,7 +81,11 @@ config=""`,
 								capabilitiesSpecPath,
 							)
 
-							if err := cmd.Run(); err != nil {
+							fmt.Println("output", string(output))
+							// TODO: Correctly handle error responses from CLI
+							// TODO: Store job ID so it is easier to remove
+
+							if err != nil {
 								return fmt.Errorf("failed to add %s capabilities to node %d: %w", name, nodeID, err)
 							}
 

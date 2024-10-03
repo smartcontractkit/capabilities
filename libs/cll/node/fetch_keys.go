@@ -132,10 +132,8 @@ func GetPublicKeys(nodeID int) (*PublicKeys, error) {
 	return &publicKeys, nil
 }
 
-func FetchKeys(nodes int) error {
-	for i := 0; i < nodes; i++ {
-		nodeID := i + 1
-
+func FetchKeys(nodeIDs []int) error {
+	for _, nodeID := range nodeIDs {
 		err := Login(nodeID)
 		if err != nil {
 			return fmt.Errorf("failed to login to node %d: %w", nodeID, err)

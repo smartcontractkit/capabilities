@@ -10,9 +10,8 @@ import (
 	"github.com/smartcontractkit/capabilities/libs/cli/utils"
 )
 
-func removeNodes(nodes int) error {
-	for i := 0; i < nodes; i++ {
-		nodeID := i + 1
+func removeNodes(nodeIDs []int) error {
+	for _, nodeID := range nodeIDs {
 		nodeDir := utils.GetNodeDir(nodeID)
 
 		if _, err := os.Stat(nodeDir); !os.IsNotExist(err) {

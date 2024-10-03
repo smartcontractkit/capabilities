@@ -66,7 +66,7 @@ func NewContractConfigTracker(logger logger.Logger, oracleIdentity Identity) (*c
 					OnchainPublicKey:  oracleIdentity.PublicKey,
 					OffchainPublicKey: oracleIdentity.OffchainPublicKey,
 					PeerID:            oracleIdentity.PeerID,
-					TransmitAccount:   "",
+					TransmitAccount:   types.Account(oracleIdentity.EVMKey),
 				},
 				ConfigEncryptionPublicKey: oracleIdentity.ConfigEncryptionPublicKey,
 			},

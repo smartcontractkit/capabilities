@@ -10,7 +10,7 @@ import (
 	"github.com/smartcontractkit/capabilities/libs/cli/utils"
 )
 
-func createNodes(nodes int) error {
+func createNodes(nodeIDs []int) error {
 	// Check if the constants.LocalDbUserName exists
 	checkUserCmd := exec.Command("psql", "-U", "postgres", "-c", fmt.Sprintf("SELECT FROM pg_catalog.pg_roles WHERE rolname = '%s';", constants.LocalDbUserName))
 	userCheckOutput, err := checkUserCmd.Output()
@@ -28,8 +28,7 @@ func createNodes(nodes int) error {
 	}
 
 	// Creating the nodes
-	for i := 0; i < nodes; i++ {
-		nodeID := i + 1
+	for _, nodeID := range nodeIDs {
 		nodeInfo := utils.GetNodeInfo(nodeID)
 
 		err = os.MkdirAll(nodeInfo.Paths.Capabilities, os.ModePerm)

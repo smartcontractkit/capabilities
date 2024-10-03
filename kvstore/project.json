@@ -30,7 +30,7 @@
       "executor": "nx:run-commands",
       "options": {
         "cwd": "{projectRoot}",
-        "command": "go build -o ./../../bin/{projectName} ."
+        "command": "go build -o ./../bin/{projectName} ."
       }
     },
     "generate": {

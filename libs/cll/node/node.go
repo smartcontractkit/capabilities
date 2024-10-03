@@ -13,57 +13,57 @@ var Commands = []*cli.Command{
 				Name:  "create",
 				Usage: "Create new local nodes",
 				Flags: []cli.Flag{
-					&cli.IntFlag{
-						Name:  "nodes",
-						Value: 1,
-						Usage: "Number of nodes to create",
+					&cli.IntSliceFlag{
+						Name:     "nodeIDs",
+						Usage:    "Node IDs to create",
+						Required: true,
 					},
 				},
 				Action: func(c *cli.Context) error {
-					return createNodes(c.Int("nodes"))
+					return createNodes(c.IntSlice("nodes"))
 				},
 			},
 			{
 				Name:  "remove",
 				Usage: "Remove local nodes",
 				Flags: []cli.Flag{
-					&cli.IntFlag{
-						Name:  "nodes",
-						Value: 1,
-						Usage: "Number of nodes to remove",
+					&cli.IntSliceFlag{
+						Name:     "nodes",
+						Usage:    "Node IDs to remove",
+						Required: true,
 					},
 				},
 				Action: func(c *cli.Context) error {
-					return removeNodes(c.Int("nodes"))
+					return removeNodes(c.IntSlice("nodes"))
 				},
 			},
 			{
 				Name:  "reset",
 				Usage: "Reset local nodes",
 				Flags: []cli.Flag{
-					&cli.IntFlag{
-						Name:  "nodes",
-						Value: 1,
-						Usage: "Number of nodes to reset",
+					&cli.IntSliceFlag{
+						Name:     "nodes",
+						Usage:    "Node IDs to resets",
+						Required: true,
 					},
 				},
 				Action: func(c *cli.Context) error {
-					err := removeNodes(c.Int("nodes"))
+					err := removeNodes(c.IntSlice("nodes"))
 					if err != nil {
 						return err
 					}
 
-					return createNodes(c.Int("nodes"))
+					return createNodes(c.IntSlice("nodes"))
 				},
 			},
 			{
 				Name:  "start",
 				Usage: "Start local nodes",
 				Flags: []cli.Flag{
-					&cli.IntFlag{
-						Name:  "nodes",
-						Value: 1,
-						Usage: "Number of nodes to start",
+					&cli.IntSliceFlag{
+						Name:     "nodes",
+						Usage:    "Node IDs to start",
+						Required: true,
 					},
 					&cli.BoolFlag{
 						Aliases: []string{"l"},
@@ -74,8 +74,8 @@ var Commands = []*cli.Command{
 				},
 				Action: func(c *cli.Context) error {
 					return startNodes(startNodesArgs{
-						nodes: c.Int("nodes"),
-						logs:  c.Bool("logs"),
+						nodeIDs: c.IntSlice("nodes"),
+						logs:    c.Bool("logs"),
 					})
 				},
 			},
@@ -83,38 +83,38 @@ var Commands = []*cli.Command{
 				Name:  "stop",
 				Usage: "Stop local nodes",
 				Flags: []cli.Flag{
-					&cli.IntFlag{
-						Name:  "nodes",
-						Value: 1,
-						Usage: "Number of nodes to stop",
+					&cli.IntSliceFlag{
+						Name:     "nodes",
+						Usage:    "Node IDs to stop",
+						Required: true,
 					},
 				},
 				Action: func(c *cli.Context) error {
-					return stopNodes(c.Int("nodes"))
+					return stopNodes(c.IntSlice("nodes"))
 				},
 			},
 			{
 				Name:  "fetch-keys",
 				Usage: "Fetch keys from the local nodes",
 				Flags: []cli.Flag{
-					&cli.IntFlag{
-						Name:  "nodes",
-						Value: 1,
-						Usage: "Number of nodes to stop",
+					&cli.IntSliceFlag{
+						Name:     "nodes",
+						Usage:    "Node IDs to fetch keys from",
+						Required: true,
 					},
 				},
 				Action: func(c *cli.Context) error {
-					return FetchKeys(c.Int("nodes"))
+					return FetchKeys(c.IntSlice("nodes"))
 				},
 			},
 			{
 				Name:  "refresh",
 				Usage: "Refresh local nodes",
 				Flags: []cli.Flag{
-					&cli.IntFlag{
-						Name:  "nodes",
-						Value: 1,
-						Usage: "Number of nodes to start",
+					&cli.IntSliceFlag{
+						Name:     "nodes",
+						Usage:    "Node IDs to refresh",
+						Required: true,
 					},
 					&cli.BoolFlag{
 						Aliases: []string{"l"},
@@ -124,28 +124,29 @@ var Commands = []*cli.Command{
 					},
 				},
 				Action: func(c *cli.Context) error {
-					err := stopNodes(c.Int("nodes"))
+					nodeIDs := c.IntSlice("nodes")
+					err := stopNodes(nodeIDs)
 					if err != nil {
 						return err
 					}
-					err = removeNodes(c.Int("nodes"))
+					err = removeNodes(nodeIDs)
 					if err != nil {
 						return err
 					}
 
-					err = createNodes(c.Int("nodes"))
+					err = createNodes(nodeIDs)
 					if err != nil {
 						return err
 					}
 
 					err = startNodes(startNodesArgs{
-						nodes: c.Int("nodes"),
-						logs:  c.Bool("logs"),
+						nodeIDs: nodeIDs,
+						logs:    c.Bool("logs"),
 					})
 					if err != nil {
 						return err
 					}
-					return FetchKeys(c.Int("nodes"))
+					return FetchKeys(nodeIDs)
 				},
 			},
 		},

@@ -11,9 +11,8 @@ import (
 	"github.com/smartcontractkit/capabilities/libs/cli/utils"
 )
 
-func stopNodes(nodes int) error {
-	for i := 0; i < nodes; i++ {
-		nodeID := i + 1
+func stopNodes(nodeIDs []int) error {
+	for _, nodeID := range nodeIDs {
 		nodeDir := utils.GetNodeDir(nodeID)
 
 		lockFilePath := filepath.Join(nodeDir, constants.LockFile)

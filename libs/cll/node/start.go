@@ -18,15 +18,14 @@ type nodeProcess struct {
 }
 
 type startNodesArgs struct {
-	nodes int
-	logs  bool
+	nodeIDs []int
+	logs    bool
 }
 
 func startNodes(args startNodesArgs) error {
 	var nodeProcesses []nodeProcess
 
-	for i := 0; i < args.nodes; i++ {
-		nodeID := i + 1
+	for i, nodeID := range args.nodeIDs {
 		nodeDir := utils.GetNodeDir(nodeID)
 		err := os.MkdirAll(nodeDir, os.ModePerm)
 		if err != nil {
@@ -100,7 +99,7 @@ func startNodes(args startNodesArgs) error {
 		fmt.Printf("Prometheus:\t%s\n", nodeInfo.URLs.Prometheus)
 		fmt.Printf("Logs:\t\t%s\n", nodeLogsFilepath)
 
-		if i+1 == args.nodes {
+		if i+1 == len(args.nodeIDs) {
 			fmt.Println("--------------------------------------------------")
 		}
 	}
