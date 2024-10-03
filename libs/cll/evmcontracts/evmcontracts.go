@@ -10,31 +10,26 @@ import (
 	"github.com/urfave/cli/v2"
 
 	"github.com/smartcontractkit/capabilities/libs/cli/chain"
-	"github.com/smartcontractkit/capabilities/libs/cli/constants"
 	"github.com/smartcontractkit/capabilities/libs/cli/utils"
 )
 
-var smartContractDir = filepath.Join(constants.LocalDir, "chain", "smartcontracts")
-var ocrContractFilePath = filepath.Join(smartContractDir, "ocr3_contract_info.json")
-
-// deployContract deploys the contract using ABI and bytecode
 func deployContract() error {
-	if err := os.MkdirAll(smartContractDir, os.ModePerm); err != nil {
+	chainInfo := chain.GetInfo()
+	var ocrContractFilePath = filepath.Join(chainInfo.Paths.Contracts, "ocr3_contract_info.json")
+
+	if err := os.MkdirAll(chainInfo.Paths.Contracts, os.ModePerm); err != nil {
 		return fmt.Errorf("failed to create smart contracts directory: %v", err)
 	}
 
-	chainInfo := chain.GetInfo()
 	chainConfig, err := chain.GetConfig()
 	if err != nil {
 		return fmt.Errorf("failed to get chain config: %v", err)
 	}
 
-	privateKey := chainConfig.PrivateKeys[0]
-
 	outputs, err := utils.ExecCommand("forge", "create",
 		"libs/cll/evmcontracts/contracts/keystone/SimpleOCR.sol:SimpleOCR",
 		"--rpc-url", chainInfo.URLs.HTTP,
-		"--private-key", privateKey,
+		"--private-key", chainConfig.PrivateKeys[0],
 		"--json")
 
 	if err != nil {
@@ -50,12 +45,11 @@ func deployContract() error {
 		return fmt.Errorf("failed to parse contract deployment output: %v", err)
 	}
 
-	var contractInfo struct {
-		Address string `json:"address"`
+	ocrContractInfo := Info{
+		Address: txReceipt.DeployedTo,
 	}
-	contractInfo.Address = txReceipt.DeployedTo
 
-	contractInfoJSON, err := json.Marshal(contractInfo)
+	contractInfoJSON, err := json.Marshal(ocrContractInfo)
 	if err != nil {
 		return fmt.Errorf("failed to marshal contract info: %v", err)
 	}
@@ -64,19 +58,26 @@ func deployContract() error {
 		return fmt.Errorf("failed to write contract info to file: %v", err)
 	}
 
-	fmt.Printf("Contract deployed to %s (info: %s)\n", txReceipt.DeployedTo, ocrContractFilePath)
+	fmt.Printf("Contract deployed to %s (info: %s)\n", ocrContractInfo.Address, ocrContractFilePath)
+	return nil
 
-	ocrConfig, err := generateOCR3Config([]int{2, 3, 4, 5})
+}
+
+func configureContract(nodeIDs []int) error {
+	chainInfo := chain.GetInfo()
+	chainConfig, err := chain.GetConfig()
+	if err != nil {
+		return fmt.Errorf("failed to get chain config: %v", err)
+	}
+	ocrContractInfo, err := GetInfo("ocr3")
+	if err != nil {
+		return fmt.Errorf("failed to get OCR contract info: %v", err)
+	}
+
+	ocrConfig, err := generateOCR3Config(nodeIDs)
 	if err != nil {
 		return fmt.Errorf("failed to generate OCR3 config: %v", err)
 	}
-
-	// address[] memory _signers,
-	//     address[] memory _transmitters,
-	//     uint8 _f,
-	//     bytes memory _onchainConfig,
-	//     uint64 _offchainConfigVersion,
-	//     bytes memory _offchainConfig
 
 	var signersArg string
 	for _, signer := range ocrConfig.Signers {
@@ -85,7 +86,6 @@ func deployContract() error {
 		}
 		signersArg += "0x" + hex.EncodeToString(signer)
 	}
-	signersArg = "[" + signersArg + "]"
 
 	var transmittersArg string
 	for _, transmitter := range ocrConfig.Transmitters {
@@ -94,16 +94,15 @@ func deployContract() error {
 		}
 		transmittersArg += string(transmitter)
 	}
-	transmittersArg = "[" + transmittersArg + "]"
 
 	setConfigOutput, err := utils.ExecCommand(
 		"cast", "send",
 		"--rpc-url", chainInfo.URLs.HTTP,
-		"--private-key", privateKey,
-		txReceipt.DeployedTo,
+		"--private-key", chainConfig.PrivateKeys[0],
+		ocrContractInfo.Address,
 		"setConfig(address[], address[], uint8, bytes, uint64, bytes)",
-		signersArg,
-		transmittersArg,
+		fmt.Sprintf("[%s]", signersArg),
+		fmt.Sprintf("[%s]", transmittersArg),
 		fmt.Sprintf("%d", ocrConfig.F),
 		"0x"+hex.EncodeToString(ocrConfig.OnchainConfig),
 		fmt.Sprintf("%d", ocrConfig.OffchainConfigVersion),
@@ -123,42 +122,33 @@ var Commands = []*cli.Command{
 		Usage: "Commands to manage the EVM contract deployments",
 		Subcommands: []*cli.Command{
 			{
-				Name:  "deploy-ocr",
-				Usage: "Deploy an OCR smart contract",
-
-				Action: func(c *cli.Context) error {
-					return deployContract()
+				Name:  "ocr",
+				Usage: "OCR smart contract commands",
+				Subcommands: []*cli.Command{
+					{
+						Name:  "deploy",
+						Usage: "Deploy OCR3 smart contract",
+						Action: func(c *cli.Context) error {
+							return deployContract()
+						},
+					},
+					{
+						Name:  "configure",
+						Usage: "Configure OCR3 smart contract",
+						Flags: []cli.Flag{
+							&cli.IntSliceFlag{
+								Aliases:  []string{"n"},
+								Name:     "nodeIDs",
+								Usage:    "Node IDs to configure OCR with",
+								Required: true,
+							},
+						},
+						Action: func(c *cli.Context) error {
+							return configureContract(c.IntSlice("nodeIDs"))
+						},
+					},
 				},
 			},
 		},
 	},
 }
-
-// // setContractValue sends a transaction to set a value in the contract
-// func setContractValue(contractAddress string, privateKey string, value int) error {
-// 	cmd := exec.Command("cast", "send", contractAddress, fmt.Sprintf("set(uint256) %d", value), "--rpc-url", "http://127.0.0.1:8545", "--private-key", privateKey)
-// 	cmd.Stdout = os.Stdout
-// 	cmd.Stderr = os.Stderr
-
-// 	err := cmd.Run()
-// 	if err != nil {
-// 		return fmt.Errorf("failed to set value in contract: %v", err)
-// 	}
-
-// 	fmt.Printf("Set value %d in contract %s\n", value, contractAddress)
-// 	return nil
-// }
-
-// // getContractValue reads the stored value from the contract
-// func getContractValue(contractAddress string) error {
-// 	cmd := exec.Command("cast", "call", contractAddress, "get() (uint256)", "--rpc-url", "http://127.0.0.1:8545")
-// 	cmd.Stdout = os.Stdout
-// 	cmd.Stderr = os.Stderr
-
-// 	err := cmd.Run()
-// 	if err != nil {
-// 		return fmt.Errorf("failed to get value from contract: %v", err)
-// 	}
-
-// 	return nil
-// }

@@ -30,11 +30,15 @@ func createNodes(nodes int) error {
 	// Creating the nodes
 	for i := 0; i < nodes; i++ {
 		nodeID := i + 1
-		nodeDir := utils.GetNodeDir(nodeID)
+		nodeInfo := utils.GetNodeInfo(nodeID)
 
-		err := os.MkdirAll(nodeDir, os.ModePerm)
+		err = os.MkdirAll(nodeInfo.Paths.Capabilities, os.ModePerm)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to create node capabilities directory: %v", err)
+		}
+		err = os.MkdirAll(nodeInfo.Paths.Jobs, os.ModePerm)
+		if err != nil {
+			return fmt.Errorf("failed to create node jobs directory: %v", err)
 		}
 
 		ports := utils.GetPorts(nodeID)
@@ -75,9 +79,9 @@ func createNodes(nodes int) error {
 	WSURL = 'ws://127.0.0.1:8545'
 	HTTPURL = 'http://127.0.0.1:8545'
 
-	`, nodeDir, ports.P2P, ports.HTTP)
+	`, nodeInfo.Paths.Dir, ports.P2P, ports.HTTP)
 
-		configFilePath := filepath.Join(nodeDir, constants.ChainlinkNodeConfigFilename)
+		configFilePath := filepath.Join(nodeInfo.Paths.Dir, constants.ChainlinkNodeConfigFilename)
 		err = os.WriteFile(configFilePath, []byte(configContent), 0600)
 		if err != nil {
 			return err
@@ -91,7 +95,7 @@ func createNodes(nodes int) error {
 	[Password]
 	Keystore = "%s" # Required`, databaseURL, constants.KeystorePassword)
 
-		secretsFilePath := filepath.Join(nodeDir, constants.ChainlinkNodeSecretsFilename)
+		secretsFilePath := filepath.Join(nodeInfo.Paths.Dir, constants.ChainlinkNodeSecretsFilename)
 		err = os.WriteFile(secretsFilePath, []byte(secretsContent), 0600)
 		if err != nil {
 			return err
@@ -100,14 +104,13 @@ func createNodes(nodes int) error {
 		// Create the UI credentials file
 		credentialsContent := fmt.Sprintf(`%s
 	%s`, constants.GenericEmail, constants.GenericPassword)
-		credentialsFilePath := filepath.Join(nodeDir, constants.ChainlinkNodeUICredentialsFilename)
-		err = os.WriteFile(credentialsFilePath, []byte(credentialsContent), 0600)
+		err = os.WriteFile(nodeInfo.Paths.Credentials, []byte(credentialsContent), 0600)
 		if err != nil {
 			return err
 		}
 
 		// Create the keystore password file
-		keystorePasswordFilePath := filepath.Join(nodeDir, constants.ChainlinkNodeKeystorePasswordFile)
+		keystorePasswordFilePath := filepath.Join(nodeInfo.Paths.Dir, constants.ChainlinkNodeKeystorePasswordFile)
 		err = os.WriteFile(keystorePasswordFilePath, []byte(constants.KeystorePassword), 0600)
 		if err != nil {
 			return err
@@ -143,7 +146,7 @@ func createNodes(nodes int) error {
 			return err
 		}
 
-		fmt.Printf("Chainlink Node %d created! (%s directory, %s database)\n", nodeID, nodeDir, utils.GetNodeDBName(nodeID))
+		fmt.Printf("Chainlink Node %d created! (%s directory, %s database)\n", nodeID, nodeInfo.Paths.Dir, utils.GetNodeDBName(nodeID))
 	}
 
 	return nil

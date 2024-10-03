@@ -10,6 +10,7 @@ import (
 	"github.com/smartcontractkit/capabilities/libs/cli/chain"
 	"github.com/smartcontractkit/capabilities/libs/cli/client"
 	"github.com/smartcontractkit/capabilities/libs/cli/evmcontracts"
+	"github.com/smartcontractkit/capabilities/libs/cli/jobs"
 	"github.com/smartcontractkit/capabilities/libs/cli/node"
 )
 
@@ -19,6 +20,7 @@ func main() {
 	commands = append(commands, chain.Commands...)
 	commands = append(commands, client.Commands...)
 	commands = append(commands, evmcontracts.Commands...)
+	commands = append(commands, jobs.Commands...)
 	commands = append(commands, node.Commands...)
 
 	app := &cli.App{

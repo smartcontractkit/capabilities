@@ -6,10 +6,11 @@ import (
 	"os/exec"
 	"path/filepath"
 
+	"github.com/urfave/cli/v2"
+
 	"github.com/smartcontractkit/capabilities/libs/cli/constants"
 	"github.com/smartcontractkit/capabilities/libs/cli/node"
 	"github.com/smartcontractkit/capabilities/libs/cli/utils"
-	"github.com/urfave/cli/v2"
 )
 
 var Commands = []*cli.Command{
