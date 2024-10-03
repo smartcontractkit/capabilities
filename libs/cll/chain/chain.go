@@ -22,9 +22,10 @@ type URLs struct {
 }
 
 type Paths struct {
-	ConfigFile string `json:"config_file"`
-	Contracts  string `json:"contracts"`
-	Dir        string `json:"dir"`
+	ChainStateFile string `json:"chain_state_file"`
+	ConfigFile     string `json:"config_file"`
+	Contracts      string `json:"contracts"`
+	Dir            string `json:"dir"`
 }
 
 type Info struct {
@@ -40,9 +41,10 @@ func GetInfo() *Info {
 		ChainID: 31337, // TODO: Configure this in anvil
 		Port:    port,
 		Paths: &Paths{
-			ConfigFile: chainConfigFilePath,
-			Contracts:  filepath.Join(chainDir, "contracts"),
-			Dir:        chainDir,
+			ChainStateFile: filepath.Join(chainDir, "chain_state.json"),
+			ConfigFile:     chainConfigFilePath,
+			Contracts:      filepath.Join(chainDir, "contracts"),
+			Dir:            chainDir,
 		},
 		URLs: &URLs{
 			HTTP: fmt.Sprintf("http://localhost:%d", port),
@@ -72,6 +74,7 @@ func GetConfig() (*Config, error) {
 }
 
 func startAnvil(silent bool) error {
+	chainInfo := GetInfo()
 	// Ensure the local directory exists
 	if err := os.MkdirAll(chainDir, os.ModePerm); err != nil {
 		return fmt.Errorf("failed to create local directory: %v", err)
@@ -97,6 +100,9 @@ func startAnvil(silent bool) error {
 
 	args := []string{
 		"--config-out", chainConfigFilePath,
+		"--block-time", "3", // seconds
+		"--port", fmt.Sprintf("%d", chainInfo.Port),
+		"--state", chainInfo.Paths.ChainStateFile,
 	}
 
 	if silent {
@@ -104,6 +110,7 @@ func startAnvil(silent bool) error {
 	}
 
 	// Start anvil in the background
+	// cmd := exec.Command("anvil", args...)
 	cmd := exec.Command("anvil", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -141,8 +148,12 @@ func stopAnvil() error {
 		}
 
 		// Kill the process
-		if err := process.Kill(); err != nil {
-			return fmt.Errorf("failed to kill anvil: %v", err)
+		if err := process.Signal(os.Interrupt); err != nil {
+			fmt.Printf("failed to interrupt anvil: %v", err)
+
+			if err2 := process.Kill(); err2 != nil {
+				return fmt.Errorf("failed to kill anvil: %v", err2)
+			}
 		}
 
 		// Clean up the chain info file
