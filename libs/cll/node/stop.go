@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"syscall"
 
 	"github.com/smartcontractkit/capabilities/libs/cli/constants"
 	"github.com/smartcontractkit/capabilities/libs/cli/utils"
@@ -35,9 +34,14 @@ func stopNodes(nodeIDs []int) error {
 			return fmt.Errorf("failed to find process with PID %d: %v", pid, err)
 		}
 
-		err = process.Signal(syscall.SIGTERM)
-		if err != nil && err.Error() != "os: process already finished" {
-			return fmt.Errorf("failed to stop process with PID %d: %v", pid, err)
+		err = process.Signal(os.Interrupt)
+
+		if err != nil && err != os.ErrProcessDone {
+			fmt.Printf("failed to interrupt node: %v", err)
+
+			if err2 := process.Kill(); err2 != nil {
+				return fmt.Errorf("failed to kill node: %v", err2)
+			}
 		}
 
 		err = os.Remove(lockFilePath)

@@ -21,10 +21,21 @@ var Commands = []*cli.Command{
 					// Refresh nodeset
 					// (Re)Deploy OCR contract
 					// Add bootstrap spec
-					// ./nx run cll:build && ./nx run kvstore:build && ./bin/cll jobs add -j bootstrap -n 1 && ./bin/cll capabilities add -c kvstore -n 2 --bootstrap-node-id=1
 					// Add KV specs - KV specs include bootstrapper
 					// Set config
-					// ./nx run cll:build && ./bin/cll contracts ocr configure --nodeIDs 2,3,4,5
+					// ==================================================
+					// TWO NODES ONLY
+					// ==================================================
+					// ./nx run cll:build && ./nx run kvstore:build && ./bin/cll client build && ./bin/cll node refresh --nodes=1,2 && ./bin/cll jobs add -j bootstrap -n 1 && ./bin/cll capabilities add -c kvstore -n 2 --bootstrap-node-id=1 && ./bin/cll contracts ocr configure --nodeIDs 2,3,4,5
+
+					// ==================================================
+					// ALL NODES
+					// ==================================================
+
+					// ./nx run cll:build && ./nx run kvstore:build &&  ./bin/cll node refresh --nodes=1,2,3,4,5 && ./bin/cll jobs add -j bootstrap -n 1 && ./bin/cll capabilities add -c kvstore -n 2,3,4,5 --bootstrap-node-id=1 && ./bin/cll contracts ocr configure --nodeIDs 2,3,4,5
+
+					// Looking for
+					// [ERROR] TrackConfig: error during LatestBlockHeight()
 					return nil
 				},
 			},
