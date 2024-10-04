@@ -93,14 +93,17 @@ type ContractReader interface {
 	Bind(ctx context.Context, bindings []types.BoundContract) error
 }
 
-func NewReadContractAction(lggr logger.Logger, config ReadContractConfig, relayer Relayer) *ReadContractAction {
+func NewReadContractAction(lggr logger.Logger, config ReadContractConfig, relayer Relayer) (*ReadContractAction, error) {
 	id := fmt.Sprintf("read-contract-%s-%d@0.1.0", config.Network, config.ChainID)
 
-	info := capabilities.MustNewCapabilityInfo(
+	info, err := capabilities.NewCapabilityInfo(
 		id,
 		capabilities.CapabilityTypeAction,
 		"Read Contract Action.  Supports reading from a contract.",
 	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create capability info: %w", err)
+	}
 
 	contractReaderCache := NewServiceCache[string, ContractReader](lggr, "ContractReaderCache",
 		clockwork.NewRealClock(), defaultCacheCleanupInterval, defaultCacheExpiryTime, defaultCacheSizeBeforeCleanupEnacted, readContractCacheStats{})
@@ -111,7 +114,7 @@ func NewReadContractAction(lggr logger.Logger, config ReadContractConfig, relaye
 		Validator:       capabilities.NewValidator[readcontractcap.Config, readcontractcap.Input, capabilities.CapabilityResponse](capabilities.ValidatorArgs{Info: info}),
 		relayer:         relayer,
 		contractReaders: contractReaderCache,
-	}
+	}, nil
 }
 
 func (r *ReadContractAction) Execute(ctx context.Context, request capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {

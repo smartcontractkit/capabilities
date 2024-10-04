@@ -110,17 +110,14 @@ func (cs *ReadContractGRPCService) Initialise(
 		return fmt.Errorf("failed to fetch relayer for chainID %d from relayerSet: %w", readContractConfig.ChainID, err)
 	}
 
-	cs.action = actions.NewReadContractAction(cs.s.Logger, readContractConfig, &readContractRelayer{relayer})
+	cs.action, err = actions.NewReadContractAction(cs.s.Logger, readContractConfig, &readContractRelayer{relayer})
+	if err != nil {
+		return fmt.Errorf("failed to create read contract action: %w", err)
+	}
 
 	if err := capabilityRegistry.Add(ctx, cs.action); err != nil {
 		return fmt.Errorf("failed to add read contract capability to the capability registry: %w", err)
 	}
-
-	info, err := cs.action.Info(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get info for read contract capability: %w", err)
-	}
-	cs.s.Logger.Infof("Added %s to the capability registry", info.ID)
 
 	return nil
 }
