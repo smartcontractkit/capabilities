@@ -74,6 +74,8 @@ func (rp *reportingPlugin) Outcome(outctx ocr3types.OutcomeContext, query types.
 
 func (rp *reportingPlugin) Reports(seqNr uint64, outcome ocr3types.Outcome) ([]ocr3types.ReportWithInfo[[]byte], error) {
 	rp.logger.Debug("Reports", "seqNr", seqNr)
+
+	// 2024-10-04T11:02:33.620+0300 [DEBUG] cannot complete, insufficient number of signatures protocol/report_attestation.go:351 configDigest=000192171524191d04b8e50ce8b2019cc4297c595dfa1e2420fb161193e49e2e
 	return nil, nil
 }
 

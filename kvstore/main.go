@@ -16,7 +16,6 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
-	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
 
@@ -128,28 +127,28 @@ func (cs *CapabilitiesService) Initialise(
 		return fmt.Errorf("error when adding kv store target to the registry: %w", err)
 	}
 
-	relayer, err := relayerSet.Get(ctx, types.RelayID{Network: "evm", ChainID: "31337"})
-	if err != nil {
-		return fmt.Errorf("error when getting relayer: %w", err)
-	}
+	// relayer, err := relayerSet.Get(ctx, types.RelayID{Network: "evm", ChainID: "31337"})
+	// if err != nil {
+	// 	return fmt.Errorf("error when getting relayer: %w", err)
+	// }
 
-	type RelayConfig struct {
-		ChainID                string   `json:"chainID"`
-		EffectiveTransmitterID string   `json:"effectiveTransmitterID"`
-		SendingKeys            []string `json:"sendingKeys"`
-	}
+	// type RelayConfig struct {
+	// 	ChainID                string   `json:"chainID"`
+	// 	EffectiveTransmitterID string   `json:"effectiveTransmitterID"`
+	// 	SendingKeys            []string `json:"sendingKeys"`
+	// }
 
-	// pluginName = "ocr-capability"
-	// providerType = "ocr3-capability"
-	var relayConfig = RelayConfig{
-		ChainID:                "31337",
-		EffectiveTransmitterID: oracleIdentity.EVMKey,
-		SendingKeys:            []string{oracleIdentity.EVMKey},
-	}
-	relayConfigBytes, err := json.Marshal(relayConfig)
-	if err != nil {
-		return fmt.Errorf("error when marshalling relay config: %w", err)
-	}
+	// // pluginName = "ocr-capability"
+	// // providerType = "ocr3-capability"
+	// var relayConfig = RelayConfig{
+	// 	ChainID:                "31337",
+	// 	EffectiveTransmitterID: oracleIdentity.EVMKey,
+	// 	SendingKeys:            []string{oracleIdentity.EVMKey},
+	// }
+	// relayConfigBytes, err := json.Marshal(relayConfig)
+	// if err != nil {
+	// 	return fmt.Errorf("error when marshalling relay config: %w", err)
+	// }
 
 	// type PipelineSpec struct {
 	// 	Name string `json:"name"`
@@ -171,25 +170,27 @@ func (cs *CapabilitiesService) Initialise(
 	// 	Config
 	// }
 
-	pluginConfig := JSONConfig{
-		"pluginName": "kvstore-capability",
-		"OCRVersion": 3,
-	}
-
-	// pluginName = "ocr-capability"
-	pluginProvider, err := relayer.NewPluginProvider(ctx, core.RelayArgs{
-		ContractID:   "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
-		ProviderType: "plugin",
-		RelayConfig:  relayConfigBytes,
-	}, core.PluginArgs{
-		TransmitterID: oracleIdentity.EVMKey,
-		PluginConfig:  pluginConfig.Bytes(),
-	})
-	if err != nil {
-		return fmt.Errorf("error when getting offchain digester: %w", err)
-	}
+	// pluginProvider, err := relayer.NewPluginProvider(ctx, core.RelayArgs{
+	// 	ContractID:   "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
+	// 	ProviderType: "plugin",
+	// 	RelayConfig:  relayConfigBytes,
+	// }, core.PluginArgs{
+	// 	TransmitterID: oracleIdentity.EVMKey,
+	// 	PluginConfig: JSONConfig{
+	// 		"pluginName": "kvstore-capability",
+	// 		"OCRVersion": 3,
+	// 	}.Bytes(),
+	// })
+	// if err != nil {
+	// 	return fmt.Errorf("error when getting offchain digester: %w", err)
+	// }
 
 	// newContext := context.Background()
+
+	contractConfigTracker, err := oracle.NewContractConfigTracker(cs.s.Logger, oracleIdentity)
+	if err != nil {
+		return fmt.Errorf("error when creating contract config tracker: %w", err)
+	}
 
 	oracle, err := oracleFactory.NewOracle(ctx, core.OracleArgs{
 		LocalConfig: ocrtypes.LocalConfig{
@@ -200,9 +201,11 @@ func (cs *CapabilitiesService) Initialise(
 			DatabaseTimeout:                    time.Second * 10,
 		},
 		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(cs.s.Logger),
-		ContractTransmitter:           oracle.NewContractTransmitter(cs.s.Logger),
-		ContractConfigTracker:         pluginProvider.ContractConfigTracker(),
-		OffchainConfigDigester:        pluginProvider.OffchainConfigDigester(),
+		ContractTransmitter:           oracle.NewContractTransmitter(cs.s.Logger, oracleIdentity),
+		ContractConfigTracker:         contractConfigTracker,
+		OffchainConfigDigester:        oracle.NewOffchainConfigDigester(cs.s.Logger),
+		// ContractConfigTracker:         pluginProvider.ContractConfigTracker(),
+		// OffchainConfigDigester: pluginProvider.OffchainConfigDigester(),
 	})
 	if err != nil {
 		return fmt.Errorf("error when creating oracle: %w", err)

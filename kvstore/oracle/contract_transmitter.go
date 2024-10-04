@@ -12,12 +12,14 @@ import (
 var _ ocr3types.ContractTransmitter[[]byte] = (*contractTransmitter)(nil)
 
 type contractTransmitter struct {
-	logger logger.Logger
+	identity Identity
+	logger   logger.Logger
 }
 
-func NewContractTransmitter(logger logger.Logger) *contractTransmitter {
+func NewContractTransmitter(logger logger.Logger, identity Identity) *contractTransmitter {
 	return &contractTransmitter{
-		logger: logger,
+		logger:   logger,
+		identity: identity,
 	}
 }
 
@@ -36,5 +38,5 @@ func (ct *contractTransmitter) Transmit(
 
 // Unused: No external transmissions
 func (ct *contractTransmitter) FromAccount() (types.Account, error) {
-	return "", nil
+	return types.Account(ct.identity.EVMKey), nil
 }
