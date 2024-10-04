@@ -16,7 +16,6 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
-	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
 
@@ -86,14 +85,6 @@ func (cs *CapabilitiesService) Infos(ctx context.Context) ([]capabilities.Capabi
 	}, nil
 }
 
-type JSONConfig map[string]interface{}
-
-// Bytes returns the raw bytes
-func (r JSONConfig) Bytes() []byte {
-	b, _ := json.Marshal(r)
-	return b
-}
-
 func (cs *CapabilitiesService) Initialise(
 	ctx context.Context,
 	config string,
@@ -115,9 +106,6 @@ func (cs *CapabilitiesService) Initialise(
 
 	cs.s.Logger.Debug("config: ", config)
 
-	// var keyBundle ocr2key.KeyBundle
-	// store.Get(ctx, "key_bundle", &keyBundle)
-
 	var oracleIdentity oracle.Identity
 	if err := json.Unmarshal([]byte(config), &oracleIdentity); err != nil {
 		return fmt.Errorf("failed to unmarshal key bundle bytes: %w", err)
@@ -128,73 +116,12 @@ func (cs *CapabilitiesService) Initialise(
 		return fmt.Errorf("error when adding kv store target to the registry: %w", err)
 	}
 
-	newContext := context.Background()
-	relayer, err := relayerSet.Get(newContext, types.RelayID{Network: "evm", ChainID: "31337"})
+	contractConfigTracker, err := oracle.NewContractConfigTracker(cs.s.Logger, oracleIdentity)
 	if err != nil {
-		return fmt.Errorf("error when getting relayer: %w", err)
+		return fmt.Errorf("error when creating contract config tracker: %w", err)
 	}
 
-	type RelayConfig struct {
-		ChainID                string   `json:"chainID"`
-		EffectiveTransmitterID string   `json:"effectiveTransmitterID"`
-		SendingKeys            []string `json:"sendingKeys"`
-	}
-
-	// pluginName = "ocr-capability"
-	// providerType = "ocr3-capability"
-	var relayConfig = RelayConfig{
-		ChainID:                "31337",
-		EffectiveTransmitterID: oracleIdentity.EVMKey,
-		SendingKeys:            []string{oracleIdentity.EVMKey},
-	}
-	relayConfigBytes, err := json.Marshal(relayConfig)
-	if err != nil {
-		return fmt.Errorf("error when marshalling relay config: %w", err)
-	}
-
-	// type PipelineSpec struct {
-	// 	Name string `json:"name"`
-	// 	Spec string `json:"spec"`
-	// }
-
-	// type Config struct {
-	// 	Pipelines    []PipelineSpec `json:"pipelines"`
-	// 	PluginConfig map[string]any `json:"pluginConfig"`
-	// }
-
-	// type innerConfig struct {
-	// 	Command       string            `json:"command"`
-	// 	EnvVars       map[string]string `json:"envVars"`
-	// 	ProviderType  string            `json:"providerType"`
-	// 	PluginName    string            `json:"pluginName"`
-	// 	TelemetryType string            `json:"telemetryType"`
-	// 	OCRVersion    int               `json:"OCRVersion"`
-	// 	Config
-	// }
-
-	pluginProvider, err := relayer.NewPluginProvider(newContext, core.RelayArgs{
-		ContractID:   "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6",
-		ProviderType: "plugin",
-		RelayConfig:  relayConfigBytes,
-	}, core.PluginArgs{
-		TransmitterID: oracleIdentity.EVMKey,
-		PluginConfig: JSONConfig{
-			"pluginName": "kvstore-capability",
-			"OCRVersion": 3,
-		}.Bytes(),
-	})
-	if err != nil {
-		return fmt.Errorf("error when getting offchain digester: %w", err)
-	}
-
-	// newContext := context.Background()
-
-	// contractConfigTracker, err := oracle.NewContractConfigTracker(cs.s.Logger, oracleIdentity)
-	// if err != nil {
-	// 	return fmt.Errorf("error when creating contract config tracker: %w", err)
-	// }
-
-	oracle, err := oracleFactory.NewOracle(newContext, core.OracleArgs{
+	oracle, err := oracleFactory.NewOracle(ctx, core.OracleArgs{
 		LocalConfig: ocrtypes.LocalConfig{
 			BlockchainTimeout:                  time.Second * 20,
 			ContractConfigTrackerPollInterval:  time.Second * 10,
@@ -204,17 +131,15 @@ func (cs *CapabilitiesService) Initialise(
 		},
 		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(cs.s.Logger),
 		ContractTransmitter:           oracle.NewContractTransmitter(cs.s.Logger, oracleIdentity),
-		// ContractConfigTracker:         contractConfigTracker,
-		// OffchainConfigDigester:        oracle.NewOffchainConfigDigester(cs.s.Logger),
-		ContractConfigTracker:  pluginProvider.ContractConfigTracker(),
-		OffchainConfigDigester: pluginProvider.OffchainConfigDigester(),
+		ContractConfigTracker:         contractConfigTracker,                         // UNUSED
+		OffchainConfigDigester:        oracle.NewOffchainConfigDigester(cs.s.Logger), // UNUSED
 	})
 	if err != nil {
 		return fmt.Errorf("error when creating oracle: %w", err)
 	}
 	cs.s.Logger.Debug("KVStore capabilities: Oracle created")
 
-	err = oracle.Start(newContext)
+	err = oracle.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("error when starting oracle: %w", err)
 	}
