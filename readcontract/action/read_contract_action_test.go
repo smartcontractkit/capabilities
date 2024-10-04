@@ -31,7 +31,8 @@ func TestReadContractAction_Execute(t *testing.T) {
 	// Set up the relayer mock to return the contract reader mock
 	relayerMock.On("NewContractReader", mock.Anything, mock.Anything).Return(contractReaderMock, nil)
 
-	action := setupReadContractAction(t, config, relayerMock)
+	action, err := setupReadContractAction(t, config, relayerMock)
+	assert.NoError(t, err)
 
 	inputs := readcontractcap.Input{
 		ReadIdentifier:  "TestReadIdentifier",
@@ -86,7 +87,8 @@ func TestReadContractAction_ExecuteMultipleTimeWithSameReaderConfigUsesSingleIns
 	// Set up the relayer mock to return the contract reader mock
 	relayerMock.On("NewContractReader", mock.Anything, mock.Anything).Return(contractReaderMock, nil).Once()
 
-	action := setupReadContractAction(t, config, relayerMock)
+	action, err := setupReadContractAction(t, config, relayerMock)
+	assert.NoError(t, err)
 
 	inputs := readcontractcap.Input{
 		ReadIdentifier:  "TestReadIdentifier",
@@ -146,7 +148,8 @@ func TestReadContractAction_ExecuteWithDifferentReaderConfigUsesDifferentContrac
 		return string(config) == `"some-config-2"`
 	})).Return(contractReaderMock2, nil).Once()
 
-	action := setupReadContractAction(t, config, relayerMock)
+	action, err := setupReadContractAction(t, config, relayerMock)
+	assert.NoError(t, err)
 
 	inputs := readcontractcap.Input{
 		ReadIdentifier:  "TestReadIdentifier",
@@ -211,7 +214,8 @@ func TestReadContractAction_ExecuteSameContractDifferentAddresses(t *testing.T) 
 	// Set up the relayer mock to return the contract reader mock
 	relayerMock.On("NewContractReader", mock.Anything, mock.Anything).Return(contractReaderMock, nil).Once()
 
-	action := setupReadContractAction(t, config, relayerMock)
+	action, err := setupReadContractAction(t, config, relayerMock)
+	assert.NoError(t, err)
 
 	inputs1 := readcontractcap.Input{
 		ReadIdentifier:  "TestReadIdentifier",
@@ -276,7 +280,7 @@ func TestReadContractAction_ExecuteSameContractDifferentAddresses(t *testing.T) 
 	assert.Equal(t, expectedBindings, contractReaderMock.allBindings)
 }
 
-func setupReadContractAction(t *testing.T, config actions.ReadContractConfig, relayerMock *Relayer) *actions.ReadContractAction {
+func setupReadContractAction(t *testing.T, config actions.ReadContractConfig, relayerMock *Relayer) (*actions.ReadContractAction, error) {
 	lggr := logger.Test(t)
 	return actions.NewReadContractAction(lggr, config, relayerMock)
 }
