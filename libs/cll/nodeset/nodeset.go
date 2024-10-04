@@ -32,7 +32,7 @@ var Commands = []*cli.Command{
 					// ALL NODES
 					// ==================================================
 
-					// ./nx run cll:build && ./nx run kvstore:build && ./bin/cll client build && ./bin/cll node refresh --nodes=1,2 && ./bin/cll jobs add -j bootstrap -n 1 && ./bin/cll capabilities add -c kvstore -n 2,3,4,5 --bootstrap-node-id=1 && ./bin/cll contracts ocr configure --nodeIDs 2,3,4,5
+					// ./nx run cll:build && ./nx run kvstore:build && ./bin/cll client build && ./bin/cll node refresh --nodes=1,2,3,4,5 && ./bin/cll jobs add -j bootstrap -n 1 && ./bin/cll capabilities add -c kvstore -n 2,3,4,5 --bootstrap-node-id=1 && ./bin/cll contracts ocr configure --nodeIDs 2,3,4,5
 
 					// Looking for
 					// [ERROR] TrackConfig: error during LatestBlockHeight()

@@ -64,6 +64,8 @@ func deployContract() error {
 }
 
 func configureContract(nodeIDs []int) error {
+	fmt.Printf("Configuring OCR... ")
+
 	chainInfo := chain.GetInfo()
 	chainConfig, err := chain.GetConfig()
 	if err != nil {
@@ -95,7 +97,7 @@ func configureContract(nodeIDs []int) error {
 		transmittersArg += string(transmitter)
 	}
 
-	setConfigOutput, err := utils.ExecCommand(
+	_, err = utils.ExecCommand(
 		"cast", "send",
 		"--rpc-url", chainInfo.URLs.HTTP,
 		"--private-key", chainConfig.PrivateKeys[0],
@@ -111,7 +113,7 @@ func configureContract(nodeIDs []int) error {
 	if err != nil {
 		return fmt.Errorf("failed to set config in contract: %v", err)
 	}
-	fmt.Printf("Set config in contract: %s\n", setConfigOutput)
+	fmt.Printf("Done.\n")
 
 	return nil
 }
