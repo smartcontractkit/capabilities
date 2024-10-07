@@ -11,7 +11,8 @@ import (
 )
 
 func TestWriteRequests(t *testing.T) {
-	requestsStore := New(testutils.NewStore(t))
+	requestsStore, err := New(testutils.NewStore(t))
+	assert.NoError(t, err)
 
 	ctx := context.Background()
 
@@ -22,15 +23,13 @@ func TestWriteRequests(t *testing.T) {
 		KVPairs:             map[string][]byte{"key1": []byte("value1")},
 	}
 
-	err := requestsStore.Add(ctx, &writeRequest)
-	assert.NoError(t, err)
+	assert.NoError(t, requestsStore.Add(ctx, &writeRequest))
 
 	storedWriteRequestsBytes, err := requestsStore.store.Get(ctx, WriteRequestsKey)
 	assert.NoError(t, err)
 
 	var storedWriteRequests []Request
-	err = json.Unmarshal(storedWriteRequestsBytes, &storedWriteRequests)
-	assert.NoError(t, err)
+	assert.NoError(t, json.Unmarshal(storedWriteRequestsBytes, &storedWriteRequests))
 
 	assert.Len(t, storedWriteRequests, 1)
 	assert.Equal(t, writeRequest, storedWriteRequests[0])

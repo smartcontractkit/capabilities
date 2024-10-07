@@ -20,7 +20,8 @@ import (
 func TestKVStoreTarget(t *testing.T) {
 	t.Run("succeeds with valid data", func(t *testing.T) {
 		kvStore := testutils.NewStore(t)
-		requestsStore := kvrequests.New(kvStore)
+		requestsStore, err := kvrequests.New(kvStore)
+		assert.NoError(t, err)
 
 		ctx := context.Background()
 		target := target.New(target.Params{

@@ -7,7 +7,82 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
 
-var _ logger.Logger = (*lgr)(nil)
+var _ logger.SugaredLogger = (*lgr)(nil)
+
+// With adds structured context to the logger
+func (l *lgr) With(args ...interface{}) logger.SugaredLogger {
+	return &lgr{name: l.name, t: l.t}
+}
+
+// Trace logs a trace message
+func (l *lgr) Trace(args ...interface{}) {
+	l.t.Log("[TRACE]", l.name, fmt.Sprint(args...))
+}
+
+// Tracef logs a trace message with formatting
+func (l *lgr) Tracef(format string, values ...interface{}) {
+	l.t.Logf("[TRACE] "+l.name+" "+format, values...)
+}
+
+// Tracew logs a trace message with key-value pairs
+func (l *lgr) Tracew(msg string, keysAndValues ...interface{}) {
+	l.t.Log("[TRACE]", l.name, msg, fmt.Sprint(keysAndValues...))
+}
+
+// Named returns a new logger with the specified name
+func (l *lgr) Named(name string) logger.SugaredLogger {
+	return &lgr{name: name, t: l.t}
+}
+
+// Helper marks the function as a test helper function
+func (l *lgr) Helper(i int) logger.SugaredLogger {
+	l.t.Helper()
+	return l
+}
+
+// ErrorIfFn logs an error message if the condition is true using a custom function
+func (l *lgr) ErrorIfFn(fn func() error, msg string) {
+	if err := fn(); err != nil {
+		l.t.Log("[ERROR]", l.name, msg, err)
+	}
+}
+
+// ErrorIf logs an error message if the condition is true
+func (l *lgr) ErrorIf(err error, msg string) {
+	if err != nil {
+		l.t.Log("[ERROR]", l.name, msg, err)
+	}
+}
+
+// Critical logs a critical message
+func (l *lgr) Critical(args ...interface{}) {
+	l.t.Log("[CRITICAL]", l.name, fmt.Sprint(args...))
+}
+
+// Criticalf logs a critical message with formatting
+func (l *lgr) Criticalf(format string, values ...interface{}) {
+	l.t.Logf("[CRITICAL] "+l.name+" "+format, values...)
+}
+
+// Criticalw logs a critical message with key-value pairs
+func (l *lgr) Criticalw(msg string, keysAndValues ...interface{}) {
+	l.t.Log("[CRITICAL]", l.name, msg, fmt.Sprint(keysAndValues...))
+}
+
+// AssumptionViolation logs an assumption violation message
+func (l *lgr) AssumptionViolation(args ...interface{}) {
+	l.t.Log("[ASSUMPTION VIOLATION]", l.name, fmt.Sprint(args...))
+}
+
+// AssumptionViolationf logs an assumption violation message with formatting
+func (l *lgr) AssumptionViolationf(format string, values ...interface{}) {
+	l.t.Logf("[ASSUMPTION VIOLATION] "+l.name+" "+format, values...)
+}
+
+// AssumptionViolationw logs an assumption violation message with key-value pairs
+func (l *lgr) AssumptionViolationw(msg string, keysAndValues ...interface{}) {
+	l.t.Log("[ASSUMPTION VIOLATION]", l.name, msg, fmt.Sprint(keysAndValues...))
+}
 
 // lgr is a simple logger for testing purposes
 type lgr struct {

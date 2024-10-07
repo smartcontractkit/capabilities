@@ -16,10 +16,22 @@ type RequestsStore struct {
 	store core.KeyValueStore
 }
 
-func New(store core.KeyValueStore) *RequestsStore {
+// [ERROR] call to ReportingPlugin.Query errored              protocol/common.go:40            configDigest=000116e2c7d0c4c8862b52f3c108434a5712392698355d3cec547eae2cd91306 e=3 error=rpc error: code = Unknown desc = could not retrieve requests: failed to get write requests: failed to get value for key: write_requests: rpc error: code = Unknown desc = failed to get bytes for key: write_requests: failed to get value by key: write_requests for jobID: 1 : sql: no rows in result set  l=3 logger=StandardCapabilities.1 oid=3 proto=outgen round=1 seqNr=1 stacktrace=github.com/smartcontractkit/libocr/offchainreporting2plus/internal/ocr3/protocol.callPlugin[...]
+
+func New(store core.KeyValueStore) (*RequestsStore, error) {
+	requests := []Request{}
+	requestsBytes, err := json.Marshal(requests)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal requests: %w", err)
+	}
+
+	if err := store.Store(context.Background(), WriteRequestsKey, requestsBytes); err != nil {
+		return nil, fmt.Errorf("failed to initialize write requests: %w", err)
+	}
+
 	return &RequestsStore{
 		store: store,
-	}
+	}, nil
 }
 
 // TODO: Cleanup the store when requests aren't processed for some time.

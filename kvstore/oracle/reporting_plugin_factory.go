@@ -130,9 +130,17 @@ func (rp *reportingPlugin) Outcome(
 	aos []types.AttributedObservation,
 ) (ocr3types.Outcome, error) {
 	var outcome Outcome
-	if err := json.Unmarshal(outctx.PreviousOutcome, &outcome); err != nil {
-		return nil, fmt.Errorf("could not unmarshal PreviousOutcome: %w", err)
-	}
+	// if outctx.SeqNr == 1 {
+	// 	outcome = Outcome{
+	// 		Values:            make(map[string][]byte),
+	// 		CompletedRequests: make([]kvrequests.RequestID, 0),
+	// 	}
+	// } else {
+	// 	if err := json.Unmarshal(outctx.PreviousOutcome, &outcome); err != nil {
+	// 		return nil, fmt.Errorf("could not unmarshal PreviousOutcome: %w", err)
+	// 	}
+	// }
+
 	// Wipe out previously completed requests
 	outcome.CompletedRequests = make([]kvrequests.RequestID, 0)
 
