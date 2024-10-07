@@ -38,11 +38,11 @@ func (c *capability) Info(ctx context.Context) (capabilities.CapabilityInfo, err
 	return capabilities.NewCapabilityInfo("kv-store-target@1.0.0", capabilities.CapabilityTypeTarget, "Writes KV-pairs from a SignedReport to a key-value store")
 }
 
-type WriteRequest struct {
+type KVWriteReport struct {
 	keyValuePairs map[string][]byte
 }
 
-func evaluate(rawRequest capabilities.CapabilityRequest) (r WriteRequest, err error) {
+func evaluate(rawRequest capabilities.CapabilityRequest) (r KVWriteReport, err error) {
 	if rawRequest.Inputs == nil {
 		return r, fmt.Errorf("missing inputs field")
 	}
@@ -83,7 +83,7 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		"WorkflowExecutionID", rawRequest.Metadata.WorkflowExecutionID,
 	)
 
-	writeRequest, err := evaluate(rawRequest)
+	kvWriteReport, err := evaluate(rawRequest)
 	if err != nil {
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to decode signed report: %v", err)
 	}
@@ -92,7 +92,12 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		"WorkflowExecutionID", rawRequest.Metadata.WorkflowExecutionID,
 	)
 
-	err = c.requestsStore.AddWriteRequest(ctx, rawRequest.Metadata.WorkflowExecutionID, writeRequest.keyValuePairs)
+	err = c.requestsStore.Add(ctx, &kvrequests.Request{
+		WorkflowExecutionID: rawRequest.Metadata.WorkflowExecutionID,
+		ReferenceID:         rawRequest.Metadata.ReferenceID,
+		Type:                kvrequests.RequestKindWrite,
+		KVPairs:             kvWriteReport.keyValuePairs,
+	})
 	if err != nil {
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to set write request: %v", err)
 	}

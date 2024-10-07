@@ -129,7 +129,7 @@ func (cs *CapabilitiesService) Initialise(
 			ContractTransmitterTransmitTimeout: time.Second * 10,
 			DatabaseTimeout:                    time.Second * 10,
 		},
-		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(cs.s.Logger),
+		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(cs.s.Logger, cs.requestsStore),
 		ContractTransmitter:           oracle.NewContractTransmitter(cs.s.Logger, oracleIdentity),
 		ContractConfigTracker:         contractConfigTracker,                         // UNUSED
 		OffchainConfigDigester:        oracle.NewOffchainConfigDigester(cs.s.Logger), // UNUSED

@@ -69,14 +69,15 @@ func TestKVStoreTarget(t *testing.T) {
 
 		writeRequestsBytes, err := kvStore.Get(ctx, kvrequests.WriteRequestsKey)
 		assert.NoError(t, err)
-		var writeRequests map[string]kvrequests.WriteRequest
+		var writeRequests []kvrequests.Request
 		assert.NoError(t, json.Unmarshal(writeRequestsBytes, &writeRequests))
 
 		assert.Len(t, writeRequests, 1)
-		assert.Equal(t, writeRequests, map[string]kvrequests.WriteRequest{
-			capabilityRequest.Metadata.WorkflowExecutionID: {
-				KVPairs: keyValuePairs,
-			},
-		})
+		assert.Equal(t, kvrequests.Request{
+			Type:                kvrequests.RequestKindWrite,
+			ReferenceID:         capabilityRequest.Metadata.ReferenceID,
+			WorkflowExecutionID: capabilityRequest.Metadata.WorkflowExecutionID,
+			KVPairs:             keyValuePairs,
+		}, writeRequests[0])
 	})
 }

@@ -29,6 +29,7 @@ func (w *workflow) NewRequest(inputs *values.Map) capabilities.CapabilityRequest
 		Metadata: capabilities.RequestMetadata{
 			WorkflowID:          w.ID,
 			WorkflowExecutionID: fmt.Sprintf("%d-%s", w.executionCounter, w.ID),
+			ReferenceID:         uuid.New().String()[:32],
 		},
 		Inputs: inputs,
 	}
