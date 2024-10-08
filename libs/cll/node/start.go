@@ -23,8 +23,6 @@ type startNodesArgs struct {
 }
 
 func startNodes(args startNodesArgs) error {
-	var nodeProcesses []nodeProcess
-
 	for i, nodeID := range args.nodeIDs {
 		nodeDir := utils.GetNodeDir(nodeID)
 		err := os.MkdirAll(nodeDir, os.ModePerm)
