@@ -114,7 +114,7 @@ func (c *capabilitiesServer) Initialise(
 			DatabaseTimeout:                    time.Second * 10,
 		},
 		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(c.s.Logger, c.requestsStore),
-		ContractTransmitter:           oracle.NewContractTransmitter(c.s.Logger, oracleIdentity),
+		ContractTransmitter:           oracle.NewContractTransmitter(c.s.Logger, oracleIdentity, c.requestsStore),
 		ContractConfigTracker:         contractConfigTracker,                        // UNUSED
 		OffchainConfigDigester:        oracle.NewOffchainConfigDigester(c.s.Logger), // UNUSED
 	})

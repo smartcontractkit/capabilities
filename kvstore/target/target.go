@@ -3,6 +3,7 @@ package target
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 
@@ -92,12 +93,14 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		"WorkflowExecutionID", rawRequest.Metadata.WorkflowExecutionID,
 	)
 
-	err = c.requestsStore.Add(ctx, &kvrequests.Request{
+	request := kvrequests.Request{
 		WorkflowExecutionID: rawRequest.Metadata.WorkflowExecutionID,
 		ReferenceID:         rawRequest.Metadata.ReferenceID,
 		Type:                kvrequests.RequestKindWrite,
 		KVPairs:             kvWriteReport.keyValuePairs,
-	})
+	}
+
+	err = c.requestsStore.Add(ctx, &request)
 	if err != nil {
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to set write request: %v", err)
 	}
@@ -106,18 +109,40 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		"WorkflowExecutionID", rawRequest.Metadata.WorkflowExecutionID,
 	)
 
-	response, err := values.NewMap(
-		map[string]any{
-			"success": true,
-		},
-	)
-	if err != nil {
-		return capabilities.CapabilityResponse{}, err
+	timeout := time.After(2 * time.Second)
+	for {
+		request, err := c.requestsStore.GetByID(ctx, request.ID())
+		if err != nil {
+			return capabilities.CapabilityResponse{}, fmt.Errorf("failed to get request by ID: %v", err)
+		}
+
+		if request.Status == kvrequests.RequestStatusCompleted {
+			response, err := values.NewMap(
+				map[string]any{
+					"success": true,
+				},
+			)
+			if err != nil {
+				return capabilities.CapabilityResponse{}, err
+			}
+
+			return capabilities.CapabilityResponse{
+				Value: response,
+			}, nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return capabilities.CapabilityResponse{}, fmt.Errorf("request did not process, context is done")
+		case <-timeout:
+			return capabilities.CapabilityResponse{}, fmt.Errorf("request did not process, timeout after 60 seconds")
+		case <-time.After(1 * time.Second):
+			c.logger.Debug("Waiting for request to be processed",
+				"RequestID", request.ID(),
+			)
+		}
 	}
 
-	return capabilities.CapabilityResponse{
-		Value: response,
-	}, nil
 }
 
 func (c *capability) RegisterToWorkflow(ctx context.Context, rawRequest capabilities.RegisterToWorkflowRequest) error {

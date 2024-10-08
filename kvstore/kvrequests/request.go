@@ -2,6 +2,7 @@ package kvrequests
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 )
 
@@ -16,6 +17,13 @@ var requestKindToString = map[RequestType]string{
 	RequestKindWrite: "write",
 	RequestKindRead:  "read",
 }
+
+type RequestStatus int
+
+const (
+	RequestStatusPending RequestStatus = iota
+	RequestStatusCompleted
+)
 
 type KVPairs map[string][]byte
 
@@ -42,10 +50,15 @@ type Request struct {
 	ReferenceID         string
 	WorkflowExecutionID string
 	KVPairs             KVPairs
+	Status              RequestStatus
 }
 
 func (r *Request) ID() RequestID {
 	return RequestID(fmt.Sprintf("%s_%s_%s", requestKindToString[r.Type], r.ReferenceID, r.WorkflowExecutionID))
+}
+
+func (r *Request) Marshal() ([]byte, error) {
+	return json.Marshal(r)
 }
 
 func (r Request) String() string {

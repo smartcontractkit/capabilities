@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/protobuf/proto"
@@ -19,12 +20,14 @@ import (
 )
 
 func TestNewCapabilities(t *testing.T) {
+	logger := testutils.NewLogger(t)
 	capabilitiesServer := New(&loop.Server{
-		Logger: testutils.NewLogger(t),
+		Logger: logger,
 	}, "kv-store-test-service")
 	assert.NotNil(t, capabilitiesServer)
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
 	assert.NoError(t, capabilitiesServer.Start(ctx))
 
 	config, err := json.Marshal(oracle.Identity{
@@ -45,7 +48,7 @@ func TestNewCapabilities(t *testing.T) {
 		nil, // unused - errorLog core.ErrorLog
 		nil, // unused - pipelineRunner core.PipelineRunnerService
 		nil, // unused - relayerSet core.RelayerSet
-		testutils.NewOracleFactory(t),
+		testutils.NewOracleFactory(t, logger),
 	))
 
 	capabilitiesInfos, err := capabilitiesServer.Infos(ctx)

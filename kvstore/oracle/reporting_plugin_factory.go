@@ -5,23 +5,24 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/smartcontractkit/capabilities/kvstore/kvrequests"
 	"github.com/smartcontractkit/libocr/commontypes"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+
+	"github.com/smartcontractkit/capabilities/kvstore/kvrequests"
 )
 
 var _ ocr3types.ReportingPluginFactory[[]byte] = (*reportingPluginFactory)(nil)
 
 type reportingPluginFactory struct {
-	logger        logger.Logger
+	logger        logger.SugaredLogger
 	requestsStore *kvrequests.RequestsStore
 }
 
 func NewReportingPluginFactory(
-	logger logger.Logger,
+	logger logger.SugaredLogger,
 	requestsStore *kvrequests.RequestsStore,
 ) *reportingPluginFactory {
 	return &reportingPluginFactory{
@@ -57,7 +58,7 @@ var _ ocr3types.ReportingPlugin[[]byte] = (*reportingPlugin)(nil)
 
 type reportingPlugin struct {
 	config        ocr3types.ReportingPluginConfig
-	logger        logger.Logger
+	logger        logger.SugaredLogger
 	requestsStore *kvrequests.RequestsStore
 }
 
@@ -89,7 +90,7 @@ func (rp *reportingPlugin) Observation(
 		return nil, fmt.Errorf("could not unmarshal query: %w", err)
 	}
 
-	requests, err := rp.requestsStore.GetByID(ctx, requestIDs)
+	requests, err := rp.requestsStore.GetByIDs(ctx, requestIDs)
 	if err != nil {
 		return nil, fmt.Errorf("could not retrieve requests: %w", err)
 	}
@@ -112,16 +113,66 @@ func (rp *reportingPlugin) ObservationQuorum(outctx ocr3types.OutcomeContext, qu
 type Outcome struct {
 	// This is the local (in-memory) key-value store
 	Values            map[string][]byte
-	CompletedRequests []kvrequests.RequestID
+	CompletedRequests []kvrequests.Request
 }
 
 // TODO: Requests need to be ordered and process by insert timestamp
 // This is not a perfect solution, but it should be good enough for now
 
 type ProcessedObservation struct {
+	lggr             logger.SugaredLogger
 	request          kvrequests.Request
 	observationCount int
 	observers        []commontypes.OracleID
+}
+type ProcessedObservations struct {
+	lggr         logger.SugaredLogger
+	observations map[kvrequests.RequestID]*ProcessedObservation
+}
+
+func (po *ProcessedObservations) Add(request kvrequests.Request, observer commontypes.OracleID) {
+	observation := po.observations[request.ID()]
+
+	// First observation of this request
+	if observation == nil {
+		po.observations[request.ID()] = &ProcessedObservation{
+			lggr:             po.lggr,
+			request:          request,
+			observationCount: 1,
+			observers:        []commontypes.OracleID{observer},
+		}
+	} else {
+		observation.Observe(request, observer)
+	}
+}
+
+func (po *ProcessedObservation) Observe(request kvrequests.Request, observer commontypes.OracleID) {
+	// TODO: What if not equal? We should probably create a new entry to protect vs malicious actors
+	// Request ID could be a hash of contents :)
+	if !po.request.Equal(request) {
+		po.lggr.Debugw("Requests are not equal",
+			"request", request,
+			"po.request", po.request,
+		)
+		return
+	}
+
+	for _, existingObserver := range po.observers {
+		if existingObserver == observer {
+			po.lggr.Debugw("Observer already observed",
+				"po.observationCount", po.observationCount,
+				"observers", po.observers,
+			)
+			return
+		}
+	}
+
+	po.observers = append(po.observers, observer)
+	po.observationCount++
+	po.lggr.Debugw("Observe processed",
+		"po.observationCount", po.observationCount,
+		"observers", po.observers,
+	)
 }
 
 func (rp *reportingPlugin) Outcome(
@@ -130,21 +181,27 @@ func (rp *reportingPlugin) Outcome(
 	aos []types.AttributedObservation,
 ) (ocr3types.Outcome, error) {
 	var outcome Outcome
-	// if outctx.SeqNr == 1 {
-	// 	outcome = Outcome{
-	// 		Values:            make(map[string][]byte),
-	// 		CompletedRequests: make([]kvrequests.RequestID, 0),
-	// 	}
-	// } else {
-	// 	if err := json.Unmarshal(outctx.PreviousOutcome, &outcome); err != nil {
-	// 		return nil, fmt.Errorf("could not unmarshal PreviousOutcome: %w", err)
-	// 	}
-	// }
+	if outctx.SeqNr == 1 {
+		rp.logger.Debugw("First outcome")
+		outcome = Outcome{
+			Values:            make(map[string][]byte),
+			CompletedRequests: make([]kvrequests.Request, 0),
+		}
+	} else {
+		if err := json.Unmarshal(outctx.PreviousOutcome, &outcome); err != nil {
+			return nil, fmt.Errorf("could not unmarshal PreviousOutcome: %w", err)
+		}
+	}
 
 	// Wipe out previously completed requests
-	outcome.CompletedRequests = make([]kvrequests.RequestID, 0)
+	outcome.CompletedRequests = make([]kvrequests.Request, 0)
 
-	processedObservations := make(map[kvrequests.RequestID]ProcessedObservation)
+	processedObservations := ProcessedObservations{
+		lggr:         rp.logger,
+		observations: make(map[kvrequests.RequestID]*ProcessedObservation),
+	}
+
+	rp.logger.Debugw("Outcome start", "aosLen", len(aos))
 	for _, ao := range aos {
 		var newRequests []kvrequests.Request
 		if err := json.Unmarshal(ao.Observation, &newRequests); err != nil {
@@ -152,30 +209,18 @@ func (rp *reportingPlugin) Outcome(
 		}
 
 		for _, newRequest := range newRequests {
-			observation, ok := processedObservations[newRequest.ID()]
-
-			// First observation of this request
-			if !ok {
-				processedObservations[newRequest.ID()] = struct {
-					request          kvrequests.Request
-					observationCount int
-					observers        []commontypes.OracleID
-				}{request: newRequest}
-			}
-
-			// TODO: What if not equal? We should probably create a new entry to protect vs malicious actors
-			// Request ID could be a hash of contents :)
-			if observation.request.Equal(newRequest) {
-				observation.observationCount++
-				// TODO: Can we get duplicates?
-				observation.observers = append(observation.observers, ao.Observer)
-			}
+			rp.logger.Debugw("Processing observation", "newRequest", newRequest)
+			processedObservations.Add(newRequest, ao.Observer)
 		}
 	}
 
-	for _, processedObservation := range processedObservations {
+	rp.logger.Debugw("Processed observations",
+		"processedObservationsLen", len(processedObservations.observations),
+	)
+
+	for _, processedObservation := range processedObservations.observations {
 		if processedObservation.observationCount <= rp.config.F {
-			rp.logger.Debug("Not enough observations",
+			rp.logger.Debugw("Not enough observations",
 				"requestID", processedObservation.request.ID(),
 				"observationCount", processedObservation.observationCount,
 				"observers", processedObservation.observers,
@@ -188,15 +233,15 @@ func (rp *reportingPlugin) Outcome(
 			for key, value := range processedObservation.request.KVPairs {
 				outcome.Values[key] = value
 			}
-			outcome.CompletedRequests = append(outcome.CompletedRequests, processedObservation.request.ID())
+			outcome.CompletedRequests = append(outcome.CompletedRequests, processedObservation.request)
 		case kvrequests.RequestKindRead:
 			// TODO: Implement
 		}
 	}
 
-	rp.logger.Debug("Outcome complete",
+	rp.logger.Debugw("Outcome complete",
 		"completedRequestsLen", len(outcome.CompletedRequests),
-		"outcome", outcome,
+		"outcome.CompletedRequests", outcome.CompletedRequests,
 	)
 	return json.Marshal(outcome)
 }
@@ -209,24 +254,37 @@ func (rp *reportingPlugin) Reports(seqNr uint64, outcome ocr3types.Outcome) ([]o
 
 	reportWithInfos := make([]ocr3types.ReportWithInfo[[]byte], 0)
 
-	for _, requestID := range o.CompletedRequests {
+	for _, request := range o.CompletedRequests {
+		request.Status = kvrequests.RequestStatusCompleted
+		requestBytes, err := request.Marshal()
+		if err != nil {
+			return nil, fmt.Errorf("could not marshall request: %w", err)
+		}
 		reportWithInfos = append(reportWithInfos, ocr3types.ReportWithInfo[[]byte]{
-			Report: []byte(requestID),
+			Report: requestBytes,
 		})
 	}
 
-	rp.logger.Debug("Reports complete",
+	rp.logger.Debugw("Reports complete",
 		"reportWithInfosLen", len(reportWithInfos),
 		"reportWithInfos", reportWithInfos,
 	)
 	return reportWithInfos, nil
 }
 
-func (rp *reportingPlugin) ShouldAcceptAttestedReport(context.Context, uint64, ocr3types.ReportWithInfo[[]byte]) (bool, error) {
+func (rp *reportingPlugin) ShouldAcceptAttestedReport(
+	ctx context.Context,
+	seqNr uint64,
+	reportWithInfo ocr3types.ReportWithInfo[[]byte],
+) (bool, error) {
 	return true, nil
 }
 
-func (rp *reportingPlugin) ShouldTransmitAcceptedReport(context.Context, uint64, ocr3types.ReportWithInfo[[]byte]) (bool, error) {
+func (rp *reportingPlugin) ShouldTransmitAcceptedReport(
+	ctx context.Context,
+	seqNr uint64,
+	reportWithInfo ocr3types.ReportWithInfo[[]byte],
+) (bool, error) {
 	return true, nil
 }
 
