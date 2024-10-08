@@ -110,7 +110,6 @@ func startAnvil(silent bool) error {
 	}
 
 	// Start anvil in the background
-	// cmd := exec.Command("anvil", args...)
 	cmd := exec.Command("anvil", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

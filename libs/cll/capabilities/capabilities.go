@@ -65,34 +65,6 @@ var Commands = []*cli.Command{
 								return fmt.Errorf("failed to get binaries directory: %w", err)
 							}
 
-							// capabilitiesSpecLockPath := filepath.Join(
-							// 	nodeInfo.Paths.Jobs,
-							// 	fmt.Sprintf("%s_job_id.lock", name),
-							// )
-
-							// capabilitiesSpecID, err := os.ReadFile(capabilitiesSpecLockPath)
-							// if err == nil {
-							// 	// Remove an existing job first
-							// 	_, err2 := utils.ExecCommand(
-							// 		constants.ChainlinkBinaryLocation,
-							// 		"--remote-node-url", nodeInfo.URLs.HTTP,
-							// 		"--admin-credentials-file", nodeInfo.Paths.Credentials,
-							// 		"jobs", "delete",
-							// 		string(capabilitiesSpecID),
-							// 	)
-
-							// 	if err2 != nil {
-							// 		return fmt.Errorf("failed to remove %s capabilities from node %d: %w", name, nodeID, err2)
-							// 	}
-
-							// 	fmt.Printf("Removed %s capabilities from node ID %d\n", name, nodeID)
-							// } else {
-							// 	if !os.IsNotExist(err) {
-							// 		return fmt.Errorf("failed to read capabilities ID lock file: %w", err)
-							// 	}
-							// 	// Else progress to adding the capabilities
-							// }
-
 							capabilitiesSpecPath := filepath.Join(
 								nodeInfo.Paths.Capabilities,
 								fmt.Sprintf("%s_capabilities_spec.toml", name),
@@ -127,16 +99,6 @@ config = '''{"enabled": true, "traceLogging": true, "bootstrapPeers": [ "%s@loca
 							}
 
 							// TODO: Bring back once job deletion also removes the capabilities from the registry
-							// newJobID, err := jobs.ParseJobID(string(output))
-							// if err != nil {
-							// 	fmt.Println("output: ", string(output))
-							// 	return fmt.Errorf("failed to parse job ID: %w", err)
-							// }
-							// fmt.Println("newJobID", newJobID)
-
-							// if err = os.WriteFile(capabilitiesSpecLockPath, []byte(newJobID), 0600); err != nil {
-							// 	return fmt.Errorf("failed to write job ID to lock file: %w", err)
-							// }
 
 							fmt.Println("output", string(output))
 							// TODO: Correctly handle error responses from CLI
