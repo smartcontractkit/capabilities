@@ -30,7 +30,10 @@
       "executor": "nx:run-commands",
       "options": {
         "cwd": "{projectRoot}",
-        "command": "go build -o ./bin/{projectName} ."
+        "commands": [
+          "CGO_ENABLED='0' GOARCH='amd64' go build -o ./../bin/amd64/{projectName} .",
+          "CGO_ENABLED='0' GOARCH='arm64' go build -o ./../bin/arm64/{projectName} ."
+        ]
       }
     },
     "generate": {
