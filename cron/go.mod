@@ -1,6 +1,6 @@
 module github.com/smartcontractkit/capabilities/cron
 
-go 1.23
+go 1.23.0
 
 require (
 	github.com/go-co-op/gocron/v2 v2.11.0
@@ -8,7 +8,7 @@ require (
 	github.com/hashicorp/go-plugin v1.6.2-0.20240829161738-06afb6d7ae99
 	github.com/jonboulle/clockwork v0.4.0
 	github.com/prometheus/client_golang v1.17.0
-	github.com/smartcontractkit/chainlink-common v0.2.2
+	github.com/smartcontractkit/chainlink-common v0.2.3-0.20241001210038-dd59341432bd
 	github.com/stretchr/testify v1.9.0
 )
 
