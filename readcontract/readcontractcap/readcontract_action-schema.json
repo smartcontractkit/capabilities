@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/smartcontractkit/capabilities/readcontract/readcontractcap/read-contract",
+  "$defs": {
+    "Config": {
+      "type": "object",
+      "properties": {
+        "ContractReaderConfig": {
+          "type": "string"
+        }
+      },
+      "required": ["ContractReaderConfig"]
+    },
+    "Input": {
+      "type": "object",
+      "properties": {
+        "ReadIdentifier": {
+          "type": "string"
+        },
+        "Address": {
+          "type": "string"
+        },
+        "ConfidenceLevel": {
+          "type": "string"
+        },
+        "Params": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "required": ["ReadIdentifier", "Address", "ConfidenceLevel", "Params"]
+    },
+    "Output": {
+      "type": "object",
+      "properties": {
+        "LatestValue": {
+          "type": "object"
+        }
+      },
+      "required": ["LatestValue"]
+    }
+  },
+  "type": "object",
+  "properties": {
+    "Config": {
+      "$ref": "#/$defs/Config"
+    },
+    "Inputs": {
+      "$ref": "#/$defs/Input"
+    },
+    "Outputs": {
+      "$ref": "#/$defs/Output"
+    }
+  }
+}

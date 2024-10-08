@@ -1,0 +1,8 @@
+dir: "{{ .InterfaceDir }}"
+mockname: "{{ .InterfaceName }}"
+outpkg: "{{ .PackageName }}_test"
+filename: "{{ .InterfaceName | snakecase }}_test.go"
+packages:
+  github.com/smartcontractkit/capabilities/readcontract/action:
+    interfaces:
+      Relayer:
