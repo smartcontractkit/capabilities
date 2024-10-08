@@ -85,12 +85,6 @@ func startNodes(args startNodesArgs) error {
 			return fmt.Errorf("failed to write lock file: %v", err)
 		}
 
-		// Keep track of the command and the log file
-		nodeProcesses = append(nodeProcesses, nodeProcess{
-			cmd:     cmd,
-			logFile: logFile,
-		})
-
 		// Output messages
 		fmt.Println("--------------------------------------------------")
 		fmt.Printf("Started Chainlink Node %d\n", nodeID)

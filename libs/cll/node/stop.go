@@ -1,6 +1,7 @@
 package node
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -36,7 +37,7 @@ func stopNodes(nodeIDs []int) error {
 
 		err = process.Signal(os.Interrupt)
 
-		if err != nil && err != os.ErrProcessDone {
+		if err != nil && errors.Is(err, os.ErrProcessDone) {
 			fmt.Printf("failed to interrupt node: %v", err)
 
 			if err2 := process.Kill(); err2 != nil {
