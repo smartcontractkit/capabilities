@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"testing"
 	"time"
 
@@ -13,7 +12,6 @@ import (
 	"github.com/smartcontractkit/capabilities/kvstore/oracle"
 	"github.com/smartcontractkit/capabilities/libs/testutils"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/ocr3cap"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
@@ -26,7 +24,8 @@ func TestNewCapabilities(t *testing.T) {
 	}, "kv-store-test-service")
 	assert.NotNil(t, capabilitiesServer)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	// Timeout is important to avoid hanging tests
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	assert.NoError(t, capabilitiesServer.Start(ctx))
 
@@ -54,16 +53,17 @@ func TestNewCapabilities(t *testing.T) {
 	capabilitiesInfos, err := capabilitiesServer.Infos(ctx)
 	assert.NoError(t, err)
 
-	fmt.Println(capabilitiesInfos)
-	assert.Len(t, capabilitiesInfos, 1)
-	assert.Equal(t, "kv-store-target@1.0.0", capabilitiesInfos[0].ID)
+	assert.Len(t, capabilitiesInfos, 2)
+	assert.Equal(t, "kv-store-action@1.0.0", capabilitiesInfos[0].ID)
+	assert.Equal(t, "kv-store-target@1.0.0", capabilitiesInfos[1].ID)
+
+	workflow := testutils.NewWorkflow(t)
 
 	// CapabilityRequest to write to the kvstore
-	keyValuePairs := map[string][]byte{
+	wrappedKVPairs, err := values.Wrap(map[string][]byte{
 		"key":  []byte("value"),
 		"key2": []byte("value2"),
-	}
-	wrappedKVPairs, err := values.Wrap(keyValuePairs)
+	})
 	assert.NoError(t, err)
 
 	keyValuePairsBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(values.Proto(wrappedKVPairs))
@@ -79,25 +79,65 @@ func TestNewCapabilities(t *testing.T) {
 	)
 	assert.NoError(t, err)
 
-	inputs, err := values.NewMap(map[string]any{
+	response, err := capabilitiesServer.Target.Execute(ctx, workflow.NewRequest(map[string]any{
 		"signedReport": wrappedSignedReport,
-	})
+	}))
 	assert.NoError(t, err)
 
-	workflow := testutils.NewWorkflow()
-	capabilityRequest := workflow.NewRequest(inputs)
-	expectedResponse, err := values.NewMap(map[string]any{
+	assert.Equal(t, workflow.NewResponse(map[string]any{
 		"success": true,
-	})
-	assert.NoError(t, err)
-
-	capabilityResponse, err := capabilitiesServer.Target.Execute(ctx, capabilityRequest)
-	assert.NoError(t, err)
-
-	assert.Equal(t, capabilities.CapabilityResponse{
-		Value: expectedResponse,
-	}, capabilityResponse)
+	}), response)
 
 	// CapabilityRequest to read from the kvstore
-	// TODO: Implement read capability
+	response, err = capabilitiesServer.Action.Execute(ctx, workflow.NewRequest(map[string]any{
+		"Keys": []string{"key", "key2", "key3"},
+	}))
+	assert.NoError(t, err)
+
+	assert.Equal(t, workflow.NewResponse(map[string]any{
+		"key":  []byte("value"),
+		"key2": []byte("value2"),
+		"key3": []byte(""),
+	}), response)
+
+	// Delete from the kvstore
+	wrappedKVPairs, err = values.Wrap(map[string][]byte{
+		"key":  []byte(""),
+		"key3": []byte("foo"),
+	})
+	assert.NoError(t, err)
+
+	keyValuePairsBytes, err = proto.MarshalOptions{Deterministic: true}.Marshal(values.Proto(wrappedKVPairs))
+	assert.NoError(t, err)
+
+	wrappedSignedReport, err = values.Wrap(
+		ocr3cap.SignedReport{
+			Context:    []uint8{},
+			ID:         []uint8{1},
+			Report:     keyValuePairsBytes,
+			Signatures: [][]uint8{{}},
+		},
+	)
+	assert.NoError(t, err)
+
+	response, err = capabilitiesServer.Target.Execute(ctx, workflow.NewRequest(map[string]any{
+		"signedReport": wrappedSignedReport,
+	}))
+	assert.NoError(t, err)
+
+	assert.Equal(t, workflow.NewResponse(map[string]any{
+		"success": true,
+	}), response)
+
+	// CapabilityRequest to read final values
+	response, err = capabilitiesServer.Action.Execute(ctx, workflow.NewRequest(map[string]any{
+		"Keys": []string{"key", "key2", "key3"},
+	}))
+	assert.NoError(t, err)
+
+	assert.Equal(t, workflow.NewResponse(map[string]any{
+		"key":  []byte(""),
+		"key2": []byte("value2"),
+		"key3": []byte("foo"),
+	}), response)
 }

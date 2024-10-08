@@ -63,7 +63,9 @@ type reportingPlugin struct {
 }
 
 func (rp *reportingPlugin) Query(ctx context.Context, outctx ocr3types.OutcomeContext) (types.Query, error) {
-	requests, err := rp.requestsStore.Get(ctx)
+	requests, err := rp.requestsStore.Get(ctx, &kvrequests.Filters{
+		Status: kvrequests.RequestStatusPending,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("could not retrieve requests: %w", err)
 	}
@@ -90,7 +92,7 @@ func (rp *reportingPlugin) Observation(
 		return nil, fmt.Errorf("could not unmarshal query: %w", err)
 	}
 
-	requests, err := rp.requestsStore.GetByIDs(ctx, requestIDs)
+	requests, err := rp.requestsStore.Get(ctx, &kvrequests.Filters{RequestIDs: requestIDs})
 	if err != nil {
 		return nil, fmt.Errorf("could not retrieve requests: %w", err)
 	}
@@ -150,7 +152,7 @@ func (po *ProcessedObservation) Observe(request kvrequests.Request, observer com
 	// TODO: What if not equal? We should probably create a new entry to protect vs malicious actors
 	// Request ID could be a hash of contents :)
 	if !po.request.Equal(request) {
-		po.lggr.Debugw("Requests are not equal",
+		po.lggr.Infow("Requests are not equal",
 			"request", request,
 			"po.request", po.request,
 		)
@@ -159,7 +161,7 @@ func (po *ProcessedObservation) Observe(request kvrequests.Request, observer com
 
 	for _, existingObserver := range po.observers {
 		if existingObserver == observer {
-			po.lggr.Debugw("Observer already observed",
+			po.lggr.Infow("Observer already observed",
 				"po.observationCount", po.observationCount,
 				"observers", po.observers,
 			)
@@ -169,10 +171,6 @@ func (po *ProcessedObservation) Observe(request kvrequests.Request, observer com
 
 	po.observers = append(po.observers, observer)
 	po.observationCount++
-	po.lggr.Debugw("Observe processed",
-		"po.observationCount", po.observationCount,
-		"observers", po.observers,
-	)
 }
 
 func (rp *reportingPlugin) Outcome(
@@ -201,7 +199,7 @@ func (rp *reportingPlugin) Outcome(
 		observations: make(map[kvrequests.RequestID]*ProcessedObservation),
 	}
 
-	rp.logger.Debugw("Outcome start", "aosLen", len(aos))
+	rp.logger.Debugw("Outcome start", "attributedObservationsLen", len(aos))
 	for _, ao := range aos {
 		var newRequests []kvrequests.Request
 		if err := json.Unmarshal(ao.Observation, &newRequests); err != nil {
@@ -209,7 +207,6 @@ func (rp *reportingPlugin) Outcome(
 		}
 
 		for _, newRequest := range newRequests {
-			rp.logger.Debugw("Processing observation", "newRequest", newRequest)
 			processedObservations.Add(newRequest, ao.Observer)
 		}
 	}
@@ -233,9 +230,25 @@ func (rp *reportingPlugin) Outcome(
 			for key, value := range processedObservation.request.KVPairs {
 				outcome.Values[key] = value
 			}
+			processedObservation.request.Status = kvrequests.RequestStatusCompleted
 			outcome.CompletedRequests = append(outcome.CompletedRequests, processedObservation.request)
 		case kvrequests.RequestKindRead:
-			// TODO: Implement
+			keysWithValues := make(map[string][]byte)
+			for key := range processedObservation.request.KVPairs {
+				val, ok := outcome.Values[key]
+				if !ok {
+					keysWithValues[key] = []byte("")
+				} else {
+					keysWithValues[key] = val
+				}
+			}
+
+			rp.logger.Debugw("Read request",
+				"request", processedObservation.request,
+			)
+			processedObservation.request.KVPairs = keysWithValues
+			processedObservation.request.Status = kvrequests.RequestStatusCompleted
+			outcome.CompletedRequests = append(outcome.CompletedRequests, processedObservation.request)
 		}
 	}
 
@@ -255,7 +268,6 @@ func (rp *reportingPlugin) Reports(seqNr uint64, outcome ocr3types.Outcome) ([]o
 	reportWithInfos := make([]ocr3types.ReportWithInfo[[]byte], 0)
 
 	for _, request := range o.CompletedRequests {
-		request.Status = kvrequests.RequestStatusCompleted
 		requestBytes, err := request.Marshal()
 		if err != nil {
 			return nil, fmt.Errorf("could not marshall request: %w", err)
@@ -267,7 +279,6 @@ func (rp *reportingPlugin) Reports(seqNr uint64, outcome ocr3types.Outcome) ([]o
 
 	rp.logger.Debugw("Reports complete",
 		"reportWithInfosLen", len(reportWithInfos),
-		"reportWithInfos", reportWithInfos,
 	)
 	return reportWithInfos, nil
 }

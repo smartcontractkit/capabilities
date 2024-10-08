@@ -20,9 +20,10 @@ func TestRequest(t *testing.T) {
 				ReferenceID:         "ref123",
 				WorkflowExecutionID: "workflow456",
 				KVPairs:             map[string][]byte{"foo": []byte("bar"), "baz": []byte("bad")},
+				Status:              RequestStatusPending,
 			},
 			expectedID:     "write_ref123_workflow456",
-			expectedString: `Request{ID: "write_ref123_workflow456", pairs: {"foo": "bar", "baz": "bad"} }`,
+			expectedString: `Request{ID: "write_ref123_workflow456", status: "pending", pairs: {"foo": "bar", "baz": "bad"} }`,
 		},
 		{
 			name: "ReadRequest",
@@ -31,9 +32,10 @@ func TestRequest(t *testing.T) {
 				ReferenceID:         "ref789",
 				WorkflowExecutionID: "workflow012",
 				KVPairs:             map[string][]byte{"key2": []byte("value2")},
+				Status:              RequestStatusCompleted,
 			},
 			expectedID:     "read_ref789_workflow012",
-			expectedString: `Request{ID: "read_ref789_workflow012", pairs: {"key2": "value2"} }`,
+			expectedString: `Request{ID: "read_ref789_workflow012", status: "completed", pairs: {"key2": "value2"} }`,
 		},
 	}
 

@@ -12,17 +12,18 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
+	"github.com/smartcontractkit/capabilities/kvstore/action"
 	"github.com/smartcontractkit/capabilities/kvstore/kvrequests"
 	"github.com/smartcontractkit/capabilities/kvstore/oracle"
 	"github.com/smartcontractkit/capabilities/kvstore/target"
 )
 
 type capabilitiesServer struct {
-	requestsStore *kvrequests.RequestsStore
-	Target        capabilities.TargetCapability
-	oracle        core.Oracle
-	s             *loop.Server
-	name          string
+	Action capabilities.ActionCapability
+	Target capabilities.TargetCapability
+	oracle core.Oracle
+	s      *loop.Server
+	name   string
 }
 
 func New(s *loop.Server, serviceName string) *capabilitiesServer {
@@ -59,7 +60,13 @@ func (c *capabilitiesServer) Infos(ctx context.Context) ([]capabilities.Capabili
 		return nil, err
 	}
 
+	actionInfo, err := c.Action.Info(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	return []capabilities.CapabilityInfo{
+		actionInfo,
 		targetInfo,
 	}, nil
 }
@@ -77,15 +84,18 @@ func (c *capabilitiesServer) Initialise(
 ) error {
 	c.s.Logger.Debugf("Initialising %s", c.name)
 
-	requestsStore, err := kvrequests.New(store)
+	requestsStore, err := kvrequests.New(store, c.s.Logger)
 	if err != nil {
 		return fmt.Errorf("error when creating requests store: %w", err)
 	}
 
-	c.requestsStore = requestsStore
-	c.Target = target.New(target.Params{
-		RequestsStore: c.requestsStore,
+	c.Action = action.New(action.Params{
 		Logger:        c.s.Logger,
+		RequestsStore: requestsStore,
+	})
+	c.Target = target.New(target.Params{
+		Logger:        c.s.Logger,
+		RequestsStore: requestsStore,
 	})
 
 	c.s.Logger.Debug("config: ", config)
@@ -113,8 +123,8 @@ func (c *capabilitiesServer) Initialise(
 			ContractTransmitterTransmitTimeout: time.Second * 10,
 			DatabaseTimeout:                    time.Second * 10,
 		},
-		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(c.s.Logger, c.requestsStore),
-		ContractTransmitter:           oracle.NewContractTransmitter(c.s.Logger, oracleIdentity, c.requestsStore),
+		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(c.s.Logger, requestsStore),
+		ContractTransmitter:           oracle.NewContractTransmitter(c.s.Logger, oracleIdentity, requestsStore),
 		ContractConfigTracker:         contractConfigTracker,                        // UNUSED
 		OffchainConfigDigester:        oracle.NewOffchainConfigDigester(c.s.Logger), // UNUSED
 	})

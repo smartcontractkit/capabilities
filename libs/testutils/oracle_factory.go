@@ -38,14 +38,6 @@ func (of *oracleFactory) NewOracle(ctx context.Context, args core.OracleArgs) (c
 	}, nil
 }
 
-// type OracleArgs struct {
-//     LocalConfig                   types.LocalConfig
-//     ReportingPluginFactoryService ocr3types.ReportingPluginFactory[[]byte]
-//     ContractConfigTracker         types.ContractConfigTracker
-//     ContractTransmitter           ocr3types.ContractTransmitter[[]byte]
-//     OffchainConfigDigester        types.OffchainConfigDigester
-// }
-
 type oracle struct {
 	config core.OracleArgs
 	wg     *sync.WaitGroup

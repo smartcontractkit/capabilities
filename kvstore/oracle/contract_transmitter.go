@@ -40,7 +40,7 @@ func (ct *contractTransmitter) Transmit(
 	if err := json.Unmarshal(reportWithInfo.Report, &request); err != nil {
 		return err
 	}
-	ct.logger.Debug("Updating request")
+	ct.logger.Debugw("Updating", "request", request)
 
 	return ct.requestsStore.Update(ctx, request)
 }

@@ -21,14 +21,15 @@ func TestKVStoreTarget(t *testing.T) {
 	t.Run("succeeds with valid data", func(t *testing.T) {
 		t.Skip()
 
+		logger := testutils.NewLogger(t)
 		kvStore := testutils.NewStore(t)
-		requestsStore, err := kvrequests.New(kvStore)
+		requestsStore, err := kvrequests.New(kvStore, logger)
 		assert.NoError(t, err)
 
 		ctx := context.Background()
 		target := target.New(target.Params{
 			RequestsStore: requestsStore,
-			Logger:        testutils.NewLogger(t),
+			Logger:        logger,
 		})
 
 		keyValuePairs := map[string][]byte{
@@ -51,13 +52,10 @@ func TestKVStoreTarget(t *testing.T) {
 		)
 		assert.NoError(t, err)
 
-		inputs, err := values.NewMap(map[string]any{
+		workflow := testutils.NewWorkflow(t)
+		capabilityRequest := workflow.NewRequest(map[string]any{
 			"signedReport": wrappedSignedReport,
 		})
-		assert.NoError(t, err)
-
-		workflow := testutils.NewWorkflow()
-		capabilityRequest := workflow.NewRequest(inputs)
 		capabilityResponse, err := target.Execute(ctx, capabilityRequest)
 		assert.NoError(t, err)
 
@@ -70,7 +68,7 @@ func TestKVStoreTarget(t *testing.T) {
 			Value: expectedValue,
 		}, capabilityResponse)
 
-		writeRequestsBytes, err := kvStore.Get(ctx, kvrequests.WriteRequestsKey)
+		writeRequestsBytes, err := kvStore.Get(ctx, kvrequests.RequestsKey)
 		assert.NoError(t, err)
 		var writeRequests []kvrequests.Request
 		assert.NoError(t, json.Unmarshal(writeRequestsBytes, &writeRequests))

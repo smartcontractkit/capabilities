@@ -24,7 +24,6 @@ func NewStore(t *testing.T) *store {
 }
 
 func (ts *store) Store(_ context.Context, key string, value []byte) error {
-	ts.t.Logf("[testutils.Store] Storing key: %s, value: %s", key, string(value))
 	ts.values[key] = value
 	return nil
 }
@@ -33,6 +32,5 @@ func (ts *store) Get(_ context.Context, key string) ([]byte, error) {
 	if _, ok := ts.values[key]; !ok {
 		return nil, fmt.Errorf("key not found: %s", key)
 	}
-	ts.t.Logf("[testutils.Store] Getting key: %s", key)
 	return ts.values[key], nil
 }

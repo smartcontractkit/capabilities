@@ -11,7 +11,7 @@ import (
 )
 
 func TestWriteRequests(t *testing.T) {
-	requestsStore, err := New(testutils.NewStore(t))
+	requestsStore, err := New(testutils.NewStore(t), testutils.NewLogger(t))
 	assert.NoError(t, err)
 
 	ctx := context.Background()
@@ -25,7 +25,7 @@ func TestWriteRequests(t *testing.T) {
 
 	assert.NoError(t, requestsStore.Add(ctx, &writeRequest))
 
-	storedWriteRequestsBytes, err := requestsStore.store.Get(ctx, WriteRequestsKey)
+	storedWriteRequestsBytes, err := requestsStore.store.Get(ctx, RequestsKey)
 	assert.NoError(t, err)
 
 	var storedWriteRequests []Request

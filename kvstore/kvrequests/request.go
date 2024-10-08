@@ -21,9 +21,20 @@ var requestKindToString = map[RequestType]string{
 type RequestStatus int
 
 const (
-	RequestStatusPending RequestStatus = iota
+	RequestStatusPending RequestStatus = iota + 1
 	RequestStatusCompleted
 )
+
+func (r RequestStatus) String() string {
+	switch r {
+	case RequestStatusPending:
+		return "pending"
+	case RequestStatusCompleted:
+		return "completed"
+	default:
+		return "unspecified"
+	}
+}
 
 type KVPairs map[string][]byte
 
@@ -62,7 +73,7 @@ func (r *Request) Marshal() ([]byte, error) {
 }
 
 func (r Request) String() string {
-	return fmt.Sprintf("Request{ID: \"%s\", pairs: %s}", r.ID(), r.KVPairs)
+	return fmt.Sprintf("Request{ID: \"%s\", status: \"%s\", pairs: %s}", r.ID(), r.Status, r.KVPairs)
 }
 
 func (r Request) Equal(other Request) bool {
