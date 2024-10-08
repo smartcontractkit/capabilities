@@ -12,11 +12,6 @@ import (
 	"github.com/smartcontractkit/capabilities/libs/cli/utils"
 )
 
-type nodeProcess struct {
-	cmd     *exec.Cmd
-	logFile *os.File
-}
-
 type startNodesArgs struct {
 	nodeIDs []int
 	logs    bool
@@ -42,7 +37,7 @@ func startNodes(args startNodesArgs) error {
 		uiCredentialsFilepath := filepath.Join(nodeDir, constants.ChainlinkNodeUICredentialsFilename)
 		secretsFilepath := filepath.Join(nodeDir, constants.ChainlinkNodeSecretsFilename)
 
-		cmd := exec.Command(
+		cmd := exec.Command( //nolint:gosec
 			constants.ChainlinkBinaryLocation,
 			"--config", filepath.Join(nodeDir, constants.ChainlinkNodeConfigFilename),
 			"--secrets", secretsFilepath,
