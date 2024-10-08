@@ -60,7 +60,6 @@ func deployContract() error {
 
 	fmt.Printf("Contract deployed to %s (info: %s)\n", ocrContractInfo.Address, ocrContractFilePath)
 	return nil
-
 }
 
 func configureContract(nodeIDs []int) error {

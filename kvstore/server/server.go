@@ -33,34 +33,34 @@ func New(s *loop.Server, serviceName string) *capabilitiesServer {
 	}
 }
 
-func (c *capabilitiesServer) Start(ctx context.Context) error {
+func (cs *capabilitiesServer) Start(ctx context.Context) error {
 	return nil
 }
 
-func (c *capabilitiesServer) Close() error {
+func (cs *capabilitiesServer) Close() error {
 	// TODO: Close missing context
-	return c.oracle.Close(context.Background())
+	return cs.oracle.Close(context.Background())
 }
 
-func (c *capabilitiesServer) Ready() error {
+func (cs *capabilitiesServer) Ready() error {
 	return nil
 }
 
-func (c *capabilitiesServer) HealthReport() map[string]error {
+func (cs *capabilitiesServer) HealthReport() map[string]error {
 	return nil
 }
 
-func (c *capabilitiesServer) Name() string {
-	return c.name
+func (cs *capabilitiesServer) Name() string {
+	return cs.name
 }
 
-func (c *capabilitiesServer) Infos(ctx context.Context) ([]capabilities.CapabilityInfo, error) {
-	targetInfo, err := c.Target.Info(ctx)
+func (cs *capabilitiesServer) Infos(ctx context.Context) ([]capabilities.CapabilityInfo, error) {
+	targetInfo, err := cs.Target.Info(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	actionInfo, err := c.Action.Info(ctx)
+	actionInfo, err := cs.Action.Info(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +71,7 @@ func (c *capabilitiesServer) Infos(ctx context.Context) ([]capabilities.Capabili
 	}, nil
 }
 
-func (c *capabilitiesServer) Initialise(
+func (cs *capabilitiesServer) Initialise(
 	ctx context.Context,
 	config string,
 	telemetryService core.TelemetryService,
@@ -82,35 +82,35 @@ func (c *capabilitiesServer) Initialise(
 	relayerSet core.RelayerSet,
 	oracleFactory core.OracleFactory,
 ) error {
-	c.s.Logger.Debugf("Initialising %s", c.name)
+	cs.s.Logger.Debugf("Initialising %s", cs.name)
 
-	requestsStore, err := kvrequests.New(store, c.s.Logger)
+	requestsStore, err := kvrequests.New(store, cs.s.Logger)
 	if err != nil {
 		return fmt.Errorf("error when creating requests store: %w", err)
 	}
 
-	c.Action = action.New(action.Params{
-		Logger:        c.s.Logger,
+	cs.Action = action.New(action.Params{
+		Logger:        cs.s.Logger,
 		RequestsStore: requestsStore,
 	})
-	c.Target = target.New(target.Params{
-		Logger:        c.s.Logger,
+	cs.Target = target.New(target.Params{
+		Logger:        cs.s.Logger,
 		RequestsStore: requestsStore,
 	})
 
-	c.s.Logger.Debug("config: ", config)
+	cs.s.Logger.Debug("config: ", config)
 
 	var oracleIdentity oracle.Identity
 	if err := json.Unmarshal([]byte(config), &oracleIdentity); err != nil {
 		return fmt.Errorf("failed to unmarshal key bundle bytes: %w", err)
 	}
-	c.s.Logger.Debug("oracleIdentity: ", oracleIdentity)
+	cs.s.Logger.Debug("oracleIdentity: ", oracleIdentity)
 
-	if err := capabilityRegistry.Add(ctx, c.Target); err != nil {
+	if err := capabilityRegistry.Add(ctx, cs.Target); err != nil {
 		return fmt.Errorf("error when adding kv store target to the registry: %w", err)
 	}
 
-	contractConfigTracker, err := oracle.NewContractConfigTracker(c.s.Logger, oracleIdentity)
+	contractConfigTracker, err := oracle.NewContractConfigTracker(cs.s.Logger, oracleIdentity)
 	if err != nil {
 		return fmt.Errorf("error when creating contract config tracker: %w", err)
 	}
@@ -123,22 +123,40 @@ func (c *capabilitiesServer) Initialise(
 			ContractTransmitterTransmitTimeout: time.Second * 10,
 			DatabaseTimeout:                    time.Second * 10,
 		},
-		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(c.s.Logger, requestsStore),
-		ContractTransmitter:           oracle.NewContractTransmitter(c.s.Logger, oracleIdentity, requestsStore),
-		ContractConfigTracker:         contractConfigTracker,                        // UNUSED
-		OffchainConfigDigester:        oracle.NewOffchainConfigDigester(c.s.Logger), // UNUSED
+		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(cs.s.Logger, requestsStore),
+		ContractTransmitter:           oracle.NewContractTransmitter(cs.s.Logger, oracleIdentity, requestsStore),
+		ContractConfigTracker:         contractConfigTracker,                         // UNUSED
+		OffchainConfigDigester:        oracle.NewOffchainConfigDigester(cs.s.Logger), // UNUSED
 	})
 	if err != nil {
 		return fmt.Errorf("error when creating oracle: %w", err)
 	}
-	c.s.Logger.Debug("KVStore capabilities: Oracle created")
+	cs.s.Logger.Debug("KVStore capabilities: Oracle created")
 
 	err = oracle.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("error when starting oracle: %w", err)
 	}
-	c.s.Logger.Debug("KVStore capabilities: Oracle started")
-	c.oracle = oracle
+	cs.s.Logger.Debug("KVStore capabilities: Oracle started")
+	cs.oracle = oracle
+
+	// =================================================================================================
+	// FOR TESTING PURPOSES ONLY
+	request := kvrequests.Request{
+		WorkflowExecutionID: "workflowExecutionID",
+		ReferenceID:         "1",
+		Type:                kvrequests.RequestKindWrite,
+		KVPairs: map[string][]byte{
+			"key":  []byte("value"),
+			"key2": []byte("value2"),
+		},
+	}
+
+	err = requestsStore.Add(ctx, &request)
+	if err != nil {
+		return err
+	}
+	// =================================================================================================
 
 	return nil
 }

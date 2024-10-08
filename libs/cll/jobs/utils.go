@@ -43,5 +43,4 @@ func ParseJobID(input string) (string, error) {
 	}
 
 	return "", fmt.Errorf("ID not found")
-
 }

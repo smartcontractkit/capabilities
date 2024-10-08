@@ -151,6 +151,8 @@ func (po *ProcessedObservations) Add(request kvrequests.Request, observer common
 func (po *ProcessedObservation) Observe(request kvrequests.Request, observer commontypes.OracleID) {
 	// TODO: What if not equal? We should probably create a new entry to protect vs malicious actors
 	// Request ID could be a hash of contents :)
+	// TODO: Ensure that requrests that are completed are treated as equal as well. This is important for nodes
+	// that have some data missing to be able process the same request.
 	if !po.request.Equal(request) {
 		po.lggr.Infow("Requests are not equal",
 			"request", request,
