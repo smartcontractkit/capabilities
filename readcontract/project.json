@@ -1,7 +1,7 @@
 {
   "name": "readcontract",
   "projectType": "capability",
-  "projectRoot": "capabilities/kvstore",
+  "projectRoot": "capabilities/readcontract",
   "implicitDependencies": ["types"],
   "tags": [],
   "targets": {

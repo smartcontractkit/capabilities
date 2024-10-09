@@ -18,6 +18,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+      - name: Cache NX
+        uses: actions/cache@2cdf405574d6ef1f33a1d12acccd3ae82f47b3f2 # v4.1.0
+        with:
+          path: |
+            .nx
+            ~/.npm
+          key: ${{ runner.os }}
       - run: npx nx@19.8.2 init # nx version is 19.8.2
       - name: Get base branch
         id: get-base
@@ -97,7 +104,14 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version: latest
+          node-version: "20"
+      - name: Cache NX
+        uses: actions/cache@2cdf405574d6ef1f33a1d12acccd3ae82f47b3f2 # v4.1.0
+        with:
+          path: |
+            .nx
+            ~/.npm
+          key: ${{ runner.os }}
       - run: npx nx@19.8.2 init # nx version is 19.8.2
       - id: get-root
         run: echo "root=$(./nx show project ${{matrix.projects}} --json)" >> "$GITHUB_OUTPUT"
