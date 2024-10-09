@@ -19,7 +19,7 @@ jobs:
         with:
           node-version: "20"
       - name: Cache NX
-        uses: actions/cache@2cdf405 # v4.1.0
+        uses: actions/cache@2cdf405574d6ef1f33a1d12acccd3ae82f47b3f2 # v4.1.0
         with:
           path: .nx
           key: ${{ runner.os }}
@@ -89,7 +89,7 @@ jobs:
         with:
           node-version: latest
       - name: Cache NX
-        uses: actions/cache@2cdf405 # v4.1.0
+        uses: actions/cache@2cdf405574d6ef1f33a1d12acccd3ae82f47b3f2 # v4.1.0
         with:
           path: .nx
           key: ${{ runner.os }}
