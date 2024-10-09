@@ -70,6 +70,11 @@ func (rp *reportingPlugin) Query(ctx context.Context, outctx ocr3types.OutcomeCo
 		return nil, fmt.Errorf("could not retrieve requests: %w", err)
 	}
 
+	if len(requests) == 0 {
+		rp.logger.Debugw("No pending requests. Skipping query.")
+		return nil, nil
+	}
+
 	var requestIDs []kvrequests.RequestID
 	for _, request := range requests {
 		requestIDs = append(requestIDs, request.ID())
@@ -90,6 +95,11 @@ func (rp *reportingPlugin) Observation(
 	var requestIDs []kvrequests.RequestID
 	if err := json.Unmarshal(query, &requestIDs); err != nil {
 		return nil, fmt.Errorf("could not unmarshal query: %w", err)
+	}
+
+	if (len(requestIDs)) == 0 {
+		rp.logger.Debugw("Empty query. Skipping observation.")
+		return nil, nil
 	}
 
 	requests, err := rp.requestsStore.Get(ctx, &kvrequests.Filters{RequestIDs: requestIDs})

@@ -29,8 +29,9 @@ type Paths struct {
 }
 
 type Info struct {
-	Paths   *Paths `json:"paths"`
 	ChainID int    `json:"chainID"`
+	Network string `json:"network"`
+	Paths   *Paths `json:"paths"`
 	Port    int    `json:"port"`
 	URLs    *URLs
 }
@@ -39,13 +40,14 @@ func GetInfo() *Info {
 	port := 8545 // TODO: Configure this in anvil
 	return &Info{
 		ChainID: 31337, // TODO: Configure this in anvil
-		Port:    port,
+		Network: "evm",
 		Paths: &Paths{
 			ChainStateFile: filepath.Join(chainDir, "chain_state.json"),
 			ConfigFile:     chainConfigFilePath,
 			Contracts:      filepath.Join(chainDir, "contracts"),
 			Dir:            chainDir,
 		},
+		Port: port,
 		URLs: &URLs{
 			HTTP: fmt.Sprintf("http://localhost:%d", port),
 			WS:   fmt.Sprintf("ws://localhost:%d", port),

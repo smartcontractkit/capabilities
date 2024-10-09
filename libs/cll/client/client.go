@@ -32,7 +32,7 @@ var Commands = []*cli.Command{
 					},
 					&cli.StringFlag{
 						Name:  "output",
-						Value: "./bin/chainlink", // Update default path as needed
+						Value: "./bin/arm64/chainlink", // Update default path as needed
 						Usage: "Output location for the Chainlink binary",
 					},
 				},
