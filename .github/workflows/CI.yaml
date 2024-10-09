@@ -32,7 +32,7 @@ jobs:
         id: get-affected
         run: echo "affected=$(./nx show projects --affected --json --base=${{steps.get-base.outputs.base}})" >> "$GITHUB_OUTPUT"
 
-  build-and-test:
+  build:
     needs: affected-projects
     if: ${{ needs.affected-projects.outputs.affected != '[]' && needs.affected-projects.outputs.affected != '' }}
     runs-on: ubuntu-latest
@@ -48,6 +48,21 @@ jobs:
         uses: ./.github/actions/setup
       - name: Build ${{ matrix.projects }}
         run: ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} build
+
+  test:
+    needs: affected-projects
+    if: ${{ needs.affected-projects.outputs.affected != '[]' && needs.affected-projects.outputs.affected != '' }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        projects: ${{fromJson(needs.affected-projects.outputs.affected)}}
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
+        with:
+          fetch-depth: 0
+      - name: Set up project environment
+        uses: ./.github/actions/setup
       - name: Test ${{ matrix.projects }}
         run: ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} test
 
@@ -111,7 +126,8 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - lint
-      - build-and-test
+      - build
+      - test
       - tidy-and-generate
     if: always()
     steps:
