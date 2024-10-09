@@ -8,11 +8,6 @@ runs:
       with:
         node-version: "20"
         cache-dependency-path: "**/.github/actions/**/*.yml"
-    - name: Cache NX
-      uses: actions/cache@2cdf405574d6ef1f33a1d12acccd3ae82f47b3f2 # v4.1.0
-      with:
-        path: .nx
-        key: ${{ runner.os }}
     - run: npx nx@19.8.2 init # nx version is 19.8.2
       shell: bash
     - id: get-root
