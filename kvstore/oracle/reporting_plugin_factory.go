@@ -72,7 +72,7 @@ func (rp *reportingPlugin) Query(ctx context.Context, outctx ocr3types.OutcomeCo
 
 	if len(requests) == 0 {
 		rp.logger.Debugw("No pending requests. Skipping query.")
-		return nil, nil
+		return json.Marshal([]kvrequests.RequestID{})
 	}
 
 	var requestIDs []kvrequests.RequestID
@@ -99,7 +99,7 @@ func (rp *reportingPlugin) Observation(
 
 	if (len(requestIDs)) == 0 {
 		rp.logger.Debugw("Empty query. Skipping observation.")
-		return nil, nil
+		return json.Marshal([]kvrequests.Request{})
 	}
 
 	requests, err := rp.requestsStore.Get(ctx, &kvrequests.Filters{RequestIDs: requestIDs})

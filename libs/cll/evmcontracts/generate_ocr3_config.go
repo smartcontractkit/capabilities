@@ -12,7 +12,7 @@ import (
 	"github.com/smartcontractkit/capabilities/libs/cli/node"
 )
 
-type OCR2Config struct {
+type OCR3Config struct {
 	Signers               []types.OnchainPublicKey
 	Transmitters          []types.Account
 	F                     uint8
@@ -21,7 +21,7 @@ type OCR2Config struct {
 	OffchainConfig        []byte
 }
 
-func generateOCR3Config(nodeIDs []int) (*OCR2Config, error) {
+func generateOCR3Config(nodeIDs []int) (*OCR3Config, error) {
 	oracleIdentities := []confighelper.OracleIdentityExtra{}
 	for _, nodeID := range nodeIDs {
 		publicKeys, err := node.GetPublicKeys(nodeID)
@@ -83,7 +83,7 @@ func generateOCR3Config(nodeIDs []int) (*OCR2Config, error) {
 		return nil, fmt.Errorf("failed to set config args: %w", err)
 	}
 
-	return &OCR2Config{
+	return &OCR3Config{
 		Signers:               signers,
 		Transmitters:          transmitters,
 		F:                     f,

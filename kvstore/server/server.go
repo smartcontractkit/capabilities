@@ -146,6 +146,7 @@ func (cs *capabilitiesServer) Initialise(
 		WorkflowExecutionID: "workflowExecutionID",
 		ReferenceID:         "1",
 		Type:                kvrequests.RequestKindWrite,
+		Status:              kvrequests.RequestStatusPending,
 		KVPairs: map[string][]byte{
 			"key":  []byte("value"),
 			"key2": []byte("value2"),

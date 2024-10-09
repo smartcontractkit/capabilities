@@ -66,11 +66,7 @@ contract SimpleOCR is ConfirmedOwnerWithProposal {
         Unset,
         // Signing address for the s_oracles[a].index'th oracle. I.e., report
         // signatures from this oracle should ecrecover back to address a.
-        Signer,
-        // Transmission address for the s_oracles[a].index'th oracle. I.e., if a
-        // report is received by OCR2Aggregator.transmit in which msg.sender is
-        // a, it is attributed to the s_oracles[a].index'th oracle.
-        Transmitter
+        Signer
     }
 
     struct Oracle {
