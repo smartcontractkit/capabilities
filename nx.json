@@ -8,7 +8,8 @@
     "sharedGlobals": [
       "{workspaceRoot}/go.work",
       "{workspaceRoot}/.github",
-      "{workspaceRoot}/.nx"
+      "{workspaceRoot}/.nx",
+      "{workspaceRoot}/.golangci.yml"
     ]
   }
 }
