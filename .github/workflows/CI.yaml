@@ -18,6 +18,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+      - name: Cache NX
+        uses: actions/cache@2cdf405574d6ef1f33a1d12acccd3ae82f47b3f2 # v4.1.0
+        with:
+          path: |
+            .nx
+            ~/.npm
+          key: ${{ runner.os }}
       - run: npx nx@19.8.2 init # nx version is 19.8.2
       - name: Get base branch
         id: get-base
@@ -26,7 +33,7 @@ jobs:
         id: get-affected
         run: echo "affected=$(./nx show projects --affected --json --base=${{steps.get-base.outputs.base}})" >> "$GITHUB_OUTPUT"
 
-  build-and-test:
+  build:
     needs: affected-projects
     if: ${{ needs.affected-projects.outputs.affected != '[]' && needs.affected-projects.outputs.affected != '' }}
     runs-on: ubuntu-latest
@@ -42,6 +49,21 @@ jobs:
         uses: ./.github/actions/setup
       - name: Build ${{ matrix.projects }}
         run: ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} build
+
+  test:
+    needs: affected-projects
+    if: ${{ needs.affected-projects.outputs.affected != '[]' && needs.affected-projects.outputs.affected != '' }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        projects: ${{fromJson(needs.affected-projects.outputs.affected)}}
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
+        with:
+          fetch-depth: 0
+      - name: Set up project environment
+        uses: ./.github/actions/setup
       - name: Test ${{ matrix.projects }}
         run: ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} test
 
@@ -82,7 +104,14 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version: latest
+          node-version: "20"
+      - name: Cache NX
+        uses: actions/cache@2cdf405574d6ef1f33a1d12acccd3ae82f47b3f2 # v4.1.0
+        with:
+          path: |
+            .nx
+            ~/.npm
+          key: ${{ runner.os }}
       - run: npx nx@19.8.2 init # nx version is 19.8.2
       - id: get-root
         run: echo "root=$(./nx show project ${{matrix.projects}} --json)" >> "$GITHUB_OUTPUT"
@@ -99,7 +128,8 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - lint
-      - build-and-test
+      - build
+      - test
       - tidy-and-generate
     if: always()
     steps:
