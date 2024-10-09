@@ -26,6 +26,5 @@
 bin
 
 # Monorepo tool
-.nx/installation
 .nx/cache
 .nx/workspace-data
