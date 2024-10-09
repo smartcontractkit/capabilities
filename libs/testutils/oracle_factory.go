@@ -2,6 +2,7 @@ package testutils
 
 import (
 	"context"
+	"math"
 	"sync"
 	"testing"
 	"time"
@@ -99,7 +100,8 @@ func (o *oracle) Start(ctx context.Context) error {
 				// Duplicate the observation N times; happy path expectation.
 				// More complex cases can be added later.
 				attributedObservations := make([]ocrtypes.AttributedObservation, config.N)
-				for i := 0; i < config.N; i++ {
+				n := uint8(math.Min(float64(config.N), 4))
+				for i := uint8(0); i < n; i++ {
 					attributedObservations[i] = ocrtypes.AttributedObservation{
 						Observation: observation,
 						Observer:    commontypes.OracleID(i),
