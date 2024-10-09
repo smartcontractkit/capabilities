@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/smartcontractkit/capabilities/kvstore/kvrequests"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+
+	"github.com/smartcontractkit/capabilities/kvstore/kvrequests"
 )
 
 var _ ocr3types.ContractTransmitter[[]byte] = (*contractTransmitter)(nil)

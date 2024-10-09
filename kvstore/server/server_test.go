@@ -130,5 +130,4 @@ func TestNewCapabilities(t *testing.T) {
 		"key2": []byte("value2"),
 		"key3": []byte("foo"),
 	}), response)
-
 }

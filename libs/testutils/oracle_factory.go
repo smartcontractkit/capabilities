@@ -64,10 +64,9 @@ func (o *oracle) Start(ctx context.Context) error {
 	outcomeCtx := ocr3types.OutcomeContext{
 		SeqNr: 1,
 	}
-
+	o.wg.Add(1)
 	go func() {
 		defer o.wg.Done()
-		o.wg.Add(1)
 		for {
 			select {
 			case <-ctx.Done():
