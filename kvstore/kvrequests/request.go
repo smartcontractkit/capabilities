@@ -64,6 +64,23 @@ type Request struct {
 	Status              RequestStatus
 }
 
+type RequestParams struct {
+	Type                RequestType
+	ReferenceID         string
+	WorkflowExecutionID string
+	KVPairs             KVPairs
+}
+
+func NewRequest(params RequestParams) *Request {
+	return &Request{
+		Type:                params.Type,
+		ReferenceID:         params.ReferenceID,
+		WorkflowExecutionID: params.WorkflowExecutionID,
+		KVPairs:             params.KVPairs,
+		Status:              RequestStatusPending,
+	}
+}
+
 func (r *Request) ID() RequestID {
 	return RequestID(fmt.Sprintf("%s_%s_%s", requestKindToString[r.Type], r.ReferenceID, r.WorkflowExecutionID))
 }

@@ -70,14 +70,14 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		kvPairs[key] = []byte{}
 	}
 
-	request := kvrequests.Request{
+	request := kvrequests.NewRequest(kvrequests.RequestParams{
 		WorkflowExecutionID: rawRequest.Metadata.WorkflowExecutionID,
 		ReferenceID:         rawRequest.Metadata.ReferenceID,
 		Type:                kvrequests.RequestKindRead,
 		KVPairs:             kvPairs,
-	}
+	})
 
-	err = c.requestsStore.Add(ctx, &request)
+	err = c.requestsStore.Add(ctx, request)
 	if err != nil {
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to add read request: %v", err)
 	}

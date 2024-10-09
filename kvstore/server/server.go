@@ -126,24 +126,5 @@ func (cs *capabilitiesServer) Initialise(
 	cs.s.Logger.Debug("KVStore capabilities: Oracle started")
 	cs.oracle = oracle
 
-	// =================================================================================================
-	// FOR TESTING PURPOSES ONLY
-	request := kvrequests.Request{
-		WorkflowExecutionID: "workflowExecutionID",
-		ReferenceID:         "1",
-		Type:                kvrequests.RequestKindWrite,
-		Status:              kvrequests.RequestStatusPending,
-		KVPairs: map[string][]byte{
-			"key":  []byte("value"),
-			"key2": []byte("value2"),
-		},
-	}
-
-	err = requestsStore.Add(ctx, &request)
-	if err != nil {
-		return err
-	}
-	// =================================================================================================
-
 	return nil
 }

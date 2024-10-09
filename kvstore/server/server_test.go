@@ -2,14 +2,12 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/smartcontractkit/capabilities/kvstore/oracle"
 	"github.com/smartcontractkit/capabilities/libs/testutils"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/ocr3cap"
@@ -29,18 +27,9 @@ func TestNewCapabilities(t *testing.T) {
 	defer cancel()
 	assert.NoError(t, capabilitiesServer.Start(ctx))
 
-	config, err := json.Marshal(oracle.Identity{
-		EVMKey:                    "evm_key",
-		PeerID:                    "peer_id",
-		PublicKey:                 []byte("public_key"),
-		OffchainPublicKey:         [32]byte{},
-		ConfigEncryptionPublicKey: [32]byte{},
-	})
-	assert.NoError(t, err)
-
 	assert.NoError(t, capabilitiesServer.Initialise(
 		ctx,
-		string(config),
+		"",  // unused - empty config
 		nil, // unused - telemetryService core.TelemetryService
 		testutils.NewStore(t),
 		testutils.NewCapabilitiesRegistry(t),
