@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -100,19 +99,8 @@ func (cs *capabilitiesServer) Initialise(
 
 	cs.s.Logger.Debug("config: ", config)
 
-	var oracleIdentity oracle.Identity
-	if err := json.Unmarshal([]byte(config), &oracleIdentity); err != nil {
-		return fmt.Errorf("failed to unmarshal key bundle bytes: %w", err)
-	}
-	cs.s.Logger.Debug("oracleIdentity: ", oracleIdentity)
-
 	if err := capabilityRegistry.Add(ctx, cs.Target); err != nil {
 		return fmt.Errorf("error when adding kv store target to the registry: %w", err)
-	}
-
-	contractConfigTracker, err := oracle.NewContractConfigTracker(cs.s.Logger, oracleIdentity)
-	if err != nil {
-		return fmt.Errorf("error when creating contract config tracker: %w", err)
 	}
 
 	oracle, err := oracleFactory.NewOracle(ctx, core.OracleArgs{
@@ -124,9 +112,7 @@ func (cs *capabilitiesServer) Initialise(
 			DatabaseTimeout:                    time.Second * 10,
 		},
 		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(cs.s.Logger, requestsStore),
-		ContractTransmitter:           oracle.NewContractTransmitter(cs.s.Logger, oracleIdentity, requestsStore),
-		ContractConfigTracker:         contractConfigTracker,                         // UNUSED
-		OffchainConfigDigester:        oracle.NewOffchainConfigDigester(cs.s.Logger), // UNUSED
+		ContractTransmitter:           oracle.NewContractTransmitter(cs.s.Logger, requestsStore),
 	})
 	if err != nil {
 		return fmt.Errorf("error when creating oracle: %w", err)

@@ -66,7 +66,8 @@ contract SimpleOCR is ConfirmedOwnerWithProposal {
         Unset,
         // Signing address for the s_oracles[a].index'th oracle. I.e., report
         // signatures from this oracle should ecrecover back to address a.
-        Signer
+        Signer,
+        Transmitter
     }
 
     struct Oracle {

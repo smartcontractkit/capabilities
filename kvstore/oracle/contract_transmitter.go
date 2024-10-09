@@ -14,15 +14,13 @@ import (
 var _ ocr3types.ContractTransmitter[[]byte] = (*contractTransmitter)(nil)
 
 type contractTransmitter struct {
-	identity      Identity
 	logger        logger.Logger
 	requestsStore *kvrequests.RequestsStore
 }
 
-func NewContractTransmitter(logger logger.Logger, identity Identity, requestsStore *kvrequests.RequestsStore) *contractTransmitter {
+func NewContractTransmitter(logger logger.Logger, requestsStore *kvrequests.RequestsStore) *contractTransmitter {
 	return &contractTransmitter{
 		logger:        logger,
-		identity:      identity,
 		requestsStore: requestsStore,
 	}
 }
@@ -45,7 +43,7 @@ func (ct *contractTransmitter) Transmit(
 	return ct.requestsStore.Update(ctx, request)
 }
 
-// Unused: No external transmissions
+// This is unused and overwritten by the OracleFactory
 func (ct *contractTransmitter) FromAccount() (types.Account, error) {
-	return types.Account(ct.identity.EVMKey), nil
+	return "", nil
 }
