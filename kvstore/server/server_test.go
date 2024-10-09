@@ -8,11 +8,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/smartcontractkit/capabilities/libs/testutils"
-
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/ocr3cap"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
+	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
+
+	"github.com/smartcontractkit/capabilities/libs/testutils"
 )
 
 func TestNewCapabilities(t *testing.T) {
@@ -25,7 +26,7 @@ func TestNewCapabilities(t *testing.T) {
 	// Timeout is important to avoid hanging tests
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	assert.NoError(t, capabilitiesServer.Start(ctx))
+	servicetest.RunHealthy(t, capabilitiesServer)
 
 	assert.NoError(t, capabilitiesServer.Initialise(
 		ctx,
@@ -129,4 +130,5 @@ func TestNewCapabilities(t *testing.T) {
 		"key2": []byte("value2"),
 		"key3": []byte("foo"),
 	}), response)
+
 }
