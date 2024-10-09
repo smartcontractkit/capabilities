@@ -18,6 +18,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+      - name: Cache NX
+        uses: actions/cache@2cdf405 # v4.1.0
+        with:
+          path: .nx
+          key: ${{ runner.os }}
+      - run: npx nx@19.8.2 init # nx version is 19.8.2
       - name: Get base branch
         id: get-base
         run: echo "base=${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }}" >> "$GITHUB_OUTPUT"
@@ -82,6 +88,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: latest
+      - name: Cache NX
+        uses: actions/cache@2cdf405 # v4.1.0
+        with:
+          path: .nx
+          key: ${{ runner.os }}
+      - run: npx nx@19.8.2 init # nx version is 19.8.2
       - id: get-root
         run: echo "root=$(./nx show project ${{matrix.projects}} --json)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
