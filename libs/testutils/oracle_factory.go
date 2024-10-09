@@ -66,9 +66,12 @@ func (o *oracle) Start(ctx context.Context) error {
 	}
 
 	go func() {
+		defer o.wg.Done()
+		o.wg.Add(1)
 		for {
 			select {
 			case <-ctx.Done():
+				o.lggr.Info("context canceled, stopping the routine")
 				return
 			case <-time.After(250 * time.Millisecond):
 				// Perform the logic of a reporting plugin
@@ -179,5 +182,6 @@ func (o *oracle) Close(ctx context.Context) error {
 	if o.cancel != nil {
 		o.cancel()
 	}
+	o.wg.Wait() // Wait for the goroutine to finish
 	return nil
 }
