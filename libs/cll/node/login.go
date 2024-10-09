@@ -17,7 +17,7 @@ func Login(nodeID int) error {
 
 	for i := 0; i < 5; i++ {
 		// Login to the node
-		cmd := exec.Command(
+		cmd := exec.Command( // nolint:gosec
 			constants.ChainlinkBinaryLocation,
 			"--remote-node-url", nodeInfo.URLs.HTTP,
 			"admin", "login",

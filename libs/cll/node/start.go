@@ -12,19 +12,12 @@ import (
 	"github.com/smartcontractkit/capabilities/libs/cli/utils"
 )
 
-type nodeProcess struct {
-	cmd     *exec.Cmd
-	logFile *os.File
-}
-
 type startNodesArgs struct {
 	nodeIDs []int
 	logs    bool
 }
 
 func startNodes(args startNodesArgs) error {
-	var nodeProcesses []nodeProcess
-
 	for i, nodeID := range args.nodeIDs {
 		nodeDir := utils.GetNodeDir(nodeID)
 		err := os.MkdirAll(nodeDir, os.ModePerm)
@@ -44,7 +37,7 @@ func startNodes(args startNodesArgs) error {
 		uiCredentialsFilepath := filepath.Join(nodeDir, constants.ChainlinkNodeUICredentialsFilename)
 		secretsFilepath := filepath.Join(nodeDir, constants.ChainlinkNodeSecretsFilename)
 
-		cmd := exec.Command(
+		cmd := exec.Command( // nolint:gosec
 			constants.ChainlinkBinaryLocation,
 			"--config", filepath.Join(nodeDir, constants.ChainlinkNodeConfigFilename),
 			"--secrets", secretsFilepath,
@@ -84,12 +77,6 @@ func startNodes(args startNodesArgs) error {
 			logFile.Close()
 			return fmt.Errorf("failed to write lock file: %v", err)
 		}
-
-		// Keep track of the command and the log file
-		nodeProcesses = append(nodeProcesses, nodeProcess{
-			cmd:     cmd,
-			logFile: logFile,
-		})
 
 		// Output messages
 		fmt.Println("--------------------------------------------------")

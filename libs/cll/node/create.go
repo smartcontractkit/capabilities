@@ -12,7 +12,11 @@ import (
 
 func createNodes(nodeIDs []int) error {
 	// Check if the constants.LocalDbUserName exists
-	checkUserCmd := exec.Command("psql", "-U", "postgres", "-c", fmt.Sprintf("SELECT FROM pg_catalog.pg_roles WHERE rolname = '%s';", constants.LocalDbUserName))
+	checkUserCmd := exec.Command( // nolint:gosec
+		"psql",
+		"-U", "postgres",
+		"-c", fmt.Sprintf("SELECT FROM pg_catalog.pg_roles WHERE rolname = '%s';", constants.LocalDbUserName),
+	)
 	userCheckOutput, err := checkUserCmd.Output()
 	if err != nil {
 		return err
@@ -20,7 +24,11 @@ func createNodes(nodeIDs []int) error {
 
 	// Create the user if it does not exist
 	if !utils.Contains(userCheckOutput, "1 row") {
-		createUserCmd := exec.Command("psql", "-q", "-U", "postgres", "-c", fmt.Sprintf("CREATE USER %s WITH SUPERUSER PASSWORD '%s';", constants.LocalDbUserName, constants.GenericPassword))
+		createUserCmd := exec.Command( // nolint:gosec
+			"psql", "-q",
+			"-U", "postgres",
+			"-c", fmt.Sprintf("CREATE USER %s WITH SUPERUSER PASSWORD '%s';", constants.LocalDbUserName, constants.GenericPassword),
+		)
 		err = createUserCmd.Run()
 		if err != nil {
 			return err
@@ -116,7 +124,11 @@ func createNodes(nodeIDs []int) error {
 		}
 
 		// Check if the database exists
-		checkDBCmd := exec.Command("psql", "-U", "postgres", "-c", fmt.Sprintf("SELECT FROM pg_database WHERE datname = '%s';", utils.GetNodeDBName(nodeID)))
+		checkDBCmd := exec.Command( // nolint:gosec
+			"psql",
+			"-U", "postgres",
+			"-c", fmt.Sprintf("SELECT FROM pg_database WHERE datname = '%s';", utils.GetNodeDBName(nodeID)),
+		)
 		dbCheckOutput, err := checkDBCmd.Output()
 		if err != nil {
 			return err
@@ -124,7 +136,8 @@ func createNodes(nodeIDs []int) error {
 
 		// Drop the database if it exists
 		if utils.Contains(dbCheckOutput, "1 row") {
-			dropDBCmd := exec.Command("psql", "-q", "-U", "postgres", "-c", fmt.Sprintf("DROP DATABASE %s;", utils.GetNodeDBName(nodeID)))
+			dropDBCmd := exec.Command( // nolint:gosec
+				"psql", "-q", "-U", "postgres", "-c", fmt.Sprintf("DROP DATABASE %s;", utils.GetNodeDBName(nodeID)))
 			err = dropDBCmd.Run()
 			if err != nil {
 				return err
@@ -132,14 +145,22 @@ func createNodes(nodeIDs []int) error {
 		}
 
 		// Create the database
-		createDBCmd := exec.Command("psql", "-q", "-U", "postgres", "-c", fmt.Sprintf("CREATE DATABASE %s;", utils.GetNodeDBName(nodeID)))
+		createDBCmd := exec.Command( // nolint:gosec
+			"psql", "-q",
+			"-U", "postgres",
+			"-c", fmt.Sprintf("CREATE DATABASE %s;", utils.GetNodeDBName(nodeID)),
+		)
 		err = createDBCmd.Run()
 		if err != nil {
 			return err
 		}
 
 		// Grant privileges
-		grantCmd := exec.Command("psql", "-q", "-U", "postgres", "-c", fmt.Sprintf("GRANT ALL ON DATABASE %s TO %s;", utils.GetNodeDBName(nodeID), constants.LocalDbUserName))
+		grantCmd := exec.Command( // nolint:gosec
+			"psql", "-q",
+			"-U", "postgres",
+			"-c", fmt.Sprintf("GRANT ALL ON DATABASE %s TO %s;", utils.GetNodeDBName(nodeID), constants.LocalDbUserName),
+		)
 		err = grantCmd.Run()
 		if err != nil {
 			return err
