@@ -12,7 +12,7 @@ import (
 
 func createNodes(nodeIDs []int) error {
 	// Check if the constants.LocalDbUserName exists
-	checkUserCmd := exec.Command( // nolint:gosec
+	checkUserCmd := exec.Command( //nolint:gosec
 		"psql",
 		"-U", "postgres",
 		"-c", fmt.Sprintf("SELECT FROM pg_catalog.pg_roles WHERE rolname = '%s';", constants.LocalDbUserName),
@@ -24,8 +24,9 @@ func createNodes(nodeIDs []int) error {
 
 	// Create the user if it does not exist
 	if !utils.Contains(userCheckOutput, "1 row") {
-		createUserCmd := exec.Command( // nolint:gosec
-			"psql", "-q",
+		createUserCmd := exec.Command( //nolint:gosec
+			"psql",
+			"-q",
 			"-U", "postgres",
 			"-c", fmt.Sprintf("CREATE USER %s WITH SUPERUSER PASSWORD '%s';", constants.LocalDbUserName, constants.GenericPassword),
 		)
@@ -124,7 +125,7 @@ func createNodes(nodeIDs []int) error {
 		}
 
 		// Check if the database exists
-		checkDBCmd := exec.Command( // nolint:gosec
+		checkDBCmd := exec.Command( //nolint:gosec
 			"psql",
 			"-U", "postgres",
 			"-c", fmt.Sprintf("SELECT FROM pg_database WHERE datname = '%s';", utils.GetNodeDBName(nodeID)),
@@ -136,8 +137,11 @@ func createNodes(nodeIDs []int) error {
 
 		// Drop the database if it exists
 		if utils.Contains(dbCheckOutput, "1 row") {
-			dropDBCmd := exec.Command( // nolint:gosec
-				"psql", "-q", "-U", "postgres", "-c", fmt.Sprintf("DROP DATABASE %s;", utils.GetNodeDBName(nodeID)))
+			dropDBCmd := exec.Command( //nolint:gosec
+				"psql", "-q",
+				"-U", "postgres",
+				"-c", fmt.Sprintf("DROP DATABASE %s;", utils.GetNodeDBName(nodeID)),
+			)
 			err = dropDBCmd.Run()
 			if err != nil {
 				return err
@@ -145,7 +149,7 @@ func createNodes(nodeIDs []int) error {
 		}
 
 		// Create the database
-		createDBCmd := exec.Command( // nolint:gosec
+		createDBCmd := exec.Command( //nolint:gosec
 			"psql", "-q",
 			"-U", "postgres",
 			"-c", fmt.Sprintf("CREATE DATABASE %s;", utils.GetNodeDBName(nodeID)),
@@ -156,7 +160,7 @@ func createNodes(nodeIDs []int) error {
 		}
 
 		// Grant privileges
-		grantCmd := exec.Command( // nolint:gosec
+		grantCmd := exec.Command( //nolint:gosec
 			"psql", "-q",
 			"-U", "postgres",
 			"-c", fmt.Sprintf("GRANT ALL ON DATABASE %s TO %s;", utils.GetNodeDBName(nodeID), constants.LocalDbUserName),

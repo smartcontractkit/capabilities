@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 
 	"github.com/urfave/cli/v2"
+
+	"github.com/smartcontractkit/capabilities/libs/cli/constants"
 )
 
 var Commands = []*cli.Command{
@@ -32,7 +34,7 @@ var Commands = []*cli.Command{
 					},
 					&cli.StringFlag{
 						Name:  "output",
-						Value: "./bin/arm64/chainlink", // Update default path as needed
+						Value: filepath.Join(constants.BinaryDir, "chainlink"),
 						Usage: "Output location for the Chainlink binary",
 					},
 				},
