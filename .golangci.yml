@@ -128,7 +128,10 @@ linters-settings:
             desc: Use gopkg.in/guregu/null.v4 instead
   gomodguard:
     blocked:
-      local_replace_directives: true
+      # Given that this is a monorepo, we want to explicitly allow the use of local modules.
+      # CI ensures that the external artefacts still build and work as expected.
+      # This allows us to skip version management making the developer experience smoother.
+      local_replace_directives: false
   loggercheck:
     # Check that *w logging functions have even number of args (i.e., well formed key-value pairs).
     rules:
