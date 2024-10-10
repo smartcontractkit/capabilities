@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/ocr3cap"
@@ -18,6 +19,7 @@ import (
 
 func TestNewCapabilities(t *testing.T) {
 	logger := testutils.NewLogger(t)
+	capabilitiesRegistry := testutils.NewCapabilitiesRegistry(t)
 	capabilitiesServer := New(&loop.Server{
 		Logger: logger,
 	}, "kv-store-test-service")
@@ -33,7 +35,7 @@ func TestNewCapabilities(t *testing.T) {
 		"",  // unused - empty config
 		nil, // unused - telemetryService core.TelemetryService
 		testutils.NewStore(t),
-		testutils.NewCapabilitiesRegistry(t),
+		capabilitiesRegistry,
 		nil, // unused - errorLog core.ErrorLog
 		nil, // unused - pipelineRunner core.PipelineRunnerService
 		nil, // unused - relayerSet core.RelayerSet
@@ -46,6 +48,9 @@ func TestNewCapabilities(t *testing.T) {
 	assert.Len(t, capabilitiesInfos, 2)
 	assert.Equal(t, "kv-store-action@1.0.0", capabilitiesInfos[0].ID)
 	assert.Equal(t, "kv-store-target@1.0.0", capabilitiesInfos[1].ID)
+
+	err = capabilitiesRegistry.Contains([]string{"kv-store-action@1.0.0", "kv-store-target@1.0.0"})
+	require.NoError(t, err)
 
 	workflow := testutils.NewWorkflow(t)
 

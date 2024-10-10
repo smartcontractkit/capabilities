@@ -111,3 +111,16 @@ func (r *capabilitiesRegistry) Add(ctx context.Context, c capabilities.BaseCapab
 	r.capabilities[info.ID] = c
 	return nil
 }
+
+// Test helpers
+func (r *capabilitiesRegistry) Contains(capabilityIDs []string) error {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, id := range capabilityIDs {
+		if _, exists := r.capabilities[id]; exists {
+			return fmt.Errorf("capability %s was not added to the capabilities registry", id)
+		}
+	}
+
+	return nil
+}
