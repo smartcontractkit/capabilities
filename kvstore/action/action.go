@@ -82,7 +82,6 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to add read request: %v", err)
 	}
 
-	// TODO: Should probably be configurable
 	timeout := time.After(60 * time.Second)
 	for {
 		request, err := c.requestsStore.GetByID(ctx, request.ID())

@@ -26,8 +26,6 @@ func NewContractTransmitter(logger logger.Logger, requestsStore *kvrequests.Requ
 	}
 }
 
-// TODO: Implement the Transmit method - store the values in the report to the KV store
-// Place success message in the outbox
 func (ct *contractTransmitter) Transmit(
 	ctx context.Context,
 	configDigest types.ConfigDigest,

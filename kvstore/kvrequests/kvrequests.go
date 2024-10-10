@@ -35,7 +35,6 @@ func New(store core.KeyValueStore, lggr logger.SugaredLogger) (*RequestsStore, e
 	}, nil
 }
 
-// TODO: Cleanup the store when requests aren't processed for some time.
 func (rs *RequestsStore) Add(ctx context.Context, newRequest *Request) error {
 	storedRequestsBytes, err := rs.store.Get(ctx, RequestsKey)
 	if err != nil {
@@ -55,7 +54,6 @@ func (rs *RequestsStore) Add(ctx context.Context, newRequest *Request) error {
 		if sotredRequest.ID() == newRequest.ID() {
 			return nil
 		}
-		// TODO: Add logic to remove stale requests
 	}
 
 	// At this point we know that the request doesn't exist in the store
@@ -109,7 +107,6 @@ type Filters struct {
 	Status     RequestStatus
 }
 
-// TODO: We might need to order requests and process them in batches.
 func (rs *RequestsStore) Get(ctx context.Context, filters *Filters) ([]Request, error) {
 	var requests []Request
 	requestsBytes, err := rs.store.Get(ctx, RequestsKey)

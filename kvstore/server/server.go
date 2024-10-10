@@ -37,7 +37,6 @@ func (cs *capabilitiesServer) Start(ctx context.Context) error {
 }
 
 func (cs *capabilitiesServer) Close() error {
-	// TODO: Close missing context
 	return cs.oracle.Close(context.Background())
 }
 
