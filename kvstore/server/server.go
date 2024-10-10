@@ -96,8 +96,9 @@ func (cs *capabilitiesServer) Initialise(
 		RequestsStore: requestsStore,
 	})
 
-	cs.s.Logger.Debug("config: ", config)
-
+	if err := capabilityRegistry.Add(ctx, cs.Action); err != nil {
+		return fmt.Errorf("error when adding kv store action to the registry: %w", err)
+	}
 	if err := capabilityRegistry.Add(ctx, cs.Target); err != nil {
 		return fmt.Errorf("error when adding kv store target to the registry: %w", err)
 	}
