@@ -37,7 +37,7 @@ func startNodes(args startNodesArgs) error {
 		uiCredentialsFilepath := filepath.Join(nodeDir, constants.ChainlinkNodeUICredentialsFilename)
 		secretsFilepath := filepath.Join(nodeDir, constants.ChainlinkNodeSecretsFilename)
 
-		cmd := exec.Command( //nolint:gosec
+		cmd := exec.Command( // nolint:gosec
 			constants.ChainlinkBinaryLocation,
 			"--config", filepath.Join(nodeDir, constants.ChainlinkNodeConfigFilename),
 			"--secrets", secretsFilepath,

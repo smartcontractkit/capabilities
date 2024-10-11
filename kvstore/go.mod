@@ -4,7 +4,17 @@ go 1.23.0
 
 require (
 	github.com/hashicorp/go-plugin v1.6.2-0.20240829161738-06afb6d7ae99
-	github.com/smartcontractkit/chainlink-common v0.2.3-0.20241001210038-dd59341432bd
+	github.com/smartcontractkit/capabilities/libs/testutils v0.0.0-unpublished
+	github.com/smartcontractkit/chainlink-common v0.2.3-0.20241008170407-8bfcea33a98d
+	github.com/smartcontractkit/libocr v0.0.0-20240717170647-ae747ca5b812
+	github.com/stretchr/testify v1.9.0
+	google.golang.org/protobuf v1.34.2
+)
+
+replace (
+	github.com/gogo/protobuf => github.com/regen-network/protobuf v1.3.3-alpha.regen.1
+
+	github.com/smartcontractkit/capabilities/libs/testutils => ../libs/testutils
 )
 
 require (
@@ -56,8 +66,6 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v5 v5.2.0 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/smartcontractkit/grpc-proxy v0.0.0-20240830132753-a7e17fec5ab7 // indirect
-	github.com/smartcontractkit/libocr v0.0.0-20240419185742-fd3cab206b2c // indirect
-	github.com/stretchr/testify v1.9.0 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.52.0 // indirect
@@ -90,7 +98,6 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20240822170219-fc7c04adadcd // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240822170219-fc7c04adadcd // indirect
 	google.golang.org/grpc v1.65.0 // indirect
-	google.golang.org/protobuf v1.34.2 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )

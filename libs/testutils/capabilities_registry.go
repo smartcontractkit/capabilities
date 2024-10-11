@@ -1,0 +1,113 @@
+package testutils
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"testing"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
+)
+
+var _ core.CapabilitiesRegistry = (*capabilitiesRegistry)(nil)
+
+type capabilitiesRegistry struct {
+	mu           sync.RWMutex
+	capabilities map[string]interface{}
+	t            *testing.T
+}
+
+func NewCapabilitiesRegistry(t *testing.T) *capabilitiesRegistry {
+	return &capabilitiesRegistry{
+		capabilities: make(map[string]interface{}),
+		t:            t,
+	}
+}
+
+func (r *capabilitiesRegistry) LocalNode(ctx context.Context) (capabilities.Node, error) {
+	// Implement the logic for LocalNode
+	return capabilities.Node{}, nil
+}
+
+func (r *capabilitiesRegistry) ConfigForCapability(ctx context.Context, name string, version uint32) (capabilities.CapabilityConfiguration, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	capability, exists := r.capabilities[name]
+	if !exists {
+		return capabilities.CapabilityConfiguration{}, fmt.Errorf("capability %s not found", name)
+	}
+	return capability.(capabilities.CapabilityConfiguration), nil
+}
+
+func (r *capabilitiesRegistry) Get(ctx context.Context, ID string) (capabilities.BaseCapability, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	capability, exists := r.capabilities[ID]
+	if !exists {
+		return nil, fmt.Errorf("capability %s not found", ID)
+	}
+	return capability.(capabilities.BaseCapability), nil
+}
+
+func (r *capabilitiesRegistry) GetTrigger(ctx context.Context, ID string) (capabilities.TriggerCapability, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	capability, exists := r.capabilities[ID]
+	if !exists {
+		return nil, fmt.Errorf("trigger capability %s not found", ID)
+	}
+	return capability.(capabilities.TriggerCapability), nil
+}
+
+func (r *capabilitiesRegistry) GetAction(ctx context.Context, ID string) (capabilities.ActionCapability, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	capability, exists := r.capabilities[ID]
+	if !exists {
+		return nil, fmt.Errorf("action capability %s not found", ID)
+	}
+	return capability.(capabilities.ActionCapability), nil
+}
+
+func (r *capabilitiesRegistry) GetConsensus(ctx context.Context, ID string) (capabilities.ConsensusCapability, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	capability, exists := r.capabilities[ID]
+	if !exists {
+		return nil, fmt.Errorf("consensus capability %s not found", ID)
+	}
+	return capability.(capabilities.ConsensusCapability), nil
+}
+
+func (r *capabilitiesRegistry) GetTarget(ctx context.Context, ID string) (capabilities.TargetCapability, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	capability, exists := r.capabilities[ID]
+	if !exists {
+		return nil, fmt.Errorf("target capability %s not found", ID)
+	}
+	return capability.(capabilities.TargetCapability), nil
+}
+
+func (r *capabilitiesRegistry) List(ctx context.Context) ([]capabilities.BaseCapability, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var list []capabilities.BaseCapability
+	for _, capability := range r.capabilities {
+		list = append(list, capability.(capabilities.BaseCapability))
+	}
+	return list, nil
+}
+
+func (r *capabilitiesRegistry) Add(ctx context.Context, c capabilities.BaseCapability) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	info, err := c.Info(ctx)
+	if err != nil {
+		return err
+	}
+
+	r.capabilities[info.ID] = c
+	return nil
+}

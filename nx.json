@@ -6,7 +6,6 @@
   "parallel": 4,
   "namedInputs": {
     "sharedGlobals": [
-      "{workspaceRoot}/go.work",
       "{workspaceRoot}/.github",
       "{workspaceRoot}/.nx",
       "{workspaceRoot}/.golangci.yml"

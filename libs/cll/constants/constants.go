@@ -1,7 +1,7 @@
 package constants
 
 const (
-	BinaryDir                          = "bin"
+	BinaryDir                          = "bin/arm64"
 	LocalDir                           = ".local"
 	LocalDbUserName                    = "cll_user"
 	LocalDbPrefix                      = "cll_node"

@@ -1,4 +1,4 @@
-module github.com/smartcontractkit/capabilities/types
+module github.com/smartcontractkit/capabilities/libs/types
 
 go 1.23.0
 
