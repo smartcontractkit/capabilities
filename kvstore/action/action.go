@@ -1,22 +1,19 @@
-package target
+package action
 
 import (
 	"context"
 	"fmt"
 	"time"
 
-	"google.golang.org/protobuf/proto"
-
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
-	"github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 
 	"github.com/smartcontractkit/capabilities/kvstore/kvcap"
 	"github.com/smartcontractkit/capabilities/kvstore/kvrequests"
 )
 
-var _ capabilities.TargetCapability = (*capability)(nil)
+var _ capabilities.ActionCapability = (*capability)(nil)
 
 type capability struct {
 	logger        logger.Logger
@@ -36,46 +33,20 @@ func New(p Params) *capability {
 }
 
 func (c *capability) Info(ctx context.Context) (capabilities.CapabilityInfo, error) {
-	return capabilities.NewCapabilityInfo("kv-store-target@1.0.0", capabilities.CapabilityTypeTarget, "Writes KV-pairs from a SignedReport to a key-value store")
+	return capabilities.NewCapabilityInfo("kv-store-action@1.0.0", capabilities.CapabilityTypeAction, "Reads keys values from a key-value store")
 }
 
-type KVWriteReport struct {
-	keyValuePairs map[string][]byte
-}
-
-func evaluate(rawRequest capabilities.CapabilityRequest) (r KVWriteReport, err error) {
+func evaluate(rawRequest capabilities.CapabilityRequest) (*kvcap.ReadInputs, error) {
 	if rawRequest.Inputs == nil {
-		return r, fmt.Errorf("missing inputs field")
+		return nil, fmt.Errorf("missing inputs field")
 	}
 
-	const signedReportField = "signedReport"
-	signedReport, ok := rawRequest.Inputs.Underlying[signedReportField]
-	if !ok {
-		return r, fmt.Errorf("missing required field %s", signedReportField)
+	var inputs kvcap.ReadInputs
+	if err := rawRequest.Inputs.UnwrapTo(&inputs); err != nil {
+		return nil, fmt.Errorf("failed to unwrap inputs: %v", err)
 	}
 
-	var inputs kvcap.WriteInputs
-	if err = signedReport.UnwrapTo(&inputs.SignedReport); err != nil {
-		return r, fmt.Errorf("failed to unwrap signed report: %v", err)
-	}
-
-	reportProto := &pb.Value{}
-	err = proto.Unmarshal(inputs.SignedReport.Report, reportProto)
-	if err != nil {
-		return r, fmt.Errorf("failed to unmarshal signed report: %v", err)
-	}
-
-	reportValue, err := values.FromProto(reportProto)
-	if err != nil {
-		return r, fmt.Errorf("failed to convert report proto to report value: %v", err)
-	}
-
-	err = reportValue.UnwrapTo(&r.keyValuePairs)
-	if err != nil {
-		return r, fmt.Errorf("failed to unwrap signed report value: %v", err)
-	}
-
-	return r, nil
+	return &inputs, nil
 }
 
 func (c *capability) Execute(ctx context.Context, rawRequest capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
@@ -93,27 +64,35 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		"WorkflowExecutionID", rawRequest.Metadata.WorkflowExecutionID,
 	)
 
+	var kvPairs = map[string][]byte{}
+
+	for _, key := range kvWriteReport.Keys {
+		kvPairs[key] = []byte{}
+	}
+
 	r := kvrequests.NewRequest(kvrequests.RequestParams{
 		WorkflowExecutionID: rawRequest.Metadata.WorkflowExecutionID,
 		ReferenceID:         rawRequest.Metadata.ReferenceID,
-		Type:                kvrequests.RequestKindWrite,
-		KVPairs:             kvWriteReport.keyValuePairs,
+		Type:                kvrequests.RequestKindRead,
+		KVPairs:             kvPairs,
 	})
 	err = c.requestsStore.Add(ctx, r)
 	if err != nil {
-		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to add write request: %v", err)
+		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to add read request: %v", err)
 	}
 
 	timeout := time.After(60 * time.Second)
 	for {
 		request := c.requestsStore.GetByID(ctx, r.ID())
 
+		// TODO: Make sure response matches the JSON schema
 		if request != nil && request.Status == kvrequests.RequestStatusCompleted {
-			response, err := values.NewMap(
-				map[string]any{
-					"success": true,
-				},
-			)
+			var response = map[string]any{}
+			for key, value := range request.KVPairs {
+				response[key] = value
+			}
+
+			responseValue, err := values.NewMap(response)
 			if err != nil {
 				return capabilities.CapabilityResponse{}, err
 			}
@@ -121,7 +100,7 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 			c.requestsStore.Remove(ctx, request.ID())
 
 			return capabilities.CapabilityResponse{
-				Value: response,
+				Value: responseValue,
 			}, nil
 		}
 

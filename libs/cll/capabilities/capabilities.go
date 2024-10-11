@@ -7,7 +7,9 @@ import (
 
 	"github.com/urfave/cli/v2"
 
+	"github.com/smartcontractkit/capabilities/libs/cli/chain"
 	"github.com/smartcontractkit/capabilities/libs/cli/constants"
+	"github.com/smartcontractkit/capabilities/libs/cli/evmcontracts"
 	"github.com/smartcontractkit/capabilities/libs/cli/node"
 	"github.com/smartcontractkit/capabilities/libs/cli/utils"
 )
@@ -49,6 +51,11 @@ var Commands = []*cli.Command{
 					if err != nil {
 						return fmt.Errorf("failed to get public keys for bootstrap node: %w", err)
 					}
+					chainInfo := chain.GetInfo()
+					ocrContractInfo, err := evmcontracts.GetInfo("ocr3")
+					if err != nil {
+						return fmt.Errorf("failed to get OCR contract info: %w", err)
+					}
 
 					for _, nodeID := range nodeIDs {
 						err := node.Login(nodeID)
@@ -76,8 +83,26 @@ var Commands = []*cli.Command{
 schemaVersion = 1
 name = "%s-capabilities"
 command="%s"
-config = '''{"enabled": true, "traceLogging": true, "bootstrapPeers": [ "%s@localhost:%d" ]}'''
-`, name, capabilitiesBinaryPath, bootstrapPublicKeys.P2PPeerID, bootstrapNodeInfo.Ports.P2P)
+
+[oracle_factory]
+enabled=true
+bootstrap_peers = [
+	"%s@localhost:%d"
+]
+network="%s"
+chain_id="%d"
+ocr_contract_address="%s"
+
+
+`,
+								name,
+								capabilitiesBinaryPath,
+								bootstrapPublicKeys.P2PPeerID,
+								bootstrapNodeInfo.Ports.P2P,
+								chainInfo.Network,
+								chainInfo.ChainID,
+								ocrContractInfo.Address,
+							)
 
 							err = os.WriteFile(capabilitiesSpecPath, []byte(capabilitiesSpec), 0600)
 							if err != nil {

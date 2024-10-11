@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-import {IOwnable} from "./interfaces/IOwnable.sol";
-
 /// @title The ConfirmedOwner contract
 /// @notice A contract with helpers for basic contract ownership.
-contract ConfirmedOwnerWithProposal is IOwnable {
+contract ConfirmedOwnerWithProposal {
     address private s_owner;
     address private s_pendingOwner;
 
@@ -23,12 +21,12 @@ contract ConfirmedOwnerWithProposal is IOwnable {
     }
 
     /// @notice Allows an owner to begin transferring ownership to a new address.
-    function transferOwnership(address to) public override onlyOwner {
+    function transferOwnership(address to) public onlyOwner {
         _transferOwnership(to);
     }
 
     /// @notice Allows an ownership transfer to be completed by the recipient.
-    function acceptOwnership() external override {
+    function acceptOwnership() external {
         // solhint-disable-next-line gas-custom-errors
         require(msg.sender == s_pendingOwner, "Must be proposed owner");
 
@@ -40,7 +38,7 @@ contract ConfirmedOwnerWithProposal is IOwnable {
     }
 
     /// @notice Get the current owner
-    function owner() public view override returns (address) {
+    function owner() public view returns (address) {
         return s_owner;
     }
 
