@@ -52,7 +52,19 @@ func TestNewCapabilities(t *testing.T) {
 	err = capabilitiesRegistry.Contains([]string{"kv-store-action@1.0.0", "kv-store-target@1.0.0"})
 	require.NoError(t, err)
 
-	workflow := testutils.NewWorkflow(t)
+	workflow := testutils.NewWorkflow(ctx, testutils.NewWorkflowParams{
+		Capabilities: []testutils.CapabilityWithConfig{
+			{
+				Capability: capabilitiesServer.Action,
+				Config:     map[string]interface{}{},
+			},
+			{
+				Capability: capabilitiesServer.Target,
+				Config:     map[string]interface{}{},
+			},
+		},
+		T: t,
+	})
 
 	// CapabilityRequest to write to the kvstore
 	wrappedKVPairs, err := values.Wrap(map[string][]byte{

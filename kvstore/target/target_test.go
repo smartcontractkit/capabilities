@@ -50,7 +50,15 @@ func TestKVStoreTarget(t *testing.T) {
 		)
 		assert.NoError(t, err)
 
-		workflow := testutils.NewWorkflow(t)
+		workflow := testutils.NewWorkflow(ctx, testutils.NewWorkflowParams{
+			Capabilities: []testutils.CapabilityWithConfig{
+				{
+					Capability: target,
+					Config:     map[string]interface{}{},
+				},
+			},
+			T: t,
+		})
 		capabilityRequest := workflow.NewRequest(map[string]any{
 			"signedReport": wrappedSignedReport,
 		})
