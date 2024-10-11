@@ -93,7 +93,7 @@ func (r *Request) Marshal() ([]byte, error) {
 }
 
 func (r Request) String() string {
-	return fmt.Sprintf("Request{ID: \"%s\", status: \"%s\", pairs: %s}", r.ID(), r.Status, r.KVPairs)
+	return fmt.Sprintf("{ID: \"%s\", status: \"%s\", pairs: %s}", r.ID(), r.Status, r.KVPairs)
 }
 
 func (r Request) Equal(other Request) bool {

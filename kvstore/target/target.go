@@ -93,26 +93,22 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		"WorkflowExecutionID", rawRequest.Metadata.WorkflowExecutionID,
 	)
 
-	request := kvrequests.NewRequest(kvrequests.RequestParams{
+	r := kvrequests.NewRequest(kvrequests.RequestParams{
 		WorkflowExecutionID: rawRequest.Metadata.WorkflowExecutionID,
 		ReferenceID:         rawRequest.Metadata.ReferenceID,
 		Type:                kvrequests.RequestKindWrite,
 		KVPairs:             kvWriteReport.keyValuePairs,
 	})
-
-	err = c.requestsStore.Add(ctx, request)
+	err = c.requestsStore.Add(ctx, r)
 	if err != nil {
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to add write request: %v", err)
 	}
 
 	timeout := time.After(60 * time.Second)
 	for {
-		request, err := c.requestsStore.GetByID(ctx, request.ID())
-		if err != nil {
-			return capabilities.CapabilityResponse{}, fmt.Errorf("failed to get request by ID: %v", err)
-		}
+		request := c.requestsStore.GetByID(ctx, r.ID())
 
-		if request.Status == kvrequests.RequestStatusCompleted {
+		if request != nil && request.Status == kvrequests.RequestStatusCompleted {
 			response, err := values.NewMap(
 				map[string]any{
 					"success": true,
@@ -122,10 +118,7 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 				return capabilities.CapabilityResponse{}, err
 			}
 
-			err = c.requestsStore.Remove(ctx, request.ID())
-			if err != nil {
-				return capabilities.CapabilityResponse{}, fmt.Errorf("failed to remove request: %v", err)
-			}
+			c.requestsStore.Remove(ctx, request.ID())
 
 			return capabilities.CapabilityResponse{
 				Value: response,

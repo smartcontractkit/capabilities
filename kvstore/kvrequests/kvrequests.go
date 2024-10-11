@@ -2,11 +2,10 @@ package kvrequests
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"sync"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
 
 var RequestsKey = "requests"
@@ -14,92 +13,44 @@ var RequestsKey = "requests"
 // RequestsStore is a store for incoming read and write requests.
 // There is a guarantee that there is only one request per request ID.
 type RequestsStore struct {
-	lggr  logger.SugaredLogger
-	store core.KeyValueStore
+	lggr     logger.SugaredLogger
+	requests map[RequestID]*Request
+	mu       sync.RWMutex
 }
 
-func New(store core.KeyValueStore, lggr logger.SugaredLogger) (*RequestsStore, error) {
-	requests := []Request{}
-	requestsBytes, err := json.Marshal(requests)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal requests: %w", err)
-	}
-
-	if err := store.Store(context.Background(), RequestsKey, requestsBytes); err != nil {
-		return nil, fmt.Errorf("failed to initialize write requests: %w", err)
-	}
-
+func New(lggr logger.SugaredLogger) (*RequestsStore, error) {
 	return &RequestsStore{
-		store: store,
-		lggr:  lggr,
+		requests: make(map[RequestID]*Request),
+		lggr:     lggr,
 	}, nil
 }
 
 func (rs *RequestsStore) Add(ctx context.Context, newRequest *Request) error {
-	storedRequestsBytes, err := rs.store.Get(ctx, RequestsKey)
-	if err != nil {
-		return fmt.Errorf("failed to get requests: %w", err)
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+
+	_, exists := rs.requests[newRequest.ID()]
+	if exists {
+		return fmt.Errorf("request with ID %v already exists", newRequest.ID())
 	}
 
-	var storedRequests []Request
-	if storedRequestsBytes != nil {
-		if err := json.Unmarshal(storedRequestsBytes, &storedRequests); err != nil {
-			return fmt.Errorf("failed to unmarshal write requests: %w", err)
-		}
-	}
-
-	// Check if the request already exists in the store
-	// Looping instead of storing unique keys to make it easier to cleanup stale requests
-	for _, sotredRequest := range storedRequests {
-		if sotredRequest.ID() == newRequest.ID() {
-			return nil
-		}
-	}
-
-	// At this point we know that the request doesn't exist in the store
-	updatedRequests := append(storedRequests, *newRequest)
-
-	updatedRequestsBytes, err := json.Marshal(updatedRequests)
-	if err != nil {
-		return fmt.Errorf("failed to marshal write requests: %w", err)
-	}
-
-	if err := rs.store.Store(ctx, RequestsKey, updatedRequestsBytes); err != nil {
-		return fmt.Errorf("failed to store write requests: %w", err)
-	}
-
+	rs.requests[newRequest.ID()] = newRequest
 	rs.lggr.Debugw("Request added", "request", newRequest)
 	return nil
 }
 
-func (rs *RequestsStore) Update(ctx context.Context, updatedRequest Request) error {
-	storedRequestsBytes, err := rs.store.Get(ctx, RequestsKey)
-	if err != nil {
-		return fmt.Errorf("failed to get requests: %w", err)
+func (rs *RequestsStore) Update(ctx context.Context, updatedRequest *Request) error {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+
+	_, exists := rs.requests[updatedRequest.ID()]
+	if !exists {
+		return fmt.Errorf("request with ID %v does not exist", updatedRequest.ID())
 	}
 
-	var storedRequests []Request
-	if storedRequestsBytes != nil {
-		if err := json.Unmarshal(storedRequestsBytes, &storedRequests); err != nil {
-			return fmt.Errorf("failed to unmarshal write requests: %w", err)
-		}
-	}
-
-	// Check if the request already exists in the store
-	// Looping instead of storing unique keys to make it easier to cleanup stale requests
-	for i, sotredRequest := range storedRequests {
-		if sotredRequest.ID() == updatedRequest.ID() {
-			storedRequests[i] = updatedRequest
-			break
-		}
-	}
-
-	updatedRequestsBytes, err := json.Marshal(storedRequests)
-	if err != nil {
-		return fmt.Errorf("failed to marshal write requests: %w", err)
-	}
-
-	return rs.store.Store(ctx, RequestsKey, updatedRequestsBytes)
+	rs.requests[updatedRequest.ID()] = updatedRequest
+	rs.lggr.Debugw("Request updated", "request", updatedRequest)
+	return nil
 }
 
 type Filters struct {
@@ -108,24 +59,18 @@ type Filters struct {
 }
 
 func (rs *RequestsStore) Get(ctx context.Context, filters *Filters) ([]Request, error) {
-	var requests []Request
-	requestsBytes, err := rs.store.Get(ctx, RequestsKey)
-	if err != nil {
-		return requests, fmt.Errorf("failed to get requests: %w", err)
-	}
-
-	if requestsBytes != nil {
-		if err := json.Unmarshal(requestsBytes, &requests); err != nil {
-			return requests, fmt.Errorf("failed to unmarshal write requests: %w", err)
-		}
-	}
+	rs.mu.RLock()
+	defer rs.mu.RUnlock()
+	requests := []Request{}
 
 	if filters == nil {
+		for _, r := range rs.requests {
+			requests = append(requests, *r)
+		}
 		return requests, nil
 	}
 
-	filteredRequests := []Request{}
-	for _, request := range requests {
+	for _, request := range rs.requests {
 		if filters.Status != RequestStatusUnspecified && filters.Status != request.Status {
 			continue
 		}
@@ -144,53 +89,20 @@ func (rs *RequestsStore) Get(ctx context.Context, filters *Filters) ([]Request, 
 			}
 		}
 
-		filteredRequests = append(filteredRequests, request)
+		requests = append(requests, *request)
 	}
 
-	return filteredRequests, nil
+	return requests, nil
 }
 
-func (rs *RequestsStore) GetByID(ctx context.Context, requestID RequestID) (*Request, error) {
-	requests, err := rs.Get(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("could not retrieve requests: %w", err)
-	}
-
-	// This is not very efficient, but the number of requests should be small
-	for _, request := range requests {
-		if request.ID() == requestID {
-			return &request, nil
-		}
-	}
-
-	return nil, fmt.Errorf("could not find request with ID: %v", requestID)
+func (rs *RequestsStore) GetByID(ctx context.Context, requestID RequestID) *Request {
+	rs.mu.RLock()
+	defer rs.mu.RUnlock()
+	return rs.requests[requestID]
 }
 
-func (rs *RequestsStore) Remove(ctx context.Context, requestID RequestID) error {
-	requests, err := rs.Get(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("could not retrieve requests: %w", err)
-	}
-
-	// This is not very efficient, but the number of requests should be small
-	var updatedRequests []Request
-	found := false
-	for _, request := range requests {
-		if request.ID() == requestID {
-			found = true
-		} else {
-			updatedRequests = append(updatedRequests, request)
-		}
-	}
-
-	if !found {
-		return fmt.Errorf("could not find request with ID: %v", requestID)
-	}
-
-	updatedRequestsBytes, err := json.Marshal(updatedRequests)
-	if err != nil {
-		return fmt.Errorf("failed to marshal updated requests: %w", err)
-	}
-
-	return rs.store.Store(ctx, RequestsKey, updatedRequestsBytes)
+func (rs *RequestsStore) Remove(ctx context.Context, requestID RequestID) {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	delete(rs.requests, requestID)
 }

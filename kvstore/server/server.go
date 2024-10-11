@@ -82,7 +82,7 @@ func (cs *capabilitiesServer) Initialise(
 ) error {
 	cs.s.Logger.Debugf("Initialising %s", cs.name)
 
-	requestsStore, err := kvrequests.New(store, cs.s.Logger)
+	requestsStore, err := kvrequests.New(cs.s.Logger)
 	if err != nil {
 		return fmt.Errorf("error when creating requests store: %w", err)
 	}

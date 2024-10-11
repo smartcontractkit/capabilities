@@ -22,8 +22,7 @@ func TestKVStoreTarget(t *testing.T) {
 		t.Skip()
 
 		logger := testutils.NewLogger(t)
-		kvStore := testutils.NewStore(t)
-		requestsStore, err := kvrequests.New(kvStore, logger)
+		requestsStore, err := kvrequests.New(logger)
 		assert.NoError(t, err)
 
 		ctx := context.Background()

@@ -70,27 +70,23 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		kvPairs[key] = []byte{}
 	}
 
-	request := kvrequests.NewRequest(kvrequests.RequestParams{
+	r := kvrequests.NewRequest(kvrequests.RequestParams{
 		WorkflowExecutionID: rawRequest.Metadata.WorkflowExecutionID,
 		ReferenceID:         rawRequest.Metadata.ReferenceID,
 		Type:                kvrequests.RequestKindRead,
 		KVPairs:             kvPairs,
 	})
-
-	err = c.requestsStore.Add(ctx, request)
+	err = c.requestsStore.Add(ctx, r)
 	if err != nil {
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to add read request: %v", err)
 	}
 
 	timeout := time.After(60 * time.Second)
 	for {
-		request, err := c.requestsStore.GetByID(ctx, request.ID())
-		if err != nil {
-			return capabilities.CapabilityResponse{}, fmt.Errorf("failed to get request by ID: %v", err)
-		}
+		request := c.requestsStore.GetByID(ctx, r.ID())
 
 		// TODO: Make sure response matches the JSON schema
-		if request.Status == kvrequests.RequestStatusCompleted {
+		if request != nil && request.Status == kvrequests.RequestStatusCompleted {
 			var response = map[string]any{}
 			for key, value := range request.KVPairs {
 				response[key] = value
@@ -100,6 +96,8 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 			if err != nil {
 				return capabilities.CapabilityResponse{}, err
 			}
+
+			c.requestsStore.Remove(ctx, request.ID())
 
 			return capabilities.CapabilityResponse{
 				Value: responseValue,

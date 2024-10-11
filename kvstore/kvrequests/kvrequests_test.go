@@ -2,7 +2,6 @@ package kvrequests
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -10,27 +9,96 @@ import (
 	"github.com/smartcontractkit/capabilities/libs/testutils"
 )
 
-func TestWriteRequests(t *testing.T) {
-	requestsStore, err := New(testutils.NewStore(t), testutils.NewLogger(t))
+func TestRequestsStore_Add(t *testing.T) {
+	lggr := testutils.NewLogger(t)
+	store, err := New(lggr)
 	assert.NoError(t, err)
 
-	ctx := context.Background()
+	req := &Request{ReferenceID: "req1", Status: RequestStatusPending}
+	err = store.Add(context.Background(), req)
+	assert.NoError(t, err)
 
-	writeRequest := Request{
+	// Try adding the same request again
+	err = store.Add(context.Background(), req)
+	assert.Error(t, err)
+	assert.Equal(t, "request with ID write_req1_ already exists", err.Error())
+}
+
+func TestRequestsStore_Update(t *testing.T) {
+	lggr := testutils.NewLogger(t)
+	store, err := New(lggr)
+	assert.NoError(t, err)
+
+	req := &Request{ReferenceID: "req1", Status: RequestStatusPending}
+	err = store.Add(context.Background(), req)
+	assert.NoError(t, err)
+
+	updatedReq := &Request{ReferenceID: "req1", Status: RequestStatusCompleted}
+	err = store.Update(context.Background(), updatedReq)
+	assert.NoError(t, err)
+
+	// Try updating a non-existent request
+	nonExistentReq := &Request{ReferenceID: "req2", Status: RequestStatusCompleted}
+	err = store.Update(context.Background(), nonExistentReq)
+	assert.Error(t, err)
+	assert.Equal(t, "request with ID write_req2_ does not exist", err.Error())
+}
+
+func TestRequestsStore_Get(t *testing.T) {
+	lggr := testutils.NewLogger(t)
+	store, err := New(lggr)
+	assert.NoError(t, err)
+
+	req1 := &Request{ReferenceID: "req1", Status: RequestStatusPending}
+	req2 := &Request{ReferenceID: "req2", Status: RequestStatusCompleted}
+
+	assert.NoError(t, store.Add(context.Background(), req1))
+	assert.NoError(t, store.Add(context.Background(), req2))
+
+	// Get all requests
+	requests, err := store.Get(context.Background(), nil)
+	assert.NoError(t, err)
+	assert.Len(t, requests, 2)
+
+	// Get requests with specific status
+	filters := &Filters{Status: RequestStatusPending}
+	requests, err = store.Get(context.Background(), filters)
+	assert.NoError(t, err)
+	assert.Len(t, requests, 1)
+	assert.Equal(t, RequestID("write_req1_"), requests[0].ID())
+}
+
+func TestRequestsStore_GetByID(t *testing.T) {
+	lggr := testutils.NewLogger(t)
+	store, err := New(lggr)
+	assert.NoError(t, err)
+
+	req := NewRequest(RequestParams{
 		Type:                RequestKindWrite,
-		ReferenceID:         "testReferenceID",
-		WorkflowExecutionID: "testID",
-		KVPairs:             map[string][]byte{"key1": []byte("value1")},
-	}
+		ReferenceID:         "req1",
+		WorkflowExecutionID: "workflow456",
+		KVPairs:             map[string][]byte{"foo": []byte("bar"), "baz": []byte("bad")},
+	})
+	assert.NoError(t, store.Add(context.Background(), req))
 
-	assert.NoError(t, requestsStore.Add(ctx, &writeRequest))
+	retrievedReq := store.GetByID(context.Background(), req.ID())
+	assert.NotNil(t, retrievedReq)
+	assert.Equal(t, req.ID(), retrievedReq.ID())
 
-	storedWriteRequestsBytes, err := requestsStore.store.Get(ctx, RequestsKey)
+	// Try getting a non-existent request
+	retrievedReq = store.GetByID(context.Background(), "req2")
+	assert.Nil(t, retrievedReq)
+}
+
+func TestRequestsStore_Remove(t *testing.T) {
+	lggr := testutils.NewLogger(t)
+	store, err := New(lggr)
 	assert.NoError(t, err)
 
-	var storedWriteRequests []Request
-	assert.NoError(t, json.Unmarshal(storedWriteRequestsBytes, &storedWriteRequests))
+	req := &Request{ReferenceID: "req1", Status: RequestStatusPending}
+	assert.NoError(t, store.Add(context.Background(), req))
 
-	assert.Len(t, storedWriteRequests, 1)
-	assert.Equal(t, writeRequest, storedWriteRequests[0])
+	store.Remove(context.Background(), "req1")
+	retrievedReq := store.GetByID(context.Background(), "req1")
+	assert.Nil(t, retrievedReq)
 }

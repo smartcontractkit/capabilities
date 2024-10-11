@@ -39,7 +39,7 @@ func (ct *contractTransmitter) Transmit(
 	}
 	ct.logger.Debugw("Updating", "request", request)
 
-	return ct.requestsStore.Update(ctx, request)
+	return ct.requestsStore.Update(ctx, &request)
 }
 
 // This is unused and overwritten by the OracleFactory
