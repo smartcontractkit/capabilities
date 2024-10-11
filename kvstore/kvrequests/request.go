@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"sort"
 )
 
 type RequestType int
@@ -42,17 +43,22 @@ func (r RequestStatus) String() string {
 type KVPairs map[string][]byte
 
 func (k KVPairs) String() string {
-	s := "{"
+	keys := make([]string, 0, len(k))
+	for key := range k {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
 
-	for key, value := range k {
-		s += fmt.Sprintf("\"%s\": \"%s\", ", key, string(value))
+	s := "{"
+	for _, key := range keys {
+		s += fmt.Sprintf("\"%s\": \"%s\", ", key, string(k[key]))
 	}
 
 	if len(k) > 0 {
 		s = s[:len(s)-2] // Remove the last ", "
 	}
 
-	s += "} "
+	s += "}"
 
 	return s
 }

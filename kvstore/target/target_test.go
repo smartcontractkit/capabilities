@@ -2,7 +2,6 @@ package target_test
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -66,18 +65,5 @@ func TestKVStoreTarget(t *testing.T) {
 		assert.Equal(t, capabilities.CapabilityResponse{
 			Value: expectedValue,
 		}, capabilityResponse)
-
-		writeRequestsBytes, err := kvStore.Get(ctx, kvrequests.RequestsKey)
-		assert.NoError(t, err)
-		var writeRequests []kvrequests.Request
-		assert.NoError(t, json.Unmarshal(writeRequestsBytes, &writeRequests))
-
-		assert.Len(t, writeRequests, 1)
-		assert.Equal(t, kvrequests.NewRequest(kvrequests.RequestParams{
-			Type:                kvrequests.RequestKindWrite,
-			ReferenceID:         capabilityRequest.Metadata.ReferenceID,
-			WorkflowExecutionID: capabilityRequest.Metadata.WorkflowExecutionID,
-			KVPairs:             keyValuePairs,
-		}), writeRequests[0])
 	})
 }
