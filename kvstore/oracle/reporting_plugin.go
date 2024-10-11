@@ -146,13 +146,13 @@ func (rp *reportingPlugin) Outcome(
 		}
 
 		switch processedObservation.request.Type {
-		case kvrequests.RequestKindWrite:
+		case kvrequests.RequestTypeWrite:
 			for key, value := range processedObservation.request.KVPairs {
 				outcome.Values[key] = value
 			}
 			processedObservation.request.Status = kvrequests.RequestStatusCompleted
 			outcome.CompletedRequests = append(outcome.CompletedRequests, processedObservation.request)
-		case kvrequests.RequestKindRead:
+		case kvrequests.RequestTypeRead:
 			keysWithValues := make(map[string][]byte)
 			for key := range processedObservation.request.KVPairs {
 				val, ok := outcome.Values[key]

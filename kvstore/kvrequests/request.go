@@ -10,13 +10,18 @@ import (
 type RequestType int
 
 const (
-	RequestKindWrite RequestType = iota
-	RequestKindRead
+	RequestTypeWrite RequestType = iota
+	RequestTypeRead
 )
 
-var requestKindToString = map[RequestType]string{
-	RequestKindWrite: "write",
-	RequestKindRead:  "read",
+func (r RequestType) String() string {
+	switch r {
+	case RequestTypeWrite:
+		return "write"
+	case RequestTypeRead:
+		return "read"
+	}
+	return "unspecified"
 }
 
 type RequestStatus int
@@ -29,15 +34,14 @@ const (
 
 func (r RequestStatus) String() string {
 	switch r {
+	case RequestStatusUnspecified:
+		return "unspecified"
 	case RequestStatusPending:
 		return "pending"
 	case RequestStatusCompleted:
 		return "completed"
-	case RequestStatusUnspecified:
-		return "unspecified"
-	default:
-		return "unspecified"
 	}
+	return "unspecified"
 }
 
 type KVPairs map[string][]byte
@@ -91,7 +95,7 @@ func NewRequest(params RequestParams) *Request {
 }
 
 func (r *Request) ID() RequestID {
-	return RequestID(fmt.Sprintf("%s_%s_%s", requestKindToString[r.Type], r.ReferenceID, r.WorkflowExecutionID))
+	return RequestID(fmt.Sprintf("%s_%s_%s", r.Type, r.ReferenceID, r.WorkflowExecutionID))
 }
 
 func (r *Request) Marshal() ([]byte, error) {

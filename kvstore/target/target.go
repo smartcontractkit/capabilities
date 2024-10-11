@@ -21,6 +21,9 @@ var _ capabilities.TargetCapability = (*capability)(nil)
 type capability struct {
 	logger        logger.Logger
 	requestsStore *kvrequests.RequestsStore
+	// Key values are stored with an owner prefix so that different workflows don't override each other's state
+	// When the last owner workflow is unregistered, the key values are deleted
+	registeredWorkflows map[string][]string
 }
 
 type Params struct {
@@ -30,8 +33,9 @@ type Params struct {
 
 func New(p Params) *capability {
 	return &capability{
-		logger:        p.Logger,
-		requestsStore: p.RequestsStore,
+		logger:              p.Logger,
+		requestsStore:       p.RequestsStore,
+		registeredWorkflows: make(map[string][]string),
 	}
 }
 
@@ -96,7 +100,7 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 	r := kvrequests.NewRequest(kvrequests.RequestParams{
 		WorkflowExecutionID: rawRequest.Metadata.WorkflowExecutionID,
 		ReferenceID:         rawRequest.Metadata.ReferenceID,
-		Type:                kvrequests.RequestKindWrite,
+		Type:                kvrequests.RequestTypeWrite,
 		KVPairs:             kvWriteReport.keyValuePairs,
 	})
 	err = c.requestsStore.Add(ctx, r)
@@ -138,13 +142,41 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 	}
 }
 
-func (c *capability) RegisterToWorkflow(ctx context.Context, rawRequest capabilities.RegisterToWorkflowRequest) error {
-	c.logger.Debugw("Registering to workflow", "WorkflowID", rawRequest.Metadata.WorkflowID)
+func (c *capability) RegisterToWorkflow(ctx context.Context, request capabilities.RegisterToWorkflowRequest) error {
+	_, ok := c.registeredWorkflows[request.Metadata.WorkflowID]
+	if !ok {
+		c.registeredWorkflows[request.Metadata.WorkflowOwner] = []string{
+			request.Metadata.WorkflowID,
+		}
+
+		// c.requestsStore.AddOwnerPrefix(request.Metadata.WorkflowOwner)
+
+		c.logger.Debugw("Added new workfow owner",
+			"WorkflowID", request.Metadata.WorkflowID,
+			"WorkflowOwner", request.Metadata.WorkflowOwner)
+	} else {
+		c.registeredWorkflows[request.Metadata.WorkflowOwner] = append(c.registeredWorkflows[request.Metadata.WorkflowOwner], request.Metadata.WorkflowID)
+	}
 
 	return nil
 }
 
-func (c *capability) UnregisterFromWorkflow(ctx context.Context, rawRequest capabilities.UnregisterFromWorkflowRequest) error {
-	c.logger.Debugw("Unregistering from workflow", "WorkflowID", rawRequest.Metadata.WorkflowID)
+func (c *capability) UnregisterFromWorkflow(ctx context.Context, request capabilities.UnregisterFromWorkflowRequest) error {
+	// if c.registeredWorkflows == nil {
+	// 	return fmt.Errorf("capability was incorrectly initialized")
+	// }
+
+	// workflowIDs, ok := (*c.registeredWorkflows)[request.Metadata.WorkflowOwner]
+	// if !ok {
+	// 	return fmt.Errorf("workflow owner not found")
+	// }
+
+	// for i, id := range workflowIDs {
+	// 	if id == request.Metadata.WorkflowID {
+	// 		c.registeredWorkflows[request.Metadata.WorkflowOwner] = append(workflowIDs[:i], workflowIDs[i+1:]...)
+	// 		break
+	// 	}
+	// }
+
 	return nil
 }

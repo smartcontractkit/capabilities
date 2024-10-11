@@ -74,7 +74,7 @@ func TestRequestsStore_GetByID(t *testing.T) {
 	assert.NoError(t, err)
 
 	req := NewRequest(RequestParams{
-		Type:                RequestKindWrite,
+		Type:                RequestTypeWrite,
 		ReferenceID:         "req1",
 		WorkflowExecutionID: "workflow456",
 		KVPairs:             map[string][]byte{"foo": []byte("bar"), "baz": []byte("bad")},

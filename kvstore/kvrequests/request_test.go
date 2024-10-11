@@ -16,26 +16,26 @@ func TestRequest(t *testing.T) {
 		{
 			name: "WriteRequest",
 			request: Request{
-				Type:                RequestKindWrite,
+				Type:                RequestTypeWrite,
 				ReferenceID:         "ref123",
 				WorkflowExecutionID: "workflow456",
 				KVPairs:             map[string][]byte{"foo": []byte("bar"), "baz": []byte("bad")},
 				Status:              RequestStatusPending,
 			},
 			expectedID:     "write_ref123_workflow456",
-			expectedString: `Request{ID: "write_ref123_workflow456", status: "pending", pairs: {"baz": "bad", "foo": "bar"}}`,
+			expectedString: `{ID: "write_ref123_workflow456", status: "pending", pairs: {"baz": "bad", "foo": "bar"}}`,
 		},
 		{
 			name: "ReadRequest",
 			request: Request{
-				Type:                RequestKindRead,
+				Type:                RequestTypeRead,
 				ReferenceID:         "ref789",
 				WorkflowExecutionID: "workflow012",
 				KVPairs:             map[string][]byte{"key2": []byte("value2")},
 				Status:              RequestStatusCompleted,
 			},
 			expectedID:     "read_ref789_workflow012",
-			expectedString: `Request{ID: "read_ref789_workflow012", status: "completed", pairs: {"key2": "value2"}}`,
+			expectedString: `{ID: "read_ref789_workflow012", status: "completed", pairs: {"key2": "value2"}}`,
 		},
 	}
 
@@ -57,13 +57,13 @@ func TestRequestEqual(t *testing.T) {
 		{
 			name: "EqualRequests",
 			request1: Request{
-				Type:                RequestKindWrite,
+				Type:                RequestTypeWrite,
 				ReferenceID:         "ref123",
 				WorkflowExecutionID: "workflow456",
 				KVPairs:             map[string][]byte{"foo": []byte("bar"), "baz": []byte("bad")},
 			},
 			request2: Request{
-				Type:                RequestKindWrite,
+				Type:                RequestTypeWrite,
 				ReferenceID:         "ref123",
 				WorkflowExecutionID: "workflow456",
 				KVPairs:             map[string][]byte{"foo": []byte("bar"), "baz": []byte("bad")},
@@ -73,13 +73,13 @@ func TestRequestEqual(t *testing.T) {
 		{
 			name: "DifferentTypes",
 			request1: Request{
-				Type:                RequestKindWrite,
+				Type:                RequestTypeWrite,
 				ReferenceID:         "ref123",
 				WorkflowExecutionID: "workflow456",
 				KVPairs:             map[string][]byte{"foo": []byte("bar"), "baz": []byte("bad")},
 			},
 			request2: Request{
-				Type:                RequestKindRead,
+				Type:                RequestTypeRead,
 				ReferenceID:         "ref123",
 				WorkflowExecutionID: "workflow456",
 				KVPairs:             map[string][]byte{"foo": []byte("bar"), "baz": []byte("bad")},
@@ -89,13 +89,13 @@ func TestRequestEqual(t *testing.T) {
 		{
 			name: "DifferentReferenceID",
 			request1: Request{
-				Type:                RequestKindWrite,
+				Type:                RequestTypeWrite,
 				ReferenceID:         "ref123",
 				WorkflowExecutionID: "workflow456",
 				KVPairs:             map[string][]byte{"foo": []byte("bar"), "baz": []byte("bad")},
 			},
 			request2: Request{
-				Type:                RequestKindWrite,
+				Type:                RequestTypeWrite,
 				ReferenceID:         "ref124",
 				WorkflowExecutionID: "workflow456",
 				KVPairs:             map[string][]byte{"foo": []byte("bar"), "baz": []byte("bad")},
@@ -105,13 +105,13 @@ func TestRequestEqual(t *testing.T) {
 		{
 			name: "DifferentWorkflowExecutionID",
 			request1: Request{
-				Type:                RequestKindWrite,
+				Type:                RequestTypeWrite,
 				ReferenceID:         "ref123",
 				WorkflowExecutionID: "workflow456",
 				KVPairs:             map[string][]byte{"foo": []byte("bar"), "baz": []byte("bad")},
 			},
 			request2: Request{
-				Type:                RequestKindWrite,
+				Type:                RequestTypeWrite,
 				ReferenceID:         "ref123",
 				WorkflowExecutionID: "workflow457",
 				KVPairs:             map[string][]byte{"foo": []byte("bar"), "baz": []byte("bad")},
@@ -121,13 +121,13 @@ func TestRequestEqual(t *testing.T) {
 		{
 			name: "DifferentKVPairs",
 			request1: Request{
-				Type:                RequestKindWrite,
+				Type:                RequestTypeWrite,
 				ReferenceID:         "ref123",
 				WorkflowExecutionID: "workflow456",
 				KVPairs:             map[string][]byte{"foo": []byte("bar"), "baz": []byte("bad")},
 			},
 			request2: Request{
-				Type:                RequestKindWrite,
+				Type:                RequestTypeWrite,
 				ReferenceID:         "ref123",
 				WorkflowExecutionID: "workflow456",
 				KVPairs:             map[string][]byte{"foo": []byte("bar"), "baz": []byte("good")},
