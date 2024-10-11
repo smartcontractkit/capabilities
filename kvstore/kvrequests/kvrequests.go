@@ -38,7 +38,7 @@ func New(store core.KeyValueStore, lggr logger.SugaredLogger) (*RequestsStore, e
 func (rs *RequestsStore) Add(ctx context.Context, newRequest *Request) error {
 	storedRequestsBytes, err := rs.store.Get(ctx, RequestsKey)
 	if err != nil {
-		return fmt.Errorf("failed to get write requests: %w", err)
+		return fmt.Errorf("failed to get requests: %w", err)
 	}
 
 	var storedRequests []Request
@@ -75,7 +75,7 @@ func (rs *RequestsStore) Add(ctx context.Context, newRequest *Request) error {
 func (rs *RequestsStore) Update(ctx context.Context, updatedRequest Request) error {
 	storedRequestsBytes, err := rs.store.Get(ctx, RequestsKey)
 	if err != nil {
-		return fmt.Errorf("failed to get write requests: %w", err)
+		return fmt.Errorf("failed to get requests: %w", err)
 	}
 
 	var storedRequests []Request
@@ -111,7 +111,7 @@ func (rs *RequestsStore) Get(ctx context.Context, filters *Filters) ([]Request, 
 	var requests []Request
 	requestsBytes, err := rs.store.Get(ctx, RequestsKey)
 	if err != nil {
-		return requests, fmt.Errorf("failed to get write requests: %w", err)
+		return requests, fmt.Errorf("failed to get requests: %w", err)
 	}
 
 	if requestsBytes != nil {
@@ -126,7 +126,7 @@ func (rs *RequestsStore) Get(ctx context.Context, filters *Filters) ([]Request, 
 
 	filteredRequests := []Request{}
 	for _, request := range requests {
-		if filters.Status != 0 && filters.Status != request.Status {
+		if filters.Status != RequestStatusUnspecified && filters.Status != request.Status {
 			continue
 		}
 

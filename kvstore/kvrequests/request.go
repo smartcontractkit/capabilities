@@ -21,7 +21,8 @@ var requestKindToString = map[RequestType]string{
 type RequestStatus int
 
 const (
-	RequestStatusPending RequestStatus = iota + 1
+	RequestStatusUnspecified RequestStatus = iota
+	RequestStatusPending
 	RequestStatusCompleted
 )
 
@@ -31,6 +32,8 @@ func (r RequestStatus) String() string {
 		return "pending"
 	case RequestStatusCompleted:
 		return "completed"
+	case RequestStatusUnspecified:
+		return "unspecified"
 	default:
 		return "unspecified"
 	}
