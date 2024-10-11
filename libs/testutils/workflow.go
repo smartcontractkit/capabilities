@@ -26,45 +26,16 @@ type workflow struct {
 	t                *testing.T
 }
 
-type NewWorkflowParams struct {
-	Capabilities []CapabilityWithConfig
-	T            *testing.T
-}
-
-func NewWorkflow(ctx context.Context, params NewWorkflowParams) *workflow {
+func NewWorkflow(ctx context.Context, t *testing.T, capabilities []CapabilityWithConfig) *workflow {
 	workflowOwner := uuid.New().String()[:32]
 	workflowID := uuid.New().String()[:32]
-	for _, c := range params.Capabilities {
-		_, err := c.Capability.Info(ctx)
-		if err != nil {
-			params.T.Errorf("failed to get capability info: %v", err)
-		}
-		config, err := values.NewMap(c.Config)
-		if err != nil {
-			params.T.Errorf("failed to create config map: %v", err)
-		}
-		r := capabilities.RegisterToWorkflowRequest{
-			Metadata: capabilities.RegistrationMetadata{
-				WorkflowID:    workflowID,
-				WorkflowOwner: workflowOwner,
-			},
-			Config: config,
-		}
-		err = c.Capability.RegisterToWorkflow(ctx, r)
-		if err != nil {
-			params.T.Errorf("capability failed to register to workflow: %v", err)
-		}
-
-		// RegisterToWorkflow(ctx context.Context, request RegisterToWorkflowRequest) error
-		// UnregisterFromWorkflow(ctx context.Context, request UnregisterFromWorkflowRequest) error
-	}
 
 	return &workflow{
-		capabilities:     params.Capabilities,
+		capabilities:     capabilities,
 		executionCounter: 0,
 		ID:               workflowID,
 		Owner:            workflowOwner,
-		t:                params.T,
+		t:                t,
 	}
 }
 
@@ -91,3 +62,50 @@ func (w *workflow) NewResponse(outputs map[string]any) capabilities.CapabilityRe
 		Value: wrappedOutputs,
 	}
 }
+
+func (w *workflow) Register(ctx context.Context) {
+	for _, c := range w.capabilities {
+		_, err := c.Capability.Info(ctx)
+		if err != nil {
+			w.t.Errorf("failed to get capability info: %v", err)
+		}
+		config, err := values.NewMap(c.Config)
+		if err != nil {
+			w.t.Errorf("failed to create config map: %v", err)
+		}
+		r := capabilities.RegisterToWorkflowRequest{
+			Metadata: capabilities.RegistrationMetadata{
+				WorkflowID:    w.ID,
+				WorkflowOwner: w.Owner,
+			},
+			Config: config,
+		}
+		err = c.Capability.RegisterToWorkflow(ctx, r)
+		if err != nil {
+			w.t.Errorf("failed when registering the workflow to the capability: %v", err)
+		}
+	}
+}
+
+func (w *workflow) Unregister(ctx context.Context) {
+	for _, c := range w.capabilities {
+		config, err := values.NewMap(c.Config)
+		if err != nil {
+			w.t.Errorf("failed to create config map: %v", err)
+		}
+		r := capabilities.UnregisterFromWorkflowRequest{
+			Metadata: capabilities.RegistrationMetadata{
+				WorkflowID:    w.ID,
+				WorkflowOwner: w.Owner,
+			},
+			Config: config,
+		}
+		err = c.Capability.UnregisterFromWorkflow(ctx, r)
+		if err != nil {
+			w.t.Errorf("failed when registering the workflow to the capability: %v", err)
+		}
+	}
+}
+
+// RegisterToWorkflow(ctx context.Context, request RegisterToWorkflowRequest) error
+// UnregisterFromWorkflow(ctx context.Context, request UnregisterFromWorkflowRequest) error

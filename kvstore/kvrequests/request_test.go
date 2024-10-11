@@ -23,7 +23,7 @@ func TestRequest(t *testing.T) {
 				Status:              RequestStatusPending,
 			},
 			expectedID:     "write_ref123_workflow456",
-			expectedString: `{ID: "write_ref123_workflow456", status: "pending", pairs: {"baz": "bad", "foo": "bar"}}`,
+			expectedString: `Request{ID: "write_ref123_workflow456", status: "pending", pairs: {"baz": "bad", "foo": "bar"}}`,
 		},
 		{
 			name: "ReadRequest",
@@ -35,7 +35,7 @@ func TestRequest(t *testing.T) {
 				Status:              RequestStatusCompleted,
 			},
 			expectedID:     "read_ref789_workflow012",
-			expectedString: `{ID: "read_ref789_workflow012", status: "completed", pairs: {"key2": "value2"}}`,
+			expectedString: `Request{ID: "read_ref789_workflow012", status: "completed", pairs: {"key2": "value2"}}`,
 		},
 	}
 

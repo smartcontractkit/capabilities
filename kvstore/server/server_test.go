@@ -7,12 +7,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/proto"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/ocr3cap"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
-	"github.com/smartcontractkit/chainlink-common/pkg/values"
 
 	"github.com/smartcontractkit/capabilities/libs/testutils"
 )
@@ -52,42 +49,23 @@ func TestNewCapabilities(t *testing.T) {
 	err = capabilitiesRegistry.Contains([]string{"kv-store-action@1.0.0", "kv-store-target@1.0.0"})
 	require.NoError(t, err)
 
-	workflow := testutils.NewWorkflow(ctx, testutils.NewWorkflowParams{
-		Capabilities: []testutils.CapabilityWithConfig{
-			{
-				Capability: capabilitiesServer.Action,
-				Config:     map[string]interface{}{},
-			},
-			{
-				Capability: capabilitiesServer.Target,
-				Config:     map[string]interface{}{},
-			},
+	workflow := testutils.NewWorkflow(ctx, t, []testutils.CapabilityWithConfig{
+		{
+			Capability: capabilitiesServer.Action,
+			Config:     map[string]interface{}{},
 		},
-		T: t,
-	})
-
-	// CapabilityRequest to write to the kvstore
-	wrappedKVPairs, err := values.Wrap(map[string][]byte{
-		"key":  []byte("value"),
-		"key2": []byte("value2"),
-	})
-	assert.NoError(t, err)
-
-	keyValuePairsBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(values.Proto(wrappedKVPairs))
-	assert.NoError(t, err)
-
-	wrappedSignedReport, err := values.Wrap(
-		ocr3cap.SignedReport{
-			Context:    []uint8{},
-			ID:         []uint8{1},
-			Report:     keyValuePairsBytes,
-			Signatures: [][]uint8{{}},
+		{
+			Capability: capabilitiesServer.Target,
+			Config:     map[string]interface{}{},
 		},
-	)
-	assert.NoError(t, err)
+	})
+	// workflow.Register(ctx)
 
 	response, err := capabilitiesServer.Target.Execute(ctx, workflow.NewRequest(map[string]any{
-		"signedReport": wrappedSignedReport,
+		"signedReport": testutils.NewReport(t, map[string][]byte{
+			"key":  []byte("value"),
+			"key2": []byte("value2"),
+		}),
 	}))
 	assert.NoError(t, err)
 
@@ -107,28 +85,11 @@ func TestNewCapabilities(t *testing.T) {
 		"key3": []byte(""),
 	}), response)
 
-	// Delete from the kvstore
-	wrappedKVPairs, err = values.Wrap(map[string][]byte{
-		"key":  []byte(""),
-		"key3": []byte("foo"),
-	})
-	assert.NoError(t, err)
-
-	keyValuePairsBytes, err = proto.MarshalOptions{Deterministic: true}.Marshal(values.Proto(wrappedKVPairs))
-	assert.NoError(t, err)
-
-	wrappedSignedReport, err = values.Wrap(
-		ocr3cap.SignedReport{
-			Context:    []uint8{},
-			ID:         []uint8{1},
-			Report:     keyValuePairsBytes,
-			Signatures: [][]uint8{{}},
-		},
-	)
-	assert.NoError(t, err)
-
 	response, err = capabilitiesServer.Target.Execute(ctx, workflow.NewRequest(map[string]any{
-		"signedReport": wrappedSignedReport,
+		"signedReport": testutils.NewReport(t, map[string][]byte{
+			"key":  []byte(""), // Delete a key from the kvstore
+			"key3": []byte("foo"),
+		}),
 	}))
 	assert.NoError(t, err)
 
