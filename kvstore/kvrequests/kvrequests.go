@@ -87,16 +87,16 @@ func (rs *RequestsStore) Get(ctx context.Context, filters *Filters) ([]Request, 
 	// If status filter is unspecified, return requests
 	if filters.Status == RequestStatusUnspecified {
 		return requests, nil
-	} else {
-		// Otherwise, filter by status
-		filteredRequests := []Request{}
-		for _, request := range requests {
-			if request.Status == filters.Status {
-				filteredRequests = append(filteredRequests, request)
-			}
-		}
-		return filteredRequests, nil
 	}
+
+	// Otherwise, filter by status
+	filteredRequests := []Request{}
+	for _, request := range requests {
+		if request.Status == filters.Status {
+			filteredRequests = append(filteredRequests, request)
+		}
+	}
+	return filteredRequests, nil
 }
 
 func (rs *RequestsStore) GetByID(ctx context.Context, requestID RequestID) *Request {
