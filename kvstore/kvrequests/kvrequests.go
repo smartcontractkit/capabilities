@@ -70,29 +70,33 @@ func (rs *RequestsStore) Get(ctx context.Context, filters *Filters) ([]Request, 
 		return requests, nil
 	}
 
-	for _, request := range rs.requests {
-		if filters.Status != RequestStatusUnspecified && filters.Status != request.Status {
-			continue
-		}
-
-		if len(filters.RequestIDs) > 0 {
-			found := false
-			for _, requestID := range filters.RequestIDs {
-				if request.ID() == requestID {
-					found = true
-					break
-				}
-			}
-
-			if !found {
-				continue
+	// First, filter by IDs
+	if len(filters.RequestIDs) > 0 {
+		for _, requestID := range filters.RequestIDs {
+			request := rs.GetByID(ctx, requestID)
+			if request != nil {
+				requests = append(requests, *request)
 			}
 		}
-
-		requests = append(requests, *request)
+	} else {
+		for _, request := range rs.requests {
+			requests = append(requests, *request)
+		}
 	}
 
-	return requests, nil
+	// If status filter is unspecified, return requests
+	if filters.Status == RequestStatusUnspecified {
+		return requests, nil
+	} else {
+		// Otherwise, filter by status
+		filteredRequests := []Request{}
+		for _, request := range requests {
+			if request.Status == filters.Status {
+				filteredRequests = append(filteredRequests, request)
+			}
+		}
+		return filteredRequests, nil
+	}
 }
 
 func (rs *RequestsStore) GetByID(ctx context.Context, requestID RequestID) *Request {
