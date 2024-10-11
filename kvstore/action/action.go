@@ -50,7 +50,7 @@ func evaluate(rawRequest capabilities.CapabilityRequest) (*kvcap.ReadInputs, err
 }
 
 func (c *capability) Execute(ctx context.Context, rawRequest capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
-	c.logger.Debug("Executing",
+	c.logger.Infow("Executing",
 		"WorkflowID", rawRequest.Metadata.WorkflowID,
 		"WorkflowExecutionID", rawRequest.Metadata.WorkflowExecutionID,
 	)
@@ -59,7 +59,7 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 	if err != nil {
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to decode signed report: %v", err)
 	}
-	c.logger.Debug("Evaluated execute request",
+	c.logger.Debugw("Evaluated execute request",
 		"WorkflowID", rawRequest.Metadata.WorkflowID,
 		"WorkflowExecutionID", rawRequest.Metadata.WorkflowExecutionID,
 	)
@@ -112,7 +112,7 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		case <-timeout:
 			return capabilities.CapabilityResponse{}, fmt.Errorf("request did not process, timeout after 60 seconds")
 		case <-time.After(250 * time.Millisecond):
-			c.logger.Debug("Waiting for request to be processed",
+			c.logger.Debugw("Waiting for request to be processed",
 				"RequestID", request.ID(),
 			)
 		}
@@ -120,12 +120,12 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 }
 
 func (c *capability) RegisterToWorkflow(ctx context.Context, rawRequest capabilities.RegisterToWorkflowRequest) error {
-	c.logger.Debug("Registering to workflow", "WorkflowID", rawRequest.Metadata.WorkflowID, "WorkflowExecutionID")
+	c.logger.Debugw("Registering to workflow", "WorkflowID", rawRequest.Metadata.WorkflowID)
 
 	return nil
 }
 
 func (c *capability) UnregisterFromWorkflow(ctx context.Context, rawRequest capabilities.UnregisterFromWorkflowRequest) error {
-	c.logger.Debug("Unregistering from workflow", "WorkflowID", rawRequest.Metadata.WorkflowID, "WorkflowExecutionID")
+	c.logger.Debugw("Unregistering from workflow", "WorkflowID", rawRequest.Metadata.WorkflowID)
 	return nil
 }
