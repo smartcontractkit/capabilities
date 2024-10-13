@@ -1,0 +1,68 @@
+{
+  "$id": "https://github.com/smartcontractkit/capabilities/beholder/webapitargetcap/web-api-target@1.0.0",
+  "description": "A target that emits events through beholder",
+  "$defs": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "triggerEvent": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "url": {
+          "type": "string"
+        },
+        "method": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        }
+      },
+      "required": ["triggerEvent", "url", "method", "body"],
+      "additionalProperties": false
+    },
+    "config": {
+      "type": "object",
+      "properties": {
+        "rateLimiter": {
+          "type": "object",
+          "properties": {
+            "globalRPS": {
+              "type": "integer"
+            },
+            "globalBurst": {
+              "type": "integer"
+            },
+            "perSenderRPS": {
+              "type": "integer"
+            },
+            "perSenderBurst": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "globalRPS",
+            "globalBurst",
+            "perSenderRPS",
+            "perSenderBurst"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": ["rateLimiter"],
+      "additionalProperties": false
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "config": {
+      "$ref": "#/$defs/config"
+    },
+    "inputs": {
+      "$ref": "#/$defs/payload"
+    }
+  },
+  "required": ["config", "inputs"]
+}

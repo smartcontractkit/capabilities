@@ -3,6 +3,7 @@ package target
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"google.golang.org/protobuf/proto"
 
@@ -56,6 +57,8 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		return capabilities.CapabilityResponse{}, err
 	}
 
+	c.logger.Info("Payload: ", fmt.Sprintf("%+v", payload))
+
 	capabilityMap, err := newMapFn(payload)
 	if err != nil {
 		return capabilities.CapabilityResponse{}, err
@@ -84,7 +87,7 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 }
 
 func (c *capability) payloadFromRequest(rawRequest capabilities.CapabilityRequest) (map[string]any, error) {
-	payload, ok := rawRequest.Inputs.Underlying["payload"]
+	payload, ok := rawRequest.Inputs.Underlying["Payload"]
 	if !ok {
 		return nil, errors.New("missing payload")
 	}

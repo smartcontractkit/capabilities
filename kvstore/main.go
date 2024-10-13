@@ -6,6 +6,7 @@ import (
 
 	"github.com/hashicorp/go-plugin"
 
+	"github.com/smartcontractkit/capabilities/kvstore/action"
 	"github.com/smartcontractkit/capabilities/kvstore/target"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -19,6 +20,7 @@ const (
 
 type CapabilitiesService struct {
 	target capabilities.TargetCapability
+	action capabilities.ActionCapability
 	s      *loop.Server
 }
 
@@ -71,8 +73,14 @@ func (cs *CapabilitiesService) Infos(ctx context.Context) ([]capabilities.Capabi
 		return nil, err
 	}
 
+	actionInfo, err := cs.action.Info(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	return []capabilities.CapabilityInfo{
 		targetInfo,
+		actionInfo,
 	}, nil
 }
 
@@ -96,5 +104,12 @@ func (cs *CapabilitiesService) Initialise(
 		return fmt.Errorf("error when adding kv store target to the registry: %w", err)
 	}
 
+	cs.action = action.New(action.Params{
+		Store:  store,
+		Logger: cs.s.Logger,
+	})
+	if err := capabilityRegistry.Add(ctx, cs.action); err != nil {
+		return fmt.Errorf("error when adding kv store action to the registry: %w", err)
+	}
 	return nil
 }

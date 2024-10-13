@@ -1,0 +1,58 @@
+{
+  "$id": "https://github.com/smartcontractkit/capabilities/kvstore/kvreadcap/kv-store-action@1.0.0",
+  "$defs": {
+    "Inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Input parameters for the Key-Value Store Read Action.",
+      "properties": {
+        "keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The keys to read from the Key-Value Store."
+        }
+      },
+      "required": ["keys"]
+    },
+    "Outputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Output parameters for the Key-Value Store Read Action.",
+      "properties": {
+        "values": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            }
+          }
+        }
+      },
+      "required": ["values"]
+    }
+  },
+  "description": "Key-Value Store Target",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "inputs": {
+      "$ref": "#/$defs/Inputs"
+    },
+    "outputs": {
+      "$ref": "#/$defs/Outputs"
+    },
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Configuration for the Key-Value Store Read Action. No configuration options are available at this time.",
+      "properties": {},
+      "required": []
+    }
+  },
+  "required": ["inputs", "outputs"]
+}
