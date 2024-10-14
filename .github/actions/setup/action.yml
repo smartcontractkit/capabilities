@@ -3,11 +3,11 @@ description: "Sets up nx and Go"
 runs:
   using: "composite"
   steps:
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
+    - name: Set up Go
+      uses: actions/setup-go@v5.0.2
       with:
-        node-version: "20"
-        cache-dependency-path: "**/.github/actions/**/*.yml"
+        go-version: ${{ env.GO_VERSION }}
+        cache: false
     - name: Cache NX
       uses: actions/cache@2cdf405574d6ef1f33a1d12acccd3ae82f47b3f2 # v4.1.0
       with:
@@ -20,9 +20,3 @@ runs:
     - id: get-root
       run: echo "root=$(./nx show project ${{matrix.projects}} --json)" >> "$GITHUB_OUTPUT"
       shell: bash
-    - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
-      with:
-        go-version: ${{ env.GO_VERSION }}
-        cache-dependency-path: |
-          ${{fromJson(steps.get-root.outputs.root).root}}/go.sum
-          "bin/**" # Cache build artifacts
