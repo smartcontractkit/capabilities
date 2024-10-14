@@ -1,6 +1,7 @@
 package target
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -84,11 +85,23 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		return capabilities.CapabilityResponse{}, err
 	}
 
-	for i, key := range storeRequest.Keys {
-		c.logger.Info("Storing new key", "key", key)
-		if err = c.store.Store(ctx, key, storeRequest.Values[i]); err != nil {
+	for i := range storeRequest.Keys {
+		var index = i
+		key := storeRequest.Keys[index]
+		c.logger.Infow("Storing new key", "key", key)
+		if err = c.store.Store(ctx, key, storeRequest.Values[index]); err != nil {
 			return capabilities.CapabilityResponse{}, err
 		}
+
+		val, err := c.store.Get(ctx, key)
+		if err != nil {
+			return capabilities.CapabilityResponse{}, err
+		}
+		if !bytes.Equal(val, []byte(storeRequest.Values[index])) {
+			return capabilities.CapabilityResponse{}, fmt.Errorf("stored value does not match expected value: expected: %v got: %v", storeRequest.Values[index], val)
+		}
+
+		c.logger.Infow("Key stored successfully", "key", key)
 	}
 	c.logger.Debug("Values stored", "WorkflowID", rawRequest.Metadata.WorkflowID, "WorkflowExecutionID", rawRequest.Metadata.WorkflowExecutionID)
 
