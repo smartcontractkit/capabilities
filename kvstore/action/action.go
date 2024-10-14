@@ -71,10 +71,9 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 	}
 
 	r := kvrequests.NewRequest(kvrequests.RequestParams{
-		WorkflowExecutionID: rawRequest.Metadata.WorkflowExecutionID,
-		ReferenceID:         rawRequest.Metadata.ReferenceID,
-		Type:                kvrequests.RequestTypeRead,
-		KVPairs:             kvPairs,
+		Reference: fmt.Sprintf("%s_%s", rawRequest.Metadata.WorkflowExecutionID, rawRequest.Metadata.ReferenceID),
+		Type:      kvrequests.RequestTypeRead,
+		KVPairs:   kvPairs,
 	})
 	err = c.requestsStore.Add(ctx, r)
 	if err != nil {

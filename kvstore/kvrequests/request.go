@@ -12,6 +12,8 @@ type RequestType int
 const (
 	RequestTypeWrite RequestType = iota
 	RequestTypeRead
+	RequestTypeAddNamespace
+	RequestTypeRemoveNamespace
 )
 
 func (r RequestType) String() string {
@@ -20,6 +22,10 @@ func (r RequestType) String() string {
 		return "write"
 	case RequestTypeRead:
 		return "read"
+	case RequestTypeAddNamespace:
+		return "add_namespace"
+	case RequestTypeRemoveNamespace:
+		return "remove_namespace"
 	}
 	return "unspecified"
 }
@@ -70,32 +76,29 @@ func (k KVPairs) String() string {
 type RequestID string
 
 type Request struct {
-	Type                RequestType
-	ReferenceID         string
-	WorkflowExecutionID string
-	KVPairs             KVPairs
-	Status              RequestStatus
+	Type      RequestType
+	Reference string
+	KVPairs   KVPairs
+	Status    RequestStatus
 }
 
 type RequestParams struct {
-	Type                RequestType
-	ReferenceID         string
-	WorkflowExecutionID string
-	KVPairs             KVPairs
+	Type      RequestType
+	Reference string
+	KVPairs   KVPairs
 }
 
 func NewRequest(params RequestParams) *Request {
 	return &Request{
-		Type:                params.Type,
-		ReferenceID:         params.ReferenceID,
-		WorkflowExecutionID: params.WorkflowExecutionID,
-		KVPairs:             params.KVPairs,
-		Status:              RequestStatusPending,
+		Type:      params.Type,
+		Reference: params.Reference,
+		KVPairs:   params.KVPairs,
+		Status:    RequestStatusPending,
 	}
 }
 
 func (r *Request) ID() RequestID {
-	return RequestID(fmt.Sprintf("%s_%s_%s", r.Type, r.ReferenceID, r.WorkflowExecutionID))
+	return RequestID(fmt.Sprintf("%s_%s", r.Type, r.Reference))
 }
 
 func (r *Request) Marshal() ([]byte, error) {
@@ -111,11 +114,7 @@ func (r Request) Equal(other Request) bool {
 		return false
 	}
 
-	if r.ReferenceID != other.ReferenceID {
-		return false
-	}
-
-	if r.WorkflowExecutionID != other.WorkflowExecutionID {
+	if r.Reference != other.Reference {
 		return false
 	}
 

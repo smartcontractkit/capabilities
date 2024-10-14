@@ -14,14 +14,14 @@ func TestRequestsStore_Add(t *testing.T) {
 	store, err := New(lggr)
 	assert.NoError(t, err)
 
-	req := &Request{ReferenceID: "req1", Status: RequestStatusPending}
+	req := &Request{Reference: "req1", Status: RequestStatusPending}
 	err = store.Add(context.Background(), req)
 	assert.NoError(t, err)
 
 	// Try adding the same request again
 	err = store.Add(context.Background(), req)
 	assert.Error(t, err)
-	assert.Equal(t, "request with ID write_req1_ already exists", err.Error())
+	assert.Equal(t, "request with ID write_req1 already exists", err.Error())
 }
 
 func TestRequestsStore_Update(t *testing.T) {
@@ -29,19 +29,19 @@ func TestRequestsStore_Update(t *testing.T) {
 	store, err := New(lggr)
 	assert.NoError(t, err)
 
-	req := &Request{ReferenceID: "req1", Status: RequestStatusPending}
+	req := &Request{Reference: "req1", Status: RequestStatusPending}
 	err = store.Add(context.Background(), req)
 	assert.NoError(t, err)
 
-	updatedReq := &Request{ReferenceID: "req1", Status: RequestStatusCompleted}
+	updatedReq := &Request{Reference: "req1", Status: RequestStatusCompleted}
 	err = store.Update(context.Background(), updatedReq)
 	assert.NoError(t, err)
 
 	// Try updating a non-existent request
-	nonExistentReq := &Request{ReferenceID: "req2", Status: RequestStatusCompleted}
+	nonExistentReq := &Request{Reference: "req2", Status: RequestStatusCompleted}
 	err = store.Update(context.Background(), nonExistentReq)
 	assert.Error(t, err)
-	assert.Equal(t, "request with ID write_req2_ does not exist", err.Error())
+	assert.Equal(t, "request with ID write_req2 does not exist", err.Error())
 }
 
 func TestRequestsStore_Get(t *testing.T) {
@@ -49,8 +49,8 @@ func TestRequestsStore_Get(t *testing.T) {
 	store, err := New(lggr)
 	assert.NoError(t, err)
 
-	req1 := &Request{ReferenceID: "req1", Status: RequestStatusPending}
-	req2 := &Request{ReferenceID: "req2", Status: RequestStatusCompleted}
+	req1 := &Request{Reference: "req1", Status: RequestStatusPending}
+	req2 := &Request{Reference: "req2", Status: RequestStatusCompleted}
 
 	assert.NoError(t, store.Add(context.Background(), req1))
 	assert.NoError(t, store.Add(context.Background(), req2))
@@ -65,7 +65,7 @@ func TestRequestsStore_Get(t *testing.T) {
 	requests, err = store.Get(context.Background(), filters)
 	assert.NoError(t, err)
 	assert.Len(t, requests, 1)
-	assert.Equal(t, RequestID("write_req1_"), requests[0].ID())
+	assert.Equal(t, RequestID("write_req1"), requests[0].ID())
 }
 
 func TestRequestsStore_GetByID(t *testing.T) {
@@ -74,10 +74,9 @@ func TestRequestsStore_GetByID(t *testing.T) {
 	assert.NoError(t, err)
 
 	req := NewRequest(RequestParams{
-		Type:                RequestTypeWrite,
-		ReferenceID:         "req1",
-		WorkflowExecutionID: "workflow456",
-		KVPairs:             map[string][]byte{"foo": []byte("bar"), "baz": []byte("bad")},
+		Type:      RequestTypeWrite,
+		Reference: "req1_workflow456",
+		KVPairs:   map[string][]byte{"foo": []byte("bar"), "baz": []byte("bad")},
 	})
 	assert.NoError(t, store.Add(context.Background(), req))
 
@@ -95,7 +94,7 @@ func TestRequestsStore_Remove(t *testing.T) {
 	store, err := New(lggr)
 	assert.NoError(t, err)
 
-	req := &Request{ReferenceID: "req1", Status: RequestStatusPending}
+	req := &Request{Reference: "req1", Status: RequestStatusPending}
 	assert.NoError(t, store.Add(context.Background(), req))
 
 	store.Remove(context.Background(), "req1")
