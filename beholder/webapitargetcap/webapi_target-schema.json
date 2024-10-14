@@ -25,6 +25,15 @@
     "config": {
       "type": "object",
       "properties": {
+        "timeoutMs": {
+          "type": "integer"
+        },
+        "retryCount": {
+          "type": "integer"
+        },
+        "deliveryMode": {
+          "type": "string"
+        },
         "rateLimiter": {
           "type": "object",
           "properties": {
@@ -50,7 +59,7 @@
           "additionalProperties": false
         }
       },
-      "required": ["rateLimiter"],
+      "required": ["rateLimiter", "timeoutMs", "retryCount", "deliveryMode"],
       "additionalProperties": false
     }
   },

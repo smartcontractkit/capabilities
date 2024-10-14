@@ -8,8 +8,17 @@ import (
 )
 
 type Config struct {
+	// DeliveryMode corresponds to the JSON schema field "deliveryMode".
+	DeliveryMode string `json:"deliveryMode" yaml:"deliveryMode" mapstructure:"deliveryMode"`
+
 	// RateLimiter corresponds to the JSON schema field "rateLimiter".
 	RateLimiter ConfigRateLimiter `json:"rateLimiter" yaml:"rateLimiter" mapstructure:"rateLimiter"`
+
+	// RetryCount corresponds to the JSON schema field "retryCount".
+	RetryCount int64 `json:"retryCount" yaml:"retryCount" mapstructure:"retryCount"`
+
+	// TimeoutMs corresponds to the JSON schema field "timeoutMs".
+	TimeoutMs int64 `json:"timeoutMs" yaml:"timeoutMs" mapstructure:"timeoutMs"`
 }
 
 type ConfigRateLimiter struct {
@@ -59,8 +68,17 @@ func (j *Config) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &raw); err != nil {
 		return err
 	}
+	if _, ok := raw["deliveryMode"]; raw != nil && !ok {
+		return fmt.Errorf("field deliveryMode in Config: required")
+	}
 	if _, ok := raw["rateLimiter"]; raw != nil && !ok {
 		return fmt.Errorf("field rateLimiter in Config: required")
+	}
+	if _, ok := raw["retryCount"]; raw != nil && !ok {
+		return fmt.Errorf("field retryCount in Config: required")
+	}
+	if _, ok := raw["timeoutMs"]; raw != nil && !ok {
+		return fmt.Errorf("field timeoutMs in Config: required")
 	}
 	type Plain Config
 	var plain Plain

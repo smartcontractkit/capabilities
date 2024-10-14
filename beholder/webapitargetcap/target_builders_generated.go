@@ -13,7 +13,10 @@ func (cfg Config) New(w *sdk.WorkflowSpecFactory, input TargetInput) {
 		ID:     "web-api-target@1.0.0",
 		Inputs: input.ToSteps(),
 		Config: map[string]any{
-			"rateLimiter": cfg.RateLimiter,
+			"deliveryMode": cfg.DeliveryMode,
+			"rateLimiter":  cfg.RateLimiter,
+			"retryCount":   cfg.RetryCount,
+			"timeoutMs":    cfg.TimeoutMs,
 		},
 		CapabilityType: capabilities.CapabilityTypeTarget,
 	}
