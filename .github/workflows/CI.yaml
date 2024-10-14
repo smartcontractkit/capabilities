@@ -14,10 +14,11 @@ jobs:
       - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
         with:
           fetch-depth: 0
-      - name: Use Node.js
-        uses: actions/setup-node@v4
+      - name: Set up Go
+        uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # 5.0.2
         with:
-          node-version: "20"
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
       - name: Cache NX
         uses: actions/cache@2cdf405574d6ef1f33a1d12acccd3ae82f47b3f2 # v4.1.0
         with:
@@ -102,27 +103,13 @@ jobs:
       - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-      - name: Cache NX
-        uses: actions/cache@2cdf405574d6ef1f33a1d12acccd3ae82f47b3f2 # v4.1.0
-        with:
-          path: |
-            .nx
-            ~/.npm
-          key: ${{ runner.os }}
-      - run: npx nx@19.8.2 init # nx version is 19.8.2
-      - id: get-root
-        run: echo "root=$(./nx show project ${{matrix.projects}} --json)" >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache-dependency-path: ${{fromJson(steps.get-root.outputs.root).root}}/go.sum
+      - id: setup
+        name: Set up project environment
+        uses: ./.github/actions/setup
       - uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.60
-          working-directory: ${{fromJson(steps.get-root.outputs.root).root}}
+          version: v1.60.2
+          working-directory: ${{fromJson(steps.setup.outputs.project-info).root}}
 
   checks:
     runs-on: ubuntu-latest
