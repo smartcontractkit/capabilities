@@ -101,10 +101,7 @@ func (rp *reportingPlugin) Outcome(
 	var outcome Outcome
 	if outctx.SeqNr == 1 {
 		rp.logger.Debugw("First outcome")
-		outcome = Outcome{
-			Values:            make(map[string][]byte),
-			CompletedRequests: make([]kvrequests.Request, 0),
-		}
+		outcome = NewOutcome()
 	} else {
 		if err := json.Unmarshal(outctx.PreviousOutcome, &outcome); err != nil {
 			return nil, fmt.Errorf("could not unmarshal PreviousOutcome: %w", err)
@@ -146,30 +143,23 @@ func (rp *reportingPlugin) Outcome(
 		}
 
 		switch processedObservation.request.Type {
+		case kvrequests.RequestTypeRemoveNamespace:
+			outcome.RemoveNamespace(processedObservation.request.Namespace)
 		case kvrequests.RequestTypeWrite:
-			for key, value := range processedObservation.request.KVPairs {
-				outcome.Values[key] = value
-			}
-			processedObservation.request.Status = kvrequests.RequestStatusCompleted
-			outcome.CompletedRequests = append(outcome.CompletedRequests, processedObservation.request)
+			outcome.Write(processedObservation.request.Namespace, processedObservation.request.KVPairs)
 		case kvrequests.RequestTypeRead:
-			keysWithValues := make(map[string][]byte)
-			for key := range processedObservation.request.KVPairs {
-				val, ok := outcome.Values[key]
-				if !ok {
-					keysWithValues[key] = []byte("")
-				} else {
-					keysWithValues[key] = val
-				}
-			}
-
-			rp.logger.Debugw("Read request",
-				"request", processedObservation.request,
+			processedObservation.request.KVPairs = outcome.Read(
+				processedObservation.request.Namespace,
+				processedObservation.request.KVPairs,
 			)
-			processedObservation.request.KVPairs = keysWithValues
-			processedObservation.request.Status = kvrequests.RequestStatusCompleted
-			outcome.CompletedRequests = append(outcome.CompletedRequests, processedObservation.request)
+		case kvrequests.RequestTypeUnspecified:
+			rp.logger.Warnw("Unspecified request",
+				"requestID", processedObservation.request.ID(),
+			)
 		}
+
+		processedObservation.request.Status = kvrequests.RequestStatusCompleted
+		outcome.CompletedRequests = append(outcome.CompletedRequests, processedObservation.request)
 	}
 
 	rp.logger.Debugw("Outcome complete",

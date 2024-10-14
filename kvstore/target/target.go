@@ -23,7 +23,7 @@ type capability struct {
 	requestsStore *kvrequests.RequestsStore
 	// Key values are stored with an owner prefix so that different workflows don't override each other's state
 	// When the last owner workflow is unregistered, the key values are deleted
-	registeredWorkflows map[string][]string
+	namespaces map[string][]string
 }
 
 type Params struct {
@@ -33,9 +33,9 @@ type Params struct {
 
 func New(p Params) *capability {
 	return &capability{
-		logger:              p.Logger,
-		requestsStore:       p.RequestsStore,
-		registeredWorkflows: make(map[string][]string),
+		logger:        p.Logger,
+		requestsStore: p.RequestsStore,
+		namespaces:    make(map[string][]string),
 	}
 }
 
@@ -97,11 +97,15 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		"WorkflowExecutionID", rawRequest.Metadata.WorkflowExecutionID,
 	)
 
-	r := kvrequests.NewRequest(kvrequests.RequestParams{
+	r, err := kvrequests.NewRequest(kvrequests.RequestParams{
+		KVPairs:   kvWriteReport.keyValuePairs,
+		Namespace: rawRequest.Metadata.WorkflowOwner,
 		Reference: fmt.Sprintf("%s_%s", rawRequest.Metadata.WorkflowExecutionID, rawRequest.Metadata.ReferenceID),
 		Type:      kvrequests.RequestTypeWrite,
-		KVPairs:   kvWriteReport.keyValuePairs,
 	})
+	if err != nil {
+		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to create write request: %v", err)
+	}
 	err = c.requestsStore.Add(ctx, r)
 	if err != nil {
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to add write request: %v", err)
@@ -142,40 +146,50 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 }
 
 func (c *capability) RegisterToWorkflow(ctx context.Context, request capabilities.RegisterToWorkflowRequest) error {
-	_, ok := c.registeredWorkflows[request.Metadata.WorkflowID]
+	_, ok := c.namespaces[request.Metadata.WorkflowOwner]
 	if !ok {
-		c.registeredWorkflows[request.Metadata.WorkflowOwner] = []string{
+		c.namespaces[request.Metadata.WorkflowOwner] = []string{
 			request.Metadata.WorkflowID,
 		}
-
-		// c.requestsStore.AddOwnerPrefix(request.Metadata.WorkflowOwner)
-
-		c.logger.Debugw("Added new workfow owner",
+		c.logger.Debugw("Adding new workspace",
 			"WorkflowID", request.Metadata.WorkflowID,
 			"WorkflowOwner", request.Metadata.WorkflowOwner)
 	} else {
-		c.registeredWorkflows[request.Metadata.WorkflowOwner] = append(c.registeredWorkflows[request.Metadata.WorkflowOwner], request.Metadata.WorkflowID)
+		c.namespaces[request.Metadata.WorkflowOwner] = append(c.namespaces[request.Metadata.WorkflowOwner], request.Metadata.WorkflowID)
 	}
-
 	return nil
 }
 
 func (c *capability) UnregisterFromWorkflow(ctx context.Context, request capabilities.UnregisterFromWorkflowRequest) error {
-	// if c.registeredWorkflows == nil {
-	// 	return fmt.Errorf("capability was incorrectly initialized")
-	// }
+	if c.namespaces == nil {
+		return fmt.Errorf("capability was incorrectly initialized")
+	}
 
-	// workflowIDs, ok := (*c.registeredWorkflows)[request.Metadata.WorkflowOwner]
-	// if !ok {
-	// 	return fmt.Errorf("workflow owner not found")
-	// }
+	workflowIDs, ok := c.namespaces[request.Metadata.WorkflowOwner]
+	if !ok {
+		return fmt.Errorf("workflow owner not found")
+	}
 
-	// for i, id := range workflowIDs {
-	// 	if id == request.Metadata.WorkflowID {
-	// 		c.registeredWorkflows[request.Metadata.WorkflowOwner] = append(workflowIDs[:i], workflowIDs[i+1:]...)
-	// 		break
-	// 	}
-	// }
+	for i, id := range workflowIDs {
+		if id == request.Metadata.WorkflowID {
+			c.namespaces[request.Metadata.WorkflowOwner] = append(workflowIDs[:i], workflowIDs[i+1:]...)
+			break
+		}
+	}
+
+	if len(c.namespaces[request.Metadata.WorkflowOwner]) == 0 {
+		r, err := kvrequests.NewRequest(kvrequests.RequestParams{
+			Namespace: request.Metadata.WorkflowOwner,
+			Type:      kvrequests.RequestTypeRemoveNamespace,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create remove namespace request: %v", err)
+		}
+		err = c.requestsStore.Add(ctx, r)
+		if err != nil {
+			return fmt.Errorf("failed to add remove namespace request: %v", err)
+		}
+	}
 
 	return nil
 }

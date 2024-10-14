@@ -70,11 +70,15 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		kvPairs[key] = []byte{}
 	}
 
-	r := kvrequests.NewRequest(kvrequests.RequestParams{
+	r, err := kvrequests.NewRequest(kvrequests.RequestParams{
+		KVPairs:   kvPairs,
+		Namespace: rawRequest.Metadata.WorkflowOwner,
 		Reference: fmt.Sprintf("%s_%s", rawRequest.Metadata.WorkflowExecutionID, rawRequest.Metadata.ReferenceID),
 		Type:      kvrequests.RequestTypeRead,
-		KVPairs:   kvPairs,
 	})
+	if err != nil {
+		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to create read request: %v", err)
+	}
 	err = c.requestsStore.Add(ctx, r)
 	if err != nil {
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to add read request: %v", err)

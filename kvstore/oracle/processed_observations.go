@@ -8,12 +8,6 @@ import (
 	"github.com/smartcontractkit/capabilities/kvstore/kvrequests"
 )
 
-type Outcome struct {
-	// This is the local (in-memory) key-value store
-	Values            map[string][]byte
-	CompletedRequests []kvrequests.Request
-}
-
 type ProcessedObservation struct {
 	lggr             logger.SugaredLogger
 	request          kvrequests.Request

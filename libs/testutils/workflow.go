@@ -26,16 +26,23 @@ type workflow struct {
 	t                *testing.T
 }
 
-func NewWorkflow(ctx context.Context, t *testing.T, capabilities []CapabilityWithConfig) *workflow {
-	workflowOwner := uuid.New().String()[:32]
+func NewWorkflow(ctx context.Context, t *testing.T, capabilities []CapabilityWithConfig, owner string) (*workflow, func(context.Context)) {
+	if owner == "" {
+		owner = uuid.New().String()[:32]
+	}
 	workflowID := uuid.New().String()[:32]
 
-	return &workflow{
+	w := workflow{
 		capabilities:     capabilities,
 		executionCounter: 0,
 		ID:               workflowID,
-		Owner:            workflowOwner,
+		Owner:            owner,
 		t:                t,
+	}
+
+	w.register(ctx)
+	return &w, func(ctx context.Context) {
+		w.unregister(ctx)
 	}
 }
 
@@ -46,6 +53,7 @@ func (w *workflow) NewRequest(inputs map[string]any) capabilities.CapabilityRequ
 	w.executionCounter++
 	return capabilities.CapabilityRequest{
 		Metadata: capabilities.RequestMetadata{
+			WorkflowOwner:       w.Owner,
 			WorkflowID:          w.ID,
 			WorkflowExecutionID: fmt.Sprintf("%d-%s", w.executionCounter, w.ID),
 			ReferenceID:         uuid.New().String()[:32],
@@ -63,7 +71,7 @@ func (w *workflow) NewResponse(outputs map[string]any) capabilities.CapabilityRe
 	}
 }
 
-func (w *workflow) Register(ctx context.Context) {
+func (w *workflow) register(ctx context.Context) {
 	for _, c := range w.capabilities {
 		_, err := c.Capability.Info(ctx)
 		if err != nil {
@@ -87,7 +95,7 @@ func (w *workflow) Register(ctx context.Context) {
 	}
 }
 
-func (w *workflow) Unregister(ctx context.Context) {
+func (w *workflow) unregister(ctx context.Context) {
 	for _, c := range w.capabilities {
 		config, err := values.NewMap(c.Config)
 		if err != nil {
@@ -106,6 +114,3 @@ func (w *workflow) Unregister(ctx context.Context) {
 		}
 	}
 }
-
-// RegisterToWorkflow(ctx context.Context, request RegisterToWorkflowRequest) error
-// UnregisterFromWorkflow(ctx context.Context, request UnregisterFromWorkflowRequest) error

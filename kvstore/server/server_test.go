@@ -14,7 +14,7 @@ import (
 	"github.com/smartcontractkit/capabilities/libs/testutils"
 )
 
-func TestNewCapabilities(t *testing.T) {
+func Test_Server_RemovingLastWorkflowClearsNamespace(t *testing.T) {
 	logger := testutils.NewLogger(t)
 	capabilitiesRegistry := testutils.NewCapabilitiesRegistry(t)
 	capabilitiesServer := New(&loop.Server{
@@ -49,7 +49,7 @@ func TestNewCapabilities(t *testing.T) {
 	err = capabilitiesRegistry.Contains([]string{"kv-store-action@1.0.0", "kv-store-target@1.0.0"})
 	require.NoError(t, err)
 
-	workflow := testutils.NewWorkflow(ctx, t, []testutils.CapabilityWithConfig{
+	workflow, removeWorkflow := testutils.NewWorkflow(ctx, t, []testutils.CapabilityWithConfig{
 		{
 			Capability: capabilitiesServer.Action,
 			Config:     map[string]interface{}{},
@@ -58,8 +58,7 @@ func TestNewCapabilities(t *testing.T) {
 			Capability: capabilitiesServer.Target,
 			Config:     map[string]interface{}{},
 		},
-	})
-	// workflow.Register(ctx)
+	}, "owner1")
 
 	response, err := capabilitiesServer.Target.Execute(ctx, workflow.NewRequest(map[string]any{
 		"signedReport": testutils.NewReport(t, map[string][]byte{
@@ -84,18 +83,7 @@ func TestNewCapabilities(t *testing.T) {
 		"key2": []byte("value2"),
 		"key3": []byte(""),
 	}), response)
-
-	response, err = capabilitiesServer.Target.Execute(ctx, workflow.NewRequest(map[string]any{
-		"signedReport": testutils.NewReport(t, map[string][]byte{
-			"key":  []byte(""), // Delete a key from the kvstore
-			"key3": []byte("foo"),
-		}),
-	}))
-	assert.NoError(t, err)
-
-	assert.Equal(t, workflow.NewResponse(map[string]any{
-		"success": true,
-	}), response)
+	removeWorkflow(ctx)
 
 	// CapabilityRequest to read final values
 	response, err = capabilitiesServer.Action.Execute(ctx, workflow.NewRequest(map[string]any{
@@ -105,7 +93,109 @@ func TestNewCapabilities(t *testing.T) {
 
 	assert.Equal(t, workflow.NewResponse(map[string]any{
 		"key":  []byte(""),
-		"key2": []byte("value2"),
-		"key3": []byte("foo"),
+		"key2": []byte(""),
+		"key3": []byte(""),
 	}), response)
+}
+
+func Test_Server_MultipleNamespaces(t *testing.T) {
+	logger := testutils.NewLogger(t)
+	capabilitiesRegistry := testutils.NewCapabilitiesRegistry(t)
+	capabilitiesServer := New(&loop.Server{
+		Logger: logger,
+	}, "kv-store-test-service")
+	assert.NotNil(t, capabilitiesServer)
+
+	// Timeout is important to avoid hanging tests
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	servicetest.RunHealthy(t, capabilitiesServer)
+
+	assert.NoError(t, capabilitiesServer.Initialise(
+		ctx,
+		"",  // unused - empty config
+		nil, // unused - telemetryService core.TelemetryService
+		testutils.NewStore(t),
+		capabilitiesRegistry,
+		nil, // unused - errorLog core.ErrorLog
+		nil, // unused - pipelineRunner core.PipelineRunnerService
+		nil, // unused - relayerSet core.RelayerSet
+		testutils.NewOracleFactory(t, logger),
+	))
+
+	capabilitiesInfos, err := capabilitiesServer.Infos(ctx)
+	assert.NoError(t, err)
+
+	assert.Len(t, capabilitiesInfos, 2)
+	assert.Equal(t, "kv-store-action@1.0.0", capabilitiesInfos[0].ID)
+	assert.Equal(t, "kv-store-target@1.0.0", capabilitiesInfos[1].ID)
+
+	err = capabilitiesRegistry.Contains([]string{"kv-store-action@1.0.0", "kv-store-target@1.0.0"})
+	require.NoError(t, err)
+
+	workflow1, removeWorkflow1 := testutils.NewWorkflow(ctx, t, []testutils.CapabilityWithConfig{
+		{
+			Capability: capabilitiesServer.Action,
+			Config:     map[string]interface{}{},
+		},
+		{
+			Capability: capabilitiesServer.Target,
+			Config:     map[string]interface{}{},
+		},
+	}, "owner1")
+	defer removeWorkflow1(ctx)
+
+	workflow2, removeWorkflow2 := testutils.NewWorkflow(ctx, t, []testutils.CapabilityWithConfig{
+		{
+			Capability: capabilitiesServer.Action,
+			Config:     map[string]interface{}{},
+		},
+		{
+			Capability: capabilitiesServer.Target,
+			Config:     map[string]interface{}{},
+		},
+	}, "owner2")
+	defer removeWorkflow2(ctx)
+
+	response1, err := capabilitiesServer.Target.Execute(ctx, workflow1.NewRequest(map[string]any{
+		"signedReport": testutils.NewReport(t, map[string][]byte{
+			"key": []byte("foo"),
+		}),
+	}))
+	assert.NoError(t, err)
+
+	assert.Equal(t, workflow1.NewResponse(map[string]any{
+		"success": true,
+	}), response1)
+
+	response2, err := capabilitiesServer.Target.Execute(ctx, workflow2.NewRequest(map[string]any{
+		"signedReport": testutils.NewReport(t, map[string][]byte{
+			"key": []byte("bar"),
+		}),
+	}))
+	assert.NoError(t, err)
+
+	assert.Equal(t, workflow2.NewResponse(map[string]any{
+		"success": true,
+	}), response2)
+
+	// READ WORKFLOW 1
+	response1, err = capabilitiesServer.Action.Execute(ctx, workflow1.NewRequest(map[string]any{
+		"Keys": []string{"key"},
+	}))
+	assert.NoError(t, err)
+
+	assert.Equal(t, workflow1.NewResponse(map[string]any{
+		"key": []byte("foo"),
+	}), response1)
+
+	// READ WORKFLOW 2
+	response2, err = capabilitiesServer.Action.Execute(ctx, workflow2.NewRequest(map[string]any{
+		"Keys": []string{"key"},
+	}))
+	assert.NoError(t, err)
+
+	assert.Equal(t, workflow2.NewResponse(map[string]any{
+		"key": []byte("bar"),
+	}), response2)
 }

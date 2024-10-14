@@ -10,20 +10,20 @@ import (
 type RequestType int
 
 const (
-	RequestTypeWrite RequestType = iota
+	RequestTypeUnspecified RequestType = iota
+	RequestTypeWrite
 	RequestTypeRead
-	RequestTypeAddNamespace
 	RequestTypeRemoveNamespace
 )
 
 func (r RequestType) String() string {
 	switch r {
+	case RequestTypeUnspecified:
+		return "unspecified"
 	case RequestTypeWrite:
 		return "write"
 	case RequestTypeRead:
 		return "read"
-	case RequestTypeAddNamespace:
-		return "add_namespace"
 	case RequestTypeRemoveNamespace:
 		return "remove_namespace"
 	}
@@ -76,29 +76,50 @@ func (k KVPairs) String() string {
 type RequestID string
 
 type Request struct {
-	Type      RequestType
-	Reference string
 	KVPairs   KVPairs
+	Namespace string
+	Reference string
 	Status    RequestStatus
+	Type      RequestType
 }
 
 type RequestParams struct {
-	Type      RequestType
-	Reference string
 	KVPairs   KVPairs
+	Namespace string
+	Reference string
+	Type      RequestType
 }
 
-func NewRequest(params RequestParams) *Request {
-	return &Request{
-		Type:      params.Type,
-		Reference: params.Reference,
-		KVPairs:   params.KVPairs,
-		Status:    RequestStatusPending,
+func NewRequest(params RequestParams) (*Request, error) {
+	if params.Namespace == "" {
+		return nil, fmt.Errorf("namespace is required")
 	}
+	if params.Type == RequestTypeUnspecified {
+		return nil, fmt.Errorf("request type is required")
+	}
+	if params.Type == RequestTypeWrite || params.Type == RequestTypeRead {
+		if params.Reference == "" {
+			return nil, fmt.Errorf("reference is required for read and write requests")
+		}
+		if len(params.KVPairs) == 0 {
+			return nil, fmt.Errorf("key-value pairs are required for read and write requests")
+		}
+	}
+
+	return &Request{
+		KVPairs:   params.KVPairs,
+		Namespace: params.Namespace,
+		Reference: params.Reference,
+		Status:    RequestStatusPending,
+		Type:      params.Type,
+	}, nil
 }
 
 func (r *Request) ID() RequestID {
-	return RequestID(fmt.Sprintf("%s_%s", r.Type, r.Reference))
+	if r.Reference != "" {
+		return RequestID(fmt.Sprintf("%s_%s_%s", r.Type, r.Namespace, r.Reference))
+	}
+	return RequestID(fmt.Sprintf("%s_%s", r.Type, r.Namespace))
 }
 
 func (r *Request) Marshal() ([]byte, error) {
@@ -110,11 +131,7 @@ func (r Request) String() string {
 }
 
 func (r Request) Equal(other Request) bool {
-	if r.Type != other.Type {
-		return false
-	}
-
-	if r.Reference != other.Reference {
+	if r.ID() != other.ID() {
 		return false
 	}
 

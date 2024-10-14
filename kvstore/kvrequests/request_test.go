@@ -4,43 +4,50 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestRequest(t *testing.T) {
 	tests := []struct {
 		name           string
-		request        Request
+		params         RequestParams
+		status         RequestStatus
 		expectedID     RequestID
 		expectedString string
 	}{
 		{
 			name: "WriteRequest",
-			request: Request{
+			params: RequestParams{
+				Namespace: "owner1",
 				Type:      RequestTypeWrite,
 				Reference: "ref123_workflow456",
 				KVPairs:   map[string][]byte{"foo": []byte("bar"), "baz": []byte("bad")},
-				Status:    RequestStatusPending,
 			},
-			expectedID:     "write_ref123_workflow456",
-			expectedString: `{ID: "write_ref123_workflow456", status: "pending", pairs: {"baz": "bad", "foo": "bar"}}`,
+			status:         RequestStatusPending,
+			expectedID:     "write_owner1_ref123_workflow456",
+			expectedString: `{ID: "write_owner1_ref123_workflow456", status: "pending", pairs: {"baz": "bad", "foo": "bar"}}`,
 		},
 		{
 			name: "ReadRequest",
-			request: Request{
+			params: RequestParams{
+				Namespace: "owner2",
 				Type:      RequestTypeRead,
 				Reference: "ref789_workflow012",
 				KVPairs:   map[string][]byte{"key2": []byte("value2")},
-				Status:    RequestStatusCompleted,
 			},
-			expectedID:     "read_ref789_workflow012",
-			expectedString: `{ID: "read_ref789_workflow012", status: "completed", pairs: {"key2": "value2"}}`,
+			status:         RequestStatusCompleted,
+			expectedID:     "read_owner2_ref789_workflow012",
+			expectedString: `{ID: "read_owner2_ref789_workflow012", status: "completed", pairs: {"key2": "value2"}}`,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expectedID, tt.request.ID())
-			assert.Equal(t, tt.expectedString, tt.request.String())
+			req, err := NewRequest(tt.params)
+			require.NoError(t, err)
+			req.Status = tt.status
+			assert.Equal(t, tt.expectedID, req.ID())
+			assert.Equal(t, tt.expectedString, req.String())
 		})
 	}
 }
@@ -48,18 +55,20 @@ func TestRequest(t *testing.T) {
 func TestRequestEqual(t *testing.T) {
 	tests := []struct {
 		name     string
-		request1 Request
-		request2 Request
+		params1  RequestParams
+		params2  RequestParams
 		expected bool
 	}{
 		{
 			name: "EqualRequests",
-			request1: Request{
+			params1: RequestParams{
+				Namespace: "owner1",
 				Type:      RequestTypeWrite,
 				Reference: "ref123_workflow456",
 				KVPairs:   map[string][]byte{"foo": []byte("bar"), "baz": []byte("bad")},
 			},
-			request2: Request{
+			params2: RequestParams{
+				Namespace: "owner1",
 				Type:      RequestTypeWrite,
 				Reference: "ref123_workflow456",
 				KVPairs:   map[string][]byte{"foo": []byte("bar"), "baz": []byte("bad")},
@@ -68,12 +77,14 @@ func TestRequestEqual(t *testing.T) {
 		},
 		{
 			name: "DifferentTypes",
-			request1: Request{
+			params1: RequestParams{
+				Namespace: "owner1",
 				Type:      RequestTypeWrite,
 				Reference: "ref123_workflow456",
 				KVPairs:   map[string][]byte{"foo": []byte("bar"), "baz": []byte("bad")},
 			},
-			request2: Request{
+			params2: RequestParams{
+				Namespace: "owner1",
 				Type:      RequestTypeRead,
 				Reference: "ref123_workflow456",
 				KVPairs:   map[string][]byte{"foo": []byte("bar"), "baz": []byte("bad")},
@@ -82,12 +93,14 @@ func TestRequestEqual(t *testing.T) {
 		},
 		{
 			name: "DifferentReferenceID",
-			request1: Request{
+			params1: RequestParams{
+				Namespace: "owner1",
 				Type:      RequestTypeWrite,
 				Reference: "ref123_workflow456",
 				KVPairs:   map[string][]byte{"foo": []byte("bar"), "baz": []byte("bad")},
 			},
-			request2: Request{
+			params2: RequestParams{
+				Namespace: "owner1",
 				Type:      RequestTypeWrite,
 				Reference: "ref124_workflow456",
 				KVPairs:   map[string][]byte{"foo": []byte("bar"), "baz": []byte("bad")},
@@ -96,12 +109,14 @@ func TestRequestEqual(t *testing.T) {
 		},
 		{
 			name: "DifferentWorkflowExecutionID",
-			request1: Request{
+			params1: RequestParams{
+				Namespace: "owner1",
 				Type:      RequestTypeWrite,
 				Reference: "ref123_workflow456",
 				KVPairs:   map[string][]byte{"foo": []byte("bar"), "baz": []byte("bad")},
 			},
-			request2: Request{
+			params2: RequestParams{
+				Namespace: "owner1",
 				Type:      RequestTypeWrite,
 				Reference: "ref123_workflow457",
 				KVPairs:   map[string][]byte{"foo": []byte("bar"), "baz": []byte("bad")},
@@ -110,12 +125,14 @@ func TestRequestEqual(t *testing.T) {
 		},
 		{
 			name: "DifferentKVPairs",
-			request1: Request{
+			params1: RequestParams{
+				Namespace: "owner1",
 				Type:      RequestTypeWrite,
 				Reference: "ref123_workflow456",
 				KVPairs:   map[string][]byte{"foo": []byte("bar"), "baz": []byte("bad")},
 			},
-			request2: Request{
+			params2: RequestParams{
+				Namespace: "owner1",
 				Type:      RequestTypeWrite,
 				Reference: "ref123_workflow456",
 				KVPairs:   map[string][]byte{"foo": []byte("bar"), "baz": []byte("good")},
@@ -126,7 +143,11 @@ func TestRequestEqual(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expected, tt.request1.Equal(tt.request2))
+			req1, err := NewRequest(tt.params1)
+			require.NoError(t, err)
+			req2, err := NewRequest(tt.params2)
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, req1.Equal(*req2))
 		})
 	}
 }
