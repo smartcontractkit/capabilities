@@ -2,9 +2,9 @@ name: "Set up project environment"
 description: "Sets up Go and NX"
 
 outputs:
-  project-info:
+  project:
     description: Project info JSON
-    value: ${{ steps.get-root.outputs.root }}
+    value: ${{ steps.get-root.outputs.project }}
 
 runs:
   using: "composite"
@@ -23,6 +23,6 @@ runs:
         key: ${{ runner.os }}
     - run: npx nx@19.8.2 init # nx version is 19.8.2
       shell: bash
-    - id: get-project-info
-      run: echo "project-info=$(./nx show project ${{matrix.projects}} --json)" >> "$GITHUB_OUTPUT"
+    - id: get-project
+      run: echo "project=$(./nx show project ${{matrix.projects}} --json)" >> "$GITHUB_OUTPUT"
       shell: bash

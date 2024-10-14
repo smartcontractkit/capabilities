@@ -109,7 +109,7 @@ jobs:
       - uses: golangci/golangci-lint-action@v6
         with:
           version: v1.60.2
-          working-directory: ${{fromJson(steps.setup.outputs.project-info).root}}
+          working-directory: ${{fromJson(steps.setup.outputs.project).root}}
 
   checks:
     runs-on: ubuntu-latest
