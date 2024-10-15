@@ -1,6 +1,11 @@
 name: "Set up project environment"
 description: "Sets up Go and NX"
 
+inputs:
+  cache-version:
+    description: Set this to cache bust
+    default: "1"
+
 outputs:
   project:
     description: Project info JSON
@@ -21,18 +26,24 @@ runs:
           .nx
           ~/.npm
         key: ${{ runner.os }}
+
     - run: npx nx@19.8.2 init # nx version is 19.8.2
       shell: bash
+
     - id: get-project
-      run: echo "project=$(./nx show project ${{matrix.projects}} --json)" >> "$GITHUB_OUTPUT"
       shell: bash
+      run: |
+        echo "project=$(./nx show project ${{matrix.projects}} --json)" >> $GITHUB_OUTPUT
+        echo "project=$(./nx show project ${{matrix.projects}} --json)"
 
     - name: Set go cache keys
       shell: bash
       id: go-cache-dir
       run: |
         echo "gomodcache=$(go env GOMODCACHE)" >> $GITHUB_OUTPUT
+        echo "gomodcache=$(go env GOMODCACHE)"
         echo "gobuildcache=$(go env GOCACHE)" >> $GITHUB_OUTPUT
+        echo "gobuildcache=$(go env GOCACHE)"
 
     - name: Set go module path
       id: go-module-path
@@ -51,7 +62,6 @@ runs:
           ${{ runner.os }}-gomod-${{ inputs.cache-version }}-
 
     - uses: actions/cache@2cdf405574d6ef1f33a1d12acccd3ae82f47b3f2 # v4.1.0
-      if: ${{ inputs.only-modules == 'false' }}
       name: Cache Go Build Outputs
       with:
         path: |
