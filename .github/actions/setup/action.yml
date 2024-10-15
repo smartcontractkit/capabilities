@@ -51,11 +51,6 @@ runs:
         echo "gobuildcache=$(go env GOCACHE)" >> $GITHUB_OUTPUT
         echo "gobuildcache=$(go env GOCACHE)"
 
-    - name: Set go module path
-      id: go-module-path
-      shell: bash
-      run: echo "path=./${{fromJson(steps.get-project.outputs.project).root}}" >> $GITHUB_OUTPUT
-
     - name: Get branch name
       if: ${{ inputs.only-modules == 'false' }}
       id: branch-name
@@ -66,9 +61,9 @@ runs:
       with:
         path: |
           ${{ steps.go-cache-dir.outputs.gomodcache }}
-        key: ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-gomod-${{hashFiles(steps.go-module-path.output.path)}}-${{steps.branch-name.outputs.current_branch}}
+        key: ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-gomod-${{hashFiles(inputs.go-module-file)}}-${{steps.branch-name.outputs.current_branch}}
         restore-keys: |
-          ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-gomod-${{hashFiles(steps.go-module-path.output.path)}}
+          ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-gomod-${{hashFiles(inputs.go-module-file)}}
           ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-gomod
 
     - uses: actions/cache@2cdf405574d6ef1f33a1d12acccd3ae82f47b3f2 # v4.1.0
@@ -77,7 +72,7 @@ runs:
         path: |
           ${{ steps.go-cache-dir.outputs.gobuildcache }}
         # The lifetime of go build outputs is pretty short, so we make our primary cache key be the branch name
-        key: ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-gobuild-${{ hashFiles(steps.go-module-path.output.path) }}
+        key: ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-gobuild-${{ hashFiles(inputs.go-module-file) }}
         restore-keys: |
-          ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-gobuild-${{ hashFiles(steps.go-module-path.output.path) }}
+          ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-gobuild-${{ hashFiles(inputs.go-module-file) }}
           ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-gobuild
