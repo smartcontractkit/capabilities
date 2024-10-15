@@ -66,6 +66,8 @@ jobs:
           fetch-depth: 0
       - name: Set up project environment
         uses: ./.github/actions/setup
+        with:
+          project: ${{ matrix.projects }}
       - name: Test ${{ matrix.projects }}
         run: ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} test
 
@@ -83,6 +85,8 @@ jobs:
           fetch-depth: 0
       - name: Set up project environment
         uses: ./.github/actions/setup
+        with:
+          project: ${{ matrix.projects }}
       - name: Install mockery
         run: go install github.com/vektra/mockery/v2/...@v2.46.1
 
