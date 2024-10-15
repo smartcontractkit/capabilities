@@ -6,10 +6,11 @@ import (
 
 	"github.com/hashicorp/go-plugin"
 
-	"github.com/smartcontractkit/capabilities/beholder/target"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
+
+	"github.com/smartcontractkit/capabilities/beholder/target"
 )
 
 const (
