@@ -15,11 +15,6 @@ inputs:
     description: Task that will run. Used for caching purposes.
     required: true
 
-outputs:
-  project:
-    description: Project info JSON
-    value: ${{ steps.get-root.outputs.project }}
-
 runs:
   using: "composite"
   steps:
@@ -39,12 +34,6 @@ runs:
 
     - run: npx nx@19.8.2 init # nx version is 19.8.2
       shell: bash
-
-    - id: get-project
-      shell: bash
-      run: |
-        echo "project=$(./nx show project ${{inputs.project}} --json)" >> $GITHUB_OUTPUT
-        echo "project=$(./nx show project ${{inputs.project}} --json)"
 
     - name: Set go cache keys
       shell: bash
