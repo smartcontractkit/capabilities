@@ -7,7 +7,6 @@ import (
 	"github.com/hashicorp/go-plugin"
 
 	"github.com/smartcontractkit/capabilities/beholder/target"
-
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
@@ -85,6 +84,7 @@ func (cs *CapabilitiesService) Initialise(
 	_ core.ErrorLog,
 	_ core.PipelineRunnerService,
 	_ core.RelayerSet,
+	_ core.OracleFactory,
 ) error {
 	cs.s.Logger.Debugf("Initialising %s", serviceName)
 	cs.target = target.New(target.Params{
