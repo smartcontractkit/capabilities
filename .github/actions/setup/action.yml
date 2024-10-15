@@ -35,7 +35,7 @@ runs:
         path: |
           .nx
           ~/.npm
-        key: ${{runner.os}}
+        key: ${{runner.os}}-nx
 
     - run: npx nx@19.8.2 init # nx version is 19.8.2
       shell: bash
@@ -63,8 +63,7 @@ runs:
     - uses: actions/cache@2cdf405574d6ef1f33a1d12acccd3ae82f47b3f2 # v4.1.0
       name: Cache Go Modules
       with:
-        path: |
-          ${{ steps.go-cache-dir.outputs.gomodcache }}
+        path: ${{ steps.go-cache-dir.outputs.gomodcache }}
         # The lifetime of go modules is much higher than the build outputs, so we increase cache efficiency
         # here by not having the primary key contain the branch name
         key: ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-${{inputs.task}}-gomod-${{hashFiles(inputs.go-module-file)}}
@@ -74,8 +73,7 @@ runs:
     - uses: actions/cache@2cdf405574d6ef1f33a1d12acccd3ae82f47b3f2 # v4.1.0
       name: Cache Go Build Outputs
       with:
-        path: |
-          ${{ steps.go-cache-dir.outputs.gobuildcache }}
+        path: ${{ steps.go-cache-dir.outputs.gobuildcache }}
         # The lifetime of go build outputs is pretty short, so we make our primary cache key be the branch name
         key: ${{runner.os}}-${{inputs.cache-version}}-gobuild-${{hashFiles(inputs.go-module-file)}}-project-${{inputs.project}}-task-${{inputs.task}}-branch-${{steps.branch-name.outputs.current_branch}}
         restore-keys: |
