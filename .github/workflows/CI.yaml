@@ -28,7 +28,9 @@ jobs:
       - run: npx nx@19.8.2 init # nx version is 19.8.2
       - name: Get base branch
         id: get-base
-        run: echo "base=${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }}" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "base=${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }}" >> $GITHUB_OUTPUT
+          echo "base=${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }}"
 
         # Outputs:
         # {
@@ -48,7 +50,9 @@ jobs:
         # }
       - name: Get affected projects
         id: get-affected
-        run: echo "affected=$(./.github/scripts/affected-projects.sh --base=${{steps.get-base.outputs.base}}" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "affected=$(./.github/scripts/affected-projects.sh --base=${{steps.get-base.outputs.base}})" >> $GITHUB_OUTPUT
+          echo "affected=$(./.github/scripts/affected-projects.sh --base=${{steps.get-base.outputs.base}})"
         # run: echo "affected=$(./nx show projects --affected --json --base=${{steps.get-base.outputs.base}})" >> "$GITHUB_OUTPUT"
 
   build:
