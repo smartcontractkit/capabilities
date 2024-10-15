@@ -39,7 +39,7 @@ done
 output="${output%,}}"
 
 # echo "Affected projects details:"
-echo "$output" | jq .
+echo $output
 # Outputs:
 # {
 #   "base": "main",

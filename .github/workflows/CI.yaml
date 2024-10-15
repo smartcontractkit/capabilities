@@ -51,7 +51,7 @@ jobs:
       - name: Get affected projects
         id: get-affected
         run: |
-          ./.github/scripts/affected-projects.sh ${{steps.get-base.outputs.base}}
+          ./.github/scripts/affected-projects.sh ${{steps.get-base.outputs.base}} | jq .
           echo "affected=$(./.github/scripts/affected-projects.sh ${{steps.get-base.outputs.base}})"
           echo "affected=$(./.github/scripts/affected-projects.sh ${{steps.get-base.outputs.base}})" >> $GITHUB_OUTPUT
         # run: echo "affected=$(./nx show projects --affected --json --base=${{steps.get-base.outputs.base}})" >> "$GITHUB_OUTPUT"
