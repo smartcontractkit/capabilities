@@ -5,6 +5,9 @@ inputs:
   cache-version:
     description: Set this to cache bust
     default: "1"
+  project:
+    description: Project to set up
+    required: true
 
 outputs:
   project:
@@ -33,8 +36,8 @@ runs:
     - id: get-project
       shell: bash
       run: |
-        echo "project=$(./nx show project ${{matrix.projects}} --json)" >> $GITHUB_OUTPUT
-        echo "project=$(./nx show project ${{matrix.projects}} --json)"
+        echo "project=$(./nx show project ${{inputs.project}} --json)" >> $GITHUB_OUTPUT
+        echo "project=$(./nx show project ${{inputs.project}} --json)"
 
     - name: Set go cache keys
       shell: bash
@@ -57,9 +60,9 @@ runs:
           ${{ steps.go-cache-dir.outputs.gomodcache }}
         # The lifetime of go modules is much higher than the build outputs, so we increase cache efficiency
         # here by not having the primary key contain the branch name
-        key: ${{ runner.os }}-gomod-${{ inputs.cache-version }}-${{ hashFiles(steps.go-module-path.output.path) }}
+        key: ${{ runner.os }}-${{inputs.project}}-gomod-${{inputs.cache-version}}-${{ hashFiles(steps.go-module-path.output.path) }}
         restore-keys: |
-          ${{ runner.os }}-gomod-${{ inputs.cache-version }}-
+          ${{ runner.os }}-${{inputs.project}}-gomod-${{inputs.cache-version}}-
 
     - uses: actions/cache@2cdf405574d6ef1f33a1d12acccd3ae82f47b3f2 # v4.1.0
       name: Cache Go Build Outputs
@@ -67,7 +70,7 @@ runs:
         path: |
           ${{ steps.go-cache-dir.outputs.gobuildcache }}
         # The lifetime of go build outputs is pretty short, so we make our primary cache key be the branch name
-        key: ${{ runner.os }}-gobuild-${{ inputs.cache-version }}-${{ hashFiles(steps.go-module-path.output.path) }}-${{ steps.branch-name.outputs.current_branch }}
+        key: ${{ runner.os }}-${{inputs.project}}-gobuild-${{inputs.cache-version}}-${{ hashFiles(steps.go-module-path.output.path) }}-${{ steps.branch-name.outputs.current_branch }}
         restore-keys: |
-          ${{ runner.os }}-gobuild-${{ inputs.cache-version }}-${{ hashFiles(steps.go-module-path.output.path) }}-
-          ${{ runner.os }}-gobuild-${{ inputs.cache-version }}-
+          ${{ runner.os }}-${{inputs.project}}-gobuild-${{inputs.cache-version}}-${{ hashFiles(steps.go-module-path.output.path) }}-
+          ${{ runner.os }}-${{inputs.project}}-gobuild-${{inputs.cache-version}}-
