@@ -21,14 +21,13 @@ runs:
       uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # 5.0.2
       with:
         go-version: ${{ env.GO_VERSION }}
-        cache: false
     - name: Cache NX
       uses: actions/cache@2cdf405574d6ef1f33a1d12acccd3ae82f47b3f2 # v4.1.0
       with:
         path: |
           .nx
           ~/.npm
-        key: ${{ runner.os }}
+        key: ${{runner.os}}
 
     - run: npx nx@19.8.2 init # nx version is 19.8.2
       shell: bash
@@ -53,16 +52,20 @@ runs:
       shell: bash
       run: echo "path=./${{fromJson(steps.get-project.outputs.project).root}}" >> $GITHUB_OUTPUT
 
+    - name: Get branch name
+      if: ${{ inputs.only-modules == 'false' }}
+      id: branch-name
+      uses: tj-actions/branch-names@6871f53176ad61624f978536bbf089c574dc19a2 # v8.0.1
+
     - uses: actions/cache@2cdf405574d6ef1f33a1d12acccd3ae82f47b3f2 # v4.1.0
       name: Cache Go Modules
       with:
         path: |
           ${{ steps.go-cache-dir.outputs.gomodcache }}
-        # The lifetime of go modules is much higher than the build outputs, so we increase cache efficiency
-        # here by not having the primary key contain the branch name
-        key: ${{ runner.os }}-${{inputs.project}}-gomod-${{inputs.cache-version}}-${{ hashFiles(steps.go-module-path.output.path) }}
+        key: ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-gomod-${{hashFiles(steps.go-module-path.output.path)}}-${{steps.branch-name.outputs.current_branch}}
         restore-keys: |
-          ${{ runner.os }}-${{inputs.project}}-gomod-${{inputs.cache-version}}-
+          ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-gomod-${{hashFiles(steps.go-module-path.output.path)}}
+          ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-gomod
 
     - uses: actions/cache@2cdf405574d6ef1f33a1d12acccd3ae82f47b3f2 # v4.1.0
       name: Cache Go Build Outputs
@@ -70,7 +73,7 @@ runs:
         path: |
           ${{ steps.go-cache-dir.outputs.gobuildcache }}
         # The lifetime of go build outputs is pretty short, so we make our primary cache key be the branch name
-        key: ${{ runner.os }}-${{inputs.project}}-gobuild-${{inputs.cache-version}}-${{ hashFiles(steps.go-module-path.output.path) }}-${{ steps.branch-name.outputs.current_branch }}
+        key: ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-gobuild-${{ hashFiles(steps.go-module-path.output.path) }}
         restore-keys: |
-          ${{ runner.os }}-${{inputs.project}}-gobuild-${{inputs.cache-version}}-${{ hashFiles(steps.go-module-path.output.path) }}-
-          ${{ runner.os }}-${{inputs.project}}-gobuild-${{inputs.cache-version}}-
+          ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-gobuild-${{ hashFiles(steps.go-module-path.output.path) }}
+          ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-gobuild
