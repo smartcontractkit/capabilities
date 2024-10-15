@@ -6,10 +6,10 @@ env:
   GO_VERSION: 1.23
 
 jobs:
-  affected-projects:
+  affected:
     runs-on: ubuntu-latest
     outputs:
-      affected: ${{ steps.get-affected.outputs.affected }}
+      nx: ${{ steps.get-affected.outputs.affected }}
     steps:
       - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
         with:
@@ -29,64 +29,90 @@ jobs:
       - name: Get base branch
         id: get-base
         run: echo "base=${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }}" >> "$GITHUB_OUTPUT"
+
+        # Outputs:
+        # {
+        #   "base": "main",
+        #   "projects": [
+        #     "project_name_1",
+        #     "project_name_2",
+        #   ],
+        #   "project_name_1": {
+        #     "root": "project_1_root",
+        #     "go_sum": "project_1_root/go.sum"
+        #   },
+        #   "project_name_2": {
+        #     "root": "project_2_root",
+        #     "go_sum": "project_2_root/go.sum"
+        #   }
+        # }
       - name: Get affected projects
         id: get-affected
-        run: echo "affected=$(./nx show projects --affected --json --base=${{steps.get-base.outputs.base}})" >> "$GITHUB_OUTPUT"
+        run: echo "affected=$(./.github/scripts/affected-projects.sh --base=${{steps.get-base.outputs.base}}" >> "$GITHUB_OUTPUT"
+        # run: echo "affected=$(./nx show projects --affected --json --base=${{steps.get-base.outputs.base}})" >> "$GITHUB_OUTPUT"
 
   build:
-    needs: affected-projects
-    if: ${{ needs.affected-projects.outputs.affected != '[]' && needs.affected-projects.outputs.affected != '' }}
+    needs: affected
+    if: ${{ needs.affected.outputs.nx.projects != '[]' && needs.affected.outputs.nx.projects != '' }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        projects: ${{fromJson(needs.affected-projects.outputs.affected)}}
+        projects: ${{fromJson(needs.affected.outputs.nx.projects)}}
     steps:
       - name: Checkout the repo
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
         with:
           fetch-depth: 0
+
       - name: Set up project environment
         uses: ./.github/actions/setup
         with:
           project: ${{ matrix.projects }}
+          go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
+
       - name: Build ${{ matrix.projects }}
         run: ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} build
 
   test:
-    needs: affected-projects
-    if: ${{ needs.affected-projects.outputs.affected != '[]' && needs.affected-projects.outputs.affected != '' }}
+    needs: affected
+    if: ${{ needs.affected.outputs.nx.projects != '[]' && needs.affected.outputs.nx.projects != '' }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        projects: ${{fromJson(needs.affected-projects.outputs.affected)}}
+        projects: ${{fromJson(needs.affected.outputs.nx.projects)}}
     steps:
       - name: Checkout the repo
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
         with:
           fetch-depth: 0
+
       - name: Set up project environment
         uses: ./.github/actions/setup
         with:
           project: ${{ matrix.projects }}
+          go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
+
       - name: Test ${{ matrix.projects }}
         run: ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} test
 
   tidy-and-generate:
-    needs: affected-projects
-    if: ${{ needs.affected-projects.outputs.affected != '[]' && needs.affected-projects.outputs.affected != '' }}
+    needs: affected
+    if: ${{ needs.affected.outputs.nx.projects != '[]' && needs.affected.outputs.nx.projects != '' }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        projects: ${{fromJson(needs.affected-projects.outputs.affected)}}
+        projects: ${{fromJson(needs.affected.outputs.nx.projects)}}
     steps:
       - name: Checkout the repo
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
         with:
           fetch-depth: 0
+
       - name: Set up project environment
         uses: ./.github/actions/setup
         with:
           project: ${{ matrix.projects }}
+          go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
       - name: Install mockery
         run: go install github.com/vektra/mockery/v2/...@v2.46.1
 
@@ -98,12 +124,12 @@ jobs:
         run: git diff --stat --exit-code
 
   lint:
-    needs: affected-projects
-    if: ${{ needs.affected-projects.outputs.affected != '[]' && needs.affected-projects.outputs.affected != '' }}
+    needs: affected
+    if: ${{ needs.affected.outputs.nx.projects != '[]' && needs.affected.outputs.nx.projects != '' }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        projects: ${{fromJson(needs.affected-projects.outputs.affected)}}
+        projects: ${{fromJson(needs.affected.outputs.nx.projects)}}
     steps:
       - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
         with:
