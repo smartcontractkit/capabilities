@@ -11,6 +11,9 @@ inputs:
   project:
     description: Project to set up
     required: true
+  task:
+    description: Task that will run. Used for caching purposes.
+    required: true
 
 outputs:
   project:
@@ -62,10 +65,11 @@ runs:
       with:
         path: |
           ${{ steps.go-cache-dir.outputs.gomodcache }}
-        key: ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-gomod-${{hashFiles(inputs.go-module-file)}}-${{steps.branch-name.outputs.current_branch}}
+        # The lifetime of go modules is much higher than the build outputs, so we increase cache efficiency
+        # here by not having the primary key contain the branch name
+        key: ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-${{inputs.task}}-gomod-${{hashFiles(inputs.go-module-file)}}
         restore-keys: |
-          ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-gomod-${{hashFiles(inputs.go-module-file)}}
-          ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-gomod
+          ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-${{inputs.task}}
 
     - uses: actions/cache@2cdf405574d6ef1f33a1d12acccd3ae82f47b3f2 # v4.1.0
       name: Cache Go Build Outputs
@@ -73,7 +77,6 @@ runs:
         path: |
           ${{ steps.go-cache-dir.outputs.gobuildcache }}
         # The lifetime of go build outputs is pretty short, so we make our primary cache key be the branch name
-        key: ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-gobuild-${{hashFiles(inputs.go-module-file)}}
+        key: ${{runner.os}}-${{inputs.cache-version}}-gobuild-${{hashFiles(inputs.go-module-file)}}-project-${{inputs.project}}-task-${{inputs.task}}-branch-${{steps.branch-name.outputs.current_branch}}
         restore-keys: |
-          ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-gobuild-${{hashFiles(inputs.go-module-file)}}
-          ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-gobuild
+          ${{runner.os}}-${{inputs.cache-version}}-gobuild-${{hashFiles(inputs.go-module-file)}}-project-${{inputs.project}}-task-${{inputs.task}}

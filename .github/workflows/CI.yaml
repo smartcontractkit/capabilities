@@ -72,6 +72,7 @@ jobs:
         with:
           project: ${{ matrix.projects }}
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
+          task: "build"
 
       - name: Build ${{ matrix.projects }}
         run: ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} build
@@ -94,6 +95,7 @@ jobs:
         with:
           project: ${{ matrix.projects }}
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
+          task: "test"
 
       - name: Test ${{ matrix.projects }}
         run: ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} test
@@ -116,6 +118,8 @@ jobs:
         with:
           project: ${{ matrix.projects }}
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
+          task: "tidy-and-generate"
+
       - name: Install mockery
         run: go install github.com/vektra/mockery/v2/...@v2.46.1
 
