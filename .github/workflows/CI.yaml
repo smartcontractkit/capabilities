@@ -6,16 +6,16 @@ env:
   GO_VERSION: 1.23
 
 jobs:
-  affected-projects:
+  affected:
     runs-on: ubuntu-latest
     outputs:
-      affected: ${{ steps.get-affected.outputs.affected }}
+      nx: ${{ steps.affected.outputs.affected }}
     steps:
       - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
         with:
           fetch-depth: 0
       - name: Use Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@0a44ba7841725637a19e28fa30b79a866c81b0a6 # v4.0.4
         with:
           node-version: "20"
       - name: Cache NX
@@ -24,63 +24,95 @@ jobs:
           path: |
             .nx
             ~/.npm
-          key: ${{ runner.os }}
-      - run: npx nx@19.8.2 init # nx version is 19.8.2
-      - name: Get base branch
-        id: get-base
-        run: echo "base=${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }}" >> "$GITHUB_OUTPUT"
-      - name: Get affected projects
-        id: get-affected
-        run: echo "affected=$(./nx show projects --affected --json --base=${{steps.get-base.outputs.base}})" >> "$GITHUB_OUTPUT"
+          key: ${{ runner.os }}-nx
+        # Outputs:
+        # {
+        #   "base": "main",
+        #   "projects": [
+        #     "project_name_1",
+        #     "project_name_2",
+        #   ],
+        #   "project_name_1": {
+        #     "root": "project_1_root",
+        #     "go_sum": "project_1_root/go.sum"
+        #   },
+        #   "project_name_2": {
+        #     "root": "project_2_root",
+        #     "go_sum": "project_2_root/go.sum"
+        #   }
+        # }
+      - name: Init NX and get affected projects
+        id: affected
+        run: |
+          npx nx@19.8.2 init
+          echo "affected=$(./.github/scripts/affected-projects.sh ${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }})" >> $GITHUB_OUTPUT
 
   build:
-    needs: affected-projects
-    if: ${{ needs.affected-projects.outputs.affected != '[]' && needs.affected-projects.outputs.affected != '' }}
+    needs: affected
+    if: ${{ fromJson(needs.affected.outputs.nx).projects != '[]' && fromJson(needs.affected.outputs.nx).projects != '' }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        projects: ${{fromJson(needs.affected-projects.outputs.affected)}}
+        projects: ${{fromJson(needs.affected.outputs.nx).projects}}
     steps:
       - name: Checkout the repo
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
         with:
           fetch-depth: 0
+
       - name: Set up project environment
         uses: ./.github/actions/setup
+        with:
+          project: ${{ matrix.projects }}
+          go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
+          task: "build"
+
       - name: Build ${{ matrix.projects }}
         run: ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} build
 
   test:
-    needs: affected-projects
-    if: ${{ needs.affected-projects.outputs.affected != '[]' && needs.affected-projects.outputs.affected != '' }}
+    needs: affected
+    if: ${{ fromJson(needs.affected.outputs.nx).projects != '[]' && fromJson(needs.affected.outputs.nx).projects != '' }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        projects: ${{fromJson(needs.affected-projects.outputs.affected)}}
+        projects: ${{fromJson(needs.affected.outputs.nx).projects}}
     steps:
       - name: Checkout the repo
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
         with:
           fetch-depth: 0
+
       - name: Set up project environment
         uses: ./.github/actions/setup
+        with:
+          project: ${{ matrix.projects }}
+          go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
+          task: "test"
+
       - name: Test ${{ matrix.projects }}
         run: ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} test
 
   tidy-and-generate:
-    needs: affected-projects
-    if: ${{ needs.affected-projects.outputs.affected != '[]' && needs.affected-projects.outputs.affected != '' }}
+    needs: affected
+    if: ${{ fromJson(needs.affected.outputs.nx).projects != '[]' && fromJson(needs.affected.outputs.nx).projects != '' }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        projects: ${{fromJson(needs.affected-projects.outputs.affected)}}
+        projects: ${{fromJson(needs.affected.outputs.nx).projects}}
     steps:
       - name: Checkout the repo
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
         with:
           fetch-depth: 0
+
       - name: Set up project environment
         uses: ./.github/actions/setup
+        with:
+          project: ${{ matrix.projects }}
+          go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
+          task: "tidy-and-generate"
+
       - name: Install mockery
         run: go install github.com/vektra/mockery/v2/...@v2.46.1
 
@@ -92,37 +124,28 @@ jobs:
         run: git diff --stat --exit-code
 
   lint:
-    needs: affected-projects
-    if: ${{ needs.affected-projects.outputs.affected != '[]' && needs.affected-projects.outputs.affected != '' }}
+    needs: affected
+    if: ${{ fromJson(needs.affected.outputs.nx).projects != '[]' && fromJson(needs.affected.outputs.nx).projects != '' }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        projects: ${{fromJson(needs.affected-projects.outputs.affected)}}
+        projects: ${{fromJson(needs.affected.outputs.nx).projects}}
     steps:
       - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - name: Set up project environment
+        id: setup
+        uses: ./.github/actions/setup
         with:
-          node-version: "20"
-      - name: Cache NX
-        uses: actions/cache@2cdf405574d6ef1f33a1d12acccd3ae82f47b3f2 # v4.1.0
-        with:
-          path: |
-            .nx
-            ~/.npm
-          key: ${{ runner.os }}
-      - run: npx nx@19.8.2 init # nx version is 19.8.2
-      - id: get-root
-        run: echo "root=$(./nx show project ${{matrix.projects}} --json)" >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-go@0c52d547c9bc32b1aa3301fd7a9cb496313a4491 # v5.0.0
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache-dependency-path: ${{fromJson(steps.get-root.outputs.root).root}}/go.sum
+          project: ${{ matrix.projects }}
+          go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
+          task: "lint"
+
       - uses: golangci/golangci-lint-action@v6
         with:
           version: v1.60
-          working-directory: ${{fromJson(steps.get-root.outputs.root).root}}
+          working-directory: ${{fromJson(needs.affected.outputs.nx)[matrix.projects].root}}
 
   checks:
     runs-on: ubuntu-latest
