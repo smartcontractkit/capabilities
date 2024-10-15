@@ -16,7 +16,6 @@ import (
 var (
 	marshalFn   = proto.Marshal
 	unmarshalFn = proto.Unmarshal
-	newMapFn    = values.NewMap
 	newClientFn = beholder.NewClient
 )
 
@@ -51,19 +50,17 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		return capabilities.CapabilityResponse{}, errors.New("missing inputs field")
 	}
 
-	payload, err := c.payloadFromRequest(rawRequest)
-	if err != nil {
-		return capabilities.CapabilityResponse{}, err
+	payload, ok := rawRequest.Inputs.Underlying["payload"]
+	if !ok || payload == nil {
+		return capabilities.CapabilityResponse{}, errors.New("missing payload")
 	}
-
-	capabilityMap, err := newMapFn(payload)
-	if err != nil {
-		return capabilities.CapabilityResponse{}, err
+	payloadMap, ok := payload.(*values.Map)
+	if !ok {
+		return capabilities.CapabilityResponse{}, errors.New("payload not values.Map")
 	}
+	pbMap := values.ProtoMap(payloadMap)
 
-	protobufMap := values.ProtoMap(capabilityMap)
-
-	bytes, err := marshalFn(protobufMap)
+	bytes, err := marshalFn(pbMap)
 	if err != nil {
 		return capabilities.CapabilityResponse{}, err
 	}
@@ -81,25 +78,6 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 	c.logger.Debug("Message emitted", "WorkflowID", rawRequest.Metadata.WorkflowID, "WorkflowExecutionID", rawRequest.Metadata.WorkflowExecutionID)
 
 	return capabilities.CapabilityResponse{}, nil
-}
-
-func (c *capability) payloadFromRequest(rawRequest capabilities.CapabilityRequest) (map[string]any, error) {
-	payload, ok := rawRequest.Inputs.Underlying["payload"]
-	if !ok {
-		return nil, errors.New("missing payload")
-	}
-
-	if payload == nil {
-		return nil, errors.New("missing payload")
-	}
-
-	unwrappedValue, _ := payload.Unwrap()
-	switch t := unwrappedValue.(type) {
-	case map[string]any:
-		return t, nil
-	default:
-		return nil, errors.New("invalid payload")
-	}
 }
 
 func (c *capability) RegisterToWorkflow(_ context.Context, rawRequest capabilities.RegisterToWorkflowRequest) error {

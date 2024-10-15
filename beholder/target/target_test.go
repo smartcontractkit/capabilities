@@ -114,7 +114,7 @@ func TestCapability_Execute(t *testing.T) {
 				"payload": values.NewString("test"),
 			}}})
 		assert.Error(t, err)
-		assert.Equal(t, "invalid payload", err.Error())
+		assert.Equal(t, "payload not values.Map", err.Error())
 	})
 
 	t.Run("capability errors when marshalling errors", func(t *testing.T) {
@@ -139,30 +139,6 @@ func TestCapability_Execute(t *testing.T) {
 		})
 		assert.Error(t, err)
 		assert.Equal(t, "boom", err.Error())
-	})
-
-	t.Run("capability errors when creating a new map errors", func(t *testing.T) {
-		c := New(Params{Logger: logger.Test(t)})
-		newMapFunction := newMapFn
-		newMapFn = func(m map[string]any) (*values.Map, error) {
-			return nil, errors.New("new map boom")
-		}
-		defer func() {
-			newMapFn = newMapFunction
-		}()
-
-		payload, err := values.NewMap(map[string]any{
-			"name": values.NewString("test"),
-		})
-		assert.NoError(t, err)
-
-		_, err = c.Execute(context.Background(), capabilities.CapabilityRequest{
-			Inputs: &values.Map{Underlying: map[string]values.Value{
-				"payload": payload,
-			}},
-		})
-		assert.Error(t, err)
-		assert.Equal(t, "new map boom", err.Error())
 	})
 
 	t.Run("capability errors when creating the beholder client errors", func(t *testing.T) {
