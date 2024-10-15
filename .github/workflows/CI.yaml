@@ -25,13 +25,6 @@ jobs:
             .nx
             ~/.npm
           key: ${{ runner.os }}-nx
-      - run: npx nx@19.8.2 init # nx version is 19.8.2
-      - name: Get base branch
-        id: get-base
-        run: |
-          echo "base=${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }}"
-          echo "base=${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }}" >> $GITHUB_OUTPUT
-
         # Outputs:
         # {
         #   "base": "main",
@@ -48,12 +41,11 @@ jobs:
         #     "go_sum": "project_2_root/go.sum"
         #   }
         # }
-      - name: Get affected projects
+      - name: Init NX and get affected projects
         id: affected
         run: |
-          echo "affected=$(./.github/scripts/affected-projects.sh ${{steps.get-base.outputs.base}})" >> $GITHUB_OUTPUT
-
-        # ./.github/scripts/affected-projects.sh ${{steps.get-base.outputs.base}} | jq .
+          npx nx@19.8.2 init
+          echo "affected=$(./.github/scripts/affected-projects.sh ${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }})" >> $GITHUB_OUTPUT
 
   build:
     needs: affected
