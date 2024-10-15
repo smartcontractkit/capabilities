@@ -4,7 +4,7 @@ description: "Sets up Go and NX"
 inputs:
   cache-version:
     description: Set this to cache bust
-    default: "1"
+    default: "2"
   go-module-file:
     description: Set where the go module file is located at
     required: true
@@ -72,7 +72,7 @@ runs:
         path: |
           ${{ steps.go-cache-dir.outputs.gobuildcache }}
         # The lifetime of go build outputs is pretty short, so we make our primary cache key be the branch name
-        key: ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-gobuild-${{ hashFiles(inputs.go-module-file) }}
+        key: ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-gobuild-${{hashFiles(inputs.go-module-file)}}
         restore-keys: |
-          ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-gobuild-${{ hashFiles(inputs.go-module-file) }}
+          ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-gobuild-${{hashFiles(inputs.go-module-file)}}
           ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-gobuild
