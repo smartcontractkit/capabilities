@@ -37,7 +37,7 @@ runs:
     - name: Set go module path
       id: go-module-path
       shell: bash
-      run: echo "path=./${{fromJson(steps.setup.outputs.project).root}}" >> $GITHUB_OUTPUT
+      run: echo "path=./${{fromJson(steps.get-project.outputs.project).root}}" >> $GITHUB_OUTPUT
 
     - uses: actions/cache@2cdf405574d6ef1f33a1d12acccd3ae82f47b3f2 # v4.1.0
       name: Cache Go Modules
