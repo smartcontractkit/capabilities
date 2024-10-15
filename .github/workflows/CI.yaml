@@ -9,7 +9,7 @@ jobs:
   affected:
     runs-on: ubuntu-latest
     outputs:
-      nx: ${{ steps.get-affected.outputs.affected }}
+      nx: ${{ steps.affected.outputs.affected }}
     steps:
       - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
         with:
@@ -49,20 +49,18 @@ jobs:
         #   }
         # }
       - name: Get affected projects
-        id: get-affected
+        id: affected
         run: |
           ./.github/scripts/affected-projects.sh ${{steps.get-base.outputs.base}} | jq .
-          echo "affected=$(./.github/scripts/affected-projects.sh ${{steps.get-base.outputs.base}})"
           echo "affected=$(./.github/scripts/affected-projects.sh ${{steps.get-base.outputs.base}})" >> $GITHUB_OUTPUT
-        # run: echo "affected=$(./nx show projects --affected --json --base=${{steps.get-base.outputs.base}})" >> "$GITHUB_OUTPUT"
 
   build:
     needs: affected
-    if: ${{ needs.affected.outputs.nx.projects != '[]' && needs.affected.outputs.nx.projects != '' }}
+    if: ${{ fromJson(needs.affected.outputs.nx).projects != '[]' && fromJson(needs.affected.outputs.nx).projects != '' }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        projects: ${{fromJson(needs.affected.outputs.nx.projects)}}
+        projects: ${{fromJson(needs.affected.outputs.nx).projects}}
     steps:
       - name: Checkout the repo
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
@@ -80,11 +78,11 @@ jobs:
 
   test:
     needs: affected
-    if: ${{ needs.affected.outputs.nx.projects != '[]' && needs.affected.outputs.nx.projects != '' }}
+    if: ${{ fromJson(needs.affected.outputs.nx).projects != '[]' && fromJson(needs.affected.outputs.nx).projects != '' }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        projects: ${{fromJson(needs.affected.outputs.nx.projects)}}
+        projects: ${{fromJson(needs.affected.outputs.nx).projects}}
     steps:
       - name: Checkout the repo
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
@@ -102,11 +100,11 @@ jobs:
 
   tidy-and-generate:
     needs: affected
-    if: ${{ needs.affected.outputs.nx.projects != '[]' && needs.affected.outputs.nx.projects != '' }}
+    if: ${{ fromJson(needs.affected.outputs.nx).projects != '[]' && fromJson(needs.affected.outputs.nx).projects != '' }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        projects: ${{fromJson(needs.affected.outputs.nx.projects)}}
+        projects: ${{fromJson(needs.affected.outputs.nx).projects}}
     steps:
       - name: Checkout the repo
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
@@ -130,11 +128,11 @@ jobs:
 
   lint:
     needs: affected
-    if: ${{ needs.affected.outputs.nx.projects != '[]' && needs.affected.outputs.nx.projects != '' }}
+    if: ${{ fromJson(needs.affected.outputs.nx).projects != '[]' && fromJson(needs.affected.outputs.nx).projects != '' }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        projects: ${{fromJson(needs.affected.outputs.nx.projects)}}
+        projects: ${{fromJson(needs.affected.outputs.nx).projects}}
     steps:
       - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
         with:
