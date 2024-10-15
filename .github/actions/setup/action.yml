@@ -36,7 +36,7 @@ runs:
       id: init
       shell: bash
       run: |
-        npx nx@19.8.2 init # nx version is 19.8.2
+        npx nx@19.8.2 init
         echo "gomodcache=$(go env GOMODCACHE)" >> $GITHUB_OUTPUT
         echo "gobuildcache=$(go env GOCACHE)" >> $GITHUB_OUTPUT
 
