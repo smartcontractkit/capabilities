@@ -3,6 +3,7 @@ package target
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 
@@ -23,6 +24,35 @@ type capability struct {
 type Params struct {
 	Logger logger.Logger
 	Store  core.KeyValueStore
+}
+
+type ReportV1Metadata struct {
+	Version             uint8
+	WorkflowExecutionID [32]byte
+	Timestamp           uint32
+	DonID               uint32
+	DonConfigVersion    uint32
+	WorkflowCID         [32]byte
+	WorkflowName        [10]byte
+	WorkflowOwner       [20]byte
+	ReportID            [2]byte
+}
+
+func (rm ReportV1Metadata) Encode() ([]byte, error) {
+	buf := new(bytes.Buffer)
+	err := binary.Write(buf, binary.BigEndian, rm)
+	if err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func (rm ReportV1Metadata) Length() int {
+	bytes, err := rm.Encode()
+	if err != nil {
+		return 0
+	}
+	return len(bytes)
 }
 
 func New(p Params) *capability {
@@ -77,13 +107,17 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to decode signed report: %v", err)
 	}
 
-	c.logger.Debug("Decoded signed report", "WorkflowID", request.Metadata.WorkflowID, "WorkflowExecutionID", request.Metadata.WorkflowExecutionID, "ReportVersion", request.Inputs.SignedReport)
+	// Ignore metadata.
+	var metadata ReportV1Metadata
+	reportData := request.Inputs.SignedReport.Report[metadata.Length():]
 
 	var storeRequest StoreMappingRequest
-	err = json.Unmarshal(request.Inputs.SignedReport.Report, &storeRequest)
+	err = json.Unmarshal(reportData, &storeRequest)
 	if err != nil {
 		return capabilities.CapabilityResponse{}, err
 	}
+
+	c.logger.Debug("Decoded signed report", "WorkflowID", request.Metadata.WorkflowID, "WorkflowExecutionID", request.Metadata.WorkflowExecutionID, "ReportVersion", request.Inputs.SignedReport)
 
 	for i := range storeRequest.Keys {
 		var index = i
