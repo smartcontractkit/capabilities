@@ -6,7 +6,6 @@ if [ -z "$1" ]; then
   exit 1
 fi
 
-# Parse the input branch
 base=$1
 affected_projects=$(./nx show projects --affected --json --base=$base)
 # echo "Affected projects:"
