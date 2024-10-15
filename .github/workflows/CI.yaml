@@ -29,8 +29,8 @@ jobs:
       - name: Get base branch
         id: get-base
         run: |
-          echo "base=${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }}" >> $GITHUB_OUTPUT
           echo "base=${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }}"
+          echo "base=${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }}" >> $GITHUB_OUTPUT
 
         # Outputs:
         # {
@@ -51,8 +51,9 @@ jobs:
       - name: Get affected projects
         id: get-affected
         run: |
-          echo "affected=$(./.github/scripts/affected-projects.sh --base=${{steps.get-base.outputs.base}})" >> $GITHUB_OUTPUT
+          ./.github/scripts/affected-projects.sh --base=${{steps.get-base.outputs.base}}
           echo "affected=$(./.github/scripts/affected-projects.sh --base=${{steps.get-base.outputs.base}})"
+          echo "affected=$(./.github/scripts/affected-projects.sh --base=${{steps.get-base.outputs.base}})" >> $GITHUB_OUTPUT
         # run: echo "affected=$(./nx show projects --affected --json --base=${{steps.get-base.outputs.base}})" >> "$GITHUB_OUTPUT"
 
   build:
