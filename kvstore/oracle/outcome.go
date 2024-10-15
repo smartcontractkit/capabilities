@@ -30,11 +30,11 @@ func (o *Outcome) Write(namespace string, kvPairs kvrequests.KVPairs) {
 }
 
 func (o *Outcome) Read(namespace string, kvPairs kvrequests.KVPairs) kvrequests.KVPairs {
-	keysWithValues := make(map[string][]byte)
+	keysWithValues := make(kvrequests.KVPairs)
 	for key := range kvPairs {
 		val, ok := o.Namespaces[namespace][key]
 		if !ok {
-			keysWithValues[key] = []byte("")
+			keysWithValues[key] = make([]byte, 0)
 		} else {
 			keysWithValues[key] = val
 		}
