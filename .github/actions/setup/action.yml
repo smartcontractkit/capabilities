@@ -32,29 +32,20 @@ runs:
           ~/.npm
         key: ${{runner.os}}-nx
 
-    - run: npx nx@19.8.2 init # nx version is 19.8.2
+    - name: Initialize NX and set up Go cache keys
+      id: init
       shell: bash
-
-    - name: Set go cache keys
-      shell: bash
-      id: go-cache-dir
       run: |
+        npx nx@19.8.2 init # nx version is 19.8.2
         echo "gomodcache=$(go env GOMODCACHE)" >> $GITHUB_OUTPUT
-        echo "gomodcache=$(go env GOMODCACHE)"
         echo "gobuildcache=$(go env GOCACHE)" >> $GITHUB_OUTPUT
-        echo "gobuildcache=$(go env GOCACHE)"
-
-    - name: Get branch name
-      if: ${{ inputs.only-modules == 'false' }}
-      id: branch-name
-      uses: tj-actions/branch-names@6871f53176ad61624f978536bbf089c574dc19a2 # v8.0.1
 
     - uses: actions/cache@2cdf405574d6ef1f33a1d12acccd3ae82f47b3f2 # v4.1.0
       name: Cache Go modules and outputs
       with:
         path: |
-          ${{ steps.go-cache-dir.outputs.gomodcache }}
-          ${{ steps.go-cache-dir.outputs.gobuildcache }}
+          ${{ steps.init.outputs.gomodcache }}
+          ${{ steps.init.outputs.gobuildcache }}
         # The lifetime of go modules is much higher than the build outputs, so we increase cache efficiency
         # here by not having the primary key contain the branch name
         key: ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-${{inputs.task}}-gomod-${{hashFiles(inputs.go-module-file)}}
