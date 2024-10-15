@@ -10,6 +10,7 @@ import (
 
 var _ core.KeyValueStore = (*store)(nil)
 
+// store is a simple in-memory key-value store for testing purposes
 type store struct {
 	t      *testing.T
 	values map[string][]byte
