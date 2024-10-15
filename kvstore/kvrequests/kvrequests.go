@@ -8,7 +8,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
 
-var RequestsKey = "requestszabc"
+var RequestsKey = "requestszabcd"
 
 // RequestsStore is a store for incoming read and write requests.
 // There is a guarantee that there is only one request per request ID.
