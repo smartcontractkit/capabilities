@@ -68,7 +68,7 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		return capabilities.CapabilityResponse{}, err
 	}
 
-	beholderClient, err := newClientFn(beholder.TestDefaultConfig())
+	beholderClient, err := newClientFn(beholder.DefaultConfig())
 	if err != nil {
 		return capabilities.CapabilityResponse{}, err
 	}
