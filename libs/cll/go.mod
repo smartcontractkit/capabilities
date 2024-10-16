@@ -1,6 +1,6 @@
 module github.com/smartcontractkit/capabilities/libs/cli
 
-go 1.23
+go 1.23.2
 
 require (
 	github.com/smartcontractkit/libocr v0.0.0-20240717100443-f6226e09bee7
