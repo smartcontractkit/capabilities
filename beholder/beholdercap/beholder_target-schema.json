@@ -7,7 +7,20 @@
       "properties": {
         "Payload": {
           "type": "object",
-          "additionalProperties": true
+          "additionalProperties": true,
+          "examples": [
+            {
+              "eventName": "Web API target triggered",
+              "data": {
+                "field": "value"
+              }
+            },
+            {
+              "eventName": "Database entry updated",
+              "recordID": "abc123",
+              "status": "active"
+            }
+          ]
         }
       },
       "required": ["Payload"],
