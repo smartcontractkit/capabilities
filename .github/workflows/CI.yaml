@@ -3,7 +3,9 @@ name: CI
 on: [push]
 
 env:
-  GO_VERSION: 1.23
+  # Ensure that a cached go version is used:
+  # https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md#go
+  GO_VERSION: 1.23.2
 
 jobs:
   affected:
@@ -14,6 +16,8 @@ jobs:
       - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
         with:
           fetch-depth: 0
+      # There's no need to setup Node as it is pre-installed:
+      # https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2204-Readme.md
       - name: Cache NX
         uses: actions/cache@2cdf405574d6ef1f33a1d12acccd3ae82f47b3f2 # v4.1.0
         with:

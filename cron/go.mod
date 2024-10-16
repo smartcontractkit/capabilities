@@ -1,6 +1,6 @@
 module github.com/smartcontractkit/capabilities/cron
 
-go 1.23.0
+go 1.23.2
 
 require (
 	github.com/go-co-op/gocron/v2 v2.11.0
