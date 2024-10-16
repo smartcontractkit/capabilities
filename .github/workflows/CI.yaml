@@ -44,6 +44,7 @@ jobs:
       - name: Init NX and get affected projects
         id: affected
         run: |
+          npm cache verify
           npx nx@19.8.2 init
           echo "affected=$(./.github/scripts/affected-projects.sh ${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }})" >> $GITHUB_OUTPUT
 
