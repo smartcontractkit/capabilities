@@ -37,10 +37,23 @@ func TestCapability_Info(t *testing.T) {
 
 func TestCapability_Execute(t *testing.T) {
 	t.Run("capability executes without error", func(t *testing.T) {
-		c, err := New(Params{Logger: logger.Test(t)})
-		assert.NoError(t, err)
 		emitter := &mockEmitter{EmitFn: func(ctx context.Context, body []byte, attrKVs ...any) error {
-			assert.Len(t, attrKVs, 4)
+			wantAttributes := []any{
+				"beholder_data_schema",
+				"/custom-message/versions/1",
+				"beholder_data_type",
+				"custom_message",
+				"workflow_id",
+				"my workflow",
+				"execution_id",
+				"12345",
+				"workflow_name",
+				"event capability test",
+				"workflow_owner",
+				"cool dude",
+			}
+
+			assert.Equal(t, wantAttributes, attrKVs)
 
 			var valueMap values.Map
 			pbm := values.ProtoMap(&valueMap)
@@ -68,6 +81,9 @@ func TestCapability_Execute(t *testing.T) {
 			newClientFn = oldNewClientFn
 		}()
 
+		c, err := New(Params{Logger: logger.Test(t)})
+		assert.NoError(t, err)
+
 		payload, err := values.NewMap(map[string]any{
 			"service":   values.NewString("Beholder"),
 			"component": values.NewString("Unit test"),
@@ -78,6 +94,12 @@ func TestCapability_Execute(t *testing.T) {
 			Inputs: &values.Map{Underlying: map[string]values.Value{
 				"payload": payload,
 			}},
+			Metadata: capabilities.RequestMetadata{
+				WorkflowID:          "my workflow",
+				WorkflowOwner:       "cool dude",
+				WorkflowExecutionID: "12345",
+				WorkflowName:        "event capability test",
+			},
 		})
 		assert.NoError(t, err)
 	})

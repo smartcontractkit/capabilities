@@ -74,8 +74,14 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		return capabilities.CapabilityResponse{}, err
 	}
 
-	if err := c.beholderClient.Emitter.Emit(ctx, bytes, "beholder_data_schema", "/custom-message/versions/1", // required
-		"beholder_data_type", "custom_message"); err != nil {
+	if err := c.beholderClient.Emitter.Emit(ctx, bytes,
+		"beholder_data_schema", "/custom-message/versions/1", // required
+		"beholder_data_type", "custom_message",
+		"workflow_id", rawRequest.Metadata.WorkflowID,
+		"execution_id", rawRequest.Metadata.WorkflowExecutionID,
+		"workflow_name", rawRequest.Metadata.WorkflowName,
+		"workflow_owner", rawRequest.Metadata.WorkflowOwner,
+	); err != nil {
 		return capabilities.CapabilityResponse{}, err
 	}
 
