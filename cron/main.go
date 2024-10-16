@@ -98,6 +98,7 @@ func (cs *CapabilitiesService) Initialise(
 	errorLog core.ErrorLog,
 	pipelineRunner core.PipelineRunnerService,
 	relayerSet core.RelayerSet,
+	oracleFactory core.OracleFactory,
 ) error {
 	cs.s.Logger.Debugf("Initialising %s", serviceName)
 	cs.trigger = trigger.New(trigger.Params{

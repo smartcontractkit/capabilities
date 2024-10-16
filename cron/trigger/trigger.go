@@ -11,6 +11,7 @@ import (
 	"github.com/jonboulle/clockwork"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/events"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
@@ -45,6 +46,7 @@ type Service struct {
 	lggr      logger.Logger
 	scheduler gocron.Scheduler
 	triggers  *cronStore
+	emitter   *events.Emitter
 }
 
 type Params struct {
@@ -85,6 +87,11 @@ func New(p Params) *Service {
 		triggers:       cronStore,
 		lggr:           l,
 		scheduler:      s,
+		emitter: events.NewEmitter().With(events.EmitMetadata{
+			CapabilityID:      cronTriggerInfo.ID,
+			CapabilityVersion: cronTriggerInfo.Version(),
+			CapabilityName:    cronTriggerInfo.ID,
+		}),
 	}
 }
 
@@ -154,7 +161,20 @@ func (s *Service) RegisterTrigger(ctx context.Context, req capabilities.TriggerR
 			select {
 			case callbackCh <- response:
 			default:
-				s.lggr.Errorw("channel full, dropping event", "executionID", req.Metadata.WorkflowExecutionID, "triggerID", req.TriggerID, "eventID", response.Event.ID)
+				s.lggr.Errorw("callback channel full, dropping event", "executionID", req.Metadata.WorkflowExecutionID, "triggerID", req.TriggerID, "eventID", response.Event.ID)
+
+				err := s.emitter.Emit(ctx, events.Message{
+					Msg: "callback channel full, dropping event",
+					Metadata: events.EmitMetadata{
+						WorkflowOwner: req.Metadata.WorkflowOwner,
+						WorkflowName:  req.Metadata.WorkflowName,
+						WorkflowID:    req.Metadata.WorkflowID,
+					},
+				})
+				if err != nil {
+					s.lggr.Errorw("cannot emit custom event", "executionID", req.Metadata.WorkflowExecutionID, "triggerID", req.TriggerID, "eventID", response.Event.ID, "err", err)
+				}
+
 			}
 		})
 
