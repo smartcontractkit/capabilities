@@ -8,14 +8,14 @@
       "executor": "nx:run-commands",
       "options": {
         "cwd": "{projectRoot}",
-        "command": "golangci-lint run ./..."
+        "command": "golangci-lint run ./... --out-format colored-line-number,checkstyle:golangci-lint-report.xml"
       }
     },
     "test": {
       "executor": "nx:run-commands",
       "options": {
         "cwd": "{projectRoot}",
-        "command": "go test ./..."
+        "command": "go test ./... -coverpkg=./... -coverprofile=coverage.txt"
       }
     },
     "tidy": {

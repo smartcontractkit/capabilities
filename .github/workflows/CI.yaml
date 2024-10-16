@@ -100,9 +100,11 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4.4.3
         with:
+          # name artifacts differently per each report
           name: ${{ matrix.projects }}_go_test_results
+          # the path to a generated report (per directory)
           path: |
-            ./${{ matrix.projects }}/coverage.txt 
+            ./${{fromJson(needs.affected.outputs.nx)[matrix.projects].root}}/coverage.txt 
 
   integrationtest:
     env:
@@ -198,9 +200,11 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4.4.3
         with:
+          # name artifacts differently per each report
           name: ${{ matrix.projects }}_golangci-lint-report
+          # the path to a generated report (per directory)
           path: |
-            ./${{ matrix.projects }}/golangci-lint-report.xml
+            ./${{fromJson(needs.affected.outputs.nx)[matrix.projects].root}}/golangci-lint-report.xml
 
   checks:
     runs-on: ubuntu-latest
@@ -217,3 +221,38 @@ jobs:
       - name: Some tests failed or were cancelled
         if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
         run: exit 1
+
+  sonarqube:
+    name: SonarQube Scan
+    needs: [test, lint]
+    if: ${{ always() && github.actor != 'dependabot[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
+        with:
+          fetch-depth: 0 # fetches all history for all tags and branches to provide more metadata for sonar reports
+
+      - name: Download all reports
+        uses: actions/download-artifact@v4.1.8 # v4.1.8
+
+      - name: Set SonarQube Report Paths
+        shell: bash
+        run: |
+          sonarqube_coverage_report_paths=$(find -type f -name 'coverage.txt' -printf "%p,")
+          sonarqube_golangci_report_paths=$(find -type f -name 'golangci-lint-report.xml' -printf "%p,")
+          ARGS=""
+          ARGS="$ARGS -Dsonar.go.coverage.reportPaths=$sonarqube_coverage_report_paths"
+          ARGS="$ARGS -Dsonar.go.golangci-lint.reportPaths=$sonarqube_golangci_report_paths"
+          echo "SONARQUBE_ARGS=$ARGS" >> $GITHUB_ENV
+          
+      - name: SonarQube Scan
+        if: always()
+        uses: sonarsource/sonarqube-scan-action@53c3e3207fe4b8d52e2f1ac9d6eb1d2506f626c0 # v2.0.2
+        with:
+          args: ${{ env.SONARQUBE_ARGS }}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+          
