@@ -16,14 +16,16 @@ import (
 
 func TestNew(t *testing.T) {
 	t.Run("a new beholder capability is created", func(t *testing.T) {
-		c := New(Params{Logger: logger.Test(t)})
+		c, err := New(Params{Logger: logger.Test(t)})
+		assert.NoError(t, err)
 		assert.NotNil(t, c)
 	})
 }
 
 func TestCapability_Info(t *testing.T) {
 	t.Run("capability info is reported correctly", func(t *testing.T) {
-		c := New(Params{Logger: logger.Test(t)})
+		c, err := New(Params{Logger: logger.Test(t)})
+		assert.NoError(t, err)
 		info, err := c.Info(context.Background())
 		assert.NoError(t, err)
 		assert.Equal(t, "beholder-target@1.0.0", info.ID)
@@ -35,8 +37,8 @@ func TestCapability_Info(t *testing.T) {
 
 func TestCapability_Execute(t *testing.T) {
 	t.Run("capability executes without error", func(t *testing.T) {
-		c := New(Params{Logger: logger.Test(t)})
-
+		c, err := New(Params{Logger: logger.Test(t)})
+		assert.NoError(t, err)
 		emitter := &mockEmitter{EmitFn: func(ctx context.Context, body []byte, attrKVs ...any) error {
 			assert.Len(t, attrKVs, 4)
 
@@ -81,8 +83,9 @@ func TestCapability_Execute(t *testing.T) {
 	})
 
 	t.Run("capability errors when inputs is nil", func(t *testing.T) {
-		c := New(Params{Logger: logger.Test(t)})
-		_, err := c.Execute(context.Background(), capabilities.CapabilityRequest{
+		c, err := New(Params{Logger: logger.Test(t)})
+		assert.NoError(t, err)
+		_, err = c.Execute(context.Background(), capabilities.CapabilityRequest{
 			Inputs: nil,
 		})
 		assert.Error(t, err)
@@ -90,16 +93,18 @@ func TestCapability_Execute(t *testing.T) {
 	})
 
 	t.Run("capability errors when payload is missing", func(t *testing.T) {
-		c := New(Params{Logger: logger.Test(t)})
-		_, err := c.Execute(context.Background(), capabilities.CapabilityRequest{
+		c, err := New(Params{Logger: logger.Test(t)})
+		assert.NoError(t, err)
+		_, err = c.Execute(context.Background(), capabilities.CapabilityRequest{
 			Inputs: &values.Map{Underlying: map[string]values.Value{}}})
 		assert.Error(t, err)
 		assert.Equal(t, "missing payload", err.Error())
 	})
 
 	t.Run("capability errors when payload is nil", func(t *testing.T) {
-		c := New(Params{Logger: logger.Test(t)})
-		_, err := c.Execute(context.Background(), capabilities.CapabilityRequest{
+		c, err := New(Params{Logger: logger.Test(t)})
+		assert.NoError(t, err)
+		_, err = c.Execute(context.Background(), capabilities.CapabilityRequest{
 			Inputs: &values.Map{Underlying: map[string]values.Value{
 				"payload": nil,
 			}}})
@@ -108,13 +113,14 @@ func TestCapability_Execute(t *testing.T) {
 	})
 
 	t.Run("capability errors when payload is not a map", func(t *testing.T) {
-		c := New(Params{Logger: logger.Test(t)})
-		_, err := c.Execute(context.Background(), capabilities.CapabilityRequest{
+		c, err := New(Params{Logger: logger.Test(t)})
+		assert.NoError(t, err)
+		_, err = c.Execute(context.Background(), capabilities.CapabilityRequest{
 			Inputs: &values.Map{Underlying: map[string]values.Value{
 				"payload": values.NewString("test"),
 			}}})
 		assert.Error(t, err)
-		assert.Equal(t, "payload not values.Map", err.Error())
+		assert.Equal(t, "payload is not a map", err.Error())
 	})
 
 	t.Run("capability errors when marshalling errors", func(t *testing.T) {
@@ -131,7 +137,8 @@ func TestCapability_Execute(t *testing.T) {
 		})
 
 		assert.NoError(t, err)
-		c := New(Params{Logger: logger.Test(t)})
+		c, err := New(Params{Logger: logger.Test(t)})
+		assert.NoError(t, err)
 		_, err = c.Execute(context.Background(), capabilities.CapabilityRequest{
 			Inputs: &values.Map{Underlying: map[string]values.Value{
 				"payload": payload,
@@ -142,7 +149,6 @@ func TestCapability_Execute(t *testing.T) {
 	})
 
 	t.Run("capability errors when creating the beholder client errors", func(t *testing.T) {
-		c := New(Params{Logger: logger.Test(t)})
 
 		oldNewClientFn := newClientFn
 		newClientFn = func(cfg beholder.Config) (*beholder.Client, error) {
@@ -152,23 +158,12 @@ func TestCapability_Execute(t *testing.T) {
 			newClientFn = oldNewClientFn
 		}()
 
-		payload, err := values.NewMap(map[string]any{
-			"name": values.NewString("test"),
-		})
-		assert.NoError(t, err)
-
-		_, err = c.Execute(context.Background(), capabilities.CapabilityRequest{
-			Inputs: &values.Map{Underlying: map[string]values.Value{
-				"payload": payload,
-			}},
-		})
+		_, err := New(Params{Logger: logger.Test(t)})
 		assert.Error(t, err)
 		assert.Equal(t, "new client boom", err.Error())
 	})
 
 	t.Run("capability errors when emit errors", func(t *testing.T) {
-		c := New(Params{Logger: logger.Test(t)})
-
 		emitter := &mockEmitter{EmitFn: func(ctx context.Context, body []byte, attrKVs ...any) error {
 			return errors.New("emit boom")
 		}}
@@ -184,6 +179,9 @@ func TestCapability_Execute(t *testing.T) {
 		defer func() {
 			newClientFn = oldNewClientFn
 		}()
+
+		c, err := New(Params{Logger: logger.Test(t)})
+		assert.NoError(t, err)
 
 		payload, err := values.NewMap(map[string]any{
 			"name": values.NewString("test"),
@@ -210,16 +208,18 @@ func (e *mockEmitter) Emit(ctx context.Context, body []byte, attrKVs ...any) err
 
 func TestCapability_UnregisterFromWorkflow(t *testing.T) {
 	t.Run("unregister from workflow does not error", func(t *testing.T) {
-		c := New(Params{Logger: logger.Test(t)})
-		err := c.UnregisterFromWorkflow(context.Background(), capabilities.UnregisterFromWorkflowRequest{})
+		c, err := New(Params{Logger: logger.Test(t)})
+		assert.NoError(t, err)
+		err = c.UnregisterFromWorkflow(context.Background(), capabilities.UnregisterFromWorkflowRequest{})
 		assert.NoError(t, err)
 	})
 }
 
 func TestCapability_RegisterToWorkflow(t *testing.T) {
 	t.Run("register to workflow does not error", func(t *testing.T) {
-		c := New(Params{Logger: logger.Test(t)})
-		err := c.RegisterToWorkflow(context.Background(), capabilities.RegisterToWorkflowRequest{})
+		c, err := New(Params{Logger: logger.Test(t)})
+		assert.NoError(t, err)
+		err = c.RegisterToWorkflow(context.Background(), capabilities.RegisterToWorkflowRequest{})
 		assert.NoError(t, err)
 	})
 }

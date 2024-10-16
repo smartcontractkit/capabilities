@@ -1,6 +1,6 @@
-# Beholder target
+# Telemetry target
 
-This is a target that, when executed, emits events via beholder
+This is a target that, when executed, emits events via a telemetry client
 
 ## Development
 

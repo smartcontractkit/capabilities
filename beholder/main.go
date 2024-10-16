@@ -88,12 +88,18 @@ func (cs *CapabilitiesService) Initialise(
 	_ core.OracleFactory,
 ) error {
 	cs.s.Logger.Debugf("Initialising %s", serviceName)
-	cs.target = target.New(target.Params{
+
+	target, err := target.New(target.Params{
 		Logger: cs.s.Logger,
 	})
+	if err != nil {
+		return fmt.Errorf("error creating telemetry target: %w", err)
+	}
+
+	cs.target = target
 
 	if err := capabilityRegistry.Add(ctx, cs.target); err != nil {
-		return fmt.Errorf("error when adding kv store target to the registry: %w", err)
+		return fmt.Errorf("error when adding telemetry target to the registry: %w", err)
 	}
 
 	return nil

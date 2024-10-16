@@ -30,13 +30,20 @@ type Request struct {
 }
 
 type capability struct {
-	lggr logger.Logger
+	lggr           logger.Logger
+	beholderClient *beholder.Client
 }
 
-func New(p Params) capabilities.TargetCapability {
-	return &capability{
-		lggr: p.Logger,
+func New(p Params) (capabilities.TargetCapability, error) {
+	beholderClient, err := newClientFn(beholder.DefaultConfig())
+	if err != nil {
+		return nil, err
 	}
+
+	return &capability{
+		lggr:           p.Logger,
+		beholderClient: beholderClient,
+	}, nil
 }
 
 func (c *capability) Info(_ context.Context) (capabilities.CapabilityInfo, error) {
@@ -47,37 +54,28 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 	c.lggr.Debugw("executing", "workflowID", rawRequest.Metadata.WorkflowID, "executionID", rawRequest.Metadata.WorkflowExecutionID, "workflowName", rawRequest.Metadata.WorkflowName, "workflowOwner", rawRequest.Metadata.WorkflowOwner)
 
 	if rawRequest.Inputs == nil {
-		c.lggr.Errorw("missing inputs field", "workflowID", rawRequest.Metadata.WorkflowID, "executionID", rawRequest.Metadata.WorkflowExecutionID, "workflowName", rawRequest.Metadata.WorkflowName, "workflowOwner", rawRequest.Metadata.WorkflowOwner)
 		return capabilities.CapabilityResponse{}, errors.New("missing inputs field")
 	}
 
 	payload, ok := rawRequest.Inputs.Underlying["payload"]
 	if !ok || payload == nil {
-		c.lggr.Errorw("missing payload", "workflowID", rawRequest.Metadata.WorkflowID, "executionID", rawRequest.Metadata.WorkflowExecutionID, "workflowName", rawRequest.Metadata.WorkflowName, "workflowOwner", rawRequest.Metadata.WorkflowOwner)
 		return capabilities.CapabilityResponse{}, errors.New("missing payload")
 	}
+
 	payloadMap, ok := payload.(*values.Map)
 	if !ok {
-		c.lggr.Errorw("payload not values.Map", "workflowID", rawRequest.Metadata.WorkflowID, "executionID", rawRequest.Metadata.WorkflowExecutionID, "workflowName", rawRequest.Metadata.WorkflowName, "workflowOwner", rawRequest.Metadata.WorkflowOwner)
-		return capabilities.CapabilityResponse{}, errors.New("payload not values.Map")
+		return capabilities.CapabilityResponse{}, errors.New("payload is not a map")
 	}
+
 	pbMap := values.ProtoMap(payloadMap)
 
 	bytes, err := marshalFn(pbMap)
 	if err != nil {
-		c.lggr.Errorw("error marshalling", "workflowID", rawRequest.Metadata.WorkflowID, "executionID", rawRequest.Metadata.WorkflowExecutionID, "workflowName", rawRequest.Metadata.WorkflowName, "workflowOwner", rawRequest.Metadata.WorkflowOwner, "err", err)
 		return capabilities.CapabilityResponse{}, err
 	}
 
-	beholderClient, err := newClientFn(beholder.DefaultConfig())
-	if err != nil {
-		c.lggr.Errorw("unable to create beholder client", "workflowID", rawRequest.Metadata.WorkflowID, "executionID", rawRequest.Metadata.WorkflowExecutionID, "workflowName", rawRequest.Metadata.WorkflowName, "workflowOwner", rawRequest.Metadata.WorkflowOwner, "err", err)
-		return capabilities.CapabilityResponse{}, err
-	}
-
-	if err := beholderClient.Emitter.Emit(ctx, bytes, "beholder_data_schema", "/custom-message/versions/1", // required
+	if err := c.beholderClient.Emitter.Emit(ctx, bytes, "beholder_data_schema", "/custom-message/versions/1", // required
 		"beholder_data_type", "custom_message"); err != nil {
-		c.lggr.Errorw("error emitting message", "workflowID", rawRequest.Metadata.WorkflowID, "executionID", rawRequest.Metadata.WorkflowExecutionID, "workflowName", rawRequest.Metadata.WorkflowName, "workflowOwner", rawRequest.Metadata.WorkflowOwner, "err", err)
 		return capabilities.CapabilityResponse{}, err
 	}
 
