@@ -175,12 +175,13 @@ jobs:
           project: ${{ matrix.projects }}
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "lint"
-
-      - uses: golangci/golangci-lint-action@v6
+      - name: Golangci Lint (${{fromJson(needs.affected.outputs.nx)[matrix.projects].root}})
+        uses: golangci/golangci-lint-action@v6
         with:
           version: v1.60
           working-directory: ${{fromJson(needs.affected.outputs.nx)[matrix.projects].root}}
-          args: "--timeout 10m"
+          args: --timeout=15m --out-format colored-line-number,checkstyle:golangci-lint-report.xml
+
   checks:
     runs-on: ubuntu-latest
     needs:
