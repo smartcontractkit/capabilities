@@ -95,7 +95,7 @@ jobs:
           task: "test"
       - name: Test ${{ matrix.projects }}
         run: ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} test
-      
+
       - name: Upload test artifacts
         if: always()
         uses: actions/upload-artifact@v4.4.3
@@ -193,6 +193,14 @@ jobs:
           version: v1.60
           working-directory: ${{fromJson(needs.affected.outputs.nx)[matrix.projects].root}}
           args: --timeout=15m --out-format colored-line-number,checkstyle:golangci-lint-report.xml
+
+      - name: Upload Golangci Lint artifacts
+        if: always()
+        uses: actions/upload-artifact@v4.4.3
+        with:
+          name: ${{ matrix.projects }}_golangci-lint-report
+          path: |
+            ./${{ matrix.projects }}/golangci-lint-report.xml
 
   checks:
     runs-on: ubuntu-latest
