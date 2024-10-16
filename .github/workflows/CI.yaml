@@ -95,6 +95,14 @@ jobs:
           task: "test"
       - name: Test ${{ matrix.projects }}
         run: ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} test
+      
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4.4.3
+        with:
+          name: ${{ matrix.projects }}_go_test_results
+          path: |
+            ./${{ matrix.projects }}/coverage.txt 
 
   integrationtest:
     env:
@@ -153,6 +161,7 @@ jobs:
         run: |
           ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} tidy
           ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} generate
+
       - name: Ensure no diff
         run: git diff --stat --exit-code
 
@@ -165,9 +174,11 @@ jobs:
       matrix:
         projects: ${{fromJson(needs.affected.outputs.nx).projects}}
     steps:
-      - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
+      - name: Checkout the repo
+        uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
         with:
           fetch-depth: 0
+
       - name: Set up project environment
         id: setup
         uses: ./.github/actions/setup
@@ -175,7 +186,8 @@ jobs:
           project: ${{ matrix.projects }}
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "lint"
-      - name: Golangci Lint (${{fromJson(needs.affected.outputs.nx)[matrix.projects].root}})
+
+      - name: Golangci Lint (${{ matrix.projects }})
         uses: golangci/golangci-lint-action@v6
         with:
           version: v1.60
