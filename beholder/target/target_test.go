@@ -149,7 +149,6 @@ func TestCapability_Execute(t *testing.T) {
 	})
 
 	t.Run("capability errors when creating the beholder client errors", func(t *testing.T) {
-
 		oldNewClientFn := newClientFn
 		newClientFn = func(cfg beholder.Config) (*beholder.Client, error) {
 			return nil, errors.New("new client boom")
