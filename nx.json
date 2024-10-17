@@ -4,11 +4,9 @@
     "version": "19.8.2"
   },
   "parallel": 4,
-  "namedInputs": {
-    "sharedGlobals": [
-      "{workspaceRoot}/.github/**",
-      "{workspaceRoot}/.nx/**",
-      "{workspaceRoot}/.golangci.yml"
-    ]
+  "implicitDependencies": {
+    ".github/**/*": ["*"],
+    ".nx/**/*": ["*"],
+    ".golangci.yml": ["*"]
   }
 }
