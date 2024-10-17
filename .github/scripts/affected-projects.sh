@@ -27,13 +27,13 @@ for project in "${projects[@]}"; do
 done
 
 if [ ${#projects[@]} -eq 0 ]; then
-  output+=", \"run_checks\": false"
+  output+=" \"run_checks\": false"
 else
-  output+=", \"run_checks\": true"
+  output+=" \"run_checks\": true"
 fi
 
 # Remove the trailing comma and close the JSON object
-output="${output%,} }"
+output+=" }"
 
 # echo "Affected projects details:"
 echo $output

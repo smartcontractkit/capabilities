@@ -50,6 +50,7 @@ jobs:
 
   build:
     needs: affected
+    if: ${{ fromJson(needs.affected.outputs.nx).run_checks }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
