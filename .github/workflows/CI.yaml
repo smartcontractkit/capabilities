@@ -50,7 +50,7 @@ jobs:
 
   build:
     needs: affected
-    if: ${{ fromJson(needs.affected.outputs.nx).skip_all == false }}
+    if: ${{ !fromJson(needs.affected.outputs.nx).skip_all }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -76,7 +76,7 @@ jobs:
     env:
       DB_URL: postgresql://postgres:postgres@localhost:5432/chainlink_test?sslmode=disable
     needs: affected
-    if: ${{ fromJson(needs.affected.outputs.nx).skip_all == false }}
+    if: ${{ !fromJson(needs.affected.outputs.nx).skip_all }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -108,7 +108,7 @@ jobs:
 
   tidy-and-generate:
     needs: affected
-    if: ${{ fromJson(needs.affected.outputs.nx).skip_all == false }}
+    if: ${{ !fromJson(needs.affected.outputs.nx).skip_all }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -139,7 +139,7 @@ jobs:
 
   lint:
     needs: affected
-    if: ${{ fromJson(needs.affected.outputs.nx).skip_all == false }}
+    if: ${{ !fromJson(needs.affected.outputs.nx).skip_all }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
