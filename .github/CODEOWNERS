@@ -3,4 +3,3 @@
 # @capabilities-team will be requested for
 # review when someone opens a pull request.
 *           @smartcontractkit/capabilities-team
-/.github/** @smartcontractkit/releng @DeividasK
