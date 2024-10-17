@@ -132,7 +132,7 @@ func (rp *reportingPlugin) Outcome(
 		"processedObservationsLen", len(processedObservations.observations),
 	)
 
-	for _, processedObservation := range processedObservations.observations {
+	for _, processedObservation := range processedObservations.GetOrdered() {
 		if processedObservation.observationCount <= rp.config.F {
 			rp.logger.Debugw("Not enough observations",
 				"requestID", processedObservation.request.ID(),
@@ -143,8 +143,13 @@ func (rp *reportingPlugin) Outcome(
 		}
 
 		switch processedObservation.request.Type {
-		case kvrequests.RequestTypeRemoveNamespace:
-			outcome.RemoveNamespace(processedObservation.request.Namespace)
+		case kvrequests.RequestTypeAddNamespaceUser:
+			outcome.AddNamespaceUser(
+				processedObservation.request.Namespace,
+				processedObservation.request.Reference,
+			)
+		case kvrequests.RequestTypeRemoveNamespaceUser:
+			outcome.RemoveNamespaceUser(processedObservation.request.Namespace, processedObservation.request.Reference)
 		case kvrequests.RequestTypeWrite:
 			outcome.Write(processedObservation.request.Namespace, processedObservation.request.KVPairs)
 		case kvrequests.RequestTypeRead:

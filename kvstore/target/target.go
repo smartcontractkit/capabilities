@@ -157,6 +157,18 @@ func (c *capability) RegisterToWorkflow(ctx context.Context, request capabilitie
 	} else {
 		c.namespaces[request.Metadata.WorkflowOwner] = append(c.namespaces[request.Metadata.WorkflowOwner], request.Metadata.WorkflowID)
 	}
+	r, err := kvrequests.NewRequest(kvrequests.RequestParams{
+		Namespace: request.Metadata.WorkflowOwner,
+		Type:      kvrequests.RequestTypeAddNamespaceUser,
+		Reference: request.Metadata.WorkflowID + "_target",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create add namespace request: %v", err)
+	}
+	err = c.requestsStore.Add(ctx, r)
+	if err != nil {
+		return fmt.Errorf("failed to add add namespace request: %v", err)
+	}
 	return nil
 }
 
@@ -180,15 +192,13 @@ func (c *capability) UnregisterFromWorkflow(ctx context.Context, request capabil
 	if len(c.namespaces[request.Metadata.WorkflowOwner]) == 0 {
 		r, err := kvrequests.NewRequest(kvrequests.RequestParams{
 			Namespace: request.Metadata.WorkflowOwner,
-			Type:      kvrequests.RequestTypeRemoveNamespace,
+			Type:      kvrequests.RequestTypeRemoveNamespaceUser,
+			Reference: request.Metadata.WorkflowID + "_target",
 		})
 		if err != nil {
 			return fmt.Errorf("failed to create remove namespace request: %v", err)
 		}
-		err = c.requestsStore.Add(ctx, r)
-		if err != nil {
-			return fmt.Errorf("failed to add remove namespace request: %v", err)
-		}
+		return c.requestsStore.Add(ctx, r)
 	}
 
 	return nil

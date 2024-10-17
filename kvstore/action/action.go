@@ -18,6 +18,9 @@ var _ capabilities.ActionCapability = (*capability)(nil)
 type capability struct {
 	logger        logger.Logger
 	requestsStore *kvrequests.RequestsStore
+	// Key values are stored with an owner prefix so that different workflows don't override each other's state
+	// When the last owner workflow is unregistered, the key values are deleted
+	namespaces map[string][]string
 }
 
 type Params struct {
@@ -29,6 +32,7 @@ func New(p Params) *capability {
 	return &capability{
 		logger:        p.Logger,
 		requestsStore: p.RequestsStore,
+		namespaces:    make(map[string][]string),
 	}
 }
 
@@ -120,13 +124,61 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 	}
 }
 
-func (c *capability) RegisterToWorkflow(ctx context.Context, rawRequest capabilities.RegisterToWorkflowRequest) error {
-	c.logger.Debugw("Registering to workflow", "WorkflowID", rawRequest.Metadata.WorkflowID)
+func (c *capability) RegisterToWorkflow(ctx context.Context, request capabilities.RegisterToWorkflowRequest) error {
+	_, ok := c.namespaces[request.Metadata.WorkflowOwner]
+	if !ok {
+		c.namespaces[request.Metadata.WorkflowOwner] = []string{
+			request.Metadata.WorkflowID,
+		}
+		c.logger.Debugw("Adding new workspace",
+			"WorkflowID", request.Metadata.WorkflowID,
+			"WorkflowOwner", request.Metadata.WorkflowOwner)
+	} else {
+		c.namespaces[request.Metadata.WorkflowOwner] = append(c.namespaces[request.Metadata.WorkflowOwner], request.Metadata.WorkflowID)
+	}
+	r, err := kvrequests.NewRequest(kvrequests.RequestParams{
+		Namespace: request.Metadata.WorkflowOwner,
+		Type:      kvrequests.RequestTypeAddNamespaceUser,
+		Reference: request.Metadata.WorkflowID + "_action",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create add namespace request: %v", err)
+	}
+	err = c.requestsStore.Add(ctx, r)
+	if err != nil {
+		return fmt.Errorf("failed to add add namespace request: %v", err)
+	}
 
 	return nil
 }
 
-func (c *capability) UnregisterFromWorkflow(ctx context.Context, rawRequest capabilities.UnregisterFromWorkflowRequest) error {
-	c.logger.Debugw("Unregistering from workflow", "WorkflowID", rawRequest.Metadata.WorkflowID)
+func (c *capability) UnregisterFromWorkflow(ctx context.Context, request capabilities.UnregisterFromWorkflowRequest) error {
+	if c.namespaces == nil {
+		return fmt.Errorf("capability was incorrectly initialized")
+	}
+
+	workflowIDs, ok := c.namespaces[request.Metadata.WorkflowOwner]
+	if !ok {
+		return fmt.Errorf("workflow owner not found")
+	}
+
+	for i, id := range workflowIDs {
+		if id == request.Metadata.WorkflowID {
+			c.namespaces[request.Metadata.WorkflowOwner] = append(workflowIDs[:i], workflowIDs[i+1:]...)
+			break
+		}
+	}
+
+	if len(c.namespaces[request.Metadata.WorkflowOwner]) == 0 {
+		r, err := kvrequests.NewRequest(kvrequests.RequestParams{
+			Namespace: request.Metadata.WorkflowOwner,
+			Type:      kvrequests.RequestTypeRemoveNamespaceUser,
+			Reference: request.Metadata.WorkflowID + "_action",
+		})
+		if err != nil {
+			return fmt.Errorf("failed to create remove namespace request: %v", err)
+		}
+		return c.requestsStore.Add(ctx, r)
+	}
 	return nil
 }

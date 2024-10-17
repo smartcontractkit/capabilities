@@ -13,7 +13,8 @@ const (
 	RequestTypeUnspecified RequestType = iota
 	RequestTypeWrite
 	RequestTypeRead
-	RequestTypeRemoveNamespace
+	RequestTypeAddNamespaceUser
+	RequestTypeRemoveNamespaceUser
 )
 
 func (r RequestType) String() string {
@@ -24,8 +25,10 @@ func (r RequestType) String() string {
 		return "write"
 	case RequestTypeRead:
 		return "read"
-	case RequestTypeRemoveNamespace:
-		return "remove_namespace"
+	case RequestTypeAddNamespaceUser:
+		return "add_namespace_user"
+	case RequestTypeRemoveNamespaceUser:
+		return "remove_namespace_user"
 	}
 	return "unspecified"
 }
@@ -86,6 +89,9 @@ type Request struct {
 type RequestParams struct {
 	KVPairs   KVPairs
 	Namespace string
+	// Reference is a unique identifier for the request within the namespace
+	// For RequestTypeWrite and RequestTypeRead, it should be workflow execution ID + reference ID
+	// For RequestTypeAddNamespaceUser and RequestTypeRemoveNamespaceUser, it is a workflow ID
 	Reference string
 	Type      RequestType
 }
@@ -97,10 +103,10 @@ func NewRequest(params RequestParams) (*Request, error) {
 	if params.Type == RequestTypeUnspecified {
 		return nil, fmt.Errorf("request type is required")
 	}
+	if params.Reference == "" {
+		return nil, fmt.Errorf("reference is required")
+	}
 	if params.Type == RequestTypeWrite || params.Type == RequestTypeRead {
-		if params.Reference == "" {
-			return nil, fmt.Errorf("reference is required for read and write requests")
-		}
 		if len(params.KVPairs) == 0 {
 			return nil, fmt.Errorf("key-value pairs are required for read and write requests")
 		}
@@ -116,10 +122,7 @@ func NewRequest(params RequestParams) (*Request, error) {
 }
 
 func (r *Request) ID() RequestID {
-	if r.Reference != "" {
-		return RequestID(fmt.Sprintf("%s_%s_%s", r.Type, r.Namespace, r.Reference))
-	}
-	return RequestID(fmt.Sprintf("%s_%s", r.Type, r.Namespace))
+	return RequestID(fmt.Sprintf("%s_%s_%s", r.Type, r.Namespace, r.Reference))
 }
 
 func (r *Request) Marshal() ([]byte, error) {

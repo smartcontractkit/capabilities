@@ -17,7 +17,7 @@ func TestRequestsStore_Add(t *testing.T) {
 	store, err := New(lggr)
 	require.NoError(t, err)
 
-	req, err := NewRequest(RequestParams{Namespace: "owner1", Type: RequestTypeRemoveNamespace})
+	req, err := NewRequest(RequestParams{Namespace: "owner1", Type: RequestTypeRemoveNamespaceUser, Reference: "workflow_id"})
 	require.NoError(t, err)
 	err = store.Add(context.Background(), req)
 	require.NoError(t, err)
@@ -25,7 +25,7 @@ func TestRequestsStore_Add(t *testing.T) {
 	// Try adding the same request again
 	err = store.Add(context.Background(), req)
 	assert.Error(t, err)
-	assert.Equal(t, "request with ID remove_namespace_owner1 already exists", err.Error())
+	assert.Equal(t, "request with ID remove_namespace_user_owner1_workflow_id already exists", err.Error())
 }
 
 func TestRequestsStore_Update(t *testing.T) {

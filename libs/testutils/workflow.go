@@ -110,7 +110,7 @@ func (w *workflow) unregister(ctx context.Context) {
 		}
 		err = c.Capability.UnregisterFromWorkflow(ctx, r)
 		if err != nil {
-			w.t.Errorf("failed when registering the workflow to the capability: %v", err)
+			w.t.Errorf("failed when unregistering the workflow from the capability: %v", err)
 		}
 	}
 }
