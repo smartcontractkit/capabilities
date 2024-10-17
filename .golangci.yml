@@ -148,6 +148,6 @@ linters-settings:
 issues:
   exclude-rules:
     - path: test
-      text: "G404:"
+      text: "^G404:"
       linters:
         - gosec
