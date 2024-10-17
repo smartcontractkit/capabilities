@@ -159,7 +159,7 @@ func (c *capability) RegisterToWorkflow(ctx context.Context, request capabilitie
 	}
 	r, err := kvrequests.NewRequest(kvrequests.RequestParams{
 		Namespace: request.Metadata.WorkflowOwner,
-		Type:      kvrequests.RequestTypeAddNamespaceUser,
+		Type:      kvrequests.RequestTypeAddNamespaceReference,
 		Reference: request.Metadata.WorkflowID + "_target",
 	})
 	if err != nil {
@@ -192,7 +192,7 @@ func (c *capability) UnregisterFromWorkflow(ctx context.Context, request capabil
 	if len(c.namespaces[request.Metadata.WorkflowOwner]) == 0 {
 		r, err := kvrequests.NewRequest(kvrequests.RequestParams{
 			Namespace: request.Metadata.WorkflowOwner,
-			Type:      kvrequests.RequestTypeRemoveNamespaceUser,
+			Type:      kvrequests.RequestTypeRemoveNamespaceReference,
 			Reference: request.Metadata.WorkflowID + "_target",
 		})
 		if err != nil {

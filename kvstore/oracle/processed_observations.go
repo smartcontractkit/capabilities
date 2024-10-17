@@ -60,21 +60,21 @@ func (po *ProcessedObservations) Add(request kvrequests.Request, observer common
 }
 
 // GetOrdered returns the ProcessedObservations in request type order:
-// 1. RequestTypeRemoveNamespaceUser
-// 2. RequestTypeAddNamespaceUser
+// 1. RequestTypeRemoveNamespaceReference
+// 2. RequestTypeAddNamespaceReference
 // 3. RequestTypeWrite
 // 4. RequestTypeRead
 func (po *ProcessedObservations) GetOrdered() []*ProcessedObservation {
 	orderedObservations := make([]*ProcessedObservation, 0)
-	addNamespaceUserObservations := make([]*ProcessedObservation, 0)
+	AddNamespaceReferencesObservations := make([]*ProcessedObservation, 0)
 	writeObservations := make([]*ProcessedObservation, 0)
 	readObservations := make([]*ProcessedObservation, 0)
 
 	for _, processedObservation := range po.observations {
 		switch processedObservation.request.Type {
-		case kvrequests.RequestTypeAddNamespaceUser:
-			addNamespaceUserObservations = append(addNamespaceUserObservations, processedObservation)
-		case kvrequests.RequestTypeRemoveNamespaceUser:
+		case kvrequests.RequestTypeAddNamespaceReference:
+			AddNamespaceReferencesObservations = append(AddNamespaceReferencesObservations, processedObservation)
+		case kvrequests.RequestTypeRemoveNamespaceReference:
 			orderedObservations = append(orderedObservations, processedObservation)
 		case kvrequests.RequestTypeWrite:
 			writeObservations = append(writeObservations, processedObservation)
@@ -86,6 +86,6 @@ func (po *ProcessedObservations) GetOrdered() []*ProcessedObservation {
 	}
 
 	return append(orderedObservations,
-		append(addNamespaceUserObservations,
+		append(AddNamespaceReferencesObservations,
 			append(writeObservations, readObservations...)...)...)
 }

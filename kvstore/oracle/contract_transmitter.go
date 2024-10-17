@@ -40,8 +40,8 @@ func (ct *contractTransmitter) Transmit(
 	ct.logger.Debugw("Updating", "request", request)
 
 	// If the request is to add or remove a namespace user, we don't need to store it
-	if request.Type == kvrequests.RequestTypeAddNamespaceUser ||
-		request.Type == kvrequests.RequestTypeRemoveNamespaceUser {
+	if request.Type == kvrequests.RequestTypeAddNamespaceReference ||
+		request.Type == kvrequests.RequestTypeRemoveNamespaceReference {
 		ct.requestsStore.Remove(ctx, request.ID())
 		return nil
 	}

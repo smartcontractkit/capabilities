@@ -13,8 +13,8 @@ const (
 	RequestTypeUnspecified RequestType = iota
 	RequestTypeWrite
 	RequestTypeRead
-	RequestTypeAddNamespaceUser
-	RequestTypeRemoveNamespaceUser
+	RequestTypeAddNamespaceReference
+	RequestTypeRemoveNamespaceReference
 )
 
 func (r RequestType) String() string {
@@ -25,9 +25,9 @@ func (r RequestType) String() string {
 		return "write"
 	case RequestTypeRead:
 		return "read"
-	case RequestTypeAddNamespaceUser:
+	case RequestTypeAddNamespaceReference:
 		return "add_namespace_user"
-	case RequestTypeRemoveNamespaceUser:
+	case RequestTypeRemoveNamespaceReference:
 		return "remove_namespace_user"
 	}
 	return "unspecified"
@@ -91,7 +91,7 @@ type RequestParams struct {
 	Namespace string
 	// Reference is a unique identifier for the request within the namespace
 	// For RequestTypeWrite and RequestTypeRead, it should be workflow execution ID + reference ID
-	// For RequestTypeAddNamespaceUser and RequestTypeRemoveNamespaceUser, it is a workflow ID
+	// For RequestTypeAddNamespaceReference and RequestTypeRemoveNamespaceReference, it is a workflow ID
 	Reference string
 	Type      RequestType
 }

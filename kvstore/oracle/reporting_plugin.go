@@ -145,13 +145,13 @@ func (rp *reportingPlugin) Outcome(
 		}
 
 		switch processedObservation.request.Type {
-		case kvrequests.RequestTypeAddNamespaceUser:
-			outcome.AddNamespaceUser(
+		case kvrequests.RequestTypeAddNamespaceReference:
+			outcome.AddNamespaceReferences(
 				processedObservation.request.Namespace,
 				processedObservation.request.Reference,
 			)
-		case kvrequests.RequestTypeRemoveNamespaceUser:
-			outcome.RemoveNamespaceUser(processedObservation.request.Namespace, processedObservation.request.Reference)
+		case kvrequests.RequestTypeRemoveNamespaceReference:
+			outcome.RemoveNamespaceReference(processedObservation.request.Namespace, processedObservation.request.Reference)
 		case kvrequests.RequestTypeWrite:
 			outcome.Write(processedObservation.request.Namespace, processedObservation.request.KVPairs)
 		case kvrequests.RequestTypeRead:

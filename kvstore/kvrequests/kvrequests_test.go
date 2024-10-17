@@ -17,7 +17,7 @@ func TestRequestsStore_Add(t *testing.T) {
 	store, err := New(lggr)
 	require.NoError(t, err)
 
-	req, err := NewRequest(RequestParams{Namespace: "owner1", Type: RequestTypeRemoveNamespaceUser, Reference: "workflow_id"})
+	req, err := NewRequest(RequestParams{Namespace: "owner1", Type: RequestTypeRemoveNamespaceReference, Reference: "workflow_id"})
 	require.NoError(t, err)
 	err = store.Add(context.Background(), req)
 	require.NoError(t, err)
