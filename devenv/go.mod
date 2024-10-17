@@ -1,6 +1,6 @@
 module github.com/smartcontractkit/capabilities/devenv
 
-go 1.23.2
+go 1.23
 
 require (
 	github.com/go-chi/chi/v5 v5.0.7

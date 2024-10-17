@@ -5,7 +5,7 @@ on: [push]
 env:
   # Ensure that a cached go version is used:
   # https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md#go
-  GO_VERSION: 1.23.2
+  GO_VERSION: 1.23
 
 jobs:
   affected:
