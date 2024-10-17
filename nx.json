@@ -6,12 +6,28 @@
   "parallel": 4,
   "namedInputs": {
     "sharedGlobals": [
-      "{workspaceRoot}/.github/**/*",
-      "{workspaceRoot}/.nx/**/*",
-      "{workspaceRoot}/.golangci.yml"
+      "{workspaceRoot}/.github/**",
+      "{workspaceRoot}/.nx/**"
     ],
-    "default": [
-      "sharedGlobals"
+    "lint": [
+      "{workspaceRoot}/.golangci.yml"
     ]
+  },
+  "targetDefaults": {
+    "build": {
+      "inputs": ["sharedGlobals"]
+    },
+    "lint": {
+      "inputs": ["sharedGlobals", "lint"]
+    },
+    "generate": {
+      "inputs": ["sharedGlobals"]
+    },
+    "test": {
+      "inputs": ["sharedGlobals"]
+    },
+    "tidy": {
+      "inputs": ["sharedGlobals"]
+    }
   }
 }
