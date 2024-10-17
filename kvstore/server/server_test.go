@@ -199,7 +199,7 @@ func Test_Server_MultipleNamespaces(t *testing.T) {
 	}), response2)
 }
 
-func Test_Server_PreserveNamespaceSomeWorkflowsAreRemoved(t *testing.T) {
+func Test_Server_PreserveNamespaceIfOnlySomeWorkflowsAreRemoved(t *testing.T) {
 	logger := testutils.NewLogger(t)
 	capabilitiesRegistry := testutils.NewCapabilitiesRegistry(t)
 	capabilitiesServer := New(&loop.Server{
