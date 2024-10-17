@@ -45,6 +45,7 @@ jobs:
         id: affected
         run: |
           npx nx@19.8.2 init
+          ./.github/scripts/affected-projects.sh ${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }})
           echo "affected=$(./.github/scripts/affected-projects.sh ${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }})" >> $GITHUB_OUTPUT
 
   build:
@@ -52,6 +53,7 @@ jobs:
     if: ${{ fromJson(needs.affected.outputs.nx).projects != '[]' }}
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         projects: ${{fromJson(needs.affected.outputs.nx).projects}}
     steps:
@@ -77,6 +79,7 @@ jobs:
     if: ${{ fromJson(needs.affected.outputs.nx).projects != '[]' }}
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         projects: ${{fromJson(needs.affected.outputs.nx).projects}}
     steps:
@@ -108,6 +111,7 @@ jobs:
     if: ${{ fromJson(needs.affected.outputs.nx).projects != '[]' }}
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         projects: ${{fromJson(needs.affected.outputs.nx).projects}}
     steps:
@@ -138,6 +142,7 @@ jobs:
     if: ${{ fromJson(needs.affected.outputs.nx).projects != '[]' }}
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         projects: ${{fromJson(needs.affected.outputs.nx).projects}}
     steps:
