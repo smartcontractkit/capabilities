@@ -8,8 +8,8 @@ require (
 )
 
 require (
-	github.com/smartcontractkit/chainlink-common v0.3.1-0.20241014122810-6c3cc4d0dc87
-	github.com/smartcontractkit/chainlink/v2 v2.14.0-mercury-20240807.0.20241016164051-3fd103db7516
+	github.com/smartcontractkit/chainlink-common v0.3.1-0.20241016173514-b7b7f6310ac2
+	github.com/smartcontractkit/chainlink/v2 v2.14.0-mercury-20240807.0.20241017120039-3cbc3a46f1ef
 )
 
 require (
