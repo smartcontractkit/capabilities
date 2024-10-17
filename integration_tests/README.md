@@ -2,8 +2,8 @@ Contains integration tests to exercise and test capabilities in this repo and to
 tests for a given product can be built using the capabilities integration testing framework.
 
 ### Usage
-1. Run a postgres instance as described in [Chainlink repo](https://github.com/smartcontractkit/chainlink) and then setup
-   the database by running `go run ./utils/databasesetup/main.go local db preparetest` from the integration_tests directory.
+1. Run a postgres instance as described in [Chainlink repo](https://github.com/smartcontractkit/chainlink) and then setup the
+   database by running `go run ./utils/databasesetup/main.go local db preparetest` from the integration_tests directory.
  
 2. Set the database path in your environment or the environment of the test runner
 ```
