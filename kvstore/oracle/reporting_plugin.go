@@ -7,6 +7,7 @@ import (
 
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/types"
+	"github.com/smartcontractkit/libocr/quorumhelper"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 
@@ -85,15 +86,16 @@ func (rp *reportingPlugin) Observation(
 	return json.Marshal(requests)
 }
 
-func (rp *reportingPlugin) ValidateObservation(outctx ocr3types.OutcomeContext, query types.Query, ao types.AttributedObservation) error {
+func (rp *reportingPlugin) ValidateObservation(_ context.Context, outctx ocr3types.OutcomeContext, query types.Query, ao types.AttributedObservation) error {
 	return nil
 }
 
-func (rp *reportingPlugin) ObservationQuorum(outctx ocr3types.OutcomeContext, query types.Query) (ocr3types.Quorum, error) {
-	return ocr3types.QuorumTwoFPlusOne, nil
+func (rp *reportingPlugin) ObservationQuorum(_ context.Context, outctx ocr3types.OutcomeContext, query types.Query, aos []types.AttributedObservation) (quorumReached bool, err error) {
+	return quorumhelper.ObservationCountReachesObservationQuorum(quorumhelper.QuorumTwoFPlusOne, rp.config.N, rp.config.F, aos), nil
 }
 
 func (rp *reportingPlugin) Outcome(
+	_ context.Context,
 	outctx ocr3types.OutcomeContext,
 	query types.Query,
 	aos []types.AttributedObservation,
@@ -174,28 +176,31 @@ func (rp *reportingPlugin) Outcome(
 	return json.Marshal(outcome)
 }
 
-func (rp *reportingPlugin) Reports(seqNr uint64, outcome ocr3types.Outcome) ([]ocr3types.ReportWithInfo[[]byte], error) {
+func (rp *reportingPlugin) Reports(ctx context.Context, seqNr uint64, outcome ocr3types.Outcome) ([]ocr3types.ReportPlus[[]byte], error) {
 	var o Outcome
 	if err := json.Unmarshal(outcome, &o); err != nil {
 		return nil, fmt.Errorf("could not unmarshal outcome: %w", err)
 	}
 
-	reportWithInfos := make([]ocr3types.ReportWithInfo[[]byte], 0)
+	reports := make([]ocr3types.ReportPlus[[]byte], 0)
 
 	for _, request := range o.CompletedRequests {
 		requestBytes, err := request.Marshal()
 		if err != nil {
 			return nil, fmt.Errorf("could not marshall request: %w", err)
 		}
-		reportWithInfos = append(reportWithInfos, ocr3types.ReportWithInfo[[]byte]{
-			Report: requestBytes,
+
+		reports = append(reports, ocr3types.ReportPlus[[]byte]{
+			ReportWithInfo: ocr3types.ReportWithInfo[[]byte]{
+				Report: requestBytes,
+			},
 		})
 	}
 
 	rp.logger.Debugw("Reports complete",
-		"reportWithInfosLen", len(reportWithInfos),
+		"reportWithInfosLen", len(reports),
 	)
-	return reportWithInfos, nil
+	return reports, nil
 }
 
 func (rp *reportingPlugin) ShouldAcceptAttestedReport(
