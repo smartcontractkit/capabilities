@@ -174,6 +174,6 @@ jobs:
       - name: All tests ok
         if: ${{ !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
         run: exit 0
-      - name: Some tests failed or were skipped
+      - name: Some tests failed or were cancelled
         if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
         run: exit 1
