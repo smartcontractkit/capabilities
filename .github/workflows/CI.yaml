@@ -45,7 +45,7 @@ jobs:
         id: affected
         run: |
           npx nx@19.8.2 init
-          ./.github/scripts/affected-projects.sh ${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }}
+          ./.github/scripts/affected-projects.sh origin/main
           echo "affected=$(./.github/scripts/affected-projects.sh ${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }})" >> $GITHUB_OUTPUT
 
   build:
