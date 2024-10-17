@@ -21,9 +21,6 @@ var _ capabilities.TargetCapability = (*capability)(nil)
 type capability struct {
 	logger        logger.Logger
 	requestsStore *kvrequests.RequestsStore
-	// Key values are stored with an owner prefix so that different workflows don't override each other's state
-	// When the last owner workflow is unregistered, the key values are deleted
-	namespaces map[string][]string
 }
 
 type Params struct {
