@@ -25,7 +25,7 @@ func TestRequestsStore_Add(t *testing.T) {
 	// Try adding the same request again
 	err = store.Add(context.Background(), req)
 	assert.Error(t, err)
-	assert.Equal(t, "request with ID remove_namespace_user_owner1_workflow_id already exists", err.Error())
+	assert.Equal(t, "request with ID remove_namespace_reference_owner1_workflow_id already exists", err.Error())
 }
 
 func TestRequestsStore_Update(t *testing.T) {

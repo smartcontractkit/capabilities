@@ -26,9 +26,9 @@ func (r RequestType) String() string {
 	case RequestTypeRead:
 		return "read"
 	case RequestTypeAddNamespaceReference:
-		return "add_namespace_user"
+		return "add_namespace_reference"
 	case RequestTypeRemoveNamespaceReference:
-		return "remove_namespace_user"
+		return "remove_namespace_reference"
 	}
 	return "unspecified"
 }

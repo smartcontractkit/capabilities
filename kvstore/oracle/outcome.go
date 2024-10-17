@@ -4,51 +4,51 @@ import "github.com/smartcontractkit/capabilities/kvstore/kvrequests"
 
 type Outcome struct {
 	// This is the local (in-memory) namespaced key-value store
-	Namespaces        map[string]kvrequests.KVPairs
-	NamespaceClients  map[string][]string
-	CompletedRequests []kvrequests.Request
+	Namespaces          map[string]kvrequests.KVPairs
+	NamespaceReferences map[string][]string
+	CompletedRequests   []kvrequests.Request
 }
 
 func NewOutcome() Outcome {
 	return Outcome{
-		NamespaceClients:  make(map[string][]string),
-		Namespaces:        make(map[string]kvrequests.KVPairs),
-		CompletedRequests: make([]kvrequests.Request, 0),
+		NamespaceReferences: make(map[string][]string),
+		Namespaces:          make(map[string]kvrequests.KVPairs),
+		CompletedRequests:   make([]kvrequests.Request, 0),
 	}
 }
 
 func (o *Outcome) AddNamespaceReferences(namespace string, workflowID string) {
-	if o.NamespaceClients[namespace] == nil {
-		o.NamespaceClients[namespace] = make([]string, 0)
+	if o.NamespaceReferences[namespace] == nil {
+		o.NamespaceReferences[namespace] = make([]string, 0)
 	}
 	if o.Namespaces[namespace] == nil {
 		o.Namespaces[namespace] = make(kvrequests.KVPairs)
 	}
 
-	// Check if the user is already in the namespace
-	for _, user := range o.NamespaceClients[namespace] {
-		if user == workflowID {
+	// Check if the reference is already assigned
+	for _, reference := range o.NamespaceReferences[namespace] {
+		if reference == workflowID {
 			return
 		}
 	}
 
-	o.NamespaceClients[namespace] = append(o.NamespaceClients[namespace], workflowID)
+	o.NamespaceReferences[namespace] = append(o.NamespaceReferences[namespace], workflowID)
 }
 
 func (o *Outcome) RemoveNamespaceReference(namespace string, workflowID string) {
-	if o.NamespaceClients[namespace] == nil {
+	if o.NamespaceReferences[namespace] == nil {
 		return
 	}
 
-	for i, user := range o.NamespaceClients[namespace] {
-		if user == workflowID {
-			o.NamespaceClients[namespace] = append(o.NamespaceClients[namespace][:i], o.NamespaceClients[namespace][i+1:]...)
+	for i, reference := range o.NamespaceReferences[namespace] {
+		if reference == workflowID {
+			o.NamespaceReferences[namespace] = append(o.NamespaceReferences[namespace][:i], o.NamespaceReferences[namespace][i+1:]...)
 			break
 		}
 	}
 
-	// If there are no more users in the namespace, delete the namespace
-	if len(o.NamespaceClients[namespace]) == 0 {
+	// If there are no more references to the namespace, delete the namespace
+	if len(o.NamespaceReferences[namespace]) == 0 {
 		delete(o.Namespaces, namespace)
 	}
 }
