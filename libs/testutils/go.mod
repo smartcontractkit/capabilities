@@ -4,8 +4,8 @@ go 1.23
 
 require (
 	github.com/google/uuid v1.6.0
-	github.com/smartcontractkit/chainlink-common v0.3.0
-	github.com/smartcontractkit/libocr v0.0.0-20241007185508-adbe57025f12
+	github.com/smartcontractkit/chainlink-common v0.2.3-0.20240926094457-238a5afc96ef
+	github.com/smartcontractkit/libocr v0.0.0-20240717100443-f6226e09bee7
 	github.com/stretchr/testify v1.9.0
 )
 

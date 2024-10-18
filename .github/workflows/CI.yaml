@@ -73,8 +73,6 @@ jobs:
         run: ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} build
 
   test:
-    env:
-      DB_URL: postgresql://postgres:postgres@localhost:5432/chainlink_test?sslmode=disable
     needs: affected
     if: ${{fromJson(needs.affected.outputs.nx).run_checks}}
     runs-on: ubuntu-latest
@@ -87,13 +85,7 @@ jobs:
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
         with:
           fetch-depth: 0
-      - name: Setup Postgres
-        uses: ./.github/actions/setup-postgres
-      - name: Setup DB
-        run: go run ./utils/databasesetup/main.go local db preparetest 
-        working-directory: integration_tests
-        env:
-          CL_DATABASE_URL: ${{ env.DB_URL }}
+
       - name: Set up project environment
         uses: ./.github/actions/setup
         with:
@@ -102,8 +94,6 @@ jobs:
           task: "test"
 
       - name: Test ${{ matrix.projects }}
-        env:
-          CL_DATABASE_URL: ${{ env.DB_URL }}
         run: ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} test
 
   tidy-and-generate:
