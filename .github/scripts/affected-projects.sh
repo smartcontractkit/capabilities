@@ -26,8 +26,14 @@ for project in "${projects[@]}"; do
     output+="\"$project\": { \"root\": \"$project_root\", \"go_sum\": \"$project_go_sum\" },"
 done
 
+if [ ${#projects[@]} -eq 0 ]; then
+  output+=" \"run_checks\": false"
+else
+  output+=" \"run_checks\": true"
+fi
+
 # Remove the trailing comma and close the JSON object
-output="${output%,}}"
+output+=" }"
 
 # echo "Affected projects details:"
 echo $output
@@ -46,4 +52,5 @@ echo $output
 #     "root": "project_2_root",
 #     "go_sum": "project_2_root/go.sum"
 #   }
+#   "run_checks": true # or false if no projects are affected
 # }
