@@ -190,9 +190,9 @@ jobs:
           task: "lint"
 
       - name: Golangci Lint (${{ matrix.projects }})
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@971e284b6050e8a5849b72094c50ab08da042db8 # v6.1.1
         with:
-          version: v1.60
+          version: v1.61.0
           working-directory: ${{fromJson(needs.affected.outputs.nx)[matrix.projects].root}}
           args: --timeout=15m --out-format colored-line-number,checkstyle:golangci-lint-report.xml
 
@@ -228,31 +228,10 @@ jobs:
     if: ${{ always() && github.actor != 'dependabot[bot]' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout the repo
-        uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
-        with:
-          fetch-depth: 0 # fetches all history for all tags and branches to provide more metadata for sonar reports
-
-      - name: Download all reports
-        uses: actions/download-artifact@v4.1.8 # v4.1.8
-
-      - name: Set SonarQube Report Paths
-        shell: bash
-        run: |
-          sonarqube_coverage_report_paths=$(find -type f -name 'coverage.txt' -printf "%p,")
-          sonarqube_golangci_report_paths=$(find -type f -name 'golangci-lint-report.xml' -printf "%p,")
-          ARGS=""
-          ARGS="$ARGS -Dsonar.go.coverage.reportPaths=$sonarqube_coverage_report_paths"
-          ARGS="$ARGS -Dsonar.go.golangci-lint.reportPaths=$sonarqube_golangci_report_paths"
-          echo "SONARQUBE_ARGS=$ARGS" >> $GITHUB_ENV
-          
       - name: SonarQube Scan
-        if: always()
-        uses: sonarsource/sonarqube-scan-action@53c3e3207fe4b8d52e2f1ac9d6eb1d2506f626c0 # v2.0.2
+        uses: smartcontractkit/.github/actions/ci-sonarqube-go@5f4a9c9c3407dd499a1ebbc658a45b9beb9bf675 # v0.3.0
         with:
-          args: ${{ env.SONARQUBE_ARGS }}
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-
+          include-lint: "true"
+          sonar-token: ${{ secrets.SONAR_TOKEN }}
+          sonar-host-url: ${{ secrets.SONAR_HOST_URL }}
           

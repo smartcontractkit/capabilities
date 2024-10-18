@@ -9,7 +9,7 @@ import (
 	"github.com/smartcontractkit/libocr/offchainreporting2/types"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3confighelper"
 
-	"github.com/smartcontractkit/capabilities/libs/cli/node"
+	"github.com/smartcontractkit/capabilities/libs/cll/node"
 )
 
 type OCR3Config struct {
