@@ -40,6 +40,7 @@ jobs:
         #     "root": "project_2_root",
         #     "go_sum": "project_2_root/go.sum"
         #   }
+        #   "run_checks": true
         # }
       - name: Init NX and get affected projects
         id: affected
@@ -49,9 +50,10 @@ jobs:
 
   build:
     needs: affected
-    if: ${{ fromJson(needs.affected.outputs.nx).projects != '[]' && fromJson(needs.affected.outputs.nx).projects != '' }}
+    if: ${{fromJson(needs.affected.outputs.nx).run_checks}}
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         projects: ${{fromJson(needs.affected.outputs.nx).projects}}
     steps:
@@ -72,9 +74,10 @@ jobs:
 
   test:
     needs: affected
-    if: ${{ fromJson(needs.affected.outputs.nx).projects != '[]' && fromJson(needs.affected.outputs.nx).projects != '' }}
+    if: ${{fromJson(needs.affected.outputs.nx).run_checks}}
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         projects: ${{fromJson(needs.affected.outputs.nx).projects}}
     steps:
@@ -95,9 +98,10 @@ jobs:
 
   tidy-and-generate:
     needs: affected
-    if: ${{ fromJson(needs.affected.outputs.nx).projects != '[]' && fromJson(needs.affected.outputs.nx).projects != '' }}
+    if: ${{fromJson(needs.affected.outputs.nx).run_checks}}
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         projects: ${{fromJson(needs.affected.outputs.nx).projects}}
     steps:
@@ -125,9 +129,10 @@ jobs:
 
   lint:
     needs: affected
-    if: ${{ fromJson(needs.affected.outputs.nx).projects != '[]' && fromJson(needs.affected.outputs.nx).projects != '' }}
+    if: ${{fromJson(needs.affected.outputs.nx).run_checks}}
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         projects: ${{fromJson(needs.affected.outputs.nx).projects}}
     steps:
@@ -157,8 +162,8 @@ jobs:
     if: always()
     steps:
       - name: All tests ok
-        if: ${{ !(contains(needs.*.result, 'failure')) }}
+        if: ${{ !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
         run: exit 0
-      - name: Some tests failed
-        if: ${{ contains(needs.*.result, 'failure') }}
+      - name: Some tests failed or were cancelled
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
         run: exit 1
