@@ -50,6 +50,6 @@ func (ct *contractTransmitter) Transmit(
 }
 
 // This is unused and overwritten by the OracleFactory
-func (ct *contractTransmitter) FromAccount() (types.Account, error) {
+func (ct *contractTransmitter) FromAccount(_ context.Context) (types.Account, error) {
 	return "", nil
 }
