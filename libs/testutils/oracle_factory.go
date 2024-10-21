@@ -20,10 +20,10 @@ var _ core.OracleFactory = (*oracleFactory)(nil)
 
 type oracleFactory struct {
 	t    *testing.T
-	lggr logger.SugaredLogger
+	lggr logger.Logger
 }
 
-func NewOracleFactory(t *testing.T, lggr logger.SugaredLogger) *oracleFactory {
+func NewOracleFactory(t *testing.T, lggr logger.Logger) *oracleFactory {
 	return &oracleFactory{
 		t:    t,
 		lggr: lggr,
@@ -43,7 +43,7 @@ type oracle struct {
 	config core.OracleArgs
 	wg     *sync.WaitGroup
 	cancel context.CancelFunc
-	lggr   logger.SugaredLogger
+	lggr   logger.Logger
 }
 
 func (o *oracle) Start(ctx context.Context) error {

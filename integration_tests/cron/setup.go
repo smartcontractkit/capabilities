@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/framework"
 	"github.com/smartcontractkit/chainlink/v2/core/logger"
 )
@@ -18,10 +19,11 @@ func setupCronTestDon(ctx context.Context, t *testing.T, lggr logger.SugaredLogg
 
 	workflowDon = createCronTestWorkflowDon(ctx, t, lggr, workflowDonInfo, donContext, targetSink)
 
-	workflowDon.AddStandardCapability("cron-capabilities", cronPath, "")
+	workflowDon.AddStandardCapability("cron-capabilities", cronPath, "\""+cronSchedule+"\"")
 
 	workflowDon.Initialise()
-	workflowDon.Start(ctx, t)
+
+	servicetest.Run(t, workflowDon)
 
 	workflowJob := GetWorkflowJobCron(t, workflowName, workflowOwnerID, cronSchedule)
 

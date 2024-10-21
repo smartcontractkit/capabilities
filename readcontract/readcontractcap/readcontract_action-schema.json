@@ -7,19 +7,34 @@
       "properties": {
         "ContractReaderConfig": {
           "type": "string"
+        },
+        "ReadIdentifier": {
+          "type": "string"
+        },
+        "ContractAddress": {
+          "type": "string"
+        },
+        "ContractName": {
+          "type": "string"
+        },
+        "WithConsensus": {
+          "type": "boolean",
+            "description": "Whether the capability should use consensus to achieve finality"
+        },
+        "PollingInterval": {
+          "type": "string",
+          "description": "Interval at which the contract is polled for new data used to achieve consensus, e.g. 1s, 10s, etc.  It should be at most half the block time, it can be less to improve the responsiveness of the capability at the cost of more rpc calls."
+        },
+        "ObservationsBeforeHeightReset": {
+          "type": "integer",
+          "description": "Number of observations without consensus before the consensus block height is reset to the latest block height"
         }
       },
-      "required": ["ContractReaderConfig"]
+      "required": ["ContractReaderConfig", "ReadIdentifier", "ContractAddress", "ContractName"]
     },
     "Input": {
       "type": "object",
       "properties": {
-        "ReadIdentifier": {
-          "type": "string"
-        },
-        "Address": {
-          "type": "string"
-        },
         "ConfidenceLevel": {
           "type": "string"
         },
