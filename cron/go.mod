@@ -8,7 +8,7 @@ require (
 	github.com/hashicorp/go-plugin v1.6.2-0.20240829161738-06afb6d7ae99
 	github.com/jonboulle/clockwork v0.4.0
 	github.com/prometheus/client_golang v1.17.0
-	github.com/smartcontractkit/chainlink-common v0.3.1-0.20241016123151-87939adac36d
+	github.com/smartcontractkit/chainlink-common v0.3.1-0.20241021103500-39a6e78c0286
 	github.com/stretchr/testify v1.9.0
 )
 
