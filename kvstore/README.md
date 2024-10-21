@@ -40,5 +40,4 @@ flowchart TB
 		foo: 'bar'
 		bar: nil
 	} }"-->user
-
 ```
