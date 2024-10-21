@@ -19,9 +19,28 @@ type Action struct {
 }
 
 type Config struct {
+	// ContractAddress corresponds to the JSON schema field "ContractAddress".
+	ContractAddress string `json:"ContractAddress" yaml:"ContractAddress" mapstructure:"ContractAddress"`
+
+	// ContractName corresponds to the JSON schema field "ContractName".
+	ContractName string `json:"ContractName" yaml:"ContractName" mapstructure:"ContractName"`
+
 	// ContractReaderConfig corresponds to the JSON schema field
 	// "ContractReaderConfig".
 	ContractReaderConfig string `json:"ContractReaderConfig" yaml:"ContractReaderConfig" mapstructure:"ContractReaderConfig"`
+
+	// Number of observations without consensus before the consensus block height is
+	// reset to the latest block height
+	ObservationsBeforeHeightReset *int64 `json:"ObservationsBeforeHeightReset,omitempty" yaml:"ObservationsBeforeHeightReset,omitempty" mapstructure:"ObservationsBeforeHeightReset,omitempty"`
+
+	// Interval at which the contract is polled for new data used to achieve consensus
+	PollingInterval *string `json:"PollingInterval,omitempty" yaml:"PollingInterval,omitempty" mapstructure:"PollingInterval,omitempty"`
+
+	// ReadIdentifier corresponds to the JSON schema field "ReadIdentifier".
+	ReadIdentifier string `json:"ReadIdentifier" yaml:"ReadIdentifier" mapstructure:"ReadIdentifier"`
+
+	// Whether the capability should use consensus to achieve finality
+	WithConsensus *bool `json:"WithConsensus,omitempty" yaml:"WithConsensus,omitempty" mapstructure:"WithConsensus,omitempty"`
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
@@ -30,8 +49,17 @@ func (j *Config) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &raw); err != nil {
 		return err
 	}
+	if _, ok := raw["ContractAddress"]; raw != nil && !ok {
+		return fmt.Errorf("field ContractAddress in Config: required")
+	}
+	if _, ok := raw["ContractName"]; raw != nil && !ok {
+		return fmt.Errorf("field ContractName in Config: required")
+	}
 	if _, ok := raw["ContractReaderConfig"]; raw != nil && !ok {
 		return fmt.Errorf("field ContractReaderConfig in Config: required")
+	}
+	if _, ok := raw["ReadIdentifier"]; raw != nil && !ok {
+		return fmt.Errorf("field ReadIdentifier in Config: required")
 	}
 	type Plain Config
 	var plain Plain
@@ -43,17 +71,11 @@ func (j *Config) UnmarshalJSON(b []byte) error {
 }
 
 type Input struct {
-	// Address corresponds to the JSON schema field "Address".
-	Address string `json:"Address" yaml:"Address" mapstructure:"Address"`
-
 	// ConfidenceLevel corresponds to the JSON schema field "ConfidenceLevel".
 	ConfidenceLevel string `json:"ConfidenceLevel" yaml:"ConfidenceLevel" mapstructure:"ConfidenceLevel"`
 
 	// Params corresponds to the JSON schema field "Params".
 	Params InputParams `json:"Params" yaml:"Params" mapstructure:"Params"`
-
-	// ReadIdentifier corresponds to the JSON schema field "ReadIdentifier".
-	ReadIdentifier string `json:"ReadIdentifier" yaml:"ReadIdentifier" mapstructure:"ReadIdentifier"`
 }
 
 type InputParams map[string]interface{}
@@ -64,17 +86,11 @@ func (j *Input) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &raw); err != nil {
 		return err
 	}
-	if _, ok := raw["Address"]; raw != nil && !ok {
-		return fmt.Errorf("field Address in Input: required")
-	}
 	if _, ok := raw["ConfidenceLevel"]; raw != nil && !ok {
 		return fmt.Errorf("field ConfidenceLevel in Input: required")
 	}
 	if _, ok := raw["Params"]; raw != nil && !ok {
 		return fmt.Errorf("field Params in Input: required")
-	}
-	if _, ok := raw["ReadIdentifier"]; raw != nil && !ok {
-		return fmt.Errorf("field ReadIdentifier in Input: required")
 	}
 	type Plain Input
 	var plain Plain
