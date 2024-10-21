@@ -55,6 +55,7 @@ func (o *oracle) Start(ctx context.Context) error {
 	}
 
 	reportingPlugin, _, err := o.config.ReportingPluginFactoryService.NewReportingPlugin(
+		ctx,
 		config,
 	)
 	if err != nil {
@@ -94,7 +95,7 @@ func (o *oracle) Start(ctx context.Context) error {
 					Observation: observation,
 					Observer:    commontypes.OracleID(1),
 				}
-				if err = reportingPlugin.ValidateObservation(outcomeCtx, query, attributedObservation); err != nil {
+				if err = reportingPlugin.ValidateObservation(ctx, outcomeCtx, query, attributedObservation); err != nil {
 					o.lggr.Errorf("failed to validate observation: %v", err)
 					return
 				}
@@ -110,7 +111,7 @@ func (o *oracle) Start(ctx context.Context) error {
 					}
 				}
 
-				newOutcome, err := reportingPlugin.Outcome(outcomeCtx, query, attributedObservations)
+				newOutcome, err := reportingPlugin.Outcome(ctx, outcomeCtx, query, attributedObservations)
 				if err != nil {
 					o.lggr.Errorf("failed to generate outcome: %v", err)
 					return
@@ -118,17 +119,17 @@ func (o *oracle) Start(ctx context.Context) error {
 
 				// Reports(seqNr uint64, outcome ocr3types.Outcome
 
-				reportsWithInfo, err := reportingPlugin.Reports(outcomeCtx.SeqNr, newOutcome)
+				reportsWithInfo, err := reportingPlugin.Reports(ctx, outcomeCtx.SeqNr, newOutcome)
 				if err != nil {
 					o.lggr.Errorf("failed to generate reports: %v", err)
 					return
 				}
 
-				for _, reportWithInfo := range reportsWithInfo {
+				for _, reportPlus := range reportsWithInfo {
 					shouldAccept, err := reportingPlugin.ShouldAcceptAttestedReport(
 						ctx,
 						outcomeCtx.SeqNr,
-						reportWithInfo,
+						reportPlus.ReportWithInfo,
 					)
 					if err != nil {
 						o.lggr.Errorf("failed when checking if should accept attested report: %v", err)
@@ -142,7 +143,7 @@ func (o *oracle) Start(ctx context.Context) error {
 					shouldTransmit, err := reportingPlugin.ShouldTransmitAcceptedReport(
 						ctx,
 						outcomeCtx.SeqNr,
-						reportWithInfo,
+						reportPlus.ReportWithInfo,
 					)
 
 					if err != nil {
@@ -158,7 +159,7 @@ func (o *oracle) Start(ctx context.Context) error {
 						ctx,
 						types.ConfigDigest{},
 						outcomeCtx.SeqNr,
-						reportWithInfo,
+						reportPlus.ReportWithInfo,
 						[]types.AttributedOnchainSignature{},
 					)
 					if err != nil {
