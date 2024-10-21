@@ -93,12 +93,15 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		"WorkflowExecutionID", rawRequest.Metadata.WorkflowExecutionID,
 	)
 
-	r := kvrequests.NewRequest(kvrequests.RequestParams{
-		WorkflowExecutionID: rawRequest.Metadata.WorkflowExecutionID,
-		ReferenceID:         rawRequest.Metadata.ReferenceID,
-		Type:                kvrequests.RequestKindWrite,
-		KVPairs:             kvWriteReport.keyValuePairs,
+	r, err := kvrequests.NewRequest(kvrequests.RequestParams{
+		KVPairs:   kvWriteReport.keyValuePairs,
+		Namespace: rawRequest.Metadata.WorkflowOwner,
+		Reference: fmt.Sprintf("%s_%s", rawRequest.Metadata.WorkflowExecutionID, rawRequest.Metadata.ReferenceID),
+		Type:      kvrequests.RequestTypeWrite,
 	})
+	if err != nil {
+		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to create write request: %v", err)
+	}
 	err = c.requestsStore.Add(ctx, r)
 	if err != nil {
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to add write request: %v", err)
@@ -138,13 +141,26 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 	}
 }
 
-func (c *capability) RegisterToWorkflow(ctx context.Context, rawRequest capabilities.RegisterToWorkflowRequest) error {
-	c.logger.Debugw("Registering to workflow", "WorkflowID", rawRequest.Metadata.WorkflowID)
-
-	return nil
+func (c *capability) RegisterToWorkflow(ctx context.Context, request capabilities.RegisterToWorkflowRequest) error {
+	r, err := kvrequests.NewRequest(kvrequests.RequestParams{
+		Namespace: request.Metadata.WorkflowOwner,
+		Type:      kvrequests.RequestTypeAddNamespaceReference,
+		Reference: request.Metadata.WorkflowID + "_target",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create add namespace request: %v", err)
+	}
+	return c.requestsStore.Add(ctx, r)
 }
 
-func (c *capability) UnregisterFromWorkflow(ctx context.Context, rawRequest capabilities.UnregisterFromWorkflowRequest) error {
-	c.logger.Debugw("Unregistering from workflow", "WorkflowID", rawRequest.Metadata.WorkflowID)
-	return nil
+func (c *capability) UnregisterFromWorkflow(ctx context.Context, request capabilities.UnregisterFromWorkflowRequest) error {
+	r, err := kvrequests.NewRequest(kvrequests.RequestParams{
+		Namespace: request.Metadata.WorkflowOwner,
+		Type:      kvrequests.RequestTypeRemoveNamespaceReference,
+		Reference: request.Metadata.WorkflowID + "_target",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create remove namespace request: %v", err)
+	}
+	return c.requestsStore.Add(ctx, r)
 }

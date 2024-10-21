@@ -3,6 +3,8 @@ name: CI
 on: [push]
 
 env:
+  # Ensure that a cached go version is used:
+  # https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md#go
   GO_VERSION: 1.23
 
 jobs:
@@ -14,10 +16,8 @@ jobs:
       - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
         with:
           fetch-depth: 0
-      - name: Use Node.js
-        uses: actions/setup-node@0a44ba7841725637a19e28fa30b79a866c81b0a6 # v4.0.4
-        with:
-          node-version: "20"
+      # There's no need to setup Node as it is pre-installed:
+      # https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2204-Readme.md
       - name: Cache NX
         uses: actions/cache@2cdf405574d6ef1f33a1d12acccd3ae82f47b3f2 # v4.1.0
         with:
@@ -40,6 +40,7 @@ jobs:
         #     "root": "project_2_root",
         #     "go_sum": "project_2_root/go.sum"
         #   }
+        #   "run_checks": true
         # }
       - name: Init NX and get affected projects
         id: affected
@@ -49,9 +50,10 @@ jobs:
 
   build:
     needs: affected
-    if: ${{ fromJson(needs.affected.outputs.nx).projects != '[]' && fromJson(needs.affected.outputs.nx).projects != '' }}
+    if: ${{fromJson(needs.affected.outputs.nx).run_checks}}
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         projects: ${{fromJson(needs.affected.outputs.nx).projects}}
     steps:
@@ -72,9 +74,10 @@ jobs:
 
   test:
     needs: affected
-    if: ${{ fromJson(needs.affected.outputs.nx).projects != '[]' && fromJson(needs.affected.outputs.nx).projects != '' }}
+    if: ${{fromJson(needs.affected.outputs.nx).run_checks}}
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         projects: ${{fromJson(needs.affected.outputs.nx).projects}}
     steps:
@@ -95,9 +98,10 @@ jobs:
 
   tidy-and-generate:
     needs: affected
-    if: ${{ fromJson(needs.affected.outputs.nx).projects != '[]' && fromJson(needs.affected.outputs.nx).projects != '' }}
+    if: ${{fromJson(needs.affected.outputs.nx).run_checks}}
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         projects: ${{fromJson(needs.affected.outputs.nx).projects}}
     steps:
@@ -125,9 +129,10 @@ jobs:
 
   lint:
     needs: affected
-    if: ${{ fromJson(needs.affected.outputs.nx).projects != '[]' && fromJson(needs.affected.outputs.nx).projects != '' }}
+    if: ${{fromJson(needs.affected.outputs.nx).run_checks}}
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         projects: ${{fromJson(needs.affected.outputs.nx).projects}}
     steps:
@@ -157,8 +162,8 @@ jobs:
     if: always()
     steps:
       - name: All tests ok
-        if: ${{ !(contains(needs.*.result, 'failure')) }}
+        if: ${{ !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
         run: exit 0
-      - name: Some tests failed
-        if: ${{ contains(needs.*.result, 'failure') }}
+      - name: Some tests failed or were cancelled
+        if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
         run: exit 1

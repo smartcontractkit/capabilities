@@ -71,13 +71,13 @@ func (cs *capabilitiesServer) Infos(ctx context.Context) ([]capabilities.Capabil
 
 func (cs *capabilitiesServer) Initialise(
 	ctx context.Context,
-	config string,
-	telemetryService core.TelemetryService,
-	store core.KeyValueStore,
+	_ string,
+	_ core.TelemetryService,
+	_ core.KeyValueStore,
 	capabilityRegistry core.CapabilitiesRegistry,
-	errorLog core.ErrorLog,
-	pipelineRunner core.PipelineRunnerService,
-	relayerSet core.RelayerSet,
+	_ core.ErrorLog,
+	_ core.PipelineRunnerService,
+	_ core.RelayerSet,
 	oracleFactory core.OracleFactory,
 ) error {
 	cs.s.Logger.Debugf("Initialising %s", cs.name)
