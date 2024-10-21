@@ -5,81 +5,91 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/capabilities/libs/testutils"
 )
 
+var kvPairs = map[string][]byte{"foo": []byte("bar"), "baz": []byte("bad")}
+
 func TestRequestsStore_Add(t *testing.T) {
 	lggr := testutils.NewLogger(t)
 	store, err := New(lggr)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
-	req := &Request{ReferenceID: "req1", Status: RequestStatusPending}
+	req, err := NewRequest(RequestParams{Namespace: "owner1", Type: RequestTypeRemoveNamespaceReference, Reference: "workflow_id"})
+	require.NoError(t, err)
 	err = store.Add(context.Background(), req)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// Try adding the same request again
 	err = store.Add(context.Background(), req)
 	assert.Error(t, err)
-	assert.Equal(t, "request with ID write_req1_ already exists", err.Error())
+	assert.Equal(t, "request with ID remove_namespace_reference_owner1_workflow_id already exists", err.Error())
 }
 
 func TestRequestsStore_Update(t *testing.T) {
 	lggr := testutils.NewLogger(t)
 	store, err := New(lggr)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
-	req := &Request{ReferenceID: "req1", Status: RequestStatusPending}
+	req, err := NewRequest(RequestParams{Namespace: "owner1", Type: RequestTypeWrite, KVPairs: kvPairs, Reference: "req1"})
+	require.NoError(t, err)
 	err = store.Add(context.Background(), req)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
-	updatedReq := &Request{ReferenceID: "req1", Status: RequestStatusCompleted}
+	updatedReq, err := NewRequest(RequestParams{Namespace: "owner1", Type: RequestTypeWrite, KVPairs: kvPairs, Reference: "req1"})
+	require.NoError(t, err)
 	err = store.Update(context.Background(), updatedReq)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// Try updating a non-existent request
-	nonExistentReq := &Request{ReferenceID: "req2", Status: RequestStatusCompleted}
+	nonExistentReq, err := NewRequest(RequestParams{Namespace: "owner1", Type: RequestTypeWrite, KVPairs: kvPairs, Reference: "req2"})
+	require.NoError(t, err)
 	err = store.Update(context.Background(), nonExistentReq)
 	assert.Error(t, err)
-	assert.Equal(t, "request with ID write_req2_ does not exist", err.Error())
+	assert.Equal(t, "request with ID write_owner1_req2 does not exist", err.Error())
 }
 
 func TestRequestsStore_Get(t *testing.T) {
 	lggr := testutils.NewLogger(t)
 	store, err := New(lggr)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
-	req1 := &Request{ReferenceID: "req1", Status: RequestStatusPending}
-	req2 := &Request{ReferenceID: "req2", Status: RequestStatusCompleted}
-
-	assert.NoError(t, store.Add(context.Background(), req1))
-	assert.NoError(t, store.Add(context.Background(), req2))
+	req1, err := NewRequest(RequestParams{Namespace: "owner1", Type: RequestTypeWrite, Reference: "req1", KVPairs: kvPairs})
+	require.NoError(t, err)
+	req2, err := NewRequest(RequestParams{Namespace: "owner1", Type: RequestTypeWrite, Reference: "req2", KVPairs: kvPairs})
+	require.NoError(t, err)
+	req2.Status = RequestStatusCompleted
+	require.NoError(t, store.Add(context.Background(), req1))
+	require.NoError(t, store.Add(context.Background(), req2))
 
 	// Get all requests
 	requests, err := store.Get(context.Background(), nil)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Len(t, requests, 2)
 
 	// Get requests with specific status
-	filters := &Filters{Status: RequestStatusPending}
+	filters := &Filters{Status: RequestStatusCompleted}
 	requests, err = store.Get(context.Background(), filters)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Len(t, requests, 1)
-	assert.Equal(t, RequestID("write_req1_"), requests[0].ID())
+	assert.Equal(t, RequestID("write_owner1_req2"), requests[0].ID())
 }
 
 func TestRequestsStore_GetByID(t *testing.T) {
 	lggr := testutils.NewLogger(t)
 	store, err := New(lggr)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
-	req := NewRequest(RequestParams{
-		Type:                RequestKindWrite,
-		ReferenceID:         "req1",
-		WorkflowExecutionID: "workflow456",
-		KVPairs:             map[string][]byte{"foo": []byte("bar"), "baz": []byte("bad")},
+	req, err := NewRequest(RequestParams{
+		Namespace: "owner1",
+		Type:      RequestTypeWrite,
+		Reference: "req1_workflow456",
+		KVPairs:   kvPairs,
 	})
-	assert.NoError(t, store.Add(context.Background(), req))
+	require.NoError(t, err)
+	require.NoError(t, store.Add(context.Background(), req))
 
 	retrievedReq := store.GetByID(context.Background(), req.ID())
 	assert.NotNil(t, retrievedReq)
@@ -93,10 +103,11 @@ func TestRequestsStore_GetByID(t *testing.T) {
 func TestRequestsStore_Remove(t *testing.T) {
 	lggr := testutils.NewLogger(t)
 	store, err := New(lggr)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
-	req := &Request{ReferenceID: "req1", Status: RequestStatusPending}
-	assert.NoError(t, store.Add(context.Background(), req))
+	req, err := NewRequest(RequestParams{Namespace: "owner1", Type: RequestTypeRead, Reference: "req1", KVPairs: kvPairs})
+	require.NoError(t, err)
+	require.NoError(t, store.Add(context.Background(), req))
 
 	store.Remove(context.Background(), "req1")
 	retrievedReq := store.GetByID(context.Background(), "req1")
