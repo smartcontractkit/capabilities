@@ -103,10 +103,7 @@ func (rp *reportingPlugin) Outcome(
 	var outcome Outcome
 	if outctx.SeqNr == 1 {
 		rp.logger.Debugw("First outcome")
-		outcome = Outcome{
-			Values:            make(map[string][]byte),
-			CompletedRequests: make([]kvrequests.Request, 0),
-		}
+		outcome = NewOutcome()
 	} else {
 		if err := json.Unmarshal(outctx.PreviousOutcome, &outcome); err != nil {
 			return nil, fmt.Errorf("could not unmarshal PreviousOutcome: %w", err)
@@ -137,7 +134,7 @@ func (rp *reportingPlugin) Outcome(
 		"processedObservationsLen", len(processedObservations.observations),
 	)
 
-	for _, processedObservation := range processedObservations.observations {
+	for _, processedObservation := range processedObservations.GetOrdered() {
 		if processedObservation.observationCount <= rp.config.F {
 			rp.logger.Debugw("Not enough observations",
 				"requestID", processedObservation.request.ID(),
@@ -148,30 +145,28 @@ func (rp *reportingPlugin) Outcome(
 		}
 
 		switch processedObservation.request.Type {
-		case kvrequests.RequestKindWrite:
-			for key, value := range processedObservation.request.KVPairs {
-				outcome.Values[key] = value
-			}
-			processedObservation.request.Status = kvrequests.RequestStatusCompleted
-			outcome.CompletedRequests = append(outcome.CompletedRequests, processedObservation.request)
-		case kvrequests.RequestKindRead:
-			keysWithValues := make(map[string][]byte)
-			for key := range processedObservation.request.KVPairs {
-				val, ok := outcome.Values[key]
-				if !ok {
-					keysWithValues[key] = []byte("")
-				} else {
-					keysWithValues[key] = val
-				}
-			}
-
-			rp.logger.Debugw("Read request",
-				"request", processedObservation.request,
+		case kvrequests.RequestTypeAddNamespaceReference:
+			outcome.AddNamespaceReferences(
+				processedObservation.request.Namespace,
+				processedObservation.request.Reference,
 			)
-			processedObservation.request.KVPairs = keysWithValues
-			processedObservation.request.Status = kvrequests.RequestStatusCompleted
-			outcome.CompletedRequests = append(outcome.CompletedRequests, processedObservation.request)
+		case kvrequests.RequestTypeRemoveNamespaceReference:
+			outcome.RemoveNamespaceReference(processedObservation.request.Namespace, processedObservation.request.Reference)
+		case kvrequests.RequestTypeWrite:
+			outcome.Write(processedObservation.request.Namespace, processedObservation.request.KVPairs)
+		case kvrequests.RequestTypeRead:
+			processedObservation.request.KVPairs = outcome.Read(
+				processedObservation.request.Namespace,
+				processedObservation.request.KVPairs,
+			)
+		case kvrequests.RequestTypeUnspecified:
+			rp.logger.Warnw("Unspecified request",
+				"requestID", processedObservation.request.ID(),
+			)
 		}
+
+		processedObservation.request.Status = kvrequests.RequestStatusCompleted
+		outcome.CompletedRequests = append(outcome.CompletedRequests, processedObservation.request)
 	}
 
 	rp.logger.Debugw("Outcome complete",

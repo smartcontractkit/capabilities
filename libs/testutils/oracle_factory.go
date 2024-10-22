@@ -117,19 +117,17 @@ func (o *oracle) Start(ctx context.Context) error {
 					return
 				}
 
-				// Reports(seqNr uint64, outcome ocr3types.Outcome
-
-				reportsWithInfo, err := reportingPlugin.Reports(ctx, outcomeCtx.SeqNr, newOutcome)
+				reports, err := reportingPlugin.Reports(ctx, outcomeCtx.SeqNr, newOutcome)
 				if err != nil {
 					o.lggr.Errorf("failed to generate reports: %v", err)
 					return
 				}
 
-				for _, reportPlus := range reportsWithInfo {
+				for _, report := range reports {
 					shouldAccept, err := reportingPlugin.ShouldAcceptAttestedReport(
 						ctx,
 						outcomeCtx.SeqNr,
-						reportPlus.ReportWithInfo,
+						report.ReportWithInfo,
 					)
 					if err != nil {
 						o.lggr.Errorf("failed when checking if should accept attested report: %v", err)
@@ -143,7 +141,7 @@ func (o *oracle) Start(ctx context.Context) error {
 					shouldTransmit, err := reportingPlugin.ShouldTransmitAcceptedReport(
 						ctx,
 						outcomeCtx.SeqNr,
-						reportPlus.ReportWithInfo,
+						report.ReportWithInfo,
 					)
 
 					if err != nil {
@@ -159,7 +157,7 @@ func (o *oracle) Start(ctx context.Context) error {
 						ctx,
 						types.ConfigDigest{},
 						outcomeCtx.SeqNr,
-						reportPlus.ReportWithInfo,
+						report.ReportWithInfo,
 						[]types.AttributedOnchainSignature{},
 					)
 					if err != nil {

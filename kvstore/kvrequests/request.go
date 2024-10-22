@@ -10,13 +10,27 @@ import (
 type RequestType int
 
 const (
-	RequestKindWrite RequestType = iota
-	RequestKindRead
+	RequestTypeUnspecified RequestType = iota
+	RequestTypeWrite
+	RequestTypeRead
+	RequestTypeAddNamespaceReference
+	RequestTypeRemoveNamespaceReference
 )
 
-var requestKindToString = map[RequestType]string{
-	RequestKindWrite: "write",
-	RequestKindRead:  "read",
+func (r RequestType) String() string {
+	switch r {
+	case RequestTypeUnspecified:
+		return "unspecified"
+	case RequestTypeWrite:
+		return "write"
+	case RequestTypeRead:
+		return "read"
+	case RequestTypeAddNamespaceReference:
+		return "add_namespace_reference"
+	case RequestTypeRemoveNamespaceReference:
+		return "remove_namespace_reference"
+	}
+	return "unspecified"
 }
 
 type RequestStatus int
@@ -29,15 +43,14 @@ const (
 
 func (r RequestStatus) String() string {
 	switch r {
+	case RequestStatusUnspecified:
+		return "unspecified"
 	case RequestStatusPending:
 		return "pending"
 	case RequestStatusCompleted:
 		return "completed"
-	case RequestStatusUnspecified:
-		return "unspecified"
-	default:
-		return "unspecified"
 	}
+	return "unspecified"
 }
 
 type KVPairs map[string][]byte
@@ -66,32 +79,50 @@ func (k KVPairs) String() string {
 type RequestID string
 
 type Request struct {
-	Type                RequestType
-	ReferenceID         string
-	WorkflowExecutionID string
-	KVPairs             KVPairs
-	Status              RequestStatus
+	KVPairs   KVPairs
+	Namespace string
+	Reference string
+	Status    RequestStatus
+	Type      RequestType
 }
 
 type RequestParams struct {
-	Type                RequestType
-	ReferenceID         string
-	WorkflowExecutionID string
-	KVPairs             KVPairs
+	KVPairs   KVPairs
+	Namespace string
+	// Reference is a unique identifier for the request within the namespace
+	// For RequestTypeWrite and RequestTypeRead, it should be workflow execution ID + reference ID
+	// For RequestTypeAddNamespaceReference and RequestTypeRemoveNamespaceReference, it is a workflow ID
+	Reference string
+	Type      RequestType
 }
 
-func NewRequest(params RequestParams) *Request {
-	return &Request{
-		Type:                params.Type,
-		ReferenceID:         params.ReferenceID,
-		WorkflowExecutionID: params.WorkflowExecutionID,
-		KVPairs:             params.KVPairs,
-		Status:              RequestStatusPending,
+func NewRequest(params RequestParams) (*Request, error) {
+	if params.Namespace == "" {
+		return nil, fmt.Errorf("namespace is required")
 	}
+	if params.Type == RequestTypeUnspecified {
+		return nil, fmt.Errorf("request type is required")
+	}
+	if params.Reference == "" {
+		return nil, fmt.Errorf("reference is required")
+	}
+	if params.Type == RequestTypeWrite || params.Type == RequestTypeRead {
+		if len(params.KVPairs) == 0 {
+			return nil, fmt.Errorf("key-value pairs are required for read and write requests")
+		}
+	}
+
+	return &Request{
+		KVPairs:   params.KVPairs,
+		Namespace: params.Namespace,
+		Reference: params.Reference,
+		Status:    RequestStatusPending,
+		Type:      params.Type,
+	}, nil
 }
 
 func (r *Request) ID() RequestID {
-	return RequestID(fmt.Sprintf("%s_%s_%s", requestKindToString[r.Type], r.ReferenceID, r.WorkflowExecutionID))
+	return RequestID(fmt.Sprintf("%s_%s_%s", r.Type, r.Namespace, r.Reference))
 }
 
 func (r *Request) Marshal() ([]byte, error) {
@@ -103,15 +134,7 @@ func (r Request) String() string {
 }
 
 func (r Request) Equal(other Request) bool {
-	if r.Type != other.Type {
-		return false
-	}
-
-	if r.ReferenceID != other.ReferenceID {
-		return false
-	}
-
-	if r.WorkflowExecutionID != other.WorkflowExecutionID {
+	if r.ID() != other.ID() {
 		return false
 	}
 
