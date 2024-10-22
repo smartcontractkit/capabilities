@@ -11,6 +11,7 @@ jobs:
   affected:
     runs-on: ubuntu-latest
     outputs:
+      nxexcludeintegration: ${{ steps.affected.outputs.affectedex }}
       nx: ${{ steps.affected.outputs.affected }}
     steps:
       - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
@@ -47,7 +48,8 @@ jobs:
         run: |
           npx nx@19.8.2 init
           echo "affected=$(./.github/scripts/affected-projects.sh ${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }})" >> $GITHUB_OUTPUT
-
+          echo "affectedex=$(./.github/scripts/affected-projects.sh ${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }} exclude-integration-test)" >> $GITHUB_OUTPUT
+          
   build:
     needs: affected
     if: ${{fromJson(needs.affected.outputs.nx).run_checks}}
@@ -74,27 +76,54 @@ jobs:
 
   test:
     needs: affected
-    if: ${{fromJson(needs.affected.outputs.nx).run_checks}}
+    if: ${{fromJson(needs.affected.outputs.nxexcludeintegration).run_checks}}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        projects: ${{fromJson(needs.affected.outputs.nx).projects}}
+        projects: ${{fromJson(needs.affected.outputs.nxexcludeintegration).projects}}
     steps:
       - name: Checkout the repo
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
         with:
           fetch-depth: 0
-
       - name: Set up project environment
         uses: ./.github/actions/setup
         with:
           project: ${{ matrix.projects }}
-          go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
+          go-module-file: ${{ fromJson(needs.affected.outputs.nxexcludeintegration)[matrix.projects].go_sum }}
           task: "test"
-
       - name: Test ${{ matrix.projects }}
         run: ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} test
+
+  integrationtest:
+    env:
+      DB_URL: postgresql://postgres:postgres@localhost:5432/chainlink_test?sslmode=disable
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
+        with:
+          fetch-depth: 0
+      - name: Setup Postgres
+        uses: ./.github/actions/setup-postgres
+      - name: Set up project environment
+        uses: ./.github/actions/setup
+        with:
+          project: integration_tests
+          go-module-file: ./integration_tests
+          task: "test"
+      - name: Setup DB
+        run: go run github.com/smartcontractkit/chainlink/v2 local db preparetest
+        working-directory: integration_tests
+        env:
+          CL_DATABASE_URL: ${{ env.DB_URL }}
+      - name: run integration_tests 
+        env:
+          CL_DATABASE_URL: ${{ env.DB_URL }}
+        run: ./.github/scripts/nx-run-if-exists.sh integration_tests test
 
   tidy-and-generate:
     needs: affected
@@ -151,7 +180,7 @@ jobs:
         with:
           version: v1.60
           working-directory: ${{fromJson(needs.affected.outputs.nx)[matrix.projects].root}}
-
+          args: "--timeout 10m"
   checks:
     runs-on: ubuntu-latest
     needs:

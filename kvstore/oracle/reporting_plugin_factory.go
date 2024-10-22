@@ -1,6 +1,8 @@
 package oracle
 
 import (
+	"context"
+
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -26,7 +28,7 @@ func NewReportingPluginFactory(
 }
 
 func (rpf *reportingPluginFactory) NewReportingPlugin(
-	config ocr3types.ReportingPluginConfig,
+	_ context.Context, config ocr3types.ReportingPluginConfig,
 ) (
 	ocr3types.ReportingPlugin[[]byte],
 	ocr3types.ReportingPluginInfo,

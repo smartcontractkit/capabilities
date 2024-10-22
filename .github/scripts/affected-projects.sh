@@ -7,7 +7,20 @@ if [ -z "$1" ]; then
 fi
 
 base=$1
-affected_projects=$(./nx show projects --affected --json --base=$base)
+exclude_integration_test=false
+
+# Check for the exclude-integration-test flag
+if [ "$2" == "exclude-integration-test" ]; then
+  exclude_integration_test=true
+fi
+
+# Determine the affected projects command based on the flag
+if [ "$exclude_integration_test" = true ]; then
+  affected_projects=$(./nx show projects --affected --json --base=$base | jq 'del(.[] | select(. == "integration_tests"))')
+else
+  affected_projects=$(./nx show projects --affected --json --base=$base)
+fi
+
 # echo "Affected projects:"
 # echo "$affected_projects" | jq .
 
