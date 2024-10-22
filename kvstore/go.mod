@@ -5,8 +5,8 @@ go 1.23
 require (
 	github.com/hashicorp/go-plugin v1.6.2-0.20240829161738-06afb6d7ae99
 	github.com/smartcontractkit/capabilities/libs/testutils v0.0.0-unpublished
-	github.com/smartcontractkit/chainlink-common v0.2.3-0.20241008170407-8bfcea33a98d
-	github.com/smartcontractkit/libocr v0.0.0-20240717170647-ae747ca5b812
+	github.com/smartcontractkit/chainlink-common v0.3.0
+	github.com/smartcontractkit/libocr v0.0.0-20241007185508-adbe57025f12
 	github.com/stretchr/testify v1.9.0
 	google.golang.org/protobuf v1.34.2
 )
