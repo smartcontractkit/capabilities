@@ -28,7 +28,8 @@ func NewReportingPluginFactory(
 }
 
 func (rpf *reportingPluginFactory) NewReportingPlugin(
-	_ context.Context, config ocr3types.ReportingPluginConfig,
+	_ context.Context,
+	config ocr3types.ReportingPluginConfig,
 ) (
 	ocr3types.ReportingPlugin[[]byte],
 	ocr3types.ReportingPluginInfo,

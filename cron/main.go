@@ -91,14 +91,14 @@ func (cs *CapabilitiesService) Infos(ctx context.Context) ([]capabilities.Capabi
 
 func (cs *CapabilitiesService) Initialise(
 	ctx context.Context,
-	config string,
-	telemetryService core.TelemetryService,
-	store core.KeyValueStore,
+	_ string,
+	_ core.TelemetryService,
+	_ core.KeyValueStore,
 	capabilityRegistry core.CapabilitiesRegistry,
-	errorLog core.ErrorLog,
-	pipelineRunner core.PipelineRunnerService,
-	relayerSet core.RelayerSet,
-	oracleFactory core.OracleFactory,
+	_ core.ErrorLog,
+	_ core.PipelineRunnerService,
+	_ core.RelayerSet,
+	_ core.OracleFactory,
 ) error {
 	cs.s.Logger.Debugf("Initialising %s", serviceName)
 	cs.trigger = trigger.New(trigger.Params{
