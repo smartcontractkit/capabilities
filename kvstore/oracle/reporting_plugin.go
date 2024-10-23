@@ -189,7 +189,6 @@ func (rp *reportingPlugin) Reports(ctx context.Context, seqNr uint64, outcome oc
 		if err != nil {
 			return nil, fmt.Errorf("could not marshall request: %w", err)
 		}
-
 		reports = append(reports, ocr3types.ReportPlus[[]byte]{
 			ReportWithInfo: ocr3types.ReportWithInfo[[]byte]{
 				Report: requestBytes,
@@ -198,7 +197,7 @@ func (rp *reportingPlugin) Reports(ctx context.Context, seqNr uint64, outcome oc
 	}
 
 	rp.logger.Debugw("Reports complete",
-		"reportWithInfosLen", len(reports),
+		"reports", len(reports),
 	)
 	return reports, nil
 }
