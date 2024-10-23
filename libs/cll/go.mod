@@ -1,4 +1,4 @@
-module github.com/smartcontractkit/capabilities/libs/cli
+module github.com/smartcontractkit/capabilities/libs/cll
 
 go 1.23
 
