@@ -9,8 +9,8 @@ import (
 
 	"github.com/urfave/cli/v2"
 
-	"github.com/smartcontractkit/capabilities/libs/cli/chain"
-	"github.com/smartcontractkit/capabilities/libs/cli/utils"
+	"github.com/smartcontractkit/capabilities/libs/cll/chain"
+	"github.com/smartcontractkit/capabilities/libs/cll/utils"
 )
 
 func deployContract() error {

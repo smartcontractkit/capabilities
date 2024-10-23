@@ -7,11 +7,11 @@ import (
 
 	"github.com/urfave/cli/v2"
 
-	"github.com/smartcontractkit/capabilities/libs/cli/chain"
-	"github.com/smartcontractkit/capabilities/libs/cli/constants"
-	"github.com/smartcontractkit/capabilities/libs/cli/evmcontracts"
-	"github.com/smartcontractkit/capabilities/libs/cli/node"
-	"github.com/smartcontractkit/capabilities/libs/cli/utils"
+	"github.com/smartcontractkit/capabilities/libs/cll/chain"
+	"github.com/smartcontractkit/capabilities/libs/cll/constants"
+	"github.com/smartcontractkit/capabilities/libs/cll/evmcontracts"
+	"github.com/smartcontractkit/capabilities/libs/cll/node"
+	"github.com/smartcontractkit/capabilities/libs/cll/utils"
 )
 
 var Commands = []*cli.Command{

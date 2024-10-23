@@ -6,12 +6,12 @@ import (
 
 	"github.com/urfave/cli/v2"
 
-	"github.com/smartcontractkit/capabilities/libs/cli/capabilities"
-	"github.com/smartcontractkit/capabilities/libs/cli/chain"
-	"github.com/smartcontractkit/capabilities/libs/cli/client"
-	"github.com/smartcontractkit/capabilities/libs/cli/evmcontracts"
-	"github.com/smartcontractkit/capabilities/libs/cli/jobs"
-	"github.com/smartcontractkit/capabilities/libs/cli/node"
+	"github.com/smartcontractkit/capabilities/libs/cll/capabilities"
+	"github.com/smartcontractkit/capabilities/libs/cll/chain"
+	"github.com/smartcontractkit/capabilities/libs/cll/client"
+	"github.com/smartcontractkit/capabilities/libs/cll/evmcontracts"
+	"github.com/smartcontractkit/capabilities/libs/cll/jobs"
+	"github.com/smartcontractkit/capabilities/libs/cll/node"
 )
 
 func main() {
