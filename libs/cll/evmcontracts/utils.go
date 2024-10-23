@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/smartcontractkit/capabilities/libs/cli/chain"
+	"github.com/smartcontractkit/capabilities/libs/cll/chain"
 )
 
 type Info struct {

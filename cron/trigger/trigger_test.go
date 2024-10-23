@@ -80,6 +80,11 @@ func upwrapCronTriggerEvent(t *testing.T, event capabilities.TriggerEvent) Respo
 }
 
 func makeTriggerID(number int) string {
+	// avoid conversion overflow for negative numbers
+	if number < 0 {
+		fmt.Printf("Trigger ID cannot be negative: %d", number)
+		return ""
+	}
 	return "test-id-" + strconv.FormatUint(uint64(number), 10)
 }
 
