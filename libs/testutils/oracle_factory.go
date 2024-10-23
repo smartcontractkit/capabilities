@@ -54,7 +54,8 @@ func (o *oracle) Start(ctx context.Context) error {
 		N: 4,
 	}
 
-	reportingPlugin, _, err := o.config.ReportingPluginFactoryService.NewReportingPlugin(ctx,
+	reportingPlugin, _, err := o.config.ReportingPluginFactoryService.NewReportingPlugin(
+		ctx,
 		config,
 	)
 	if err != nil {

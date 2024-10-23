@@ -8,7 +8,7 @@ require (
 	github.com/hashicorp/go-plugin v1.6.2-0.20240829161738-06afb6d7ae99
 	github.com/jonboulle/clockwork v0.4.0
 	github.com/prometheus/client_golang v1.17.0
-	github.com/smartcontractkit/chainlink-common v0.2.3-0.20241001210038-dd59341432bd
+	github.com/smartcontractkit/chainlink-common v0.3.0
 	github.com/stretchr/testify v1.9.0
 )
 
@@ -60,7 +60,7 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v5 v5.2.0 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/smartcontractkit/grpc-proxy v0.0.0-20240830132753-a7e17fec5ab7 // indirect
-	github.com/smartcontractkit/libocr v0.0.0-20240419185742-fd3cab206b2c // indirect
+	github.com/smartcontractkit/libocr v0.0.0-20241007185508-adbe57025f12 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.52.0 // indirect

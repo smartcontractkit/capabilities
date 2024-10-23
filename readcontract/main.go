@@ -89,12 +89,13 @@ func (cs *ReadContractGRPCService) Infos(ctx context.Context) ([]capabilities.Ca
 func (cs *ReadContractGRPCService) Initialise(
 	ctx context.Context,
 	config string,
-	telemetryService core.TelemetryService,
-	store core.KeyValueStore,
+	_ core.TelemetryService,
+	_ core.KeyValueStore,
 	capabilityRegistry core.CapabilitiesRegistry,
-	errorLog core.ErrorLog,
-	pipelineRunner core.PipelineRunnerService,
+	_ core.ErrorLog,
+	_ core.PipelineRunnerService,
 	relayerSet core.RelayerSet,
+	_ core.OracleFactory,
 ) error {
 	cs.s.Logger.Infof("Initialising %s", serviceName)
 
