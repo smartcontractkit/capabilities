@@ -11,6 +11,7 @@ import (
 	"github.com/jonboulle/clockwork"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/custmsg"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
@@ -45,6 +46,7 @@ type Service struct {
 	lggr      logger.Logger
 	scheduler gocron.Scheduler
 	triggers  *cronStore
+	labeler   custmsg.Labeler
 }
 
 type Params struct {
@@ -85,10 +87,15 @@ func New(p Params) *Service {
 		triggers:       cronStore,
 		lggr:           l,
 		scheduler:      s,
+		labeler: custmsg.NewLabeler().With(
+			"capabilityID", cronTriggerInfo.ID,
+			"capabilityVersion", cronTriggerInfo.Version(),
+			"capabilityName", cronTriggerInfo.ID,
+		),
 	}
 }
 
-// Register a new trigger
+// RegisterTrigger Registers a new trigger
 // Can register triggers before the service is actively scheduling
 func (s *Service) RegisterTrigger(ctx context.Context, req capabilities.TriggerRegistrationRequest) (<-chan capabilities.TriggerResponse, error) {
 	if req.Config == nil {
@@ -154,7 +161,16 @@ func (s *Service) RegisterTrigger(ctx context.Context, req capabilities.TriggerR
 			select {
 			case callbackCh <- response:
 			default:
-				s.lggr.Errorw("channel full, dropping event", "executionID", req.Metadata.WorkflowExecutionID, "triggerID", req.TriggerID, "eventID", response.Event.ID)
+				s.lggr.Errorw("callback channel full, dropping event", "executionID", req.Metadata.WorkflowExecutionID, "triggerID", req.TriggerID, "eventID", response.Event.ID)
+
+				lblErr := s.labeler.With(
+					"workflowOwner", req.Metadata.WorkflowOwner,
+					"workflowName", req.Metadata.WorkflowName,
+					"workflowID", req.Metadata.WorkflowID,
+				).SendLogAsCustomMessage("callback channel full, dropping event")
+				if lblErr != nil {
+					s.lggr.Errorw("cannot emit custom event", "executionID", req.Metadata.WorkflowExecutionID, "triggerID", req.TriggerID, "eventID", response.Event.ID, "err", err)
+				}
 			}
 		})
 
