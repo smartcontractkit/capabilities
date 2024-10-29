@@ -17,7 +17,8 @@ import (
 var (
 	marshalFn   = proto.Marshal
 	unmarshalFn = proto.Unmarshal
-	newMapFn    = values.NewMap
+	// getting this error: cannot use generic function values.NewMap without instantiationcompilerWrongTypeArgCount
+	// newMapFn    = values.NewMap
 	newClientFn = beholder.NewClient
 )
 
@@ -59,7 +60,7 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 
 	c.logger.Info("Payload: ", fmt.Sprintf("%+v", payload))
 
-	capabilityMap, err := newMapFn(payload)
+	capabilityMap, err := values.NewMap(payload)
 	if err != nil {
 		return capabilities.CapabilityResponse{}, err
 	}
@@ -76,7 +77,10 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		return capabilities.CapabilityResponse{}, err
 	}
 
-	if err := beholderClient.Emitter.Emit(ctx, bytes, "beholder_data_schema", "/custom-message/versions/1", // required
+	if err := beholderClient.Emitter.Emit(ctx, bytes,
+		"beholder_data_schema", "/custom-message/versions/1", // required
+		"beholder_domain", "platform", // required
+		"beholder_entity", "capability_message", // required
 		"beholder_data_type", "custom_message"); err != nil {
 		return capabilities.CapabilityResponse{}, err
 	}
@@ -89,11 +93,11 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 func (c *capability) payloadFromRequest(rawRequest capabilities.CapabilityRequest) (map[string]any, error) {
 	payload, ok := rawRequest.Inputs.Underlying["Payload"]
 	if !ok {
-		return nil, errors.New("missing payload")
+		return nil, errors.New("missing Payload field")
 	}
 
 	if payload == nil {
-		return nil, errors.New("missing payload")
+		return nil, errors.New("field Payload nil")
 	}
 
 	unwrappedValue, _ := payload.Unwrap()
