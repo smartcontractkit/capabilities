@@ -33,7 +33,6 @@ func TestKVStoreTarget(t *testing.T) {
 			Capabilities: []testutils.CapabilityWithConfig{
 				{
 					Capability: target,
-					Config:     map[string]interface{}{},
 				},
 			},
 		})

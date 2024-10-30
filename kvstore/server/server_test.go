@@ -57,11 +57,9 @@ func Test_Server(t *testing.T) {
 			Capabilities: []testutils.CapabilityWithConfig{
 				{
 					Capability: capabilitiesServer.Action,
-					Config:     map[string]interface{}{},
 				},
 				{
 					Capability: capabilitiesServer.Target,
-					Config:     map[string]interface{}{},
 				},
 			},
 			Owner: "owner1",
@@ -145,11 +143,9 @@ func Test_Server(t *testing.T) {
 			Capabilities: []testutils.CapabilityWithConfig{
 				{
 					Capability: capabilitiesServer.Action,
-					Config:     map[string]interface{}{},
 				},
 				{
 					Capability: capabilitiesServer.Target,
-					Config:     map[string]interface{}{},
 				},
 			},
 			Owner: "owner1",
@@ -161,11 +157,9 @@ func Test_Server(t *testing.T) {
 			Capabilities: []testutils.CapabilityWithConfig{
 				{
 					Capability: capabilitiesServer.Action,
-					Config:     map[string]interface{}{},
 				},
 				{
 					Capability: capabilitiesServer.Target,
-					Config:     map[string]interface{}{},
 				},
 			},
 			Owner: "owner2",
@@ -255,7 +249,6 @@ func Test_Server(t *testing.T) {
 			Capabilities: []testutils.CapabilityWithConfig{
 				{
 					Capability: capabilitiesServer.Target,
-					Config:     map[string]interface{}{},
 				},
 			},
 			Owner: "owner1",
@@ -266,7 +259,6 @@ func Test_Server(t *testing.T) {
 			Capabilities: []testutils.CapabilityWithConfig{
 				{
 					Capability: capabilitiesServer.Action,
-					Config:     map[string]interface{}{},
 				},
 			},
 			Owner: "owner1",
