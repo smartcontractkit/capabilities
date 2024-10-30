@@ -12,7 +12,6 @@ require (
 )
 
 replace (
-
 	github.com/smartcontractkit/capabilities/libs/loopserver => ../libs/loopserver
 	github.com/smartcontractkit/capabilities/libs/testutils => ../libs/testutils
 )
