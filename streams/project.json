@@ -1,7 +1,7 @@
 {
-  "name": "kvstore",
+  "name": "streams",
   "projectType": "capability",
-  "implicitDependencies": ["types", "testutils"],
+  "implicitDependencies": ["testutils"],
   "tags": [],
   "targets": {
     "lint": {

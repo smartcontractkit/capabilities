@@ -17,6 +17,8 @@ import (
 	"github.com/smartcontractkit/capabilities/kvstore/target"
 )
 
+var _ loop.StandardCapabilities = (*capabilitiesServer)(nil)
+
 type capabilitiesServer struct {
 	Action capabilities.ActionCapability
 	Target capabilities.TargetCapability

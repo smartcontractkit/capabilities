@@ -12,6 +12,11 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 )
 
+type TriggerWithConfig struct {
+	Capability capabilities.TriggerCapability
+	Config     map[string]interface{}
+}
+
 type CapabilityWithConfig struct {
 	Capability capabilities.ExecutableCapability
 	Config     map[string]interface{}
@@ -24,20 +29,31 @@ type workflow struct {
 	ID               string
 	Owner            string
 	t                *testing.T
+	triggers         []TriggerWithConfig
+	TriggersCh       []<-chan capabilities.TriggerResponse
 }
 
-func NewWorkflow(ctx context.Context, t *testing.T, capabilities []CapabilityWithConfig, owner string) (*workflow, func(context.Context)) {
-	if owner == "" {
-		owner = uuid.New().String()[:32]
+type WorkflowParams struct {
+	T            *testing.T
+	Capabilities []CapabilityWithConfig
+	Triggers     []TriggerWithConfig
+	Owner        string
+}
+
+func NewWorkflow(ctx context.Context, wp WorkflowParams) (*workflow, func(context.Context)) {
+	if wp.Owner == "" {
+		wp.Owner = uuid.New().String()[:32]
 	}
 	workflowID := uuid.New().String()[:32]
 
 	w := workflow{
-		capabilities:     capabilities,
+		capabilities:     wp.Capabilities,
 		executionCounter: 0,
 		ID:               workflowID,
-		Owner:            owner,
-		t:                t,
+		Owner:            wp.Owner,
+		t:                wp.T,
+		triggers:         wp.Triggers,
+		TriggersCh:       make([]<-chan capabilities.TriggerResponse, len(wp.Triggers)),
 	}
 
 	w.register(ctx)
@@ -72,6 +88,29 @@ func (w *workflow) NewResponse(outputs map[string]any) capabilities.CapabilityRe
 }
 
 func (w *workflow) register(ctx context.Context) {
+	for triggerIndex, c := range w.triggers {
+		_, err := c.Capability.Info(ctx)
+		if err != nil {
+			w.t.Errorf("failed to get capability info: %v", err)
+		}
+		config, err := values.NewMap(c.Config)
+		if err != nil {
+			w.t.Errorf("failed to create config map: %v", err)
+		}
+		r := capabilities.TriggerRegistrationRequest{
+			TriggerID: fmt.Sprintf("%s-%d", w.ID, triggerIndex),
+			Metadata: capabilities.RequestMetadata{
+				WorkflowID:    w.ID,
+				WorkflowOwner: w.Owner,
+			},
+			Config: config,
+		}
+		ch, err := c.Capability.RegisterTrigger(ctx, r)
+		if err != nil {
+			w.t.Errorf("failed when registering the workflow to the capability: %v", err)
+		}
+		w.TriggersCh[triggerIndex] = ch
+	}
 	for _, c := range w.capabilities {
 		_, err := c.Capability.Info(ctx)
 		if err != nil {
@@ -96,6 +135,23 @@ func (w *workflow) register(ctx context.Context) {
 }
 
 func (w *workflow) unregister(ctx context.Context) {
+	for triggerIndex, c := range w.triggers {
+		config, err := values.NewMap(c.Config)
+		if err != nil {
+			w.t.Errorf("failed to create config map: %v", err)
+		}
+		r := capabilities.TriggerRegistrationRequest{
+			TriggerID: fmt.Sprintf("%s-%d", w.ID, triggerIndex),
+			Metadata: capabilities.RequestMetadata{
+				WorkflowID:    w.ID,
+				WorkflowOwner: w.Owner,
+			},
+			Config: config,
+		}
+		if err = c.Capability.UnregisterTrigger(ctx, r); err != nil {
+			w.t.Errorf("failed when unregistering the workflow from the trigger: %v", err)
+		}
+	}
 	for _, c := range w.capabilities {
 		config, err := values.NewMap(c.Config)
 		if err != nil {
@@ -108,8 +164,7 @@ func (w *workflow) unregister(ctx context.Context) {
 			},
 			Config: config,
 		}
-		err = c.Capability.UnregisterFromWorkflow(ctx, r)
-		if err != nil {
+		if err = c.Capability.UnregisterFromWorkflow(ctx, r); err != nil {
 			w.t.Errorf("failed when unregistering the workflow from the capability: %v", err)
 		}
 	}

@@ -15,6 +15,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
 
+var _ loop.StandardCapabilities = (*CapabilitiesService)(nil)
+
 const (
 	serviceName = "CronCapabilities"
 )

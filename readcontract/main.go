@@ -15,6 +15,8 @@ import (
 	actions "github.com/smartcontractkit/capabilities/readcontract/action"
 )
 
+var _ loop.StandardCapabilities = (*ReadContractGRPCService)(nil)
+
 const (
 	serviceName = "ReadContractCapability"
 )
