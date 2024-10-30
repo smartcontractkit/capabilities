@@ -5,10 +5,10 @@ go 1.23
 require (
 	github.com/ethereum/go-ethereum v1.14.11
 	github.com/hashicorp/go-plugin v1.6.2-0.20240829161738-06afb6d7ae99
-	github.com/pkg/errors v0.9.1
+	github.com/smartcontractkit/capabilities/libs/testutils v0.0.0-unpublished
 	github.com/smartcontractkit/chainlink-common v0.3.0
 	github.com/smartcontractkit/libocr v0.0.0-20241007185508-adbe57025f12
-	github.com/smartcontractkit/capabilities/libs/testutils v0.0.0-unpublished
+	github.com/stretchr/testify v1.9.0
 )
 
 replace github.com/smartcontractkit/capabilities/libs/testutils => ../libs/testutils
@@ -70,6 +70,7 @@ require (
 	github.com/mr-tron/base58 v1.2.0 // indirect
 	github.com/oklog/run v1.0.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.0 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/client_golang v1.17.0 // indirect
 	github.com/prometheus/client_model v0.5.0 // indirect
@@ -80,7 +81,6 @@ require (
 	github.com/shirou/gopsutil v3.21.4-0.20210419000835-c7a38de76ee5+incompatible // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/smartcontractkit/grpc-proxy v0.0.0-20240830132753-a7e17fec5ab7 // indirect
-	github.com/stretchr/testify v1.9.0 // indirect
 	github.com/supranational/blst v0.3.13 // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect

@@ -52,15 +52,15 @@ func Test_Server(t *testing.T) {
 		err = capabilitiesRegistry.Contains([]string{"mock-streams-trigger@1.0.0"})
 		require.NoError(t, err)
 
-		feedIdOne := streamscap.FeedId("0x0003fbba4fce42f65d6032b18aee53efdf526cc734ad296cb57565979d883bdd")
-		feedIdTwo := streamscap.FeedId("0x0003c317fec7fad514c67aacc6366bf2f007ce37100e3cddcacd0ccaa1f3746d")
+		feedIDOne := streamscap.FeedId("0x0003fbba4fce42f65d6032b18aee53efdf526cc734ad296cb57565979d883bdd")
+		feedIDTwo := streamscap.FeedId("0x0003c317fec7fad514c67aacc6366bf2f007ce37100e3cddcacd0ccaa1f3746d")
 		workflow, removeWorkflow := testutils.NewWorkflow(ctx, testutils.WorkflowParams{
 			T: t,
 			Triggers: []testutils.TriggerWithConfig{
 				{
 					Capability: capabilitiesServer.Trigger,
 					Config: map[string]interface{}{
-						"FeedIds":        []streamscap.FeedId{feedIdOne, feedIdTwo},
+						"FeedIds":        []streamscap.FeedId{feedIDOne, feedIDTwo},
 						"MaxFrequencyMs": 100,
 					},
 				},
@@ -82,8 +82,8 @@ func Test_Server(t *testing.T) {
 				require.NoError(t, err)
 
 				require.Equal(t, 2, len(output.Payload))
-				require.Equal(t, feedIdOne, output.Payload[0].FeedID)
-				require.Equal(t, feedIdTwo, output.Payload[1].FeedID)
+				require.Equal(t, feedIDOne, output.Payload[0].FeedID)
+				require.Equal(t, feedIDTwo, output.Payload[1].FeedID)
 			case <-ctx.Done():
 				t.Fatal("timeout waiting for event")
 			}
