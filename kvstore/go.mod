@@ -3,7 +3,7 @@ module github.com/smartcontractkit/capabilities/kvstore
 go 1.23
 
 require (
-	github.com/hashicorp/go-plugin v1.6.2-0.20240829161738-06afb6d7ae99
+	github.com/smartcontractkit/capabilities/libs/cll v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/capabilities/libs/testutils v0.0.0-unpublished
 	github.com/smartcontractkit/chainlink-common v0.3.0
 	github.com/smartcontractkit/libocr v0.0.0-20241007185508-adbe57025f12
@@ -13,6 +13,7 @@ require (
 
 replace (
 	github.com/gogo/protobuf => github.com/regen-network/protobuf v1.3.3-alpha.regen.1
+	github.com/smartcontractkit/capabilities/libs/cll => ../libs/cll
 
 	github.com/smartcontractkit/capabilities/libs/testutils => ../libs/testutils
 )
@@ -43,6 +44,7 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.1.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.22.0 // indirect
 	github.com/hashicorp/go-hclog v1.5.0 // indirect
+	github.com/hashicorp/go-plugin v1.6.2-0.20240829161738-06afb6d7ae99 // indirect
 	github.com/hashicorp/yamux v0.1.1 // indirect
 	github.com/iancoleman/strcase v0.3.0 // indirect
 	github.com/invopop/jsonschema v0.12.0 // indirect
