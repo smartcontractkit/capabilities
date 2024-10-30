@@ -1,7 +1,7 @@
 {
   "name": "streams",
   "projectType": "capability",
-  "implicitDependencies": ["testutils"],
+  "implicitDependencies": ["testutils", "loopserver"],
   "tags": [],
   "targets": {
     "lint": {

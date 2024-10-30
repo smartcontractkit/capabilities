@@ -5,14 +5,13 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/smartcontractkit/capabilities/libs/cll/capabilities/execution"
-
-	"github.com/smartcontractkit/capabilities/cron/trigger"
-
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
+
+	"github.com/smartcontractkit/capabilities/cron/trigger"
+	"github.com/smartcontractkit/capabilities/libs/loopserver"
 )
 
 var _ loop.StandardCapabilities = (*CapabilitiesService)(nil)
@@ -33,7 +32,7 @@ type CapabilitiesService struct {
 }
 
 func main() {
-	execution.RunCapability(serviceName, func(s *loop.Server, _ string) *CapabilitiesService {
+	loopserver.Create(serviceName, func(s *loop.Server, _ string) *CapabilitiesService {
 		return &CapabilitiesService{s: s}
 	})
 }

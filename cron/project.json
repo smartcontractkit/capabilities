@@ -1,7 +1,7 @@
 {
   "name": "cron",
   "projectType": "capability",
-  "projectRoot": "capabilities/cron",
+  "implicitDependencies": ["loopserver"],
   "tags": [],
   "targets": {
     "lint": {

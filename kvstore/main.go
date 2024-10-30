@@ -1,15 +1,10 @@
 package main
 
 import (
-	"github.com/smartcontractkit/capabilities/libs/cll/capabilities/execution"
-
 	"github.com/smartcontractkit/capabilities/kvstore/server"
-)
-
-const (
-	serviceName = "KVStoreCapabilities"
+	"github.com/smartcontractkit/capabilities/libs/loopserver"
 )
 
 func main() {
-	execution.RunCapability(serviceName, server.New)
+	loopserver.Create("KVStoreCapabilities", server.New)
 }

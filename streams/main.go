@@ -1,8 +1,7 @@
 package main
 
 import (
-	"github.com/smartcontractkit/capabilities/libs/cll/capabilities/execution"
-
+	"github.com/smartcontractkit/capabilities/libs/loopserver"
 	"github.com/smartcontractkit/capabilities/streams/server"
 )
 
@@ -11,5 +10,5 @@ const (
 )
 
 func main() {
-	execution.RunCapability(serviceName, server.New)
+	loopserver.Create("StreamsCapabilities", server.New)
 }

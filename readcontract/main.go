@@ -10,7 +10,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
-	"github.com/smartcontractkit/capabilities/libs/cll/capabilities/execution"
+	"github.com/smartcontractkit/capabilities/libs/loopserver"
 	actions "github.com/smartcontractkit/capabilities/readcontract/action"
 )
 
@@ -26,7 +26,7 @@ type ReadContractGRPCService struct {
 }
 
 func main() {
-	execution.RunCapability(serviceName, func(s *loop.Server, _ string) *ReadContractGRPCService {
+	loopserver.Create(serviceName, func(s *loop.Server, _ string) *ReadContractGRPCService {
 		return &ReadContractGRPCService{s: s}
 	})
 }
