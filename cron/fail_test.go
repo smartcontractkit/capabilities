@@ -30,7 +30,17 @@ func TestRace(t *testing.T) {
 }
 
 func TestLint(t *testing.T) {
-	const UnusedVar = 1 // lint should complain for unused variable
+	const v1 = (true && false) && (true && false) // SQ Identical expressions should not be used on both sides of a binary operator
+	a := 1
+	if !(a == 2) { // SQ boolean check should not be inverted
+		// empty block
+	}
+
+	//nolint:unused
+	const UnusedVar = 1 // lint should complain for unused variable (nolint for one line)
+	// nolint as inline comment
+	const UnusedVar2 = 2 //nolint:unused
+	//nolint:all
 	const ALL_CAPS = 10 // should be AllCaps
 	err := os.ErrNotExist
 	if err == os.ErrNotExist { // should use errors.Is
