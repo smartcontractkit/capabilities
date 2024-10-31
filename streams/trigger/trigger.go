@@ -97,6 +97,7 @@ func New(p Params) (*capability, error) {
 
 func (c *capability) Start(ctx context.Context) error {
 	c.stopCh = make(services.StopChan)
+	c.wg.Add(1)
 	go c.loop()
 	c.lggr.Info(cronTriggerInfo.ID + " started")
 	return nil
@@ -178,7 +179,7 @@ func (c *capability) ValidateConfig(config *values.Map) (*streamscap.TriggerConf
 	return cfg, nil
 }
 
-func newReport(lggr logger.Logger, feedID [32]byte, price *big.Int, timestamp uint32) []byte {
+func newReport(lggr logger.Logger, feedID [32]byte, price *big.Int, timestamp uint32) ([]byte, error) {
 	ctx := context.Background()
 	v3Codec := reportcodec.NewReportCodec(feedID, lggr)
 	raw, err := v3Codec.BuildReport(ctx, v3.ReportFields{
@@ -192,9 +193,9 @@ func newReport(lggr logger.Logger, feedID [32]byte, price *big.Int, timestamp ui
 		ExpiresAt:          timestamp + 1000000,
 	})
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	return raw
+	return raw, nil
 }
 
 func rawReportContext(reportCtx ocrTypes.ReportContext) []byte {
@@ -207,7 +208,6 @@ func rawReportContext(reportCtx ocrTypes.ReportContext) []byte {
 }
 
 func (c *capability) loop() {
-	c.wg.Add(1)
 	defer c.wg.Done()
 	ticker := time.NewTicker(time.Duration(c.tickerResolution) * time.Millisecond)
 	defer ticker.Stop()
@@ -237,77 +237,90 @@ func (c *capability) loop() {
 					Round: ocrRound,
 				},
 			}
-			reports := []datastreams.FeedReport{}
 
 			if len(c.subscribers) == 0 {
 				c.lggr.Debug("No subscribers, skipping")
 				continue
 			}
 
-			c.mu.Lock()
-			for _, subscriber := range c.subscribers {
-				subscriber.DurationSinceLastTriggerResponse += c.tickerResolution
-
-				if subscriber.DurationSinceLastTriggerResponse < int(subscriber.Config.MaxFrequencyMs) { // nolint:gosec
-					continue
-				}
-				subscriber.DurationSinceLastTriggerResponse = 0
-
-				// Produce and send a TriggerResponse
-				timestamp := time.Now().Unix()
-				for i, feedID := range subscriber.Config.FeedIds {
-					feedID := string(feedID)
-					report := datastreams.FeedReport{
-						FeedID: feedID,
-						FullReport: newReport(
-							c.lggr,
-							common.HexToHash(feedID),
-							big.NewInt(prices[i%5]),
-							uint32(timestamp), // nolint:gosec
-						),
-						ReportContext:        rawReportContext(reportCtx),
-						ObservationTimestamp: timestamp,
-					}
-
-					// sign report with mock signers
-					sigData := append(crypto.Keccak256(report.FullReport), report.ReportContext...)
-					hash := crypto.Keccak256(sigData)
-					for n := 0; n < c.meta.MinRequiredSignatures; n++ {
-						sig, err := crypto.Sign(hash, c.signers[n])
-						if err != nil {
-							panic(err)
-						}
-						report.Signatures = append(report.Signatures, sig)
-					}
-					reports = append(reports, report)
-				}
-
-				c.lggr.Infow("New set of Mock reports", "timestamp", timestamp, "payload", reports)
-
-				out := datastreams.StreamsTriggerEvent{
-					Payload:   reports,
-					Metadata:  c.meta,
-					Timestamp: timestamp,
-				}
-				outputsv, err := values.WrapMap(out)
-				if err != nil {
-					subscriber.Ch <- capabilities.TriggerResponse{Err: err}
-					continue
-				}
-				eventID := fmt.Sprintf("streams_%024s", strconv.FormatInt(timestamp, 10))
-
-				subscriber.Ch <- capabilities.TriggerResponse{
-					Event: capabilities.TriggerEvent{
-						TriggerType: cronTriggerInfo.ID,
-						ID:          eventID,
-						Outputs:     outputsv,
-					},
-				}
-			}
-			c.mu.Unlock()
-			c.lggr.Debugw("Processed subscribers",
-				"numSubscribers", len(c.subscribers),
-			)
+			c.processSubscribers(prices, reportCtx)
 		}
 	}
+}
+
+func (c *capability) processSubscribers(prices []int64, reportCtx ocrTypes.ReportContext) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	for _, subscriber := range c.subscribers {
+		reports := []datastreams.FeedReport{}
+		subscriber.DurationSinceLastTriggerResponse += c.tickerResolution
+
+		if subscriber.DurationSinceLastTriggerResponse < int(subscriber.Config.MaxFrequencyMs) { // nolint:gosec
+			continue
+		}
+		subscriber.DurationSinceLastTriggerResponse = 0
+
+		// Produce and send a TriggerResponse
+		timestamp := time.Now().Unix()
+		for i, feedID := range subscriber.Config.FeedIds {
+			feedID := string(feedID)
+			fullReport, err := newReport(
+				c.lggr,
+				common.HexToHash(feedID),
+				big.NewInt(prices[i%5]),
+				uint32(timestamp), // nolint:gosec
+			)
+			if err != nil {
+				subscriber.Ch <- capabilities.TriggerResponse{Err: err}
+				return
+			}
+
+			report := datastreams.FeedReport{
+				FeedID:               feedID,
+				FullReport:           fullReport,
+				ReportContext:        rawReportContext(reportCtx),
+				ObservationTimestamp: timestamp,
+			}
+
+			// sign report with mock signers
+			sigData := append(crypto.Keccak256(report.FullReport), report.ReportContext...)
+			hash := crypto.Keccak256(sigData)
+			for n := 0; n < c.meta.MinRequiredSignatures; n++ {
+				sig, err := crypto.Sign(hash, c.signers[n])
+				if err != nil {
+					subscriber.Ch <- capabilities.TriggerResponse{Err: err}
+					return
+				}
+				report.Signatures = append(report.Signatures, sig)
+			}
+			reports = append(reports, report)
+		}
+
+		c.lggr.Infow("New set of Mock reports", "timestamp", timestamp, "payload", reports)
+
+		out := datastreams.StreamsTriggerEvent{
+			Payload:   reports,
+			Metadata:  c.meta,
+			Timestamp: timestamp,
+		}
+		outputsv, err := values.WrapMap(out)
+		if err != nil {
+			subscriber.Ch <- capabilities.TriggerResponse{Err: err}
+			continue
+		}
+		eventID := fmt.Sprintf("streams_%024s", strconv.FormatInt(timestamp, 10))
+
+		subscriber.Ch <- capabilities.TriggerResponse{
+			Event: capabilities.TriggerEvent{
+				TriggerType: cronTriggerInfo.ID,
+				ID:          eventID,
+				Outputs:     outputsv,
+			},
+		}
+	}
+
+	c.lggr.Debugw("Processed subscribers",
+		"numSubscribers", len(c.subscribers),
+	)
 }
