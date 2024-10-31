@@ -182,7 +182,7 @@ func (c *capability) ValidateConfig(config *values.Map) (*streamscap.TriggerConf
 func newReport(lggr logger.Logger, feedID [32]byte, price *big.Int, timestamp uint32) ([]byte, error) {
 	ctx := context.Background()
 	v3Codec := reportcodec.NewReportCodec(feedID, lggr)
-	raw, err := v3Codec.BuildReport(ctx, v3.ReportFields{
+	return v3Codec.BuildReport(ctx, v3.ReportFields{
 		BenchmarkPrice:     price,
 		Timestamp:          timestamp,
 		ValidFromTimestamp: timestamp,
@@ -192,10 +192,6 @@ func newReport(lggr logger.Logger, feedID [32]byte, price *big.Int, timestamp ui
 		NativeFee:          price,
 		ExpiresAt:          timestamp + 1000000,
 	})
-	if err != nil {
-		return nil, err
-	}
-	return raw, nil
 }
 
 func rawReportContext(reportCtx ocrTypes.ReportContext) []byte {
