@@ -6,5 +6,5 @@ import (
 )
 
 func main() {
-	loopserver.Create("KVStoreCapabilities", server.New)
+	loopserver.Serve("KVStoreCapabilities", server.New)
 }

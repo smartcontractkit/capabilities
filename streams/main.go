@@ -6,5 +6,5 @@ import (
 )
 
 func main() {
-	loopserver.Create("StreamsCapabilities", server.New)
+	loopserver.Serve("StreamsCapabilities", server.New)
 }

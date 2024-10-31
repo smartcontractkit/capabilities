@@ -26,7 +26,7 @@ type ReadContractGRPCService struct {
 }
 
 func main() {
-	loopserver.Create(serviceName, func(s *loop.Server, _ string) *ReadContractGRPCService {
+	loopserver.Serve(serviceName, func(s *loop.Server, _ string) *ReadContractGRPCService {
 		return &ReadContractGRPCService{s: s}
 	})
 }

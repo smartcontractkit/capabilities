@@ -32,7 +32,7 @@ type CapabilitiesService struct {
 }
 
 func main() {
-	loopserver.Create(serviceName, func(s *loop.Server, _ string) *CapabilitiesService {
+	loopserver.Serve(serviceName, func(s *loop.Server, _ string) *CapabilitiesService {
 		return &CapabilitiesService{s: s}
 	})
 }

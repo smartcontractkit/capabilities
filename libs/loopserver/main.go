@@ -6,7 +6,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 )
 
-func Create[T loop.StandardCapabilities](serviceName string, createPluginServer func(*loop.Server, string) T) {
+func Serve[T loop.StandardCapabilities](serviceName string, createPluginServer func(*loop.Server, string) T) {
 	s := loop.MustNewStartedServer(serviceName)
 	defer s.Stop()
 
