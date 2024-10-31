@@ -30,7 +30,9 @@ func TestRace(t *testing.T) {
 }
 
 func TestLint(t *testing.T) {
-	const v1 = (true && false) && (true && false) // SQ Identical expressions should not be used on both sides of a binary operator
+	const newUnusedVar = 1                             // unused
+	const notUsed = (true && false) && (true && false) // SQ Identical expressions should not be used on both sides of a binary operator
+	const v1 = (true && false) && (true && false)      // SQ Identical expressions should not be used on both sides of a binary operator
 	a := 1
 	if !(a == 2) { // SQ boolean check should not be inverted
 		// empty block
