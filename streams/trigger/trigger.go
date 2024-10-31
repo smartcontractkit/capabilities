@@ -65,7 +65,7 @@ type Params struct {
 	Logger logger.Logger
 }
 
-func New(p Params) *capability {
+func New(p Params) (*capability, error) {
 	// Needs a start method that starts a loop that sends reports to the registered workflows
 	f := 1
 	meta := datastreams.Metadata{MinRequiredSignatures: 2*f + 1}
@@ -77,7 +77,7 @@ func New(p Params) *capability {
 
 		privKey, err := crypto.ToECDSA(bytes)
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
 		signers = append(signers, privKey)
 
@@ -92,7 +92,7 @@ func New(p Params) *capability {
 		subscribers:           make(map[string]*subscriber),
 		tickerResolution:      defaultTickerResolutionMs,
 		sendChannelBufferSize: defaultSendChannelBufferSize,
-	}
+	}, nil
 }
 
 func (c *capability) Start(ctx context.Context) error {
@@ -166,7 +166,11 @@ func (c *capability) ValidateConfig(config *values.Map) (*streamscap.TriggerConf
 		return nil, err
 	}
 
-	b, _ := json.Marshal(cfg)
+	b, err := json.Marshal(cfg)
+	if err != nil {
+		return nil, err
+	}
+
 	if err := json.Unmarshal(b, cfg); err != nil {
 		return nil, err
 	}

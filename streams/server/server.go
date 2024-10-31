@@ -76,9 +76,13 @@ func (cs *capabilitiesServer) Initialise(
 	_ core.OracleFactory,
 ) error {
 	cs.s.Logger.Debugf("Initialising %s", cs.name)
-	cs.Trigger = trigger.New(trigger.Params{
+	t, err := trigger.New(trigger.Params{
 		Logger: cs.s.Logger,
 	})
+	if err != nil {
+		return fmt.Errorf("error when creating trigger: %w", err)
+	}
+	cs.Trigger = t
 
 	if err := cs.Trigger.Start(ctx); err != nil {
 		return fmt.Errorf("error when starting trigger: %w", err)
