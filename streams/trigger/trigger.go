@@ -92,11 +92,11 @@ func New(p Params) (*capability, error) {
 		subscribers:           make(map[string]*subscriber),
 		tickerResolution:      defaultTickerResolutionMs,
 		sendChannelBufferSize: defaultSendChannelBufferSize,
+		stopCh:                make(services.StopChan),
 	}, nil
 }
 
 func (c *capability) Start(ctx context.Context) error {
-	c.stopCh = make(services.StopChan)
 	c.wg.Add(1)
 	go c.loop()
 	c.lggr.Info(cronTriggerInfo.ID + " started")
