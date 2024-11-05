@@ -2,7 +2,7 @@
   "name": "readcontract",
   "projectType": "capability",
   "projectRoot": "capabilities/readcontract",
-  "implicitDependencies": ["types"],
+  "implicitDependencies": ["loopserver"],
   "tags": [],
   "targets": {
     "lint": {

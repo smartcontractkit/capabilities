@@ -5,15 +5,16 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/hashicorp/go-plugin"
-
-	"github.com/smartcontractkit/capabilities/cron/trigger"
-
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
+
+	"github.com/smartcontractkit/capabilities/cron/trigger"
+	"github.com/smartcontractkit/capabilities/libs/loopserver"
 )
+
+var _ loop.StandardCapabilities = (*CapabilitiesService)(nil)
 
 const (
 	serviceName = "CronCapabilities"
@@ -31,25 +32,8 @@ type CapabilitiesService struct {
 }
 
 func main() {
-	s := loop.MustNewStartedServer(serviceName)
-	defer s.Stop()
-
-	s.Logger.Infof("Starting %s", serviceName)
-
-	stopCh := make(chan struct{})
-	defer close(stopCh)
-
-	plugin.Serve(&plugin.ServeConfig{
-		HandshakeConfig: loop.StandardCapabilitiesHandshakeConfig(),
-		Plugins: map[string]plugin.Plugin{
-			loop.PluginStandardCapabilitiesName: &loop.StandardCapabilitiesLoop{
-				PluginServer: &CapabilitiesService{
-					s: s,
-				},
-				BrokerConfig: loop.BrokerConfig{Logger: s.Logger, StopCh: stopCh, GRPCOpts: s.GRPCOpts},
-			},
-		},
-		GRPCServer: s.GRPCOpts.NewServer,
+	loopserver.Serve(serviceName, func(s *loop.Server, _ string) *CapabilitiesService {
+		return &CapabilitiesService{s: s}
 	})
 }
 

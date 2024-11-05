@@ -59,25 +59,28 @@ func generateOCR3Config(nodeIDs []int) (*OCR3Config, error) {
 		})
 	}
 
+	maxDurationInitialization := 10 * time.Second
+
 	// Generate OCR3 configuration arguments for testing
 	signers, transmitters, f, onchainConfig, offchainConfigVersion, offchainConfig, err := ocr3confighelper.ContractSetConfigArgsForTests(
-		5*time.Second,        // DeltaProgress: Time between rounds
-		5*time.Second,        // DeltaResend: Time between resending unconfirmed transmissions
-		5*time.Second,        // DeltaInitial: Initial delay before starting the first round
-		2*time.Second,        // DeltaRound: Time between rounds within an epoch
-		500*time.Millisecond, // DeltaGrace: Grace period for delayed transmissions
-		1*time.Second,        // DeltaCertifiedCommitRequest: Time between certified commit requests
-		30*time.Second,       // DeltaStage: Time between stages of the protocol
-		10,                   // MaxRoundsPerEpoch: Maximum number of rounds per epoch
-		nodeIDs,              // TransmissionSchedule: Transmission schedule
-		oracleIdentities,     // Oracle identities with their public keys
-		nil,                  // Plugin config (empty for now)
-		1*time.Second,        // MaxDurationQuery: Maximum duration for querying
-		1*time.Second,        // MaxDurationObservation: Maximum duration for observation
-		1*time.Second,        // MaxDurationAccept: Maximum duration for acceptance
-		1*time.Second,        // MaxDurationTransmit: Maximum duration for transmission
-		1,                    // F: Maximum number of faulty oracles
-		nil,                  // OnChain config (empty for now)
+		5*time.Second,              // DeltaProgress: Time between rounds
+		5*time.Second,              // DeltaResend: Time between resending unconfirmed transmissions
+		5*time.Second,              // DeltaInitial: Initial delay before starting the first round
+		2*time.Second,              // DeltaRound: Time between rounds within an epoch
+		500*time.Millisecond,       // DeltaGrace: Grace period for delayed transmissions
+		1*time.Second,              // DeltaCertifiedCommitRequest: Time between certified commit requests
+		30*time.Second,             // DeltaStage: Time between stages of the protocol
+		10,                         // MaxRoundsPerEpoch: Maximum number of rounds per epoch
+		nodeIDs,                    // TransmissionSchedule: Transmission schedule
+		oracleIdentities,           // Oracle identities with their public keys
+		nil,                        // Plugin config (empty for now)
+		&maxDurationInitialization, // MaxDurationInitialization: ???
+		1*time.Second,              // MaxDurationQuery: Maximum duration for querying
+		1*time.Second,              // MaxDurationObservation: Maximum duration for observation
+		1*time.Second,              // MaxDurationAccept: Maximum duration for acceptance
+		1*time.Second,              // MaxDurationTransmit: Maximum duration for transmission
+		1,                          // F: Maximum number of faulty oracles
+		nil,                        // OnChain config (empty for now)
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set config args: %w", err)

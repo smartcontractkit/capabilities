@@ -28,12 +28,14 @@ func TestKVStoreTarget(t *testing.T) {
 			Logger:        logger,
 		})
 
-		workflow, removeWorkflow := testutils.NewWorkflow(ctx, t, []testutils.CapabilityWithConfig{
-			{
-				Capability: target,
-				Config:     map[string]interface{}{},
+		workflow, removeWorkflow := testutils.NewWorkflow(ctx, testutils.WorkflowParams{
+			T: t,
+			Capabilities: []testutils.CapabilityWithConfig{
+				{
+					Capability: target,
+				},
 			},
-		}, "")
+		})
 		defer removeWorkflow(ctx)
 
 		keyValuePairs := map[string][]byte{

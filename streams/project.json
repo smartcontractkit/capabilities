@@ -1,7 +1,7 @@
 {
-  "name": "cron",
+  "name": "streams",
   "projectType": "capability",
-  "implicitDependencies": ["loopserver"],
+  "implicitDependencies": ["testutils", "loopserver"],
   "tags": [],
   "targets": {
     "lint": {
@@ -31,7 +31,7 @@
         "cwd": "{projectRoot}",
         "commands": [
           "CGO_ENABLED='0' GOARCH='amd64' go build -o ./../bin/amd64/{projectName} .",
-          "CGO_ENABLED='0' GOARCH='arm64' go build -o ./../bin/arm64/{projectName} ."
+          "GOOS='linux' CGO_ENABLED='0' GOARCH='arm64' go build -o ./../bin/arm64/{projectName} ."
         ]
       }
     },

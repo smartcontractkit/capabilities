@@ -1,4 +1,4 @@
-package server
+package server_test
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 
+	"github.com/smartcontractkit/capabilities/kvstore/server"
 	"github.com/smartcontractkit/capabilities/libs/testutils"
 )
 
@@ -19,7 +20,7 @@ func Test_Server(t *testing.T) {
 	t.Run("RemovingLastWorkflowClearsNamespace", func(t *testing.T) {
 		logger := testutils.NewLogger(t)
 		capabilitiesRegistry := testutils.NewCapabilitiesRegistry(t)
-		capabilitiesServer := New(&loop.Server{
+		capabilitiesServer := server.New(&loop.Server{
 			Logger: logger,
 		}, "kv-store-test-service")
 		require.NotNil(t, capabilitiesServer)
@@ -51,16 +52,18 @@ func Test_Server(t *testing.T) {
 		err = capabilitiesRegistry.Contains([]string{"kv-store-action@1.0.0", "kv-store-target@1.0.0"})
 		require.NoError(t, err)
 
-		workflow, removeWorkflow := testutils.NewWorkflow(ctx, t, []testutils.CapabilityWithConfig{
-			{
-				Capability: capabilitiesServer.Action,
-				Config:     map[string]interface{}{},
+		workflow, removeWorkflow := testutils.NewWorkflow(ctx, testutils.WorkflowParams{
+			T: t,
+			Capabilities: []testutils.CapabilityWithConfig{
+				{
+					Capability: capabilitiesServer.Action,
+				},
+				{
+					Capability: capabilitiesServer.Target,
+				},
 			},
-			{
-				Capability: capabilitiesServer.Target,
-				Config:     map[string]interface{}{},
-			},
-		}, "owner1")
+			Owner: "owner1",
+		})
 
 		response, err := capabilitiesServer.Target.Execute(ctx, workflow.NewRequest(map[string]any{
 			"signedReport": testutils.NewReport(t, map[string][]byte{
@@ -103,7 +106,7 @@ func Test_Server(t *testing.T) {
 	t.Run("MultipleNamespaces", func(t *testing.T) {
 		logger := testutils.NewLogger(t)
 		capabilitiesRegistry := testutils.NewCapabilitiesRegistry(t)
-		capabilitiesServer := New(&loop.Server{
+		capabilitiesServer := server.New(&loop.Server{
 			Logger: logger,
 		}, "kv-store-test-service")
 		require.NotNil(t, capabilitiesServer)
@@ -135,28 +138,32 @@ func Test_Server(t *testing.T) {
 		err = capabilitiesRegistry.Contains([]string{"kv-store-action@1.0.0", "kv-store-target@1.0.0"})
 		require.NoError(t, err)
 
-		workflow1, removeWorkflow1 := testutils.NewWorkflow(ctx, t, []testutils.CapabilityWithConfig{
-			{
-				Capability: capabilitiesServer.Action,
-				Config:     map[string]interface{}{},
+		workflow1, removeWorkflow1 := testutils.NewWorkflow(ctx, testutils.WorkflowParams{
+			T: t,
+			Capabilities: []testutils.CapabilityWithConfig{
+				{
+					Capability: capabilitiesServer.Action,
+				},
+				{
+					Capability: capabilitiesServer.Target,
+				},
 			},
-			{
-				Capability: capabilitiesServer.Target,
-				Config:     map[string]interface{}{},
-			},
-		}, "owner1")
+			Owner: "owner1",
+		})
 		defer removeWorkflow1(ctx)
 
-		workflow2, removeWorkflow2 := testutils.NewWorkflow(ctx, t, []testutils.CapabilityWithConfig{
-			{
-				Capability: capabilitiesServer.Action,
-				Config:     map[string]interface{}{},
+		workflow2, removeWorkflow2 := testutils.NewWorkflow(ctx, testutils.WorkflowParams{
+			T: t,
+			Capabilities: []testutils.CapabilityWithConfig{
+				{
+					Capability: capabilitiesServer.Action,
+				},
+				{
+					Capability: capabilitiesServer.Target,
+				},
 			},
-			{
-				Capability: capabilitiesServer.Target,
-				Config:     map[string]interface{}{},
-			},
-		}, "owner2")
+			Owner: "owner2",
+		})
 		defer removeWorkflow2(ctx)
 
 		response1, err := capabilitiesServer.Target.Execute(ctx, workflow1.NewRequest(map[string]any{
@@ -205,7 +212,7 @@ func Test_Server(t *testing.T) {
 	t.Run("PreserveNamespaceIfOnlySomeWorkflowsAreRemoved", func(t *testing.T) {
 		logger := testutils.NewLogger(t)
 		capabilitiesRegistry := testutils.NewCapabilitiesRegistry(t)
-		capabilitiesServer := New(&loop.Server{
+		capabilitiesServer := server.New(&loop.Server{
 			Logger: logger,
 		}, "kv-store-test-service")
 		require.NotNil(t, capabilitiesServer)
@@ -237,19 +244,25 @@ func Test_Server(t *testing.T) {
 		err = capabilitiesRegistry.Contains([]string{"kv-store-action@1.0.0", "kv-store-target@1.0.0"})
 		require.NoError(t, err)
 
-		workflow1, removeWorkflow1 := testutils.NewWorkflow(ctx, t, []testutils.CapabilityWithConfig{
-			{
-				Capability: capabilitiesServer.Target,
-				Config:     map[string]interface{}{},
+		workflow1, removeWorkflow1 := testutils.NewWorkflow(ctx, testutils.WorkflowParams{
+			T: t,
+			Capabilities: []testutils.CapabilityWithConfig{
+				{
+					Capability: capabilitiesServer.Target,
+				},
 			},
-		}, "owner1")
+			Owner: "owner1",
+		})
 
-		workflow2, removeWorkflow2 := testutils.NewWorkflow(ctx, t, []testutils.CapabilityWithConfig{
-			{
-				Capability: capabilitiesServer.Action,
-				Config:     map[string]interface{}{},
+		workflow2, removeWorkflow2 := testutils.NewWorkflow(ctx, testutils.WorkflowParams{
+			T: t,
+			Capabilities: []testutils.CapabilityWithConfig{
+				{
+					Capability: capabilitiesServer.Action,
+				},
 			},
-		}, "owner1")
+			Owner: "owner1",
+		})
 		defer removeWorkflow2(ctx)
 
 		// WRITE with workflow 1

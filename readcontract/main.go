@@ -5,15 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/hashicorp/go-plugin"
-
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
+	"github.com/smartcontractkit/capabilities/libs/loopserver"
 	actions "github.com/smartcontractkit/capabilities/readcontract/action"
 )
+
+var _ loop.StandardCapabilities = (*ReadContractGRPCService)(nil)
 
 const (
 	serviceName = "ReadContractCapability"
@@ -25,25 +26,8 @@ type ReadContractGRPCService struct {
 }
 
 func main() {
-	s := loop.MustNewStartedServer(serviceName)
-	defer s.Stop()
-
-	s.Logger.Infof("Starting %s", serviceName)
-
-	stopCh := make(chan struct{})
-	defer close(stopCh)
-
-	plugin.Serve(&plugin.ServeConfig{
-		HandshakeConfig: loop.StandardCapabilitiesHandshakeConfig(),
-		Plugins: map[string]plugin.Plugin{
-			loop.PluginStandardCapabilitiesName: &loop.StandardCapabilitiesLoop{
-				PluginServer: &ReadContractGRPCService{
-					s: s,
-				},
-				BrokerConfig: loop.BrokerConfig{Logger: s.Logger, StopCh: stopCh, GRPCOpts: s.GRPCOpts},
-			},
-		},
-		GRPCServer: s.GRPCOpts.NewServer,
+	loopserver.Serve(serviceName, func(s *loop.Server, _ string) *ReadContractGRPCService {
+		return &ReadContractGRPCService{s: s}
 	})
 }
 

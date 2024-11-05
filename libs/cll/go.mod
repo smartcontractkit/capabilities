@@ -3,7 +3,7 @@ module github.com/smartcontractkit/capabilities/libs/cll
 go 1.23
 
 require (
-	github.com/smartcontractkit/libocr v0.0.0-20240717100443-f6226e09bee7
+	github.com/smartcontractkit/libocr v0.0.0-20241007185508-adbe57025f12
 	github.com/urfave/cli/v2 v2.25.7
 )
 
