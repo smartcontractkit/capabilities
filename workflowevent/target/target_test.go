@@ -28,9 +28,9 @@ func TestCapability_Info(t *testing.T) {
 		assert.NoError(t, err)
 		info, err := c.Info(context.Background())
 		assert.NoError(t, err)
-		assert.Equal(t, "beholder-target@1.0.0", info.ID)
+		assert.Equal(t, "workflowevent-target@1.0.0", info.ID)
 		assert.Equal(t, capabilities.CapabilityType("target"), info.CapabilityType)
-		assert.Equal(t, "Emits messages through beholder", info.Description)
+		assert.Equal(t, "Emits messages through an OTEL client", info.Description)
 		assert.Equal(t, true, info.IsLocal)
 	})
 }
