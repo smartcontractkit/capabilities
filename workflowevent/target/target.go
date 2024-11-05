@@ -77,6 +77,8 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 	if err := c.beholderClient.Emitter.Emit(ctx, bytes,
 		"beholder_data_schema", "/custom-message/versions/1", // required
 		"beholder_data_type", "custom_message",
+		"beholder_domain", "keystone",
+		"beholder_entity", "values",
 		"workflow_id", rawRequest.Metadata.WorkflowID,
 		"execution_id", rawRequest.Metadata.WorkflowExecutionID,
 		"workflow_name", rawRequest.Metadata.WorkflowName,
