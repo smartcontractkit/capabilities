@@ -1,4 +1,4 @@
-module github.com/smartcontractkit/capabilities/beholder
+module github.com/smartcontractkit/capabilities/workflowevent
 
 go 1.23.0
 

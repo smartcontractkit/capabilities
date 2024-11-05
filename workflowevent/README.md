@@ -1,4 +1,4 @@
-# Telemetry target
+# Workflow event target
 
 This is a target that, when executed, emits events via a telemetry client
 
@@ -6,13 +6,13 @@ This is a target that, when executed, emits events via a telemetry client
 
 ### Tidy
 
-`nx run beholder:tidy`
+`nx run workflowevent:tidy`
 
 ### Generate
 
-`nx run beholder:generate`
+`nx run workflowevent:generate`
 
 ### Test
 
-`nx run beholder:test`
+`nx run workflowevent:test`
 

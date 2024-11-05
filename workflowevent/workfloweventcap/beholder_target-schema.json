@@ -1,6 +1,6 @@
 {
-  "$id": "https://github.com/smartcontractkit/capabilities/beholder/beholdercap/beholder-target@1.0.0",
-  "description": "A target that emits events through beholder",
+  "$id": "https://github.com/smartcontractkit/capabilities/workflowevent/workfloweventcap/workflowevent-target@1.0.0",
+  "description": "A target that emits events through an OTEL client",
   "$defs": {
     "Payload": {
       "type": "object",

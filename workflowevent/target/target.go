@@ -47,7 +47,7 @@ func New(p Params) (capabilities.TargetCapability, error) {
 }
 
 func (c *capability) Info(_ context.Context) (capabilities.CapabilityInfo, error) {
-	return capabilities.NewCapabilityInfo("beholder-target@1.0.0", capabilities.CapabilityTypeTarget, "Emits messages through beholder")
+	return capabilities.NewCapabilityInfo("workflowevent-target@1.0.0", capabilities.CapabilityTypeTarget, "Emits messages through an OTEL client")
 }
 
 func (c *capability) Execute(ctx context.Context, rawRequest capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {

@@ -1,0 +1,5 @@
+type = "standardcapabilities"
+schemaVersion = 1
+name = "workflow-event-capabilities"
+command="${PATH_TO_BINARY}/workflowevent" # Binary location
+config=""

@@ -1,7 +1,7 @@
 {
-  "name": "beholder",
+  "name": "workflowevent",
   "projectType": "capability",
-  "projectRoot": "capabilities/beholder",
+  "projectRoot": "capabilities/workflowevent",
   "implicitDependencies": ["types"],
   "tags": [],
   "targets": {

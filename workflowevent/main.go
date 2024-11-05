@@ -10,11 +10,11 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
-	"github.com/smartcontractkit/capabilities/beholder/target"
+	"github.com/smartcontractkit/capabilities/workflowevent/target"
 )
 
 const (
-	serviceName = "BeholderCapabilities"
+	serviceName = "WorkflowEventCapabilities"
 )
 
 type CapabilitiesService struct {
