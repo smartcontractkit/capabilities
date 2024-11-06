@@ -4,11 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/smartcontractkit/capabilities/libs/loopserver"
-	"github.com/smartcontractkit/capabilities/workflowevent/target"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
+
+	"github.com/smartcontractkit/capabilities/libs/loopserver"
+	"github.com/smartcontractkit/capabilities/workflowevent/target"
 )
 
 const (
