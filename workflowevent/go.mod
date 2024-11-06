@@ -3,8 +3,8 @@ module github.com/smartcontractkit/capabilities/workflowevent
 go 1.23.0
 
 require (
-	github.com/hashicorp/go-plugin v1.6.2-0.20240829161738-06afb6d7ae99
-	github.com/smartcontractkit/chainlink-common v0.2.3-0.20241008170407-8bfcea33a98d
+	github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-unpublished
+	github.com/smartcontractkit/chainlink-common v0.3.1-0.20241016173514-b7b7f6310ac2
 	github.com/stretchr/testify v1.9.0
 	google.golang.org/protobuf v1.34.2
 )
@@ -15,6 +15,8 @@ replace (
 
 	// until merged upstream: https://github.com/mwitkow/grpc-proxy/pull/69
 	github.com/mwitkow/grpc-proxy => github.com/smartcontractkit/grpc-proxy v0.0.0-20230731113816-f1be6620749f
+
+	github.com/smartcontractkit/capabilities/libs/loopserver => ../libs/loopserver
 
 	github.com/smartcontractkit/capabilities/libs/types => ../../libs/types
 )
@@ -45,6 +47,7 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.1.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.22.0 // indirect
 	github.com/hashicorp/go-hclog v1.5.0 // indirect
+	github.com/hashicorp/go-plugin v1.6.2 // indirect
 	github.com/hashicorp/yamux v0.1.1 // indirect
 	github.com/iancoleman/strcase v0.3.0 // indirect
 	github.com/invopop/jsonschema v0.12.0 // indirect
@@ -69,7 +72,7 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v5 v5.2.0 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/smartcontractkit/grpc-proxy v0.0.0-20240830132753-a7e17fec5ab7 // indirect
-	github.com/smartcontractkit/libocr v0.0.0-20240717100443-f6226e09bee7 // indirect
+	github.com/smartcontractkit/libocr v0.0.0-20241007185508-adbe57025f12 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.52.0 // indirect
