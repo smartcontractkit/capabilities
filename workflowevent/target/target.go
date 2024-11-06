@@ -14,9 +14,14 @@ import (
 )
 
 var (
-	marshalFn   = proto.Marshal
-	unmarshalFn = proto.Unmarshal
-	newClientFn = beholder.NewClient
+	marshalFn               = proto.Marshal
+	unmarshalFn             = proto.Unmarshal
+	newClientFn             = beholder.NewClient
+	workflowEventTargetInfo = capabilities.MustNewCapabilityInfo(
+		"workflowevent-target@1.0.0",
+		capabilities.CapabilityTypeTarget,
+		"Emits messages through an OTEL client",
+	)
 )
 
 type Params struct {
@@ -47,7 +52,7 @@ func New(p Params) (capabilities.TargetCapability, error) {
 }
 
 func (c *capability) Info(_ context.Context) (capabilities.CapabilityInfo, error) {
-	return capabilities.NewCapabilityInfo("workflowevent-target@1.0.0", capabilities.CapabilityTypeTarget, "Emits messages through an OTEL client")
+	return workflowEventTargetInfo, nil
 }
 
 func (c *capability) Execute(ctx context.Context, rawRequest capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
