@@ -8,11 +8,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/smartcontractkit/capabilities/libs/testutils"
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
+
+	"github.com/smartcontractkit/capabilities/libs/testutils"
 )
 
 func TestNew(t *testing.T) {
