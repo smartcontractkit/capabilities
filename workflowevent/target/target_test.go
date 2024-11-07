@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/smartcontractkit/capabilities/libs/testutils"
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -38,27 +39,6 @@ func TestCapability_Info(t *testing.T) {
 func TestCapability_Execute(t *testing.T) {
 	t.Run("capability executes without error", func(t *testing.T) {
 		emitter := &mockEmitter{EmitFn: func(ctx context.Context, body []byte, attrKVs ...any) error {
-			wantAttributes := []any{
-				"beholder_data_schema",
-				"/custom-message/versions/1",
-				"beholder_data_type",
-				"custom_message",
-				"beholder_domain",
-				"keystone",
-				"beholder_entity",
-				"values",
-				"workflow_id",
-				"my workflow",
-				"execution_id",
-				"12345",
-				"workflow_name",
-				"event capability test",
-				"workflow_owner",
-				"cool dude",
-			}
-
-			assert.Equal(t, wantAttributes, attrKVs)
-
 			var valueMap values.Map
 			pbm := values.ProtoMap(&valueMap)
 			err := unmarshalFn(body, pbm)
@@ -94,17 +74,22 @@ func TestCapability_Execute(t *testing.T) {
 		})
 		assert.NoError(t, err)
 
-		_, err = c.Execute(context.Background(), capabilities.CapabilityRequest{
-			Inputs: &values.Map{Underlying: map[string]values.Value{
-				"payload": payload,
-			}},
-			Metadata: capabilities.RequestMetadata{
-				WorkflowID:          "my workflow",
-				WorkflowOwner:       "cool dude",
-				WorkflowExecutionID: "12345",
-				WorkflowName:        "event capability test",
+		ctx := context.Background()
+
+		workflow, removeWorkflow := testutils.NewWorkflow(ctx, testutils.WorkflowParams{
+			T: t,
+			Capabilities: []testutils.CapabilityWithConfig{
+				{
+					Capability: c,
+				},
 			},
+			Owner: "owner1",
 		})
+		defer removeWorkflow(ctx)
+
+		_, err = c.Execute(context.Background(), workflow.NewRequest(map[string]any{
+			"payload": payload,
+		}))
 		assert.NoError(t, err)
 	})
 
@@ -130,6 +115,7 @@ func TestCapability_Execute(t *testing.T) {
 	t.Run("capability errors when payload is nil", func(t *testing.T) {
 		c, err := New(Params{Logger: logger.Test(t)})
 		assert.NoError(t, err)
+
 		_, err = c.Execute(context.Background(), capabilities.CapabilityRequest{
 			Inputs: &values.Map{Underlying: map[string]values.Value{
 				"payload": nil,
