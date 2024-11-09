@@ -57,13 +57,15 @@ func (r *ConsensusHandler) StartConsensusRequest(ctx context.Context, requestID 
 	return responseCh, nil
 }
 
-func (r *ConsensusHandler) StopConsensusRequest(requestID string) {
+func (r *ConsensusHandler) StopConsensusRequest(ctx context.Context, requestID string) {
 	r.mux.Lock()
 	defer r.mux.Unlock()
 
 	if req, exists := r.requests[requestID]; exists {
 		close(req.responseCh)
 		delete(r.requests, requestID)
+		r.activeConsensusRequests.Add(ctx, -1)
+		r.activeObservationsCount.Add(ctx, -int64(req.getObservationCount()))
 	}
 }
 
@@ -159,11 +161,6 @@ func (r *ConsensusHandler) SetConsensusValue(ctx context.Context, requestID stri
 	r.mux.Lock()
 	defer r.mux.Unlock()
 	if req, exists := r.requests[requestID]; exists {
-		delete(r.requests, requestID)
 		req.responseCh <- value
-		close(req.responseCh)
-
-		r.activeConsensusRequests.Add(ctx, -1)
-		r.activeObservationsCount.Add(ctx, -int64(req.getObservationCount()))
 	}
 }

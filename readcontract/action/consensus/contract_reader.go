@@ -25,7 +25,7 @@ type contractReader interface {
 
 type consensusHandler interface {
 	StartConsensusRequest(ctx context.Context, requestID string, observationsBeforeHeightReset int) (<-chan []byte, error)
-	StopConsensusRequest(requestID string)
+	StopConsensusRequest(ctx context.Context, requestID string)
 	AddObservationForRequest(ctx context.Context, requestID string, height uint64, value []byte) error
 }
 
@@ -70,7 +70,7 @@ func (c *ContractReader) GetLatestValue(ctx context.Context, requestID string,
 	ticker := c.clock.NewTicker(c.pollInterval)
 	go func() {
 		defer ticker.Stop()
-		defer c.consensusHandler.StopConsensusRequest(requestID)
+		defer c.consensusHandler.StopConsensusRequest(ctx, requestID)
 		defer close(respCh)
 		for {
 			select {

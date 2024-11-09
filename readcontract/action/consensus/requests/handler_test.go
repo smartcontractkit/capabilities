@@ -143,7 +143,7 @@ func TestStoppedRequest(t *testing.T) {
 	require.NoError(t, err)
 
 	// Stop the request
-	handler.StopConsensusRequest("reqID1")
+	handler.StopConsensusRequest(ctx, "reqID1")
 
 	// Test AddObservationForRequest with stopped request
 	err = handler.AddObservationForRequest(ctx, "reqID1", 1, []byte("value1"))
