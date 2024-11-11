@@ -3,7 +3,8 @@ module github.com/smartcontractkit/capabilities/beholder
 go 1.23.0
 
 require (
-	github.com/hashicorp/go-plugin v1.6.2-0.20240829161738-06afb6d7ae99
+	github.com/hashicorp/go-plugin v1.6.2
+	github.com/segmentio/kafka-go v0.4.47
 	github.com/smartcontractkit/chainlink-common v0.2.3-0.20241001140426-35be2fad06ec
 	github.com/stretchr/testify v1.9.0
 	google.golang.org/protobuf v1.34.2
@@ -69,7 +70,6 @@ require (
 	github.com/prometheus/procfs v0.11.1 // indirect
 	github.com/sanity-io/litter v1.5.5 // indirect
 	github.com/santhosh-tekuri/jsonschema/v5 v5.2.0 // indirect
-	github.com/segmentio/kafka-go v0.4.47 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/smartcontractkit/grpc-proxy v0.0.0-20240830132753-a7e17fec5ab7 // indirect
 	github.com/smartcontractkit/libocr v0.0.0-20241007185508-adbe57025f12 // indirect
