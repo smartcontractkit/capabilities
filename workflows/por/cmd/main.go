@@ -28,7 +28,7 @@ type computeOutput struct {
 	// TODO: specify decimals; requires a different consumer contract.
 	// Decimal int
 	FeedID    [32]byte
-	Timestamp time.Time
+	Timestamp int64
 }
 
 type computeConfig struct {
@@ -53,7 +53,7 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 	}.New(workflow)
 
 	compConf := computeConfig{
-		FeedID: "",
+		FeedID: "0x0003fbba4fce42f65d6032b18aee53efdf526cc734ad296cb57565979d883bdd",
 	}
 
 	compute := sdk.Compute1WithConfig(
@@ -62,14 +62,16 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 		&sdk.ComputeConfig[computeConfig]{Config: compConf},
 		sdk.Compute1Inputs[croncap.Payload]{Arg0: cron},
 		func(runtime sdk.Runtime, config computeConfig, outputs croncap.Payload) (computeOutput, error) {
+			fmt.Printf("FeedID: %+v", config)
 			feedID, err := convertFeedIDtoBytes(config.FeedID)
 			if err != nil {
 				return computeOutput{}, fmt.Errorf("cannot convert feedID to bytes")
 			}
 
 			fresp, err := runtime.Fetch(sdk.FetchRequest{
-				URL:    "https://api.real-time-reserves.verinumus.io/v1/chainlink/proof-of-reserves/TrueUSD",
-				Method: "GET",
+				URL:       "https://api.real-time-reserves.verinumus.io/v1/chainlink/proof-of-reserves/TrueUSD",
+				Method:    "GET",
+				TimeoutMs: 5000,
 			})
 			if err != nil {
 				return computeOutput{}, err
@@ -94,7 +96,7 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 			return computeOutput{
 				Price:     int(resp.TotalTrust * 100),
 				FeedID:    feedID, // TrueUSD
-				Timestamp: resp.UpdatedAt,
+				Timestamp: resp.UpdatedAt.Unix(),
 			}, nil
 		},
 	)
@@ -109,6 +111,7 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 			"abi": "(bytes32 FeedID, uint224 Price, uint32 Timestamp)[] Reports",
 		},
 		ReportID: "0001",
+		KeyID:    "evm",
 		AggregationConfig: aggregators.ReduceAggConfig{
 			Fields: []aggregators.AggregationField{
 				{
@@ -140,8 +143,10 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 	}
 
 	chainwriter.TargetConfig{
-		Address: "0x83aF34AbeF5785Dc9C65C2e581f773e5c722fDe0", // Eth sepolia feeds consumer
-	}.New(workflow, "write_chain", targetInput)
+		Address:    "0x83aF34AbeF5785Dc9C65C2e581f773e5c722fDe0", // Eth sepolia feeds consumer
+		DeltaStage: "15s",
+		Schedule:   "oneAtATime",
+	}.New(workflow, "write_ethereum-testnet-sepolia@1.0.0", targetInput)
 
 	return workflow
 }
