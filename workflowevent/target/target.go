@@ -3,6 +3,7 @@ package target
 import (
 	"context"
 	"errors"
+	"os"
 
 	"google.golang.org/protobuf/proto"
 
@@ -22,6 +23,8 @@ var (
 		capabilities.CapabilityTypeTarget,
 		"Emits messages through an OTEL client",
 	)
+	beholderDomain = "keystone"
+	beholderEntity = "values"
 )
 
 type Params struct {
@@ -43,6 +46,18 @@ func New(p Params) (capabilities.TargetCapability, error) {
 	beholderClient, err := newClientFn(beholder.DefaultConfig())
 	if err != nil {
 		return nil, err
+	}
+
+	if domain := os.Getenv("WORKFLOW_EVENT_DOMAIN"); domain != "" {
+		beholderDomain = domain
+	} else {
+		p.Logger.Warn("WORKFLOW_EVENT_DOMAIN not set, using default value")
+	}
+
+	if entity := os.Getenv("WORKFLOW_EVENT_ENTITY"); entity != "" {
+		beholderEntity = entity
+	} else {
+		p.Logger.Warn("WORKFLOW_EVENT_ENTITY not set, using default value")
 	}
 
 	return &capability{
@@ -82,8 +97,8 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 	if err := c.beholderClient.Emitter.Emit(ctx, bytes,
 		"beholder_data_schema", "/custom-message/versions/1", // required
 		"beholder_data_type", "custom_message",
-		"beholder_domain", "keystone",
-		"beholder_entity", "values",
+		"beholder_domain", beholderDomain,
+		"beholder_entity", beholderEntity,
 		"workflow_id", rawRequest.Metadata.WorkflowID,
 		"execution_id", rawRequest.Metadata.WorkflowExecutionID,
 		"workflow_name", rawRequest.Metadata.WorkflowName,
