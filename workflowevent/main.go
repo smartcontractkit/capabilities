@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	"github.com/smartcontractkit/chainlink-common/pkg/loop"
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
@@ -18,12 +18,12 @@ const (
 
 type CapabilitiesService struct {
 	target capabilities.TargetCapability
-	s      *loop.Server
+	lggr   logger.Logger
 }
 
 func main() {
-	loopserver.Serve(serviceName, func(s *loop.Server, _ string) *CapabilitiesService {
-		return &CapabilitiesService{s: s}
+	loopserver.Serve(serviceName, func(lggr logger.Logger) *CapabilitiesService {
+		return &CapabilitiesService{lggr: lggr}
 	})
 }
 
@@ -69,10 +69,10 @@ func (cs *CapabilitiesService) Initialise(
 	_ core.RelayerSet,
 	_ core.OracleFactory,
 ) error {
-	cs.s.Logger.Debugf("Initialising %s", serviceName)
+	cs.lggr.Debugf("Initialising %s", serviceName)
 
 	target, err := target.New(target.Params{
-		Logger: cs.s.Logger,
+		Logger: cs.lggr,
 	})
 	if err != nil {
 		return fmt.Errorf("error creating telemetry target: %w", err)
