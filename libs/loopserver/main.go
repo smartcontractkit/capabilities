@@ -3,10 +3,11 @@ package loopserver
 import (
 	"github.com/hashicorp/go-plugin"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 )
 
-func Serve[T loop.StandardCapabilities](serviceName string, createPluginServer func(*loop.Server, string) T) {
+func Serve[T loop.StandardCapabilities](serviceName string, createPluginServer func(logger.Logger) T) {
 	s := loop.MustNewStartedServer(serviceName)
 	defer s.Stop()
 
@@ -19,7 +20,7 @@ func Serve[T loop.StandardCapabilities](serviceName string, createPluginServer f
 		HandshakeConfig: loop.StandardCapabilitiesHandshakeConfig(),
 		Plugins: map[string]plugin.Plugin{
 			loop.PluginStandardCapabilitiesName: &loop.StandardCapabilitiesLoop{
-				PluginServer: createPluginServer(s, serviceName),
+				PluginServer: createPluginServer(s.Logger),
 				BrokerConfig: loop.BrokerConfig{Logger: s.Logger, StopCh: stopCh, GRPCOpts: s.GRPCOpts},
 			},
 		},

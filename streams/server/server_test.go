@@ -7,7 +7,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 
 	"github.com/smartcontractkit/capabilities/libs/testutils"
@@ -21,9 +20,7 @@ func Test_Server(t *testing.T) {
 	t.Run("RemovingLastWorkflowClearsNamespace", func(t *testing.T) {
 		logger := testutils.NewLogger(t)
 		capabilitiesRegistry := testutils.NewCapabilitiesRegistry(t)
-		capabilitiesServer := server.New(&loop.Server{
-			Logger: logger,
-		}, "kv-store-test-service")
+		capabilitiesServer := server.New(logger)
 		require.NotNil(t, capabilitiesServer)
 
 		// Timeout is important to avoid hanging tests
