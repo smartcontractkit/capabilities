@@ -87,16 +87,21 @@ jobs:
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
         with:
           fetch-depth: 0
+      
       - name: Set up project environment
         uses: ./.github/actions/setup
         with:
           project: ${{ matrix.projects }}
           go-module-file: ${{ fromJson(needs.affected.outputs.nxexcludeintegration)[matrix.projects].go_sum }}
           task: "test"
-      - name: Test ${{ matrix.projects }}
+
+      - name: Unit Test ${{ matrix.projects }}
         run: ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} test
 
-      - name: Upload test artifacts
+      - name: Race Test ${{ matrix.projects }}
+        run: ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} race
+
+      - name: Upload Unit Tests Artifacts
         if: always()
         uses: actions/upload-artifact@v4.4.3
         with:
