@@ -34,6 +34,10 @@ func (cs *cronStore) Read(triggerID string) (value cronTrigger, ok bool) {
 func (cs *cronStore) ReadAll() (values map[string]cronTrigger) {
 	cs.mu.RLock()
 	defer cs.mu.RUnlock()
+	// maybe use sync.Map??
+	// make new map
+	// copy everything in 
+	// return this map
 	return cs.triggers
 }
 
