@@ -42,7 +42,7 @@ func Test_RemoteReadCapability(t *testing.T) {
 
 	donContext := framework.CreateDonContext(ctx, t)
 
-	address, _, _, err := contract.DeployContract(donContext.EthBlockchain.TransactionOpts(), donContext.EthBlockchain)
+	address, _, _, err := contract.DeployContract(donContext.EthBlockchain.TransactionOpts(), donContext.EthBlockchain.Client())
 	require.NoError(t, err)
 
 	readContractBinary, err := utils.DeployCapability(t, "readcontract")
@@ -129,7 +129,7 @@ func testLocalReadContractCapability(t *testing.T, withConsensus bool, pollingIn
 
 	donContext := framework.CreateDonContext(ctx, t)
 
-	address, _, _, err := contract.DeployContract(donContext.EthBlockchain.TransactionOpts(), donContext.EthBlockchain)
+	address, _, _, err := contract.DeployContract(donContext.EthBlockchain.TransactionOpts(), donContext.EthBlockchain.Client())
 	require.NoError(t, err)
 
 	readContractBinary, err := utils.DeployCapability(t, "readcontract")
