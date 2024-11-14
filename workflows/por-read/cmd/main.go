@@ -17,7 +17,9 @@ import (
 )
 
 type computeOutput struct {
-	Price     int
+	Price int
+	// TODO: specify decimals; requires a different consumer contract.
+	// Decimal int
 	FeedID    [32]byte
 	Timestamp time.Time
 }
