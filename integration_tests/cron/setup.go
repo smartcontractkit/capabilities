@@ -25,6 +25,8 @@ func setupCronTestDon(ctx context.Context, t *testing.T, lggr logger.SugaredLogg
 
 	servicetest.Run(t, workflowDon)
 
+	donContext.WaitForCapabilitiesToBeExposed(t, workflowDon)
+
 	workflowJob := GetWorkflowJobCron(t, workflowName, workflowOwnerID, cronSchedule)
 
 	err := workflowDon.AddJob(ctx, &workflowJob)

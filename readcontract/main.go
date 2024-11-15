@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/hashicorp/go-plugin"
 	"github.com/jonboulle/clockwork"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -33,7 +32,7 @@ type readContractAction interface {
 
 type ReadContractGRPCService struct {
 	services.StateMachine
-	action capabilities.ActionCapability
+	action readContractAction
 	lggr   logger.Logger
 }
 
