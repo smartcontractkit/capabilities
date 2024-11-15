@@ -3,6 +3,7 @@ package target
 import (
 	"context"
 	"errors"
+	"math/big"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -161,20 +162,6 @@ func TestCapability_Execute(t *testing.T) {
 		assert.Equal(t, "boom", err.Error())
 	})
 
-	t.Run("capability errors when creating the beholder client errors", func(t *testing.T) {
-		oldNewClientFn := newClientFn
-		newClientFn = func(cfg beholder.Config) (*beholder.Client, error) {
-			return nil, errors.New("new client boom")
-		}
-		defer func() {
-			newClientFn = oldNewClientFn
-		}()
-
-		_, err := New(Params{Logger: logger.Test(t)})
-		assert.Error(t, err)
-		assert.Equal(t, "new client boom", err.Error())
-	})
-
 	t.Run("capability errors when emit errors", func(t *testing.T) {
 		emitter := &mockEmitter{EmitFn: func(ctx context.Context, body []byte, attrKVs ...any) error {
 			return errors.New("emit boom")
@@ -207,6 +194,150 @@ func TestCapability_Execute(t *testing.T) {
 		})
 		assert.Error(t, err)
 		assert.Equal(t, "emit boom", err.Error())
+	})
+
+	t.Run("capability execute errors when the client creation errors", func(t *testing.T) {
+		oldNewClientFn := newClientFn
+		newClientFn = func(cfg beholder.Config) (*beholder.Client, error) {
+			return nil, errors.New("client boom")
+		}
+		defer func() {
+			newClientFn = oldNewClientFn
+		}()
+
+		c, err := New(Params{Logger: logger.Test(t)})
+		assert.NoError(t, err)
+
+		payload, err := values.NewMap(map[string]any{
+			"service":   values.NewString("Beholder"),
+			"component": values.NewString("Unit test"),
+		})
+		assert.NoError(t, err)
+
+		ctx := context.Background()
+
+		workflow, removeWorkflow := testutils.NewWorkflow(ctx, testutils.WorkflowParams{
+			T: t,
+			Capabilities: []testutils.CapabilityWithConfig{
+				{
+					Capability: c,
+				},
+			},
+			Owner: "owner1",
+		})
+		defer removeWorkflow(ctx)
+
+		_, err = c.Execute(context.Background(), workflow.NewRequest(map[string]any{
+			"payload": payload,
+		}))
+		assert.Error(t, err)
+		assert.Equal(t, "client boom", err.Error())
+	})
+
+	t.Run("capability runs with a custom otel endpoint", func(t *testing.T) {
+		emitter := &mockEmitter{EmitFn: func(ctx context.Context, body []byte, attrKVs ...any) error {
+			var valueMap values.Map
+			pbm := values.ProtoMap(&valueMap)
+			err := unmarshalFn(body, pbm)
+			assert.NoError(t, err)
+
+			rawMap := map[string]any{}
+			for k, v := range pbm.Fields {
+				rawMap[k] = v.GetStringValue()
+			}
+
+			assert.Equal(t, rawMap, map[string]any{"service": "Beholder", "component": "Unit test"})
+			return nil
+		}}
+
+		mockBeholderClient := &beholder.Client{
+			Emitter: emitter,
+		}
+
+		oldNewClientFn := newClientFn
+		newClientFn = func(cfg beholder.Config) (*beholder.Client, error) {
+			assert.Equal(t, "redpanda:1234", cfg.OtelExporterGRPCEndpoint)
+			return mockBeholderClient, nil
+		}
+		defer func() {
+			newClientFn = oldNewClientFn
+		}()
+
+		c, err := New(Params{Logger: logger.Test(t)})
+		assert.NoError(t, err)
+
+		payload, err := values.NewMap(map[string]any{
+			"service":   values.NewString("Beholder"),
+			"component": values.NewString("Unit test"),
+		})
+		assert.NoError(t, err)
+
+		config, err := values.NewMap(map[string]interface{}{
+			"otelEndpoint": "redpanda:1234",
+		})
+		assert.NoError(t, err)
+
+		_, err = c.Execute(context.Background(), capabilities.CapabilityRequest{
+			Inputs: &values.Map{Underlying: map[string]values.Value{
+				"payload": payload,
+			}},
+			Config: config,
+		})
+		assert.NoError(t, err)
+	})
+
+	t.Run("capability errors when an unsupported type is passed in the config", func(t *testing.T) {
+		emitter := &mockEmitter{EmitFn: func(ctx context.Context, body []byte, attrKVs ...any) error {
+			var valueMap values.Map
+			pbm := values.ProtoMap(&valueMap)
+			err := unmarshalFn(body, pbm)
+			assert.NoError(t, err)
+
+			rawMap := map[string]any{}
+			for k, v := range pbm.Fields {
+				rawMap[k] = v.GetStringValue()
+			}
+
+			assert.Equal(t, rawMap, map[string]any{"service": "Beholder", "component": "Unit test"})
+			return nil
+		}}
+
+		mockBeholderClient := &beholder.Client{
+			Emitter: emitter,
+		}
+
+		oldNewClientFn := newClientFn
+		newClientFn = func(cfg beholder.Config) (*beholder.Client, error) {
+			return mockBeholderClient, nil
+		}
+		defer func() {
+			newClientFn = oldNewClientFn
+		}()
+
+		c, err := New(Params{Logger: logger.Test(t)})
+		assert.NoError(t, err)
+
+		payload, err := values.NewMap(map[string]any{
+			"service":   values.NewString("Beholder"),
+			"component": values.NewString("Unit test"),
+		})
+		assert.NoError(t, err)
+
+		config, err := values.NewMap(map[string]interface{}{
+			"otelEndpoint": big.NewInt(123),
+		})
+		assert.NoError(t, err)
+
+		_, err = c.Execute(context.Background(), capabilities.CapabilityRequest{
+			Inputs: &values.Map{Underlying: map[string]values.Value{
+				"payload": payload,
+			}},
+			Config: config,
+		})
+		assert.Error(t, err)
+		assert.Equal(t, `decoding failed due to the following error(s):
+
+'otelEndpoint' expected type 'string', got unconvertible type 'values.BigInt', value: '&{123}'`, err.Error())
 	})
 }
 

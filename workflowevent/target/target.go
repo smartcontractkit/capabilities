@@ -11,6 +11,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk"
+
+	"github.com/smartcontractkit/capabilities/workflowevent/workfloweventcap"
 )
 
 var (
@@ -40,14 +42,8 @@ type capability struct {
 }
 
 func New(p Params) (capabilities.TargetCapability, error) {
-	beholderClient, err := newClientFn(beholder.DefaultConfig())
-	if err != nil {
-		return nil, err
-	}
-
 	return &capability{
-		lggr:           p.Logger,
-		beholderClient: beholderClient,
+		lggr: p.Logger,
 	}, nil
 }
 
@@ -57,6 +53,28 @@ func (c *capability) Info(_ context.Context) (capabilities.CapabilityInfo, error
 
 func (c *capability) Execute(ctx context.Context, rawRequest capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
 	c.lggr.Debugw("executing", "workflowID", rawRequest.Metadata.WorkflowID, "executionID", rawRequest.Metadata.WorkflowExecutionID, "workflowName", rawRequest.Metadata.WorkflowName, "workflowOwner", rawRequest.Metadata.WorkflowOwner)
+
+	if c.beholderClient == nil {
+		config := beholder.DefaultConfig()
+
+		if rawRequest.Config != nil {
+			capConfig := &workfloweventcap.Config{}
+			if err := rawRequest.Config.UnwrapTo(capConfig); err != nil {
+				return capabilities.CapabilityResponse{}, err
+			}
+
+			if capConfig.OtelEndpoint != nil {
+				config.OtelExporterGRPCEndpoint = *capConfig.OtelEndpoint
+			}
+		}
+
+		beholderClient, err := newClientFn(config)
+		if err != nil {
+			return capabilities.CapabilityResponse{}, err
+		}
+
+		c.beholderClient = beholderClient
+	}
 
 	if rawRequest.Inputs == nil {
 		return capabilities.CapabilityResponse{}, errors.New("missing inputs field")

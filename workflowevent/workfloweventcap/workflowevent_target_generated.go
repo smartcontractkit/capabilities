@@ -7,7 +7,10 @@ import (
 	"fmt"
 )
 
-type Config map[string]interface{}
+type Config struct {
+	// OtelEndpoint corresponds to the JSON schema field "otelEndpoint".
+	OtelEndpoint *string `json:"otelEndpoint,omitempty" yaml:"otelEndpoint,omitempty" mapstructure:"otelEndpoint,omitempty"`
+}
 
 type Payload struct {
 	// Payload corresponds to the JSON schema field "Payload".

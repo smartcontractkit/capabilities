@@ -28,9 +28,17 @@
     },
     "Config": {
       "type": "object",
-      "properties": {},
-      "required": [],
-      "additionalProperties": false
+      "properties": {
+        "otelEndpoint": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "examples": [
+        {
+          "otelEndpoint": "localhost:4317"
+        }
+      ]
     }
   },
   "type": "object",
