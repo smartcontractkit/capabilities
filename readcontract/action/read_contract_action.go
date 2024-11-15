@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/jonboulle/clockwork"
 
@@ -15,51 +14,17 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
-	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
-
-	"github.com/smartcontractkit/capabilities/readcontract/action/consensus"
-	"github.com/smartcontractkit/capabilities/readcontract/action/consensus/reportingplugins"
-	"github.com/smartcontractkit/capabilities/readcontract/action/consensus/requests"
 
 	"github.com/smartcontractkit/capabilities/readcontract/readcontractcap"
 )
 
 type ReadContractConfig struct {
-	ChainID           uint64 `json:"chainId"`
-	Network           string `json:"network"`
-	SupportsConsensus bool   `json:"supportsConsensus"`
+	ChainID uint64 `json:"chainId"`
+	Network string `json:"network"`
 }
 
 type Output struct {
 	LatestValue values.Value `json:"latestValue"`
-}
-
-type consensusHandler struct {
-	requestsConsensusHandler *requests.ConsensusHandler
-	medianHeightOracle       core.Oracle
-	valueAtHeightOracle      core.Oracle
-}
-
-func (r *consensusHandler) Start(ctx context.Context) error {
-	if err := r.medianHeightOracle.Start(ctx); err != nil {
-		return fmt.Errorf("failed to start median height oracle: %w", err)
-	}
-
-	if err := r.valueAtHeightOracle.Start(ctx); err != nil {
-		return fmt.Errorf("failed to start value at height oracle: %w", err)
-	}
-	return nil
-}
-
-func (r *consensusHandler) Close() error {
-	if err := r.medianHeightOracle.Close(context.Background()); err != nil {
-		return fmt.Errorf("failed to close median height oracle: %w", err)
-	}
-
-	if err := r.valueAtHeightOracle.Close(context.Background()); err != nil {
-		return fmt.Errorf("failed to close value at height oracle: %w", err)
-	}
-	return nil
 }
 
 type ReadContractAction struct {
@@ -72,8 +37,6 @@ type ReadContractAction struct {
 	relayer Relayer
 
 	readContractStore *readContractStore
-
-	consensusHandler *consensusHandler
 
 	clock clockwork.Clock
 }
@@ -101,44 +64,11 @@ func NewReadContractAction(ctx context.Context, lggr logger.Logger, config ReadC
 		return nil, fmt.Errorf("failed to create capability info: %w", err)
 	}
 
-	var handler *consensusHandler
-	if config.SupportsConsensus {
-		requestsConsensusHandler, err := requests.NewConsensusHandler()
-		if err != nil {
-			return nil, fmt.Errorf("failed to create consensus handler: %w", err)
-		}
-
-		medianHeightOracle, err := oracleFactory.NewOracle(ctx, core.OracleArgs{
-			LocalConfig:                   ocrtypes.LocalConfig{},
-			ReportingPluginFactoryService: &reportingplugins.MedianHeightReportingPluginFactory{ConsensusHandler: requestsConsensusHandler},
-			ContractTransmitter:           &reportingplugins.MedianHeightTransmitter{Requests: requestsConsensusHandler},
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to create median height oracle: %w", err)
-		}
-
-		valueAtHeightOracle, err := oracleFactory.NewOracle(ctx, core.OracleArgs{
-			LocalConfig:                   ocrtypes.LocalConfig{},
-			ReportingPluginFactoryService: &reportingplugins.ValueAtHeightReportingPluginFactory{ConsensusHandler: requestsConsensusHandler},
-			ContractTransmitter:           &reportingplugins.ValueAtHeightTransmitter{Requests: requestsConsensusHandler},
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to create value at height oracle: %w", err)
-		}
-
-		handler = &consensusHandler{
-			requestsConsensusHandler: requestsConsensusHandler,
-			medianHeightOracle:       medianHeightOracle,
-			valueAtHeightOracle:      valueAtHeightOracle,
-		}
-	}
-
 	return &ReadContractAction{
 		lggr:              logger.Named(lggr, id),
 		CapabilityInfo:    info,
 		Validator:         capabilities.NewValidator[readcontractcap.Config, readcontractcap.Input, capabilities.CapabilityResponse](capabilities.ValidatorArgs{Info: info}),
 		relayer:           relayer,
-		consensusHandler:  handler,
 		clock:             clock,
 		readContractStore: NewReadContractStore(),
 	}, nil
@@ -146,22 +76,12 @@ func NewReadContractAction(ctx context.Context, lggr logger.Logger, config ReadC
 
 func (r *ReadContractAction) Start(ctx context.Context) error {
 	return r.StartOnce("ReadContractAction", func() error {
-		if r.consensusHandler != nil {
-			if err := r.consensusHandler.Start(ctx); err != nil {
-				return fmt.Errorf("failed to start consensus handler: %w", err)
-			}
-		}
 		return nil
 	})
 }
 
 func (r *ReadContractAction) Close() error {
 	return r.StopOnce("ReadContractAction", func() error {
-		if r.consensusHandler != nil {
-			if err := r.consensusHandler.Close(); err != nil {
-				return fmt.Errorf("failed to close consensus handler: %w", err)
-			}
-		}
 		return nil
 	})
 }
@@ -221,30 +141,7 @@ func (r *ReadContractAction) RegisterToWorkflow(ctx context.Context, request cap
 		return fmt.Errorf("error binding read identifier: %w", err)
 	}
 
-	var cr CapabilityContractReader
-	if config.WithConsensus != nil && *config.WithConsensus {
-		if r.consensusHandler == nil {
-			return fmt.Errorf("capability is not configured to support consensus")
-		}
-
-		if config.PollingInterval == nil {
-			return fmt.Errorf("polling interval must be set if using consensus")
-		}
-
-		pollInterval, err := time.ParseDuration(*config.PollingInterval)
-
-		if config.ObservationsBeforeHeightReset == nil {
-			return fmt.Errorf("observations before height reset must be set if using consensus")
-		}
-		observationsBeforeReset := *config.ObservationsBeforeHeightReset
-
-		cr = consensus.NewContractReader(reader, r.consensusHandler.requestsConsensusHandler, config.ReadIdentifier, r.clock, pollInterval, int(observationsBeforeReset))
-		if err != nil {
-			return fmt.Errorf("invalid polling interval: %w", err)
-		}
-	} else {
-		cr = &nonConsensusContractReader{contractReader: reader, readIdentifier: config.ReadIdentifier}
-	}
+	cr := &nonConsensusContractReader{contractReader: reader, readIdentifier: config.ReadIdentifier}
 
 	r.readContractStore.Add(request.Metadata, cr)
 
@@ -256,30 +153,35 @@ func (r *ReadContractAction) UnregisterFromWorkflow(ctx context.Context, request
 	return nil
 }
 
+type Response struct {
+	Value *values.Value
+	Err   error
+}
+
 type nonConsensusContractReader struct {
 	contractReader ContractReader
 	readIdentifier string
 }
 
 func (n *nonConsensusContractReader) GetLatestValue(ctx context.Context, requestID string,
-	confidenceLevel primitives.ConfidenceLevel, params any) (<-chan consensus.Response, error) {
-	respCh := make(chan consensus.Response, 1)
+	confidenceLevel primitives.ConfidenceLevel, params any) (<-chan Response, error) {
+	respCh := make(chan Response, 1)
 	go func() {
 		defer close(respCh)
 		var value values.Value
 		_, err := n.contractReader.GetLatestValueWithHeadData(ctx, n.readIdentifier, confidenceLevel, params, &value)
 		if err != nil {
-			respCh <- consensus.Response{Err: fmt.Errorf("failed to get latest value fron contract reader: %w", err)}
+			respCh <- Response{Err: fmt.Errorf("failed to get latest value fron contract reader: %w", err)}
 			return
 		}
-		respCh <- consensus.Response{Value: &value}
+		respCh <- Response{Value: &value}
 	}()
 	return respCh, nil
 }
 
 type CapabilityContractReader interface {
 	GetLatestValue(ctx context.Context, requestID string,
-		confidenceLevel primitives.ConfidenceLevel, params any) (<-chan consensus.Response, error)
+		confidenceLevel primitives.ConfidenceLevel, params any) (<-chan Response, error)
 }
 
 type contractStoreKey struct {

@@ -13,13 +13,10 @@ func (cfg Config) New(w *sdk.WorkflowSpecFactory, id string, ref string, input A
 		ID: id, Ref: ref,
 		Inputs: input.ToSteps(),
 		Config: map[string]any{
-			"ContractAddress":               cfg.ContractAddress,
-			"ContractName":                  cfg.ContractName,
-			"ContractReaderConfig":          cfg.ContractReaderConfig,
-			"ObservationsBeforeHeightReset": cfg.ObservationsBeforeHeightReset,
-			"PollingInterval":               cfg.PollingInterval,
-			"ReadIdentifier":                cfg.ReadIdentifier,
-			"WithConsensus":                 cfg.WithConsensus,
+			"ContractAddress":      cfg.ContractAddress,
+			"ContractName":         cfg.ContractName,
+			"ContractReaderConfig": cfg.ContractReaderConfig,
+			"ReadIdentifier":       cfg.ReadIdentifier,
 		},
 		CapabilityType: capabilities.CapabilityTypeAction,
 	}

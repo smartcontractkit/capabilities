@@ -29,18 +29,8 @@ type Config struct {
 	// "ContractReaderConfig".
 	ContractReaderConfig string `json:"ContractReaderConfig" yaml:"ContractReaderConfig" mapstructure:"ContractReaderConfig"`
 
-	// Number of observations without consensus before the consensus block height is
-	// reset to the latest block height
-	ObservationsBeforeHeightReset *int64 `json:"ObservationsBeforeHeightReset,omitempty" yaml:"ObservationsBeforeHeightReset,omitempty" mapstructure:"ObservationsBeforeHeightReset,omitempty"`
-
-	// Interval at which the contract is polled for new data used to achieve consensus
-	PollingInterval *string `json:"PollingInterval,omitempty" yaml:"PollingInterval,omitempty" mapstructure:"PollingInterval,omitempty"`
-
 	// ReadIdentifier corresponds to the JSON schema field "ReadIdentifier".
 	ReadIdentifier string `json:"ReadIdentifier" yaml:"ReadIdentifier" mapstructure:"ReadIdentifier"`
-
-	// Whether the capability should use consensus to achieve finality
-	WithConsensus *bool `json:"WithConsensus,omitempty" yaml:"WithConsensus,omitempty" mapstructure:"WithConsensus,omitempty"`
 }
 
 // UnmarshalJSON implements json.Unmarshaler.

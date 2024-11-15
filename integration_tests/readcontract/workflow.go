@@ -39,9 +39,6 @@ actions:
       ReadIdentifier: "%s"
       ContractReaderConfig: |
         %s
-      WithConsensus: %s
-      PollingInterval: "%s"
-      ObservationsBeforeHeightReset: %d
 
 targets:
   - id: "mock-target@1.0.0"
@@ -62,9 +59,6 @@ func CreateWorkflowJobForTest(
 	contractName string,
 	contractFuncName string,
 	contractABI string,
-	withConsensus bool,
-	pollingInterval string,
-	observationsBeforeHeightReset int,
 ) job.Job {
 	contractReaderConfig, err := CreateContractReaderConfig(contractName, contractFuncName, contractABI)
 	require.NoError(t, err)
@@ -86,9 +80,6 @@ func CreateWorkflowJobForTest(
 		contractName,
 		readIdentifier,
 		contractReaderConfig,
-		fmt.Sprintf("%t", withConsensus),
-		pollingInterval,
-		observationsBeforeHeightReset,
 	)
 
 	fmt.Println("Test Job Spec->")

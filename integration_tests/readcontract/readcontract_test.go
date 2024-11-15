@@ -24,26 +24,20 @@ import (
 )
 
 type ReadContractConfig struct {
-	ChainID           uint64 `json:"chainId"`
-	Network           string `json:"network"`
-	SupportsConsensus bool   `json:"supportsConsensus"`
-}
-
-func Test_RemoteReadCapabilityWithConsensus(t *testing.T) {
-	testRemoteReadContractCapability(t, true, "15s")
+	ChainID uint64 `json:"chainId"`
+	Network string `json:"network"`
 }
 
 func Test_RemoteReadCapabilityWithoutConsensus(t *testing.T) {
-	testRemoteReadContractCapability(t, false, "")
+	testRemoteReadContractCapability(t)
 }
 
-func testRemoteReadContractCapability(t *testing.T, withConsensus bool, pollingInterval string) {
+func testRemoteReadContractCapability(t *testing.T) {
 	ctx, cancel := framework.Context(t)
 	defer cancel()
 
 	lggr := logger.TestLogger(t)
 	lggr.SetLogLevel(zapcore.InfoLevel)
-
 	defer func() {
 		utils.CleanupCapabilities(lggr)
 	}()
@@ -80,7 +74,7 @@ func testRemoteReadContractCapability(t *testing.T, withConsensus bool, pollingI
 
 	chainID := uint64(1337)
 	network := "evm"
-	readCapabilityConfig, err := CreateReadContractCapabilityConfig(chainID, network, withConsensus)
+	readCapabilityConfig, err := CreateReadContractCapabilityConfig(chainID, network)
 	require.NoError(t, err)
 
 	readCapabilityDon.AddPublishedStandardCapability("readcontract-capability", readContractBinary, readCapabilityConfig,
@@ -98,8 +92,7 @@ func testRemoteReadContractCapability(t *testing.T, withConsensus bool, pollingI
 	donContext.WaitForCapabilitiesToBeExposed(t, readCapabilityDon, workflowDon)
 
 	workflowJob := CreateWorkflowJobForTest(t, workflowName, workflowOwnerID, network, strconv.FormatUint(chainID, 10),
-		address.String(), "ValueSource", "GetValue", contract.ContractMetaData.ABI,
-		withConsensus, pollingInterval, 10)
+		address.String(), "ValueSource", "GetValue", contract.ContractMetaData.ABI)
 
 	err = workflowDon.AddJob(ctx, &workflowJob)
 	require.NoError(t, err)
@@ -117,81 +110,10 @@ func testRemoteReadContractCapability(t *testing.T, withConsensus bool, pollingI
 	require.Equal(t, CreateExpectedValue(t, []int64{21, 42, 63}), readresult.Inputs)
 }
 
-func Test_LocalReadCapabilityWithConsensus(t *testing.T) {
-	testLocalReadContractCapability(t, true, "1s")
-}
-
-func Test_LocalReadCapabilityWithoutConsensus(t *testing.T) {
-	testLocalReadContractCapability(t, false, "")
-}
-
-func testLocalReadContractCapability(t *testing.T, withConsensus bool, pollingInterval string) {
-	ctx, cancel := framework.Context(t)
-	defer cancel()
-	lggr := logger.TestLogger(t)
-	lggr.SetLogLevel(zapcore.InfoLevel)
-
-	defer func() {
-		utils.CleanupCapabilities(lggr)
-	}()
-
-	donContext := framework.CreateDonContext(ctx, t)
-
-	address, _, _, err := contract.DeployContract(donContext.EthBlockchain.TransactionOpts(), donContext.EthBlockchain.Client())
-	require.NoError(t, err)
-
-	readContractBinary, err := utils.DeployCapability(t, "readcontract")
-	require.NoError(t, err)
-
-	workflowDonConfiguration, err := framework.NewDonConfiguration(framework.NewDonConfigurationParams{Name: "Workflow", NumNodes: 7, F: 2, AcceptsWorkflows: true})
-	require.NoError(t, err)
-
-	triggerSink := framework.NewTriggerSink(t, "mock-trigger", "1.0.0")
-	targetSink := framework.NewTargetSink("mock-target", "1.0.0")
-
-	workflowDon := framework.NewDON(ctx, t, lggr, workflowDonConfiguration,
-		[]commoncap.DON{},
-		donContext, true)
-
-	// Note: it is expected that the workflow don always has an  at least one external capability, falure to do so will
-	// cause adding a node to the capability registry contract to fail - arguably a bug in the contract
-	workflowDon.AddExternalTriggerCapability(triggerSink)
-	workflowDon.AddTargetCapability(targetSink)
-
-	chainID := uint64(1337)
-	network := "evm"
-	readCapabilityConfig, err := CreateReadContractCapabilityConfig(chainID, network, withConsensus)
-	require.NoError(t, err)
-
-	workflowDon.AddStandardCapability("readcontract-capability", readContractBinary, readCapabilityConfig)
-
-	servicetest.Run(t, workflowDon)
-
-	workflowJob := CreateWorkflowJobForTest(t, workflowName, workflowOwnerID, network, strconv.FormatUint(chainID, 10),
-		address.String(), "ValueSource", "GetValue", contract.ContractMetaData.ABI,
-		withConsensus, pollingInterval, 10)
-
-	err = workflowDon.AddJob(ctx, &workflowJob)
-	require.NoError(t, err)
-
-	contractReadActionParams, err := values.WrapMap(map[string]any{
-		"ConfidenceLevel": "unconfirmed",
-		"Params":          map[string]any{},
-	})
-	require.NoError(t, err)
-
-	triggerSink.SendOutput(contractReadActionParams)
-
-	readresult := <-targetSink.Sink
-	require.NotNil(t, readresult)
-	require.Equal(t, CreateExpectedValue(t, []int64{21, 42, 63}), readresult.Inputs)
-}
-
-func CreateReadContractCapabilityConfig(chainID uint64, network string, supportsConsensus bool) (string, error) {
+func CreateReadContractCapabilityConfig(chainID uint64, network string) (string, error) {
 	readContractConfig := ReadContractConfig{
-		ChainID:           chainID,
-		Network:           network,
-		SupportsConsensus: supportsConsensus,
+		ChainID: chainID,
+		Network: network,
 	}
 
 	configJSON, err := json.Marshal(readContractConfig)
