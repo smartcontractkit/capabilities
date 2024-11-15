@@ -7,19 +7,22 @@
       "properties": {
         "ContractReaderConfig": {
           "type": "string"
+        },
+        "ReadIdentifier": {
+          "type": "string"
+        },
+        "ContractAddress": {
+          "type": "string"
+        },
+        "ContractName": {
+          "type": "string"
         }
       },
-      "required": ["ContractReaderConfig"]
+      "required": ["ContractReaderConfig", "ReadIdentifier", "ContractAddress", "ContractName"]
     },
     "Input": {
       "type": "object",
       "properties": {
-        "ReadIdentifier": {
-          "type": "string"
-        },
-        "Address": {
-          "type": "string"
-        },
         "ConfidenceLevel": {
           "type": "string"
         },
