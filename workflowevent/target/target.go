@@ -3,8 +3,11 @@ package target
 import (
 	"context"
 	"errors"
+	"time"
 
 	"google.golang.org/protobuf/proto"
+
+	otelattr "go.opentelemetry.io/otel/attribute"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -39,8 +42,24 @@ type capability struct {
 	beholderClient *beholder.Client
 }
 
+var defaultOtelAttributes = []otelattr.KeyValue{
+	otelattr.String("package_name", "beholder"),
+}
+
 func New(p Params) (capabilities.TargetCapability, error) {
-	beholderClient, err := newClientFn(beholder.DefaultConfig())
+	beholderClient, err := newClientFn(beholder.Config{
+		InsecureConnection:       true,
+		CACertFile:               "",
+		OtelExporterGRPCEndpoint: "host.docker.internal:4317",
+		ResourceAttributes:       defaultOtelAttributes,
+		EmitterExportTimeout:     1 * time.Second,
+		EmitterBatchProcessor:    true,
+		TraceSampleRatio:         1,
+		TraceBatchTimeout:        1 * time.Second,
+		MetricReaderInterval:     1 * time.Second,
+		LogExportTimeout:         1 * time.Second,
+		LogBatchProcessor:        true,
+	})
 	if err != nil {
 		return nil, err
 	}
