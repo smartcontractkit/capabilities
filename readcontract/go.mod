@@ -3,12 +3,13 @@ module github.com/smartcontractkit/capabilities/readcontract
 go 1.23
 
 require (
-	github.com/hashicorp/go-plugin v1.6.2-0.20240829161738-06afb6d7ae99
+	github.com/hashicorp/go-plugin v1.6.2
 	github.com/jonboulle/clockwork v0.4.0
 	github.com/smartcontractkit/capabilities/libs/testutils v0.0.0-unpublished
-	github.com/smartcontractkit/chainlink-common v0.3.1-0.20241107182105-916d0d094dc0
+	github.com/smartcontractkit/chainlink-common v0.3.1-0.20241114134822-aadff98ef068
 	github.com/smartcontractkit/libocr v0.0.0-20241007185508-adbe57025f12
 	github.com/stretchr/testify v1.9.0
+	go.opentelemetry.io/otel/metric v1.30.0
 	google.golang.org/protobuf v1.34.2
 )
 
@@ -79,7 +80,6 @@ require (
 	go.opentelemetry.io/otel/exporters/stdout/stdoutmetric v1.28.0 // indirect
 	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.28.0 // indirect
 	go.opentelemetry.io/otel/log v0.6.0 // indirect
-	go.opentelemetry.io/otel/metric v1.30.0 // indirect
 	go.opentelemetry.io/otel/sdk v1.30.0 // indirect
 	go.opentelemetry.io/otel/sdk/log v0.6.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.30.0 // indirect

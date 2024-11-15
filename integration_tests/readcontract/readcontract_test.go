@@ -29,7 +29,15 @@ type ReadContractConfig struct {
 	SupportsConsensus bool   `json:"supportsConsensus"`
 }
 
-func Test_RemoteReadCapability(t *testing.T) {
+func Test_RemoteReadCapabilityWithConsensus(t *testing.T) {
+	testRemoteReadContractCapability(t, true, "15s")
+}
+
+func Test_RemoteReadCapabilityWithoutConsensus(t *testing.T) {
+	testRemoteReadContractCapability(t, false, "")
+}
+
+func testRemoteReadContractCapability(t *testing.T, withConsensus bool, pollingInterval string) {
 	ctx, cancel := framework.Context(t)
 	defer cancel()
 
@@ -72,7 +80,7 @@ func Test_RemoteReadCapability(t *testing.T) {
 
 	chainID := uint64(1337)
 	network := "evm"
-	readCapabilityConfig, err := CreateReadContractCapabilityConfig(chainID, network, true)
+	readCapabilityConfig, err := CreateReadContractCapabilityConfig(chainID, network, withConsensus)
 	require.NoError(t, err)
 
 	readCapabilityDon.AddPublishedStandardCapability("readcontract-capability", readContractBinary, readCapabilityConfig,
@@ -91,7 +99,7 @@ func Test_RemoteReadCapability(t *testing.T) {
 
 	workflowJob := CreateWorkflowJobForTest(t, workflowName, workflowOwnerID, network, strconv.FormatUint(chainID, 10),
 		address.String(), "ValueSource", "GetValue", contract.ContractMetaData.ABI,
-		true, "1s", 10)
+		withConsensus, pollingInterval, 10)
 
 	err = workflowDon.AddJob(ctx, &workflowJob)
 	require.NoError(t, err)
