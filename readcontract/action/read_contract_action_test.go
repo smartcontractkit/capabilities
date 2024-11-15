@@ -18,26 +18,16 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 
 	"github.com/smartcontractkit/capabilities/libs/testutils"
-	"github.com/smartcontractkit/capabilities/readcontract/action/consensus"
 
 	actions "github.com/smartcontractkit/capabilities/readcontract/action"
 	"github.com/smartcontractkit/capabilities/readcontract/readcontractcap"
 )
 
-func TestReadContractAction_Execute_WithConsensus(t *testing.T) {
-	pollingInterval := "1s"
-	withConsensus := true
-
-	observationsBeforeHeightReset := int64(10)
-	testReadContractActionExecute(t, &pollingInterval, &withConsensus, &observationsBeforeHeightReset)
-}
-
 func TestReadContractAction_Execute_WithoutConsensus(t *testing.T) {
-	testReadContractActionExecute(t, nil, nil, nil)
+	testReadContractActionExecute(t)
 }
 
-func testReadContractActionExecute(t *testing.T, pollingInterval *string, withConsensus *bool,
-	observationsBeforeHeightReset *int64) {
+func testReadContractActionExecute(t *testing.T) {
 	ctx := tests.Context(t)
 
 	config := actions.ReadContractConfig{
@@ -64,13 +54,10 @@ func testReadContractActionExecute(t *testing.T, pollingInterval *string, withCo
 	servicetest.Run(t, action)
 
 	capconfig := readcontractcap.Config{
-		ContractReaderConfig:          "some-config",
-		PollingInterval:               pollingInterval,
-		ReadIdentifier:                "TestReadIdentifier",
-		ContractAddress:               "0x123",
-		ContractName:                  "TestContract",
-		WithConsensus:                 withConsensus,
-		ObservationsBeforeHeightReset: observationsBeforeHeightReset,
+		ContractReaderConfig: "some-config",
+		ReadIdentifier:       "TestReadIdentifier",
+		ContractAddress:      "0x123",
+		ContractName:         "TestContract",
 	}
 	configAsValueMap, err := values.WrapMap(capconfig)
 	require.NoError(t, err)
@@ -229,9 +216,9 @@ type mockCapabilityContractReader struct {
 	mock.Mock
 }
 
-func (m *mockCapabilityContractReader) GetLatestValue(ctx context.Context, requestID string, confidenceLevel primitives.ConfidenceLevel, params any) (<-chan consensus.Response, error) {
+func (m *mockCapabilityContractReader) GetLatestValue(ctx context.Context, requestID string, confidenceLevel primitives.ConfidenceLevel, params any) (<-chan actions.Response, error) {
 	args := m.Called(ctx, requestID, confidenceLevel, params)
-	respCh := make(chan consensus.Response, 1)
-	respCh <- args.Get(0).(consensus.Response)
+	respCh := make(chan actions.Response, 1)
+	respCh <- args.Get(0).(actions.Response)
 	return respCh, args.Error(1)
 }
