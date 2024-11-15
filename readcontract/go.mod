@@ -3,19 +3,19 @@ module github.com/smartcontractkit/capabilities/readcontract
 go 1.23
 
 replace github.com/smartcontractkit/capabilities/libs/loopserver => ../libs/loopserver
+
 replace github.com/smartcontractkit/capabilities/libs/testutils => ../libs/testutils
 
 require (
-	github.com/smartcontractkit/chainlink-common v0.3.1-0.20241114134822-aadff98ef068
-	github.com/hashicorp/go-plugin v1.6.2
+	github.com/hashicorp/go-plugin v1.6.2 // indirect
 	github.com/jonboulle/clockwork v0.4.0
 	github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-unpublished
 	github.com/smartcontractkit/capabilities/libs/testutils v0.0.0-00010101000000-000000000000
-
-	github.com/smartcontractkit/libocr v0.0.0-20241007185508-adbe57025f12
+	github.com/smartcontractkit/chainlink-common v0.3.1-0.20241114134822-aadff98ef068
+	github.com/smartcontractkit/libocr v0.0.0-20241007185508-adbe57025f12 // indirect
 	github.com/stretchr/testify v1.9.0
-	go.opentelemetry.io/otel/metric v1.30.0
-	google.golang.org/protobuf v1.34.2
+	go.opentelemetry.io/otel/metric v1.30.0 // indirect
+	google.golang.org/protobuf v1.34.2 // indirect
 )
 
 require (
