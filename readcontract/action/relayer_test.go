@@ -13,12 +13,12 @@ type Relayer struct {
 	mock.Mock
 }
 
-type Relayer_Expecter struct {
+type RelayerExpecter struct {
 	mock *mock.Mock
 }
 
-func (_m *Relayer) EXPECT() *Relayer_Expecter {
-	return &Relayer_Expecter{mock: &_m.Mock}
+func (_m *Relayer) EXPECT() *RelayerExpecter {
+	return &RelayerExpecter{mock: &_m.Mock}
 }
 
 // NewContractReader provides a mock function with given fields: _a0, contractReaderConfig
@@ -51,31 +51,31 @@ func (_m *Relayer) NewContractReader(_a0 context.Context, contractReaderConfig [
 	return r0, r1
 }
 
-// Relayer_NewContractReader_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'NewContractReader'
-type Relayer_NewContractReader_Call struct {
+// RelayerNewContractReaderCall is a *mock.Call that shadows Run/Return methods with type explicit version for method 'NewContractReader'
+type RelayerNewContractReaderCall struct {
 	*mock.Call
 }
 
 // NewContractReader is a helper method to define mock.On call
 //   - _a0 context.Context
 //   - contractReaderConfig []byte
-func (_e *Relayer_Expecter) NewContractReader(_a0 interface{}, contractReaderConfig interface{}) *Relayer_NewContractReader_Call {
-	return &Relayer_NewContractReader_Call{Call: _e.mock.On("NewContractReader", _a0, contractReaderConfig)}
+func (_e *RelayerExpecter) NewContractReader(_a0 interface{}, contractReaderConfig interface{}) *RelayerNewContractReaderCall {
+	return &RelayerNewContractReaderCall{Call: _e.mock.On("NewContractReader", _a0, contractReaderConfig)}
 }
 
-func (_c *Relayer_NewContractReader_Call) Run(run func(_a0 context.Context, contractReaderConfig []byte)) *Relayer_NewContractReader_Call {
+func (_c *RelayerNewContractReaderCall) Run(run func(_a0 context.Context, contractReaderConfig []byte)) *RelayerNewContractReaderCall {
 	_c.Call.Run(func(args mock.Arguments) {
 		run(args[0].(context.Context), args[1].([]byte))
 	})
 	return _c
 }
 
-func (_c *Relayer_NewContractReader_Call) Return(_a0 actions.ContractReader, _a1 error) *Relayer_NewContractReader_Call {
+func (_c *RelayerNewContractReaderCall) Return(_a0 actions.ContractReader, _a1 error) *RelayerNewContractReaderCall {
 	_c.Call.Return(_a0, _a1)
 	return _c
 }
 
-func (_c *Relayer_NewContractReader_Call) RunAndReturn(run func(context.Context, []byte) (actions.ContractReader, error)) *Relayer_NewContractReader_Call {
+func (_c *RelayerNewContractReaderCall) RunAndReturn(run func(context.Context, []byte) (actions.ContractReader, error)) *RelayerNewContractReaderCall {
 	_c.Call.Return(run)
 	return _c
 }
