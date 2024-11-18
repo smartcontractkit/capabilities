@@ -94,7 +94,7 @@ jobs:
           task: "test"
 
       - name: Unit Test ${{ matrix.projects }}
-        run: ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} test
+        run: ./nx run ${{ matrix.projects }}:test
 
       - name: Upload Unit Tests Artifacts
         if: always()
@@ -128,7 +128,7 @@ jobs:
           task: "race"
 
       - name: Race Test ${{ matrix.projects }}
-        run: ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} race
+        run: ./nx run ${{ matrix.projects }}:race
 
   integrationtest:
     env:
@@ -157,7 +157,7 @@ jobs:
       - name: run integration_tests 
         env:
           CL_DATABASE_URL: ${{ env.DB_URL }}
-        run: ./.github/scripts/nx-run-if-exists.sh integration_tests test
+        run: ./nx run integration_tests:race
 
   tidy-and-generate:
     needs: affected
@@ -185,7 +185,7 @@ jobs:
 
       - name: Run "tidy" and "generate"
         run: |
-          ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} tidy
+          ./nx run ${{ matrix.projects }}:tidy
           ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} generate
 
       - name: Ensure no diff
