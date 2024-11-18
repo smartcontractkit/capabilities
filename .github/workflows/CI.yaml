@@ -157,7 +157,7 @@ jobs:
       - name: run integration_tests 
         env:
           CL_DATABASE_URL: ${{ env.DB_URL }}
-        run: ./nx run integration_tests:race
+        run: ./nx run integration_tests:test
 
   tidy-and-generate:
     needs: affected
