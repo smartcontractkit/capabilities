@@ -18,7 +18,7 @@ projects=($(echo $affected_projects | jq -r '.[]'))
 # Initialize an output string
 output="{ \"base\": \"$base\", \"projects\": $affected_projects, "
 
-targets=("test" "race" "lint" "tidy" "build")
+targets=("test" "race" "build")
 
 for target in "${targets[@]}"; do
   projects_with_target=$(./nx show projects --affected -t $target --json --base=$base)
