@@ -11,7 +11,6 @@ jobs:
   affected:
     runs-on: ubuntu-latest
     outputs:
-      nxexcludeintegration: ${{ steps.affected.outputs.affectedex }}
       nx: ${{ steps.affected.outputs.affected }}
     steps:
       - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
@@ -48,7 +47,6 @@ jobs:
         run: |
           npx nx@19.8.2 init
           echo "affected=$(./.github/scripts/affected-projects.sh ${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }})" >> $GITHUB_OUTPUT
-          echo "affectedex=$(./.github/scripts/affected-projects.sh ${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }} exclude-integration-test)" >> $GITHUB_OUTPUT
           
   build:
     needs: affected
@@ -76,12 +74,12 @@ jobs:
 
   test:
     needs: affected
-    if: ${{fromJson(needs.affected.outputs.nxexcludeintegration).run_test}}
+    if: ${{fromJson(needs.affected.outputs.nx).run_test}}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        projects: ${{fromJson(needs.affected.outputs.nxexcludeintegration).projects_with_test}}
+        projects: ${{fromJson(needs.affected.outputs.nx).projects_with_test}}
     steps:
       - name: Checkout the repo
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
@@ -92,7 +90,7 @@ jobs:
         uses: ./.github/actions/setup
         with:
           project: ${{ matrix.projects }}
-          go-module-file: ${{ fromJson(needs.affected.outputs.nxexcludeintegration)[matrix.projects].go_sum }}
+          go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "test"
 
       - name: Unit Test ${{ matrix.projects }}
@@ -110,12 +108,12 @@ jobs:
 
   race:
     needs: affected
-    if: ${{fromJson(needs.affected.outputs.nxexcludeintegration).run_race}}
+    if: ${{fromJson(needs.affected.outputs.nx).run_race}}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        projects: ${{fromJson(needs.affected.outputs.nxexcludeintegration).projects_with_race}}
+        projects: ${{fromJson(needs.affected.outputs.nx).projects_with_race}}
     steps:
       - name: Checkout the repo
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
@@ -126,7 +124,7 @@ jobs:
         uses: ./.github/actions/setup
         with:
           project: ${{ matrix.projects }}
-          go-module-file: ${{ fromJson(needs.affected.outputs.nxexcludeintegration)[matrix.projects].go_sum }}
+          go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "race"
 
       - name: Race Test ${{ matrix.projects }}
