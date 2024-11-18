@@ -29,10 +29,16 @@ flowchart LR
 
 `nx run test`
 
+
+## Configuration
+
+The capability accepts the following configuration:
+- `otelEndpoint`: The endpoint of the OTEL collector to send the events to, defaults to `http://localhost:4317` if not specified
+
 ## Usage
 
 The capability accepts a `Payload` input, which is a map of key-value pairs that will be sent as part of the event. 
-The events are emitted to the OTEL collector using beholder. 
+The events are emitted to the OTEL collector using beholder.
 
 ### In toml workflows
 
