@@ -234,7 +234,11 @@ func (c *capability) loop() {
 				},
 			}
 
-			if len(c.subscribers) == 0 {
+			c.mu.Lock()
+			subscribersLen := len(c.subscribers)
+			c.mu.Unlock()
+
+			if subscribersLen == 0 {
 				c.lggr.Debug("No subscribers, skipping")
 				continue
 			}
