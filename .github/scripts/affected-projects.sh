@@ -29,6 +29,19 @@ projects=($(echo $affected_projects | jq -r '.[]'))
 # Initialize an output string
 output="{ \"base\": \"$base\", \"projects\": $affected_projects, "
 
+targets=("test" "race" "lint" "tidy" "build")
+
+for target in "${targets[@]}"; do
+  projects_with_target=$(./nx show projects --affected -t $target --json --base=$base)
+  output+="\"projects_with_$target\": $projects_with_target, "
+
+  if [ ${#projects_with_target[@]} -eq 0 ]; then
+    output+=" \"run_$target\": false, "
+  else
+    output+=" \"run_$target\": true, "
+  fi
+done
+
 # Loop through each project and collect nested details
 for project in "${projects[@]}"; do
     project_info=$(./nx show project "$project" --json)
@@ -56,6 +69,13 @@ echo $output
 #   "projects": [
 #     "project_name_1",
 #     "project_name_2",
+#   ],
+#   "projects_with_target_1": [
+#     "project_name_1"
+#   ],
+#   "projects_with_target_2": [
+#     "project_name_1",
+#     "project_name_2"
 #   ],
 #   "project_name_1": {
 #     "root": "project_1_root",

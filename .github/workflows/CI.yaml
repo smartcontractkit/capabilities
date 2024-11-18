@@ -52,12 +52,12 @@ jobs:
           
   build:
     needs: affected
-    if: ${{fromJson(needs.affected.outputs.nx).run_checks}}
+    if: ${{fromJson(needs.affected.outputs.nx).run_build}}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        projects: ${{fromJson(needs.affected.outputs.nx).projects}}
+        projects: ${{fromJson(needs.affected.outputs.nx).projects_with_build}}
     steps:
       - name: Checkout the repo
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
@@ -76,12 +76,12 @@ jobs:
 
   test:
     needs: affected
-    if: ${{fromJson(needs.affected.outputs.nxexcludeintegration).run_checks}}
+    if: ${{fromJson(needs.affected.outputs.nxexcludeintegration).run_test}}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        projects: ${{fromJson(needs.affected.outputs.nxexcludeintegration).projects}}
+        projects: ${{fromJson(needs.affected.outputs.nxexcludeintegration).projects_with_test}}
     steps:
       - name: Checkout the repo
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
@@ -98,9 +98,6 @@ jobs:
       - name: Unit Test ${{ matrix.projects }}
         run: ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} test
 
-      - name: Race Test ${{ matrix.projects }}
-        run: ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} race
-
       - name: Upload Unit Tests Artifacts
         if: always()
         uses: actions/upload-artifact@v4.4.3
@@ -110,6 +107,30 @@ jobs:
           # the path to a generated report (per directory)
           path: |
             ./${{fromJson(needs.affected.outputs.nx)[matrix.projects].root}}/coverage.txt 
+
+  race:
+    needs: affected
+    if: ${{fromJson(needs.affected.outputs.nxexcludeintegration).run_race}}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        projects: ${{fromJson(needs.affected.outputs.nxexcludeintegration).projects_with_race}}
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
+        with:
+          fetch-depth: 0
+      
+      - name: Set up project environment
+        uses: ./.github/actions/setup
+        with:
+          project: ${{ matrix.projects }}
+          go-module-file: ${{ fromJson(needs.affected.outputs.nxexcludeintegration)[matrix.projects].go_sum }}
+          task: "race"
+
+      - name: Race Test ${{ matrix.projects }}
+        run: ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} race
 
   integrationtest:
     env:
@@ -142,12 +163,12 @@ jobs:
 
   tidy-and-generate:
     needs: affected
-    if: ${{fromJson(needs.affected.outputs.nx).run_checks}}
+    if: ${{fromJson(needs.affected.outputs.nx).run_tidy}}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        projects: ${{fromJson(needs.affected.outputs.nx).projects}}
+        projects: ${{fromJson(needs.affected.outputs.nx).projects_with_tidy}}
     steps:
       - name: Checkout the repo
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
@@ -174,12 +195,12 @@ jobs:
 
   lint:
     needs: affected
-    if: ${{fromJson(needs.affected.outputs.nx).run_checks}}
+    if: ${{fromJson(needs.affected.outputs.nx).run_lint}}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        projects: ${{fromJson(needs.affected.outputs.nx).projects}}
+        projects: ${{fromJson(needs.affected.outputs.nx).projects_with_lint}}
     steps:
       - name: Checkout the repo
         uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
@@ -217,6 +238,7 @@ jobs:
       - lint
       - build
       - test
+      - race
       - tidy-and-generate
     if: always()
     steps:
