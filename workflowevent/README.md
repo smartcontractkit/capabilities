@@ -42,7 +42,7 @@ The events are emitted to the OTEL collector using beholder.
 
 ### In toml workflows
 
-```toml 
+```yaml
 targets:
  - id: 'workflowevent-target@1.0.0'
    config:
