@@ -18,6 +18,7 @@ flowchart LR
 	capabilities/libs/testutils --> chainlink-common
 	click capabilities/libs/testutils href "https://github.com/smartcontractkit/capabilities"
 	capabilities/readcontract --> capabilities/libs/loopserver
+	capabilities/readcontract --> capabilities/libs/testutils
 	click capabilities/readcontract href "https://github.com/smartcontractkit/capabilities"
 	capabilities/streams --> capabilities/libs/loopserver
 	capabilities/streams --> capabilities/libs/testutils
