@@ -1,0 +1,55 @@
+{
+  "$id": "https://github.com/smartcontractkit/capabilities/workflowevent/workfloweventcap/workflowevent-target@1.0.0",
+  "description": "A target that emits events through an OTEL client",
+  "$defs": {
+    "Payload": {
+      "type": "object",
+      "properties": {
+        "Payload": {
+          "type": "object",
+          "additionalProperties": true,
+          "examples": [
+            {
+              "eventName": "Web API target triggered",
+              "data": {
+                "field": "value"
+              }
+            },
+            {
+              "eventName": "Database entry updated",
+              "recordID": "abc123",
+              "status": "active"
+            }
+          ]
+        }
+      },
+      "required": ["Payload"],
+      "additionalProperties": false
+    },
+    "Config": {
+      "type": "object",
+      "properties": {
+        "otelEndpoint": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "examples": [
+        {
+          "otelEndpoint": "localhost:4317"
+        }
+      ]
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "config": {
+      "$ref": "#/$defs/Config"
+    },
+    "inputs": {
+      "$ref": "#/$defs/Payload"
+    }
+  },
+  "required": ["config","inputs"]
+}

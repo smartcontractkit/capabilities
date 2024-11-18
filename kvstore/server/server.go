@@ -8,6 +8,7 @@ import (
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2/types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
@@ -23,15 +24,11 @@ type capabilitiesServer struct {
 	Action capabilities.ActionCapability
 	Target capabilities.TargetCapability
 	oracle core.Oracle
-	s      *loop.Server
-	name   string
+	lggr   logger.SugaredLogger
 }
 
-func New(s *loop.Server, serviceName string) *capabilitiesServer {
-	return &capabilitiesServer{
-		name: serviceName,
-		s:    s,
-	}
+func New(lggr logger.Logger) *capabilitiesServer {
+	return &capabilitiesServer{lggr: logger.Sugared(lggr)}
 }
 
 func (cs *capabilitiesServer) Start(ctx context.Context) error {
@@ -47,11 +44,11 @@ func (cs *capabilitiesServer) Ready() error {
 }
 
 func (cs *capabilitiesServer) HealthReport() map[string]error {
-	return nil
+	return map[string]error{cs.Name(): nil}
 }
 
 func (cs *capabilitiesServer) Name() string {
-	return cs.name
+	return cs.lggr.Name()
 }
 
 func (cs *capabilitiesServer) Infos(ctx context.Context) ([]capabilities.CapabilityInfo, error) {
@@ -82,19 +79,19 @@ func (cs *capabilitiesServer) Initialise(
 	_ core.RelayerSet,
 	oracleFactory core.OracleFactory,
 ) error {
-	cs.s.Logger.Debugf("Initialising %s", cs.name)
+	cs.lggr.Debug("Initialising")
 
-	requestsStore, err := kvrequests.New(cs.s.Logger)
+	requestsStore, err := kvrequests.New(cs.lggr)
 	if err != nil {
 		return fmt.Errorf("error when creating requests store: %w", err)
 	}
 
 	cs.Action = action.New(action.Params{
-		Logger:        cs.s.Logger,
+		Logger:        cs.lggr,
 		RequestsStore: requestsStore,
 	})
 	cs.Target = target.New(target.Params{
-		Logger:        cs.s.Logger,
+		Logger:        cs.lggr,
 		RequestsStore: requestsStore,
 	})
 
@@ -113,19 +110,19 @@ func (cs *capabilitiesServer) Initialise(
 			ContractTransmitterTransmitTimeout: time.Second * 10,
 			DatabaseTimeout:                    time.Second * 10,
 		},
-		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(cs.s.Logger, requestsStore),
-		ContractTransmitter:           oracle.NewContractTransmitter(cs.s.Logger, requestsStore),
+		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(cs.lggr, requestsStore),
+		ContractTransmitter:           oracle.NewContractTransmitter(cs.lggr, requestsStore),
 	})
 	if err != nil {
 		return fmt.Errorf("error when creating oracle: %w", err)
 	}
-	cs.s.Logger.Debug("KVStore capabilities: Oracle created")
+	cs.lggr.Debug("KVStore capabilities: Oracle created")
 
 	err = oracle.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("error when starting oracle: %w", err)
 	}
-	cs.s.Logger.Debug("KVStore capabilities: Oracle started")
+	cs.lggr.Debug("KVStore capabilities: Oracle started")
 	cs.oracle = oracle
 
 	return nil

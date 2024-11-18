@@ -18,6 +18,13 @@
         "command": "go test ./... -coverpkg=./... -coverprofile=coverage.txt"
       }
     },
+    "race": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "{projectRoot}",
+        "command": "go test -race ./..."
+      }
+    },
     "tidy": {
       "executor": "nx:run-commands",
       "options": {
