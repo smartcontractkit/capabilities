@@ -32,7 +32,7 @@ flowchart LR
 ## Usage
 
 The capability accepts a `Payload` input, which is a map of key-value pairs that will be sent as part of the event. 
-The events are emitted to the telemetry client, using beholder.
+The events are emitted to the OTEL collector using beholder. 
 
 ### In toml workflows
 
@@ -40,6 +40,7 @@ The events are emitted to the telemetry client, using beholder.
 targets:
  - id: 'workflowevent-target@1.0.0'
    config:
+    otelEndpoint: 'http://localhost:4317'
    inputs:
      payload:
        test: '$(trigger.outputs)'
