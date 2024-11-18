@@ -324,5 +324,5 @@ func (s *Service) HealthReport() map[string]error {
 }
 
 func (s *Service) Name() string {
-	return "CronTrigger"
+	return s.lggr.Name()
 }

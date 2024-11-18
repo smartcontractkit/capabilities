@@ -10,9 +10,11 @@ import (
 func (cfg Config) New(w *sdk.WorkflowSpecFactory, input TargetInput) {
 
 	def := sdk.StepDefinition{
-		ID:             "workflowevent-target@1.0.0",
-		Inputs:         input.ToSteps(),
-		Config:         map[string]any{},
+		ID:     "workflowevent-target@1.0.0",
+		Inputs: input.ToSteps(),
+		Config: map[string]any{
+			"otelEndpoint": cfg.OtelEndpoint,
+		},
 		CapabilityType: capabilities.CapabilityTypeTarget,
 	}
 

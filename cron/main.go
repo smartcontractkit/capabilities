@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
@@ -27,13 +28,13 @@ type TriggerCapabilityService interface {
 
 type CapabilitiesService struct {
 	trigger TriggerCapabilityService
-	s       *loop.Server
+	lggr    logger.Logger
 	srvcs   []services.Service
 }
 
 func main() {
-	loopserver.Serve(serviceName, func(s *loop.Server, _ string) *CapabilitiesService {
-		return &CapabilitiesService{s: s}
+	loopserver.Serve(serviceName, func(lggr logger.Logger) *CapabilitiesService {
+		return &CapabilitiesService{lggr: lggr}
 	})
 }
 
@@ -43,7 +44,7 @@ func (cs *CapabilitiesService) Start(ctx context.Context) error {
 
 func (cs *CapabilitiesService) Close() (err error) {
 	for _, service := range cs.srvcs {
-		cs.s.Logger.Debugw("Closing service...", "name", service.Name())
+		cs.lggr.Debugw("Closing service...", "name", service.Name())
 		err = errors.Join(err, service.Close())
 	}
 
@@ -55,11 +56,11 @@ func (cs *CapabilitiesService) Ready() error {
 }
 
 func (cs *CapabilitiesService) HealthReport() map[string]error {
-	return nil
+	return map[string]error{cs.Name(): nil}
 }
 
 func (cs *CapabilitiesService) Name() string {
-	return serviceName
+	return cs.lggr.Name()
 }
 
 func (cs *CapabilitiesService) Infos(ctx context.Context) ([]capabilities.CapabilityInfo, error) {
@@ -84,9 +85,9 @@ func (cs *CapabilitiesService) Initialise(
 	_ core.RelayerSet,
 	_ core.OracleFactory,
 ) error {
-	cs.s.Logger.Debugf("Initialising %s", serviceName)
+	cs.lggr.Debugf("Initialising %s", serviceName)
 	cs.trigger = trigger.New(trigger.Params{
-		Logger: cs.s.Logger,
+		Logger: cs.lggr,
 	})
 	if err := cs.trigger.Start(ctx); err != nil {
 		return fmt.Errorf("error when starting trigger: %w", err)

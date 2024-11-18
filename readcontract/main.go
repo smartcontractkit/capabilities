@@ -5,8 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/jonboulle/clockwork"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
+	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
@@ -20,14 +24,21 @@ const (
 	serviceName = "ReadContractCapability"
 )
 
+type readContractAction interface {
+	capabilities.ActionCapability
+	Start(context.Context) error
+	Close() error
+}
+
 type ReadContractGRPCService struct {
-	action capabilities.ActionCapability
-	s      *loop.Server
+	services.StateMachine
+	action readContractAction
+	lggr   logger.Logger
 }
 
 func main() {
-	loopserver.Serve(serviceName, func(s *loop.Server, _ string) *ReadContractGRPCService {
-		return &ReadContractGRPCService{s: s}
+	loopserver.Serve(serviceName, func(lggr logger.Logger) *ReadContractGRPCService {
+		return &ReadContractGRPCService{lggr: lggr}
 	})
 }
 
@@ -52,11 +63,11 @@ func (cs *ReadContractGRPCService) Ready() error {
 }
 
 func (cs *ReadContractGRPCService) HealthReport() map[string]error {
-	return nil
+	return map[string]error{cs.Name(): nil}
 }
 
 func (cs *ReadContractGRPCService) Name() string {
-	return serviceName
+	return cs.lggr.Name()
 }
 
 func (cs *ReadContractGRPCService) Infos(ctx context.Context) ([]capabilities.CapabilityInfo, error) {
@@ -79,9 +90,9 @@ func (cs *ReadContractGRPCService) Initialise(
 	_ core.ErrorLog,
 	_ core.PipelineRunnerService,
 	relayerSet core.RelayerSet,
-	_ core.OracleFactory,
+	oracleFactory core.OracleFactory,
 ) error {
-	cs.s.Logger.Infof("Initialising %s", serviceName)
+	cs.lggr.Infof("Initialising %s", serviceName)
 
 	var readContractConfig actions.ReadContractConfig
 	err := json.Unmarshal([]byte(config), &readContractConfig)
@@ -95,9 +106,14 @@ func (cs *ReadContractGRPCService) Initialise(
 		return fmt.Errorf("failed to fetch relayer for chainID %d from relayerSet: %w", readContractConfig.ChainID, err)
 	}
 
-	cs.action, err = actions.NewReadContractAction(cs.s.Logger, readContractConfig, &readContractRelayer{relayer})
+	cs.action, err = actions.NewReadContractAction(ctx, cs.lggr, readContractConfig, &readContractRelayer{relayer},
+		oracleFactory, clockwork.NewRealClock())
 	if err != nil {
 		return fmt.Errorf("failed to create read contract action: %w", err)
+	}
+
+	if err = cs.action.Start(ctx); err != nil {
+		return fmt.Errorf("failed to start read contract action: %w", err)
 	}
 
 	if err := capabilityRegistry.Add(ctx, cs.action); err != nil {

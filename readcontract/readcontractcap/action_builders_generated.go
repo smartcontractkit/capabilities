@@ -13,13 +13,26 @@ func (cfg Config) New(w *sdk.WorkflowSpecFactory, id string, ref string, input A
 		ID: id, Ref: ref,
 		Inputs: input.ToSteps(),
 		Config: map[string]any{
+			"ContractAddress":      cfg.ContractAddress,
+			"ContractName":         cfg.ContractName,
 			"ContractReaderConfig": cfg.ContractReaderConfig,
+			"ReadIdentifier":       cfg.ReadIdentifier,
 		},
 		CapabilityType: capabilities.CapabilityTypeAction,
 	}
 
 	step := sdk.Step[Output]{Definition: def}
-	return OutputCapFromStep(w, step)
+	raw := step.AddTo(w)
+	return OutputWrapper(raw)
+}
+
+// OutputWrapper allows access to field from an sdk.CapDefinition[Output]
+func OutputWrapper(raw sdk.CapDefinition[Output]) OutputCap {
+	wrapped, ok := raw.(OutputCap)
+	if ok {
+		return wrapped
+	}
+	return &outputCap{CapDefinition: raw}
 }
 
 type OutputCap interface {
@@ -28,19 +41,17 @@ type OutputCap interface {
 	private()
 }
 
-// OutputCapFromStep should only be called from generated code to assure type safety
-func OutputCapFromStep(w *sdk.WorkflowSpecFactory, step sdk.Step[Output]) OutputCap {
-	raw := step.AddTo(w)
-	return &output{CapDefinition: raw}
-}
-
-type output struct {
+type outputCap struct {
 	sdk.CapDefinition[Output]
 }
 
-func (*output) private() {}
-func (c *output) LatestValue() OutputLatestValueCap {
-	return OutputLatestValueCap(sdk.AccessField[Output, OutputLatestValue](c.CapDefinition, "LatestValue"))
+func (*outputCap) private() {}
+func (c *outputCap) LatestValue() OutputLatestValueCap {
+	return OutputLatestValueWrapper(sdk.AccessField[Output, OutputLatestValue](c.CapDefinition, "LatestValue"))
+}
+
+func ConstantOutput(value Output) OutputCap {
+	return &outputCap{CapDefinition: sdk.ConstantDefinition(value)}
 }
 
 func NewOutputFromFields(
@@ -64,22 +75,27 @@ func (c *simpleOutput) LatestValue() OutputLatestValueCap {
 
 func (c *simpleOutput) private() {}
 
+// OutputLatestValueWrapper allows access to field from an sdk.CapDefinition[OutputLatestValue]
+func OutputLatestValueWrapper(raw sdk.CapDefinition[OutputLatestValue]) OutputLatestValueCap {
+	wrapped, ok := raw.(OutputLatestValueCap)
+	if ok {
+		return wrapped
+	}
+	return OutputLatestValueCap(raw)
+}
+
 type OutputLatestValueCap sdk.CapDefinition[OutputLatestValue]
 
 type ActionInput struct {
-	Address         sdk.CapDefinition[string]
 	ConfidenceLevel sdk.CapDefinition[string]
 	Params          sdk.CapDefinition[InputParams]
-	ReadIdentifier  sdk.CapDefinition[string]
 }
 
 func (input ActionInput) ToSteps() sdk.StepInputs {
 	return sdk.StepInputs{
 		Mapping: map[string]any{
-			"Address":         input.Address.Ref(),
 			"ConfidenceLevel": input.ConfidenceLevel.Ref(),
 			"Params":          input.Params.Ref(),
-			"ReadIdentifier":  input.ReadIdentifier.Ref(),
 		},
 	}
 }
