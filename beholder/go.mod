@@ -5,7 +5,7 @@ go 1.23.0
 require (
 	github.com/hashicorp/go-plugin v1.6.2
 	github.com/segmentio/kafka-go v0.4.47
-	github.com/smartcontractkit/chainlink-common v0.2.3-0.20241001140426-35be2fad06ec
+	github.com/smartcontractkit/chainlink-common v0.3.1-0.20241118100029-5a979f3e5a42
 	github.com/stretchr/testify v1.9.0
 	google.golang.org/protobuf v1.34.2
 )
