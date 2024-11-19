@@ -13,8 +13,8 @@ type Config struct {
 }
 
 type Payload struct {
-	// Payload corresponds to the JSON schema field "Payload".
-	Payload PayloadPayload `json:"Payload" yaml:"Payload" mapstructure:"Payload"`
+	// Payload corresponds to the JSON schema field "payload".
+	Payload PayloadPayload `json:"payload" yaml:"payload" mapstructure:"payload"`
 }
 
 type PayloadPayload map[string]interface{}
@@ -25,8 +25,8 @@ func (j *Payload) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &raw); err != nil {
 		return err
 	}
-	if _, ok := raw["Payload"]; raw != nil && !ok {
-		return fmt.Errorf("field Payload in Payload: required")
+	if _, ok := raw["payload"]; raw != nil && !ok {
+		return fmt.Errorf("field payload in Payload: required")
 	}
 	type Plain Payload
 	var plain Plain
