@@ -93,10 +93,8 @@ func (j *Input) UnmarshalJSON(b []byte) error {
 
 type Output struct {
 	// LatestValue corresponds to the JSON schema field "LatestValue".
-	LatestValue OutputLatestValue `json:"LatestValue" yaml:"LatestValue" mapstructure:"LatestValue"`
+	LatestValue interface{} `json:"LatestValue" yaml:"LatestValue" mapstructure:"LatestValue"`
 }
-
-type OutputLatestValue map[string]interface{}
 
 // UnmarshalJSON implements json.Unmarshaler.
 func (j *Output) UnmarshalJSON(b []byte) error {

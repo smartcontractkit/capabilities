@@ -37,7 +37,7 @@ func OutputWrapper(raw sdk.CapDefinition[Output]) OutputCap {
 
 type OutputCap interface {
 	sdk.CapDefinition[Output]
-	LatestValue() OutputLatestValueCap
+	LatestValue() sdk.CapDefinition[any]
 	private()
 }
 
@@ -46,8 +46,8 @@ type outputCap struct {
 }
 
 func (*outputCap) private() {}
-func (c *outputCap) LatestValue() OutputLatestValueCap {
-	return OutputLatestValueWrapper(sdk.AccessField[Output, OutputLatestValue](c.CapDefinition, "LatestValue"))
+func (c *outputCap) LatestValue() sdk.CapDefinition[any] {
+	return sdk.AccessField[Output, any](c.CapDefinition, "LatestValue")
 }
 
 func ConstantOutput(value Output) OutputCap {
@@ -55,7 +55,7 @@ func ConstantOutput(value Output) OutputCap {
 }
 
 func NewOutputFromFields(
-	latestValue OutputLatestValueCap) OutputCap {
+	latestValue sdk.CapDefinition[any]) OutputCap {
 	return &simpleOutput{
 		CapDefinition: sdk.ComponentCapDefinition[Output]{
 			"LatestValue": latestValue.Ref(),
@@ -66,25 +66,14 @@ func NewOutputFromFields(
 
 type simpleOutput struct {
 	sdk.CapDefinition[Output]
-	latestValue OutputLatestValueCap
+	latestValue sdk.CapDefinition[any]
 }
 
-func (c *simpleOutput) LatestValue() OutputLatestValueCap {
+func (c *simpleOutput) LatestValue() sdk.CapDefinition[any] {
 	return c.latestValue
 }
 
 func (c *simpleOutput) private() {}
-
-// OutputLatestValueWrapper allows access to field from an sdk.CapDefinition[OutputLatestValue]
-func OutputLatestValueWrapper(raw sdk.CapDefinition[OutputLatestValue]) OutputLatestValueCap {
-	wrapped, ok := raw.(OutputLatestValueCap)
-	if ok {
-		return wrapped
-	}
-	return OutputLatestValueCap(raw)
-}
-
-type OutputLatestValueCap sdk.CapDefinition[OutputLatestValue]
 
 type ActionInput struct {
 	ConfidenceLevel sdk.CapDefinition[string]

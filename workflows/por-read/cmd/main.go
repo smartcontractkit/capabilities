@@ -55,22 +55,23 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 
 	chainRead := readcontractcap.Config{
 		ContractReaderConfig: "{\"chainId\": 11155111,\"network\": \"evm\"}",
+		Address:              balanceReaderContract,
+		ReadIdentifier:       "BalanceReader.getNativeBalances", // TODO
 	}.New(
 		workflow,
-		cron.ScheduledExecutionTime().Ref().(string),
+		"read-contract-evm-11155111@1.0.0",
 		"read",
 		readcontractcap.ActionInput{
-			Address:         sdk.ConstantDefinition(balanceReaderContract),
 			ConfidenceLevel: sdk.ConstantDefinition("finalized"),
-			ReadIdentifier:  sdk.ConstantDefinition("BalanceReader.getNativeBalances"), // TODO #1 Bind contract?
 			Params: sdk.ConstantDefinition(readcontractcap.InputParams{
 				"addresses": addresses,
+				"_unused":   cron.Ref(), // Figure out a nicer way to do this.
 			}),
 		},
 	)
 
 	compConf := computeConfig{
-		FeedID: "",
+		FeedID: "", // TODO
 	}
 
 	compute := sdk.Compute1WithConfig(
@@ -84,11 +85,14 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 				return computeOutput{}, fmt.Errorf("cannot convert feedID to bytes")
 			}
 
-			// TODO #2: How to get []uint256 out of readcontractcap.OutputLatestValue
-			// which is a map[string]interface{}, not a values.Value
-			balance := 0
-			for _, bal := range outputs.LatestValue {
-				balance += bal.(int)
+			balances, ok := outputs.LatestValue.([]int64)
+			if !ok {
+				return computeOutput{}, fmt.Errorf("cannot convert latest value to []int64, got type %T", outputs.LatestValue)
+			}
+
+			var balance int64
+			for _, bal := range balances {
+				balance += bal
 			}
 
 			return computeOutput{
