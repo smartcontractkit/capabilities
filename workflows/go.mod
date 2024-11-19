@@ -4,7 +4,8 @@ go 1.23.2
 
 require (
 	github.com/smartcontractkit/capabilities/cron v0.0.0-00010101000000-000000000000
-	github.com/smartcontractkit/chainlink-common v0.3.1-0.20241107130404-a3c5766b518e
+	github.com/smartcontractkit/capabilities/readcontract v0.0.0-00010101000000-000000000000
+	github.com/smartcontractkit/chainlink-common v0.3.1-0.20241114134822-aadff98ef068
 	github.com/stretchr/testify v1.9.0
 )
 
@@ -48,9 +49,6 @@ require (
 	github.com/sanity-io/litter v1.5.5 // indirect
 	github.com/santhosh-tekuri/jsonschema/v5 v5.2.0 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
-	github.com/smartcontractkit/capabilities/cron v0.0.0-00010101000000-000000000000 // indirect
-	github.com/smartcontractkit/capabilities/readcontract v0.0.0-00010101000000-000000000000 // indirect
-	github.com/smartcontractkit/grpc-proxy v0.0.0-20240830132753-a7e17fec5ab7 // indirect
 	github.com/smartcontractkit/libocr v0.0.0-20241007185508-adbe57025f12 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	go.opentelemetry.io/otel v1.30.0 // indirect

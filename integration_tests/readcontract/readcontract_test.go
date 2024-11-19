@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zapcore"
 
@@ -30,6 +31,14 @@ type ReadContractConfig struct {
 
 func Test_RemoteReadCapabilityWithoutConsensus(t *testing.T) {
 	testRemoteReadContractCapability(t, false, "")
+}
+
+func TestGenerateContractReaderConfig(t *testing.T) {
+	str, err := CreateContractReaderConfig("BalanceReader", "getNativeBalances", `[{"inputs":[{"internalType":"address[]","name":"addresses","type":"address[]"}],"name":"getNativeBalances","outputs":[{"internalType":"uint256[]","name":"","type":"uint256[]"}],"stateMutability":"view","type":"function"}]
+`)
+	require.NoError(t, err)
+	fmt.Printf(str)
+	assert.True(t, false)
 }
 
 func testRemoteReadContractCapability(t *testing.T, withConsensus bool, pollingInterval string) {

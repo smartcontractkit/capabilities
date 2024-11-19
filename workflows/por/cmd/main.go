@@ -53,7 +53,7 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 	}.New(workflow)
 
 	compConf := computeConfig{
-		FeedID: "0x0003fbba4fce42f65d6032b18aee53efdf526cc734ad296cb57565979d883bdd",
+		FeedID: "0x02afa5a69f0000220000000000000000",
 	}
 
 	compute := sdk.Compute1WithConfig(
@@ -143,7 +143,7 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 	}
 
 	chainwriter.TargetConfig{
-		Address:    "0x83aF34AbeF5785Dc9C65C2e581f773e5c722fDe0", // Eth sepolia feeds consumer
+		Address:    "0x533114FA9E9E9c180e6b898895Bbc31F4D7a4500", // Sepolia PoR Cache
 		DeltaStage: "15s",
 		Schedule:   "oneAtATime",
 	}.New(workflow, "write_ethereum-testnet-sepolia@1.0.0", targetInput)

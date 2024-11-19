@@ -54,9 +54,10 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 	balanceReaderContract := "0x93c4bB995e7B5a726c8ef1bED9EA92e300F18eb4"
 
 	chainRead := readcontractcap.Config{
-		ContractReaderConfig: "{\"chainId\": 11155111,\"network\": \"evm\"}",
-		Address:              balanceReaderContract,
-		ReadIdentifier:       "BalanceReader.getNativeBalances", // TODO
+		ContractReaderConfig: `{"contracts":{"BalanceReader":{"contractABI":"[{\\\"inputs\\\":[{\\\"internalType\\\":\\\"address[]\\\",\\\"name\\\":\\\"addresses\\\",\\\"type\\\":\\\"address[]\\\"}],\\\"name\\\":\\\"getNativeBalances\\\",\\\"outputs\\\":[{\\\"internalType\\\":\\\"uint256[]\\\",\\\"name\\\":\\\"\\\",\\\"type\\\":\\\"uint256[]\\\"}],\\\"stateMutability\\\":\\\"view\\\",\\\"type\\\":\\\"function\\\"}]\","contractPollingFilter":{"genericEventNames":null,"pollingFilter":{"topic2":null,"topic3":null,"topic4":null,"retention":"0s","maxLogsKept":0,"logsPerBlock":0}},"configs":{"getNativeBalances":"{  \\\"chainSpecificName\\\": \\\"getNativeBalances\\\"}"}}}}`,
+		ContractAddress:      balanceReaderContract,
+		ContractName:         "BalanceReader",
+		ReadIdentifier:       fmt.Sprintf("%s-%s-%s", balanceReaderContract, "BalanceReader", "getNativeBalances"),
 	}.New(
 		workflow,
 		"read-contract-evm-11155111@1.0.0",
@@ -65,13 +66,12 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 			ConfidenceLevel: sdk.ConstantDefinition("finalized"),
 			Params: sdk.ConstantDefinition(readcontractcap.InputParams{
 				"addresses": addresses,
-				"_unused":   cron.Ref(), // Figure out a nicer way to do this.
+				"_unused":   cron.Ref(), // TODO: Figure out a nicer way to do this.
 			}),
 		},
 	)
-
 	compConf := computeConfig{
-		FeedID: "", // TODO
+		FeedID: "0x02ce8bfc980000320000000000000000",
 	}
 
 	compute := sdk.Compute1WithConfig(
@@ -113,6 +113,7 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 			"abi": "(bytes32 FeedID, uint224 Price, uint32 Timestamp)[] Reports",
 		},
 		ReportID: "0001",
+		KeyID:    "evm",
 		AggregationConfig: aggregators.ReduceAggConfig{
 			Fields: []aggregators.AggregationField{
 				{
@@ -131,7 +132,7 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 					InputKey:        "Timestamp",
 					OutputKey:       "Timestamp",
 					Method:          "median",
-					DeviationString: "86400", // 24 hours
+					DeviationString: "300", // 5 minutes
 					DeviationType:   "absolute",
 				},
 			},
@@ -144,8 +145,10 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 	}
 
 	chainwriter.TargetConfig{
-		Address: "0x83aF34AbeF5785Dc9C65C2e581f773e5c722fDe0", // Eth sepolia feeds consumer
-	}.New(workflow, "write_chain", targetInput)
+		Address:    "0x533114FA9E9E9c180e6b898895Bbc31F4D7a4500", // Sepolia PoR Cache
+		DeltaStage: "15s",
+		Schedule:   "onAtATime",
+	}.New(workflow, "write_ethereum-testnet-sepolia@1.0.0", targetInput)
 
 	return workflow
 }
