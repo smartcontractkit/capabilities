@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -17,17 +16,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk"
 )
 
-type trueUSDResponse struct {
-	AccountName string    `json:"accountName"`
-	TotalTrust  float64   `json:"totalTrust"`
-	Ripcord     bool      `json:"ripcord"`
-	UpdatedAt   time.Time `json:"updatedAt"`
-}
-
 type computeOutput struct {
-	Price int
-	// TODO: specify decimals; requires a different consumer contract.
-	// Decimal int
+	Price     int
 	FeedID    [32]byte
 	Timestamp time.Time
 }
@@ -53,28 +43,29 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 		Schedule: "*/60 * * * * *", // Every 60 seconds
 	}.New(workflow)
 
-	// BTC endpoints, TODO: BTC indexer?
-	// MEMBERS_ENDPOINT: https://wbtc.network/api/wbtc/members?type=merchant
-	// ADDRESSES_ENDPOINT: https://wbtc.network/api/chain/eth/token/wbtc/addresses?type=custodial
-
-	addresses := []string{"0x1", "0x2"}
-	balances := []readcontractcap.OutputCap{}
-	for _, addr := range addresses {
-		chainRead := readcontractcap.Config{
-			ContractReaderConfig: "{\"chainId\": 1,\"network\": \"testnet\"}",
-		}.New(
-			workflow,
-			cron.ScheduledExecutionTime().Ref().(string),
-			"read",
-			readcontractcap.ActionInput{
-				Address:         sdk.ConstantDefinition(addr),
-				ConfidenceLevel: sdk.ConstantDefinition("finalized"),
-				ReadIdentifier:  sdk.ConstantDefinition(""),
-				Params:          sdk.ConstantDefinition(readcontractcap.InputParams{}),
-			},
-		)
-		balances = append(balances, chainRead)
+	addresses := []string{
+		"0x5c25312C82791e6cB76Dc9eFaBE2F5fa695D966b", // Keystone Dev Wallet #1
+		"0xAc85bE3811e06712f53BC11844Ed8a37d3e9C3Ab", // Keystone Dev Wallet #2
 	}
+
+	// https://sepolia.etherscan.io/address/0x93c4bB995e7B5a726c8ef1bED9EA92e300F18eb4
+	balanceReaderContract := "0x93c4bB995e7B5a726c8ef1bED9EA92e300F18eb4"
+
+	chainRead := readcontractcap.Config{
+		ContractReaderConfig: "{\"chainId\": 11155111,\"network\": \"evm\"}",
+	}.New(
+		workflow,
+		cron.ScheduledExecutionTime().Ref().(string),
+		"read",
+		readcontractcap.ActionInput{
+			Address:         sdk.ConstantDefinition(balanceReaderContract),
+			ConfidenceLevel: sdk.ConstantDefinition("finalized"),
+			ReadIdentifier:  sdk.ConstantDefinition("BalanceReader.getNativeBalances"), // TODO #1 Bind contract?
+			Params: sdk.ConstantDefinition(readcontractcap.InputParams{
+				"addresses": addresses,
+			}),
+		},
+	)
 
 	compConf := computeConfig{
 		FeedID: "",
@@ -84,41 +75,24 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 		workflow,
 		"compute",
 		&sdk.ComputeConfig[computeConfig]{Config: compConf},
-		sdk.Compute1Inputs[croncap.Payload]{Arg0: cron},
-		func(runtime sdk.Runtime, config computeConfig, outputs croncap.Payload) (computeOutput, error) {
+		sdk.Compute1Inputs[readcontractcap.Output]{Arg0: chainRead},
+		func(runtime sdk.Runtime, config computeConfig, outputs readcontractcap.Output) (computeOutput, error) {
 			feedID, err := convertFeedIDtoBytes(config.FeedID)
 			if err != nil {
 				return computeOutput{}, fmt.Errorf("cannot convert feedID to bytes")
 			}
 
-			fresp, err := runtime.Fetch(sdk.FetchRequest{
-				URL:    "https://api.real-time-reserves.verinumus.io/v1/chainlink/proof-of-reserves/TrueUSD",
-				Method: "GET",
-			})
-			if err != nil {
-				return computeOutput{}, err
-			}
-
-			var resp trueUSDResponse
-			err = json.Unmarshal(fresp.Body, &resp)
-			if err != nil {
-				return computeOutput{}, err
-			}
-
-			if resp.Ripcord {
-				err := runtime.Emitter().With(
-					"feedID", config.FeedID,
-				).Emit(fmt.Sprintf("ripcord flag set for feed ID %s", config.FeedID))
-				if err != nil {
-					runtime.Logger().Error("failed to emit custom message")
-				}
-				return computeOutput{}, sdk.BreakErr
+			// TODO #2: How to get []uint256 out of readcontractcap.OutputLatestValue
+			// which is a map[string]interface{}, not a values.Value
+			balance := 0
+			for _, bal := range outputs.LatestValue {
+				balance += bal.(int)
 			}
 
 			return computeOutput{
-				Price:     int(resp.TotalTrust * 100),
+				Price:     int(balance),
 				FeedID:    feedID, // TrueUSD
-				Timestamp: resp.UpdatedAt,
+				Timestamp: time.Now(),
 			}, nil
 		},
 	)
