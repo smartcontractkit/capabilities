@@ -25,7 +25,7 @@ type computeOutput struct {
 	// TODO: specify decimals; requires a different consumer contract.
 	// Decimal int
 	FeedID    [32]byte
-	Timestamp time.Time
+	Timestamp int64
 }
 
 type computeConfig struct {
@@ -119,7 +119,7 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 			return computeOutput{
 				Price:     balance,
 				FeedID:    feedID, // Randomly generated
-				Timestamp: time.Now(),
+				Timestamp: time.Now().Unix(),
 			}, nil
 		},
 	)
