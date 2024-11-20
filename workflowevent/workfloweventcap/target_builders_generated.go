@@ -29,7 +29,7 @@ type TargetInput struct {
 func (input TargetInput) ToSteps() sdk.StepInputs {
 	return sdk.StepInputs{
 		Mapping: map[string]any{
-			"Payload": input.Payload.Ref(),
+			"payload": input.Payload.Ref(),
 		},
 	}
 }

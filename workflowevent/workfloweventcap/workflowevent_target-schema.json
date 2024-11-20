@@ -2,10 +2,10 @@
   "$id": "https://github.com/smartcontractkit/capabilities/workflowevent/workfloweventcap/workflowevent-target@1.0.0",
   "description": "A target that emits events through an OTEL client",
   "$defs": {
-    "Payload": {
+    "payload": {
       "type": "object",
       "properties": {
-        "Payload": {
+        "payload": {
           "type": "object",
           "additionalProperties": true,
           "examples": [
@@ -23,10 +23,10 @@
           ]
         }
       },
-      "required": ["Payload"],
+      "required": ["payload"],
       "additionalProperties": false
     },
-    "Config": {
+    "config": {
       "type": "object",
       "properties": {
         "otelEndpoint": {
@@ -45,10 +45,10 @@
   "additionalProperties": false,
   "properties": {
     "config": {
-      "$ref": "#/$defs/Config"
+      "$ref": "#/$defs/config"
     },
     "inputs": {
-      "$ref": "#/$defs/Payload"
+      "$ref": "#/$defs/payload"
     }
   },
   "required": ["config","inputs"]
