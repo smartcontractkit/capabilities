@@ -6,7 +6,7 @@ require (
 	github.com/ethereum/go-ethereum v1.13.8
 	github.com/smartcontractkit/capabilities/cron v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/capabilities/readcontract v0.0.0-00010101000000-000000000000
-	github.com/smartcontractkit/chainlink-common v0.3.1-0.20241114134822-aadff98ef068
+	github.com/smartcontractkit/chainlink-common v0.3.1-0.20241120190613-262c6d8a55e1
 	github.com/stretchr/testify v1.9.0
 )
 
