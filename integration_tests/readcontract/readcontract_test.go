@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zapcore"
 
@@ -98,9 +99,27 @@ func testRemoteReadContractCapability(t *testing.T, withConsensus bool, pollingI
 	err = workflowDon.AddJob(ctx, &workflowJob)
 	require.NoError(t, err)
 
+	params := map[string]any{
+		"addresses": []common.Address{address},
+		"uints":     []int64{1, 2, 3},
+		"ints":      []int64{4, 5, 6},
+		"bools":     []bool{true, false, true},
+		"strings":   []string{"hello", "world", "chainlink"},
+		"bytesArray": [][]byte{
+			[]byte("first byte array"),
+			[]byte("second byte array"),
+			[]byte("third byte array"),
+		},
+		"bytes32Array": [][32]byte{
+			[32]byte{'f', 'i', 'r', 's', 't', ' ', 'b', 'y', 't', 'e', '3', '2', ' ', 'a', 'r', 'r', 'a', 'y'},
+			[32]byte{'s', 'e', 'c', 'o', 'n', 'd', ' ', 'b', 'y', 't', 'e', '3', '2', ' ', 'a', 'r', 'r', 'a', 'y'},
+			[32]byte{'t', 'h', 'i', 'r', 'd', ' ', 'b', 'y', 't', 'e', '3', '2', ' ', 'a', 'r', 'r', 'a', 'y'},
+		},
+	}
+
 	contractReadActionParams, err := values.WrapMap(map[string]any{
 		"ConfidenceLevel": "unconfirmed",
-		"Params":          map[string]any{},
+		"Params":          params,
 	})
 	require.NoError(t, err)
 
