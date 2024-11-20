@@ -3,7 +3,10 @@ package main
 import (
 	"encoding/hex"
 	"fmt"
+	"math/big"
 	"time"
+
+	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/wasm"
 
@@ -17,7 +20,7 @@ import (
 )
 
 type computeOutput struct {
-	Price int
+	Price *big.Int
 	// TODO: specify decimals; requires a different consumer contract.
 	// Decimal int
 	FeedID    [32]byte
@@ -33,6 +36,13 @@ func convertFeedIDtoBytes(feedIDStr string) ([32]byte, error) {
 	if err != nil {
 		return [32]byte{}, err
 	}
+
+	if len(b) < 32 {
+		nb := [32]byte{}
+		copy(nb[:], b[:])
+		return nb, err
+	}
+
 	return [32]byte(b), nil
 }
 
@@ -45,16 +55,16 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 		Schedule: "*/60 * * * * *", // Every 60 seconds
 	}.New(workflow)
 
-	addresses := []string{
-		"0x5c25312C82791e6cB76Dc9eFaBE2F5fa695D966b", // Keystone Dev Wallet #1
-		"0xAc85bE3811e06712f53BC11844Ed8a37d3e9C3Ab", // Keystone Dev Wallet #2
+	addresses := []common.Address{
+		common.HexToAddress("0x5c25312C82791e6cB76Dc9eFaBE2F5fa695D966b"), // Keystone Dev Wallet #1
+		common.HexToAddress("0xAc85bE3811e06712f53BC11844Ed8a37d3e9C3Ab"), // Keystone Dev Wallet #2
 	}
 
 	// https://sepolia.etherscan.io/address/0x93c4bB995e7B5a726c8ef1bED9EA92e300F18eb4
 	balanceReaderContract := "0x93c4bB995e7B5a726c8ef1bED9EA92e300F18eb4"
 
 	chainRead := readcontractcap.Config{
-		ContractReaderConfig: `{"contracts":{"BalanceReader":{"contractABI":"[{\\\"inputs\\\":[{\\\"internalType\\\":\\\"address[]\\\",\\\"name\\\":\\\"addresses\\\",\\\"type\\\":\\\"address[]\\\"}],\\\"name\\\":\\\"getNativeBalances\\\",\\\"outputs\\\":[{\\\"internalType\\\":\\\"uint256[]\\\",\\\"name\\\":\\\"\\\",\\\"type\\\":\\\"uint256[]\\\"}],\\\"stateMutability\\\":\\\"view\\\",\\\"type\\\":\\\"function\\\"}]\","contractPollingFilter":{"genericEventNames":null,"pollingFilter":{"topic2":null,"topic3":null,"topic4":null,"retention":"0s","maxLogsKept":0,"logsPerBlock":0}},"configs":{"getNativeBalances":"{  \\\"chainSpecificName\\\": \\\"getNativeBalances\\\"}"}}}}`,
+		ContractReaderConfig: `{"contracts":{"BalanceReader":{"contractABI":"[{\"inputs\":[{\"internalType\":\"address[]\",\"name\":\"addresses\",\"type\":\"address[]\"}],\"name\":\"getNativeBalances\",\"outputs\":[{\"internalType\":\"uint256[]\",\"name\":\"\",\"type\":\"uint256[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"}]","contractPollingFilter":{"genericEventNames":null,"pollingFilter":{"topic2":null,"topic3":null,"topic4":null,"retention":"0s","maxLogsKept":0,"logsPerBlock":0}},"configs":{"getNativeBalances":"{  \"chainSpecificName\": \"getNativeBalances\"}"}}}}`,
 		ContractAddress:      balanceReaderContract,
 		ContractName:         "BalanceReader",
 		ReadIdentifier:       fmt.Sprintf("%s-%s-%s", balanceReaderContract, "BalanceReader", "getNativeBalances"),
@@ -80,24 +90,34 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 		&sdk.ComputeConfig[computeConfig]{Config: compConf},
 		sdk.Compute1Inputs[readcontractcap.Output]{Arg0: chainRead},
 		func(runtime sdk.Runtime, config computeConfig, outputs readcontractcap.Output) (computeOutput, error) {
+			defer func() {
+				if r := recover(); r != nil {
+					runtime.Logger().Infof("%s", r)
+				}
+			}()
 			feedID, err := convertFeedIDtoBytes(config.FeedID)
 			if err != nil {
 				return computeOutput{}, fmt.Errorf("cannot convert feedID to bytes")
 			}
 
-			balances, ok := outputs.LatestValue.([]int64)
+			balances, ok := outputs.LatestValue.([]any)
 			if !ok {
-				return computeOutput{}, fmt.Errorf("cannot convert latest value to []int64, got type %T", outputs.LatestValue)
+				return computeOutput{}, fmt.Errorf("cannot convert latest value to []*big.Int, got type %T", outputs.LatestValue)
 			}
 
-			var balance int64
+			balance := &big.Int{}
 			for _, bal := range balances {
-				balance += bal
+				bi, ok := bal.(*big.Int)
+				if !ok {
+					return computeOutput{}, fmt.Errorf("cannot convert value to *big.Int, got %T", bi)
+				}
+
+				balance = balance.Add(balance, bi)
 			}
 
 			return computeOutput{
-				Price:     int(balance),
-				FeedID:    feedID, // TrueUSD
+				Price:     balance,
+				FeedID:    feedID, // Randomly generated
 				Timestamp: time.Now(),
 			}, nil
 		},

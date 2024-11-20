@@ -40,6 +40,13 @@ func convertFeedIDtoBytes(feedIDStr string) ([32]byte, error) {
 	if err != nil {
 		return [32]byte{}, err
 	}
+
+	if len(b) < 32 {
+		nb := [32]byte{}
+		copy(nb[:], b[:])
+		return nb, err
+	}
+
 	return [32]byte(b), nil
 }
 

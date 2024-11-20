@@ -3,6 +3,7 @@ module github.com/smartcontractkit/capabilities/workflows
 go 1.23.2
 
 require (
+	github.com/ethereum/go-ethereum v1.13.8
 	github.com/smartcontractkit/capabilities/cron v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/capabilities/readcontract v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/chainlink-common v0.3.1-0.20241114134822-aadff98ef068
@@ -30,6 +31,7 @@ require (
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.22.0 // indirect
+	github.com/holiman/uint256 v1.2.4 // indirect
 	github.com/iancoleman/strcase v0.3.0 // indirect
 	github.com/invopop/jsonschema v0.12.0 // indirect
 	github.com/jonboulle/clockwork v0.4.0 // indirect
