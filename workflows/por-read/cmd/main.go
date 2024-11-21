@@ -166,7 +166,7 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 	}
 
 	chainwriter.TargetConfig{
-		Address:    "0xfa28021d0583ee18c9b1eb966ebdc0b218a9243c", // Sepolia PoR Cache
+		Address:    "0xC4D5Af244E4Fe5e5f2D5a6b0F6F1867D4A5f0336", // Sepolia PoR Cache
 		DeltaStage: "15s",
 		Schedule:   "onAtATime",
 	}.New(workflow, "write_ethereum-testnet-sepolia@1.0.0", targetInput)
