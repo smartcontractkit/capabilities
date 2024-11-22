@@ -85,12 +85,12 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 		FeedID: "0x02ce8bfc980000320000000000000000",
 	}
 
-	compute := sdk.Compute1WithConfig(
+	compute := sdk.Compute2WithConfig(
 		workflow,
 		"compute",
 		&sdk.ComputeConfig[computeConfig]{Config: compConf},
-		sdk.Compute1Inputs[readcontractcap.Output]{Arg0: chainRead},
-		func(runtime sdk.Runtime, config computeConfig, outputs readcontractcap.Output) (computeOutput, error) {
+		sdk.Compute2Inputs[readcontractcap.Output, string]{Arg0: chainRead, Arg1: cron.ScheduledExecutionTime()},
+		func(runtime sdk.Runtime, config computeConfig, readOutput readcontractcap.Output, executedAt string) (computeOutput, error) {
 			defer func() {
 				if r := recover(); r != nil {
 					runtime.Logger().Infof("%s", r)
@@ -101,9 +101,9 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 				return computeOutput{}, fmt.Errorf("cannot convert feedID to bytes")
 			}
 
-			balances, ok := outputs.LatestValue.([]any)
+			balances, ok := readOutput.LatestValue.([]any)
 			if !ok {
-				return computeOutput{}, fmt.Errorf("cannot convert latest value to []*big.Int, got type %T", outputs.LatestValue)
+				return computeOutput{}, fmt.Errorf("cannot convert latest value to []*big.Int, got type %T", readOutput.LatestValue)
 			}
 
 			balance := &big.Int{}
@@ -116,10 +116,15 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 				balance = balance.Add(balance, bi)
 			}
 
+			executedAtT, err := time.Parse(time.RFC3339, executedAt)
+			if err != nil {
+				return computeOutput{}, fmt.Errorf("cannot convert executed at to time, got %s", executedAt)
+			}
+
 			return computeOutput{
 				Price:     balance,
 				FeedID:    feedID, // Randomly generated
-				Timestamp: time.Now().Unix(),
+				Timestamp: executedAtT.Unix(),
 			}, nil
 		},
 	)
@@ -166,9 +171,9 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 	}
 
 	chainwriter.TargetConfig{
-		Address:    "0xC4D5Af244E4Fe5e5f2D5a6b0F6F1867D4A5f0336", // Sepolia PoR Cache
+		Address:    "0x6c56e8125acacbaa61322cc47e356b79212e8521", // Feeds Consumer
 		DeltaStage: "15s",
-		Schedule:   "onAtATime",
+		Schedule:   "oneAtATime",
 	}.New(workflow, "write_ethereum-testnet-sepolia@1.0.0", targetInput)
 
 	return workflow
