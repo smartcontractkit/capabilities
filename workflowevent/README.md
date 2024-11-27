@@ -68,3 +68,7 @@ workfloweventcap.Config{}.New(w, workfloweventcap.TargetInput{
 	})
 ```
 
+## Reserved fields
+
+The following is a list of reserved fields that are included in every payload:
+- `event_timestamp`: The time at which the event was emitted, in RFC3339Nano format
