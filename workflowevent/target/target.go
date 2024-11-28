@@ -25,7 +25,6 @@ var (
 		capabilities.CapabilityTypeTarget,
 		"Emits messages through an OTEL client",
 	)
-	timeFn = time.Now
 )
 
 type Params struct {
@@ -92,7 +91,7 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		return capabilities.CapabilityResponse{}, errors.New("payload is not a map")
 	}
 
-	payloadMap.Underlying["event_timestamp"] = values.NewString(timeFn().UTC().Format(time.RFC3339Nano))
+	payloadMap.Underlying["event_timestamp"] = values.NewString(time.Now().UTC().Format(time.RFC3339Nano))
 
 	pbMap := values.ProtoMap(payloadMap)
 

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"math/big"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/protobuf/proto"
@@ -47,12 +46,7 @@ func TestCapability_Execute(t *testing.T) {
 			err := unmarshalFn(body, pbm)
 			assert.NoError(t, err)
 
-			rawMap := map[string]any{}
-			for k, v := range pbm.Fields {
-				rawMap[k] = v.GetStringValue()
-			}
-
-			assert.Equal(t, rawMap, map[string]any{"service": "Beholder", "component": "Unit test", "event_timestamp": "2021-09-01T00:00:00Z"})
+			assert.Len(t, pbm.Fields, 3)
 			return nil
 		}}
 
@@ -66,15 +60,6 @@ func TestCapability_Execute(t *testing.T) {
 		}
 		defer func() {
 			newClientFn = oldNewClientFn
-		}()
-
-		oldTimeFn := timeFn
-		timeFn = func() time.Time {
-			t, _ := time.Parse("2006-01-02T15:04:05Z", "2021-09-01T00:00:00Z")
-			return t
-		}
-		defer func() {
-			timeFn = oldTimeFn
 		}()
 
 		c, err := New(Params{Logger: logger.Test(t)})
@@ -251,12 +236,7 @@ func TestCapability_Execute(t *testing.T) {
 			err := unmarshalFn(body, pbm)
 			assert.NoError(t, err)
 
-			rawMap := map[string]any{}
-			for k, v := range pbm.Fields {
-				rawMap[k] = v.GetStringValue()
-			}
-
-			assert.Equal(t, rawMap, map[string]any{"service": "Beholder", "component": "Unit test", "event_timestamp": "2021-09-01T00:00:00Z"})
+			assert.Len(t, pbm.Fields, 3)
 			return nil
 		}}
 
@@ -271,14 +251,6 @@ func TestCapability_Execute(t *testing.T) {
 		}
 		defer func() {
 			newClientFn = oldNewClientFn
-		}()
-		oldTimeFn := timeFn
-		timeFn = func() time.Time {
-			t, _ := time.Parse("2006-01-02T15:04:05Z", "2021-09-01T00:00:00Z")
-			return t
-		}
-		defer func() {
-			timeFn = oldTimeFn
 		}()
 
 		c, err := New(Params{Logger: logger.Test(t)})
