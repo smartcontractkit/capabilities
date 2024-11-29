@@ -11,7 +11,6 @@ jobs:
   affected:
     runs-on: ubuntu-latest
     outputs:
-      nxexcludeintegration: ${{ steps.affected.outputs.affectedex }}
       nx: ${{ steps.affected.outputs.affected }}
     steps:
       - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
@@ -48,16 +47,15 @@ jobs:
         run: |
           npx nx@19.8.2 init
           echo "affected=$(./.github/scripts/affected-projects.sh ${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }})" >> $GITHUB_OUTPUT
-          echo "affectedex=$(./.github/scripts/affected-projects.sh ${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }} exclude-integration-test)" >> $GITHUB_OUTPUT
           
   build:
     needs: affected
-    if: ${{fromJson(needs.affected.outputs.nx).run_checks}}
+    if: ${{fromJson(needs.affected.outputs.nx).run_build}}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        projects: ${{fromJson(needs.affected.outputs.nx).projects}}
+        projects: ${{fromJson(needs.affected.outputs.nx).projects_with_build}}
     steps:
       - name: Checkout the repo
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
@@ -76,12 +74,12 @@ jobs:
 
   test:
     needs: affected
-    if: ${{fromJson(needs.affected.outputs.nxexcludeintegration).run_checks}}
+    if: ${{fromJson(needs.affected.outputs.nx).run_test}}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        projects: ${{fromJson(needs.affected.outputs.nxexcludeintegration).projects}}
+        projects: ${{fromJson(needs.affected.outputs.nx).projects_with_test}}
     steps:
       - name: Checkout the repo
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
@@ -92,14 +90,11 @@ jobs:
         uses: ./.github/actions/setup
         with:
           project: ${{ matrix.projects }}
-          go-module-file: ${{ fromJson(needs.affected.outputs.nxexcludeintegration)[matrix.projects].go_sum }}
+          go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "test"
 
       - name: Unit Test ${{ matrix.projects }}
-        run: ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} test
-
-      - name: Race Test ${{ matrix.projects }}
-        run: ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} race
+        run: ./nx run ${{ matrix.projects }}:test
 
       - name: Upload Unit Tests Artifacts
         if: always()
@@ -110,6 +105,30 @@ jobs:
           # the path to a generated report (per directory)
           path: |
             ./${{fromJson(needs.affected.outputs.nx)[matrix.projects].root}}/coverage.txt 
+
+  race:
+    needs: affected
+    if: ${{fromJson(needs.affected.outputs.nx).run_race}}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        projects: ${{fromJson(needs.affected.outputs.nx).projects_with_race}}
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
+        with:
+          fetch-depth: 0
+      
+      - name: Set up project environment
+        uses: ./.github/actions/setup
+        with:
+          project: ${{ matrix.projects }}
+          go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
+          task: "race"
+
+      - name: Race Test ${{ matrix.projects }}
+        run: ./nx run ${{ matrix.projects }}:race
 
   integrationtest:
     env:
@@ -138,7 +157,7 @@ jobs:
       - name: run integration_tests 
         env:
           CL_DATABASE_URL: ${{ env.DB_URL }}
-        run: ./.github/scripts/nx-run-if-exists.sh integration_tests test
+        run: ./nx run integration_tests:test
 
   tidy-and-generate:
     needs: affected
@@ -166,7 +185,7 @@ jobs:
 
       - name: Run "tidy" and "generate"
         run: |
-          ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} tidy
+          ./nx run ${{ matrix.projects }}:tidy
           ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} generate
 
       - name: Ensure no diff
@@ -232,6 +251,7 @@ jobs:
       - lint
       - build
       - test
+      - race
       - tidy-and-generate
       - modgraph
     if: always()

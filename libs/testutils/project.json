@@ -11,11 +11,18 @@
         "command": "golangci-lint run ./..."
       }
     },
+    "race": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "{projectRoot}",
+        "command": "go test -race ./..."
+      }
+    },
     "test": {
       "executor": "nx:run-commands",
       "options": {
         "cwd": "{projectRoot}",
-        "command": "go test ./..."
+        "command": "go test ./... -coverpkg=./... -coverprofile=coverage.txt"
       }
     },
     "tidy": {

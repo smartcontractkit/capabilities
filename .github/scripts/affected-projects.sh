@@ -7,19 +7,8 @@ if [ -z "$1" ]; then
 fi
 
 base=$1
-exclude_integration_test=false
 
-# Check for the exclude-integration-test flag
-if [ "$2" == "exclude-integration-test" ]; then
-  exclude_integration_test=true
-fi
-
-# Determine the affected projects command based on the flag
-if [ "$exclude_integration_test" = true ]; then
-  affected_projects=$(./nx show projects --affected --json --base=$base | jq 'del(.[] | select(. == "integration_tests"))')
-else
-  affected_projects=$(./nx show projects --affected --json --base=$base)
-fi
+affected_projects=$(./nx show projects --affected --json --base=$base)
 
 # echo "Affected projects:"
 # echo "$affected_projects" | jq .
@@ -28,6 +17,24 @@ projects=($(echo $affected_projects | jq -r '.[]'))
 
 # Initialize an output string
 output="{ \"base\": \"$base\", \"projects\": $affected_projects, "
+
+targets=("test" "race" "build")
+
+for target in "${targets[@]}"; do
+  projects_with_target=$(./nx show projects --affected -t $target --json --base=$base)
+
+  if [ "$target" == "test" ]; then
+    projects_with_target=$(echo $projects_with_target | jq 'del(.[] | select(. == "integration_tests"))')
+  fi
+
+  output+="\"projects_with_$target\": $projects_with_target, "
+
+  if [ ${#projects_with_target[@]} -eq 0 ]; then
+    output+=" \"run_$target\": false, "
+  else
+    output+=" \"run_$target\": true, "
+  fi
+done
 
 # Loop through each project and collect nested details
 for project in "${projects[@]}"; do
@@ -57,6 +64,17 @@ echo $output
 #     "project_name_1",
 #     "project_name_2",
 #   ],
+#   "projects_with_target_1": [
+#     "project_name_1"
+#   ],
+#   "run_target_1": true,
+#   "projects_with_target_2": [
+#     "project_name_1",
+#     "project_name_2"
+#   ],
+#   "run_target_2": true,
+#   "projects_with_target_3": [],
+#   "run_target_3": false,
 #   "project_name_1": {
 #     "root": "project_1_root",
 #     "go_sum": "project_1_root/go.sum"
