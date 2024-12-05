@@ -112,6 +112,13 @@ func (r *capabilitiesRegistry) Add(ctx context.Context, c capabilities.BaseCapab
 	return nil
 }
 
+func (r *capabilitiesRegistry) Remove(ctx context.Context, id string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.capabilities, id)
+	return nil
+}
+
 // Test helpers
 func (r *capabilitiesRegistry) Contains(capabilityIDs []string) error {
 	r.mu.RLock()

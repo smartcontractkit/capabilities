@@ -17,9 +17,10 @@ import (
 var _ loop.StandardCapabilities = (*capabilitiesServer)(nil)
 
 type capabilitiesServer struct {
-	Trigger trigger.CapabilityService
-	lggr    logger.Logger
-	srvcs   []services.Service
+	Trigger            trigger.CapabilityService
+	lggr               logger.Logger
+	srvcs              []services.Service
+	capabilityRegistry core.CapabilitiesRegistry
 }
 
 func New(lggr logger.Logger) *capabilitiesServer {
@@ -35,6 +36,7 @@ func (cs *capabilitiesServer) Close() (err error) {
 		cs.lggr.Debugw("Closing service...", "name", service.Name())
 		err = errors.Join(err, service.Close())
 	}
+	err = errors.Join(err, cs.capabilityRegistry.Remove(context.TODO(), trigger.ID))
 	return err
 }
 
@@ -89,5 +91,6 @@ func (cs *capabilitiesServer) Initialise(
 	if err := capabilityRegistry.Add(ctx, cs.Trigger); err != nil {
 		return fmt.Errorf("error when adding streams trigger to the registry: %w", err)
 	}
+	cs.capabilityRegistry = capabilityRegistry
 	return nil
 }

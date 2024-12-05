@@ -17,8 +17,9 @@ const (
 )
 
 type CapabilitiesService struct {
-	target capabilities.TargetCapability
-	lggr   logger.Logger
+	target             capabilities.TargetCapability
+	lggr               logger.Logger
+	capabilityRegistry core.CapabilitiesRegistry
 }
 
 func main() {
@@ -32,6 +33,10 @@ func (cs *CapabilitiesService) Start(ctx context.Context) error {
 }
 
 func (cs *CapabilitiesService) Close() error {
+	err := cs.capabilityRegistry.Remove(context.TODO(), target.ID)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -83,6 +88,8 @@ func (cs *CapabilitiesService) Initialise(
 	if err := capabilityRegistry.Add(ctx, cs.target); err != nil {
 		return fmt.Errorf("error when adding telemetry target to the registry: %w", err)
 	}
+
+	cs.capabilityRegistry = capabilityRegistry
 
 	return nil
 }

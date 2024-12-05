@@ -13,6 +13,8 @@ import (
 	"github.com/smartcontractkit/capabilities/kvstore/kvrequests"
 )
 
+const ID = "kv-store-action@1.0.0"
+
 var _ capabilities.ActionCapability = (*capability)(nil)
 
 type capability struct {
@@ -33,7 +35,7 @@ func New(p Params) *capability {
 }
 
 func (c *capability) Info(ctx context.Context) (capabilities.CapabilityInfo, error) {
-	return capabilities.NewCapabilityInfo("kv-store-action@1.0.0", capabilities.CapabilityTypeAction, "Reads keys values from a key-value store")
+	return capabilities.NewCapabilityInfo(ID, capabilities.CapabilityTypeAction, "Reads keys values from a key-value store")
 }
 
 func evaluate(rawRequest capabilities.CapabilityRequest) (*kvcap.ReadInputs, error) {

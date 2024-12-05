@@ -27,9 +27,10 @@ type TriggerCapabilityService interface {
 }
 
 type CapabilitiesService struct {
-	trigger TriggerCapabilityService
-	lggr    logger.Logger
-	srvcs   []services.Service
+	trigger            TriggerCapabilityService
+	lggr               logger.Logger
+	srvcs              []services.Service
+	capabilityRegistry core.CapabilitiesRegistry
 }
 
 func main() {
@@ -47,7 +48,7 @@ func (cs *CapabilitiesService) Close() (err error) {
 		cs.lggr.Debugw("Closing service...", "name", service.Name())
 		err = errors.Join(err, service.Close())
 	}
-
+	err = errors.Join(err, cs.capabilityRegistry.Remove(context.TODO(), trigger.ID))
 	return err
 }
 
@@ -94,6 +95,7 @@ func (cs *CapabilitiesService) Initialise(
 	}
 	cs.srvcs = append(cs.srvcs, cs.trigger)
 
+	cs.capabilityRegistry = capabilityRegistry
 	if err := capabilityRegistry.Add(ctx, cs.trigger); err != nil {
 		return fmt.Errorf("error when adding trigger to the registry: %w", err)
 	}

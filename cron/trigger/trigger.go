@@ -46,7 +46,7 @@ type Service struct {
 	lggr      logger.Logger
 	scheduler gocron.Scheduler
 	triggers  *cronStore
-	labeler   custmsg.Labeler
+	labeler   custmsg.MessageEmitter
 }
 
 type Params struct {
@@ -167,7 +167,7 @@ func (s *Service) RegisterTrigger(ctx context.Context, req capabilities.TriggerR
 					"workflowOwner", req.Metadata.WorkflowOwner,
 					"workflowName", req.Metadata.WorkflowName,
 					"workflowID", req.Metadata.WorkflowID,
-				).SendLogAsCustomMessage("callback channel full, dropping event")
+				).Emit(ctx, "callback channel full, dropping event")
 				if lblErr != nil {
 					s.lggr.Errorw("cannot emit custom event", "executionID", req.Metadata.WorkflowExecutionID, "triggerID", req.TriggerID, "eventID", response.Event.ID, "err", err)
 				}

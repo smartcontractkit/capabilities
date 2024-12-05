@@ -32,8 +32,9 @@ type readContractAction interface {
 
 type ReadContractGRPCService struct {
 	services.StateMachine
-	action readContractAction
-	lggr   logger.Logger
+	action             readContractAction
+	lggr               logger.Logger
+	capabilityRegistry core.CapabilitiesRegistry
 }
 
 func main() {
@@ -55,6 +56,14 @@ func (cs *ReadContractGRPCService) Start(ctx context.Context) error {
 }
 
 func (cs *ReadContractGRPCService) Close() error {
+	triggerInfo, err := cs.action.Info(context.TODO())
+	if err != nil {
+		return err
+	}
+	err = cs.capabilityRegistry.Remove(context.TODO(), triggerInfo.ID)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -119,6 +128,8 @@ func (cs *ReadContractGRPCService) Initialise(
 	if err := capabilityRegistry.Add(ctx, cs.action); err != nil {
 		return fmt.Errorf("failed to add read contract capability to the capability registry: %w", err)
 	}
+
+	cs.capabilityRegistry = capabilityRegistry
 
 	return nil
 }

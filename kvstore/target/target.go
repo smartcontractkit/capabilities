@@ -16,6 +16,8 @@ import (
 	"github.com/smartcontractkit/capabilities/kvstore/kvrequests"
 )
 
+const ID = "kv-store-target@1.0.0"
+
 var _ capabilities.TargetCapability = (*capability)(nil)
 
 type capability struct {
@@ -36,7 +38,7 @@ func New(p Params) *capability {
 }
 
 func (c *capability) Info(ctx context.Context) (capabilities.CapabilityInfo, error) {
-	return capabilities.NewCapabilityInfo("kv-store-target@1.0.0", capabilities.CapabilityTypeTarget, "Writes KV-pairs from a SignedReport to a key-value store")
+	return capabilities.NewCapabilityInfo(ID, capabilities.CapabilityTypeTarget, "Writes KV-pairs from a SignedReport to a key-value store")
 }
 
 type KVWriteReport struct {

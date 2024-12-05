@@ -17,11 +17,12 @@ import (
 )
 
 var (
+	ID                      = "workflowevent-target@1.0.0"
 	marshalFn               = proto.Marshal
 	unmarshalFn             = proto.Unmarshal
 	newClientFn             = beholder.NewClient
 	workflowEventTargetInfo = capabilities.MustNewCapabilityInfo(
-		"workflowevent-target@1.0.0",
+		ID,
 		capabilities.CapabilityTypeTarget,
 		"Emits messages through an OTEL client",
 	)

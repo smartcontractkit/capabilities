@@ -21,10 +21,11 @@ import (
 var _ loop.StandardCapabilities = (*capabilitiesServer)(nil)
 
 type capabilitiesServer struct {
-	Action capabilities.ActionCapability
-	Target capabilities.TargetCapability
-	oracle core.Oracle
-	lggr   logger.SugaredLogger
+	Action             capabilities.ActionCapability
+	Target             capabilities.TargetCapability
+	oracle             core.Oracle
+	lggr               logger.SugaredLogger
+	capabilityRegistry core.CapabilitiesRegistry
 }
 
 func New(lggr logger.Logger) *capabilitiesServer {
@@ -36,7 +37,22 @@ func (cs *capabilitiesServer) Start(ctx context.Context) error {
 }
 
 func (cs *capabilitiesServer) Close() error {
-	return cs.oracle.Close(context.Background())
+	err := cs.oracle.Close(context.Background())
+	if err != nil {
+		return err
+	}
+
+	err = cs.capabilityRegistry.Remove(context.TODO(), action.ID)
+	if err != nil {
+		return err
+	}
+
+	err = cs.capabilityRegistry.Remove(context.TODO(), target.ID)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (cs *capabilitiesServer) Ready() error {
@@ -94,6 +110,8 @@ func (cs *capabilitiesServer) Initialise(
 		Logger:        cs.lggr,
 		RequestsStore: requestsStore,
 	})
+
+	cs.capabilityRegistry = capabilityRegistry
 
 	if err := capabilityRegistry.Add(ctx, cs.Action); err != nil {
 		return fmt.Errorf("error when adding kv store action to the registry: %w", err)
