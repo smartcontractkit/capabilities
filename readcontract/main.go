@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/jonboulle/clockwork"
 
@@ -56,11 +57,13 @@ func (cs *ReadContractGRPCService) Start(ctx context.Context) error {
 }
 
 func (cs *ReadContractGRPCService) Close() error {
-	triggerInfo, err := cs.action.Info(context.TODO())
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	info, err := cs.action.Info(ctx)
 	if err != nil {
 		return err
 	}
-	err = cs.capabilityRegistry.Remove(context.TODO(), triggerInfo.ID)
+	err = cs.capabilityRegistry.Remove(ctx, info.ID)
 	if err != nil {
 		return err
 	}

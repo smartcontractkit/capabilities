@@ -42,12 +42,15 @@ func (cs *capabilitiesServer) Close() error {
 		return err
 	}
 
-	err = cs.capabilityRegistry.Remove(context.TODO(), action.ID)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	err = cs.capabilityRegistry.Remove(ctx, action.ID)
 	if err != nil {
 		return err
 	}
 
-	err = cs.capabilityRegistry.Remove(context.TODO(), target.ID)
+	err = cs.capabilityRegistry.Remove(ctx, target.ID)
 	if err != nil {
 		return err
 	}

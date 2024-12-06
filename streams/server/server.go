@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -36,7 +37,9 @@ func (cs *capabilitiesServer) Close() (err error) {
 		cs.lggr.Debugw("Closing service...", "name", service.Name())
 		err = errors.Join(err, service.Close())
 	}
-	err = errors.Join(err, cs.capabilityRegistry.Remove(context.TODO(), trigger.ID))
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	err = errors.Join(err, cs.capabilityRegistry.Remove(ctx, trigger.ID))
 	return err
 }
 

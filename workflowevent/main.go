@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -33,7 +34,9 @@ func (cs *CapabilitiesService) Start(ctx context.Context) error {
 }
 
 func (cs *CapabilitiesService) Close() error {
-	err := cs.capabilityRegistry.Remove(context.TODO(), target.ID)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	err := cs.capabilityRegistry.Remove(ctx, target.ID)
 	if err != nil {
 		return err
 	}
