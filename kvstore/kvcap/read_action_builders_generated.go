@@ -17,7 +17,17 @@ func (cfg ReadActionConfig) New(w *sdk.WorkflowSpecFactory, ref string, input Re
 	}
 
 	step := sdk.Step[ReadOutputs]{Definition: def}
-	return ReadOutputsCapFromStep(w, step)
+	raw := step.AddTo(w)
+	return ReadOutputsWrapper(raw)
+}
+
+// ReadOutputsWrapper allows access to field from an sdk.CapDefinition[ReadOutputs]
+func ReadOutputsWrapper(raw sdk.CapDefinition[ReadOutputs]) ReadOutputsCap {
+	wrapped, ok := raw.(ReadOutputsCap)
+	if ok {
+		return wrapped
+	}
+	return &readOutputsCap{CapDefinition: raw}
 }
 
 type ReadOutputsCap interface {
@@ -26,19 +36,17 @@ type ReadOutputsCap interface {
 	private()
 }
 
-// ReadOutputsCapFromStep should only be called from generated code to assure type safety
-func ReadOutputsCapFromStep(w *sdk.WorkflowSpecFactory, step sdk.Step[ReadOutputs]) ReadOutputsCap {
-	raw := step.AddTo(w)
-	return &readOutputs{CapDefinition: raw}
-}
-
-type readOutputs struct {
+type readOutputsCap struct {
 	sdk.CapDefinition[ReadOutputs]
 }
 
-func (*readOutputs) private() {}
-func (c *readOutputs) Values() sdk.CapDefinition[[][]uint8] {
+func (*readOutputsCap) private() {}
+func (c *readOutputsCap) Values() sdk.CapDefinition[[][]uint8] {
 	return sdk.AccessField[ReadOutputs, [][]uint8](c.CapDefinition, "values")
+}
+
+func ConstantReadOutputs(value ReadOutputs) ReadOutputsCap {
+	return &readOutputsCap{CapDefinition: sdk.ConstantDefinition(value)}
 }
 
 func NewReadOutputsFromFields(

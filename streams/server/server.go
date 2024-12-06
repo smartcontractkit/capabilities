@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -17,9 +18,10 @@ import (
 var _ loop.StandardCapabilities = (*capabilitiesServer)(nil)
 
 type capabilitiesServer struct {
-	Trigger trigger.CapabilityService
-	lggr    logger.Logger
-	srvcs   []services.Service
+	Trigger            trigger.CapabilityService
+	lggr               logger.Logger
+	srvcs              []services.Service
+	capabilityRegistry core.CapabilitiesRegistry
 }
 
 func New(lggr logger.Logger) *capabilitiesServer {
@@ -35,6 +37,9 @@ func (cs *capabilitiesServer) Close() (err error) {
 		cs.lggr.Debugw("Closing service...", "name", service.Name())
 		err = errors.Join(err, service.Close())
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	err = errors.Join(err, cs.capabilityRegistry.Remove(ctx, trigger.ID))
 	return err
 }
 
@@ -89,5 +94,6 @@ func (cs *capabilitiesServer) Initialise(
 	if err := capabilityRegistry.Add(ctx, cs.Trigger); err != nil {
 		return fmt.Errorf("error when adding streams trigger to the registry: %w", err)
 	}
+	cs.capabilityRegistry = capabilityRegistry
 	return nil
 }

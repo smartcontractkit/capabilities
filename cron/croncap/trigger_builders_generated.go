@@ -19,7 +19,17 @@ func (cfg Config) New(w *sdk.WorkflowSpecFactory) PayloadCap {
 	}
 
 	step := sdk.Step[Payload]{Definition: def}
-	return PayloadCapFromStep(w, step)
+	raw := step.AddTo(w)
+	return PayloadWrapper(raw)
+}
+
+// PayloadWrapper allows access to field from an sdk.CapDefinition[Payload]
+func PayloadWrapper(raw sdk.CapDefinition[Payload]) PayloadCap {
+	wrapped, ok := raw.(PayloadCap)
+	if ok {
+		return wrapped
+	}
+	return &payloadCap{CapDefinition: raw}
 }
 
 type PayloadCap interface {
@@ -29,22 +39,20 @@ type PayloadCap interface {
 	private()
 }
 
-// PayloadCapFromStep should only be called from generated code to assure type safety
-func PayloadCapFromStep(w *sdk.WorkflowSpecFactory, step sdk.Step[Payload]) PayloadCap {
-	raw := step.AddTo(w)
-	return &payload{CapDefinition: raw}
-}
-
-type payload struct {
+type payloadCap struct {
 	sdk.CapDefinition[Payload]
 }
 
-func (*payload) private() {}
-func (c *payload) ActualExecutionTime() sdk.CapDefinition[string] {
+func (*payloadCap) private() {}
+func (c *payloadCap) ActualExecutionTime() sdk.CapDefinition[string] {
 	return sdk.AccessField[Payload, string](c.CapDefinition, "ActualExecutionTime")
 }
-func (c *payload) ScheduledExecutionTime() sdk.CapDefinition[string] {
+func (c *payloadCap) ScheduledExecutionTime() sdk.CapDefinition[string] {
 	return sdk.AccessField[Payload, string](c.CapDefinition, "ScheduledExecutionTime")
+}
+
+func ConstantPayload(value Payload) PayloadCap {
+	return &payloadCap{CapDefinition: sdk.ConstantDefinition(value)}
 }
 
 func NewPayloadFromFields(

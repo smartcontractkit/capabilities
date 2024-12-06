@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/jonboulle/clockwork"
 
@@ -32,8 +33,9 @@ type readContractAction interface {
 
 type ReadContractGRPCService struct {
 	services.StateMachine
-	action readContractAction
-	lggr   logger.Logger
+	action             readContractAction
+	lggr               logger.Logger
+	capabilityRegistry core.CapabilitiesRegistry
 }
 
 func main() {
@@ -55,6 +57,16 @@ func (cs *ReadContractGRPCService) Start(ctx context.Context) error {
 }
 
 func (cs *ReadContractGRPCService) Close() error {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	info, err := cs.action.Info(ctx)
+	if err != nil {
+		return err
+	}
+	err = cs.capabilityRegistry.Remove(ctx, info.ID)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -119,6 +131,8 @@ func (cs *ReadContractGRPCService) Initialise(
 	if err := capabilityRegistry.Add(ctx, cs.action); err != nil {
 		return fmt.Errorf("failed to add read contract capability to the capability registry: %w", err)
 	}
+
+	cs.capabilityRegistry = capabilityRegistry
 
 	return nil
 }

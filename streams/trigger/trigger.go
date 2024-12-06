@@ -26,8 +26,11 @@ import (
 	"github.com/smartcontractkit/capabilities/streams/trigger/reportcodec"
 )
 
-const defaultSendChannelBufferSize = 1000
-const defaultTickerResolutionMs = 100
+const (
+	ID                           = "mock-streams-trigger@1.0.0"
+	defaultSendChannelBufferSize = 1000
+	defaultTickerResolutionMs    = 100
+)
 
 type CapabilityService interface {
 	services.Service
@@ -35,7 +38,7 @@ type CapabilityService interface {
 }
 
 var cronTriggerInfo = capabilities.MustNewCapabilityInfo(
-	"mock-streams-trigger@1.0.0",
+	ID,
 	capabilities.CapabilityTypeTrigger,
 	"A trigger that periodically returns a mock streams report.",
 )

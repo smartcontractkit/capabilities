@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -17,8 +18,9 @@ const (
 )
 
 type CapabilitiesService struct {
-	target capabilities.TargetCapability
-	lggr   logger.Logger
+	target             capabilities.TargetCapability
+	lggr               logger.Logger
+	capabilityRegistry core.CapabilitiesRegistry
 }
 
 func main() {
@@ -32,6 +34,12 @@ func (cs *CapabilitiesService) Start(ctx context.Context) error {
 }
 
 func (cs *CapabilitiesService) Close() error {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	err := cs.capabilityRegistry.Remove(ctx, target.ID)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -83,6 +91,8 @@ func (cs *CapabilitiesService) Initialise(
 	if err := capabilityRegistry.Add(ctx, cs.target); err != nil {
 		return fmt.Errorf("error when adding telemetry target to the registry: %w", err)
 	}
+
+	cs.capabilityRegistry = capabilityRegistry
 
 	return nil
 }

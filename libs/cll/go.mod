@@ -1,6 +1,8 @@
 module github.com/smartcontractkit/capabilities/libs/cll
 
-go 1.23
+go 1.23.3
+
+toolchain go1.23.4
 
 require (
 	github.com/smartcontractkit/libocr v0.0.0-20241007185508-adbe57025f12
