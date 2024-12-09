@@ -31,13 +31,13 @@
           "additionalProperties": true
         }
       },
-      "required": ["ReadIdentifier", "Address", "ConfidenceLevel", "Params"]
+      "required": ["ConfidenceLevel", "Params"]
     },
     "Output": {
       "type": "object",
       "properties": {
         "LatestValue": {
-          "type": "object"
+          "type": ["object", "string", "boolean", "null", "array"]
         }
       },
       "required": ["LatestValue"]

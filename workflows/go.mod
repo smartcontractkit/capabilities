@@ -9,7 +9,6 @@ replace github.com/smartcontractkit/capabilities/cron => ../cron
 replace github.com/smartcontractkit/capabilities/readcontract => ../readcontract
 
 require (
-	github.com/ethereum/go-ethereum v1.14.12
 	github.com/smartcontractkit/capabilities/cron v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/capabilities/readcontract v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/chainlink-common v0.3.1-0.20241202172404-26d4a0b45b23
@@ -33,7 +32,6 @@ require (
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.22.0 // indirect
-	github.com/holiman/uint256 v1.3.1 // indirect
 	github.com/iancoleman/strcase v0.3.0 // indirect
 	github.com/invopop/jsonschema v0.12.0 // indirect
 	github.com/leodido/go-urn v1.2.0 // indirect
