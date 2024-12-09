@@ -1,27 +1,36 @@
 #!/bin/bash
 
-# Check if a base input is provided
-if [ -z "$1" ]; then
-  echo "Please provide a branch."
+# to ensure affected projects are correctly detected provide base branch and head sha
+base=$1
+head=$2
+
+# Check if a `base` input is provided
+if [ -z "$base" ]; then
+  echo "Please provide a base branch (to compare against) as the first argument."
+  exit 1
+# Check if a `head` input is provided
+elif [ -z "$head" ]; then
+  echo "Please provide a head sha as the second argument."
   exit 1
 fi
 
-base=$1
+# to ensure affected projects are correctly detected use `--base` and `--head`
+affected_projects=$(./nx show projects --affected --json --base=$base --head=$head)
 
-affected_projects=$(./nx show projects --affected --json --base=$base)
-
+# Uncomment echo lines for debugging
 # echo "Affected projects:"
 # echo "$affected_projects" | jq .
 
 projects=($(echo $affected_projects | jq -r '.[]'))
 
 # Initialize an output string
-output="{ \"base\": \"$base\", \"projects\": $affected_projects, "
+output="{ \"base\": \"$base\", \"head\": \"$head\", \"projects\": $affected_projects, "
 
 targets=("test" "race" "build")
 
 for target in "${targets[@]}"; do
-  projects_with_target=$(./nx show projects --affected -t $target --json --base=$base)
+  # to ensure affected projects are correctly detected use `--base` and `--head`
+  projects_with_target=$(./nx show projects --affected -t $target --json --base=$base --head=$head)
 
   if [ "$target" == "test" ]; then
     projects_with_target=$(echo $projects_with_target | jq 'del(.[] | select(. == "integration_tests"))')
@@ -60,6 +69,7 @@ echo $output
 # Outputs:
 # {
 #   "base": "main",
+#   "head": "f6756431b2cc499526be6b3edccedb1678191921",
 #   "projects": [
 #     "project_name_1",
 #     "project_name_2",
