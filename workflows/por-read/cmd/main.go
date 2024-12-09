@@ -21,9 +21,7 @@ import (
 )
 
 type computeOutput struct {
-	Price *big.Int
-	// TODO: specify decimals; requires a different consumer contract.
-	// Decimal int
+	Price     *big.Int
 	FeedID    [32]byte
 	Timestamp int64
 }
@@ -91,11 +89,6 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 		&sdk.ComputeConfig[computeConfig]{Config: compConf},
 		sdk.Compute2Inputs[readcontractcap.Output, string]{Arg0: chainRead, Arg1: cron.ScheduledExecutionTime()},
 		func(runtime sdk.Runtime, config computeConfig, readOutput readcontractcap.Output, executedAt string) (computeOutput, error) {
-			defer func() {
-				if r := recover(); r != nil {
-					runtime.Logger().Infof("%s", r)
-				}
-			}()
 			feedID, err := convertFeedIDtoBytes(config.FeedID)
 			if err != nil {
 				return computeOutput{}, fmt.Errorf("cannot convert feedID to bytes")
@@ -123,7 +116,7 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 
 			return computeOutput{
 				Price:     balance,
-				FeedID:    feedID, // Randomly generated
+				FeedID:    feedID,
 				Timestamp: executedAtT.Unix(),
 			}, nil
 		},

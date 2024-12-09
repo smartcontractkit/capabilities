@@ -24,9 +24,7 @@ type trueUSDResponse struct {
 }
 
 type computeOutput struct {
-	Price int
-	// TODO: specify decimals; requires a different consumer contract.
-	// Decimal int
+	Price     int
 	FeedID    [32]byte
 	Timestamp int64
 }
@@ -69,7 +67,6 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 		&sdk.ComputeConfig[computeConfig]{Config: compConf},
 		sdk.Compute1Inputs[croncap.Payload]{Arg0: cron},
 		func(runtime sdk.Runtime, config computeConfig, outputs croncap.Payload) (computeOutput, error) {
-			fmt.Printf("FeedID: %+v", config)
 			feedID, err := convertFeedIDtoBytes(config.FeedID)
 			if err != nil {
 				return computeOutput{}, fmt.Errorf("cannot convert feedID to bytes")
@@ -102,7 +99,7 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 
 			return computeOutput{
 				Price:     int(resp.TotalTrust * 100),
-				FeedID:    feedID, // TrueUSD
+				FeedID:    feedID,
 				Timestamp: resp.UpdatedAt.Unix(),
 			}, nil
 		},
