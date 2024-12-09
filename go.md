@@ -26,6 +26,9 @@ flowchart LR
 	capabilities/workflowevent --> capabilities/libs/loopserver
 	capabilities/workflowevent --> capabilities/libs/testutils
 	click capabilities/workflowevent href "https://github.com/smartcontractkit/capabilities"
+	capabilities/workflows --> capabilities/cron
+	capabilities/workflows --> capabilities/readcontract
+	click capabilities/workflows href "https://github.com/smartcontractkit/capabilities"
 	chain-selectors
 	click chain-selectors href "https://github.com/smartcontractkit/chain-selectors"
 	chainlink-automation --> chainlink-common
@@ -81,6 +84,7 @@ flowchart LR
 		 capabilities/readcontract
 		 capabilities/streams
 		 capabilities/workflowevent
+		 capabilities/workflows
 	end
 	click capabilities-repo href "https://github.com/smartcontractkit/capabilities"
 
