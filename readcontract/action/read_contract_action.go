@@ -2,10 +2,14 @@ package actions
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/jonboulle/clockwork"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -18,6 +22,12 @@ import (
 	"github.com/smartcontractkit/capabilities/readcontract/readcontractcap"
 )
 
+const (
+	defaultCacheCleanupInterval          = 1 * time.Minute
+	defaultCacheExpiryTime               = 1 * time.Hour
+	defaultCacheSizeBeforeCleanupEnacted = 100
+)
+
 type ReadContractConfig struct {
 	ChainID           uint64 `json:"chainId"`
 	Network           string `json:"network"`
@@ -26,6 +36,40 @@ type ReadContractConfig struct {
 
 type Output struct {
 	LatestValue values.Value `json:"latestValue"`
+}
+
+var (
+	readContractCacheHit = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "readcontract_capability_cache_hit",
+		Help: "hit vs non-hits of the read contract capability cache",
+	}, []string{"hit"})
+	readContractCacheEviction = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "readcontract_capability_cache_eviction",
+		Help: "evictions from the read contract cache",
+	})
+	readContractCacheAddition = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "readcontract_capability_cache_addition",
+		Help: "additions to the read contract cache",
+	})
+)
+
+type readContractCacheStats struct {
+}
+
+func (r readContractCacheStats) OnCacheHit() {
+	readContractCacheHit.WithLabelValues("true").Inc()
+}
+
+func (r readContractCacheStats) OnCacheMiss() {
+	readContractCacheHit.WithLabelValues("false").Inc()
+}
+
+func (r readContractCacheStats) OnCacheEviction(i int) {
+	readContractCacheEviction.Add(float64(i))
+}
+
+func (r readContractCacheStats) OnCacheAddition() {
+	readContractCacheAddition.Inc()
 }
 
 type ReadContractAction struct {
@@ -37,8 +81,9 @@ type ReadContractAction struct {
 
 	relayer Relayer
 
-	readContractStore *readContractStore
+	contractReaders *ServiceCache[string, CapabilityContractReader]
 
+	mux   sync.Mutex
 	clock clockwork.Clock
 }
 
@@ -65,13 +110,16 @@ func NewReadContractAction(_ context.Context, lggr logger.Logger, config ReadCon
 		return nil, fmt.Errorf("failed to create capability info: %w", err)
 	}
 
+	contractReaderCache := NewServiceCache[string, CapabilityContractReader](lggr, "ContractReaderCache",
+		clockwork.NewRealClock(), defaultCacheCleanupInterval, defaultCacheExpiryTime, defaultCacheSizeBeforeCleanupEnacted, readContractCacheStats{})
+
 	return &ReadContractAction{
-		lggr:              logger.Named(lggr, id),
-		CapabilityInfo:    info,
-		Validator:         capabilities.NewValidator[readcontractcap.Config, readcontractcap.Input, capabilities.CapabilityResponse](capabilities.ValidatorArgs{Info: info}),
-		relayer:           relayer,
-		clock:             clock,
-		readContractStore: NewReadContractStore(),
+		lggr:            logger.Named(lggr, id),
+		CapabilityInfo:  info,
+		Validator:       capabilities.NewValidator[readcontractcap.Config, readcontractcap.Input, capabilities.CapabilityResponse](capabilities.ValidatorArgs{Info: info}),
+		relayer:         relayer,
+		clock:           clock,
+		contractReaders: contractReaderCache,
 	}, nil
 }
 
@@ -86,6 +134,11 @@ func (r *ReadContractAction) Close() error {
 func (r *ReadContractAction) Execute(ctx context.Context, request capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
 	lggr := logger.With(r.lggr, "workflow", request.Metadata)
 
+	config, err := r.ValidateConfig(request.Config)
+	if err != nil {
+		return capabilities.CapabilityResponse{}, fmt.Errorf("invalid config: %w", err)
+	}
+
 	inputs, err := r.ValidateInputs(request.Inputs)
 	if err != nil {
 		return capabilities.CapabilityResponse{}, fmt.Errorf("invalid inputs: %w", err)
@@ -96,12 +149,17 @@ func (r *ReadContractAction) Execute(ctx context.Context, request capabilities.C
 		return capabilities.CapabilityResponse{}, fmt.Errorf("invalid confidence level: %w", err)
 	}
 
-	reader, exists := r.readContractStore.Get(request.Metadata)
-	if !exists {
-		return capabilities.CapabilityResponse{}, fmt.Errorf("no contract reader found for workflow %s", request.Metadata.WorkflowID)
+	reader, err := r.getContractReader(ctx, config.ContractReaderConfig, config.ReadIdentifier)
+	if err != nil {
+		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to get contract reader: %w", err)
 	}
 
-	lggr.Info("Executing Get Latest Value request", "confidenceLevel", confidenceLevel, "params", inputs.Params)
+	if err = reader.Bind(ctx, []types.BoundContract{{Address: config.ContractAddress, Name: config.ContractName}}); err != nil {
+		return capabilities.CapabilityResponse{}, fmt.Errorf("error binding read identifier: %w", err)
+	}
+
+	lggr.Info("Executing Get Latest Value request", "readIdentifier", config.ReadIdentifier, "address", config.ContractAddress,
+		"confidenceLevel", confidenceLevel, "params", inputs.Params)
 
 	resp, err := reader.GetLatestValue(ctx, request.Metadata.WorkflowExecutionID, confidenceLevel, inputs.Params)
 	if err != nil {
@@ -117,36 +175,69 @@ func (r *ReadContractAction) Execute(ctx context.Context, request capabilities.C
 	return capabilities.CapabilityResponse{Value: resultValue}, nil
 }
 
+func (r *ReadContractAction) getContractReader(ctx context.Context, contractReaderConfig string, readIdentifier string) (CapabilityContractReader, error) {
+	r.mux.Lock()
+	defer r.mux.Unlock()
+
+	contractReaderConfigID := fmt.Sprintf("%x", sha256.Sum256([]byte(contractReaderConfig)))
+	if reader, ok := r.contractReaders.Get(contractReaderConfigID); ok {
+		return reader, nil
+	}
+
+	reader, err := r.relayer.NewContractReader(ctx, []byte(contractReaderConfig))
+	if err != nil {
+		return nil, fmt.Errorf("error fetching contract reader: %w", err)
+	}
+
+	capabiltyContractReader := &nonConsensusContractReader{
+		contractReader: reader,
+		readIdentifier: readIdentifier,
+	}
+
+	err = r.contractReaders.AddAndStart(ctx, contractReaderConfigID, capabiltyContractReader)
+	if err != nil {
+		return nil, fmt.Errorf("error adding contract reader to cache: %w", err)
+	}
+	return capabiltyContractReader, nil
+}
+
 func (r *ReadContractAction) RegisterToWorkflow(ctx context.Context, request capabilities.RegisterToWorkflowRequest) error {
-	config, err := r.ValidateConfig(request.Config)
-	if err != nil {
-		return fmt.Errorf("invalid config: %w", err)
-	}
-
-	reader, err := r.relayer.NewContractReader(ctx, []byte(config.ContractReaderConfig))
-	if err != nil {
-		return fmt.Errorf("error fetching contract reader: %w", err)
-	}
-
-	if err = reader.Bind(ctx, []types.BoundContract{{Address: config.ContractAddress, Name: config.ContractName}}); err != nil {
-		return fmt.Errorf("error binding read identifier: %w", err)
-	}
-
-	cr := &nonConsensusContractReader{contractReader: reader, readIdentifier: config.ReadIdentifier}
-
-	r.readContractStore.Add(request.Metadata, cr)
-
+	// Do Nothing - currently expected that this method is to be removed from executable capabilities
 	return nil
 }
 
 func (r *ReadContractAction) UnregisterFromWorkflow(ctx context.Context, request capabilities.UnregisterFromWorkflowRequest) error {
-	r.readContractStore.Remove(request.Metadata)
+	// Do Nothing - currently expected that this method is to be removed from executable capabilities
 	return nil
 }
 
 type nonConsensusContractReader struct {
 	contractReader ContractReader
 	readIdentifier string
+}
+
+func (n *nonConsensusContractReader) Start(ctx context.Context) error {
+	return n.contractReader.Start(ctx)
+}
+
+func (n *nonConsensusContractReader) Close() error {
+	return n.contractReader.Close()
+}
+
+func (n *nonConsensusContractReader) Bind(ctx context.Context, bindings []types.BoundContract) error {
+	return n.contractReader.Bind(ctx, bindings)
+}
+
+func (n *nonConsensusContractReader) Ready() error {
+	return n.contractReader.Ready()
+}
+
+func (n *nonConsensusContractReader) HealthReport() map[string]error {
+	return n.contractReader.HealthReport()
+}
+
+func (n *nonConsensusContractReader) Name() string {
+	return n.contractReader.Name()
 }
 
 func (n *nonConsensusContractReader) GetLatestValue(ctx context.Context, requestID string,
@@ -160,53 +251,8 @@ func (n *nonConsensusContractReader) GetLatestValue(ctx context.Context, request
 }
 
 type CapabilityContractReader interface {
+	services.Service
 	GetLatestValue(ctx context.Context, requestID string,
 		confidenceLevel primitives.ConfidenceLevel, params any) (values.Value, error)
-}
-
-type contractStoreKey struct {
-	workflowID    string
-	stepReference string
-}
-
-type readContractStore struct {
-	mux   sync.Mutex
-	store map[contractStoreKey]CapabilityContractReader
-}
-
-func NewReadContractStore() *readContractStore {
-	return &readContractStore{store: make(map[contractStoreKey]CapabilityContractReader)}
-}
-
-func (r *readContractStore) Add(key capabilities.RegistrationMetadata, reader CapabilityContractReader) {
-	r.mux.Lock()
-	defer r.mux.Unlock()
-	if r.store == nil {
-		r.store = make(map[contractStoreKey]CapabilityContractReader)
-	}
-	r.store[contractStoreKey{
-		workflowID:    key.WorkflowID,
-		stepReference: key.ReferenceID,
-	}] = reader
-}
-
-func (r *readContractStore) Remove(key capabilities.RegistrationMetadata) {
-	r.mux.Lock()
-	defer r.mux.Unlock()
-	delete(r.store, contractStoreKey{
-		workflowID:    key.WorkflowID,
-		stepReference: key.ReferenceID,
-	})
-}
-
-func (r *readContractStore) Get(key capabilities.RequestMetadata) (CapabilityContractReader, bool) {
-	r.mux.Lock()
-	defer r.mux.Unlock()
-
-	storeKey := contractStoreKey{
-		workflowID:    key.WorkflowID,
-		stepReference: key.ReferenceID,
-	}
-	reader, exists := r.store[storeKey]
-	return reader, exists
+	Bind(ctx context.Context, bindings []types.BoundContract) error
 }
