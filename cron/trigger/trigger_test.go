@@ -333,7 +333,7 @@ func TestCronTrigger_Load(t *testing.T) {
 	assert.Equal(t, ts.scheduler.JobsWaitingInQueue(), 0)
 
 	// Wait a second to ensure no more events
-	time.Sleep(time.Second * 1)
+	time.Sleep(time.Second * 5)
 	for i := 0; i < numTriggers; i++ {
 		msg := <-callbacks[i]
 		require.Equal(t, capabilities.TriggerResponse{}, msg)

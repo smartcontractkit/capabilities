@@ -3,6 +3,7 @@ package crontest
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -10,16 +11,19 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/framework"
 	"github.com/smartcontractkit/chainlink/v2/core/logger"
+
+	"github.com/smartcontractkit/capabilities/integration_tests/utils"
 )
 
 func setupCronTestDon(ctx context.Context, t *testing.T, lggr logger.SugaredLogger,
 	workflowDonInfo framework.DonConfiguration,
-	cronSchedule string, targetSink framework.TargetFactory, cronPath string) (workflowDon *framework.DON) {
+	cronSchedule string, targetSink framework.TargetFactory, cronPath string,
+	fastestIntervalSeconds int) (workflowDon *framework.DON) {
 	donContext := framework.CreateDonContext(ctx, t)
 
 	workflowDon = createCronTestWorkflowDon(ctx, t, lggr, workflowDonInfo, donContext, targetSink)
 
-	workflowDon.AddStandardCapability("cron-capabilities", cronPath, "\"\"")
+	workflowDon.AddStandardCapability("cron-capabilities", cronPath, utils.GetCronConfig(t, fastestIntervalSeconds))
 
 	workflowDon.Initialise()
 
@@ -41,7 +45,7 @@ func createCronTestWorkflowDon(ctx context.Context, t *testing.T, lggr logger.Su
 	targetFactory framework.TargetFactory) *framework.DON {
 	workflowDon := framework.NewDON(ctx, t, lggr, workflowDonInfo,
 		[]commoncap.DON{},
-		donContext, true)
+		donContext, true, 1*time.Second)
 
 	workflowDon.AddTargetCapability(targetFactory)
 	workflowDon.AddOCR3NonStandardCapability()

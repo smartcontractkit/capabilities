@@ -49,3 +49,4 @@ runs:
         key: ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-${{inputs.task}}-gomod-${{hashFiles(inputs.go-module-file)}}
         restore-keys: |
           ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-${{inputs.task}}
+        save-always: true

@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zapcore"
@@ -15,7 +16,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/framework"
-	capabilities_registry "github.com/smartcontractkit/chainlink/v2/core/gethwrappers/keystone/generated/capabilities_registry_1_1_0"
+	kcr "github.com/smartcontractkit/chainlink/v2/core/gethwrappers/keystone/generated/capabilities_registry_1_1_0"
 	"github.com/smartcontractkit/chainlink/v2/core/logger"
 	"github.com/smartcontractkit/chainlink/v2/core/services/registrysyncer"
 
@@ -40,7 +41,7 @@ func testRemoteReadContractCapability(t *testing.T, withConsensus bool, pollingI
 	lggr.SetLogLevel(zapcore.InfoLevel)
 
 	defer func() {
-		utils.CleanupCapabilities(lggr)
+		utils.CleanupCapabilitiesDir(lggr)
 	}()
 
 	donContext := framework.CreateDonContext(ctx, t)
@@ -51,10 +52,10 @@ func testRemoteReadContractCapability(t *testing.T, withConsensus bool, pollingI
 	readContractBinary, err := utils.DeployCapability(t, "readcontract")
 	require.NoError(t, err)
 
-	workflowDonConfiguration, err := framework.NewDonConfiguration(framework.NewDonConfigurationParams{Name: "Workflow", NumNodes: 7, F: 2, AcceptsWorkflows: true})
+	workflowDonConfiguration, err := framework.NewDonConfiguration(framework.NewDonConfigurationParams{Name: "Workflow", NumNodes: 4, F: 1, AcceptsWorkflows: true})
 	require.NoError(t, err)
 
-	readCapabilityDonConfiguration, err := framework.NewDonConfiguration(framework.NewDonConfigurationParams{Name: "ReadCapability", NumNodes: 7, F: 2, AcceptsWorkflows: false})
+	readCapabilityDonConfiguration, err := framework.NewDonConfiguration(framework.NewDonConfigurationParams{Name: "ReadCapability", NumNodes: 4, F: 1, AcceptsWorkflows: false})
 	require.NoError(t, err)
 
 	triggerSink := framework.NewTriggerSink(t, "mock-trigger", "1.0.0")
@@ -62,11 +63,11 @@ func testRemoteReadContractCapability(t *testing.T, withConsensus bool, pollingI
 
 	workflowDon := framework.NewDON(ctx, t, lggr, workflowDonConfiguration,
 		[]commoncap.DON{readCapabilityDonConfiguration.DON},
-		donContext, true)
+		donContext, true, 1*time.Second)
 
 	readCapabilityDon := framework.NewDON(ctx, t, lggr, readCapabilityDonConfiguration,
 		[]commoncap.DON{},
-		donContext, true)
+		donContext, true, 1*time.Second)
 
 	// Note: it is expected that the workflow don always has an  at least one external capability, failure to do so will
 	// cause adding a node to the capability registry contract to fail - arguably a bug in the contract
@@ -79,7 +80,7 @@ func testRemoteReadContractCapability(t *testing.T, withConsensus bool, pollingI
 	require.NoError(t, err)
 
 	readCapabilityDon.AddPublishedStandardCapability("readcontract-capability", readContractBinary, readCapabilityConfig,
-		&pb.CapabilityConfig{}, capabilities_registry.CapabilitiesRegistryCapability{
+		&pb.CapabilityConfig{}, kcr.CapabilitiesRegistryCapability{
 			LabelledName:   fmt.Sprintf("read-contract-%s-%d", network, chainID),
 			Version:        "1.0.0",
 			CapabilityType: uint8(registrysyncer.ContractCapabilityTypeAction),

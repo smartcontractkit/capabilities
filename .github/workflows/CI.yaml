@@ -147,8 +147,8 @@ jobs:
         uses: ./.github/actions/setup
         with:
           project: integration_tests
-          go-module-file: ./integration_tests
-          task: "test"
+          go-module-file: ./integration_tests/go.mod
+          task: "integrationtest"
       - name: Setup DB
         run: go run github.com/smartcontractkit/chainlink/v2 local db preparetest
         working-directory: integration_tests

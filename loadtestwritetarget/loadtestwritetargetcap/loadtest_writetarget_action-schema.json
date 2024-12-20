@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/smartcontractkit/capabilities/loadtestwritetarget/loadtestwritetargetcap/loadtestwritetarget",
+  "$defs": {
+    "Config": {
+      "type": "object",
+      "properties": {
+        "ResultsPath": {
+          "type": "string"
+        }
+      },
+      "required": []
+    },
+    "Input": {
+      "type": "object",
+      "properties": {
+        "ScheduledStartTime": {
+          "type": "string"
+        },
+        "StartTime": {
+          "type": "string"
+        },
+        "SignedReport": {
+          "$ref": "https://raw.githubusercontent.com/smartcontractkit/chainlink-common/refs/heads/main/pkg/capabilities/consensus/ocr3/ocr3cap/ocr3cap_common-schema.json#/$defs/SignedReport"
+        }
+      },
+      "required": ["StartTime","SignedReport"]
+    },
+    "Output": {
+      "type": "object",
+      "properties": {
+        "Message": {
+          "type": ["string"]
+        }
+      },
+      "required": []
+    }
+  },
+  "type": "object",
+  "properties": {
+    "Config": {
+      "$ref": "#/$defs/Config"
+    },
+    "Inputs": {
+      "$ref": "#/$defs/Input"
+    },
+    "Outputs": {
+      "$ref": "#/$defs/Output"
+    }
+  }
+}

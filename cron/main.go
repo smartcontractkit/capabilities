@@ -102,6 +102,7 @@ func (cs *CapabilitiesService) Initialise(
 
 	cs.trigger = trigger.New(trigger.Params{
 		Logger: cs.lggr,
+		Config: cronConfig,
 	})
 	if err := cs.trigger.Start(ctx); err != nil {
 		return fmt.Errorf("error when starting trigger: %w", err)

@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	scheduleEveryThirtySeconds = "30 * * * * *"
+	scheduleEverySecond = "* * * * * *"
 )
 
 type Payload struct {
@@ -34,7 +34,7 @@ func Test_CronTrigger(t *testing.T) {
 	lggr := logger.TestLogger(t)
 	lggr.SetLogLevel(zapcore.InfoLevel)
 	defer func() {
-		utils.CleanupCapabilities(lggr)
+		utils.CleanupCapabilitiesDir(lggr)
 	}()
 
 	cronBinary, err := utils.DeployCapability(t, "cron")
@@ -45,11 +45,11 @@ func Test_CronTrigger(t *testing.T) {
 
 	targetSink := framework.NewTargetSink("mock-target", "1.0.0")
 
-	setupCronTestDon(ctx, t, lggr, workflowDonConfiguration, scheduleEveryThirtySeconds, targetSink, cronBinary)
+	setupCronTestDon(ctx, t, lggr, workflowDonConfiguration, scheduleEverySecond, targetSink, cronBinary, 1)
 
 	quorum := 3 // number of nodes that need to execute the workflow (F+1)
 	runs := 3   // number of rounds to be considered done
-	waitTime := 5 * 30 * time.Second
+	waitTime := 60 * time.Second
 
 	waitFor(ctx, t, targetSink, quorum, runs, waitTime)
 }
