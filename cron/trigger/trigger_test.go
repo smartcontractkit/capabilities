@@ -184,19 +184,8 @@ func TestCronTrigger_SuccessWithStandardCronIntervals(t *testing.T) {
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			fakeClock := clockwork.NewFakeClock()
-			// Set time to have 0h0m0s0ms by advancing to rounded times
-			fakeClock.Advance(time.Duration(1000000000 - fakeClock.Now().Nanosecond()))
-			fakeClock.Advance(60*time.Second - time.Duration(fakeClock.Now().Second())*time.Second)
-			fakeClock.Advance(60*time.Minute - time.Duration(fakeClock.Now().Minute())*time.Minute)
-			fakeClock.Advance(24*time.Hour - time.Duration(fakeClock.Now().UTC().Hour())*time.Hour)
-			// Set time to the first of January
-			for fakeClock.Now().UTC().Month() != time.January {
-				fakeClock.Advance(24 * time.Hour)
-			}
-			for fakeClock.Now().UTC().Day() != 1 {
-				fakeClock.Advance(24 * time.Hour)
-			}
+			startTime, _ := time.Parse("Jan-01", "Jan-01")
+			fakeClock := clockwork.NewFakeClockAt(startTime)
 			if tt.schedule == everyWeek {
 				// If every week set to Saturday
 				for fakeClock.Now().UTC().Weekday() != time.Sunday {
@@ -204,7 +193,11 @@ func TestCronTrigger_SuccessWithStandardCronIntervals(t *testing.T) {
 				}
 			}
 
-			ts := New(Params{Logger: logger.Nop(), Clock: fakeClock})
+			ts := New(Params{
+				Logger: logger.Nop(),
+				Clock:  fakeClock,
+				Config: Config{FastestScheduleIntervalSeconds: 1}, // Allow 1 sec max interval
+			})
 			ctx := tests.Context(t)
 
 			// Start scheduling
@@ -285,7 +278,11 @@ func TestCronTrigger_Load(t *testing.T) {
 
 	fakeClock := clockwork.NewRealClock()
 
-	ts := New(Params{Logger: logger.Nop(), Clock: fakeClock})
+	ts := New(Params{
+		Logger: logger.Nop(),
+		Clock:  fakeClock,
+		Config: Config{FastestScheduleIntervalSeconds: 1}, // Allow 1 sec max interval
+	})
 	ctx := tests.Context(t)
 
 	var callbacks [numTriggers]<-chan capabilities.TriggerResponse
@@ -373,7 +370,10 @@ func TestCronTrigger_Load(t *testing.T) {
 }
 
 func TestCronTrigger_RegisterTriggerBeforeStart(t *testing.T) {
-	ts := New(Params{Logger: logger.Nop()})
+	ts := New(Params{
+		Logger: logger.Nop(),
+		Config: Config{FastestScheduleIntervalSeconds: 1}, // Allow 1 sec max interval
+	})
 	ctx := tests.Context(t)
 
 	// Register trigger
@@ -430,7 +430,11 @@ func TestCronTrigger_TimeWindows(t *testing.T) {
 	fakeClock.Advance(time.Duration(60-sec) * time.Second)
 	fakeClock.Advance(time.Duration(49-min) * time.Minute)
 	fakeClock.Advance(time.Duration(8-hour) * time.Hour)
-	ts := New(Params{Logger: logger.Nop(), Clock: fakeClock})
+	ts := New(Params{
+		Logger: logger.Nop(),
+		Clock:  fakeClock,
+		Config: Config{FastestScheduleIntervalSeconds: 1}, // Allow 1 sec max interval
+	})
 	ctx := tests.Context(t)
 
 	// Register trigger
@@ -481,9 +485,6 @@ func TestCronTrigger_TimeWindows(t *testing.T) {
 	require.NoError(t, ts.Close())
 
 	// Check scheduled execution times 9am, 10am, then 9am the next day
-	fmt.Println(scheduledExecutionTime1)
-	fmt.Println(scheduledExecutionTime2)
-	fmt.Println(scheduledExecutionTime3)
 	require.True(t, scheduledExecutionTime3.Equal(scheduledExecutionTime2.Add(23*time.Hour)))
 	require.True(t, scheduledExecutionTime3.Equal(scheduledExecutionTime1.Add(24*time.Hour)))
 	require.True(t, scheduledExecutionTime2.Equal(scheduledExecutionTime1.Add(time.Hour)))
@@ -495,7 +496,11 @@ func TestCronTrigger_MultipleDifferentSchedules(t *testing.T) {
 	if fakeClock.Now().Second()%2 == 1 {
 		fakeClock.Advance(time.Second)
 	}
-	ts := New(Params{Logger: logger.Nop(), Clock: fakeClock})
+	ts := New(Params{
+		Logger: logger.Nop(),
+		Clock:  fakeClock,
+		Config: Config{FastestScheduleIntervalSeconds: 1}, // Allow 1 sec max interval
+	})
 	ctx := tests.Context(t)
 
 	callback1, registerUnregisterRequest1, err := registerTriggerToCronTriggerService(
@@ -665,7 +670,7 @@ func TestCronTrigger_RegisterTrigger(t *testing.T) {
 		// No Error
 		{
 			name:              "valid cron schedule - 6 entries",
-			schedule:          everySecond,
+			schedule:          everyMinute,
 			shouldErr:         false,
 			expectedErrString: "",
 		},
@@ -694,6 +699,12 @@ func TestCronTrigger_RegisterTrigger(t *testing.T) {
 			schedule:          "TZ=moon * * * * *",
 			shouldErr:         true,
 			expectedErrString: "gocron: CronJob: crontab parse failure\nprovided bad location moon: unknown time zone moon",
+		},
+		{
+			name:              "invalid cron schedule - exceeds maximum fastest",
+			schedule:          everySecond,
+			shouldErr:         true,
+			expectedErrString: "maximum fastest cron schedule is 30s",
 		},
 	}
 	for _, tt := range cases {
@@ -724,7 +735,10 @@ func TestCronTrigger_RegisterTrigger(t *testing.T) {
 }
 
 func TestCronTrigger_RegisterTriggerDuplicateError(t *testing.T) {
-	ts := New(Params{Logger: logger.Nop()})
+	ts := New(Params{
+		Logger: logger.Nop(),
+		Config: Config{FastestScheduleIntervalSeconds: 1}, // Allow 1 sec max interval
+	})
 	ctx := tests.Context(t)
 
 	config, err := values.NewMap(map[string]interface{}{

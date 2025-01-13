@@ -21,13 +21,20 @@ import (
 
 const ID = "cron-trigger@1.0.0"
 
-const defaultSendChannelBufferSize = 1000
+const (
+	defaultSendChannelBufferSize          = 1000
+	defaultFastestScheduleIntervalSeconds = 30
+)
 
 var cronTriggerInfo = capabilities.MustNewCapabilityInfo(
 	ID,
 	capabilities.CapabilityTypeTrigger,
 	"A trigger that uses a cron schedule to run periodically at fixed times, dates, or intervals.",
 )
+
+type Config struct {
+	FastestScheduleIntervalSeconds int `json:"fastestScheduleIntervalSeconds"`
+}
 
 type Response struct {
 	capabilities.TriggerEvent
@@ -42,6 +49,7 @@ type cronTrigger struct {
 
 type Service struct {
 	capabilities.CapabilityInfo
+	config    Config
 	clock     clockwork.Clock
 	lggr      logger.Logger
 	scheduler gocron.Scheduler
@@ -52,6 +60,7 @@ type Service struct {
 type Params struct {
 	Logger logger.Logger
 	Clock  clockwork.Clock
+	Config Config
 }
 
 var _ capabilities.TriggerCapability = (*Service)(nil)
@@ -81,8 +90,13 @@ func New(p Params) *Service {
 
 	cronStore := NewCronStore()
 
+	if p.Config.FastestScheduleIntervalSeconds == 0 {
+		p.Config.FastestScheduleIntervalSeconds = defaultFastestScheduleIntervalSeconds
+	}
+
 	return &Service{
 		CapabilityInfo: cronTriggerInfo,
+		config:         p.Config,
 		clock:          p.Clock,
 		triggers:       cronStore,
 		lggr:           l,
@@ -125,6 +139,11 @@ func (s *Service) RegisterTrigger(ctx context.Context, req capabilities.TriggerR
 
 	allowSeconds := true
 	jobDef := gocron.CronJob(config.Schedule, allowSeconds)
+
+	err = enforceFastestSchedule(s.clock, jobDef, time.Second*time.Duration(s.config.FastestScheduleIntervalSeconds))
+	if err != nil {
+		return nil, err
+	}
 
 	task := gocron.NewTask(
 		// Task callback, executed at next run time

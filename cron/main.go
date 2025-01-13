@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -80,7 +81,7 @@ func (cs *CapabilitiesService) Infos(ctx context.Context) ([]capabilities.Capabi
 
 func (cs *CapabilitiesService) Initialise(
 	ctx context.Context,
-	_ string,
+	config string,
 	_ core.TelemetryService,
 	_ core.KeyValueStore,
 	capabilityRegistry core.CapabilitiesRegistry,
@@ -90,6 +91,13 @@ func (cs *CapabilitiesService) Initialise(
 	_ core.OracleFactory,
 ) error {
 	cs.lggr.Debugf("Initialising %s", serviceName)
+
+	var cronConfig trigger.Config
+	err := json.Unmarshal([]byte(config), &cronConfig)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
 	cs.trigger = trigger.New(trigger.Params{
 		Logger: cs.lggr,
 	})
