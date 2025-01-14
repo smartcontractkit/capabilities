@@ -16,7 +16,10 @@ func enforceFastestSchedule(clock clockwork.Clock, jobDef gocron.JobDefinition, 
 	// Use passed in clock
 	options = append(options, gocron.WithClock(clock))
 
-	tempScheduler, _ := gocron.NewScheduler(options...)
+	tempScheduler, err := gocron.NewScheduler(options...)
+	if err != nil {
+		return err
+	}
 	tempJob, err := tempScheduler.NewJob(jobDef, gocron.NewTask(func() {}))
 	if err != nil {
 		return err
@@ -26,7 +29,10 @@ func enforceFastestSchedule(clock clockwork.Clock, jobDef gocron.JobDefinition, 
 	if err != nil {
 		return err
 	}
-	tempScheduler.Shutdown()
+	err = tempScheduler.Shutdown()
+	if err != nil {
+		return err
+	}
 
 	if len(nextRuns) != 2 {
 		return errors.New("could not determine next two scheduled runs")
