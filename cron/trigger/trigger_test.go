@@ -184,6 +184,8 @@ func TestCronTrigger_SuccessWithStandardCronIntervals(t *testing.T) {
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			startTime, _ := time.Parse("Jan-01", "Jan-01")
 			fakeClock := clockwork.NewFakeClockAt(startTime)
 			if tt.schedule == everyWeek {
