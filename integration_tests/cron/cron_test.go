@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	scheduleEveryOtherSecond = "*/2 * * * * *"
+	scheduleEveryThirtySeconds = "30 * * * * *"
 )
 
 type Payload struct {
@@ -45,11 +45,11 @@ func Test_CronTrigger(t *testing.T) {
 
 	targetSink := framework.NewTargetSink("mock-target", "1.0.0")
 
-	setupCronTestDon(ctx, t, lggr, workflowDonConfiguration, scheduleEveryOtherSecond, targetSink, cronBinary)
+	setupCronTestDon(ctx, t, lggr, workflowDonConfiguration, scheduleEveryThirtySeconds, targetSink, cronBinary)
 
 	quorum := 3 // number of nodes that need to execute the workflow (F+1)
 	runs := 3   // number of rounds to be considered done
-	waitTime := 10 * time.Second
+	waitTime := (30 * 3 * time.Second) + time.Second
 
 	waitFor(ctx, t, targetSink, quorum, runs, waitTime)
 }
