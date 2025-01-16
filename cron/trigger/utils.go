@@ -7,9 +7,10 @@ import (
 
 	"github.com/go-co-op/gocron/v2"
 	"github.com/jonboulle/clockwork"
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
 
-func enforceFastestSchedule(clock clockwork.Clock, jobDef gocron.JobDefinition, maximumFastest time.Duration) error {
+func enforceFastestSchedule(lggr logger.Logger, clock clockwork.Clock, jobDef gocron.JobDefinition, maximumFastest time.Duration) error {
 	var options []gocron.SchedulerOption
 	// Set scheduler location to UTC for consistency across nodes.
 	options = append(options, gocron.WithLocation(time.UTC))
@@ -25,11 +26,14 @@ func enforceFastestSchedule(clock clockwork.Clock, jobDef gocron.JobDefinition, 
 		return err
 	}
 	tempScheduler.Start()
+	defer func() {
+		err := tempScheduler.Shutdown()
+		if err != nil {
+			lggr.Errorw("error shutting down enforceFastestSchedule temporary scheduler")
+		}
+	}()
+
 	nextRuns, err := tempJob.NextRuns(2)
-	if err != nil {
-		return err
-	}
-	err = tempScheduler.Shutdown()
 	if err != nil {
 		return err
 	}

@@ -41,15 +41,15 @@ A trigger that uses a cron schedule to run periodically at fixed times, dates, o
 
 ```
 type Response struct {
-	// The ID of the trigger capability
-    TriggerType string
-    // The ID of the trigger event
-    ID string
-    // Trigger-specific payload
-    Outputs *values.Map
-	Payload: {  
-        ActualExecutionTime: '2022-07-14T12:01:25.225089+08:00',
-        ScheduledExecutionTime: '2022-07-14T12:01:25.000000+08:00',
-    }
+// The ID of the trigger capability
+TriggerType string
+// The ID of the trigger event
+ID string
+// Trigger-specific payload
+Outputs *values.Map
+Payload: {  
+    ActualExecutionTime: '2022-07-14T12:01:25.225089+08:00',
+    ScheduledExecutionTime: '2022-07-14T12:01:25.000000+08:00',
+}
 }
 ```

@@ -140,7 +140,7 @@ func (s *Service) RegisterTrigger(ctx context.Context, req capabilities.TriggerR
 	allowSeconds := true
 	jobDef := gocron.CronJob(config.Schedule, allowSeconds)
 
-	err = enforceFastestSchedule(s.clock, jobDef, time.Second*time.Duration(s.config.FastestScheduleIntervalSeconds))
+	err = enforceFastestSchedule(s.lggr, s.clock, jobDef, time.Second*time.Duration(s.config.FastestScheduleIntervalSeconds))
 	if err != nil {
 		return nil, err
 	}
