@@ -93,9 +93,11 @@ func (cs *CapabilitiesService) Initialise(
 	cs.lggr.Debugf("Initialising %s", serviceName)
 
 	var cronConfig trigger.Config
-	err := json.Unmarshal([]byte(config), &cronConfig)
-	if err != nil {
-		return fmt.Errorf("failed to unmarshal config: %w", err)
+	if len(config) > 0 {
+		err := json.Unmarshal([]byte(config), &cronConfig)
+		if err != nil {
+			return fmt.Errorf("failed to unmarshal config: %s %w", config, err)
+		}
 	}
 
 	cs.trigger = trigger.New(trigger.Params{

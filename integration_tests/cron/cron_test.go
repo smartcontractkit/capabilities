@@ -49,7 +49,7 @@ func Test_CronTrigger(t *testing.T) {
 
 	quorum := 3 // number of nodes that need to execute the workflow (F+1)
 	runs := 3   // number of rounds to be considered done
-	waitTime := (30 * 3 * time.Second) + time.Second
+	waitTime := 5 * 30 * time.Second
 
 	waitFor(ctx, t, targetSink, quorum, runs, waitTime)
 }

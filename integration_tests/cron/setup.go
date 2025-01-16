@@ -19,7 +19,7 @@ func setupCronTestDon(ctx context.Context, t *testing.T, lggr logger.SugaredLogg
 
 	workflowDon = createCronTestWorkflowDon(ctx, t, lggr, workflowDonInfo, donContext, targetSink)
 
-	workflowDon.AddStandardCapability("cron-capabilities", cronPath, "\""+cronSchedule+"\"")
+	workflowDon.AddStandardCapability("cron-capabilities", cronPath, "\"\"")
 
 	workflowDon.Initialise()
 
