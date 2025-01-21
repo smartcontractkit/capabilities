@@ -103,18 +103,12 @@ func (r *ReadContractAction) Execute(ctx context.Context, request capabilities.C
 
 	lggr.Info("Executing Get Latest Value request", "confidenceLevel", confidenceLevel, "params", inputs.Params)
 
-	respCh, err := reader.GetLatestValue(ctx, request.Metadata.WorkflowExecutionID, confidenceLevel, inputs.Params)
+	resp, err := reader.GetLatestValue(ctx, request.Metadata.WorkflowExecutionID, confidenceLevel, inputs.Params)
 	if err != nil {
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to get latest value: %w", err)
 	}
 
-	resp := <-respCh
-
-	if resp.Err != nil {
-		return capabilities.CapabilityResponse{}, fmt.Errorf("error getting latest value: %w", resp.Err)
-	}
-
-	output := Output{LatestValue: *resp.Value}
+	output := Output{LatestValue: resp}
 	resultValue, err := values.WrapMap(&output)
 	if err != nil {
 		return capabilities.CapabilityResponse{}, fmt.Errorf("error wrapping output: %w", err)
@@ -150,35 +144,24 @@ func (r *ReadContractAction) UnregisterFromWorkflow(ctx context.Context, request
 	return nil
 }
 
-type Response struct {
-	Value *values.Value
-	Err   error
-}
-
 type nonConsensusContractReader struct {
 	contractReader ContractReader
 	readIdentifier string
 }
 
 func (n *nonConsensusContractReader) GetLatestValue(ctx context.Context, requestID string,
-	confidenceLevel primitives.ConfidenceLevel, params any) (<-chan Response, error) {
-	respCh := make(chan Response, 1)
-	go func() {
-		defer close(respCh)
-		var value values.Value
-		_, err := n.contractReader.GetLatestValueWithHeadData(ctx, n.readIdentifier, confidenceLevel, params, &value)
-		if err != nil {
-			respCh <- Response{Err: fmt.Errorf("failed to get latest value fron contract reader: %w", err)}
-			return
-		}
-		respCh <- Response{Value: &value}
-	}()
-	return respCh, nil
+	confidenceLevel primitives.ConfidenceLevel, params any) (values.Value, error) {
+	var value values.Value
+	_, err := n.contractReader.GetLatestValueWithHeadData(ctx, n.readIdentifier, confidenceLevel, params, &value)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get latest value fron contract reader: %w", err)
+	}
+	return value, nil
 }
 
 type CapabilityContractReader interface {
 	GetLatestValue(ctx context.Context, requestID string,
-		confidenceLevel primitives.ConfidenceLevel, params any) (<-chan Response, error)
+		confidenceLevel primitives.ConfidenceLevel, params any) (values.Value, error)
 }
 
 type contractStoreKey struct {

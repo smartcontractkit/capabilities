@@ -2,6 +2,7 @@ package actions_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/jonboulle/clockwork"
@@ -28,107 +29,177 @@ func TestReadContractAction_Execute_WithoutConsensus(t *testing.T) {
 }
 
 func testReadContractActionExecute(t *testing.T) {
-	ctx := tests.Context(t)
+	t.Run("happy path", func(t *testing.T) {
+		ctx := tests.Context(t)
 
-	config := actions.ReadContractConfig{
-		ChainID:           1,
-		Network:           "testnet",
-		SupportsConsensus: true,
-	}
+		config := actions.ReadContractConfig{
+			ChainID:           1,
+			Network:           "testnet",
+			SupportsConsensus: true,
+		}
 
-	relayerMock := NewRelayer(t)
-	returnVal, err := values.Wrap(5)
-	require.NoError(t, err)
-	contractReaderMock := &mockContractReader{returnVal: returnVal}
+		relayerMock := NewRelayer(t)
+		returnVal, err := values.Wrap(5)
+		require.NoError(t, err)
+		contractReaderMock := &mockContractReader{returnVal: returnVal}
 
-	// Set up the relayer mock to return the contract reader mock
-	relayerMock.On("NewContractReader", mock.Anything, mock.Anything).Return(contractReaderMock, nil)
+		// Set up the relayer mock to return the contract reader mock
+		relayerMock.On("NewContractReader", mock.Anything, mock.Anything).Return(contractReaderMock, nil)
 
-	lggr := logger.Test(t)
+		lggr := logger.Test(t)
 
-	oracleFactory := testutils.NewOracleFactory(t, lggr)
+		oracleFactory := testutils.NewOracleFactory(t, lggr)
 
-	action, err := actions.NewReadContractAction(ctx, lggr, config, relayerMock, oracleFactory, clockwork.NewRealClock())
-	require.NoError(t, err)
+		action, err := actions.NewReadContractAction(ctx, lggr, config, relayerMock, oracleFactory, clockwork.NewRealClock())
+		require.NoError(t, err)
 
-	servicetest.Run(t, action)
+		servicetest.Run(t, action)
 
-	capconfig := readcontractcap.Config{
-		ContractReaderConfig: "some-config",
-		ReadIdentifier:       "TestReadIdentifier",
-		ContractAddress:      "0x123",
-		ContractName:         "TestContract",
-	}
-	configAsValueMap, err := values.WrapMap(capconfig)
-	require.NoError(t, err)
+		capconfig := readcontractcap.Config{
+			ContractReaderConfig: "some-config",
+			ReadIdentifier:       "TestReadIdentifier",
+			ContractAddress:      "0x123",
+			ContractName:         "TestContract",
+		}
+		configAsValueMap, err := values.WrapMap(capconfig)
+		require.NoError(t, err)
 
-	err = action.RegisterToWorkflow(ctx, capabilities.RegisterToWorkflowRequest{
-		Metadata: capabilities.RegistrationMetadata{
-			WorkflowID:    "workflowID",
-			WorkflowOwner: "",
-		},
-		Config: configAsValueMap,
-	})
-	require.NoError(t, err)
+		err = action.RegisterToWorkflow(ctx, capabilities.RegisterToWorkflowRequest{
+			Metadata: capabilities.RegistrationMetadata{
+				WorkflowID:    "workflowID",
+				WorkflowOwner: "",
+			},
+			Config: configAsValueMap,
+		})
+		require.NoError(t, err)
 
-	inputs := readcontractcap.Input{
-		ConfidenceLevel: "finalized",
-		Params: readcontractcap.InputParams{
+		inputs := readcontractcap.Input{
+			ConfidenceLevel: "finalized",
+			Params: readcontractcap.InputParams{
+				"param1": "value1",
+				"param2": "value2",
+			},
+		}
+
+		requestInputs, err := values.WrapMap(inputs)
+		assert.NoError(t, err)
+
+		request := capabilities.CapabilityRequest{
+			Config: configAsValueMap,
+			Inputs: requestInputs,
+			Metadata: capabilities.RequestMetadata{
+				WorkflowID: "workflowID",
+			},
+		}
+
+		response, err := action.Execute(ctx, request)
+
+		require.NoError(t, err)
+		assert.NotNil(t, response)
+
+		output := actions.Output{}
+		err = response.Value.UnwrapTo(&output)
+		require.NoError(t, err)
+
+		var result int
+		err = output.LatestValue.UnwrapTo(&result)
+		require.NoError(t, err)
+
+		assert.Equal(t, 5, result)
+		relayerMock.AssertExpectations(t)
+		assert.Equal(t, 1, contractReaderMock.bindingsCallCount)
+		assert.Equal(t, 1, contractReaderMock.getLatestValueCallCount)
+
+		// Check that the params are passed as expected
+		expectedParams := readcontractcap.InputParams{
 			"param1": "value1",
 			"param2": "value2",
-		},
-	}
+		}
 
-	requestInputs, err := values.WrapMap(inputs)
-	assert.NoError(t, err)
+		assert.Equal(t, expectedParams, contractReaderMock.receivedParams[0])
 
-	request := capabilities.CapabilityRequest{
-		Config: configAsValueMap,
-		Inputs: requestInputs,
-		Metadata: capabilities.RequestMetadata{
-			WorkflowID: "workflowID",
-		},
-	}
-
-	response, err := action.Execute(ctx, request)
-
-	require.NoError(t, err)
-	assert.NotNil(t, response)
-
-	output := actions.Output{}
-	err = response.Value.UnwrapTo(&output)
-	require.NoError(t, err)
-
-	var result int
-	err = output.LatestValue.UnwrapTo(&result)
-	require.NoError(t, err)
-
-	assert.Equal(t, 5, result)
-	relayerMock.AssertExpectations(t)
-	assert.Equal(t, 1, contractReaderMock.bindingsCallCount)
-	assert.Equal(t, 1, contractReaderMock.getLatestValueCallCount)
-
-	// Check that the params are passed as expected
-	expectedParams := readcontractcap.InputParams{
-		"param1": "value1",
-		"param2": "value2",
-	}
-
-	assert.Equal(t, expectedParams, contractReaderMock.receivedParams[0])
-
-	// Unregister from workflow
-	err = action.UnregisterFromWorkflow(ctx, capabilities.UnregisterFromWorkflowRequest{
-		Metadata: capabilities.RegistrationMetadata{
-			WorkflowID:    "workflowID",
-			WorkflowOwner: "",
-		},
-		Config: configAsValueMap,
+		// Unregister from workflow
+		err = action.UnregisterFromWorkflow(ctx, capabilities.UnregisterFromWorkflowRequest{
+			Metadata: capabilities.RegistrationMetadata{
+				WorkflowID:    "workflowID",
+				WorkflowOwner: "",
+			},
+			Config: configAsValueMap,
+		})
+		require.NoError(t, err)
 	})
-	require.NoError(t, err)
+
+	t.Run("contract reader returns an error", func(t *testing.T) {
+		ctx := tests.Context(t)
+
+		config := actions.ReadContractConfig{
+			ChainID:           1,
+			Network:           "testnet",
+			SupportsConsensus: true,
+		}
+
+		relayerMock := NewRelayer(t)
+		returnVal, err := values.Wrap(5)
+		require.NoError(t, err)
+		contractReaderMock := &mockContractReader{returnVal: returnVal, returnErr: fmt.Errorf("some error")}
+
+		// Set up the relayer mock to return the contract reader mock
+		relayerMock.On("NewContractReader", mock.Anything, mock.Anything).Return(contractReaderMock, nil)
+
+		lggr := logger.Test(t)
+
+		oracleFactory := testutils.NewOracleFactory(t, lggr)
+
+		action, err := actions.NewReadContractAction(ctx, lggr, config, relayerMock, oracleFactory, clockwork.NewRealClock())
+		require.NoError(t, err)
+
+		servicetest.Run(t, action)
+
+		capconfig := readcontractcap.Config{
+			ContractReaderConfig: "some-config",
+			ReadIdentifier:       "TestReadIdentifier",
+			ContractAddress:      "0x123",
+			ContractName:         "TestContract",
+		}
+		configAsValueMap, err := values.WrapMap(capconfig)
+		require.NoError(t, err)
+
+		err = action.RegisterToWorkflow(ctx, capabilities.RegisterToWorkflowRequest{
+			Metadata: capabilities.RegistrationMetadata{
+				WorkflowID:    "workflowID",
+				WorkflowOwner: "",
+			},
+			Config: configAsValueMap,
+		})
+		require.NoError(t, err)
+
+		inputs := readcontractcap.Input{
+			ConfidenceLevel: "finalized",
+			Params: readcontractcap.InputParams{
+				"param1": "value1",
+				"param2": "value2",
+			},
+		}
+
+		requestInputs, err := values.WrapMap(inputs)
+		assert.NoError(t, err)
+
+		request := capabilities.CapabilityRequest{
+			Config: configAsValueMap,
+			Inputs: requestInputs,
+			Metadata: capabilities.RequestMetadata{
+				WorkflowID: "workflowID",
+			},
+		}
+
+		_, err = action.Execute(ctx, request)
+		require.ErrorIs(t, err, contractReaderMock.returnErr)
+	})
 }
 
 type mockContractReader struct {
 	returnVal values.Value
+	returnErr error
 
 	receivedParams          []any
 	getLatestValueCallCount int
@@ -147,7 +218,7 @@ func (m *mockContractReader) GetLatestValueWithHeadData(ctx context.Context, rea
 		Height:    "1",
 		Hash:      nil,
 		Timestamp: 0,
-	}, nil
+	}, m.returnErr
 }
 
 func (m *mockContractReader) Bind(ctx context.Context, bindings []types.BoundContract) error {
@@ -216,9 +287,7 @@ type mockCapabilityContractReader struct {
 	mock.Mock
 }
 
-func (m *mockCapabilityContractReader) GetLatestValue(ctx context.Context, requestID string, confidenceLevel primitives.ConfidenceLevel, params any) (<-chan actions.Response, error) {
+func (m *mockCapabilityContractReader) GetLatestValue(ctx context.Context, requestID string, confidenceLevel primitives.ConfidenceLevel, params any) (values.Value, error) {
 	args := m.Called(ctx, requestID, confidenceLevel, params)
-	respCh := make(chan actions.Response, 1)
-	respCh <- args.Get(0).(actions.Response)
-	return respCh, args.Error(1)
+	return args.Get(0).(values.Value), args.Error(1)
 }
