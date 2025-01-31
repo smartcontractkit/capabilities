@@ -11,7 +11,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	common2 "github.com/ethereum/go-ethereum/common"
-	"github.com/pelletier/go-toml"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zapcore"
@@ -230,7 +229,7 @@ func fundAddress(ctx context.Context, t *testing.T, ethBlockChain *framework.Eth
 }
 
 func registerWorkflow(t *testing.T, donContext framework.DonContext, workflowName string, compressedBinary []byte,
-	secretsURL string, workflowDon *framework.DON, binaryUrl string, configUrl string, configBytes []byte) {
+	secretsURL string, workflowDon *framework.DON, binaryURL string, configURL string, configBytes []byte) {
 	workflowID, err := workflows.GenerateWorkflowID(donContext.EthBlockchain.TransactionOpts().From[:], workflowName, compressedBinary, configBytes, secretsURL)
 	require.NoError(t, err)
 
@@ -238,8 +237,8 @@ func registerWorkflow(t *testing.T, donContext framework.DonContext, workflowNam
 		Name:       workflowName,
 		ID:         workflowID,
 		Status:     0,
-		BinaryURL:  binaryUrl,
-		ConfigURL:  configUrl,
+		BinaryURL:  binaryURL,
+		ConfigURL:  configURL,
 		SecretsURL: secretsURL,
 	})
 	require.NoError(t, err)

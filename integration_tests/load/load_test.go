@@ -488,7 +488,6 @@ func (s *loadTestSample) ColumnTitle() string {
 }
 
 func (s *loadTestSample) String() string {
-
 	startTimeStr := s.StartTime.Format(time.RFC3339)
 	endTimeStr := s.EndTime.Format(time.RFC3339)
 	scheduledStartTimeStr := s.ScheduledStartTime.Format(time.RFC3339)
