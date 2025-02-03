@@ -18,3 +18,5 @@ If a test killed part way through it's possible that it zombie standard capabili
 ./scripts/killZombieProcesses.sh
 ```
 
+### Test setup
+![Diagram to illustrate the communication mechanisms and processes involved in running the integration tests](./integrationtestsdiagram.png)
