@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"os"
+	"os/exec"
 	"testing"
 
 	"github.com/andybalholm/brotli"
@@ -24,4 +25,12 @@ func GetCompressedWorkflowWasm(t *testing.T, workflowWasmPath string) ([]byte, s
 	compressedBinary := compressedBuffer.Bytes()
 	base64EncodedCompressedBinary := base64.StdEncoding.EncodeToString(compressedBinary)
 	return compressedBinary, base64EncodedCompressedBinary
+}
+
+func CreateWasmBinary(t *testing.T, goFile string, wasmFile string) {
+	cmd := exec.Command("go", "build", "-o", wasmFile, goFile) // #nosec
+	cmd.Env = append(os.Environ(), "GOOS=wasip1", "GOARCH=wasm")
+
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(output))
 }

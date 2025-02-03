@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
@@ -74,8 +75,15 @@ func Test_PORReadbalances(t *testing.T) {
 		utils.CleanupCapabilitiesDir(lggr)
 	}()
 
-	workflow := "../../workflows/readbalances-with-config/cmd/readbalances.wasm"
-	consumerContract := setupDons(ctx, t, lggr, workflow)
+	readBalancesWithConfigPath, err := filepath.Abs("../../workflows/readbalances-with-config/cmd")
+	require.NoError(t, err)
+
+	wasmFile := filepath.Join(readBalancesWithConfigPath, "readbalances.wasm")
+	mainFile := filepath.Join(readBalancesWithConfigPath, "main.go")
+
+	utils.CreateWasmBinary(t, mainFile, wasmFile)
+
+	consumerContract := setupDons(ctx, t, lggr, wasmFile)
 
 	feedsReceived := make(chan *feeds_consumer.KeystoneFeedsConsumerFeedReceived, 1000)
 	feedsSub, err := consumerContract.WatchFeedReceived(&bind.WatchOpts{}, feedsReceived, nil)
