@@ -262,4 +262,17 @@ jobs:
       - name: Some tests failed or were cancelled
         if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
         run: exit 1
+
+  sonarqube:
+    name: SonarQube Scan
+    needs: [test, lint]
+    if: ${{ always() && github.actor != 'dependabot[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: SonarQube Scan
+        uses: smartcontractkit/.github/actions/ci-sonarqube-go@5f4a9c9c3407dd499a1ebbc658a45b9beb9bf675 # v0.3.0
+        with:
+          include-lint: "true"
+          sonar-token: ${{ secrets.SONAR_TOKEN }}
+          sonar-host-url: ${{ secrets.SONAR_HOST_URL }}
           
