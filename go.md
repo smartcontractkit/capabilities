@@ -6,6 +6,9 @@ flowchart LR
 	click capabilities/cron href "https://github.com/smartcontractkit/capabilities"
 	capabilities/devenv --> chainlink/v2
 	click capabilities/devenv href "https://github.com/smartcontractkit/capabilities"
+	capabilities/integration_tests --> capabilities/cron
+	capabilities/integration_tests --> capabilities/loadtestwritetarget
+	capabilities/integration_tests --> capabilities/readcontract
 	capabilities/integration_tests --> chainlink/v2
 	click capabilities/integration_tests href "https://github.com/smartcontractkit/capabilities"
 	capabilities/kvstore --> capabilities/libs/loopserver
@@ -17,6 +20,8 @@ flowchart LR
 	click capabilities/libs/loopserver href "https://github.com/smartcontractkit/capabilities"
 	capabilities/libs/testutils --> chainlink-common
 	click capabilities/libs/testutils href "https://github.com/smartcontractkit/capabilities"
+	capabilities/loadtestwritetarget --> capabilities/libs/loopserver
+	click capabilities/loadtestwritetarget href "https://github.com/smartcontractkit/capabilities"
 	capabilities/readcontract --> capabilities/libs/loopserver
 	capabilities/readcontract --> capabilities/libs/testutils
 	click capabilities/readcontract href "https://github.com/smartcontractkit/capabilities"
@@ -39,17 +44,21 @@ flowchart LR
 	chainlink-common --> grpc-proxy
 	chainlink-common --> libocr
 	click chainlink-common href "https://github.com/smartcontractkit/chainlink-common"
-	chainlink-cosmos --> chainlink-common
+	chainlink-cosmos --> chainlink-framework/chains
 	click chainlink-cosmos href "https://github.com/smartcontractkit/chainlink-cosmos"
 	chainlink-data-streams --> chainlink-common
 	click chainlink-data-streams href "https://github.com/smartcontractkit/chainlink-data-streams"
 	chainlink-feeds --> chainlink-common
 	click chainlink-feeds href "https://github.com/smartcontractkit/chainlink-feeds"
+	chainlink-framework/chains --> chainlink-framework/multinode
+	click chainlink-framework/chains href "https://github.com/smartcontractkit/chainlink-framework"
 	chainlink-framework/multinode --> chainlink-common
 	click chainlink-framework/multinode href "https://github.com/smartcontractkit/chainlink-framework"
 	chainlink-protos/orchestrator --> wsrpc
 	click chainlink-protos/orchestrator href "https://github.com/smartcontractkit/chainlink-protos"
-	chainlink-solana --> chainlink-common
+	chainlink-protos/svr
+	click chainlink-protos/svr href "https://github.com/smartcontractkit/chainlink-protos"
+	chainlink-solana --> chainlink-framework/multinode
 	click chainlink-solana href "https://github.com/smartcontractkit/chainlink-solana"
 	chainlink-starknet/relayer --> chainlink-common
 	click chainlink-starknet/relayer href "https://github.com/smartcontractkit/chainlink-starknet"
@@ -58,8 +67,8 @@ flowchart LR
 	chainlink/v2 --> chainlink-cosmos
 	chainlink/v2 --> chainlink-data-streams
 	chainlink/v2 --> chainlink-feeds
-	chainlink/v2 --> chainlink-framework/multinode
 	chainlink/v2 --> chainlink-protos/orchestrator
+	chainlink/v2 --> chainlink-protos/svr
 	chainlink/v2 --> chainlink-solana
 	chainlink/v2 --> chainlink-starknet/relayer
 	chainlink/v2 --> tdh2/go/ocr2/decryptionplugin
@@ -84,12 +93,25 @@ flowchart LR
 		 capabilities/libs/cll
 		 capabilities/libs/loopserver
 		 capabilities/libs/testutils
+		 capabilities/loadtestwritetarget
 		 capabilities/readcontract
 		 capabilities/streams
 		 capabilities/workflowevent
 		 capabilities/workflows
 	end
 	click capabilities-repo href "https://github.com/smartcontractkit/capabilities"
+
+	subgraph chainlink-framework-repo[chainlink-framework]
+		 chainlink-framework/chains
+		 chainlink-framework/multinode
+	end
+	click chainlink-framework-repo href "https://github.com/smartcontractkit/chainlink-framework"
+
+	subgraph chainlink-protos-repo[chainlink-protos]
+		 chainlink-protos/orchestrator
+		 chainlink-protos/svr
+	end
+	click chainlink-protos-repo href "https://github.com/smartcontractkit/chainlink-protos"
 
 	subgraph tdh2-repo[tdh2]
 		 tdh2/go/ocr2/decryptionplugin
@@ -98,5 +120,5 @@ flowchart LR
 	click tdh2-repo href "https://github.com/smartcontractkit/tdh2"
 
 	classDef outline stroke-dasharray:6,fill:none;
-	class capabilities-repo,tdh2-repo outline
+	class capabilities-repo,chainlink-framework-repo,chainlink-protos-repo,tdh2-repo outline
 ```
