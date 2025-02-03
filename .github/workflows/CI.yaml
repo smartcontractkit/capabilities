@@ -275,5 +275,5 @@ jobs:
           include-lint: "true"
           sonar-token: ${{ secrets.SONAR_TOKEN }}
           sonar-host-url: ${{ secrets.SONAR_HOST_URL }}
-          extra-args: "-Dsonar.exclusions=integration_tests/**"
+          extra-args: "-Dsonar.exclusions=integration_tests/**, workflows/**"
           
