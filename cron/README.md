@@ -2,6 +2,8 @@
 
 A trigger that uses a cron schedule to run periodically at fixed times, dates, or intervals.
 
+NOTE: CRON Trigger can only be used as a local capability of a Workflow DON, due to the non-deterministic output of "ActualExecutionTime".
+
 
 ## Configuration
 
@@ -34,7 +36,7 @@ A trigger that uses a cron schedule to run periodically at fixed times, dates, o
 
 |          Name          |                               Description                                |  Type  | Default |
 |:----------------------:|:------------------------------------------------------------------------:|:------:|:-------:|
-|  ActualExecutionTime   | Time that cron trigger's task execution occurred (RFC3339Nano formatted) | string |    -    |
+|  [ActualExecutionTime]   | Time that cron trigger's task execution occurred (RFC3339Nano formatted) | string |    -    |
 | ScheduledExecutionTime |   Time that cron trigger's task execution had been scheduled to occur    | string |    -    |
 
 ### Sample
