@@ -31,6 +31,7 @@ type computeOutput struct {
 
 type computeConfig struct {
 	FeedID string
+	Secret sdk.SecretValue
 }
 
 func convertFeedIDtoBytes(feedIDStr string) ([32]byte, error) {
@@ -57,6 +58,7 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 
 	compConf := computeConfig{
 		FeedID: "0x02afa5a69f0000220000000000000000",
+		Secret: sdk.Secret("SECRET_A"),
 	}
 
 	compute := sdk.Compute1WithConfig(
@@ -72,6 +74,9 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 
 			fresp, err := runtime.Fetch(sdk.FetchRequest{
 				URL:       "https://api.real-time-reserves.verinumus.io/v1/chainlink/proof-of-reserves/TrueUSD",
+				Headers: map[string]any{
+					"AUTH": config.Secret,
+				},
 				Method:    "GET",
 				TimeoutMs: 5000,
 			})
