@@ -10,12 +10,12 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/wasm"
 
-	"github.com/smartcontractkit/capabilities/cron/croncap"
 	"github.com/smartcontractkit/capabilities/loadtestwritetarget/loadtestwritetargetcap"
-	"github.com/smartcontractkit/capabilities/readcontract/readcontractcap"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/actions/readcontract"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/aggregators"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/ocr3cap"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/triggers/cron"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk"
 )
 
@@ -107,7 +107,7 @@ func BuildWorkflow(configBytes []byte) (*sdk.WorkflowSpecFactory, error) {
 
 	workflow := sdk.NewWorkflowSpecFactory()
 
-	cron := croncap.Config{
+	cron := cron.Config{
 		Schedule: config.CronSchedule,
 	}.New(workflow)
 
@@ -118,7 +118,7 @@ func BuildWorkflow(configBytes []byte) (*sdk.WorkflowSpecFactory, error) {
 
 	balanceReaderContract := config.BalanceReaderContractAddress
 
-	chainRead := readcontractcap.Config{
+	chainRead := readcontract.Config{
 		ContractReaderConfig: `{"contracts":{"BalanceReader":{"contractABI":"[{\"inputs\":[{\"internalType\":\"address[]\",\"name\":\"addresses\",\"type\":\"address[]\"}],\"name\":\"getNativeBalances\",\"outputs\":[{\"internalType\":\"uint256[]\",\"name\":\"\",\"type\":\"uint256[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"}]","contractPollingFilter":{"genericEventNames":null,"pollingFilter":{"topic2":null,"topic3":null,"topic4":null,"retention":"0s","maxLogsKept":0,"logsPerBlock":0}},"configs":{"getNativeBalances":"{  \"chainSpecificName\": \"getNativeBalances\"}"}}}}`,
 		ContractAddress:      balanceReaderContract,
 		ContractName:         "BalanceReader",
@@ -127,12 +127,12 @@ func BuildWorkflow(configBytes []byte) (*sdk.WorkflowSpecFactory, error) {
 		workflow,
 		"read-contract-evm-"+config.ChainID+"@1.0.0",
 		"read",
-		readcontractcap.ActionInput{
+		readcontract.ActionInput{
 			ConfidenceLevel: sdk.ConstantDefinition("finalized"),
-			Params: sdk.ConstantDefinition(readcontractcap.InputParams{
+			Params: sdk.ConstantDefinition(readcontract.InputParams{
 				"addresses": addresses,
-				"_unused":   cron.Ref(), // TODO: Figure out a nicer way to do this.
 			}),
+			StepDependency: sdk.ConstantDefinition(cron.Ref()),
 		},
 	)
 	compConf := computeConfig{
@@ -143,8 +143,8 @@ func BuildWorkflow(configBytes []byte) (*sdk.WorkflowSpecFactory, error) {
 		workflow,
 		"compute",
 		&sdk.ComputeConfig[computeConfig]{Config: compConf},
-		sdk.Compute1Inputs[readcontractcap.Output]{Arg0: chainRead},
-		func(runtime sdk.Runtime, config computeConfig, outputs readcontractcap.Output) (computeOutput, error) {
+		sdk.Compute1Inputs[readcontract.Output]{Arg0: chainRead},
+		func(runtime sdk.Runtime, config computeConfig, outputs readcontract.Output) (computeOutput, error) {
 			feedID, err := convertFeedIDtoBytes(config.FeedID)
 			if err != nil {
 				return computeOutput{}, fmt.Errorf("cannot convert feedID to bytes")

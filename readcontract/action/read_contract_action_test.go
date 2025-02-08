@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	readcontractcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/actions/readcontract"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -21,7 +22,6 @@ import (
 	"github.com/smartcontractkit/capabilities/libs/testutils"
 
 	actions "github.com/smartcontractkit/capabilities/readcontract/action"
-	"github.com/smartcontractkit/capabilities/readcontract/readcontractcap"
 )
 
 func TestReadContractAction_Execute_WithoutConsensus(t *testing.T) {
