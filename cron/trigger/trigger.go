@@ -11,12 +11,11 @@ import (
 	"github.com/jonboulle/clockwork"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/triggers/cron"
 	"github.com/smartcontractkit/chainlink-common/pkg/custmsg"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
-
-	"github.com/smartcontractkit/capabilities/cron/croncap"
 )
 
 const ID = "cron-trigger@1.0.0"
@@ -38,7 +37,7 @@ type Config struct {
 
 type Response struct {
 	capabilities.TriggerEvent
-	Payload croncap.Payload
+	Payload cron.Payload
 }
 
 type cronTrigger struct {
@@ -115,7 +114,7 @@ func (s *Service) RegisterTrigger(ctx context.Context, req capabilities.TriggerR
 	if req.Config == nil {
 		return nil, errors.New("config is required to register a cron trigger")
 	}
-	config := &croncap.Config{}
+	config := &cron.Config{}
 	if err := req.Config.UnwrapTo(config); err != nil {
 		return nil, err
 	}
@@ -236,7 +235,7 @@ func createTriggerResponse(scheduledExecutionTime time.Time, currentTime time.Ti
 	triggerEventID := scheduledExecutionTimeFormatted
 
 	// Show difference between scheduled and actual execution by including nanoseconds
-	payload := croncap.Payload{
+	payload := cron.Payload{
 		ScheduledExecutionTime: scheduledExecutionTimeUTC.Format(time.RFC3339Nano),
 		ActualExecutionTime:    currentTimeUTC.Format(time.RFC3339Nano),
 	}

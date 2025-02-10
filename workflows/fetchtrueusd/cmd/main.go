@@ -6,9 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	croncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/triggers/cron"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/wasm"
-
-	"github.com/smartcontractkit/capabilities/cron/croncap"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/aggregators"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/ocr3cap"

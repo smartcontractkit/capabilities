@@ -6,9 +6,7 @@ flowchart LR
 	click capabilities/cron href "https://github.com/smartcontractkit/capabilities"
 	capabilities/devenv --> chainlink/v2
 	click capabilities/devenv href "https://github.com/smartcontractkit/capabilities"
-	capabilities/integration_tests --> capabilities/cron
 	capabilities/integration_tests --> capabilities/loadtestwritetarget
-	capabilities/integration_tests --> capabilities/readcontract
 	capabilities/integration_tests --> chainlink/v2
 	click capabilities/integration_tests href "https://github.com/smartcontractkit/capabilities"
 	capabilities/kvstore --> capabilities/libs/loopserver
@@ -31,8 +29,7 @@ flowchart LR
 	capabilities/workflowevent --> capabilities/libs/loopserver
 	capabilities/workflowevent --> capabilities/libs/testutils
 	click capabilities/workflowevent href "https://github.com/smartcontractkit/capabilities"
-	capabilities/workflows --> capabilities/cron
-	capabilities/workflows --> capabilities/readcontract
+	capabilities/workflows --> chainlink-common
 	click capabilities/workflows href "https://github.com/smartcontractkit/capabilities"
 	chain-selectors
 	click chain-selectors href "https://github.com/smartcontractkit/chain-selectors"

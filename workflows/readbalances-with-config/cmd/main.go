@@ -10,8 +10,8 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/wasm"
 
-	"github.com/smartcontractkit/capabilities/cron/croncap"
-	"github.com/smartcontractkit/capabilities/readcontract/readcontractcap"
+	readcontractcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/actions/readcontract"
+	croncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/triggers/cron"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/aggregators"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/ocr3cap"
@@ -132,8 +132,8 @@ func BuildWorkflow(configBytes []byte) (*sdk.WorkflowSpecFactory, error) {
 			ConfidenceLevel: sdk.ConstantDefinition("finalized"),
 			Params: sdk.ConstantDefinition(readcontractcap.InputParams{
 				"addresses": addresses,
-				"_unused":   cron.Ref(), // TODO: Figure out a nicer way to do this.
 			}),
+			StepDependency: sdk.ConstantDefinition(cron.Ref()),
 		},
 	)
 	compConf := computeConfig{
