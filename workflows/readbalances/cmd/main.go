@@ -2,11 +2,11 @@ package main
 
 import (
 	"encoding/hex"
-	"math/big"
-
 	"fmt"
+	"math/big"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/wasm"
 
 	readcontractcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/actions/readcontract"
@@ -50,9 +50,9 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 		Schedule: "*/60 * * * * *", // Every 60 seconds
 	}.New(workflow)
 
-	addresses := []string{
-		"0x5c25312C82791e6cB76Dc9eFaBE2F5fa695D966b", // Keystone Dev Wallet #1
-		"0xAc85bE3811e06712f53BC11844Ed8a37d3e9C3Ab", // Keystone Dev Wallet #2
+	addresses := []common.Address{
+		common.HexToAddress("0x5c25312C82791e6cB76Dc9eFaBE2F5fa695D966b"), // Keystone Dev Wallet #1
+		common.HexToAddress("0xAc85bE3811e06712f53BC11844Ed8a37d3e9C3Ab"), // Keystone Dev Wallet #2
 	}
 
 	// https://sepolia.etherscan.io/address/0x93c4bB995e7B5a726c8ef1bED9EA92e300F18eb4
@@ -157,7 +157,7 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 	chainwriter.TargetConfig{
 		Address:    "0xC4D5Af244E4Fe5e5f2D5a6b0F6F1867D4A5f0336", // Sepolia PoR Cache
 		DeltaStage: "15s",
-		Schedule:   "onAtATime",
+		Schedule:   "oneAtATime",
 	}.New(workflow, "write_ethereum-testnet-sepolia@1.0.0", targetInput)
 
 	return workflow
