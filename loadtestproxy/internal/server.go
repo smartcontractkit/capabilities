@@ -119,6 +119,8 @@ func (s *Server) HookExecutables(server pb.Proxy_HookExecutablesServer) error {
 			s.lggr.Info("client disconnected")
 			return nil
 		case d := <-s.executableRequests:
+			s.lggr.Debugw("received execute request", "ID", d.ID, "type", d.capType, "metadata", d.request.Metadata, "input", d.request.Inputs, "config", d.request.Config)
+
 			config, err := mapToBytes(d.request.Config)
 			if err != nil {
 				return err
@@ -188,10 +190,15 @@ func (s *Server) Execute(ctx context.Context, request *pb.ExecutableRequest) (*p
 	if err != nil {
 		return nil, err
 	}
+	s.lggr.Debugw("Before bytesToMap", "data", request.Inputs)
+
 	input, err := bytesToMap(request.Inputs)
 	if err != nil {
 		return nil, err
 	}
+	s.lggr.Debugw("After bytesToMap", "data", input)
+
+	s.lggr.Debugw("execute call", "ID", request.ID, "cap type", request.CapabilityType, "metadata", request.RequestMetadata, "config", config, "inputs", input)
 
 	response, err := e.Execute(ctx, capabilities.CapabilityRequest{
 		Metadata: capabilities.RequestMetadata{
@@ -455,20 +462,36 @@ func toRemoteCapEnum(c pb.CapabilityType) capabilities.CapabilityType {
 }
 
 func mapToBytes(m *values.Map) ([]byte, error) {
-	return proto.Marshal(values.Proto(m))
+	if m == nil {
+		return nil, nil
+	}
+
+	pm := make(map[string]*pb2.Value)
+	for k, v := range m.Underlying {
+		pm[k] = values.Proto(v)
+	}
+	bytes, err := proto.Marshal(pb2.NewMapValue(pm))
+	if err != nil {
+		return nil, err
+	}
+	return bytes, nil
 }
 func bytesToMap(b []byte) (*values.Map, error) {
-	var o pb2.Map
-	err := proto.Unmarshal(b, &o)
-	if err != nil {
+	var o pb2.Value
+	if err := proto.Unmarshal(b, &o); err != nil {
 		return nil, err
 	}
 
-	fromProto, err := values.FromMapValueProto(&o)
-	if err != nil {
-		return nil, err
+	vm := values.Map{Underlying: make(map[string]values.Value)}
+	for k, v := range o.GetMapValue().Fields {
+		val, err := values.FromProto(v)
+		if err != nil {
+			return nil, err
+		}
+		vm.Underlying[k] = val
 	}
-	return fromProto, nil
+
+	return &vm, nil
 }
 
 func (s *Server) findTrigger(ctx context.Context, id string) (capabilities.TriggerCapability, error) {
