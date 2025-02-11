@@ -7,10 +7,53 @@ import "google/protobuf/empty.proto";
 
 
 service Proxy {
-  rpc List(ListRequest) returns (ListResponse){}
-  rpc CreateTrigger(CapabilityInfo) returns(CreateTriggerResponse) {}
-  rpc SendTrigger(SendTriggerRequest)returns(SendTriggerResponse) {}
+  rpc List(ListRequest) returns (ListResponse){} //Get info of all capabilities
+
+  rpc CreateCapability(CapabilityInfo) returns(google.protobuf.Empty) {}
+
+  //TriggerExecutable (used for triggers)
+  rpc SendTriggerEvent(SendTriggerEventRequest)returns(google.protobuf.Empty) {} //Send data through mock trigger
+
+  rpc RegisterTrigger(TriggerRegistrationRequest)returns(stream TriggerResponse) {} //Register to trigger
+  rpc UnregisterTrigger(TriggerRegistrationRequest)returns(google.protobuf.Empty) {} //Unregister to trigger
+
+  //Executable (used for target,action,consensus)
+  rpc HookExecutables(stream ExecutableResponse) returns(stream ExecutableRequest) {}
+
+  rpc RegisterToWorkflow(RegisterToWorkflowRequest) returns (google.protobuf.Empty){}
+  rpc UnregisterFromWorkflow(UnregisterFromWorkflowRequest) returns (google.protobuf.Empty){}
+  rpc Execute(ExecutableRequest) returns (CapabilityResponse){}
+
 }
+
+message TriggerEvent{
+  string TriggerType = 1;
+  string ID = 2;
+  bytes Outputs = 3;
+}
+message TriggerResponse{
+  TriggerEvent TriggerEvent = 1;
+  string Error = 2;
+}
+
+message TriggerRegistrationRequest{
+  string TriggerID = 1;
+  Metadata Metadata = 2;
+  bytes Config = 3;
+}
+
+
+message Metadata{
+  string WorkflowID = 1;
+  string WorkflowOwner = 2;
+  string WorkflowExecutionID = 3;
+  string WorkflowName = 4;
+  uint32 WorkflowDonID = 5;
+  uint32 WorkflowDonConfigVersion = 6;
+  string ReferenceID = 7;
+  string DecodedWorkflowName = 8;
+}
+
 
 message ListRequest {}
 message ListResponse {
@@ -27,21 +70,54 @@ message DON{
 
 }
 message CapabilityInfo{
-  string ProxyID = 1;
-  string ID = 2;
-  CapabilityType CapabilityType = 3;
-  string Description = 4;
-  DON DON = 5;
-  bool IsLocal = 6;
+  string ID = 1;
+  CapabilityType CapabilityType = 2;
+  string Description = 3;
+  DON DON = 4;
+  bool IsLocal = 5;
+}
+
+message SendTriggerEventRequest{
+  string ID = 1;
+  string EventID = 2;
+  bytes Payload = 3;
+}
+
+message RegisterToWorkflowRequest{
+  string ID = 1;
+  CapabilityType CapabilityType = 2;
+  RegistrationMetadata RegistrationMetadata = 3;
+  bytes Config = 4;
+}
+
+message RegistrationMetadata{
+  string WorkflowID = 1;
+  string WorkflowOwner = 2;
+  string ReferenceID = 3;
+}
+
+message UnregisterFromWorkflowRequest{
+  RegistrationMetadata RegistrationMetadata = 1;
+  bytes Config = 2;
+}
+
+message ExecutableRequest{
+  string ID = 1;
+  CapabilityType CapabilityType = 2;
+  Metadata RequestMetadata = 3;
+  bytes Config = 4;
+  bytes Inputs = 5;
+}
+
+message CapabilityResponse{
+  bytes Value = 1;
+}
+
+message ExecutableResponse{
+  string ID = 1;
+  CapabilityType CapabilityType = 2;
+  bytes Value = 3;
 }
 
 
-message CreateTriggerResponse{
-  string ProxyID=1;
-}
-message SendTriggerRequest{
-  string ProxyID=1;
-  string EventID=2;
-  bytes Payload=3;
-}
-message SendTriggerResponse{}
+

@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"time"
 
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
 	"github.com/smartcontractkit/capabilities/loadtestproxy/internal"
 	"github.com/smartcontractkit/capabilities/loadtestproxy/internal/pb"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/keepalive"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -25,6 +27,7 @@ type CapProxyGRPCService struct {
 	services.StateMachine
 	lggr               logger.Logger
 	capabilityRegistry core.CapabilitiesRegistry
+	grpcServer         *grpc.Server
 }
 
 func main() {
@@ -38,7 +41,7 @@ func (cs *CapProxyGRPCService) Start(ctx context.Context) error {
 }
 
 func (cs *CapProxyGRPCService) Close() error {
-	//TODO: close GRPC server™£
+	cs.grpcServer.Stop()
 	return nil
 }
 
@@ -78,10 +81,16 @@ func (cs *CapProxyGRPCService) Initialise(
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
-	var opts []grpc.ServerOption
+	opts := []grpc.ServerOption{
+		grpc.KeepaliveParams(keepalive.ServerParameters{
+			Time:    30 * time.Second, // Send keepalive ping every 30s
+			Timeout: 10 * time.Second, // Wait 10s for ping response
+		}),
+	}
 	grpcServer := grpc.NewServer(opts...)
-	pb.RegisterProxyServer(grpcServer, internal.NewMockServer(capabilityRegistry, cs.lggr))
+	pb.RegisterProxyServer(grpcServer, internal.NewServer(capabilityRegistry, cs.lggr))
 	grpcServer.Serve(lis)
 
+	cs.grpcServer = grpcServer
 	return nil
 }

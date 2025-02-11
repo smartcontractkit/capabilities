@@ -11,6 +11,7 @@ import (
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
 )
 
 // This is a compile-time assertion to ensure that this generated file
@@ -19,9 +20,15 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	Proxy_List_FullMethodName          = "/proxy.Proxy/List"
-	Proxy_CreateTrigger_FullMethodName = "/proxy.Proxy/CreateTrigger"
-	Proxy_SendTrigger_FullMethodName   = "/proxy.Proxy/SendTrigger"
+	Proxy_List_FullMethodName                   = "/proxy.Proxy/List"
+	Proxy_CreateCapability_FullMethodName       = "/proxy.Proxy/CreateCapability"
+	Proxy_SendTriggerEvent_FullMethodName       = "/proxy.Proxy/SendTriggerEvent"
+	Proxy_RegisterTrigger_FullMethodName        = "/proxy.Proxy/RegisterTrigger"
+	Proxy_UnregisterTrigger_FullMethodName      = "/proxy.Proxy/UnregisterTrigger"
+	Proxy_HookExecutables_FullMethodName        = "/proxy.Proxy/HookExecutables"
+	Proxy_RegisterToWorkflow_FullMethodName     = "/proxy.Proxy/RegisterToWorkflow"
+	Proxy_UnregisterFromWorkflow_FullMethodName = "/proxy.Proxy/UnregisterFromWorkflow"
+	Proxy_Execute_FullMethodName                = "/proxy.Proxy/Execute"
 )
 
 // ProxyClient is the client API for Proxy service.
@@ -29,8 +36,16 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ProxyClient interface {
 	List(ctx context.Context, in *ListRequest, opts ...grpc.CallOption) (*ListResponse, error)
-	CreateTrigger(ctx context.Context, in *CapabilityInfo, opts ...grpc.CallOption) (*CreateTriggerResponse, error)
-	SendTrigger(ctx context.Context, in *SendTriggerRequest, opts ...grpc.CallOption) (*SendTriggerResponse, error)
+	CreateCapability(ctx context.Context, in *CapabilityInfo, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// TriggerExecutable (used for triggers)
+	SendTriggerEvent(ctx context.Context, in *SendTriggerEventRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	RegisterTrigger(ctx context.Context, in *TriggerRegistrationRequest, opts ...grpc.CallOption) (Proxy_RegisterTriggerClient, error)
+	UnregisterTrigger(ctx context.Context, in *TriggerRegistrationRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// Executable (used for target,action,consensus)
+	HookExecutables(ctx context.Context, opts ...grpc.CallOption) (Proxy_HookExecutablesClient, error)
+	RegisterToWorkflow(ctx context.Context, in *RegisterToWorkflowRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	UnregisterFromWorkflow(ctx context.Context, in *UnregisterFromWorkflowRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	Execute(ctx context.Context, in *ExecutableRequest, opts ...grpc.CallOption) (*CapabilityResponse, error)
 }
 
 type proxyClient struct {
@@ -50,18 +65,117 @@ func (c *proxyClient) List(ctx context.Context, in *ListRequest, opts ...grpc.Ca
 	return out, nil
 }
 
-func (c *proxyClient) CreateTrigger(ctx context.Context, in *CapabilityInfo, opts ...grpc.CallOption) (*CreateTriggerResponse, error) {
-	out := new(CreateTriggerResponse)
-	err := c.cc.Invoke(ctx, Proxy_CreateTrigger_FullMethodName, in, out, opts...)
+func (c *proxyClient) CreateCapability(ctx context.Context, in *CapabilityInfo, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, Proxy_CreateCapability_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *proxyClient) SendTrigger(ctx context.Context, in *SendTriggerRequest, opts ...grpc.CallOption) (*SendTriggerResponse, error) {
-	out := new(SendTriggerResponse)
-	err := c.cc.Invoke(ctx, Proxy_SendTrigger_FullMethodName, in, out, opts...)
+func (c *proxyClient) SendTriggerEvent(ctx context.Context, in *SendTriggerEventRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, Proxy_SendTriggerEvent_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *proxyClient) RegisterTrigger(ctx context.Context, in *TriggerRegistrationRequest, opts ...grpc.CallOption) (Proxy_RegisterTriggerClient, error) {
+	stream, err := c.cc.NewStream(ctx, &Proxy_ServiceDesc.Streams[0], Proxy_RegisterTrigger_FullMethodName, opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &proxyRegisterTriggerClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type Proxy_RegisterTriggerClient interface {
+	Recv() (*TriggerResponse, error)
+	grpc.ClientStream
+}
+
+type proxyRegisterTriggerClient struct {
+	grpc.ClientStream
+}
+
+func (x *proxyRegisterTriggerClient) Recv() (*TriggerResponse, error) {
+	m := new(TriggerResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (c *proxyClient) UnregisterTrigger(ctx context.Context, in *TriggerRegistrationRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, Proxy_UnregisterTrigger_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *proxyClient) HookExecutables(ctx context.Context, opts ...grpc.CallOption) (Proxy_HookExecutablesClient, error) {
+	stream, err := c.cc.NewStream(ctx, &Proxy_ServiceDesc.Streams[1], Proxy_HookExecutables_FullMethodName, opts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &proxyHookExecutablesClient{stream}
+	return x, nil
+}
+
+type Proxy_HookExecutablesClient interface {
+	Send(*ExecutableResponse) error
+	Recv() (*ExecutableRequest, error)
+	grpc.ClientStream
+}
+
+type proxyHookExecutablesClient struct {
+	grpc.ClientStream
+}
+
+func (x *proxyHookExecutablesClient) Send(m *ExecutableResponse) error {
+	return x.ClientStream.SendMsg(m)
+}
+
+func (x *proxyHookExecutablesClient) Recv() (*ExecutableRequest, error) {
+	m := new(ExecutableRequest)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (c *proxyClient) RegisterToWorkflow(ctx context.Context, in *RegisterToWorkflowRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, Proxy_RegisterToWorkflow_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *proxyClient) UnregisterFromWorkflow(ctx context.Context, in *UnregisterFromWorkflowRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, Proxy_UnregisterFromWorkflow_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *proxyClient) Execute(ctx context.Context, in *ExecutableRequest, opts ...grpc.CallOption) (*CapabilityResponse, error) {
+	out := new(CapabilityResponse)
+	err := c.cc.Invoke(ctx, Proxy_Execute_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -73,8 +187,16 @@ func (c *proxyClient) SendTrigger(ctx context.Context, in *SendTriggerRequest, o
 // for forward compatibility
 type ProxyServer interface {
 	List(context.Context, *ListRequest) (*ListResponse, error)
-	CreateTrigger(context.Context, *CapabilityInfo) (*CreateTriggerResponse, error)
-	SendTrigger(context.Context, *SendTriggerRequest) (*SendTriggerResponse, error)
+	CreateCapability(context.Context, *CapabilityInfo) (*emptypb.Empty, error)
+	// TriggerExecutable (used for triggers)
+	SendTriggerEvent(context.Context, *SendTriggerEventRequest) (*emptypb.Empty, error)
+	RegisterTrigger(*TriggerRegistrationRequest, Proxy_RegisterTriggerServer) error
+	UnregisterTrigger(context.Context, *TriggerRegistrationRequest) (*emptypb.Empty, error)
+	// Executable (used for target,action,consensus)
+	HookExecutables(Proxy_HookExecutablesServer) error
+	RegisterToWorkflow(context.Context, *RegisterToWorkflowRequest) (*emptypb.Empty, error)
+	UnregisterFromWorkflow(context.Context, *UnregisterFromWorkflowRequest) (*emptypb.Empty, error)
+	Execute(context.Context, *ExecutableRequest) (*CapabilityResponse, error)
 	mustEmbedUnimplementedProxyServer()
 }
 
@@ -85,11 +207,29 @@ type UnimplementedProxyServer struct {
 func (UnimplementedProxyServer) List(context.Context, *ListRequest) (*ListResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method List not implemented")
 }
-func (UnimplementedProxyServer) CreateTrigger(context.Context, *CapabilityInfo) (*CreateTriggerResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method CreateTrigger not implemented")
+func (UnimplementedProxyServer) CreateCapability(context.Context, *CapabilityInfo) (*emptypb.Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateCapability not implemented")
 }
-func (UnimplementedProxyServer) SendTrigger(context.Context, *SendTriggerRequest) (*SendTriggerResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method SendTrigger not implemented")
+func (UnimplementedProxyServer) SendTriggerEvent(context.Context, *SendTriggerEventRequest) (*emptypb.Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SendTriggerEvent not implemented")
+}
+func (UnimplementedProxyServer) RegisterTrigger(*TriggerRegistrationRequest, Proxy_RegisterTriggerServer) error {
+	return status.Errorf(codes.Unimplemented, "method RegisterTrigger not implemented")
+}
+func (UnimplementedProxyServer) UnregisterTrigger(context.Context, *TriggerRegistrationRequest) (*emptypb.Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UnregisterTrigger not implemented")
+}
+func (UnimplementedProxyServer) HookExecutables(Proxy_HookExecutablesServer) error {
+	return status.Errorf(codes.Unimplemented, "method HookExecutables not implemented")
+}
+func (UnimplementedProxyServer) RegisterToWorkflow(context.Context, *RegisterToWorkflowRequest) (*emptypb.Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RegisterToWorkflow not implemented")
+}
+func (UnimplementedProxyServer) UnregisterFromWorkflow(context.Context, *UnregisterFromWorkflowRequest) (*emptypb.Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UnregisterFromWorkflow not implemented")
+}
+func (UnimplementedProxyServer) Execute(context.Context, *ExecutableRequest) (*CapabilityResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Execute not implemented")
 }
 func (UnimplementedProxyServer) mustEmbedUnimplementedProxyServer() {}
 
@@ -122,38 +262,157 @@ func _Proxy_List_Handler(srv interface{}, ctx context.Context, dec func(interfac
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Proxy_CreateTrigger_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _Proxy_CreateCapability_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CapabilityInfo)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ProxyServer).CreateTrigger(ctx, in)
+		return srv.(ProxyServer).CreateCapability(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Proxy_CreateTrigger_FullMethodName,
+		FullMethod: Proxy_CreateCapability_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ProxyServer).CreateTrigger(ctx, req.(*CapabilityInfo))
+		return srv.(ProxyServer).CreateCapability(ctx, req.(*CapabilityInfo))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Proxy_SendTrigger_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SendTriggerRequest)
+func _Proxy_SendTriggerEvent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SendTriggerEventRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ProxyServer).SendTrigger(ctx, in)
+		return srv.(ProxyServer).SendTriggerEvent(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Proxy_SendTrigger_FullMethodName,
+		FullMethod: Proxy_SendTriggerEvent_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ProxyServer).SendTrigger(ctx, req.(*SendTriggerRequest))
+		return srv.(ProxyServer).SendTriggerEvent(ctx, req.(*SendTriggerEventRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Proxy_RegisterTrigger_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(TriggerRegistrationRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(ProxyServer).RegisterTrigger(m, &proxyRegisterTriggerServer{stream})
+}
+
+type Proxy_RegisterTriggerServer interface {
+	Send(*TriggerResponse) error
+	grpc.ServerStream
+}
+
+type proxyRegisterTriggerServer struct {
+	grpc.ServerStream
+}
+
+func (x *proxyRegisterTriggerServer) Send(m *TriggerResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func _Proxy_UnregisterTrigger_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TriggerRegistrationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProxyServer).UnregisterTrigger(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Proxy_UnregisterTrigger_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProxyServer).UnregisterTrigger(ctx, req.(*TriggerRegistrationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Proxy_HookExecutables_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(ProxyServer).HookExecutables(&proxyHookExecutablesServer{stream})
+}
+
+type Proxy_HookExecutablesServer interface {
+	Send(*ExecutableRequest) error
+	Recv() (*ExecutableResponse, error)
+	grpc.ServerStream
+}
+
+type proxyHookExecutablesServer struct {
+	grpc.ServerStream
+}
+
+func (x *proxyHookExecutablesServer) Send(m *ExecutableRequest) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func (x *proxyHookExecutablesServer) Recv() (*ExecutableResponse, error) {
+	m := new(ExecutableResponse)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func _Proxy_RegisterToWorkflow_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RegisterToWorkflowRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProxyServer).RegisterToWorkflow(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Proxy_RegisterToWorkflow_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProxyServer).RegisterToWorkflow(ctx, req.(*RegisterToWorkflowRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Proxy_UnregisterFromWorkflow_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UnregisterFromWorkflowRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProxyServer).UnregisterFromWorkflow(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Proxy_UnregisterFromWorkflow_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProxyServer).UnregisterFromWorkflow(ctx, req.(*UnregisterFromWorkflowRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Proxy_Execute_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExecutableRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProxyServer).Execute(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Proxy_Execute_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProxyServer).Execute(ctx, req.(*ExecutableRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -170,14 +429,42 @@ var Proxy_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Proxy_List_Handler,
 		},
 		{
-			MethodName: "CreateTrigger",
-			Handler:    _Proxy_CreateTrigger_Handler,
+			MethodName: "CreateCapability",
+			Handler:    _Proxy_CreateCapability_Handler,
 		},
 		{
-			MethodName: "SendTrigger",
-			Handler:    _Proxy_SendTrigger_Handler,
+			MethodName: "SendTriggerEvent",
+			Handler:    _Proxy_SendTriggerEvent_Handler,
+		},
+		{
+			MethodName: "UnregisterTrigger",
+			Handler:    _Proxy_UnregisterTrigger_Handler,
+		},
+		{
+			MethodName: "RegisterToWorkflow",
+			Handler:    _Proxy_RegisterToWorkflow_Handler,
+		},
+		{
+			MethodName: "UnregisterFromWorkflow",
+			Handler:    _Proxy_UnregisterFromWorkflow_Handler,
+		},
+		{
+			MethodName: "Execute",
+			Handler:    _Proxy_Execute_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "RegisterTrigger",
+			Handler:       _Proxy_RegisterTrigger_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "HookExecutables",
+			Handler:       _Proxy_HookExecutables_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
+		},
+	},
 	Metadata: "proxy.proto",
 }
