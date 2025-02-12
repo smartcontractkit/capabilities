@@ -17,6 +17,7 @@ const capabilitiesDir = "integration_tests_temp"
 func DeployCapability(t *testing.T, capabilityName string) (string, error) {
 	projectPath := "../../" + capabilityName
 	absoluteProjectPath, err := filepath.Abs(projectPath)
+	require.NoError(t, err)
 
 	outputBinary := capabilitiesDir + "/" + capabilityName
 	absoluteBinaryPath, err := filepath.Abs(outputBinary)
