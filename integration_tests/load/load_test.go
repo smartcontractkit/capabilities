@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -219,7 +220,11 @@ func setupLoadtestDON(ctx context.Context, t *testing.T, lggr logger.SugaredLogg
 		return nil, fmt.Errorf("unknown url: %s", url)
 	}
 
-	donContext := framework.CreateDonContextWithWorkflowRegistry(ctx, t, fetcherFunc, NullFetcherFactory{})
+	homeDir, err := os.UserHomeDir()
+	require.NoError(t, err)
+
+	donContext := framework.CreateDonContextWithWorkflowRegistry(ctx, t, fetcherFunc, NullFetcherFactory{},
+		framework.NewFileBasedSerialisedModuleStoreFactory(filepath.Join(homeDir, "load_test_module_store")))
 
 	addresses := []string{
 		"0x5c25312C82791e6cB76Dc9eFaBE2F5fa695D966b",

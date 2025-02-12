@@ -136,7 +136,8 @@ func setupDons(ctx context.Context, t *testing.T, lggr logger.SugaredLogger, wor
 		return nil, fmt.Errorf("unknown  url: %s", url)
 	}
 
-	donContext := framework.CreateDonContextWithWorkflowRegistry(ctx, t, syncerFetcherFunc, utils.NoopComputeFetcherFactory{})
+	donContext := framework.CreateDonContextWithWorkflowRegistry(ctx, t, syncerFetcherFunc, utils.NoopComputeFetcherFactory{},
+		framework.NewNoStoreModuleStoreFactory())
 
 	workflowConfig.Addresses = fundAddresses(ctx, t, donContext.EthBlockchain, 100, 50)
 
