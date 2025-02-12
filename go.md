@@ -6,6 +6,7 @@ flowchart LR
 	click capabilities/cron href "https://github.com/smartcontractkit/capabilities"
 	capabilities/devenv --> chainlink/v2
 	click capabilities/devenv href "https://github.com/smartcontractkit/capabilities"
+	capabilities/integration_tests --> capabilities/loadtestwritetarget
 	capabilities/integration_tests --> chainlink/v2
 	click capabilities/integration_tests href "https://github.com/smartcontractkit/capabilities"
 	capabilities/kvstore --> capabilities/libs/loopserver
@@ -43,7 +44,7 @@ flowchart LR
 	chainlink-common --> grpc-proxy
 	chainlink-common --> libocr
 	click chainlink-common href "https://github.com/smartcontractkit/chainlink-common"
-	chainlink-cosmos --> chainlink-framework/chains
+	chainlink-cosmos
 	click chainlink-cosmos href "https://github.com/smartcontractkit/chainlink-cosmos"
 	chainlink-data-streams --> chainlink-common
 	click chainlink-data-streams href "https://github.com/smartcontractkit/chainlink-data-streams"
@@ -65,7 +66,7 @@ flowchart LR
 	chainlink-solana --> chainlink-ccip/chains/solana
 	chainlink-solana --> chainlink-framework/multinode
 	click chainlink-solana href "https://github.com/smartcontractkit/chainlink-solana"
-	chainlink-starknet/relayer --> chainlink-common
+	chainlink-starknet/relayer
 	click chainlink-starknet/relayer href "https://github.com/smartcontractkit/chainlink-starknet"
 	chainlink/v2 --> chainlink-automation
 	chainlink/v2 --> chainlink-cosmos
