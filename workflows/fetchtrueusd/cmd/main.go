@@ -24,9 +24,11 @@ type trueUSDResponse struct {
 }
 
 type computeOutput struct {
-	Price     int
-	FeedID    [32]byte
-	Timestamp int64
+	TotalTrust uint64
+	TotalToken uint64
+	Ripcord    bool
+	FeedID     [32]byte
+	Timestamp  int64
 }
 
 type computeConfig struct {
@@ -56,7 +58,7 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 	}.New(workflow)
 
 	compConf := computeConfig{
-		FeedID: "0x029BFA81517000400000000000000000",
+		FeedID: "0xA1B2C3D4E5F600010203040506070809", // any random bytes16 string to track the feed
 	}
 
 	compute := sdk.Compute1WithConfig(
@@ -96,9 +98,11 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 			}
 
 			return computeOutput{
-				Price:     int(resp.TotalTrust * 100),
-				FeedID:    feedID, // TrueUSD
-				Timestamp: resp.UpdatedAt.Unix(),
+				TotalTrust: uint64(resp.TotalTrust * 100), // 2 decimal places
+				TotalToken: uint64(resp.TotalToken * 100), // 2 decimal places
+				Ripcord:    resp.Ripcord,                  // 0 decimal places
+				FeedID:     feedID,
+				Timestamp:  resp.UpdatedAt.Unix(),
 			}, nil
 		},
 	)
