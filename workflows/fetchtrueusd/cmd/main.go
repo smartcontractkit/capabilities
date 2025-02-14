@@ -78,13 +78,13 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 				TimeoutMs: 5000,
 			})
 			if err != nil {
-				return computeOutput{}, err
+				return computeOutput{}, fmt.Errorf("not able to fetch API response: %w", err)
 			}
 
 			var resp trueUSDResponse
 			err = json.Unmarshal(fresp.Body, &resp)
 			if err != nil {
-				return computeOutput{}, err
+				return computeOutput{}, fmt.Errorf("not able to unmarshal response payload %s, err: %w", fresp.Body, err)
 			}
 
 			if resp.Ripcord {
@@ -94,7 +94,6 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 				if err != nil {
 					runtime.Logger().Error("failed to emit custom message")
 				}
-				return computeOutput{}, sdk.BreakErr
 			}
 
 			return computeOutput{
