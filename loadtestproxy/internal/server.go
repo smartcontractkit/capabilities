@@ -190,13 +190,11 @@ func (s *Server) Execute(ctx context.Context, request *pb.ExecutableRequest) (*p
 	if err != nil {
 		return nil, err
 	}
-	s.lggr.Debugw("Before bytesToMap", "data", request.Inputs)
 
 	input, err := bytesToMap(request.Inputs)
 	if err != nil {
 		return nil, err
 	}
-	s.lggr.Debugw("After bytesToMap", "data", input)
 
 	s.lggr.Debugw("execute call", "ID", request.ID, "cap type", request.CapabilityType, "metadata", request.RequestMetadata, "config", config, "inputs", input)
 

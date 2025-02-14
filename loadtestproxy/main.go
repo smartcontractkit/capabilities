@@ -87,10 +87,8 @@ func (cs *CapProxyGRPCService) Initialise(
 			Timeout: 10 * time.Second, // Wait 10s for ping response
 		}),
 	}
-	grpcServer := grpc.NewServer(opts...)
-	pb.RegisterProxyServer(grpcServer, internal.NewServer(capabilityRegistry, cs.lggr))
-	grpcServer.Serve(lis)
+	cs.grpcServer = grpc.NewServer(opts...)
+	pb.RegisterProxyServer(cs.grpcServer, internal.NewServer(capabilityRegistry, cs.lggr))
 
-	cs.grpcServer = grpcServer
-	return nil
+	return cs.grpcServer.Serve(lis)
 }
