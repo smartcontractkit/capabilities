@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
 	"time"
 
+	"github.com/pelletier/go-toml/v2"
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
 	"github.com/smartcontractkit/capabilities/loadtestproxy/internal"
 	"github.com/smartcontractkit/capabilities/loadtestproxy/internal/pb"
@@ -19,6 +21,16 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
 
+type Mocks struct {
+	ID          string `toml:"id"`
+	Description string `toml:"description""`
+	Type        string `toml:"type"`
+}
+type Config struct {
+	Port         int     `toml:"port"`
+	DefaultMocks []Mocks `toml:"defaultMocks"`
+}
+
 const (
 	serviceName = "CapabilityRegistryProxy"
 )
@@ -28,6 +40,7 @@ type CapProxyGRPCService struct {
 	lggr               logger.Logger
 	capabilityRegistry core.CapabilitiesRegistry
 	grpcServer         *grpc.Server
+	mockServer         *internal.MockServer
 }
 
 func main() {
@@ -41,6 +54,7 @@ func (cs *CapProxyGRPCService) Start(ctx context.Context) error {
 }
 
 func (cs *CapProxyGRPCService) Close() error {
+	cs.mockServer.Close()
 	cs.grpcServer.Stop()
 	return nil
 }
@@ -58,8 +72,7 @@ func (cs *CapProxyGRPCService) Name() string {
 }
 
 func (cs *CapProxyGRPCService) Infos(ctx context.Context) ([]capabilities.CapabilityInfo, error) {
-	//TODO: add this
-	return nil, nil
+	return cs.mockServer.GetAllMockInfo()
 }
 
 func (cs *CapProxyGRPCService) Initialise(
@@ -73,11 +86,21 @@ func (cs *CapProxyGRPCService) Initialise(
 	_ core.RelayerSet,
 	_ core.OracleFactory,
 ) error {
-	//TODO @george-dorin:
-	// - Add port to config
-	// - Add auto register in config
-	cs.lggr.Info("Starting proxy")
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", 3456))
+	if len(config) < 1 {
+		return errors.New("missing config")
+	}
+	var mockConfig Config
+	err := toml.Unmarshal([]byte(config), &mockConfig)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal config: %s %w", config, err)
+	}
+
+	if mockConfig.Port == 0 {
+		return errors.New("must specify a port number")
+	}
+
+	cs.lggr.Info("Starting mock capability server")
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", mockConfig.Port))
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
@@ -87,8 +110,28 @@ func (cs *CapProxyGRPCService) Initialise(
 			Timeout: 10 * time.Second, // Wait 10s for ping response
 		}),
 	}
-	cs.grpcServer = grpc.NewServer(opts...)
-	pb.RegisterProxyServer(cs.grpcServer, internal.NewServer(capabilityRegistry, cs.lggr))
+	cs.mockServer = internal.NewMockServer(capabilityRegistry, cs.lggr)
 
-	return cs.grpcServer.Serve(lis)
+	for _, m := range mockConfig.DefaultMocks {
+		capType := internal.ToMockServerEnum(capabilities.CapabilityType(m.Type))
+		if capType == 0 {
+			return fmt.Errorf("could not start mock capabilitie %s unknown capability type %s", m.ID, m.Type)
+		}
+		cs.mockServer.CreateCapability(ctx, &pb.CapabilityInfo{
+			ID:             m.ID,
+			CapabilityType: capType,
+			Description:    m.Description,
+			IsLocal:        true,
+		})
+	}
+
+	cs.grpcServer = grpc.NewServer(opts...)
+	pb.RegisterProxyServer(cs.grpcServer, cs.mockServer)
+
+	go func() {
+		if err2 := cs.grpcServer.Serve(lis); err2 != nil {
+			cs.lggr.Error("gRPC server failed to serve: ", err2)
+		}
+	}()
+	return nil
 }

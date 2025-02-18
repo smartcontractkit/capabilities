@@ -28,7 +28,7 @@ func (t *executable) UnregisterFromWorkflow(ctx context.Context, request capabil
 func (t *executable) Execute(ctx context.Context, request capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
 	t.requestChan <- ExecutableRequest{
 		ID:      t.info.ID,
-		capType: toLocalCapEnum(t.info.CapabilityType),
+		capType: ToMockServerEnum(t.info.CapabilityType),
 		request: request,
 	}
 
@@ -42,7 +42,7 @@ func NewExecutable(info *pb.CapabilityInfo, rChan chan ExecutableRequest) *execu
 	return &executable{
 		capabilityInfo: &capabilityInfo{info: capabilities.CapabilityInfo{
 			ID:             info.ID,
-			CapabilityType: toRemoteCapEnum(info.CapabilityType),
+			CapabilityType: ToCapabilityEnum(info.CapabilityType),
 			Description:    info.Description,
 			DON:            nil,
 			IsLocal:        info.IsLocal,
