@@ -18,14 +18,17 @@ import (
 type trueUSDResponse struct {
 	AccountName string    `json:"accountName"`
 	TotalTrust  float64   `json:"totalTrust"`
+	TotalToken  float64   `json:"totalToken"`
 	Ripcord     bool      `json:"ripcord"`
 	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
 type computeOutput struct {
-	Price     int
-	FeedID    [32]byte
-	Timestamp int64
+	TotalTrust uint64
+	TotalToken uint64
+	Ripcord    bool
+	FeedID     [32]byte
+	Timestamp  int64
 }
 
 type computeConfig struct {
@@ -55,7 +58,7 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 	}.New(workflow)
 
 	compConf := computeConfig{
-		FeedID: "0x02afa5a69f0000220000000000000000",
+		FeedID: "0xA1B2C3D4E5F600010203040506070809", // any random bytes16 string to track the feed
 	}
 
 	compute := sdk.Compute1WithConfig(
@@ -75,13 +78,13 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 				TimeoutMs: 5000,
 			})
 			if err != nil {
-				return computeOutput{}, err
+				return computeOutput{}, fmt.Errorf("not able to fetch API response: %w", err)
 			}
 
 			var resp trueUSDResponse
 			err = json.Unmarshal(fresp.Body, &resp)
 			if err != nil {
-				return computeOutput{}, err
+				return computeOutput{}, fmt.Errorf("not able to unmarshal response payload %s, err: %w", fresp.Body, err)
 			}
 
 			if resp.Ripcord {
@@ -91,13 +94,14 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 				if err != nil {
 					runtime.Logger().Error("failed to emit custom message")
 				}
-				return computeOutput{}, sdk.BreakErr
 			}
 
 			return computeOutput{
-				Price:     int(resp.TotalTrust * 100),
-				FeedID:    feedID, // TrueUSD
-				Timestamp: resp.UpdatedAt.Unix(),
+				TotalTrust: uint64(resp.TotalTrust * 100), // 2 decimal places
+				TotalToken: uint64(resp.TotalToken * 100), // 2 decimal places
+				Ripcord:    resp.Ripcord,                  // 0 decimal places
+				FeedID:     feedID,
+				Timestamp:  resp.UpdatedAt.Unix(),
 			}, nil
 		},
 	)
@@ -109,7 +113,10 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 	consensus := ocr3cap.ReduceConsensusConfig[computeOutput]{
 		Encoder: ocr3cap.EncoderEVM,
 		EncoderConfig: map[string]any{
-			"abi": "(bytes32 FeedID, uint224 Price, uint32 Timestamp)[] Reports",
+			"abi": "(bytes32 FeedID, uint32 Timestamp, bytes Bundle)[] Reports",
+			"subabi": map[string]string{
+				"Reports.Bundle": "uint256 TotalTrust, uint256 TotalToken, bool Ripcord",
+			},
 		},
 		ReportID: "0001",
 		KeyID:    "evm",
@@ -121,21 +128,37 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 					Method:    "mode",
 				},
 				{
-					InputKey:        "Price",
-					OutputKey:       "Price",
-					Method:          "median",
-					DeviationString: "1",
-					DeviationType:   "percent",
-				},
-				{
 					InputKey:        "Timestamp",
 					OutputKey:       "Timestamp",
 					Method:          "median",
 					DeviationString: "300",
 					DeviationType:   "absolute",
 				},
+				{
+					InputKey:        "TotalTrust",
+					OutputKey:       "TotalTrust",
+					Method:          "median",
+					DeviationString: "1",
+					DeviationType:   "percent",
+					SubMapField:     true,
+				},
+				{
+					InputKey:        "TotalToken",
+					OutputKey:       "TotalToken",
+					Method:          "median",
+					DeviationString: "1",
+					DeviationType:   "percent",
+					SubMapField:     true,
+				},
+				{
+					InputKey:    "Ripcord",
+					OutputKey:   "Ripcord",
+					Method:      "mode",
+					SubMapField: true,
+				},
 			},
 			ReportFormat: aggregators.REPORT_FORMAT_ARRAY,
+			SubMapKey:    "Bundle",
 		},
 	}.New(workflow, "consensus", consensusInput)
 
@@ -144,7 +167,7 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 	}
 
 	chainwriter.TargetConfig{
-		Address:    "0xC4D5Af244E4Fe5e5f2D5a6b0F6F1867D4A5f0336", // Sepolia PoR Cache
+		Address:    "0xb79288ce6a58b7af2230a77f296f6a13b78a0292", // Sepolia PoR Cache using DF 1.5
 		DeltaStage: "15s",
 		Schedule:   "oneAtATime",
 	}.New(workflow, "write_ethereum-testnet-sepolia@1.0.0", targetInput)
