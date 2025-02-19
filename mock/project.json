@@ -1,7 +1,7 @@
 {
-  "name": "loadtestproxy",
+  "name": "mock",
   "projectType": "capability",
-  "projectRoot": "capabilities/loadtestproxy",
+  "projectRoot": "capabilities/mock",
   "implicitDependencies": ["loopserver"],
   "tags": [],
   "targets": {

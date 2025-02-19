@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/smartcontractkit/capabilities/loadtestproxy/loadtestproxy/proxy-trigger@0.0.1",
+  "$id": "https://github.com/smartcontractkit/capabilities/mock/mockcap/mock@0.0.1",
   "$defs": {
     "Payload": {
       "type": "object",
@@ -27,5 +27,5 @@
   },
   "required": ["config", "outputs"],
   "additionalProperties": false,
-  "description": "GRPC capability proxy used for load tests"
+  "description": "mock capability that allows the creation and control of capabilities"
 }

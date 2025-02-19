@@ -7,23 +7,33 @@ import "google/protobuf/empty.proto";
 
 
 service Proxy {
-  rpc List(ListRequest) returns (ListResponse){} //Get info of all capabilities
+  // Retrieve information about all capabilities available on the node
+  rpc List(ListRequest) returns (ListResponse){}
 
+  // Create a mock capability and register it with the node
   rpc CreateCapability(CapabilityInfo) returns(google.protobuf.Empty) {}
 
-  //TriggerExecutable (used for triggers)
-  rpc SendTriggerEvent(SendTriggerEventRequest)returns(google.protobuf.Empty) {} //Send data through mock trigger
+  // Send data through a mock trigger
+  rpc SendTriggerEvent(SendTriggerEventRequest) returns(google.protobuf.Empty) {}
 
-  rpc RegisterTrigger(TriggerRegistrationRequest)returns(stream TriggerResponse) {} //Register to trigger
-  rpc UnregisterTrigger(TriggerRegistrationRequest)returns(google.protobuf.Empty) {} //Unregister to trigger
+  // Subscribe to a trigger (includes all triggers, not limited to mock triggers),
+  // creates a stream that send trigger events
+  rpc RegisterTrigger(TriggerRegistrationRequest) returns(stream TriggerResponse) {}
 
-  //Executable (used for target,action,consensus)
+  // Unsubscribe from a trigger (includes all triggers, not limited to mock triggers)
+  rpc UnregisterTrigger(TriggerRegistrationRequest) returns(google.protobuf.Empty) {}//NOOP
+
+  // Establish a bidirectional streaming service. When Execute is called, it streams requests and allows streaming responses back
   rpc HookExecutables(stream ExecutableResponse) returns(stream ExecutableRequest) {}
 
+  // Subscribe to a workflow (includes all executable capabilities, not limited to mocks)
   rpc RegisterToWorkflow(RegisterToWorkflowRequest) returns (google.protobuf.Empty){}
-  rpc UnregisterFromWorkflow(UnregisterFromWorkflowRequest) returns (google.protobuf.Empty){}
-  rpc Execute(ExecutableRequest) returns (CapabilityResponse){}
 
+  // Unsubscribe from a workflow (includes all executable capabilities, not limited to mocks)
+  rpc UnregisterFromWorkflow(UnregisterFromWorkflowRequest) returns (google.protobuf.Empty){}
+
+  // Invoke the Execute method on an executable capability (includes all executable capabilities, not limited to mocks)
+  rpc Execute(ExecutableRequest) returns (CapabilityResponse){}
 }
 
 message TriggerEvent{
