@@ -58,7 +58,12 @@ func NewMockServer(impl core.CapabilitiesRegistry, lggr logger.Logger) *MockServ
 }
 
 func (s *MockServer) Close() {
-	close(s.stopCh)
+	select {
+	case <-s.stopCh:
+		// Channel is already closed
+	default:
+		close(s.stopCh)
+	}
 }
 
 func (s *MockServer) GetAllMockInfo() ([]capabilities.CapabilityInfo, error) {
@@ -256,10 +261,12 @@ func (s *MockServer) RegisterTrigger(request *pb.TriggerRegistrationRequest, ser
 	if err != nil {
 		return err
 	}
-
-	config, err := bytesToMap(request.Config)
-	if err != nil {
-		return err
+	config := &values.Map{}
+	if request.Config != nil {
+		config, err = bytesToMap(request.Config)
+		if err != nil {
+			return err
+		}
 	}
 
 	triggerResponsesChan, err := t.RegisterTrigger(server.Context(), capabilities.TriggerRegistrationRequest{
@@ -281,46 +288,48 @@ func (s *MockServer) RegisterTrigger(request *pb.TriggerRegistrationRequest, ser
 		return err
 	}
 
-	go func() {
-		for {
-			select {
-			case <-s.stopCh:
-				return
-			case <-server.Context().Done():
-				s.lggr.Info("client disconnected from trigger")
-				return
-			case triggerResponse := <-triggerResponsesChan:
-				s.lggr.Infow("got trigger response", "response", triggerResponse)
-				b, err2 := mapToBytes(triggerResponse.Event.Outputs)
-				if err2 != nil {
-					s.lggr.Error(err)
-					continue
-				}
-
-				s.lggr.Infow("sending trigger event")
-
-				errString := ""
-				if triggerResponse.Err != nil {
-					errString = triggerResponse.Err.Error()
-				}
-
-				event := &pb.TriggerResponse{
-					TriggerEvent: &pb.TriggerEvent{
-						TriggerType: triggerResponse.Event.TriggerType,
-						ID:          triggerResponse.Event.ID,
-						Outputs:     b,
-					},
-					Error: errString,
-				}
-
-				if err = server.Send(event); err != nil {
-					s.lggr.Errorw("failed to send trigger response", "err", err)
-				}
-
-				s.lggr.Infow("trigger event sent", "event", event)
+	for {
+		select {
+		case <-s.stopCh:
+			return nil
+		case <-server.Context().Done():
+			s.lggr.Info("client disconnected from trigger")
+			return nil
+		case triggerResponse, ok := <-triggerResponsesChan:
+			if !ok {
+				s.lggr.Warn("triggerResponsesChan closed, ending stream")
+				return nil
 			}
+			s.lggr.Infow("got trigger response", "response", triggerResponse)
+			b, err2 := mapToBytes(triggerResponse.Event.Outputs)
+			if err2 != nil {
+				s.lggr.Error(err2)
+				continue
+			}
+
+			s.lggr.Infow("sending trigger event")
+
+			errString := ""
+			if triggerResponse.Err != nil {
+				errString = triggerResponse.Err.Error()
+			}
+
+			event := &pb.TriggerResponse{
+				TriggerEvent: &pb.TriggerEvent{
+					TriggerType: triggerResponse.Event.TriggerType,
+					ID:          triggerResponse.Event.ID,
+					Outputs:     b,
+				},
+				Error: errString,
+			}
+
+			if err = server.Send(event); err != nil {
+				s.lggr.Errorw("failed to send trigger response", "err", err)
+			}
+
+			s.lggr.Infow("trigger event sent", "event", event)
 		}
-	}()
+	}
 
 	return nil
 }
