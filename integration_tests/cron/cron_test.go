@@ -29,8 +29,7 @@ type Payload struct {
 }
 
 func Test_CronTrigger(t *testing.T) {
-	ctx, cancel := framework.Context(t)
-	defer cancel()
+	ctx := t.Context()
 	lggr := logger.TestLogger(t)
 	lggr.SetLogLevel(zapcore.InfoLevel)
 	defer func() {

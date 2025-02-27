@@ -8,7 +8,7 @@ replace github.com/smartcontractkit/capabilities/libs/loopserver => ../libs/loop
 
 require (
 	github.com/hashicorp/go-plugin v1.6.2 // indirect
-	github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-unpublished
+	github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/chainlink-common v0.4.1-0.20241217120918-bbe318cd0760
 	github.com/smartcontractkit/libocr v0.0.0-20241007185508-adbe57025f12 // indirect
 	github.com/stretchr/testify v1.9.0 // indirect

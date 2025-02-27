@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zapcore"
 
@@ -34,8 +35,7 @@ func Test_RemoteReadCapabilityWithoutConsensus(t *testing.T) {
 }
 
 func testRemoteReadContractCapability(t *testing.T, withConsensus bool, pollingInterval string) {
-	ctx, cancel := framework.Context(t)
-	defer cancel()
+	ctx := t.Context()
 
 	lggr := logger.TestLogger(t)
 	lggr.SetLogLevel(zapcore.InfoLevel)
@@ -105,7 +105,7 @@ func testRemoteReadContractCapability(t *testing.T, withConsensus bool, pollingI
 	})
 	require.NoError(t, err)
 
-	triggerSink.SendOutput(contractReadActionParams)
+	triggerSink.SendOutput(contractReadActionParams, uuid.New().String())
 
 	readresult := <-targetSink.Sink
 	require.NotNil(t, readresult)
