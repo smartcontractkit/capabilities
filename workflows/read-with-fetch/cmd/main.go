@@ -2,11 +2,10 @@ package main
 
 import (
 	"encoding/hex"
-	"encoding/json"
 	"math/big"
+	"time"
 
 	"fmt"
-	"time"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/wasm"
 
@@ -19,20 +18,36 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk"
 )
 
-type trueUSDResponse struct {
-	AccountName string    `json:"accountName"`
-	TotalTrust  float64   `json:"totalTrust"`
-	TotalToken  float64   `json:"totalToken"`
-	Ripcord     bool      `json:"ripcord"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+// helper internal type that wraps runtime emitter
+type WorkflowEventEmitter struct {
+	runtime sdk.Runtime
+	labels  []string
+}
+
+func NewWorkflowEventEmitter(runtime sdk.Runtime) *WorkflowEventEmitter {
+	return &WorkflowEventEmitter{
+		runtime: runtime,
+	}
+}
+
+func (e *WorkflowEventEmitter) With(kvs ...string) *WorkflowEventEmitter {
+	e.labels = append(e.labels, kvs...)
+	return e
+}
+
+func (e *WorkflowEventEmitter) Emit(message string) {
+	err := e.runtime.Emitter().With(e.labels...).Emit(message)
+	if err != nil {
+		// using logger instance is not encouraged, and this might be deprecated in the future
+		// these logs will not be visible on Beholder, but will end up in node system logs
+		e.runtime.Logger().Errorf("failed to emit message: %s", message)
+	}
 }
 
 type computeOutput struct {
-	TotalTrust uint64
-	TotalToken uint64
-	Ripcord    bool
-	FeedID     [32]byte
-	Timestamp  int64
+	Price     *big.Int
+	FeedID    [32]byte
+	Timestamp int64
 }
 
 type computeConfig struct {
@@ -54,17 +69,11 @@ func convertFeedIDtoBytes(feedIDStr string) ([32]byte, error) {
 	return [32]byte(b), nil
 }
 
-func convertBigIntToFloat64(bi *big.Int) float64 {
-	bigFloat := new(big.Float).SetInt(bi)
-	f, _ := bigFloat.Float64()
-	return f
-}
-
 func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 	workflow := sdk.NewWorkflowSpecFactory()
 
 	cron := croncap.Config{
-		Schedule: "*/30 * * * * *",
+		Schedule: "*/60 * * * * *", // Every 60 seconds
 	}.New(workflow)
 
 	addresses := []string{
@@ -79,13 +88,13 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 		ContractReaderConfig: `{"contracts":{"BalanceReader":{"contractABI":"[{\"inputs\":[{\"internalType\":\"address[]\",\"name\":\"addresses\",\"type\":\"address[]\"}],\"name\":\"getNativeBalances\",\"outputs\":[{\"internalType\":\"uint256[]\",\"name\":\"\",\"type\":\"uint256[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"}]","contractPollingFilter":{"genericEventNames":null,"pollingFilter":{"topic2":null,"topic3":null,"topic4":null,"retention":"0s","maxLogsKept":0,"logsPerBlock":0}},"configs":{"getNativeBalances":"{  \"chainSpecificName\": \"getNativeBalances\"}"}}}}`,
 		ContractAddress:      balanceReaderContract,
 		ContractName:         "BalanceReader",
-		ReadIdentifier:       fmt.Sprintf("%s-%s-%s", balanceReaderContract, "BalanceReader", "getNativeBalances"),
+		ReadIdentifier:       fmt.Sprintf("test-%s-%s-%s", balanceReaderContract, "BalanceReader", "getNativeBalances"),
 	}.New(
 		workflow,
 		"read-contract-evm-11155111@1.0.0",
-		"read",
+		"readEthSepolia",
 		readcontractcap.ActionInput{
-			ConfidenceLevel: sdk.ConstantDefinition("finalized"),
+			ConfidenceLevel: sdk.ConstantDefinition("unconfirmed"),
 			Params: sdk.ConstantDefinition(readcontractcap.InputParams{
 				"addresses": addresses,
 			}),
@@ -102,25 +111,29 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 		"compute",
 		&sdk.ComputeConfig[computeConfig]{Config: compConf},
 		sdk.Compute1Inputs[readcontractcap.Output]{Arg0: chainRead},
-		func(runtime sdk.Runtime, config computeConfig, outputs readcontractcap.Output) (computeOutput, error) {
+		func(runtime sdk.Runtime, config computeConfig, output readcontractcap.Output) (computeOutput, error) {
+			// example of emitting, emit the event to the Beholder, only available in the compute capability
+			NewWorkflowEventEmitter(runtime).
+				With("feedID", config.FeedID).
+				Emit(fmt.Sprintf("CONVERTING FEED_ID: TEST -> %s", config.FeedID))
+
 			feedID, err := convertFeedIDtoBytes(config.FeedID)
 			if err != nil {
 				return computeOutput{}, fmt.Errorf("cannot convert feedID to bytes")
 			}
 
+			// system level log
+			runtime.Logger().Info("STARTING READING CONTRACT BALANCES: TEST_ALEX")
+
 			// READ THE BALANCES
-			balances, ok := outputs.LatestValue.([]any)
+			balances, ok := output.LatestValue.([]any)
 			if !ok {
-				return computeOutput{}, fmt.Errorf("cannot convert latest value to []*big.Int, got type %T", outputs.LatestValue)
+				return computeOutput{}, fmt.Errorf("cannot convert latest value to []*big.Int, got type %T", output.LatestValue)
 			}
 
-			err = runtime.Emitter().
-				With("FeedID", config.FeedID).
-				With("Balances", fmt.Sprintf("%v", balances)).
-				Emit("Received response with balances from ETH")
-			if err != nil {
-				runtime.Logger().Error("Failed to emit event for received balances")
-			}
+			NewWorkflowEventEmitter(runtime).
+				With("feedID", config.FeedID).
+				Emit(fmt.Sprintf("BALANCES FROM ETH READ: TEST -> %s", config.FeedID))
 
 			totalBalance := &big.Int{}
 			for _, bal := range balances {
@@ -132,40 +145,10 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 				totalBalance = totalBalance.Add(totalBalance, bi)
 			}
 
-			// FETCH THE TRUE USD API
-			fresp, err := runtime.Fetch(sdk.FetchRequest{
-				URL:       "https://api.real-time-reserves.verinumus.io/v1/chainlink/proof-of-reserves/TrueUSD",
-				Method:    "GET",
-				TimeoutMs: 5000,
-			})
-			if err != nil {
-				return computeOutput{}, fmt.Errorf("not able to fetch API response: %w", err)
-			}
-
-			var resp trueUSDResponse
-			err = json.Unmarshal(fresp.Body, &resp)
-			if err != nil {
-				return computeOutput{}, fmt.Errorf("not able to unmarshal response payload %s, err: %w", fresp.Body, err)
-			}
-
-			if resp.Ripcord {
-				err := runtime.Emitter().
-					With("FeedID", config.FeedID).
-					Emit(fmt.Sprintf("ripcord flag set for feed ID %s", config.FeedID))
-				if err != nil {
-					runtime.Logger().Error("Failed to emit event for fetched HTTP response")
-				}
-			}
-
-			// COMPUTE THE TOTAL (by adding the balances to the total value)
-			total := resp.TotalTrust + convertBigIntToFloat64(totalBalance)
-
 			return computeOutput{
-				TotalTrust: uint64(total * 100),           // 2 decimal places
-				TotalToken: uint64(resp.TotalToken * 100), // 2 decimal places
-				Ripcord:    resp.Ripcord,                  // 0 decimal places
-				FeedID:     feedID,
-				Timestamp:  resp.UpdatedAt.Unix(),
+				Price:     totalBalance,
+				FeedID:    feedID,
+				Timestamp: time.Now().Unix(),
 			}, nil
 		},
 	)
@@ -179,7 +162,7 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 		EncoderConfig: map[string]any{
 			"abi": "(bytes32 FeedID, uint32 Timestamp, bytes Bundle)[] Reports",
 			"subabi": map[string]string{
-				"Reports.Bundle": "uint256 TotalTrust, uint256 TotalToken, bool Ripcord",
+				"Reports.Bundle": "uint256 Price",
 			},
 		},
 		ReportID: "0001",
@@ -195,30 +178,16 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 					InputKey:        "Timestamp",
 					OutputKey:       "Timestamp",
 					Method:          "median",
-					DeviationString: "300", // 5 minutes to write on-chain
+					DeviationString: "300", // 5 minutes
 					DeviationType:   "absolute",
 				},
 				{
-					InputKey:        "TotalTrust",
-					OutputKey:       "TotalTrust",
+					InputKey:        "Price",
+					OutputKey:       "Price",
 					Method:          "median",
 					DeviationString: "1",
 					DeviationType:   "percent",
 					SubMapField:     true,
-				},
-				{
-					InputKey:        "TotalToken",
-					OutputKey:       "TotalToken",
-					Method:          "median",
-					DeviationString: "1",
-					DeviationType:   "percent",
-					SubMapField:     true,
-				},
-				{
-					InputKey:    "Ripcord",
-					OutputKey:   "Ripcord",
-					Method:      "mode",
-					SubMapField: true,
 				},
 			},
 			ReportFormat: aggregators.REPORT_FORMAT_ARRAY,
