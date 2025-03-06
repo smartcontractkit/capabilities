@@ -19,7 +19,7 @@ jobs:
       # There's no need to setup Node as it is pre-installed:
       # https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2204-Readme.md
       - name: Cache NX
-        uses: actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf # v4.2.2
+        uses: actions/cache@v4
         with:
           path: |
             .nx
