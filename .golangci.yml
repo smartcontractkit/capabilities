@@ -31,8 +31,6 @@ linters-settings:
       # - G304
       # - G404
   govet:
-    # report about shadowed variables
-    shadow: true
     settings:
       printf:
         # Additionally check chainlink custom loggers

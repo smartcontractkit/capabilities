@@ -19,7 +19,7 @@ jobs:
       # There's no need to setup Node as it is pre-installed:
       # https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2204-Readme.md
       - name: Cache NX
-        uses: actions/cache@2cdf405574d6ef1f33a1d12acccd3ae82f47b3f2 # v4.1.0
+        uses: actions/cache@v4
         with:
           path: |
             .nx
@@ -214,9 +214,9 @@ jobs:
           task: "lint"
 
       - name: Golangci Lint (${{ matrix.projects }})
-        uses: golangci/golangci-lint-action@971e284b6050e8a5849b72094c50ab08da042db8 # v6.1.1
+        uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.61.0
+          version: v1.64.2
           working-directory: ${{fromJson(needs.affected.outputs.nx)[matrix.projects].root}}
           args: --timeout=15m --out-format colored-line-number,checkstyle:golangci-lint-report.xml
 
