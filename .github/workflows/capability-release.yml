@@ -1,0 +1,101 @@
+name: Capability Release
+description: |
+  This workflow builds and pushes the capability Docker image to ECR.
+  We publish to ECR in order to version the image and distribute it to
+  other images.
+
+on:
+  push:
+    tags:
+      # Changesets compatible monorepo git tags.
+      - "cron@*.*.*"
+      - "kvstore@*.*.*"
+      - "readcontract@*.*.*"
+      - "streams@*.*.*"
+      - "workflowevent@*.*.*"
+      - "workflows@*.*.*-*"
+
+concurrency:
+  group: capability-release-${{ github.ref_name }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  init:
+    name: init
+    permissions:
+      contents: read
+    runs-on: ubuntu-24.04
+    outputs:
+      is-release: ${{ steps.release-tag-check.outputs.is-release }}
+      is-pre-release: ${{ steps.release-tag-check.outputs.is-pre-release }}
+      release-version: ${{ steps.release-tag-check.outputs.release-version }}
+      pre-release-version: ${{ steps.release-tag-check.outputs.pre-release-version }}
+      tag-version: ${{ steps.get-version.outputs.version }}
+      capability-name: ${{ steps.detect-capability.outputs.capability-name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Detect Capability From Tag
+        id: detect-capability
+        run: |
+          if [[ "${GITHUB_REF_NAME}" =~ ^[a-zA-Z0-9]+@[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.\-_]+)?$ ]]; then
+            # We expect tag names to look like: cron@0.1.0, kvstore@1.2.3-beta.0, <capability-name>@<valid-semver-tag>, ...
+            # Extract the capability name from the tag.
+            capability_name="${GITHUB_REF_NAME%%@*}"
+            echo "capability-name=${capability_name}" | tee -a "${GITHUB_OUTPUT}"
+          else
+            echo "::error::Invalid tag name: ${GITHUB_REF_NAME}. Expected format: <capability-name>@<valid-semver-tag>."
+            exit 1
+          fi
+      - name: Check release tag
+        id: release-tag-check
+        uses: smartcontractkit/.github/actions/release-tag-check@c5c4a8186da4218cff6cac8184e47dd3dec69ba3 # release-tag-check@0.1.0
+        env:
+          # Match semver git tags with a "<capability-name>@" prefix.
+          RELEASE_REGEX: ${{ format('^{0}@[0-9]+\.[0-9]+\.[0-9]+$', steps.detect-capability.outputs.integcapabilityration-name) }}
+          PRE_RELEASE_REGEX: ${{ format('^{0}@[0-9]+\.[0-9]+\.[0-9]+-(.+)$', steps.detect-capability.outputs.capability-name) }}
+          # Get the version by stripping the "<capability-name>@" prefix.
+          VERSION_PREFIX: ${{ format('{0}@', steps.detect-capability.outputs.capability-name) }}
+      - name: Get Version
+        id: get-version
+        shell: bash
+        env:
+          IS_RELEASE: ${{ steps.release-tag-check.outputs.is-release }}
+          IS_PRE_RELEASE: ${{ steps.release-tag-check.outputs.is-pre-release }}
+          RELEASE_VERSION: ${{ steps.release-tag-check.outputs.release-version }}
+          PRE_RELEASE_VERSION: ${{ steps.release-tag-check.outputs.pre-release-version }}
+        run: |
+          if [[ "${IS_RELEASE:-}" ]]; then
+            echo "version=${RELEASE_VERSION}" | tee -a "${GITHUB_OUTPUT}"
+          elif [[ "${IS_PRE_RELEASE:-}" ]]; then
+            echo "version=${PRE_RELEASE_VERSION}" | tee -a "${GITHUB_OUTPUT}"
+          fi
+
+  docker-build-publish:
+    needs: init
+    permissions:
+      contents: read
+      id-token: write
+    uses: smartcontractkit/.github/.github/workflows/reusable-docker-build-publish.yml@cdd6cd208e7d778ce97b57aa459d8c2242aa8e11 # 2025-03-10
+    with:
+      # TODO: create ECR's
+      aws-ecr-name: chainlink-capabilities-${{ needs.init.outputs.capability-name }}
+      # TODO: create Dockerfile (make it general like integrations?)
+      dockerfile: ./Dockerfile
+      docker-build-context: .
+      docker-image-type: tag
+      docker-manifest-sign: true
+      git-sha: ${{ github.sha }}
+      github-event-name: ${{ github.event_name }}
+      github-ref-name: ${{ format('v{0}', needs.init.outputs.tag-version) }}
+      github-workflow-repository: ${{ github.repository }}
+    secrets:
+      # TODO: create and add secrets
+      # TODO: create IAM role for publishing to ECR.
+      AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID_PROD }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN_PROD_PUBLISH_ECR }}
