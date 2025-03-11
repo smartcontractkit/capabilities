@@ -13,7 +13,6 @@ on:
       - "readcontract@*.*.*"
       - "streams@*.*.*"
       - "workflowevent@*.*.*"
-      - "workflows@*.*.*-*"
 
 concurrency:
   group: capability-release-${{ github.ref_name }}
