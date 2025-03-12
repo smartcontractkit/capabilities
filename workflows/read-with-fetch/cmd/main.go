@@ -133,17 +133,18 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 			// example of emitting, emit the event to the Beholder, only available in the compute capability
 			NewWorkflowEventEmitter(runtime).
 				With("feedID", config.FeedID).
-				Emit(fmt.Sprintf("CONVERTING FEED_ID: TEST -> %s", config.FeedID))
+				Emit(fmt.Sprintf("Converting feedID, %s", config.FeedID))
+
+			// system level log
+			runtime.Logger().Info("Converting feedID:", config.FeedID)
 
 			feedID, err := convertFeedIDtoBytes(config.FeedID)
 			if err != nil {
 				return computeOutput{}, fmt.Errorf("cannot convert feedID to bytes")
 			}
 
-			// system level log
-			runtime.Logger().Info("STARTING READING CONTRACT BALANCES: TEST_ALEX")
-
 			// READ THE BALANCES
+			runtime.Logger().Info("Start reading balances")
 			balances, ok := output.LatestValue.([]any)
 			if !ok {
 				return computeOutput{}, fmt.Errorf("cannot convert latest value to []*big.Int, got type %T", output.LatestValue)
@@ -151,7 +152,10 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 
 			NewWorkflowEventEmitter(runtime).
 				With("feedID", config.FeedID).
-				Emit(fmt.Sprintf("BALANCES FROM ETH READ: TEST -> %s", config.FeedID))
+				Emit(fmt.Sprintf("Balances read, %s", config.FeedID))
+
+			// system level log
+			runtime.Logger().Info("Balances read,", config.FeedID)
 
 			totalBalance := &big.Int{}
 			for _, bal := range balances {
@@ -163,9 +167,11 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 				totalBalance = totalBalance.Add(totalBalance, bi)
 			}
 
-			runtime.Logger().Info("STARTING FETCHING API: TEST_ALEX")
+			// system level log
+			runtime.Logger().Info("Read balances: ", totalBalance)
 
 			// FETCH THE TRUE USD API
+			runtime.Logger().Info("Fetching API")
 			fresp, err := runtime.Fetch(sdk.FetchRequest{
 				URL:       "https://api.real-time-reserves.verinumus.io/v1/chainlink/proof-of-reserves/TrueUSD",
 				Method:    "GET",
@@ -183,19 +189,25 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 
 			if resp.Ripcord {
 				err := runtime.Emitter().
-					With("FeedID", config.FeedID).
+					With("feedID", config.FeedID).
 					Emit(fmt.Sprintf("ripcord flag set for feed ID %s", config.FeedID))
 				if err != nil {
 					runtime.Logger().Error("Failed to emit event for fetched HTTP response")
 				}
 			}
 
+			// system level log
+			runtime.Logger().Info("Fetched API response: ", resp.TotalTrust)
+
 			// COMPUTE THE TOTAL (by adding the balances to the total value)
 			total := resp.TotalTrust + convertBigIntToFloat64(totalBalance)
 
+			// system level log
+			runtime.Logger().Info("Total computed: ", total)
+
 			NewWorkflowEventEmitter(runtime).
 				With("feedID", config.FeedID).
-				Emit(fmt.Sprintf("BALANCES FROM ETH READ: TEST -> %s", config.FeedID))
+				Emit(fmt.Sprintf("Total computed for feed ID %s", config.FeedID))
 
 			return computeOutput{
 				TotalTrust: uint64(total * 100),           // 2 decimal places
