@@ -2,11 +2,13 @@ package main
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"math/big"
-	"time"
 
 	"fmt"
+	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/wasm"
 
 	readcontractcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/actions/readcontract"
@@ -44,10 +46,20 @@ func (e *WorkflowEventEmitter) Emit(message string) {
 	}
 }
 
+type trueUSDResponse struct {
+	AccountName string    `json:"accountName"`
+	TotalTrust  float64   `json:"totalTrust"`
+	TotalToken  float64   `json:"totalToken"`
+	Ripcord     bool      `json:"ripcord"`
+	UpdatedAt   time.Time `json:"updatedAt"`
+}
+
 type computeOutput struct {
-	Price     *big.Int
-	FeedID    [32]byte
-	Timestamp int64
+	TotalTrust uint64
+	TotalToken uint64
+	Ripcord    bool
+	FeedID     [32]byte
+	Timestamp  int64
 }
 
 type computeConfig struct {
@@ -69,6 +81,12 @@ func convertFeedIDtoBytes(feedIDStr string) ([32]byte, error) {
 	return [32]byte(b), nil
 }
 
+func convertBigIntToFloat64(bi *big.Int) float64 {
+	bigFloat := new(big.Float).SetInt(bi)
+	f, _ := bigFloat.Float64()
+	return f
+}
+
 func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 	workflow := sdk.NewWorkflowSpecFactory()
 
@@ -76,9 +94,9 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 		Schedule: "*/60 * * * * *", // Every 60 seconds
 	}.New(workflow)
 
-	addresses := []string{
-		"0x5c25312C82791e6cB76Dc9eFaBE2F5fa695D966b", // Keystone Dev Wallet #1
-		"0xAc85bE3811e06712f53BC11844Ed8a37d3e9C3Ab", // Keystone Dev Wallet #2
+	addresses := []common.Address{
+		common.HexToAddress("0x5c25312C82791e6cB76Dc9eFaBE2F5fa695D966b"), // Keystone Dev Wallet #1
+		common.HexToAddress("0xAc85bE3811e06712f53BC11844Ed8a37d3e9C3Ab"), // Keystone Dev Wallet #2
 	}
 
 	// https://sepolia.etherscan.io/address/0x93c4bB995e7B5a726c8ef1bED9EA92e300F18eb4
@@ -88,11 +106,11 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 		ContractReaderConfig: `{"contracts":{"BalanceReader":{"contractABI":"[{\"inputs\":[{\"internalType\":\"address[]\",\"name\":\"addresses\",\"type\":\"address[]\"}],\"name\":\"getNativeBalances\",\"outputs\":[{\"internalType\":\"uint256[]\",\"name\":\"\",\"type\":\"uint256[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"}]","contractPollingFilter":{"genericEventNames":null,"pollingFilter":{"topic2":null,"topic3":null,"topic4":null,"retention":"0s","maxLogsKept":0,"logsPerBlock":0}},"configs":{"getNativeBalances":"{  \"chainSpecificName\": \"getNativeBalances\"}"}}}}`,
 		ContractAddress:      balanceReaderContract,
 		ContractName:         "BalanceReader",
-		ReadIdentifier:       fmt.Sprintf("test-%s-%s-%s", balanceReaderContract, "BalanceReader", "getNativeBalances"),
+		ReadIdentifier:       fmt.Sprintf("%s-%s-%s", balanceReaderContract, "BalanceReader", "getNativeBalances"),
 	}.New(
 		workflow,
 		"read-contract-evm-11155111@1.0.0",
-		"readEthSepolia",
+		"readETHTest",
 		readcontractcap.ActionInput{
 			ConfidenceLevel: sdk.ConstantDefinition("unconfirmed"),
 			Params: sdk.ConstantDefinition(readcontractcap.InputParams{
@@ -145,10 +163,46 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 				totalBalance = totalBalance.Add(totalBalance, bi)
 			}
 
+			runtime.Logger().Info("STARTING FETCHING API: TEST_ALEX")
+
+			// FETCH THE TRUE USD API
+			fresp, err := runtime.Fetch(sdk.FetchRequest{
+				URL:       "https://api.real-time-reserves.verinumus.io/v1/chainlink/proof-of-reserves/TrueUSD",
+				Method:    "GET",
+				TimeoutMs: 5000,
+			})
+			if err != nil {
+				return computeOutput{}, fmt.Errorf("not able to fetch API response: %w", err)
+			}
+
+			var resp trueUSDResponse
+			err = json.Unmarshal(fresp.Body, &resp)
+			if err != nil {
+				return computeOutput{}, fmt.Errorf("not able to unmarshal response payload %s, err: %w", fresp.Body, err)
+			}
+
+			if resp.Ripcord {
+				err := runtime.Emitter().
+					With("FeedID", config.FeedID).
+					Emit(fmt.Sprintf("ripcord flag set for feed ID %s", config.FeedID))
+				if err != nil {
+					runtime.Logger().Error("Failed to emit event for fetched HTTP response")
+				}
+			}
+
+			// COMPUTE THE TOTAL (by adding the balances to the total value)
+			total := resp.TotalTrust + convertBigIntToFloat64(totalBalance)
+
+			NewWorkflowEventEmitter(runtime).
+				With("feedID", config.FeedID).
+				Emit(fmt.Sprintf("BALANCES FROM ETH READ: TEST -> %s", config.FeedID))
+
 			return computeOutput{
-				Price:     totalBalance,
-				FeedID:    feedID,
-				Timestamp: time.Now().Unix(),
+				TotalTrust: uint64(total * 100),           // 2 decimal places
+				TotalToken: uint64(resp.TotalToken * 100), // 2 decimal places
+				Ripcord:    resp.Ripcord,                  // 0 decimal places
+				FeedID:     feedID,
+				Timestamp:  resp.UpdatedAt.Unix(),
 			}, nil
 		},
 	)
@@ -162,7 +216,7 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 		EncoderConfig: map[string]any{
 			"abi": "(bytes32 FeedID, uint32 Timestamp, bytes Bundle)[] Reports",
 			"subabi": map[string]string{
-				"Reports.Bundle": "uint256 Price",
+				"Reports.Bundle": "uint256 TotalTrust, uint256 TotalToken, bool Ripcord",
 			},
 		},
 		ReportID: "0001",
@@ -178,16 +232,30 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 					InputKey:        "Timestamp",
 					OutputKey:       "Timestamp",
 					Method:          "median",
-					DeviationString: "300", // 5 minutes
+					DeviationString: "300", // 5 minutes to write on-chain
 					DeviationType:   "absolute",
 				},
 				{
-					InputKey:        "Price",
-					OutputKey:       "Price",
+					InputKey:        "TotalTrust",
+					OutputKey:       "TotalTrust",
 					Method:          "median",
 					DeviationString: "1",
 					DeviationType:   "percent",
 					SubMapField:     true,
+				},
+				{
+					InputKey:        "TotalToken",
+					OutputKey:       "TotalToken",
+					Method:          "median",
+					DeviationString: "1",
+					DeviationType:   "percent",
+					SubMapField:     true,
+				},
+				{
+					InputKey:    "Ripcord",
+					OutputKey:   "Ripcord",
+					Method:      "mode",
+					SubMapField: true,
 				},
 			},
 			ReportFormat: aggregators.REPORT_FORMAT_ARRAY,
