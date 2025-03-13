@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common" //nolint:depguard
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/wasm"
 
 	readcontractcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/actions/readcontract"
