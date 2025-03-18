@@ -3,7 +3,6 @@
 
 package contract
 
-
 import (
 	"errors"
 	"math/big"
@@ -32,8 +31,8 @@ var (
 
 // ContractMetaData contains all meta data concerning the Contract contract.
 var ContractMetaData = &bind.MetaData{
-	ABI: "[{\"inputs\":[],\"name\":\"GetValue\",\"outputs\":[{\"internalType\":\"int256[]\",\"name\":\"\",\"type\":\"int256[]\"}],\"stateMutability\":\"pure\",\"type\":\"function\"}]",
-	Bin: "0x608060405234801561001057600080fd5b50610289806100206000396000f3fe608060405234801561001057600080fd5b506004361061002b5760003560e01c8063725f4fa714610030575b600080fd5b61003861004e565b6040516100459190610190565b60405180910390f35b60606000600367ffffffffffffffff81111561006d5761006c610224565b5b60405190808252806020026020018201604052801561009b5781602001602082028036833780820191505090505b5090506015816000815181106100b4576100b36101f5565b5b602002602001018181525050602a816001815181106100d6576100d56101f5565b5b602002602001018181525050603f816002815181106100f8576100f76101f5565b5b6020026020010181815250508091505090565b60006101178383610181565b60208301905092915050565b600061012e826101c2565b61013881856101da565b9350610143836101b2565b8060005b8381101561017457815161015b888261010b565b9750610166836101cd565b925050600181019050610147565b5085935050505092915050565b61018a816101eb565b82525050565b600060208201905081810360008301526101aa8184610123565b905092915050565b6000819050602082019050919050565b600081519050919050565b6000602082019050919050565b600082825260208201905092915050565b6000819050919050565b7f4e487b7100000000000000000000000000000000000000000000000000000000600052603260045260246000fd5b7f4e487b7100000000000000000000000000000000000000000000000000000000600052604160045260246000fdfea2646970667358221220a64f64410e2e7ef6ae04d92fc0ce65d3bd09f82db916a0a9b79df81a2a3b2dd164736f6c63430008060033",
+	ABI: "[{\"inputs\":[],\"name\":\"GetValue\",\"outputs\":[{\"internalType\":\"int256\",\"name\":\"\",\"type\":\"int256\"}],\"stateMutability\":\"pure\",\"type\":\"function\"}]",
+	Bin: "0x608060405234801561000f575f80fd5b5060af8061001c5f395ff3fe6080604052348015600e575f80fd5b50600436106026575f3560e01c8063725f4fa714602a575b5f80fd5b60306044565b604051603b91906062565b60405180910390f35b5f6015905090565b5f819050919050565b605c81604c565b82525050565b5f60208201905060735f8301846055565b9291505056fea264697066735822122080793befa15e19906db274a8436d76c46c823518270aaad800a494e19e02ce9f64736f6c63430008180033",
 }
 
 // ContractABI is the input ABI used to generate the binding from.
@@ -205,16 +204,16 @@ func (_Contract *ContractTransactorRaw) Transact(opts *bind.TransactOpts, method
 
 // GetValue is a free data retrieval call binding the contract method 0x725f4fa7.
 //
-// Solidity: function GetValue() pure returns(int256[])
-func (_Contract *ContractCaller) GetValue(opts *bind.CallOpts) ([]*big.Int, error) {
+// Solidity: function GetValue() pure returns(int256)
+func (_Contract *ContractCaller) GetValue(opts *bind.CallOpts) (*big.Int, error) {
 	var out []interface{}
 	err := _Contract.contract.Call(opts, &out, "GetValue")
 
 	if err != nil {
-		return *new([]*big.Int), err
+		return *new(*big.Int), err
 	}
 
-	out0 := *abi.ConvertType(out[0], new([]*big.Int)).(*[]*big.Int)
+	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
 
 	return out0, err
 
@@ -222,14 +221,14 @@ func (_Contract *ContractCaller) GetValue(opts *bind.CallOpts) ([]*big.Int, erro
 
 // GetValue is a free data retrieval call binding the contract method 0x725f4fa7.
 //
-// Solidity: function GetValue() pure returns(int256[])
-func (_Contract *ContractSession) GetValue() ([]*big.Int, error) {
+// Solidity: function GetValue() pure returns(int256)
+func (_Contract *ContractSession) GetValue() (*big.Int, error) {
 	return _Contract.Contract.GetValue(&_Contract.CallOpts)
 }
 
 // GetValue is a free data retrieval call binding the contract method 0x725f4fa7.
 //
-// Solidity: function GetValue() pure returns(int256[])
-func (_Contract *ContractCallerSession) GetValue() ([]*big.Int, error) {
+// Solidity: function GetValue() pure returns(int256)
+func (_Contract *ContractCallerSession) GetValue() (*big.Int, error) {
 	return _Contract.Contract.GetValue(&_Contract.CallOpts)
 }
