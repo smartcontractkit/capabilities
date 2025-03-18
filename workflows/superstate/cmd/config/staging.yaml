@@ -1,0 +1,6 @@
+feed_id: "0x6561615f746573740000000000000000"
+feed_description: "Superstate Feed With Read-Fetch-Write, params (config file) and secrets"
+cron_trigger_interval: 60
+endpoint_timeout_milliseconds: 5000
+df_cache: "0xb79288ce6a58b7af2230a77f296f6a13b78a0292"
+balance_reader: "0x93c4bB995e7B5a726c8ef1bED9EA92e300F18eb4"
