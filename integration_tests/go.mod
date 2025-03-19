@@ -27,7 +27,7 @@ require (
 	github.com/andybalholm/brotli v1.1.1
 	github.com/ethereum/go-ethereum v1.14.11
 	github.com/pelletier/go-toml v1.9.5
-//	github.com/smartcontractkit/capabilities/loadtestwritetarget v0.0.0-00010101000000-000000000000
+	github.com/smartcontractkit/capabilities/loadtestwritetarget v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/chainlink-common v0.4.2-0.20250225100621-f0e1dd7b7942
 	github.com/smartcontractkit/chainlink/v2 v2.19.0-ccip1.5.16-alpha.0.0.20250131142022-212ec7e02c03
 	github.com/stretchr/testify v1.10.0
