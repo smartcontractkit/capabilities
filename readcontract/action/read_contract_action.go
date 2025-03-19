@@ -148,7 +148,7 @@ func (r *ReadContractAction) Execute(ctx context.Context, request capabilities.C
 		return capabilities.CapabilityResponse{}, fmt.Errorf("invalid confidence level: %w", err)
 	}
 
-	reader, err := r.getContractReader(ctx, config.ContractReaderConfig, config.ReadIdentifier)
+	reader, err := r.getContractReader(ctx, config.ContractReaderConfig, config.ReadIdentifier, request.Metadata.WorkflowID)
 	if err != nil {
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to get contract reader: %w", err)
 	}
@@ -174,11 +174,12 @@ func (r *ReadContractAction) Execute(ctx context.Context, request capabilities.C
 	return capabilities.CapabilityResponse{Value: resultValue}, nil
 }
 
-func (r *ReadContractAction) getContractReader(ctx context.Context, contractReaderConfig string, readIdentifier string) (CapabilityContractReader, error) {
+func (r *ReadContractAction) getContractReader(ctx context.Context, contractReaderConfig string, readIdentifier string,
+	workflowID string) (CapabilityContractReader, error) {
 	r.mux.Lock()
 	defer r.mux.Unlock()
 
-	contractReaderConfigID := fmt.Sprintf("%x", sha256.Sum256([]byte(contractReaderConfig)))
+	contractReaderConfigID := fmt.Sprintf("%x", sha256.Sum256([]byte(contractReaderConfig+readIdentifier+workflowID)))
 	if reader, ok := r.contractReaders.Get(contractReaderConfigID); ok {
 		return reader, nil
 	}
