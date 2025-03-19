@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"strconv"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -28,7 +29,7 @@ const (
 	DataSourceEndpoint = "DATA_SOURCE_ENDPOINT_URL"
 )
 
-// inject params from `./config/<config>.yaml`
+// inject params from `./config/config.yaml`
 // using cre cli compile with config file
 type workflowConfig struct {
 	FeedID                      string `yaml:"feed_id" validate:"required,hexadecimal,len=34"` // data ID is bytes16 type (in hex, 0x + 32 chars)
@@ -65,26 +66,51 @@ func (e *WorkflowEventEmitter) Emit(message string) {
 	}
 }
 
-type trueUSDResponse struct {
-	AccountName string    `json:"accountName"`
-	TotalTrust  float64   `json:"totalTrust"`
-	TotalToken  float64   `json:"totalToken"`
-	Ripcord     bool      `json:"ripcord"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+type FundData struct {
+	FundID                int    `json:"fund_id"`
+	NetAssetValueDate     string `json:"net_asset_value_date"`
+	NetAssetValue         string `json:"net_asset_value"`
+	AssetsUnderManagement string `json:"assets_under_management"`
+	OutstandingShares     string `json:"outstanding_shares"`
+	NetIncomeExpenses     string `json:"net_income_expenses"`
 }
 
 type computeOutput struct {
-	TotalTrust uint64
-	TotalToken uint64
-	Ripcord    bool
-	FeedID     [32]byte
-	Timestamp  int64
+	NetAssetValue         uint64
+	AssetsUnderManagement uint64
+	OutstandingShares     uint64
+	NetIncomeExpenses     uint64
+	FeedID                [32]byte
+	Timestamp             int64
 }
 
 type computeConfig struct {
 	FeedID                      string
 	DataSourceEndpoint          sdk.SecretValue
 	EndpointTimeoutMilliseconds uint32
+}
+
+func parseFloat(value string) float64 {
+	f, _ := strconv.ParseFloat(value, 64) // handle errors as needed
+	return f
+}
+
+// GetScheduledTimestampUnix extracts the scheduled execution time as a Unix timestamp (int64) from a cron capability.
+func GetScheduledTimestampUnix(cronPayload croncap.Payload) (int64, error) {
+	// Get the scheduled time as a string
+	scheduledTimeStr := cronPayload.ScheduledExecutionTime
+
+	// Adjust the layout based on the format of the scheduled time string
+	layout := time.RFC3339 // Example: "2006-01-02T15:04:05Z07:00"
+	scheduledTime, err := time.Parse(layout, scheduledTimeStr)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse scheduled time: %v", err)
+	}
+
+	// Convert the time.Time object to a Unix timestamp (int64)
+	unixTimestamp := scheduledTime.Unix()
+
+	return unixTimestamp, nil
 }
 
 func convertFeedIDtoBytes(feedIDStr string) ([32]byte, error) {
@@ -102,9 +128,11 @@ func convertFeedIDtoBytes(feedIDStr string) ([32]byte, error) {
 	return [32]byte(b), nil
 }
 
-func convertBigIntToFloat64(bi *big.Int) float64 {
+// convert denomination (from wei to eth)
+func convertBigIntToEthFloat64(bi *big.Int) float64 {
 	bigFloat := new(big.Float).SetInt(bi)
 	f, _ := bigFloat.Float64()
+	f = f / 1e18 // 18 decimal places (9668507033961693184 wei -> 9.668507033961693184 eth)
 	return f
 }
 
@@ -128,8 +156,8 @@ func BuildWorkflow(runner *wasm.Runner) *sdk.WorkflowSpecFactory {
 
 	// READ THE BALANCES
 	addresses := []common.Address{
-		common.HexToAddress("0x5c25312C82791e6cB76Dc9eFaBE2F5fa695D966b"), // Keystone Dev Wallet #1
-		common.HexToAddress("0xAc85bE3811e06712f53BC11844Ed8a37d3e9C3Ab"), // Keystone Dev Wallet #2
+		common.HexToAddress("0x5c25312C82791e6cB76Dc9eFaBE2F5fa695D966b"), // Test Wallet #1
+		common.HexToAddress("0xAc85bE3811e06712f53BC11844Ed8a37d3e9C3Ab"), // Test Wallet #2
 	}
 
 	chainRead := readcontractcap.Config{
@@ -140,7 +168,7 @@ func BuildWorkflow(runner *wasm.Runner) *sdk.WorkflowSpecFactory {
 	}.New(
 		workflow,
 		"read-contract-evm-11155111@1.0.0",
-		"readETHTest",
+		"readETHSupSec", // superstate-secrets
 		readcontractcap.ActionInput{
 			ConfidenceLevel: sdk.ConstantDefinition("unconfirmed"),
 			Params: sdk.ConstantDefinition(readcontractcap.InputParams{
@@ -150,33 +178,42 @@ func BuildWorkflow(runner *wasm.Runner) *sdk.WorkflowSpecFactory {
 		},
 	)
 
+	// COMPUTE
 	compConf := computeConfig{
 		FeedID:                      workflowConfig.FeedID, // any random bytes16 string to track the feed
 		DataSourceEndpoint:          sdk.Secret(DataSourceEndpoint),
 		EndpointTimeoutMilliseconds: workflowConfig.EndpointTimeoutMilliseconds,
 	}
 
-	compute := sdk.Compute1WithConfig(
+	compute := sdk.Compute2WithConfig(
 		workflow,
 		"compute",
 		&sdk.ComputeConfig[computeConfig]{Config: compConf},
-		sdk.Compute1Inputs[readcontractcap.Output]{Arg0: chainRead},
-		func(runtime sdk.Runtime, config computeConfig, output readcontractcap.Output) (computeOutput, error) {
+		sdk.Compute2Inputs[readcontractcap.Output, croncap.Payload]{
+			Arg0: chainRead,
+			Arg1: cron,
+		},
+		func(runtime sdk.Runtime, config computeConfig, output readcontractcap.Output, cronOutput croncap.Payload) (computeOutput, error) {
+			// beholder event emitter
+			NewWorkflowEventEmitter(runtime).
+				With("feedID", config.FeedID).
+				With("URL", string(config.DataSourceEndpoint)).
+				Emit(fmt.Sprintf("Starting workflow for feed ID - %s", config.FeedID))
 
 			// example of a system level log
-			runtime.Logger().Info("Converting feed ID, ", config.FeedID)
+			runtime.Logger().Infof("Converting feed ID - %s", config.FeedID)
 			feedID, err := convertFeedIDtoBytes(config.FeedID)
 			if err != nil {
 				return computeOutput{}, fmt.Errorf("cannot convert feedID to bytes")
 			}
 
 			// GET THE BALANCES FROM READ
-			runtime.Logger().Info("Start reading balances for feed ID ", config.FeedID)
+			runtime.Logger().Infof("Getting balance for feed ID - %s", config.FeedID)
 			balances, ok := output.LatestValue.([]any)
 			if !ok {
-				return computeOutput{}, fmt.Errorf("cannot convert latest value to []*big.Int, got type %T", output.LatestValue)
+				return computeOutput{}, fmt.Errorf("cannot convert latest value to []*big.Int, got type %T, for feed ID - %s", output.LatestValue, config.FeedID)
 			}
-			runtime.Logger().Info("Balances read for feedID, ", config.FeedID)
+			runtime.Logger().Infof("Balances obtained for feed ID - %s, balances - %v", config.FeedID, balances)
 
 			totalBalance := &big.Int{}
 			for _, bal := range balances {
@@ -184,53 +221,52 @@ func BuildWorkflow(runner *wasm.Runner) *sdk.WorkflowSpecFactory {
 				if !ok {
 					return computeOutput{}, fmt.Errorf("cannot convert value to *big.Int, got %T", bi)
 				}
-
 				totalBalance = totalBalance.Add(totalBalance, bi)
 			}
-			runtime.Logger().Info("Read balances calculated, ", totalBalance, " for feed ID ", config.FeedID)
+			runtime.Logger().Infof("Balances calculated - %f, for feed ID - %s", totalBalance, config.FeedID)
 
-			// FETCH THE TRUE USD API
-			runtime.Logger().Info("Fetching API", config.DataSourceEndpoint[len(config.DataSourceEndpoint)-7:], " for feed ID ", config.FeedID)
+			// FETCH THE SUPERSTATE API
+			truncatedDSEndpoint := config.DataSourceEndpoint[len(config.DataSourceEndpoint)-7:]
+			runtime.Logger().Infof("Fetching API - %s, for feed ID - %s", truncatedDSEndpoint, config.FeedID)
 			fresp, err := runtime.Fetch(sdk.FetchRequest{
 				URL:       string(config.DataSourceEndpoint),
 				Method:    "GET",
 				TimeoutMs: config.EndpointTimeoutMilliseconds,
 			})
 			if err != nil {
-				return computeOutput{}, fmt.Errorf("not able to fetch API response: %w", err)
+				return computeOutput{}, fmt.Errorf("not able to fetch API response: %w, for feed ID - %s", err, config.FeedID)
 			}
 
-			var resp trueUSDResponse
+			var resp []FundData
 			err = json.Unmarshal(fresp.Body, &resp)
 			if err != nil {
-				return computeOutput{}, fmt.Errorf("not able to unmarshal response payload %s, err: %w", fresp.Body, err)
+				return computeOutput{}, fmt.Errorf("not able to unmarshal response payload %s, err: %w, for feed ID - %s", fresp.Body, err, config.FeedID)
 			}
+			runtime.Logger().Infof("Fetched API response, NetAssetValue - '%s', AssetsUnderManagement - '%s', OutstandingShares - '%s', NetIncomeExpenses - '%s', NetAssetValueDate - %s,  for feed ID - %s", resp[0].NetAssetValue, resp[0].AssetsUnderManagement, resp[0].OutstandingShares, resp[0].NetIncomeExpenses, resp[0].NetAssetValueDate, config.FeedID)
 
-			if resp.Ripcord {
-				err := runtime.Emitter().
-					With("feedID", config.FeedID).
-					Emit(fmt.Sprintf("ripcord flag set for feed ID %s", config.FeedID))
-				if err != nil {
-					runtime.Logger().Error("Failed to emit event for fetched HTTP response")
-				}
-			}
-			runtime.Logger().Info("Fetched API response, ", resp.TotalTrust)
-
-			// COMPUTE THE TOTAL (by adding the balances to the total value)
-			total := resp.TotalTrust + convertBigIntToFloat64(totalBalance)
-			runtime.Logger().Info("Total computed, ", total)
-
-			// example of emitting the event to the Beholder, only available in the compute capability
 			NewWorkflowEventEmitter(runtime).
 				With("feedID", config.FeedID).
-				Emit(fmt.Sprintf("Total computed for feed ID %s", config.FeedID))
+				With("URL", string(config.DataSourceEndpoint)).
+				With("NetAssetValue", resp[0].NetAssetValue).
+				Emit(fmt.Sprintf("received response payload: %s", fresp.Body))
+
+			// An example of computing the total (by adding the balances to the "total" value)
+			total := parseFloat(resp[0].NetAssetValue) + convertBigIntToEthFloat64(totalBalance)
+			runtime.Logger().Infof("Total computed - %f, for feed ID - %s", total, config.FeedID)
+
+			scheduledTimeUnix, err := GetScheduledTimestampUnix(cronOutput)
+			if err != nil {
+				return computeOutput{}, fmt.Errorf("failed to get scheduled timestamp: %v, for feed ID - %s", err, config.FeedID)
+			}
+			runtime.Logger().Infof("Timestamp from cron payload for compute report - %d, for feed ID - %s", scheduledTimeUnix, config.FeedID)
 
 			return computeOutput{
-				TotalTrust: uint64(total * 100),           // 2 decimal places
-				TotalToken: uint64(resp.TotalToken * 100), // 2 decimal places
-				Ripcord:    resp.Ripcord,                  // 0 decimal places
-				FeedID:     feedID,
-				Timestamp:  resp.UpdatedAt.Unix(),
+				NetAssetValue:         uint64(total * 100000000),                                     // 8 decimal places
+				AssetsUnderManagement: uint64(parseFloat(resp[0].AssetsUnderManagement) * 100000000), // 8 decimal places
+				OutstandingShares:     uint64(parseFloat(resp[0].OutstandingShares) * 100000000),     // 8 decimal places
+				NetIncomeExpenses:     uint64(parseFloat(resp[0].NetIncomeExpenses) * 100000000),     // 8 decimal places
+				FeedID:                feedID,
+				Timestamp:             scheduledTimeUnix,
 			}, nil
 		},
 	)
@@ -244,10 +280,10 @@ func BuildWorkflow(runner *wasm.Runner) *sdk.WorkflowSpecFactory {
 		EncoderConfig: map[string]any{
 			"abi": "(bytes32 FeedID, uint32 Timestamp, bytes Bundle)[] Reports",
 			"subabi": map[string]string{
-				"Reports.Bundle": "uint256 TotalTrust, uint256 TotalToken, bool Ripcord",
+				"Reports.Bundle": "uint256 NetAssetValue, uint256 AssetsUnderManagement, uint256 OutstandingShares,uint256 NetIncomeExpenses",
 			},
 		},
-		ReportID: "0001",
+		ReportID: "0010",
 		KeyID:    "evm",
 		AggregationConfig: aggregators.ReduceAggConfig{
 			Fields: []aggregators.AggregationField{
@@ -260,30 +296,40 @@ func BuildWorkflow(runner *wasm.Runner) *sdk.WorkflowSpecFactory {
 					InputKey:        "Timestamp",
 					OutputKey:       "Timestamp",
 					Method:          "median",
-					DeviationString: "300", // 5 minutes to write on-chain
+					DeviationString: "300",
 					DeviationType:   "absolute",
 				},
 				{
-					InputKey:        "TotalTrust",
-					OutputKey:       "TotalTrust",
+					InputKey:        "NetAssetValue",
+					OutputKey:       "NetAssetValue",
+					Method:          "median",
+					DeviationString: "5",
+					DeviationType:   "percent",
+					SubMapField:     true,
+				},
+				{
+					InputKey:        "AssetsUnderManagement",
+					OutputKey:       "AssetsUnderManagement",
 					Method:          "median",
 					DeviationString: "1",
 					DeviationType:   "percent",
 					SubMapField:     true,
 				},
 				{
-					InputKey:        "TotalToken",
-					OutputKey:       "TotalToken",
+					InputKey:        "OutstandingShares",
+					OutputKey:       "OutstandingShares",
 					Method:          "median",
 					DeviationString: "1",
 					DeviationType:   "percent",
 					SubMapField:     true,
 				},
 				{
-					InputKey:    "Ripcord",
-					OutputKey:   "Ripcord",
-					Method:      "mode",
-					SubMapField: true,
+					InputKey:        "NetIncomeExpenses",
+					OutputKey:       "NetIncomeExpenses",
+					Method:          "median",
+					DeviationString: "1",
+					DeviationType:   "percent",
+					SubMapField:     true,
 				},
 			},
 			ReportFormat: aggregators.REPORT_FORMAT_ARRAY,

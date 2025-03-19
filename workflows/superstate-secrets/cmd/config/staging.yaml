@@ -1,5 +1,5 @@
-feed_id: "0x6561615f746573740000000000000000"
-feed_description: "Superstate Feed With Read-Fetch-Write, params (config file)"
+feed_id: "0x656e636f64655f6561615f7365637265"
+feed_description: "Superstate Feed With Read-Fetch-Write, params (config file) and secrets"
 cron_trigger_interval: 60
 endpoint_timeout_milliseconds: 5000
 df_cache: "0xb79288ce6a58b7af2230a77f296f6a13b78a0292"
