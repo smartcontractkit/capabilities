@@ -25,6 +25,8 @@ const (
 	defaultCacheCleanupInterval          = 1 * time.Minute
 	defaultCacheExpiryTime               = 1 * time.Hour
 	defaultCacheSizeBeforeCleanupEnacted = 100
+
+	defaultMaximumBindTime = 30 * time.Second
 )
 
 type ReadContractConfig struct {
@@ -153,7 +155,12 @@ func (r *ReadContractAction) Execute(ctx context.Context, request capabilities.C
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to get contract reader: %w", err)
 	}
 
-	if err = reader.Bind(ctx, []types.BoundContract{{Address: config.ContractAddress, Name: config.ContractName}}); err != nil {
+	// If the initial loopp connection to the contract reader fails due to incorrect binding (or any other cause) the
+	// bind method will block retrying to establish the connection and never succeeding until the ctx expires, this is
+	// a workaround so that the bind method returns in a more timely fashion.
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, defaultMaximumBindTime)
+	defer cancel()
+	if err = reader.Bind(ctxWithTimeout, []types.BoundContract{{Address: config.ContractAddress, Name: config.ContractName}}); err != nil {
 		return capabilities.CapabilityResponse{}, fmt.Errorf("error binding read identifier: %w", err)
 	}
 
