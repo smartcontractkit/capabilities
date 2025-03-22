@@ -3,9 +3,8 @@ package main
 import (
 	"encoding/hex"
 	"encoding/json"
-	"math/big"
-
 	"fmt"
+	"math/big"
 	"time"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/wasm"
@@ -184,7 +183,7 @@ func BuildWorkflow(runner *wasm.Runner) *sdk.WorkflowSpecFactory {
 		Address:        cfg.PorCacheAddress, // Eth mainnet cache
 		DeltaStage:     cfg.DeltaStage,
 		Schedule:       "oneAtATime",
-		CreStepTimeout: &timeout,
+		CreStepTimeout: timeout,
 	}.New(workflow, cfg.WriteCapID, targetInput)
 
 	return workflow

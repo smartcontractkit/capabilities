@@ -27,8 +27,9 @@ func GetCompressedWorkflowWasm(t *testing.T, workflowWasmPath string) ([]byte, s
 	return compressedBinary, base64EncodedCompressedBinary
 }
 
-func CreateWasmBinary(t *testing.T, goFile string, wasmFile string) {
+func CreateWasmBinary(t *testing.T, dir string, goFile string, wasmFile string) {
 	cmd := exec.Command("go", "build", "-o", wasmFile, goFile) // #nosec
+	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "GOOS=wasip1", "GOARCH=wasm")
 
 	output, err := cmd.CombinedOutput()

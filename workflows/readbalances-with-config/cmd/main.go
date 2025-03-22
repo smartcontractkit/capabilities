@@ -3,11 +3,11 @@ package main
 import (
 	"encoding/hex"
 	"encoding/json"
-	"math/big"
-
 	"fmt"
+	"math/big"
 	"time"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/types/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/wasm"
 
 	readcontractcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/actions/readcontract"
@@ -118,9 +118,23 @@ func BuildWorkflow(configBytes []byte) (*sdk.WorkflowSpecFactory, error) {
 
 	// https://sepolia.etherscan.io/address/0x93c4bB995e7B5a726c8ef1bED9EA92e300F18eb4
 	balanceReaderContract := config.BalanceReaderContractAddress
-
+	contractRederConfig, err := json.Marshal(evm.ContractReaderConfig{
+		Contracts: map[string]evm.ChainContractReader{
+			"BalanceReader": {
+				ContractABI: `[{"inputs":[{"internalType":"address[]","name":"addresses","type":"address[]"}],"name":"getNativeBalances","outputs":[{"internalType":"uint256[]","name":"","type":"uint256[]"}],"stateMutability":"view","type":"function"}]`,
+				Configs: map[string]*evm.ChainReaderDefinition{
+					"getNativeBalances": {
+						ChainSpecificName: "getNativeBalances",
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal contract reader config: %w", err)
+	}
 	chainRead := readcontractcap.Config{
-		ContractReaderConfig: `{"contracts":{"BalanceReader":{"contractABI":"[{\"inputs\":[{\"internalType\":\"address[]\",\"name\":\"addresses\",\"type\":\"address[]\"}],\"name\":\"getNativeBalances\",\"outputs\":[{\"internalType\":\"uint256[]\",\"name\":\"\",\"type\":\"uint256[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"}]","contractPollingFilter":{"genericEventNames":null,"pollingFilter":{"topic2":null,"topic3":null,"topic4":null,"retention":"0s","maxLogsKept":0,"logsPerBlock":0}},"configs":{"getNativeBalances":"{  \"chainSpecificName\": \"getNativeBalances\"}"}}}}`,
+		ContractReaderConfig: string(contractRederConfig),
 		ContractAddress:      balanceReaderContract,
 		ContractName:         "BalanceReader",
 		ReadIdentifier:       fmt.Sprintf("%s-%s-%s", balanceReaderContract, "BalanceReader", "getNativeBalances"),

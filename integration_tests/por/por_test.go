@@ -76,11 +76,11 @@ func Test_PORReadbalances(t *testing.T) {
 	readBalancesWithConfigPath, err := filepath.Abs("../../workflows/readbalances-with-config/cmd")
 	require.NoError(t, err)
 
-	wasmFile := filepath.Join(readBalancesWithConfigPath, "readbalances.wasm")
-	mainFile := filepath.Join(readBalancesWithConfigPath, "main.go")
-	utils.CreateWasmBinary(t, mainFile, wasmFile)
+	const wasmFile = "readbalances.wasm"
 
-	consumerContract := setupDons(ctx, t, lggr, wasmFile)
+	utils.CreateWasmBinary(t, readBalancesWithConfigPath, "main.go", wasmFile)
+
+	consumerContract := setupDons(ctx, t, lggr, filepath.Join(readBalancesWithConfigPath, wasmFile))
 
 	feedsReceived := make(chan *feeds_consumer.KeystoneFeedsConsumerFeedReceived, 1000)
 	feedsSub, err := consumerContract.WatchFeedReceived(&bind.WatchOpts{}, feedsReceived, nil)
