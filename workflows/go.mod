@@ -10,7 +10,10 @@ replace github.com/smartcontractkit/capabilities/readcontract => ../readcontract
 
 replace github.com/smartcontractkit/capabilities/loadtestwritetarget => ./../loadtestwritetarget
 
-require github.com/smartcontractkit/chainlink-common v0.4.2-0.20250210122326-d2aaa393ca55
+require (
+	github.com/ethereum/go-ethereum v1.14.11
+	github.com/smartcontractkit/chainlink-common v0.5.1-0.20250321130403-7a90b780e251
+)
 
 require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
@@ -27,6 +30,7 @@ require (
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.22.0 // indirect
+	github.com/holiman/uint256 v1.3.1 // indirect
 	github.com/invopop/jsonschema v0.12.0 // indirect
 	github.com/leodido/go-urn v1.2.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
@@ -38,7 +42,7 @@ require (
 	github.com/prometheus/procfs v0.11.1 // indirect
 	github.com/santhosh-tekuri/jsonschema/v5 v5.2.0 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
-	github.com/smartcontractkit/libocr v0.0.0-20241007185508-adbe57025f12 // indirect
+	github.com/smartcontractkit/libocr v0.0.0-20250220133800-f3b940c4f298 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	go.opentelemetry.io/otel v1.30.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.0.0-20240823153156-2a54df7bffb9 // indirect
@@ -60,10 +64,10 @@ require (
 	go.opentelemetry.io/proto/otlp v1.3.1 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
-	golang.org/x/crypto v0.28.0 // indirect
+	golang.org/x/crypto v0.29.0 // indirect
 	golang.org/x/net v0.30.0 // indirect
-	golang.org/x/sys v0.26.0 // indirect
-	golang.org/x/text v0.19.0 // indirect
+	golang.org/x/sys v0.27.0 // indirect
+	golang.org/x/text v0.20.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20240903143218-8af14fe29dc1 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240903143218-8af14fe29dc1 // indirect
 	google.golang.org/grpc v1.67.1 // indirect

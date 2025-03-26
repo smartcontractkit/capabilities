@@ -58,7 +58,7 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 
 	// hello
 	// Base
-	addr := "0xf9C805641348dE519210e4A2CA6bd7EE0DAC051f"
+	addr := "0xefdBF23c246e565780d8C2F3e15213a788CdC6C8"
 
 	chainRead := readcontractcap.Config{
 		ContractReaderConfig: `{"contracts":{"BalanceReader":{"contractABI":"[{\"inputs\":[{\"internalType\":\"address[]\",\"name\":\"addresses\",\"type\":\"address[]\"}],\"name\":\"getNativeBalances\",\"outputs\":[{\"internalType\":\"uint256[]\",\"name\":\"\",\"type\":\"uint256[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"}]","contractPollingFilter":{"genericEventNames":null,"pollingFilter":{"topic2":null,"topic3":null,"topic4":null,"retention":"0s","maxLogsKept":0,"logsPerBlock":0}},"configs":{"getNativeBalances":"{  \"chainSpecificName\": \"getNativeBalances\"}"}}}}`,
@@ -67,7 +67,7 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 		ReadIdentifier:       fmt.Sprintf("%s-%s-%s", addr, "BalanceReader", "getNativeBalances"),
 	}.New(
 		workflow,
-		"read-contract-evm-8453@1.0.0",
+		"read-contract-evm-1@1.0.0",
 		"read",
 		readcontractcap.ActionInput{
 			ConfidenceLevel: sdk.ConstantDefinition("unconfirmed"),
@@ -122,7 +122,10 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 	consensus := ocr3cap.ReduceConsensusConfig[computeOutput]{
 		Encoder: ocr3cap.EncoderEVM,
 		EncoderConfig: map[string]any{
-			"abi": "(bytes32 FeedID, uint224 Price, uint32 Timestamp)[] Reports",
+			"subabi": map[string]string{
+				"Reports.Bundle": "uint256 Price",
+			},
+			"abi": "(bytes32 FeedID, uint32 Timestamp, bytes Bundle)[] Reports",
 		},
 		ReportID: "0001",
 		KeyID:    "evm",
@@ -139,6 +142,7 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 					Method:          "median",
 					DeviationString: "1",
 					DeviationType:   "percent",
+					SubMapField:     true,
 				},
 				{
 					InputKey:        "Timestamp",
@@ -149,6 +153,7 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 				},
 			},
 			ReportFormat: aggregators.REPORT_FORMAT_ARRAY,
+			SubMapKey:    "Bundle",
 		},
 	}.New(workflow, "consensus", consensusInput)
 
@@ -156,11 +161,13 @@ func BuildWorkflow(config []byte) *sdk.WorkflowSpecFactory {
 		SignedReport: consensus,
 	}
 
+	timeout := int64(300)
 	chainwriter.TargetConfig{
-		Address:    "0xf8CEdCB201DA4dDd163cb845aE5220624E96D1B0",
-		DeltaStage: "60s",
-		Schedule:   "oneAtATime",
-	}.New(workflow, "write_ethereum-mainnet-base-1@1.0.0", targetInput)
+		Address:        "0x844FDF4275F59ED011feF86857Db88404b0a7C7e", // Eth mainnet cache
+		DeltaStage:     "30s",
+		Schedule:       "oneAtATime",
+		CreStepTimeout: &timeout,
+	}.New(workflow, "write_ethereum-mainnet@1.0.0", targetInput)
 
 	return workflow
 }
