@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"context"
@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hashicorp/consul/sdk/freeport"
 	"github.com/hashicorp/consul/sdk/testutil"
 	"github.com/smartcontractkit/capabilities/libs/testutils"
 	"github.com/smartcontractkit/capabilities/mock/internal/pb"
-	"github.com/smartcontractkit/capabilities/mock/server"
 	"github.com/smartcontractkit/capabilities/mock/utils"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -23,10 +23,10 @@ import (
 
 func Test_ServerTrigger(t *testing.T) {
 	t.Parallel()
-	port := 3004
+	port := freeport.GetOne(t)
 	logger := testutils.NewLogger(t)
 	capabilitiesRegistry := testutils.NewCapabilitiesRegistry(t)
-	capabilitiesServer := &server.MockServer{Lggr: logger}
+	capabilitiesServer := &MockServer{Lggr: logger}
 	require.NotNil(t, capabilitiesServer)
 
 	ctx := testutil.TestContext(t)
@@ -136,10 +136,10 @@ type="trigger"
 
 func Test_ServerExecutable(t *testing.T) {
 	t.Parallel()
-	port := 3000
+	port := freeport.GetOne(t)
 	logger := testutils.NewLogger(t)
 	capabilitiesRegistry := testutils.NewCapabilitiesRegistry(t)
-	capabilitiesServer := &server.MockServer{Lggr: logger}
+	capabilitiesServer := &MockServer{Lggr: logger}
 	require.NotNil(t, capabilitiesServer)
 
 	// Timeout is important to avoid hanging tests

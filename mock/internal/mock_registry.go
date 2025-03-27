@@ -218,7 +218,6 @@ func (m *MockRegistry) UnregisterTrigger(ctx context.Context, request *pb.Trigge
 }
 
 func (m *MockRegistry) HookExecutables(server pb.MockCapability_HookExecutablesServer) error {
-	//TODO @george-dorin: Clean up!
 	//MockServer will receive CapabilityResponse
 	go m.incomingLoop(server)
 

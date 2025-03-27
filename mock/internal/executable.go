@@ -2,6 +2,8 @@ package internal
 
 import (
 	"context"
+	"errors"
+	"time"
 
 	"github.com/smartcontractkit/capabilities/mock/internal/pb"
 	"github.com/smartcontractkit/capabilities/mock/utils"
@@ -19,8 +21,9 @@ type ExecutableRequest struct {
 }
 type Executable struct {
 	capabilities.CapabilityInfo
-	requestChan  chan ExecutableRequest
-	ResponseChan chan capabilities.CapabilityResponse
+	requestChan    chan ExecutableRequest
+	ResponseChan   chan capabilities.CapabilityResponse
+	ExecuteTimeout time.Duration
 }
 
 func (t *Executable) RegisterToWorkflow(ctx context.Context, request capabilities.RegisterToWorkflowRequest) error {
@@ -32,16 +35,29 @@ func (t *Executable) UnregisterFromWorkflow(ctx context.Context, request capabil
 }
 
 func (t *Executable) Execute(ctx context.Context, request capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
-	t.requestChan <- ExecutableRequest{
+	execReq := ExecutableRequest{
 		ID:      t.ID,
 		CapType: utils.ToMockServerEnum(t.CapabilityType),
 		Request: request,
 	}
 
-	//TODO: @george-dorin add timeout
-	//TODO: @george-dorin, might be good to sequence the response
-	d := <-t.ResponseChan
-	return d, nil
+	select {
+	case t.requestChan <- execReq:
+	case <-ctx.Done():
+		return capabilities.CapabilityResponse{}, ctx.Err()
+	case <-time.After(t.ExecuteTimeout):
+		return capabilities.CapabilityResponse{}, errors.New("timeout sending execute request")
+	}
+
+	select {
+	case d := <-t.ResponseChan:
+		return d, nil
+	case <-ctx.Done():
+		return capabilities.CapabilityResponse{}, ctx.Err()
+	case <-time.After(t.ExecuteTimeout):
+		return capabilities.CapabilityResponse{}, errors.New("timeout waiting for execute response")
+	}
+
 }
 
 func NewExecutable(info *pb.CapabilityInfo, rChan chan ExecutableRequest) *Executable {
@@ -53,7 +69,8 @@ func NewExecutable(info *pb.CapabilityInfo, rChan chan ExecutableRequest) *Execu
 			DON:            nil,
 			IsLocal:        info.IsLocal,
 		},
-		requestChan:  rChan,
-		ResponseChan: make(chan capabilities.CapabilityResponse),
+		requestChan:    rChan,
+		ResponseChan:   make(chan capabilities.CapabilityResponse),
+		ExecuteTimeout: time.Minute * 5,
 	}
 }
