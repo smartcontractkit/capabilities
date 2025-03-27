@@ -7,8 +7,8 @@ toolchain go1.24.1
 require (
 	github.com/hashicorp/consul/sdk v0.16.0
 	github.com/pelletier/go-toml/v2 v2.2.0
-	github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-20250225154536-b949c8336a19
-	github.com/smartcontractkit/capabilities/libs/testutils v0.0.0-20250225154536-b949c8336a19
+	github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-20250320180854-c1360b785d49
+	github.com/smartcontractkit/capabilities/libs/testutils v0.0.0-20250320180854-c1360b785d49
 	github.com/smartcontractkit/chainlink-common v0.5.0
 	github.com/stretchr/testify v1.9.0
 	google.golang.org/grpc v1.67.1
