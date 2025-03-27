@@ -23,8 +23,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 )
 
-//var _ pb.MockCapabilityServer = (*MockRegistry)(nil)
-
 type MockRegistry struct {
 	pb.UnimplementedMockCapabilityServer
 	Triggers             map[string]*Trigger
