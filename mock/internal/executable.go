@@ -3,51 +3,57 @@ package internal
 import (
 	"context"
 
-	"github.com/smartcontractkit/capabilities/loadtestproxy/internal/pb"
+	"github.com/smartcontractkit/capabilities/mock/internal/pb"
+	"github.com/smartcontractkit/capabilities/mock/utils"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 )
 
-var _ capabilities.TargetCapability = (*executable)(nil)
-var _ capabilities.ExecutableCapability = (*executable)(nil)
+var _ capabilities.TargetCapability = (*Executable)(nil)
+var _ capabilities.ExecutableCapability = (*Executable)(nil)
 
-type executable struct {
-	*capabilityInfo
+type ExecutableRequest struct {
+	ID      string
+	CapType pb.CapabilityType
+	Request capabilities.CapabilityRequest
+}
+type Executable struct {
+	capabilities.CapabilityInfo
 	requestChan  chan ExecutableRequest
-	responseChan chan capabilities.CapabilityResponse
+	ResponseChan chan capabilities.CapabilityResponse
 }
 
-func (t *executable) RegisterToWorkflow(ctx context.Context, request capabilities.RegisterToWorkflowRequest) error {
+func (t *Executable) RegisterToWorkflow(ctx context.Context, request capabilities.RegisterToWorkflowRequest) error {
 	return nil
 }
 
-func (t *executable) UnregisterFromWorkflow(ctx context.Context, request capabilities.UnregisterFromWorkflowRequest) error {
+func (t *Executable) UnregisterFromWorkflow(ctx context.Context, request capabilities.UnregisterFromWorkflowRequest) error {
 	return nil
 }
 
-func (t *executable) Execute(ctx context.Context, request capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
+func (t *Executable) Execute(ctx context.Context, request capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
 	t.requestChan <- ExecutableRequest{
-		ID:      t.info.ID,
-		capType: ToMockServerEnum(t.info.CapabilityType),
-		request: request,
+		ID:      t.ID,
+		CapType: utils.ToMockServerEnum(t.CapabilityType),
+		Request: request,
 	}
 
 	//TODO: @george-dorin add timeout
 	//TODO: @george-dorin, might be good to sequence the response
-	d := <-t.responseChan
+	d := <-t.ResponseChan
 	return d, nil
 }
 
-func NewExecutable(info *pb.CapabilityInfo, rChan chan ExecutableRequest) *executable {
-	return &executable{
-		capabilityInfo: &capabilityInfo{info: capabilities.CapabilityInfo{
+func NewExecutable(info *pb.CapabilityInfo, rChan chan ExecutableRequest) *Executable {
+	return &Executable{
+		CapabilityInfo: capabilities.CapabilityInfo{
 			ID:             info.ID,
-			CapabilityType: ToCapabilityEnum(info.CapabilityType),
+			CapabilityType: utils.ToCapabilityEnum(info.CapabilityType),
 			Description:    info.Description,
 			DON:            nil,
 			IsLocal:        info.IsLocal,
-		}},
+		},
 		requestChan:  rChan,
-		responseChan: make(chan capabilities.CapabilityResponse),
+		ResponseChan: make(chan capabilities.CapabilityResponse),
 	}
 }

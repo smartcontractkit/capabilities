@@ -20,75 +20,83 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	Proxy_List_FullMethodName                   = "/proxy.Proxy/List"
-	Proxy_CreateCapability_FullMethodName       = "/proxy.Proxy/CreateCapability"
-	Proxy_SendTriggerEvent_FullMethodName       = "/proxy.Proxy/SendTriggerEvent"
-	Proxy_RegisterTrigger_FullMethodName        = "/proxy.Proxy/RegisterTrigger"
-	Proxy_UnregisterTrigger_FullMethodName      = "/proxy.Proxy/UnregisterTrigger"
-	Proxy_HookExecutables_FullMethodName        = "/proxy.Proxy/HookExecutables"
-	Proxy_RegisterToWorkflow_FullMethodName     = "/proxy.Proxy/RegisterToWorkflow"
-	Proxy_UnregisterFromWorkflow_FullMethodName = "/proxy.Proxy/UnregisterFromWorkflow"
-	Proxy_Execute_FullMethodName                = "/proxy.Proxy/Execute"
+	MockCapability_List_FullMethodName                   = "/mockcap.MockCapability/List"
+	MockCapability_CreateCapability_FullMethodName       = "/mockcap.MockCapability/CreateCapability"
+	MockCapability_SendTriggerEvent_FullMethodName       = "/mockcap.MockCapability/SendTriggerEvent"
+	MockCapability_RegisterTrigger_FullMethodName        = "/mockcap.MockCapability/RegisterTrigger"
+	MockCapability_UnregisterTrigger_FullMethodName      = "/mockcap.MockCapability/UnregisterTrigger"
+	MockCapability_HookExecutables_FullMethodName        = "/mockcap.MockCapability/HookExecutables"
+	MockCapability_RegisterToWorkflow_FullMethodName     = "/mockcap.MockCapability/RegisterToWorkflow"
+	MockCapability_UnregisterFromWorkflow_FullMethodName = "/mockcap.MockCapability/UnregisterFromWorkflow"
+	MockCapability_Execute_FullMethodName                = "/mockcap.MockCapability/Execute"
 )
 
-// ProxyClient is the client API for Proxy service.
+// MockCapabilityClient is the client API for MockCapability service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-type ProxyClient interface {
+type MockCapabilityClient interface {
+	// Retrieve information about all capabilities available on the node
 	List(ctx context.Context, in *ListRequest, opts ...grpc.CallOption) (*ListResponse, error)
+	// Create a mock capability and register it with the node
 	CreateCapability(ctx context.Context, in *CapabilityInfo, opts ...grpc.CallOption) (*emptypb.Empty, error)
-	// TriggerExecutable (used for triggers)
+	// Send data through a mock trigger
 	SendTriggerEvent(ctx context.Context, in *SendTriggerEventRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
-	RegisterTrigger(ctx context.Context, in *TriggerRegistrationRequest, opts ...grpc.CallOption) (Proxy_RegisterTriggerClient, error)
+	// Subscribe to a trigger (includes all triggers, not limited to mock triggers),
+	// creates a stream that send trigger events
+	RegisterTrigger(ctx context.Context, in *TriggerRegistrationRequest, opts ...grpc.CallOption) (MockCapability_RegisterTriggerClient, error)
+	// Unsubscribe from a trigger (includes all triggers, not limited to mock triggers)
 	UnregisterTrigger(ctx context.Context, in *TriggerRegistrationRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
-	// Executable (used for target,action,consensus)
-	HookExecutables(ctx context.Context, opts ...grpc.CallOption) (Proxy_HookExecutablesClient, error)
+	// Establish a bidirectional streaming service. When Execute is called, it streams requests and allows streaming responses back
+	HookExecutables(ctx context.Context, opts ...grpc.CallOption) (MockCapability_HookExecutablesClient, error)
+	// Subscribe to a workflow (includes all executable capabilities, not limited to mocks)
 	RegisterToWorkflow(ctx context.Context, in *RegisterToWorkflowRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// Unsubscribe from a workflow (includes all executable capabilities, not limited to mocks)
 	UnregisterFromWorkflow(ctx context.Context, in *UnregisterFromWorkflowRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// Invoke the Execute method on an executable capability (includes all executable capabilities, not limited to mocks)
 	Execute(ctx context.Context, in *ExecutableRequest, opts ...grpc.CallOption) (*CapabilityResponse, error)
 }
 
-type proxyClient struct {
+type mockCapabilityClient struct {
 	cc grpc.ClientConnInterface
 }
 
-func NewProxyClient(cc grpc.ClientConnInterface) ProxyClient {
-	return &proxyClient{cc}
+func NewMockCapabilityClient(cc grpc.ClientConnInterface) MockCapabilityClient {
+	return &mockCapabilityClient{cc}
 }
 
-func (c *proxyClient) List(ctx context.Context, in *ListRequest, opts ...grpc.CallOption) (*ListResponse, error) {
+func (c *mockCapabilityClient) List(ctx context.Context, in *ListRequest, opts ...grpc.CallOption) (*ListResponse, error) {
 	out := new(ListResponse)
-	err := c.cc.Invoke(ctx, Proxy_List_FullMethodName, in, out, opts...)
+	err := c.cc.Invoke(ctx, MockCapability_List_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *proxyClient) CreateCapability(ctx context.Context, in *CapabilityInfo, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+func (c *mockCapabilityClient) CreateCapability(ctx context.Context, in *CapabilityInfo, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	out := new(emptypb.Empty)
-	err := c.cc.Invoke(ctx, Proxy_CreateCapability_FullMethodName, in, out, opts...)
+	err := c.cc.Invoke(ctx, MockCapability_CreateCapability_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *proxyClient) SendTriggerEvent(ctx context.Context, in *SendTriggerEventRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+func (c *mockCapabilityClient) SendTriggerEvent(ctx context.Context, in *SendTriggerEventRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	out := new(emptypb.Empty)
-	err := c.cc.Invoke(ctx, Proxy_SendTriggerEvent_FullMethodName, in, out, opts...)
+	err := c.cc.Invoke(ctx, MockCapability_SendTriggerEvent_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *proxyClient) RegisterTrigger(ctx context.Context, in *TriggerRegistrationRequest, opts ...grpc.CallOption) (Proxy_RegisterTriggerClient, error) {
-	stream, err := c.cc.NewStream(ctx, &Proxy_ServiceDesc.Streams[0], Proxy_RegisterTrigger_FullMethodName, opts...)
+func (c *mockCapabilityClient) RegisterTrigger(ctx context.Context, in *TriggerRegistrationRequest, opts ...grpc.CallOption) (MockCapability_RegisterTriggerClient, error) {
+	stream, err := c.cc.NewStream(ctx, &MockCapability_ServiceDesc.Streams[0], MockCapability_RegisterTrigger_FullMethodName, opts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &proxyRegisterTriggerClient{stream}
+	x := &mockCapabilityRegisterTriggerClient{stream}
 	if err := x.ClientStream.SendMsg(in); err != nil {
 		return nil, err
 	}
@@ -98,16 +106,16 @@ func (c *proxyClient) RegisterTrigger(ctx context.Context, in *TriggerRegistrati
 	return x, nil
 }
 
-type Proxy_RegisterTriggerClient interface {
+type MockCapability_RegisterTriggerClient interface {
 	Recv() (*TriggerResponse, error)
 	grpc.ClientStream
 }
 
-type proxyRegisterTriggerClient struct {
+type mockCapabilityRegisterTriggerClient struct {
 	grpc.ClientStream
 }
 
-func (x *proxyRegisterTriggerClient) Recv() (*TriggerResponse, error) {
+func (x *mockCapabilityRegisterTriggerClient) Recv() (*TriggerResponse, error) {
 	m := new(TriggerResponse)
 	if err := x.ClientStream.RecvMsg(m); err != nil {
 		return nil, err
@@ -115,39 +123,39 @@ func (x *proxyRegisterTriggerClient) Recv() (*TriggerResponse, error) {
 	return m, nil
 }
 
-func (c *proxyClient) UnregisterTrigger(ctx context.Context, in *TriggerRegistrationRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+func (c *mockCapabilityClient) UnregisterTrigger(ctx context.Context, in *TriggerRegistrationRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	out := new(emptypb.Empty)
-	err := c.cc.Invoke(ctx, Proxy_UnregisterTrigger_FullMethodName, in, out, opts...)
+	err := c.cc.Invoke(ctx, MockCapability_UnregisterTrigger_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *proxyClient) HookExecutables(ctx context.Context, opts ...grpc.CallOption) (Proxy_HookExecutablesClient, error) {
-	stream, err := c.cc.NewStream(ctx, &Proxy_ServiceDesc.Streams[1], Proxy_HookExecutables_FullMethodName, opts...)
+func (c *mockCapabilityClient) HookExecutables(ctx context.Context, opts ...grpc.CallOption) (MockCapability_HookExecutablesClient, error) {
+	stream, err := c.cc.NewStream(ctx, &MockCapability_ServiceDesc.Streams[1], MockCapability_HookExecutables_FullMethodName, opts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &proxyHookExecutablesClient{stream}
+	x := &mockCapabilityHookExecutablesClient{stream}
 	return x, nil
 }
 
-type Proxy_HookExecutablesClient interface {
+type MockCapability_HookExecutablesClient interface {
 	Send(*ExecutableResponse) error
 	Recv() (*ExecutableRequest, error)
 	grpc.ClientStream
 }
 
-type proxyHookExecutablesClient struct {
+type mockCapabilityHookExecutablesClient struct {
 	grpc.ClientStream
 }
 
-func (x *proxyHookExecutablesClient) Send(m *ExecutableResponse) error {
+func (x *mockCapabilityHookExecutablesClient) Send(m *ExecutableResponse) error {
 	return x.ClientStream.SendMsg(m)
 }
 
-func (x *proxyHookExecutablesClient) Recv() (*ExecutableRequest, error) {
+func (x *mockCapabilityHookExecutablesClient) Recv() (*ExecutableRequest, error) {
 	m := new(ExecutableRequest)
 	if err := x.ClientStream.RecvMsg(m); err != nil {
 		return nil, err
@@ -155,207 +163,215 @@ func (x *proxyHookExecutablesClient) Recv() (*ExecutableRequest, error) {
 	return m, nil
 }
 
-func (c *proxyClient) RegisterToWorkflow(ctx context.Context, in *RegisterToWorkflowRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+func (c *mockCapabilityClient) RegisterToWorkflow(ctx context.Context, in *RegisterToWorkflowRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	out := new(emptypb.Empty)
-	err := c.cc.Invoke(ctx, Proxy_RegisterToWorkflow_FullMethodName, in, out, opts...)
+	err := c.cc.Invoke(ctx, MockCapability_RegisterToWorkflow_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *proxyClient) UnregisterFromWorkflow(ctx context.Context, in *UnregisterFromWorkflowRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+func (c *mockCapabilityClient) UnregisterFromWorkflow(ctx context.Context, in *UnregisterFromWorkflowRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	out := new(emptypb.Empty)
-	err := c.cc.Invoke(ctx, Proxy_UnregisterFromWorkflow_FullMethodName, in, out, opts...)
+	err := c.cc.Invoke(ctx, MockCapability_UnregisterFromWorkflow_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *proxyClient) Execute(ctx context.Context, in *ExecutableRequest, opts ...grpc.CallOption) (*CapabilityResponse, error) {
+func (c *mockCapabilityClient) Execute(ctx context.Context, in *ExecutableRequest, opts ...grpc.CallOption) (*CapabilityResponse, error) {
 	out := new(CapabilityResponse)
-	err := c.cc.Invoke(ctx, Proxy_Execute_FullMethodName, in, out, opts...)
+	err := c.cc.Invoke(ctx, MockCapability_Execute_FullMethodName, in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-// ProxyServer is the server API for Proxy service.
-// All implementations must embed UnimplementedProxyServer
+// MockCapabilityServer is the server API for MockCapability service.
+// All implementations must embed UnimplementedMockCapabilityServer
 // for forward compatibility
-type ProxyServer interface {
+type MockCapabilityServer interface {
+	// Retrieve information about all capabilities available on the node
 	List(context.Context, *ListRequest) (*ListResponse, error)
+	// Create a mock capability and register it with the node
 	CreateCapability(context.Context, *CapabilityInfo) (*emptypb.Empty, error)
-	// TriggerExecutable (used for triggers)
+	// Send data through a mock trigger
 	SendTriggerEvent(context.Context, *SendTriggerEventRequest) (*emptypb.Empty, error)
-	RegisterTrigger(*TriggerRegistrationRequest, Proxy_RegisterTriggerServer) error
+	// Subscribe to a trigger (includes all triggers, not limited to mock triggers),
+	// creates a stream that send trigger events
+	RegisterTrigger(*TriggerRegistrationRequest, MockCapability_RegisterTriggerServer) error
+	// Unsubscribe from a trigger (includes all triggers, not limited to mock triggers)
 	UnregisterTrigger(context.Context, *TriggerRegistrationRequest) (*emptypb.Empty, error)
-	// Executable (used for target,action,consensus)
-	HookExecutables(Proxy_HookExecutablesServer) error
+	// Establish a bidirectional streaming service. When Execute is called, it streams requests and allows streaming responses back
+	HookExecutables(MockCapability_HookExecutablesServer) error
+	// Subscribe to a workflow (includes all executable capabilities, not limited to mocks)
 	RegisterToWorkflow(context.Context, *RegisterToWorkflowRequest) (*emptypb.Empty, error)
+	// Unsubscribe from a workflow (includes all executable capabilities, not limited to mocks)
 	UnregisterFromWorkflow(context.Context, *UnregisterFromWorkflowRequest) (*emptypb.Empty, error)
+	// Invoke the Execute method on an executable capability (includes all executable capabilities, not limited to mocks)
 	Execute(context.Context, *ExecutableRequest) (*CapabilityResponse, error)
-	mustEmbedUnimplementedProxyServer()
+	mustEmbedUnimplementedMockCapabilityServer()
 }
 
-// UnimplementedProxyServer must be embedded to have forward compatible implementations.
-type UnimplementedProxyServer struct {
+// UnimplementedMockCapabilityServer must be embedded to have forward compatible implementations.
+type UnimplementedMockCapabilityServer struct {
 }
 
-func (UnimplementedProxyServer) List(context.Context, *ListRequest) (*ListResponse, error) {
+func (UnimplementedMockCapabilityServer) List(context.Context, *ListRequest) (*ListResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method List not implemented")
 }
-func (UnimplementedProxyServer) CreateCapability(context.Context, *CapabilityInfo) (*emptypb.Empty, error) {
+func (UnimplementedMockCapabilityServer) CreateCapability(context.Context, *CapabilityInfo) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateCapability not implemented")
 }
-func (UnimplementedProxyServer) SendTriggerEvent(context.Context, *SendTriggerEventRequest) (*emptypb.Empty, error) {
+func (UnimplementedMockCapabilityServer) SendTriggerEvent(context.Context, *SendTriggerEventRequest) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SendTriggerEvent not implemented")
 }
-func (UnimplementedProxyServer) RegisterTrigger(*TriggerRegistrationRequest, Proxy_RegisterTriggerServer) error {
+func (UnimplementedMockCapabilityServer) RegisterTrigger(*TriggerRegistrationRequest, MockCapability_RegisterTriggerServer) error {
 	return status.Errorf(codes.Unimplemented, "method RegisterTrigger not implemented")
 }
-func (UnimplementedProxyServer) UnregisterTrigger(context.Context, *TriggerRegistrationRequest) (*emptypb.Empty, error) {
+func (UnimplementedMockCapabilityServer) UnregisterTrigger(context.Context, *TriggerRegistrationRequest) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UnregisterTrigger not implemented")
 }
-func (UnimplementedProxyServer) HookExecutables(Proxy_HookExecutablesServer) error {
+func (UnimplementedMockCapabilityServer) HookExecutables(MockCapability_HookExecutablesServer) error {
 	return status.Errorf(codes.Unimplemented, "method HookExecutables not implemented")
 }
-func (UnimplementedProxyServer) RegisterToWorkflow(context.Context, *RegisterToWorkflowRequest) (*emptypb.Empty, error) {
+func (UnimplementedMockCapabilityServer) RegisterToWorkflow(context.Context, *RegisterToWorkflowRequest) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RegisterToWorkflow not implemented")
 }
-func (UnimplementedProxyServer) UnregisterFromWorkflow(context.Context, *UnregisterFromWorkflowRequest) (*emptypb.Empty, error) {
+func (UnimplementedMockCapabilityServer) UnregisterFromWorkflow(context.Context, *UnregisterFromWorkflowRequest) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UnregisterFromWorkflow not implemented")
 }
-func (UnimplementedProxyServer) Execute(context.Context, *ExecutableRequest) (*CapabilityResponse, error) {
+func (UnimplementedMockCapabilityServer) Execute(context.Context, *ExecutableRequest) (*CapabilityResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Execute not implemented")
 }
-func (UnimplementedProxyServer) mustEmbedUnimplementedProxyServer() {}
+func (UnimplementedMockCapabilityServer) mustEmbedUnimplementedMockCapabilityServer() {}
 
-// UnsafeProxyServer may be embedded to opt out of forward compatibility for this service.
-// Use of this interface is not recommended, as added methods to ProxyServer will
+// UnsafeMockCapabilityServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to MockCapabilityServer will
 // result in compilation errors.
-type UnsafeProxyServer interface {
-	mustEmbedUnimplementedProxyServer()
+type UnsafeMockCapabilityServer interface {
+	mustEmbedUnimplementedMockCapabilityServer()
 }
 
-func RegisterProxyServer(s grpc.ServiceRegistrar, srv ProxyServer) {
-	s.RegisterService(&Proxy_ServiceDesc, srv)
+func RegisterMockCapabilityServer(s grpc.ServiceRegistrar, srv MockCapabilityServer) {
+	s.RegisterService(&MockCapability_ServiceDesc, srv)
 }
 
-func _Proxy_List_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _MockCapability_List_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ListRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ProxyServer).List(ctx, in)
+		return srv.(MockCapabilityServer).List(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Proxy_List_FullMethodName,
+		FullMethod: MockCapability_List_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ProxyServer).List(ctx, req.(*ListRequest))
+		return srv.(MockCapabilityServer).List(ctx, req.(*ListRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Proxy_CreateCapability_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _MockCapability_CreateCapability_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CapabilityInfo)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ProxyServer).CreateCapability(ctx, in)
+		return srv.(MockCapabilityServer).CreateCapability(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Proxy_CreateCapability_FullMethodName,
+		FullMethod: MockCapability_CreateCapability_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ProxyServer).CreateCapability(ctx, req.(*CapabilityInfo))
+		return srv.(MockCapabilityServer).CreateCapability(ctx, req.(*CapabilityInfo))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Proxy_SendTriggerEvent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _MockCapability_SendTriggerEvent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SendTriggerEventRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ProxyServer).SendTriggerEvent(ctx, in)
+		return srv.(MockCapabilityServer).SendTriggerEvent(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Proxy_SendTriggerEvent_FullMethodName,
+		FullMethod: MockCapability_SendTriggerEvent_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ProxyServer).SendTriggerEvent(ctx, req.(*SendTriggerEventRequest))
+		return srv.(MockCapabilityServer).SendTriggerEvent(ctx, req.(*SendTriggerEventRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Proxy_RegisterTrigger_Handler(srv interface{}, stream grpc.ServerStream) error {
+func _MockCapability_RegisterTrigger_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(TriggerRegistrationRequest)
 	if err := stream.RecvMsg(m); err != nil {
 		return err
 	}
-	return srv.(ProxyServer).RegisterTrigger(m, &proxyRegisterTriggerServer{stream})
+	return srv.(MockCapabilityServer).RegisterTrigger(m, &mockCapabilityRegisterTriggerServer{stream})
 }
 
-type Proxy_RegisterTriggerServer interface {
+type MockCapability_RegisterTriggerServer interface {
 	Send(*TriggerResponse) error
 	grpc.ServerStream
 }
 
-type proxyRegisterTriggerServer struct {
+type mockCapabilityRegisterTriggerServer struct {
 	grpc.ServerStream
 }
 
-func (x *proxyRegisterTriggerServer) Send(m *TriggerResponse) error {
+func (x *mockCapabilityRegisterTriggerServer) Send(m *TriggerResponse) error {
 	return x.ServerStream.SendMsg(m)
 }
 
-func _Proxy_UnregisterTrigger_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _MockCapability_UnregisterTrigger_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(TriggerRegistrationRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ProxyServer).UnregisterTrigger(ctx, in)
+		return srv.(MockCapabilityServer).UnregisterTrigger(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Proxy_UnregisterTrigger_FullMethodName,
+		FullMethod: MockCapability_UnregisterTrigger_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ProxyServer).UnregisterTrigger(ctx, req.(*TriggerRegistrationRequest))
+		return srv.(MockCapabilityServer).UnregisterTrigger(ctx, req.(*TriggerRegistrationRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Proxy_HookExecutables_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(ProxyServer).HookExecutables(&proxyHookExecutablesServer{stream})
+func _MockCapability_HookExecutables_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(MockCapabilityServer).HookExecutables(&mockCapabilityHookExecutablesServer{stream})
 }
 
-type Proxy_HookExecutablesServer interface {
+type MockCapability_HookExecutablesServer interface {
 	Send(*ExecutableRequest) error
 	Recv() (*ExecutableResponse, error)
 	grpc.ServerStream
 }
 
-type proxyHookExecutablesServer struct {
+type mockCapabilityHookExecutablesServer struct {
 	grpc.ServerStream
 }
 
-func (x *proxyHookExecutablesServer) Send(m *ExecutableRequest) error {
+func (x *mockCapabilityHookExecutablesServer) Send(m *ExecutableRequest) error {
 	return x.ServerStream.SendMsg(m)
 }
 
-func (x *proxyHookExecutablesServer) Recv() (*ExecutableResponse, error) {
+func (x *mockCapabilityHookExecutablesServer) Recv() (*ExecutableResponse, error) {
 	m := new(ExecutableResponse)
 	if err := x.ServerStream.RecvMsg(m); err != nil {
 		return nil, err
@@ -363,105 +379,105 @@ func (x *proxyHookExecutablesServer) Recv() (*ExecutableResponse, error) {
 	return m, nil
 }
 
-func _Proxy_RegisterToWorkflow_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _MockCapability_RegisterToWorkflow_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(RegisterToWorkflowRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ProxyServer).RegisterToWorkflow(ctx, in)
+		return srv.(MockCapabilityServer).RegisterToWorkflow(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Proxy_RegisterToWorkflow_FullMethodName,
+		FullMethod: MockCapability_RegisterToWorkflow_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ProxyServer).RegisterToWorkflow(ctx, req.(*RegisterToWorkflowRequest))
+		return srv.(MockCapabilityServer).RegisterToWorkflow(ctx, req.(*RegisterToWorkflowRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Proxy_UnregisterFromWorkflow_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _MockCapability_UnregisterFromWorkflow_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(UnregisterFromWorkflowRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ProxyServer).UnregisterFromWorkflow(ctx, in)
+		return srv.(MockCapabilityServer).UnregisterFromWorkflow(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Proxy_UnregisterFromWorkflow_FullMethodName,
+		FullMethod: MockCapability_UnregisterFromWorkflow_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ProxyServer).UnregisterFromWorkflow(ctx, req.(*UnregisterFromWorkflowRequest))
+		return srv.(MockCapabilityServer).UnregisterFromWorkflow(ctx, req.(*UnregisterFromWorkflowRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Proxy_Execute_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _MockCapability_Execute_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ExecutableRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(ProxyServer).Execute(ctx, in)
+		return srv.(MockCapabilityServer).Execute(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: Proxy_Execute_FullMethodName,
+		FullMethod: MockCapability_Execute_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ProxyServer).Execute(ctx, req.(*ExecutableRequest))
+		return srv.(MockCapabilityServer).Execute(ctx, req.(*ExecutableRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-// Proxy_ServiceDesc is the grpc.ServiceDesc for Proxy service.
+// MockCapability_ServiceDesc is the grpc.ServiceDesc for MockCapability service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
-var Proxy_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "proxy.Proxy",
-	HandlerType: (*ProxyServer)(nil),
+var MockCapability_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "mockcap.MockCapability",
+	HandlerType: (*MockCapabilityServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
 			MethodName: "List",
-			Handler:    _Proxy_List_Handler,
+			Handler:    _MockCapability_List_Handler,
 		},
 		{
 			MethodName: "CreateCapability",
-			Handler:    _Proxy_CreateCapability_Handler,
+			Handler:    _MockCapability_CreateCapability_Handler,
 		},
 		{
 			MethodName: "SendTriggerEvent",
-			Handler:    _Proxy_SendTriggerEvent_Handler,
+			Handler:    _MockCapability_SendTriggerEvent_Handler,
 		},
 		{
 			MethodName: "UnregisterTrigger",
-			Handler:    _Proxy_UnregisterTrigger_Handler,
+			Handler:    _MockCapability_UnregisterTrigger_Handler,
 		},
 		{
 			MethodName: "RegisterToWorkflow",
-			Handler:    _Proxy_RegisterToWorkflow_Handler,
+			Handler:    _MockCapability_RegisterToWorkflow_Handler,
 		},
 		{
 			MethodName: "UnregisterFromWorkflow",
-			Handler:    _Proxy_UnregisterFromWorkflow_Handler,
+			Handler:    _MockCapability_UnregisterFromWorkflow_Handler,
 		},
 		{
 			MethodName: "Execute",
-			Handler:    _Proxy_Execute_Handler,
+			Handler:    _MockCapability_Execute_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
 			StreamName:    "RegisterTrigger",
-			Handler:       _Proxy_RegisterTrigger_Handler,
+			Handler:       _MockCapability_RegisterTrigger_Handler,
 			ServerStreams: true,
 		},
 		{
 			StreamName:    "HookExecutables",
-			Handler:       _Proxy_HookExecutables_Handler,
+			Handler:       _MockCapability_HookExecutables_Handler,
 			ServerStreams: true,
 			ClientStreams: true,
 		},

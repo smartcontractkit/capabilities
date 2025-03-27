@@ -1,12 +1,13 @@
 syntax = "proto3";
-option go_package = "github.com/smartcontractkit/capabilities/loadtestproxy/internal/pb";
+option go_package = "github.com/smartcontractkit/capabilities/mock/internal/pb";
 
-package proxy;
+package mockcap;
+
 
 import "google/protobuf/empty.proto";
 
 
-service Proxy {
+service MockCapability {
   // Retrieve information about all capabilities available on the node
   rpc List(ListRequest) returns (ListResponse){}
 
@@ -41,6 +42,7 @@ message TriggerEvent{
   string ID = 2;
   bytes Outputs = 3;
 }
+
 message TriggerResponse{
   TriggerEvent TriggerEvent = 1;
   string Error = 2;
