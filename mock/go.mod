@@ -1,17 +1,15 @@
 module github.com/smartcontractkit/capabilities/mock
 
-go 1.24
+go 1.23.3
 
 toolchain go1.24.1
 
 require (
-	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
-	github.com/google/uuid v1.6.0
 	github.com/hashicorp/consul/sdk v0.16.0
 	github.com/pelletier/go-toml/v2 v2.2.0
 	github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-20250225154536-b949c8336a19
 	github.com/smartcontractkit/capabilities/libs/testutils v0.0.0-20250225154536-b949c8336a19
-	github.com/smartcontractkit/chainlink-common v0.6.0
+	github.com/smartcontractkit/chainlink-common v0.5.0
 	github.com/stretchr/testify v1.9.0
 	google.golang.org/grpc v1.67.1
 	google.golang.org/protobuf v1.36.6
@@ -25,6 +23,7 @@ require (
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dominikbraun/graph v0.23.0 // indirect
 	github.com/fatih/color v1.17.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.5.0 // indirect
@@ -38,6 +37,7 @@ require (
 	github.com/goccy/go-yaml v1.12.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus v1.0.1 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.1.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.22.0 // indirect
