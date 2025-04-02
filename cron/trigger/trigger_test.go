@@ -428,9 +428,9 @@ func TestCronTrigger_TimeWindows(t *testing.T) {
 	// Set time to have 0ms by advancing to next truncated second
 	fakeClock.Advance(fakeClock.Now().Truncate(time.Second).Add(time.Second).Sub(fakeClock.Now()))
 	// Set time to 8:50am UTC
-	hour, min, sec := fakeClock.Now().UTC().Clock()
+	hour, minimum, sec := fakeClock.Now().UTC().Clock()
 	fakeClock.Advance(time.Duration(60-sec) * time.Second)
-	fakeClock.Advance(time.Duration(49-min) * time.Minute)
+	fakeClock.Advance(time.Duration(49-minimum) * time.Minute)
 	fakeClock.Advance(time.Duration(8-hour) * time.Hour)
 	ts := New(Params{
 		Logger: logger.Nop(),
@@ -610,9 +610,9 @@ func TestCronTrigger_TimeZone(t *testing.T) {
 	fakeClock.Advance(time.Duration(1000000000 - fakeClock.Now().Nanosecond()))
 	// Set time to 23:50pm Eastern
 	now := fakeClock.Now().In(location)
-	hour, min, sec := now.Clock()
+	hour, minimum, sec := now.Clock()
 	fakeClock.Advance(time.Duration(60-sec) * time.Second)
-	fakeClock.Advance(time.Duration(49-min) * time.Minute)
+	fakeClock.Advance(time.Duration(49-minimum) * time.Minute)
 	fakeClock.Advance(time.Duration(23-hour) * time.Hour)
 
 	ts := New(Params{Logger: logger.Nop(), Clock: fakeClock})
