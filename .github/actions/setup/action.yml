@@ -32,6 +32,11 @@ runs:
           ~/.npm
         key: ${{runner.os}}-nx
 
+    - name: Allow fetching private Go modules
+      shell: bash
+      run: |
+        go env -w GOPRIVATE=github.com/smartcontractkit/capabilities/*
+
     - name: Initialize NX and set up Go cache keys
       id: init
       shell: bash
