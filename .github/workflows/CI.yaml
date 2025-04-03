@@ -47,11 +47,14 @@ jobs:
         run: |
           npx nx@19.8.2 init
           echo "affected=$(./.github/scripts/affected-projects.sh ${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }})" >> $GITHUB_OUTPUT
-          
+
   build:
     needs: affected
     if: ${{fromJson(needs.affected.outputs.nx).run_build}}
     runs-on: ubuntu-latest
+    env:
+      # Skips go mod proxy for private repos.
+      GOPRIVATE: github.com/smartcontractkit/capabilities
     strategy:
       fail-fast: false
       matrix:
@@ -85,7 +88,7 @@ jobs:
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
         with:
           fetch-depth: 0
-      
+
       - name: Set up project environment
         uses: ./.github/actions/setup
         with:
@@ -104,7 +107,7 @@ jobs:
           name: ${{ matrix.projects }}_go_test_results
           # the path to a generated report (per directory)
           path: |
-            ./${{fromJson(needs.affected.outputs.nx)[matrix.projects].root}}/coverage.txt 
+            ./${{fromJson(needs.affected.outputs.nx)[matrix.projects].root}}/coverage.txt
 
   race:
     needs: affected
@@ -119,7 +122,7 @@ jobs:
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
         with:
           fetch-depth: 0
-      
+
       - name: Set up project environment
         uses: ./.github/actions/setup
         with:
@@ -154,7 +157,7 @@ jobs:
         working-directory: integration_tests
         env:
           CL_DATABASE_URL: ${{ env.DB_URL }}
-      - name: run integration_tests 
+      - name: run integration_tests
         env:
           CL_DATABASE_URL: ${{ env.DB_URL }}
         run: ./nx run integration_tests:test
@@ -275,4 +278,3 @@ jobs:
           include-lint: "true"
           sonar-token: ${{ secrets.SONAR_TOKEN }}
           sonar-host-url: ${{ secrets.SONAR_HOST_URL }}
-          
