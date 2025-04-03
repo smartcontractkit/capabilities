@@ -52,9 +52,6 @@ jobs:
     needs: affected
     if: ${{fromJson(needs.affected.outputs.nx).run_build}}
     runs-on: ubuntu-latest
-    env:
-      # Skips go mod proxy for private repos.
-      GOPRIVATE: github.com/smartcontractkit/capabilities
     strategy:
       fail-fast: false
       matrix:
