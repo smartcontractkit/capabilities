@@ -4,17 +4,16 @@ go 1.23.3
 
 toolchain go1.23.4
 
-replace github.com/smartcontractkit/capabilities/libs/loopserver => ../libs/loopserver
-
 require (
 	github.com/hashicorp/go-plugin v1.6.2 // indirect
-	github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/chainlink-common v0.4.1-0.20241217120918-bbe318cd0760
 	github.com/smartcontractkit/libocr v0.0.0-20241007185508-adbe57025f12 // indirect
 	github.com/stretchr/testify v1.9.0 // indirect
 	go.opentelemetry.io/otel/metric v1.30.0 // indirect
 	google.golang.org/protobuf v1.35.1 // indirect
 )
+
+require github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-20250402163239-224ad2061432
 
 require (
 	github.com/atombender/go-jsonschema v0.16.1-0.20240916205339-a74cd4e2851c // indirect

@@ -12,8 +12,8 @@ flowchart LR
 	capabilities/kvstore --> capabilities/libs/loopserver
 	capabilities/kvstore --> capabilities/libs/testutils
 	click capabilities/kvstore href "https://github.com/smartcontractkit/capabilities"
-	capabilities/libs/cll --> libocr
-	click capabilities/libs/cll href "https://github.com/smartcontractkit/capabilities"
+	capabilities/libs --> chainlink-common
+	click capabilities/libs href "https://github.com/smartcontractkit/capabilities"
 	capabilities/libs/loopserver --> chainlink-common
 	click capabilities/libs/loopserver href "https://github.com/smartcontractkit/capabilities"
 	capabilities/libs/testutils --> chainlink-common
@@ -23,14 +23,13 @@ flowchart LR
 	capabilities/readcontract --> capabilities/libs/loopserver
 	capabilities/readcontract --> capabilities/libs/testutils
 	click capabilities/readcontract href "https://github.com/smartcontractkit/capabilities"
-	capabilities/streams --> capabilities/libs/loopserver
-	capabilities/streams --> capabilities/libs/testutils
-	click capabilities/streams href "https://github.com/smartcontractkit/capabilities"
 	capabilities/workflowevent --> capabilities/libs/loopserver
 	capabilities/workflowevent --> capabilities/libs/testutils
 	click capabilities/workflowevent href "https://github.com/smartcontractkit/capabilities"
 	capabilities/workflows --> chainlink-common
 	click capabilities/workflows href "https://github.com/smartcontractkit/capabilities"
+	capabilities/workflows/readbalancesgen --> chainlink-common
+	click capabilities/workflows/readbalancesgen href "https://github.com/smartcontractkit/capabilities"
 	chain-selectors
 	click chain-selectors href "https://github.com/smartcontractkit/chain-selectors"
 	chainlink-automation --> chainlink-common
@@ -95,14 +94,14 @@ flowchart LR
 		 capabilities/devenv
 		 capabilities/integration_tests
 		 capabilities/kvstore
-		 capabilities/libs/cll
+		 capabilities/libs
 		 capabilities/libs/loopserver
 		 capabilities/libs/testutils
 		 capabilities/loadtestwritetarget
 		 capabilities/readcontract
-		 capabilities/streams
 		 capabilities/workflowevent
 		 capabilities/workflows
+		 capabilities/workflows/readbalancesgen
 	end
 	click capabilities-repo href "https://github.com/smartcontractkit/capabilities"
 
