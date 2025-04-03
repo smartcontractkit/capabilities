@@ -1,6 +1,7 @@
 name: CI
 
 on: [push]
+git config --global url."https://${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
 
 env:
   # Ensure that a cached go version is used:
@@ -53,6 +54,8 @@ jobs:
     needs: affected
     if: ${{fromJson(needs.affected.outputs.nx).run_build}}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     env:
       # Skips go mod proxy for private repos.
       GOPRIVATE: github.com/smartcontractkit/capabilities
@@ -72,6 +75,11 @@ jobs:
           project: ${{ matrix.projects }}
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "build"
+
+      - name: Set git config with GITHUB_TOKEN
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: git config --global url."https://${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
 
       - name: Set GOPRIVATE
         run: go env -w GOPRIVATE="${GOPRIVATE}"
