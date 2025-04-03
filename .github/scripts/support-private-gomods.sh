@@ -7,8 +7,8 @@ set -euo pipefail
 # Expects env vars GITHUB_TOKEN and GOPRIVATE to be set.
 ##
 
-if [[ -z "${GITHUB_SECRET:-}" ]]; then
-  echo "::error::GITHUB_SECRET is not set. Exiting."
+if [[ -z "${GITHUB_TOKEN:-}" ]]; then
+  echo "::error::GITHUB_TOKEN is not set. Exiting."
   exit 1
 fi
 
