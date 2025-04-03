@@ -1,7 +1,6 @@
 name: CI
 
 on: [push]
-git config --global url."https://${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
 
 env:
   # Ensure that a cached go version is used:
