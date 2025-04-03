@@ -78,7 +78,7 @@ jobs:
       - name: Support private Go modules
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./.github/scripts/setup-private-go-modules.sh
+        run: ./.github/scripts/support-private-gomods.sh
 
       - name: Build ${{ matrix.projects }}
         run: ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} build
@@ -107,7 +107,7 @@ jobs:
       - name: Support private Go modules
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./.github/scripts/setup-private-go-modules.sh
+        run: ./.github/scripts/support-private-gomods.sh
 
       - name: Unit Test ${{ matrix.projects }}
         run: ./nx run ${{ matrix.projects }}:test
@@ -146,7 +146,7 @@ jobs:
       - name: Support private Go modules
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./.github/scripts/setup-private-go-modules.sh
+        run: ./.github/scripts/support-private-gomods.sh
 
       - name: Race Test ${{ matrix.projects }}
         run: ./nx run ${{ matrix.projects }}:race
@@ -173,7 +173,7 @@ jobs:
       - name: Support private Go modules
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./.github/scripts/setup-private-go-modules.sh
+        run: ./.github/scripts/support-private-gomods.sh
       - name: Setup DB
         run: go run github.com/smartcontractkit/chainlink/v2 local db preparetest
         working-directory: integration_tests
@@ -208,7 +208,7 @@ jobs:
       - name: Support private Go modules
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./.github/scripts/setup-private-go-modules.sh
+        run: ./.github/scripts/support-private-gomods.sh
 
       - name: Install mockery
         run: go install github.com/vektra/mockery/v2/...@v2.46.1
@@ -246,7 +246,7 @@ jobs:
       - name: Support private Go modules
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./.github/scripts/setup-private-go-modules.sh
+        run: ./.github/scripts/support-private-gomods.sh
 
       - name: Golangci Lint (${{ matrix.projects }})
         uses: golangci/golangci-lint-action@38e1018663fa5173f3968ea0777460d3de38f256 # v5.3.0
