@@ -75,16 +75,10 @@ jobs:
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "build"
 
-      - name: Set git config with GITHUB_TOKEN
+      - name: Support private Go modules
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          git config --global \
-            url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf \
-            "https://github.com/"
-
-      - name: Set GOPRIVATE
-        run: go env -w GOPRIVATE="${GOPRIVATE}"
+        run: ./.github/scripts/setup-private-go-modules.sh
 
       - name: Build ${{ matrix.projects }}
         run: ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} build
@@ -109,6 +103,11 @@ jobs:
           project: ${{ matrix.projects }}
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "test"
+
+      - name: Support private Go modules
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./.github/scripts/setup-private-go-modules.sh
 
       - name: Unit Test ${{ matrix.projects }}
         run: ./nx run ${{ matrix.projects }}:test
@@ -144,6 +143,11 @@ jobs:
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "race"
 
+      - name: Support private Go modules
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./.github/scripts/setup-private-go-modules.sh
+
       - name: Race Test ${{ matrix.projects }}
         run: ./nx run ${{ matrix.projects }}:race
 
@@ -166,6 +170,10 @@ jobs:
           project: integration_tests
           go-module-file: ./integration_tests/go.mod
           task: "integrationtest"
+      - name: Support private Go modules
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./.github/scripts/setup-private-go-modules.sh
       - name: Setup DB
         run: go run github.com/smartcontractkit/chainlink/v2 local db preparetest
         working-directory: integration_tests
@@ -196,6 +204,11 @@ jobs:
           project: ${{ matrix.projects }}
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "tidy-and-generate"
+
+      - name: Support private Go modules
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./.github/scripts/setup-private-go-modules.sh
 
       - name: Install mockery
         run: go install github.com/vektra/mockery/v2/...@v2.46.1
@@ -229,6 +242,11 @@ jobs:
           project: ${{ matrix.projects }}
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "lint"
+
+      - name: Support private Go modules
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./.github/scripts/setup-private-go-modules.sh
 
       - name: Golangci Lint (${{ matrix.projects }})
         uses: golangci/golangci-lint-action@38e1018663fa5173f3968ea0777460d3de38f256 # v5.3.0
