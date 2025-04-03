@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-###
+##
 # Supports private Go modules to be fetched from its own repo in GitHub.
 # Expects env vars GITHUB_TOKEN and GOPRIVATE to be set.
 ##
