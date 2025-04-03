@@ -6,16 +6,11 @@ toolchain go1.23.4
 
 require (
 	github.com/ethereum/go-ethereum v1.14.11
-	github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-unpublished
-	github.com/smartcontractkit/capabilities/libs/testutils v0.0.0-unpublished
+	github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-20250402163239-224ad2061432
+	github.com/smartcontractkit/capabilities/libs/testutils v0.0.0-20250402163239-224ad2061432
 	github.com/smartcontractkit/chainlink-common v0.3.1-0.20241202172404-26d4a0b45b23
 	github.com/smartcontractkit/libocr v0.0.0-20241007185508-adbe57025f12
 	github.com/stretchr/testify v1.9.0
-)
-
-replace (
-	github.com/smartcontractkit/capabilities/libs/loopserver => ../libs/loopserver
-	github.com/smartcontractkit/capabilities/libs/testutils => ../libs/testutils
 )
 
 require (

@@ -154,6 +154,10 @@ github.com/santhosh-tekuri/jsonschema/v5 v5.2.0 h1:WCcC4vZDS1tYNxjWlwRJZQy28r8CM
 github.com/santhosh-tekuri/jsonschema/v5 v5.2.0/go.mod h1:FKdcjfQW6rpZSnxxUvEA5H/cDPdvJ/SZJQLWWXWGrZ0=
 github.com/shopspring/decimal v1.4.0 h1:bxl37RwXBklmTi0C79JfXCEBD1cqqHt0bbgBAGFp81k=
 github.com/shopspring/decimal v1.4.0/go.mod h1:gawqmDU56v4yIKSwfBSFip1HdCCXN8/+DMd9qYNcwME=
+github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-20250402163239-224ad2061432 h1:RO8PP8FF/qArlODaHbdWQBlhAyIKl7Kq/48CvZlgAyI=
+github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-20250402163239-224ad2061432/go.mod h1:E5l1dD0v2PqmKqZqHRidGyQy0a+c3/xjWSmFmet1A2s=
+github.com/smartcontractkit/capabilities/libs/testutils v0.0.0-20250402163239-224ad2061432 h1:qeQoM96RzOjNhU8wO71te+fyVjexbIZq/eXxuKmVnmc=
+github.com/smartcontractkit/capabilities/libs/testutils v0.0.0-20250402163239-224ad2061432/go.mod h1:IV5el/od/61QAOkq3lnw3WYr/b/EDz4BeMwoCM6L20c=
 github.com/smartcontractkit/chainlink-common v0.3.1-0.20241202172404-26d4a0b45b23 h1:eFXguUq9e4ETuSteII8ge3mJKyyVIt5pIUxuvyuUuTA=
 github.com/smartcontractkit/chainlink-common v0.3.1-0.20241202172404-26d4a0b45b23/go.mod h1:bQktEJf7sJ0U3SmIcXvbGUox7SmXcnSEZ4kUbT8R5Nk=
 github.com/smartcontractkit/grpc-proxy v0.0.0-20240830132753-a7e17fec5ab7 h1:12ijqMM9tvYVEm+nR826WsrNi6zCKpwBhuApq127wHs=
