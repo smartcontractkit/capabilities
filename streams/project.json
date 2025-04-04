@@ -1,15 +1,14 @@
 {
-  "name": "workflowevent",
+  "name": "streams",
   "projectType": "capability",
-  "projectRoot": "capabilities/workflowevent",
-  "implicitDependencies": ["types"],
+  "implicitDependencies": ["testutils", "loopserver"],
   "tags": [],
   "targets": {
     "lint": {
       "executor": "nx:run-commands",
       "options": {
         "cwd": "{projectRoot}",
-        "command": "golangci-lint run ."
+        "command": "golangci-lint run ./..."
       }
     },
     "test": {
@@ -38,8 +37,8 @@
       "options": {
         "cwd": "{projectRoot}",
         "commands": [
-          "CGO_ENABLED='0' GOOS='linux' GOARCH='amd64' go build -o ./../bin/amd64/{projectName} .",
-          "CGO_ENABLED='0' GOOS='linux' GOARCH='arm64' go build -o ./../bin/arm64/{projectName} ."
+          "CGO_ENABLED='0' GOARCH='amd64' go build -o ./../bin/amd64/{projectName} .",
+          "GOOS='linux' CGO_ENABLED='0' GOARCH='arm64' go build -o ./../bin/arm64/{projectName} ."
         ]
       }
     },
