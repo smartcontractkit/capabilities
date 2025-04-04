@@ -1,0 +1,10 @@
+{
+	"BalanceAddresses": ["0xFbb30BD8E9D779044c3c30dd82e52a5FA1573388"],
+	"BalReadAddress": "0xa68A99C6A80E2ACf65D38F64FFac744AE51c8d96",
+	"ReadCapID": "read-contract-evm-43114@1.0.0",
+	"WriteCapID": "write_avalanche-mainnet@1.0.0",
+	"DeltaStage": "15s",
+	"TimeoutSec": 180,
+	"PorCacheAddress": "0x5aF281C8a183eC292eFe8e6e82063960D3A479ca",
+	"Foo": "Bar"
+}
