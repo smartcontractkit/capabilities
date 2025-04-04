@@ -1,7 +1,7 @@
 {
   "name": "kvstore",
   "projectType": "capability",
-  "implicitDependencies": ["testutils", "loopserver"],
+  "implicitDependencies": ["types", "testutils", "loopserver"],
   "tags": [],
   "targets": {
     "lint": {
