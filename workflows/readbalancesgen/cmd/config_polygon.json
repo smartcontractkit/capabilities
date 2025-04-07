@@ -1,0 +1,9 @@
+{
+	"BalanceAddresses": ["0xFbb30BD8E9D779044c3c30dd82e52a5FA1573388"],
+	"BalReadAddress": "0xf9C805641348dE519210e4A2CA6bd7EE0DAC051f",
+	"ReadCapID": "read-contract-evm-137@1.0.0",
+	"WriteCapID": "write_polygon-mainnet@1.0.0",
+	"DeltaStage": "15s",
+	"TimeoutSec": 180,
+	"PorCacheAddress": "0xf8CEdCB201DA4dDd163cb845aE5220624E96D1B0"
+}

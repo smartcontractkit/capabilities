@@ -1,0 +1,9 @@
+{
+	"BalanceAddresses": ["0xFbb30BD8E9D779044c3c30dd82e52a5FA1573388"],
+	"BalReadAddress": "0xefdBF23c246e565780d8C2F3e15213a788CdC6C8",
+	"ReadCapID": "read-contract-evm-1@1.0.0",
+	"WriteCapID": "write_ethereum-mainnet@1.0.0",
+	"DeltaStage": "30s",
+	"TimeoutSec": 300,
+	"PorCacheAddress": "0x844FDF4275F59ED011feF86857Db88404b0a7C7e"
+}

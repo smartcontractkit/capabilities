@@ -6,6 +6,7 @@ env:
   # Ensure that a cached go version is used:
   # https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md#go
   GO_VERSION: 1.23
+  GOPRIVATE: github.com/smartcontractkit/capabilities
 
 jobs:
   affected:
@@ -47,11 +48,13 @@ jobs:
         run: |
           npx nx@19.8.2 init
           echo "affected=$(./.github/scripts/affected-projects.sh ${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }})" >> $GITHUB_OUTPUT
-          
+
   build:
     needs: affected
     if: ${{fromJson(needs.affected.outputs.nx).run_build}}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -69,6 +72,11 @@ jobs:
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "build"
 
+      - name: Support private Go modules
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./.github/scripts/support-private-gomods.sh
+
       - name: Build ${{ matrix.projects }}
         run: ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} build
 
@@ -85,13 +93,18 @@ jobs:
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
         with:
           fetch-depth: 0
-      
+
       - name: Set up project environment
         uses: ./.github/actions/setup
         with:
           project: ${{ matrix.projects }}
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "test"
+
+      - name: Support private Go modules
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./.github/scripts/support-private-gomods.sh
 
       - name: Unit Test ${{ matrix.projects }}
         run: ./nx run ${{ matrix.projects }}:test
@@ -104,7 +117,7 @@ jobs:
           name: ${{ matrix.projects }}_go_test_results
           # the path to a generated report (per directory)
           path: |
-            ./${{fromJson(needs.affected.outputs.nx)[matrix.projects].root}}/coverage.txt 
+            ./${{fromJson(needs.affected.outputs.nx)[matrix.projects].root}}/coverage.txt
 
   race:
     needs: affected
@@ -119,13 +132,18 @@ jobs:
         uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
         with:
           fetch-depth: 0
-      
+
       - name: Set up project environment
         uses: ./.github/actions/setup
         with:
           project: ${{ matrix.projects }}
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "race"
+
+      - name: Support private Go modules
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./.github/scripts/support-private-gomods.sh
 
       - name: Race Test ${{ matrix.projects }}
         run: ./nx run ${{ matrix.projects }}:race
@@ -149,12 +167,16 @@ jobs:
           project: integration_tests
           go-module-file: ./integration_tests/go.mod
           task: "integrationtest"
+      - name: Support private Go modules
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./.github/scripts/support-private-gomods.sh
       - name: Setup DB
         run: go run github.com/smartcontractkit/chainlink/v2 local db preparetest
         working-directory: integration_tests
         env:
           CL_DATABASE_URL: ${{ env.DB_URL }}
-      - name: run integration_tests 
+      - name: run integration_tests
         env:
           CL_DATABASE_URL: ${{ env.DB_URL }}
         run: ./nx run integration_tests:test
@@ -179,6 +201,11 @@ jobs:
           project: ${{ matrix.projects }}
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "tidy-and-generate"
+
+      - name: Support private Go modules
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./.github/scripts/support-private-gomods.sh
 
       - name: Install mockery
         run: go install github.com/vektra/mockery/v2/...@v2.46.1
@@ -213,6 +240,11 @@ jobs:
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "lint"
 
+      - name: Support private Go modules
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./.github/scripts/support-private-gomods.sh
+
       - name: Golangci Lint (${{ matrix.projects }})
         uses: golangci/golangci-lint-action@38e1018663fa5173f3968ea0777460d3de38f256 # v5.3.0
         with:
@@ -239,6 +271,11 @@ jobs:
 
       - name: Setup Go
         uses: actions/setup-go@v5
+
+      - name: Support private Go modules
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./.github/scripts/support-private-gomods.sh
 
       - run: make modgraph
 
@@ -275,4 +312,3 @@ jobs:
           include-lint: "true"
           sonar-token: ${{ secrets.SONAR_TOKEN }}
           sonar-host-url: ${{ secrets.SONAR_HOST_URL }}
-          
