@@ -1,0 +1,11 @@
+name: street-readbalances-fixed
+workflowID: 00b88be0500452074756da3f25ccd9fc701bd48161173031e13d9da8efbf9a41
+workflowOwner: 0xcec984E1dA8Ad5C012bEE7C4abc334F07Ee61A6e
+binaryURL: https://gist.githubusercontent.com/MStreet3/744ebed8d526169b542ae75173cac687/raw/7a151355d80b73c4f1edf4525b9f8ff50c5105d8/binary.wasm.br.b64
+ConfigURL: ""
+SecretsURL: ""
+sourceURL: ""
+donID: "5"
+workflowRegistry: 0xe3188aFCc8FA3aE39Ea38d73DBBf90A6AD529128
+automaticallyStarted: true
+timestamp: "2025-04-04T12:05:24-04:00"

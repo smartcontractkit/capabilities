@@ -10,7 +10,11 @@ replace github.com/smartcontractkit/capabilities/readcontract => ../readcontract
 
 replace github.com/smartcontractkit/capabilities/loadtestwritetarget => ./../loadtestwritetarget
 
-require github.com/smartcontractkit/chainlink-common v0.4.2-0.20250210122326-d2aaa393ca55
+require (
+	github.com/ethereum/go-ethereum v1.13.8
+	github.com/smartcontractkit/chainlink-common v0.4.2-0.20250210122326-d2aaa393ca55
+	gopkg.in/yaml.v3 v3.0.1
+)
 
 require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
@@ -27,6 +31,7 @@ require (
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.22.0 // indirect
+	github.com/holiman/uint256 v1.2.4 // indirect
 	github.com/invopop/jsonschema v0.12.0 // indirect
 	github.com/leodido/go-urn v1.2.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
@@ -68,5 +73,4 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240903143218-8af14fe29dc1 // indirect
 	google.golang.org/grpc v1.67.1 // indirect
 	google.golang.org/protobuf v1.35.1 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

@@ -1,0 +1,39 @@
+# THIS IS AN EXAMPLE OF THE CRE TOOL CONFIGURATION FILE
+# PLEASE DON'T OVERRIDE SINCE THIS FILE CAN CHANGE IN THE FUTURE
+# INSTEAD COPY THE FILE, RENAME to <name>.settings.yaml AND ADJUST TO YOUR NEEDS
+dev-platform:
+  # Workflow DON ID to use in commands for registering and operating workflows
+  # Optional: If not provided, default DON ID will be used.
+  don-id: 4
+logging:
+  # Path to the seth configuration file (TOML)
+  # Optional: Needed for fine-tuning the logging configuration. If not provided, default settings will be used.
+  seth-config-path: ""
+contracts:
+  # Required contract group
+  registries:
+    # Required: Contract address of the Workflow Registry (override to switch between testnet/mainnet addresss)
+    # Required: Chain selector for the Workflow Registry (https://github.com/smartcontractkit/chain-selectors/blob/main/selectors.yml)
+    - name: WorkflowRegistry
+      address: "0xF3f93fc4dc177748E7557568b5354cB009e3818a"
+      chain-selector: 16015286601757825753
+    # Required: Contract address of Capabilities Registry (override to switch between testnet/mainnet addresss)
+    # Required: Chain selector for the Capabilities Registry (https://github.com/smartcontractkit/chain-selectors/blob/main/selectors.yml)
+    - name: CapabilitiesRegistry
+      address: "0x02471a03A86ac92DE793af303E9f756f0aE60677"
+      chain-selector: 16015286601757825753
+# Required: specify RPC URL (HTTPS) per chain selector
+# Every chain selector mentioned in the contracts section must be mapped to the RPC URL
+rpcs:
+  # Example - Chainselector list can be found at: https://github.com/smartcontractkit/chain-selectors
+  - chain-selector: 16015286601757825753 #ethereum-sepolia
+    url: https://sepolia.drpc.org
+keystone:
+  # Optional: Contract address of the Keystone contract on a specific chain
+  # Optional: Chain selectors for Keystone contracts (https://github.com/smartcontractkit/chain-selectors/blob/main/selectors.yml)
+  - name: KeystoneForwarder
+    address: "0xd0dbB2486e3Fbf371D1B2e35Fa330bef6529d2f4"
+    chain-selector: 16015286601757825753
+workflow_storage:
+  gist:
+    github_token: "${CRE_GITHUB_API_TOKEN}"

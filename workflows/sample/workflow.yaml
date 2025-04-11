@@ -1,0 +1,8 @@
+user-workflow:
+  # This is the address of the workflow owner wallet or MSIG contract.
+  # It is required to establish secrets ownership when encrypting secrets file for the workflow.
+  # This is done in order to prevent an unauthorized owner from attempting to use the secrets in their own workflow.
+  # Optional: Needed for secrets encryption and if MSIG wallet should be used instead of an EOA. If not provided, default will be an empty string.
+  workflow-owner-address: "0xcec984E1dA8Ad5C012bEE7C4abc334F07Ee61A6e"
+  # This is the workflow name used when registered on the Workflow Register Contract
+  workflow-name: "sample"

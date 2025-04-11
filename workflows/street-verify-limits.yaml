@@ -1,0 +1,11 @@
+name: street-verify-limits
+workflowID: 00779dbddc07dfd00b0493ca326d1d5260c4b0ed97e1dc97a0b4abc82292890d
+workflowOwner: 0xcec984E1dA8Ad5C012bEE7C4abc334F07Ee61A6e
+binaryURL: https://gist.githubusercontent.com/MStreet3/b6f161d83794cf34de7fe6810909db7e/raw/5c112f3b5c23fb219f917fd2b4334cabf8fb2c47/binary.wasm.br.b64
+ConfigURL: ""
+SecretsURL: ""
+sourceURL: ""
+donID: "1"
+workflowRegistry: 0xe3188aFCc8FA3aE39Ea38d73DBBf90A6AD529128
+automaticallyStarted: true
+timestamp: "2025-03-31T16:01:01-04:00"

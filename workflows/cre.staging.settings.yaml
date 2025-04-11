@@ -1,0 +1,97 @@
+dev-platform:
+  # Workflow DON ID to use in commands for registering and operating workflows
+  # Optional: If not provided, default DON ID will be used.
+  don-id: 1
+logging:
+  # Path to the seth configuration file (TOML)
+  # Optional: Needed for fine-tuning the logging configuration. If not provided, default settings will be used.
+  seth-config-path: ""
+user-workflow:
+  # This is the address of the workflow owner wallet or MSIG contract.
+  # It is required to establish secrets ownership when encrypting secrets file for the workflow.
+  # This is done in order to prevent an unauthorized owner from attempting to use the secrets in their own workflow.
+  # Optional: Needed for secrets encryption and if MSIG wallet should be used instead of an EOA. If not provided, default will be an empty string.
+  workflow-owner-address: "0xcec984E1dA8Ad5C012bEE7C4abc334F07Ee61A6e"
+mcms-config:
+  # Path to proposals directory
+  # Optional: Location for storing all proposal files. If not provided, proposal will be stored directly to current root directory.
+  proposals-directory: "./proposals/staging/"
+contracts:
+  # Required contract group
+  registries:
+    # Required: Contract address of the Workflow Registry (override to switch between testnet/mainnet addresss)
+    # Required: Chain selector for the Workflow Registry (https://github.com/smartcontractkit/chain-selectors/blob/main/selectors.yml)
+    - name: WorkflowRegistry
+      address: "0xe3188aFCc8FA3aE39Ea38d73DBBf90A6AD529128"
+      chain-selector: 16015286601757825753 #ethereum-sepolia
+    # Required: Contract address of Capabilities Registry (override to switch between testnet/mainnet addresss)
+    # Required: Chain selector for the Capabilities Registry (https://github.com/smartcontractkit/chain-selectors/blob/main/selectors.yml)
+    - name: CapabilitiesRegistry
+      address: "0x455D2C9DD31046dccEf8317Ff71AF0a2ce3A8170"
+      chain-selector: 16015286601757825753 #ethereum-sepolia
+  mcms:
+    - name: ProposerManyChainMultiSig
+      address: "0xaC40c4698E64b4411eb372F8374eF31F31BF4DaF"
+      chain-selector: 16015286601757825753 #ethereum-sepolia
+    - name: RBACTimelock
+      address: "0x8a6d3E7531Be0dA98a5043d28a4cDa33Ddf425a1"
+      chain-selector: 16015286601757825753 #ethereum-sepolia
+    - name: CallProxy
+      address: "0x78bDf9300dD17f48f38E890D3170311C0Ca828cB"
+      chain-selector: 16015286601757825753 #ethereum-sepolia
+    - name: ProposerManyChainMultiSig
+      address: "0x778dF87186470198Db7C647889Ab0Ccb472CDb8B"
+      chain-selector: 3478487238524512106 #arbitrum-sepolia
+    - name: RBACTimelock
+      address: "0xA016FbAc72EC07E706A4138bAA8bA772dadEaf58"
+      chain-selector: 3478487238524512106 #arbitrum-sepolia
+    - name: CallProxy
+      address: "0x2496029DE83ade46d25D083D62F3f9110B91001f"
+      chain-selector: 3478487238524512106 #arbitrum-sepolia
+  data-feeds:
+    - name: DataFeedsCache
+      address: "0x80716f867A3e69d46D740d137f43cBa61C68a40D"
+      chain-selector: 13264668187771770619 #binance_smart_chain-testnet 97
+    - name: DataFeedsCache
+      address: "0xf0F516843BE002E820cc418DD861c4cca5d5Ff0e"
+      chain-selector: 16015286601757825753 #ethereum-sepolia
+    - name: DataFeedsCache
+      address: "0x2e6AE560E9845EFB857bA344Ed2Cd275a95F1190"
+      chain-selector: 3478487238524512106 #ethereum-testnet-sepolia-arbitrum-1 421614
+    - name: DataFeedsCache
+      address: "0xB873538b29468E980E08f40762BeBE1ddE25B090"
+      chain-selector: 10344971235874465080 #ethereum-testnet-sepolia-base-1 84532
+    - name: DataFeedsCache
+      address: "0xAA9ecc4068fB48e92EDA56f98e2d40C9cCE0F78D"
+      chain-selector: 5224473277236331295 #ethereum-testnet-sepolia-optimism-1 11155420
+    - name: DataFeedsCache
+      address: "0xAdf6DBb1c936D13907A419D57918342df1AD5d3b"
+      chain-selector: 16281711391670634445 #polygon-testnet-amoy 80002
+    - name: DataFeedsCache
+      address: "0x9167C613aBa1E81ACe1aD09253720ce76cCcBCE5"
+      chain-selector: 14767482510784806043 #avalanche-testnet-fuji 43113 not verified due to explorer delays
+  keystone:
+    - name: KeystoneForwarder
+      address: "0x7e2B4c7477e9372DF969CF0e097Bbc620D421ca3"
+      chain-selector: 16015286601757825753 #ethereum-sepolia
+    - name: KeystoneForwarder
+      address: "0xC6dD174b18E5b477183e330370844f59F4556A69"
+      chain-selector: 3478487238524512106 #arbitrum-sepolia
+
+# Required: specify RPC URL (HTTPS) per chain selector
+# Every chain selector mentioned in the contracts section must be mapped to the RPC URL
+rpcs:
+  - chain-selector: 3478487238524512106 #arbitrum-sepolia
+    url: https://rpcs.cldev.sh/arbitrum/sepolia
+  - chain-selector: 16015286601757825753 #ethereum-sepolia
+    url: https://rpcs.cldev.sh/ethereum/sepolia
+  - chain-selector: 16281711391670634445 #polygon-testnet-amoy 80002
+    url: https://rpcs.cldev.sh/polygon/amoy
+  - chain-selector: 14767482510784806043 #avalanche-testnet-fuji 43113
+    url: https://rpcs.cldev.sh/avalanche/fuji
+  - chain-selector: 13264668187771770619 #binance-smart-chain-testnet 97
+    url: https://rpcs.cldev.sh/bsc/testnet
+  - chain-selector: 10344971235874465080 #ethereum-testnet-sepolia-base-1 84532
+    url: https://rpcs.cldev.sh/base/sepolia
+  - chain-selector: 5224473277236331295 #ethereum-testnet-sepolia-optimism-1 11155420
+    url: https://rpcs.cldev.sh/optimism/sepolia
