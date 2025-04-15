@@ -24,6 +24,8 @@ runs:
         go-version: ${{ env.GO_VERSION }}
         # We are doing custom caching, so we don't need the default caching
         cache: false
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v3
     - name: Cache NX
       uses: actions/cache@v4
       with:
