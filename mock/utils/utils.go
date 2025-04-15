@@ -1,12 +1,13 @@
 package utils
 
 import (
-	"github.com/smartcontractkit/capabilities/mock/internal/pb"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 	pb2 "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
+
+	"github.com/smartcontractkit/capabilities/mock/internal/pb"
 )
 
 func MapToBytes(m *values.Map) ([]byte, error) {
