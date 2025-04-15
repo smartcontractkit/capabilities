@@ -69,24 +69,24 @@ func (m *mockCapRegistry) GetConsensus(ctx context.Context, id string) (capabili
 }
 
 func (m *mockCapRegistry) GetAction(ctx context.Context, id string) (capabilities.ActionCapability, error) {
-	cap := m.caps[id]
-	if action, ok := cap.(capabilities.ActionCapability); ok {
+	capability := m.caps[id]
+	if action, ok := capability.(capabilities.ActionCapability); ok {
 		return action, nil
 	}
 	return nil, nil
 }
 
 func (m *mockCapRegistry) GetTarget(ctx context.Context, id string) (capabilities.TargetCapability, error) {
-	cap := m.caps[id]
-	if target, ok := cap.(capabilities.TargetCapability); ok {
+	capability := m.caps[id]
+	if target, ok := capability.(capabilities.TargetCapability); ok {
 		return target, nil
 	}
 	return nil, nil
 }
 
 func (m *mockCapRegistry) GetTrigger(ctx context.Context, id string) (capabilities.TriggerCapability, error) {
-	cap := m.caps[id]
-	if trigger, ok := cap.(capabilities.TriggerCapability); ok {
+	capability := m.caps[id]
+	if trigger, ok := capability.(capabilities.TriggerCapability); ok {
 		return trigger, nil
 	}
 	return nil, nil

@@ -90,7 +90,6 @@ func (m *MockRegistry) CreateCapability(ctx context.Context, info *pb.Capability
 	default:
 		return &emptypb.Empty{}, errors.New("capability type not supported")
 	}
-
 }
 
 func (m *MockRegistry) SendTriggerEvent(ctx context.Context, request *pb.SendTriggerEventRequest) (*emptypb.Empty, error) {
@@ -206,7 +205,6 @@ func (m *MockRegistry) RegisterTrigger(request *pb.TriggerRegistrationRequest, s
 			m.lggr.Infow("trigger event sent", "event", event)
 		}
 	}
-
 }
 
 func (m *MockRegistry) UnregisterTrigger(ctx context.Context, request *pb.TriggerRegistrationRequest) (*emptypb.Empty, error) {
@@ -402,14 +400,6 @@ func (m *MockRegistry) GetTarget(ctx context.Context, id string) (capabilities.T
 	t, ok := m.Targets[id]
 	if !ok {
 		return nil, fmt.Errorf("cannot find target %s", id)
-	}
-	return t, nil
-}
-
-func (m *MockRegistry) findTrigger(ctx context.Context, id string) (capabilities.TriggerCapability, error) {
-	t, err := m.capabilitiesRegistry.GetTrigger(ctx, id)
-	if err != nil {
-		return nil, err
 	}
 	return t, nil
 }
