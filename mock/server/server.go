@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/pelletier/go-toml/v2"
+
 	"github.com/smartcontractkit/capabilities/mock/internal"
 	"github.com/smartcontractkit/capabilities/mock/internal/pb"
 	"github.com/smartcontractkit/capabilities/mock/utils"

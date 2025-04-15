@@ -8,9 +8,10 @@ import (
 	"time"
 
 	"github.com/smartcontractkit/capabilities/libs/testutils"
-	"github.com/smartcontractkit/capabilities/mock/internal/pb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/smartcontractkit/capabilities/mock/internal/pb"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 )
