@@ -21,6 +21,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/pb"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
+	"github.com/smartcontractkit/chainlink-integrations/evm/assets"
+	"github.com/smartcontractkit/chainlink-integrations/evm/testutils"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/compute"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/framework"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/keystone"
@@ -28,10 +30,9 @@ import (
 	kcr "github.com/smartcontractkit/chainlink/v2/core/gethwrappers/keystone/generated/capabilities_registry_1_1_0"
 	feeds_consumer "github.com/smartcontractkit/chainlink/v2/core/gethwrappers/keystone/generated/feeds_consumer_1_0_0"
 	"github.com/smartcontractkit/chainlink/v2/core/logger"
+	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/handlers/capabilities"
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/handlers/common"
 	"github.com/smartcontractkit/chainlink/v2/core/services/registrysyncer"
-	"github.com/smartcontractkit/chainlink/v2/evm/assets"
-	"github.com/smartcontractkit/chainlink/v2/evm/testutils"
 
 	"github.com/smartcontractkit/capabilities/integration_tests/por/contract"
 	"github.com/smartcontractkit/capabilities/integration_tests/utils"
@@ -65,8 +66,7 @@ type readBalancesConfig struct {
 }
 
 func Test_PORReadbalances(t *testing.T) {
-	ctx, cancel := framework.Context(t)
-	defer cancel()
+	ctx := t.Context()
 
 	lggr := logger.TestLogger(t)
 	lggr.SetLogLevel(zapcore.InfoLevel)
@@ -80,7 +80,6 @@ func Test_PORReadbalances(t *testing.T) {
 
 	wasmFile := filepath.Join(readBalancesWithConfigPath, "readbalances.wasm")
 	mainFile := filepath.Join(readBalancesWithConfigPath, "main.go")
-
 	utils.CreateWasmBinary(t, mainFile, wasmFile)
 
 	consumerContract := setupDons(ctx, t, lggr, wasmFile)
@@ -123,7 +122,8 @@ func setupDons(ctx context.Context, t *testing.T, lggr logger.SugaredLogger, wor
 
 	compressedBinary, base64EncodedCompressedBinary := utils.GetCompressedWorkflowWasm(t, workflowURL)
 
-	syncerFetcherFunc := func(ctx context.Context, url string, maxBytes uint32) ([]byte, error) {
+	syncerFetcherFunc := func(ctx context.Context, messageID string, req capabilities.Request) ([]byte, error) {
+		url := req.URL
 		switch url {
 		case workflowURL:
 			return []byte(base64EncodedCompressedBinary), nil

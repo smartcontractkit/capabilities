@@ -9,12 +9,10 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jonboulle/clockwork v0.4.0
 	github.com/prometheus/client_golang v1.17.0
-	github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-unpublished
+	github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-20250402163239-224ad2061432
 	github.com/smartcontractkit/chainlink-common v0.4.2-0.20250225100621-f0e1dd7b7942
 	github.com/stretchr/testify v1.9.0
 )
-
-replace github.com/smartcontractkit/capabilities/libs/loopserver => ../libs/loopserver
 
 require (
 	github.com/XSAM/otelsql v0.29.0 // indirect
