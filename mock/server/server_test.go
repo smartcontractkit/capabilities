@@ -8,10 +8,11 @@ import (
 	"time"
 
 	"github.com/hashicorp/consul/sdk/freeport"
-	"github.com/smartcontractkit/capabilities/libs/testutils"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+
+	"github.com/smartcontractkit/capabilities/libs/testutils"
 
 	"github.com/smartcontractkit/capabilities/mock/internal/pb"
 	"github.com/smartcontractkit/capabilities/mock/utils"

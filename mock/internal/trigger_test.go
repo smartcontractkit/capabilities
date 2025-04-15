@@ -7,10 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/smartcontractkit/capabilities/libs/testutils"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/smartcontractkit/capabilities/libs/testutils"
 
 	"github.com/smartcontractkit/capabilities/mock/internal/pb"
 )
