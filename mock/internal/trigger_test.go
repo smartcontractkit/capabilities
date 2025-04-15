@@ -8,12 +8,11 @@ import (
 	"time"
 
 	"github.com/smartcontractkit/capabilities/libs/testutils"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/capabilities/mock/internal/pb"
-
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 )
 
 func TestTrigger_RegisterAndUnregister(t *testing.T) {
