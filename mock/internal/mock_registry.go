@@ -91,7 +91,6 @@ func (m *MockRegistry) CreateCapability(ctx context.Context, info *pb.Capability
 		return &emptypb.Empty{}, errors.New("capability type not supported")
 	}
 
-	return &emptypb.Empty{}, nil
 }
 
 func (m *MockRegistry) SendTriggerEvent(ctx context.Context, request *pb.SendTriggerEventRequest) (*emptypb.Empty, error) {
@@ -208,7 +207,6 @@ func (m *MockRegistry) RegisterTrigger(request *pb.TriggerRegistrationRequest, s
 		}
 	}
 
-	return nil
 }
 
 func (m *MockRegistry) UnregisterTrigger(ctx context.Context, request *pb.TriggerRegistrationRequest) (*emptypb.Empty, error) {
@@ -333,148 +331,148 @@ func (m *MockRegistry) Execute(ctx context.Context, request *pb.ExecutableReques
 	}, nil
 }
 
-func (s *MockRegistry) createAction(ctx context.Context, info *pb.CapabilityInfo) (*emptypb.Empty, error) {
-	c := NewExecutable(info, s.executableRequests)
-	err := s.capabilitiesRegistry.Add(ctx, c)
+func (m *MockRegistry) createAction(ctx context.Context, info *pb.CapabilityInfo) (*emptypb.Empty, error) {
+	c := NewExecutable(info, m.executableRequests)
+	err := m.capabilitiesRegistry.Add(ctx, c)
 	if err != nil {
-		s.lggr.Error(err)
+		m.lggr.Error(err)
 		return &emptypb.Empty{}, err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.Action[info.ID] = c
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.Action[info.ID] = c
 
-	s.lggr.Infow("Created mock action", "id", info.ID)
+	m.lggr.Infow("Created mock action", "id", info.ID)
 	return &emptypb.Empty{}, nil
 }
 
-func (s *MockRegistry) createConsensus(ctx context.Context, info *pb.CapabilityInfo) (*emptypb.Empty, error) {
-	c := NewExecutable(info, s.executableRequests)
-	err := s.capabilitiesRegistry.Add(ctx, c)
+func (m *MockRegistry) createConsensus(ctx context.Context, info *pb.CapabilityInfo) (*emptypb.Empty, error) {
+	c := NewExecutable(info, m.executableRequests)
+	err := m.capabilitiesRegistry.Add(ctx, c)
 	if err != nil {
-		s.lggr.Error(err)
+		m.lggr.Error(err)
 		return &emptypb.Empty{}, err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.Consensus[info.ID] = c
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.Consensus[info.ID] = c
 
-	s.lggr.Infow("Created mock consensus", "id", info.ID)
+	m.lggr.Infow("Created mock consensus", "id", info.ID)
 	return &emptypb.Empty{}, nil
 }
 
-func (s *MockRegistry) createTarget(ctx context.Context, info *pb.CapabilityInfo) (*emptypb.Empty, error) {
-	c := NewExecutable(info, s.executableRequests)
-	err := s.capabilitiesRegistry.Add(ctx, c)
+func (m *MockRegistry) createTarget(ctx context.Context, info *pb.CapabilityInfo) (*emptypb.Empty, error) {
+	c := NewExecutable(info, m.executableRequests)
+	err := m.capabilitiesRegistry.Add(ctx, c)
 	if err != nil {
-		s.lggr.Error(err)
+		m.lggr.Error(err)
 		return &emptypb.Empty{}, err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.Targets[info.ID] = c
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.Targets[info.ID] = c
 
-	s.lggr.Infow("Created mock target", "id", info.ID)
+	m.lggr.Infow("Created mock target", "id", info.ID)
 	return &emptypb.Empty{}, nil
 }
 
-func (s *MockRegistry) createTrigger(ctx context.Context, info *pb.CapabilityInfo) (*emptypb.Empty, error) {
-	c := NewTrigger(info, s.lggr)
-	err := s.capabilitiesRegistry.Add(ctx, c)
+func (m *MockRegistry) createTrigger(ctx context.Context, info *pb.CapabilityInfo) (*emptypb.Empty, error) {
+	c := NewTrigger(info, m.lggr)
+	err := m.capabilitiesRegistry.Add(ctx, c)
 	if err != nil {
-		s.lggr.Error(err)
+		m.lggr.Error(err)
 		return &emptypb.Empty{}, err
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.Triggers[info.ID] = c
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.Triggers[info.ID] = c
 
-	s.lggr.Infow("Created mock trigger", "id", info.ID)
+	m.lggr.Infow("Created mock trigger", "id", info.ID)
 	return &emptypb.Empty{}, nil
 }
 
-func (s *MockRegistry) GetTrigger(ctx context.Context, id string) (capabilities.TriggerCapability, error) {
-	t, ok := s.Triggers[id]
+func (m *MockRegistry) GetTrigger(ctx context.Context, id string) (capabilities.TriggerCapability, error) {
+	t, ok := m.Triggers[id]
 	if !ok {
 		return nil, fmt.Errorf("cannot find trigger %s", id)
 	}
 	return t, nil
 }
-func (s *MockRegistry) GetTarget(ctx context.Context, id string) (capabilities.TargetCapability, error) {
-	t, ok := s.Targets[id]
+func (m *MockRegistry) GetTarget(ctx context.Context, id string) (capabilities.TargetCapability, error) {
+	t, ok := m.Targets[id]
 	if !ok {
 		return nil, fmt.Errorf("cannot find target %s", id)
 	}
 	return t, nil
 }
 
-func (s *MockRegistry) findTrigger(ctx context.Context, id string) (capabilities.TriggerCapability, error) {
-	t, err := s.capabilitiesRegistry.GetTrigger(ctx, id)
+func (m *MockRegistry) findTrigger(ctx context.Context, id string) (capabilities.TriggerCapability, error) {
+	t, err := m.capabilitiesRegistry.GetTrigger(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 	return t, nil
 }
 
-func (s *MockRegistry) getExecutable(ctx context.Context, ID string, capType pb.CapabilityType) (capabilities.ExecutableCapability, error) {
+func (m *MockRegistry) getExecutable(ctx context.Context, ID string, capType pb.CapabilityType) (capabilities.ExecutableCapability, error) {
 	switch capType {
 	case pb.CapabilityType_Target:
-		return s.findTarget(ctx, ID)
+		return m.findTarget(ctx, ID)
 	case pb.CapabilityType_Action:
-		return s.findAction(ctx, ID)
+		return m.findAction(ctx, ID)
 	case pb.CapabilityType_Consensus:
-		return s.findConsensus(ctx, ID)
+		return m.findConsensus(ctx, ID)
 	default:
 		return nil, errors.New("capability type not supported")
 	}
 }
 
-func (s *MockRegistry) findTarget(ctx context.Context, id string) (capabilities.TargetCapability, error) {
-	t, err := s.capabilitiesRegistry.GetTarget(ctx, id)
+func (m *MockRegistry) findTarget(ctx context.Context, id string) (capabilities.TargetCapability, error) {
+	t, err := m.capabilitiesRegistry.GetTarget(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 	return t, nil
 }
 
-func (s *MockRegistry) findAction(ctx context.Context, id string) (capabilities.ActionCapability, error) {
-	t, err := s.capabilitiesRegistry.GetAction(ctx, id)
+func (m *MockRegistry) findAction(ctx context.Context, id string) (capabilities.ActionCapability, error) {
+	t, err := m.capabilitiesRegistry.GetAction(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 	return t, nil
 }
 
-func (s *MockRegistry) findConsensus(ctx context.Context, id string) (capabilities.ConsensusCapability, error) {
-	t, err := s.capabilitiesRegistry.GetConsensus(ctx, id)
+func (m *MockRegistry) findConsensus(ctx context.Context, id string) (capabilities.ConsensusCapability, error) {
+	t, err := m.capabilitiesRegistry.GetConsensus(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 	return t, nil
 }
 
-func (s *MockRegistry) incomingLoop(server pb.MockCapability_HookExecutablesServer) {
+func (m *MockRegistry) incomingLoop(server pb.MockCapability_HookExecutablesServer) {
 	for {
 		executeResponse, err := server.Recv()
-		if err == io.EOF {
-			s.lggr.Warnf("Execute hook closed")
+		if errors.Is(err, io.EOF) {
+			m.lggr.Warnf("Execute hook closed")
 			return
 		}
 		if err != nil {
-			s.lggr.Errorf("Error receiving message: %v", err)
+			m.lggr.Errorf("Error receiving message: %v", err)
 			return
 		}
 
-		t, err := s.findExecutable(executeResponse.ID, executeResponse.CapabilityType)
+		t, err := m.findExecutable(executeResponse.ID, executeResponse.CapabilityType)
 
 		if err != nil {
-			s.lggr.Errorw("Could not find capability", "err", err, "id", executeResponse.ID, "type", utils.ToCapabilityEnum(executeResponse.CapabilityType))
+			m.lggr.Errorw("Could not find capability", "err", err, "id", executeResponse.ID, "type", utils.ToCapabilityEnum(executeResponse.CapabilityType))
 			continue
 		}
 
 		v, err := utils.BytesToMap(executeResponse.Value)
 		if err != nil {
-			s.lggr.Errorw("cannot convert value to bytes", "err", err)
+			m.lggr.Errorw("cannot convert value to bytes", "err", err)
 		}
 		t.ResponseChan <- capabilities.CapabilityResponse{
 			Value: v,
@@ -482,26 +480,26 @@ func (s *MockRegistry) incomingLoop(server pb.MockCapability_HookExecutablesServ
 	}
 }
 
-func (s *MockRegistry) findExecutable(ID string, capType pb.CapabilityType) (*Executable, error) {
+func (m *MockRegistry) findExecutable(ID string, capType pb.CapabilityType) (*Executable, error) {
 	var t *Executable
 	var found bool
 
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 
 	switch capType {
 	case pb.CapabilityType_Target:
-		t, found = s.Targets[ID]
+		t, found = m.Targets[ID]
 	case pb.CapabilityType_Action:
-		t, found = s.Action[ID]
+		t, found = m.Action[ID]
 	case pb.CapabilityType_Consensus:
-		t, found = s.Consensus[ID]
+		t, found = m.Consensus[ID]
 	default:
-		return nil, errors.New(fmt.Sprintf("capability %s not supported", capType))
+		return nil, fmt.Errorf("capability %s not supported", capType)
 	}
 
 	if !found {
-		return nil, errors.New(fmt.Sprintf("capability %s not found", ID))
+		return nil, fmt.Errorf("capability %s not found", ID)
 	}
 
 	return t, nil

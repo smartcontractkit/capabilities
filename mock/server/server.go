@@ -20,7 +20,7 @@ var _ loop.StandardCapabilities = (*MockServer)(nil)
 
 type Mocks struct {
 	ID          string `toml:"id"`
-	Description string `toml:"description""`
+	Description string `toml:"description"`
 	Type        string `toml:"type"`
 }
 type Config struct {
@@ -85,7 +85,12 @@ func (s *MockServer) Initialise(ctx context.Context, config string, telemetrySer
 		}
 	}
 
-	go s.MockRegistry.Start(mockConfig.Port)
+	go func() {
+		err2 := s.MockRegistry.Start(mockConfig.Port)
+		if err2 != nil {
+			panic(err2)
+		}
+	}()
 
 	return nil
 }

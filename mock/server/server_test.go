@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/hashicorp/consul/sdk/freeport"
-	"github.com/hashicorp/consul/sdk/testutil"
 	"github.com/smartcontractkit/capabilities/libs/testutils"
 	"github.com/smartcontractkit/capabilities/mock/internal/pb"
 	"github.com/smartcontractkit/capabilities/mock/utils"
@@ -29,7 +28,6 @@ func Test_ServerTrigger(t *testing.T) {
 	capabilitiesServer := &MockServer{Lggr: logger}
 	require.NotNil(t, capabilitiesServer)
 
-	ctx := testutil.TestContext(t)
 	// Timeout is important to avoid hanging tests
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -107,14 +105,10 @@ type="trigger"
 
 	go func() {
 		defer wg.Done()
-		found := 0
 		for {
-			select {
-			case m := <-r1Chan:
-				found++
-				require.Equal(t, m.Event.Outputs, e)
-				return
-			}
+			m := <-r1Chan
+			require.Equal(t, m.Event.Outputs, e)
+			return
 		}
 	}()
 
@@ -131,7 +125,6 @@ type="trigger"
 	require.NoError(t, err)
 
 	wg.Wait()
-
 }
 
 func Test_ServerExecutable(t *testing.T) {
@@ -248,19 +241,17 @@ type="target"
 	go func() {
 		wg.Done()
 		for {
-			select {
-			case m := <-ch:
-				logger.Infow("Got message, forwarding response", "m", m.String())
-				err2 := hookExecutables.Send(&pb.ExecutableResponse{
-					ID:             m.ID,
-					CapabilityType: m.CapabilityType,
-					Value:          nil,
-				})
-				require.NoError(t, err2)
-				resCount++
-				if resCount > 1 {
-					return
-				}
+			m := <-ch
+			logger.Infow("Got message, forwarding response", "m", m.String())
+			err2 := hookExecutables.Send(&pb.ExecutableResponse{
+				ID:             m.ID,
+				CapabilityType: m.CapabilityType,
+				Value:          nil,
+			})
+			require.NoError(t, err2)
+			resCount++
+			if resCount > 1 {
+				return
 			}
 		}
 	}()

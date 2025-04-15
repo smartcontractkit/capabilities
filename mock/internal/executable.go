@@ -57,7 +57,6 @@ func (t *Executable) Execute(ctx context.Context, request capabilities.Capabilit
 	case <-time.After(t.ExecuteTimeout):
 		return capabilities.CapabilityResponse{}, errors.New("timeout waiting for execute response")
 	}
-
 }
 
 func NewExecutable(info *pb.CapabilityInfo, rChan chan ExecutableRequest) *Executable {

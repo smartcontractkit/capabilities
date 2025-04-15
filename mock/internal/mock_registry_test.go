@@ -39,12 +39,12 @@ func (m *mockCapRegistry) Remove(ctx context.Context, ID string) error {
 	return nil
 }
 
-func (m *mockCapRegistry) Add(ctx context.Context, cap capabilities.BaseCapability) error {
-	info, err := cap.Info(ctx)
+func (m *mockCapRegistry) Add(ctx context.Context, capability capabilities.BaseCapability) error {
+	info, err := capability.Info(ctx)
 	if err != nil {
 		return err
 	}
-	m.caps[info.ID] = cap
+	m.caps[info.ID] = capability
 	return nil
 }
 
@@ -61,8 +61,8 @@ func (m *mockCapRegistry) List(ctx context.Context) ([]capabilities.BaseCapabili
 }
 
 func (m *mockCapRegistry) GetConsensus(ctx context.Context, id string) (capabilities.ConsensusCapability, error) {
-	cap := m.caps[id]
-	if cons, ok := cap.(capabilities.ConsensusCapability); ok {
+	capability := m.caps[id]
+	if cons, ok := capability.(capabilities.ConsensusCapability); ok {
 		return cons, nil
 	}
 	return nil, nil
@@ -237,13 +237,10 @@ func TestMockRegistry_Execute(t *testing.T) {
 	executable := registry.Targets["test-target"]
 	executable.ExecuteTimeout = time.Millisecond * 50000
 	go func() {
-		select {
-		case <-executable.requestChan:
-			executable.ResponseChan <- capabilities.CapabilityResponse{
-				Value: inputs,
-			}
+		<-executable.requestChan
+		executable.ResponseChan <- capabilities.CapabilityResponse{
+			Value: inputs,
 		}
-
 	}()
 
 	resp, err := registry.Execute(ctx, &pb.ExecutableRequest{

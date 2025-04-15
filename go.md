@@ -20,6 +20,9 @@ flowchart LR
 	click capabilities/libs/testutils href "https://github.com/smartcontractkit/capabilities"
 	capabilities/loadtestwritetarget --> capabilities/libs/loopserver
 	click capabilities/loadtestwritetarget href "https://github.com/smartcontractkit/capabilities"
+	capabilities/mock --> capabilities/libs/loopserver
+	capabilities/mock --> capabilities/libs/testutils
+	click capabilities/mock href "https://github.com/smartcontractkit/capabilities"
 	capabilities/readcontract --> capabilities/libs/loopserver
 	capabilities/readcontract --> capabilities/libs/testutils
 	click capabilities/readcontract href "https://github.com/smartcontractkit/capabilities"
@@ -28,8 +31,6 @@ flowchart LR
 	click capabilities/workflowevent href "https://github.com/smartcontractkit/capabilities"
 	capabilities/workflows --> chainlink-common
 	click capabilities/workflows href "https://github.com/smartcontractkit/capabilities"
-	capabilities/workflows/readbalancesgen --> chainlink-common
-	click capabilities/workflows/readbalancesgen href "https://github.com/smartcontractkit/capabilities"
 	chain-selectors
 	click chain-selectors href "https://github.com/smartcontractkit/chain-selectors"
 	chainlink-automation --> chainlink-common
@@ -98,10 +99,10 @@ flowchart LR
 		 capabilities/libs/loopserver
 		 capabilities/libs/testutils
 		 capabilities/loadtestwritetarget
+		 capabilities/mock
 		 capabilities/readcontract
 		 capabilities/workflowevent
 		 capabilities/workflows
-		 capabilities/workflows/readbalancesgen
 	end
 	click capabilities-repo href "https://github.com/smartcontractkit/capabilities"
 

@@ -27,7 +27,6 @@ type Trigger struct {
 }
 
 func NewTrigger(info *pb.CapabilityInfo, lggr logger.Logger) *Trigger {
-
 	return &Trigger{
 		CapabilityInfo: capabilities.CapabilityInfo{
 			ID:             info.ID,
