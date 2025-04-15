@@ -216,7 +216,7 @@ jobs:
           ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} generate
 
       - name: Ensure no diff
-        run: git diff --stat --exit-code
+        run: git diff --minimal --exit-code
 
   lint:
     needs: affected
