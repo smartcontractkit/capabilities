@@ -8,15 +8,16 @@ import (
 	"time"
 
 	"github.com/hashicorp/consul/sdk/freeport"
-	"github.com/smartcontractkit/capabilities/libs/testutils"
-	"github.com/smartcontractkit/capabilities/mock/internal/pb"
-	"github.com/smartcontractkit/capabilities/mock/utils"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+
+	"github.com/smartcontractkit/capabilities/libs/testutils"
+	"github.com/smartcontractkit/capabilities/mock/internal/pb"
+	"github.com/smartcontractkit/capabilities/mock/utils"
 )
 
 func Test_ServerTrigger(t *testing.T) {
