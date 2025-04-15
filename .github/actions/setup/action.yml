@@ -25,6 +25,7 @@ runs:
         # We are doing custom caching, so we don't need the default caching
         cache: false
     - name: Install protoc
+      shell: bash
       run: |
         PROTOC_VERSION=28.1
         curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip
