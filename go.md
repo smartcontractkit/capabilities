@@ -31,6 +31,8 @@ flowchart LR
 	click capabilities/workflowevent href "https://github.com/smartcontractkit/capabilities"
 	capabilities/workflows --> chainlink-common
 	click capabilities/workflows href "https://github.com/smartcontractkit/capabilities"
+	capabilities/workflows/readbalancesgen --> chainlink-common
+	click capabilities/workflows/readbalancesgen href "https://github.com/smartcontractkit/capabilities"
 	chain-selectors
 	click chain-selectors href "https://github.com/smartcontractkit/chain-selectors"
 	chainlink-automation --> chainlink-common
@@ -103,6 +105,7 @@ flowchart LR
 		 capabilities/readcontract
 		 capabilities/workflowevent
 		 capabilities/workflows
+		 capabilities/workflows/readbalancesgen
 	end
 	click capabilities-repo href "https://github.com/smartcontractkit/capabilities"
 

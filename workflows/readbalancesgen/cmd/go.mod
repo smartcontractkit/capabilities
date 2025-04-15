@@ -1,12 +1,12 @@
 module github.com/smartcontractkit/capabilities/workflows/readbalancesgen
 
-go 1.23.3
+go 1.24
 
-toolchain go1.23.4
+toolchain go1.24.2
 
 require (
 	github.com/ethereum/go-ethereum v1.14.11
-	github.com/smartcontractkit/chainlink-common v0.5.1-0.20250321130403-7a90b780e251
+	github.com/smartcontractkit/chainlink-common v0.6.0
 )
 
 require (
@@ -65,6 +65,6 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20240903143218-8af14fe29dc1 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240903143218-8af14fe29dc1 // indirect
 	google.golang.org/grpc v1.67.1 // indirect
-	google.golang.org/protobuf v1.35.1 // indirect
+	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
