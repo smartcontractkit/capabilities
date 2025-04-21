@@ -164,7 +164,7 @@ func (r *ReadContractAction) Execute(ctx context.Context, request capabilities.C
 		return capabilities.CapabilityResponse{}, fmt.Errorf("error binding read identifier: %w", err)
 	}
 
-	lggr.Info("Executing Get Latest Value request", "readIdentifier", config.ReadIdentifier, "address", config.ContractAddress,
+	lggr.Infow("Executing Get Latest Value request", "readIdentifier", config.ReadIdentifier, "address", config.ContractAddress,
 		"confidenceLevel", confidenceLevel, "params", inputs.Params)
 
 	resp, err := reader.GetLatestValue(ctx, request.Metadata.WorkflowExecutionID, confidenceLevel, inputs.Params)
