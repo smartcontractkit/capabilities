@@ -1,8 +1,5 @@
 {
   "name": "capabilities",
-  "engines": {
-    "pnpm": "10"
-  },
   "private": true,
   "version": "0.1.0",
   "description": "",
