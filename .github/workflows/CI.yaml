@@ -17,6 +17,11 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+
+      # Needed for pnpm.
+      - name: Setup Node.js
+        uses: smartcontractkit/.github/actions/setup-nodejs@dx-643/pnpm-bump # TODO
+
       # There's no need to setup Node as it is pre-installed:
       # https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2204-Readme.md
       - name: Cache NX
