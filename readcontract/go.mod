@@ -1,6 +1,6 @@
 module github.com/smartcontractkit/capabilities/readcontract
 
-go 1.24
+go 1.24.1
 
 toolchain go1.24.2
 
@@ -9,7 +9,7 @@ require (
 	github.com/jonboulle/clockwork v0.4.0
 	github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-20250402163239-224ad2061432
 	github.com/smartcontractkit/capabilities/libs/testutils v0.0.0-20250402163239-224ad2061432
-	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250430110238-37914f6b9ce0
+	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250501105414-d46a3f780fb4
 	github.com/smartcontractkit/libocr v0.0.0-20250328171017-609ec10a5510 // indirect
 	github.com/stretchr/testify v1.10.0
 	go.opentelemetry.io/otel/metric v1.35.0 // indirect
@@ -107,7 +107,7 @@ require (
 	golang.org/x/crypto v0.36.0 // indirect
 	golang.org/x/exp v0.0.0-20240909161429-701f63a606c0 // indirect
 	golang.org/x/net v0.38.0 // indirect
-	golang.org/x/sys v0.31.0 // indirect
+	golang.org/x/sys v0.32.0 // indirect
 	golang.org/x/text v0.23.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250218202821-56aae31c358a // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250324211829-b45e905df463 // indirect

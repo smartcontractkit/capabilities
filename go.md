@@ -44,6 +44,7 @@ flowchart LR
 	click chainlink-ccip href "https://github.com/smartcontractkit/chainlink-ccip"
 	chainlink-ccip/chains/solana --> chainlink-ccip
 	click chainlink-ccip/chains/solana href "https://github.com/smartcontractkit/chainlink-ccip"
+	chainlink-common --> freeport
 	chainlink-common --> grpc-proxy
 	chainlink-common --> libocr
 	click chainlink-common href "https://github.com/smartcontractkit/chainlink-common"
@@ -95,6 +96,8 @@ flowchart LR
 	chainlink/v2 --> chainlink-tron/relayer
 	chainlink/v2 --> tdh2/go/ocr2/decryptionplugin
 	click chainlink/v2 href "https://github.com/smartcontractkit/chainlink"
+	freeport
+	click freeport href "https://github.com/smartcontractkit/freeport"
 	grpc-proxy
 	click grpc-proxy href "https://github.com/smartcontractkit/grpc-proxy"
 	libocr

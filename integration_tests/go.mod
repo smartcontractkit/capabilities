@@ -18,7 +18,7 @@ require (
 	github.com/andybalholm/brotli v1.1.1
 	github.com/ethereum/go-ethereum v1.15.3
 	github.com/pelletier/go-toml v1.9.5
-	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250430110238-37914f6b9ce0
+	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250501105414-d46a3f780fb4
 	github.com/smartcontractkit/chainlink/v2 v2.22.1-por-beta.5.0.20250425101914-f17973eaea59
 	github.com/stretchr/testify v1.10.0
 	go.uber.org/zap v1.27.0
