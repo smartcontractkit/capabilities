@@ -18,6 +18,18 @@ inputs:
 runs:
   using: "composite"
   steps:
+    - name: Get versions from asdf file
+      id: versions
+      shell: bash
+      run: |
+        echo "pnpm=$(grep -E '^pnpm \d.*$' .tool-versions | awk '{print $2}')" | tee -a "$GITHUB_OUTPUT"
+
+    - uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
+      name: Install pnpm
+      with:
+        version: ${{ steps.versions.outputs.pnpm }}
+        run_install: true
+
     - name: Set up Go
       uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # 5.0.2
       with:
