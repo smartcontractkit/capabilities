@@ -24,6 +24,20 @@ runs:
         go-version: ${{ env.GO_VERSION }}
         # We are doing custom caching, so we don't need the default caching
         cache: false
+    - name: Install protoc-gen-go grpc
+      shell: bash
+      run: |
+        go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.2
+        go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
+    - name: Install protoc
+      shell: bash
+      run: |
+        PROTOC_VERSION=28.1
+        curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip
+        unzip protoc-${PROTOC_VERSION}-linux-x86_64.zip -d protoc3
+        sudo mv protoc3/bin/* /usr/local/bin/
+        sudo mv protoc3/include/* /usr/local/include/
+        rm -rf protoc3 protoc-${PROTOC_VERSION}-linux-x86_64.zip
     - name: Cache NX
       uses: actions/cache@v4
       with:

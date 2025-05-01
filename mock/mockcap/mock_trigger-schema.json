@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/smartcontractkit/capabilities/mock/mockcap/mock@0.0.1",
+  "$defs": {
+    "Payload": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "Config": {
+      "type": "object",
+      "properties": {
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  "type": "object",
+  "properties": {
+    "config": {
+      "$ref": "#/$defs/Config"
+    },
+    "outputs": {
+      "$ref": "#/$defs/Payload"
+    }
+  },
+  "required": ["config", "outputs"],
+  "additionalProperties": false,
+  "description": "mock capability that allows the creation and control of capabilities"
+}

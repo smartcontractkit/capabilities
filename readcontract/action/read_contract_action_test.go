@@ -2,6 +2,7 @@ package actions_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -16,7 +17,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
-	"github.com/smartcontractkit/chainlink-common/pkg/utils/tests"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 
 	"github.com/smartcontractkit/capabilities/libs/testutils"
@@ -30,7 +30,7 @@ func TestReadContractAction_Execute_WithoutConsensus(t *testing.T) {
 
 func testReadContractActionExecute(t *testing.T) {
 	t.Run("happy path", func(t *testing.T) {
-		ctx := tests.Context(t)
+		ctx := t.Context()
 
 		config := actions.ReadContractConfig{
 			ChainID:           1,
@@ -128,9 +128,8 @@ func testReadContractActionExecute(t *testing.T) {
 		})
 		require.NoError(t, err)
 	})
-
 	t.Run("contract reader returns an error", func(t *testing.T) {
-		ctx := tests.Context(t)
+		ctx := t.Context()
 
 		config := actions.ReadContractConfig{
 			ChainID:           1,
@@ -194,7 +193,77 @@ func testReadContractActionExecute(t *testing.T) {
 
 		_, err = action.Execute(ctx, request)
 		require.ErrorIs(t, err, contractReaderMock.returnErr)
-	})
+	},
+	)
+	t.Run("contract reader returns reportable error on misconfiguration", func(t *testing.T) {
+		ctx := t.Context()
+
+		config := actions.ReadContractConfig{
+			ChainID:           1,
+			Network:           "testnet",
+			SupportsConsensus: true,
+		}
+
+		relayerMock := NewRelayer(t)
+		returnVal, err := values.Wrap(5)
+		require.NoError(t, err)
+		contractReaderMock := &mockContractReader{returnVal: returnVal, returnErr: fmt.Errorf("some error")}
+
+		// Set up the relayer mock to return the contract reader mock
+		relayerMock.On("NewContractReader", mock.Anything, mock.Anything).Return(contractReaderMock, errors.New("invalid config"))
+
+		lggr := logger.Test(t)
+
+		oracleFactory := testutils.NewOracleFactory(t, lggr)
+
+		action, err := actions.NewReadContractAction(ctx, lggr, config, relayerMock, oracleFactory, clockwork.NewRealClock())
+		require.NoError(t, err)
+
+		servicetest.Run(t, action)
+
+		capconfig := readcontractcap.Config{
+			ContractReaderConfig: "some-bad-config",
+			ReadIdentifier:       "TestReadIdentifier",
+			ContractAddress:      "0x123",
+			ContractName:         "TestContract",
+		}
+		configAsValueMap, err := values.WrapMap(capconfig)
+		require.NoError(t, err)
+
+		err = action.RegisterToWorkflow(ctx, capabilities.RegisterToWorkflowRequest{
+			Metadata: capabilities.RegistrationMetadata{
+				WorkflowID:    "workflowID",
+				WorkflowOwner: "",
+			},
+			Config: configAsValueMap,
+		})
+		require.NoError(t, err)
+
+		inputs := readcontractcap.Input{
+			ConfidenceLevel: "finalized",
+			Params: readcontractcap.InputParams{
+				"param1": "value1",
+				"param2": "value2",
+			},
+		}
+
+		requestInputs, err := values.WrapMap(inputs)
+		assert.NoError(t, err)
+
+		request := capabilities.CapabilityRequest{
+			Config: configAsValueMap,
+			Inputs: requestInputs,
+			Metadata: capabilities.RequestMetadata{
+				WorkflowID: "workflowID",
+			},
+		}
+
+		_, err = action.Execute(ctx, request)
+		require.Error(t, err)
+		var reportableError *capabilities.RemoteReportableError
+		require.ErrorAs(t, err, &reportableError)
+	},
+	)
 }
 
 type mockContractReader struct {

@@ -24,22 +24,22 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/custmsg"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
+	"github.com/smartcontractkit/chainlink-common/pkg/workflows/wasm/host"
+	kcr "github.com/smartcontractkit/chainlink-evm/gethwrappers/keystone/generated/capabilities_registry_1_1_0"
+	"github.com/smartcontractkit/chainlink-integrations/evm/assets"
+	"github.com/smartcontractkit/chainlink-integrations/evm/testutils"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/compute"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/framework"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/webapi"
-	kcr "github.com/smartcontractkit/chainlink/v2/core/gethwrappers/keystone/generated/capabilities_registry_1_1_0"
 	"github.com/smartcontractkit/chainlink/v2/core/logger"
+	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/handlers/capabilities"
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/handlers/common"
 	"github.com/smartcontractkit/chainlink/v2/core/services/registrysyncer"
-	"github.com/smartcontractkit/chainlink/v2/evm/assets"
-	"github.com/smartcontractkit/chainlink/v2/evm/testutils"
 
 	"github.com/smartcontractkit/capabilities/integration_tests/por/contract"
 	"github.com/smartcontractkit/capabilities/integration_tests/utils"
 
 	commonlogger "github.com/smartcontractkit/chainlink-common/pkg/logger"
-
-	wasmpb "github.com/smartcontractkit/chainlink-common/pkg/workflows/wasm/pb"
 )
 
 const commandOverrideForCustomComputeAction = "__builtin_custom-compute-action"
@@ -72,7 +72,7 @@ type readBalancesConfig struct {
 type NullFetcherFactory struct{}
 
 func (n NullFetcherFactory) NewFetcher(log commonlogger.Logger, emitter custmsg.MessageEmitter) compute.FetcherFn {
-	return func(ctx context.Context, req *wasmpb.FetchRequest) (*wasmpb.FetchResponse, error) {
+	return func(ctx context.Context, req *host.FetchRequest) (*host.FetchResponse, error) {
 		return nil, fmt.Errorf("no fetcher configured")
 	}
 }
@@ -135,8 +135,7 @@ func getResultDir(t *testing.T) string {
 func runLoadTest(t *testing.T, numberOfNodes int, f uint8, numberOfWorkflows int, protocolRoundTime time.Duration,
 	getNextCronSchedule func() string, waitTimeAfterRegistrationComplete time.Duration, timeBetweenIncreasingWorkflowCount time.Duration,
 	resultsDir string) {
-	ctx, cancel := framework.Context(t)
-	defer cancel()
+	ctx := t.Context()
 
 	lggr := logger.TestLogger(t)
 	lggr.SetLogLevel(zapcore.InfoLevel)
@@ -204,7 +203,8 @@ func setupLoadtestDON(ctx context.Context, t *testing.T, lggr logger.SugaredLogg
 
 	urlToConfigBytes := map[string][]byte{}
 
-	fetcherFunc := func(ctx context.Context, url string, maxBytesSize uint32) ([]byte, error) {
+	fetcherFunc := func(ctx context.Context, messageID string, req capabilities.Request) ([]byte, error) {
+		url := req.URL
 		if strings.HasPrefix(url, "workflows") {
 			compressedBinary, err := os.ReadFile(url)
 			require.NoError(t, err)
