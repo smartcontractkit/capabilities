@@ -2,9 +2,6 @@
 
 A trigger that uses a cron schedule to run periodically at fixed times, dates, or intervals.
 
-NOTE: CRON Trigger can only be used as a local capability of a Workflow DON, due to the non-deterministic output of "ActualExecutionTime".
-
-
 ## Configuration
 
 |              Name              |                       Description                       | Type | Default |
@@ -36,7 +33,6 @@ NOTE: CRON Trigger can only be used as a local capability of a Workflow DON, due
 
 |          Name          |                               Description                                |  Type  | Default |
 |:----------------------:|:------------------------------------------------------------------------:|:------:|:-------:|
-|  [ActualExecutionTime]   | Time that cron trigger's task execution occurred (RFC3339Nano formatted) | string |    -    |
 | ScheduledExecutionTime |   Time that cron trigger's task execution had been scheduled to occur    | string |    -    |
 
 ### Sample
@@ -50,7 +46,6 @@ ID string
 // Trigger-specific payload
 Outputs *values.Map
 Payload: {  
-    ActualExecutionTime: '2022-07-14T12:01:25.225089+08:00',
     ScheduledExecutionTime: '2022-07-14T12:01:25.000000+08:00',
 }
 }

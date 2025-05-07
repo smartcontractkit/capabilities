@@ -20,9 +20,6 @@ const (
 )
 
 type Payload struct {
-	// Time that cron trigger's task execution occurred (RFC3339Nano formatted)
-	ActualExecutionTime string `json:"ActualExecutionTime" yaml:"ActualExecutionTime" mapstructure:"ActualExecutionTime"`
-
 	// Time that cron trigger's task execution had been scheduled to occur
 	// (RFC3339Nano formatted)
 	ScheduledExecutionTime string `json:"ScheduledExecutionTime" yaml:"ScheduledExecutionTime" mapstructure:"ScheduledExecutionTime"`
@@ -76,7 +73,7 @@ func waitFor(ctx context.Context, t *testing.T, targetSink *framework.TargetSink
 
 			countCalls++
 
-			actualTime, _ := time.Parse(time.RFC3339Nano, payload.ActualExecutionTime)
+			actualTime := time.Now()
 			idsToActualTime[request.Metadata.WorkflowExecutionID] = append(idsToActualTime[request.Metadata.WorkflowExecutionID], actualTime)
 
 			// Check that the actual execution time of trigger is within a second across nodes
