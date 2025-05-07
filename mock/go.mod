@@ -1,15 +1,15 @@
 module github.com/smartcontractkit/capabilities/mock
 
-go 1.24
+go 1.24.1
 
 toolchain go1.24.2
 
 require (
-	github.com/hashicorp/consul/sdk v0.16.0
 	github.com/pelletier/go-toml/v2 v2.2.3
 	github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-20250402163239-224ad2061432
 	github.com/smartcontractkit/capabilities/libs/testutils v0.0.0-20250402163239-224ad2061432
 	github.com/smartcontractkit/chainlink-common v0.7.0
+	github.com/smartcontractkit/freeport v0.1.0
 	github.com/stretchr/testify v1.10.0
 	google.golang.org/grpc v1.71.0
 	google.golang.org/protobuf v1.36.6
@@ -112,7 +112,7 @@ require (
 	golang.org/x/mod v0.24.0 // indirect
 	golang.org/x/net v0.38.0 // indirect
 	golang.org/x/sync v0.12.0 // indirect
-	golang.org/x/sys v0.31.0 // indirect
+	golang.org/x/sys v0.32.0 // indirect
 	golang.org/x/text v0.23.0 // indirect
 	golang.org/x/tools v0.26.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
