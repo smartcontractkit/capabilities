@@ -12,7 +12,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/triggers/cron"
-	cron2 "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron"
+	crontypedAPI "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron"
 	"github.com/smartcontractkit/chainlink-common/pkg/custmsg"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
@@ -43,7 +43,7 @@ type Response struct {
 }
 
 type cronTrigger struct {
-	ch      chan<- capabilities.TriggerAndId[*cron2.Payload]
+	ch      chan<- capabilities.TriggerAndId[*crontypedAPI.Payload]
 	job     gocron.Job
 	nextRun time.Time
 }
@@ -127,14 +127,14 @@ func (s *Service) Initialise(ctx context.Context, config string, _ core.Telemetr
 	return nil
 }
 
-func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *cron2.Config) (<-chan capabilities.TriggerAndId[*cron2.Payload], error) {
+func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedAPI.Config) (<-chan capabilities.TriggerAndId[*crontypedAPI.Payload], error) {
 	_, ok := s.triggers.Read(triggerID)
 	if ok {
 		return nil, fmt.Errorf("triggerId %s already registered", triggerID)
 	}
 
 	var job gocron.Job
-	callbackCh := make(chan capabilities.TriggerAndId[*cron2.Payload], defaultSendChannelBufferSize)
+	callbackCh := make(chan capabilities.TriggerAndId[*crontypedAPI.Payload], defaultSendChannelBufferSize)
 
 	allowSeconds := true
 	jobDef := gocron.CronJob(input.Schedule, allowSeconds)
@@ -221,7 +221,7 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 	return callbackCh, nil
 }
 
-func createTriggerResponse(scheduledExecutionTime time.Time) capabilities.TriggerAndId[*cron2.Payload] {
+func createTriggerResponse(scheduledExecutionTime time.Time) capabilities.TriggerAndId[*crontypedAPI.Payload] {
 	// Ensure UTC time is used for consistency across nodes.
 	scheduledExecutionTimeUTC := scheduledExecutionTime.UTC()
 
@@ -231,15 +231,15 @@ func createTriggerResponse(scheduledExecutionTime time.Time) capabilities.Trigge
 	scheduledExecutionTimeFormatted := scheduledExecutionTimeUTC.Format(time.RFC3339)
 	triggerEventID := scheduledExecutionTimeFormatted
 
-	return capabilities.TriggerAndId[*cron2.Payload]{
-		Trigger: &cron2.Payload{
+	return capabilities.TriggerAndId[*crontypedAPI.Payload]{
+		Trigger: &crontypedAPI.Payload{
 			ScheduledExecutionTime: scheduledExecutionTimeUTC.Format(time.RFC3339Nano),
 		},
 		Id: triggerEventID,
 	}
 }
 
-func (s *Service) UnregisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *cron2.Config) error {
+func (s *Service) UnregisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedAPI.Config) error {
 	trigger, ok := s.triggers.Read(triggerID)
 	if !ok {
 		return fmt.Errorf("triggerId %s not found", triggerID)
