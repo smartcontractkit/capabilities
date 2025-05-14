@@ -1,5 +1,5 @@
 {
-  "name": "evm",
+  "name": "evm_chain",
   "projectType": "capability",
   "projectRoot": "capabilities/chain_capabilities/evm",
   "implicitDependencies": ["loopserver"],
