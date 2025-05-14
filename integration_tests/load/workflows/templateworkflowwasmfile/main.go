@@ -212,7 +212,7 @@ func BuildWorkflow(configBytes []byte) (*sdk.WorkflowSpecFactory, error) {
 
 	targetInput := loadtestwritetargetcap.WritetargetActionInput{
 		ScheduledStartTime: cron.ScheduledExecutionTime(),
-		StartTime:          cron.ActualExecutionTime(),
+		StartTime:          cron.ScheduledExecutionTime(),
 		SignedReport:       consensus,
 	}
 

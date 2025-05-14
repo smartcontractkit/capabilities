@@ -12,13 +12,15 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/triggers/cron"
+	crontypedapi "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron"
 	"github.com/smartcontractkit/chainlink-common/pkg/custmsg"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
-	"github.com/smartcontractkit/chainlink-common/pkg/values"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
 
 const ID = "cron-trigger@1.0.0"
+const ServiceName = "CronCapabilities"
 
 const (
 	defaultSendChannelBufferSize          = 1000
@@ -41,7 +43,7 @@ type Response struct {
 }
 
 type cronTrigger struct {
-	ch      chan<- capabilities.TriggerResponse
+	ch      chan<- capabilities.TriggerAndId[*crontypedapi.Payload]
 	job     gocron.Job
 	nextRun time.Time
 }
@@ -56,50 +58,37 @@ type Service struct {
 	labeler   custmsg.MessageEmitter
 }
 
-type Params struct {
-	Logger logger.Logger
-	Clock  clockwork.Clock
-	Config Config
-}
-
-var _ capabilities.TriggerCapability = (*Service)(nil)
 var _ services.Service = &Service{}
 
-// Creates a new Cron Trigger Service.
-// Scheduling will commence on calling .Start()
-func New(p Params) *Service {
-	l := logger.Named(p.Logger, "Service")
+// NewTriggerService creates a new trigger service.  Optionally, a clock can be passed in for testing, if nil
+// the system clock will be used.
+func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock) *Service {
+	lggr := logger.Named(parentLggr, "Service")
 
 	var options []gocron.SchedulerOption
 	options = append(options, gocron.WithMonitor(NewCronMonitor()))
 	// Set scheduler location to UTC for consistency across nodes.
 	options = append(options, gocron.WithLocation(time.UTC))
 	// Adapt chainlink logger to gocron logger interface.
-	options = append(options, gocron.WithLogger(NewCronLogger(l)))
+	options = append(options, gocron.WithLogger(NewCronLogger(lggr)))
 	// Allow injecting a clock for testing. Otherwise use system clock.
-	if p.Clock != nil {
-		options = append(options, gocron.WithClock(p.Clock))
+	if clock != nil {
+		options = append(options, gocron.WithClock(clock))
 	} else {
-		p.Clock = clockwork.NewRealClock()
+		clock = clockwork.NewRealClock()
 	}
-	s, err := gocron.NewScheduler(options...)
+
+	scheduler, err := gocron.NewScheduler(options...)
 	if err != nil {
 		return nil
 	}
 
-	cronStore := NewCronStore()
-
-	if p.Config.FastestScheduleIntervalSeconds == 0 {
-		p.Config.FastestScheduleIntervalSeconds = defaultFastestScheduleIntervalSeconds
-	}
-
 	return &Service{
+		lggr:           lggr,
 		CapabilityInfo: cronTriggerInfo,
-		config:         p.Config,
-		clock:          p.Clock,
-		triggers:       cronStore,
-		lggr:           l,
-		scheduler:      s,
+		triggers:       NewCronStore(),
+		scheduler:      scheduler,
+		clock:          clock,
 		labeler: custmsg.NewLabeler().With(
 			"capabilityID", cronTriggerInfo.ID,
 			"capabilityVersion", cronTriggerInfo.Version(),
@@ -108,38 +97,49 @@ func New(p Params) *Service {
 	}
 }
 
-// RegisterTrigger Registers a new trigger
-// Can register triggers before the service is actively scheduling
-func (s *Service) RegisterTrigger(ctx context.Context, req capabilities.TriggerRegistrationRequest) (<-chan capabilities.TriggerResponse, error) {
-	if req.Config == nil {
-		return nil, errors.New("config is required to register a cron trigger")
-	}
-	config := &cron.Config{}
-	if err := req.Config.UnwrapTo(config); err != nil {
-		return nil, err
+func (s *Service) Initialise(ctx context.Context, config string, _ core.TelemetryService,
+	_ core.KeyValueStore,
+	_ core.ErrorLog,
+	_ core.PipelineRunnerService,
+	_ core.RelayerSet,
+	_ core.OracleFactory) error {
+	s.lggr.Debugf("Initialising %s", ServiceName)
+
+	var cronConfig Config
+	if len(config) > 0 {
+		err := json.Unmarshal([]byte(config), &cronConfig)
+		if err != nil {
+			return fmt.Errorf("failed to unmarshal config: %s %w", config, err)
+		}
 	}
 
-	// validate against the json schema
-	b, err := json.Marshal(config)
+	if cronConfig.FastestScheduleIntervalSeconds == 0 {
+		cronConfig.FastestScheduleIntervalSeconds = defaultFastestScheduleIntervalSeconds
+	}
+
+	s.config = cronConfig
+
+	err := s.Start(ctx)
 	if err != nil {
-		return nil, err
-	}
-	if err = json.Unmarshal(b, &config); err != nil {
-		return nil, err
+		return fmt.Errorf("error when starting trigger service: %w", err)
 	}
 
-	_, ok := s.triggers.Read(req.TriggerID)
+	return nil
+}
+
+func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) (<-chan capabilities.TriggerAndId[*crontypedapi.Payload], error) {
+	_, ok := s.triggers.Read(triggerID)
 	if ok {
-		return nil, fmt.Errorf("triggerId %s already registered", req.TriggerID)
+		return nil, fmt.Errorf("triggerId %s already registered", triggerID)
 	}
 
 	var job gocron.Job
-	callbackCh := make(chan capabilities.TriggerResponse, defaultSendChannelBufferSize)
+	callbackCh := make(chan capabilities.TriggerAndId[*crontypedapi.Payload], defaultSendChannelBufferSize)
 
 	allowSeconds := true
-	jobDef := gocron.CronJob(config.Schedule, allowSeconds)
+	jobDef := gocron.CronJob(input.Schedule, allowSeconds)
 
-	err = enforceFastestSchedule(s.lggr, s.clock, jobDef, time.Second*time.Duration(s.config.FastestScheduleIntervalSeconds))
+	err := enforceFastestSchedule(s.lggr, s.clock, jobDef, time.Second*time.Duration(s.config.FastestScheduleIntervalSeconds))
 	if err != nil {
 		return nil, err
 	}
@@ -147,30 +147,28 @@ func (s *Service) RegisterTrigger(ctx context.Context, req capabilities.TriggerR
 	task := gocron.NewTask(
 		// Task callback, executed at next run time
 		func() {
-			trigger, ok := s.triggers.Read(req.TriggerID)
+			trigger, ok := s.triggers.Read(triggerID)
 			if !ok {
 				// Invariant: The trigger should always exist, as unregistering the trigger removes the job
-				s.lggr.Errorw("task callback invariant: trigger no longer exists", "triggerID", req.TriggerID)
+				s.lggr.Errorw("task callback invariant: trigger no longer exists", "triggerID", triggerID)
 				return
 			}
+
 			scheduledExecutionTimeUTC := trigger.nextRun.UTC()
 			currentTimeUTC := s.clock.Now().UTC()
 
-			response := createTriggerResponse(scheduledExecutionTimeUTC, currentTimeUTC)
+			response := createTriggerResponse(scheduledExecutionTimeUTC)
 
-			if response.Err != nil {
-				s.lggr.Errorw("task callback failed to create response", "executionID", req.Metadata.WorkflowExecutionID, "triggerID", req.TriggerID, "err", response.Err)
-			} else {
-				s.lggr.Debugw("task callback sending trigger response", "executionID", req.Metadata.WorkflowExecutionID, "triggerID", req.TriggerID, "scheduledExecTimeUTC", scheduledExecutionTimeUTC.Format(time.RFC3339Nano), "actualExecTimeUTC", currentTimeUTC.Format(time.RFC3339Nano))
-			}
+			s.lggr.Debugw("task callback sending trigger response", "executionID", metadata.WorkflowExecutionID, "triggerID", triggerID, "scheduledExecTimeUTC", scheduledExecutionTimeUTC.Format(time.RFC3339Nano), "actualExecTimeUTC", currentTimeUTC.Format(time.RFC3339Nano))
 
 			nextExecutionTime, nextRunErr := job.NextRun()
 			if nextRunErr != nil {
 				// .NextRun() will error if the job no longer exists
 				// or if there is no next run to schedule, which shouldn't happen with cron jobs
-				s.lggr.Errorw("task callback failed to schedule next run", "executionID", req.Metadata.WorkflowExecutionID, "triggerID", req.TriggerID)
+				s.lggr.Errorw("task callback failed to schedule next run", "executionID", metadata.WorkflowExecutionID, "triggerID", triggerID)
 			}
-			s.triggers.Write(req.TriggerID, cronTrigger{
+
+			s.triggers.Write(triggerID, cronTrigger{
 				ch:      callbackCh,
 				job:     job,
 				nextRun: nextExecutionTime,
@@ -179,15 +177,15 @@ func (s *Service) RegisterTrigger(ctx context.Context, req capabilities.TriggerR
 			select {
 			case callbackCh <- response:
 			default:
-				s.lggr.Errorw("callback channel full, dropping event", "executionID", req.Metadata.WorkflowExecutionID, "triggerID", req.TriggerID, "eventID", response.Event.ID)
+				s.lggr.Errorw("callback channel full, dropping event", "executionID", metadata.WorkflowExecutionID, "triggerID", triggerID, "eventID", response.Id)
 
 				lblErr := s.labeler.With(
-					"workflowOwner", req.Metadata.WorkflowOwner,
-					"workflowName", req.Metadata.WorkflowName,
-					"workflowID", req.Metadata.WorkflowID,
+					"workflowOwner", metadata.WorkflowOwner,
+					"workflowName", metadata.WorkflowName,
+					"workflowID", metadata.WorkflowID,
 				).Emit(ctx, "callback channel full, dropping event")
 				if lblErr != nil {
-					s.lggr.Errorw("cannot emit custom event", "executionID", req.Metadata.WorkflowExecutionID, "triggerID", req.TriggerID, "eventID", response.Event.ID, "err", err)
+					s.lggr.Errorw("cannot emit custom event", "executionID", metadata.WorkflowExecutionID, "triggerID", triggerID, "eventID", response.Id, "err", err)
 				}
 			}
 		})
@@ -197,7 +195,7 @@ func (s *Service) RegisterTrigger(ctx context.Context, req capabilities.TriggerR
 	}
 
 	// If service has already started, job will be scheduled immediately
-	job, err = s.scheduler.NewJob(jobDef, task, gocron.WithName(req.TriggerID))
+	job, err = s.scheduler.NewJob(jobDef, task, gocron.WithName(triggerID))
 	if err != nil {
 		s.lggr.Errorw("failed to create new job", "err", err)
 		return nil, err
@@ -212,21 +210,20 @@ func (s *Service) RegisterTrigger(ctx context.Context, req capabilities.TriggerR
 		return nil, err
 	}
 
-	s.triggers.Write(req.TriggerID, cronTrigger{
+	s.triggers.Write(triggerID, cronTrigger{
 		ch:      callbackCh,
 		job:     job,
 		nextRun: firstRunTime,
 	})
 
-	s.lggr.Debugw("Trigger registered", "workflowId", req.Metadata.WorkflowID, "triggerId", req.TriggerID, "jobId", job.ID())
+	s.lggr.Debugw("Trigger registered", "workflowId", metadata.WorkflowID, "triggerId", triggerID, "jobId", job.ID())
 	PromTotalTriggersCount.Inc()
 	return callbackCh, nil
 }
 
-func createTriggerResponse(scheduledExecutionTime time.Time, currentTime time.Time) capabilities.TriggerResponse {
+func createTriggerResponse(scheduledExecutionTime time.Time) capabilities.TriggerAndId[*crontypedapi.Payload] {
 	// Ensure UTC time is used for consistency across nodes.
 	scheduledExecutionTimeUTC := scheduledExecutionTime.UTC()
-	currentTimeUTC := currentTime.UTC()
 
 	// Use the scheduled execution time as a deterministic identifier.
 	// Since cron schedules only go to second granularity this should never have ms.
@@ -234,31 +231,18 @@ func createTriggerResponse(scheduledExecutionTime time.Time, currentTime time.Ti
 	scheduledExecutionTimeFormatted := scheduledExecutionTimeUTC.Format(time.RFC3339)
 	triggerEventID := scheduledExecutionTimeFormatted
 
-	// Show difference between scheduled and actual execution by including nanoseconds
-	payload := cron.Payload{
-		ScheduledExecutionTime: scheduledExecutionTimeUTC.Format(time.RFC3339Nano),
-		ActualExecutionTime:    currentTimeUTC.Format(time.RFC3339Nano),
-	}
-	wrappedPayload, err := values.WrapMap(payload)
-	if err != nil {
-		return capabilities.TriggerResponse{
-			Err: fmt.Errorf("error wrapping trigger event: %s", err),
-		}
-	}
-
-	return capabilities.TriggerResponse{
-		Event: capabilities.TriggerEvent{
-			TriggerType: ID,
-			ID:          triggerEventID,
-			Outputs:     wrappedPayload,
+	return capabilities.TriggerAndId[*crontypedapi.Payload]{
+		Trigger: &crontypedapi.Payload{
+			ScheduledExecutionTime: scheduledExecutionTimeUTC.Format(time.RFC3339Nano),
 		},
+		Id: triggerEventID,
 	}
 }
 
-func (s *Service) UnregisterTrigger(ctx context.Context, req capabilities.TriggerRegistrationRequest) error {
-	trigger, ok := s.triggers.Read(req.TriggerID)
+func (s *Service) UnregisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) error {
+	trigger, ok := s.triggers.Read(triggerID)
 	if !ok {
-		return fmt.Errorf("triggerId %s not found", req.TriggerID)
+		return fmt.Errorf("triggerId %s not found", triggerID)
 	}
 
 	jobID := trigger.job.ID()
@@ -274,10 +258,11 @@ func (s *Service) UnregisterTrigger(ctx context.Context, req capabilities.Trigge
 
 	// Close callback channel
 	close(trigger.ch)
-	// Remove from triggers context
-	s.triggers.Delete(req.TriggerID)
 
-	s.lggr.Debugw("UnregisterTrigger", "triggerId", req.TriggerID, "jobId", jobID)
+	// Remove from triggers context
+	s.triggers.Delete(triggerID)
+
+	s.lggr.Debugw("UnregisterTrigger", "triggerId", triggerID, "jobId", jobID)
 	PromTotalTriggersCount.Dec()
 	return nil
 }
@@ -343,4 +328,8 @@ func (s *Service) HealthReport() map[string]error {
 
 func (s *Service) Name() string {
 	return s.lggr.Name()
+}
+
+func (s *Service) Description() string {
+	return "Cron Trigger Capability"
 }
