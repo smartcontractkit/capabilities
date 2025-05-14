@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -308,7 +309,6 @@ func successWithStandardCronIntervals(t *testing.T, useTypedAPI bool) {
 	}
 }
 
-/*
 func TestCronTrigger_Load(t *testing.T) {
 	const numTriggers = 1_000
 	const numExecutions = 3
@@ -321,7 +321,6 @@ func TestCronTrigger_Load(t *testing.T) {
 	require.NoError(t, err)
 
 	ts := NewTriggerService(logger.Nop(), fakeClock)
-
 
 	triggerAPI := server.NewCronServer(ts).(TriggerCapability)
 
@@ -392,8 +391,8 @@ func TestCronTrigger_Load(t *testing.T) {
 	// Wait a second to ensure no more events
 	time.Sleep(time.Second * 5)
 	for i := 0; i < numTriggers; i++ {
-		_, closed := <-callbacks[i]
-		require.True(t, closed)
+		_, open := <-callbacks[i]
+		require.False(t, open)
 	}
 
 	// Close the service
@@ -414,9 +413,6 @@ func TestCronTrigger_Load(t *testing.T) {
 			// Check that actual execution time is after scheduled time
 
 			after := timestamps[triggerIdx][execIdx].After(scheduledExecTimes[triggerIdx][execIdx]) || timestamps[triggerIdx][execIdx].Equal(scheduledExecTimes[triggerIdx][execIdx])
-			if !after {
-				fmt.Printf("Scheduled: %v, Actual: %v\n", scheduledExecTimes[triggerIdx][execIdx], timestamps[triggerIdx][execIdx])
-			}
 
 			require.True(t, after)
 
@@ -434,7 +430,6 @@ func TestCronTrigger_Load(t *testing.T) {
 	averageDelta = averageDelta / int64(len(scheduledActualDelta))
 	fmt.Println("Average Delta: ", averageDelta, "ms")
 }
-*/
 
 func TestCronTrigger_RegisterTriggerBeforeStart_TypedAPI(t *testing.T) {
 	testCronTriggerRegisterTriggerBeforeStart(t, true)
