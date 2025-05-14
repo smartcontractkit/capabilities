@@ -16,7 +16,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/triggers/cron"
-	crontypedAPI "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron"
+	crontypedapi "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
@@ -66,7 +66,7 @@ func registerTriggerToCronTriggerService(
 	}
 
 	if useTypedAPI {
-		payload, err := anypb.New(&crontypedAPI.Config{Schedule: schedule})
+		payload, err := anypb.New(&crontypedapi.Config{Schedule: schedule})
 		require.NoError(t, err)
 
 		request := capabilities.TriggerRegistrationRequest{
@@ -103,7 +103,7 @@ func upwrapCronTriggerEvent(t *testing.T, event capabilities.TriggerEvent,
 	response.ID = event.ID
 
 	if useTypedAPI {
-		payload := &crontypedAPI.Payload{}
+		payload := &crontypedapi.Payload{}
 		err := event.Payload.UnmarshalTo(payload)
 		require.NoError(t, err)
 		response.Payload = cron.Payload{ScheduledExecutionTime: payload.ScheduledExecutionTime}
