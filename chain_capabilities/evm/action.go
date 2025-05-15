@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"time"
 
 	"google.golang.org/protobuf/types/known/emptypb"
 
@@ -13,16 +14,16 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 )
 
-func (c *capability) CallContract(ctx context.Context, _ capabilities.RequestMetadata, input *evmcap.CallContractRequest) (*evmcap.CallContractReply, error) {
-	callMsg, err := parseCallMsg(input.Call)
+func (c *capability) CallContract(ctx context.Context, _ capabilities.RequestMetadata, req *evmcap.CallContractRequest) (*evmcap.CallContractReply, error) {
+	callMsg, err := parseCallMsg(req.Call)
 	if err != nil {
 		return &evmcap.CallContractReply{}, err
 	}
 
 	blockNumber := &big.Int{}
-	blockNumber, isOK := blockNumber.SetString(input.BlockNumber.String(), 10)
+	blockNumber, isOK := blockNumber.SetString(req.BlockNumber.String(), 10)
 	if !isOK {
-		return &evmcap.CallContractReply{}, fmt.Errorf("failed to parse block number: %s", input.BlockNumber.String())
+		return &evmcap.CallContractReply{}, fmt.Errorf("failed to parse block number: %s", req.BlockNumber.String())
 	}
 
 	response, err := c.EVMService.CallContract(ctx, &callMsg, blockNumber)
@@ -33,8 +34,8 @@ func (c *capability) CallContract(ctx context.Context, _ capabilities.RequestMet
 	return &evmcap.CallContractReply{Data: &evmcap.ABIPayload{Abi: response}}, nil
 }
 
-func (c *capability) FilterLogs(ctx context.Context, _ capabilities.RequestMetadata, input *evmcap.FilterLogsRequest) (*evmcap.FilterLogsReply, error) {
-	evmCapFq := input.GetFilterQuery()
+func (c *capability) FilterLogs(ctx context.Context, _ capabilities.RequestMetadata, req *evmcap.FilterLogsRequest) (*evmcap.FilterLogsReply, error) {
+	evmCapFq := req.GetFilterQuery()
 
 	fromBlock := &big.Int{}
 	fromBlock, isOK := fromBlock.SetString(evmCapFq.FromBlock.String(), 10)
@@ -71,14 +72,14 @@ func (c *capability) FilterLogs(ctx context.Context, _ capabilities.RequestMetad
 	return &evmcap.FilterLogsReply{Logs: parseLogs(logs)}, nil
 }
 
-func (c *capability) BalanceAt(ctx context.Context, _ capabilities.RequestMetadata, input *evmcap.BalanceAtRequest) (*evmcap.BalanceAtReply, error) {
+func (c *capability) BalanceAt(ctx context.Context, _ capabilities.RequestMetadata, req *evmcap.BalanceAtRequest) (*evmcap.BalanceAtReply, error) {
 	blockNumber := &big.Int{}
-	blockNumber, isOK := blockNumber.SetString(input.BlockNumber.String(), 10)
+	blockNumber, isOK := blockNumber.SetString(req.BlockNumber.String(), 10)
 	if !isOK {
-		return nil, fmt.Errorf("failed to parse to block number: %s", input.BlockNumber.String())
+		return nil, fmt.Errorf("failed to parse to block number: %s", req.BlockNumber.String())
 	}
 
-	balance, err := c.EVMService.BalanceAt(ctx, evmservicetypes.Address(input.Account.Address), blockNumber)
+	balance, err := c.EVMService.BalanceAt(ctx, evmservicetypes.Address(req.Account.Address), blockNumber)
 	if err != nil {
 		return nil, err
 	}
@@ -86,8 +87,8 @@ func (c *capability) BalanceAt(ctx context.Context, _ capabilities.RequestMetada
 	return &evmcap.BalanceAtReply{Balance: &pb.BigInt{AbsVal: balance.Bytes(), Sign: int64(balance.Sign())}}, nil
 }
 
-func (c *capability) EstimateGas(ctx context.Context, _ capabilities.RequestMetadata, input *evmcap.EstimateGasRequest) (*evmcap.EstimateGasReply, error) {
-	callMsg, err := parseCallMsg(input.Msg)
+func (c *capability) EstimateGas(ctx context.Context, _ capabilities.RequestMetadata, req *evmcap.EstimateGasRequest) (*evmcap.EstimateGasReply, error) {
+	callMsg, err := parseCallMsg(req.Msg)
 	if err != nil {
 		return &evmcap.EstimateGasReply{}, err
 	}
@@ -100,8 +101,8 @@ func (c *capability) EstimateGas(ctx context.Context, _ capabilities.RequestMeta
 	return &evmcap.EstimateGasReply{Gas: estimate}, nil
 }
 
-func (c *capability) GetTransactionByHash(ctx context.Context, _ capabilities.RequestMetadata, input *evmcap.GetTransactionByHashRequest) (*evmcap.GetTransactionByHashReply, error) {
-	tx, err := c.EVMService.TransactionByHash(ctx, evmservicetypes.Hash(input.Hash.Hash))
+func (c *capability) GetTransactionByHash(ctx context.Context, _ capabilities.RequestMetadata, req *evmcap.GetTransactionByHashRequest) (*evmcap.GetTransactionByHashReply, error) {
+	tx, err := c.EVMService.TransactionByHash(ctx, evmservicetypes.Hash(req.Hash.Hash))
 	if err != nil {
 		return nil, err
 	}
@@ -117,8 +118,8 @@ func (c *capability) GetTransactionByHash(ctx context.Context, _ capabilities.Re
 	}}, nil
 }
 
-func (c *capability) GetTransactionReceipt(ctx context.Context, _ capabilities.RequestMetadata, input *evmcap.GetReceiptRequest) (*evmcap.GetReceiptReply, error) {
-	receipt, err := c.EVMService.TransactionReceipt(ctx, evmservicetypes.Hash(input.Hash.Hash))
+func (c *capability) GetTransactionReceipt(ctx context.Context, _ capabilities.RequestMetadata, req *evmcap.GetReceiptRequest) (*evmcap.GetReceiptReply, error) {
+	receipt, err := c.EVMService.TransactionReceipt(ctx, evmservicetypes.Hash(req.Hash.Hash))
 	if err != nil {
 		return nil, err
 	}
@@ -184,14 +185,40 @@ func (c *capability) QueryTrackedLogs(ctx context.Context, _ capabilities.Reques
 	return &evmcap.QueryTrackedLogsReply{Logs: parseLogs(result)}, nil
 }
 
-func (c *capability) RegisterLogTracking(_ context.Context, _ capabilities.RequestMetadata, _ *evmcap.RegisterLogTrackingRequest) (*emptypb.Empty, error) {
-	//TODO implement me
-	panic("implement me")
+func (c *capability) RegisterLogTracking(ctx context.Context, _ capabilities.RequestMetadata, req *evmcap.RegisterLogTrackingRequest) (*emptypb.Empty, error) {
+	reqFilter := req.GetFilter()
+	filter := evmservicetypes.LPFilterQuery{
+		Name:         reqFilter.GetName(),
+		Retention:    time.Duration(reqFilter.RetentionTime),
+		MaxLogsKept:  reqFilter.MaxLogsKept,
+		LogsPerBlock: reqFilter.LogsPerBlock,
+	}
+
+	for _, address := range reqFilter.Addresses {
+		filter.Addresses = append(filter.Addresses, evmservicetypes.Address(address.GetAddress()))
+	}
+
+	for _, eventSig := range reqFilter.EventSigs {
+		filter.EventSigs = append(filter.EventSigs, evmservicetypes.Hash(eventSig.GetHash()))
+	}
+
+	for _, topic := range reqFilter.Topic2 {
+		filter.Topic2 = append(filter.Topic2, evmservicetypes.Hash(topic.GetHash()))
+	}
+
+	for _, topic := range reqFilter.Topic3 {
+		filter.Topic2 = append(filter.Topic3, evmservicetypes.Hash(topic.GetHash()))
+	}
+
+	for _, topic := range reqFilter.Topic4 {
+		filter.Topic4 = append(filter.Topic3, evmservicetypes.Hash(topic.GetHash()))
+	}
+
+	return &emptypb.Empty{}, c.EVMService.RegisterLogTracking(ctx, filter)
 }
 
-func (c *capability) UnregisterLogTracking(_ context.Context, _ capabilities.RequestMetadata, _ *evmcap.UnregisterLogTrackingRequest) (*emptypb.Empty, error) {
-	//TODO implement me
-	panic("implement me")
+func (c *capability) UnregisterLogTracking(ctx context.Context, _ capabilities.RequestMetadata, req *evmcap.UnregisterLogTrackingRequest) (*emptypb.Empty, error) {
+	return &emptypb.Empty{}, c.EVMService.UnregisterLogTracking(ctx, req.FilterName)
 }
 
 func parseCallMsg(callMsg *evmcap.CallMsg) (evmservicetypes.CallMsg, error) {
