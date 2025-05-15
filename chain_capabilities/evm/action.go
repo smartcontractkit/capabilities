@@ -160,9 +160,28 @@ func (c *capability) LatestAndFinalizedHead(ctx context.Context, _ capabilities.
 		},
 	}, nil
 }
-func (c *capability) QueryTrackedLogs(_ context.Context, _ capabilities.RequestMetadata, _ *evmcap.QueryTrackedLogsRequest) (*evmcap.QueryTrackedLogsReply, error) {
-	//TODO implement me
-	panic("implement me")
+func (c *capability) QueryTrackedLogs(ctx context.Context, _ capabilities.RequestMetadata, req *evmcap.QueryTrackedLogsRequest) (*evmcap.QueryTrackedLogsReply, error) {
+	exp, err := evmcap.ConvertQueryTrackedLogsRequestFromProto(req)
+	if err != nil {
+		return nil, err
+	}
+
+	limitAndSort, err := evmcap.ConvertLimitAndSortFromProto(req.LimitAndSort)
+	if err != nil {
+		return nil, err
+	}
+
+	confidenceLevel, err := evmcap.ConfidenceFromProto(req.ConfidenceLevel)
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := c.EVMService.QueryTrackedLogs(ctx, exp, limitAndSort, confidenceLevel)
+	if err != nil {
+		return nil, err
+	}
+
+	return &evmcap.QueryTrackedLogsReply{Logs: parseLogs(result)}, nil
 }
 
 func (c *capability) RegisterLogTracking(_ context.Context, _ capabilities.RequestMetadata, _ *evmcap.RegisterLogTrackingRequest) (*emptypb.Empty, error) {
