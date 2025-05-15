@@ -6,7 +6,7 @@ toolchain go1.24.2
 
 require (
 	github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-20250402163239-224ad2061432
-	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250514131144-43cef40b77f2
+	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250515150948-11cf918c9d1e
 )
 
 require (
