@@ -101,13 +101,13 @@ func (c *capability) EstimateGas(ctx context.Context, _ capabilities.RequestMeta
 	return &evmcap.EstimateGasReply{Gas: estimate}, nil
 }
 
-func (c *capability) GetTransactionByHash(ctx context.Context, _ capabilities.RequestMetadata, req *evmcap.GetTransactionByHashRequest) (*evmcap.GetTransactionByHashReply, error) {
+func (c *capability) GetTransactionByHash(ctx context.Context, _ capabilities.RequestMetadata, req *evmcap.TransactionByHashRequest) (*evmcap.TransactionByHashReply, error) {
 	tx, err := c.EVMService.TransactionByHash(ctx, evmservicetypes.Hash(req.Hash.Hash))
 	if err != nil {
 		return nil, err
 	}
 
-	return &evmcap.GetTransactionByHashReply{Transaction: &evmcap.Transaction{
+	return &evmcap.TransactionByHashReply{Transaction: &evmcap.Transaction{
 		Nonce:    tx.Nonce,
 		Gas:      tx.Gas,
 		To:       &evmcap.Address{Address: tx.To[:]},
@@ -118,13 +118,13 @@ func (c *capability) GetTransactionByHash(ctx context.Context, _ capabilities.Re
 	}}, nil
 }
 
-func (c *capability) GetTransactionReceipt(ctx context.Context, _ capabilities.RequestMetadata, req *evmcap.GetReceiptRequest) (*evmcap.GetReceiptReply, error) {
+func (c *capability) GetTransactionReceipt(ctx context.Context, _ capabilities.RequestMetadata, req *evmcap.TransactionReceiptRequest) (*evmcap.TransactionReceiptReply, error) {
 	receipt, err := c.EVMService.TransactionReceipt(ctx, evmservicetypes.Hash(req.Hash.Hash))
 	if err != nil {
 		return nil, err
 	}
 
-	reply := &evmcap.GetReceiptReply{Receipt: &evmcap.Receipt{
+	reply := &evmcap.TransactionReceiptReply{Receipt: &evmcap.Receipt{
 		Status:          receipt.Status,
 		Logs:            parseLogs(receipt.Logs),
 		TxHash:          &evmcap.Hash{Hash: receipt.TxHash[:]},
