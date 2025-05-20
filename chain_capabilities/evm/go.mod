@@ -6,9 +6,8 @@ toolchain go1.24.2
 
 require (
 	github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-20250402163239-224ad2061432
-	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250515224129-a460a6f40e21
+	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250520165735-085f7df1facb
 	github.com/stretchr/testify v1.10.0
-	google.golang.org/grpc v1.71.0
 	google.golang.org/protobuf v1.36.6
 )
 
@@ -108,5 +107,6 @@ require (
 	golang.org/x/text v0.23.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250218202821-56aae31c358a // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250324211829-b45e905df463 // indirect
+	google.golang.org/grpc v1.71.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
