@@ -8,14 +8,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/framework"
-	"github.com/smartcontractkit/chainlink/v2/core/logger"
 
 	"github.com/smartcontractkit/capabilities/integration_tests/utils"
 )
 
-func setupCronTestDon(ctx context.Context, t *testing.T, lggr logger.SugaredLogger,
+func setupCronTestDon(ctx context.Context, t *testing.T, lggr logger.Logger,
 	workflowDonInfo framework.DonConfiguration,
 	cronSchedule string, targetSink framework.TargetFactory, cronPath string,
 	fastestIntervalSeconds int) (workflowDon *framework.DON) {
@@ -39,7 +39,7 @@ func setupCronTestDon(ctx context.Context, t *testing.T, lggr logger.SugaredLogg
 	return workflowDon
 }
 
-func createCronTestWorkflowDon(ctx context.Context, t *testing.T, lggr logger.SugaredLogger,
+func createCronTestWorkflowDon(ctx context.Context, t *testing.T, lggr logger.Logger,
 	workflowDonInfo framework.DonConfiguration,
 	donContext framework.DonContext,
 	targetFactory framework.TargetFactory) *framework.DON {
