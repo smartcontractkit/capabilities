@@ -12,22 +12,20 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap/zapcore"
 
+	beholderpb "github.com/smartcontractkit/chainlink-common/pkg/beholder/pb"
 	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/pb"
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/tests"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 	kcr "github.com/smartcontractkit/chainlink-evm/gethwrappers/keystone/generated/capabilities_registry_1_1_0"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/framework"
-	"github.com/smartcontractkit/chainlink/v2/core/logger"
 	"github.com/smartcontractkit/chainlink/v2/core/services/registrysyncer"
 
 	"github.com/smartcontractkit/capabilities/integration_tests/readcontract/contract"
 	"github.com/smartcontractkit/capabilities/integration_tests/utils"
-
-	beholderpb "github.com/smartcontractkit/chainlink-common/pkg/beholder/pb"
 )
 
 type ReadContractConfig struct {
@@ -37,8 +35,7 @@ type ReadContractConfig struct {
 
 func Test_RemoteReadCapabilityWithoutConsensus(t *testing.T) {
 	ctx := t.Context()
-	lggr := logger.TestLogger(t)
-	lggr.SetLogLevel(zapcore.InfoLevel)
+	lggr := logger.Test(t)
 
 	defer func() {
 		utils.CleanupCapabilitiesDir(lggr)
@@ -55,8 +52,7 @@ func Test_RemoteReadCapabilityMisconfiguredContractError(t *testing.T) {
 	beholderTester := tests.Beholder(t)
 
 	ctx := t.Context()
-	lggr := logger.TestLogger(t)
-	lggr.SetLogLevel(zapcore.InfoLevel)
+	lggr := logger.Test(t)
 
 	defer func() {
 		utils.CleanupCapabilitiesDir(lggr)
@@ -78,7 +74,7 @@ func Test_RemoteReadCapabilityMisconfiguredContractError(t *testing.T) {
 	}, 10*time.Second, 100*time.Millisecond)
 }
 
-func readValueFromContractFunction(ctx context.Context, t *testing.T, lggr logger.SugaredLogger, contractFunc string,
+func readValueFromContractFunction(ctx context.Context, t *testing.T, lggr logger.Logger, contractFunc string,
 	numOfWorkflowNodes int) *framework.TargetSink {
 	donContext := framework.CreateDonContext(ctx, t)
 
