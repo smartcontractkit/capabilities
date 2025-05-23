@@ -17,11 +17,11 @@ import (
 	common2 "github.com/ethereum/go-ethereum/common"
 	"github.com/pelletier/go-toml"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap/zapcore"
 
 	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/pb"
 	"github.com/smartcontractkit/chainlink-common/pkg/custmsg"
+	logger "github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/wasm/host"
@@ -31,15 +31,12 @@ import (
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/compute"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/framework"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/webapi"
-	"github.com/smartcontractkit/chainlink/v2/core/logger"
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/handlers/capabilities"
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/handlers/common"
 	"github.com/smartcontractkit/chainlink/v2/core/services/registrysyncer"
 
 	"github.com/smartcontractkit/capabilities/integration_tests/por/contract"
 	"github.com/smartcontractkit/capabilities/integration_tests/utils"
-
-	commonlogger "github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
 
 const commandOverrideForCustomComputeAction = "__builtin_custom-compute-action"
@@ -71,7 +68,7 @@ type readBalancesConfig struct {
 
 type NullFetcherFactory struct{}
 
-func (n NullFetcherFactory) NewFetcher(log commonlogger.Logger, emitter custmsg.MessageEmitter) compute.FetcherFn {
+func (n NullFetcherFactory) NewFetcher(log logger.Logger, emitter custmsg.MessageEmitter) compute.FetcherFn {
 	return func(ctx context.Context, req *host.FetchRequest) (*host.FetchResponse, error) {
 		return nil, fmt.Errorf("no fetcher configured")
 	}
@@ -137,9 +134,7 @@ func runLoadTest(t *testing.T, numberOfNodes int, f uint8, numberOfWorkflows int
 	resultsDir string) {
 	ctx := t.Context()
 
-	lggr := logger.TestLogger(t)
-	lggr.SetLogLevel(zapcore.InfoLevel)
-
+	lggr := logger.Test(t)
 	defer func() {
 		utils.CleanupCapabilitiesDir(lggr)
 	}()
@@ -190,7 +185,7 @@ func runLoadTest(t *testing.T, numberOfNodes int, f uint8, numberOfWorkflows int
 	fmt.Println(report)
 }
 
-func setupLoadtestDON(ctx context.Context, t *testing.T, lggr logger.SugaredLogger, numberOfNodes int, f uint8,
+func setupLoadtestDON(ctx context.Context, t *testing.T, lggr logger.Logger, numberOfNodes int, f uint8,
 	protocolRoundTime time.Duration) (*framework.TargetSink, func(workflowName string, cronSchedule string, workflowNumber int)) {
 	chainID := uint64(1337)
 	network := "evm"

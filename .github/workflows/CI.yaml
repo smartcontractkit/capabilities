@@ -51,7 +51,7 @@ jobs:
 
   build:
     needs: affected
-    if: ${{fromJson(needs.affected.outputs.nx).run_build}}
+    if: ${{fromJson(needs.affected.outputs.nx).projects_with_build != null && contains(fromJson(needs.affected.outputs.nx).projects_with_build, fromJson(needs.affected.outputs.nx).projects_with_build[0])}}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -82,7 +82,7 @@ jobs:
 
   test:
     needs: affected
-    if: ${{fromJson(needs.affected.outputs.nx).run_test}}
+    if: ${{fromJson(needs.affected.outputs.nx).projects_with_test != null && contains(fromJson(needs.affected.outputs.nx).projects_with_test, fromJson(needs.affected.outputs.nx).projects_with_test[0])}}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -121,7 +121,7 @@ jobs:
 
   race:
     needs: affected
-    if: ${{fromJson(needs.affected.outputs.nx).run_race}}
+    if: ${{fromJson(needs.affected.outputs.nx).projects_with_race != null && contains(fromJson(needs.affected.outputs.nx).projects_with_race, fromJson(needs.affected.outputs.nx).projects_with_race[0])}}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
