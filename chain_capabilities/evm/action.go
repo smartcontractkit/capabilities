@@ -2,6 +2,7 @@ package evm
 
 import (
 	"context"
+	"fmt"
 
 	"google.golang.org/protobuf/types/known/emptypb"
 
@@ -18,7 +19,14 @@ func (c *capability) CallContract(ctx context.Context, _ capabilities.RequestMet
 		return nil, err
 	}
 
-	data, err := c.EVMService.CallContract(ctx, callMsg, valuespb.NewIntFromBigInt(input.GetBlockNumber()))
+	// TODO handle unspecified block number, which defaults to the latest block, need an OCR round for consensus on read.
+	// To do this the EVMService has to be modified/extended to return from which block the contract was read or even a list of contact reads from a couple of blocks.
+	blockNumber := valuespb.NewIntFromBigInt(input.GetBlockNumber())
+	if blockNumber == nil || blockNumber.String() == "0" {
+		return nil, fmt.Errorf("block number must be specified and non-zero, got: %s", blockNumber)
+	}
+
+	data, err := c.EVMService.CallContract(ctx, callMsg, blockNumber)
 	if err != nil {
 		return nil, err
 	}
@@ -32,6 +40,14 @@ func (c *capability) FilterLogs(ctx context.Context, _ capabilities.RequestMetad
 		return nil, err
 	}
 
+	if (fq.FromBlock == nil || fq.FromBlock.String() == "0") || (fq.ToBlock == nil || fq.ToBlock.String() == "0") {
+		return nil, fmt.Errorf("fromBlock and toBlock have to be specified and bounded in the filter query, got: fromBlock=%s, toBlock=%s", fq.FromBlock, fq.ToBlock)
+	}
+
+	if fq.FromBlock.Cmp(fq.ToBlock) > 0 {
+		return nil, fmt.Errorf("fromBlock (%s) cannot be greater than toBlock (%s)", fq.FromBlock, fq.ToBlock)
+	}
+
 	logs, err := c.EVMService.FilterLogs(ctx, fq)
 	if err != nil {
 		return nil, err
@@ -41,7 +57,16 @@ func (c *capability) FilterLogs(ctx context.Context, _ capabilities.RequestMetad
 }
 
 func (c *capability) BalanceAt(ctx context.Context, _ capabilities.RequestMetadata, req *evmservice.BalanceAtRequest) (*evmservice.BalanceAtReply, error) {
-	balance, err := c.EVMService.BalanceAt(ctx, evmtypes.Address(req.GetAccount().GetAddress()), valuespb.NewIntFromBigInt(req.GetBlockNumber()))
+	blockNumber := valuespb.NewIntFromBigInt(req.GetBlockNumber())
+
+	// TODO allow the block number to be nil or zero, which would default to the latest block, this requires an OCR round to reach consesnus on balance read.
+	// To do this the EVMService has to be modified/extended to return from which block the balance was read or even a list of balances from a couple of blocks.
+	// alternatively, just return median of the balance value?
+	if blockNumber == nil || blockNumber.String() == "0" {
+		return nil, fmt.Errorf("block number must be specified and non-zero, got: %s", blockNumber)
+	}
+
+	balance, err := c.EVMService.BalanceAt(ctx, evmtypes.Address(req.GetAccount().GetAddress()), blockNumber)
 	if err != nil {
 		return nil, err
 	}
@@ -50,6 +75,7 @@ func (c *capability) BalanceAt(ctx context.Context, _ capabilities.RequestMetada
 }
 
 func (c *capability) EstimateGas(ctx context.Context, _ capabilities.RequestMetadata, req *evmservice.EstimateGasRequest) (*evmservice.EstimateGasReply, error) {
+	// TODO double check if an ocr round can just return a median of the estimate gas value and implement this.
 	callMsg, err := evmservice.ConvertCallMsgFromProto(req.GetMsg())
 	if err != nil {
 		return nil, err
@@ -92,6 +118,7 @@ func (c *capability) GetTransactionReceipt(ctx context.Context, _ capabilities.R
 }
 
 func (c *capability) LatestAndFinalizedHead(ctx context.Context, _ capabilities.RequestMetadata, _ *emptypb.Empty) (*evmservice.LatestAndFinalizedHeadReply, error) {
+	// TODO need to start an OCR round here to get median of latest and finalized head, do we need a list of blocks to do this or can we get the DON median from the OCRFactory?
 	latest, finalized, err := c.EVMService.LatestAndFinalizedHead(ctx)
 	if err != nil {
 		return nil, err
@@ -118,6 +145,8 @@ func (c *capability) QueryTrackedLogs(ctx context.Context, _ capabilities.Reques
 		return nil, err
 	}
 
+	// TODO what does confidence level do here when we have block ranges, should the impl. throw an error if a block range is outside of the specifice confidence level?
+	// TODO is an OCR round needed to validate block hashes on the log response, probably is too much, probably just require the block range to always be specified and rely on exact match
 	result, err := c.EVMService.QueryTrackedLogs(ctx, expression, limitAndSort, confidenceLevel)
 	if err != nil {
 		return nil, err
