@@ -250,7 +250,7 @@ jobs:
         with:
           version: v1.64.7
           working-directory: ${{fromJson(needs.affected.outputs.nx)[matrix.projects].root}}
-          args: --timeout=15m --out-format colored-line-number,checkstyle:golangci-lint-report.xml
+          args: --timeout=30m --out-format colored-line-number,checkstyle:golangci-lint-report.xml
 
       - name: Upload Golangci Lint artifacts
         if: always()
