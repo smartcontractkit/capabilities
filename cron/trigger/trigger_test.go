@@ -889,25 +889,108 @@ func TestCronTrigger_UnregisterTriggerError(t *testing.T) {
 	require.NoError(t, err)
 	triggerAPI := server.NewCronServer(ts)
 
-	ctx := t.Context()
+	t.Run("OK if trigger not found", func(t *testing.T) {
+		ctx := t.Context()
 
-	config, err := values.NewMap(map[string]interface{}{
-		"schedule": everySecond,
+		config, err := values.NewMap(map[string]interface{}{
+			"schedule": everySecond,
+		})
+		require.NoError(t, err)
+
+		requestMetadata := capabilities.RequestMetadata{
+			WorkflowID: workflowID1,
+		}
+		request := capabilities.TriggerRegistrationRequest{
+			TriggerID: "missing",
+			Metadata:  requestMetadata,
+			Config:    config,
+		}
+
+		err = triggerAPI.UnregisterTrigger(ctx, request)
+		require.NoError(t, err)
 	})
-	require.NoError(t, err)
 
-	requestMetadata := capabilities.RequestMetadata{
-		WorkflowID: workflowID1,
-	}
-	request := capabilities.TriggerRegistrationRequest{
-		TriggerID: "invalid",
-		Metadata:  requestMetadata,
-		Config:    config,
-	}
+	t.Run("OK register then unregister", func(t *testing.T) {
+		ctx := t.Context()
 
-	err = triggerAPI.UnregisterTrigger(ctx, request)
-	require.Error(t, err)
-	require.Equal(t, "triggerId invalid not found", err.Error())
+		config, err := values.NewMap(map[string]interface{}{
+			"schedule": everySecond,
+		})
+		require.NoError(t, err)
+
+		requestMetadata := capabilities.RequestMetadata{
+			WorkflowID: workflowID1,
+		}
+		request := capabilities.TriggerRegistrationRequest{
+			TriggerID: "trigger-id",
+			Metadata:  requestMetadata,
+			Config:    config,
+		}
+
+		_, err = triggerAPI.RegisterTrigger(ctx, request)
+		require.NoError(t, err)
+		err = triggerAPI.UnregisterTrigger(ctx, request)
+		require.NoError(t, err)
+	})
+
+	t.Run("OK register then unregister multiple times", func(t *testing.T) {
+		ctx := t.Context()
+
+		config, err := values.NewMap(map[string]interface{}{
+			"schedule": everySecond,
+		})
+		require.NoError(t, err)
+
+		requestMetadata := capabilities.RequestMetadata{
+			WorkflowID: workflowID1,
+		}
+		request := capabilities.TriggerRegistrationRequest{
+			TriggerID: "trigger-id",
+			Metadata:  requestMetadata,
+			Config:    config,
+		}
+
+		_, err = triggerAPI.RegisterTrigger(ctx, request)
+		require.NoError(t, err)
+
+		for range 3 {
+			err = triggerAPI.UnregisterTrigger(ctx, request)
+			require.NoError(t, err)
+		}
+	})
+
+	t.Run("NOK fails to unregister if closed", func(t *testing.T) {
+		ts := NewTriggerService(logger.Nop(), fakeClock)
+		err = ts.Initialise(t.Context(), string(triggerConfig), nil, nil, nil, nil, nil, nil)
+		require.NoError(t, err)
+
+		triggerAPI := server.NewCronServer(ts)
+		ctx := t.Context()
+
+		config, err := values.NewMap(map[string]interface{}{
+			"schedule": everySecond,
+		})
+		require.NoError(t, err)
+
+		requestMetadata := capabilities.RequestMetadata{
+			WorkflowID: workflowID1,
+		}
+		request := capabilities.TriggerRegistrationRequest{
+			TriggerID: "trigger-id",
+			Metadata:  requestMetadata,
+			Config:    config,
+		}
+
+		_, err = triggerAPI.RegisterTrigger(ctx, request)
+		require.NoError(t, err)
+
+		err = triggerAPI.Close()
+		require.NoError(t, err)
+
+		err = triggerAPI.UnregisterTrigger(ctx, request)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "cannot unregister a new trigger, service has been closed")
+	})
 }
 
 func TestCronTrigger_CloseStartErrors(t *testing.T) {
