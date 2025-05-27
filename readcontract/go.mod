@@ -1,15 +1,13 @@
 module github.com/smartcontractkit/capabilities/readcontract
 
-go 1.24.1
-
-toolchain go1.24.2
+go 1.24.2
 
 require (
 	github.com/hashicorp/go-plugin v1.6.3 // indirect
 	github.com/jonboulle/clockwork v0.4.0
 	github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-20250402163239-224ad2061432
 	github.com/smartcontractkit/capabilities/libs/testutils v0.0.0-20250402163239-224ad2061432
-	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250501105414-d46a3f780fb4
+	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250527164052-5a4fb8e255ff
 	github.com/smartcontractkit/libocr v0.0.0-20250328171017-609ec10a5510 // indirect
 	github.com/stretchr/testify v1.10.0
 	go.opentelemetry.io/otel/metric v1.35.0 // indirect
@@ -79,6 +77,7 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v5 v5.2.0 // indirect
 	github.com/scylladb/go-reflectx v1.0.1 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
+	github.com/smartcontractkit/freeport v0.1.0 // indirect
 	github.com/smartcontractkit/grpc-proxy v0.0.0-20240830132753-a7e17fec5ab7 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
@@ -111,6 +110,6 @@ require (
 	golang.org/x/text v0.23.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250218202821-56aae31c358a // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250324211829-b45e905df463 // indirect
-	google.golang.org/grpc v1.71.0 // indirect
+	google.golang.org/grpc v1.72.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
