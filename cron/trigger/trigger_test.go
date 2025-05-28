@@ -247,7 +247,7 @@ func successWithStandardCronIntervals(t *testing.T, useTypedAPI bool) {
 			err = ts.Initialise(t.Context(), string(config), nil, nil, nil, nil, nil, nil)
 			require.NoError(t, err)
 
-			triggerAPI := server.NewCronServer(ts).(TriggerCapability)
+			triggerAPI := server.NewCronServer(ts)
 
 			// Register trigger
 			callback, registerUnregisterRequest, err := registerTriggerToCronTriggerService(
@@ -322,7 +322,7 @@ func TestCronTrigger_Load(t *testing.T) {
 
 	ts := NewTriggerService(logger.Nop(), fakeClock)
 
-	triggerAPI := server.NewCronServer(ts).(TriggerCapability)
+	triggerAPI := server.NewCronServer(ts)
 
 	ctx := t.Context()
 
@@ -445,7 +445,7 @@ func testCronTriggerRegisterTriggerBeforeStart(t *testing.T, useTypedAPI bool) {
 	require.NoError(t, err)
 	ts := NewTriggerService(logger.Nop(), fakeClock)
 
-	triggerAPI := server.NewCronServer(ts).(TriggerCapability)
+	triggerAPI := server.NewCronServer(ts)
 
 	ctx := t.Context()
 
@@ -516,7 +516,7 @@ func testCronTriggerTimeWindows(t *testing.T, useTypedAPI bool) {
 	config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
 	require.NoError(t, err)
 	ts := NewTriggerService(logger.Nop(), fakeClock)
-	triggerAPI := server.NewCronServer(ts).(TriggerCapability)
+	triggerAPI := server.NewCronServer(ts)
 
 	ctx := t.Context()
 
@@ -591,7 +591,7 @@ func testCronTriggerMultipleDifferentSchedules(t *testing.T, useTypedAPI bool) {
 	config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
 	require.NoError(t, err)
 	ts := NewTriggerService(logger.Nop(), fakeClock)
-	triggerAPI := server.NewCronServer(ts).(TriggerCapability)
+	triggerAPI := server.NewCronServer(ts)
 	ctx := t.Context()
 
 	callback1, registerUnregisterRequest1, err := registerTriggerToCronTriggerService(
@@ -713,7 +713,7 @@ func testCronTriggerTimeZone(t *testing.T, useTypedAPI bool) {
 	config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
 	require.NoError(t, err)
 	ts := NewTriggerService(logger.Nop(), fakeClock)
-	triggerAPI := server.NewCronServer(ts).(TriggerCapability)
+	triggerAPI := server.NewCronServer(ts)
 	ctx := t.Context()
 
 	// Register trigger
@@ -823,7 +823,7 @@ func testCronTriggerRegisterTrigger(t *testing.T, useTypedAPI bool) {
 			ts := NewTriggerService(logger.Nop(), fakeClock)
 			err := ts.Initialise(t.Context(), "", nil, nil, nil, nil, nil, nil)
 			require.NoError(t, err)
-			triggerAPI := server.NewCronServer(ts).(TriggerCapability)
+			triggerAPI := server.NewCronServer(ts)
 			ctx := t.Context()
 			_, _, err = registerTriggerToCronTriggerService(
 				ctx,
@@ -855,7 +855,7 @@ func TestCronTrigger_RegisterTriggerDuplicateError(t *testing.T) {
 	ts := NewTriggerService(logger.Nop(), fakeClock)
 	err = ts.Initialise(t.Context(), string(triggerConfig), nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
-	triggerAPI := server.NewCronServer(ts).(TriggerCapability)
+	triggerAPI := server.NewCronServer(ts)
 
 	ctx := t.Context()
 
@@ -887,7 +887,7 @@ func TestCronTrigger_UnregisterTriggerError(t *testing.T) {
 	ts := NewTriggerService(logger.Nop(), fakeClock)
 	err = ts.Initialise(t.Context(), string(triggerConfig), nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
-	triggerAPI := server.NewCronServer(ts).(TriggerCapability)
+	triggerAPI := server.NewCronServer(ts)
 
 	ctx := t.Context()
 
