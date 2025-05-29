@@ -4,10 +4,6 @@ go 1.24.2
 
 toolchain go1.24.3
 
-replace github.com/smartcontractkit/capabilities/cron => ../cron
-
-replace github.com/smartcontractkit/capabilities/readcontract => ../readcontract
-
 replace github.com/smartcontractkit/capabilities/loadtestwritetarget => ../loadtestwritetarget
 
 replace github.com/fbsobreira/gotron-sdk => github.com/smartcontractkit/chainlink-tron/relayer/gotron-sdk v0.0.5-0.20250422175525-b7575d96bd4d

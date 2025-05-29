@@ -5,15 +5,9 @@ go 1.23.3
 toolchain go1.23.4
 
 require (
-	github.com/hashicorp/go-plugin v1.6.2 // indirect
+	github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-20250402163239-224ad2061432
 	github.com/smartcontractkit/chainlink-common v0.4.1-0.20241217120918-bbe318cd0760
-	github.com/smartcontractkit/libocr v0.0.0-20241007185508-adbe57025f12 // indirect
-	github.com/stretchr/testify v1.9.0 // indirect
-	go.opentelemetry.io/otel/metric v1.30.0 // indirect
-	google.golang.org/protobuf v1.35.1 // indirect
 )
-
-require github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-20250402163239-224ad2061432
 
 require (
 	github.com/atombender/go-jsonschema v0.16.1-0.20240916205339-a74cd4e2851c // indirect
@@ -41,6 +35,7 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.1.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.22.0 // indirect
 	github.com/hashicorp/go-hclog v1.5.0 // indirect
+	github.com/hashicorp/go-plugin v1.6.2 // indirect
 	github.com/hashicorp/yamux v0.1.1 // indirect
 	github.com/iancoleman/strcase v0.3.0 // indirect
 	github.com/invopop/jsonschema v0.12.0 // indirect
@@ -64,6 +59,8 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v5 v5.2.0 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/smartcontractkit/grpc-proxy v0.0.0-20240830132753-a7e17fec5ab7 // indirect
+	github.com/smartcontractkit/libocr v0.0.0-20241007185508-adbe57025f12 // indirect
+	github.com/stretchr/testify v1.9.0 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.52.0 // indirect
@@ -79,6 +76,7 @@ require (
 	go.opentelemetry.io/otel/exporters/stdout/stdoutmetric v1.28.0 // indirect
 	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.28.0 // indirect
 	go.opentelemetry.io/otel/log v0.6.0 // indirect
+	go.opentelemetry.io/otel/metric v1.30.0 // indirect
 	go.opentelemetry.io/otel/sdk v1.30.0 // indirect
 	go.opentelemetry.io/otel/sdk/log v0.6.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.30.0 // indirect
@@ -98,6 +96,7 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20240903143218-8af14fe29dc1 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240903143218-8af14fe29dc1 // indirect
 	google.golang.org/grpc v1.67.1 // indirect
+	google.golang.org/protobuf v1.35.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
