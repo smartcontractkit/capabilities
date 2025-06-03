@@ -7,7 +7,7 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	evmservice "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm/chain-service"
+	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	chaincommonpb "github.com/smartcontractkit/chainlink-common/pkg/loop/chain-common"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
@@ -31,7 +31,7 @@ func (c *capability) CallContract(ctx context.Context, _ capabilities.RequestMet
 		return nil, err
 	}
 
-	return &evmservice.CallContractReply{Data: &evmservice.ABIPayload{Abi: data}}, nil
+	return &evmservice.CallContractReply{Data: data}, nil
 }
 
 func (c *capability) FilterLogs(ctx context.Context, _ capabilities.RequestMetadata, req *evmservice.FilterLogsRequest) (*evmservice.FilterLogsReply, error) {
@@ -66,7 +66,7 @@ func (c *capability) BalanceAt(ctx context.Context, _ capabilities.RequestMetada
 		return nil, fmt.Errorf("block number must be specified and non-zero, got: %s", blockNumber)
 	}
 
-	balance, err := c.EVMService.BalanceAt(ctx, evmtypes.Address(req.GetAccount().GetAddress()), blockNumber)
+	balance, err := c.EVMService.BalanceAt(ctx, evmtypes.Address(req.GetAccount()), blockNumber)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +90,7 @@ func (c *capability) EstimateGas(ctx context.Context, _ capabilities.RequestMeta
 }
 
 func (c *capability) GetTransactionByHash(ctx context.Context, _ capabilities.RequestMetadata, req *evmservice.GetTransactionByHashRequest) (*evmservice.GetTransactionByHashReply, error) {
-	tx, err := c.EVMService.GetTransactionByHash(ctx, evmtypes.Hash(req.Hash.Hash))
+	tx, err := c.EVMService.GetTransactionByHash(ctx, evmtypes.Hash(req.Hash))
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +104,7 @@ func (c *capability) GetTransactionByHash(ctx context.Context, _ capabilities.Re
 }
 
 func (c *capability) GetTransactionReceipt(ctx context.Context, _ capabilities.RequestMetadata, req *evmservice.GetTransactionReceiptRequest) (*evmservice.GetTransactionReceiptReply, error) {
-	receipt, err := c.EVMService.GetTransactionReceipt(ctx, evmtypes.Hash(req.Hash.Hash))
+	receipt, err := c.EVMService.GetTransactionReceipt(ctx, evmtypes.Hash(req.Hash))
 	if err != nil {
 		return nil, err
 	}

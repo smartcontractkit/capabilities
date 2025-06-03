@@ -8,7 +8,7 @@ import (
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	evmcapserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm/capability/server"
+	evmcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -34,11 +34,11 @@ type capability struct {
 	types.EVMService
 }
 
-var _ evmcapserver.EVMCapability = &capabilityGRPCService{}
+var _ evmcap.Client = &capabilityGRPCService{}
 
 func main() {
 	loopserver.Serve(CapabilityName, func(lggr logger.Logger) loop.StandardCapabilities {
-		return evmcapserver.NewEVMServer(&capabilityGRPCService{lggr: lggr})
+		return evmcap.NewClientClient(&capabilityGRPCService{lggr: lggr})
 	})
 }
 
