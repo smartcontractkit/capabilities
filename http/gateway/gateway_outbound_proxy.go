@@ -102,7 +102,7 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 	messageID := p.getMessageID(metadata)
 	lggr := logger.With(p.lggr, "messageID", messageID, "workflowID", metadata.WorkflowID, "workflowExecutionID", metadata.WorkflowExecutionID, "workflowOwner", metadata.WorkflowOwner)
 
-	ctx, cancel := context.WithTimeout(ctx, time.Duration(input.TimeoutMs))
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(input.TimeoutMs)*time.Millisecond)
 	defer cancel()
 
 	workflowAllow, globalAllow := p.outgoingRateLimiter.AllowVerbose(metadata.WorkflowOwner)

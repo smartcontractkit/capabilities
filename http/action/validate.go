@@ -74,11 +74,11 @@ func getWithDefault(cfgVal uint32, defaultVal uint32) uint32 {
 }
 
 func validateInputMaxLimits(input *http.Inputs, cfg common.ServiceConfig) error {
-	maxTimeoutMs := getWithDefault(uint32(cfg.LimitsConfig.MaxTimeoutMs), defaultMaxTimeoutMs)
-	maxHeaderCount := getWithDefault(uint32(cfg.LimitsConfig.MaxHeaderCount), defaultMaxHeaderCount)
-	maxHeaderKeyLength := getWithDefault(uint32(cfg.LimitsConfig.MaxHeaderKeyLength), defaultMaxHeaderKeyLength)
-	maxHeaderValueLength := getWithDefault(uint32(cfg.LimitsConfig.MaxHeaderValueLength), defaultMaxHeaderValueLength)
-	maxBodyLength := getWithDefault(uint32(cfg.LimitsConfig.MaxBodyLength), defaultMaxBodyLength)
+	maxTimeoutMs := getWithDefault(cfg.LimitsConfig.MaxTimeoutMs, defaultMaxTimeoutMs)
+	maxHeaderCount := getWithDefault(cfg.LimitsConfig.MaxHeaderCount, defaultMaxHeaderCount)
+	maxHeaderKeyLength := getWithDefault(cfg.LimitsConfig.MaxHeaderKeyLength, defaultMaxHeaderKeyLength)
+	maxHeaderValueLength := getWithDefault(cfg.LimitsConfig.MaxHeaderValueLength, defaultMaxHeaderValueLength)
+	maxBodyLength := getWithDefault(cfg.LimitsConfig.MaxBodyLength, defaultMaxBodyLength)
 
 	if input.TimeoutMs < 0 || uint32(input.TimeoutMs) > maxTimeoutMs {
 		return fmt.Errorf("timeout must be between 0 and %d milliseconds", maxTimeoutMs)
