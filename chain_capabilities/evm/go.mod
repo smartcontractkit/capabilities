@@ -2,6 +2,8 @@ module github.com/smartcontractkit/capabilities/cron
 
 go 1.24.2
 
+toolchain go1.24.3
+
 require (
 	github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-20250402163239-224ad2061432
 	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250602154415-8aa3f7dc56ea
