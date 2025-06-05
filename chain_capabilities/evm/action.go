@@ -13,6 +13,7 @@ import (
 	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 )
 
+// TODO finalise the signature PLEX-1482
 func (c *capability) CallContract(ctx context.Context, _ capabilities.RequestMetadata, input *evmservice.CallContractRequest) (*evmservice.CallContractReply, error) {
 	callMsg, err := evmservice.ConvertCallMsgFromProto(input.GetCall())
 	if err != nil {
@@ -129,6 +130,8 @@ func (c *capability) LatestAndFinalizedHead(ctx context.Context, _ capabilities.
 		Finalized: evmservice.ConvertHeadToProto(finalized),
 	}, nil
 }
+
+// TODO finalise the signature PLEX-1482
 func (c *capability) QueryTrackedLogs(ctx context.Context, _ capabilities.RequestMetadata, req *evmservice.QueryTrackedLogsRequest) (*evmservice.QueryTrackedLogsReply, error) {
 	expression, err := evmservice.ConvertExpressionsFromProto(req.Expression)
 	if err != nil {
