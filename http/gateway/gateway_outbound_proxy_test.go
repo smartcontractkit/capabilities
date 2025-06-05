@@ -21,8 +21,6 @@ import (
 	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 )
 
-type ctxKey string
-
 func TestOutgoingConnectorHandler_AwaitConnection(t *testing.T) {
 	type testCase struct {
 		name string
@@ -101,10 +99,15 @@ func TestOutgoingConnectorHandler_AwaitConnection(t *testing.T) {
 	}
 }
 
-func TestGatewayOutboundProxy_SendRequest_Success(t *testing.T) {
+// Helper for setting up proxy and mockConnector for SendRequest tests
+func setupSendRequestTest(t *testing.T) (*gatewayOutboundProxy, *mockGatewayConnector, chan string) {
+	readyCh := make(chan string, 1)
 	mockConnector := &mockGatewayConnector{
 		DonIDVal:      "don1",
 		GatewayIDsVal: []string{"gateway1"},
+		OnSend: func(messageID string) {
+			readyCh <- messageID
+		},
 	}
 	lggr := logger.Test(t)
 	proxy, err := NewGatewayOutboundProxy(
@@ -114,6 +117,11 @@ func TestGatewayOutboundProxy_SendRequest_Success(t *testing.T) {
 		gateway_common.WithFixedStart(),
 	)
 	require.NoError(t, err)
+	return proxy, mockConnector, readyCh
+}
+
+func TestGatewayOutboundProxy_SendRequest_Success(t *testing.T) {
+	proxy, _, readyCh := setupSendRequestTest(t)
 
 	metadata := capabilities.RequestMetadata{
 		WorkflowID:          "wf1",
@@ -128,12 +136,11 @@ func TestGatewayOutboundProxy_SendRequest_Success(t *testing.T) {
 		TimeoutMs: 5000,
 	}
 
-	// Prepare a goroutine to simulate the gateway sending a response
+	// Prepare a goroutine to receive gateway response
 	go func() {
+		messageID := <-readyCh
 		// Wait for the request to be registered
 		time.Sleep(100 * time.Millisecond)
-		// Find the messageID used
-		messageID := proxy.getMessageID(metadata)
 		msg := &gateway_common.Message{
 			Body: gateway_common.MessageBody{
 				MessageId: messageID,
@@ -163,150 +170,115 @@ func TestGatewayOutboundProxy_SendRequest_Success(t *testing.T) {
 	assert.Equal(t, "", output.ErrorMessage)
 }
 
-// func TestGatewayOutboundProxy_SendRequest_Timeout(t *testing.T) {
-// 	mockConnector := &mockGatewayConnector{
-// 		DonIDVal:      "don1",
-// 		GatewayIDsVal: []string{"gateway1"},
-// 	}
-// 	lggr := logger.Test(t)
-// 	proxy, err := NewGatewayOutboundProxy(
-// 		mockConnector,
-// 		common.ServiceConfig{},
-// 		lggr,
-// 		gateway_common.WithFixedStart(),
-// 	)
-// 	require.NoError(t, err)
+func TestGatewayOutboundProxy_SendRequest_Timeout(t *testing.T) {
+	proxy, _, _ := setupSendRequestTest(t)
 
-// 	metadata := core.RequestMetadata{
-// 		WorkflowID:          "wf1",
-// 		WorkflowExecutionID: "exec1",
-// 		WorkflowOwner:       "owner1",
-// 	}
-// 	input := &gateway_common.HTTPInputs{
-// 		Url:       "http://example.com",
-// 		Method:    "GET",
-// 		Headers:   map[string]string{"X-Test": "1"},
-// 		Body:      []byte("test"),
-// 		TimeoutMs: 100, // short timeout
-// 	}
+	metadata := capabilities.RequestMetadata{
+		WorkflowID:          "wf1",
+		WorkflowExecutionID: "exec1",
+		WorkflowOwner:       "owner1",
+	}
+	input := &http.Inputs{
+		Url:       "http://example.com",
+		Method:    "GET",
+		Headers:   map[string]string{"X-Test": "1"},
+		Body:      []byte("test"),
+		TimeoutMs: 100, // short timeout
+	}
 
-// 	// Do not send a response, should timeout
-// 	start := time.Now()
-// 	output, err := proxy.SendRequest(context.Background(), metadata, input)
-// 	elapsed := time.Since(start)
-// 	require.Error(t, err)
-// 	require.Nil(t, output)
-// 	assert.Contains(t, err.Error(), "context deadline exceeded")
-// 	assert.GreaterOrEqual(t, elapsed.Milliseconds(), int64(100))
-// }
+	// Do not send a response, should timeout
+	start := time.Now()
+	output, err := proxy.SendRequest(context.Background(), metadata, input)
+	elapsed := time.Since(start)
+	require.Error(t, err)
+	require.Nil(t, output)
+	assert.Contains(t, err.Error(), "context deadline exceeded")
+	assert.GreaterOrEqual(t, elapsed.Milliseconds(), int64(100))
+}
 
-// func TestGatewayOutboundProxy_SendRequest_ExecutionError(t *testing.T) {
-// 	mockConnector := &mockGatewayConnector{
-// 		DonIDVal:      "don1",
-// 		GatewayIDsVal: []string{"gateway1"},
-// 	}
-// 	lggr := logger.Test(t)
-// 	proxy, err := NewGatewayOutboundProxy(
-// 		mockConnector,
-// 		common.ServiceConfig{},
-// 		lggr,
-// 		gateway_common.WithFixedStart(),
-// 	)
-// 	require.NoError(t, err)
+func TestGatewayOutboundProxy_SendRequest_ExecutionError(t *testing.T) {
+	proxy, _, readyCh := setupSendRequestTest(t)
 
-// 	metadata := core.RequestMetadata{
-// 		WorkflowID:          "wf1",
-// 		WorkflowExecutionID: "exec1",
-// 		WorkflowOwner:       "owner1",
-// 	}
-// 	input := &gateway_common.HTTPInputs{
-// 		Url:       "http://example.com",
-// 		Method:    "GET",
-// 		Headers:   map[string]string{"X-Test": "1"},
-// 		Body:      []byte("test"),
-// 		TimeoutMs: 5000,
-// 	}
+	metadata := capabilities.RequestMetadata{
+		WorkflowID:          "wf1",
+		WorkflowExecutionID: "exec1",
+		WorkflowOwner:       "owner1",
+	}
+	input := &http.Inputs{
+		Url:       "http://example.com",
+		Method:    "GET",
+		Headers:   map[string]string{"X-Test": "1"},
+		Body:      []byte("test"),
+		TimeoutMs: 5000,
+	}
 
-// 	go func() {
-// 		time.Sleep(100 * time.Millisecond)
-// 		messageID := proxy.getMessageID(metadata)
-// 		msg := &gateway_common.Message{
-// 			Body: &gateway_common.MessageBody{
-// 				MessageId: messageID,
-// 				Method:    gateway_common.MethodHTTPAction,
-// 			},
-// 		}
-// 		resp := gateway_common.GatewayResponse{
-// 			StatusCode:     500,
-// 			Body:           nil,
-// 			ErrorMessage:   "some error",
-// 			ExecutionError: true,
-// 		}
-// 		payload, err := json.Marshal(resp)
-// 		require.NoError(t, err)
-// 		msg.Body.Payload = payload
-// 		_ = proxy.HandleGatewayMessage(context.Background(), "gateway1", msg)
-// 	}()
+	go func() {
+		messageID := <-readyCh
+		msg := &gateway_common.Message{
+			Body: gateway_common.MessageBody{
+				MessageId: messageID,
+				Method:    gateway_common.MethodHTTPAction,
+			},
+		}
+		resp := gateway_common.GatewayResponse{
+			StatusCode:     500,
+			Body:           nil,
+			ErrorMessage:   "some error",
+			ExecutionError: true,
+		}
+		payload, err := json.Marshal(resp)
+		require.NoError(t, err)
+		msg.Body.Payload = payload
+		_ = proxy.HandleGatewayMessage(context.Background(), "gateway1", msg)
+	}()
 
-// 	output, err := proxy.SendRequest(context.Background(), metadata, input)
-// 	require.Error(t, err)
-// 	require.Nil(t, output)
-// 	assert.Equal(t, "internal error", err.Error())
-// }
+	output, err := proxy.SendRequest(context.Background(), metadata, input)
+	require.Error(t, err)
+	require.Nil(t, output)
+	assert.Equal(t, "internal error", err.Error())
+}
 
-// func TestGatewayOutboundProxy_SendRequest_RateLimitError(t *testing.T) {
-// 	mockConnector := &mockGatewayConnector{
-// 		DonIDVal:      "don1",
-// 		GatewayIDsVal: []string{"gateway1"},
-// 	}
-// 	lggr := logger.Test(t)
-// 	proxy, err := NewGatewayOutboundProxy(
-// 		mockConnector,
-// 		common.ServiceConfig{},
-// 		lggr,
-// 		gateway_common.WithFixedStart(),
-// 	)
-// 	require.NoError(t, err)
+func TestGatewayOutboundProxy_SendRequest_RateLimitError(t *testing.T) {
+	proxy, _, readyCh := setupSendRequestTest(t)
 
-// 	metadata := core.RequestMetadata{
-// 		WorkflowID:          "wf1",
-// 		WorkflowExecutionID: "exec1",
-// 		WorkflowOwner:       "owner1",
-// 	}
-// 	input := &gateway_common.HTTPInputs{
-// 		Url:       "http://example.com",
-// 		Method:    "GET",
-// 		Headers:   map[string]string{"X-Test": "1"},
-// 		Body:      []byte("test"),
-// 		TimeoutMs: 5000,
-// 	}
+	metadata := capabilities.RequestMetadata{
+		WorkflowID:          "wf1",
+		WorkflowExecutionID: "exec1",
+		WorkflowOwner:       "owner1",
+	}
+	input := &http.Inputs{
+		Url:       "http://example.com",
+		Method:    "GET",
+		Headers:   map[string]string{"X-Test": "1"},
+		Body:      []byte("test"),
+		TimeoutMs: 5000,
+	}
 
-// 	go func() {
-// 		time.Sleep(100 * time.Millisecond)
-// 		messageID := proxy.getMessageID(metadata)
-// 		msg := &gateway_common.Message{
-// 			Body: &gateway_common.MessageBody{
-// 				MessageId: messageID,
-// 				Method:    gateway_common.MethodHTTPAction,
-// 			},
-// 		}
-// 		resp := gateway_common.GatewayResponse{
-// 			StatusCode:     429,
-// 			Body:           nil,
-// 			ErrorMessage:   "global limit of outgoing gateways requests has been exceeded",
-// 			ExecutionError: true,
-// 		}
-// 		payload, err := json.Marshal(resp)
-// 		require.NoError(t, err)
-// 		msg.Body.Payload = payload
-// 		_ = proxy.HandleGatewayMessage(context.Background(), "gateway1", msg)
-// 	}()
+	go func() {
+		messageID := <-readyCh
+		msg := &gateway_common.Message{
+			Body: gateway_common.MessageBody{
+				MessageId: messageID,
+				Method:    gateway_common.MethodHTTPAction,
+			},
+		}
+		resp := gateway_common.GatewayResponse{
+			StatusCode:     429,
+			Body:           nil,
+			ErrorMessage:   "global limit of outgoing gateways requests has been exceeded",
+			ExecutionError: true,
+		}
+		payload, err := json.Marshal(resp)
+		require.NoError(t, err)
+		msg.Body.Payload = payload
+		_ = proxy.HandleGatewayMessage(context.Background(), "gateway1", msg)
+	}()
 
-// 	output, err := proxy.SendRequest(context.Background(), metadata, input)
-// 	require.Error(t, err)
-// 	require.Nil(t, output)
-// 	assert.Contains(t, err.Error(), "global limit of outgoing gateways requests has been exceeded")
-// }
+	output, err := proxy.SendRequest(context.Background(), metadata, input)
+	require.Error(t, err)
+	require.Nil(t, output)
+	assert.Contains(t, err.Error(), "global limit of outgoing gateways requests has been exceeded")
+}
 
 type mockGatewayConnector struct {
 	core.GatewayConnector
