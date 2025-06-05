@@ -318,7 +318,7 @@ func (m *mockGatewayConnector) AwaitConnection(ctx context.Context, gateway stri
 }
 
 func (m *mockGatewayConnector) AddHandler(methods []string, handler core.GatewayConnectorHandler) error {
-	return nil
+	return m.AddHandlerErr
 }
 
 func TestGatewayOutboundProxy_nextBackoff(t *testing.T) {
