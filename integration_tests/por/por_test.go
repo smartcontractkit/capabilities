@@ -15,21 +15,20 @@ import (
 	"github.com/pelletier/go-toml"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap/zapcore"
 
 	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/pb"
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
 	kcr "github.com/smartcontractkit/chainlink-evm/gethwrappers/keystone/generated/capabilities_registry_1_1_0"
 	feeds_consumer "github.com/smartcontractkit/chainlink-evm/gethwrappers/keystone/generated/feeds_consumer_1_0_0"
-	"github.com/smartcontractkit/chainlink-integrations/evm/assets"
-	"github.com/smartcontractkit/chainlink-integrations/evm/testutils"
+	"github.com/smartcontractkit/chainlink-evm/pkg/assets"
+	"github.com/smartcontractkit/chainlink-evm/pkg/testutils"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/compute"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/framework"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/keystone"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/webapi"
-	"github.com/smartcontractkit/chainlink/v2/core/logger"
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/handlers/capabilities"
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/handlers/common"
 	"github.com/smartcontractkit/chainlink/v2/core/services/registrysyncer"
@@ -68,9 +67,7 @@ type readBalancesConfig struct {
 func Test_PORReadbalances(t *testing.T) {
 	ctx := t.Context()
 
-	lggr := logger.TestLogger(t)
-	lggr.SetLogLevel(zapcore.InfoLevel)
-
+	lggr := logger.Test(t)
 	defer func() {
 		utils.CleanupCapabilitiesDir(lggr)
 	}()
@@ -108,7 +105,7 @@ loop:
 	}
 }
 
-func setupDons(ctx context.Context, t *testing.T, lggr logger.SugaredLogger, workflowURL string) *feeds_consumer.KeystoneFeedsConsumer {
+func setupDons(ctx context.Context, t *testing.T, lggr logger.Logger, workflowURL string) *feeds_consumer.KeystoneFeedsConsumer {
 	chainID := uint64(1337)
 	network := "evm"
 	readCapabilityConfig, err := CreateReadContractCapabilityConfig(chainID, network)
