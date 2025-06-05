@@ -139,8 +139,6 @@ func TestGatewayOutboundProxy_SendRequest_Success(t *testing.T) {
 	// Prepare a goroutine to receive gateway response
 	go func() {
 		messageID := <-readyCh
-		// Wait for the request to be registered
-		time.Sleep(100 * time.Millisecond)
 		msg := &gateway_common.Message{
 			Body: gateway_common.MessageBody{
 				MessageId: messageID,
