@@ -242,7 +242,8 @@ func createTriggerResponse(scheduledExecutionTime time.Time) capabilities.Trigge
 func (s *Service) UnregisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) error {
 	trigger, ok := s.triggers.Read(triggerID)
 	if !ok {
-		return fmt.Errorf("triggerId %s not found", triggerID)
+		s.lggr.Warnf("triggerId %s not found", triggerID)
+		return nil
 	}
 
 	jobID := trigger.job.ID()
