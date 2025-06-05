@@ -52,13 +52,13 @@ func (m *MockRegistry) GetTriggerSubscribers(ctx context.Context, request *pb.Ge
 	trigger.mu.RLock()
 	defer trigger.mu.RUnlock()
 
-	workflowIds := make([]string, 0)
+	workflowIDs := make([]string, 0)
 	for _, sub := range trigger.Subscribers {
-		workflowIds = append(workflowIds, sub.WorkflowID)
+		workflowIDs = append(workflowIDs, sub.WorkflowID)
 	}
 
 	return &pb.GetTriggerSubscribersResponse{
-		WorkflowIDs: workflowIds,
+		WorkflowIDs: workflowIDs,
 	}, nil
 }
 
