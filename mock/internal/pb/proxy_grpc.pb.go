@@ -21,7 +21,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	MockCapability_List_FullMethodName                   = "/mockcap.MockCapability/List"
-	MockCapability_GetTriggerSubscriber_FullMethodName   = "/mockcap.MockCapability/GetTriggerSubscriber"
+	MockCapability_GetTriggerSubscribers_FullMethodName  = "/mockcap.MockCapability/GetTriggerSubscribers"
 	MockCapability_CreateCapability_FullMethodName       = "/mockcap.MockCapability/CreateCapability"
 	MockCapability_SendTriggerEvent_FullMethodName       = "/mockcap.MockCapability/SendTriggerEvent"
 	MockCapability_RegisterTrigger_FullMethodName        = "/mockcap.MockCapability/RegisterTrigger"
@@ -38,8 +38,8 @@ const (
 type MockCapabilityClient interface {
 	// Retrieve information about all capabilities available on the node
 	List(ctx context.Context, in *ListRequest, opts ...grpc.CallOption) (*ListResponse, error)
-	// Retrieve information about all capabilities available on the node
-	GetTriggerSubscriber(ctx context.Context, in *GetTriggerSubscribersRequest, opts ...grpc.CallOption) (*GetTriggerSubscribersResponse, error)
+	// Retrieve unique workflow IDs of subscribers for a specific trigger
+	GetTriggerSubscribers(ctx context.Context, in *GetTriggerSubscribersRequest, opts ...grpc.CallOption) (*GetTriggerSubscribersResponse, error)
 	// Create a mock capability and register it with the node
 	CreateCapability(ctx context.Context, in *CapabilityInfo, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	// Send data through a mock trigger
@@ -77,10 +77,10 @@ func (c *mockCapabilityClient) List(ctx context.Context, in *ListRequest, opts .
 	return out, nil
 }
 
-func (c *mockCapabilityClient) GetTriggerSubscriber(ctx context.Context, in *GetTriggerSubscribersRequest, opts ...grpc.CallOption) (*GetTriggerSubscribersResponse, error) {
+func (c *mockCapabilityClient) GetTriggerSubscribers(ctx context.Context, in *GetTriggerSubscribersRequest, opts ...grpc.CallOption) (*GetTriggerSubscribersResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetTriggerSubscribersResponse)
-	err := c.cc.Invoke(ctx, MockCapability_GetTriggerSubscriber_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, MockCapability_GetTriggerSubscribers_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -185,8 +185,8 @@ func (c *mockCapabilityClient) Execute(ctx context.Context, in *ExecutableReques
 type MockCapabilityServer interface {
 	// Retrieve information about all capabilities available on the node
 	List(context.Context, *ListRequest) (*ListResponse, error)
-	// Retrieve information about all capabilities available on the node
-	GetTriggerSubscriber(context.Context, *GetTriggerSubscribersRequest) (*GetTriggerSubscribersResponse, error)
+	// Retrieve unique workflow IDs of subscribers for a specific trigger
+	GetTriggerSubscribers(context.Context, *GetTriggerSubscribersRequest) (*GetTriggerSubscribersResponse, error)
 	// Create a mock capability and register it with the node
 	CreateCapability(context.Context, *CapabilityInfo) (*emptypb.Empty, error)
 	// Send data through a mock trigger
@@ -217,8 +217,8 @@ type UnimplementedMockCapabilityServer struct{}
 func (UnimplementedMockCapabilityServer) List(context.Context, *ListRequest) (*ListResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method List not implemented")
 }
-func (UnimplementedMockCapabilityServer) GetTriggerSubscriber(context.Context, *GetTriggerSubscribersRequest) (*GetTriggerSubscribersResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetTriggerSubscriber not implemented")
+func (UnimplementedMockCapabilityServer) GetTriggerSubscribers(context.Context, *GetTriggerSubscribersRequest) (*GetTriggerSubscribersResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetTriggerSubscribers not implemented")
 }
 func (UnimplementedMockCapabilityServer) CreateCapability(context.Context, *CapabilityInfo) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateCapability not implemented")
@@ -283,20 +283,20 @@ func _MockCapability_List_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
-func _MockCapability_GetTriggerSubscriber_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _MockCapability_GetTriggerSubscribers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetTriggerSubscribersRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(MockCapabilityServer).GetTriggerSubscriber(ctx, in)
+		return srv.(MockCapabilityServer).GetTriggerSubscribers(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: MockCapability_GetTriggerSubscriber_FullMethodName,
+		FullMethod: MockCapability_GetTriggerSubscribers_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MockCapabilityServer).GetTriggerSubscriber(ctx, req.(*GetTriggerSubscribersRequest))
+		return srv.(MockCapabilityServer).GetTriggerSubscribers(ctx, req.(*GetTriggerSubscribersRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -439,8 +439,8 @@ var MockCapability_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _MockCapability_List_Handler,
 		},
 		{
-			MethodName: "GetTriggerSubscriber",
-			Handler:    _MockCapability_GetTriggerSubscriber_Handler,
+			MethodName: "GetTriggerSubscribers",
+			Handler:    _MockCapability_GetTriggerSubscribers_Handler,
 		},
 		{
 			MethodName: "CreateCapability",

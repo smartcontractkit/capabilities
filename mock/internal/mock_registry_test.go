@@ -281,8 +281,8 @@ func TestMockRegistry_List(t *testing.T) {
 		},
 	}
 
-	for _, cap := range caps {
-		_, err := registry.CreateCapability(ctx, cap)
+	for _, c := range caps {
+		_, err := registry.CreateCapability(ctx, c)
 		require.NoError(t, err)
 	}
 
@@ -305,7 +305,7 @@ func TestMockRegistry_List(t *testing.T) {
 	}
 }
 
-func TestMockRegistry_GetTriggerSubscriber(t *testing.T) {
+func TestMockRegistry_GetTriggerSubscribers(t *testing.T) {
 	lggr := testutils.NewLogger(t)
 	capRegistry := newMockCapRegistry()
 	registry := NewMockRegistry(lggr, capRegistry)
@@ -338,7 +338,7 @@ func TestMockRegistry_GetTriggerSubscriber(t *testing.T) {
 
 	// Test case 1: Getting subscribers for a trigger with subscribers
 	t.Run("existing trigger with subscribers", func(t *testing.T) {
-		resp, err := registry.GetTriggerSubscriber(ctx, &pb.GetTriggerSubscribersRequest{
+		resp, err := registry.GetTriggerSubscribers(ctx, &pb.GetTriggerSubscribersRequest{
 			ID: "test-trigger",
 		})
 
@@ -351,7 +351,7 @@ func TestMockRegistry_GetTriggerSubscriber(t *testing.T) {
 
 	// Test case 2: Getting subscribers for a non-existent trigger
 	t.Run("non-existent trigger", func(t *testing.T) {
-		resp, err := registry.GetTriggerSubscriber(ctx, &pb.GetTriggerSubscribersRequest{
+		resp, err := registry.GetTriggerSubscribers(ctx, &pb.GetTriggerSubscribersRequest{
 			ID: "non-existent-trigger",
 		})
 
@@ -370,7 +370,7 @@ func TestMockRegistry_GetTriggerSubscriber(t *testing.T) {
 		_, err := registry.CreateCapability(ctx, emptyInfo)
 		require.NoError(t, err)
 
-		resp, err := registry.GetTriggerSubscriber(ctx, &pb.GetTriggerSubscribersRequest{
+		resp, err := registry.GetTriggerSubscribers(ctx, &pb.GetTriggerSubscribersRequest{
 			ID: "empty-trigger",
 		})
 

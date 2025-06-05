@@ -38,7 +38,7 @@ type MockRegistry struct {
 	capabilitiesRegistry core.CapabilitiesRegistry
 }
 
-func (m *MockRegistry) GetTriggerSubscriber(ctx context.Context, request *pb.GetTriggerSubscribersRequest) (*pb.GetTriggerSubscribersResponse, error) {
+func (m *MockRegistry) GetTriggerSubscribers(ctx context.Context, request *pb.GetTriggerSubscribersRequest) (*pb.GetTriggerSubscribersResponse, error) {
 	// Get the trigger from the registry
 	m.mu.RLock()
 	trigger, found := m.Triggers[request.ID]
@@ -57,7 +57,6 @@ func (m *MockRegistry) GetTriggerSubscriber(ctx context.Context, request *pb.Get
 		workflowIds = append(workflowIds, sub.WorkflowID)
 	}
 
-	// No subscribers found
 	return &pb.GetTriggerSubscribersResponse{
 		WorkflowIDs: workflowIds,
 	}, nil
