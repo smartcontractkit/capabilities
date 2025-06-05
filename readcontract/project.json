@@ -1,7 +1,7 @@
 {
-  "name": "evm",
+  "name": "readcontract",
   "projectType": "capability",
-  "projectRoot": "capabilities/chain_capabilities/evm",
+  "projectRoot": "capabilities/readcontract",
   "implicitDependencies": ["loopserver"],
   "tags": [],
   "targets": {
