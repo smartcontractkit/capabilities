@@ -7,8 +7,8 @@ type ServiceConfig struct {
 	// RateLimiter configuration for messages incoming to this node from the gateway.
 	// The sender is a Gateway node, which is identified by the Gateway ID.
 	RateLimiter gateway.RateLimiterConfig `toml:"incomingRateLimiter" json:"incomingRateLimiter" yaml:"incomingRateLimiter" mapstructure:"incomingRateLimiter"`
-	// RateLimiter configuration for outgoing messages from this node to the gateway.
-	// The sender is a workflow, which is identified by the Workflow ID.
+	// OutgoingRateLimiter is the configuration for outgoing messages from this node to the gateway.
+	// The sender is a workflow owner
 	OutgoingRateLimiter gateway.RateLimiterConfig `toml:"outgoingRateLimiter" json:"outgoingRateLimiter" yaml:"outgoingRateLimiter" mapstructure:"outgoingRateLimiter"`
 	// LimitsConfig groups HTTP-related configuration fields.
 	LimitsConfig LimitsConfig `toml:"limits" json:"limits" yaml:"limits" mapstructure:"limits"`
@@ -30,16 +30,16 @@ type GatewayConnectionConfig struct {
 
 // LimitsConfig groups HTTP-related configuration fields for both requests and responses.
 type LimitsConfig struct {
-	// Timeout for HTTP requests in milliseconds.
+	// MaxTimeoutMs is the timeout for HTTP requests in milliseconds.
 	MaxTimeoutMs uint32 `toml:"timeoutMs" json:"timeoutMs" yaml:"timeoutMs" mapstructure:"timeoutMs"`
-	// Maximum number of bytes to read from the response body.
+	// MaxResponseBytes is the maximum number of bytes to read from the response body.
 	MaxResponseBytes uint32 `toml:"maxResponseBytes" json:"maxResponseBytes" yaml:"maxResponseBytes" mapstructure:"maxResponseBytes"`
-	// Maximum number of headers allowed in a request.
+	// MaxHeaderCount is the maximum number of headers allowed in a request.
 	MaxHeaderCount uint32 `toml:"headerCount" json:"headerCount" yaml:"headerCount" mapstructure:"headerCount"`
-	// Maximum length of a header key.
+	// MaxHeaderKeyLength is the maximum length of a header key.
 	MaxHeaderKeyLength uint32 `toml:"maxHeaderKeyLength" json:"maxHeaderKeyLength" yaml:"maxHeaderKeyLength" mapstructure:"maxHeaderKeyLength"`
-	// Maximum length of a header value.
+	// MaxHeaderValueLength is the maximum length of a header value.
 	MaxHeaderValueLength uint32 `toml:"maxHeaderValueLength" json:"maxHeaderValueLength" yaml:"maxHeaderValueLength" mapstructure:"maxHeaderValueLength"`
-	// Maximum length of the request body.
+	// MaxBodyLength is the maximum length of the request body.
 	MaxBodyLength uint32 `toml:"maxBodyLength" json:"maxBodyLength" yaml:"maxBodyLength" mapstructure:"maxBodyLength"`
 }

@@ -97,7 +97,7 @@ func NewGatewayOutboundProxy(gatewayConnector core.GatewayConnector, config comm
 	}, nil
 }
 
-// HandleSingleNodeRequest sends a request to first available gateway node and blocks until response is received
+// SendRequest sends a request to first available gateway node and blocks until response is received
 func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *http.Inputs) (*http.Outputs, error) {
 	messageID := p.getMessageID(metadata)
 	lggr := logger.With(p.lggr, "messageID", messageID, "workflowID", metadata.WorkflowID, "workflowExecutionID", metadata.WorkflowExecutionID, "workflowOwner", metadata.WorkflowOwner)
@@ -184,7 +184,6 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 	}
 }
 
-// TODO: all nodes must generate the same messageID for the same request if OneAtATime is used
 func (p *gatewayOutboundProxy) getMessageID(metadata capabilities.RequestMetadata) string {
 	messageID := []string{
 		metadata.WorkflowID,
@@ -232,14 +231,14 @@ func (p *gatewayOutboundProxy) awaitConnection(ctx context.Context, lggr logger.
 
 			attempts[gateway]++
 
-			lggr.Infow("selected gateway, awaiting connection", "selectedGateway", gateway)
+			lggr.Info("selected gateway, awaiting connection")
 
 			if err := p.attemptGatewayConnection(ctx, lggr, gateway, backoff); err != nil {
-				lggr.Warnw("failed to await connection to gateway node, retrying", "selectedGateway", gateway, "error", err)
+				lggr.Warnw("failed to await connection to gateway node, retrying", "err", err)
 				continue
 			}
 
-			lggr.Debugw("connected successfully", "selectedGateway", gateway)
+			lggr.Debug("connected successfully")
 			return gateway, nil
 		}
 	}
