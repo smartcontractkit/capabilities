@@ -7,13 +7,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hashicorp/consul/sdk/freeport"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
-	"github.com/smartcontractkit/chainlink-common/pkg/values"
+	"github.com/smartcontractkit/freeport"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
+	"github.com/smartcontractkit/chainlink-common/pkg/values"
 
 	"github.com/smartcontractkit/capabilities/libs/testutils"
 	"github.com/smartcontractkit/capabilities/mock/internal/pb"
@@ -113,9 +114,8 @@ type="trigger"
 	}()
 
 	//Connect to grpc server
-	conn, err := grpc.NewClient(fmt.Sprintf("127.0.0.1:%d", port), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	client, err := connectWithRetry(port, 5)
 	require.NoError(t, err)
-	client := pb.NewMockCapabilityClient(conn)
 
 	_, err = client.SendTriggerEvent(ctx, &pb.SendTriggerEventRequest{
 		ID:      "some-trigger@1.0.0",
@@ -269,4 +269,26 @@ type="target"
 	})
 	require.NoError(t, err)
 	wg.Wait()
+}
+
+func connectWithRetry(port int, maxAttempts int) (pb.MockCapabilityClient, error) {
+	address := fmt.Sprintf("127.0.0.1:%d", port)
+	var lastErr error
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		conn, err := grpc.NewClient(
+			address,
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+		)
+		if err == nil {
+			return pb.NewMockCapabilityClient(conn), nil
+		}
+		lastErr = err
+
+		if attempt < maxAttempts {
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+	}
+	return nil, fmt.Errorf("failed to connect after %d attempts: %w", maxAttempts, lastErr)
 }

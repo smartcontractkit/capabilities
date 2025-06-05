@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/smartcontractkit/chainlink/v2/core/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/moby/moby/pkg/namesgenerator"

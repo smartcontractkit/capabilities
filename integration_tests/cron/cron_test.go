@@ -7,10 +7,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap/zapcore"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/framework"
-	"github.com/smartcontractkit/chainlink/v2/core/logger"
 
 	"github.com/smartcontractkit/capabilities/integration_tests/utils"
 )
@@ -20,9 +19,6 @@ const (
 )
 
 type Payload struct {
-	// Time that cron trigger's task execution occurred (RFC3339Nano formatted)
-	ActualExecutionTime string `json:"ActualExecutionTime" yaml:"ActualExecutionTime" mapstructure:"ActualExecutionTime"`
-
 	// Time that cron trigger's task execution had been scheduled to occur
 	// (RFC3339Nano formatted)
 	ScheduledExecutionTime string `json:"ScheduledExecutionTime" yaml:"ScheduledExecutionTime" mapstructure:"ScheduledExecutionTime"`
@@ -30,8 +26,7 @@ type Payload struct {
 
 func Test_CronTrigger(t *testing.T) {
 	ctx := t.Context()
-	lggr := logger.TestLogger(t)
-	lggr.SetLogLevel(zapcore.InfoLevel)
+	lggr := logger.Test(t)
 	defer func() {
 		utils.CleanupCapabilitiesDir(lggr)
 	}()
@@ -76,7 +71,7 @@ func waitFor(ctx context.Context, t *testing.T, targetSink *framework.TargetSink
 
 			countCalls++
 
-			actualTime, _ := time.Parse(time.RFC3339Nano, payload.ActualExecutionTime)
+			actualTime := time.Now()
 			idsToActualTime[request.Metadata.WorkflowExecutionID] = append(idsToActualTime[request.Metadata.WorkflowExecutionID], actualTime)
 
 			// Check that the actual execution time of trigger is within a second across nodes

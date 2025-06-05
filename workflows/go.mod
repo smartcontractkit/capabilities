@@ -4,12 +4,6 @@ go 1.23.3
 
 toolchain go1.23.4
 
-replace github.com/smartcontractkit/capabilities/cron => ../cron
-
-replace github.com/smartcontractkit/capabilities/readcontract => ../readcontract
-
-replace github.com/smartcontractkit/capabilities/loadtestwritetarget => ./../loadtestwritetarget
-
 require github.com/smartcontractkit/chainlink-common v0.4.2-0.20250210122326-d2aaa393ca55
 
 require (
