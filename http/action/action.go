@@ -121,8 +121,8 @@ func NewOutboundRequestClient(gatewayConnector core.GatewayConnector, serviceCon
 	case "direct":
 		return common.NewHTTPClientProxy(serviceConfig), nil
 	case "gateway":
-	default:
 		return gateway.NewGatewayOutboundProxy(gatewayConnector, serviceConfig, lggr)
+	default:
+		return nil, errors.New("invalid ProxyMode: " + serviceConfig.ProxyMode)
 	}
-	return nil, errors.New("invalid ProxyMode: " + serviceConfig.ProxyMode)
 }
