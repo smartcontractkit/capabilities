@@ -1,6 +1,10 @@
 {
   "name": "capabilities",
   "private": true,
+  "scripts": {
+    "ci:changeset:publish": "pnpm changeset publish",
+    "ci:changeset:version": "pnpm changeset version"
+  },
   "version": "0.1.0",
   "description": "",
   "repository": {
