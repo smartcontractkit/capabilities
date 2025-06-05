@@ -11,6 +11,9 @@ service MockCapability {
   // Retrieve information about all capabilities available on the node
   rpc List(ListRequest) returns (ListResponse){}
 
+  // Retrieve information about all capabilities available on the node
+  rpc GetTriggerSubscriber(GetTriggerSubscribersRequest) returns (GetTriggerSubscribersResponse){}
+
   // Create a mock capability and register it with the node
   rpc CreateCapability(CapabilityInfo) returns(google.protobuf.Empty) {}
 
@@ -46,6 +49,14 @@ message TriggerEvent{
 message TriggerResponse{
   TriggerEvent TriggerEvent = 1;
   string Error = 2;
+}
+
+message GetTriggerSubscribersRequest{
+  string ID = 1;
+}
+
+message GetTriggerSubscribersResponse{
+  repeated string WorkflowIDs=1;
 }
 
 message TriggerRegistrationRequest{

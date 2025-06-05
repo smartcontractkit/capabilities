@@ -10,14 +10,15 @@ import (
 	"sync"
 	"time"
 
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/keepalive"
+	"google.golang.org/protobuf/types/known/emptypb"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/keepalive"
-	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/smartcontractkit/capabilities/mock/internal/pb"
 	"github.com/smartcontractkit/capabilities/mock/utils"
@@ -35,6 +36,31 @@ type MockRegistry struct {
 	grpcServer           *grpc.Server
 	lggr                 logger.Logger
 	capabilitiesRegistry core.CapabilitiesRegistry
+}
+
+func (m *MockRegistry) GetTriggerSubscriber(ctx context.Context, request *pb.GetTriggerSubscribersRequest) (*pb.GetTriggerSubscribersResponse, error) {
+	// Get the trigger from the registry
+	m.mu.RLock()
+	trigger, found := m.Triggers[request.ID]
+	m.mu.RUnlock()
+
+	if !found {
+		return nil, fmt.Errorf("trigger with ID %s not found", request.ID)
+	}
+
+	// Lock the trigger to safely access its subscribers
+	trigger.mu.RLock()
+	defer trigger.mu.RUnlock()
+
+	workflowIds := make([]string, 0)
+	for _, sub := range trigger.Subscribers {
+		workflowIds = append(workflowIds, sub.WorkflowID)
+	}
+
+	// No subscribers found
+	return &pb.GetTriggerSubscribersResponse{
+		WorkflowIDs: workflowIds,
+	}, nil
 }
 
 func NewMockRegistry(lggr logger.Logger, capRegistry core.CapabilitiesRegistry) *MockRegistry {
@@ -212,10 +238,10 @@ func (m *MockRegistry) UnregisterTrigger(ctx context.Context, request *pb.Trigge
 }
 
 func (m *MockRegistry) HookExecutables(server pb.MockCapability_HookExecutablesServer) error {
-	//MockServer will receive CapabilityResponse
+	// MockServer will receive CapabilityResponse
 	go m.incomingLoop(server)
 
-	//Client will receive CapabilityRequest
+	// Client will receive CapabilityRequest
 	for {
 		select {
 		case <-m.stopCh:
