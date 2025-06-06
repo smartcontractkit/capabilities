@@ -16,19 +16,31 @@
   },
   "targetDefaults": {
     "build": {
-      "inputs": ["sharedGlobals"]
+      "inputs": [
+        "sharedGlobals"
+      ]
     },
     "lint": {
-      "inputs": ["sharedGlobals", "lint"]
+      "inputs": [
+        "sharedGlobals",
+        "lint"
+      ]
     },
     "generate": {
-      "inputs": ["sharedGlobals"]
+      "inputs": [
+        "sharedGlobals"
+      ]
     },
     "test": {
-      "inputs": ["sharedGlobals"]
+      "inputs": [
+        "sharedGlobals"
+      ]
     },
     "tidy": {
-      "inputs": ["sharedGlobals"]
+      "inputs": [
+        "sharedGlobals"
+      ]
     }
-  }
+  },
+  "$schema": "./node_modules/nx/schemas/nx-schema.json"
 }
