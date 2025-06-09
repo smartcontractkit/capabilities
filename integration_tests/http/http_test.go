@@ -109,7 +109,10 @@ func startTestHTTPServer(t *testing.T, handler http.Handler) (net.Listener, func
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 
-	srv := &http.Server{Handler: handler}
+	srv := &http.Server{
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
 	go func() {
 		err := srv.Serve(listener)
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -158,7 +161,7 @@ func newTestGatewayConnector(t *testing.T, publicKey, nodeURL string, signer con
 }
 
 // Helper to create and initialize the HTTP capability
-func newTestHTTPCapability(t *testing.T, ctx context.Context, gc core.GatewayConnector, lggr logger.Logger) server.ClientCapability {
+func newTestHTTPCapability(ctx context.Context, t *testing.T, gc core.GatewayConnector, lggr logger.Logger) server.ClientCapability {
 	httpCapability := httpcap.NewService(lggr)
 	err := httpCapability.Initialise(ctx, serviceConfigTemplate, nil, nil, nil, nil, nil, nil, gc)
 	require.NoError(t, err)
@@ -201,7 +204,9 @@ func TestHTTPActionCapability(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/test", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Custom-Header", "my-value")
-		io.WriteString(w, "pong")
+		if _, err := io.WriteString(w, "pong"); err != nil {
+			t.Errorf("failed to write response: %v", err)
+		}
 	})
 	listener, cleanup := startTestHTTPServer(t, mux)
 	t.Cleanup(cleanup)
@@ -217,7 +222,7 @@ func TestHTTPActionCapability(t *testing.T) {
 
 	client := &client{privateKey: privateKey}
 	gc := newTestGatewayConnector(t, publicKey, nodeURL, client, lggr)
-	httpCapability := newTestHTTPCapability(t, ctx, gc, lggr)
+	httpCapability := newTestHTTPCapability(ctx, t, gc, lggr)
 
 	requestData := capabilities.RequestMetadata{
 		WorkflowOwner:       "workflow_owner",
