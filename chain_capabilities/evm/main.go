@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/smartcontractkit/capabilities/cron/actions"
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -31,7 +32,7 @@ type capabilityGRPCService struct {
 }
 
 type capability struct {
-	types.EVMService
+	actions.EVM
 }
 
 var _ evmcapserver.ClientCapability = &capabilityGRPCService{}
@@ -40,10 +41,6 @@ func main() {
 	loopserver.Serve(CapabilityName, func(lggr logger.Logger) loop.StandardCapabilities {
 		return evmcapserver.NewClientServer(&capabilityGRPCService{lggr: lggr})
 	})
-}
-
-type Relayer interface {
-	EVM() (types.EVMService, error)
 }
 
 func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _ core.TelemetryService, _ core.KeyValueStore, _ core.ErrorLog, _ core.PipelineRunnerService, relayerSet core.RelayerSet, of core.OracleFactory) error {
@@ -56,7 +53,6 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _
 
 	relayID := types.NewRelayID(cfg.Network, fmt.Sprintf("%d", cfg.ChainID))
 
-	var relayer Relayer
 	relayer, err := relayerSet.Get(ctx, relayID)
 	if err != nil {
 		return fmt.Errorf("failed to fetch relayer for chainID %d from relayerSet: %w", cfg.ChainID, err)
@@ -67,7 +63,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
 
-	c.capability = capability{EVMService: evmRelayer}
+	c.capability = capability{EVM: actions.NewEVM(evmRelayer)}
 
 	c.lggr.Infof("Successfully initialised %s", CapabilityName)
 
