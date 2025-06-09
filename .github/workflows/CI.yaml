@@ -14,10 +14,9 @@ jobs:
     outputs:
       nx: ${{ steps.affected.outputs.affected }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
         with:
           fetch-depth: 0
-          persist-credentials: false
       # There's no need to setup Node as it is pre-installed:
       # https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2204-Readme.md
       - name: Cache NX
@@ -61,10 +60,10 @@ jobs:
       matrix:
         projects: ${{fromJson(needs.affected.outputs.nx).projects_with_build}}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout the repo
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
         with:
           fetch-depth: 0
-          persist-credentials: false
 
       - name: Set up project environment
         uses: ./.github/actions/setup
@@ -90,10 +89,10 @@ jobs:
       matrix:
         projects: ${{fromJson(needs.affected.outputs.nx).projects_with_test}}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout the repo
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
         with:
           fetch-depth: 0
-          persist-credentials: false
 
       - name: Set up project environment
         uses: ./.github/actions/setup
@@ -129,10 +128,10 @@ jobs:
       matrix:
         projects: ${{fromJson(needs.affected.outputs.nx).projects_with_race}}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout the repo
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
         with:
           fetch-depth: 0
-          persist-credentials: false
 
       - name: Set up project environment
         uses: ./.github/actions/setup
@@ -156,10 +155,10 @@ jobs:
     strategy:
       fail-fast: false
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout the repo
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
         with:
           fetch-depth: 0
-          persist-credentials: false
       - name: Setup Postgres
         uses: ./.github/actions/setup-postgres
       - name: Set up project environment
@@ -191,10 +190,10 @@ jobs:
       matrix:
         projects: ${{fromJson(needs.affected.outputs.nx).projects}}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout the repo
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
         with:
           fetch-depth: 0
-          persist-credentials: false
 
       - name: Set up project environment
         uses: ./.github/actions/setup
@@ -228,10 +227,10 @@ jobs:
       matrix:
         projects: ${{fromJson(needs.affected.outputs.nx).projects}}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout the repo
+        uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
         with:
           fetch-depth: 0
-          persist-credentials: false
 
       - name: Set up project environment
         id: setup
@@ -267,9 +266,8 @@ jobs:
     runs-on: ubuntu-latest
     name: modgraph
     steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
+      - name: Checkout the Repo
+        uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 # v4.2.1
 
       - name: Setup Go
         uses: actions/setup-go@v5
