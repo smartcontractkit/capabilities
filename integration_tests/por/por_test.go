@@ -20,6 +20,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/pb"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
 	kcr "github.com/smartcontractkit/chainlink-evm/gethwrappers/keystone/generated/capabilities_registry_1_1_0"
 	feeds_consumer "github.com/smartcontractkit/chainlink-evm/gethwrappers/keystone/generated/feeds_consumer_1_0_0"
@@ -30,7 +31,6 @@ import (
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/keystone"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/webapi"
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/handlers/capabilities"
-	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/handlers/common"
 	"github.com/smartcontractkit/chainlink/v2/core/services/registrysyncer"
 
 	"github.com/smartcontractkit/capabilities/integration_tests/por/contract"
@@ -41,7 +41,7 @@ const commandOverrideForCustomComputeAction = "__builtin_custom-compute-action"
 
 var defaultConfig = compute.Config{
 	ServiceConfig: webapi.ServiceConfig{
-		RateLimiter: common.RateLimiterConfig{
+		RateLimiter: gateway.RateLimiterConfig{
 			GlobalRPS:      100.0,
 			GlobalBurst:    100,
 			PerSenderRPS:   100.0,

@@ -105,7 +105,7 @@ func (s *service) Description() string {
 	return "HTTP Actions Service"
 }
 
-func (s *service) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *http.Inputs) (*http.Outputs, error) {
+func (s *service) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *http.Request) (*http.Response, error) {
 	s.lggr.Debugf("Received request with metadata: %v", metadata)
 	validatedInput, err := ValidateAndApplyDefaults(input, s.cfg)
 	if err != nil {

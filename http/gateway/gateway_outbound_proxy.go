@@ -98,7 +98,7 @@ func NewGatewayOutboundProxy(gatewayConnector core.GatewayConnector, config comm
 }
 
 // SendRequest sends a request to first available gateway node and blocks until response is received
-func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *http.Inputs) (*http.Outputs, error) {
+func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *http.Request) (*http.Response, error) {
 	messageID := p.getMessageID(metadata)
 	lggr := logger.With(p.lggr, "messageID", messageID, "workflowID", metadata.WorkflowID, "workflowExecutionID", metadata.WorkflowExecutionID, "workflowOwner", metadata.WorkflowOwner)
 
@@ -116,7 +116,7 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 	gatewayReq := gc.GatewayRequest{
 		WorkflowID: metadata.WorkflowID,
 		URL:        input.Url,
-		Method:     input.Method,
+		Method:     input.Method.String(),
 		Headers:    input.Headers,
 		Body:       input.Body,
 		// Casting is safe because input to this function is already validated
@@ -173,9 +173,9 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 			lggr.Errorw("gateway response indicates execution error", "errorMessage", gatewayResp.ErrorMessage)
 			return nil, errors.New(internalError)
 		}
-		return &http.Outputs{
+		return &http.Response{
 			StatusCode:   uint32(gatewayResp.StatusCode), //nolint:gosec // G115
-			Headers:      gatewayReq.Headers,
+			Headers:      gatewayResp.Headers,
 			Body:         gatewayResp.Body,
 			ErrorMessage: gatewayResp.ErrorMessage,
 		}, nil
@@ -319,6 +319,7 @@ func (p *gatewayOutboundProxy) ID() (string, error) {
 }
 
 func (p *gatewayOutboundProxy) Start(ctx context.Context) error {
+	p.lggr.Debug("Starting GatewayOutboundProxy...")
 	return p.StartOnce("GatewayOutboundProxy", func() error {
 		return p.gatewayConnector.AddHandler([]string{gc.MethodHTTPAction}, p)
 	})

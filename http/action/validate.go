@@ -27,21 +27,13 @@ var allowedMethods = map[string]bool{
 }
 
 // ValidateAndApplyDefaults validates the HTTP request fields and applies default values where necessary.
-func ValidateAndApplyDefaults(input *http.Inputs, cfg common.ServiceConfig) (*http.Inputs, error) {
+func ValidateAndApplyDefaults(input *http.Request, cfg common.ServiceConfig) (*http.Request, error) {
 	// Validate and set defaults for request fields
 	url := strings.TrimSpace(input.Url)
 	if url == "" {
 		return nil, fmt.Errorf("URL must not be empty")
 	}
 
-	method := strings.ToUpper(strings.TrimSpace(input.Method))
-	if method == "" {
-		method = "GET"
-	}
-	// Optionally, validate allowed HTTP methods
-	if !allowedMethods[method] {
-		return nil, fmt.Errorf("unsupported HTTP method: %s", method)
-	}
 	err := validateInputMaxLimits(input, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("input validation failed: %w", err)
@@ -56,9 +48,9 @@ func ValidateAndApplyDefaults(input *http.Inputs, cfg common.ServiceConfig) (*ht
 		timeoutMs = int32(defaultTimeoutMs)
 	}
 
-	return &http.Inputs{
+	return &http.Request{
 		Url:       url,
-		Method:    method,
+		Method:    input.Method,
 		Headers:   input.Headers,
 		Body:      input.Body,
 		TimeoutMs: timeoutMs,
@@ -73,7 +65,7 @@ func getWithDefault(cfgVal uint32, defaultVal uint32) uint32 {
 	return defaultVal
 }
 
-func validateInputMaxLimits(input *http.Inputs, cfg common.ServiceConfig) error {
+func validateInputMaxLimits(input *http.Request, cfg common.ServiceConfig) error {
 	maxTimeoutMs := getWithDefault(cfg.LimitsConfig.MaxTimeoutMs, defaultMaxTimeoutMs)
 	maxHeaderCount := getWithDefault(cfg.LimitsConfig.MaxHeaderCount, defaultMaxHeaderCount)
 	maxHeaderKeyLength := getWithDefault(cfg.LimitsConfig.MaxHeaderKeyLength, defaultMaxHeaderKeyLength)

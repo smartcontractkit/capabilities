@@ -17,7 +17,7 @@ const defaultMaxTimeoutMs = 20_000
 const defaultMaxBodyLength = 10 * 1024 * 1024 // 1 MB
 
 type OutboundRequestClient interface {
-	SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *httpactions.Inputs) (*httpactions.Outputs, error)
+	SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *httpactions.Request) (*httpactions.Response, error)
 	Start(ctx context.Context) error
 	Close() error
 }
@@ -49,9 +49,9 @@ func NewHTTPClientProxy(cfg ServiceConfig) *httpClientProxy {
 	}
 }
 
-func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *httpactions.Inputs) (*httpactions.Outputs, error) {
+func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *httpactions.Request) (*httpactions.Response, error) {
 	// Build the HTTP request from input
-	req, err := http.NewRequestWithContext(ctx, input.Method, input.Url, bytes.NewReader(input.Body))
+	req, err := http.NewRequestWithContext(ctx, input.Method.String(), input.Url, bytes.NewReader(input.Body))
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +86,7 @@ func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities
 	}
 
 	// Build Outputs
-	outputs := &httpactions.Outputs{
+	outputs := &httpactions.Response{
 		StatusCode: uint32(resp.StatusCode), //nolint:gosec // G115
 		Headers:    headers,
 		Body:       body,

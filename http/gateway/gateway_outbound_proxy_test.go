@@ -128,9 +128,9 @@ func TestGatewayOutboundProxy_SendRequest_Success(t *testing.T) {
 		WorkflowExecutionID: "exec1",
 		WorkflowOwner:       "owner1",
 	}
-	input := &http.Inputs{
+	input := &http.Request{
 		Url:       "http://example.com",
-		Method:    "GET",
+		Method:    http.Method_GET,
 		Headers:   map[string]string{"X-Test": "1"},
 		Body:      []byte("test"),
 		TimeoutMs: 5000,
@@ -176,9 +176,9 @@ func TestGatewayOutboundProxy_SendRequest_Timeout(t *testing.T) {
 		WorkflowExecutionID: "exec1",
 		WorkflowOwner:       "owner1",
 	}
-	input := &http.Inputs{
+	input := &http.Request{
 		Url:       "http://example.com",
-		Method:    "GET",
+		Method:    http.Method_GET,
 		Headers:   map[string]string{"X-Test": "1"},
 		Body:      []byte("test"),
 		TimeoutMs: 100, // short timeout
@@ -202,9 +202,9 @@ func TestGatewayOutboundProxy_SendRequest_ExecutionError(t *testing.T) {
 		WorkflowExecutionID: "exec1",
 		WorkflowOwner:       "owner1",
 	}
-	input := &http.Inputs{
+	input := &http.Request{
 		Url:       "http://example.com",
-		Method:    "GET",
+		Method:    http.Method_GET,
 		Headers:   map[string]string{"X-Test": "1"},
 		Body:      []byte("test"),
 		TimeoutMs: 5000,
@@ -244,9 +244,9 @@ func TestGatewayOutboundProxy_SendRequest_RateLimitError(t *testing.T) {
 		WorkflowExecutionID: "exec1",
 		WorkflowOwner:       "owner1",
 	}
-	input := &http.Inputs{
+	input := &http.Request{
 		Url:       "http://example.com",
-		Method:    "GET",
+		Method:    http.Method_GET,
 		Headers:   map[string]string{"X-Test": "1"},
 		Body:      []byte("test"),
 		TimeoutMs: 5000,

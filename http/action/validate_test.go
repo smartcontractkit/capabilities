@@ -28,9 +28,9 @@ func customConfig() common.ServiceConfig {
 
 func TestValidateAndApplyDefaults(t *testing.T) {
 	t.Run("valid input", func(t *testing.T) {
-		input := &http.Inputs{
+		input := &http.Request{
 			Url:       "https://example.com",
-			Method:    "POST",
+			Method:    http.Method_POST,
 			Headers:   map[string]string{"Content-Type": "application/json"},
 			Body:      []byte(`{"foo":"bar"}`),
 			TimeoutMs: 1000,
@@ -38,33 +38,20 @@ func TestValidateAndApplyDefaults(t *testing.T) {
 		out, err := ValidateAndApplyDefaults(input, defaultConfig())
 		require.NoError(t, err)
 		require.Equal(t, "https://example.com", out.Url)
-		require.Equal(t, "POST", out.Method)
+		require.Equal(t, http.Method_POST, out.Method)
 		require.Equal(t, input.Headers, out.Headers)
 		require.Equal(t, input.Body, out.Body)
 		require.Equal(t, int32(1000), out.TimeoutMs)
 	})
 
 	t.Run("empty URL", func(t *testing.T) {
-		input := &http.Inputs{Url: ""}
+		input := &http.Request{Url: ""}
 		_, err := ValidateAndApplyDefaults(input, defaultConfig())
 		require.ErrorContains(t, err, "URL must not be empty")
 	})
 
-	t.Run("unsupported method", func(t *testing.T) {
-		input := &http.Inputs{Url: "https://foo", Method: "FOOBAR"}
-		_, err := ValidateAndApplyDefaults(input, defaultConfig())
-		require.ErrorContains(t, err, "unsupported HTTP method")
-	})
-
-	t.Run("default method", func(t *testing.T) {
-		input := &http.Inputs{Url: "https://foo", Method: ""}
-		out, err := ValidateAndApplyDefaults(input, defaultConfig())
-		require.NoError(t, err)
-		require.Equal(t, "GET", out.Method)
-	})
-
 	t.Run("timeout default and custom", func(t *testing.T) {
-		input := &http.Inputs{Url: "https://foo", Method: "GET", TimeoutMs: 0}
+		input := &http.Request{Url: "https://foo", Method: http.Method_GET, TimeoutMs: 0}
 		out, err := ValidateAndApplyDefaults(input, defaultConfig())
 		require.NoError(t, err)
 		require.Equal(t, int32(defaultMaxTimeoutMs), out.TimeoutMs)
@@ -74,7 +61,7 @@ func TestValidateAndApplyDefaults(t *testing.T) {
 	})
 
 	t.Run("header count limits", func(t *testing.T) {
-		input := &http.Inputs{Url: "https://foo", Method: "GET", Headers: map[string]string{}}
+		input := &http.Request{Url: "https://foo", Method: http.Method_GET, Headers: map[string]string{}}
 		for i := 0; i < 51; i++ {
 			input.Headers[string(rune('A'+i))] = "v"
 		}
@@ -89,7 +76,7 @@ func TestValidateAndApplyDefaults(t *testing.T) {
 		for i := range longKey {
 			longKey[i] = 'a'
 		}
-		input := &http.Inputs{Url: "https://foo", Method: "GET", Headers: map[string]string{string(longKey): "v"}}
+		input := &http.Request{Url: "https://foo", Method: http.Method_GET, Headers: map[string]string{string(longKey): "v"}}
 		_, err := ValidateAndApplyDefaults(input, defaultConfig())
 		require.ErrorContains(t, err, "header key too long")
 
@@ -97,7 +84,7 @@ func TestValidateAndApplyDefaults(t *testing.T) {
 		for i := range longVal {
 			longVal[i] = 'b'
 		}
-		input2 := &http.Inputs{Url: "https://foo", Method: "GET", Headers: map[string]string{"k": string(longVal)}}
+		input2 := &http.Request{Url: "https://foo", Method: http.Method_GET, Headers: map[string]string{"k": string(longVal)}}
 		_, err = ValidateAndApplyDefaults(input2, defaultConfig())
 		require.ErrorContains(t, err, "header value for \"k\" too long")
 
@@ -110,7 +97,7 @@ func TestValidateAndApplyDefaults(t *testing.T) {
 
 	t.Run("body size limit", func(t *testing.T) {
 		bigBody := make([]byte, 10*1024*1024+1)
-		input := &http.Inputs{Url: "https://foo", Method: "GET", Body: bigBody}
+		input := &http.Request{Url: "https://foo", Method: http.Method_GET, Body: bigBody}
 		_, err := ValidateAndApplyDefaults(input, defaultConfig())
 		require.ErrorContains(t, err, "body too large")
 		_, err = ValidateAndApplyDefaults(input, customConfig())
@@ -118,7 +105,7 @@ func TestValidateAndApplyDefaults(t *testing.T) {
 	})
 
 	t.Run("timeout limit", func(t *testing.T) {
-		input := &http.Inputs{Url: "https://foo", Method: "GET", TimeoutMs: 999999999}
+		input := &http.Request{Url: "https://foo", Method: http.Method_GET, TimeoutMs: 999999999}
 		_, err := ValidateAndApplyDefaults(input, defaultConfig())
 		require.ErrorContains(t, err, "timeout must be between 0 and")
 		_, err = ValidateAndApplyDefaults(input, customConfig())
