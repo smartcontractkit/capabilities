@@ -42,6 +42,10 @@ func main() {
 	})
 }
 
+type Relayer interface {
+	EVM() (types.EVMService, error)
+}
+
 func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _ core.TelemetryService, _ core.KeyValueStore, _ core.ErrorLog, _ core.PipelineRunnerService, relayerSet core.RelayerSet, of core.OracleFactory) error {
 	c.lggr.Infof("Initialising %s", CapabilityName)
 
@@ -51,6 +55,8 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _
 	}
 
 	relayID := types.NewRelayID(cfg.Network, fmt.Sprintf("%d", cfg.ChainID))
+
+	var relayer Relayer
 	relayer, err := relayerSet.Get(ctx, relayID)
 	if err != nil {
 		return fmt.Errorf("failed to fetch relayer for chainID %d from relayerSet: %w", cfg.ChainID, err)

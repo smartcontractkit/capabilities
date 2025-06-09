@@ -6,7 +6,8 @@ toolchain go1.24.3
 
 require (
 	github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-20250402163239-224ad2061432
-	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250602154415-8aa3f7dc56ea
+	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250609205706-9164a0bc60ea
+	github.com/stretchr/testify v1.10.0
 	google.golang.org/protobuf v1.36.6
 )
 
@@ -71,10 +72,10 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v5 v5.2.0 // indirect
 	github.com/scylladb/go-reflectx v1.0.1 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
-	github.com/smartcontractkit/freeport v0.1.0 // indirect
+	github.com/smartcontractkit/freeport v0.1.1 // indirect
 	github.com/smartcontractkit/grpc-proxy v0.0.0-20240830132753-a7e17fec5ab7 // indirect
 	github.com/smartcontractkit/libocr v0.0.0-20250220133800-f3b940c4f298 // indirect
-	github.com/stretchr/testify v1.10.0 // indirect
+	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
