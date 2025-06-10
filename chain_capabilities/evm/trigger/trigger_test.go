@@ -4,6 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
+	"testing"
+	"time"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
@@ -16,9 +20,6 @@ import (
 	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"math/big"
-	"testing"
-	"time"
 )
 
 var (
@@ -270,7 +271,7 @@ func TestCreateLogRequest(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			expressions, limitAndSort, confidence, err := service.createLogRequest(nil, tc.input, tc.fromBlock)
+			expressions, limitAndSort, confidence, err := service.createLogRequest(context.Background(), tc.input, tc.fromBlock)
 			require.NoError(t, err)
 			require.NotNil(t, expressions)
 			require.Len(t, expressions, len(tc.expectedExpressions))

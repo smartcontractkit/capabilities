@@ -3,6 +3,9 @@ package trigger
 import (
 	"context"
 	"fmt"
+	"math/big"
+	"time"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
@@ -12,8 +15,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives/evm"
-	"math/big"
-	"time"
 )
 
 const (
