@@ -131,7 +131,6 @@ func (lts LogTriggerService) startPolling(ctx context.Context, triggerID string,
 	for {
 		select {
 		case <-ctx.Done():
-			lts.lggr.Debugf("Stopping polling for triggerID: %s", triggerID)
 			return
 		case <-ticker.Channel():
 			state, exists := lts.triggers.Read(triggerID)

@@ -66,6 +66,7 @@ func initMocks(t *testing.T) *evmmock.EVMService {
 
 // testing all the input parameters and some minor validations
 func TestRegisterLogTrigger_InputValidation(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	lggr := logger.Test(t)
