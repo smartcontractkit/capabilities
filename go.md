@@ -35,6 +35,8 @@ flowchart LR
 	click capabilities/workflows/readbalancesgen href "https://github.com/smartcontractkit/capabilities"
 	chain-selectors
 	click chain-selectors href "https://github.com/smartcontractkit/chain-selectors"
+	chain_capabilities/evm --> capabilities/libs/loopserver
+	click chain_capabilities/evm href "https://github.com/smartcontractkit/chain_capabilities"
 	chainlink-automation --> chainlink-common
 	click chainlink-automation href "https://github.com/smartcontractkit/chainlink-automation"
 	chainlink-ccip --> chain-selectors
