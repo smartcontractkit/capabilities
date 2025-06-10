@@ -426,12 +426,16 @@ func TestIntegration_RegisterAndUnregisterLogTrigger(t *testing.T) {
 
 	tickCh := make(chan time.Time)
 	defaultTickerFactory = &mockTickerFactory{C1: tickCh}
+	require.Empty(t, service.triggers.ReadAll())
 
 	ch, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
 		Addresses: addresses,
 		EventSigs: eventSignatures,
 	})
 	require.NoError(t, err)
+	_, exists := service.triggers.Read(triggerID)
+	require.True(t, exists, "expected trigger to be registered")
+	require.Len(t, service.triggers.ReadAll(), 1, "expected one and only one trigger to be registered")
 
 	validateLog := func(msg *capabilities.TriggerAndId[*evmservice.Log], expectedBlock *big.Int) {
 		require.Equal(t, service.generateLogIdentifier(msg.Trigger), msg.Id)
@@ -463,6 +467,9 @@ func TestIntegration_RegisterAndUnregisterLogTrigger(t *testing.T) {
 
 	err = service.UnregisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{})
 	require.NoError(t, err)
+	_, exists = service.triggers.Read(triggerID)
+	require.False(t, exists, "no trigger should come up with that ID after unregistering")
+	require.Len(t, service.triggers.ReadAll(), 0, "no triggers should be registered at this point")
 
 	// Wait to confirm no more messages after unregister
 	msg := <-ch
