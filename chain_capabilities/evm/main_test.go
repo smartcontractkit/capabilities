@@ -35,7 +35,6 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("happy-path", func(t *testing.T) {
-
 		t.Run("bad-json", func(t *testing.T) {
 			svc := &capabilityGRPCService{lggr: lggr}
 			err := svc.Initialise(context.Background(), "x", nil, nil, nil, nil, nil, nil)
