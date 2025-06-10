@@ -6,7 +6,7 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/smartcontractkit/capabilities/cron/actions"
+	"github.com/smartcontractkit/chain_capabilities/evm/actions"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"

@@ -1,4 +1,4 @@
-module github.com/smartcontractkit/capabilities/cron
+module github.com/smartcontractkit/chain_capabilities/evm
 
 go 1.24.2
 

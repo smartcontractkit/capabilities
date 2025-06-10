@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/smartcontractkit/capabilities/cron/actions"
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
+	"github.com/smartcontractkit/chain_capabilities/evm/actions"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	evmcapserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm/server"
@@ -43,7 +43,7 @@ func main() {
 	})
 }
 
-func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _ core.TelemetryService, _ core.KeyValueStore, _ core.ErrorLog, _ core.PipelineRunnerService, relayerSet core.RelayerSet, of core.OracleFactory) error {
+func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _ core.TelemetryService, _ core.KeyValueStore, _ core.ErrorLog, _ core.PipelineRunnerService, relayerSet core.RelayerSet, _ core.OracleFactory) error {
 	c.lggr.Infof("Initialising %s", CapabilityName)
 
 	var cfg Config
