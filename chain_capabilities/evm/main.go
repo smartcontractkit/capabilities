@@ -4,6 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/smartcontractkit/chain_capabilities/evm/trigger"
+	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
+	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
+	"time"
 
 	"github.com/smartcontractkit/chain_capabilities/evm/actions"
 
@@ -22,14 +26,16 @@ const (
 )
 
 type Config struct {
-	ChainID uint64 `json:"chainId"`
-	Network string `json:"network"`
+	ChainID                uint64        `json:"chainId"`
+	Network                string        `json:"network"`
+	LogTriggerPollInterval time.Duration `json:"logTriggerPollInterval"`
 }
 
 type capabilityGRPCService struct {
 	capabilities.CapabilityInfo
 	capability
-	lggr logger.Logger
+	lggr           logger.Logger
+	triggerService *trigger.LogTriggerService
 }
 
 type capability struct {
@@ -65,6 +71,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _
 	}
 
 	c.capability = capability{EVM: actions.NewEVM(evmRelayer)}
+	c.triggerService = trigger.NewLogTriggerService(evmRelayer, c.lggr, cfg.LogTriggerPollInterval)
 
 	c.lggr.Infof("Successfully initialised %s", CapabilityName)
 
@@ -72,10 +79,18 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _
 }
 
 func (c *capabilityGRPCService) Start(_ context.Context) error {
+	c.lggr.Infof("Start %s", CapabilityName)
+	// TODO PLEX-1456: implement the clean up call here
 	return nil
 }
 
 func (c *capabilityGRPCService) Close() error {
+	c.lggr.Infof("Closing %s", CapabilityName)
+	err := c.triggerService.Close()
+	if err != nil {
+		return err
+	}
+	// TODO PLEX-1456: also implement the clean up to free up resources in the LogPoller (unregister all filters)
 	return nil
 }
 
@@ -103,4 +118,12 @@ func (c *capabilityGRPCService) RegisterToWorkflow(_ context.Context, _ capabili
 func (c *capabilityGRPCService) UnregisterFromWorkflow(_ context.Context, _ capabilities.UnregisterFromWorkflowRequest) error {
 	//TODO implement me
 	panic("implement me")
+}
+
+func (c *capabilityGRPCService) RegisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*evmservice.Log], error) {
+	return c.triggerService.RegisterLogTrigger(ctx, triggerID, metadata, input)
+}
+
+func (c *capabilityGRPCService) UnregisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) error {
+	return c.triggerService.UnregisterLogTrigger(ctx, triggerID, metadata, input)
 }
