@@ -57,8 +57,8 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _
 	if err := json.Unmarshal([]byte(config), &cfg); err != nil {
 		return fmt.Errorf("failed to parse EVM capability config: %w", err)
 	}
-	if cfg.LogTriggerPollInterval < 1 {
-		return fmt.Errorf("LogTriggerPollInterval must be greater than one, got: %s", cfg.LogTriggerPollInterval)
+	if cfg.LogTriggerPollInterval <= 10*time.Second {
+		return fmt.Errorf("LogTriggerPollInterval must be at least 10s, got: %s", cfg.LogTriggerPollInterval)
 	}
 
 	relayID := types.NewRelayID(cfg.Network, fmt.Sprintf("%d", cfg.ChainID))
@@ -123,9 +123,10 @@ func (c *capabilityGRPCService) UnregisterFromWorkflow(_ context.Context, _ capa
 	panic("implement me")
 }
 
-func (c *capabilityGRPCService) RegisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*evmservice.Log], error) {
-	return c.triggerService.RegisterLogTrigger(ctx, triggerID, metadata, input)
-}
+//
+//func (c *capabilityGRPCService) RegisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*evmservice.Log], error) {
+//	return c.triggerService.RegisterLogTrigger(ctx, triggerID, metadata, input)
+//}
 
 func (c *capabilityGRPCService) UnregisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) error {
 	return c.triggerService.UnregisterLogTrigger(ctx, triggerID, metadata, input)

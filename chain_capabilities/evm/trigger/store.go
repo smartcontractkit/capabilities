@@ -12,34 +12,34 @@ type logTriggerState struct {
 	lastBlock  *big.Int
 }
 
-type LogTriggerStore struct {
+type logTriggerStore struct {
 	mu       sync.RWMutex
 	triggers map[string]logTriggerState
 }
 
-type LogTriggerStoreI interface {
+type LogTriggerStore interface {
 	Read(triggerID string) (value logTriggerState, ok bool)
 	ReadAll() (values map[string]logTriggerState)
 	Write(triggerID string, value logTriggerState)
 	Delete(triggerID string)
 }
 
-var _ LogTriggerStoreI = (*LogTriggerStore)(nil)
+var _ LogTriggerStore = (*logTriggerStore)(nil)
 
-func NewLogTriggerStore() *LogTriggerStore {
-	return &LogTriggerStore{
+func NewLogTriggerStore() *logTriggerStore {
+	return &logTriggerStore{
 		triggers: map[string]logTriggerState{},
 	}
 }
 
-func (cs *LogTriggerStore) Read(triggerID string) (value logTriggerState, ok bool) {
+func (cs *logTriggerStore) Read(triggerID string) (value logTriggerState, ok bool) {
 	cs.mu.RLock()
 	defer cs.mu.RUnlock()
 	trigger, ok := cs.triggers[triggerID]
 	return trigger, ok
 }
 
-func (cs *LogTriggerStore) ReadAll() (values map[string]logTriggerState) {
+func (cs *logTriggerStore) ReadAll() (values map[string]logTriggerState) {
 	cs.mu.RLock()
 	defer cs.mu.RUnlock()
 	tCopy := map[string]logTriggerState{}
@@ -49,13 +49,13 @@ func (cs *LogTriggerStore) ReadAll() (values map[string]logTriggerState) {
 	return tCopy
 }
 
-func (cs *LogTriggerStore) Write(triggerID string, value logTriggerState) {
+func (cs *logTriggerStore) Write(triggerID string, value logTriggerState) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	cs.triggers[triggerID] = value
 }
 
-func (cs *LogTriggerStore) Update(triggerID string, lastBlock *big.Int) error {
+func (cs *logTriggerStore) Update(triggerID string, lastBlock *big.Int) error {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	trigger, ok := cs.triggers[triggerID]
@@ -65,12 +65,11 @@ func (cs *LogTriggerStore) Update(triggerID string, lastBlock *big.Int) error {
 	cs.triggers[triggerID] = logTriggerState{
 		cancelFunc: trigger.cancelFunc,
 		lastBlock:  lastBlock,
-		//logCh:      trigger.logCh,
 	}
 	return nil
 }
 
-func (cs *LogTriggerStore) Delete(triggerID string) {
+func (cs *logTriggerStore) Delete(triggerID string) {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	delete(cs.triggers, triggerID)
