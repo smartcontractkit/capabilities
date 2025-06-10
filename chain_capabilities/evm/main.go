@@ -57,6 +57,9 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _
 	if err := json.Unmarshal([]byte(config), &cfg); err != nil {
 		return fmt.Errorf("failed to parse EVM capability config: %w", err)
 	}
+	if cfg.LogTriggerPollInterval < 1 {
+		return fmt.Errorf("LogTriggerPollInterval must be greater than one, got: %s", cfg.LogTriggerPollInterval)
+	}
 
 	relayID := types.NewRelayID(cfg.Network, fmt.Sprintf("%d", cfg.ChainID))
 
