@@ -32,11 +32,11 @@ type LogTriggerService struct {
 
 // NewLogTriggerService creates a new instance of logTriggerService.
 // TODO PLEX-1465: the core logic of RegisterLogTrigger/UnregisterLogTrigger/Close/etc. should be moved to the EVMService, so it can be used by other services as well.
-func NewLogTriggerService(evmService types.EVMService, lggr logger.Logger, logTriggerPollInterval time.Duration) *LogTriggerService {
+func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lggr logger.Logger, logTriggerPollInterval time.Duration) *LogTriggerService {
 	return &LogTriggerService{
 		EVMService:             evmService,
 		lggr:                   lggr,
-		triggers:               NewLogTriggerStore(),
+		triggers:               store,
 		logTriggerPollInterval: logTriggerPollInterval,
 	}
 }

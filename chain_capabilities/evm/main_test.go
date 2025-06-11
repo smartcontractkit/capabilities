@@ -3,8 +3,14 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"math/big"
 	"testing"
 	"time"
+
+	"github.com/smartcontractkit/chain_capabilities/evm/trigger"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
+	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -58,5 +64,43 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 				nil, nil, nil, nil, relayerSet, nil)
 			assert.ErrorIs(t, err, assert.AnError)
 		})
+
+		t.Run("close", func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			evmSvc.On("LatestAndFinalizedHead", mock.Anything).Return(evmtypes.Head{Number: big.NewInt(30)}, evmtypes.Head{Number: big.NewInt(25)}, nil)
+			evmSvc.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
+			evmSvc.On("UnregisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
+
+			svc := &capabilityGRPCService{lggr: lggr}
+			cfg := Config{ChainID: 1337, Network: "testnet", LogTriggerPollInterval: 60 * time.Second}
+			cfgJSON, _ := json.Marshal(cfg)
+			err := svc.Initialise(context.Background(), string(cfgJSON), nil, nil, nil, nil, relayerSet, nil)
+			require.NoError(t, err)
+
+			store := trigger.NewLogTriggerStore()
+			svc.triggerService = trigger.NewLogTriggerService(evmSvc, store, lggr, 60*time.Second)
+
+			triggerID := "triggerID"
+			_, exists := store.Read(triggerID)
+			assert.False(t, exists, "Trigger should not exist before registration")
+
+			_, err = svc.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
+				Addresses: [][]byte{{0xde}},
+				EventSigs: [][]byte{{0xdd}},
+			})
+			require.NoError(t, err)
+
+			_, exists = store.Read(triggerID)
+			assert.True(t, exists, "Trigger should exist after registration")
+
+			err = svc.Close()
+			assert.NoError(t, err)
+
+			_, exists = store.Read(triggerID)
+			assert.False(t, exists, "Trigger should not exist after close")
+		})
+
 	})
 }

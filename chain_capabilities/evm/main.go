@@ -77,7 +77,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _
 
 	c.capability = capability{
 		EVM:            actions.NewEVM(evmRelayer),
-		triggerService: trigger.NewLogTriggerService(evmRelayer, c.lggr, cfg.LogTriggerPollInterval),
+		triggerService: trigger.NewLogTriggerService(evmRelayer, trigger.NewLogTriggerStore(), c.lggr, cfg.LogTriggerPollInterval),
 	}
 
 	c.lggr.Infof("Successfully initialised %s", CapabilityName)
