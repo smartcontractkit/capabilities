@@ -36,12 +36,12 @@ type Config struct {
 type capabilityGRPCService struct {
 	capabilities.CapabilityInfo
 	capability
-	lggr           logger.Logger
-	triggerService *trigger.LogTriggerService
+	lggr logger.Logger
 }
 
 type capability struct {
 	actions.EVM
+	triggerService *trigger.LogTriggerService
 }
 
 var _ evmcapserver.ClientCapability = &capabilityGRPCService{}
@@ -75,8 +75,10 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
 
-	c.capability = capability{EVM: actions.NewEVM(evmRelayer)}
-	c.triggerService = trigger.NewLogTriggerService(evmRelayer, c.lggr, cfg.LogTriggerPollInterval)
+	c.capability = capability{
+		EVM:            actions.NewEVM(evmRelayer),
+		triggerService: trigger.NewLogTriggerService(evmRelayer, c.lggr, cfg.LogTriggerPollInterval),
+	}
 
 	c.lggr.Infof("Successfully initialised %s", CapabilityName)
 
