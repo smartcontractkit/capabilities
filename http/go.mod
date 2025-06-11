@@ -9,7 +9,7 @@ require (
 	github.com/pelletier/go-toml v1.9.5
 	github.com/pkg/errors v0.9.1
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20250530004552-1b414f8954d0
-	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250609123523-d5c04e24a648
+	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250610170838-4d8b1feecfe9
 	github.com/stretchr/testify v1.10.0
 )
 

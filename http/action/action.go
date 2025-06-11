@@ -69,6 +69,7 @@ func (s *service) Initialise(
 }
 
 func (s *service) Start(ctx context.Context) error {
+	//TODO start once
 	s.lggr.Debug("Service starting...")
 	err := s.client.Start(ctx)
 	if err != nil {

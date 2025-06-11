@@ -1,0 +1,110 @@
+package trigger
+
+import (
+	"context"
+	"encoding/json"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http/server"
+	"github.com/smartcontractkit/chainlink-common/pkg/services"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+)
+
+const ServiceName = "HTTPTriggerCapability"
+const defaultSendChannelBufferSize = uint32(1000)
+
+var _ server.HTTPCapability = &service{}
+
+type ServiceConfig struct {
+	SendChannelBufferSize uint32 `json:"sendChannelBufferSize"`
+}
+
+type service struct {
+	services.StateMachine
+	lggr           logger.SugaredLogger
+	cfg            ServiceConfig
+	requestHandler *requestHandler
+}
+
+func NewService(lggr logger.Logger) *service {
+	return &service{
+		lggr: logger.Sugared(logger.Named(lggr, ServiceName)),
+	}
+}
+
+func (s *service) Initialise(
+	ctx context.Context,
+	config string,
+	_ core.TelemetryService,
+	_ core.KeyValueStore,
+	_ core.ErrorLog,
+	_ core.PipelineRunnerService,
+	_ core.RelayerSet,
+	_ core.OracleFactory,
+	gc core.GatewayConnector,
+) error {
+	s.lggr.Debugf("Initialising %s", ServiceName)
+
+	var serviceConfig ServiceConfig
+	err := json.Unmarshal([]byte(config), &serviceConfig)
+	if err != nil {
+		return err
+	}
+	s.cfg = serviceConfig
+	s.requestHandler = NewRequestHandler(s.lggr, gc, serviceConfig)
+	return nil
+}
+
+func (s *service) Start(ctx context.Context) error {
+	s.lggr.Debug("Service starting...")
+	return s.StartOnce(ServiceName, func() error {
+		return s.requestHandler.Start(ctx)
+	})
+}
+
+func (s *service) Close() error {
+	s.lggr.Debug("Service closing...")
+	return s.StopOnce(ServiceName, func() error {
+		return s.requestHandler.Close()
+	})
+}
+
+func (s *service) HealthReport() map[string]error {
+	return map[string]error{s.Name(): nil}
+}
+
+func (s *service) Ready() error {
+	return nil
+}
+
+func (s *service) Name() string {
+	return ServiceName
+}
+
+func (s *service) Description() string {
+	return "HTTP Trigger Service"
+}
+
+func (s *service) RegisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *http.Config) (<-chan capabilities.TriggerAndId[*http.Payload], error) {
+	sendChannelBufferSize := s.cfg.SendChannelBufferSize
+	if sendChannelBufferSize == 0 {
+		sendChannelBufferSize = defaultSendChannelBufferSize
+	}
+	sendCh := make(chan capabilities.TriggerAndId[*http.Payload], sendChannelBufferSize)
+	err := s.requestHandler.RegisterWorkflow(ctx, metadata.WorkflowID, input, sendCh)
+	if err != nil {
+		return nil, err
+	}
+	return sendCh, nil
+}
+
+func (s *service) UnregisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *http.Config) error {
+	err := s.requestHandler.UnregisterWorkflow(ctx, metadata.WorkflowID)
+	if err != nil {
+		s.lggr.Errorf("Failed to unregister workflow %s: %v", metadata.WorkflowID, err)
+	}
+	return nil
+}
