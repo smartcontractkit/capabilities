@@ -2,18 +2,23 @@ package trigger
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/triggers/cron"
+	crontypedapi "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/utils/tests"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 )
 
@@ -38,27 +43,50 @@ const (
 	triggerID2 = "test-id-2"
 )
 
+type TriggerCapability interface {
+	RegisterTrigger(ctx context.Context, request capabilities.TriggerRegistrationRequest) (<-chan capabilities.TriggerResponse, error)
+	UnregisterTrigger(ctx context.Context, request capabilities.TriggerRegistrationRequest) error
+}
+
 func registerTriggerToCronTriggerService(
 	ctx context.Context,
 	t *testing.T,
-	cts *Service,
+	cts TriggerCapability,
 	schedule string,
 	triggerID string,
+	useTypedAPI bool,
 ) (
 	<-chan capabilities.TriggerResponse,
 	capabilities.TriggerRegistrationRequest,
 	error,
 ) {
+	requestTriggerID := workflowID1 + "|" + triggerID // TODO: remove wid once added by workflow engine
+	requestMetadata := capabilities.RequestMetadata{
+		WorkflowID: workflowID1,
+	}
+
+	if useTypedAPI {
+		payload, err := anypb.New(&crontypedapi.Config{Schedule: schedule})
+		require.NoError(t, err)
+
+		request := capabilities.TriggerRegistrationRequest{
+			TriggerID: requestTriggerID,
+			Metadata:  requestMetadata,
+			Payload:   payload,
+			Method:    "Trigger",
+		}
+		triggerEventsCh, err := cts.RegisterTrigger(ctx, request)
+
+		return triggerEventsCh, request, err
+	}
+
 	config, err := values.NewMap(map[string]interface{}{
 		"schedule": schedule,
 	})
 	require.NoError(t, err)
 
-	requestMetadata := capabilities.RequestMetadata{
-		WorkflowID: workflowID1,
-	}
 	request := capabilities.TriggerRegistrationRequest{
-		TriggerID: workflowID1 + "|" + triggerID, // TODO: remove wid once added by workflow engine
+		TriggerID: requestTriggerID,
 		Metadata:  requestMetadata,
 		Config:    config,
 	}
@@ -67,15 +95,24 @@ func registerTriggerToCronTriggerService(
 	return triggerEventsCh, request, err
 }
 
-func upwrapCronTriggerEvent(t *testing.T, event capabilities.TriggerEvent) Response {
+func upwrapCronTriggerEvent(t *testing.T, event capabilities.TriggerEvent,
+	useTypedAPI bool) Response {
 	response := Response{}
 	response.TriggerType = event.TriggerType
 	assert.Equal(t, ID, response.TriggerType)
 	response.ID = event.ID
+
+	if useTypedAPI {
+		payload := &crontypedapi.Payload{}
+		err := event.Payload.UnmarshalTo(payload)
+		require.NoError(t, err)
+		response.Payload = cron.Payload{ScheduledExecutionTime: payload.ScheduledExecutionTime}
+		return response
+	}
+
 	err := event.Outputs.UnwrapTo(&response.Payload)
 	require.NoError(t, err)
 	require.NotNil(t, response.Payload.ScheduledExecutionTime)
-	require.NotNil(t, response.Payload.ActualExecutionTime)
 	return response
 }
 
@@ -98,7 +135,15 @@ func requireNoChanMsg[T any](t *testing.T, ch <-chan T) {
 	require.True(t, timedOut)
 }
 
-func TestCronTrigger_SuccessWithStandardCronIntervals(t *testing.T) {
+func TestCronTrigger_SuccessWithStandardCronIntervals_UntypedAPI(t *testing.T) {
+	successWithStandardCronIntervals(t, false)
+}
+
+func TestCronTrigger_SuccessWithStandardCronIntervals_TypedAPI(t *testing.T) {
+	successWithStandardCronIntervals(t, true)
+}
+
+func successWithStandardCronIntervals(t *testing.T, useTypedAPI bool) {
 	cases := []struct {
 		name     string
 		schedule string
@@ -184,19 +229,10 @@ func TestCronTrigger_SuccessWithStandardCronIntervals(t *testing.T) {
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			fakeClock := clockwork.NewFakeClock()
-			// Set time to have 0h0m0s0ms by advancing to rounded times
-			fakeClock.Advance(time.Duration(1000000000 - fakeClock.Now().Nanosecond()))
-			fakeClock.Advance(60*time.Second - time.Duration(fakeClock.Now().Second())*time.Second)
-			fakeClock.Advance(60*time.Minute - time.Duration(fakeClock.Now().Minute())*time.Minute)
-			fakeClock.Advance(24*time.Hour - time.Duration(fakeClock.Now().UTC().Hour())*time.Hour)
-			// Set time to the first of January
-			for fakeClock.Now().UTC().Month() != time.January {
-				fakeClock.Advance(24 * time.Hour)
-			}
-			for fakeClock.Now().UTC().Day() != 1 {
-				fakeClock.Advance(24 * time.Hour)
-			}
+			t.Parallel()
+
+			startTime, _ := time.Parse("2006-01-01", "22-01-01")
+			fakeClock := clockwork.NewFakeClockAt(startTime)
 			if tt.schedule == everyWeek {
 				// If every week set to Saturday
 				for fakeClock.Now().UTC().Weekday() != time.Sunday {
@@ -204,20 +240,23 @@ func TestCronTrigger_SuccessWithStandardCronIntervals(t *testing.T) {
 				}
 			}
 
-			ts := New(Params{Logger: logger.Nop(), Clock: fakeClock})
-			ctx := tests.Context(t)
-
-			// Start scheduling
-			err := ts.Start(ctx)
+			config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
 			require.NoError(t, err)
+
+			ts := NewTriggerService(logger.Nop(), fakeClock)
+			err = ts.Initialise(t.Context(), string(config), nil, nil, nil, nil, nil, nil)
+			require.NoError(t, err)
+
+			triggerAPI := server.NewCronServer(ts)
 
 			// Register trigger
 			callback, registerUnregisterRequest, err := registerTriggerToCronTriggerService(
-				ctx,
+				t.Context(),
 				t,
-				ts,
+				triggerAPI,
 				tt.schedule,
 				makeTriggerID(1),
+				useTypedAPI,
 			)
 			require.NoError(t, err)
 			assert.Equal(t, len(ts.scheduler.Jobs()), 1)
@@ -230,41 +269,34 @@ func TestCronTrigger_SuccessWithStandardCronIntervals(t *testing.T) {
 
 			// 1st process
 			msg := <-callback
-			response := upwrapCronTriggerEvent(t, msg.Event)
+			response := upwrapCronTriggerEvent(t, msg.Event, useTypedAPI)
 			scheduledExecutionTime1, _ := time.Parse(time.RFC3339, response.Payload.ScheduledExecutionTime)
 
 			fakeClock.Advance(tt.interval[1])
 
 			// 2nd process
 			msg = <-callback
-			response = upwrapCronTriggerEvent(t, msg.Event)
+			response = upwrapCronTriggerEvent(t, msg.Event, useTypedAPI)
 			scheduledExecutionTime2, _ := time.Parse(time.RFC3339, response.Payload.ScheduledExecutionTime)
 
 			fakeClock.Advance(tt.interval[2])
 
 			// 3rd process
 			msg = <-callback
-			response = upwrapCronTriggerEvent(t, msg.Event)
+			response = upwrapCronTriggerEvent(t, msg.Event, useTypedAPI)
 			scheduledExecutionTime3, _ := time.Parse(time.RFC3339, response.Payload.ScheduledExecutionTime)
 
 			// Unregister the trigger and check that events no longer go on the callback
-			require.NoError(t, ts.UnregisterTrigger(ctx, registerUnregisterRequest))
+			require.NoError(t, triggerAPI.UnregisterTrigger(t.Context(), registerUnregisterRequest))
 			assert.Equal(t, len(ts.scheduler.Jobs()), 0)
 			assert.Equal(t, ts.scheduler.JobsWaitingInQueue(), 0)
 
 			// Skip to when the next execution would be
 			fakeClock.Advance(tt.interval[3])
 
-			// One interval after unregistering, should be no new messages
-			msg = <-callback
-			require.Equal(t, msg, capabilities.TriggerResponse{})
-
-			// Skip to when the next execution would be
-			fakeClock.Advance(tt.interval[4])
-
-			// Two intervals after unregistering, should be no new messages
-			msg = <-callback
-			require.Equal(t, msg, capabilities.TriggerResponse{})
+			// One interval after unregistering, channel should be closed
+			_, open := <-callback
+			require.False(t, open)
 
 			// Close the service
 			require.NoError(t, ts.Close())
@@ -285,8 +317,14 @@ func TestCronTrigger_Load(t *testing.T) {
 
 	fakeClock := clockwork.NewRealClock()
 
-	ts := New(Params{Logger: logger.Nop(), Clock: fakeClock})
-	ctx := tests.Context(t)
+	config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
+	require.NoError(t, err)
+
+	ts := NewTriggerService(logger.Nop(), fakeClock)
+
+	triggerAPI := server.NewCronServer(ts)
+
+	ctx := t.Context()
 
 	var callbacks [numTriggers]<-chan capabilities.TriggerResponse
 	var unregisterRequests [numTriggers]capabilities.TriggerRegistrationRequest
@@ -296,9 +334,10 @@ func TestCronTrigger_Load(t *testing.T) {
 		callback, unregisterRequest, err := registerTriggerToCronTriggerService(
 			ctx,
 			t,
-			ts,
+			triggerAPI,
 			everySecond,
 			makeTriggerID(triggerIdx+1),
+			false,
 		)
 		require.NoError(t, err)
 		callbacks[triggerIdx] = callback
@@ -307,37 +346,53 @@ func TestCronTrigger_Load(t *testing.T) {
 	assert.Equal(t, len(ts.scheduler.Jobs()), numTriggers)
 
 	// Start scheduling
-	err := ts.Start(ctx)
+	err = ts.Initialise(t.Context(), string(config), nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	// Process "numExecutions" times
 	var timestamps [numTriggers][numExecutions]time.Time
 	var scheduledExecTimes [numTriggers][numExecutions]time.Time
+	var mu sync.Mutex // Mutex to ensure memory is synced across threads
 
-	for execIdx := 0; execIdx < numExecutions; execIdx++ {
-		for triggerIdx := 0; triggerIdx < numTriggers; triggerIdx++ {
-			msg := <-callbacks[triggerIdx]
-			response := upwrapCronTriggerEvent(t, msg.Event)
-			scheduledExecutionTime, _ := time.Parse(time.RFC3339Nano, response.Payload.ScheduledExecutionTime)
-			scheduledExecTimes[triggerIdx][execIdx] = scheduledExecutionTime
-			actualExecutionTime, _ := time.Parse(time.RFC3339Nano, response.Payload.ActualExecutionTime)
-			timestamps[triggerIdx][execIdx] = actualExecutionTime
-		}
+	wg := sync.WaitGroup{}
+
+	for triggerIdx := 0; triggerIdx < numTriggers; triggerIdx++ {
+		wg.Add(1)
+		go func(tIdx int) {
+			for execIdx := 0; execIdx < numExecutions; execIdx++ {
+				msg := <-callbacks[tIdx]
+				response := upwrapCronTriggerEvent(t, msg.Event, false)
+				scheduledExecutionTime, _ := time.Parse(time.RFC3339Nano, response.Payload.ScheduledExecutionTime)
+
+				actualExecutionTimeUTC := fakeClock.Now().UTC()
+
+				mu.Lock()
+				scheduledExecTimes[tIdx][execIdx] = scheduledExecutionTime
+				timestamps[tIdx][execIdx] = actualExecutionTimeUTC
+				mu.Unlock()
+			}
+			wg.Done()
+		}(triggerIdx)
 	}
+
+	wg.Wait()
+
+	mu.Lock()
+	defer mu.Unlock()
 
 	// Unregister the trigger and check that events no longer go on the callback
 	for i := 0; i < numTriggers; i++ {
-		require.NoError(t, ts.UnregisterTrigger(ctx, unregisterRequests[i]))
+		require.NoError(t, triggerAPI.UnregisterTrigger(ctx, unregisterRequests[i]))
 	}
 
 	assert.Equal(t, len(ts.scheduler.Jobs()), 0)
 	assert.Equal(t, ts.scheduler.JobsWaitingInQueue(), 0)
 
 	// Wait a second to ensure no more events
-	time.Sleep(time.Second * 1)
+	time.Sleep(time.Second * 5)
 	for i := 0; i < numTriggers; i++ {
-		msg := <-callbacks[i]
-		require.Equal(t, capabilities.TriggerResponse{}, msg)
+		_, open := <-callbacks[i]
+		require.False(t, open)
 	}
 
 	// Close the service
@@ -356,7 +411,11 @@ func TestCronTrigger_Load(t *testing.T) {
 				require.True(t, scheduledExecTimes[triggerIdx][execIdx].Equal(scheduledExecTimes[triggerIdx][execIdx-1].Add(time.Second)))
 			}
 			// Check that actual execution time is after scheduled time
-			require.True(t, timestamps[triggerIdx][execIdx].After(scheduledExecTimes[triggerIdx][execIdx]))
+
+			after := timestamps[triggerIdx][execIdx].After(scheduledExecTimes[triggerIdx][execIdx]) || timestamps[triggerIdx][execIdx].Equal(scheduledExecTimes[triggerIdx][execIdx])
+
+			require.True(t, after)
+
 			// Check that scheduled time and actual time did not differ more than 1 second
 			require.False(t, timestamps[triggerIdx][execIdx].After(scheduledExecTimes[triggerIdx][execIdx].Add(time.Second)))
 			// Store time difference between scheduled and actual
@@ -372,39 +431,54 @@ func TestCronTrigger_Load(t *testing.T) {
 	fmt.Println("Average Delta: ", averageDelta, "ms")
 }
 
-func TestCronTrigger_RegisterTriggerBeforeStart(t *testing.T) {
-	ts := New(Params{Logger: logger.Nop()})
-	ctx := tests.Context(t)
+func TestCronTrigger_RegisterTriggerBeforeStart_TypedAPI(t *testing.T) {
+	testCronTriggerRegisterTriggerBeforeStart(t, true)
+}
+
+func TestCronTrigger_RegisterTriggerBeforeStart_UntypedAPI(t *testing.T) {
+	testCronTriggerRegisterTriggerBeforeStart(t, false)
+}
+
+func testCronTriggerRegisterTriggerBeforeStart(t *testing.T, useTypedAPI bool) {
+	fakeClock := clockwork.NewRealClock()
+	config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
+	require.NoError(t, err)
+	ts := NewTriggerService(logger.Nop(), fakeClock)
+
+	triggerAPI := server.NewCronServer(ts)
+
+	ctx := t.Context()
 
 	// Register trigger
 	callback, registerUnregisterRequest, err := registerTriggerToCronTriggerService(
 		ctx,
 		t,
-		ts,
+		triggerAPI,
 		everySecond,
 		makeTriggerID(1),
+		useTypedAPI,
 	)
 	require.NoError(t, err)
 	assert.Equal(t, len(ts.scheduler.Jobs()), 1)
 
 	// Start scheduling
-	err = ts.Start(ctx)
+	err = ts.Initialise(t.Context(), string(config), nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	// 1st process
 	msg := <-callback
-	response := upwrapCronTriggerEvent(t, msg.Event)
+	actualExecutionTime1 := fakeClock.Now().UTC()
+	response := upwrapCronTriggerEvent(t, msg.Event, useTypedAPI)
 	scheduledExecutionTime1, _ := time.Parse(time.RFC3339, response.Payload.ScheduledExecutionTime)
-	actualExecutionTime1, _ := time.Parse(time.RFC3339, response.Payload.ActualExecutionTime)
 
 	// 2nd process
 	msg = <-callback
-	response = upwrapCronTriggerEvent(t, msg.Event)
+	actualExecutionTime2 := fakeClock.Now().UTC()
+	response = upwrapCronTriggerEvent(t, msg.Event, useTypedAPI)
 	scheduledExecutionTime2, _ := time.Parse(time.RFC3339, response.Payload.ScheduledExecutionTime)
-	actualExecutionTime2, _ := time.Parse(time.RFC3339, response.Payload.ActualExecutionTime)
 
 	// Unregister the trigger and check that events no longer go on the callback
-	require.NoError(t, ts.UnregisterTrigger(ctx, registerUnregisterRequest))
+	require.NoError(t, triggerAPI.UnregisterTrigger(ctx, registerUnregisterRequest))
 	assert.Equal(t, len(ts.scheduler.Jobs()), 0)
 	assert.Equal(t, ts.scheduler.JobsWaitingInQueue(), 0)
 
@@ -421,31 +495,45 @@ func TestCronTrigger_RegisterTriggerBeforeStart(t *testing.T) {
 	require.False(t, actualExecutionTime2.After(scheduledExecutionTime2.Add(time.Second)))
 }
 
-func TestCronTrigger_TimeWindows(t *testing.T) {
+func TestCronTriggerTimeWindows_UntypedAPI(t *testing.T) {
+	testCronTriggerTimeWindows(t, false)
+}
+
+func TestCronTriggerTimeWindows_TypedAPI(t *testing.T) {
+	testCronTriggerTimeWindows(t, true)
+}
+
+func testCronTriggerTimeWindows(t *testing.T, useTypedAPI bool) {
 	fakeClock := clockwork.NewFakeClock()
 	// Set time to have 0ms by advancing to next truncated second
 	fakeClock.Advance(fakeClock.Now().Truncate(time.Second).Add(time.Second).Sub(fakeClock.Now()))
 	// Set time to 8:50am UTC
-	hour, min, sec := fakeClock.Now().UTC().Clock()
+	hour, minimum, sec := fakeClock.Now().UTC().Clock()
 	fakeClock.Advance(time.Duration(60-sec) * time.Second)
-	fakeClock.Advance(time.Duration(49-min) * time.Minute)
+	fakeClock.Advance(time.Duration(49-minimum) * time.Minute)
 	fakeClock.Advance(time.Duration(8-hour) * time.Hour)
-	ts := New(Params{Logger: logger.Nop(), Clock: fakeClock})
-	ctx := tests.Context(t)
+
+	config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
+	require.NoError(t, err)
+	ts := NewTriggerService(logger.Nop(), fakeClock)
+	triggerAPI := server.NewCronServer(ts)
+
+	ctx := t.Context()
 
 	// Register trigger
 	callback, registerUnregisterRequest, err := registerTriggerToCronTriggerService(
 		ctx,
 		t,
-		ts,
+		triggerAPI,
 		everyHourFrom9To10,
 		makeTriggerID(1),
+		useTypedAPI,
 	)
 	require.NoError(t, err)
 	assert.Equal(t, len(ts.scheduler.Jobs()), 1)
 
 	// Start scheduling
-	err = ts.Start(ctx)
+	err = ts.Initialise(t.Context(), string(config), nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	// Advance to 1ms past 9am
@@ -453,7 +541,7 @@ func TestCronTrigger_TimeWindows(t *testing.T) {
 
 	// 1st process @ 9am UTC
 	msg := <-callback
-	response := upwrapCronTriggerEvent(t, msg.Event)
+	response := upwrapCronTriggerEvent(t, msg.Event, useTypedAPI)
 	scheduledExecutionTime1, _ := time.Parse(time.RFC3339, response.Payload.ScheduledExecutionTime)
 
 	// Advance to 10am
@@ -461,7 +549,7 @@ func TestCronTrigger_TimeWindows(t *testing.T) {
 
 	// 2nd process @ 10am UTC
 	msg = <-callback
-	response = upwrapCronTriggerEvent(t, msg.Event)
+	response = upwrapCronTriggerEvent(t, msg.Event, useTypedAPI)
 	scheduledExecutionTime2, _ := time.Parse(time.RFC3339, response.Payload.ScheduledExecutionTime)
 
 	// Advance to 9am UTC next day
@@ -469,11 +557,11 @@ func TestCronTrigger_TimeWindows(t *testing.T) {
 
 	// should not process again until next day
 	msg = <-callback
-	response = upwrapCronTriggerEvent(t, msg.Event)
+	response = upwrapCronTriggerEvent(t, msg.Event, useTypedAPI)
 	scheduledExecutionTime3, _ := time.Parse(time.RFC3339, response.Payload.ScheduledExecutionTime)
 
 	// Unregister the trigger and check that events no longer go on the callback
-	require.NoError(t, ts.UnregisterTrigger(ctx, registerUnregisterRequest))
+	require.NoError(t, triggerAPI.UnregisterTrigger(ctx, registerUnregisterRequest))
 	assert.Equal(t, len(ts.scheduler.Jobs()), 0)
 	assert.Equal(t, ts.scheduler.JobsWaitingInQueue(), 0)
 
@@ -481,64 +569,74 @@ func TestCronTrigger_TimeWindows(t *testing.T) {
 	require.NoError(t, ts.Close())
 
 	// Check scheduled execution times 9am, 10am, then 9am the next day
-	fmt.Println(scheduledExecutionTime1)
-	fmt.Println(scheduledExecutionTime2)
-	fmt.Println(scheduledExecutionTime3)
 	require.True(t, scheduledExecutionTime3.Equal(scheduledExecutionTime2.Add(23*time.Hour)))
 	require.True(t, scheduledExecutionTime3.Equal(scheduledExecutionTime1.Add(24*time.Hour)))
 	require.True(t, scheduledExecutionTime2.Equal(scheduledExecutionTime1.Add(time.Hour)))
 }
 
-func TestCronTrigger_MultipleDifferentSchedules(t *testing.T) {
+func TestCronTrigger_MultipleDifferentSchedules_UntypedAPI(t *testing.T) {
+	testCronTriggerMultipleDifferentSchedules(t, false)
+}
+
+func TestCronTrigger_MultipleDifferentSchedules_TypedAPI(t *testing.T) {
+	testCronTriggerMultipleDifferentSchedules(t, true)
+}
+
+func testCronTriggerMultipleDifferentSchedules(t *testing.T, useTypedAPI bool) {
 	fakeClock := clockwork.NewFakeClock()
 	// Start on an odd numbered second
 	if fakeClock.Now().Second()%2 == 1 {
 		fakeClock.Advance(time.Second)
 	}
-	ts := New(Params{Logger: logger.Nop(), Clock: fakeClock})
-	ctx := tests.Context(t)
+	config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
+	require.NoError(t, err)
+	ts := NewTriggerService(logger.Nop(), fakeClock)
+	triggerAPI := server.NewCronServer(ts)
+	ctx := t.Context()
 
 	callback1, registerUnregisterRequest1, err := registerTriggerToCronTriggerService(
 		ctx,
 		t,
-		ts,
+		triggerAPI,
 		everySecond,
 		triggerID1,
+		useTypedAPI,
 	)
 	require.NoError(t, err)
 
 	callback2, registerUnregisterRequest2, err := registerTriggerToCronTriggerService(
 		ctx,
 		t,
-		ts,
+		triggerAPI,
 		everyEvenSecond,
 		triggerID2,
+		useTypedAPI,
 	)
 	require.NoError(t, err)
 
 	assert.Equal(t, len(ts.scheduler.Jobs()), 2)
 
 	// Start scheduling
-	err = ts.Start(ctx)
+	err = ts.Initialise(t.Context(), string(config), nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	fakeClock.Advance(time.Second)
 
 	// 1st second
 	msg1 := <-callback1
-	response1 := upwrapCronTriggerEvent(t, msg1.Event)
+	response1 := upwrapCronTriggerEvent(t, msg1.Event, useTypedAPI)
 	scheduledExecutionTime1_1, _ := time.Parse(time.RFC3339, response1.Payload.ScheduledExecutionTime)
 
 	fakeClock.Advance(time.Second)
 
 	// 2nd second
 	msg1 = <-callback1
-	response1 = upwrapCronTriggerEvent(t, msg1.Event)
+	response1 = upwrapCronTriggerEvent(t, msg1.Event, useTypedAPI)
 	scheduledExecutionTime1_2, _ := time.Parse(time.RFC3339, response1.Payload.ScheduledExecutionTime)
 	eventID1Run2 := response1.ID
 
 	msg2 := <-callback2
-	response2 := upwrapCronTriggerEvent(t, msg2.Event)
+	response2 := upwrapCronTriggerEvent(t, msg2.Event, useTypedAPI)
 	scheduledExecutionTime2_1, _ := time.Parse(time.RFC3339, response2.Payload.ScheduledExecutionTime)
 	eventID2Run2 := response2.ID
 
@@ -546,37 +644,33 @@ func TestCronTrigger_MultipleDifferentSchedules(t *testing.T) {
 
 	// 3rd second
 	msg1 = <-callback1
-	response1 = upwrapCronTriggerEvent(t, msg1.Event)
+	response1 = upwrapCronTriggerEvent(t, msg1.Event, useTypedAPI)
 	scheduledExecutionTime1_3, _ := time.Parse(time.RFC3339, response1.Payload.ScheduledExecutionTime)
 
 	fakeClock.Advance(time.Second)
 
 	// 4th second
 	msg1 = <-callback1
-	response1 = upwrapCronTriggerEvent(t, msg1.Event)
+	response1 = upwrapCronTriggerEvent(t, msg1.Event, useTypedAPI)
 	scheduledExecutionTime1_4, _ := time.Parse(time.RFC3339, response1.Payload.ScheduledExecutionTime)
 	eventID1Run4 := response1.ID
 
 	msg2 = <-callback2
-	response2 = upwrapCronTriggerEvent(t, msg2.Event)
+	response2 = upwrapCronTriggerEvent(t, msg2.Event, useTypedAPI)
 	scheduledExecutionTime2_2, _ := time.Parse(time.RFC3339, response2.Payload.ScheduledExecutionTime)
 	eventID2Run4 := response2.ID
 
 	// Unregister the trigger and check that events no longer go on the callback
-	require.NoError(t, ts.UnregisterTrigger(ctx, registerUnregisterRequest1))
-	require.NoError(t, ts.UnregisterTrigger(ctx, registerUnregisterRequest2))
+	require.NoError(t, triggerAPI.UnregisterTrigger(ctx, registerUnregisterRequest1))
+	require.NoError(t, triggerAPI.UnregisterTrigger(ctx, registerUnregisterRequest2))
 
 	fakeClock.Advance(time.Second)
 
-	msg1 = <-callback1
-	require.Equal(t, msg1, capabilities.TriggerResponse{})
-	msg2 = <-callback2
-	require.Equal(t, msg2, capabilities.TriggerResponse{})
-	time.Sleep(time.Second)
-	msg1 = <-callback1
-	require.Equal(t, msg1, capabilities.TriggerResponse{})
-	msg2 = <-callback2
-	require.Equal(t, msg2, capabilities.TriggerResponse{})
+	_, open := <-callback1
+	require.False(t, open)
+
+	_, open = <-callback2
+	require.False(t, open)
 
 	// Close the service
 	require.NoError(t, ts.Close())
@@ -596,34 +690,47 @@ func TestCronTrigger_MultipleDifferentSchedules(t *testing.T) {
 	require.Equal(t, eventID1Run4, eventID2Run4)
 }
 
-func TestCronTrigger_TimeZone(t *testing.T) {
+func TestCronTriggerTimeZone_UntypedAPI(t *testing.T) {
+	testCronTriggerTimeZone(t, false)
+}
+
+func TestCronTriggerTimeZone_TypedAPI(t *testing.T) {
+	testCronTriggerTimeZone(t, true)
+}
+
+func testCronTriggerTimeZone(t *testing.T, useTypedAPI bool) {
 	fakeClock := clockwork.NewFakeClock()
 	location, _ := time.LoadLocation("America/New_York")
 	// Set time to have 0ms by advancing to next truncated second
 	fakeClock.Advance(time.Duration(1000000000 - fakeClock.Now().Nanosecond()))
 	// Set time to 23:50pm Eastern
 	now := fakeClock.Now().In(location)
-	hour, min, sec := now.Clock()
+	hour, minimum, sec := now.Clock()
 	fakeClock.Advance(time.Duration(60-sec) * time.Second)
-	fakeClock.Advance(time.Duration(49-min) * time.Minute)
+	fakeClock.Advance(time.Duration(49-minimum) * time.Minute)
 	fakeClock.Advance(time.Duration(23-hour) * time.Hour)
 
-	ts := New(Params{Logger: logger.Nop(), Clock: fakeClock})
-	ctx := tests.Context(t)
+	config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
+	require.NoError(t, err)
+	ts := NewTriggerService(logger.Nop(), fakeClock)
+	triggerAPI := server.NewCronServer(ts)
+	ctx := t.Context()
 
 	// Register trigger
 	callback, registerUnregisterRequest, err := registerTriggerToCronTriggerService(
 		ctx,
 		t,
-		ts,
+		triggerAPI,
 		everyDayEasternTZ,
 		makeTriggerID(1),
+		useTypedAPI,
 	)
 	require.NoError(t, err)
 	assert.Equal(t, len(ts.scheduler.Jobs()), 1)
 
 	// Start scheduling
-	err = ts.Start(ctx)
+	err = ts.Initialise(t.Context(), string(config), nil, nil, nil, nil, nil, nil)
+	require.NoError(t, err)
 	require.NoError(t, err)
 
 	// Advance to 1ms before trigger
@@ -637,11 +744,11 @@ func TestCronTrigger_TimeZone(t *testing.T) {
 
 	// 1st process @ 12am Eastern
 	msg := <-callback
-	response := upwrapCronTriggerEvent(t, msg.Event)
+	response := upwrapCronTriggerEvent(t, msg.Event, useTypedAPI)
 	scheduledExecutionTime, _ := time.Parse(time.RFC3339, response.Payload.ScheduledExecutionTime)
 
 	// Unregister the trigger and check that events no longer go on the callback
-	require.NoError(t, ts.UnregisterTrigger(ctx, registerUnregisterRequest))
+	require.NoError(t, triggerAPI.UnregisterTrigger(ctx, registerUnregisterRequest))
 	assert.Equal(t, len(ts.scheduler.Jobs()), 0)
 	assert.Equal(t, ts.scheduler.JobsWaitingInQueue(), 0)
 
@@ -655,7 +762,15 @@ func TestCronTrigger_TimeZone(t *testing.T) {
 	require.True(t, scheduledExecutionTime.Equal(expectedEasternExecution))
 }
 
-func TestCronTrigger_RegisterTrigger(t *testing.T) {
+func TestCronTrigger_RegisterTrigger_UntypedAPI(t *testing.T) {
+	testCronTriggerRegisterTrigger(t, false)
+}
+
+func TestCronTrigger_RegisterTrigger_TypedAPI(t *testing.T) {
+	testCronTriggerRegisterTrigger(t, true)
+}
+
+func testCronTriggerRegisterTrigger(t *testing.T, useTypedAPI bool) {
 	cases := []struct {
 		name              string
 		schedule          string
@@ -665,7 +780,7 @@ func TestCronTrigger_RegisterTrigger(t *testing.T) {
 		// No Error
 		{
 			name:              "valid cron schedule - 6 entries",
-			schedule:          everySecond,
+			schedule:          everyMinute,
 			shouldErr:         false,
 			expectedErrString: "",
 		},
@@ -695,18 +810,28 @@ func TestCronTrigger_RegisterTrigger(t *testing.T) {
 			shouldErr:         true,
 			expectedErrString: "gocron: CronJob: crontab parse failure\nprovided bad location moon: unknown time zone moon",
 		},
+		{
+			name:              "invalid cron schedule - exceeds maximum fastest",
+			schedule:          everySecond,
+			shouldErr:         true,
+			expectedErrString: "maximum fastest cron schedule is 30s",
+		},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
-			ts := New(Params{Logger: logger.Nop()})
-			ctx := tests.Context(t)
-
-			_, _, err := registerTriggerToCronTriggerService(
+			fakeClock := clockwork.NewRealClock()
+			ts := NewTriggerService(logger.Nop(), fakeClock)
+			err := ts.Initialise(t.Context(), "", nil, nil, nil, nil, nil, nil)
+			require.NoError(t, err)
+			triggerAPI := server.NewCronServer(ts)
+			ctx := t.Context()
+			_, _, err = registerTriggerToCronTriggerService(
 				ctx,
 				t,
-				ts,
+				triggerAPI,
 				tt.schedule,
 				triggerID1,
+				useTypedAPI,
 			)
 
 			if tt.shouldErr {
@@ -724,8 +849,15 @@ func TestCronTrigger_RegisterTrigger(t *testing.T) {
 }
 
 func TestCronTrigger_RegisterTriggerDuplicateError(t *testing.T) {
-	ts := New(Params{Logger: logger.Nop()})
-	ctx := tests.Context(t)
+	triggerConfig, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
+	require.NoError(t, err)
+	fakeClock := clockwork.NewRealClock()
+	ts := NewTriggerService(logger.Nop(), fakeClock)
+	err = ts.Initialise(t.Context(), string(triggerConfig), nil, nil, nil, nil, nil, nil)
+	require.NoError(t, err)
+	triggerAPI := server.NewCronServer(ts)
+
+	ctx := t.Context()
 
 	config, err := values.NewMap(map[string]interface{}{
 		"schedule": everySecond,
@@ -741,39 +873,130 @@ func TestCronTrigger_RegisterTriggerDuplicateError(t *testing.T) {
 		Config:    config,
 	}
 
-	_, err = ts.RegisterTrigger(ctx, request)
+	_, err = triggerAPI.RegisterTrigger(ctx, request)
 	require.NoError(t, err)
-	_, err = ts.RegisterTrigger(ctx, request)
+	_, err = triggerAPI.RegisterTrigger(ctx, request)
 	require.Error(t, err)
 	require.Equal(t, "triggerId test-id-1 already registered", err.Error())
 }
 
 func TestCronTrigger_UnregisterTriggerError(t *testing.T) {
-	ts := New(Params{Logger: logger.Nop()})
-	ctx := tests.Context(t)
-
-	config, err := values.NewMap(map[string]interface{}{
-		"schedule": everySecond,
-	})
+	triggerConfig, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
 	require.NoError(t, err)
+	fakeClock := clockwork.NewRealClock()
+	ts := NewTriggerService(logger.Nop(), fakeClock)
+	err = ts.Initialise(t.Context(), string(triggerConfig), nil, nil, nil, nil, nil, nil)
+	require.NoError(t, err)
+	triggerAPI := server.NewCronServer(ts)
 
-	requestMetadata := capabilities.RequestMetadata{
-		WorkflowID: workflowID1,
-	}
-	request := capabilities.TriggerRegistrationRequest{
-		TriggerID: "invalid",
-		Metadata:  requestMetadata,
-		Config:    config,
-	}
+	t.Run("OK if trigger not found", func(t *testing.T) {
+		ctx := t.Context()
 
-	err = ts.UnregisterTrigger(ctx, request)
-	require.Error(t, err)
-	require.Equal(t, "triggerId invalid not found", err.Error())
+		config, err := values.NewMap(map[string]interface{}{
+			"schedule": everySecond,
+		})
+		require.NoError(t, err)
+
+		requestMetadata := capabilities.RequestMetadata{
+			WorkflowID: workflowID1,
+		}
+		request := capabilities.TriggerRegistrationRequest{
+			TriggerID: "missing",
+			Metadata:  requestMetadata,
+			Config:    config,
+		}
+
+		err = triggerAPI.UnregisterTrigger(ctx, request)
+		require.NoError(t, err)
+	})
+
+	t.Run("OK register then unregister", func(t *testing.T) {
+		ctx := t.Context()
+
+		config, err := values.NewMap(map[string]interface{}{
+			"schedule": everySecond,
+		})
+		require.NoError(t, err)
+
+		requestMetadata := capabilities.RequestMetadata{
+			WorkflowID: workflowID1,
+		}
+		request := capabilities.TriggerRegistrationRequest{
+			TriggerID: "trigger-id",
+			Metadata:  requestMetadata,
+			Config:    config,
+		}
+
+		_, err = triggerAPI.RegisterTrigger(ctx, request)
+		require.NoError(t, err)
+		err = triggerAPI.UnregisterTrigger(ctx, request)
+		require.NoError(t, err)
+	})
+
+	t.Run("OK register then unregister multiple times", func(t *testing.T) {
+		ctx := t.Context()
+
+		config, err := values.NewMap(map[string]interface{}{
+			"schedule": everySecond,
+		})
+		require.NoError(t, err)
+
+		requestMetadata := capabilities.RequestMetadata{
+			WorkflowID: workflowID1,
+		}
+		request := capabilities.TriggerRegistrationRequest{
+			TriggerID: "trigger-id",
+			Metadata:  requestMetadata,
+			Config:    config,
+		}
+
+		_, err = triggerAPI.RegisterTrigger(ctx, request)
+		require.NoError(t, err)
+
+		for range 3 {
+			err = triggerAPI.UnregisterTrigger(ctx, request)
+			require.NoError(t, err)
+		}
+	})
+
+	t.Run("NOK fails to unregister if closed", func(t *testing.T) {
+		ts := NewTriggerService(logger.Nop(), fakeClock)
+		err = ts.Initialise(t.Context(), string(triggerConfig), nil, nil, nil, nil, nil, nil)
+		require.NoError(t, err)
+
+		triggerAPI := server.NewCronServer(ts)
+		ctx := t.Context()
+
+		config, err := values.NewMap(map[string]interface{}{
+			"schedule": everySecond,
+		})
+		require.NoError(t, err)
+
+		requestMetadata := capabilities.RequestMetadata{
+			WorkflowID: workflowID1,
+		}
+		request := capabilities.TriggerRegistrationRequest{
+			TriggerID: "trigger-id",
+			Metadata:  requestMetadata,
+			Config:    config,
+		}
+
+		_, err = triggerAPI.RegisterTrigger(ctx, request)
+		require.NoError(t, err)
+
+		err = triggerAPI.Close()
+		require.NoError(t, err)
+
+		err = triggerAPI.UnregisterTrigger(ctx, request)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "cannot unregister a new trigger, service has been closed")
+	})
 }
 
 func TestCronTrigger_CloseStartErrors(t *testing.T) {
-	ts := New(Params{Logger: logger.Nop()})
-	ctx := tests.Context(t)
+	fakeClock := clockwork.NewRealClock()
+	ts := NewTriggerService(logger.Nop(), fakeClock)
+	ctx := t.Context()
 
 	err := ts.Start(ctx)
 	require.NoError(t, err)

@@ -7,34 +7,28 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap/zapcore"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/framework"
-	"github.com/smartcontractkit/chainlink/v2/core/logger"
 
 	"github.com/smartcontractkit/capabilities/integration_tests/utils"
 )
 
 const (
-	scheduleEveryOtherSecond = "*/2 * * * * *"
+	scheduleEverySecond = "* * * * * *"
 )
 
 type Payload struct {
-	// Time that cron trigger's task execution occurred (RFC3339Nano formatted)
-	ActualExecutionTime string `json:"ActualExecutionTime" yaml:"ActualExecutionTime" mapstructure:"ActualExecutionTime"`
-
 	// Time that cron trigger's task execution had been scheduled to occur
 	// (RFC3339Nano formatted)
 	ScheduledExecutionTime string `json:"ScheduledExecutionTime" yaml:"ScheduledExecutionTime" mapstructure:"ScheduledExecutionTime"`
 }
 
 func Test_CronTrigger(t *testing.T) {
-	ctx, cancel := framework.Context(t)
-	defer cancel()
-	lggr := logger.TestLogger(t)
-	lggr.SetLogLevel(zapcore.InfoLevel)
+	ctx := t.Context()
+	lggr := logger.Test(t)
 	defer func() {
-		utils.CleanupCapabilities(lggr)
+		utils.CleanupCapabilitiesDir(lggr)
 	}()
 
 	cronBinary, err := utils.DeployCapability(t, "cron")
@@ -45,11 +39,11 @@ func Test_CronTrigger(t *testing.T) {
 
 	targetSink := framework.NewTargetSink("mock-target", "1.0.0")
 
-	setupCronTestDon(ctx, t, lggr, workflowDonConfiguration, scheduleEveryOtherSecond, targetSink, cronBinary)
+	setupCronTestDon(ctx, t, lggr, workflowDonConfiguration, scheduleEverySecond, targetSink, cronBinary, 1)
 
 	quorum := 3 // number of nodes that need to execute the workflow (F+1)
 	runs := 3   // number of rounds to be considered done
-	waitTime := 10 * time.Second
+	waitTime := 60 * time.Second
 
 	waitFor(ctx, t, targetSink, quorum, runs, waitTime)
 }
@@ -77,7 +71,7 @@ func waitFor(ctx context.Context, t *testing.T, targetSink *framework.TargetSink
 
 			countCalls++
 
-			actualTime, _ := time.Parse(time.RFC3339Nano, payload.ActualExecutionTime)
+			actualTime := time.Now()
 			idsToActualTime[request.Metadata.WorkflowExecutionID] = append(idsToActualTime[request.Metadata.WorkflowExecutionID], actualTime)
 
 			// Check that the actual execution time of trigger is within a second across nodes

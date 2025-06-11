@@ -2,7 +2,6 @@
   "name": "workflowevent",
   "projectType": "capability",
   "projectRoot": "capabilities/workflowevent",
-  "implicitDependencies": ["types"],
   "tags": [],
   "targets": {
     "lint": {

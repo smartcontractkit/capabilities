@@ -1,0 +1,146 @@
+syntax = "proto3";
+option go_package = "github.com/smartcontractkit/capabilities/mock/internal/pb";
+
+package mockcap;
+
+
+import "google/protobuf/empty.proto";
+
+
+service MockCapability {
+  // Retrieve information about all capabilities available on the node
+  rpc List(ListRequest) returns (ListResponse){}
+
+  // Retrieve unique workflow IDs of subscribers for a specific trigger
+  rpc GetTriggerSubscribers(GetTriggerSubscribersRequest) returns (GetTriggerSubscribersResponse){}
+
+  // Create a mock capability and register it with the node
+  rpc CreateCapability(CapabilityInfo) returns(google.protobuf.Empty) {}
+
+  // Send data through a mock trigger
+  rpc SendTriggerEvent(SendTriggerEventRequest) returns(google.protobuf.Empty) {}
+
+  // Subscribe to a trigger (includes all triggers, not limited to mock triggers),
+  // creates a stream that send trigger events
+  rpc RegisterTrigger(TriggerRegistrationRequest) returns(stream TriggerResponse) {}
+
+  // Unsubscribe from a trigger (includes all triggers, not limited to mock triggers)
+  rpc UnregisterTrigger(TriggerRegistrationRequest) returns(google.protobuf.Empty) {}//NOOP
+
+  // Establish a bidirectional streaming service. When Execute is called, it streams requests and allows streaming responses back
+  rpc HookExecutables(stream ExecutableResponse) returns(stream ExecutableRequest) {}
+
+  // Subscribe to a workflow (includes all executable capabilities, not limited to mocks)
+  rpc RegisterToWorkflow(RegisterToWorkflowRequest) returns (google.protobuf.Empty){}
+
+  // Unsubscribe from a workflow (includes all executable capabilities, not limited to mocks)
+  rpc UnregisterFromWorkflow(UnregisterFromWorkflowRequest) returns (google.protobuf.Empty){}
+
+  // Invoke the Execute method on an executable capability (includes all executable capabilities, not limited to mocks)
+  rpc Execute(ExecutableRequest) returns (CapabilityResponse){}
+}
+
+message TriggerEvent{
+  string TriggerType = 1;
+  string ID = 2;
+  bytes Outputs = 3;
+}
+
+message TriggerResponse{
+  TriggerEvent TriggerEvent = 1;
+  string Error = 2;
+}
+
+message GetTriggerSubscribersRequest{
+  string ID = 1;
+}
+
+message GetTriggerSubscribersResponse{
+  repeated string WorkflowIDs=1;
+}
+
+message TriggerRegistrationRequest{
+  string TriggerID = 1;
+  Metadata Metadata = 2;
+  bytes Config = 3;
+}
+
+
+message Metadata{
+  string WorkflowID = 1;
+  string WorkflowOwner = 2;
+  string WorkflowExecutionID = 3;
+  string WorkflowName = 4;
+  uint32 WorkflowDonID = 5;
+  uint32 WorkflowDonConfigVersion = 6;
+  string ReferenceID = 7;
+  string DecodedWorkflowName = 8;
+}
+
+
+message ListRequest {}
+message ListResponse {
+  repeated CapabilityInfo capInfos = 1;
+}
+enum CapabilityType {
+  Unknown = 0;
+  Trigger = 1;
+  Action = 2;
+  Consensus = 3;
+  Target = 4;
+}
+message DON{
+
+}
+message CapabilityInfo{
+  string ID = 1;
+  CapabilityType CapabilityType = 2;
+  string Description = 3;
+  DON DON = 4;
+  bool IsLocal = 5;
+}
+
+message SendTriggerEventRequest{
+  string ID = 1;
+  string EventID = 2;
+  bytes Payload = 3;
+}
+
+message RegisterToWorkflowRequest{
+  string ID = 1;
+  CapabilityType CapabilityType = 2;
+  RegistrationMetadata RegistrationMetadata = 3;
+  bytes Config = 4;
+}
+
+message RegistrationMetadata{
+  string WorkflowID = 1;
+  string WorkflowOwner = 2;
+  string ReferenceID = 3;
+}
+
+message UnregisterFromWorkflowRequest{
+  RegistrationMetadata RegistrationMetadata = 1;
+  bytes Config = 2;
+}
+
+message ExecutableRequest{
+  string ID = 1;
+  CapabilityType CapabilityType = 2;
+  Metadata RequestMetadata = 3;
+  bytes Config = 4;
+  bytes Inputs = 5;
+}
+
+message CapabilityResponse{
+  bytes Value = 1;
+}
+
+message ExecutableResponse{
+  string ID = 1;
+  CapabilityType CapabilityType = 2;
+  bytes Value = 3;
+}
+
+
+

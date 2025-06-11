@@ -1,0 +1,9 @@
+{
+	"BalanceAddresses": ["0xFbb30BD8E9D779044c3c30dd82e52a5FA1573388"],
+	"BalReadAddress": "0xd7Bffc6B0649965c58D51e282b68B2f746084ECd",
+	"ReadCapID": "read-contract-evm-56@1.0.0",
+	"WriteCapID": "write_binance_smart_chain-mainnet@1.0.0",
+	"DeltaStage": "15s",
+	"TimeoutSec": 180,
+	"PorCacheAddress": "0x59B90307D8094579F68331A8ebC9dFe40f1aF1c8"
+}

@@ -1,22 +1,27 @@
 package readcontract
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math/big"
 	"strconv"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap/zapcore"
 
+	beholderpb "github.com/smartcontractkit/chainlink-common/pkg/beholder/pb"
 	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/pb"
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
+	"github.com/smartcontractkit/chainlink-common/pkg/utils/tests"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
+	kcr "github.com/smartcontractkit/chainlink-evm/gethwrappers/keystone/generated/capabilities_registry_1_1_0"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/framework"
-	"github.com/smartcontractkit/chainlink/v2/core/gethwrappers/keystone/generated/capabilities_registry"
-	"github.com/smartcontractkit/chainlink/v2/core/logger"
 	"github.com/smartcontractkit/chainlink/v2/core/services/registrysyncer"
 
 	"github.com/smartcontractkit/capabilities/integration_tests/readcontract/contract"
@@ -29,20 +34,48 @@ type ReadContractConfig struct {
 }
 
 func Test_RemoteReadCapabilityWithoutConsensus(t *testing.T) {
-	testRemoteReadContractCapability(t, false, "")
-}
-
-func testRemoteReadContractCapability(t *testing.T, withConsensus bool, pollingInterval string) {
-	ctx, cancel := framework.Context(t)
-	defer cancel()
-
-	lggr := logger.TestLogger(t)
-	lggr.SetLogLevel(zapcore.InfoLevel)
+	ctx := t.Context()
+	lggr := logger.Test(t)
 
 	defer func() {
-		utils.CleanupCapabilities(lggr)
+		utils.CleanupCapabilitiesDir(lggr)
 	}()
 
+	targetSink := readValueFromContractFunction(ctx, t, lggr, "GetValue", 4)
+
+	readresult := <-targetSink.Sink
+	require.NotNil(t, readresult)
+	require.Equal(t, CreateExpectedValue(t, []int64{21, 42, 63}), readresult.Inputs)
+}
+
+func Test_RemoteReadCapabilityMisconfiguredContractError(t *testing.T) {
+	beholderTester := tests.Beholder(t)
+
+	ctx := t.Context()
+	lggr := logger.Test(t)
+
+	defer func() {
+		utils.CleanupCapabilitiesDir(lggr)
+	}()
+
+	numOfWorkflowNodes := 4
+	readValueFromContractFunction(ctx, t, lggr, "GetValue2", numOfWorkflowNodes)
+	require.Eventually(t, func() bool {
+		beholderLogs := getBeholderLogsForStep(beholderTester, t, "abcdef0123", "action2")
+
+		var readContractCapabilityErrorMessages []*beholderpb.BaseMessage
+		for _, log := range beholderLogs {
+			if strings.Contains(log.Msg, "method GetValue2 doesn't exist") {
+				readContractCapabilityErrorMessages = append(readContractCapabilityErrorMessages, log)
+			}
+		}
+
+		return len(readContractCapabilityErrorMessages) == numOfWorkflowNodes
+	}, 10*time.Second, 100*time.Millisecond)
+}
+
+func readValueFromContractFunction(ctx context.Context, t *testing.T, lggr logger.Logger, contractFunc string,
+	numOfWorkflowNodes int) *framework.TargetSink {
 	donContext := framework.CreateDonContext(ctx, t)
 
 	address, _, _, err := contract.DeployContract(donContext.EthBlockchain.TransactionOpts(), donContext.EthBlockchain.Client())
@@ -51,10 +84,10 @@ func testRemoteReadContractCapability(t *testing.T, withConsensus bool, pollingI
 	readContractBinary, err := utils.DeployCapability(t, "readcontract")
 	require.NoError(t, err)
 
-	workflowDonConfiguration, err := framework.NewDonConfiguration(framework.NewDonConfigurationParams{Name: "Workflow", NumNodes: 7, F: 2, AcceptsWorkflows: true})
+	workflowDonConfiguration, err := framework.NewDonConfiguration(framework.NewDonConfigurationParams{Name: "Workflow", NumNodes: numOfWorkflowNodes, F: 1, AcceptsWorkflows: true})
 	require.NoError(t, err)
 
-	readCapabilityDonConfiguration, err := framework.NewDonConfiguration(framework.NewDonConfigurationParams{Name: "ReadCapability", NumNodes: 7, F: 2, AcceptsWorkflows: false})
+	readCapabilityDonConfiguration, err := framework.NewDonConfiguration(framework.NewDonConfigurationParams{Name: "ReadCapability", NumNodes: 4, F: 1, AcceptsWorkflows: false})
 	require.NoError(t, err)
 
 	triggerSink := framework.NewTriggerSink(t, "mock-trigger", "1.0.0")
@@ -62,11 +95,11 @@ func testRemoteReadContractCapability(t *testing.T, withConsensus bool, pollingI
 
 	workflowDon := framework.NewDON(ctx, t, lggr, workflowDonConfiguration,
 		[]commoncap.DON{readCapabilityDonConfiguration.DON},
-		donContext, true)
+		donContext, true, 1*time.Second)
 
 	readCapabilityDon := framework.NewDON(ctx, t, lggr, readCapabilityDonConfiguration,
 		[]commoncap.DON{},
-		donContext, true)
+		donContext, true, 1*time.Second)
 
 	// Note: it is expected that the workflow don always has an  at least one external capability, failure to do so will
 	// cause adding a node to the capability registry contract to fail - arguably a bug in the contract
@@ -79,7 +112,7 @@ func testRemoteReadContractCapability(t *testing.T, withConsensus bool, pollingI
 	require.NoError(t, err)
 
 	readCapabilityDon.AddPublishedStandardCapability("readcontract-capability", readContractBinary, readCapabilityConfig,
-		&pb.CapabilityConfig{}, capabilities_registry.CapabilitiesRegistryCapability{
+		&pb.CapabilityConfig{}, kcr.CapabilitiesRegistryCapability{
 			LabelledName:   fmt.Sprintf("read-contract-%s-%d", network, chainID),
 			Version:        "1.0.0",
 			CapabilityType: uint8(registrysyncer.ContractCapabilityTypeAction),
@@ -93,7 +126,7 @@ func testRemoteReadContractCapability(t *testing.T, withConsensus bool, pollingI
 	donContext.WaitForCapabilitiesToBeExposed(t, readCapabilityDon, workflowDon)
 
 	workflowJob := CreateWorkflowJobForTest(t, workflowName, workflowOwnerID, network, strconv.FormatUint(chainID, 10),
-		address.String(), "ValueSource", "GetValue", contract.ContractMetaData.ABI)
+		address.String(), "ValueSource", contractFunc, contract.ContractMetaData.ABI)
 
 	err = workflowDon.AddJob(ctx, &workflowJob)
 	require.NoError(t, err)
@@ -104,11 +137,17 @@ func testRemoteReadContractCapability(t *testing.T, withConsensus bool, pollingI
 	})
 	require.NoError(t, err)
 
-	triggerSink.SendOutput(contractReadActionParams)
+	triggerSink.SendOutput(contractReadActionParams, uuid.New().String())
+	return targetSink
+}
 
-	readresult := <-targetSink.Sink
-	require.NotNil(t, readresult)
-	require.Equal(t, CreateExpectedValue(t, []int64{21, 42, 63}), readresult.Inputs)
+func getBeholderLogsForStep(beholderTester tests.BeholderTester, t *testing.T, workflowName string, stepRef string) []*beholderpb.BaseMessage {
+	baseMessages, err := beholderTester.BaseMessagesForLabels(t, map[string]string{
+		"workflowName": workflowName,
+		"stepRef":      stepRef,
+	})
+	require.NoError(t, err)
+	return baseMessages
 }
 
 func CreateReadContractCapabilityConfig(chainID uint64, network string) (string, error) {
