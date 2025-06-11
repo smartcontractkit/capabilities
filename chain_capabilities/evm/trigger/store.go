@@ -21,12 +21,13 @@ type LogTriggerStore interface {
 	Read(triggerID string) (value logTriggerState, ok bool)
 	ReadAll() (values map[string]logTriggerState)
 	Write(triggerID string, value logTriggerState)
+	Update(triggerID string, lastBlock *big.Int) error
 	Delete(triggerID string)
 }
 
 var _ LogTriggerStore = (*logTriggerStore)(nil)
 
-func NewLogTriggerStore() *logTriggerStore {
+func NewLogTriggerStore() LogTriggerStore {
 	return &logTriggerStore{
 		triggers: map[string]logTriggerState{},
 	}

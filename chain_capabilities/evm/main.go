@@ -59,7 +59,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _
 	if err := json.Unmarshal([]byte(config), &cfg); err != nil {
 		return fmt.Errorf("failed to parse EVM capability config: %w", err)
 	}
-	if cfg.LogTriggerPollInterval <= minimalPollInterval {
+	if cfg.LogTriggerPollInterval < minimalPollInterval {
 		return fmt.Errorf("LogTriggerPollInterval must be at least %s, got: %s", minimalPollInterval, cfg.LogTriggerPollInterval)
 	}
 

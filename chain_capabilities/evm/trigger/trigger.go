@@ -26,11 +26,12 @@ const (
 type LogTriggerService struct {
 	EVMService             types.EVMService
 	lggr                   logger.Logger
-	triggers               *logTriggerStore
+	triggers               LogTriggerStore
 	logTriggerPollInterval time.Duration
 }
 
 // NewLogTriggerService creates a new instance of logTriggerService.
+// TODO PLEX-1465: the core logic of RegisterLogTrigger/UnregisterLogTrigger/Close/etc. should be moved to the EVMService, so it can be used by other services as well.
 func NewLogTriggerService(evmService types.EVMService, lggr logger.Logger, logTriggerPollInterval time.Duration) *LogTriggerService {
 	return &LogTriggerService{
 		EVMService:             evmService,
@@ -43,7 +44,9 @@ func NewLogTriggerService(evmService types.EVMService, lggr logger.Logger, logTr
 func (lts LogTriggerService) Close() error {
 	var errs []error
 	// Unregister all log triggers
-	ctx := context.Background() //TODO lautaro is this correct? I need the context for the logPoller
+	//ctx := context.Background() //TODO lautaro is this correct? I need the context for the logPoller
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
 	for triggerID := range lts.triggers.ReadAll() {
 		err := lts.UnregisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, nil)
 		if err != nil {
