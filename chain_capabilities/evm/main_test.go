@@ -103,6 +103,5 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 			_, exists = store.Read(triggerID)
 			assert.False(t, exists, "Trigger should not exist after close")
 		})
-
 	})
 }
