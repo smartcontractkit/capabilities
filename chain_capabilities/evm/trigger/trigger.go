@@ -44,7 +44,6 @@ func NewLogTriggerService(evmService types.EVMService, lggr logger.Logger, logTr
 func (lts LogTriggerService) Close() error {
 	var errs []error
 	// Unregister all log triggers
-	//ctx := context.Background() //TODO lautaro is this correct? I need the context for the logPoller
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	for triggerID := range lts.triggers.ReadAll() {
