@@ -6,13 +6,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/smartcontractkit/chain_capabilities/evm/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	relayermock "github.com/smartcontractkit/chainlink-common/pkg/types/core/mocks"
 	evmmock "github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
+	"github.com/smartcontractkit/chainlink-evm/pkg/testutils"
 )
 
 func TestCapabilityGRPCService_Initialise(t *testing.T) {
@@ -28,7 +31,7 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 	relayerSet.On("Get", mock.Anything, mock.Anything).Return(relayer, nil)
 
 	svc := &capabilityGRPCService{lggr: lggr}
-	cfg := Config{ChainID: 1337, Network: "testnet", LogTriggerPollInterval: 60 * time.Second}
+	cfg := Config{ChainID: 1337, Network: "testnet", LogTriggerPollInterval: 60 * time.Second, KeystoneForwarderAddress: common.Bytes2Hex(testutils.NewAddress().Bytes()), ReceiverGasMinimum: 1000}
 	cfgJSON, _ := json.Marshal(cfg)
 
 	err := svc.Initialise(context.Background(), string(cfgJSON),
@@ -51,7 +54,33 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 			relayerSet := relayermock.NewRelayerSet(t)
 			relayerSet.On("Get", mock.Anything, mock.Anything).Return(nil, assert.AnError)
 
-			cfgJSON, _ := json.Marshal(Config{ChainID: 1, Network: "net", LogTriggerPollInterval: 60 * time.Second})
+			cfgJSON, _ := json.Marshal(Config{ChainID: 1, Network: "net", LogTriggerPollInterval: 60 * time.Second, KeystoneForwarderAddress: common.Bytes2Hex(testutils.NewAddress().Bytes()), ReceiverGasMinimum: 1000})
+			cfgJSON, _ := json.Marshal(config.Config{ChainID: 1, Network: "net"})
+			svc := &capabilityGRPCService{lggr: lggr}
+
+			err := svc.Initialise(context.Background(), string(cfgJSON),
+				nil, nil, nil, nil, relayerSet, nil)
+			assert.ErrorIs(t, err, assert.AnError)
+		})
+	})
+	t.Run("Misconfiguration", func(t *testing.T) {
+		t.Run("No Keystone forwarder address provided", func(t *testing.T) {
+			relayerSet := relayermock.NewRelayerSet(t)
+			relayerSet.On("Get", mock.Anything, mock.Anything).Return(nil, assert.AnError)
+
+			cfgJSON, _ := json.Marshal(config.Config{ChainID: 1, Network: "net", ReceiverGasMinimum: 1000})
+			svc := &capabilityGRPCService{lggr: lggr}
+
+			err := svc.Initialise(context.Background(), string(cfgJSON),
+				nil, nil, nil, nil, relayerSet, nil)
+			assert.ErrorIs(t, err, assert.AnError)
+		})
+
+		t.Run("ReceiverGasConfig zero", func(t *testing.T) {
+			relayerSet := relayermock.NewRelayerSet(t)
+			relayerSet.On("Get", mock.Anything, mock.Anything).Return(nil, assert.AnError)
+
+			cfgJSON, _ := json.Marshal(config.Config{ChainID: 1, Network: "net", ReceiverGasMinimum: 1000})
 			svc := &capabilityGRPCService{lggr: lggr}
 
 			err := svc.Initialise(context.Background(), string(cfgJSON),
