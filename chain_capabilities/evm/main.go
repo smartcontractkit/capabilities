@@ -6,11 +6,18 @@ import (
 	"fmt"
 
 	"github.com/smartcontractkit/chain_capabilities/evm/actions"
+	"github.com/smartcontractkit/chain_capabilities/evm/config"
 
+	"math/big"
+	"sync"
+	"time"
+
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	evmcapserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm/server"
+	"github.com/smartcontractkit/chainlink-common/pkg/custmsg"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -21,15 +28,23 @@ const (
 	CapabilityName = "evm"
 )
 
-type Config struct {
-	ChainID uint64 `json:"chainId"`
-	Network string `json:"network"`
+type logTriggerState struct {
+	cancelFunc context.CancelFunc
+	lastBlock  *big.Int
 }
 
 type capabilityGRPCService struct {
 	capabilities.CapabilityInfo
 	capability
+	//TODO we need to set this app
+	emitter custmsg.MessageEmitter
+
 	lggr logger.Logger
+
+	mutexCapabilityTriggers sync.RWMutex
+	triggers                map[string]*logTriggerState // key: triggerID
+	logTriggerPollInterval  time.Duration
+	blockDepth              int64
 }
 
 type capability struct {
@@ -44,11 +59,11 @@ func main() {
 	})
 }
 
-func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _ core.TelemetryService, _ core.KeyValueStore, _ core.ErrorLog, _ core.PipelineRunnerService, relayerSet core.RelayerSet, _ core.OracleFactory) error {
+func (c *capabilityGRPCService) Initialise(ctx context.Context, cfgstr string, _ core.TelemetryService, _ core.KeyValueStore, _ core.ErrorLog, _ core.PipelineRunnerService, relayerSet core.RelayerSet, _ core.OracleFactory) error {
 	c.lggr.Infof("Initialising %s", CapabilityName)
 
-	var cfg Config
-	if err := json.Unmarshal([]byte(config), &cfg); err != nil {
+	var cfg config.Config
+	if err := json.Unmarshal([]byte(cfgstr), &cfg); err != nil {
 		return fmt.Errorf("failed to parse EVM capability config: %w", err)
 	}
 
@@ -64,8 +79,21 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
 
-	c.capability = capability{EVM: actions.NewEVM(evmRelayer)}
+	if len(common.Hex2Bytes(cfg.KeystoneForwarderAddress)) != 20 {
+		return fmt.Errorf("invalid keystone forward address, it does not have 20 characters: %s", cfg.KeystoneForwarderAddress)
+	}
 
+	if cfg.ReceiverGasMinimum == 0 {
+		return fmt.Errorf("invalid ReceiverGasMinimum value. It must be greater than 0. Provided ReceiverGasMinimum %d", cfg.ReceiverGasMinimum)
+	}
+
+	evm, err := actions.NewEVM(cfg, evmRelayer, c.lggr)
+	if err != nil {
+		return err
+	}
+	c.capability = capability{evm}
+	c.logTriggerPollInterval = cfg.LogTriggerPollInterval
+	c.blockDepth = cfg.BlockDepth
 	c.lggr.Infof("Successfully initialised %s", CapabilityName)
 
 	return nil

@@ -6,7 +6,12 @@ import (
 
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/smartcontractkit/chain_capabilities/evm/config"
+	"github.com/smartcontractkit/chain_capabilities/evm/contracts"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	chaincommonpb "github.com/smartcontractkit/chainlink-common/pkg/loop/chain-common"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -16,10 +21,19 @@ import (
 
 type EVM struct {
 	types.EVMService
+	keystoneForwarderAddress common.Address
+	forwarderClient          contracts.KeystoneForwarderClient
+	lggr logger.Logger
+	ReceiverGasMinimum       uint64
 }
 
-func NewEVM(evmService types.EVMService) EVM {
-	return EVM{EVMService: evmService}
+func NewEVM(cfg config.Config, evmService types.EVMService, logger logger.Logger) (EVM, error) {
+	keystoneForwarderAddress := common.HexToAddress(cfg.KeystoneForwarderAddress) 
+	kfc, err := contracts.NewKeystoneForwarderClient(evmService, keystoneForwarderAddress, logger)
+	if err != nil {
+		return EVM{}, err
+	}
+	return EVM{EVMService: evmService, keystoneForwarderAddress: keystoneForwarderAddress, ReceiverGasMinimum: cfg.ReceiverGasMinimum, lggr: logger, forwarderClient: kfc}, nil
 }
 
 // TODO finalise the signature PLEX-1482
