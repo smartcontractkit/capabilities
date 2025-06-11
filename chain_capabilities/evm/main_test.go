@@ -73,6 +73,7 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 			evmSvc.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
 			evmSvc.On("UnregisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
 
+			lggr := logger.Nop() //making sure it doesn't panic when logging in the thread
 			svc := &capabilityGRPCService{lggr: lggr}
 			cfg := Config{ChainID: 1337, Network: "testnet", LogTriggerPollInterval: 60 * time.Second}
 			cfgJSON, _ := json.Marshal(cfg)
@@ -97,6 +98,7 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 
 			err = svc.Close()
 			assert.NoError(t, err)
+			cancel()
 
 			_, exists = store.Read(triggerID)
 			assert.False(t, exists, "Trigger should not exist after close")
