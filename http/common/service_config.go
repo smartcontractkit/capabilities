@@ -3,6 +3,7 @@ package common
 import "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 
 // ServiceConfig defines the configuration for the HTTP Actions service.
+// TODO: move this out of common
 type ServiceConfig struct {
 	// RateLimiter configuration for messages incoming to this node from the gateway.
 	// The sender is a Gateway node, which is identified by the Gateway ID.

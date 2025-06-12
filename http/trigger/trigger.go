@@ -9,6 +9,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
@@ -20,6 +21,12 @@ var _ server.HTTPCapability = &service{}
 
 type ServiceConfig struct {
 	SendChannelBufferSize uint32 `json:"sendChannelBufferSize"`
+	// RateLimiter configuration for messages incoming to this node from the gateway.
+	// The sender is a Gateway node, which is identified by the Gateway ID.
+	RateLimiter gateway.RateLimiterConfig `toml:"incomingRateLimiter" json:"incomingRateLimiter" yaml:"incomingRateLimiter" mapstructure:"incomingRateLimiter"`
+	// OutgoingRateLimiter is the configuration for outgoing messages from this node to the gateway.
+	// The sender is a workflow owner
+	OutgoingRateLimiter gateway.RateLimiterConfig `toml:"outgoingRateLimiter" json:"outgoingRateLimiter" yaml:"outgoingRateLimiter" mapstructure:"outgoingRateLimiter"`
 }
 
 type service struct {
@@ -54,7 +61,10 @@ func (s *service) Initialise(
 		return err
 	}
 	s.cfg = serviceConfig
-	s.requestHandler = NewRequestHandler(s.lggr, gc, serviceConfig)
+	s.requestHandler, err = NewRequestHandler(s.lggr, gc, serviceConfig)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 

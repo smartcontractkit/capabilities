@@ -4,6 +4,8 @@ go 1.24.2
 
 toolchain go1.24.3
 
+replace github.com/smartcontractkit/chainlink-common => ../../chainlink-common
+
 require (
 	github.com/google/uuid v1.6.0
 	github.com/pelletier/go-toml v1.9.5
