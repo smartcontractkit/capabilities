@@ -73,7 +73,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 		evmService.On("LatestAndFinalizedHead", mock.Anything).Return(evmtypes.Head{}, evmtypes.Head{}, nil)
 		evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
 		service := &LogTriggerService{
-			lggr:                   lggr,
+			lggr:                   logger.Nop(),
 			logTriggerPollInterval: pollInterval,
 			triggers:               NewLogTriggerStore(),
 			EVMService:             evmService,
