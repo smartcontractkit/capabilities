@@ -148,13 +148,8 @@ func (lts LogTriggerService) startPolling(ctx context.Context, triggerID string,
 				//TODO PLEX-1457: should we sent an error to some o11y place?
 				continue
 			}
-			lts.lggr.Debugf("Got %d logs, sending it to the workflow trigger ID: %s", len(logs), triggerID)
-			for _, log := range logs {
-				logCh <- capabilities.TriggerAndId[*evmservice.Log]{
-					Id:      lts.generateLogIdentifier(log),
-					Trigger: log,
-				}
-			}
+			lts.sendLogsToWorkflows(logs, triggerID, logCh)
+
 			lts.lggr.Debugf("Finished sending events for triggerID: %s, about to update latest block number (current BlockNumber:BlockNumber %d)", triggerID, state.lastBlock)
 			calculatedLatestBlock := lts.getLatestBlockNumber(logs, state.lastBlock)
 			err = lts.triggers.Update(triggerID, calculatedLatestBlock)
@@ -165,6 +160,26 @@ func (lts LogTriggerService) startPolling(ctx context.Context, triggerID string,
 			}
 			lts.lggr.Debugf("Finished updating BlockNumber for triggerID: %s, BlockNumber: %d", triggerID, calculatedLatestBlock)
 		}
+	}
+}
+
+func (lts LogTriggerService) sendLogsToWorkflows(logs []*evmservice.Log, triggerID string, logCh chan capabilities.TriggerAndId[*evmservice.Log]) {
+	lts.lggr.Debugf("Got %d logs, sending it to the workflow trigger ID: %s", len(logs), triggerID)
+	for _, log := range logs {
+		response := lts.createTriggerResponse(log)
+		select {
+		case logCh <- response:
+		default:
+			lts.lggr.Errorw("Callback channel full, dropping event", "triggerID", triggerID, "eventID", response.Id)
+			//TODO PLEX-1457: should we sent an error to some o11y place?
+		}
+	}
+}
+
+func (lts LogTriggerService) createTriggerResponse(log *evmservice.Log) capabilities.TriggerAndId[*evmservice.Log] {
+	return capabilities.TriggerAndId[*evmservice.Log]{
+		Id:      lts.generateLogIdentifier(log),
+		Trigger: log,
 	}
 }
 

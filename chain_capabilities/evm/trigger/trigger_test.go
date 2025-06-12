@@ -38,25 +38,10 @@ var (
 	}
 	eventSignatures = [][]byte{eventSig0Example}
 
-	triggerID         = "trigger-1"
-	breakingTriggerID = "breaking-logTriggerUnregister"
-
-	parentHash = evmtypes.Hash{01, 33, 44}
-	blockHash  = evmtypes.Hash{22, 33, 44}
-
-	latestExpHead = evmtypes.Head{
-		Number:     big.NewInt(30),
-		Hash:       blockHash,
-		ParentHash: parentHash,
-		Timestamp:  5,
-	}
-	finalizedExpHead = evmtypes.Head{
-		Number:     big.NewInt(25),
-		Hash:       blockHash,
-		ParentHash: parentHash,
-		Timestamp:  10,
-	}
-	pollInterval = 10 * time.Millisecond
+	triggerID        = "trigger-1"
+	latestExpHead    = evmtypes.Head{Number: big.NewInt(30)}
+	finalizedExpHead = evmtypes.Head{Number: big.NewInt(25)}
+	pollInterval     = 10 * time.Millisecond
 )
 
 func initMocks(t *testing.T) *evmmock.EVMService {
@@ -185,6 +170,7 @@ func TestUnregisterLogTrigger_InputValidation(t *testing.T) {
 	})
 
 	t.Run("fail to unregister log-tracking", func(t *testing.T) {
+		breakingTriggerID := "breaking-logTriggerUnregister"
 		evmService := initMocks(t)
 		evmService.On("UnregisterLogTracking", mock.Anything, mock.Anything).Return(errors.New("mocking error, making unregister failing on purpose")).Once()
 		service := &LogTriggerService{
@@ -395,6 +381,70 @@ func TestGetLatestBlockNumber(t *testing.T) {
 	})
 }
 
+func TestSendLogsToWorkflows(t *testing.T) {
+	lggr := logger.Test(t)
+	service := &LogTriggerService{
+		lggr: lggr,
+	}
+	expectedLog1 := &evmservice.Log{
+		TxHash:    []byte("txhash1"),
+		BlockHash: []byte("blockhash1"),
+		Index:     1,
+	}
+	expectedLog2 := &evmservice.Log{
+		TxHash:    []byte("txhash2"),
+		BlockHash: []byte("blockhash2"),
+		Index:     2,
+	}
+	expectedLogs := []*evmservice.Log{expectedLog1, expectedLog2}
+
+	t.Run("all logs are sent to the channel", func(t *testing.T) {
+		logCh := make(chan capabilities.TriggerAndId[*evmservice.Log], len(expectedLogs))
+
+		service.sendLogsToWorkflows(expectedLogs, triggerID, logCh)
+		require.Len(t, logCh, len(expectedLogs))
+		actualLog1 := <-logCh
+		require.Equal(t, service.createTriggerResponse(expectedLog1), actualLog1)
+		actualLog2 := <-logCh
+		require.Equal(t, service.createTriggerResponse(expectedLog2), actualLog2)
+		select {
+		case msg := <-logCh:
+			t.Fatalf("unexpected message received: %+v", msg)
+		default:
+			// no message received, as expected
+		}
+	})
+
+	t.Run("first log sent to channel second log dropped out due to timeout", func(t *testing.T) {
+		logCh := make(chan capabilities.TriggerAndId[*evmservice.Log], 1) // buffer size of 1, so it can only hold one log at a time
+
+		service.sendLogsToWorkflows(expectedLogs, triggerID, logCh)
+		require.Len(t, logCh, 1)
+
+		actualLog1 := <-logCh
+		require.Equal(t, service.createTriggerResponse(expectedLog1), actualLog1)
+		select {
+		case msg := <-logCh:
+			t.Fatalf("unexpected message received: %+v", msg)
+		default:
+			// no message received, as expected
+		}
+	})
+}
+
+func TestCreateTriggerResponse(t *testing.T) {
+	service := &LogTriggerService{}
+	log := &evmservice.Log{
+		TxHash:    []byte("txhash"),
+		BlockHash: []byte("blockhash"),
+		Index:     1,
+	}
+	expectedID := service.generateLogIdentifier(log)
+	actual := service.createTriggerResponse(log)
+	require.Equal(t, expectedID, actual.Id)
+	require.Equal(t, log, actual.Trigger)
+}
+
 func TestIntegration_RegisterAndUnregisterLogTrigger(t *testing.T) {
 	lggr := logger.Test(t)
 	evmService := initMocks(t)
@@ -481,7 +531,7 @@ func TestIntegration_RegisterAndUnregisterLogTrigger(t *testing.T) {
 func createLog(number *big.Int, address evmtypes.Address, message []byte) *evmtypes.Log {
 	return &evmtypes.Log{
 		LogIndex:    0,
-		BlockHash:   blockHash,
+		BlockHash:   evmtypes.Hash{22, 33, 44},
 		BlockNumber: number,
 		Topics:      []evmtypes.Hash{},
 		EventSig:    [32]byte{},
