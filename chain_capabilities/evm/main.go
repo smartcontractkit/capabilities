@@ -23,8 +23,7 @@ import (
 )
 
 const (
-	CapabilityName      = "evm"
-	minimalPollInterval = 10 * time.Second // Minimum poll interval for log triggers
+	CapabilityName = "evm"
 )
 
 type Config struct {
@@ -59,8 +58,8 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _
 	if err := json.Unmarshal([]byte(config), &cfg); err != nil {
 		return fmt.Errorf("failed to parse EVM capability config: %w", err)
 	}
-	if cfg.LogTriggerPollInterval < minimalPollInterval {
-		return fmt.Errorf("LogTriggerPollInterval must be at least %s, got: %s", minimalPollInterval, cfg.LogTriggerPollInterval)
+	if cfg.LogTriggerPollInterval < 0 {
+		return fmt.Errorf("LogTriggerPollInterval must be positive, got: %s", cfg.LogTriggerPollInterval)
 	}
 
 	relayID := types.NewRelayID(cfg.Network, fmt.Sprintf("%d", cfg.ChainID))

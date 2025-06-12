@@ -52,7 +52,6 @@ func (lts LogTriggerService) Close() error {
 			errs = append(errs, fmt.Errorf("failed to unregister log trigger %s: %w", triggerID, err))
 		}
 	}
-	//TODO PLEX-1487: make sure to cancel all working log triggers, and unregister them from the logPoller
 	if len(errs) > 0 {
 		return fmt.Errorf("errors occurred during Close: %v", errs)
 	}
@@ -134,6 +133,7 @@ func (lts LogTriggerService) startPolling(ctx context.Context, triggerID string,
 	for {
 		select {
 		case <-ctx.Done():
+			lts.lggr.Debugf("Context cancelled for triggerID: %s, stopping polling", triggerID)
 			return
 		case <-ticker.Channel():
 			state, exists := lts.triggers.Read(triggerID)

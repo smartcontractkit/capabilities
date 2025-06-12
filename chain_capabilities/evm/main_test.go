@@ -48,10 +48,10 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 			assert.ErrorContains(t, err, "failed to parse")
 		})
 		t.Run("bad-interval", func(t *testing.T) {
-			cfgJSON, _ := json.Marshal(Config{ChainID: 1, Network: "net", LogTriggerPollInterval: 1})
+			cfgJSON, _ := json.Marshal(Config{ChainID: 1, Network: "net", LogTriggerPollInterval: -1})
 			svc := &capabilityGRPCService{lggr: lggr}
 			err := svc.Initialise(context.Background(), string(cfgJSON), nil, nil, nil, nil, nil, nil)
-			assert.ErrorContains(t, err, "LogTriggerPollInterval must be at least 10s, got: 1ns")
+			assert.ErrorContains(t, err, "LogTriggerPollInterval must be positive, got: -1ns")
 		})
 		t.Run("relayerSet error", func(t *testing.T) {
 			relayerSet := relayermock.NewRelayerSet(t)

@@ -17,6 +17,7 @@ type logTriggerStore struct {
 	triggers map[string]logTriggerState
 }
 
+// LogTriggerStore is an interface for managing locking/unlocking of log triggers, and it also allows to inject it from a test context.
 type LogTriggerStore interface {
 	Read(triggerID string) (value logTriggerState, ok bool)
 	ReadAll() (values map[string]logTriggerState)
