@@ -40,6 +40,7 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 		lggr:                   lggr,
 		triggers:               store,
 		logTriggerPollInterval: logTriggerPollInterval,
+		wg:                     sync.WaitGroup{},
 	}
 }
 
@@ -102,6 +103,7 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 		cancelFunc: cancel,
 		lastBlock:  fromBlock,
 	})
+	lts.wg.Add(1)
 	go lts.startPolling(subCtx, triggerID, input, logCh)
 
 	return logCh, nil
@@ -131,7 +133,6 @@ func (lts *LogTriggerService) generateFilterID(triggerID string) string {
 }
 
 func (lts *LogTriggerService) startPolling(ctx context.Context, triggerID string, input *evmcappb.FilterLogTriggerRequest, logCh chan capabilities.TriggerAndId[*evmservice.Log]) {
-	lts.wg.Add(1)
 	defer lts.wg.Done() // Decrement when done
 
 	lts.lggr.Debugf("Starting polling for triggerID: %s, interval: %d", triggerID, lts.logTriggerPollInterval)
