@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"sync"
 	"time"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -26,6 +27,7 @@ const (
 type LogTriggerService struct {
 	EVMService             types.EVMService
 	lggr                   logger.Logger
+	wg                     sync.WaitGroup
 	triggers               LogTriggerStore
 	logTriggerPollInterval time.Duration
 }
@@ -41,12 +43,16 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 	}
 }
 
-func (lts LogTriggerService) Close() error {
-	var errs []error
+func (lts *LogTriggerService) Close() error {
+	lts.lggr.Debug("Closing LogTriggerService")
+	// wait for all polling goroutines to finish
+	lts.wg.Wait()
 	// Unregister all log triggers
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
+	var errs []error
 	for triggerID := range lts.triggers.ReadAll() {
+		lts.lggr.Debugf("Closing triggerID: %s", triggerID)
 		err := lts.UnregisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, nil)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("failed to unregister log trigger %s: %w", triggerID, err))
@@ -58,7 +64,7 @@ func (lts LogTriggerService) Close() error {
 	return nil
 }
 
-func (lts LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID string, _ capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*evmservice.Log], error) {
+func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID string, _ capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*evmservice.Log], error) {
 	if triggerID == "" {
 		return nil, fmt.Errorf("no triggerID provided")
 	}
@@ -101,7 +107,7 @@ func (lts LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID s
 	return logCh, nil
 }
 
-func (lts LogTriggerService) calculateFromBlock(ctx context.Context, triggerID string, input *evmcappb.FilterLogTriggerRequest) (*big.Int, error) {
+func (lts *LogTriggerService) calculateFromBlock(ctx context.Context, triggerID string, input *evmcappb.FilterLogTriggerRequest) (*big.Int, error) {
 	var fromBlock *big.Int
 	latest, finalized, err := lts.EVMService.LatestAndFinalizedHead(ctx)
 	if err != nil {
@@ -120,11 +126,14 @@ func (lts LogTriggerService) calculateFromBlock(ctx context.Context, triggerID s
 	return fromBlock, nil
 }
 
-func (lts LogTriggerService) generateFilterID(triggerID string) string {
+func (lts *LogTriggerService) generateFilterID(triggerID string) string {
 	return triggerID + suffixLogTriggerFilterID
 }
 
-func (lts LogTriggerService) startPolling(ctx context.Context, triggerID string, input *evmcappb.FilterLogTriggerRequest, logCh chan capabilities.TriggerAndId[*evmservice.Log]) {
+func (lts *LogTriggerService) startPolling(ctx context.Context, triggerID string, input *evmcappb.FilterLogTriggerRequest, logCh chan capabilities.TriggerAndId[*evmservice.Log]) {
+	lts.wg.Add(1)
+	defer lts.wg.Done() // Decrement when done
+
 	lts.lggr.Debugf("Starting polling for triggerID: %s, interval: %d", triggerID, lts.logTriggerPollInterval)
 	ticker := defaultTickerFactory.NewTicker(lts.logTriggerPollInterval)
 	defer ticker.Stop()
@@ -163,7 +172,7 @@ func (lts LogTriggerService) startPolling(ctx context.Context, triggerID string,
 	}
 }
 
-func (lts LogTriggerService) sendLogsToWorkflows(logs []*evmservice.Log, triggerID string, logCh chan capabilities.TriggerAndId[*evmservice.Log]) {
+func (lts *LogTriggerService) sendLogsToWorkflows(logs []*evmservice.Log, triggerID string, logCh chan capabilities.TriggerAndId[*evmservice.Log]) {
 	lts.lggr.Debugf("Got %d logs, sending it to the workflow trigger ID: %s", len(logs), triggerID)
 	for _, log := range logs {
 		response := lts.createTriggerResponse(log)
@@ -176,18 +185,18 @@ func (lts LogTriggerService) sendLogsToWorkflows(logs []*evmservice.Log, trigger
 	}
 }
 
-func (lts LogTriggerService) createTriggerResponse(log *evmservice.Log) capabilities.TriggerAndId[*evmservice.Log] {
+func (lts *LogTriggerService) createTriggerResponse(log *evmservice.Log) capabilities.TriggerAndId[*evmservice.Log] {
 	return capabilities.TriggerAndId[*evmservice.Log]{
 		Id:      lts.generateLogIdentifier(log),
 		Trigger: log,
 	}
 }
 
-func (lts LogTriggerService) generateLogIdentifier(log *evmservice.Log) string {
+func (lts *LogTriggerService) generateLogIdentifier(log *evmservice.Log) string {
 	return fmt.Sprintf("%s:%s:%d", log.GetTxHash(), log.GetBlockHash(), log.GetIndex())
 }
 
-func (lts LogTriggerService) getLatestBlockNumber(logs []*evmservice.Log, currentBlockNumber *big.Int) *big.Int {
+func (lts *LogTriggerService) getLatestBlockNumber(logs []*evmservice.Log, currentBlockNumber *big.Int) *big.Int {
 	for _, l := range logs {
 		// it has to iterate over all logs to update the last block number, as it could be multiple addresses with different block numbers among them
 		blockNumber := new(big.Int).SetBytes(l.BlockNumber.AbsVal)
@@ -198,7 +207,7 @@ func (lts LogTriggerService) getLatestBlockNumber(logs []*evmservice.Log, curren
 	return currentBlockNumber
 }
 
-func (lts LogTriggerService) fetchLogsFromLogPoller(ctx context.Context, input *evmcappb.FilterLogTriggerRequest, fromBlock *big.Int) ([]*evmservice.Log, error) {
+func (lts *LogTriggerService) fetchLogsFromLogPoller(ctx context.Context, input *evmcappb.FilterLogTriggerRequest, fromBlock *big.Int) ([]*evmservice.Log, error) {
 	expressions, limitAndSort, confidence, err := lts.createLogRequest(ctx, input, fromBlock)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create log request: %w", err)
@@ -210,7 +219,7 @@ func (lts LogTriggerService) fetchLogsFromLogPoller(ctx context.Context, input *
 	return evmservice.ConvertLogsToProto(logs), nil
 }
 
-func (lts LogTriggerService) createLogRequest(ctx context.Context, input *evmcappb.FilterLogTriggerRequest, fromBlock *big.Int) ([]query.Expression, query.LimitAndSort, primitives.ConfidenceLevel, error) {
+func (lts *LogTriggerService) createLogRequest(ctx context.Context, input *evmcappb.FilterLogTriggerRequest, fromBlock *big.Int) ([]query.Expression, query.LimitAndSort, primitives.ConfidenceLevel, error) {
 	var expressions []query.Expression
 
 	var addressFilters []query.Expression
@@ -260,7 +269,7 @@ func (lts LogTriggerService) createLogRequest(ctx context.Context, input *evmcap
 	return expressions, limitAndSort, confidenceLevel, nil
 }
 
-func (lts LogTriggerService) makeEventByTopicFilter(topic uint64, topics [][]byte) *query.Expression {
+func (lts *LogTriggerService) makeEventByTopicFilter(topic uint64, topics [][]byte) *query.Expression {
 	if len(topics) == 0 {
 		return nil
 	}
@@ -275,7 +284,7 @@ func (lts LogTriggerService) makeEventByTopicFilter(topic uint64, topics [][]byt
 	return &expr
 }
 
-func (lts LogTriggerService) UnregisterLogTrigger(ctx context.Context, triggerID string, _ capabilities.RequestMetadata, _ *evmcappb.FilterLogTriggerRequest) error {
+func (lts *LogTriggerService) UnregisterLogTrigger(ctx context.Context, triggerID string, _ capabilities.RequestMetadata, _ *evmcappb.FilterLogTriggerRequest) error {
 	if triggerID == "" {
 		return fmt.Errorf("no triggerID provided")
 	}

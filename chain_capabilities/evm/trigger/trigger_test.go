@@ -50,6 +50,167 @@ func initMocks(t *testing.T) *evmmock.EVMService {
 	return evmSvc
 }
 
+func TestLogTriggerService_Close_WaitsForPollingGoroutine(t *testing.T) {
+
+	t.Run("close awaits on syncGroup to finalize", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		lggr := logger.Test(t)
+		evmService := initMocks(t)
+		evmService.On("LatestAndFinalizedHead", mock.Anything).Return(latestExpHead, finalizedExpHead, nil)
+		evmService.On("QueryTrackedLogs", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]*evmtypes.Log{}, nil)
+		evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
+		evmService.On("UnregisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
+		store := NewLogTriggerStore()
+		service := &LogTriggerService{
+			lggr:                   lggr,
+			logTriggerPollInterval: 10 * time.Millisecond,
+			triggers:               store,
+			EVMService:             evmService,
+		}
+		ch, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
+			Addresses: addresses,
+			EventSigs: eventSignatures,
+		})
+		require.NoError(t, err)
+		require.NotNil(t, ch)
+		_, exists := store.Read(triggerID)
+		require.True(t, exists)
+
+		// Wait a bit to ensure polling goroutine is running
+		time.Sleep(100 * time.Millisecond)
+
+		done := make(chan struct{})
+		go func() {
+			require.NoError(t, service.Close())
+			close(done)
+		}()
+
+		// Unregister to allow polling goroutine to exit
+		err = service.UnregisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{})
+		require.NoError(t, err)
+		_, exists = store.Read(triggerID)
+		require.False(t, exists)
+
+		select {
+		case <-done:
+			// Success: Close() returned after goroutine finished
+		case <-time.After(1 * time.Second):
+			t.Fatal("Close() did not return in time, likely did not wait for goroutine startPolling() to finish")
+		}
+	})
+
+	t.Run("close cleans up broken state", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		lggr := logger.Test(t)
+		evmService := initMocks(t)
+		evmService.On("LatestAndFinalizedHead", mock.Anything).Return(latestExpHead, finalizedExpHead, nil)
+		//evmService.On("QueryTrackedLogs", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]*evmtypes.Log{}, nil)
+		evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
+		evmService.On("UnregisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
+		store := NewLogTriggerStore()
+		service := &LogTriggerService{
+			lggr:                   lggr,
+			logTriggerPollInterval: 10 * time.Millisecond,
+			triggers:               store,
+			EVMService:             evmService,
+		}
+		ch, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
+			Addresses: addresses,
+			EventSigs: eventSignatures,
+		})
+		require.NoError(t, err)
+		require.NotNil(t, ch)
+		trigger, exists := store.Read(triggerID)
+		require.True(t, exists)
+
+		// Simulate a broken state by cancelling the trigger's cancelFunc so that the Close() clean up can handle it
+		trigger.cancelFunc()
+
+		done := make(chan struct{})
+		go func() {
+			require.NoError(t, service.Close())
+			close(done)
+		}()
+
+		// Wait a bit to ensure polling goroutine is running
+		time.Sleep(100 * time.Millisecond)
+
+		// Unregister to allow polling goroutine to exit
+		err = service.UnregisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{})
+		require.Error(t, err)
+		require.ErrorContains(t, err, "no active trigger found for triggerID: trigger-1")
+		_, exists = store.Read(triggerID)
+		require.False(t, exists)
+
+		select {
+		case <-done:
+			// Success: Close() returned after goroutine finished
+		case <-time.After(1 * time.Second):
+			t.Fatal("Close() did not return in time, likely did not wait for goroutine startPolling() to finish")
+		}
+	})
+
+	t.Run("close reports an error accordingly", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		lggr := logger.Test(t)
+		evmService := initMocks(t)
+		evmService.On("LatestAndFinalizedHead", mock.Anything).Return(latestExpHead, finalizedExpHead, nil)
+		//evmService.On("QueryTrackedLogs", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]*evmtypes.Log{}, nil)
+		evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
+		evmService.On("UnregisterLogTracking", mock.Anything, mock.Anything).Return(errors.New("mocked failure error")).Once()
+		store := NewLogTriggerStore()
+		service := &LogTriggerService{
+			lggr:                   lggr,
+			logTriggerPollInterval: 10 * time.Millisecond,
+			triggers:               store,
+			EVMService:             evmService,
+		}
+		ch, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
+			Addresses: addresses,
+			EventSigs: eventSignatures,
+		})
+		require.NoError(t, err)
+		require.NotNil(t, ch)
+		trigger, exists := store.Read(triggerID)
+		require.True(t, exists)
+
+		done := make(chan struct{})
+		go func() {
+			require.ErrorContains(t,
+				service.Close(),
+				"errors occurred during Close: [failed to unregister log trigger trigger-1: failed to unregister log-tracking: 'mocked failure error' for triggerID: trigger-1]")
+			close(done)
+		}()
+
+		// Simulate a broken state by cancelling the trigger's cancelFunc so that the Close() clean up can handle it
+		trigger.cancelFunc()
+		// Wait a bit to ensure polling goroutine is running
+		time.Sleep(100 * time.Millisecond)
+		msg := <-ch
+		lggr.Debugf("msg: %+v", msg)
+		require.Equal(t, msg, capabilities.TriggerAndId[*evmservice.Log]{Trigger: nil, Id: ""})
+
+		// Unregister to allow polling goroutine to exit
+		err = service.UnregisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{})
+		require.Error(t, err)
+		require.ErrorContains(t, err, "no active trigger found for triggerID: trigger-1")
+		<-done // Wait for Close() to finish before checking the store
+
+		_, exists = store.Read(triggerID)
+		require.False(t, exists)
+
+		select {
+		case <-done:
+			// Success: Close() returned after goroutine finished
+		case <-time.After(1 * time.Second):
+			t.Fatal("Close() did not return in time, likely did not wait for goroutine startPolling() to finish")
+		}
+	})
+}
+
 // testing all the input parameters and some minor validations
 func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -69,22 +230,15 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 	})
 
 	t.Run("already registered triggerID", func(t *testing.T) {
-		evmService := initMocks(t)
-		evmService.On("LatestAndFinalizedHead", mock.Anything).Return(evmtypes.Head{}, evmtypes.Head{}, nil)
-		evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
+		store := NewLogTriggerStore()
 		service := &LogTriggerService{
-			lggr:                   logger.Nop(),
+			lggr:                   lggr,
 			logTriggerPollInterval: pollInterval,
-			triggers:               NewLogTriggerStore(),
-			EVMService:             evmService,
+			triggers:               store,
 		}
+		//we simulate a RegisterLogTrigger() by tampering the store
+		store.Write(triggerID, logTriggerState{})
 		_, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
-			Addresses: addresses,
-			EventSigs: eventSignatures,
-		})
-		require.NoError(t, err)
-
-		_, err = service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
 		})
 		require.Error(t, err)
@@ -160,7 +314,7 @@ func TestUnregisterLogTrigger_InputValidation(t *testing.T) {
 		require.Equal(t, err.Error(), "no triggerID provided")
 	})
 
-	t.Run("already registered triggerID", func(t *testing.T) {
+	t.Run("no active trigger found", func(t *testing.T) {
 		service := &LogTriggerService{
 			triggers: NewLogTriggerStore(),
 		}
