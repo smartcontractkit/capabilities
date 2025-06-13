@@ -15,5 +15,3 @@ func (c *capability) UnregisterTrigger(_ context.Context, _ capabilities.Trigger
 	//TODO implement me
 	panic("implement me")
 }
-
-const suffixLogTriggerFilterID = "-log-trigger"
