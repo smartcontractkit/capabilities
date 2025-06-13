@@ -44,29 +44,6 @@ func TestKeystoneForwarderClient_GetTransmissionInfo(t *testing.T) {
 		}
 		output := testEncoder.encodeTransmissionInfo(expectedTransmissionInfo)
 
-		// tInfo := contracts.TransmissionInfo{}
-		// err := forwarderABI.UnpackIntoInterface(&tInfo, "getTransmissionInfo", output)
-
-		// values, err := forwarderABI.Methods["getTransmissionInfo"].Outputs.UnpackValues(output)
-		// if err != nil {
-		// 	require.NoError(t, err)
-		// }
-
-		// value := values[0]
-		// // CopyStruct(&tInfo, &value)
-		// fmt.Printf("%+v\n", value)
-		// bytes, err := json.MarshalIndent(value, "", "  ")
-		// if err != nil {
-		// 	panic(err)
-		// }
-		// fmt.Println(string(bytes))
-		// fmt.Println(reflect.TypeOf(value))
-		// json.Unmarshal(bytes, &tInfo)
-		// tuple, ok := value.([]interface{})
-		// if !ok {
-		// 	t.Fail()
-		// }
-
 		transmissionID := contracts.TransmissionID{
 			Receiver:            common.BytesToAddress(test.RandomBytes(20)),
 			ReportID:            [2]byte(test.RandomBytes(2)),
@@ -133,7 +110,6 @@ func TestKeystoneForwarderClient_InvokeOnReport(t *testing.T) {
 	defer cancel()
 	testLogger := logger.Test(t)
 	forwarderAddress := common.BytesToAddress(test.RandomBytes(20))
-	// transmitterAddress := common.BytesToAddress(test.RandomBytes(20))
 	receiverAddress := common.BytesToAddress(test.RandomBytes(20))
 	forwarderABI, _ := forwarder.KeystoneForwarderMetaData.GetAbi()
 	testEncoder := TestEncoder{abi: *forwarderABI}
