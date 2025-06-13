@@ -43,7 +43,7 @@ type Config struct {
 type capabilityGRPCService struct {
 	capabilities.CapabilityInfo
 	capability
-	//TODO we need to set this app
+	// PLEX-1525 - Provide support for beholder metrics
 	emitter custmsg.MessageEmitter
 
 	lggr logger.Logger

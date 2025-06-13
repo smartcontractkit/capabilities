@@ -19,23 +19,6 @@ import (
 	"github.com/smartcontractkit/chainlink-evm/gethwrappers/keystone/generated/forwarder"
 )
 
-//Transmission Info
-// bytes32 transmissionId;
-// TransmissionState state;
-// address transmitter;
-// // This is true if the receiver is not a contract or does not implement the
-// // `IReceiver` interface.
-// bool invalidReceiver;
-// // Whether the transmission attempt was successful. If `false`, the
-// // transmission can be retried with an increased gas limit.
-// bool success;
-// // The amount of gas allocated for the `IReceiver.onReport` call. uint80
-// // allows storing gas for known EVM block gas limits.
-// // Ensures that the minimum gas requested by the user is available during
-// // the transmission attempt. If the transmission fails (indicated by a
-// // `false` success state), it can be retried with an increased gas limit.
-// uint80 gasLimit;
-
 type TransmissionInfo struct {
 	GasLimit        *big.Int
 	InvalidReceiver bool
@@ -47,7 +30,7 @@ type TransmissionInfo struct {
 
 // The gas cost of the forwarder contract logic, including state updates and event emission.
 // This is a rough estimate and should be updated if the forwarder contract logic changes.
-// TODO: Make this part of the on-chain capability configuration
+// PLEX-1524 - Make the forwarder contract logic gas cost limit configurable
 const ForwarderContractLogicGasCost = 100_000
 
 func NewKeystoneForwarderCodec() (KeystoneForwarderCodec, error) {
@@ -96,13 +79,11 @@ func (kfclient *keystoneForwarderClient) InvokeOnReport(ctx context.Context, rec
 
 	kfclient.Logger.Debugw("Transaction raw report", "report", hex.EncodeToString(report.RawReport))
 
-	// meta := commontypes.TxMeta{WorkflowExecutionID: &request.Metadata.WorkflowExecutionID}
 	var resolvedGasConfig *evmtypes.GasConfig
 	if gasConfig != nil && gasConfig.GasLimit > 0 {
 		resolvedGasConfig = &evmtypes.GasConfig{
 			GasLimit: &gasConfig.GasLimit,
 		}
-		// meta.GasLimit = new(big.Int).SetUint64(request.GasConfig.GasLimit)
 	}
 	encodedReport, err := kfclient.ForwarderCodec.EncodeReport(receiverAddress, report)
 	if err != nil {
@@ -188,7 +169,7 @@ func (kfc *keystoneForwarderCodecImpl) EncodeQueryTransmissionInputs(query Query
 }
 
 func (kfc *keystoneForwarderCodecImpl) DecodeQueryTransmissionInfo(encodedData []byte) (TransmissionInfo, error) {
-	//TODO this is ugly. For some reason ABI.UnpackIntoInterface doesn't work.
+	//PLEX-1524 this is ugly. For some reason ABI.UnpackIntoInterface doesn't work.
 	var transmissionInfo TransmissionInfo
 	values, err := kfc.abi.Methods["getTransmissionInfo"].Outputs.UnpackValues(encodedData)
 	if err != nil {
