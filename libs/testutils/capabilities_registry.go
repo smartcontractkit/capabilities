@@ -60,6 +60,10 @@ func (r *capabilitiesRegistry) GetTrigger(ctx context.Context, ID string) (capab
 	return capability.(capabilities.TriggerCapability), nil
 }
 
+func (r *capabilitiesRegistry) GetExecutable(_ context.Context, _ string) (capabilities.ExecutableCapability, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+
 func (r *capabilitiesRegistry) GetAction(ctx context.Context, ID string) (capabilities.ActionCapability, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
