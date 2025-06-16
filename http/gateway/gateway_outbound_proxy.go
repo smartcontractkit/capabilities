@@ -21,6 +21,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 	gc "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/jsonrpc"
 )
 
 const (
@@ -55,6 +56,7 @@ type gatewayOutboundProxy struct {
 	responses               *responses
 	selectorOpts            []func(*gc.RoundRobinSelector)
 	gatewayConnectionConfig common.GatewayConnectionConfig
+	codec                   jsonrpc.Codec
 }
 
 func NewGatewayOutboundProxy(gatewayConnector core.GatewayConnector, config common.ServiceConfig, lgger logger.Logger, opts ...func(*gc.RoundRobinSelector)) (*gatewayOutboundProxy, error) {
@@ -94,6 +96,7 @@ func NewGatewayOutboundProxy(gatewayConnector core.GatewayConnector, config comm
 			MaxElapsedTimeMs:  maxElapsedTime,
 			Multiplier:        multiplier,
 		},
+		codec: jsonrpc.Codec{},
 	}, nil
 }
 
@@ -113,10 +116,10 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 		return nil, errors.New(errorOutgoingRatelimitGlobal)
 	}
 
-	gatewayReq := gc.GatewayRequest{
+	gatewayReq := gc.OutboundHTTPRequest{
 		WorkflowID: metadata.WorkflowID,
 		URL:        input.Url,
-		Method:     input.Method.String(),
+		Method:     input.Method,
 		Headers:    input.Headers,
 		Body:       input.Body,
 		// Casting is safe because input to this function is already validated
@@ -136,16 +139,11 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 
 	lggr.Debugw("sending request to gateway")
 
-	donID, err := p.gatewayConnector.DonID()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get DON ID: %w", err)
-	}
-
-	body := &gc.MessageBody{
-		MessageId: messageID,
-		DonId:     donID,
-		Method:    gc.MethodHTTPAction,
-		Payload:   payload,
+	req := jsonrpc.Request{
+		Version: "2.0",
+		ID:      messageID,
+		Method:  gc.MethodHTTPAction,
+		Params:  json.RawMessage(payload),
 	}
 
 	selectedGateway, err := p.awaitConnection(ctx, lggr)
@@ -153,31 +151,31 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 		return nil, errors.Wrap(err, "failed to await connection to gateway")
 	}
 
-	if err := p.gatewayConnector.SignAndSendToGateway(ctx, selectedGateway, body); err != nil {
+	reqData, err := p.codec.EncodeRequest(&req)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to encode request")
+	}
+
+	if err := p.gatewayConnector.SendToGateway(ctx, selectedGateway, reqData); err != nil {
 		return nil, errors.Wrap(err, "failed to send request to gateway")
 	}
 
 	select {
 	case resp := <-responseCh:
 		lggr.Debugw("received response from gateway")
-		var gatewayResp gc.GatewayResponse
-		err := json.Unmarshal(resp.Body.Payload, &gatewayResp)
-		if err != nil {
-			lggr.Errorw("failed to unmarshal gateway response", "error", err)
-			return nil, errors.New(internalError)
-		}
-		if gatewayResp.ExecutionError {
-			if isRateLimitError(gatewayResp.ErrorMessage) {
-				return nil, errors.New(gatewayResp.ErrorMessage)
+		if resp.ExecutionError {
+			if isRateLimitError(resp.ErrorMessage) {
+				lggr.Errorw("incoming message from gateway exceeded rate limit", "errorMessage", resp.ErrorMessage)
+			} else {
+				lggr.Errorw("gateway response indicates execution error", "errorMessage", resp.ErrorMessage)
 			}
-			lggr.Errorw("gateway response indicates execution error", "errorMessage", gatewayResp.ErrorMessage)
 			return nil, errors.New(internalError)
 		}
 		return &http.Response{
-			StatusCode:   uint32(gatewayResp.StatusCode), //nolint:gosec // G115
-			Headers:      gatewayResp.Headers,
-			Body:         gatewayResp.Body,
-			ErrorMessage: gatewayResp.ErrorMessage,
+			StatusCode:   uint32(resp.StatusCode), //nolint:gosec // G115
+			Headers:      resp.Headers,
+			Body:         resp.Body,
+			ErrorMessage: resp.ErrorMessage,
 		}, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -197,7 +195,7 @@ func (p *gatewayOutboundProxy) getMessageID(metadata capabilities.RequestMetadat
 // using a round robin selector, connecting to the first available.  The method respects the provided context, allowing for
 // cancellation or timeout.
 func (p *gatewayOutboundProxy) awaitConnection(ctx context.Context, lggr logger.Logger) (string, error) {
-	gatewayIDs, err := p.gatewayConnector.GatewayIDs()
+	gatewayIDs, err := p.gatewayConnector.GatewayIDs(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get gateway IDs: %w", err)
 	}
@@ -260,39 +258,44 @@ func (p *gatewayOutboundProxy) attemptGatewayConnection(ctx context.Context, lgg
 
 // HandleGatewayMessage processes incoming messages from the Gateway,
 // which are in response to a HandleSingleNodeRequest call.
-func (p *gatewayOutboundProxy) HandleGatewayMessage(ctx context.Context, gatewayID string, msg *gc.Message) error {
-	l := logger.With(p.lggr, "gatewayID", gatewayID, "method", msg.Body.Method, "messageID", msg.Body.MessageId)
+func (p *gatewayOutboundProxy) HandleGatewayMessage(ctx context.Context, gatewayID string, data []byte) error {
+	req, err := p.codec.DecodeRequest(data)
+	if err != nil {
+		p.lggr.Errorw("failed to decode request", "error", err)
+		return nil
+	}
+	l := logger.With(p.lggr, "gatewayID", gatewayID, "method", req.Method, "messageID", req.ID)
+	l.Debugw("handling incomming gateway message")
 
-	ch, ok := p.responses.get(msg.Body.MessageId)
+	var msg gateway.OutboundHTTPResponse
+	err = json.Unmarshal(req.Params, &msg)
+	if err != nil {
+		l.Errorw("failed to unmarshal request params", "error", err)
+		return nil
+	}
+
+	ch, ok := p.responses.get(req.ID)
 	if !ok {
 		l.Warnw("no response channel found; this may indicate that the node timed out the request")
 		return nil
 	}
 
-	senderAllow, globalAllow := p.incomingRateLimiter.AllowVerbose(msg.Body.Sender)
+	senderAllow, globalAllow := p.incomingRateLimiter.AllowVerbose(gatewayID)
 	errorMsg := ""
 	if !senderAllow {
 		errorMsg = errorIncomingRatelimitSender
 	} else if !globalAllow {
 		errorMsg = errorIncomingRatelimitGlobal
 	}
+
 	if errorMsg != "" {
 		l.Errorw("request rate-limited")
-		resp := gc.GatewayResponse{
+		msg = gc.OutboundHTTPResponse{
 			ErrorMessage:   errorMsg,
 			ExecutionError: true,
 		}
-		payload, err := json.Marshal(resp)
-		if err != nil {
-			l.Errorw("failed to marshal err payload", "err", err)
-			// return nil and skip processing this gateway message
-			return nil
-		}
-		msg.Body.Payload = payload
 	}
-
-	l.Debugw("handling gateway request")
-	switch msg.Body.Method {
+	switch req.Method {
 	case gc.MethodHTTPAction:
 		select {
 		case ch <- msg:
@@ -314,14 +317,14 @@ func isRateLimitError(errStr string) bool {
 		strings.Contains(errStr, errorIncomingRatelimitSender)
 }
 
-func (p *gatewayOutboundProxy) ID() (string, error) {
+func (p *gatewayOutboundProxy) ID(ctx context.Context) (string, error) {
 	return p.Name(), nil
 }
 
 func (p *gatewayOutboundProxy) Start(ctx context.Context) error {
 	p.lggr.Debug("Starting GatewayOutboundProxy...")
 	return p.StartOnce("GatewayOutboundProxy", func() error {
-		return p.gatewayConnector.AddHandler([]string{gc.MethodHTTPAction}, p)
+		return p.gatewayConnector.AddHandler(ctx, []string{gc.MethodHTTPAction}, p)
 	})
 }
 
@@ -372,7 +375,7 @@ func outgoingRateLimiterConfigDefaults(config gateway.RateLimiterConfig) gateway
 
 func newResponses() *responses {
 	return &responses{
-		chs: map[string]chan *gc.Message{},
+		chs: map[string]chan gc.OutboundHTTPResponse{},
 	}
 }
 
@@ -385,11 +388,11 @@ func (p *gatewayOutboundProxy) nextBackoff(backoff time.Duration) time.Duration 
 }
 
 type responses struct {
-	chs map[string]chan *gc.Message
+	chs map[string]chan gc.OutboundHTTPResponse
 	mu  sync.RWMutex
 }
 
-func (r *responses) new(id string) (chan *gc.Message, error) {
+func (r *responses) new(id string) (chan gc.OutboundHTTPResponse, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -399,7 +402,7 @@ func (r *responses) new(id string) (chan *gc.Message, error) {
 	}
 
 	// Buffered so we don't wait if sending
-	ch := make(chan *gc.Message, 1)
+	ch := make(chan gc.OutboundHTTPResponse, 1)
 	r.chs[id] = ch
 	return ch, nil
 }
@@ -411,7 +414,7 @@ func (r *responses) cleanup(id string) {
 	delete(r.chs, id)
 }
 
-func (r *responses) get(id string) (chan *gc.Message, bool) {
+func (r *responses) get(id string) (chan gc.OutboundHTTPResponse, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	ch, ok := r.chs[id]

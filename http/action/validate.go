@@ -16,14 +16,33 @@ const defaultMaxHeaderKeyLength = 256
 const defaultMaxHeaderValueLength = 1024
 const defaultMaxBodyLength = 10 * 1024 * 1024 // 1 MB
 
-var allowedMethods = map[string]bool{
-	"GET":     true,
-	"POST":    true,
-	"PUT":     true,
-	"DELETE":  true,
-	"PATCH":   true,
-	"HEAD":    true,
-	"OPTIONS": true,
+var allowedMethods = map[string]struct{}{
+	"GET":    {},
+	"POST":   {},
+	"PUT":    {},
+	"DELETE": {},
+	"PATCH":  {},
+}
+
+func ValidatedServiceConfig(cfg *common.ServiceConfig) (*common.ServiceConfig, error) {
+	maxTimeoutMs := getWithDefault(cfg.LimitsConfig.MaxTimeoutMs, defaultMaxTimeoutMs)
+	maxHeaderCount := getWithDefault(cfg.LimitsConfig.MaxHeaderCount, defaultMaxHeaderCount)
+	maxHeaderKeyLength := getWithDefault(cfg.LimitsConfig.MaxHeaderKeyLength, defaultMaxHeaderKeyLength)
+	maxHeaderValueLength := getWithDefault(cfg.LimitsConfig.MaxHeaderValueLength, defaultMaxHeaderValueLength)
+	maxBodyLength := getWithDefault(cfg.LimitsConfig.MaxBodyLength, defaultMaxBodyLength)
+
+	if cfg.LimitsConfig.MaxTimeoutMs > math.MaxInt32 {
+		return nil, fmt.Errorf("MaxTimeoutMs exceeds int32 maximum: %d", math.MaxInt32)
+	}
+	limitsConfig := common.LimitsConfig{
+		MaxTimeoutMs:         maxTimeoutMs,
+		MaxHeaderCount:       maxHeaderCount,
+		MaxHeaderKeyLength:   maxHeaderKeyLength,
+		MaxHeaderValueLength: maxHeaderValueLength,
+		MaxBodyLength:        maxBodyLength,
+	}
+	cfg.LimitsConfig = limitsConfig
+	return cfg, nil
 }
 
 // ValidateAndApplyDefaults validates the HTTP request fields and applies default values where necessary.
@@ -39,13 +58,16 @@ func ValidateAndApplyDefaults(input *http.Request, cfg common.ServiceConfig) (*h
 		return nil, fmt.Errorf("input validation failed: %w", err)
 	}
 
+	method := strings.ToUpper(strings.TrimSpace(input.Method))
+	if _, ok := allowedMethods[method]; !ok {
+		return nil, fmt.Errorf("invalid HTTP method: %s", method)
+	}
+
+	input.Method = method
+
 	timeoutMs := input.TimeoutMs
 	if timeoutMs == 0 {
-		defaultTimeoutMs := getWithDefault(uint32(cfg.LimitsConfig.MaxTimeoutMs), defaultMaxTimeoutMs)
-		if defaultTimeoutMs > math.MaxInt32 {
-			return nil, fmt.Errorf("default timeout exceeds maximum allowed value: %d", math.MaxInt32)
-		}
-		timeoutMs = int32(defaultTimeoutMs)
+		timeoutMs = int32(cfg.LimitsConfig.MaxTimeoutMs) //nolint:gosec // G115 (validated in action.go)
 	}
 
 	return &http.Request{
@@ -66,20 +88,14 @@ func getWithDefault(cfgVal uint32, defaultVal uint32) uint32 {
 }
 
 func validateInputMaxLimits(input *http.Request, cfg common.ServiceConfig) error {
-	maxTimeoutMs := getWithDefault(cfg.LimitsConfig.MaxTimeoutMs, defaultMaxTimeoutMs)
-	maxHeaderCount := getWithDefault(cfg.LimitsConfig.MaxHeaderCount, defaultMaxHeaderCount)
-	maxHeaderKeyLength := getWithDefault(cfg.LimitsConfig.MaxHeaderKeyLength, defaultMaxHeaderKeyLength)
-	maxHeaderValueLength := getWithDefault(cfg.LimitsConfig.MaxHeaderValueLength, defaultMaxHeaderValueLength)
-	maxBodyLength := getWithDefault(cfg.LimitsConfig.MaxBodyLength, defaultMaxBodyLength)
-
-	if input.TimeoutMs < 0 || uint32(input.TimeoutMs) > maxTimeoutMs {
-		return fmt.Errorf("timeout must be between 0 and %d milliseconds", maxTimeoutMs)
+	if input.TimeoutMs < 0 || uint32(input.TimeoutMs) > cfg.LimitsConfig.MaxTimeoutMs {
+		return fmt.Errorf("timeout must be between 0 and %d milliseconds", cfg.LimitsConfig.MaxTimeoutMs)
 	}
 	if len(input.Headers) > math.MaxUint32 {
 		return fmt.Errorf("too many headers: exceeds uint32 limit")
 	}
-	if uint32(len(input.Headers)) > maxHeaderCount {
-		return fmt.Errorf("too many headers: maximum allowed is %d", maxHeaderCount)
+	if uint32(len(input.Headers)) > cfg.LimitsConfig.MaxHeaderCount {
+		return fmt.Errorf("too many headers: maximum allowed is %d", cfg.LimitsConfig.MaxHeaderCount)
 	}
 	for k, v := range input.Headers {
 		if len(k) > math.MaxUint32 {
@@ -88,18 +104,18 @@ func validateInputMaxLimits(input *http.Request, cfg common.ServiceConfig) error
 		if len(v) > math.MaxUint32 {
 			return fmt.Errorf("header value for %q too long (max %d)", k, math.MaxUint32)
 		}
-		if uint32(len(k)) > maxHeaderKeyLength {
-			return fmt.Errorf("header key too long: %q (max %d)", k, maxHeaderKeyLength)
+		if uint32(len(k)) > cfg.LimitsConfig.MaxHeaderCount {
+			return fmt.Errorf("header key too long: %q (max %d)", k, cfg.LimitsConfig.MaxHeaderCount)
 		}
-		if uint32(len(v)) > maxHeaderValueLength {
-			return fmt.Errorf("header value for %q too long (max %d)", k, maxHeaderValueLength)
+		if uint32(len(v)) > cfg.LimitsConfig.MaxHeaderValueLength {
+			return fmt.Errorf("header value for %q too long (max %d)", k, cfg.LimitsConfig.MaxHeaderValueLength)
 		}
 	}
 	if len(input.Body) > math.MaxUint32 {
 		return fmt.Errorf("body too large: exceeds uint32 limit")
 	}
-	if uint32(len(input.Body)) > maxBodyLength {
-		return fmt.Errorf("body too large: maximum allowed is %d bytes", maxBodyLength)
+	if uint32(len(input.Body)) > cfg.LimitsConfig.MaxResponseBytes {
+		return fmt.Errorf("body too large: maximum allowed is %d bytes", cfg.LimitsConfig.MaxResponseBytes)
 	}
 	return nil
 }
