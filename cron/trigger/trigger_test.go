@@ -73,7 +73,7 @@ func registerTriggerToCronTriggerService(
 			TriggerID: requestTriggerID,
 			Metadata:  requestMetadata,
 			Payload:   payload,
-			Method:    "Trigger",
+			Method:    "",
 		}
 		triggerEventsCh, err := cts.RegisterTrigger(ctx, request)
 
@@ -99,11 +99,11 @@ func upwrapCronTriggerEvent(t *testing.T, event capabilities.TriggerEvent,
 	useTypedAPI bool) Response {
 	response := Response{}
 	response.TriggerType = event.TriggerType
-	assert.Equal(t, ID, response.TriggerType)
+	assert.Equal(t, server.CronID, response.TriggerType)
 	response.ID = event.ID
 
 	if useTypedAPI {
-		payload := &crontypedapi.Payload{}
+		payload := &crontypedapi.LegacyPayload{}
 		err := event.Payload.UnmarshalTo(payload)
 		require.NoError(t, err)
 		response.Payload = cron.Payload{ScheduledExecutionTime: payload.ScheduledExecutionTime}
