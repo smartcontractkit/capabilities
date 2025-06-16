@@ -23,8 +23,7 @@ flowchart LR
 	capabilities/mock --> capabilities/libs/loopserver
 	capabilities/mock --> capabilities/libs/testutils
 	click capabilities/mock href "https://github.com/smartcontractkit/capabilities"
-	capabilities/readcontract --> capabilities/libs/loopserver
-	capabilities/readcontract --> capabilities/libs/testutils
+	capabilities/readcontract --> capabilities/libs
 	click capabilities/readcontract href "https://github.com/smartcontractkit/capabilities"
 	capabilities/workflowevent --> capabilities/libs/loopserver
 	capabilities/workflowevent --> capabilities/libs/testutils
