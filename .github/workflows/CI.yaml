@@ -265,7 +265,6 @@ jobs:
   modgraph:
     runs-on: ubuntu-latest
     name: modgraph
-    if: false #disabling modgraph check
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 # v4.2.1
@@ -291,7 +290,7 @@ jobs:
       - test
       - race
       - tidy-and-generate
-      - modgraph
+      # - modgraph
     if: always()
     steps:
       - name: All tests ok
