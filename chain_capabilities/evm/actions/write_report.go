@@ -108,26 +108,25 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 		return nil, err
 	}
 
-	var txHashRetriever TxHashRetriever = NewTxHashRetriever(e.EVMService, e.lggr, transmissionID)
+	txHashRetriever := NewTxHashRetriever(e.EVMService, e.lggr, transmissionID)
 
-	//TODO transaction fee is missing
-	switch {
-	case transmissionInfo.State == TransmissionStateNotAttempted:
+	switch transmissionInfo.State {
+	case TransmissionStateNotAttempted:
 		e.lggr.Infow("non-empty report - transmission not attempted - attempting to push to txmgr", "request", request, "reportLen", len(request.Report.RawReport), "reportContextLen", len(request.Report.RawReport), "nSignatures", len(request.Report.Signatures), "executionID", metadata.WorkflowExecutionID)
-	case transmissionInfo.State == TransmissionStateSucceeded:
+	case TransmissionStateSucceeded:
 		e.lggr.Infow("returning without a transmission attempt - report already onchain ", "executionID", metadata.WorkflowExecutionID)
 		txHash, err := txHashRetriever.GetHash(ctx)
 		if err != nil {
 			return nil, err
 		}
 		return e.fetchTransactionAndCreateReply(ctx, transmissionInfo, *txHash, evmcap.ReceiverContractExecutionStatus_SUCCESS, nil)
-	case transmissionInfo.State == TransmissionStateInvalidReceiver:
+	case TransmissionStateInvalidReceiver:
 		txHash, err := txHashRetriever.GetHash(ctx)
 		if err != nil {
 			return nil, err
 		}
 		return e.processUnrecoverableTxState(ctx, request, metadata, *txHash, transmissionInfo, transmissionID, true)
-	case transmissionInfo.State == TransmissionStateFailed:
+	case TransmissionStateFailed:
 		receiverGasMinimum := e.ReceiverGasMinimum
 		if request.GasConfig != nil && request.GasConfig.GasLimit > 0 {
 			receiverGasMinimum = *&request.GasConfig.GasLimit - contracts.ForwarderContractLogicGasCost
@@ -168,6 +167,7 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 		}, nil
 	}
 
+	// PLEX-1524 - improve this since it may be using an RPC that's lagging related to the one that submitted the TX.
 	transmissionInfo, err = e.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
 	if err != nil {
 		return nil, err

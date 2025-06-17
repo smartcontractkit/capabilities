@@ -19,6 +19,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const LATEST_BLOCK = -2
+
 func TestKeystoneForwarderClient_GetTransmissionInfo(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -26,7 +28,7 @@ func TestKeystoneForwarderClient_GetTransmissionInfo(t *testing.T) {
 	testLogger := logger.Test(t)
 	forwarderAddress := common.BytesToAddress(test.RandomBytes(20))
 	transmitterAddress := common.BytesToAddress(test.RandomBytes(20))
-	expectedBlockNumberForGetTransmission := big.NewInt(-1)
+	expectedBlockNumberForGetTransmission := big.NewInt(LATEST_BLOCK)
 	forwarderABI, _ := forwarder.KeystoneForwarderMetaData.GetAbi()
 	testEncoder := TestEncoder{abi: *forwarderABI}
 

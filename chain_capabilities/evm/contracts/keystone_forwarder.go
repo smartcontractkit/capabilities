@@ -31,7 +31,10 @@ type TransmissionInfo struct {
 // The gas cost of the forwarder contract logic, including state updates and event emission.
 // This is a rough estimate and should be updated if the forwarder contract logic changes.
 // PLEX-1524 - Make the forwarder contract logic gas cost limit configurable
-const ForwarderContractLogicGasCost = 100_000
+const (
+	ForwarderContractLogicGasCost = 100_000
+	LATEST_BLOCK                  = -2 // PLEX-1524 - Use constant defined by EVM types once it's ready.
+)
 
 func NewKeystoneForwarderCodec() (KeystoneForwarderCodec, error) {
 	ABI, err := forwarder.KeystoneForwarderMetaData.GetAbi()
@@ -49,10 +52,10 @@ func NewKeystoneForwarderClient(EVMService types.EVMService, forwarderAddress co
 		return nil, err
 	}
 	return &keystoneForwarderClient{
-		EVMService:       EVMService,
-		ForwarderCodec:   codec,
-		ForwarderAddress: forwarderAddress,
-		Logger:           logger,
+		evmService:       EVMService,
+		forwarderCodec:   codec,
+		forwarderAddress: forwarderAddress,
+		logger:           logger,
 	}, nil
 
 }
@@ -69,15 +72,15 @@ type KeystoneForwarderCodec interface {
 }
 
 type keystoneForwarderClient struct {
-	EVMService       types.EVMService
-	ForwarderCodec   KeystoneForwarderCodec
-	ForwarderAddress common.Address
-	Logger           logger.Logger
+	evmService       types.EVMService
+	forwarderCodec   KeystoneForwarderCodec
+	forwarderAddress common.Address
+	logger           logger.Logger
 }
 
 func (kfclient *keystoneForwarderClient) InvokeOnReport(ctx context.Context, receiverAddress common.Address, report *evmcap.SignedReport, gasConfig *evmcap.GasConfig) (*evmtypes.TransactionResult, error) {
 
-	kfclient.Logger.Debugw("Transaction raw report", "report", hex.EncodeToString(report.RawReport))
+	kfclient.logger.Debugw("Transaction raw report", "report", hex.EncodeToString(report.RawReport))
 
 	var resolvedGasConfig *evmtypes.GasConfig
 	if gasConfig != nil && gasConfig.GasLimit > 0 {
@@ -85,21 +88,21 @@ func (kfclient *keystoneForwarderClient) InvokeOnReport(ctx context.Context, rec
 			GasLimit: &gasConfig.GasLimit,
 		}
 	}
-	encodedReport, err := kfclient.ForwarderCodec.EncodeReport(receiverAddress, report)
+	encodedReport, err := kfclient.forwarderCodec.EncodeReport(receiverAddress, report)
 	if err != nil {
 		return nil, err
 	}
 	// TODO: PLEX-1522 - Add support to limit maximum total fee based on billing config
-	transactionResult, err := kfclient.EVMService.SubmitTransaction(ctx, evmtypes.SubmitTransactionRequest{
-		To:        kfclient.ForwarderAddress,
+	transactionResult, err := kfclient.evmService.SubmitTransaction(ctx, evmtypes.SubmitTransactionRequest{
+		To:        kfclient.forwarderAddress,
 		Data:      encodedReport,
 		GasConfig: resolvedGasConfig,
 	})
 
 	if err != nil {
-		if types.ErrSettingTransactionGasLimitNotSupported.Is(err) {
-			return kfclient.EVMService.SubmitTransaction(ctx, evmtypes.SubmitTransactionRequest{
-				To:   kfclient.ForwarderAddress,
+		if errors.Is(err, types.ErrSettingTransactionGasLimitNotSupported) {
+			return kfclient.evmService.SubmitTransaction(ctx, evmtypes.SubmitTransactionRequest{
+				To:   kfclient.forwarderAddress,
 				Data: encodedReport,
 			})
 		}
@@ -114,18 +117,18 @@ func (kfclient *keystoneForwarderClient) GetTransmissionInfo(ctx context.Context
 		WorkflowExecutionID: transmissionID.WorkflowExecutionID,
 		ReportID:            transmissionID.ReportID,
 	}
-	calldata, err := kfclient.ForwarderCodec.EncodeQueryTransmissionInputs(queryInputs)
+	calldata, err := kfclient.forwarderCodec.EncodeQueryTransmissionInputs(queryInputs)
 	if err != nil {
 		return TransmissionInfo{}, err
 	}
-	response, err := kfclient.EVMService.CallContract(ctx, &evmtypes.CallMsg{
-		To:   kfclient.ForwarderAddress,
+	response, err := kfclient.evmService.CallContract(ctx, &evmtypes.CallMsg{
+		To:   kfclient.forwarderAddress,
 		Data: calldata,
-	}, big.NewInt(-1))
+	}, big.NewInt(LATEST_BLOCK))
 	if err != nil {
 		return TransmissionInfo{}, err
 	}
-	return kfclient.ForwarderCodec.DecodeQueryTransmissionInfo(response)
+	return kfclient.forwarderCodec.DecodeQueryTransmissionInfo(response)
 }
 
 type keystoneForwarderCodecImpl struct {

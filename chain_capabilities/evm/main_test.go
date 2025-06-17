@@ -31,7 +31,7 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 	relayerSet.On("Get", mock.Anything, mock.Anything).Return(relayer, nil)
 
 	svc := &capabilityGRPCService{lggr: lggr}
-	cfg := Config{ChainID: 1337, Network: "testnet", LogTriggerPollInterval: 60 * time.Second, KeystoneForwarderAddress: common.Bytes2Hex(testutils.NewAddress().Bytes()), ReceiverGasMinimum: 1000}
+	cfg := config.Config{ChainID: 1337, Network: "testnet", LogTriggerPollInterval: 60 * time.Second, KeystoneForwarderAddress: common.Bytes2Hex(testutils.NewAddress().Bytes()), ReceiverGasMinimum: 1000}
 	cfgJSON, _ := json.Marshal(cfg)
 
 	err := svc.Initialise(context.Background(), string(cfgJSON),
@@ -45,7 +45,7 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 			assert.ErrorContains(t, err, "failed to parse")
 		})
 		t.Run("bad-interval", func(t *testing.T) {
-			cfgJSON, _ := json.Marshal(Config{ChainID: 1, Network: "net", LogTriggerPollInterval: -1})
+			cfgJSON, _ := json.Marshal(config.Config{ChainID: 1, Network: "net", LogTriggerPollInterval: -1})
 			svc := &capabilityGRPCService{lggr: lggr}
 			err := svc.Initialise(context.Background(), string(cfgJSON), nil, nil, nil, nil, nil, nil, nil)
 			assert.ErrorContains(t, err, "LogTriggerPollInterval must be positive, got: -1ns")
@@ -54,8 +54,7 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 			relayerSet := relayermock.NewRelayerSet(t)
 			relayerSet.On("Get", mock.Anything, mock.Anything).Return(nil, assert.AnError)
 
-			cfgJSON, _ := json.Marshal(Config{ChainID: 1, Network: "net", LogTriggerPollInterval: 60 * time.Second, KeystoneForwarderAddress: common.Bytes2Hex(testutils.NewAddress().Bytes()), ReceiverGasMinimum: 1000})
-			cfgJSON, _ := json.Marshal(config.Config{ChainID: 1, Network: "net"})
+			cfgJSON, _ := json.Marshal(config.Config{ChainID: 1, Network: "net", LogTriggerPollInterval: 60 * time.Second, KeystoneForwarderAddress: common.Bytes2Hex(testutils.NewAddress().Bytes()), ReceiverGasMinimum: 1000})
 			svc := &capabilityGRPCService{lggr: lggr}
 
 			err := svc.Initialise(context.Background(), string(cfgJSON),
