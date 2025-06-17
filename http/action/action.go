@@ -47,14 +47,18 @@ func (s *service) Initialise(
 ) error {
 	s.lggr.Debugf("Initialising %s", ServiceName)
 
-	var serviceConfig common.ServiceConfig
-	err := json.Unmarshal([]byte(config), &serviceConfig)
+	var serviceConfig *common.ServiceConfig
+	err := json.Unmarshal([]byte(config), serviceConfig)
 	if err != nil {
 		return err
 	}
-	s.cfg = serviceConfig
+	serviceConfig, err = ValidatedServiceConfig(serviceConfig)
+	if err != nil {
+		return err
+	}
+	s.cfg = *serviceConfig
 
-	outboundRequestClient, err := NewOutboundRequestClient(gc, serviceConfig, s.lggr)
+	outboundRequestClient, err := NewOutboundRequestClient(gc, s.cfg, s.lggr)
 	if err != nil {
 		s.lggr.Errorf("Failed to create OutboundRequestClient: %v", err)
 	}

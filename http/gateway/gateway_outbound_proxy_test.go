@@ -17,9 +17,11 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
-	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/jsonrpc"
 )
+
+var codec = jsonrpc.Codec{}
 
 func TestOutgoingConnectorHandler_AwaitConnection(t *testing.T) {
 	type testCase struct {
@@ -105,8 +107,8 @@ func setupSendRequestTest(t *testing.T) (*gatewayOutboundProxy, *mockGatewayConn
 	mockConnector := &mockGatewayConnector{
 		DonIDVal:      "don1",
 		GatewayIDsVal: []string{"gateway1"},
-		OnSend: func(messageID string) {
-			readyCh <- messageID
+		OnSend: func(id string) {
+			readyCh <- id
 		},
 	}
 	lggr := logger.Test(t)
@@ -130,7 +132,7 @@ func TestGatewayOutboundProxy_SendRequest_Success(t *testing.T) {
 	}
 	input := &http.Request{
 		Url:       "http://example.com",
-		Method:    http.Method_GET,
+		Method:    "GET",
 		Headers:   map[string]string{"X-Test": "1"},
 		Body:      []byte("test"),
 		TimeoutMs: 5000,
@@ -138,26 +140,8 @@ func TestGatewayOutboundProxy_SendRequest_Success(t *testing.T) {
 
 	// Prepare a goroutine to receive gateway response
 	go func() {
-		messageID := <-readyCh
-		msg := &gateway_common.Message{
-			Body: gateway_common.MessageBody{
-				MessageId: messageID,
-				Method:    gateway_common.MethodHTTPAction,
-				Payload:   nil, // will be set below
-			},
-		}
-		resp := gateway_common.GatewayResponse{
-			StatusCode:     200,
-			Body:           []byte("ok"),
-			ErrorMessage:   "",
-			ExecutionError: false,
-		}
-		payload, err := json.Marshal(resp)
-		require.NoError(t, err)
-		msg.Body.Payload = payload
-
-		// Call HandleGatewayMessage to simulate the gateway response
-		_ = proxy.HandleGatewayMessage(context.Background(), "gateway1", msg)
+		id := <-readyCh
+		simulateGatewayMessage(t, proxy, id, 200, "ok", "", false)
 	}()
 
 	output, err := proxy.SendRequest(context.Background(), metadata, input)
@@ -178,7 +162,7 @@ func TestGatewayOutboundProxy_SendRequest_Timeout(t *testing.T) {
 	}
 	input := &http.Request{
 		Url:       "http://example.com",
-		Method:    http.Method_GET,
+		Method:    "GET",
 		Headers:   map[string]string{"X-Test": "1"},
 		Body:      []byte("test"),
 		TimeoutMs: 100, // short timeout
@@ -204,30 +188,15 @@ func TestGatewayOutboundProxy_SendRequest_ExecutionError(t *testing.T) {
 	}
 	input := &http.Request{
 		Url:       "http://example.com",
-		Method:    http.Method_GET,
+		Method:    "GET",
 		Headers:   map[string]string{"X-Test": "1"},
 		Body:      []byte("test"),
 		TimeoutMs: 5000,
 	}
 
 	go func() {
-		messageID := <-readyCh
-		msg := &gateway_common.Message{
-			Body: gateway_common.MessageBody{
-				MessageId: messageID,
-				Method:    gateway_common.MethodHTTPAction,
-			},
-		}
-		resp := gateway_common.GatewayResponse{
-			StatusCode:     500,
-			Body:           nil,
-			ErrorMessage:   "some error",
-			ExecutionError: true,
-		}
-		payload, err := json.Marshal(resp)
-		require.NoError(t, err)
-		msg.Body.Payload = payload
-		_ = proxy.HandleGatewayMessage(context.Background(), "gateway1", msg)
+		id := <-readyCh
+		simulateGatewayMessage(t, proxy, id, 500, "ok", "some error", true)
 	}()
 
 	output, err := proxy.SendRequest(context.Background(), metadata, input)
@@ -246,36 +215,42 @@ func TestGatewayOutboundProxy_SendRequest_RateLimitError(t *testing.T) {
 	}
 	input := &http.Request{
 		Url:       "http://example.com",
-		Method:    http.Method_GET,
+		Method:    "GET",
 		Headers:   map[string]string{"X-Test": "1"},
 		Body:      []byte("test"),
 		TimeoutMs: 5000,
 	}
 
 	go func() {
-		messageID := <-readyCh
-		msg := &gateway_common.Message{
-			Body: gateway_common.MessageBody{
-				MessageId: messageID,
-				Method:    gateway_common.MethodHTTPAction,
-			},
-		}
-		resp := gateway_common.GatewayResponse{
-			StatusCode:     429,
-			Body:           nil,
-			ErrorMessage:   "global limit of outgoing gateways requests has been exceeded",
-			ExecutionError: true,
-		}
-		payload, err := json.Marshal(resp)
-		require.NoError(t, err)
-		msg.Body.Payload = payload
-		_ = proxy.HandleGatewayMessage(context.Background(), "gateway1", msg)
+		id := <-readyCh
+		simulateGatewayMessage(t, proxy, id, 429, "", "global limit of outgoing gateways requests has been exceeded", true)
 	}()
 
 	output, err := proxy.SendRequest(context.Background(), metadata, input)
 	require.Error(t, err)
 	require.Nil(t, output)
-	assert.Contains(t, err.Error(), "global limit of outgoing gateways requests has been exceeded")
+	assert.Contains(t, err.Error(), "internal error")
+}
+
+func simulateGatewayMessage(t *testing.T, proxy *gatewayOutboundProxy, id string, statusCode int, body string, errorMessage string, executionError bool) {
+	req := jsonrpc.Request{
+		ID:      id,
+		Method:  gateway_common.MethodHTTPAction,
+		Version: "2.0",
+	}
+	resp := gateway_common.OutboundHTTPResponse{
+		StatusCode:     statusCode,
+		Body:           []byte(body),
+		ErrorMessage:   errorMessage,
+		ExecutionError: executionError,
+	}
+	payload, err := json.Marshal(resp)
+	require.NoError(t, err)
+	req.Params = payload
+	data, err := codec.EncodeRequest(&req)
+	require.NoError(t, err)
+	err = proxy.HandleGatewayMessage(context.Background(), "gateway1", data)
+	require.NoError(t, err)
 }
 
 type mockGatewayConnector struct {
@@ -285,23 +260,27 @@ type mockGatewayConnector struct {
 	SendErr       error
 	AwaitErrs     []error
 	AddHandlerErr error
-	OnSend        func(messageID string)
+	OnSend        func(id string)
 
 	// For tracking calls in tests
 	awaitCalls []string
 }
 
-func (m *mockGatewayConnector) DonID() (string, error) {
+func (m *mockGatewayConnector) DonID(context.Context) (string, error) {
 	return m.DonIDVal, nil
 }
 
-func (m *mockGatewayConnector) GatewayIDs() ([]string, error) {
+func (m *mockGatewayConnector) GatewayIDs(context.Context) ([]string, error) {
 	return m.GatewayIDsVal, nil
 }
 
-func (m *mockGatewayConnector) SignAndSendToGateway(ctx context.Context, gateway string, body *gateway.MessageBody) error {
+func (m *mockGatewayConnector) SendToGateway(ctx context.Context, gateway string, data []byte) error {
+	resp, err := codec.DecodeResponse(data)
+	if err != nil {
+		return err
+	}
 	if m.OnSend != nil {
-		m.OnSend(body.MessageId)
+		m.OnSend(resp.ID)
 	}
 	return m.SendErr
 }
@@ -315,7 +294,7 @@ func (m *mockGatewayConnector) AwaitConnection(ctx context.Context, gateway stri
 	return m.AwaitErrs[n]
 }
 
-func (m *mockGatewayConnector) AddHandler(methods []string, handler core.GatewayConnectorHandler) error {
+func (m *mockGatewayConnector) AddHandler(ctx context.Context, methods []string, handler core.GatewayConnectorHandler) error {
 	return m.AddHandlerErr
 }
 

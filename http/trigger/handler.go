@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sync"
 
@@ -17,6 +16,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/jsonrpc"
 )
 
 const (
@@ -45,6 +45,7 @@ type requestHandler struct {
 	config              ServiceConfig
 	incomingRateLimiter *gateway.RateLimiter
 	outgoingRateLimiter *gateway.RateLimiter
+	codec               jsonrpc.Codec
 }
 
 type workflow struct {
@@ -69,13 +70,14 @@ func NewRequestHandler(lggr logger.Logger, gc core.GatewayConnector, config Serv
 		config:              config,
 		outgoingRateLimiter: outgoingRateLimiter,
 		incomingRateLimiter: incomingRateLimiter,
+		codec:               jsonrpc.Codec{},
 	}, nil
 }
 
-func (h *requestHandler) Start(context.Context) error {
+func (h *requestHandler) Start(ctx context.Context) error {
 	h.lggr.Debug("Starting request handler")
 	return h.StartOnce(HandlerName, func() error {
-		return h.gatewayConnector.AddHandler([]string{MethodHTTPTrigger}, h)
+		return h.gatewayConnector.AddHandler(ctx, []string{MethodHTTPTrigger}, h)
 	})
 }
 
@@ -85,7 +87,7 @@ func (h *requestHandler) Close() error {
 	})
 }
 
-func (h *requestHandler) ID() (string, error) {
+func (h *requestHandler) ID(context.Context) (string, error) {
 	return HandlerName, nil
 }
 
@@ -126,78 +128,145 @@ func (h *requestHandler) UnregisterWorkflow(ctx context.Context, workflowID stri
 	return nil
 }
 
-func (h *requestHandler) HandleGatewayMessage(ctx context.Context, gatewayID string, msg *gateway.Message) error {
+func (h *requestHandler) HandleGatewayMessage(ctx context.Context, gatewayID string, data []byte) error {
+	req, err := h.codec.DecodeRequest(data)
+	if err != nil {
+		h.lggr.Errorw("Failed to decode request", "error", err, "gatewayID", gatewayID)
+		return nil
+	}
 	senderAllow, globalAllow := h.incomingRateLimiter.AllowVerbose(gatewayID)
 	if !senderAllow {
-		return errors.New(errorIncomingRatelimitSender)
+		h.lggr.Errorw(errorIncomingRatelimitSender, "gatewayID", gatewayID, "error", errorIncomingRatelimitSender)
+		return nil
 	}
 	if !globalAllow {
-		return errors.New(errorIncomingRatelimitGlobal)
+		h.lggr.Errorw(errorIncomingRatelimitGlobal, "gatewayID", gatewayID, "error", errorIncomingRatelimitSender)
+		return nil
 	}
 
-	switch msg.Body.Method {
+	switch req.Method {
 	case MethodHTTPTrigger:
-		// TODO: handle error response
-		return h.processTrigger(ctx, gatewayID, msg)
+		h.processTrigger(ctx, gatewayID, req)
 	default:
-		return fmt.Errorf("unsupported method %s", msg.Body.Method)
+		h.lggr.Errorw("Unsupported method", "method", req.Method, "gatewayID", gatewayID)
 	}
+	return nil
 }
 
-func (h *requestHandler) processTrigger(ctx context.Context, gatewayID string, msg *gateway.Message) error {
-	var req WrappedHTTPTriggerRequest
-	err := json.Unmarshal(msg.Body.Payload, &req)
+func isValidJSON(raw json.RawMessage) bool {
+	var v interface{}
+	return json.Unmarshal(raw, &v) == nil
+}
+
+func (h *requestHandler) sendErrorResponse(ctx context.Context, gatewayID string, reqID string, payload HTTPTriggerResponse, code int, message string) {
+	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("failed to unmarshal HTTP trigger request: %w", err)
+		h.lggr.Errorw("Failed to marshal error response", "error", err, "gatewayID", gatewayID)
+		return
 	}
-	var triggerReq HTTPTriggerRequest
-	err = json.Unmarshal(req.ReqBody.Params, &triggerReq)
+	resp := jsonrpc.Response{
+		Version: "2.0",
+		ID:      reqID,
+		Result:  payloadJSON,
+		Error: &jsonrpc.Error{
+			Code:    code,
+			Message: message,
+		},
+	}
+	data, err := h.codec.EncodeResponse(&resp)
 	if err != nil {
-		return fmt.Errorf("failed to unmarshal HTTP trigger request body: %w", err)
+		h.lggr.Errorw("Failed to encode error response", "error", err, "gatewayID", gatewayID)
+		return
 	}
-	// TODO: validate JWT
-	h.workflowsMu.RLock()
-	workflow, ok := h.workflows[req.WorkflowID]
-	h.workflowsMu.RUnlock()
-	if !ok {
-		return fmt.Errorf("workflow %s not registered", req.WorkflowID)
-	}
-	workflowExecutionID, err := generateExecutionID(req.WorkflowID, triggerReq.DeduplicationKey)
-	if err != nil {
-		return fmt.Errorf("failed to generate execution ID: %w", err)
-	}
-	payload := HTTPTriggerResponse{
-		Status:              HTTPTriggerStatusAccepted,
-		WorkflowID:          req.WorkflowID,
-		WorkflowExecutionID: workflowExecutionID,
-	}
-	jsonPayload, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("failed to marshal HTTP trigger response: %w", err)
-	}
+	h.sendResponse(ctx, gatewayID, data)
+}
+
+func (h *requestHandler) sendResponse(ctx context.Context, gatewayID string, data []byte) {
 	senderAllow, globalAllow := h.outgoingRateLimiter.AllowVerbose(gatewayID)
 	if !senderAllow {
-		return errors.New(errorOutgoingRatelimitSender)
+		h.lggr.Errorw(errorOutgoingRatelimitSender, "gatewayID", gatewayID)
+		return
 	}
 	if !globalAllow {
-		return errors.New(errorOutgoingRatelimitSender)
+		h.lggr.Errorw(errorOutgoingRatelimitGlobal, "gatewayID", gatewayID)
+		return
 	}
+	err := h.gatewayConnector.SendToGateway(ctx, gatewayID, data)
+	if err != nil {
+		h.lggr.Errorw("Failed to send response to gateway", "error", err, "gatewayID", gatewayID)
+		return
+	}
+	return
+}
+
+func (h *requestHandler) processTrigger(ctx context.Context, gatewayID string, req jsonrpc.Request) {
+	var triggerReq HTTPTriggerRequest
+	err := json.Unmarshal(req.Params, &triggerReq)
+	l := logger.With(h.lggr, "gatewayID", gatewayID, "deduplicationKey", triggerReq.DeduplicationKey)
+	payload := HTTPTriggerResponse{
+		DeduplicationKey: triggerReq.DeduplicationKey,
+	}
+	if err != nil {
+		l.Errorw("Failed to unmarshal HTTP trigger request", "error", err)
+		h.sendErrorResponse(ctx, gatewayID, req.ID, payload, CodeValidationError, "Failed to unmarshal HTTP trigger request")
+		return
+	}
+	if !isValidJSON(triggerReq.Input) {
+		l.Errorw("Invalid input JSON in HTTP trigger request", "input", triggerReq.Input)
+		h.sendErrorResponse(ctx, gatewayID, req.ID, payload, CodeValidationError, "Invalid input JSON in HTTP trigger request")
+		return
+	}
+	// TODO: PRODCRE-305 validate JWT against authorized keys
+	// TODO: PRODCRE-475 support look-up of workflowID using workflowOwner/Label/Name
+	workflowID := triggerReq.Workflow.WorkflowID
+	if workflowID == "" {
+		l.Error("WorkflowID is required in HTTP trigger request")
+		h.sendErrorResponse(ctx, gatewayID, req.ID, payload, CodeValidationError, "workflowID is required")
+		return
+	}
+	l = logger.With(l, "workflowID", workflowID)
+	payload.WorkflowID = workflowID
+	h.workflowsMu.RLock()
+	workflow, ok := h.workflows[workflowID]
+	h.workflowsMu.RUnlock()
+	if !ok {
+		l.Error("Workflow not registered")
+		h.sendErrorResponse(ctx, gatewayID, req.ID, payload, CodeResourceNotFound, "Workflow not registered")
+		return
+	}
+	workflowExecutionID, err := generateExecutionID(workflowID, triggerReq.DeduplicationKey)
+	if err != nil {
+		l.Errorw("Failed to generate workflow execution ID", "error", err)
+		h.sendErrorResponse(ctx, gatewayID, req.ID, payload, CodeInternalServerError, "Internal server error")
+		return
+	}
+	payload.WorkflowExecutionID = workflowExecutionID
 	input, err := convertRawJSONToProto(triggerReq.Input)
 	if err != nil {
-		return fmt.Errorf("failed to convert input to proto struct: %w", err)
+		l.Errorw("Failed to convert input JSON to proto", "error", err)
+		h.sendErrorResponse(ctx, gatewayID, req.ID, payload, CodeInternalServerError, "Failed to convert input JSON to proto")
+		return
 	}
 	workflow.sendCh <- capabilities.TriggerAndId[*http.Payload]{
 		Id: triggerReq.DeduplicationKey,
 		Trigger: &http.Payload{
 			Input: input,
-			// Key: // TODO:
+			// TODO: PRODCRE-305 validate JWT against authorized keys
 		},
 	}
-	return h.gatewayConnector.SignAndSendToGateway(context.Background(), gatewayID, &gateway.MessageBody{
-		MessageId: msg.Body.MessageId,
-		Method:    MethodHTTPTrigger,
-		Payload:   jsonPayload,
+	jsonPayload, err := json.Marshal(payload)
+	if err != nil {
+		l.Errorw("Failed to marshal HTTP trigger response", "error", err)
+		h.sendErrorResponse(ctx, gatewayID, req.ID, payload, CodeInternalServerError, "Failed to marshal HTTP trigger response")
+		return
+	}
+	resp, err := h.codec.EncodeResponse(&jsonrpc.Response{
+		Version: "2.0",
+		ID:      req.ID,
+		Result:  jsonPayload,
 	})
+	h.sendResponse(ctx, gatewayID, resp)
+	return
 }
 
 func incomingRateLimiterConfigDefaults(config gateway.RateLimiterConfig) gateway.RateLimiterConfig {
@@ -244,13 +313,6 @@ func convertRawJSONToProto(raw json.RawMessage) (*structpb.Struct, error) {
 	return s, nil
 }
 
-// TODO: move this to chainlink-common
-type WrappedHTTPTriggerRequest struct {
-	AuthToken  string
-	ReqBody    JSONRPCRequest
-	WorkflowID string
-}
-
 type HTTPTriggerRequest struct {
 	Workflow         WorkflowSelector `json:"workflow"`
 	DeduplicationKey string           `json:"deduplicationKey"`
@@ -265,10 +327,9 @@ type WorkflowSelector struct {
 }
 
 type HTTPTriggerResponse struct {
-	ErrorMessage        string            `json:"error_message,omitempty"`
-	Status              HTTPTriggerStatus `json:"status"`
-	WorkflowID          string            `json:"workflow_id,omitempty"`
-	WorkflowExecutionID string            `json:"workflow_execution_id,omitempty"`
+	WorkflowID          string `json:"workflow_id,omitempty"`
+	DeduplicationKey    string `json:"deduplication_key,omitempty"`
+	WorkflowExecutionID string `json:"workflow_execution_id,omitempty"`
 }
 
 type HTTPTriggerStatus string
@@ -276,6 +337,11 @@ type HTTPTriggerStatus string
 const (
 	HTTPTriggerStatusError    HTTPTriggerStatus = "ERROR"
 	HTTPTriggerStatusAccepted HTTPTriggerStatus = "ACCEPTED"
+	CodeValidationError                         = -32602 // ValidationError: invalid fields, not retryable
+	CodeUnauthorized                            = -32001 // Unauthorized: invalid/missing JWT, not retryable
+	CodeResourceNotFound                        = -32004 // ResourceNotFound: workflowID does not exist, not retryable
+	CodeLimitExceeded                           = -32029 // LimitExceeded: rate limits exceeded, retryable
+	CodeInternalServerError                     = -32603 // InternalServerError: unexpected errors, retryable
 )
 
 type JSONRPCRequest struct {
