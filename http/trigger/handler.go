@@ -71,6 +71,7 @@ func NewRequestHandler(lggr logger.Logger, gc core.GatewayConnector, config Serv
 		outgoingRateLimiter: outgoingRateLimiter,
 		incomingRateLimiter: incomingRateLimiter,
 		codec:               jsonrpc.Codec{},
+		workflows:           make(map[string]workflow),
 	}, nil
 }
 
@@ -93,6 +94,7 @@ func (h *requestHandler) ID(context.Context) (string, error) {
 
 func (h *requestHandler) RegisterWorkflow(ctx context.Context, workflowID string, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error {
 	authorizedKeys := map[string]struct{}{}
+	// TODO: validate public key
 	for _, key := range input.AuthorizedKeys {
 		if key.GetEcdsa() != nil {
 			authorizedKeys[key.GetEcdsa().PublicKey] = struct{}{}
@@ -154,7 +156,7 @@ func (h *requestHandler) HandleGatewayMessage(ctx context.Context, gatewayID str
 }
 
 func isValidJSON(raw json.RawMessage) bool {
-	var v interface{}
+	var v map[string]interface{}
 	return json.Unmarshal(raw, &v) == nil
 }
 
@@ -196,24 +198,24 @@ func (h *requestHandler) sendResponse(ctx context.Context, gatewayID string, dat
 		h.lggr.Errorw("Failed to send response to gateway", "error", err, "gatewayID", gatewayID)
 		return
 	}
-	return
 }
 
 func (h *requestHandler) processTrigger(ctx context.Context, gatewayID string, req jsonrpc.Request) {
+	l := logger.With(h.lggr, "gatewayID", gatewayID)
 	var triggerReq HTTPTriggerRequest
 	err := json.Unmarshal(req.Params, &triggerReq)
-	l := logger.With(h.lggr, "gatewayID", gatewayID, "deduplicationKey", triggerReq.DeduplicationKey)
+	if err != nil {
+		l.Errorw("Failed to unmarshal HTTP trigger request", "error", err)
+		return
+	}
+	l = logger.With(h.lggr, "deduplicationKey", triggerReq.DeduplicationKey)
 	payload := HTTPTriggerResponse{
 		DeduplicationKey: triggerReq.DeduplicationKey,
 	}
+	input, err := convertRawJSONToProto(triggerReq.Input)
 	if err != nil {
-		l.Errorw("Failed to unmarshal HTTP trigger request", "error", err)
-		h.sendErrorResponse(ctx, gatewayID, req.ID, payload, CodeValidationError, "Failed to unmarshal HTTP trigger request")
-		return
-	}
-	if !isValidJSON(triggerReq.Input) {
-		l.Errorw("Invalid input JSON in HTTP trigger request", "input", triggerReq.Input)
-		h.sendErrorResponse(ctx, gatewayID, req.ID, payload, CodeValidationError, "Invalid input JSON in HTTP trigger request")
+		l.Errorw("Failed to convert input JSON to proto", "error", err)
+		h.sendErrorResponse(ctx, gatewayID, req.ID, payload, CodeValidationError, "Invalid input JSON")
 		return
 	}
 	// TODO: PRODCRE-305 validate JWT against authorized keys
@@ -240,13 +242,6 @@ func (h *requestHandler) processTrigger(ctx context.Context, gatewayID string, r
 		h.sendErrorResponse(ctx, gatewayID, req.ID, payload, CodeInternalServerError, "Internal server error")
 		return
 	}
-	payload.WorkflowExecutionID = workflowExecutionID
-	input, err := convertRawJSONToProto(triggerReq.Input)
-	if err != nil {
-		l.Errorw("Failed to convert input JSON to proto", "error", err)
-		h.sendErrorResponse(ctx, gatewayID, req.ID, payload, CodeInternalServerError, "Failed to convert input JSON to proto")
-		return
-	}
 	workflow.sendCh <- capabilities.TriggerAndId[*http.Payload]{
 		Id: triggerReq.DeduplicationKey,
 		Trigger: &http.Payload{
@@ -254,10 +249,11 @@ func (h *requestHandler) processTrigger(ctx context.Context, gatewayID string, r
 			// TODO: PRODCRE-305 validate JWT against authorized keys
 		},
 	}
+	payload.WorkflowExecutionID = workflowExecutionID
 	jsonPayload, err := json.Marshal(payload)
 	if err != nil {
 		l.Errorw("Failed to marshal HTTP trigger response", "error", err)
-		h.sendErrorResponse(ctx, gatewayID, req.ID, payload, CodeInternalServerError, "Failed to marshal HTTP trigger response")
+		h.sendErrorResponse(ctx, gatewayID, req.ID, payload, CodeInternalServerError, "Internal server error")
 		return
 	}
 	resp, err := h.codec.EncodeResponse(&jsonrpc.Response{
@@ -265,8 +261,12 @@ func (h *requestHandler) processTrigger(ctx context.Context, gatewayID string, r
 		ID:      req.ID,
 		Result:  jsonPayload,
 	})
+	if err != nil {
+		l.Errorw("Failed to encode HTTP trigger response", "error", err)
+		h.sendErrorResponse(ctx, gatewayID, req.ID, payload, CodeInternalServerError, "Internal server error")
+		return
+	}
 	h.sendResponse(ctx, gatewayID, resp)
-	return
 }
 
 func incomingRateLimiterConfigDefaults(config gateway.RateLimiterConfig) gateway.RateLimiterConfig {
