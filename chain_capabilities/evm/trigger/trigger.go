@@ -3,7 +3,10 @@ package trigger
 import (
 	"context"
 	"fmt"
+
+	//"github.com/smartcontractkit/chainlink/v2/core/platform"
 	"math/big"
+	//"strconv"
 	"sync"
 	"time"
 
@@ -50,18 +53,12 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 
 	lts.Service, lts.srvcEng = services.Config{
 		Name:  "EvmLogTriggerService",
-		Start: lts.Start,
 		Close: lts.Close,
 	}.NewServiceEngine(lggr)
 
 	return lts
 }
 
-func (lts *LogTriggerService) Start(context.Context) error {
-	lts.lggr.Debug("Start LogTriggerService")
-	// TODO on start
-	return nil
-}
 func (lts *LogTriggerService) Close() error {
 	lts.lggr.Debug("Closing LogTriggerService")
 	// wait for all polling goroutines to finish
