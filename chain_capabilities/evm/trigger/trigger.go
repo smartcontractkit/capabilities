@@ -3,10 +3,7 @@ package trigger
 import (
 	"context"
 	"fmt"
-
-	//"github.com/smartcontractkit/chainlink/v2/core/platform"
 	"math/big"
-	//"strconv"
 	"sync"
 	"time"
 
