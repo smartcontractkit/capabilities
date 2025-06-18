@@ -61,18 +61,14 @@ func TestLogTriggerService_Close_WaitsForPollingGoroutine(t *testing.T) {
 		evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
 		evmService.On("UnregisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
 		store := NewLogTriggerStore()
-		service := &LogTriggerService{
-			lggr:                   lggr,
-			logTriggerPollInterval: 10 * time.Millisecond,
-			triggers:               store,
-			EVMService:             evmService,
-		}
+		service := NewLogTriggerService(evmService, store, lggr, 10*time.Millisecond)
 		ch, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
 			EventSigs: eventSignatures,
 		})
 		require.NoError(t, err)
 		require.NotNil(t, ch)
+		time.Sleep(10 * time.Millisecond) // let it run a bit more
 		_, exists := store.Read(triggerID)
 		require.True(t, exists)
 
@@ -98,56 +94,6 @@ func TestLogTriggerService_Close_WaitsForPollingGoroutine(t *testing.T) {
 			t.Fatal("Close() did not return in time, likely did not wait for goroutine startPolling() to finish")
 		}
 	})
-
-	t.Run("close cleans up broken state", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		lggr := logger.Test(t)
-		evmService := initMocks(t)
-		evmService.On("UnregisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
-		store := NewLogTriggerStore()
-		service := &LogTriggerService{
-			lggr:                   lggr,
-			logTriggerPollInterval: 10 * time.Millisecond,
-			triggers:               store,
-			EVMService:             evmService,
-		}
-		/* instead of performing a RegisterLogTrigger() we will tamper with the store directly, to simulate a scenario
-		of insertion, so that we can test the Close() method can clean up the broken state as it doesn't have to wait on
-		the syncGroup to finalize, as it is not running the startPolling() goroutine, but we still need to go over all
-		the triggers in the store and unregister them
-		*/
-		_, subCtx := context.WithCancel(ctx)
-		store.Write(triggerID, logTriggerState{
-			cancelFunc: subCtx,
-		})
-		require.NoError(t, service.Close())
-		//ensure the Close() has dispatched the UnregisterLogTrigger() for the triggerID ending up in cleaning the store
-		_, exists := store.Read(triggerID)
-		require.False(t, exists)
-	})
-
-	t.Run("close reports an error accordingly", func(t *testing.T) {
-		lggr := logger.Test(t)
-		evmService := initMocks(t)
-		evmService.On("UnregisterLogTracking", mock.Anything, mock.Anything).Return(errors.New("mocked failure error")).Once()
-		store := NewLogTriggerStore()
-		service := &LogTriggerService{
-			lggr:                   lggr,
-			logTriggerPollInterval: 10 * time.Millisecond,
-			triggers:               store,
-			EVMService:             evmService,
-		}
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		_, subCtx := context.WithCancel(ctx)
-		store.Write(triggerID, logTriggerState{
-			cancelFunc: subCtx,
-		})
-		require.ErrorContains(t,
-			service.Close(),
-			"errors occurred during Close: [failed to unregister log trigger trigger-1: failed to unregister log-tracking: 'mocked failure error' for triggerID: trigger-1]")
-	})
 }
 
 // testing all the input parameters and some minor validations
@@ -155,10 +101,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	lggr := logger.Test(t)
-	service := &LogTriggerService{
-		lggr:     lggr,
-		triggers: NewLogTriggerStore(),
-	}
+	service := NewLogTriggerService(nil, NewLogTriggerStore(), lggr, pollInterval)
 
 	t.Run("missing triggerID", func(t *testing.T) {
 		_, err := service.RegisterLogTrigger(ctx, "", capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
@@ -170,11 +113,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 
 	t.Run("already registered triggerID", func(t *testing.T) {
 		store := NewLogTriggerStore()
-		service := &LogTriggerService{
-			lggr:                   lggr,
-			logTriggerPollInterval: pollInterval,
-			triggers:               store,
-		}
+		service := NewLogTriggerService(nil, store, lggr, pollInterval)
 		//we simulate a RegisterLogTrigger() by tampering the store
 		store.Write(triggerID, logTriggerState{})
 		_, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
@@ -203,11 +142,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 	t.Run("fail to get latest head", func(t *testing.T) {
 		evmService := initMocks(t)
 		evmService.On("LatestAndFinalizedHead", mock.Anything).Return(evmtypes.Head{}, evmtypes.Head{}, errors.New("mocked failure error"))
-		service := &LogTriggerService{
-			lggr:       lggr,
-			triggers:   NewLogTriggerStore(),
-			EVMService: evmService,
-		}
+		service := NewLogTriggerService(evmService, NewLogTriggerStore(), lggr, pollInterval)
 		_, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
 			EventSigs: eventSignatures,
@@ -220,12 +155,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 		evmService := initMocks(t)
 		evmService.On("LatestAndFinalizedHead", mock.Anything).Return(evmtypes.Head{}, evmtypes.Head{}, nil)
 		evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(errors.New("mocking error, making register failing on purpose")).Once()
-		service := &LogTriggerService{
-			lggr:                   lggr,
-			logTriggerPollInterval: pollInterval,
-			triggers:               NewLogTriggerStore(),
-			EVMService:             evmService,
-		}
+		service := NewLogTriggerService(evmService, NewLogTriggerStore(), lggr, pollInterval)
 		_, err := service.RegisterLogTrigger(ctx, triggerID+"-logtracking", capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: brokenAddresses,
 			EventSigs: eventSignatures,
@@ -266,11 +196,7 @@ func TestUnregisterLogTrigger_InputValidation(t *testing.T) {
 		breakingTriggerID := "breaking-logTriggerUnregister"
 		evmService := initMocks(t)
 		evmService.On("UnregisterLogTracking", mock.Anything, mock.Anything).Return(errors.New("mocking error, making unregister failing on purpose")).Once()
-		service := &LogTriggerService{
-			lggr:       lggr,
-			triggers:   NewLogTriggerStore(),
-			EVMService: evmService,
-		}
+		service := NewLogTriggerService(evmService, NewLogTriggerStore(), lggr, pollInterval)
 
 		service.triggers.Write(breakingTriggerID, logTriggerState{
 			cancelFunc: func() {},
@@ -556,12 +482,7 @@ func TestIntegration_RegisterAndUnregisterLogTrigger(t *testing.T) {
 		createLog(nextBlockNumber, evmtypes.Address(expectedAddress), message),
 	}, nil).Once()
 
-	service := &LogTriggerService{
-		lggr:                   lggr,
-		logTriggerPollInterval: pollInterval,
-		triggers:               NewLogTriggerStore(),
-		EVMService:             evmService,
-	}
+	service := NewLogTriggerService(evmService, NewLogTriggerStore(), lggr, pollInterval)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -577,6 +498,7 @@ func TestIntegration_RegisterAndUnregisterLogTrigger(t *testing.T) {
 		EventSigs: eventSignatures,
 	})
 	require.NoError(t, err)
+	time.Sleep(10 * time.Millisecond) // let it run a bit more
 	_, exists := service.triggers.Read(triggerID)
 	require.True(t, exists, "expected trigger to be registered")
 	require.Len(t, service.triggers.ReadAll(), 1, "expected one and only one trigger to be registered")

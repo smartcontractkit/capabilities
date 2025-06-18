@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/services"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
@@ -25,6 +27,9 @@ const (
 )
 
 type LogTriggerService struct {
+	services.Service
+	srvcEng *services.Engine
+
 	EVMService             types.EVMService
 	lggr                   logger.Logger
 	wg                     sync.WaitGroup
@@ -35,33 +40,32 @@ type LogTriggerService struct {
 // NewLogTriggerService creates a new instance of logTriggerService.
 // TODO PLEX-1465: the core logic of RegisterLogTrigger/UnregisterLogTrigger/Close/etc. should be moved to the EVMService, so it can be used by other services as well.
 func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lggr logger.Logger, logTriggerPollInterval time.Duration) *LogTriggerService {
-	return &LogTriggerService{
+	lts := &LogTriggerService{
 		EVMService:             evmService,
 		lggr:                   lggr,
 		triggers:               store,
 		logTriggerPollInterval: logTriggerPollInterval,
 		wg:                     sync.WaitGroup{},
 	}
+
+	lts.Service, lts.srvcEng = services.Config{
+		Name:  "EvmLogTriggerService",
+		Start: lts.Start,
+		Close: lts.Close,
+	}.NewServiceEngine(lggr)
+
+	return lts
 }
 
+func (lts *LogTriggerService) Start(context.Context) error {
+	lts.lggr.Debug("Start LogTriggerService")
+	// TODO on start
+	return nil
+}
 func (lts *LogTriggerService) Close() error {
 	lts.lggr.Debug("Closing LogTriggerService")
 	// wait for all polling goroutines to finish
 	lts.wg.Wait()
-	// Unregister all log triggers
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	var errs []error
-	for triggerID := range lts.triggers.ReadAll() {
-		lts.lggr.Debugf("Closing triggerID: %s", triggerID)
-		err := lts.UnregisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, nil)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("failed to unregister log trigger %s: %w", triggerID, err))
-		}
-	}
-	if len(errs) > 0 {
-		return fmt.Errorf("errors occurred during Close: %v", errs)
-	}
 	return nil
 }
 
@@ -98,13 +102,15 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 			err, triggerID, filter.Addresses, filter.EventSigs, filter.Topic2, filter.Topic3, filter.Topic4)
 	}
 	logCh := make(chan capabilities.TriggerAndId[*evmservice.Log], defaultSendChannelBufferSize)
-	subCtx, cancel := context.WithCancel(ctx)
-	lts.triggers.Write(triggerID, logTriggerState{
-		cancelFunc: cancel,
-		lastBlock:  fromBlock,
-	})
 	lts.wg.Add(1)
-	go lts.startPolling(subCtx, triggerID, input, logCh)
+	lts.srvcEng.Go(func(ctx context.Context) {
+		subCtx, cancel := context.WithCancel(ctx)
+		lts.triggers.Write(triggerID, logTriggerState{
+			cancelFunc: cancel,
+			lastBlock:  fromBlock,
+		})
+		lts.startPolling(subCtx, triggerID, input, logCh)
+	})
 
 	return logCh, nil
 }
@@ -193,6 +199,7 @@ func (lts *LogTriggerService) createTriggerResponse(log *evmservice.Log) capabil
 	}
 }
 
+// generateLogIdentifier creates the trigger event id, a unique identifier for the log based on its transaction hash, block hash, and index
 func (lts *LogTriggerService) generateLogIdentifier(log *evmservice.Log) string {
 	return fmt.Sprintf("%s:%s:%d", log.GetTxHash(), log.GetBlockHash(), log.GetIndex())
 }
