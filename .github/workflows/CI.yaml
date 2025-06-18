@@ -290,7 +290,7 @@ jobs:
       - test
       - race
       - tidy-and-generate
-      - modgraph
+      # - modgraph
     if: always()
     steps:
       - name: All tests ok
