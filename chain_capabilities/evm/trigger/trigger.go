@@ -33,16 +33,24 @@ type LogTriggerService struct {
 	lggr                   logger.Logger
 	triggers               LogTriggerStore
 	logTriggerPollInterval time.Duration
+	// limitAndSort defines the default sorting and limiting for all log queries.
+	limitAndSort query.LimitAndSort
 }
 
 // NewLogTriggerService creates a new instance of logTriggerService.
 // TODO PLEX-1465: the core logic of RegisterLogTrigger/UnregisterLogTrigger/Close/etc. should be moved to the EVMService, so it can be used by other services as well.
 func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lggr logger.Logger, logTriggerPollInterval time.Duration) *LogTriggerService {
+	// all queries to log poller will have the same limit and sort, so we can create it once and reuse it
+	limitAndSort := query.NewLimitAndSort(query.Limit{
+		Count: defaultLimitQueryLogSize,
+	}, query.NewSortByBlock(query.Asc))
+
 	lts := &LogTriggerService{
 		EVMService:             evmService,
 		lggr:                   lggr,
 		triggers:               store,
 		logTriggerPollInterval: logTriggerPollInterval,
+		limitAndSort:           limitAndSort,
 	}
 
 	lts.Service, lts.srvcEng = services.Config{
@@ -71,7 +79,7 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 		return nil, err
 	}
 
-	filter := evmtypes.LPFilterQuery{
+	filterQuery := evmtypes.LPFilterQuery{
 		Name:      lts.generateFilterID(triggerID),
 		Addresses: evmservice.ConvertAddressesFromProto(input.GetAddresses()),
 		EventSigs: evmservice.ConvertHashesFromProto(input.GetEventSigs()),
@@ -79,20 +87,26 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 		Topic3:    evmservice.ConvertHashesFromProto(input.GetTopic3()),
 		Topic4:    evmservice.ConvertHashesFromProto(input.GetTopic4()),
 	}
-	err = lts.EVMService.RegisterLogTracking(ctx, filter)
+	err = lts.EVMService.RegisterLogTracking(ctx, filterQuery)
 	if err != nil {
 		return nil, fmt.Errorf("failed to register log-tracking: '%w' for triggerID: %s, addresses: %v, eventSig: %v, topic2: %v, topic3: %v, topic4: %v",
-			err, triggerID, filter.Addresses, filter.EventSigs, filter.Topic2, filter.Topic3, filter.Topic4)
+			err, triggerID, filterQuery.Addresses, filterQuery.EventSigs, filterQuery.Topic2, filterQuery.Topic3, filterQuery.Topic4)
 	}
+	expressions, confidence := lts.createLogRequest(ctx, input)
+
 	logCh := make(chan capabilities.TriggerAndId[*evmservice.Log], defaultSendChannelBufferSize)
 	lts.srvcEng.Go(func(srvcCtx context.Context) {
 		subCtx, cancel := context.WithCancel(srvcCtx)
 		lts.triggers.Write(triggerID, logTriggerState{
-			cancelFunc: cancel,
-			lastBlock:  fromBlock,
-			unfinalizedSentEventIds: make(map[string]*big.Int),
+			cancelFunc:              cancel,
+			lastBlock:               fromBlock,
+			unfinalizedSentEventIDs: make(map[string]*big.Int),
+			filter: filter{
+				expressions: expressions,
+				confidence:  confidence,
+			},
 		})
-		lts.startPolling(subCtx, triggerID, input, logCh)
+		lts.startPolling(subCtx, triggerID, logCh)
 	})
 
 	return logCh, nil
@@ -129,7 +143,7 @@ func (lts *LogTriggerService) startPolling(ctx context.Context, triggerID string
 				return
 			}
 			lts.lggr.Debugf("Awake, polling for triggerID: %s, currentOffset: %d", triggerID, state.lastBlock)
-			logs, err := lts.fetchLogsFromLogPoller(ctx, input, state.lastBlock)
+			logs, err := lts.fetchLogsFromLogPoller(ctx, state)
 			if err != nil {
 				lts.lggr.Errorf("Failed to fetch logs for triggerID: %s, error: %v", triggerID, err)
 				//TODO PLEX-1457: should we sent an error to some o11y place?
@@ -147,7 +161,7 @@ func (lts *LogTriggerService) startPolling(ctx context.Context, triggerID string
 
 			lts.lggr.Debugf("Finished sending events for triggerID: %s, about to update latest block number (current offset: %d, latest finalized block: %d)", triggerID, state.lastBlock, finalizedBlockNumber)
 			calculatedLatestBlock := lts.getLatestBlockNumber(logs, state.lastBlock, finalizedBlockNumber)
-			err = lts.triggers.Update(triggerID, calculatedLatestBlock, state.unfinalizedSentEventIds)
+			err = lts.triggers.Update(triggerID, calculatedLatestBlock, state.unfinalizedSentEventIDs)
 			if err != nil {
 				lts.lggr.Errorf("Failed to update last block for triggerID: %s, error: %v", triggerID, err)
 				//TODO PLEX-1457: should we sent an error to some o11y place?
@@ -167,13 +181,13 @@ func (lts *LogTriggerService) sendLogsToWorkflows(logs []*evmtypes.Log,
 	var needsUpdate bool
 
 	for _, log := range logs {
-		logId := lts.generateLogIdentifier(log)
-		_, alreadySent := trigger.unfinalizedSentEventIds[logId]
-		lts.lggr.Debugf("Working with logId: %s, alreadySent: %t", logId, alreadySent)
+		logID := lts.generateLogIdentifier(log)
+		_, alreadySent := trigger.unfinalizedSentEventIDs[logID]
+		lts.lggr.Debugf("Working with logId: %s, alreadySent: %t", logID, alreadySent)
 
 		if log.BlockNumber.Cmp(finalizedBlockNumber) > 0 && !alreadySent {
 			// log's block number is unfinalized, and it was not sent yet
-			trigger.unfinalizedSentEventIds[logId] = log.BlockNumber
+			trigger.unfinalizedSentEventIDs[logID] = log.BlockNumber
 			needsUpdate = true
 		}
 		if !alreadySent {
@@ -194,15 +208,15 @@ func (lts *LogTriggerService) sendLogsToWorkflows(logs []*evmtypes.Log,
 	}
 
 	// Prune all entries in unfinalizedSentEventIds where the block number is less than or equal to finalizedBlockNumber
-	for logId, blockNum := range trigger.unfinalizedSentEventIds {
+	for logID, blockNum := range trigger.unfinalizedSentEventIDs {
 		if blockNum.Cmp(finalizedBlockNumber) <= 0 {
-			delete(trigger.unfinalizedSentEventIds, logId)
+			delete(trigger.unfinalizedSentEventIDs, logID)
 			needsUpdate = true
 		}
 	}
 
 	if needsUpdate {
-		err := lts.triggers.Update(triggerID, trigger.lastBlock, trigger.unfinalizedSentEventIds)
+		err := lts.triggers.Update(triggerID, trigger.lastBlock, trigger.unfinalizedSentEventIDs)
 		if err != nil {
 			lts.lggr.Errorf("Failed to update unfinalized sent event IDs for triggerID: %s, error: %v", triggerID, err)
 			//TODO PLEX-1457: should we sent an error to some o11y place?
@@ -226,19 +240,17 @@ func (lts *LogTriggerService) getLatestBlockNumber(logs []*evmtypes.Log, current
 	return currentBlockNumber
 }
 
-func (lts *LogTriggerService) fetchLogsFromLogPoller(ctx context.Context, input *evmcappb.FilterLogTriggerRequest, fromBlock *big.Int) ([]*evmtypes.Log, error) {
-	expressions, limitAndSort, confidence, err := lts.createLogRequest(ctx, input, fromBlock)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create log request: %w", err)
-	}
-	logs, err := lts.EVMService.QueryTrackedLogs(ctx, expressions, limitAndSort, confidence)
+func (lts *LogTriggerService) fetchLogsFromLogPoller(ctx context.Context, triggerState logTriggerState) ([]*evmtypes.Log, error) {
+	block := fmt.Sprintf("%d", triggerState.lastBlock)
+	expressions := append(triggerState.expressions, query.Block(block, primitives.Gt))
+	logs, err := lts.EVMService.QueryTrackedLogs(ctx, expressions, lts.limitAndSort, triggerState.confidence)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch logs: %w", err)
 	}
 	return logs, nil
 }
 
-func (lts *LogTriggerService) createLogRequest(ctx context.Context, input *evmcappb.FilterLogTriggerRequest, fromBlock *big.Int) ([]query.Expression, query.LimitAndSort, primitives.ConfidenceLevel, error) {
+func (lts *LogTriggerService) createLogRequest(_ context.Context, input *evmcappb.FilterLogTriggerRequest) ([]query.Expression, primitives.ConfidenceLevel) {
 	var expressions []query.Expression
 
 	var addressFilters []query.Expression
@@ -272,20 +284,10 @@ func (lts *LogTriggerService) createLogRequest(ctx context.Context, input *evmca
 	if expr := lts.makeEventByTopicFilter(3, input.GetTopic4()); expr != nil {
 		expressions = append(expressions, *expr)
 	}
-	block := fmt.Sprintf("%d", fromBlock)
-	expressions = append(expressions, query.Block(block, primitives.Gt))
 
 	//TODO PLEX-1488: when implementing SAFE we need to add a toBlockExpression to the query where it will be the latest safe block number
 
-	limitAndSort := query.LimitAndSort{
-		SortBy: []query.SortBy{
-			query.NewSortByBlock(query.Asc),
-		},
-		Limit: query.Limit{
-			Count: defaultLimitQueryLogSize,
-		},
-	}
-	return expressions, limitAndSort, confidenceLevel, nil
+	return expressions, confidenceLevel
 }
 
 func (lts *LogTriggerService) makeEventByTopicFilter(topic uint64, topics [][]byte) *query.Expression {

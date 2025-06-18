@@ -17,7 +17,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives/evm"
-	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -211,13 +210,11 @@ func TestUnregisterLogTrigger_InputValidation(t *testing.T) {
 }
 
 func TestCreateLogRequest(t *testing.T) {
-	service := &LogTriggerService{
-		lggr: logger.Test(t),
-	}
+	service := NewLogTriggerService(nil, NewLogTriggerStore(), logger.Test(t), pollInterval)
+
 	tests := []struct {
 		name                string
 		input               *evmcappb.FilterLogTriggerRequest
-		fromBlock           *big.Int
 		expectedConfidence  primitives.ConfidenceLevel
 		expectedExpressions []query.Expression
 	}{
@@ -228,12 +225,10 @@ func TestCreateLogRequest(t *testing.T) {
 				EventSigs:  eventSignatures,
 				Confidence: evmcappb.ConfidenceLevel_FINALIZED,
 			},
-			fromBlock:          big.NewInt(10),
 			expectedConfidence: primitives.Finalized,
 			expectedExpressions: []query.Expression{
 				evm.NewAddressFilter(evmtypes.Address(expectedAddress)),
 				evm.NewEventSigFilter(evmtypes.Hash(eventSig0Example)),
-				query.Block("10", primitives.Gt),
 			},
 		},
 		//TODO PLEX-1488: missing test for SAFE confidence level
@@ -244,12 +239,10 @@ func TestCreateLogRequest(t *testing.T) {
 				EventSigs:  eventSignatures,
 				Confidence: evmcappb.ConfidenceLevel_LATEST,
 			},
-			fromBlock:          big.NewInt(10),
 			expectedConfidence: primitives.Unconfirmed,
 			expectedExpressions: []query.Expression{
 				evm.NewAddressFilter(evmtypes.Address(expectedAddress)),
 				evm.NewEventSigFilter(evmtypes.Hash(eventSig0Example)),
-				query.Block("10", primitives.Gt),
 			},
 		},
 		{
@@ -262,7 +255,6 @@ func TestCreateLogRequest(t *testing.T) {
 				Topic4:     eventSignatures,
 				Confidence: evmcappb.ConfidenceLevel_FINALIZED,
 			},
-			fromBlock:          big.NewInt(10),
 			expectedConfidence: primitives.Finalized,
 			expectedExpressions: []query.Expression{
 				evm.NewAddressFilter(evmtypes.Address(expectedAddress)),
@@ -270,23 +262,21 @@ func TestCreateLogRequest(t *testing.T) {
 				*service.makeEventByTopicFilter(1, eventSignatures),
 				*service.makeEventByTopicFilter(2, eventSignatures),
 				*service.makeEventByTopicFilter(3, eventSignatures),
-				query.Block("10", primitives.Gt),
 			},
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			expressions, limitAndSort, confidence, err := service.createLogRequest(context.Background(), tc.input, tc.fromBlock)
-			require.NoError(t, err)
+			expressions, confidence := service.createLogRequest(context.Background(), tc.input)
 			require.NotNil(t, expressions)
 			require.Len(t, expressions, len(tc.expectedExpressions))
 			for i, expected := range tc.expectedExpressions {
 				require.Equal(t, expected, expressions[i])
 			}
-			require.NotNil(t, limitAndSort)
-			require.NotNil(t, limitAndSort.SortBy)
-			require.Equal(t, query.NewSortByBlock(query.Asc), limitAndSort.SortBy[0])
+			require.NotNil(t, service.limitAndSort)
+			require.NotNil(t, service.limitAndSort.SortBy)
+			require.Equal(t, query.NewSortByBlock(query.Asc), service.limitAndSort.SortBy[0])
 			require.NotNil(t, confidence)
 			require.Equal(t, tc.expectedConfidence, confidence)
 		})
@@ -425,25 +415,25 @@ func TestFetchLogsFromLogPoller(t *testing.T) {
 	ctx := context.Background()
 	lggr := logger.Test(t)
 	evmService := evmmock.NewEVMService(t)
-	service := LogTriggerService{
-		EVMService: evmService,
-		lggr:       lggr,
-	}
-
-	input := &evmcappb.FilterLogTriggerRequest{
-		Addresses: addresses,
-		EventSigs: eventSignatures,
-	}
+	service := NewLogTriggerService(evmService, NewLogTriggerStore(), lggr, pollInterval)
 	fromBlock := big.NewInt(10)
+	state := logTriggerState{
+		lastBlock: fromBlock,
+		filter: filter{
+			expressions: []query.Expression{},
+			confidence:  primitives.Finalized,
+		},
+	}
 
 	evmService.On("QueryTrackedLogs", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Run(func(args mock.Arguments) {
 			filterQuery := args.Get(1).([]query.Expression)
 			require.NotEmpty(t, filterQuery)
-			require.Len(t, filterQuery, 3) // Expecting 3 expressions: address, eventSig, block number
-			require.Equal(t, evm.NewAddressFilter(evmtypes.Address(expectedAddress)), filterQuery[0])
-			require.Equal(t, evm.NewEventSigFilter(evmtypes.Hash(eventSig0Example)), filterQuery[1])
-			require.Equal(t, query.Block(fromBlock.String(), primitives.Gt), filterQuery[2])
+			require.Len(t, filterQuery, 1) // Expecting only the block number expression
+			require.Equal(t, query.Block(fromBlock.String(), primitives.Gt), filterQuery[0])
+			confidenceLevel := args.Get(3).(primitives.ConfidenceLevel)
+			require.NotEmpty(t, confidenceLevel)
+			require.Equal(t, state.confidence, confidenceLevel)
 		}).
 		Return([]*evmtypes.Log{
 			{
@@ -451,10 +441,12 @@ func TestFetchLogsFromLogPoller(t *testing.T) {
 			},
 		}, nil).Once()
 
-	logs, err := service.fetchLogsFromLogPoller(ctx, input, fromBlock)
+	logs, err := service.fetchLogsFromLogPoller(ctx, state)
 	require.NoError(t, err)
 	require.Len(t, logs, 1)
 	require.Equal(t, big.NewInt(11), logs[0].BlockNumber)
+
+	require.Len(t, state.expressions, 0, "state expressions should not be modified by fetchLogsFromLogPoller")
 }
 
 func TestSendLogsToWorkflows(t *testing.T) {
@@ -481,7 +473,7 @@ func TestSendLogsToWorkflows(t *testing.T) {
 
 	t.Run("all logs are sent to the channel", func(t *testing.T) {
 		service.triggers.Write(triggerID, logTriggerState{
-			unfinalizedSentEventIds: map[string]*big.Int{},
+			unfinalizedSentEventIDs: map[string]*big.Int{},
 		})
 		state, _ := service.triggers.Read(triggerID)
 		logCh := make(chan capabilities.TriggerAndId[*evmservice.Log], len(expectedLogs))
@@ -503,7 +495,7 @@ func TestSendLogsToWorkflows(t *testing.T) {
 	t.Run("first log sent to channel second log dropped out due to timeout", func(t *testing.T) {
 		logCh := make(chan capabilities.TriggerAndId[*evmservice.Log], 1) // buffer size of 1, so it can only hold one log at a time
 		service.triggers.Write(triggerID, logTriggerState{
-			unfinalizedSentEventIds: map[string]*big.Int{},
+			unfinalizedSentEventIDs: map[string]*big.Int{},
 		})
 		state, _ := service.triggers.Read(triggerID)
 		service.sendLogsToWorkflows(expectedLogs, finalizedBlockNumber, triggerID, state, logCh)
@@ -521,7 +513,7 @@ func TestSendLogsToWorkflows(t *testing.T) {
 	t.Run("store unfinalized logs in store and do not re-send them", func(t *testing.T) {
 		logCh := make(chan capabilities.TriggerAndId[*evmservice.Log], 1)
 		service.triggers.Write(triggerID, logTriggerState{
-			unfinalizedSentEventIds: map[string]*big.Int{},
+			unfinalizedSentEventIDs: map[string]*big.Int{},
 		})
 		triggerState, _ := service.triggers.Read(triggerID)
 		service.sendLogsToWorkflows([]*evmtypes.Log{expectedLog2}, finalizedBlockNumber, triggerID, triggerState, logCh)
@@ -536,8 +528,8 @@ func TestSendLogsToWorkflows(t *testing.T) {
 		}
 		// Verify that the unfinalized log is stored in the trigger state
 		triggerState, _ = service.triggers.Read(triggerID)
-		require.Len(t, triggerState.unfinalizedSentEventIds, 1, "expected one unfinalized sent event ID to be stored")
-		require.Contains(t, triggerState.unfinalizedSentEventIds, service.generateLogIdentifier(expectedLog2), "expected the unfinalized log to be stored in the trigger state")
+		require.Len(t, triggerState.unfinalizedSentEventIDs, 1, "expected one unfinalized sent event ID to be stored")
+		require.Contains(t, triggerState.unfinalizedSentEventIDs, service.generateLogIdentifier(expectedLog2), "expected the unfinalized log to be stored in the trigger state")
 		// Verify that the unfinalized log is not sent again
 		service.sendLogsToWorkflows([]*evmtypes.Log{expectedLog2}, finalizedBlockNumber, triggerID, triggerState, logCh)
 		require.Len(t, logCh, 0)
@@ -551,7 +543,7 @@ func TestSendLogsToWorkflows(t *testing.T) {
 
 	t.Run("prune logs that went fron unfinalized to finalized", func(t *testing.T) {
 		service.triggers.Write(triggerID, logTriggerState{
-			unfinalizedSentEventIds: map[string]*big.Int{
+			unfinalizedSentEventIDs: map[string]*big.Int{
 				"fakeId":  big.NewInt(0),
 				"fakeId2": finalizedBlockNumber,
 				"fakeId3": big.NewInt(2),
@@ -569,8 +561,8 @@ func TestSendLogsToWorkflows(t *testing.T) {
 			// no message received, as expected
 		}
 		triggerState, _ = service.triggers.Read(triggerID)
-		require.Len(t, triggerState.unfinalizedSentEventIds, 1, "expected only one unfinalized sent event ID to remain after pruning")
-		require.Equal(t, big.NewInt(2), triggerState.unfinalizedSentEventIds["fakeId3"], "expected only the unfinalized log to remain in the state after pruning")
+		require.Len(t, triggerState.unfinalizedSentEventIDs, 1, "expected only one unfinalized sent event ID to remain after pruning")
+		require.Equal(t, big.NewInt(2), triggerState.unfinalizedSentEventIDs["fakeId3"], "expected only the unfinalized log to remain in the state after pruning")
 	})
 }
 
@@ -586,19 +578,19 @@ func TestIntegration_RegisterAndUnregisterLogTrigger(t *testing.T) {
 	evmService.On("LatestAndFinalizedHead", mock.Anything).Return(evmtypes.Head{}, evmtypes.Head{Number: big.NewInt(26)}, nil).Once()
 	// Mocking the QueryTrackedLogs method to return logs for the test (1st call) and then a second log for the next block (2nd call)
 	nextBlockNumber := new(big.Int).Add(finalizedExpHead.Number, big.NewInt(1))
-	nextBlockNumber2 := new(big.Int).Add(nextBlockNumber, big.NewInt(1))
 	message := []byte(assemblyDataMessage(evmtypes.Address(expectedAddress), nextBlockNumber))
+	nextBlockNumber2 := new(big.Int).Add(nextBlockNumber, big.NewInt(1))
 	message2 := []byte(assemblyDataMessage(evmtypes.Address(expectedAddress), nextBlockNumber2))
-	log2 := createLog(nextBlockNumber2, evmtypes.Address(expectedAddress), message2)
+	log2 := createLog(0, nextBlockNumber2, evmtypes.Address(expectedAddress), message2)
 
 	evmService.On("QueryTrackedLogs", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]*evmtypes.Log{
-		createLog(nextBlockNumber, evmtypes.Address(expectedAddress), message),
+		createLog(1, nextBlockNumber, evmtypes.Address(expectedAddress), message),
 		log2,
 	}, nil).Once()
 	nextBlockNumber3 := new(big.Int).Add(nextBlockNumber2, big.NewInt(1))
 	message = []byte(assemblyDataMessage(evmtypes.Address(expectedAddress), nextBlockNumber3))
 	evmService.On("QueryTrackedLogs", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]*evmtypes.Log{
-		createLog(nextBlockNumber3, evmtypes.Address(expectedAddress), message),
+		createLog(2, nextBlockNumber3, evmtypes.Address(expectedAddress), message),
 	}, nil).Once()
 
 	service := NewLogTriggerService(evmService, NewLogTriggerStore(), lggr, pollInterval)
@@ -621,7 +613,7 @@ func TestIntegration_RegisterAndUnregisterLogTrigger(t *testing.T) {
 	triggerState, exists := service.triggers.Read(triggerID)
 	require.True(t, exists, "expected trigger to be registered")
 	require.Len(t, service.triggers.ReadAll(), 1, "expected one and only one trigger to be registered")
-	require.Len(t, triggerState.unfinalizedSentEventIds, 0, "expected no unfinalized sent event IDs stored in trigger state before registration")
+	require.Len(t, triggerState.unfinalizedSentEventIDs, 0, "expected no unfinalized sent event IDs stored in trigger state before registration")
 
 	validateLog := func(msg *capabilities.TriggerAndId[*evmservice.Log], expectedBlock *big.Int) {
 		logConverted := &evmtypes.Log{
@@ -655,7 +647,7 @@ func TestIntegration_RegisterAndUnregisterLogTrigger(t *testing.T) {
 
 	triggerState, exists = service.triggers.Read(triggerID)
 	require.True(t, exists)
-	require.Len(t, triggerState.unfinalizedSentEventIds, 2, "expected two unfinalized sent event IDs stored in trigger state")
+	require.Len(t, triggerState.unfinalizedSentEventIDs, 2, "expected two unfinalized sent event IDs stored in trigger state")
 
 	tickCh <- time.Now()
 	time.Sleep(5 * time.Millisecond) // let it run a bit more
@@ -669,9 +661,9 @@ func TestIntegration_RegisterAndUnregisterLogTrigger(t *testing.T) {
 
 	triggerState, exists = service.triggers.Read(triggerID)
 	require.True(t, exists)
-	require.Len(t, triggerState.unfinalizedSentEventIds, 2, "expected two unfinalized sent event IDs stored in trigger state")
-	logId2 := service.generateLogIdentifier(log2)
-	require.Equal(t, log2.BlockNumber, triggerState.unfinalizedSentEventIds[logId2])
+	require.Len(t, triggerState.unfinalizedSentEventIDs, 2, "expected two unfinalized sent event IDs stored in trigger state")
+	logID2 := service.generateLogIdentifier(log2)
+	require.Equal(t, log2.BlockNumber, triggerState.unfinalizedSentEventIDs[logID2])
 
 	err = service.UnregisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{})
 	require.NoError(t, err)
@@ -685,9 +677,9 @@ func TestIntegration_RegisterAndUnregisterLogTrigger(t *testing.T) {
 	require.Equal(t, msg, capabilities.TriggerAndId[*evmservice.Log]{Trigger: nil, Id: ""})
 }
 
-func createLog(number *big.Int, address evmtypes.Address, message []byte) *evmtypes.Log {
+func createLog(index uint32, number *big.Int, address evmtypes.Address, message []byte) *evmtypes.Log {
 	return &evmtypes.Log{
-		LogIndex:    uint32(number.Uint64()),
+		LogIndex:    index,
 		BlockHash:   [32]byte{},
 		BlockNumber: number,
 		Topics:      []evmtypes.Hash{},
