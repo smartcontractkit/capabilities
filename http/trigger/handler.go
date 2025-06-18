@@ -29,6 +29,7 @@ const (
 	errorOutgoingRatelimitSender = "per-sender limit of outgoing gateways requests has been exceeded"
 	errorIncomingRatelimitGlobal = "message from gateway exceeded global rate limit"
 	errorIncomingRatelimitSender = "message from gateway exceeded per sender rate limit"
+	ecdsaPubKeyHexLen            = 42 // 2 (0x prefix) + 40 (hex digits)
 )
 
 // TODO: move these to common package
@@ -94,12 +95,15 @@ func (h *requestHandler) ID(context.Context) (string, error) {
 
 func (h *requestHandler) RegisterWorkflow(ctx context.Context, workflowID string, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error {
 	authorizedKeys := map[string]struct{}{}
-	// TODO: validate public key
 	for _, key := range input.AuthorizedKeys {
-		if key.GetEcdsa() != nil {
-			authorizedKeys[key.GetEcdsa().PublicKey] = struct{}{}
-		} else {
-			return fmt.Errorf("unexpected key type: %T", key)
+		switch key.Type {
+		case http.KeyType_ECDSA:
+			if len(key.PublicKey) != ecdsaPubKeyHexLen || key.PublicKey[:2] != "0x" {
+				return fmt.Errorf("invalid public key format: must be 0x-prefixed hex string of length %d, got %q", ecdsaPubKeyHexLen, key.PublicKey)
+			}
+			authorizedKeys[key.PublicKey] = struct{}{}
+		default:
+			return fmt.Errorf("unsupported key type: %s", key.Type)
 		}
 	}
 
@@ -153,11 +157,6 @@ func (h *requestHandler) HandleGatewayMessage(ctx context.Context, gatewayID str
 		h.lggr.Errorw("Unsupported method", "method", req.Method, "gatewayID", gatewayID)
 	}
 	return nil
-}
-
-func isValidJSON(raw json.RawMessage) bool {
-	var v map[string]interface{}
-	return json.Unmarshal(raw, &v) == nil
 }
 
 func (h *requestHandler) sendErrorResponse(ctx context.Context, gatewayID string, reqID string, payload HTTPTriggerResponse, code int, message string) {

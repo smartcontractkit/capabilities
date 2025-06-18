@@ -98,15 +98,11 @@ func setup(t *testing.T, lggr logger.Logger) (*requestHandler, *mockGatewayConne
 		cfg,
 	)
 	require.NoError(t, err)
-	key := &http.AuthorizedKey_Ecdsa{
-		Ecdsa: &http.ECDSAKey{
-			PublicKey: publicKey,
-		},
-	}
 	sdkCfg := &http.Config{
 		AuthorizedKeys: []*http.AuthorizedKey{
 			{
-				Key: key,
+				PublicKey: publicKey,
+				Type:      http.KeyType_ECDSA,
 			},
 		},
 	}
@@ -327,4 +323,54 @@ func TestProcessTrigger_UnregisteredWorkflow(t *testing.T) {
 	require.Equal(t, "nonexistent", triggerResp.WorkflowID)
 	require.Equal(t, "dedup1", triggerResp.DeduplicationKey)
 	require.Len(t, triggerCh, 0, "trigger channel should not receive any messages")
+}
+
+func TestRegisterWorkflow_InvalidECDSAPublicKey(t *testing.T) {
+	lggr := logger.Test(t)
+	handler, _, _ := setup(t, lggr)
+	sendCh := make(chan capabilities.TriggerAndId[*http.Payload], 1)
+
+	testCases := []struct {
+		name      string
+		publicKey string
+		keyType   http.KeyType
+		errorMsg  string
+	}{
+		{
+			name:      "invalid publicKey format (nothex)",
+			publicKey: "nothex",
+			keyType:   http.KeyType_ECDSA,
+			errorMsg:  "invalid public key format",
+		},
+		{
+			name:      "invalid publicKey length",
+			publicKey: "0x123",
+			keyType:   http.KeyType_ECDSA,
+			errorMsg:  "invalid public key format",
+		},
+		{
+			name:      "invalid key type",
+			publicKey: publicKey,
+			keyType:   http.KeyType_KEY_TYPE_UNSPECIFIED,
+			errorMsg:  "unsupported key type",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			invalidKey := &http.AuthorizedKey{
+				PublicKey: tc.publicKey,
+				Type:      tc.keyType,
+			}
+			cfg := &http.Config{
+				AuthorizedKeys: []*http.AuthorizedKey{
+					invalidKey,
+				},
+			}
+
+			err := handler.RegisterWorkflow(context.Background(), "wf1", cfg, sendCh)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tc.errorMsg)
+		})
+	}
 }
