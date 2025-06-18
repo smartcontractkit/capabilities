@@ -49,7 +49,7 @@ func Test_RemoteReadCapabilityWithoutConsensus(t *testing.T) {
 }
 
 func Test_RemoteReadCapabilityMisconfiguredContractError(t *testing.T) {
-	beholderTester := tests.Beholder(t)
+	beholderTester := tests.Beholder(t) //nolint:staticcheck
 
 	ctx := t.Context()
 	lggr := logger.Test(t)
@@ -141,7 +141,7 @@ func readValueFromContractFunction(ctx context.Context, t *testing.T, lggr logge
 	return targetSink
 }
 
-func getBeholderLogsForStep(beholderTester tests.BeholderTester, t *testing.T, workflowName string, stepRef string) []*beholderpb.BaseMessage {
+func getBeholderLogsForStep(beholderTester tests.BeholderTester, t *testing.T, workflowName string, stepRef string) []*beholderpb.BaseMessage { //nolint:staticcheck
 	baseMessages, err := beholderTester.BaseMessagesForLabels(t, map[string]string{
 		"workflowName": workflowName,
 		"stepRef":      stepRef,

@@ -26,7 +26,7 @@ const (
 )
 
 type readContractAction interface {
-	capabilities.ActionCapability
+	capabilities.ExecutableCapability
 	Start(context.Context) error
 	Close() error
 }

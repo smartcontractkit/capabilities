@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	common2 "github.com/ethereum/go-ethereum/common"
+	common2 "github.com/ethereum/go-ethereum/common" //nolint:depguard
 	"github.com/pelletier/go-toml"
 	"github.com/stretchr/testify/require"
 
