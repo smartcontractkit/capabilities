@@ -5,8 +5,8 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
-	"math/big"
 	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -17,8 +17,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/values/pb"
-
-	"github.com/smartcontractkit/chainlink-common/pkg/types"
 )
 
 const (
@@ -108,18 +106,18 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 		return nil, err
 	}
 
-	txHashRetriever := NewTxHashRetriever(e.EVMService, e.lggr, transmissionID)
+	txHashRetriever := NewTxHashRetriever(e.forwarderClient, e.lggr, transmissionID)
 
 	switch transmissionInfo.State {
 	case TransmissionStateNotAttempted:
-		e.lggr.Infow("non-empty report - transmission not attempted - attempting to push to txmgr", "request", request, "reportLen", len(request.Report.RawReport), "reportContextLen", len(request.Report.ReportContext), "nSignatures", len(request.Report.Signatures), "executionID", metadata.WorkflowExecutionID)
+		e.lggr.Infow("transmission not attempted - attempting to push to txmgr", "request", request, "reportLen", len(request.Report.RawReport), "reportContextLen", len(request.Report.ReportContext), "nSignatures", len(request.Report.Signatures), "executionID", metadata.WorkflowExecutionID)
 	case TransmissionStateSucceeded:
 		e.lggr.Infow("returning without a transmission attempt - report already onchain ", "executionID", metadata.WorkflowExecutionID)
 		txHash, err := txHashRetriever.GetHash(ctx)
 		if err != nil {
 			return nil, err
 		}
-		return e.fetchTransactionAndCreateReply(ctx, transmissionInfo, *txHash, evmcap.ReceiverContractExecutionStatus_SUCCESS, nil)
+		return e.fetchTransactionReceiptAndCreateReply(ctx, *txHash, evmcap.ReceiverContractExecutionStatus_SUCCESS, nil)
 	case TransmissionStateInvalidReceiver:
 		txHash, err := txHashRetriever.GetHash(ctx)
 		if err != nil {
@@ -137,9 +135,9 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 			if err != nil {
 				return nil, err
 			}
-			return e.fetchTransactionAndCreateReply(ctx, transmissionInfo, *txHash, evmcap.ReceiverContractExecutionStatus_REVERTED, nil)
+			return e.fetchTransactionReceiptAndCreateReply(ctx, *txHash, evmcap.ReceiverContractExecutionStatus_REVERTED, nil)
 		}
-		e.lggr.Infow("non-empty report - retrying a failed transmission - attempting to push to txmgr", "request", request, "reportLen", len(request.Report.RawReport), "reportContextLen", len(request.Report.ReportContext), "nSignatures", len(request.Report.Signatures), "executionID", metadata.WorkflowExecutionID, "receiverGasMinimum", receiverGasMinimum, "transmissionGasLimit", transmissionInfo.GasLimit)
+		e.lggr.Infow("retrying a failed transmission - attempting to push to txmgr", "request", request, "reportLen", len(request.Report.RawReport), "reportContextLen", len(request.Report.ReportContext), "nSignatures", len(request.Report.Signatures), "executionID", metadata.WorkflowExecutionID, "receiverGasMinimum", receiverGasMinimum, "transmissionGasLimit", transmissionInfo.GasLimit)
 	default:
 		return fatalWriteReportReply(getInvalidStateErrorMessage(transmissionInfo.State)), nil
 	}
@@ -182,7 +180,7 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 	switch transmissionInfo.State {
 	case TransmissionStateSucceeded:
 		e.lggr.Debugw("Transaction confirmed", "request", request)
-		return e.fetchTransactionAndCreateReply(ctx, transmissionInfo, txHash, evmcap.ReceiverContractExecutionStatus_SUCCESS, nil)
+		return e.fetchTransactionReceiptAndCreateReply(ctx, txHash, evmcap.ReceiverContractExecutionStatus_SUCCESS, nil)
 	case TransmissionStateFailed, TransmissionStateInvalidReceiver:
 		return e.processUnrecoverableTxState(ctx, request, metadata, txHash, transmissionInfo, transmissionID, true)
 	default:
@@ -218,7 +216,7 @@ func (e EVM) processUnrecoverableTxState(ctx context.Context, request *evmcap.Wr
 	} else {
 		message = ptr(UnknownIssueExecutingReceiverContractMessage)
 	}
-	return e.fetchTransactionAndCreateReply(ctx, transmissionInfo, txHash, evmcap.ReceiverContractExecutionStatus_REVERTED, &message)
+	return e.fetchTransactionReceiptAndCreateReply(ctx, txHash, evmcap.ReceiverContractExecutionStatus_REVERTED, message)
 }
 
 func getInvalidReceiverMessage(receiver []byte) *string {
@@ -228,7 +226,7 @@ func getInvalidReceiverMessage(receiver []byte) *string {
 func getTransmissionID(workflowExecutionID string, request *evmcap.WriteReportRequest) (contracts.TransmissionID, error) {
 	rawExecutionID, err := hex.DecodeString(workflowExecutionID)
 	if err != nil {
-		return contracts.TransmissionID{}, nil
+		return contracts.TransmissionID{}, err
 	}
 
 	transmissionID := contracts.TransmissionID{
@@ -239,7 +237,7 @@ func getTransmissionID(workflowExecutionID string, request *evmcap.WriteReportRe
 	return transmissionID, nil
 }
 
-func (e EVM) fetchTransactionAndCreateReply(ctx context.Context, transmissionInfo contracts.TransmissionInfo, txHash evmtypes.Hash, receiverStatus evmcap.ReceiverContractExecutionStatus, errorMessage *string) (*evmcap.WriteReportReply, error) {
+func (e EVM) fetchTransactionReceiptAndCreateReply(ctx context.Context, txHash evmtypes.Hash, receiverStatus evmcap.ReceiverContractExecutionStatus, errorMessage *string) (*evmcap.WriteReportReply, error) {
 	txReceipt, err := e.EVMService.GetTransactionReceipt(ctx, txHash)
 	if err != nil {
 		return nil, err
@@ -264,15 +262,6 @@ func (e EVM) fetchTransactionAndCreateReply(ctx context.Context, transmissionInf
 	}, nil
 }
 
-func (e EVM) createInvalidReceiverReply(ctx context.Context, receiver []byte, txHash evmtypes.Hash) (*evmcap.WriteReportReply, error) {
-	return &evmcap.WriteReportReply{
-		TxStatus:                        evm.TxStatus_TX_SUCCESS,
-		ReceiverContractExecutionStatus: evmcap.ReceiverContractExecutionStatus_REVERTED.Enum(),
-		ErrorMessage:                    ptr(fmt.Sprintf("Invalid receiver address: %s", receiver)),
-		TxHash:                          txHash[:],
-	}, nil
-}
-
 // TODO remove this should already exists in some common
 func ptr(s string) *string {
 	return &s
@@ -285,16 +274,6 @@ func fatalWriteReportReply(message string) *evmcap.WriteReportReply {
 	}
 }
 
-func encodeReport(req struct {
-	Receiver      string
-	RawReport     []byte
-	ReportContext []byte
-	Signatures    [][]byte
-}) []byte {
-	panic("unimplemented")
-}
-
-// WRITE TARGET >>>>
 func validateInputsAndReportMetadata(metadata capabilities.RequestMetadata, request *evmcap.WriteReportRequest) error {
 	if len(request.Receiver) != 20 {
 		return fmt.Errorf("Received address is not 20 bytes long. Address in HEX: %s", hex.EncodeToString(request.Receiver))
@@ -346,34 +325,32 @@ func validateInputsAndReportMetadata(metadata capabilities.RequestMetadata, requ
 
 // Helper to retrieve TX Hash based on log event executed after processing a report.
 type TxHashRetriever struct {
-	transmissionID contracts.TransmissionID
-	evmService     types.EVMService
-	lggr           logger.Logger
-	txHash         *evmtypes.Hash
+	transmissionID          contracts.TransmissionID
+	keystoneForwarderClient contracts.KeystoneForwarderClient
+	lggr                    logger.Logger
+	txHash                  *evmtypes.Hash
 }
 
-func NewTxHashRetriever(evmService types.EVMService, lggr logger.Logger, transmissionID contracts.TransmissionID) TxHashRetriever {
-	return TxHashRetriever{lggr: lggr, evmService: evmService, transmissionID: transmissionID}
+func NewTxHashRetriever(forwarderClient contracts.KeystoneForwarderClient, lggr logger.Logger, transmissionID contracts.TransmissionID) TxHashRetriever {
+	return TxHashRetriever{lggr: lggr, keystoneForwarderClient: forwarderClient, transmissionID: transmissionID}
 }
 
 func (thr *TxHashRetriever) Reset() {
 	thr.txHash = nil
 }
 
+const failedToRetrieveTxHashErrorMessage = "Failed to retrieve TX HASH for report"
+
 func (thr *TxHashRetriever) GetHash(ctx context.Context) (*evmtypes.Hash, error) {
 	if thr.txHash != nil {
 		return thr.txHash, nil
 	}
-	logs, err := thr.evmService.FilterLogs(ctx, evmtypes.FilterQuery{
-		Addresses: []evmtypes.Address{
-			evmtypes.Address(thr.transmissionID.Receiver),
-		},
-		Topics:  [][]evmtypes.Hash{},
-		ToBlock: big.NewInt(-1), //TODO fix to be confirmed
-	})
+
+	logs, err := thr.keystoneForwarderClient.GetReportProcessedEvents(ctx, thr.transmissionID.Receiver, thr.transmissionID.WorkflowExecutionID, thr.transmissionID.ReportID)
+
 	if err != nil {
-		thr.lggr.Debugw("Failed to retrieve TX HASH for report", thr.transmissionID.GetIDPartsForDebugging()...)
-		return nil, err
+		thr.lggr.Debugw(failedToRetrieveTxHashErrorMessage, thr.transmissionID.GetIDPartsForDebugging()...)
+		return nil, errors.Join(err, fmt.Errorf("%s: %w", failedToRetrieveTxHashErrorMessage, err))
 	}
 	if len(logs) > 1 {
 		thr.lggr.Debugw("Found more than one log associated to report transmission", thr.transmissionID.GetIDPartsForDebugging()...)

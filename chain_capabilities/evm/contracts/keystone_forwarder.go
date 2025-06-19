@@ -15,6 +15,7 @@ import (
 
 	evmcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	"github.com/smartcontractkit/chainlink-evm/gethwrappers/keystone/generated/forwarder"
 )
@@ -60,15 +61,35 @@ func NewKeystoneForwarderClient(EVMService types.EVMService, forwarderAddress co
 
 }
 
+func (k keystoneForwarderClient) GetReportProcessedEvents(ctx context.Context, receiver common.Address, workflowExecutionID [32]byte, reportID [2]byte) ([]*evm.Log, error) {
+	filterQuery := evmtypes.FilterQuery{
+		Addresses: []evmtypes.Address{evmtypes.Address(receiver)},
+		Topics: [][]evmtypes.Hash{
+			{k.forwarderCodec.GetReportProcessedTopicHash()},
+			{evmtypes.Hash(receiver.Bytes())},
+			{evmtypes.Hash(workflowExecutionID[:])},
+			{evmtypes.Hash(reportID[:])},
+		},
+		ToBlock: big.NewInt(LATEST_BLOCK),
+	}
+	return k.evmService.FilterLogs(ctx, filterQuery)
+}
+
 type KeystoneForwarderClient interface {
 	GetTransmissionInfo(ctx context.Context, transmissionID TransmissionID) (TransmissionInfo, error)
 	InvokeOnReport(ctx context.Context, receiverAddress common.Address, report *evmcap.SignedReport, gasConfig *evmcap.GasConfig) (*evmtypes.TransactionResult, error)
+	GetReportProcessedEvents(ctx context.Context, receiver common.Address, workflowExecutionID [32]byte, reportID [2]byte) ([]*evm.Log, error)
 }
 
 type KeystoneForwarderCodec interface {
 	EncodeQueryTransmissionInputs(query QueryTransmissionInputs) ([]byte, error)
 	DecodeQueryTransmissionInfo(encodedData []byte) (TransmissionInfo, error)
 	EncodeReport(receiver common.Address, report *evmcap.SignedReport) ([]byte, error)
+	GetReportProcessedTopicHash() evmtypes.Hash
+}
+
+func (k keystoneForwarderCodecImpl) GetReportProcessedTopicHash() evmtypes.Hash {
+	return k.abi.Events["ReportProcessed"].ID
 }
 
 type keystoneForwarderClient struct {

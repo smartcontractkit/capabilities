@@ -172,6 +172,24 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 	defer cancel()
 	testLogger := logger.Test(t)
 
+	t.Run("Fail with invalid workflow execution id", func(t *testing.T) {
+		_, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
+		expectedError := "some error"
+		mockForwarderClient.On("GetTransmissionInfo", ctx, mock.Anything).Return(contracts.TransmissionInfo{}, errors.New(expectedError))
+		reportMetadata := createTestReportMetadata()
+		encodedReportMetadata, _ := reportMetadata.Encode()
+		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
+			Receiver: testutils.NewAddress().Bytes(),
+			Report: &evm.SignedReport{
+				RawReport:     encodedReportMetadata,
+				ReportContext: []byte{},
+				Signatures:    generateRandomSignatures(),
+				Id:            reportMetadata.ReportID[:],
+			},
+		})
+		require.Error(t, err)
+		require.Equal(t, err.Error(), expectedError)
+	})
 	t.Run("Fail while getting transmission info", func(t *testing.T) {
 		_, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
 		expectedError := "some error"
@@ -206,7 +224,8 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		logs := append([]*evmtypes.Log{}, &evmtypes.Log{
 			TxHash: txHash,
 		})
-		evmServiceMock.EXPECT().FilterLogs(ctx, mock.Anything).Return(logs, nil)
+		
+		mockForwarderClient.EXPECT().GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(logs, nil)
 
 		receipt := evmtypes.Receipt{
 			Status:            uint64(TransmissionStateSucceeded),
@@ -289,7 +308,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 
 	})
 	t.Run("TX already transmitted successfully - Failed to fetch report emitted log", func(t *testing.T) {
-		evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
+		_, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
 
 		transmissionInfo := contracts.TransmissionInfo{
 			Success:         true,
@@ -299,7 +318,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		mockForwarderClient.On("GetTransmissionInfo", ctx, mock.Anything).Return(transmissionInfo, nil)
 
 		expectedError := "Error getting report emitted log"
-		evmServiceMock.EXPECT().FilterLogs(ctx, mock.Anything).Return(nil, errors.New(expectedError))
+		mockForwarderClient.EXPECT().GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, errors.New(expectedError))
 
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
@@ -330,7 +349,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		logs := append([]*evmtypes.Log{}, &evmtypes.Log{
 			TxHash: txHash,
 		})
-		evmServiceMock.EXPECT().FilterLogs(ctx, mock.Anything).Return(logs, nil)
+		mockForwarderClient.EXPECT().GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(logs, nil)
 
 		expectedError := "Error getting tx receipt"
 		evmServiceMock.EXPECT().GetTransactionReceipt(ctx, txHash).Return(nil, errors.New(expectedError))
@@ -365,7 +384,8 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		logs := append([]*evmtypes.Log{}, &evmtypes.Log{
 			TxHash: txHash,
 		})
-		evmServiceMock.EXPECT().FilterLogs(ctx, mock.Anything).Return(logs, nil)
+		mockForwarderClient.EXPECT().GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(logs, nil)
+
 
 		receipt := evmtypes.Receipt{
 			Status:            uint64(TransmissionStateSucceeded),
@@ -478,7 +498,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		logs := append([]*evmtypes.Log{}, &evmtypes.Log{
 			TxHash: txHash,
 		})
-		evmServiceMock.EXPECT().FilterLogs(ctx, mock.Anything).Return(logs, nil)
+		mockForwarderClient.EXPECT().GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(logs, nil)
 
 		receipt := evmtypes.Receipt{
 			Status:            uint64(TransmissionStateSucceeded),
