@@ -264,7 +264,7 @@ func (e EVM) fetchTransactionAndCreateReply(ctx context.Context, transmissionInf
 	}, nil
 }
 
-func (c EVM) createInvalidReceiverReply(ctx context.Context, receiver []byte, txHash evmtypes.Hash) (*evmcap.WriteReportReply, error) {
+func (e EVM) createInvalidReceiverReply(ctx context.Context, receiver []byte, txHash evmtypes.Hash) (*evmcap.WriteReportReply, error) {
 	return &evmcap.WriteReportReply{
 		TxStatus:                        evm.TxStatus_TX_SUCCESS,
 		ReceiverContractExecutionStatus: evmcap.ReceiverContractExecutionStatus_REVERTED.Enum(),
