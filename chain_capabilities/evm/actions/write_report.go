@@ -129,7 +129,7 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 	case TransmissionStateFailed:
 		receiverGasMinimum := e.ReceiverGasMinimum
 		if request.GasConfig != nil && request.GasConfig.GasLimit > 0 {
-			receiverGasMinimum = *&request.GasConfig.GasLimit - contracts.ForwarderContractLogicGasCost
+			receiverGasMinimum = request.GasConfig.GasLimit - contracts.ForwarderContractLogicGasCost
 		}
 		if transmissionInfo.GasLimit.Uint64() > receiverGasMinimum {
 			e.lggr.Infow("returning without a transmission attempt - transmission already attempted and failed, sufficient gas was provided", "executionID", metadata.WorkflowExecutionID, "receiverGasMinimum", receiverGasMinimum, "transmissionGasLimit", transmissionInfo.GasLimit)
