@@ -218,7 +218,7 @@ func (e EVM) processUnrecoverableTxState(ctx context.Context, request *evmcap.Wr
 	} else {
 		message = ptr(UnknownIssueExecutingReceiverContractMessage)
 	}
-	return e.fetchTransactionAndCreateReply(ctx, transmissionInfo, txHash, evmcap.ReceiverContractExecutionStatus_REVERTED, message)
+	return e.fetchTransactionAndCreateReply(ctx, transmissionInfo, txHash, evmcap.ReceiverContractExecutionStatus_REVERTED, &message)
 }
 
 func getInvalidReceiverMessage(receiver []byte) *string {
