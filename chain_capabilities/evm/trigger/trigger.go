@@ -125,7 +125,7 @@ func (lts *LogTriggerService) generateFilterID(triggerID string) string {
 	return triggerID + suffixLogTriggerFilterID
 }
 
-func (lts *LogTriggerService) startPolling(ctx context.Context, triggerID string, input *evmcappb.FilterLogTriggerRequest, logCh chan capabilities.TriggerAndId[*evmservice.Log]) {
+func (lts *LogTriggerService) startPolling(ctx context.Context, triggerID string, logCh chan capabilities.TriggerAndId[*evmservice.Log]) {
 	lts.lggr.Debugf("Starting polling for triggerID: %s, interval: %d", triggerID, lts.logTriggerPollInterval)
 	ticker := defaultTickerFactory.NewTicker(lts.logTriggerPollInterval)
 	defer ticker.Stop()
