@@ -112,7 +112,7 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 
 	switch transmissionInfo.State {
 	case TransmissionStateNotAttempted:
-		e.lggr.Infow("non-empty report - transmission not attempted - attempting to push to txmgr", "request", request, "reportLen", len(request.Report.RawReport), "reportContextLen", len(request.Report.RawReport), "nSignatures", len(request.Report.Signatures), "executionID", metadata.WorkflowExecutionID)
+		e.lggr.Infow("non-empty report - transmission not attempted - attempting to push to txmgr", "request", request, "reportLen", len(request.Report.RawReport), "reportContextLen", len(request.Report.ReportContext), "nSignatures", len(request.Report.Signatures), "executionID", metadata.WorkflowExecutionID)
 	case TransmissionStateSucceeded:
 		e.lggr.Infow("returning without a transmission attempt - report already onchain ", "executionID", metadata.WorkflowExecutionID)
 		txHash, err := txHashRetriever.GetHash(ctx)
