@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"sync"
 	"time"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
@@ -32,7 +31,6 @@ type LogTriggerService struct {
 
 	EVMService             types.EVMService
 	lggr                   logger.Logger
-	wg                     sync.WaitGroup
 	triggers               LogTriggerStore
 	logTriggerPollInterval time.Duration
 }
@@ -45,22 +43,13 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 		lggr:                   lggr,
 		triggers:               store,
 		logTriggerPollInterval: logTriggerPollInterval,
-		wg:                     sync.WaitGroup{},
 	}
 
 	lts.Service, lts.srvcEng = services.Config{
-		Name:  "EvmLogTriggerService",
-		Close: lts.Close,
+		Name: "EvmLogTriggerService",
 	}.NewServiceEngine(lggr)
 
 	return lts
-}
-
-func (lts *LogTriggerService) Close() error {
-	lts.lggr.Debug("Closing LogTriggerService")
-	// wait for all polling goroutines to finish
-	lts.wg.Wait()
-	return nil
 }
 
 func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID string, _ capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*evmservice.Log], error) {
@@ -96,9 +85,8 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 			err, triggerID, filter.Addresses, filter.EventSigs, filter.Topic2, filter.Topic3, filter.Topic4)
 	}
 	logCh := make(chan capabilities.TriggerAndId[*evmservice.Log], defaultSendChannelBufferSize)
-	lts.wg.Add(1)
-	lts.srvcEng.Go(func(ctx context.Context) {
-		subCtx, cancel := context.WithCancel(ctx)
+	lts.srvcEng.Go(func(srvcCtx context.Context) {
+		subCtx, cancel := context.WithCancel(srvcCtx)
 		lts.triggers.Write(triggerID, logTriggerState{
 			cancelFunc: cancel,
 			lastBlock:  fromBlock,
@@ -133,8 +121,6 @@ func (lts *LogTriggerService) generateFilterID(triggerID string) string {
 }
 
 func (lts *LogTriggerService) startPolling(ctx context.Context, triggerID string, input *evmcappb.FilterLogTriggerRequest, logCh chan capabilities.TriggerAndId[*evmservice.Log]) {
-	defer lts.wg.Done() // Decrement when done
-
 	lts.lggr.Debugf("Starting polling for triggerID: %s, interval: %d", triggerID, lts.logTriggerPollInterval)
 	ticker := defaultTickerFactory.NewTicker(lts.logTriggerPollInterval)
 	defer ticker.Stop()

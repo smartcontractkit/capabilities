@@ -62,6 +62,8 @@ func TestLogTriggerService_Close_WaitsForPollingGoroutine(t *testing.T) {
 		evmService.On("UnregisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
 		store := NewLogTriggerStore()
 		service := NewLogTriggerService(evmService, store, lggr, 10*time.Millisecond)
+		err := service.Start(ctx)
+		require.NoError(t, err)
 		ch, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
 			EventSigs: eventSignatures,
