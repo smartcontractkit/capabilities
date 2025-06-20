@@ -59,12 +59,12 @@ type Service struct {
 	labeler   custmsg.MessageEmitter
 }
 
-func (s *Service) RegisterLegacyTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) (<-chan capabilities.TriggerAndId[*crontypedapi.LegacyPayload], error) {
+func (s *Service) RegisterLegacyTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) (<-chan capabilities.TriggerAndId[*crontypedapi.LegacyPayload], error) { //nolint:deprecation
 	ch, err := s.RegisterTrigger(ctx, triggerID, metadata, input)
 	if err != nil {
 		return nil, err
 	}
-	mapped := make(chan capabilities.TriggerAndId[*crontypedapi.LegacyPayload])
+	mapped := make(chan capabilities.TriggerAndId[*crontypedapi.LegacyPayload]) //nolint:deprecation
 	go func() {
 		defer close(mapped)
 		for {
@@ -77,7 +77,7 @@ func (s *Service) RegisterLegacyTrigger(ctx context.Context, triggerID string, m
 				}
 				mapped <- capabilities.TriggerAndId[*crontypedapi.LegacyPayload]{
 					Id: triggerEvent.Id,
-					Trigger: &crontypedapi.LegacyPayload{
+					Trigger: &crontypedapi.LegacyPayload{ //nolint:deprecation
 						ScheduledExecutionTime: triggerEvent.Trigger.ScheduledExecutionTime.AsTime().Format(time.RFC3339Nano),
 					},
 				}
