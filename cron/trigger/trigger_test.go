@@ -103,7 +103,7 @@ func upwrapCronTriggerEvent(t *testing.T, event capabilities.TriggerEvent,
 	response.ID = event.ID
 
 	if useTypedAPI {
-		payload := &crontypedapi.LegacyPayload{}
+		payload := &crontypedapi.LegacyPayload{} //nolint:staticcheck
 		err := event.Payload.UnmarshalTo(payload)
 		require.NoError(t, err)
 		response.Payload = cron.Payload{ScheduledExecutionTime: payload.ScheduledExecutionTime}
