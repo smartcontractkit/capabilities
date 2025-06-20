@@ -6,12 +6,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/smartcontractkit/chain_capabilities/evm/trigger"
-
+	"chain_capabilities/evm/trigger"
 	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 
-	"github.com/smartcontractkit/chain_capabilities/evm/actions"
+	"chain_capabilities/evm/actions"
 
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
 

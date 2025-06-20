@@ -1,0 +1,30 @@
+syntax="proto3";
+
+package chain_capabilities.evm;
+option go_package = "github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring";
+
+import "monitoring/execution_context.proto";
+
+message CallContractSuccess {
+  string node = 1;
+
+  int64 block_number  = 2;
+  string contract_address = 3;
+  
+  // [Execution Context]
+  common.ExecutionContext execution_context = 20;
+}
+
+
+message CallContractError {
+  string node = 1;
+
+  string summary = 2;
+  string cause = 3;
+
+  int64 block_number  = 4;
+  string contract_address = 5;
+
+  // [Execution Context]
+  common.ExecutionContext execution_context = 20;
+}

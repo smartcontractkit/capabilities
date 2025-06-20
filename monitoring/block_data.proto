@@ -1,0 +1,13 @@
+syntax="proto3";
+
+package common;
+option go_package = "github.com/smartcontractkit/capabilities/monitoring";
+// [Block Data]
+message BlockData {
+  // Head data - when was the event produced on-chain
+  string block_hash = 6;
+  string block_height = 7;
+  uint64 block_timestamp = 8;
+}
+
+
