@@ -2,8 +2,12 @@ package actions
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math/big"
 
+	"github.com/ethereum/go-ethereum/rpc"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -12,80 +16,186 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
+
+	ctypes "github.com/smartcontractkit/chain_capabilities/evm/consensus/types"
 )
+
+type consensusReader interface {
+	Read(request ctypes.Request) (<-chan []byte, error)
+}
 
 type EVM struct {
 	types.EVMService
+	consensusReader consensusReader
 }
 
 func NewEVM(evmService types.EVMService) EVM {
 	return EVM{EVMService: evmService}
 }
 
-// TODO finalise the signature PLEX-1482
-func (e EVM) CallContract(etx context.Context, _ capabilities.RequestMetadata, input *evmservice.CallContractRequest) (*evmservice.CallContractReply, error) {
+func requestID(meta capabilities.RequestMetadata) string {
+	return meta.WorkflowExecutionID + ":" + meta.ReferenceID
+}
+
+func (e EVM) CallContract(ctx context.Context, meta capabilities.RequestMetadata, input *evmservice.CallContractRequest) (*evmservice.CallContractReply, error) {
 	callMsg, err := evmservice.ConvertCallMsgFromProto(input.GetCall())
 	if err != nil {
 		return nil, err
 	}
 
-	// TODO handle unspecified block number, which defaults to the latest block, need an OCR round for consensus on read.
-	// To do this the EVMService has to be modified/extended to return from which block the contract was read or even a list of contact reads from a couple of blocks.
-	blockNumber := valuespb.NewIntFromBigInt(input.GetBlockNumber())
-	if blockNumber == nil || blockNumber.String() == "0" {
-		return nil, fmt.Errorf("block number must be specified and non-zero, got: %s", blockNumber)
-	}
-
-	data, err := e.EVMService.CallContract(etx, callMsg, blockNumber)
+	blockNumber, requiresLocking, err := normalizeBlockNumber(input.GetBlockNumber())
 	if err != nil {
 		return nil, err
 	}
 
-	return &evmservice.CallContractReply{Data: data}, nil
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var request ctypes.Request
+	if requiresLocking {
+		request = ctypes.NewLockableToABlockRequest(requestID(meta), ctx, func(ctx context.Context, height *evmservice.ChainHeight) ([]byte, error) {
+			callBlockNumber, err := getCallBlockNumber(blockNumber, height)
+			if err != nil {
+				return nil, fmt.Errorf("error getting call block number: %w", err)
+			}
+
+			// TODO: PLEX-1558 agree on RPC error content in cases where request itself is invalid
+			return e.EVMService.CallContract(ctx, callMsg, callBlockNumber)
+		})
+	} else {
+		request = ctypes.NewEventuallyConsistentRequest(requestID(meta), ctx, func(ctx context.Context) ([]byte, error) {
+			return e.EVMService.CallContract(ctx, callMsg, big.NewInt(blockNumber.Int64()))
+		})
+	}
+
+	resultCh, err := e.consensusReader.Read(request)
+	if err != nil {
+		return nil, err
+	}
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case data := <-resultCh:
+		return &evmservice.CallContractReply{Data: data}, nil
+	}
 }
 
-func (e EVM) FilterLogs(etx context.Context, _ capabilities.RequestMetadata, req *evmservice.FilterLogsRequest) (*evmservice.FilterLogsReply, error) {
-	fq, err := evmservice.ConvertFilterFromProto(req.GetFilterQuery())
+func (e EVM) filterLogsToRequest(ctx context.Context, meta capabilities.RequestMetadata, req *evmservice.FilterLogsRequest) (ctypes.Request, error) {
+	ethFilterQuery, err := evmservice.ConvertFilterFromProto(req.GetFilterQuery())
 	if err != nil {
 		return nil, err
 	}
 
-	if (fq.FromBlock == nil || fq.FromBlock.String() == "0") || (fq.ToBlock == nil || fq.ToBlock.String() == "0") {
-		return nil, fmt.Errorf("fromBlock and toBlock have to be specified and bounded in the filter query, got: fromBlock=%s, toBlock=%s", fq.FromBlock, fq.ToBlock)
+	filterLogs := func(ctx context.Context, query evmtypes.FilterQuery) ([]byte, error) {
+		ethLogs, err := e.EVMService.FilterLogs(ctx, query)
+		if err != nil {
+			return nil, err
+		}
+
+		return proto.Marshal(&evmservice.FilterLogsReply{Logs: evmservice.ConvertLogsToProto(ethLogs)})
 	}
 
-	if fq.FromBlock.Cmp(fq.ToBlock) > 0 {
-		return nil, fmt.Errorf("fromBlock (%s) cannot be greater than toBlock (%s)", fq.FromBlock, fq.ToBlock)
+	// TODO: PLEX-1559 add validation for block range size and size of returned payload
+	if len(req.FilterQuery.BlockHash) != 0 {
+		if ethFilterQuery.FromBlock != nil || ethFilterQuery.ToBlock != nil {
+			return nil, errors.New("cannot specify both block hash and block range")
+		}
+
+		return ctypes.NewEventuallyConsistentRequest(requestID(meta), ctx, func(ctx context.Context) ([]byte, error) {
+			return filterLogs(ctx, ethFilterQuery)
+		}), nil
 	}
 
-	logs, err := e.EVMService.FilterLogs(etx, fq)
+	fromBlock, fromBlockRequiresLocking, err := normalizeBlockNumber(req.FilterQuery.FromBlock)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("fromBlock is invalid: %w", err)
 	}
 
-	return &evmservice.FilterLogsReply{Logs: evmservice.ConvertLogsToProto(logs)}, nil
+	toBlock, toBlockRequiresLocking, err := normalizeBlockNumber(req.FilterQuery.ToBlock)
+	if err != nil {
+		return nil, fmt.Errorf("toBlock is invalid: %w", err)
+	}
+
+	if !fromBlockRequiresLocking && !toBlockRequiresLocking {
+		return ctypes.NewEventuallyConsistentRequest(requestID(meta), ctx, func(ctx context.Context) ([]byte, error) {
+			return filterLogs(ctx, ethFilterQuery)
+		}), nil
+	}
+
+	return ctypes.NewLockableToABlockRequest(requestID(meta), ctx, func(ctx context.Context, height *evmservice.ChainHeight) ([]byte, error) {
+		callFromBlock, err := getCallBlockNumber(fromBlock, height)
+		if err != nil {
+			return nil, fmt.Errorf("error getting callFromBlock: %w", err)
+		}
+
+		callToBlock, err := getCallBlockNumber(toBlock, height)
+		if err != nil {
+			return nil, fmt.Errorf("error getting callToBlock: %w", err)
+		}
+
+		ethFilterQuery.FromBlock = big.NewInt(callFromBlock.Int64())
+		ethFilterQuery.ToBlock = big.NewInt(callToBlock.Int64())
+
+		return filterLogs(ctx, ethFilterQuery)
+	}), nil
 }
 
-func (e EVM) BalanceAt(etx context.Context, _ capabilities.RequestMetadata, req *evmservice.BalanceAtRequest) (*evmservice.BalanceAtReply, error) {
-	blockNumber := valuespb.NewIntFromBigInt(req.GetBlockNumber())
-
-	// TODO allow the block number to be nil or zero, which would default to the latest block, this requires an OCR round to reach consesnus on balance read.
-	// To do this the EVMService has to be modified/extended to return from which block the balance was read or even a list of balances from a couple of blocks.
-	// alternatively, just return median of the balance value?
-	if blockNumber == nil || blockNumber.String() == "0" {
-		return nil, fmt.Errorf("block number must be specified and non-zero, got: %s", blockNumber)
-	}
-
-	balance, err := e.EVMService.BalanceAt(etx, evmtypes.Address(req.GetAccount()), blockNumber)
+func (e EVM) FilterLogs(ctx context.Context, meta capabilities.RequestMetadata, req *evmservice.FilterLogsRequest) (*evmservice.FilterLogsReply, error) {
+	request, err := e.filterLogsToRequest(ctx, meta, req)
 	if err != nil {
 		return nil, err
 	}
 
-	return &evmservice.BalanceAtReply{Balance: valuespb.NewBigIntFromInt(balance)}, nil
+	var reply evmservice.FilterLogsReply
+	err = e.getReply(request, &reply)
+	if err != nil {
+		return nil, err
+	}
+
+	return &reply, nil
+}
+
+func (e EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, req *evmservice.BalanceAtRequest) (*evmservice.BalanceAtReply, error) {
+	blockNumber, requiresLocking, err := normalizeBlockNumber(req.GetBlockNumber())
+	if err != nil {
+		return nil, err
+	}
+
+	balanceAt := func(ctx context.Context, height *evmservice.ChainHeight) ([]byte, error) {
+		callBlockNumber, err := getCallBlockNumber(blockNumber, height)
+		if err != nil {
+			return nil, fmt.Errorf("error getting call block number: %w", err)
+		}
+		balance, err := e.EVMService.BalanceAt(ctx, evmtypes.Address(req.GetAccount()), callBlockNumber)
+		if err != nil {
+			return nil, err
+		}
+
+		pbBalance := valuespb.NewBigIntFromInt(balance)
+		return proto.Marshal(pbBalance)
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var request ctypes.Request
+	if requiresLocking {
+		request = ctypes.NewLockableToABlockRequest(requestID(meta), ctx, balanceAt)
+	} else {
+		request = ctypes.NewEventuallyConsistentRequest(requestID(meta), ctx, func(ctx context.Context) ([]byte, error) {
+			return balanceAt(ctx, nil)
+		})
+	}
+
+	var balance valuespb.BigInt
+	if err := e.getReply(request, &balance); err != nil {
+		return nil, err
+	}
+
+	return &evmservice.BalanceAtReply{Balance: &balance}, nil
 }
 
 func (e EVM) EstimateGas(etx context.Context, _ capabilities.RequestMetadata, req *evmservice.EstimateGasRequest) (*evmservice.EstimateGasReply, error) {
-	// TODO double check if an ocr round can just return a median of the estimate gas value and implement this.
+	// TODO: PLEX-1470 implement aggregatable method handling
 	callMsg, err := evmservice.ConvertCallMsgFromProto(req.GetMsg())
 	if err != nil {
 		return nil, err
@@ -99,36 +209,73 @@ func (e EVM) EstimateGas(etx context.Context, _ capabilities.RequestMetadata, re
 	return &evmservice.EstimateGasReply{Gas: estimate}, nil
 }
 
-func (e EVM) GetTransactionByHash(etx context.Context, _ capabilities.RequestMetadata, req *evmservice.GetTransactionByHashRequest) (*evmservice.GetTransactionByHashReply, error) {
-	tx, err := e.EVMService.GetTransactionByHash(etx, evmtypes.Hash(req.Hash))
+func (e EVM) getReply(request ctypes.Request, into proto.Message) (err error) {
+	resultCh, err := e.consensusReader.Read(request)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	protoTx, err := evmservice.ConvertTransactionToProto(tx)
-	if err != nil {
-		return nil, err
+	select {
+	case <-request.Ctx().Done():
+		return request.Ctx().Err()
+	case data := <-resultCh:
+		if err := proto.Unmarshal(data, into); err != nil {
+			return err
+		}
+		return nil
 	}
-
-	return &evmservice.GetTransactionByHashReply{Transaction: protoTx}, nil
 }
 
-func (e EVM) GetTransactionReceipt(etx context.Context, _ capabilities.RequestMetadata, req *evmservice.GetTransactionReceiptRequest) (*evmservice.GetTransactionReceiptReply, error) {
-	receipt, err := e.EVMService.GetTransactionReceipt(etx, evmtypes.Hash(req.Hash))
-	if err != nil {
+func (e EVM) GetTransactionByHash(ctx context.Context, meta capabilities.RequestMetadata, req *evmservice.GetTransactionByHashRequest) (*evmservice.GetTransactionByHashReply, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	request := ctypes.NewEventuallyConsistentRequest(requestID(meta), ctx, func(ctx context.Context) ([]byte, error) {
+		tx, err := e.EVMService.GetTransactionByHash(ctx, evmtypes.Hash(req.Hash))
+		if err != nil {
+			return nil, err
+		}
+
+		protoTx, err := evmservice.ConvertTransactionToProto(tx)
+		if err != nil {
+			return nil, err
+		}
+
+		return proto.MarshalOptions{Deterministic: true}.Marshal(protoTx)
+	})
+
+	var tx evmservice.Transaction
+	if err := e.getReply(request, &tx); err != nil {
 		return nil, err
 	}
+	return &evmservice.GetTransactionByHashReply{Transaction: &tx}, nil
+}
 
-	protoReceipt, err := evmservice.ConvertReceiptToProto(receipt)
-	if err != nil {
+func (e EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.RequestMetadata, req *evmservice.GetTransactionReceiptRequest) (*evmservice.GetTransactionReceiptReply, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	request := ctypes.NewEventuallyConsistentRequest(requestID(meta), ctx, func(ctx context.Context) ([]byte, error) {
+		receipt, err := e.EVMService.GetTransactionReceipt(ctx, evmtypes.Hash(req.Hash))
+		if err != nil {
+			return nil, err
+		}
+
+		protoReceipt, err := evmservice.ConvertReceiptToProto(receipt)
+		if err != nil {
+			return nil, err
+		}
+
+		return proto.MarshalOptions{Deterministic: true}.Marshal(protoReceipt)
+	})
+
+	var receipt evmservice.Receipt
+	if err := e.getReply(request, &receipt); err != nil {
 		return nil, err
 	}
-
-	return &evmservice.GetTransactionReceiptReply{Receipt: protoReceipt}, nil
+	return &evmservice.GetTransactionReceiptReply{Receipt: &receipt}, nil
 }
 
 func (e EVM) LatestAndFinalizedHead(etx context.Context, _ capabilities.RequestMetadata, _ *emptypb.Empty) (*evmservice.LatestAndFinalizedHeadReply, error) {
-	// TODO need to start an OCR round here to get median of latest and finalized head, do we need a list of blocks to do this or can we get the DON median from the OCRFactory?
+	// TODO implement as part of PLEX-1560
 	latest, finalized, err := e.EVMService.LatestAndFinalizedHead(etx)
 	if err != nil {
 		return nil, err
@@ -177,4 +324,50 @@ func (e EVM) RegisterLogTracking(etx context.Context, _ capabilities.RequestMeta
 
 func (e EVM) UnregisterLogTracking(etx context.Context, _ capabilities.RequestMetadata, req *evmservice.UnregisterLogTrackingRequest) (*emptypb.Empty, error) {
 	return &emptypb.Empty{}, e.EVMService.UnregisterLogTracking(etx, req.FilterName)
+}
+
+func normalizeBlockNumber(pbBlockNumber *valuespb.BigInt) (number rpc.BlockNumber, requiresLocking bool, err error) {
+	blockNumber := valuespb.NewIntFromBigInt(pbBlockNumber)
+	if blockNumber == nil {
+		return rpc.LatestBlockNumber, true, nil
+	}
+
+	if !blockNumber.IsInt64() {
+		return 0, false, fmt.Errorf("block number %s is not an int64", blockNumber)
+	}
+
+	rpcBlockNumber := rpc.BlockNumber(blockNumber.Int64())
+	if rpcBlockNumber > 0 {
+		return rpcBlockNumber, false, nil
+	}
+
+	switch rpcBlockNumber {
+	case rpc.SafeBlockNumber, rpc.FinalizedBlockNumber, rpc.LatestBlockNumber:
+		return rpcBlockNumber, true, nil
+	default:
+		return 0, false, fmt.Errorf("block number %s is not supported", rpcBlockNumber)
+	}
+}
+
+func getCallBlockNumber(requestedBlockNumber rpc.BlockNumber, chainHeight *evmservice.ChainHeight) (*big.Int, error) {
+	switch requestedBlockNumber {
+	case rpc.LatestBlockNumber, rpc.SafeBlockNumber, rpc.FinalizedBlockNumber:
+	default:
+		return big.NewInt(requestedBlockNumber.Int64()), nil
+	}
+
+	if chainHeight == nil {
+		return nil, fmt.Errorf("chain height is nil")
+	}
+
+	switch requestedBlockNumber {
+	case rpc.LatestBlockNumber:
+		return big.NewInt(chainHeight.Latest), nil
+	case rpc.SafeBlockNumber:
+		return big.NewInt(chainHeight.Safe), nil
+	case rpc.FinalizedBlockNumber:
+		return big.NewInt(chainHeight.Finalized), nil
+	default:
+		return nil, fmt.Errorf("unexpected block number %d", requestedBlockNumber)
+	}
 }
