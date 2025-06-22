@@ -8,7 +8,6 @@ import (
 
 type Request interface {
 	ID() string
-	Ctx() context.Context
 	Type() evmservice.RequestType
 }
 
@@ -27,10 +26,9 @@ type AggregatableRequest interface {
 	Observe(context.Context, evmservice.ChainHeight)
 }
 
-func NewRequest(id string, ctx context.Context, requestType evmservice.RequestType) Request {
+func NewRequest(id string, requestType evmservice.RequestType) Request {
 	return &request{
 		id:          id,
-		ctx:         ctx,
 		requestType: requestType,
 	}
 }
@@ -60,9 +58,9 @@ type eventuallyConsistentRequest struct {
 	observe func(context.Context) ([]byte, error)
 }
 
-func NewEventuallyConsistentRequest(id string, ctx context.Context, observe func(context.Context) ([]byte, error)) EventuallyConsistentRequest {
+func NewEventuallyConsistentRequest(id string, observe func(context.Context) ([]byte, error)) EventuallyConsistentRequest {
 	return &eventuallyConsistentRequest{
-		Request: NewRequest(id, ctx, evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT),
+		Request: NewRequest(id, evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT),
 		observe: observe,
 	}
 }
@@ -76,15 +74,15 @@ type lockableToABlockRequest struct {
 	observe func(context.Context, *evmservice.ChainHeight) ([]byte, error)
 }
 
-func NewLockableToABlockRequest(id string, ctx context.Context, observe func(context.Context, *evmservice.ChainHeight) ([]byte, error)) Request {
+func NewLockableToABlockRequest(id string, observe func(context.Context, *evmservice.ChainHeight) ([]byte, error)) Request {
 	return &lockableToABlockRequest{
-		Request: NewRequest(id, ctx, evmservice.RequestType_REQUEST_TYPE_LOCKABLE_TO_BLOCK),
+		Request: NewRequest(id, evmservice.RequestType_REQUEST_TYPE_LOCKABLE_TO_BLOCK),
 		observe: observe,
 	}
 }
 
 func (r *lockableToABlockRequest) ToEventuallyConsistent(chainHeight *evmservice.ChainHeight) EventuallyConsistentRequest {
-	return NewEventuallyConsistentRequest(r.ID(), r.Ctx(), func(ctx context.Context) ([]byte, error) {
+	return NewEventuallyConsistentRequest(r.ID(), func(ctx context.Context) ([]byte, error) {
 		return r.observe(ctx, chainHeight)
 	})
 }

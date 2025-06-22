@@ -117,6 +117,8 @@ func (rp *reportingPlugin) Observation(
 			continue
 		}
 
+		rp.requestsStore.MarkAttempted(requestID)
+
 		requestType := request.Type()
 		switch requestType {
 		case evmservice.RequestType_REQUEST_TYPE_AGGREGATABLE, evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT:

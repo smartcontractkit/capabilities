@@ -18,15 +18,15 @@ func (q *priorityQueue) Push(x types.Request) {
 	heap.Push(q.queue, x)
 }
 
-func (q *priorityQueue) Pop() *internalRequest {
-	return heap.Pop(q.queue).(*internalRequest)
+func (q *priorityQueue) Pop() *requestCtx {
+	return heap.Pop(q.queue).(*requestCtx)
 }
 
 func (q *priorityQueue) Len() int {
 	return q.queue.Len()
 }
 
-func (q *priorityQueue) Peek() *internalRequest {
+func (q *priorityQueue) Peek() *requestCtx {
 	return q.queue.values[0]
 }
 
@@ -40,7 +40,7 @@ func (q *priorityQueue) IncreaseAttempt(id string) {
 	heap.Fix(q.queue, index)
 }
 
-func (q *priorityQueue) GetByID(id string) (*internalRequest, bool) {
+func (q *priorityQueue) GetByID(id string) (*requestCtx, bool) {
 	index, ok := q.queue.idToIndex[id]
 	if !ok {
 		return nil, false
@@ -49,8 +49,20 @@ func (q *priorityQueue) GetByID(id string) (*internalRequest, bool) {
 	return q.queue.values[index], true
 }
 
+func (q *priorityQueue) Remove(id string) (*requestCtx, bool) {
+	index, ok := q.queue.idToIndex[id]
+	if !ok {
+		return nil, false
+	}
+
+	request := q.queue.values[index]
+	heap.Remove(q.queue, index)
+	delete(q.queue.idToIndex, id)
+	return request, true
+}
+
 type internalPriorityQueue struct {
-	values    []*internalRequest
+	values    []*requestCtx
 	idToIndex map[string]int
 }
 
@@ -69,7 +81,7 @@ func (q *internalPriorityQueue) Swap(i, j int) {
 }
 
 func (q *internalPriorityQueue) Push(x any) {
-	request := x.(*internalRequest)
+	request := x.(*requestCtx)
 	q.values = append(q.values, request)
 	q.idToIndex[request.ID()] = len(q.values) - 1
 }

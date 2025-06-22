@@ -14,4 +14,5 @@ type RequestsStore interface {
 	GetObservation(id string) ([]byte, bool)
 	CompleteRequest(id string, result []byte)
 	Update(request types.Request)
+	MarkAttempted(id string)
 }

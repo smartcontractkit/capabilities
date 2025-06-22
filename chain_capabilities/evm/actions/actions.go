@@ -21,7 +21,7 @@ import (
 )
 
 type consensusReader interface {
-	Read(request ctypes.Request) (<-chan []byte, error)
+	Enqueue(ctx context.Context, request ctypes.Request) (<-chan []byte, error)
 }
 
 type EVM struct {
@@ -52,7 +52,7 @@ func (e EVM) CallContract(ctx context.Context, meta capabilities.RequestMetadata
 	defer cancel()
 	var request ctypes.Request
 	if requiresLocking {
-		request = ctypes.NewLockableToABlockRequest(requestID(meta), ctx, func(ctx context.Context, height *evmservice.ChainHeight) ([]byte, error) {
+		request = ctypes.NewLockableToABlockRequest(requestID(meta), func(ctx context.Context, height *evmservice.ChainHeight) ([]byte, error) {
 			callBlockNumber, err := getCallBlockNumber(blockNumber, height)
 			if err != nil {
 				return nil, fmt.Errorf("error getting call block number: %w", err)
@@ -62,12 +62,12 @@ func (e EVM) CallContract(ctx context.Context, meta capabilities.RequestMetadata
 			return e.EVMService.CallContract(ctx, callMsg, callBlockNumber)
 		})
 	} else {
-		request = ctypes.NewEventuallyConsistentRequest(requestID(meta), ctx, func(ctx context.Context) ([]byte, error) {
+		request = ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
 			return e.EVMService.CallContract(ctx, callMsg, big.NewInt(blockNumber.Int64()))
 		})
 	}
 
-	resultCh, err := e.consensusReader.Read(request)
+	resultCh, err := e.consensusReader.Enqueue(ctx, request)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +101,7 @@ func (e EVM) filterLogsToRequest(ctx context.Context, meta capabilities.RequestM
 			return nil, errors.New("cannot specify both block hash and block range")
 		}
 
-		return ctypes.NewEventuallyConsistentRequest(requestID(meta), ctx, func(ctx context.Context) ([]byte, error) {
+		return ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
 			return filterLogs(ctx, ethFilterQuery)
 		}), nil
 	}
@@ -117,12 +117,12 @@ func (e EVM) filterLogsToRequest(ctx context.Context, meta capabilities.RequestM
 	}
 
 	if !fromBlockRequiresLocking && !toBlockRequiresLocking {
-		return ctypes.NewEventuallyConsistentRequest(requestID(meta), ctx, func(ctx context.Context) ([]byte, error) {
+		return ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
 			return filterLogs(ctx, ethFilterQuery)
 		}), nil
 	}
 
-	return ctypes.NewLockableToABlockRequest(requestID(meta), ctx, func(ctx context.Context, height *evmservice.ChainHeight) ([]byte, error) {
+	return ctypes.NewLockableToABlockRequest(requestID(meta), func(ctx context.Context, height *evmservice.ChainHeight) ([]byte, error) {
 		callFromBlock, err := getCallBlockNumber(fromBlock, height)
 		if err != nil {
 			return nil, fmt.Errorf("error getting callFromBlock: %w", err)
@@ -147,7 +147,7 @@ func (e EVM) FilterLogs(ctx context.Context, meta capabilities.RequestMetadata, 
 	}
 
 	var reply evmservice.FilterLogsReply
-	err = e.getReply(request, &reply)
+	err = e.getReply(ctx, request, &reply)
 	if err != nil {
 		return nil, err
 	}
@@ -179,15 +179,15 @@ func (e EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, r
 	defer cancel()
 	var request ctypes.Request
 	if requiresLocking {
-		request = ctypes.NewLockableToABlockRequest(requestID(meta), ctx, balanceAt)
+		request = ctypes.NewLockableToABlockRequest(requestID(meta), balanceAt)
 	} else {
-		request = ctypes.NewEventuallyConsistentRequest(requestID(meta), ctx, func(ctx context.Context) ([]byte, error) {
+		request = ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
 			return balanceAt(ctx, nil)
 		})
 	}
 
 	var balance valuespb.BigInt
-	if err := e.getReply(request, &balance); err != nil {
+	if err := e.getReply(ctx, request, &balance); err != nil {
 		return nil, err
 	}
 
@@ -209,15 +209,15 @@ func (e EVM) EstimateGas(etx context.Context, _ capabilities.RequestMetadata, re
 	return &evmservice.EstimateGasReply{Gas: estimate}, nil
 }
 
-func (e EVM) getReply(request ctypes.Request, into proto.Message) (err error) {
-	resultCh, err := e.consensusReader.Read(request)
+func (e EVM) getReply(ctx context.Context, request ctypes.Request, into proto.Message) (err error) {
+	resultCh, err := e.consensusReader.Enqueue(ctx, request)
 	if err != nil {
 		return err
 	}
 
 	select {
-	case <-request.Ctx().Done():
-		return request.Ctx().Err()
+	case <-ctx.Done():
+		return ctx.Err()
 	case data := <-resultCh:
 		if err := proto.Unmarshal(data, into); err != nil {
 			return err
@@ -229,7 +229,7 @@ func (e EVM) getReply(request ctypes.Request, into proto.Message) (err error) {
 func (e EVM) GetTransactionByHash(ctx context.Context, meta capabilities.RequestMetadata, req *evmservice.GetTransactionByHashRequest) (*evmservice.GetTransactionByHashReply, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	request := ctypes.NewEventuallyConsistentRequest(requestID(meta), ctx, func(ctx context.Context) ([]byte, error) {
+	request := ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
 		tx, err := e.EVMService.GetTransactionByHash(ctx, evmtypes.Hash(req.Hash))
 		if err != nil {
 			return nil, err
@@ -244,7 +244,7 @@ func (e EVM) GetTransactionByHash(ctx context.Context, meta capabilities.Request
 	})
 
 	var tx evmservice.Transaction
-	if err := e.getReply(request, &tx); err != nil {
+	if err := e.getReply(ctx, request, &tx); err != nil {
 		return nil, err
 	}
 	return &evmservice.GetTransactionByHashReply{Transaction: &tx}, nil
@@ -253,7 +253,7 @@ func (e EVM) GetTransactionByHash(ctx context.Context, meta capabilities.Request
 func (e EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.RequestMetadata, req *evmservice.GetTransactionReceiptRequest) (*evmservice.GetTransactionReceiptReply, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	request := ctypes.NewEventuallyConsistentRequest(requestID(meta), ctx, func(ctx context.Context) ([]byte, error) {
+	request := ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
 		receipt, err := e.EVMService.GetTransactionReceipt(ctx, evmtypes.Hash(req.Hash))
 		if err != nil {
 			return nil, err
@@ -268,7 +268,7 @@ func (e EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.Reques
 	})
 
 	var receipt evmservice.Receipt
-	if err := e.getReply(request, &receipt); err != nil {
+	if err := e.getReply(ctx, request, &receipt); err != nil {
 		return nil, err
 	}
 	return &evmservice.GetTransactionReceiptReply{Receipt: &receipt}, nil

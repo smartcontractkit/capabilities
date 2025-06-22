@@ -1,13 +1,13 @@
 package poller
 
 import (
-	"container/list"
 	"context"
 	"sync"
 	"time"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
+	"github.com/smartcontractkit/chainlink-common/pkg/utils/list"
 
 	"github.com/smartcontractkit/chain_capabilities/evm/consensus/types"
 )
@@ -16,12 +16,17 @@ type ObservationsStore interface {
 	SetObservation(id string, observation []byte)
 }
 
-type processedRequest struct {
-	Request     types.EventuallyConsistentRequest
-	ProcessedAt time.Time
+type requestToPoll struct {
+	types.EventuallyConsistentRequest
+	Ctx context.Context
 }
 
-// Poller - maintains queue of request and periodically refreshes our observations for those that request multiple observations
+type requestToRetry struct {
+	requestToPoll
+	LastAttemptAt time.Time
+}
+
+// Poller - maintains queue of requestToPoll and periodically refreshes our observations for those that requestToPoll multiple observations
 type Poller struct {
 	// service state management
 	services.Service
@@ -32,16 +37,16 @@ type Poller struct {
 	pollPeriod time.Duration
 	maxWorkers int
 
-	rwMutex        sync.RWMutex
-	inputNotify    chan struct{}
-	requests       *list.List
-	requestsCh     chan types.EventuallyConsistentRequest
-	processedQueue *list.List
+	mutex       sync.Mutex
+	inputNotify chan struct{}
+	requests    *list.List[requestToPoll]
+	requestsCh  chan requestToPoll
+	retryQueue  *list.List[requestToRetry]
 }
 
 func NewPoller(lggr logger.Logger, store ObservationsStore, maxWorkers int, pollPeriod time.Duration) *Poller {
 	p := &Poller{
-		requestsCh:  make(chan types.EventuallyConsistentRequest, maxWorkers),
+		requestsCh:  make(chan requestToPoll, maxWorkers),
 		pollPeriod:  pollPeriod,
 		inputNotify: make(chan struct{}, 1),
 		store:       store,
@@ -49,7 +54,7 @@ func NewPoller(lggr logger.Logger, store ObservationsStore, maxWorkers int, poll
 	}
 
 	p.Service, p.engine = services.Config{
-		Name:  "WorkerGroup",
+		Name:  "Poller",
 		Start: p.start,
 		Close: p.close,
 	}.NewServiceEngine(lggr)
@@ -58,14 +63,28 @@ func NewPoller(lggr logger.Logger, store ObservationsStore, maxWorkers int, poll
 	return p
 }
 
-func (p *Poller) Enqueue(request types.EventuallyConsistentRequest) {
-	p.rwMutex.Lock()
-	p.enqueueUnsafe(request)
-	p.rwMutex.Unlock()
+func (p *Poller) Enqueue(ctx context.Context, request types.EventuallyConsistentRequest) {
+	p.mutex.Lock()
+	p.enqueueUnsafe(requestToPoll{
+		EventuallyConsistentRequest: request,
+		Ctx:                         ctx,
+	})
+	p.mutex.Unlock()
 }
 
-func (p *Poller) enqueueUnsafe(request types.EventuallyConsistentRequest) {
-	p.requests.PushBack(request)
+func (p *Poller) popFirst() *requestToPoll {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+	if p.requests.Len() == 0 {
+		return nil
+	}
+
+	result := p.requests.Remove(p.requests.Front())
+	return &result
+}
+
+func (p *Poller) enqueueUnsafe(rq requestToPoll) {
+	p.requests.PushBack(rq)
 	select {
 	case p.inputNotify <- struct{}{}:
 	default:
@@ -86,26 +105,29 @@ func (p *Poller) close() error {
 	return nil
 }
 
-// processRequest fetches observations and adds request into retry queue if needed.
-func (p *Poller) processRequest(ctx context.Context, request types.EventuallyConsistentRequest) {
-	if request.Ctx().Err() != nil {
-		p.lggr.Debugw("request was canceled - removing from queue", "request", request.ID())
+// processRequest fetches observations and adds requestToPoll into retry queue if needed.
+func (p *Poller) processRequest(request requestToPoll) {
+	ctx, cancel := p.engine.Ctx(request.Ctx)
+	defer cancel()
+	if ctx.Err() != nil {
+		p.lggr.Debugw("request was canceled - removing from queue", "requestID", request.ID())
 		return
 	}
+
 	observation, err := request.Observe(ctx)
 	if err != nil {
-		p.lggr.Warnw("failed to capture observation", "err", err, "request", request.ID())
+		p.lggr.Warnw("failed to capture observation", "err", err, "requestToPoll", request.ID())
 	} else {
 		// TODO: some requests might need only one successful read (finalized data)
 		p.store.SetObservation(request.ID(), observation)
 	}
 
-	p.rwMutex.Lock()
-	p.processedQueue.PushBack(processedRequest{
-		Request:     request,
-		ProcessedAt: time.Now(),
+	p.mutex.Lock()
+	p.retryQueue.PushBack(requestToRetry{
+		requestToPoll: request,
+		LastAttemptAt: time.Now(),
 	})
-	p.rwMutex.Unlock()
+	p.mutex.Unlock()
 	return
 }
 
@@ -118,21 +140,9 @@ func (p *Poller) processRequests(ctx context.Context) {
 			if !ok {
 				return
 			}
-			p.processRequest(ctx, request)
+			p.processRequest(request)
 		}
 	}
-}
-
-func (p *Poller) popFirst() types.EventuallyConsistentRequest {
-	p.rwMutex.RLock()
-	defer p.rwMutex.RUnlock()
-	front := p.requests.Front()
-	if front == nil {
-		return nil
-	}
-
-	p.requests.Remove(front)
-	return front.Value.(types.EventuallyConsistentRequest)
 }
 
 func (p *Poller) scheduleProcessing(ctx context.Context) {
@@ -153,7 +163,7 @@ func (p *Poller) scheduleProcessing(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				return
-			case p.requestsCh <- request:
+			case p.requestsCh <- *request:
 			}
 
 		}
@@ -161,19 +171,23 @@ func (p *Poller) scheduleProcessing(ctx context.Context) {
 }
 
 func (p *Poller) scheduleReadyForReprocessing(ctx context.Context, now time.Time) {
-	p.rwMutex.Lock()
-	defer p.rwMutex.Unlock()
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
 	for {
 		if ctx.Err() != nil {
 			return
 		}
-		front := p.processedQueue.Front()
-		pRequest := front.Value.(processedRequest)
-		if pRequest.ProcessedAt.Add(p.pollPeriod).Before(now) {
+		request := p.retryQueue.Front()
+		if request == nil {
+			return
+		}
+		if request.Value.LastAttemptAt.Add(p.pollPeriod).Before(now) {
 			return
 		}
 
-		p.enqueueUnsafe(pRequest.Request)
+		p.retryQueue.Remove(request)
+
+		p.enqueueUnsafe(request.Value.requestToPoll)
 	}
 }
 
