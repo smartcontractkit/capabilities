@@ -170,7 +170,7 @@ func (lts *LogTriggerService) startPolling(ctx context.Context, triggerID string
 			if err != nil {
 				lts.lggr.Errorf("Failed to update last block for triggerID: %s, error: %v", triggerID, err)
 				//TODO PLEX-1457: should we sent an error to some o11y place?
-				continue
+				return
 			}
 			lts.lggr.Debugf("Finished updating BlockNumber for triggerID: %s, BlockNumber: %d", triggerID, calculatedLatestBlock)
 		}
