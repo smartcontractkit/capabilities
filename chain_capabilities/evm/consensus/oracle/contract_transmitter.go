@@ -15,21 +15,21 @@ import (
 	ctypes "github.com/smartcontractkit/chain_capabilities/evm/consensus/types"
 )
 
-var _ ocr3types.ContractTransmitter[[]byte] = (*contractTransmitter)(nil)
+var _ ocr3types.ContractTransmitter[[]byte] = (*ContractTransmitter)(nil)
 
-type contractTransmitter struct {
+type ContractTransmitter struct {
 	lggr          logger.SugaredLogger
 	requestsStore RequestsStore
 }
 
-func newContractTransmitter(lggr logger.Logger, requestsStore RequestsStore) *contractTransmitter {
-	return &contractTransmitter{
+func NewContractTransmitter(lggr logger.Logger, requestsStore RequestsStore) *ContractTransmitter {
+	return &ContractTransmitter{
 		lggr:          logger.Sugared(lggr),
 		requestsStore: requestsStore,
 	}
 }
 
-func (ct *contractTransmitter) Transmit(
+func (ct *ContractTransmitter) Transmit(
 	ctx context.Context,
 	configDigest types.ConfigDigest,
 	seqNr uint64,
@@ -73,6 +73,6 @@ func (ct *contractTransmitter) Transmit(
 }
 
 // This is unused and overwritten by the OracleFactory
-func (ct *contractTransmitter) FromAccount(_ context.Context) (types.Account, error) {
+func (ct *ContractTransmitter) FromAccount(_ context.Context) (types.Account, error) {
 	return "", nil
 }

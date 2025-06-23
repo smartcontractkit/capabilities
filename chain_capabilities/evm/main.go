@@ -3,7 +3,17 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"time"
+
+	services2 "github.com/smartcontractkit/chainlink-common/pkg/services"
+
+	"github.com/smartcontractkit/chain_capabilities/evm/consensus"
+	"github.com/smartcontractkit/chain_capabilities/evm/consensus/oracle"
+	"github.com/smartcontractkit/chain_capabilities/evm/consensus/poller"
+
+	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
 	"github.com/smartcontractkit/chain_capabilities/evm/actions"
 
@@ -19,6 +29,10 @@ import (
 
 const (
 	CapabilityName = "evm"
+	// TODO PLEX-1569: make configurable
+	MaxNumberOfRequestsPerOCRRound = 50
+	PollingWorkersNum              = 10
+	PollPeriod                     = 10 * time.Second
 )
 
 type Config struct {
@@ -34,6 +48,9 @@ type capabilityGRPCService struct {
 
 type capability struct {
 	actions.EVM
+	requestPoller *poller.Poller
+	requestsStore *consensus.RequestStore
+	oracle        core.Oracle
 }
 
 var _ evmcapserver.ClientCapability = &capabilityGRPCService{}
@@ -44,7 +61,7 @@ func main() {
 	})
 }
 
-func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _ core.TelemetryService, _ core.KeyValueStore, _ core.ErrorLog, _ core.PipelineRunnerService, relayerSet core.RelayerSet, _ core.OracleFactory) error {
+func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _ core.TelemetryService, _ core.KeyValueStore, _ core.ErrorLog, _ core.PipelineRunnerService, relayerSet core.RelayerSet, oracleFactory core.OracleFactory) error {
 	c.lggr.Infof("Initialising %s", CapabilityName)
 
 	var cfg Config
@@ -66,6 +83,35 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _
 
 	c.capability = capability{EVM: actions.NewEVM(evmRelayer)}
 
+	c.requestsStore = consensus.NewRequestsStore(c.lggr, time.Second*10)
+	requestPoller := poller.NewPoller(c.lggr, c.requestsStore, PollingWorkersNum, PollPeriod)
+	c.requestsStore.SetPoller(requestPoller)
+
+	// TODO PLEX-1560: populate with implementation
+	var blocksProvider oracle.BlocksProvider
+
+	c.oracle, err = oracleFactory.NewOracle(ctx, core.OracleArgs{
+		LocalConfig: ocrtypes.LocalConfig{
+			BlockchainTimeout:                  time.Second * 20,
+			ContractConfigTrackerPollInterval:  time.Second * 10,
+			ContractConfigConfirmations:        1,
+			ContractTransmitterTransmitTimeout: time.Second * 10,
+			DatabaseTimeout:                    time.Second * 10,
+		},
+		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(logger.Sugared(c.lggr), c.requestsStore, blocksProvider, MaxNumberOfRequestsPerOCRRound),
+		ContractTransmitter:           oracle.NewContractTransmitter(c.lggr, c.requestsStore),
+	})
+	if err != nil {
+		return fmt.Errorf("error when creating oracle: %w", err)
+	}
+
+	services := []interface{ Start(context.Context) error }{c.requestsStore, c.requestPoller, c.oracle}
+	for _, service := range services {
+		if err := service.Start(ctx); err != nil {
+			return err
+		}
+	}
+
 	c.lggr.Infof("Successfully initialised %s", CapabilityName)
 
 	return nil
@@ -76,7 +122,7 @@ func (c *capabilityGRPCService) Start(_ context.Context) error {
 }
 
 func (c *capabilityGRPCService) Close() error {
-	return nil
+	return errors.Join(c.requestPoller.Close(), c.requestsStore.Close(), c.oracle.Close(context.Background()))
 }
 
 func (c *capabilityGRPCService) HealthReport() map[string]error {

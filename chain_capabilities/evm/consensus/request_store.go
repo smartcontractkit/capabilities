@@ -16,7 +16,7 @@ type Poller interface {
 	Enqueue(ctx context.Context, request types.EventuallyConsistentRequest)
 }
 
-type requestStore struct {
+type RequestStore struct {
 	// service state management
 	services.Service
 	engine *services.Engine
@@ -31,8 +31,8 @@ type requestStore struct {
 	unknownRequestTTL               time.Duration
 }
 
-func newRequestStore(lggr logger.Logger, unknownRequestTTL time.Duration) *requestStore {
-	s := &requestStore{
+func NewRequestsStore(lggr logger.Logger, unknownRequestTTL time.Duration) *RequestStore {
+	s := &RequestStore{
 		requests:                        newPriorityQueue(),
 		unknownRequestsResultByID:       make(map[string]*unknownRequest),
 		unknownRequestsOrderedByTimeout: list.New[*unknownRequest](),
@@ -48,7 +48,7 @@ func newRequestStore(lggr logger.Logger, unknownRequestTTL time.Duration) *reque
 	return s
 }
 
-func (s *requestStore) SetPoller(poller Poller) {
+func (s *RequestStore) SetPoller(poller Poller) {
 	s.poller = poller
 }
 
@@ -69,13 +69,13 @@ type requestCtx struct {
 	Attempt        int
 }
 
-func (s *requestStore) start(Ctx context.Context) error {
+func (s *RequestStore) start(Ctx context.Context) error {
 	s.engine.GoTick(services.TickerConfig{Initial: time.Second}.NewTicker(time.Second), s.removeExpiredRequests)
 	return nil
 }
 
 // GetRequestIDs - returns `limit` of request IDs in ascending order by number of attempts. Requests remain in the queue.
-func (s *requestStore) GetRequestIDs(limit int) ([]string, error) {
+func (s *RequestStore) GetRequestIDs(limit int) ([]string, error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	requestIDs := make([]string, 0, limit)
@@ -97,19 +97,19 @@ func (s *requestStore) GetRequestIDs(limit int) ([]string, error) {
 	return requestIDs, nil
 }
 
-func (s *requestStore) MarkAttempted(requestID string) {
+func (s *RequestStore) MarkAttempted(requestID string) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	s.requests.IncreaseAttempt(requestID)
 }
 
-func (s *requestStore) GetRequest(id string) (types.Request, bool) {
+func (s *RequestStore) GetRequest(id string) (types.Request, bool) {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 	return s.requests.GetByID(id)
 }
 
-func (s *requestStore) GetObservation(id string) (observation []byte, ok bool) {
+func (s *RequestStore) GetObservation(id string) (observation []byte, ok bool) {
 	s.lock.RLock()
 	defer s.lock.RUnlock()
 	request, ok := s.requests.GetByID(id)
@@ -119,7 +119,7 @@ func (s *requestStore) GetObservation(id string) (observation []byte, ok bool) {
 	return request.Observation, request.HasObservation
 }
 
-func (s *requestStore) SetObservation(id string, observation []byte) {
+func (s *RequestStore) SetObservation(id string, observation []byte) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	request, ok := s.requests.GetByID(id)
@@ -130,7 +130,7 @@ func (s *requestStore) SetObservation(id string, observation []byte) {
 	request.HasObservation = true
 }
 
-func (s *requestStore) CompleteRequest(id string, result []byte) {
+func (s *RequestStore) CompleteRequest(id string, result []byte) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	request, ok := s.requests.GetByID(id)
@@ -154,7 +154,7 @@ func (s *requestStore) CompleteRequest(id string, result []byte) {
 	request.Cancel()
 }
 
-func (s *requestStore) Enqueue(ctx context.Context, request types.Request) (<-chan []byte, error) {
+func (s *RequestStore) Enqueue(ctx context.Context, request types.Request) (<-chan []byte, error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	ch := make(chan []byte, 1)
@@ -177,7 +177,7 @@ func (s *requestStore) Enqueue(ctx context.Context, request types.Request) (<-ch
 	return ch, nil
 }
 
-func (s *requestStore) addRequestCtx(requestCtx *requestCtx) {
+func (s *RequestStore) addRequestCtx(requestCtx *requestCtx) {
 	s.requests.Push(requestCtx)
 	switch tRequest := requestCtx.Request.(type) {
 	case types.EventuallyConsistentRequest:
@@ -185,7 +185,7 @@ func (s *requestStore) addRequestCtx(requestCtx *requestCtx) {
 	}
 }
 
-func (s *requestStore) Update(newRequest types.Request) {
+func (s *RequestStore) Update(newRequest types.Request) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	oldRequestCtx, ok := s.requests.Remove(newRequest.ID())
@@ -197,7 +197,7 @@ func (s *requestStore) Update(newRequest types.Request) {
 	s.addRequestCtx(oldRequestCtx)
 }
 
-func (s *requestStore) removeExpiredRequests(ctx context.Context) {
+func (s *RequestStore) removeExpiredRequests(ctx context.Context) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	now := time.Now()
