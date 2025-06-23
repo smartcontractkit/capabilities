@@ -58,7 +58,7 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 			svc := &capabilityGRPCService{lggr: lggr}
 
 			err := svc.Initialise(context.Background(), string(cfgJSON),
-				nil, nil, nil, nil, relayerSet, nil)
+				nil, nil, nil, nil, relayerSet, nil, nil)
 			assert.ErrorIs(t, err, assert.AnError)
 		})
 	})
@@ -71,7 +71,7 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 			svc := &capabilityGRPCService{lggr: lggr}
 
 			err := svc.Initialise(context.Background(), string(cfgJSON),
-				nil, nil, nil, nil, relayerSet, nil)
+				nil, nil, nil, nil, relayerSet, nil, nil)
 			assert.ErrorIs(t, err, assert.AnError)
 		})
 
