@@ -157,7 +157,12 @@ func (lts *LogTriggerService) startPolling(ctx context.Context, triggerID string
 				continue
 			}
 
-			lts.sendLogsToWorkflows(logs, finalizedBlockNumber, triggerID, state, logCh)
+			err = lts.sendLogsToWorkflows(logs, finalizedBlockNumber, triggerID, state, logCh)
+			if err != nil {
+				lts.lggr.Errorf("Failed to send logs for triggerID: %s, error: %v", triggerID, err)
+				//TODO PLEX-1457: should we sent an error to some o11y place?
+				return
+			}
 
 			lts.lggr.Debugf("Finished sending events for triggerID: %s, about to update latest block number (current offset: %d, latest finalized block: %d)", triggerID, state.lastBlock, finalizedBlockNumber)
 			calculatedLatestBlock := lts.getLatestBlockNumber(logs, state.lastBlock, finalizedBlockNumber)
@@ -176,7 +181,7 @@ func (lts *LogTriggerService) sendLogsToWorkflows(logs []*evmtypes.Log,
 	finalizedBlockNumber *big.Int,
 	triggerID string,
 	trigger logTriggerState,
-	logCh chan capabilities.TriggerAndId[*evmservice.Log]) {
+	logCh chan capabilities.TriggerAndId[*evmservice.Log]) error {
 	lts.lggr.Debugf("Got %d logs, sending them to the workflow trigger ID: %s", len(logs), triggerID)
 	var needsUpdate bool
 
@@ -185,11 +190,6 @@ func (lts *LogTriggerService) sendLogsToWorkflows(logs []*evmtypes.Log,
 		_, alreadySent := trigger.unfinalizedSentEventIDs[logID]
 		lts.lggr.Debugf("Working with logId: %s, alreadySent: %t", logID, alreadySent)
 
-		if log.BlockNumber.Cmp(finalizedBlockNumber) > 0 && !alreadySent {
-			// log's block number is unfinalized, and it was not sent yet
-			trigger.unfinalizedSentEventIDs[logID] = log.BlockNumber
-			needsUpdate = true
-		}
 		if !alreadySent {
 			protoLog := evmservice.ConvertLogToProto(log)
 			response := capabilities.TriggerAndId[*evmservice.Log]{
@@ -200,6 +200,11 @@ func (lts *LogTriggerService) sendLogsToWorkflows(logs []*evmtypes.Log,
 
 			select {
 			case logCh <- response:
+				if log.BlockNumber.Cmp(finalizedBlockNumber) > 0 {
+					// log's block number is unfinalized and needs to be tracked
+					trigger.unfinalizedSentEventIDs[logID] = log.BlockNumber
+					needsUpdate = true
+				}
 			default:
 				lts.lggr.Errorw("Callback channel full, dropping event", "triggerID", triggerID, "eventID", response.Id)
 				//TODO PLEX-1457: should we sent an error to some o11y place?
@@ -219,9 +224,10 @@ func (lts *LogTriggerService) sendLogsToWorkflows(logs []*evmtypes.Log,
 		err := lts.triggers.Update(triggerID, trigger.lastBlock, trigger.unfinalizedSentEventIDs)
 		if err != nil {
 			lts.lggr.Errorf("Failed to update unfinalized sent event IDs for triggerID: %s, error: %v", triggerID, err)
-			//TODO PLEX-1457: should we sent an error to some o11y place?
+			return fmt.Errorf("failed to update unfinalized sent event IDs for triggerID: %s: %w", triggerID, err)
 		}
 	}
+	return nil
 }
 
 // generateLogIdentifier creates the trigger event id, a unique identifier for the log based on its transaction hash, block hash, and index
