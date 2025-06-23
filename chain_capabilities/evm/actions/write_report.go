@@ -206,6 +206,7 @@ func getTransmissionID(workflowExecutionID string, request *evmcap.WriteReportRe
 }
 
 func (e EVM) fetchTransactionReceiptAndCreateReply(ctx context.Context, txHash evmtypes.Hash, receiverStatus evmcap.ReceiverContractExecutionStatus, errorMessage *string) (*evmcap.WriteReportReply, error) {
+	// TODO: PLEX-1524 - we need retry logic here in case the underlying RPC is lagging behind the one that submitted the TX.
 	txReceipt, err := e.EVMService.GetTransactionReceipt(ctx, txHash)
 	if err != nil {
 		return nil, err
