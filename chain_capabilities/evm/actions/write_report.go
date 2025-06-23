@@ -3,7 +3,6 @@ package actions
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -12,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/smartcontractkit/chain_capabilities/evm/contracts"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	evmcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -49,41 +49,9 @@ const (
 	ValueWorkflowVersionV2 = "2.0.0"
 )
 
-// Note: This should be a shared type that the OCR3 package validates as well
-type ReportV1Metadata struct {
-	Version             uint8
-	WorkflowExecutionID [32]byte
-	Timestamp           uint32
-	DonID               uint32
-	DonConfigVersion    uint32
-	WorkflowCID         [32]byte
-	WorkflowName        [10]byte
-	WorkflowOwner       [20]byte
-	ReportID            [2]byte
-}
-
-func (rm ReportV1Metadata) Encode() ([]byte, error) {
-	buf := new(bytes.Buffer)
-	err := binary.Write(buf, binary.BigEndian, rm)
-	if err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
-
-func (rm ReportV1Metadata) Length() int {
-	bytes, err := rm.Encode()
-	if err != nil {
-		return 0
-	}
-	return len(bytes)
-}
-
-func decodeReportMetadata(data []byte) (metadata ReportV1Metadata, err error) {
-	if len(data) < metadata.Length() {
-		return metadata, fmt.Errorf("Metadata data too short: %d bytes", len(data))
-	}
-	return metadata, binary.Read(bytes.NewReader(data[:metadata.Length()]), binary.BigEndian, &metadata)
+func decodeReportMetadata(data []byte) (ocrtypes.Metadata, error) {
+	metadata, _, err := ocrtypes.Decode(data)
+	return metadata, err
 }
 
 func (e EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMetadata, input *evmcap.WriteReportRequest) (*evmcap.WriteReportReply, error) {
@@ -274,7 +242,7 @@ func fatalWriteReportReply(message string) *evmcap.WriteReportReply {
 	}
 }
 
-func validateInputsAndReportMetadata(metadata capabilities.RequestMetadata, request *evmcap.WriteReportRequest) error {
+func validateInputsAndReportMetadata(requestMetadata capabilities.RequestMetadata, request *evmcap.WriteReportRequest) error {
 	if len(request.Receiver) != 20 {
 		return fmt.Errorf("Received address is not 20 bytes long. Address in HEX: %s", hex.EncodeToString(request.Receiver))
 	}
@@ -288,31 +256,31 @@ func validateInputsAndReportMetadata(metadata capabilities.RequestMetadata, requ
 		return fmt.Errorf("unsupported report version: %d", reportMetadata.Version)
 	}
 
-	if hex.EncodeToString(reportMetadata.WorkflowExecutionID[:]) != metadata.WorkflowExecutionID {
-		return fmt.Errorf("WorkflowExecutionID in the report does not match WorkflowExecutionID in the request metadata. Report WorkflowExecutionID: %+v, request WorkflowExecutionID: %+v", hex.EncodeToString(reportMetadata.WorkflowExecutionID[:]), metadata.WorkflowExecutionID)
+	if reportMetadata.ExecutionID != requestMetadata.WorkflowExecutionID {
+		return fmt.Errorf("WorkflowExecutionID in the report does not match WorkflowExecutionID in the request metadata. Report WorkflowExecutionID: %+v, request WorkflowExecutionID: %+v", reportMetadata.ExecutionID, requestMetadata.WorkflowExecutionID)
 	}
 
 	// case-insensitive verification of the owner address (so that a check-summed address matches its non-checksummed version).
-	if !strings.EqualFold(hex.EncodeToString(reportMetadata.WorkflowOwner[:]), metadata.WorkflowOwner) {
-		return fmt.Errorf("WorkflowOwner in the report does not match WorkflowOwner in the request metadata. Report WorkflowOwner: %+v, request WorkflowOwner: %+v", hex.EncodeToString(reportMetadata.WorkflowOwner[:]), metadata.WorkflowOwner)
+	if !strings.EqualFold(reportMetadata.WorkflowOwner, requestMetadata.WorkflowOwner) {
+		return fmt.Errorf("WorkflowOwner in the report does not match WorkflowOwner in the request metadata. Report WorkflowOwner: %+v, request WorkflowOwner: %+v", reportMetadata.WorkflowOwner, requestMetadata.WorkflowOwner)
 	}
 
 	// workflowNames are padded to 10bytes
-	decodedName, err := hex.DecodeString(metadata.WorkflowName)
+	decodedName := []byte(requestMetadata.WorkflowName)
 	if err != nil {
 		return err
 	}
-	var workflowName [10]byte
+	var workflowName [20]byte
 	copy(workflowName[:], decodedName)
-	if !bytes.Equal(reportMetadata.WorkflowName[:], workflowName[:]) {
-		return fmt.Errorf("WorkflowName in the report does not match WorkflowName in the request metadata. Report WorkflowName: %+v, request WorkflowName: %+v", hex.EncodeToString(reportMetadata.WorkflowName[:]), hex.EncodeToString(workflowName[:]))
+	if !bytes.Equal([]byte(reportMetadata.WorkflowName[:]), workflowName[:]) {
+		return fmt.Errorf("WorkflowName in the report does not match WorkflowName in the request metadata. Report WorkflowName: %+v, request WorkflowName: %+v", reportMetadata.WorkflowName, hex.EncodeToString(workflowName[:]))
 	}
 
-	if hex.EncodeToString(reportMetadata.WorkflowCID[:]) != metadata.WorkflowID {
-		return fmt.Errorf("WorkflowID in the report does not match WorkflowID in the request metadata. Report WorkflowID: %+v, request WorkflowID: %+v", reportMetadata.WorkflowCID, metadata.WorkflowID)
+	if reportMetadata.WorkflowID != requestMetadata.WorkflowID {
+		return fmt.Errorf("WorkflowID in the report does not match WorkflowID in the request metadata. Report WorkflowID: %+v, request WorkflowID: %+v", reportMetadata.WorkflowID, requestMetadata.WorkflowID)
 	}
 
-	if !bytes.Equal(reportMetadata.ReportID[:], request.Report.Id) {
+	if !bytes.Equal([]byte(reportMetadata.ReportID), request.Report.Id) {
 		return fmt.Errorf("ReportID in the report does not match ReportID in the inputs. reportMetadata.ReportID: %x, Inputs.SignedReport.ID: %x", reportMetadata.ReportID, request.Report.Id)
 	}
 
