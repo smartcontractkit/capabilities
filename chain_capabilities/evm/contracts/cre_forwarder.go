@@ -37,22 +37,22 @@ const (
 	LATEST_BLOCK                  = -2 // PLEX-1524 - Use constant defined by EVM types once it's ready.
 )
 
-func NewKeystoneForwarderCodec() (KeystoneForwarderCodec, error) {
+func NewCREForwarderCodec() (CREForwarderCodec, error) {
 	ABI, err := forwarder.KeystoneForwarderMetaData.GetAbi()
 	if err != nil {
 		return nil, err
 	}
-	return &keystoneForwarderCodecImpl{
+	return &creForwarderCodecImpl{
 		abi: ABI,
 	}, nil
 }
 
-func NewKeystoneForwarderClient(EVMService types.EVMService, forwarderAddress common.Address, logger logger.Logger) (KeystoneForwarderClient, error) {
-	codec, err := NewKeystoneForwarderCodec()
+func NewCREForwarderClient(EVMService types.EVMService, forwarderAddress common.Address, logger logger.Logger) (CREForwarderClient, error) {
+	codec, err := NewCREForwarderCodec()
 	if err != nil {
 		return nil, err
 	}
-	return &keystoneForwarderClient{
+	return &creForwarderClient{
 		evmService:       EVMService,
 		forwarderCodec:   codec,
 		forwarderAddress: forwarderAddress,
@@ -61,47 +61,47 @@ func NewKeystoneForwarderClient(EVMService types.EVMService, forwarderAddress co
 
 }
 
-func (k keystoneForwarderClient) GetReportProcessedEvents(ctx context.Context, receiver common.Address, workflowExecutionID [32]byte, reportID [2]byte) ([]*evm.Log, error) {
+func (cfclient creForwarderClient) GetReportProcessedEvents(ctx context.Context, receiver common.Address, workflowExecutionID [32]byte, reportID [2]byte) ([]*evm.Log, error) {
 	filterQuery := evmtypes.FilterQuery{
 		Addresses: []evmtypes.Address{evmtypes.Address(receiver)},
 		Topics: [][]evmtypes.Hash{
-			{k.forwarderCodec.GetReportProcessedTopicHash()},
+			{cfclient.forwarderCodec.GetReportProcessedTopicHash()},
 			{evmtypes.Hash(receiver.Bytes())},
 			{evmtypes.Hash(workflowExecutionID[:])},
 			{evmtypes.Hash(reportID[:])},
 		},
 		ToBlock: big.NewInt(LATEST_BLOCK),
 	}
-	return k.evmService.FilterLogs(ctx, filterQuery)
+	return cfclient.evmService.FilterLogs(ctx, filterQuery)
 }
 
-type KeystoneForwarderClient interface {
+type CREForwarderClient interface {
 	GetTransmissionInfo(ctx context.Context, transmissionID TransmissionID) (TransmissionInfo, error)
 	InvokeOnReport(ctx context.Context, receiverAddress common.Address, report *evmcap.SignedReport, gasConfig *evmcap.GasConfig) (*evmtypes.TransactionResult, error)
 	GetReportProcessedEvents(ctx context.Context, receiver common.Address, workflowExecutionID [32]byte, reportID [2]byte) ([]*evm.Log, error)
 }
 
-type KeystoneForwarderCodec interface {
+type CREForwarderCodec interface {
 	EncodeQueryTransmissionInputs(query QueryTransmissionInputs) ([]byte, error)
 	DecodeQueryTransmissionInfo(encodedData []byte) (TransmissionInfo, error)
 	EncodeReport(receiver common.Address, report *evmcap.SignedReport) ([]byte, error)
 	GetReportProcessedTopicHash() evmtypes.Hash
 }
 
-func (k keystoneForwarderCodecImpl) GetReportProcessedTopicHash() evmtypes.Hash {
-	return k.abi.Events["ReportProcessed"].ID
+func (cfc creForwarderCodecImpl) GetReportProcessedTopicHash() evmtypes.Hash {
+	return cfc.abi.Events["ReportProcessed"].ID
 }
 
-type keystoneForwarderClient struct {
+type creForwarderClient struct {
 	evmService       types.EVMService
-	forwarderCodec   KeystoneForwarderCodec
+	forwarderCodec   CREForwarderCodec
 	forwarderAddress common.Address
 	logger           logger.Logger
 }
 
-func (kfclient *keystoneForwarderClient) InvokeOnReport(ctx context.Context, receiverAddress common.Address, report *evmcap.SignedReport, gasConfig *evmcap.GasConfig) (*evmtypes.TransactionResult, error) {
+func (cfclient *creForwarderClient) InvokeOnReport(ctx context.Context, receiverAddress common.Address, report *evmcap.SignedReport, gasConfig *evmcap.GasConfig) (*evmtypes.TransactionResult, error) {
 
-	kfclient.logger.Debugw("Transaction raw report", "report", hex.EncodeToString(report.RawReport))
+	cfclient.logger.Debugw("Transaction raw report", "report", hex.EncodeToString(report.RawReport))
 
 	var resolvedGasConfig *evmtypes.GasConfig
 	if gasConfig != nil && gasConfig.GasLimit > 0 {
@@ -109,21 +109,21 @@ func (kfclient *keystoneForwarderClient) InvokeOnReport(ctx context.Context, rec
 			GasLimit: &gasConfig.GasLimit,
 		}
 	}
-	encodedReport, err := kfclient.forwarderCodec.EncodeReport(receiverAddress, report)
+	encodedReport, err := cfclient.forwarderCodec.EncodeReport(receiverAddress, report)
 	if err != nil {
 		return nil, err
 	}
 	// TODO: PLEX-1522 - Add support to limit maximum total fee based on billing config
-	transactionResult, err := kfclient.evmService.SubmitTransaction(ctx, evmtypes.SubmitTransactionRequest{
-		To:        kfclient.forwarderAddress,
+	transactionResult, err := cfclient.evmService.SubmitTransaction(ctx, evmtypes.SubmitTransactionRequest{
+		To:        cfclient.forwarderAddress,
 		Data:      encodedReport,
 		GasConfig: resolvedGasConfig,
 	})
 
 	if err != nil {
 		if errors.Is(err, types.ErrSettingTransactionGasLimitNotSupported) {
-			return kfclient.evmService.SubmitTransaction(ctx, evmtypes.SubmitTransactionRequest{
-				To:   kfclient.forwarderAddress,
+			return cfclient.evmService.SubmitTransaction(ctx, evmtypes.SubmitTransactionRequest{
+				To:   cfclient.forwarderAddress,
 				Data: encodedReport,
 			})
 		}
@@ -132,32 +132,32 @@ func (kfclient *keystoneForwarderClient) InvokeOnReport(ctx context.Context, rec
 	return transactionResult, nil
 }
 
-func (kfclient *keystoneForwarderClient) GetTransmissionInfo(ctx context.Context, transmissionID TransmissionID) (TransmissionInfo, error) {
+func (cfclient *creForwarderClient) GetTransmissionInfo(ctx context.Context, transmissionID TransmissionID) (TransmissionInfo, error) {
 	queryInputs := QueryTransmissionInputs{
 		Receiver:            transmissionID.ReceiverHex(),
 		WorkflowExecutionID: transmissionID.WorkflowExecutionID,
 		ReportID:            transmissionID.ReportID,
 	}
-	calldata, err := kfclient.forwarderCodec.EncodeQueryTransmissionInputs(queryInputs)
+	calldata, err := cfclient.forwarderCodec.EncodeQueryTransmissionInputs(queryInputs)
 	if err != nil {
 		return TransmissionInfo{}, err
 	}
-	response, err := kfclient.evmService.CallContract(ctx, &evmtypes.CallMsg{
-		To:   kfclient.forwarderAddress,
+	response, err := cfclient.evmService.CallContract(ctx, &evmtypes.CallMsg{
+		To:   cfclient.forwarderAddress,
 		Data: calldata,
 	}, big.NewInt(LATEST_BLOCK))
 	if err != nil {
 		return TransmissionInfo{}, err
 	}
-	return kfclient.forwarderCodec.DecodeQueryTransmissionInfo(response)
+	return cfclient.forwarderCodec.DecodeQueryTransmissionInfo(response)
 }
 
-type keystoneForwarderCodecImpl struct {
+type creForwarderCodecImpl struct {
 	abi *abi.ABI
 }
 
 // EncodeReport implements KeystoneForwarderCodec.
-func (kfc *keystoneForwarderCodecImpl) EncodeReport(receiver common.Address, report *evmcap.SignedReport) ([]byte, error) {
+func (cfc *creForwarderCodecImpl) EncodeReport(receiver common.Address, report *evmcap.SignedReport) ([]byte, error) {
 	// Note: The codec that ChainWriter uses to encode the parameters for the contract ABI cannot handle
 	// `nil` values, including for slices. Until the bug is fixed we need to ensure that there are no
 	// `nil` values passed in the request.
@@ -179,7 +179,7 @@ func (kfc *keystoneForwarderCodecImpl) EncodeReport(receiver common.Address, rep
 	if req.Signatures == nil {
 		req.Signatures = make([][]byte, 0)
 	}
-	return kfc.abi.Pack("report", req.Receiver, req.RawReport, req.ReportContext, req.Signatures)
+	return cfc.abi.Pack("report", req.Receiver, req.RawReport, req.ReportContext, req.Signatures)
 }
 
 type QueryTransmissionInputs struct {
@@ -188,14 +188,14 @@ type QueryTransmissionInputs struct {
 	ReportID            [2]byte
 }
 
-func (kfc *keystoneForwarderCodecImpl) EncodeQueryTransmissionInputs(query QueryTransmissionInputs) ([]byte, error) {
-	return kfc.abi.Pack("getTransmissionInfo", common.HexToAddress(query.Receiver), query.WorkflowExecutionID, query.ReportID)
+func (cfc *creForwarderCodecImpl) EncodeQueryTransmissionInputs(query QueryTransmissionInputs) ([]byte, error) {
+	return cfc.abi.Pack("getTransmissionInfo", common.HexToAddress(query.Receiver), query.WorkflowExecutionID, query.ReportID)
 }
 
-func (kfc *keystoneForwarderCodecImpl) DecodeQueryTransmissionInfo(encodedData []byte) (TransmissionInfo, error) {
+func (cfc *creForwarderCodecImpl) DecodeQueryTransmissionInfo(encodedData []byte) (TransmissionInfo, error) {
 	//PLEX-1524 this is ugly. For some reason ABI.UnpackIntoInterface doesn't work.
 	var transmissionInfo TransmissionInfo
-	values, err := kfc.abi.Methods["getTransmissionInfo"].Outputs.UnpackValues(encodedData)
+	values, err := cfc.abi.Methods["getTransmissionInfo"].Outputs.UnpackValues(encodedData)
 	if err != nil {
 		return TransmissionInfo{}, errors.Join(errors.New("Failed to decode getTransmissionInfo return data"), err)
 	}

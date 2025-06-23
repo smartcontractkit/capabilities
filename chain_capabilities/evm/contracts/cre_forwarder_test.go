@@ -21,7 +21,7 @@ import (
 
 const LATEST_BLOCK = -2
 
-func TestKeystoneForwarderClient_GetTransmissionInfo(t *testing.T) {
+func TestCREForwarderClient_GetTransmissionInfo(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -34,7 +34,7 @@ func TestKeystoneForwarderClient_GetTransmissionInfo(t *testing.T) {
 
 	t.Run("Get Transmission info - Successfully get transmission info", func(t *testing.T) {
 		mockEVMService := mocks2.NewEVMService(t)
-		forwarderClient, _ := contracts.NewKeystoneForwarderClient(mockEVMService, forwarderAddress, testLogger)
+		forwarderClient, _ := contracts.NewCREForwarderClient(mockEVMService, forwarderAddress, testLogger)
 
 		expectedTransmissionInfo := contracts.TransmissionInfo{
 			State:           2,
@@ -65,7 +65,7 @@ func TestKeystoneForwarderClient_GetTransmissionInfo(t *testing.T) {
 	})
 	t.Run("Get Transmission info - Fail calling CallContract ", func(t *testing.T) {
 		mockEVMService := mocks2.NewEVMService(t)
-		forwarderClient, _ := contracts.NewKeystoneForwarderClient(mockEVMService, forwarderAddress, testLogger)
+		forwarderClient, _ := contracts.NewCREForwarderClient(mockEVMService, forwarderAddress, testLogger)
 
 		transmissionID := contracts.TransmissionID{
 			Receiver:            common.BytesToAddress(test.RandomBytes(20)),
@@ -86,7 +86,7 @@ func TestKeystoneForwarderClient_GetTransmissionInfo(t *testing.T) {
 	})
 	t.Run("Get Transmission info - Fail decoding data from call contract", func(t *testing.T) {
 		mockEVMService := mocks2.NewEVMService(t)
-		forwarderClient, _ := contracts.NewKeystoneForwarderClient(mockEVMService, forwarderAddress, testLogger)
+		forwarderClient, _ := contracts.NewCREForwarderClient(mockEVMService, forwarderAddress, testLogger)
 
 		transmissionID := contracts.TransmissionID{
 			Receiver:            common.BytesToAddress(test.RandomBytes(20)),
@@ -106,7 +106,7 @@ func TestKeystoneForwarderClient_GetTransmissionInfo(t *testing.T) {
 	})
 }
 
-func TestKeystoneForwarderClient_InvokeOnReport(t *testing.T) {
+func TestCREForwarderClient_InvokeOnReport(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -139,7 +139,7 @@ func TestKeystoneForwarderClient_InvokeOnReport(t *testing.T) {
 		expectedEncodedReport := testEncoder.encodeReport(receiverAddress, report)
 
 		mockEVMService := mocks2.NewEVMService(t)
-		forwarderClient, _ := contracts.NewKeystoneForwarderClient(mockEVMService, forwarderAddress, testLogger)
+		forwarderClient, _ := contracts.NewCREForwarderClient(mockEVMService, forwarderAddress, testLogger)
 		expectedGasLimit := uint64(100)
 		txHash := evmtypes.Hash(test.RandomBytes(32))
 
@@ -172,7 +172,7 @@ func TestKeystoneForwarderClient_InvokeOnReport(t *testing.T) {
 		expectedEncodedReport := testEncoder.encodeReport(receiverAddress, report)
 
 		mockEVMService := mocks2.NewEVMService(t)
-		forwarderClient, _ := contracts.NewKeystoneForwarderClient(mockEVMService, forwarderAddress, testLogger)
+		forwarderClient, _ := contracts.NewCREForwarderClient(mockEVMService, forwarderAddress, testLogger)
 		expectedGasLimit := uint64(100)
 		expectedError := "some random error sending TX"
 
@@ -193,7 +193,7 @@ func TestKeystoneForwarderClient_InvokeOnReport(t *testing.T) {
 
 func testSuccessfulReportSubmissionAndEncoding(ctx context.Context, t *testing.T, forwarderAddress common.Address, testLogger logger.Logger, expectedEncodedReport []byte, receiverAddress common.Address, report *evmcap.SignedReport) {
 	mockEVMService := mocks2.NewEVMService(t)
-	forwarderClient, _ := contracts.NewKeystoneForwarderClient(mockEVMService, forwarderAddress, testLogger)
+	forwarderClient, _ := contracts.NewCREForwarderClient(mockEVMService, forwarderAddress, testLogger)
 	expectedGasLimit := uint64(100)
 	txHash := evmtypes.Hash(test.RandomBytes(32))
 

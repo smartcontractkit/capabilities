@@ -70,8 +70,8 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
 
-	if len(common.Hex2Bytes(cfg.KeystoneForwarderAddress)) != 20 {
-		return fmt.Errorf("invalid keystone forward address, it does not have 20 characters: %s", cfg.KeystoneForwarderAddress)
+	if len(common.Hex2Bytes(cfg.CREForwarderAddress)) != 20 {
+		return fmt.Errorf("invalid cre forward address, it does not have 20 characters: %s", cfg.CREForwarderAddress)
 	}
 
 	if cfg.ReceiverGasMinimum == 0 {

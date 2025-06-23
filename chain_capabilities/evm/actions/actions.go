@@ -22,14 +22,14 @@ import (
 type EVM struct {
 	types.EVMService
 	keystoneForwarderAddress common.Address
-	forwarderClient          contracts.KeystoneForwarderClient
-	lggr logger.Logger
+	forwarderClient          contracts.CREForwarderClient
+	lggr                     logger.Logger
 	ReceiverGasMinimum       uint64
 }
 
 func NewEVM(cfg config.Config, evmService types.EVMService, logger logger.Logger) (EVM, error) {
-	keystoneForwarderAddress := common.HexToAddress(cfg.KeystoneForwarderAddress) 
-	kfc, err := contracts.NewKeystoneForwarderClient(evmService, keystoneForwarderAddress, logger)
+	keystoneForwarderAddress := common.HexToAddress(cfg.CREForwarderAddress)
+	kfc, err := contracts.NewCREForwarderClient(evmService, keystoneForwarderAddress, logger)
 	if err != nil {
 		return EVM{}, err
 	}

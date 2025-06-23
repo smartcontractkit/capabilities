@@ -326,12 +326,12 @@ func validateInputsAndReportMetadata(metadata capabilities.RequestMetadata, requ
 // Helper to retrieve TX Hash based on log event executed after processing a report.
 type TxHashRetriever struct {
 	transmissionID          contracts.TransmissionID
-	keystoneForwarderClient contracts.KeystoneForwarderClient
+	keystoneForwarderClient contracts.CREForwarderClient
 	lggr                    logger.Logger
 	txHash                  *evmtypes.Hash
 }
 
-func NewTxHashRetriever(forwarderClient contracts.KeystoneForwarderClient, lggr logger.Logger, transmissionID contracts.TransmissionID) TxHashRetriever {
+func NewTxHashRetriever(forwarderClient contracts.CREForwarderClient, lggr logger.Logger, transmissionID contracts.TransmissionID) TxHashRetriever {
 	return TxHashRetriever{lggr: lggr, keystoneForwarderClient: forwarderClient, transmissionID: transmissionID}
 }
 
