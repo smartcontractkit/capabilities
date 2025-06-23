@@ -40,6 +40,6 @@ type LimitsConfig struct {
 	MaxHeaderKeyLength uint32 `toml:"maxHeaderKeyLength" json:"maxHeaderKeyLength" yaml:"maxHeaderKeyLength" mapstructure:"maxHeaderKeyLength"`
 	// MaxHeaderValueLength is the maximum length of a header value.
 	MaxHeaderValueLength uint32 `toml:"maxHeaderValueLength" json:"maxHeaderValueLength" yaml:"maxHeaderValueLength" mapstructure:"maxHeaderValueLength"`
-	// MaxBodyLength is the maximum length of the request body.
-	MaxBodyLength uint32 `toml:"maxBodyLength" json:"maxBodyLength" yaml:"maxBodyLength" mapstructure:"maxBodyLength"`
+	// MaxRequestBytes is the maximum length of the request body.
+	MaxRequestBytes uint32 `toml:"maxBodyLength" json:"maxBodyLength" yaml:"maxBodyLength" mapstructure:"maxBodyLength"`
 }

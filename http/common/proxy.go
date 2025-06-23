@@ -33,7 +33,7 @@ func NewHTTPClientProxy(cfg ServiceConfig) *httpClientProxy {
 		client: &http.Client{
 			Timeout: time.Duration(cfg.LimitsConfig.MaxTimeoutMs) * time.Millisecond,
 		},
-		maxResponseBodyLength: cfg.LimitsConfig.MaxBodyLength,
+		maxResponseBodyLength: cfg.LimitsConfig.MaxResponseBytes,
 	}
 }
 

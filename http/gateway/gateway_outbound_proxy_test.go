@@ -16,12 +16,10 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 
+	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
-	"github.com/smartcontractkit/chainlink-common/pkg/types/jsonrpc"
 )
-
-var codec = jsonrpc.Codec{}
 
 func TestOutgoingConnectorHandler_AwaitConnection(t *testing.T) {
 	type testCase struct {
@@ -247,9 +245,7 @@ func simulateGatewayMessage(t *testing.T, proxy *gatewayOutboundProxy, id string
 	payload, err := json.Marshal(resp)
 	require.NoError(t, err)
 	req.Params = payload
-	data, err := codec.EncodeRequest(&req)
-	require.NoError(t, err)
-	err = proxy.HandleGatewayMessage(context.Background(), "gateway1", data)
+	err = proxy.HandleGatewayMessage(context.Background(), "gateway1", &req)
 	require.NoError(t, err)
 }
 
@@ -274,11 +270,7 @@ func (m *mockGatewayConnector) GatewayIDs(context.Context) ([]string, error) {
 	return m.GatewayIDsVal, nil
 }
 
-func (m *mockGatewayConnector) SendToGateway(ctx context.Context, gateway string, data []byte) error {
-	resp, err := codec.DecodeResponse(data)
-	if err != nil {
-		return err
-	}
+func (m *mockGatewayConnector) SendToGateway(ctx context.Context, gateway string, resp *jsonrpc.Response) error {
 	if m.OnSend != nil {
 		m.OnSend(resp.ID)
 	}

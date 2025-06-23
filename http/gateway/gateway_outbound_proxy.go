@@ -16,12 +16,12 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
+	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 	gc "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
-	"github.com/smartcontractkit/chainlink-common/pkg/types/jsonrpc"
 )
 
 const (
@@ -56,7 +56,6 @@ type gatewayOutboundProxy struct {
 	responses               *responses
 	selectorOpts            []func(*gc.RoundRobinSelector)
 	gatewayConnectionConfig common.GatewayConnectionConfig
-	codec                   jsonrpc.Codec
 }
 
 func NewGatewayOutboundProxy(gatewayConnector core.GatewayConnector, config common.ServiceConfig, lgger logger.Logger, opts ...func(*gc.RoundRobinSelector)) (*gatewayOutboundProxy, error) {
@@ -96,7 +95,6 @@ func NewGatewayOutboundProxy(gatewayConnector core.GatewayConnector, config comm
 			MaxElapsedTimeMs:  maxElapsedTime,
 			Multiplier:        multiplier,
 		},
-		codec: jsonrpc.Codec{},
 	}, nil
 }
 
@@ -139,11 +137,10 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 
 	lggr.Debugw("sending request to gateway")
 
-	req := jsonrpc.Request{
+	gatewayResp := jsonrpc.Response{
 		Version: "2.0",
 		ID:      messageID,
-		Method:  gc.MethodHTTPAction,
-		Params:  json.RawMessage(payload),
+		Result:  json.RawMessage(payload),
 	}
 
 	selectedGateway, err := p.awaitConnection(ctx, lggr)
@@ -151,12 +148,7 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 		return nil, errors.Wrap(err, "failed to await connection to gateway")
 	}
 
-	reqData, err := p.codec.EncodeRequest(&req)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to encode request")
-	}
-
-	if err := p.gatewayConnector.SendToGateway(ctx, selectedGateway, reqData); err != nil {
+	if err := p.gatewayConnector.SendToGateway(ctx, selectedGateway, &gatewayResp); err != nil {
 		return nil, errors.Wrap(err, "failed to send request to gateway")
 	}
 
@@ -258,17 +250,11 @@ func (p *gatewayOutboundProxy) attemptGatewayConnection(ctx context.Context, lgg
 
 // HandleGatewayMessage processes incoming messages from the Gateway,
 // which are in response to a HandleSingleNodeRequest call.
-func (p *gatewayOutboundProxy) HandleGatewayMessage(ctx context.Context, gatewayID string, data []byte) error {
-	req, err := p.codec.DecodeRequest(data)
-	if err != nil {
-		p.lggr.Errorw("failed to decode request", "error", err)
-		return nil
-	}
+func (p *gatewayOutboundProxy) HandleGatewayMessage(ctx context.Context, gatewayID string, req *jsonrpc.Request) error {
 	l := logger.With(p.lggr, "gatewayID", gatewayID, "method", req.Method, "messageID", req.ID)
 	l.Debugw("handling incomming gateway message")
-
 	var msg gateway.OutboundHTTPResponse
-	err = json.Unmarshal(req.Params, &msg)
+	err := json.Unmarshal(req.Params, &msg)
 	if err != nil {
 		l.Errorw("failed to unmarshal request params", "error", err)
 		return nil

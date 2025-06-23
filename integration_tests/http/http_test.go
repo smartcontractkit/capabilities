@@ -173,7 +173,7 @@ type client struct {
 	privateKey *ecdsa.PrivateKey
 }
 
-func (c *client) Sign(data ...[]byte) ([]byte, error) {
+func (c *client) Sign(ctx context.Context, data ...[]byte) ([]byte, error) {
 	var msg []byte
 	for _, d := range data {
 		msg = append(msg, d...)
@@ -232,7 +232,7 @@ func TestHTTPActionCapability(t *testing.T) {
 
 	output, err := httpCapability.SendRequest(ctx, requestData, &httpsdk.Request{
 		Url:     fmt.Sprintf("http://%s/test", listener.Addr().String()),
-		Method:  httpsdk.Method_GET,
+		Method:  "GET",
 		Headers: map[string]string{"X-Test": "1"},
 		Body:    []byte("ping"),
 	})

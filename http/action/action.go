@@ -48,7 +48,7 @@ func (s *service) Initialise(
 	s.lggr.Debugf("Initialising %s", ServiceName)
 
 	var serviceConfig *common.ServiceConfig
-	err := json.Unmarshal([]byte(config), serviceConfig)
+	err := json.Unmarshal([]byte(config), &serviceConfig)
 	if err != nil {
 		return err
 	}

@@ -29,7 +29,8 @@ func ValidatedServiceConfig(cfg *common.ServiceConfig) (*common.ServiceConfig, e
 	maxHeaderCount := getWithDefault(cfg.LimitsConfig.MaxHeaderCount, defaultMaxHeaderCount)
 	maxHeaderKeyLength := getWithDefault(cfg.LimitsConfig.MaxHeaderKeyLength, defaultMaxHeaderKeyLength)
 	maxHeaderValueLength := getWithDefault(cfg.LimitsConfig.MaxHeaderValueLength, defaultMaxHeaderValueLength)
-	maxBodyLength := getWithDefault(cfg.LimitsConfig.MaxBodyLength, defaultMaxBodyLength)
+	maxRequestBytes := getWithDefault(cfg.LimitsConfig.MaxRequestBytes, defaultMaxBodyLength)
+	maxResponseBytes := getWithDefault(cfg.LimitsConfig.MaxResponseBytes, defaultMaxBodyLength)
 
 	if cfg.LimitsConfig.MaxTimeoutMs > math.MaxInt32 {
 		return nil, fmt.Errorf("MaxTimeoutMs exceeds int32 maximum: %d", math.MaxInt32)
@@ -39,7 +40,8 @@ func ValidatedServiceConfig(cfg *common.ServiceConfig) (*common.ServiceConfig, e
 		MaxHeaderCount:       maxHeaderCount,
 		MaxHeaderKeyLength:   maxHeaderKeyLength,
 		MaxHeaderValueLength: maxHeaderValueLength,
-		MaxBodyLength:        maxBodyLength,
+		MaxRequestBytes:        maxRequestBytes,
+		MaxResponseBytes: maxResponseBytes,
 	}
 	cfg.LimitsConfig = limitsConfig
 	return cfg, nil
@@ -114,8 +116,8 @@ func validateInputMaxLimits(input *http.Request, cfg common.ServiceConfig) error
 	if len(input.Body) > math.MaxUint32 {
 		return fmt.Errorf("body too large: exceeds uint32 limit")
 	}
-	if uint32(len(input.Body)) > cfg.LimitsConfig.MaxResponseBytes {
-		return fmt.Errorf("body too large: maximum allowed is %d bytes", cfg.LimitsConfig.MaxResponseBytes)
+	if uint32(len(input.Body)) > cfg.LimitsConfig.MaxRequestBytes {
+		return fmt.Errorf("body too large: maximum allowed is %d bytes", cfg.LimitsConfig.MaxRequestBytes)
 	}
 	return nil
 }
