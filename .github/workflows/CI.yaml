@@ -44,10 +44,18 @@ jobs:
         #   }
         #   "run_checks": true
         # }
-      - name: Init NX and get affected projects
+
+      - name: Setup nodejs and install nx
+        uses: smartcontractkit/.github/actions/setup-nodejs@setup-nodejs/v1
+        with:
+          node-version-file: ./tool-versions
+          pnpm-version: ./tool-versions
+          use-cache: true
+          run-install: "true"
+
+      - name: Get affected projects
         id: affected
         run: |
-          npx nx@19.8.2 init
           echo "affected=$(./.github/scripts/affected-projects.sh ${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }})" >> $GITHUB_OUTPUT
 
   build:
