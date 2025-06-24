@@ -42,7 +42,7 @@ func NewMetrics() (*Metrics, error) {
 	callContractError := struct {
 		basic commoncapbeholder.MetricsInfoCapBasic
 	}{
-		basic: commoncapbeholder.NewMetricsInfoCapBasic(ns("call_contract_error"), commonbeholder.ToSchemaFullName(&CallContractSuccess{})),
+		basic: commoncapbeholder.NewMetricsInfoCapBasic(ns("call_contract_error"), commonbeholder.ToSchemaFullName(&CallContractError{})),
 	}
 
 	m.CallContractSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(callContractSuccess.basic)
@@ -58,69 +58,68 @@ func NewMetrics() (*Metrics, error) {
 	return m, nil
 }
 
+func (m *Metrics) OnCallContractInitiated(ctx context.Context, msg *CallContractInitiated) error {
+	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
+	m.CallContractSuccess.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
+	return nil
+}
+
 func (m *Metrics) OnCallContractSuccess(ctx context.Context, msg *CallContractSuccess) error {
-	// Emit basic metrics (count, timestamps)
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
 	m.CallContractSuccess.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
 	return nil
 }
 
 func (m *Metrics) OnCallContractError(ctx context.Context, msg *CallContractError) error {
-	// Emit basic metrics (count, timestamps)
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
 	m.CallContractError.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
 	return nil
 }
 
 // Attributes returns the attributes for the CallContractSuccess message to be used in metrics
-func (r *CallContractSuccess) Attributes() []attribute.KeyValue {
-	ctx := commoncapbeholder.ExecutionMetadata{
-		SourceID:                 r.ExecutionContext.MetaSourceId,
-		ChainFamilyName:          r.ExecutionContext.MetaChainFamilyName,
-		ChainID:                  r.ExecutionContext.MetaChainId,
-		NetworkName:              r.ExecutionContext.MetaNetworkName,
-		NetworkNameFull:          r.ExecutionContext.MetaNetworkNameFull,
-		WorkflowID:               r.ExecutionContext.MetaWorkflowId,
-		WorkflowOwner:            r.ExecutionContext.MetaWorkflowOwner,
-		WorkflowExecutionID:      r.ExecutionContext.MetaWorkflowExecutionId,
-		WorkflowName:             r.ExecutionContext.MetaWorkflowName,
-		WorkflowDonID:            r.ExecutionContext.MetaWorkflowDonId,
-		WorkflowDonConfigVersion: r.ExecutionContext.MetaWorkflowDonConfigVersion,
-		ReferenceID:              r.ExecutionContext.MetaReferenceId,
-		CapabilityType:           r.ExecutionContext.MetaCapabilityType,
-		CapabilityID:             r.ExecutionContext.MetaCapabilityId,
-	}
-	// Base attributes
+func (r *CallContractInitiated) Attributes() []attribute.KeyValue {
 	attrs := []attribute.KeyValue{
-		attribute.Int64("block_number", r.BlockNumber),
-		attribute.String("contract_address", r.ContractAddress),
+		attribute.Int64("block_number", r.Req.GetBlockNumber()),
+		attribute.String("contract_address", r.Req.GetContractAddress()),
 	}
-	return append(attrs, ctx.Attributes()...)
+	return append(attrs, executionMetadata(r.ExecutionContext).Attributes()...)
+}
+
+// Attributes returns the attributes for the CallContractSuccess message to be used in metrics
+func (r *CallContractSuccess) Attributes() []attribute.KeyValue {
+	attrs := []attribute.KeyValue{
+		attribute.Int64("block_number", r.Req.GetBlockNumber()),
+		attribute.String("contract_address", r.Req.GetContractAddress()),
+	}
+	return append(attrs, executionMetadata(r.ExecutionContext).Attributes()...)
 }
 
 // Attributes returns the attributes for the CallContractError message to be used in metrics
 func (r *CallContractError) Attributes() []attribute.KeyValue {
-	ctx := commoncapbeholder.ExecutionMetadata{
-		SourceID:                 r.ExecutionContext.MetaSourceId,
-		ChainFamilyName:          r.ExecutionContext.MetaChainFamilyName,
-		ChainID:                  r.ExecutionContext.MetaChainId,
-		NetworkName:              r.ExecutionContext.MetaNetworkName,
-		NetworkNameFull:          r.ExecutionContext.MetaNetworkNameFull,
-		WorkflowID:               r.ExecutionContext.MetaWorkflowId,
-		WorkflowOwner:            r.ExecutionContext.MetaWorkflowOwner,
-		WorkflowExecutionID:      r.ExecutionContext.MetaWorkflowExecutionId,
-		WorkflowName:             r.ExecutionContext.MetaWorkflowName,
-		WorkflowDonID:            r.ExecutionContext.MetaWorkflowDonId,
-		WorkflowDonConfigVersion: r.ExecutionContext.MetaWorkflowDonConfigVersion,
-		ReferenceID:              r.ExecutionContext.MetaReferenceId,
-		CapabilityType:           r.ExecutionContext.MetaCapabilityType,
-		CapabilityID:             r.ExecutionContext.MetaCapabilityId,
-	}
-	// Base attributes
 	attrs := []attribute.KeyValue{
-		attribute.Int64("block_number", r.BlockNumber),
-		attribute.String("contract_address", r.ContractAddress),
-		attribute.String("summary", r.Summary),
+		attribute.Int64("block_number", r.Req.GetBlockNumber()),
+		attribute.String("contract_address", r.Req.GetContractAddress()),
+		attribute.String("summary", r.GetSummary()),
 	}
-	return append(attrs, ctx.Attributes()...)
+	return append(attrs, executionMetadata(r.ExecutionContext).Attributes()...)
+}
+
+func executionMetadata(ec *commoncapbeholder.ExecutionContext) commoncapbeholder.ExecutionMetadata {
+	ctx := commoncapbeholder.ExecutionMetadata{
+		SourceID:                 ec.MetaSourceId,
+		ChainFamilyName:          ec.MetaChainFamilyName,
+		ChainID:                  ec.MetaChainId,
+		NetworkName:              ec.MetaNetworkName,
+		NetworkNameFull:          ec.MetaNetworkNameFull,
+		WorkflowID:               ec.MetaWorkflowId,
+		WorkflowOwner:            ec.MetaWorkflowOwner,
+		WorkflowExecutionID:      ec.MetaWorkflowExecutionId,
+		WorkflowName:             ec.MetaWorkflowName,
+		WorkflowDonID:            ec.MetaWorkflowDonId,
+		WorkflowDonConfigVersion: ec.MetaWorkflowDonConfigVersion,
+		ReferenceID:              ec.MetaReferenceId,
+		CapabilityType:           ec.MetaCapabilityType,
+		CapabilityID:             ec.MetaCapabilityId,
+	}
+	return ctx
 }

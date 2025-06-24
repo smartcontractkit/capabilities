@@ -3,11 +3,15 @@ package actions
 import (
 	"context"
 	"fmt"
+	"time"
 
+	"chain_capabilities/evm/monitoring"
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	chaincommonpb "github.com/smartcontractkit/chainlink-common/pkg/loop/chain-common"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
@@ -16,14 +20,30 @@ import (
 
 type EVM struct {
 	types.EVMService
+	lggr              logger.Logger
+	beholderProcessor beholder.ProtoProcessor
+	messageBuilder    *monitoring.MessageBuilder
 }
 
-func NewEVM(evmService types.EVMService) EVM {
-	return EVM{EVMService: evmService}
+func NewEVM(evmService types.EVMService, lggr logger.Logger, beholderProcessor beholder.ProtoProcessor, messageBuilder *monitoring.MessageBuilder) EVM {
+	return EVM{
+		EVMService:        evmService,
+		lggr:              lggr,
+		beholderProcessor: beholderProcessor,
+		messageBuilder:    messageBuilder,
+	}
 }
 
 // TODO finalise the signature PLEX-1482
-func (e EVM) CallContract(etx context.Context, _ capabilities.RequestMetadata, input *evmservice.CallContractRequest) (*evmservice.CallContractReply, error) {
+func (e EVM) CallContract(etx context.Context, req capabilities.RequestMetadata, input *evmservice.CallContractRequest) (*evmservice.CallContractReply, error) {
+	tsStart := time.Now().UnixMilli()
+	readRequest := monitoring.ReadRequest{
+		// TODO what to use for MetaSourceId
+		Node:            "",
+		TsStart:         tsStart,
+		RequestMetadata: req,
+	}
+
 	callMsg, err := evmservice.ConvertCallMsgFromProto(input.GetCall())
 	if err != nil {
 		return nil, err
@@ -32,13 +52,28 @@ func (e EVM) CallContract(etx context.Context, _ capabilities.RequestMetadata, i
 	// TODO handle unspecified block number, which defaults to the latest block, need an OCR round for consensus on read.
 	// To do this the EVMService has to be modified/extended to return from which block the contract was read or even a list of contact reads from a couple of blocks.
 	blockNumber := valuespb.NewIntFromBigInt(input.GetBlockNumber())
-	if blockNumber == nil || blockNumber.String() == "0" {
+	if blockNumber == nil || blockNumber.Int64() == 0 {
 		return nil, fmt.Errorf("block number must be specified and non-zero, got: %s", blockNumber)
+	}
+
+	err = e.beholderProcessor.Process(etx, e.messageBuilder.BuildCallContractInitiated(readRequest, callMsg, blockNumber))
+	if err != nil {
+		e.lggr.Errorw("failed to process CallContractInitiated message", "err", err)
 	}
 
 	data, err := e.EVMService.CallContract(etx, callMsg, blockNumber)
 	if err != nil {
+		e.lggr.Errorw("failed to read contract", "contract", callMsg.To, "block", blockNumber.String(), "err", err)
+		err2 := e.beholderProcessor.Process(etx, e.messageBuilder.BuildCallContractError(readRequest, callMsg, blockNumber, "failed to call contract", err.Error()))
+		if err2 != nil {
+			return nil, fmt.Errorf("failed to process CallContractError message: %w after err: %w", err2, err)
+		}
 		return nil, err
+	}
+
+	e.lggr.Infow("successfully read contract", "contract", callMsg.To, "block", blockNumber.String(), "err", err)
+	if err = e.beholderProcessor.Process(etx, e.messageBuilder.BuildCallContractSuccess(readRequest, callMsg, blockNumber)); err != nil {
+		e.lggr.Errorw("failed to process Call Contract success message", "err", err)
 	}
 
 	return &evmservice.CallContractReply{Data: data}, nil

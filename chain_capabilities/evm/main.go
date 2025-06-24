@@ -6,7 +6,11 @@ import (
 	"fmt"
 	"time"
 
+	"chain_capabilities/evm/monitoring"
 	"chain_capabilities/evm/trigger"
+	"github.com/smartcontractkit/capabilities/chain_capabilities"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 
@@ -24,6 +28,10 @@ import (
 
 const (
 	CapabilityName = "evm"
+	// TODO
+	repoCLLCapabilities = "https://raw.githubusercontent.com/smartcontractkit/capabilities"
+	versionRefsDevelop  = "..."
+	schemaBasePath      = repoCLLCapabilities + "/" + versionRefsDevelop + "/chain_capabilities/evm/monitoring"
 )
 
 type Config struct {
@@ -58,8 +66,15 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _
 	if err := json.Unmarshal([]byte(config), &cfg); err != nil {
 		return fmt.Errorf("failed to parse EVM capability config: %w", err)
 	}
+
 	if cfg.LogTriggerPollInterval < 0 {
 		return fmt.Errorf("LogTriggerPollInterval must be positive, got: %s", cfg.LogTriggerPollInterval)
+	}
+
+	client := beholder.GetClient().ForName("evm_capability")
+	processor, err := monitoring.NewProcessor(beholder.NewProtoEmitter(c.lggr, &client, schemaBasePath))
+	if err != nil {
+		return fmt.Errorf("failed to create monitoring proto processor: %w", err)
 	}
 
 	relayID := types.NewRelayID(cfg.Network, fmt.Sprintf("%d", cfg.ChainID))
@@ -69,13 +84,16 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _
 		return fmt.Errorf("failed to fetch relayer for chainID %d from relayerSet: %w", cfg.ChainID, err)
 	}
 
+	// TODO Relayer should return chain info
+	messageBuilder := monitoring.NewMessageBuilder(chain_capabilities.ChainInfo{}, c.CapabilityInfo)
+
 	evmRelayer, err := relayer.EVM()
 	if err != nil {
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
 
 	c.capability = capability{
-		EVM:            actions.NewEVM(evmRelayer),
+		EVM:            actions.NewEVM(evmRelayer, c.lggr, processor, messageBuilder),
 		triggerService: trigger.NewLogTriggerService(evmRelayer, trigger.NewLogTriggerStore(), c.lggr, cfg.LogTriggerPollInterval),
 	}
 

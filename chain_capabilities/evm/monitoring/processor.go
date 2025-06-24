@@ -24,21 +24,31 @@ func NewProcessor(emitter beholder.ProtoEmitter) (beholder.ProtoProcessor, error
 		metrics: metrics,
 	}, nil
 }
-func (p *processor) Process(ctx context.Context, m proto.Message, _ ...any) error {
-	// Switch on the type of the proto.Message
+
+func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any) error {
 	switch msg := m.(type) {
+	case *CallContractInitiated:
+		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
+			return fmt.Errorf("failed to emit CallContractInitiated log: %w", err)
+		}
 	case *CallContractSuccess:
 		if err := p.metrics.OnCallContractSuccess(ctx, msg); err != nil {
-			return fmt.Errorf("failed to publish write initiated metrics: %w", err)
+			return fmt.Errorf("failed to publish CallContractSuccess metrics: %w", err)
 		}
-		// TODO emit structured logs
+
+		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
+			return fmt.Errorf("failed to emit CallContractSuccess log: %w", err)
+		}
 	case *CallContractError:
 		if err := p.metrics.OnCallContractError(ctx, msg); err != nil {
-			return fmt.Errorf("failed to publish write error metrics: %w", err)
+			return fmt.Errorf("failed to publish CallContractError metrics: %w", err)
+		}
+
+		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
+			return fmt.Errorf("failed to emit CallContractError log: %w", err)
 		}
 	default:
-		return nil // fallthrough
+		return nil
 	}
-
 	return nil
 }
