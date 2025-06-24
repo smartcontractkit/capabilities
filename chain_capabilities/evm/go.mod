@@ -6,7 +6,7 @@ toolchain go1.24.3
 
 require (
 	github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-20250402163239-224ad2061432
-	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250617125326-e36b605af8c5
+	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250624150103-934f4bfb7123
 	github.com/stretchr/testify v1.10.0
 	google.golang.org/protobuf v1.36.6
 )

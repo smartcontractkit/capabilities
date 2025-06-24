@@ -51,7 +51,7 @@ func main() {
 	})
 }
 
-func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _ core.TelemetryService, _ core.KeyValueStore, _ core.ErrorLog, _ core.PipelineRunnerService, relayerSet core.RelayerSet, _ core.OracleFactory) error {
+func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, telemetryService core.TelemetryService, store core.KeyValueStore, errorLog core.ErrorLog, pipelineRunner core.PipelineRunnerService, relayerSet core.RelayerSet, oracleFactory core.OracleFactory, gatewayConnector core.GatewayConnector) error {
 	c.lggr.Infof("Initialising %s", CapabilityName)
 
 	var cfg Config

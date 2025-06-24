@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/smartcontractkit/chain_capabilities/evm/actions"
+	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -196,7 +197,7 @@ func TestCapability_GetTransactionByHash(t *testing.T) {
 		evmSvc.On("GetTransactionByHash", mock.Anything, mock.Anything).Return(nil, assert.AnError)
 
 		_, err := svc.GetTransactionByHash(context.Background(), capabilities.RequestMetadata{},
-			&chainsevm.GetTransactionByHashRequest{Hash: hash[:]})
+			&evmcappb.GetTransactionByHashRequest{Hash: hash[:]})
 		assert.ErrorIs(t, err, assert.AnError)
 	})
 }
@@ -252,14 +253,14 @@ func TestCapability_LatestAndFinalizedHead(t *testing.T) {
 }
 
 func TestCapability_Register_Unregister_LogTracking(t *testing.T) {
-	filterProto := &chainsevm.LPFilter{} // empty is enough for proto→types conversion
+	filterProto := &evmcappb.LPFilter{} // empty is enough for proto→types conversion
 
 	t.Run("register happy-path", func(t *testing.T) {
 		svc, evmSvc := initMocks(t)
 		evmSvc.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil)
 
 		_, err := svc.RegisterLogTracking(context.Background(), capabilities.RequestMetadata{},
-			&chainsevm.RegisterLogTrackingRequest{Filter: filterProto})
+			&evmcappb.RegisterLogTrackingRequest{Filter: filterProto})
 		require.NoError(t, err)
 	})
 
