@@ -9,6 +9,8 @@ import (
 
 	"github.com/go-co-op/gocron/v2"
 	"github.com/jonboulle/clockwork"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron/server"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/triggers/cron"
@@ -19,7 +21,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
 
-const ID = "cron-trigger@1.0.0"
 const ServiceName = "CronCapabilities"
 
 const (
@@ -28,7 +29,7 @@ const (
 )
 
 var cronTriggerInfo = capabilities.MustNewCapabilityInfo(
-	ID,
+	server.CronID,
 	capabilities.CapabilityTypeTrigger,
 	"A trigger that uses a cron schedule to run periodically at fixed times, dates, or intervals.",
 )
@@ -56,6 +57,38 @@ type Service struct {
 	scheduler gocron.Scheduler
 	triggers  *cronStore
 	labeler   custmsg.MessageEmitter
+}
+
+func (s *Service) RegisterLegacyTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) (<-chan capabilities.TriggerAndId[*crontypedapi.LegacyPayload], error) { //nolint:staticcheck
+	ch, err := s.RegisterTrigger(ctx, triggerID, metadata, input)
+	if err != nil {
+		return nil, err
+	}
+	mapped := make(chan capabilities.TriggerAndId[*crontypedapi.LegacyPayload]) //nolint
+	go func() {
+		defer close(mapped)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case triggerEvent, ok := <-ch:
+				if !ok {
+					return
+				}
+				mapped <- capabilities.TriggerAndId[*crontypedapi.LegacyPayload]{ //nolint:staticcheck
+					Id: triggerEvent.Id,
+					Trigger: &crontypedapi.LegacyPayload{ //nolint:staticcheck
+						ScheduledExecutionTime: triggerEvent.Trigger.ScheduledExecutionTime.AsTime().Format(time.RFC3339Nano),
+					},
+				}
+			}
+		}
+	}()
+	return mapped, nil
+}
+
+func (s *Service) UnregisterLegacyTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) error {
+	return s.UnregisterTrigger(ctx, triggerID, metadata, input)
 }
 
 var _ services.Service = &Service{}
@@ -233,7 +266,7 @@ func createTriggerResponse(scheduledExecutionTime time.Time) capabilities.Trigge
 
 	return capabilities.TriggerAndId[*crontypedapi.Payload]{
 		Trigger: &crontypedapi.Payload{
-			ScheduledExecutionTime: scheduledExecutionTimeUTC.Format(time.RFC3339Nano),
+			ScheduledExecutionTime: timestamppb.New(scheduledExecutionTimeUTC),
 		},
 		Id: triggerEventID,
 	}
