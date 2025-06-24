@@ -48,11 +48,6 @@ runs:
 
     - name: Setup nodejs and install nx
       uses: smartcontractkit/.github/actions/setup-nodejs@setup-nodejs/v1
-      with:
-        node-version-file: ./.tool-versions
-        pnpm-version: ./.tool-versions
-        use-cache: true
-        run-install: "true"
 
     - name: Set up Go cache keys
       id: init
