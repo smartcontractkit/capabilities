@@ -7,21 +7,20 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/rpc"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/emptypb"
-
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	chaincommonpb "github.com/smartcontractkit/chainlink-common/pkg/loop/chain-common"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	ctypes "github.com/smartcontractkit/chain_capabilities/evm/consensus/types"
 )
 
 type consensusReader interface {
-	Enqueue(ctx context.Context, request ctypes.Request) (<-chan []byte, error)
+	Read(ctx context.Context, request ctypes.Request) (<-chan []byte, error)
 }
 
 type EVM struct {
@@ -53,12 +52,13 @@ func (e EVM) CallContract(ctx context.Context, meta capabilities.RequestMetadata
 	var request ctypes.Request
 	if requiresLocking {
 		request = ctypes.NewLockableToABlockRequest(requestID(meta), func(ctx context.Context, height *evmservice.ChainHeight) ([]byte, error) {
+			// TODO: PLEX-1571 guarantee finality/safety of observed data for load balanced RPCs
 			callBlockNumber, err := getCallBlockNumber(blockNumber, height)
 			if err != nil {
 				return nil, fmt.Errorf("error getting call block number: %w", err)
 			}
 
-			// TODO: PLEX-1558 agree on RPC error content in cases where request itself is invalid
+			// TODO: PLEX-1558 agree on RPC error content
 			return e.EVMService.CallContract(ctx, callMsg, callBlockNumber)
 		})
 	} else {
@@ -67,7 +67,7 @@ func (e EVM) CallContract(ctx context.Context, meta capabilities.RequestMetadata
 		})
 	}
 
-	resultCh, err := e.consensusReader.Enqueue(ctx, request)
+	resultCh, err := e.consensusReader.Read(ctx, request)
 	if err != nil {
 		return nil, err
 	}
@@ -210,7 +210,7 @@ func (e EVM) EstimateGas(etx context.Context, _ capabilities.RequestMetadata, re
 }
 
 func (e EVM) getReply(ctx context.Context, request ctypes.Request, into proto.Message) (err error) {
-	resultCh, err := e.consensusReader.Enqueue(ctx, request)
+	resultCh, err := e.consensusReader.Read(ctx, request)
 	if err != nil {
 		return err
 	}

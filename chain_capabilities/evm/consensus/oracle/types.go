@@ -1,6 +1,8 @@
 package oracle
 
-import "github.com/smartcontractkit/chain_capabilities/evm/consensus/types"
+import (
+	"github.com/smartcontractkit/chain_capabilities/evm/consensus/types"
+)
 
 type BlocksProvider interface {
 	GetLatest() (int64, error)

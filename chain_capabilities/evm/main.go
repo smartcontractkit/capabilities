@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"time"
 
-	services2 "github.com/smartcontractkit/chainlink-common/pkg/services"
-
 	"github.com/smartcontractkit/chain_capabilities/evm/consensus"
 	"github.com/smartcontractkit/chain_capabilities/evm/consensus/oracle"
 	"github.com/smartcontractkit/chain_capabilities/evm/consensus/poller"
@@ -48,9 +46,9 @@ type capabilityGRPCService struct {
 
 type capability struct {
 	actions.EVM
-	requestPoller *poller.Poller
-	requestsStore *consensus.RequestStore
-	oracle        core.Oracle
+	requestPoller   *poller.Poller
+	consensusReader *consensus.Reader
+	oracle          core.Oracle
 }
 
 var _ evmcapserver.ClientCapability = &capabilityGRPCService{}
@@ -83,9 +81,9 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _
 
 	c.capability = capability{EVM: actions.NewEVM(evmRelayer)}
 
-	c.requestsStore = consensus.NewRequestsStore(c.lggr, time.Second*10)
-	requestPoller := poller.NewPoller(c.lggr, c.requestsStore, PollingWorkersNum, PollPeriod)
-	c.requestsStore.SetPoller(requestPoller)
+	c.consensusReader = consensus.NewReader(c.lggr, time.Second*10)
+	requestPoller := poller.NewPoller(c.lggr, c.consensusReader, PollingWorkersNum, PollPeriod)
+	c.consensusReader.SetPoller(requestPoller)
 
 	// TODO PLEX-1560: populate with implementation
 	var blocksProvider oracle.BlocksProvider
@@ -98,14 +96,14 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _
 			ContractTransmitterTransmitTimeout: time.Second * 10,
 			DatabaseTimeout:                    time.Second * 10,
 		},
-		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(logger.Sugared(c.lggr), c.requestsStore, blocksProvider, MaxNumberOfRequestsPerOCRRound),
-		ContractTransmitter:           oracle.NewContractTransmitter(c.lggr, c.requestsStore),
+		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(logger.Sugared(c.lggr), c.consensusReader, blocksProvider, MaxNumberOfRequestsPerOCRRound),
+		ContractTransmitter:           oracle.NewContractTransmitter(c.lggr, c.consensusReader),
 	})
 	if err != nil {
 		return fmt.Errorf("error when creating oracle: %w", err)
 	}
 
-	services := []interface{ Start(context.Context) error }{c.requestsStore, c.requestPoller, c.oracle}
+	services := []interface{ Start(context.Context) error }{c.consensusReader, c.requestPoller, c.oracle}
 	for _, service := range services {
 		if err := service.Start(ctx); err != nil {
 			return err
@@ -122,7 +120,7 @@ func (c *capabilityGRPCService) Start(_ context.Context) error {
 }
 
 func (c *capabilityGRPCService) Close() error {
-	return errors.Join(c.requestPoller.Close(), c.requestsStore.Close(), c.oracle.Close(context.Background()))
+	return errors.Join(c.requestPoller.Close(), c.consensusReader.Close(), c.oracle.Close(context.Background()))
 }
 
 func (c *capabilityGRPCService) HealthReport() map[string]error {

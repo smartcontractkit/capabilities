@@ -33,9 +33,9 @@ type Poller struct {
 	engine *services.Engine
 
 	lggr       logger.SugaredLogger
-	store      ObservationsStore
-	pollPeriod time.Duration
 	maxWorkers int
+	pollPeriod time.Duration
+	store      ObservationsStore
 
 	mutex       sync.Mutex
 	inputNotify chan struct{}
@@ -46,11 +46,14 @@ type Poller struct {
 
 func NewPoller(lggr logger.Logger, store ObservationsStore, maxWorkers int, pollPeriod time.Duration) *Poller {
 	p := &Poller{
-		requestsCh:  make(chan requestToPoll, maxWorkers),
-		pollPeriod:  pollPeriod,
+		maxWorkers: maxWorkers,
+		pollPeriod: pollPeriod,
+		store:      store,
+
 		inputNotify: make(chan struct{}, 1),
-		store:       store,
-		maxWorkers:  maxWorkers,
+		requests:    list.New[requestToPoll](),
+		requestsCh:  make(chan requestToPoll, maxWorkers),
+		retryQueue:  list.New[requestToRetry](),
 	}
 
 	p.Service, p.engine = services.Config{
@@ -79,6 +82,7 @@ func (p *Poller) popFirst() *requestToPoll {
 		return nil
 	}
 
+	// TODO PLEX-1572: report requests queue size to beholder
 	result := p.requests.Remove(p.requests.Front())
 	return &result
 }
@@ -116,9 +120,10 @@ func (p *Poller) processRequest(request requestToPoll) {
 
 	observation, err := request.Observe(ctx)
 	if err != nil {
-		p.lggr.Warnw("failed to capture observation", "err", err, "requestToPoll", request.ID())
+		p.lggr.Warnw("failed to capture observation", "err", err, "requestID", request.ID())
 	} else {
 		// TODO: some requests might need only one successful read (finalized data)
+		p.lggr.Debugw("captured observation", "requestID", request.ID())
 		p.store.SetObservation(request.ID(), observation)
 	}
 
@@ -185,6 +190,7 @@ func (p *Poller) scheduleReadyForReprocessing(ctx context.Context, now time.Time
 			return
 		}
 
+		// TODO PLEX-1572: report retryQueue queue size to beholder
 		p.retryQueue.Remove(request)
 
 		p.enqueueUnsafe(request.Value.requestToPoll)

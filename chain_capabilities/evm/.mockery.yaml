@@ -4,7 +4,14 @@ outpkg: mocks
 filename: "{{ .InterfaceName | snakecase }}.go"
 fail-on-missing: true
 packages:
-  github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/poller:
+  github.com/smartcontractkit/chain_capabilities/evm/consensus/poller:
     interfaces:
       ObservationsStore:
+  github.com/smartcontractkit/chain_capabilities/evm/consensus/types:
+    interfaces:
+      EventuallyConsistentRequest:
+      Request:
+  github.com/smartcontractkit/chain_capabilities/evm/consensus:
+    interfaces:
+      Poller:
 

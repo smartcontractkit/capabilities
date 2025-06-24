@@ -56,7 +56,7 @@ func (ct *ContractTransmitter) Transmit(
 		return nil
 	}
 
-	request, ok := rawRequest.(ctypes.LockableToABlockRequest)
+	request, ok := rawRequest.(ctypes.LockableToBlockRequest)
 	if !ok {
 		ct.lggr.Warnf("lockable to a block request %s is of a different type %T", report.RequestID, rawRequest)
 		return nil

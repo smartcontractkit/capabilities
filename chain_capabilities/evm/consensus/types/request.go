@@ -16,7 +16,7 @@ type EventuallyConsistentRequest interface {
 	Observe(context.Context) ([]byte, error)
 }
 
-type LockableToABlockRequest interface {
+type LockableToBlockRequest interface {
 	Request
 	ToEventuallyConsistent(chainHeight *evmservice.ChainHeight) EventuallyConsistentRequest
 }
@@ -35,16 +35,11 @@ func NewRequest(id string, requestType evmservice.RequestType) Request {
 
 type request struct {
 	id          string
-	ctx         context.Context
 	requestType evmservice.RequestType
 }
 
 func (r *request) ID() string {
 	return r.id
-}
-
-func (r *request) Ctx() context.Context {
-	return r.ctx
 }
 
 func (r *request) Type() evmservice.RequestType {
@@ -74,7 +69,7 @@ type lockableToABlockRequest struct {
 	observe func(context.Context, *evmservice.ChainHeight) ([]byte, error)
 }
 
-func NewLockableToABlockRequest(id string, observe func(context.Context, *evmservice.ChainHeight) ([]byte, error)) Request {
+func NewLockableToABlockRequest(id string, observe func(context.Context, *evmservice.ChainHeight) ([]byte, error)) LockableToBlockRequest {
 	return &lockableToABlockRequest{
 		Request: NewRequest(id, evmservice.RequestType_REQUEST_TYPE_LOCKABLE_TO_BLOCK),
 		observe: observe,

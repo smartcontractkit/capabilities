@@ -2,8 +2,6 @@ package consensus
 
 import (
 	"container/heap"
-
-	"github.com/smartcontractkit/chain_capabilities/evm/consensus/types"
 )
 
 type priorityQueue struct {
@@ -14,7 +12,7 @@ func newPriorityQueue() *priorityQueue {
 	return &priorityQueue{queue: &internalPriorityQueue{idToIndex: make(map[string]int)}}
 }
 
-func (q *priorityQueue) Push(x types.Request) {
+func (q *priorityQueue) Push(x *requestCtx) {
 	heap.Push(q.queue, x)
 }
 
@@ -71,7 +69,7 @@ func (q *internalPriorityQueue) Len() int {
 }
 
 func (q *internalPriorityQueue) Less(i, j int) bool {
-	return q.values[i].Attempt > q.values[j].Attempt
+	return q.values[i].Attempt < q.values[j].Attempt
 }
 
 func (q *internalPriorityQueue) Swap(i, j int) {
