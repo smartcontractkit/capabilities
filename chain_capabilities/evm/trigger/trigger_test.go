@@ -299,8 +299,7 @@ func TestCreateLogRequest(t *testing.T) {
 	service := NewLogTriggerService(nil, NewLogTriggerStore(), logger.Test(t), pollInterval)
 
 	tests := []struct {
-		name string
-		//input                                *evmcappb.FilterLogTriggerRequest
+		name                                            string
 		addresses, eventSigs, topics2, topics3, topics4 [][]byte
 		confidence                                      evmcappb.ConfidenceLevel
 		expectedConfidence                              primitives.ConfidenceLevel
