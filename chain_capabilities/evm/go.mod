@@ -1,4 +1,4 @@
-module github.com/smartcontractkit/chain_capabilities/evm
+module github.com/smartcontractkit/capabilities/chain_capabilities/evm
 
 go 1.24.2
 

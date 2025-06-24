@@ -10,6 +10,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 
@@ -21,12 +22,13 @@ import (
 )
 
 type TransmissionInfo struct {
-	GasLimit        *big.Int
-	InvalidReceiver bool
-	State           uint8
-	Success         bool
-	TransmissionId  [32]byte
-	Transmitter     common.Address
+	GasLimit        *big.Int `json:"gasLimit,omitempty"`
+	InvalidReceiver bool     `json:"invalidReceiver,omitempty"`
+	State           uint8    `json:"state,omitempty"`
+	Success         bool     `json:"success,omitempty"`
+	//nolint:revive
+	TransmissionId [32]byte       `json:"transmissionId,omitempty"`
+	Transmitter    common.Address `json:"transmitter,omitempty"`
 }
 
 // The gas cost of the forwarder contract logic, including state updates and event emission.
@@ -34,7 +36,7 @@ type TransmissionInfo struct {
 // PLEX-1524 - Make the forwarder contract logic gas cost limit configurable
 const (
 	ForwarderContractLogicGasCost = 100_000
-	LATEST_BLOCK                  = -2 // PLEX-1524 - Use constant defined by EVM types once it's ready.
+	LatestBlock                   = -2 // PLEX-1524 - Use constant defined by EVM types once it's ready.
 )
 
 func NewCREForwarderCodec() (CREForwarderCodec, error) {
@@ -58,7 +60,6 @@ func NewCREForwarderClient(EVMService types.EVMService, forwarderAddress common.
 		forwarderAddress: forwarderAddress,
 		logger:           logger,
 	}, nil
-
 }
 
 func (cfclient creForwarderClient) GetReportProcessedEvents(ctx context.Context, receiver common.Address, workflowExecutionID [32]byte, reportID [2]byte) ([]*evm.Log, error) {
@@ -66,11 +67,11 @@ func (cfclient creForwarderClient) GetReportProcessedEvents(ctx context.Context,
 		Addresses: []evmtypes.Address{evmtypes.Address(receiver)},
 		Topics: [][]evmtypes.Hash{
 			{cfclient.forwarderCodec.GetReportProcessedTopicHash()},
-			{evmtypes.Hash(receiver.Bytes())},
-			{evmtypes.Hash(workflowExecutionID[:])},
-			{evmtypes.Hash(reportID[:])},
+			{evmtypes.Hash(common.LeftPadBytes(receiver.Bytes(), common.HashLength))},
+			{evmtypes.Hash(common.LeftPadBytes(workflowExecutionID[:], common.HashLength))},
+			{evmtypes.Hash(common.LeftPadBytes(reportID[:], common.HashLength))},
 		},
-		ToBlock: big.NewInt(LATEST_BLOCK),
+		ToBlock: big.NewInt(LatestBlock),
 	}
 	return cfclient.evmService.FilterLogs(ctx, filterQuery)
 }
@@ -100,7 +101,6 @@ type creForwarderClient struct {
 }
 
 func (cfclient *creForwarderClient) InvokeOnReport(ctx context.Context, receiverAddress common.Address, report *evmcap.SignedReport, gasConfig *evmcap.GasConfig) (*evmtypes.TransactionResult, error) {
-
 	cfclient.logger.Debugw("Transaction raw report", "report", hex.EncodeToString(report.RawReport))
 
 	var resolvedGasConfig *evmtypes.GasConfig
@@ -119,7 +119,6 @@ func (cfclient *creForwarderClient) InvokeOnReport(ctx context.Context, receiver
 		Data:      encodedReport,
 		GasConfig: resolvedGasConfig,
 	})
-
 	if err != nil {
 		if errors.Is(err, types.ErrSettingTransactionGasLimitNotSupported) {
 			return cfclient.evmService.SubmitTransaction(ctx, evmtypes.SubmitTransactionRequest{
@@ -145,7 +144,7 @@ func (cfclient *creForwarderClient) GetTransmissionInfo(ctx context.Context, tra
 	response, err := cfclient.evmService.CallContract(ctx, &evmtypes.CallMsg{
 		To:   cfclient.forwarderAddress,
 		Data: calldata,
-	}, big.NewInt(LATEST_BLOCK))
+	}, big.NewInt(LatestBlock))
 	if err != nil {
 		return TransmissionInfo{}, err
 	}
@@ -193,7 +192,7 @@ func (cfc *creForwarderCodecImpl) EncodeQueryTransmissionInputs(query QueryTrans
 }
 
 func (cfc *creForwarderCodecImpl) DecodeQueryTransmissionInfo(encodedData []byte) (TransmissionInfo, error) {
-	//PLEX-1524 this is ugly. For some reason ABI.UnpackIntoInterface doesn't work.
+	// PLEX-1524 this is ugly. For some reason ABI.UnpackIntoInterface doesn't work.
 	var transmissionInfo TransmissionInfo
 	values, err := cfc.abi.Methods["getTransmissionInfo"].Outputs.UnpackValues(encodedData)
 	if err != nil {
@@ -201,6 +200,7 @@ func (cfc *creForwarderCodecImpl) DecodeQueryTransmissionInfo(encodedData []byte
 	}
 	value := values[0]
 	bytes, err := json.Marshal(value)
+	//nolint:errcheck
 	json.Unmarshal(bytes, &transmissionInfo)
 	return transmissionInfo, err
 }

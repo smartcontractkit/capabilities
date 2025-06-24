@@ -9,12 +9,14 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	_ "github.com/ethereum/go-ethereum/common"
-	"github.com/smartcontractkit/chain_capabilities/evm/contracts"
-	"github.com/smartcontractkit/chain_capabilities/evm/contracts/mocks"
-	"github.com/smartcontractkit/chain_capabilities/evm/test"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/contracts"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/contracts/mocks"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
 
 	evmcommon "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -22,15 +24,18 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 	"github.com/smartcontractkit/chainlink-evm/pkg/testutils"
 
-	mocks2 "github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	"github.com/stretchr/testify/mock"
+
+	mocks2 "github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 
 	"github.com/stretchr/testify/require"
 )
 
-const ConfiguredReceiverGasMinimum = 1000
-const EnoughReceiverGas = ConfiguredReceiverGasMinimum + 1
-const NotEnoughReceiverGas = ConfiguredReceiverGasMinimum - 1
+const (
+	ConfiguredReceiverGasMinimum = 1000
+	EnoughReceiverGas            = ConfiguredReceiverGasMinimum + 1
+	NotEnoughReceiverGas         = ConfiguredReceiverGasMinimum - 1
+)
 
 func TestWriteReport_InputValidation(t *testing.T) {
 	t.Parallel()
@@ -311,7 +316,6 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TxStatus:     evmcommon.TxStatus_TX_FATAL,
 			ErrorMessage: ptr(getInvalidStateErrorMessage(invalidState)),
 		}, txResult)
-
 	})
 	t.Run("TX already transmitted successfully - Failed to fetch report emitted log", func(t *testing.T) {
 		_, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
@@ -794,9 +798,9 @@ func toReceiptGasInfo(receipt evmtypes.Receipt) evmtypes.ReceiptGasInfo {
 	}
 }
 
-func createMocksAndCapability(t *testing.T, lggr logger.Logger) (*mocks2.EVMService, *mocks.KeystoneForwarderClient, *EVM) {
+func createMocksAndCapability(t *testing.T, lggr logger.Logger) (*mocks2.EVMService, *mocks.CREForwarderClient, *EVM) {
 	mockEVMService := mocks2.NewEVMService(t)
-	mockForwarderClient := mocks.NewKeystoneForwarderClient(t)
+	mockForwarderClient := mocks.NewCREForwarderClient(t)
 	service := EVM{
 		keystoneForwarderAddress: common.BytesToAddress(test.RandomBytes(20)),
 		forwarderClient:          mockForwarderClient,
@@ -820,8 +824,8 @@ func equalWriteReportReply(t *testing.T, expected *evm.WriteReportReply, actual 
 
 func generateRandomSignatures() [][]byte {
 	return [][]byte{
-		[]byte{0x01, 0x02, 0x03, 0x04},
-		[]byte{0xAA, 0xBB, 0xCC, 0xDD},
+		{0x01, 0x02, 0x03, 0x04},
+		{0xAA, 0xBB, 0xCC, 0xDD},
 	}
 }
 

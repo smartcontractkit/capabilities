@@ -8,18 +8,22 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/smartcontractkit/chain_capabilities/evm/contracts"
-	"github.com/smartcontractkit/chain_capabilities/evm/test"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+
 	evmcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	mocks2 "github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	"github.com/smartcontractkit/chainlink-evm/gethwrappers/keystone/generated/forwarder"
-	"github.com/stretchr/testify/require"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/contracts"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
 )
 
-const LATEST_BLOCK = -2
+const LatestBlock = -2
 
 func TestCREForwarderClient_GetTransmissionInfo(t *testing.T) {
 	t.Parallel()
@@ -28,7 +32,7 @@ func TestCREForwarderClient_GetTransmissionInfo(t *testing.T) {
 	testLogger := logger.Test(t)
 	forwarderAddress := common.BytesToAddress(test.RandomBytes(20))
 	transmitterAddress := common.BytesToAddress(test.RandomBytes(20))
-	expectedBlockNumberForGetTransmission := big.NewInt(LATEST_BLOCK)
+	expectedBlockNumberForGetTransmission := big.NewInt(LatestBlock)
 	forwarderABI, _ := forwarder.KeystoneForwarderMetaData.GetAbi()
 	testEncoder := TestEncoder{abi: *forwarderABI}
 
@@ -61,7 +65,6 @@ func TestCREForwarderClient_GetTransmissionInfo(t *testing.T) {
 
 		require.NoError(t, err)
 		require.Equal(t, expectedTransmissionInfo, transmissionInfo)
-
 	})
 	t.Run("Get Transmission info - Fail calling CallContract ", func(t *testing.T) {
 		mockEVMService := mocks2.NewEVMService(t)
@@ -103,6 +106,42 @@ func TestCREForwarderClient_GetTransmissionInfo(t *testing.T) {
 
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "Failed to decode getTransmissionInfo return data")
+	})
+}
+
+func TestCREForwarderClient_GetReportProcessedEvents(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	testLogger := logger.Test(t)
+	forwarderAddress := common.BytesToAddress(test.RandomBytes(20))
+	receiverAddress := common.BytesToAddress(test.RandomBytes(20))
+	reportID := [2]byte(test.RandomBytes(2))
+	workflowExecutionID := [32]byte(test.RandomBytes(32))
+	expectedHash := evmtypes.Hash(test.RandomBytes(32))
+
+	t.Run("Get Transmission info - Successfully get transmission info", func(t *testing.T) {
+		mockEVMService := mocks2.NewEVMService(t)
+		forwarderClient, _ := contracts.NewCREForwarderClient(mockEVMService, forwarderAddress, testLogger)
+		mockLogs := []*evm.Log{{
+			TxHash: expectedHash,
+		}}
+		mockEVMService.EXPECT().FilterLogs(ctx, mock.Anything).Return(mockLogs, nil)
+
+		evmLogs, err := forwarderClient.GetReportProcessedEvents(ctx, receiverAddress, workflowExecutionID, reportID)
+		require.NoError(t, err)
+		require.Equal(t, 1, len(evmLogs))
+		require.Equal(t, expectedHash, evmLogs[0].TxHash)
+	})
+	t.Run("Get Transmission info - Error calling FilterLogs", func(t *testing.T) {
+		mockEVMService := mocks2.NewEVMService(t)
+		forwarderClient, _ := contracts.NewCREForwarderClient(mockEVMService, forwarderAddress, testLogger)
+		expectedError := "fail calling EVM FilterLogs"
+		mockEVMService.EXPECT().FilterLogs(ctx, mock.Anything).Return(nil, errors.New(expectedError))
+
+		_, err := forwarderClient.GetReportProcessedEvents(ctx, receiverAddress, workflowExecutionID, reportID)
+		require.Error(t, err)
+		require.Equal(t, expectedError, err.Error())
 	})
 }
 
@@ -188,7 +227,6 @@ func TestCREForwarderClient_InvokeOnReport(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, "failed to submit transaction: "+expectedError, err.Error())
 	})
-
 }
 
 func testSuccessfulReportSubmissionAndEncoding(ctx context.Context, t *testing.T, forwarderAddress common.Address, testLogger logger.Logger, expectedEncodedReport []byte, receiverAddress common.Address, report *evmcap.SignedReport) {

@@ -6,11 +6,12 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/smartcontractkit/chain_capabilities/evm/actions"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/emptypb"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	chainsevm "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"

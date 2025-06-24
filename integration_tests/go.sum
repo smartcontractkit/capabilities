@@ -264,6 +264,8 @@ github.com/cpuguy83/go-md2man/v2 v2.0.0/go.mod h1:maD7wRr/U5Z6m/iR4s+kqSMx2CaBsr
 github.com/cpuguy83/go-md2man/v2 v2.0.2/go.mod h1:tgQtvFlXSQOSOSIRvRPT7W67SCa46tRHOmNcaadrF8o=
 github.com/cpuguy83/go-md2man/v2 v2.0.6 h1:XJtiaUW6dEEqVuZiMTn1ldk455QWwEIsMIJlo5vtkx0=
 github.com/cpuguy83/go-md2man/v2 v2.0.6/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=
+github.com/crate-crypto/go-eth-kzg v1.3.0 h1:05GrhASN9kDAidaFJOda6A4BEvgvuXbazXg/0E3OOdI=
+github.com/crate-crypto/go-eth-kzg v1.3.0/go.mod h1:J9/u5sWfznSObptgfa92Jq8rTswn6ahQWEuiLHOjCUI=
 github.com/crate-crypto/go-ipa v0.0.0-20240724233137-53bbb0ceb27a h1:W8mUrRp6NOVl3J+MYp5kPMoUZPp7aOYHtaua31lwRHg=
 github.com/crate-crypto/go-ipa v0.0.0-20240724233137-53bbb0ceb27a/go.mod h1:sTwzHBvIzm2RfVCGNEBZgRyjwK40bVoun3ZnGOCafNM=
 github.com/crate-crypto/go-kzg-4844 v1.1.0 h1:EN/u9k2TF6OWSHrCCDBBU6GLNMq88OspHHlMnHfoyU4=
@@ -324,8 +326,12 @@ github.com/esote/minmaxheap v1.0.0 h1:rgA7StnXXpZG6qlM0S7pUmEv1KpWe32rYT4x8J8nta
 github.com/esote/minmaxheap v1.0.0/go.mod h1:Ln8+i7fS1k3PLgZI2JAo0iA1as95QnIYiGCrqSJ5FZk=
 github.com/ethereum/c-kzg-4844 v1.0.3 h1:IEnbOHwjixW2cTvKRUlAAUOeleV7nNM/umJR+qy4WDs=
 github.com/ethereum/c-kzg-4844 v1.0.3/go.mod h1:VewdlzQmpT5QSrVhbBuGoCdFJkpaJlO1aQputP83wc0=
+github.com/ethereum/c-kzg-4844/v2 v2.1.0 h1:gQropX9YFBhl3g4HYhwE70zq3IHFRgbbNPw0Shwzf5w=
+github.com/ethereum/c-kzg-4844/v2 v2.1.0/go.mod h1:TC48kOKjJKPbN7C++qIgt0TJzZ70QznYR7Ob+WXl57E=
 github.com/ethereum/go-ethereum v1.15.3 h1:OeTWAq6r8iR89bfJDjmmOemE74ywArl9DUViFsVj3Y8=
 github.com/ethereum/go-ethereum v1.15.3/go.mod h1:jMXlpZXfSar1mGs/5sB0aEpEnPsiE1Jn6/3anlueqz8=
+github.com/ethereum/go-ethereum v1.15.11 h1:JK73WKeu0WC0O1eyX+mdQAVHUV+UR1a9VB/domDngBU=
+github.com/ethereum/go-ethereum v1.15.11/go.mod h1:mf8YiHIb0GR4x4TipcvBUPxJLw1mFdmxzoDi11sDRoI=
 github.com/ethereum/go-verkle v0.2.2 h1:I2W0WjnrFUIzzVPwm8ykY+7pL2d4VhlsePn4j7cnFk8=
 github.com/ethereum/go-verkle v0.2.2/go.mod h1:M3b90YRnzqKyyzBEWJGqj8Qff4IDeXnzFw0P9bFw3uk=
 github.com/fatih/color v1.7.0/go.mod h1:Zm6kSWBoL9eyXnKyktHP6abPY2pDugNf5KwzbycvMj4=
@@ -431,6 +437,8 @@ github.com/go-task/slim-sprig/v3 v3.0.0 h1:sUs3vkvUymDpBKi3qH1YSqBQk9+9D/8M2mN1v
 github.com/go-task/slim-sprig/v3 v3.0.0/go.mod h1:W848ghGpv3Qj3dhTPRyJypKRiqCdHZiAzKg9hl15HA8=
 github.com/go-viper/mapstructure/v2 v2.2.1 h1:ZAaOCxANMuZx5RCeg0mBdEZk7DZasvvZIxtHqx8aGss=
 github.com/go-viper/mapstructure/v2 v2.2.1/go.mod h1:oJDH3BJKyqBA2TXFhDsKDGDTlndYOZ6rGS0BRZIxGhM=
+github.com/go-viper/mapstructure/v2 v2.3.0 h1:27XbWsHIqhbdR5TIC911OfYvgSaW93HM+dX7970Q7jk=
+github.com/go-viper/mapstructure/v2 v2.3.0/go.mod h1:oJDH3BJKyqBA2TXFhDsKDGDTlndYOZ6rGS0BRZIxGhM=
 github.com/go-webauthn/webauthn v0.9.4 h1:YxvHSqgUyc5AK2pZbqkWWR55qKeDPhP8zLDr6lpIc2g=
 github.com/go-webauthn/webauthn v0.9.4/go.mod h1:LqupCtzSef38FcxzaklmOn7AykGKhAhr9xlRbdbgnTw=
 github.com/go-webauthn/x v0.1.5 h1:V2TCzDU2TGLd0kSZOXdrqDVV5JB9ILnKxA9S53CSBw0=
@@ -1043,6 +1051,10 @@ github.com/sirupsen/logrus v1.4.2/go.mod h1:tLMulIdttU9McNUspp0xgXVQah82FyeX6Mwd
 github.com/sirupsen/logrus v1.8.1/go.mod h1:yWOB1SBYBC5VeMP7gHvWumXLIWorT60ONWic61uBYv0=
 github.com/sirupsen/logrus v1.9.3 h1:dueUQJ1C2q9oE3F7wvmSGAaVtTmUizReu6fjN8uqzbQ=
 github.com/sirupsen/logrus v1.9.3/go.mod h1:naHLuLoDiP4jHNo9R0sCBMtWGeIprob74mVsIT4qYEQ=
+github.com/smartcontractkit/capabilities/chain_capabilities/evm v0.0.0-20250624201627-f87932f05f00 h1:Nl3kfEgLogrXJ+nWswdI7zFuCHMBa6B2qgXuaykGq24=
+github.com/smartcontractkit/capabilities/chain_capabilities/evm v0.0.0-20250624201627-f87932f05f00/go.mod h1:UDBUO/sCB1jR3K9R6vSKIl4CBNt0cC7hP9Ofr5JMvig=
+github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-20250402163239-224ad2061432 h1:RO8PP8FF/qArlODaHbdWQBlhAyIKl7Kq/48CvZlgAyI=
+github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-20250402163239-224ad2061432/go.mod h1:E5l1dD0v2PqmKqZqHRidGyQy0a+c3/xjWSmFmet1A2s=
 github.com/smartcontractkit/chain-selectors v1.0.60 h1:X/5CcVB5izIaMrGRdl0hc6sSbKSBFhYRKqo1C/JmgFs=
 github.com/smartcontractkit/chain-selectors v1.0.60/go.mod h1:xsKM0aN3YGcQKTPRPDDtPx2l4mlTN1Djmg0VVXV40b8=
 <<<<<<< HEAD
@@ -1067,9 +1079,16 @@ github.com/smartcontractkit/chainlink-ccip/chains/solana v0.0.0-20250609091505-5
 github.com/smartcontractkit/chainlink-ccip/chains/solana v0.0.0-20250609091505-5c8cd74b92ed/go.mod h1:k3/Z6AvwurPUlfuDFEonRbkkiTSgNSrtVNhJEWNlUZA=
 github.com/smartcontractkit/chainlink-common v0.7.1-0.20250623170135-6714cf6df914 h1:hgiMt+N2ay2moLLAi521Eb8iLf05sked7jvc0YAq5kk=
 github.com/smartcontractkit/chainlink-common v0.7.1-0.20250623170135-6714cf6df914/go.mod h1:crejZI9ZpBHfhqghQOG9u7Sri7CBzEUYQ/0lVnN60yg=
+<<<<<<< HEAD
 >>>>>>> 473474f (updating go mod)
+=======
+github.com/smartcontractkit/chainlink-common v0.7.1-0.20250624180831-b3689bcd43a6 h1:ZfUNZQq/SQSjlu4VxIKl1S16H+6qYaLgoQyD09W8m3s=
+github.com/smartcontractkit/chainlink-common v0.7.1-0.20250624180831-b3689bcd43a6/go.mod h1:plVu/MNDcoGbX++P0Dhv8gTtpafG98HqG6BfNj+dfE0=
+>>>>>>> 7533888 (fixing module name for evm capability)
 github.com/smartcontractkit/chainlink-common/pkg/monitoring v0.0.0-20250415235644-8703639403c7 h1:9wh1G+WbXwPVqf0cfSRSgwIcaXTQgvYezylEAfwmrbw=
 github.com/smartcontractkit/chainlink-common/pkg/monitoring v0.0.0-20250415235644-8703639403c7/go.mod h1:yaDOAZF6MNB+NGYpxGCUc+owIdKrjvFW0JODdTcQ3V0=
+github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250624161023-93f383781b0a h1:AVYA3UTkn2wjdpkTRhtXH0XgVBE25tXmfqxmEZhE+4s=
+github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250624161023-93f383781b0a/go.mod h1:QUEPHdSkH19Or+E1iMGG+rDQ6jpCTIbm//9Osa6MXDE=
 github.com/smartcontractkit/chainlink-data-streams v0.1.1-0.20250604171706-a98fa6515eae h1:BmqiIDbA9FB/uOCOHi/shgL7P0XmjFxhfRtJHdKPLE4=
 github.com/smartcontractkit/chainlink-data-streams v0.1.1-0.20250604171706-a98fa6515eae/go.mod h1:2MggrMtbhqr0u4U2pcYa21lvAtvaeSawjxdIy1ytHWE=
 <<<<<<< HEAD
@@ -1084,13 +1103,20 @@ github.com/smartcontractkit/chainlink-framework/chains v0.0.0-20250616180023-87b
 =======
 github.com/smartcontractkit/chainlink-evm v0.0.0-20250623170324-d539bcdcbc43 h1:cQNJy5L6sotpCWjV6uw2HNYcmgAw/dPkurvENPffNvI=
 github.com/smartcontractkit/chainlink-evm v0.0.0-20250623170324-d539bcdcbc43/go.mod h1:XelJv8o8P8K2GRZ1shqqxz/ErEB0wSvKi8fNkkKUBkM=
+github.com/smartcontractkit/chainlink-evm v0.0.0-20250624182208-f47bca5dbbfc h1:v+r0KkrdYH5Nk340ujRqZxe6cT86jrtxelS6bUK+TdM=
+github.com/smartcontractkit/chainlink-evm v0.0.0-20250624182208-f47bca5dbbfc/go.mod h1:bzngvgVMCF7IJm1Ji0NnwqNDonthYNi4L3BeLy6xFgM=
 github.com/smartcontractkit/chainlink-feeds v0.1.2-0.20250227211209-7cd000095135 h1:8u9xUrC+yHrTDexOKDd+jrA6LCzFFHeX1G82oj2fsSI=
 github.com/smartcontractkit/chainlink-feeds v0.1.2-0.20250227211209-7cd000095135/go.mod h1:NkvE4iQgiT7dMCP6U3xPELHhWhN5Xr6rHC0axRebyMU=
 github.com/smartcontractkit/chainlink-framework/capabilities v0.0.0-20250618164021-9b34289a9502 h1:WLgEB8/lIfA1vI+7O4RE/PYitO57TRkKUqVllDIgJD4=
 github.com/smartcontractkit/chainlink-framework/capabilities v0.0.0-20250618164021-9b34289a9502/go.mod h1:Kb8f+wt2YmBdD0PfbsC9bDhdUG/Y8sqUkzAvC2Dn8/M=
 github.com/smartcontractkit/chainlink-framework/chains v0.0.0-20250623170305-0b151245f4a6 h1:kE/UyJwu88ydWiGv+Avpyy5nKJKnapCNqCbhykxr1I4=
 github.com/smartcontractkit/chainlink-framework/chains v0.0.0-20250623170305-0b151245f4a6/go.mod h1:NgD9JwrEctXl5YvQroIwRZNBlYfly25AJBbXIP983+w=
+<<<<<<< HEAD
 >>>>>>> 473474f (updating go mod)
+=======
+github.com/smartcontractkit/chainlink-framework/chains v0.0.0-20250624181658-04f654af25ad h1:9OxawQ6/QYx4i5HpWVc9t8goCH6Mptc1VM3Rzxrb3QU=
+github.com/smartcontractkit/chainlink-framework/chains v0.0.0-20250624181658-04f654af25ad/go.mod h1:VdbsHGfPdEv77LOntr++z8tbDi0BFJ2UIEiYpmUFZu4=
+>>>>>>> 7533888 (fixing module name for evm capability)
 github.com/smartcontractkit/chainlink-framework/metrics v0.0.0-20250618135814-7e3f79ab707e h1:LRT+PltY99+hxZAJn+4nyTfqGVNEM1S6FJ675B9BtJo=
 github.com/smartcontractkit/chainlink-framework/metrics v0.0.0-20250618135814-7e3f79ab707e/go.mod h1:jo+cUqNcHwN8IF7SInQNXDZ8qzBsyMpnLdYbDswviFc=
 github.com/smartcontractkit/chainlink-framework/multinode v0.0.0-20250522110034-65c54665034a h1:O28vgyHM7QF1YLg1BwkQSIbOYA+t0RiH9+b+k90GPG8=

@@ -5,15 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/smartcontractkit/chain_capabilities/evm/trigger"
+	"github.com/ethereum/go-ethereum/common"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/trigger"
 
 	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 
-	"github.com/smartcontractkit/chain_capabilities/evm/actions"
-	"github.com/smartcontractkit/chain_capabilities/evm/config"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -126,12 +127,12 @@ func (c *capabilityGRPCService) Ready() error {
 }
 
 func (c *capabilityGRPCService) RegisterToWorkflow(_ context.Context, _ capabilities.RegisterToWorkflowRequest) error {
-	//TODO implement me
+	// TODO implement me
 	panic("implement me")
 }
 
 func (c *capabilityGRPCService) UnregisterFromWorkflow(_ context.Context, _ capabilities.UnregisterFromWorkflowRequest) error {
-	//TODO implement me
+	// TODO implement me
 	panic("implement me")
 }
 

@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/smartcontractkit/chain_capabilities/evm/contracts"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	evmcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
@@ -17,6 +17,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/values/pb"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/contracts"
 )
 
 const (
@@ -110,13 +112,12 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 		return fatalWriteReportReply(getInvalidStateErrorMessage(transmissionInfo.State)), nil
 	}
 
-	e.lggr.Debugw("Submitting transaction for report", "request", request, "transaction")
+	e.lggr.Debugw("Submitting transaction for report", "request", request)
 
-	transactionResult, err := e.forwarderClient.InvokeOnReport(ctx, common.Address(transmissionID.Receiver), request.Report, request.GasConfig)
-
+	transactionResult, err := e.forwarderClient.InvokeOnReport(ctx, transmissionID.Receiver, request.Report, request.GasConfig)
 	if err != nil {
 		e.lggr.Error("Transaction failed", "request", request)
-		//TODO add beholder ticket.
+		// TODO add beholder ticket.
 		// msg := "transaction failed to be written to the forwarder, transmission ID: " + transmissionID.GetDebugID()
 		// err = c.emitter.With(
 		// 	KeyWorkflowID, metadata.WorkflowID,
@@ -161,12 +162,11 @@ func getInvalidStateErrorMessage(state uint8) string {
 }
 
 func (e EVM) processUnrecoverableTxState(ctx context.Context, request *evmcap.WriteReportRequest, metadata capabilities.RequestMetadata, txHash evmtypes.Hash, transmissionInfo contracts.TransmissionInfo, transmissionID contracts.TransmissionID, txAttemptedLocally bool) (*evmcap.WriteReportReply, error) {
-
 	if !txAttemptedLocally {
 		e.lggr.Infow("returning without a transmission attempt - transmission already attempted, receiver was marked as invalid", "executionID", metadata.WorkflowExecutionID)
 	} else {
 		e.lggr.Errorw("Transaction written to the forwarder, but failed to be written to the consumer contract", "request", request, "transmissionState", transmissionInfo.State)
-		//TODO Add link to configure emitter in the capability.
+		// TODO Add link to configure emitter in the capability.
 		// msg := "transaction written to the forwarder, but failed to be written to the consumer contract, transaction hash: " + common.Bytes2Hex((*txHash)[:])
 		// err = c.emitter.With(
 		// 	KeyWorkflowID, metadata.WorkflowID,
@@ -218,7 +218,7 @@ func (e EVM) fetchTransactionReceiptAndCreateReply(ctx context.Context, txHash e
 	if err != nil {
 		return nil, err
 	}
-	var message *string = errorMessage
+	message := errorMessage
 	if receiverStatus.Enum() == evmcap.ReceiverContractExecutionStatus_REVERTED.Enum() && errorMessage == nil {
 		message = ptr("Receiver contract execution failure")
 	}
@@ -244,7 +244,7 @@ func fatalWriteReportReply(message string) *evmcap.WriteReportReply {
 }
 
 func validateInputsAndReportMetadata(requestMetadata capabilities.RequestMetadata, request *evmcap.WriteReportRequest) error {
-	if len(request.Receiver) != 20 {
+	if len(request.Receiver) != common.AddressLength {
 		return fmt.Errorf("Received address is not 20 bytes long. Address in HEX: %s", hex.EncodeToString(request.Receiver))
 	}
 
@@ -316,7 +316,6 @@ func (thr *TxHashRetriever) GetHash(ctx context.Context) (*evmtypes.Hash, error)
 	}
 
 	logs, err := thr.keystoneForwarderClient.GetReportProcessedEvents(ctx, thr.transmissionID.Receiver, thr.transmissionID.WorkflowExecutionID, thr.transmissionID.ReportID)
-
 	if err != nil {
 		thr.lggr.Debugw(failedToRetrieveTxHashErrorMessage, thr.transmissionID.GetIDPartsForDebugging()...)
 		return nil, errors.Join(err, fmt.Errorf("%s: %w", failedToRetrieveTxHashErrorMessage, err))

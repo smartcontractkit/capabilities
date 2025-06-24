@@ -7,10 +7,12 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/smartcontractkit/chain_capabilities/evm/config"
-	"github.com/smartcontractkit/chain_capabilities/evm/contracts"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/contracts"
 
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	chaincommonpb "github.com/smartcontractkit/chainlink-common/pkg/loop/chain-common"

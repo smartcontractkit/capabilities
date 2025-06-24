@@ -11,11 +11,12 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smartcontractkit/chain_capabilities/evm/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	relayermock "github.com/smartcontractkit/chainlink-common/pkg/types/core/mocks"
 	evmmock "github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	"github.com/smartcontractkit/chainlink-evm/pkg/testutils"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
 )
 
 func TestCapabilityGRPCService_Initialise(t *testing.T) {

@@ -8,7 +8,7 @@ replace github.com/fbsobreira/gotron-sdk => github.com/smartcontractkit/chainlin
 
 require (
 	github.com/andybalholm/brotli v1.1.1
-	github.com/ethereum/go-ethereum v1.15.3
+	github.com/ethereum/go-ethereum v1.15.11
 	github.com/google/uuid v1.6.0
 	github.com/pelletier/go-toml v1.9.5
 	github.com/smartcontractkit/capabilities/loadtestwritetarget v0.0.0-00010101000000-000000000000
@@ -88,6 +88,7 @@ require (
 	github.com/cosmos/ics23/go v0.11.0 // indirect
 	github.com/cosmos/ledger-cosmos-go v0.14.0 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.6 // indirect
+	github.com/crate-crypto/go-eth-kzg v1.3.0 // indirect
 	github.com/crate-crypto/go-ipa v0.0.0-20240724233137-53bbb0ceb27a // indirect
 	github.com/crate-crypto/go-kzg-4844 v1.1.0 // indirect
 	github.com/danieljoos/wincred v1.2.1 // indirect
@@ -103,6 +104,7 @@ require (
 	github.com/dvsekhvalnov/jose2go v1.7.0 // indirect
 	github.com/esote/minmaxheap v1.0.0 // indirect
 	github.com/ethereum/c-kzg-4844 v1.0.3 // indirect
+	github.com/ethereum/c-kzg-4844/v2 v2.1.0 // indirect
 	github.com/ethereum/go-verkle v0.2.2 // indirect
 	github.com/fatih/color v1.18.0 // indirect
 	github.com/fbsobreira/gotron-sdk v0.0.0-20250403083053-2943ce8c759b // indirect
@@ -133,7 +135,7 @@ require (
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.25.0 // indirect
-	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
+	github.com/go-viper/mapstructure/v2 v2.3.0 // indirect
 	github.com/go-webauthn/webauthn v0.9.4 // indirect
 	github.com/go-webauthn/x v0.1.5 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
@@ -268,6 +270,8 @@ require (
 	github.com/shirou/gopsutil/v3 v3.24.3 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/sigurn/crc16 v0.0.0-20211026045750-20ab5afb07e3 // indirect
+	github.com/smartcontractkit/capabilities/chain_capabilities/evm v0.0.0-20250624201627-f87932f05f00 // indirect
+	github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-20250402163239-224ad2061432 // indirect
 	github.com/smartcontractkit/chain-selectors v1.0.60 // indirect
 <<<<<<< HEAD
 	github.com/smartcontractkit/chainlink-aptos v0.0.0-20250624090157-6b89f926f864 // indirect
@@ -283,11 +287,16 @@ require (
 	github.com/smartcontractkit/chainlink-automation v0.8.1 // indirect
 	github.com/smartcontractkit/chainlink-ccip v0.0.0-20250620162016-c6fdc20009c6 // indirect
 	github.com/smartcontractkit/chainlink-ccip/chains/solana v0.0.0-20250609091505-5c8cd74b92ed // indirect
+	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250624161023-93f383781b0a // indirect
 	github.com/smartcontractkit/chainlink-data-streams v0.1.1-0.20250604171706-a98fa6515eae // indirect
 	github.com/smartcontractkit/chainlink-feeds v0.1.2-0.20250227211209-7cd000095135 // indirect
 	github.com/smartcontractkit/chainlink-framework/capabilities v0.0.0-20250618164021-9b34289a9502 // indirect
+<<<<<<< HEAD
 	github.com/smartcontractkit/chainlink-framework/chains v0.0.0-20250623170305-0b151245f4a6 // indirect
 >>>>>>> 473474f (updating go mod)
+=======
+	github.com/smartcontractkit/chainlink-framework/chains v0.0.0-20250624181658-04f654af25ad // indirect
+>>>>>>> 7533888 (fixing module name for evm capability)
 	github.com/smartcontractkit/chainlink-framework/metrics v0.0.0-20250618135814-7e3f79ab707e // indirect
 	github.com/smartcontractkit/chainlink-framework/multinode v0.0.0-20250522110034-65c54665034a // indirect
 	github.com/smartcontractkit/chainlink-protos/billing/go v0.0.0-20250612182447-1c32d2efe48f // indirect

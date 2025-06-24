@@ -464,6 +464,7 @@ github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-20250402163239-2
 <<<<<<< HEAD
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 github.com/smartcontractkit/chainlink-common v0.7.1-0.20250625034302-0df230b89f7a h1:iPJ64jQ4zray3TC0g5L9ANq4xn/h8zgB7kzyC1lH1mQ=
 github.com/smartcontractkit/chainlink-common v0.7.1-0.20250625034302-0df230b89f7a/go.mod h1:plVu/MNDcoGbX++P0Dhv8gTtpafG98HqG6BfNj+dfE0=
 github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250624161023-93f383781b0a h1:AVYA3UTkn2wjdpkTRhtXH0XgVBE25tXmfqxmEZhE+4s=
@@ -496,8 +497,14 @@ github.com/smartcontractkit/chainlink-framework/multinode v0.0.0-20250522110034-
 >>>>>>> de1ba2e (go mod changes)
 >>>>>>> 2d69868 (go mod changes)
 =======
+=======
+github.com/smartcontractkit/chainlink-common v0.7.1-0.20250624180831-b3689bcd43a6 h1:ZfUNZQq/SQSjlu4VxIKl1S16H+6qYaLgoQyD09W8m3s=
+github.com/smartcontractkit/chainlink-common v0.7.1-0.20250624180831-b3689bcd43a6/go.mod h1:plVu/MNDcoGbX++P0Dhv8gTtpafG98HqG6BfNj+dfE0=
+>>>>>>> 7533888 (fixing module name for evm capability)
 github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250624161023-93f383781b0a h1:AVYA3UTkn2wjdpkTRhtXH0XgVBE25tXmfqxmEZhE+4s=
 github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250624161023-93f383781b0a/go.mod h1:QUEPHdSkH19Or+E1iMGG+rDQ6jpCTIbm//9Osa6MXDE=
+github.com/smartcontractkit/chainlink-evm v0.0.0-20250624182208-f47bca5dbbfc h1:v+r0KkrdYH5Nk340ujRqZxe6cT86jrtxelS6bUK+TdM=
+github.com/smartcontractkit/chainlink-evm v0.0.0-20250624182208-f47bca5dbbfc/go.mod h1:bzngvgVMCF7IJm1Ji0NnwqNDonthYNi4L3BeLy6xFgM=
 github.com/smartcontractkit/chainlink-framework/chains v0.0.0-20250624181658-04f654af25ad h1:9OxawQ6/QYx4i5HpWVc9t8goCH6Mptc1VM3Rzxrb3QU=
 github.com/smartcontractkit/chainlink-framework/chains v0.0.0-20250624181658-04f654af25ad/go.mod h1:VdbsHGfPdEv77LOntr++z8tbDi0BFJ2UIEiYpmUFZu4=
 github.com/smartcontractkit/chainlink-framework/multinode v0.0.0-20250522110034-65c54665034a h1:O28vgyHM7QF1YLg1BwkQSIbOYA+t0RiH9+b+k90GPG8=
