@@ -19,13 +19,13 @@ import (
 	ctypes "github.com/smartcontractkit/chain_capabilities/evm/consensus/types"
 )
 
-type consensusReader interface {
+type ConsensusReader interface {
 	Read(ctx context.Context, request ctypes.Request) (<-chan []byte, error)
 }
 
 type EVM struct {
 	types.EVMService
-	consensusReader consensusReader
+	consensusReader ConsensusReader
 }
 
 func NewEVM(evmService types.EVMService) EVM {

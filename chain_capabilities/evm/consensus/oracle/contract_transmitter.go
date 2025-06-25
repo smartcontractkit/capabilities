@@ -11,8 +11,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
-
-	ctypes "github.com/smartcontractkit/chain_capabilities/evm/consensus/types"
 )
 
 var _ ocr3types.ContractTransmitter[[]byte] = (*ContractTransmitter)(nil)
@@ -41,35 +39,8 @@ func (ct *ContractTransmitter) Transmit(
 		return fmt.Errorf("failed to unmarshal report: %w", err)
 	}
 
-	switch report.RequestType {
-	case evmservice.RequestType_REQUEST_TYPE_AGGREGATABLE, evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT:
-		ct.requestsStore.CompleteRequest(report.RequestID, report.GetValue())
-		return nil
-	case evmservice.RequestType_REQUEST_TYPE_LOCKABLE_TO_BLOCK:
-	default:
-		return fmt.Errorf("unsupported request type: %s %s", report.RequestType, report.RequestID)
-	}
-
-	rawRequest, ok := ct.requestsStore.GetRequest(report.RequestID)
-	if !ok {
-		ct.lggr.Warnf("lockable to a block request %s not found", report.RequestID)
-		return nil
-	}
-
-	request, ok := rawRequest.(ctypes.LockableToBlockRequest)
-	if !ok {
-		ct.lggr.Warnf("lockable to a block request %s is of a different type %T", report.RequestID, rawRequest)
-		return nil
-	}
-
-	height := report.GetHeight()
-	if height == nil {
-		return fmt.Errorf("lockable to a block request %s has no height", report.RequestID)
-	}
-
-	newRequest := request.ToEventuallyConsistent(report.GetHeight())
-	ct.requestsStore.Update(newRequest)
-	return nil
+	// TODO PLEX-1574: pass report signatures to workflow DON
+	return ct.requestsStore.CompleteRequest(report.RequestID, &report)
 }
 
 // This is unused and overwritten by the OracleFactory

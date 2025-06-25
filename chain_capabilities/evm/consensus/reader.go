@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/list"
@@ -131,7 +132,51 @@ func (s *Reader) SetObservation(id string, observation []byte) {
 	request.HasObservation = true
 }
 
-func (s *Reader) CompleteRequest(id string, result []byte) {
+func (s *Reader) CompleteRequest(id string, report *evmservice.RequestReport) error {
+	switch report.RequestType {
+	case evmservice.RequestType_REQUEST_TYPE_LOCKABLE_TO_BLOCK:
+		return s.completeLockableRequest(id, report.GetHeight())
+	case evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT:
+		return s.completeEventuallyConsistentRequest(id, report.GetValue())
+	default:
+		return fmt.Errorf("unknown request type %v", report.RequestType)
+	}
+}
+
+func (s *Reader) completeLockableRequest(id string, height *evmservice.ChainHeight) error {
+	if height == nil {
+		return fmt.Errorf("chain height is nil for report with requestID %s", id)
+	}
+
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	rawRequest, ok := s.requests.GetByID(id)
+	if !ok {
+		s.lggr.Infof("lockable to a block request %s not found", id)
+		return nil
+	}
+
+	request, ok := rawRequest.Request.(types.LockableToBlockRequest)
+	if !ok {
+		// might be because we've already converted it to eventually consistent
+		s.lggr.Infof("lockable to a block request %s is of a different type %T", id, rawRequest.Request)
+		return nil
+	}
+
+	newRequest := request.ToEventuallyConsistent(height)
+	oldRequestCtx, ok := s.requests.Remove(newRequest.ID())
+	if !ok {
+		s.lggr.Warnf("lockable to a block request %s not found while removing", id)
+		return nil
+	}
+	oldRequestCtx.Request = newRequest
+	oldRequestCtx.Attempt = 0
+	s.addRequestCtx(oldRequestCtx)
+	s.lggr.Infof("locked request %s to height %v", id, height)
+	return nil
+}
+
+func (s *Reader) completeEventuallyConsistentRequest(id string, value []byte) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	request, ok := s.requests.GetByID(id)
@@ -139,20 +184,21 @@ func (s *Reader) CompleteRequest(id string, result []byte) {
 		uRequest := &unknownRequest{
 			ID:        id,
 			ExpiresAt: time.Now().Add(s.unknownRequestTTL),
-			Result:    result,
+			Result:    value,
 		}
 		uRequest.Element = s.unknownRequestsOrderedByTimeout.PushBack(uRequest)
 		s.unknownRequestsResultByID[id] = uRequest
-		return
+		return nil
 	}
 
 	s.requests.Remove(id)
 	select {
-	case request.ResultChan <- result: // non blocking as ResultChan is buffered
+	case request.ResultChan <- value: // non blocking as ResultChan is buffered
 	}
 
 	// cancel request to prevent further polling
 	request.Cancel()
+	return nil
 }
 
 func (s *Reader) Read(ctx context.Context, request types.Request) (<-chan []byte, error) {
@@ -189,18 +235,6 @@ func (s *Reader) addRequestCtx(requestCtx *requestCtx) {
 	case types.EventuallyConsistentRequest:
 		s.poller.Enqueue(requestCtx.Ctx, tRequest)
 	}
-}
-
-func (s *Reader) Update(newRequest types.Request) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-	oldRequestCtx, ok := s.requests.Remove(newRequest.ID())
-	if !ok {
-		return
-	}
-	oldRequestCtx.Request = newRequest
-	oldRequestCtx.Attempt = 0
-	s.addRequestCtx(oldRequestCtx)
 }
 
 func (s *Reader) removeExpiredRequests(ctx context.Context) {

@@ -3,6 +3,7 @@
 package mocks
 
 import (
+	evm "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	mock "github.com/stretchr/testify/mock"
 
 	types "github.com/smartcontractkit/chain_capabilities/evm/consensus/types"
@@ -21,9 +22,22 @@ func (_m *RequestsStore) EXPECT() *RequestsStore_Expecter {
 	return &RequestsStore_Expecter{mock: &_m.Mock}
 }
 
-// CompleteRequest provides a mock function with given fields: id, result
-func (_m *RequestsStore) CompleteRequest(id string, result []byte) {
-	_m.Called(id, result)
+// CompleteRequest provides a mock function with given fields: id, report
+func (_m *RequestsStore) CompleteRequest(id string, report *evm.RequestReport) error {
+	ret := _m.Called(id, report)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CompleteRequest")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(string, *evm.RequestReport) error); ok {
+		r0 = rf(id, report)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
 }
 
 // RequestsStore_CompleteRequest_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CompleteRequest'
@@ -33,25 +47,25 @@ type RequestsStore_CompleteRequest_Call struct {
 
 // CompleteRequest is a helper method to define mock.On call
 //   - id string
-//   - result []byte
-func (_e *RequestsStore_Expecter) CompleteRequest(id interface{}, result interface{}) *RequestsStore_CompleteRequest_Call {
-	return &RequestsStore_CompleteRequest_Call{Call: _e.mock.On("CompleteRequest", id, result)}
+//   - report *evm.RequestReport
+func (_e *RequestsStore_Expecter) CompleteRequest(id interface{}, report interface{}) *RequestsStore_CompleteRequest_Call {
+	return &RequestsStore_CompleteRequest_Call{Call: _e.mock.On("CompleteRequest", id, report)}
 }
 
-func (_c *RequestsStore_CompleteRequest_Call) Run(run func(id string, result []byte)) *RequestsStore_CompleteRequest_Call {
+func (_c *RequestsStore_CompleteRequest_Call) Run(run func(id string, report *evm.RequestReport)) *RequestsStore_CompleteRequest_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(string), args[1].([]byte))
+		run(args[0].(string), args[1].(*evm.RequestReport))
 	})
 	return _c
 }
 
-func (_c *RequestsStore_CompleteRequest_Call) Return() *RequestsStore_CompleteRequest_Call {
-	_c.Call.Return()
+func (_c *RequestsStore_CompleteRequest_Call) Return(_a0 error) *RequestsStore_CompleteRequest_Call {
+	_c.Call.Return(_a0)
 	return _c
 }
 
-func (_c *RequestsStore_CompleteRequest_Call) RunAndReturn(run func(string, []byte)) *RequestsStore_CompleteRequest_Call {
-	_c.Run(run)
+func (_c *RequestsStore_CompleteRequest_Call) RunAndReturn(run func(string, *evm.RequestReport) error) *RequestsStore_CompleteRequest_Call {
+	_c.Call.Return(run)
 	return _c
 }
 
