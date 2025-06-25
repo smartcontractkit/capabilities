@@ -6,7 +6,7 @@ require (
 	github.com/ethereum/go-ethereum v1.14.11
 	github.com/smartcontractkit/capabilities v1.0.2-alpha.0.20250625143139-06d18d1c4852
 	github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-20250402163239-224ad2061432
-	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250625103529-4db79aea14df
+	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250625181931-98bb4a8cd19d
 	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250624161023-93f383781b0a
 	github.com/stretchr/testify v1.10.0
 	go.opentelemetry.io/otel v1.35.0

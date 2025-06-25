@@ -5,7 +5,7 @@ go 1.24.2
 toolchain go1.24.3
 
 require (
-	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250625103529-4db79aea14df
+	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250625181931-98bb4a8cd19d
 	go.opentelemetry.io/otel v1.35.0
 	go.opentelemetry.io/otel/metric v1.35.0
 	google.golang.org/protobuf v1.36.6

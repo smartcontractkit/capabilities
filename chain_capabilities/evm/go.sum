@@ -273,8 +273,8 @@ github.com/smartcontractkit/capabilities v1.0.2-alpha.0.20250625143139-06d18d1c4
 github.com/smartcontractkit/capabilities v1.0.2-alpha.0.20250625143139-06d18d1c4852/go.mod h1:WD+W6swU5/ckOH4dhK5uzLusuf500kyrLuaw9LRiXm4=
 github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-20250402163239-224ad2061432 h1:RO8PP8FF/qArlODaHbdWQBlhAyIKl7Kq/48CvZlgAyI=
 github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-20250402163239-224ad2061432/go.mod h1:E5l1dD0v2PqmKqZqHRidGyQy0a+c3/xjWSmFmet1A2s=
-github.com/smartcontractkit/chainlink-common v0.7.1-0.20250625103529-4db79aea14df h1:keMQWVwC4XS6ev92ApJf0jF5NLoL+gV1O+kkSACqbE0=
-github.com/smartcontractkit/chainlink-common v0.7.1-0.20250625103529-4db79aea14df/go.mod h1:plVu/MNDcoGbX++P0Dhv8gTtpafG98HqG6BfNj+dfE0=
+github.com/smartcontractkit/chainlink-common v0.7.1-0.20250625181931-98bb4a8cd19d h1:RECQwdjcONYGFAa8P4BYQWVRRI9Vw0m+g477UOUbyU4=
+github.com/smartcontractkit/chainlink-common v0.7.1-0.20250625181931-98bb4a8cd19d/go.mod h1:plVu/MNDcoGbX++P0Dhv8gTtpafG98HqG6BfNj+dfE0=
 github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250624161023-93f383781b0a h1:AVYA3UTkn2wjdpkTRhtXH0XgVBE25tXmfqxmEZhE+4s=
 github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250624161023-93f383781b0a/go.mod h1:QUEPHdSkH19Or+E1iMGG+rDQ6jpCTIbm//9Osa6MXDE=
 github.com/smartcontractkit/freeport v0.1.1 h1:B5fhEtmgomdIhw03uPVbVTP6oPv27fBhZsoZZMSIS8I=
