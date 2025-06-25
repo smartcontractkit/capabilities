@@ -219,18 +219,19 @@ func (e EVM) getReply(ctx context.Context, request ctypes.Request, into proto.Me
 	case <-ctx.Done():
 		return ctx.Err()
 	case data := <-resultCh:
-		if err := proto.Unmarshal(data, into); err != nil {
-			return err
-		}
-		return nil
+		return proto.Unmarshal(data, into)
 	}
 }
 
 func (e EVM) GetTransactionByHash(ctx context.Context, meta capabilities.RequestMetadata, req *evmservice.GetTransactionByHashRequest) (*evmservice.GetTransactionByHashReply, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	hash, err := evmservice.ConvertHashFromProto(req.GetHash())
+	if err != nil {
+		return nil, err
+	}
 	request := ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
-		tx, err := e.EVMService.GetTransactionByHash(ctx, evmtypes.Hash(req.Hash))
+		tx, err := e.EVMService.GetTransactionByHash(ctx, hash)
 		if err != nil {
 			return nil, err
 		}
@@ -253,8 +254,12 @@ func (e EVM) GetTransactionByHash(ctx context.Context, meta capabilities.Request
 func (e EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.RequestMetadata, req *evmservice.GetTransactionReceiptRequest) (*evmservice.GetTransactionReceiptReply, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	hash, err := evmservice.ConvertHashFromProto(req.GetHash())
+	if err != nil {
+		return nil, err
+	}
 	request := ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
-		receipt, err := e.EVMService.GetTransactionReceipt(ctx, evmtypes.Hash(req.Hash))
+		receipt, err := e.EVMService.GetTransactionReceipt(ctx, hash)
 		if err != nil {
 			return nil, err
 		}

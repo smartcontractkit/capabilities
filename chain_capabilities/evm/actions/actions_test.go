@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/google/go-cmp/cmp"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	chainsevm "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	chaincommonpb "github.com/smartcontractkit/chainlink-common/pkg/loop/chain-common"
@@ -18,10 +19,11 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
-
-	"github.com/smartcontractkit/chain_capabilities/evm/actions/mocks"
+	"google.golang.org/protobuf/testing/protocmp"
 
 	evmmock "github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
+
+	"github.com/smartcontractkit/chain_capabilities/evm/actions/mocks"
 )
 
 type evmWithMocks struct {
@@ -175,6 +177,122 @@ func TestCapability_BalanceAt(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
 		_, err := svc.BalanceAt(ctx, capabilities.RequestMetadata{}, req)
+		require.ErrorContains(t, err, "context canceled")
+	})
+}
+
+func TestCapability_FilterLogs(t *testing.T) {
+	t.Run("happy-path", func(t *testing.T) {
+		svc := initMocks(t)
+
+		ch := make(chan []byte, 1)
+		expectedReply := &chainsevm.FilterLogsReply{Logs: []*chainsevm.Log{{Address: []byte("0xabc"), Data: []byte("0xdef")}}}
+		logs, err := proto.Marshal(expectedReply)
+		require.NoError(t, err)
+		ch <- logs
+		svc.consensusReader.EXPECT().Read(mock.Anything, mock.Anything).Return(ch, nil).Once()
+
+		req := &chainsevm.FilterLogsRequest{FilterQuery: &chainsevm.FilterQuery{BlockHash: make([]byte, 32)}}
+		resp, err := svc.FilterLogs(t.Context(), capabilities.RequestMetadata{}, req)
+		require.NoError(t, err)
+		require.Empty(t, cmp.Diff(expectedReply, resp, protocmp.Transform()))
+	})
+	t.Run("Returns error if both block hash and block range is used", func(t *testing.T) {
+		svc := initMocks(t)
+		req := &chainsevm.FilterLogsRequest{FilterQuery: &chainsevm.FilterQuery{BlockHash: make([]byte, 32), FromBlock: valuespb.NewBigIntFromInt(big.NewInt(1))}}
+		_, err := svc.FilterLogs(t.Context(), capabilities.RequestMetadata{}, req)
+		require.ErrorContains(t, err, "cannot specify both block hash and block range")
+	})
+	t.Run("Returns error if both block hash is of invalid length", func(t *testing.T) {
+		svc := initMocks(t)
+		req := &chainsevm.FilterLogsRequest{FilterQuery: &chainsevm.FilterQuery{BlockHash: make([]byte, 2)}}
+		_, err := svc.FilterLogs(t.Context(), capabilities.RequestMetadata{}, req)
+		require.ErrorContains(t, err, "invalid hash: got 2 bytes, expected 32")
+	})
+	t.Run("Returns error on timeout", func(t *testing.T) {
+		svc := initMocks(t)
+
+		ch := make(chan []byte, 1)
+		svc.consensusReader.EXPECT().Read(mock.Anything, mock.Anything).Return(ch, nil).Once()
+
+		req := &chainsevm.FilterLogsRequest{FilterQuery: &chainsevm.FilterQuery{}}
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		_, err := svc.FilterLogs(ctx, capabilities.RequestMetadata{}, req)
+		require.ErrorContains(t, err, "context canceled")
+	})
+}
+
+func TestCapability_GetTransactionByHash(t *testing.T) {
+	t.Run("happy-path", func(t *testing.T) {
+		svc := initMocks(t)
+
+		ch := make(chan []byte, 1)
+		tx := &chainsevm.Transaction{Nonce: 12}
+		transaction, err := proto.Marshal(tx)
+		require.NoError(t, err)
+		ch <- transaction
+		svc.consensusReader.EXPECT().Read(mock.Anything, mock.Anything).Return(ch, nil).Once()
+
+		req := &chainsevm.GetTransactionByHashRequest{Hash: make([]byte, 32)}
+		resp, err := svc.GetTransactionByHash(t.Context(), capabilities.RequestMetadata{}, req)
+		require.NoError(t, err)
+		require.Empty(t, cmp.Diff(chainsevm.GetTransactionByHashReply{Transaction: tx}, resp, protocmp.Transform()))
+	})
+	t.Run("Returns error on invalid hash", func(t *testing.T) {
+		svc := initMocks(t)
+
+		req := &chainsevm.GetTransactionByHashRequest{Hash: make([]byte, 2)}
+		_, err := svc.GetTransactionByHash(t.Context(), capabilities.RequestMetadata{}, req)
+		require.ErrorContains(t, err, "invalid hash: got 2 bytes, expected 32")
+	})
+	t.Run("Returns error on timeout", func(t *testing.T) {
+		svc := initMocks(t)
+
+		ch := make(chan []byte, 1)
+		svc.consensusReader.EXPECT().Read(mock.Anything, mock.Anything).Return(ch, nil).Once()
+
+		req := &chainsevm.GetTransactionByHashRequest{Hash: make([]byte, 32)}
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		_, err := svc.GetTransactionByHash(ctx, capabilities.RequestMetadata{}, req)
+		require.ErrorContains(t, err, "context canceled")
+	})
+}
+
+func TestCapability_GetTransactionReceipt(t *testing.T) {
+	t.Run("happy-path", func(t *testing.T) {
+		svc := initMocks(t)
+
+		ch := make(chan []byte, 1)
+		receipt := &chainsevm.Receipt{Status: 12}
+		rawReceipt, err := proto.Marshal(receipt)
+		require.NoError(t, err)
+		ch <- rawReceipt
+		svc.consensusReader.EXPECT().Read(mock.Anything, mock.Anything).Return(ch, nil).Once()
+
+		req := &chainsevm.GetTransactionReceiptRequest{Hash: make([]byte, 32)}
+		resp, err := svc.GetTransactionReceipt(t.Context(), capabilities.RequestMetadata{}, req)
+		require.NoError(t, err)
+		require.Empty(t, cmp.Diff(chainsevm.GetTransactionReceiptReply{Receipt: receipt}, resp, protocmp.Transform()))
+	})
+	t.Run("Returns error on invalid hash", func(t *testing.T) {
+		svc := initMocks(t)
+
+		req := &chainsevm.GetTransactionReceiptRequest{Hash: make([]byte, 2)}
+		_, err := svc.GetTransactionReceipt(t.Context(), capabilities.RequestMetadata{}, req)
+		require.ErrorContains(t, err, "invalid hash: got 2 bytes, expected 32")
+	})
+	t.Run("Returns error on timeout", func(t *testing.T) {
+		svc := initMocks(t)
+
+		ch := make(chan []byte, 1)
+		svc.consensusReader.EXPECT().Read(mock.Anything, mock.Anything).Return(ch, nil).Once()
+
+		req := &chainsevm.GetTransactionReceiptRequest{Hash: make([]byte, 32)}
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		_, err := svc.GetTransactionReceipt(ctx, capabilities.RequestMetadata{}, req)
 		require.ErrorContains(t, err, "context canceled")
 	})
 }

@@ -305,6 +305,8 @@ github.com/smartcontractkit/capabilities/libs v0.0.0-20250625153933-d42434f487d7
 github.com/smartcontractkit/capabilities/libs v0.0.0-20250625153933-d42434f487d7/go.mod h1:08Q5Oq7fx4FbKJ2a+dEKgR21GtLwD7hv6zyhSnVcGIU=
 github.com/smartcontractkit/chainlink-common v0.7.1-0.20250625160454-754a8694674e h1:HvxYSnDTBmTAiJJJAIbFNuzBqRYOZHu42+v95Hca8tM=
 github.com/smartcontractkit/chainlink-common v0.7.1-0.20250625160454-754a8694674e/go.mod h1:plVu/MNDcoGbX++P0Dhv8gTtpafG98HqG6BfNj+dfE0=
+github.com/smartcontractkit/chainlink-common v0.7.1-0.20250625174041-dfb6d55e748c h1:+WFw5aJEQ00nWYADPvJBaL1aF6O2d27cy7+4Ndndm6g=
+github.com/smartcontractkit/chainlink-common v0.7.1-0.20250625174041-dfb6d55e748c/go.mod h1:plVu/MNDcoGbX++P0Dhv8gTtpafG98HqG6BfNj+dfE0=
 github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250624161023-93f383781b0a h1:AVYA3UTkn2wjdpkTRhtXH0XgVBE25tXmfqxmEZhE+4s=
 github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250624161023-93f383781b0a/go.mod h1:QUEPHdSkH19Or+E1iMGG+rDQ6jpCTIbm//9Osa6MXDE=
 github.com/smartcontractkit/freeport v0.1.1 h1:B5fhEtmgomdIhw03uPVbVTP6oPv27fBhZsoZZMSIS8I=
