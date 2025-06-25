@@ -271,6 +271,8 @@ github.com/smartcontractkit/chainlink-common v0.7.1-0.20250610121303-f0d618f73b0
 github.com/smartcontractkit/chainlink-common v0.7.1-0.20250610121303-f0d618f73b03/go.mod h1:H7gOuN4Jzf+DWllfP5Pb7AiCWBMQrDX1D1KYXAEhdnw=
 github.com/smartcontractkit/chainlink-common v0.7.1-0.20250617170424-4d2241b1e7d7 h1:aZ5KSXiBNPTR//MkzoWn+QP9lTxnyxEn/Y2bAn90McM=
 github.com/smartcontractkit/chainlink-common v0.7.1-0.20250617170424-4d2241b1e7d7/go.mod h1:H7gOuN4Jzf+DWllfP5Pb7AiCWBMQrDX1D1KYXAEhdnw=
+github.com/smartcontractkit/chainlink-common v0.7.1-0.20250625115527-7b836f1f5676 h1:VHxs9Mbe29Ya0HvhFm/NccF1LwJsr5DTECCzoDh316s=
+github.com/smartcontractkit/chainlink-common v0.7.1-0.20250625115527-7b836f1f5676/go.mod h1:H7gOuN4Jzf+DWllfP5Pb7AiCWBMQrDX1D1KYXAEhdnw=
 github.com/smartcontractkit/freeport v0.1.1 h1:B5fhEtmgomdIhw03uPVbVTP6oPv27fBhZsoZZMSIS8I=
 github.com/smartcontractkit/freeport v0.1.1/go.mod h1:T4zH9R8R8lVWKfU7tUvYz2o2jMv1OpGCdpY2j2QZXzU=
 github.com/smartcontractkit/grpc-proxy v0.0.0-20240830132753-a7e17fec5ab7 h1:12ijqMM9tvYVEm+nR826WsrNi6zCKpwBhuApq127wHs=

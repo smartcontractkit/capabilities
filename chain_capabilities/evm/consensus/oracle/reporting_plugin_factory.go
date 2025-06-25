@@ -39,7 +39,7 @@ func (rpf *ReportingPluginFactory) NewReportingPlugin(
 	ocr3types.ReportingPluginInfo,
 	error,
 ) {
-	return NewReportingPlugin(Config{ReportingPluginConfig: config, BatchSize: rpf.batchSize}, rpf.logger, rpf.blocksProvider, rpf.requestsStore), ocr3types.ReportingPluginInfo{
+	return newReportingPlugin(Config{ReportingPluginConfig: config, BatchSize: rpf.batchSize}, rpf.logger, rpf.blocksProvider, rpf.requestsStore), ocr3types.ReportingPluginInfo{
 		Name: "evm-reads-oracle",
 		Limits: ocr3types.ReportingPluginLimits{
 			MaxQueryLength:       ocr3types.MaxMaxQueryLength,

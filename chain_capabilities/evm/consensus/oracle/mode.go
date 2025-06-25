@@ -2,6 +2,7 @@ package oracle
 
 import (
 	"errors"
+	"fmt"
 	"iter"
 
 	"github.com/smartcontractkit/libocr/commontypes"
@@ -20,6 +21,7 @@ type observation[keyT comparable, valueT any] struct {
 
 // mode - returns most frequent value, if total number of observations is at least (N+F)/2+1 and
 // number of values with identical keys is at least F+1. Returns error, otherwise.
+// If multiple values have identical number of observations, prefers value reported by oracle with the lowest oracleID.
 func mode[keyT comparable, valueT any](N, F int, observations iter.Seq2[commontypes.OracleID, observation[keyT, valueT]]) (valueT, error) {
 	counters := make(map[keyT]*counter[valueT])
 	var totalNum int
@@ -38,23 +40,29 @@ func mode[keyT comparable, valueT any](N, F int, observations iter.Seq2[commonty
 		}
 	}
 
-	if totalNum < (N+F)/2+1 {
+	expectedObservations := (N+F)/2 + 1
+	if totalNum < expectedObservations {
 		var zero valueT
-		return zero, errors.New("insufficient number of observations")
+		return zero, fmt.Errorf("insufficient number of observations: expected %d, got %d", expectedObservations, totalNum)
 	}
 
 	var highestCounter *counter[valueT]
 	for _, newCounter := range counters {
 		if highestCounter == nil ||
 			highestCounter.count < newCounter.count ||
-			(highestCounter.count == newCounter.count && highestCounter.observer < newCounter.observer) {
+			(highestCounter.count == newCounter.count && highestCounter.observer > newCounter.observer) {
 			highestCounter = newCounter
 		}
 	}
 
-	if highestCounter == nil || highestCounter.count < F+1 {
+	if highestCounter == nil {
 		var zero valueT
-		return zero, errors.New("insufficient number of identical observations")
+		return zero, errors.New("unexpected state: highestCounter is nil")
+	}
+
+	if highestCounter.count < F+1 {
+		var zero valueT
+		return zero, fmt.Errorf("insufficient number of identical observations: expected %d, got %d", F+1, highestCounter.count)
 	}
 
 	return highestCounter.value, nil

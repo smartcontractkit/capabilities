@@ -16,6 +16,8 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+
+	ctypes "github.com/smartcontractkit/chain_capabilities/evm/consensus/types"
 )
 
 var _ ocr3types.ReportingPlugin[[]byte] = (*reportingPlugin)(nil)
@@ -32,12 +34,12 @@ type reportingPlugin struct {
 	requestsStore  RequestsStore
 }
 
-func NewReportingPlugin(
+func newReportingPlugin(
 	config Config,
 	logger logger.SugaredLogger,
 	blocksProvider BlocksProvider,
 	requestsStore RequestsStore,
-) ocr3types.ReportingPlugin[[]byte] {
+) *reportingPlugin {
 	return &reportingPlugin{
 		config:         config,
 		logger:         logger,
@@ -67,10 +69,10 @@ func (rp *reportingPlugin) Observation(
 	}
 
 	if len(requestIDs) > rp.config.BatchSize {
-		return nil, fmt.Errorf("too many request IDs: %d expected %d", len(requestIDs), rp.config.BatchSize)
+		return nil, fmt.Errorf("too many request IDs: got %d, expected %d", len(requestIDs), rp.config.BatchSize)
 	}
 
-	observation := &evmservice.Observations{ChainHeight: &evmservice.ChainHeight{}}
+	observation := &evmservice.Observation{ChainHeight: &evmservice.ChainHeight{}, Observations: make(map[string]*evmservice.RequestObservation, len(requestIDs))}
 	var err error
 	observation.ChainHeight.Finalized, err = rp.blocksProvider.GetFinalized()
 	if err != nil {
@@ -100,6 +102,7 @@ func (rp *reportingPlugin) Observation(
 			return nil, fmt.Errorf("could not unmarshal previous outcome: %w", err)
 		}
 
+		// TODO PLEX-1572: report observed chain height
 		prevChainHeight := previousOutcome.ChainHeight
 		observation.ChainHeight.Finalized = max(observation.ChainHeight.Finalized, prevChainHeight.Finalized)
 		observation.ChainHeight.Safe = max(observation.ChainHeight.Safe, prevChainHeight.Safe, observation.ChainHeight.Finalized)
@@ -117,27 +120,12 @@ func (rp *reportingPlugin) Observation(
 			continue
 		}
 
-		rp.requestsStore.MarkAttempted(requestID)
-
-		requestType := request.Type()
-		switch requestType {
-		case evmservice.RequestType_REQUEST_TYPE_AGGREGATABLE, evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT:
-			requestOb, ok := rp.requestsStore.GetObservation(requestID)
-			if !ok {
-				continue
-			}
-			observation.Observations[requestID] = &evmservice.RequestObservation{
-				RequestType: requestType,
-				Value:       requestOb,
-			}
-		case evmservice.RequestType_REQUEST_TYPE_LOCKABLE_TO_BLOCK:
-			observation.Observations[requestID] = &evmservice.RequestObservation{
-				RequestType: requestType,
-			}
-		default:
-			return nil, fmt.Errorf("unsupported request type: %s", requestType)
+		err := rp.observeRequest(observation, request)
+		if err != nil {
+			return nil, fmt.Errorf("failed to observe request: %w", err)
 		}
 
+		rp.requestsStore.MarkAttempted(requestID)
 	}
 
 	rp.logger.Debugw("Observation complete",
@@ -147,10 +135,33 @@ func (rp *reportingPlugin) Observation(
 	return proto.Marshal(observation)
 }
 
+func (rp *reportingPlugin) observeRequest(observation *evmservice.Observation, request ctypes.Request) error {
+	requestType := request.Type()
+	switch requestType {
+	case evmservice.RequestType_REQUEST_TYPE_AGGREGATABLE, evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT:
+		requestOb, ok := rp.requestsStore.GetObservation(request.ID())
+		if !ok {
+			return nil
+		}
+		observation.Observations[request.ID()] = &evmservice.RequestObservation{
+			RequestType: requestType,
+			Value:       requestOb,
+		}
+		return nil
+	case evmservice.RequestType_REQUEST_TYPE_LOCKABLE_TO_BLOCK:
+		observation.Observations[request.ID()] = &evmservice.RequestObservation{
+			RequestType: requestType,
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported request type: %s", requestType)
+	}
+}
+
 func (rp *reportingPlugin) ValidateObservation(_ context.Context, outctx ocr3types.OutcomeContext, query types.Query, ao types.AttributedObservation) error {
-	ob := new(evmservice.Observations)
+	ob := new(evmservice.Observation)
 	if err := proto.Unmarshal(ao.Observation, ob); err != nil {
-		return fmt.Errorf("could not unmarshal proposed outcome: %w", err)
+		return fmt.Errorf("could not unmarshal proposed observation: %w", err)
 	}
 
 	err := validateChainHeight(ob.ChainHeight)
@@ -191,26 +202,23 @@ func validateChainHeight(chainHeight *evmservice.ChainHeight) error {
 	return nil
 }
 
-func fPlusOneLowestBlockHeight(obs []attributedObservation, f int, getHeight func(ob *evmservice.ChainHeight) int64) (int64, error) {
-	if len(obs) < f+1 {
-		return 0, fmt.Errorf("not enough observations to calculate F+1 lowest block height. Got %d, expected at least %d", len(obs), f+1)
-	}
+func fPlusOneLowestBlockHeight(obs []attributedObservation, f int, getHeight func(ob *evmservice.ChainHeight) int64) int64 {
 	sort.Slice(obs, func(i, j int) bool {
 		return getHeight(obs[i].Observation.ChainHeight) < getHeight(obs[j].Observation.ChainHeight)
 	})
 
-	return getHeight(obs[f].Observation.ChainHeight), nil
+	return getHeight(obs[f].Observation.ChainHeight)
 }
 
 func validateChainHeightAgainstOutcome(ob *evmservice.ChainHeight, prevOutcome *evmservice.ChainHeight) error {
 	if ob.Latest < prevOutcome.Latest {
-		return fmt.Errorf("expected latest to be gt or equal to previous latest: %d < %d", ob.Latest, prevOutcome.Latest)
+		return fmt.Errorf("expected latest %d to be gt or equal to previous latest %d", ob.Latest, prevOutcome.Latest)
 	}
 	if ob.Safe < prevOutcome.Safe {
-		return fmt.Errorf("expected safe to be gt or equal to previous safe: %d < %d", ob.Safe, prevOutcome.Safe)
+		return fmt.Errorf("expected safe %d to be gt or equal to previous safe %d", ob.Safe, prevOutcome.Safe)
 	}
 	if ob.Finalized < prevOutcome.Finalized {
-		return fmt.Errorf("expected finalized to be gt or equal to previous finalized: %d < %d", ob.Finalized, prevOutcome.Finalized)
+		return fmt.Errorf("expected finalized %d to be gt or equal to previous finalized %d", ob.Finalized, prevOutcome.Finalized)
 	}
 
 	return nil
@@ -257,31 +265,20 @@ func (rp *reportingPlugin) agreeOnRequestValue(requestID string, aos []attribute
 }
 
 func (rp *reportingPlugin) agreeOnChainHeight(aos []attributedObservation) (*evmservice.ChainHeight, error) {
-	latest, err := fPlusOneLowestBlockHeight(aos, rp.config.F, func(o *evmservice.ChainHeight) int64 { return o.Latest })
-	if err != nil {
-		return nil, fmt.Errorf("could not determine latest block height: %w", err)
-	}
-
-	safe, err := fPlusOneLowestBlockHeight(aos, rp.config.F, func(o *evmservice.ChainHeight) int64 { return o.Safe })
-	if err != nil {
-		return nil, fmt.Errorf("could not determine safe block height: %w", err)
-	}
-
-	finalized, err := fPlusOneLowestBlockHeight(aos, rp.config.F, func(o *evmservice.ChainHeight) int64 { return o.Finalized })
-	if err != nil {
-		return nil, fmt.Errorf("could not determine finalized block height: %w", err)
+	if len(aos) < rp.config.F+1 {
+		return nil, fmt.Errorf("not enough observations to calculate chain height. Got %d, expected at least %d", len(aos), rp.config.F+1)
 	}
 
 	return &evmservice.ChainHeight{
-		Latest:    latest,
-		Safe:      safe,
-		Finalized: finalized,
+		Latest:    fPlusOneLowestBlockHeight(aos, rp.config.F, func(o *evmservice.ChainHeight) int64 { return o.Latest }),
+		Safe:      fPlusOneLowestBlockHeight(aos, rp.config.F, func(o *evmservice.ChainHeight) int64 { return o.Safe }),
+		Finalized: fPlusOneLowestBlockHeight(aos, rp.config.F, func(o *evmservice.ChainHeight) int64 { return o.Finalized }),
 	}, nil
 }
 
 type attributedObservation struct {
 	Observer    commontypes.OracleID
-	Observation *evmservice.Observations
+	Observation *evmservice.Observation
 }
 
 func (rp *reportingPlugin) Outcome(
@@ -294,14 +291,15 @@ func (rp *reportingPlugin) Outcome(
 	for i, ao := range rawAOs {
 		aos[i] = attributedObservation{
 			Observer:    ao.Observer,
-			Observation: new(evmservice.Observations),
+			Observation: new(evmservice.Observation),
 		}
 		if err := proto.Unmarshal(ao.Observation, aos[i].Observation); err != nil {
-			return nil, fmt.Errorf("could not unmarshal proposed outcome: %w", err)
+			return nil, fmt.Errorf("could not unmarshal proposed observation: %w", err)
 		}
 	}
 
 	outcome := evmservice.Outcome{ChainHeight: &evmservice.ChainHeight{}}
+	// TODO PLEX-1572: report common chain height
 	var err error
 	outcome.ChainHeight, err = rp.agreeOnChainHeight(aos)
 	if err != nil {
@@ -322,7 +320,7 @@ func (rp *reportingPlugin) Outcome(
 
 		switch requestType {
 		case evmservice.RequestType_REQUEST_TYPE_AGGREGATABLE:
-			// TODO: PLEX-1470
+			// TODO: PLEX-1470 implement aggregatable methods
 			panic("not implemented")
 		case evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT:
 			value, err := rp.agreeOnRequestValue(requestID, aos)
@@ -366,6 +364,8 @@ func (rp *reportingPlugin) Reports(ctx context.Context, seqNr uint64, rawOutcome
 			report.Payload = &evmservice.RequestReport_Value{Value: requestOutcome.Value}
 		case evmservice.RequestType_REQUEST_TYPE_LOCKABLE_TO_BLOCK:
 			report.Payload = &evmservice.RequestReport_Height{Height: outcome.ChainHeight}
+		default:
+			return nil, fmt.Errorf("unsupported request type: %s", requestOutcome.RequestType)
 		}
 
 		asProto, err := proto.Marshal(&report)
