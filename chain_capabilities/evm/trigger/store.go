@@ -5,11 +5,25 @@ import (
 	"fmt"
 	"math/big"
 	"sync"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/types/query"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 )
+
+type filter struct {
+	expressions []query.Expression
+	confidence  primitives.ConfidenceLevel
+}
 
 type logTriggerState struct {
 	cancelFunc context.CancelFunc
-	lastBlock  *big.Int
+	lastBlock  *big.Int //latest finalized block number that this trigger is aware of.
+	/*
+		unfinalizedSentEventIDs is a map of event IDs that prevent log trigger of sending duplicate unfinalized events.
+		Once the lastBlocks moves ahead of the block that contains the event, the event ID can be removed from this map.
+	*/
+	unfinalizedSentEventIDs map[string]*big.Int
+	filter
 }
 
 type logTriggerStore struct {
@@ -22,7 +36,7 @@ type LogTriggerStore interface {
 	Read(triggerID string) (value logTriggerState, ok bool)
 	ReadAll() (values map[string]logTriggerState)
 	Write(triggerID string, value logTriggerState)
-	Update(triggerID string, lastBlock *big.Int) error
+	Update(triggerID string, lastBlock *big.Int, unfinalizedSentEventIDs map[string]*big.Int) error
 	Delete(triggerID string)
 }
 
@@ -57,7 +71,7 @@ func (cs *logTriggerStore) Write(triggerID string, value logTriggerState) {
 	cs.triggers[triggerID] = value
 }
 
-func (cs *logTriggerStore) Update(triggerID string, lastBlock *big.Int) error {
+func (cs *logTriggerStore) Update(triggerID string, lastBlock *big.Int, unfinalizedSentEventIDs map[string]*big.Int) error {
 	cs.mu.Lock()
 	defer cs.mu.Unlock()
 	trigger, ok := cs.triggers[triggerID]
@@ -65,8 +79,9 @@ func (cs *logTriggerStore) Update(triggerID string, lastBlock *big.Int) error {
 		return fmt.Errorf("cannot find trigger with ID %q", triggerID)
 	}
 	cs.triggers[triggerID] = logTriggerState{
-		cancelFunc: trigger.cancelFunc,
-		lastBlock:  lastBlock,
+		cancelFunc:              trigger.cancelFunc,
+		lastBlock:               lastBlock,
+		unfinalizedSentEventIDs: unfinalizedSentEventIDs,
 	}
 	return nil
 }
