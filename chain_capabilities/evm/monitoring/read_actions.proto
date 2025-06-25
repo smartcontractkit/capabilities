@@ -93,16 +93,25 @@ message EstimateGasError {
   common.ExecutionContext execution_context = 20;
 }
 
-// -------------------------------
-// GetTransactionByHash
-// -------------------------------
+message Receipt {
+  uint64 status = 1;
+  string tx_hash = 2;
+  string contract_address = 3;
+  uint64 gas_used = 4;
+  string block_hash = 5;
+  uint64 block_number = 6;
+  uint64 transaction_index = 7;
+  uint64 effective_gas_price = 8;
+}
 message GetTransactionByHashRequest {
   string hash = 1;
 }
+
 message GetTransactionByHashInitiated {
   GetTransactionByHashRequest req = 1;
   common.ExecutionContext execution_context = 20;
 }
+
 message TransactionData {
   string tx_hash = 1;
   uint64 tx_nonce = 2;
@@ -134,7 +143,7 @@ message GetTransactionReceiptInitiated {
 
 message GetTransactionReceiptSuccess {
   GetTransactionReceiptRequest req = 1;
-  bytes receipt = 2;
+  Receipt receipt = 2;
   common.ExecutionContext execution_context = 20;
 }
 
@@ -142,7 +151,6 @@ message GetTransactionReceiptError {
   GetTransactionReceiptRequest req = 1;
   string summary = 2;
   string cause = 3;
-  
   common.ExecutionContext execution_context = 20;
 }
 

@@ -100,9 +100,17 @@ func (m *MessageBuilder) BuildGetTransactionReceiptInitiated(r ReadRequest, hash
 	return &GetTransactionReceiptInitiated{Req: &GetTransactionReceiptRequest{Hash: hash}, ExecutionContext: m.BuildExecutionContext(r)}
 }
 
-// TODO add receipt data to the success message
-func (m *MessageBuilder) BuildGetTransactionReceiptSuccess(r ReadRequest, hash string, _ *evm.Receipt) *GetTransactionReceiptSuccess {
-	return &GetTransactionReceiptSuccess{Req: &GetTransactionReceiptRequest{Hash: hash}, Receipt: nil, ExecutionContext: m.BuildExecutionContext(r)}
+func (m *MessageBuilder) BuildGetTransactionReceiptSuccess(r ReadRequest, hash string, receipt *evm.Receipt) *GetTransactionReceiptSuccess {
+	return &GetTransactionReceiptSuccess{Req: &GetTransactionReceiptRequest{Hash: hash}, Receipt: &Receipt{
+		Status:            receipt.Status,
+		TxHash:            common.BytesToHash(receipt.TxHash[:]).String(),
+		ContractAddress:   common.BytesToAddress(receipt.ContractAddress[:]).String(),
+		GasUsed:           receipt.GasUsed,
+		BlockHash:         common.BytesToHash(receipt.BlockHash[:]).String(),
+		BlockNumber:       receipt.BlockNumber.Uint64(),
+		TransactionIndex:  receipt.TransactionIndex,
+		EffectiveGasPrice: receipt.EffectiveGasPrice.Uint64(),
+	}, ExecutionContext: m.BuildExecutionContext(r)}
 }
 
 func (m *MessageBuilder) BuildGetTransactionReceiptError(r ReadRequest, hash, summary, cause string) *GetTransactionReceiptError {
