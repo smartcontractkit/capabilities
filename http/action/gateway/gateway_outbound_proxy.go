@@ -12,12 +12,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
 
-	"github.com/smartcontractkit/capabilities/http/common"
+	"github.com/smartcontractkit/capabilities/http/action/common"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
@@ -51,8 +52,8 @@ type gatewayOutboundProxy struct {
 	services.StateMachine
 	gatewayConnector        core.GatewayConnector
 	lggr                    logger.Logger
-	incomingRateLimiter     *gateway.RateLimiter
-	outgoingRateLimiter     *gateway.RateLimiter
+	incomingRateLimiter     *ratelimit.RateLimiter
+	outgoingRateLimiter     *ratelimit.RateLimiter
 	responses               *responses
 	selectorOpts            []func(*gc.RoundRobinSelector)
 	gatewayConnectionConfig common.GatewayConnectionConfig
@@ -60,12 +61,12 @@ type gatewayOutboundProxy struct {
 
 func NewGatewayOutboundProxy(gatewayConnector core.GatewayConnector, config common.ServiceConfig, lgger logger.Logger, opts ...func(*gc.RoundRobinSelector)) (*gatewayOutboundProxy, error) {
 	outgoingRLCfg := outgoingRateLimiterConfigDefaults(config.OutgoingRateLimiter)
-	outgoingRateLimiter, err := gateway.NewRateLimiter(outgoingRLCfg)
+	outgoingRateLimiter, err := ratelimit.NewRateLimiter(outgoingRLCfg)
 	if err != nil {
 		return nil, err
 	}
 	incomingRLCfg := incomingRateLimiterConfigDefaults(config.RateLimiter)
-	incomingRateLimiter, err := gateway.NewRateLimiter(incomingRLCfg)
+	incomingRateLimiter, err := ratelimit.NewRateLimiter(incomingRLCfg)
 	if err != nil {
 		return nil, err
 	}
@@ -100,8 +101,8 @@ func NewGatewayOutboundProxy(gatewayConnector core.GatewayConnector, config comm
 
 // SendRequest sends a request to first available gateway node and blocks until response is received
 func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *http.Request) (*http.Response, error) {
-	messageID := p.getMessageID(metadata)
-	lggr := logger.With(p.lggr, "messageID", messageID, "workflowID", metadata.WorkflowID, "workflowExecutionID", metadata.WorkflowExecutionID, "workflowOwner", metadata.WorkflowOwner)
+	requestID := p.getRequestID(metadata)
+	lggr := logger.With(p.lggr, "requestID", requestID, "workflowID", metadata.WorkflowID, "workflowExecutionID", metadata.WorkflowExecutionID, "workflowOwner", metadata.WorkflowOwner)
 
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(input.TimeoutMs)*time.Millisecond)
 	defer cancel()
@@ -129,17 +130,17 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 		return nil, fmt.Errorf("failed to marshal fetch request: %w", err)
 	}
 
-	responseCh, err := p.responses.new(messageID)
+	responseCh, err := p.responses.new(requestID)
 	if err != nil {
-		return nil, fmt.Errorf("duplicate message received for ID: %s", messageID)
+		return nil, fmt.Errorf("duplicate message received for ID: %s", requestID)
 	}
-	defer p.responses.cleanup(messageID)
+	defer p.responses.cleanup(requestID)
 
 	lggr.Debugw("sending request to gateway")
 
 	gatewayResp := jsonrpc.Response{
 		Version: "2.0",
-		ID:      messageID,
+		ID:      requestID,
 		Result:  json.RawMessage(payload),
 	}
 
@@ -164,23 +165,22 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 			return nil, errors.New(internalError)
 		}
 		return &http.Response{
-			StatusCode:   uint32(resp.StatusCode), //nolint:gosec // G115
-			Headers:      resp.Headers,
-			Body:         resp.Body,
-			ErrorMessage: resp.ErrorMessage,
+			StatusCode: uint32(resp.StatusCode), //nolint:gosec // G115
+			Headers:    resp.Headers,
+			Body:       resp.Body,
 		}, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
 }
 
-func (p *gatewayOutboundProxy) getMessageID(metadata capabilities.RequestMetadata) string {
-	messageID := []string{
+func (p *gatewayOutboundProxy) getRequestID(metadata capabilities.RequestMetadata) string {
+	id := []string{
 		metadata.WorkflowID,
 		metadata.WorkflowExecutionID,
 		uuid.New().String(),
 	}
-	return strings.Join(messageID, "/")
+	return strings.Join(id, "/")
 }
 
 // awaitConnection attempts to establish a connection to an available gateway.  It iterates through available gateways
@@ -251,7 +251,7 @@ func (p *gatewayOutboundProxy) attemptGatewayConnection(ctx context.Context, lgg
 // HandleGatewayMessage processes incoming messages from the Gateway,
 // which are in response to a HandleSingleNodeRequest call.
 func (p *gatewayOutboundProxy) HandleGatewayMessage(ctx context.Context, gatewayID string, req *jsonrpc.Request) error {
-	l := logger.With(p.lggr, "gatewayID", gatewayID, "method", req.Method, "messageID", req.ID)
+	l := logger.With(p.lggr, "gatewayID", gatewayID, "method", req.Method, "requestID", req.ID)
 	l.Debugw("handling incomming gateway message")
 	var msg gateway.OutboundHTTPResponse
 	err := json.Unmarshal(req.Params, &msg)
@@ -328,7 +328,7 @@ func (p *gatewayOutboundProxy) Name() string {
 	return p.lggr.Name()
 }
 
-func incomingRateLimiterConfigDefaults(config gateway.RateLimiterConfig) gateway.RateLimiterConfig {
+func incomingRateLimiterConfigDefaults(config ratelimit.RateLimiterConfig) ratelimit.RateLimiterConfig {
 	if config.GlobalBurst == 0 {
 		config.GlobalBurst = defaultGlobalBurst
 	}
@@ -343,7 +343,7 @@ func incomingRateLimiterConfigDefaults(config gateway.RateLimiterConfig) gateway
 	}
 	return config
 }
-func outgoingRateLimiterConfigDefaults(config gateway.RateLimiterConfig) gateway.RateLimiterConfig {
+func outgoingRateLimiterConfigDefaults(config ratelimit.RateLimiterConfig) ratelimit.RateLimiterConfig {
 	if config.GlobalBurst == 0 {
 		config.GlobalBurst = defaultGlobalBurst
 	}

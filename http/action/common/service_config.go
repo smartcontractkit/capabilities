@@ -1,15 +1,15 @@
 package common
 
-import "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
+import "github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 
 // ServiceConfig defines the configuration for the HTTP Actions service.
 type ServiceConfig struct {
 	// RateLimiter configuration for messages incoming to this node from the gateway.
 	// The sender is a Gateway node, which is identified by the Gateway ID.
-	RateLimiter gateway.RateLimiterConfig `toml:"incomingRateLimiter" json:"incomingRateLimiter" yaml:"incomingRateLimiter" mapstructure:"incomingRateLimiter"`
+	RateLimiter ratelimit.RateLimiterConfig `toml:"incomingRateLimiter" json:"incomingRateLimiter" yaml:"incomingRateLimiter" mapstructure:"incomingRateLimiter"`
 	// OutgoingRateLimiter is the configuration for outgoing messages from this node to the gateway.
 	// The sender is a workflow owner
-	OutgoingRateLimiter gateway.RateLimiterConfig `toml:"outgoingRateLimiter" json:"outgoingRateLimiter" yaml:"outgoingRateLimiter" mapstructure:"outgoingRateLimiter"`
+	OutgoingRateLimiter ratelimit.RateLimiterConfig `toml:"outgoingRateLimiter" json:"outgoingRateLimiter" yaml:"outgoingRateLimiter" mapstructure:"outgoingRateLimiter"`
 	// LimitsConfig groups HTTP-related configuration fields.
 	LimitsConfig LimitsConfig `toml:"limits" json:"limits" yaml:"limits" mapstructure:"limits"`
 	// ProxyMode is the mode of the outbound proxy. can be "gateway", "direct"

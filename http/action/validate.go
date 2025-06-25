@@ -5,7 +5,7 @@ import (
 	"math"
 	"strings"
 
-	"github.com/smartcontractkit/capabilities/http/common"
+	"github.com/smartcontractkit/capabilities/http/action/common"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 )
@@ -24,7 +24,8 @@ var allowedMethods = map[string]struct{}{
 	"PATCH":  {},
 }
 
-func ValidatedServiceConfig(cfg *common.ServiceConfig) (*common.ServiceConfig, error) {
+// ApplyDefaultsAndValidate validates and applies default values to the service configuration.
+func ApplyDefaultsAndValidate(cfg *common.ServiceConfig) (*common.ServiceConfig, error) {
 	maxTimeoutMs := getWithDefault(cfg.LimitsConfig.MaxTimeoutMs, defaultMaxTimeoutMs)
 	maxHeaderCount := getWithDefault(cfg.LimitsConfig.MaxHeaderCount, defaultMaxHeaderCount)
 	maxHeaderKeyLength := getWithDefault(cfg.LimitsConfig.MaxHeaderKeyLength, defaultMaxHeaderKeyLength)
@@ -40,15 +41,15 @@ func ValidatedServiceConfig(cfg *common.ServiceConfig) (*common.ServiceConfig, e
 		MaxHeaderCount:       maxHeaderCount,
 		MaxHeaderKeyLength:   maxHeaderKeyLength,
 		MaxHeaderValueLength: maxHeaderValueLength,
-		MaxRequestBytes:        maxRequestBytes,
-		MaxResponseBytes: maxResponseBytes,
+		MaxRequestBytes:      maxRequestBytes,
+		MaxResponseBytes:     maxResponseBytes,
 	}
 	cfg.LimitsConfig = limitsConfig
 	return cfg, nil
 }
 
-// ValidateAndApplyDefaults validates the HTTP request fields and applies default values where necessary.
-func ValidateAndApplyDefaults(input *http.Request, cfg common.ServiceConfig) (*http.Request, error) {
+// ValidatedRequest validates the HTTP request fields and applies default values where necessary.
+func ValidatedRequest(input *http.Request, cfg common.ServiceConfig) (*http.Request, error) {
 	// Validate and set defaults for request fields
 	url := strings.TrimSpace(input.Url)
 	if url == "" {
@@ -69,7 +70,7 @@ func ValidateAndApplyDefaults(input *http.Request, cfg common.ServiceConfig) (*h
 
 	timeoutMs := input.TimeoutMs
 	if timeoutMs == 0 {
-		timeoutMs = int32(cfg.LimitsConfig.MaxTimeoutMs) //nolint:gosec // G115 (validated in action.go)
+		timeoutMs = int32(cfg.LimitsConfig.MaxTimeoutMs) //nolint:gosec // G115 (validated in ApplyDefaultsAndValidate)
 	}
 
 	return &http.Request{
@@ -81,7 +82,7 @@ func ValidateAndApplyDefaults(input *http.Request, cfg common.ServiceConfig) (*h
 	}, nil
 }
 
-// getWithDefault returns the first non-zero value among the arguments, or the last one as a fallback.
+// getWithDefault returns the first non-zero value among the arguments
 func getWithDefault(cfgVal uint32, defaultVal uint32) uint32 {
 	if cfgVal != 0 {
 		return cfgVal

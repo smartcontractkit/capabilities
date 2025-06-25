@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/smartcontractkit/capabilities/http/common"
-	"github.com/smartcontractkit/capabilities/http/gateway"
+	"github.com/smartcontractkit/capabilities/http/action/common"
+	"github.com/smartcontractkit/capabilities/http/action/gateway"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
@@ -52,7 +52,7 @@ func (s *service) Initialise(
 	if err != nil {
 		return err
 	}
-	serviceConfig, err = ValidatedServiceConfig(serviceConfig)
+	serviceConfig, err = ApplyDefaultsAndValidate(serviceConfig)
 	if err != nil {
 		return err
 	}
@@ -60,13 +60,13 @@ func (s *service) Initialise(
 
 	outboundRequestClient, err := NewOutboundRequestClient(gc, s.cfg, s.lggr)
 	if err != nil {
-		s.lggr.Errorf("Failed to create OutboundRequestClient: %v", err)
+		return err
 	}
 	s.client = outboundRequestClient
 
 	err = s.Start(ctx)
 	if err != nil {
-		s.lggr.Errorf("Failed to start %s: %v", ServiceName, err)
+		return err
 	}
 
 	return nil
@@ -111,7 +111,7 @@ func (s *service) Description() string {
 
 func (s *service) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *http.Request) (*http.Response, error) {
 	s.lggr.Debugf("Received request with metadata: %v", metadata)
-	validatedInput, err := ValidateAndApplyDefaults(input, s.cfg)
+	validatedInput, err := ValidatedRequest(input, s.cfg)
 	if err != nil {
 		s.lggr.Errorf("Failed to validate input: %v", err)
 		return nil, err
