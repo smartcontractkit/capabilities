@@ -24,11 +24,10 @@ import (
 )
 
 const (
-	CapabilityName = "evm"
-	// TODO
+	CapabilityName      = "evm"
 	repoCLLCapabilities = "https://raw.githubusercontent.com/smartcontractkit/capabilities"
-	versionRefsDevelop  = "..."
-	schemaBasePath      = repoCLLCapabilities + "/" + versionRefsDevelop + "/chain_capabilities/evm/monitoring"
+	versionRefsMain     = "refs/heads/main"
+	schemaBasePath      = repoCLLCapabilities + "/" + versionRefsMain + "/chain_capabilities/evm/monitoring"
 )
 
 type Config struct {

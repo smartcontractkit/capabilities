@@ -52,23 +52,22 @@ func (e EVM) CallContract(
 		return nil, fmt.Errorf("block number must be non-zero, got %s", bn)
 	}
 
-	if err := e.beholderProcessor.Process(ctx, e.messageBuilder.BuildCallContractInitiated(read, callMsg, bn)); err != nil {
-		e.lggr.Errorw("CallContractInitiated failed", "err", err)
+	if err = e.beholderProcessor.Process(ctx, e.messageBuilder.BuildCallContractInitiated(read, callMsg, bn)); err != nil {
+		e.lggr.Errorw("failed to process CallContractInitiated message", "err", err)
 	}
 
 	data, err := e.EVMService.CallContract(ctx, callMsg, bn)
 	if err != nil {
-		e.lggr.Errorw("CallContract failed", "contract", callMsg.To, "block", bn.String(), "err", err)
-		err2 := e.beholderProcessor.Process(ctx, e.messageBuilder.BuildCallContractError(read, callMsg, bn, "call error", err.Error()))
-		if err2 != nil {
-			return nil, fmt.Errorf("post-error proc failed: %w (orig: %w)", err2, err)
+		e.lggr.Errorw("failed to read CallContract", "contract", callMsg.To, "block", bn.String(), "err", err)
+		if err2 := e.beholderProcessor.Process(ctx, e.messageBuilder.BuildCallContractError(read, callMsg, bn, "failed to execute CallContract", err.Error())); err2 != nil {
+			return nil, fmt.Errorf("failed to process CallContractError message: %w (orig: %w)", err2, err)
 		}
 		return nil, err
 	}
 
-	e.lggr.Infow("CallContract success", "contract", callMsg.To, "block", bn.String())
+	e.lggr.Infow("Successfully read CallContract", "contract", callMsg.To, "block", bn.String())
 	if err = e.beholderProcessor.Process(ctx, e.messageBuilder.BuildCallContractSuccess(read, callMsg, bn)); err != nil {
-		e.lggr.Errorw("CallContractSuccess proc failed", "err", err)
+		e.lggr.Errorw("failed to process CallContractSuccess message", "err", err)
 	}
 
 	return &evmservice.CallContractReply{Data: data}, nil
@@ -90,32 +89,27 @@ func (e EVM) FilterLogs(
 		return nil, fmt.Errorf("invalid range: %s-%s", fq.FromBlock, fq.ToBlock)
 	}
 
-	// Initiated
-	if err := e.beholderProcessor.Process(ctx, e.messageBuilder.BuildFilterLogsInitiated(read, fq.FromBlock, fq.ToBlock)); err != nil {
-		e.lggr.Errorw("FilterLogsInitiated failed", "err", err)
+	if err = e.beholderProcessor.Process(ctx, e.messageBuilder.BuildFilterLogsInitiated(read, fq.FromBlock, fq.ToBlock)); err != nil {
+		e.lggr.Errorw("failed to process FilterLogsInitiated message", "err", err)
 	}
 
-	// Execute
 	logs, err := e.EVMService.FilterLogs(ctx, fq)
 	if err != nil {
-		e.lggr.Errorw("FilterLogs failed", "from", fq.FromBlock, "to", fq.ToBlock, "err", err)
-		err2 := e.beholderProcessor.Process(ctx, e.messageBuilder.BuildFilterLogsError(read, fq.FromBlock, fq.ToBlock, "filter error", err.Error()))
-		if err2 != nil {
-			return nil, fmt.Errorf("post-error proc failed: %w (orig: %w)", err2, err)
+		e.lggr.Errorw("failed to execute FilterLogs", "from", fq.FromBlock, "to", fq.ToBlock, "err", err)
+		if err2 := e.beholderProcessor.Process(ctx, e.messageBuilder.BuildFilterLogsError(read, fq.FromBlock, fq.ToBlock, "failed to execute FilterLogs", err.Error())); err2 != nil {
+			return nil, fmt.Errorf("failed to process FilterLogsError message: %w (orig: %w)", err2, err)
 		}
 		return nil, err
 	}
 
-	// Success
-	e.lggr.Infow("FilterLogs success", "count", len(logs))
+	e.lggr.Infow("successfully executed FilterLogs", "count", len(logs))
 	if err := e.beholderProcessor.Process(ctx, e.messageBuilder.BuildFilterLogsSuccess(read, fq.FromBlock, fq.ToBlock, len(logs))); err != nil {
-		e.lggr.Errorw("FilterLogsSuccess proc failed", "err", err)
+		e.lggr.Errorw("failed to process FilterLogsSuccess message", "err", err)
 	}
 
 	return &evmservice.FilterLogsReply{Logs: evmservice.ConvertLogsToProto(logs)}, nil
 }
 
-// BalanceAt with metrics/logs
 func (e EVM) BalanceAt(
 	ctx context.Context,
 	req capabilities.RequestMetadata,
@@ -129,32 +123,27 @@ func (e EVM) BalanceAt(
 		return nil, fmt.Errorf("invalid block number %s", bn)
 	}
 
-	// Initiated
 	if err := e.beholderProcessor.Process(ctx, e.messageBuilder.BuildBalanceAtInitiated(read, common.Bytes2Hex(input.GetAccount()), bn)); err != nil {
-		e.lggr.Errorw("BalanceAtInitiated failed", "err", err)
+		e.lggr.Errorw("Failed to process BalanceAtInitiated message", "err", err)
 	}
 
-	// Execute
 	bal, err := e.EVMService.BalanceAt(ctx, evmtypes.Address(input.GetAccount()), bn)
 	if err != nil {
-		e.lggr.Errorw("BalanceAt failed", "account", input.GetAccount(), "err", err)
-		err2 := e.beholderProcessor.Process(ctx, e.messageBuilder.BuildBalanceAtError(read, common.Bytes2Hex(input.GetAccount()), bn, "balance error", err.Error()))
-		if err2 != nil {
-			return nil, fmt.Errorf("post-error proc failed: %w (orig: %w)", err2, err)
+		e.lggr.Errorw("Failed to execute BalanceAt", "account", input.GetAccount(), "err", err)
+		if err2 := e.beholderProcessor.Process(ctx, e.messageBuilder.BuildBalanceAtError(read, common.Bytes2Hex(input.GetAccount()), bn, "failed to execute BalanceAt", err.Error())); err2 != nil {
+			return nil, fmt.Errorf("failed to process BalanceAtError message: %w (orig: %w)", err2, err)
 		}
 		return nil, err
 	}
 
-	// Success
-	e.lggr.Infow("BalanceAt success", "account", input.GetAccount(), "balance", bal.String())
+	e.lggr.Infow("Successfully executed BalanceAt", "account", input.GetAccount(), "balance", bal.String())
 	if err := e.beholderProcessor.Process(ctx, e.messageBuilder.BuildBalanceAtSuccess(read, common.Bytes2Hex(input.GetAccount()), bn, bal)); err != nil {
-		e.lggr.Errorw("BalanceAtSuccess proc failed", "err", err)
+		e.lggr.Errorw("Failed to process BalanceAtSuccess message", "err", err)
 	}
 
 	return &evmservice.BalanceAtReply{Balance: pb.NewBigIntFromInt(bal)}, nil
 }
 
-// EstimateGas with metrics/logs
 func (e EVM) EstimateGas(
 	ctx context.Context,
 	req capabilities.RequestMetadata,
@@ -168,32 +157,27 @@ func (e EVM) EstimateGas(
 		return nil, err
 	}
 
-	// Initiated
-	if err := e.beholderProcessor.Process(ctx, e.messageBuilder.BuildEstimateGasInitiated(read, common.Bytes2Hex(msg.From[:]), common.Bytes2Hex(msg.To[:]), msg.Data)); err != nil {
-		e.lggr.Errorw("EstimateGasInitiated failed", "err", err)
+	if err = e.beholderProcessor.Process(ctx, e.messageBuilder.BuildEstimateGasInitiated(read, common.Bytes2Hex(msg.From[:]), common.Bytes2Hex(msg.To[:]), msg.Data)); err != nil {
+		e.lggr.Errorw("Failed to process EstimateGasInitiated message", "err", err)
 	}
 
-	// Execute
 	estimate, err := e.EVMService.EstimateGas(ctx, msg)
 	if err != nil {
-		e.lggr.Errorw("EstimateGas failed", "err", err)
-		err2 := e.beholderProcessor.Process(ctx, e.messageBuilder.BuildEstimateGasError(read, common.Bytes2Hex(msg.From[:]), common.Bytes2Hex(msg.To[:]), msg.Data, "estimate error", err.Error()))
-		if err2 != nil {
-			return nil, fmt.Errorf("post-error proc failed: %w (orig: %w)", err2, err)
+		e.lggr.Errorw("Failed to execute EstimateGas", "err", err)
+		if err2 := e.beholderProcessor.Process(ctx, e.messageBuilder.BuildEstimateGasError(read, common.Bytes2Hex(msg.From[:]), common.Bytes2Hex(msg.To[:]), msg.Data, "failed to execute EstimateGas", err.Error())); err2 != nil {
+			return nil, fmt.Errorf("failed to process EstimateGasError message: %w (orig: %w)", err2, err)
 		}
 		return nil, err
 	}
 
-	// Success
-	e.lggr.Infow("EstimateGas success", "gas", estimate)
+	e.lggr.Infow("Successfully executed EstimateGas", "gas", estimate)
 	if err := e.beholderProcessor.Process(ctx, e.messageBuilder.BuildEstimateGasSuccess(read, common.Bytes2Hex(msg.From[:]), common.Bytes2Hex(msg.To[:]), msg.Data, estimate)); err != nil {
-		e.lggr.Errorw("EstimateGasSuccess proc failed", "err", err)
+		e.lggr.Errorw("Failed to process EstimateGasSuccess message", "err", err)
 	}
 
 	return &evmservice.EstimateGasReply{Gas: estimate}, nil
 }
 
-// GetTransactionByHash with metrics/logs
 func (e EVM) GetTransactionByHash(
 	ctx context.Context,
 	req capabilities.RequestMetadata,
@@ -202,38 +186,32 @@ func (e EVM) GetTransactionByHash(
 	ts := time.Now().UnixMilli()
 	read := monitoring.ReadRequest{TsStart: ts, RequestMetadata: req}
 
-	// Initiated
 	if err := e.beholderProcessor.Process(ctx, e.messageBuilder.BuildGetTransactionByHashInitiated(read, common.Bytes2Hex(input.GetHash()))); err != nil {
-		e.lggr.Errorw("GetTxByHashInitiated failed", "err", err)
+		e.lggr.Errorw("Failed to process GetTransactionByHashInitiated message", "err", err)
 	}
 
-	// Execute
 	tx, err := e.EVMService.GetTransactionByHash(ctx, evmtypes.Hash(input.GetHash()))
 	if err != nil {
-		e.lggr.Errorw("GetTxByHash failed", "hash", input.GetHash(), "err", err)
-		err2 := e.beholderProcessor.Process(ctx, e.messageBuilder.BuildGetTransactionByHashError(read, common.Bytes2Hex(input.GetHash()), "get tx error", err.Error()))
-		if err2 != nil {
-			return nil, fmt.Errorf("post-error proc failed: %w (orig: %w)", err2, err)
+		e.lggr.Errorw("Failed to execute GetTransactionByHash", "hash", input.GetHash(), "err", err)
+		if err2 := e.beholderProcessor.Process(ctx, e.messageBuilder.BuildGetTransactionByHashError(read, common.Bytes2Hex(input.GetHash()), "failed to execute GetTransactionByHash", err.Error())); err2 != nil {
+			return nil, fmt.Errorf("failed to process GetTransactionByHashError message: %w (orig: %w)", err2, err)
 		}
 		return nil, err
 	}
 
-	// Convert
 	protoTx, err := evmservice.ConvertTransactionToProto(tx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Success
-	e.lggr.Infow("GetTxByHash success", "hash", input.GetHash())
-	if err := e.beholderProcessor.Process(ctx, e.messageBuilder.BuildGetTransactionByHashSuccess(read, common.Bytes2Hex(input.GetHash()), tx)); err != nil {
-		e.lggr.Errorw("GetTxByHashSuccess proc failed", "err", err)
+	e.lggr.Infow("Successfully executed GetTransactionByHash", "hash", input.GetHash())
+	if err = e.beholderProcessor.Process(ctx, e.messageBuilder.BuildGetTransactionByHashSuccess(read, common.Bytes2Hex(input.GetHash()), tx)); err != nil {
+		e.lggr.Errorw("Failed to process GetTransactionByHashSuccess message", "err", err)
 	}
 
 	return &evmservice.GetTransactionByHashReply{Transaction: protoTx}, nil
 }
 
-// GetTransactionReceipt with metrics/logs
 func (e EVM) GetTransactionReceipt(
 	ctx context.Context,
 	req capabilities.RequestMetadata,
@@ -242,38 +220,33 @@ func (e EVM) GetTransactionReceipt(
 	ts := time.Now().UnixMilli()
 	read := monitoring.ReadRequest{TsStart: ts, RequestMetadata: req}
 
-	// Initiated
 	if err := e.beholderProcessor.Process(ctx, e.messageBuilder.BuildGetTransactionReceiptInitiated(read, common.Bytes2Hex(input.GetHash()))); err != nil {
-		e.lggr.Errorw("GetReceiptInitiated failed", "err", err)
+		e.lggr.Errorw("Failed to process GetTransactionReceiptInitiated message", "err", err)
 	}
 
-	// Execute
 	rcp, err := e.EVMService.GetTransactionReceipt(ctx, evmtypes.Hash(input.GetHash()))
 	if err != nil {
-		e.lggr.Errorw("GetReceipt failed", "hash", input.GetHash(), "err", err)
-		err2 := e.beholderProcessor.Process(ctx, e.messageBuilder.BuildGetTransactionReceiptError(read, common.Bytes2Hex(input.GetHash()), "receipt error", err.Error()))
-		if err2 != nil {
-			return nil, fmt.Errorf("post-error proc failed: %w (orig: %w)", err2, err)
+		e.lggr.Errorw("Failed to execute GetTransactionReceipt", "hash", input.GetHash(), "err", err)
+		if err2 := e.beholderProcessor.Process(ctx, e.messageBuilder.BuildGetTransactionReceiptError(read, common.Bytes2Hex(input.GetHash()), "failed to execute GetTransactionReceipt", err.Error())); err2 != nil {
+			return nil, fmt.Errorf("failed to process GetTransactionReceiptError message: %w (orig: %w)", err2, err)
 		}
 		return nil, err
 	}
 
-	// Convert
 	protoR, err := evmservice.ConvertReceiptToProto(rcp)
 	if err != nil {
 		return nil, err
 	}
 
-	// Success
-	e.lggr.Infow("GetReceipt success", "hash", input.GetHash(), "status", protoR.GetStatus())
+	e.lggr.Infow("Successfully read tx receipt", "hash", input.GetHash(), "status", protoR.GetStatus())
 	if err = e.beholderProcessor.Process(ctx, e.messageBuilder.BuildGetTransactionReceiptSuccess(read, common.Bytes2Hex(input.GetHash()), rcp)); err != nil {
-		e.lggr.Errorw("GetReceiptSuccess proc failed", "err", err)
+		e.lggr.Errorw("Failed to process GetTransactionReceiptSuccess", "err", err)
 	}
 
 	return &evmservice.GetTransactionReceiptReply{Receipt: protoR}, nil
 }
 
-// LatestAndFinalizedHead with metrics/logs
+// TODO turn this into GetBlock(... finality...)
 func (e EVM) LatestAndFinalizedHead(
 	ctx context.Context,
 	req capabilities.RequestMetadata,
@@ -282,25 +255,22 @@ func (e EVM) LatestAndFinalizedHead(
 	ts := time.Now().UnixMilli()
 	read := monitoring.ReadRequest{TsStart: ts, RequestMetadata: req}
 
-	// Initiated
 	if err := e.beholderProcessor.Process(ctx, e.messageBuilder.BuildLatestAndFinalizedHeadInitiated(read)); err != nil {
-		e.lggr.Errorw("HeadInitiated failed", "err", err)
+		e.lggr.Errorw("Failed to process LatestAndFinalizedHeadInitiated message", "err", err)
 	}
 
-	// Execute
 	latest, fin, err := e.EVMService.LatestAndFinalizedHead(ctx)
 	if err != nil {
-		e.lggr.Errorw("Head failed", "err", err)
-		err2 := e.beholderProcessor.Process(ctx, e.messageBuilder.BuildLatestAndFinalizedHeadError(read, "head error", err.Error()))
-		if err2 != nil {
-			return nil, fmt.Errorf("post-error proc failed: %w (orig: %w)", err2, err)
+		e.lggr.Errorw("Failed to get latest and finalized head", "err", err)
+		if err2 := e.beholderProcessor.Process(ctx, e.messageBuilder.BuildLatestAndFinalizedHeadError(read, "failed to get latest and finalized head", err.Error())); err2 != nil {
+			return nil, fmt.Errorf("failed to process LatestAndFinalizedHeadError message: %w (orig: %w)", err2, err)
 		}
 		return nil, err
 	}
 
-	e.lggr.Infow("Head success", "latest", latest.Number, "finalized", fin.Number)
+	e.lggr.Infow("Successfully read latest and finalize head", "latest", latest.Number, "finalized", fin.Number)
 	if err = e.beholderProcessor.Process(ctx, e.messageBuilder.BuildLatestAndFinalizedHeadSuccess(read, latest, fin)); err != nil {
-		e.lggr.Errorw("HeadSuccess proc failed", "err", err)
+		e.lggr.Errorw("Failed to process LatestAndFinalizedHeadSuccess message", "err", err)
 	}
 
 	return &evmservice.LatestAndFinalizedHeadReply{Latest: evmservice.ConvertHeadToProto(latest), Finalized: evmservice.ConvertHeadToProto(fin)}, nil
