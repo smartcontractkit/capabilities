@@ -70,7 +70,11 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _
 	}
 
 	client := beholder.GetClient().ForName("evm_capability")
-	processor, err := monitoring.NewProcessor(beholder.NewProtoEmitter(c.lggr, &client, schemaBasePath))
+	metrics, err := monitoring.NewMetrics()
+	if err != nil {
+		return fmt.Errorf("failed to create metrics: %w", err)
+	}
+	processor, err := monitoring.NewProcessor(beholder.NewProtoEmitter(c.lggr, &client, schemaBasePath), metrics)
 	if err != nil {
 		return fmt.Errorf("failed to create monitoring proto processor: %w", err)
 	}

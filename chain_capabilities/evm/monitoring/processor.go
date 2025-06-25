@@ -10,15 +10,11 @@ import (
 )
 
 type processor struct {
-	metrics *Metrics
+	metrics Metrics
 	emitter beholder.ProtoEmitter
 }
 
-func NewProcessor(emitter beholder.ProtoEmitter) (beholder.ProtoProcessor, error) {
-	metrics, err := NewMetrics()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create metrics: %w", err)
-	}
+func NewProcessor(emitter beholder.ProtoEmitter, metrics Metrics) (beholder.ProtoProcessor, error) {
 	return &processor{
 		emitter: emitter,
 		metrics: metrics,

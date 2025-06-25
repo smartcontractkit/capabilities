@@ -59,92 +59,92 @@ type Metrics struct {
 }
 
 // NewMetrics constructs all counters & histograms bound to a given chainID
-func NewMetrics() (*Metrics, error) {
-	m := &Metrics{}
+func NewMetrics() (Metrics, error) {
+	m := Metrics{}
 	var err error
 
 	// -- CallContract --
 	ccSucc := commoncapbeholder.NewMetricsInfoCapBasic(ns("call_contract_success"), commonbeholder.ToSchemaFullName(&CallContractSuccess{}))
 	m.CallContractSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(ccSucc)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create call contract success metric: %w", err)
+		return Metrics{}, fmt.Errorf("failed to create call contract success metric: %w", err)
 	}
 	ccErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("call_contract_error"), commonbeholder.ToSchemaFullName(&CallContractError{}))
 	m.CallContractError.basic, err = commoncapbeholder.NewMetricsCapBasic(ccErr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create call contract error metric: %w", err)
+		return Metrics{}, fmt.Errorf("failed to create call contract error metric: %w", err)
 	}
 
 	// -- FilterLogs --
 	flSucc := commoncapbeholder.NewMetricsInfoCapBasic(ns("filter_logs_success"), commonbeholder.ToSchemaFullName(&FilterLogsSuccess{}))
 	m.FilterLogsSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(flSucc)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create filter logs success metric: %w", err)
+		return Metrics{}, fmt.Errorf("failed to create filter logs success metric: %w", err)
 	}
 	flErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("filter_logs_error"), commonbeholder.ToSchemaFullName(&FilterLogsError{}))
 	m.FilterLogsError.basic, err = commoncapbeholder.NewMetricsCapBasic(flErr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create filter logs error metric: %w", err)
+		return Metrics{}, fmt.Errorf("failed to create filter logs error metric: %w", err)
 	}
 
 	// -- BalanceAt --
 	baSucc := commoncapbeholder.NewMetricsInfoCapBasic(ns("balance_at_success"), commonbeholder.ToSchemaFullName(&BalanceAtSuccess{}))
 	m.BalanceAtSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(baSucc)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create balance at success metric: %w", err)
+		return Metrics{}, fmt.Errorf("failed to create balance at success metric: %w", err)
 	}
 	baErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("balance_at_error"), commonbeholder.ToSchemaFullName(&BalanceAtError{}))
 	m.BalanceAtError.basic, err = commoncapbeholder.NewMetricsCapBasic(baErr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create balance at error metric: %w", err)
+		return Metrics{}, fmt.Errorf("failed to create balance at error metric: %w", err)
 	}
 
 	// -- EstimateGas --
 	egSucc := commoncapbeholder.NewMetricsInfoCapBasic(ns("estimate_gas_success"), commonbeholder.ToSchemaFullName(&EstimateGasSuccess{}))
 	m.EstimateGasSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(egSucc)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create estimate gas success metric: %w", err)
+		return Metrics{}, fmt.Errorf("failed to create estimate gas success metric: %w", err)
 	}
 	egErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("estimate_gas_error"), commonbeholder.ToSchemaFullName(&EstimateGasError{}))
 	m.EstimateGasError.basic, err = commoncapbeholder.NewMetricsCapBasic(egErr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create estimate gas error metric: %w", err)
+		return Metrics{}, fmt.Errorf("failed to create estimate gas error metric: %w", err)
 	}
 
 	// -- GetTransactionByHash --
 	txSucc := commoncapbeholder.NewMetricsInfoCapBasic(ns("get_transaction_by_hash_success"), commonbeholder.ToSchemaFullName(&GetTransactionByHashSuccess{}))
 	m.GetTxByHashSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(txSucc)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create get tx by hash success metric: %w", err)
+		return Metrics{}, fmt.Errorf("failed to create get tx by hash success metric: %w", err)
 	}
 	txErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("get_transaction_by_hash_error"), commonbeholder.ToSchemaFullName(&GetTransactionByHashError{}))
 	m.GetTxByHashError.basic, err = commoncapbeholder.NewMetricsCapBasic(txErr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create get tx by hash error metric: %w", err)
+		return Metrics{}, fmt.Errorf("failed to create get tx by hash error metric: %w", err)
 	}
 
 	// -- GetTransactionReceipt --
 	rcSucc := commoncapbeholder.NewMetricsInfoCapBasic(ns("get_transaction_receipt_success"), commonbeholder.ToSchemaFullName(&GetTransactionReceiptSuccess{}))
 	m.GetReceiptSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(rcSucc)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create get receipt success metric: %w", err)
+		return Metrics{}, fmt.Errorf("failed to create get receipt success metric: %w", err)
 	}
 	rcErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("get_transaction_receipt_error"), commonbeholder.ToSchemaFullName(&GetTransactionReceiptError{}))
 	m.GetReceiptError.basic, err = commoncapbeholder.NewMetricsCapBasic(rcErr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create get receipt error metric: %w", err)
+		return Metrics{}, fmt.Errorf("failed to create get receipt error metric: %w", err)
 	}
 
 	// -- LatestAndFinalizedHead --
 	headSucc := commoncapbeholder.NewMetricsInfoCapBasic(ns("latest_and_finalized_head_success"), commonbeholder.ToSchemaFullName(&LatestAndFinalizedHeadSuccess{}))
 	m.HeadSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(headSucc)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create head success metric: %w", err)
+		return Metrics{}, fmt.Errorf("failed to create head success metric: %w", err)
 	}
 	headErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("latest_and_finalized_head_error"), commonbeholder.ToSchemaFullName(&LatestAndFinalizedHeadError{}))
 	m.HeadError.basic, err = commoncapbeholder.NewMetricsCapBasic(headErr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create head error metric: %w", err)
+		return Metrics{}, fmt.Errorf("failed to create head error metric: %w", err)
 	}
 
 	return m, nil
