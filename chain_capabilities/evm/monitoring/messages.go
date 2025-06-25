@@ -14,20 +14,20 @@ import (
 
 // ReadRequest wraps context for telemetry
 type ReadRequest struct {
-	Node    string
 	TsStart int64
 	capabilities.RequestMetadata
 }
 
 // MessageBuilder constructs telemetry messages for EVM calls
 type MessageBuilder struct {
-	ChainInfo chain_capabilities.ChainInfo
-	CapInfo   capabilities.CapabilityInfo
+	ChainInfo   chain_capabilities.ChainInfo
+	CapInfo     capabilities.CapabilityInfo
+	nodeAddress string
 }
 
 // NewMessageBuilder creates a new builder
-func NewMessageBuilder(chainInfo chain_capabilities.ChainInfo, capInfo capabilities.CapabilityInfo) *MessageBuilder {
-	return &MessageBuilder{ChainInfo: chainInfo, CapInfo: capInfo}
+func NewMessageBuilder(chainInfo chain_capabilities.ChainInfo, capInfo capabilities.CapabilityInfo, nodeAddress string) *MessageBuilder {
+	return &MessageBuilder{ChainInfo: chainInfo, CapInfo: capInfo, nodeAddress: nodeAddress}
 }
 
 func (m *MessageBuilder) BuildCallContractInitiated(r ReadRequest, msg *evm.CallMsg, bn *big.Int) *CallContractInitiated {
@@ -134,7 +134,7 @@ func (m *MessageBuilder) BuildLatestAndFinalizedHeadError(r ReadRequest, summary
 // BuildExecutionContext builds the shared ExecutionContext
 func (m *MessageBuilder) BuildExecutionContext(request ReadRequest) *commoncapbeholder.ExecutionContext {
 	ex := &commoncapbeholder.ExecutionContext{
-		MetaSourceId: request.Node,
+		MetaSourceId: m.nodeAddress,
 
 		// Chain
 		MetaChainFamilyName: m.ChainInfo.FamilyName,

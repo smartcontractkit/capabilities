@@ -35,6 +35,7 @@ type Config struct {
 	ChainID                uint64        `json:"chainId"`
 	Network                string        `json:"network"`
 	LogTriggerPollInterval time.Duration `json:"logTriggerPollInterval"`
+	NodeAddress            string        `json:"nodeAddress"`
 }
 
 type capabilityGRPCService struct {
@@ -65,7 +66,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _
 	}
 
 	if cfg.LogTriggerPollInterval < 0 {
-		return fmt.Errorf("LogTriggerPollInterval must be positive, got: %s", cfg.LogTriggerPollInterval)
+		return fmt.Errorf("logTriggerPollInterval must be positive, got: %s", cfg.LogTriggerPollInterval)
 	}
 
 	client := beholder.GetClient().ForName("evm_capability")
@@ -75,14 +76,13 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _
 	}
 
 	relayID := types.NewRelayID(cfg.Network, fmt.Sprintf("%d", cfg.ChainID))
-
 	relayer, err := relayerSet.Get(ctx, relayID)
 	if err != nil {
 		return fmt.Errorf("failed to fetch relayer for chainID %d from relayerSet: %w", cfg.ChainID, err)
 	}
 
 	// TODO Relayer should return chain info
-	messageBuilder := monitoring.NewMessageBuilder(chain_capabilities.ChainInfo{}, c.CapabilityInfo)
+	messageBuilder := monitoring.NewMessageBuilder(chain_capabilities.ChainInfo{}, c.CapabilityInfo, cfg.NodeAddress)
 
 	evmRelayer, err := relayer.EVM()
 	if err != nil {
@@ -95,7 +95,6 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _
 	}
 
 	c.lggr.Infof("Successfully initialised %s", CapabilityName)
-
 	return nil
 }
 
