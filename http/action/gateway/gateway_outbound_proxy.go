@@ -14,6 +14,8 @@ import (
 
 	"github.com/smartcontractkit/capabilities/http/action/common"
 
+	"github.com/stathat/consistent"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
@@ -144,7 +146,7 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 		Result:  json.RawMessage(payload),
 	}
 
-	selectedGateway, err := p.awaitConnection(ctx, lggr)
+	selectedGateway, err := p.awaitConnection(ctx, lggr, requestID)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to await connection to gateway")
 	}
@@ -186,13 +188,12 @@ func (p *gatewayOutboundProxy) getRequestID(metadata capabilities.RequestMetadat
 // awaitConnection attempts to establish a connection to an available gateway.  It iterates through available gateways
 // using a round robin selector, connecting to the first available.  The method respects the provided context, allowing for
 // cancellation or timeout.
-func (p *gatewayOutboundProxy) awaitConnection(ctx context.Context, lggr logger.Logger) (string, error) {
+func (p *gatewayOutboundProxy) awaitConnection(ctx context.Context, lggr logger.Logger, requestID string) (string, error) {
 	gatewayIDs, err := p.gatewayConnector.GatewayIDs(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get gateway IDs: %w", err)
 	}
-	selector := gc.NewRoundRobinSelector(gatewayIDs, p.selectorOpts...)
-	attempts := make(map[string]int)
+	selector := NewConsistentHashSelector(gatewayIDs)
 	backoff := time.Duration(p.gatewayConnectionConfig.InitialIntervalMs) * time.Millisecond
 
 	for {
@@ -200,31 +201,29 @@ func (p *gatewayOutboundProxy) awaitConnection(ctx context.Context, lggr logger.
 		case <-ctx.Done():
 			return "", ctx.Err()
 		default:
-			gateway, err := selector.NextGateway()
-			if err != nil {
-				return "", fmt.Errorf("failed to select gateway: %w", err)
+			gateway, err := selector.Select(requestID)
+			if err != nil && !errors.Is(err, consistent.ErrEmptyCircle) {
+				return "", fmt.Errorf("failed to select gateway using consistent hashing: %w", err)
 			}
-			lggr = logger.With(lggr, "gateway", gateway)
-
-			if attempts[gateway] > 0 {
-				lggr.Warnw("all available gateway nodes attempted without connection, backing off", "waitTime", backoff)
-
+			if err != nil && errors.Is(err, consistent.ErrEmptyCircle) {
+				lggr.Warn("no available gateways found, retrying after backoff")
 				select {
 				case <-ctx.Done():
 					return "", ctx.Err()
 				case <-time.After(backoff):
-					// backoff completed, update state and continue with next iteration
-					attempts = make(map[string]int)
+					gatewayIDs, err := p.gatewayConnector.GatewayIDs(ctx)
+					if err != nil {
+						return "", fmt.Errorf("failed to get gateway IDs: %w", err)
+					}
+					selector.Reset(gatewayIDs)
 					backoff = p.nextBackoff(backoff)
+					continue
 				}
 			}
 
-			attempts[gateway]++
-
-			lggr.Info("selected gateway, awaiting connection")
-
 			if err := p.attemptGatewayConnection(ctx, lggr, gateway, backoff); err != nil {
-				lggr.Warnw("failed to await connection to gateway node, retrying", "err", err)
+				lggr.Warnw("failed to await connection to gateway node, retrying", "err", err, "gateway", gateway)
+				selector.MarkUnavailable(gateway)
 				continue
 			}
 
