@@ -306,7 +306,7 @@ func (e EVM) LatestAndFinalizedHead(
 	return &evmservice.LatestAndFinalizedHeadReply{Latest: evmservice.ConvertHeadToProto(latest), Finalized: evmservice.ConvertHeadToProto(fin)}, nil
 }
 
-// TODO finalise the signature PLEX-1482
+// TODO remove
 func (e EVM) QueryTrackedLogs(etx context.Context, _ capabilities.RequestMetadata, req *evmservice.QueryTrackedLogsRequest) (*evmservice.QueryTrackedLogsReply, error) {
 	expression, err := evmservice.ConvertExpressionsFromProto(req.Expression)
 	if err != nil {
@@ -323,8 +323,6 @@ func (e EVM) QueryTrackedLogs(etx context.Context, _ capabilities.RequestMetadat
 		return nil, err
 	}
 
-	// TODO what does confidence level do here when we have block ranges, should the impl. throw an error if a block range is outside of the specifice confidence level?
-	// TODO is an OCR round needed to validate block hashes on the log response, probably is too much, probably just require the block range to always be specified and rely on exact match
 	result, err := e.EVMService.QueryTrackedLogs(etx, expression, limitAndSort, confidenceLevel)
 	if err != nil {
 		return nil, err
