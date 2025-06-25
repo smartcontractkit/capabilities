@@ -281,8 +281,8 @@ func TestMockRegistry_List(t *testing.T) {
 		},
 	}
 
-	for _, cap := range caps {
-		_, err := registry.CreateCapability(ctx, cap)
+	for _, c := range caps {
+		_, err := registry.CreateCapability(ctx, c)
 		require.NoError(t, err)
 	}
 
@@ -303,4 +303,79 @@ func TestMockRegistry_List(t *testing.T) {
 		}
 		require.True(t, found, "Listed capability not found in original caps")
 	}
+}
+
+func TestMockRegistry_GetTriggerSubscribers(t *testing.T) {
+	lggr := testutils.NewLogger(t)
+	capRegistry := newMockCapRegistry()
+	registry := NewMockRegistry(lggr, capRegistry)
+
+	ctx := context.Background()
+
+	// Create a trigger capability
+	info := &pb.CapabilityInfo{
+		ID:             "test-trigger",
+		CapabilityType: pb.CapabilityType_Trigger,
+	}
+
+	_, err := registry.CreateCapability(ctx, info)
+	require.NoError(t, err)
+
+	// Register two subscribers with different workflow IDs
+	trigger := registry.Triggers["test-trigger"]
+
+	// First subscriber
+	_, err = trigger.RegisterTrigger(ctx, capabilities.TriggerRegistrationRequest{
+		TriggerID: "workflow-1",
+	})
+	require.NoError(t, err)
+
+	// Second subscriber
+	_, err = trigger.RegisterTrigger(ctx, capabilities.TriggerRegistrationRequest{
+		TriggerID: "workflow-2",
+	})
+	require.NoError(t, err)
+
+	// Test case 1: Getting subscribers for a trigger with subscribers
+	t.Run("existing trigger with subscribers", func(t *testing.T) {
+		resp, err := registry.GetTriggerSubscribers(ctx, &pb.GetTriggerSubscribersRequest{
+			ID: "test-trigger",
+		})
+
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Len(t, resp.WorkflowIDs, 2)
+		require.Contains(t, resp.WorkflowIDs, "workflow-1")
+		require.Contains(t, resp.WorkflowIDs, "workflow-2")
+	})
+
+	// Test case 2: Getting subscribers for a non-existent trigger
+	t.Run("non-existent trigger", func(t *testing.T) {
+		resp, err := registry.GetTriggerSubscribers(ctx, &pb.GetTriggerSubscribersRequest{
+			ID: "non-existent-trigger",
+		})
+
+		require.Error(t, err)
+		require.Nil(t, resp)
+		require.Contains(t, err.Error(), "not found")
+	})
+
+	// Test case 3: Getting subscribers for a trigger with no subscribers
+	t.Run("trigger with no subscribers", func(t *testing.T) {
+		emptyInfo := &pb.CapabilityInfo{
+			ID:             "empty-trigger",
+			CapabilityType: pb.CapabilityType_Trigger,
+		}
+
+		_, err := registry.CreateCapability(ctx, emptyInfo)
+		require.NoError(t, err)
+
+		resp, err := registry.GetTriggerSubscribers(ctx, &pb.GetTriggerSubscribersRequest{
+			ID: "empty-trigger",
+		})
+
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Empty(t, resp.WorkflowIDs)
+	})
 }

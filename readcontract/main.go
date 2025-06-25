@@ -26,7 +26,7 @@ const (
 )
 
 type readContractAction interface {
-	capabilities.ActionCapability
+	capabilities.ExecutableCapability
 	Start(context.Context) error
 	Close() error
 }
@@ -103,6 +103,7 @@ func (cs *ReadContractGRPCService) Initialise(
 	_ core.PipelineRunnerService,
 	relayerSet core.RelayerSet,
 	oracleFactory core.OracleFactory,
+	_ core.GatewayConnector,
 ) error {
 	cs.lggr.Infof("Initialising %s", serviceName)
 
