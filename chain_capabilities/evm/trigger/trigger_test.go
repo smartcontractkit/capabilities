@@ -35,7 +35,9 @@ var (
 		0x95, 0x2b, 0xa7, 0xf1, 0x63, 0xc4, 0xa1, 0x16,
 		0x28, 0xf5, 0x5a, 0x4d, 0xf5, 0x23, 0xb3, 0xef,
 	}
-	eventSignatures = [][]byte{eventSig0Example}
+	topicsWithEventSig0 = []*evmcappb.TopicValues{
+		{Values: [][]byte{eventSig0Example}},
+	}
 
 	triggerID        = "trigger-1"
 	latestExpHead    = evmtypes.Head{Number: big.NewInt(30)}
@@ -65,7 +67,7 @@ func TestLogTriggerService_Close_WaitsForPollingGoroutine(t *testing.T) {
 		require.NoError(t, err)
 		ch, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
-			EventSigs: eventSignatures,
+			Topics:    topicsWithEventSig0,
 		})
 		require.NoError(t, err)
 		require.NotNil(t, ch)
@@ -132,12 +134,34 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 		require.Equal(t, err.Error(), "no valid addresses provided (at least one address is required)")
 	})
 
+	t.Run("too many topics", func(t *testing.T) {
+		_, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
+			Addresses: addresses,
+			Topics: []*evmcappb.TopicValues{
+				{Values: [][]byte{}},
+				{Values: [][]byte{}},
+				{Values: [][]byte{}},
+				{Values: [][]byte{}},
+				{Values: [][]byte{}}, // 5th topic, should fail
+			},
+		})
+		require.Error(t, err)
+		require.Equal(t, err.Error(), "there can be at most 4 topics provided, got 5 instead")
+	})
+
 	t.Run("missing eventSig", func(t *testing.T) {
 		_, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
 		})
 		require.Error(t, err)
-		require.Equal(t, err.Error(), "no valid event sig provided (at least one event sig is required)")
+		require.Equal(t, err.Error(), "no valid event sig provided (at least one event sig is required in topics)")
+
+		_, err = service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
+			Addresses: addresses,
+			Topics:    []*evmcappb.TopicValues{},
+		})
+		require.Error(t, err)
+		require.Equal(t, err.Error(), "no valid event sig provided (at least one event sig is required in topics)")
 	})
 
 	t.Run("fail to get latest head", func(t *testing.T) {
@@ -146,7 +170,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 		service := NewLogTriggerService(evmService, NewLogTriggerStore(), lggr, pollInterval)
 		_, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
-			EventSigs: eventSignatures,
+			Topics:    topicsWithEventSig0,
 		})
 		require.Error(t, err)
 		require.Equal(t, err.Error(), "failed to register latest and finalized head: 'mocked failure error' for triggerID: trigger-1")
@@ -159,7 +183,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 		service := NewLogTriggerService(evmService, NewLogTriggerStore(), lggr, pollInterval)
 		_, err := service.RegisterLogTrigger(ctx, triggerID+"-logtracking", capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: brokenAddresses,
-			EventSigs: eventSignatures,
+			Topics:    topicsWithEventSig0,
 		})
 		require.Error(t, err)
 		require.Equal(t,
@@ -209,22 +233,83 @@ func TestUnregisterLogTrigger_InputValidation(t *testing.T) {
 	})
 }
 
+func TestGetTopics(t *testing.T) {
+	t.Parallel()
+	service := &LogTriggerService{}
+	t.Run("only eventSigs provided", func(t *testing.T) {
+		input := &evmcappb.FilterLogTriggerRequest{
+			Topics: []*evmcappb.TopicValues{
+				{Values: [][]byte{[]byte("eventSig1")}},
+			},
+		}
+		eventSigs, topics2, topics3, topics4 := service.getTopics(input)
+		require.Equal(t, [][]byte{[]byte("eventSig1")}, eventSigs)
+		require.Nil(t, topics2)
+		require.Nil(t, topics3)
+		require.Nil(t, topics4)
+	})
+
+	t.Run("eventSigs and topic1 provided", func(t *testing.T) {
+		input := &evmcappb.FilterLogTriggerRequest{
+			Topics: []*evmcappb.TopicValues{
+				{Values: [][]byte{[]byte("eventSig1")}},
+				{Values: [][]byte{[]byte("topic2")}},
+			},
+		}
+		eventSigs, topics2, topics3, topics4 := service.getTopics(input)
+		require.Equal(t, [][]byte{[]byte("eventSig1")}, eventSigs)
+		require.Equal(t, [][]byte{[]byte("topic2")}, topics2)
+		require.Nil(t, topics3)
+		require.Nil(t, topics4)
+	})
+
+	t.Run("eventSigs, topic1 and topic2 provided", func(t *testing.T) {
+		input := &evmcappb.FilterLogTriggerRequest{
+			Topics: []*evmcappb.TopicValues{
+				{Values: [][]byte{[]byte("eventSig1")}},
+				{Values: [][]byte{[]byte("topic2")}},
+				{Values: [][]byte{[]byte("topic3")}},
+			},
+		}
+		eventSigs, topics2, topics3, topics4 := service.getTopics(input)
+		require.Equal(t, [][]byte{[]byte("eventSig1")}, eventSigs)
+		require.Equal(t, [][]byte{[]byte("topic2")}, topics2)
+		require.Equal(t, [][]byte{[]byte("topic3")}, topics3)
+		require.Nil(t, topics4)
+	})
+
+	t.Run("all topics provided", func(t *testing.T) {
+		input := &evmcappb.FilterLogTriggerRequest{
+			Topics: []*evmcappb.TopicValues{
+				{Values: [][]byte{[]byte("eventSig1")}},
+				{Values: [][]byte{[]byte("topic2")}},
+				{Values: [][]byte{[]byte("topic3")}},
+				{Values: [][]byte{[]byte("topic4")}},
+			},
+		}
+		eventSigs, topics2, topics3, topics4 := service.getTopics(input)
+		require.Equal(t, [][]byte{[]byte("eventSig1")}, eventSigs)
+		require.Equal(t, [][]byte{[]byte("topic2")}, topics2)
+		require.Equal(t, [][]byte{[]byte("topic3")}, topics3)
+		require.Equal(t, [][]byte{[]byte("topic4")}, topics4)
+	})
+}
+
 func TestCreateLogRequest(t *testing.T) {
 	service := NewLogTriggerService(nil, NewLogTriggerStore(), logger.Test(t), pollInterval)
 
 	tests := []struct {
-		name                string
-		input               *evmcappb.FilterLogTriggerRequest
-		expectedConfidence  primitives.ConfidenceLevel
-		expectedExpressions []query.Expression
+		name                                            string
+		addresses, eventSigs, topics2, topics3, topics4 [][]byte
+		confidence                                      evmcappb.ConfidenceLevel
+		expectedConfidence                              primitives.ConfidenceLevel
+		expectedExpressions                             []query.Expression
 	}{
 		{
-			name: "finalized confidence, single address and single eventSig and empty topics",
-			input: &evmcappb.FilterLogTriggerRequest{
-				Addresses:  addresses,
-				EventSigs:  eventSignatures,
-				Confidence: evmcappb.ConfidenceLevel_FINALIZED,
-			},
+			name:               "finalized confidence, single address and single eventSig and empty topics",
+			addresses:          addresses,
+			eventSigs:          [][]byte{eventSig0Example},
+			confidence:         evmcappb.ConfidenceLevel_FINALIZED,
 			expectedConfidence: primitives.Finalized,
 			expectedExpressions: []query.Expression{
 				evm.NewAddressFilter(evmtypes.Address(expectedAddress)),
@@ -233,12 +318,10 @@ func TestCreateLogRequest(t *testing.T) {
 		},
 		//TODO PLEX-1488: missing test for SAFE confidence level
 		{
-			name: "latest confidence, single address and single eventSig and empty topics",
-			input: &evmcappb.FilterLogTriggerRequest{
-				Addresses:  addresses,
-				EventSigs:  eventSignatures,
-				Confidence: evmcappb.ConfidenceLevel_LATEST,
-			},
+			name:               "latest confidence, single address and single eventSig and empty topics",
+			addresses:          addresses,
+			eventSigs:          [][]byte{eventSig0Example},
+			confidence:         evmcappb.ConfidenceLevel_LATEST,
 			expectedConfidence: primitives.Unconfirmed,
 			expectedExpressions: []query.Expression{
 				evm.NewAddressFilter(evmtypes.Address(expectedAddress)),
@@ -246,29 +329,32 @@ func TestCreateLogRequest(t *testing.T) {
 			},
 		},
 		{
-			name: "finalized confidence, single address and single eventSig and a topic for 2, 3, 4",
-			input: &evmcappb.FilterLogTriggerRequest{
-				Addresses:  addresses,
-				EventSigs:  eventSignatures,
-				Topic2:     eventSignatures,
-				Topic3:     eventSignatures,
-				Topic4:     eventSignatures,
-				Confidence: evmcappb.ConfidenceLevel_FINALIZED,
-			},
+			name:               "finalized confidence, single address and single eventSig and a topic for 2, 3, 4",
+			addresses:          addresses,
+			eventSigs:          [][]byte{eventSig0Example},
+			topics2:            [][]byte{eventSig0Example},
+			topics3:            [][]byte{eventSig0Example},
+			topics4:            [][]byte{eventSig0Example},
+			confidence:         evmcappb.ConfidenceLevel_FINALIZED,
 			expectedConfidence: primitives.Finalized,
 			expectedExpressions: []query.Expression{
 				evm.NewAddressFilter(evmtypes.Address(expectedAddress)),
 				evm.NewEventSigFilter(evmtypes.Hash(eventSig0Example)),
-				*service.makeEventByTopicFilter(1, eventSignatures),
-				*service.makeEventByTopicFilter(2, eventSignatures),
-				*service.makeEventByTopicFilter(3, eventSignatures),
+				*service.makeEventByTopicFilter(1, [][]byte{eventSig0Example}),
+				*service.makeEventByTopicFilter(2, [][]byte{eventSig0Example}),
+				*service.makeEventByTopicFilter(3, [][]byte{eventSig0Example}),
 			},
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			expressions, confidence := service.createLogRequest(context.Background(), tc.input)
+			expressions, confidence := service.createLogRequest(context.Background(), tc.addresses,
+				tc.eventSigs,
+				tc.topics2,
+				tc.topics3,
+				tc.topics4,
+				tc.confidence)
 			require.NotNil(t, expressions)
 			require.Len(t, expressions, len(tc.expectedExpressions))
 			for i, expected := range tc.expectedExpressions {
@@ -628,7 +714,7 @@ func TestIntegration_RegisterAndUnregisterLogTrigger(t *testing.T) {
 
 	ch, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
 		Addresses: addresses,
-		EventSigs: eventSignatures,
+		Topics:    topicsWithEventSig0,
 	})
 	require.NoError(t, err)
 	time.Sleep(10 * time.Millisecond) // let it run a bit more

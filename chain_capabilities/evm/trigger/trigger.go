@@ -70,9 +70,13 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	if len(input.GetAddresses()) == 0 {
 		return nil, fmt.Errorf("no valid addresses provided (at least one address is required)")
 	}
-	if len(input.GetEventSigs()) == 0 {
-		return nil, fmt.Errorf("no valid event sig provided (at least one event sig is required)")
+	if len(input.GetTopics()) > 4 {
+		return nil, fmt.Errorf("there can be at most 4 topics provided, got %d instead", len(input.GetTopics()))
 	}
+	if len(input.GetTopics()) == 0 || len(input.GetTopics()[0].Values) == 0 {
+		return nil, fmt.Errorf("no valid event sig provided (at least one event sig is required in topics)")
+	}
+	eventSigs, topics2, topics3, topics4 := lts.getTopics(input)
 
 	fromBlock, err := lts.getFinalizedBlockNumber(ctx, triggerID)
 	if err != nil {
@@ -82,17 +86,17 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	filterQuery := evmtypes.LPFilterQuery{
 		Name:      lts.generateFilterID(triggerID),
 		Addresses: evmservice.ConvertAddressesFromProto(input.GetAddresses()),
-		EventSigs: evmservice.ConvertHashesFromProto(input.GetEventSigs()),
-		Topic2:    evmservice.ConvertHashesFromProto(input.GetTopic2()),
-		Topic3:    evmservice.ConvertHashesFromProto(input.GetTopic3()),
-		Topic4:    evmservice.ConvertHashesFromProto(input.GetTopic4()),
+		EventSigs: evmservice.ConvertHashesFromProto(eventSigs),
+		Topic2:    evmservice.ConvertHashesFromProto(topics2),
+		Topic3:    evmservice.ConvertHashesFromProto(topics3),
+		Topic4:    evmservice.ConvertHashesFromProto(topics4),
 	}
 	err = lts.EVMService.RegisterLogTracking(ctx, filterQuery)
 	if err != nil {
 		return nil, fmt.Errorf("failed to register log-tracking: '%w' for triggerID: %s, addresses: %v, eventSig: %v, topic2: %v, topic3: %v, topic4: %v",
 			err, triggerID, filterQuery.Addresses, filterQuery.EventSigs, filterQuery.Topic2, filterQuery.Topic3, filterQuery.Topic4)
 	}
-	expressions, confidence := lts.createLogRequest(ctx, input)
+	expressions, confidence := lts.createLogRequest(ctx, input.GetAddresses(), eventSigs, topics2, topics3, topics4, input.GetConfidence())
 
 	logCh := make(chan capabilities.TriggerAndId[*evmservice.Log], defaultSendChannelBufferSize)
 	lts.srvcEng.Go(func(srvcCtx context.Context) {
@@ -110,6 +114,21 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	})
 
 	return logCh, nil
+}
+
+func (lts *LogTriggerService) getTopics(input *evmcappb.FilterLogTriggerRequest) ([][]byte, [][]byte, [][]byte, [][]byte) {
+	eventSigs := input.GetTopics()[0].Values
+	var topics2, topics3, topics4 [][]byte
+	if len(input.GetTopics()) > 1 && input.GetTopics()[1] != nil {
+		topics2 = input.GetTopics()[1].Values
+	}
+	if len(input.GetTopics()) > 2 && input.GetTopics()[2] != nil {
+		topics3 = input.GetTopics()[2].Values
+	}
+	if len(input.GetTopics()) > 3 && input.GetTopics()[3] != nil {
+		topics4 = input.GetTopics()[3].Values
+	}
+	return eventSigs, topics2, topics3, topics4
 }
 
 func (lts *LogTriggerService) getFinalizedBlockNumber(ctx context.Context, triggerID string) (*big.Int, error) {
@@ -256,23 +275,23 @@ func (lts *LogTriggerService) fetchLogsFromLogPoller(ctx context.Context, trigge
 	return logs, nil
 }
 
-func (lts *LogTriggerService) createLogRequest(_ context.Context, input *evmcappb.FilterLogTriggerRequest) ([]query.Expression, primitives.ConfidenceLevel) {
+func (lts *LogTriggerService) createLogRequest(_ context.Context, addresses, eventSigs, topics2, topics3, topics4 [][]byte, confidence evmcappb.ConfidenceLevel) ([]query.Expression, primitives.ConfidenceLevel) {
 	var expressions []query.Expression
 
 	var addressFilters []query.Expression
-	for _, addr := range input.GetAddresses() {
+	for _, addr := range addresses {
 		addressFilters = append(addressFilters, evm.NewAddressFilter(evmtypes.Address(addr)))
 	}
 	expressions = append(expressions, query.Or(addressFilters...))
 
 	var topicFilters []query.Expression
-	for _, topic := range input.GetEventSigs() {
+	for _, topic := range eventSigs {
 		topicFilters = append(topicFilters, evm.NewEventSigFilter(evmtypes.Hash(topic)))
 	}
 	expressions = append(expressions, query.Or(topicFilters...))
 
 	var confidenceLevel primitives.ConfidenceLevel
-	switch input.GetConfidence() {
+	switch confidence {
 	case evmcappb.ConfidenceLevel_FINALIZED:
 		confidenceLevel = primitives.Finalized
 	default:
@@ -281,13 +300,13 @@ func (lts *LogTriggerService) createLogRequest(_ context.Context, input *evmcapp
 		confidenceLevel = primitives.Unconfirmed
 	}
 
-	if expr := lts.makeEventByTopicFilter(1, input.GetTopic2()); expr != nil {
+	if expr := lts.makeEventByTopicFilter(1, topics2); expr != nil {
 		expressions = append(expressions, *expr)
 	}
-	if expr := lts.makeEventByTopicFilter(2, input.GetTopic3()); expr != nil {
+	if expr := lts.makeEventByTopicFilter(2, topics3); expr != nil {
 		expressions = append(expressions, *expr)
 	}
-	if expr := lts.makeEventByTopicFilter(3, input.GetTopic4()); expr != nil {
+	if expr := lts.makeEventByTopicFilter(3, topics4); expr != nil {
 		expressions = append(expressions, *expr)
 	}
 
