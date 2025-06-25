@@ -13,6 +13,11 @@ import (
 
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
+	"github.com/smartcontractkit/chain_capabilities/evm/trigger"
+
+	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
+	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
+
 	"github.com/smartcontractkit/chain_capabilities/evm/actions"
 
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
@@ -34,8 +39,9 @@ const (
 )
 
 type Config struct {
-	ChainID uint64 `json:"chainId"`
-	Network string `json:"network"`
+	ChainID                uint64        `json:"chainId"`
+	Network                string        `json:"network"`
+	LogTriggerPollInterval time.Duration `json:"logTriggerPollInterval"`
 }
 
 type capabilityGRPCService struct {
@@ -49,6 +55,7 @@ type capability struct {
 	requestPoller   *poller.Poller
 	consensusReader *consensus.Reader
 	oracle          core.Oracle
+	triggerService  *trigger.LogTriggerService
 }
 
 var _ evmcapserver.ClientCapability = &capabilityGRPCService{}
@@ -59,12 +66,15 @@ func main() {
 	})
 }
 
-func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _ core.TelemetryService, _ core.KeyValueStore, _ core.ErrorLog, _ core.PipelineRunnerService, relayerSet core.RelayerSet, oracleFactory core.OracleFactory) error {
+func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _ core.TelemetryService, _ core.KeyValueStore, _ core.ErrorLog, _ core.PipelineRunnerService, relayerSet core.RelayerSet, oracleFactory core.OracleFactory, _ core.GatewayConnector) error {
 	c.lggr.Infof("Initialising %s", CapabilityName)
 
 	var cfg Config
 	if err := json.Unmarshal([]byte(config), &cfg); err != nil {
 		return fmt.Errorf("failed to parse EVM capability config: %w", err)
+	}
+	if cfg.LogTriggerPollInterval < 0 {
+		return fmt.Errorf("LogTriggerPollInterval must be positive, got: %s", cfg.LogTriggerPollInterval)
 	}
 
 	relayID := types.NewRelayID(cfg.Network, fmt.Sprintf("%d", cfg.ChainID))
@@ -79,11 +89,14 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
 
-	c.capability = capability{EVM: actions.NewEVM(evmRelayer)}
+	c.capability = capability{
+		EVM:            actions.NewEVM(evmRelayer),
+		triggerService: trigger.NewLogTriggerService(evmRelayer, trigger.NewLogTriggerStore(), c.lggr, cfg.LogTriggerPollInterval),
+	}
 
 	c.consensusReader = consensus.NewReader(c.lggr, time.Second*10)
-	requestPoller := poller.NewPoller(c.lggr, c.consensusReader, PollingWorkersNum, PollPeriod)
-	c.consensusReader.SetPoller(requestPoller)
+	c.requestPoller = poller.NewPoller(c.lggr, c.consensusReader, PollingWorkersNum, PollPeriod)
+	c.consensusReader.SetPoller(c.requestPoller)
 
 	// TODO PLEX-1560: populate with implementation
 	var blocksProvider oracle.BlocksProvider
@@ -116,11 +129,14 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _
 }
 
 func (c *capabilityGRPCService) Start(_ context.Context) error {
+	c.lggr.Infof("Start %s", CapabilityName)
+	// TODO PLEX-1456: implement the clean up call here
 	return nil
 }
 
 func (c *capabilityGRPCService) Close() error {
-	return errors.Join(c.requestPoller.Close(), c.consensusReader.Close(), c.oracle.Close(context.Background()))
+	c.lggr.Infof("Closing %s", CapabilityName)
+	return errors.Join(c.requestPoller.Close(), c.consensusReader.Close(), c.oracle.Close(context.Background()), c.triggerService.Close())
 }
 
 func (c *capabilityGRPCService) HealthReport() map[string]error {
@@ -147,4 +163,12 @@ func (c *capabilityGRPCService) RegisterToWorkflow(_ context.Context, _ capabili
 func (c *capabilityGRPCService) UnregisterFromWorkflow(_ context.Context, _ capabilities.UnregisterFromWorkflowRequest) error {
 	//TODO implement me
 	panic("implement me")
+}
+
+func (c *capabilityGRPCService) RegisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*evmservice.Log], error) {
+	return c.triggerService.RegisterLogTrigger(ctx, triggerID, metadata, input)
+}
+
+func (c *capabilityGRPCService) UnregisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) error {
+	return c.triggerService.UnregisterLogTrigger(ctx, triggerID, metadata, input)
 }

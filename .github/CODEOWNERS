@@ -2,4 +2,4 @@
 # the repo. Unless a later match takes precedence,
 # @capabilities-team will be requested for
 # review when someone opens a pull request.
-*           @smartcontractkit/capabilities-team
+*           @smartcontractkit/capabilities-team @smartcontractkit/bix-framework

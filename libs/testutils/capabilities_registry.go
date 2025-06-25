@@ -50,6 +50,16 @@ func (r *capabilitiesRegistry) Get(ctx context.Context, ID string) (capabilities
 	return capability.(capabilities.BaseCapability), nil
 }
 
+func (r *capabilitiesRegistry) GetExecutable(ctx context.Context, ID string) (capabilities.ExecutableCapability, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	capability, exists := r.capabilities[ID]
+	if !exists {
+		return nil, fmt.Errorf("trigger capability %s not found", ID)
+	}
+	return capability.(capabilities.ExecutableCapability), nil
+}
+
 func (r *capabilitiesRegistry) GetTrigger(ctx context.Context, ID string) (capabilities.TriggerCapability, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -60,34 +70,34 @@ func (r *capabilitiesRegistry) GetTrigger(ctx context.Context, ID string) (capab
 	return capability.(capabilities.TriggerCapability), nil
 }
 
-func (r *capabilitiesRegistry) GetAction(ctx context.Context, ID string) (capabilities.ActionCapability, error) {
+func (r *capabilitiesRegistry) GetAction(ctx context.Context, ID string) (capabilities.ExecutableCapability, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	capability, exists := r.capabilities[ID]
 	if !exists {
 		return nil, fmt.Errorf("action capability %s not found", ID)
 	}
-	return capability.(capabilities.ActionCapability), nil
+	return capability.(capabilities.ExecutableCapability), nil
 }
 
-func (r *capabilitiesRegistry) GetConsensus(ctx context.Context, ID string) (capabilities.ConsensusCapability, error) {
+func (r *capabilitiesRegistry) GetConsensus(ctx context.Context, ID string) (capabilities.ExecutableCapability, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	capability, exists := r.capabilities[ID]
 	if !exists {
 		return nil, fmt.Errorf("consensus capability %s not found", ID)
 	}
-	return capability.(capabilities.ConsensusCapability), nil
+	return capability.(capabilities.ExecutableCapability), nil
 }
 
-func (r *capabilitiesRegistry) GetTarget(ctx context.Context, ID string) (capabilities.TargetCapability, error) {
+func (r *capabilitiesRegistry) GetTarget(ctx context.Context, ID string) (capabilities.ExecutableCapability, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	capability, exists := r.capabilities[ID]
 	if !exists {
 		return nil, fmt.Errorf("target capability %s not found", ID)
 	}
-	return capability.(capabilities.TargetCapability), nil
+	return capability.(capabilities.ExecutableCapability), nil
 }
 
 func (r *capabilitiesRegistry) List(ctx context.Context) ([]capabilities.BaseCapability, error) {

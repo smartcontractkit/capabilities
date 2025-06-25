@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -27,30 +29,51 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 	relayerSet.On("Get", mock.Anything, mock.Anything).Return(relayer, nil)
 
 	svc := &capabilityGRPCService{lggr: lggr}
-	cfg := Config{ChainID: 1337, Network: "testnet"}
+	cfg := Config{ChainID: 1337, Network: "testnet", LogTriggerPollInterval: 60 * time.Second}
 	cfgJSON, _ := json.Marshal(cfg)
 
 	err := svc.Initialise(context.Background(), string(cfgJSON),
-		nil, nil, nil, nil, relayerSet, nil)
+		nil, nil, nil, nil, relayerSet, nullOracleFactory{}, nil)
 	require.NoError(t, err)
 
 	t.Run("happy-path", func(t *testing.T) {
 		t.Run("bad-json", func(t *testing.T) {
 			svc := &capabilityGRPCService{lggr: lggr}
-			err := svc.Initialise(context.Background(), "x", nil, nil, nil, nil, nil, nil)
+			err := svc.Initialise(context.Background(), "x", nil, nil, nil, nil, nil, nullOracleFactory{}, nil)
 			assert.ErrorContains(t, err, "failed to parse")
 		})
-
+		t.Run("bad-interval", func(t *testing.T) {
+			cfgJSON, _ := json.Marshal(Config{ChainID: 1, Network: "net", LogTriggerPollInterval: -1})
+			svc := &capabilityGRPCService{lggr: lggr}
+			err := svc.Initialise(context.Background(), string(cfgJSON), nil, nil, nil, nil, nil, nullOracleFactory{}, nil)
+			assert.ErrorContains(t, err, "LogTriggerPollInterval must be positive, got: -1ns")
+		})
 		t.Run("relayerSet error", func(t *testing.T) {
 			relayerSet := relayermock.NewRelayerSet(t)
 			relayerSet.On("Get", mock.Anything, mock.Anything).Return(nil, assert.AnError)
 
-			cfgJSON, _ := json.Marshal(Config{ChainID: 1, Network: "net"})
+			cfgJSON, _ := json.Marshal(Config{ChainID: 1, Network: "net", LogTriggerPollInterval: 60 * time.Second})
 			svc := &capabilityGRPCService{lggr: lggr}
 
 			err := svc.Initialise(context.Background(), string(cfgJSON),
-				nil, nil, nil, nil, relayerSet, nil)
+				nil, nil, nil, nil, relayerSet, nil, nil)
 			assert.ErrorIs(t, err, assert.AnError)
 		})
 	})
+}
+
+type nullOracleFactory struct{}
+
+func (nullOracleFactory) NewOracle(ctx context.Context, args core.OracleArgs) (core.Oracle, error) {
+	return nullOracle{}, nil
+}
+
+type nullOracle struct{}
+
+func (nullOracle) Start(ctx context.Context) error {
+	return nil
+}
+
+func (nullOracle) Close(ctx context.Context) error {
+	return nil
 }
