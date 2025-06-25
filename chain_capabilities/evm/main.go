@@ -6,20 +6,17 @@ import (
 	"fmt"
 	"time"
 
-	"chain_capabilities/evm/monitoring"
-	"chain_capabilities/evm/trigger"
 	"github.com/smartcontractkit/capabilities/chain_capabilities"
-
-	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
-	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
-	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
-
-	"chain_capabilities/evm/actions"
-
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/trigger"
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	evmcapserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm/server"
+	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"

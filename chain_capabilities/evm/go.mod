@@ -1,14 +1,15 @@
-module github.com/smartcontractkit/chain_capabilities/evm
+module github.com/smartcontractkit/capabilities/chain_capabilities/evm
 
-go 1.24.2
-
-toolchain go1.24.3
+go 1.24.4
 
 require (
+	github.com/ethereum/go-ethereum v1.14.11
+	github.com/smartcontractkit/capabilities v1.0.2-alpha.0.20250625135556-6485cc7528db
 	github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-20250402163239-224ad2061432
-	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250625034302-0df230b89f7a
+	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250625103529-4db79aea14df
 	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250624161023-93f383781b0a
 	github.com/stretchr/testify v1.10.0
+	go.opentelemetry.io/otel v1.35.0
 	google.golang.org/protobuf v1.36.6
 )
 
@@ -40,6 +41,7 @@ require (
 	github.com/hashicorp/go-hclog v1.5.0 // indirect
 	github.com/hashicorp/go-plugin v1.6.2 // indirect
 	github.com/hashicorp/yamux v0.1.1 // indirect
+	github.com/holiman/uint256 v1.3.1 // indirect
 	github.com/invopop/jsonschema v0.12.0 // indirect
 	github.com/jackc/chunkreader/v2 v2.0.1 // indirect
 	github.com/jackc/pgconn v1.14.3 // indirect
@@ -81,7 +83,6 @@ require (
 	github.com/x448/float16 v0.8.4 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.52.0 // indirect
-	go.opentelemetry.io/otel v1.35.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.0.0-20240823153156-2a54df7bffb9 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.6.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.35.0 // indirect

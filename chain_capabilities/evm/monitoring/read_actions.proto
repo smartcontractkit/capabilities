@@ -1,6 +1,6 @@
 syntax = "proto3";
 package chain_capabilities.evm;
-option go_package = "github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring";
+option go_package = "github.com/smartcontractkit/capabilities/chain_capabilities/evm;monitoring";
 
 import "monitoring/execution_context.proto";
 

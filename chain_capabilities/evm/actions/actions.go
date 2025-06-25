@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"chain_capabilities/evm/monitoring"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"

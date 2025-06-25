@@ -1815,7 +1815,7 @@ const file_chain_capabilities_evm_monitoring_read_actions_proto_rawDesc = "" +
 	"\x1bLatestAndFinalizedHeadError\x12\x18\n" +
 	"\asummary\x18\x01 \x01(\tR\asummary\x12\x14\n" +
 	"\x05cause\x18\x02 \x01(\tR\x05cause\x12E\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x18.common.ExecutionContextR\x10executionContextBLZJgithub.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoringb\x06proto3"
+	"\x11execution_context\x18\x14 \x01(\v2\x18.common.ExecutionContextR\x10executionContextBLZJgithub.com/smartcontractkit/capabilities/chain_capabilities/evm;monitoringb\x06proto3"
 
 var (
 	file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescOnce sync.Once
