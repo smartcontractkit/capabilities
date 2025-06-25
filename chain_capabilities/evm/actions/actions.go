@@ -41,7 +41,7 @@ func (e EVM) CallContract(
 	input *evmservice.CallContractRequest,
 ) (*evmservice.CallContractReply, error) {
 	ts := time.Now().UnixMilli()
-	read := monitoring.ReadRequest{Node: "", TsStart: ts, RequestMetadata: req}
+	read := monitoring.ReadRequest{TsStart: ts, RequestMetadata: req}
 
 	callMsg, err := evmservice.ConvertCallMsgFromProto(input.GetCall())
 	if err != nil {
@@ -80,7 +80,7 @@ func (e EVM) FilterLogs(
 	input *evmservice.FilterLogsRequest,
 ) (*evmservice.FilterLogsReply, error) {
 	ts := time.Now().UnixMilli()
-	read := monitoring.ReadRequest{Node: "", TsStart: ts, RequestMetadata: req}
+	read := monitoring.ReadRequest{TsStart: ts, RequestMetadata: req}
 
 	fq, err := evmservice.ConvertFilterFromProto(input.GetFilterQuery())
 	if err != nil {
@@ -122,7 +122,7 @@ func (e EVM) BalanceAt(
 	input *evmservice.BalanceAtRequest,
 ) (*evmservice.BalanceAtReply, error) {
 	ts := time.Now().UnixMilli()
-	read := monitoring.ReadRequest{Node: "", TsStart: ts, RequestMetadata: req}
+	read := monitoring.ReadRequest{TsStart: ts, RequestMetadata: req}
 
 	bn := pb.NewIntFromBigInt(input.GetBlockNumber())
 	if bn == nil || bn.Int64() == 0 {
@@ -161,7 +161,7 @@ func (e EVM) EstimateGas(
 	input *evmservice.EstimateGasRequest,
 ) (*evmservice.EstimateGasReply, error) {
 	ts := time.Now().UnixMilli()
-	read := monitoring.ReadRequest{Node: "", TsStart: ts, RequestMetadata: req}
+	read := monitoring.ReadRequest{TsStart: ts, RequestMetadata: req}
 
 	msg, err := evmservice.ConvertCallMsgFromProto(input.GetMsg())
 	if err != nil {
@@ -200,7 +200,7 @@ func (e EVM) GetTransactionByHash(
 	input *evmservice.GetTransactionByHashRequest,
 ) (*evmservice.GetTransactionByHashReply, error) {
 	ts := time.Now().UnixMilli()
-	read := monitoring.ReadRequest{Node: "", TsStart: ts, RequestMetadata: req}
+	read := monitoring.ReadRequest{TsStart: ts, RequestMetadata: req}
 
 	// Initiated
 	if err := e.beholderProcessor.Process(ctx, e.messageBuilder.BuildGetTransactionByHashInitiated(read, common.Bytes2Hex(input.GetHash()))); err != nil {
@@ -240,7 +240,7 @@ func (e EVM) GetTransactionReceipt(
 	input *evmservice.GetTransactionReceiptRequest,
 ) (*evmservice.GetTransactionReceiptReply, error) {
 	ts := time.Now().UnixMilli()
-	read := monitoring.ReadRequest{Node: "", TsStart: ts, RequestMetadata: req}
+	read := monitoring.ReadRequest{TsStart: ts, RequestMetadata: req}
 
 	// Initiated
 	if err := e.beholderProcessor.Process(ctx, e.messageBuilder.BuildGetTransactionReceiptInitiated(read, common.Bytes2Hex(input.GetHash()))); err != nil {
@@ -280,7 +280,7 @@ func (e EVM) LatestAndFinalizedHead(
 	_ *emptypb.Empty,
 ) (*evmservice.LatestAndFinalizedHeadReply, error) {
 	ts := time.Now().UnixMilli()
-	read := monitoring.ReadRequest{Node: "", TsStart: ts, RequestMetadata: req}
+	read := monitoring.ReadRequest{TsStart: ts, RequestMetadata: req}
 
 	// Initiated
 	if err := e.beholderProcessor.Process(ctx, e.messageBuilder.BuildLatestAndFinalizedHeadInitiated(read)); err != nil {
