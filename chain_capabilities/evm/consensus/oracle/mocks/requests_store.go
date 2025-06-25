@@ -276,39 +276,6 @@ func (_c *RequestsStore_MarkAttempted_Call) RunAndReturn(run func(string)) *Requ
 	return _c
 }
 
-// Update provides a mock function with given fields: request
-func (_m *RequestsStore) Update(request types.Request) {
-	_m.Called(request)
-}
-
-// RequestsStore_Update_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Update'
-type RequestsStore_Update_Call struct {
-	*mock.Call
-}
-
-// Update is a helper method to define mock.On call
-//   - request types.Request
-func (_e *RequestsStore_Expecter) Update(request interface{}) *RequestsStore_Update_Call {
-	return &RequestsStore_Update_Call{Call: _e.mock.On("Update", request)}
-}
-
-func (_c *RequestsStore_Update_Call) Run(run func(request types.Request)) *RequestsStore_Update_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(types.Request))
-	})
-	return _c
-}
-
-func (_c *RequestsStore_Update_Call) Return() *RequestsStore_Update_Call {
-	_c.Call.Return()
-	return _c
-}
-
-func (_c *RequestsStore_Update_Call) RunAndReturn(run func(types.Request)) *RequestsStore_Update_Call {
-	_c.Run(run)
-	return _c
-}
-
 // NewRequestsStore creates a new instance of RequestsStore. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
 // The first argument is typically a *testing.T value.
 func NewRequestsStore(t interface {
