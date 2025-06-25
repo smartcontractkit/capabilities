@@ -49,9 +49,8 @@ func TestPoller_ObservesRequestUntilCanceled(t *testing.T) {
 		observationsCount++
 		if observationsCount%2 == 0 {
 			return []byte(requestObservation), nil
-		} else {
-			return nil, assert.AnError
 		}
+		return nil, assert.AnError
 	})
 
 	// Read the request

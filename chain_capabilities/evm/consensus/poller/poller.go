@@ -18,6 +18,7 @@ type ObservationsStore interface {
 
 type requestToPoll struct {
 	types.EventuallyConsistentRequest
+	//nolint:containedctx // Justification: required to receive signal, that request no longer requires polling
 	Ctx context.Context
 }
 
@@ -133,7 +134,6 @@ func (p *Poller) processRequest(request requestToPoll) {
 		LastAttemptAt: time.Now(),
 	})
 	p.mutex.Unlock()
-	return
 }
 
 func (p *Poller) processRequests(ctx context.Context) {
@@ -170,7 +170,6 @@ func (p *Poller) scheduleProcessing(ctx context.Context) {
 				return
 			case p.requestsCh <- *request:
 			}
-
 		}
 	}
 }
@@ -208,6 +207,5 @@ func (p *Poller) scheduleReprocessing(ctx context.Context) {
 		case now = <-ticker.C:
 			p.scheduleReadyForReprocessing(ctx, now)
 		}
-
 	}
 }

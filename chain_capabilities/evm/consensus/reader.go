@@ -63,6 +63,7 @@ type unknownRequest struct {
 
 type requestCtx struct {
 	types.Request
+	//nolint:containedctx // Justification: required to track request's timeout
 	Ctx            context.Context
 	Cancel         context.CancelFunc
 	Observation    []byte
@@ -192,9 +193,7 @@ func (s *Reader) completeEventuallyConsistentRequest(id string, value []byte) er
 	}
 
 	s.requests.Remove(id)
-	select {
-	case request.ResultChan <- value: // non blocking as ResultChan is buffered
-	}
+	request.ResultChan <- value // non blocking as ResultChan is buffered
 
 	// cancel request to prevent further polling
 	request.Cancel()
