@@ -114,5 +114,3 @@ require (
 	google.golang.org/grpc v1.72.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/smartcontractkit/chainlink-common v0.7.1-0.20250617170424-4d2241b1e7d7 => /Users/dh/go/src/github.com/smartcontractkit/chainlink-common
