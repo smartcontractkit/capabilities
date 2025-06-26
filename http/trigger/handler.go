@@ -49,7 +49,7 @@ type requestHandler struct {
 	lggr                logger.Logger
 	gatewayConnector    core.GatewayConnector
 	workflowsMu         sync.RWMutex
-	workflows           map[string]workflow // workflowID -> workflow
+	workflows           map[string]workflow // workflowID -> workflow metadata
 	config              ServiceConfig
 	incomingRateLimiter *ratelimit.RateLimiter
 	outgoingRateLimiter *ratelimit.RateLimiter
@@ -139,14 +139,17 @@ func (h *requestHandler) UnregisterWorkflow(ctx context.Context, workflowID stri
 	return nil
 }
 
+// HandleGatewayMessage processes incoming messages from gateways.
+// Always returns nil. Unless request is malformed or rate-limited, response is sent back to the
+// gateway using sendResponse method.
 func (h *requestHandler) HandleGatewayMessage(ctx context.Context, gatewayID string, req *jsonrpc.Request) error {
 	senderAllow, globalAllow := h.incomingRateLimiter.AllowVerbose(gatewayID)
 	if !senderAllow {
-		h.lggr.Errorw(errorIncomingRatelimitSender, "gatewayID", gatewayID, "error", errorIncomingRatelimitSender)
+		h.lggr.Errorw(errorIncomingRatelimitSender, "gatewayID", gatewayID)
 		return nil
 	}
 	if !globalAllow {
-		h.lggr.Errorw(errorIncomingRatelimitGlobal, "gatewayID", gatewayID, "error", errorIncomingRatelimitSender)
+		h.lggr.Errorw(errorIncomingRatelimitGlobal, "gatewayID", gatewayID)
 		return nil
 	}
 
@@ -226,6 +229,7 @@ func (h *requestHandler) processTrigger(ctx context.Context, gatewayID string, r
 		return
 	}
 	workflow.sendCh <- capabilities.TriggerAndId[*http.Payload]{
+		// workflow engine does not process the request if the ID has already been used
 		Id: req.ID,
 		Trigger: &http.Payload{
 			Input: input,
@@ -247,11 +251,6 @@ func (h *requestHandler) processTrigger(ctx context.Context, gatewayID string, r
 		Version: "2.0",
 		ID:      req.ID,
 		Result:  jsonPayload,
-	}
-	if err != nil {
-		l.Errorw("Failed to encode HTTP trigger response", "error", err)
-		h.sendErrorResponse(ctx, gatewayID, req.ID, ErrInternal, "Internal server error")
-		return
 	}
 	h.sendResponse(ctx, gatewayID, resp)
 }
