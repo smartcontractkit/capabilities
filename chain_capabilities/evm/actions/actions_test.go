@@ -6,7 +6,6 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/google/go-cmp/cmp"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	chainsevm "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
@@ -50,14 +49,14 @@ func TestNormalizeBlockNumber(t *testing.T) {
 	tests := []struct {
 		name              string
 		pbBlockNumber     *valuespb.BigInt
-		expectedNumber    rpc.BlockNumber
+		expectedNumber    rpcBlockNumber
 		expectedIsLocking bool
 		expectedErrMsg    string
 	}{
 		{
 			name:              "nil block number",
 			pbBlockNumber:     nil,
-			expectedNumber:    rpc.LatestBlockNumber,
+			expectedNumber:    latestBlockNumber,
 			expectedIsLocking: true,
 		},
 		{
@@ -75,20 +74,20 @@ func TestNormalizeBlockNumber(t *testing.T) {
 		},
 		{
 			name:              "safe block number",
-			pbBlockNumber:     valuespb.NewBigIntFromInt(big.NewInt(int64(rpc.SafeBlockNumber))),
-			expectedNumber:    rpc.SafeBlockNumber,
+			pbBlockNumber:     valuespb.NewBigIntFromInt(big.NewInt(int64(safeBlockNumber))),
+			expectedNumber:    safeBlockNumber,
 			expectedIsLocking: true,
 		},
 		{
 			name:              "finalized block number",
-			pbBlockNumber:     valuespb.NewBigIntFromInt(big.NewInt(int64(rpc.FinalizedBlockNumber))),
-			expectedNumber:    rpc.FinalizedBlockNumber,
+			pbBlockNumber:     valuespb.NewBigIntFromInt(big.NewInt(int64(finalizedBlockNumber))),
+			expectedNumber:    finalizedBlockNumber,
 			expectedIsLocking: true,
 		},
 		{
 			name:              "latest block number",
-			pbBlockNumber:     valuespb.NewBigIntFromInt(big.NewInt(int64(rpc.LatestBlockNumber))),
-			expectedNumber:    rpc.LatestBlockNumber,
+			pbBlockNumber:     valuespb.NewBigIntFromInt(big.NewInt(int64(latestBlockNumber))),
+			expectedNumber:    latestBlockNumber,
 			expectedIsLocking: true,
 		},
 		{
@@ -96,7 +95,7 @@ func TestNormalizeBlockNumber(t *testing.T) {
 			pbBlockNumber:     valuespb.NewBigIntFromInt(big.NewInt(-99)),
 			expectedNumber:    0,
 			expectedIsLocking: false,
-			expectedErrMsg:    "block number <invalid -99> is not supported",
+			expectedErrMsg:    "block number -99 is not supported",
 		},
 	}
 

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	chaincommonpb "github.com/smartcontractkit/chainlink-common/pkg/loop/chain-common"
@@ -63,7 +62,7 @@ func (e EVM) CallContract(ctx context.Context, meta capabilities.RequestMetadata
 		})
 	} else {
 		request = ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
-			return e.EVMService.CallContract(ctx, callMsg, big.NewInt(blockNumber.Int64()))
+			return e.EVMService.CallContract(ctx, callMsg, big.NewInt(int64(blockNumber)))
 		})
 	}
 
@@ -331,34 +330,34 @@ func (e EVM) UnregisterLogTracking(etx context.Context, _ capabilities.RequestMe
 	return &emptypb.Empty{}, e.EVMService.UnregisterLogTracking(etx, req.FilterName)
 }
 
-func normalizeBlockNumber(pbBlockNumber *valuespb.BigInt) (number rpc.BlockNumber, requiresLocking bool, err error) {
-	blockNumber := valuespb.NewIntFromBigInt(pbBlockNumber)
-	if blockNumber == nil {
-		return rpc.LatestBlockNumber, true, nil
+func normalizeBlockNumber(pbBlockNumber *valuespb.BigInt) (number rpcBlockNumber, requiresLocking bool, err error) {
+	if pbBlockNumber == nil {
+		return latestBlockNumber, true, nil
 	}
 
-	if !blockNumber.IsInt64() {
-		return 0, false, fmt.Errorf("block number %s is not an int64", blockNumber)
+	bigBlockNumber := valuespb.NewIntFromBigInt(pbBlockNumber)
+	if !bigBlockNumber.IsInt64() {
+		return 0, false, fmt.Errorf("block number %s is not an int64", bigBlockNumber)
 	}
 
-	rpcBlockNumber := rpc.BlockNumber(blockNumber.Int64())
-	if rpcBlockNumber > 0 {
-		return rpcBlockNumber, false, nil
+	blockNumber := rpcBlockNumber(bigBlockNumber.Int64())
+	if blockNumber > 0 {
+		return blockNumber, false, nil
 	}
 
-	switch rpcBlockNumber {
-	case rpc.SafeBlockNumber, rpc.FinalizedBlockNumber, rpc.LatestBlockNumber:
-		return rpcBlockNumber, true, nil
+	switch blockNumber {
+	case safeBlockNumber, finalizedBlockNumber, latestBlockNumber:
+		return blockNumber, true, nil
 	default:
-		return 0, false, fmt.Errorf("block number %s is not supported", rpcBlockNumber)
+		return 0, false, fmt.Errorf("block number %d is not supported", blockNumber)
 	}
 }
 
-func getCallBlockNumber(requestedBlockNumber rpc.BlockNumber, chainHeight *evmservice.ChainHeight) (*big.Int, error) {
+func getCallBlockNumber(requestedBlockNumber rpcBlockNumber, chainHeight *evmservice.ChainHeight) (*big.Int, error) {
 	switch requestedBlockNumber {
-	case rpc.LatestBlockNumber, rpc.SafeBlockNumber, rpc.FinalizedBlockNumber:
+	case latestBlockNumber, safeBlockNumber, finalizedBlockNumber:
 	default:
-		return big.NewInt(requestedBlockNumber.Int64()), nil
+		return big.NewInt(int64(requestedBlockNumber)), nil
 	}
 
 	if chainHeight == nil {
@@ -366,11 +365,11 @@ func getCallBlockNumber(requestedBlockNumber rpc.BlockNumber, chainHeight *evmse
 	}
 
 	switch requestedBlockNumber {
-	case rpc.LatestBlockNumber:
+	case latestBlockNumber:
 		return big.NewInt(chainHeight.Latest), nil
-	case rpc.SafeBlockNumber:
+	case safeBlockNumber:
 		return big.NewInt(chainHeight.Safe), nil
-	case rpc.FinalizedBlockNumber:
+	case finalizedBlockNumber:
 		return big.NewInt(chainHeight.Finalized), nil
 	default:
 		return nil, fmt.Errorf("unexpected block number %d", requestedBlockNumber)
