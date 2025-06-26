@@ -145,12 +145,6 @@ github.com/go-playground/validator/v10 v10.25.0/go.mod h1:GGzBIJMuE98Ic/kJsBXbz1
 github.com/go-sql-driver/mysql v1.8.1 h1:LedoTUt/eveggdHS9qUFC1EFSa8bU2+1pZjSRpvNJ1Y=
 github.com/go-sql-driver/mysql v1.8.1/go.mod h1:wEBSXgmK//2ZFJyE+qWnIsVGmvmEKlqwuVSjsCm7DZg=
 github.com/go-stack/stack v1.8.0/go.mod h1:v0f6uXyyMGvRgIKkXu+yp6POWl0qKG85gN/melR3HDY=
-<<<<<<< HEAD
-github.com/go-viper/mapstructure/v2 v2.3.0 h1:27XbWsHIqhbdR5TIC911OfYvgSaW93HM+dX7970Q7jk=
-github.com/go-viper/mapstructure/v2 v2.3.0/go.mod h1:oJDH3BJKyqBA2TXFhDsKDGDTlndYOZ6rGS0BRZIxGhM=
-github.com/goccy/go-json v0.10.3 h1:KZ5WoDbxAIgm2HNbYckL0se1fHD6rz5j4ywS6ebzDqA=
-github.com/goccy/go-json v0.10.3/go.mod h1:oq7eo15ShAhp70Anwd5lgX2pLfOS3QCiwU/PULtXL6M=
-=======
 github.com/go-task/slim-sprig v0.0.0-20210107165309-348f09dbbbc0/go.mod h1:fyg7847qk6SyHyPtNmDHnmrv/HOrqktSC+C9fM+CJOE=
 github.com/go-viper/mapstructure/v2 v2.3.0 h1:27XbWsHIqhbdR5TIC911OfYvgSaW93HM+dX7970Q7jk=
 github.com/go-viper/mapstructure/v2 v2.3.0/go.mod h1:oJDH3BJKyqBA2TXFhDsKDGDTlndYOZ6rGS0BRZIxGhM=
@@ -158,7 +152,6 @@ github.com/goccy/go-json v0.10.5 h1:Fq85nIqj+gXn/S5ahsiTlK3TmC85qgirsdTP/+DeaC4=
 github.com/goccy/go-json v0.10.5/go.mod h1:oq7eo15ShAhp70Anwd5lgX2pLfOS3QCiwU/PULtXL6M=
 github.com/gofrs/flock v0.8.1 h1:+gYjHKf32LDeiEEFhQaotPbLuUXjY5ZqxKgXy7n59aw=
 github.com/gofrs/flock v0.8.1/go.mod h1:F1TvTiK9OcQqauNUHlbJvyl9Qa1QvF/gOUDKA14jxHU=
->>>>>>> 171e3da (PLEX-250 - WriteReport initial implementation)
 github.com/gofrs/uuid v4.0.0+incompatible h1:1SD/1F5pU8p29ybwgQSwpQk+mwdRrXCYuPhW6m+TnJw=
 github.com/gofrs/uuid v4.0.0+incompatible/go.mod h1:b2aQJv3Z4Fp6yNu3cdSllBxTCLRxnplIgP/c0N/04lM=
 github.com/gogo/protobuf v1.3.2 h1:Ov1cvc58UF3b5XjBnZv7+opcTcQFZebYjWzi34vdm4Q=
@@ -461,55 +454,16 @@ github.com/sirupsen/logrus v1.4.1/go.mod h1:ni0Sbl8bgC9z8RoU9G6nDWqqs/fq4eDPysMB
 github.com/sirupsen/logrus v1.4.2/go.mod h1:tLMulIdttU9McNUspp0xgXVQah82FyeX6MwdIuYE2rE=
 github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-20250402163239-224ad2061432 h1:RO8PP8FF/qArlODaHbdWQBlhAyIKl7Kq/48CvZlgAyI=
 github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-20250402163239-224ad2061432/go.mod h1:E5l1dD0v2PqmKqZqHRidGyQy0a+c3/xjWSmFmet1A2s=
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-github.com/smartcontractkit/chainlink-common v0.7.1-0.20250625034302-0df230b89f7a h1:iPJ64jQ4zray3TC0g5L9ANq4xn/h8zgB7kzyC1lH1mQ=
-github.com/smartcontractkit/chainlink-common v0.7.1-0.20250625034302-0df230b89f7a/go.mod h1:plVu/MNDcoGbX++P0Dhv8gTtpafG98HqG6BfNj+dfE0=
+github.com/smartcontractkit/chainlink-common v0.7.1-0.20250626111924-65e6802674d9 h1:pnCghho7MNdYy0M9HBlj7sb+DUiXwHHxDEvfHVzZzRM=
+github.com/smartcontractkit/chainlink-common v0.7.1-0.20250626111924-65e6802674d9/go.mod h1:plVu/MNDcoGbX++P0Dhv8gTtpafG98HqG6BfNj+dfE0=
 github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250624161023-93f383781b0a h1:AVYA3UTkn2wjdpkTRhtXH0XgVBE25tXmfqxmEZhE+4s=
 github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250624161023-93f383781b0a/go.mod h1:QUEPHdSkH19Or+E1iMGG+rDQ6jpCTIbm//9Osa6MXDE=
-=======
-=======
->>>>>>> 2d69868 (go mod changes)
-<<<<<<< HEAD
-github.com/smartcontractkit/chainlink-common v0.7.1-0.20250623175819-a17cdfe27dfd h1:5AjfcD6373yjIgKbSXHFcJFSEHno4Du1l67TT3Bo6vI=
-github.com/smartcontractkit/chainlink-common v0.7.1-0.20250623175819-a17cdfe27dfd/go.mod h1:crejZI9ZpBHfhqghQOG9u7Sri7CBzEUYQ/0lVnN60yg=
-=======
-<<<<<<< HEAD
-github.com/smartcontractkit/chainlink-common v0.7.1-0.20250617125326-e36b605af8c5 h1:vwKWQBjN+kKdoa9Xdckm/whSgOD5t03/o9fGZr3H9HY=
-github.com/smartcontractkit/chainlink-common v0.7.1-0.20250617125326-e36b605af8c5/go.mod h1:1ntZ0rtQpPx6h+xlcOJp0ccqHFaxTzW2Z62FJG358q0=
-=======
-github.com/smartcontractkit/chainlink-framework/chains v0.0.0-20250522110034-65c54665034a h1:1CrY+turGOYaSEs4efA4zJprX0G2Uk+0dcDO1eCsHhk=
-github.com/smartcontractkit/chainlink-framework/chains v0.0.0-20250522110034-65c54665034a/go.mod h1:X+a4k2a+2G2/yeAaRQMCTLmlhNdQYAeN6v+ZpLzRZww=
+github.com/smartcontractkit/chainlink-evm v0.0.0-20250626113617-5e73e27dc402 h1:k0zO9J5H8Wmagi6Mdw147WY2gri/ORAJzsqYeJfK0eM=
+github.com/smartcontractkit/chainlink-evm v0.0.0-20250626113617-5e73e27dc402/go.mod h1:B6s6Z6G+tpj5D8+YWojqa0neFfTQiQG+6C9RmIqHpc0=
+github.com/smartcontractkit/chainlink-framework/chains v0.0.0-20250626112324-470b01e94903 h1:1IZYb0vEzqRcXKWmWsUQfh7t2rjO97j1mRYejsJbjAU=
+github.com/smartcontractkit/chainlink-framework/chains v0.0.0-20250626112324-470b01e94903/go.mod h1:a7jmbejh4mY+cOuYMbtGLXD4LqunlvH4Z30WP1l9m8o=
 github.com/smartcontractkit/chainlink-framework/multinode v0.0.0-20250522110034-65c54665034a h1:O28vgyHM7QF1YLg1BwkQSIbOYA+t0RiH9+b+k90GPG8=
 github.com/smartcontractkit/chainlink-framework/multinode v0.0.0-20250522110034-65c54665034a/go.mod h1:zYqPBBRUXUQ/L+aD4Q7phnYsfVeC5rDBXtPt1VYwtws=
->>>>>>> 38937e4 (PLEX-250 - WriteReport initial implementation)
->>>>>>> c49ad9a (PLEX-250 - WriteReport initial implementation)
-<<<<<<< HEAD
->>>>>>> 171e3da (PLEX-250 - WriteReport initial implementation)
-=======
-=======
-github.com/smartcontractkit/chainlink-framework/chains v0.0.0-20250619151743-689a2849c556 h1:UAZ3zjygMHBt1dTwf3VufCrSgVjrygnvNkYtVzW6dFQ=
-github.com/smartcontractkit/chainlink-framework/chains v0.0.0-20250619151743-689a2849c556/go.mod h1:Dc12Gs3LAVauX81RfzPNKTyU7fwfnq7usBqlDM2/HdI=
-github.com/smartcontractkit/chainlink-framework/multinode v0.0.0-20250522110034-65c54665034a h1:O28vgyHM7QF1YLg1BwkQSIbOYA+t0RiH9+b+k90GPG8=
-github.com/smartcontractkit/chainlink-framework/multinode v0.0.0-20250522110034-65c54665034a/go.mod h1:zYqPBBRUXUQ/L+aD4Q7phnYsfVeC5rDBXtPt1VYwtws=
->>>>>>> de1ba2e (go mod changes)
->>>>>>> 2d69868 (go mod changes)
-=======
-=======
-github.com/smartcontractkit/chainlink-common v0.7.1-0.20250624180831-b3689bcd43a6 h1:ZfUNZQq/SQSjlu4VxIKl1S16H+6qYaLgoQyD09W8m3s=
-github.com/smartcontractkit/chainlink-common v0.7.1-0.20250624180831-b3689bcd43a6/go.mod h1:plVu/MNDcoGbX++P0Dhv8gTtpafG98HqG6BfNj+dfE0=
->>>>>>> 7533888 (fixing module name for evm capability)
-github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250624161023-93f383781b0a h1:AVYA3UTkn2wjdpkTRhtXH0XgVBE25tXmfqxmEZhE+4s=
-github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250624161023-93f383781b0a/go.mod h1:QUEPHdSkH19Or+E1iMGG+rDQ6jpCTIbm//9Osa6MXDE=
-github.com/smartcontractkit/chainlink-evm v0.0.0-20250624182208-f47bca5dbbfc h1:v+r0KkrdYH5Nk340ujRqZxe6cT86jrtxelS6bUK+TdM=
-github.com/smartcontractkit/chainlink-evm v0.0.0-20250624182208-f47bca5dbbfc/go.mod h1:bzngvgVMCF7IJm1Ji0NnwqNDonthYNi4L3BeLy6xFgM=
-github.com/smartcontractkit/chainlink-framework/chains v0.0.0-20250624181658-04f654af25ad h1:9OxawQ6/QYx4i5HpWVc9t8goCH6Mptc1VM3Rzxrb3QU=
-github.com/smartcontractkit/chainlink-framework/chains v0.0.0-20250624181658-04f654af25ad/go.mod h1:VdbsHGfPdEv77LOntr++z8tbDi0BFJ2UIEiYpmUFZu4=
-github.com/smartcontractkit/chainlink-framework/multinode v0.0.0-20250522110034-65c54665034a h1:O28vgyHM7QF1YLg1BwkQSIbOYA+t0RiH9+b+k90GPG8=
-github.com/smartcontractkit/chainlink-framework/multinode v0.0.0-20250522110034-65c54665034a/go.mod h1:zYqPBBRUXUQ/L+aD4Q7phnYsfVeC5rDBXtPt1VYwtws=
->>>>>>> 473474f (updating go mod)
 github.com/smartcontractkit/freeport v0.1.1 h1:B5fhEtmgomdIhw03uPVbVTP6oPv27fBhZsoZZMSIS8I=
 github.com/smartcontractkit/freeport v0.1.1/go.mod h1:T4zH9R8R8lVWKfU7tUvYz2o2jMv1OpGCdpY2j2QZXzU=
 github.com/smartcontractkit/grpc-proxy v0.0.0-20240830132753-a7e17fec5ab7 h1:12ijqMM9tvYVEm+nR826WsrNi6zCKpwBhuApq127wHs=
