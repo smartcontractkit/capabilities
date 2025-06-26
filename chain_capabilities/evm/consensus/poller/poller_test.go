@@ -22,7 +22,7 @@ func TestPoller_ObservesRequestUntilCanceled(t *testing.T) {
 	const requestObservation = "request-observation"
 
 	// Create poller with short poll period for faster testing
-	pollPeriod := 100 * time.Millisecond
+	pollPeriod := 10 * time.Millisecond
 	poller := NewPoller(lggr, 1, pollPeriod)
 
 	// Start the poller
