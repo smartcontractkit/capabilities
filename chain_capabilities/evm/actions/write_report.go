@@ -244,8 +244,17 @@ func fatalWriteReportReply(message string) *evmcap.WriteReportReply {
 }
 
 func validateInputsAndReportMetadata(requestMetadata capabilities.RequestMetadata, request *evmcap.WriteReportRequest) error {
+	if request == nil {
+		return errors.New("nil WriteReportRequest")
+	}
+	if request.Report == nil {
+		return errors.New("nil SignedReport in WriteReportRequest")
+	}
 	if len(request.Receiver) != common.AddressLength {
-		return fmt.Errorf("Received address is not 20 bytes long. Address in HEX: %s", hex.EncodeToString(request.Receiver))
+		return fmt.Errorf("received address is not 20 bytes long. Address in HEX: %s", hex.EncodeToString(request.Receiver))
+	}
+	if len(request.Report.Signatures) == 0 {
+		return fmt.Errorf("no signatures provided")
 	}
 
 	reportMetadata, err := decodeReportMetadata(request.Report.RawReport)
@@ -258,12 +267,12 @@ func validateInputsAndReportMetadata(requestMetadata capabilities.RequestMetadat
 	}
 
 	if reportMetadata.ExecutionID != requestMetadata.WorkflowExecutionID {
-		return fmt.Errorf("WorkflowExecutionID in the report does not match WorkflowExecutionID in the request metadata. Report WorkflowExecutionID: %+v, request WorkflowExecutionID: %+v", reportMetadata.ExecutionID, requestMetadata.WorkflowExecutionID)
+		return fmt.Errorf("workflowExecutionID in the report does not match WorkflowExecutionID in the request metadata. Report WorkflowExecutionID: %+v, request WorkflowExecutionID: %+v", reportMetadata.ExecutionID, requestMetadata.WorkflowExecutionID)
 	}
 
 	// case-insensitive verification of the owner address (so that a check-summed address matches its non-checksummed version).
 	if !strings.EqualFold(reportMetadata.WorkflowOwner, requestMetadata.WorkflowOwner) {
-		return fmt.Errorf("WorkflowOwner in the report does not match WorkflowOwner in the request metadata. Report WorkflowOwner: %+v, request WorkflowOwner: %+v", reportMetadata.WorkflowOwner, requestMetadata.WorkflowOwner)
+		return fmt.Errorf("workflowOwner in the report does not match WorkflowOwner in the request metadata. Report WorkflowOwner: %+v, request WorkflowOwner: %+v", reportMetadata.WorkflowOwner, requestMetadata.WorkflowOwner)
 	}
 
 	// workflowNames are padded to 10bytes
@@ -274,19 +283,15 @@ func validateInputsAndReportMetadata(requestMetadata capabilities.RequestMetadat
 	var workflowName [20]byte
 	copy(workflowName[:], decodedName)
 	if !bytes.Equal([]byte(reportMetadata.WorkflowName[:]), workflowName[:]) {
-		return fmt.Errorf("WorkflowName in the report does not match WorkflowName in the request metadata. Report WorkflowName: %+v, request WorkflowName: %+v", reportMetadata.WorkflowName, hex.EncodeToString(workflowName[:]))
+		return fmt.Errorf("workflowName in the report does not match WorkflowName in the request metadata. Report WorkflowName: %+v, request WorkflowName: %+v", reportMetadata.WorkflowName, hex.EncodeToString(workflowName[:]))
 	}
 
 	if reportMetadata.WorkflowID != requestMetadata.WorkflowID {
-		return fmt.Errorf("WorkflowID in the report does not match WorkflowID in the request metadata. Report WorkflowID: %+v, request WorkflowID: %+v", reportMetadata.WorkflowID, requestMetadata.WorkflowID)
+		return fmt.Errorf("workflowID in the report does not match WorkflowID in the request metadata. Report WorkflowID: %+v, request WorkflowID: %+v", reportMetadata.WorkflowID, requestMetadata.WorkflowID)
 	}
 
 	if !bytes.Equal([]byte(reportMetadata.ReportID), request.Report.Id) {
-		return fmt.Errorf("ReportID in the report does not match ReportID in the inputs. reportMetadata.ReportID: %x, Inputs.SignedReport.ID: %x", reportMetadata.ReportID, request.Report.Id)
-	}
-
-	if len(request.Report.Signatures) == 0 {
-		return fmt.Errorf("No signatures provided")
+		return fmt.Errorf("reportID in the report does not match ReportID in the inputs. reportMetadata.ReportID: %x, Inputs.SignedReport.ID: %x", reportMetadata.ReportID, request.Report.Id)
 	}
 
 	return nil
@@ -321,12 +326,13 @@ func (thr *TxHashRetriever) GetHash(ctx context.Context) (*evmtypes.Hash, error)
 		return nil, errors.Join(err, fmt.Errorf("%s: %w", failedToRetrieveTxHashErrorMessage, err))
 	}
 	if len(logs) > 1 {
-		thr.lggr.Debugw("Found more than one log associated to report transmission", thr.transmissionID.GetIDPartsForDebugging()...)
+		thr.lggr.Debugw("found more than one log associated to report transmission", thr.transmissionID.GetIDPartsForDebugging()...)
 		return nil, fmt.Errorf("We found more than one TX Hash for: %s", thr.transmissionID.GetDebugID())
 	}
 	if len(logs) == 0 {
-		thr.lggr.Debugw("No log associated to report transmission found", thr.transmissionID.GetIDPartsForDebugging()...)
+		thr.lggr.Debugw("no log associated to report transmission found", thr.transmissionID.GetIDPartsForDebugging()...)
 		return nil, nil
 	}
-	return &logs[0].TxHash, nil
+	thr.txHash = &logs[0].TxHash
+	return thr.txHash, nil
 }

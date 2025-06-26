@@ -53,7 +53,7 @@ func TestWriteReport_InputValidation(t *testing.T) {
 			},
 		})
 		require.Error(t, err)
-		require.Equal(t, "Received address is not 20 bytes long. Address in HEX: ", err.Error())
+		require.Equal(t, "received address is not 20 bytes long. Address in HEX: ", err.Error())
 	})
 	t.Run("Invalid report metadata", func(t *testing.T) {
 		_, _, service := createMocksAndCapability(t, lggr)
@@ -83,7 +83,7 @@ func TestWriteReport_InputValidation(t *testing.T) {
 			},
 		})
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "ReportID in the report does not match ReportID in the inputs.")
+		require.Contains(t, err.Error(), "reportID in the report does not match ReportID in the inputs.")
 	})
 
 	t.Run("Report signatures are not empty", func(t *testing.T) {
@@ -101,7 +101,7 @@ func TestWriteReport_InputValidation(t *testing.T) {
 			},
 		})
 		require.Error(t, err)
-		require.Contains(t, "No signatures provided", err.Error())
+		require.Contains(t, "no signatures provided", err.Error())
 	})
 	t.Run("Invalid request metadata", func(t *testing.T) {
 		_, _, service := createMocksAndCapability(t, lggr)
@@ -136,7 +136,7 @@ func TestWriteReport_InputValidation(t *testing.T) {
 			},
 		})
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "WorkflowName in the report does not match WorkflowName in the request metadata.")
+		require.Contains(t, err.Error(), "workflowName in the report does not match WorkflowName in the request metadata.")
 	})
 	t.Run("Workflow IDs do not match", func(t *testing.T) {
 		_, _, service := createMocksAndCapability(t, lggr)
@@ -154,7 +154,7 @@ func TestWriteReport_InputValidation(t *testing.T) {
 			},
 		})
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "WorkflowID in the report does not match WorkflowID in the request metadata.")
+		require.Contains(t, err.Error(), "workflowID in the report does not match WorkflowID in the request metadata.")
 	})
 	t.Run("Workflow execution IDs do not match and workflow name less than 10 characters work", func(t *testing.T) {
 		_, _, service := createMocksAndCapability(t, lggr)
@@ -173,7 +173,7 @@ func TestWriteReport_InputValidation(t *testing.T) {
 			},
 		})
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "WorkflowExecutionID in the report does not match WorkflowExecutionID in the request metadata.")
+		require.Contains(t, err.Error(), "workflowExecutionID in the report does not match WorkflowExecutionID in the request metadata.")
 	})
 }
 
