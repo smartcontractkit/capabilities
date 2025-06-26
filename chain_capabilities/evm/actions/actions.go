@@ -6,8 +6,9 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 	"google.golang.org/protobuf/types/known/emptypb"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -103,7 +104,9 @@ func (e EVM) FilterLogs(
 	}
 
 	e.lggr.Infow("successfully executed FilterLogs", "count", len(logs))
-	if err := e.beholderProcessor.Process(ctx, e.messageBuilder.BuildFilterLogsSuccess(read, fq.FromBlock, fq.ToBlock, len(logs))); err != nil {
+	// G115: integer overflow conversion int -> int32 (gosec)
+	// nolint:gosec
+	if err = e.beholderProcessor.Process(ctx, e.messageBuilder.BuildFilterLogsSuccess(read, fq.FromBlock, fq.ToBlock, int32(len(logs)))); err != nil {
 		e.lggr.Errorw("failed to process FilterLogsSuccess message", "err", err)
 	}
 
@@ -171,7 +174,10 @@ func (e EVM) EstimateGas(
 	}
 
 	e.lggr.Infow("Successfully executed EstimateGas", "gas", estimate)
-	if err := e.beholderProcessor.Process(ctx, e.messageBuilder.BuildEstimateGasSuccess(read, common.Bytes2Hex(msg.From[:]), common.Bytes2Hex(msg.To[:]), msg.Data, estimate)); err != nil {
+
+	//  G115: integer overflow conversion uint64 -> int64 (gosec)
+	// nolint:gosec
+	if err = e.beholderProcessor.Process(ctx, e.messageBuilder.BuildEstimateGasSuccess(read, common.Bytes2Hex(msg.From[:]), common.Bytes2Hex(msg.To[:]), msg.Data, int64(estimate))); err != nil {
 		e.lggr.Errorw("Failed to process EstimateGasSuccess message", "err", err)
 	}
 

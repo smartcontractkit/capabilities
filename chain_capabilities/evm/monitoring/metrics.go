@@ -4,8 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	commoncapbeholder "github.com/smartcontractkit/capabilities/monitoring"
 	"go.opentelemetry.io/otel/attribute"
+
+	commoncapbeholder "github.com/smartcontractkit/capabilities/monitoring"
 
 	commonbeholder "github.com/smartcontractkit/chainlink-common/pkg/beholder"
 )
@@ -301,7 +302,7 @@ func (r *EstimateGasSuccess) Attributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.String("from", r.Req.GetFrom()),
 		attribute.String("to", r.Req.GetTo()),
-		attribute.Int64("gas", int64(r.GetGas())),
+		attribute.Int64("gas", r.GetGas()),
 	}, executionMetadata(r.ExecutionContext).Attributes()...)
 }
 

@@ -5,13 +5,14 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
-	capmonitoring "github.com/smartcontractkit/capabilities/monitoring"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
+	capmonitoring "github.com/smartcontractkit/capabilities/monitoring"
 )
 
 type mockEmitter struct {

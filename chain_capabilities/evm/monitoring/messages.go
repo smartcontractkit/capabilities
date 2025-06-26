@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/smartcontractkit/capabilities/chain_capabilities"
 	commoncapbeholder "github.com/smartcontractkit/capabilities/monitoring"
 
@@ -46,8 +47,8 @@ func (m *MessageBuilder) BuildFilterLogsInitiated(r ReadRequest, from, to *big.I
 	return &FilterLogsInitiated{Req: &FilterLogsRequest{FromBlock: from.Int64(), ToBlock: to.Int64()}, ExecutionContext: m.BuildExecutionContext(r)}
 }
 
-func (m *MessageBuilder) BuildFilterLogsSuccess(r ReadRequest, from, to *big.Int, count int) *FilterLogsSuccess {
-	return &FilterLogsSuccess{Req: &FilterLogsRequest{FromBlock: from.Int64(), ToBlock: to.Int64()}, LogCount: int32(count), ExecutionContext: m.BuildExecutionContext(r)}
+func (m *MessageBuilder) BuildFilterLogsSuccess(r ReadRequest, from, to *big.Int, count int32) *FilterLogsSuccess {
+	return &FilterLogsSuccess{Req: &FilterLogsRequest{FromBlock: from.Int64(), ToBlock: to.Int64()}, LogCount: count, ExecutionContext: m.BuildExecutionContext(r)}
 }
 
 func (m *MessageBuilder) BuildFilterLogsError(r ReadRequest, from, to *big.Int, summary, cause string) *FilterLogsError {
@@ -70,7 +71,7 @@ func (m *MessageBuilder) BuildEstimateGasInitiated(r ReadRequest, from, to strin
 	return &EstimateGasInitiated{Req: &EstimateGasRequest{From: from, To: to, Data: data}, ExecutionContext: m.BuildExecutionContext(r)}
 }
 
-func (m *MessageBuilder) BuildEstimateGasSuccess(r ReadRequest, from, to string, data []byte, gas uint64) *EstimateGasSuccess {
+func (m *MessageBuilder) BuildEstimateGasSuccess(r ReadRequest, from, to string, data []byte, gas int64) *EstimateGasSuccess {
 	return &EstimateGasSuccess{Req: &EstimateGasRequest{From: from, To: to, Data: data}, Gas: gas, ExecutionContext: m.BuildExecutionContext(r)}
 }
 
@@ -158,12 +159,15 @@ func (m *MessageBuilder) BuildExecutionContext(request ReadRequest) *commoncapbe
 		MetaWorkflowDonId:            request.WorkflowDonID,
 		MetaWorkflowDonConfigVersion: request.WorkflowDonConfigVersion,
 		MetaReferenceId:              request.ReferenceID,
-
 		// Capability
-		MetaCapabilityType:           string(m.CapInfo.CapabilityType),
-		MetaCapabilityId:             m.CapInfo.ID,
+		MetaCapabilityType: string(m.CapInfo.CapabilityType),
+		MetaCapabilityId:   m.CapInfo.ID,
+		// G115: integer overflow conversion uint64 -> int64 (gosec)
+		// nolint:gosec
 		MetaCapabilityTimestampStart: uint64(request.TsStart),
-		MetaCapabilityTimestampEmit:  uint64(time.Now().UnixMilli()),
+		// G115: integer overflow conversion uint64 -> int64 (gosec)
+		// nolint:gosec
+		MetaCapabilityTimestampEmit: uint64(time.Now().UnixMilli()),
 	}
 	return ex
 }

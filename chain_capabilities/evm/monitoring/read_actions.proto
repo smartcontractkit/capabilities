@@ -83,7 +83,7 @@ message EstimateGasInitiated {
 }
 message EstimateGasSuccess {
   EstimateGasRequest req = 1;
-  uint64 gas = 2;
+  int64 gas = 2;
   common.ExecutionContext execution_context = 20;
 }
 message EstimateGasError {
