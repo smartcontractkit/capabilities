@@ -11,6 +11,13 @@ const (
 	WorkflowExecutionIDShortLen = 3 // first 3 characters, 16^3 = 4.096 possibilities (mid-high cardinality)
 )
 
+type ChainInfo struct {
+	FamilyName      string
+	ChainID         string
+	NetworkName     string
+	NetworkNameFull string
+}
+
 // TODO: Refactor as a proto referenced from the other proto files (telemetry messages)
 type ExecutionMetadata struct {
 	// Execution Context - Source
