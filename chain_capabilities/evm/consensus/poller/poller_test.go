@@ -11,23 +11,19 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zapcore"
 
-	"github.com/smartcontractkit/chain_capabilities/evm/consensus/poller/mocks"
 	"github.com/smartcontractkit/chain_capabilities/evm/consensus/types"
 )
 
 func TestPoller_ObservesRequestUntilCanceled(t *testing.T) {
 	// Setup
 	lggr, observedLogs := logger.TestObserved(t, zapcore.DebugLevel)
-	store := mocks.NewObservationsStore(t)
 
 	const requestID = "request-1"
 	const requestObservation = "request-observation"
-	// Configure store expectations
-	store.EXPECT().SetObservation(requestID, []byte(requestObservation)).Return()
 
 	// Create poller with short poll period for faster testing
 	pollPeriod := 100 * time.Millisecond
-	poller := NewPoller(lggr, store, 1, pollPeriod)
+	poller := NewPoller(lggr, 1, pollPeriod)
 
 	// Start the poller
 	require.NoError(t, poller.Start(t.Context()))

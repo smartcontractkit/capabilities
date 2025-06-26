@@ -18,9 +18,11 @@ import (
 )
 
 func TestGetRequestIDs(t *testing.T) {
-	reader := NewReader(logger.Test(t), time.Second)
+	poller := mocks.NewPoller(t)
+	poller.EXPECT().Enqueue(mock.Anything, mock.Anything)
+	reader := NewReader(logger.Test(t), poller, time.Second)
 	addRequestToReader := func(t *testing.T, ctx context.Context, id string) {
-		request := types.NewRequest(id, evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT)
+		request := types.NewEventuallyConsistentRequest(id, nil)
 		_, err := reader.Read(ctx, request)
 		require.NoError(t, err)
 	}
@@ -62,9 +64,9 @@ func TestGetRequestIDs(t *testing.T) {
 }
 
 func TestMarkAttempted(t *testing.T) {
-	reader := NewReader(logger.Test(t), time.Second)
+	reader := NewReader(logger.Test(t), nil, time.Second)
 	addRequestToReader := func(t *testing.T, ctx context.Context, id string) {
-		request := types.NewRequest(id, evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT)
+		request := types.NewAggregatabelRequest(id, nil)
 		_, err := reader.Read(ctx, request)
 		require.NoError(t, err)
 	}
@@ -90,9 +92,9 @@ func TestMarkAttempted(t *testing.T) {
 }
 
 func TestGetRequest(t *testing.T) {
-	reader := NewReader(logger.Test(t), time.Second)
+	reader := NewReader(logger.Test(t), nil, time.Second)
 	addRequestToReader := func(t *testing.T, ctx context.Context, id string) {
-		request := types.NewRequest(id, evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT)
+		request := types.NewAggregatabelRequest(id, nil)
 		_, err := reader.Read(ctx, request)
 		require.NoError(t, err)
 	}
@@ -118,40 +120,9 @@ func TestGetRequest(t *testing.T) {
 	})
 }
 
-func TestRequestObservations(t *testing.T) {
-	reader := NewReader(logger.Test(t), time.Second)
-	const id = "req-1"
-	request := types.NewRequest(id, evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT)
-	_, err := reader.Read(t.Context(), request)
-	require.NoError(t, err)
-
-	//non existing request
-	const invalidID = "non-existing-request"
-	observation, ok := reader.GetObservation(invalidID)
-	require.False(t, ok)
-	require.Nil(t, observation)
-
-	// request without observation
-	observation, ok = reader.GetObservation(id)
-	require.False(t, ok)
-	require.Nil(t, observation)
-
-	// set observations for non existing request
-	reader.SetObservation(invalidID, []byte("observation"))
-	observation, ok = reader.GetObservation(invalidID)
-	require.False(t, ok)
-	require.Nil(t, observation)
-
-	// set observation
-	reader.SetObservation(id, []byte("observation"))
-	observation, ok = reader.GetObservation(id)
-	require.True(t, ok)
-	require.Equal(t, []byte("observation"), observation)
-}
-
 func TestCompleteRequest(t *testing.T) {
-	newReader := func(t *testing.T, lggr logger.Logger) *Reader {
-		reader := NewReader(lggr, time.Second)
+	newReader := func(t *testing.T, lggr logger.Logger, poller Poller) *Reader {
+		reader := NewReader(lggr, poller, time.Second)
 		require.NoError(t, reader.Start(t.Context()))
 		t.Cleanup(func() {
 			require.NoError(t, reader.Close())
@@ -161,15 +132,16 @@ func TestCompleteRequest(t *testing.T) {
 
 	t.Run("Eventually consistent request: complete existing request", func(t *testing.T) {
 		const id = "req-1"
-		request := types.NewRequest(id, evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT)
-		reader := newReader(t, logger.Test(t))
+		request := types.NewEventuallyConsistentRequest(id, nil)
+		poller := mocks.NewPoller(t)
+		poller.EXPECT().Enqueue(mock.Anything, mock.Anything).Once()
+		reader := newReader(t, logger.Test(t), poller)
 		ch, err := reader.Read(t.Context(), request)
 		require.NoError(t, err)
 
 		report := []byte("result-data")
 		require.NoError(t, reader.CompleteRequest(id, &evmservice.RequestReport{
-			RequestType: evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT,
-			Payload:     &evmservice.RequestReport_Value{Value: report},
+			Report: &evmservice.RequestReport_EventuallyConsistent{EventuallyConsistent: report},
 		}))
 
 		actualReport := <-ch
@@ -183,14 +155,13 @@ func TestCompleteRequest(t *testing.T) {
 	t.Run("Eventually consistent request: complete non-existing", func(t *testing.T) {
 		const id = "non-existing-req"
 		report := []byte("non-existing-result")
-		reader := newReader(t, logger.Test(t))
+		reader := newReader(t, logger.Test(t), nil)
 		require.NoError(t, reader.CompleteRequest(id, &evmservice.RequestReport{
-			RequestType: evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT,
-			Payload:     &evmservice.RequestReport_Value{Value: report},
+			Report: &evmservice.RequestReport_EventuallyConsistent{EventuallyConsistent: report},
 		}))
 
 		// enqueue non existing result to get saved outcome
-		request := types.NewRequest(id, evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT)
+		request := types.NewEventuallyConsistentRequest(id, nil)
 		ch, err := reader.Read(t.Context(), request)
 		require.NoError(t, err)
 		actualReport := <-ch
@@ -202,10 +173,9 @@ func TestCompleteRequest(t *testing.T) {
 	})
 
 	t.Run("Eventually consistent request: expire unknown", func(t *testing.T) {
-		reader := newReader(t, logger.Test(t))
+		reader := newReader(t, logger.Test(t), nil)
 		require.NoError(t, reader.CompleteRequest("request_to_expire", &evmservice.RequestReport{
-			RequestType: evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT,
-			Payload:     &evmservice.RequestReport_Value{Value: []byte("report")},
+			Report: &evmservice.RequestReport_EventuallyConsistent{EventuallyConsistent: []byte("report")},
 		}))
 
 		assert.Eventually(t, func() bool {
@@ -215,61 +185,54 @@ func TestCompleteRequest(t *testing.T) {
 		}, time.Second*10, time.Second)
 	})
 	t.Run("Returns error for unknown request type", func(t *testing.T) {
-		reader := newReader(t, logger.Test(t))
-		err := reader.CompleteRequest("id", &evmservice.RequestReport{
-			RequestType: evmservice.RequestType_REQUEST_TYPE_UNKNOWN,
-		})
-		require.ErrorContains(t, err, "unknown request type REQUEST_TYPE_UNKNOWN")
+		reader := newReader(t, logger.Test(t), nil)
+		err := reader.CompleteRequest("id", &evmservice.RequestReport{Report: nil})
+		require.ErrorContains(t, err, "unknown request type <nil>")
 	})
 	t.Run("Lockable Request: returns error if height is nil", func(t *testing.T) {
-		reader := newReader(t, logger.Test(t))
+		reader := newReader(t, logger.Test(t), nil)
 		err := reader.CompleteRequest("req-1", &evmservice.RequestReport{
-			RequestType: evmservice.RequestType_REQUEST_TYPE_LOCKABLE_TO_BLOCK,
+			Report: &evmservice.RequestReport_LockableToBlock{},
 		})
 		require.ErrorContains(t, err, "chain height is nil for report with requestID req-1")
 	})
 	t.Run("Lockable Request: emits log if request does not exist", func(t *testing.T) {
 		lggr, observed := logger.TestObserved(t, zapcore.InfoLevel)
-		reader := newReader(t, lggr)
+		reader := newReader(t, lggr, nil)
 		err := reader.CompleteRequest("req-1", &evmservice.RequestReport{
-			RequestType: evmservice.RequestType_REQUEST_TYPE_LOCKABLE_TO_BLOCK,
-			Payload:     &evmservice.RequestReport_Height{Height: &evmservice.ChainHeight{}},
+			Report: &evmservice.RequestReport_LockableToBlock{LockableToBlock: &evmservice.ChainHeight{}},
 		})
 		require.NoError(t, err)
 		tests.RequireLogMessage(t, observed, "lockable to a block request req-1 not found")
 	})
 	t.Run("Lockable Request: emits log if request is of a wrong type", func(t *testing.T) {
-		lggr, observed := logger.TestObserved(t, zapcore.InfoLevel)
-		reader := newReader(t, lggr)
 		poller := mocks.NewPoller(t)
 		poller.EXPECT().Enqueue(mock.Anything, mock.Anything).Once() // one call during setup
-		reader.SetPoller(poller)
+		lggr, observed := logger.TestObserved(t, zapcore.InfoLevel)
+		reader := newReader(t, lggr, poller)
 
 		request := types.NewEventuallyConsistentRequest("req-1", nil)
 		_, err := reader.Read(t.Context(), request)
 		require.NoError(t, err)
 
 		err = reader.CompleteRequest("req-1", &evmservice.RequestReport{
-			RequestType: evmservice.RequestType_REQUEST_TYPE_LOCKABLE_TO_BLOCK,
-			Payload:     &evmservice.RequestReport_Height{Height: &evmservice.ChainHeight{}},
+			Report: &evmservice.RequestReport_LockableToBlock{LockableToBlock: &evmservice.ChainHeight{}},
 		})
 		require.NoError(t, err)
-		tests.RequireLogMessage(t, observed, "lockable to a block request req-1 is of a different type *types.eventuallyConsistentRequest")
+		tests.RequireLogMessage(t, observed, "lockable to a block request req-1 is of a different type *types.EventuallyConsistentRequest")
 	})
 	t.Run("Lockable Request is converted to eventually consistent and added to the poller", func(t *testing.T) {
 		lggr, observed := logger.TestObserved(t, zapcore.InfoLevel)
-		reader := newReader(t, lggr)
 		poller := mocks.NewPoller(t)
 		poller.EXPECT().Enqueue(mock.Anything, mock.Anything).Once() // one during conversion
-		reader.SetPoller(poller)
+		reader := newReader(t, lggr, poller)
 
-		request := types.NewLockableToABlockRequest("req-1", nil)
+		request := types.NewLockableToBlockRequest("req-1", nil)
 		_, err := reader.Read(t.Context(), request)
 		require.NoError(t, err)
 
 		err = reader.CompleteRequest("req-1", &evmservice.RequestReport{
-			RequestType: evmservice.RequestType_REQUEST_TYPE_LOCKABLE_TO_BLOCK,
-			Payload:     &evmservice.RequestReport_Height{Height: &evmservice.ChainHeight{Latest: 100}},
+			Report: &evmservice.RequestReport_LockableToBlock{LockableToBlock: &evmservice.ChainHeight{Latest: 100}},
 		})
 		require.NoError(t, err)
 		tests.RequireLogMessage(t, observed, "locked request req-1 to height latest:100")
@@ -277,13 +240,12 @@ func TestCompleteRequest(t *testing.T) {
 }
 
 func TestRead(t *testing.T) {
-	reader := NewReader(logger.Test(t), time.Second)
+	poller := mocks.NewPoller(t)
+	reader := NewReader(logger.Test(t), poller, time.Second)
 	require.NoError(t, reader.Start(t.Context()))
 	t.Cleanup(func() {
 		require.NoError(t, reader.Close())
 	})
-	poller := mocks.NewPoller(t)
-	reader.SetPoller(poller)
 
 	t.Run("Eventually consistent request is added to poller", func(t *testing.T) {
 		r := types.NewEventuallyConsistentRequest("id", nil)
@@ -292,7 +254,7 @@ func TestRead(t *testing.T) {
 		require.NoError(t, err)
 	})
 	t.Run("Read return an error if same request is added twice", func(t *testing.T) {
-		r := types.NewRequest("id3", evmservice.RequestType_REQUEST_TYPE_UNKNOWN)
+		r := types.NewLockableToBlockRequest("id3", nil)
 		_, err := reader.Read(t.Context(), r)
 		require.NoError(t, err)
 		_, err = reader.Read(t.Context(), r)

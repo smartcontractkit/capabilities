@@ -7,13 +7,6 @@ packages:
   github.com/smartcontractkit/chain_capabilities/evm/actions:
     interfaces:
       ConsensusReader:
-  github.com/smartcontractkit/chain_capabilities/evm/consensus/poller:
-    interfaces:
-      ObservationsStore:
-  github.com/smartcontractkit/chain_capabilities/evm/consensus/types:
-    interfaces:
-      EventuallyConsistentRequest:
-      Request:
   github.com/smartcontractkit/chain_capabilities/evm/consensus:
     interfaces:
       Poller:

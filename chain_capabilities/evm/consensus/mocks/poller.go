@@ -23,7 +23,7 @@ func (_m *Poller) EXPECT() *Poller_Expecter {
 }
 
 // Enqueue provides a mock function with given fields: ctx, request
-func (_m *Poller) Enqueue(ctx context.Context, request types.EventuallyConsistentRequest) {
+func (_m *Poller) Enqueue(ctx context.Context, request types.ObservableRequest) {
 	_m.Called(ctx, request)
 }
 
@@ -34,14 +34,14 @@ type Poller_Enqueue_Call struct {
 
 // Enqueue is a helper method to define mock.On call
 //   - ctx context.Context
-//   - request types.EventuallyConsistentRequest
+//   - request types.ObservableRequest
 func (_e *Poller_Expecter) Enqueue(ctx interface{}, request interface{}) *Poller_Enqueue_Call {
 	return &Poller_Enqueue_Call{Call: _e.mock.On("Enqueue", ctx, request)}
 }
 
-func (_c *Poller_Enqueue_Call) Run(run func(ctx context.Context, request types.EventuallyConsistentRequest)) *Poller_Enqueue_Call {
+func (_c *Poller_Enqueue_Call) Run(run func(ctx context.Context, request types.ObservableRequest)) *Poller_Enqueue_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(types.EventuallyConsistentRequest))
+		run(args[0].(context.Context), args[1].(types.ObservableRequest))
 	})
 	return _c
 }
@@ -51,7 +51,7 @@ func (_c *Poller_Enqueue_Call) Return() *Poller_Enqueue_Call {
 	return _c
 }
 
-func (_c *Poller_Enqueue_Call) RunAndReturn(run func(context.Context, types.EventuallyConsistentRequest)) *Poller_Enqueue_Call {
+func (_c *Poller_Enqueue_Call) RunAndReturn(run func(context.Context, types.ObservableRequest)) *Poller_Enqueue_Call {
 	_c.Run(run)
 	return _c
 }

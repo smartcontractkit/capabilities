@@ -14,6 +14,7 @@ import (
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 	"github.com/smartcontractkit/libocr/quorumhelper"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 
@@ -135,26 +136,26 @@ func (rp *reportingPlugin) Observation(
 	return proto.Marshal(observation)
 }
 
-func (rp *reportingPlugin) observeRequest(observation *evmservice.Observation, request ctypes.Request) error {
-	requestType := request.Type()
-	switch requestType {
-	case evmservice.RequestType_REQUEST_TYPE_AGGREGATABLE, evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT:
-		requestOb, ok := rp.requestsStore.GetObservation(request.ID())
+func (rp *reportingPlugin) observeRequest(observation *evmservice.Observation, rawRequest ctypes.Request) error {
+	switch rq := rawRequest.(type) {
+	case *ctypes.AggregatabelRequest:
+		panic("not implemented")
+	case *ctypes.EventuallyConsistentRequest:
+		requestOb, ok := rq.GetObservation()
 		if !ok {
 			return nil
 		}
-		observation.Observations[request.ID()] = &evmservice.RequestObservation{
-			RequestType: requestType,
-			Value:       requestOb,
+		observation.Observations[rq.ID()] = &evmservice.RequestObservation{
+			Observation: &evmservice.RequestObservation_EventuallyConsistent{EventuallyConsistent: requestOb},
 		}
 		return nil
-	case evmservice.RequestType_REQUEST_TYPE_LOCKABLE_TO_BLOCK:
-		observation.Observations[request.ID()] = &evmservice.RequestObservation{
-			RequestType: requestType,
+	case *ctypes.LockableToBlockRequest:
+		observation.Observations[rq.ID()] = &evmservice.RequestObservation{
+			Observation: &evmservice.RequestObservation_LockableToBlock{LockableToBlock: &emptypb.Empty{}},
 		}
 		return nil
 	default:
-		return fmt.Errorf("unsupported request type: %s", requestType)
+		return fmt.Errorf("unsupported request type: %T", rq)
 	}
 }
 
@@ -235,9 +236,18 @@ func (rp *reportingPlugin) agreeOnRequestType(requestID string, aos []attributed
 			if !ok || requestOb == nil {
 				continue
 			}
+			var requestType evmservice.RequestType
+			switch requestOb.GetObservation().(type) {
+			case *evmservice.RequestObservation_EventuallyConsistent:
+				requestType = evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT
+			case *evmservice.RequestObservation_LockableToBlock:
+				requestType = evmservice.RequestType_REQUEST_TYPE_LOCKABLE_TO_BLOCK
+			case *evmservice.RequestObservation_Aggregatable:
+				requestType = evmservice.RequestType_REQUEST_TYPE_AGGREGATABLE
+			}
 			yield(ob.Observer, observation[evmservice.RequestType, evmservice.RequestType]{
-				Key:   requestOb.RequestType,
-				Value: requestOb.RequestType,
+				Key:   requestType,
+				Value: requestType,
 			})
 		}
 	}
@@ -245,7 +255,7 @@ func (rp *reportingPlugin) agreeOnRequestType(requestID string, aos []attributed
 	return mode[evmservice.RequestType, evmservice.RequestType](rp.config.N, rp.config.F, iterator)
 }
 
-func (rp *reportingPlugin) agreeOnRequestValue(requestID string, aos []attributedObservation) ([]byte, error) {
+func (rp *reportingPlugin) agreeOnEventuallyConsistentValue(requestID string, aos []attributedObservation) ([]byte, error) {
 	iterator := func(yield func(commontypes.OracleID, observation[[32]byte, []byte]) bool) {
 		for _, ob := range aos {
 			requestOb, ok := ob.Observation.Observations[requestID]
@@ -253,10 +263,10 @@ func (rp *reportingPlugin) agreeOnRequestValue(requestID string, aos []attribute
 				continue
 			}
 
-			key := sha256.Sum256(requestOb.Value)
+			key := sha256.Sum256(requestOb.GetEventuallyConsistent())
 			yield(ob.Observer, observation[[32]byte, []byte]{
 				Key:   key,
-				Value: requestOb.Value,
+				Value: requestOb.GetEventuallyConsistent(),
 			})
 		}
 	}
@@ -323,20 +333,19 @@ func (rp *reportingPlugin) Outcome(
 			// TODO: PLEX-1470 implement aggregatable methods
 			panic("not implemented")
 		case evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT:
-			value, err := rp.agreeOnRequestValue(requestID, aos)
+			value, err := rp.agreeOnEventuallyConsistentValue(requestID, aos)
 			if err != nil {
 				rp.logger.Infow("Could not determine request value", "requestID", requestID, "err", err)
 				continue
 			}
 			outcome.Outcomes = append(outcome.Outcomes, &evmservice.RequestOutcome{
-				RequestID:   requestID,
-				RequestType: requestType,
-				Value:       value,
+				RequestID: requestID,
+				Outcome:   &evmservice.RequestOutcome_EventuallyConsistent{EventuallyConsistent: value},
 			})
 		case evmservice.RequestType_REQUEST_TYPE_LOCKABLE_TO_BLOCK:
 			outcome.Outcomes = append(outcome.Outcomes, &evmservice.RequestOutcome{
-				RequestID:   requestID,
-				RequestType: requestType,
+				RequestID: requestID,
+				Outcome:   &evmservice.RequestOutcome_LockableToBlock{LockableToBlock: &emptypb.Empty{}},
 			})
 		default:
 			return nil, fmt.Errorf("unsupported request type: %s", requestType)
@@ -355,17 +364,16 @@ func (rp *reportingPlugin) Reports(ctx context.Context, seqNr uint64, rawOutcome
 	reports := make([]ocr3types.ReportPlus[[]byte], len(outcome.Outcomes))
 	for i, requestOutcome := range outcome.Outcomes {
 		report := evmservice.RequestReport{
-			RequestID:   requestOutcome.RequestID,
-			RequestType: requestOutcome.RequestType,
+			RequestID: requestOutcome.RequestID,
 		}
 
-		switch requestOutcome.RequestType {
-		case evmservice.RequestType_REQUEST_TYPE_AGGREGATABLE, evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT:
-			report.Payload = &evmservice.RequestReport_Value{Value: requestOutcome.Value}
-		case evmservice.RequestType_REQUEST_TYPE_LOCKABLE_TO_BLOCK:
-			report.Payload = &evmservice.RequestReport_Height{Height: outcome.ChainHeight}
+		switch requestOutcome.Outcome.(type) {
+		case *evmservice.RequestOutcome_EventuallyConsistent:
+			report.Report = &evmservice.RequestReport_EventuallyConsistent{EventuallyConsistent: requestOutcome.GetEventuallyConsistent()}
+		case *evmservice.RequestOutcome_LockableToBlock:
+			report.Report = &evmservice.RequestReport_LockableToBlock{LockableToBlock: outcome.ChainHeight}
 		default:
-			return nil, fmt.Errorf("unsupported request type: %s", requestOutcome.RequestType)
+			return nil, fmt.Errorf("unsupported request type: %T", requestOutcome.Outcome)
 		}
 
 		asProto, err := proto.Marshal(&report)

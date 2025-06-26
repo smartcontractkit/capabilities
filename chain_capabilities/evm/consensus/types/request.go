@@ -2,82 +2,108 @@ package types
 
 import (
 	"context"
+	"sync"
 
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
+	"github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 )
 
 type Request interface {
 	ID() string
-	Type() evmservice.RequestType
 }
 
-type EventuallyConsistentRequest interface {
+type ObservableRequest interface {
 	Request
-	Observe(context.Context) ([]byte, error)
+	CaptureObservation(ctx context.Context) error
 }
 
-type LockableToBlockRequest interface {
-	Request
-	ToEventuallyConsistent(chainHeight *evmservice.ChainHeight) EventuallyConsistentRequest
+var _ ObservableRequest = (*EventuallyConsistentRequest)(nil)
+
+type EventuallyConsistentRequest struct {
+	*observableRequest[[]byte]
 }
 
-type AggregatableRequest interface {
-	Request
-	Observe(context.Context, evmservice.ChainHeight)
-}
-
-func NewRequest(id string, requestType evmservice.RequestType) Request {
-	return &request{
-		id:          id,
-		requestType: requestType,
+func NewEventuallyConsistentRequest(id string, observe func(context.Context) ([]byte, error)) *EventuallyConsistentRequest {
+	return &EventuallyConsistentRequest{
+		observableRequest: &observableRequest[[]byte]{
+			id:      id,
+			observe: observe,
+		},
 	}
 }
 
-type request struct {
-	id          string
-	requestType evmservice.RequestType
+var _ ObservableRequest = (*AggregatabelRequest)(nil)
+
+type AggregatabelRequest struct {
+	*observableRequest[*pb.Decimal]
 }
 
-func (r *request) ID() string {
+func NewAggregatabelRequest(id string, observe func(context.Context) (*pb.Decimal, error)) *AggregatabelRequest {
+	return &AggregatabelRequest{
+		observableRequest: &observableRequest[*pb.Decimal]{
+			id:      id,
+			observe: observe,
+		},
+	}
+}
+
+type observableRequest[T any] struct {
+	id                string
+	observation       T
+	observationExists bool
+	observationMutex  sync.Mutex
+	observe           func(context.Context) (T, error)
+}
+
+func (r *observableRequest[T]) ID() string {
 	return r.id
 }
 
-func (r *request) Type() evmservice.RequestType {
-	return r.requestType
-}
-
-var _ EventuallyConsistentRequest = (*eventuallyConsistentRequest)(nil)
-
-type eventuallyConsistentRequest struct {
-	Request
-	observe func(context.Context) ([]byte, error)
-}
-
-func NewEventuallyConsistentRequest(id string, observe func(context.Context) ([]byte, error)) EventuallyConsistentRequest {
-	return &eventuallyConsistentRequest{
-		Request: NewRequest(id, evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT),
-		observe: observe,
+func (r *observableRequest[T]) CaptureObservation(ctx context.Context) error {
+	observation, err := r.observe(ctx)
+	if err != nil {
+		return err
 	}
+
+	r.observationMutex.Lock()
+	defer r.observationMutex.Unlock()
+	r.observation = observation
+	r.observationExists = true
+	return nil
 }
 
-func (r *eventuallyConsistentRequest) Observe(ctx context.Context) ([]byte, error) {
-	return r.observe(ctx)
+func (r *observableRequest[T]) GetObservation() (T, bool) {
+	r.observationMutex.Lock()
+	defer r.observationMutex.Unlock()
+	return r.observation, r.observationExists
 }
 
-type lockableToABlockRequest struct {
-	Request
+// SetObservation - sets observation. Should be used only for tests
+func (r *observableRequest[T]) SetObservation(observation T) {
+	r.observationMutex.Lock()
+	defer r.observationMutex.Unlock()
+	r.observation = observation
+	r.observationExists = true
+}
+
+type LockableToBlockRequest struct {
+	id      string
 	observe func(context.Context, *evmservice.ChainHeight) ([]byte, error)
 }
 
-func NewLockableToABlockRequest(id string, observe func(context.Context, *evmservice.ChainHeight) ([]byte, error)) LockableToBlockRequest {
-	return &lockableToABlockRequest{
-		Request: NewRequest(id, evmservice.RequestType_REQUEST_TYPE_LOCKABLE_TO_BLOCK),
+func NewLockableToBlockRequest(id string, observe func(context.Context, *evmservice.ChainHeight) ([]byte, error)) *LockableToBlockRequest {
+	return &LockableToBlockRequest{
+		id:      id,
 		observe: observe,
 	}
 }
 
-func (r *lockableToABlockRequest) ToEventuallyConsistent(chainHeight *evmservice.ChainHeight) EventuallyConsistentRequest {
-	return NewEventuallyConsistentRequest(r.ID(), func(ctx context.Context) ([]byte, error) {
+func (r *LockableToBlockRequest) ID() string {
+	return r.id
+}
+
+func (r *LockableToBlockRequest) ToEventuallyConsistent(chainHeight *evmservice.ChainHeight) *EventuallyConsistentRequest {
+	return NewEventuallyConsistentRequest(r.id, func(ctx context.Context) ([]byte, error) {
 		return r.observe(ctx, chainHeight)
 	})
 }

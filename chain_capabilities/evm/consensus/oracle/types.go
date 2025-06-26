@@ -15,7 +15,6 @@ type BlocksProvider interface {
 type RequestsStore interface {
 	GetRequestIDs(batchSize int) ([]string, error)
 	GetRequest(id string) (types.Request, bool)
-	GetObservation(id string) ([]byte, bool)
 	CompleteRequest(id string, report *evmservice.RequestReport) error
 	MarkAttempted(id string)
 }

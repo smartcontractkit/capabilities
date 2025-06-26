@@ -4,7 +4,6 @@ import (
 	"context"
 	"testing"
 
-	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/chain_capabilities/evm/consensus/types"
@@ -12,16 +11,14 @@ import (
 
 // Helper function to create a test requestCtx
 func createTestRequest(t *testing.T, id string, attempt int) *requestCtx {
-	ctx, cancel := context.WithCancel(context.Background())
-	request := types.NewRequest(id, evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT)
+	ctx, cancel := context.WithCancel(t.Context())
+	request := types.NewEventuallyConsistentRequest(id, nil)
 	return &requestCtx{
-		Request:        request,
-		Ctx:            ctx,
-		Cancel:         cancel,
-		Observation:    nil,
-		HasObservation: false,
-		ResultChan:     make(chan []byte, 1),
-		Attempt:        attempt,
+		Request:    request,
+		Ctx:        ctx,
+		Cancel:     cancel,
+		ResultChan: make(chan []byte, 1),
+		Attempt:    attempt,
 	}
 }
 

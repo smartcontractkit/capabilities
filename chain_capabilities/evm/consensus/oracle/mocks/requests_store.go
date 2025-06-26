@@ -69,64 +69,6 @@ func (_c *RequestsStore_CompleteRequest_Call) RunAndReturn(run func(string, *evm
 	return _c
 }
 
-// GetObservation provides a mock function with given fields: id
-func (_m *RequestsStore) GetObservation(id string) ([]byte, bool) {
-	ret := _m.Called(id)
-
-	if len(ret) == 0 {
-		panic("no return value specified for GetObservation")
-	}
-
-	var r0 []byte
-	var r1 bool
-	if rf, ok := ret.Get(0).(func(string) ([]byte, bool)); ok {
-		return rf(id)
-	}
-	if rf, ok := ret.Get(0).(func(string) []byte); ok {
-		r0 = rf(id)
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]byte)
-		}
-	}
-
-	if rf, ok := ret.Get(1).(func(string) bool); ok {
-		r1 = rf(id)
-	} else {
-		r1 = ret.Get(1).(bool)
-	}
-
-	return r0, r1
-}
-
-// RequestsStore_GetObservation_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetObservation'
-type RequestsStore_GetObservation_Call struct {
-	*mock.Call
-}
-
-// GetObservation is a helper method to define mock.On call
-//   - id string
-func (_e *RequestsStore_Expecter) GetObservation(id interface{}) *RequestsStore_GetObservation_Call {
-	return &RequestsStore_GetObservation_Call{Call: _e.mock.On("GetObservation", id)}
-}
-
-func (_c *RequestsStore_GetObservation_Call) Run(run func(id string)) *RequestsStore_GetObservation_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(string))
-	})
-	return _c
-}
-
-func (_c *RequestsStore_GetObservation_Call) Return(_a0 []byte, _a1 bool) *RequestsStore_GetObservation_Call {
-	_c.Call.Return(_a0, _a1)
-	return _c
-}
-
-func (_c *RequestsStore_GetObservation_Call) RunAndReturn(run func(string) ([]byte, bool)) *RequestsStore_GetObservation_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
 // GetRequest provides a mock function with given fields: id
 func (_m *RequestsStore) GetRequest(id string) (types.Request, bool) {
 	ret := _m.Called(id)

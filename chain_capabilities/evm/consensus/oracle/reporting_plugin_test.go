@@ -7,16 +7,16 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/tests"
+	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2/types"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zapcore"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
+	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/google/go-cmp/cmp"
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
-
-	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
 	"github.com/smartcontractkit/chain_capabilities/evm/consensus/oracle/mocks"
 	"github.com/smartcontractkit/chain_capabilities/evm/consensus/types"
@@ -129,9 +129,9 @@ func TestObservation(t *testing.T) {
 		})
 		requestsStore := mocks.NewRequestsStore(t)
 		plugin := newReportingPlugin(Config{BatchSize: 1}, logger.Sugared(logger.Test(t)), blocksProvider, requestsStore)
-		requestsStore.EXPECT().GetRequest("1").Return(types.NewRequest("1", evmservice.RequestType_REQUEST_TYPE_UNKNOWN), true)
+		requestsStore.EXPECT().GetRequest("1").Return(types.Request(nil), true)
 		_, err := plugin.Observation(t.Context(), ocr3types.OutcomeContext{}, []byte(`["1"]`))
-		require.EqualError(t, err, "failed to observe request: unsupported request type: REQUEST_TYPE_UNKNOWN")
+		require.EqualError(t, err, "failed to observe request: unsupported request type: <nil>")
 	})
 	t.Run("Happy path", func(t *testing.T) {
 		expectedChainHeight := &evm.ChainHeight{
@@ -144,17 +144,17 @@ func TestObservation(t *testing.T) {
 		requestsStore.EXPECT().GetRequest("request_not_present_in_store").Return(nil, false).Once()
 
 		id := "request_without_observation"
-		requestsStore.EXPECT().GetRequest(id).Return(types.NewRequest(id, evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT), true).Once()
-		requestsStore.EXPECT().GetObservation(id).Return(nil, false).Once()
+		requestsStore.EXPECT().GetRequest(id).Return(types.NewEventuallyConsistentRequest(id, nil), true).Once()
 		requestsStore.EXPECT().MarkAttempted(id).Once()
 
 		id = "request_with_observation"
-		requestsStore.EXPECT().GetRequest(id).Return(types.NewRequest(id, evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT), true).Once()
-		requestsStore.EXPECT().GetObservation(id).Return([]byte("observation"), true).Once()
+		withObservation := types.NewEventuallyConsistentRequest(id, nil)
+		withObservation.SetObservation([]byte("observation"))
+		requestsStore.EXPECT().GetRequest(id).Return(withObservation, true).Once()
 		requestsStore.EXPECT().MarkAttempted(id).Once()
 
 		id = "lockable_request"
-		requestsStore.EXPECT().GetRequest(id).Return(types.NewRequest(id, evmservice.RequestType_REQUEST_TYPE_LOCKABLE_TO_BLOCK), true).Once()
+		requestsStore.EXPECT().GetRequest(id).Return(types.NewLockableToBlockRequest(id, nil), true).Once()
 		requestsStore.EXPECT().MarkAttempted(id).Once()
 
 		plugin := newReportingPlugin(Config{BatchSize: 50}, logger.Sugared(logger.Test(t)), blocksProvider, requestsStore)
@@ -166,11 +166,10 @@ func TestObservation(t *testing.T) {
 			ChainHeight: expectedChainHeight,
 			Observations: map[string]*evmservice.RequestObservation{
 				"request_with_observation": {
-					RequestType: evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT,
-					Value:       []byte("observation"),
+					Observation: &evmservice.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("observation")},
 				},
 				"lockable_request": {
-					RequestType: evmservice.RequestType_REQUEST_TYPE_LOCKABLE_TO_BLOCK,
+					Observation: &evmservice.RequestObservation_LockableToBlock{LockableToBlock: &emptypb.Empty{}},
 				},
 			},
 		}
@@ -348,19 +347,15 @@ func TestOutcome(t *testing.T) {
 			nodesObservations: []map[string]*evmservice.RequestObservation{
 				{
 					// node1
-					"request_1": &evmservice.RequestObservation{RequestType: evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT},
+					"request_1": &evmservice.RequestObservation{Observation: &evmservice.RequestObservation_EventuallyConsistent{}},
 				},
 				{
 					// node2
-					"request_1": &evmservice.RequestObservation{RequestType: evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT},
+					"request_1": &evmservice.RequestObservation{Observation: &evmservice.RequestObservation_EventuallyConsistent{}},
 				},
 				{
 					// node3
-					"request_2": &evmservice.RequestObservation{RequestType: evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT},
-				},
-				{
-					// node4
-					"request_2": &evmservice.RequestObservation{RequestType: evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT},
+					"request_2": &evmservice.RequestObservation{Observation: &evmservice.RequestObservation_EventuallyConsistent{}},
 				},
 			},
 			expectedOutcome: &evmservice.Outcome{ChainHeight: chainHeight},
@@ -372,15 +367,15 @@ func TestOutcome(t *testing.T) {
 			nodesObservations: []map[string]*evmservice.RequestObservation{
 				{
 					// node1
-					"request_1": &evmservice.RequestObservation{RequestType: evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT, Value: []byte("value1")},
+					"request_1": &evmservice.RequestObservation{Observation: &evmservice.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
 				},
 				{
 					// node2
-					"request_1": &evmservice.RequestObservation{RequestType: evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT, Value: []byte("value2")},
+					"request_1": &evmservice.RequestObservation{Observation: &evmservice.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value2")}},
 				},
 				{
 					// node3
-					"request_1": &evmservice.RequestObservation{RequestType: evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT, Value: []byte("value3")},
+					"request_1": &evmservice.RequestObservation{Observation: &evmservice.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value3")}},
 				},
 			},
 			expectedOutcome: &evmservice.Outcome{ChainHeight: chainHeight},
@@ -392,15 +387,15 @@ func TestOutcome(t *testing.T) {
 			nodesObservations: []map[string]*evmservice.RequestObservation{
 				{
 					// node1
-					"request_1": &evmservice.RequestObservation{RequestType: evmservice.RequestType_REQUEST_TYPE_UNKNOWN},
+					"request_1": &evmservice.RequestObservation{},
 				},
 				{
 					// node2
-					"request_1": &evmservice.RequestObservation{RequestType: evmservice.RequestType_REQUEST_TYPE_UNKNOWN},
+					"request_1": &evmservice.RequestObservation{},
 				},
 				{
 					// node3
-					"request_1": &evmservice.RequestObservation{RequestType: evmservice.RequestType_REQUEST_TYPE_UNKNOWN},
+					"request_1": &evmservice.RequestObservation{},
 				},
 			},
 			expectedError: "unsupported request type: REQUEST_TYPE_UNKNOWN",
@@ -411,36 +406,35 @@ func TestOutcome(t *testing.T) {
 			nodesObservations: []map[string]*evmservice.RequestObservation{
 				{
 					// node1
-					"request_with_common_value":                     &evmservice.RequestObservation{RequestType: evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT, Value: []byte("value1")},
-					"request_without_common_value":                  &evmservice.RequestObservation{RequestType: evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT, Value: []byte("value1")},
-					"lockable_request":                              &evmservice.RequestObservation{RequestType: evmservice.RequestType_REQUEST_TYPE_LOCKABLE_TO_BLOCK},
-					"request_known_to_insufficient_number_of_nodes": &evmservice.RequestObservation{RequestType: evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT, Value: []byte("value1")},
+					"request_with_common_value":                     &evmservice.RequestObservation{Observation: &evmservice.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
+					"request_without_common_value":                  &evmservice.RequestObservation{Observation: &evmservice.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
+					"lockable_request":                              &evmservice.RequestObservation{Observation: &evmservice.RequestObservation_LockableToBlock{LockableToBlock: &emptypb.Empty{}}},
+					"request_known_to_insufficient_number_of_nodes": &evmservice.RequestObservation{Observation: &evmservice.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
 				},
 				{
 					// node2
-					"request_with_common_value":                     &evmservice.RequestObservation{RequestType: evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT, Value: []byte("value1")},
-					"request_without_common_value":                  &evmservice.RequestObservation{RequestType: evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT, Value: []byte("value2")},
-					"lockable_request":                              &evmservice.RequestObservation{RequestType: evmservice.RequestType_REQUEST_TYPE_LOCKABLE_TO_BLOCK},
-					"request_known_to_insufficient_number_of_nodes": &evmservice.RequestObservation{RequestType: evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT, Value: []byte("value1")},
+					"request_with_common_value":                     &evmservice.RequestObservation{Observation: &evmservice.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
+					"request_without_common_value":                  &evmservice.RequestObservation{Observation: &evmservice.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value2")}},
+					"lockable_request":                              &evmservice.RequestObservation{Observation: &evmservice.RequestObservation_LockableToBlock{LockableToBlock: &emptypb.Empty{}}},
+					"request_known_to_insufficient_number_of_nodes": &evmservice.RequestObservation{Observation: &evmservice.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
 				},
 				{
 					// node3
-					"request_with_common_value":    &evmservice.RequestObservation{RequestType: evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT, Value: []byte("value1")},
-					"request_without_common_value": &evmservice.RequestObservation{RequestType: evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT, Value: []byte("value3")},
-					"lockable_request":             &evmservice.RequestObservation{RequestType: evmservice.RequestType_REQUEST_TYPE_LOCKABLE_TO_BLOCK},
+					"request_with_common_value":    &evmservice.RequestObservation{Observation: &evmservice.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
+					"request_without_common_value": &evmservice.RequestObservation{Observation: &evmservice.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value3")}},
+					"lockable_request":             &evmservice.RequestObservation{Observation: &evmservice.RequestObservation_LockableToBlock{LockableToBlock: &emptypb.Empty{}}},
 				},
 			},
 			expectedOutcome: &evmservice.Outcome{
 				ChainHeight: chainHeight,
 				Outcomes: []*evmservice.RequestOutcome{
 					{
-						RequestID:   "request_with_common_value",
-						RequestType: evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT,
-						Value:       []byte("value1"),
+						RequestID: "request_with_common_value",
+						Outcome:   &evmservice.RequestOutcome_EventuallyConsistent{EventuallyConsistent: []byte("value1")},
 					},
 					{
-						RequestID:   "lockable_request",
-						RequestType: evmservice.RequestType_REQUEST_TYPE_LOCKABLE_TO_BLOCK,
+						RequestID: "lockable_request",
+						Outcome:   &evmservice.RequestOutcome_LockableToBlock{LockableToBlock: &emptypb.Empty{}},
 					},
 				},
 			},
@@ -490,7 +484,7 @@ func TestAgreeOnRequestValue(t *testing.T) {
 					Observer: 1,
 					Observation: &evmservice.Observation{
 						Observations: map[string]*evmservice.RequestObservation{
-							id: {Value: []byte("value1")},
+							id: {Observation: &evmservice.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
 						},
 					},
 				},
@@ -498,7 +492,7 @@ func TestAgreeOnRequestValue(t *testing.T) {
 					Observer: 2,
 					Observation: &evmservice.Observation{
 						Observations: map[string]*evmservice.RequestObservation{
-							id: {Value: []byte("value1")},
+							id: {Observation: &evmservice.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
 						},
 					},
 				},
@@ -512,7 +506,7 @@ func TestAgreeOnRequestValue(t *testing.T) {
 					Observer: 1,
 					Observation: &evmservice.Observation{
 						Observations: map[string]*evmservice.RequestObservation{
-							id: {Value: []byte("value1")},
+							id: {Observation: &evmservice.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
 						},
 					},
 				},
@@ -520,7 +514,7 @@ func TestAgreeOnRequestValue(t *testing.T) {
 					Observer: 2,
 					Observation: &evmservice.Observation{
 						Observations: map[string]*evmservice.RequestObservation{
-							id: {Value: []byte("value2")},
+							id: {Observation: &evmservice.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value2")}},
 						},
 					},
 				},
@@ -528,7 +522,7 @@ func TestAgreeOnRequestValue(t *testing.T) {
 					Observer: 3,
 					Observation: &evmservice.Observation{
 						Observations: map[string]*evmservice.RequestObservation{
-							id: {Value: []byte("value3")},
+							id: {Observation: &evmservice.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value3")}},
 						},
 					},
 				},
@@ -536,7 +530,7 @@ func TestAgreeOnRequestValue(t *testing.T) {
 					Observer: 4,
 					Observation: &evmservice.Observation{
 						Observations: map[string]*evmservice.RequestObservation{
-							id: {Value: []byte("value4")},
+							id: {Observation: &evmservice.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value4")}},
 						},
 					},
 				},
@@ -550,7 +544,7 @@ func TestAgreeOnRequestValue(t *testing.T) {
 					Observer: 1,
 					Observation: &evmservice.Observation{
 						Observations: map[string]*evmservice.RequestObservation{
-							id: {Value: []byte("value1")},
+							id: {Observation: &evmservice.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
 						},
 					},
 				},
@@ -558,7 +552,7 @@ func TestAgreeOnRequestValue(t *testing.T) {
 					Observer: 2,
 					Observation: &evmservice.Observation{
 						Observations: map[string]*evmservice.RequestObservation{
-							id: {Value: []byte("value2")},
+							id: {Observation: &evmservice.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value2")}},
 						},
 					},
 				},
@@ -566,7 +560,7 @@ func TestAgreeOnRequestValue(t *testing.T) {
 					Observer: 3,
 					Observation: &evmservice.Observation{
 						Observations: map[string]*evmservice.RequestObservation{
-							id: {Value: []byte("value2")},
+							id: {Observation: &evmservice.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value2")}},
 						},
 					},
 				},
@@ -574,7 +568,7 @@ func TestAgreeOnRequestValue(t *testing.T) {
 					Observer: 4,
 					Observation: &evmservice.Observation{
 						Observations: map[string]*evmservice.RequestObservation{
-							id: {Value: []byte("value1")},
+							id: {Observation: &evmservice.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
 						},
 					},
 				},
@@ -588,7 +582,7 @@ func TestAgreeOnRequestValue(t *testing.T) {
 					Observer: 1,
 					Observation: &evmservice.Observation{
 						Observations: map[string]*evmservice.RequestObservation{
-							id: {Value: []byte("invalid_value")},
+							id: {Observation: &evmservice.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("invalid_vale")}},
 						},
 					},
 				},
@@ -596,7 +590,7 @@ func TestAgreeOnRequestValue(t *testing.T) {
 					Observer: 2,
 					Observation: &evmservice.Observation{
 						Observations: map[string]*evmservice.RequestObservation{
-							id: {Value: []byte("value2")},
+							id: {Observation: &evmservice.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value2")}},
 						},
 					},
 				},
@@ -604,7 +598,7 @@ func TestAgreeOnRequestValue(t *testing.T) {
 					Observer: 3,
 					Observation: &evmservice.Observation{
 						Observations: map[string]*evmservice.RequestObservation{
-							id: {Value: []byte("value2")},
+							id: {Observation: &evmservice.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value2")}},
 						},
 					},
 				},
@@ -612,7 +606,7 @@ func TestAgreeOnRequestValue(t *testing.T) {
 					Observer: 4,
 					Observation: &evmservice.Observation{
 						Observations: map[string]*evmservice.RequestObservation{
-							id: {Value: []byte("value4")},
+							id: {Observation: &evmservice.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value4")}},
 						},
 					},
 				},
@@ -623,7 +617,120 @@ func TestAgreeOnRequestValue(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1, N: 4}}, logger.Sugared(logger.Test(t)), nil, nil)
-			value, err := plugin.agreeOnRequestValue(id, tc.nodesObservations)
+			value, err := plugin.agreeOnEventuallyConsistentValue(id, tc.nodesObservations)
+			if tc.expectedError == "" {
+				require.NoError(t, err)
+				require.Equal(t, tc.expectedValue, value)
+			} else {
+				require.EqualError(t, err, tc.expectedError)
+			}
+		})
+	}
+}
+
+func TestAgreeOnRequestType(t *testing.T) {
+	const id = "request_1"
+	testCases := []struct {
+		name              string
+		nodesObservations []attributedObservation
+		expectedError     string
+		expectedValue     evmservice.RequestType
+	}{
+		{
+			name: "insufficient total number of observations",
+			nodesObservations: []attributedObservation{
+				{
+					Observer: 1,
+					Observation: &evmservice.Observation{
+						Observations: map[string]*evmservice.RequestObservation{
+							id: {Observation: &evmservice.RequestObservation_EventuallyConsistent{}},
+						},
+					},
+				},
+				{
+					Observer: 2,
+					Observation: &evmservice.Observation{
+						Observations: map[string]*evmservice.RequestObservation{
+							id: {Observation: &evmservice.RequestObservation_EventuallyConsistent{}},
+						},
+					},
+				},
+			},
+			expectedError: "insufficient number of observations: expected 3, got 2",
+		},
+		{
+			name: "insufficient number of identical observations",
+			nodesObservations: []attributedObservation{
+				{
+					Observer: 1,
+					Observation: &evmservice.Observation{
+						Observations: map[string]*evmservice.RequestObservation{
+							id: {Observation: &evmservice.RequestObservation_EventuallyConsistent{}},
+						},
+					},
+				},
+				{
+					Observer: 2,
+					Observation: &evmservice.Observation{
+						Observations: map[string]*evmservice.RequestObservation{
+							id: {Observation: &evmservice.RequestObservation_LockableToBlock{}},
+						},
+					},
+				},
+				{
+					Observer: 3,
+					Observation: &evmservice.Observation{
+						Observations: map[string]*evmservice.RequestObservation{
+							id: {Observation: &evmservice.RequestObservation_Aggregatable{}},
+						},
+					},
+				},
+			},
+			expectedError: "insufficient number of identical observations: expected 2, got 1",
+		},
+		{
+			name: "prefer value observed by oracle with lowest id",
+			nodesObservations: []attributedObservation{
+				{
+					Observer: 1,
+					Observation: &evmservice.Observation{
+						Observations: map[string]*evmservice.RequestObservation{
+							id: {Observation: &evmservice.RequestObservation_EventuallyConsistent{}},
+						},
+					},
+				},
+				{
+					Observer: 2,
+					Observation: &evmservice.Observation{
+						Observations: map[string]*evmservice.RequestObservation{
+							id: {Observation: &evmservice.RequestObservation_LockableToBlock{}},
+						},
+					},
+				},
+				{
+					Observer: 3,
+					Observation: &evmservice.Observation{
+						Observations: map[string]*evmservice.RequestObservation{
+							id: {Observation: &evmservice.RequestObservation_LockableToBlock{}},
+						},
+					},
+				},
+				{
+					Observer: 4,
+					Observation: &evmservice.Observation{
+						Observations: map[string]*evmservice.RequestObservation{
+							id: {Observation: &evmservice.RequestObservation_EventuallyConsistent{}},
+						},
+					},
+				},
+			},
+			expectedValue: evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1, N: 4}}, logger.Sugared(logger.Test(t)), nil, nil)
+			value, err := plugin.agreeOnRequestType(id, tc.nodesObservations)
 			if tc.expectedError == "" {
 				require.NoError(t, err)
 				require.Equal(t, tc.expectedValue, value)
@@ -646,13 +753,12 @@ func TestReports(t *testing.T) {
 			outcome: &evmservice.Outcome{
 				Outcomes: []*evmservice.RequestOutcome{
 					{
-						RequestID:   "request_1",
-						RequestType: evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT,
-						Value:       []byte("value_1"),
+						RequestID: "request_1",
+						Outcome:   &evmservice.RequestOutcome_EventuallyConsistent{EventuallyConsistent: []byte("value_1")},
 					},
 					{
-						RequestID:   "request_2",
-						RequestType: evmservice.RequestType_REQUEST_TYPE_LOCKABLE_TO_BLOCK,
+						RequestID: "request_2",
+						Outcome:   &evmservice.RequestOutcome_LockableToBlock{LockableToBlock: &emptypb.Empty{}},
 					},
 				},
 				ChainHeight: &evmservice.ChainHeight{
@@ -665,20 +771,16 @@ func TestReports(t *testing.T) {
 				{
 					ReportWithInfo: ocr3types.ReportWithInfo[[]byte]{
 						Report: mustMarshalProto(&evmservice.RequestReport{
-							RequestID:   "request_1",
-							RequestType: evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT,
-							Payload:     &evmservice.RequestReport_Value{Value: []byte("value_1")},
+							RequestID: "request_1",
+							Report:    &evmservice.RequestReport_EventuallyConsistent{EventuallyConsistent: []byte("value_1")},
 						}),
 					},
 				},
 				{
 					ReportWithInfo: ocr3types.ReportWithInfo[[]byte]{
 						Report: mustMarshalProto(&evmservice.RequestReport{
-							RequestID:   "request_2",
-							RequestType: evmservice.RequestType_REQUEST_TYPE_LOCKABLE_TO_BLOCK,
-							Payload: &evmservice.RequestReport_Height{Height: &evmservice.ChainHeight{
-								Latest: 15, Safe: 10, Finalized: 8,
-							}},
+							RequestID: "request_2",
+							Report:    &evmservice.RequestReport_LockableToBlock{LockableToBlock: &evmservice.ChainHeight{Latest: 15, Safe: 10, Finalized: 8}},
 						}),
 					},
 				},
@@ -689,12 +791,12 @@ func TestReports(t *testing.T) {
 			outcome: &evmservice.Outcome{
 				Outcomes: []*evmservice.RequestOutcome{
 					{
-						RequestID:   "invalid_request",
-						RequestType: evmservice.RequestType_REQUEST_TYPE_UNKNOWN,
+						RequestID: "invalid_request",
+						Outcome:   nil,
 					},
 				},
 			},
-			expectedError: "unsupported request type: REQUEST_TYPE_UNKNOWN",
+			expectedError: "unsupported request type: <nil>",
 		},
 	}
 

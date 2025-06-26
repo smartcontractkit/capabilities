@@ -7,7 +7,7 @@ toolchain go1.24.3
 require (
 	github.com/google/go-cmp v0.7.0
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20250625153933-d42434f487d7
-	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250625174041-dfb6d55e748c
+	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250626180423-f58cfcd159ac
 	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250624161023-93f383781b0a
 	github.com/smartcontractkit/libocr v0.0.0-20250328171017-609ec10a5510
 	github.com/stretchr/testify v1.10.0

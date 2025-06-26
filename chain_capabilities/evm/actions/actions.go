@@ -50,7 +50,7 @@ func (e EVM) CallContract(ctx context.Context, meta capabilities.RequestMetadata
 	defer cancel()
 	var request ctypes.Request
 	if requiresLocking {
-		request = ctypes.NewLockableToABlockRequest(requestID(meta), func(ctx context.Context, height *evmservice.ChainHeight) ([]byte, error) {
+		request = ctypes.NewLockableToBlockRequest(requestID(meta), func(ctx context.Context, height *evmservice.ChainHeight) ([]byte, error) {
 			// TODO: PLEX-1571 guarantee finality/safety of observed data for load balanced RPCs
 			callBlockNumber, err := getCallBlockNumber(blockNumber, height)
 			if err != nil {
@@ -121,7 +121,7 @@ func (e EVM) filterLogsToRequest(ctx context.Context, meta capabilities.RequestM
 		}), nil
 	}
 
-	return ctypes.NewLockableToABlockRequest(requestID(meta), func(ctx context.Context, height *evmservice.ChainHeight) ([]byte, error) {
+	return ctypes.NewLockableToBlockRequest(requestID(meta), func(ctx context.Context, height *evmservice.ChainHeight) ([]byte, error) {
 		callFromBlock, err := getCallBlockNumber(fromBlock, height)
 		if err != nil {
 			return nil, fmt.Errorf("error getting callFromBlock: %w", err)
@@ -178,7 +178,7 @@ func (e EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, r
 	defer cancel()
 	var request ctypes.Request
 	if requiresLocking {
-		request = ctypes.NewLockableToABlockRequest(requestID(meta), balanceAt)
+		request = ctypes.NewLockableToBlockRequest(requestID(meta), balanceAt)
 	} else {
 		request = ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
 			return balanceAt(ctx, nil)

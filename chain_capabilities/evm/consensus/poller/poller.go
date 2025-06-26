@@ -12,12 +12,8 @@ import (
 	"github.com/smartcontractkit/chain_capabilities/evm/consensus/types"
 )
 
-type ObservationsStore interface {
-	SetObservation(id string, observation []byte)
-}
-
 type requestToPoll struct {
-	types.EventuallyConsistentRequest
+	types.ObservableRequest
 	//nolint:containedctx // Justification: required to receive signal, that request no longer requires polling
 	Ctx context.Context
 }
@@ -36,7 +32,6 @@ type Poller struct {
 	lggr       logger.SugaredLogger
 	maxWorkers int
 	pollPeriod time.Duration
-	store      ObservationsStore
 
 	mutex       sync.Mutex
 	inputNotify chan struct{}
@@ -45,11 +40,10 @@ type Poller struct {
 	retryQueue  *list.List[requestToRetry]
 }
 
-func NewPoller(lggr logger.Logger, store ObservationsStore, maxWorkers int, pollPeriod time.Duration) *Poller {
+func NewPoller(lggr logger.Logger, maxWorkers int, pollPeriod time.Duration) *Poller {
 	p := &Poller{
 		maxWorkers: maxWorkers,
 		pollPeriod: pollPeriod,
-		store:      store,
 
 		inputNotify: make(chan struct{}, 1),
 		requests:    list.New[requestToPoll](),
@@ -67,11 +61,11 @@ func NewPoller(lggr logger.Logger, store ObservationsStore, maxWorkers int, poll
 	return p
 }
 
-func (p *Poller) Enqueue(ctx context.Context, request types.EventuallyConsistentRequest) {
+func (p *Poller) Enqueue(ctx context.Context, request types.ObservableRequest) {
 	p.mutex.Lock()
 	p.enqueueUnsafe(requestToPoll{
-		EventuallyConsistentRequest: request,
-		Ctx:                         ctx,
+		ObservableRequest: request,
+		Ctx:               ctx,
 	})
 	p.mutex.Unlock()
 }
@@ -119,13 +113,12 @@ func (p *Poller) processRequest(request requestToPoll) {
 		return
 	}
 
-	observation, err := request.Observe(ctx)
+	err := request.CaptureObservation(ctx)
 	if err != nil {
 		p.lggr.Warnw("failed to capture observation", "err", err, "requestID", request.ID())
 	} else {
 		// TODO: some requests might need only one successful read (finalized data)
 		p.lggr.Debugw("captured observation", "requestID", request.ID())
-		p.store.SetObservation(request.ID(), observation)
 	}
 
 	p.mutex.Lock()

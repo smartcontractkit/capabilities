@@ -15,7 +15,7 @@ import (
 )
 
 type Poller interface {
-	Enqueue(ctx context.Context, request types.EventuallyConsistentRequest)
+	Enqueue(ctx context.Context, request types.ObservableRequest)
 }
 
 type Reader struct {
@@ -33,12 +33,13 @@ type Reader struct {
 	unknownRequestTTL               time.Duration
 }
 
-func NewReader(lggr logger.Logger, unknownRequestTTL time.Duration) *Reader {
+func NewReader(lggr logger.Logger, poller Poller, unknownRequestTTL time.Duration) *Reader {
 	r := &Reader{
 		requests:                        newPriorityQueue(),
 		unknownRequestsResultByID:       make(map[string]*unknownRequest),
 		unknownRequestsOrderedByTimeout: list.New[*unknownRequest](),
 		unknownRequestTTL:               unknownRequestTTL,
+		poller:                          poller,
 	}
 
 	r.Service, r.engine = services.Config{
@@ -48,10 +49,6 @@ func NewReader(lggr logger.Logger, unknownRequestTTL time.Duration) *Reader {
 
 	r.lggr = r.engine.SugaredLogger
 	return r
-}
-
-func (s *Reader) SetPoller(poller Poller) {
-	s.poller = poller
 }
 
 type unknownRequest struct {
@@ -64,12 +61,10 @@ type unknownRequest struct {
 type requestCtx struct {
 	types.Request
 	//nolint:containedctx // Justification: required to track request's timeout
-	Ctx            context.Context
-	Cancel         context.CancelFunc
-	Observation    []byte
-	HasObservation bool
-	ResultChan     chan []byte
-	Attempt        int
+	Ctx        context.Context
+	Cancel     context.CancelFunc
+	ResultChan chan []byte
+	Attempt    int
 }
 
 func (s *Reader) start(Ctx context.Context) error {
@@ -112,35 +107,14 @@ func (s *Reader) GetRequest(id string) (types.Request, bool) {
 	return s.requests.GetByID(id)
 }
 
-func (s *Reader) GetObservation(id string) (observation []byte, ok bool) {
-	s.lock.RLock()
-	defer s.lock.RUnlock()
-	request, ok := s.requests.GetByID(id)
-	if !ok {
-		return nil, false
-	}
-	return request.Observation, request.HasObservation
-}
-
-func (s *Reader) SetObservation(id string, observation []byte) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-	request, ok := s.requests.GetByID(id)
-	if !ok {
-		return
-	}
-	request.Observation = observation
-	request.HasObservation = true
-}
-
 func (s *Reader) CompleteRequest(id string, report *evmservice.RequestReport) error {
-	switch report.RequestType {
-	case evmservice.RequestType_REQUEST_TYPE_LOCKABLE_TO_BLOCK:
-		return s.completeLockableRequest(id, report.GetHeight())
-	case evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT:
-		return s.completeEventuallyConsistentRequest(id, report.GetValue())
+	switch report.Report.(type) {
+	case *evmservice.RequestReport_LockableToBlock:
+		return s.completeLockableRequest(id, report.GetLockableToBlock())
+	case *evmservice.RequestReport_EventuallyConsistent:
+		return s.completeEventuallyConsistentRequest(id, report.GetEventuallyConsistent())
 	default:
-		return fmt.Errorf("unknown request type %v", report.RequestType)
+		return fmt.Errorf("unknown request type %T", report.Report)
 	}
 }
 
@@ -157,7 +131,7 @@ func (s *Reader) completeLockableRequest(id string, height *evmservice.ChainHeig
 		return nil
 	}
 
-	request, ok := rawRequest.Request.(types.LockableToBlockRequest)
+	request, ok := rawRequest.Request.(*types.LockableToBlockRequest)
 	if !ok {
 		// might be because we've already converted it to eventually consistent
 		s.lggr.Infof("lockable to a block request %s is of a different type %T", id, rawRequest.Request)
@@ -231,7 +205,7 @@ func (s *Reader) Read(ctx context.Context, request types.Request) (<-chan []byte
 func (s *Reader) addRequestCtx(requestCtx *requestCtx) {
 	s.requests.Push(requestCtx)
 	switch tRequest := requestCtx.Request.(type) {
-	case types.EventuallyConsistentRequest:
+	case *types.EventuallyConsistentRequest:
 		s.poller.Enqueue(requestCtx.Ctx, tRequest)
 	}
 }

@@ -94,9 +94,8 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _
 		triggerService: trigger.NewLogTriggerService(evmRelayer, trigger.NewLogTriggerStore(), c.lggr, cfg.LogTriggerPollInterval),
 	}
 
-	c.consensusReader = consensus.NewReader(c.lggr, time.Second*10)
-	c.requestPoller = poller.NewPoller(c.lggr, c.consensusReader, PollingWorkersNum, PollPeriod)
-	c.consensusReader.SetPoller(c.requestPoller)
+	c.requestPoller = poller.NewPoller(c.lggr, PollingWorkersNum, PollPeriod)
+	c.consensusReader = consensus.NewReader(c.lggr, c.requestPoller, time.Second*10)
 
 	// TODO PLEX-1560: populate with implementation
 	var blocksProvider oracle.BlocksProvider
