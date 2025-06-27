@@ -10,6 +10,9 @@ import (
 
 	"github.com/doyensec/safeurl"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -32,15 +35,22 @@ type OutboundRequestClient interface {
 
 // httpClientProxy implements OutboundRequestClient using a regular HTTP client
 type httpClientProxy struct {
-	client *safeurl.WrappedClient
-	cfg    ServiceConfig
+	client              *safeurl.WrappedClient
+	cfg                 ServiceConfig
+	outgoingRateLimiter *ratelimit.RateLimiter
+	lggr                logger.Logger
 }
 
 func disableRedirects(req *http.Request, via []*http.Request) error {
 	return errors.New("redirects are not allowed")
 }
 
-func NewHTTPClientProxy(cfg ServiceConfig) *httpClientProxy {
+func NewHTTPClientProxy(cfg ServiceConfig, lggr logger.Logger) (*httpClientProxy, error) {
+	outgoingRateLimiter, err := ratelimit.NewRateLimiter(cfg.OutgoingRateLimiter)
+	if err != nil {
+		return nil, err
+	}
+
 	clientCfg := ApplyDefaults(&cfg.HTTPClientConfig)
 	safeConfig := safeurl.
 		GetConfigBuilder().
@@ -52,10 +62,13 @@ func NewHTTPClientProxy(cfg ServiceConfig) *httpClientProxy {
 		SetBlockedIPsCIDR(clientCfg.BlockedIPsCIDR...).
 		SetCheckRedirect(disableRedirects).
 		Build()
+
 	return &httpClientProxy{
-		cfg:    cfg,
-		client: safeurl.Client(safeConfig),
-	}
+		cfg:                 cfg,
+		client:              safeurl.Client(safeConfig),
+		outgoingRateLimiter: outgoingRateLimiter,
+		lggr:                lggr,
+	}, nil
 }
 
 func headers(req *httpactions.Request) map[string][]string {
@@ -67,6 +80,17 @@ func headers(req *httpactions.Request) map[string][]string {
 }
 
 func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *httpactions.Request) (*httpactions.Response, error) {
+	requestID := GetRequestID(metadata)
+	lggr := logger.With(h.lggr, "requestID", requestID, "workflowID", metadata.WorkflowID, "workflowExecutionID", metadata.WorkflowExecutionID, "workflowOwner", metadata.WorkflowOwner)
+
+	workflowAllow, globalAllow := h.outgoingRateLimiter.AllowVerbose(metadata.WorkflowOwner)
+	if !workflowAllow {
+		return nil, errors.New(ErrorOutgoingRatelimitWorkflowOwner)
+	}
+	if !globalAllow {
+		return nil, errors.New(ErrorOutgoingRatelimitGlobal)
+	}
+
 	timeoutCtx, cancel := context.WithTimeout(ctx, time.Duration(input.TimeoutMs)*time.Millisecond)
 	defer cancel()
 
@@ -77,11 +101,13 @@ func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities
 
 	req.Header = http.Header(headers(input))
 
+	lggr.Debugw("Sending HTTP request")
 	resp, err := h.client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	lggr.Debugw("Received HTTP response", "status", resp.Status, "statusCode", resp.StatusCode)
 	limited := io.LimitReader(resp.Body, int64(h.cfg.LimitsConfig.MaxResponseBytes))
 	body, err := io.ReadAll(limited)
 	if err != nil {

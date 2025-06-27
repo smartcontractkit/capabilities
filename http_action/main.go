@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/smartcontractkit/capabilities/http/action"
+	"github.com/smartcontractkit/capabilities/http_action/action"
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http/server"

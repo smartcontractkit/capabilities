@@ -1,7 +1,7 @@
 {
-  "name": "http",
+  "name": "http_action",
   "projectType": "capability",
-  "projectRoot": "capabilities/http",
+  "projectRoot": "capabilities/http_action",
   "implicitDependencies": ["loopserver"],
   "tags": [],
   "targets": {

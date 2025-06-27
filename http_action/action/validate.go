@@ -5,16 +5,25 @@ import (
 	"math"
 	"strings"
 
-	"github.com/smartcontractkit/capabilities/http/action/common"
+	"github.com/smartcontractkit/capabilities/http_action/common"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
+	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 )
 
-const defaultMaxTimeoutMs = 20_000
-const defaultMaxHeaderCount = 50
-const defaultMaxHeaderKeyLength = 256
-const defaultMaxHeaderValueLength = 1024
-const defaultMaxBodyLength = 10 * 1024 * 1024 // 1 MB
+const (
+	defaultMaxTimeoutMs         = 20_000
+	defaultMaxHeaderCount       = 50
+	defaultMaxHeaderKeyLength   = 256
+	defaultMaxHeaderValueLength = 1024
+	defaultMaxBodyLength        = 10 * 1024 * 1024 // 1 MB
+	defaultGlobalRPS            = 100.0
+	defaultGlobalBurst          = 100
+	defaultPerSenderRPS         = 100.0
+	defaultPerSenderBurst       = 100
+	defaultWorkflowOwnerRPS     = 5.0
+	defaultWorkflowOwnerBurst   = 50
+)
 
 var allowedMethods = map[string]struct{}{
 	"GET":    {},
@@ -45,6 +54,18 @@ func ApplyDefaultsAndValidate(cfg *common.ServiceConfig) (*common.ServiceConfig,
 		MaxResponseBytes:     maxResponseBytes,
 	}
 	cfg.LimitsConfig = limitsConfig
+	cfg.OutgoingRateLimiter = ratelimit.RateLimiterConfig{
+		GlobalRPS:      getWithDefault(cfg.OutgoingRateLimiter.GlobalRPS, defaultGlobalRPS),
+		GlobalBurst:    getWithDefault(cfg.OutgoingRateLimiter.GlobalBurst, defaultGlobalBurst),
+		PerSenderRPS:   getWithDefault(cfg.OutgoingRateLimiter.PerSenderRPS, defaultWorkflowOwnerRPS),
+		PerSenderBurst: getWithDefault(cfg.OutgoingRateLimiter.PerSenderBurst, defaultWorkflowOwnerBurst),
+	}
+	cfg.RateLimiter = ratelimit.RateLimiterConfig{
+		GlobalRPS:      getWithDefault(cfg.RateLimiter.GlobalRPS, defaultGlobalRPS),
+		GlobalBurst:    getWithDefault(cfg.RateLimiter.GlobalBurst, defaultGlobalBurst),
+		PerSenderRPS:   getWithDefault(cfg.RateLimiter.PerSenderRPS, defaultPerSenderRPS),
+		PerSenderBurst: getWithDefault(cfg.RateLimiter.PerSenderBurst, defaultPerSenderRPS),
+	}
 	return cfg, nil
 }
 
@@ -82,9 +103,10 @@ func ValidatedRequest(input *http.Request, cfg common.ServiceConfig) (*http.Requ
 	}, nil
 }
 
-// getWithDefault returns the first non-zero value among the arguments
-func getWithDefault(cfgVal uint32, defaultVal uint32) uint32 {
-	if cfgVal != 0 {
+// getWithDefault returns the first non-zero (or non-default) value among the arguments for any comparable type
+func getWithDefault[T comparable](cfgVal, defaultVal T) T {
+	var zero T
+	if cfgVal != zero {
 		return cfgVal
 	}
 	return defaultVal
@@ -97,7 +119,7 @@ func validateInputMaxLimits(input *http.Request, cfg common.ServiceConfig) error
 	if len(input.Headers) > math.MaxUint32 {
 		return fmt.Errorf("too many headers: exceeds uint32 limit")
 	}
-	if uint32(len(input.Headers)) > cfg.LimitsConfig.MaxHeaderCount {
+	if uint32(len(input.Headers)) > cfg.LimitsConfig.MaxHeaderCount { // nolint:gosec // G115
 		return fmt.Errorf("too many headers: maximum allowed is %d", cfg.LimitsConfig.MaxHeaderCount)
 	}
 	for k, v := range input.Headers {
@@ -107,17 +129,17 @@ func validateInputMaxLimits(input *http.Request, cfg common.ServiceConfig) error
 		if len(v) > math.MaxUint32 {
 			return fmt.Errorf("header value for %q too long (max %d)", k, math.MaxUint32)
 		}
-		if uint32(len(k)) > cfg.LimitsConfig.MaxHeaderCount {
+		if uint32(len(k)) > cfg.LimitsConfig.MaxHeaderKeyLength { // nolint:gosec // G115
 			return fmt.Errorf("header key too long: %q (max %d)", k, cfg.LimitsConfig.MaxHeaderCount)
 		}
-		if uint32(len(v)) > cfg.LimitsConfig.MaxHeaderValueLength {
+		if uint32(len(v)) > cfg.LimitsConfig.MaxHeaderValueLength { // nolint:gosec // G115
 			return fmt.Errorf("header value for %q too long (max %d)", k, cfg.LimitsConfig.MaxHeaderValueLength)
 		}
 	}
 	if len(input.Body) > math.MaxUint32 {
 		return fmt.Errorf("body too large: exceeds uint32 limit")
 	}
-	if uint32(len(input.Body)) > cfg.LimitsConfig.MaxRequestBytes {
+	if uint32(len(input.Body)) > cfg.LimitsConfig.MaxRequestBytes { // nolint:gosec // G115
 		return fmt.Errorf("body too large: maximum allowed is %d bytes", cfg.LimitsConfig.MaxRequestBytes)
 	}
 	return nil

@@ -9,10 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/pkg/errors"
+	"errors"
 
-	"github.com/smartcontractkit/capabilities/http/action/common"
+	"github.com/smartcontractkit/capabilities/http_action/common"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
@@ -28,21 +27,9 @@ import (
 const (
 	internalError = "internal error"
 
-	defaultGlobalRPS          = 100.0
-	defaultGlobalBurst        = 100
-	defaultPerSenderRPS       = 100.0
-	defaultPerSenderBurst     = 100
-	defaultWorkflowOwnerRPS   = 5.0
-	defaultWorkflowOwnerBurst = 50
-
 	defaultGatewayConnectionInitialIntervalMs = 100    // 100 milliseconds
 	defaultGatewayConnectionMaxElapsedTimeMs  = 30_000 // 30 seconds
 	defaultGatewayConnectionMultiplier        = 2.0
-
-	errorOutgoingRatelimitGlobal        = "global limit of outgoing gateways requests has been exceeded"
-	errorOutgoingRatelimitWorkflowOwner = "workflow owner exceeded limit of gateways requests"
-	errorIncomingRatelimitGlobal        = "message from gateway exceeded global rate limit"
-	errorIncomingRatelimitSender        = "message from gateway exceeded per sender rate limit"
 )
 
 var _ core.GatewayConnectorHandler = &gatewayOutboundProxy{}
@@ -59,14 +46,12 @@ type gatewayOutboundProxy struct {
 	gatewayConnectionConfig common.GatewayConnectionConfig
 }
 
-func NewGatewayOutboundProxy(gatewayConnector core.GatewayConnector, config common.ServiceConfig, lgger logger.Logger, opts ...func(*gc.RoundRobinSelector)) (*gatewayOutboundProxy, error) {
-	outgoingRLCfg := outgoingRateLimiterConfigDefaults(config.OutgoingRateLimiter)
-	outgoingRateLimiter, err := ratelimit.NewRateLimiter(outgoingRLCfg)
+func NewGatewayOutboundProxy(gatewayConnector core.GatewayConnector, config common.ServiceConfig, lggr logger.Logger, opts ...func(*gc.RoundRobinSelector)) (*gatewayOutboundProxy, error) {
+	outgoingRateLimiter, err := ratelimit.NewRateLimiter(config.OutgoingRateLimiter)
 	if err != nil {
 		return nil, err
 	}
-	incomingRLCfg := incomingRateLimiterConfigDefaults(config.RateLimiter)
-	incomingRateLimiter, err := ratelimit.NewRateLimiter(incomingRLCfg)
+	incomingRateLimiter, err := ratelimit.NewRateLimiter(config.RateLimiter)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +74,7 @@ func NewGatewayOutboundProxy(gatewayConnector core.GatewayConnector, config comm
 		responses:           newResponses(),
 		outgoingRateLimiter: outgoingRateLimiter,
 		incomingRateLimiter: incomingRateLimiter,
-		lggr:                lgger,
+		lggr:                lggr,
 		selectorOpts:        opts,
 		gatewayConnectionConfig: common.GatewayConnectionConfig{
 			InitialIntervalMs: initialInterval,
@@ -101,7 +86,7 @@ func NewGatewayOutboundProxy(gatewayConnector core.GatewayConnector, config comm
 
 // SendRequest sends a request to first available gateway node and blocks until response is received
 func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *http.Request) (*http.Response, error) {
-	requestID := p.getRequestID(metadata)
+	requestID := common.GetRequestID(metadata)
 	lggr := logger.With(p.lggr, "requestID", requestID, "workflowID", metadata.WorkflowID, "workflowExecutionID", metadata.WorkflowExecutionID, "workflowOwner", metadata.WorkflowOwner)
 
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(input.TimeoutMs)*time.Millisecond)
@@ -109,10 +94,10 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 
 	workflowAllow, globalAllow := p.outgoingRateLimiter.AllowVerbose(metadata.WorkflowOwner)
 	if !workflowAllow {
-		return nil, errors.New(errorOutgoingRatelimitWorkflowOwner)
+		return nil, errors.New(common.ErrorOutgoingRatelimitWorkflowOwner)
 	}
 	if !globalAllow {
-		return nil, errors.New(errorOutgoingRatelimitGlobal)
+		return nil, errors.New(common.ErrorOutgoingRatelimitGlobal)
 	}
 
 	gatewayReq := gc.OutboundHTTPRequest{
@@ -146,11 +131,11 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 
 	selectedGateway, err := p.awaitConnection(ctx, lggr)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to await connection to gateway")
+		return nil, errors.Join(errors.New("failed to await connection to gateway"), err)
 	}
 
 	if err := p.gatewayConnector.SendToGateway(ctx, selectedGateway, &gatewayResp); err != nil {
-		return nil, errors.Wrap(err, "failed to send request to gateway")
+		return nil, errors.Join(errors.New("failed to send request to gateway"), err)
 	}
 
 	select {
@@ -172,15 +157,6 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
-}
-
-func (p *gatewayOutboundProxy) getRequestID(metadata capabilities.RequestMetadata) string {
-	id := []string{
-		metadata.WorkflowID,
-		metadata.WorkflowExecutionID,
-		uuid.New().String(),
-	}
-	return strings.Join(id, "/")
 }
 
 // awaitConnection attempts to establish a connection to an available gateway.  It iterates through available gateways
@@ -269,9 +245,9 @@ func (p *gatewayOutboundProxy) HandleGatewayMessage(ctx context.Context, gateway
 	senderAllow, globalAllow := p.incomingRateLimiter.AllowVerbose(gatewayID)
 	errorMsg := ""
 	if !senderAllow {
-		errorMsg = errorIncomingRatelimitSender
+		errorMsg = common.ErrorIncomingRatelimitSender
 	} else if !globalAllow {
-		errorMsg = errorIncomingRatelimitGlobal
+		errorMsg = common.ErrorIncomingRatelimitGlobal
 	}
 
 	if errorMsg != "" {
@@ -297,10 +273,10 @@ func (p *gatewayOutboundProxy) HandleGatewayMessage(ctx context.Context, gateway
 
 // isRateLimitError checks if the error string contains any of the rate limit error constants.
 func isRateLimitError(errStr string) bool {
-	return strings.Contains(errStr, errorOutgoingRatelimitGlobal) ||
-		strings.Contains(errStr, errorOutgoingRatelimitWorkflowOwner) ||
-		strings.Contains(errStr, errorIncomingRatelimitGlobal) ||
-		strings.Contains(errStr, errorIncomingRatelimitSender)
+	return strings.Contains(errStr, common.ErrorOutgoingRatelimitGlobal) ||
+		strings.Contains(errStr, common.ErrorOutgoingRatelimitWorkflowOwner) ||
+		strings.Contains(errStr, common.ErrorIncomingRatelimitGlobal) ||
+		strings.Contains(errStr, common.ErrorIncomingRatelimitSender)
 }
 
 func (p *gatewayOutboundProxy) ID(ctx context.Context) (string, error) {
@@ -326,37 +302,6 @@ func (p *gatewayOutboundProxy) HealthReport() map[string]error {
 
 func (p *gatewayOutboundProxy) Name() string {
 	return p.lggr.Name()
-}
-
-func incomingRateLimiterConfigDefaults(config ratelimit.RateLimiterConfig) ratelimit.RateLimiterConfig {
-	if config.GlobalBurst == 0 {
-		config.GlobalBurst = defaultGlobalBurst
-	}
-	if config.GlobalRPS == 0 {
-		config.GlobalRPS = defaultGlobalRPS
-	}
-	if config.PerSenderBurst == 0 {
-		config.PerSenderBurst = defaultPerSenderBurst
-	}
-	if config.PerSenderRPS == 0 {
-		config.PerSenderRPS = defaultPerSenderRPS
-	}
-	return config
-}
-func outgoingRateLimiterConfigDefaults(config ratelimit.RateLimiterConfig) ratelimit.RateLimiterConfig {
-	if config.GlobalBurst == 0 {
-		config.GlobalBurst = defaultGlobalBurst
-	}
-	if config.GlobalRPS == 0 {
-		config.GlobalRPS = defaultGlobalRPS
-	}
-	if config.PerSenderBurst == 0 {
-		config.PerSenderBurst = defaultWorkflowOwnerBurst
-	}
-	if config.PerSenderRPS == 0 {
-		config.PerSenderRPS = defaultWorkflowOwnerRPS
-	}
-	return config
 }
 
 func newResponses() *responses {

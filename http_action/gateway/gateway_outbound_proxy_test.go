@@ -6,15 +6,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pkg/errors"
+	"errors"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smartcontractkit/capabilities/http/action/common"
+	"github.com/smartcontractkit/capabilities/http_action/common"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
@@ -112,7 +114,10 @@ func setupSendRequestTest(t *testing.T) (*gatewayOutboundProxy, *mockGatewayConn
 	lggr := logger.Test(t)
 	proxy, err := NewGatewayOutboundProxy(
 		mockConnector,
-		common.ServiceConfig{},
+		common.ServiceConfig{
+			OutgoingRateLimiter: rateLimiterConfig(),
+			RateLimiter:         rateLimiterConfig(),
+		},
 		lggr,
 		gateway_common.WithFixedStart(),
 	)
@@ -302,4 +307,13 @@ func TestGatewayOutboundProxy_nextBackoff(t *testing.T) {
 	assert.Equal(t, 200*time.Millisecond, res)
 	res = proxy.nextBackoff(600 * time.Millisecond)
 	assert.Equal(t, 1000*time.Millisecond, res) // capped at max
+}
+
+func rateLimiterConfig() ratelimit.RateLimiterConfig {
+	return ratelimit.RateLimiterConfig{
+		GlobalRPS:      100.0,
+		GlobalBurst:    100,
+		PerSenderRPS:   100.0,
+		PerSenderBurst: 100,
+	}
 }

@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/smartcontractkit/capabilities/http/action/common"
-	"github.com/smartcontractkit/capabilities/http/action/gateway"
+	"github.com/smartcontractkit/capabilities/http_action/common"
+	"github.com/smartcontractkit/capabilities/http_action/gateway"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
@@ -123,7 +123,7 @@ func (s *service) SendRequest(ctx context.Context, metadata capabilities.Request
 func NewOutboundRequestClient(gatewayConnector core.GatewayConnector, serviceConfig common.ServiceConfig, lggr logger.Logger) (common.OutboundRequestClient, error) {
 	switch serviceConfig.ProxyMode {
 	case "direct":
-		return common.NewHTTPClientProxy(serviceConfig), nil
+		return common.NewHTTPClientProxy(serviceConfig, lggr)
 	case "gateway":
 		return gateway.NewGatewayOutboundProxy(gatewayConnector, serviceConfig, lggr)
 	default:

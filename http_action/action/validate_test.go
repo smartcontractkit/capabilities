@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/smartcontractkit/capabilities/http/action/common"
+	"github.com/smartcontractkit/capabilities/http_action/common"
 	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"

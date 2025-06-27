@@ -16,12 +16,18 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	httpactions "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 )
 
 func TestNewHTTPClientProxy(t *testing.T) {
 	t.Run("with default config", func(t *testing.T) {
-		cfg := ServiceConfig{}
-		proxy := NewHTTPClientProxy(cfg)
+		cfg := ServiceConfig{
+			OutgoingRateLimiter: rateLimiterConfig(),
+		}
+		lggr := logger.Test(t)
+		proxy, err := NewHTTPClientProxy(cfg, lggr)
+		require.NoError(t, err)
 		require.NotNil(t, proxy)
 		require.NotNil(t, proxy.client)
 		require.Equal(t, []int{80, 443}, proxy.cfg.HTTPClientConfig.AllowedPorts)
@@ -39,8 +45,11 @@ func TestNewHTTPClientProxy(t *testing.T) {
 			LimitsConfig: LimitsConfig{
 				MaxResponseBytes: 1024,
 			},
+			OutgoingRateLimiter: rateLimiterConfig(),
 		}
-		proxy := NewHTTPClientProxy(cfg)
+		lggr := logger.Test(t)
+		proxy, err := NewHTTPClientProxy(cfg, lggr)
+		require.NoError(t, err)
 		require.NotNil(t, proxy)
 		require.NotNil(t, proxy.client)
 		require.Equal(t, cfg, proxy.cfg)
@@ -85,9 +94,12 @@ func TestSendRequest(t *testing.T) {
 			LimitsConfig: LimitsConfig{
 				MaxResponseBytes: 1024,
 			},
-			HTTPClientConfig: validClientCfg(t, server.URL),
+			HTTPClientConfig:    validClientCfg(t, server.URL),
+			OutgoingRateLimiter: rateLimiterConfig(),
 		}
-		proxy := NewHTTPClientProxy(cfg)
+		lggr := logger.Test(t)
+		proxy, err := NewHTTPClientProxy(cfg, lggr)
+		require.NoError(t, err)
 
 		ctx := context.Background()
 		metadata := capabilities.RequestMetadata{
@@ -121,9 +133,12 @@ func TestSendRequest(t *testing.T) {
 			LimitsConfig: LimitsConfig{
 				MaxResponseBytes: 1024,
 			},
-			HTTPClientConfig: validClientCfg(t, server.URL),
+			HTTPClientConfig:    validClientCfg(t, server.URL),
+			OutgoingRateLimiter: rateLimiterConfig(),
 		}
-		proxy := NewHTTPClientProxy(cfg)
+		lggr := logger.Test(t)
+		proxy, err := NewHTTPClientProxy(cfg, lggr)
+		require.NoError(t, err)
 
 		ctx := context.Background()
 		metadata := capabilities.RequestMetadata{
@@ -154,9 +169,12 @@ func TestSendRequest(t *testing.T) {
 			LimitsConfig: LimitsConfig{
 				MaxResponseBytes: 1024,
 			},
-			HTTPClientConfig: validClientCfg(t, server.URL),
+			HTTPClientConfig:    validClientCfg(t, server.URL),
+			OutgoingRateLimiter: rateLimiterConfig(),
 		}
-		proxy := NewHTTPClientProxy(cfg)
+		lggr := logger.Test(t)
+		proxy, err := NewHTTPClientProxy(cfg, lggr)
+		require.NoError(t, err)
 
 		ctx := context.Background()
 		metadata := capabilities.RequestMetadata{
@@ -175,7 +193,7 @@ func TestSendRequest(t *testing.T) {
 			Body: []byte{},
 		}
 
-		_, err := proxy.SendRequest(ctx, metadata, input)
+		_, err = proxy.SendRequest(ctx, metadata, input)
 
 		// We should get a timeout error
 		require.Error(t, err)
@@ -187,9 +205,12 @@ func TestSendRequest(t *testing.T) {
 			LimitsConfig: LimitsConfig{
 				MaxResponseBytes: 1024,
 			},
-			HTTPClientConfig: validClientCfg(t, server.URL),
+			HTTPClientConfig:    validClientCfg(t, server.URL),
+			OutgoingRateLimiter: rateLimiterConfig(),
 		}
-		proxy := NewHTTPClientProxy(cfg)
+		lggr := logger.Test(t)
+		proxy, err := NewHTTPClientProxy(cfg, lggr)
+		require.NoError(t, err)
 
 		ctx := context.Background()
 		metadata := capabilities.RequestMetadata{
@@ -205,7 +226,7 @@ func TestSendRequest(t *testing.T) {
 			Body:      []byte{},
 		}
 
-		_, err := proxy.SendRequest(ctx, metadata, input)
+		_, err = proxy.SendRequest(ctx, metadata, input)
 
 		require.Error(t, err)
 	})
@@ -223,9 +244,12 @@ func TestSendRequest(t *testing.T) {
 			LimitsConfig: LimitsConfig{
 				MaxResponseBytes: 50, // Limit to 50 bytes
 			},
-			HTTPClientConfig: validClientCfg(t, largeServer.URL),
+			HTTPClientConfig:    validClientCfg(t, largeServer.URL),
+			OutgoingRateLimiter: rateLimiterConfig(),
 		}
-		proxy := NewHTTPClientProxy(cfg)
+		lggr := logger.Test(t)
+		proxy, err := NewHTTPClientProxy(cfg, lggr)
+		require.NoError(t, err)
 
 		ctx := context.Background()
 		metadata := capabilities.RequestMetadata{
@@ -263,5 +287,14 @@ func validClientCfg(t *testing.T, urlStr string) HTTPClientConfig {
 	return HTTPClientConfig{
 		AllowedPorts: []int{port},
 		AllowedIPs:   []string{"127.0.0.1"},
+	}
+}
+
+func rateLimiterConfig() ratelimit.RateLimiterConfig {
+	return ratelimit.RateLimiterConfig{
+		GlobalRPS:      1000,
+		GlobalBurst:    1000,
+		PerSenderRPS:   1000,
+		PerSenderBurst: 1000,
 	}
 }
