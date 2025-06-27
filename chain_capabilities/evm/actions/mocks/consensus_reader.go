@@ -23,23 +23,23 @@ func (_m *ConsensusReader) EXPECT() *ConsensusReader_Expecter {
 }
 
 // Read provides a mock function with given fields: ctx, request
-func (_m *ConsensusReader) Read(ctx context.Context, request types.Request) (<-chan []byte, error) {
+func (_m *ConsensusReader) Read(ctx context.Context, request types.Request) (<-chan interface{}, error) {
 	ret := _m.Called(ctx, request)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Read")
 	}
 
-	var r0 <-chan []byte
+	var r0 <-chan interface{}
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, types.Request) (<-chan []byte, error)); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, types.Request) (<-chan interface{}, error)); ok {
 		return rf(ctx, request)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, types.Request) <-chan []byte); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, types.Request) <-chan interface{}); ok {
 		r0 = rf(ctx, request)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(<-chan []byte)
+			r0 = ret.Get(0).(<-chan interface{})
 		}
 	}
 
@@ -71,12 +71,12 @@ func (_c *ConsensusReader_Read_Call) Run(run func(ctx context.Context, request t
 	return _c
 }
 
-func (_c *ConsensusReader_Read_Call) Return(_a0 <-chan []byte, _a1 error) *ConsensusReader_Read_Call {
+func (_c *ConsensusReader_Read_Call) Return(_a0 <-chan interface{}, _a1 error) *ConsensusReader_Read_Call {
 	_c.Call.Return(_a0, _a1)
 	return _c
 }
 
-func (_c *ConsensusReader_Read_Call) RunAndReturn(run func(context.Context, types.Request) (<-chan []byte, error)) *ConsensusReader_Read_Call {
+func (_c *ConsensusReader_Read_Call) RunAndReturn(run func(context.Context, types.Request) (<-chan interface{}, error)) *ConsensusReader_Read_Call {
 	_c.Call.Return(run)
 	return _c
 }

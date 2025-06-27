@@ -122,7 +122,7 @@ func TestCapability_CallContract(t *testing.T) {
 		msgProto, _ := chainsevm.ConvertCallMsgToProto(&msg)
 
 		block := big.NewInt(123)
-		ch := make(chan []byte, 1)
+		ch := make(chan any, 1)
 		ch <- []byte("ok")
 		svc.consensusReader.EXPECT().Read(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
@@ -137,7 +137,7 @@ func TestCapability_CallContract(t *testing.T) {
 		msgProto, _ := chainsevm.ConvertCallMsgToProto(&msg)
 
 		block := big.NewInt(123)
-		ch := make(chan []byte, 1)
+		ch := make(chan any, 1)
 		svc.consensusReader.EXPECT().Read(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
 		req := &chainsevm.CallContractRequest{Call: msgProto, BlockNumber: valuespb.NewBigIntFromInt(block)}
@@ -153,7 +153,7 @@ func TestCapability_BalanceAt(t *testing.T) {
 		svc := initMocks(t)
 
 		block := big.NewInt(123)
-		ch := make(chan []byte, 1)
+		ch := make(chan any, 1)
 		balance, err := proto.Marshal(valuespb.NewBigIntFromInt(big.NewInt(1000)))
 		require.NoError(t, err)
 		ch <- balance
@@ -168,7 +168,7 @@ func TestCapability_BalanceAt(t *testing.T) {
 		svc := initMocks(t)
 
 		block := big.NewInt(123)
-		ch := make(chan []byte, 1)
+		ch := make(chan any, 1)
 		svc.consensusReader.EXPECT().Read(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
 		req := &chainsevm.BalanceAtRequest{Account: []byte("by_account"), BlockNumber: valuespb.NewBigIntFromInt(block)}
@@ -183,7 +183,7 @@ func TestCapability_FilterLogs(t *testing.T) {
 	t.Run("happy-path", func(t *testing.T) {
 		svc := initMocks(t)
 
-		ch := make(chan []byte, 1)
+		ch := make(chan any, 1)
 		expectedReply := &chainsevm.FilterLogsReply{Logs: []*chainsevm.Log{{Address: []byte("0xabc"), Data: []byte("0xdef")}}}
 		logs, err := proto.Marshal(expectedReply)
 		require.NoError(t, err)
@@ -210,7 +210,7 @@ func TestCapability_FilterLogs(t *testing.T) {
 	t.Run("Returns error on timeout", func(t *testing.T) {
 		svc := initMocks(t)
 
-		ch := make(chan []byte, 1)
+		ch := make(chan any, 1)
 		svc.consensusReader.EXPECT().Read(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
 		req := &chainsevm.FilterLogsRequest{FilterQuery: &chainsevm.FilterQuery{}}
@@ -225,7 +225,7 @@ func TestCapability_GetTransactionByHash(t *testing.T) {
 	t.Run("happy-path", func(t *testing.T) {
 		svc := initMocks(t)
 
-		ch := make(chan []byte, 1)
+		ch := make(chan any, 1)
 		tx := &chainsevm.Transaction{Nonce: 12}
 		transaction, err := proto.Marshal(tx)
 		require.NoError(t, err)
@@ -247,7 +247,7 @@ func TestCapability_GetTransactionByHash(t *testing.T) {
 	t.Run("Returns error on timeout", func(t *testing.T) {
 		svc := initMocks(t)
 
-		ch := make(chan []byte, 1)
+		ch := make(chan any, 1)
 		svc.consensusReader.EXPECT().Read(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
 		req := &chainsevm.GetTransactionByHashRequest{Hash: make([]byte, 32)}
@@ -262,7 +262,7 @@ func TestCapability_GetTransactionReceipt(t *testing.T) {
 	t.Run("happy-path", func(t *testing.T) {
 		svc := initMocks(t)
 
-		ch := make(chan []byte, 1)
+		ch := make(chan any, 1)
 		receipt := &chainsevm.Receipt{Status: 12}
 		rawReceipt, err := proto.Marshal(receipt)
 		require.NoError(t, err)
@@ -284,7 +284,7 @@ func TestCapability_GetTransactionReceipt(t *testing.T) {
 	t.Run("Returns error on timeout", func(t *testing.T) {
 		svc := initMocks(t)
 
-		ch := make(chan []byte, 1)
+		ch := make(chan any, 1)
 		svc.consensusReader.EXPECT().Read(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
 		req := &chainsevm.GetTransactionReceiptRequest{Hash: make([]byte, 32)}

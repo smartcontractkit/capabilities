@@ -5,7 +5,6 @@ import (
 	"sync"
 
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
-	"github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 )
 
 type Request interface {
@@ -34,13 +33,17 @@ func NewEventuallyConsistentRequest(id string, observe func(context.Context) ([]
 
 var _ ObservableRequest = (*AggregatabelRequest)(nil)
 
+const (
+	AggregationMethodFPlusOneHighest = "f+1-highest"
+)
+
 type AggregatabelRequest struct {
-	*observableRequest[*pb.Decimal]
+	*observableRequest[*evmservice.AggregatableObservation]
 }
 
-func NewAggregatabelRequest(id string, observe func(context.Context) (*pb.Decimal, error)) *AggregatabelRequest {
+func NewAggregatabelRequest(id string, observe func(context.Context) (*evmservice.AggregatableObservation, error)) *AggregatabelRequest {
 	return &AggregatabelRequest{
-		observableRequest: &observableRequest[*pb.Decimal]{
+		observableRequest: &observableRequest[*evmservice.AggregatableObservation]{
 			id:      id,
 			observe: observe,
 		},

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/shopspring/decimal"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	chaincommonpb "github.com/smartcontractkit/chainlink-common/pkg/loop/chain-common"
@@ -19,7 +20,7 @@ import (
 )
 
 type ConsensusReader interface {
-	Read(ctx context.Context, request ctypes.Request) (<-chan []byte, error)
+	Read(ctx context.Context, request ctypes.Request) (<-chan any, error)
 }
 
 type EVM struct {
@@ -64,17 +65,12 @@ func (e EVM) CallContract(ctx context.Context, meta capabilities.RequestMetadata
 		})
 	}
 
-	resultCh, err := e.consensusReader.Read(ctx, request)
+	data, err := readType[[]byte](ctx, e.consensusReader, request)
 	if err != nil {
 		return nil, err
 	}
 
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case data := <-resultCh:
-		return &evmservice.CallContractReply{Data: data}, nil
-	}
+	return &evmservice.CallContractReply{Data: data}, nil
 }
 
 func (e EVM) filterLogsToRequest(ctx context.Context, meta capabilities.RequestMetadata, req *evmservice.FilterLogsRequest) (ctypes.Request, error) {
@@ -144,7 +140,7 @@ func (e EVM) FilterLogs(ctx context.Context, meta capabilities.RequestMetadata, 
 	}
 
 	var reply evmservice.FilterLogsReply
-	err = e.getReply(ctx, request, &reply)
+	err = e.readProto(ctx, request, &reply)
 	if err != nil {
 		return nil, err
 	}
@@ -182,39 +178,78 @@ func (e EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, r
 	}
 
 	var balance valuespb.BigInt
-	if err := e.getReply(ctx, request, &balance); err != nil {
+	if err := e.readProto(ctx, request, &balance); err != nil {
 		return nil, err
 	}
 
 	return &evmservice.BalanceAtReply{Balance: &balance}, nil
 }
 
-func (e EVM) EstimateGas(etx context.Context, _ capabilities.RequestMetadata, req *evmservice.EstimateGasRequest) (*evmservice.EstimateGasReply, error) {
-	// TODO: PLEX-1470 implement aggregatable method handling
+func (e EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata, req *evmservice.EstimateGasRequest) (*evmservice.EstimateGasReply, error) {
 	callMsg, err := evmservice.ConvertCallMsgFromProto(req.GetMsg())
 	if err != nil {
 		return nil, err
 	}
 
-	estimate, err := e.EVMService.EstimateGas(etx, callMsg)
+	request := ctypes.NewAggregatabelRequest(requestID(meta), func(ctx context.Context) (*evmservice.AggregatableObservation, error) {
+		rawEstimate, err := e.EVMService.EstimateGas(ctx, callMsg)
+		if err != nil {
+			return nil, err
+		}
+
+		estimate := &valuespb.Decimal{
+			Coefficient: valuespb.NewBigIntFromInt(big.NewInt(0).SetUint64(rawEstimate)),
+			Exponent:    0,
+		}
+
+		return &evmservice.AggregatableObservation{
+			Method: ctypes.AggregationMethodFPlusOneHighest,
+			Value:  estimate,
+		}, nil
+	})
+
+	rawEstimate, err := readDecimal(ctx, e.consensusReader, request)
 	if err != nil {
-		return &evmservice.EstimateGasReply{}, err
+		return nil, err
 	}
 
-	return &evmservice.EstimateGasReply{Gas: estimate}, nil
+	return &evmservice.EstimateGasReply{Gas: rawEstimate.BigInt().Uint64()}, nil
 }
 
-func (e EVM) getReply(ctx context.Context, request ctypes.Request, into proto.Message) (err error) {
-	resultCh, err := e.consensusReader.Read(ctx, request)
+func readDecimal(ctx context.Context, reader ConsensusReader, request ctypes.Request) (decimal.Decimal, error) {
+	rawDecimal, err := readType[*valuespb.Decimal](ctx, reader, request)
+	if err != nil {
+		return decimal.Decimal{}, err
+	}
+
+	return decimal.NewFromBigInt(valuespb.NewIntFromBigInt(rawDecimal.Coefficient), rawDecimal.Exponent), nil
+}
+
+func (e EVM) readProto(ctx context.Context, request ctypes.Request, into proto.Message) (err error) {
+	data, err := readType[[]byte](ctx, e.consensusReader, request)
 	if err != nil {
 		return err
+	}
+	return proto.Unmarshal(data, into)
+}
+
+func readType[T any](ctx context.Context, reader ConsensusReader, request ctypes.Request) (T, error) {
+	var zero T
+	resultCh, err := reader.Read(ctx, request)
+	if err != nil {
+		return zero, err
 	}
 
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
-	case data := <-resultCh:
-		return proto.Unmarshal(data, into)
+		return zero, ctx.Err()
+	case rawData := <-resultCh:
+		data, ok := rawData.(T)
+		if !ok {
+			return zero, fmt.Errorf("unexpected result type: expected %T, got %T", zero, rawData)
+		}
+
+		return data, nil
 	}
 }
 
@@ -238,7 +273,7 @@ func (e EVM) GetTransactionByHash(ctx context.Context, meta capabilities.Request
 	})
 
 	var tx evmservice.Transaction
-	if err := e.getReply(ctx, request, &tx); err != nil {
+	if err := e.readProto(ctx, request, &tx); err != nil {
 		return nil, err
 	}
 	return &evmservice.GetTransactionByHashReply{Transaction: &tx}, nil
@@ -264,7 +299,7 @@ func (e EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.Reques
 	})
 
 	var receipt evmservice.Receipt
-	if err := e.getReply(ctx, request, &receipt); err != nil {
+	if err := e.readProto(ctx, request, &receipt); err != nil {
 		return nil, err
 	}
 	return &evmservice.GetTransactionReceiptReply{Receipt: &receipt}, nil

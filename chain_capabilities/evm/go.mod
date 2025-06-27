@@ -6,9 +6,10 @@ toolchain go1.24.3
 
 require (
 	github.com/google/go-cmp v0.7.0
+	github.com/shopspring/decimal v1.4.0
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20250625153933-d42434f487d7
-	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250626180423-f58cfcd159ac
-	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250624161023-93f383781b0a
+	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250627122318-0a7b0134da9b
+	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250626141212-e50b2e7ffe2d
 	github.com/smartcontractkit/libocr v0.0.0-20250328171017-609ec10a5510
 	github.com/stretchr/testify v1.10.0
 	go.uber.org/zap v1.27.0
@@ -75,7 +76,6 @@ require (
 	github.com/prometheus/procfs v0.16.0 // indirect
 	github.com/santhosh-tekuri/jsonschema/v5 v5.2.0 // indirect
 	github.com/scylladb/go-reflectx v1.0.1 // indirect
-	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/smartcontractkit/freeport v0.1.1 // indirect
 	github.com/smartcontractkit/grpc-proxy v0.0.0-20240830132753-a7e17fec5ab7 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
