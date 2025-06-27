@@ -14,8 +14,8 @@ import (
 )
 
 var (
-	ID                      = "p2psigner-action@1.0.0"
-	workflowEventActionInfo = capabilities.MustNewCapabilityInfo(
+	ID         = "p2psigner-action@1.0.0"
+	actionInfo = capabilities.MustNewCapabilityInfo(
 		ID,
 		capabilities.CapabilityTypeAction,
 		"Signs a message using the P2P signing key.",
@@ -46,7 +46,7 @@ func New(p Params) (capabilities.ExecutableCapability, error) {
 }
 
 func (c *capability) Info(_ context.Context) (capabilities.CapabilityInfo, error) {
-	return workflowEventActionInfo, nil
+	return actionInfo, nil
 }
 
 func (c *capability) Execute(ctx context.Context, rawRequest capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
