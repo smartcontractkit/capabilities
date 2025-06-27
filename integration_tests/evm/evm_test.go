@@ -48,7 +48,7 @@ func Test_LogTrigger(t *testing.T) {
 	workflowPath, err := filepath.Abs("./workflow")
 	require.NoError(t, err)
 	mainFile := filepath.Join(workflowPath, "main_logtrigger.go")
-	wasmFile := filepath.Join(utils.CapabilitiesDir, "evm_logTrigger.wasm") //forcing cleanup on defer
+	wasmFile := filepath.Join(utils.CapabilitiesDir, "evm_logTrigger.wasm") // forcing cleanup on defer
 	utils.CreateWasmBinary(t, mainFile, wasmFile)
 	abiBytes, err := os.ReadFile("./contract/MessageEmitter.abi")
 	require.NoError(t, err)
@@ -64,8 +64,8 @@ func Test_LogTrigger(t *testing.T) {
 
 	messageEmitter, donContext := setupDon(ctx, t, lggr, wasmFile, abiString, eventName, topic0, numOfWorkflowNodes, workflowName)
 
-	//waiting time to ensure the logTrigger inside the workflow is ready to process messages
-	time.Sleep(3 * time.Second)
+	// waiting time to ensure the logTrigger inside the workflow is ready to process messages
+	time.Sleep(10 * time.Second)
 
 	// emitting single event we will be waiting from the workflow's LogTrigger
 	messageDataThatWillBeEmitted := "Data for log trigger"
