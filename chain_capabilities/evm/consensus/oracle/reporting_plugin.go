@@ -226,7 +226,7 @@ func validateChainHeightAgainstOutcome(ob *evmservice.ChainHeight, prevOutcome *
 }
 
 func (rp *reportingPlugin) ObservationQuorum(_ context.Context, outctx ocr3types.OutcomeContext, query types.Query, aos []types.AttributedObservation) (quorumReached bool, err error) {
-	return quorumhelper.ObservationCountReachesObservationQuorum(quorumhelper.QuorumByzQuorum, rp.config.N, rp.config.F, aos), nil
+	return quorumhelper.ObservationCountReachesObservationQuorum(quorumhelper.QuorumNMinusF, rp.config.N, rp.config.F, aos), nil
 }
 
 func (rp *reportingPlugin) agreeOnRequestType(requestID string, aos []attributedObservation) (evmservice.RequestType, error) {
