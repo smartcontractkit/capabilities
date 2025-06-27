@@ -9,7 +9,6 @@ import (
 	"github.com/smartcontractkit/chain_capabilities/evm/trigger"
 
 	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
-	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 
 	"github.com/smartcontractkit/chain_capabilities/evm/actions"
 
@@ -127,7 +126,7 @@ func (c *capabilityGRPCService) UnregisterFromWorkflow(_ context.Context, _ capa
 	panic("implement me")
 }
 
-func (c *capabilityGRPCService) RegisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*evmservice.Log], error) {
+func (c *capabilityGRPCService) RegisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*evmcappb.Log], error) {
 	return c.triggerService.RegisterLogTrigger(ctx, triggerID, metadata, input)
 }
 

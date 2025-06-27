@@ -4,8 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	"google.golang.org/protobuf/types/known/emptypb"
+
+	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -22,7 +23,7 @@ func NewEVM(evmService types.EVMService) EVM {
 }
 
 // TODO finalise the signature PLEX-1482
-func (e EVM) CallContractCallContract(ctx context.Context, metadata capabilities.RequestMetadata, input *evmcappb.CallContractRequest) (*evmcappb.CallContractReply, error) {
+func (e EVM) CallContract(ctx context.Context, _ capabilities.RequestMetadata, input *evmcappb.CallContractRequest) (*evmcappb.CallContractReply, error) {
 	callMsg, err := evmcappb.ConvertCallMsgFromProto(input.GetCall())
 	if err != nil {
 		return nil, err
@@ -43,7 +44,7 @@ func (e EVM) CallContractCallContract(ctx context.Context, metadata capabilities
 	return &evmcappb.CallContractReply{Data: data}, nil
 }
 
-func (e EVM) FilterLogs(ctx context.Context, metadata capabilities.RequestMetadata, req *evmcappb.FilterLogsRequest) (*evmcappb.FilterLogsReply, error) {
+func (e EVM) FilterLogs(ctx context.Context, _ capabilities.RequestMetadata, req *evmcappb.FilterLogsRequest) (*evmcappb.FilterLogsReply, error) {
 	fq, err := evmcappb.ConvertFilterFromProto(req.GetFilterQuery())
 	if err != nil {
 		return nil, err
@@ -149,4 +150,9 @@ func (e EVM) RegisterLogTracking(etx context.Context, _ capabilities.RequestMeta
 
 func (e EVM) UnregisterLogTracking(etx context.Context, _ capabilities.RequestMetadata, req *evmcappb.UnregisterLogTrackingRequest) (*emptypb.Empty, error) {
 	return &emptypb.Empty{}, e.EVMService.UnregisterLogTracking(etx, req.FilterName)
+}
+
+func (e EVM) WriteReport(_ context.Context, _ capabilities.RequestMetadata, _ *evmcappb.WriteReportRequest) (*evmcappb.WriteReportReply, error) {
+	//TODO implement me
+	panic("implement me")
 }
