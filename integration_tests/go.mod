@@ -2,8 +2,6 @@ module github.com/smartcontractkit/capabilities/integration_tests
 
 go 1.24.4
 
-replace github.com/smartcontractkit/chainlink/v2 => ../../chainlink
-
 replace github.com/smartcontractkit/capabilities/loadtestwritetarget => ../loadtestwritetarget
 
 replace github.com/fbsobreira/gotron-sdk => github.com/smartcontractkit/chainlink-tron/relayer/gotron-sdk v0.0.5-0.20250422175525-b7575d96bd4d
@@ -16,7 +14,7 @@ require (
 	github.com/smartcontractkit/capabilities/loadtestwritetarget v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250620211537-feb7ced11575
 	github.com/smartcontractkit/chainlink-evm v0.0.0-20250618173856-d731d7e7468e
-	github.com/smartcontractkit/chainlink/v2 v2.23.2-por-beta.1.0.20250616185217-d92b89a34f58
+	github.com/smartcontractkit/chainlink/v2 v2.23.2-por-beta.1.0.20250627020441-5325f7b2545c
 	github.com/stretchr/testify v1.10.0
 )
 
