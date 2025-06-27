@@ -74,6 +74,7 @@ func (cs *capabilitiesServer) Initialise(
 	_ core.PipelineRunnerService,
 	_ core.RelayerSet,
 	oracleFactory core.OracleFactory,
+	_ core.GatewayConnector,
 	keystore core.Keystore,
 ) error {
 	cs.lggr.Debug("Initialising")

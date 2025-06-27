@@ -5,10 +5,9 @@ go 1.24.4
 replace github.com/fbsobreira/gotron-sdk => github.com/smartcontractkit/chainlink-tron/relayer/gotron-sdk v0.0.5-0.20250422175525-b7575d96bd4d
 
 require (
-	github.com/andybalholm/brotli v1.1.1
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20250613213914-93a34678e8e2
-	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250620211537-feb7ced11575
-	github.com/stretchr/testify v1.10.0
+	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250627185555-3e6245a79ec9
+	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250626141212-e50b2e7ffe2d
 )
 
 require (
@@ -33,7 +32,7 @@ require (
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.25.0 // indirect
-	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
+	github.com/go-viper/mapstructure/v2 v2.3.0 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/goccy/go-yaml v1.12.0 // indirect
 	github.com/gofrs/uuid v4.4.0+incompatible // indirect
@@ -89,6 +88,7 @@ require (
 	github.com/smartcontractkit/freeport v0.1.1 // indirect
 	github.com/smartcontractkit/grpc-proxy v0.0.0-20240830132753-a7e17fec5ab7 // indirect
 	github.com/smartcontractkit/libocr v0.0.0-20250604151357-2fe8c61bbf2e // indirect
+	github.com/stretchr/testify v1.10.0 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
