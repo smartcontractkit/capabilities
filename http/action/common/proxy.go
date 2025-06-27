@@ -3,9 +3,14 @@ package common
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http" // aliased below to avoid conflict
 	"time"
+
+	"github.com/doyensec/safeurl"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/services"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	httpactions "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
@@ -13,42 +18,59 @@ import (
 
 var _ OutboundRequestClient = &httpClientProxy{}
 
+const ClientName = "HTTPClientProxy"
+
+var (
+	defaultAllowedPorts   = []int{80, 443}
+	defaultAllowedSchemes = []string{"http", "https"}
+)
+
 type OutboundRequestClient interface {
 	SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *httpactions.Request) (*httpactions.Response, error)
-	Start(ctx context.Context) error
-	Close() error
+	services.Service
 }
 
 // httpClientProxy implements OutboundRequestClient using a regular HTTP client
-// TODO: This client is experimental for now. Add additional protections/configuration. For instance,
-// - Server-Side Request Forgery (SSRF): Block internal, private or otherwise restricted IP ranges. Only alow HTTPS
-// - Timeouts and Limits (e.g., maximum response size, request timeout ms)
 type httpClientProxy struct {
-	client                *http.Client
-	maxResponseBodyLength uint32
+	client *safeurl.WrappedClient
+	cfg    ServiceConfig
+}
+
+func disableRedirects(req *http.Request, via []*http.Request) error {
+	return errors.New("redirects are not allowed")
 }
 
 func NewHTTPClientProxy(cfg ServiceConfig) *httpClientProxy {
+	clientCfg := ApplyDefaults(&cfg.HTTPClientConfig)
+	safeConfig := safeurl.
+		GetConfigBuilder().
+		SetAllowedIPs(clientCfg.AllowedIPs...).
+		SetAllowedIPsCIDR(clientCfg.AllowedIPsCIDR...).
+		SetAllowedPorts(clientCfg.AllowedPorts...).
+		SetAllowedSchemes(clientCfg.AllowedSchemes...).
+		SetBlockedIPs(clientCfg.BlockedIPs...).
+		SetBlockedIPsCIDR(clientCfg.BlockedIPsCIDR...).
+		SetCheckRedirect(disableRedirects).
+		Build()
 	return &httpClientProxy{
-		client: &http.Client{
-			Timeout: time.Duration(cfg.LimitsConfig.MaxTimeoutMs) * time.Millisecond,
-		},
-		maxResponseBodyLength: cfg.LimitsConfig.MaxResponseBytes,
+		cfg:    cfg,
+		client: safeurl.Client(safeConfig),
 	}
 }
 
 func headers(req *httpactions.Request) map[string][]string {
 	headers := make(map[string][]string)
 	for k, v := range req.Headers {
-		var values []string
-		values = append(values, v)
-		headers[k] = values
+		headers[k] = []string{v}
 	}
 	return headers
 }
 
 func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *httpactions.Request) (*httpactions.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, input.Method, input.Url, bytes.NewReader(input.Body))
+	timeoutCtx, cancel := context.WithTimeout(ctx, time.Duration(input.TimeoutMs)*time.Millisecond)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(timeoutCtx, input.Method, input.Url, bytes.NewReader(input.Body))
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +82,7 @@ func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities
 		return nil, err
 	}
 	defer resp.Body.Close()
-	limited := io.LimitReader(resp.Body, int64(h.maxResponseBodyLength))
+	limited := io.LimitReader(resp.Body, int64(h.cfg.LimitsConfig.MaxResponseBytes))
 	body, err := io.ReadAll(limited)
 	if err != nil {
 		return nil, err
@@ -83,11 +105,35 @@ func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities
 }
 
 func (h *httpClientProxy) Start(ctx context.Context) error {
-	// No-op for direct HTTP client
 	return nil
 }
 
 func (h *httpClientProxy) Close() error {
-	// No-op for direct HTTP client
 	return nil
+}
+
+func (h *httpClientProxy) HealthReport() map[string]error {
+	return map[string]error{ClientName: nil}
+}
+
+func (h *httpClientProxy) Name() string {
+	return ClientName
+}
+
+func (h *httpClientProxy) Ready() error {
+	return nil
+}
+
+func ApplyDefaults(c *HTTPClientConfig) *HTTPClientConfig {
+	if len(c.AllowedPorts) == 0 {
+		c.AllowedPorts = defaultAllowedPorts
+	}
+
+	if len(c.AllowedSchemes) == 0 {
+		c.AllowedSchemes = defaultAllowedSchemes
+	}
+
+	// safeurl automatically blocks internal IPs so no need
+	// to set defaults here.
+	return c
 }
