@@ -5,7 +5,7 @@ on: [push]
 env:
   # Ensure that a cached go version is used:
   # https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md#go
-  GO_VERSION: 1.23
+  GO_VERSION: 1.24
   GOPRIVATE: github.com/smartcontractkit/capabilities
 
 jobs:
@@ -208,7 +208,7 @@ jobs:
         run: ./.github/scripts/support-private-gomods.sh
 
       - name: Install mockery
-        run: go install github.com/vektra/mockery/v2/...@v2.46.1
+        run: go install github.com/vektra/mockery/v2/...@v2.53.3
 
       - name: Run "tidy" and "generate"
         run: |
