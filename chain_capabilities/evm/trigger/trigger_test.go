@@ -117,7 +117,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 	t.Run("already registered triggerID", func(t *testing.T) {
 		store := NewLogTriggerStore()
 		service := NewLogTriggerService(nil, store, lggr, pollInterval)
-		//we simulate a RegisterLogTrigger() by tampering the store
+		// we simulate a RegisterLogTrigger() by tampering the store
 		store.Write(triggerID, logTriggerState{})
 		_, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
@@ -316,7 +316,7 @@ func TestCreateLogRequest(t *testing.T) {
 				evm.NewEventSigFilter(evmtypes.Hash(eventSig0Example)),
 			},
 		},
-		//TODO PLEX-1488: missing test for SAFE confidence level
+		// TODO PLEX-1488: missing test for SAFE confidence level
 		{
 			name:               "latest confidence, single address and single eventSig and empty topics",
 			addresses:          addresses,
@@ -680,9 +680,9 @@ func TestIntegration_RegisterAndUnregisterLogTrigger(t *testing.T) {
 	evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
 	evmService.On("UnregisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
 
-	//two calls, one for the starting offset and a second one for the next block
+	// two calls, one for the starting offset and a second one for the next block
 	evmService.On("LatestAndFinalizedHead", mock.Anything).Return(evmtypes.Head{}, evmtypes.Head{Number: big.NewInt(25)}, nil).Twice()
-	//single call, for fetching the latest finalized head and check if the offset has to be adjusted
+	// single call, for fetching the latest finalized head and check if the offset has to be adjusted
 	evmService.On("LatestAndFinalizedHead", mock.Anything).Return(evmtypes.Head{}, evmtypes.Head{Number: big.NewInt(26)}, nil).Once()
 	// Mocking the QueryTrackedLogs method to return logs for the test (1st call) and then a second log for the next block (2nd call)
 	nextBlockNumber := new(big.Int).Add(finalizedExpHead.Number, big.NewInt(1))
@@ -888,5 +888,5 @@ func (m *mockTicker) Channel() <-chan time.Time {
 }
 
 func (m *mockTicker) Stop() {
-	//do nothing, mocked ticker doesn't have to do any clean up
+	// do nothing, mocked ticker doesn't have to do any clean up
 }
