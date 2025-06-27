@@ -13,7 +13,6 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
-	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	evmmock "github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
@@ -783,7 +782,7 @@ func TestIntegration_RegisterAndUnregisterLogTrigger(t *testing.T) {
 	// Wait to confirm no more messages after unregister
 	msg := <-ch
 	lggr.Debugf("msg: %+v", msg)
-	require.Equal(t, msg, capabilities.TriggerAndId[*evmservice.Log]{Trigger: nil, Id: ""})
+	require.Equal(t, msg, capabilities.TriggerAndId[*evmcappb.Log]{Trigger: nil, Id: ""})
 }
 
 func createLog(index uint32, number *big.Int, address evmtypes.Address, message []byte) *evmtypes.Log {
@@ -864,11 +863,10 @@ func assemblyDataMessage(address evmtypes.Address, blockNumber *big.Int) string 
 	return message
 }
 
-func createTriggerResponse(log *evmtypes.Log, service *LogTriggerService) capabilities.TriggerAndId[*evmservice.Log] {
-	protoLog := evmservice.ConvertLogToProto(log)
-	return capabilities.TriggerAndId[*evmservice.Log]{
+func createTriggerResponse(log *evmtypes.Log, service *LogTriggerService) capabilities.TriggerAndId[*evmcappb.Log] {
+	return capabilities.TriggerAndId[*evmcappb.Log]{
 		Id:      service.generateLogIdentifier(log),
-		Trigger: protoLog,
+		Trigger: evmcappb.ConvertLogToProto(log),
 	}
 }
 
