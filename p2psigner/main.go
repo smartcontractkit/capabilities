@@ -88,7 +88,7 @@ func (cs *capabilitiesServer) Initialise(
 	}
 
 	if err := capabilityRegistry.Add(ctx, cs.action); err != nil {
-		return fmt.Errorf("failed to add read contract capability to the capability registry: %w", err)
+		return fmt.Errorf("failed to add P2P signer capability to the capability registry: %w", err)
 	}
 
 	cs.capabilityRegistry = capabilityRegistry
