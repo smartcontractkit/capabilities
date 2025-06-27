@@ -4,8 +4,9 @@ import (
 	"math"
 	"testing"
 
-	"github.com/smartcontractkit/capabilities/http_action/common"
 	"github.com/stretchr/testify/require"
+
+	"github.com/smartcontractkit/capabilities/http_action/common"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 )
@@ -105,7 +106,7 @@ func TestValidatedRequest(t *testing.T) {
 		input := &http.Request{Url: "https://foo", Method: "GET", TimeoutMs: 0}
 		out, err := ValidatedRequest(input, customConfig)
 		require.NoError(t, err)
-		require.Equal(t, int32(customConfig.LimitsConfig.MaxTimeoutMs), out.TimeoutMs)
+		require.Equal(t, int32(customConfig.LimitsConfig.MaxTimeoutMs), out.TimeoutMs) //nolint:gosec // G115
 	})
 
 	t.Run("header count limits", func(t *testing.T) {
