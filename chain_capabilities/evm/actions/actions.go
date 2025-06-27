@@ -45,9 +45,7 @@ func (e EVM) CallContract(ctx context.Context, meta capabilities.RequestMetadata
 	if err != nil {
 		return nil, err
 	}
-
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	
 	var request ctypes.Request
 	if requiresLocking {
 		request = ctypes.NewLockableToBlockRequest(requestID(meta), func(ctx context.Context, height *evmservice.ChainHeight) ([]byte, error) {
@@ -174,8 +172,6 @@ func (e EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, r
 		return proto.Marshal(pbBalance)
 	}
 
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	var request ctypes.Request
 	if requiresLocking {
 		request = ctypes.NewLockableToBlockRequest(requestID(meta), balanceAt)
@@ -223,8 +219,6 @@ func (e EVM) getReply(ctx context.Context, request ctypes.Request, into proto.Me
 }
 
 func (e EVM) GetTransactionByHash(ctx context.Context, meta capabilities.RequestMetadata, req *evmservice.GetTransactionByHashRequest) (*evmservice.GetTransactionByHashReply, error) {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	hash, err := evmservice.ConvertHashFromProto(req.GetHash())
 	if err != nil {
 		return nil, err
@@ -251,8 +245,6 @@ func (e EVM) GetTransactionByHash(ctx context.Context, meta capabilities.Request
 }
 
 func (e EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.RequestMetadata, req *evmservice.GetTransactionReceiptRequest) (*evmservice.GetTransactionReceiptReply, error) {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	hash, err := evmservice.ConvertHashFromProto(req.GetHash())
 	if err != nil {
 		return nil, err
