@@ -22,20 +22,46 @@ The **HTTP Action Capability** allows CRE workflows to interact with external HT
 
 ### 🛠️ Configuration Example
 
-```toml
-[limits]
-timeoutMs = 10000                # Request timeout in milliseconds
-maxResponseBytes = 1048576       # Maximum allowed response size in bytes
-headerCount = 50                 # Maximum number of headers
-maxHeaderKeyLength = 256         # Maximum length of a header key
-maxRequestBytes = 1048576        # Maximum allowed request size in bytes
-maxResponseBytes = 1048576       # Maximum allowed response size in bytes
-
-[gatewayConnection]
-initialIntervalMs = 100          # Initial retry interval in milliseconds
-maxElapsedTimeMs = 10000         # Maximum total retry time in milliseconds
-multiplier = 2.0                 # Backoff multiplier for retries
+```json
+{
+  "incomingRateLimiter": {
+    "globalRPS": 100.0,
+    "globalBurst": 100,
+    "perSenderRPS": 100.0,
+    "perSenderBurst": 100,
+  },
+  "outgoingRateLimiter": {
+    "globalRPS": 100.0,
+    "globalBurst": 100,
+    "perSenderRPS": 100.0,
+    "perSenderBurst": 100,
+  },
+  "limits": {
+    "maxTimeoutMs": 10000,
+    "maxResponseBytes": 1048576,
+    "maxHeaderCount": 50,
+    "maxHeaderKeyLength": 256,
+    "maxHeaderValueLength": 1024,
+    "maxRequestBytes": 1048576
+  },
+  "proxyMode": "gateway",
+  "gatewayConnection": {
+    "initialIntervalMs": 100,
+    "maxElapsedTimeMs": 10000,
+    "multiplier": 2.0
+  },
+  "httpClient": {
+    "blockedIPs": [],
+    "blockedIPsCIDR": [],
+    "allowedPorts": [80, 443],
+    "allowedSchemes": ["http", "https"],
+    "allowedIPs": [],
+    "allowedIPsCIDR": []
+  }
+}
 ```
+
+> **See also:** [Default values in `action/validate.go`](./action/validate.go)
 
 ### Run all tests:
 
