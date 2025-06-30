@@ -4,7 +4,6 @@ import (
 	"context"
 	"sync"
 
-	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 )
 
@@ -88,10 +87,10 @@ func (r *observableRequest[T]) SetObservation(observation T) {
 
 type LockableToBlockRequest struct {
 	id      string
-	observe func(context.Context, *evmservice.ChainHeight) ([]byte, error)
+	observe func(context.Context, *ChainHeight) ([]byte, error)
 }
 
-func NewLockableToBlockRequest(id string, observe func(context.Context, *evmservice.ChainHeight) ([]byte, error)) *LockableToBlockRequest {
+func NewLockableToBlockRequest(id string, observe func(context.Context, *ChainHeight) ([]byte, error)) *LockableToBlockRequest {
 	return &LockableToBlockRequest{
 		id:      id,
 		observe: observe,
@@ -102,7 +101,7 @@ func (r *LockableToBlockRequest) ID() string {
 	return r.id
 }
 
-func (r *LockableToBlockRequest) ToEventuallyConsistent(chainHeight *evmservice.ChainHeight) *EventuallyConsistentRequest {
+func (r *LockableToBlockRequest) ToEventuallyConsistent(chainHeight *ChainHeight) *EventuallyConsistentRequest {
 	return NewEventuallyConsistentRequest(r.id, func(ctx context.Context) ([]byte, error) {
 		return r.observe(ctx, chainHeight)
 	})

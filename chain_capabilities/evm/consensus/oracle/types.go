@@ -1,8 +1,6 @@
 package oracle
 
 import (
-	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
-
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
 )
 
@@ -15,6 +13,6 @@ type BlocksProvider interface {
 type RequestsStore interface {
 	GetRequestIDs(batchSize int) ([]string, error)
 	GetRequest(id string) (types.Request, bool)
-	CompleteRequest(id string, report *evmservice.RequestReport) error
+	CompleteRequest(id string, report *types.RequestReport) error
 	MarkAttempted(id string)
 }

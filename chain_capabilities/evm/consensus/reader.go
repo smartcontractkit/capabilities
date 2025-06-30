@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/list"
@@ -107,18 +106,18 @@ func (s *Reader) GetRequest(id string) (types.Request, bool) {
 	return s.requests.GetByID(id)
 }
 
-func (s *Reader) CompleteRequest(id string, report *evmservice.RequestReport) error {
+func (s *Reader) CompleteRequest(id string, report *types.RequestReport) error {
 	switch report.Report.(type) {
-	case *evmservice.RequestReport_LockableToBlock:
+	case *types.RequestReport_LockableToBlock:
 		return s.completeLockableRequest(id, report.GetLockableToBlock())
-	case *evmservice.RequestReport_EventuallyConsistent:
+	case *types.RequestReport_EventuallyConsistent:
 		return s.completeEventuallyConsistentRequest(id, report.GetEventuallyConsistent())
 	default:
 		return fmt.Errorf("unknown request type %T", report.Report)
 	}
 }
 
-func (s *Reader) completeLockableRequest(id string, height *evmservice.ChainHeight) error {
+func (s *Reader) completeLockableRequest(id string, height *types.ChainHeight) error {
 	if height == nil {
 		return fmt.Errorf("chain height is nil for report with requestID %s", id)
 	}

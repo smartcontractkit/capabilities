@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"sort"
 
-	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	"github.com/smartcontractkit/libocr/commontypes"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/types"
@@ -73,7 +72,7 @@ func (rp *reportingPlugin) Observation(
 		return nil, fmt.Errorf("too many request IDs: got %d, expected %d", len(requestIDs), rp.config.BatchSize)
 	}
 
-	observation := &evmservice.Observation{ChainHeight: &evmservice.ChainHeight{}, Observations: make(map[string]*evmservice.RequestObservation, len(requestIDs))}
+	observation := &ctypes.Observation{ChainHeight: &ctypes.ChainHeight{}, Observations: make(map[string]*ctypes.RequestObservation, len(requestIDs))}
 	var err error
 	observation.ChainHeight.Finalized, err = rp.blocksProvider.GetFinalized()
 	if err != nil {
@@ -96,7 +95,7 @@ func (rp *reportingPlugin) Observation(
 	}
 
 	if len(outctx.PreviousOutcome) > 0 {
-		var previousOutcome evmservice.Outcome
+		var previousOutcome ctypes.Outcome
 		err := proto.Unmarshal(outctx.PreviousOutcome, &previousOutcome)
 		if err != nil {
 			rp.logger.Errorw("Could not unmarshal previous outcome", "err", err, "previousOutcome", hex.EncodeToString(outctx.PreviousOutcome))
@@ -136,7 +135,7 @@ func (rp *reportingPlugin) Observation(
 	return proto.Marshal(observation)
 }
 
-func (rp *reportingPlugin) observeRequest(observation *evmservice.Observation, rawRequest ctypes.Request) error {
+func (rp *reportingPlugin) observeRequest(observation *ctypes.Observation, rawRequest ctypes.Request) error {
 	switch rq := rawRequest.(type) {
 	case *ctypes.AggregatabelRequest:
 		panic("not implemented")
@@ -145,13 +144,13 @@ func (rp *reportingPlugin) observeRequest(observation *evmservice.Observation, r
 		if !ok {
 			return nil
 		}
-		observation.Observations[rq.ID()] = &evmservice.RequestObservation{
-			Observation: &evmservice.RequestObservation_EventuallyConsistent{EventuallyConsistent: requestOb},
+		observation.Observations[rq.ID()] = &ctypes.RequestObservation{
+			Observation: &ctypes.RequestObservation_EventuallyConsistent{EventuallyConsistent: requestOb},
 		}
 		return nil
 	case *ctypes.LockableToBlockRequest:
-		observation.Observations[rq.ID()] = &evmservice.RequestObservation{
-			Observation: &evmservice.RequestObservation_LockableToBlock{LockableToBlock: &emptypb.Empty{}},
+		observation.Observations[rq.ID()] = &ctypes.RequestObservation{
+			Observation: &ctypes.RequestObservation_LockableToBlock{LockableToBlock: &emptypb.Empty{}},
 		}
 		return nil
 	default:
@@ -160,7 +159,7 @@ func (rp *reportingPlugin) observeRequest(observation *evmservice.Observation, r
 }
 
 func (rp *reportingPlugin) ValidateObservation(_ context.Context, outctx ocr3types.OutcomeContext, query types.Query, ao types.AttributedObservation) error {
-	ob := new(evmservice.Observation)
+	ob := new(ctypes.Observation)
 	if err := proto.Unmarshal(ao.Observation, ob); err != nil {
 		return fmt.Errorf("could not unmarshal proposed observation: %w", err)
 	}
@@ -171,7 +170,7 @@ func (rp *reportingPlugin) ValidateObservation(_ context.Context, outctx ocr3typ
 	}
 
 	if len(outctx.PreviousOutcome) > 0 {
-		prev := new(evmservice.Outcome)
+		prev := new(ctypes.Outcome)
 		err := proto.Unmarshal(outctx.PreviousOutcome, prev)
 		if err != nil {
 			rp.logger.Errorw("Could not unmarshal previous outcome", "err", err, "previousOutcome", hex.EncodeToString(outctx.PreviousOutcome))
@@ -189,7 +188,7 @@ func (rp *reportingPlugin) ValidateObservation(_ context.Context, outctx ocr3typ
 	return nil
 }
 
-func validateChainHeight(chainHeight *evmservice.ChainHeight) error {
+func validateChainHeight(chainHeight *ctypes.ChainHeight) error {
 	if chainHeight == nil {
 		return fmt.Errorf("chain height is nil")
 	}
@@ -203,7 +202,7 @@ func validateChainHeight(chainHeight *evmservice.ChainHeight) error {
 	return nil
 }
 
-func fPlusOneLowestBlockHeight(obs []attributedObservation, f int, getHeight func(ob *evmservice.ChainHeight) int64) int64 {
+func fPlusOneLowestBlockHeight(obs []attributedObservation, f int, getHeight func(ob *ctypes.ChainHeight) int64) int64 {
 	sort.Slice(obs, func(i, j int) bool {
 		return getHeight(obs[i].Observation.ChainHeight) < getHeight(obs[j].Observation.ChainHeight)
 	})
@@ -211,7 +210,7 @@ func fPlusOneLowestBlockHeight(obs []attributedObservation, f int, getHeight fun
 	return getHeight(obs[f].Observation.ChainHeight)
 }
 
-func validateChainHeightAgainstOutcome(ob *evmservice.ChainHeight, prevOutcome *evmservice.ChainHeight) error {
+func validateChainHeightAgainstOutcome(ob *ctypes.ChainHeight, prevOutcome *ctypes.ChainHeight) error {
 	if ob.Latest < prevOutcome.Latest {
 		return fmt.Errorf("expected latest %d to be gt or equal to previous latest %d", ob.Latest, prevOutcome.Latest)
 	}
@@ -229,30 +228,30 @@ func (rp *reportingPlugin) ObservationQuorum(_ context.Context, outctx ocr3types
 	return quorumhelper.ObservationCountReachesObservationQuorum(quorumhelper.QuorumNMinusF, rp.config.N, rp.config.F, aos), nil
 }
 
-func (rp *reportingPlugin) agreeOnRequestType(requestID string, aos []attributedObservation) (evmservice.RequestType, error) {
-	iterator := func(yield func(commontypes.OracleID, observation[evmservice.RequestType, evmservice.RequestType]) bool) {
+func (rp *reportingPlugin) agreeOnRequestType(requestID string, aos []attributedObservation) (ctypes.RequestType, error) {
+	iterator := func(yield func(commontypes.OracleID, observation[ctypes.RequestType, ctypes.RequestType]) bool) {
 		for _, ob := range aos {
 			requestOb, ok := ob.Observation.Observations[requestID]
 			if !ok || requestOb == nil {
 				continue
 			}
-			var requestType evmservice.RequestType
+			var requestType ctypes.RequestType
 			switch requestOb.GetObservation().(type) {
-			case *evmservice.RequestObservation_EventuallyConsistent:
-				requestType = evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT
-			case *evmservice.RequestObservation_LockableToBlock:
-				requestType = evmservice.RequestType_REQUEST_TYPE_LOCKABLE_TO_BLOCK
-			case *evmservice.RequestObservation_Aggregatable:
-				requestType = evmservice.RequestType_REQUEST_TYPE_AGGREGATABLE
+			case *ctypes.RequestObservation_EventuallyConsistent:
+				requestType = ctypes.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT
+			case *ctypes.RequestObservation_LockableToBlock:
+				requestType = ctypes.RequestType_REQUEST_TYPE_LOCKABLE_TO_BLOCK
+			case *ctypes.RequestObservation_Aggregatable:
+				requestType = ctypes.RequestType_REQUEST_TYPE_AGGREGATABLE
 			}
-			yield(ob.Observer, observation[evmservice.RequestType, evmservice.RequestType]{
+			yield(ob.Observer, observation[ctypes.RequestType, ctypes.RequestType]{
 				Key:   requestType,
 				Value: requestType,
 			})
 		}
 	}
 
-	return mode[evmservice.RequestType, evmservice.RequestType](rp.config.N, rp.config.F, iterator)
+	return mode[ctypes.RequestType, ctypes.RequestType](rp.config.N, rp.config.F, iterator)
 }
 
 func (rp *reportingPlugin) agreeOnEventuallyConsistentValue(requestID string, aos []attributedObservation) ([]byte, error) {
@@ -274,21 +273,21 @@ func (rp *reportingPlugin) agreeOnEventuallyConsistentValue(requestID string, ao
 	return mode[[32]byte, []byte](rp.config.N, rp.config.F, iterator)
 }
 
-func (rp *reportingPlugin) agreeOnChainHeight(aos []attributedObservation) (*evmservice.ChainHeight, error) {
+func (rp *reportingPlugin) agreeOnChainHeight(aos []attributedObservation) (*ctypes.ChainHeight, error) {
 	if len(aos) < rp.config.F+1 {
 		return nil, fmt.Errorf("not enough observations to calculate chain height. Got %d, expected at least %d", len(aos), rp.config.F+1)
 	}
 
-	return &evmservice.ChainHeight{
-		Latest:    fPlusOneLowestBlockHeight(aos, rp.config.F, func(o *evmservice.ChainHeight) int64 { return o.Latest }),
-		Safe:      fPlusOneLowestBlockHeight(aos, rp.config.F, func(o *evmservice.ChainHeight) int64 { return o.Safe }),
-		Finalized: fPlusOneLowestBlockHeight(aos, rp.config.F, func(o *evmservice.ChainHeight) int64 { return o.Finalized }),
+	return &ctypes.ChainHeight{
+		Latest:    fPlusOneLowestBlockHeight(aos, rp.config.F, func(o *ctypes.ChainHeight) int64 { return o.Latest }),
+		Safe:      fPlusOneLowestBlockHeight(aos, rp.config.F, func(o *ctypes.ChainHeight) int64 { return o.Safe }),
+		Finalized: fPlusOneLowestBlockHeight(aos, rp.config.F, func(o *ctypes.ChainHeight) int64 { return o.Finalized }),
 	}, nil
 }
 
 type attributedObservation struct {
 	Observer    commontypes.OracleID
-	Observation *evmservice.Observation
+	Observation *ctypes.Observation
 }
 
 func (rp *reportingPlugin) Outcome(
@@ -301,14 +300,14 @@ func (rp *reportingPlugin) Outcome(
 	for i, ao := range rawAOs {
 		aos[i] = attributedObservation{
 			Observer:    ao.Observer,
-			Observation: new(evmservice.Observation),
+			Observation: new(ctypes.Observation),
 		}
 		if err := proto.Unmarshal(ao.Observation, aos[i].Observation); err != nil {
 			return nil, fmt.Errorf("could not unmarshal proposed observation: %w", err)
 		}
 	}
 
-	outcome := evmservice.Outcome{ChainHeight: &evmservice.ChainHeight{}}
+	outcome := ctypes.Outcome{ChainHeight: &ctypes.ChainHeight{}}
 	// TODO PLEX-1572: report common chain height
 	var err error
 	outcome.ChainHeight, err = rp.agreeOnChainHeight(aos)
@@ -329,23 +328,23 @@ func (rp *reportingPlugin) Outcome(
 		}
 
 		switch requestType {
-		case evmservice.RequestType_REQUEST_TYPE_AGGREGATABLE:
+		case ctypes.RequestType_REQUEST_TYPE_AGGREGATABLE:
 			// TODO: PLEX-1470 implement aggregatable methods
 			panic("not implemented")
-		case evmservice.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT:
+		case ctypes.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT:
 			value, err := rp.agreeOnEventuallyConsistentValue(requestID, aos)
 			if err != nil {
 				rp.logger.Infow("Could not determine request value", "requestID", requestID, "err", err)
 				continue
 			}
-			outcome.Outcomes = append(outcome.Outcomes, &evmservice.RequestOutcome{
+			outcome.Outcomes = append(outcome.Outcomes, &ctypes.RequestOutcome{
 				RequestID: requestID,
-				Outcome:   &evmservice.RequestOutcome_EventuallyConsistent{EventuallyConsistent: value},
+				Outcome:   &ctypes.RequestOutcome_EventuallyConsistent{EventuallyConsistent: value},
 			})
-		case evmservice.RequestType_REQUEST_TYPE_LOCKABLE_TO_BLOCK:
-			outcome.Outcomes = append(outcome.Outcomes, &evmservice.RequestOutcome{
+		case ctypes.RequestType_REQUEST_TYPE_LOCKABLE_TO_BLOCK:
+			outcome.Outcomes = append(outcome.Outcomes, &ctypes.RequestOutcome{
 				RequestID: requestID,
-				Outcome:   &evmservice.RequestOutcome_LockableToBlock{LockableToBlock: &emptypb.Empty{}},
+				Outcome:   &ctypes.RequestOutcome_LockableToBlock{LockableToBlock: &emptypb.Empty{}},
 			})
 		default:
 			return nil, fmt.Errorf("unsupported request type: %s", requestType)
@@ -356,22 +355,22 @@ func (rp *reportingPlugin) Outcome(
 }
 
 func (rp *reportingPlugin) Reports(ctx context.Context, seqNr uint64, rawOutcome ocr3types.Outcome) ([]ocr3types.ReportPlus[[]byte], error) {
-	var outcome evmservice.Outcome
+	var outcome ctypes.Outcome
 	if err := proto.Unmarshal(rawOutcome, &outcome); err != nil {
 		return nil, fmt.Errorf("could not unmarshal proposed outcome: %w", err)
 	}
 
 	reports := make([]ocr3types.ReportPlus[[]byte], len(outcome.Outcomes))
 	for i, requestOutcome := range outcome.Outcomes {
-		report := evmservice.RequestReport{
+		report := ctypes.RequestReport{
 			RequestID: requestOutcome.RequestID,
 		}
 
 		switch requestOutcome.Outcome.(type) {
-		case *evmservice.RequestOutcome_EventuallyConsistent:
-			report.Report = &evmservice.RequestReport_EventuallyConsistent{EventuallyConsistent: requestOutcome.GetEventuallyConsistent()}
-		case *evmservice.RequestOutcome_LockableToBlock:
-			report.Report = &evmservice.RequestReport_LockableToBlock{LockableToBlock: outcome.ChainHeight}
+		case *ctypes.RequestOutcome_EventuallyConsistent:
+			report.Report = &ctypes.RequestReport_EventuallyConsistent{EventuallyConsistent: requestOutcome.GetEventuallyConsistent()}
+		case *ctypes.RequestOutcome_LockableToBlock:
+			report.Report = &ctypes.RequestReport_LockableToBlock{LockableToBlock: outcome.ChainHeight}
 		default:
 			return nil, fmt.Errorf("unsupported request type: %T", requestOutcome.Outcome)
 		}

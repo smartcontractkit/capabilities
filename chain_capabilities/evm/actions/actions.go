@@ -14,7 +14,6 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
-	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
@@ -64,7 +63,7 @@ func (e EVM) CallContract(ctx context.Context, meta capabilities.RequestMetadata
 	}
 	var request ctypes.Request
 	if requiresLocking {
-		request = ctypes.NewLockableToBlockRequest(requestID(meta), func(ctx context.Context, height *evmservice.ChainHeight) ([]byte, error) {
+		request = ctypes.NewLockableToBlockRequest(requestID(meta), func(ctx context.Context, height *ctypes.ChainHeight) ([]byte, error) {
 			// TODO: PLEX-1571 guarantee finality/safety of observed data for load balanced RPCs
 			callBlockNumber, err := getCallBlockNumber(blockNumber, height)
 			if err != nil {
@@ -135,7 +134,7 @@ func (e EVM) filterLogsToRequest(ctx context.Context, meta capabilities.RequestM
 		}), nil
 	}
 
-	return ctypes.NewLockableToBlockRequest(requestID(meta), func(ctx context.Context, height *evmservice.ChainHeight) ([]byte, error) {
+	return ctypes.NewLockableToBlockRequest(requestID(meta), func(ctx context.Context, height *ctypes.ChainHeight) ([]byte, error) {
 		callFromBlock, err := getCallBlockNumber(fromBlock, height)
 		if err != nil {
 			return nil, fmt.Errorf("error getting callFromBlock: %w", err)
@@ -173,7 +172,7 @@ func (e EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, r
 		return nil, err
 	}
 
-	balanceAt := func(ctx context.Context, height *evmservice.ChainHeight) ([]byte, error) {
+	balanceAt := func(ctx context.Context, height *ctypes.ChainHeight) ([]byte, error) {
 		callBlockNumber, err := getCallBlockNumber(blockNumber, height)
 		if err != nil {
 			return nil, fmt.Errorf("error getting call block number: %w", err)
@@ -333,7 +332,7 @@ func normalizeBlockNumber(pbBlockNumber *valuespb.BigInt) (number rpc.BlockNumbe
 	}
 }
 
-func getCallBlockNumber(requestedBlockNumber rpc.BlockNumber, chainHeight *evmservice.ChainHeight) (*big.Int, error) {
+func getCallBlockNumber(requestedBlockNumber rpc.BlockNumber, chainHeight *ctypes.ChainHeight) (*big.Int, error) {
 	switch requestedBlockNumber {
 	case rpc.LatestBlockNumber, rpc.SafeBlockNumber, rpc.FinalizedBlockNumber:
 	default:
