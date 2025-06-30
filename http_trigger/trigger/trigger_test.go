@@ -125,20 +125,17 @@ func TestService_Start_HealthReport_Ready_Close(t *testing.T) {
 	hr := svc.HealthReport()
 	require.Contains(t, hr, svc.Name())
 	require.NoError(t, hr[svc.Name()])
-
-	// Ready should report healthy
 	require.NoError(t, svc.Ready())
+
+	// Restarting the service should return an error
+	require.Error(t, svc.Start(ctx))
 
 	// Close the service
 	err = svc.Close()
 	require.NoError(t, err)
-
-	// HealthReport should still report healthy (since StateMachine is stopped, but not unhealthy)
 	hr = svc.HealthReport()
 	require.Contains(t, hr, svc.Name())
 	require.Error(t, hr[svc.Name()])
-
-	// Ready should still report healthy (since StateMachine is stopped, but not unhealthy)
 	require.Error(t, svc.Ready())
 }
 
