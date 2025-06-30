@@ -305,3 +305,46 @@ func TestRegisterWorkflow_InvalidECDSAPublicKey(t *testing.T) {
 		})
 	}
 }
+func TestConnectorHandler_Start_HealthReport_Ready_Name_Close(t *testing.T) {
+	lggr := logger.Test(t)
+	mockConnector := &mockGatewayConnector{}
+	cfg := ServiceConfig{}
+	handler, err := NewConnectorHandler(lggr, mockConnector, cfg)
+	require.NoError(t, err)
+
+	// Before Start, Ready should fail
+	require.Error(t, handler.Ready())
+
+	// Start the handler
+	ctx := context.Background()
+	err = handler.Start(ctx)
+	require.NoError(t, err)
+
+	// Ready should succeed after Start
+	require.NoError(t, handler.Ready())
+
+	// HealthReport should contain a healthy status
+	hr := handler.HealthReport()
+	require.Contains(t, hr, handler.Name())
+	require.NoError(t, hr[handler.Name()])
+
+	// Name should match ServiceName
+	require.Equal(t, ServiceName, handler.Name())
+
+	// Start should error if called again
+	require.Error(t, handler.Start(ctx))
+
+	// Close the handler
+	require.NoError(t, handler.Close())
+
+	// After Close, Ready should fail
+	require.Error(t, handler.Ready())
+
+	// HealthReport should contain an error after Close
+	hr = handler.HealthReport()
+	require.Contains(t, hr, handler.Name())
+	require.Error(t, hr[handler.Name()])
+
+	// Close should panic or error if called again
+	require.Error(t, handler.Close())
+}

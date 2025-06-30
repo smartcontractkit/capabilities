@@ -50,10 +50,11 @@ func TestService_RegisterTrigger(t *testing.T) {
 			mockHandler := &mockConnectorHandler{
 				registerErr: tc.registerErr,
 			}
-			svc := &service{
-				cfg:              ServiceConfig{SendChannelBufferSize: tc.sendChannelBufSize},
-				connectorHandler: mockHandler,
-			}
+			svc := NewService(logger.Test(t))
+			cfgStr := fmt.Sprintf(`{"sendChannelBufferSize": %d}`, tc.sendChannelBufSize)
+			err := svc.Initialise(t.Context(), cfgStr, nil, nil, nil, nil, nil, nil, nil)
+			require.NoError(t, err)
+			svc.connectorHandler = mockHandler
 			ctx := context.Background()
 			meta := capabilities.RequestMetadata{WorkflowID: "wid"}
 			input := &http.Config{}
@@ -91,14 +92,13 @@ func TestService_UnregisterTrigger(t *testing.T) {
 			mockHandler := &mockConnectorHandler{
 				unregisterErr: tt.handlerErr,
 			}
-
-			svc := &service{
-				lggr:             logger.Sugared(logger.Test(t)),
-				connectorHandler: mockHandler,
-			}
+			svc := NewService(logger.Test(t))
+			err := svc.Initialise(t.Context(), "{}", nil, nil, nil, nil, nil, nil, nil)
+			require.NoError(t, err)
+			svc.connectorHandler = mockHandler
 
 			metadata := capabilities.RequestMetadata{WorkflowID: "wid-123"}
-			err := svc.UnregisterTrigger(context.Background(), "tid-1", metadata, nil)
+			err = svc.UnregisterTrigger(context.Background(), "tid-1", metadata, nil)
 			if tt.handlerErr != nil {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tt.handlerErr.Error())
@@ -107,6 +107,39 @@ func TestService_UnregisterTrigger(t *testing.T) {
 			}
 		})
 	}
+}
+func TestService_Start_HealthReport_Ready_Close(t *testing.T) {
+	mockHandler := &mockConnectorHandler{}
+	svc := NewService(logger.Test(t))
+	err := svc.Initialise(t.Context(), `{}`, nil, nil, nil, nil, nil, nil, nil)
+	require.NoError(t, err)
+	svc.connectorHandler = mockHandler
+
+	ctx := context.Background()
+
+	// Start the service
+	err = svc.Start(ctx)
+	require.NoError(t, err)
+
+	// HealthReport should report healthy
+	hr := svc.HealthReport()
+	require.Contains(t, hr, svc.Name())
+	require.NoError(t, hr[svc.Name()])
+
+	// Ready should report healthy
+	require.NoError(t, svc.Ready())
+
+	// Close the service
+	err = svc.Close()
+	require.NoError(t, err)
+
+	// HealthReport should still report healthy (since StateMachine is stopped, but not unhealthy)
+	hr = svc.HealthReport()
+	require.Contains(t, hr, svc.Name())
+	require.Error(t, hr[svc.Name()])
+
+	// Ready should still report healthy (since StateMachine is stopped, but not unhealthy)
+	require.Error(t, svc.Ready())
 }
 
 // mockConnectorHandler implements minimal RegisterWorkflow/UnregisterWorkflow for testing
@@ -127,3 +160,12 @@ func (m *mockConnectorHandler) UnregisterWorkflow(ctx context.Context, workflowI
 }
 func (m *mockConnectorHandler) Start(ctx context.Context) error { return nil }
 func (m *mockConnectorHandler) Close() error                    { return nil }
+func (m *mockConnectorHandler) HealthReport() map[string]error {
+	return map[string]error{"mockConnectorHandler": nil}
+}
+func (m *mockConnectorHandler) Name() string {
+	return "mockConnectorHandler"
+}
+func (m *mockConnectorHandler) Ready() error {
+	return nil
+}

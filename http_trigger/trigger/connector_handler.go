@@ -89,6 +89,18 @@ func (h *connectorHandler) Close() error {
 	})
 }
 
+func (h *connectorHandler) HealthReport() map[string]error {
+	return map[string]error{h.Name(): h.Healthy()}
+}
+
+func (h *connectorHandler) Ready() error {
+	return h.StateMachine.Healthy()
+}
+
+func (h *connectorHandler) Name() string {
+	return ServiceName
+}
+
 func (h *connectorHandler) ID(context.Context) (string, error) {
 	return HandlerName, nil
 }

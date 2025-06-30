@@ -23,15 +23,14 @@ type ServiceConfig struct {
 	SendChannelBufferSize uint32 `json:"sendChannelBufferSize"`
 	// RateLimiter configuration for messages incoming to this node from the gateway.
 	// The sender is a Gateway node, which is identified by the Gateway ID.
-	RateLimiter ratelimit.RateLimiterConfig `toml:"incomingRateLimiter" json:"incomingRateLimiter" yaml:"incomingRateLimiter" mapstructure:"incomingRateLimiter"`
+	RateLimiter ratelimit.RateLimiterConfig `json:"incomingRateLimiter" `
 	// OutgoingRateLimiter is the configuration for outgoing messages from this node to the gateway.
 	// The sender is a workflow owner
-	OutgoingRateLimiter ratelimit.RateLimiterConfig `toml:"outgoingRateLimiter" json:"outgoingRateLimiter" yaml:"outgoingRateLimiter" mapstructure:"outgoingRateLimiter"`
+	OutgoingRateLimiter ratelimit.RateLimiterConfig `json:"outgoingRateLimiter"`
 }
 
 type ConnectorHandler interface {
-	Start(ctx context.Context) error
-	Close() error
+	services.Service
 	RegisterWorkflow(ctx context.Context, workflowID string, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error
 	UnregisterWorkflow(ctx context.Context, workflowID string) error
 }
@@ -90,11 +89,11 @@ func (s *service) Close() error {
 }
 
 func (s *service) HealthReport() map[string]error {
-	return map[string]error{s.Name(): nil}
+	return map[string]error{s.Name(): s.Healthy()}
 }
 
 func (s *service) Ready() error {
-	return nil
+	return s.StateMachine.Healthy()
 }
 
 func (s *service) Name() string {
