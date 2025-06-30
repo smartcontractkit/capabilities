@@ -6,10 +6,9 @@ import (
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/trigger"
-
-	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
@@ -21,7 +20,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	evmcapserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm/server"
-	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -34,13 +32,6 @@ const (
 	versionRefsMain     = "refs/heads/main"
 	schemaBasePath      = repoCLLCapabilities + "/" + versionRefsMain + "/chain_capabilities/evm/monitoring"
 )
-
-type Config struct {
-	ChainID                uint64        `json:"chainId"`
-	Network                string        `json:"network"`
-	LogTriggerPollInterval time.Duration `json:"logTriggerPollInterval"`
-	NodeAddress            string        `json:"nodeAddress"`
-}
 
 type capabilityGRPCService struct {
 	capabilities.CapabilityInfo
@@ -105,13 +96,13 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 		return fmt.Errorf("invalid ReceiverGasMinimum value. It must be greater than 0. Provided ReceiverGasMinimum %d", cfg.ReceiverGasMinimum)
 	}
 
-	evm, err := actions.NewEVM(cfg, evmRelayer, c.lggr)
+	evm, err := actions.NewEVM(cfg, evmRelayer, c.lggr, processor, messageBuilder)
 	if err != nil {
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
 
 	c.capability = capability{
-		EVM:            actions.NewEVM(evmRelayer, c.lggr, processor, messageBuilder),
+		EVM:            evm,
 		triggerService: trigger.NewLogTriggerService(evmRelayer, trigger.NewLogTriggerStore(), c.lggr, cfg.LogTriggerPollInterval),
 	}
 

@@ -12,15 +12,15 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
+
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 
 	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	chainsevm "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	commonlogger "github.com/smartcontractkit/chainlink-common/pkg/logger"
-	chaincommonpb "github.com/smartcontractkit/chainlink-common/pkg/loop/chain-common"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	evmmock "github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
@@ -33,7 +33,9 @@ func (nopProcessor) Process(_ context.Context, _ proto.Message, _ ...any) error 
 func initMocks(t *testing.T) (actions.EVM, *evmmock.EVMService) {
 	t.Helper()
 	evmSvc := evmmock.NewEVMService(t)
-	return actions.NewEVM(evmSvc, commonlogger.Test(t), nopProcessor{}, &monitoring.MessageBuilder{}), evmSvc
+	evm, err := actions.NewEVM(config.Config{}, evmSvc, commonlogger.Test(t), nopProcessor{}, &monitoring.MessageBuilder{})
+	require.NoError(t, err)
+	return evm, evmSvc
 }
 
 func TestCapability_CallContract(t *testing.T) {

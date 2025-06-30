@@ -10,7 +10,6 @@ import (
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 
-
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
@@ -18,7 +17,6 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
-	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
@@ -31,31 +29,34 @@ type EVM struct {
 	forwarderClient          contracts.CREForwarderClient
 	ReceiverGasMinimum       uint64
 
-	lggr                     logger.Logger
+	lggr              logger.Logger
 	beholderProcessor beholder.ProtoProcessor
 	messageBuilder    *monitoring.MessageBuilder
 }
 
-func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, beholderProcessor beholder.ProtoProcessor, messageBuilder *monitoring.MessageBuilder) EVM {
+func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, beholderProcessor beholder.ProtoProcessor, messageBuilder *monitoring.MessageBuilder) (EVM, error) {
 	keystoneForwarderAddress := common.HexToAddress(cfg.CREForwarderAddress)
-	kfc, err := contracts.NewCREForwarderClient(evmService, keystoneForwarderAddress, logger)
+	kfc, err := contracts.NewCREForwarderClient(evmService, keystoneForwarderAddress, lggr)
 	if err != nil {
 		return EVM{}, err
 	}
-	
+
 	return EVM{
-		EVMService:        evmService,
-		lggr:              lggr,
-		beholderProcessor: beholderProcessor,
-		messageBuilder:    messageBuilder,
-	}
+		EVMService:               evmService,
+		keystoneForwarderAddress: keystoneForwarderAddress,
+		forwarderClient:          kfc,
+		ReceiverGasMinimum:       cfg.ReceiverGasMinimum,
+		lggr:                     lggr,
+		beholderProcessor:        beholderProcessor,
+		messageBuilder:           messageBuilder,
+	}, nil
 }
 
 func (e EVM) CallContract(
 	ctx context.Context,
 	req capabilities.RequestMetadata,
-	input *evmservice.CallContractRequest,
-) (*evmservice.CallContractReply, error) {
+	input *evmcappb.CallContractRequest,
+) (*evmcappb.CallContractReply, error) {
 	ts := time.Now().UnixMilli()
 	read := monitoring.ReadRequest{TsStart: ts, RequestMetadata: req}
 
@@ -86,7 +87,7 @@ func (e EVM) CallContract(
 		e.lggr.Errorw("failed to process CallContractSuccess message", "err", err)
 	}
 
-	return &evmservice.CallContractReply{Data: data}, nil
+	return &evmcappb.CallContractReply{Data: data}, nil
 }
 
 func (e EVM) FilterLogs(
