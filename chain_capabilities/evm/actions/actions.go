@@ -7,14 +7,13 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/contracts"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
-	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	chaincommonpb "github.com/smartcontractkit/chainlink-common/pkg/loop/chain-common"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
@@ -165,9 +164,4 @@ func (e EVM) RegisterLogTracking(etx context.Context, _ capabilities.RequestMeta
 
 func (e EVM) UnregisterLogTracking(etx context.Context, _ capabilities.RequestMetadata, req *evmcappb.UnregisterLogTrackingRequest) (*emptypb.Empty, error) {
 	return &emptypb.Empty{}, e.EVMService.UnregisterLogTracking(etx, req.FilterName)
-}
-
-func (e EVM) WriteReport(_ context.Context, _ capabilities.RequestMetadata, _ *evmcappb.WriteReportRequest) (*evmcappb.WriteReportReply, error) {
-	//TODO implement me
-	panic("implement me")
 }

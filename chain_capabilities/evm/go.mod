@@ -6,8 +6,9 @@ toolchain go1.24.3
 
 require (
 	github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-20250402163239-224ad2061432
-	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250627002929-2cbb7418aaa5
+	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250627165544-731d426aa846
 	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250626141212-e50b2e7ffe2d
+	github.com/smartcontractkit/chainlink-evm v0.0.0-20250627135735-93e3b09aec5a
 	github.com/stretchr/testify v1.10.0
 	google.golang.org/protobuf v1.36.6
 )
@@ -40,7 +41,7 @@ require (
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/gofrs/flock v0.8.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
+	github.com/golang-jwt/jwt/v4 v4.5.1 // indirect
 	github.com/golang/snappy v0.0.5-0.20220116011046-fa5810519dcb // indirect
 	github.com/google/flatbuffers v24.12.23+incompatible // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
@@ -50,6 +51,7 @@ require (
 	github.com/holiman/uint256 v1.3.2 // indirect
 	github.com/huin/goupnp v1.3.0 // indirect
 	github.com/jackpal/go-nat-pmp v1.0.2 // indirect
+	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.9 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
@@ -135,7 +137,6 @@ require (
 	github.com/jmoiron/sqlx v1.4.0 // indirect
 	github.com/jpillora/backoff v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/lib/pq v1.10.9 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
@@ -156,7 +157,6 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v5 v5.2.0 // indirect
 	github.com/scylladb/go-reflectx v1.0.1 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
-	github.com/smartcontractkit/chainlink-evm v0.0.0-20250627135735-93e3b09aec5a
 	github.com/smartcontractkit/freeport v0.1.1 // indirect
 	github.com/smartcontractkit/grpc-proxy v0.0.0-20240830132753-a7e17fec5ab7 // indirect
 	github.com/smartcontractkit/libocr v0.0.0-20250328171017-609ec10a5510 // indirect
@@ -194,3 +194,5 @@ require (
 	google.golang.org/grpc v1.72.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/fbsobreira/gotron-sdk => github.com/smartcontractkit/chainlink-tron/relayer/gotron-sdk v0.0.5-0.20250528121202-292529af39df
