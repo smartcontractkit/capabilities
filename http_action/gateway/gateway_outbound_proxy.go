@@ -141,7 +141,7 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 	select {
 	case resp := <-responseCh:
 		lggr.Debugw("received response from gateway")
-		if resp.ExecutionError {
+		if resp.ErrorMessage != "" {
 			if isRateLimitError(resp.ErrorMessage) {
 				lggr.Errorw("incoming message from gateway exceeded rate limit", "errorMessage", resp.ErrorMessage)
 			} else {
@@ -253,8 +253,7 @@ func (p *gatewayOutboundProxy) HandleGatewayMessage(ctx context.Context, gateway
 	if errorMsg != "" {
 		l.Errorw("request rate-limited")
 		msg = gc.OutboundHTTPResponse{
-			ErrorMessage:   errorMsg,
-			ExecutionError: true,
+			ErrorMessage: errorMsg,
 		}
 	}
 	switch req.Method {

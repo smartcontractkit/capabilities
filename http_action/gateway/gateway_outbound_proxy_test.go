@@ -152,7 +152,6 @@ func TestGatewayOutboundProxy_SendRequest_Success(t *testing.T) {
 	require.NotNil(t, output)
 	assert.Equal(t, uint32(200), output.StatusCode)
 	assert.Equal(t, []byte("ok"), output.Body)
-	assert.Equal(t, "", output.ErrorMessage)
 }
 
 func TestGatewayOutboundProxy_SendRequest_Timeout(t *testing.T) {
@@ -242,10 +241,9 @@ func simulateGatewayMessage(t *testing.T, proxy *gatewayOutboundProxy, id string
 		Version: "2.0",
 	}
 	resp := gateway_common.OutboundHTTPResponse{
-		StatusCode:     statusCode,
-		Body:           []byte(body),
-		ErrorMessage:   errorMessage,
-		ExecutionError: executionError,
+		StatusCode:   statusCode,
+		Body:         []byte(body),
+		ErrorMessage: errorMessage,
 	}
 	payload, err := json.Marshal(resp)
 	require.NoError(t, err)
