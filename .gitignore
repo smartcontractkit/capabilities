@@ -25,6 +25,7 @@ coverage.txt
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
+proto_vendor
 
 # START - Chainlink Local (CLL) artifacts
 .local

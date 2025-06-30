@@ -5,7 +5,7 @@ go 1.24.2
 toolchain go1.24.3
 
 require (
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20250630144956-1e4dcdf44f5e
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20250630150003-cb3395d2b48c
 	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250626194303-6d35905cbe3d
 	github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/protoc/installer v0.0.0-20250630135429-dc5983b33a0d
 	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250626192802-ba22aca9d350
