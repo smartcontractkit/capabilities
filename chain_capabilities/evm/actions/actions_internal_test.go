@@ -5,6 +5,7 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/rpc"
 	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 	"github.com/stretchr/testify/require"
 )
@@ -15,14 +16,14 @@ func TestNormalizeBlockNumber(t *testing.T) {
 	tests := []struct {
 		name              string
 		pbBlockNumber     *valuespb.BigInt
-		expectedNumber    rpcBlockNumber
+		expectedNumber    rpc.BlockNumber
 		expectedIsLocking bool
 		expectedErrMsg    string
 	}{
 		{
 			name:              "nil block number",
 			pbBlockNumber:     nil,
-			expectedNumber:    latestBlockNumber,
+			expectedNumber:    rpc.LatestBlockNumber,
 			expectedIsLocking: true,
 		},
 		{
@@ -40,20 +41,20 @@ func TestNormalizeBlockNumber(t *testing.T) {
 		},
 		{
 			name:              "safe block number",
-			pbBlockNumber:     valuespb.NewBigIntFromInt(big.NewInt(int64(safeBlockNumber))),
-			expectedNumber:    safeBlockNumber,
+			pbBlockNumber:     valuespb.NewBigIntFromInt(big.NewInt(int64(rpc.SafeBlockNumber))),
+			expectedNumber:    rpc.SafeBlockNumber,
 			expectedIsLocking: true,
 		},
 		{
 			name:              "finalized block number",
-			pbBlockNumber:     valuespb.NewBigIntFromInt(big.NewInt(int64(finalizedBlockNumber))),
-			expectedNumber:    finalizedBlockNumber,
+			pbBlockNumber:     valuespb.NewBigIntFromInt(big.NewInt(int64(rpc.FinalizedBlockNumber))),
+			expectedNumber:    rpc.FinalizedBlockNumber,
 			expectedIsLocking: true,
 		},
 		{
 			name:              "latest block number",
-			pbBlockNumber:     valuespb.NewBigIntFromInt(big.NewInt(int64(latestBlockNumber))),
-			expectedNumber:    latestBlockNumber,
+			pbBlockNumber:     valuespb.NewBigIntFromInt(big.NewInt(int64(rpc.LatestBlockNumber))),
+			expectedNumber:    rpc.LatestBlockNumber,
 			expectedIsLocking: true,
 		},
 		{
