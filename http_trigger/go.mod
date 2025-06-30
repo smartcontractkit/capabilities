@@ -6,7 +6,7 @@ toolchain go1.24.3
 
 require (
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20250530004552-1b414f8954d0
-	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250627102319-3cf15073d1f9
+	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250630220142-e903795cfa47
 	github.com/stretchr/testify v1.10.0
 	google.golang.org/protobuf v1.36.6
 )
@@ -18,8 +18,8 @@ require (
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/cloudevents/sdk-go/binding/format/protobuf/v2 v2.15.2 // indirect
-	github.com/cloudevents/sdk-go/v2 v2.16.0 // indirect
+	github.com/cloudevents/sdk-go/binding/format/protobuf/v2 v2.16.1 // indirect
+	github.com/cloudevents/sdk-go/v2 v2.16.1 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dominikbraun/graph v0.23.0 // indirect
 	github.com/fatih/color v1.17.0 // indirect
@@ -106,7 +106,7 @@ require (
 	golang.org/x/net v0.38.0 // indirect
 	golang.org/x/sys v0.32.0 // indirect
 	golang.org/x/text v0.23.0 // indirect
-	golang.org/x/time v0.5.0 // indirect
+	golang.org/x/time v0.12.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250218202821-56aae31c358a // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250324211829-b45e905df463 // indirect
 	google.golang.org/grpc v1.72.0 // indirect

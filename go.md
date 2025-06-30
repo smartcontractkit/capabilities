@@ -6,29 +6,37 @@ flowchart LR
 	capabilities/chain_capabilities/evm --> chainlink-common/pkg/values
 	capabilities/chain_capabilities/evm --> chainlink-evm
 	capabilities/chain_capabilities/evm --> chainlink-framework/chains
-	capabilities/chain_capabilities/evm --> freeport
 	click capabilities/chain_capabilities/evm href "https://github.com/smartcontractkit/capabilities"
 	capabilities/cron --> capabilities/libs
 	click capabilities/cron href "https://github.com/smartcontractkit/capabilities"
+	capabilities/devenv --> chainlink-automation
+	capabilities/devenv --> chainlink-ccip
+	capabilities/devenv --> chainlink-data-streams
+	capabilities/devenv --> chainlink-evm
+	capabilities/devenv --> chainlink-framework/chains
+	capabilities/devenv --> chainlink-framework/metrics
+	capabilities/devenv --> chainlink-framework/multinode
+	capabilities/devenv --> chainlink-protos/svr
+	capabilities/devenv --> chainlink-protos/workflows/go
+	capabilities/devenv --> chainlink-tron/relayer
 	capabilities/devenv --> chainlink/v2
+	capabilities/devenv --> freeport
+	capabilities/devenv --> grpc-proxy
+	capabilities/devenv --> tdh2/go/ocr2/decryptionplugin
+	capabilities/devenv --> wsrpc
 	click capabilities/devenv href "https://github.com/smartcontractkit/capabilities"
 	capabilities/http_trigger --> capabilities/libs
-	capabilities/http_trigger --> chainlink-common
-	capabilities/http_trigger --> chainlink-common/pkg/values
-	capabilities/http_trigger --> freeport
-	capabilities/http_trigger --> grpc-proxy
-	capabilities/http_trigger --> libocr
 	click capabilities/http_trigger href "https://github.com/smartcontractkit/capabilities"
 	capabilities/integration_tests --> capabilities/loadtestwritetarget
 	capabilities/integration_tests --> chainlink/v2
 	click capabilities/integration_tests href "https://github.com/smartcontractkit/capabilities"
 	capabilities/kvstore --> capabilities/libs/loopserver
 	capabilities/kvstore --> capabilities/libs/testutils
-	capabilities/kvstore --> chainlink-common
-	capabilities/kvstore --> grpc-proxy
-	capabilities/kvstore --> libocr
 	click capabilities/kvstore href "https://github.com/smartcontractkit/capabilities"
 	capabilities/libs --> chainlink-common
+	capabilities/libs --> freeport
+	capabilities/libs --> grpc-proxy
+	capabilities/libs --> libocr
 	click capabilities/libs href "https://github.com/smartcontractkit/capabilities"
 	capabilities/libs/loopserver --> chainlink-common
 	capabilities/libs/loopserver --> grpc-proxy
@@ -38,30 +46,27 @@ flowchart LR
 	capabilities/libs/testutils --> libocr
 	click capabilities/libs/testutils href "https://github.com/smartcontractkit/capabilities"
 	capabilities/loadtestwritetarget --> capabilities/libs/loopserver
+	capabilities/loadtestwritetarget --> chainlink-common
+	capabilities/loadtestwritetarget --> grpc-proxy
+	capabilities/loadtestwritetarget --> libocr
 	click capabilities/loadtestwritetarget href "https://github.com/smartcontractkit/capabilities"
 	capabilities/mock --> capabilities/libs/loopserver
 	capabilities/mock --> capabilities/libs/testutils
+	capabilities/mock --> freeport
 	click capabilities/mock href "https://github.com/smartcontractkit/capabilities"
 	capabilities/readcontract --> capabilities/libs
-	capabilities/readcontract --> chainlink-common
-	capabilities/readcontract --> freeport
-	capabilities/readcontract --> grpc-proxy
-	capabilities/readcontract --> libocr
 	click capabilities/readcontract href "https://github.com/smartcontractkit/capabilities"
 	capabilities/workflowevent --> capabilities/libs/loopserver
 	capabilities/workflowevent --> capabilities/libs/testutils
 	click capabilities/workflowevent href "https://github.com/smartcontractkit/capabilities"
 	capabilities/workflows --> chainlink-common
+	capabilities/workflows --> libocr
 	click capabilities/workflows href "https://github.com/smartcontractkit/capabilities"
 	capabilities/workflows/readbalancesgen --> chainlink-common
-	capabilities/workflows/readbalancesgen --> libocr
 	click capabilities/workflows/readbalancesgen href "https://github.com/smartcontractkit/capabilities"
 	chain-selectors
 	click chain-selectors href "https://github.com/smartcontractkit/chain-selectors"
 	chainlink-aptos --> chainlink-common
-	chainlink-aptos --> freeport
-	chainlink-aptos --> grpc-proxy
-	chainlink-aptos --> libocr
 	click chainlink-aptos href "https://github.com/smartcontractkit/chainlink-aptos"
 	chainlink-automation --> chainlink-common
 	chainlink-automation --> libocr
@@ -69,10 +74,9 @@ flowchart LR
 	chainlink-ccip --> chain-selectors
 	chainlink-ccip --> chainlink-common
 	chainlink-ccip --> chainlink-protos/rmn/v1.6/go
+	chainlink-ccip --> libocr
 	click chainlink-ccip href "https://github.com/smartcontractkit/chainlink-ccip"
 	chainlink-ccip/chains/solana --> chainlink-ccip
-	chainlink-ccip/chains/solana --> chainlink-common
-	chainlink-ccip/chains/solana --> libocr
 	click chainlink-ccip/chains/solana href "https://github.com/smartcontractkit/chainlink-ccip"
 	chainlink-common --> chainlink-common/pkg/values
 	chainlink-common --> chainlink-protos/billing/go
@@ -85,21 +89,20 @@ flowchart LR
 	chainlink-common/pkg/values
 	click chainlink-common/pkg/values href "https://github.com/smartcontractkit/chainlink-common"
 	chainlink-data-streams --> chainlink-common
+	chainlink-data-streams --> grpc-proxy
+	chainlink-data-streams --> libocr
 	click chainlink-data-streams href "https://github.com/smartcontractkit/chainlink-data-streams"
 	chainlink-evm --> chainlink-common/pkg/values
 	chainlink-evm --> chainlink-framework/capabilities
 	chainlink-evm --> chainlink-framework/chains
-	chainlink-evm --> chainlink-framework/metrics
 	chainlink-evm --> chainlink-protos/svr
 	chainlink-evm --> chainlink-tron/relayer
-	chainlink-evm --> grpc-proxy
 	click chainlink-evm href "https://github.com/smartcontractkit/chainlink-evm"
 	chainlink-feeds --> chainlink-common
 	chainlink-feeds --> grpc-proxy
 	chainlink-feeds --> libocr
 	click chainlink-feeds href "https://github.com/smartcontractkit/chainlink-feeds"
 	chainlink-framework/capabilities --> chainlink-common
-	chainlink-framework/capabilities --> libocr
 	click chainlink-framework/capabilities href "https://github.com/smartcontractkit/chainlink-framework"
 	chainlink-framework/chains --> chainlink-framework/multinode
 	chainlink-framework/chains --> freeport
@@ -107,7 +110,9 @@ flowchart LR
 	chainlink-framework/metrics --> chainlink-common
 	chainlink-framework/metrics --> libocr
 	click chainlink-framework/metrics href "https://github.com/smartcontractkit/chainlink-framework"
+	chainlink-framework/multinode --> chainlink-common
 	chainlink-framework/multinode --> chainlink-framework/metrics
+	chainlink-framework/multinode --> libocr
 	click chainlink-framework/multinode href "https://github.com/smartcontractkit/chainlink-framework"
 	chainlink-protos/billing/go --> chainlink-protos/workflows/go
 	click chainlink-protos/billing/go href "https://github.com/smartcontractkit/chainlink-protos"
@@ -122,14 +127,13 @@ flowchart LR
 	chainlink-solana --> chainlink-ccip
 	chainlink-solana --> chainlink-ccip/chains/solana
 	chainlink-solana --> chainlink-common/pkg/monitoring
-	chainlink-solana --> chainlink-framework/metrics
 	chainlink-solana --> chainlink-framework/multinode
 	chainlink-solana --> freeport
 	chainlink-solana --> grpc-proxy
 	click chainlink-solana href "https://github.com/smartcontractkit/chainlink-solana"
 	chainlink-tron/relayer --> chainlink-evm
+	chainlink-tron/relayer --> grpc-proxy
 	click chainlink-tron/relayer href "https://github.com/smartcontractkit/chainlink-tron"
-	chainlink/v2 --> chain-selectors
 	chainlink/v2 --> chainlink-aptos
 	chainlink/v2 --> chainlink-automation
 	chainlink/v2 --> chainlink-ccip
@@ -140,19 +144,15 @@ flowchart LR
 	chainlink/v2 --> chainlink-feeds
 	chainlink/v2 --> chainlink-framework/capabilities
 	chainlink/v2 --> chainlink-framework/chains
-	chainlink/v2 --> chainlink-framework/metrics
 	chainlink/v2 --> chainlink-framework/multinode
 	chainlink/v2 --> chainlink-protos/billing/go
 	chainlink/v2 --> chainlink-protos/orchestrator
-	chainlink/v2 --> chainlink-protos/rmn/v1.6/go
 	chainlink/v2 --> chainlink-protos/svr
 	chainlink/v2 --> chainlink-solana
 	chainlink/v2 --> chainlink-tron/relayer
 	chainlink/v2 --> freeport
 	chainlink/v2 --> grpc-proxy
 	chainlink/v2 --> tdh2/go/ocr2/decryptionplugin
-	chainlink/v2 --> tdh2/go/tdh2
-	chainlink/v2 --> wsrpc
 	click chainlink/v2 href "https://github.com/smartcontractkit/chainlink"
 	freeport
 	click freeport href "https://github.com/smartcontractkit/freeport"
