@@ -31,15 +31,6 @@ const (
 	errorIncomingRatelimitGlobal = "message from gateway exceeded global rate limit"
 	errorIncomingRatelimitSender = "message from gateway exceeded per sender rate limit"
 	ecdsaPubKeyHexLen            = 42 // 2 (0x prefix) + 40 (hex digits)
-	// TODO: use constants from chainlink-common once
-	// https://github.com/smartcontractkit/chainlink-common/pull/1293 is merged
-	ErrUnknown          int64 = -32001
-	ErrParse            int64 = -32700
-	ErrInvalidRequest   int64 = -32600
-	ErrMethodNotFound   int64 = -32601
-	ErrInvalidParams    int64 = -32602
-	ErrInternal         int64 = -32603
-	ErrServerOverloaded int64 = -32000
 )
 
 var _ core.GatewayConnectorHandler = &connectorHandler{}
@@ -84,6 +75,7 @@ func (h *connectorHandler) Start(ctx context.Context) error {
 }
 
 func (h *connectorHandler) Close() error {
+	h.lggr.Debug("Stopping request handler")
 	return h.StopOnce(HandlerName, func() error {
 		return nil
 	})
@@ -98,7 +90,7 @@ func (h *connectorHandler) Ready() error {
 }
 
 func (h *connectorHandler) Name() string {
-	return ServiceName
+	return HandlerName
 }
 
 func (h *connectorHandler) ID(context.Context) (string, error) {
@@ -206,7 +198,7 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 	input, err := convertRawJSONToProto(triggerReq.Input)
 	if err != nil {
 		l.Errorw("Failed to convert input JSON to proto", "error", err)
-		h.sendErrorResponse(ctx, gatewayID, req.ID, ErrParse, "Invalid input JSON")
+		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrParse, "Invalid input JSON")
 		return
 	}
 	// TODO: PRODCRE-305 validate JWT against authorized keys
@@ -214,7 +206,7 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 	workflowID := triggerReq.Workflow.WorkflowID
 	if workflowID == "" {
 		l.Error("WorkflowID is required in HTTP trigger request")
-		h.sendErrorResponse(ctx, gatewayID, req.ID, ErrInvalidParams, "workflowID is required")
+		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInvalidParams, "workflowID is required")
 		return
 	}
 	l = logger.With(l, "workflowID", workflowID)
@@ -226,7 +218,7 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 	workflowExecutionID, err := workflows.EncodeExecutionID(workflowID, req.ID)
 	if err != nil {
 		l.Errorw("Failed to generate workflow execution ID", "error", err)
-		h.sendErrorResponse(ctx, gatewayID, req.ID, ErrInternal, "Internal server error")
+		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInternal, "Internal server error")
 		return
 	}
 	payload := &gateway_common.HTTPTriggerResponse{
@@ -237,7 +229,7 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 	jsonPayload, err := json.Marshal(payload)
 	if err != nil {
 		l.Errorw("Failed to marshal HTTP trigger response", "error", err)
-		h.sendErrorResponse(ctx, gatewayID, req.ID, ErrInternal, "Internal server error")
+		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInternal, "Internal server error")
 		return
 	}
 	resp := &jsonrpc.Response{
@@ -253,7 +245,7 @@ func (h *connectorHandler) triggerWorkflow(ctx context.Context, workflowID strin
 	workflow, ok := h.workflows[workflowID]
 	h.workflowsMu.RUnlock()
 	if !ok {
-		h.sendErrorResponse(ctx, gatewayID, reqID, ErrInvalidRequest, "Workflow not registered")
+		h.sendErrorResponse(ctx, gatewayID, reqID, jsonrpc.ErrInvalidRequest, "Workflow not registered")
 		return fmt.Errorf("workflowID %s not registered", workflowID)
 	}
 	err := workflow.trigger(ctx, capabilities.TriggerAndId[*http.Payload]{
@@ -266,9 +258,9 @@ func (h *connectorHandler) triggerWorkflow(ctx context.Context, workflowID strin
 	})
 	if err != nil {
 		if errors.Is(err, errWorkflowClosed) {
-			h.sendErrorResponse(ctx, gatewayID, reqID, ErrInvalidRequest, err.Error())
+			h.sendErrorResponse(ctx, gatewayID, reqID, jsonrpc.ErrInvalidRequest, err.Error())
 		} else if errors.Is(err, errFullChannel) {
-			h.sendErrorResponse(ctx, gatewayID, reqID, ErrServerOverloaded, err.Error())
+			h.sendErrorResponse(ctx, gatewayID, reqID, jsonrpc.ErrServerOverloaded, err.Error())
 		}
 		return err
 	}
