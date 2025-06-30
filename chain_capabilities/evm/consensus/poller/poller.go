@@ -178,7 +178,7 @@ func (p *Poller) scheduleReadyForReprocessing(ctx context.Context, now time.Time
 		if request == nil {
 			return
 		}
-		if request.Value.LastAttemptAt.Add(p.pollPeriod).Before(now) {
+		if request.Value.LastAttemptAt.Add(p.pollPeriod).After(now) {
 			return
 		}
 
