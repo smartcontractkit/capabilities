@@ -13,6 +13,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
+	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
 )
 
 const (
@@ -57,18 +58,6 @@ func gatewayRequest(t *testing.T, method string) *jsonrpc.Request {
 		},
 		Input: json.RawMessage(`{"key":"value"}`),
 	}
-	jsonPayload, err := json.Marshal(payload)
-	require.NoError(t, err)
-	return &jsonrpc.Request{
-		Version: "2.0",
-		ID:      "id",
-		Method:  method,
-		Params:  jsonPayload,
-	}
-}
-
-// gatewayRequestCustomPayload creates a test request with custom payload
-func gatewayRequestCustomPayload(t *testing.T, method string, payload gateway_common.HTTPTriggerRequest) *jsonrpc.Request {
 	jsonPayload, err := json.Marshal(payload)
 	require.NoError(t, err)
 	return &jsonrpc.Request{
@@ -133,7 +122,7 @@ func TestHandleGatewayMessage_Success(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "wf1", triggerResp.WorkflowID)
 
-	executionID, err := generateExecutionID("wf1", req.ID)
+	executionID, err := workflows.EncodeExecutionID("wf1", req.ID)
 	require.NoError(t, err)
 	require.Equal(t, executionID, triggerResp.WorkflowExecutionID)
 }
