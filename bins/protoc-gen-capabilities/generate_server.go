@@ -35,7 +35,7 @@ var serverTemplates = map[ServerLanguage]protoc.TemplateGenerator{
 	ServerLangaugeGo: {
 		Name:             "go_server",
 		Template:         goServerTemplate,
-		FileNameTemplate: "server/{{.}}_server_gen.go",
+		FileNameTemplate: "{{.}}_server_gen.go",
 	},
 }
 
