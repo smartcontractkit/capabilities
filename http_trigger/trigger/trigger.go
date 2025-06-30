@@ -31,9 +31,9 @@ type ServiceConfig struct {
 
 type service struct {
 	services.StateMachine
-	lggr           logger.SugaredLogger
-	cfg            ServiceConfig
-	requestHandler *requestHandler
+	lggr             logger.SugaredLogger
+	cfg              ServiceConfig
+	connectorHandler *connectorHandler
 }
 
 func NewService(lggr logger.Logger) *service {
@@ -61,7 +61,7 @@ func (s *service) Initialise(
 		return err
 	}
 	s.cfg = serviceConfig
-	s.requestHandler, err = NewRequestHandler(s.lggr, gc, serviceConfig)
+	s.connectorHandler, err = NewConnectorHandler(s.lggr, gc, serviceConfig)
 	if err != nil {
 		return err
 	}
@@ -71,14 +71,14 @@ func (s *service) Initialise(
 func (s *service) Start(ctx context.Context) error {
 	s.lggr.Debug("Service starting...")
 	return s.StartOnce(ServiceName, func() error {
-		return s.requestHandler.Start(ctx)
+		return s.connectorHandler.Start(ctx)
 	})
 }
 
 func (s *service) Close() error {
 	s.lggr.Debug("Service closing...")
 	return s.StopOnce(ServiceName, func() error {
-		return s.requestHandler.Close()
+		return s.connectorHandler.Close()
 	})
 }
 
@@ -104,7 +104,7 @@ func (s *service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 		sendChannelBufferSize = defaultSendChannelBufferSize
 	}
 	sendCh := make(chan capabilities.TriggerAndId[*http.Payload], sendChannelBufferSize)
-	err := s.requestHandler.RegisterWorkflow(ctx, metadata.WorkflowID, input, sendCh)
+	err := s.connectorHandler.RegisterWorkflow(ctx, metadata.WorkflowID, input, sendCh)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +112,7 @@ func (s *service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 }
 
 func (s *service) UnregisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *http.Config) error {
-	err := s.requestHandler.UnregisterWorkflow(ctx, metadata.WorkflowID)
+	err := s.connectorHandler.UnregisterWorkflow(ctx, metadata.WorkflowID)
 	if err != nil {
 		s.lggr.Errorf("Failed to unregister workflow %s: %v", metadata.WorkflowID, err)
 	}

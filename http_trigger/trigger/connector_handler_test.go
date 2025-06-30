@@ -80,10 +80,10 @@ func gatewayRequestCustomPayload(t *testing.T, method string, payload gateway_co
 }
 
 // Helper for setting up proxy and mockConnector for SendRequest tests
-func setup(t *testing.T, lggr logger.Logger) (*requestHandler, *mockGatewayConnector, <-chan capabilities.TriggerAndId[*http.Payload]) {
+func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayConnector, <-chan capabilities.TriggerAndId[*http.Payload]) {
 	mockConnector := &mockGatewayConnector{}
 	cfg := ServiceConfig{}
-	handler, err := NewRequestHandler(
+	handler, err := NewConnectorHandler(
 		lggr,
 		mockConnector,
 		cfg,
@@ -231,6 +231,8 @@ func TestRegisterAndUnregisterWorkflow(t *testing.T) {
 	require.NoError(t, err, "UnregisterWorkflow failed")
 	_, ok = handler.workflows["wf1"]
 	require.False(t, ok, "workflow still registered after unregistering")
+	err = handler.UnregisterWorkflow(context.Background(), "wf1")
+	require.Error(t, err, "UnregisterWorkflow should return error for non-existent workflow")
 }
 
 func TestProcessTrigger_UnregisteredWorkflow(t *testing.T) {

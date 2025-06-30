@@ -1,4 +1,4 @@
-module github.com/smartcontractkit/capabilities/http
+module github.com/smartcontractkit/capabilities/http_trigger
 
 go 1.24.2
 
@@ -6,7 +6,7 @@ toolchain go1.24.3
 
 require (
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20250530004552-1b414f8954d0
-	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250626131319-51f74fada1db
+	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250627102319-3cf15073d1f9
 	github.com/stretchr/testify v1.10.0
 	google.golang.org/protobuf v1.36.6
 )
@@ -21,6 +21,7 @@ require (
 	github.com/cloudevents/sdk-go/binding/format/protobuf/v2 v2.15.2 // indirect
 	github.com/cloudevents/sdk-go/v2 v2.16.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
+	github.com/dominikbraun/graph v0.23.0 // indirect
 	github.com/fatih/color v1.17.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.5.0 // indirect
 	github.com/go-json-experiment/json v0.0.0-20231102232822-2e55bd4e08b0 // indirect
@@ -29,7 +30,7 @@ require (
 	github.com/go-playground/locales v0.13.0 // indirect
 	github.com/go-playground/universal-translator v0.17.0 // indirect
 	github.com/go-playground/validator/v10 v10.4.1 // indirect
-	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
+	github.com/go-viper/mapstructure/v2 v2.3.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
@@ -72,6 +73,7 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v5 v5.2.0 // indirect
 	github.com/scylladb/go-reflectx v1.0.1 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
+	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250626141212-e50b2e7ffe2d // indirect
 	github.com/smartcontractkit/freeport v0.1.1 // indirect
 	github.com/smartcontractkit/grpc-proxy v0.0.0-20240830132753-a7e17fec5ab7 // indirect
 	github.com/smartcontractkit/libocr v0.0.0-20250328171017-609ec10a5510 // indirect
@@ -109,4 +111,5 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250324211829-b45e905df463 // indirect
 	google.golang.org/grpc v1.72.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
+	sigs.k8s.io/yaml v1.4.0 // indirect
 )

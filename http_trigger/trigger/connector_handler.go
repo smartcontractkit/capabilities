@@ -18,6 +18,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
+	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
 )
 
 const (
@@ -42,25 +43,27 @@ const (
 	ErrServerOverloaded int64 = -32000
 )
 
-var _ core.GatewayConnectorHandler = &requestHandler{}
+var _ core.GatewayConnectorHandler = &connectorHandler{}
 
-type requestHandler struct {
+type connectorHandler struct {
 	services.StateMachine
 	lggr                logger.Logger
 	gatewayConnector    core.GatewayConnector
 	workflowsMu         sync.RWMutex
-	workflows           map[string]workflow // workflowID -> workflow metadata
+	workflows           map[string]*workflow // workflowID -> workflow metadata
 	config              ServiceConfig
 	incomingRateLimiter *ratelimit.RateLimiter
 	outgoingRateLimiter *ratelimit.RateLimiter
 }
 
 type workflow struct {
+	mu             sync.RWMutex
 	authorizedKeys map[string]struct{}
 	sendCh         chan<- capabilities.TriggerAndId[*http.Payload]
+	closed         bool
 }
 
-func NewRequestHandler(lggr logger.Logger, gc core.GatewayConnector, config ServiceConfig) (*requestHandler, error) {
+func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config ServiceConfig) (*connectorHandler, error) {
 	outgoingRLCfg := outgoingRateLimiterConfigDefaults(config.OutgoingRateLimiter)
 	outgoingRateLimiter, err := ratelimit.NewRateLimiter(outgoingRLCfg)
 	if err != nil {
@@ -71,34 +74,34 @@ func NewRequestHandler(lggr logger.Logger, gc core.GatewayConnector, config Serv
 	if err != nil {
 		return nil, err
 	}
-	return &requestHandler{
+	return &connectorHandler{
 		lggr:                logger.Named(lggr, HandlerName),
 		gatewayConnector:    gc,
 		config:              config,
 		outgoingRateLimiter: outgoingRateLimiter,
 		incomingRateLimiter: incomingRateLimiter,
-		workflows:           make(map[string]workflow),
+		workflows:           make(map[string]*workflow),
 	}, nil
 }
 
-func (h *requestHandler) Start(ctx context.Context) error {
+func (h *connectorHandler) Start(ctx context.Context) error {
 	h.lggr.Debug("Starting request handler")
 	return h.StartOnce(HandlerName, func() error {
 		return h.gatewayConnector.AddHandler(ctx, []string{gateway_common.MethodWorkflowExecute}, h)
 	})
 }
 
-func (h *requestHandler) Close() error {
+func (h *connectorHandler) Close() error {
 	return h.StopOnce(HandlerName, func() error {
 		return nil
 	})
 }
 
-func (h *requestHandler) ID(context.Context) (string, error) {
+func (h *connectorHandler) ID(context.Context) (string, error) {
 	return HandlerName, nil
 }
 
-func (h *requestHandler) RegisterWorkflow(ctx context.Context, workflowID string, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error {
+func (h *connectorHandler) RegisterWorkflow(ctx context.Context, workflowID string, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error {
 	authorizedKeys := map[string]struct{}{}
 	for _, key := range input.AuthorizedKeys {
 		switch key.Type {
@@ -118,7 +121,7 @@ func (h *requestHandler) RegisterWorkflow(ctx context.Context, workflowID string
 	if ok {
 		h.lggr.Debugw("Workflow already registered, re-registering", "workflowID", workflowID)
 	}
-	h.workflows[workflowID] = workflow{
+	h.workflows[workflowID] = &workflow{
 		authorizedKeys: authorizedKeys,
 		sendCh:         sendCh,
 	}
@@ -126,14 +129,19 @@ func (h *requestHandler) RegisterWorkflow(ctx context.Context, workflowID string
 	return nil
 }
 
-func (h *requestHandler) UnregisterWorkflow(ctx context.Context, workflowID string) error {
+func (h *connectorHandler) UnregisterWorkflow(ctx context.Context, workflowID string) error {
 	h.workflowsMu.Lock()
 	defer h.workflowsMu.Unlock()
 	workflow, ok := h.workflows[workflowID]
 	if !ok {
 		return fmt.Errorf("workflowID %s not registered", workflowID)
 	}
-	close(workflow.sendCh)
+	workflow.mu.Lock()
+	if !workflow.closed {
+		close(workflow.sendCh)
+		workflow.closed = true
+	}
+	workflow.mu.Unlock()
 	delete(h.workflows, workflowID)
 	h.lggr.Debugf("Unregistered workflow %s", workflowID)
 	return nil
@@ -142,7 +150,7 @@ func (h *requestHandler) UnregisterWorkflow(ctx context.Context, workflowID stri
 // HandleGatewayMessage processes incoming messages from gateways.
 // Always returns nil. Unless request is malformed or rate-limited, response is sent back to the
 // gateway using sendResponse method.
-func (h *requestHandler) HandleGatewayMessage(ctx context.Context, gatewayID string, req *jsonrpc.Request) error {
+func (h *connectorHandler) HandleGatewayMessage(ctx context.Context, gatewayID string, req *jsonrpc.Request) error {
 	senderAllow, globalAllow := h.incomingRateLimiter.AllowVerbose(gatewayID)
 	if !senderAllow {
 		h.lggr.Errorw(errorIncomingRatelimitSender, "gatewayID", gatewayID)
@@ -162,7 +170,7 @@ func (h *requestHandler) HandleGatewayMessage(ctx context.Context, gatewayID str
 	return nil
 }
 
-func (h *requestHandler) sendErrorResponse(ctx context.Context, gatewayID string, reqID string, code int64, message string) {
+func (h *connectorHandler) sendErrorResponse(ctx context.Context, gatewayID string, reqID string, code int64, message string) {
 	resp := &jsonrpc.Response{
 		Version: "2.0",
 		ID:      reqID,
@@ -174,7 +182,7 @@ func (h *requestHandler) sendErrorResponse(ctx context.Context, gatewayID string
 	h.sendResponse(ctx, gatewayID, resp)
 }
 
-func (h *requestHandler) sendResponse(ctx context.Context, gatewayID string, resp *jsonrpc.Response) {
+func (h *connectorHandler) sendResponse(ctx context.Context, gatewayID string, resp *jsonrpc.Response) {
 	senderAllow, globalAllow := h.outgoingRateLimiter.AllowVerbose(gatewayID)
 	if !senderAllow {
 		h.lggr.Errorw(errorOutgoingRatelimitSender, "gatewayID", gatewayID)
@@ -191,7 +199,42 @@ func (h *requestHandler) sendResponse(ctx context.Context, gatewayID string, res
 	}
 }
 
-func (h *requestHandler) processTrigger(ctx context.Context, gatewayID string, req *jsonrpc.Request) {
+func (h *connectorHandler) triggerWorkflow(ctx context.Context, workflowID string, reqID string, gatewayID string, input *structpb.Struct) error {
+	h.workflowsMu.RLock()
+	workflow, ok := h.workflows[workflowID]
+	h.workflowsMu.RUnlock()
+	if !ok {
+		h.sendErrorResponse(ctx, gatewayID, reqID, ErrInvalidRequest, "Workflow not registered")
+		return fmt.Errorf("workflowID %s not registered", workflowID)
+	}
+	workflow.mu.RLock()
+	defer workflow.mu.RUnlock()
+	if workflow.closed {
+		h.sendErrorResponse(ctx, gatewayID, reqID, ErrInvalidRequest, "Workflow is closed")
+		return fmt.Errorf("workflowID %s is closed", workflowID)
+	}
+	select {
+	case <-ctx.Done():
+		h.lggr.Error("Context cancelled while sending trigger", "workflowID", workflowID, "gatewayID", gatewayID, "requestID", reqID)
+		return fmt.Errorf("context cancelled while sending trigger for workflowID %s", workflowID)
+	case workflow.sendCh <- capabilities.TriggerAndId[*http.Payload]{
+		// workflow engine does not process the request if the ID has already been used
+		Id: reqID,
+		Trigger: &http.Payload{
+			Input: input,
+			// TODO: PRODCRE-305 validate JWT against authorized keys
+		},
+	}:
+		h.lggr.Debugw("Sent trigger to workflow", "workflowID", workflowID, "gatewayID", gatewayID, "requestID", reqID)
+		return nil
+	default:
+		h.lggr.Errorw("Failed to send trigger to workflow, channel is full", "workflowID", workflowID, "gatewayID", gatewayID, "requestID", reqID)
+		h.sendErrorResponse(ctx, gatewayID, reqID, ErrServerOverloaded, "Workflow channel is full, try again later")
+		return fmt.Errorf("workflowID %s channel is full", workflowID)
+	}
+}
+
+func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string, req *jsonrpc.Request) {
 	var triggerReq gateway_common.HTTPTriggerRequest
 	err := json.Unmarshal(req.Params, &triggerReq)
 	if err != nil {
@@ -214,27 +257,16 @@ func (h *requestHandler) processTrigger(ctx context.Context, gatewayID string, r
 		return
 	}
 	l = logger.With(l, "workflowID", workflowID)
-	h.workflowsMu.RLock()
-	workflow, ok := h.workflows[workflowID]
-	h.workflowsMu.RUnlock()
-	if !ok {
-		l.Error("Workflow not registered")
-		h.sendErrorResponse(ctx, gatewayID, req.ID, ErrInvalidRequest, "Workflow not registered")
+	err = h.triggerWorkflow(ctx, workflowID, req.ID, gatewayID, input)
+	if err != nil {
+		l.Errorw("Failed to trigger workflow", "error", err)
 		return
 	}
-	workflowExecutionID, err := generateExecutionID(workflowID, req.ID)
+	workflowExecutionID, err := workflows.EncodeExecutionID(workflowID, req.ID)
 	if err != nil {
 		l.Errorw("Failed to generate workflow execution ID", "error", err)
 		h.sendErrorResponse(ctx, gatewayID, req.ID, ErrInternal, "Internal server error")
 		return
-	}
-	workflow.sendCh <- capabilities.TriggerAndId[*http.Payload]{
-		// workflow engine does not process the request if the ID has already been used
-		Id: req.ID,
-		Trigger: &http.Payload{
-			Input: input,
-			// TODO: PRODCRE-305 validate JWT against authorized keys
-		},
 	}
 	payload := &gateway_common.HTTPTriggerResponse{
 		WorkflowID:          workflowID,
