@@ -4,11 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/trigger"
+
+	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
+
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
 	capmonitoring "github.com/smartcontractkit/capabilities/monitoring"
 
@@ -56,11 +61,11 @@ func main() {
 	})
 }
 
-func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _ core.TelemetryService, _ core.KeyValueStore, _ core.ErrorLog, _ core.PipelineRunnerService, relayerSet core.RelayerSet, _ core.OracleFactory, _ core.GatewayConnector) error {
+func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string, _ core.TelemetryService, _ core.KeyValueStore, _ core.ErrorLog, _ core.PipelineRunnerService, relayerSet core.RelayerSet, _ core.OracleFactory, _ core.GatewayConnector) error {
 	c.lggr.Infof("Initialising %s", CapabilityName)
 
-	var cfg Config
-	if err := json.Unmarshal([]byte(config), &cfg); err != nil {
+	var cfg config.Config
+	if err := json.Unmarshal([]byte(configStr), &cfg); err != nil {
 		return fmt.Errorf("failed to parse EVM capability config: %w", err)
 	}
 
@@ -88,6 +93,19 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _
 	messageBuilder := monitoring.NewMessageBuilder(capmonitoring.ChainInfo{}, c.CapabilityInfo, cfg.NodeAddress)
 
 	evmRelayer, err := relayer.EVM()
+	if err != nil {
+		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
+	}
+
+	if len(common.Hex2Bytes(cfg.CREForwarderAddress)) != 20 {
+		return fmt.Errorf("invalid cre forward address, it does not have 20 characters: %s", cfg.CREForwarderAddress)
+	}
+
+	if cfg.ReceiverGasMinimum == 0 {
+		return fmt.Errorf("invalid ReceiverGasMinimum value. It must be greater than 0. Provided ReceiverGasMinimum %d", cfg.ReceiverGasMinimum)
+	}
+
+	evm, err := actions.NewEVM(cfg, evmRelayer, c.lggr)
 	if err != nil {
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
@@ -134,16 +152,16 @@ func (c *capabilityGRPCService) Ready() error {
 }
 
 func (c *capabilityGRPCService) RegisterToWorkflow(_ context.Context, _ capabilities.RegisterToWorkflowRequest) error {
-	//TODO implement me
+	// TODO implement me
 	panic("implement me")
 }
 
 func (c *capabilityGRPCService) UnregisterFromWorkflow(_ context.Context, _ capabilities.UnregisterFromWorkflowRequest) error {
-	//TODO implement me
+	// TODO implement me
 	panic("implement me")
 }
 
-func (c *capabilityGRPCService) RegisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*evmservice.Log], error) {
+func (c *capabilityGRPCService) RegisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*evmcappb.Log], error) {
 	return c.triggerService.RegisterLogTrigger(ctx, triggerID, metadata, input)
 }
 

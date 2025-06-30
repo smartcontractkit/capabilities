@@ -10,11 +10,16 @@ import (
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 
+
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/contracts"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	chaincommonpb "github.com/smartcontractkit/chainlink-common/pkg/loop/chain-common"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/values/pb"
@@ -22,12 +27,22 @@ import (
 
 type EVM struct {
 	types.EVMService
-	lggr              logger.Logger
+	keystoneForwarderAddress common.Address
+	forwarderClient          contracts.CREForwarderClient
+	ReceiverGasMinimum       uint64
+
+	lggr                     logger.Logger
 	beholderProcessor beholder.ProtoProcessor
 	messageBuilder    *monitoring.MessageBuilder
 }
 
-func NewEVM(evmService types.EVMService, lggr logger.Logger, beholderProcessor beholder.ProtoProcessor, messageBuilder *monitoring.MessageBuilder) EVM {
+func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, beholderProcessor beholder.ProtoProcessor, messageBuilder *monitoring.MessageBuilder) EVM {
+	keystoneForwarderAddress := common.HexToAddress(cfg.CREForwarderAddress)
+	kfc, err := contracts.NewCREForwarderClient(evmService, keystoneForwarderAddress, logger)
+	if err != nil {
+		return EVM{}, err
+	}
+	
 	return EVM{
 		EVMService:        evmService,
 		lggr:              lggr,
@@ -44,7 +59,7 @@ func (e EVM) CallContract(
 	ts := time.Now().UnixMilli()
 	read := monitoring.ReadRequest{TsStart: ts, RequestMetadata: req}
 
-	callMsg, err := evmservice.ConvertCallMsgFromProto(input.GetCall())
+	callMsg, err := evmcappb.ConvertCallMsgFromProto(input.GetCall())
 	if err != nil {
 		return nil, err
 	}
@@ -77,12 +92,12 @@ func (e EVM) CallContract(
 func (e EVM) FilterLogs(
 	ctx context.Context,
 	req capabilities.RequestMetadata,
-	input *evmservice.FilterLogsRequest,
-) (*evmservice.FilterLogsReply, error) {
+	input *evmcappb.FilterLogsRequest,
+) (*evmcappb.FilterLogsReply, error) {
 	ts := time.Now().UnixMilli()
 	read := monitoring.ReadRequest{TsStart: ts, RequestMetadata: req}
 
-	fq, err := evmservice.ConvertFilterFromProto(input.GetFilterQuery())
+	fq, err := evmcappb.ConvertFilterFromProto(input.GetFilterQuery())
 	if err != nil {
 		return nil, err
 	}
@@ -110,14 +125,14 @@ func (e EVM) FilterLogs(
 		e.lggr.Errorw("failed to process FilterLogsSuccess message", "err", err)
 	}
 
-	return &evmservice.FilterLogsReply{Logs: evmservice.ConvertLogsToProto(logs)}, nil
+	return &evmcappb.FilterLogsReply{Logs: evmcappb.ConvertLogsToProto(logs)}, nil
 }
 
 func (e EVM) BalanceAt(
 	ctx context.Context,
 	req capabilities.RequestMetadata,
-	input *evmservice.BalanceAtRequest,
-) (*evmservice.BalanceAtReply, error) {
+	input *evmcappb.BalanceAtRequest,
+) (*evmcappb.BalanceAtReply, error) {
 	ts := time.Now().UnixMilli()
 	read := monitoring.ReadRequest{TsStart: ts, RequestMetadata: req}
 
@@ -144,18 +159,18 @@ func (e EVM) BalanceAt(
 		e.lggr.Errorw("Failed to process BalanceAtSuccess message", "err", err)
 	}
 
-	return &evmservice.BalanceAtReply{Balance: pb.NewBigIntFromInt(bal)}, nil
+	return &evmcappb.BalanceAtReply{Balance: pb.NewBigIntFromInt(bal)}, nil
 }
 
 func (e EVM) EstimateGas(
 	ctx context.Context,
 	req capabilities.RequestMetadata,
-	input *evmservice.EstimateGasRequest,
-) (*evmservice.EstimateGasReply, error) {
+	input *evmcappb.EstimateGasRequest,
+) (*evmcappb.EstimateGasReply, error) {
 	ts := time.Now().UnixMilli()
 	read := monitoring.ReadRequest{TsStart: ts, RequestMetadata: req}
 
-	msg, err := evmservice.ConvertCallMsgFromProto(input.GetMsg())
+	msg, err := evmcappb.ConvertCallMsgFromProto(input.GetMsg())
 	if err != nil {
 		return nil, err
 	}
@@ -181,14 +196,14 @@ func (e EVM) EstimateGas(
 		e.lggr.Errorw("Failed to process EstimateGasSuccess message", "err", err)
 	}
 
-	return &evmservice.EstimateGasReply{Gas: estimate}, nil
+	return &evmcappb.EstimateGasReply{Gas: estimate}, nil
 }
 
 func (e EVM) GetTransactionByHash(
 	ctx context.Context,
 	req capabilities.RequestMetadata,
-	input *evmservice.GetTransactionByHashRequest,
-) (*evmservice.GetTransactionByHashReply, error) {
+	input *evmcappb.GetTransactionByHashRequest,
+) (*evmcappb.GetTransactionByHashReply, error) {
 	ts := time.Now().UnixMilli()
 	read := monitoring.ReadRequest{TsStart: ts, RequestMetadata: req}
 
@@ -205,7 +220,7 @@ func (e EVM) GetTransactionByHash(
 		return nil, err
 	}
 
-	protoTx, err := evmservice.ConvertTransactionToProto(tx)
+	protoTx, err := evmcappb.ConvertTransactionToProto(tx)
 	if err != nil {
 		return nil, err
 	}
@@ -215,14 +230,14 @@ func (e EVM) GetTransactionByHash(
 		e.lggr.Errorw("Failed to process GetTransactionByHashSuccess message", "err", err)
 	}
 
-	return &evmservice.GetTransactionByHashReply{Transaction: protoTx}, nil
+	return &evmcappb.GetTransactionByHashReply{Transaction: protoTx}, nil
 }
 
 func (e EVM) GetTransactionReceipt(
 	ctx context.Context,
 	req capabilities.RequestMetadata,
-	input *evmservice.GetTransactionReceiptRequest,
-) (*evmservice.GetTransactionReceiptReply, error) {
+	input *evmcappb.GetTransactionReceiptRequest,
+) (*evmcappb.GetTransactionReceiptReply, error) {
 	ts := time.Now().UnixMilli()
 	read := monitoring.ReadRequest{TsStart: ts, RequestMetadata: req}
 
@@ -239,7 +254,7 @@ func (e EVM) GetTransactionReceipt(
 		return nil, err
 	}
 
-	protoR, err := evmservice.ConvertReceiptToProto(rcp)
+	protoR, err := evmcappb.ConvertReceiptToProto(rcp)
 	if err != nil {
 		return nil, err
 	}
@@ -249,7 +264,7 @@ func (e EVM) GetTransactionReceipt(
 		e.lggr.Errorw("Failed to process GetTransactionReceiptSuccess", "err", err)
 	}
 
-	return &evmservice.GetTransactionReceiptReply{Receipt: protoR}, nil
+	return &evmcappb.GetTransactionReceiptReply{Receipt: protoR}, nil
 }
 
 // TODO turn this into GetBlock(... finality...)
@@ -257,7 +272,7 @@ func (e EVM) LatestAndFinalizedHead(
 	ctx context.Context,
 	req capabilities.RequestMetadata,
 	_ *emptypb.Empty,
-) (*evmservice.LatestAndFinalizedHeadReply, error) {
+) (*evmcappb.LatestAndFinalizedHeadReply, error) {
 	ts := time.Now().UnixMilli()
 	read := monitoring.ReadRequest{TsStart: ts, RequestMetadata: req}
 
@@ -279,42 +294,17 @@ func (e EVM) LatestAndFinalizedHead(
 		e.lggr.Errorw("Failed to process LatestAndFinalizedHeadSuccess message", "err", err)
 	}
 
-	return &evmservice.LatestAndFinalizedHeadReply{Latest: evmservice.ConvertHeadToProto(latest), Finalized: evmservice.ConvertHeadToProto(fin)}, nil
+	return &evmcappb.LatestAndFinalizedHeadReply{Latest: evmcappb.ConvertHeadToProto(latest), Finalized: evmcappb.ConvertHeadToProto(fin)}, nil
 }
 
-// TODO remove
-func (e EVM) QueryTrackedLogs(etx context.Context, _ capabilities.RequestMetadata, req *evmservice.QueryTrackedLogsRequest) (*evmservice.QueryTrackedLogsReply, error) {
-	expression, err := evmservice.ConvertExpressionsFromProto(req.Expression)
-	if err != nil {
-		return nil, err
-	}
-
-	limitAndSort, err := chaincommonpb.ConvertLimitAndSortFromProto(req.LimitAndSort)
-	if err != nil {
-		return nil, err
-	}
-
-	confidenceLevel, err := chaincommonpb.ConfidenceFromProto(req.ConfidenceLevel)
-	if err != nil {
-		return nil, err
-	}
-
-	result, err := e.EVMService.QueryTrackedLogs(etx, expression, limitAndSort, confidenceLevel)
-	if err != nil {
-		return nil, err
-	}
-
-	return &evmservice.QueryTrackedLogsReply{Logs: evmservice.ConvertLogsToProto(result)}, nil
-}
-
-func (e EVM) RegisterLogTracking(etx context.Context, _ capabilities.RequestMetadata, req *evmservice.RegisterLogTrackingRequest) (*emptypb.Empty, error) {
-	filter, err := evmservice.ConvertLPFilterFromProto(req.GetFilter())
+func (e EVM) RegisterLogTracking(etx context.Context, _ capabilities.RequestMetadata, req *evmcappb.RegisterLogTrackingRequest) (*emptypb.Empty, error) {
+	filter, err := evmcappb.ConvertLPFilterFromProto(req.GetFilter())
 	if err != nil {
 		return nil, err
 	}
 	return &emptypb.Empty{}, e.EVMService.RegisterLogTracking(etx, filter)
 }
 
-func (e EVM) UnregisterLogTracking(etx context.Context, _ capabilities.RequestMetadata, req *evmservice.UnregisterLogTrackingRequest) (*emptypb.Empty, error) {
+func (e EVM) UnregisterLogTracking(etx context.Context, _ capabilities.RequestMetadata, req *evmcappb.UnregisterLogTrackingRequest) (*emptypb.Empty, error) {
 	return &emptypb.Empty{}, e.EVMService.UnregisterLogTracking(etx, req.FilterName)
 }
