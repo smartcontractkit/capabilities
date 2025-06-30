@@ -14,11 +14,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 
-	evmcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
-
 	"github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
-	"github.com/smartcontractkit/chainlink-evm/gethwrappers/keystone/generated/forwarder"
 )
 
 type TransmissionInfo struct {

@@ -12,18 +12,10 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
-
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/contracts"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/contracts/mocks"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
-
-	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/values/pb"
-	"github.com/smartcontractkit/chainlink-evm/pkg/testutils"
 
 	"github.com/stretchr/testify/mock"
 

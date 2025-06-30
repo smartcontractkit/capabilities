@@ -4,15 +4,14 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/smartcontractkit/chain_capabilities/evm/config"
+	"github.com/smartcontractkit/chain_capabilities/evm/contracts"
+	"github.com/smartcontractkit/chain_capabilities/evm/pb"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/contracts"
-
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
@@ -37,8 +36,8 @@ func NewEVM(cfg config.Config, evmService types.EVMService, logger logger.Logger
 }
 
 // TODO finalise the signature PLEX-1482
-func (e EVM) CallContract(ctx context.Context, _ capabilities.RequestMetadata, input *evmcappb.CallContractRequest) (*evmcappb.CallContractReply, error) {
-	callMsg, err := evmcappb.ConvertCallMsgFromProto(input.GetCall())
+func (e EVM) CallContract(ctx context.Context, _ capabilities.RequestMetadata, input *pb.CallContractRequest) (*pb.CallContractReply, error) {
+	callMsg, err := pb.ConvertCallMsgFromProto(input.GetCall())
 	if err != nil {
 		return nil, err
 	}
@@ -55,11 +54,11 @@ func (e EVM) CallContract(ctx context.Context, _ capabilities.RequestMetadata, i
 		return nil, err
 	}
 
-	return &evmcappb.CallContractReply{Data: data}, nil
+	return &pb.CallContractReply{Data: data}, nil
 }
 
-func (e EVM) FilterLogs(ctx context.Context, _ capabilities.RequestMetadata, req *evmcappb.FilterLogsRequest) (*evmcappb.FilterLogsReply, error) {
-	fq, err := evmcappb.ConvertFilterFromProto(req.GetFilterQuery())
+func (e EVM) FilterLogs(ctx context.Context, _ capabilities.RequestMetadata, req *pb.FilterLogsRequest) (*pb.FilterLogsReply, error) {
+	fq, err := pb.ConvertFilterFromProto(req.GetFilterQuery())
 	if err != nil {
 		return nil, err
 	}
@@ -77,10 +76,10 @@ func (e EVM) FilterLogs(ctx context.Context, _ capabilities.RequestMetadata, req
 		return nil, err
 	}
 
-	return &evmcappb.FilterLogsReply{Logs: evmcappb.ConvertLogsToProto(logs)}, nil
+	return &pb.FilterLogsReply{Logs: pb.ConvertLogsToProto(logs)}, nil
 }
 
-func (e EVM) BalanceAt(etx context.Context, _ capabilities.RequestMetadata, req *evmcappb.BalanceAtRequest) (*evmcappb.BalanceAtReply, error) {
+func (e EVM) BalanceAt(etx context.Context, _ capabilities.RequestMetadata, req *pb.BalanceAtRequest) (*pb.BalanceAtReply, error) {
 	blockNumber := valuespb.NewIntFromBigInt(req.GetBlockNumber())
 
 	// TODO allow the block number to be nil or zero, which would default to the latest block, this requires an OCR round to reach consesnus on balance read.
@@ -95,73 +94,73 @@ func (e EVM) BalanceAt(etx context.Context, _ capabilities.RequestMetadata, req 
 		return nil, err
 	}
 
-	return &evmcappb.BalanceAtReply{Balance: valuespb.NewBigIntFromInt(balance)}, nil
+	return &pb.BalanceAtReply{Balance: valuespb.NewBigIntFromInt(balance)}, nil
 }
 
-func (e EVM) EstimateGas(etx context.Context, _ capabilities.RequestMetadata, req *evmcappb.EstimateGasRequest) (*evmcappb.EstimateGasReply, error) {
+func (e EVM) EstimateGas(etx context.Context, _ capabilities.RequestMetadata, req *pb.EstimateGasRequest) (*pb.EstimateGasReply, error) {
 	// TODO double check if an ocr round can just return a median of the estimate gas value and implement this.
-	callMsg, err := evmcappb.ConvertCallMsgFromProto(req.GetMsg())
+	callMsg, err := pb.ConvertCallMsgFromProto(req.GetMsg())
 	if err != nil {
 		return nil, err
 	}
 
 	estimate, err := e.EVMService.EstimateGas(etx, callMsg)
 	if err != nil {
-		return &evmcappb.EstimateGasReply{}, err
+		return &pb.EstimateGasReply{}, err
 	}
 
-	return &evmcappb.EstimateGasReply{Gas: estimate}, nil
+	return &pb.EstimateGasReply{Gas: estimate}, nil
 }
 
-func (e EVM) GetTransactionByHash(etx context.Context, _ capabilities.RequestMetadata, req *evmcappb.GetTransactionByHashRequest) (*evmcappb.GetTransactionByHashReply, error) {
+func (e EVM) GetTransactionByHash(etx context.Context, _ capabilities.RequestMetadata, req *pb.GetTransactionByHashRequest) (*pb.GetTransactionByHashReply, error) {
 	tx, err := e.EVMService.GetTransactionByHash(etx, evmtypes.Hash(req.Hash))
 	if err != nil {
 		return nil, err
 	}
 
-	protoTx, err := evmcappb.ConvertTransactionToProto(tx)
+	protoTx, err := pb.ConvertTransactionToProto(tx)
 	if err != nil {
 		return nil, err
 	}
 
-	return &evmcappb.GetTransactionByHashReply{Transaction: protoTx}, nil
+	return &pb.GetTransactionByHashReply{Transaction: protoTx}, nil
 }
 
-func (e EVM) GetTransactionReceipt(etx context.Context, _ capabilities.RequestMetadata, req *evmcappb.GetTransactionReceiptRequest) (*evmcappb.GetTransactionReceiptReply, error) {
+func (e EVM) GetTransactionReceipt(etx context.Context, _ capabilities.RequestMetadata, req *pb.GetTransactionReceiptRequest) (*pb.GetTransactionReceiptReply, error) {
 	receipt, err := e.EVMService.GetTransactionReceipt(etx, evmtypes.Hash(req.Hash))
 	if err != nil {
 		return nil, err
 	}
 
-	protoReceipt, err := evmcappb.ConvertReceiptToProto(receipt)
+	protoReceipt, err := pb.ConvertReceiptToProto(receipt)
 	if err != nil {
 		return nil, err
 	}
 
-	return &evmcappb.GetTransactionReceiptReply{Receipt: protoReceipt}, nil
+	return &pb.GetTransactionReceiptReply{Receipt: protoReceipt}, nil
 }
 
-func (e EVM) LatestAndFinalizedHead(etx context.Context, _ capabilities.RequestMetadata, _ *emptypb.Empty) (*evmcappb.LatestAndFinalizedHeadReply, error) {
+func (e EVM) LatestAndFinalizedHead(etx context.Context, _ capabilities.RequestMetadata, _ *emptypb.Empty) (*pb.LatestAndFinalizedHeadReply, error) {
 	// TODO need to start an OCR round here to get median of latest and finalized head, do we need a list of blocks to do this or can we get the DON median from the OCRFactory?
 	latest, finalized, err := e.EVMService.LatestAndFinalizedHead(etx)
 	if err != nil {
 		return nil, err
 	}
 
-	return &evmcappb.LatestAndFinalizedHeadReply{
-		Latest:    evmcappb.ConvertHeadToProto(latest),
-		Finalized: evmcappb.ConvertHeadToProto(finalized),
+	return &pb.LatestAndFinalizedHeadReply{
+		Latest:    pb.ConvertHeadToProto(latest),
+		Finalized: pb.ConvertHeadToProto(finalized),
 	}, nil
 }
 
-func (e EVM) RegisterLogTracking(etx context.Context, _ capabilities.RequestMetadata, req *evmcappb.RegisterLogTrackingRequest) (*emptypb.Empty, error) {
-	filter, err := evmcappb.ConvertLPFilterFromProto(req.GetFilter())
+func (e EVM) RegisterLogTracking(etx context.Context, _ capabilities.RequestMetadata, req *pb.RegisterLogTrackingRequest) (*emptypb.Empty, error) {
+	filter, err := pb.ConvertLPFilterFromProto(req.GetFilter())
 	if err != nil {
 		return nil, err
 	}
 	return &emptypb.Empty{}, e.EVMService.RegisterLogTracking(etx, filter)
 }
 
-func (e EVM) UnregisterLogTracking(etx context.Context, _ capabilities.RequestMetadata, req *evmcappb.UnregisterLogTrackingRequest) (*emptypb.Empty, error) {
+func (e EVM) UnregisterLogTracking(etx context.Context, _ capabilities.RequestMetadata, req *pb.UnregisterLogTrackingRequest) (*emptypb.Empty, error) {
 	return &emptypb.Empty{}, e.EVMService.UnregisterLogTracking(etx, req.FilterName)
 }

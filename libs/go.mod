@@ -6,8 +6,8 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-plugin v1.6.3
 	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250630184840-a85c2c04671c
-	github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/protoc/installer v0.0.0-20250630184840-a85c2c04671c
-	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250630184732-499257035a0b
+	github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/protoc/installer v0.0.0-20250630194238-3631c0f88d89
+	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250630193954-65985e6645e4
 	github.com/smartcontractkit/libocr v0.0.0-20250328171017-609ec10a5510
 	github.com/stretchr/testify v1.10.0
 	github.com/urfave/cli/v2 v2.27.6

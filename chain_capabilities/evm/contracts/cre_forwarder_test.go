@@ -11,16 +11,11 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	evmcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	mocks2 "github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
-	"github.com/smartcontractkit/chainlink-evm/gethwrappers/keystone/generated/forwarder"
-
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/contracts"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
 )
 
 const LatestBlock = -2
