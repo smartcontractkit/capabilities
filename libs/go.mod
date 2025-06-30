@@ -5,9 +5,9 @@ go 1.24.2
 require (
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-plugin v1.6.3
-	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250626194303-6d35905cbe3d
-	github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/protoc/installer v0.0.0-20250630152507-b3f7d7b037a4
-	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250626192802-ba22aca9d350
+	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250630184840-a85c2c04671c
+	github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/protoc/installer v0.0.0-20250630184840-a85c2c04671c
+	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250630184732-499257035a0b
 	github.com/smartcontractkit/libocr v0.0.0-20250328171017-609ec10a5510
 	github.com/stretchr/testify v1.10.0
 	github.com/urfave/cli/v2 v2.27.6
@@ -23,8 +23,8 @@ require (
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/cloudevents/sdk-go/binding/format/protobuf/v2 v2.15.2 // indirect
-	github.com/cloudevents/sdk-go/v2 v2.16.0 // indirect
+	github.com/cloudevents/sdk-go/binding/format/protobuf/v2 v2.16.1 // indirect
+	github.com/cloudevents/sdk-go/v2 v2.16.1 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.5 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0 // indirect

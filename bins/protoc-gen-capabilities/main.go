@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"google.golang.org/protobuf/compiler/protogen"
+	"google.golang.org/protobuf/types/pluginpb"
 )
 
 func main() {
@@ -15,6 +16,7 @@ func main() {
 		args[strings.ToLower(name)] = value
 		return nil
 	}}.Run(func(plugin *protogen.Plugin) error {
+		plugin.SupportedFeatures = uint64(pluginpb.CodeGeneratorResponse_FEATURE_PROTO3_OPTIONAL)
 		goLang := ServerLangaugeGo
 		serverLanguage, err := parseArg(args, "server_language", func(value string) (ServerLanguage, error) {
 			serverLanguage := ServerLanguage(strings.ToLower(value))
