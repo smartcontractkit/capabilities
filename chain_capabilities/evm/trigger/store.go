@@ -82,6 +82,7 @@ func (cs *logTriggerStore) Update(triggerID string, lastBlock *big.Int, unfinali
 		cancelFunc:              trigger.cancelFunc,
 		lastBlock:               lastBlock,
 		unfinalizedSentEventIDs: unfinalizedSentEventIDs,
+		filter:                  trigger.filter,
 	}
 	return nil
 }

@@ -18,7 +18,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 
-	ctypes "github.com/smartcontractkit/chain_capabilities/evm/consensus/types"
+	ctypes "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
 )
 
 var _ ocr3types.ReportingPlugin[[]byte] = (*reportingPlugin)(nil)

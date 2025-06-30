@@ -11,7 +11,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/list"
 
-	"github.com/smartcontractkit/chain_capabilities/evm/consensus/types"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
 )
 
 type Poller interface {

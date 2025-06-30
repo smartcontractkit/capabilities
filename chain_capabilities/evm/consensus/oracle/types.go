@@ -3,7 +3,7 @@ package oracle
 import (
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 
-	"github.com/smartcontractkit/chain_capabilities/evm/consensus/types"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
 )
 
 type BlocksProvider interface {

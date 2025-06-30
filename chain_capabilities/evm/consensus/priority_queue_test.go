@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/smartcontractkit/chain_capabilities/evm/consensus/types"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
 )
 
 // Helper function to create a test requestCtx
