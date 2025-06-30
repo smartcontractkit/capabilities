@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sync"
 
 	"google.golang.org/protobuf/types/known/structpb"
 
@@ -37,16 +36,31 @@ var _ core.GatewayConnectorHandler = &connectorHandler{}
 
 type connectorHandler struct {
 	services.StateMachine
-	lggr                logger.Logger
-	gatewayConnector    core.GatewayConnector
-	workflowsMu         sync.RWMutex
-	workflows           map[string]*workflow // workflowID -> workflow metadata
-	config              ServiceConfig
-	incomingRateLimiter *ratelimit.RateLimiter
-	outgoingRateLimiter *ratelimit.RateLimiter
+	lggr                  logger.Logger
+	gatewayConnector      core.GatewayConnector
+	config                ServiceConfig
+	incomingRateLimiter   *ratelimit.RateLimiter
+	outgoingRateLimiter   *ratelimit.RateLimiter
+	authMetadataHandler   AuthMetadataHandler
+	workflowMetadataStore WorkflowMetadataStore
 }
 
-func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config ServiceConfig) (*connectorHandler, error) {
+type AuthMetadataHandler interface {
+	// HandlePullFromGateway processes a request to pull authentication metadata from the gateway.
+	// It is expected to send a response back to the gateway using the gatewayConnector.
+	// In case of an error, it should log and send an error response back to the gateway
+	HandlePullFromGateway(ctx context.Context, gatewayID string, req *jsonrpc.Request)
+	// PushToGateway sends the authentication metadata to the gateway.
+	PushToGateway(ctx context.Context, workflowID string, keys []AuthorizedKey) error
+}
+
+type WorkflowMetadataStore interface {
+	RegisterWorkflow(workflowID string, authorizedKeys []AuthorizedKey, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error
+	UnregisterWorkflow(workflowID string) error
+	GetWorkflow(workflowID string) (*workflow, error)
+}
+
+func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config ServiceConfig, workflowMetadataStore WorkflowMetadataStore, authMetadataHandler AuthMetadataHandler) (*connectorHandler, error) {
 	outgoingRLCfg := outgoingRateLimiterConfigDefaults(config.OutgoingRateLimiter)
 	outgoingRateLimiter, err := ratelimit.NewRateLimiter(outgoingRLCfg)
 	if err != nil {
@@ -58,19 +72,23 @@ func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config Se
 		return nil, err
 	}
 	return &connectorHandler{
-		lggr:                logger.Named(lggr, HandlerName),
-		gatewayConnector:    gc,
-		config:              config,
-		outgoingRateLimiter: outgoingRateLimiter,
-		incomingRateLimiter: incomingRateLimiter,
-		workflows:           make(map[string]*workflow),
+		lggr:                  logger.Named(lggr, HandlerName),
+		gatewayConnector:      gc,
+		config:                config,
+		outgoingRateLimiter:   outgoingRateLimiter,
+		incomingRateLimiter:   incomingRateLimiter,
+		workflowMetadataStore: workflowMetadataStore,
 	}, nil
 }
 
 func (h *connectorHandler) Start(ctx context.Context) error {
 	h.lggr.Debug("Starting request handler")
 	return h.StartOnce(HandlerName, func() error {
-		return h.gatewayConnector.AddHandler(ctx, []string{gateway_common.MethodWorkflowExecute}, h)
+		return h.gatewayConnector.AddHandler(ctx, []string{
+			gateway_common.MethodWorkflowExecute,
+			MethodWorkflowPushAuthMetadata,
+			MethodWorkflowPullAuthMetadata,
+		}, h)
 	})
 }
 
@@ -97,42 +115,38 @@ func (h *connectorHandler) ID(context.Context) (string, error) {
 	return HandlerName, nil
 }
 
-func (h *connectorHandler) RegisterWorkflow(ctx context.Context, workflowID string, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error {
-	authorizedKeys := map[string]struct{}{}
+func (h *connectorHandler) RegisterWorkflow(ctx context.Context, workflowID string, triggerID string, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error {
+	var authorizedKeys []AuthorizedKey
 	for _, key := range input.AuthorizedKeys {
 		switch key.Type {
 		case http.KeyType_ECDSA:
 			if len(key.PublicKey) != ecdsaPubKeyHexLen || key.PublicKey[:2] != "0x" {
 				return fmt.Errorf("invalid public key format: must be 0x-prefixed hex string of length %d, got %q", ecdsaPubKeyHexLen, key.PublicKey)
 			}
-			authorizedKeys[key.PublicKey] = struct{}{}
+			authorizedKeys = append(authorizedKeys, AuthorizedKey{
+				KeyType:   KeyTypeECDSA,
+				PublicKey: key.PublicKey,
+			})
 		default:
 			return fmt.Errorf("unsupported key type: %s", key.Type)
 		}
 	}
-
-	h.workflowsMu.Lock()
-	defer h.workflowsMu.Unlock()
-	_, ok := h.workflows[workflowID]
-	if ok {
-		h.lggr.Debugw("Workflow already registered, re-registering", "workflowID", workflowID)
+	err := h.workflowMetadataStore.RegisterWorkflow(workflowID, authorizedKeys, sendCh)
+	if err != nil {
+		return errors.Join(err, fmt.Errorf("failed to register workflow %s: %w", workflowID, err))
 	}
-	h.workflows[workflowID] = newWorkflow(authorizedKeys, sendCh)
-	h.lggr.Debugf("Registered workflow %s", workflowID)
+	// Push the auth metadata to the gateway
+	// Error is non-critical. Retries will be handled by the authMetadataHandler.
+	err = h.authMetadataHandler.PushToGateway(ctx, workflowID, triggerID, authorizedKeys)
+	if err != nil {
+		h.lggr.Errorw("Failed to push auth metadata to gateway", "error",
+			err, "workflowID", workflowID, "triggerID", triggerID)
+	}
 	return nil
 }
 
 func (h *connectorHandler) UnregisterWorkflow(ctx context.Context, workflowID string) error {
-	h.workflowsMu.Lock()
-	defer h.workflowsMu.Unlock()
-	workflow, ok := h.workflows[workflowID]
-	if !ok {
-		return fmt.Errorf("workflowID %s not registered", workflowID)
-	}
-	workflow.close()
-	delete(h.workflows, workflowID)
-	h.lggr.Debugf("Unregistered workflow %s", workflowID)
-	return nil
+	return h.workflowMetadataStore.UnregisterWorkflow(workflowID)
 }
 
 // HandleGatewayMessage processes incoming messages from gateways.
@@ -152,6 +166,8 @@ func (h *connectorHandler) HandleGatewayMessage(ctx context.Context, gatewayID s
 	switch req.Method {
 	case gateway_common.MethodWorkflowExecute:
 		h.processTrigger(ctx, gatewayID, req)
+	case MethodWorkflowPullAuthMetadata:
+		h.authMetadataHandler.HandlePullFromGateway(ctx, gatewayID, req)
 	default:
 		h.lggr.Errorw("Unsupported method", "method", req.Method, "gatewayID", gatewayID)
 	}
@@ -241,14 +257,12 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 }
 
 func (h *connectorHandler) triggerWorkflow(ctx context.Context, workflowID string, reqID string, gatewayID string, input *structpb.Struct) error {
-	h.workflowsMu.RLock()
-	workflow, ok := h.workflows[workflowID]
-	h.workflowsMu.RUnlock()
-	if !ok {
+	workflow, err := h.workflowMetadataStore.GetWorkflow(workflowID)
+	if err != nil {
 		h.sendErrorResponse(ctx, gatewayID, reqID, jsonrpc.ErrInvalidRequest, "Workflow not registered")
 		return fmt.Errorf("workflowID %s not registered", workflowID)
 	}
-	err := workflow.trigger(ctx, capabilities.TriggerAndId[*http.Payload]{
+	err = workflow.trigger(ctx, capabilities.TriggerAndId[*http.Payload]{
 		// workflow engine does not process the request if the ID has already been used
 		Id: reqID,
 		Trigger: &http.Payload{

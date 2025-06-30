@@ -20,7 +20,10 @@ const defaultSendChannelBufferSize = uint32(1000)
 var _ server.HTTPCapability = &service{}
 
 type ServiceConfig struct {
-	SendChannelBufferSize uint32 `json:"sendChannelBufferSize"`
+	// AuthMetadataBatchSize is the number of auth metadata items to send in a single batch to the gateway.
+	AuthMetdataBatchSize uint16 `json:"authMetadataBatchSize"`
+	// SendChannelBufferSize is the size of the channel used to trigger workflows.
+	SendChannelBufferSize uint16 `json:"sendChannelBufferSize"`
 	// RateLimiter configuration for messages incoming to this node from the gateway.
 	// The sender is a Gateway node, which is identified by the Gateway ID.
 	RateLimiter ratelimit.RateLimiterConfig `json:"incomingRateLimiter" `
@@ -31,7 +34,7 @@ type ServiceConfig struct {
 
 type ConnectorHandler interface {
 	services.Service
-	RegisterWorkflow(ctx context.Context, workflowID string, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error
+	RegisterWorkflow(ctx context.Context, workflowID string, triggerID string, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error
 	UnregisterWorkflow(ctx context.Context, workflowID string) error
 }
 
@@ -110,7 +113,7 @@ func (s *service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 		sendChannelBufferSize = defaultSendChannelBufferSize
 	}
 	sendCh := make(chan capabilities.TriggerAndId[*http.Payload], sendChannelBufferSize)
-	err := s.connectorHandler.RegisterWorkflow(ctx, metadata.WorkflowID, input, sendCh)
+	err := s.connectorHandler.RegisterWorkflow(ctx, metadata.WorkflowID, triggerID, input, sendCh)
 	if err != nil {
 		return nil, err
 	}
