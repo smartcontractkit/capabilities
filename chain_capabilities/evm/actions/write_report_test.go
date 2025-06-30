@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	_ "github.com/ethereum/go-ethereum/common"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/contracts"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/contracts/mocks"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/pb"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
 	"github.com/smartcontractkit/chainlink-evm/pkg/testutils"

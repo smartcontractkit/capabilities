@@ -133,10 +133,10 @@ func (c *capabilityGRPCService) UnregisterFromWorkflow(_ context.Context, _ capa
 	panic("implement me")
 }
 
-func (c *capabilityGRPCService) RegisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*evmcappb.Log], error) {
+func (c *capabilityGRPCService) RegisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *pb.FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*pb.Log], error) {
 	return c.triggerService.RegisterLogTrigger(ctx, triggerID, metadata, input)
 }
 
-func (c *capabilityGRPCService) UnregisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) error {
+func (c *capabilityGRPCService) UnregisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *pb.FilterLogTriggerRequest) error {
 	return c.triggerService.UnregisterLogTrigger(ctx, triggerID, metadata, input)
 }

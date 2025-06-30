@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/pb"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -59,7 +60,7 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 	return lts
 }
 
-func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID string, _ capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*evmcappb.Log], error) {
+func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID string, _ capabilities.RequestMetadata, input *pb.FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*pb.Log], error) {
 	if triggerID == "" {
 		return nil, fmt.Errorf("no triggerID provided")
 	}
@@ -97,7 +98,7 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	}
 	expressions, confidence := lts.createLogRequest(ctx, input.GetAddresses(), eventSigs, topics2, topics3, topics4, input.GetConfidence())
 
-	logCh := make(chan capabilities.TriggerAndId[*evmcappb.Log], defaultSendChannelBufferSize)
+	logCh := make(chan capabilities.TriggerAndId[*pb.Log], defaultSendChannelBufferSize)
 	lts.srvcEng.Go(func(srvcCtx context.Context) {
 		subCtx, cancel := context.WithCancel(srvcCtx)
 		lts.triggers.Write(triggerID, logTriggerState{
@@ -115,7 +116,7 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	return logCh, nil
 }
 
-func (lts *LogTriggerService) getTopics(input *evmcappb.FilterLogTriggerRequest) ([][]byte, [][]byte, [][]byte, [][]byte) {
+func (lts *LogTriggerService) getTopics(input *pb.FilterLogTriggerRequest) ([][]byte, [][]byte, [][]byte, [][]byte) {
 	eventSigs := input.GetTopics()[0].Values
 	var topics2, topics3, topics4 [][]byte
 	if len(input.GetTopics()) > 1 && input.GetTopics()[1] != nil {
@@ -143,7 +144,7 @@ func (lts *LogTriggerService) generateFilterID(triggerID string) string {
 	return triggerID + suffixLogTriggerFilterID
 }
 
-func (lts *LogTriggerService) startPolling(ctx context.Context, triggerID string, logCh chan capabilities.TriggerAndId[*evmcappb.Log]) {
+func (lts *LogTriggerService) startPolling(ctx context.Context, triggerID string, logCh chan capabilities.TriggerAndId[*pb.Log]) {
 	lts.lggr.Debugf("Starting polling for triggerID: %s, interval: %d", triggerID, lts.logTriggerPollInterval)
 	ticker := defaultTickerFactory.NewTicker(lts.logTriggerPollInterval)
 	defer ticker.Stop()
@@ -199,7 +200,7 @@ func (lts *LogTriggerService) sendLogsToWorkflows(logs []*evmtypes.Log,
 	finalizedBlockNumber *big.Int,
 	triggerID string,
 	trigger logTriggerState,
-	logCh chan capabilities.TriggerAndId[*evmcappb.Log]) error {
+	logCh chan capabilities.TriggerAndId[*pb.Log]) error {
 	lts.lggr.Debugf("Got %d logs, sending them to the workflow trigger ID: %s", len(logs), triggerID)
 	var needsUpdate bool
 
@@ -209,9 +210,9 @@ func (lts *LogTriggerService) sendLogsToWorkflows(logs []*evmtypes.Log,
 		lts.lggr.Debugf("Working with logId: %s, alreadySent: %t", logID, alreadySent)
 
 		if !alreadySent {
-			response := capabilities.TriggerAndId[*evmcappb.Log]{
+			response := capabilities.TriggerAndId[*pb.Log]{
 				Id:      lts.generateLogIdentifier(log),
-				Trigger: evmcappb.ConvertLogToProto(log),
+				Trigger: pb.ConvertLogToProto(log),
 			}
 			lts.lggr.Debugf("Sending log event for triggerID: %s, block number: %d, eventID: %s", triggerID, log.BlockNumber, response.Id)
 
@@ -273,7 +274,7 @@ func (lts *LogTriggerService) fetchLogsFromLogPoller(ctx context.Context, trigge
 	return logs, nil
 }
 
-func (lts *LogTriggerService) createLogRequest(_ context.Context, addresses, eventSigs, topics2, topics3, topics4 [][]byte, confidence evmcappb.ConfidenceLevel) ([]query.Expression, primitives.ConfidenceLevel) {
+func (lts *LogTriggerService) createLogRequest(_ context.Context, addresses, eventSigs, topics2, topics3, topics4 [][]byte, confidence pb.ConfidenceLevel) ([]query.Expression, primitives.ConfidenceLevel) {
 	var expressions []query.Expression
 
 	var addressFilters []query.Expression
@@ -290,7 +291,7 @@ func (lts *LogTriggerService) createLogRequest(_ context.Context, addresses, eve
 
 	var confidenceLevel primitives.ConfidenceLevel
 	switch confidence {
-	case evmcappb.ConfidenceLevel_FINALIZED:
+	case pb.ConfidenceLevel_CONFIDENCE_LEVEL_FINALIZED:
 		confidenceLevel = primitives.Finalized
 	default:
 		//TODO PLEX-1488: it has to support SAFE here.
@@ -328,7 +329,7 @@ func (lts *LogTriggerService) makeEventByTopicFilter(topic uint64, topics [][]by
 	return &expr
 }
 
-func (lts *LogTriggerService) UnregisterLogTrigger(ctx context.Context, triggerID string, _ capabilities.RequestMetadata, _ *evmcappb.FilterLogTriggerRequest) error {
+func (lts *LogTriggerService) UnregisterLogTrigger(ctx context.Context, triggerID string, _ capabilities.RequestMetadata, _ *pb.FilterLogTriggerRequest) error {
 	if triggerID == "" {
 		return fmt.Errorf("no triggerID provided")
 	}

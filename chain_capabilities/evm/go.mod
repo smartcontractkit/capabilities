@@ -192,3 +192,5 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
+
+replace github.com/fbsobreira/gotron-sdk => github.com/smartcontractkit/chainlink-tron/relayer/gotron-sdk v0.0.5-0.20250528121202-292529af39df

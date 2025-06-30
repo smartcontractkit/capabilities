@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
+	"github.com/smartcontractkit/chainlink-evm/pkg/testutils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"

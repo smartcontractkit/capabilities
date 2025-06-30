@@ -8,6 +8,10 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/contracts"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/pb"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
+	"github.com/smartcontractkit/chainlink-evm/gethwrappers/keystone/generated/forwarder"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
@@ -151,13 +155,13 @@ func TestCREForwarderClient_InvokeOnReport(t *testing.T) {
 	testEncoder := TestEncoder{abi: *forwarderABI}
 
 	t.Run("Invoke On Report - Successfully send transaction - empty report", func(t *testing.T) {
-		report := &evmcap.SignedReport{}
+		report := &pb.SignedReport{}
 		expectedEncodedReport := testEncoder.encodeReport(receiverAddress, report)
 
 		testSuccessfulReportSubmissionAndEncoding(ctx, t, forwarderAddress, testLogger, expectedEncodedReport, receiverAddress, report)
 	})
 	t.Run("Invoke On Report - Successfully send transaction - complete report", func(t *testing.T) {
-		report := &evmcap.SignedReport{
+		report := &pb.SignedReport{
 			RawReport:     test.RandomBytes(100),
 			ReportContext: test.RandomBytes(50),
 			Signatures:    [][]byte{test.RandomBytes(20), test.RandomBytes(20)},
@@ -169,7 +173,7 @@ func TestCREForwarderClient_InvokeOnReport(t *testing.T) {
 		testSuccessfulReportSubmissionAndEncoding(ctx, t, forwarderAddress, testLogger, expectedEncodedReport, receiverAddress, report)
 	})
 	t.Run("Invoke On Report - Retry on GasLimit not supported", func(t *testing.T) {
-		report := &evmcap.SignedReport{}
+		report := &pb.SignedReport{}
 		expectedEncodedReport := testEncoder.encodeReport(receiverAddress, report)
 
 		mockEVMService := mocks2.NewEVMService(t)
@@ -193,7 +197,7 @@ func TestCREForwarderClient_InvokeOnReport(t *testing.T) {
 			TxStatus: evmtypes.TxSuccess,
 		}, nil)
 
-		txResult, err := forwarderClient.InvokeOnReport(ctx, receiverAddress, report, &evmcap.GasConfig{GasLimit: expectedGasLimit})
+		txResult, err := forwarderClient.InvokeOnReport(ctx, receiverAddress, report, &pb.GasConfig{GasLimit: expectedGasLimit})
 		require.NoError(t, err)
 		require.Equal(t, &evmtypes.TransactionResult{
 			TxHash:   txHash,
@@ -202,7 +206,7 @@ func TestCREForwarderClient_InvokeOnReport(t *testing.T) {
 	})
 
 	t.Run("Invoke On Report - Failed to send transaction", func(t *testing.T) {
-		report := &evmcap.SignedReport{}
+		report := &pb.SignedReport{}
 		expectedEncodedReport := testEncoder.encodeReport(receiverAddress, report)
 
 		mockEVMService := mocks2.NewEVMService(t)
@@ -218,13 +222,13 @@ func TestCREForwarderClient_InvokeOnReport(t *testing.T) {
 			},
 		}).Return(nil, errors.New(expectedError))
 
-		_, err := forwarderClient.InvokeOnReport(ctx, receiverAddress, report, &evmcap.GasConfig{GasLimit: expectedGasLimit})
+		_, err := forwarderClient.InvokeOnReport(ctx, receiverAddress, report, &pb.GasConfig{GasLimit: expectedGasLimit})
 		require.Error(t, err)
 		require.Contains(t, "failed to submit transaction: "+expectedError, err.Error())
 	})
 }
 
-func testSuccessfulReportSubmissionAndEncoding(ctx context.Context, t *testing.T, forwarderAddress common.Address, testLogger logger.Logger, expectedEncodedReport []byte, receiverAddress common.Address, report *evmcap.SignedReport) {
+func testSuccessfulReportSubmissionAndEncoding(ctx context.Context, t *testing.T, forwarderAddress common.Address, testLogger logger.Logger, expectedEncodedReport []byte, receiverAddress common.Address, report *pb.SignedReport) {
 	mockEVMService := mocks2.NewEVMService(t)
 	forwarderClient, _ := contracts.NewCREForwarderClient(mockEVMService, forwarderAddress, testLogger)
 	expectedGasLimit := uint64(100)
@@ -241,7 +245,7 @@ func testSuccessfulReportSubmissionAndEncoding(ctx context.Context, t *testing.T
 		TxStatus: evmtypes.TxSuccess,
 	}, nil)
 
-	txResult, err := forwarderClient.InvokeOnReport(ctx, receiverAddress, report, &evmcap.GasConfig{GasLimit: expectedGasLimit})
+	txResult, err := forwarderClient.InvokeOnReport(ctx, receiverAddress, report, &pb.GasConfig{GasLimit: expectedGasLimit})
 	require.NoError(t, err)
 	require.Equal(t, &evmtypes.TransactionResult{
 		TxHash:   txHash,
@@ -263,7 +267,7 @@ func (t TestEncoder) encodeTransmissionInfo(transmissionInfo contracts.Transmiss
 	return encodedData
 }
 
-func (t TestEncoder) encodeReport(receiver common.Address, report *evmcap.SignedReport) []byte {
+func (t TestEncoder) encodeReport(receiver common.Address, report *pb.SignedReport) []byte {
 	data, _ := t.abi.Pack("report", receiver, report.RawReport, report.ReportContext, report.Signatures)
 	return data
 }
