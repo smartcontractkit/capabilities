@@ -265,8 +265,8 @@ github.com/shopspring/decimal v1.4.0 h1:bxl37RwXBklmTi0C79JfXCEBD1cqqHt0bbgBAGFp
 github.com/shopspring/decimal v1.4.0/go.mod h1:gawqmDU56v4yIKSwfBSFip1HdCCXN8/+DMd9qYNcwME=
 github.com/sirupsen/logrus v1.4.1/go.mod h1:ni0Sbl8bgC9z8RoU9G6nDWqqs/fq4eDPysMBDgk/93Q=
 github.com/sirupsen/logrus v1.4.2/go.mod h1:tLMulIdttU9McNUspp0xgXVQah82FyeX6MwdIuYE2rE=
-github.com/smartcontractkit/capabilities/libs v0.0.0-20250630144747-7bcef415f42e h1:e8qs1D/luVVgzugs2rH5BY0zM6EzvJhOn3SQyDnzCEA=
-github.com/smartcontractkit/capabilities/libs v0.0.0-20250630144747-7bcef415f42e/go.mod h1:zDBsdF+4kEWAzI8c1zGg2Upu/1hYny9KoNCZ7FiCRu0=
+github.com/smartcontractkit/capabilities/libs v0.0.0-20250630144956-1e4dcdf44f5e h1:0zQNuE/rhO9Y0c0xbznRl5yhSYtPAKTeY5YPp4dLLF8=
+github.com/smartcontractkit/capabilities/libs v0.0.0-20250630144956-1e4dcdf44f5e/go.mod h1:zDBsdF+4kEWAzI8c1zGg2Upu/1hYny9KoNCZ7FiCRu0=
 github.com/smartcontractkit/chainlink-common v0.7.1-0.20250626194303-6d35905cbe3d h1:oBEr8fn/EymhnGncQn8cvTnKss6tiO6FScRJ2evOZPw=
 github.com/smartcontractkit/chainlink-common v0.7.1-0.20250626194303-6d35905cbe3d/go.mod h1:khGj5E9pd95CnqBE8vdC5iTBUkhWd1xA2ZLPzOoLJSc=
 github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/protoc/installer v0.0.0-20250630135429-dc5983b33a0d h1:08tKTNySWlRfdVW6gbjM/GRwB9rXanwRPx7Y6o+AA9s=
