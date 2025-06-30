@@ -9,6 +9,7 @@ import (
 	capmonitoring "github.com/smartcontractkit/capabilities/monitoring"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 )
 
@@ -20,13 +21,13 @@ type ReadRequest struct {
 
 // MessageBuilder constructs telemetry messages for EVM calls
 type MessageBuilder struct {
-	ChainInfo   capmonitoring.ChainInfo
+	ChainInfo   types.ChainInfo
 	CapInfo     capabilities.CapabilityInfo
 	nodeAddress string
 }
 
 // NewMessageBuilder creates a new builder
-func NewMessageBuilder(chainInfo capmonitoring.ChainInfo, capInfo capabilities.CapabilityInfo, nodeAddress string) *MessageBuilder {
+func NewMessageBuilder(chainInfo types.ChainInfo, capInfo capabilities.CapabilityInfo, nodeAddress string) *MessageBuilder {
 	return &MessageBuilder{ChainInfo: chainInfo, CapInfo: capInfo, nodeAddress: nodeAddress}
 }
 

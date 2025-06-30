@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
-
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/trigger"
 
@@ -14,7 +13,6 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
 
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
-	capmonitoring "github.com/smartcontractkit/capabilities/monitoring"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -80,8 +78,12 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 		return fmt.Errorf("failed to fetch relayer for chainID %d from relayerSet: %w", cfg.ChainID, err)
 	}
 
-	// TODO Relayer should return chain info
-	messageBuilder := monitoring.NewMessageBuilder(capmonitoring.ChainInfo{}, c.CapabilityInfo, cfg.NodeAddress)
+	chainInfo, err := relayer.GetChainInfo(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to fetch chain info for chainID %d from relayer: %w", cfg.ChainID, err)
+	}
+
+	messageBuilder := monitoring.NewMessageBuilder(chainInfo, c.CapabilityInfo, cfg.NodeAddress)
 
 	evmRelayer, err := relayer.EVM()
 	if err != nil {
