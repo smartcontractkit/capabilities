@@ -34,11 +34,11 @@ type {{.GoName}}Capability interface {
     {{- range .Methods}}
         {{- if isTrigger . }}
             {{ $hasTriggers = true }}
-    Register{{.GoName}}(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *{{name .Input.GoIdent.GoImportPath $.GoImportPath.String}}.{{.Input.GoIdent.GoName}}) (<- chan capabilities.TriggerAndId[*{{name .Output.GoIdent.GoImportPath $.GoImportPath.String}}.{{.Output.GoIdent.GoName}}], error)
-    Unregister{{.GoName}}(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *{{name .Input.GoIdent.GoImportPath $.GoImportPath.String}}.{{.Input.GoIdent.GoName}}) error
+    Register{{.GoName}}(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *{{name .Input.GoIdent.GoImportPath.Ident $.GoImportPath.String}}.{{.Input.GoIdent.GoName}}) (<- chan capabilities.TriggerAndId[*{{name .Output.GoIdent.GoImportPath.Ident $.GoImportPath.String}}.{{.Output.GoIdent.GoName}}], error)
+    Unregister{{.GoName}}(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *{{name .Input.GoIdent.GoImportPath.Ident $.GoImportPath.String}}.{{.Input.GoIdent.GoName}}) error
         {{- else }}
             {{ $hasActions = true }}
-    {{.GoName}}(ctx context.Context, metadata capabilities.RequestMetadata, input *{{name .Input.GoIdent.GoImportPath $.GoImportPath.String}}.{{.Input.GoIdent.GoName}} {{if ne "emptypb.Empty" (ConfigType $service)}}, {{(ConfigType $service)}}{{ end }}) (*{{name .Output.GoIdent.GoImportPath $.GoImportPath.String}}.{{.Output.GoIdent.GoName}}, error)
+    {{.GoName}}(ctx context.Context, metadata capabilities.RequestMetadata, input *{{name .Input.GoIdent.GoImportPath.Ident $.GoImportPath.String}}.{{.Input.GoIdent.GoName}} {{if ne "emptypb.Empty" (ConfigType $service)}}, {{(ConfigType $service)}}{{ end }}) (*{{name .Output.GoIdent.GoImportPath.Ident $.GoImportPath.String}}.{{.Output.GoIdent.GoName}}, error)
         {{- end }}
     {{- end }}
 
@@ -130,7 +130,7 @@ func (c *{{.GoName|LowerFirst}}Capability) RegisterTrigger(ctx context.Context, 
         {{- range .Methods}}
         {{- if (isTrigger .) }}
             case {{- if (MapToUntypedAPI .) }} "" {{- else}} "{{.GoName}}" {{- end }}:
-                input := &{{name .Input.GoIdent.GoImportPath $.GoImportPath.String}}.{{.Input.GoIdent.GoName}}{}
+                input := &{{name .Input.GoIdent.GoImportPath.Ident $.GoImportPath.String}}.{{.Input.GoIdent.GoName}}{}
                 return capabilities.RegisterTrigger(ctx, c.stopCh, "{{(CapabilityId $service)}}", request, input, c.{{$service.GoName}}Capability.Register{{.GoName}})
         {{- end }}
         {{- end }}
@@ -148,7 +148,7 @@ func (c *{{.GoName|LowerFirst}}Capability) UnregisterTrigger(ctx context.Context
             {{- range .Methods}}
             {{- if (isTrigger .) }}
                 case {{- if (MapToUntypedAPI .) }} "" {{- else}} "{{.GoName}}" {{- end }}:
-                    input := &{{name .Input.GoIdent.GoImportPath $.GoImportPath.String}}.{{.Input.GoIdent.GoName}}{}
+                    input := &{{name .Input.GoIdent.GoImportPath.Ident $.GoImportPath.String}}.{{.Input.GoIdent.GoName}}{}
                     _, err := capabilities.FromValueOrAny(request.Config, request.Payload, input)
                     if err != nil {
                         return err
@@ -179,10 +179,10 @@ func (c *{{.GoName|LowerFirst}}Capability) Execute(ctx context.Context, request 
     {{- range .Methods}}
     {{- if  not (isTrigger .) }}
         case "{{.GoName}}":
-            input := &{{name .Input.GoIdent.GoImportPath $.GoImportPath.String}}.{{.Input.GoIdent.GoName}}{}
+            input := &{{name .Input.GoIdent.GoImportPath.Ident $.GoImportPath.String}}.{{.Input.GoIdent.GoName}}{}
             config := &{{ConfigType $service}}{}
             {{- if eq "emptypb.Empty" (ConfigType $service) }}
-            wrapped := func(ctx context.Context, metadata capabilities.RequestMetadata, input *{{name .Input.GoIdent.GoImportPath $.GoImportPath.String}}.{{.Input.GoIdent.GoName}}, _ *emptypb.Empty) (*{{name .Output.GoIdent.GoImportPath $.GoImportPath.String}}.{{.Output.GoIdent.GoName}}, error) {
+            wrapped := func(ctx context.Context, metadata capabilities.RequestMetadata, input *{{name .Input.GoIdent.GoImportPath.Ident $.GoImportPath.String}}.{{.Input.GoIdent.GoName}}, _ *emptypb.Empty) (*{{name .Output.GoIdent.GoImportPath.Ident $.GoImportPath.String}}.{{.Output.GoIdent.GoName}}, error) {
                 return c.{{$service.GoName}}Capability.{{.GoName}}(ctx, metadata, input)
             }
             return capabilities.Execute(ctx, request, input, config, wrapped)
@@ -191,10 +191,10 @@ func (c *{{.GoName|LowerFirst}}Capability) Execute(ctx context.Context, request 
             {{- end }}
           {{- if (MapToUntypedAPI .) }}
          case "":
-             input := &{{name .Input.GoIdent.GoImportPath $.GoImportPath.String}}.{{.Input.GoIdent.GoName}}{}
+             input := &{{name .Input.GoIdent.GoImportPath.Ident $.GoImportPath.String}}.{{.Input.GoIdent.GoName}}{}
              config := &{{ConfigType $service}}{}
              {{- if eq "emptypb.Empty" (ConfigType $service) }}
-             wrapped := func(ctx context.Context, metadata capabilities.RequestMetadata, input *{{name .Input.GoIdent.GoImportPath $.GoImportPath.String}}.{{.Input.GoIdent.GoName}}, _ *emptypb.Empty) (*{{name .Output.GoIdent.GoImportPath $.GoImportPath.String}}.{{.Output.GoIdent.GoName}}, error) {
+             wrapped := func(ctx context.Context, metadata capabilities.RequestMetadata, input *{{name .Input.GoIdent.GoImportPath.Ident $.GoImportPath.String}}.{{.Input.GoIdent.GoName}}, _ *emptypb.Empty) (*{{name .Output.GoIdent.GoImportPath.Ident $.GoImportPath.String}}.{{.Output.GoIdent.GoName}}, error) {
                  return c.{{$service.GoName}}Capability.{{.GoName}}(ctx, metadata, input)
              }
              return capabilities.Execute(ctx, request, input, config, wrapped)
