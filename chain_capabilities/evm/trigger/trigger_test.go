@@ -561,6 +561,13 @@ func TestSendLogsToWorkflows(t *testing.T) {
 	t.Run("all logs are sent to the channel", func(t *testing.T) {
 		service.triggers.Write(triggerID, logTriggerState{
 			unfinalizedSentEventIDs: map[string]*big.Int{},
+			lastBlock:               finalizedBlockNumber,
+			filter: filter{
+				expressions: []query.Expression{
+					evm.NewAddressFilter(evmtypes.Address(expectedAddress)),
+				},
+				confidence: primitives.Finalized,
+			},
 		})
 		state, _ := service.triggers.Read(triggerID)
 		logCh := make(chan capabilities.TriggerAndId[*evmservice.Log], len(expectedLogs))
@@ -578,6 +585,12 @@ func TestSendLogsToWorkflows(t *testing.T) {
 		default:
 			// no message received, as expected
 		}
+		// Verify that the unfinalized logs are stored in the trigger state and all other fields are preserved
+		state2, _ := service.triggers.Read(triggerID)
+		require.Len(t, state2.unfinalizedSentEventIDs, 1)
+		require.Equal(t, state.lastBlock, state2.lastBlock)
+		require.Equal(t, state.expressions, state2.expressions)
+		require.Equal(t, state.confidence, state2.confidence)
 	})
 
 	t.Run("first log sent to channel second log dropped out due to timeout", func(t *testing.T) {
