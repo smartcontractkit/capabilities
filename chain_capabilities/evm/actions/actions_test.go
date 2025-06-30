@@ -9,12 +9,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	chainsevm "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
+	commonlogger "github.com/smartcontractkit/chainlink-common/pkg/logger"
 	chaincommonpb "github.com/smartcontractkit/chainlink-common/pkg/loop/chain-common"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	evmmock "github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
@@ -23,11 +27,14 @@ import (
 	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 )
 
-func initMocks(t *testing.T) (*actions.EVM, *evmmock.EVMService) {
-	t.Helper()
+type nopProcessor struct{}
 
+func (nopProcessor) Process(_ context.Context, _ proto.Message, _ ...any) error { return nil }
+
+func initMocks(t *testing.T) (actions.EVM, *evmmock.EVMService) {
+	t.Helper()
 	evmSvc := evmmock.NewEVMService(t)
-	return &actions.EVM{EVMService: evmSvc}, evmSvc
+	return actions.NewEVM(evmSvc, commonlogger.Test(t), nopProcessor{}, &monitoring.MessageBuilder{}), evmSvc
 }
 
 func TestCapability_CallContract(t *testing.T) {
@@ -53,7 +60,7 @@ func TestCapability_CallContract(t *testing.T) {
 		msgProto, _ := chainsevm.ConvertCallMsgToProto(&evmtypes.CallMsg{})
 		_, err := svc.CallContract(context.Background(), capabilities.RequestMetadata{},
 			&chainsevm.CallContractRequest{Call: msgProto})
-		assert.ErrorContains(t, err, "block number must be specified")
+		assert.ErrorContains(t, err, "block number must be non-zero")
 	})
 
 	t.Run("EVM error bubbles", func(t *testing.T) {
@@ -61,7 +68,8 @@ func TestCapability_CallContract(t *testing.T) {
 
 		msgProto, _ := chainsevm.ConvertCallMsgToProto(&evmtypes.CallMsg{})
 		block := big.NewInt(1)
-		evmSvc.On("CallContract", mock.Anything, mock.Anything, block).Return(nil, assert.AnError)
+		evmSvc.On("CallContract", mock.Anything, mock.Anything, block).
+			Return(nil, assert.AnError)
 
 		_, err := svc.CallContract(context.Background(), capabilities.RequestMetadata{},
 			&chainsevm.CallContractRequest{Call: msgProto, BlockNumber: valuespb.NewBigIntFromInt(block)})
@@ -91,7 +99,7 @@ func TestCapability_FilterLogs(t *testing.T) {
 		_, err := svc.FilterLogs(context.Background(),
 			capabilities.RequestMetadata{},
 			&chainsevm.FilterLogsRequest{FilterQuery: toFilter(2, 1)})
-		assert.ErrorContains(t, err, "cannot be greater")
+		assert.ErrorContains(t, err, "invalid range")
 	})
 
 	t.Run("happy-path", func(t *testing.T) {
@@ -137,7 +145,7 @@ func TestCapability_BalanceAt(t *testing.T) {
 		addr := bytes.Repeat([]byte{0xbb}, 20)
 		_, err := svc.BalanceAt(context.Background(), capabilities.RequestMetadata{},
 			&chainsevm.BalanceAtRequest{Account: addr, BlockNumber: valuespb.NewBigIntFromInt(big.NewInt(0))})
-		assert.ErrorContains(t, err, "block number must be specified")
+		assert.ErrorContains(t, err, "invalid block number")
 	})
 
 	t.Run("EVM error", func(t *testing.T) {
@@ -184,7 +192,13 @@ func TestCapability_GetTransactionByHash(t *testing.T) {
 		svc, evmSvc := initMocks(t)
 
 		evmSvc.On("GetTransactionByHash", mock.Anything, mock.Anything).
-			Return(&evmtypes.Transaction{}, nil)
+			Return(&evmtypes.Transaction{
+				Hash:     hash,
+				Nonce:    0,
+				Gas:      0,
+				GasPrice: big.NewInt(0),
+				Value:    big.NewInt(0),
+			}, nil)
 
 		resp, err := svc.GetTransactionByHash(context.Background(), capabilities.RequestMetadata{},
 			&chainsevm.GetTransactionByHashRequest{Hash: hash[:]})
@@ -194,7 +208,8 @@ func TestCapability_GetTransactionByHash(t *testing.T) {
 
 	t.Run("EVM error", func(t *testing.T) {
 		svc, evmSvc := initMocks(t)
-		evmSvc.On("GetTransactionByHash", mock.Anything, mock.Anything).Return(nil, assert.AnError)
+		evmSvc.On("GetTransactionByHash", mock.Anything, mock.Anything).
+			Return(nil, assert.AnError)
 
 		_, err := svc.GetTransactionByHash(context.Background(), capabilities.RequestMetadata{},
 			&chainsevm.GetTransactionByHashRequest{Hash: hash[:]})
@@ -209,7 +224,16 @@ func TestCapability_GetTransactionReceipt(t *testing.T) {
 		svc, evmSvc := initMocks(t)
 
 		evmSvc.On("GetTransactionReceipt", mock.Anything, mock.Anything).
-			Return(&evmtypes.Receipt{}, nil)
+			Return(&evmtypes.Receipt{
+				Status:            0,
+				TxHash:            hash,
+				ContractAddress:   [20]byte{},
+				GasUsed:           0,
+				BlockHash:         [32]byte{},
+				BlockNumber:       big.NewInt(0),
+				TransactionIndex:  0,
+				EffectiveGasPrice: big.NewInt(0),
+			}, nil)
 
 		resp, err := svc.GetTransactionReceipt(context.Background(), capabilities.RequestMetadata{},
 			&chainsevm.GetTransactionReceiptRequest{Hash: hash[:]})

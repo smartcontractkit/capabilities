@@ -65,8 +65,8 @@ func NewMetrics() (Metrics, error) {
 	var err error
 
 	// -- CallContract --
-	ccSucc := commoncapbeholder.NewMetricsInfoCapBasic(ns("call_contract_success"), commonbeholder.ToSchemaFullName(&CallContractSuccess{}))
-	m.CallContractSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(ccSucc)
+	ccSuccess := commoncapbeholder.NewMetricsInfoCapBasic(ns("call_contract_success"), commonbeholder.ToSchemaFullName(&CallContractSuccess{}))
+	m.CallContractSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(ccSuccess)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create call contract success metric: %w", err)
 	}
@@ -77,8 +77,8 @@ func NewMetrics() (Metrics, error) {
 	}
 
 	// -- FilterLogs --
-	flSucc := commoncapbeholder.NewMetricsInfoCapBasic(ns("filter_logs_success"), commonbeholder.ToSchemaFullName(&FilterLogsSuccess{}))
-	m.FilterLogsSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(flSucc)
+	flSuccess := commoncapbeholder.NewMetricsInfoCapBasic(ns("filter_logs_success"), commonbeholder.ToSchemaFullName(&FilterLogsSuccess{}))
+	m.FilterLogsSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(flSuccess)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create filter logs success metric: %w", err)
 	}
@@ -89,8 +89,8 @@ func NewMetrics() (Metrics, error) {
 	}
 
 	// -- BalanceAt --
-	baSucc := commoncapbeholder.NewMetricsInfoCapBasic(ns("balance_at_success"), commonbeholder.ToSchemaFullName(&BalanceAtSuccess{}))
-	m.BalanceAtSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(baSucc)
+	baSuccess := commoncapbeholder.NewMetricsInfoCapBasic(ns("balance_at_success"), commonbeholder.ToSchemaFullName(&BalanceAtSuccess{}))
+	m.BalanceAtSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(baSuccess)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create balance at success metric: %w", err)
 	}
@@ -101,8 +101,8 @@ func NewMetrics() (Metrics, error) {
 	}
 
 	// -- EstimateGas --
-	egSucc := commoncapbeholder.NewMetricsInfoCapBasic(ns("estimate_gas_success"), commonbeholder.ToSchemaFullName(&EstimateGasSuccess{}))
-	m.EstimateGasSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(egSucc)
+	egSuccess := commoncapbeholder.NewMetricsInfoCapBasic(ns("estimate_gas_success"), commonbeholder.ToSchemaFullName(&EstimateGasSuccess{}))
+	m.EstimateGasSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(egSuccess)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create estimate gas success metric: %w", err)
 	}
@@ -113,8 +113,8 @@ func NewMetrics() (Metrics, error) {
 	}
 
 	// -- GetTransactionByHash --
-	txSucc := commoncapbeholder.NewMetricsInfoCapBasic(ns("get_transaction_by_hash_success"), commonbeholder.ToSchemaFullName(&GetTransactionByHashSuccess{}))
-	m.GetTxByHashSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(txSucc)
+	txSuccess := commoncapbeholder.NewMetricsInfoCapBasic(ns("get_transaction_by_hash_success"), commonbeholder.ToSchemaFullName(&GetTransactionByHashSuccess{}))
+	m.GetTxByHashSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(txSuccess)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create get tx by hash success metric: %w", err)
 	}
@@ -125,8 +125,8 @@ func NewMetrics() (Metrics, error) {
 	}
 
 	// -- GetTransactionReceipt --
-	rcSucc := commoncapbeholder.NewMetricsInfoCapBasic(ns("get_transaction_receipt_success"), commonbeholder.ToSchemaFullName(&GetTransactionReceiptSuccess{}))
-	m.GetReceiptSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(rcSucc)
+	rcSuccess := commoncapbeholder.NewMetricsInfoCapBasic(ns("get_transaction_receipt_success"), commonbeholder.ToSchemaFullName(&GetTransactionReceiptSuccess{}))
+	m.GetReceiptSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(rcSuccess)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create get receipt success metric: %w", err)
 	}
@@ -137,8 +137,8 @@ func NewMetrics() (Metrics, error) {
 	}
 
 	// -- LatestAndFinalizedHead --
-	headSucc := commoncapbeholder.NewMetricsInfoCapBasic(ns("latest_and_finalized_head_success"), commonbeholder.ToSchemaFullName(&LatestAndFinalizedHeadSuccess{}))
-	m.HeadSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(headSucc)
+	headSuccess := commoncapbeholder.NewMetricsInfoCapBasic(ns("latest_and_finalized_head_success"), commonbeholder.ToSchemaFullName(&LatestAndFinalizedHeadSuccess{}))
+	m.HeadSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(headSuccess)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create head success metric: %w", err)
 	}

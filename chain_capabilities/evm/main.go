@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/trigger"
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
+	capmonitoring "github.com/smartcontractkit/capabilities/monitoring"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -85,7 +85,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, config string, _
 	}
 
 	// TODO Relayer should return chain info
-	messageBuilder := monitoring.NewMessageBuilder(chain_capabilities.ChainInfo{}, c.CapabilityInfo, cfg.NodeAddress)
+	messageBuilder := monitoring.NewMessageBuilder(capmonitoring.ChainInfo{}, c.CapabilityInfo, cfg.NodeAddress)
 
 	evmRelayer, err := relayer.EVM()
 	if err != nil {

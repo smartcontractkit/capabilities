@@ -6,8 +6,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities"
-	commoncapbeholder "github.com/smartcontractkit/capabilities/monitoring"
+	capmonitoring "github.com/smartcontractkit/capabilities/monitoring"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
@@ -21,13 +20,13 @@ type ReadRequest struct {
 
 // MessageBuilder constructs telemetry messages for EVM calls
 type MessageBuilder struct {
-	ChainInfo   chain_capabilities.ChainInfo
+	ChainInfo   capmonitoring.ChainInfo
 	CapInfo     capabilities.CapabilityInfo
 	nodeAddress string
 }
 
 // NewMessageBuilder creates a new builder
-func NewMessageBuilder(chainInfo chain_capabilities.ChainInfo, capInfo capabilities.CapabilityInfo, nodeAddress string) *MessageBuilder {
+func NewMessageBuilder(chainInfo capmonitoring.ChainInfo, capInfo capabilities.CapabilityInfo, nodeAddress string) *MessageBuilder {
 	return &MessageBuilder{ChainInfo: chainInfo, CapInfo: capInfo, nodeAddress: nodeAddress}
 }
 
@@ -141,8 +140,8 @@ func (m *MessageBuilder) BuildLatestAndFinalizedHeadError(r ReadRequest, summary
 }
 
 // BuildExecutionContext builds the shared ExecutionContext
-func (m *MessageBuilder) BuildExecutionContext(request ReadRequest) *commoncapbeholder.ExecutionContext {
-	ex := &commoncapbeholder.ExecutionContext{
+func (m *MessageBuilder) BuildExecutionContext(request ReadRequest) *capmonitoring.ExecutionContext {
+	ex := &capmonitoring.ExecutionContext{
 		MetaSourceId: m.nodeAddress,
 
 		// Chain

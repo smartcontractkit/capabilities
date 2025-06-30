@@ -48,7 +48,7 @@ type MetricsCapBasic struct {
 	count             metric.Int64Counter
 	capTimestampStart metric.Int64Gauge
 	capTimestampEmit  metric.Int64Gauge
-	capDuration       metric.Int64Gauge // ts.emit - ts.start
+	capDuration       metric.Int64Histogram // ts.emit - ts.start
 }
 
 // NewMetricsCapBasic creates a new MetricsCapBasic using the provided MetricsInfoCapBasic
@@ -74,9 +74,9 @@ func NewMetricsCapBasic(info MetricsInfoCapBasic) (MetricsCapBasic, error) {
 		return set, fmt.Errorf("failed to create new gauge: %w", err)
 	}
 
-	set.capDuration, err = info.capDuration.NewInt64Gauge(meter)
+	set.capDuration, err = info.capDuration.NewInt64Histogram(meter)
 	if err != nil {
-		return set, fmt.Errorf("failed to create new gauge: %w", err)
+		return set, fmt.Errorf("failed to create new histogram: %w", err)
 	}
 
 	return set, nil
