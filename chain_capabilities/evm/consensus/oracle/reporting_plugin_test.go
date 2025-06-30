@@ -18,8 +18,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 
-	"github.com/smartcontractkit/chain_capabilities/evm/consensus/oracle/mocks"
-	"github.com/smartcontractkit/chain_capabilities/evm/consensus/types"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/oracle/mocks"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
 )
 
 func TestValidateChainHeight(t *testing.T) {

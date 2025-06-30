@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/smartcontractkit/chain_capabilities/evm/consensus/types"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
 )
 
 // Helper function to create a test requestCtx
@@ -17,7 +17,7 @@ func createTestRequest(t *testing.T, id string, attempt int) *requestCtx {
 		Request:    request,
 		Ctx:        ctx,
 		Cancel:     cancel,
-		ResultChan: make(chan []byte, 1),
+		ResultChan: make(chan any, 1),
 		Attempt:    attempt,
 	}
 }
