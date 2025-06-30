@@ -59,6 +59,9 @@ func (e EVM) CallContract(ctx context.Context, meta capabilities.RequestMetadata
 	}
 
 	blockNumber, requiresLocking, err := normalizeBlockNumber(input.GetBlockNumber())
+	if err != nil {
+		return nil, err
+	}
 	var request ctypes.Request
 	if requiresLocking {
 		request = ctypes.NewLockableToBlockRequest(requestID(meta), func(ctx context.Context, height *evmservice.ChainHeight) ([]byte, error) {
