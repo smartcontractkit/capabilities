@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/smartcontractkit/chain_capabilities/evm/contracts"
-	"github.com/smartcontractkit/chain_capabilities/evm/pb"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/contracts"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/pb"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 
@@ -85,7 +85,7 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 		if err != nil {
 			return nil, err
 		}
-		return e.fetchTransactionReceiptAndCreateReply(ctx, *txHash, pb.ReceiverContractExecutionStatus_SUCCESS, nil)
+		return e.fetchTransactionReceiptAndCreateReply(ctx, *txHash, pb.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS, nil)
 	case TransmissionStateInvalidReceiver:
 		txHash, err := txHashRetriever.GetHash(ctx)
 		if err != nil {
@@ -103,7 +103,7 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 			if err != nil {
 				return nil, err
 			}
-			return e.fetchTransactionReceiptAndCreateReply(ctx, *txHash, pb.ReceiverContractExecutionStatus_REVERTED, nil)
+			return e.fetchTransactionReceiptAndCreateReply(ctx, *txHash, pb.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED, nil)
 		}
 		e.lggr.Infow("retrying a failed transmission - attempting to push to txmgr", "request", request, "reportLen", len(request.Report.RawReport), "reportContextLen", len(request.Report.ReportContext), "nSignatures", len(request.Report.Signatures), "executionID", metadata.WorkflowExecutionID, "receiverGasMinimum", receiverGasMinimum, "transmissionGasLimit", transmissionInfo.GasLimit)
 	default:
@@ -127,7 +127,7 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 		// 	c.lggr.Errorf("failed to send custom message with msg: %s, err: %v", msg, err)
 		// }
 		return &pb.WriteReportReply{
-			TxStatus:     pb.TxStatus_TX_FATAL,
+			TxStatus:     pb.TxStatus_TX_STATUS_FATAL,
 			ErrorMessage: ptr(err.Error()),
 		}, nil
 	}
@@ -147,7 +147,7 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 	switch transmissionInfo.State {
 	case TransmissionStateSucceeded:
 		e.lggr.Debugw("Transaction confirmed", "request", request)
-		return e.fetchTransactionReceiptAndCreateReply(ctx, txHash, pb.ReceiverContractExecutionStatus_SUCCESS, nil)
+		return e.fetchTransactionReceiptAndCreateReply(ctx, txHash, pb.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS, nil)
 	case TransmissionStateFailed, TransmissionStateInvalidReceiver:
 		return e.processUnrecoverableTxState(ctx, request, metadata, txHash, transmissionInfo, transmissionID, true)
 	default:
@@ -182,7 +182,7 @@ func (e EVM) processUnrecoverableTxState(ctx context.Context, request *pb.WriteR
 	} else {
 		message = ptr(UnknownIssueExecutingReceiverContractMessage)
 	}
-	return e.fetchTransactionReceiptAndCreateReply(ctx, txHash, pb.ReceiverContractExecutionStatus_REVERTED, message)
+	return e.fetchTransactionReceiptAndCreateReply(ctx, txHash, pb.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED, message)
 }
 
 func getInvalidReceiverMessage(receiver []byte) *string {
@@ -217,12 +217,12 @@ func (e EVM) fetchTransactionReceiptAndCreateReply(ctx context.Context, txHash e
 		return nil, err
 	}
 	message := errorMessage
-	if receiverStatus.Enum() == pb.ReceiverContractExecutionStatus_REVERTED.Enum() && errorMessage == nil {
+	if receiverStatus.Enum() == pb.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum() && errorMessage == nil {
 		message = ptr("Receiver contract execution failure")
 	}
 	return &pb.WriteReportReply{
 		TxHash:                          (txHash)[:],
-		TxStatus:                        pb.TxStatus_TX_SUCCESS,
+		TxStatus:                        pb.TxStatus_TX_STATUS_SUCCESS,
 		TransactionFee:                  valuespb.NewBigIntFromInt(transactionFee.TransactionFee),
 		ReceiverContractExecutionStatus: &receiverStatus,
 		ErrorMessage:                    message,
@@ -237,7 +237,7 @@ func ptr(s string) *string {
 func fatalWriteReportReply(message string) *pb.WriteReportReply {
 	return &pb.WriteReportReply{
 		ErrorMessage: &message,
-		TxStatus:     pb.TxStatus_TX_FATAL,
+		TxStatus:     pb.TxStatus_TX_STATUS_FATAL,
 	}
 }
 

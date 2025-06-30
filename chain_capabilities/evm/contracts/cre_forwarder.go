@@ -10,12 +10,13 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/pb"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
-
 	"github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
+	"github.com/smartcontractkit/chainlink-evm/gethwrappers/keystone/generated/forwarder"
 )
 
 type TransmissionInfo struct {
@@ -75,14 +76,14 @@ func (cfclient creForwarderClient) GetReportProcessedEvents(ctx context.Context,
 
 type CREForwarderClient interface {
 	GetTransmissionInfo(ctx context.Context, transmissionID TransmissionID) (TransmissionInfo, error)
-	InvokeOnReport(ctx context.Context, receiverAddress common.Address, report *evmcap.SignedReport, gasConfig *evmcap.GasConfig) (*evmtypes.TransactionResult, error)
+	InvokeOnReport(ctx context.Context, receiverAddress common.Address, report *pb.SignedReport, gasConfig *pb.GasConfig) (*evmtypes.TransactionResult, error)
 	GetReportProcessedEvents(ctx context.Context, receiver common.Address, workflowExecutionID [32]byte, reportID [2]byte) ([]*evm.Log, error)
 }
 
 type CREForwarderCodec interface {
 	EncodeQueryTransmissionInputs(query QueryTransmissionInputs) ([]byte, error)
 	DecodeQueryTransmissionInfo(encodedData []byte) (TransmissionInfo, error)
-	EncodeReport(receiver common.Address, report *evmcap.SignedReport) ([]byte, error)
+	EncodeReport(receiver common.Address, report *pb.SignedReport) ([]byte, error)
 	GetReportProcessedTopicHash() evmtypes.Hash
 }
 
@@ -97,7 +98,7 @@ type creForwarderClient struct {
 	logger           logger.Logger
 }
 
-func (cfclient *creForwarderClient) InvokeOnReport(ctx context.Context, receiverAddress common.Address, report *evmcap.SignedReport, gasConfig *evmcap.GasConfig) (*evmtypes.TransactionResult, error) {
+func (cfclient *creForwarderClient) InvokeOnReport(ctx context.Context, receiverAddress common.Address, report *pb.SignedReport, gasConfig *pb.GasConfig) (*evmtypes.TransactionResult, error) {
 	cfclient.logger.Debugw("Transaction raw report", "report", hex.EncodeToString(report.RawReport))
 
 	var resolvedGasConfig *evmtypes.GasConfig
@@ -153,7 +154,7 @@ type creForwarderCodecImpl struct {
 }
 
 // EncodeReport implements KeystoneForwarderCodec.
-func (cfc *creForwarderCodecImpl) EncodeReport(receiver common.Address, report *evmcap.SignedReport) ([]byte, error) {
+func (cfc *creForwarderCodecImpl) EncodeReport(receiver common.Address, report *pb.SignedReport) ([]byte, error) {
 	// Note: The codec that ChainWriter uses to encode the parameters for the contract ABI cannot handle
 	// `nil` values, including for slices. Until the bug is fixed we need to ensure that there are no
 	// `nil` values passed in the request.

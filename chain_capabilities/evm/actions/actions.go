@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/smartcontractkit/chain_capabilities/evm/config"
-	"github.com/smartcontractkit/chain_capabilities/evm/contracts"
-	"github.com/smartcontractkit/chain_capabilities/evm/pb"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/contracts"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/pb"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/ethereum/go-ethereum/common"

@@ -38,6 +38,8 @@ type ClientCapability interface {
 	RegisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*Log], error)
 	UnregisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *FilterLogTriggerRequest) error
 
+	WriteReport(ctx context.Context, metadata capabilities.RequestMetadata, input *WriteReportRequest) (*WriteReportReply, error)
+
 	Start(ctx context.Context) error
 	Close() error
 	HealthReport() map[string]error
@@ -212,6 +214,13 @@ func (c *clientCapability) Execute(ctx context.Context, request capabilities.Cap
 		config := &emptypb.Empty{}
 		wrapped := func(ctx context.Context, metadata capabilities.RequestMetadata, input *UnregisterLogTrackingRequest, _ *emptypb.Empty) (*emptypb.Empty, error) {
 			return c.ClientCapability.UnregisterLogTracking(ctx, metadata, input)
+		}
+		return capabilities.Execute(ctx, request, input, config, wrapped)
+	case "WriteReport":
+		input := &WriteReportRequest{}
+		config := &emptypb.Empty{}
+		wrapped := func(ctx context.Context, metadata capabilities.RequestMetadata, input *WriteReportRequest, _ *emptypb.Empty) (*WriteReportReply, error) {
+			return c.ClientCapability.WriteReport(ctx, metadata, input)
 		}
 		return capabilities.Execute(ctx, request, input, config, wrapped)
 	default:

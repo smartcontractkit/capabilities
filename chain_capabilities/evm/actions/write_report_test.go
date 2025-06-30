@@ -9,13 +9,17 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	_ "github.com/ethereum/go-ethereum/common"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/contracts"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/pb"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
+	"github.com/smartcontractkit/chainlink-evm/pkg/testutils"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
-	"github.com/smartcontractkit/chainlink-common/pkg/values/pb"
+	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 
 	"github.com/stretchr/testify/mock"
 
@@ -37,8 +41,8 @@ func TestWriteReport_InputValidation(t *testing.T) {
 	lggr := logger.Test(t)
 	t.Run("Invalid receiver address", func(t *testing.T) {
 		_, _, service := createMocksAndCapability(t, lggr)
-		_, err := service.WriteReport(ctx, capabilities.RequestMetadata{}, &evm.WriteReportRequest{
-			Report: &evm.SignedReport{
+		_, err := service.WriteReport(ctx, capabilities.RequestMetadata{}, &pb.WriteReportRequest{
+			Report: &pb.SignedReport{
 				RawReport:     []byte{},
 				ReportContext: []byte{},
 				Signatures:    generateRandomSignatures(),
@@ -50,9 +54,9 @@ func TestWriteReport_InputValidation(t *testing.T) {
 	})
 	t.Run("Invalid report metadata", func(t *testing.T) {
 		_, _, service := createMocksAndCapability(t, lggr)
-		_, err := service.WriteReport(ctx, capabilities.RequestMetadata{}, &evm.WriteReportRequest{
+		_, err := service.WriteReport(ctx, capabilities.RequestMetadata{}, &pb.WriteReportRequest{
 			Receiver: testutils.NewAddress().Bytes(),
-			Report: &evm.SignedReport{
+			Report: &pb.SignedReport{
 				RawReport:     []byte{},
 				ReportContext: []byte{},
 				Signatures:    generateRandomSignatures(),
@@ -66,9 +70,9 @@ func TestWriteReport_InputValidation(t *testing.T) {
 		_, _, service := createMocksAndCapability(t, lggr)
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
-		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
+		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &pb.WriteReportRequest{
 			Receiver: testutils.NewAddress().Bytes(),
-			Report: &evm.SignedReport{
+			Report: &pb.SignedReport{
 				RawReport:     encodedReportMetadata,
 				ReportContext: []byte{},
 				Signatures:    generateRandomSignatures(),
@@ -84,9 +88,9 @@ func TestWriteReport_InputValidation(t *testing.T) {
 
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
-		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
+		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &pb.WriteReportRequest{
 			Receiver: testutils.NewAddress().Bytes(),
-			Report: &evm.SignedReport{
+			Report: &pb.SignedReport{
 				RawReport:     encodedReportMetadata,
 				ReportContext: []byte{},
 				Signatures:    [][]byte{},
@@ -101,9 +105,9 @@ func TestWriteReport_InputValidation(t *testing.T) {
 		reportMetadata := createTestReportMetadata()
 		reportMetadata.Version = 20
 		encodedReportMetadata, _ := reportMetadata.Encode()
-		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
+		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &pb.WriteReportRequest{
 			Receiver: testutils.NewAddress().Bytes(),
-			Report: &evm.SignedReport{
+			Report: &pb.SignedReport{
 				RawReport:     encodedReportMetadata,
 				ReportContext: []byte{},
 				Signatures:    generateRandomSignatures(),
@@ -119,9 +123,9 @@ func TestWriteReport_InputValidation(t *testing.T) {
 		encodedReportMetadata, _ := reportMetadata.Encode()
 		workflowName := [10]byte(test.RandomBytes(10))
 		reportMetadata.WorkflowName = hex.EncodeToString(workflowName[:])
-		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
+		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &pb.WriteReportRequest{
 			Receiver: testutils.NewAddress().Bytes(),
-			Report: &evm.SignedReport{
+			Report: &pb.SignedReport{
 				RawReport:     encodedReportMetadata,
 				ReportContext: []byte{},
 				Signatures:    generateRandomSignatures(),
@@ -137,9 +141,9 @@ func TestWriteReport_InputValidation(t *testing.T) {
 		encodedReportMetadata, _ := reportMetadata.Encode()
 		workflowID := [32]byte(test.RandomBytes(32))
 		reportMetadata.WorkflowID = hex.EncodeToString(workflowID[:])
-		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
+		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &pb.WriteReportRequest{
 			Receiver: testutils.NewAddress().Bytes(),
-			Report: &evm.SignedReport{
+			Report: &pb.SignedReport{
 				RawReport:     encodedReportMetadata,
 				ReportContext: []byte{},
 				Signatures:    generateRandomSignatures(),
@@ -156,9 +160,9 @@ func TestWriteReport_InputValidation(t *testing.T) {
 		encodedReportMetadata, _ := reportMetadata.Encode()
 		workflowID := [32]byte(test.RandomBytes(32))
 		reportMetadata.ExecutionID = hex.EncodeToString(workflowID[:])
-		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
+		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &pb.WriteReportRequest{
 			Receiver: testutils.NewAddress().Bytes(),
-			Report: &evm.SignedReport{
+			Report: &pb.SignedReport{
 				RawReport:     encodedReportMetadata,
 				ReportContext: []byte{},
 				Signatures:    generateRandomSignatures(),
@@ -182,9 +186,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		mockForwarderClient.On("GetTransmissionInfo", ctx, mock.Anything).Return(contracts.TransmissionInfo{}, errors.New(expectedError))
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
-		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
+		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &pb.WriteReportRequest{
 			Receiver: testutils.NewAddress().Bytes(),
-			Report: &evm.SignedReport{
+			Report: &pb.SignedReport{
 				RawReport:     encodedReportMetadata,
 				ReportContext: []byte{},
 				Signatures:    generateRandomSignatures(),
@@ -200,9 +204,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		mockForwarderClient.On("GetTransmissionInfo", ctx, mock.Anything).Return(contracts.TransmissionInfo{}, errors.New(expectedError))
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
-		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
+		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &pb.WriteReportRequest{
 			Receiver: testutils.NewAddress().Bytes(),
-			Report: &evm.SignedReport{
+			Report: &pb.SignedReport{
 				RawReport:     encodedReportMetadata,
 				ReportContext: []byte{},
 				Signatures:    generateRandomSignatures(),
@@ -245,9 +249,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
-		txResult, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
+		txResult, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &pb.WriteReportRequest{
 			Receiver: testutils.NewAddress().Bytes(),
-			Report: &evm.SignedReport{
+			Report: &pb.SignedReport{
 				RawReport:     encodedReportMetadata,
 				ReportContext: []byte{},
 				Signatures:    generateRandomSignatures(),
@@ -255,11 +259,11 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			},
 		})
 		require.NoError(t, err)
-		equalWriteReportReply(t, &evm.WriteReportReply{
-			TxStatus:                        evmcappb.TxStatus_TX_SUCCESS,
+		equalWriteReportReply(t, &pb.WriteReportReply{
+			TxStatus:                        pb.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:                          receipt.TxHash[:],
-			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_SUCCESS.Enum(),
-			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
+			ReceiverContractExecutionStatus: pb.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS.Enum(),
+			TransactionFee:                  valuespb.NewBigIntFromInt(big.NewInt(2000)),
 		}, txResult)
 	})
 	t.Run("TX already transmitted successfully - Failed to fetch transmission details", func(t *testing.T) {
@@ -270,9 +274,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
-		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
+		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &pb.WriteReportRequest{
 			Receiver: testutils.NewAddress().Bytes(),
-			Report: &evm.SignedReport{
+			Report: &pb.SignedReport{
 				RawReport:     encodedReportMetadata,
 				ReportContext: []byte{},
 				Signatures:    generateRandomSignatures(),
@@ -295,9 +299,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
-		txResult, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
+		txResult, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &pb.WriteReportRequest{
 			Receiver: testutils.NewAddress().Bytes(),
-			Report: &evm.SignedReport{
+			Report: &pb.SignedReport{
 				RawReport:     encodedReportMetadata,
 				ReportContext: []byte{},
 				Signatures:    generateRandomSignatures(),
@@ -305,8 +309,8 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			},
 		})
 		require.NoError(t, err)
-		equalWriteReportReply(t, &evm.WriteReportReply{
-			TxStatus:     evmcappb.TxStatus_TX_FATAL,
+		equalWriteReportReply(t, &pb.WriteReportReply{
+			TxStatus:     pb.TxStatus_TX_STATUS_FATAL,
 			ErrorMessage: ptr(getInvalidStateErrorMessage(invalidState)),
 		}, txResult)
 	})
@@ -325,9 +329,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
-		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
+		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &pb.WriteReportRequest{
 			Receiver: testutils.NewAddress().Bytes(),
-			Report: &evm.SignedReport{
+			Report: &pb.SignedReport{
 				RawReport:     encodedReportMetadata,
 				ReportContext: []byte{},
 				Signatures:    generateRandomSignatures(),
@@ -359,9 +363,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
-		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
+		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &pb.WriteReportRequest{
 			Receiver: testutils.NewAddress().Bytes(),
-			Report: &evm.SignedReport{
+			Report: &pb.SignedReport{
 				RawReport:     encodedReportMetadata,
 				ReportContext: []byte{},
 				Signatures:    generateRandomSignatures(),
@@ -403,9 +407,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
-		txResult, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
+		txResult, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &pb.WriteReportRequest{
 			Receiver: testutils.NewAddress().Bytes(),
-			Report: &evm.SignedReport{
+			Report: &pb.SignedReport{
 				RawReport:     encodedReportMetadata,
 				ReportContext: []byte{},
 				Signatures:    generateRandomSignatures(),
@@ -413,11 +417,11 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			},
 		})
 		require.NoError(t, err)
-		equalWriteReportReply(t, &evm.WriteReportReply{
-			TxStatus:                        evmcappb.TxStatus_TX_SUCCESS,
+		equalWriteReportReply(t, &pb.WriteReportReply{
+			TxStatus:                        pb.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:                          receipt.TxHash[:],
-			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_REVERTED.Enum().Enum(),
-			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
+			ReceiverContractExecutionStatus: pb.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum().Enum(),
+			TransactionFee:                  valuespb.NewBigIntFromInt(big.NewInt(2000)),
 		}, txResult)
 	})
 	t.Run("TX already transmitted successfully - Receiver contract reverted - not enough gas", func(t *testing.T) {
@@ -426,13 +430,13 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		receiverAddress := testutils.NewAddress()
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
-		signedReport := &evm.SignedReport{
+		signedReport := &pb.SignedReport{
 			RawReport:     encodedReportMetadata,
 			ReportContext: []byte{},
 			Signatures:    generateRandomSignatures(),
 			Id:            []byte(reportMetadata.ReportID),
 		}
-		writeReportRequest := &evm.WriteReportRequest{
+		writeReportRequest := &pb.WriteReportRequest{
 			Receiver: receiverAddress.Bytes(),
 			Report:   signedReport,
 		}
@@ -477,11 +481,11 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 
 		txResult, err := service.WriteReport(ctx, capabilitiesMetadata, writeReportRequest)
 		require.NoError(t, err)
-		equalWriteReportReply(t, &evm.WriteReportReply{
-			TxStatus:                        evmcappb.TxStatus_TX_SUCCESS,
+		equalWriteReportReply(t, &pb.WriteReportReply{
+			TxStatus:                        pb.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:                          retryReceipt.TxHash[:],
-			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_SUCCESS.Enum(),
-			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(retryTxFee)),
+			ReceiverContractExecutionStatus: pb.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS.Enum(),
+			TransactionFee:                  valuespb.NewBigIntFromInt(big.NewInt(retryTxFee)),
 		}, txResult)
 	})
 	t.Run("TX already transmitted successfully - Invalid receiver", func(t *testing.T) {
@@ -517,9 +521,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
 		receiver := testutils.NewAddress().Bytes()
-		txResult, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
+		txResult, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &pb.WriteReportRequest{
 			Receiver: receiver,
-			Report: &evm.SignedReport{
+			Report: &pb.SignedReport{
 				RawReport:     encodedReportMetadata,
 				ReportContext: []byte{},
 				Signatures:    generateRandomSignatures(),
@@ -527,11 +531,11 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			},
 		})
 		require.NoError(t, err)
-		equalWriteReportReply(t, &evm.WriteReportReply{
-			TxStatus:                        evmcappb.TxStatus_TX_SUCCESS,
+		equalWriteReportReply(t, &pb.WriteReportReply{
+			TxStatus:                        pb.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:                          receipt.TxHash[:],
-			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_REVERTED.Enum().Enum(),
-			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
+			ReceiverContractExecutionStatus: pb.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum().Enum(),
+			TransactionFee:                  valuespb.NewBigIntFromInt(big.NewInt(2000)),
 			ErrorMessage:                    getInvalidReceiverMessage(receiver),
 		}, txResult)
 	})
@@ -541,13 +545,13 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		receiverAddress := testutils.NewAddress()
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
-		signedReport := &evm.SignedReport{
+		signedReport := &pb.SignedReport{
 			RawReport:     encodedReportMetadata,
 			ReportContext: []byte{},
 			Signatures:    generateRandomSignatures(),
 			Id:            []byte(reportMetadata.ReportID),
 		}
-		writeReportRequest := &evm.WriteReportRequest{
+		writeReportRequest := &pb.WriteReportRequest{
 			Receiver: receiverAddress.Bytes(),
 			Report:   signedReport,
 		}
@@ -589,11 +593,11 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 
 		txResult, err := service.WriteReport(ctx, capabilitiesMetadata, writeReportRequest)
 		require.NoError(t, err)
-		equalWriteReportReply(t, &evm.WriteReportReply{
-			TxStatus:                        evmcappb.TxStatus_TX_SUCCESS,
+		equalWriteReportReply(t, &pb.WriteReportReply{
+			TxStatus:                        pb.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:                          receipt.TxHash[:],
-			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_SUCCESS.Enum(),
-			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(retryTxFee)),
+			ReceiverContractExecutionStatus: pb.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS.Enum(),
+			TransactionFee:                  valuespb.NewBigIntFromInt(big.NewInt(retryTxFee)),
 		}, txResult)
 	})
 	t.Run("TX first transmission - Error submitting TX", func(t *testing.T) {
@@ -602,13 +606,13 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		receiverAddress := testutils.NewAddress()
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
-		signedReport := &evm.SignedReport{
+		signedReport := &pb.SignedReport{
 			RawReport:     encodedReportMetadata,
 			ReportContext: []byte{},
 			Signatures:    generateRandomSignatures(),
 			Id:            []byte(reportMetadata.ReportID),
 		}
-		writeReportRequest := &evm.WriteReportRequest{
+		writeReportRequest := &pb.WriteReportRequest{
 			Receiver: receiverAddress.Bytes(),
 			Report:   signedReport,
 		}
@@ -625,8 +629,8 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 
 		txResult, err := service.WriteReport(ctx, capabilitiesMetadata, writeReportRequest)
 		require.NoError(t, err)
-		equalWriteReportReply(t, &evm.WriteReportReply{
-			TxStatus:     evmcappb.TxStatus_TX_FATAL,
+		equalWriteReportReply(t, &pb.WriteReportReply{
+			TxStatus:     pb.TxStatus_TX_STATUS_FATAL,
 			ErrorMessage: &expectedError,
 		}, txResult)
 	})
@@ -635,13 +639,13 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		receiverAddress := testutils.NewAddress()
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
-		signedReport := &evm.SignedReport{
+		signedReport := &pb.SignedReport{
 			RawReport:     encodedReportMetadata,
 			ReportContext: []byte{},
 			Signatures:    generateRandomSignatures(),
 			Id:            []byte(reportMetadata.ReportID),
 		}
-		writeReportRequest := &evm.WriteReportRequest{
+		writeReportRequest := &pb.WriteReportRequest{
 			Receiver: receiverAddress.Bytes(),
 			Report:   signedReport,
 		}
@@ -682,11 +686,11 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 
 		txResult, err := service.WriteReport(ctx, capabilitiesMetadata, writeReportRequest)
 		require.NoError(t, err)
-		equalWriteReportReply(t, &evm.WriteReportReply{
-			TxStatus:                        evmcappb.TxStatus_TX_SUCCESS,
+		equalWriteReportReply(t, &pb.WriteReportReply{
+			TxStatus:                        pb.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:                          receipt.TxHash[:],
-			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_REVERTED.Enum(),
-			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(retryTxFee)),
+			ReceiverContractExecutionStatus: pb.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(),
+			TransactionFee:                  valuespb.NewBigIntFromInt(big.NewInt(retryTxFee)),
 			ErrorMessage:                    ptr(UnknownIssueExecutingReceiverContractMessage),
 		}, txResult)
 	})
@@ -697,13 +701,13 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		receiverAddress := testutils.NewAddress()
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
-		signedReport := &evm.SignedReport{
+		signedReport := &pb.SignedReport{
 			RawReport:     encodedReportMetadata,
 			ReportContext: []byte{},
 			Signatures:    generateRandomSignatures(),
 			Id:            []byte(reportMetadata.ReportID[:]),
 		}
-		writeReportRequest := &evm.WriteReportRequest{
+		writeReportRequest := &pb.WriteReportRequest{
 			Receiver: receiverAddress.Bytes(),
 			Report:   signedReport,
 		}
@@ -745,11 +749,11 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 
 		txResult, err := service.WriteReport(ctx, capabilitiesMetadata, writeReportRequest)
 		require.NoError(t, err)
-		equalWriteReportReply(t, &evm.WriteReportReply{
-			TxStatus:                        evmcappb.TxStatus_TX_SUCCESS,
+		equalWriteReportReply(t, &pb.WriteReportReply{
+			TxStatus:                        pb.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:                          receipt.TxHash[:],
-			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_REVERTED.Enum(),
-			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(retryTxFee)),
+			ReceiverContractExecutionStatus: pb.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(),
+			TransactionFee:                  valuespb.NewBigIntFromInt(big.NewInt(retryTxFee)),
 			ErrorMessage:                    getInvalidReceiverMessage(receiverAddress[:]),
 		}, txResult)
 	})
@@ -767,9 +771,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
-		txResult, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
+		txResult, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &pb.WriteReportRequest{
 			Receiver: testutils.NewAddress().Bytes(),
-			Report: &evm.SignedReport{
+			Report: &pb.SignedReport{
 				RawReport:     encodedReportMetadata,
 				ReportContext: []byte{},
 				Signatures:    generateRandomSignatures(),
@@ -777,8 +781,8 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			},
 		})
 		require.NoError(t, err)
-		equalWriteReportReply(t, &evm.WriteReportReply{
-			TxStatus:     evmcappb.TxStatus_TX_FATAL,
+		equalWriteReportReply(t, &pb.WriteReportReply{
+			TxStatus:     pb.TxStatus_TX_STATUS_FATAL,
 			ErrorMessage: ptr(getInvalidStateErrorMessage(invalidState)),
 		}, txResult)
 	})
@@ -804,7 +808,7 @@ func createMocksAndCapability(t *testing.T, lggr logger.Logger) (*mocks2.EVMServ
 	return mockEVMService, mockForwarderClient, &service
 }
 
-func equalWriteReportReply(t *testing.T, expected *evm.WriteReportReply, actual *evm.WriteReportReply) {
+func equalWriteReportReply(t *testing.T, expected *pb.WriteReportReply, actual *pb.WriteReportReply) {
 	require.Equal(t, expected.TxStatus.Enum(), actual.TxStatus.Enum())
 	require.Equal(t, expected.TxHash, actual.TxHash)
 	require.Equal(t, expected.TransactionFee, actual.TransactionFee)

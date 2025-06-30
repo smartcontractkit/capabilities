@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/smartcontractkit/chain_capabilities/evm/pb"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/pb"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/trigger"
 

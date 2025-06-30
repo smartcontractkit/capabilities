@@ -6,8 +6,8 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/smartcontractkit/chain_capabilities/evm/actions"
-	"github.com/smartcontractkit/chain_capabilities/evm/pb"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/pb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
