@@ -204,7 +204,7 @@ func TestProcessTrigger_MissingWorkflowID(t *testing.T) {
 	require.True(t, connector.SendToGatewayCalled, "Should send error response")
 	resp := connector.SendToGatewayArgs.Msg
 	require.Len(t, triggerCh, 0, "trigger channel should not receive any messages")
-	assertErrorResponse(t, connector, resp, ErrInvalidParams)
+	assertErrorResponse(t, connector, resp, jsonrpc.ErrInvalidParams)
 	var triggerResp gateway_common.HTTPTriggerResponse
 	require.Nil(t, resp.Result, "Result should be nil in error response")
 	require.Empty(t, triggerResp.WorkflowID, "WorkflowID should be empty in error response")
@@ -251,7 +251,7 @@ func TestProcessTrigger_UnregisteredWorkflow(t *testing.T) {
 	// Verify error response
 	resp := connector.SendToGatewayArgs.Msg
 	require.Len(t, triggerCh, 0, "trigger channel should not receive any messages")
-	assertErrorResponse(t, connector, resp, ErrInvalidRequest)
+	assertErrorResponse(t, connector, resp, jsonrpc.ErrInvalidRequest)
 	require.Nil(t, resp.Result, "Result should be nil in error response")
 	require.Equal(t, req.ID, resp.ID)
 }
