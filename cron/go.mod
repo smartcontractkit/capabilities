@@ -7,8 +7,10 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jonboulle/clockwork v0.4.0
 	github.com/prometheus/client_golang v1.21.1
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20250613213914-93a34678e8e2
-	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250623175819-a17cdfe27dfd
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20250630163247-7c69f68d6902
+	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250630152507-b3f7d7b037a4
+	github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/protoc/installer v0.0.0-20250630152507-b3f7d7b037a4
+	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250626192802-ba22aca9d350
 	github.com/stretchr/testify v1.10.0
 	google.golang.org/protobuf v1.36.6
 )
@@ -31,7 +33,7 @@ require (
 	github.com/go-playground/locales v0.13.0 // indirect
 	github.com/go-playground/universal-translator v0.17.0 // indirect
 	github.com/go-playground/validator/v10 v10.4.1 // indirect
-	github.com/go-viper/mapstructure/v2 v2.2.1 // indirect
+	github.com/go-viper/mapstructure/v2 v2.3.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus v1.0.1 // indirect

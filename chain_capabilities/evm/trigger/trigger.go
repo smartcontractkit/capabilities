@@ -59,7 +59,7 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 	return lts
 }
 
-func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID string, _ capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*evmservice.Log], error) {
+func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID string, _ capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*evmcappb.Log], error) {
 	if triggerID == "" {
 		return nil, fmt.Errorf("no triggerID provided")
 	}
@@ -97,7 +97,7 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	}
 	expressions, confidence := lts.createLogRequest(ctx, input.GetAddresses(), eventSigs, topics2, topics3, topics4, input.GetConfidence())
 
-	logCh := make(chan capabilities.TriggerAndId[*evmservice.Log], defaultSendChannelBufferSize)
+	logCh := make(chan capabilities.TriggerAndId[*evmcappb.Log], defaultSendChannelBufferSize)
 	lts.srvcEng.Go(func(srvcCtx context.Context) {
 		subCtx, cancel := context.WithCancel(srvcCtx)
 		lts.triggers.Write(triggerID, logTriggerState{
@@ -143,7 +143,7 @@ func (lts *LogTriggerService) generateFilterID(triggerID string) string {
 	return triggerID + suffixLogTriggerFilterID
 }
 
-func (lts *LogTriggerService) startPolling(ctx context.Context, triggerID string, logCh chan capabilities.TriggerAndId[*evmservice.Log]) {
+func (lts *LogTriggerService) startPolling(ctx context.Context, triggerID string, logCh chan capabilities.TriggerAndId[*evmcappb.Log]) {
 	lts.lggr.Debugf("Starting polling for triggerID: %s, interval: %d", triggerID, lts.logTriggerPollInterval)
 	ticker := defaultTickerFactory.NewTicker(lts.logTriggerPollInterval)
 	defer ticker.Stop()
@@ -199,7 +199,7 @@ func (lts *LogTriggerService) sendLogsToWorkflows(logs []*evmtypes.Log,
 	finalizedBlockNumber *big.Int,
 	triggerID string,
 	trigger logTriggerState,
-	logCh chan capabilities.TriggerAndId[*evmservice.Log]) error {
+	logCh chan capabilities.TriggerAndId[*evmcappb.Log]) error {
 	lts.lggr.Debugf("Got %d logs, sending them to the workflow trigger ID: %s", len(logs), triggerID)
 	var needsUpdate bool
 
@@ -209,10 +209,9 @@ func (lts *LogTriggerService) sendLogsToWorkflows(logs []*evmtypes.Log,
 		lts.lggr.Debugf("Working with logId: %s, alreadySent: %t", logID, alreadySent)
 
 		if !alreadySent {
-			protoLog := evmservice.ConvertLogToProto(log)
-			response := capabilities.TriggerAndId[*evmservice.Log]{
+			response := capabilities.TriggerAndId[*evmcappb.Log]{
 				Id:      lts.generateLogIdentifier(log),
-				Trigger: protoLog,
+				Trigger: evmcappb.ConvertLogToProto(log),
 			}
 			lts.lggr.Debugf("Sending log event for triggerID: %s, block number: %d, eventID: %s", triggerID, log.BlockNumber, response.Id)
 

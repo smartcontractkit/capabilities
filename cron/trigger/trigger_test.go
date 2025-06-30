@@ -10,14 +10,13 @@ import (
 	"time"
 
 	"github.com/jonboulle/clockwork"
+	"github.com/smartcontractkit/capabilities/cron/pb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/triggers/cron"
-	crontypedapi "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 )
@@ -66,7 +65,7 @@ func registerTriggerToCronTriggerService(
 	}
 
 	if useTypedAPI {
-		payload, err := anypb.New(&crontypedapi.Config{Schedule: schedule})
+		payload, err := anypb.New(&pb.Config{Schedule: schedule})
 		require.NoError(t, err)
 
 		request := capabilities.TriggerRegistrationRequest{
@@ -99,11 +98,11 @@ func upwrapCronTriggerEvent(t *testing.T, event capabilities.TriggerEvent,
 	useTypedAPI bool) Response {
 	response := Response{}
 	response.TriggerType = event.TriggerType
-	assert.Equal(t, server.CronID, response.TriggerType)
+	assert.Equal(t, pb.CronID, response.TriggerType)
 	response.ID = event.ID
 
 	if useTypedAPI {
-		payload := &crontypedapi.LegacyPayload{} //nolint:staticcheck
+		payload := &pb.LegacyPayload{} //nolint:staticcheck
 		err := event.Payload.UnmarshalTo(payload)
 		require.NoError(t, err)
 		response.Payload = cron.Payload{ScheduledExecutionTime: payload.ScheduledExecutionTime}
@@ -247,7 +246,7 @@ func successWithStandardCronIntervals(t *testing.T, useTypedAPI bool) {
 			err = ts.Initialise(t.Context(), string(config), nil, nil, nil, nil, nil, nil, nil)
 			require.NoError(t, err)
 
-			triggerAPI := server.NewCronServer(ts)
+			triggerAPI := pb.NewCronServer(ts)
 
 			// Register trigger
 			callback, registerUnregisterRequest, err := registerTriggerToCronTriggerService(
@@ -322,7 +321,7 @@ func TestCronTrigger_Load(t *testing.T) {
 
 	ts := NewTriggerService(logger.Nop(), fakeClock)
 
-	triggerAPI := server.NewCronServer(ts)
+	triggerAPI := pb.NewCronServer(ts)
 
 	ctx := t.Context()
 
@@ -445,7 +444,7 @@ func testCronTriggerRegisterTriggerBeforeStart(t *testing.T, useTypedAPI bool) {
 	require.NoError(t, err)
 	ts := NewTriggerService(logger.Nop(), fakeClock)
 
-	triggerAPI := server.NewCronServer(ts)
+	triggerAPI := pb.NewCronServer(ts)
 
 	ctx := t.Context()
 
@@ -516,7 +515,7 @@ func testCronTriggerTimeWindows(t *testing.T, useTypedAPI bool) {
 	config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
 	require.NoError(t, err)
 	ts := NewTriggerService(logger.Nop(), fakeClock)
-	triggerAPI := server.NewCronServer(ts)
+	triggerAPI := pb.NewCronServer(ts)
 
 	ctx := t.Context()
 
@@ -591,7 +590,7 @@ func testCronTriggerMultipleDifferentSchedules(t *testing.T, useTypedAPI bool) {
 	config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
 	require.NoError(t, err)
 	ts := NewTriggerService(logger.Nop(), fakeClock)
-	triggerAPI := server.NewCronServer(ts)
+	triggerAPI := pb.NewCronServer(ts)
 	ctx := t.Context()
 
 	callback1, registerUnregisterRequest1, err := registerTriggerToCronTriggerService(
@@ -713,7 +712,7 @@ func testCronTriggerTimeZone(t *testing.T, useTypedAPI bool) {
 	config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
 	require.NoError(t, err)
 	ts := NewTriggerService(logger.Nop(), fakeClock)
-	triggerAPI := server.NewCronServer(ts)
+	triggerAPI := pb.NewCronServer(ts)
 	ctx := t.Context()
 
 	// Register trigger
@@ -823,7 +822,7 @@ func testCronTriggerRegisterTrigger(t *testing.T, useTypedAPI bool) {
 			ts := NewTriggerService(logger.Nop(), fakeClock)
 			err := ts.Initialise(t.Context(), "", nil, nil, nil, nil, nil, nil, nil)
 			require.NoError(t, err)
-			triggerAPI := server.NewCronServer(ts)
+			triggerAPI := pb.NewCronServer(ts)
 			ctx := t.Context()
 			_, _, err = registerTriggerToCronTriggerService(
 				ctx,
@@ -855,7 +854,7 @@ func TestCronTrigger_RegisterTriggerDuplicateError(t *testing.T) {
 	ts := NewTriggerService(logger.Nop(), fakeClock)
 	err = ts.Initialise(t.Context(), string(triggerConfig), nil, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
-	triggerAPI := server.NewCronServer(ts)
+	triggerAPI := pb.NewCronServer(ts)
 
 	ctx := t.Context()
 
@@ -887,7 +886,7 @@ func TestCronTrigger_UnregisterTriggerError(t *testing.T) {
 	ts := NewTriggerService(logger.Nop(), fakeClock)
 	err = ts.Initialise(t.Context(), string(triggerConfig), nil, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
-	triggerAPI := server.NewCronServer(ts)
+	triggerAPI := pb.NewCronServer(ts)
 
 	t.Run("OK if trigger not found", func(t *testing.T) {
 		ctx := t.Context()
@@ -964,7 +963,7 @@ func TestCronTrigger_UnregisterTriggerError(t *testing.T) {
 		err = ts.Initialise(t.Context(), string(triggerConfig), nil, nil, nil, nil, nil, nil, nil)
 		require.NoError(t, err)
 
-		triggerAPI := server.NewCronServer(ts)
+		triggerAPI := pb.NewCronServer(ts)
 		ctx := t.Context()
 
 		config, err := values.NewMap(map[string]interface{}{
