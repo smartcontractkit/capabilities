@@ -29,11 +29,18 @@ type ServiceConfig struct {
 	OutgoingRateLimiter ratelimit.RateLimiterConfig `toml:"outgoingRateLimiter" json:"outgoingRateLimiter" yaml:"outgoingRateLimiter" mapstructure:"outgoingRateLimiter"`
 }
 
+type ConnectorHandler interface {
+	Start(ctx context.Context) error
+	Close() error
+	RegisterWorkflow(ctx context.Context, workflowID string, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error
+	UnregisterWorkflow(ctx context.Context, workflowID string) error
+}
+
 type service struct {
 	services.StateMachine
 	lggr             logger.SugaredLogger
 	cfg              ServiceConfig
-	connectorHandler *connectorHandler
+	connectorHandler ConnectorHandler
 }
 
 func NewService(lggr logger.Logger) *service {
@@ -116,5 +123,5 @@ func (s *service) UnregisterTrigger(ctx context.Context, triggerID string, metad
 	if err != nil {
 		s.lggr.Errorf("Failed to unregister workflow %s: %v", metadata.WorkflowID, err)
 	}
-	return nil
+	return err
 }
