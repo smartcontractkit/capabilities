@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 
@@ -18,7 +19,7 @@ import (
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/contracts"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 )
 
 const (
@@ -29,27 +30,6 @@ const (
 )
 
 const UnknownIssueExecutingReceiverContractMessage = "unknown issue execution receiver contract"
-
-// TODO from chainlink/core/platform - we should have this in common
-// Observability keys
-const (
-	KeyCapabilityID        = "capabilityID"
-	KeyTriggerID           = "triggerID"
-	KeyWorkflowID          = "workflowID"
-	KeyWorkflowExecutionID = "workflowExecutionID"
-	KeyWorkflowName        = "workflowName"
-	KeyWorkflowVersion     = "workflowVersion"
-	KeyWorkflowOwner       = "workflowOwner"
-	KeyStepID              = "stepID"
-	KeyStepRef             = "stepRef"
-	KeyDonID               = "DonID"
-	KeyDonF                = "F"
-	KeyDonN                = "N"
-	KeyDonQ                = "Q"
-	KeyP2PID               = "p2pID"
-	ValueWorkflowVersion   = "1.0.0"
-	ValueWorkflowVersionV2 = "2.0.0"
-)
 
 func decodeReportMetadata(data []byte) (ocrtypes.Metadata, error) {
 	metadata, _, err := ocrtypes.Decode(data)
@@ -70,14 +50,15 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 		return nil, err
 	}
 
-	// Check whether value was already transmitted on chain
-	transmissionInfo, err := e.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
+	var transmissionInfo contracts.TransmissionInfo
+	transmissionInfo, err = e.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
 	if err != nil {
 		return nil, err
 	}
 
 	txHashRetriever := NewTxHashRetriever(e.forwarderClient, e.lggr, transmissionID)
 
+	fmt.Printf(">>>>> Transamisson State: %d", transmissionInfo.State)
 	switch transmissionInfo.State {
 	case TransmissionStateNotAttempted:
 		e.lggr.Infow("transmission not attempted - attempting to push to txmgr", "request", request, "reportLen", len(request.Report.RawReport), "reportContextLen", len(request.Report.ReportContext), "nSignatures", len(request.Report.Signatures), "executionID", metadata.WorkflowExecutionID)
@@ -89,10 +70,12 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 		}
 		return e.fetchTransactionReceiptAndCreateReply(ctx, *txHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS, nil)
 	case TransmissionStateInvalidReceiver:
+		e.lggr.Infow("transmission already done by another node but failed due to invalid receiver, not reattempting")
 		txHash, err := txHashRetriever.GetHash(ctx)
 		if err != nil {
 			return nil, err
 		}
+		fmt.Printf(">>>>> Transamisson State invalid receiver, found TX Hash: %x", *txHash)
 		return e.processUnrecoverableTxState(ctx, request, metadata, *txHash, transmissionInfo, transmissionID, true)
 	case TransmissionStateFailed:
 		receiverGasMinimum := e.ReceiverGasMinimum
@@ -113,7 +96,6 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 	}
 
 	e.lggr.Debugw("Submitting transaction for report", "request", request)
-
 	transactionResult, err := e.forwarderClient.InvokeOnReport(ctx, transmissionID.Receiver, request.Report, request.GasConfig)
 	if err != nil {
 		e.lggr.Error("Transaction failed", "request", request)
@@ -135,9 +117,17 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 	}
 
 	// PLEX-1524 - improve this since it may be using an RPC that's lagging related to the one that submitted the TX.
-	transmissionInfo, err = e.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
-	if err != nil {
-		return nil, err
+	// Check whether value was already transmitted on chain
+	var readTransmissionErr error
+	for i := 0; i <= 10; i++ {
+		transmissionInfo, readTransmissionErr = e.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
+		if readTransmissionErr == nil && transmissionInfo.State != TransmissionStateNotAttempted {
+			break
+		}
+		time.Sleep(time.Second)
+	}
+	if readTransmissionErr != nil {
+		return nil, readTransmissionErr
 	}
 
 	txHashRetriever.Reset()
@@ -251,7 +241,7 @@ func validateInputsAndReportMetadata(requestMetadata capabilities.RequestMetadat
 		return errors.New("nil SignedReport in WriteReportRequest")
 	}
 	if len(request.Receiver) != common.AddressLength {
-		return fmt.Errorf("received address is not 20 bytes long. Address in HEX: %s", hex.EncodeToString(request.Receiver))
+		return fmt.Errorf("received address is not 40 bytes long. Address in HEX: %s", hex.EncodeToString(request.Receiver))
 	}
 	if len(request.Report.Signatures) == 0 {
 		return fmt.Errorf("no signatures provided")
@@ -275,11 +265,8 @@ func validateInputsAndReportMetadata(requestMetadata capabilities.RequestMetadat
 		return fmt.Errorf("workflowOwner in the report does not match WorkflowOwner in the request metadata. Report WorkflowOwner: %+v, request WorkflowOwner: %+v", reportMetadata.WorkflowOwner, requestMetadata.WorkflowOwner)
 	}
 
-	// workflowNames are padded to 10bytes
+	//	workflowNames are padded to 10bytes
 	decodedName := []byte(requestMetadata.WorkflowName)
-	if err != nil {
-		return err
-	}
 	var workflowName [20]byte
 	copy(workflowName[:], decodedName)
 	if !bytes.Equal([]byte(reportMetadata.WorkflowName[:]), workflowName[:]) {
@@ -290,7 +277,8 @@ func validateInputsAndReportMetadata(requestMetadata capabilities.RequestMetadat
 		return fmt.Errorf("workflowID in the report does not match WorkflowID in the request metadata. Report WorkflowID: %+v, request WorkflowID: %+v", reportMetadata.WorkflowID, requestMetadata.WorkflowID)
 	}
 
-	if !bytes.Equal([]byte(reportMetadata.ReportID), request.Report.Id) {
+	hexEncodedReportID := hex.EncodeToString(request.Report.Id)
+	if reportMetadata.ReportID != hexEncodedReportID {
 		return fmt.Errorf("reportID in the report does not match ReportID in the inputs. reportMetadata.ReportID: %x, Inputs.SignedReport.ID: %x", reportMetadata.ReportID, request.Report.Id)
 	}
 
@@ -331,7 +319,8 @@ func (thr *TxHashRetriever) GetHash(ctx context.Context) (*evmtypes.Hash, error)
 	}
 	if len(logs) == 0 {
 		thr.lggr.Debugw("no log associated to report transmission found", thr.transmissionID.GetIDPartsForDebugging()...)
-		return nil, nil
+		// return nil, nil
+		return nil, fmt.Errorf("No log found but a log was executed for transmission ID: %+v", thr.transmissionID)
 	}
 	thr.txHash = &logs[0].TxHash
 	return thr.txHash, nil

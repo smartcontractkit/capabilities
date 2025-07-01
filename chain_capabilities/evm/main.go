@@ -12,6 +12,7 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/poller"
 
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
 
@@ -110,7 +111,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
 
-	if len(common.Hex2Bytes(cfg.CREForwarderAddress)) != 20 {
+	if len(removeAddressPrefix(cfg.CREForwarderAddress)) != 2*common.AddressLength {
 		return fmt.Errorf("invalid cre forward address, it does not have 20 characters: %s", cfg.CREForwarderAddress)
 	}
 
@@ -155,6 +156,13 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 
 	c.lggr.Infof("Successfully initialised %s", CapabilityName)
 	return nil
+}
+
+func removeAddressPrefix(s string) string {
+	if strings.HasPrefix(s, "0x") || strings.HasPrefix(s, "0X") {
+		return s[2:]
+	}
+	return s
 }
 
 func (c *capabilityGRPCService) Start(_ context.Context) error {

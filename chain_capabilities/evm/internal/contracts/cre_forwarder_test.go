@@ -19,7 +19,7 @@ import (
 	mocks2 "github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	"github.com/smartcontractkit/chainlink-evm/gethwrappers/keystone/generated/forwarder"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/contracts"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
 )
 
@@ -38,6 +38,7 @@ func TestCREForwarderClient_GetTransmissionInfo(t *testing.T) {
 
 	t.Run("Get Transmission info - Successfully get transmission info", func(t *testing.T) {
 		mockEVMService := mocks2.NewEVMService(t)
+		mockEVMService.EXPECT().LatestAndFinalizedHead(mock.Anything).Return(evmtypes.Head{Number: big.NewInt(100)}, evmtypes.Head{Number: big.NewInt(200)}, nil).Maybe()
 		forwarderClient, _ := contracts.NewCREForwarderClient(mockEVMService, forwarderAddress, testLogger)
 
 		expectedTransmissionInfo := contracts.TransmissionInfo{
@@ -122,6 +123,7 @@ func TestCREForwarderClient_GetReportProcessedEvents(t *testing.T) {
 
 	t.Run("Get Transmission info - Successfully get transmission info", func(t *testing.T) {
 		mockEVMService := mocks2.NewEVMService(t)
+		mockEVMService.EXPECT().LatestAndFinalizedHead(mock.Anything).Return(evmtypes.Head{Number: big.NewInt(100)}, evmtypes.Head{Number: big.NewInt(200)}, nil).Maybe()
 		forwarderClient, _ := contracts.NewCREForwarderClient(mockEVMService, forwarderAddress, testLogger)
 		mockLogs := []*evm.Log{{
 			TxHash: expectedHash,
@@ -135,6 +137,7 @@ func TestCREForwarderClient_GetReportProcessedEvents(t *testing.T) {
 	})
 	t.Run("Get Transmission info - Error calling FilterLogs", func(t *testing.T) {
 		mockEVMService := mocks2.NewEVMService(t)
+		mockEVMService.EXPECT().LatestAndFinalizedHead(mock.Anything).Return(evmtypes.Head{Number: big.NewInt(100)}, evmtypes.Head{Number: big.NewInt(200)}, nil).Maybe()
 		forwarderClient, _ := contracts.NewCREForwarderClient(mockEVMService, forwarderAddress, testLogger)
 		expectedError := "fail calling EVM FilterLogs"
 		mockEVMService.EXPECT().FilterLogs(ctx, mock.Anything).Return(nil, errors.New(expectedError))
