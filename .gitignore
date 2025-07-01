@@ -41,3 +41,7 @@ bin
 .nx/installation
 .nx/cache
 .nx/workspace-data
+
+# Used for changesets
+node_modules
+
