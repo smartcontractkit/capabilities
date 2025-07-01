@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/list"
@@ -24,7 +25,7 @@ type Reader struct {
 
 	lggr     logger.SugaredLogger
 	lock     sync.RWMutex
-	requests *priorityQueue
+	requests *requests.Store[*requestCtx]
 	poller   Poller
 
 	unknownRequestsResultByID       map[string]*unknownRequest
@@ -34,7 +35,7 @@ type Reader struct {
 
 func NewReader(lggr logger.Logger, poller Poller, unknownRequestTTL time.Duration) *Reader {
 	r := &Reader{
-		requests:                        newPriorityQueue(),
+		requests:                        requests.NewStore[*requestCtx](),
 		unknownRequestsResultByID:       make(map[string]*unknownRequest),
 		unknownRequestsOrderedByTimeout: list.New[*unknownRequest](),
 		unknownRequestTTL:               unknownRequestTTL,
@@ -63,7 +64,20 @@ type requestCtx struct {
 	Ctx        context.Context
 	Cancel     context.CancelFunc
 	ResultChan chan []byte
-	Attempt    int
+}
+
+func (r *requestCtx) ID() string {
+	return r.Request.ID()
+}
+
+func (r *requestCtx) Copy() *requestCtx {
+	return &requestCtx{
+		Request: r.Request.Copy(),
+		// explicitly not copying as usage is thread safe
+		Ctx:        r.Ctx,
+		Cancel:     r.Cancel,
+		ResultChan: r.ResultChan,
+	}
 }
 
 func (s *Reader) start(Ctx context.Context) error {
@@ -73,37 +87,28 @@ func (s *Reader) start(Ctx context.Context) error {
 
 // GetRequestIDs - returns `limit` of request IDs in ascending order by number of attempts. Requests remain in the queue.
 func (s *Reader) GetRequestIDs(limit int) ([]string, error) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
+	request, err := s.requests.FirstN(limit)
+	if err != nil {
+		return nil, err
+	}
 	requestIDs := make([]string, 0, limit)
-	requests := make([]*requestCtx, 0, limit)
-	for len(requestIDs) < limit && s.requests.Len() > 0 {
-		request := s.requests.Pop()
-		if request.Ctx.Err() != nil {
+	for _, r := range request {
+		if r.Ctx.Err() != nil {
+			s.requests.Evict(r.ID())
 			continue
 		}
-		requestIDs = append(requestIDs, request.ID())
-		requests = append(requests, request)
-	}
-
-	// add requests back to the queue, as we can remove them only once they are fully processed
-	for _, request := range requests {
-		s.requests.Push(request)
+		requestIDs = append(requestIDs, r.ID())
 	}
 
 	return requestIDs, nil
 }
 
-func (s *Reader) MarkAttempted(requestID string) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-	s.requests.IncreaseAttempt(requestID)
-}
-
 func (s *Reader) GetRequest(id string) (types.Request, bool) {
-	s.lock.RLock()
-	defer s.lock.RUnlock()
-	return s.requests.GetByID(id)
+	rq := s.requests.Get(id)
+	if rq == nil {
+		return nil, false
+	}
+	return rq.Request, true
 }
 
 func (s *Reader) CompleteRequest(id string, report *types.RequestReport) error {
@@ -124,8 +129,8 @@ func (s *Reader) completeLockableRequest(id string, height *types.ChainHeight) e
 
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	rawRequest, ok := s.requests.GetByID(id)
-	if !ok {
+	rawRequest := s.requests.Get(id)
+	if rawRequest == nil {
 		s.lggr.Infof("lockable to a block request %s not found", id)
 		return nil
 	}
@@ -138,14 +143,17 @@ func (s *Reader) completeLockableRequest(id string, height *types.ChainHeight) e
 	}
 
 	newRequest := request.ToEventuallyConsistent(height)
-	oldRequestCtx, ok := s.requests.Remove(newRequest.ID())
+	oldRequestCtx, ok := s.requests.Evict(newRequest.ID())
 	if !ok {
 		s.lggr.Warnf("lockable to a block request %s not found while removing", id)
 		return nil
 	}
-	oldRequestCtx.Request = newRequest
-	oldRequestCtx.Attempt = 0
-	s.addRequestCtx(oldRequestCtx)
+	newRequestCtx := oldRequestCtx.Copy()
+	newRequestCtx.Request = newRequest
+	err := s.addRequestCtx(newRequestCtx)
+	if err != nil {
+		return fmt.Errorf("failed to readd lcoked request %s: %w", newRequest.ID(), err)
+	}
 	s.lggr.Infof("locked request %s to height %v", id, height)
 	return nil
 }
@@ -153,8 +161,8 @@ func (s *Reader) completeLockableRequest(id string, height *types.ChainHeight) e
 func (s *Reader) completeEventuallyConsistentRequest(id string, value []byte) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	request, ok := s.requests.GetByID(id)
-	if !ok {
+	request := s.requests.Get(id)
+	if request == nil {
 		uRequest := &unknownRequest{
 			ID:        id,
 			ExpiresAt: time.Now().Add(s.unknownRequestTTL),
@@ -165,7 +173,7 @@ func (s *Reader) completeEventuallyConsistentRequest(id string, value []byte) er
 		return nil
 	}
 
-	s.requests.Remove(id)
+	s.requests.Evict(id)
 	request.ResultChan <- value // non blocking as ResultChan is buffered
 
 	// cancel request to prevent further polling
@@ -185,28 +193,30 @@ func (s *Reader) Read(ctx context.Context, request types.Request) (<-chan []byte
 		return ch, nil
 	}
 
-	_, ok = s.requests.GetByID(request.ID())
-	if ok {
-		return nil, fmt.Errorf("request with id %s already exists", request.ID())
-	}
-
 	ctx, cancel := s.engine.Ctx(ctx)
-	s.addRequestCtx(&requestCtx{
+	err := s.addRequestCtx(&requestCtx{
 		Request:    request,
 		Ctx:        ctx,
 		Cancel:     cancel,
 		ResultChan: ch,
 	})
+	if err != nil {
+		return nil, err
+	}
 
 	return ch, nil
 }
 
-func (s *Reader) addRequestCtx(requestCtx *requestCtx) {
-	s.requests.Push(requestCtx)
+func (s *Reader) addRequestCtx(requestCtx *requestCtx) error {
+	err := s.requests.Add(requestCtx)
+	if err != nil {
+		return fmt.Errorf("failed to add request %s: %w", requestCtx.ID(), err)
+	}
 	switch tRequest := requestCtx.Request.(type) {
 	case *types.EventuallyConsistentRequest:
 		s.poller.Enqueue(requestCtx.Ctx, tRequest)
 	}
+	return nil
 }
 
 func (s *Reader) removeExpiredRequests(ctx context.Context) {

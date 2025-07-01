@@ -135,8 +135,6 @@ func (rp *reportingPlugin) Observation(
 		if err != nil {
 			return nil, fmt.Errorf("failed to observe request: %w", err)
 		}
-
-		rp.requestsStore.MarkAttempted(requestID)
 	}
 
 	rp.logger.Debugw("Observation complete", "observation", observation)

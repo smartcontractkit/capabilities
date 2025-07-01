@@ -59,35 +59,7 @@ func TestGetRequestIDs(t *testing.T) {
 	ids, err = reader.GetRequestIDs(5)
 	require.NoError(t, err)
 	// 'req-3' is ignored due to canceled context
-	require.Equal(t, []string{"req-2", "req-4", "req-1"}, ids) // order changes as heap does not stable sorting for equal values
-}
-
-func TestMarkAttempted(t *testing.T) {
-	reader := NewReader(logger.Test(t), nil, time.Second)
-	addRequestToReader := func(t *testing.T, ctx context.Context, id string) {
-		request := types.NewAggregatableRequest(id, nil)
-		_, err := reader.Read(ctx, request)
-		require.NoError(t, err)
-	}
-
-	// Non existing
-	reader.MarkAttempted("non existing")
-	ids, err := reader.GetRequestIDs(1)
-	require.NoError(t, err)
-	require.Empty(t, ids)
-
-	// Single request in the queue
-	addRequestToReader(t, t.Context(), "req-1")
-	addRequestToReader(t, t.Context(), "req-2")
-	ids, err = reader.GetRequestIDs(2)
-	require.NoError(t, err)
-	require.Equal(t, []string{"req-1", "req-2"}, ids)
-
-	// MarkAttempted lower request priority
-	reader.MarkAttempted("req-1")
-	ids, err = reader.GetRequestIDs(2)
-	require.NoError(t, err)
-	require.Equal(t, []string{"req-2", "req-1"}, ids)
+	require.Equal(t, []string{"req-1", "req-2", "req-4"}, ids)
 }
 
 func TestGetRequest(t *testing.T) {

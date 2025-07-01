@@ -148,17 +148,14 @@ func TestObservation(t *testing.T) {
 
 		id := "request_without_observation"
 		requestsStore.EXPECT().GetRequest(id).Return(types.NewEventuallyConsistentRequest(id, nil), true).Once()
-		requestsStore.EXPECT().MarkAttempted(id).Once()
 
 		id = "request_with_observation"
 		withObservation := types.NewEventuallyConsistentRequest(id, nil)
 		withObservation.SetObservation([]byte("observation"))
 		requestsStore.EXPECT().GetRequest(id).Return(withObservation, true).Once()
-		requestsStore.EXPECT().MarkAttempted(id).Once()
 
 		id = "lockable_request"
 		requestsStore.EXPECT().GetRequest(id).Return(types.NewLockableToBlockRequest(id, nil), true).Once()
-		requestsStore.EXPECT().MarkAttempted(id).Once()
 
 		plugin := newReportingPlugin(Config{MaxAllowedBatchSize: 50}, logger.Sugared(logger.Test(t)), blocksProvider, requestsStore)
 		query := mustQuery(t, []string{"request_not_present_in_store", "request_without_observation", "request_with_observation", "lockable_request"})

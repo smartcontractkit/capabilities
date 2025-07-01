@@ -184,39 +184,6 @@ func (_c *RequestsStore_GetRequestIDs_Call) RunAndReturn(run func(int) ([]string
 	return _c
 }
 
-// MarkAttempted provides a mock function with given fields: id
-func (_m *RequestsStore) MarkAttempted(id string) {
-	_m.Called(id)
-}
-
-// RequestsStore_MarkAttempted_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MarkAttempted'
-type RequestsStore_MarkAttempted_Call struct {
-	*mock.Call
-}
-
-// MarkAttempted is a helper method to define mock.On call
-//   - id string
-func (_e *RequestsStore_Expecter) MarkAttempted(id interface{}) *RequestsStore_MarkAttempted_Call {
-	return &RequestsStore_MarkAttempted_Call{Call: _e.mock.On("MarkAttempted", id)}
-}
-
-func (_c *RequestsStore_MarkAttempted_Call) Run(run func(id string)) *RequestsStore_MarkAttempted_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(string))
-	})
-	return _c
-}
-
-func (_c *RequestsStore_MarkAttempted_Call) Return() *RequestsStore_MarkAttempted_Call {
-	_c.Call.Return()
-	return _c
-}
-
-func (_c *RequestsStore_MarkAttempted_Call) RunAndReturn(run func(string)) *RequestsStore_MarkAttempted_Call {
-	_c.Run(run)
-	return _c
-}
-
 // NewRequestsStore creates a new instance of RequestsStore. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
 // The first argument is typically a *testing.T value.
 func NewRequestsStore(t interface {

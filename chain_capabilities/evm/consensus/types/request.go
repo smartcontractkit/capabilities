@@ -9,6 +9,7 @@ import (
 
 type Request interface {
 	ID() string
+	Copy() Request
 }
 
 type ObservableRequest interface {
@@ -31,6 +32,11 @@ func NewEventuallyConsistentRequest(id string, observe func(context.Context) ([]
 	}
 }
 
+func (r *EventuallyConsistentRequest) Copy() Request {
+	// intentionally reuse the same instance, since it's thread safe and we need to get most recent captured observation
+	return r
+}
+
 var _ ObservableRequest = (*AggregatableRequest)(nil)
 
 type AggregatableRequest struct {
@@ -44,6 +50,11 @@ func NewAggregatableRequest(id string, observe func(context.Context) (*pb.Decima
 			observe: observe,
 		},
 	}
+}
+
+func (a *AggregatableRequest) Copy() Request {
+	// intentionally reuse the same instance, since it's thread safe and we need to get most recent captured observation
+	return a
 }
 
 type observableRequest[T any] struct {
@@ -94,6 +105,13 @@ func NewLockableToBlockRequest(id string, observe func(context.Context, *ChainHe
 	return &LockableToBlockRequest{
 		id:      id,
 		observe: observe,
+	}
+}
+
+func (r *LockableToBlockRequest) Copy() Request {
+	return &LockableToBlockRequest{
+		id:      r.id,
+		observe: r.observe,
 	}
 }
 

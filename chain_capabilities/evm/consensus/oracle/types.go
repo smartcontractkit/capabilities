@@ -14,5 +14,4 @@ type RequestsStore interface {
 	GetRequestIDs(batchSize int) ([]string, error)
 	GetRequest(id string) (types.Request, bool)
 	CompleteRequest(id string, report *types.RequestReport) error
-	MarkAttempted(id string)
 }
