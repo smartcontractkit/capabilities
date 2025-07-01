@@ -1,7 +1,6 @@
 package oracle
 
 import (
-	"encoding/json"
 	"testing"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -72,16 +71,22 @@ func TestValidateChainHeight(t *testing.T) {
 	}
 }
 
+func mustQuery(t *testing.T, requestIDs []string) ocrtypes.Query {
+	result, err := proto.Marshal(&types.Query{RequestIDs: requestIDs})
+	require.NoError(t, err)
+	return result
+}
+
 func TestObservation(t *testing.T) {
 	t.Run("Error if query is invalid", func(t *testing.T) {
 		plugin := newReportingPlugin(Config{}, logger.Sugared(logger.Test(t)), nil, nil)
 		_, err := plugin.Observation(t.Context(), ocr3types.OutcomeContext{}, []byte("invalid json"))
-		require.EqualError(t, err, "failed to unmarshal request IDs: invalid character 'i' looking for beginning of value")
+		require.ErrorContains(t, err, "failed to unmarshal request IDs: proto")
 	})
-	t.Run("Error if query exceeds batch size", func(t *testing.T) {
-		plugin := newReportingPlugin(Config{BatchSize: 1}, logger.Sugared(logger.Test(t)), nil, nil)
-		_, err := plugin.Observation(t.Context(), ocr3types.OutcomeContext{}, []byte(`["1","2","3"]`))
-		require.EqualError(t, err, "too many request IDs: got 3, expected 1")
+	t.Run("Error if query exceeds max batch size", func(t *testing.T) {
+		plugin := newReportingPlugin(Config{BatchSize: 1, MaxAllowedBatchSize: 2}, logger.Sugared(logger.Test(t)), nil, nil)
+		_, err := plugin.Observation(t.Context(), ocr3types.OutcomeContext{}, mustQuery(t, []string{"1", "2", "3"}))
+		require.EqualError(t, err, "too many request IDs: got 3, expected 2")
 	})
 	newBlockProvider := func(t *testing.T, chainHeight *types.ChainHeight) *mocks.BlocksProvider {
 		blocksProvider := mocks.NewBlocksProvider(t)
@@ -106,7 +111,7 @@ func TestObservation(t *testing.T) {
 		}
 		rawPreviousOutcome, err := proto.Marshal(previousOutcome)
 		require.NoError(t, err)
-		rawObservation, err := plugin.Observation(t.Context(), ocr3types.OutcomeContext{PreviousOutcome: rawPreviousOutcome}, []byte("[]"))
+		rawObservation, err := plugin.Observation(t.Context(), ocr3types.OutcomeContext{PreviousOutcome: rawPreviousOutcome}, mustQuery(t, nil))
 		require.NoError(t, err)
 		var observation types.Outcome
 		require.NoError(t, proto.Unmarshal(rawObservation, &observation))
@@ -126,9 +131,9 @@ func TestObservation(t *testing.T) {
 			Finalized: 8,
 		})
 		requestsStore := mocks.NewRequestsStore(t)
-		plugin := newReportingPlugin(Config{BatchSize: 1}, logger.Sugared(logger.Test(t)), blocksProvider, requestsStore)
+		plugin := newReportingPlugin(Config{MaxAllowedBatchSize: 1}, logger.Sugared(logger.Test(t)), blocksProvider, requestsStore)
 		requestsStore.EXPECT().GetRequest("1").Return(types.Request(nil), true)
-		_, err := plugin.Observation(t.Context(), ocr3types.OutcomeContext{}, []byte(`["1"]`))
+		_, err := plugin.Observation(t.Context(), ocr3types.OutcomeContext{}, mustQuery(t, []string{"1"}))
 		require.EqualError(t, err, "failed to observe request: unsupported request type: <nil>")
 	})
 	t.Run("Happy path", func(t *testing.T) {
@@ -155,8 +160,9 @@ func TestObservation(t *testing.T) {
 		requestsStore.EXPECT().GetRequest(id).Return(types.NewLockableToBlockRequest(id, nil), true).Once()
 		requestsStore.EXPECT().MarkAttempted(id).Once()
 
-		plugin := newReportingPlugin(Config{BatchSize: 50}, logger.Sugared(logger.Test(t)), blocksProvider, requestsStore)
-		rawObservation, err := plugin.Observation(t.Context(), ocr3types.OutcomeContext{}, []byte(`["request_not_present_in_store", "request_without_observation", "request_with_observation", "lockable_request"]`))
+		plugin := newReportingPlugin(Config{MaxAllowedBatchSize: 50}, logger.Sugared(logger.Test(t)), blocksProvider, requestsStore)
+		query := mustQuery(t, []string{"request_not_present_in_store", "request_without_observation", "request_with_observation", "lockable_request"})
+		rawObservation, err := plugin.Observation(t.Context(), ocr3types.OutcomeContext{}, query)
 		require.NoError(t, err)
 		var observation types.Observation
 		require.NoError(t, proto.Unmarshal(rawObservation, &observation))
@@ -442,15 +448,13 @@ func TestOutcome(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			lggr, observed := logger.TestObserved(t, zapcore.DebugLevel)
 			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1, N: 4}}, logger.Sugared(lggr), nil, nil)
-			requestIDs, err := json.Marshal(tc.requestIDs)
-			require.NoError(t, err)
 			var rawAOs []ocrtypes.AttributedObservation
 			for _, nodesObservations := range tc.nodesObservations {
 				rawObservation, err := proto.Marshal(&types.Observation{ChainHeight: chainHeight, Observations: nodesObservations})
 				require.NoError(t, err)
 				rawAOs = append(rawAOs, ocrtypes.AttributedObservation{Observation: rawObservation})
 			}
-			rawOutcome, err := plugin.Outcome(t.Context(), ocr3types.OutcomeContext{}, requestIDs, rawAOs)
+			rawOutcome, err := plugin.Outcome(t.Context(), ocr3types.OutcomeContext{}, mustQuery(t, tc.requestIDs), rawAOs)
 			if tc.expectedError == "" {
 				require.NoError(t, err)
 				var outcome types.Outcome

@@ -20,6 +20,10 @@ enum RequestType {
   REQUEST_TYPE_AGGREGATABLE = 3;
 }
 
+message Query {
+  repeated string requestIDs = 1;
+}
+
 message AggregatableObservation {
   string method = 1;
   values.v1.Decimal value = 2;

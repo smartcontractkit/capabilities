@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"sort"
 
@@ -24,7 +23,10 @@ var _ ocr3types.ReportingPlugin[[]byte] = (*reportingPlugin)(nil)
 
 type Config struct {
 	ocr3types.ReportingPluginConfig
-	BatchSize int // max number of requests to be handled in a single OCR round
+	BatchSize int // max number of requests that this node will try to process in a single round
+	// MaxAllowedBatchSize - defines max number of requests that this node will process in a round, if requested by another node.
+	// Needed to allow graceful roll out of BatchSize increase.
+	MaxAllowedBatchSize int
 }
 
 type reportingPlugin struct {
@@ -55,24 +57,24 @@ func (rp *reportingPlugin) Query(ctx context.Context, outctx ocr3types.OutcomeCo
 	}
 
 	rp.logger.Debugw("Query complete", "ids", ids)
-	return json.Marshal(ids)
+	return proto.Marshal(&ctypes.Query{RequestIDs: ids})
 }
 
 func (rp *reportingPlugin) Observation(
 	ctx context.Context,
 	outctx ocr3types.OutcomeContext,
-	query types.Query,
+	rawQuery types.Query,
 ) (types.Observation, error) {
-	var requestIDs []string
-	if err := json.Unmarshal(query, &requestIDs); err != nil {
+	var query ctypes.Query
+	if err := proto.Unmarshal(rawQuery, &query); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal request IDs: %w", err)
 	}
 
-	if len(requestIDs) > rp.config.BatchSize {
-		return nil, fmt.Errorf("too many request IDs: got %d, expected %d", len(requestIDs), rp.config.BatchSize)
+	if len(query.RequestIDs) > rp.config.MaxAllowedBatchSize {
+		return nil, fmt.Errorf("too many request IDs: got %d, expected %d", len(query.RequestIDs), rp.config.MaxAllowedBatchSize)
 	}
 
-	observation := &ctypes.Observation{ChainHeight: &ctypes.ChainHeight{}, Observations: make(map[string]*ctypes.RequestObservation, len(requestIDs))}
+	observation := &ctypes.Observation{ChainHeight: &ctypes.ChainHeight{}, Observations: make(map[string]*ctypes.RequestObservation, len(query.RequestIDs))}
 	var err error
 	observation.ChainHeight.Finalized, err = rp.blocksProvider.GetFinalized()
 	if err != nil {
@@ -114,7 +116,7 @@ func (rp *reportingPlugin) Observation(
 		"safe", observation.ChainHeight.Safe,
 		"latest", observation.ChainHeight.Latest)
 
-	for _, requestID := range requestIDs {
+	for _, requestID := range query.RequestIDs {
 		request, ok := rp.requestsStore.GetRequest(requestID)
 		if !ok {
 			continue
@@ -293,7 +295,7 @@ type attributedObservation struct {
 func (rp *reportingPlugin) Outcome(
 	_ context.Context,
 	outctx ocr3types.OutcomeContext,
-	query types.Query,
+	rawQuery types.Query,
 	rawAOs []types.AttributedObservation,
 ) (ocr3types.Outcome, error) {
 	aos := make([]attributedObservation, len(rawAOs))
@@ -315,12 +317,12 @@ func (rp *reportingPlugin) Outcome(
 		return nil, fmt.Errorf("could not determine chain height: %w", err)
 	}
 
-	var requestIDs []string
-	if err := json.Unmarshal(query, &requestIDs); err != nil {
+	var query ctypes.Query
+	if err := proto.Unmarshal(rawQuery, &query); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal request IDs: %w", err)
 	}
 
-	for _, requestID := range requestIDs {
+	for _, requestID := range query.RequestIDs {
 		requestType, err := rp.agreeOnRequestType(requestID, aos)
 		if err != nil {
 			rp.logger.Infow("Could not determine request type", "requestID", requestID, "err", err)
