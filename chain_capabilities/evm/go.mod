@@ -6,10 +6,9 @@ toolchain go1.24.3
 
 require (
 	github.com/ethereum/go-ethereum v1.15.3
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20250630195135-9fb1bd879f35
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20250701013341-40c0c3382ef9
 	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250630184840-a85c2c04671c
-	github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/protoc/installer v0.0.0-20250630194238-3631c0f88d89
-	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250630193954-65985e6645e4
+	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250701004702-b5cfd2343397
 	github.com/smartcontractkit/chainlink-evm v0.0.0-20250627135735-93e3b09aec5a
 	github.com/stretchr/testify v1.10.0
 	google.golang.org/protobuf v1.36.6

@@ -2,12 +2,12 @@ package main
 
 import (
 	"github.com/smartcontractkit/capabilities/libs/protos"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/protoc/installer"
+	"github.com/smartcontractkit/chainlink-common/pkg/values/installer/pkg"
 )
 
 func main() {
-	gen := installer.Generator{GeneratorHelper: protos.GeneratorHelper{}}
-	if err := gen.Generate(&installer.CapabilityConfig{
+	gen := protos.ProtocGen{}
+	if err := gen.Generate(&pkg.CapabilityConfig{
 		Category:      "blockchain",
 		Pkg:           "evm",
 		MajorVersion:  1,
