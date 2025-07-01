@@ -3,6 +3,11 @@ mockname: "{{ .InterfaceName }}"
 outpkg: mocks
 filename: "{{ .InterfaceName | snakecase }}.go"
 packages:
+  github.com/smartcontractkit/chainlink-common/pkg/logger:
+    config:
+      dir: ../monitoring/mocks
+    interfaces:
+      Logger:
   github.com/smartcontractkit/capabilities/chain_capabilities/evm/contracts:
     interfaces:
       CREForwarderClient:

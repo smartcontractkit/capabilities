@@ -2,14 +2,19 @@ package monitoring_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/types/known/emptypb"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring/mocks"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 	capmonitoring "github.com/smartcontractkit/capabilities/monitoring"
@@ -175,6 +180,89 @@ func TestProcessor_Process_ErrorMessages(t *testing.T) {
 
 			require.NoError(t, p.Process(ctx, tc.msg))
 			me.AssertExpectations(t)
+		})
+	}
+}
+
+type ProcessorMock struct {
+	mock.Mock
+}
+
+func (m *ProcessorMock) Process(ctx context.Context, pm proto.Message, _ ...any) error {
+	args := m.Called(ctx, pm)
+	return args.Error(0)
+}
+
+type stubSuccessMessage struct{ *emptypb.Empty }
+
+func (s *stubSuccessMessage) Attributes() []attribute.KeyValue {
+	return []attribute.KeyValue{attribute.String("foo", "bar")}
+}
+
+// stubErrorMessage implements monitoring.ErrorMessage via embedded Empty
+// and GetSummary/GetCause.
+type stubErrorMessage struct{ *emptypb.Empty }
+
+func (s *stubErrorMessage) Attributes() []attribute.KeyValue {
+	return []attribute.KeyValue{attribute.String("errKey", "errVal")}
+}
+func (s *stubErrorMessage) GetSummary() string { return "summary" }
+func (s *stubErrorMessage) GetCause() string   { return "cause" }
+
+func TestLogEmit_SuccessCases(t *testing.T) {
+	cases := []struct {
+		name    string
+		success string
+		err     error
+	}{
+		{"NoError", "operation succeeded", nil},
+		{"WithError", "operation succeeded", errors.New("boom")},
+	}
+
+	ctx := context.Background()
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			logger := mocks.NewLogger(t)
+			proc := new(ProcessorMock)
+			msg := &stubSuccessMessage{Empty: &emptypb.Empty{}}
+
+			logger.EXPECT().Infow(c.success, "foo", "bar").Once()
+			proc.On("Process", ctx, msg).Return(c.err).Once()
+			if c.err != nil {
+				logger.EXPECT().Errorw("Failed to process Empty message", "err", c.err).Once()
+			}
+
+			monitoring.LogAndEmitSuccess(ctx, c.success, logger, proc, msg)
+			proc.AssertExpectations(t)
+		})
+	}
+}
+
+func TestLogEmit_ErrorCases(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+	}{
+		{"NoError", nil},
+		{"WithError", errors.New("boom")},
+	}
+
+	ctx := context.Background()
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			logger := mocks.NewLogger(t)
+			proc := new(ProcessorMock)
+			msg := &stubErrorMessage{Empty: &emptypb.Empty{}}
+
+			logger.EXPECT().Errorw("cause", "errKey", "errVal").Once()
+			proc.On("Process", ctx, msg).Return(c.err).Once()
+
+			if c.err != nil {
+				logger.EXPECT().Errorw("Failed to process Empty message", "err", c.err).Once()
+			}
+
+			monitoring.LogAndEmitError(ctx, logger, proc, msg)
+			proc.AssertExpectations(t)
 		})
 	}
 }

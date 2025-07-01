@@ -6,7 +6,6 @@ require (
 	github.com/ethereum/go-ethereum v1.15.11
 	github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-20250402163239-224ad2061432
 	github.com/smartcontractkit/capabilities/monitoring v0.0.0-20250626124236-6f7a7d592358
-	github.com/smartcontractkit/chain-selectors v1.0.60
 	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250630180021-f216eaa9aa54
 	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250626141212-e50b2e7ffe2d
 	github.com/smartcontractkit/chainlink-evm v0.0.0-20250627135735-93e3b09aec5a
