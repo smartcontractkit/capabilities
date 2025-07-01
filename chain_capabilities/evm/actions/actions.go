@@ -25,6 +25,9 @@ import (
 )
 
 type ConsensusReader interface {
+	// Read - returns a channel to the result of `request.GetObservation()`. This result is consistent across all nodes in
+	// the DON, even if individual RPC states differ.
+	//TODO: switches from bytes to <-chan any as part of PLEX-1470
 	Read(ctx context.Context, request ctypes.Request) (<-chan []byte, error)
 }
 
@@ -57,12 +60,12 @@ func (e EVM) CallContract(ctx context.Context, meta capabilities.RequestMetadata
 		return nil, err
 	}
 
-	blockNumber, requiresLocking, err := normalizeBlockNumber(input.GetBlockNumber())
+	blockNumber, needsBlockHeightConsensus, err := normalizeBlockNumber(input.GetBlockNumber())
 	if err != nil {
 		return nil, err
 	}
 	var request ctypes.Request
-	if requiresLocking {
+	if needsBlockHeightConsensus {
 		request = ctypes.NewLockableToBlockRequest(requestID(meta), func(ctx context.Context, height *ctypes.ChainHeight) ([]byte, error) {
 			// TODO: PLEX-1571 guarantee finality/safety of observed data for load balanced RPCs
 			callBlockNumber, err := getCallBlockNumber(blockNumber, height)
@@ -118,17 +121,17 @@ func (e EVM) filterLogsToRequest(ctx context.Context, meta capabilities.RequestM
 		}), nil
 	}
 
-	fromBlock, fromBlockRequiresLocking, err := normalizeBlockNumber(req.FilterQuery.FromBlock)
+	fromBlock, fromNeedsBlockHeightConsensus, err := normalizeBlockNumber(req.FilterQuery.FromBlock)
 	if err != nil {
 		return nil, fmt.Errorf("fromBlock is invalid: %w", err)
 	}
 
-	toBlock, toBlockRequiresLocking, err := normalizeBlockNumber(req.FilterQuery.ToBlock)
+	toBlock, toNeedsBlockHeightConsensus, err := normalizeBlockNumber(req.FilterQuery.ToBlock)
 	if err != nil {
 		return nil, fmt.Errorf("toBlock is invalid: %w", err)
 	}
 
-	if !fromBlockRequiresLocking && !toBlockRequiresLocking {
+	if !fromNeedsBlockHeightConsensus && !toNeedsBlockHeightConsensus {
 		return ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
 			return filterLogs(ctx, ethFilterQuery)
 		}), nil
@@ -167,7 +170,7 @@ func (e EVM) FilterLogs(ctx context.Context, meta capabilities.RequestMetadata, 
 }
 
 func (e EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, req *evmcappb.BalanceAtRequest) (*evmcappb.BalanceAtReply, error) {
-	blockNumber, requiresLocking, err := normalizeBlockNumber(req.GetBlockNumber())
+	blockNumber, needsBlockHeightConsensus, err := normalizeBlockNumber(req.GetBlockNumber())
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +190,7 @@ func (e EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, r
 	}
 
 	var request ctypes.Request
-	if requiresLocking {
+	if needsBlockHeightConsensus {
 		request = ctypes.NewLockableToBlockRequest(requestID(meta), balanceAt)
 	} else {
 		request = ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
@@ -309,7 +312,11 @@ func (e EVM) UnregisterLogTracking(etx context.Context, _ capabilities.RequestMe
 	return &emptypb.Empty{}, e.EVMService.UnregisterLogTracking(etx, req.FilterName)
 }
 
-func normalizeBlockNumber(pbBlockNumber *valuespb.BigInt) (number rpc.BlockNumber, requiresLocking bool, err error) {
+// normalizeBlockNumber - returns:
+// number - normalized block number converted to a corresponding tag, if possible
+// needsBlockHeightConsensus - true, if DON Nodes need to agree on common height for corresponding tag, before agreeing on request reply.
+func normalizeBlockNumber(pbBlockNumber *valuespb.BigInt) (number rpc.BlockNumber, needsBlockHeightConsensus bool, err error) {
+	// Replicate EthClient API, that treats nil block number as latest
 	if pbBlockNumber == nil {
 		return rpc.LatestBlockNumber, true, nil
 	}
