@@ -60,6 +60,28 @@ func (rp *reportingPlugin) Query(ctx context.Context, outctx ocr3types.OutcomeCo
 	return proto.Marshal(&ctypes.Query{RequestIDs: ids})
 }
 
+func (rp *reportingPlugin) populateHeightFromPreviousOutcome(
+	observation *ctypes.Observation,
+	outctx ocr3types.OutcomeContext,
+) {
+	if len(outctx.PreviousOutcome) == 0 {
+		return
+	}
+
+	var previousOutcome ctypes.Outcome
+	err := proto.Unmarshal(outctx.PreviousOutcome, &previousOutcome)
+	if err != nil {
+		rp.logger.Errorw("Could not unmarshal previous outcome", "err", err, "previousOutcome", hex.EncodeToString(outctx.PreviousOutcome))
+		return
+	}
+
+	// TODO PLEX-1572: report observed chain height
+	prevChainHeight := previousOutcome.ChainHeight
+	observation.ChainHeight.Finalized = max(observation.ChainHeight.Finalized, prevChainHeight.Finalized)
+	observation.ChainHeight.Safe = max(observation.ChainHeight.Safe, prevChainHeight.Safe, observation.ChainHeight.Finalized)
+	observation.ChainHeight.Latest = max(observation.ChainHeight.Latest, prevChainHeight.Latest, observation.ChainHeight.Safe)
+}
+
 func (rp *reportingPlugin) Observation(
 	ctx context.Context,
 	outctx ocr3types.OutcomeContext,
@@ -91,24 +113,11 @@ func (rp *reportingPlugin) Observation(
 		return nil, fmt.Errorf("failed to get latest block height: %w", err)
 	}
 
+	rp.populateHeightFromPreviousOutcome(observation, outctx)
+
 	err = validateChainHeight(observation.ChainHeight)
 	if err != nil {
 		return nil, fmt.Errorf("invalid chain height: %w", err)
-	}
-
-	if len(outctx.PreviousOutcome) > 0 {
-		var previousOutcome ctypes.Outcome
-		err := proto.Unmarshal(outctx.PreviousOutcome, &previousOutcome)
-		if err != nil {
-			rp.logger.Errorw("Could not unmarshal previous outcome", "err", err, "previousOutcome", hex.EncodeToString(outctx.PreviousOutcome))
-			return nil, fmt.Errorf("could not unmarshal previous outcome: %w", err)
-		}
-
-		// TODO PLEX-1572: report observed chain height
-		prevChainHeight := previousOutcome.ChainHeight
-		observation.ChainHeight.Finalized = max(observation.ChainHeight.Finalized, prevChainHeight.Finalized)
-		observation.ChainHeight.Safe = max(observation.ChainHeight.Safe, prevChainHeight.Safe, observation.ChainHeight.Finalized)
-		observation.ChainHeight.Latest = max(observation.ChainHeight.Latest, prevChainHeight.Latest, observation.ChainHeight.Safe)
 	}
 
 	rp.logger.Infow("Captures chain observations",
@@ -130,16 +139,14 @@ func (rp *reportingPlugin) Observation(
 		rp.requestsStore.MarkAttempted(requestID)
 	}
 
-	rp.logger.Debugw("Observation complete",
-		"observation", observation,
-	)
+	rp.logger.Debugw("Observation complete", "observation", observation)
 
 	return proto.Marshal(observation)
 }
 
 func (rp *reportingPlugin) observeRequest(observation *ctypes.Observation, rawRequest ctypes.Request) error {
 	switch rq := rawRequest.(type) {
-	case *ctypes.AggregatabelRequest:
+	case *ctypes.AggregatableRequest:
 		panic("not implemented")
 	case *ctypes.EventuallyConsistentRequest:
 		requestOb, ok := rq.GetObservation()
@@ -171,20 +178,33 @@ func (rp *reportingPlugin) ValidateObservation(_ context.Context, outctx ocr3typ
 		return fmt.Errorf("invalid chain height: %w", err)
 	}
 
-	if len(outctx.PreviousOutcome) > 0 {
-		prev := new(ctypes.Outcome)
-		err := proto.Unmarshal(outctx.PreviousOutcome, prev)
-		if err != nil {
-			rp.logger.Errorw("Could not unmarshal previous outcome", "err", err, "previousOutcome", hex.EncodeToString(outctx.PreviousOutcome))
-			return fmt.Errorf("could not unmarshal previous outcome: %w", err)
-		}
+	err = rp.validateExternalObservationAgainsOutcome(ob, outctx)
+	if err != nil {
+		return fmt.Errorf("observation contradicts prev outcome: %w", err)
+	}
 
-		if prev.ChainHeight != nil {
-			err = validateChainHeightAgainstOutcome(ob.ChainHeight, prev.ChainHeight)
-			if err != nil {
-				return fmt.Errorf("invalid chain height compared to previous outcome: %w", err)
-			}
-		}
+	return nil
+}
+
+func (rp *reportingPlugin) validateExternalObservationAgainsOutcome(ob *ctypes.Observation, outctx ocr3types.OutcomeContext) error {
+	if len(outctx.PreviousOutcome) == 0 {
+		return nil
+	}
+
+	var prev ctypes.Outcome
+	err := proto.Unmarshal(outctx.PreviousOutcome, &prev)
+	if err != nil {
+		rp.logger.Errorw("Could not unmarshal previous outcome", "err", err, "previousOutcome", hex.EncodeToString(outctx.PreviousOutcome))
+		return nil
+	}
+
+	if prev.ChainHeight == nil {
+		return nil
+	}
+
+	err = validateChainHeightAgainstOutcome(ob.ChainHeight, prev.ChainHeight)
+	if err != nil {
+		return fmt.Errorf("invalid chain height compared to previous outcome: %w", err)
 	}
 
 	return nil

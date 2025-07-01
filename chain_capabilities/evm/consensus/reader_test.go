@@ -65,7 +65,7 @@ func TestGetRequestIDs(t *testing.T) {
 func TestMarkAttempted(t *testing.T) {
 	reader := NewReader(logger.Test(t), nil, time.Second)
 	addRequestToReader := func(t *testing.T, ctx context.Context, id string) {
-		request := types.NewAggregatabelRequest(id, nil)
+		request := types.NewAggregatableRequest(id, nil)
 		_, err := reader.Read(ctx, request)
 		require.NoError(t, err)
 	}
@@ -93,7 +93,7 @@ func TestMarkAttempted(t *testing.T) {
 func TestGetRequest(t *testing.T) {
 	reader := NewReader(logger.Test(t), nil, time.Second)
 	addRequestToReader := func(t *testing.T, ctx context.Context, id string) {
-		request := types.NewAggregatabelRequest(id, nil)
+		request := types.NewAggregatableRequest(id, nil)
 		_, err := reader.Read(ctx, request)
 		require.NoError(t, err)
 	}

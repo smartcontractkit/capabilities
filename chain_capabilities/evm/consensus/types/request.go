@@ -31,14 +31,14 @@ func NewEventuallyConsistentRequest(id string, observe func(context.Context) ([]
 	}
 }
 
-var _ ObservableRequest = (*AggregatabelRequest)(nil)
+var _ ObservableRequest = (*AggregatableRequest)(nil)
 
-type AggregatabelRequest struct {
+type AggregatableRequest struct {
 	*observableRequest[*pb.Decimal]
 }
 
-func NewAggregatabelRequest(id string, observe func(context.Context) (*pb.Decimal, error)) *AggregatabelRequest {
-	return &AggregatabelRequest{
+func NewAggregatableRequest(id string, observe func(context.Context) (*pb.Decimal, error)) *AggregatableRequest {
+	return &AggregatableRequest{
 		observableRequest: &observableRequest[*pb.Decimal]{
 			id:      id,
 			observe: observe,

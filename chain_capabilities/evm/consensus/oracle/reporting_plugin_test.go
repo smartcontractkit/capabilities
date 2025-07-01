@@ -229,22 +229,6 @@ func TestValidateObservation(t *testing.T) {
 			expectedError: "invalid chain height: expected latest 15 to be gt or equal to safe 16",
 		},
 		{
-			name: "Error unmarshalling previous outcome",
-			outcomeContext: ocr3types.OutcomeContext{
-				PreviousOutcome: []byte("invalid-data"),
-			},
-			observations: ocrtypes.AttributedObservation{
-				Observation: mustMarshalProto(&types.Observation{
-					ChainHeight: &types.ChainHeight{
-						Latest:    15,
-						Safe:      10,
-						Finalized: 8,
-					},
-				}),
-			},
-			expectedError: "could not unmarshal previous outcome",
-		},
-		{
 			name: "Previous outcome has higher blocks than observation",
 			outcomeContext: ocr3types.OutcomeContext{
 				PreviousOutcome: mustMarshalProto(&types.Outcome{
