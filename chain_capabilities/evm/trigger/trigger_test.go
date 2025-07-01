@@ -13,7 +13,6 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
-	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	evmmock "github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
@@ -561,9 +560,16 @@ func TestSendLogsToWorkflows(t *testing.T) {
 	t.Run("all logs are sent to the channel", func(t *testing.T) {
 		service.triggers.Write(triggerID, logTriggerState{
 			unfinalizedSentEventIDs: map[string]*big.Int{},
+			lastBlock:               finalizedBlockNumber,
+			filter: filter{
+				expressions: []query.Expression{
+					evm.NewAddressFilter(evmtypes.Address(expectedAddress)),
+				},
+				confidence: primitives.Finalized,
+			},
 		})
 		state, _ := service.triggers.Read(triggerID)
-		logCh := make(chan capabilities.TriggerAndId[*evmservice.Log], len(expectedLogs))
+		logCh := make(chan capabilities.TriggerAndId[*evmcappb.Log], len(expectedLogs))
 
 		err := service.sendLogsToWorkflows(expectedLogs, finalizedBlockNumber, triggerID, state, logCh)
 		require.NoError(t, err)
@@ -578,10 +584,16 @@ func TestSendLogsToWorkflows(t *testing.T) {
 		default:
 			// no message received, as expected
 		}
+		// Verify that the unfinalized logs are stored in the trigger state and all other fields are preserved
+		state2, _ := service.triggers.Read(triggerID)
+		require.Len(t, state2.unfinalizedSentEventIDs, 1)
+		require.Equal(t, state.lastBlock, state2.lastBlock)
+		require.Equal(t, state.expressions, state2.expressions)
+		require.Equal(t, state.confidence, state2.confidence)
 	})
 
 	t.Run("first log sent to channel second log dropped out due to timeout", func(t *testing.T) {
-		logCh := make(chan capabilities.TriggerAndId[*evmservice.Log], 1) // buffer size of 1, so it can only hold one log at a time
+		logCh := make(chan capabilities.TriggerAndId[*evmcappb.Log], 1) // buffer size of 1, so it can only hold one log at a time
 		service.triggers.Write(triggerID, logTriggerState{
 			unfinalizedSentEventIDs: map[string]*big.Int{},
 		})
@@ -604,7 +616,7 @@ func TestSendLogsToWorkflows(t *testing.T) {
 	})
 
 	t.Run("store unfinalized logs in store and do not re-send them", func(t *testing.T) {
-		logCh := make(chan capabilities.TriggerAndId[*evmservice.Log], 1)
+		logCh := make(chan capabilities.TriggerAndId[*evmcappb.Log], 1)
 		service.triggers.Write(triggerID, logTriggerState{
 			unfinalizedSentEventIDs: map[string]*big.Int{},
 		})
@@ -645,7 +657,7 @@ func TestSendLogsToWorkflows(t *testing.T) {
 			},
 		})
 		triggerState, _ := service.triggers.Read(triggerID)
-		logCh := make(chan capabilities.TriggerAndId[*evmservice.Log], len(expectedLogs))
+		logCh := make(chan capabilities.TriggerAndId[*evmcappb.Log], len(expectedLogs))
 
 		err := service.sendLogsToWorkflows([]*evmtypes.Log{}, finalizedBlockNumber, triggerID, triggerState, logCh)
 		require.NoError(t, err)
@@ -668,7 +680,7 @@ func TestSendLogsToWorkflows(t *testing.T) {
 		state := logTriggerState{
 			unfinalizedSentEventIDs: map[string]*big.Int{},
 		}
-		logCh := make(chan capabilities.TriggerAndId[*evmservice.Log], len(expectedLogs))
+		logCh := make(chan capabilities.TriggerAndId[*evmcappb.Log], len(expectedLogs))
 		err := service.sendLogsToWorkflows(expectedLogs, finalizedBlockNumber, triggerID, state, logCh)
 		require.Error(t, err)
 		require.ErrorContains(t, err, "failed to update unfinalized sent event IDs for triggerID: trigger-1: cannot find trigger with ID \"trigger-1\"")
@@ -724,7 +736,7 @@ func TestIntegration_RegisterAndUnregisterLogTrigger(t *testing.T) {
 	require.Len(t, service.triggers.ReadAll(), 1, "expected one and only one trigger to be registered")
 	require.Len(t, triggerState.unfinalizedSentEventIDs, 0, "expected no unfinalized sent event IDs stored in trigger state before registration")
 
-	validateLog := func(msg *capabilities.TriggerAndId[*evmservice.Log], expectedBlock *big.Int) {
+	validateLog := func(msg *capabilities.TriggerAndId[*evmcappb.Log], expectedBlock *big.Int) {
 		logConverted := &evmtypes.Log{
 			TxHash:    evmtypes.Hash(msg.Trigger.TxHash),
 			BlockHash: evmtypes.Hash(msg.Trigger.BlockHash),
@@ -783,7 +795,7 @@ func TestIntegration_RegisterAndUnregisterLogTrigger(t *testing.T) {
 	// Wait to confirm no more messages after unregister
 	msg := <-ch
 	lggr.Debugf("msg: %+v", msg)
-	require.Equal(t, msg, capabilities.TriggerAndId[*evmservice.Log]{Trigger: nil, Id: ""})
+	require.Equal(t, msg, capabilities.TriggerAndId[*evmcappb.Log]{Trigger: nil, Id: ""})
 }
 
 func createLog(index uint32, number *big.Int, address evmtypes.Address, message []byte) *evmtypes.Log {
@@ -864,11 +876,10 @@ func assemblyDataMessage(address evmtypes.Address, blockNumber *big.Int) string 
 	return message
 }
 
-func createTriggerResponse(log *evmtypes.Log, service *LogTriggerService) capabilities.TriggerAndId[*evmservice.Log] {
-	protoLog := evmservice.ConvertLogToProto(log)
-	return capabilities.TriggerAndId[*evmservice.Log]{
+func createTriggerResponse(log *evmtypes.Log, service *LogTriggerService) capabilities.TriggerAndId[*evmcappb.Log] {
+	return capabilities.TriggerAndId[*evmcappb.Log]{
 		Id:      service.generateLogIdentifier(log),
-		Trigger: protoLog,
+		Trigger: evmcappb.ConvertLogToProto(log),
 	}
 }
 

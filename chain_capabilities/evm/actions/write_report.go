@@ -12,8 +12,8 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
-	evmcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
-	"github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
+	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/values/pb"
@@ -56,7 +56,7 @@ func decodeReportMetadata(data []byte) (ocrtypes.Metadata, error) {
 	return metadata, err
 }
 
-func (e EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMetadata, input *evmcap.WriteReportRequest) (*evmcap.WriteReportReply, error) {
+func (e EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMetadata, input *evmcappb.WriteReportRequest) (*evmcappb.WriteReportReply, error) {
 	err := validateInputsAndReportMetadata(metadata, input)
 	if err != nil {
 		return nil, err
@@ -64,7 +64,7 @@ func (e EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMetad
 	return e.executeWriteReport(ctx, metadata, input)
 }
 
-func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.RequestMetadata, request *evmcap.WriteReportRequest) (*evmcap.WriteReportReply, error) {
+func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.RequestMetadata, request *evmcappb.WriteReportRequest) (*evmcappb.WriteReportReply, error) {
 	transmissionID, err := getTransmissionID(metadata.WorkflowExecutionID, request)
 	if err != nil {
 		return nil, err
@@ -87,7 +87,7 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 		if err != nil {
 			return nil, err
 		}
-		return e.fetchTransactionReceiptAndCreateReply(ctx, *txHash, evmcap.ReceiverContractExecutionStatus_SUCCESS, nil)
+		return e.fetchTransactionReceiptAndCreateReply(ctx, *txHash, evmcappb.ReceiverContractExecutionStatus_SUCCESS, nil)
 	case TransmissionStateInvalidReceiver:
 		txHash, err := txHashRetriever.GetHash(ctx)
 		if err != nil {
@@ -105,7 +105,7 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 			if err != nil {
 				return nil, err
 			}
-			return e.fetchTransactionReceiptAndCreateReply(ctx, *txHash, evmcap.ReceiverContractExecutionStatus_REVERTED, nil)
+			return e.fetchTransactionReceiptAndCreateReply(ctx, *txHash, evmcappb.ReceiverContractExecutionStatus_REVERTED, nil)
 		}
 		e.lggr.Infow("retrying a failed transmission - attempting to push to txmgr", "request", request, "reportLen", len(request.Report.RawReport), "reportContextLen", len(request.Report.ReportContext), "nSignatures", len(request.Report.Signatures), "executionID", metadata.WorkflowExecutionID, "receiverGasMinimum", receiverGasMinimum, "transmissionGasLimit", transmissionInfo.GasLimit)
 	default:
@@ -128,8 +128,8 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 		// if err != nil {
 		// 	c.lggr.Errorf("failed to send custom message with msg: %s, err: %v", msg, err)
 		// }
-		return &evmcap.WriteReportReply{
-			TxStatus:     evm.TxStatus_TX_FATAL,
+		return &evmcappb.WriteReportReply{
+			TxStatus:     evmcappb.TxStatus_TX_FATAL,
 			ErrorMessage: ptr(err.Error()),
 		}, nil
 	}
@@ -149,7 +149,7 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 	switch transmissionInfo.State {
 	case TransmissionStateSucceeded:
 		e.lggr.Debugw("Transaction confirmed", "request", request)
-		return e.fetchTransactionReceiptAndCreateReply(ctx, txHash, evmcap.ReceiverContractExecutionStatus_SUCCESS, nil)
+		return e.fetchTransactionReceiptAndCreateReply(ctx, txHash, evmcappb.ReceiverContractExecutionStatus_SUCCESS, nil)
 	case TransmissionStateFailed, TransmissionStateInvalidReceiver:
 		return e.processUnrecoverableTxState(ctx, request, metadata, txHash, transmissionInfo, transmissionID, true)
 	default:
@@ -161,7 +161,7 @@ func getInvalidStateErrorMessage(state uint8) string {
 	return fmt.Sprintf("unexpected transmission state: %v", state)
 }
 
-func (e EVM) processUnrecoverableTxState(ctx context.Context, request *evmcap.WriteReportRequest, metadata capabilities.RequestMetadata, txHash evmtypes.Hash, transmissionInfo contracts.TransmissionInfo, transmissionID contracts.TransmissionID, txAttemptedLocally bool) (*evmcap.WriteReportReply, error) {
+func (e EVM) processUnrecoverableTxState(ctx context.Context, request *evmcappb.WriteReportRequest, metadata capabilities.RequestMetadata, txHash evmtypes.Hash, transmissionInfo contracts.TransmissionInfo, transmissionID contracts.TransmissionID, txAttemptedLocally bool) (*evmcappb.WriteReportReply, error) {
 	if !txAttemptedLocally {
 		e.lggr.Infow("returning without a transmission attempt - transmission already attempted, receiver was marked as invalid", "executionID", metadata.WorkflowExecutionID)
 	} else {
@@ -184,14 +184,14 @@ func (e EVM) processUnrecoverableTxState(ctx context.Context, request *evmcap.Wr
 	} else {
 		message = ptr(UnknownIssueExecutingReceiverContractMessage)
 	}
-	return e.fetchTransactionReceiptAndCreateReply(ctx, txHash, evmcap.ReceiverContractExecutionStatus_REVERTED, message)
+	return e.fetchTransactionReceiptAndCreateReply(ctx, txHash, evmcappb.ReceiverContractExecutionStatus_REVERTED, message)
 }
 
 func getInvalidReceiverMessage(receiver []byte) *string {
 	return ptr(fmt.Sprintf("Invalid receiver: %s", common.Bytes2Hex(receiver)))
 }
 
-func getTransmissionID(workflowExecutionID string, request *evmcap.WriteReportRequest) (contracts.TransmissionID, error) {
+func getTransmissionID(workflowExecutionID string, request *evmcappb.WriteReportRequest) (contracts.TransmissionID, error) {
 	rawExecutionID, err := hex.DecodeString(workflowExecutionID)
 	if err != nil {
 		return contracts.TransmissionID{}, err
@@ -205,7 +205,7 @@ func getTransmissionID(workflowExecutionID string, request *evmcap.WriteReportRe
 	return transmissionID, nil
 }
 
-func (e EVM) fetchTransactionReceiptAndCreateReply(ctx context.Context, txHash evmtypes.Hash, receiverStatus evmcap.ReceiverContractExecutionStatus, errorMessage *string) (*evmcap.WriteReportReply, error) {
+func (e EVM) fetchTransactionReceiptAndCreateReply(ctx context.Context, txHash evmtypes.Hash, receiverStatus evmcappb.ReceiverContractExecutionStatus, errorMessage *string) (*evmcappb.WriteReportReply, error) {
 	// TODO: PLEX-1524 - we need retry logic here in case the underlying RPC is lagging behind the one that submitted the TX.
 	txReceipt, err := e.EVMService.GetTransactionReceipt(ctx, txHash)
 	if err != nil {
@@ -219,12 +219,12 @@ func (e EVM) fetchTransactionReceiptAndCreateReply(ctx context.Context, txHash e
 		return nil, err
 	}
 	message := errorMessage
-	if receiverStatus.Enum() == evmcap.ReceiverContractExecutionStatus_REVERTED.Enum() && errorMessage == nil {
+	if receiverStatus.Enum() == evmcappb.ReceiverContractExecutionStatus_REVERTED.Enum() && errorMessage == nil {
 		message = ptr("Receiver contract execution failure")
 	}
-	return &evmcap.WriteReportReply{
+	return &evmcappb.WriteReportReply{
 		TxHash:                          (txHash)[:],
-		TxStatus:                        evm.TxStatus_TX_SUCCESS,
+		TxStatus:                        evmcappb.TxStatus_TX_SUCCESS,
 		TransactionFee:                  pb.NewBigIntFromInt(transactionFee.TransactionFee),
 		ReceiverContractExecutionStatus: &receiverStatus,
 		ErrorMessage:                    message,
@@ -236,14 +236,14 @@ func ptr(s string) *string {
 	return &s
 }
 
-func fatalWriteReportReply(message string) *evmcap.WriteReportReply {
-	return &evmcap.WriteReportReply{
+func fatalWriteReportReply(message string) *evmcappb.WriteReportReply {
+	return &evmcappb.WriteReportReply{
 		ErrorMessage: &message,
-		TxStatus:     evm.TxStatus_TX_FATAL,
+		TxStatus:     evmcappb.TxStatus_TX_FATAL,
 	}
 }
 
-func validateInputsAndReportMetadata(requestMetadata capabilities.RequestMetadata, request *evmcap.WriteReportRequest) error {
+func validateInputsAndReportMetadata(requestMetadata capabilities.RequestMetadata, request *evmcappb.WriteReportRequest) error {
 	if request == nil {
 		return errors.New("nil WriteReportRequest")
 	}
