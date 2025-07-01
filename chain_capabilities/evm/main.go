@@ -111,7 +111,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 	c.consensusReader = consensus.NewReader(c.lggr, c.requestPoller, time.Second*10)
 
 	// TODO PLEX-1560: populate with implementation
-	var blocksProvider oracle.BlocksProvider
+	blocksProvider := &oracle.NullBlocksProvider{}
 
 	c.oracle, err = oracleFactory.NewOracle(ctx, core.OracleArgs{
 		LocalConfig: ocrtypes.LocalConfig{
