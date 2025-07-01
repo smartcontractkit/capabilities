@@ -100,11 +100,15 @@ func TestHandleGatewayMessage_Success(t *testing.T) {
 
 	// Start a goroutine to assert that the correct trigger payload is received
 	go func() {
-		triggerReq := <-triggerCh
-		input := triggerReq.Trigger.Input.AsMap()
-		require.Len(t, input, 1)
-		require.Equal(t, "value", input["key"])
-		// TODO: PRODCRE-305 validate triggerReq.Trigger.Key
+		select {
+		case <-t.Context().Done():
+			t.Errorf("Test context was cancelled before trigger was received")
+		case triggerReq := <-triggerCh:
+			input := triggerReq.Trigger.Input.AsMap()
+			require.Len(t, input, 1)
+			require.Equal(t, "value", input["key"])
+			// TODO: PRODCRE-305 validate triggerReq.Trigger.Key
+		}
 	}()
 	err := handler.HandleGatewayMessage(t.Context(), "gw1", req)
 	require.NoError(t, err)
