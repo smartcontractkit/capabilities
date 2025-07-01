@@ -61,7 +61,7 @@ func TestCapability_CallContract(t *testing.T) {
 		msgProto, _ := evmcappb.ConvertCallMsgToProto(&evmtypes.CallMsg{})
 		_, err := svc.CallContract(context.Background(), capabilities.RequestMetadata{},
 			&evmcappb.CallContractRequest{Call: msgProto})
-		assert.ErrorContains(t, err, "block number must be non-zero")
+		assert.ErrorContains(t, err, "blockNumber must be non-zero")
 	})
 
 	t.Run("EVM error bubbles", func(t *testing.T) {
