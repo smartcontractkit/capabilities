@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	relayermock "github.com/smartcontractkit/chainlink-common/pkg/types/core/mocks"
 	evmmock "github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	"github.com/smartcontractkit/chainlink-evm/pkg/testutils"
@@ -27,6 +28,7 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 	evmSvc := evmmock.NewEVMService(t)
 	relayer := relayermock.NewRelayer(t)
 	relayer.On("EVM").Return(evmSvc, nil)
+	relayer.On("GetChainInfo", mock.Anything).Return(types.ChainInfo{}, nil)
 
 	relayerSet := relayermock.NewRelayerSet(t)
 	relayerSet.On("Get", mock.Anything, mock.Anything).Return(relayer, nil)
