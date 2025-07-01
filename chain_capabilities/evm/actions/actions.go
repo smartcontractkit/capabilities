@@ -75,7 +75,7 @@ func (e EVM) CallContract(
 
 	data, err := e.EVMService.CallContract(ctx, callMsg, bn)
 	if err != nil {
-		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildCallContractError(read, callMsg, bn, "Failed to execute CallContract", err.Error()))
+		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildCallContractError(read, callMsg, bn, "Failed to read CallContract", err.Error()))
 		return nil, err
 	}
 
