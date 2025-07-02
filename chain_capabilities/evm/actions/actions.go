@@ -23,16 +23,15 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/contracts"
 )
 
-type ConsensusReader interface {
-	// Read - returns a channel to the result of `request.GetObservation()`. This result is consistent across all nodes in
+type ConsensusHandler interface {
+	// Handle - returns a channel to the result of `request.GetObservation()`. This result is consistent across all nodes in
 	// the DON, even if individual RPC states differ.
-	//TODO: switches from bytes to <-chan any as part of PLEX-1470
-	Read(ctx context.Context, request ctypes.Request) (<-chan any, error)
+	Handle(ctx context.Context, request ctypes.Request) (<-chan any, error)
 }
 
 type EVM struct {
 	types.EVMService
-	ConsensusReader          ConsensusReader
+	ConsensusHandler         ConsensusHandler
 	keystoneForwarderAddress common.Address
 	forwarderClient          contracts.CREForwarderClient
 	lggr                     logger.Logger
@@ -81,7 +80,7 @@ func (e EVM) CallContract(ctx context.Context, meta capabilities.RequestMetadata
 		})
 	}
 
-	data, err := readType[[]byte](ctx, e.ConsensusReader, request)
+	data, err := readType[[]byte](ctx, e.ConsensusHandler, request)
 	if err != nil {
 		return nil, err
 	}
@@ -223,7 +222,7 @@ func (e EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata,
 		}, nil
 	})
 
-	rawEstimate, err := readDecimal(ctx, e.ConsensusReader, request)
+	rawEstimate, err := readDecimal(ctx, e.ConsensusHandler, request)
 	if err != nil {
 		return nil, err
 	}
@@ -231,8 +230,8 @@ func (e EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata,
 	return &evmcappb.EstimateGasReply{Gas: rawEstimate.BigInt().Uint64()}, nil
 }
 
-func readDecimal(ctx context.Context, reader ConsensusReader, request ctypes.Request) (decimal.Decimal, error) {
-	rawDecimal, err := readType[*valuespb.Decimal](ctx, reader, request)
+func readDecimal(ctx context.Context, handler ConsensusHandler, request ctypes.Request) (decimal.Decimal, error) {
+	rawDecimal, err := readType[*valuespb.Decimal](ctx, handler, request)
 	if err != nil {
 		return decimal.Decimal{}, err
 	}
@@ -241,16 +240,16 @@ func readDecimal(ctx context.Context, reader ConsensusReader, request ctypes.Req
 }
 
 func (e EVM) readProto(ctx context.Context, request ctypes.Request, into proto.Message) (err error) {
-	data, err := readType[[]byte](ctx, e.ConsensusReader, request)
+	data, err := readType[[]byte](ctx, e.ConsensusHandler, request)
 	if err != nil {
 		return err
 	}
 	return proto.Unmarshal(data, into)
 }
 
-func readType[T any](ctx context.Context, reader ConsensusReader, request ctypes.Request) (T, error) {
+func readType[T any](ctx context.Context, reader ConsensusHandler, request ctypes.Request) (T, error) {
 	var zero T
-	resultCh, err := reader.Read(ctx, request)
+	resultCh, err := reader.Handle(ctx, request)
 	if err != nil {
 		return zero, err
 	}

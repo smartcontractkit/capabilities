@@ -35,14 +35,14 @@ type reportingPlugin struct {
 	config         Config
 	logger         logger.SugaredLogger
 	blocksProvider BlocksProvider
-	requestsStore  RequestsStore
+	requestsStore  RequestsHandler
 }
 
 func newReportingPlugin(
 	config Config,
 	logger logger.SugaredLogger,
 	blocksProvider BlocksProvider,
-	requestsStore RequestsStore,
+	requestsStore RequestsHandler,
 ) *reportingPlugin {
 	return &reportingPlugin{
 		config:         config,

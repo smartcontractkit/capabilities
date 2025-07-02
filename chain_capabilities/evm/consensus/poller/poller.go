@@ -25,7 +25,7 @@ type requestToRetry struct {
 
 // Poller - maintains queue of requestToPoll and periodically refreshes our observations by calling CaptureObservation.
 // A request remains in the queue until its context is canceled to ensure that in case of reorg or errors we eventually capture
-// valid observation.
+// valid observation. Example: CallContract should be polled until quorum of nodes has reached requested block.
 // Request polls after initial, occur with a delay defined by pollPeriod.
 type Poller struct {
 	// service state management

@@ -10,7 +10,7 @@ type BlocksProvider interface {
 	GetFinalized() (int64, error)
 }
 
-type RequestsStore interface {
+type RequestsHandler interface {
 	GetRequestIDs(batchSize int) ([]string, error)
 	GetRequest(id string) (types.Request, bool)
 	CompleteRequest(id string, report *types.RequestReport) error

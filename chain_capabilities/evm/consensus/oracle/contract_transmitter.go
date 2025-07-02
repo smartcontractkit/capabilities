@@ -17,10 +17,10 @@ var _ ocr3types.ContractTransmitter[[]byte] = (*ContractTransmitter)(nil)
 
 type ContractTransmitter struct {
 	lggr          logger.SugaredLogger
-	requestsStore RequestsStore
+	requestsStore RequestsHandler
 }
 
-func NewContractTransmitter(lggr logger.Logger, requestsStore RequestsStore) *ContractTransmitter {
+func NewContractTransmitter(lggr logger.Logger, requestsStore RequestsHandler) *ContractTransmitter {
 	return &ContractTransmitter{
 		lggr:          logger.Sugared(lggr),
 		requestsStore: requestsStore,
