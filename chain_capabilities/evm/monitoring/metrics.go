@@ -255,7 +255,7 @@ func (r *CallContractSuccess) Attributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.Int64("block_number", r.Req.GetBlockNumber()),
 		attribute.String("contract_address", r.Req.GetContractAddress()),
-	}, executionMetadata(r.ExecutionContext).Attributes()...)
+	}, r.ExecutionContext.Attributes()...)
 }
 
 func (r *CallContractError) Attributes() []attribute.KeyValue {
@@ -263,7 +263,7 @@ func (r *CallContractError) Attributes() []attribute.KeyValue {
 		attribute.Int64("block_number", r.Req.GetBlockNumber()),
 		attribute.String("contract_address", r.Req.GetContractAddress()),
 		attribute.String("summary", r.GetSummary()),
-	}, executionMetadata(r.ExecutionContext).Attributes()...)
+	}, r.ExecutionContext.Attributes()...)
 }
 
 func (r *FilterLogsSuccess) Attributes() []attribute.KeyValue {
@@ -271,7 +271,7 @@ func (r *FilterLogsSuccess) Attributes() []attribute.KeyValue {
 		attribute.Int64("from_block", r.Req.GetFromBlock()),
 		attribute.Int64("to_block", r.Req.GetToBlock()),
 		attribute.Int64("log_count", int64(r.GetLogCount())),
-	}, executionMetadata(r.ExecutionContext).Attributes()...)
+	}, r.ExecutionContext.Attributes()...)
 }
 
 func (r *FilterLogsError) Attributes() []attribute.KeyValue {
@@ -279,7 +279,7 @@ func (r *FilterLogsError) Attributes() []attribute.KeyValue {
 		attribute.Int64("from_block", r.Req.GetFromBlock()),
 		attribute.Int64("to_block", r.Req.GetToBlock()),
 		attribute.String("summary", r.GetSummary()),
-	}, executionMetadata(r.ExecutionContext).Attributes()...)
+	}, r.ExecutionContext.Attributes()...)
 }
 
 func (r *BalanceAtSuccess) Attributes() []attribute.KeyValue {
@@ -287,7 +287,7 @@ func (r *BalanceAtSuccess) Attributes() []attribute.KeyValue {
 		attribute.String("account", r.Req.GetAccount()),
 		attribute.Int64("block_number", r.Req.GetBlockNumber()),
 		attribute.String("balance", r.GetBalance()),
-	}, executionMetadata(r.ExecutionContext).Attributes()...)
+	}, r.ExecutionContext.Attributes()...)
 }
 
 func (r *BalanceAtError) Attributes() []attribute.KeyValue {
@@ -295,7 +295,7 @@ func (r *BalanceAtError) Attributes() []attribute.KeyValue {
 		attribute.String("account", r.Req.GetAccount()),
 		attribute.Int64("block_number", r.Req.GetBlockNumber()),
 		attribute.String("summary", r.GetSummary()),
-	}, executionMetadata(r.ExecutionContext).Attributes()...)
+	}, r.ExecutionContext.Attributes()...)
 }
 
 func (r *EstimateGasSuccess) Attributes() []attribute.KeyValue {
@@ -303,7 +303,7 @@ func (r *EstimateGasSuccess) Attributes() []attribute.KeyValue {
 		attribute.String("from", r.Req.GetFrom()),
 		attribute.String("to", r.Req.GetTo()),
 		attribute.Int64("gas", r.GetGas()),
-	}, executionMetadata(r.ExecutionContext).Attributes()...)
+	}, r.ExecutionContext.Attributes()...)
 }
 
 func (r *EstimateGasError) Attributes() []attribute.KeyValue {
@@ -311,61 +311,41 @@ func (r *EstimateGasError) Attributes() []attribute.KeyValue {
 		attribute.String("from", r.Req.GetFrom()),
 		attribute.String("to", r.Req.GetTo()),
 		attribute.String("summary", r.GetSummary()),
-	}, executionMetadata(r.ExecutionContext).Attributes()...)
+	}, r.ExecutionContext.Attributes()...)
 }
 
 func (r *GetTransactionByHashSuccess) Attributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.String("hash", r.Req.GetHash()),
-	}, executionMetadata(r.ExecutionContext).Attributes()...)
+	}, r.ExecutionContext.Attributes()...)
 }
 
 func (r *GetTransactionByHashError) Attributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.String("hash", r.Req.GetHash()),
 		attribute.String("summary", r.GetSummary()),
-	}, executionMetadata(r.ExecutionContext).Attributes()...)
+	}, r.ExecutionContext.Attributes()...)
 }
 
 func (r *GetTransactionReceiptSuccess) Attributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.String("hash", r.Req.GetHash()),
-	}, executionMetadata(r.ExecutionContext).Attributes()...)
+	}, r.ExecutionContext.Attributes()...)
 }
 
 func (r *GetTransactionReceiptError) Attributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.String("hash", r.Req.GetHash()),
 		attribute.String("summary", r.GetSummary()),
-	}, executionMetadata(r.ExecutionContext).Attributes()...)
+	}, r.ExecutionContext.Attributes()...)
 }
 
 func (r *LatestAndFinalizedHeadSuccess) Attributes() []attribute.KeyValue {
-	return executionMetadata(r.ExecutionContext).Attributes()
+	return r.ExecutionContext.Attributes()
 }
 
 func (r *LatestAndFinalizedHeadError) Attributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.String("summary", r.GetSummary()),
-	}, executionMetadata(r.ExecutionContext).Attributes()...)
-}
-
-// executionMetadata extracts common labels from ExecutionContext
-func executionMetadata(ec *commoncapbeholder.ExecutionContext) commoncapbeholder.ExecutionMetadata {
-	return commoncapbeholder.ExecutionMetadata{
-		SourceID:                 ec.MetaSourceId,
-		ChainFamilyName:          ec.MetaChainFamilyName,
-		ChainID:                  ec.MetaChainId,
-		NetworkName:              ec.MetaNetworkName,
-		NetworkNameFull:          ec.MetaNetworkNameFull,
-		WorkflowID:               ec.MetaWorkflowId,
-		WorkflowOwner:            ec.MetaWorkflowOwner,
-		WorkflowExecutionID:      ec.MetaWorkflowExecutionId,
-		WorkflowName:             ec.MetaWorkflowName,
-		WorkflowDonID:            ec.MetaWorkflowDonId,
-		WorkflowDonConfigVersion: ec.MetaWorkflowDonConfigVersion,
-		ReferenceID:              ec.MetaReferenceId,
-		CapabilityType:           ec.MetaCapabilityType,
-		CapabilityID:             ec.MetaCapabilityId,
-	}
+	}, r.ExecutionContext.Attributes()...)
 }
