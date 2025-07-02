@@ -3,10 +3,14 @@ package actions
 import (
 	"context"
 	"fmt"
-
-	"google.golang.org/protobuf/types/known/emptypb"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"google.golang.org/protobuf/types/known/emptypb"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/contracts"
@@ -16,106 +20,153 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
-	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
+	"github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 )
 
 type EVM struct {
 	types.EVMService
 	keystoneForwarderAddress common.Address
 	forwarderClient          contracts.CREForwarderClient
-	lggr                     logger.Logger
 	ReceiverGasMinimum       uint64
+
+	lggr              logger.Logger
+	beholderProcessor beholder.ProtoProcessor
+	messageBuilder    *monitoring.MessageBuilder
 }
 
-func NewEVM(cfg config.Config, evmService types.EVMService, logger logger.Logger) (EVM, error) {
+func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, beholderProcessor beholder.ProtoProcessor, messageBuilder *monitoring.MessageBuilder) (EVM, error) {
 	keystoneForwarderAddress := common.HexToAddress(cfg.CREForwarderAddress)
-	kfc, err := contracts.NewCREForwarderClient(evmService, keystoneForwarderAddress, logger)
+	kfc, err := contracts.NewCREForwarderClient(evmService, keystoneForwarderAddress, lggr)
 	if err != nil {
 		return EVM{}, err
 	}
-	return EVM{EVMService: evmService, keystoneForwarderAddress: keystoneForwarderAddress, ReceiverGasMinimum: cfg.ReceiverGasMinimum, lggr: logger, forwarderClient: kfc}, nil
+
+	return EVM{
+		EVMService:               evmService,
+		keystoneForwarderAddress: keystoneForwarderAddress,
+		forwarderClient:          kfc,
+		ReceiverGasMinimum:       cfg.ReceiverGasMinimum,
+		lggr:                     lggr,
+		beholderProcessor:        beholderProcessor,
+		messageBuilder:           messageBuilder,
+	}, nil
 }
 
-// TODO finalise the signature PLEX-1482
-func (e EVM) CallContract(ctx context.Context, _ capabilities.RequestMetadata, input *evmcappb.CallContractRequest) (*evmcappb.CallContractReply, error) {
+func (e EVM) CallContract(
+	ctx context.Context,
+	req capabilities.RequestMetadata,
+	input *evmcappb.CallContractRequest,
+) (*evmcappb.CallContractReply, error) {
+	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: req}
+
 	callMsg, err := evmcappb.ConvertCallMsgFromProto(input.GetCall())
 	if err != nil {
 		return nil, err
 	}
 
-	// TODO handle unspecified block number, which defaults to the latest block, need an OCR round for consensus on read.
-	// To do this the EVMService has to be modified/extended to return from which block the contract was read or even a list of contact reads from a couple of blocks.
-	blockNumber := valuespb.NewIntFromBigInt(input.GetBlockNumber())
-	if blockNumber == nil || blockNumber.String() == "0" {
-		return nil, fmt.Errorf("block number must be specified and non-zero, got: %s", blockNumber)
+	bn := pb.NewIntFromBigInt(input.GetBlockNumber())
+	if bn == nil || bn.Int64() == 0 {
+		return nil, fmt.Errorf("blockNumber must be non-zero, got %s", bn)
 	}
 
-	data, err := e.EVMService.CallContract(ctx, callMsg, blockNumber)
+	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildCallContractInitiated(read, callMsg, bn))
+	data, err := e.EVMService.CallContract(ctx, callMsg, bn)
 	if err != nil {
+		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildCallContractError(read, callMsg, bn, "Failed to read CallContract", err.Error()))
 		return nil, err
 	}
 
+	monitoring.LogAndEmitSuccess(ctx, "Successfully read CallContract", e.lggr, e.beholderProcessor, e.messageBuilder.BuildCallContractSuccess(read, callMsg, bn))
 	return &evmcappb.CallContractReply{Data: data}, nil
 }
 
-func (e EVM) FilterLogs(ctx context.Context, _ capabilities.RequestMetadata, req *evmcappb.FilterLogsRequest) (*evmcappb.FilterLogsReply, error) {
-	fq, err := evmcappb.ConvertFilterFromProto(req.GetFilterQuery())
+func (e EVM) FilterLogs(
+	ctx context.Context,
+	req capabilities.RequestMetadata,
+	input *evmcappb.FilterLogsRequest,
+) (*evmcappb.FilterLogsReply, error) {
+	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: req}
+
+	fq, err := evmcappb.ConvertFilterFromProto(input.GetFilterQuery())
 	if err != nil {
 		return nil, err
 	}
-
-	if (fq.FromBlock == nil || fq.FromBlock.String() == "0") || (fq.ToBlock == nil || fq.ToBlock.String() == "0") {
-		return nil, fmt.Errorf("fromBlock and toBlock have to be specified and bounded in the filter query, got: fromBlock=%s, toBlock=%s", fq.FromBlock, fq.ToBlock)
+	if fq.FromBlock == nil || fq.ToBlock == nil || fq.FromBlock.Cmp(fq.ToBlock) > 0 {
+		return nil, fmt.Errorf("invalid range: %s-%s", fq.FromBlock, fq.ToBlock)
 	}
 
-	if fq.FromBlock.Cmp(fq.ToBlock) > 0 {
-		return nil, fmt.Errorf("fromBlock (%s) cannot be greater than toBlock (%s)", fq.FromBlock, fq.ToBlock)
-	}
-
+	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildFilterLogsInitiated(read, fq))
 	logs, err := e.EVMService.FilterLogs(ctx, fq)
 	if err != nil {
+		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildFilterLogsError(read, fq, "Failed to FilterLogs", err.Error()))
 		return nil, err
 	}
 
+	// G115: integer overflow conversion int -> int32 (gosec)
+	// nolint:gosec
+	monitoring.LogAndEmitSuccess(ctx, "Successfully executed FilterLogs", e.lggr, e.beholderProcessor, e.messageBuilder.BuildFilterLogsSuccess(read, fq, int32(len(logs))))
 	return &evmcappb.FilterLogsReply{Logs: evmcappb.ConvertLogsToProto(logs)}, nil
 }
 
-func (e EVM) BalanceAt(etx context.Context, _ capabilities.RequestMetadata, req *evmcappb.BalanceAtRequest) (*evmcappb.BalanceAtReply, error) {
-	blockNumber := valuespb.NewIntFromBigInt(req.GetBlockNumber())
+func (e EVM) BalanceAt(
+	ctx context.Context,
+	req capabilities.RequestMetadata,
+	input *evmcappb.BalanceAtRequest,
+) (*evmcappb.BalanceAtReply, error) {
+	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: req}
 
-	// TODO allow the block number to be nil or zero, which would default to the latest block, this requires an OCR round to reach consesnus on balance read.
-	// To do this the EVMService has to be modified/extended to return from which block the balance was read or even a list of balances from a couple of blocks.
-	// alternatively, just return median of the balance value?
-	if blockNumber == nil || blockNumber.String() == "0" {
-		return nil, fmt.Errorf("block number must be specified and non-zero, got: %s", blockNumber)
+	bn := pb.NewIntFromBigInt(input.GetBlockNumber())
+	if bn == nil || bn.Int64() == 0 {
+		return nil, fmt.Errorf("invalid block number %s", bn)
 	}
 
-	balance, err := e.EVMService.BalanceAt(etx, evmtypes.Address(req.GetAccount()), blockNumber)
+	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildBalanceAtInitiated(read, common.Bytes2Hex(input.GetAccount()), bn))
+	bal, err := e.EVMService.BalanceAt(ctx, evmtypes.Address(input.GetAccount()), bn)
 	if err != nil {
+		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildBalanceAtError(read, common.Bytes2Hex(input.GetAccount()), bn, "Failed to read BalanceAt", err.Error()))
 		return nil, err
 	}
 
-	return &evmcappb.BalanceAtReply{Balance: valuespb.NewBigIntFromInt(balance)}, nil
+	monitoring.LogAndEmitSuccess(ctx, "Successfully read BalanceAt", e.lggr, e.beholderProcessor, e.messageBuilder.BuildBalanceAtSuccess(read, common.Bytes2Hex(input.GetAccount()), bn, bal))
+	return &evmcappb.BalanceAtReply{Balance: pb.NewBigIntFromInt(bal)}, nil
 }
 
-func (e EVM) EstimateGas(etx context.Context, _ capabilities.RequestMetadata, req *evmcappb.EstimateGasRequest) (*evmcappb.EstimateGasReply, error) {
-	// TODO double check if an ocr round can just return a median of the estimate gas value and implement this.
-	callMsg, err := evmcappb.ConvertCallMsgFromProto(req.GetMsg())
+func (e EVM) EstimateGas(
+	ctx context.Context,
+	req capabilities.RequestMetadata,
+	input *evmcappb.EstimateGasRequest,
+) (*evmcappb.EstimateGasReply, error) {
+	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: req}
+
+	msg, err := evmcappb.ConvertCallMsgFromProto(input.GetMsg())
 	if err != nil {
 		return nil, err
 	}
 
-	estimate, err := e.EVMService.EstimateGas(etx, callMsg)
+	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildEstimateGasInitiated(read, common.Bytes2Hex(msg.From[:]), common.Bytes2Hex(msg.To[:]), msg.Data))
+	estimate, err := e.EVMService.EstimateGas(ctx, msg)
 	if err != nil {
-		return &evmcappb.EstimateGasReply{}, err
+		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildEstimateGasError(read, common.Bytes2Hex(msg.From[:]), common.Bytes2Hex(msg.To[:]), msg.Data, "Failed to execute EstimateGas", err.Error()))
+		return nil, err
 	}
 
+	// G115: integer overflow conversion uint64 -> int64 (gosec)
+	// nolint:gosec
+	monitoring.LogAndEmitSuccess(ctx, "Successfully read EstimateGas", e.lggr, e.beholderProcessor, e.messageBuilder.BuildEstimateGasSuccess(read, common.Bytes2Hex(msg.From[:]), common.Bytes2Hex(msg.To[:]), msg.Data, int64(estimate)))
 	return &evmcappb.EstimateGasReply{Gas: estimate}, nil
 }
 
-func (e EVM) GetTransactionByHash(etx context.Context, _ capabilities.RequestMetadata, req *evmcappb.GetTransactionByHashRequest) (*evmcappb.GetTransactionByHashReply, error) {
-	tx, err := e.EVMService.GetTransactionByHash(etx, evmtypes.Hash(req.Hash))
+func (e EVM) GetTransactionByHash(
+	ctx context.Context,
+	req capabilities.RequestMetadata,
+	input *evmcappb.GetTransactionByHashRequest,
+) (*evmcappb.GetTransactionByHashReply, error) {
+	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: req}
+
+	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildGetTransactionByHashInitiated(read, common.Bytes2Hex(input.GetHash())))
+	tx, err := e.EVMService.GetTransactionByHash(ctx, evmtypes.Hash(input.GetHash()))
 	if err != nil {
+		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildGetTransactionByHashError(read, common.Bytes2Hex(input.GetHash()), "Failed to execute GetTransactionByHash", err.Error()))
 		return nil, err
 	}
 
@@ -124,34 +175,50 @@ func (e EVM) GetTransactionByHash(etx context.Context, _ capabilities.RequestMet
 		return nil, err
 	}
 
+	monitoring.LogAndEmitSuccess(ctx, "Successfully read GetTransactionByHash", e.lggr, e.beholderProcessor, e.messageBuilder.BuildGetTransactionByHashSuccess(read, common.Bytes2Hex(input.GetHash()), tx))
 	return &evmcappb.GetTransactionByHashReply{Transaction: protoTx}, nil
 }
 
-func (e EVM) GetTransactionReceipt(etx context.Context, _ capabilities.RequestMetadata, req *evmcappb.GetTransactionReceiptRequest) (*evmcappb.GetTransactionReceiptReply, error) {
-	receipt, err := e.EVMService.GetTransactionReceipt(etx, evmtypes.Hash(req.Hash))
+func (e EVM) GetTransactionReceipt(
+	ctx context.Context,
+	req capabilities.RequestMetadata,
+	input *evmcappb.GetTransactionReceiptRequest,
+) (*evmcappb.GetTransactionReceiptReply, error) {
+	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: req}
+
+	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildGetTransactionReceiptInitiated(read, common.Bytes2Hex(input.GetHash())))
+	rcp, err := e.EVMService.GetTransactionReceipt(ctx, evmtypes.Hash(input.GetHash()))
+	if err != nil {
+		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildGetTransactionReceiptError(read, common.Bytes2Hex(input.GetHash()), "Failed to get latest and finalized head", err.Error()))
+		return nil, err
+	}
+
+	protoR, err := evmcappb.ConvertReceiptToProto(rcp)
 	if err != nil {
 		return nil, err
 	}
 
-	protoReceipt, err := evmcappb.ConvertReceiptToProto(receipt)
-	if err != nil {
-		return nil, err
-	}
-
-	return &evmcappb.GetTransactionReceiptReply{Receipt: protoReceipt}, nil
+	monitoring.LogAndEmitSuccess(ctx, "Successfully read GetTransactionReceiptSuccess", e.lggr, e.beholderProcessor, e.messageBuilder.BuildGetTransactionReceiptSuccess(read, common.Bytes2Hex(input.GetHash()), rcp))
+	return &evmcappb.GetTransactionReceiptReply{Receipt: protoR}, nil
 }
 
-func (e EVM) LatestAndFinalizedHead(etx context.Context, _ capabilities.RequestMetadata, _ *emptypb.Empty) (*evmcappb.LatestAndFinalizedHeadReply, error) {
-	// TODO need to start an OCR round here to get median of latest and finalized head, do we need a list of blocks to do this or can we get the DON median from the OCRFactory?
-	latest, finalized, err := e.EVMService.LatestAndFinalizedHead(etx)
+// TODO turn this into GetBlock(... finality...)
+func (e EVM) LatestAndFinalizedHead(
+	ctx context.Context,
+	req capabilities.RequestMetadata,
+	_ *emptypb.Empty,
+) (*evmcappb.LatestAndFinalizedHeadReply, error) {
+	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: req}
+
+	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildLatestAndFinalizedHeadInitiated(read))
+	latest, fin, err := e.EVMService.LatestAndFinalizedHead(ctx)
 	if err != nil {
+		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildLatestAndFinalizedHeadError(read, "Failed to get latest and finalized head", err.Error()))
 		return nil, err
 	}
 
-	return &evmcappb.LatestAndFinalizedHeadReply{
-		Latest:    evmcappb.ConvertHeadToProto(latest),
-		Finalized: evmcappb.ConvertHeadToProto(finalized),
-	}, nil
+	monitoring.LogAndEmitSuccess(ctx, "Successfully read LatestAndFinalizedHead", e.lggr, e.beholderProcessor, e.messageBuilder.BuildLatestAndFinalizedHeadSuccess(read, latest, fin))
+	return &evmcappb.LatestAndFinalizedHeadReply{Latest: evmcappb.ConvertHeadToProto(latest), Finalized: evmcappb.ConvertHeadToProto(fin)}, nil
 }
 
 func (e EVM) RegisterLogTracking(etx context.Context, _ capabilities.RequestMetadata, req *evmcappb.RegisterLogTrackingRequest) (*emptypb.Empty, error) {
