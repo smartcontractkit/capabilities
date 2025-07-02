@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"strings"
 	"sync"
 	"time"
 
@@ -257,14 +256,6 @@ func (p *gatewayOutboundProxy) HandleGatewayMessage(ctx context.Context, gateway
 		l.Errorw("unsupported method")
 	}
 	return nil
-}
-
-// isRateLimitError checks if the error string contains any of the rate limit error constants.
-func isRateLimitError(errStr string) bool {
-	return strings.Contains(errStr, common.ErrorOutgoingRatelimitGlobal) ||
-		strings.Contains(errStr, common.ErrorOutgoingRatelimitWorkflowOwner) ||
-		strings.Contains(errStr, common.ErrorIncomingRatelimitGlobal) ||
-		strings.Contains(errStr, common.ErrorIncomingRatelimitSender)
 }
 
 func (p *gatewayOutboundProxy) ID(ctx context.Context) (string, error) {
