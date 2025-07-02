@@ -7,12 +7,12 @@
 package monitoring
 
 import (
-	reflect "reflect"
-	sync "sync"
-	unsafe "unsafe"
+	"reflect"
+	"sync"
+	"unsafe"
 
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/runtime/protoimpl"
 )
 
 const (
@@ -213,7 +213,7 @@ const file_execution_context_proto_rawDesc = "" +
 	"\x14meta_capability_type\x18\r \x01(\tR\x12metaCapabilityType\x12,\n" +
 	"\x12meta_capability_id\x18\x0e \x01(\tR\x10metaCapabilityId\x12E\n" +
 	"\x1fmeta_capability_timestamp_start\x18\x0f \x01(\x04R\x1cmetaCapabilityTimestampStart\x12C\n" +
-	"\x1emeta_capability_timestamp_emit\x18\x10 \x01(\x04R\x1bmetaCapabilityTimestampEmitB5Z3github.com/smartcontractkit/capabilities/monitoringb\x06proto3"
+	"\x1emeta_capability_timestamp_emit\x18\x10 \x01(\x04R\x1bmetaCapabilityTimestampEmitB5Z3github.com/smartcontractkit/capabilities/libs/monitoringb\x06proto3"
 
 var (
 	file_execution_context_proto_rawDescOnce sync.Once
