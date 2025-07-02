@@ -11,19 +11,19 @@ message CallContractRequest {
 
 message CallContractInitiated {
   CallContractRequest req = 1;
-  common.ExecutionContext execution_context = 20;
+  monitoring.ExecutionContext execution_context = 20;
 }
 
 message CallContractSuccess {
   CallContractRequest req = 1;
-  common.ExecutionContext execution_context = 20;
+  monitoring.ExecutionContext execution_context = 20;
 }
 
 message CallContractError {
   CallContractRequest req = 1;
   string summary = 2;
   string cause = 3;
-  common.ExecutionContext execution_context = 20;
+  monitoring.ExecutionContext execution_context = 20;
 }
 
 message Topics {
@@ -40,20 +40,20 @@ message FilterLogsRequest {
 
 message FilterLogsInitiated {
   FilterLogsRequest req = 1;
-  common.ExecutionContext execution_context = 20;
+  monitoring.ExecutionContext execution_context = 20;
 }
 
 message FilterLogsSuccess {
   FilterLogsRequest req = 1;
   int32 log_count = 2;
-  common.ExecutionContext execution_context = 20;
+  monitoring.ExecutionContext execution_context = 20;
 }
 
 message FilterLogsError {
   FilterLogsRequest req = 1;
   string summary = 2;
   string cause = 3;
-  common.ExecutionContext execution_context = 20;
+  monitoring.ExecutionContext execution_context = 20;
 }
 
 message BalanceAtRequest {
@@ -63,20 +63,20 @@ message BalanceAtRequest {
 
 message BalanceAtInitiated {
   BalanceAtRequest req = 1;
-  common.ExecutionContext execution_context = 20;
+  monitoring.ExecutionContext execution_context = 20;
 }
 
 message BalanceAtSuccess {
   BalanceAtRequest req = 1;
   string balance = 2;
-  common.ExecutionContext execution_context = 20;
+  monitoring.ExecutionContext execution_context = 20;
 }
 
 message BalanceAtError {
   BalanceAtRequest req = 1;
   string summary = 2;
   string cause = 3;
-  common.ExecutionContext execution_context = 20;
+  monitoring.ExecutionContext execution_context = 20;
 }
 
 message EstimateGasRequest {
@@ -86,18 +86,18 @@ message EstimateGasRequest {
 }
 message EstimateGasInitiated {
   EstimateGasRequest req = 1;
-  common.ExecutionContext execution_context = 20;
+  monitoring.ExecutionContext execution_context = 20;
 }
 message EstimateGasSuccess {
   EstimateGasRequest req = 1;
   int64 gas = 2;
-  common.ExecutionContext execution_context = 20;
+  monitoring.ExecutionContext execution_context = 20;
 }
 message EstimateGasError {
   EstimateGasRequest req = 1;
   string summary = 2;
   string cause = 3;
-  common.ExecutionContext execution_context = 20;
+  monitoring.ExecutionContext execution_context = 20;
 }
 
 message Receipt {
@@ -116,7 +116,7 @@ message GetTransactionByHashRequest {
 
 message GetTransactionByHashInitiated {
   GetTransactionByHashRequest req = 1;
-  common.ExecutionContext execution_context = 20;
+  monitoring.ExecutionContext execution_context = 20;
 }
 
 message TransactionData {
@@ -130,13 +130,13 @@ message TransactionData {
 message GetTransactionByHashSuccess {
   GetTransactionByHashRequest req = 1;
   TransactionData transaction = 2;
-  common.ExecutionContext execution_context = 20;
+  monitoring.ExecutionContext execution_context = 20;
 }
 message GetTransactionByHashError {
   GetTransactionByHashRequest req = 1;
   string summary = 2;
   string cause = 3;
-  common.ExecutionContext execution_context = 20;
+  monitoring.ExecutionContext execution_context = 20;
 }
 
 message GetTransactionReceiptRequest {
@@ -145,24 +145,24 @@ message GetTransactionReceiptRequest {
 
 message GetTransactionReceiptInitiated {
   GetTransactionReceiptRequest req = 1;
-  common.ExecutionContext execution_context = 20;
+  monitoring.ExecutionContext execution_context = 20;
 }
 
 message GetTransactionReceiptSuccess {
   GetTransactionReceiptRequest req = 1;
   Receipt receipt = 2;
-  common.ExecutionContext execution_context = 20;
+  monitoring.ExecutionContext execution_context = 20;
 }
 
 message GetTransactionReceiptError {
   GetTransactionReceiptRequest req = 1;
   string summary = 2;
   string cause = 3;
-  common.ExecutionContext execution_context = 20;
+  monitoring.ExecutionContext execution_context = 20;
 }
 
 message LatestAndFinalizedHeadInitiated{
-  common.ExecutionContext execution_context = 20;
+  monitoring.ExecutionContext execution_context = 20;
 }
 
 message BlockData {
@@ -174,11 +174,11 @@ message BlockData {
 message LatestAndFinalizedHeadSuccess {
   BlockData latest = 1;
   BlockData finalized = 2;
-  common.ExecutionContext execution_context = 20;
+  monitoring.ExecutionContext execution_context = 20;
 }
 
 message LatestAndFinalizedHeadError {
   string summary = 1;
   string cause = 2;
-  common.ExecutionContext execution_context = 20;
+  monitoring.ExecutionContext execution_context = 20;
 }

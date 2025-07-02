@@ -1873,18 +1873,18 @@ const file_chain_capabilities_evm_monitoring_read_actions_proto_rawDesc = "" +
 	"4chain_capabilities/evm/monitoring/read_actions.proto\x12\x16chain_capabilities.evm\x1a'libs/monitoring/execution_context.proto\"c\n" +
 	"\x13CallContractRequest\x12!\n" +
 	"\fblock_number\x18\x01 \x01(\x03R\vblockNumber\x12)\n" +
-	"\x10contract_address\x18\x02 \x01(\tR\x0fcontractAddress\"\x9d\x01\n" +
+	"\x10contract_address\x18\x02 \x01(\tR\x0fcontractAddress\"\xa1\x01\n" +
 	"\x15CallContractInitiated\x12=\n" +
-	"\x03req\x18\x01 \x01(\v2+.chain_capabilities.evm.CallContractRequestR\x03req\x12E\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x18.common.ExecutionContextR\x10executionContext\"\x9b\x01\n" +
+	"\x03req\x18\x01 \x01(\v2+.chain_capabilities.evm.CallContractRequestR\x03req\x12I\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\x9f\x01\n" +
 	"\x13CallContractSuccess\x12=\n" +
-	"\x03req\x18\x01 \x01(\v2+.chain_capabilities.evm.CallContractRequestR\x03req\x12E\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x18.common.ExecutionContextR\x10executionContext\"\xc9\x01\n" +
+	"\x03req\x18\x01 \x01(\v2+.chain_capabilities.evm.CallContractRequestR\x03req\x12I\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xcd\x01\n" +
 	"\x11CallContractError\x12=\n" +
 	"\x03req\x18\x01 \x01(\v2+.chain_capabilities.evm.CallContractRequestR\x03req\x12\x18\n" +
 	"\asummary\x18\x02 \x01(\tR\asummary\x12\x14\n" +
-	"\x05cause\x18\x03 \x01(\tR\x05cause\x12E\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x18.common.ExecutionContextR\x10executionContext\"\x1e\n" +
+	"\x05cause\x18\x03 \x01(\tR\x05cause\x12I\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\x1e\n" +
 	"\x06Topics\x12\x14\n" +
 	"\x05topic\x18\x01 \x03(\tR\x05topic\"\xc2\x01\n" +
 	"\x11FilterLogsRequest\x12\x1d\n" +
@@ -1894,50 +1894,50 @@ const file_chain_capabilities_evm_monitoring_read_actions_proto_rawDesc = "" +
 	"\n" +
 	"block_hash\x18\x03 \x01(\tR\tblockHash\x12\x1c\n" +
 	"\taddresses\x18\x04 \x03(\tR\taddresses\x126\n" +
-	"\x06topics\x18\x05 \x03(\v2\x1e.chain_capabilities.evm.TopicsR\x06topics\"\x99\x01\n" +
+	"\x06topics\x18\x05 \x03(\v2\x1e.chain_capabilities.evm.TopicsR\x06topics\"\x9d\x01\n" +
 	"\x13FilterLogsInitiated\x12;\n" +
-	"\x03req\x18\x01 \x01(\v2).chain_capabilities.evm.FilterLogsRequestR\x03req\x12E\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x18.common.ExecutionContextR\x10executionContext\"\xb4\x01\n" +
+	"\x03req\x18\x01 \x01(\v2).chain_capabilities.evm.FilterLogsRequestR\x03req\x12I\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xb8\x01\n" +
 	"\x11FilterLogsSuccess\x12;\n" +
 	"\x03req\x18\x01 \x01(\v2).chain_capabilities.evm.FilterLogsRequestR\x03req\x12\x1b\n" +
-	"\tlog_count\x18\x02 \x01(\x05R\blogCount\x12E\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x18.common.ExecutionContextR\x10executionContext\"\xc5\x01\n" +
+	"\tlog_count\x18\x02 \x01(\x05R\blogCount\x12I\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xc9\x01\n" +
 	"\x0fFilterLogsError\x12;\n" +
 	"\x03req\x18\x01 \x01(\v2).chain_capabilities.evm.FilterLogsRequestR\x03req\x12\x18\n" +
 	"\asummary\x18\x02 \x01(\tR\asummary\x12\x14\n" +
-	"\x05cause\x18\x03 \x01(\tR\x05cause\x12E\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x18.common.ExecutionContextR\x10executionContext\"O\n" +
+	"\x05cause\x18\x03 \x01(\tR\x05cause\x12I\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"O\n" +
 	"\x10BalanceAtRequest\x12\x18\n" +
 	"\aaccount\x18\x01 \x01(\tR\aaccount\x12!\n" +
-	"\fblock_number\x18\x02 \x01(\x03R\vblockNumber\"\x97\x01\n" +
+	"\fblock_number\x18\x02 \x01(\x03R\vblockNumber\"\x9b\x01\n" +
 	"\x12BalanceAtInitiated\x12:\n" +
-	"\x03req\x18\x01 \x01(\v2(.chain_capabilities.evm.BalanceAtRequestR\x03req\x12E\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x18.common.ExecutionContextR\x10executionContext\"\xaf\x01\n" +
+	"\x03req\x18\x01 \x01(\v2(.chain_capabilities.evm.BalanceAtRequestR\x03req\x12I\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xb3\x01\n" +
 	"\x10BalanceAtSuccess\x12:\n" +
 	"\x03req\x18\x01 \x01(\v2(.chain_capabilities.evm.BalanceAtRequestR\x03req\x12\x18\n" +
-	"\abalance\x18\x02 \x01(\tR\abalance\x12E\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x18.common.ExecutionContextR\x10executionContext\"\xc3\x01\n" +
+	"\abalance\x18\x02 \x01(\tR\abalance\x12I\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xc7\x01\n" +
 	"\x0eBalanceAtError\x12:\n" +
 	"\x03req\x18\x01 \x01(\v2(.chain_capabilities.evm.BalanceAtRequestR\x03req\x12\x18\n" +
 	"\asummary\x18\x02 \x01(\tR\asummary\x12\x14\n" +
-	"\x05cause\x18\x03 \x01(\tR\x05cause\x12E\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x18.common.ExecutionContextR\x10executionContext\"L\n" +
+	"\x05cause\x18\x03 \x01(\tR\x05cause\x12I\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"L\n" +
 	"\x12EstimateGasRequest\x12\x12\n" +
 	"\x04from\x18\x01 \x01(\tR\x04from\x12\x0e\n" +
 	"\x02to\x18\x02 \x01(\tR\x02to\x12\x12\n" +
-	"\x04data\x18\x03 \x01(\fR\x04data\"\x9b\x01\n" +
+	"\x04data\x18\x03 \x01(\fR\x04data\"\x9f\x01\n" +
 	"\x14EstimateGasInitiated\x12<\n" +
-	"\x03req\x18\x01 \x01(\v2*.chain_capabilities.evm.EstimateGasRequestR\x03req\x12E\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x18.common.ExecutionContextR\x10executionContext\"\xab\x01\n" +
+	"\x03req\x18\x01 \x01(\v2*.chain_capabilities.evm.EstimateGasRequestR\x03req\x12I\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xaf\x01\n" +
 	"\x12EstimateGasSuccess\x12<\n" +
 	"\x03req\x18\x01 \x01(\v2*.chain_capabilities.evm.EstimateGasRequestR\x03req\x12\x10\n" +
-	"\x03gas\x18\x02 \x01(\x03R\x03gas\x12E\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x18.common.ExecutionContextR\x10executionContext\"\xc7\x01\n" +
+	"\x03gas\x18\x02 \x01(\x03R\x03gas\x12I\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xcb\x01\n" +
 	"\x10EstimateGasError\x12<\n" +
 	"\x03req\x18\x01 \x01(\v2*.chain_capabilities.evm.EstimateGasRequestR\x03req\x12\x18\n" +
 	"\asummary\x18\x02 \x01(\tR\asummary\x12\x14\n" +
-	"\x05cause\x18\x03 \x01(\tR\x05cause\x12E\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x18.common.ExecutionContextR\x10executionContext\"\x9f\x02\n" +
+	"\x05cause\x18\x03 \x01(\tR\x05cause\x12I\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\x9f\x02\n" +
 	"\aReceipt\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\x04R\x06status\x12\x17\n" +
 	"\atx_hash\x18\x02 \x01(\tR\x06txHash\x12)\n" +
@@ -1949,54 +1949,54 @@ const file_chain_capabilities_evm_monitoring_read_actions_proto_rawDesc = "" +
 	"\x11transaction_index\x18\a \x01(\x04R\x10transactionIndex\x12.\n" +
 	"\x13effective_gas_price\x18\b \x01(\x04R\x11effectiveGasPrice\"1\n" +
 	"\x1bGetTransactionByHashRequest\x12\x12\n" +
-	"\x04hash\x18\x01 \x01(\tR\x04hash\"\xad\x01\n" +
+	"\x04hash\x18\x01 \x01(\tR\x04hash\"\xb1\x01\n" +
 	"\x1dGetTransactionByHashInitiated\x12E\n" +
-	"\x03req\x18\x01 \x01(\v23.chain_capabilities.evm.GetTransactionByHashRequestR\x03req\x12E\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x18.common.ExecutionContextR\x10executionContext\"\x8a\x01\n" +
+	"\x03req\x18\x01 \x01(\v23.chain_capabilities.evm.GetTransactionByHashRequestR\x03req\x12I\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\x8a\x01\n" +
 	"\x0fTransactionData\x12\x17\n" +
 	"\atx_hash\x18\x01 \x01(\tR\x06txHash\x12\x19\n" +
 	"\btx_nonce\x18\x02 \x01(\x04R\atxNonce\x12\x10\n" +
 	"\x03gas\x18\x03 \x01(\x04R\x03gas\x12\x1b\n" +
 	"\tgas_price\x18\x04 \x01(\x04R\bgasPrice\x12\x14\n" +
-	"\x05value\x18\x05 \x01(\x04R\x05value\"\xf6\x01\n" +
+	"\x05value\x18\x05 \x01(\x04R\x05value\"\xfa\x01\n" +
 	"\x1bGetTransactionByHashSuccess\x12E\n" +
 	"\x03req\x18\x01 \x01(\v23.chain_capabilities.evm.GetTransactionByHashRequestR\x03req\x12I\n" +
-	"\vtransaction\x18\x02 \x01(\v2'.chain_capabilities.evm.TransactionDataR\vtransaction\x12E\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x18.common.ExecutionContextR\x10executionContext\"\xd9\x01\n" +
+	"\vtransaction\x18\x02 \x01(\v2'.chain_capabilities.evm.TransactionDataR\vtransaction\x12I\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xdd\x01\n" +
 	"\x19GetTransactionByHashError\x12E\n" +
 	"\x03req\x18\x01 \x01(\v23.chain_capabilities.evm.GetTransactionByHashRequestR\x03req\x12\x18\n" +
 	"\asummary\x18\x02 \x01(\tR\asummary\x12\x14\n" +
-	"\x05cause\x18\x03 \x01(\tR\x05cause\x12E\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x18.common.ExecutionContextR\x10executionContext\"2\n" +
+	"\x05cause\x18\x03 \x01(\tR\x05cause\x12I\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"2\n" +
 	"\x1cGetTransactionReceiptRequest\x12\x12\n" +
-	"\x04hash\x18\x01 \x01(\tR\x04hash\"\xaf\x01\n" +
+	"\x04hash\x18\x01 \x01(\tR\x04hash\"\xb3\x01\n" +
 	"\x1eGetTransactionReceiptInitiated\x12F\n" +
-	"\x03req\x18\x01 \x01(\v24.chain_capabilities.evm.GetTransactionReceiptRequestR\x03req\x12E\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x18.common.ExecutionContextR\x10executionContext\"\xe8\x01\n" +
+	"\x03req\x18\x01 \x01(\v24.chain_capabilities.evm.GetTransactionReceiptRequestR\x03req\x12I\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xec\x01\n" +
 	"\x1cGetTransactionReceiptSuccess\x12F\n" +
 	"\x03req\x18\x01 \x01(\v24.chain_capabilities.evm.GetTransactionReceiptRequestR\x03req\x129\n" +
-	"\areceipt\x18\x02 \x01(\v2\x1f.chain_capabilities.evm.ReceiptR\areceipt\x12E\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x18.common.ExecutionContextR\x10executionContext\"\xdb\x01\n" +
+	"\areceipt\x18\x02 \x01(\v2\x1f.chain_capabilities.evm.ReceiptR\areceipt\x12I\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xdf\x01\n" +
 	"\x1aGetTransactionReceiptError\x12F\n" +
 	"\x03req\x18\x01 \x01(\v24.chain_capabilities.evm.GetTransactionReceiptRequestR\x03req\x12\x18\n" +
 	"\asummary\x18\x02 \x01(\tR\asummary\x12\x14\n" +
-	"\x05cause\x18\x03 \x01(\tR\x05cause\x12E\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x18.common.ExecutionContextR\x10executionContext\"h\n" +
-	"\x1fLatestAndFinalizedHeadInitiated\x12E\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x18.common.ExecutionContextR\x10executionContext\"v\n" +
+	"\x05cause\x18\x03 \x01(\tR\x05cause\x12I\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"l\n" +
+	"\x1fLatestAndFinalizedHeadInitiated\x12I\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"v\n" +
 	"\tBlockData\x12\x1d\n" +
 	"\n" +
 	"block_hash\x18\x01 \x01(\tR\tblockHash\x12!\n" +
 	"\fblock_height\x18\x02 \x01(\tR\vblockHeight\x12'\n" +
-	"\x0fblock_timestamp\x18\x03 \x01(\x04R\x0eblockTimestamp\"\xe2\x01\n" +
+	"\x0fblock_timestamp\x18\x03 \x01(\x04R\x0eblockTimestamp\"\xe6\x01\n" +
 	"\x1dLatestAndFinalizedHeadSuccess\x129\n" +
 	"\x06latest\x18\x01 \x01(\v2!.chain_capabilities.evm.BlockDataR\x06latest\x12?\n" +
-	"\tfinalized\x18\x02 \x01(\v2!.chain_capabilities.evm.BlockDataR\tfinalized\x12E\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x18.common.ExecutionContextR\x10executionContext\"\x94\x01\n" +
+	"\tfinalized\x18\x02 \x01(\v2!.chain_capabilities.evm.BlockDataR\tfinalized\x12I\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\x98\x01\n" +
 	"\x1bLatestAndFinalizedHeadError\x12\x18\n" +
 	"\asummary\x18\x01 \x01(\tR\asummary\x12\x14\n" +
-	"\x05cause\x18\x02 \x01(\tR\x05cause\x12E\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x18.common.ExecutionContextR\x10executionContextBLZJgithub.com/smartcontractkit/capabilities/chain_capabilities/evm;monitoringb\x06proto3"
+	"\x05cause\x18\x02 \x01(\tR\x05cause\x12I\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContextBLZJgithub.com/smartcontractkit/capabilities/chain_capabilities/evm;monitoringb\x06proto3"
 
 var (
 	file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescOnce sync.Once
@@ -2043,53 +2043,53 @@ var file_chain_capabilities_evm_monitoring_read_actions_proto_goTypes = []any{
 	(*BlockData)(nil),                       // 28: chain_capabilities.evm.BlockData
 	(*LatestAndFinalizedHeadSuccess)(nil),   // 29: chain_capabilities.evm.LatestAndFinalizedHeadSuccess
 	(*LatestAndFinalizedHeadError)(nil),     // 30: chain_capabilities.evm.LatestAndFinalizedHeadError
-	(*monitoring.ExecutionContext)(nil),     // 31: common.ExecutionContext
+	(*monitoring.ExecutionContext)(nil),     // 31: monitoring.ExecutionContext
 }
 var file_chain_capabilities_evm_monitoring_read_actions_proto_depIdxs = []int32{
 	0,  // 0: chain_capabilities.evm.CallContractInitiated.req:type_name -> chain_capabilities.evm.CallContractRequest
-	31, // 1: chain_capabilities.evm.CallContractInitiated.execution_context:type_name -> common.ExecutionContext
+	31, // 1: chain_capabilities.evm.CallContractInitiated.execution_context:type_name -> monitoring.ExecutionContext
 	0,  // 2: chain_capabilities.evm.CallContractSuccess.req:type_name -> chain_capabilities.evm.CallContractRequest
-	31, // 3: chain_capabilities.evm.CallContractSuccess.execution_context:type_name -> common.ExecutionContext
+	31, // 3: chain_capabilities.evm.CallContractSuccess.execution_context:type_name -> monitoring.ExecutionContext
 	0,  // 4: chain_capabilities.evm.CallContractError.req:type_name -> chain_capabilities.evm.CallContractRequest
-	31, // 5: chain_capabilities.evm.CallContractError.execution_context:type_name -> common.ExecutionContext
+	31, // 5: chain_capabilities.evm.CallContractError.execution_context:type_name -> monitoring.ExecutionContext
 	4,  // 6: chain_capabilities.evm.FilterLogsRequest.topics:type_name -> chain_capabilities.evm.Topics
 	5,  // 7: chain_capabilities.evm.FilterLogsInitiated.req:type_name -> chain_capabilities.evm.FilterLogsRequest
-	31, // 8: chain_capabilities.evm.FilterLogsInitiated.execution_context:type_name -> common.ExecutionContext
+	31, // 8: chain_capabilities.evm.FilterLogsInitiated.execution_context:type_name -> monitoring.ExecutionContext
 	5,  // 9: chain_capabilities.evm.FilterLogsSuccess.req:type_name -> chain_capabilities.evm.FilterLogsRequest
-	31, // 10: chain_capabilities.evm.FilterLogsSuccess.execution_context:type_name -> common.ExecutionContext
+	31, // 10: chain_capabilities.evm.FilterLogsSuccess.execution_context:type_name -> monitoring.ExecutionContext
 	5,  // 11: chain_capabilities.evm.FilterLogsError.req:type_name -> chain_capabilities.evm.FilterLogsRequest
-	31, // 12: chain_capabilities.evm.FilterLogsError.execution_context:type_name -> common.ExecutionContext
+	31, // 12: chain_capabilities.evm.FilterLogsError.execution_context:type_name -> monitoring.ExecutionContext
 	9,  // 13: chain_capabilities.evm.BalanceAtInitiated.req:type_name -> chain_capabilities.evm.BalanceAtRequest
-	31, // 14: chain_capabilities.evm.BalanceAtInitiated.execution_context:type_name -> common.ExecutionContext
+	31, // 14: chain_capabilities.evm.BalanceAtInitiated.execution_context:type_name -> monitoring.ExecutionContext
 	9,  // 15: chain_capabilities.evm.BalanceAtSuccess.req:type_name -> chain_capabilities.evm.BalanceAtRequest
-	31, // 16: chain_capabilities.evm.BalanceAtSuccess.execution_context:type_name -> common.ExecutionContext
+	31, // 16: chain_capabilities.evm.BalanceAtSuccess.execution_context:type_name -> monitoring.ExecutionContext
 	9,  // 17: chain_capabilities.evm.BalanceAtError.req:type_name -> chain_capabilities.evm.BalanceAtRequest
-	31, // 18: chain_capabilities.evm.BalanceAtError.execution_context:type_name -> common.ExecutionContext
+	31, // 18: chain_capabilities.evm.BalanceAtError.execution_context:type_name -> monitoring.ExecutionContext
 	13, // 19: chain_capabilities.evm.EstimateGasInitiated.req:type_name -> chain_capabilities.evm.EstimateGasRequest
-	31, // 20: chain_capabilities.evm.EstimateGasInitiated.execution_context:type_name -> common.ExecutionContext
+	31, // 20: chain_capabilities.evm.EstimateGasInitiated.execution_context:type_name -> monitoring.ExecutionContext
 	13, // 21: chain_capabilities.evm.EstimateGasSuccess.req:type_name -> chain_capabilities.evm.EstimateGasRequest
-	31, // 22: chain_capabilities.evm.EstimateGasSuccess.execution_context:type_name -> common.ExecutionContext
+	31, // 22: chain_capabilities.evm.EstimateGasSuccess.execution_context:type_name -> monitoring.ExecutionContext
 	13, // 23: chain_capabilities.evm.EstimateGasError.req:type_name -> chain_capabilities.evm.EstimateGasRequest
-	31, // 24: chain_capabilities.evm.EstimateGasError.execution_context:type_name -> common.ExecutionContext
+	31, // 24: chain_capabilities.evm.EstimateGasError.execution_context:type_name -> monitoring.ExecutionContext
 	18, // 25: chain_capabilities.evm.GetTransactionByHashInitiated.req:type_name -> chain_capabilities.evm.GetTransactionByHashRequest
-	31, // 26: chain_capabilities.evm.GetTransactionByHashInitiated.execution_context:type_name -> common.ExecutionContext
+	31, // 26: chain_capabilities.evm.GetTransactionByHashInitiated.execution_context:type_name -> monitoring.ExecutionContext
 	18, // 27: chain_capabilities.evm.GetTransactionByHashSuccess.req:type_name -> chain_capabilities.evm.GetTransactionByHashRequest
 	20, // 28: chain_capabilities.evm.GetTransactionByHashSuccess.transaction:type_name -> chain_capabilities.evm.TransactionData
-	31, // 29: chain_capabilities.evm.GetTransactionByHashSuccess.execution_context:type_name -> common.ExecutionContext
+	31, // 29: chain_capabilities.evm.GetTransactionByHashSuccess.execution_context:type_name -> monitoring.ExecutionContext
 	18, // 30: chain_capabilities.evm.GetTransactionByHashError.req:type_name -> chain_capabilities.evm.GetTransactionByHashRequest
-	31, // 31: chain_capabilities.evm.GetTransactionByHashError.execution_context:type_name -> common.ExecutionContext
+	31, // 31: chain_capabilities.evm.GetTransactionByHashError.execution_context:type_name -> monitoring.ExecutionContext
 	23, // 32: chain_capabilities.evm.GetTransactionReceiptInitiated.req:type_name -> chain_capabilities.evm.GetTransactionReceiptRequest
-	31, // 33: chain_capabilities.evm.GetTransactionReceiptInitiated.execution_context:type_name -> common.ExecutionContext
+	31, // 33: chain_capabilities.evm.GetTransactionReceiptInitiated.execution_context:type_name -> monitoring.ExecutionContext
 	23, // 34: chain_capabilities.evm.GetTransactionReceiptSuccess.req:type_name -> chain_capabilities.evm.GetTransactionReceiptRequest
 	17, // 35: chain_capabilities.evm.GetTransactionReceiptSuccess.receipt:type_name -> chain_capabilities.evm.Receipt
-	31, // 36: chain_capabilities.evm.GetTransactionReceiptSuccess.execution_context:type_name -> common.ExecutionContext
+	31, // 36: chain_capabilities.evm.GetTransactionReceiptSuccess.execution_context:type_name -> monitoring.ExecutionContext
 	23, // 37: chain_capabilities.evm.GetTransactionReceiptError.req:type_name -> chain_capabilities.evm.GetTransactionReceiptRequest
-	31, // 38: chain_capabilities.evm.GetTransactionReceiptError.execution_context:type_name -> common.ExecutionContext
-	31, // 39: chain_capabilities.evm.LatestAndFinalizedHeadInitiated.execution_context:type_name -> common.ExecutionContext
+	31, // 38: chain_capabilities.evm.GetTransactionReceiptError.execution_context:type_name -> monitoring.ExecutionContext
+	31, // 39: chain_capabilities.evm.LatestAndFinalizedHeadInitiated.execution_context:type_name -> monitoring.ExecutionContext
 	28, // 40: chain_capabilities.evm.LatestAndFinalizedHeadSuccess.latest:type_name -> chain_capabilities.evm.BlockData
 	28, // 41: chain_capabilities.evm.LatestAndFinalizedHeadSuccess.finalized:type_name -> chain_capabilities.evm.BlockData
-	31, // 42: chain_capabilities.evm.LatestAndFinalizedHeadSuccess.execution_context:type_name -> common.ExecutionContext
-	31, // 43: chain_capabilities.evm.LatestAndFinalizedHeadError.execution_context:type_name -> common.ExecutionContext
+	31, // 42: chain_capabilities.evm.LatestAndFinalizedHeadSuccess.execution_context:type_name -> monitoring.ExecutionContext
+	31, // 43: chain_capabilities.evm.LatestAndFinalizedHeadError.execution_context:type_name -> monitoring.ExecutionContext
 	44, // [44:44] is the sub-list for method output_type
 	44, // [44:44] is the sub-list for method input_type
 	44, // [44:44] is the sub-list for extension type_name
