@@ -26,19 +26,19 @@ import (
 
 type evmWithMocks struct {
 	actions.EVM
-	evmService      *evmmock.EVMService
-	consensusReader *mocks.ConsensusReader
+	evmService       *evmmock.EVMService
+	consensusHandler *mocks.ConsensusHandler
 }
 
 func initMocks(t *testing.T) *evmWithMocks {
 	t.Helper()
 
 	evmSvc := evmmock.NewEVMService(t)
-	consensusReader := mocks.NewConsensusReader(t)
+	consensusHandler := mocks.NewConsensusHandler(t)
 	return &evmWithMocks{
-		EVM:             actions.EVM{EVMService: evmSvc, ConsensusReader: consensusReader},
-		evmService:      evmSvc,
-		consensusReader: consensusReader,
+		EVM:              actions.EVM{EVMService: evmSvc, ConsensusHandler: consensusHandler},
+		evmService:       evmSvc,
+		consensusHandler: consensusHandler,
 	}
 }
 
@@ -51,7 +51,7 @@ func TestCapability_CallContract(t *testing.T) {
 		block := big.NewInt(123)
 		ch := make(chan []byte, 1)
 		ch <- []byte("ok")
-		svc.consensusReader.EXPECT().Read(mock.Anything, mock.Anything).Return(ch, nil).Once()
+		svc.consensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
 		req := &evmcappb.CallContractRequest{Call: msgProto, BlockNumber: valuespb.NewBigIntFromInt(block)}
 		resp, err := svc.CallContract(t.Context(), capabilities.RequestMetadata{}, req)
@@ -65,7 +65,7 @@ func TestCapability_CallContract(t *testing.T) {
 
 		block := big.NewInt(123)
 		ch := make(chan []byte, 1)
-		svc.consensusReader.EXPECT().Read(mock.Anything, mock.Anything).Return(ch, nil).Once()
+		svc.consensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
 		req := &evmcappb.CallContractRequest{Call: msgProto, BlockNumber: valuespb.NewBigIntFromInt(block)}
 		ctx, cancel := context.WithCancel(t.Context())
@@ -84,7 +84,7 @@ func TestCapability_BalanceAt(t *testing.T) {
 		balance, err := proto.Marshal(valuespb.NewBigIntFromInt(big.NewInt(1000)))
 		require.NoError(t, err)
 		ch <- balance
-		svc.consensusReader.EXPECT().Read(mock.Anything, mock.Anything).Return(ch, nil).Once()
+		svc.consensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
 		req := &evmcappb.BalanceAtRequest{Account: []byte("by_account"), BlockNumber: valuespb.NewBigIntFromInt(block)}
 		resp, err := svc.BalanceAt(t.Context(), capabilities.RequestMetadata{}, req)
@@ -95,7 +95,7 @@ func TestCapability_BalanceAt(t *testing.T) {
 		svc := initMocks(t)
 		block := big.NewInt(123)
 		ch := make(chan []byte, 1)
-		svc.consensusReader.EXPECT().Read(mock.Anything, mock.Anything).Return(ch, nil).Once()
+		svc.consensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
 		req := &evmcappb.BalanceAtRequest{Account: []byte("by_account"), BlockNumber: valuespb.NewBigIntFromInt(block)}
 		ctx, cancel := context.WithCancel(t.Context())
@@ -114,7 +114,7 @@ func TestCapability_FilterLogs(t *testing.T) {
 		logs, err := proto.Marshal(expectedReply)
 		require.NoError(t, err)
 		ch <- logs
-		svc.consensusReader.EXPECT().Read(mock.Anything, mock.Anything).Return(ch, nil).Once()
+		svc.consensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
 		req := &evmcappb.FilterLogsRequest{FilterQuery: &evmcappb.FilterQuery{BlockHash: make([]byte, 32)}}
 		resp, err := svc.FilterLogs(t.Context(), capabilities.RequestMetadata{}, req)
@@ -137,7 +137,7 @@ func TestCapability_FilterLogs(t *testing.T) {
 		svc := initMocks(t)
 
 		ch := make(chan []byte, 1)
-		svc.consensusReader.EXPECT().Read(mock.Anything, mock.Anything).Return(ch, nil).Once()
+		svc.consensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
 		req := &evmcappb.FilterLogsRequest{FilterQuery: &evmcappb.FilterQuery{}}
 		ctx, cancel := context.WithCancel(t.Context())
@@ -156,7 +156,7 @@ func TestCapability_GetTransactionByHash(t *testing.T) {
 		transaction, err := proto.Marshal(tx)
 		require.NoError(t, err)
 		ch <- transaction
-		svc.consensusReader.EXPECT().Read(mock.Anything, mock.Anything).Return(ch, nil).Once()
+		svc.consensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
 		req := &evmcappb.GetTransactionByHashRequest{Hash: make([]byte, 32)}
 		resp, err := svc.GetTransactionByHash(t.Context(), capabilities.RequestMetadata{}, req)
@@ -174,7 +174,7 @@ func TestCapability_GetTransactionByHash(t *testing.T) {
 		svc := initMocks(t)
 
 		ch := make(chan []byte, 1)
-		svc.consensusReader.EXPECT().Read(mock.Anything, mock.Anything).Return(ch, nil).Once()
+		svc.consensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
 		req := &evmcappb.GetTransactionByHashRequest{Hash: make([]byte, 32)}
 		ctx, cancel := context.WithCancel(t.Context())
@@ -193,7 +193,7 @@ func TestCapability_GetTransactionReceipt(t *testing.T) {
 		rawReceipt, err := proto.Marshal(receipt)
 		require.NoError(t, err)
 		ch <- rawReceipt
-		svc.consensusReader.EXPECT().Read(mock.Anything, mock.Anything).Return(ch, nil).Once()
+		svc.consensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
 		req := &evmcappb.GetTransactionReceiptRequest{Hash: make([]byte, 32)}
 		resp, err := svc.GetTransactionReceipt(t.Context(), capabilities.RequestMetadata{}, req)
@@ -211,7 +211,7 @@ func TestCapability_GetTransactionReceipt(t *testing.T) {
 		svc := initMocks(t)
 
 		ch := make(chan []byte, 1)
-		svc.consensusReader.EXPECT().Read(mock.Anything, mock.Anything).Return(ch, nil).Once()
+		svc.consensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
 		req := &evmcappb.GetTransactionReceiptRequest{Hash: make([]byte, 32)}
 		ctx, cancel := context.WithCancel(t.Context())

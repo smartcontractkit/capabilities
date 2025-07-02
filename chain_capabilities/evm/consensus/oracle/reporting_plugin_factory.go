@@ -12,7 +12,7 @@ var _ ocr3types.ReportingPluginFactory[[]byte] = (*ReportingPluginFactory)(nil)
 
 type ReportingPluginFactory struct {
 	logger              logger.SugaredLogger
-	requestsStore       RequestsStore
+	requestsStore       RequestsHandler
 	blocksProvider      BlocksProvider
 	batchSize           int
 	maxAllowedBatchSize int
@@ -20,7 +20,7 @@ type ReportingPluginFactory struct {
 
 func NewReportingPluginFactory(
 	logger logger.SugaredLogger,
-	requestsStore RequestsStore,
+	requestsStore RequestsHandler,
 	blocksProvider BlocksProvider,
 	batchSize int,
 	maxAllowedBatchSize int,

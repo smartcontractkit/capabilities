@@ -52,10 +52,10 @@ type capabilityGRPCService struct {
 
 type capability struct {
 	actions.EVM
-	requestPoller   *poller.Poller
-	consensusReader *consensus.Reader
-	oracle          core.Oracle
-	triggerService  *trigger.LogTriggerService
+	requestPoller    *poller.Poller
+	consensusHandler *consensus.Handler
+	oracle           core.Oracle
+	triggerService   *trigger.LogTriggerService
 }
 
 var _ evmcapserver.ClientCapability = &capabilityGRPCService{}
@@ -108,7 +108,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 	}
 
 	c.requestPoller = poller.NewPoller(c.lggr, PollingWorkersNum, PollPeriod)
-	c.consensusReader = consensus.NewReader(c.lggr, c.requestPoller, time.Second*10)
+	c.consensusHandler = consensus.NewHandler(c.lggr, c.requestPoller, time.Second*10)
 
 	// TODO PLEX-1560: populate with implementation
 	blocksProvider := &oracle.NullBlocksProvider{}
@@ -121,14 +121,14 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 			ContractTransmitterTransmitTimeout: time.Second * 10,
 			DatabaseTimeout:                    time.Second * 10,
 		},
-		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(logger.Sugared(c.lggr), c.consensusReader, blocksProvider, OCRRoundBatchSize, OCRRoundMaxBatchSize),
-		ContractTransmitter:           oracle.NewContractTransmitter(c.lggr, c.consensusReader),
+		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(logger.Sugared(c.lggr), c.consensusHandler, blocksProvider, OCRRoundBatchSize, OCRRoundMaxBatchSize),
+		ContractTransmitter:           oracle.NewContractTransmitter(c.lggr, c.consensusHandler),
 	})
 	if err != nil {
 		return fmt.Errorf("error when creating oracle: %w", err)
 	}
 
-	services := []interface{ Start(context.Context) error }{c.consensusReader, c.requestPoller, c.oracle}
+	services := []interface{ Start(context.Context) error }{c.consensusHandler, c.requestPoller, c.oracle}
 	for _, service := range services {
 		if err := service.Start(ctx); err != nil {
 			return err
@@ -148,7 +148,7 @@ func (c *capabilityGRPCService) Start(_ context.Context) error {
 
 func (c *capabilityGRPCService) Close() error {
 	c.lggr.Infof("Closing %s", CapabilityName)
-	return errors.Join(c.requestPoller.Close(), c.consensusReader.Close(), c.oracle.Close(context.Background()), c.triggerService.Close())
+	return errors.Join(c.requestPoller.Close(), c.consensusHandler.Close(), c.oracle.Close(context.Background()), c.triggerService.Close())
 }
 
 func (c *capabilityGRPCService) HealthReport() map[string]error {

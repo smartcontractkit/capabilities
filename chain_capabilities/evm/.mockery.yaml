@@ -6,14 +6,14 @@ fail-on-missing: true
 packages:
   github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions:
     interfaces:
-      ConsensusReader:
+      ConsensusHandler:
   github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus:
     interfaces:
       Poller:
   github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/oracle:
     interfaces:
       BlocksProvider:
-      RequestsStore:
+      RequestsHandler:
   github.com/smartcontractkit/capabilities/chain_capabilities/evm/contracts:
     interfaces:
       CREForwarderClient:

@@ -24,16 +24,16 @@ import (
 	ctypes "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
 )
 
-type ConsensusReader interface {
-	// Read - returns a channel to the result of `request.GetObservation()`. This result is consistent across all nodes in
+type ConsensusHandler interface {
+	// Handle - returns a channel to the result of `request.GetObservation()`. This result is consistent across all nodes in
 	// the DON, even if individual RPC states differ.
 	//TODO: switches from bytes to <-chan any as part of PLEX-1470
-	Read(ctx context.Context, request ctypes.Request) (<-chan []byte, error)
+	Handle(ctx context.Context, request ctypes.Request) (<-chan []byte, error)
 }
 
 type EVM struct {
 	types.EVMService
-	ConsensusReader          ConsensusReader
+	ConsensusHandler         ConsensusHandler
 	keystoneForwarderAddress common.Address
 	forwarderClient          contracts.CREForwarderClient
 	lggr                     logger.Logger
@@ -82,7 +82,7 @@ func (e EVM) CallContract(ctx context.Context, meta capabilities.RequestMetadata
 		})
 	}
 
-	resultCh, err := e.ConsensusReader.Read(ctx, request)
+	resultCh, err := e.ConsensusHandler.Handle(ctx, request)
 	if err != nil {
 		return nil, err
 	}
@@ -222,7 +222,7 @@ func (e EVM) EstimateGas(etx context.Context, _ capabilities.RequestMetadata, re
 }
 
 func (e EVM) getReply(ctx context.Context, request ctypes.Request, into proto.Message) (err error) {
-	resultCh, err := e.ConsensusReader.Read(ctx, request)
+	resultCh, err := e.ConsensusHandler.Handle(ctx, request)
 	if err != nil {
 		return err
 	}

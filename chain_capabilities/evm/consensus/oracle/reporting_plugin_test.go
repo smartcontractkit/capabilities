@@ -130,7 +130,7 @@ func TestObservation(t *testing.T) {
 			Safe:      9,
 			Finalized: 8,
 		})
-		requestsStore := mocks.NewRequestsStore(t)
+		requestsStore := mocks.NewRequestsHandler(t)
 		plugin := newReportingPlugin(Config{MaxAllowedBatchSize: 1}, logger.Sugared(logger.Test(t)), blocksProvider, requestsStore)
 		requestsStore.EXPECT().GetRequest("1").Return(types.Request(nil), true)
 		_, err := plugin.Observation(t.Context(), ocr3types.OutcomeContext{}, mustQuery(t, []string{"1"}))
@@ -143,7 +143,7 @@ func TestObservation(t *testing.T) {
 			Finalized: 8,
 		}
 		blocksProvider := newBlockProvider(t, expectedChainHeight)
-		requestsStore := mocks.NewRequestsStore(t)
+		requestsStore := mocks.NewRequestsHandler(t)
 		requestsStore.EXPECT().GetRequest("request_not_present_in_store").Return(nil, false).Once()
 
 		id := "request_without_observation"

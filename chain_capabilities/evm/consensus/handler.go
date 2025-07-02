@@ -18,7 +18,7 @@ type Poller interface {
 	Enqueue(ctx context.Context, request types.ObservableRequest)
 }
 
-type Reader struct {
+type Handler struct {
 	// service state management
 	services.Service
 	engine *services.Engine
@@ -33,8 +33,8 @@ type Reader struct {
 	unknownRequestTTL               time.Duration
 }
 
-func NewReader(lggr logger.Logger, poller Poller, unknownRequestTTL time.Duration) *Reader {
-	r := &Reader{
+func NewHandler(lggr logger.Logger, poller Poller, unknownRequestTTL time.Duration) *Handler {
+	r := &Handler{
 		requests:                        requests.NewStore[*requestCtx](),
 		unknownRequestsResultByID:       make(map[string]*unknownRequest),
 		unknownRequestsOrderedByTimeout: list.New[*unknownRequest](),
@@ -43,7 +43,7 @@ func NewReader(lggr logger.Logger, poller Poller, unknownRequestTTL time.Duratio
 	}
 
 	r.Service, r.engine = services.Config{
-		Name:  "ConsensusRequestsStore",
+		Name:  "EVMConsensusHandler",
 		Start: r.start,
 	}.NewServiceEngine(lggr)
 
@@ -80,13 +80,13 @@ func (r *requestCtx) Copy() *requestCtx {
 	}
 }
 
-func (s *Reader) start(Ctx context.Context) error {
+func (s *Handler) start(Ctx context.Context) error {
 	s.engine.GoTick(services.TickerConfig{Initial: time.Second}.NewTicker(time.Second), s.removeExpiredRequests)
 	return nil
 }
 
 // GetRequestIDs - returns `limit` of request IDs in ascending order by number of attempts. Requests remain in the queue.
-func (s *Reader) GetRequestIDs(limit int) ([]string, error) {
+func (s *Handler) GetRequestIDs(limit int) ([]string, error) {
 	request, err := s.requests.FirstN(limit)
 	if err != nil {
 		return nil, err
@@ -103,7 +103,7 @@ func (s *Reader) GetRequestIDs(limit int) ([]string, error) {
 	return requestIDs, nil
 }
 
-func (s *Reader) GetRequest(id string) (types.Request, bool) {
+func (s *Handler) GetRequest(id string) (types.Request, bool) {
 	rq := s.requests.Get(id)
 	if rq == nil {
 		return nil, false
@@ -111,7 +111,7 @@ func (s *Reader) GetRequest(id string) (types.Request, bool) {
 	return rq.Request, true
 }
 
-func (s *Reader) CompleteRequest(id string, report *types.RequestReport) error {
+func (s *Handler) CompleteRequest(id string, report *types.RequestReport) error {
 	switch report.Report.(type) {
 	case *types.RequestReport_LockableToBlock:
 		return s.completeLockableRequest(id, report.GetLockableToBlock())
@@ -122,7 +122,7 @@ func (s *Reader) CompleteRequest(id string, report *types.RequestReport) error {
 	}
 }
 
-func (s *Reader) completeLockableRequest(id string, height *types.ChainHeight) error {
+func (s *Handler) completeLockableRequest(id string, height *types.ChainHeight) error {
 	if height == nil {
 		return fmt.Errorf("chain height is nil for report with requestID %s", id)
 	}
@@ -152,13 +152,13 @@ func (s *Reader) completeLockableRequest(id string, height *types.ChainHeight) e
 	newRequestCtx.Request = newRequest
 	err := s.addRequestCtx(newRequestCtx)
 	if err != nil {
-		return fmt.Errorf("failed to readd lcoked request %s: %w", newRequest.ID(), err)
+		return fmt.Errorf("failed to readd locked request %s: %w", newRequest.ID(), err)
 	}
 	s.lggr.Infof("locked request %s to height %v", id, height)
 	return nil
 }
 
-func (s *Reader) completeEventuallyConsistentRequest(id string, value []byte) error {
+func (s *Handler) completeEventuallyConsistentRequest(id string, value []byte) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	request := s.requests.Get(id)
@@ -181,7 +181,7 @@ func (s *Reader) completeEventuallyConsistentRequest(id string, value []byte) er
 	return nil
 }
 
-func (s *Reader) Read(ctx context.Context, request types.Request) (<-chan []byte, error) {
+func (s *Handler) Handle(ctx context.Context, request types.Request) (<-chan []byte, error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	ch := make(chan []byte, 1)
@@ -207,7 +207,7 @@ func (s *Reader) Read(ctx context.Context, request types.Request) (<-chan []byte
 	return ch, nil
 }
 
-func (s *Reader) addRequestCtx(requestCtx *requestCtx) error {
+func (s *Handler) addRequestCtx(requestCtx *requestCtx) error {
 	err := s.requests.Add(requestCtx)
 	if err != nil {
 		return fmt.Errorf("failed to add request %s: %w", requestCtx.ID(), err)
@@ -219,7 +219,7 @@ func (s *Reader) addRequestCtx(requestCtx *requestCtx) error {
 	return nil
 }
 
-func (s *Reader) removeExpiredRequests(ctx context.Context) {
+func (s *Handler) removeExpiredRequests(ctx context.Context) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	now := time.Now()

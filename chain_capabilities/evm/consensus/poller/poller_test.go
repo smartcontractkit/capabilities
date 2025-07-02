@@ -49,7 +49,7 @@ func TestPoller_ObservesRequestUntilCanceled(t *testing.T) {
 		return nil, assert.AnError
 	})
 
-	// Read the request
+	// Handle the request
 	poller.Enqueue(requestCtx, request)
 
 	tests.AssertLogEventually(t, observedLogs, "request was canceled - removing from queue")
