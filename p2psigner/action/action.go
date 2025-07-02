@@ -3,6 +3,7 @@ package action
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -76,13 +77,13 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 
 	var acct string
 	for _, a := range accounts {
-		if a == "P2P_SIGNER" {
+		if a == core.P2PAccountKey {
 			acct = a
 			break
 		}
 	}
 	if acct == "" {
-		return capabilities.CapabilityResponse{}, errors.New("no P2P_SIGNER account found in keystore")
+		return capabilities.CapabilityResponse{}, errors.New(fmt.Sprintf("no %s account found in keystore", core.P2PAccountKey))
 	}
 
 	sig, err := c.keystore.Sign(ctx, acct, input.Digest)

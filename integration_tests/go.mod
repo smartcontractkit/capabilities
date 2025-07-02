@@ -12,10 +12,10 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/pelletier/go-toml v1.9.5
 	github.com/smartcontractkit/capabilities/loadtestwritetarget v0.0.0-00010101000000-000000000000
-	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250627185555-3e6245a79ec9
+	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250702171606-3b1f1680ae79
 	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250626141212-e50b2e7ffe2d
 	github.com/smartcontractkit/chainlink-evm v0.0.0-20250627135735-93e3b09aec5a
-	github.com/smartcontractkit/chainlink/v2 v2.23.2-por-beta.1.0.20250627203320-3f6b8489288f
+	github.com/smartcontractkit/chainlink/v2 v2.23.2-por-beta.1.0.20250702171932-ffe418e7b050
 	github.com/stretchr/testify v1.10.0
 )
 
