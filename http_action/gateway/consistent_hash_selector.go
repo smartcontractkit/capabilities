@@ -14,7 +14,7 @@ func NewConsistentHashSelector(nodes []string) *consistentHashSelector {
 	}
 }
 
-// MarkAvailable removes a node from the consistent hash ring, marking it as unavailable.
+// MarkUnavailable removes a node from the consistent hash ring, marking it as unavailable.
 // This is typically used when a node is temporarily down or should not be selected for requests.
 func (s *consistentHashSelector) MarkUnavailable(node string) {
 	s.c.Remove(node)
