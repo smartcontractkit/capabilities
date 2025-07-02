@@ -1,6 +1,7 @@
 package actions_test
 
 import (
+	"bytes"
 	"context"
 	"math/big"
 	"testing"
@@ -9,20 +10,28 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 
 	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	commonlogger "github.com/smartcontractkit/chainlink-common/pkg/logger"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	evmmock "github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions/mocks"
 )
+
+type nopProcessor struct{}
+
+func (nopProcessor) Process(_ context.Context, _ proto.Message, _ ...any) error { return nil }
 
 type evmWithMocks struct {
 	actions.EVM
@@ -32,11 +41,13 @@ type evmWithMocks struct {
 
 func initMocks(t *testing.T) *evmWithMocks {
 	t.Helper()
-
+	t.Helper()
 	evmSvc := evmmock.NewEVMService(t)
 	consensusHandler := mocks.NewConsensusHandler(t)
+	evm, err := actions.NewEVM(config.Config{}, evmSvc, commonlogger.Test(t), nopProcessor{}, &monitoring.MessageBuilder{}, consensusHandler)
+	require.NoError(t, err)
 	return &evmWithMocks{
-		EVM:              actions.EVM{EVMService: evmSvc, ConsensusHandler: consensusHandler},
+		EVM:              evm,
 		evmService:       evmSvc,
 		consensusHandler: consensusHandler,
 	}
@@ -123,11 +134,11 @@ func TestCapability_FilterLogs(t *testing.T) {
 	})
 	t.Run("Returns error if both block hash and block range is used", func(t *testing.T) {
 		svc := initMocks(t)
-		req := &evmcappb.FilterLogsRequest{FilterQuery: &evmcappb.FilterQuery{BlockHash: make([]byte, 32), FromBlock: valuespb.NewBigIntFromInt(big.NewInt(1))}}
+		req := &evmcappb.FilterLogsRequest{FilterQuery: &evmcappb.FilterQuery{BlockHash: bytes.Repeat([]byte{1}, 32), FromBlock: valuespb.NewBigIntFromInt(big.NewInt(1))}}
 		_, err := svc.FilterLogs(t.Context(), capabilities.RequestMetadata{}, req)
 		require.ErrorContains(t, err, "cannot specify both block hash and block range")
 	})
-	t.Run("Returns error if both block hash is of invalid length", func(t *testing.T) {
+	t.Run("Returns error if block hash is of invalid length", func(t *testing.T) {
 		svc := initMocks(t)
 		req := &evmcappb.FilterLogsRequest{FilterQuery: &evmcappb.FilterQuery{BlockHash: make([]byte, 2)}}
 		_, err := svc.FilterLogs(t.Context(), capabilities.RequestMetadata{}, req)
@@ -154,6 +165,7 @@ func TestCapability_GetTransactionByHash(t *testing.T) {
 		ch := make(chan []byte, 1)
 		tx := &evmcappb.Transaction{Nonce: 12}
 		transaction, err := proto.Marshal(tx)
+
 		require.NoError(t, err)
 		ch <- transaction
 		svc.consensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
@@ -228,7 +240,7 @@ func TestCapability_Register_Unregister_LogTracking(t *testing.T) {
 		svc := initMocks(t)
 		svc.evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil)
 
-		_, err := svc.RegisterLogTracking(context.Background(), capabilities.RequestMetadata{},
+		_, err := svc.RegisterLogTracking(t.Context(), capabilities.RequestMetadata{},
 			&evmcappb.RegisterLogTrackingRequest{Filter: filterProto})
 		require.NoError(t, err)
 	})
@@ -237,7 +249,7 @@ func TestCapability_Register_Unregister_LogTracking(t *testing.T) {
 		svc := initMocks(t)
 		svc.evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(assert.AnError)
 
-		_, err := svc.RegisterLogTracking(context.Background(), capabilities.RequestMetadata{},
+		_, err := svc.RegisterLogTracking(t.Context(), capabilities.RequestMetadata{},
 			&evmcappb.RegisterLogTrackingRequest{Filter: filterProto})
 		assert.ErrorIs(t, err, assert.AnError)
 	})
@@ -246,7 +258,7 @@ func TestCapability_Register_Unregister_LogTracking(t *testing.T) {
 		svc := initMocks(t)
 		svc.evmService.On("UnregisterLogTracking", mock.Anything, "myFilter").Return(nil)
 
-		_, err := svc.UnregisterLogTracking(context.Background(), capabilities.RequestMetadata{},
+		_, err := svc.UnregisterLogTracking(t.Context(), capabilities.RequestMetadata{},
 			&evmcappb.UnregisterLogTrackingRequest{FilterName: "myFilter"})
 		require.NoError(t, err)
 	})
@@ -255,7 +267,7 @@ func TestCapability_Register_Unregister_LogTracking(t *testing.T) {
 		svc := initMocks(t)
 		svc.evmService.On("UnregisterLogTracking", mock.Anything, "myFilter").Return(assert.AnError)
 
-		_, err := svc.UnregisterLogTracking(context.Background(), capabilities.RequestMetadata{},
+		_, err := svc.UnregisterLogTracking(t.Context(), capabilities.RequestMetadata{},
 			&evmcappb.UnregisterLogTrackingRequest{FilterName: "myFilter"})
 		assert.ErrorIs(t, err, assert.AnError)
 	})

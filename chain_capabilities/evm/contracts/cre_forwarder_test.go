@@ -27,7 +27,7 @@ const LatestBlock = -2
 
 func TestCREForwarderClient_GetTransmissionInfo(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	testLogger := logger.Test(t)
 	forwarderAddress := common.BytesToAddress(test.RandomBytes(20))
@@ -111,7 +111,7 @@ func TestCREForwarderClient_GetTransmissionInfo(t *testing.T) {
 
 func TestCREForwarderClient_GetReportProcessedEvents(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	testLogger := logger.Test(t)
 	forwarderAddress := common.BytesToAddress(test.RandomBytes(20))
@@ -147,7 +147,7 @@ func TestCREForwarderClient_GetReportProcessedEvents(t *testing.T) {
 
 func TestCREForwarderClient_InvokeOnReport(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	testLogger := logger.Test(t)
 	forwarderAddress := common.BytesToAddress(test.RandomBytes(20))
