@@ -180,6 +180,17 @@ func LogAndEmitSuccess(
 	}
 }
 
+func EmitInitiated(
+	ctx context.Context,
+	lggr logger.Logger,
+	beholderProcessor beholder.ProtoProcessor,
+	m proto.Message,
+) {
+	if err := beholderProcessor.Process(ctx, m); err != nil {
+		lggr.Errorw(fmt.Sprintf("Failed to process %s message", getMessageName(m)), "err", err)
+	}
+}
+
 func LogAndEmitError(
 	ctx context.Context,
 	lggr logger.Logger,

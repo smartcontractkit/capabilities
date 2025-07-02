@@ -57,22 +57,19 @@ func (e EVM) CallContract(
 	req capabilities.RequestMetadata,
 	input *evmcappb.CallContractRequest,
 ) (*evmcappb.CallContractReply, error) {
-	ts := time.Now().UnixMilli()
-	read := monitoring.ReadRequest{TsStart: ts, RequestMetadata: req}
+	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: req}
 
 	callMsg, err := evmcappb.ConvertCallMsgFromProto(input.GetCall())
 	if err != nil {
 		return nil, err
 	}
+
 	bn := pb.NewIntFromBigInt(input.GetBlockNumber())
 	if bn == nil || bn.Int64() == 0 {
 		return nil, fmt.Errorf("blockNumber must be non-zero, got %s", bn)
 	}
 
-	if err = e.beholderProcessor.Process(ctx, e.messageBuilder.BuildCallContractInitiated(read, callMsg, bn)); err != nil {
-		e.lggr.Errorw("failed to process CallContractInitiated message", "err", err)
-	}
-
+	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildCallContractInitiated(read, callMsg, bn))
 	data, err := e.EVMService.CallContract(ctx, callMsg, bn)
 	if err != nil {
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildCallContractError(read, callMsg, bn, "Failed to read CallContract", err.Error()))
@@ -88,8 +85,7 @@ func (e EVM) FilterLogs(
 	req capabilities.RequestMetadata,
 	input *evmcappb.FilterLogsRequest,
 ) (*evmcappb.FilterLogsReply, error) {
-	ts := time.Now().UnixMilli()
-	read := monitoring.ReadRequest{TsStart: ts, RequestMetadata: req}
+	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: req}
 
 	fq, err := evmcappb.ConvertFilterFromProto(input.GetFilterQuery())
 	if err != nil {
@@ -99,10 +95,7 @@ func (e EVM) FilterLogs(
 		return nil, fmt.Errorf("invalid range: %s-%s", fq.FromBlock, fq.ToBlock)
 	}
 
-	if err = e.beholderProcessor.Process(ctx, e.messageBuilder.BuildFilterLogsInitiated(read, fq)); err != nil {
-		e.lggr.Errorw("failed to process FilterLogsInitiated message", "err", err)
-	}
-
+	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildFilterLogsInitiated(read, fq))
 	logs, err := e.EVMService.FilterLogs(ctx, fq)
 	if err != nil {
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildFilterLogsError(read, fq, "Failed to FilterLogs", err.Error()))
@@ -120,18 +113,14 @@ func (e EVM) BalanceAt(
 	req capabilities.RequestMetadata,
 	input *evmcappb.BalanceAtRequest,
 ) (*evmcappb.BalanceAtReply, error) {
-	ts := time.Now().UnixMilli()
-	read := monitoring.ReadRequest{TsStart: ts, RequestMetadata: req}
+	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: req}
 
 	bn := pb.NewIntFromBigInt(input.GetBlockNumber())
 	if bn == nil || bn.Int64() == 0 {
 		return nil, fmt.Errorf("invalid block number %s", bn)
 	}
 
-	if err := e.beholderProcessor.Process(ctx, e.messageBuilder.BuildBalanceAtInitiated(read, common.Bytes2Hex(input.GetAccount()), bn)); err != nil {
-		e.lggr.Errorw("Failed to process BalanceAtInitiated message", "err", err)
-	}
-
+	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildBalanceAtInitiated(read, common.Bytes2Hex(input.GetAccount()), bn))
 	bal, err := e.EVMService.BalanceAt(ctx, evmtypes.Address(input.GetAccount()), bn)
 	if err != nil {
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildBalanceAtError(read, common.Bytes2Hex(input.GetAccount()), bn, "Failed to read BalanceAt", err.Error()))
@@ -147,18 +136,14 @@ func (e EVM) EstimateGas(
 	req capabilities.RequestMetadata,
 	input *evmcappb.EstimateGasRequest,
 ) (*evmcappb.EstimateGasReply, error) {
-	ts := time.Now().UnixMilli()
-	read := monitoring.ReadRequest{TsStart: ts, RequestMetadata: req}
+	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: req}
 
 	msg, err := evmcappb.ConvertCallMsgFromProto(input.GetMsg())
 	if err != nil {
 		return nil, err
 	}
 
-	if err = e.beholderProcessor.Process(ctx, e.messageBuilder.BuildEstimateGasInitiated(read, common.Bytes2Hex(msg.From[:]), common.Bytes2Hex(msg.To[:]), msg.Data)); err != nil {
-		e.lggr.Errorw("Failed to process EstimateGasInitiated message", "err", err)
-	}
-
+	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildEstimateGasInitiated(read, common.Bytes2Hex(msg.From[:]), common.Bytes2Hex(msg.To[:]), msg.Data))
 	estimate, err := e.EVMService.EstimateGas(ctx, msg)
 	if err != nil {
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildEstimateGasError(read, common.Bytes2Hex(msg.From[:]), common.Bytes2Hex(msg.To[:]), msg.Data, "Failed to execute EstimateGas", err.Error()))
@@ -176,13 +161,9 @@ func (e EVM) GetTransactionByHash(
 	req capabilities.RequestMetadata,
 	input *evmcappb.GetTransactionByHashRequest,
 ) (*evmcappb.GetTransactionByHashReply, error) {
-	ts := time.Now().UnixMilli()
-	read := monitoring.ReadRequest{TsStart: ts, RequestMetadata: req}
+	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: req}
 
-	if err := e.beholderProcessor.Process(ctx, e.messageBuilder.BuildGetTransactionByHashInitiated(read, common.Bytes2Hex(input.GetHash()))); err != nil {
-		e.lggr.Errorw("Failed to process GetTransactionByHashInitiated message", "err", err)
-	}
-
+	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildGetTransactionByHashInitiated(read, common.Bytes2Hex(input.GetHash())))
 	tx, err := e.EVMService.GetTransactionByHash(ctx, evmtypes.Hash(input.GetHash()))
 	if err != nil {
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildGetTransactionByHashError(read, common.Bytes2Hex(input.GetHash()), "Failed to execute GetTransactionByHash", err.Error()))
@@ -203,13 +184,9 @@ func (e EVM) GetTransactionReceipt(
 	req capabilities.RequestMetadata,
 	input *evmcappb.GetTransactionReceiptRequest,
 ) (*evmcappb.GetTransactionReceiptReply, error) {
-	ts := time.Now().UnixMilli()
-	read := monitoring.ReadRequest{TsStart: ts, RequestMetadata: req}
+	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: req}
 
-	if err := e.beholderProcessor.Process(ctx, e.messageBuilder.BuildGetTransactionReceiptInitiated(read, common.Bytes2Hex(input.GetHash()))); err != nil {
-		e.lggr.Errorw("Failed to process GetTransactionReceiptInitiated message", "err", err)
-	}
-
+	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildGetTransactionReceiptInitiated(read, common.Bytes2Hex(input.GetHash())))
 	rcp, err := e.EVMService.GetTransactionReceipt(ctx, evmtypes.Hash(input.GetHash()))
 	if err != nil {
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildGetTransactionReceiptError(read, common.Bytes2Hex(input.GetHash()), "Failed to get latest and finalized head", err.Error()))
@@ -231,13 +208,9 @@ func (e EVM) LatestAndFinalizedHead(
 	req capabilities.RequestMetadata,
 	_ *emptypb.Empty,
 ) (*evmcappb.LatestAndFinalizedHeadReply, error) {
-	ts := time.Now().UnixMilli()
-	read := monitoring.ReadRequest{TsStart: ts, RequestMetadata: req}
+	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: req}
 
-	if err := e.beholderProcessor.Process(ctx, e.messageBuilder.BuildLatestAndFinalizedHeadInitiated(read)); err != nil {
-		e.lggr.Errorw("Failed to process LatestAndFinalizedHeadInitiated message", "err", err)
-	}
-
+	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildLatestAndFinalizedHeadInitiated(read))
 	latest, fin, err := e.EVMService.LatestAndFinalizedHead(ctx)
 	if err != nil {
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildLatestAndFinalizedHeadError(read, "Failed to get latest and finalized head", err.Error()))
