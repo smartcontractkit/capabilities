@@ -1,6 +1,6 @@
 syntax="proto3";
 
-package common;
+package monitoring;
 option go_package = "github.com/smartcontractkit/capabilities/libs/monitoring";
 // [Execution Context]
 message ExecutionContext {
