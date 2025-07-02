@@ -40,7 +40,7 @@ const (
 
 func TestWriteReport_InputValidation(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	lggr := logger.Test(t)
 	t.Run("Invalid receiver address", func(t *testing.T) {
@@ -180,7 +180,7 @@ func TestWriteReport_InputValidation(t *testing.T) {
 
 func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 	// t.Parallel()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	testLogger := logger.Test(t)
 

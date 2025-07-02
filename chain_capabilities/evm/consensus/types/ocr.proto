@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+option go_package = "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types";
+package chain_capabilities.evm.types;
+
+import "google/protobuf/empty.proto";
+import "values/v1/values.proto";
+
+
+message ChainHeight {
+  int64 latest = 1;
+  int64 safe = 2;
+  int64 finalized = 3;
+}
+
+enum RequestType {
+  REQUEST_TYPE_UNKNOWN = 0;
+  REQUEST_TYPE_EVENTUALLY_CONSISTENT = 1;
+  REQUEST_TYPE_LOCKABLE_TO_BLOCK = 2;
+  REQUEST_TYPE_AGGREGATABLE = 3;
+}
+
+message Query {
+  repeated string requestIDs = 1;
+}
+
+message AggregatableObservation {
+  string method = 1;
+  values.v1.Decimal value = 2;
+}
+
+message RequestObservation {
+  oneof observation {
+    google.protobuf.Empty lockableToBlock = 1;
+    bytes eventuallyConsistent = 2;
+    AggregatableObservation aggregatable = 3;
+  }
+}
+
+message Observation {
+  ChainHeight chainHeight = 1;
+  map<string, RequestObservation> observations = 2;
+}
+
+message RequestOutcome {
+  string requestID = 1;
+  oneof outcome {
+    google.protobuf.Empty lockableToBlock = 2;
+    bytes eventuallyConsistent = 3;
+    values.v1.Decimal aggregatable = 4;
+  }
+}
+
+message Outcome {
+  ChainHeight chainHeight = 1;
+  repeated RequestOutcome outcomes = 2;
+}
+
+message RequestReport {
+  string requestID = 1;
+  oneof report {
+    ChainHeight lockableToBlock = 2;
+    bytes eventuallyConsistent = 3;
+    values.v1.Decimal aggregatable = 4;
+  }
+}
