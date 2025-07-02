@@ -20,19 +20,6 @@ import (
 	capmonitoring "github.com/smartcontractkit/capabilities/monitoring"
 )
 
-type mockEmitter struct {
-	mock.Mock
-}
-
-func (m *mockEmitter) Emit(_ context.Context, _ proto.Message, _ ...any) error {
-	panic("implement me")
-}
-
-func (m *mockEmitter) EmitWithLog(ctx context.Context, msg proto.Message, _ ...any) error {
-	args := m.Called(ctx, msg)
-	return args.Error(0)
-}
-
 func TestProcessor_Process_InitiatedMessages(t *testing.T) {
 	ctx := t.Context()
 	initiated := []struct {
@@ -50,17 +37,17 @@ func TestProcessor_Process_InitiatedMessages(t *testing.T) {
 
 	for _, tc := range initiated {
 		t.Run(tc.name, func(t *testing.T) {
-			me := &mockEmitter{}
-			me.On("EmitWithLog", ctx, tc.msg).Return(nil).Once()
+			pe := &mocks.ProtoEmitter{}
+			pe.On("EmitWithLog", ctx, tc.msg).Return(nil).Once()
 
 			metrics, merr := monitoring.NewMetrics()
 			require.NoError(t, merr)
 
-			p, err := monitoring.NewProcessor(me, metrics)
+			p, err := monitoring.NewProcessor(pe, metrics)
 			require.NoError(t, err)
 
 			require.NoError(t, p.Process(ctx, tc.msg))
-			me.AssertExpectations(t)
+			pe.AssertExpectations(t)
 		})
 	}
 }
@@ -84,20 +71,20 @@ func TestProcessor_Process_InitiatedMessages_Error(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			me := &mockEmitter{}
-			me.On("EmitWithLog", ctx, tc.msg).Return(errIn).Once()
+			pe := &mocks.ProtoEmitter{}
+			pe.On("EmitWithLog", ctx, tc.msg).Return(errIn).Once()
 
 			metrics, merr := monitoring.NewMetrics()
 			require.NoError(t, merr)
 
-			p, err := monitoring.NewProcessor(me, metrics)
+			p, err := monitoring.NewProcessor(pe, metrics)
 			require.NoError(t, err)
 
 			procErr := p.Process(ctx, tc.msg)
 			require.Error(t, procErr)
 			assert.Contains(t, procErr.Error(), fmt.Sprintf("failed to emit %s log", tc.name))
 
-			me.AssertExpectations(t)
+			pe.AssertExpectations(t)
 		})
 	}
 }
@@ -109,11 +96,11 @@ func (d *dummyProto) ProtoReflect() protoreflect.Message {
 }
 
 func TestProcessor_Process_UnknownMessage_Noop(t *testing.T) {
-	me := &mockEmitter{} // emitter never used
+	pe := &mocks.ProtoEmitter{}
 	metrics, merr := monitoring.NewMetrics()
 	require.NoError(t, merr)
 
-	p, err := monitoring.NewProcessor(me, metrics)
+	p, err := monitoring.NewProcessor(pe, metrics)
 	require.NoError(t, err)
 
 	err = p.Process(t.Context(), &dummyProto{})
@@ -137,17 +124,17 @@ func TestProcessor_Process_SuccessMessages(t *testing.T) {
 
 	for _, tc := range successMsgs {
 		t.Run(tc.name, func(t *testing.T) {
-			me := &mockEmitter{}
-			me.On("EmitWithLog", ctx, tc.msg).Return(nil).Once()
+			pe := &mocks.ProtoEmitter{}
+			pe.On("EmitWithLog", ctx, tc.msg).Return(nil).Once()
 
 			metrics, merr := monitoring.NewMetrics()
 			require.NoError(t, merr)
 
-			p, err := monitoring.NewProcessor(me, metrics)
+			p, err := monitoring.NewProcessor(pe, metrics)
 			require.NoError(t, err)
 
 			require.NoError(t, p.Process(ctx, tc.msg))
-			me.AssertExpectations(t)
+			pe.AssertExpectations(t)
 		})
 	}
 }
@@ -169,17 +156,17 @@ func TestProcessor_Process_ErrorMessages(t *testing.T) {
 
 	for _, tc := range errorMsgs {
 		t.Run(tc.name, func(t *testing.T) {
-			me := &mockEmitter{}
-			me.On("EmitWithLog", ctx, tc.msg).Return(nil).Once()
+			pe := &mocks.ProtoEmitter{}
+			pe.On("EmitWithLog", ctx, tc.msg).Return(nil).Once()
 
 			metrics, merr := monitoring.NewMetrics()
 			require.NoError(t, merr)
 
-			p, err := monitoring.NewProcessor(me, metrics)
+			p, err := monitoring.NewProcessor(pe, metrics)
 			require.NoError(t, err)
 
 			require.NoError(t, p.Process(ctx, tc.msg))
-			me.AssertExpectations(t)
+			pe.AssertExpectations(t)
 		})
 	}
 }
