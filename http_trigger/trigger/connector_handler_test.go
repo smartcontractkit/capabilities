@@ -99,12 +99,18 @@ func TestHandleGatewayMessage_Success(t *testing.T) {
 	req := gatewayRequest(t, gateway_common.MethodWorkflowExecute)
 
 	// Start a goroutine to assert that the correct trigger payload is received
+	done := make(chan struct{})
 	go func() {
-		triggerReq := <-triggerCh
-		input := triggerReq.Trigger.Input.AsMap()
-		require.Len(t, input, 1)
-		require.Equal(t, "value", input["key"])
-		// TODO: PRODCRE-305 validate triggerReq.Trigger.Key
+		defer close(done)
+		select {
+		case <-t.Context().Done():
+			t.Errorf("Test context was cancelled before trigger was received")
+		case triggerReq := <-triggerCh:
+			input := triggerReq.Trigger.Input.AsMap()
+			require.Len(t, input, 1)
+			require.Equal(t, "value", input["key"])
+			// TODO: PRODCRE-305 validate triggerReq.Trigger.Key
+		}
 	}()
 	err := handler.HandleGatewayMessage(t.Context(), "gw1", req)
 	require.NoError(t, err)
@@ -125,6 +131,11 @@ func TestHandleGatewayMessage_Success(t *testing.T) {
 	executionID, err := workflows.EncodeExecutionID("wf1", req.ID)
 	require.NoError(t, err)
 	require.Equal(t, executionID, triggerResp.WorkflowExecutionID)
+	select {
+	case <-t.Context().Done():
+		t.Errorf("Test context was cancelled before trigger was received")
+	case <-done: // Ensure goroutine completes
+	}
 }
 
 func assertErrorResponse(t *testing.T, connector *mockGatewayConnector, resp *jsonrpc.Response, code int64) {
