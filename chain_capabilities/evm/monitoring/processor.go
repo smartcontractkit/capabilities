@@ -186,7 +186,15 @@ func LogAndEmitError(
 	beholderProcessor beholder.ProtoProcessor,
 	eM ErrorMessage,
 ) {
-	lggr.Errorw(eM.GetCause(), attrsToErrorKV(eM.Attributes())...)
+	attributes := eM.Attributes()
+	for i := 0; i < len(attributes); i++ {
+		if attributes[i].Key == "summary" {
+			attributes = append(attributes[:i], attributes[i+1:]...)
+			break
+		}
+	}
+
+	lggr.Errorw(eM.GetSummary()+" err: "+eM.GetCause(), attrsToErrorKV(attributes)...)
 	if err := beholderProcessor.Process(ctx, eM); err != nil {
 		lggr.Errorw(fmt.Sprintf("Failed to process %s message", getMessageName(eM)), "err", err)
 	}
