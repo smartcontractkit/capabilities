@@ -34,7 +34,7 @@ func (m *mockEmitter) EmitWithLog(ctx context.Context, msg proto.Message, _ ...a
 }
 
 func TestProcessor_Process_InitiatedMessages(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	initiated := []struct {
 		name string
 		msg  proto.Message
@@ -66,7 +66,7 @@ func TestProcessor_Process_InitiatedMessages(t *testing.T) {
 }
 
 func TestProcessor_Process_InitiatedMessages_Error(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	errIn := assert.AnError
 
 	cases := []struct {
@@ -116,12 +116,12 @@ func TestProcessor_Process_UnknownMessage_Noop(t *testing.T) {
 	p, err := monitoring.NewProcessor(me, metrics)
 	require.NoError(t, err)
 
-	err = p.Process(context.Background(), &dummyProto{})
+	err = p.Process(t.Context(), &dummyProto{})
 	require.NoError(t, err)
 }
 
 func TestProcessor_Process_SuccessMessages(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	successMsgs := []struct {
 		name string
 		msg  proto.Message
@@ -153,7 +153,7 @@ func TestProcessor_Process_SuccessMessages(t *testing.T) {
 }
 
 func TestProcessor_Process_ErrorMessages(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	errorMsgs := []struct {
 		name string
 		msg  proto.Message
@@ -204,7 +204,7 @@ func (s *stubSuccessMessage) Attributes() []attribute.KeyValue {
 type stubErrorMessage struct{ *emptypb.Empty }
 
 func (s *stubErrorMessage) Attributes() []attribute.KeyValue {
-	return []attribute.KeyValue{attribute.String("errKey", "errVal")}
+	return []attribute.KeyValue{attribute.String("key", "val"), attribute.String("summary", "summaryString")}
 }
 func (s *stubErrorMessage) GetSummary() string { return "summary" }
 func (s *stubErrorMessage) GetCause() string   { return "cause" }
@@ -219,7 +219,7 @@ func TestLogEmit_SuccessCases(t *testing.T) {
 		{"WithError", "operation succeeded", errors.New("boom")},
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			logger := mocks.NewLogger(t)
@@ -247,14 +247,14 @@ func TestLogEmit_ErrorCases(t *testing.T) {
 		{"WithError", errors.New("boom")},
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			logger := mocks.NewLogger(t)
 			proc := new(ProcessorMock)
 			msg := &stubErrorMessage{Empty: &emptypb.Empty{}}
 
-			logger.EXPECT().Errorw("cause", "errKey", "errVal").Once()
+			logger.EXPECT().Errorw("summary err: cause", "key", "val").Once()
 			proc.On("Process", ctx, msg).Return(c.err).Once()
 
 			if c.err != nil {

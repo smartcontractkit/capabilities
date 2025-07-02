@@ -50,7 +50,7 @@ func TestCapability_CallContract(t *testing.T) {
 			Return([]byte("ok"), nil)
 
 		req := &evmcappb.CallContractRequest{Call: msgProto, BlockNumber: valuespb.NewBigIntFromInt(block)}
-		resp, err := svc.CallContract(context.Background(), capabilities.RequestMetadata{}, req)
+		resp, err := svc.CallContract(t.Context(), capabilities.RequestMetadata{}, req)
 		require.NoError(t, err)
 		assert.Equal(t, []byte("ok"), resp.Data)
 	})
@@ -59,7 +59,7 @@ func TestCapability_CallContract(t *testing.T) {
 		svc, _ := initMocks(t)
 
 		msgProto, _ := evmcappb.ConvertCallMsgToProto(&evmtypes.CallMsg{})
-		_, err := svc.CallContract(context.Background(), capabilities.RequestMetadata{},
+		_, err := svc.CallContract(t.Context(), capabilities.RequestMetadata{},
 			&evmcappb.CallContractRequest{Call: msgProto})
 		assert.ErrorContains(t, err, "blockNumber must be non-zero")
 	})
@@ -72,7 +72,7 @@ func TestCapability_CallContract(t *testing.T) {
 		evmSvc.On("CallContract", mock.Anything, mock.Anything, block).
 			Return(nil, assert.AnError)
 
-		_, err := svc.CallContract(context.Background(), capabilities.RequestMetadata{},
+		_, err := svc.CallContract(t.Context(), capabilities.RequestMetadata{},
 			&evmcappb.CallContractRequest{Call: msgProto, BlockNumber: valuespb.NewBigIntFromInt(block)})
 		assert.ErrorIs(t, err, assert.AnError)
 	})
@@ -91,13 +91,13 @@ func TestCapability_FilterLogs(t *testing.T) {
 	}
 
 	t.Run("missing filter query", func(t *testing.T) {
-		_, err := svc.FilterLogs(context.Background(),
+		_, err := svc.FilterLogs(t.Context(),
 			capabilities.RequestMetadata{}, &evmcappb.FilterLogsRequest{})
 		assert.Error(t, err)
 	})
 
 	t.Run("fromBlock greater than toBlock rejected", func(t *testing.T) {
-		_, err := svc.FilterLogs(context.Background(),
+		_, err := svc.FilterLogs(t.Context(),
 			capabilities.RequestMetadata{},
 			&evmcappb.FilterLogsRequest{FilterQuery: toFilter(2, 1)})
 		assert.ErrorContains(t, err, "invalid range")
@@ -107,7 +107,7 @@ func TestCapability_FilterLogs(t *testing.T) {
 		evmSvc.On("FilterLogs", mock.Anything, mock.Anything).
 			Return([]*evmtypes.Log{}, nil)
 
-		_, err := svc.FilterLogs(context.Background(),
+		_, err := svc.FilterLogs(t.Context(),
 			capabilities.RequestMetadata{},
 			&evmcappb.FilterLogsRequest{FilterQuery: toFilter(1, 2)})
 		require.NoError(t, err)
@@ -118,7 +118,7 @@ func TestCapability_FilterLogs(t *testing.T) {
 		evmSvc.On("FilterLogs", mock.Anything, mock.Anything).
 			Return(nil, assert.AnError)
 
-		_, err := svc.FilterLogs(context.Background(),
+		_, err := svc.FilterLogs(t.Context(),
 			capabilities.RequestMetadata{},
 			&evmcappb.FilterLogsRequest{FilterQuery: toFilter(1, 2)})
 		assert.ErrorIs(t, err, assert.AnError)
@@ -134,7 +134,7 @@ func TestCapability_BalanceAt(t *testing.T) {
 		evmSvc.On("BalanceAt", mock.Anything, mock.Anything, block).
 			Return(big.NewInt(42), nil)
 
-		resp, err := svc.BalanceAt(context.Background(), capabilities.RequestMetadata{},
+		resp, err := svc.BalanceAt(t.Context(), capabilities.RequestMetadata{},
 			&evmcappb.BalanceAtRequest{Account: addr, BlockNumber: valuespb.NewBigIntFromInt(block)})
 		require.NoError(t, err)
 		got := new(big.Int).SetBytes(resp.Balance.AbsVal)
@@ -144,7 +144,7 @@ func TestCapability_BalanceAt(t *testing.T) {
 	t.Run("zero block rejected", func(t *testing.T) {
 		svc, _ := initMocks(t)
 		addr := bytes.Repeat([]byte{0xbb}, 20)
-		_, err := svc.BalanceAt(context.Background(), capabilities.RequestMetadata{},
+		_, err := svc.BalanceAt(t.Context(), capabilities.RequestMetadata{},
 			&evmcappb.BalanceAtRequest{Account: addr, BlockNumber: valuespb.NewBigIntFromInt(big.NewInt(0))})
 		assert.ErrorContains(t, err, "invalid block number")
 	})
@@ -157,7 +157,7 @@ func TestCapability_BalanceAt(t *testing.T) {
 		evmSvc.On("BalanceAt", mock.Anything, mock.Anything, block).
 			Return(nil, assert.AnError)
 
-		_, err := svc.BalanceAt(context.Background(), capabilities.RequestMetadata{},
+		_, err := svc.BalanceAt(t.Context(), capabilities.RequestMetadata{},
 			&evmcappb.BalanceAtRequest{Account: addr, BlockNumber: valuespb.NewBigIntFromInt(block)})
 		assert.ErrorIs(t, err, assert.AnError)
 	})
@@ -170,7 +170,7 @@ func TestCapability_EstimateGas(t *testing.T) {
 		svc, evmSvc := initMocks(t)
 		evmSvc.On("EstimateGas", mock.Anything, mock.Anything).Return(uint64(99), nil)
 
-		resp, err := svc.EstimateGas(context.Background(), capabilities.RequestMetadata{},
+		resp, err := svc.EstimateGas(t.Context(), capabilities.RequestMetadata{},
 			&evmcappb.EstimateGasRequest{Msg: msgProto})
 		require.NoError(t, err)
 		assert.Equal(t, uint64(99), resp.Gas)
@@ -180,7 +180,7 @@ func TestCapability_EstimateGas(t *testing.T) {
 		svc, evmSvc := initMocks(t)
 		evmSvc.On("EstimateGas", mock.Anything, mock.Anything).Return(uint64(0), assert.AnError)
 
-		_, err := svc.EstimateGas(context.Background(), capabilities.RequestMetadata{},
+		_, err := svc.EstimateGas(t.Context(), capabilities.RequestMetadata{},
 			&evmcappb.EstimateGasRequest{Msg: msgProto})
 		assert.ErrorIs(t, err, assert.AnError)
 	})
@@ -201,7 +201,7 @@ func TestCapability_GetTransactionByHash(t *testing.T) {
 				Value:    big.NewInt(0),
 			}, nil)
 
-		resp, err := svc.GetTransactionByHash(context.Background(), capabilities.RequestMetadata{},
+		resp, err := svc.GetTransactionByHash(t.Context(), capabilities.RequestMetadata{},
 			&evmcappb.GetTransactionByHashRequest{Hash: hash[:]})
 		require.NoError(t, err)
 		assert.NotNil(t, resp.Transaction)
@@ -212,7 +212,7 @@ func TestCapability_GetTransactionByHash(t *testing.T) {
 		evmSvc.On("GetTransactionByHash", mock.Anything, mock.Anything).
 			Return(nil, assert.AnError)
 
-		_, err := svc.GetTransactionByHash(context.Background(), capabilities.RequestMetadata{},
+		_, err := svc.GetTransactionByHash(t.Context(), capabilities.RequestMetadata{},
 			&evmcappb.GetTransactionByHashRequest{Hash: hash[:]})
 		assert.ErrorIs(t, err, assert.AnError)
 	})
@@ -236,7 +236,7 @@ func TestCapability_GetTransactionReceipt(t *testing.T) {
 				EffectiveGasPrice: big.NewInt(0),
 			}, nil)
 
-		resp, err := svc.GetTransactionReceipt(context.Background(), capabilities.RequestMetadata{},
+		resp, err := svc.GetTransactionReceipt(t.Context(), capabilities.RequestMetadata{},
 			&evmcappb.GetTransactionReceiptRequest{Hash: hash[:]})
 		require.NoError(t, err)
 		assert.NotNil(t, resp.Receipt)
@@ -247,7 +247,7 @@ func TestCapability_GetTransactionReceipt(t *testing.T) {
 		evmSvc.On("GetTransactionReceipt", mock.Anything, mock.Anything).
 			Return(nil, assert.AnError)
 
-		_, err := svc.GetTransactionReceipt(context.Background(), capabilities.RequestMetadata{},
+		_, err := svc.GetTransactionReceipt(t.Context(), capabilities.RequestMetadata{},
 			&evmcappb.GetTransactionReceiptRequest{Hash: hash[:]})
 		assert.ErrorIs(t, err, assert.AnError)
 	})
@@ -260,7 +260,7 @@ func TestCapability_LatestAndFinalizedHead(t *testing.T) {
 		evmSvc.On("LatestAndFinalizedHead", mock.Anything).
 			Return(evmtypes.Head{}, evmtypes.Head{}, nil)
 
-		_, err := svc.LatestAndFinalizedHead(context.Background(),
+		_, err := svc.LatestAndFinalizedHead(t.Context(),
 			capabilities.RequestMetadata{}, &emptypb.Empty{})
 		require.NoError(t, err)
 		evmSvc.AssertExpectations(t)
@@ -271,7 +271,7 @@ func TestCapability_LatestAndFinalizedHead(t *testing.T) {
 		evmSvc.On("LatestAndFinalizedHead", mock.Anything).
 			Return(evmtypes.Head{}, evmtypes.Head{}, assert.AnError)
 
-		_, err := svc.LatestAndFinalizedHead(context.Background(),
+		_, err := svc.LatestAndFinalizedHead(t.Context(),
 			capabilities.RequestMetadata{}, &emptypb.Empty{})
 		assert.ErrorIs(t, err, assert.AnError)
 	})
@@ -284,7 +284,7 @@ func TestCapability_Register_Unregister_LogTracking(t *testing.T) {
 		svc, evmSvc := initMocks(t)
 		evmSvc.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil)
 
-		_, err := svc.RegisterLogTracking(context.Background(), capabilities.RequestMetadata{},
+		_, err := svc.RegisterLogTracking(t.Context(), capabilities.RequestMetadata{},
 			&evmcappb.RegisterLogTrackingRequest{Filter: filterProto})
 		require.NoError(t, err)
 	})
@@ -293,7 +293,7 @@ func TestCapability_Register_Unregister_LogTracking(t *testing.T) {
 		svc, evmSvc := initMocks(t)
 		evmSvc.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(assert.AnError)
 
-		_, err := svc.RegisterLogTracking(context.Background(), capabilities.RequestMetadata{},
+		_, err := svc.RegisterLogTracking(t.Context(), capabilities.RequestMetadata{},
 			&evmcappb.RegisterLogTrackingRequest{Filter: filterProto})
 		assert.ErrorIs(t, err, assert.AnError)
 	})
@@ -302,7 +302,7 @@ func TestCapability_Register_Unregister_LogTracking(t *testing.T) {
 		svc, evmSvc := initMocks(t)
 		evmSvc.On("UnregisterLogTracking", mock.Anything, "myFilter").Return(nil)
 
-		_, err := svc.UnregisterLogTracking(context.Background(), capabilities.RequestMetadata{},
+		_, err := svc.UnregisterLogTracking(t.Context(), capabilities.RequestMetadata{},
 			&evmcappb.UnregisterLogTrackingRequest{FilterName: "myFilter"})
 		require.NoError(t, err)
 	})
@@ -311,7 +311,7 @@ func TestCapability_Register_Unregister_LogTracking(t *testing.T) {
 		svc, evmSvc := initMocks(t)
 		evmSvc.On("UnregisterLogTracking", mock.Anything, "myFilter").Return(assert.AnError)
 
-		_, err := svc.UnregisterLogTracking(context.Background(), capabilities.RequestMetadata{},
+		_, err := svc.UnregisterLogTracking(t.Context(), capabilities.RequestMetadata{},
 			&evmcappb.UnregisterLogTrackingRequest{FilterName: "myFilter"})
 		assert.ErrorIs(t, err, assert.AnError)
 	})
