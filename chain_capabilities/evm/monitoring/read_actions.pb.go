@@ -246,17 +246,64 @@ func (x *CallContractError) GetExecutionContext() *monitoring.ExecutionContext {
 	return nil
 }
 
+type Topics struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Topic         []string               `protobuf:"bytes,1,rep,name=topic,proto3" json:"topic,omitempty"` // in [32]byte fix-sized array format
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Topics) Reset() {
+	*x = Topics{}
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Topics) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Topics) ProtoMessage() {}
+
+func (x *Topics) ProtoReflect() protoreflect.Message {
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Topics.ProtoReflect.Descriptor instead.
+func (*Topics) Descriptor() ([]byte, []int) {
+	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *Topics) GetTopic() []string {
+	if x != nil {
+		return x.Topic
+	}
+	return nil
+}
+
 type FilterLogsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	FromBlock     int64                  `protobuf:"varint,1,opt,name=from_block,json=fromBlock,proto3" json:"from_block,omitempty"`
 	ToBlock       int64                  `protobuf:"varint,2,opt,name=to_block,json=toBlock,proto3" json:"to_block,omitempty"`
+	BlockHash     string                 `protobuf:"bytes,3,opt,name=block_hash,json=blockHash,proto3" json:"block_hash,omitempty"` // exact block (cant use from/to), in [32]byte fix-sized array format
+	Addresses     []string               `protobuf:"bytes,4,rep,name=addresses,proto3" json:"addresses,omitempty"`                  // contract(s) to filter logs from in evm address [20]byte fix-sized array format
+	Topics        []*Topics              `protobuf:"bytes,5,rep,name=topics,proto3" json:"topics,omitempty"`                        // filter log by event signature and indexed args
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *FilterLogsRequest) Reset() {
 	*x = FilterLogsRequest{}
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[4]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -268,7 +315,7 @@ func (x *FilterLogsRequest) String() string {
 func (*FilterLogsRequest) ProtoMessage() {}
 
 func (x *FilterLogsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[4]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -281,7 +328,7 @@ func (x *FilterLogsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FilterLogsRequest.ProtoReflect.Descriptor instead.
 func (*FilterLogsRequest) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{4}
+	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *FilterLogsRequest) GetFromBlock() int64 {
@@ -298,6 +345,27 @@ func (x *FilterLogsRequest) GetToBlock() int64 {
 	return 0
 }
 
+func (x *FilterLogsRequest) GetBlockHash() string {
+	if x != nil {
+		return x.BlockHash
+	}
+	return ""
+}
+
+func (x *FilterLogsRequest) GetAddresses() []string {
+	if x != nil {
+		return x.Addresses
+	}
+	return nil
+}
+
+func (x *FilterLogsRequest) GetTopics() []*Topics {
+	if x != nil {
+		return x.Topics
+	}
+	return nil
+}
+
 type FilterLogsInitiated struct {
 	state            protoimpl.MessageState       `protogen:"open.v1"`
 	Req              *FilterLogsRequest           `protobuf:"bytes,1,opt,name=req,proto3" json:"req,omitempty"`
@@ -308,7 +376,7 @@ type FilterLogsInitiated struct {
 
 func (x *FilterLogsInitiated) Reset() {
 	*x = FilterLogsInitiated{}
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[5]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -320,7 +388,7 @@ func (x *FilterLogsInitiated) String() string {
 func (*FilterLogsInitiated) ProtoMessage() {}
 
 func (x *FilterLogsInitiated) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[5]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -333,7 +401,7 @@ func (x *FilterLogsInitiated) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FilterLogsInitiated.ProtoReflect.Descriptor instead.
 func (*FilterLogsInitiated) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{5}
+	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *FilterLogsInitiated) GetReq() *FilterLogsRequest {
@@ -361,7 +429,7 @@ type FilterLogsSuccess struct {
 
 func (x *FilterLogsSuccess) Reset() {
 	*x = FilterLogsSuccess{}
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[6]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -373,7 +441,7 @@ func (x *FilterLogsSuccess) String() string {
 func (*FilterLogsSuccess) ProtoMessage() {}
 
 func (x *FilterLogsSuccess) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[6]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -386,7 +454,7 @@ func (x *FilterLogsSuccess) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FilterLogsSuccess.ProtoReflect.Descriptor instead.
 func (*FilterLogsSuccess) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{6}
+	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *FilterLogsSuccess) GetReq() *FilterLogsRequest {
@@ -422,7 +490,7 @@ type FilterLogsError struct {
 
 func (x *FilterLogsError) Reset() {
 	*x = FilterLogsError{}
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[7]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -434,7 +502,7 @@ func (x *FilterLogsError) String() string {
 func (*FilterLogsError) ProtoMessage() {}
 
 func (x *FilterLogsError) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[7]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -447,7 +515,7 @@ func (x *FilterLogsError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FilterLogsError.ProtoReflect.Descriptor instead.
 func (*FilterLogsError) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{7}
+	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *FilterLogsError) GetReq() *FilterLogsRequest {
@@ -488,7 +556,7 @@ type BalanceAtRequest struct {
 
 func (x *BalanceAtRequest) Reset() {
 	*x = BalanceAtRequest{}
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[8]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -500,7 +568,7 @@ func (x *BalanceAtRequest) String() string {
 func (*BalanceAtRequest) ProtoMessage() {}
 
 func (x *BalanceAtRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[8]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -513,7 +581,7 @@ func (x *BalanceAtRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BalanceAtRequest.ProtoReflect.Descriptor instead.
 func (*BalanceAtRequest) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{8}
+	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *BalanceAtRequest) GetAccount() string {
@@ -540,7 +608,7 @@ type BalanceAtInitiated struct {
 
 func (x *BalanceAtInitiated) Reset() {
 	*x = BalanceAtInitiated{}
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[9]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -552,7 +620,7 @@ func (x *BalanceAtInitiated) String() string {
 func (*BalanceAtInitiated) ProtoMessage() {}
 
 func (x *BalanceAtInitiated) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[9]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -565,7 +633,7 @@ func (x *BalanceAtInitiated) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BalanceAtInitiated.ProtoReflect.Descriptor instead.
 func (*BalanceAtInitiated) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{9}
+	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *BalanceAtInitiated) GetReq() *BalanceAtRequest {
@@ -593,7 +661,7 @@ type BalanceAtSuccess struct {
 
 func (x *BalanceAtSuccess) Reset() {
 	*x = BalanceAtSuccess{}
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[10]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -605,7 +673,7 @@ func (x *BalanceAtSuccess) String() string {
 func (*BalanceAtSuccess) ProtoMessage() {}
 
 func (x *BalanceAtSuccess) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[10]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -618,7 +686,7 @@ func (x *BalanceAtSuccess) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BalanceAtSuccess.ProtoReflect.Descriptor instead.
 func (*BalanceAtSuccess) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{10}
+	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *BalanceAtSuccess) GetReq() *BalanceAtRequest {
@@ -654,7 +722,7 @@ type BalanceAtError struct {
 
 func (x *BalanceAtError) Reset() {
 	*x = BalanceAtError{}
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[11]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -666,7 +734,7 @@ func (x *BalanceAtError) String() string {
 func (*BalanceAtError) ProtoMessage() {}
 
 func (x *BalanceAtError) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[11]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -679,7 +747,7 @@ func (x *BalanceAtError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BalanceAtError.ProtoReflect.Descriptor instead.
 func (*BalanceAtError) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{11}
+	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *BalanceAtError) GetReq() *BalanceAtRequest {
@@ -721,7 +789,7 @@ type EstimateGasRequest struct {
 
 func (x *EstimateGasRequest) Reset() {
 	*x = EstimateGasRequest{}
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[12]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -733,7 +801,7 @@ func (x *EstimateGasRequest) String() string {
 func (*EstimateGasRequest) ProtoMessage() {}
 
 func (x *EstimateGasRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[12]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -746,7 +814,7 @@ func (x *EstimateGasRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EstimateGasRequest.ProtoReflect.Descriptor instead.
 func (*EstimateGasRequest) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{12}
+	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *EstimateGasRequest) GetFrom() string {
@@ -780,7 +848,7 @@ type EstimateGasInitiated struct {
 
 func (x *EstimateGasInitiated) Reset() {
 	*x = EstimateGasInitiated{}
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[13]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -792,7 +860,7 @@ func (x *EstimateGasInitiated) String() string {
 func (*EstimateGasInitiated) ProtoMessage() {}
 
 func (x *EstimateGasInitiated) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[13]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -805,7 +873,7 @@ func (x *EstimateGasInitiated) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EstimateGasInitiated.ProtoReflect.Descriptor instead.
 func (*EstimateGasInitiated) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{13}
+	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *EstimateGasInitiated) GetReq() *EstimateGasRequest {
@@ -833,7 +901,7 @@ type EstimateGasSuccess struct {
 
 func (x *EstimateGasSuccess) Reset() {
 	*x = EstimateGasSuccess{}
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[14]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -845,7 +913,7 @@ func (x *EstimateGasSuccess) String() string {
 func (*EstimateGasSuccess) ProtoMessage() {}
 
 func (x *EstimateGasSuccess) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[14]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -858,7 +926,7 @@ func (x *EstimateGasSuccess) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EstimateGasSuccess.ProtoReflect.Descriptor instead.
 func (*EstimateGasSuccess) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{14}
+	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *EstimateGasSuccess) GetReq() *EstimateGasRequest {
@@ -894,7 +962,7 @@ type EstimateGasError struct {
 
 func (x *EstimateGasError) Reset() {
 	*x = EstimateGasError{}
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[15]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -906,7 +974,7 @@ func (x *EstimateGasError) String() string {
 func (*EstimateGasError) ProtoMessage() {}
 
 func (x *EstimateGasError) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[15]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -919,7 +987,7 @@ func (x *EstimateGasError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EstimateGasError.ProtoReflect.Descriptor instead.
 func (*EstimateGasError) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{15}
+	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *EstimateGasError) GetReq() *EstimateGasRequest {
@@ -966,7 +1034,7 @@ type Receipt struct {
 
 func (x *Receipt) Reset() {
 	*x = Receipt{}
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[16]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -978,7 +1046,7 @@ func (x *Receipt) String() string {
 func (*Receipt) ProtoMessage() {}
 
 func (x *Receipt) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[16]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -991,7 +1059,7 @@ func (x *Receipt) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Receipt.ProtoReflect.Descriptor instead.
 func (*Receipt) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{16}
+	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *Receipt) GetStatus() uint64 {
@@ -1059,7 +1127,7 @@ type GetTransactionByHashRequest struct {
 
 func (x *GetTransactionByHashRequest) Reset() {
 	*x = GetTransactionByHashRequest{}
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[17]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1071,7 +1139,7 @@ func (x *GetTransactionByHashRequest) String() string {
 func (*GetTransactionByHashRequest) ProtoMessage() {}
 
 func (x *GetTransactionByHashRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[17]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1084,7 +1152,7 @@ func (x *GetTransactionByHashRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTransactionByHashRequest.ProtoReflect.Descriptor instead.
 func (*GetTransactionByHashRequest) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{17}
+	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *GetTransactionByHashRequest) GetHash() string {
@@ -1104,7 +1172,7 @@ type GetTransactionByHashInitiated struct {
 
 func (x *GetTransactionByHashInitiated) Reset() {
 	*x = GetTransactionByHashInitiated{}
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[18]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1116,7 +1184,7 @@ func (x *GetTransactionByHashInitiated) String() string {
 func (*GetTransactionByHashInitiated) ProtoMessage() {}
 
 func (x *GetTransactionByHashInitiated) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[18]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1129,7 +1197,7 @@ func (x *GetTransactionByHashInitiated) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTransactionByHashInitiated.ProtoReflect.Descriptor instead.
 func (*GetTransactionByHashInitiated) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{18}
+	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *GetTransactionByHashInitiated) GetReq() *GetTransactionByHashRequest {
@@ -1159,7 +1227,7 @@ type TransactionData struct {
 
 func (x *TransactionData) Reset() {
 	*x = TransactionData{}
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[19]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1171,7 +1239,7 @@ func (x *TransactionData) String() string {
 func (*TransactionData) ProtoMessage() {}
 
 func (x *TransactionData) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[19]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1184,7 +1252,7 @@ func (x *TransactionData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransactionData.ProtoReflect.Descriptor instead.
 func (*TransactionData) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{19}
+	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *TransactionData) GetTxHash() string {
@@ -1233,7 +1301,7 @@ type GetTransactionByHashSuccess struct {
 
 func (x *GetTransactionByHashSuccess) Reset() {
 	*x = GetTransactionByHashSuccess{}
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[20]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1245,7 +1313,7 @@ func (x *GetTransactionByHashSuccess) String() string {
 func (*GetTransactionByHashSuccess) ProtoMessage() {}
 
 func (x *GetTransactionByHashSuccess) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[20]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1258,7 +1326,7 @@ func (x *GetTransactionByHashSuccess) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTransactionByHashSuccess.ProtoReflect.Descriptor instead.
 func (*GetTransactionByHashSuccess) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{20}
+	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *GetTransactionByHashSuccess) GetReq() *GetTransactionByHashRequest {
@@ -1294,7 +1362,7 @@ type GetTransactionByHashError struct {
 
 func (x *GetTransactionByHashError) Reset() {
 	*x = GetTransactionByHashError{}
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[21]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1306,7 +1374,7 @@ func (x *GetTransactionByHashError) String() string {
 func (*GetTransactionByHashError) ProtoMessage() {}
 
 func (x *GetTransactionByHashError) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[21]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1319,7 +1387,7 @@ func (x *GetTransactionByHashError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTransactionByHashError.ProtoReflect.Descriptor instead.
 func (*GetTransactionByHashError) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{21}
+	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *GetTransactionByHashError) GetReq() *GetTransactionByHashRequest {
@@ -1359,7 +1427,7 @@ type GetTransactionReceiptRequest struct {
 
 func (x *GetTransactionReceiptRequest) Reset() {
 	*x = GetTransactionReceiptRequest{}
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[22]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1371,7 +1439,7 @@ func (x *GetTransactionReceiptRequest) String() string {
 func (*GetTransactionReceiptRequest) ProtoMessage() {}
 
 func (x *GetTransactionReceiptRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[22]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1384,7 +1452,7 @@ func (x *GetTransactionReceiptRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTransactionReceiptRequest.ProtoReflect.Descriptor instead.
 func (*GetTransactionReceiptRequest) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{22}
+	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *GetTransactionReceiptRequest) GetHash() string {
@@ -1404,7 +1472,7 @@ type GetTransactionReceiptInitiated struct {
 
 func (x *GetTransactionReceiptInitiated) Reset() {
 	*x = GetTransactionReceiptInitiated{}
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[23]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1416,7 +1484,7 @@ func (x *GetTransactionReceiptInitiated) String() string {
 func (*GetTransactionReceiptInitiated) ProtoMessage() {}
 
 func (x *GetTransactionReceiptInitiated) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[23]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1429,7 +1497,7 @@ func (x *GetTransactionReceiptInitiated) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTransactionReceiptInitiated.ProtoReflect.Descriptor instead.
 func (*GetTransactionReceiptInitiated) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{23}
+	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *GetTransactionReceiptInitiated) GetReq() *GetTransactionReceiptRequest {
@@ -1457,7 +1525,7 @@ type GetTransactionReceiptSuccess struct {
 
 func (x *GetTransactionReceiptSuccess) Reset() {
 	*x = GetTransactionReceiptSuccess{}
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[24]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1469,7 +1537,7 @@ func (x *GetTransactionReceiptSuccess) String() string {
 func (*GetTransactionReceiptSuccess) ProtoMessage() {}
 
 func (x *GetTransactionReceiptSuccess) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[24]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1482,7 +1550,7 @@ func (x *GetTransactionReceiptSuccess) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTransactionReceiptSuccess.ProtoReflect.Descriptor instead.
 func (*GetTransactionReceiptSuccess) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{24}
+	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *GetTransactionReceiptSuccess) GetReq() *GetTransactionReceiptRequest {
@@ -1518,7 +1586,7 @@ type GetTransactionReceiptError struct {
 
 func (x *GetTransactionReceiptError) Reset() {
 	*x = GetTransactionReceiptError{}
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[25]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1530,7 +1598,7 @@ func (x *GetTransactionReceiptError) String() string {
 func (*GetTransactionReceiptError) ProtoMessage() {}
 
 func (x *GetTransactionReceiptError) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[25]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1543,7 +1611,7 @@ func (x *GetTransactionReceiptError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTransactionReceiptError.ProtoReflect.Descriptor instead.
 func (*GetTransactionReceiptError) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{25}
+	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *GetTransactionReceiptError) GetReq() *GetTransactionReceiptRequest {
@@ -1583,7 +1651,7 @@ type LatestAndFinalizedHeadInitiated struct {
 
 func (x *LatestAndFinalizedHeadInitiated) Reset() {
 	*x = LatestAndFinalizedHeadInitiated{}
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[26]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1595,7 +1663,7 @@ func (x *LatestAndFinalizedHeadInitiated) String() string {
 func (*LatestAndFinalizedHeadInitiated) ProtoMessage() {}
 
 func (x *LatestAndFinalizedHeadInitiated) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[26]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1608,7 +1676,7 @@ func (x *LatestAndFinalizedHeadInitiated) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LatestAndFinalizedHeadInitiated.ProtoReflect.Descriptor instead.
 func (*LatestAndFinalizedHeadInitiated) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{26}
+	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *LatestAndFinalizedHeadInitiated) GetExecutionContext() *monitoring.ExecutionContext {
@@ -1629,7 +1697,7 @@ type BlockData struct {
 
 func (x *BlockData) Reset() {
 	*x = BlockData{}
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[27]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1641,7 +1709,7 @@ func (x *BlockData) String() string {
 func (*BlockData) ProtoMessage() {}
 
 func (x *BlockData) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[27]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1654,7 +1722,7 @@ func (x *BlockData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BlockData.ProtoReflect.Descriptor instead.
 func (*BlockData) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{27}
+	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *BlockData) GetBlockHash() string {
@@ -1689,7 +1757,7 @@ type LatestAndFinalizedHeadSuccess struct {
 
 func (x *LatestAndFinalizedHeadSuccess) Reset() {
 	*x = LatestAndFinalizedHeadSuccess{}
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[28]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1701,7 +1769,7 @@ func (x *LatestAndFinalizedHeadSuccess) String() string {
 func (*LatestAndFinalizedHeadSuccess) ProtoMessage() {}
 
 func (x *LatestAndFinalizedHeadSuccess) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[28]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1714,7 +1782,7 @@ func (x *LatestAndFinalizedHeadSuccess) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LatestAndFinalizedHeadSuccess.ProtoReflect.Descriptor instead.
 func (*LatestAndFinalizedHeadSuccess) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{28}
+	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *LatestAndFinalizedHeadSuccess) GetLatest() *BlockData {
@@ -1749,7 +1817,7 @@ type LatestAndFinalizedHeadError struct {
 
 func (x *LatestAndFinalizedHeadError) Reset() {
 	*x = LatestAndFinalizedHeadError{}
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[29]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1761,7 +1829,7 @@ func (x *LatestAndFinalizedHeadError) String() string {
 func (*LatestAndFinalizedHeadError) ProtoMessage() {}
 
 func (x *LatestAndFinalizedHeadError) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[29]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1774,7 +1842,7 @@ func (x *LatestAndFinalizedHeadError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LatestAndFinalizedHeadError.ProtoReflect.Descriptor instead.
 func (*LatestAndFinalizedHeadError) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{29}
+	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *LatestAndFinalizedHeadError) GetSummary() string {
@@ -1816,11 +1884,17 @@ const file_chain_capabilities_evm_monitoring_read_actions_proto_rawDesc = "" +
 	"\x03req\x18\x01 \x01(\v2+.chain_capabilities.evm.CallContractRequestR\x03req\x12\x18\n" +
 	"\asummary\x18\x02 \x01(\tR\asummary\x12\x14\n" +
 	"\x05cause\x18\x03 \x01(\tR\x05cause\x12E\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x18.common.ExecutionContextR\x10executionContext\"M\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x18.common.ExecutionContextR\x10executionContext\"\x1e\n" +
+	"\x06Topics\x12\x14\n" +
+	"\x05topic\x18\x01 \x03(\tR\x05topic\"\xc2\x01\n" +
 	"\x11FilterLogsRequest\x12\x1d\n" +
 	"\n" +
 	"from_block\x18\x01 \x01(\x03R\tfromBlock\x12\x19\n" +
-	"\bto_block\x18\x02 \x01(\x03R\atoBlock\"\x99\x01\n" +
+	"\bto_block\x18\x02 \x01(\x03R\atoBlock\x12\x1d\n" +
+	"\n" +
+	"block_hash\x18\x03 \x01(\tR\tblockHash\x12\x1c\n" +
+	"\taddresses\x18\x04 \x03(\tR\taddresses\x126\n" +
+	"\x06topics\x18\x05 \x03(\v2\x1e.chain_capabilities.evm.TopicsR\x06topics\"\x99\x01\n" +
 	"\x13FilterLogsInitiated\x12;\n" +
 	"\x03req\x18\x01 \x01(\v2).chain_capabilities.evm.FilterLogsRequestR\x03req\x12E\n" +
 	"\x11execution_context\x18\x14 \x01(\v2\x18.common.ExecutionContextR\x10executionContext\"\xb4\x01\n" +
@@ -1936,89 +2010,91 @@ func file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP() []b
 	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescData
 }
 
-var file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
+var file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes = make([]protoimpl.MessageInfo, 31)
 var file_chain_capabilities_evm_monitoring_read_actions_proto_goTypes = []any{
 	(*CallContractRequest)(nil),             // 0: chain_capabilities.evm.CallContractRequest
 	(*CallContractInitiated)(nil),           // 1: chain_capabilities.evm.CallContractInitiated
 	(*CallContractSuccess)(nil),             // 2: chain_capabilities.evm.CallContractSuccess
 	(*CallContractError)(nil),               // 3: chain_capabilities.evm.CallContractError
-	(*FilterLogsRequest)(nil),               // 4: chain_capabilities.evm.FilterLogsRequest
-	(*FilterLogsInitiated)(nil),             // 5: chain_capabilities.evm.FilterLogsInitiated
-	(*FilterLogsSuccess)(nil),               // 6: chain_capabilities.evm.FilterLogsSuccess
-	(*FilterLogsError)(nil),                 // 7: chain_capabilities.evm.FilterLogsError
-	(*BalanceAtRequest)(nil),                // 8: chain_capabilities.evm.BalanceAtRequest
-	(*BalanceAtInitiated)(nil),              // 9: chain_capabilities.evm.BalanceAtInitiated
-	(*BalanceAtSuccess)(nil),                // 10: chain_capabilities.evm.BalanceAtSuccess
-	(*BalanceAtError)(nil),                  // 11: chain_capabilities.evm.BalanceAtError
-	(*EstimateGasRequest)(nil),              // 12: chain_capabilities.evm.EstimateGasRequest
-	(*EstimateGasInitiated)(nil),            // 13: chain_capabilities.evm.EstimateGasInitiated
-	(*EstimateGasSuccess)(nil),              // 14: chain_capabilities.evm.EstimateGasSuccess
-	(*EstimateGasError)(nil),                // 15: chain_capabilities.evm.EstimateGasError
-	(*Receipt)(nil),                         // 16: chain_capabilities.evm.Receipt
-	(*GetTransactionByHashRequest)(nil),     // 17: chain_capabilities.evm.GetTransactionByHashRequest
-	(*GetTransactionByHashInitiated)(nil),   // 18: chain_capabilities.evm.GetTransactionByHashInitiated
-	(*TransactionData)(nil),                 // 19: chain_capabilities.evm.TransactionData
-	(*GetTransactionByHashSuccess)(nil),     // 20: chain_capabilities.evm.GetTransactionByHashSuccess
-	(*GetTransactionByHashError)(nil),       // 21: chain_capabilities.evm.GetTransactionByHashError
-	(*GetTransactionReceiptRequest)(nil),    // 22: chain_capabilities.evm.GetTransactionReceiptRequest
-	(*GetTransactionReceiptInitiated)(nil),  // 23: chain_capabilities.evm.GetTransactionReceiptInitiated
-	(*GetTransactionReceiptSuccess)(nil),    // 24: chain_capabilities.evm.GetTransactionReceiptSuccess
-	(*GetTransactionReceiptError)(nil),      // 25: chain_capabilities.evm.GetTransactionReceiptError
-	(*LatestAndFinalizedHeadInitiated)(nil), // 26: chain_capabilities.evm.LatestAndFinalizedHeadInitiated
-	(*BlockData)(nil),                       // 27: chain_capabilities.evm.BlockData
-	(*LatestAndFinalizedHeadSuccess)(nil),   // 28: chain_capabilities.evm.LatestAndFinalizedHeadSuccess
-	(*LatestAndFinalizedHeadError)(nil),     // 29: chain_capabilities.evm.LatestAndFinalizedHeadError
-	(*monitoring.ExecutionContext)(nil),     // 30: common.ExecutionContext
+	(*Topics)(nil),                          // 4: chain_capabilities.evm.Topics
+	(*FilterLogsRequest)(nil),               // 5: chain_capabilities.evm.FilterLogsRequest
+	(*FilterLogsInitiated)(nil),             // 6: chain_capabilities.evm.FilterLogsInitiated
+	(*FilterLogsSuccess)(nil),               // 7: chain_capabilities.evm.FilterLogsSuccess
+	(*FilterLogsError)(nil),                 // 8: chain_capabilities.evm.FilterLogsError
+	(*BalanceAtRequest)(nil),                // 9: chain_capabilities.evm.BalanceAtRequest
+	(*BalanceAtInitiated)(nil),              // 10: chain_capabilities.evm.BalanceAtInitiated
+	(*BalanceAtSuccess)(nil),                // 11: chain_capabilities.evm.BalanceAtSuccess
+	(*BalanceAtError)(nil),                  // 12: chain_capabilities.evm.BalanceAtError
+	(*EstimateGasRequest)(nil),              // 13: chain_capabilities.evm.EstimateGasRequest
+	(*EstimateGasInitiated)(nil),            // 14: chain_capabilities.evm.EstimateGasInitiated
+	(*EstimateGasSuccess)(nil),              // 15: chain_capabilities.evm.EstimateGasSuccess
+	(*EstimateGasError)(nil),                // 16: chain_capabilities.evm.EstimateGasError
+	(*Receipt)(nil),                         // 17: chain_capabilities.evm.Receipt
+	(*GetTransactionByHashRequest)(nil),     // 18: chain_capabilities.evm.GetTransactionByHashRequest
+	(*GetTransactionByHashInitiated)(nil),   // 19: chain_capabilities.evm.GetTransactionByHashInitiated
+	(*TransactionData)(nil),                 // 20: chain_capabilities.evm.TransactionData
+	(*GetTransactionByHashSuccess)(nil),     // 21: chain_capabilities.evm.GetTransactionByHashSuccess
+	(*GetTransactionByHashError)(nil),       // 22: chain_capabilities.evm.GetTransactionByHashError
+	(*GetTransactionReceiptRequest)(nil),    // 23: chain_capabilities.evm.GetTransactionReceiptRequest
+	(*GetTransactionReceiptInitiated)(nil),  // 24: chain_capabilities.evm.GetTransactionReceiptInitiated
+	(*GetTransactionReceiptSuccess)(nil),    // 25: chain_capabilities.evm.GetTransactionReceiptSuccess
+	(*GetTransactionReceiptError)(nil),      // 26: chain_capabilities.evm.GetTransactionReceiptError
+	(*LatestAndFinalizedHeadInitiated)(nil), // 27: chain_capabilities.evm.LatestAndFinalizedHeadInitiated
+	(*BlockData)(nil),                       // 28: chain_capabilities.evm.BlockData
+	(*LatestAndFinalizedHeadSuccess)(nil),   // 29: chain_capabilities.evm.LatestAndFinalizedHeadSuccess
+	(*LatestAndFinalizedHeadError)(nil),     // 30: chain_capabilities.evm.LatestAndFinalizedHeadError
+	(*monitoring.ExecutionContext)(nil),     // 31: common.ExecutionContext
 }
 var file_chain_capabilities_evm_monitoring_read_actions_proto_depIdxs = []int32{
 	0,  // 0: chain_capabilities.evm.CallContractInitiated.req:type_name -> chain_capabilities.evm.CallContractRequest
-	30, // 1: chain_capabilities.evm.CallContractInitiated.execution_context:type_name -> common.ExecutionContext
+	31, // 1: chain_capabilities.evm.CallContractInitiated.execution_context:type_name -> common.ExecutionContext
 	0,  // 2: chain_capabilities.evm.CallContractSuccess.req:type_name -> chain_capabilities.evm.CallContractRequest
-	30, // 3: chain_capabilities.evm.CallContractSuccess.execution_context:type_name -> common.ExecutionContext
+	31, // 3: chain_capabilities.evm.CallContractSuccess.execution_context:type_name -> common.ExecutionContext
 	0,  // 4: chain_capabilities.evm.CallContractError.req:type_name -> chain_capabilities.evm.CallContractRequest
-	30, // 5: chain_capabilities.evm.CallContractError.execution_context:type_name -> common.ExecutionContext
-	4,  // 6: chain_capabilities.evm.FilterLogsInitiated.req:type_name -> chain_capabilities.evm.FilterLogsRequest
-	30, // 7: chain_capabilities.evm.FilterLogsInitiated.execution_context:type_name -> common.ExecutionContext
-	4,  // 8: chain_capabilities.evm.FilterLogsSuccess.req:type_name -> chain_capabilities.evm.FilterLogsRequest
-	30, // 9: chain_capabilities.evm.FilterLogsSuccess.execution_context:type_name -> common.ExecutionContext
-	4,  // 10: chain_capabilities.evm.FilterLogsError.req:type_name -> chain_capabilities.evm.FilterLogsRequest
-	30, // 11: chain_capabilities.evm.FilterLogsError.execution_context:type_name -> common.ExecutionContext
-	8,  // 12: chain_capabilities.evm.BalanceAtInitiated.req:type_name -> chain_capabilities.evm.BalanceAtRequest
-	30, // 13: chain_capabilities.evm.BalanceAtInitiated.execution_context:type_name -> common.ExecutionContext
-	8,  // 14: chain_capabilities.evm.BalanceAtSuccess.req:type_name -> chain_capabilities.evm.BalanceAtRequest
-	30, // 15: chain_capabilities.evm.BalanceAtSuccess.execution_context:type_name -> common.ExecutionContext
-	8,  // 16: chain_capabilities.evm.BalanceAtError.req:type_name -> chain_capabilities.evm.BalanceAtRequest
-	30, // 17: chain_capabilities.evm.BalanceAtError.execution_context:type_name -> common.ExecutionContext
-	12, // 18: chain_capabilities.evm.EstimateGasInitiated.req:type_name -> chain_capabilities.evm.EstimateGasRequest
-	30, // 19: chain_capabilities.evm.EstimateGasInitiated.execution_context:type_name -> common.ExecutionContext
-	12, // 20: chain_capabilities.evm.EstimateGasSuccess.req:type_name -> chain_capabilities.evm.EstimateGasRequest
-	30, // 21: chain_capabilities.evm.EstimateGasSuccess.execution_context:type_name -> common.ExecutionContext
-	12, // 22: chain_capabilities.evm.EstimateGasError.req:type_name -> chain_capabilities.evm.EstimateGasRequest
-	30, // 23: chain_capabilities.evm.EstimateGasError.execution_context:type_name -> common.ExecutionContext
-	17, // 24: chain_capabilities.evm.GetTransactionByHashInitiated.req:type_name -> chain_capabilities.evm.GetTransactionByHashRequest
-	30, // 25: chain_capabilities.evm.GetTransactionByHashInitiated.execution_context:type_name -> common.ExecutionContext
-	17, // 26: chain_capabilities.evm.GetTransactionByHashSuccess.req:type_name -> chain_capabilities.evm.GetTransactionByHashRequest
-	19, // 27: chain_capabilities.evm.GetTransactionByHashSuccess.transaction:type_name -> chain_capabilities.evm.TransactionData
-	30, // 28: chain_capabilities.evm.GetTransactionByHashSuccess.execution_context:type_name -> common.ExecutionContext
-	17, // 29: chain_capabilities.evm.GetTransactionByHashError.req:type_name -> chain_capabilities.evm.GetTransactionByHashRequest
-	30, // 30: chain_capabilities.evm.GetTransactionByHashError.execution_context:type_name -> common.ExecutionContext
-	22, // 31: chain_capabilities.evm.GetTransactionReceiptInitiated.req:type_name -> chain_capabilities.evm.GetTransactionReceiptRequest
-	30, // 32: chain_capabilities.evm.GetTransactionReceiptInitiated.execution_context:type_name -> common.ExecutionContext
-	22, // 33: chain_capabilities.evm.GetTransactionReceiptSuccess.req:type_name -> chain_capabilities.evm.GetTransactionReceiptRequest
-	16, // 34: chain_capabilities.evm.GetTransactionReceiptSuccess.receipt:type_name -> chain_capabilities.evm.Receipt
-	30, // 35: chain_capabilities.evm.GetTransactionReceiptSuccess.execution_context:type_name -> common.ExecutionContext
-	22, // 36: chain_capabilities.evm.GetTransactionReceiptError.req:type_name -> chain_capabilities.evm.GetTransactionReceiptRequest
-	30, // 37: chain_capabilities.evm.GetTransactionReceiptError.execution_context:type_name -> common.ExecutionContext
-	30, // 38: chain_capabilities.evm.LatestAndFinalizedHeadInitiated.execution_context:type_name -> common.ExecutionContext
-	27, // 39: chain_capabilities.evm.LatestAndFinalizedHeadSuccess.latest:type_name -> chain_capabilities.evm.BlockData
-	27, // 40: chain_capabilities.evm.LatestAndFinalizedHeadSuccess.finalized:type_name -> chain_capabilities.evm.BlockData
-	30, // 41: chain_capabilities.evm.LatestAndFinalizedHeadSuccess.execution_context:type_name -> common.ExecutionContext
-	30, // 42: chain_capabilities.evm.LatestAndFinalizedHeadError.execution_context:type_name -> common.ExecutionContext
-	43, // [43:43] is the sub-list for method output_type
-	43, // [43:43] is the sub-list for method input_type
-	43, // [43:43] is the sub-list for extension type_name
-	43, // [43:43] is the sub-list for extension extendee
-	0,  // [0:43] is the sub-list for field type_name
+	31, // 5: chain_capabilities.evm.CallContractError.execution_context:type_name -> common.ExecutionContext
+	4,  // 6: chain_capabilities.evm.FilterLogsRequest.topics:type_name -> chain_capabilities.evm.Topics
+	5,  // 7: chain_capabilities.evm.FilterLogsInitiated.req:type_name -> chain_capabilities.evm.FilterLogsRequest
+	31, // 8: chain_capabilities.evm.FilterLogsInitiated.execution_context:type_name -> common.ExecutionContext
+	5,  // 9: chain_capabilities.evm.FilterLogsSuccess.req:type_name -> chain_capabilities.evm.FilterLogsRequest
+	31, // 10: chain_capabilities.evm.FilterLogsSuccess.execution_context:type_name -> common.ExecutionContext
+	5,  // 11: chain_capabilities.evm.FilterLogsError.req:type_name -> chain_capabilities.evm.FilterLogsRequest
+	31, // 12: chain_capabilities.evm.FilterLogsError.execution_context:type_name -> common.ExecutionContext
+	9,  // 13: chain_capabilities.evm.BalanceAtInitiated.req:type_name -> chain_capabilities.evm.BalanceAtRequest
+	31, // 14: chain_capabilities.evm.BalanceAtInitiated.execution_context:type_name -> common.ExecutionContext
+	9,  // 15: chain_capabilities.evm.BalanceAtSuccess.req:type_name -> chain_capabilities.evm.BalanceAtRequest
+	31, // 16: chain_capabilities.evm.BalanceAtSuccess.execution_context:type_name -> common.ExecutionContext
+	9,  // 17: chain_capabilities.evm.BalanceAtError.req:type_name -> chain_capabilities.evm.BalanceAtRequest
+	31, // 18: chain_capabilities.evm.BalanceAtError.execution_context:type_name -> common.ExecutionContext
+	13, // 19: chain_capabilities.evm.EstimateGasInitiated.req:type_name -> chain_capabilities.evm.EstimateGasRequest
+	31, // 20: chain_capabilities.evm.EstimateGasInitiated.execution_context:type_name -> common.ExecutionContext
+	13, // 21: chain_capabilities.evm.EstimateGasSuccess.req:type_name -> chain_capabilities.evm.EstimateGasRequest
+	31, // 22: chain_capabilities.evm.EstimateGasSuccess.execution_context:type_name -> common.ExecutionContext
+	13, // 23: chain_capabilities.evm.EstimateGasError.req:type_name -> chain_capabilities.evm.EstimateGasRequest
+	31, // 24: chain_capabilities.evm.EstimateGasError.execution_context:type_name -> common.ExecutionContext
+	18, // 25: chain_capabilities.evm.GetTransactionByHashInitiated.req:type_name -> chain_capabilities.evm.GetTransactionByHashRequest
+	31, // 26: chain_capabilities.evm.GetTransactionByHashInitiated.execution_context:type_name -> common.ExecutionContext
+	18, // 27: chain_capabilities.evm.GetTransactionByHashSuccess.req:type_name -> chain_capabilities.evm.GetTransactionByHashRequest
+	20, // 28: chain_capabilities.evm.GetTransactionByHashSuccess.transaction:type_name -> chain_capabilities.evm.TransactionData
+	31, // 29: chain_capabilities.evm.GetTransactionByHashSuccess.execution_context:type_name -> common.ExecutionContext
+	18, // 30: chain_capabilities.evm.GetTransactionByHashError.req:type_name -> chain_capabilities.evm.GetTransactionByHashRequest
+	31, // 31: chain_capabilities.evm.GetTransactionByHashError.execution_context:type_name -> common.ExecutionContext
+	23, // 32: chain_capabilities.evm.GetTransactionReceiptInitiated.req:type_name -> chain_capabilities.evm.GetTransactionReceiptRequest
+	31, // 33: chain_capabilities.evm.GetTransactionReceiptInitiated.execution_context:type_name -> common.ExecutionContext
+	23, // 34: chain_capabilities.evm.GetTransactionReceiptSuccess.req:type_name -> chain_capabilities.evm.GetTransactionReceiptRequest
+	17, // 35: chain_capabilities.evm.GetTransactionReceiptSuccess.receipt:type_name -> chain_capabilities.evm.Receipt
+	31, // 36: chain_capabilities.evm.GetTransactionReceiptSuccess.execution_context:type_name -> common.ExecutionContext
+	23, // 37: chain_capabilities.evm.GetTransactionReceiptError.req:type_name -> chain_capabilities.evm.GetTransactionReceiptRequest
+	31, // 38: chain_capabilities.evm.GetTransactionReceiptError.execution_context:type_name -> common.ExecutionContext
+	31, // 39: chain_capabilities.evm.LatestAndFinalizedHeadInitiated.execution_context:type_name -> common.ExecutionContext
+	28, // 40: chain_capabilities.evm.LatestAndFinalizedHeadSuccess.latest:type_name -> chain_capabilities.evm.BlockData
+	28, // 41: chain_capabilities.evm.LatestAndFinalizedHeadSuccess.finalized:type_name -> chain_capabilities.evm.BlockData
+	31, // 42: chain_capabilities.evm.LatestAndFinalizedHeadSuccess.execution_context:type_name -> common.ExecutionContext
+	31, // 43: chain_capabilities.evm.LatestAndFinalizedHeadError.execution_context:type_name -> common.ExecutionContext
+	44, // [44:44] is the sub-list for method output_type
+	44, // [44:44] is the sub-list for method input_type
+	44, // [44:44] is the sub-list for extension type_name
+	44, // [44:44] is the sub-list for extension extendee
+	0,  // [0:44] is the sub-list for field type_name
 }
 
 func init() { file_chain_capabilities_evm_monitoring_read_actions_proto_init() }
@@ -2032,7 +2108,7 @@ func file_chain_capabilities_evm_monitoring_read_actions_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_chain_capabilities_evm_monitoring_read_actions_proto_rawDesc), len(file_chain_capabilities_evm_monitoring_read_actions_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   30,
+			NumMessages:   31,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

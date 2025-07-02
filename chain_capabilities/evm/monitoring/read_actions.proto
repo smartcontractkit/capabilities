@@ -26,9 +26,16 @@ message CallContractError {
   common.ExecutionContext execution_context = 20;
 }
 
+message Topics {
+  repeated string topic = 1; // in [32]byte fix-sized array format
+}
+
 message FilterLogsRequest {
   int64 from_block = 1;
   int64 to_block = 2;
+  string block_hash = 3; // exact block (cant use from/to), in [32]byte fix-sized array format
+  repeated string addresses = 4; // contract(s) to filter logs from in evm address [20]byte fix-sized array format
+  repeated Topics topics = 5;  // filter log by event signature and indexed args
 }
 
 message FilterLogsInitiated {

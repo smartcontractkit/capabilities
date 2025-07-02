@@ -13,6 +13,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
+	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 )
 
 // ReadRequest wraps context for telemetry
@@ -56,16 +57,16 @@ func (m *MessageBuilder) BuildCallContractError(r ReadRequest, msg *evm.CallMsg,
 	return &CallContractError{Req: &CallContractRequest{BlockNumber: bn.Int64(), ContractAddress: common.Bytes2Hex(msg.To[:])}, Summary: summary, Cause: cause, ExecutionContext: m.BuildExecutionContext(r)}
 }
 
-func (m *MessageBuilder) BuildFilterLogsInitiated(r ReadRequest, from, to *big.Int) *FilterLogsInitiated {
-	return &FilterLogsInitiated{Req: &FilterLogsRequest{FromBlock: from.Int64(), ToBlock: to.Int64()}, ExecutionContext: m.BuildExecutionContext(r)}
+func (m *MessageBuilder) BuildFilterLogsInitiated(r ReadRequest, fq evmtypes.FilterQuery) *FilterLogsInitiated {
+	return &FilterLogsInitiated{Req: toFilterLogsRequest(fq), ExecutionContext: m.BuildExecutionContext(r)}
 }
 
-func (m *MessageBuilder) BuildFilterLogsSuccess(r ReadRequest, from, to *big.Int, count int32) Message {
-	return &FilterLogsSuccess{Req: &FilterLogsRequest{FromBlock: from.Int64(), ToBlock: to.Int64()}, LogCount: count, ExecutionContext: m.BuildExecutionContext(r)}
+func (m *MessageBuilder) BuildFilterLogsSuccess(r ReadRequest, fq evmtypes.FilterQuery, count int32) Message {
+	return &FilterLogsSuccess{Req: toFilterLogsRequest(fq), LogCount: count, ExecutionContext: m.BuildExecutionContext(r)}
 }
 
-func (m *MessageBuilder) BuildFilterLogsError(r ReadRequest, from, to *big.Int, summary, cause string) ErrorMessage {
-	return &FilterLogsError{Req: &FilterLogsRequest{FromBlock: from.Int64(), ToBlock: to.Int64()}, Summary: summary, Cause: cause, ExecutionContext: m.BuildExecutionContext(r)}
+func (m *MessageBuilder) BuildFilterLogsError(r ReadRequest, fq evmtypes.FilterQuery, summary, cause string) ErrorMessage {
+	return &FilterLogsError{Req: toFilterLogsRequest(fq), Summary: summary, Cause: cause, ExecutionContext: m.BuildExecutionContext(r)}
 }
 
 func (m *MessageBuilder) BuildBalanceAtInitiated(r ReadRequest, account string, bn *big.Int) *BalanceAtInitiated {
@@ -183,4 +184,28 @@ func (m *MessageBuilder) BuildExecutionContext(request ReadRequest) *capmonitori
 		MetaCapabilityTimestampEmit: uint64(time.Now().UnixMilli()),
 	}
 	return ex
+}
+
+func toFilterLogsRequest(fq evmtypes.FilterQuery) *FilterLogsRequest {
+	hexAddresses := make([]string, 0, len(fq.Addresses))
+	for _, addr := range fq.Addresses {
+		hexAddresses = append(hexAddresses, common.BytesToAddress(addr[:]).Hex())
+	}
+
+	hexTopics := make([]*Topics, 0, len(fq.Topics))
+	for _, topicList := range fq.Topics {
+		var hexTopicsList []string
+		for _, topic := range topicList {
+			hexTopicsList = append(hexTopicsList, common.Bytes2Hex(topic[:]))
+		}
+		hexTopics = append(hexTopics, &Topics{Topic: hexTopicsList})
+	}
+
+	return &FilterLogsRequest{
+		FromBlock: fq.FromBlock.Int64(),
+		ToBlock:   fq.ToBlock.Int64(),
+		BlockHash: common.Bytes2Hex(fq.BlockHash[:]),
+		Addresses: hexAddresses,
+		Topics:    hexTopics,
+	}
 }

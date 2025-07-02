@@ -99,19 +99,19 @@ func (e EVM) FilterLogs(
 		return nil, fmt.Errorf("invalid range: %s-%s", fq.FromBlock, fq.ToBlock)
 	}
 
-	if err = e.beholderProcessor.Process(ctx, e.messageBuilder.BuildFilterLogsInitiated(read, fq.FromBlock, fq.ToBlock)); err != nil {
+	if err = e.beholderProcessor.Process(ctx, e.messageBuilder.BuildFilterLogsInitiated(read, fq)); err != nil {
 		e.lggr.Errorw("failed to process FilterLogsInitiated message", "err", err)
 	}
 
 	logs, err := e.EVMService.FilterLogs(ctx, fq)
 	if err != nil {
-		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildFilterLogsError(read, fq.FromBlock, fq.ToBlock, "Failed to FilterLogs", err.Error()))
+		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildFilterLogsError(read, fq, "Failed to FilterLogs", err.Error()))
 		return nil, err
 	}
 
 	// G115: integer overflow conversion int -> int32 (gosec)
 	// nolint:gosec
-	monitoring.LogAndEmitSuccess(ctx, "Successfully executed FilterLogs", e.lggr, e.beholderProcessor, e.messageBuilder.BuildFilterLogsSuccess(read, fq.FromBlock, fq.ToBlock, int32(len(logs))))
+	monitoring.LogAndEmitSuccess(ctx, "Successfully executed FilterLogs", e.lggr, e.beholderProcessor, e.messageBuilder.BuildFilterLogsSuccess(read, fq, int32(len(logs))))
 	return &evmcappb.FilterLogsReply{Logs: evmcappb.ConvertLogsToProto(logs)}, nil
 }
 
