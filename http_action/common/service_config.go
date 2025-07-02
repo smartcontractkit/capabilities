@@ -4,9 +4,9 @@ import "github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 
 // ServiceConfig defines the configuration for the HTTP Actions service.
 type ServiceConfig struct {
-	// RateLimiter configuration for messages incoming to this node from the gateway.
+	// IncomingRateLimiter configuration for messages incoming to this node from the gateway.
 	// The sender is a Gateway node, which is identified by the Gateway ID.
-	RateLimiter ratelimit.RateLimiterConfig `json:"incomingRateLimiter"`
+	IncomingRateLimiter ratelimit.RateLimiterConfig `json:"incomingRateLimiter"`
 	// OutgoingRateLimiter is the configuration for outgoing messages from this node to the gateway.
 	// The sender is a workflow owner
 	OutgoingRateLimiter ratelimit.RateLimiterConfig `json:"outgoingRateLimiter"`

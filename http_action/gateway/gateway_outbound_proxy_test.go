@@ -41,7 +41,7 @@ func TestOutgoingConnectorHandler_AwaitConnection(t *testing.T) {
 				mockConnector.GatewayIDsVal = []string{"gateway1", "gateway2"}
 			},
 			ctxSetup:        context.Background,
-			expectedGateway: "gateway1",
+			expectedGateway: "gateway2",
 		},
 		{
 			name: "connection timeout then success",
@@ -50,7 +50,7 @@ func TestOutgoingConnectorHandler_AwaitConnection(t *testing.T) {
 				mockConnector.GatewayIDsVal = []string{"gateway1", "gateway2"}
 			},
 			ctxSetup:        context.Background,
-			expectedGateway: "gateway2",
+			expectedGateway: "gateway1",
 		},
 		{
 			name: "connection timeout then success after backoff",
@@ -59,7 +59,7 @@ func TestOutgoingConnectorHandler_AwaitConnection(t *testing.T) {
 				mockConnector.AwaitErrs = []error{errors.New("connection failed"), errors.New("connection failed"), nil}
 			},
 			ctxSetup:        context.Background,
-			expectedGateway: "gateway1",
+			expectedGateway: "gateway2",
 		},
 		{
 			name: "context canceled",
@@ -90,7 +90,7 @@ func TestOutgoingConnectorHandler_AwaitConnection(t *testing.T) {
 			}
 
 			ctx := tc.ctxSetup()
-			gateway, err := c.awaitConnection(ctx, logger.Test(t))
+			gateway, err := c.awaitConnection(ctx, logger.Test(t), "requestHash")
 			assert.Equal(t, tc.expectedGateway, gateway)
 			if tc.expectedError != "" {
 				require.ErrorContains(t, err, tc.expectedError)
@@ -116,7 +116,7 @@ func setupSendRequestTest(t *testing.T) (*gatewayOutboundProxy, *mockGatewayConn
 		mockConnector,
 		common.ServiceConfig{
 			OutgoingRateLimiter: rateLimiterConfig(),
-			RateLimiter:         rateLimiterConfig(),
+			IncomingRateLimiter: rateLimiterConfig(),
 		},
 		lggr,
 		gateway_common.WithFixedStart(),
