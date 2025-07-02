@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/tests"
 	"github.com/stretchr/testify/assert"
@@ -60,41 +59,13 @@ func TestGetRequestIDs(t *testing.T) {
 	ids, err = reader.GetRequestIDs(5)
 	require.NoError(t, err)
 	// 'req-3' is ignored due to canceled context
-	require.Equal(t, []string{"req-2", "req-4", "req-1"}, ids) // order changes as heap does not stable sorting for equal values
-}
-
-func TestMarkAttempted(t *testing.T) {
-	reader := NewReader(logger.Test(t), nil, time.Second)
-	addRequestToReader := func(t *testing.T, ctx context.Context, id string) {
-		request := types.NewAggregatabelRequest(id, nil)
-		_, err := reader.Read(ctx, request)
-		require.NoError(t, err)
-	}
-
-	// Non existing
-	reader.MarkAttempted("non existing")
-	ids, err := reader.GetRequestIDs(1)
-	require.NoError(t, err)
-	require.Empty(t, ids)
-
-	// Single request in the queue
-	addRequestToReader(t, t.Context(), "req-1")
-	addRequestToReader(t, t.Context(), "req-2")
-	ids, err = reader.GetRequestIDs(2)
-	require.NoError(t, err)
-	require.Equal(t, []string{"req-1", "req-2"}, ids)
-
-	// MarkAttempted lower request priority
-	reader.MarkAttempted("req-1")
-	ids, err = reader.GetRequestIDs(2)
-	require.NoError(t, err)
-	require.Equal(t, []string{"req-2", "req-1"}, ids)
+	require.Equal(t, []string{"req-1", "req-2", "req-4"}, ids)
 }
 
 func TestGetRequest(t *testing.T) {
 	reader := NewReader(logger.Test(t), nil, time.Second)
 	addRequestToReader := func(t *testing.T, ctx context.Context, id string) {
-		request := types.NewAggregatabelRequest(id, nil)
+		request := types.NewAggregatableRequest(id, nil)
 		_, err := reader.Read(ctx, request)
 		require.NoError(t, err)
 	}
@@ -140,8 +111,8 @@ func TestCompleteRequest(t *testing.T) {
 		require.NoError(t, err)
 
 		report := []byte("result-data")
-		require.NoError(t, reader.CompleteRequest(id, &evmservice.RequestReport{
-			Report: &evmservice.RequestReport_EventuallyConsistent{EventuallyConsistent: report},
+		require.NoError(t, reader.CompleteRequest(id, &types.RequestReport{
+			Report: &types.RequestReport_EventuallyConsistent{EventuallyConsistent: report},
 		}))
 
 		actualReport := <-ch
@@ -156,8 +127,8 @@ func TestCompleteRequest(t *testing.T) {
 		const id = "non-existing-req"
 		report := []byte("non-existing-result")
 		reader := newReader(t, logger.Test(t), nil)
-		require.NoError(t, reader.CompleteRequest(id, &evmservice.RequestReport{
-			Report: &evmservice.RequestReport_EventuallyConsistent{EventuallyConsistent: report},
+		require.NoError(t, reader.CompleteRequest(id, &types.RequestReport{
+			Report: &types.RequestReport_EventuallyConsistent{EventuallyConsistent: report},
 		}))
 
 		// enqueue non existing result to get saved outcome
@@ -174,8 +145,8 @@ func TestCompleteRequest(t *testing.T) {
 
 	t.Run("Eventually consistent request: expire unknown", func(t *testing.T) {
 		reader := newReader(t, logger.Test(t), nil)
-		require.NoError(t, reader.CompleteRequest("request_to_expire", &evmservice.RequestReport{
-			Report: &evmservice.RequestReport_EventuallyConsistent{EventuallyConsistent: []byte("report")},
+		require.NoError(t, reader.CompleteRequest("request_to_expire", &types.RequestReport{
+			Report: &types.RequestReport_EventuallyConsistent{EventuallyConsistent: []byte("report")},
 		}))
 
 		assert.Eventually(t, func() bool {
@@ -186,21 +157,21 @@ func TestCompleteRequest(t *testing.T) {
 	})
 	t.Run("Returns error for unknown request type", func(t *testing.T) {
 		reader := newReader(t, logger.Test(t), nil)
-		err := reader.CompleteRequest("id", &evmservice.RequestReport{Report: nil})
+		err := reader.CompleteRequest("id", &types.RequestReport{Report: nil})
 		require.ErrorContains(t, err, "unknown request type <nil>")
 	})
 	t.Run("Lockable Request: returns error if height is nil", func(t *testing.T) {
 		reader := newReader(t, logger.Test(t), nil)
-		err := reader.CompleteRequest("req-1", &evmservice.RequestReport{
-			Report: &evmservice.RequestReport_LockableToBlock{},
+		err := reader.CompleteRequest("req-1", &types.RequestReport{
+			Report: &types.RequestReport_LockableToBlock{},
 		})
 		require.ErrorContains(t, err, "chain height is nil for report with requestID req-1")
 	})
 	t.Run("Lockable Request: emits log if request does not exist", func(t *testing.T) {
 		lggr, observed := logger.TestObserved(t, zapcore.InfoLevel)
 		reader := newReader(t, lggr, nil)
-		err := reader.CompleteRequest("req-1", &evmservice.RequestReport{
-			Report: &evmservice.RequestReport_LockableToBlock{LockableToBlock: &evmservice.ChainHeight{}},
+		err := reader.CompleteRequest("req-1", &types.RequestReport{
+			Report: &types.RequestReport_LockableToBlock{LockableToBlock: &types.ChainHeight{}},
 		})
 		require.NoError(t, err)
 		tests.RequireLogMessage(t, observed, "lockable to a block request req-1 not found")
@@ -215,8 +186,8 @@ func TestCompleteRequest(t *testing.T) {
 		_, err := reader.Read(t.Context(), request)
 		require.NoError(t, err)
 
-		err = reader.CompleteRequest("req-1", &evmservice.RequestReport{
-			Report: &evmservice.RequestReport_LockableToBlock{LockableToBlock: &evmservice.ChainHeight{}},
+		err = reader.CompleteRequest("req-1", &types.RequestReport{
+			Report: &types.RequestReport_LockableToBlock{LockableToBlock: &types.ChainHeight{}},
 		})
 		require.NoError(t, err)
 		tests.RequireLogMessage(t, observed, "lockable to a block request req-1 is of a different type *types.EventuallyConsistentRequest")
@@ -231,8 +202,8 @@ func TestCompleteRequest(t *testing.T) {
 		_, err := reader.Read(t.Context(), request)
 		require.NoError(t, err)
 
-		err = reader.CompleteRequest("req-1", &evmservice.RequestReport{
-			Report: &evmservice.RequestReport_LockableToBlock{LockableToBlock: &evmservice.ChainHeight{Latest: 100}},
+		err = reader.CompleteRequest("req-1", &types.RequestReport{
+			Report: &types.RequestReport_LockableToBlock{LockableToBlock: &types.ChainHeight{Latest: 100}},
 		})
 		require.NoError(t, err)
 		tests.RequireLogMessage(t, observed, "locked request req-1 to height latest:100")

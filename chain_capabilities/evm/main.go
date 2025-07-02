@@ -34,10 +34,14 @@ import (
 
 const (
 	CapabilityName = "evm"
+	// OCRRoundBatchSize - max number of requests that this node will try to process in a single round
 	// TODO PLEX-1569: make configurable
-	MaxNumberOfRequestsPerOCRRound = 50
-	PollingWorkersNum              = 10
-	PollPeriod                     = 10 * time.Second
+	OCRRoundBatchSize = 50
+	// OCRRoundMaxBatchSize - defines max number of requests that this node will process in a round, if requested by another node.
+	// Needed to allow graceful roll out of OCRBatchSize increase.
+	OCRRoundMaxBatchSize = 500
+	PollingWorkersNum    = 10
+	PollPeriod           = 10 * time.Second
 )
 
 type capabilityGRPCService struct {
@@ -107,7 +111,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 	c.consensusReader = consensus.NewReader(c.lggr, c.requestPoller, time.Second*10)
 
 	// TODO PLEX-1560: populate with implementation
-	var blocksProvider oracle.BlocksProvider
+	blocksProvider := &oracle.NullBlocksProvider{}
 
 	c.oracle, err = oracleFactory.NewOracle(ctx, core.OracleArgs{
 		LocalConfig: ocrtypes.LocalConfig{
@@ -117,7 +121,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 			ContractTransmitterTransmitTimeout: time.Second * 10,
 			DatabaseTimeout:                    time.Second * 10,
 		},
-		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(logger.Sugared(c.lggr), c.consensusReader, blocksProvider, MaxNumberOfRequestsPerOCRRound),
+		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(logger.Sugared(c.lggr), c.consensusReader, blocksProvider, OCRRoundBatchSize, OCRRoundMaxBatchSize),
 		ContractTransmitter:           oracle.NewContractTransmitter(c.lggr, c.consensusReader),
 	})
 	if err != nil {

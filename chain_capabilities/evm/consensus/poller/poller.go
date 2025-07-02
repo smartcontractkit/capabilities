@@ -23,7 +23,10 @@ type requestToRetry struct {
 	LastAttemptAt time.Time
 }
 
-// Poller - maintains queue of requestToPoll and periodically refreshes our observations for those that requestToPoll multiple observations
+// Poller - maintains queue of requestToPoll and periodically refreshes our observations by calling CaptureObservation.
+// A request remains in the queue until its context is canceled to ensure that in case of reorg or errors we eventually capture
+// valid observation.
+// Request polls after initial, occur with a delay defined by pollPeriod.
 type Poller struct {
 	// service state management
 	services.Service

@@ -3,12 +3,11 @@ package types
 import (
 	"context"
 	"sync"
-
-	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 )
 
 type Request interface {
 	ID() string
+	Copy() Request
 }
 
 type ObservableRequest interface {
@@ -31,23 +30,33 @@ func NewEventuallyConsistentRequest(id string, observe func(context.Context) ([]
 	}
 }
 
-var _ ObservableRequest = (*AggregatabelRequest)(nil)
+func (r *EventuallyConsistentRequest) Copy() Request {
+	// intentionally reuse the same instance, since it's thread safe and we need to get most recent captured observation
+	return r
+}
 
 const (
 	AggregationMethodFPlusOneHighest = "f+1-highest"
 )
 
-type AggregatabelRequest struct {
-	*observableRequest[*evmservice.AggregatableObservation]
+var _ ObservableRequest = (*AggregatableRequest)(nil)
+
+type AggregatableRequest struct {
+	*observableRequest[*AggregatableObservation]
 }
 
-func NewAggregatabelRequest(id string, observe func(context.Context) (*evmservice.AggregatableObservation, error)) *AggregatabelRequest {
-	return &AggregatabelRequest{
-		observableRequest: &observableRequest[*evmservice.AggregatableObservation]{
+func NewAggregatableRequest(id string, observe func(context.Context) (*AggregatableObservation, error)) *AggregatableRequest {
+	return &AggregatableRequest{
+		observableRequest: &observableRequest[*AggregatableObservation]{
 			id:      id,
 			observe: observe,
 		},
 	}
+}
+
+func (a *AggregatableRequest) Copy() Request {
+	// intentionally reuse the same instance, since it's thread safe and we need to get most recent captured observation
+	return a
 }
 
 type observableRequest[T any] struct {
@@ -91,13 +100,20 @@ func (r *observableRequest[T]) SetObservation(observation T) {
 
 type LockableToBlockRequest struct {
 	id      string
-	observe func(context.Context, *evmservice.ChainHeight) ([]byte, error)
+	observe func(context.Context, *ChainHeight) ([]byte, error)
 }
 
-func NewLockableToBlockRequest(id string, observe func(context.Context, *evmservice.ChainHeight) ([]byte, error)) *LockableToBlockRequest {
+func NewLockableToBlockRequest(id string, observe func(context.Context, *ChainHeight) ([]byte, error)) *LockableToBlockRequest {
 	return &LockableToBlockRequest{
 		id:      id,
 		observe: observe,
+	}
+}
+
+func (r *LockableToBlockRequest) Copy() Request {
+	return &LockableToBlockRequest{
+		id:      r.id,
+		observe: r.observe,
 	}
 }
 
@@ -105,7 +121,7 @@ func (r *LockableToBlockRequest) ID() string {
 	return r.id
 }
 
-func (r *LockableToBlockRequest) ToEventuallyConsistent(chainHeight *evmservice.ChainHeight) *EventuallyConsistentRequest {
+func (r *LockableToBlockRequest) ToEventuallyConsistent(chainHeight *ChainHeight) *EventuallyConsistentRequest {
 	return NewEventuallyConsistentRequest(r.id, func(ctx context.Context) ([]byte, error) {
 		return r.observe(ctx, chainHeight)
 	})

@@ -3,7 +3,6 @@
 package mocks
 
 import (
-	evm "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	mock "github.com/stretchr/testify/mock"
 
 	types "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
@@ -23,7 +22,7 @@ func (_m *RequestsStore) EXPECT() *RequestsStore_Expecter {
 }
 
 // CompleteRequest provides a mock function with given fields: id, report
-func (_m *RequestsStore) CompleteRequest(id string, report *evm.RequestReport) error {
+func (_m *RequestsStore) CompleteRequest(id string, report *types.RequestReport) error {
 	ret := _m.Called(id, report)
 
 	if len(ret) == 0 {
@@ -31,7 +30,7 @@ func (_m *RequestsStore) CompleteRequest(id string, report *evm.RequestReport) e
 	}
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(string, *evm.RequestReport) error); ok {
+	if rf, ok := ret.Get(0).(func(string, *types.RequestReport) error); ok {
 		r0 = rf(id, report)
 	} else {
 		r0 = ret.Error(0)
@@ -47,14 +46,14 @@ type RequestsStore_CompleteRequest_Call struct {
 
 // CompleteRequest is a helper method to define mock.On call
 //   - id string
-//   - report *evm.RequestReport
+//   - report *types.RequestReport
 func (_e *RequestsStore_Expecter) CompleteRequest(id interface{}, report interface{}) *RequestsStore_CompleteRequest_Call {
 	return &RequestsStore_CompleteRequest_Call{Call: _e.mock.On("CompleteRequest", id, report)}
 }
 
-func (_c *RequestsStore_CompleteRequest_Call) Run(run func(id string, report *evm.RequestReport)) *RequestsStore_CompleteRequest_Call {
+func (_c *RequestsStore_CompleteRequest_Call) Run(run func(id string, report *types.RequestReport)) *RequestsStore_CompleteRequest_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(string), args[1].(*evm.RequestReport))
+		run(args[0].(string), args[1].(*types.RequestReport))
 	})
 	return _c
 }
@@ -64,7 +63,7 @@ func (_c *RequestsStore_CompleteRequest_Call) Return(_a0 error) *RequestsStore_C
 	return _c
 }
 
-func (_c *RequestsStore_CompleteRequest_Call) RunAndReturn(run func(string, *evm.RequestReport) error) *RequestsStore_CompleteRequest_Call {
+func (_c *RequestsStore_CompleteRequest_Call) RunAndReturn(run func(string, *types.RequestReport) error) *RequestsStore_CompleteRequest_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -182,39 +181,6 @@ func (_c *RequestsStore_GetRequestIDs_Call) Return(_a0 []string, _a1 error) *Req
 
 func (_c *RequestsStore_GetRequestIDs_Call) RunAndReturn(run func(int) ([]string, error)) *RequestsStore_GetRequestIDs_Call {
 	_c.Call.Return(run)
-	return _c
-}
-
-// MarkAttempted provides a mock function with given fields: id
-func (_m *RequestsStore) MarkAttempted(id string) {
-	_m.Called(id)
-}
-
-// RequestsStore_MarkAttempted_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MarkAttempted'
-type RequestsStore_MarkAttempted_Call struct {
-	*mock.Call
-}
-
-// MarkAttempted is a helper method to define mock.On call
-//   - id string
-func (_e *RequestsStore_Expecter) MarkAttempted(id interface{}) *RequestsStore_MarkAttempted_Call {
-	return &RequestsStore_MarkAttempted_Call{Call: _e.mock.On("MarkAttempted", id)}
-}
-
-func (_c *RequestsStore_MarkAttempted_Call) Run(run func(id string)) *RequestsStore_MarkAttempted_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(string))
-	})
-	return _c
-}
-
-func (_c *RequestsStore_MarkAttempted_Call) Return() *RequestsStore_MarkAttempted_Call {
-	_c.Call.Return()
-	return _c
-}
-
-func (_c *RequestsStore_MarkAttempted_Call) RunAndReturn(run func(string)) *RequestsStore_MarkAttempted_Call {
-	_c.Run(run)
 	return _c
 }
 

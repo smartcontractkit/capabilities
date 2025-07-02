@@ -11,10 +11,11 @@ import (
 var _ ocr3types.ReportingPluginFactory[[]byte] = (*ReportingPluginFactory)(nil)
 
 type ReportingPluginFactory struct {
-	logger         logger.SugaredLogger
-	requestsStore  RequestsStore
-	blocksProvider BlocksProvider
-	batchSize      int
+	logger              logger.SugaredLogger
+	requestsStore       RequestsStore
+	blocksProvider      BlocksProvider
+	batchSize           int
+	maxAllowedBatchSize int
 }
 
 func NewReportingPluginFactory(
@@ -22,12 +23,14 @@ func NewReportingPluginFactory(
 	requestsStore RequestsStore,
 	blocksProvider BlocksProvider,
 	batchSize int,
+	maxAllowedBatchSize int,
 ) *ReportingPluginFactory {
 	return &ReportingPluginFactory{
-		logger:         logger,
-		requestsStore:  requestsStore,
-		blocksProvider: blocksProvider,
-		batchSize:      batchSize,
+		logger:              logger,
+		requestsStore:       requestsStore,
+		blocksProvider:      blocksProvider,
+		batchSize:           batchSize,
+		maxAllowedBatchSize: maxAllowedBatchSize,
 	}
 }
 
@@ -39,7 +42,12 @@ func (rpf *ReportingPluginFactory) NewReportingPlugin(
 	ocr3types.ReportingPluginInfo,
 	error,
 ) {
-	return newReportingPlugin(Config{ReportingPluginConfig: config, BatchSize: rpf.batchSize}, rpf.logger, rpf.blocksProvider, rpf.requestsStore), ocr3types.ReportingPluginInfo{
+	cfg := Config{
+		ReportingPluginConfig: config,
+		BatchSize:             rpf.batchSize,
+		MaxAllowedBatchSize:   rpf.maxAllowedBatchSize,
+	}
+	return newReportingPlugin(cfg, rpf.logger, rpf.blocksProvider, rpf.requestsStore), ocr3types.ReportingPluginInfo{
 		Name: "evm-reads-oracle",
 		Limits: ocr3types.ReportingPluginLimits{
 			MaxQueryLength:       ocr3types.MaxMaxQueryLength,

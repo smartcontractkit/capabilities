@@ -10,7 +10,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 
-	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
+	ctypes "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
 )
 
 var _ ocr3types.ContractTransmitter[[]byte] = (*ContractTransmitter)(nil)
@@ -34,7 +34,7 @@ func (ct *ContractTransmitter) Transmit(
 	reportWithInfo ocr3types.ReportWithInfo[[]byte],
 	attributedOnchainSignature []types.AttributedOnchainSignature,
 ) error {
-	var report evmservice.RequestReport
+	var report ctypes.RequestReport
 	if err := proto.Unmarshal(reportWithInfo.Report, &report); err != nil {
 		return fmt.Errorf("failed to unmarshal report: %w", err)
 	}
