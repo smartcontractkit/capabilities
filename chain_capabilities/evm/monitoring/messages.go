@@ -8,7 +8,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"google.golang.org/protobuf/proto"
 
-	capmonitoring "github.com/smartcontractkit/capabilities/monitoring"
+	capmonitoring "github.com/smartcontractkit/capabilities/libs/monitoring"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"

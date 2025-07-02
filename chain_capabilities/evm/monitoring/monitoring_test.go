@@ -17,7 +17,7 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring/mocks"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
-	capmonitoring "github.com/smartcontractkit/capabilities/monitoring"
+	capmonitoring "github.com/smartcontractkit/capabilities/libs/monitoring"
 )
 
 func TestProcessor_Process_InitiatedMessages(t *testing.T) {

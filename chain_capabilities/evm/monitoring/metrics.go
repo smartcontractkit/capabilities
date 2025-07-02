@@ -6,7 +6,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 
-	commoncapbeholder "github.com/smartcontractkit/capabilities/monitoring"
+	commoncapbeholder "github.com/smartcontractkit/capabilities/libs/monitoring"
 
 	commonbeholder "github.com/smartcontractkit/chainlink-common/pkg/beholder"
 )

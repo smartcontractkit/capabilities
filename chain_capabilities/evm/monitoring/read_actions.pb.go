@@ -7,7 +7,7 @@
 package monitoring
 
 import (
-	monitoring "github.com/smartcontractkit/capabilities/monitoring"
+	monitoring "github.com/smartcontractkit/capabilities/libs/monitoring"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -1802,7 +1802,7 @@ var File_chain_capabilities_evm_monitoring_read_actions_proto protoreflect.FileD
 
 const file_chain_capabilities_evm_monitoring_read_actions_proto_rawDesc = "" +
 	"\n" +
-	"4chain_capabilities/evm/monitoring/read_actions.proto\x12\x16chain_capabilities.evm\x1a\"monitoring/execution_context.proto\"c\n" +
+	"4chain_capabilities/evm/monitoring/read_actions.proto\x12\x16chain_capabilities.evm\x1a'libs/monitoring/execution_context.proto\"c\n" +
 	"\x13CallContractRequest\x12!\n" +
 	"\fblock_number\x18\x01 \x01(\x03R\vblockNumber\x12)\n" +
 	"\x10contract_address\x18\x02 \x01(\tR\x0fcontractAddress\"\x9d\x01\n" +

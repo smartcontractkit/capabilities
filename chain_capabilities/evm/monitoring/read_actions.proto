@@ -2,7 +2,7 @@ syntax = "proto3";
 package chain_capabilities.evm;
 option go_package = "github.com/smartcontractkit/capabilities/chain_capabilities/evm;monitoring";
 
-import "monitoring/execution_context.proto";
+import "libs/monitoring/execution_context.proto";
 
 message CallContractRequest {
   int64 block_number = 1;
