@@ -18,64 +18,39 @@ type ChainInfo struct {
 	NetworkNameFull string
 }
 
-// TODO: Refactor as a proto referenced from the other proto files (telemetry messages)
-type ExecutionMetadata struct {
-	// Execution Context - Source
-	SourceID string
-	// Execution Context - Chain
-	ChainFamilyName string
-	ChainID         string
-	NetworkName     string
-	NetworkNameFull string
-	// Execution Context - Workflow (capabilities.RequestMetadata)
-	WorkflowID               string
-	WorkflowOwner            string
-	WorkflowExecutionID      string
-	WorkflowName             string
-	WorkflowDonID            uint32
-	WorkflowDonConfigVersion uint32
-	ReferenceID              string
-	// Execution Context - Capability
-	CapabilityType           string
-	CapabilityID             string
-	CapabilityTimestampStart uint32
-	CapabilityTimestampEmit  uint32
-}
-
 // Attributes returns common attributes used for metrics
-func (m ExecutionMetadata) Attributes() []attribute.KeyValue {
+func (x *ExecutionContext) Attributes() []attribute.KeyValue {
 	// Decode workflow name attribute for output
-	workflowName := m.decodeWorkflowName()
+	workflowName := x.decodeWorkflowName()
 
 	return []attribute.KeyValue{
 		// Execution Context - Source
-		attribute.String("source_id", ValOrUnknown(m.SourceID)),
+		attribute.String("source_id", ValOrUnknown(x.GetMetaSourceId())),
 		// Execution Context - Chain
-		attribute.String("chain_family_name", ValOrUnknown(m.ChainFamilyName)),
-		attribute.String("chain_id", ValOrUnknown(m.ChainID)),
-		attribute.String("network_name", ValOrUnknown(m.NetworkName)),
-		attribute.String("network_name_full", ValOrUnknown(m.NetworkNameFull)),
+		attribute.String("chain_family_name", ValOrUnknown(x.GetMetaChainFamilyName())),
+		attribute.String("chain_id", ValOrUnknown(x.GetMetaChainId())),
+		attribute.String("network_name", ValOrUnknown(x.GetMetaNetworkName())),
+		attribute.String("network_name_full", ValOrUnknown(x.GetMetaNetworkNameFull())),
 		// Execution Context - Workflow (capabilities.RequestMetadata)
-		attribute.String("workflow_id", ValOrUnknown(m.WorkflowID)),
-		attribute.String("workflow_owner", ValOrUnknown(m.WorkflowOwner)),
+		attribute.String("workflow_id", ValOrUnknown(x.GetMetaWorkflowId())),
+		attribute.String("workflow_owner", ValOrUnknown(x.GetMetaWorkflowOwner())),
 		// Notice: We lower the cardinality on the WorkflowExecutionID so it can be used by metrics
 		// This label has good chances to be unique per workflow, in a reasonable bounded time window
 		// TODO: enable this when sufficiently tested (PromQL queries like alerts might need to change if this is used)
-		// attribute.String("workflow_execution_id_short", ValShortOrUnknown(m.WorkflowExecutionID, WorkflowExecutionIDShortLen)),
+		//attribute.String("workflow_execution_id_short", ValShortOrUnknown(x.GetMetaWorkflowExecutionId(), WorkflowExecutionIDShortLen)),
 		attribute.String("workflow_name", ValOrUnknown(workflowName)),
-		attribute.Int64("workflow_don_id", int64(m.WorkflowDonID)),
-		attribute.Int64("workflow_don_config_version", int64(m.WorkflowDonConfigVersion)),
-		attribute.String("reference_id", ValOrUnknown(m.ReferenceID)),
+		attribute.Int64("workflow_don_id", int64(x.GetMetaWorkflowDonId())),
+		attribute.Int64("workflow_don_config_version", int64(x.GetMetaWorkflowDonConfigVersion())),
+		attribute.String("reference_id", ValOrUnknown(x.GetMetaReferenceId())),
 		// Execution Context - Capability
-		attribute.String("capability_type", ValOrUnknown(m.CapabilityType)),
-		attribute.String("capability_id", ValOrUnknown(m.CapabilityID)),
-		// Notice: we don't include the timestamps here (high cardinality)
+		attribute.String("capability_type", ValOrUnknown(x.GetMetaCapabilityType())),
+		attribute.String("capability_id", ValOrUnknown(x.GetMetaCapabilityId())),
 	}
 }
 
 // decodeWorkflowName decodes the workflow name from hex string to raw string (underlying, output)
-func (m ExecutionMetadata) decodeWorkflowName() string {
-	bytes, err := hex.DecodeString(m.WorkflowName)
+func (x *ExecutionContext) decodeWorkflowName() string {
+	bytes, err := hex.DecodeString(x.GetMetaWorkflowName())
 	if err != nil {
 		// This should never happen
 		bytes = []byte("unknown-decode-error")
