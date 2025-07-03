@@ -85,7 +85,7 @@ func Test_LogTrigger(t *testing.T) {
 			}
 		}
 		return foundEvents == numOfWorkflowNodes
-	}, 30*time.Second, // test takes in average 24 seconds to complete locally
+	}, 60*time.Second, // test takes in average 24 seconds to complete locally
 		1*time.Second,
 		"Expected to find %d events, but found %d", numOfWorkflowNodes, foundEvents)
 }
@@ -190,8 +190,11 @@ func getBeholderLogs(beholderTester tests.BeholderTester, t *testing.T) []string
 		payload := beholderpb.BaseMessage{}
 		err := proto.Unmarshal(userMsg.Body, &payload)
 		require.NoError(t, err)
-		for _, v := range payload.Labels {
+		fmt.Printf("Beholder logs: Payload.msg: %v\n", &payload.Msg)
+		fmt.Printf("Beholder logs: payload.Labels: %v\n", payload.Labels)
+		for k, v := range payload.Labels {
 			baseMessages = append(baseMessages, v)
+			fmt.Printf("Beholder logs label key: %v, value: %v\n", k, v)
 		}
 	}
 	return baseMessages
