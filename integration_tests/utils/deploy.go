@@ -11,12 +11,12 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
 
-const capabilitiesDir = "integration_tests_temp"
+const CapabilitiesDir = "integration_tests_temp"
 
 // DeployCapability builds the capability returns the path to the binary
 func DeployCapability(t *testing.T, capabilityName string) (string, error) {
 	projectPath := "../../" + capabilityName
-	outputBinary := capabilitiesDir + "/" + capabilityName
+	outputBinary := CapabilitiesDir + "/" + capabilityName
 	absoluteBinaryPath, err := filepath.Abs(outputBinary)
 	require.NoError(t, err)
 
@@ -32,7 +32,7 @@ func DeployCapability(t *testing.T, capabilityName string) (string, error) {
 
 // CleanupCapabilitiesDir removes any capabilities built by the test
 func CleanupCapabilitiesDir(lggr logger.Logger) {
-	err := os.RemoveAll(capabilitiesDir)
+	err := os.RemoveAll(CapabilitiesDir)
 	if err != nil {
 		lggr.Errorf("Failed to remove directory: %v", err)
 	}
