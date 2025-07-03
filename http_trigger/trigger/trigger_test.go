@@ -9,8 +9,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+
+	"github.com/smartcontractkit/capabilities/http_trigger/pb"
 )
 
 func TestService_RegisterTrigger(t *testing.T) {
@@ -57,7 +58,7 @@ func TestService_RegisterTrigger(t *testing.T) {
 			svc.connectorHandler = mockHandler
 			ctx := context.Background()
 			meta := capabilities.RequestMetadata{WorkflowID: "wid"}
-			input := &http.Config{}
+			input := &pb.Config{}
 
 			ch, err := svc.RegisterTrigger(ctx, "tid", meta, input)
 			if tc.expectErr {
@@ -144,10 +145,10 @@ type mockConnectorHandler struct {
 	registerErr    error
 	unregisterErr  error
 	lastWorkflowID string
-	lastInput      *http.Config
+	lastInput      *pb.Config
 }
 
-func (m *mockConnectorHandler) RegisterWorkflow(ctx context.Context, workflowID string, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error {
+func (m *mockConnectorHandler) RegisterWorkflow(ctx context.Context, workflowID string, input *pb.Config, sendCh chan<- capabilities.TriggerAndId[*pb.Payload]) error {
 	m.lastWorkflowID = workflowID
 	m.lastInput = input
 	return m.registerErr

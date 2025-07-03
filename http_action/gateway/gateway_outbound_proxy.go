@@ -14,7 +14,6 @@ import (
 	"github.com/smartcontractkit/capabilities/http_action/common"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
@@ -22,6 +21,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 	gc "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
+
+	"github.com/smartcontractkit/capabilities/http_action/pb"
 )
 
 const (
@@ -85,7 +86,7 @@ func NewGatewayOutboundProxy(gatewayConnector core.GatewayConnector, config comm
 }
 
 // SendRequest sends a request to first available gateway node and blocks until response is received
-func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *http.Request) (*http.Response, error) {
+func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *pb.Request) (*pb.Response, error) {
 	requestID := common.GetRequestID(metadata)
 	lggr := logger.With(p.lggr, "requestID", requestID, "workflowID", metadata.WorkflowID, "workflowExecutionID", metadata.WorkflowExecutionID, "workflowOwner", metadata.WorkflowOwner)
 
@@ -149,7 +150,7 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 			}
 			return nil, errors.New(internalError)
 		}
-		return &http.Response{
+		return &pb.Response{
 			StatusCode: uint32(resp.StatusCode), //nolint:gosec // G115
 			Headers:    resp.Headers,
 			Body:       resp.Body,

@@ -11,11 +11,10 @@ import (
 	"github.com/jonboulle/clockwork"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron/server"
+	"github.com/smartcontractkit/capabilities/cron/pb"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/triggers/cron"
-	crontypedapi "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron"
 	"github.com/smartcontractkit/chainlink-common/pkg/custmsg"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
@@ -30,7 +29,7 @@ const (
 )
 
 var cronTriggerInfo = capabilities.MustNewCapabilityInfo(
-	server.CronID,
+	pb.CronID,
 	capabilities.CapabilityTypeTrigger,
 	"A trigger that uses a cron schedule to run periodically at fixed times, dates, or intervals.",
 )
@@ -45,7 +44,7 @@ type Response struct {
 }
 
 type cronTrigger struct {
-	ch      chan<- capabilities.TriggerAndId[*crontypedapi.Payload]
+	ch      chan<- capabilities.TriggerAndId[*pb.Payload]
 	job     gocron.Job
 	nextRun time.Time
 }
@@ -60,12 +59,12 @@ type Service struct {
 	labeler   custmsg.MessageEmitter
 }
 
-func (s *Service) RegisterLegacyTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) (<-chan capabilities.TriggerAndId[*crontypedapi.LegacyPayload], error) { //nolint:staticcheck
+func (s *Service) RegisterLegacyTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *pb.Config) (<-chan capabilities.TriggerAndId[*pb.LegacyPayload], error) { //nolint:staticcheck
 	ch, err := s.RegisterTrigger(ctx, triggerID, metadata, input)
 	if err != nil {
 		return nil, err
 	}
-	mapped := make(chan capabilities.TriggerAndId[*crontypedapi.LegacyPayload]) //nolint
+	mapped := make(chan capabilities.TriggerAndId[*pb.LegacyPayload]) //nolint
 	go func() {
 		defer close(mapped)
 		for {
@@ -76,9 +75,9 @@ func (s *Service) RegisterLegacyTrigger(ctx context.Context, triggerID string, m
 				if !ok {
 					return
 				}
-				mapped <- capabilities.TriggerAndId[*crontypedapi.LegacyPayload]{ //nolint:staticcheck
+				mapped <- capabilities.TriggerAndId[*pb.LegacyPayload]{ //nolint:staticcheck
 					Id: triggerEvent.Id,
-					Trigger: &crontypedapi.LegacyPayload{ //nolint:staticcheck
+					Trigger: &pb.LegacyPayload{ //nolint:staticcheck
 						ScheduledExecutionTime: triggerEvent.Trigger.ScheduledExecutionTime.AsTime().Format(time.RFC3339Nano),
 					},
 				}
@@ -88,7 +87,7 @@ func (s *Service) RegisterLegacyTrigger(ctx context.Context, triggerID string, m
 	return mapped, nil
 }
 
-func (s *Service) UnregisterLegacyTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) error {
+func (s *Service) UnregisterLegacyTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *pb.Config) error {
 	return s.UnregisterTrigger(ctx, triggerID, metadata, input)
 }
 
@@ -162,14 +161,14 @@ func (s *Service) Initialise(ctx context.Context, config string, _ core.Telemetr
 	return nil
 }
 
-func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) (<-chan capabilities.TriggerAndId[*crontypedapi.Payload], error) {
+func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *pb.Config) (<-chan capabilities.TriggerAndId[*pb.Payload], error) {
 	_, ok := s.triggers.Read(triggerID)
 	if ok {
 		return nil, fmt.Errorf("triggerId %s already registered", triggerID)
 	}
 
 	var job gocron.Job
-	callbackCh := make(chan capabilities.TriggerAndId[*crontypedapi.Payload], defaultSendChannelBufferSize)
+	callbackCh := make(chan capabilities.TriggerAndId[*pb.Payload], defaultSendChannelBufferSize)
 
 	allowSeconds := true
 	jobDef := gocron.CronJob(input.Schedule, allowSeconds)
@@ -256,7 +255,7 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 	return callbackCh, nil
 }
 
-func createTriggerResponse(scheduledExecutionTime time.Time) capabilities.TriggerAndId[*crontypedapi.Payload] {
+func createTriggerResponse(scheduledExecutionTime time.Time) capabilities.TriggerAndId[*pb.Payload] {
 	// Ensure UTC time is used for consistency across nodes.
 	scheduledExecutionTimeUTC := scheduledExecutionTime.UTC()
 
@@ -266,15 +265,15 @@ func createTriggerResponse(scheduledExecutionTime time.Time) capabilities.Trigge
 	scheduledExecutionTimeFormatted := scheduledExecutionTimeUTC.Format(time.RFC3339)
 	triggerEventID := scheduledExecutionTimeFormatted
 
-	return capabilities.TriggerAndId[*crontypedapi.Payload]{
-		Trigger: &crontypedapi.Payload{
+	return capabilities.TriggerAndId[*pb.Payload]{
+		Trigger: &pb.Payload{
 			ScheduledExecutionTime: timestamppb.New(scheduledExecutionTimeUTC),
 		},
 		Id: triggerEventID,
 	}
 }
 
-func (s *Service) UnregisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) error {
+func (s *Service) UnregisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *pb.Config) error {
 	trigger, ok := s.triggers.Read(triggerID)
 	if !ok {
 		s.lggr.Warnf("triggerId %s not found", triggerID)

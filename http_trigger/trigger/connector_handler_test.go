@@ -8,12 +8,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
+
+	"github.com/smartcontractkit/capabilities/http_trigger/pb"
 )
 
 const (
@@ -69,7 +70,7 @@ func gatewayRequest(t *testing.T, method string) *jsonrpc.Request {
 }
 
 // Helper for setting up proxy and mockConnector for SendRequest tests
-func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayConnector, <-chan capabilities.TriggerAndId[*http.Payload]) {
+func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayConnector, <-chan capabilities.TriggerAndId[*pb.Payload]) {
 	mockConnector := &mockGatewayConnector{}
 	cfg := ServiceConfig{}
 	handler, err := NewConnectorHandler(
@@ -78,15 +79,15 @@ func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayCon
 		cfg,
 	)
 	require.NoError(t, err)
-	sdkCfg := &http.Config{
-		AuthorizedKeys: []*http.AuthorizedKey{
+	sdkCfg := &pb.Config{
+		AuthorizedKeys: []*pb.AuthorizedKey{
 			{
 				PublicKey: publicKey,
-				Type:      http.KeyType_ECDSA,
+				Type:      pb.KeyType_KEY_TYPE_ECDSA,
 			},
 		},
 	}
-	triggerCh := make(chan capabilities.TriggerAndId[*http.Payload], 1)
+	triggerCh := make(chan capabilities.TriggerAndId[*pb.Payload], 1)
 	err = handler.RegisterWorkflow(t.Context(), "wf1", sdkCfg, triggerCh)
 	require.NoError(t, err, "Failed to register workflow")
 	return handler, mockConnector, triggerCh
@@ -270,42 +271,42 @@ func TestProcessTrigger_UnregisteredWorkflow(t *testing.T) {
 func TestRegisterWorkflow_InvalidECDSAPublicKey(t *testing.T) {
 	lggr := logger.Test(t)
 	handler, _, _ := setup(t, lggr)
-	sendCh := make(chan capabilities.TriggerAndId[*http.Payload], 1)
+	sendCh := make(chan capabilities.TriggerAndId[*pb.Payload], 1)
 
 	testCases := []struct {
 		name      string
 		publicKey string
-		keyType   http.KeyType
+		keyType   pb.KeyType
 		errorMsg  string
 	}{
 		{
 			name:      "invalid publicKey format (nothex)",
 			publicKey: "nothex",
-			keyType:   http.KeyType_ECDSA,
+			keyType:   pb.KeyType_KEY_TYPE_ECDSA,
 			errorMsg:  "invalid public key format",
 		},
 		{
 			name:      "invalid publicKey length",
 			publicKey: "0x123",
-			keyType:   http.KeyType_ECDSA,
+			keyType:   pb.KeyType_KEY_TYPE_ECDSA,
 			errorMsg:  "invalid public key format",
 		},
 		{
 			name:      "invalid key type",
 			publicKey: publicKey,
-			keyType:   http.KeyType_KEY_TYPE_UNSPECIFIED,
+			keyType:   pb.KeyType_KEY_TYPE_UNSPECIFIED,
 			errorMsg:  "unsupported key type",
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			invalidKey := &http.AuthorizedKey{
+			invalidKey := &pb.AuthorizedKey{
 				PublicKey: tc.publicKey,
 				Type:      tc.keyType,
 			}
-			cfg := &http.Config{
-				AuthorizedKeys: []*http.AuthorizedKey{
+			cfg := &pb.Config{
+				AuthorizedKeys: []*pb.AuthorizedKey{
 					invalidKey,
 				},
 			}
