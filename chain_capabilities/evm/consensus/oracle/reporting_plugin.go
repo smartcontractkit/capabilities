@@ -183,7 +183,7 @@ func (rp *reportingPlugin) ValidateObservation(_ context.Context, outctx ocr3typ
 		return fmt.Errorf("invalid chain height: %w", err)
 	}
 
-	err = rp.validateExternalObservationAgainsOutcome(ob, outctx)
+	err = rp.validateExternalObservationAgainstOutcome(ob, outctx)
 	if err != nil {
 		return fmt.Errorf("observation contradicts prev outcome: %w", err)
 	}
@@ -191,7 +191,7 @@ func (rp *reportingPlugin) ValidateObservation(_ context.Context, outctx ocr3typ
 	return nil
 }
 
-func (rp *reportingPlugin) validateExternalObservationAgainsOutcome(ob *ctypes.Observation, outctx ocr3types.OutcomeContext) error {
+func (rp *reportingPlugin) validateExternalObservationAgainstOutcome(ob *ctypes.Observation, outctx ocr3types.OutcomeContext) error {
 	if len(outctx.PreviousOutcome) == 0 {
 		return nil
 	}
@@ -295,7 +295,7 @@ func (rp *reportingPlugin) aggregateValue(requestID string, aos []attributedObse
 		}
 
 		aggrOb := requestOb.GetAggregatable()
-		if aggrOb == nil {
+		if aggrOb == nil || aggrOb.Value == nil || aggrOb.Value.Coefficient == nil {
 			continue
 		}
 

@@ -217,6 +217,11 @@ func (s *Handler) addRequestCtx(requestCtx *requestCtx) error {
 	switch tRequest := requestCtx.Request.(type) {
 	case *types.EventuallyConsistentRequest:
 		s.poller.Enqueue(requestCtx.Ctx, tRequest)
+	case *types.LockableToBlockRequest:
+	case *types.AggregatableRequest:
+		s.poller.Enqueue(requestCtx.Ctx, tRequest)
+	default:
+		return fmt.Errorf("unknown request type %T", tRequest)
 	}
 	return nil
 }

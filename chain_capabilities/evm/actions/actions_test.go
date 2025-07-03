@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -229,6 +230,43 @@ func TestCapability_GetTransactionReceipt(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
 		_, err := svc.GetTransactionReceipt(ctx, capabilities.RequestMetadata{}, req)
+		require.ErrorContains(t, err, "context canceled")
+	})
+}
+
+func TestCapability_EstimateGas(t *testing.T) {
+	t.Run("happy-path", func(t *testing.T) {
+		svc := initMocks(t)
+
+		ch := make(chan any, 1)
+		ch <- &valuespb.Decimal{
+			Coefficient: valuespb.NewBigIntFromInt(big.NewInt(123)),
+			Exponent:    2,
+		}
+		svc.consensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
+
+		req := &evmcappb.EstimateGasRequest{Msg: &evmcappb.CallMsg{Data: []byte{0xbe, 0xef}, From: make([]byte, common.AddressLength), To: make([]byte, common.AddressLength)}}
+		resp, err := svc.EstimateGas(t.Context(), capabilities.RequestMetadata{}, req)
+		require.NoError(t, err)
+		require.Empty(t, cmp.Diff(evmcappb.EstimateGasReply{Gas: 12300}, resp, protocmp.Transform()))
+	})
+	t.Run("Returns error on invalid request", func(t *testing.T) {
+		svc := initMocks(t)
+
+		req := &evmcappb.EstimateGasRequest{Msg: nil}
+		_, err := svc.EstimateGas(t.Context(), capabilities.RequestMetadata{}, req)
+		require.ErrorContains(t, err, "call msg can't be nil")
+	})
+	t.Run("Returns error on timeout", func(t *testing.T) {
+		svc := initMocks(t)
+
+		ch := make(chan any, 1)
+		svc.consensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
+
+		req := &evmcappb.EstimateGasRequest{Msg: &evmcappb.CallMsg{Data: []byte{0xbe, 0xef}, From: make([]byte, common.AddressLength), To: make([]byte, common.AddressLength)}}
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		_, err := svc.EstimateGas(ctx, capabilities.RequestMetadata{}, req)
 		require.ErrorContains(t, err, "context canceled")
 	})
 }

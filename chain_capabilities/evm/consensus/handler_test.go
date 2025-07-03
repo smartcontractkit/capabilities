@@ -2,11 +2,13 @@ package consensus
 
 import (
 	"context"
+	"math/big"
 	"testing"
 	"time"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/tests"
+	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -63,7 +65,9 @@ func TestGetRequestIDs(t *testing.T) {
 }
 
 func TestGetRequest(t *testing.T) {
-	handler := NewHandler(logger.Test(t), nil, time.Second)
+	poller := mocks.NewPoller(t)
+	poller.EXPECT().Enqueue(mock.Anything, mock.Anything).Maybe()
+	handler := NewHandler(logger.Test(t), poller, time.Second)
 	addRequestToHandler := func(t *testing.T, ctx context.Context, id string) {
 		request := types.NewAggregatableRequest(id, nil)
 		_, err := handler.Handle(ctx, request)
@@ -122,7 +126,27 @@ func TestCompleteRequest(t *testing.T) {
 		require.NoError(t, err)
 		require.NotContains(t, ids, id)
 	})
+	t.Run("Aggregatable request: complete existing request", func(t *testing.T) {
+		const id = "req-1"
+		request := types.NewAggregatableRequest(id, nil)
+		poller := mocks.NewPoller(t)
+		poller.EXPECT().Enqueue(mock.Anything, mock.Anything).Once()
+		handler := newHandler(t, logger.Test(t), poller)
+		ch, err := handler.Handle(t.Context(), request)
+		require.NoError(t, err)
 
+		report := &valuespb.Decimal{Coefficient: valuespb.NewBigIntFromInt(big.NewInt(100))}
+		require.NoError(t, handler.CompleteRequest(id, &types.RequestReport{
+			Report: &types.RequestReport_Aggregatable{Aggregatable: &valuespb.Decimal{Coefficient: valuespb.NewBigIntFromInt(big.NewInt(100))}},
+		}))
+
+		actualReport := <-ch
+		require.Equal(t, report, actualReport)
+		// ensure request was removed
+		ids, err := handler.GetRequestIDs(5)
+		require.NoError(t, err)
+		require.NotContains(t, ids, id)
+	})
 	t.Run("Eventually consistent request: complete non-existing", func(t *testing.T) {
 		const id = "non-existing-req"
 		report := []byte("non-existing-result")
@@ -219,7 +243,13 @@ func TestHandle(t *testing.T) {
 	})
 
 	t.Run("Eventually consistent request is added to poller", func(t *testing.T) {
-		r := types.NewEventuallyConsistentRequest("id", nil)
+		r := types.NewEventuallyConsistentRequest("eventually_consistent", nil)
+		poller.EXPECT().Enqueue(mock.Anything, r).Once()
+		_, err := handler.Handle(t.Context(), r)
+		require.NoError(t, err)
+	})
+	t.Run("Aggregatable request is added to poller", func(t *testing.T) {
+		r := types.NewAggregatableRequest("aggr_request", nil)
 		poller.EXPECT().Enqueue(mock.Anything, r).Once()
 		_, err := handler.Handle(t.Context(), r)
 		require.NoError(t, err)
@@ -231,4 +261,20 @@ func TestHandle(t *testing.T) {
 		_, err = handler.Handle(t.Context(), r)
 		require.Error(t, err)
 	})
+	t.Run("Handle return an error if request type is not known", func(t *testing.T) {
+		_, err := handler.Handle(t.Context(), &unknownRequestType{id: "unknown-request-type"})
+		require.EqualError(t, err, "unknown request type *consensus.unknownRequestType")
+	})
+}
+
+type unknownRequestType struct {
+	id string
+}
+
+func (r *unknownRequestType) ID() string {
+	return r.id
+}
+
+func (r *unknownRequestType) Copy() types.Request {
+	return &unknownRequestType{id: r.id}
 }
