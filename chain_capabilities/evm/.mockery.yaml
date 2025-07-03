@@ -14,6 +14,17 @@ packages:
     interfaces:
       BlocksProvider:
       RequestsHandler:
+  github.com/smartcontractkit/chainlink-common/pkg/beholder:
+    config:
+      dir: ../monitoring/mocks
+    interfaces:
+      ProtoEmitter:
+  github.com/smartcontractkit/chainlink-common/pkg/logger:
+    config:
+      dir: ../monitoring/mocks
+    interfaces:
+      Logger:
   github.com/smartcontractkit/capabilities/chain_capabilities/evm/contracts:
     interfaces:
       CREForwarderClient:
+        

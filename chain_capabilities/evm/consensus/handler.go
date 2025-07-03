@@ -64,7 +64,6 @@ type requestCtx struct {
 	Ctx        context.Context
 	Cancel     context.CancelFunc
 	ResultChan chan any
-	Attempt    int
 }
 
 func (r *requestCtx) ID() string {

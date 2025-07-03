@@ -53,7 +53,7 @@ func initMocks(t *testing.T) *evmmock.EVMService {
 
 func TestLogTriggerService_Close_WaitsForPollingGoroutine(t *testing.T) {
 	t.Run("close awaits on syncGroup to finalize", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
 		lggr := logger.Test(t)
 		evmService := initMocks(t)
@@ -101,7 +101,7 @@ func TestLogTriggerService_Close_WaitsForPollingGoroutine(t *testing.T) {
 
 // testing all the input parameters and some minor validations
 func TestRegisterLogTrigger_InputValidation(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	lggr := logger.Test(t)
 	service := NewLogTriggerService(nil, NewLogTriggerStore(), lggr, pollInterval)
@@ -194,7 +194,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 
 func TestUnregisterLogTrigger_InputValidation(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	service := &LogTriggerService{}
 	lggr := logger.Test(t)
@@ -349,7 +349,7 @@ func TestCreateLogRequest(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			expressions, confidence := service.createLogRequest(context.Background(), tc.addresses,
+			expressions, confidence := service.createLogRequest(t.Context(), tc.addresses,
 				tc.eventSigs,
 				tc.topics2,
 				tc.topics3,
@@ -410,7 +410,7 @@ func TestMakeEventByTopicFilter(t *testing.T) {
 
 func TestGetFinalizedBlockNumber(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := t.Context()
 	lggr := logger.Test(t)
 	t.Run("gets latest block number", func(t *testing.T) {
 		evmService := initMocks(t)
@@ -498,7 +498,7 @@ func TestGetLatestBlockNumber(t *testing.T) {
 
 func TestFetchLogsFromLogPoller(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := t.Context()
 	lggr := logger.Test(t)
 	evmService := evmmock.NewEVMService(t)
 	service := NewLogTriggerService(evmService, NewLogTriggerStore(), lggr, pollInterval)
@@ -716,7 +716,7 @@ func TestIntegration_RegisterAndUnregisterLogTrigger(t *testing.T) {
 
 	service := NewLogTriggerService(evmService, NewLogTriggerStore(), lggr, pollInterval)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
 
 	triggerID := "trigger-integration"

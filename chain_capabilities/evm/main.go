@@ -15,16 +15,17 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/trigger"
-
-	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
 
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	evmcapserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
@@ -42,6 +43,9 @@ const (
 	OCRRoundMaxBatchSize = 500
 	PollingWorkersNum    = 10
 	PollPeriod           = 10 * time.Second
+	repoCLLCapabilities  = "https://raw.githubusercontent.com/smartcontractkit/capabilities"
+	versionRefsMain      = "refs/heads/main"
+	schemaBasePath       = repoCLLCapabilities + "/" + versionRefsMain + "/chain_capabilities/evm/monitoring"
 )
 
 type capabilityGRPCService struct {
@@ -73,16 +77,33 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 	if err := json.Unmarshal([]byte(configStr), &cfg); err != nil {
 		return fmt.Errorf("failed to parse EVM capability config: %w", err)
 	}
+
 	if cfg.LogTriggerPollInterval < 0 {
-		return fmt.Errorf("LogTriggerPollInterval must be positive, got: %s", cfg.LogTriggerPollInterval)
+		return fmt.Errorf("logTriggerPollInterval must be positive, got: %s", cfg.LogTriggerPollInterval)
+	}
+
+	client := beholder.GetClient().ForName("evm_capability")
+	metrics, err := monitoring.NewMetrics()
+	if err != nil {
+		return fmt.Errorf("failed to create metrics: %w", err)
+	}
+	processor, err := monitoring.NewProcessor(beholder.NewProtoEmitter(c.lggr, &client, schemaBasePath), metrics)
+	if err != nil {
+		return fmt.Errorf("failed to create monitoring proto processor: %w", err)
 	}
 
 	relayID := types.NewRelayID(cfg.Network, fmt.Sprintf("%d", cfg.ChainID))
-
 	relayer, err := relayerSet.Get(ctx, relayID)
 	if err != nil {
 		return fmt.Errorf("failed to fetch relayer for chainID %d from relayerSet: %w", cfg.ChainID, err)
 	}
+
+	chainInfo, err := relayer.GetChainInfo(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to fetch chain info for chainID %d from relayer: %w", cfg.ChainID, err)
+	}
+
+	messageBuilder := monitoring.NewMessageBuilder(chainInfo, c.CapabilityInfo, cfg.NodeAddress)
 
 	evmRelayer, err := relayer.EVM()
 	if err != nil {
@@ -97,18 +118,15 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 		return fmt.Errorf("invalid ReceiverGasMinimum value. It must be greater than 0. Provided ReceiverGasMinimum %d", cfg.ReceiverGasMinimum)
 	}
 
-	evm, err := actions.NewEVM(cfg, evmRelayer, c.lggr)
+	c.requestPoller = poller.NewPoller(c.lggr, PollingWorkersNum, PollPeriod)
+	c.consensusHandler = consensus.NewHandler(c.lggr, c.requestPoller, time.Second*10)
+
+	c.EVM, err = actions.NewEVM(cfg, evmRelayer, c.lggr, processor, messageBuilder, c.consensusHandler)
 	if err != nil {
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
 
-	c.capability = capability{
-		EVM:            evm,
-		triggerService: trigger.NewLogTriggerService(evmRelayer, trigger.NewLogTriggerStore(), c.lggr, cfg.LogTriggerPollInterval),
-	}
-
-	c.requestPoller = poller.NewPoller(c.lggr, PollingWorkersNum, PollPeriod)
-	c.consensusHandler = consensus.NewHandler(c.lggr, c.requestPoller, time.Second*10)
+	c.triggerService = trigger.NewLogTriggerService(evmRelayer, trigger.NewLogTriggerStore(), c.lggr, cfg.LogTriggerPollInterval)
 
 	// TODO PLEX-1560: populate with implementation
 	blocksProvider := &oracle.NullBlocksProvider{}
@@ -136,7 +154,6 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 	}
 
 	c.lggr.Infof("Successfully initialised %s", CapabilityName)
-
 	return nil
 }
 
