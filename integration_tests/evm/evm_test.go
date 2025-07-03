@@ -13,7 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/smartcontractkit/capabilities/integration_tests/evm/contract"
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
 
@@ -28,6 +27,7 @@ import (
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/framework"
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/handlers/capabilities"
 
+	"github.com/smartcontractkit/capabilities/integration_tests/evm/contract"
 	"github.com/smartcontractkit/capabilities/integration_tests/utils"
 )
 
