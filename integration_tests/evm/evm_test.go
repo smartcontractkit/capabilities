@@ -30,6 +30,9 @@ import (
 	"github.com/smartcontractkit/capabilities/integration_tests/utils"
 )
 
+// Test_LogTrigger tests the log trigger functionality in the EVM capability.
+// It deploys a contract that emits logs, sets up a workflow with that deployed contract to the log trigger, waits for the workflow to be ready,
+// emits a log event, and then checks that the workflow processes the log event correctly by counting the number of events logged by beholder.
 func Test_LogTrigger(t *testing.T) {
 	ctx := t.Context()
 	beholderTester := tests.Beholder(t)
@@ -207,9 +210,9 @@ func CreateEvmCapabilityConfig(t *testing.T, chainID uint64, network string, dur
 		ChainID:                chainID,
 		Network:                network,
 		LogTriggerPollInterval: duration,
-		CREForwarderAddress:    "1234567890abcdef1234567890abcdef12345678", //fake address for testing
-		ReceiverGasMinimum:     1,
-		NodeAddress:            "fakeAddressForTesting", //fake address for testing
+		//CREForwarderAddress:    "1234567890abcdef1234567890abcdef12345678", //fake address for testing
+		ReceiverGasMinimum: 1,
+		NodeAddress:        "fakeAddressForTesting", //fake address for testing
 	}
 
 	configJSON, err := json.Marshal(readContractConfig)
