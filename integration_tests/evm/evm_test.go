@@ -1,20 +1,21 @@
-package evm_logtrigger
+package evmlogtrigger
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/smartcontractkit/capabilities/integration_tests/evm/contract"
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
-	"os"
-	"path/filepath"
-	"strings"
-	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -35,7 +36,7 @@ import (
 // emits a log event, and then checks that the workflow processes the log event correctly by counting the number of events logged by beholder.
 func Test_LogTrigger(t *testing.T) {
 	ctx := t.Context()
-	beholderTester := tests.Beholder(t)
+	beholderTester := tests.Beholder(t) //nolint:staticcheck
 
 	lggr := logger.Test(t)
 	defer func() {
@@ -182,7 +183,7 @@ func registerWorkflow(t *testing.T, donContext framework.DonContext, workflowNam
 	require.NoError(t, err)
 }
 
-func getBeholderLogs(beholderTester tests.BeholderTester, t *testing.T) []string {
+func getBeholderLogs(beholderTester tests.BeholderTester, t *testing.T) []string { //nolint:staticcheck
 	var baseMessages []string
 	userMsgs := beholderTester.Messages(t, "beholder_data_schema", "/cre-events-user-logs/v1")
 	for _, userMsg := range userMsgs {

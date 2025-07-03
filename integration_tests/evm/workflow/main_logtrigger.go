@@ -1,14 +1,15 @@
-///go:build wasip1
+//go:build wasip1
 
 package main
 
 import (
 	"encoding/hex"
 	"fmt"
+	"strings"
+
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
-	"strings"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/wasm/v2"
