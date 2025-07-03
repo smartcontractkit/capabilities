@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/beholder/beholdertest"
+
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -18,17 +20,17 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	beholderpb "github.com/smartcontractkit/chainlink-common/pkg/beholder/pb"
 	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
-	"github.com/smartcontractkit/chainlink-common/pkg/utils/tests"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/framework"
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/handlers/capabilities"
 
 	"github.com/smartcontractkit/capabilities/integration_tests/evm/contract"
 	"github.com/smartcontractkit/capabilities/integration_tests/utils"
+
+	events2 "github.com/smartcontractkit/chainlink-protos/workflows/go/events"
 )
 
 // Test_LogTrigger tests the log trigger functionality in the EVM capability.
@@ -36,8 +38,7 @@ import (
 // emits a log event, and then checks that the workflow processes the log event correctly by counting the number of events logged by beholder.
 func Test_LogTrigger(t *testing.T) {
 	ctx := t.Context()
-	beholderTester := tests.Beholder(t) //nolint:staticcheck
-
+	beholderTester := beholdertest.NewObserver(t)
 	lggr := logger.Test(t)
 	defer func() {
 		utils.CleanupCapabilitiesDir(lggr)
@@ -78,9 +79,17 @@ func Test_LogTrigger(t *testing.T) {
 	// assertion to validate we get the expected number of events in beholder logs
 	foundEvents := 0
 	require.Eventually(t, func() bool {
-		beholderLogs := getBeholderLogs(beholderTester, t)
-		for _, log := range beholderLogs {
-			if strings.Contains(log, messageDataThatWillBeEmitted) {
+		workflowLogs := getBeholderLogsForWorkflow(beholderTester, t)
+		// Wait until we have the logs for all workflows
+		if len(workflowLogs) < numOfWorkflowNodes {
+			return false
+		}
+
+		for _, logs := range workflowLogs {
+			// Expect only one log line
+			require.Len(t, logs, 1, "Expected exactly one log line per workflow (it's printed inside the onTrigger() function of the workflow)")
+			log := logs[0]
+			if strings.Contains(log.GetMessage(), messageDataThatWillBeEmitted) {
 				foundEvents++
 			}
 		}
@@ -183,21 +192,21 @@ func registerWorkflow(t *testing.T, donContext framework.DonContext, workflowNam
 	require.NoError(t, err)
 }
 
-func getBeholderLogs(beholderTester tests.BeholderTester, t *testing.T) []string { //nolint:staticcheck
-	var baseMessages []string
+func getBeholderLogsForWorkflow(beholderTester beholdertest.Observer, t *testing.T) [][]*events2.LogLine {
+	var workflowLogs [][]*events2.LogLine
+
 	userMsgs := beholderTester.Messages(t, "beholder_data_schema", "/cre-events-user-logs/v1")
-	for _, userMsg := range userMsgs {
-		payload := beholderpb.BaseMessage{}
-		err := proto.Unmarshal(userMsg.Body, &payload)
-		require.NoError(t, err)
-		fmt.Printf("Beholder logs: Payload.msg: %v\n", &payload.Msg)
-		fmt.Printf("Beholder logs: payload.Labels: %v\n", payload.Labels)
-		for k, v := range payload.Labels {
-			baseMessages = append(baseMessages, v)
-			fmt.Printf("Beholder logs label key: %v, value: %v\n", k, v)
+	if len(userMsgs) > 0 {
+		for _, userMsg := range userMsgs {
+			userLog := events2.UserLogs{}
+			err := proto.Unmarshal(userMsg.Body, &userLog)
+			require.NoError(t, err)
+			fmt.Printf("Beholder Observer logs: Payload.msg: %v\n", &userLog.LogLines)
+			workflowLogs = append(workflowLogs, userLog.LogLines)
 		}
 	}
-	return baseMessages
+
+	return workflowLogs
 }
 
 type EVMCapabilityConfig struct {
