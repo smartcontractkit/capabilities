@@ -855,6 +855,20 @@ func TestGenerateLogIdentifier_DifferentLogsProduceDifferentIDs(t *testing.T) {
 		id2 := service.generateLogIdentifier(log2)
 		require.NotEqual(t, id1, id2)
 	})
+	t.Run("log generates valid string identifier", func(t *testing.T) {
+		rx := `^[0-9a-f]+:[0-9a-f]+:\d+$`
+		log1 := &evmtypes.Log{
+			TxHash:    stringToHashBytes("91056b6ac7e64dd15ffaa011ec8026596cd9d05ba96fc138948620ca58a44167"),
+			BlockHash: stringToHashBytes("7e96f4eecec1e72b761298d57a66e660f2a8df2e29dd1cc2bf2ded9fcce8fc14"),
+			LogIndex:  42,
+		}
+		log2 := createLog("txhashX", "blockhashZ", 99)
+
+		id1 := service.generateLogIdentifier(log1)
+		id2 := service.generateLogIdentifier(log2)
+		require.Regexp(t, rx, id1, "expected log identifier to be a valid string in the format 'hex(txhash):hex(blockhash):logindex'")
+		require.Regexp(t, rx, id2, "expected log identifier to be a valid string in the format 'hex(txhash):hex(blockhash):logindex'")
+	})
 }
 
 func stringToHashBytes(s string) [evmtypes.HashLength]byte {
