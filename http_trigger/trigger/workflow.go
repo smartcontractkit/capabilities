@@ -58,20 +58,27 @@ func (w *workflow) trigger(ctx context.Context, trigger capabilities.TriggerAndI
 	}
 }
 
-type workflowMetadataStore struct {
+type WorkflowStore interface {
+	RegisterWorkflow(workflowID string, authorizedKeys []AuthorizedKey, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error
+	UnregisterWorkflow(workflowID string) error
+	GetWorkflow(workflowID string) (*workflow, error)
+	GetWorkflows() ([]*workflow, error)
+}
+
+type workflowStore struct {
 	workflowsMu sync.RWMutex
 	workflows   map[string]*workflow // workflowID -> workflow metadata
 	lggr        logger.Logger
 }
 
-func NewWorkflowMetadataStore(lggr logger.Logger) *workflowMetadataStore {
-	return &workflowMetadataStore{
+func NewWorkflowStore(lggr logger.Logger) *workflowStore {
+	return &workflowStore{
 		workflows: make(map[string]*workflow),
-		lggr:      logger.Named(lggr, "WorkflowMetadataStore"),
+		lggr:      logger.Named(lggr, "WorkflowStore"),
 	}
 }
 
-func (s *workflowMetadataStore) RegisterWorkflow(workflowID string, authorizedKeys []AuthorizedKey, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error {
+func (s *workflowStore) RegisterWorkflow(workflowID string, authorizedKeys []AuthorizedKey, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error {
 	s.workflowsMu.Lock()
 	defer s.workflowsMu.Unlock()
 	if _, exists := s.workflows[workflowID]; exists {
@@ -89,7 +96,7 @@ func (s *workflowMetadataStore) RegisterWorkflow(workflowID string, authorizedKe
 	return nil
 }
 
-func (s *workflowMetadataStore) UnregisterWorkflow(workflowID string) error {
+func (s *workflowStore) UnregisterWorkflow(workflowID string) error {
 	s.workflowsMu.Lock()
 	defer s.workflowsMu.Unlock()
 	if workflow, exists := s.workflows[workflowID]; exists {
@@ -101,7 +108,7 @@ func (s *workflowMetadataStore) UnregisterWorkflow(workflowID string) error {
 	return fmt.Errorf("workflow %s not found", workflowID)
 }
 
-func (s *workflowMetadataStore) GetWorkflow(workflowID string) (*workflow, error) {
+func (s *workflowStore) GetWorkflow(workflowID string) (*workflow, error) {
 	s.workflowsMu.RLock()
 	defer s.workflowsMu.RUnlock()
 	if workflow, exists := s.workflows[workflowID]; exists {
@@ -110,7 +117,7 @@ func (s *workflowMetadataStore) GetWorkflow(workflowID string) (*workflow, error
 	return nil, fmt.Errorf("workflow %s not found", workflowID)
 }
 
-func (s *workflowMetadataStore) GetWorkflows() ([]*workflow, error) {
+func (s *workflowStore) GetWorkflows() ([]*workflow, error) {
 	s.workflowsMu.RLock()
 	defer s.workflowsMu.RUnlock()
 	workflows := make([]*workflow, 0, len(s.workflows))

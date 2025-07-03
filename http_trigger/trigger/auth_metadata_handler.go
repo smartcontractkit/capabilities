@@ -3,11 +3,12 @@ package trigger
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math"
 	"strings"
+	"time"
 
-	"github.com/NethermindEth/juno/jsonrpc"
-	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
@@ -43,29 +44,42 @@ type authMetadataHandler struct {
 	lggr                logger.Logger
 	gc                  core.GatewayConnector
 	outgoingRateLimiter *ratelimit.RateLimiter
-	workflowFetcher     WorkflowFetcher
+	workflowStore       WorkflowStore
 	cfg                 ServiceConfig
-}
-
-type WorkflowFetcher interface {
-	GetWorkflows() ([]*workflow, error)
 }
 
 func NewAuthMetadataHandler(
 	lggr logger.Logger,
 	gc core.GatewayConnector,
 	outgoingRateLimiter *ratelimit.RateLimiter,
-	workflowFetcher WorkflowFetcher,
+	workflowStore WorkflowStore,
 ) *authMetadataHandler {
 	return &authMetadataHandler{
 		lggr:                lggr,
 		gc:                  gc,
 		outgoingRateLimiter: outgoingRateLimiter,
-		workflowFetcher:     workflowFetcher,
+		workflowStore:       workflowStore,
 	}
 }
 
-func (h *authMetadataHandler) PushToGateway(ctx context.Context, workflowID string, keys []AuthorizedKey) error {
+type AuthMetadataHandler interface {
+	// SendWorkflows sends all workflows' authentication metadata to the gateway in batches
+	// It is expected to send a response back to the gateway using the gatewayConnector then return error
+	SendWorkflows(ctx context.Context, gatewayID string, req *jsonrpc.Request) error
+	// BroadcastWorkflow sends the authentication metadata to the gateway.
+	BroadcastWorkflow(ctx context.Context, workflowID string, keys []AuthorizedKey) error
+}
+
+// TODO: move this to chainlink-common
+func GetRequestID(methodName string, parts ...string) string {
+	id := append([]string{methodName}, parts...)
+	id = append(id, uuid.New().String())
+	return strings.Join(id, "/")
+}
+
+func (h *authMetadataHandler) BroadcastWorkflow(ctx context.Context, workflowID string, keys []AuthorizedKey) error {
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(h.cfg.GatewayConnectionConfig.MaxPushAuthMetadataDurationMs))
+	defer cancel()
 	authData := WorkflowAuthMetadata{
 		WorkflowID:     workflowID,
 		AuthorizedKeys: keys,
@@ -76,7 +90,7 @@ func (h *authMetadataHandler) PushToGateway(ctx context.Context, workflowID stri
 	}
 	gatewayResp := jsonrpc.Response{
 		Version: "2.0",
-		ID:      fmt.Sprintf("%s/%s/%s", MethodWorkflowPushAuthMetadata, workflowID, uuid.New().String()),
+		ID:      GetRequestID(MethodWorkflowPushAuthMetadata, workflowID),
 		Result:  json.RawMessage(payload),
 	}
 	gatewayIDs, err := h.gc.GatewayIDs(ctx)
@@ -84,31 +98,47 @@ func (h *authMetadataHandler) PushToGateway(ctx context.Context, workflowID stri
 		return fmt.Errorf("failed to get gateway IDs: %w", err)
 	}
 	for _, gatewayID := range gatewayIDs {
-		// TODO:
-		// attempt connection
-		// retry with backoff until timeout
-		// send
-		// workflowAllow, globalAllow := p.outgoingRateLimiter.AllowVerbose(metadata.WorkflowOwner)
-		// 	if !workflowAllow {
-		// 		return errors.New(common.ErrorOutgoingRatelimitWorkflowOwner)
-		// 	}
-		// 	if !globalAllow {
-		// 		return errors.New(common.ErrorOutgoingRatelimitGlobal)
-		// 	}
-		err := h.gc.SendToGateway(ctx, gatewayID, &gatewayResp)
-		if err != nil {
-			h.lggr.Errorw("failed to send auth metadata to gateway", "gatewayID", gatewayID, "error", err)
-			continue // try next gateway
+		backoff := time.Duration(h.cfg.GatewayConnectionConfig.InitialIntervalMs) * time.Millisecond
+		for {
+			err := h.sendResponse(ctx, gatewayID, &gatewayResp)
+			if err != nil {
+				h.lggr.Errorw("failed to send auth metadata to gateway. Retrying", "gatewayID", gatewayID, "error", err)
+			} else {
+				return nil
+			}
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("context canceled while awaiting connection to gateway %s: %w", gatewayID, ctx.Err())
+			case <-time.After(backoff):
+				backoff = nextBackoff(backoff,
+					h.cfg.GatewayConnectionConfig.Multiplier,
+					time.Duration(h.cfg.GatewayConnectionConfig.MaxPushAuthMetadataDurationMs)*time.Millisecond)
+				continue
+			}
 		}
 	}
 	return nil
 }
 
-func (h *authMetadataHandler) HandlePullFromGateway(ctx context.Context) error {
-	workflows, err := h.workflowFetcher.GetWorkflows()
+func (h *authMetadataHandler) sendErrorResponse(ctx context.Context, gatewayID string, reqID string, code int64, message string) {
+	resp := &jsonrpc.Response{
+		Version: "2.0",
+		ID:      reqID,
+		Error: &jsonrpc.WireError{
+			Code:    code,
+			Message: message,
+		},
+	}
+	h.sendResponse(ctx, gatewayID, resp)
+}
+
+func (h *authMetadataHandler) SendWorkflows(ctx context.Context, gatewayID string, req *jsonrpc.Request) error {
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(h.cfg.GatewayConnectionConfig.MaxPullAuthMetadataDurationMs))
+	defer cancel()
+	workflows, err := h.workflowStore.GetWorkflows()
 	if err != nil {
-		h.lggr.Errorw("failed to fetch workflows", "error", err)
-		return
+		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInternal, "failed to fetch workflows")
+		return fmt.Errorf("failed to fetch workflows: %w", err)
 	}
 	batchSize := int(h.cfg.AuthMetdataBatchSize)
 	for i := 0; i < len(workflows); i += batchSize {
@@ -120,59 +150,55 @@ func (h *authMetadataHandler) HandlePullFromGateway(ctx context.Context) error {
 
 		var batchAuthData []WorkflowAuthMetadata
 		for _, wf := range batch {
-			for key := range wf.authorizedKeys {
+			var keys []AuthorizedKey
+			for _, key := range wf.authorizedKeys {
+				keys = append(keys, key)
+			}
 			batchAuthData = append(batchAuthData, WorkflowAuthMetadata{
 				WorkflowID:     wf.workflowID,
-				AuthorizedKeys: wf.authorizedKeys,
+				AuthorizedKeys: keys,
 			})
 		}
 
 		payload, err := json.Marshal(batchAuthData)
 		if err != nil {
-			h.lggr.Errorw("failed to marshal batch auth metadata", "error", err)
-			continue
+			h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInternal, "failed to marshal batch auth metadata")
+			return fmt.Errorf("failed to marshal batch auth metadata: %w", err)
 		}
 
 		gatewayResp := jsonrpc.Response{
 			Version: "2.0",
-			ID:      fmt.Sprintf("%s/%s", MethodWorkflowPullAuthMetadata + uuid.New().String()),
+			ID:      fmt.Sprintf("%s/%s", MethodWorkflowPullAuthMetadata+uuid.New().String()),
 			Result:  json.RawMessage(payload),
 		}
 
-		gatewayIDs, err := h.gc.GatewayIDs(ctx)
+		err = h.sendResponse(ctx, gatewayID, &gatewayResp)
 		if err != nil {
-			h.lggr.Errorw("failed to get gateway IDs", "error", err)
-			return
-		}
-
-		for _, gatewayID := range gatewayIDs {
-			err := h.gc.SendToGateway(ctx, gatewayID, &gatewayResp)
-			if err != nil {
-				
-			}
+			return fmt.Errorf("failed to send batch auth metadata to gateway for workflow: %w", err)
 		}
 	}
+	return nil
 }
 
-// 	selectedGateway, err := p.awaitConnection(ctx, lggr)
-// 	if err != nil {
-// 		return nil, errors.Join(errors.New("failed to await connection to gateway"), err)
-// 	}
+func (h *authMetadataHandler) sendResponse(ctx context.Context, gatewayID string, resp *jsonrpc.Response) error {
+	workflowAllow, globalAllow := h.outgoingRateLimiter.AllowVerbose(gatewayID)
+	if !workflowAllow {
+		return errors.New(errorOutgoingRatelimitSender)
+	}
+	if !globalAllow {
+		return errors.New(errorOutgoingRatelimitGlobal)
+	}
+	err := h.gc.SendToGateway(ctx, gatewayID, resp)
+	if err != nil {
+		return fmt.Errorf("failed to send response to gateway %s: %w", gatewayID, err)
+	}
+	return nil
+}
 
-// 	if err := p.gatewayConnector.SendToGateway(ctx, selectedGateway, &gatewayResp); err != nil {
-// 		return nil, errors.Join(errors.New("failed to send request to gateway"), err)
-// 	}
-
-// TODO: consolidate this with HTTP action
-// func attemptGatewayConnection(ctx context.Context, lggr logger.Logger, gateway string, timeout time.Duration) error {
-// 	lggr.Debugw("awaiting connection", "timeout", timeout)
-
-// 	// create a new child context to wait on gateway connection
-// 	ctxWithTimeout, cancel := context.WithTimeout(ctx, timeout)
-// 	defer cancel()
-
-// 	if err := p.gatewayConnector.AwaitConnection(ctxWithTimeout, gateway); err != nil {
-// 		return fmt.Errorf("gateway connection failed: %w", err)
-// 	}
-// 	return nil
-// }
+// nextBackoff calculates the next backoff duration using the configured multiplier and max elapsed time.
+func nextBackoff(backoff time.Duration, multiplier float64, max time.Duration) time.Duration {
+	backoffMs := float64(backoff.Milliseconds())
+	backoffMs = backoffMs * multiplier
+	backoffMs = math.Min(backoffMs, float64(max.Milliseconds()))
+	return time.Duration(backoffMs) * time.Millisecond
+}

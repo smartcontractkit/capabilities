@@ -21,10 +21,6 @@ import (
 
 const (
 	HandlerName                  = "HTTPTriggerHandler"
-	defaultGlobalRPS             = 100.0
-	defaultGlobalBurst           = 100
-	defaultPerSenderRPS          = 100.0
-	defaultPerSenderBurst        = 100
 	errorOutgoingRatelimitGlobal = "global limit of outgoing gateways requests has been exceeded"
 	errorOutgoingRatelimitSender = "per-sender limit of outgoing gateways requests has been exceeded"
 	errorIncomingRatelimitGlobal = "message from gateway exceeded global rate limit"
@@ -42,35 +38,12 @@ type connectorHandler struct {
 	incomingRateLimiter   *ratelimit.RateLimiter
 	outgoingRateLimiter   *ratelimit.RateLimiter
 	authMetadataHandler   AuthMetadataHandler
-	workflowMetadataStore WorkflowMetadataStore
+	workflowMetadataStore WorkflowStore
 }
 
-type AuthMetadataHandler interface {
-	// HandlePullFromGateway processes a request to pull authentication metadata from the gateway.
-	// It is expected to send a response back to the gateway using the gatewayConnector.
-	// In case of an error, it should log and send an error response back to the gateway
-	HandlePullFromGateway(ctx context.Context, gatewayID string, req *jsonrpc.Request)
-	// PushToGateway sends the authentication metadata to the gateway.
-	PushToGateway(ctx context.Context, workflowID string, keys []AuthorizedKey) error
-}
-
-type WorkflowMetadataStore interface {
-	RegisterWorkflow(workflowID string, authorizedKeys []AuthorizedKey, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error
-	UnregisterWorkflow(workflowID string) error
-	GetWorkflow(workflowID string) (*workflow, error)
-}
-
-func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config ServiceConfig, workflowMetadataStore WorkflowMetadataStore, authMetadataHandler AuthMetadataHandler) (*connectorHandler, error) {
-	outgoingRLCfg := outgoingRateLimiterConfigDefaults(config.OutgoingRateLimiter)
-	outgoingRateLimiter, err := ratelimit.NewRateLimiter(outgoingRLCfg)
-	if err != nil {
-		return nil, err
-	}
-	incomingRLCfg := incomingRateLimiterConfigDefaults(config.RateLimiter)
-	incomingRateLimiter, err := ratelimit.NewRateLimiter(incomingRLCfg)
-	if err != nil {
-		return nil, err
-	}
+func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config ServiceConfig,
+	outgoingRateLimiter *ratelimit.RateLimiter, incomingRateLimiter *ratelimit.RateLimiter,
+	workflowMetadataStore WorkflowStore, authMetadataHandler AuthMetadataHandler) (*connectorHandler, error) {
 	return &connectorHandler{
 		lggr:                  logger.Named(lggr, HandlerName),
 		gatewayConnector:      gc,
@@ -137,7 +110,7 @@ func (h *connectorHandler) RegisterWorkflow(ctx context.Context, workflowID stri
 	}
 	// Push the auth metadata to the gateway
 	// Error is non-critical. Retries will be handled by the authMetadataHandler.
-	err = h.authMetadataHandler.PushToGateway(ctx, workflowID, triggerID, authorizedKeys)
+	err = h.authMetadataHandler.BroadcastWorkflow(ctx, workflowID, authorizedKeys)
 	if err != nil {
 		h.lggr.Errorw("Failed to push auth metadata to gateway", "error",
 			err, "workflowID", workflowID, "triggerID", triggerID)
@@ -167,7 +140,11 @@ func (h *connectorHandler) HandleGatewayMessage(ctx context.Context, gatewayID s
 	case gateway_common.MethodWorkflowExecute:
 		h.processTrigger(ctx, gatewayID, req)
 	case MethodWorkflowPullAuthMetadata:
-		h.authMetadataHandler.HandlePullFromGateway(ctx, gatewayID, req)
+		err := h.authMetadataHandler.SendWorkflows(ctx, gatewayID, req)
+		if err != nil {
+			h.lggr.Errorw("Failed to handle pull auth metadata request", "error",
+				err, "gatewayID", gatewayID, "requestID", req.ID)
+		}
 	default:
 		h.lggr.Errorw("Unsupported method", "method", req.Method, "gatewayID", gatewayID)
 	}
@@ -279,37 +256,6 @@ func (h *connectorHandler) triggerWorkflow(ctx context.Context, workflowID strin
 		return err
 	}
 	return nil
-}
-
-func incomingRateLimiterConfigDefaults(config ratelimit.RateLimiterConfig) ratelimit.RateLimiterConfig {
-	if config.GlobalBurst == 0 {
-		config.GlobalBurst = defaultGlobalBurst
-	}
-	if config.GlobalRPS == 0 {
-		config.GlobalRPS = defaultGlobalRPS
-	}
-	if config.PerSenderBurst == 0 {
-		config.PerSenderBurst = defaultPerSenderBurst
-	}
-	if config.PerSenderRPS == 0 {
-		config.PerSenderRPS = defaultPerSenderRPS
-	}
-	return config
-}
-func outgoingRateLimiterConfigDefaults(config ratelimit.RateLimiterConfig) ratelimit.RateLimiterConfig {
-	if config.GlobalBurst == 0 {
-		config.GlobalBurst = defaultGlobalBurst
-	}
-	if config.GlobalRPS == 0 {
-		config.GlobalRPS = defaultGlobalRPS
-	}
-	if config.PerSenderBurst == 0 {
-		config.PerSenderBurst = defaultPerSenderBurst
-	}
-	if config.PerSenderRPS == 0 {
-		config.PerSenderRPS = defaultPerSenderRPS
-	}
-	return config
 }
 
 func convertRawJSONToProto(raw json.RawMessage) (*structpb.Struct, error) {

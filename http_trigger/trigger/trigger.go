@@ -15,22 +15,9 @@ import (
 )
 
 const ServiceName = "HTTPTriggerCapability"
-const defaultSendChannelBufferSize = uint32(1000)
+const defaultSendChannelBufferSize = uint16(1000)
 
 var _ server.HTTPCapability = &service{}
-
-type ServiceConfig struct {
-	// AuthMetadataBatchSize is the number of auth metadata items to send in a single batch to the gateway.
-	AuthMetdataBatchSize uint16 `json:"authMetadataBatchSize"`
-	// SendChannelBufferSize is the size of the channel used to trigger workflows.
-	SendChannelBufferSize uint16 `json:"sendChannelBufferSize"`
-	// RateLimiter configuration for messages incoming to this node from the gateway.
-	// The sender is a Gateway node, which is identified by the Gateway ID.
-	RateLimiter ratelimit.RateLimiterConfig `json:"incomingRateLimiter" `
-	// OutgoingRateLimiter is the configuration for outgoing messages from this node to the gateway.
-	// The sender is a workflow owner
-	OutgoingRateLimiter ratelimit.RateLimiterConfig `json:"outgoingRateLimiter"`
-}
 
 type ConnectorHandler interface {
 	services.Service
@@ -69,8 +56,18 @@ func (s *service) Initialise(
 	if err != nil {
 		return err
 	}
-	s.cfg = serviceConfig
-	s.connectorHandler, err = NewConnectorHandler(s.lggr, gc, serviceConfig)
+	s.cfg = applyDefaults(serviceConfig)
+	outgoingRateLimiter, err := ratelimit.NewRateLimiter(s.cfg.OutgoingRateLimiter)
+	if err != nil {
+		return err
+	}
+	incomingRateLimiter, err := ratelimit.NewRateLimiter(s.cfg.IncomingRateLimiter)
+	if err != nil {
+		return err
+	}
+	workflowStore := NewWorkflowStore(s.lggr)
+	authMetadataHandler := NewAuthMetadataHandler(s.lggr, gc, outgoingRateLimiter, workflowStore)
+	s.connectorHandler, err = NewConnectorHandler(s.lggr, gc, s.cfg, outgoingRateLimiter, incomingRateLimiter, workflowStore, authMetadataHandler)
 	if err != nil {
 		return err
 	}
