@@ -9,8 +9,9 @@ import (
 
 	"github.com/go-co-op/gocron/v2"
 	"github.com/jonboulle/clockwork"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron/server"
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron/server"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/triggers/cron"
@@ -135,7 +136,8 @@ func (s *Service) Initialise(ctx context.Context, config string, _ core.Telemetr
 	_ core.ErrorLog,
 	_ core.PipelineRunnerService,
 	_ core.RelayerSet,
-	_ core.OracleFactory) error {
+	_ core.OracleFactory,
+	_ core.GatewayConnector) error {
 	s.lggr.Debugf("Initialising %s", ServiceName)
 
 	var cronConfig Config

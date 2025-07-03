@@ -17,7 +17,7 @@ const workflowTemplateCron = `
 name: "%s"
 owner: "0x%s"
 triggers:
-  - id: "cron-trigger@1.1.0"
+  - id: "cron-trigger@1.0.0"
     ref: "trigger"
     config:
       schedule:
