@@ -211,9 +211,9 @@ func CreateEvmCapabilityConfig(t *testing.T, chainID uint64, network string, dur
 		ChainID:                chainID,
 		Network:                network,
 		LogTriggerPollInterval: duration,
-		//CREForwarderAddress:    "1234567890abcdef1234567890abcdef12345678", //fake address for testing
-		ReceiverGasMinimum: 1,
-		NodeAddress:        "fakeAddressForTesting", //fake address for testing
+		CREForwarderAddress:    "1234567890abcdef1234567890abcdef12345678", //fake address for testing
+		ReceiverGasMinimum:     1,
+		NodeAddress:            "fakeAddressForTesting", //fake address for testing
 	}
 
 	configJSON, err := json.Marshal(readContractConfig)
