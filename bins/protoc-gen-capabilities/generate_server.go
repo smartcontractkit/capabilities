@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/protoc"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/protoc/pkg"
 	"google.golang.org/protobuf/compiler/protogen"
 )
 
@@ -31,7 +31,7 @@ func (s ServerLanguage) Validate() error {
 //go:embed templates/server.go.tmpl
 var goServerTemplate string
 
-var serverTemplates = map[ServerLanguage]protoc.TemplateGenerator{
+var serverTemplates = map[ServerLanguage]pkg.TemplateGenerator{
 	ServerLangaugeGo: {
 		Name:             "go_server",
 		Template:         goServerTemplate,
