@@ -11,6 +11,7 @@ import (
 	"errors"
 
 	"github.com/smartcontractkit/capabilities/http_action/common"
+	"stathat.com/c/consistent"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
@@ -159,7 +160,7 @@ func (p *gatewayOutboundProxy) awaitConnection(ctx context.Context, lggr logger.
 	if err != nil {
 		return "", fmt.Errorf("failed to get gateway IDs: %w", err)
 	}
-	selector := NewConsistentHashSelector(gatewayIDs)
+	selector := setupRing(gatewayIDs)
 	backoff := time.Duration(p.gatewayConnectionConfig.InitialIntervalMs) * time.Millisecond
 
 	for {
@@ -177,19 +178,19 @@ func (p *gatewayOutboundProxy) awaitConnection(ctx context.Context, lggr logger.
 					if err != nil {
 						return "", fmt.Errorf("failed to get gateway IDs: %w", err)
 					}
-					selector.Reset(gatewayIDs)
+					selector = setupRing(gatewayIDs)
 					backoff = p.nextBackoff(backoff)
 					continue
 				}
 			}
-			gateway, err := selector.Select(requestHash)
+			gateway, err := selector.Get(requestHash)
 			if err != nil {
 				return "", fmt.Errorf("failed to select gateway using consistent hashing: %w", err)
 			}
 
 			if err := p.attemptGatewayConnection(ctx, lggr, gateway, backoff); err != nil {
 				lggr.Warnw("failed to await connection to gateway node, retrying", "err", err, "gateway", gateway)
-				selector.MarkUnavailable(gateway)
+				selector.Remove(gateway)
 				continue
 			}
 
@@ -330,4 +331,13 @@ func (r *responses) get(id string) (chan gc.OutboundHTTPResponse, bool) {
 	defer r.mu.RUnlock()
 	ch, ok := r.chs[id]
 	return ch, ok
+}
+
+// setupRing initializes a consistent hash ring with the provided nodes.
+func setupRing(gatewayIDs []string) *consistent.Consistent {
+	c := consistent.New()
+	for _, node := range gatewayIDs {
+		c.Add(node)
+	}
+	return c
 }
