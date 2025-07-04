@@ -79,9 +79,11 @@ func Test_LogTrigger(t *testing.T) {
 	// assertion to validate we get the expected number of events in beholder logs
 	foundEvents := 0
 	require.Eventually(t, func() bool {
+		lggr.Info("Waiting for workflow logs to be emitted...")
 		workflowLogs := getBeholderLogsForWorkflow(beholderTester, t)
 		// Wait until we have the logs for all workflows
 		if len(workflowLogs) < numOfWorkflowNodes {
+			lggr.Infof("Workflow logs not emitted, current size: %d, expected: %d", len(workflowLogs), numOfWorkflowNodes)
 			return false
 		}
 
