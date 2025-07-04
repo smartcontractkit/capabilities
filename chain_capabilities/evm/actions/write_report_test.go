@@ -12,13 +12,12 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
+
+	evm "github.com/smartcontractkit/capabilities/chain_capabilities/evm/pb"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/contracts/mocks"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
-
-	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
@@ -40,7 +39,7 @@ const (
 
 func TestWriteReport_InputValidation(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	lggr := logger.Test(t)
 	t.Run("Invalid receiver address", func(t *testing.T) {
@@ -180,7 +179,7 @@ func TestWriteReport_InputValidation(t *testing.T) {
 
 func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 	// t.Parallel()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	testLogger := logger.Test(t)
 
@@ -264,9 +263,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		})
 		require.NoError(t, err)
 		equalWriteReportReply(t, &evm.WriteReportReply{
-			TxStatus:                        evmcappb.TxStatus_TX_SUCCESS,
+			TxStatus:                        evm.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:                          receipt.TxHash[:],
-			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_SUCCESS.Enum(),
+			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
 		}, txResult)
 	})
@@ -314,7 +313,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		})
 		require.NoError(t, err)
 		equalWriteReportReply(t, &evm.WriteReportReply{
-			TxStatus:     evmcappb.TxStatus_TX_FATAL,
+			TxStatus:     evm.TxStatus_TX_STATUS_FATAL,
 			ErrorMessage: ptr(getInvalidStateErrorMessage(invalidState)),
 		}, txResult)
 	})
@@ -422,9 +421,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		})
 		require.NoError(t, err)
 		equalWriteReportReply(t, &evm.WriteReportReply{
-			TxStatus:                        evmcappb.TxStatus_TX_SUCCESS,
+			TxStatus:                        evm.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:                          receipt.TxHash[:],
-			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_REVERTED.Enum().Enum(),
+			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum().Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
 		}, txResult)
 	})
@@ -486,9 +485,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		txResult, err := service.WriteReport(ctx, capabilitiesMetadata, writeReportRequest)
 		require.NoError(t, err)
 		equalWriteReportReply(t, &evm.WriteReportReply{
-			TxStatus:                        evmcappb.TxStatus_TX_SUCCESS,
+			TxStatus:                        evm.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:                          retryReceipt.TxHash[:],
-			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_SUCCESS.Enum(),
+			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(retryTxFee)),
 		}, txResult)
 	})
@@ -536,9 +535,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		})
 		require.NoError(t, err)
 		equalWriteReportReply(t, &evm.WriteReportReply{
-			TxStatus:                        evmcappb.TxStatus_TX_SUCCESS,
+			TxStatus:                        evm.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:                          receipt.TxHash[:],
-			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_REVERTED.Enum().Enum(),
+			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum().Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
 			ErrorMessage:                    getInvalidReceiverMessage(receiver),
 		}, txResult)
@@ -598,9 +597,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		txResult, err := service.WriteReport(ctx, capabilitiesMetadata, writeReportRequest)
 		require.NoError(t, err)
 		equalWriteReportReply(t, &evm.WriteReportReply{
-			TxStatus:                        evmcappb.TxStatus_TX_SUCCESS,
+			TxStatus:                        evm.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:                          receipt.TxHash[:],
-			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_SUCCESS.Enum(),
+			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(retryTxFee)),
 		}, txResult)
 	})
@@ -634,7 +633,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		txResult, err := service.WriteReport(ctx, capabilitiesMetadata, writeReportRequest)
 		require.NoError(t, err)
 		equalWriteReportReply(t, &evm.WriteReportReply{
-			TxStatus:     evmcappb.TxStatus_TX_FATAL,
+			TxStatus:     evm.TxStatus_TX_STATUS_FATAL,
 			ErrorMessage: &expectedError,
 		}, txResult)
 	})
@@ -691,9 +690,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		txResult, err := service.WriteReport(ctx, capabilitiesMetadata, writeReportRequest)
 		require.NoError(t, err)
 		equalWriteReportReply(t, &evm.WriteReportReply{
-			TxStatus:                        evmcappb.TxStatus_TX_SUCCESS,
+			TxStatus:                        evm.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:                          receipt.TxHash[:],
-			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_REVERTED.Enum(),
+			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(retryTxFee)),
 			ErrorMessage:                    ptr(UnknownIssueExecutingReceiverContractMessage),
 		}, txResult)
@@ -754,9 +753,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		txResult, err := service.WriteReport(ctx, capabilitiesMetadata, writeReportRequest)
 		require.NoError(t, err)
 		equalWriteReportReply(t, &evm.WriteReportReply{
-			TxStatus:                        evmcappb.TxStatus_TX_SUCCESS,
+			TxStatus:                        evm.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:                          receipt.TxHash[:],
-			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_REVERTED.Enum(),
+			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(retryTxFee)),
 			ErrorMessage:                    getInvalidReceiverMessage(receiverAddress[:]),
 		}, txResult)
@@ -786,7 +785,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		})
 		require.NoError(t, err)
 		equalWriteReportReply(t, &evm.WriteReportReply{
-			TxStatus:     evmcappb.TxStatus_TX_FATAL,
+			TxStatus:     evm.TxStatus_TX_STATUS_FATAL,
 			ErrorMessage: ptr(getInvalidStateErrorMessage(invalidState)),
 		}, txResult)
 	})

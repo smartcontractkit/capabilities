@@ -14,9 +14,10 @@ import (
 	"github.com/smartcontractkit/capabilities/http_action/common"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
+
+	"github.com/smartcontractkit/capabilities/http_action/pb"
 
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
@@ -133,7 +134,7 @@ func TestGatewayOutboundProxy_SendRequest_Success(t *testing.T) {
 		WorkflowExecutionID: "exec1",
 		WorkflowOwner:       "owner1",
 	}
-	input := &http.Request{
+	input := &pb.Request{
 		Url:       "http://example.com",
 		Method:    "GET",
 		Headers:   map[string]string{"X-Test": "1"},
@@ -162,7 +163,7 @@ func TestGatewayOutboundProxy_SendRequest_Timeout(t *testing.T) {
 		WorkflowExecutionID: "exec1",
 		WorkflowOwner:       "owner1",
 	}
-	input := &http.Request{
+	input := &pb.Request{
 		Url:       "http://example.com",
 		Method:    "GET",
 		Headers:   map[string]string{"X-Test": "1"},
@@ -188,7 +189,7 @@ func TestGatewayOutboundProxy_SendRequest_ExecutionError(t *testing.T) {
 		WorkflowExecutionID: "exec1",
 		WorkflowOwner:       "owner1",
 	}
-	input := &http.Request{
+	input := &pb.Request{
 		Url:       "http://example.com",
 		Method:    "GET",
 		Headers:   map[string]string{"X-Test": "1"},
@@ -215,7 +216,7 @@ func TestGatewayOutboundProxy_SendRequest_RateLimitError(t *testing.T) {
 		WorkflowExecutionID: "exec1",
 		WorkflowOwner:       "owner1",
 	}
-	input := &http.Request{
+	input := &pb.Request{
 		Url:       "http://example.com",
 		Method:    "GET",
 		Headers:   map[string]string{"X-Test": "1"},

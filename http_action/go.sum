@@ -267,12 +267,12 @@ github.com/shopspring/decimal v1.4.0 h1:bxl37RwXBklmTi0C79JfXCEBD1cqqHt0bbgBAGFp
 github.com/shopspring/decimal v1.4.0/go.mod h1:gawqmDU56v4yIKSwfBSFip1HdCCXN8/+DMd9qYNcwME=
 github.com/sirupsen/logrus v1.4.1/go.mod h1:ni0Sbl8bgC9z8RoU9G6nDWqqs/fq4eDPysMBDgk/93Q=
 github.com/sirupsen/logrus v1.4.2/go.mod h1:tLMulIdttU9McNUspp0xgXVQah82FyeX6MwdIuYE2rE=
-github.com/smartcontractkit/capabilities/libs v0.0.0-20250530004552-1b414f8954d0 h1:UjiGknJyvmgIWiHUVAQLSc0hvivKiIJvffHGOYGSdDI=
-github.com/smartcontractkit/capabilities/libs v0.0.0-20250530004552-1b414f8954d0/go.mod h1:ibY8oPwtyn4IHWo+yx6627oBp/Y+XUlOB8vopOppw7o=
+github.com/smartcontractkit/capabilities/libs v0.0.0-20250703172529-b99ea55f5826 h1:gbKt0djJCxqtn6/7nJfBZCsbl1Fb7WmnUtl0CCOLttw=
+github.com/smartcontractkit/capabilities/libs v0.0.0-20250703172529-b99ea55f5826/go.mod h1:pm9lUizswiUnuTNuakhWhSOSDAynWTkCXu33Pt2AUz4=
 github.com/smartcontractkit/chainlink-common v0.7.1-0.20250703170050-bb77f59474b3 h1:ICuXujwJ29rsHyZGjmXMGbNv1dL/spta3pN6VDI8LtQ=
 github.com/smartcontractkit/chainlink-common v0.7.1-0.20250703170050-bb77f59474b3/go.mod h1:mIJBT+bsThlr9GCiWAXMiKuEVckQfc9JUM1g4azZEis=
-github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250702175503-91331140edc3 h1:r2bveTQfaijoqR/WUXpbVfhux+G39SphMyUB7As6HoY=
-github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250702175503-91331140edc3/go.mod h1:QUEPHdSkH19Or+E1iMGG+rDQ6jpCTIbm//9Osa6MXDE=
+github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250703141104-e7b4552635a9 h1:6dpyqGov4c+w51Q4sbzXQQTztXYnOrqwTrVjyjiJjC8=
+github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250703141104-e7b4552635a9/go.mod h1:U1UAbPhy6D7Qz0wHKGPoQO+dpR0hsYjgUz8xwRrmKwI=
 github.com/smartcontractkit/freeport v0.1.1 h1:B5fhEtmgomdIhw03uPVbVTP6oPv27fBhZsoZZMSIS8I=
 github.com/smartcontractkit/freeport v0.1.1/go.mod h1:T4zH9R8R8lVWKfU7tUvYz2o2jMv1OpGCdpY2j2QZXzU=
 github.com/smartcontractkit/grpc-proxy v0.0.0-20240830132753-a7e17fec5ab7 h1:12ijqMM9tvYVEm+nR826WsrNi6zCKpwBhuApq127wHs=
@@ -428,8 +428,8 @@ golang.org/x/sys v0.0.0-20210927094055-39ccf1dd6fa6/go.mod h1:oPkhp1MJrh7nUepCBc
 golang.org/x/sys v0.0.0-20220503163025-988cb79eb6c6/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 golang.org/x/sys v0.0.0-20220811171246-fbc7d0a398ab/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 golang.org/x/sys v0.6.0/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
-golang.org/x/sys v0.32.0 h1:s77OFDvIQeibCmezSnk/q6iAfkdiQaJi4VzroCFrN20=
-golang.org/x/sys v0.32.0/go.mod h1:BJP2sWEmIv4KK5OTEluFJCKSidICx8ciO85XgH3Ak8k=
+golang.org/x/sys v0.33.0 h1:q3i8TbbEz+JRD9ywIRlyRAQbM0qF7hu24q3teo2hbuw=
+golang.org/x/sys v0.33.0/go.mod h1:BJP2sWEmIv4KK5OTEluFJCKSidICx8ciO85XgH3Ak8k=
 golang.org/x/term v0.0.0-20201117132131-f5c789dd3221/go.mod h1:Nr5EML6q2oocZ2LXRh80K7BxOlk5/8JxuGnuhpl+muw=
 golang.org/x/term v0.0.0-20201126162022-7de9c90e9dd1/go.mod h1:bj7SfCRtBDWHUb9snDiAeCFNEtKQo2Wmx5Cou7ajbmo=
 golang.org/x/text v0.3.0/go.mod h1:NqM8EUOU14njkJ3fqMW+pc6Ldnwhi/IjpwHt7yyuwOQ=

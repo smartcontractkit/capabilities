@@ -17,7 +17,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	httpactions "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
+
+	"github.com/smartcontractkit/capabilities/http_action/pb"
 )
 
 var _ OutboundRequestClient = &httpClientProxy{}
@@ -30,7 +31,7 @@ var (
 )
 
 type OutboundRequestClient interface {
-	SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *httpactions.Request) (*httpactions.Response, error)
+	SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *pb.Request) (*pb.Response, error)
 	services.Service
 }
 
@@ -72,7 +73,7 @@ func NewHTTPClientProxy(cfg ServiceConfig, lggr logger.Logger) (*httpClientProxy
 	}, nil
 }
 
-func headers(req *httpactions.Request) map[string][]string {
+func headers(req *pb.Request) map[string][]string {
 	headers := make(map[string][]string)
 	for k, v := range req.Headers {
 		headers[k] = []string{v}
@@ -80,7 +81,7 @@ func headers(req *httpactions.Request) map[string][]string {
 	return headers
 }
 
-func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *httpactions.Request) (*httpactions.Response, error) {
+func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *pb.Request) (*pb.Response, error) {
 	requestID := uuid.New().String()
 	lggr := logger.With(h.lggr, "requestID", requestID, "workflowID", metadata.WorkflowID, "workflowExecutionID", metadata.WorkflowExecutionID, "workflowOwner", metadata.WorkflowOwner)
 
@@ -123,7 +124,7 @@ func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities
 		headers[k] = v[0]
 	}
 
-	outputs := &httpactions.Response{
+	outputs := &pb.Response{
 		StatusCode: uint32(resp.StatusCode), //nolint:gosec // G115
 		Headers:    headers,
 		Body:       body,

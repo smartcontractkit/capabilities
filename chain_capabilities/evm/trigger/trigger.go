@@ -9,7 +9,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -17,6 +16,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives/evm"
+
+	evmcappb "github.com/smartcontractkit/capabilities/chain_capabilities/evm/pb"
 )
 
 const (
@@ -250,7 +251,7 @@ func (lts *LogTriggerService) sendLogsToWorkflows(logs []*evmtypes.Log,
 
 // generateLogIdentifier creates the trigger event id, a unique identifier for the log based on its transaction hash, block hash, and index
 func (lts *LogTriggerService) generateLogIdentifier(log *evmtypes.Log) string {
-	return fmt.Sprintf("%s:%s:%d", log.TxHash, log.BlockHash, log.LogIndex)
+	return fmt.Sprintf("%x:%x:%d", log.TxHash, log.BlockHash, log.LogIndex)
 }
 
 func (lts *LogTriggerService) getLatestBlockNumber(logs []*evmtypes.Log, currentBlockNumber *big.Int, finalizedBlockNumber *big.Int) *big.Int {
@@ -291,7 +292,7 @@ func (lts *LogTriggerService) createLogRequest(_ context.Context, addresses, eve
 
 	var confidenceLevel primitives.ConfidenceLevel
 	switch confidence {
-	case evmcappb.ConfidenceLevel_FINALIZED:
+	case evmcappb.ConfidenceLevel_CONFIDENCE_LEVEL_FINALIZED:
 		confidenceLevel = primitives.Finalized
 	default:
 		//TODO PLEX-1488: it has to support SAFE here.
