@@ -10,8 +10,9 @@ import (
 
 	"errors"
 
-	"github.com/smartcontractkit/capabilities/http_action/common"
 	"stathat.com/c/consistent"
+
+	"github.com/smartcontractkit/capabilities/http_action/common"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
