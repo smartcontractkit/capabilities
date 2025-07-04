@@ -7,10 +7,9 @@ import (
 	"fmt"
 	"sync"
 
-	"google.golang.org/protobuf/types/known/structpb"
+	"github.com/smartcontractkit/capabilities/http_trigger/pb"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
@@ -18,6 +17,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 const (
@@ -97,11 +97,11 @@ func (h *connectorHandler) ID(context.Context) (string, error) {
 	return HandlerName, nil
 }
 
-func (h *connectorHandler) RegisterWorkflow(ctx context.Context, workflowID string, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error {
+func (h *connectorHandler) RegisterWorkflow(ctx context.Context, workflowID string, input *pb.Config, sendCh chan<- capabilities.TriggerAndId[*pb.Payload]) error {
 	authorizedKeys := map[string]struct{}{}
 	for _, key := range input.AuthorizedKeys {
 		switch key.Type {
-		case http.KeyType_ECDSA:
+		case pb.KeyType_KEY_TYPE_ECDSA:
 			if len(key.PublicKey) != ecdsaPubKeyHexLen || key.PublicKey[:2] != "0x" {
 				return fmt.Errorf("invalid public key format: must be 0x-prefixed hex string of length %d, got %q", ecdsaPubKeyHexLen, key.PublicKey)
 			}
@@ -248,10 +248,10 @@ func (h *connectorHandler) triggerWorkflow(ctx context.Context, workflowID strin
 		h.sendErrorResponse(ctx, gatewayID, reqID, jsonrpc.ErrInvalidRequest, "Workflow not registered")
 		return fmt.Errorf("workflowID %s not registered", workflowID)
 	}
-	err := workflow.trigger(ctx, capabilities.TriggerAndId[*http.Payload]{
+	err := workflow.trigger(ctx, capabilities.TriggerAndId[*pb.Payload]{
 		// workflow engine does not process the request if the ID has already been used
 		Id: reqID,
-		Trigger: &http.Payload{
+		Trigger: &pb.Payload{
 			Input: input,
 			// TODO: PRODCRE-305 validate JWT against authorized keys
 		},

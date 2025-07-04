@@ -5,9 +5,9 @@ go 1.24.4
 require (
 	github.com/ethereum/go-ethereum v1.15.11
 	github.com/google/go-cmp v0.7.0
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20250702143256-b7ae0073499d
-	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250702142954-f9ce5ef305d1
-	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250626141212-e50b2e7ffe2d
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20250703172529-b99ea55f5826
+	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250703150508-135b4a985265
+	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250703141104-e7b4552635a9
 	github.com/smartcontractkit/chainlink-evm v0.0.0-20250627135735-93e3b09aec5a
 	github.com/stretchr/testify v1.10.0
 	go.opentelemetry.io/otel v1.37.0
@@ -186,7 +186,7 @@ require (
 	golang.org/x/crypto v0.36.0 // indirect
 	golang.org/x/exp v0.0.0-20250218142911-aa4b98e5adaa // indirect
 	golang.org/x/net v0.38.0 // indirect
-	golang.org/x/sys v0.32.0 // indirect
+	golang.org/x/sys v0.33.0 // indirect
 	golang.org/x/text v0.23.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250219182151-9fdb1cabc7b2 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250324211829-b45e905df463 // indirect
