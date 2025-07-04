@@ -7,12 +7,10 @@ import (
 
 	"github.com/smartcontractkit/capabilities/http_action/common"
 	"github.com/smartcontractkit/capabilities/http_action/gateway"
+	"github.com/smartcontractkit/capabilities/http_action/pb"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
@@ -20,7 +18,7 @@ import (
 const ServiceName = "HTTPActionCapability"
 
 var _ services.Service = &service{}
-var _ server.ClientCapability = &service{}
+var _ pb.ClientCapability = &service{}
 
 type service struct {
 	lggr   logger.SugaredLogger
@@ -109,7 +107,7 @@ func (s *service) Description() string {
 	return "HTTP Actions Service"
 }
 
-func (s *service) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *http.Request) (*http.Response, error) {
+func (s *service) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *pb.Request) (*pb.Response, error) {
 	s.lggr.Debugf("Received request with metadata: %v", metadata)
 	validatedInput, err := ValidatedRequest(input, s.cfg)
 	if err != nil {

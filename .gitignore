@@ -8,6 +8,7 @@
 *.so
 *.dylib
 .DS_Store
+**/.tools
 
 # IntelliJ IDE
 .idea

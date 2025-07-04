@@ -25,12 +25,12 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
-	evmcapserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/pb"
 )
 
 const (
@@ -62,11 +62,11 @@ type capability struct {
 	triggerService   *trigger.LogTriggerService
 }
 
-var _ evmcapserver.ClientCapability = &capabilityGRPCService{}
+var _ pb.ClientCapability = &capabilityGRPCService{}
 
 func main() {
 	loopserver.Serve(CapabilityName, func(lggr logger.Logger) loop.StandardCapabilities {
-		return evmcapserver.NewClientServer(&capabilityGRPCService{lggr: lggr})
+		return pb.NewClientServer(&capabilityGRPCService{lggr: lggr})
 	})
 }
 
@@ -194,10 +194,10 @@ func (c *capabilityGRPCService) UnregisterFromWorkflow(_ context.Context, _ capa
 	panic("implement me")
 }
 
-func (c *capabilityGRPCService) RegisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*evmcappb.Log], error) {
+func (c *capabilityGRPCService) RegisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *pb.FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*pb.Log], error) {
 	return c.triggerService.RegisterLogTrigger(ctx, triggerID, metadata, input)
 }
 
-func (c *capabilityGRPCService) UnregisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) error {
+func (c *capabilityGRPCService) UnregisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *pb.FilterLogTriggerRequest) error {
 	return c.triggerService.UnregisterLogTrigger(ctx, triggerID, metadata, input)
 }

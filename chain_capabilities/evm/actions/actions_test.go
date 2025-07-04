@@ -17,7 +17,7 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 
-	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
+	evmcappb "github.com/smartcontractkit/capabilities/chain_capabilities/evm/pb"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	commonlogger "github.com/smartcontractkit/chainlink-common/pkg/logger"

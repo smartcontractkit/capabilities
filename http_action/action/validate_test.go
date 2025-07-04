@@ -8,7 +8,7 @@ import (
 
 	"github.com/smartcontractkit/capabilities/http_action/common"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
+	"github.com/smartcontractkit/capabilities/http_action/pb"
 )
 
 func customConfig() common.ServiceConfig {
@@ -78,7 +78,7 @@ func TestValidatedRequest(t *testing.T) {
 	customConfig := customConfig()
 	t.Run("valid input", func(t *testing.T) {
 		t.Parallel()
-		input := &http.Request{
+		input := &pb.Request{
 			Url:       "https://example.com",
 			Method:    "POST",
 			Headers:   map[string]string{"Content-Type": "application/json"},
@@ -96,14 +96,14 @@ func TestValidatedRequest(t *testing.T) {
 
 	t.Run("empty URL", func(t *testing.T) {
 		t.Parallel()
-		input := &http.Request{Url: ""}
+		input := &pb.Request{Url: ""}
 		_, err := ValidatedRequest(input, customConfig)
 		require.ErrorContains(t, err, "URL must not be empty")
 	})
 
 	t.Run("timeout default and custom", func(t *testing.T) {
 		t.Parallel()
-		input := &http.Request{Url: "https://foo", Method: "GET", TimeoutMs: 0}
+		input := &pb.Request{Url: "https://foo", Method: "GET", TimeoutMs: 0}
 		out, err := ValidatedRequest(input, customConfig)
 		require.NoError(t, err)
 		require.Equal(t, int32(customConfig.LimitsConfig.MaxTimeoutMs), out.TimeoutMs) //nolint:gosec // G115
@@ -111,7 +111,7 @@ func TestValidatedRequest(t *testing.T) {
 
 	t.Run("header count limits", func(t *testing.T) {
 		t.Parallel()
-		input := &http.Request{Url: "https://foo", Method: "GET", Headers: map[string]string{}}
+		input := &pb.Request{Url: "https://foo", Method: "GET", Headers: map[string]string{}}
 		for i := 0; i < 51; i++ {
 			input.Headers[string(rune('A'+i))] = "v"
 		}
@@ -125,7 +125,7 @@ func TestValidatedRequest(t *testing.T) {
 		for i := range longKey {
 			longKey[i] = 'a'
 		}
-		input := &http.Request{Url: "https://foo", Method: "GET", Headers: map[string]string{string(longKey): "v"}}
+		input := &pb.Request{Url: "https://foo", Method: "GET", Headers: map[string]string{string(longKey): "v"}}
 		_, err := ValidatedRequest(input, customConfig)
 		require.ErrorContains(t, err, "header key too long")
 
@@ -133,7 +133,7 @@ func TestValidatedRequest(t *testing.T) {
 		for i := range longVal {
 			longVal[i] = 'b'
 		}
-		input2 := &http.Request{Url: "https://foo", Method: "GET", Headers: map[string]string{"k": string(longVal)}}
+		input2 := &pb.Request{Url: "https://foo", Method: "GET", Headers: map[string]string{"k": string(longVal)}}
 		_, err = ValidatedRequest(input2, customConfig)
 		require.ErrorContains(t, err, "header value for \"k\" too long")
 	})
@@ -141,14 +141,14 @@ func TestValidatedRequest(t *testing.T) {
 	t.Run("body size limit", func(t *testing.T) {
 		t.Parallel()
 		bigBody := make([]byte, 10*1024*1024+1)
-		input := &http.Request{Url: "https://foo", Method: "GET", Body: bigBody}
+		input := &pb.Request{Url: "https://foo", Method: "GET", Body: bigBody}
 		_, err := ValidatedRequest(input, customConfig)
 		require.ErrorContains(t, err, "body too large")
 	})
 
 	t.Run("timeout limit", func(t *testing.T) {
 		t.Parallel()
-		input := &http.Request{Url: "https://foo", Method: "GET", TimeoutMs: 1000000001}
+		input := &pb.Request{Url: "https://foo", Method: "GET", TimeoutMs: 1000000001}
 		_, err := ValidatedRequest(input, customConfig)
 		require.ErrorContains(t, err, "timeout must be between 0 and")
 	})
