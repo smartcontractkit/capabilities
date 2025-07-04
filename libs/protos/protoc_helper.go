@@ -1,13 +1,12 @@
 package protos
 
 import (
-	"path/filepath"
-	"strings"
-
 	"github.com/smartcontractkit/chainlink-common/pkg/values/installer/pkg"
 )
 
-type ProtocHelper struct{}
+type ProtocHelper struct {
+	fullPkg string
+}
 
 var _ pkg.ProtocHelper = ProtocHelper{}
 
@@ -16,7 +15,5 @@ func (g ProtocHelper) SdkPgk() string {
 }
 
 func (g ProtocHelper) FullGoPackageName(_ *pkg.CapabilityConfig) string {
-	absPath, _ := filepath.Abs(".")
-	lastIndex := strings.LastIndex(absPath, "github.com")
-	return absPath[lastIndex:]
+	return g.fullPkg
 }
