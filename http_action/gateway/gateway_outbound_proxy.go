@@ -155,6 +155,7 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 // Gateway node is selected based on the request hash. If the selected gateway is unavailable, it is removed
 // from the consistent hash ring and the method retries to select another gateway.
 // When all gateways are evicted from the hash ring, then it will retry to get the list of gateways and reinitialize the ring and retry after backoff.
+// Note that consitent hash ring is reset every time a new request is made, so it will always use the latest list of gateways.
 func (p *gatewayOutboundProxy) awaitConnection(ctx context.Context, lggr logger.Logger, requestHash string) (string, error) {
 	gatewayIDs, err := p.gatewayConnector.GatewayIDs(ctx)
 	if err != nil {
