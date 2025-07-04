@@ -1,9 +1,0 @@
-addresses:
-  - "0x1234567890abcdef1234567890abcdef12345678" # Replace with your contract address
-
-topics:
-  - values:
-      - "0xdeadbeefcafebabe00112233445566778899aabbccddeeff1020304050607080" # Replace with your topic value
-  - values: [] # topic 2
-  - values: [] # topic 3
-  - values: [] # topic 4

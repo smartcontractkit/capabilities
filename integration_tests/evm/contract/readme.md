@@ -1,9 +1,5 @@
 ## How to build the contract and generate Go bindings
 
-//*TODO lautaro* : do we need to push generated files to the repo 
-//  (MessageEmitter.abi, MessageEmitter.bin, MessageEmitter.go) 
-//  or can we generate them on the fly?
-
 From the `integration_tests/evm/` directory, run the following commands:
 
 ### 1 Compile the contract
