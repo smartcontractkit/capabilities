@@ -309,7 +309,7 @@ func TestCreateLogRequest(t *testing.T) {
 			name:               "finalized confidence, single address and single eventSig and empty topics",
 			addresses:          addresses,
 			eventSigs:          [][]byte{eventSig0Example},
-			confidence:         evmcappb.ConfidenceLevel_FINALIZED,
+			confidence:         evmcappb.ConfidenceLevel_CONFIDENCE_LEVEL_FINALIZED,
 			expectedConfidence: primitives.Finalized,
 			expectedExpressions: []query.Expression{
 				evm.NewAddressFilter(evmtypes.Address(expectedAddress)),
@@ -321,7 +321,7 @@ func TestCreateLogRequest(t *testing.T) {
 			name:               "latest confidence, single address and single eventSig and empty topics",
 			addresses:          addresses,
 			eventSigs:          [][]byte{eventSig0Example},
-			confidence:         evmcappb.ConfidenceLevel_LATEST,
+			confidence:         evmcappb.ConfidenceLevel_CONFIDENCE_LEVEL_LATEST,
 			expectedConfidence: primitives.Unconfirmed,
 			expectedExpressions: []query.Expression{
 				evm.NewAddressFilter(evmtypes.Address(expectedAddress)),
@@ -335,7 +335,7 @@ func TestCreateLogRequest(t *testing.T) {
 			topics2:            [][]byte{eventSig0Example},
 			topics3:            [][]byte{eventSig0Example},
 			topics4:            [][]byte{eventSig0Example},
-			confidence:         evmcappb.ConfidenceLevel_FINALIZED,
+			confidence:         evmcappb.ConfidenceLevel_CONFIDENCE_LEVEL_FINALIZED,
 			expectedConfidence: primitives.Finalized,
 			expectedExpressions: []query.Expression{
 				evm.NewAddressFilter(evmtypes.Address(expectedAddress)),
@@ -854,6 +854,20 @@ func TestGenerateLogIdentifier_DifferentLogsProduceDifferentIDs(t *testing.T) {
 		id1 := service.generateLogIdentifier(log1)
 		id2 := service.generateLogIdentifier(log2)
 		require.NotEqual(t, id1, id2)
+	})
+	t.Run("log generates valid string identifier", func(t *testing.T) {
+		rx := `^[0-9a-f]+:[0-9a-f]+:\d+$`
+		log1 := &evmtypes.Log{
+			TxHash:    stringToHashBytes("91056b6ac7e64dd15ffaa011ec8026596cd9d05ba96fc138948620ca58a44167"),
+			BlockHash: stringToHashBytes("7e96f4eecec1e72b761298d57a66e660f2a8df2e29dd1cc2bf2ded9fcce8fc14"),
+			LogIndex:  42,
+		}
+		log2 := createLog("txhashX", "blockhashZ", 99)
+
+		id1 := service.generateLogIdentifier(log1)
+		id2 := service.generateLogIdentifier(log2)
+		require.Regexp(t, rx, id1, "expected log identifier to be a valid string in the format 'hex(txhash):hex(blockhash):logindex'")
+		require.Regexp(t, rx, id2, "expected log identifier to be a valid string in the format 'hex(txhash):hex(blockhash):logindex'")
 	})
 }
 

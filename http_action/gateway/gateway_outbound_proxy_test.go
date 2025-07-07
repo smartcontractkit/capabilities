@@ -3,10 +3,9 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
-
-	"errors"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -41,7 +40,7 @@ func TestOutgoingConnectorHandler_AwaitConnection(t *testing.T) {
 				mockConnector.GatewayIDsVal = []string{"gateway1", "gateway2"}
 			},
 			ctxSetup:        context.Background,
-			expectedGateway: "gateway1",
+			expectedGateway: "gateway2",
 		},
 		{
 			name: "connection timeout then success",
@@ -50,7 +49,7 @@ func TestOutgoingConnectorHandler_AwaitConnection(t *testing.T) {
 				mockConnector.GatewayIDsVal = []string{"gateway1", "gateway2"}
 			},
 			ctxSetup:        context.Background,
-			expectedGateway: "gateway2",
+			expectedGateway: "gateway1",
 		},
 		{
 			name: "connection timeout then success after backoff",
@@ -59,7 +58,7 @@ func TestOutgoingConnectorHandler_AwaitConnection(t *testing.T) {
 				mockConnector.AwaitErrs = []error{errors.New("connection failed"), errors.New("connection failed"), nil}
 			},
 			ctxSetup:        context.Background,
-			expectedGateway: "gateway1",
+			expectedGateway: "gateway2",
 		},
 		{
 			name: "context canceled",
@@ -90,7 +89,7 @@ func TestOutgoingConnectorHandler_AwaitConnection(t *testing.T) {
 			}
 
 			ctx := tc.ctxSetup()
-			gateway, err := c.awaitConnection(ctx, logger.Test(t))
+			gateway, err := c.awaitConnection(ctx, logger.Test(t), "requestHash")
 			assert.Equal(t, tc.expectedGateway, gateway)
 			if tc.expectedError != "" {
 				require.ErrorContains(t, err, tc.expectedError)
@@ -116,7 +115,7 @@ func setupSendRequestTest(t *testing.T) (*gatewayOutboundProxy, *mockGatewayConn
 		mockConnector,
 		common.ServiceConfig{
 			OutgoingRateLimiter: rateLimiterConfig(),
-			RateLimiter:         rateLimiterConfig(),
+			IncomingRateLimiter: rateLimiterConfig(),
 		},
 		lggr,
 		gateway_common.WithFixedStart(),
@@ -144,7 +143,7 @@ func TestGatewayOutboundProxy_SendRequest_Success(t *testing.T) {
 	// Prepare a goroutine to receive gateway response
 	go func() {
 		id := <-readyCh
-		simulateGatewayMessage(t, proxy, id, 200, "ok", "", false)
+		simulateGatewayMessage(t, proxy, id, 200, "ok", "", true)
 	}()
 
 	output, err := proxy.SendRequest(context.Background(), metadata, input)
@@ -152,6 +151,32 @@ func TestGatewayOutboundProxy_SendRequest_Success(t *testing.T) {
 	require.NotNil(t, output)
 	assert.Equal(t, uint32(200), output.StatusCode)
 	assert.Equal(t, []byte("ok"), output.Body)
+}
+
+func TestGatewayOutboundProxy_SendRequest_MissingBodyToGateway(t *testing.T) {
+	proxy, _, readyCh := setupSendRequestTest(t)
+
+	metadata := capabilities.RequestMetadata{
+		WorkflowID:          "wf1",
+		WorkflowExecutionID: "exec1",
+		WorkflowOwner:       "owner1",
+	}
+	input := &http.Request{
+		Url:       "http://example.com",
+		Method:    "GET",
+		Headers:   map[string]string{"X-Test": "1"},
+		Body:      []byte("test"),
+		TimeoutMs: 5000,
+	}
+
+	// Prepare a goroutine to receive gateway response
+	go func() {
+		id := <-readyCh
+		simulateGatewayMessage(t, proxy, id, 200, "ok", "", false)
+	}()
+
+	_, err := proxy.SendRequest(context.Background(), metadata, input)
+	require.Error(t, err)
 }
 
 func TestGatewayOutboundProxy_SendRequest_Timeout(t *testing.T) {
@@ -234,8 +259,8 @@ func TestGatewayOutboundProxy_SendRequest_RateLimitError(t *testing.T) {
 	assert.Contains(t, err.Error(), "internal error")
 }
 
-func simulateGatewayMessage(t *testing.T, proxy *gatewayOutboundProxy, id string, statusCode int, body string, errorMessage string, executionError bool) {
-	req := jsonrpc.Request{
+func simulateGatewayMessage(t *testing.T, proxy *gatewayOutboundProxy, id string, statusCode int, body string, errorMessage string, includeBody bool) {
+	req := jsonrpc.Request[json.RawMessage]{
 		ID:      id,
 		Method:  gateway_common.MethodHTTPAction,
 		Version: "2.0",
@@ -245,10 +270,15 @@ func simulateGatewayMessage(t *testing.T, proxy *gatewayOutboundProxy, id string
 		Body:         []byte(body),
 		ErrorMessage: errorMessage,
 	}
-	payload, err := json.Marshal(resp)
-	require.NoError(t, err)
-	req.Params = payload
-	err = proxy.HandleGatewayMessage(context.Background(), "gateway1", &req)
+
+	if includeBody {
+		payload, err := json.Marshal(resp)
+		require.NoError(t, err)
+		rj := json.RawMessage(payload)
+		req.Params = &rj
+	}
+
+	err := proxy.HandleGatewayMessage(context.Background(), "gateway1", &req)
 	require.NoError(t, err)
 }
 
@@ -273,7 +303,7 @@ func (m *mockGatewayConnector) GatewayIDs(context.Context) ([]string, error) {
 	return m.GatewayIDsVal, nil
 }
 
-func (m *mockGatewayConnector) SendToGateway(ctx context.Context, gateway string, resp *jsonrpc.Response) error {
+func (m *mockGatewayConnector) SendToGateway(ctx context.Context, gateway string, resp *jsonrpc.Response[json.RawMessage]) error {
 	if m.OnSend != nil {
 		m.OnSend(resp.ID)
 	}

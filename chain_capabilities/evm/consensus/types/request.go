@@ -3,8 +3,6 @@ package types
 import (
 	"context"
 	"sync"
-
-	"github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 )
 
 type Request interface {
@@ -37,15 +35,19 @@ func (r *EventuallyConsistentRequest) Copy() Request {
 	return r
 }
 
+const (
+	AggregationMethodFPlusOneHighest = "f+1-highest"
+)
+
 var _ ObservableRequest = (*AggregatableRequest)(nil)
 
 type AggregatableRequest struct {
-	*observableRequest[*pb.Decimal]
+	*observableRequest[*AggregatableObservation]
 }
 
-func NewAggregatableRequest(id string, observe func(context.Context) (*pb.Decimal, error)) *AggregatableRequest {
+func NewAggregatableRequest(id string, observe func(context.Context) (*AggregatableObservation, error)) *AggregatableRequest {
 	return &AggregatableRequest{
-		observableRequest: &observableRequest[*pb.Decimal]{
+		observableRequest: &observableRequest[*AggregatableObservation]{
 			id:      id,
 			observe: observe,
 		},

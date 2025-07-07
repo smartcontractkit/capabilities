@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/shopspring/decimal"
+	"github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 	"github.com/smartcontractkit/libocr/commontypes"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/types"
@@ -145,7 +147,13 @@ func (rp *reportingPlugin) Observation(
 func (rp *reportingPlugin) observeRequest(observation *ctypes.Observation, rawRequest ctypes.Request) error {
 	switch rq := rawRequest.(type) {
 	case *ctypes.AggregatableRequest:
-		panic("not implemented")
+		requestOb, ok := rq.GetObservation()
+		if !ok {
+			return nil
+		}
+		observation.Observations[rq.ID()] = &ctypes.RequestObservation{
+			Observation: &ctypes.RequestObservation_Aggregatable{Aggregatable: requestOb},
+		}
 	case *ctypes.EventuallyConsistentRequest:
 		requestOb, ok := rq.GetObservation()
 		if !ok {
@@ -154,15 +162,14 @@ func (rp *reportingPlugin) observeRequest(observation *ctypes.Observation, rawRe
 		observation.Observations[rq.ID()] = &ctypes.RequestObservation{
 			Observation: &ctypes.RequestObservation_EventuallyConsistent{EventuallyConsistent: requestOb},
 		}
-		return nil
 	case *ctypes.LockableToBlockRequest:
 		observation.Observations[rq.ID()] = &ctypes.RequestObservation{
 			Observation: &ctypes.RequestObservation_LockableToBlock{LockableToBlock: &emptypb.Empty{}},
 		}
-		return nil
 	default:
 		return fmt.Errorf("unsupported request type: %T", rq)
 	}
+	return nil
 }
 
 func (rp *reportingPlugin) ValidateObservation(_ context.Context, outctx ocr3types.OutcomeContext, query types.Query, ao types.AttributedObservation) error {
@@ -176,7 +183,7 @@ func (rp *reportingPlugin) ValidateObservation(_ context.Context, outctx ocr3typ
 		return fmt.Errorf("invalid chain height: %w", err)
 	}
 
-	err = rp.validateExternalObservationAgainsOutcome(ob, outctx)
+	err = rp.validateExternalObservationAgainstOutcome(ob, outctx)
 	if err != nil {
 		return fmt.Errorf("observation contradicts prev outcome: %w", err)
 	}
@@ -184,7 +191,7 @@ func (rp *reportingPlugin) ValidateObservation(_ context.Context, outctx ocr3typ
 	return nil
 }
 
-func (rp *reportingPlugin) validateExternalObservationAgainsOutcome(ob *ctypes.Observation, outctx ocr3types.OutcomeContext) error {
+func (rp *reportingPlugin) validateExternalObservationAgainstOutcome(ob *ctypes.Observation, outctx ocr3types.OutcomeContext) error {
 	if len(outctx.PreviousOutcome) == 0 {
 		return nil
 	}
@@ -274,6 +281,69 @@ func (rp *reportingPlugin) agreeOnRequestType(requestID string, aos []attributed
 	return mode[ctypes.RequestType, ctypes.RequestType](rp.config.N, rp.config.F, iterator)
 }
 
+func (rp *reportingPlugin) aggregateValue(requestID string, aos []attributedObservation) (*pb.Decimal, error) {
+	aggrMethod, err := rp.agreeOnAggregationMethod(requestID, aos)
+	if err != nil {
+		return nil, fmt.Errorf("could not determine aggregation method: %w", err)
+	}
+
+	values := make([]decimal.Decimal, 0, len(aos))
+	for _, ob := range aos {
+		requestOb, ok := ob.Observation.Observations[requestID]
+		if !ok || requestOb == nil {
+			continue
+		}
+
+		aggrOb := requestOb.GetAggregatable()
+		if aggrOb == nil || aggrOb.Value == nil || aggrOb.Value.Coefficient == nil {
+			continue
+		}
+
+		values = append(values, decimal.NewFromBigInt(pb.NewIntFromBigInt(aggrOb.Value.Coefficient), aggrOb.Value.Exponent))
+	}
+
+	byzQuorum := byzQuorumSize(rp.config.N, rp.config.F)
+	if len(values) < byzQuorum {
+		return nil, fmt.Errorf("not enough observations to aggregate value. Got %d, expected at least %d", len(values), byzQuorum)
+	}
+
+	sort.Slice(values, func(i, j int) bool {
+		return values[i].LessThan(values[j])
+	})
+
+	switch aggrMethod {
+	case ctypes.AggregationMethodFPlusOneHighest:
+		result := values[len(values)-(rp.config.F+1)]
+		return &pb.Decimal{
+			Coefficient: pb.NewBigIntFromInt(result.Coefficient()),
+			Exponent:    result.Exponent(),
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported aggregation method: %s", aggrMethod)
+	}
+}
+
+func (rp *reportingPlugin) agreeOnAggregationMethod(requestID string, aos []attributedObservation) (string, error) {
+	iterator := func(yield func(commontypes.OracleID, observation[string, string]) bool) {
+		for _, ob := range aos {
+			requestOb, ok := ob.Observation.Observations[requestID]
+			if !ok || requestOb == nil {
+				continue
+			}
+			aggrOb := requestOb.GetAggregatable()
+			if aggrOb == nil {
+				continue
+			}
+			yield(ob.Observer, observation[string, string]{
+				Key:   aggrOb.Method,
+				Value: aggrOb.Method,
+			})
+		}
+	}
+
+	return mode[string, string](rp.config.N, rp.config.F, iterator)
+}
+
 func (rp *reportingPlugin) agreeOnEventuallyConsistentValue(requestID string, aos []attributedObservation) ([]byte, error) {
 	iterator := func(yield func(commontypes.OracleID, observation[[32]byte, []byte]) bool) {
 		for _, ob := range aos {
@@ -349,8 +419,16 @@ func (rp *reportingPlugin) Outcome(
 
 		switch requestType {
 		case ctypes.RequestType_REQUEST_TYPE_AGGREGATABLE:
-			// TODO: PLEX-1470 implement aggregatable methods
-			panic("not implemented")
+			value, err := rp.aggregateValue(requestID, aos)
+			if err != nil {
+				rp.logger.Infow("Could not determine request value", "requestID", requestID, "err", err)
+				continue
+			}
+
+			outcome.Outcomes = append(outcome.Outcomes, &ctypes.RequestOutcome{
+				RequestID: requestID,
+				Outcome:   &ctypes.RequestOutcome_Aggregatable{Aggregatable: value},
+			})
 		case ctypes.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT:
 			value, err := rp.agreeOnEventuallyConsistentValue(requestID, aos)
 			if err != nil {
@@ -387,6 +465,8 @@ func (rp *reportingPlugin) Reports(ctx context.Context, seqNr uint64, rawOutcome
 		}
 
 		switch requestOutcome.Outcome.(type) {
+		case *ctypes.RequestOutcome_Aggregatable:
+			report.Report = &ctypes.RequestReport_Aggregatable{Aggregatable: requestOutcome.GetAggregatable()}
 		case *ctypes.RequestOutcome_EventuallyConsistent:
 			report.Report = &ctypes.RequestReport_EventuallyConsistent{EventuallyConsistent: requestOutcome.GetEventuallyConsistent()}
 		case *ctypes.RequestOutcome_LockableToBlock:

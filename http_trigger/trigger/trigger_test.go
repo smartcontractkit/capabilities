@@ -52,7 +52,7 @@ func TestService_RegisterTrigger(t *testing.T) {
 			}
 			svc := NewService(logger.Test(t))
 			cfgStr := fmt.Sprintf(`{"sendChannelBufferSize": %d}`, tc.sendChannelBufSize)
-			err := svc.Initialise(t.Context(), cfgStr, nil, nil, nil, nil, nil, nil, nil)
+			err := svc.Initialise(t.Context(), cfgStr, nil, nil, nil, nil, nil, nil, nil, nil)
 			require.NoError(t, err)
 			svc.connectorHandler = mockHandler
 			ctx := context.Background()
@@ -93,7 +93,7 @@ func TestService_UnregisterTrigger(t *testing.T) {
 				unregisterErr: tt.handlerErr,
 			}
 			svc := NewService(logger.Test(t))
-			err := svc.Initialise(t.Context(), "{}", nil, nil, nil, nil, nil, nil, nil)
+			err := svc.Initialise(t.Context(), "{}", nil, nil, nil, nil, nil, nil, nil, nil)
 			require.NoError(t, err)
 			svc.connectorHandler = mockHandler
 
@@ -111,7 +111,7 @@ func TestService_UnregisterTrigger(t *testing.T) {
 func TestService_Start_HealthReport_Ready_Close(t *testing.T) {
 	mockHandler := &mockConnectorHandler{}
 	svc := NewService(logger.Test(t))
-	err := svc.Initialise(t.Context(), `{}`, nil, nil, nil, nil, nil, nil, nil)
+	err := svc.Initialise(t.Context(), `{}`, nil, nil, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	svc.connectorHandler = mockHandler
 

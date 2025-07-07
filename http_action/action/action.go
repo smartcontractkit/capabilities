@@ -44,6 +44,7 @@ func (s *service) Initialise(
 	_ core.RelayerSet,
 	_ core.OracleFactory,
 	gc core.GatewayConnector,
+	_ core.Keystore,
 ) error {
 	s.lggr.Debugf("Initialising %s", ServiceName)
 

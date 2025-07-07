@@ -9,14 +9,14 @@ import (
 	"time"
 
 	"github.com/doyensec/safeurl"
+	"github.com/google/uuid"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	httpcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
-
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	httpactions "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 )
 
 var _ OutboundRequestClient = &httpClientProxy{}
@@ -29,7 +29,7 @@ var (
 )
 
 type OutboundRequestClient interface {
-	SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *httpactions.Request) (*httpactions.Response, error)
+	SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *httpcap.Request) (*httpcap.Response, error)
 	services.Service
 }
 
@@ -71,7 +71,7 @@ func NewHTTPClientProxy(cfg ServiceConfig, lggr logger.Logger) (*httpClientProxy
 	}, nil
 }
 
-func headers(req *httpactions.Request) map[string][]string {
+func headers(req *httpcap.Request) map[string][]string {
 	headers := make(map[string][]string)
 	for k, v := range req.Headers {
 		headers[k] = []string{v}
@@ -79,8 +79,8 @@ func headers(req *httpactions.Request) map[string][]string {
 	return headers
 }
 
-func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *httpactions.Request) (*httpactions.Response, error) {
-	requestID := GetRequestID(metadata)
+func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *httpcap.Request) (*httpcap.Response, error) {
+	requestID := uuid.New().String()
 	lggr := logger.With(h.lggr, "requestID", requestID, "workflowID", metadata.WorkflowID, "workflowExecutionID", metadata.WorkflowExecutionID, "workflowOwner", metadata.WorkflowOwner)
 
 	workflowAllow, globalAllow := h.outgoingRateLimiter.AllowVerbose(metadata.WorkflowOwner)
@@ -122,7 +122,7 @@ func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities
 		headers[k] = v[0]
 	}
 
-	outputs := &httpactions.Response{
+	outputs := &httpcap.Response{
 		StatusCode: uint32(resp.StatusCode), //nolint:gosec // G115
 		Headers:    headers,
 		Body:       body,

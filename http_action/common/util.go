@@ -4,15 +4,13 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 )
 
-func GetRequestID(metadata capabilities.RequestMetadata) string {
-	id := []string{
-		metadata.WorkflowID,
-		metadata.WorkflowExecutionID,
-		uuid.New().String(),
-	}
+// GetRequestID generates a unique request ID by combining the method name,
+// additional parts and a UUID. The additional parts can be identifiers like workflowID,
+// workflowExecutionID, etc
+func GetRequestID(methodName string, parts ...string) string {
+	id := append([]string{methodName}, parts...)
+	id = append(id, uuid.New().String())
 	return strings.Join(id, "/")
 }

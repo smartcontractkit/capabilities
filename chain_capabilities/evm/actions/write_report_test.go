@@ -264,9 +264,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		})
 		require.NoError(t, err)
 		equalWriteReportReply(t, &evm.WriteReportReply{
-			TxStatus:                        evmcappb.TxStatus_TX_SUCCESS,
+			TxStatus:                        evmcappb.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:                          receipt.TxHash[:],
-			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_SUCCESS.Enum(),
+			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
 		}, txResult)
 	})
@@ -314,7 +314,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		})
 		require.NoError(t, err)
 		equalWriteReportReply(t, &evm.WriteReportReply{
-			TxStatus:     evmcappb.TxStatus_TX_FATAL,
+			TxStatus:     evmcappb.TxStatus_TX_STATUS_FATAL,
 			ErrorMessage: ptr(getInvalidStateErrorMessage(invalidState)),
 		}, txResult)
 	})
@@ -422,9 +422,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		})
 		require.NoError(t, err)
 		equalWriteReportReply(t, &evm.WriteReportReply{
-			TxStatus:                        evmcappb.TxStatus_TX_SUCCESS,
+			TxStatus:                        evmcappb.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:                          receipt.TxHash[:],
-			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_REVERTED.Enum().Enum(),
+			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
 		}, txResult)
 	})
@@ -486,9 +486,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		txResult, err := service.WriteReport(ctx, capabilitiesMetadata, writeReportRequest)
 		require.NoError(t, err)
 		equalWriteReportReply(t, &evm.WriteReportReply{
-			TxStatus:                        evmcappb.TxStatus_TX_SUCCESS,
+			TxStatus:                        evmcappb.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:                          retryReceipt.TxHash[:],
-			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_SUCCESS.Enum(),
+			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(retryTxFee)),
 		}, txResult)
 	})
@@ -536,9 +536,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		})
 		require.NoError(t, err)
 		equalWriteReportReply(t, &evm.WriteReportReply{
-			TxStatus:                        evmcappb.TxStatus_TX_SUCCESS,
+			TxStatus:                        evmcappb.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:                          receipt.TxHash[:],
-			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_REVERTED.Enum().Enum(),
+			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
 			ErrorMessage:                    getInvalidReceiverMessage(receiver),
 		}, txResult)
@@ -598,9 +598,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		txResult, err := service.WriteReport(ctx, capabilitiesMetadata, writeReportRequest)
 		require.NoError(t, err)
 		equalWriteReportReply(t, &evm.WriteReportReply{
-			TxStatus:                        evmcappb.TxStatus_TX_SUCCESS,
+			TxStatus:                        evmcappb.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:                          receipt.TxHash[:],
-			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_SUCCESS.Enum(),
+			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(retryTxFee)),
 		}, txResult)
 	})
@@ -634,7 +634,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		txResult, err := service.WriteReport(ctx, capabilitiesMetadata, writeReportRequest)
 		require.NoError(t, err)
 		equalWriteReportReply(t, &evm.WriteReportReply{
-			TxStatus:     evmcappb.TxStatus_TX_FATAL,
+			TxStatus:     evmcappb.TxStatus_TX_STATUS_FATAL,
 			ErrorMessage: &expectedError,
 		}, txResult)
 	})
@@ -691,9 +691,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		txResult, err := service.WriteReport(ctx, capabilitiesMetadata, writeReportRequest)
 		require.NoError(t, err)
 		equalWriteReportReply(t, &evm.WriteReportReply{
-			TxStatus:                        evmcappb.TxStatus_TX_SUCCESS,
+			TxStatus:                        evmcappb.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:                          receipt.TxHash[:],
-			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_REVERTED.Enum(),
+			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(retryTxFee)),
 			ErrorMessage:                    ptr(UnknownIssueExecutingReceiverContractMessage),
 		}, txResult)
@@ -754,9 +754,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		txResult, err := service.WriteReport(ctx, capabilitiesMetadata, writeReportRequest)
 		require.NoError(t, err)
 		equalWriteReportReply(t, &evm.WriteReportReply{
-			TxStatus:                        evmcappb.TxStatus_TX_SUCCESS,
+			TxStatus:                        evmcappb.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:                          receipt.TxHash[:],
-			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_REVERTED.Enum(),
+			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(retryTxFee)),
 			ErrorMessage:                    getInvalidReceiverMessage(receiverAddress[:]),
 		}, txResult)
@@ -786,7 +786,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		})
 		require.NoError(t, err)
 		equalWriteReportReply(t, &evm.WriteReportReply{
-			TxStatus:     evmcappb.TxStatus_TX_FATAL,
+			TxStatus:     evmcappb.TxStatus_TX_STATUS_FATAL,
 			ErrorMessage: ptr(getInvalidStateErrorMessage(invalidState)),
 		}, txResult)
 	})
