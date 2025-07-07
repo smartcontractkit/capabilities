@@ -9,6 +9,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -16,8 +17,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives/evm"
-
-	evmcappb "github.com/smartcontractkit/capabilities/chain_capabilities/evm/pb"
 )
 
 const (
@@ -296,7 +295,7 @@ func (lts *LogTriggerService) createLogRequest(_ context.Context, addresses, eve
 		confidenceLevel = primitives.Finalized
 	default:
 		//TODO PLEX-1488: it has to support SAFE here.
-		//Default here for either ConfidenceLevel_LATEST or ConfidenceLevel_SAFE
+		//Default here for either ConfidenceLevel_CONFIDENCE_LEVEL_LATEST or ConfidenceLevel_CONFIDENCE_LEVEL_SAFE
 		confidenceLevel = primitives.Unconfirmed
 	}
 

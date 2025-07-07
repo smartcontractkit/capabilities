@@ -10,14 +10,13 @@ import (
 	"github.com/smartcontractkit/capabilities/http_action/common"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-
-	"github.com/smartcontractkit/capabilities/http_action/pb"
 )
 
 type MockOutboundRequestClient struct {
-	CapturedInput *pb.Request
-	Response      *pb.Response
+	CapturedInput *http.Request
+	Response      *http.Response
 	Err           error
 }
 
@@ -29,7 +28,7 @@ func (m *MockOutboundRequestClient) Close() error {
 	return nil
 }
 
-func (m *MockOutboundRequestClient) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *pb.Request) (*pb.Response, error) {
+func (m *MockOutboundRequestClient) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *http.Request) (*http.Response, error) {
 	m.CapturedInput = input
 	return m.Response, m.Err
 }
@@ -67,13 +66,13 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 	}
 
 	t.Run("valid request gets validated and forwarded to client", func(t *testing.T) {
-		input := &pb.Request{
+		input := &http.Request{
 			Url:       "https://example.com",
 			Method:    "GET",
 			Headers:   map[string]string{"Content-Type": "application/json"},
 			TimeoutMs: 1000,
 		}
-		expectedResponse := &pb.Response{
+		expectedResponse := &http.Response{
 			StatusCode: 200,
 			Headers:    map[string]string{"Content-Type": "application/json"},
 			Body:       []byte(`{"result": "success"}`),
@@ -88,13 +87,13 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 	})
 
 	t.Run("empty headers are allowed", func(t *testing.T) {
-		input := &pb.Request{
+		input := &http.Request{
 			Url:       "https://example.com",
 			Method:    "GET",
 			Headers:   nil,
 			TimeoutMs: 1000,
 		}
-		expectedResponse := &pb.Response{
+		expectedResponse := &http.Response{
 			StatusCode: 200,
 			Body:       []byte(`{"result": "success"}`),
 		}
@@ -108,7 +107,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 	})
 
 	t.Run("invalid URL fails validation and doesn't call client", func(t *testing.T) {
-		input := &pb.Request{
+		input := &http.Request{
 			Url:       "",
 			Method:    "GET",
 			TimeoutMs: 1000,
@@ -124,7 +123,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 
 	t.Run("request with body exceeding limit fails validation", func(t *testing.T) {
 		largeBody := make([]byte, 1025)
-		input := &pb.Request{
+		input := &http.Request{
 			Url:       "https://example.com",
 			Method:    "POST",
 			Body:      largeBody,
@@ -140,7 +139,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 	})
 
 	t.Run("invalid HTTP method fails validation", func(t *testing.T) {
-		input := &pb.Request{
+		input := &http.Request{
 			Url:       "https://example.com",
 			Method:    "CONNECT",
 			TimeoutMs: 1000,
@@ -155,7 +154,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 	})
 
 	t.Run("timeout exceeding limit fails validation", func(t *testing.T) {
-		input := &pb.Request{
+		input := &http.Request{
 			Url:       "https://example.com",
 			Method:    "GET",
 			TimeoutMs: 10000,

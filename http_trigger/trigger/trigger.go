@@ -4,19 +4,20 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/smartcontractkit/capabilities/http_trigger/pb"
-
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
 
 const ServiceName = "HTTPTriggerCapability"
 const defaultSendChannelBufferSize = uint32(1000)
 
-var _ pb.HTTPCapability = &service{}
+var _ server.HTTPCapability = &service{}
 
 type ServiceConfig struct {
 	SendChannelBufferSize uint32 `json:"sendChannelBufferSize"`
@@ -30,7 +31,7 @@ type ServiceConfig struct {
 
 type ConnectorHandler interface {
 	services.Service
-	RegisterWorkflow(ctx context.Context, workflowID string, input *pb.Config, sendCh chan<- capabilities.TriggerAndId[*pb.Payload]) error
+	RegisterWorkflow(ctx context.Context, workflowID string, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error
 	UnregisterWorkflow(ctx context.Context, workflowID string) error
 }
 
@@ -57,6 +58,7 @@ func (s *service) Initialise(
 	_ core.RelayerSet,
 	_ core.OracleFactory,
 	gc core.GatewayConnector,
+	_ core.Keystore,
 ) error {
 	s.lggr.Debugf("Initialising %s", ServiceName)
 
@@ -103,12 +105,12 @@ func (s *service) Description() string {
 	return "HTTP Trigger Service"
 }
 
-func (s *service) RegisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *pb.Config) (<-chan capabilities.TriggerAndId[*pb.Payload], error) {
+func (s *service) RegisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *http.Config) (<-chan capabilities.TriggerAndId[*http.Payload], error) {
 	sendChannelBufferSize := s.cfg.SendChannelBufferSize
 	if sendChannelBufferSize == 0 {
 		sendChannelBufferSize = defaultSendChannelBufferSize
 	}
-	sendCh := make(chan capabilities.TriggerAndId[*pb.Payload], sendChannelBufferSize)
+	sendCh := make(chan capabilities.TriggerAndId[*http.Payload], sendChannelBufferSize)
 	err := s.connectorHandler.RegisterWorkflow(ctx, metadata.WorkflowID, input, sendCh)
 	if err != nil {
 		return nil, err
@@ -116,7 +118,7 @@ func (s *service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 	return sendCh, nil
 }
 
-func (s *service) UnregisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *pb.Config) error {
+func (s *service) UnregisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *http.Config) error {
 	err := s.connectorHandler.UnregisterWorkflow(ctx, metadata.WorkflowID)
 	if err != nil {
 		s.lggr.Errorf("Failed to unregister workflow %s: %v", metadata.WorkflowID, err)

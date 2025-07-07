@@ -13,12 +13,10 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	httpcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
-
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-
-	"github.com/smartcontractkit/capabilities/http_action/pb"
 )
 
 var _ OutboundRequestClient = &httpClientProxy{}
@@ -31,7 +29,7 @@ var (
 )
 
 type OutboundRequestClient interface {
-	SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *pb.Request) (*pb.Response, error)
+	SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *httpcap.Request) (*httpcap.Response, error)
 	services.Service
 }
 
@@ -73,7 +71,7 @@ func NewHTTPClientProxy(cfg ServiceConfig, lggr logger.Logger) (*httpClientProxy
 	}, nil
 }
 
-func headers(req *pb.Request) map[string][]string {
+func headers(req *httpcap.Request) map[string][]string {
 	headers := make(map[string][]string)
 	for k, v := range req.Headers {
 		headers[k] = []string{v}
@@ -81,7 +79,7 @@ func headers(req *pb.Request) map[string][]string {
 	return headers
 }
 
-func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *pb.Request) (*pb.Response, error) {
+func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *httpcap.Request) (*httpcap.Response, error) {
 	requestID := uuid.New().String()
 	lggr := logger.With(h.lggr, "requestID", requestID, "workflowID", metadata.WorkflowID, "workflowExecutionID", metadata.WorkflowExecutionID, "workflowOwner", metadata.WorkflowOwner)
 
@@ -124,7 +122,7 @@ func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities
 		headers[k] = v[0]
 	}
 
-	outputs := &pb.Response{
+	outputs := &httpcap.Response{
 		StatusCode: uint32(resp.StatusCode), //nolint:gosec // G115
 		Headers:    headers,
 		Body:       body,

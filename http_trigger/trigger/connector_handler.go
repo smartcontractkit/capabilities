@@ -7,9 +7,10 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/smartcontractkit/capabilities/http_trigger/pb"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
@@ -17,7 +18,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 const (
@@ -97,11 +97,11 @@ func (h *connectorHandler) ID(context.Context) (string, error) {
 	return HandlerName, nil
 }
 
-func (h *connectorHandler) RegisterWorkflow(ctx context.Context, workflowID string, input *pb.Config, sendCh chan<- capabilities.TriggerAndId[*pb.Payload]) error {
+func (h *connectorHandler) RegisterWorkflow(ctx context.Context, workflowID string, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error {
 	authorizedKeys := map[string]struct{}{}
 	for _, key := range input.AuthorizedKeys {
 		switch key.Type {
-		case pb.KeyType_KEY_TYPE_ECDSA:
+		case http.KeyType_KEY_TYPE_ECDSA:
 			if len(key.PublicKey) != ecdsaPubKeyHexLen || key.PublicKey[:2] != "0x" {
 				return fmt.Errorf("invalid public key format: must be 0x-prefixed hex string of length %d, got %q", ecdsaPubKeyHexLen, key.PublicKey)
 			}
@@ -138,7 +138,7 @@ func (h *connectorHandler) UnregisterWorkflow(ctx context.Context, workflowID st
 // HandleGatewayMessage processes incoming messages from gateways.
 // Always returns nil. Unless request is malformed or rate-limited, response is sent back to the
 // gateway using sendResponse method.
-func (h *connectorHandler) HandleGatewayMessage(ctx context.Context, gatewayID string, req *jsonrpc.Request) error {
+func (h *connectorHandler) HandleGatewayMessage(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage]) error {
 	senderAllow, globalAllow := h.incomingRateLimiter.AllowVerbose(gatewayID)
 	if !senderAllow {
 		h.lggr.Errorw(errorIncomingRatelimitSender, "gatewayID", gatewayID)
@@ -159,7 +159,7 @@ func (h *connectorHandler) HandleGatewayMessage(ctx context.Context, gatewayID s
 }
 
 func (h *connectorHandler) sendErrorResponse(ctx context.Context, gatewayID string, reqID string, code int64, message string) {
-	resp := &jsonrpc.Response{
+	resp := &jsonrpc.Response[json.RawMessage]{
 		Version: "2.0",
 		ID:      reqID,
 		Error: &jsonrpc.WireError{
@@ -170,7 +170,7 @@ func (h *connectorHandler) sendErrorResponse(ctx context.Context, gatewayID stri
 	h.sendResponse(ctx, gatewayID, resp)
 }
 
-func (h *connectorHandler) sendResponse(ctx context.Context, gatewayID string, resp *jsonrpc.Response) {
+func (h *connectorHandler) sendResponse(ctx context.Context, gatewayID string, resp *jsonrpc.Response[json.RawMessage]) {
 	senderAllow, globalAllow := h.outgoingRateLimiter.AllowVerbose(gatewayID)
 	if !senderAllow {
 		h.lggr.Errorw(errorOutgoingRatelimitSender, "gatewayID", gatewayID)
@@ -187,9 +187,13 @@ func (h *connectorHandler) sendResponse(ctx context.Context, gatewayID string, r
 	}
 }
 
-func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string, req *jsonrpc.Request) {
+func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage]) {
 	var triggerReq gateway_common.HTTPTriggerRequest
-	err := json.Unmarshal(req.Params, &triggerReq)
+	if req.Params == nil {
+		req.Params = &json.RawMessage{}
+	}
+
+	err := json.Unmarshal(*req.Params, &triggerReq)
 	if err != nil {
 		h.lggr.Errorw("Failed to unmarshal HTTP trigger request", "error", err, "gatewayID", gatewayID, "requestID", req.ID)
 		return
@@ -232,10 +236,11 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInternal, "Internal server error")
 		return
 	}
-	resp := &jsonrpc.Response{
+	payloadMsg := json.RawMessage(jsonPayload)
+	resp := &jsonrpc.Response[json.RawMessage]{
 		Version: "2.0",
 		ID:      req.ID,
-		Result:  jsonPayload,
+		Result:  &payloadMsg,
 	}
 	h.sendResponse(ctx, gatewayID, resp)
 }
@@ -248,10 +253,10 @@ func (h *connectorHandler) triggerWorkflow(ctx context.Context, workflowID strin
 		h.sendErrorResponse(ctx, gatewayID, reqID, jsonrpc.ErrInvalidRequest, "Workflow not registered")
 		return fmt.Errorf("workflowID %s not registered", workflowID)
 	}
-	err := workflow.trigger(ctx, capabilities.TriggerAndId[*pb.Payload]{
+	err := workflow.trigger(ctx, capabilities.TriggerAndId[*http.Payload]{
 		// workflow engine does not process the request if the ID has already been used
 		Id: reqID,
-		Trigger: &pb.Payload{
+		Trigger: &http.Payload{
 			Input: input,
 			// TODO: PRODCRE-305 validate JWT against authorized keys
 		},

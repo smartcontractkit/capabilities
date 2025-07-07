@@ -9,9 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-
-	"github.com/smartcontractkit/capabilities/http_trigger/pb"
 )
 
 func TestService_RegisterTrigger(t *testing.T) {
@@ -53,12 +52,12 @@ func TestService_RegisterTrigger(t *testing.T) {
 			}
 			svc := NewService(logger.Test(t))
 			cfgStr := fmt.Sprintf(`{"sendChannelBufferSize": %d}`, tc.sendChannelBufSize)
-			err := svc.Initialise(t.Context(), cfgStr, nil, nil, nil, nil, nil, nil, nil)
+			err := svc.Initialise(t.Context(), cfgStr, nil, nil, nil, nil, nil, nil, nil, nil)
 			require.NoError(t, err)
 			svc.connectorHandler = mockHandler
 			ctx := context.Background()
 			meta := capabilities.RequestMetadata{WorkflowID: "wid"}
-			input := &pb.Config{}
+			input := &http.Config{}
 
 			ch, err := svc.RegisterTrigger(ctx, "tid", meta, input)
 			if tc.expectErr {
@@ -94,7 +93,7 @@ func TestService_UnregisterTrigger(t *testing.T) {
 				unregisterErr: tt.handlerErr,
 			}
 			svc := NewService(logger.Test(t))
-			err := svc.Initialise(t.Context(), "{}", nil, nil, nil, nil, nil, nil, nil)
+			err := svc.Initialise(t.Context(), "{}", nil, nil, nil, nil, nil, nil, nil, nil)
 			require.NoError(t, err)
 			svc.connectorHandler = mockHandler
 
@@ -112,7 +111,7 @@ func TestService_UnregisterTrigger(t *testing.T) {
 func TestService_Start_HealthReport_Ready_Close(t *testing.T) {
 	mockHandler := &mockConnectorHandler{}
 	svc := NewService(logger.Test(t))
-	err := svc.Initialise(t.Context(), `{}`, nil, nil, nil, nil, nil, nil, nil)
+	err := svc.Initialise(t.Context(), `{}`, nil, nil, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	svc.connectorHandler = mockHandler
 
@@ -145,10 +144,10 @@ type mockConnectorHandler struct {
 	registerErr    error
 	unregisterErr  error
 	lastWorkflowID string
-	lastInput      *pb.Config
+	lastInput      *http.Config
 }
 
-func (m *mockConnectorHandler) RegisterWorkflow(ctx context.Context, workflowID string, input *pb.Config, sendCh chan<- capabilities.TriggerAndId[*pb.Payload]) error {
+func (m *mockConnectorHandler) RegisterWorkflow(ctx context.Context, workflowID string, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error {
 	m.lastWorkflowID = workflowID
 	m.lastInput = input
 	return m.registerErr

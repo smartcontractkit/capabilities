@@ -8,13 +8,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
-
-	"github.com/smartcontractkit/capabilities/http_trigger/pb"
 )
 
 const (
@@ -25,14 +24,14 @@ type mockGatewayConnector struct {
 	SendToGatewayCalled bool
 	SendToGatewayArgs   struct {
 		GatewayID string
-		Msg       *jsonrpc.Response
+		Msg       *jsonrpc.Response[json.RawMessage]
 	}
 }
 
 func (m *mockGatewayConnector) AddHandler(ctx context.Context, methods []string, handler core.GatewayConnectorHandler) error {
 	return nil
 }
-func (m *mockGatewayConnector) SendToGateway(ctx context.Context, gatewayID string, resp *jsonrpc.Response) error {
+func (m *mockGatewayConnector) SendToGateway(ctx context.Context, gatewayID string, resp *jsonrpc.Response[json.RawMessage]) error {
 	m.SendToGatewayCalled = true
 	m.SendToGatewayArgs.GatewayID = gatewayID
 	m.SendToGatewayArgs.Msg = resp
@@ -52,7 +51,7 @@ func (m *mockGatewayConnector) AwaitConnection(ctx context.Context, gatewayID st
 }
 
 // gatewayRequest creates a test request message with the given method
-func gatewayRequest(t *testing.T, method string) *jsonrpc.Request {
+func gatewayRequest(t *testing.T, method string) *jsonrpc.Request[json.RawMessage] {
 	payload := gateway_common.HTTPTriggerRequest{
 		Workflow: gateway_common.WorkflowSelector{
 			WorkflowID: "wf1",
@@ -61,16 +60,17 @@ func gatewayRequest(t *testing.T, method string) *jsonrpc.Request {
 	}
 	jsonPayload, err := json.Marshal(payload)
 	require.NoError(t, err)
-	return &jsonrpc.Request{
+	jsonPayloadMsg := json.RawMessage(jsonPayload)
+	return &jsonrpc.Request[json.RawMessage]{
 		Version: "2.0",
 		ID:      "id",
 		Method:  method,
-		Params:  jsonPayload,
+		Params:  &jsonPayloadMsg,
 	}
 }
 
 // Helper for setting up proxy and mockConnector for SendRequest tests
-func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayConnector, <-chan capabilities.TriggerAndId[*pb.Payload]) {
+func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayConnector, <-chan capabilities.TriggerAndId[*http.Payload]) {
 	mockConnector := &mockGatewayConnector{}
 	cfg := ServiceConfig{}
 	handler, err := NewConnectorHandler(
@@ -79,15 +79,15 @@ func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayCon
 		cfg,
 	)
 	require.NoError(t, err)
-	sdkCfg := &pb.Config{
-		AuthorizedKeys: []*pb.AuthorizedKey{
+	sdkCfg := &http.Config{
+		AuthorizedKeys: []*http.AuthorizedKey{
 			{
 				PublicKey: publicKey,
-				Type:      pb.KeyType_KEY_TYPE_ECDSA,
+				Type:      http.KeyType_KEY_TYPE_ECDSA,
 			},
 		},
 	}
-	triggerCh := make(chan capabilities.TriggerAndId[*pb.Payload], 1)
+	triggerCh := make(chan capabilities.TriggerAndId[*http.Payload], 1)
 	err = handler.RegisterWorkflow(t.Context(), "wf1", sdkCfg, triggerCh)
 	require.NoError(t, err, "Failed to register workflow")
 	return handler, mockConnector, triggerCh
@@ -125,7 +125,8 @@ func TestHandleGatewayMessage_Success(t *testing.T) {
 	require.Nil(t, resp.Error, "Response should not contain an error")
 
 	var triggerResp gateway_common.HTTPTriggerResponse
-	err = json.Unmarshal(resp.Result, &triggerResp)
+	require.NotNil(t, resp.Result)
+	err = json.Unmarshal(*resp.Result, &triggerResp)
 	require.NoError(t, err)
 	require.Equal(t, "wf1", triggerResp.WorkflowID)
 
@@ -139,7 +140,7 @@ func TestHandleGatewayMessage_Success(t *testing.T) {
 	}
 }
 
-func assertErrorResponse(t *testing.T, connector *mockGatewayConnector, resp *jsonrpc.Response, code int64) {
+func assertErrorResponse(t *testing.T, connector *mockGatewayConnector, resp *jsonrpc.Response[json.RawMessage], code int64) {
 	require.Equal(t, "gw1", connector.SendToGatewayArgs.GatewayID)
 	require.Equal(t, "2.0", resp.Version)
 	require.Equal(t, "id", resp.ID)
@@ -150,7 +151,7 @@ func TestHandleGatewayMessage_InvalidRequest(t *testing.T) {
 	lggr := logger.Test(t)
 	handler, connector, triggerCh := setup(t, lggr)
 	// empty request
-	req := &jsonrpc.Request{}
+	req := &jsonrpc.Request[json.RawMessage]{}
 	err := handler.HandleGatewayMessage(t.Context(), "gw1", req)
 	require.NoError(t, err)
 	require.False(t, connector.SendToGatewayCalled)
@@ -161,7 +162,8 @@ func TestHandleGatewayMessage_InvalidUserInputJSON(t *testing.T) {
 	lggr := logger.Test(t)
 	handler, connector, triggerCh := setup(t, lggr)
 	req := gatewayRequest(t, gateway_common.MethodWorkflowExecute)
-	req.Params = json.RawMessage("invalid json")
+	invalidJson := json.RawMessage("invalid json")
+	req.Params = &invalidJson
 	err := handler.HandleGatewayMessage(t.Context(), "gw1", req)
 	require.NoError(t, err)
 	require.False(t, connector.SendToGatewayCalled)
@@ -172,7 +174,8 @@ func TestHandleGatewayMessage_InvalidJSON(t *testing.T) {
 	lggr := logger.Test(t)
 	handler, connector, triggerCh := setup(t, lggr)
 	req := gatewayRequest(t, gateway_common.MethodWorkflowExecute)
-	req.Params = json.RawMessage(`{"workflow":{"workflowId":"wf1"},"input":{"key": {"invalid json"}}}`)
+	params := json.RawMessage(`{"workflow":{"workflowId":"wf1"},"input":{"key": {"invalid json"}}}`)
+	req.Params = &params
 	err := handler.HandleGatewayMessage(t.Context(), "gw1", req)
 	require.NoError(t, err)
 	require.False(t, connector.SendToGatewayCalled)
@@ -205,11 +208,12 @@ func TestProcessTrigger_MissingWorkflowID(t *testing.T) {
 	jsonPayload, err := json.Marshal(payload)
 	require.NoError(t, err)
 
-	req := &jsonrpc.Request{
+	params := json.RawMessage(jsonPayload)
+	req := &jsonrpc.Request[json.RawMessage]{
 		Version: "2.0",
 		ID:      "id",
 		Method:  gateway_common.MethodWorkflowExecute,
-		Params:  jsonPayload,
+		Params:  &params,
 	}
 
 	handler.processTrigger(t.Context(), "gw1", req)
@@ -250,11 +254,12 @@ func TestProcessTrigger_UnregisteredWorkflow(t *testing.T) {
 	jsonPayload, err := json.Marshal(payload)
 	require.NoError(t, err)
 
-	req := &jsonrpc.Request{
+	params := json.RawMessage(jsonPayload)
+	req := &jsonrpc.Request[json.RawMessage]{
 		Version: "2.0",
 		ID:      "id",
 		Method:  gateway_common.MethodWorkflowExecute,
-		Params:  jsonPayload,
+		Params:  &params,
 	}
 
 	handler.processTrigger(t.Context(), "gw1", req)
@@ -271,42 +276,42 @@ func TestProcessTrigger_UnregisteredWorkflow(t *testing.T) {
 func TestRegisterWorkflow_InvalidECDSAPublicKey(t *testing.T) {
 	lggr := logger.Test(t)
 	handler, _, _ := setup(t, lggr)
-	sendCh := make(chan capabilities.TriggerAndId[*pb.Payload], 1)
+	sendCh := make(chan capabilities.TriggerAndId[*http.Payload], 1)
 
 	testCases := []struct {
 		name      string
 		publicKey string
-		keyType   pb.KeyType
+		keyType   http.KeyType
 		errorMsg  string
 	}{
 		{
 			name:      "invalid publicKey format (nothex)",
 			publicKey: "nothex",
-			keyType:   pb.KeyType_KEY_TYPE_ECDSA,
+			keyType:   http.KeyType_KEY_TYPE_ECDSA,
 			errorMsg:  "invalid public key format",
 		},
 		{
 			name:      "invalid publicKey length",
 			publicKey: "0x123",
-			keyType:   pb.KeyType_KEY_TYPE_ECDSA,
+			keyType:   http.KeyType_KEY_TYPE_ECDSA,
 			errorMsg:  "invalid public key format",
 		},
 		{
 			name:      "invalid key type",
 			publicKey: publicKey,
-			keyType:   pb.KeyType_KEY_TYPE_UNSPECIFIED,
+			keyType:   http.KeyType_KEY_TYPE_UNSPECIFIED,
 			errorMsg:  "unsupported key type",
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			invalidKey := &pb.AuthorizedKey{
+			invalidKey := &http.AuthorizedKey{
 				PublicKey: tc.publicKey,
 				Type:      tc.keyType,
 			}
-			cfg := &pb.Config{
-				AuthorizedKeys: []*pb.AuthorizedKey{
+			cfg := &http.Config{
+				AuthorizedKeys: []*http.AuthorizedKey{
 					invalidKey,
 				},
 			}
