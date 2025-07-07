@@ -120,10 +120,11 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 
 	lggr.Debugw("sending request to gateway")
 
-	gatewayResp := jsonrpc.Response{
+	rawRes := json.RawMessage(payload)
+	gatewayResp := jsonrpc.Response[json.RawMessage]{
 		Version: "2.0",
 		ID:      requestID,
-		Result:  json.RawMessage(payload),
+		Result:  &rawRes,
 	}
 
 	selectedGateway, err := p.awaitConnection(ctx, lggr, gatewayReq.Hash())
@@ -218,11 +219,15 @@ func (p *gatewayOutboundProxy) attemptGatewayConnection(ctx context.Context, lgg
 
 // HandleGatewayMessage processes incoming messages from the Gateway,
 // which are in response to a HandleSingleNodeRequest call.
-func (p *gatewayOutboundProxy) HandleGatewayMessage(ctx context.Context, gatewayID string, req *jsonrpc.Request) error {
+func (p *gatewayOutboundProxy) HandleGatewayMessage(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage]) error {
 	l := logger.With(p.lggr, "gatewayID", gatewayID, "method", req.Method, "requestID", req.ID)
 	l.Debugw("handling incomming gateway message")
 	var msg gateway.OutboundHTTPResponse
-	err := json.Unmarshal(req.Params, &msg)
+	if req.Params == nil {
+		l.Errorw("request params are nil")
+		return nil
+	}
+	err := json.Unmarshal(*req.Params, &msg)
 	if err != nil {
 		l.Errorw("failed to unmarshal request params", "error", err)
 		return nil

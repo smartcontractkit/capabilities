@@ -236,7 +236,7 @@ func TestGatewayOutboundProxy_SendRequest_RateLimitError(t *testing.T) {
 }
 
 func simulateGatewayMessage(t *testing.T, proxy *gatewayOutboundProxy, id string, statusCode int, body string, errorMessage string, executionError bool) {
-	req := jsonrpc.Request{
+	req := jsonrpc.Request[json.RawMessage]{
 		ID:      id,
 		Method:  gateway_common.MethodHTTPAction,
 		Version: "2.0",
@@ -248,7 +248,8 @@ func simulateGatewayMessage(t *testing.T, proxy *gatewayOutboundProxy, id string
 	}
 	payload, err := json.Marshal(resp)
 	require.NoError(t, err)
-	req.Params = payload
+	rawPayload := json.RawMessage(payload)
+	req.Params = &rawPayload
 	err = proxy.HandleGatewayMessage(context.Background(), "gateway1", &req)
 	require.NoError(t, err)
 }
@@ -274,7 +275,7 @@ func (m *mockGatewayConnector) GatewayIDs(context.Context) ([]string, error) {
 	return m.GatewayIDsVal, nil
 }
 
-func (m *mockGatewayConnector) SendToGateway(ctx context.Context, gateway string, resp *jsonrpc.Response) error {
+func (m *mockGatewayConnector) SendToGateway(ctx context.Context, gateway string, resp *jsonrpc.Response[json.RawMessage]) error {
 	if m.OnSend != nil {
 		m.OnSend(resp.ID)
 	}
