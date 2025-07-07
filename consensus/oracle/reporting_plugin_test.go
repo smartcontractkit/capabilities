@@ -226,7 +226,7 @@ type metadata struct {
 
 func createReportingPlugin(t *testing.T, pluginObservations map[string]*values.Int64, lggr logger.Logger, f int, n int,
 	batchSize int, requestMetaData map[string]metadata) ocr3types.ReportingPlugin[[]byte] {
-	reqStore := requests.NewStore[*oracle.ConsensusRequest, oracle.ConsensusResponse]()
+	reqStore := requests.NewStore[*oracle.ConsensusRequest]()
 	for reqID, obs := range pluginObservations {
 		input := &pb.SimpleConsensusInputs{
 			Observation: &pb.SimpleConsensusInputs_Value{

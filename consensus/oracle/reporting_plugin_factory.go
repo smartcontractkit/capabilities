@@ -27,7 +27,7 @@ const (
 type SetRequestTimeout func(timeout time.Duration)
 
 type factory struct {
-	store *requests.Store[*ConsensusRequest, ConsensusResponse]
+	store *requests.Store[*ConsensusRequest]
 
 	// Request timeout is set by the plugin factory and used by the reporting plugin to set the timeout for requests
 	// created in the capability
@@ -38,7 +38,7 @@ type factory struct {
 	services.StateMachine
 }
 
-func NewReportingPluginFactory(lggr logger.Logger, s *requests.Store[*ConsensusRequest, ConsensusResponse],
+func NewReportingPluginFactory(lggr logger.Logger, s *requests.Store[*ConsensusRequest],
 	setRequestTimeout SetRequestTimeout, batchSize int) (*factory, error) {
 	return &factory{
 		store:             s,

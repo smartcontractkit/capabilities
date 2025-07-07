@@ -27,7 +27,7 @@ var _ ocr3types.ReportingPlugin[[]byte] = (*reportingPlugin)(nil)
 
 type reportingPlugin struct {
 	batchSize int
-	s         *requests.Store[*ConsensusRequest, ConsensusResponse]
+	s         *requests.Store[*ConsensusRequest]
 
 	f int
 	n int
@@ -37,7 +37,7 @@ type reportingPlugin struct {
 	lggr logger.Logger
 }
 
-func NewReportingPlugin(lggr logger.Logger, f int, n int, s *requests.Store[*ConsensusRequest, ConsensusResponse], batchSize int) (*reportingPlugin, error) {
+func NewReportingPlugin(lggr logger.Logger, f int, n int, s *requests.Store[*ConsensusRequest], batchSize int) (*reportingPlugin, error) {
 	return &reportingPlugin{
 		s:                   s,
 		batchSize:           batchSize,
