@@ -275,8 +275,8 @@ github.com/sirupsen/logrus v1.4.1/go.mod h1:ni0Sbl8bgC9z8RoU9G6nDWqqs/fq4eDPysMB
 github.com/sirupsen/logrus v1.4.2/go.mod h1:tLMulIdttU9McNUspp0xgXVQah82FyeX6MwdIuYE2rE=
 github.com/smartcontractkit/capabilities/libs v0.0.0-20250613213914-93a34678e8e2 h1:aN7VVaO35OC1opTyruxDsiDz8p3YaBKPdCsqbZ71KiM=
 github.com/smartcontractkit/capabilities/libs v0.0.0-20250613213914-93a34678e8e2/go.mod h1:6gZ8Ub+e4i6DYVisQu0L4MytMNZA9a9O59OUhBhlAek=
-github.com/smartcontractkit/chainlink-common v0.7.1-0.20250707133321-27faefc9ce45 h1:EPlVedH4Sxm3R5iNvy160+stnFIYJR+iPHnU2XYOZVY=
-github.com/smartcontractkit/chainlink-common v0.7.1-0.20250707133321-27faefc9ce45/go.mod h1:SrzacsyKxhRg/U0fNJc1aMwiZJLq064dZ4Pk5dWCNrg=
+github.com/smartcontractkit/chainlink-common v0.7.1-0.20250707183758-0325e478c7f0 h1:3wcPeVTW1tzeEt4YkBol/+vEIkuS2s8pm9wHYxbgAP4=
+github.com/smartcontractkit/chainlink-common v0.7.1-0.20250707183758-0325e478c7f0/go.mod h1:SrzacsyKxhRg/U0fNJc1aMwiZJLq064dZ4Pk5dWCNrg=
 github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250704215855-8e0907d77096 h1:s4fQl1rIX163chG90hU25s2844N1NTl98sdiQwsVWmA=
 github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250704215855-8e0907d77096/go.mod h1:U1UAbPhy6D7Qz0wHKGPoQO+dpR0hsYjgUz8xwRrmKwI=
 github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb v0.0.0-20250704203933-af56933301a8 h1:Z/CBFhnxGaR1S74HmUhcGXWmT6Afso2CFcpDQaovqsM=
