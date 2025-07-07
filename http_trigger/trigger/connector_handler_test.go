@@ -158,12 +158,23 @@ func TestHandleGatewayMessage_InvalidRequest(t *testing.T) {
 	require.Len(t, triggerCh, 0, "trigger channel should not receive any messages")
 }
 
+func TestHandleGatewayMessage_MissingBody(t *testing.T) {
+	lggr := logger.Test(t)
+	handler, connector, triggerCh := setup(t, lggr)
+	// empty request
+	req := &jsonrpc.Request[json.RawMessage]{Method: gateway_common.MethodWorkflowExecute}
+	err := handler.HandleGatewayMessage(t.Context(), "gw1", req)
+	require.NoError(t, err)
+	require.False(t, connector.SendToGatewayCalled)
+	require.Len(t, triggerCh, 0, "trigger channel should not receive any messages")
+}
+
 func TestHandleGatewayMessage_InvalidUserInputJSON(t *testing.T) {
 	lggr := logger.Test(t)
 	handler, connector, triggerCh := setup(t, lggr)
 	req := gatewayRequest(t, gateway_common.MethodWorkflowExecute)
-	invalidJson := json.RawMessage("invalid json")
-	req.Params = &invalidJson
+	invalidJSON := json.RawMessage("invalid json")
+	req.Params = &invalidJSON
 	err := handler.HandleGatewayMessage(t.Context(), "gw1", req)
 	require.NoError(t, err)
 	require.False(t, connector.SendToGatewayCalled)
