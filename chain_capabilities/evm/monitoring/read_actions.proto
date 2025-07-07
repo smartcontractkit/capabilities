@@ -1,0 +1,184 @@
+syntax = "proto3";
+package chain_capabilities.evm;
+option go_package = "github.com/smartcontractkit/capabilities/chain_capabilities/evm;monitoring";
+
+import "libs/monitoring/execution_context.proto";
+
+message CallContractRequest {
+  int64 block_number = 1;
+  string contract_address = 2;
+}
+
+message CallContractInitiated {
+  CallContractRequest req = 1;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message CallContractSuccess {
+  CallContractRequest req = 1;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message CallContractError {
+  CallContractRequest req = 1;
+  string summary = 2;
+  string cause = 3;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message Topics {
+  repeated string topic = 1; // in [32]byte fix-sized array format
+}
+
+message FilterLogsRequest {
+  int64 from_block = 1;
+  int64 to_block = 2;
+  string block_hash = 3; // exact block (cant use from/to), in [32]byte fix-sized array format
+  repeated string addresses = 4; // contract(s) to filter logs from in evm address [20]byte fix-sized array format
+  repeated Topics topics = 5;  // filter log by event signature and indexed args
+}
+
+message FilterLogsInitiated {
+  FilterLogsRequest req = 1;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message FilterLogsSuccess {
+  FilterLogsRequest req = 1;
+  int32 log_count = 2;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message FilterLogsError {
+  FilterLogsRequest req = 1;
+  string summary = 2;
+  string cause = 3;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message BalanceAtRequest {
+  string account = 1;
+  int64 block_number = 2;
+}
+
+message BalanceAtInitiated {
+  BalanceAtRequest req = 1;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message BalanceAtSuccess {
+  BalanceAtRequest req = 1;
+  string balance = 2;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message BalanceAtError {
+  BalanceAtRequest req = 1;
+  string summary = 2;
+  string cause = 3;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message EstimateGasRequest {
+  string from = 1;
+  string to = 2;
+  bytes data = 3;
+}
+message EstimateGasInitiated {
+  EstimateGasRequest req = 1;
+  monitoring.ExecutionContext execution_context = 20;
+}
+message EstimateGasSuccess {
+  EstimateGasRequest req = 1;
+  int64 gas = 2;
+  monitoring.ExecutionContext execution_context = 20;
+}
+message EstimateGasError {
+  EstimateGasRequest req = 1;
+  string summary = 2;
+  string cause = 3;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message Receipt {
+  uint64 status = 1;
+  string tx_hash = 2;
+  string contract_address = 3;
+  uint64 gas_used = 4;
+  string block_hash = 5;
+  uint64 block_number = 6;
+  uint64 transaction_index = 7;
+  uint64 effective_gas_price = 8;
+}
+message GetTransactionByHashRequest {
+  string hash = 1;
+}
+
+message GetTransactionByHashInitiated {
+  GetTransactionByHashRequest req = 1;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message TransactionData {
+  string tx_hash = 1;
+  uint64 tx_nonce = 2;
+  uint64 gas = 3;
+  uint64 gas_price = 4;
+  uint64 value = 5;
+}
+
+message GetTransactionByHashSuccess {
+  GetTransactionByHashRequest req = 1;
+  TransactionData transaction = 2;
+  monitoring.ExecutionContext execution_context = 20;
+}
+message GetTransactionByHashError {
+  GetTransactionByHashRequest req = 1;
+  string summary = 2;
+  string cause = 3;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message GetTransactionReceiptRequest {
+  string hash = 1;
+}
+
+message GetTransactionReceiptInitiated {
+  GetTransactionReceiptRequest req = 1;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message GetTransactionReceiptSuccess {
+  GetTransactionReceiptRequest req = 1;
+  Receipt receipt = 2;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message GetTransactionReceiptError {
+  GetTransactionReceiptRequest req = 1;
+  string summary = 2;
+  string cause = 3;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message LatestAndFinalizedHeadInitiated{
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message BlockData {
+  string block_hash = 1;
+  string block_height = 2;
+  uint64 block_timestamp = 3;
+}
+
+message LatestAndFinalizedHeadSuccess {
+  BlockData latest = 1;
+  BlockData finalized = 2;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message LatestAndFinalizedHeadError {
+  string summary = 1;
+  string cause = 2;
+  monitoring.ExecutionContext execution_context = 20;
+}

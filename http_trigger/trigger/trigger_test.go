@@ -1,0 +1,169 @@
+package trigger
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"testing"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+
+	"github.com/smartcontractkit/capabilities/http_trigger/pb"
+)
+
+func TestService_RegisterTrigger(t *testing.T) {
+	type testCase struct {
+		name                string
+		sendChannelBufSize  uint32
+		registerErr         error
+		expectedChanBufSize uint32
+		expectErr           bool
+	}
+	tests := []testCase{
+		{
+			name:                "success with default buffer size",
+			sendChannelBufSize:  0,
+			registerErr:         nil,
+			expectedChanBufSize: defaultSendChannelBufferSize,
+			expectErr:           false,
+		},
+		{
+			name:                "success with custom buffer size",
+			sendChannelBufSize:  42,
+			registerErr:         nil,
+			expectedChanBufSize: 42,
+			expectErr:           false,
+		},
+		{
+			name:                "error from RegisterWorkflow",
+			sendChannelBufSize:  0,
+			registerErr:         errors.New("register error"),
+			expectedChanBufSize: defaultSendChannelBufferSize,
+			expectErr:           true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mockHandler := &mockConnectorHandler{
+				registerErr: tc.registerErr,
+			}
+			svc := NewService(logger.Test(t))
+			cfgStr := fmt.Sprintf(`{"sendChannelBufferSize": %d}`, tc.sendChannelBufSize)
+			err := svc.Initialise(t.Context(), cfgStr, nil, nil, nil, nil, nil, nil, nil)
+			require.NoError(t, err)
+			svc.connectorHandler = mockHandler
+			ctx := context.Background()
+			meta := capabilities.RequestMetadata{WorkflowID: "wid"}
+			input := &pb.Config{}
+
+			ch, err := svc.RegisterTrigger(ctx, "tid", meta, input)
+			if tc.expectErr {
+				require.Error(t, err)
+				require.Nil(t, ch)
+			} else {
+				require.Equal(t, tc.expectedChanBufSize, uint32(cap(ch))) //nolint:gosec // G115
+				require.Equal(t, meta.WorkflowID, mockHandler.lastWorkflowID)
+				require.Equal(t, input, mockHandler.lastInput)
+			}
+		})
+	}
+}
+
+func TestService_UnregisterTrigger(t *testing.T) {
+	tests := []struct {
+		name       string
+		handlerErr error
+	}{
+		{
+			name:       "successfully unregisters workflow",
+			handlerErr: nil,
+		},
+		{
+			name:       "logs error if handler fails",
+			handlerErr: fmt.Errorf("some error"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockHandler := &mockConnectorHandler{
+				unregisterErr: tt.handlerErr,
+			}
+			svc := NewService(logger.Test(t))
+			err := svc.Initialise(t.Context(), "{}", nil, nil, nil, nil, nil, nil, nil)
+			require.NoError(t, err)
+			svc.connectorHandler = mockHandler
+
+			metadata := capabilities.RequestMetadata{WorkflowID: "wid-123"}
+			err = svc.UnregisterTrigger(context.Background(), "tid-1", metadata, nil)
+			if tt.handlerErr != nil {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tt.handlerErr.Error())
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+func TestService_Start_HealthReport_Ready_Close(t *testing.T) {
+	mockHandler := &mockConnectorHandler{}
+	svc := NewService(logger.Test(t))
+	err := svc.Initialise(t.Context(), `{}`, nil, nil, nil, nil, nil, nil, nil)
+	require.NoError(t, err)
+	svc.connectorHandler = mockHandler
+
+	ctx := context.Background()
+
+	// Start the service
+	err = svc.Start(ctx)
+	require.NoError(t, err)
+
+	// HealthReport should report healthy
+	hr := svc.HealthReport()
+	require.Contains(t, hr, svc.Name())
+	require.NoError(t, hr[svc.Name()])
+	require.NoError(t, svc.Ready())
+
+	// Restarting the service should return an error
+	require.Error(t, svc.Start(ctx))
+
+	// Close the service
+	err = svc.Close()
+	require.NoError(t, err)
+	hr = svc.HealthReport()
+	require.Contains(t, hr, svc.Name())
+	require.Error(t, hr[svc.Name()])
+	require.Error(t, svc.Ready())
+}
+
+// mockConnectorHandler implements minimal RegisterWorkflow/UnregisterWorkflow for testing
+type mockConnectorHandler struct {
+	registerErr    error
+	unregisterErr  error
+	lastWorkflowID string
+	lastInput      *pb.Config
+}
+
+func (m *mockConnectorHandler) RegisterWorkflow(ctx context.Context, workflowID string, input *pb.Config, sendCh chan<- capabilities.TriggerAndId[*pb.Payload]) error {
+	m.lastWorkflowID = workflowID
+	m.lastInput = input
+	return m.registerErr
+}
+func (m *mockConnectorHandler) UnregisterWorkflow(ctx context.Context, workflowID string) error {
+	return m.unregisterErr
+}
+func (m *mockConnectorHandler) Start(ctx context.Context) error { return nil }
+func (m *mockConnectorHandler) Close() error                    { return nil }
+func (m *mockConnectorHandler) HealthReport() map[string]error {
+	return map[string]error{"mockConnectorHandler": nil}
+}
+func (m *mockConnectorHandler) Name() string {
+	return "mockConnectorHandler"
+}
+func (m *mockConnectorHandler) Ready() error {
+	return nil
+}

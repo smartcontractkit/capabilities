@@ -5,7 +5,7 @@ on: [push]
 env:
   # Ensure that a cached go version is used:
   # https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md#go
-  GO_VERSION: 1.23
+  GO_VERSION: 1.24
   GOPRIVATE: github.com/smartcontractkit/capabilities
 
 jobs:
@@ -14,9 +14,10 @@ jobs:
     outputs:
       nx: ${{ steps.affected.outputs.affected }}
     steps:
-      - uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
       # There's no need to setup Node as it is pre-installed:
       # https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2204-Readme.md
       - name: Cache NX
@@ -43,10 +44,13 @@ jobs:
         #   }
         #   "run_checks": true
         # }
-      - name: Init NX and get affected projects
+
+      - name: Setup nodejs and install nx
+        uses: smartcontractkit/.github/actions/setup-nodejs@setup-nodejs/v1
+
+      - name: Get affected projects
         id: affected
         run: |
-          npx nx@19.8.2 init
           echo "affected=$(./.github/scripts/affected-projects.sh ${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }})" >> $GITHUB_OUTPUT
 
   build:
@@ -60,10 +64,10 @@ jobs:
       matrix:
         projects: ${{fromJson(needs.affected.outputs.nx).projects_with_build}}
     steps:
-      - name: Checkout the repo
-        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up project environment
         uses: ./.github/actions/setup
@@ -89,10 +93,10 @@ jobs:
       matrix:
         projects: ${{fromJson(needs.affected.outputs.nx).projects_with_test}}
     steps:
-      - name: Checkout the repo
-        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up project environment
         uses: ./.github/actions/setup
@@ -128,10 +132,10 @@ jobs:
       matrix:
         projects: ${{fromJson(needs.affected.outputs.nx).projects_with_race}}
     steps:
-      - name: Checkout the repo
-        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up project environment
         uses: ./.github/actions/setup
@@ -155,10 +159,10 @@ jobs:
     strategy:
       fail-fast: false
     steps:
-      - name: Checkout the repo
-        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Setup Postgres
         uses: ./.github/actions/setup-postgres
       - name: Set up project environment
@@ -190,10 +194,10 @@ jobs:
       matrix:
         projects: ${{fromJson(needs.affected.outputs.nx).projects}}
     steps:
-      - name: Checkout the repo
-        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.1.7
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up project environment
         uses: ./.github/actions/setup
@@ -208,7 +212,7 @@ jobs:
         run: ./.github/scripts/support-private-gomods.sh
 
       - name: Install mockery
-        run: go install github.com/vektra/mockery/v2/...@v2.46.1
+        run: go install github.com/vektra/mockery/v2/...@v2.53.3
 
       - name: Run "tidy" and "generate"
         run: |
@@ -216,7 +220,9 @@ jobs:
           ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} generate
 
       - name: Ensure no diff
-        run: git diff --stat --exit-code
+        run: |
+          git diff
+          git diff --stat --exit-code
 
   lint:
     needs: affected
@@ -227,10 +233,10 @@ jobs:
       matrix:
         projects: ${{fromJson(needs.affected.outputs.nx).projects}}
     steps:
-      - name: Checkout the repo
-        uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b # v4.1.4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up project environment
         id: setup
@@ -267,8 +273,9 @@ jobs:
     name: modgraph
     if: false
     steps:
-      - name: Checkout the Repo
-        uses: actions/checkout@eef61447b9ff4aafe5dcd4e0bbf5d482be7e7871 # v4.2.1
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Setup Go
         uses: actions/setup-go@v5

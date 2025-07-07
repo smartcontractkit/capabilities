@@ -8,6 +8,7 @@
 *.so
 *.dylib
 .DS_Store
+**/.tools
 
 # IntelliJ IDE
 .idea
@@ -25,6 +26,7 @@ coverage.txt
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
+proto_vendor
 
 # START - Chainlink Local (CLL) artifacts
 .local
@@ -41,3 +43,7 @@ bin
 .nx/installation
 .nx/cache
 .nx/workspace-data
+
+# Used for changesets
+node_modules
+
