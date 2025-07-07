@@ -5,11 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"strings"
 	"sync"
 	"time"
 
 	"errors"
+
+	"stathat.com/c/consistent"
 
 	"github.com/smartcontractkit/capabilities/http_action/common"
 
@@ -47,49 +48,44 @@ type gatewayOutboundProxy struct {
 	gatewayConnectionConfig common.GatewayConnectionConfig
 }
 
+func applyDefaults(cfg common.GatewayConnectionConfig) common.GatewayConnectionConfig {
+	if cfg.InitialIntervalMs == 0 {
+		cfg.InitialIntervalMs = defaultGatewayConnectionInitialIntervalMs
+	}
+	if cfg.MaxElapsedTimeMs == 0 {
+		cfg.MaxElapsedTimeMs = defaultGatewayConnectionMaxElapsedTimeMs
+	}
+	if cfg.Multiplier == 0 {
+		cfg.Multiplier = defaultGatewayConnectionMultiplier
+	}
+	return cfg
+}
+
 func NewGatewayOutboundProxy(gatewayConnector core.GatewayConnector, config common.ServiceConfig, lggr logger.Logger, opts ...func(*gc.RoundRobinSelector)) (*gatewayOutboundProxy, error) {
 	outgoingRateLimiter, err := ratelimit.NewRateLimiter(config.OutgoingRateLimiter)
 	if err != nil {
 		return nil, err
 	}
-	incomingRateLimiter, err := ratelimit.NewRateLimiter(config.RateLimiter)
+	incomingRateLimiter, err := ratelimit.NewRateLimiter(config.IncomingRateLimiter)
 	if err != nil {
 		return nil, err
 	}
 
-	initialInterval := config.GatewayConnectionConfig.InitialIntervalMs
-	if initialInterval == 0 {
-		initialInterval = defaultGatewayConnectionInitialIntervalMs
-	}
-	maxElapsedTime := config.GatewayConnectionConfig.MaxElapsedTimeMs
-	if maxElapsedTime == 0 {
-		maxElapsedTime = defaultGatewayConnectionMaxElapsedTimeMs
-	}
-	multiplier := config.GatewayConnectionConfig.Multiplier
-	if multiplier == 0 {
-		multiplier = defaultGatewayConnectionMultiplier
-	}
-
 	return &gatewayOutboundProxy{
-		gatewayConnector:    gatewayConnector,
-		responses:           newResponses(),
-		outgoingRateLimiter: outgoingRateLimiter,
-		incomingRateLimiter: incomingRateLimiter,
-		lggr:                lggr,
-		selectorOpts:        opts,
-		gatewayConnectionConfig: common.GatewayConnectionConfig{
-			InitialIntervalMs: initialInterval,
-			MaxElapsedTimeMs:  maxElapsedTime,
-			Multiplier:        multiplier,
-		},
+		gatewayConnector:        gatewayConnector,
+		responses:               newResponses(),
+		outgoingRateLimiter:     outgoingRateLimiter,
+		incomingRateLimiter:     incomingRateLimiter,
+		lggr:                    lggr,
+		selectorOpts:            opts,
+		gatewayConnectionConfig: applyDefaults(config.GatewayConnectionConfig),
 	}, nil
 }
 
-// SendRequest sends a request to first available gateway node and blocks until response is received
+// SendRequest sends a request to gateway node and blocks until response is received
 func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *pb.Request) (*pb.Response, error) {
-	requestID := common.GetRequestID(metadata)
+	requestID := common.GetRequestID(gc.MethodHTTPAction, metadata.WorkflowID, metadata.WorkflowExecutionID)
 	lggr := logger.With(p.lggr, "requestID", requestID, "workflowID", metadata.WorkflowID, "workflowExecutionID", metadata.WorkflowExecutionID, "workflowOwner", metadata.WorkflowOwner)
-
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(input.TimeoutMs)*time.Millisecond)
 	defer cancel()
 
@@ -130,7 +126,7 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 		Result:  json.RawMessage(payload),
 	}
 
-	selectedGateway, err := p.awaitConnection(ctx, lggr)
+	selectedGateway, err := p.awaitConnection(ctx, lggr, gatewayReq.Hash())
 	if err != nil {
 		return nil, errors.Join(errors.New("failed to await connection to gateway"), err)
 	}
@@ -143,11 +139,7 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 	case resp := <-responseCh:
 		lggr.Debugw("received response from gateway")
 		if resp.ErrorMessage != "" {
-			if isRateLimitError(resp.ErrorMessage) {
-				lggr.Errorw("incoming message from gateway exceeded rate limit", "errorMessage", resp.ErrorMessage)
-			} else {
-				lggr.Errorw("gateway response indicates execution error", "errorMessage", resp.ErrorMessage)
-			}
+			lggr.Errorw("error while receiving response from gateway", "errorMessage", resp.ErrorMessage)
 			return nil, errors.New(internalError)
 		}
 		return &pb.Response{
@@ -160,16 +152,17 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 	}
 }
 
-// awaitConnection attempts to establish a connection to an available gateway.  It iterates through available gateways
-// using a round robin selector, connecting to the first available.  The method respects the provided context, allowing for
-// cancellation or timeout.
-func (p *gatewayOutboundProxy) awaitConnection(ctx context.Context, lggr logger.Logger) (string, error) {
+// awaitConnection attempts to establish a connection to a gateway using consistent hashing algorithm.
+// Gateway node is selected based on the request hash. If the selected gateway is unavailable, it is removed
+// from the consistent hash ring and the method retries to select another gateway.
+// When all gateways are evicted from the hash ring, then it will retry to get the list of gateways and reinitialize the ring and retry after backoff.
+// Note that consitent hash ring is reset every time a new request is made, so it will always use the latest list of gateways.
+func (p *gatewayOutboundProxy) awaitConnection(ctx context.Context, lggr logger.Logger, requestHash string) (string, error) {
 	gatewayIDs, err := p.gatewayConnector.GatewayIDs(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get gateway IDs: %w", err)
 	}
-	selector := gc.NewRoundRobinSelector(gatewayIDs, p.selectorOpts...)
-	attempts := make(map[string]int)
+	selector := setupRing(gatewayIDs)
 	backoff := time.Duration(p.gatewayConnectionConfig.InitialIntervalMs) * time.Millisecond
 
 	for {
@@ -177,31 +170,29 @@ func (p *gatewayOutboundProxy) awaitConnection(ctx context.Context, lggr logger.
 		case <-ctx.Done():
 			return "", ctx.Err()
 		default:
-			gateway, err := selector.NextGateway()
-			if err != nil {
-				return "", fmt.Errorf("failed to select gateway: %w", err)
-			}
-			lggr = logger.With(lggr, "gateway", gateway)
-
-			if attempts[gateway] > 0 {
-				lggr.Warnw("all available gateway nodes attempted without connection, backing off", "waitTime", backoff)
-
+			if len(selector.Members()) == 0 {
+				lggr.Warn("no available gateways found, retrying after backoff")
 				select {
 				case <-ctx.Done():
 					return "", ctx.Err()
 				case <-time.After(backoff):
-					// backoff completed, update state and continue with next iteration
-					attempts = make(map[string]int)
+					gatewayIDs, err := p.gatewayConnector.GatewayIDs(ctx)
+					if err != nil {
+						return "", fmt.Errorf("failed to get gateway IDs: %w", err)
+					}
+					selector = setupRing(gatewayIDs)
 					backoff = p.nextBackoff(backoff)
+					continue
 				}
 			}
-
-			attempts[gateway]++
-
-			lggr.Info("selected gateway, awaiting connection")
+			gateway, err := selector.Get(requestHash)
+			if err != nil {
+				return "", fmt.Errorf("failed to select gateway using consistent hashing: %w", err)
+			}
 
 			if err := p.attemptGatewayConnection(ctx, lggr, gateway, backoff); err != nil {
-				lggr.Warnw("failed to await connection to gateway node, retrying", "err", err)
+				lggr.Warnw("failed to await connection to gateway node, retrying", "err", err, "gateway", gateway)
+				selector.Remove(gateway)
 				continue
 			}
 
@@ -269,14 +260,6 @@ func (p *gatewayOutboundProxy) HandleGatewayMessage(ctx context.Context, gateway
 		l.Errorw("unsupported method")
 	}
 	return nil
-}
-
-// isRateLimitError checks if the error string contains any of the rate limit error constants.
-func isRateLimitError(errStr string) bool {
-	return strings.Contains(errStr, common.ErrorOutgoingRatelimitGlobal) ||
-		strings.Contains(errStr, common.ErrorOutgoingRatelimitWorkflowOwner) ||
-		strings.Contains(errStr, common.ErrorIncomingRatelimitGlobal) ||
-		strings.Contains(errStr, common.ErrorIncomingRatelimitSender)
 }
 
 func (p *gatewayOutboundProxy) ID(ctx context.Context) (string, error) {
@@ -350,4 +333,13 @@ func (r *responses) get(id string) (chan gc.OutboundHTTPResponse, bool) {
 	defer r.mu.RUnlock()
 	ch, ok := r.chs[id]
 	return ch, ok
+}
+
+// setupRing initializes a consistent hash ring with the provided nodes.
+func setupRing(gatewayIDs []string) *consistent.Consistent {
+	c := consistent.New()
+	for _, node := range gatewayIDs {
+		c.Add(node)
+	}
+	return c
 }

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/doyensec/safeurl"
+	"github.com/google/uuid"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 
@@ -81,7 +82,7 @@ func headers(req *pb.Request) map[string][]string {
 }
 
 func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *pb.Request) (*pb.Response, error) {
-	requestID := GetRequestID(metadata)
+	requestID := uuid.New().String()
 	lggr := logger.With(h.lggr, "requestID", requestID, "workflowID", metadata.WorkflowID, "workflowExecutionID", metadata.WorkflowExecutionID, "workflowOwner", metadata.WorkflowOwner)
 
 	workflowAllow, globalAllow := h.outgoingRateLimiter.AllowVerbose(metadata.WorkflowOwner)

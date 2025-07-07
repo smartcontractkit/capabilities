@@ -61,11 +61,11 @@ func ApplyDefaultsAndValidate(cfg *common.ServiceConfig) (*common.ServiceConfig,
 		PerSenderRPS:   getWithDefault(cfg.OutgoingRateLimiter.PerSenderRPS, defaultWorkflowOwnerRPS),
 		PerSenderBurst: getWithDefault(cfg.OutgoingRateLimiter.PerSenderBurst, defaultWorkflowOwnerBurst),
 	}
-	cfg.RateLimiter = ratelimit.RateLimiterConfig{
-		GlobalRPS:      getWithDefault(cfg.RateLimiter.GlobalRPS, defaultGlobalRPS),
-		GlobalBurst:    getWithDefault(cfg.RateLimiter.GlobalBurst, defaultGlobalBurst),
-		PerSenderRPS:   getWithDefault(cfg.RateLimiter.PerSenderRPS, defaultPerSenderRPS),
-		PerSenderBurst: getWithDefault(cfg.RateLimiter.PerSenderBurst, defaultPerSenderRPS),
+	cfg.IncomingRateLimiter = ratelimit.RateLimiterConfig{
+		GlobalRPS:      getWithDefault(cfg.IncomingRateLimiter.GlobalRPS, defaultGlobalRPS),
+		GlobalBurst:    getWithDefault(cfg.IncomingRateLimiter.GlobalBurst, defaultGlobalBurst),
+		PerSenderRPS:   getWithDefault(cfg.IncomingRateLimiter.PerSenderRPS, defaultPerSenderRPS),
+		PerSenderBurst: getWithDefault(cfg.IncomingRateLimiter.PerSenderBurst, defaultPerSenderRPS),
 	}
 	return cfg, nil
 }
