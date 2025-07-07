@@ -16,9 +16,9 @@ import (
 func TestService_RegisterTrigger(t *testing.T) {
 	type testCase struct {
 		name                string
-		sendChannelBufSize  uint32
+		sendChannelBufSize  uint16
 		registerErr         error
-		expectedChanBufSize uint32
+		expectedChanBufSize uint16
 		expectErr           bool
 	}
 	tests := []testCase{
@@ -52,7 +52,7 @@ func TestService_RegisterTrigger(t *testing.T) {
 			}
 			svc := NewService(logger.Test(t))
 			cfgStr := fmt.Sprintf(`{"sendChannelBufferSize": %d}`, tc.sendChannelBufSize)
-			err := svc.Initialise(t.Context(), cfgStr, nil, nil, nil, nil, nil, nil, nil)
+			err := svc.Initialise(t.Context(), cfgStr, nil, nil, nil, nil, nil, nil, nil, nil)
 			require.NoError(t, err)
 			svc.connectorHandler = mockHandler
 			ctx := context.Background()
@@ -64,7 +64,7 @@ func TestService_RegisterTrigger(t *testing.T) {
 				require.Error(t, err)
 				require.Nil(t, ch)
 			} else {
-				require.Equal(t, tc.expectedChanBufSize, uint32(cap(ch))) //nolint:gosec // G115
+				require.Equal(t, tc.expectedChanBufSize, uint16(cap(ch))) //nolint:gosec // G115
 				require.Equal(t, meta.WorkflowID, mockHandler.lastWorkflowID)
 				require.Equal(t, input, mockHandler.lastInput)
 			}
@@ -93,7 +93,7 @@ func TestService_UnregisterTrigger(t *testing.T) {
 				unregisterErr: tt.handlerErr,
 			}
 			svc := NewService(logger.Test(t))
-			err := svc.Initialise(t.Context(), "{}", nil, nil, nil, nil, nil, nil, nil)
+			err := svc.Initialise(t.Context(), "{}", nil, nil, nil, nil, nil, nil, nil, nil)
 			require.NoError(t, err)
 			svc.connectorHandler = mockHandler
 
@@ -111,7 +111,7 @@ func TestService_UnregisterTrigger(t *testing.T) {
 func TestService_Start_HealthReport_Ready_Close(t *testing.T) {
 	mockHandler := &mockConnectorHandler{}
 	svc := NewService(logger.Test(t))
-	err := svc.Initialise(t.Context(), `{}`, nil, nil, nil, nil, nil, nil, nil)
+	err := svc.Initialise(t.Context(), `{}`, nil, nil, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	svc.connectorHandler = mockHandler
 
@@ -147,7 +147,7 @@ type mockConnectorHandler struct {
 	lastInput      *http.Config
 }
 
-func (m *mockConnectorHandler) RegisterWorkflow(ctx context.Context, workflowID string, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error {
+func (m *mockConnectorHandler) RegisterWorkflow(ctx context.Context, workflowID string, triggerID string, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error {
 	m.lastWorkflowID = workflowID
 	m.lastInput = input
 	return m.registerErr

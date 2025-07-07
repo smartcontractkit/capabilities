@@ -65,7 +65,7 @@ func NewAuthMetadataHandler(
 type AuthMetadataHandler interface {
 	// SendWorkflows sends all workflows' authentication metadata to the gateway in batches
 	// It is expected to send a response back to the gateway using the gatewayConnector then return error
-	SendWorkflows(ctx context.Context, gatewayID string, req *jsonrpc.Request) error
+	SendWorkflows(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage]) error
 	// BroadcastWorkflow sends the authentication metadata to the gateway.
 	BroadcastWorkflow(ctx context.Context, workflowID string, keys []AuthorizedKey) error
 }
@@ -88,10 +88,11 @@ func (h *authMetadataHandler) BroadcastWorkflow(ctx context.Context, workflowID 
 	if err != nil {
 		return errors.New("failed to marshal auth metadata")
 	}
-	gatewayResp := jsonrpc.Response{
-		Version: "2.0",
+	rawRes := json.RawMessage(payload)
+	gatewayResp := jsonrpc.Response[json.RawMessage]{
+		Version: jsonrpc.JsonRpcVersion,
 		ID:      GetRequestID(MethodWorkflowPushAuthMetadata, workflowID),
-		Result:  json.RawMessage(payload),
+		Result:  &rawRes,
 	}
 	gatewayIDs, err := h.gc.GatewayIDs(ctx)
 	if err != nil {
@@ -121,18 +122,21 @@ func (h *authMetadataHandler) BroadcastWorkflow(ctx context.Context, workflowID 
 }
 
 func (h *authMetadataHandler) sendErrorResponse(ctx context.Context, gatewayID string, reqID string, code int64, message string) {
-	resp := &jsonrpc.Response{
-		Version: "2.0",
+	resp := &jsonrpc.Response[json.RawMessage]{
+		Version: jsonrpc.JsonRpcVersion,
 		ID:      reqID,
 		Error: &jsonrpc.WireError{
 			Code:    code,
 			Message: message,
 		},
 	}
-	h.sendResponse(ctx, gatewayID, resp)
+	err := h.sendResponse(ctx, gatewayID, resp)
+	if err != nil {
+		h.lggr.Errorw("failed to send error response to gateway", "gatewayID", gatewayID, "error", err)
+	}
 }
 
-func (h *authMetadataHandler) SendWorkflows(ctx context.Context, gatewayID string, req *jsonrpc.Request) error {
+func (h *authMetadataHandler) SendWorkflows(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage]) error {
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(h.cfg.GatewayConnectionConfig.MaxPullAuthMetadataDurationMs))
 	defer cancel()
 	workflows, err := h.workflowStore.GetWorkflows()
@@ -166,10 +170,11 @@ func (h *authMetadataHandler) SendWorkflows(ctx context.Context, gatewayID strin
 			return fmt.Errorf("failed to marshal batch auth metadata: %w", err)
 		}
 
-		gatewayResp := jsonrpc.Response{
-			Version: "2.0",
-			ID:      fmt.Sprintf("%s/%s", MethodWorkflowPullAuthMetadata+uuid.New().String()),
-			Result:  json.RawMessage(payload),
+		rawRes := json.RawMessage(payload)
+		gatewayResp := jsonrpc.Response[json.RawMessage]{
+			Version: jsonrpc.JsonRpcVersion,
+			ID:      GetRequestID(MethodWorkflowPullAuthMetadata, req.ID),
+			Result:  &rawRes,
 		}
 
 		err = h.sendResponse(ctx, gatewayID, &gatewayResp)
@@ -180,7 +185,7 @@ func (h *authMetadataHandler) SendWorkflows(ctx context.Context, gatewayID strin
 	return nil
 }
 
-func (h *authMetadataHandler) sendResponse(ctx context.Context, gatewayID string, resp *jsonrpc.Response) error {
+func (h *authMetadataHandler) sendResponse(ctx context.Context, gatewayID string, resp *jsonrpc.Response[json.RawMessage]) error {
 	workflowAllow, globalAllow := h.outgoingRateLimiter.AllowVerbose(gatewayID)
 	if !workflowAllow {
 		return errors.New(errorOutgoingRatelimitSender)

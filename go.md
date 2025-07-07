@@ -2,9 +2,13 @@
 ```mermaid
 flowchart LR
 
-	capabilities/chain_capabilities/evm --> capabilities/libs/loopserver
+	capabilities/bins/protoc-gen-capabilities --> chainlink-common
+	click capabilities/bins/protoc-gen-capabilities href "https://github.com/smartcontractkit/capabilities"
+	capabilities/chain_capabilities/evm --> capabilities/libs
 	capabilities/chain_capabilities/evm --> chainlink-evm
 	click capabilities/chain_capabilities/evm href "https://github.com/smartcontractkit/capabilities"
+	capabilities/consensus --> capabilities/libs
+	click capabilities/consensus href "https://github.com/smartcontractkit/capabilities"
 	capabilities/cron --> capabilities/libs
 	click capabilities/cron href "https://github.com/smartcontractkit/capabilities"
 	capabilities/devenv --> chainlink/v2
@@ -34,15 +38,21 @@ flowchart LR
 	click capabilities/loadtestwritetarget href "https://github.com/smartcontractkit/capabilities"
 	capabilities/mock --> capabilities/libs/loopserver
 	capabilities/mock --> capabilities/libs/testutils
+<<<<<<< HEAD
+=======
+	capabilities/mock --> chainlink-common
+>>>>>>> origin/main
 	click capabilities/mock href "https://github.com/smartcontractkit/capabilities"
 	capabilities/readcontract --> capabilities/libs
 	click capabilities/readcontract href "https://github.com/smartcontractkit/capabilities"
 	capabilities/workflowevent --> capabilities/libs/loopserver
 	capabilities/workflowevent --> capabilities/libs/testutils
+	capabilities/workflowevent --> chainlink-common
 	click capabilities/workflowevent href "https://github.com/smartcontractkit/capabilities"
 	capabilities/workflows --> chainlink-common
 	click capabilities/workflows href "https://github.com/smartcontractkit/capabilities"
 	capabilities/workflows/readbalancesgen --> chainlink-common
+	capabilities/workflows/readbalancesgen --> libocr
 	click capabilities/workflows/readbalancesgen href "https://github.com/smartcontractkit/capabilities"
 	chain-selectors
 	click chain-selectors href "https://github.com/smartcontractkit/chain-selectors"
@@ -74,8 +84,11 @@ flowchart LR
 	click chainlink-common/pkg/values href "https://github.com/smartcontractkit/chainlink-common"
 	chainlink-data-streams --> chainlink-common
 	click chainlink-data-streams href "https://github.com/smartcontractkit/chainlink-data-streams"
+<<<<<<< HEAD
 	chainlink-evm --> chainlink-common
 	chainlink-evm --> chainlink-common/pkg/values
+=======
+>>>>>>> origin/main
 	chainlink-evm --> chainlink-framework/capabilities
 	chainlink-evm --> chainlink-framework/chains
 	chainlink-evm --> chainlink-framework/metrics
@@ -112,6 +125,7 @@ flowchart LR
 	chainlink-solana --> chainlink-common/pkg/monitoring
 	chainlink-solana --> chainlink-framework/multinode
 	click chainlink-solana href "https://github.com/smartcontractkit/chainlink-solana"
+	chainlink-tron/relayer --> chainlink-common
 	chainlink-tron/relayer --> chainlink-evm
 	click chainlink-tron/relayer href "https://github.com/smartcontractkit/chainlink-tron"
 	chainlink/v2 --> chain-selectors
@@ -154,7 +168,9 @@ flowchart LR
 	click wsrpc href "https://github.com/smartcontractkit/wsrpc"
 
 	subgraph capabilities-repo[capabilities]
+		 capabilities/bins/protoc-gen-capabilities
 		 capabilities/chain_capabilities/evm
+		 capabilities/consensus
 		 capabilities/cron
 		 capabilities/devenv
 		 capabilities/http_action

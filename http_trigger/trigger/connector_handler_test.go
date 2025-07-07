@@ -11,6 +11,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
@@ -24,14 +25,14 @@ type mockGatewayConnector struct {
 	SendToGatewayCalled bool
 	SendToGatewayArgs   struct {
 		GatewayID string
-		Msg       *jsonrpc.Response
+		Msg       *jsonrpc.Response[json.RawMessage]
 	}
 }
 
 func (m *mockGatewayConnector) AddHandler(ctx context.Context, methods []string, handler core.GatewayConnectorHandler) error {
 	return nil
 }
-func (m *mockGatewayConnector) SendToGateway(ctx context.Context, gatewayID string, resp *jsonrpc.Response) error {
+func (m *mockGatewayConnector) SendToGateway(ctx context.Context, gatewayID string, resp *jsonrpc.Response[json.RawMessage]) error {
 	m.SendToGatewayCalled = true
 	m.SendToGatewayArgs.GatewayID = gatewayID
 	m.SendToGatewayArgs.Msg = resp
@@ -51,7 +52,7 @@ func (m *mockGatewayConnector) AwaitConnection(ctx context.Context, gatewayID st
 }
 
 // gatewayRequest creates a test request message with the given method
-func gatewayRequest(t *testing.T, method string) *jsonrpc.Request {
+func gatewayRequest(t *testing.T, method string) *jsonrpc.Request[json.RawMessage] {
 	payload := gateway_common.HTTPTriggerRequest{
 		Workflow: gateway_common.WorkflowSelector{
 			WorkflowID: "wf1",
@@ -60,11 +61,21 @@ func gatewayRequest(t *testing.T, method string) *jsonrpc.Request {
 	}
 	jsonPayload, err := json.Marshal(payload)
 	require.NoError(t, err)
-	return &jsonrpc.Request{
+	jsonPayloadMsg := json.RawMessage(jsonPayload)
+	return &jsonrpc.Request[json.RawMessage]{
 		Version: "2.0",
 		ID:      "id",
 		Method:  method,
-		Params:  jsonPayload,
+		Params:  &jsonPayloadMsg,
+	}
+}
+
+func rateLimiterConfig() ratelimit.RateLimiterConfig {
+	return ratelimit.RateLimiterConfig{
+		GlobalRPS:      100.0,
+		GlobalBurst:    100,
+		PerSenderRPS:   100.0,
+		PerSenderBurst: 100,
 	}
 }
 
@@ -72,22 +83,37 @@ func gatewayRequest(t *testing.T, method string) *jsonrpc.Request {
 func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayConnector, <-chan capabilities.TriggerAndId[*http.Payload]) {
 	mockConnector := &mockGatewayConnector{}
 	cfg := ServiceConfig{}
+	irl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
+	require.NoError(t, err)
+	orl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
+	require.NoError(t, err)
+	store := NewWorkflowStore(lggr)
+	authHandler := NewAuthMetadataHandler(
+		lggr,
+		mockConnector,
+		orl,
+		store,
+	)
 	handler, err := NewConnectorHandler(
 		lggr,
 		mockConnector,
 		cfg,
+		orl,
+		irl,
+		store,
+		authHandler,
 	)
 	require.NoError(t, err)
 	sdkCfg := &http.Config{
 		AuthorizedKeys: []*http.AuthorizedKey{
 			{
 				PublicKey: publicKey,
-				Type:      http.KeyType_ECDSA,
+				Type:      http.KeyType_KEY_TYPE_ECDSA,
 			},
 		},
 	}
 	triggerCh := make(chan capabilities.TriggerAndId[*http.Payload], 1)
-	err = handler.RegisterWorkflow(t.Context(), "wf1", sdkCfg, triggerCh)
+	err = handler.RegisterWorkflow(t.Context(), "wf1", "trigger1", sdkCfg, triggerCh)
 	require.NoError(t, err, "Failed to register workflow")
 	return handler, mockConnector, triggerCh
 }
@@ -124,7 +150,8 @@ func TestHandleGatewayMessage_Success(t *testing.T) {
 	require.Nil(t, resp.Error, "Response should not contain an error")
 
 	var triggerResp gateway_common.HTTPTriggerResponse
-	err = json.Unmarshal(resp.Result, &triggerResp)
+	require.NotNil(t, resp.Result)
+	err = json.Unmarshal(*resp.Result, &triggerResp)
 	require.NoError(t, err)
 	require.Equal(t, "wf1", triggerResp.WorkflowID)
 
@@ -138,7 +165,7 @@ func TestHandleGatewayMessage_Success(t *testing.T) {
 	}
 }
 
-func assertErrorResponse(t *testing.T, connector *mockGatewayConnector, resp *jsonrpc.Response, code int64) {
+func assertErrorResponse(t *testing.T, connector *mockGatewayConnector, resp *jsonrpc.Response[json.RawMessage], code int64) {
 	require.Equal(t, "gw1", connector.SendToGatewayArgs.GatewayID)
 	require.Equal(t, "2.0", resp.Version)
 	require.Equal(t, "id", resp.ID)
@@ -149,7 +176,18 @@ func TestHandleGatewayMessage_InvalidRequest(t *testing.T) {
 	lggr := logger.Test(t)
 	handler, connector, triggerCh := setup(t, lggr)
 	// empty request
-	req := &jsonrpc.Request{}
+	req := &jsonrpc.Request[json.RawMessage]{}
+	err := handler.HandleGatewayMessage(t.Context(), "gw1", req)
+	require.NoError(t, err)
+	require.False(t, connector.SendToGatewayCalled)
+	require.Len(t, triggerCh, 0, "trigger channel should not receive any messages")
+}
+
+func TestHandleGatewayMessage_MissingBody(t *testing.T) {
+	lggr := logger.Test(t)
+	handler, connector, triggerCh := setup(t, lggr)
+	// empty request
+	req := &jsonrpc.Request[json.RawMessage]{Method: gateway_common.MethodWorkflowExecute}
 	err := handler.HandleGatewayMessage(t.Context(), "gw1", req)
 	require.NoError(t, err)
 	require.False(t, connector.SendToGatewayCalled)
@@ -160,7 +198,8 @@ func TestHandleGatewayMessage_InvalidUserInputJSON(t *testing.T) {
 	lggr := logger.Test(t)
 	handler, connector, triggerCh := setup(t, lggr)
 	req := gatewayRequest(t, gateway_common.MethodWorkflowExecute)
-	req.Params = json.RawMessage("invalid json")
+	invalidJSON := json.RawMessage("invalid json")
+	req.Params = &invalidJSON
 	err := handler.HandleGatewayMessage(t.Context(), "gw1", req)
 	require.NoError(t, err)
 	require.False(t, connector.SendToGatewayCalled)
@@ -171,7 +210,8 @@ func TestHandleGatewayMessage_InvalidJSON(t *testing.T) {
 	lggr := logger.Test(t)
 	handler, connector, triggerCh := setup(t, lggr)
 	req := gatewayRequest(t, gateway_common.MethodWorkflowExecute)
-	req.Params = json.RawMessage(`{"workflow":{"workflowId":"wf1"},"input":{"key": {"invalid json"}}}`)
+	params := json.RawMessage(`{"workflow":{"workflowId":"wf1"},"input":{"key": {"invalid json"}}}`)
+	req.Params = &params
 	err := handler.HandleGatewayMessage(t.Context(), "gw1", req)
 	require.NoError(t, err)
 	require.False(t, connector.SendToGatewayCalled)
@@ -204,11 +244,12 @@ func TestProcessTrigger_MissingWorkflowID(t *testing.T) {
 	jsonPayload, err := json.Marshal(payload)
 	require.NoError(t, err)
 
-	req := &jsonrpc.Request{
+	params := json.RawMessage(jsonPayload)
+	req := &jsonrpc.Request[json.RawMessage]{
 		Version: "2.0",
 		ID:      "id",
 		Method:  gateway_common.MethodWorkflowExecute,
-		Params:  jsonPayload,
+		Params:  &params,
 	}
 
 	handler.processTrigger(t.Context(), "gw1", req)
@@ -225,12 +266,12 @@ func TestProcessTrigger_MissingWorkflowID(t *testing.T) {
 func TestRegisterAndUnregisterWorkflow(t *testing.T) {
 	lggr := logger.Test(t)
 	handler, _, _ := setup(t, lggr)
-	_, ok := handler.workflows["wf1"]
-	require.True(t, ok, "workflow not registered")
-	err := handler.UnregisterWorkflow(context.Background(), "wf1")
+	_, err := handler.workflowMetadataStore.GetWorkflow("wf1")
+	require.NoError(t, err)
+	err = handler.UnregisterWorkflow(context.Background(), "wf1")
 	require.NoError(t, err, "UnregisterWorkflow failed")
-	_, ok = handler.workflows["wf1"]
-	require.False(t, ok, "workflow still registered after unregistering")
+	_, err = handler.workflowMetadataStore.GetWorkflow("wf1")
+	require.Error(t, err)
 	err = handler.UnregisterWorkflow(context.Background(), "wf1")
 	require.Error(t, err, "UnregisterWorkflow should return error for non-existent workflow")
 }
@@ -249,11 +290,12 @@ func TestProcessTrigger_UnregisteredWorkflow(t *testing.T) {
 	jsonPayload, err := json.Marshal(payload)
 	require.NoError(t, err)
 
-	req := &jsonrpc.Request{
+	params := json.RawMessage(jsonPayload)
+	req := &jsonrpc.Request[json.RawMessage]{
 		Version: "2.0",
 		ID:      "id",
 		Method:  gateway_common.MethodWorkflowExecute,
-		Params:  jsonPayload,
+		Params:  &params,
 	}
 
 	handler.processTrigger(t.Context(), "gw1", req)
@@ -281,13 +323,13 @@ func TestRegisterWorkflow_InvalidECDSAPublicKey(t *testing.T) {
 		{
 			name:      "invalid publicKey format (nothex)",
 			publicKey: "nothex",
-			keyType:   http.KeyType_ECDSA,
+			keyType:   http.KeyType_KEY_TYPE_ECDSA,
 			errorMsg:  "invalid public key format",
 		},
 		{
 			name:      "invalid publicKey length",
 			publicKey: "0x123",
-			keyType:   http.KeyType_ECDSA,
+			keyType:   http.KeyType_KEY_TYPE_ECDSA,
 			errorMsg:  "invalid public key format",
 		},
 		{
@@ -310,7 +352,7 @@ func TestRegisterWorkflow_InvalidECDSAPublicKey(t *testing.T) {
 				},
 			}
 
-			err := handler.RegisterWorkflow(context.Background(), "wf1", cfg, sendCh)
+			err := handler.RegisterWorkflow(context.Background(), "wf1", "trigger1", cfg, sendCh)
 			require.Error(t, err)
 			require.Contains(t, err.Error(), tc.errorMsg)
 		})
@@ -320,7 +362,26 @@ func TestConnectorHandler_Start_HealthReport_Ready_Name_Close(t *testing.T) {
 	lggr := logger.Test(t)
 	mockConnector := &mockGatewayConnector{}
 	cfg := ServiceConfig{}
-	handler, err := NewConnectorHandler(lggr, mockConnector, cfg)
+	irl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
+	require.NoError(t, err)
+	orl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
+	require.NoError(t, err)
+	store := NewWorkflowStore(lggr)
+	authHandler := NewAuthMetadataHandler(
+		lggr,
+		mockConnector,
+		orl,
+		store,
+	)
+	handler, err := NewConnectorHandler(
+		lggr,
+		mockConnector,
+		cfg,
+		orl,
+		irl,
+		store,
+		authHandler,
+	)
 	require.NoError(t, err)
 
 	require.Error(t, handler.Ready())

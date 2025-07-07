@@ -3,12 +3,13 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"sync"
 	"time"
 
-	"errors"
+	"stathat.com/c/consistent"
 
 	"github.com/smartcontractkit/capabilities/http_action/common"
 
@@ -117,10 +118,11 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 
 	lggr.Debugw("sending request to gateway")
 
-	gatewayResp := jsonrpc.Response{
+	tmp := json.RawMessage(payload)
+	gatewayResp := jsonrpc.Response[json.RawMessage]{
 		Version: "2.0",
 		ID:      requestID,
-		Result:  json.RawMessage(payload),
+		Result:  &tmp,
 	}
 
 	selectedGateway, err := p.awaitConnection(ctx, lggr, gatewayReq.Hash())
@@ -153,12 +155,13 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 // Gateway node is selected based on the request hash. If the selected gateway is unavailable, it is removed
 // from the consistent hash ring and the method retries to select another gateway.
 // When all gateways are evicted from the hash ring, then it will retry to get the list of gateways and reinitialize the ring and retry after backoff.
+// Note that consitent hash ring is reset every time a new request is made, so it will always use the latest list of gateways.
 func (p *gatewayOutboundProxy) awaitConnection(ctx context.Context, lggr logger.Logger, requestHash string) (string, error) {
 	gatewayIDs, err := p.gatewayConnector.GatewayIDs(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get gateway IDs: %w", err)
 	}
-	selector := NewConsistentHashSelector(gatewayIDs)
+	selector := setupRing(gatewayIDs)
 	backoff := time.Duration(p.gatewayConnectionConfig.InitialIntervalMs) * time.Millisecond
 
 	for {
@@ -176,19 +179,19 @@ func (p *gatewayOutboundProxy) awaitConnection(ctx context.Context, lggr logger.
 					if err != nil {
 						return "", fmt.Errorf("failed to get gateway IDs: %w", err)
 					}
-					selector.Reset(gatewayIDs)
+					selector = setupRing(gatewayIDs)
 					backoff = p.nextBackoff(backoff)
 					continue
 				}
 			}
-			gateway, err := selector.Select(requestHash)
+			gateway, err := selector.Get(requestHash)
 			if err != nil {
 				return "", fmt.Errorf("failed to select gateway using consistent hashing: %w", err)
 			}
 
 			if err := p.attemptGatewayConnection(ctx, lggr, gateway, backoff); err != nil {
 				lggr.Warnw("failed to await connection to gateway node, retrying", "err", err, "gateway", gateway)
-				selector.MarkUnavailable(gateway)
+				selector.Remove(gateway)
 				continue
 			}
 
@@ -214,11 +217,15 @@ func (p *gatewayOutboundProxy) attemptGatewayConnection(ctx context.Context, lgg
 
 // HandleGatewayMessage processes incoming messages from the Gateway,
 // which are in response to a HandleSingleNodeRequest call.
-func (p *gatewayOutboundProxy) HandleGatewayMessage(ctx context.Context, gatewayID string, req *jsonrpc.Request) error {
+func (p *gatewayOutboundProxy) HandleGatewayMessage(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage]) error {
 	l := logger.With(p.lggr, "gatewayID", gatewayID, "method", req.Method, "requestID", req.ID)
 	l.Debugw("handling incomming gateway message")
+	if req.Params == nil {
+		req.Params = &json.RawMessage{}
+	}
+
 	var msg gateway.OutboundHTTPResponse
-	err := json.Unmarshal(req.Params, &msg)
+	err := json.Unmarshal(*req.Params, &msg)
 	if err != nil {
 		l.Errorw("failed to unmarshal request params", "error", err)
 		return nil
@@ -329,4 +336,13 @@ func (r *responses) get(id string) (chan gc.OutboundHTTPResponse, bool) {
 	defer r.mu.RUnlock()
 	ch, ok := r.chs[id]
 	return ch, ok
+}
+
+// setupRing initializes a consistent hash ring with the provided nodes.
+func setupRing(gatewayIDs []string) *consistent.Consistent {
+	c := consistent.New()
+	for _, node := range gatewayIDs {
+		c.Add(node)
+	}
+	return c
 }

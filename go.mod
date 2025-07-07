@@ -1,4 +1,4 @@
-module cre-workflow/capabilities
+module github.com/smartcontractkit/capabilities
 
 go 1.24.2
 

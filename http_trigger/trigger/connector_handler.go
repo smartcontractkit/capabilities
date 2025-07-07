@@ -51,6 +51,7 @@ func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config Se
 		outgoingRateLimiter:   outgoingRateLimiter,
 		incomingRateLimiter:   incomingRateLimiter,
 		workflowMetadataStore: workflowMetadataStore,
+		authMetadataHandler:   authMetadataHandler,
 	}, nil
 }
 
@@ -92,7 +93,7 @@ func (h *connectorHandler) RegisterWorkflow(ctx context.Context, workflowID stri
 	var authorizedKeys []AuthorizedKey
 	for _, key := range input.AuthorizedKeys {
 		switch key.Type {
-		case http.KeyType_ECDSA:
+		case http.KeyType_KEY_TYPE_ECDSA:
 			if len(key.PublicKey) != ecdsaPubKeyHexLen || key.PublicKey[:2] != "0x" {
 				return fmt.Errorf("invalid public key format: must be 0x-prefixed hex string of length %d, got %q", ecdsaPubKeyHexLen, key.PublicKey)
 			}
@@ -125,7 +126,7 @@ func (h *connectorHandler) UnregisterWorkflow(ctx context.Context, workflowID st
 // HandleGatewayMessage processes incoming messages from gateways.
 // Always returns nil. Unless request is malformed or rate-limited, response is sent back to the
 // gateway using sendResponse method.
-func (h *connectorHandler) HandleGatewayMessage(ctx context.Context, gatewayID string, req *jsonrpc.Request) error {
+func (h *connectorHandler) HandleGatewayMessage(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage]) error {
 	senderAllow, globalAllow := h.incomingRateLimiter.AllowVerbose(gatewayID)
 	if !senderAllow {
 		h.lggr.Errorw(errorIncomingRatelimitSender, "gatewayID", gatewayID)
@@ -152,7 +153,7 @@ func (h *connectorHandler) HandleGatewayMessage(ctx context.Context, gatewayID s
 }
 
 func (h *connectorHandler) sendErrorResponse(ctx context.Context, gatewayID string, reqID string, code int64, message string) {
-	resp := &jsonrpc.Response{
+	resp := &jsonrpc.Response[json.RawMessage]{
 		Version: "2.0",
 		ID:      reqID,
 		Error: &jsonrpc.WireError{
@@ -163,7 +164,7 @@ func (h *connectorHandler) sendErrorResponse(ctx context.Context, gatewayID stri
 	h.sendResponse(ctx, gatewayID, resp)
 }
 
-func (h *connectorHandler) sendResponse(ctx context.Context, gatewayID string, resp *jsonrpc.Response) {
+func (h *connectorHandler) sendResponse(ctx context.Context, gatewayID string, resp *jsonrpc.Response[json.RawMessage]) {
 	senderAllow, globalAllow := h.outgoingRateLimiter.AllowVerbose(gatewayID)
 	if !senderAllow {
 		h.lggr.Errorw(errorOutgoingRatelimitSender, "gatewayID", gatewayID)
@@ -180,9 +181,13 @@ func (h *connectorHandler) sendResponse(ctx context.Context, gatewayID string, r
 	}
 }
 
-func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string, req *jsonrpc.Request) {
+func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage]) {
 	var triggerReq gateway_common.HTTPTriggerRequest
-	err := json.Unmarshal(req.Params, &triggerReq)
+	if req.Params == nil {
+		req.Params = &json.RawMessage{}
+	}
+
+	err := json.Unmarshal(*req.Params, &triggerReq)
 	if err != nil {
 		h.lggr.Errorw("Failed to unmarshal HTTP trigger request", "error", err, "gatewayID", gatewayID, "requestID", req.ID)
 		return
@@ -225,10 +230,11 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInternal, "Internal server error")
 		return
 	}
-	resp := &jsonrpc.Response{
+	payloadMsg := json.RawMessage(jsonPayload)
+	resp := &jsonrpc.Response[json.RawMessage]{
 		Version: "2.0",
 		ID:      req.ID,
-		Result:  jsonPayload,
+		Result:  &payloadMsg,
 	}
 	h.sendResponse(ctx, gatewayID, resp)
 }
