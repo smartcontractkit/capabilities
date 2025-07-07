@@ -7,7 +7,7 @@ toolchain go1.24.3
 require (
 	github.com/jonboulle/clockwork v0.4.0
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20250613213914-93a34678e8e2
-	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250704223230-62166777d639
+	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250707133321-27faefc9ce45
 	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250704215855-8e0907d77096
 	github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb v0.0.0-20250704203933-af56933301a8
 	github.com/smartcontractkit/libocr v0.0.0-20250513175559-61c382d6cee4
