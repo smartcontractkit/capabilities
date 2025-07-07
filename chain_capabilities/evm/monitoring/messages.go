@@ -5,11 +5,10 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	evmcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 	"go.opentelemetry.io/otel/attribute"
 	"google.golang.org/protobuf/proto"
-
-	evmcap "github.com/smartcontractkit/capabilities/chain_capabilities/evm/pb"
 
 	capmonitoring "github.com/smartcontractkit/capabilities/libs/monitoring"
 

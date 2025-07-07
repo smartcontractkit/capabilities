@@ -12,14 +12,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	evmmock "github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives/evm"
-
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/pb"
 )
 
 var (
@@ -36,7 +35,7 @@ var (
 		0x95, 0x2b, 0xa7, 0xf1, 0x63, 0xc4, 0xa1, 0x16,
 		0x28, 0xf5, 0x5a, 0x4d, 0xf5, 0x23, 0xb3, 0xef,
 	}
-	topicsWithEventSig0 = []*pb.TopicValues{
+	topicsWithEventSig0 = []*evmcappb.TopicValues{
 		{Values: [][]byte{eventSig0Example}},
 	}
 
@@ -66,7 +65,7 @@ func TestLogTriggerService_Close_WaitsForPollingGoroutine(t *testing.T) {
 		service := NewLogTriggerService(evmService, store, lggr, 10*time.Millisecond)
 		err := service.Start(ctx)
 		require.NoError(t, err)
-		ch, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &pb.FilterLogTriggerRequest{
+		ch, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
 			Topics:    topicsWithEventSig0,
 		})
@@ -86,7 +85,7 @@ func TestLogTriggerService_Close_WaitsForPollingGoroutine(t *testing.T) {
 		}()
 
 		// Unregister to allow polling goroutine to exit
-		err = service.UnregisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &pb.FilterLogTriggerRequest{})
+		err = service.UnregisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{})
 		require.NoError(t, err)
 		_, exists = store.Read(triggerID)
 		require.False(t, exists)
@@ -108,7 +107,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 	service := NewLogTriggerService(nil, NewLogTriggerStore(), lggr, pollInterval)
 
 	t.Run("missing triggerID", func(t *testing.T) {
-		_, err := service.RegisterLogTrigger(ctx, "", capabilities.RequestMetadata{}, &pb.FilterLogTriggerRequest{
+		_, err := service.RegisterLogTrigger(ctx, "", capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
 		})
 		require.Error(t, err)
@@ -120,7 +119,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 		service := NewLogTriggerService(nil, store, lggr, pollInterval)
 		// we simulate a RegisterLogTrigger() by tampering the store
 		store.Write(triggerID, logTriggerState{})
-		_, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &pb.FilterLogTriggerRequest{
+		_, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
 		})
 		require.Error(t, err)
@@ -128,7 +127,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 	})
 
 	t.Run("missing addresses", func(t *testing.T) {
-		_, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &pb.FilterLogTriggerRequest{
+		_, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: [][]byte{},
 		})
 		require.Error(t, err)
@@ -136,9 +135,9 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 	})
 
 	t.Run("too many topics", func(t *testing.T) {
-		_, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &pb.FilterLogTriggerRequest{
+		_, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
-			Topics: []*pb.TopicValues{
+			Topics: []*evmcappb.TopicValues{
 				{Values: [][]byte{}},
 				{Values: [][]byte{}},
 				{Values: [][]byte{}},
@@ -151,15 +150,15 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 	})
 
 	t.Run("missing eventSig", func(t *testing.T) {
-		_, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &pb.FilterLogTriggerRequest{
+		_, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
 		})
 		require.Error(t, err)
 		require.Equal(t, err.Error(), "no valid event sig provided (at least one event sig is required in topics)")
 
-		_, err = service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &pb.FilterLogTriggerRequest{
+		_, err = service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
-			Topics:    []*pb.TopicValues{},
+			Topics:    []*evmcappb.TopicValues{},
 		})
 		require.Error(t, err)
 		require.Equal(t, err.Error(), "no valid event sig provided (at least one event sig is required in topics)")
@@ -169,7 +168,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 		evmService := initMocks(t)
 		evmService.On("LatestAndFinalizedHead", mock.Anything).Return(evmtypes.Head{}, evmtypes.Head{}, errors.New("mocked failure error"))
 		service := NewLogTriggerService(evmService, NewLogTriggerStore(), lggr, pollInterval)
-		_, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &pb.FilterLogTriggerRequest{
+		_, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
 			Topics:    topicsWithEventSig0,
 		})
@@ -182,7 +181,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 		evmService.On("LatestAndFinalizedHead", mock.Anything).Return(evmtypes.Head{}, evmtypes.Head{}, nil)
 		evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(errors.New("mocking error, making register failing on purpose")).Once()
 		service := NewLogTriggerService(evmService, NewLogTriggerStore(), lggr, pollInterval)
-		_, err := service.RegisterLogTrigger(ctx, triggerID+"-logtracking", capabilities.RequestMetadata{}, &pb.FilterLogTriggerRequest{
+		_, err := service.RegisterLogTrigger(ctx, triggerID+"-logtracking", capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: brokenAddresses,
 			Topics:    topicsWithEventSig0,
 		})
@@ -201,7 +200,7 @@ func TestUnregisterLogTrigger_InputValidation(t *testing.T) {
 	lggr := logger.Test(t)
 
 	emptyMetadata := capabilities.RequestMetadata{}
-	emptyRequest := &pb.FilterLogTriggerRequest{}
+	emptyRequest := &evmcappb.FilterLogTriggerRequest{}
 
 	t.Run("missing triggerID", func(t *testing.T) {
 		err := service.UnregisterLogTrigger(ctx, "", emptyMetadata, emptyRequest)
@@ -238,8 +237,8 @@ func TestGetTopics(t *testing.T) {
 	t.Parallel()
 	service := &LogTriggerService{}
 	t.Run("only eventSigs provided", func(t *testing.T) {
-		input := &pb.FilterLogTriggerRequest{
-			Topics: []*pb.TopicValues{
+		input := &evmcappb.FilterLogTriggerRequest{
+			Topics: []*evmcappb.TopicValues{
 				{Values: [][]byte{[]byte("eventSig1")}},
 			},
 		}
@@ -251,8 +250,8 @@ func TestGetTopics(t *testing.T) {
 	})
 
 	t.Run("eventSigs and topic1 provided", func(t *testing.T) {
-		input := &pb.FilterLogTriggerRequest{
-			Topics: []*pb.TopicValues{
+		input := &evmcappb.FilterLogTriggerRequest{
+			Topics: []*evmcappb.TopicValues{
 				{Values: [][]byte{[]byte("eventSig1")}},
 				{Values: [][]byte{[]byte("topic2")}},
 			},
@@ -265,8 +264,8 @@ func TestGetTopics(t *testing.T) {
 	})
 
 	t.Run("eventSigs, topic1 and topic2 provided", func(t *testing.T) {
-		input := &pb.FilterLogTriggerRequest{
-			Topics: []*pb.TopicValues{
+		input := &evmcappb.FilterLogTriggerRequest{
+			Topics: []*evmcappb.TopicValues{
 				{Values: [][]byte{[]byte("eventSig1")}},
 				{Values: [][]byte{[]byte("topic2")}},
 				{Values: [][]byte{[]byte("topic3")}},
@@ -280,8 +279,8 @@ func TestGetTopics(t *testing.T) {
 	})
 
 	t.Run("all topics provided", func(t *testing.T) {
-		input := &pb.FilterLogTriggerRequest{
-			Topics: []*pb.TopicValues{
+		input := &evmcappb.FilterLogTriggerRequest{
+			Topics: []*evmcappb.TopicValues{
 				{Values: [][]byte{[]byte("eventSig1")}},
 				{Values: [][]byte{[]byte("topic2")}},
 				{Values: [][]byte{[]byte("topic3")}},
@@ -302,7 +301,7 @@ func TestCreateLogRequest(t *testing.T) {
 	tests := []struct {
 		name                                            string
 		addresses, eventSigs, topics2, topics3, topics4 [][]byte
-		confidence                                      pb.ConfidenceLevel
+		confidence                                      evmcappb.ConfidenceLevel
 		expectedConfidence                              primitives.ConfidenceLevel
 		expectedExpressions                             []query.Expression
 	}{
@@ -310,7 +309,7 @@ func TestCreateLogRequest(t *testing.T) {
 			name:               "finalized confidence, single address and single eventSig and empty topics",
 			addresses:          addresses,
 			eventSigs:          [][]byte{eventSig0Example},
-			confidence:         pb.ConfidenceLevel_CONFIDENCE_LEVEL_FINALIZED,
+			confidence:         evmcappb.ConfidenceLevel_CONFIDENCE_LEVEL_FINALIZED,
 			expectedConfidence: primitives.Finalized,
 			expectedExpressions: []query.Expression{
 				evm.NewAddressFilter(evmtypes.Address(expectedAddress)),
@@ -322,7 +321,7 @@ func TestCreateLogRequest(t *testing.T) {
 			name:               "latest confidence, single address and single eventSig and empty topics",
 			addresses:          addresses,
 			eventSigs:          [][]byte{eventSig0Example},
-			confidence:         pb.ConfidenceLevel_CONFIDENCE_LEVEL_LATEST,
+			confidence:         evmcappb.ConfidenceLevel_CONFIDENCE_LEVEL_LATEST,
 			expectedConfidence: primitives.Unconfirmed,
 			expectedExpressions: []query.Expression{
 				evm.NewAddressFilter(evmtypes.Address(expectedAddress)),
@@ -336,7 +335,7 @@ func TestCreateLogRequest(t *testing.T) {
 			topics2:            [][]byte{eventSig0Example},
 			topics3:            [][]byte{eventSig0Example},
 			topics4:            [][]byte{eventSig0Example},
-			confidence:         pb.ConfidenceLevel_CONFIDENCE_LEVEL_FINALIZED,
+			confidence:         evmcappb.ConfidenceLevel_CONFIDENCE_LEVEL_FINALIZED,
 			expectedConfidence: primitives.Finalized,
 			expectedExpressions: []query.Expression{
 				evm.NewAddressFilter(evmtypes.Address(expectedAddress)),
@@ -570,7 +569,7 @@ func TestSendLogsToWorkflows(t *testing.T) {
 			},
 		})
 		state, _ := service.triggers.Read(triggerID)
-		logCh := make(chan capabilities.TriggerAndId[*pb.Log], len(expectedLogs))
+		logCh := make(chan capabilities.TriggerAndId[*evmcappb.Log], len(expectedLogs))
 
 		err := service.sendLogsToWorkflows(expectedLogs, finalizedBlockNumber, triggerID, state, logCh)
 		require.NoError(t, err)
@@ -594,7 +593,7 @@ func TestSendLogsToWorkflows(t *testing.T) {
 	})
 
 	t.Run("first log sent to channel second log dropped out due to timeout", func(t *testing.T) {
-		logCh := make(chan capabilities.TriggerAndId[*pb.Log], 1) // buffer size of 1, so it can only hold one log at a time
+		logCh := make(chan capabilities.TriggerAndId[*evmcappb.Log], 1) // buffer size of 1, so it can only hold one log at a time
 		service.triggers.Write(triggerID, logTriggerState{
 			unfinalizedSentEventIDs: map[string]*big.Int{},
 		})
@@ -617,7 +616,7 @@ func TestSendLogsToWorkflows(t *testing.T) {
 	})
 
 	t.Run("store unfinalized logs in store and do not re-send them", func(t *testing.T) {
-		logCh := make(chan capabilities.TriggerAndId[*pb.Log], 1)
+		logCh := make(chan capabilities.TriggerAndId[*evmcappb.Log], 1)
 		service.triggers.Write(triggerID, logTriggerState{
 			unfinalizedSentEventIDs: map[string]*big.Int{},
 		})
@@ -658,7 +657,7 @@ func TestSendLogsToWorkflows(t *testing.T) {
 			},
 		})
 		triggerState, _ := service.triggers.Read(triggerID)
-		logCh := make(chan capabilities.TriggerAndId[*pb.Log], len(expectedLogs))
+		logCh := make(chan capabilities.TriggerAndId[*evmcappb.Log], len(expectedLogs))
 
 		err := service.sendLogsToWorkflows([]*evmtypes.Log{}, finalizedBlockNumber, triggerID, triggerState, logCh)
 		require.NoError(t, err)
@@ -681,7 +680,7 @@ func TestSendLogsToWorkflows(t *testing.T) {
 		state := logTriggerState{
 			unfinalizedSentEventIDs: map[string]*big.Int{},
 		}
-		logCh := make(chan capabilities.TriggerAndId[*pb.Log], len(expectedLogs))
+		logCh := make(chan capabilities.TriggerAndId[*evmcappb.Log], len(expectedLogs))
 		err := service.sendLogsToWorkflows(expectedLogs, finalizedBlockNumber, triggerID, state, logCh)
 		require.Error(t, err)
 		require.ErrorContains(t, err, "failed to update unfinalized sent event IDs for triggerID: trigger-1: cannot find trigger with ID \"trigger-1\"")
@@ -726,7 +725,7 @@ func TestIntegration_RegisterAndUnregisterLogTrigger(t *testing.T) {
 	defaultTickerFactory = &mockTickerFactory{C1: tickCh}
 	require.Empty(t, service.triggers.ReadAll())
 
-	ch, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &pb.FilterLogTriggerRequest{
+	ch, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
 		Addresses: addresses,
 		Topics:    topicsWithEventSig0,
 	})
@@ -737,7 +736,7 @@ func TestIntegration_RegisterAndUnregisterLogTrigger(t *testing.T) {
 	require.Len(t, service.triggers.ReadAll(), 1, "expected one and only one trigger to be registered")
 	require.Len(t, triggerState.unfinalizedSentEventIDs, 0, "expected no unfinalized sent event IDs stored in trigger state before registration")
 
-	validateLog := func(msg *capabilities.TriggerAndId[*pb.Log], expectedBlock *big.Int) {
+	validateLog := func(msg *capabilities.TriggerAndId[*evmcappb.Log], expectedBlock *big.Int) {
 		logConverted := &evmtypes.Log{
 			TxHash:    evmtypes.Hash(msg.Trigger.TxHash),
 			BlockHash: evmtypes.Hash(msg.Trigger.BlockHash),
@@ -787,7 +786,7 @@ func TestIntegration_RegisterAndUnregisterLogTrigger(t *testing.T) {
 	logID2 := service.generateLogIdentifier(log2)
 	require.Equal(t, log2.BlockNumber, triggerState.unfinalizedSentEventIDs[logID2])
 
-	err = service.UnregisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &pb.FilterLogTriggerRequest{})
+	err = service.UnregisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{})
 	require.NoError(t, err)
 	_, exists = service.triggers.Read(triggerID)
 	require.False(t, exists, "no trigger should come up with that ID after unregistering")
@@ -796,7 +795,7 @@ func TestIntegration_RegisterAndUnregisterLogTrigger(t *testing.T) {
 	// Wait to confirm no more messages after unregister
 	msg := <-ch
 	lggr.Debugf("msg: %+v", msg)
-	require.Equal(t, msg, capabilities.TriggerAndId[*pb.Log]{Trigger: nil, Id: ""})
+	require.Equal(t, msg, capabilities.TriggerAndId[*evmcappb.Log]{Trigger: nil, Id: ""})
 }
 
 func createLog(index uint32, number *big.Int, address evmtypes.Address, message []byte) *evmtypes.Log {
@@ -891,10 +890,10 @@ func assemblyDataMessage(address evmtypes.Address, blockNumber *big.Int) string 
 	return message
 }
 
-func createTriggerResponse(log *evmtypes.Log, service *LogTriggerService) capabilities.TriggerAndId[*pb.Log] {
-	return capabilities.TriggerAndId[*pb.Log]{
+func createTriggerResponse(log *evmtypes.Log, service *LogTriggerService) capabilities.TriggerAndId[*evmcappb.Log] {
+	return capabilities.TriggerAndId[*evmcappb.Log]{
 		Id:      service.generateLogIdentifier(log),
-		Trigger: pb.ConvertLogToProto(log),
+		Trigger: evmcappb.ConvertLogToProto(log),
 	}
 }
 

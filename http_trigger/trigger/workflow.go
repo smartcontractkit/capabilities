@@ -5,9 +5,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/smartcontractkit/capabilities/http_trigger/pb"
-
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 )
 
 var (
@@ -19,11 +18,11 @@ var (
 type workflow struct {
 	mu             sync.Mutex
 	authorizedKeys map[string]struct{}
-	sendCh         chan<- capabilities.TriggerAndId[*pb.Payload]
+	sendCh         chan<- capabilities.TriggerAndId[*http.Payload]
 	closed         bool
 }
 
-func newWorkflow(authorizedKeys map[string]struct{}, sendCh chan<- capabilities.TriggerAndId[*pb.Payload]) *workflow {
+func newWorkflow(authorizedKeys map[string]struct{}, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) *workflow {
 	return &workflow{
 		authorizedKeys: authorizedKeys,
 		sendCh:         sendCh,
@@ -40,7 +39,7 @@ func (w *workflow) close() {
 	}
 }
 
-func (w *workflow) trigger(ctx context.Context, trigger capabilities.TriggerAndId[*pb.Payload]) error {
+func (w *workflow) trigger(ctx context.Context, trigger capabilities.TriggerAndId[*http.Payload]) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.closed {

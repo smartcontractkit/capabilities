@@ -3,10 +3,9 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
-
-	"errors"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -14,10 +13,9 @@ import (
 	"github.com/smartcontractkit/capabilities/http_action/common"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
-
-	"github.com/smartcontractkit/capabilities/http_action/pb"
 
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
@@ -134,7 +132,36 @@ func TestGatewayOutboundProxy_SendRequest_Success(t *testing.T) {
 		WorkflowExecutionID: "exec1",
 		WorkflowOwner:       "owner1",
 	}
-	input := &pb.Request{
+	input := &http.Request{
+		Url:       "http://example.com",
+		Method:    "GET",
+		Headers:   map[string]string{"X-Test": "1"},
+		Body:      []byte("test"),
+		TimeoutMs: 5000,
+	}
+
+	// Prepare a goroutine to receive gateway response
+	go func() {
+		id := <-readyCh
+		simulateGatewayMessage(t, proxy, id, 200, "ok", "", true)
+	}()
+
+	output, err := proxy.SendRequest(context.Background(), metadata, input)
+	require.NoError(t, err)
+	require.NotNil(t, output)
+	assert.Equal(t, uint32(200), output.StatusCode)
+	assert.Equal(t, []byte("ok"), output.Body)
+}
+
+func TestGatewayOutboundProxy_SendRequest_MissingBodyToGateway(t *testing.T) {
+	proxy, _, readyCh := setupSendRequestTest(t)
+
+	metadata := capabilities.RequestMetadata{
+		WorkflowID:          "wf1",
+		WorkflowExecutionID: "exec1",
+		WorkflowOwner:       "owner1",
+	}
+	input := &http.Request{
 		Url:       "http://example.com",
 		Method:    "GET",
 		Headers:   map[string]string{"X-Test": "1"},
@@ -148,11 +175,8 @@ func TestGatewayOutboundProxy_SendRequest_Success(t *testing.T) {
 		simulateGatewayMessage(t, proxy, id, 200, "ok", "", false)
 	}()
 
-	output, err := proxy.SendRequest(context.Background(), metadata, input)
-	require.NoError(t, err)
-	require.NotNil(t, output)
-	assert.Equal(t, uint32(200), output.StatusCode)
-	assert.Equal(t, []byte("ok"), output.Body)
+	_, err := proxy.SendRequest(context.Background(), metadata, input)
+	require.Error(t, err)
 }
 
 func TestGatewayOutboundProxy_SendRequest_Timeout(t *testing.T) {
@@ -163,7 +187,7 @@ func TestGatewayOutboundProxy_SendRequest_Timeout(t *testing.T) {
 		WorkflowExecutionID: "exec1",
 		WorkflowOwner:       "owner1",
 	}
-	input := &pb.Request{
+	input := &http.Request{
 		Url:       "http://example.com",
 		Method:    "GET",
 		Headers:   map[string]string{"X-Test": "1"},
@@ -189,7 +213,7 @@ func TestGatewayOutboundProxy_SendRequest_ExecutionError(t *testing.T) {
 		WorkflowExecutionID: "exec1",
 		WorkflowOwner:       "owner1",
 	}
-	input := &pb.Request{
+	input := &http.Request{
 		Url:       "http://example.com",
 		Method:    "GET",
 		Headers:   map[string]string{"X-Test": "1"},
@@ -216,7 +240,7 @@ func TestGatewayOutboundProxy_SendRequest_RateLimitError(t *testing.T) {
 		WorkflowExecutionID: "exec1",
 		WorkflowOwner:       "owner1",
 	}
-	input := &pb.Request{
+	input := &http.Request{
 		Url:       "http://example.com",
 		Method:    "GET",
 		Headers:   map[string]string{"X-Test": "1"},
@@ -235,7 +259,7 @@ func TestGatewayOutboundProxy_SendRequest_RateLimitError(t *testing.T) {
 	assert.Contains(t, err.Error(), "internal error")
 }
 
-func simulateGatewayMessage(t *testing.T, proxy *gatewayOutboundProxy, id string, statusCode int, body string, errorMessage string, executionError bool) {
+func simulateGatewayMessage(t *testing.T, proxy *gatewayOutboundProxy, id string, statusCode int, body string, errorMessage string, includeBody bool) {
 	req := jsonrpc.Request[json.RawMessage]{
 		ID:      id,
 		Method:  gateway_common.MethodHTTPAction,
@@ -246,11 +270,14 @@ func simulateGatewayMessage(t *testing.T, proxy *gatewayOutboundProxy, id string
 		Body:         []byte(body),
 		ErrorMessage: errorMessage,
 	}
-	payload, err := json.Marshal(resp)
-	require.NoError(t, err)
-	rawPayload := json.RawMessage(payload)
-	req.Params = &rawPayload
-	err = proxy.HandleGatewayMessage(context.Background(), "gateway1", &req)
+	if includeBody {
+		payload, err := json.Marshal(resp)
+		require.NoError(t, err)
+		rj := json.RawMessage(payload)
+		req.Params = &rj
+	}
+
+	err := proxy.HandleGatewayMessage(context.Background(), "gateway1", &req)
 	require.NoError(t, err)
 }
 
