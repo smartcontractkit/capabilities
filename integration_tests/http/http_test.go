@@ -17,7 +17,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 
-	httpcap "github.com/smartcontractkit/capabilities/http/action"
+	httpcap "github.com/smartcontractkit/capabilities/http_action/action"
 
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway"
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/config"
@@ -25,13 +25,12 @@ import (
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/network"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	httpsdk "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/smartcontractkit/capabilities/http_action/pb"
 )
 
 const EthSignedMessagePrefix = "\x19Ethereum Signed Message:\n"
@@ -161,7 +160,7 @@ func newTestGatewayConnector(t *testing.T, publicKey, nodeURL string, signer con
 }
 
 // Helper to create and initialize the HTTP capability
-func newTestHTTPCapability(ctx context.Context, t *testing.T, gc core.GatewayConnector, lggr logger.Logger) server.ClientCapability {
+func newTestHTTPCapability(ctx context.Context, t *testing.T, gc core.GatewayConnector, lggr logger.Logger) pb.ClientCapability {
 	httpCapability := httpcap.NewService(lggr)
 	err := httpCapability.Initialise(ctx, serviceConfigTemplate, nil, nil, nil, nil, nil, nil, gc)
 	require.NoError(t, err)
@@ -230,7 +229,7 @@ func TestHTTPActionCapability(t *testing.T) {
 		WorkflowExecutionID: "workflow_execution_id",
 	}
 
-	output, err := httpCapability.SendRequest(ctx, requestData, &httpsdk.Request{
+	output, err := httpCapability.SendRequest(ctx, requestData, &pb.Request{
 		Url:     fmt.Sprintf("http://%s/test", listener.Addr().String()),
 		Method:  "GET",
 		Headers: map[string]string{"X-Test": "1"},
