@@ -3,18 +3,19 @@ package trigger
 import "github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 
 const (
-	defaultInitialIntervalMs = 100    // 100 milliseconds
-	defaultDurationMs        = 30_000 // 30 seconds
-	defaultMultiplier        = 2.0
-	defaultGlobalRPS         = 100.0
-	defaultGlobalBurst       = 100
-	defaultPerSenderRPS      = 100.0
-	defaultPerSenderBurst    = 100
+	defaultInitialIntervalMs     = 100    // 100 milliseconds
+	defaultDurationMs            = 30_000 // 30 seconds
+	defaultMultiplier            = 2.0
+	defaultGlobalRPS             = 100.0
+	defaultGlobalBurst           = 100
+	defaultPerSenderRPS          = 100.0
+	defaultPerSenderBurst        = 100
+	defaultAuthMetadataBatchSize = 50
 )
 
 type ServiceConfig struct {
 	// AuthMetadataBatchSize is the number of auth metadata items to send in a single batch to the gateway.
-	AuthMetdataBatchSize uint16 `json:"authMetadataBatchSize"`
+	AuthMetadataBatchSize uint16 `json:"authMetadataBatchSize"`
 	// SendChannelBufferSize is the size of the channel used to trigger workflows.
 	SendChannelBufferSize uint16 `json:"sendChannelBufferSize"`
 	// IncomingRateLimiter configuration for messages incoming to this node from the gateway.
@@ -45,6 +46,9 @@ func applyDefaults(cfg ServiceConfig) ServiceConfig {
 	cfg.GatewayConnectionConfig = gatewayConnectionConfigDefaults(cfg.GatewayConnectionConfig)
 	cfg.OutgoingRateLimiter = outgoingRateLimiterConfigDefaults(cfg.OutgoingRateLimiter)
 	cfg.IncomingRateLimiter = incomingRateLimiterConfigDefaults(cfg.IncomingRateLimiter)
+	if cfg.AuthMetadataBatchSize == 0 {
+		cfg.AuthMetadataBatchSize = defaultAuthMetadataBatchSize
+	}
 	return cfg
 }
 

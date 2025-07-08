@@ -67,7 +67,7 @@ func (s *service) Initialise(
 		return err
 	}
 	workflowStore := NewWorkflowStore(s.lggr)
-	authMetadataHandler := NewAuthMetadataHandler(s.lggr, gc, outgoingRateLimiter, workflowStore)
+	authMetadataHandler := NewGatewayAuthPublisher(s.lggr, gc, outgoingRateLimiter, workflowStore, s.cfg)
 	s.connectorHandler, err = NewConnectorHandler(s.lggr, gc, s.cfg, outgoingRateLimiter, incomingRateLimiter, workflowStore, authMetadataHandler)
 	if err != nil {
 		return err

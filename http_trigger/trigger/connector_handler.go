@@ -37,13 +37,13 @@ type connectorHandler struct {
 	config                ServiceConfig
 	incomingRateLimiter   *ratelimit.RateLimiter
 	outgoingRateLimiter   *ratelimit.RateLimiter
-	authMetadataHandler   AuthMetadataHandler
+	gatewayAuthPublisher  GatewayAuthPublisher
 	workflowMetadataStore WorkflowStore
 }
 
 func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config ServiceConfig,
 	outgoingRateLimiter *ratelimit.RateLimiter, incomingRateLimiter *ratelimit.RateLimiter,
-	workflowMetadataStore WorkflowStore, authMetadataHandler AuthMetadataHandler) (*connectorHandler, error) {
+	workflowMetadataStore WorkflowStore, gatewayAuthPublisher GatewayAuthPublisher) (*connectorHandler, error) {
 	return &connectorHandler{
 		lggr:                  logger.Named(lggr, HandlerName),
 		gatewayConnector:      gc,
@@ -51,7 +51,7 @@ func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config Se
 		outgoingRateLimiter:   outgoingRateLimiter,
 		incomingRateLimiter:   incomingRateLimiter,
 		workflowMetadataStore: workflowMetadataStore,
-		authMetadataHandler:   authMetadataHandler,
+		gatewayAuthPublisher:  gatewayAuthPublisher,
 	}, nil
 }
 
@@ -111,7 +111,7 @@ func (h *connectorHandler) RegisterWorkflow(ctx context.Context, workflowID stri
 	}
 	// Push the auth metadata to the gateway
 	// Error is non-critical. Retries will be handled by the authMetadataHandler.
-	err = h.authMetadataHandler.BroadcastWorkflow(ctx, workflowID, authorizedKeys)
+	err = h.gatewayAuthPublisher.BroadcastWorkflow(ctx, workflowID, authorizedKeys)
 	if err != nil {
 		h.lggr.Errorw("Failed to push auth metadata to gateway", "error",
 			err, "workflowID", workflowID, "triggerID", triggerID)
@@ -141,7 +141,8 @@ func (h *connectorHandler) HandleGatewayMessage(ctx context.Context, gatewayID s
 	case gateway_common.MethodWorkflowExecute:
 		h.processTrigger(ctx, gatewayID, req)
 	case gateway_common.MethodWorkflowPullAuthMetadata:
-		err := h.authMetadataHandler.SendWorkflows(ctx, gatewayID, req)
+		// No retries here. Retries are orchestrated by the gateway node
+		err := h.gatewayAuthPublisher.SendWorkflows(ctx, gatewayID, req)
 		if err != nil {
 			h.lggr.Errorw("Failed to handle pull auth metadata request", "error",
 				err, "gatewayID", gatewayID, "requestID", req.ID)

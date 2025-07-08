@@ -82,17 +82,20 @@ func rateLimiterConfig() ratelimit.RateLimiterConfig {
 // Helper for setting up proxy and mockConnector for SendRequest tests
 func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayConnector, <-chan capabilities.TriggerAndId[*http.Payload]) {
 	mockConnector := &mockGatewayConnector{}
-	cfg := ServiceConfig{}
+	cfg := ServiceConfig{
+		AuthMetadataBatchSize: 10,
+	}
 	irl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
 	require.NoError(t, err)
 	orl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
 	require.NoError(t, err)
 	store := NewWorkflowStore(lggr)
-	authHandler := NewAuthMetadataHandler(
+	authHandler := NewGatewayAuthPublisher(
 		lggr,
 		mockConnector,
 		orl,
 		store,
+		cfg,
 	)
 	handler, err := NewConnectorHandler(
 		lggr,
@@ -367,11 +370,12 @@ func TestConnectorHandler_Start_HealthReport_Ready_Name_Close(t *testing.T) {
 	orl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
 	require.NoError(t, err)
 	store := NewWorkflowStore(lggr)
-	authHandler := NewAuthMetadataHandler(
+	authHandler := NewGatewayAuthPublisher(
 		lggr,
 		mockConnector,
 		orl,
 		store,
+		cfg,
 	)
 	handler, err := NewConnectorHandler(
 		lggr,
@@ -408,4 +412,148 @@ func TestConnectorHandler_Start_HealthReport_Ready_Name_Close(t *testing.T) {
 	require.Error(t, hr[handler.Name()])
 
 	require.Error(t, handler.Close())
+}
+
+func TestHandleGatewayMessage_PullAuthMetadata(t *testing.T) {
+	lggr := logger.Test(t)
+	handler, connector, _ := setup(t, lggr)
+
+	// Register additional workflows to test multiple workflows
+	sdkCfg2 := &http.Config{
+		AuthorizedKeys: []*http.AuthorizedKey{
+			{
+				PublicKey: "0xB18B5D6DB47fB7b0974505D7aB544e24478B6e99",
+				Type:      http.KeyType_KEY_TYPE_ECDSA,
+			},
+		},
+	}
+	triggerCh2 := make(chan capabilities.TriggerAndId[*http.Payload], 1)
+	err := handler.RegisterWorkflow(t.Context(), "wf2", "trigger2", sdkCfg2, triggerCh2)
+	require.NoError(t, err, "Failed to register second workflow")
+
+	// Create pull auth metadata request
+	// The request ID must start with the method name for validation
+	requestID := gateway_common.GetRequestID(gateway_common.MethodWorkflowPullAuthMetadata)
+	req := &jsonrpc.Request[json.RawMessage]{
+		Version: "2.0",
+		ID:      requestID,
+		Method:  gateway_common.MethodWorkflowPullAuthMetadata,
+		Params:  nil, // Pull auth metadata doesn't need params
+	}
+
+	err = handler.HandleGatewayMessage(t.Context(), "gw1", req)
+	require.NoError(t, err)
+
+	require.True(t, connector.SendToGatewayCalled)
+	require.Equal(t, "gw1", connector.SendToGatewayArgs.GatewayID)
+
+	resp := connector.SendToGatewayArgs.Msg
+	require.Equal(t, "2.0", resp.Version)
+	require.Equal(t, requestID, resp.ID)
+	require.Nil(t, resp.Error, "Response should not contain an error")
+	require.NotNil(t, resp.Result, "Response should contain workflow auth metadata")
+
+	var workflowAuthMetadata []gateway_common.WorkflowAuthMetadata
+	err = json.Unmarshal(*resp.Result, &workflowAuthMetadata)
+	require.NoError(t, err)
+
+	require.Len(t, workflowAuthMetadata, 2, "Should receive auth metadata for all registered workflows")
+	metadataByWorkflowID := make(map[string]gateway_common.WorkflowAuthMetadata)
+	for _, metadata := range workflowAuthMetadata {
+		metadataByWorkflowID[metadata.WorkflowID] = metadata
+	}
+	wf1Metadata, exists := metadataByWorkflowID["wf1"]
+	require.True(t, exists, "Should contain metadata for wf1")
+	require.Equal(t, "wf1", wf1Metadata.WorkflowID)
+	require.Len(t, wf1Metadata.AuthorizedKeys, 1)
+	require.Equal(t, publicKey, wf1Metadata.AuthorizedKeys[0].PublicKey)
+	require.Equal(t, "ecdsa", string(wf1Metadata.AuthorizedKeys[0].KeyType))
+	wf2Metadata, exists := metadataByWorkflowID["wf2"]
+	require.True(t, exists, "Should contain metadata for wf2")
+	require.Equal(t, "wf2", wf2Metadata.WorkflowID)
+	require.Len(t, wf2Metadata.AuthorizedKeys, 1)
+	require.Equal(t, "0xB18B5D6DB47fB7b0974505D7aB544e24478B6e99", wf2Metadata.AuthorizedKeys[0].PublicKey)
+	require.Equal(t, "ecdsa", string(wf2Metadata.AuthorizedKeys[0].KeyType))
+}
+
+// TestHandleGatewayMessage_PullAuthMetadata_InvalidRequestID tests pull auth metadata with invalid request ID
+func TestHandleGatewayMessage_PullAuthMetadata_InvalidRequestID(t *testing.T) {
+	lggr := logger.Test(t)
+	handler, connector, _ := setup(t, lggr)
+
+	// Create pull auth metadata request with invalid request ID
+	// The request ID must start with "workflow_pull_auth_metadata" for validation
+	requestID := "invalid-request-id"
+	req := &jsonrpc.Request[json.RawMessage]{
+		Version: "2.0",
+		ID:      requestID,
+		Method:  gateway_common.MethodWorkflowPullAuthMetadata,
+		Params:  nil,
+	}
+
+	err := handler.HandleGatewayMessage(t.Context(), "gw1", req)
+	require.NoError(t, err)
+
+	// Verify that SendToGateway was called with error response
+	require.True(t, connector.SendToGatewayCalled)
+	require.Equal(t, "gw1", connector.SendToGatewayArgs.GatewayID)
+
+	resp := connector.SendToGatewayArgs.Msg
+	require.Equal(t, "2.0", resp.Version)
+	require.Equal(t, requestID, resp.ID)
+	require.NotNil(t, resp.Error, "Response should contain an error")
+	require.Equal(t, jsonrpc.ErrInvalidRequest, resp.Error.Code)
+	require.Contains(t, resp.Error.Message, "invalid request ID")
+	require.Nil(t, resp.Result, "Response should not contain result on error")
+}
+
+// TestHandleGatewayMessage_PullAuthMetadata_EmptyWorkflows tests pull auth metadata when no workflows are registered
+func TestHandleGatewayMessage_PullAuthMetadata_EmptyWorkflows(t *testing.T) {
+	lggr := logger.Test(t)
+	// Create handler without registering any workflows
+	mockConnector := &mockGatewayConnector{}
+	cfg := ServiceConfig{}
+	irl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
+	require.NoError(t, err)
+	orl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
+	require.NoError(t, err)
+	store := NewWorkflowStore(lggr)
+	authHandler := NewGatewayAuthPublisher(
+		lggr,
+		mockConnector,
+		orl,
+		store,
+		cfg,
+	)
+	handler, err := NewConnectorHandler(
+		lggr,
+		mockConnector,
+		cfg,
+		orl,
+		irl,
+		store,
+		authHandler,
+	)
+	require.NoError(t, err)
+
+	// Create pull auth metadata request
+	requestID := gateway_common.GetRequestID(gateway_common.MethodWorkflowPullAuthMetadata)
+	req := &jsonrpc.Request[json.RawMessage]{
+		Version: "2.0",
+		ID:      requestID,
+		Method:  gateway_common.MethodWorkflowPullAuthMetadata,
+		Params:  nil,
+	}
+
+	err = handler.HandleGatewayMessage(t.Context(), "gw1", req)
+	require.NoError(t, err)
+
+	require.True(t, mockConnector.SendToGatewayCalled)
+	require.Equal(t, "gw1", mockConnector.SendToGatewayArgs.GatewayID)
+
+	resp := mockConnector.SendToGatewayArgs.Msg
+	require.Equal(t, "2.0", resp.Version)
+	require.Equal(t, requestID, resp.ID)
+	require.NotNil(t, resp.Error, "Response should contain an error")
+	require.Nil(t, resp.Result, "Response should not contain result")
 }

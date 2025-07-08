@@ -44,14 +44,18 @@ func (w *workflow) close() {
 }
 
 func (w *workflow) trigger(ctx context.Context, trigger capabilities.TriggerAndId[*http.Payload]) error {
+	select {
+	case <-ctx.Done():
+		return errContextCanceled
+	default:
+	}
+
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.closed {
 		return errWorkflowClosed
 	}
 	select {
-	case <-ctx.Done():
-		return errContextCanceled
 	case w.sendCh <- trigger:
 		return nil
 	default:
