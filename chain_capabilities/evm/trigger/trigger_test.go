@@ -316,7 +316,17 @@ func TestCreateLogRequest(t *testing.T) {
 				evm.NewEventSigFilter(evmtypes.Hash(eventSig0Example)),
 			},
 		},
-		// TODO PLEX-1488: missing test for SAFE confidence level
+		{
+			name:               "safe confidence, single address and single eventSig and empty topics",
+			addresses:          addresses,
+			eventSigs:          [][]byte{eventSig0Example},
+			confidence:         evmcappb.ConfidenceLevel_CONFIDENCE_LEVEL_SAFE,
+			expectedConfidence: primitives.Safe,
+			expectedExpressions: []query.Expression{
+				evm.NewAddressFilter(evmtypes.Address(expectedAddress)),
+				evm.NewEventSigFilter(evmtypes.Hash(eventSig0Example)),
+			},
+		},
 		{
 			name:               "latest confidence, single address and single eventSig and empty topics",
 			addresses:          addresses,

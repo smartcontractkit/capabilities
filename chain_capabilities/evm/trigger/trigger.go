@@ -293,10 +293,11 @@ func (lts *LogTriggerService) createLogRequest(_ context.Context, addresses, eve
 	switch confidence {
 	case evmcappb.ConfidenceLevel_CONFIDENCE_LEVEL_FINALIZED:
 		confidenceLevel = primitives.Finalized
-	default:
-		//TODO PLEX-1488: it has to support SAFE here.
-		//Default here for either ConfidenceLevel_CONFIDENCE_LEVEL_LATEST or ConfidenceLevel_CONFIDENCE_LEVEL_SAFE
+	case evmcappb.ConfidenceLevel_CONFIDENCE_LEVEL_LATEST:
 		confidenceLevel = primitives.Unconfirmed
+	default:
+		//Default ConfidenceLevel_CONFIDENCE_LEVEL_SAFE
+		confidenceLevel = primitives.Safe
 	}
 
 	if expr := lts.makeEventByTopicFilter(1, topics2); expr != nil {
@@ -308,9 +309,6 @@ func (lts *LogTriggerService) createLogRequest(_ context.Context, addresses, eve
 	if expr := lts.makeEventByTopicFilter(3, topics4); expr != nil {
 		expressions = append(expressions, *expr)
 	}
-
-	//TODO PLEX-1488: when implementing SAFE we need to add a toBlockExpression to the query where it will be the latest safe block number
-
 	return expressions, confidenceLevel
 }
 
