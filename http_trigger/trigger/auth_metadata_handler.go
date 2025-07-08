@@ -99,20 +99,19 @@ func (h *authMetadataHandler) BroadcastWorkflow(ctx context.Context, workflowID 
 		return fmt.Errorf("failed to get gateway IDs: %w", err)
 	}
 	for _, gatewayID := range gatewayIDs {
-		backoff := time.Duration(h.cfg.GatewayConnectionConfig.InitialIntervalMs) * time.Millisecond
+		backoff := time.Duration(h.cfg.GatewayConnectionConfig.RetryConfig.InitialIntervalMs) * time.Millisecond
 		for {
 			err := h.sendResponse(ctx, gatewayID, &gatewayResp)
-			if err != nil {
-				h.lggr.Errorw("failed to send auth metadata to gateway. Retrying", "gatewayID", gatewayID, "error", err)
-			} else {
-				return nil
+			if err == nil {
+				continue
 			}
+			h.lggr.Debugw("failed to send auth metadata to gateway. Retrying", "gatewayID", gatewayID, "error", err)
 			select {
 			case <-ctx.Done():
 				return fmt.Errorf("context canceled while awaiting connection to gateway %s: %w", gatewayID, ctx.Err())
 			case <-time.After(backoff):
 				backoff = nextBackoff(backoff,
-					h.cfg.GatewayConnectionConfig.Multiplier,
+					h.cfg.GatewayConnectionConfig.RetryConfig.Multiplier,
 					time.Duration(h.cfg.GatewayConnectionConfig.MaxPushAuthMetadataDurationMs)*time.Millisecond)
 				continue
 			}
@@ -201,9 +200,9 @@ func (h *authMetadataHandler) sendResponse(ctx context.Context, gatewayID string
 }
 
 // nextBackoff calculates the next backoff duration using the configured multiplier and max elapsed time.
-func nextBackoff(backoff time.Duration, multiplier float64, max time.Duration) time.Duration {
+func nextBackoff(backoff time.Duration, multiplier float64, maxDuration time.Duration) time.Duration {
 	backoffMs := float64(backoff.Milliseconds())
 	backoffMs = backoffMs * multiplier
-	backoffMs = math.Min(backoffMs, float64(max.Milliseconds()))
+	backoffMs = math.Min(backoffMs, float64(maxDuration.Milliseconds()))
 	return time.Duration(backoffMs) * time.Millisecond
 }

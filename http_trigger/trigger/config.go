@@ -28,14 +28,17 @@ type ServiceConfig struct {
 }
 
 type GatewayConnectionConfig struct {
-	// InitialIntervalMs is the initial interval in milliseconds for the exponential backoff retry strategy when pushing auth metadata to the gateway.
-	InitialIntervalMs uint32 `json:"initialIntervalMs"`
-	// Multiplier is the multiplier for the exponential backoff retry strategy.
-	Multiplier float64 `json:"multiplier"`
+	RetryConfig RetryConfig `json:"retryConfig"`
 	// MaxPushAuthMetadataDurationMs is the maximum duration in milliseconds for broadcasting auth metadata to the gateway.
 	MaxPushAuthMetadataDurationMs uint32 `json:"maxPushAuthMetadataDurationMs"`
 	// MaxPullAuthMetadataDurationMs is the maximum duration in milliseconds for responding to pull auth metadata from the gateway.
 	MaxPullAuthMetadataDurationMs uint32 `json:"maxPullAuthMetadataDurationMs"`
+}
+
+type RetryConfig struct {
+	InitialIntervalMs int     `json:"initialIntervalMs"`
+	MaxIntervalTimeMs int     `json:"maxIntervalTimeMs"`
+	Multiplier        float64 `json:"multiplier"`
 }
 
 func applyDefaults(cfg ServiceConfig) ServiceConfig {
@@ -46,11 +49,14 @@ func applyDefaults(cfg ServiceConfig) ServiceConfig {
 }
 
 func gatewayConnectionConfigDefaults(config GatewayConnectionConfig) GatewayConnectionConfig {
-	if config.InitialIntervalMs == 0 {
-		config.InitialIntervalMs = defaultInitialIntervalMs
+	if config.RetryConfig.InitialIntervalMs == 0 {
+		config.RetryConfig.InitialIntervalMs = defaultInitialIntervalMs
 	}
-	if config.Multiplier == 0 {
-		config.Multiplier = defaultMultiplier
+	if config.RetryConfig.Multiplier == 0 {
+		config.RetryConfig.Multiplier = defaultMultiplier
+	}
+	if config.RetryConfig.MaxIntervalTimeMs == 0 {
+		config.RetryConfig.MaxIntervalTimeMs = defaultDurationMs
 	}
 	if config.MaxPushAuthMetadataDurationMs == 0 {
 		config.MaxPushAuthMetadataDurationMs = defaultDurationMs
