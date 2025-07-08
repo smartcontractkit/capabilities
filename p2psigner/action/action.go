@@ -83,7 +83,7 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		}
 	}
 	if acct == "" {
-		return capabilities.CapabilityResponse{}, errors.New(fmt.Sprintf("no %s account found in keystore", core.P2PAccountKey))
+		return capabilities.CapabilityResponse{}, fmt.Errorf("no %s account found in keystore", core.P2PAccountKey)
 	}
 
 	sig, err := c.keystore.Sign(ctx, acct, input.Digest)

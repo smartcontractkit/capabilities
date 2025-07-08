@@ -8,6 +8,7 @@ require (
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20250613213914-93a34678e8e2
 	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250707183758-0325e478c7f0
 	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250704215855-8e0907d77096
+	github.com/stretchr/testify v1.10.0
 )
 
 require (
@@ -88,7 +89,6 @@ require (
 	github.com/smartcontractkit/freeport v0.1.1 // indirect
 	github.com/smartcontractkit/grpc-proxy v0.0.0-20240830132753-a7e17fec5ab7 // indirect
 	github.com/smartcontractkit/libocr v0.0.0-20250604151357-2fe8c61bbf2e // indirect
-	github.com/stretchr/testify v1.10.0 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
