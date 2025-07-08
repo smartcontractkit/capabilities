@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/smartcontractkit/capabilities/libs/loopserver"
-	action "github.com/smartcontractkit/capabilities/p2psigner/action"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
+
+	action "github.com/smartcontractkit/capabilities/p2psigner/action"
+
+	"github.com/smartcontractkit/capabilities/libs/loopserver"
 )
 
 var _ loop.StandardCapabilities = (*capabilitiesServer)(nil)
