@@ -1,4 +1,4 @@
-package action
+package action_test
 
 import (
 	"context"
@@ -14,6 +14,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 
 	"github.com/smartcontractkit/capabilities/libs/testutils"
+	"github.com/smartcontractkit/capabilities/p2psigner/action"
 	"github.com/smartcontractkit/capabilities/p2psigner/signercap"
 )
 
@@ -40,7 +41,7 @@ func (m *mockKeystore) Sign(ctx context.Context, account string, msg []byte) ([]
 func TestNew(t *testing.T) {
 	t.Run("a new p2psigner action is created", func(t *testing.T) {
 		mockKeystore := &mockKeystore{}
-		c, err := New(Params{
+		c, err := action.New(action.Params{
 			Logger:   logger.Test(t),
 			Keystore: mockKeystore,
 		})
@@ -52,7 +53,7 @@ func TestNew(t *testing.T) {
 func TestCapability_Info(t *testing.T) {
 	t.Run("capability info is reported correctly", func(t *testing.T) {
 		mockKeystore := &mockKeystore{}
-		c, err := New(Params{
+		c, err := action.New(action.Params{
 			Logger:   logger.Test(t),
 			Keystore: mockKeystore,
 		})
@@ -75,7 +76,7 @@ func TestCapability_Execute(t *testing.T) {
 			},
 		}
 
-		c, err := New(Params{
+		c, err := action.New(action.Params{
 			Logger:   logger.Test(t),
 			Keystore: mockKeystore,
 		})
@@ -117,7 +118,7 @@ func TestCapability_Execute(t *testing.T) {
 
 	t.Run("capability errors when inputs is nil", func(t *testing.T) {
 		mockKeystore := &mockKeystore{}
-		c, err := New(Params{
+		c, err := action.New(action.Params{
 			Logger:   logger.Test(t),
 			Keystore: mockKeystore,
 		})
@@ -131,7 +132,7 @@ func TestCapability_Execute(t *testing.T) {
 
 	t.Run("capability errors when SignInputs is missing", func(t *testing.T) {
 		mockKeystore := &mockKeystore{}
-		c, err := New(Params{
+		c, err := action.New(action.Params{
 			Logger:   logger.Test(t),
 			Keystore: mockKeystore,
 		})
@@ -144,7 +145,7 @@ func TestCapability_Execute(t *testing.T) {
 
 	t.Run("capability errors when SignInputs is nil", func(t *testing.T) {
 		mockKeystore := &mockKeystore{}
-		c, err := New(Params{
+		c, err := action.New(action.Params{
 			Logger:   logger.Test(t),
 			Keystore: mockKeystore,
 		})
@@ -164,7 +165,7 @@ func TestCapability_Execute(t *testing.T) {
 				return nil, errors.New("keystore error")
 			},
 		}
-		c, err := New(Params{
+		c, err := action.New(action.Params{
 			Logger:   logger.Test(t),
 			Keystore: mockKeystore,
 		})
@@ -191,7 +192,7 @@ func TestCapability_Execute(t *testing.T) {
 		mockKeystore := &mockKeystore{
 			accounts: []string{},
 		}
-		c, err := New(Params{
+		c, err := action.New(action.Params{
 			Logger:   logger.Test(t),
 			Keystore: mockKeystore,
 		})
@@ -218,7 +219,7 @@ func TestCapability_Execute(t *testing.T) {
 		mockKeystore := &mockKeystore{
 			accounts: []string{"OTHER_ACCOUNT"},
 		}
-		c, err := New(Params{
+		c, err := action.New(action.Params{
 			Logger:   logger.Test(t),
 			Keystore: mockKeystore,
 		})
@@ -248,7 +249,7 @@ func TestCapability_Execute(t *testing.T) {
 				return nil, errors.New("signing error")
 			},
 		}
-		c, err := New(Params{
+		c, err := action.New(action.Params{
 			Logger:   logger.Test(t),
 			Keystore: mockKeystore,
 		})
@@ -275,7 +276,7 @@ func TestCapability_Execute(t *testing.T) {
 func TestCapability_RegisterToWorkflow(t *testing.T) {
 	t.Run("register to workflow does not error", func(t *testing.T) {
 		mockKeystore := &mockKeystore{}
-		c, err := New(Params{
+		c, err := action.New(action.Params{
 			Logger:   logger.Test(t),
 			Keystore: mockKeystore,
 		})
@@ -288,7 +289,7 @@ func TestCapability_RegisterToWorkflow(t *testing.T) {
 func TestCapability_UnregisterFromWorkflow(t *testing.T) {
 	t.Run("unregister from workflow does not error", func(t *testing.T) {
 		mockKeystore := &mockKeystore{}
-		c, err := New(Params{
+		c, err := action.New(action.Params{
 			Logger:   logger.Test(t),
 			Keystore: mockKeystore,
 		})
