@@ -60,8 +60,8 @@ func (h *connectorHandler) Start(ctx context.Context) error {
 	return h.StartOnce(HandlerName, func() error {
 		return h.gatewayConnector.AddHandler(ctx, []string{
 			gateway_common.MethodWorkflowExecute,
-			MethodWorkflowPushAuthMetadata,
-			MethodWorkflowPullAuthMetadata,
+			gateway_common.MethodWorkflowPushAuthMetadata,
+			gateway_common.MethodWorkflowPullAuthMetadata,
 		}, h)
 	})
 }
@@ -90,15 +90,15 @@ func (h *connectorHandler) ID(context.Context) (string, error) {
 }
 
 func (h *connectorHandler) RegisterWorkflow(ctx context.Context, workflowID string, triggerID string, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error {
-	var authorizedKeys []AuthorizedKey
+	var authorizedKeys []gateway_common.AuthorizedKey
 	for _, key := range input.AuthorizedKeys {
 		switch key.Type {
 		case http.KeyType_KEY_TYPE_ECDSA:
 			if len(key.PublicKey) != ecdsaPubKeyHexLen || key.PublicKey[:2] != "0x" {
 				return fmt.Errorf("invalid public key format: must be 0x-prefixed hex string of length %d, got %q", ecdsaPubKeyHexLen, key.PublicKey)
 			}
-			authorizedKeys = append(authorizedKeys, AuthorizedKey{
-				KeyType:   KeyTypeECDSA,
+			authorizedKeys = append(authorizedKeys, gateway_common.AuthorizedKey{
+				KeyType:   gateway_common.KeyTypeECDSA,
 				PublicKey: key.PublicKey,
 			})
 		default:
@@ -140,7 +140,7 @@ func (h *connectorHandler) HandleGatewayMessage(ctx context.Context, gatewayID s
 	switch req.Method {
 	case gateway_common.MethodWorkflowExecute:
 		h.processTrigger(ctx, gatewayID, req)
-	case MethodWorkflowPullAuthMetadata:
+	case gateway_common.MethodWorkflowPullAuthMetadata:
 		err := h.authMetadataHandler.SendWorkflows(ctx, gatewayID, req)
 		if err != nil {
 			h.lggr.Errorw("Failed to handle pull auth metadata request", "error",

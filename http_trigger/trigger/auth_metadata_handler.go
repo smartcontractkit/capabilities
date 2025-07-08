@@ -6,39 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"strings"
 	"time"
-
-	"github.com/google/uuid"
 
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 )
-
-const (
-	// TODO: move this to chainlink-common
-	MethodWorkflowPushAuthMetadata = "workflow.push_auth_metadata"
-	MethodWorkflowPullAuthMetadata = "workflow.pull_auth_metadata"
-)
-
-// TODO: move this to chainlink-common
-type WorkflowAuthMetadata struct {
-	WorkflowID     string
-	AuthorizedKeys []AuthorizedKey
-}
-
-type KeyType string
-
-const (
-	KeyTypeECDSA KeyType = "ecdsa"
-)
-
-type AuthorizedKey struct {
-	KeyType   KeyType
-	PublicKey string
-}
 
 type authMetadataHandler struct {
 	lggr                logger.Logger
@@ -67,20 +42,13 @@ type AuthMetadataHandler interface {
 	// It is expected to send a response back to the gateway using the gatewayConnector then return error
 	SendWorkflows(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage]) error
 	// BroadcastWorkflow sends the authentication metadata to the gateway.
-	BroadcastWorkflow(ctx context.Context, workflowID string, keys []AuthorizedKey) error
+	BroadcastWorkflow(ctx context.Context, workflowID string, keys []gateway.AuthorizedKey) error
 }
 
-// TODO: move this to chainlink-common
-func GetRequestID(methodName string, parts ...string) string {
-	id := append([]string{methodName}, parts...)
-	id = append(id, uuid.New().String())
-	return strings.Join(id, "/")
-}
-
-func (h *authMetadataHandler) BroadcastWorkflow(ctx context.Context, workflowID string, keys []AuthorizedKey) error {
+func (h *authMetadataHandler) BroadcastWorkflow(ctx context.Context, workflowID string, keys []gateway.AuthorizedKey) error {
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(h.cfg.GatewayConnectionConfig.MaxPushAuthMetadataDurationMs))
 	defer cancel()
-	authData := WorkflowAuthMetadata{
+	authData := gateway.WorkflowAuthMetadata{
 		WorkflowID:     workflowID,
 		AuthorizedKeys: keys,
 	}
@@ -91,7 +59,7 @@ func (h *authMetadataHandler) BroadcastWorkflow(ctx context.Context, workflowID 
 	rawRes := json.RawMessage(payload)
 	gatewayResp := jsonrpc.Response[json.RawMessage]{
 		Version: jsonrpc.JsonRpcVersion,
-		ID:      GetRequestID(MethodWorkflowPushAuthMetadata, workflowID),
+		ID:      gateway.GetRequestID(gateway.MethodWorkflowPushAuthMetadata, workflowID),
 		Result:  &rawRes,
 	}
 	gatewayIDs, err := h.gc.GatewayIDs(ctx)
@@ -151,13 +119,13 @@ func (h *authMetadataHandler) SendWorkflows(ctx context.Context, gatewayID strin
 		}
 		batch := workflows[i:end]
 
-		var batchAuthData []WorkflowAuthMetadata
+		var batchAuthData []gateway.WorkflowAuthMetadata
 		for _, wf := range batch {
-			var keys []AuthorizedKey
+			var keys []gateway.AuthorizedKey
 			for _, key := range wf.authorizedKeys {
 				keys = append(keys, key)
 			}
-			batchAuthData = append(batchAuthData, WorkflowAuthMetadata{
+			batchAuthData = append(batchAuthData, gateway.WorkflowAuthMetadata{
 				WorkflowID:     wf.workflowID,
 				AuthorizedKeys: keys,
 			})
@@ -172,7 +140,7 @@ func (h *authMetadataHandler) SendWorkflows(ctx context.Context, gatewayID strin
 		rawRes := json.RawMessage(payload)
 		gatewayResp := jsonrpc.Response[json.RawMessage]{
 			Version: jsonrpc.JsonRpcVersion,
-			ID:      GetRequestID(MethodWorkflowPullAuthMetadata, req.ID),
+			ID:      gateway.GetRequestID(gateway.MethodWorkflowPullAuthMetadata, req.ID),
 			Result:  &rawRes,
 		}
 

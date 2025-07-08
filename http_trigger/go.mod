@@ -5,9 +5,8 @@ go 1.24.2
 toolchain go1.24.3
 
 require (
-	github.com/google/uuid v1.6.0
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20250530004552-1b414f8954d0
-	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250707133321-27faefc9ce45
+	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250708020957-6a50ce6e7da6
 	github.com/stretchr/testify v1.10.0
 	google.golang.org/protobuf v1.36.6
 )
@@ -36,6 +35,7 @@ require (
 	github.com/goccy/go-json v0.10.4 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus v1.0.1 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.1.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.26.1 // indirect

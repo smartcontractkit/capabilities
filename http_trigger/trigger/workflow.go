@@ -8,6 +8,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 )
 
 var (
@@ -19,12 +20,12 @@ var (
 type workflow struct {
 	workflowID     string
 	mu             sync.Mutex
-	authorizedKeys map[string]AuthorizedKey
+	authorizedKeys map[string]gateway.AuthorizedKey
 	sendCh         chan<- capabilities.TriggerAndId[*http.Payload]
 	closed         bool
 }
 
-func newWorkflow(workflowID string, authorizedKeys map[string]AuthorizedKey, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) *workflow {
+func newWorkflow(workflowID string, authorizedKeys map[string]gateway.AuthorizedKey, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) *workflow {
 	return &workflow{
 		workflowID:     workflowID,
 		authorizedKeys: authorizedKeys,
@@ -59,7 +60,7 @@ func (w *workflow) trigger(ctx context.Context, trigger capabilities.TriggerAndI
 }
 
 type WorkflowStore interface {
-	RegisterWorkflow(workflowID string, authorizedKeys []AuthorizedKey, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error
+	RegisterWorkflow(workflowID string, authorizedKeys []gateway.AuthorizedKey, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error
 	UnregisterWorkflow(workflowID string) error
 	GetWorkflow(workflowID string) (*workflow, error)
 	GetWorkflows() ([]*workflow, error)
@@ -78,15 +79,15 @@ func NewWorkflowStore(lggr logger.Logger) *workflowStore {
 	}
 }
 
-func (s *workflowStore) RegisterWorkflow(workflowID string, authorizedKeys []AuthorizedKey, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error {
+func (s *workflowStore) RegisterWorkflow(workflowID string, authorizedKeys []gateway.AuthorizedKey, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error {
 	s.workflowsMu.Lock()
 	defer s.workflowsMu.Unlock()
 	if _, exists := s.workflows[workflowID]; exists {
 		s.lggr.Debugw("Workflow already registered, re-registering", "workflowID", workflowID)
 	}
-	keys := make(map[string]AuthorizedKey, len(authorizedKeys))
+	keys := make(map[string]gateway.AuthorizedKey, len(authorizedKeys))
 	for _, key := range authorizedKeys {
-		keys[key.PublicKey] = AuthorizedKey{
+		keys[key.PublicKey] = gateway.AuthorizedKey{
 			KeyType:   key.KeyType,
 			PublicKey: key.PublicKey,
 		}
