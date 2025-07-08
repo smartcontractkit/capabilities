@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sync"
-
 	"time"
 
 	"github.com/jonboulle/clockwork"
@@ -31,7 +30,7 @@ type consensusCapability struct {
 
 	lggr       logger.Logger
 	oracle     core.Oracle
-	reqStore   *requests.Store[*oracle2.ConsensusRequest, oracle2.ConsensusResponse]
+	reqStore   *requests.Store[*oracle2.ConsensusRequest]
 	reqHandler *requests.Handler[*oracle2.ConsensusRequest, oracle2.ConsensusResponse]
 
 	requestTimeout     time.Duration
@@ -44,7 +43,7 @@ type consensusCapability struct {
 // response cache expiry controls how long a response for a given request is cached before it is considered expired and evicted. This allows
 // the capability to respond to slow requests sent after consensus has been reached.
 func NewConsensusCapability(lggr logger.Logger, clock clockwork.Clock, responseCacheExpiry time.Duration) *consensusCapability {
-	reqStore := requests.NewStore[*oracle2.ConsensusRequest, oracle2.ConsensusResponse]()
+	reqStore := requests.NewStore[*oracle2.ConsensusRequest]()
 
 	return &consensusCapability{
 		lggr:       lggr,
@@ -65,7 +64,7 @@ func (c *consensusCapability) Initialise(ctx context.Context, config string,
 	telemetryService core.TelemetryService,
 	store core.KeyValueStore, errorLog core.ErrorLog, pipelineRunner core.PipelineRunnerService,
 	relayerSet core.RelayerSet, oracleFactory core.OracleFactory,
-	gatewayConnector core.GatewayConnector) error {
+	gatewayConnector core.GatewayConnector, _ core.Keystore) error {
 
 	// TODO key bundle id should be on the request if we want to support multi sig for reports
 	c.defaultKeyBundleID = "evm"
