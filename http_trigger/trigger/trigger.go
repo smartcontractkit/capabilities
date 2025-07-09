@@ -38,6 +38,9 @@ func (c *ServiceConfig) Validate() error {
 	if c.HomeChainID == "" {
 		return errors.New("homeChainId must be set")
 	}
+	if c.WorkflowRegistryAddress == "" {
+		return errors.New("workflowRegistryAddress must be set")
+	}
 	return nil
 }
 
