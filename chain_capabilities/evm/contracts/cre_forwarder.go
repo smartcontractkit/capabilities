@@ -10,6 +10,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -73,7 +74,7 @@ func (cfclient creForwarderClient) GetReportProcessedEvents(ctx context.Context,
 		},
 		ToBlock: big.NewInt(LatestBlock),
 	}
-	return cfclient.evmService.FilterLogs(ctx, filterQuery)
+	return cfclient.evmService.FilterLogsWithConfidence(ctx, filterQuery, primitives.Unconfirmed)
 }
 
 type CREForwarderClient interface {
@@ -141,10 +142,10 @@ func (cfclient *creForwarderClient) GetTransmissionInfo(ctx context.Context, tra
 	if err != nil {
 		return TransmissionInfo{}, err
 	}
-	response, err := cfclient.evmService.CallContract(ctx, &evmtypes.CallMsg{
+	response, err := cfclient.evmService.CallContractWithConfidence(ctx, &evmtypes.CallMsg{
 		To:   cfclient.forwarderAddress,
 		Data: calldata,
-	}, big.NewInt(LatestBlock))
+	}, big.NewInt(LatestBlock), primitives.Unconfirmed)
 	if err != nil {
 		return TransmissionInfo{}, err
 	}

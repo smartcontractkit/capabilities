@@ -51,10 +51,10 @@ type Metrics struct {
 	GetReceiptError struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
-	HeadSuccess struct {
+	HeaderByNumberSuccess struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
-	HeadError struct {
+	HeaderByNumberError struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
 }
@@ -136,16 +136,16 @@ func NewMetrics() (Metrics, error) {
 		return Metrics{}, fmt.Errorf("failed to create get receipt error metric: %w", err)
 	}
 
-	// -- LatestAndFinalizedHead --
-	headSuccess := commoncapbeholder.NewMetricsInfoCapBasic(ns("latest_and_finalized_head_success"), commonbeholder.ToSchemaFullName(&LatestAndFinalizedHeadSuccess{}))
-	m.HeadSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(headSuccess)
+	// -- HeaderByNumber --
+	headerByNumberSuccess := commoncapbeholder.NewMetricsInfoCapBasic(ns("header_by_number_success"), commonbeholder.ToSchemaFullName(&HeaderByNumberSuccess{}))
+	m.HeaderByNumberSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(headerByNumberSuccess)
 	if err != nil {
-		return Metrics{}, fmt.Errorf("failed to create head success metric: %w", err)
+		return Metrics{}, fmt.Errorf("failed to create header by number success metric: %w", err)
 	}
-	headErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("latest_and_finalized_head_error"), commonbeholder.ToSchemaFullName(&LatestAndFinalizedHeadError{}))
-	m.HeadError.basic, err = commoncapbeholder.NewMetricsCapBasic(headErr)
+	headerByNumberErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("header_by_number_error"), commonbeholder.ToSchemaFullName(&HeaderByNumberError{}))
+	m.HeaderByNumberError.basic, err = commoncapbeholder.NewMetricsCapBasic(headerByNumberErr)
 	if err != nil {
-		return Metrics{}, fmt.Errorf("failed to create head error metric: %w", err)
+		return Metrics{}, fmt.Errorf("failed to create header by number error metric: %w", err)
 	}
 
 	return m, nil
@@ -235,17 +235,17 @@ func (m *Metrics) OnGetTransactionReceiptError(ctx context.Context, msg *GetTran
 	return nil
 }
 
-// -- LatestAndFinalizedHead --
+// -- HeaderByNumber --
 
-func (m *Metrics) OnLatestAndFinalizedHeadSuccess(ctx context.Context, msg *LatestAndFinalizedHeadSuccess) error {
+func (m *Metrics) OnHeaderByNumberSuccess(ctx context.Context, msg *HeaderByNumberSuccess) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.HeadSuccess.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
+	m.HeaderByNumberSuccess.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
 	return nil
 }
 
-func (m *Metrics) OnLatestAndFinalizedHeadError(ctx context.Context, msg *LatestAndFinalizedHeadError) error {
+func (m *Metrics) OnHeaderByNumberError(ctx context.Context, msg *HeaderByNumberError) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.HeadError.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
+	m.HeaderByNumberError.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
 	return nil
 }
 
@@ -340,12 +340,14 @@ func (r *GetTransactionReceiptError) Attributes() []attribute.KeyValue {
 	}, r.ExecutionContext.Attributes()...)
 }
 
-func (r *LatestAndFinalizedHeadSuccess) Attributes() []attribute.KeyValue {
-	return r.ExecutionContext.Attributes()
+func (r *HeaderByNumberSuccess) Attributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
+		attribute.Int64("block_number", r.Req.GetBlockNumber()),
+	}, r.ExecutionContext.Attributes()...)
 }
 
-func (r *LatestAndFinalizedHeadError) Attributes() []attribute.KeyValue {
+func (r *HeaderByNumberError) Attributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
-		attribute.String("summary", r.GetSummary()),
+		attribute.Int64("block_number", r.Req.GetBlockNumber()),
 	}, r.ExecutionContext.Attributes()...)
 }

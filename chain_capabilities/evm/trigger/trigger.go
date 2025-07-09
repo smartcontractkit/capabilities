@@ -132,7 +132,7 @@ func (lts *LogTriggerService) getTopics(input *evmcappb.FilterLogTriggerRequest)
 }
 
 func (lts *LogTriggerService) getFinalizedBlockNumber(ctx context.Context, triggerID string) (*big.Int, error) {
-	_, finalized, err := lts.EVMService.LatestAndFinalizedHead(ctx)
+	finalized, err := lts.EVMService.HeaderByNumberWithConfidence(ctx, nil, primitives.Finalized)
 	if err != nil {
 		return nil, fmt.Errorf("failed to register latest and finalized head: '%w' for triggerID: %s", err, triggerID)
 	}
