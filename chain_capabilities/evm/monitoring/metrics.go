@@ -21,6 +21,9 @@ type Metrics struct {
 	CallContractError struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
+	LogTriggerEventDroppedError struct {
+		basic commoncapbeholder.MetricsCapBasic
+	}
 	FilterLogsSuccess struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
@@ -74,6 +77,13 @@ func NewMetrics() (Metrics, error) {
 	m.CallContractError.basic, err = commoncapbeholder.NewMetricsCapBasic(ccErr)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create call contract error metric: %w", err)
+	}
+
+	// -- LogTrigger --
+	ltedErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("log_trigger_event_dropped_error"), commonbeholder.ToSchemaFullName(&TriggerEventDroppedError{}))
+	m.LogTriggerEventDroppedError.basic, err = commoncapbeholder.NewMetricsCapBasic(ltedErr)
+	if err != nil {
+		return Metrics{}, fmt.Errorf("failed to create log trigger event dropped error metric: %w", err)
 	}
 
 	// -- FilterLogs --
@@ -160,6 +170,14 @@ func (m *Metrics) OnCallContractSuccess(ctx context.Context, msg *CallContractSu
 }
 
 func (m *Metrics) OnCallContractError(ctx context.Context, msg *CallContractError) error {
+	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
+	m.CallContractError.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
+	return nil
+}
+
+// -- LogTrigger --
+
+func (m *Metrics) OnTriggerEventDroppedError(ctx context.Context, msg *TriggerEventDroppedError) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
 	m.CallContractError.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
 	return nil
@@ -262,6 +280,26 @@ func (r *CallContractError) Attributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.Int64("block_number", r.Req.GetBlockNumber()),
 		attribute.String("contract_address", r.Req.GetContractAddress()),
+		attribute.String("summary", r.GetSummary()),
+	}, r.ExecutionContext.Attributes()...)
+}
+
+//func (r *CallContractError2) Attributes() []attribute.KeyValue {
+//	return append([]attribute.KeyValue{
+//		attribute.Int64("block_number", r.Req.GetBlockNumber()),
+//		attribute.String("contract_address", r.Req.GetContractAddress()),
+//		attribute.String("summary", r.GetSummary()),
+//		//attribute.
+//	}, r.ExecutionContext.Attributes()...)
+//}
+
+func (r *TriggerEventDroppedError) Attributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
+		attribute.String("trigger_id", r.GetTriggerID()),
+		attribute.String("tx_hash", r.GetTxHash()),
+		attribute.String("block_hash", r.GetBlockHash()),
+		attribute.Int64("log_index", r.GetLogIndex()),
+
 		attribute.String("summary", r.GetSummary()),
 	}, r.ExecutionContext.Attributes()...)
 }

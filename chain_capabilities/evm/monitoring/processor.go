@@ -46,6 +46,25 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 		if err := p.metrics.OnCallContractError(ctx, msg); err != nil {
 			return fmt.Errorf("failed to publish CallContractError metrics: %w", err)
 		}
+	// -- LogTrigger --
+	//case *CallContractInitiated:
+	//	if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
+	//		return fmt.Errorf("failed to emit CallContractInitiated log: %w", err)
+	//	}
+	//case *CallContractSuccess:
+	//	if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
+	//		return fmt.Errorf("failed to emit CallContractSuccess log: %w", err)
+	//	}
+	//	if err := p.metrics.OnCallContractSuccess(ctx, msg); err != nil {
+	//		return fmt.Errorf("failed to publish CallContractSuccess metrics: %w", err)
+	//	}
+	case *TriggerEventDroppedError:
+		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
+			return fmt.Errorf("failed to emit CallContractError log: %w", err)
+		}
+		if err := p.metrics.OnTriggerEventDroppedError(ctx, msg); err != nil {
+			return fmt.Errorf("failed to publish CallContractError metrics: %w", err)
+		}
 	// -- FilterLogs --
 	case *FilterLogsInitiated:
 		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {

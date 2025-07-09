@@ -59,6 +59,18 @@ func (m *MessageBuilder) BuildCallContractError(r ReadRequest, msg *evm.CallMsg,
 	return &CallContractError{Req: &CallContractRequest{BlockNumber: bn, ContractAddress: common.Bytes2Hex(msg.To[:])}, Summary: summary, Cause: cause, ExecutionContext: m.BuildExecutionContext(r)}
 }
 
+func (m *MessageBuilder) BuildLogTriggerEventDroppedError(r ReadRequest, triggerID string, log *evm.Log, summary, cause string) ErrorMessage {
+	return &TriggerEventDroppedError{
+		TriggerID:        triggerID,
+		TxHash:           common.Bytes2Hex(log.TxHash[:]),
+		BlockHash:        common.Bytes2Hex(log.BlockHash[:]),
+		LogIndex:         int64(log.LogIndex),
+		Summary:          summary,
+		Cause:            cause,
+		ExecutionContext: m.BuildExecutionContext(r),
+	}
+}
+
 func (m *MessageBuilder) BuildFilterLogsInitiated(r ReadRequest, fq evmtypes.FilterQuery) *FilterLogsInitiated {
 	return &FilterLogsInitiated{Req: toFilterLogsRequest(fq), ExecutionContext: m.BuildExecutionContext(r)}
 }
