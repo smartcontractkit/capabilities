@@ -205,16 +205,19 @@ func (h *connectorHandler) sendResponse(ctx context.Context, gatewayID string, r
 	}
 }
 
-func (h *connectorHandler) fetchWorkflowByTag(ctx context.Context, workflowOwner string, workflowName string, tag string) (string, error) {
+func (h *connectorHandler) fetchWorkflowByTag(ctx context.Context, gatewayID string, requestID string, workflowOwner string, workflowName string, tag string) (string, error) {
 	if workflowOwner == "" || workflowName == "" || tag == "" {
+		h.sendErrorResponse(ctx, gatewayID, requestID, jsonrpc.ErrInvalidRequest, "Workflow not found")
 		return "", errors.New("workflowOwner, workflowName, and tag must be provided")
 	}
 	workflowOwnerAddr := gethcommon.HexToAddress(workflowOwner)
 	if workflowOwnerAddr == (gethcommon.Address{}) {
+		h.sendErrorResponse(ctx, gatewayID, requestID, jsonrpc.ErrInvalidRequest, "Workflow not found")
 		return "", errors.New("invalid workflowOwner address")
 	}
-	calldata, err := registryABI.Pack("getWorkflow", workflowOwner, workflowName, tag)
+	calldata, err := registryABI.Pack("getWorkflow", workflowOwnerAddr, workflowName, tag)
 	if err != nil {
+		h.sendErrorResponse(ctx, gatewayID, requestID, jsonrpc.ErrInternal, "Failed to pack ABI call")
 		return "", fmt.Errorf("failed to pack ABI call: %w", err)
 	}
 	msg := &evm.CallMsg{
@@ -223,20 +226,28 @@ func (h *connectorHandler) fetchWorkflowByTag(ctx context.Context, workflowOwner
 	}
 	data, err := h.evm.CallContract(ctx, msg, nil)
 	if err != nil {
+		h.sendErrorResponse(ctx, gatewayID, requestID, jsonrpc.ErrInternal, "Failed to call contract")
 		return "", fmt.Errorf("failed to call contract: %w", err)
 	}
 	method, ok := registryABI.Methods["getWorkflow"]
 	if !ok {
+		h.sendErrorResponse(ctx, gatewayID, requestID, jsonrpc.ErrInternal, "Missing method getWorkflow in ABI")
 		return "", errors.New("missing method getWorkflow")
 	}
 	unpacked, err := method.Outputs.Unpack(data)
 	if err != nil {
+		h.sendErrorResponse(ctx, gatewayID, requestID, jsonrpc.ErrInternal, "Failed to unpack ABI response")
 		return "", fmt.Errorf("failed to unpack: %w", err)
 	}
 	if len(unpacked) != 1 {
+		h.sendErrorResponse(ctx, gatewayID, requestID, jsonrpc.ErrInternal, "Failed to unpack ABI response: expected 1 output")
 		return "", fmt.Errorf("expected 1 argument, got %d", len(unpacked))
 	}
 	workflowMetadataView := *abi.ConvertType(unpacked[0], new(workflow_registry_wrapper_v2.WorkflowRegistryWorkflowMetadataView)).(*workflow_registry_wrapper_v2.WorkflowRegistryWorkflowMetadataView)
+	if workflowMetadataView.WorkflowId == (gethcommon.Hash{}) {
+		h.sendErrorResponse(ctx, gatewayID, requestID, jsonrpc.ErrInvalidRequest, "Workflow not found")
+		return "", fmt.Errorf("workflow not found for owner %s, name %s, tag %s", workflowOwner, workflowName, tag)
+	}
 	return "0x" + hex.EncodeToString(workflowMetadataView.WorkflowId[:]), nil
 }
 
@@ -261,10 +272,10 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 	// TODO: PRODCRE-305 validate JWT against authorized keys
 	workflowID := triggerReq.Workflow.WorkflowID
 	if workflowID == "" {
-		workflowID, err = h.fetchWorkflowByTag(ctx, triggerReq.Workflow.WorkflowOwner, triggerReq.Workflow.WorkflowName, triggerReq.Workflow.WorkflowLabel)
+		workflowID, err = h.fetchWorkflowByTag(ctx, gatewayID, req.ID, triggerReq.Workflow.WorkflowOwner, triggerReq.Workflow.WorkflowName, triggerReq.Workflow.WorkflowLabel)
 		if err != nil {
+			// error is sent back to the gateway inside fetchWorkflowByTag
 			l.Errorw("Failed to fetch workflow", "error", err)
-			h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInvalidRequest, "Workflow not found")
 			return
 		}
 	}

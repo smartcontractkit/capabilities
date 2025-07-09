@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	coremocks "github.com/smartcontractkit/chainlink-common/pkg/types/core/mocks"
 )
 
 func TestService_RegisterTrigger(t *testing.T) {
@@ -51,8 +53,9 @@ func TestService_RegisterTrigger(t *testing.T) {
 				registerErr: tc.registerErr,
 			}
 			svc := NewService(logger.Test(t))
-			cfgStr := fmt.Sprintf(`{"sendChannelBufferSize": %d}`, tc.sendChannelBufSize)
-			err := svc.Initialise(t.Context(), cfgStr, nil, nil, nil, nil, nil, nil, nil, nil)
+			cfgStr := fmt.Sprintf(`{"sendChannelBufferSize": %d, "homeChainId": "1", "workflowRegistryAddress": "0x1234567890abcdef"}`, tc.sendChannelBufSize)
+			rs := mockRelayerSet(t)
+			err := svc.Initialise(t.Context(), cfgStr, nil, nil, nil, nil, rs, nil, nil, nil)
 			require.NoError(t, err)
 			svc.connectorHandler = mockHandler
 			ctx := context.Background()
@@ -93,7 +96,9 @@ func TestService_UnregisterTrigger(t *testing.T) {
 				unregisterErr: tt.handlerErr,
 			}
 			svc := NewService(logger.Test(t))
-			err := svc.Initialise(t.Context(), "{}", nil, nil, nil, nil, nil, nil, nil, nil)
+			cfg := `{"homeChainId": "1", "workflowRegistryAddress": "0x1234567890abcdef"}`
+			rs := mockRelayerSet(t)
+			err := svc.Initialise(t.Context(), cfg, nil, nil, nil, nil, rs, nil, nil, nil)
 			require.NoError(t, err)
 			svc.connectorHandler = mockHandler
 
@@ -108,10 +113,21 @@ func TestService_UnregisterTrigger(t *testing.T) {
 		})
 	}
 }
+
+func mockRelayerSet(t *testing.T) *coremocks.RelayerSet {
+	rs := coremocks.NewRelayerSet(t)
+	relayer := coremocks.NewRelayer(t)
+	rs.EXPECT().Get(mock.Anything, mock.Anything).Return(relayer, nil).Once()
+	relayer.EXPECT().EVM().Return(nil, nil).Once()
+	return rs
+}
+
 func TestService_Start_HealthReport_Ready_Close(t *testing.T) {
 	mockHandler := &mockConnectorHandler{}
 	svc := NewService(logger.Test(t))
-	err := svc.Initialise(t.Context(), `{}`, nil, nil, nil, nil, nil, nil, nil, nil)
+	rs := mockRelayerSet(t)
+	cfg := `{"homeChainId": "1", "workflowRegistryAddress": "0x1234567890abcdef"}`
+	err := svc.Initialise(t.Context(), cfg, nil, nil, nil, nil, rs, nil, nil, nil)
 	require.NoError(t, err)
 	svc.connectorHandler = mockHandler
 
