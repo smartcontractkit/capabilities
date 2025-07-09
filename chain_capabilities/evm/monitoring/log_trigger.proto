@@ -16,25 +16,3 @@ message TriggerEventDroppedError {
 //  Log log = 3; // the log that was dropped
   monitoring.ExecutionContext execution_context = 20;
 }
-
-
-//chainlink-protos/cre/capabilities/blockchain/evm/v1alpha/client.proto
-// represents evm-style log
-message Log {
-  bytes address = 1; // address of the contract emitted the log in evm address [20]byte fix-sized array format
-  repeated bytes topics = 2; // indexed log fields, in [32]byte fix-sized array format
-  bytes tx_hash = 3; // hash of the transaction containing the log, in [32]byte fix-sized array format
-  bytes block_hash = 4; // hash of the block containing the log, in [32]byte fix-sized array format
-  bytes data = 5; // solidity-spec abi encoded log Data
-  bytes event_sig = 6; // keccak256 of event signature, in [32]byte fix-sized array format
-  BigInt block_number = 7; // block number containing the log
-  uint32 tx_index = 8; // index of transaction emmited the log
-  uint32 index = 9; // index of the Log within the intire block
-  bool removed = 10; // flag if the log was removed during reorg
-}
-
-//chainlin-protos/cre/values/v1/values.proto
-message BigInt {
-  bytes abs_val = 1;
-  int64 sign = 2;
-}
