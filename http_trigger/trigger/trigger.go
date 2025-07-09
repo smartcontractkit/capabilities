@@ -3,18 +3,21 @@ package trigger
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
+	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
 
 const ServiceName = "HTTPTriggerCapability"
+const WorkflowRegistryContractName = "WorkflowRegistryV2"
 const defaultSendChannelBufferSize = uint32(1000)
 
 var _ server.HTTPCapability = &service{}
@@ -26,7 +29,16 @@ type ServiceConfig struct {
 	RateLimiter ratelimit.RateLimiterConfig `json:"incomingRateLimiter" `
 	// OutgoingRateLimiter is the configuration for outgoing messages from this node to the gateway.
 	// The sender is a workflow owner
-	OutgoingRateLimiter ratelimit.RateLimiterConfig `json:"outgoingRateLimiter"`
+	OutgoingRateLimiter     ratelimit.RateLimiterConfig `json:"outgoingRateLimiter"`
+	HomeChainID             string                      `json:"homeChainId"`
+	WorkflowRegistryAddress string                      `json:"workflowRegistryAddress"`
+}
+
+func (c *ServiceConfig) Validate() error {
+	if c.HomeChainID == "" {
+		return errors.New("homeChainId must be set")
+	}
+	return nil
 }
 
 type ConnectorHandler interface {
@@ -55,7 +67,7 @@ func (s *service) Initialise(
 	_ core.KeyValueStore,
 	_ core.ErrorLog,
 	_ core.PipelineRunnerService,
-	_ core.RelayerSet,
+	relayerSet core.RelayerSet,
 	_ core.OracleFactory,
 	gc core.GatewayConnector,
 	_ core.Keystore,
@@ -67,8 +79,21 @@ func (s *service) Initialise(
 	if err != nil {
 		return err
 	}
+	err = serviceConfig.Validate()
+	if err != nil {
+		return err
+	}
 	s.cfg = serviceConfig
-	s.connectorHandler, err = NewConnectorHandler(s.lggr, gc, serviceConfig)
+	relayID := types.RelayID{Network: "evm", ChainID: s.cfg.HomeChainID}
+	relayer, err := relayerSet.Get(ctx, relayID)
+	if err != nil {
+		return err
+	}
+	evmService, err := relayer.EVM()
+	if err != nil {
+		return err
+	}
+	s.connectorHandler, err = NewConnectorHandler(s.lggr, gc, serviceConfig, evmService)
 	if err != nil {
 		return err
 	}

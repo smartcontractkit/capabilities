@@ -2,12 +2,18 @@ package trigger
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
 	"google.golang.org/protobuf/types/known/structpb"
+
+	"github.com/ethereum/go-ethereum/accounts/abi"
+
+	gethcommon "github.com/ethereum/go-ethereum/common"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
@@ -15,9 +21,12 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
+	"github.com/smartcontractkit/chainlink-common/pkg/types"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
+	"github.com/smartcontractkit/chainlink-evm/gethwrappers/workflow/generated/workflow_registry_wrapper_v2"
 )
 
 const (
@@ -34,19 +43,22 @@ const (
 )
 
 var _ core.GatewayConnectorHandler = &connectorHandler{}
+var registryABI = MustParseABI(workflow_registry_wrapper_v2.WorkflowRegistryABI)
 
 type connectorHandler struct {
 	services.StateMachine
-	lggr                logger.Logger
-	gatewayConnector    core.GatewayConnector
-	workflowsMu         sync.RWMutex
-	workflows           map[string]*workflow // workflowID -> workflow metadata
-	config              ServiceConfig
-	incomingRateLimiter *ratelimit.RateLimiter
-	outgoingRateLimiter *ratelimit.RateLimiter
+	lggr                 logger.Logger
+	gatewayConnector     core.GatewayConnector
+	workflowsMu          sync.RWMutex
+	workflows            map[string]*workflow // workflowID -> workflow metadata
+	config               ServiceConfig
+	incomingRateLimiter  *ratelimit.RateLimiter
+	outgoingRateLimiter  *ratelimit.RateLimiter
+	evm                  types.EVMService
+	workflowRegistryAddr gethcommon.Address
 }
 
-func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config ServiceConfig) (*connectorHandler, error) {
+func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config ServiceConfig, evmService types.EVMService) (*connectorHandler, error) {
 	outgoingRLCfg := outgoingRateLimiterConfigDefaults(config.OutgoingRateLimiter)
 	outgoingRateLimiter, err := ratelimit.NewRateLimiter(outgoingRLCfg)
 	if err != nil {
@@ -57,13 +69,19 @@ func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config Se
 	if err != nil {
 		return nil, err
 	}
+	workflowRegistryAddr := gethcommon.HexToAddress(config.WorkflowRegistryAddress)
+	if workflowRegistryAddr == (gethcommon.Address{}) {
+		return nil, fmt.Errorf("invalid workflow registry address: %s", config.WorkflowRegistryAddress)
+	}
 	return &connectorHandler{
-		lggr:                logger.Named(lggr, HandlerName),
-		gatewayConnector:    gc,
-		config:              config,
-		outgoingRateLimiter: outgoingRateLimiter,
-		incomingRateLimiter: incomingRateLimiter,
-		workflows:           make(map[string]*workflow),
+		lggr:                 logger.Named(lggr, HandlerName),
+		gatewayConnector:     gc,
+		config:               config,
+		outgoingRateLimiter:  outgoingRateLimiter,
+		incomingRateLimiter:  incomingRateLimiter,
+		workflows:            make(map[string]*workflow),
+		workflowRegistryAddr: workflowRegistryAddr,
+		evm:                  evmService,
 	}, nil
 }
 
@@ -187,6 +205,41 @@ func (h *connectorHandler) sendResponse(ctx context.Context, gatewayID string, r
 	}
 }
 
+func (h *connectorHandler) fetchWorkflowByTag(ctx context.Context, workflowOwner string, workflowName string, tag string) (string, error) {
+	if workflowOwner == "" || workflowName == "" || tag == "" {
+		return "", errors.New("workflowOwner, workflowName, and tag must be provided")
+	}
+	workflowOwnerAddr := gethcommon.HexToAddress(workflowOwner)
+	if workflowOwnerAddr == (gethcommon.Address{}) {
+		return "", errors.New("invalid workflowOwner address")
+	}
+	calldata, err := registryABI.Pack("getWorkflow", workflowOwner, workflowName, tag)
+	if err != nil {
+		return "", fmt.Errorf("failed to pack ABI call: %w", err)
+	}
+	msg := &evm.CallMsg{
+		To:   h.workflowRegistryAddr,
+		Data: calldata,
+	}
+	data, err := h.evm.CallContract(ctx, msg, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to call contract: %w", err)
+	}
+	method, ok := registryABI.Methods["getWorkflow"]
+	if !ok {
+		return "", errors.New("missing method getWorkflow")
+	}
+	unpacked, err := method.Outputs.Unpack(data)
+	if err != nil {
+		return "", fmt.Errorf("failed to unpack: %w", err)
+	}
+	if len(unpacked) != 1 {
+		return "", fmt.Errorf("expected 1 argument, got %d", len(unpacked))
+	}
+	workflowMetadataView := *abi.ConvertType(unpacked[0], new(workflow_registry_wrapper_v2.WorkflowRegistryWorkflowMetadataView)).(*workflow_registry_wrapper_v2.WorkflowRegistryWorkflowMetadataView)
+	return "0x" + hex.EncodeToString(workflowMetadataView.WorkflowId[:]), nil
+}
+
 func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage]) {
 	var triggerReq gateway_common.HTTPTriggerRequest
 	if req.Params == nil {
@@ -206,12 +259,14 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		return
 	}
 	// TODO: PRODCRE-305 validate JWT against authorized keys
-	// TODO: PRODCRE-475 support look-up of workflowID using workflowOwner/Label/Name
 	workflowID := triggerReq.Workflow.WorkflowID
 	if workflowID == "" {
-		l.Error("WorkflowID is required in HTTP trigger request")
-		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInvalidParams, "workflowID is required")
-		return
+		workflowID, err = h.fetchWorkflowByTag(ctx, triggerReq.Workflow.WorkflowOwner, triggerReq.Workflow.WorkflowName, triggerReq.Workflow.WorkflowLabel)
+		if err != nil {
+			l.Errorw("Failed to fetch workflow", "error", err)
+			h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInvalidRequest, "Workflow not found")
+			return
+		}
 	}
 	l = logger.With(l, "workflowID", workflowID)
 	err = h.triggerWorkflow(ctx, workflowID, req.ID, gatewayID, input)
@@ -314,4 +369,12 @@ func convertRawJSONToProto(raw json.RawMessage) (*structpb.Struct, error) {
 		return nil, fmt.Errorf("failed to convert map to structpb.Struct: %w", err)
 	}
 	return s, nil
+}
+
+func MustParseABI(abiStr string) abi.ABI {
+	abiParsed, err := abi.JSON(strings.NewReader(abiStr))
+	if err != nil {
+		panic(err)
+	}
+	return abiParsed
 }
