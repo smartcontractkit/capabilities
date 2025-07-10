@@ -164,7 +164,10 @@ func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.
 
 	c.reqHandler.SendRequest(ctx,
 		oracle2.NewConsensusRequest(requestID, input, time.Now().Add(requestTimeout), callbackChan,
-			metadata, c.defaultKeyBundleID,
+			oracle2.ConsensusRequestMetadata{
+				RequestMetadata: metadata,
+				KeyBundleID:     c.defaultKeyBundleID,
+			},
 		))
 
 	select {
@@ -177,6 +180,11 @@ func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.
 
 		return response.Value, nil
 	}
+}
+
+func (c *consensusCapability) Report(ctx context.Context, metadata capabilities.RequestMetadata, input *pb.ReportRequest) (*pb.ReportResponse, error) {
+	// TODO
+	return nil, nil
 }
 
 func (c *consensusCapability) SendResponse(ctx context.Context, requestID string, value *valuespb.Value) {

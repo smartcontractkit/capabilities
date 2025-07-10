@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -27,10 +28,10 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
-type testObservations struct {
-	observations   []*values.Int64
-	expectedResult *values.Int64
-	keyBundleID    string
+type protocolRoundTest struct {
+	requests            []*oracle.ConsensusRequest
+	expectedResult      *values.Int64
+	expectedKeyBundleID string
 }
 
 // TODO tests for determinism, shuffling inputs, non-happy path etc.
@@ -43,61 +44,95 @@ func Test_ProtocolRounds(t *testing.T) {
 	f := 2
 	batchSize := 10
 
-	reqToObservations := map[string]testObservations{
-		"req-1": {observations: []*values.Int64{
-			values.NewInt64(10), values.NewInt64(20), values.NewInt64(30),
-			values.NewInt64(40), values.NewInt64(50), values.NewInt64(60),
-			values.NewInt64(70)},
-			expectedResult: values.NewInt64(40), keyBundleID: "evm"},
-		"req-2": {observations: []*values.Int64{
-			values.NewInt64(110), values.NewInt64(120), values.NewInt64(130),
-			values.NewInt64(140), values.NewInt64(150), values.NewInt64(160),
-			values.NewInt64(170)},
+	defaultMetaData := oracle.ConsensusRequestMetadata{
+		RequestMetadata: capabilities.RequestMetadata{
+			WorkflowID:               uuid.NewString(),
+			WorkflowOwner:            "test-owner",
+			WorkflowExecutionID:      uuid.NewString(),
+			WorkflowName:             "test-workflow",
+			WorkflowDonID:            1,
+			WorkflowDonConfigVersion: 1,
+			ReferenceID:              "01",
+			DecodedWorkflowName:      "test-workflow-decoded",
+			SpendLimits:              nil,
+		},
+		KeyBundleID: "",
+	}
+
+	newCrKBID := func(observation int64, keyBundleID string) *oracle.ConsensusRequest {
+		requestID := defaultMetaData.WorkflowExecutionID + "-" + defaultMetaData.ReferenceID
+
+		metaDataCopy := defaultMetaData
+		metaDataCopy.KeyBundleID = keyBundleID
+
+		simpleConsensusInputs := &pb.SimpleConsensusInputs{
+			Observation: &pb.SimpleConsensusInputs_Value{Value: values.Proto(values.NewInt64(observation))},
+			Descriptors: &pb.ConsensusDescriptor{Descriptor_: &pb.ConsensusDescriptor_Aggregation{Aggregation: pb.AggregationType_AGGREGATION_TYPE_MEDIAN}},
+		}
+
+		return oracle.NewConsensusRequest(requestID, simpleConsensusInputs, time.Now().Add(1*time.Hour).UTC(), nil, metaDataCopy)
+	}
+
+	newCr := func(observation int64) *oracle.ConsensusRequest {
+		return newCrKBID(observation, "")
+	}
+
+	reqToObservations := map[string]protocolRoundTest{
+		"req-1": {requests: []*oracle.ConsensusRequest{
+			newCrKBID(10, "evm"), newCrKBID(20, "evm"), newCrKBID(30, "evm"),
+			newCrKBID(40, "evm"), newCrKBID(50, "evm"), newCrKBID(60, "evm"),
+			newCrKBID(70, "evm")},
+			expectedResult: values.NewInt64(40), expectedKeyBundleID: "evm"},
+
+		"req-2": {requests: []*oracle.ConsensusRequest{
+			newCr(110), newCr(120), newCr(130),
+			newCr(140), newCr(150), newCr(160),
+			newCr(170)},
 			expectedResult: values.NewInt64(140)},
 
 		// Simulate some rounds where some nodes have not yet received the observation for req-3 and req-4
-		"req-3": {observations: []*values.Int64{
-			values.NewInt64(110), values.NewInt64(120), values.NewInt64(130),
-			values.NewInt64(140), values.NewInt64(150), nil, nil},
+		"req-3": {requests: []*oracle.ConsensusRequest{
+			newCr(110), newCr(120), newCr(130),
+			newCr(140), newCr(150), nil, nil},
 			expectedResult: values.NewInt64(130)},
-		"req-4": {observations: []*values.Int64{
-			values.NewInt64(110), nil, values.NewInt64(130),
-			values.NewInt64(140), values.NewInt64(150), nil,
-			values.NewInt64(170)},
+		"req-4": {requests: []*oracle.ConsensusRequest{
+			newCr(110), nil, newCr(130),
+			newCr(140), newCr(150), nil,
+			newCr(170)},
 			expectedResult: values.NewInt64(140)},
-		"req-5": {observations: []*values.Int64{
-			values.NewInt64(110), nil, values.NewInt64(130),
-			nil, values.NewInt64(150), nil,
-			values.NewInt64(170)},
+		"req-5": {requests: []*oracle.ConsensusRequest{
+			newCr(110), nil, newCr(130),
+			nil, newCr(150), nil,
+			newCr(170)},
 			expectedResult: nil},
 
 		// Simulate a round where there are insufficient observations for req-6
-		"req-6": {observations: []*values.Int64{
-			values.NewInt64(110), nil, values.NewInt64(130),
-			values.NewInt64(140), values.NewInt64(150), nil, nil},
+		"req-6": {requests: []*oracle.ConsensusRequest{
+			newCr(110), nil, newCr(130),
+			newCr(140), newCr(150), nil, nil},
 			expectedResult: nil},
 
 		// Simulate a round where the leader has not yet received the observation for req-7
-		"req-7": {observations: []*values.Int64{
-			nil, values.NewInt64(120), values.NewInt64(130),
-			values.NewInt64(140), values.NewInt64(150), values.NewInt64(160),
-			values.NewInt64(170)},
+		"req-7": {requests: []*oracle.ConsensusRequest{
+			nil, newCr(120), newCr(130),
+			newCr(140), newCr(150), newCr(160),
+			newCr(170)},
 			expectedResult: nil},
 	}
 
 	var reportingPlugins []ocr3types.ReportingPlugin[[]byte]
 	for i := 0; i < n; i++ {
-		pluginObs := map[string]*values.Int64{}
+		pluginObs := map[string]*oracle.ConsensusRequest{}
 		pluginRequestMetaData := make(map[string]metadata)
 
 		for reqID, obsData := range reqToObservations {
-			observation := obsData.observations[i]
+			observation := obsData.requests[i]
 			if observation != nil {
 				pluginObs[reqID] = observation
 			}
 
 			pluginRequestMetaData[reqID] = metadata{
-				keyBundleID: obsData.keyBundleID,
+				keyBundleID: obsData.expectedKeyBundleID,
 			}
 		}
 		reportingPlugin := createReportingPlugin(t, pluginObs, lggr, f, n, batchSize, pluginRequestMetaData)
@@ -177,7 +212,7 @@ func Test_ProtocolRounds(t *testing.T) {
 	}
 
 	// Create a map to hold the request ID to expected result
-	requestIDToOutcome := make(map[string]*testObservations)
+	requestIDToOutcome := make(map[string]*protocolRoundTest)
 	for reqID, obs := range reqToObservations {
 		if obs.expectedResult != nil {
 			requestIDToOutcome[reqID] = &obs
@@ -206,7 +241,7 @@ func Test_ProtocolRounds(t *testing.T) {
 		fmt.Printf("Expected outcome for request %s: %s, Actual outcome: %s\n", reqID, expectedProto, actualProto)
 		require.True(t, proto.Equal(actualProto, expectedProto), "expected outcome value to match expected value for request %s", reqID)
 
-		require.Equal(t, expectedOutcome.keyBundleID, outcome.Metadata.KeyBundleId)
+		require.Equal(t, expectedOutcome.expectedKeyBundleID, outcome.Metadata.KeyBundleId)
 
 		// Verify that the report info contains key bundle id
 		require.NotNil(t, report.ReportWithInfo.Info, "report info should not be nil")
@@ -216,7 +251,7 @@ func Test_ProtocolRounds(t *testing.T) {
 		require.NoError(t, err, "failed to unmarshal value from report")
 
 		keyBundleName := infos.Fields["keyBundleName"].GetStringValue()
-		assert.Equal(t, expectedOutcome.keyBundleID, keyBundleName, "keyBundle name should be equal")
+		assert.Equal(t, expectedOutcome.expectedKeyBundleID, keyBundleName, "keyBundle name should be equal")
 	}
 }
 
@@ -224,22 +259,11 @@ type metadata struct {
 	keyBundleID string
 }
 
-func createReportingPlugin(t *testing.T, pluginObservations map[string]*values.Int64, lggr logger.Logger, f int, n int,
+func createReportingPlugin(t *testing.T, pluginObservations map[string]*oracle.ConsensusRequest, lggr logger.Logger, f int, n int,
 	batchSize int, requestMetaData map[string]metadata) ocr3types.ReportingPlugin[[]byte] {
 	reqStore := requests.NewStore[*oracle.ConsensusRequest]()
 	for reqID, obs := range pluginObservations {
-		input := &pb.SimpleConsensusInputs{
-			Observation: &pb.SimpleConsensusInputs_Value{
-				Value: values.Proto(obs),
-			},
-			Descriptors: &pb.ConsensusDescriptor{
-				Descriptor_: &pb.ConsensusDescriptor_Aggregation{
-					Aggregation: pb.AggregationType_AGGREGATION_TYPE_MEDIAN,
-				},
-			},
-			Default: nil,
-		}
-		req := oracle.NewConsensusRequest(reqID, input, time.Now(), nil, capabilities.RequestMetadata{}, requestMetaData[reqID].keyBundleID)
+		req := oracle.NewConsensusRequest(reqID, obs.Input, time.Now(), nil, oracle.ConsensusRequestMetadata{KeyBundleID: requestMetaData[reqID].keyBundleID})
 		err := reqStore.Add(req)
 		require.NoError(t, err, "failed to add request to store")
 	}
