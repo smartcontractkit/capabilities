@@ -2,6 +2,7 @@ package action
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -123,10 +124,6 @@ func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.
 	// TODO limit check the size of the serialised value and consensus descriptor (and metadata? or can rely on sensible sized values here?), error if too large - pass in the limits
 	// in the capability config
 
-	// TODO - workflows request count limits etc - confirm if needs to be handled here
-
-	requestID := metadata.WorkflowExecutionID + "-" + metadata.ReferenceID
-
 	lggr := logger.With(
 		c.lggr,
 		"workflowID", metadata.WorkflowID,
@@ -152,7 +149,7 @@ func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.
 			}
 			lggr.Debugw("serialised default value", "value", val)
 		} else {
-			lggr.Debugw("neither value, error or default is set in the observation input for request", "requestID", requestID)
+			lggr.Debugw("neither value, error or default is set in the observation input for request", "metadata", metadata)
 		}
 	}
 
@@ -163,8 +160,11 @@ func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.
 	callbackChan := make(chan oracle2.ConsensusResponse, 1)
 
 	c.reqHandler.SendRequest(ctx,
-		oracle2.NewConsensusRequest(requestID, input, time.Now().Add(requestTimeout), callbackChan,
-			metadata, c.defaultKeyBundleID,
+		oracle2.NewConsensusRequest(input, time.Now().Add(requestTimeout), callbackChan,
+			oracle2.ConsensusRequestMetadata{
+				RequestMetadata: metadata,
+				KeyBundleID:     c.defaultKeyBundleID,
+			},
 		))
 
 	select {
@@ -179,12 +179,9 @@ func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.
 	}
 }
 
-func (c *consensusCapability) Report(
-	ctx context.Context,
-	metadata capabilities.RequestMetadata,
-	req *pb.ReportRequest,
-) (*pb.ReportResponse, error) {
-	return nil, fmt.Errorf("unimplemented")
+func (c *consensusCapability) Report(ctx context.Context, metadata capabilities.RequestMetadata, input *pb.ReportRequest) (*pb.ReportResponse, error) {
+	// TODO
+	return nil, errors.New("report method is not implemented for Consensus Capability")
 }
 
 func (c *consensusCapability) SendResponse(ctx context.Context, requestID string, value *valuespb.Value) {
