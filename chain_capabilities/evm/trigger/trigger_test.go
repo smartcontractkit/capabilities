@@ -40,7 +40,6 @@ var (
 	}
 
 	triggerID        = "trigger-1"
-	latestExpHead    = evmtypes.Head{Number: big.NewInt(30)}
 	finalizedExpHead = evmtypes.Head{Number: big.NewInt(25)}
 	pollInterval     = 10 * time.Millisecond
 )
