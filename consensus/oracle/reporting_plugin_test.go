@@ -2,6 +2,7 @@ package oracle_test
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -35,6 +36,67 @@ type protocolRoundTest struct {
 }
 
 // TODO tests for determinism, shuffling inputs, non-happy path etc.
+
+func Test_MismatchedLeaderMetaData(t *testing.T) {
+
+	lggr := logger.Test(t)
+	ctx := t.Context()
+
+	n := 7
+	f := 2
+	batchSize := 10
+
+	defaultMetaData := oracle.ConsensusRequestMetadata{
+		RequestMetadata: capabilities.RequestMetadata{
+			WorkflowID:               "default-workflow-id",
+			WorkflowOwner:            "test-owner",
+			WorkflowExecutionID:      "default-workflow-execution-id",
+			WorkflowName:             "test-workflow",
+			WorkflowDonID:            1,
+			WorkflowDonConfigVersion: 1,
+			ReferenceID:              "01",
+			DecodedWorkflowName:      "test-workflow-decoded",
+			SpendLimits:              nil,
+		},
+		KeyBundleID: "evm",
+	}
+
+	leaderMetaData := oracle.ConsensusRequestMetadata{
+		RequestMetadata: capabilities.RequestMetadata{
+			WorkflowID:               "leader-workflow-id",
+			WorkflowOwner:            "test-owner",
+			WorkflowExecutionID:      "leader-workflow-execution-id",
+			WorkflowName:             "test-workflow",
+			WorkflowDonID:            1,
+			WorkflowDonConfigVersion: 1,
+			ReferenceID:              "01",
+			DecodedWorkflowName:      "test-workflow-decoded",
+			SpendLimits:              nil,
+		},
+		KeyBundleID: "evm",
+	}
+
+	newCr := func(observation int64, metadata oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
+		requestID := defaultMetaData.WorkflowExecutionID + "-" + defaultMetaData.ReferenceID
+
+		simpleConsensusInputs := &pb.SimpleConsensusInputs{
+			Observation: &pb.SimpleConsensusInputs_Value{Value: values.Proto(values.NewInt64(observation))},
+			Descriptors: &pb.ConsensusDescriptor{Descriptor_: &pb.ConsensusDescriptor_Aggregation{Aggregation: pb.AggregationType_AGGREGATION_TYPE_MEDIAN}},
+		}
+
+		return oracle.NewConsensusRequest(requestID, simpleConsensusInputs, time.Now().Add(1*time.Hour).UTC(), nil, metadata)
+	}
+
+	protocolRoundTests := map[string]protocolRoundTest{
+		"req-2": {requests: []*oracle.ConsensusRequest{
+			newCr(110, leaderMetaData), newCr(120, defaultMetaData), newCr(130, defaultMetaData),
+			newCr(140, defaultMetaData), newCr(150, defaultMetaData), newCr(160, defaultMetaData),
+			newCr(170, defaultMetaData)},
+			expectedResult: nil},
+	}
+
+	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, protocolRoundTests)
+}
 
 func Test_ProtocolRounds(t *testing.T) {
 	lggr := logger.Test(t)
@@ -120,6 +182,10 @@ func Test_ProtocolRounds(t *testing.T) {
 			expectedResult: nil},
 	}
 
+	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
+}
+
+func runProtocolRoundTests(ctx context.Context, t *testing.T, lggr logger.Logger, n, f, batchSize int, reqToObservations map[string]protocolRoundTest) {
 	var reportingPlugins []ocr3types.ReportingPlugin[[]byte]
 	for i := 0; i < n; i++ {
 		pluginObs := map[string]*oracle.ConsensusRequest{}
