@@ -83,17 +83,12 @@ func Test_MismatchedNonLeaderMetaData(t *testing.T) {
 	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, protocolRoundTests)
 }
 
-func Test_ProtocolRounds(t *testing.T) {
+func Test_ReceivedAllObservationsFromAllNodes(t *testing.T) {
 	lggr := logger.Test(t)
 	ctx := t.Context()
 
 	md1 := newRequestMetaData()
 	md2 := newRequestMetaData()
-	md3 := newRequestMetaData()
-	md4 := newRequestMetaData()
-	md5 := newRequestMetaData()
-	md6 := newRequestMetaData()
-	md7 := newRequestMetaData()
 
 	md1.KeyBundleID = "evm"
 
@@ -109,6 +104,19 @@ func Test_ProtocolRounds(t *testing.T) {
 			newCr(140, md2), newCr(150, md2), newCr(160, md2),
 			newCr(170, md2)},
 			expectedResult: values.NewInt64(140)},
+	}
+
+	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
+}
+
+func Test_MissingButSufficientObservations(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := t.Context()
+	md3 := newRequestMetaData()
+	md4 := newRequestMetaData()
+	md5 := newRequestMetaData()
+
+	reqToObservations := map[string]protocolRoundTest{
 
 		// Simulate some rounds where some nodes have not yet received the observation for req-3 and req-4
 		md3.RequestID(): {requests: []*oracle.ConsensusRequest{
@@ -125,18 +133,31 @@ func Test_ProtocolRounds(t *testing.T) {
 			nil, newCr(150, md5), nil,
 			newCr(170, md5)},
 			expectedResult: nil},
+	}
+
+	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
+}
+
+func Test_InsufficientObservations(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := t.Context()
+
+	md1 := newRequestMetaData()
+	md6 := newRequestMetaData()
+
+	md1.KeyBundleID = "evm"
+
+	reqToObservations := map[string]protocolRoundTest{
+		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newCr(10, md1), newCr(20, md1), newCr(30, md1),
+			newCr(40, md1), newCr(50, md1), newCr(60, md1),
+			newCr(70, md1)},
+			expectedResult: values.NewInt64(40), expectedKeyBundleID: "evm"},
 
 		// Simulate a round where there are insufficient observations for req-6
 		md6.RequestID(): {requests: []*oracle.ConsensusRequest{
 			newCr(110, md6), nil, newCr(130, md6),
 			newCr(140, md6), newCr(150, md6), nil, nil},
-			expectedResult: nil},
-
-		// Simulate a round where the leader has not yet received the observation for req-7
-		md7.RequestID(): {requests: []*oracle.ConsensusRequest{
-			nil, newCr(120, md7), newCr(130, md7),
-			newCr(140, md7), newCr(150, md7), newCr(160, md7),
-			newCr(170, md7)},
 			expectedResult: nil},
 	}
 
