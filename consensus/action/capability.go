@@ -64,8 +64,8 @@ func (c *consensusCapability) Initialise(ctx context.Context, config string,
 	telemetryService core.TelemetryService,
 	store core.KeyValueStore, errorLog core.ErrorLog, pipelineRunner core.PipelineRunnerService,
 	relayerSet core.RelayerSet, oracleFactory core.OracleFactory,
-	gatewayConnector core.GatewayConnector, _ core.Keystore) error {
-
+	gatewayConnector core.GatewayConnector, _ core.Keystore,
+) error {
 	// TODO key bundle id should be on the request if we want to support multi sig for reports
 	c.defaultKeyBundleID = "evm"
 
@@ -177,6 +177,14 @@ func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.
 
 		return response.Value, nil
 	}
+}
+
+func (c *consensusCapability) Report(
+	ctx context.Context,
+	metadata capabilities.RequestMetadata,
+	req *pb.ReportRequest,
+) (*pb.ReportResponse, error) {
+	return nil, fmt.Errorf("unimplemented")
 }
 
 func (c *consensusCapability) SendResponse(ctx context.Context, requestID string, value *valuespb.Value) {
