@@ -1,0 +1,100 @@
+{
+    "$id": "https://github.com/smartcontractkit/capabilities/confidential_http_action/confidential-http-action@1.0.0",
+    "description": "Confidential HTTP action",
+    "$defs": {
+        "Config": {
+            "type": "object",
+            "properties": {
+                "EnclaveURL": {
+                    "type": "string"
+                },
+                "PrivateKey": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 255
+                    }
+                },
+                "PublicKey": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 255
+                    }
+                }
+            },
+            "required": [
+                "EnclaveURL",
+                "PrivateKey"
+            ]
+        },
+        "Input": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "The URL to send the request to"
+                    },
+                    "method": {
+                        "type": "string",
+                        "description": "The HTTP method to use for the request"
+                    },
+                    "headers": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "The headers to include in the request"
+                    },
+                    "body": {
+                        "type": "string",
+                        "description": "The body of the request"
+                    }
+                },
+                "required": [
+                    "url",
+                    "method",
+                    "headers",
+                    "body"
+                ],
+                "additionalProperties": false
+            }
+        },
+        "Output": {
+            "type": "array",
+            "items": {
+                "properties": {
+                    "payload": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 255
+                        }
+                    }
+                },
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                    "payload"
+                ]
+            }
+        }
+    },
+    "type": "object",
+    "properties": {
+        "Config": {
+            "$ref": "#/$defs/Config"
+        },
+        "Inputs": {
+            "$ref": "#/$defs/Input"
+        },
+        "Outputs": {
+            "$ref": "#/$defs/Output"
+        }
+    }
+}
