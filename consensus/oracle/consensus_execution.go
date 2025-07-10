@@ -37,22 +37,9 @@ func CalculateOutcomeForObservations(
 	consensusDescriptor *pb.ConsensusDescriptor,
 	minObservations int,
 ) (*valuespb.Value, error) {
-	if len(observationProtos) < minObservations {
-		return nil, fmt.Errorf("insufficient observations (%d) to meet minimum (%d)", len(observationProtos), minObservations)
-	}
-
-	finalSelectedTypeName, err := determineConsensusType(observationProtos, minObservations)
+	filtered, consensusType, err := filterObservations(observationProtos, minObservations)
 	if err != nil {
 		return nil, err
-	}
-
-	observations := make([]values.Value, len(observationProtos))
-	for i, obsProto := range observationProtos {
-		obs, err := values.FromProto(obsProto)
-		if err != nil {
-			return nil, fmt.Errorf("failed to unmarshal observation value: %w", err)
-		}
-		observations[i] = obs
 	}
 
 	switch desc := consensusDescriptor.GetDescriptor_().(type) {
@@ -60,13 +47,13 @@ func CalculateOutcomeForObservations(
 		aggregation := consensusDescriptor.GetAggregation()
 		switch aggregation {
 		case pb.AggregationType_AGGREGATION_TYPE_IDENTICAL:
-			return handleIdenticalAggregation(observations, finalSelectedTypeName)
+			return handleIdenticalAggregation(filtered, consensusType)
 		case pb.AggregationType_AGGREGATION_TYPE_MEDIAN:
-			return handleMedianAggregation(observations, finalSelectedTypeName)
+			return handleMedianAggregation(filtered, consensusType)
 		case pb.AggregationType_AGGREGATION_TYPE_COMMON_PREFIX:
-			return handleCommonPrefixAggregation(observations, finalSelectedTypeName)
+			return handleCommonPrefixAggregation(filtered, consensusType)
 		case pb.AggregationType_AGGREGATION_TYPE_COMMON_SUFFIX:
-			return handleCommonSuffixAggregation(observations, finalSelectedTypeName)
+			return handleCommonSuffixAggregation(filtered, consensusType)
 		default:
 			return nil, fmt.Errorf("unknown aggregation type: %s", aggregation)
 		}
@@ -78,23 +65,16 @@ func CalculateOutcomeForObservations(
 	}
 }
 
-func handleMedianAggregation(observations []values.Value, finalSelectedTypeName string) (*valuespb.Value, error) {
-	var filteredObservations []values.Value
-	for _, v := range observations {
-		if reflect.TypeOf(v).String() == finalSelectedTypeName {
-			filteredObservations = append(filteredObservations, v)
-		}
-	}
-
+func handleMedianAggregation(observations []values.Value, medianType string) (*valuespb.Value, error) {
 	var (
 		medianResult values.Value
 		err          error
 	)
 
-	switch finalSelectedTypeName {
+	switch medianType {
 	case TypeInt64:
 		medianResult, err = getMedianFromFilteredObservations(
-			filteredObservations,
+			observations,
 			func(val values.Value) (int64, error) {
 				var got int64
 				return got, val.UnwrapTo(&got)
@@ -116,7 +96,7 @@ func handleMedianAggregation(observations []values.Value, finalSelectedTypeName 
 
 	case TypeFloat64:
 		medianResult, err = getMedianFromFilteredObservations(
-			filteredObservations,
+			observations,
 			func(val values.Value) (float64, error) {
 				var got float64
 				return got, val.UnwrapTo(&got)
@@ -138,7 +118,7 @@ func handleMedianAggregation(observations []values.Value, finalSelectedTypeName 
 
 	case TypeDecimal:
 		medianResult, err = getMedianFromFilteredObservations(
-			filteredObservations,
+			observations,
 			func(val values.Value) (decimal.Decimal, error) {
 				var got decimal.Decimal
 				return got, val.UnwrapTo(&got)
@@ -154,7 +134,7 @@ func handleMedianAggregation(observations []values.Value, finalSelectedTypeName 
 
 	case TypeBigInt:
 		medianResult, err = getMedianFromFilteredObservations(
-			filteredObservations,
+			observations,
 			func(val values.Value) (*big.Int, error) {
 				got := new(big.Int)
 				return got, val.UnwrapTo(got)
@@ -170,7 +150,7 @@ func handleMedianAggregation(observations []values.Value, finalSelectedTypeName 
 
 	case TypeTime:
 		medianResult, err = getMedianFromFilteredObservations(
-			filteredObservations,
+			observations,
 			func(val values.Value) (time.Time, error) {
 				var got time.Time
 				return got, val.UnwrapTo(&got)
@@ -185,7 +165,7 @@ func handleMedianAggregation(observations []values.Value, finalSelectedTypeName 
 		}
 
 	default:
-		return nil, fmt.Errorf("unsupported type for median aggregation: %s", finalSelectedTypeName)
+		return nil, fmt.Errorf("unsupported type for median aggregation: %s", medianType)
 	}
 
 	return values.Proto(medianResult), nil
@@ -249,28 +229,43 @@ func countTypes(observationProtos []*valuespb.Value) map[string]int {
 	return typeCounts
 }
 
-// determineConsensusType takes a slice of valuespb.Value and a minimum observation count,
-// returning the constant string name of the most frequent type that meets the min observation
-// threshold, or an error.
-func determineConsensusType(observationProtos []*valuespb.Value, minObservations int) (string, error) {
+// filterObservations returns all the observations that meet the minimum observation
+// threshold of the same underlying type.  Errors if no single type meets the
+// threshold.
+func filterObservations(observationProtos []*valuespb.Value, minObservations int) ([]values.Value, string, error) {
+	if len(observationProtos) < minObservations {
+		return nil, "", fmt.Errorf("insufficient observations (%d) to meet minimum (%d)", len(observationProtos), minObservations)
+	}
+
 	typeCounts := countTypes(observationProtos)
 
-	var finalSelectedTypeName string
+	var dominantType string
 	var maxCount int
 	for typeName, count := range typeCounts {
 		if count >= minObservations {
 			if count > maxCount {
 				maxCount = count
-				finalSelectedTypeName = typeName
+				dominantType = typeName
 			}
 		}
 	}
 
-	if finalSelectedTypeName == "" || finalSelectedTypeName == TypeNil {
-		return "", fmt.Errorf("no single type met the minimum observation threshold of %d", minObservations)
+	if dominantType == "" || dominantType == TypeNil {
+		return nil, "", fmt.Errorf("no single type met the minimum observation threshold of %d", minObservations)
 	}
 
-	return finalSelectedTypeName, nil
+	observations := make([]values.Value, 0, len(observationProtos))
+	for _, obsProto := range observationProtos {
+		obs, err := values.FromProto(obsProto)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to unmarshal observation value: %w", err)
+		}
+		if reflect.TypeOf(obs).String() == dominantType {
+			observations = append(observations, obs)
+		}
+	}
+
+	return observations, dominantType, nil
 }
 
 // getMedianFromFilteredObservations is a generic helper function that calculates the median

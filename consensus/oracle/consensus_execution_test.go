@@ -358,87 +358,6 @@ func Test_handleCommonSuffixAggregation(t *testing.T) {
 	})
 }
 
-func Test_determineFinalSelectedType(t *testing.T) {
-	type testCase struct {
-		name          string
-		observations  []*valuespb.Value
-		minObs        int
-		expectedType  string
-		expectedError error
-	}
-
-	testCases := []testCase{
-		{
-			name: "single dominant type (int64)",
-			observations: []*valuespb.Value{
-				values.Proto(values.NewInt64(10)), values.Proto(values.NewInt64(20)), values.Proto(values.NewInt64(30)),
-			},
-			minObs:        3,
-			expectedType:  TypeInt64,
-			expectedError: nil,
-		},
-		{
-			name: "multiple types, one dominant (float64)",
-			observations: []*valuespb.Value{
-				values.Proto(values.NewInt64(1)), values.Proto(values.NewInt64(2)),
-				values.Proto(values.NewFloat64(1.1)), values.Proto(values.NewFloat64(2.2)), values.Proto(values.NewFloat64(3.3)), values.Proto(values.NewFloat64(4.4)),
-			},
-			minObs:        3,
-			expectedType:  TypeFloat64,
-			expectedError: nil,
-		},
-		{
-			name: "multiple types, none dominant",
-			observations: []*valuespb.Value{
-				values.Proto(values.NewInt64(1)), values.Proto(values.NewInt64(2)),
-				values.Proto(values.NewString("a")), values.Proto(values.NewString("b")),
-			},
-			minObs:        3,
-			expectedType:  "",
-			expectedError: errors.New("no single type met the minimum observation threshold of 3"),
-		},
-		{
-			name:          "empty observations slice",
-			observations:  []*valuespb.Value{},
-			minObs:        1,
-			expectedType:  "",
-			expectedError: errors.New("no single type met the minimum observation threshold of 1"),
-		},
-		{
-			name: "nil values in observations",
-			observations: []*valuespb.Value{
-				values.Proto(values.NewInt64(1)), values.Proto(nil), values.Proto(values.NewInt64(2)), values.Proto(nil), values.Proto(values.NewInt64(3)),
-			},
-			minObs:        3,
-			expectedType:  TypeInt64,
-			expectedError: nil,
-		},
-		{
-			name: "only nil values, no dominant type",
-			observations: []*valuespb.Value{
-				values.Proto(nil), values.Proto(nil), values.Proto(nil),
-			},
-			minObs:        2,
-			expectedType:  "",
-			expectedError: errors.New("no single type met the minimum observation threshold of 2"),
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			resultType, err := determineConsensusType(tc.observations, tc.minObs)
-
-			if tc.expectedError != nil {
-				require.Error(t, err)
-				require.Contains(t, err.Error(), tc.expectedError.Error())
-			} else {
-				require.NoError(t, err)
-				assert.Equal(t, tc.expectedType, resultType)
-			}
-		})
-	}
-}
-
 func Test_countTypes(t *testing.T) {
 	type testCase struct {
 		name           string
@@ -507,6 +426,145 @@ func Test_countTypes(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			counts := countTypes(tc.observations)
 			assert.Equal(t, tc.expectedCounts, counts)
+		})
+	}
+}
+
+func assertDeepEqualValuesSlice(t *testing.T, expected, actual []values.Value) {
+	require.Len(t, actual, len(expected), "Slice length mismatch")
+	for i := range expected {
+		expectedUnwrapped, err := values.Unwrap(expected[i])
+		require.NoError(t, err)
+		actualUnwrapped, err := values.Unwrap(actual[i])
+		require.NoError(t, err)
+		assert.Equal(t, expectedUnwrapped, actualUnwrapped, "Elements at index %d mismatch", i)
+	}
+}
+
+func Test_filterObservations(t *testing.T) {
+	type testCase struct {
+		name                 string
+		observationProtos    []*valuespb.Value
+		minObservations      int
+		expectedObservations []values.Value
+		expectedTypeName     string
+		expectedError        error
+	}
+
+	// Helper to create values.Value observations for expected output from protobufs
+	createGoValuesFromProtos := func(protos []*valuespb.Value) []values.Value {
+		var goValues []values.Value
+		for _, p := range protos {
+			v, err := values.FromProto(p)
+			require.NoError(t, err)
+			goValues = append(goValues, v)
+		}
+		return goValues
+	}
+
+	testCases := []testCase{
+		{
+			name: "sufficient observations of dominant type (int64)",
+			observationProtos: []*valuespb.Value{
+				values.Proto(values.NewInt64(10)),
+				values.Proto(values.NewFloat64(1.1)),
+				values.Proto(values.NewInt64(20)),
+				values.Proto(values.NewFloat64(2.2)),
+				values.Proto(values.NewInt64(30)),
+			},
+			minObservations: 3,
+			expectedObservations: createGoValuesFromProtos([]*valuespb.Value{
+				values.Proto(values.NewInt64(10)),
+				values.Proto(values.NewInt64(20)),
+				values.Proto(values.NewInt64(30)),
+			}),
+			expectedTypeName: TypeInt64,
+			expectedError:    nil,
+		},
+		{
+			name: "insufficient total observations (initial check)",
+			observationProtos: []*valuespb.Value{
+				values.Proto(values.NewInt64(10)),
+				values.Proto(values.NewInt64(20)),
+			},
+			minObservations:      3,
+			expectedObservations: nil,
+			expectedTypeName:     "",
+			expectedError:        errors.New("insufficient observations (2) to meet minimum (3)"),
+		},
+		{
+			name: "no dominant type meeting threshold",
+			observationProtos: []*valuespb.Value{
+				values.Proto(values.NewInt64(10)),
+				values.Proto(values.NewInt64(20)),
+				values.Proto(values.NewFloat64(1.1)),
+				values.Proto(values.NewFloat64(2.2)),
+			},
+			minObservations:      3,
+			expectedObservations: nil,
+			expectedTypeName:     "",
+			expectedError:        errors.New("no single type met the minimum observation threshold of 3"),
+		},
+		{
+			name: "dominant type is TypeNil",
+			observationProtos: []*valuespb.Value{
+				values.Proto(nil),
+				values.Proto(nil),
+				values.Proto(values.NewInt64(10)),
+			},
+			minObservations:      2,
+			expectedObservations: nil,
+			expectedTypeName:     "",
+			expectedError:        errors.New("no single type met the minimum observation threshold of 2"),
+		},
+		{
+			name: "all observations are of dominant type",
+			observationProtos: []*valuespb.Value{
+				values.Proto(values.NewFloat64(1.1)),
+				values.Proto(values.NewFloat64(2.2)),
+				values.Proto(values.NewFloat64(3.3)),
+			},
+			minObservations: 3,
+			expectedObservations: createGoValuesFromProtos([]*valuespb.Value{
+				values.Proto(values.NewFloat64(1.1)),
+				values.Proto(values.NewFloat64(2.2)),
+				values.Proto(values.NewFloat64(3.3)),
+			}),
+			expectedTypeName: TypeFloat64,
+			expectedError:    nil,
+		},
+		{
+			name: "mixed types but only dominant passes filter",
+			observationProtos: []*valuespb.Value{
+				values.Proto(values.NewInt64(100)),
+				values.Proto(values.NewString("test")),
+				values.Proto(values.NewInt64(200)),
+				values.Proto(values.NewBool(true)),
+			},
+			minObservations: 2,
+			expectedObservations: createGoValuesFromProtos([]*valuespb.Value{
+				values.Proto(values.NewInt64(100)),
+				values.Proto(values.NewInt64(200)),
+			}),
+			expectedTypeName: TypeInt64,
+			expectedError:    nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actualObservations, actualTypeName, err := filterObservations(tc.observationProtos, tc.minObservations)
+
+			if tc.expectedError != nil {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.expectedError.Error())
+				assert.Nil(t, actualObservations)
+				assert.Empty(t, actualTypeName)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tc.expectedTypeName, actualTypeName)
+				assertDeepEqualValuesSlice(t, tc.expectedObservations, actualObservations)
+			}
 		})
 	}
 }
