@@ -35,6 +35,10 @@ type protocolRoundTest struct {
 	expectedKeyBundleID string
 }
 
+const n = 7
+const f = 2
+const batchSize = 10
+
 // TODO tests for determinism, shuffling inputs, non-happy path etc.
 
 func Test_MismatchedLeaderMetaData(t *testing.T) {
@@ -42,39 +46,10 @@ func Test_MismatchedLeaderMetaData(t *testing.T) {
 	lggr := logger.Test(t)
 	ctx := t.Context()
 
-	n := 7
-	f := 2
-	batchSize := 10
+	metaData := newRequestMetaData()
+	leaderMetaData := metaData
 
-	defaultMetaData := oracle.ConsensusRequestMetadata{
-		RequestMetadata: capabilities.RequestMetadata{
-			WorkflowID:               "default-workflow-id",
-			WorkflowOwner:            "test-owner",
-			WorkflowExecutionID:      "default-workflow-execution-id",
-			WorkflowName:             "test-workflow",
-			WorkflowDonID:            1,
-			WorkflowDonConfigVersion: 1,
-			ReferenceID:              "01",
-			DecodedWorkflowName:      "test-workflow-decoded",
-			SpendLimits:              nil,
-		},
-		KeyBundleID: "evm",
-	}
-
-	leaderMetaData := oracle.ConsensusRequestMetadata{
-		RequestMetadata: capabilities.RequestMetadata{
-			WorkflowID:               "leader-workflow-id",
-			WorkflowOwner:            "test-owner",
-			WorkflowExecutionID:      "leader-workflow-execution-id",
-			WorkflowName:             "test-workflow",
-			WorkflowDonID:            1,
-			WorkflowDonConfigVersion: 1,
-			ReferenceID:              "01",
-			DecodedWorkflowName:      "test-workflow-decoded",
-			SpendLimits:              nil,
-		},
-		KeyBundleID: "evm",
-	}
+	leaderMetaData.WorkflowDonID = 2
 
 	newCr := func(observation int64, metadata oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
 
@@ -87,10 +62,10 @@ func Test_MismatchedLeaderMetaData(t *testing.T) {
 	}
 
 	protocolRoundTests := map[string]protocolRoundTest{
-		"req-2": {requests: []*oracle.ConsensusRequest{
-			newCr(110, leaderMetaData), newCr(120, defaultMetaData), newCr(130, defaultMetaData),
-			newCr(140, defaultMetaData), newCr(150, defaultMetaData), newCr(160, defaultMetaData),
-			newCr(170, defaultMetaData)},
+		metaData.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newCr(110, leaderMetaData), newCr(120, metaData), newCr(130, metaData),
+			newCr(140, metaData), newCr(150, metaData), newCr(160, metaData),
+			newCr(170, metaData)},
 			expectedResult: nil},
 	}
 
@@ -100,10 +75,6 @@ func Test_MismatchedLeaderMetaData(t *testing.T) {
 func Test_ProtocolRounds(t *testing.T) {
 	lggr := logger.Test(t)
 	ctx := t.Context()
-
-	n := 7
-	f := 2
-	batchSize := 10
 
 	md1 := newRequestMetaData()
 	md2 := newRequestMetaData()
@@ -170,10 +141,6 @@ func Test_ProtocolRounds(t *testing.T) {
 	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
 }
 
-func getRequestID(metaData oracle.ConsensusRequestMetadata) string {
-	return metaData.WorkflowExecutionID + "-" + metaData.ReferenceID
-}
-
 func newRequestMetaData() oracle.ConsensusRequestMetadata {
 	return oracle.ConsensusRequestMetadata{
 		RequestMetadata: capabilities.RequestMetadata{
@@ -194,20 +161,15 @@ func newRequestMetaData() oracle.ConsensusRequestMetadata {
 func runProtocolRoundTests(ctx context.Context, t *testing.T, lggr logger.Logger, n, f, batchSize int, reqToObservations map[string]protocolRoundTest) {
 	var reportingPlugins []ocr3types.ReportingPlugin[[]byte]
 	for i := 0; i < n; i++ {
-		pluginObs := map[string]*oracle.ConsensusRequest{}
-		pluginRequestMetaData := make(map[string]metadata)
+		pluginObs := []*oracle.ConsensusRequest{}
 
-		for reqID, obsData := range reqToObservations {
+		for _, obsData := range reqToObservations {
 			observation := obsData.requests[i]
 			if observation != nil {
-				pluginObs[reqID] = observation
-			}
-
-			pluginRequestMetaData[reqID] = metadata{
-				keyBundleID: obsData.expectedKeyBundleID,
+				pluginObs = append(pluginObs, observation)
 			}
 		}
-		reportingPlugin := createReportingPlugin(t, pluginObs, lggr, f, n, batchSize, pluginRequestMetaData)
+		reportingPlugin := createReportingPlugin(t, pluginObs, lggr, f, n, batchSize)
 		reportingPlugins = append(reportingPlugins, reportingPlugin)
 	}
 
@@ -331,8 +293,8 @@ type metadata struct {
 	keyBundleID string
 }
 
-func createReportingPlugin(t *testing.T, pluginObservations map[string]*oracle.ConsensusRequest, lggr logger.Logger, f int, n int,
-	batchSize int, requestMetaData map[string]metadata) ocr3types.ReportingPlugin[[]byte] {
+func createReportingPlugin(t *testing.T, pluginObservations []*oracle.ConsensusRequest, lggr logger.Logger, f int, n int,
+	batchSize int) ocr3types.ReportingPlugin[[]byte] {
 	reqStore := requests.NewStore[*oracle.ConsensusRequest]()
 	for _, obs := range pluginObservations {
 		req := obs
