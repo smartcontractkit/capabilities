@@ -2,6 +2,7 @@ package action
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -179,7 +180,7 @@ func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.
 
 func (c *consensusCapability) Report(ctx context.Context, metadata capabilities.RequestMetadata, input *pb.ReportRequest) (*pb.ReportResponse, error) {
 	// TODO
-	return nil, nil
+	return nil, errors.New("report method is not implemented for Consensus Capability")
 }
 
 func (c *consensusCapability) SendResponse(ctx context.Context, requestID string, value *valuespb.Value) {
