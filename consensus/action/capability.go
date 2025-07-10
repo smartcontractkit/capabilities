@@ -65,7 +65,6 @@ func (c *consensusCapability) Initialise(ctx context.Context, config string,
 	store core.KeyValueStore, errorLog core.ErrorLog, pipelineRunner core.PipelineRunnerService,
 	relayerSet core.RelayerSet, oracleFactory core.OracleFactory,
 	gatewayConnector core.GatewayConnector, _ core.Keystore) error {
-
 	// TODO key bundle id should be on the request if we want to support multi sig for reports
 	c.defaultKeyBundleID = "evm"
 

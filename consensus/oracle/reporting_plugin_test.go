@@ -42,7 +42,6 @@ const batchSize = 10
 // TODO tests for determinism, shuffling inputs, non-happy path etc.
 
 func Test_MismatchedLeaderMetaData(t *testing.T) {
-
 	lggr := logger.Test(t)
 	ctx := t.Context()
 
@@ -63,7 +62,6 @@ func Test_MismatchedLeaderMetaData(t *testing.T) {
 }
 
 func Test_MismatchedNonLeaderMetaData(t *testing.T) {
-
 	lggr := logger.Test(t)
 	ctx := t.Context()
 
@@ -346,10 +344,6 @@ func runProtocolRoundTests(ctx context.Context, t *testing.T, lggr logger.Logger
 		keyBundleName := infos.Fields["keyBundleName"].GetStringValue()
 		assert.Equal(t, expectedOutcome.expectedKeyBundleID, keyBundleName, "keyBundle name should be equal")
 	}
-}
-
-type metadata struct {
-	keyBundleID string
 }
 
 func createReportingPlugin(t *testing.T, pluginObservations []*oracle.ConsensusRequest, lggr logger.Logger, f int, n int,
