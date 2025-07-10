@@ -28,8 +28,7 @@ func TestCapability(t *testing.T) {
 	oracleFactory := testutils.NewOracleFactory(t, lggr)
 
 	err := capability.Initialise(ctx, "", nil, nil, nil, nil, nil,
-		oracleFactory, nil,
-	)
+		oracleFactory, nil, nil)
 	require.NoError(t, err)
 
 	servicetest.Run(t, capability)
