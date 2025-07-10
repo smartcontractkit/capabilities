@@ -2,12 +2,14 @@ package action
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/jonboulle/clockwork"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
@@ -22,9 +24,15 @@ import (
 	oracle2 "github.com/smartcontractkit/capabilities/consensus/oracle"
 )
 
-// TODO - make the batch size configurable via the capability config, possible the batch size could be set based on the
-// total size of the requests from the store and limit configured in libocr
 const defaultRequestBatchSize = 20
+const defaultMaxRequestSizeBytes = 10 * 1024 // 10KB
+const defaultKeyBundleIDForValueConsensus = "evm"
+
+type ConsensusCapabilityConfig struct {
+	RequestBatchSize             int
+	MaxRequestSizeBytes          int
+	KeyBundleIDForValueConsensus string
+}
 
 type consensusCapability struct {
 	services.StateMachine
@@ -37,7 +45,9 @@ type consensusCapability struct {
 	requestTimeout     time.Duration
 	requestTimeoutLock sync.RWMutex
 
-	defaultKeyBundleID string
+	requestBatchSize          int
+	maxRequestSizeBytes       int
+	valueConsensusKeyBundleID string
 }
 
 // NewConsensusCapability creates a new ConsensusCapability with the given logger, clock, and response cache expiry time.  The
@@ -66,16 +76,38 @@ func (c *consensusCapability) Initialise(ctx context.Context, config string,
 	store core.KeyValueStore, errorLog core.ErrorLog, pipelineRunner core.PipelineRunnerService,
 	relayerSet core.RelayerSet, oracleFactory core.OracleFactory,
 	gatewayConnector core.GatewayConnector, _ core.Keystore) error {
-	// TODO key bundle id should be on the request if we want to support multi sig for reports
-	c.defaultKeyBundleID = "evm"
+	c.lggr.Debugf("Initialising Consensus Capability")
+
+	c.valueConsensusKeyBundleID = defaultKeyBundleIDForValueConsensus
+	c.requestBatchSize = defaultRequestBatchSize
+	c.maxRequestSizeBytes = defaultMaxRequestSizeBytes
+
+	var capabilityConfig ConsensusCapabilityConfig
+	err := json.Unmarshal([]byte(config), &capabilityConfig)
+	if err != nil {
+		return fmt.Errorf("failed to deserialize config into ConsensusCapabilityConfig: %w", err)
+	}
+
+	c.lggr.Debugw("Parsed Consensus Capability config", "config", capabilityConfig)
+
+	if len(capabilityConfig.KeyBundleIDForValueConsensus) > 0 {
+		c.valueConsensusKeyBundleID = capabilityConfig.KeyBundleIDForValueConsensus
+	}
+
+	if capabilityConfig.RequestBatchSize > 0 {
+		c.requestBatchSize = capabilityConfig.RequestBatchSize
+	}
+
+	if capabilityConfig.MaxRequestSizeBytes > 0 {
+		c.maxRequestSizeBytes = capabilityConfig.MaxRequestSizeBytes
+	}
 
 	c.lggr.Debugf("Initialising Consensus Capability")
 
-	// TODO get batch size and limits from config
 	// TODO check pending requests metric is published
 
 	reportingPlugin, err := oracle2.NewReportingPluginFactory(c.lggr, c.reqStore, c.SetRequestTimeout,
-		defaultRequestBatchSize)
+		c.requestBatchSize)
 	if err != nil {
 		return fmt.Errorf("error when creating reporting plugin factory: %w", err)
 	}
@@ -120,8 +152,14 @@ func (c *consensusCapability) Initialise(ctx context.Context, config string,
 }
 
 func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.RequestMetadata, input *pb.SimpleConsensusInputs) (*valuespb.Value, error) {
-	// TODO limit check the size of the serialised value and consensus descriptor (and metadata? or can rely on sensible sized values here?), error if too large - pass in the limits
-	// in the capability config
+	consensusRequestMetaData := oracle2.ConsensusRequestMetadata{
+		RequestMetadata: metadata,
+		KeyBundleID:     c.valueConsensusKeyBundleID,
+	}
+
+	if err := validateInputSize(consensusRequestMetaData, input, c.maxRequestSizeBytes); err != nil {
+		return nil, fmt.Errorf("failed to validate input size: %w", err)
+	}
 
 	lggr := logger.With(
 		c.lggr,
@@ -160,10 +198,7 @@ func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.
 
 	c.reqHandler.SendRequest(ctx,
 		oracle2.NewConsensusRequest(input, time.Now().Add(requestTimeout), callbackChan,
-			oracle2.ConsensusRequestMetadata{
-				RequestMetadata: metadata,
-				KeyBundleID:     c.defaultKeyBundleID,
-			},
+			consensusRequestMetaData,
 		))
 
 	select {
@@ -225,4 +260,25 @@ func (c *consensusCapability) Name() string {
 
 func (c *consensusCapability) Description() string {
 	return "Consensus Capability"
+}
+
+// validateInputSize checks that the size of the input and metadata does not exceed the maximum request size.  This is to
+// prevent excessively large requests that could cause issues in the consensus process.
+func validateInputSize(consensusRequestMetaData oracle2.ConsensusRequestMetadata, input *pb.SimpleConsensusInputs, maxRequestSizeBytes int) error {
+	requestMetaData := oracle2.ToRequestMetaData(consensusRequestMetaData)
+	
+	serialisedInput, err := proto.Marshal(input)
+	if err != nil {
+		return fmt.Errorf("failed to serialise input: %w", err)
+	}
+
+	serialisedMetadata, err := proto.Marshal(requestMetaData)
+	if err != nil {
+		return fmt.Errorf("failed to serialise metadata: %w", err)
+	}
+
+	if len(serialisedInput)+len(serialisedMetadata) > maxRequestSizeBytes {
+		return fmt.Errorf("request size exceeds maximum allowed size of %d bytes: got %d bytes", maxRequestSizeBytes, len(serialisedInput)+len(serialisedMetadata))
+	}
+	return nil
 }
