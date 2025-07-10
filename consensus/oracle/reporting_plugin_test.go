@@ -51,22 +51,33 @@ func Test_MismatchedLeaderMetaData(t *testing.T) {
 
 	leaderMetaData.WorkflowDonID = 2
 
-	newCr := func(observation int64, metadata oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
-
-		simpleConsensusInputs := &pb.SimpleConsensusInputs{
-			Observation: &pb.SimpleConsensusInputs_Value{Value: values.Proto(values.NewInt64(observation))},
-			Descriptors: &pb.ConsensusDescriptor{Descriptor_: &pb.ConsensusDescriptor_Aggregation{Aggregation: pb.AggregationType_AGGREGATION_TYPE_MEDIAN}},
-		}
-
-		return oracle.NewConsensusRequest(simpleConsensusInputs, time.Now().Add(1*time.Hour).UTC(), nil, metadata)
-	}
-
 	protocolRoundTests := map[string]protocolRoundTest{
 		metaData.RequestID(): {requests: []*oracle.ConsensusRequest{
 			newCr(110, leaderMetaData), newCr(120, metaData), newCr(130, metaData),
 			newCr(140, metaData), newCr(150, metaData), newCr(160, metaData),
 			newCr(170, metaData)},
 			expectedResult: nil},
+	}
+
+	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, protocolRoundTests)
+}
+
+func Test_MismatchedNonLeaderMetaData(t *testing.T) {
+
+	lggr := logger.Test(t)
+	ctx := t.Context()
+
+	metaData := newRequestMetaData()
+	misMatchedMetaData := metaData
+
+	misMatchedMetaData.WorkflowDonID = 2
+
+	protocolRoundTests := map[string]protocolRoundTest{
+		metaData.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newCr(110, metaData), newCr(120, metaData), newCr(130, metaData),
+			newCr(140, metaData), newCr(150, misMatchedMetaData), newCr(160, metaData),
+			newCr(170, metaData)},
+			expectedResult: values.NewInt64(140)},
 	}
 
 	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, protocolRoundTests)
@@ -85,15 +96,6 @@ func Test_ProtocolRounds(t *testing.T) {
 	md7 := newRequestMetaData()
 
 	md1.KeyBundleID = "evm"
-
-	newCr := func(observation int64, metaData oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
-		simpleConsensusInputs := &pb.SimpleConsensusInputs{
-			Observation: &pb.SimpleConsensusInputs_Value{Value: values.Proto(values.NewInt64(observation))},
-			Descriptors: &pb.ConsensusDescriptor{Descriptor_: &pb.ConsensusDescriptor_Aggregation{Aggregation: pb.AggregationType_AGGREGATION_TYPE_MEDIAN}},
-		}
-
-		return oracle.NewConsensusRequest(simpleConsensusInputs, time.Now().Add(1*time.Hour).UTC(), nil, metaData)
-	}
 
 	reqToObservations := map[string]protocolRoundTest{
 		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
@@ -141,6 +143,33 @@ func Test_ProtocolRounds(t *testing.T) {
 	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
 }
 
+func Test_LeaderHasNoMatchingRequest(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := t.Context()
+
+	md1 := newRequestMetaData()
+	md7 := newRequestMetaData()
+
+	md1.KeyBundleID = "evm"
+
+	reqToObservations := map[string]protocolRoundTest{
+		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newCr(10, md1), newCr(20, md1), newCr(30, md1),
+			newCr(40, md1), newCr(50, md1), newCr(60, md1),
+			newCr(70, md1)},
+			expectedResult: values.NewInt64(40), expectedKeyBundleID: "evm"},
+
+		// Simulate a round where the leader has not yet received the observation for req-7
+		md7.RequestID(): {requests: []*oracle.ConsensusRequest{
+			nil, newCr(120, md7), newCr(130, md7),
+			newCr(140, md7), newCr(150, md7), newCr(160, md7),
+			newCr(170, md7)},
+			expectedResult: nil},
+	}
+
+	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
+}
+
 func newRequestMetaData() oracle.ConsensusRequestMetadata {
 	return oracle.ConsensusRequestMetadata{
 		RequestMetadata: capabilities.RequestMetadata{
@@ -156,6 +185,15 @@ func newRequestMetaData() oracle.ConsensusRequestMetadata {
 		},
 		KeyBundleID: "",
 	}
+}
+
+func newCr(observation int64, metaData oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
+	simpleConsensusInputs := &pb.SimpleConsensusInputs{
+		Observation: &pb.SimpleConsensusInputs_Value{Value: values.Proto(values.NewInt64(observation))},
+		Descriptors: &pb.ConsensusDescriptor{Descriptor_: &pb.ConsensusDescriptor_Aggregation{Aggregation: pb.AggregationType_AGGREGATION_TYPE_MEDIAN}},
+	}
+
+	return oracle.NewConsensusRequest(simpleConsensusInputs, time.Now().Add(1*time.Hour).UTC(), nil, metaData)
 }
 
 func runProtocolRoundTests(ctx context.Context, t *testing.T, lggr logger.Logger, n, f, batchSize int, reqToObservations map[string]protocolRoundTest) {
