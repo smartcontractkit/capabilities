@@ -7,24 +7,15 @@ import (
 	"time"
 
 	"github.com/shopspring/decimal"
-	"google.golang.org/protobuf/proto" //
-
-	"github.com/smartcontractkit/chainlink-common/pkg/values"             //
-	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb" //
-	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/values"
+	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
+	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb"
 )
 
-// Helper to parse time strings safely in tests
-func parseTime(t *testing.T, s string) time.Time {
-	parsedTime, err := time.Parse(time.RFC3339, s)
-	require.NoError(t, err)
-	return parsedTime
-}
-
-// Test_CalculateOutcomeForObservations focuses on the top-level dispatching and initial validation
-// of the CalculateOutcomeForObservations function.
 func Test_CalculateOutcomeForObservations(t *testing.T) {
 	type testCase struct {
 		name            string
@@ -168,7 +159,7 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 func Test_handleMedianAggregation(t *testing.T) {
 	type testCase struct {
 		name              string
-		observations      []values.Value // Use values.Value for direct handler input
+		observations      []values.Value
 		finalSelectedType string
 		expectedOutcome   *valuespb.Value
 		expectedError     error
@@ -311,8 +302,6 @@ func Test_handleMedianAggregation(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			// Convert values.Value to valuespb.Value for input to CalculateOutcomeForObservations
-			// This is not strictly necessary for handleMedianAggregation, but keeps the test structure consistent if needed elsewhere.
 			outcome, err := handleMedianAggregation(
 				tc.observations,
 				tc.finalSelectedType,
@@ -335,8 +324,6 @@ func Test_handleMedianAggregation(t *testing.T) {
 
 // Test_handleIdenticalAggregation tests the handleIdenticalAggregation function directly.
 func Test_handleIdenticalAggregation(t *testing.T) {
-	// Currently, this handler always returns "not supported".
-	// Add more complex test cases here once the handler is implemented.
 	t.Run("identical aggregation: not yet supported", func(t *testing.T) {
 		observations := []values.Value{values.NewInt64(10)}
 		finalSelectedType := TypeInt64
@@ -349,8 +336,6 @@ func Test_handleIdenticalAggregation(t *testing.T) {
 
 // Test_handleCommonPrefixAggregation tests the handleCommonPrefixAggregation function directly.
 func Test_handleCommonPrefixAggregation(t *testing.T) {
-	// Currently, this handler always returns "not supported".
-	// Add more complex test cases here once the handler is implemented.
 	t.Run("common prefix aggregation: not yet supported", func(t *testing.T) {
 		observations := []values.Value{values.NewString("test")}
 		finalSelectedType := TypeString
@@ -363,8 +348,6 @@ func Test_handleCommonPrefixAggregation(t *testing.T) {
 
 // Test_handleCommonSuffixAggregation tests the handleCommonSuffixAggregation function directly.
 func Test_handleCommonSuffixAggregation(t *testing.T) {
-	// Currently, this handler always returns "not supported".
-	// Add more complex test cases here once the handler is implemented.
 	t.Run("common suffix aggregation: not yet supported", func(t *testing.T) {
 		observations := []values.Value{values.NewString("test")}
 		finalSelectedType := TypeString
@@ -443,7 +426,7 @@ func Test_determineFinalSelectedType(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			resultType, err := determineFinalSelectedType(tc.observations, tc.minObs)
+			resultType, err := determineConsensusType(tc.observations, tc.minObs)
 
 			if tc.expectedError != nil {
 				require.Error(t, err)
@@ -526,4 +509,10 @@ func Test_countTypes(t *testing.T) {
 			assert.Equal(t, tc.expectedCounts, counts)
 		})
 	}
+}
+
+func parseTime(t *testing.T, s string) time.Time {
+	parsedTime, err := time.Parse(time.RFC3339, s)
+	require.NoError(t, err)
+	return parsedTime
 }

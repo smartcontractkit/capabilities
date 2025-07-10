@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/shopspring/decimal"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb"
@@ -40,7 +41,7 @@ func CalculateOutcomeForObservations(
 		return nil, fmt.Errorf("insufficient observations (%d) to meet minimum (%d)", len(observationProtos), minObservations)
 	}
 
-	finalSelectedTypeName, err := determineFinalSelectedType(observationProtos, minObservations)
+	finalSelectedTypeName, err := determineConsensusType(observationProtos, minObservations)
 	if err != nil {
 		return nil, err
 	}
@@ -54,35 +55,27 @@ func CalculateOutcomeForObservations(
 		observations[i] = obs
 	}
 
-	var outcomeValue *valuespb.Value
-
 	switch desc := consensusDescriptor.GetDescriptor_().(type) {
 	case *pb.ConsensusDescriptor_Aggregation:
 		aggregation := consensusDescriptor.GetAggregation()
 		switch aggregation {
 		case pb.AggregationType_AGGREGATION_TYPE_IDENTICAL:
-			outcomeValue, err = handleIdenticalAggregation(observations, finalSelectedTypeName)
+			return handleIdenticalAggregation(observations, finalSelectedTypeName)
 		case pb.AggregationType_AGGREGATION_TYPE_MEDIAN:
-			outcomeValue, err = handleMedianAggregation(observations, finalSelectedTypeName)
+			return handleMedianAggregation(observations, finalSelectedTypeName)
 		case pb.AggregationType_AGGREGATION_TYPE_COMMON_PREFIX:
-			outcomeValue, err = handleCommonPrefixAggregation(observations, finalSelectedTypeName)
+			return handleCommonPrefixAggregation(observations, finalSelectedTypeName)
 		case pb.AggregationType_AGGREGATION_TYPE_COMMON_SUFFIX:
-			outcomeValue, err = handleCommonSuffixAggregation(observations, finalSelectedTypeName)
+			return handleCommonSuffixAggregation(observations, finalSelectedTypeName)
 		default:
 			return nil, fmt.Errorf("unknown aggregation type: %s", aggregation)
 		}
 	case *pb.ConsensusDescriptor_FieldsMap:
 		// TODO: Implement aggregation for structured types (FieldsMap).
-		// This handler needs to support consensus calculation for complex data structures defined by a FieldsMap.
 		return nil, errors.New("TODO only primitive aggregation types are supported right now")
 	default:
 		return nil, fmt.Errorf("unknown consensus descriptor type: %T", desc)
 	}
-
-	if err != nil {
-		return nil, err
-	}
-	return outcomeValue, nil
 }
 
 func handleMedianAggregation(observations []values.Value, finalSelectedTypeName string) (*valuespb.Value, error) {
@@ -200,24 +193,21 @@ func handleMedianAggregation(observations []values.Value, finalSelectedTypeName 
 
 func handleIdenticalAggregation(_ []values.Value, _ string) (*valuespb.Value, error) {
 	// TODO: Implement identical aggregation logic.
-	// This handler should find if all valid observations are identical and return that value, or an error if not.
 	return nil, fmt.Errorf("identical aggregation type not supported")
 }
 
 func handleCommonSuffixAggregation(_ []values.Value, _ string) (*valuespb.Value, error) {
 	// TODO: Implement common suffix aggregation logic.
-	// This handler should identify the longest common suffix among string or bytes observations and return it.
 	return nil, fmt.Errorf("common suffix aggregation type not supported")
 }
 
 func handleCommonPrefixAggregation(_ []values.Value, _ string) (*valuespb.Value, error) {
 	// TODO: Implement common prefix aggregation logic.
-	// This handler should identify the longest common prefix among string or bytes observations and return it.
 	return nil, fmt.Errorf("common prefix aggregation type not supported")
 }
 
 // countTypes takes a slice of valuespb.Value and returns a map
-// where keys are the constant string names of the corresponding values.Value types (e.g., TypeInt64)
+// where keys are the constant string names of the corresponding values.Value types
 // and values are their counts.
 func countTypes(observationProtos []*valuespb.Value) map[string]int {
 	typeCounts := make(map[string]int)
@@ -259,10 +249,10 @@ func countTypes(observationProtos []*valuespb.Value) map[string]int {
 	return typeCounts
 }
 
-// determineFinalSelectedType takes a slice of valuespb.Value and a minimum observation count,
-// returning the constant string name of the most frequent values.Value type that meets the threshold, or an error.
-// This version operates directly on protobufs.
-func determineFinalSelectedType(observationProtos []*valuespb.Value, minObservations int) (string, error) {
+// determineConsensusType takes a slice of valuespb.Value and a minimum observation count,
+// returning the constant string name of the most frequent type that meets the min observation
+// threshold, or an error.
+func determineConsensusType(observationProtos []*valuespb.Value, minObservations int) (string, error) {
 	typeCounts := countTypes(observationProtos)
 
 	var finalSelectedTypeName string
@@ -285,14 +275,14 @@ func determineFinalSelectedType(observationProtos []*valuespb.Value, minObservat
 
 // getMedianFromFilteredObservations is a generic helper function that calculates the median
 // for a slice of values.Value that can be unwrapped to type T.
-// It requires specific functions for unwrapping, comparing, and re-wrapping the values.
+// It accepts functions for unwrapping, comparing, and re-wrapping the values.
 //
 // For an even number of elements, we take the left of the two middle elements.
 func getMedianFromFilteredObservations[T any](
 	filteredObservations []values.Value,
-	unwrap func(val values.Value) (T, error), // Unwraps values.Value to type T
-	cmp func(a, b T) int, // Compares two values of type T
-	wrap func(any) (values.Value, error), // Wraps type T back to values.Value
+	unwrap func(val values.Value) (T, error),
+	cmp func(a, b T) int,
+	wrap func(any) (values.Value, error),
 ) (values.Value, error) {
 	if len(filteredObservations) == 0 {
 		return nil, errors.New("no valid observations for median calculation")
