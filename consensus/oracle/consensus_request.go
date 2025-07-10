@@ -17,9 +17,12 @@ type ConsensusRequestMetadata struct {
 	KeyBundleID string
 }
 
+func (m ConsensusRequestMetadata) RequestID() string {
+	return m.WorkflowExecutionID + "-" + m.ReferenceID
+}
+
 type ConsensusRequest struct {
 	RequestID string
-
 	Input     *pb.SimpleConsensusInputs
 	ExpiresAt time.Time
 
@@ -29,14 +32,13 @@ type ConsensusRequest struct {
 }
 
 func NewConsensusRequest(
-	id string,
 	input *pb.SimpleConsensusInputs,
 	expiresAt time.Time,
 	callbackCh chan ConsensusResponse,
 	metadata ConsensusRequestMetadata,
 ) *ConsensusRequest {
 	return &ConsensusRequest{
-		RequestID:  id,
+		RequestID:  metadata.RequestID(),
 		Input:      input,
 		ExpiresAt:  expiresAt,
 		CallbackCh: callbackCh,

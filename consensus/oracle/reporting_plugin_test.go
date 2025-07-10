@@ -77,14 +77,13 @@ func Test_MismatchedLeaderMetaData(t *testing.T) {
 	}
 
 	newCr := func(observation int64, metadata oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
-		requestID := defaultMetaData.WorkflowExecutionID + "-" + defaultMetaData.ReferenceID
 
 		simpleConsensusInputs := &pb.SimpleConsensusInputs{
 			Observation: &pb.SimpleConsensusInputs_Value{Value: values.Proto(values.NewInt64(observation))},
 			Descriptors: &pb.ConsensusDescriptor{Descriptor_: &pb.ConsensusDescriptor_Aggregation{Aggregation: pb.AggregationType_AGGREGATION_TYPE_MEDIAN}},
 		}
 
-		return oracle.NewConsensusRequest(requestID, simpleConsensusInputs, time.Now().Add(1*time.Hour).UTC(), nil, metadata)
+		return oracle.NewConsensusRequest(simpleConsensusInputs, time.Now().Add(1*time.Hour).UTC(), nil, metadata)
 	}
 
 	protocolRoundTests := map[string]protocolRoundTest{
@@ -106,9 +105,79 @@ func Test_ProtocolRounds(t *testing.T) {
 	f := 2
 	batchSize := 10
 
-	defaultMetaData := oracle.ConsensusRequestMetadata{
+	md1 := newRequestMetaData()
+	md2 := newRequestMetaData()
+	md3 := newRequestMetaData()
+	md4 := newRequestMetaData()
+	md5 := newRequestMetaData()
+	md6 := newRequestMetaData()
+	md7 := newRequestMetaData()
+
+	md1.KeyBundleID = "evm"
+
+	newCr := func(observation int64, metaData oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
+		simpleConsensusInputs := &pb.SimpleConsensusInputs{
+			Observation: &pb.SimpleConsensusInputs_Value{Value: values.Proto(values.NewInt64(observation))},
+			Descriptors: &pb.ConsensusDescriptor{Descriptor_: &pb.ConsensusDescriptor_Aggregation{Aggregation: pb.AggregationType_AGGREGATION_TYPE_MEDIAN}},
+		}
+
+		return oracle.NewConsensusRequest(simpleConsensusInputs, time.Now().Add(1*time.Hour).UTC(), nil, metaData)
+	}
+
+	reqToObservations := map[string]protocolRoundTest{
+		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newCr(10, md1), newCr(20, md1), newCr(30, md1),
+			newCr(40, md1), newCr(50, md1), newCr(60, md1),
+			newCr(70, md1)},
+			expectedResult: values.NewInt64(40), expectedKeyBundleID: "evm"},
+
+		md2.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newCr(110, md2), newCr(120, md2), newCr(130, md2),
+			newCr(140, md2), newCr(150, md2), newCr(160, md2),
+			newCr(170, md2)},
+			expectedResult: values.NewInt64(140)},
+
+		// Simulate some rounds where some nodes have not yet received the observation for req-3 and req-4
+		md3.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newCr(110, md3), newCr(120, md3), newCr(130, md3),
+			newCr(140, md3), newCr(150, md3), nil, nil},
+			expectedResult: values.NewInt64(130)},
+		md4.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newCr(110, md4), nil, newCr(130, md4),
+			newCr(140, md4), newCr(150, md4), nil,
+			newCr(170, md4)},
+			expectedResult: values.NewInt64(140)},
+		md5.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newCr(110, md5), nil, newCr(130, md5),
+			nil, newCr(150, md5), nil,
+			newCr(170, md5)},
+			expectedResult: nil},
+
+		// Simulate a round where there are insufficient observations for req-6
+		md6.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newCr(110, md6), nil, newCr(130, md6),
+			newCr(140, md6), newCr(150, md6), nil, nil},
+			expectedResult: nil},
+
+		// Simulate a round where the leader has not yet received the observation for req-7
+		md7.RequestID(): {requests: []*oracle.ConsensusRequest{
+			nil, newCr(120, md7), newCr(130, md7),
+			newCr(140, md7), newCr(150, md7), newCr(160, md7),
+			newCr(170, md7)},
+			expectedResult: nil},
+	}
+
+	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
+}
+
+func getRequestID(metaData oracle.ConsensusRequestMetadata) string {
+	return metaData.WorkflowExecutionID + "-" + metaData.ReferenceID
+}
+
+func newRequestMetaData() oracle.ConsensusRequestMetadata {
+	return oracle.ConsensusRequestMetadata{
 		RequestMetadata: capabilities.RequestMetadata{
-			WorkflowID:               uuid.NewString(),
+			WorkflowID:               "default-workflow-id",
 			WorkflowOwner:            "test-owner",
 			WorkflowExecutionID:      uuid.NewString(),
 			WorkflowName:             "test-workflow",
@@ -120,69 +189,6 @@ func Test_ProtocolRounds(t *testing.T) {
 		},
 		KeyBundleID: "",
 	}
-
-	newCrKBID := func(observation int64, keyBundleID string) *oracle.ConsensusRequest {
-		requestID := defaultMetaData.WorkflowExecutionID + "-" + defaultMetaData.ReferenceID
-
-		metaDataCopy := defaultMetaData
-		metaDataCopy.KeyBundleID = keyBundleID
-
-		simpleConsensusInputs := &pb.SimpleConsensusInputs{
-			Observation: &pb.SimpleConsensusInputs_Value{Value: values.Proto(values.NewInt64(observation))},
-			Descriptors: &pb.ConsensusDescriptor{Descriptor_: &pb.ConsensusDescriptor_Aggregation{Aggregation: pb.AggregationType_AGGREGATION_TYPE_MEDIAN}},
-		}
-
-		return oracle.NewConsensusRequest(requestID, simpleConsensusInputs, time.Now().Add(1*time.Hour).UTC(), nil, metaDataCopy)
-	}
-
-	newCr := func(observation int64) *oracle.ConsensusRequest {
-		return newCrKBID(observation, "")
-	}
-
-	reqToObservations := map[string]protocolRoundTest{
-		"req-1": {requests: []*oracle.ConsensusRequest{
-			newCrKBID(10, "evm"), newCrKBID(20, "evm"), newCrKBID(30, "evm"),
-			newCrKBID(40, "evm"), newCrKBID(50, "evm"), newCrKBID(60, "evm"),
-			newCrKBID(70, "evm")},
-			expectedResult: values.NewInt64(40), expectedKeyBundleID: "evm"},
-
-		"req-2": {requests: []*oracle.ConsensusRequest{
-			newCr(110), newCr(120), newCr(130),
-			newCr(140), newCr(150), newCr(160),
-			newCr(170)},
-			expectedResult: values.NewInt64(140)},
-
-		// Simulate some rounds where some nodes have not yet received the observation for req-3 and req-4
-		"req-3": {requests: []*oracle.ConsensusRequest{
-			newCr(110), newCr(120), newCr(130),
-			newCr(140), newCr(150), nil, nil},
-			expectedResult: values.NewInt64(130)},
-		"req-4": {requests: []*oracle.ConsensusRequest{
-			newCr(110), nil, newCr(130),
-			newCr(140), newCr(150), nil,
-			newCr(170)},
-			expectedResult: values.NewInt64(140)},
-		"req-5": {requests: []*oracle.ConsensusRequest{
-			newCr(110), nil, newCr(130),
-			nil, newCr(150), nil,
-			newCr(170)},
-			expectedResult: nil},
-
-		// Simulate a round where there are insufficient observations for req-6
-		"req-6": {requests: []*oracle.ConsensusRequest{
-			newCr(110), nil, newCr(130),
-			newCr(140), newCr(150), nil, nil},
-			expectedResult: nil},
-
-		// Simulate a round where the leader has not yet received the observation for req-7
-		"req-7": {requests: []*oracle.ConsensusRequest{
-			nil, newCr(120), newCr(130),
-			newCr(140), newCr(150), newCr(160),
-			newCr(170)},
-			expectedResult: nil},
-	}
-
-	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
 }
 
 func runProtocolRoundTests(ctx context.Context, t *testing.T, lggr logger.Logger, n, f, batchSize int, reqToObservations map[string]protocolRoundTest) {
@@ -328,8 +334,8 @@ type metadata struct {
 func createReportingPlugin(t *testing.T, pluginObservations map[string]*oracle.ConsensusRequest, lggr logger.Logger, f int, n int,
 	batchSize int, requestMetaData map[string]metadata) ocr3types.ReportingPlugin[[]byte] {
 	reqStore := requests.NewStore[*oracle.ConsensusRequest]()
-	for reqID, obs := range pluginObservations {
-		req := oracle.NewConsensusRequest(reqID, obs.Input, time.Now(), nil, oracle.ConsensusRequestMetadata{KeyBundleID: requestMetaData[reqID].keyBundleID})
+	for _, obs := range pluginObservations {
+		req := obs
 		err := reqStore.Add(req)
 		require.NoError(t, err, "failed to add request to store")
 	}
