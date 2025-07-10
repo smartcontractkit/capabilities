@@ -284,15 +284,6 @@ func (r *CallContractError) Attributes() []attribute.KeyValue {
 	}, r.ExecutionContext.Attributes()...)
 }
 
-//func (r *CallContractError2) Attributes() []attribute.KeyValue {
-//	return append([]attribute.KeyValue{
-//		attribute.Int64("block_number", r.Req.GetBlockNumber()),
-//		attribute.String("contract_address", r.Req.GetContractAddress()),
-//		attribute.String("summary", r.GetSummary()),
-//		//attribute.
-//	}, r.ExecutionContext.Attributes()...)
-//}
-
 func (r *TriggerEventDroppedError) Attributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.String("trigger_id", r.GetTriggerID()),

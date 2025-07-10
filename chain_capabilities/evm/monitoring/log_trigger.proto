@@ -3,8 +3,27 @@ package chain_capabilities.evm;
 option go_package = "github.com/smartcontractkit/capabilities/chain_capabilities/evm;monitoring";
 
 import "libs/monitoring/execution_context.proto";
-//import "values/v1/values.proto";
-
+//
+//enum ConfidenceLevel {
+//  CONFIDENCE_LEVEL_SAFE = 0;
+//  CONFIDENCE_LEVEL_LATEST = 1;
+//  CONFIDENCE_LEVEL_FINALIZED = 2;
+//}
+//
+//message TopicValues {
+//  repeated bytes values = 1;
+//}
+//
+//message FilterLogTriggerRequest {
+//  repeated bytes addresses = 1;
+//  repeated TopicValues topics = 2;
+//  ConfidenceLevel confidence = 3;
+//}
+//
+//message TriggerInitiated{
+//  FilterLogTriggerRequest req = 1;
+//  monitoring.ExecutionContext execution_context = 20;
+//}
 
 message TriggerEventDroppedError {
   string triggerID = 1;
@@ -13,6 +32,5 @@ message TriggerEventDroppedError {
   int64 log_index = 4;
   string summary = 5;
   string cause = 6;
-//  Log log = 3; // the log that was dropped
   monitoring.ExecutionContext execution_context = 20;
 }

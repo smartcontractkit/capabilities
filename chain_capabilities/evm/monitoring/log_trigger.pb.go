@@ -23,14 +23,13 @@ const (
 )
 
 type TriggerEventDroppedError struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	TriggerID string                 `protobuf:"bytes,1,opt,name=triggerID,proto3" json:"triggerID,omitempty"`
-	TxHash    string                 `protobuf:"bytes,2,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
-	BlockHash string                 `protobuf:"bytes,3,opt,name=block_hash,json=blockHash,proto3" json:"block_hash,omitempty"`
-	LogIndex  int64                  `protobuf:"varint,4,opt,name=log_index,json=logIndex,proto3" json:"log_index,omitempty"`
-	Summary   string                 `protobuf:"bytes,5,opt,name=summary,proto3" json:"summary,omitempty"`
-	Cause     string                 `protobuf:"bytes,6,opt,name=cause,proto3" json:"cause,omitempty"`
-	// Log log = 3; // the log that was dropped
+	state            protoimpl.MessageState       `protogen:"open.v1"`
+	TriggerID        string                       `protobuf:"bytes,1,opt,name=triggerID,proto3" json:"triggerID,omitempty"`
+	TxHash           string                       `protobuf:"bytes,2,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
+	BlockHash        string                       `protobuf:"bytes,3,opt,name=block_hash,json=blockHash,proto3" json:"block_hash,omitempty"`
+	LogIndex         int64                        `protobuf:"varint,4,opt,name=log_index,json=logIndex,proto3" json:"log_index,omitempty"`
+	Summary          string                       `protobuf:"bytes,5,opt,name=summary,proto3" json:"summary,omitempty"`
+	Cause            string                       `protobuf:"bytes,6,opt,name=cause,proto3" json:"cause,omitempty"`
 	ExecutionContext *monitoring.ExecutionContext `protobuf:"bytes,20,opt,name=execution_context,json=executionContext,proto3" json:"execution_context,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
