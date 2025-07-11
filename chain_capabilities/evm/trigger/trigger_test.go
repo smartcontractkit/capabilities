@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
-	_ "github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 	_ "github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"google.golang.org/protobuf/proto"
 
