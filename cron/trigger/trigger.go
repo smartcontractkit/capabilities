@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"time"
 
 	"github.com/go-co-op/gocron/v2"
@@ -26,7 +27,7 @@ const ServiceName = "CronCapabilities"
 
 const (
 	defaultSendChannelBufferSize          = 1000
-	defaultFastestScheduleIntervalSeconds = 30
+	defaultFastestScheduleIntervalSeconds = 40
 )
 
 var cronTriggerInfo = capabilities.MustNewCapabilityInfo(
@@ -164,6 +165,13 @@ func (s *Service) Initialise(ctx context.Context, config string, _ core.Telemetr
 }
 
 func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) (<-chan capabilities.TriggerAndId[*crontypedapi.Payload], error) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.lggr.Errorw("panic in RegisterTrigger function", "err", r, "stack", string(debug.Stack()))
+			panic(r)
+		}
+	}()
+
 	_, ok := s.triggers.Read(triggerID)
 	if ok {
 		return nil, fmt.Errorf("triggerId %s already registered", triggerID)
@@ -179,6 +187,7 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 	if err != nil {
 		return nil, err
 	}
+	s.lggr.Infof("schedule error: %s", err.Error())
 
 	task := gocron.NewTask(
 		// Task callback, executed at next run time
