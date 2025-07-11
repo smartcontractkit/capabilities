@@ -14,7 +14,6 @@ func main() {
 	// direct used protos
 	gen.LinkPackage(pkg.Packages{Go: "github.com/smartcontractkit/capabilities/libs/monitoring", Proto: "libs/monitoring/execution_context.proto"})
 	gen.LinkPackage(pkg.Packages{Go: "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm", Proto: "capabilities/blockchain/evm/v1alpha/client.proto"})
-	//gen.LinkPackage(pkg.Packages{Go: "github.com/smartcontractkit/chainlink-common/pkg/values/pb", Proto: "values/v1/values.proto"})
 	if err := gen.GenerateFile("log_trigger.proto", "."); err != nil {
 		panic(err.Error())
 	}
