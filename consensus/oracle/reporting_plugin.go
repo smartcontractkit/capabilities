@@ -34,8 +34,8 @@ type reportingPlugin struct {
 	n int
 
 	minimumObservations int
-
-	lggr logger.Logger
+	oh                  *observationHandler
+	lggr                logger.Logger
 }
 
 func NewReportingPlugin(lggr logger.Logger, f int, n int, store *requests.Store[*ConsensusRequest], batchSize int) (*reportingPlugin, error) {
@@ -45,6 +45,7 @@ func NewReportingPlugin(lggr logger.Logger, f int, n int, store *requests.Store[
 		f:                   f,
 		n:                   n,
 		minimumObservations: 2*f + 1,
+		oh:                  newObservationHandler(),
 		lggr:                logger.Named(lggr, "CapabilityConsensusReportingPlugin"),
 	}, nil
 }
@@ -248,7 +249,7 @@ func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeC
 			return nil, fmt.Errorf("could not unmarshal consensus descriptor for request %s: %w", requestID, err)
 		}
 
-		value, err := CalculateOutcomeForObservations(observations, consensusDescriptor, r.minimumObservations)
+		value, err := r.oh.CalculateOutcomeForObservations(observations, consensusDescriptor, r.minimumObservations)
 		if err != nil {
 			return nil, fmt.Errorf("failed to calculate outcome for observations %s: %w", requestID, err)
 		}
