@@ -2,12 +2,13 @@
 // versions:
 // 	protoc-gen-go v1.36.6
 // 	protoc        v5.29.3
-// source: chain_capabilities/evm/monitoring/log_trigger.proto
+// source: log_trigger.proto
 
 package monitoring
 
 import (
 	monitoring "github.com/smartcontractkit/capabilities/libs/monitoring"
+	evm "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -21,6 +22,58 @@ const (
 	// Verify that runtime/protoimpl is sufficiently up-to-date.
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
+
+type TriggerInitiated struct {
+	state            protoimpl.MessageState       `protogen:"open.v1"`
+	Req              *evm.FilterLogTriggerRequest `protobuf:"bytes,1,opt,name=req,proto3" json:"req,omitempty"`
+	ExecutionContext *monitoring.ExecutionContext `protobuf:"bytes,20,opt,name=execution_context,json=executionContext,proto3" json:"execution_context,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *TriggerInitiated) Reset() {
+	*x = TriggerInitiated{}
+	mi := &file_log_trigger_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TriggerInitiated) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TriggerInitiated) ProtoMessage() {}
+
+func (x *TriggerInitiated) ProtoReflect() protoreflect.Message {
+	mi := &file_log_trigger_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TriggerInitiated.ProtoReflect.Descriptor instead.
+func (*TriggerInitiated) Descriptor() ([]byte, []int) {
+	return file_log_trigger_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *TriggerInitiated) GetReq() *evm.FilterLogTriggerRequest {
+	if x != nil {
+		return x.Req
+	}
+	return nil
+}
+
+func (x *TriggerInitiated) GetExecutionContext() *monitoring.ExecutionContext {
+	if x != nil {
+		return x.ExecutionContext
+	}
+	return nil
+}
 
 type TriggerEventDroppedError struct {
 	state            protoimpl.MessageState       `protogen:"open.v1"`
@@ -37,7 +90,7 @@ type TriggerEventDroppedError struct {
 
 func (x *TriggerEventDroppedError) Reset() {
 	*x = TriggerEventDroppedError{}
-	mi := &file_chain_capabilities_evm_monitoring_log_trigger_proto_msgTypes[0]
+	mi := &file_log_trigger_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -49,7 +102,7 @@ func (x *TriggerEventDroppedError) String() string {
 func (*TriggerEventDroppedError) ProtoMessage() {}
 
 func (x *TriggerEventDroppedError) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_evm_monitoring_log_trigger_proto_msgTypes[0]
+	mi := &file_log_trigger_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -62,7 +115,7 @@ func (x *TriggerEventDroppedError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TriggerEventDroppedError.ProtoReflect.Descriptor instead.
 func (*TriggerEventDroppedError) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_evm_monitoring_log_trigger_proto_rawDescGZIP(), []int{0}
+	return file_log_trigger_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *TriggerEventDroppedError) GetTriggerID() string {
@@ -114,11 +167,14 @@ func (x *TriggerEventDroppedError) GetExecutionContext() *monitoring.ExecutionCo
 	return nil
 }
 
-var File_chain_capabilities_evm_monitoring_log_trigger_proto protoreflect.FileDescriptor
+var File_log_trigger_proto protoreflect.FileDescriptor
 
-const file_chain_capabilities_evm_monitoring_log_trigger_proto_rawDesc = "" +
+const file_log_trigger_proto_rawDesc = "" +
 	"\n" +
-	"3chain_capabilities/evm/monitoring/log_trigger.proto\x12\x16chain_capabilities.evm\x1a'libs/monitoring/execution_context.proto\"\x88\x02\n" +
+	"\x11log_trigger.proto\x12\x16chain_capabilities.evm\x1a0capabilities/blockchain/evm/v1alpha/client.proto\x1a'libs/monitoring/execution_context.proto\"\xad\x01\n" +
+	"\x10TriggerInitiated\x12N\n" +
+	"\x03req\x18\x01 \x01(\v2<.capabilities.blockchain.evm.v1alpha.FilterLogTriggerRequestR\x03req\x12I\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\x88\x02\n" +
 	"\x18TriggerEventDroppedError\x12\x1c\n" +
 	"\ttriggerID\x18\x01 \x01(\tR\ttriggerID\x12\x17\n" +
 	"\atx_hash\x18\x02 \x01(\tR\x06txHash\x12\x1d\n" +
@@ -130,51 +186,55 @@ const file_chain_capabilities_evm_monitoring_log_trigger_proto_rawDesc = "" +
 	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContextBLZJgithub.com/smartcontractkit/capabilities/chain_capabilities/evm;monitoringb\x06proto3"
 
 var (
-	file_chain_capabilities_evm_monitoring_log_trigger_proto_rawDescOnce sync.Once
-	file_chain_capabilities_evm_monitoring_log_trigger_proto_rawDescData []byte
+	file_log_trigger_proto_rawDescOnce sync.Once
+	file_log_trigger_proto_rawDescData []byte
 )
 
-func file_chain_capabilities_evm_monitoring_log_trigger_proto_rawDescGZIP() []byte {
-	file_chain_capabilities_evm_monitoring_log_trigger_proto_rawDescOnce.Do(func() {
-		file_chain_capabilities_evm_monitoring_log_trigger_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_chain_capabilities_evm_monitoring_log_trigger_proto_rawDesc), len(file_chain_capabilities_evm_monitoring_log_trigger_proto_rawDesc)))
+func file_log_trigger_proto_rawDescGZIP() []byte {
+	file_log_trigger_proto_rawDescOnce.Do(func() {
+		file_log_trigger_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_log_trigger_proto_rawDesc), len(file_log_trigger_proto_rawDesc)))
 	})
-	return file_chain_capabilities_evm_monitoring_log_trigger_proto_rawDescData
+	return file_log_trigger_proto_rawDescData
 }
 
-var file_chain_capabilities_evm_monitoring_log_trigger_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
-var file_chain_capabilities_evm_monitoring_log_trigger_proto_goTypes = []any{
-	(*TriggerEventDroppedError)(nil),    // 0: chain_capabilities.evm.TriggerEventDroppedError
-	(*monitoring.ExecutionContext)(nil), // 1: monitoring.ExecutionContext
+var file_log_trigger_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_log_trigger_proto_goTypes = []any{
+	(*TriggerInitiated)(nil),            // 0: chain_capabilities.evm.TriggerInitiated
+	(*TriggerEventDroppedError)(nil),    // 1: chain_capabilities.evm.TriggerEventDroppedError
+	(*evm.FilterLogTriggerRequest)(nil), // 2: capabilities.blockchain.evm.v1alpha.FilterLogTriggerRequest
+	(*monitoring.ExecutionContext)(nil), // 3: monitoring.ExecutionContext
 }
-var file_chain_capabilities_evm_monitoring_log_trigger_proto_depIdxs = []int32{
-	1, // 0: chain_capabilities.evm.TriggerEventDroppedError.execution_context:type_name -> monitoring.ExecutionContext
-	1, // [1:1] is the sub-list for method output_type
-	1, // [1:1] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+var file_log_trigger_proto_depIdxs = []int32{
+	2, // 0: chain_capabilities.evm.TriggerInitiated.req:type_name -> capabilities.blockchain.evm.v1alpha.FilterLogTriggerRequest
+	3, // 1: chain_capabilities.evm.TriggerInitiated.execution_context:type_name -> monitoring.ExecutionContext
+	3, // 2: chain_capabilities.evm.TriggerEventDroppedError.execution_context:type_name -> monitoring.ExecutionContext
+	3, // [3:3] is the sub-list for method output_type
+	3, // [3:3] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
-func init() { file_chain_capabilities_evm_monitoring_log_trigger_proto_init() }
-func file_chain_capabilities_evm_monitoring_log_trigger_proto_init() {
-	if File_chain_capabilities_evm_monitoring_log_trigger_proto != nil {
+func init() { file_log_trigger_proto_init() }
+func file_log_trigger_proto_init() {
+	if File_log_trigger_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_chain_capabilities_evm_monitoring_log_trigger_proto_rawDesc), len(file_chain_capabilities_evm_monitoring_log_trigger_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_log_trigger_proto_rawDesc), len(file_log_trigger_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   1,
+			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
-		GoTypes:           file_chain_capabilities_evm_monitoring_log_trigger_proto_goTypes,
-		DependencyIndexes: file_chain_capabilities_evm_monitoring_log_trigger_proto_depIdxs,
-		MessageInfos:      file_chain_capabilities_evm_monitoring_log_trigger_proto_msgTypes,
+		GoTypes:           file_log_trigger_proto_goTypes,
+		DependencyIndexes: file_log_trigger_proto_depIdxs,
+		MessageInfos:      file_log_trigger_proto_msgTypes,
 	}.Build()
-	File_chain_capabilities_evm_monitoring_log_trigger_proto = out.File
-	file_chain_capabilities_evm_monitoring_log_trigger_proto_goTypes = nil
-	file_chain_capabilities_evm_monitoring_log_trigger_proto_depIdxs = nil
+	File_log_trigger_proto = out.File
+	file_log_trigger_proto_goTypes = nil
+	file_log_trigger_proto_depIdxs = nil
 }
