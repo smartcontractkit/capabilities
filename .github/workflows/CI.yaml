@@ -211,6 +211,17 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./.github/scripts/support-private-gomods.sh
 
+      - name: Install Python
+        uses: actions/setup-python@v3
+        with:
+          python-version: '3.x'
+
+      - name: Install solc-select
+        run: pip3 install solc-select
+
+      - name: Install Solidity
+        run: solc-select use 0.8.19 --always-install
+
       - name: Install mockery
         run: go install github.com/vektra/mockery/v2/...@v2.53.3
 
