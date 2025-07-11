@@ -8,9 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 	_ "github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
