@@ -133,11 +133,12 @@ func TestGatewayOutboundProxy_SendRequest_Success(t *testing.T) {
 		WorkflowOwner:       "owner1",
 	}
 	input := &http.Request{
-		Url:       "http://example.com",
-		Method:    "GET",
-		Headers:   map[string]string{"X-Test": "1"},
-		Body:      []byte("test"),
-		TimeoutMs: 5000,
+		Url:           "http://example.com",
+		Method:        "GET",
+		Headers:       map[string]string{"X-Test": "1"},
+		Body:          []byte("test"),
+		TimeoutMs:     5000,
+		CacheSettings: &http.CacheSettings{},
 	}
 
 	// Prepare a goroutine to receive gateway response
@@ -167,6 +168,11 @@ func TestGatewayOutboundProxy_SendRequest_MissingBodyToGateway(t *testing.T) {
 		Headers:   map[string]string{"X-Test": "1"},
 		Body:      []byte("test"),
 		TimeoutMs: 5000,
+		CacheSettings: &http.CacheSettings{
+			StoreInCache:  true,
+			ReadFromCache: true,
+			TtlMs:         10000, // 10 seconds
+		},
 	}
 
 	// Prepare a goroutine to receive gateway response
@@ -188,11 +194,12 @@ func TestGatewayOutboundProxy_SendRequest_Timeout(t *testing.T) {
 		WorkflowOwner:       "owner1",
 	}
 	input := &http.Request{
-		Url:       "http://example.com",
-		Method:    "GET",
-		Headers:   map[string]string{"X-Test": "1"},
-		Body:      []byte("test"),
-		TimeoutMs: 100, // short timeout
+		Url:           "http://example.com",
+		Method:        "GET",
+		Headers:       map[string]string{"X-Test": "1"},
+		Body:          []byte("test"),
+		TimeoutMs:     100, // short timeout
+		CacheSettings: &http.CacheSettings{},
 	}
 
 	// Do not send a response, should timeout
@@ -214,11 +221,12 @@ func TestGatewayOutboundProxy_SendRequest_ExecutionError(t *testing.T) {
 		WorkflowOwner:       "owner1",
 	}
 	input := &http.Request{
-		Url:       "http://example.com",
-		Method:    "GET",
-		Headers:   map[string]string{"X-Test": "1"},
-		Body:      []byte("test"),
-		TimeoutMs: 5000,
+		Url:           "http://example.com",
+		Method:        "GET",
+		Headers:       map[string]string{"X-Test": "1"},
+		Body:          []byte("test"),
+		TimeoutMs:     5000,
+		CacheSettings: &http.CacheSettings{},
 	}
 
 	go func() {
@@ -241,11 +249,12 @@ func TestGatewayOutboundProxy_SendRequest_RateLimitError(t *testing.T) {
 		WorkflowOwner:       "owner1",
 	}
 	input := &http.Request{
-		Url:       "http://example.com",
-		Method:    "GET",
-		Headers:   map[string]string{"X-Test": "1"},
-		Body:      []byte("test"),
-		TimeoutMs: 5000,
+		Url:           "http://example.com",
+		Method:        "GET",
+		Headers:       map[string]string{"X-Test": "1"},
+		Body:          []byte("test"),
+		TimeoutMs:     5000,
+		CacheSettings: &http.CacheSettings{},
 	}
 
 	go func() {

@@ -248,6 +248,27 @@ func TestHTTPActionCapability(t *testing.T) {
 		errorCounter++
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	})
+	// POST endpoint to test request handling
+	var postBody string
+	var postHeaders http.Header
+	mux.HandleFunc("/post", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		postBodyBytes, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "Bad Request", http.StatusBadRequest)
+			return
+		}
+		postBody = string(postBodyBytes)
+		postHeaders = r.Header
+		w.WriteHeader(http.StatusOK)
+		if _, err := io.WriteString(w, "Post received"); err != nil {
+			t.Errorf("failed to write response: %v", err)
+		}
+	})
+
 	listener, cleanup := startTestHTTPServer(t, mux)
 	t.Cleanup(cleanup)
 	addr := listener.Addr().(*net.TCPAddr)
@@ -281,6 +302,22 @@ func TestHTTPActionCapability(t *testing.T) {
 		require.Equal(t, uint32(http.StatusOK), output.StatusCode)
 		require.Equal(t, "pong", string(output.Body))
 		require.Equal(t, "my-value", output.Headers["X-Custom-Header"])
+	})
+
+	t.Run("POST /post with body and headers", func(t *testing.T) {
+		input := &httpclient.Request{
+			Url:     fmt.Sprintf("http://%s/post", listener.Addr().String()),
+			Method:  "POST",
+			Headers: map[string]string{"X-Test": "1"},
+			Body:    []byte(`abc`),
+		}
+		output, err := httpCapability.SendRequest(ctx, requestData, input)
+		require.NoError(t, err)
+		require.NotNil(t, output)
+		require.Equal(t, uint32(http.StatusOK), output.StatusCode)
+		require.Equal(t, "Post received", string(output.Body))
+		require.Equal(t, "1", postHeaders.Get("X-Test"))
+		require.Equal(t, "abc", postBody)
 	})
 
 	t.Run("GET /random with caching enabled", func(t *testing.T) {
