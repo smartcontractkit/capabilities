@@ -70,7 +70,7 @@ func TestLogTriggerService_Close_WaitsForPollingGoroutine(t *testing.T) {
 		evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
 		evmService.On("UnregisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
 		store := NewLogTriggerStore()
-		service := NewLogTriggerService(evmService, store, lggr, nopProcessor{}, nil,
+		service := NewLogTriggerService(evmService, store, lggr, nopProcessor{}, &monitoring.MessageBuilder{},
 			10*time.Millisecond)
 		err := service.Start(ctx)
 		require.NoError(t, err)
@@ -744,7 +744,7 @@ func TestIntegration_RegisterAndUnregisterLogTrigger(t *testing.T) {
 		createLog(2, nextBlockNumber3, evmtypes.Address(expectedAddress), message),
 	}, nil).Once()
 
-	service := NewLogTriggerService(evmService, NewLogTriggerStore(), lggr, nopProcessor{}, nil, pollInterval)
+	service := NewLogTriggerService(evmService, NewLogTriggerStore(), lggr, nopProcessor{}, &monitoring.MessageBuilder{}, pollInterval)
 
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
