@@ -230,7 +230,7 @@ func TestUnregisterLogTrigger_InputValidation(t *testing.T) {
 		breakingTriggerID := "breaking-logTriggerUnregister"
 		evmService := initMocks(t)
 		evmService.On("UnregisterLogTracking", mock.Anything, mock.Anything).Return(errors.New("mocking error, making unregister failing on purpose")).Once()
-		service := NewLogTriggerService(evmService, NewLogTriggerStore(), lggr, nopProcessor{}, nil, pollInterval)
+		service := NewLogTriggerService(evmService, NewLogTriggerStore(), lggr, nopProcessor{}, &monitoring.MessageBuilder{}, pollInterval)
 
 		service.triggers.Write(breakingTriggerID, logTriggerState{
 			cancelFunc: func() {},

@@ -351,7 +351,8 @@ func (lts *LogTriggerService) makeEventByTopicFilter(topic uint64, topics [][]by
 	return &expr
 }
 
-func (lts *LogTriggerService) UnregisterLogTrigger(ctx context.Context, triggerID string, _ capabilities.RequestMetadata, _ *evmcappb.FilterLogTriggerRequest) error {
+func (lts *LogTriggerService) UnregisterLogTrigger(ctx context.Context, triggerID string, meta capabilities.RequestMetadata, _ *evmcappb.FilterLogTriggerRequest) error {
+	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	if triggerID == "" {
 		return fmt.Errorf("no triggerID provided")
 	}
@@ -366,6 +367,8 @@ func (lts *LogTriggerService) UnregisterLogTrigger(ctx context.Context, triggerI
 	err := lts.EVMService.UnregisterLogTracking(ctx, lts.generateFilterID(triggerID))
 	if err != nil {
 		//TODO PLEX-1456: once the clean up is implemented decide if we want to return an error here or just log it
+		summary := fmt.Sprintf("failed to unregister log-tracking: '%v' for triggerID: %s", err, triggerID)
+		monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(read, triggerID, summary, err.Error()))
 		return fmt.Errorf("failed to unregister log-tracking: '%w' for triggerID: %s", err, triggerID)
 	}
 	return nil
