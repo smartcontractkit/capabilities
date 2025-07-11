@@ -8,14 +8,11 @@ import (
 )
 
 type Config struct {
-	// EnclaveURL corresponds to the JSON schema field "EnclaveURL".
-	EnclaveURL string `json:"EnclaveURL" yaml:"EnclaveURL" mapstructure:"EnclaveURL"`
+	// Enclaves corresponds to the JSON schema field "Enclaves".
+	Enclaves []Enclave `json:"Enclaves" yaml:"Enclaves" mapstructure:"Enclaves"`
 
-	// PrivateKey corresponds to the JSON schema field "PrivateKey".
-	PrivateKey []uint8 `json:"PrivateKey" yaml:"PrivateKey" mapstructure:"PrivateKey"`
-
-	// PublicKey corresponds to the JSON schema field "PublicKey".
-	PublicKey []uint8 `json:"PublicKey,omitempty" yaml:"PublicKey,omitempty" mapstructure:"PublicKey,omitempty"`
+	// VaultDONID corresponds to the JSON schema field "VaultDONID".
+	VaultDONID []uint8 `json:"VaultDONID" yaml:"VaultDONID" mapstructure:"VaultDONID"`
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
@@ -24,11 +21,11 @@ func (j *Config) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &raw); err != nil {
 		return err
 	}
-	if _, ok := raw["EnclaveURL"]; raw != nil && !ok {
-		return fmt.Errorf("field EnclaveURL in Config: required")
+	if _, ok := raw["Enclaves"]; raw != nil && !ok {
+		return fmt.Errorf("field Enclaves in Config: required")
 	}
-	if _, ok := raw["PrivateKey"]; raw != nil && !ok {
-		return fmt.Errorf("field PrivateKey in Config: required")
+	if _, ok := raw["VaultDONID"]; raw != nil && !ok {
+		return fmt.Errorf("field VaultDONID in Config: required")
 	}
 	type Plain Config
 	var plain Plain
@@ -39,33 +36,92 @@ func (j *Config) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+type Enclave struct {
+	// EnclaveType corresponds to the JSON schema field "EnclaveType".
+	EnclaveType *string `json:"EnclaveType,omitempty" yaml:"EnclaveType,omitempty" mapstructure:"EnclaveType,omitempty"`
+
+	// ExtraData corresponds to the JSON schema field "ExtraData".
+	ExtraData []uint8 `json:"ExtraData" yaml:"ExtraData" mapstructure:"ExtraData"`
+
+	// ID corresponds to the JSON schema field "ID".
+	ID []uint8 `json:"ID" yaml:"ID" mapstructure:"ID"`
+
+	// TrustedValues corresponds to the JSON schema field "TrustedValues".
+	TrustedValues []uint8 `json:"TrustedValues" yaml:"TrustedValues" mapstructure:"TrustedValues"`
+
+	// URL corresponds to the JSON schema field "URL".
+	URL string `json:"URL" yaml:"URL" mapstructure:"URL"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *Enclave) UnmarshalJSON(b []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["ExtraData"]; raw != nil && !ok {
+		return fmt.Errorf("field ExtraData in Enclave: required")
+	}
+	if _, ok := raw["ID"]; raw != nil && !ok {
+		return fmt.Errorf("field ID in Enclave: required")
+	}
+	if _, ok := raw["TrustedValues"]; raw != nil && !ok {
+		return fmt.Errorf("field TrustedValues in Enclave: required")
+	}
+	if _, ok := raw["URL"]; raw != nil && !ok {
+		return fmt.Errorf("field URL in Enclave: required")
+	}
+	type Plain Enclave
+	var plain Plain
+	if err := json.Unmarshal(b, &plain); err != nil {
+		return err
+	}
+	*j = Enclave(plain)
+	return nil
+}
+
 // Confidential HTTP action
 type HttpAction struct {
-	// Config corresponds to the JSON schema field "Config".
-	Config *Config `json:"Config,omitempty" yaml:"Config,omitempty" mapstructure:"Config,omitempty"`
+	// Config corresponds to the JSON schema field "config".
+	Config Config `json:"config" yaml:"config" mapstructure:"config"`
 
-	// Inputs corresponds to the JSON schema field "Inputs".
-	Inputs Input `json:"Inputs,omitempty" yaml:"Inputs,omitempty" mapstructure:"Inputs,omitempty"`
+	// Inputs corresponds to the JSON schema field "inputs".
+	Inputs Input `json:"inputs" yaml:"inputs" mapstructure:"inputs"`
 
-	// Outputs corresponds to the JSON schema field "Outputs".
-	Outputs Output `json:"Outputs,omitempty" yaml:"Outputs,omitempty" mapstructure:"Outputs,omitempty"`
+	// Outputs corresponds to the JSON schema field "outputs".
+	Outputs Output `json:"outputs" yaml:"outputs" mapstructure:"outputs"`
 }
 
-type Input []struct {
-	// The body of the request
-	Body string `json:"body" yaml:"body" mapstructure:"body"`
-
-	// The headers to include in the request
-	Headers []string `json:"headers" yaml:"headers" mapstructure:"headers"`
-
-	// The HTTP method to use for the request
-	Method string `json:"method" yaml:"method" mapstructure:"method"`
-
-	// The URL to send the request to
-	Url string `json:"url" yaml:"url" mapstructure:"url"`
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *HttpAction) UnmarshalJSON(b []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["config"]; raw != nil && !ok {
+		return fmt.Errorf("field config in HttpAction: required")
+	}
+	if _, ok := raw["inputs"]; raw != nil && !ok {
+		return fmt.Errorf("field inputs in HttpAction: required")
+	}
+	if _, ok := raw["outputs"]; raw != nil && !ok {
+		return fmt.Errorf("field outputs in HttpAction: required")
+	}
+	type Plain HttpAction
+	var plain Plain
+	if err := json.Unmarshal(b, &plain); err != nil {
+		return err
+	}
+	*j = HttpAction(plain)
+	return nil
 }
 
-type Output []struct {
-	// Payload corresponds to the JSON schema field "payload".
-	Payload []uint8 `json:"payload" yaml:"payload" mapstructure:"payload"`
+type Input struct {
+	// Requests corresponds to the JSON schema field "requests".
+	Requests []interface{} `json:"requests,omitempty" yaml:"requests,omitempty" mapstructure:"requests,omitempty"`
+}
+
+type Output struct {
+	// Responses corresponds to the JSON schema field "responses".
+	Responses []uint8 `json:"responses,omitempty" yaml:"responses,omitempty" mapstructure:"responses,omitempty"`
 }

@@ -5,22 +5,23 @@
 package confidential_http_actiontest
 
 import (
+	"github.com/smartcontractkit/capabilities/confidential_http_action"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/testutils"
 )
 
 // HttpAction registers a new capability mock with the runner
 // if another mock is registered for the same capability with for a step, it will take priority for that step.
-func HttpAction(runner *testutils.Runner, fn func(input Input.Input) (Output, error)) *testutils.Mock[Input.Input, Output] {
-	mock := testutils.MockCapability[Input.Input, Output]("confidential-http-action@1.0.0", fn)
+func HttpAction(runner *testutils.Runner, fn func(input confidential_http_action.Input) (confidential_http_action.Output, error)) *testutils.Mock[confidential_http_action.Input, confidential_http_action.Output] {
+	mock := testutils.MockCapability[confidential_http_action.Input, confidential_http_action.Output]("confidential-http-action@1.0.0", fn)
 	runner.MockCapability("confidential-http-action@1.0.0", nil, mock)
 	return mock
 }
 
 // HttpActionForStep registers a new capability mock with the runner, but only for a given step.
 // if another mock was registered for the same capability without a step, this mock will take priority for that step.
-func HttpActionForStep(runner *testutils.Runner, step string, mockFn func(input Input.Input) (Output, error)) *testutils.Mock[Input.Input, Output] {
+func HttpActionForStep(runner *testutils.Runner, step string, mockFn func(input confidential_http_action.Input) (confidential_http_action.Output, error)) *testutils.Mock[confidential_http_action.Input, confidential_http_action.Output] {
 	fn := mockFn
-	mock := testutils.MockCapability[Input.Input, Output]("confidential-http-action@1.0.0", fn)
+	mock := testutils.MockCapability[confidential_http_action.Input, confidential_http_action.Output]("confidential-http-action@1.0.0", fn)
 	runner.MockCapability("confidential-http-action@1.0.0", &step, mock)
 	return mock
 }

@@ -2,13 +2,10 @@
     "$id": "https://github.com/smartcontractkit/capabilities/confidential_http_action/confidential-http-action@1.0.0",
     "description": "Confidential HTTP action",
     "$defs": {
-        "Config": {
+        "Enclave": {
             "type": "object",
             "properties": {
-                "EnclaveURL": {
-                    "type": "string"
-                },
-                "PrivateKey": {
+                "ID": {
                     "type": "array",
                     "items": {
                         "type": "integer",
@@ -16,7 +13,48 @@
                         "maximum": 255
                     }
                 },
-                "PublicKey": {
+                "URL": {
+                    "type": "string"
+                },
+                "TrustedValues": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 255
+                    }
+                },
+                "EnclaveType": {
+                    "type": "string"
+                },
+                "ExtraData": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 255
+                    }
+                }
+            },
+            "additionalProperties": false,
+            "required": [
+                "ID",
+                "URL",
+                "TrustedValues",
+                "Type",
+                "ExtraData"
+            ]
+        },
+        "Config": {
+            "type": "object",
+            "properties": {
+                "Enclaves": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/$defs/Enclave"
+                    }
+                },
+                "VaultDONID": {
                     "type": "array",
                     "items": {
                         "type": "integer",
@@ -26,75 +64,80 @@
                 }
             },
             "required": [
-                "EnclaveURL",
-                "PrivateKey"
+                "Enclaves",
+                "VaultDONID"
             ]
         },
         "Input": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "url": {
-                        "type": "string",
-                        "description": "The URL to send the request to"
-                    },
-                    "method": {
-                        "type": "string",
-                        "description": "The HTTP method to use for the request"
-                    },
-                    "headers": {
-                        "type": "array",
-                        "items": {
-                            "type": "string"
+            "type": "object",
+            "properties": {
+                "requests": {
+                    "type": "array",
+                    "items": {
+                        "url": {
+                            "type": "string",
+                            "description": "The URL to send the request to"
                         },
-                        "description": "The headers to include in the request"
-                    },
-                    "body": {
-                        "type": "string",
-                        "description": "The body of the request"
-                    }
-                },
-                "required": [
-                    "url",
-                    "method",
-                    "headers",
-                    "body"
-                ],
-                "additionalProperties": false
-            }
-        },
-        "Output": {
-            "type": "array",
-            "items": {
-                "properties": {
-                    "payload": {
-                        "type": "array",
-                        "items": {
-                            "type": "integer",
-                            "minimum": 0,
-                            "maximum": 255
+                        "method": {
+                            "type": "string",
+                            "description": "The HTTP method to use for the request"
+                        },
+                        "headers": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "description": "The headers to include in the request"
+                        },
+                        "body": {
+                            "type": "string",
+                            "description": "The body of the request"
                         }
                     }
-                },
-                "additionalProperties": false,
-                "type": "object",
-                "required": [
-                    "payload"
-                ]
-            }
+                }
+            },
+            "required": [
+                "url",
+                "method",
+                "headers",
+                "body"
+            ],
+            "additionalProperties": false
+        },
+        "Output": {
+            "properties": {
+                "responses": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 255
+                    }
+                }
+            },
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+                "payload"
+            ]
         }
     },
     "type": "object",
     "properties": {
-        "Config": {
+        "config": {
             "$ref": "#/$defs/Config"
         },
-        "Inputs": {
+        "inputs": {
             "$ref": "#/$defs/Input"
         },
-        "Outputs": {
+        "outputs": {
             "$ref": "#/$defs/Output"
         }
-    }
+    },
+    "required": [
+        "config",
+        "inputs",
+        "outputs"
+    ],
+    "additionalProperties": false
 }
