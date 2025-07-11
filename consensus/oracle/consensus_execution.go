@@ -73,7 +73,7 @@ func handleMedianAggregation(observations []values.Value, medianType string) (*v
 
 	switch medianType {
 	case TypeInt64:
-		medianResult, err = getMedianFromFilteredObservations(
+		medianResult, err = getMedian(
 			observations,
 			func(val values.Value) (int64, error) {
 				var got int64
@@ -88,14 +88,13 @@ func handleMedianAggregation(observations []values.Value, medianType string) (*v
 				}
 				return 0
 			},
-			values.Wrap,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to calculate int64 median: %w", err)
 		}
 
 	case TypeFloat64:
-		medianResult, err = getMedianFromFilteredObservations(
+		medianResult, err = getMedian(
 			observations,
 			func(val values.Value) (float64, error) {
 				var got float64
@@ -110,14 +109,13 @@ func handleMedianAggregation(observations []values.Value, medianType string) (*v
 				}
 				return 0
 			},
-			values.Wrap,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to calculate float64 median: %w", err)
 		}
 
 	case TypeDecimal:
-		medianResult, err = getMedianFromFilteredObservations(
+		medianResult, err = getMedian(
 			observations,
 			func(val values.Value) (decimal.Decimal, error) {
 				var got decimal.Decimal
@@ -126,14 +124,13 @@ func handleMedianAggregation(observations []values.Value, medianType string) (*v
 			func(a, b decimal.Decimal) int {
 				return a.Cmp(b)
 			},
-			values.Wrap,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to calculate decimal median: %w", err)
 		}
 
 	case TypeBigInt:
-		medianResult, err = getMedianFromFilteredObservations(
+		medianResult, err = getMedian(
 			observations,
 			func(val values.Value) (*big.Int, error) {
 				got := new(big.Int)
@@ -142,14 +139,13 @@ func handleMedianAggregation(observations []values.Value, medianType string) (*v
 			func(a, b *big.Int) int {
 				return a.Cmp(b)
 			},
-			values.Wrap,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to calculate big.Int median: %w", err)
 		}
 
 	case TypeTime:
-		medianResult, err = getMedianFromFilteredObservations(
+		medianResult, err = getMedian(
 			observations,
 			func(val values.Value) (time.Time, error) {
 				var got time.Time
@@ -158,7 +154,6 @@ func handleMedianAggregation(observations []values.Value, medianType string) (*v
 			func(a, b time.Time) int {
 				return a.Compare(b)
 			},
-			values.Wrap,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to calculate time median: %w", err)
@@ -268,23 +263,22 @@ func filterObservations(observationProtos []*valuespb.Value, minObservations int
 	return observations, dominantType, nil
 }
 
-// getMedianFromFilteredObservations is a generic helper function that calculates the median
+// getMedian is a generic helper function that calculates the median
 // for a slice of values.Value that can be unwrapped to type T.
-// It accepts functions for unwrapping, comparing, and re-wrapping the values.
+// It accepts functions for unwrapping and comparing the values.
 //
 // For an even number of elements, we take the left of the two middle elements.
-func getMedianFromFilteredObservations[T any](
-	filteredObservations []values.Value,
+func getMedian[T any](
+	observations []values.Value,
 	unwrap func(val values.Value) (T, error),
-	cmp func(a, b T) int,
-	wrap func(any) (values.Value, error),
+	compare func(a, b T) int,
 ) (values.Value, error) {
-	if len(filteredObservations) == 0 {
+	if len(observations) < 1 {
 		return nil, errors.New("no valid observations for median calculation")
 	}
 
 	var unwrappedValues []T
-	for _, v := range filteredObservations {
+	for _, v := range observations {
 		unwrapped, err := unwrap(v)
 		if err != nil {
 			return nil, err
@@ -292,12 +286,12 @@ func getMedianFromFilteredObservations[T any](
 		unwrappedValues = append(unwrappedValues, unwrapped)
 	}
 
-	slices.SortFunc(unwrappedValues, cmp)
+	slices.SortFunc(unwrappedValues, compare)
 
 	medianVal := unwrappedValues[len(unwrappedValues)/2]
 	if len(unwrappedValues)%2 == 0 && len(unwrappedValues) > 0 {
 		medianVal = unwrappedValues[len(unwrappedValues)/2-1]
 	}
 
-	return wrap(medianVal)
+	return values.Wrap(medianVal)
 }
