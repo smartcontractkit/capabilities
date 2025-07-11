@@ -2,12 +2,14 @@ package testutils
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
+	"github.com/smartcontractkit/libocr/ragep2p/types"
 )
 
 var _ core.CapabilitiesRegistry = (*capabilitiesRegistry)(nil)
@@ -140,4 +142,8 @@ func (r *capabilitiesRegistry) Contains(capabilityIDs []string) error {
 	}
 
 	return nil
+}
+
+func (r *capabilitiesRegistry) NodeByPeerID(ctx context.Context, peerID types.PeerID) (capabilities.Node, error) {
+	return capabilities.Node{}, errors.New("unimplemented")
 }
