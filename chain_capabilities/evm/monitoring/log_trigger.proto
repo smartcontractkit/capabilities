@@ -1,0 +1,36 @@
+syntax = "proto3";
+package chain_capabilities.evm;
+option go_package = "github.com/smartcontractkit/capabilities/chain_capabilities/evm;monitoring";
+
+import "capabilities/blockchain/evm/v1alpha/client.proto";
+import "libs/monitoring/execution_context.proto";
+
+message TriggerInitiated{
+  capabilities.blockchain.evm.v1alpha.FilterLogTriggerRequest req = 1;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message LogTriggerSuccess {
+  string triggerID = 1;
+  capabilities.blockchain.evm.v1alpha.FilterLogTriggerRequest req = 2;
+  int32 log_count = 3;
+  int64 latestOffsetBlock = 4;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message LogTriggerError {
+  string triggerID = 1;
+  string summary = 5;
+  string cause = 6;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message LogTriggerEventDroppedError {
+  string triggerID = 1;
+  string tx_hash = 2;
+  string block_hash = 3;
+  int64 log_index = 4;
+  string summary = 5;
+  string cause = 6;
+  monitoring.ExecutionContext execution_context = 20;
+}
