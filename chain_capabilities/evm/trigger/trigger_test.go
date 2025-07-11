@@ -111,13 +111,11 @@ func TestLogTriggerService_Close_WaitsForPollingGoroutine(t *testing.T) {
 
 // testing all the input parameters and some minor validations
 func TestRegisterLogTrigger_InputValidation(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
 	lggr := logger.Test(t)
 	service := NewLogTriggerService(nil, NewLogTriggerStore(), lggr, nopProcessor{}, nil, pollInterval)
 
 	t.Run("missing triggerID", func(t *testing.T) {
-		_, err := service.RegisterLogTrigger(ctx, "", capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
+		_, err := service.RegisterLogTrigger(t.Context(), "", capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
 		})
 		require.Error(t, err)
@@ -129,7 +127,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 		service := NewLogTriggerService(nil, store, lggr, nopProcessor{}, nil, pollInterval)
 		// we simulate a RegisterLogTrigger() by tampering the store
 		store.Write(triggerID, logTriggerState{})
-		_, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
+		_, err := service.RegisterLogTrigger(t.Context(), triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
 		})
 		require.Error(t, err)
@@ -137,7 +135,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 	})
 
 	t.Run("missing addresses", func(t *testing.T) {
-		_, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
+		_, err := service.RegisterLogTrigger(t.Context(), triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: [][]byte{},
 		})
 		require.Error(t, err)
@@ -145,7 +143,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 	})
 
 	t.Run("too many topics", func(t *testing.T) {
-		_, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
+		_, err := service.RegisterLogTrigger(t.Context(), triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
 			Topics: []*evmcappb.TopicValues{
 				{Values: [][]byte{}},
@@ -160,13 +158,13 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 	})
 
 	t.Run("missing eventSig", func(t *testing.T) {
-		_, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
+		_, err := service.RegisterLogTrigger(t.Context(), triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
 		})
 		require.Error(t, err)
 		require.Equal(t, err.Error(), "no valid event sig provided (at least one event sig is required in topics)")
 
-		_, err = service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
+		_, err = service.RegisterLogTrigger(t.Context(), triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
 			Topics:    []*evmcappb.TopicValues{},
 		})
@@ -178,7 +176,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 		evmService := initMocks(t)
 		evmService.On("LatestAndFinalizedHead", mock.Anything).Return(evmtypes.Head{}, evmtypes.Head{}, errors.New("mocked failure error"))
 		service := NewLogTriggerService(evmService, NewLogTriggerStore(), lggr, nopProcessor{}, nil, pollInterval)
-		_, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
+		_, err := service.RegisterLogTrigger(t.Context(), triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
 			Topics:    topicsWithEventSig0,
 		})
@@ -191,7 +189,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 		evmService.On("LatestAndFinalizedHead", mock.Anything).Return(evmtypes.Head{}, evmtypes.Head{}, nil)
 		evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(errors.New("mocking error, making register failing on purpose")).Once()
 		service := NewLogTriggerService(evmService, NewLogTriggerStore(), lggr, nopProcessor{}, nil, pollInterval)
-		_, err := service.RegisterLogTrigger(ctx, triggerID+"-logtracking", capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
+		_, err := service.RegisterLogTrigger(t.Context(), triggerID+"-logtracking", capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: brokenAddresses,
 			Topics:    topicsWithEventSig0,
 		})
@@ -204,8 +202,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 
 func TestUnregisterLogTrigger_InputValidation(t *testing.T) {
 	t.Parallel()
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
+
 	service := &LogTriggerService{}
 	lggr := logger.Test(t)
 
@@ -213,7 +210,7 @@ func TestUnregisterLogTrigger_InputValidation(t *testing.T) {
 	emptyRequest := &evmcappb.FilterLogTriggerRequest{}
 
 	t.Run("missing triggerID", func(t *testing.T) {
-		err := service.UnregisterLogTrigger(ctx, "", emptyMetadata, emptyRequest)
+		err := service.UnregisterLogTrigger(t.Context(), "", emptyMetadata, emptyRequest)
 		require.Error(t, err)
 		require.Equal(t, err.Error(), "no triggerID provided")
 	})
@@ -222,7 +219,7 @@ func TestUnregisterLogTrigger_InputValidation(t *testing.T) {
 		service := &LogTriggerService{
 			triggers: NewLogTriggerStore(),
 		}
-		err := service.UnregisterLogTrigger(ctx, triggerID, emptyMetadata, emptyRequest)
+		err := service.UnregisterLogTrigger(t.Context(), triggerID, emptyMetadata, emptyRequest)
 		require.Error(t, err)
 		require.Equal(t, err.Error(), "no active trigger found for triggerID: trigger-1")
 	})
@@ -237,7 +234,7 @@ func TestUnregisterLogTrigger_InputValidation(t *testing.T) {
 			cancelFunc: func() {},
 			lastBlock:  big.NewInt(0),
 		})
-		err := service.UnregisterLogTrigger(ctx, breakingTriggerID, emptyMetadata, emptyRequest)
+		err := service.UnregisterLogTrigger(t.Context(), breakingTriggerID, emptyMetadata, emptyRequest)
 		require.Error(t, err)
 		require.Equal(t, err.Error(), "failed to unregister log-tracking: 'mocking error, making unregister failing on purpose' for triggerID: breaking-logTriggerUnregister")
 	})
@@ -593,9 +590,7 @@ func TestSendLogsToWorkflows(t *testing.T) {
 		state, _ := service.triggers.Read(triggerID)
 		logCh := make(chan capabilities.TriggerAndId[*evmcappb.Log], len(expectedLogs))
 
-		ctx, cancel := context.WithCancel(t.Context())
-		t.Cleanup(cancel)
-		err := service.sendLogsToWorkflows(ctx, monitoring.ReadRequest{}, expectedLogs, finalizedBlockNumber, triggerID, state, logCh)
+		err := service.sendLogsToWorkflows(t.Context(), monitoring.ReadRequest{}, expectedLogs, finalizedBlockNumber, triggerID, state, logCh)
 		require.NoError(t, err)
 		require.Len(t, logCh, len(expectedLogs))
 		actualLog1 := <-logCh
@@ -622,9 +617,7 @@ func TestSendLogsToWorkflows(t *testing.T) {
 			unfinalizedSentEventIDs: map[string]*big.Int{},
 		})
 		state, _ := service.triggers.Read(triggerID)
-		ctx, cancel := context.WithCancel(t.Context())
-		t.Cleanup(cancel)
-		err := service.sendLogsToWorkflows(ctx, monitoring.ReadRequest{}, expectedLogs, big.NewInt(0), triggerID, state, logCh)
+		err := service.sendLogsToWorkflows(t.Context(), monitoring.ReadRequest{}, expectedLogs, big.NewInt(0), triggerID, state, logCh)
 		require.NoError(t, err)
 		require.Len(t, logCh, 1)
 		actualLog1 := <-logCh
@@ -647,9 +640,7 @@ func TestSendLogsToWorkflows(t *testing.T) {
 			unfinalizedSentEventIDs: map[string]*big.Int{},
 		})
 		triggerState, _ := service.triggers.Read(triggerID)
-		ctx, cancel := context.WithCancel(t.Context())
-		t.Cleanup(cancel)
-		err := service.sendLogsToWorkflows(ctx, monitoring.ReadRequest{}, []*evmtypes.Log{expectedLog2}, finalizedBlockNumber, triggerID, triggerState, logCh)
+		err := service.sendLogsToWorkflows(t.Context(), monitoring.ReadRequest{}, []*evmtypes.Log{expectedLog2}, finalizedBlockNumber, triggerID, triggerState, logCh)
 		require.NoError(t, err)
 		require.Len(t, logCh, 1)
 		actualLog2 := <-logCh
@@ -665,7 +656,7 @@ func TestSendLogsToWorkflows(t *testing.T) {
 		require.Len(t, triggerState.unfinalizedSentEventIDs, 1, "expected one unfinalized sent event ID to be stored")
 		require.Contains(t, triggerState.unfinalizedSentEventIDs, service.generateLogIdentifier(expectedLog2), "expected the unfinalized log to be stored in the trigger state")
 		// Verify that the unfinalized log is not sent again
-		err = service.sendLogsToWorkflows(ctx, monitoring.ReadRequest{}, []*evmtypes.Log{expectedLog2}, finalizedBlockNumber, triggerID, triggerState, logCh)
+		err = service.sendLogsToWorkflows(t.Context(), monitoring.ReadRequest{}, []*evmtypes.Log{expectedLog2}, finalizedBlockNumber, triggerID, triggerState, logCh)
 		require.NoError(t, err)
 		require.Len(t, logCh, 0)
 		select {
@@ -686,9 +677,7 @@ func TestSendLogsToWorkflows(t *testing.T) {
 		})
 		triggerState, _ := service.triggers.Read(triggerID)
 		logCh := make(chan capabilities.TriggerAndId[*evmcappb.Log], len(expectedLogs))
-		ctx, cancel := context.WithCancel(t.Context())
-		t.Cleanup(cancel)
-		err := service.sendLogsToWorkflows(ctx, monitoring.ReadRequest{}, []*evmtypes.Log{}, finalizedBlockNumber, triggerID, triggerState, logCh)
+		err := service.sendLogsToWorkflows(t.Context(), monitoring.ReadRequest{}, []*evmtypes.Log{}, finalizedBlockNumber, triggerID, triggerState, logCh)
 		require.NoError(t, err)
 		require.Len(t, logCh, 0)
 		select {
@@ -710,9 +699,7 @@ func TestSendLogsToWorkflows(t *testing.T) {
 			unfinalizedSentEventIDs: map[string]*big.Int{},
 		}
 		logCh := make(chan capabilities.TriggerAndId[*evmcappb.Log], len(expectedLogs))
-		ctx, cancel := context.WithCancel(t.Context())
-		t.Cleanup(cancel)
-		err := service.sendLogsToWorkflows(ctx, monitoring.ReadRequest{}, expectedLogs, finalizedBlockNumber, triggerID, state, logCh)
+		err := service.sendLogsToWorkflows(t.Context(), monitoring.ReadRequest{}, expectedLogs, finalizedBlockNumber, triggerID, state, logCh)
 		require.Error(t, err)
 		require.ErrorContains(t, err, "failed to update unfinalized sent event IDs for triggerID: trigger-1: cannot find trigger with ID \"trigger-1\"")
 	})
