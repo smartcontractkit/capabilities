@@ -7,9 +7,9 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jonboulle/clockwork v0.4.0
 	github.com/prometheus/client_golang v1.21.1
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20250613213914-93a34678e8e2
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20250711131700-236a5b631ad7
 	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250711153012-4854126b2774
-	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250707214334-e164c13b2f32
+	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250710122011-7c14b396e486
 	github.com/stretchr/testify v1.10.0
 	google.golang.org/protobuf v1.36.6
 )

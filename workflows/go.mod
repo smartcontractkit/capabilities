@@ -36,8 +36,8 @@ require (
 	github.com/prometheus/procfs v0.16.0 // indirect
 	github.com/santhosh-tekuri/jsonschema/v5 v5.2.0 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
-	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250707214334-e164c13b2f32 // indirect
-	github.com/smartcontractkit/libocr v0.0.0-20250220133800-f3b940c4f298 // indirect
+	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250710122011-7c14b396e486 // indirect
+	github.com/smartcontractkit/libocr v0.0.0-20250328171017-609ec10a5510 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/otel v1.36.0 // indirect
