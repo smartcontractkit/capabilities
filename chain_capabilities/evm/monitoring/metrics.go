@@ -21,6 +21,12 @@ type Metrics struct {
 	CallContractError struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
+	LogTriggerSuccess struct {
+		basic commoncapbeholder.MetricsCapBasic
+	}
+	LogTriggerError struct {
+		basic commoncapbeholder.MetricsCapBasic
+	}
 	LogTriggerEventDroppedError struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
@@ -80,7 +86,17 @@ func NewMetrics() (Metrics, error) {
 	}
 
 	// -- LogTrigger --
-	ltedErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("log_trigger_event_dropped_error"), commonbeholder.ToSchemaFullName(&TriggerEventDroppedError{}))
+	ltSuccess := commoncapbeholder.NewMetricsInfoCapBasic(ns("log_trigger_success"), commonbeholder.ToSchemaFullName(&LogTriggerSuccess{}))
+	m.LogTriggerSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(ltSuccess)
+	if err != nil {
+		return Metrics{}, fmt.Errorf("failed to create log trigger success metric: %w", err)
+	}
+	ltErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("log_trigger_error"), commonbeholder.ToSchemaFullName(&LogTriggerError{}))
+	m.LogTriggerError.basic, err = commoncapbeholder.NewMetricsCapBasic(ltErr)
+	if err != nil {
+		return Metrics{}, fmt.Errorf("failed to create log trigger error metric: %w", err)
+	}
+	ltedErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("log_trigger_event_dropped_error"), commonbeholder.ToSchemaFullName(&LogTriggerEventDroppedError{}))
 	m.LogTriggerEventDroppedError.basic, err = commoncapbeholder.NewMetricsCapBasic(ltedErr)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create log trigger event dropped error metric: %w", err)
@@ -177,9 +193,21 @@ func (m *Metrics) OnCallContractError(ctx context.Context, msg *CallContractErro
 
 // -- LogTrigger --
 
-func (m *Metrics) OnTriggerEventDroppedError(ctx context.Context, msg *TriggerEventDroppedError) error {
+func (m *Metrics) OnLogTriggerSuccess(ctx context.Context, msg *LogTriggerSuccess) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.CallContractError.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
+	m.LogTriggerSuccess.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
+	return nil
+}
+
+func (m *Metrics) OnLogTriggerError(ctx context.Context, msg *LogTriggerError) error {
+	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
+	m.LogTriggerError.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
+	return nil
+}
+
+func (m *Metrics) OnTriggerEventDroppedError(ctx context.Context, msg *LogTriggerEventDroppedError) error {
+	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
+	m.LogTriggerEventDroppedError.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
 	return nil
 }
 
@@ -284,13 +312,26 @@ func (r *CallContractError) Attributes() []attribute.KeyValue {
 	}, r.ExecutionContext.Attributes()...)
 }
 
-func (r *TriggerEventDroppedError) Attributes() []attribute.KeyValue {
+func (r *LogTriggerSuccess) Attributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
+		attribute.String("trigger_id", r.GetTriggerID()),
+		attribute.Int64("log_count", int64(r.GetLogCount())),
+	}, r.ExecutionContext.Attributes()...)
+}
+
+func (r *LogTriggerError) Attributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
+		attribute.String("trigger_id", r.GetTriggerID()),
+		attribute.String("summary", r.GetSummary()),
+	}, r.ExecutionContext.Attributes()...)
+}
+
+func (r *LogTriggerEventDroppedError) Attributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.String("trigger_id", r.GetTriggerID()),
 		attribute.String("tx_hash", r.GetTxHash()),
 		attribute.String("block_hash", r.GetBlockHash()),
 		attribute.Int64("log_index", r.GetLogIndex()),
-
 		attribute.String("summary", r.GetSummary()),
 	}, r.ExecutionContext.Attributes()...)
 }

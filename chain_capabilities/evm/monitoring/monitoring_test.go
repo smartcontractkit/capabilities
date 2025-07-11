@@ -27,6 +27,7 @@ func TestProcessor_Process_InitiatedMessages(t *testing.T) {
 		msg  proto.Message
 	}{
 		{"CallContractInitiated", &monitoring.CallContractInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
+		{"TriggerInitiated", &monitoring.TriggerInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"FilterLogsInitiated", &monitoring.FilterLogsInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"BalanceAtInitiated", &monitoring.BalanceAtInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"EstimateGasInitiated", &monitoring.EstimateGasInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
@@ -61,6 +62,7 @@ func TestProcessor_Process_InitiatedMessages_Error(t *testing.T) {
 		msg  proto.Message
 	}{
 		{"CallContractInitiated", &monitoring.CallContractInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
+		{"TriggerInitiated", &monitoring.TriggerInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"FilterLogsInitiated", &monitoring.FilterLogsInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"BalanceAtInitiated", &monitoring.BalanceAtInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"EstimateGasInitiated", &monitoring.EstimateGasInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
@@ -114,6 +116,7 @@ func TestProcessor_Process_SuccessMessages(t *testing.T) {
 		msg  proto.Message
 	}{
 		{"CallContractSuccess", &monitoring.CallContractSuccess{ExecutionContext: &capmonitoring.ExecutionContext{}}},
+		{"LogTriggerSuccess", &monitoring.LogTriggerSuccess{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"FilterLogsSuccess", &monitoring.FilterLogsSuccess{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"BalanceAtSuccess", &monitoring.BalanceAtSuccess{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"EstimateGasSuccess", &monitoring.EstimateGasSuccess{ExecutionContext: &capmonitoring.ExecutionContext{}}},
@@ -146,7 +149,8 @@ func TestProcessor_Process_ErrorMessages(t *testing.T) {
 		msg  proto.Message
 	}{
 		{"CallContractError", &monitoring.CallContractError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
-		{"TriggerEventDroppedError", &monitoring.TriggerEventDroppedError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
+		{"LogTriggerError", &monitoring.LogTriggerError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
+		{"LogTriggerEventDroppedError", &monitoring.LogTriggerEventDroppedError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"FilterLogsError", &monitoring.FilterLogsError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"BalanceAtError", &monitoring.BalanceAtError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"EstimateGasError", &monitoring.EstimateGasError{ExecutionContext: &capmonitoring.ExecutionContext{}}},

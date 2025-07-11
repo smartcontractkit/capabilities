@@ -108,6 +108,8 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	}
 	expressions, confidence := lts.createLogRequest(ctx, input.GetAddresses(), eventSigs, topics2, topics3, topics4, input.GetConfidence())
 
+	monitoring.EmitInitiated(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerInitiated(read, input))
+
 	logCh := make(chan capabilities.TriggerAndId[*evmcappb.Log], defaultSendChannelBufferSize)
 	lts.srvcEng.Go(func(srvcCtx context.Context) {
 		subCtx, cancel := context.WithCancel(srvcCtx)
@@ -120,7 +122,7 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 				confidence:  confidence,
 			},
 		})
-		lts.startPolling(subCtx, read, triggerID, logCh)
+		lts.startPolling(subCtx, read, triggerID, input, logCh)
 	})
 
 	return logCh, nil
@@ -154,7 +156,7 @@ func (lts *LogTriggerService) generateFilterID(triggerID string) string {
 	return triggerID + suffixLogTriggerFilterID
 }
 
-func (lts *LogTriggerService) startPolling(ctx context.Context, read monitoring.ReadRequest, triggerID string, logCh chan capabilities.TriggerAndId[*evmcappb.Log]) {
+func (lts *LogTriggerService) startPolling(ctx context.Context, read monitoring.ReadRequest, triggerID string, input *evmcappb.FilterLogTriggerRequest, logCh chan capabilities.TriggerAndId[*evmcappb.Log]) {
 	lts.lggr.Debugf("Starting polling for triggerID: %s, interval: %d", triggerID, lts.logTriggerPollInterval)
 	ticker := defaultTickerFactory.NewTicker(lts.logTriggerPollInterval)
 	defer ticker.Stop()
@@ -174,22 +176,25 @@ func (lts *LogTriggerService) startPolling(ctx context.Context, read monitoring.
 			lts.lggr.Debugf("Awake, polling for triggerID: %s, currentOffset: %d", triggerID, state.lastBlock)
 			logs, err := lts.fetchLogsFromLogPoller(ctx, state)
 			if err != nil {
-				lts.lggr.Errorf("Failed to fetch logs for triggerID: %s, error: %v", triggerID, err)
-				//TODO PLEX-1457: should we sent an error to some o11y place?
+				summary := fmt.Sprintf("Failed to fetch logs for triggerID: %s, error: %v", triggerID, err)
+				monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(read, triggerID, summary, err.Error()))
+				// no logs fetched, so we continue to the next iteration
 				continue
 			}
 
 			finalizedBlockNumber, err := lts.getFinalizedBlockNumber(ctx, triggerID)
 			if err != nil {
-				lts.lggr.Errorf("Failed to get latest finalized block number for triggerID: %s, error: %v", triggerID, err)
-				//TODO PLEX-1457: should we sent an error to some o11y place?
+				summary := fmt.Sprintf("Failed to get latest finalized block number for triggerID: %s, error: %v", triggerID, err)
+				monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(read, triggerID, summary, err.Error()))
+				// no finalized block number, so we continue to the next iteration
 				continue
 			}
 
 			err = lts.sendLogsToWorkflows(ctx, read, logs, finalizedBlockNumber, triggerID, state, logCh)
 			if err != nil {
-				lts.lggr.Errorf("Failed to send logs for triggerID: %s, error: %v", triggerID, err)
-				//TODO PLEX-1457: should we sent an error to some o11y place?
+				summary := fmt.Sprintf("Failed to send logs for triggerID: %s, error: %v", triggerID, err)
+				monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(read, triggerID, summary, err.Error()))
+				// serious error occurred while sending logs, so we break the loop
 				return
 			}
 
@@ -197,11 +202,13 @@ func (lts *LogTriggerService) startPolling(ctx context.Context, read monitoring.
 			calculatedLatestBlock := lts.getLatestBlockNumber(logs, state.lastBlock, finalizedBlockNumber)
 			err = lts.triggers.Update(triggerID, calculatedLatestBlock, state.unfinalizedSentEventIDs)
 			if err != nil {
-				lts.lggr.Errorf("Failed to update last block for triggerID: %s, error: %v", triggerID, err)
-				//TODO PLEX-1457: should we sent an error to some o11y place?
+				summary := fmt.Sprintf("Failed to update last block for triggerID: %s, error: %v", triggerID, err)
+				monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(read, triggerID, summary, err.Error()))
+				// serious error occurred while updating the last processed block, so we break the loop
 				return
 			}
-			lts.lggr.Debugf("Finished updating BlockNumber for triggerID: %s, BlockNumber: %d", triggerID, calculatedLatestBlock)
+			successMessage := fmt.Sprintf("Finished updating BlockNumber for triggerID: %s, BlockNumber: %d, sent logs: %d", triggerID, calculatedLatestBlock, len(logs))
+			monitoring.LogAndEmitSuccess(ctx, successMessage, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerSuccess(read, triggerID, input, len(logs), calculatedLatestBlock.Int64()))
 		}
 	}
 }
@@ -236,7 +243,6 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, read moni
 					needsUpdate = true
 				}
 			default:
-				//fmt.Sprintf("Callback channel full, dropping event", "triggerID", triggerID, "eventID", response.Id)
 				summary := fmt.Sprintf("Callback channel full (buffer size: %d), dropping event (triggerID: %s, eventID: %s)", defaultSendChannelBufferSize, triggerID, response.Id)
 				lts.lggr.Errorw(summary, "triggerID", triggerID, "eventID", response.Id)
 				monitoring.LogAndEmitError(

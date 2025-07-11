@@ -11,7 +11,22 @@ message TriggerInitiated{
   monitoring.ExecutionContext execution_context = 20;
 }
 
-message TriggerEventDroppedError {
+message LogTriggerSuccess {
+  string triggerID = 1;
+  capabilities.blockchain.evm.v1alpha.FilterLogTriggerRequest req = 2;
+  int32 log_count = 3;
+  int64 latestOffsetBlock = 4;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message LogTriggerError {
+  string triggerID = 1;
+  string summary = 5;
+  string cause = 6;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message LogTriggerEventDroppedError {
   string triggerID = 1;
   string tx_hash = 2;
   string block_hash = 3;

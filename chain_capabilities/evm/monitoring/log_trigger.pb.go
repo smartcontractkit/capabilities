@@ -75,7 +75,151 @@ func (x *TriggerInitiated) GetExecutionContext() *monitoring.ExecutionContext {
 	return nil
 }
 
-type TriggerEventDroppedError struct {
+type LogTriggerSuccess struct {
+	state             protoimpl.MessageState       `protogen:"open.v1"`
+	TriggerID         string                       `protobuf:"bytes,1,opt,name=triggerID,proto3" json:"triggerID,omitempty"`
+	Req               *evm.FilterLogTriggerRequest `protobuf:"bytes,2,opt,name=req,proto3" json:"req,omitempty"`
+	LogCount          int32                        `protobuf:"varint,3,opt,name=log_count,json=logCount,proto3" json:"log_count,omitempty"`
+	LatestOffsetBlock int64                        `protobuf:"varint,4,opt,name=latestOffsetBlock,proto3" json:"latestOffsetBlock,omitempty"`
+	ExecutionContext  *monitoring.ExecutionContext `protobuf:"bytes,20,opt,name=execution_context,json=executionContext,proto3" json:"execution_context,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *LogTriggerSuccess) Reset() {
+	*x = LogTriggerSuccess{}
+	mi := &file_log_trigger_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LogTriggerSuccess) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LogTriggerSuccess) ProtoMessage() {}
+
+func (x *LogTriggerSuccess) ProtoReflect() protoreflect.Message {
+	mi := &file_log_trigger_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LogTriggerSuccess.ProtoReflect.Descriptor instead.
+func (*LogTriggerSuccess) Descriptor() ([]byte, []int) {
+	return file_log_trigger_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *LogTriggerSuccess) GetTriggerID() string {
+	if x != nil {
+		return x.TriggerID
+	}
+	return ""
+}
+
+func (x *LogTriggerSuccess) GetReq() *evm.FilterLogTriggerRequest {
+	if x != nil {
+		return x.Req
+	}
+	return nil
+}
+
+func (x *LogTriggerSuccess) GetLogCount() int32 {
+	if x != nil {
+		return x.LogCount
+	}
+	return 0
+}
+
+func (x *LogTriggerSuccess) GetLatestOffsetBlock() int64 {
+	if x != nil {
+		return x.LatestOffsetBlock
+	}
+	return 0
+}
+
+func (x *LogTriggerSuccess) GetExecutionContext() *monitoring.ExecutionContext {
+	if x != nil {
+		return x.ExecutionContext
+	}
+	return nil
+}
+
+type LogTriggerError struct {
+	state            protoimpl.MessageState       `protogen:"open.v1"`
+	TriggerID        string                       `protobuf:"bytes,1,opt,name=triggerID,proto3" json:"triggerID,omitempty"`
+	Summary          string                       `protobuf:"bytes,5,opt,name=summary,proto3" json:"summary,omitempty"`
+	Cause            string                       `protobuf:"bytes,6,opt,name=cause,proto3" json:"cause,omitempty"`
+	ExecutionContext *monitoring.ExecutionContext `protobuf:"bytes,20,opt,name=execution_context,json=executionContext,proto3" json:"execution_context,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *LogTriggerError) Reset() {
+	*x = LogTriggerError{}
+	mi := &file_log_trigger_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LogTriggerError) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LogTriggerError) ProtoMessage() {}
+
+func (x *LogTriggerError) ProtoReflect() protoreflect.Message {
+	mi := &file_log_trigger_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LogTriggerError.ProtoReflect.Descriptor instead.
+func (*LogTriggerError) Descriptor() ([]byte, []int) {
+	return file_log_trigger_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *LogTriggerError) GetTriggerID() string {
+	if x != nil {
+		return x.TriggerID
+	}
+	return ""
+}
+
+func (x *LogTriggerError) GetSummary() string {
+	if x != nil {
+		return x.Summary
+	}
+	return ""
+}
+
+func (x *LogTriggerError) GetCause() string {
+	if x != nil {
+		return x.Cause
+	}
+	return ""
+}
+
+func (x *LogTriggerError) GetExecutionContext() *monitoring.ExecutionContext {
+	if x != nil {
+		return x.ExecutionContext
+	}
+	return nil
+}
+
+type LogTriggerEventDroppedError struct {
 	state            protoimpl.MessageState       `protogen:"open.v1"`
 	TriggerID        string                       `protobuf:"bytes,1,opt,name=triggerID,proto3" json:"triggerID,omitempty"`
 	TxHash           string                       `protobuf:"bytes,2,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
@@ -88,21 +232,21 @@ type TriggerEventDroppedError struct {
 	sizeCache        protoimpl.SizeCache
 }
 
-func (x *TriggerEventDroppedError) Reset() {
-	*x = TriggerEventDroppedError{}
-	mi := &file_log_trigger_proto_msgTypes[1]
+func (x *LogTriggerEventDroppedError) Reset() {
+	*x = LogTriggerEventDroppedError{}
+	mi := &file_log_trigger_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *TriggerEventDroppedError) String() string {
+func (x *LogTriggerEventDroppedError) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*TriggerEventDroppedError) ProtoMessage() {}
+func (*LogTriggerEventDroppedError) ProtoMessage() {}
 
-func (x *TriggerEventDroppedError) ProtoReflect() protoreflect.Message {
-	mi := &file_log_trigger_proto_msgTypes[1]
+func (x *LogTriggerEventDroppedError) ProtoReflect() protoreflect.Message {
+	mi := &file_log_trigger_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -113,54 +257,54 @@ func (x *TriggerEventDroppedError) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use TriggerEventDroppedError.ProtoReflect.Descriptor instead.
-func (*TriggerEventDroppedError) Descriptor() ([]byte, []int) {
-	return file_log_trigger_proto_rawDescGZIP(), []int{1}
+// Deprecated: Use LogTriggerEventDroppedError.ProtoReflect.Descriptor instead.
+func (*LogTriggerEventDroppedError) Descriptor() ([]byte, []int) {
+	return file_log_trigger_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *TriggerEventDroppedError) GetTriggerID() string {
+func (x *LogTriggerEventDroppedError) GetTriggerID() string {
 	if x != nil {
 		return x.TriggerID
 	}
 	return ""
 }
 
-func (x *TriggerEventDroppedError) GetTxHash() string {
+func (x *LogTriggerEventDroppedError) GetTxHash() string {
 	if x != nil {
 		return x.TxHash
 	}
 	return ""
 }
 
-func (x *TriggerEventDroppedError) GetBlockHash() string {
+func (x *LogTriggerEventDroppedError) GetBlockHash() string {
 	if x != nil {
 		return x.BlockHash
 	}
 	return ""
 }
 
-func (x *TriggerEventDroppedError) GetLogIndex() int64 {
+func (x *LogTriggerEventDroppedError) GetLogIndex() int64 {
 	if x != nil {
 		return x.LogIndex
 	}
 	return 0
 }
 
-func (x *TriggerEventDroppedError) GetSummary() string {
+func (x *LogTriggerEventDroppedError) GetSummary() string {
 	if x != nil {
 		return x.Summary
 	}
 	return ""
 }
 
-func (x *TriggerEventDroppedError) GetCause() string {
+func (x *LogTriggerEventDroppedError) GetCause() string {
 	if x != nil {
 		return x.Cause
 	}
 	return ""
 }
 
-func (x *TriggerEventDroppedError) GetExecutionContext() *monitoring.ExecutionContext {
+func (x *LogTriggerEventDroppedError) GetExecutionContext() *monitoring.ExecutionContext {
 	if x != nil {
 		return x.ExecutionContext
 	}
@@ -174,8 +318,19 @@ const file_log_trigger_proto_rawDesc = "" +
 	"\x11log_trigger.proto\x12\x16chain_capabilities.evm\x1a0capabilities/blockchain/evm/v1alpha/client.proto\x1a'libs/monitoring/execution_context.proto\"\xad\x01\n" +
 	"\x10TriggerInitiated\x12N\n" +
 	"\x03req\x18\x01 \x01(\v2<.capabilities.blockchain.evm.v1alpha.FilterLogTriggerRequestR\x03req\x12I\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\x88\x02\n" +
-	"\x18TriggerEventDroppedError\x12\x1c\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\x97\x02\n" +
+	"\x11LogTriggerSuccess\x12\x1c\n" +
+	"\ttriggerID\x18\x01 \x01(\tR\ttriggerID\x12N\n" +
+	"\x03req\x18\x02 \x01(\v2<.capabilities.blockchain.evm.v1alpha.FilterLogTriggerRequestR\x03req\x12\x1b\n" +
+	"\tlog_count\x18\x03 \x01(\x05R\blogCount\x12,\n" +
+	"\x11latestOffsetBlock\x18\x04 \x01(\x03R\x11latestOffsetBlock\x12I\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xaa\x01\n" +
+	"\x0fLogTriggerError\x12\x1c\n" +
+	"\ttriggerID\x18\x01 \x01(\tR\ttriggerID\x12\x18\n" +
+	"\asummary\x18\x05 \x01(\tR\asummary\x12\x14\n" +
+	"\x05cause\x18\x06 \x01(\tR\x05cause\x12I\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\x8b\x02\n" +
+	"\x1bLogTriggerEventDroppedError\x12\x1c\n" +
 	"\ttriggerID\x18\x01 \x01(\tR\ttriggerID\x12\x17\n" +
 	"\atx_hash\x18\x02 \x01(\tR\x06txHash\x12\x1d\n" +
 	"\n" +
@@ -197,22 +352,27 @@ func file_log_trigger_proto_rawDescGZIP() []byte {
 	return file_log_trigger_proto_rawDescData
 }
 
-var file_log_trigger_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_log_trigger_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_log_trigger_proto_goTypes = []any{
 	(*TriggerInitiated)(nil),            // 0: chain_capabilities.evm.TriggerInitiated
-	(*TriggerEventDroppedError)(nil),    // 1: chain_capabilities.evm.TriggerEventDroppedError
-	(*evm.FilterLogTriggerRequest)(nil), // 2: capabilities.blockchain.evm.v1alpha.FilterLogTriggerRequest
-	(*monitoring.ExecutionContext)(nil), // 3: monitoring.ExecutionContext
+	(*LogTriggerSuccess)(nil),           // 1: chain_capabilities.evm.LogTriggerSuccess
+	(*LogTriggerError)(nil),             // 2: chain_capabilities.evm.LogTriggerError
+	(*LogTriggerEventDroppedError)(nil), // 3: chain_capabilities.evm.LogTriggerEventDroppedError
+	(*evm.FilterLogTriggerRequest)(nil), // 4: capabilities.blockchain.evm.v1alpha.FilterLogTriggerRequest
+	(*monitoring.ExecutionContext)(nil), // 5: monitoring.ExecutionContext
 }
 var file_log_trigger_proto_depIdxs = []int32{
-	2, // 0: chain_capabilities.evm.TriggerInitiated.req:type_name -> capabilities.blockchain.evm.v1alpha.FilterLogTriggerRequest
-	3, // 1: chain_capabilities.evm.TriggerInitiated.execution_context:type_name -> monitoring.ExecutionContext
-	3, // 2: chain_capabilities.evm.TriggerEventDroppedError.execution_context:type_name -> monitoring.ExecutionContext
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	4, // 0: chain_capabilities.evm.TriggerInitiated.req:type_name -> capabilities.blockchain.evm.v1alpha.FilterLogTriggerRequest
+	5, // 1: chain_capabilities.evm.TriggerInitiated.execution_context:type_name -> monitoring.ExecutionContext
+	4, // 2: chain_capabilities.evm.LogTriggerSuccess.req:type_name -> capabilities.blockchain.evm.v1alpha.FilterLogTriggerRequest
+	5, // 3: chain_capabilities.evm.LogTriggerSuccess.execution_context:type_name -> monitoring.ExecutionContext
+	5, // 4: chain_capabilities.evm.LogTriggerError.execution_context:type_name -> monitoring.ExecutionContext
+	5, // 5: chain_capabilities.evm.LogTriggerEventDroppedError.execution_context:type_name -> monitoring.ExecutionContext
+	6, // [6:6] is the sub-list for method output_type
+	6, // [6:6] is the sub-list for method input_type
+	6, // [6:6] is the sub-list for extension type_name
+	6, // [6:6] is the sub-list for extension extendee
+	0, // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_log_trigger_proto_init() }
@@ -226,7 +386,7 @@ func file_log_trigger_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_log_trigger_proto_rawDesc), len(file_log_trigger_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

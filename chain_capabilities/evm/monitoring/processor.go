@@ -47,23 +47,30 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 			return fmt.Errorf("failed to publish CallContractError metrics: %w", err)
 		}
 	// -- LogTrigger --
-	//case *CallContractInitiated:
-	//	if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-	//		return fmt.Errorf("failed to emit CallContractInitiated log: %w", err)
-	//	}
-	//case *CallContractSuccess:
-	//	if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-	//		return fmt.Errorf("failed to emit CallContractSuccess log: %w", err)
-	//	}
-	//	if err := p.metrics.OnCallContractSuccess(ctx, msg); err != nil {
-	//		return fmt.Errorf("failed to publish CallContractSuccess metrics: %w", err)
-	//	}
-	case *TriggerEventDroppedError:
+	case *TriggerInitiated:
 		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit CallContractError log: %w", err)
+			return fmt.Errorf("failed to emit TriggerInitiated log: %w", err)
+		}
+	case *LogTriggerSuccess:
+		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
+			return fmt.Errorf("failed to emit LogTriggerSuccess log: %w", err)
+		}
+		if err := p.metrics.OnLogTriggerSuccess(ctx, msg); err != nil {
+			return fmt.Errorf("failed to publish LogTriggerSuccess metrics: %w", err)
+		}
+	case *LogTriggerError:
+		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
+			return fmt.Errorf("failed to emit LogTriggerError log: %w", err)
+		}
+		if err := p.metrics.OnLogTriggerError(ctx, msg); err != nil {
+			return fmt.Errorf("failed to publish LogTriggerError metrics: %w", err)
+		}
+	case *LogTriggerEventDroppedError:
+		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
+			return fmt.Errorf("failed to emit TriggerEventDroppedError log: %w", err)
 		}
 		if err := p.metrics.OnTriggerEventDroppedError(ctx, msg); err != nil {
-			return fmt.Errorf("failed to publish CallContractError metrics: %w", err)
+			return fmt.Errorf("failed to publish TriggerEventDroppedError metrics: %w", err)
 		}
 	// -- FilterLogs --
 	case *FilterLogsInitiated:

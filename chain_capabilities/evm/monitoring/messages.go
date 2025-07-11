@@ -59,8 +59,30 @@ func (m *MessageBuilder) BuildCallContractError(r ReadRequest, msg *evm.CallMsg,
 	return &CallContractError{Req: &CallContractRequest{BlockNumber: bn, ContractAddress: common.Bytes2Hex(msg.To[:])}, Summary: summary, Cause: cause, ExecutionContext: m.BuildExecutionContext(r)}
 }
 
+func (m *MessageBuilder) BuildLogTriggerInitiated(r ReadRequest, req *evmcap.FilterLogTriggerRequest) *TriggerInitiated {
+	return &TriggerInitiated{Req: req, ExecutionContext: m.BuildExecutionContext(r)}
+}
+
+func (m *MessageBuilder) BuildLogTriggerSuccess(r ReadRequest, triggerID string, req *evmcap.FilterLogTriggerRequest, logCount int, latestOffsetBlock int64) Message {
+	return &LogTriggerSuccess{
+		TriggerID:         triggerID,
+		Req:               req,
+		LogCount:          int32(logCount),
+		LatestOffsetBlock: latestOffsetBlock,
+		ExecutionContext:  m.BuildExecutionContext(r)}
+}
+
+func (m *MessageBuilder) BuildLogTriggerError(r ReadRequest, triggerID string, summary, cause string) ErrorMessage {
+	return &LogTriggerError{
+		TriggerID:        triggerID,
+		Summary:          summary,
+		Cause:            cause,
+		ExecutionContext: m.BuildExecutionContext(r),
+	}
+}
+
 func (m *MessageBuilder) BuildLogTriggerEventDroppedError(r ReadRequest, triggerID string, log *evm.Log, summary, cause string) ErrorMessage {
-	return &TriggerEventDroppedError{
+	return &LogTriggerEventDroppedError{
 		TriggerID:        triggerID,
 		TxHash:           common.Bytes2Hex(log.TxHash[:]),
 		BlockHash:        common.Bytes2Hex(log.BlockHash[:]),
