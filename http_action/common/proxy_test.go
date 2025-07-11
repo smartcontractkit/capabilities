@@ -15,10 +15,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	httpactions "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
-
-	"github.com/smartcontractkit/capabilities/http_action/pb"
 )
 
 func TestNewHTTPClientProxy(t *testing.T) {
@@ -109,7 +108,7 @@ func TestSendRequest(t *testing.T) {
 			WorkflowOwner:       "owner1",
 		}
 
-		input := &pb.Request{
+		input := &httpactions.Request{
 			Method:    http.MethodGet,
 			Url:       server.URL,
 			TimeoutMs: 1000,
@@ -148,7 +147,7 @@ func TestSendRequest(t *testing.T) {
 			WorkflowOwner:       "owner1",
 		}
 
-		input := &pb.Request{
+		input := &httpactions.Request{
 			Method:    http.MethodPost,
 			Url:       server.URL,
 			TimeoutMs: 1000,
@@ -184,7 +183,7 @@ func TestSendRequest(t *testing.T) {
 			WorkflowOwner:       "owner1",
 		}
 
-		input := &pb.Request{
+		input := &httpactions.Request{
 			Method:    http.MethodGet,
 			Url:       server.URL,
 			TimeoutMs: 100, // Set timeout to 100ms, which should be less than the server delay
@@ -220,7 +219,7 @@ func TestSendRequest(t *testing.T) {
 			WorkflowOwner:       "owner1",
 		}
 
-		input := &pb.Request{
+		input := &httpactions.Request{
 			Method:    http.MethodGet,
 			Url:       "http://invalid-url-that-does-not-exist.example",
 			TimeoutMs: 1000,
@@ -259,7 +258,7 @@ func TestSendRequest(t *testing.T) {
 			WorkflowOwner:       "owner1",
 		}
 
-		input := &pb.Request{
+		input := &httpactions.Request{
 			Method:    http.MethodGet,
 			Url:       largeServer.URL,
 			TimeoutMs: 1000,

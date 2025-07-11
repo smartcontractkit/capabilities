@@ -7,9 +7,8 @@ import (
 
 	"github.com/smartcontractkit/capabilities/http_action/common"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
-
-	"github.com/smartcontractkit/capabilities/http_action/pb"
 )
 
 const (
@@ -71,7 +70,7 @@ func ApplyDefaultsAndValidate(cfg *common.ServiceConfig) (*common.ServiceConfig,
 }
 
 // ValidatedRequest validates the HTTP request fields and applies default values where necessary.
-func ValidatedRequest(input *pb.Request, cfg common.ServiceConfig) (*pb.Request, error) {
+func ValidatedRequest(input *http.Request, cfg common.ServiceConfig) (*http.Request, error) {
 	// Validate and set defaults for request fields
 	url := strings.TrimSpace(input.Url)
 	if url == "" {
@@ -95,7 +94,7 @@ func ValidatedRequest(input *pb.Request, cfg common.ServiceConfig) (*pb.Request,
 		timeoutMs = int32(cfg.LimitsConfig.MaxTimeoutMs) //nolint:gosec // G115 (validated in ApplyDefaultsAndValidate)
 	}
 
-	return &pb.Request{
+	return &http.Request{
 		Url:       url,
 		Method:    input.Method,
 		Headers:   input.Headers,
@@ -113,7 +112,7 @@ func getWithDefault[T comparable](cfgVal, defaultVal T) T {
 	return defaultVal
 }
 
-func validateInputMaxLimits(input *pb.Request, cfg common.ServiceConfig) error {
+func validateInputMaxLimits(input *http.Request, cfg common.ServiceConfig) error {
 	if input.TimeoutMs < 0 || uint32(input.TimeoutMs) > cfg.LimitsConfig.MaxTimeoutMs {
 		return fmt.Errorf("timeout must be between 0 and %d milliseconds", cfg.LimitsConfig.MaxTimeoutMs)
 	}

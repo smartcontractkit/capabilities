@@ -39,19 +39,19 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 	cfgJSON, _ := json.Marshal(cfg)
 
 	err := svc.Initialise(t.Context(), string(cfgJSON),
-		nil, nil, nil, nil, relayerSet, nullOracleFactory{}, nil)
+		nil, nil, nil, nil, relayerSet, nullOracleFactory{}, nil, nil)
 	require.NoError(t, err)
 
 	t.Run("happy-path", func(t *testing.T) {
 		t.Run("bad-json", func(t *testing.T) {
 			svc := &capabilityGRPCService{lggr: lggr}
-			err := svc.Initialise(t.Context(), "x", nil, nil, nil, nil, nil, nullOracleFactory{}, nil)
+			err := svc.Initialise(t.Context(), "x", nil, nil, nil, nil, nil, nullOracleFactory{}, nil, nil)
 			assert.ErrorContains(t, err, "failed to parse")
 		})
 		t.Run("bad-interval", func(t *testing.T) {
 			cfgJSON, _ := json.Marshal(config.Config{ChainID: 1, Network: "net", LogTriggerPollInterval: -1})
 			svc := &capabilityGRPCService{lggr: lggr}
-			err := svc.Initialise(t.Context(), string(cfgJSON), nil, nil, nil, nil, nil, nullOracleFactory{}, nil)
+			err := svc.Initialise(t.Context(), string(cfgJSON), nil, nil, nil, nil, nil, nullOracleFactory{}, nil, nil)
 			assert.ErrorContains(t, err, "logTriggerPollInterval must be positive, got: -1ns")
 		})
 		t.Run("relayerSet error", func(t *testing.T) {
@@ -62,7 +62,7 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 			svc := &capabilityGRPCService{lggr: lggr}
 
 			err := svc.Initialise(t.Context(), string(cfgJSON),
-				nil, nil, nil, nil, relayerSet, nil, nil)
+				nil, nil, nil, nil, relayerSet, nil, nil, nil)
 			assert.ErrorIs(t, err, assert.AnError)
 		})
 	})
@@ -75,7 +75,7 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 			svc := &capabilityGRPCService{lggr: lggr}
 
 			err := svc.Initialise(t.Context(), string(cfgJSON),
-				nil, nil, nil, nil, relayerSet, nil, nil)
+				nil, nil, nil, nil, relayerSet, nil, nil, nil)
 			assert.ErrorIs(t, err, assert.AnError)
 		})
 
@@ -87,7 +87,7 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 			svc := &capabilityGRPCService{lggr: lggr}
 
 			err := svc.Initialise(t.Context(), string(cfgJSON),
-				nil, nil, nil, nil, relayerSet, nil, nil)
+				nil, nil, nil, nil, relayerSet, nil, nil, nil)
 			assert.ErrorIs(t, err, assert.AnError)
 		})
 	})

@@ -55,7 +55,7 @@ type unknownRequest struct {
 	ID        string
 	ExpiresAt time.Time
 	Element   *list.Element[*unknownRequest]
-	Result    []byte
+	Result    any
 }
 
 type requestCtx struct {
@@ -63,7 +63,7 @@ type requestCtx struct {
 	//nolint:containedctx // Justification: required to track request's timeout
 	Ctx        context.Context
 	Cancel     context.CancelFunc
-	ResultChan chan []byte
+	ResultChan chan any
 }
 
 func (r *requestCtx) ID() string {
@@ -113,10 +113,12 @@ func (s *Handler) GetRequest(id string) (types.Request, bool) {
 
 func (s *Handler) CompleteRequest(id string, report *types.RequestReport) error {
 	switch report.Report.(type) {
+	case *types.RequestReport_Aggregatable:
+		return s.completeRequest(id, report.GetAggregatable())
 	case *types.RequestReport_LockableToBlock:
 		return s.completeLockableRequest(id, report.GetLockableToBlock())
 	case *types.RequestReport_EventuallyConsistent:
-		return s.completeEventuallyConsistentRequest(id, report.GetEventuallyConsistent())
+		return s.completeRequest(id, report.GetEventuallyConsistent())
 	default:
 		return fmt.Errorf("unknown request type %T", report.Report)
 	}
@@ -158,7 +160,7 @@ func (s *Handler) completeLockableRequest(id string, height *types.ChainHeight) 
 	return nil
 }
 
-func (s *Handler) completeEventuallyConsistentRequest(id string, value []byte) error {
+func (s *Handler) completeRequest(id string, value any) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	request := s.requests.Get(id)
@@ -181,10 +183,10 @@ func (s *Handler) completeEventuallyConsistentRequest(id string, value []byte) e
 	return nil
 }
 
-func (s *Handler) Handle(ctx context.Context, request types.Request) (<-chan []byte, error) {
+func (s *Handler) Handle(ctx context.Context, request types.Request) (<-chan any, error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	ch := make(chan []byte, 1)
+	ch := make(chan any, 1)
 	uRequest, ok := s.unknownRequestsResultByID[request.ID()]
 	if ok {
 		ch <- uRequest.Result // non-blocking as ch is buffered
@@ -215,6 +217,11 @@ func (s *Handler) addRequestCtx(requestCtx *requestCtx) error {
 	switch tRequest := requestCtx.Request.(type) {
 	case *types.EventuallyConsistentRequest:
 		s.poller.Enqueue(requestCtx.Ctx, tRequest)
+	case *types.LockableToBlockRequest:
+	case *types.AggregatableRequest:
+		s.poller.Enqueue(requestCtx.Ctx, tRequest)
+	default:
+		return fmt.Errorf("unknown request type %T", tRequest)
 	}
 	return nil
 }

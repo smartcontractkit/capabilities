@@ -40,7 +40,7 @@ func mode[keyT comparable, valueT any](N, F int, observations iter.Seq2[commonty
 		}
 	}
 
-	expectedObservations := (N+F)/2 + 1
+	expectedObservations := byzQuorumSize(N, F)
 	if totalNum < expectedObservations {
 		var zero valueT
 		return zero, fmt.Errorf("insufficient number of observations: expected %d, got %d", expectedObservations, totalNum)
@@ -66,4 +66,8 @@ func mode[keyT comparable, valueT any](N, F int, observations iter.Seq2[commonty
 	}
 
 	return highestCounter.value, nil
+}
+
+func byzQuorumSize(N, F int) int {
+	return (N+F)/2 + 1
 }

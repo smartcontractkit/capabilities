@@ -3,18 +3,18 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"sync"
 	"time"
-
-	"errors"
 
 	"stathat.com/c/consistent"
 
 	"github.com/smartcontractkit/capabilities/http_action/common"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
@@ -22,8 +22,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 	gc "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
-
-	"github.com/smartcontractkit/capabilities/http_action/pb"
 )
 
 const (
@@ -83,7 +81,7 @@ func NewGatewayOutboundProxy(gatewayConnector core.GatewayConnector, config comm
 }
 
 // SendRequest sends a request to gateway node and blocks until response is received
-func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *pb.Request) (*pb.Response, error) {
+func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *http.Request) (*http.Response, error) {
 	requestID := common.GetRequestID(gc.MethodHTTPAction, metadata.WorkflowID, metadata.WorkflowExecutionID)
 	lggr := logger.With(p.lggr, "requestID", requestID, "workflowID", metadata.WorkflowID, "workflowExecutionID", metadata.WorkflowExecutionID, "workflowOwner", metadata.WorkflowOwner)
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(input.TimeoutMs)*time.Millisecond)
@@ -120,10 +118,11 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 
 	lggr.Debugw("sending request to gateway")
 
-	gatewayResp := jsonrpc.Response{
+	tmp := json.RawMessage(payload)
+	gatewayResp := jsonrpc.Response[json.RawMessage]{
 		Version: "2.0",
 		ID:      requestID,
-		Result:  json.RawMessage(payload),
+		Result:  &tmp,
 	}
 
 	selectedGateway, err := p.awaitConnection(ctx, lggr, gatewayReq.Hash())
@@ -142,7 +141,7 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 			lggr.Errorw("error while receiving response from gateway", "errorMessage", resp.ErrorMessage)
 			return nil, errors.New(internalError)
 		}
-		return &pb.Response{
+		return &http.Response{
 			StatusCode: uint32(resp.StatusCode), //nolint:gosec // G115
 			Headers:    resp.Headers,
 			Body:       resp.Body,
@@ -218,11 +217,15 @@ func (p *gatewayOutboundProxy) attemptGatewayConnection(ctx context.Context, lgg
 
 // HandleGatewayMessage processes incoming messages from the Gateway,
 // which are in response to a HandleSingleNodeRequest call.
-func (p *gatewayOutboundProxy) HandleGatewayMessage(ctx context.Context, gatewayID string, req *jsonrpc.Request) error {
+func (p *gatewayOutboundProxy) HandleGatewayMessage(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage]) error {
 	l := logger.With(p.lggr, "gatewayID", gatewayID, "method", req.Method, "requestID", req.ID)
 	l.Debugw("handling incomming gateway message")
+	if req.Params == nil {
+		req.Params = &json.RawMessage{}
+	}
+
 	var msg gateway.OutboundHTTPResponse
-	err := json.Unmarshal(req.Params, &msg)
+	err := json.Unmarshal(*req.Params, &msg)
 	if err != nil {
 		l.Errorw("failed to unmarshal request params", "error", err)
 		return nil

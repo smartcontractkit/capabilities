@@ -1,10 +1,13 @@
 package oracle
 
 import (
+	"math/big"
 	"testing"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/tests"
+	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
+	"github.com/smartcontractkit/libocr/commontypes"
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2/types"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
 	"github.com/stretchr/testify/require"
@@ -157,8 +160,19 @@ func TestObservation(t *testing.T) {
 		id = "lockable_request"
 		requestsStore.EXPECT().GetRequest(id).Return(types.NewLockableToBlockRequest(id, nil), true).Once()
 
+		id = "aggregatable_request"
+		aggrWithObservation := types.NewAggregatableRequest(id, nil)
+		aggrWithObservation.SetObservation(&types.AggregatableObservation{
+			Method: types.AggregationMethodFPlusOneHighest,
+			Value:  newDecimal(123, 2),
+		})
+		requestsStore.EXPECT().GetRequest(id).Return(aggrWithObservation, true).Once()
+
+		id = "aggregatable_request_without_observation"
+		requestsStore.EXPECT().GetRequest(id).Return(types.NewAggregatableRequest(id, nil), true).Once()
+
 		plugin := newReportingPlugin(Config{MaxAllowedBatchSize: 50}, logger.Sugared(logger.Test(t)), blocksProvider, requestsStore)
-		query := mustQuery(t, []string{"request_not_present_in_store", "request_without_observation", "request_with_observation", "lockable_request"})
+		query := mustQuery(t, []string{"request_not_present_in_store", "request_without_observation", "request_with_observation", "lockable_request", "aggregatable_request", "aggregatable_request_without_observation"})
 		rawObservation, err := plugin.Observation(t.Context(), ocr3types.OutcomeContext{}, query)
 		require.NoError(t, err)
 		var observation types.Observation
@@ -171,6 +185,12 @@ func TestObservation(t *testing.T) {
 				},
 				"lockable_request": {
 					Observation: &types.RequestObservation_LockableToBlock{LockableToBlock: &emptypb.Empty{}},
+				},
+				"aggregatable_request": {
+					Observation: &types.RequestObservation_Aggregatable{Aggregatable: &types.AggregatableObservation{
+						Method: types.AggregationMethodFPlusOneHighest,
+						Value:  newDecimal(123, 2),
+					}},
 				},
 			},
 		}
@@ -312,6 +332,15 @@ func TestAgreeOnChainHeight(t *testing.T) {
 }
 
 func TestOutcome(t *testing.T) {
+	newAggregatableObservation := func(coefficient, exponent int32) *types.RequestObservation {
+		decimal := newDecimal(coefficient, exponent)
+		return &types.RequestObservation{Observation: &types.RequestObservation_Aggregatable{
+			Aggregatable: &types.AggregatableObservation{
+				Value:  decimal,
+				Method: types.AggregationMethodFPlusOneHighest,
+			}},
+		}
+	}
 	chainHeight := &types.ChainHeight{Latest: 10, Safe: 9, Finalized: 8}
 	testCases := []struct {
 		name              string
@@ -387,7 +416,7 @@ func TestOutcome(t *testing.T) {
 		},
 		{
 			name:       "happy path",
-			requestIDs: []string{"request_with_common_value", "request_without_common_value", "lockable_request", "request_known_to_insufficient_number_of_nodes"},
+			requestIDs: []string{"request_with_common_value", "request_without_common_value", "lockable_request", "request_known_to_insufficient_number_of_nodes", "aggregatable_request"},
 			nodesObservations: []map[string]*types.RequestObservation{
 				{
 					// node1
@@ -395,6 +424,7 @@ func TestOutcome(t *testing.T) {
 					"request_without_common_value":                  &types.RequestObservation{Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
 					"lockable_request":                              &types.RequestObservation{Observation: &types.RequestObservation_LockableToBlock{LockableToBlock: &emptypb.Empty{}}},
 					"request_known_to_insufficient_number_of_nodes": &types.RequestObservation{Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
+					"aggregatable_request":                          newAggregatableObservation(123, 2),
 				},
 				{
 					// node2
@@ -402,12 +432,14 @@ func TestOutcome(t *testing.T) {
 					"request_without_common_value":                  &types.RequestObservation{Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value2")}},
 					"lockable_request":                              &types.RequestObservation{Observation: &types.RequestObservation_LockableToBlock{LockableToBlock: &emptypb.Empty{}}},
 					"request_known_to_insufficient_number_of_nodes": &types.RequestObservation{Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
+					"aggregatable_request":                          newAggregatableObservation(124, 2),
 				},
 				{
 					// node3
 					"request_with_common_value":    &types.RequestObservation{Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
 					"request_without_common_value": &types.RequestObservation{Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value3")}},
 					"lockable_request":             &types.RequestObservation{Observation: &types.RequestObservation_LockableToBlock{LockableToBlock: &emptypb.Empty{}}},
+					"aggregatable_request":         newAggregatableObservation(124, 3),
 				},
 			},
 			expectedOutcome: &types.Outcome{
@@ -420,6 +452,10 @@ func TestOutcome(t *testing.T) {
 					{
 						RequestID: "lockable_request",
 						Outcome:   &types.RequestOutcome_LockableToBlock{LockableToBlock: &emptypb.Empty{}},
+					},
+					{
+						RequestID: "aggregatable_request",
+						Outcome:   &types.RequestOutcome_Aggregatable{Aggregatable: newDecimal(124, 2)},
 					},
 				},
 			},
@@ -456,143 +492,45 @@ func TestAgreeOnRequestValue(t *testing.T) {
 	const id = "request_1"
 	testCases := []struct {
 		name              string
-		nodesObservations []attributedObservation
+		nodesObservations [][]byte
 		expectedError     string
 		expectedValue     []byte
 	}{
 		{
 			name: "insufficient total number of observations",
-			nodesObservations: []attributedObservation{
-				{
-					Observer: 1,
-					Observation: &types.Observation{
-						Observations: map[string]*types.RequestObservation{
-							id: {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
-						},
-					},
-				},
-				{
-					Observer: 2,
-					Observation: &types.Observation{
-						Observations: map[string]*types.RequestObservation{
-							id: {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
-						},
-					},
-				},
+			nodesObservations: [][]byte{
+				[]byte("value1"),
+				[]byte("value1"),
 			},
 			expectedError: "insufficient number of observations: expected 3, got 2",
 		},
 		{
 			name: "insufficient number of identical observations",
-			nodesObservations: []attributedObservation{
-				{
-					Observer: 1,
-					Observation: &types.Observation{
-						Observations: map[string]*types.RequestObservation{
-							id: {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
-						},
-					},
-				},
-				{
-					Observer: 2,
-					Observation: &types.Observation{
-						Observations: map[string]*types.RequestObservation{
-							id: {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value2")}},
-						},
-					},
-				},
-				{
-					Observer: 3,
-					Observation: &types.Observation{
-						Observations: map[string]*types.RequestObservation{
-							id: {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value3")}},
-						},
-					},
-				},
-				{
-					Observer: 4,
-					Observation: &types.Observation{
-						Observations: map[string]*types.RequestObservation{
-							id: {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value4")}},
-						},
-					},
-				},
+			nodesObservations: [][]byte{
+				[]byte("value1"),
+				[]byte("value2"),
+				[]byte("value3"),
+				[]byte("value4"),
 			},
 			expectedError: "insufficient number of identical observations: expected 2, got 1",
 		},
 		{
 			name: "prefer value observed by oracle with lowest id",
-			nodesObservations: []attributedObservation{
-				{
-					Observer: 1,
-					Observation: &types.Observation{
-						Observations: map[string]*types.RequestObservation{
-							id: {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
-						},
-					},
-				},
-				{
-					Observer: 2,
-					Observation: &types.Observation{
-						Observations: map[string]*types.RequestObservation{
-							id: {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value2")}},
-						},
-					},
-				},
-				{
-					Observer: 3,
-					Observation: &types.Observation{
-						Observations: map[string]*types.RequestObservation{
-							id: {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value2")}},
-						},
-					},
-				},
-				{
-					Observer: 4,
-					Observation: &types.Observation{
-						Observations: map[string]*types.RequestObservation{
-							id: {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
-						},
-					},
-				},
+			nodesObservations: [][]byte{
+				[]byte("value1"),
+				[]byte("value2"),
+				[]byte("value2"),
+				[]byte("value1"),
 			},
 			expectedValue: []byte("value1"),
 		},
 		{
 			name: "happy path",
-			nodesObservations: []attributedObservation{
-				{
-					Observer: 1,
-					Observation: &types.Observation{
-						Observations: map[string]*types.RequestObservation{
-							id: {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("invalid_vale")}},
-						},
-					},
-				},
-				{
-					Observer: 2,
-					Observation: &types.Observation{
-						Observations: map[string]*types.RequestObservation{
-							id: {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value2")}},
-						},
-					},
-				},
-				{
-					Observer: 3,
-					Observation: &types.Observation{
-						Observations: map[string]*types.RequestObservation{
-							id: {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value2")}},
-						},
-					},
-				},
-				{
-					Observer: 4,
-					Observation: &types.Observation{
-						Observations: map[string]*types.RequestObservation{
-							id: {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value4")}},
-						},
-					},
-				},
+			nodesObservations: [][]byte{
+				[]byte("invalid_value"),
+				[]byte("value2"),
+				[]byte("value2"),
+				[]byte("value4"),
 			},
 			expectedValue: []byte("value2"),
 		},
@@ -600,7 +538,20 @@ func TestAgreeOnRequestValue(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1, N: 4}}, logger.Sugared(logger.Test(t)), nil, nil)
-			value, err := plugin.agreeOnEventuallyConsistentValue(id, tc.nodesObservations)
+			var nodesObservations []attributedObservation
+			for i, ob := range tc.nodesObservations {
+				nodesObservations = append(nodesObservations, attributedObservation{
+					// G115: integer overflow conversion int -> uint8
+					//nolint:gosec
+					Observer: commontypes.OracleID(i),
+					Observation: &types.Observation{
+						Observations: map[string]*types.RequestObservation{
+							id: {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: ob}},
+						},
+					},
+				})
+			}
+			value, err := plugin.agreeOnEventuallyConsistentValue(id, nodesObservations)
 			if tc.expectedError == "" {
 				require.NoError(t, err)
 				require.Equal(t, tc.expectedValue, value)
@@ -614,98 +565,65 @@ func TestAgreeOnRequestValue(t *testing.T) {
 func TestAgreeOnRequestType(t *testing.T) {
 	const id = "request_1"
 	testCases := []struct {
-		name              string
-		nodesObservations []attributedObservation
-		expectedError     string
-		expectedValue     types.RequestType
+		name          string
+		observations  []types.RequestObservation
+		expectedError string
+		expectedValue types.RequestType
 	}{
 		{
 			name: "insufficient total number of observations",
-			nodesObservations: []attributedObservation{
-				{
-					Observer: 1,
-					Observation: &types.Observation{
-						Observations: map[string]*types.RequestObservation{
-							id: {Observation: &types.RequestObservation_EventuallyConsistent{}},
-						},
-					},
-				},
-				{
-					Observer: 2,
-					Observation: &types.Observation{
-						Observations: map[string]*types.RequestObservation{
-							id: {Observation: &types.RequestObservation_EventuallyConsistent{}},
-						},
-					},
-				},
+			observations: []types.RequestObservation{
+				{Observation: &types.RequestObservation_EventuallyConsistent{}},
+				{Observation: &types.RequestObservation_EventuallyConsistent{}},
 			},
 			expectedError: "insufficient number of observations: expected 3, got 2",
 		},
 		{
 			name: "insufficient number of identical observations",
-			nodesObservations: []attributedObservation{
-				{
-					Observer: 1,
-					Observation: &types.Observation{
-						Observations: map[string]*types.RequestObservation{
-							id: {Observation: &types.RequestObservation_EventuallyConsistent{}},
-						},
-					},
-				},
-				{
-					Observer: 2,
-					Observation: &types.Observation{
-						Observations: map[string]*types.RequestObservation{
-							id: {Observation: &types.RequestObservation_LockableToBlock{}},
-						},
-					},
-				},
-				{
-					Observer: 3,
-					Observation: &types.Observation{
-						Observations: map[string]*types.RequestObservation{
-							id: {Observation: &types.RequestObservation_Aggregatable{}},
-						},
-					},
-				},
+			observations: []types.RequestObservation{
+				{Observation: &types.RequestObservation_EventuallyConsistent{}},
+				{Observation: &types.RequestObservation_LockableToBlock{}},
+				{Observation: &types.RequestObservation_Aggregatable{}},
 			},
 			expectedError: "insufficient number of identical observations: expected 2, got 1",
 		},
 		{
 			name: "prefer value observed by oracle with lowest id",
-			nodesObservations: []attributedObservation{
-				{
-					Observer: 1,
-					Observation: &types.Observation{
-						Observations: map[string]*types.RequestObservation{
-							id: {Observation: &types.RequestObservation_EventuallyConsistent{}},
-						},
-					},
-				},
-				{
-					Observer: 2,
-					Observation: &types.Observation{
-						Observations: map[string]*types.RequestObservation{
-							id: {Observation: &types.RequestObservation_LockableToBlock{}},
-						},
-					},
-				},
-				{
-					Observer: 3,
-					Observation: &types.Observation{
-						Observations: map[string]*types.RequestObservation{
-							id: {Observation: &types.RequestObservation_LockableToBlock{}},
-						},
-					},
-				},
-				{
-					Observer: 4,
-					Observation: &types.Observation{
-						Observations: map[string]*types.RequestObservation{
-							id: {Observation: &types.RequestObservation_EventuallyConsistent{}},
-						},
-					},
-				},
+			observations: []types.RequestObservation{
+				{Observation: &types.RequestObservation_EventuallyConsistent{}},
+				{Observation: &types.RequestObservation_LockableToBlock{}},
+				{Observation: &types.RequestObservation_LockableToBlock{}},
+				{Observation: &types.RequestObservation_EventuallyConsistent{}},
+			},
+			expectedValue: types.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT,
+		},
+		{
+			name: "Happy path aggregatable",
+			observations: []types.RequestObservation{
+				{Observation: &types.RequestObservation_LockableToBlock{}},
+				{Observation: &types.RequestObservation_Aggregatable{}},
+				{Observation: &types.RequestObservation_Aggregatable{}},
+				{Observation: &types.RequestObservation_EventuallyConsistent{}},
+			},
+			expectedValue: types.RequestType_REQUEST_TYPE_AGGREGATABLE,
+		},
+		{
+			name: "Happy path lockable",
+			observations: []types.RequestObservation{
+				{Observation: &types.RequestObservation_Aggregatable{}},
+				{Observation: &types.RequestObservation_LockableToBlock{}},
+				{Observation: &types.RequestObservation_LockableToBlock{}},
+				{Observation: &types.RequestObservation_EventuallyConsistent{}},
+			},
+			expectedValue: types.RequestType_REQUEST_TYPE_LOCKABLE_TO_BLOCK,
+		},
+		{
+			name: "Happy path eventually consistent",
+			observations: []types.RequestObservation{
+				{Observation: &types.RequestObservation_Aggregatable{}},
+				{Observation: &types.RequestObservation_EventuallyConsistent{}},
+				{Observation: &types.RequestObservation_EventuallyConsistent{}},
+				{Observation: &types.RequestObservation_LockableToBlock{}},
 			},
 			expectedValue: types.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT,
 		},
@@ -713,7 +631,126 @@ func TestAgreeOnRequestType(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1, N: 4}}, logger.Sugared(logger.Test(t)), nil, nil)
-			value, err := plugin.agreeOnRequestType(id, tc.nodesObservations)
+			var nodesObservations []attributedObservation
+			for i := range tc.observations {
+				ob := &tc.observations[i]
+				nodesObservations = append(nodesObservations, attributedObservation{
+					// G115: integer overflow conversion int -> uint8
+					//nolint:gosec
+					Observer:    commontypes.OracleID(i),
+					Observation: &types.Observation{Observations: map[string]*types.RequestObservation{id: ob}},
+				})
+			}
+			value, err := plugin.agreeOnRequestType(id, nodesObservations)
+			if tc.expectedError == "" {
+				require.NoError(t, err)
+				require.Equal(t, tc.expectedValue, value)
+			} else {
+				require.EqualError(t, err, tc.expectedError)
+			}
+		})
+	}
+}
+
+func TestAggregateValue(t *testing.T) {
+	testCases := []struct {
+		name          string
+		observations  []*types.AggregatableObservation
+		expectedError string
+		expectedValue *valuespb.Decimal
+	}{
+		{
+			name: "insufficient total number of observations",
+			observations: []*types.AggregatableObservation{
+				nil,
+				{
+					Method: types.AggregationMethodFPlusOneHighest,
+					Value:  newDecimal(1, 2),
+				},
+				{
+					Method: types.AggregationMethodFPlusOneHighest,
+					Value:  newDecimal(2, 2),
+				},
+			},
+			expectedError: "could not determine aggregation method: insufficient number of observations: expected 3, got 2",
+		},
+		{
+			name: "insufficient number of values",
+			observations: []*types.AggregatableObservation{
+				{
+					Method: types.AggregationMethodFPlusOneHighest,
+					Value:  newDecimal(1, 2),
+				},
+				{
+					Method: types.AggregationMethodFPlusOneHighest,
+					Value:  nil,
+				},
+				{
+					Method: types.AggregationMethodFPlusOneHighest,
+					Value:  &valuespb.Decimal{Coefficient: nil, Exponent: 2},
+				},
+			},
+			expectedError: "not enough observations to aggregate value. Got 1, expected at least 3",
+		},
+		{
+			name: "not supported aggregation method",
+			observations: []*types.AggregatableObservation{
+				{
+					Method: "my_aggregation_method",
+					Value:  newDecimal(1, 2),
+				},
+				{
+					Method: "my_aggregation_method",
+					Value:  newDecimal(1, 2),
+				},
+				{
+					Method: "my_aggregation_method",
+					Value:  newDecimal(1, 2),
+				},
+			},
+			expectedError: "unsupported aggregation method: my_aggregation_method",
+		},
+		{
+			name: "happy path",
+			observations: []*types.AggregatableObservation{
+				{
+					Method: types.AggregationMethodFPlusOneHighest,
+					Value:  newDecimal(1, 2),
+				},
+				{
+					Method: types.AggregationMethodFPlusOneHighest,
+					Value:  newDecimal(2, 2),
+				},
+				{
+					Method: types.AggregationMethodFPlusOneHighest,
+					Value:  newDecimal(3, 2),
+				},
+				{
+					Method: types.AggregationMethodFPlusOneHighest,
+					Value:  newDecimal(4, 0),
+				},
+			},
+			expectedValue: newDecimal(2, 2),
+		},
+	}
+
+	for _, tc := range testCases {
+		const id = "id"
+		t.Run(tc.name, func(t *testing.T) {
+			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1, N: 4}}, logger.Sugared(logger.Test(t)), nil, nil)
+			var nodesObservations []attributedObservation
+			for i := range tc.observations {
+				ob := tc.observations[i]
+				nodesObservations = append(nodesObservations, attributedObservation{
+					// G115: integer overflow conversion int -> uint8
+					//nolint:gosec
+					Observer: commontypes.OracleID(i),
+					Observation: &types.Observation{Observations: map[string]*types.RequestObservation{id: {
+						Observation: &types.RequestObservation_Aggregatable{Aggregatable: ob},
+					}}},
+				})
+			}
+			value, err := plugin.aggregateValue(id, nodesObservations)
 			if tc.expectedError == "" {
 				require.NoError(t, err)
 				require.Equal(t, tc.expectedValue, value)
@@ -743,6 +780,10 @@ func TestReports(t *testing.T) {
 						RequestID: "request_2",
 						Outcome:   &types.RequestOutcome_LockableToBlock{LockableToBlock: &emptypb.Empty{}},
 					},
+					{
+						RequestID: "request_3",
+						Outcome:   &types.RequestOutcome_Aggregatable{Aggregatable: newDecimal(124, 2)},
+					},
 				},
 				ChainHeight: &types.ChainHeight{
 					Latest:    15,
@@ -764,6 +805,14 @@ func TestReports(t *testing.T) {
 						Report: mustMarshalProto(&types.RequestReport{
 							RequestID: "request_2",
 							Report:    &types.RequestReport_LockableToBlock{LockableToBlock: &types.ChainHeight{Latest: 15, Safe: 10, Finalized: 8}},
+						}),
+					},
+				},
+				{
+					ReportWithInfo: ocr3types.ReportWithInfo[[]byte]{
+						Report: mustMarshalProto(&types.RequestReport{
+							RequestID: "request_3",
+							Report:    &types.RequestReport_Aggregatable{Aggregatable: newDecimal(124, 2)},
 						}),
 					},
 				},
@@ -798,6 +847,13 @@ func TestReports(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func newDecimal(coefficient, exponent int32) *valuespb.Decimal {
+	return &valuespb.Decimal{
+		Coefficient: valuespb.NewBigIntFromInt(big.NewInt(int64(coefficient))),
+		Exponent:    exponent,
 	}
 }
 

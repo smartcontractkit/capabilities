@@ -1,0 +1,65 @@
+{
+  "$id": "https://github.com/smartcontractkit/capabilities/p2psigner/signercap/signer-action@1.0.0",
+  "description": "A test action that signs a payload",
+  "$defs": {
+    "SignInputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "digest": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 255
+          }
+        }
+      },
+      "required": [
+        "digest"
+      ]
+    },
+    "SignOutputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Outputs of the Key-Value Store Action.",
+      "properties": {
+        "signature": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 255
+          }
+        },
+        "accountID": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "signature",
+        "accountID"
+      ]
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "inputs": {
+      "$ref": "#/$defs/SignInputs"
+    },
+    "outputs": {
+      "$ref": "#/$defs/SignOutputs"
+    },
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {},
+      "required": []
+    }
+  },
+  "required": [
+    "inputs",
+    "outputs"
+  ]
+}
