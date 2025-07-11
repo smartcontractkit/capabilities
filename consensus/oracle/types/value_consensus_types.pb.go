@@ -31,7 +31,8 @@ type RequestMetaData struct {
 	WorkflowName             string                 `protobuf:"bytes,6,opt,name=workflow_name,json=workflowName,proto3" json:"workflow_name,omitempty"`
 	WorkflowDonId            uint32                 `protobuf:"varint,7,opt,name=workflow_don_id,json=workflowDonId,proto3" json:"workflow_don_id,omitempty"`
 	WorkflowDonConfigVersion uint32                 `protobuf:"varint,8,opt,name=workflow_don_config_version,json=workflowDonConfigVersion,proto3" json:"workflow_don_config_version,omitempty"`
-	KeyBundleId              string                 `protobuf:"bytes,9,opt,name=keyBundleId,proto3" json:"keyBundleId,omitempty"`
+	ReportId                 string                 `protobuf:"bytes,9,opt,name=report_id,json=reportId,proto3" json:"report_id,omitempty"`
+	KeyBundleId              string                 `protobuf:"bytes,10,opt,name=keyBundleId,proto3" json:"keyBundleId,omitempty"`
 	unknownFields            protoimpl.UnknownFields
 	sizeCache                protoimpl.SizeCache
 }
@@ -120,6 +121,13 @@ func (x *RequestMetaData) GetWorkflowDonConfigVersion() uint32 {
 		return x.WorkflowDonConfigVersion
 	}
 	return 0
+}
+
+func (x *RequestMetaData) GetReportId() string {
+	if x != nil {
+		return x.ReportId
+	}
+	return ""
 }
 
 func (x *RequestMetaData) GetKeyBundleId() string {
@@ -421,7 +429,7 @@ var File_value_consensus_types_proto protoreflect.FileDescriptor
 
 const file_value_consensus_types_proto_rawDesc = "" +
 	"\n" +
-	"\x1bvalue_consensus_types.proto\x12\x15value_consensus_types\"\x92\x03\n" +
+	"\x1bvalue_consensus_types.proto\x12\x15value_consensus_types\"\xaf\x03\n" +
 	"\x0fRequestMetaData\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x122\n" +
@@ -432,8 +440,10 @@ const file_value_consensus_types_proto_rawDesc = "" +
 	"\x0eworkflow_owner\x18\x05 \x01(\tR\rworkflowOwner\x12#\n" +
 	"\rworkflow_name\x18\x06 \x01(\tR\fworkflowName\x12&\n" +
 	"\x0fworkflow_don_id\x18\a \x01(\rR\rworkflowDonId\x12=\n" +
-	"\x1bworkflow_don_config_version\x18\b \x01(\rR\x18workflowDonConfigVersion\x12 \n" +
-	"\vkeyBundleId\x18\t \x01(\tR\vkeyBundleId\"\x8f\x01\n" +
+	"\x1bworkflow_don_config_version\x18\b \x01(\rR\x18workflowDonConfigVersion\x12\x1b\n" +
+	"\treport_id\x18\t \x01(\tR\breportId\x12 \n" +
+	"\vkeyBundleId\x18\n" +
+	" \x01(\tR\vkeyBundleId\"\x8f\x01\n" +
 	"\aRequest\x12B\n" +
 	"\bmetadata\x18\x01 \x01(\v2&.value_consensus_types.RequestMetaDataR\bmetadata\x12@\n" +
 	"\x1crequest_consensus_descriptor\x18\x02 \x01(\fR\x1arequestConsensusDescriptor\"C\n" +
