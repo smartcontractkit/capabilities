@@ -67,7 +67,7 @@ func (m *MessageBuilder) BuildLogTriggerSuccess(r ReadRequest, triggerID string,
 	return &LogTriggerSuccess{
 		TriggerID:         triggerID,
 		Req:               req,
-		LogCount:          int32(logCount),
+		LogCount:          int32(logCount), // nolint:gosec // G115: integer overflow conversion int -> int32 (gosec)
 		LatestOffsetBlock: latestOffsetBlock,
 		ExecutionContext:  m.BuildExecutionContext(r)}
 }

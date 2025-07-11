@@ -4,8 +4,8 @@ import "github.com/smartcontractkit/chainlink-common/pkg/values/installer/pkg"
 
 func main() {
 	gen := &pkg.ProtocGen{}
-	gen.AddSourceDirectories(".")          //current monitoring directory
-	gen.AddSourceDirectories("../../../.") //go up to find libs/monitoring/execution_context proto
+	gen.AddSourceDirectories(".")          // current monitoring directory
+	gen.AddSourceDirectories("../../../.") // go up to find libs/monitoring/execution_context proto
 
 	// needed by the proto generator
 	gen.LinkPackage(pkg.Packages{Go: "github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb", Proto: "tools/generator/v1alpha/cre_metadata.proto"})
