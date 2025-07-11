@@ -86,8 +86,6 @@ func (cs *LoadTestWriteTargetGRPCService) Initialise(
 	_ core.PipelineRunnerService,
 	relayerSet core.RelayerSet,
 	oracleFactory core.OracleFactory,
-	_ core.GatewayConnector,
-	_ core.Keystore,
 ) error {
 	return nil
 }
