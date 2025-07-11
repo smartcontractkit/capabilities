@@ -3,10 +3,11 @@ package trigger
 import (
 	"context"
 	"fmt"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
-	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"math/big"
 	"time"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
+	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 

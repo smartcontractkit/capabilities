@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
+	"testing"
+	"time"
+
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 	_ "github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 	_ "github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"google.golang.org/protobuf/proto"
-	"math/big"
-	"testing"
-	"time"
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
