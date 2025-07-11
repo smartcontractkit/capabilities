@@ -32,7 +32,8 @@ const (
 )
 
 // CalculateOutcomeForObservations determines the outcome for a set of observations based on a consensus descriptor.
-// It now supports median aggregation for Int64, Float64, Decimal, BigInt, and Time types.
+// It now supports median aggregation for Int64, Float64, Decimal, BigInt, and Time types. It assumes that the observationProtos
+// are already validated to ensure they all correctly unmarshal to a values.Value
 func CalculateOutcomeForObservations(
 	observationProtos []*valuespb.Value,
 	consensusDescriptor *pb.ConsensusDescriptor,
