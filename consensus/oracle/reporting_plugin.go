@@ -79,28 +79,29 @@ func (r *reportingPlugin) Query(ctx context.Context, outctx ocr3types.OutcomeCon
 		}
 
 		reqs = append(reqs, &oracletypes.Request{
-			Metadata:                   requestMetaDataFromConsensusRequest(rq),
+			Metadata:                   ToRequestMetaData(rq.Metadata),
 			RequestConsensusDescriptor: serialisedConsensusDescriptor,
 		})
 	}
 
-	r.lggr.Debugw("Query complete", "number of requests", len(reqs))
+	r.lggr.Debugw("consensus plugin query complete", "number of requests", len(reqs))
 	return proto.MarshalOptions{Deterministic: true}.Marshal(&oracletypes.Query{
 		Requests: reqs,
 	})
 }
 
-func requestMetaDataFromConsensusRequest(rq *ConsensusRequest) *oracletypes.RequestMetaData {
+func ToRequestMetaData(metadata ConsensusRequestMetadata) *oracletypes.RequestMetaData {
 	return &oracletypes.RequestMetaData{
-		RequestId:                rq.ID(),
-		WorkflowExecutionId:      rq.Metadata.WorkflowExecutionID,
-		WorkflowStepReference:    rq.Metadata.ReferenceID,
-		WorkflowId:               rq.Metadata.WorkflowID,
-		WorkflowOwner:            rq.Metadata.WorkflowOwner,
-		WorkflowName:             rq.Metadata.WorkflowName,
-		WorkflowDonId:            rq.Metadata.WorkflowDonID,
-		WorkflowDonConfigVersion: rq.Metadata.WorkflowDonConfigVersion,
-		KeyBundleId:              rq.Metadata.KeyBundleID,
+		RequestId:                metadata.RequestID(),
+		WorkflowExecutionId:      metadata.WorkflowExecutionID,
+		WorkflowStepReference:    metadata.ReferenceID,
+		WorkflowId:               metadata.WorkflowID,
+		WorkflowOwner:            metadata.WorkflowOwner,
+		WorkflowName:             metadata.WorkflowName,
+		WorkflowDonId:            metadata.WorkflowDonID,
+		WorkflowDonConfigVersion: metadata.WorkflowDonConfigVersion,
+		ReportId:                 metadata.ReportID,
+		KeyBundleId:              metadata.KeyBundleID,
 	}
 }
 
@@ -143,7 +144,7 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 			continue // Skip this request as the consensus descriptor does not match
 		}
 
-		serialisedRequestMetaData, err := proto.MarshalOptions{Deterministic: true}.Marshal(requestMetaDataFromConsensusRequest(req))
+		serialisedRequestMetaData, err := proto.MarshalOptions{Deterministic: true}.Marshal(ToRequestMetaData(req.Metadata))
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal request metadata for request %s: %w", req.ID(), err)
 		}
@@ -190,7 +191,7 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 
 	observation := &oracletypes.Observation{Observations: requestObservations}
 
-	r.lggr.Debugw("Observation complete", "numObservations", len(requestObservations), "numOfRequestsInQuery", len(requestsQuery.Requests))
+	r.lggr.Debugw("consensus plugin observation complete", "numObservations", len(requestObservations), "numOfRequestsInQuery", len(requestsQuery.Requests))
 	return proto.MarshalOptions{Deterministic: true}.Marshal(observation)
 }
 
@@ -296,7 +297,7 @@ func (r *reportingPlugin) Reports(ctx context.Context, seqNr uint64, outcome ocr
 				WorkflowId:               reqMetadata.WorkflowId,
 				WorkflowOwner:            reqMetadata.WorkflowOwner,
 				WorkflowName:             reqMetadata.WorkflowName,
-				ReportId:                 "", // TODO confirm for value reports we would not use this, but for onchain reports we would
+				ReportId:                 reqMetadata.ReportId,
 				WorkflowDonId:            reqMetadata.WorkflowDonId,
 				WorkflowDonConfigVersion: reqMetadata.WorkflowDonConfigVersion,
 				KeyId:                    reqMetadata.KeyBundleId,
@@ -322,7 +323,7 @@ func (r *reportingPlugin) Reports(ctx context.Context, seqNr uint64, outcome ocr
 		})
 	}
 
-	r.lggr.Debug("Reports complete, number of reports", len(reports))
+	r.lggr.Debug("consensus plugin reports complete, number of reports", len(reports))
 	return reports, nil
 }
 

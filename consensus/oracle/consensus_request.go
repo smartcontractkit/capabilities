@@ -15,6 +15,7 @@ import (
 type ConsensusRequestMetadata struct {
 	capabilities.RequestMetadata
 	KeyBundleID string
+	ReportID    string
 }
 
 func (m ConsensusRequestMetadata) RequestID() string {

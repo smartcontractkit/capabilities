@@ -41,6 +41,58 @@ const batchSize = 10
 
 // TODO tests for determinism, shuffling inputs, non-happy path etc.
 
+func Test_MismatchedLeaderConsensusDescriptor(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := t.Context()
+
+	metaData := newRequestMetaData()
+
+	newCrIdenticalConsensus := func(observation int64, metaData oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
+		simpleConsensusInputs := &pb.SimpleConsensusInputs{
+			Observation: &pb.SimpleConsensusInputs_Value{Value: values.Proto(values.NewInt64(observation))},
+			Descriptors: &pb.ConsensusDescriptor{Descriptor_: &pb.ConsensusDescriptor_Aggregation{Aggregation: pb.AggregationType_AGGREGATION_TYPE_IDENTICAL}},
+		}
+
+		return oracle.NewConsensusRequest(simpleConsensusInputs, time.Now().Add(1*time.Hour).UTC(), nil, metaData)
+	}
+
+	protocolRoundTests := map[string]protocolRoundTest{
+		metaData.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newCrIdenticalConsensus(110, metaData), newCr(120, metaData), newCr(130, metaData),
+			newCr(140, metaData), newCr(150, metaData), newCr(160, metaData),
+			newCr(170, metaData)},
+			expectedResult: nil},
+	}
+
+	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, protocolRoundTests)
+}
+
+func Test_MismatchedNonLeaderConsensusDescriptor(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := t.Context()
+
+	metaData := newRequestMetaData()
+
+	newCrIdenticalConsensus := func(observation int64, metaData oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
+		simpleConsensusInputs := &pb.SimpleConsensusInputs{
+			Observation: &pb.SimpleConsensusInputs_Value{Value: values.Proto(values.NewInt64(observation))},
+			Descriptors: &pb.ConsensusDescriptor{Descriptor_: &pb.ConsensusDescriptor_Aggregation{Aggregation: pb.AggregationType_AGGREGATION_TYPE_IDENTICAL}},
+		}
+
+		return oracle.NewConsensusRequest(simpleConsensusInputs, time.Now().Add(1*time.Hour).UTC(), nil, metaData)
+	}
+
+	protocolRoundTests := map[string]protocolRoundTest{
+		metaData.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newCr(110, metaData), newCr(120, metaData), newCr(130, metaData),
+			newCr(140, metaData), newCrIdenticalConsensus(150, metaData), newCr(160, metaData),
+			newCr(170, metaData)},
+			expectedResult: values.NewInt64(140)},
+	}
+
+	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, protocolRoundTests)
+}
+
 func Test_MismatchedLeaderMetaData(t *testing.T) {
 	lggr := logger.Test(t)
 	ctx := t.Context()
