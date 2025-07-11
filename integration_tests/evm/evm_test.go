@@ -65,7 +65,7 @@ func Test_LogTrigger(t *testing.T) {
 	messageEmitter, donContext := setupDon(ctx, t, lggr, wasmFile, abiString, eventName, topic0, numOfWorkflowNodes, workflowName)
 
 	// waiting time to ensure the logTrigger inside the workflow is ready to process messages
-	time.Sleep(40 * time.Second)
+	time.Sleep(60 * time.Second)
 
 	// emitting single event we will be waiting from the workflow's LogTrigger
 	messageDataThatWillBeEmitted := "Data for log trigger"
