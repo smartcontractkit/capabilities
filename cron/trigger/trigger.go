@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"time"
 
 	"github.com/go-co-op/gocron/v2"
@@ -183,6 +184,12 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 	task := gocron.NewTask(
 		// Task callback, executed at next run time
 		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					s.lggr.Errorw("panic in gocron.NewTask function", "err", r, "stack", string(debug.Stack()))
+					panic(r)
+				}
+			}()
 			trigger, ok := s.triggers.Read(triggerID)
 			if !ok {
 				// Invariant: The trigger should always exist, as unregistering the trigger removes the job
