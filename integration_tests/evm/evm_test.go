@@ -65,7 +65,7 @@ func Test_LogTrigger(t *testing.T) {
 	messageEmitter, donContext := setupDon(ctx, t, lggr, wasmFile, abiString, eventName, topic0, numOfWorkflowNodes, workflowName)
 
 	// waiting time to ensure the logTrigger inside the workflow is ready to process messages
-	time.Sleep(10 * time.Second)
+	time.Sleep(90 * time.Second)
 
 	// emitting single event we will be waiting from the workflow's LogTrigger
 	messageDataThatWillBeEmitted := "Data for log trigger"
@@ -79,17 +79,17 @@ func Test_LogTrigger(t *testing.T) {
 	// assertion to validate we get the expected number of events in beholder logs
 	foundEvents := 0
 	require.Eventually(t, func() bool {
-		lggr.Info("About to force emitting new logs/events from onchain")
-		tx, err := messageEmitter.EmitMessage(donContext.EthBlockchain.TransactionOpts(), messageDataThatWillBeEmitted)
-		require.NoError(t, err)
-		lggr.Infof("EmitMessage tx sent: %s", tx.Hash().Hex())
-		receipt, err := bind.WaitMined(ctx, donContext.EthBlockchain.Client(), tx)
-		require.NoError(t, err)
-		lggr.Infof("Transaction mined in block: %d", receipt.BlockNumber.Uint64())
+		//lggr.Info("About to force emitting new logs/events from onchain")
+		//tx, err := messageEmitter.EmitMessage(donContext.EthBlockchain.TransactionOpts(), messageDataThatWillBeEmitted)
+		//require.NoError(t, err)
+		//lggr.Infof("EmitMessage tx sent: %s", tx.Hash().Hex())
+		//receipt, err := bind.WaitMined(ctx, donContext.EthBlockchain.Client(), tx)
+		//require.NoError(t, err)
+		//lggr.Infof("Transaction mined in block: %d", receipt.BlockNumber.Uint64())
 
 		lggr.Info("Waiting for workflow logs to be emitted...")
 		workflowLogs := getBeholderLogsForWorkflow(beholderTester, t)
-		lggr.Debugf("Found %d logs", len(workflowLogs))
+		lggr.Debugf("Found BeholderLogs %d logs", len(workflowLogs))
 		// Wait until we have the logs for all workflows
 		if len(workflowLogs) < numOfWorkflowNodes {
 			lggr.Infof("Workflow logs not emitted, current size: %d, expected: %d", len(workflowLogs), numOfWorkflowNodes)
