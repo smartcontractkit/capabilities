@@ -19,11 +19,11 @@ require (
 	github.com/pelletier/go-toml v1.9.5
 	github.com/smartcontractkit/capabilities/http_action v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/capabilities/loadtestwritetarget v0.0.0-00010101000000-000000000000
-	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250707183758-0325e478c7f0
+	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250707133321-27faefc9ce45
 	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250707133321-27faefc9ce45
 	github.com/smartcontractkit/chainlink-evm v0.0.0-20250707113334-93191f4c5ff4
 	github.com/smartcontractkit/chainlink-protos/workflows/go v0.0.0-20250619160901-79b609b1021c
-	github.com/smartcontractkit/chainlink/v2 v2.23.2-por-beta.1.0.20250707210011-88ad7e49a096
+	github.com/smartcontractkit/chainlink/v2 v2.23.2-por-beta.1.0.20250707182035-ca7ff0f92532
 	github.com/stretchr/testify v1.10.0
 	google.golang.org/protobuf v1.36.6
 )
@@ -366,14 +366,14 @@ require (
 	golang.org/x/crypto v0.38.0 // indirect
 	golang.org/x/exp v0.0.0-20250408133849-7e4ce0ab07d0 // indirect
 	golang.org/x/mod v0.24.0 // indirect
-	golang.org/x/net v0.40.0 // indirect
+	golang.org/x/net v0.39.0 // indirect
 	golang.org/x/oauth2 v0.27.0 // indirect
 	golang.org/x/sync v0.15.0 // indirect
 	golang.org/x/sys v0.33.0 // indirect
 	golang.org/x/term v0.32.0 // indirect
 	golang.org/x/text v0.25.0 // indirect
 	golang.org/x/time v0.12.0 // indirect
-	golang.org/x/tools v0.33.0 // indirect
+	golang.org/x/tools v0.32.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	gonum.org/v1/gonum v0.15.1 // indirect
 	google.golang.org/genproto v0.0.0-20250122153221-138b5a5a4fd4 // indirect

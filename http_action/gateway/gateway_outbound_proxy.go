@@ -103,6 +103,11 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 		Body:       input.Body,
 		// Casting is safe because input to this function is already validated
 		TimeoutMs: uint32(input.TimeoutMs), //nolint:gosec // G115
+		CacheSettings: gc.CacheSettings{
+			ReadFromCache: input.CacheSettings.ReadFromCache,
+			StoreInCache:  input.CacheSettings.StoreInCache,
+			TTLMs:         input.CacheSettings.TtlMs,
+		},
 	}
 
 	payload, err := json.Marshal(gatewayReq)

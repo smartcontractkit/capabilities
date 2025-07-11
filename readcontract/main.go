@@ -104,6 +104,7 @@ func (cs *ReadContractGRPCService) Initialise(
 	relayerSet core.RelayerSet,
 	oracleFactory core.OracleFactory,
 	_ core.GatewayConnector,
+	_ core.Keystore,
 ) error {
 	cs.lggr.Infof("Initialising %s", serviceName)
 

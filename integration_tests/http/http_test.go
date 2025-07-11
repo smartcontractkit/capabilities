@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+	"github.com/google/uuid"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 
@@ -30,7 +31,9 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/smartcontractkit/capabilities/http_action/pb"
+
+	httpclient "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http/server"
 )
 
 const EthSignedMessagePrefix = "\x19Ethereum Signed Message:\n"
@@ -77,7 +80,7 @@ const gatewayConfigTemplate = `
   "Dons": [
     {
       "DonId": "test_don",
-      "HandlerName": "web-api-capabilities",
+      "HandlerName": "http-capabilities",
       "HandlerConfig": {
         "MaxAllowedMessageAgeSec": 1000,
         "NodeRateLimiter": {
@@ -85,7 +88,13 @@ const gatewayConfigTemplate = `
           "GlobalRPS": 50,
           "PerSenderBurst": 10,
           "PerSenderRPS": 10
-        }
+        },
+		"UserRateLimiter": {
+		  "GlobalBurst": 10,
+          "GlobalRPS": 50,
+          "PerSenderBurst": 10,
+          "PerSenderRPS": 10	
+		}
       },
       "Members": [
         {
@@ -100,7 +109,19 @@ const gatewayConfigTemplate = `
 
 const serviceConfigTemplate = `
 {
-	"proxyMode": "gateway"
+	"proxyMode": "gateway",
+	"incomingRateLimiter": {
+		"globalBurst": 10,
+		"globalRPS": 50,
+		"perSenderBurst": 10,
+		"perSenderRPS": 10
+	},
+	"outgoingRateLimiter": {
+		"globalBurst": 10,
+		"globalRPS": 50,
+		"perSenderBurst": 10,
+		"perSenderRPS": 10
+	}
 }
 `
 
@@ -160,9 +181,9 @@ func newTestGatewayConnector(t *testing.T, publicKey, nodeURL string, signer con
 }
 
 // Helper to create and initialize the HTTP capability
-func newTestHTTPCapability(ctx context.Context, t *testing.T, gc core.GatewayConnector, lggr logger.Logger) pb.ClientCapability {
+func newTestHTTPCapability(ctx context.Context, t *testing.T, gc core.GatewayConnector, lggr logger.Logger) server.ClientCapability {
 	httpCapability := httpcap.NewService(lggr)
-	err := httpCapability.Initialise(ctx, serviceConfigTemplate, nil, nil, nil, nil, nil, nil, gc)
+	err := httpCapability.Initialise(ctx, serviceConfigTemplate, nil, nil, nil, nil, nil, nil, gc, nil)
 	require.NoError(t, err)
 	return httpCapability
 }
@@ -207,6 +228,26 @@ func TestHTTPActionCapability(t *testing.T) {
 			t.Errorf("failed to write response: %v", err)
 		}
 	})
+	// random endpoint to test response caching
+	mux.HandleFunc("/random", func(w http.ResponseWriter, r *http.Request) {
+		randomID := uuid.New().String()
+		w.Header().Set("X-Custom-Header", randomID)
+		if _, err := io.WriteString(w, randomID); err != nil {
+			t.Errorf("failed to write response: %v", err)
+		}
+	})
+	// endpoint that returns a 404 error
+	notFoundCounter := 0
+	mux.HandleFunc("/not-found", func(w http.ResponseWriter, r *http.Request) {
+		notFoundCounter++
+		http.Error(w, "Not Found", http.StatusNotFound)
+	})
+	// endpoint that returns a 500 error with counter
+	errorCounter := 0
+	mux.HandleFunc("/error", func(w http.ResponseWriter, r *http.Request) {
+		errorCounter++
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	})
 	listener, cleanup := startTestHTTPServer(t, mux)
 	t.Cleanup(cleanup)
 	addr := listener.Addr().(*net.TCPAddr)
@@ -228,17 +269,117 @@ func TestHTTPActionCapability(t *testing.T) {
 		WorkflowID:          "workflow_id",
 		WorkflowExecutionID: "workflow_execution_id",
 	}
-
-	output, err := httpCapability.SendRequest(ctx, requestData, &pb.Request{
-		Url:     fmt.Sprintf("http://%s/test", listener.Addr().String()),
-		Method:  "GET",
-		Headers: map[string]string{"X-Test": "1"},
-		Body:    []byte("ping"),
+	t.Run("GET /test returns pong with custom header", func(t *testing.T) {
+		output, err := httpCapability.SendRequest(ctx, requestData, &httpclient.Request{
+			Url:     fmt.Sprintf("http://%s/test", listener.Addr().String()),
+			Method:  "GET",
+			Headers: map[string]string{"X-Test": "1"},
+			Body:    []byte("ping"),
+		})
+		require.NoError(t, err)
+		require.NotNil(t, output)
+		require.Equal(t, uint32(http.StatusOK), output.StatusCode)
+		require.Equal(t, "pong", string(output.Body))
+		require.Equal(t, "my-value", output.Headers["X-Custom-Header"])
 	})
-	require.NoError(t, err)
-	require.NotNil(t, output)
-	require.Equal(t, uint32(http.StatusOK), output.StatusCode)
-	require.Equal(t, "pong", string(output.Body))
-	require.Empty(t, output.ErrorMessage)
-	require.Equal(t, "my-value", output.Headers["X-Custom-Header"])
+
+	t.Run("GET /random with caching enabled", func(t *testing.T) {
+		initialOutput, err := httpCapability.SendRequest(ctx, requestData, &httpclient.Request{
+			Url:    fmt.Sprintf("http://%s/random", listener.Addr().String()),
+			Method: "GET",
+			CacheSettings: &httpclient.CacheSettings{
+				StoreInCache: true,
+				TtlMs:        10000, // 10 seconds
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, initialOutput)
+		require.Equal(t, uint32(http.StatusOK), initialOutput.StatusCode)
+		require.NotEmpty(t, initialOutput.Body)
+		require.NotEmpty(t, initialOutput.Headers["X-Custom-Header"])
+
+		cachedOutput, err := httpCapability.SendRequest(ctx, requestData, &httpclient.Request{
+			Url:    fmt.Sprintf("http://%s/random", listener.Addr().String()),
+			Method: "GET",
+			CacheSettings: &httpclient.CacheSettings{
+				ReadFromCache: true,
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, cachedOutput)
+		require.Equal(t, uint32(http.StatusOK), cachedOutput.StatusCode)
+		require.NotEmpty(t, cachedOutput.Body)
+		require.NotEmpty(t, cachedOutput.Headers["X-Custom-Header"])
+
+		freshOutput, err := httpCapability.SendRequest(ctx, requestData, &httpclient.Request{
+			Url:    fmt.Sprintf("http://%s/random", listener.Addr().String()),
+			Method: "GET",
+		})
+		require.NoError(t, err)
+		require.NotNil(t, freshOutput)
+		require.Equal(t, uint32(http.StatusOK), freshOutput.StatusCode)
+		require.NotEmpty(t, freshOutput.Body)
+		require.NotEmpty(t, freshOutput.Headers["X-Custom-Header"])
+
+		require.Equal(t, initialOutput.Body, cachedOutput.Body)
+		require.Equal(t, initialOutput.Headers["X-Custom-Header"], cachedOutput.Headers["X-Custom-Header"])
+		require.NotEqual(t, initialOutput.Body, freshOutput.Body)
+		require.NotEqual(t, initialOutput.Headers["X-Custom-Header"], freshOutput.Headers["X-Custom-Header"])
+	})
+
+	t.Run("GET /not-found returns 404", func(t *testing.T) {
+		output, err := httpCapability.SendRequest(ctx, requestData, &httpclient.Request{
+			Url:    fmt.Sprintf("http://%s/not-found", listener.Addr().String()),
+			Method: "GET",
+			CacheSettings: &httpclient.CacheSettings{
+				StoreInCache: true,
+				TtlMs:        10000, // 10 seconds
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, output)
+		require.Equal(t, uint32(http.StatusNotFound), output.StatusCode)
+		require.Equal(t, string(output.Body), "Not Found\n")
+
+		cachedOutput, err := httpCapability.SendRequest(ctx, requestData, &httpclient.Request{
+			Url:    fmt.Sprintf("http://%s/not-found", listener.Addr().String()),
+			Method: "GET",
+			CacheSettings: &httpclient.CacheSettings{
+				ReadFromCache: true,
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, cachedOutput)
+		require.Equal(t, uint32(http.StatusNotFound), cachedOutput.StatusCode)
+		require.Equal(t, string(cachedOutput.Body), "Not Found\n")
+		require.Equal(t, notFoundCounter, 1, "not-found endpoint should have been called once")
+	})
+
+	t.Run("GET /error returns 500", func(t *testing.T) {
+		output, err := httpCapability.SendRequest(ctx, requestData, &httpclient.Request{
+			Url:    fmt.Sprintf("http://%s/error", listener.Addr().String()),
+			Method: "GET",
+			CacheSettings: &httpclient.CacheSettings{
+				StoreInCache: true,
+				TtlMs:        10000, // 10 seconds
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, output)
+		require.Equal(t, uint32(http.StatusInternalServerError), output.StatusCode)
+		require.Equal(t, string(output.Body), "Internal Server Error\n")
+
+		cachedOutput, err := httpCapability.SendRequest(ctx, requestData, &httpclient.Request{
+			Url:    fmt.Sprintf("http://%s/error", listener.Addr().String()),
+			Method: "GET",
+			CacheSettings: &httpclient.CacheSettings{
+				ReadFromCache: true,
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, cachedOutput)
+		require.Equal(t, uint32(http.StatusInternalServerError), cachedOutput.StatusCode)
+		require.Equal(t, string(cachedOutput.Body), "Internal Server Error\n")
+		require.Equal(t, errorCounter, 2, "error endpoint should have been called twice. No caching on 500")
+	})
 }

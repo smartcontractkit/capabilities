@@ -126,7 +126,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
 
-	c.triggerService = trigger.NewLogTriggerService(evmRelayer, trigger.NewLogTriggerStore(), c.lggr, cfg.LogTriggerPollInterval)
+	c.triggerService = trigger.NewLogTriggerService(evmRelayer, trigger.NewLogTriggerStore(), c.lggr, processor, messageBuilder, cfg.LogTriggerPollInterval)
 
 	// TODO PLEX-1560: populate with implementation
 	blocksProvider := &oracle.NullBlocksProvider{}
