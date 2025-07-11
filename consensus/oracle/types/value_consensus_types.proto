@@ -16,7 +16,9 @@ message RequestMetaData {
   uint32 workflow_don_id = 7;
   uint32 workflow_don_config_version = 8;
 
-  string keyBundleId = 9;
+  string report_id = 9;
+
+  string keyBundleId = 10;
 }
 
 message Request {
