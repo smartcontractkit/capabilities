@@ -38,12 +38,12 @@ func Test_WriteReport(t *testing.T) {
 
 	testApp := evm.NewTestAppWithSimulatedBackend(t, evm.TestAppConfig{
 		CustomizeConfigFunc: func(config *chainlink.GeneralConfig, backend evm.SimulatedBackend, transactOptsAccoutns evm.TransactOptsAccounts) {
-			keystoneForwaderContractAddress = deployAndConfigureKeystoneForwader(t, keystoneForwaderContractAddress, kfc, transactOptsAccoutns, backend)
+			keystoneForwaderContractAddress = deployAndConfigureKeystoneForwader(t, kfc, transactOptsAccoutns, backend)
 			applyEVMRelayerConfig(config, transactOptsAccoutns)
 		},
 	})
 	app := testApp.App
-	app.Start(t.Context())
+	require.NoError(t, app.Start(t.Context()))
 	defer testApp.App.Stop()
 
 	simulatedBackend := testApp.SimulatedBackend
@@ -77,7 +77,7 @@ func getTotalNumberOfTXs(ctx context.Context, t *testing.T, simulatedBackend evm
 		if err != nil {
 			continue
 		}
-		totalTxs += int(len(block.Transactions()))
+		totalTxs += len(block.Transactions())
 	}
 	return totalTxs
 }
@@ -98,9 +98,9 @@ func applyEVMRelayerConfig(config *chainlink.GeneralConfig, transactOptsAccoutns
 	c.EVMConfigs()[0].GasEstimator.PriceMax = assets.NewWei(big.NewInt(50000000))
 }
 
-func deployAndConfigureKeystoneForwader(t *testing.T, keystoneForwaderContractAddress common.Address, kfc *gethwrappers.KeystoneForwarderTest, transactOptsAccoutns evm.TransactOptsAccounts, backend evm.SimulatedBackend) common.Address {
-	var err error = nil
-	keystoneForwaderContractAddress, _, kfc, err = gethwrappers.DeployKeystoneForwarderTest(transactOptsAccoutns.TransactOpts[0], backend.Backend.Client())
+func deployAndConfigureKeystoneForwader(t *testing.T, kfc *gethwrappers.KeystoneForwarderTest, transactOptsAccoutns evm.TransactOptsAccounts, backend evm.SimulatedBackend) common.Address {
+	var err error
+	keystoneForwaderContractAddress, _, kfc, err := gethwrappers.DeployKeystoneForwarderTest(transactOptsAccoutns.TransactOpts[0], backend.Backend.Client())
 	require.NoError(t, err)
 	backend.Backend.Commit()
 
@@ -162,7 +162,7 @@ func createEVMService(t *testing.T, evmRelayer loop.Relayer, simulatedBackend ev
 func RandomHex(n int) string {
 	byteLen := (n + 1) / 2 // round up if n is odd
 	bytes := make([]byte, byteLen)
-	rand.Read(bytes)
+	_, _ = rand.Read(bytes)
 	hexStr := hex.EncodeToString(bytes)
 	return hexStr[:n]
 }

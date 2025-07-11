@@ -11,8 +11,9 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/oracle"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/poller"
 
-	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 	"strings"
+
+	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
 	"github.com/ethereum/go-ethereum/common"
 
