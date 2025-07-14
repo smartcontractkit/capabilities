@@ -231,7 +231,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			InvalidReceiver: false,
 			State:           TransmissionStateSucceeded,
 		}
-		mockForwarderClient.On("GetTransmissionInfo", ctx, mock.Anything).Return(transmissionInfo, nil)
+		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(transmissionInfo, nil)
 
 		txHash := evmtypes.Hash(test.RandomBytes(32))
 
@@ -247,7 +247,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			GasUsed:           1000,
 			EffectiveGasPrice: big.NewInt(2),
 		}
-		evmServiceMock.EXPECT().GetTransactionReceipt(ctx, txHash).Return(&receipt, nil)
+		evmServiceMock.EXPECT().GetTransactionReceipt(mock.Anything, txHash).Return(&receipt, nil)
 
 		evmServiceMock.EXPECT().CalculateTransactionFee(ctx, toReceiptGasInfo(receipt)).Return(&evmtypes.TransactionFee{
 			TransactionFee: big.NewInt(2000),
@@ -303,7 +303,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			InvalidReceiver: false,
 			State:           invalidState,
 		}
-		mockForwarderClient.On("GetTransmissionInfo", ctx, mock.Anything).Return(transmissionInfo, nil)
+		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(transmissionInfo, nil)
 
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
@@ -462,7 +462,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			GasLimit:        big.NewInt(NotEnoughReceiverGas),
 		}
 
-		mockForwarderClient.On("GetTransmissionInfo", ctx, transmissionID).Return(transmissionInfo, nil).Once()
+		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, transmissionID).Return(transmissionInfo, nil).Once()
 
 		retryTxHash := evmtypes.Hash(test.RandomBytes(32))
 
@@ -477,7 +477,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			State:           TransmissionStateSucceeded,
 			GasLimit:        big.NewInt(EnoughReceiverGas),
 		}
-		mockForwarderClient.On("GetTransmissionInfo", ctx, transmissionID).Return(retryTransmissionInfo, nil)
+		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, transmissionID).Return(retryTransmissionInfo, nil)
 
 		retryReceipt := evmtypes.Receipt{
 			Status:            uint64(TransmissionStateSucceeded),
@@ -572,7 +572,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		}
 		capabilitiesMetadata := createTestRequestMetadata(reportMetadata)
 		// transmissionID, _ := getTransmissionID(capabilitiesMetadata.WorkflowExecutionID, writeReportRequest)
-		mockForwarderClient.On("GetTransmissionInfo", ctx, mock.Anything).Return(contracts.TransmissionInfo{
+		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(contracts.TransmissionInfo{
 			Success:         false,
 			InvalidReceiver: false,
 			State:           TransmissionStateNotAttempted,
@@ -591,7 +591,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			State:           TransmissionStateSucceeded,
 			GasLimit:        big.NewInt(EnoughReceiverGas),
 		}
-		mockForwarderClient.On("GetTransmissionInfo", ctx, mock.Anything).Return(transmissionInfo, nil).Once()
+		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(transmissionInfo, nil).Once()
 
 		receipt := evmtypes.Receipt{
 			Status:            uint64(TransmissionStateSucceeded),
@@ -667,7 +667,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			Report:   signedReport,
 		}
 		capabilitiesMetadata := createTestRequestMetadata(reportMetadata)
-		mockForwarderClient.On("GetTransmissionInfo", ctx, mock.Anything).Return(contracts.TransmissionInfo{
+		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(contracts.TransmissionInfo{
 			Success:         false,
 			InvalidReceiver: false,
 			State:           TransmissionStateNotAttempted,
@@ -683,7 +683,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			State:           TransmissionStateSucceeded,
 			GasLimit:        big.NewInt(EnoughReceiverGas),
 		}
-		mockForwarderClient.On("GetTransmissionInfo", ctx, mock.Anything).Return(transmissionInfo, nil).Once()
+		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(transmissionInfo, nil).Once()
 		receipt := evmtypes.Receipt{
 			Status:            uint64(TransmissionStateSucceeded),
 			TxHash:            txHash,
@@ -726,7 +726,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			Report:   signedReport,
 		}
 		capabilitiesMetadata := createTestRequestMetadata(reportMetadata)
-		mockForwarderClient.On("GetTransmissionInfo", ctx, mock.Anything).Return(contracts.TransmissionInfo{
+		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(contracts.TransmissionInfo{
 			Success:         false,
 			InvalidReceiver: false,
 			State:           TransmissionStateNotAttempted,
@@ -745,7 +745,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			State:           TransmissionStateInvalidReceiver,
 			GasLimit:        big.NewInt(EnoughReceiverGas),
 		}
-		mockForwarderClient.On("GetTransmissionInfo", ctx, mock.Anything).Return(transmissionInfo, nil).Once()
+		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(transmissionInfo, nil).Once()
 
 		receipt := evmtypes.Receipt{
 			Status:            uint64(TransmissionStateSucceeded),

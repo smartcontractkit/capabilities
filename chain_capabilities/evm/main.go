@@ -11,8 +11,6 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/oracle"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/poller"
 
-	"strings"
-
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -157,13 +155,6 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 
 	c.lggr.Infof("Successfully initialised %s", CapabilityName)
 	return nil
-}
-
-func removeAddressPrefix(s string) string {
-	if strings.HasPrefix(s, "0x") || strings.HasPrefix(s, "0X") {
-		return s[2:]
-	}
-	return s
 }
 
 func (c *capabilityGRPCService) Start(_ context.Context) error {

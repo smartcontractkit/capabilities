@@ -10,10 +10,12 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/jpillora/backoff"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
+	"github.com/smartcontractkit/chainlink-common/pkg/utils/retry"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
@@ -114,7 +116,18 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 		}, nil
 	}
 
-	transmissionInfo, err = withRetry(ctx, 20*time.Second, 200*time.Millisecond, func() (contracts.TransmissionInfo, error) {
+	strategy := retry.Strategy[contracts.TransmissionInfo]{
+		Backoff: &backoff.Backoff{
+			Factor: 2,
+			Max:    2 * time.Second,
+			Min:    100 * time.Millisecond,
+		},
+		MaxRetries: 5,
+	}
+	retryContext, cancelFunc := context.WithTimeout(ctx, 50*time.Second)
+	defer cancelFunc()
+
+	transmissionInfo, err = strategy.Do(retryContext, e.lggr, func(ctx context.Context) (contracts.TransmissionInfo, error) {
 		readTransmissionInfo, readTransmissionErr := e.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
 		if readTransmissionErr != nil {
 			return contracts.TransmissionInfo{}, readTransmissionErr
@@ -122,8 +135,12 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 		if readTransmissionInfo.State != TransmissionStateNotAttempted {
 			return readTransmissionInfo, nil
 		}
-		return contracts.TransmissionInfo{}, errors.New("transaction successfully executed but not yet seing the transmission info updated, retrying getting transmission info")
+		return contracts.TransmissionInfo{}, errors.New("transaction successfully executed but not yet seeing the transmission info updated, retrying getting transmission info")
 	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed getting transmission info after node submitted the report on chain, %w", err)
+	}
 
 	txHashRetriever.Reset()
 	txHash := transactionResult.TxHash
@@ -318,31 +335,4 @@ func (thr *TxHashRetriever) GetHash(ctx context.Context) (*evmtypes.Hash, error)
 	}
 	thr.txHash = &logs[0].TxHash
 	return thr.txHash, nil
-}
-
-// Retry retries fn until success or timeout. If ctx times out, it returns nil and an error.
-// Use this only if T is a type that can be nil (e.g., pointer, slice, map).
-func withRetry[T any](ctx context.Context, totalTimeout, retryInterval time.Duration, fn func() (T, error)) (T, error) {
-	ctx, cancel := context.WithTimeout(ctx, totalTimeout)
-	defer cancel()
-
-	var zero T
-	var lastErr error
-
-	for {
-		result, err := fn()
-		if err == nil {
-			return result, nil
-		}
-
-		lastErr = err
-
-		select {
-		case <-ctx.Done():
-			// If T can be nil, then zero is nil.
-			return zero, fmt.Errorf("retry failed: timeout exceeded, last error: %w", lastErr)
-		case <-time.After(retryInterval):
-			// retry
-		}
-	}
 }
