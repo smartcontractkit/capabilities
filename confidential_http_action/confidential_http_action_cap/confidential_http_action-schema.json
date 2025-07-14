@@ -45,6 +45,50 @@
                 "ExtraData"
             ]
         },
+        "Request": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "The URL to send the request to"
+                },
+                "method": {
+                    "type": "string",
+                    "description": "The HTTP method to use for the request"
+                },
+                "headers": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "The headers to include in the request"
+                },
+                "body": {
+                    "type": "string",
+                    "description": "The body of the request"
+                },
+                "customRootCaCertPEM": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 255
+                    },
+                    "description": "Custom root CA certificate in PEM format"
+                },
+                "publicTemplateValues": {
+                    "type": "object",
+                    "additionalProperties": true
+                }
+            },
+            "additionalProperties": false,
+            "required": [
+                "url",
+                "method",
+                "headers",
+                "body"
+            ]
+        },
         "Config": {
             "type": "object",
             "properties": {
@@ -74,33 +118,20 @@
                 "requests": {
                     "type": "array",
                     "items": {
-                        "url": {
-                            "type": "string",
-                            "description": "The URL to send the request to"
-                        },
-                        "method": {
-                            "type": "string",
-                            "description": "The HTTP method to use for the request"
-                        },
-                        "headers": {
-                            "type": "array",
-                            "items": {
-                                "type": "string"
-                            },
-                            "description": "The headers to include in the request"
-                        },
-                        "body": {
-                            "type": "string",
-                            "description": "The body of the request"
-                        }
+                        "$ref": "#/$defs/Request"
                     }
+                },
+                "ciphertextTemplateNames": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "Names of ciphertexts to be used in the request"
                 }
             },
             "required": [
-                "url",
-                "method",
-                "headers",
-                "body"
+                "requests",
+                "ciphertextTemplateNames"
             ],
             "additionalProperties": false
         },
