@@ -96,11 +96,16 @@ func (b *BlocksProvider) pollBlocks(ctx context.Context) {
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
 
-	// retain the max value
-	b.latestBlock = latestBlock.Number.Int64()
-	b.safeBlock = safeBlock.Number.Int64()
-	// for finalized, we should retain the max value
-	b.finalizedBlock = max(b.finalizedBlock, finalizedBlock.Number.Int64())
+	if latestBlock.Number != nil {
+		b.latestBlock = latestBlock.Number.Int64()
+	}
+	if safeBlock.Number != nil {
+		b.safeBlock = safeBlock.Number.Int64()
+	}
+	if finalizedBlock.Number != nil {
+		// for finalized, we should retain the max value
+		b.finalizedBlock = max(b.finalizedBlock, finalizedBlock.Number.Int64())
+	}
 
 	// sanitation
 	if b.finalizedBlock > b.safeBlock {
