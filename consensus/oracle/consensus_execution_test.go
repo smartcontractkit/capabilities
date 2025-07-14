@@ -75,20 +75,6 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 			expectedError:   nil,
 		},
 		{
-			name: "identical aggregation: not yet supported",
-			observations: []*valuespb.Value{
-				values.Proto(values.NewInt64(10)),
-			},
-			descriptor: &pb.ConsensusDescriptor{
-				Descriptor_: &pb.ConsensusDescriptor_Aggregation{
-					Aggregation: pb.AggregationType_AGGREGATION_TYPE_IDENTICAL,
-				},
-			},
-			minObs:          1,
-			expectedOutcome: nil,
-			expectedError:   errors.New("identical aggregation type not supported"),
-		},
-		{
 			name: "common prefix aggregation: not yet supported",
 			observations: []*valuespb.Value{
 				values.Proto(values.NewString("abc")),
@@ -173,7 +159,7 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 func Test_handleMedianAggregation(t *testing.T) {
 	type testCase struct {
 		name              string
-		observations      []values.Value
+		observations      []*valuespb.Value
 		finalSelectedType string
 		expectedOutcome   *valuespb.Value
 		expectedError     error
@@ -182,8 +168,8 @@ func Test_handleMedianAggregation(t *testing.T) {
 	testCases := []testCase{
 		{
 			name: "int64 median: basic five values",
-			observations: []values.Value{
-				values.NewInt64(30), values.NewInt64(40), values.NewInt64(10), values.NewInt64(20), values.NewInt64(50),
+			observations: []*valuespb.Value{
+				values.Proto(values.NewInt64(30)), values.Proto(values.NewInt64(40)), values.Proto(values.NewInt64(10)), values.Proto(values.NewInt64(20)), values.Proto(values.NewInt64(50)),
 			},
 			finalSelectedType: TypeInt64,
 			expectedOutcome:   values.Proto(values.NewInt64(30)),
@@ -191,8 +177,8 @@ func Test_handleMedianAggregation(t *testing.T) {
 		},
 		{
 			name: "int64 median: even number of values returns left value",
-			observations: []values.Value{
-				values.NewInt64(10), values.NewInt64(20), values.NewInt64(30), values.NewInt64(40),
+			observations: []*valuespb.Value{
+				values.Proto(values.NewInt64(10)), values.Proto(values.NewInt64(20)), values.Proto(values.NewInt64(30)), values.Proto(values.NewInt64(40)),
 			},
 			finalSelectedType: TypeInt64,
 			expectedOutcome:   values.Proto(values.NewInt64(20)),
@@ -200,8 +186,8 @@ func Test_handleMedianAggregation(t *testing.T) {
 		},
 		{
 			name: "float64 median: basic five values",
-			observations: []values.Value{
-				values.NewFloat64(30.5), values.NewFloat64(40.5), values.NewFloat64(10.5), values.NewFloat64(20.5), values.NewFloat64(50.5),
+			observations: []*valuespb.Value{
+				values.Proto(values.NewFloat64(30.5)), values.Proto(values.NewFloat64(40.5)), values.Proto(values.NewFloat64(10.5)), values.Proto(values.NewFloat64(20.5)), values.Proto(values.NewFloat64(50.5)),
 			},
 			finalSelectedType: TypeFloat64,
 			expectedOutcome:   values.Proto(values.NewFloat64(30.5)),
@@ -209,8 +195,8 @@ func Test_handleMedianAggregation(t *testing.T) {
 		},
 		{
 			name: "float64 median: even number of values returns left value",
-			observations: []values.Value{
-				values.NewFloat64(10.5), values.NewFloat64(20.5), values.NewFloat64(30.5), values.NewFloat64(40.5),
+			observations: []*valuespb.Value{
+				values.Proto(values.NewFloat64(10.5)), values.Proto(values.NewFloat64(20.5)), values.Proto(values.NewFloat64(30.5)), values.Proto(values.NewFloat64(40.5)),
 			},
 			finalSelectedType: TypeFloat64,
 			expectedOutcome:   values.Proto(values.NewFloat64(20.5)),
@@ -218,10 +204,10 @@ func Test_handleMedianAggregation(t *testing.T) {
 		},
 		{
 			name: "decimal median: basic five values",
-			observations: []values.Value{
-				values.NewDecimal(decimal.NewFromFloat(30.3)), values.NewDecimal(decimal.NewFromFloat(40.4)),
-				values.NewDecimal(decimal.NewFromFloat(10.1)), values.NewDecimal(decimal.NewFromFloat(20.2)),
-				values.NewDecimal(decimal.NewFromFloat(50.5)),
+			observations: []*valuespb.Value{
+				values.Proto(values.NewDecimal(decimal.NewFromFloat(30.3))), values.Proto(values.NewDecimal(decimal.NewFromFloat(40.4))),
+				values.Proto(values.NewDecimal(decimal.NewFromFloat(10.1))), values.Proto(values.NewDecimal(decimal.NewFromFloat(20.2))),
+				values.Proto(values.NewDecimal(decimal.NewFromFloat(50.5))),
 			},
 			finalSelectedType: TypeDecimal,
 			expectedOutcome:   values.Proto(values.NewDecimal(decimal.NewFromFloat(30.3))),
@@ -229,9 +215,9 @@ func Test_handleMedianAggregation(t *testing.T) {
 		},
 		{
 			name: "decimal median: even number of values returns left value",
-			observations: []values.Value{
-				values.NewDecimal(decimal.NewFromFloat(10.1)), values.NewDecimal(decimal.NewFromFloat(20.2)),
-				values.NewDecimal(decimal.NewFromFloat(30.3)), values.NewDecimal(decimal.NewFromFloat(40.4)),
+			observations: []*valuespb.Value{
+				values.Proto(values.NewDecimal(decimal.NewFromFloat(10.1))), values.Proto(values.NewDecimal(decimal.NewFromFloat(20.2))),
+				values.Proto(values.NewDecimal(decimal.NewFromFloat(30.3))), values.Proto(values.NewDecimal(decimal.NewFromFloat(40.4))),
 			},
 			finalSelectedType: TypeDecimal,
 			expectedOutcome:   values.Proto(values.NewDecimal(decimal.NewFromFloat(20.2))),
@@ -239,10 +225,10 @@ func Test_handleMedianAggregation(t *testing.T) {
 		},
 		{
 			name: "bigint median: basic five values",
-			observations: []values.Value{
-				values.NewBigInt(big.NewInt(300)), values.NewBigInt(big.NewInt(400)),
-				values.NewBigInt(big.NewInt(100)), values.NewBigInt(big.NewInt(200)),
-				values.NewBigInt(big.NewInt(500)),
+			observations: []*valuespb.Value{
+				values.Proto(values.NewBigInt(big.NewInt(300))), values.Proto(values.NewBigInt(big.NewInt(400))),
+				values.Proto(values.NewBigInt(big.NewInt(100))), values.Proto(values.NewBigInt(big.NewInt(200))),
+				values.Proto(values.NewBigInt(big.NewInt(500))),
 			},
 			finalSelectedType: TypeBigInt,
 			expectedOutcome:   values.Proto(values.NewBigInt(big.NewInt(300))),
@@ -250,9 +236,9 @@ func Test_handleMedianAggregation(t *testing.T) {
 		},
 		{
 			name: "bigint median: even number of values returns left value",
-			observations: []values.Value{
-				values.NewBigInt(big.NewInt(100)), values.NewBigInt(big.NewInt(200)),
-				values.NewBigInt(big.NewInt(300)), values.NewBigInt(big.NewInt(400)),
+			observations: []*valuespb.Value{
+				values.Proto(values.NewBigInt(big.NewInt(100))), values.Proto(values.NewBigInt(big.NewInt(200))),
+				values.Proto(values.NewBigInt(big.NewInt(300))), values.Proto(values.NewBigInt(big.NewInt(400))),
 			},
 			finalSelectedType: TypeBigInt,
 			expectedOutcome:   values.Proto(values.NewBigInt(big.NewInt(200))),
@@ -260,12 +246,12 @@ func Test_handleMedianAggregation(t *testing.T) {
 		},
 		{
 			name: "time median: basic five values",
-			observations: []values.Value{
-				values.NewTime(parseTime(t, "2023-01-01T00:00:30Z")),
-				values.NewTime(parseTime(t, "2023-01-01T00:00:40Z")),
-				values.NewTime(parseTime(t, "2023-01-01T00:00:10Z")),
-				values.NewTime(parseTime(t, "2023-01-01T00:00:20Z")),
-				values.NewTime(parseTime(t, "2023-01-01T00:00:50Z")),
+			observations: []*valuespb.Value{
+				values.Proto(values.NewTime(parseTime(t, "2023-01-01T00:00:30Z"))),
+				values.Proto(values.NewTime(parseTime(t, "2023-01-01T00:00:40Z"))),
+				values.Proto(values.NewTime(parseTime(t, "2023-01-01T00:00:10Z"))),
+				values.Proto(values.NewTime(parseTime(t, "2023-01-01T00:00:20Z"))),
+				values.Proto(values.NewTime(parseTime(t, "2023-01-01T00:00:50Z"))),
 			},
 			finalSelectedType: TypeTime,
 			expectedOutcome:   values.Proto(values.NewTime(parseTime(t, "2023-01-01T00:00:30Z"))),
@@ -273,11 +259,11 @@ func Test_handleMedianAggregation(t *testing.T) {
 		},
 		{
 			name: "time median: even number of values returns left value",
-			observations: []values.Value{
-				values.NewTime(parseTime(t, "2023-01-01T00:00:10Z")),
-				values.NewTime(parseTime(t, "2023-01-01T00:00:20Z")),
-				values.NewTime(parseTime(t, "2023-01-01T00:00:30Z")),
-				values.NewTime(parseTime(t, "2023-01-01T00:00:40Z")),
+			observations: []*valuespb.Value{
+				values.Proto(values.NewTime(parseTime(t, "2023-01-01T00:00:10Z"))),
+				values.Proto(values.NewTime(parseTime(t, "2023-01-01T00:00:20Z"))),
+				values.Proto(values.NewTime(parseTime(t, "2023-01-01T00:00:30Z"))),
+				values.Proto(values.NewTime(parseTime(t, "2023-01-01T00:00:40Z"))),
 			},
 			finalSelectedType: TypeTime,
 			expectedOutcome:   values.Proto(values.NewTime(parseTime(t, "2023-01-01T00:00:20Z"))),
@@ -285,8 +271,8 @@ func Test_handleMedianAggregation(t *testing.T) {
 		},
 		{
 			name: "median: unsupported type for median aggregation (string)",
-			observations: []values.Value{
-				values.NewString("foo"), values.NewString("bar"), values.NewString("baz"),
+			observations: []*valuespb.Value{
+				values.Proto(values.NewString("foo")), values.Proto(values.NewString("bar")), values.Proto(values.NewString("baz")),
 			},
 			finalSelectedType: TypeString,
 			expectedOutcome:   nil,
@@ -294,7 +280,7 @@ func Test_handleMedianAggregation(t *testing.T) {
 		},
 		{
 			name:              "empty filtered observations for median",
-			observations:      []values.Value{},
+			observations:      []*valuespb.Value{},
 			finalSelectedType: TypeFloat64,
 			expectedOutcome:   nil,
 			expectedError:     errors.New("no valid observations for median calculation"),

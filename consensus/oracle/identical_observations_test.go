@@ -268,14 +268,10 @@ func Test_countTypes(t *testing.T) {
 	}
 }
 
-func assertDeepEqualValuesSlice(t *testing.T, expected, actual []values.Value) {
+func assertDeepEqualValuesSlice(t *testing.T, expected, actual []*valuespb.Value) {
 	require.Len(t, actual, len(expected), "Slice length mismatch")
 	for i := range expected {
-		expectedUnwrapped, err := values.Unwrap(expected[i])
-		require.NoError(t, err)
-		actualUnwrapped, err := values.Unwrap(actual[i])
-		require.NoError(t, err)
-		assert.Equal(t, expectedUnwrapped, actualUnwrapped, "Elements at index %d mismatch", i)
+		assert.True(t, proto.Equal(actual[i], expected[i]))
 	}
 }
 
@@ -284,20 +280,9 @@ func Test_filterObservations(t *testing.T) {
 		name                 string
 		observationProtos    []*valuespb.Value
 		minObservations      int
-		expectedObservations []values.Value
+		expectedObservations []*valuespb.Value
 		expectedTypeName     string
 		expectedError        error
-	}
-
-	// Helper to create values.Value observations for expected output from protobufs
-	createGoValuesFromProtos := func(protos []*valuespb.Value) []values.Value {
-		var goValues []values.Value
-		for _, p := range protos {
-			v, err := values.FromProto(p)
-			require.NoError(t, err)
-			goValues = append(goValues, v)
-		}
-		return goValues
 	}
 
 	testCases := []testCase{
@@ -311,11 +296,11 @@ func Test_filterObservations(t *testing.T) {
 				values.Proto(values.NewInt64(30)),
 			},
 			minObservations: 3,
-			expectedObservations: createGoValuesFromProtos([]*valuespb.Value{
+			expectedObservations: []*valuespb.Value{
 				values.Proto(values.NewInt64(10)),
 				values.Proto(values.NewInt64(20)),
 				values.Proto(values.NewInt64(30)),
-			}),
+			},
 			expectedTypeName: TypeInt64,
 			expectedError:    nil,
 		},
@@ -363,11 +348,11 @@ func Test_filterObservations(t *testing.T) {
 				values.Proto(values.NewFloat64(3.3)),
 			},
 			minObservations: 3,
-			expectedObservations: createGoValuesFromProtos([]*valuespb.Value{
+			expectedObservations: []*valuespb.Value{
 				values.Proto(values.NewFloat64(1.1)),
 				values.Proto(values.NewFloat64(2.2)),
 				values.Proto(values.NewFloat64(3.3)),
-			}),
+			},
 			expectedTypeName: TypeFloat64,
 			expectedError:    nil,
 		},
@@ -380,10 +365,10 @@ func Test_filterObservations(t *testing.T) {
 				values.Proto(values.NewBool(true)),
 			},
 			minObservations: 2,
-			expectedObservations: createGoValuesFromProtos([]*valuespb.Value{
+			expectedObservations: []*valuespb.Value{
 				values.Proto(values.NewInt64(100)),
 				values.Proto(values.NewInt64(200)),
-			}),
+			},
 			expectedTypeName: TypeInt64,
 			expectedError:    nil,
 		},

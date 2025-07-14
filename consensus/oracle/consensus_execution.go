@@ -50,13 +50,13 @@ func CalculateOutcomeForObservations(
 		aggregation := consensusDescriptor.GetAggregation()
 		switch aggregation {
 		case pb.AggregationType_AGGREGATION_TYPE_IDENTICAL:
-			return handleIdenticalAggregation(observationProtos)
+			return handleIdenticalAggregation(filtered)
 		case pb.AggregationType_AGGREGATION_TYPE_MEDIAN:
 			return handleMedianAggregation(filtered, consensusType)
 		case pb.AggregationType_AGGREGATION_TYPE_COMMON_PREFIX:
-			return handleCommonPrefixAggregation(filtered, consensusType)
+			return handleCommonPrefixAggregation(nil, consensusType)
 		case pb.AggregationType_AGGREGATION_TYPE_COMMON_SUFFIX:
-			return handleCommonSuffixAggregation(filtered, consensusType)
+			return handleCommonSuffixAggregation(nil, consensusType)
 		default:
 			return nil, fmt.Errorf("unknown aggregation type: %s", aggregation)
 		}
@@ -68,9 +68,9 @@ func CalculateOutcomeForObservations(
 	}
 }
 
-func handleMedianAggregation(observations []values.Value, medianType string) (*valuespb.Value, error) {
+func handleMedianAggregation(observations []*valuespb.Value, medianType string) (*valuespb.Value, error) {
 	var (
-		medianResult values.Value
+		medianResult *valuespb.Value
 		err          error
 	)
 
@@ -78,9 +78,8 @@ func handleMedianAggregation(observations []values.Value, medianType string) (*v
 	case TypeInt64:
 		medianResult, err = getMedian(
 			observations,
-			func(val values.Value) (int64, error) {
-				var got int64
-				return got, val.UnwrapTo(&got)
+			func(val *valuespb.Value) (int64, error) {
+				return val.GetInt64Value(), nil
 			},
 			func(a, b int64) int {
 				if a < b {
@@ -99,9 +98,8 @@ func handleMedianAggregation(observations []values.Value, medianType string) (*v
 	case TypeFloat64:
 		medianResult, err = getMedian(
 			observations,
-			func(val values.Value) (float64, error) {
-				var got float64
-				return got, val.UnwrapTo(&got)
+			func(val *valuespb.Value) (float64, error) {
+				return val.GetFloat64Value(), nil
 			},
 			func(a, b float64) int {
 				if a < b {
@@ -120,9 +118,13 @@ func handleMedianAggregation(observations []values.Value, medianType string) (*v
 	case TypeDecimal:
 		medianResult, err = getMedian(
 			observations,
-			func(val values.Value) (decimal.Decimal, error) {
-				var got decimal.Decimal
-				return got, val.UnwrapTo(&got)
+			func(val *valuespb.Value) (decimal.Decimal, error) {
+				var d decimal.Decimal
+				v, err := values.FromProto(val)
+				if err != nil {
+					return d, err
+				}
+				return d, v.UnwrapTo(&d)
 			},
 			func(a, b decimal.Decimal) int {
 				return a.Cmp(b)
@@ -135,9 +137,13 @@ func handleMedianAggregation(observations []values.Value, medianType string) (*v
 	case TypeBigInt:
 		medianResult, err = getMedian(
 			observations,
-			func(val values.Value) (*big.Int, error) {
-				got := new(big.Int)
-				return got, val.UnwrapTo(got)
+			func(val *valuespb.Value) (*big.Int, error) {
+				var got big.Int
+				v, err := values.FromProto(val)
+				if err != nil {
+					return nil, err
+				}
+				return &got, v.UnwrapTo(&got)
 			},
 			func(a, b *big.Int) int {
 				return a.Cmp(b)
@@ -150,9 +156,13 @@ func handleMedianAggregation(observations []values.Value, medianType string) (*v
 	case TypeTime:
 		medianResult, err = getMedian(
 			observations,
-			func(val values.Value) (time.Time, error) {
+			func(val *valuespb.Value) (time.Time, error) {
 				var got time.Time
-				return got, val.UnwrapTo(&got)
+				v, err := values.FromProto(val)
+				if err != nil {
+					return got, err
+				}
+				return got, v.UnwrapTo(&got)
 			},
 			func(a, b time.Time) int {
 				return a.Compare(b)
@@ -166,7 +176,7 @@ func handleMedianAggregation(observations []values.Value, medianType string) (*v
 		return nil, fmt.Errorf("unsupported type for median aggregation: %s", medianType)
 	}
 
-	return values.Proto(medianResult), nil
+	return medianResult, nil
 }
 
 func handleIdenticalAggregation(values []*valuespb.Value) (*valuespb.Value, error) {
@@ -255,7 +265,7 @@ func countTypes(observationProtos []*valuespb.Value) map[string]int {
 // filterObservations returns all the observations that meet the minimum observation
 // threshold of the same underlying type.  Errors if no single type meets the
 // threshold.
-func filterObservations(observationProtos []*valuespb.Value, minObservations int) ([]values.Value, string, error) {
+func filterObservations(observationProtos []*valuespb.Value, minObservations int) ([]*valuespb.Value, string, error) {
 	if len(observationProtos) < minObservations {
 		return nil, "", fmt.Errorf("insufficient observations (%d) to meet minimum (%d)", len(observationProtos), minObservations)
 	}
@@ -277,14 +287,14 @@ func filterObservations(observationProtos []*valuespb.Value, minObservations int
 		return nil, "", fmt.Errorf("no single type met the minimum observation threshold of %d", minObservations)
 	}
 
-	observations := make([]values.Value, 0, len(observationProtos))
+	observations := make([]*valuespb.Value, 0, len(observationProtos))
 	for _, obsProto := range observationProtos {
 		obs, err := values.FromProto(obsProto)
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to unmarshal observation value: %w", err)
 		}
 		if reflect.TypeOf(obs).String() == dominantType {
-			observations = append(observations, obs)
+			observations = append(observations, obsProto)
 		}
 	}
 
@@ -297,10 +307,10 @@ func filterObservations(observationProtos []*valuespb.Value, minObservations int
 //
 // For an even number of elements, we take the left of the two middle elements.
 func getMedian[T any](
-	observations []values.Value,
-	unwrap func(val values.Value) (T, error),
+	observations []*valuespb.Value,
+	unwrap func(val *valuespb.Value) (T, error),
 	compare func(a, b T) int,
-) (values.Value, error) {
+) (*valuespb.Value, error) {
 	if len(observations) < 1 {
 		return nil, errors.New("no valid observations for median calculation")
 	}
@@ -321,5 +331,10 @@ func getMedian[T any](
 		medianVal = unwrappedValues[len(unwrappedValues)/2-1]
 	}
 
-	return values.Wrap(medianVal)
+	v, err := values.Wrap(medianVal)
+	if err != nil {
+		return nil, err
+	}
+
+	return values.Proto(v), nil
 }
