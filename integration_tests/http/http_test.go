@@ -39,7 +39,7 @@ import (
 const EthSignedMessagePrefix = "\x19Ethereum Signed Message:\n"
 
 const nodeConfigTemplate = `
-DonID = "test_don"
+DonID = "%s"
 AuthMinChallengeLen = 32
 AuthTimestampToleranceSec = 30
 NodeAddress = "%s" 
@@ -154,10 +154,9 @@ func newTestNetworkClient(t *testing.T, addr *net.TCPAddr, lggr logger.Logger) n
 	return c
 }
 
-func newTestGateway(t *testing.T, publicKey string, c network.HTTPClient, lggr logger.Logger) gateway.Gateway {
-	gatewayConfigStr := fmt.Sprintf(gatewayConfigTemplate, publicKey)
+func newTestGateway(t *testing.T, configStr string, c network.HTTPClient, lggr logger.Logger) gateway.Gateway {
 	var gatewayConfig *config.GatewayConfig
-	err := json.Unmarshal([]byte(gatewayConfigStr), &gatewayConfig)
+	err := json.Unmarshal([]byte(configStr), &gatewayConfig)
 	require.NoError(t, err)
 	gateway, err := gateway.NewGatewayFromConfig(gatewayConfig, gateway.NewHandlerFactory(nil, nil, c, lggr), lggr)
 	require.NoError(t, err)
@@ -165,16 +164,13 @@ func newTestGateway(t *testing.T, publicKey string, c network.HTTPClient, lggr l
 	return gateway
 }
 
-func parseConnectorConfig(t *testing.T, tomlConfig string, nodeAddress string, nodeURL string) *connector.ConnectorConfig {
-	nodeConfig := fmt.Sprintf(tomlConfig, nodeAddress, nodeURL)
+func newTestGatewayConnector(t *testing.T, donID, nodeURL string, privateKey *ecdsa.PrivateKey, lggr logger.Logger) core.GatewayConnector {
+	signer := &client{privateKey: privateKey}
+	publicKey := strings.ToLower(crypto.PubkeyToAddress(privateKey.PublicKey).Hex())
+	nodeConfig := fmt.Sprintf(nodeConfigTemplate, donID, publicKey, nodeURL)
 	var cfg connector.ConnectorConfig
 	require.NoError(t, toml.Unmarshal([]byte(nodeConfig), &cfg))
-	return &cfg
-}
-
-func newTestGatewayConnector(t *testing.T, publicKey, nodeURL string, signer connector.Signer, lggr logger.Logger) core.GatewayConnector {
-	cfg := parseConnectorConfig(t, nodeConfigTemplate, publicKey, nodeURL)
-	gc, err := connector.NewGatewayConnector(cfg, signer, clockwork.NewRealClock(), lggr)
+	gc, err := connector.NewGatewayConnector(&cfg, signer, clockwork.NewRealClock(), lggr)
 	require.NoError(t, err)
 	servicetest.Run(t, gc)
 	return gc
@@ -278,11 +274,10 @@ func TestHTTPActionCapability(t *testing.T) {
 	privateKey, err := crypto.GenerateKey()
 	require.NoError(t, err)
 	publicKey := strings.ToLower(crypto.PubkeyToAddress(privateKey.PublicKey).Hex())
-	gateway := newTestGateway(t, publicKey, netClient, lggr)
+	gatewayConfigStr := fmt.Sprintf(gatewayConfigTemplate, publicKey)
+	gateway := newTestGateway(t, gatewayConfigStr, netClient, lggr)
 	nodeURL := fmt.Sprintf("ws://localhost:%d/node", gateway.GetNodePort())
-
-	client := &client{privateKey: privateKey}
-	gc := newTestGatewayConnector(t, publicKey, nodeURL, client, lggr)
+	gc := newTestGatewayConnector(t, "test_don", nodeURL, privateKey, lggr)
 	httpCapability := newTestHTTPCapability(ctx, t, gc, lggr)
 
 	requestData := capabilities.RequestMetadata{
