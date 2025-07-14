@@ -46,6 +46,32 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 		if err := p.metrics.OnCallContractError(ctx, msg); err != nil {
 			return fmt.Errorf("failed to publish CallContractError metrics: %w", err)
 		}
+	// -- LogTrigger --
+	case *TriggerInitiated:
+		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
+			return fmt.Errorf("failed to emit TriggerInitiated log: %w", err)
+		}
+	case *LogTriggerSuccess:
+		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
+			return fmt.Errorf("failed to emit LogTriggerSuccess log: %w", err)
+		}
+		if err := p.metrics.OnLogTriggerSuccess(ctx, msg); err != nil {
+			return fmt.Errorf("failed to publish LogTriggerSuccess metrics: %w", err)
+		}
+	case *LogTriggerError:
+		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
+			return fmt.Errorf("failed to emit LogTriggerError log: %w", err)
+		}
+		if err := p.metrics.OnLogTriggerError(ctx, msg); err != nil {
+			return fmt.Errorf("failed to publish LogTriggerError metrics: %w", err)
+		}
+	case *LogTriggerEventDroppedError:
+		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
+			return fmt.Errorf("failed to emit TriggerEventDroppedError log: %w", err)
+		}
+		if err := p.metrics.OnTriggerEventDroppedError(ctx, msg); err != nil {
+			return fmt.Errorf("failed to publish TriggerEventDroppedError metrics: %w", err)
+		}
 	// -- FilterLogs --
 	case *FilterLogsInitiated:
 		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {

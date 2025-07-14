@@ -24,9 +24,11 @@ import (
 	oracle2 "github.com/smartcontractkit/capabilities/consensus/oracle"
 )
 
-const defaultRequestBatchSize = 20
-const defaultMaxRequestSizeBytes = 10 * 1024 // 10KB
-const defaultKeyBundleIDForValueConsensus = "evm"
+const (
+	defaultRequestBatchSize             = 20
+	defaultMaxRequestSizeBytes          = 10 * 1024 // 10KB
+	defaultKeyBundleIDForValueConsensus = "evm"
+)
 
 type ConsensusCapabilityConfig struct {
 	RequestBatchSize             int
@@ -75,7 +77,8 @@ func (c *consensusCapability) Initialise(ctx context.Context, config string,
 	telemetryService core.TelemetryService,
 	store core.KeyValueStore, errorLog core.ErrorLog, pipelineRunner core.PipelineRunnerService,
 	relayerSet core.RelayerSet, oracleFactory core.OracleFactory,
-	gatewayConnector core.GatewayConnector, _ core.Keystore) error {
+	gatewayConnector core.GatewayConnector, _ core.Keystore,
+) error {
 	c.lggr.Debugf("Initialising Consensus Capability")
 
 	c.valueConsensusKeyBundleID = defaultKeyBundleIDForValueConsensus
@@ -266,7 +269,7 @@ func (c *consensusCapability) Description() string {
 // prevent excessively large requests that could cause issues in the consensus process.
 func validateInputSize(consensusRequestMetaData oracle2.ConsensusRequestMetadata, input *pb.SimpleConsensusInputs, maxRequestSizeBytes int) error {
 	requestMetaData := oracle2.ToRequestMetaData(consensusRequestMetaData)
-	
+
 	serialisedInput, err := proto.Marshal(input)
 	if err != nil {
 		return fmt.Errorf("failed to serialise input: %w", err)
