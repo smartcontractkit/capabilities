@@ -65,6 +65,7 @@ func Test_LogTrigger(t *testing.T) {
 	messageEmitter, donContext := setupDon(ctx, t, lggr, wasmFile, abiString, eventName, topic0, numOfWorkflowNodes, workflowName)
 
 	// waiting time to ensure the logTrigger inside the workflow is ready to process messages
+	// TODO PLEX-1621: this wait time should be much lower, but in CI needs to be high enough to make log poller ready to work on the logs
 	time.Sleep(75 * time.Second)
 
 	// emitting single event we will be waiting from the workflow's LogTrigger
