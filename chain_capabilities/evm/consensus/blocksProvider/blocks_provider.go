@@ -47,7 +47,7 @@ func NewBlocksProvider(lggr logger.Logger, pollPeriod time.Duration, evmService 
 }
 
 func (b *BlocksProvider) start(_ context.Context) error {
-	b.engine.Go(b.pollBlocks)
+	b.engine.Go(b.poll)
 	return nil
 }
 
@@ -55,21 +55,18 @@ func (b *BlocksProvider) close() error {
 	return nil
 }
 
-func (b *BlocksProvider) pollBlocks(ctx context.Context) {
+func (b *BlocksProvider) poll(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-time.After(b.pollPeriod):
-			b.pollBlock(ctx)
+			b.pollBlocks(ctx)
 		}
 	}
 }
 
-func (b *BlocksProvider) pollBlock(ctx context.Context) {
-	b.mutex.Lock()
-	defer b.mutex.Unlock()
-
+func (b *BlocksProvider) pollBlocks(ctx context.Context) {
 	b.lggr.Debug("polling block")
 
 	latestBlock, err := b.EVMService.HeaderByNumber(ctx, nil, primitives.Unconfirmed)
@@ -91,9 +88,14 @@ func (b *BlocksProvider) pollBlock(ctx context.Context) {
 	}
 	b.lggr.Debugw("finalized block", "blockHeight", finalizedBlock.Number)
 
+	b.mutex.Lock()
+	defer b.mutex.Unlock()
+
+	// retain the max value
 	b.latestBlock = latestBlock.Number.Int64()
 	b.safeBlock = safeBlock.Number.Int64()
-	b.finalizedBlock = finalizedBlock.Number.Int64()
+	// for finalized, we should retain the max value
+	b.finalizedBlock = max(b.finalizedBlock, finalizedBlock.Number.Int64())
 
 	// sanitation
 	if b.finalizedBlock > b.safeBlock {
