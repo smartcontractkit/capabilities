@@ -116,19 +116,16 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 		}, nil
 	}
 
-	// PLEX-1524 - improve this since it may be using an RPC that's lagging related to the one that submitted the TX.
-	// Check whether value was already transmitted on chain
-	var readTransmissionErr error
-	for i := 0; i <= 10; i++ {
-		transmissionInfo, readTransmissionErr = e.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
-		if readTransmissionErr == nil && transmissionInfo.State != TransmissionStateNotAttempted {
-			break
+	transmissionInfo, err = withRetry(ctx, 20*time.Second, 200*time.Millisecond, func() (contracts.TransmissionInfo, error) {
+		readTransmissionInfo, readTransmissionErr := e.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
+		if readTransmissionErr != nil {
+			return contracts.TransmissionInfo{}, readTransmissionErr
 		}
-		time.Sleep(time.Second)
-	}
-	if readTransmissionErr != nil {
-		return nil, readTransmissionErr
-	}
+		if readTransmissionInfo.State != TransmissionStateNotAttempted {
+			return transmissionInfo, nil
+		}
+		return contracts.TransmissionInfo{}, errors.New("transaction successfully executed but not yet seing the transmission info updated")
+	})
 
 	txHashRetriever.Reset()
 	txHash := transactionResult.TxHash
@@ -319,9 +316,35 @@ func (thr *TxHashRetriever) GetHash(ctx context.Context) (*evmtypes.Hash, error)
 	}
 	if len(logs) == 0 {
 		thr.lggr.Debugw("no log associated to report transmission found", thr.transmissionID.GetIDPartsForDebugging()...)
-		// return nil, nil
 		return nil, fmt.Errorf("No log found but a log was executed for transmission ID: %+v", thr.transmissionID)
 	}
 	thr.txHash = &logs[0].TxHash
 	return thr.txHash, nil
+}
+
+// Retry retries fn until success or timeout. If ctx times out, it returns nil and an error.
+// Use this only if T is a type that can be nil (e.g., pointer, slice, map).
+func withRetry[T any](ctx context.Context, totalTimeout, retryInterval time.Duration, fn func() (T, error)) (T, error) {
+	ctx, cancel := context.WithTimeout(ctx, totalTimeout)
+	defer cancel()
+
+	var zero T
+	var lastErr error
+
+	for {
+		result, err := fn()
+		if err == nil {
+			return result, nil
+		}
+
+		lastErr = err
+
+		select {
+		case <-ctx.Done():
+			// If T can be nil, then zero is nil.
+			return zero, fmt.Errorf("retry failed: timeout exceeded, last error: %w", lastErr)
+		case <-time.After(retryInterval):
+			// retry
+		}
+	}
 }
