@@ -1,4 +1,4 @@
-package blocksProvider
+package blocksprovider
 
 import (
 	"context"
@@ -50,7 +50,6 @@ func TestBlocksProvider(t *testing.T) {
 		assert.Equal(t, int64(1), finalizedBlock)
 		assert.Equal(t, int64(2), safeBlock)
 		assert.Equal(t, int64(3), latestBlock)
-
 	})
 
 	t.Run("latest = safe = finalized", func(t *testing.T) {
@@ -124,5 +123,4 @@ func TestBlocksProvider(t *testing.T) {
 		assert.Equal(t, int64(2), safeBlock)
 		assert.Equal(t, int64(2), finalizedBlock)
 	})
-
 }

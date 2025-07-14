@@ -1,4 +1,4 @@
-package blocksProvider
+package blocksprovider
 
 import (
 	"context"
