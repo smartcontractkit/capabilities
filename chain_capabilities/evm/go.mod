@@ -6,7 +6,7 @@ require (
 	github.com/ethereum/go-ethereum v1.15.11
 	github.com/google/go-cmp v0.7.0
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20250711131700-236a5b631ad7
-	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250711154419-14c52fd754e2
+	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250714060150-97b700097bfa
 	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250710122011-7c14b396e486
 	github.com/smartcontractkit/chainlink-evm v0.0.0-20250627135735-93e3b09aec5a
 	github.com/stretchr/testify v1.10.0
