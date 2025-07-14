@@ -2,14 +2,19 @@ package blocksProvider
 
 import (
 	"context"
+	"math/big"
 	"sync"
 	"time"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
-	"github.com/smartcontractkit/chainlink-common/pkg/types"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 )
+
+type HeaderByNumberProvider interface {
+	HeaderByNumber(ctx context.Context, blockNumber *big.Int, confidenceLevel primitives.ConfidenceLevel) (evm.Head, error)
+}
 
 // BlocksProvider is a service that polls the latest, safe, and finalized blocks from the EVM chain.
 // It ensures that the heights respect the following constraints:
@@ -21,7 +26,7 @@ type BlocksProvider struct {
 
 	lggr       logger.SugaredLogger
 	pollPeriod time.Duration
-	EVMService types.EVMService
+	EVMService HeaderByNumberProvider
 
 	mutex          sync.RWMutex
 	latestBlock    int64
@@ -29,7 +34,7 @@ type BlocksProvider struct {
 	finalizedBlock int64
 }
 
-func NewBlocksProvider(lggr logger.Logger, pollPeriod time.Duration, evmService types.EVMService) *BlocksProvider {
+func NewBlocksProvider(lggr logger.Logger, pollPeriod time.Duration, evmService HeaderByNumberProvider) *BlocksProvider {
 	b := &BlocksProvider{
 		pollPeriod: pollPeriod,
 		EVMService: evmService,
