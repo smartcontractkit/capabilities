@@ -61,11 +61,14 @@ func (b *BlocksProvider) close() error {
 }
 
 func (b *BlocksProvider) poll(ctx context.Context) {
+	ticker := time.NewTicker(b.pollPeriod)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(b.pollPeriod):
+		case <-ticker.C:
 			b.pollBlocks(ctx)
 		}
 	}
@@ -76,19 +79,19 @@ func (b *BlocksProvider) pollBlocks(ctx context.Context) {
 
 	latestBlock, err := b.EVMService.HeaderByNumber(ctx, nil, primitives.Unconfirmed)
 	if err != nil {
-		b.lggr.Error("failed to get latest block", "error", err)
+		b.lggr.Errorw("failed to get latest block", "error", err)
 		return
 	}
 	b.lggr.Debugw("latest block", "blockHeight", latestBlock.Number)
 	safeBlock, err := b.EVMService.HeaderByNumber(ctx, nil, primitives.Safe)
 	if err != nil {
-		b.lggr.Error("failed to get safe block", "error", err)
+		b.lggr.Errorw("failed to get safe block", "error", err)
 		return
 	}
 	b.lggr.Debugw("safe block", "blockHeight", safeBlock.Number)
 	finalizedBlock, err := b.EVMService.HeaderByNumber(ctx, nil, primitives.Finalized)
 	if err != nil {
-		b.lggr.Error("failed to get finalized block", "error", err)
+		b.lggr.Errorw("failed to get finalized block", "error", err)
 		return
 	}
 	b.lggr.Debugw("finalized block", "blockHeight", finalizedBlock.Number)
