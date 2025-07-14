@@ -2,34 +2,24 @@ package target
 
 import (
 	"context"
-	"crypto/sha256"
 	"crypto/tls"
-	"encoding/hex"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 
-	"google.golang.org/protobuf/proto"
-
-	"github.com/go-viper/mapstructure/v2"
+	cap "github.com/smartcontractkit/capabilities/confidential_http_action/confidential_http_action_cap"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk"
 	enclaveclient "github.com/smartcontractkit/confidential-compute/enclave-client"
-	attestationvalidator "github.com/smartcontractkit/confidential-compute/enclave-client/attestation-validator"
-	testdata "github.com/smartcontractkit/confidential-compute/enclave-client/test-data"
 	httpenclavetypes "github.com/smartcontractkit/confidential-compute/enclave/nitro-confidential-http-enclave/types"
 	enclavetypes "github.com/smartcontractkit/confidential-compute/types"
-	"github.com/smartcontractkit/confidential-compute/util"
 )
 
 var (
 	ID                         = "confidential-http-action@1.0.0"
-	marshalFn                  = proto.Marshal
-	unmarshalFn                = proto.Unmarshal
 	confidentialHttpActionInfo = capabilities.MustNewCapabilityInfo(
 		ID,
 		capabilities.CapabilityTypeAction,
@@ -37,9 +27,8 @@ var (
 	)
 )
 
-type Params struct {
-	Logger logger.Logger
-	URL    string
+func (c *capability) Info(_ context.Context) (capabilities.CapabilityInfo, error) {
+	return confidentialHttpActionInfo, nil
 }
 
 type Request struct {
@@ -53,24 +42,84 @@ type capability struct {
 	enclaveClient enclaveclient.EnclaveClient[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse]
 }
 
-func New(p Params) (*capability, error) {
-	measurements, err := getMeasurements()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get measurements: %w", err)
+// parseEnclaveType converts a string into an EnclaveType using case-insensitive matching.
+// It handles the case where the source type is a pointer and might be nil.
+// It defaults to AWS NITRO.
+func parseEnclaveType(typeStr *string) enclavetypes.EnclaveType {
+	if typeStr == nil {
+		return enclavetypes.EnclaveTypeNitro
 	}
 
-	// Create a pool with a single enclave node.
-	eID := sha256.Sum256([]byte("attestedhttp-action-enclave-id"))
-	nodes := []enclavetypes.EnclaveNode{{
-		EnclaveID:     eID,
-		EnclaveURL:    p.URL,
-		TrustedValues: measurements,
-		EnclaveType:   enclavetypes.EnclaveTypeNitro,
-	}}
-	signer, err := util.NewSimpleEd25519Signer(p.SignerPrivateKey)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create signer: %w", err)
+	// Convert input to upper case for case-insensitive matching.
+	upperType := strings.ToUpper(*typeStr)
+	switch enclavetypes.EnclaveType(upperType) {
+	case enclavetypes.EnclaveTypeNitro, enclavetypes.EnclaveTypeSGX, enclavetypes.EnclaveTypeTDX, enclavetypes.EnclaveTypeSEV:
+		return enclavetypes.EnclaveType(upperType)
+	default:
+		return enclavetypes.EnclaveTypeNitro // Default to AWS NITRO if no match found.
 	}
+}
+
+// GetNodes transforms a slice of Enclave structs from the config into a slice of EnclaveNode structs.
+func GetNodes(config cap.Config) ([]enclavetypes.EnclaveNode, error) {
+	// Pre-allocate the slice with the correct capacity for efficiency.
+	nodes := make([]enclavetypes.EnclaveNode, 0, len(config.Enclaves))
+
+	for i, confEnclave := range config.Enclaves {
+		// The EnclaveID in EnclaveNode is a fixed-size [32]byte array.
+		// The ID in the source Enclave is a []byte slice.
+		// We must copy the data from the slice to the array.
+		var enclaveID [32]byte
+		if len(confEnclave.ID) > 32 {
+			// Returning an error on data loss is safer than silent truncation.
+			return nil, fmt.Errorf("enclave at index %d has an ID longer than 32 bytes", i)
+		}
+		copy(enclaveID[:], confEnclave.ID)
+
+		node := enclavetypes.EnclaveNode{
+			EnclaveURL:       confEnclave.URL,
+			TrustedValues:    confEnclave.TrustedValues, // Directly compatible ( []uint8 is alias for []byte )
+			EnclaveExtraData: confEnclave.ExtraData,     // Directly compatible
+			EnclaveType:      parseEnclaveType(confEnclave.EnclaveType),
+			EnclaveID:        enclaveID,
+		}
+		nodes = append(nodes, node)
+	}
+
+	return nodes, nil
+}
+
+// getVaultDONPublicKey is a placeholder function to simulate retrieving a DON's public key.
+// In a real implementation, this would involve a lookup process based on the DON ID.
+// For now, it returns a hardcoded public key to allow the program to compile.
+func getVaultDONPublicKey(donID []byte) ([]byte, error) {
+	// This is a dummy public key for placeholder purposes.
+	// It's 32 bytes long, which is the standard length for an ed25519 public key.
+	dummyPublicKey := []byte{
+		0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef,
+		0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef,
+		0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef,
+		0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef,
+	}
+
+	// You could add logic here to check the donID if needed.
+	if len(donID) == 0 {
+		return nil, fmt.Errorf("VaultDONID cannot be empty")
+	}
+
+	log.Printf("Placeholder: Looked up public key for DON ID: %x\n", donID)
+
+	return dummyPublicKey, nil
+}
+
+// SignerCapability is (for now) a no-op implementation of the Signer interface. This will be replaced with a call to the p2pSigner capability.
+type SignerCapability struct{}
+
+func (s *SignerCapability) Sign(data []byte) ([]byte, error) {
+	return data, nil
+}
+
+func New(lggr logger.Logger, c cap.Config) (*capability, error) {
 	httpClient := http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
@@ -78,105 +127,30 @@ func New(p Params) (*capability, error) {
 			},
 		},
 	}
-	pool, err := enclaveclient.NewPool[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse](nodes, p.PublicKey, signer, nil, nil, nil, &httpClient)
+	nodes, err := GetNodes(c)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create enclave pool: %w", err)
+	}
+
+	vaultDONPublicKey, err := getVaultDONPublicKey(c.VaultDONID)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get VaultDON public key: %w", err)
+	}
+
+	pool, err := enclaveclient.NewPool[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse](nodes, vaultDONPublicKey, &SignerCapability{}, nil, nil, nil, &httpClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create enclave pool: %w", err)
 	}
 	return &capability{
-		lggr:          p.Logger,
+		lggr:          lggr,
 		enclaveClient: pool,
 	}, nil
 }
 
-func (c *capability) Info(_ context.Context) (capabilities.CapabilityInfo, error) {
-	return confidentialHttpActionInfo, nil
-}
-
 func (c *capability) Execute(ctx context.Context, rawRequest capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
 	c.lggr.Debugw("executing", "workflowID", rawRequest.Metadata.WorkflowID, "executionID", rawRequest.Metadata.WorkflowExecutionID, "workflowName", rawRequest.Metadata.WorkflowName, "workflowOwner", rawRequest.Metadata.WorkflowOwner)
-
-	// Parse user input.
-	if rawRequest.Inputs == nil {
-		return capabilities.CapabilityResponse{}, errors.New("missing inputs field")
-	}
-	var input confidentialhttpactioncap.Input
-	err := rawRequest.Inputs.UnwrapTo(&input)
-	if err != nil {
-		return capabilities.CapabilityResponse{}, err
-	}
-
-	// Fetch the public keys that can be used for this request.
-	reqID := sha256.Sum256([]byte(rawRequest.Metadata.WorkflowExecutionID))
-	ephemeralPubKeyResponse, err := c.enclaveClient.GetPublicKeys(ctx, reqID, nil)
-	if err != nil {
-		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to get public keys: %w", err)
-	}
-
-	// Out of the enclave responses returned, pick the first response (this capability only uses one enclave).
-	// Then, select the most recently created public key from that enclave.
-	if len(ephemeralPubKeyResponse) == 0 || len(ephemeralPubKeyResponse[0].PublicKeys) == 0 {
-		return capabilities.CapabilityResponse{}, fmt.Errorf("no enclave public keys found for request %x", reqID)
-	}
-	selectedEnclaveResponse := ephemeralPubKeyResponse[0]
-	var mostRecentPubKeyIndex, mostRecentPubKeyCreationTime int64
-	for i, time := range selectedEnclaveResponse.CreationTimes {
-		if time.UnixMicro() > mostRecentPubKeyCreationTime {
-			mostRecentPubKeyIndex = int64(i)
-		}
-	}
-	selectedEphemeralPublicKey := selectedEnclaveResponse.PublicKeys[mostRecentPubKeyIndex]
-	c.lggr.Info(fmt.Sprintf("using enclave public key: %x for request %x", selectedEphemeralPublicKey, reqID))
-
-	// Make requests to VaultDON here.
-
-	var requests []httpenclavetypes.RequestTemplate
-	err = mapstructure.Decode(input.Requests, &requests)
-	if err != nil {
-		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to decode requests: %w", err)
-	}
-	enclaveRequestData := httpenclavetypes.HTTPEnclaveRequestData{
-		Requests:                requests,
-		TemplateCiphertextNames: []string{}, // No ciphertexts are used in this capability.
-	}
-
-	// Execute the compute request.
-	resp, err := c.enclaveClient.Execute(
-		ctx,
-		reqID,
-		enclaveRequestData,
-		[][]byte{},   // No ciphertexts are used in this capability.
-		[][][]byte{}, // No encrypted decryption key shares are used in this capability.
-		selectedEphemeralPublicKey,
-		selectedEnclaveResponse.EnclaveID,
-	)
-	if err != nil {
-		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to execute enclave request: %w", err)
-	}
-
-	// As with the enclave request data, output must be converted from the enclave type to the SDK type.
-	var responses []confidentialhttpactioncap.Response
-	err = mapstructure.Decode(resp.Output, &responses)
-	if err != nil {
-		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to decode enclave response: %w", err)
-	}
-
-	var respBodies []string
-	for _, r := range responses {
-		respBodies = append(respBodies, string(r.Body))
-	}
-
-	// Validate the attestation here.
-
-	// Return the response.
-	valsMap, err := values.WrapMap(confidentialhttpactioncap.Output{
-		Responses: responses,
-	})
-	if err != nil {
-		return capabilities.CapabilityResponse{}, err
-	}
-	return capabilities.CapabilityResponse{
-		Value: valsMap,
-	}, nil
+	return capabilities.CapabilityResponse{}, nil
 }
 
 func (c *capability) Start(ctx context.Context) error {
@@ -195,23 +169,4 @@ func (c *capability) UnregisterFromWorkflow(_ context.Context, rawRequest capabi
 
 func (c *capability) Close() error {
 	return nil
-}
-
-// Replace this with the actual implementation to get the measurements.
-func getMeasurements() ([]byte, error) {
-	emptyPCR, err := hex.DecodeString(testdata.EmptyPCR)
-	if err != nil {
-		return nil, err
-	}
-	trustedMeasurements := attestationvalidator.NitroPCRs{
-		PCR0: emptyPCR,
-		PCR1: emptyPCR,
-		PCR2: emptyPCR,
-	}
-	trustedMeasurementsBin, err := json.Marshal(trustedMeasurements)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	return trustedMeasurementsBin, nil
 }
