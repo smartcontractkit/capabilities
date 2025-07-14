@@ -8,8 +8,8 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jonboulle/clockwork v0.4.0
 	github.com/shopspring/decimal v1.4.0
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20250613213914-93a34678e8e2
-	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250710122011-7c14b396e486
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20250711131700-236a5b631ad7
+	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250711153012-4854126b2774
 	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250710122011-7c14b396e486
 	github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb v0.0.0-20250710122011-7c14b396e486
 	github.com/smartcontractkit/libocr v0.0.0-20250513175559-61c382d6cee4
