@@ -117,11 +117,85 @@ func (j *HttpAction) UnmarshalJSON(b []byte) error {
 }
 
 type Input struct {
+	// Names of ciphertexts to be used in the request
+	CiphertextTemplateNames []string `json:"ciphertextTemplateNames" yaml:"ciphertextTemplateNames" mapstructure:"ciphertextTemplateNames"`
+
 	// Requests corresponds to the JSON schema field "requests".
-	Requests []interface{} `json:"requests,omitempty" yaml:"requests,omitempty" mapstructure:"requests,omitempty"`
+	Requests []Request `json:"requests" yaml:"requests" mapstructure:"requests"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *Input) UnmarshalJSON(b []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["ciphertextTemplateNames"]; raw != nil && !ok {
+		return fmt.Errorf("field ciphertextTemplateNames in Input: required")
+	}
+	if _, ok := raw["requests"]; raw != nil && !ok {
+		return fmt.Errorf("field requests in Input: required")
+	}
+	type Plain Input
+	var plain Plain
+	if err := json.Unmarshal(b, &plain); err != nil {
+		return err
+	}
+	*j = Input(plain)
+	return nil
 }
 
 type Output struct {
 	// Responses corresponds to the JSON schema field "responses".
 	Responses []uint8 `json:"responses,omitempty" yaml:"responses,omitempty" mapstructure:"responses,omitempty"`
+}
+
+type Request struct {
+	// The body of the request
+	Body string `json:"body" yaml:"body" mapstructure:"body"`
+
+	// Custom root CA certificate in PEM format
+	CustomRootCaCertPEM []uint8 `json:"customRootCaCertPEM,omitempty" yaml:"customRootCaCertPEM,omitempty" mapstructure:"customRootCaCertPEM,omitempty"`
+
+	// The headers to include in the request
+	Headers []string `json:"headers" yaml:"headers" mapstructure:"headers"`
+
+	// The HTTP method to use for the request
+	Method string `json:"method" yaml:"method" mapstructure:"method"`
+
+	// PublicTemplateValues corresponds to the JSON schema field
+	// "publicTemplateValues".
+	PublicTemplateValues RequestPublicTemplateValues `json:"publicTemplateValues,omitempty" yaml:"publicTemplateValues,omitempty" mapstructure:"publicTemplateValues,omitempty"`
+
+	// The URL to send the request to
+	Url string `json:"url" yaml:"url" mapstructure:"url"`
+}
+
+type RequestPublicTemplateValues map[string]interface{}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *Request) UnmarshalJSON(b []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["body"]; raw != nil && !ok {
+		return fmt.Errorf("field body in Request: required")
+	}
+	if _, ok := raw["headers"]; raw != nil && !ok {
+		return fmt.Errorf("field headers in Request: required")
+	}
+	if _, ok := raw["method"]; raw != nil && !ok {
+		return fmt.Errorf("field method in Request: required")
+	}
+	if _, ok := raw["url"]; raw != nil && !ok {
+		return fmt.Errorf("field url in Request: required")
+	}
+	type Plain Request
+	var plain Plain
+	if err := json.Unmarshal(b, &plain); err != nil {
+		return err
+	}
+	*j = Request(plain)
+	return nil
 }

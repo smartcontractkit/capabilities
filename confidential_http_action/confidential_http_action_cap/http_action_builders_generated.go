@@ -166,14 +166,131 @@ func (c *simpleOutput) Responses() sdk.CapDefinition[[]uint8] {
 
 func (c *simpleOutput) private() {}
 
+// RequestWrapper allows access to field from an sdk.CapDefinition[Request]
+func RequestWrapper(raw sdk.CapDefinition[Request]) RequestCap {
+	wrapped, ok := raw.(RequestCap)
+	if ok {
+		return wrapped
+	}
+	return &requestCap{CapDefinition: raw}
+}
+
+type RequestCap interface {
+	sdk.CapDefinition[Request]
+	Body() sdk.CapDefinition[string]
+	CustomRootCaCertPEM() sdk.CapDefinition[[]uint8]
+	Headers() sdk.CapDefinition[[]string]
+	Method() sdk.CapDefinition[string]
+	PublicTemplateValues() RequestPublicTemplateValuesCap
+	Url() sdk.CapDefinition[string]
+	private()
+}
+
+type requestCap struct {
+	sdk.CapDefinition[Request]
+}
+
+func (*requestCap) private() {}
+func (c *requestCap) Body() sdk.CapDefinition[string] {
+	return sdk.AccessField[Request, string](c.CapDefinition, "body")
+}
+func (c *requestCap) CustomRootCaCertPEM() sdk.CapDefinition[[]uint8] {
+	return sdk.AccessField[Request, []uint8](c.CapDefinition, "customRootCaCertPEM")
+}
+func (c *requestCap) Headers() sdk.CapDefinition[[]string] {
+	return sdk.AccessField[Request, []string](c.CapDefinition, "headers")
+}
+func (c *requestCap) Method() sdk.CapDefinition[string] {
+	return sdk.AccessField[Request, string](c.CapDefinition, "method")
+}
+func (c *requestCap) PublicTemplateValues() RequestPublicTemplateValuesCap {
+	return RequestPublicTemplateValuesWrapper(sdk.AccessField[Request, RequestPublicTemplateValues](c.CapDefinition, "publicTemplateValues"))
+}
+func (c *requestCap) Url() sdk.CapDefinition[string] {
+	return sdk.AccessField[Request, string](c.CapDefinition, "url")
+}
+
+func ConstantRequest(value Request) RequestCap {
+	return &requestCap{CapDefinition: sdk.ConstantDefinition(value)}
+}
+
+func NewRequestFromFields(
+	body sdk.CapDefinition[string],
+	customRootCaCertPEM sdk.CapDefinition[[]uint8],
+	headers sdk.CapDefinition[[]string],
+	method sdk.CapDefinition[string],
+	publicTemplateValues RequestPublicTemplateValuesCap,
+	url sdk.CapDefinition[string]) RequestCap {
+	return &simpleRequest{
+		CapDefinition: sdk.ComponentCapDefinition[Request]{
+			"body":                 body.Ref(),
+			"customRootCaCertPEM":  customRootCaCertPEM.Ref(),
+			"headers":              headers.Ref(),
+			"method":               method.Ref(),
+			"publicTemplateValues": publicTemplateValues.Ref(),
+			"url":                  url.Ref(),
+		},
+		body:                 body,
+		customRootCaCertPEM:  customRootCaCertPEM,
+		headers:              headers,
+		method:               method,
+		publicTemplateValues: publicTemplateValues,
+		url:                  url,
+	}
+}
+
+type simpleRequest struct {
+	sdk.CapDefinition[Request]
+	body                 sdk.CapDefinition[string]
+	customRootCaCertPEM  sdk.CapDefinition[[]uint8]
+	headers              sdk.CapDefinition[[]string]
+	method               sdk.CapDefinition[string]
+	publicTemplateValues RequestPublicTemplateValuesCap
+	url                  sdk.CapDefinition[string]
+}
+
+func (c *simpleRequest) Body() sdk.CapDefinition[string] {
+	return c.body
+}
+func (c *simpleRequest) CustomRootCaCertPEM() sdk.CapDefinition[[]uint8] {
+	return c.customRootCaCertPEM
+}
+func (c *simpleRequest) Headers() sdk.CapDefinition[[]string] {
+	return c.headers
+}
+func (c *simpleRequest) Method() sdk.CapDefinition[string] {
+	return c.method
+}
+func (c *simpleRequest) PublicTemplateValues() RequestPublicTemplateValuesCap {
+	return c.publicTemplateValues
+}
+func (c *simpleRequest) Url() sdk.CapDefinition[string] {
+	return c.url
+}
+
+func (c *simpleRequest) private() {}
+
+// RequestPublicTemplateValuesWrapper allows access to field from an sdk.CapDefinition[RequestPublicTemplateValues]
+func RequestPublicTemplateValuesWrapper(raw sdk.CapDefinition[RequestPublicTemplateValues]) RequestPublicTemplateValuesCap {
+	wrapped, ok := raw.(RequestPublicTemplateValuesCap)
+	if ok {
+		return wrapped
+	}
+	return RequestPublicTemplateValuesCap(raw)
+}
+
+type RequestPublicTemplateValuesCap sdk.CapDefinition[RequestPublicTemplateValues]
+
 type HttpActionInput struct {
-	Requests sdk.CapDefinition[[]interface{}]
+	CiphertextTemplateNames sdk.CapDefinition[[]string]
+	Requests                sdk.CapDefinition[[]Request]
 }
 
 func (input HttpActionInput) ToSteps() sdk.StepInputs {
 	return sdk.StepInputs{
 		Mapping: map[string]any{
-			"requests": input.Requests.Ref(),
+			"ciphertextTemplateNames": input.CiphertextTemplateNames.Ref(),
+			"requests":                input.Requests.Ref(),
 		},
 	}
 }
