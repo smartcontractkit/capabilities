@@ -58,7 +58,6 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 
 	txHashRetriever := NewTxHashRetriever(e.forwarderClient, e.lggr, transmissionID)
 
-	fmt.Printf(">>>>> Transamisson State: %d", transmissionInfo.State)
 	switch transmissionInfo.State {
 	case TransmissionStateNotAttempted:
 		e.lggr.Infow("transmission not attempted - attempting to push to txmgr", "request", request, "reportLen", len(request.Report.RawReport), "reportContextLen", len(request.Report.ReportContext), "nSignatures", len(request.Report.Signatures), "executionID", metadata.WorkflowExecutionID)
@@ -75,7 +74,6 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 		if err != nil {
 			return nil, err
 		}
-		fmt.Printf(">>>>> Transamisson State invalid receiver, found TX Hash: %x", *txHash)
 		return e.processUnrecoverableTxState(ctx, request, metadata, *txHash, transmissionInfo, transmissionID, true)
 	case TransmissionStateFailed:
 		receiverGasMinimum := e.ReceiverGasMinimum
@@ -122,9 +120,9 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 			return contracts.TransmissionInfo{}, readTransmissionErr
 		}
 		if readTransmissionInfo.State != TransmissionStateNotAttempted {
-			return transmissionInfo, nil
+			return readTransmissionInfo, nil
 		}
-		return contracts.TransmissionInfo{}, errors.New("transaction successfully executed but not yet seing the transmission info updated")
+		return contracts.TransmissionInfo{}, errors.New("transaction successfully executed but not yet seing the transmission info updated, retrying getting transmission info")
 	})
 
 	txHashRetriever.Reset()
@@ -238,7 +236,7 @@ func validateInputsAndReportMetadata(requestMetadata capabilities.RequestMetadat
 		return errors.New("nil SignedReport in WriteReportRequest")
 	}
 	if len(request.Receiver) != common.AddressLength {
-		return fmt.Errorf("received address is not 40 bytes long. Address in HEX: %s", hex.EncodeToString(request.Receiver))
+		return fmt.Errorf("received address is not 20 bytes long. Address in HEX: %s", hex.EncodeToString(request.Receiver))
 	}
 	if len(request.Report.Signatures) == 0 {
 		return fmt.Errorf("no signatures provided")
@@ -254,12 +252,12 @@ func validateInputsAndReportMetadata(requestMetadata capabilities.RequestMetadat
 	}
 
 	if reportMetadata.ExecutionID != requestMetadata.WorkflowExecutionID {
-		return fmt.Errorf("workflowExecutionID in the report does not match WorkflowExecutionID in the request metadata. Report WorkflowExecutionID: %+v, request WorkflowExecutionID: %+v", reportMetadata.ExecutionID, requestMetadata.WorkflowExecutionID)
+		return fmt.Errorf("workflowExecutionID in the report does not match WorkflowExecutionID in the request metadata. Report WorkflowExecutionID: %s, request WorkflowExecutionID: %s", reportMetadata.ExecutionID, requestMetadata.WorkflowExecutionID)
 	}
 
 	// case-insensitive verification of the owner address (so that a check-summed address matches its non-checksummed version).
 	if !strings.EqualFold(reportMetadata.WorkflowOwner, requestMetadata.WorkflowOwner) {
-		return fmt.Errorf("workflowOwner in the report does not match WorkflowOwner in the request metadata. Report WorkflowOwner: %+v, request WorkflowOwner: %+v", reportMetadata.WorkflowOwner, requestMetadata.WorkflowOwner)
+		return fmt.Errorf("workflowOwner in the report does not match WorkflowOwner in the request metadata. Report WorkflowOwner: %s, request WorkflowOwner: %s", reportMetadata.WorkflowOwner, requestMetadata.WorkflowOwner)
 	}
 
 	//	workflowNames are padded to 10bytes
@@ -267,11 +265,11 @@ func validateInputsAndReportMetadata(requestMetadata capabilities.RequestMetadat
 	var workflowName [20]byte
 	copy(workflowName[:], decodedName)
 	if !bytes.Equal([]byte(reportMetadata.WorkflowName[:]), workflowName[:]) {
-		return fmt.Errorf("workflowName in the report does not match WorkflowName in the request metadata. Report WorkflowName: %+v, request WorkflowName: %+v", reportMetadata.WorkflowName, hex.EncodeToString(workflowName[:]))
+		return fmt.Errorf("workflowName in the report does not match WorkflowName in the request metadata. Report WorkflowName: %s, request WorkflowName: %s", reportMetadata.WorkflowName, hex.EncodeToString(workflowName[:]))
 	}
 
 	if reportMetadata.WorkflowID != requestMetadata.WorkflowID {
-		return fmt.Errorf("workflowID in the report does not match WorkflowID in the request metadata. Report WorkflowID: %+v, request WorkflowID: %+v", reportMetadata.WorkflowID, requestMetadata.WorkflowID)
+		return fmt.Errorf("workflowID in the report does not match WorkflowID in the request metadata. Report WorkflowID: %s, request WorkflowID: %s", reportMetadata.WorkflowID, requestMetadata.WorkflowID)
 	}
 
 	hexEncodedReportID := hex.EncodeToString(request.Report.Id)
@@ -316,7 +314,7 @@ func (thr *TxHashRetriever) GetHash(ctx context.Context) (*evmtypes.Hash, error)
 	}
 	if len(logs) == 0 {
 		thr.lggr.Debugw("no log associated to report transmission found", thr.transmissionID.GetIDPartsForDebugging()...)
-		return nil, fmt.Errorf("No log found but a log was executed for transmission ID: %+v", thr.transmissionID)
+		return nil, fmt.Errorf("no log found but a log was executed for transmission ID: %+v", thr.transmissionID)
 	}
 	thr.txHash = &logs[0].TxHash
 	return thr.txHash, nil

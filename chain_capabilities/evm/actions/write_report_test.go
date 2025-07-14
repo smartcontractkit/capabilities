@@ -54,7 +54,7 @@ func TestWriteReport_InputValidation(t *testing.T) {
 			},
 		})
 		require.Error(t, err)
-		require.Equal(t, "received address is not 40 bytes long. Address in HEX: ", err.Error())
+		require.Equal(t, "received address is not 20 bytes long. Address in HEX: ", err.Error())
 	})
 	t.Run("Invalid report metadata", func(t *testing.T) {
 		_, _, service := createMocksAndCapability(t, lggr)
@@ -650,7 +650,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			ErrorMessage: &expectedError,
 		}, txResult)
 	})
-	t.Run("TX first transmission - Failed to execute receiver contract", func(t *testing.T) {
+	t.Run("TX first transmission - Failed to get transmission info and then succeed", func(t *testing.T) {
 		evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
 		receiverAddress := testutils.NewAddress()
 		reportMetadata := createTestReportMetadata()
@@ -671,23 +671,19 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			Success:         false,
 			InvalidReceiver: false,
 			State:           TransmissionStateNotAttempted,
-		}, nil).Once()
-
+		}, nil).Twice()
 		txHash := evmtypes.Hash(test.RandomBytes(32))
-
 		mockForwarderClient.On("InvokeOnReport", ctx, receiverAddress, signedReport, mock.Anything).Return(&evmtypes.TransactionResult{
 			TxHash:   txHash,
 			TxStatus: evmtypes.TxSuccess,
 		}, nil)
-
 		transmissionInfo := contracts.TransmissionInfo{
 			Success:         true,
 			InvalidReceiver: false,
-			State:           TransmissionStateFailed,
+			State:           TransmissionStateSucceeded,
 			GasLimit:        big.NewInt(EnoughReceiverGas),
 		}
 		mockForwarderClient.On("GetTransmissionInfo", ctx, mock.Anything).Return(transmissionInfo, nil).Once()
-
 		receipt := evmtypes.Receipt{
 			Status:            uint64(TransmissionStateSucceeded),
 			TxHash:            txHash,
@@ -706,9 +702,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		equalWriteReportReply(t, &evm.WriteReportReply{
 			TxStatus:                        evmcappb.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:                          receipt.TxHash[:],
-			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(),
+			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(retryTxFee)),
-			ErrorMessage:                    ptr(UnknownIssueExecutingReceiverContractMessage),
+			ErrorMessage:                    nil,
 		}, txResult)
 	})
 
