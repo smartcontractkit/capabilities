@@ -1,6 +1,8 @@
 package oracle
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"math/big"
@@ -9,6 +11,7 @@ import (
 	"time"
 
 	"github.com/shopspring/decimal"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
@@ -47,7 +50,7 @@ func CalculateOutcomeForObservations(
 		aggregation := consensusDescriptor.GetAggregation()
 		switch aggregation {
 		case pb.AggregationType_AGGREGATION_TYPE_IDENTICAL:
-			return handleIdenticalAggregation(filtered, consensusType)
+			return handleIdenticalAggregation(observationProtos)
 		case pb.AggregationType_AGGREGATION_TYPE_MEDIAN:
 			return handleMedianAggregation(filtered, consensusType)
 		case pb.AggregationType_AGGREGATION_TYPE_COMMON_PREFIX:
@@ -166,9 +169,34 @@ func handleMedianAggregation(observations []values.Value, medianType string) (*v
 	return values.Proto(medianResult), nil
 }
 
-func handleIdenticalAggregation(_ []values.Value, _ string) (*valuespb.Value, error) {
-	// TODO: Implement identical aggregation logic.
-	return nil, fmt.Errorf("identical aggregation type not supported")
+func handleIdenticalAggregation(values []*valuespb.Value) (*valuespb.Value, error) {
+	if len(values) == 0 {
+		return nil, errors.New("input slice cannot be empty for identical aggregation")
+	}
+
+	// Use deterministic marshaling for consistent byte representation
+	opts := proto.MarshalOptions{Deterministic: true}
+
+	firstValueBytes, err := opts.Marshal(values[0])
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal first value: %w", err)
+	}
+	firstValueHash := sha256.Sum256(firstValueBytes)
+
+	// Compare the first hash to the hash of each subsequent value
+	for i := 1; i < len(values); i++ {
+		currentValueBytes, err := opts.Marshal(values[i])
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal value at index %d: %w", i, err)
+		}
+		currentValueHash := sha256.Sum256(currentValueBytes)
+
+		if !bytes.Equal(firstValueHash[:], currentValueHash[:]) {
+			return nil, fmt.Errorf("values are not identical: mismatch found at index %d", i)
+		}
+	}
+
+	return values[0], nil
 }
 
 func handleCommonSuffixAggregation(_ []values.Value, _ string) (*valuespb.Value, error) {
