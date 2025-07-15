@@ -5,9 +5,9 @@ go 1.24.4
 require (
 	github.com/ethereum/go-ethereum v1.15.11
 	github.com/google/go-cmp v0.7.0
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20250702143256-b7ae0073499d
-	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250715115754-567a65288288
-	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250709190845-3e47d3dde03d
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20250711131700-236a5b631ad7
+	github.com/smartcontractkit/chainlink-common v0.8.1-0.20250715172114-aa60670a917e
+	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250715171446-42e31e2bef64
 	github.com/smartcontractkit/chainlink-evm v0.0.0-20250627135735-93e3b09aec5a
 	github.com/stretchr/testify v1.10.0
 	go.opentelemetry.io/otel v1.37.0
@@ -76,7 +76,8 @@ require (
 	github.com/rs/cors v1.11.1 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/shirou/gopsutil v3.21.11+incompatible // indirect
-	github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb v0.0.0-20250708135749-8736758474ec // indirect
+	github.com/smartcontractkit/chainlink-common/pkg/chipingress v0.0.1 // indirect
+	github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb v0.0.0-20250715132921-fbb00f834ac8 // indirect
 	github.com/smartcontractkit/chainlink-framework/chains v0.0.0-20250627121608-e7b52913fae2 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/supranational/blst v0.3.14 // indirect
@@ -138,7 +139,7 @@ require (
 	github.com/jackc/pgtype v1.14.4 // indirect
 	github.com/jackc/pgx/v4 v4.18.3 // indirect
 	github.com/jmoiron/sqlx v1.4.0 // indirect
-	github.com/jpillora/backoff v1.0.0 // indirect
+	github.com/jpillora/backoff v1.0.0
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/lib/pq v1.10.9 // indirect

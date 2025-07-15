@@ -28,11 +28,8 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions/mocks"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
 )
-
-type nopProcessor struct{}
-
-func (nopProcessor) Process(_ context.Context, _ proto.Message, _ ...any) error { return nil }
 
 type evmWithMocks struct {
 	actions.EVM
@@ -45,7 +42,7 @@ func initMocks(t *testing.T) *evmWithMocks {
 	t.Helper()
 	evmSvc := evmmock.NewEVMService(t)
 	consensusHandler := mocks.NewConsensusHandler(t)
-	evm, err := actions.NewEVM(config.Config{}, evmSvc, commonlogger.Test(t), nopProcessor{}, &monitoring.MessageBuilder{}, consensusHandler)
+	evm, err := actions.NewEVM(config.Config{}, evmSvc, commonlogger.Test(t), test.NopBeholderProcessor{}, &monitoring.MessageBuilder{}, consensusHandler)
 	require.NoError(t, err)
 	return &evmWithMocks{
 		EVM:              evm,
