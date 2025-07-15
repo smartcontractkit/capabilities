@@ -185,8 +185,8 @@ func handleIdenticalAggregation(values []*valuespb.Value, f int) (*valuespb.Valu
 	}
 
 	type valueOccurrence struct {
-		count         int
-		originalValue *valuespb.Value
+		count int
+		value *valuespb.Value
 	}
 
 	var (
@@ -204,17 +204,16 @@ func handleIdenticalAggregation(values []*valuespb.Value, f int) (*valuespb.Valu
 
 		observation := identityMap[key]
 		observation.count++
-		if observation.originalValue == nil {
-			observation.originalValue = currentValue
+		if observation.value == nil {
+			observation.value = currentValue
 		}
 		identityMap[key] = observation
 
-		if observation.count >= f+1 {
-			if uniqueCandidate == nil {
-				uniqueCandidate = observation.originalValue
-			} else if uniqueCandidate != observation.originalValue {
+		if observation.count == f+1 {
+			if uniqueCandidate != nil {
 				return nil, errors.New("not identical, multiple values with f+1 occurrences")
 			}
+			uniqueCandidate = observation.value
 		}
 	}
 
