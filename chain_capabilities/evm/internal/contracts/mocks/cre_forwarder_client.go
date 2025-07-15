@@ -8,7 +8,7 @@ import (
 
 	context "context"
 
-	contracts "github.com/smartcontractkit/capabilities/chain_capabilities/evm/contracts"
+	contracts "github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 
 	evm "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 

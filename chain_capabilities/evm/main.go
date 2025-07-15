@@ -110,7 +110,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
 
-	if len(common.Hex2Bytes(cfg.CREForwarderAddress)) != 20 {
+	if !common.IsHexAddress(cfg.CREForwarderAddress) {
 		return fmt.Errorf("invalid cre forward address, it does not have 20 characters: %s", cfg.CREForwarderAddress)
 	}
 

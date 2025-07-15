@@ -24,7 +24,7 @@ packages:
       dir: ../monitoring/mocks
     interfaces:
       Logger:
-  github.com/smartcontractkit/capabilities/chain_capabilities/evm/contracts:
+  github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts:
     interfaces:
       CREForwarderClient:
         

@@ -14,7 +14,7 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring/mocks"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/monitoring/mocks"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 	capmonitoring "github.com/smartcontractkit/capabilities/libs/monitoring"
