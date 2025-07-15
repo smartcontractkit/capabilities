@@ -254,9 +254,14 @@ func (h *connectorHandler) triggerWorkflow(ctx context.Context, workflowID strin
 		h.sendErrorResponse(ctx, gatewayID, reqID, jsonrpc.ErrInvalidRequest, "Workflow not registered")
 		return fmt.Errorf("workflowID %s not registered", workflowID)
 	}
-	err := workflow.trigger(ctx, capabilities.TriggerAndId[*http.Payload]{
+	executionID, err := workflows.EncodeExecutionID(workflowID, reqID)
+	if err != nil {
+		h.sendErrorResponse(ctx, gatewayID, reqID, jsonrpc.ErrInternal, "Internal server error")
+		return fmt.Errorf("failed to encode workflow execution ID: %w", err)
+	}
+	err = workflow.trigger(ctx, capabilities.TriggerAndId[*http.Payload]{
 		// workflow engine does not process the request if the ID has already been used
-		Id: reqID,
+		Id: executionID,
 		Trigger: &http.Payload{
 			Input: input,
 			// TODO: PRODCRE-305 validate JWT against authorized keys
