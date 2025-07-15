@@ -179,44 +179,50 @@ func handleMedianAggregation(observations []*valuespb.Value, medianType string) 
 }
 
 func handleIdenticalAggregation(values []*valuespb.Value, f int) (*valuespb.Value, error) {
-	if len(values) == 0 {
+	n := len(values)
+	if n == 0 {
 		return nil, errors.New("input slice cannot be empty for identical aggregation")
 	}
 
-	identityMap := make(map[string]int, 0)
+	type valueOccurrence struct {
+		count         int
+		originalValue *valuespb.Value
+	}
 
-	// Use deterministic marshaling for consistent byte representation
-	opts := proto.MarshalOptions{Deterministic: true}
+	var (
+		marshaler       = &proto.MarshalOptions{Deterministic: true}
+		identityMap     = make(map[string]valueOccurrence)
+		uniqueCandidate *valuespb.Value
+	)
 
-	for _, value := range values {
-		b, err := opts.Marshal(value)
+	for _, currentValue := range values {
+		b, err := marshaler.Marshal(currentValue)
 		if err != nil {
 			return nil, fmt.Errorf("unable to marshal value: %w", err)
 		}
-		identityMap[string(b)]++
-	}
+		key := string(b)
 
-	candidates := make([]string, 0, len(identityMap))
-	for key, count := range identityMap {
-		if count >= f+1 {
-			candidates = append(candidates, key)
+		observation := identityMap[key]
+		observation.count++
+		if observation.originalValue == nil {
+			observation.originalValue = currentValue
+		}
+		identityMap[key] = observation
+
+		if observation.count >= f+1 {
+			if uniqueCandidate == nil {
+				uniqueCandidate = observation.originalValue
+			} else if uniqueCandidate != observation.originalValue {
+				return nil, errors.New("not identical, multiple values with f+1 occurrences")
+			}
 		}
 	}
 
-	if len(candidates) == 0 {
+	if uniqueCandidate == nil {
 		return nil, errors.New("no values met f+1 threshold")
 	}
 
-	if len(candidates) > 1 {
-		return nil, errors.New("not identical, multiple values with f+1 occurrences")
-	}
-
-	var identical valuespb.Value
-	if err := proto.Unmarshal([]byte(candidates[0]), &identical); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal candidate value: %w", err)
-	}
-
-	return &identical, nil
+	return uniqueCandidate, nil
 }
 
 func handleCommonSuffixAggregation(_ []*valuespb.Value, _ int) (*valuespb.Value, error) {
