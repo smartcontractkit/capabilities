@@ -61,6 +61,26 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 			expectedError:   nil,
 		},
 		{
+			name: "identical aggregation: happy path (int64)",
+			observations: []*valuespb.Value{
+				values.Proto(values.NewInt64(42)),
+				values.Proto(values.NewInt64(42)),
+				values.Proto(values.NewInt64(42)),
+				values.Proto(values.NewInt64(42)),
+				values.Proto(values.NewInt64(50)), // spurious
+				values.Proto(values.NewString("malicious")),
+			},
+			descriptor: &pb.ConsensusDescriptor{
+				Descriptor_: &pb.ConsensusDescriptor_Aggregation{
+					Aggregation: pb.AggregationType_AGGREGATION_TYPE_IDENTICAL,
+				},
+			},
+			minObs:          5,
+			f:               3,
+			expectedOutcome: values.Proto(values.NewInt64(42)),
+			expectedError:   nil,
+		},
+		{
 			name: "median: mixed types, one dominant (int64) - handled by filtering",
 			observations: []*valuespb.Value{
 				values.Proto(values.NewInt64(10)), values.Proto(values.NewFloat64(1.0)),
