@@ -74,7 +74,14 @@ func (cfclient creForwarderClient) GetReportProcessedEvents(ctx context.Context,
 		},
 		ToBlock: big.NewInt(LatestBlock),
 	}
-	return cfclient.evmService.FilterLogsWithConfidence(ctx, filterQuery, primitives.Unconfirmed)
+	reply, err := cfclient.evmService.FilterLogs(ctx, evmtypes.FilterLogsRequest{
+		FilterQuery: filterQuery, ConfidenceLevel: primitives.Unconfirmed,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return reply.Logs, nil
 }
 
 type CREForwarderClient interface {
@@ -142,14 +149,18 @@ func (cfclient *creForwarderClient) GetTransmissionInfo(ctx context.Context, tra
 	if err != nil {
 		return TransmissionInfo{}, err
 	}
-	response, err := cfclient.evmService.CallContractWithConfidence(ctx, &evmtypes.CallMsg{
-		To:   cfclient.forwarderAddress,
-		Data: calldata,
-	}, big.NewInt(LatestBlock), primitives.Unconfirmed)
+	response, err := cfclient.evmService.CallContract(ctx, evmtypes.CallContractRequest{
+		Msg: &evmtypes.CallMsg{
+			To:   cfclient.forwarderAddress,
+			Data: calldata,
+		},
+		BlockNumber:     big.NewInt(LatestBlock),
+		ConfidenceLevel: primitives.Unconfirmed,
+	})
 	if err != nil {
 		return TransmissionInfo{}, err
 	}
-	return cfclient.forwarderCodec.DecodeQueryTransmissionInfo(response)
+	return cfclient.forwarderCodec.DecodeQueryTransmissionInfo(response.Data)
 }
 
 type creForwarderCodecImpl struct {

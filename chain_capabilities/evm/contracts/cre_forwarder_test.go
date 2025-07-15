@@ -58,10 +58,14 @@ func TestCREForwarderClient_GetTransmissionInfo(t *testing.T) {
 		}
 		encodedData := testEncoder.encodeTransmissionIDCall(transmissionID)
 
-		mockEVMService.EXPECT().CallContractWithConfidence(ctx, &evmtypes.CallMsg{
-			To:   forwarderAddress,
-			Data: encodedData,
-		}, expectedBlockNumberForGetTransmission, primitives.Unconfirmed).Return(output, nil)
+		mockEVMService.EXPECT().CallContract(ctx, evmtypes.CallContractRequest{
+			Msg: &evmtypes.CallMsg{
+				To:   forwarderAddress,
+				Data: encodedData,
+			},
+			BlockNumber:     expectedBlockNumberForGetTransmission,
+			ConfidenceLevel: primitives.Unconfirmed,
+		}).Return(&evmtypes.CallContractReply{Data: output}, nil)
 		transmissionInfo, err := forwarderClient.GetTransmissionInfo(ctx, transmissionID)
 
 		require.NoError(t, err)
@@ -79,10 +83,14 @@ func TestCREForwarderClient_GetTransmissionInfo(t *testing.T) {
 		encodedData := testEncoder.encodeTransmissionIDCall(transmissionID)
 
 		expectedError := "failed calling call contract"
-		mockEVMService.EXPECT().CallContractWithConfidence(ctx, &evmtypes.CallMsg{
-			To:   forwarderAddress,
-			Data: encodedData,
-		}, expectedBlockNumberForGetTransmission, primitives.Unconfirmed).Return([]byte{}, errors.New(expectedError))
+		mockEVMService.EXPECT().CallContract(ctx, evmtypes.CallContractRequest{
+			Msg: &evmtypes.CallMsg{
+				To:   forwarderAddress,
+				Data: encodedData,
+			},
+			BlockNumber:     expectedBlockNumberForGetTransmission,
+			ConfidenceLevel: primitives.Unconfirmed,
+		}).Return(nil, errors.New(expectedError))
 		_, err := forwarderClient.GetTransmissionInfo(ctx, transmissionID)
 
 		require.Error(t, err)
@@ -99,10 +107,14 @@ func TestCREForwarderClient_GetTransmissionInfo(t *testing.T) {
 		}
 		encodedData := testEncoder.encodeTransmissionIDCall(transmissionID)
 
-		mockEVMService.EXPECT().CallContractWithConfidence(ctx, &evmtypes.CallMsg{
-			To:   forwarderAddress,
-			Data: encodedData,
-		}, expectedBlockNumberForGetTransmission, primitives.Unconfirmed).Return(test.RandomBytes(20), nil)
+		mockEVMService.EXPECT().CallContract(ctx, evmtypes.CallContractRequest{
+			Msg: &evmtypes.CallMsg{
+				To:   forwarderAddress,
+				Data: encodedData,
+			},
+			BlockNumber:     expectedBlockNumberForGetTransmission,
+			ConfidenceLevel: primitives.Unconfirmed,
+		}).Return(&evmtypes.CallContractReply{Data: test.RandomBytes(20)}, nil)
 		_, err := forwarderClient.GetTransmissionInfo(ctx, transmissionID)
 
 		require.Error(t, err)
@@ -127,7 +139,7 @@ func TestCREForwarderClient_GetReportProcessedEvents(t *testing.T) {
 		mockLogs := []*evm.Log{{
 			TxHash: expectedHash,
 		}}
-		mockEVMService.EXPECT().FilterLogsWithConfidence(ctx, mock.Anything, primitives.Unconfirmed).Return(mockLogs, nil)
+		mockEVMService.EXPECT().FilterLogs(ctx, mock.Anything).Return(&evmtypes.FilterLogsReply{Logs: mockLogs}, nil)
 
 		evmLogs, err := forwarderClient.GetReportProcessedEvents(ctx, receiverAddress, workflowExecutionID, reportID)
 		require.NoError(t, err)
@@ -138,7 +150,7 @@ func TestCREForwarderClient_GetReportProcessedEvents(t *testing.T) {
 		mockEVMService := mocks2.NewEVMService(t)
 		forwarderClient, _ := contracts.NewCREForwarderClient(mockEVMService, forwarderAddress, testLogger)
 		expectedError := "fail calling EVM FilterLogs"
-		mockEVMService.EXPECT().FilterLogsWithConfidence(ctx, mock.Anything, primitives.Unconfirmed).Return(nil, errors.New(expectedError))
+		mockEVMService.EXPECT().FilterLogs(ctx, mock.Anything).Return(nil, errors.New(expectedError))
 
 		_, err := forwarderClient.GetReportProcessedEvents(ctx, receiverAddress, workflowExecutionID, reportID)
 		require.Error(t, err)

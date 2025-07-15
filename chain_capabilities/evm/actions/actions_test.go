@@ -317,7 +317,7 @@ func TestCapability_HeaderByNumber(t *testing.T) {
 
 		block := big.NewInt(123)
 		ch := make(chan any, 1)
-		header := evmtypes.Head{
+		header := evmtypes.Header{
 			Timestamp: 123,
 			Number:    block,
 		}

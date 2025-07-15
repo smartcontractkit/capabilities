@@ -40,7 +40,7 @@ var (
 	}
 
 	triggerID        = "trigger-1"
-	finalizedExpHead = evmtypes.Head{Number: big.NewInt(25)}
+	finalizedExpHead = evmtypes.Header{Number: big.NewInt(25)}
 	pollInterval     = 10 * time.Millisecond
 )
 
@@ -56,7 +56,7 @@ func TestLogTriggerService_Close_WaitsForPollingGoroutine(t *testing.T) {
 		defer cancel()
 		lggr := logger.Test(t)
 		evmService := initMocks(t)
-		evmService.EXPECT().HeaderByNumberWithConfidence(mock.Anything, mock.Anything, primitives.Finalized).Return(finalizedExpHead, nil)
+		evmService.EXPECT().HeaderByNumber(mock.Anything, mock.Anything).Return(&evmtypes.HeaderByNumberReply{Header: &finalizedExpHead}, nil)
 		evmService.On("QueryTrackedLogs", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]*evmtypes.Log{}, nil)
 		evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
 		evmService.On("UnregisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
@@ -165,7 +165,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 
 	t.Run("fail to get latest head", func(t *testing.T) {
 		evmService := initMocks(t)
-		evmService.EXPECT().HeaderByNumberWithConfidence(mock.Anything, mock.Anything, primitives.Finalized).Return(evmtypes.Head{}, errors.New("mocked failure error"))
+		evmService.EXPECT().HeaderByNumber(mock.Anything, mock.Anything).Return(nil, errors.New("mocked failure error"))
 		service := NewLogTriggerService(evmService, NewLogTriggerStore(), lggr, pollInterval)
 		_, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
@@ -177,7 +177,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 
 	t.Run("fail to register log-tracking", func(t *testing.T) {
 		evmService := initMocks(t)
-		evmService.EXPECT().HeaderByNumberWithConfidence(mock.Anything, mock.Anything, primitives.Finalized).Return(evmtypes.Head{}, nil)
+		evmService.EXPECT().HeaderByNumber(mock.Anything, mock.Anything).Return(&evmtypes.HeaderByNumberReply{Header: &finalizedExpHead}, nil)
 		evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(errors.New("mocking error, making register failing on purpose")).Once()
 		service := NewLogTriggerService(evmService, NewLogTriggerStore(), lggr, pollInterval)
 		_, err := service.RegisterLogTrigger(ctx, triggerID+"-logtracking", capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
@@ -427,7 +427,7 @@ func TestGetFinalizedBlockNumber(t *testing.T) {
 			lggr:       lggr,
 			EVMService: evmService,
 		}
-		evmService.EXPECT().HeaderByNumberWithConfidence(mock.Anything, mock.Anything, primitives.Finalized).Return(finalizedExpHead, nil)
+		evmService.EXPECT().HeaderByNumber(mock.Anything, mock.Anything).Return(&evmtypes.HeaderByNumberReply{Header: &finalizedExpHead}, nil)
 		fromBlock, err := service.getFinalizedBlockNumber(ctx, triggerID)
 		require.NoError(t, err)
 		require.Equal(t, finalizedExpHead.Number, fromBlock)
@@ -438,7 +438,7 @@ func TestGetFinalizedBlockNumber(t *testing.T) {
 			lggr:       lggr,
 			EVMService: evmService,
 		}
-		evmService.EXPECT().HeaderByNumberWithConfidence(mock.Anything, mock.Anything, primitives.Finalized).Return(evmtypes.Head{}, errors.New("mocked failure error for LatestAndFinalizedHead"))
+		evmService.EXPECT().HeaderByNumber(mock.Anything, mock.Anything).Return(nil, errors.New("mocked failure error for LatestAndFinalizedHead"))
 		_, err := service.getFinalizedBlockNumber(ctx, triggerID)
 		require.Error(t, err)
 		require.ErrorContains(t, err, "failed to register latest and finalized head: 'mocked failure error for LatestAndFinalizedHead' for triggerID: trigger-1")
@@ -703,9 +703,9 @@ func TestIntegration_RegisterAndUnregisterLogTrigger(t *testing.T) {
 	evmService.On("UnregisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
 
 	// two calls, one for the starting offset and a second one for the next block
-	evmService.EXPECT().HeaderByNumberWithConfidence(mock.Anything, mock.Anything, primitives.Finalized).Return(evmtypes.Head{Number: big.NewInt(25)}, nil).Twice()
+	evmService.EXPECT().HeaderByNumber(mock.Anything, mock.Anything).Return(&evmtypes.HeaderByNumberReply{Header: &evmtypes.Header{Number: big.NewInt(25)}}, nil).Twice()
 	// single call, for fetching the latest finalized head and check if the offset has to be adjusted
-	evmService.EXPECT().HeaderByNumberWithConfidence(mock.Anything, mock.Anything, primitives.Finalized).Return(evmtypes.Head{Number: big.NewInt(26)}, nil).Once()
+	evmService.EXPECT().HeaderByNumber(mock.Anything, mock.Anything).Return(&evmtypes.HeaderByNumberReply{Header: &evmtypes.Header{Number: big.NewInt(26)}}, nil).Once()
 	// Mocking the QueryTrackedLogs method to return logs for the test (1st call) and then a second log for the next block (2nd call)
 	nextBlockNumber := new(big.Int).Add(finalizedExpHead.Number, big.NewInt(1))
 	message := []byte(assemblyDataMessage(evmtypes.Address(expectedAddress), nextBlockNumber))

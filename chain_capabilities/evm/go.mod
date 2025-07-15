@@ -6,8 +6,8 @@ require (
 	github.com/ethereum/go-ethereum v1.15.11
 	github.com/google/go-cmp v0.7.0
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20250702143256-b7ae0073499d
-	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250709182350-cc5088f0e844
-	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250707214334-e164c13b2f32
+	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250715115754-567a65288288
+	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250709190845-3e47d3dde03d
 	github.com/smartcontractkit/chainlink-evm v0.0.0-20250627135735-93e3b09aec5a
 	github.com/stretchr/testify v1.10.0
 	go.opentelemetry.io/otel v1.37.0
@@ -64,6 +64,7 @@ require (
 	github.com/mitchellh/pointerstructure v1.2.0 // indirect
 	github.com/mmcloughlin/addchain v0.4.0 // indirect
 	github.com/olekukonko/tablewriter v0.0.5 // indirect
+	github.com/pelletier/go-toml v1.9.5 // indirect
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
 	github.com/pion/dtls/v2 v2.2.12 // indirect
 	github.com/pion/logging v0.2.2 // indirect
@@ -165,7 +166,7 @@ require (
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
-	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.52.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.61.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.10.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.10.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.35.0 // indirect
@@ -173,25 +174,25 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.35.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.34.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.35.0 // indirect
-	go.opentelemetry.io/otel/exporters/stdout/stdoutlog v0.10.0 // indirect
+	go.opentelemetry.io/otel/exporters/stdout/stdoutlog v0.13.0 // indirect
 	go.opentelemetry.io/otel/exporters/stdout/stdoutmetric v1.34.0 // indirect
 	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.34.0 // indirect
-	go.opentelemetry.io/otel/log v0.10.0 // indirect
+	go.opentelemetry.io/otel/log v0.13.0 // indirect
 	go.opentelemetry.io/otel/metric v1.37.0 // indirect
-	go.opentelemetry.io/otel/sdk v1.35.0 // indirect
-	go.opentelemetry.io/otel/sdk/log v0.10.0 // indirect
-	go.opentelemetry.io/otel/sdk/metric v1.35.0 // indirect
+	go.opentelemetry.io/otel/sdk v1.37.0 // indirect
+	go.opentelemetry.io/otel/sdk/log v0.13.0 // indirect
+	go.opentelemetry.io/otel/sdk/metric v1.37.0 // indirect
 	go.opentelemetry.io/otel/trace v1.37.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.5.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/crypto v0.36.0 // indirect
+	golang.org/x/crypto v0.38.0 // indirect
 	golang.org/x/exp v0.0.0-20250218142911-aa4b98e5adaa // indirect
-	golang.org/x/net v0.38.0 // indirect
+	golang.org/x/net v0.40.0 // indirect
 	golang.org/x/sys v0.33.0 // indirect
-	golang.org/x/text v0.23.0 // indirect
+	golang.org/x/text v0.25.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250219182151-9fdb1cabc7b2 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250324211829-b45e905df463 // indirect
-	google.golang.org/grpc v1.72.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250519155744-55703ea1f237 // indirect
+	google.golang.org/grpc v1.72.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 

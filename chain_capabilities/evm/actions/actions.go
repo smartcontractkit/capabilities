@@ -90,6 +90,19 @@ func (e EVM) CallContract(
 
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildCallContractInitiated(read, callMsg, blockNumber.Int64()))
 
+	callContract := func(ctx context.Context, blockNumber *big.Int) ([]byte, error) {
+		// TODO: PLEX-1558 agree on RPC error content
+		resp, err := e.EVMService.CallContract(ctx, evmtypes.CallContractRequest{
+			Msg:             callMsg,
+			BlockNumber:     blockNumber,
+			ConfidenceLevel: confidenceLevel,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return resp.Data, nil
+	}
+
 	var request ctypes.Request
 	if needsBlockHeightConsensus {
 		request = ctypes.NewLockableToBlockRequest(requestID(meta), func(ctx context.Context, height *ctypes.ChainHeight) ([]byte, error) {
@@ -99,12 +112,11 @@ func (e EVM) CallContract(
 				return nil, fmt.Errorf("error getting call block number: %w", err)
 			}
 
-			// TODO: PLEX-1558 agree on RPC error content
-			return e.EVMService.CallContractWithConfidence(ctx, callMsg, callBlockNumber, confidenceLevel)
+			return callContract(ctx, callBlockNumber)
 		})
 	} else {
 		request = ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
-			return e.EVMService.CallContractWithConfidence(ctx, callMsg, big.NewInt(int64(blockNumber)), confidenceLevel)
+			return callContract(ctx, big.NewInt(blockNumber.Int64()))
 		})
 	}
 
@@ -120,12 +132,15 @@ func (e EVM) CallContract(
 
 func (e EVM) filterLogsToRequest(meta capabilities.RequestMetadata, ethFilterQuery evmtypes.FilterQuery) (ctypes.Request, error) {
 	filterLogs := func(ctx context.Context, query evmtypes.FilterQuery, confidenceLevel primitives.ConfidenceLevel) ([]byte, error) {
-		ethLogs, err := e.EVMService.FilterLogsWithConfidence(ctx, query, confidenceLevel)
+		reply, err := e.EVMService.FilterLogs(ctx, evmtypes.FilterLogsRequest{
+			FilterQuery:     query,
+			ConfidenceLevel: confidenceLevel,
+		})
 		if err != nil {
 			return nil, err
 		}
 
-		return proto.Marshal(&evm.FilterLogsReply{Logs: evm.ConvertLogsToProto(ethLogs)})
+		return proto.Marshal(&evm.FilterLogsReply{Logs: evm.ConvertLogsToProto(reply.Logs)})
 	}
 
 	// TODO: PLEX-1559 add validation for block range size and size of returned payload
@@ -213,12 +228,16 @@ func (e EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, r
 		if err != nil {
 			return nil, fmt.Errorf("error getting call block number: %w", err)
 		}
-		balance, err := e.EVMService.BalanceAtWithConfidence(ctx, evmtypes.Address(req.GetAccount()), callBlockNumber, confidenceLevel)
+		reply, err := e.EVMService.BalanceAt(ctx, evmtypes.BalanceAtRequest{
+			Address:         evmtypes.Address(req.GetAccount()),
+			BlockNumber:     callBlockNumber,
+			ConfidenceLevel: confidenceLevel,
+		})
 		if err != nil {
 			return nil, err
 		}
 
-		pbBalance := valuespb.NewBigIntFromInt(balance)
+		pbBalance := valuespb.NewBigIntFromInt(reply.Balance)
 		return proto.Marshal(pbBalance)
 	}
 
@@ -358,6 +377,22 @@ func (e EVM) HeaderByNumber(
 
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildHeaderByNumberInitiated(read, blockNumber.Int64()))
 
+	headerByNumber := func(ctx context.Context, blockNumber *big.Int) ([]byte, error) {
+		reply, err := e.EVMService.HeaderByNumber(ctx, evmtypes.HeaderByNumberRequest{
+			Number:          blockNumber,
+			ConfidenceLevel: confidenceLevel,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		if reply.Header == nil {
+			return nil, fmt.Errorf("header is nil")
+		}
+
+		return proto.Marshal(&evm.HeaderByNumberReply{Header: evm.ConvertHeaderToProto(*reply.Header)})
+	}
+
 	var request ctypes.Request
 	if needsBlockHeightConsensus {
 		request = ctypes.NewLockableToBlockRequest(requestID(meta), func(ctx context.Context, height *ctypes.ChainHeight) ([]byte, error) {
@@ -366,21 +401,11 @@ func (e EVM) HeaderByNumber(
 				return nil, fmt.Errorf("error getting call block number: %w", err)
 			}
 
-			header, err := e.EVMService.HeaderByNumberWithConfidence(ctx, callBlockNumber, confidenceLevel)
-			if err != nil {
-				return nil, err
-			}
-
-			return proto.Marshal(&evm.HeaderByNumberReply{Header: evm.ConvertHeaderToProto(header)})
+			return headerByNumber(ctx, callBlockNumber)
 		})
 	} else {
 		request = ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
-			header, err := e.EVMService.HeaderByNumberWithConfidence(ctx, big.NewInt(blockNumber.Int64()), confidenceLevel)
-			if err != nil {
-				return nil, err
-			}
-
-			return proto.Marshal(&evm.HeaderByNumberReply{Header: evm.ConvertHeaderToProto(header)})
+			return headerByNumber(ctx, big.NewInt(blockNumber.Int64()))
 		})
 	}
 
