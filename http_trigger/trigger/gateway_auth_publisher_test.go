@@ -217,21 +217,17 @@ func TestSendWorkflows_Success(t *testing.T) {
 	err = json.Unmarshal(*calls[0].msg.Result, &authMetadata)
 	require.NoError(t, err)
 	require.Len(t, authMetadata, 2)
-	found1 := false
+	found1, found2 := false, false
 	for _, metadata := range authMetadata {
 		if metadata.WorkflowID == "workflow1" {
 			require.Equal(t, authorizedKeys1, metadata.AuthorizedKeys)
 			found1 = true
-		}
-	}
-	require.True(t, found1, "workflow1 metadata not found in response")
-	found2 := false
-	for _, metadata := range authMetadata {
-		if metadata.WorkflowID == "workflow2" {
+		} else if metadata.WorkflowID == "workflow2" {
 			require.Equal(t, authorizedKeys2, metadata.AuthorizedKeys)
 			found2 = true
 		}
 	}
+	require.True(t, found1, "workflow1 metadata not found in response")
 	require.True(t, found2, "workflow2 metadata not found in response")
 }
 
