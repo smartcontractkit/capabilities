@@ -5,6 +5,7 @@ package mockcap;
 
 
 import "google/protobuf/empty.proto";
+import "google/protobuf/any.proto";
 
 
 service MockCapability {
@@ -18,7 +19,7 @@ service MockCapability {
   rpc CreateCapability(CapabilityInfo) returns(google.protobuf.Empty) {}
 
   // Remove a mock capability
-  rpc RemoveCapability(CapabilityInfo) returns(google.protobuf.Empty) {}
+  rpc RemoveCapability(RemoveCapabilityRequest) returns(google.protobuf.Empty) {}
 
   // Send data through a mock trigger
   rpc SendTriggerEvent(SendTriggerEventRequest) returns(google.protobuf.Empty) {}
@@ -78,8 +79,8 @@ message Metadata{
   uint32 WorkflowDonConfigVersion = 6;
   string ReferenceID = 7;
   string DecodedWorkflowName = 8;
+  repeated SpendLimit SpendLimit = 9;
 }
-
 
 message ListRequest {}
 message ListResponse {
@@ -133,6 +134,15 @@ message ExecutableRequest{
   Metadata RequestMetadata = 3;
   bytes Config = 4;
   bytes Inputs = 5;
+  google.protobuf.Any Payload = 6;
+  google.protobuf.Any ConfigPayload = 7;
+  string Method = 8;
+  string CapabilityId = 9;
+}
+
+message SpendLimit{
+  string SpendType = 1;
+  string Limit = 2;
 }
 
 message CapabilityResponse{
@@ -145,5 +155,6 @@ message ExecutableResponse{
   bytes Value = 3;
 }
 
-
-
+message RemoveCapabilityRequest{
+  string ID = 1;
+}

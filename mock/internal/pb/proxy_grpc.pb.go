@@ -44,7 +44,7 @@ type MockCapabilityClient interface {
 	// Create a mock capability and register it with the node
 	CreateCapability(ctx context.Context, in *CapabilityInfo, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	// Remove a mock capability
-	RemoveCapability(ctx context.Context, in *CapabilityInfo, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	RemoveCapability(ctx context.Context, in *RemoveCapabilityRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	// Send data through a mock trigger
 	SendTriggerEvent(ctx context.Context, in *SendTriggerEventRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	// Subscribe to a trigger (includes all triggers, not limited to mock triggers),
@@ -100,7 +100,7 @@ func (c *mockCapabilityClient) CreateCapability(ctx context.Context, in *Capabil
 	return out, nil
 }
 
-func (c *mockCapabilityClient) RemoveCapability(ctx context.Context, in *CapabilityInfo, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+func (c *mockCapabilityClient) RemoveCapability(ctx context.Context, in *RemoveCapabilityRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(emptypb.Empty)
 	err := c.cc.Invoke(ctx, MockCapability_RemoveCapability_FullMethodName, in, out, cOpts...)
@@ -203,7 +203,7 @@ type MockCapabilityServer interface {
 	// Create a mock capability and register it with the node
 	CreateCapability(context.Context, *CapabilityInfo) (*emptypb.Empty, error)
 	// Remove a mock capability
-	RemoveCapability(context.Context, *CapabilityInfo) (*emptypb.Empty, error)
+	RemoveCapability(context.Context, *RemoveCapabilityRequest) (*emptypb.Empty, error)
 	// Send data through a mock trigger
 	SendTriggerEvent(context.Context, *SendTriggerEventRequest) (*emptypb.Empty, error)
 	// Subscribe to a trigger (includes all triggers, not limited to mock triggers),
@@ -238,7 +238,7 @@ func (UnimplementedMockCapabilityServer) GetTriggerSubscribers(context.Context, 
 func (UnimplementedMockCapabilityServer) CreateCapability(context.Context, *CapabilityInfo) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateCapability not implemented")
 }
-func (UnimplementedMockCapabilityServer) RemoveCapability(context.Context, *CapabilityInfo) (*emptypb.Empty, error) {
+func (UnimplementedMockCapabilityServer) RemoveCapability(context.Context, *RemoveCapabilityRequest) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RemoveCapability not implemented")
 }
 func (UnimplementedMockCapabilityServer) SendTriggerEvent(context.Context, *SendTriggerEventRequest) (*emptypb.Empty, error) {
@@ -338,7 +338,7 @@ func _MockCapability_CreateCapability_Handler(srv interface{}, ctx context.Conte
 }
 
 func _MockCapability_RemoveCapability_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CapabilityInfo)
+	in := new(RemoveCapabilityRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -350,7 +350,7 @@ func _MockCapability_RemoveCapability_Handler(srv interface{}, ctx context.Conte
 		FullMethod: MockCapability_RemoveCapability_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MockCapabilityServer).RemoveCapability(ctx, req.(*CapabilityInfo))
+		return srv.(MockCapabilityServer).RemoveCapability(ctx, req.(*RemoveCapabilityRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }

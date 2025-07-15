@@ -36,6 +36,26 @@ type MockRegistry struct {
 	capabilitiesRegistry core.CapabilitiesRegistry
 }
 
+func (m *MockRegistry) RemoveCapability(ctx context.Context, info *pb.RemoveCapabilityRequest) (*emptypb.Empty, error) {
+	_, capType, err := m.findCapabilityByID(ctx, info.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	switch capType {
+	case capabilities.CapabilityTypeTrigger:
+		m.Triggers[info.ID] = nil
+		delete(m.Triggers, info.ID)
+	case capabilities.CapabilityTypeAction, capabilities.CapabilityTypeConsensus, capabilities.CapabilityTypeTarget:
+		m.Executable[info.ID] = nil
+		delete(m.Executable, info.ID)
+	default:
+		return &emptypb.Empty{}, errors.New("capability type not supported")
+	}
+
+	return &emptypb.Empty{}, nil
+}
+
 func (m *MockRegistry) GetTriggerSubscribers(ctx context.Context, request *pb.GetTriggerSubscribersRequest) (*pb.GetTriggerSubscribersResponse, error) {
 	// Get the trigger from the registry
 	m.mu.RLock()
@@ -279,7 +299,7 @@ func (m *MockRegistry) RegisterToWorkflow(ctx context.Context, request *pb.Regis
 	var err error
 	switch request.CapabilityType {
 	case pb.CapabilityType_Target, pb.CapabilityType_Action, pb.CapabilityType_Consensus:
-		t, err = m.findExecutable(ctx, request.ID)
+		t, err = m.getExecutable(ctx, request.ID)
 	default:
 		return &emptypb.Empty{}, errors.New("capability type not supported")
 	}
@@ -299,7 +319,7 @@ func (m *MockRegistry) UnregisterFromWorkflow(ctx context.Context, request *pb.U
 }
 
 func (m *MockRegistry) Execute(ctx context.Context, request *pb.ExecutableRequest) (*pb.CapabilityResponse, error) {
-	e, err := m.getExecutable(ctx, request.ID, request.CapabilityType)
+	e, err := m.getExecutable(ctx, request.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -316,6 +336,14 @@ func (m *MockRegistry) Execute(ctx context.Context, request *pb.ExecutableReques
 
 	m.lggr.Debugw("execute call", "ID", request.ID, "cap type", request.CapabilityType, "metadata", request.RequestMetadata, "config", config, "inputs", input)
 
+	spendLimits := make([]capabilities.SpendLimit, 0)
+	for _, s := range request.RequestMetadata.SpendLimit {
+		spendLimits = append(spendLimits, capabilities.SpendLimit{
+			SpendType: capabilities.CapabilitySpendType(s.SpendType),
+			Limit:     s.Limit,
+		})
+	}
+
 	response, err := e.Execute(ctx, capabilities.CapabilityRequest{
 		Metadata: capabilities.RequestMetadata{
 			WorkflowID:               request.RequestMetadata.WorkflowID,
@@ -326,9 +354,14 @@ func (m *MockRegistry) Execute(ctx context.Context, request *pb.ExecutableReques
 			WorkflowDonConfigVersion: request.RequestMetadata.WorkflowDonConfigVersion,
 			ReferenceID:              request.RequestMetadata.ReferenceID,
 			DecodedWorkflowName:      request.RequestMetadata.DecodedWorkflowName,
+			SpendLimits:              spendLimits,
 		},
-		Config: config,
-		Inputs: input,
+		Config:        config,
+		Inputs:        input,
+		Payload:       request.Payload,
+		ConfigPayload: request.ConfigPayload,
+		Method:        request.Method,
+		CapabilityId:  request.CapabilityId,
 	})
 	if err != nil {
 		return nil, err
@@ -387,17 +420,28 @@ func (m *MockRegistry) GetExecutable(ctx context.Context, id string) (capabiliti
 	return t, nil
 }
 
-func (m *MockRegistry) getExecutable(ctx context.Context, ID string, capType pb.CapabilityType) (capabilities.ExecutableCapability, error) {
-	return m.findExecutable(ctx, ID)
-
-}
-
-func (m *MockRegistry) findExecutable(ctx context.Context, id string) (capabilities.ExecutableCapability, error) {
+func (m *MockRegistry) getExecutable(ctx context.Context, id string) (capabilities.ExecutableCapability, error) {
 	t, err := m.capabilitiesRegistry.GetExecutable(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 	return t, nil
+}
+
+// FindCapabilityByID searches for a capability by ID in both Triggers and Executable maps
+func (m *MockRegistry) findCapabilityByID(ctx context.Context, ID string) (capabilities.BaseCapability, capabilities.CapabilityType, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if trigger, found := m.Triggers[ID]; found {
+		return trigger, trigger.CapabilityType, nil
+	}
+
+	if executable, found := m.Executable[ID]; found {
+		return executable, executable.CapabilityType, nil
+	}
+
+	return nil, "", fmt.Errorf("capability with ID %s not found", ID)
 }
 
 func (m *MockRegistry) incomingLoop(server pb.MockCapability_HookExecutablesServer) {
