@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"google.golang.org/protobuf/types/known/structpb"
 
@@ -59,11 +60,15 @@ func (h *connectorHandler) Start(ctx context.Context) error {
 	h.lggr.Debug("Starting request handler")
 	return h.StartOnce(HandlerName, func() error {
 		return h.gatewayConnector.AddHandler(ctx, []string{
-			gateway_common.MethodWorkflowExecute,
-			gateway_common.MethodWorkflowPushAuthMetadata,
-			gateway_common.MethodWorkflowPullAuthMetadata,
+			serviceName(gateway_common.MethodWorkflowExecute),
+			serviceName(gateway_common.MethodWorkflowPushAuthMetadata),
+			serviceName(gateway_common.MethodWorkflowPullAuthMetadata),
 		}, h)
 	})
+}
+
+func serviceName(method string) string {
+	return strings.Split(method, ".")[0]
 }
 
 func (h *connectorHandler) Close() error {

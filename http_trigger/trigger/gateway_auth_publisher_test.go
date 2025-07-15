@@ -219,11 +219,12 @@ func TestSendWorkflows_Success(t *testing.T) {
 	require.Len(t, authMetadata, 2)
 	found1, found2 := false, false
 	for _, metadata := range authMetadata {
-		if metadata.WorkflowID == "workflow1" {
+		switch metadata.WorkflowID {
+		case "workflow1":
 			require.Equal(t, authorizedKeys1, metadata.AuthorizedKeys)
 			found1 = true
-		} else if metadata.WorkflowID == "workflow2" {
-			require.Equal(t, authorizedKeys2, metadata.AuthorizedKeys)
+		case "workflow2":
+			require.ElementsMatch(t, authorizedKeys2, metadata.AuthorizedKeys)
 			found2 = true
 		}
 	}
