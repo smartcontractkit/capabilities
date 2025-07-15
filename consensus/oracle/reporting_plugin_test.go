@@ -2,10 +2,12 @@ package oracle_test
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -27,80 +29,256 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
-type testObservations struct {
-	observations   []*values.Int64
-	expectedResult *values.Int64
-	keyBundleID    string
+type protocolRoundTest struct {
+	requests            []*oracle.ConsensusRequest
+	expectedResult      *values.Int64
+	expectedKeyBundleID string
 }
+
+const n = 7
+const f = 2
+const batchSize = 10
 
 // TODO tests for determinism, shuffling inputs, non-happy path etc.
 
-func Test_ProtocolRounds(t *testing.T) {
+func Test_MismatchedLeaderConsensusDescriptor(t *testing.T) {
 	lggr := logger.Test(t)
 	ctx := t.Context()
 
-	n := 7
-	f := 2
-	batchSize := 10
+	metaData := newRequestMetaData()
 
-	reqToObservations := map[string]testObservations{
-		"req-1": {observations: []*values.Int64{
-			values.NewInt64(10), values.NewInt64(20), values.NewInt64(30),
-			values.NewInt64(40), values.NewInt64(50), values.NewInt64(60),
-			values.NewInt64(70)},
-			expectedResult: values.NewInt64(40), keyBundleID: "evm"},
-		"req-2": {observations: []*values.Int64{
-			values.NewInt64(110), values.NewInt64(120), values.NewInt64(130),
-			values.NewInt64(140), values.NewInt64(150), values.NewInt64(160),
-			values.NewInt64(170)},
-			expectedResult: values.NewInt64(140)},
+	newCrIdenticalConsensus := func(observation int64, metaData oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
+		simpleConsensusInputs := &pb.SimpleConsensusInputs{
+			Observation: &pb.SimpleConsensusInputs_Value{Value: values.Proto(values.NewInt64(observation))},
+			Descriptors: &pb.ConsensusDescriptor{Descriptor_: &pb.ConsensusDescriptor_Aggregation{Aggregation: pb.AggregationType_AGGREGATION_TYPE_IDENTICAL}},
+		}
 
-		// Simulate some rounds where some nodes have not yet received the observation for req-3 and req-4
-		"req-3": {observations: []*values.Int64{
-			values.NewInt64(110), values.NewInt64(120), values.NewInt64(130),
-			values.NewInt64(140), values.NewInt64(150), nil, nil},
-			expectedResult: values.NewInt64(130)},
-		"req-4": {observations: []*values.Int64{
-			values.NewInt64(110), nil, values.NewInt64(130),
-			values.NewInt64(140), values.NewInt64(150), nil,
-			values.NewInt64(170)},
-			expectedResult: values.NewInt64(140)},
-		"req-5": {observations: []*values.Int64{
-			values.NewInt64(110), nil, values.NewInt64(130),
-			nil, values.NewInt64(150), nil,
-			values.NewInt64(170)},
-			expectedResult: nil},
+		return oracle.NewConsensusRequest(simpleConsensusInputs, time.Now().Add(1*time.Hour).UTC(), nil, metaData)
+	}
 
-		// Simulate a round where there are insufficient observations for req-6
-		"req-6": {observations: []*values.Int64{
-			values.NewInt64(110), nil, values.NewInt64(130),
-			values.NewInt64(140), values.NewInt64(150), nil, nil},
-			expectedResult: nil},
-
-		// Simulate a round where the leader has not yet received the observation for req-7
-		"req-7": {observations: []*values.Int64{
-			nil, values.NewInt64(120), values.NewInt64(130),
-			values.NewInt64(140), values.NewInt64(150), values.NewInt64(160),
-			values.NewInt64(170)},
+	protocolRoundTests := map[string]protocolRoundTest{
+		metaData.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newCrIdenticalConsensus(110, metaData), newCr(120, metaData), newCr(130, metaData),
+			newCr(140, metaData), newCr(150, metaData), newCr(160, metaData),
+			newCr(170, metaData)},
 			expectedResult: nil},
 	}
 
+	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, protocolRoundTests)
+}
+
+func Test_MismatchedNonLeaderConsensusDescriptor(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := t.Context()
+
+	metaData := newRequestMetaData()
+
+	newCrIdenticalConsensus := func(observation int64, metaData oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
+		simpleConsensusInputs := &pb.SimpleConsensusInputs{
+			Observation: &pb.SimpleConsensusInputs_Value{Value: values.Proto(values.NewInt64(observation))},
+			Descriptors: &pb.ConsensusDescriptor{Descriptor_: &pb.ConsensusDescriptor_Aggregation{Aggregation: pb.AggregationType_AGGREGATION_TYPE_IDENTICAL}},
+		}
+
+		return oracle.NewConsensusRequest(simpleConsensusInputs, time.Now().Add(1*time.Hour).UTC(), nil, metaData)
+	}
+
+	protocolRoundTests := map[string]protocolRoundTest{
+		metaData.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newCr(110, metaData), newCr(120, metaData), newCr(130, metaData),
+			newCr(140, metaData), newCrIdenticalConsensus(150, metaData), newCr(160, metaData),
+			newCr(170, metaData)},
+			expectedResult: values.NewInt64(140)},
+	}
+
+	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, protocolRoundTests)
+}
+
+func Test_MismatchedLeaderMetaData(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := t.Context()
+
+	metaData := newRequestMetaData()
+	leaderMetaData := metaData
+
+	leaderMetaData.WorkflowDonID = 2
+
+	protocolRoundTests := map[string]protocolRoundTest{
+		metaData.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newCr(110, leaderMetaData), newCr(120, metaData), newCr(130, metaData),
+			newCr(140, metaData), newCr(150, metaData), newCr(160, metaData),
+			newCr(170, metaData)},
+			expectedResult: nil},
+	}
+
+	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, protocolRoundTests)
+}
+
+func Test_MismatchedNonLeaderMetaData(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := t.Context()
+
+	metaData := newRequestMetaData()
+	misMatchedMetaData := metaData
+
+	misMatchedMetaData.WorkflowDonID = 2
+
+	protocolRoundTests := map[string]protocolRoundTest{
+		metaData.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newCr(110, metaData), newCr(120, metaData), newCr(130, metaData),
+			newCr(140, metaData), newCr(150, misMatchedMetaData), newCr(160, metaData),
+			newCr(170, metaData)},
+			expectedResult: values.NewInt64(140)},
+	}
+
+	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, protocolRoundTests)
+}
+
+func Test_ReceivedAllObservationsFromAllNodes(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := t.Context()
+
+	md1 := newRequestMetaData()
+	md2 := newRequestMetaData()
+
+	md1.KeyBundleID = "evm"
+
+	reqToObservations := map[string]protocolRoundTest{
+		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newCr(10, md1), newCr(20, md1), newCr(30, md1),
+			newCr(40, md1), newCr(50, md1), newCr(60, md1),
+			newCr(70, md1)},
+			expectedResult: values.NewInt64(40), expectedKeyBundleID: "evm"},
+
+		md2.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newCr(110, md2), newCr(120, md2), newCr(130, md2),
+			newCr(140, md2), newCr(150, md2), newCr(160, md2),
+			newCr(170, md2)},
+			expectedResult: values.NewInt64(140)},
+	}
+
+	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
+}
+
+func Test_MissingButSufficientObservations(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := t.Context()
+	md3 := newRequestMetaData()
+	md4 := newRequestMetaData()
+	md5 := newRequestMetaData()
+
+	reqToObservations := map[string]protocolRoundTest{
+
+		// Simulate some rounds where some nodes have not yet received the observation for req-3 and req-4
+		md3.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newCr(110, md3), newCr(120, md3), newCr(130, md3),
+			newCr(140, md3), newCr(150, md3), nil, nil},
+			expectedResult: values.NewInt64(130)},
+		md4.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newCr(110, md4), nil, newCr(130, md4),
+			newCr(140, md4), newCr(150, md4), nil,
+			newCr(170, md4)},
+			expectedResult: values.NewInt64(140)},
+		md5.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newCr(110, md5), nil, newCr(130, md5),
+			nil, newCr(150, md5), nil,
+			newCr(170, md5)},
+			expectedResult: nil},
+	}
+
+	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
+}
+
+func Test_InsufficientObservations(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := t.Context()
+
+	md1 := newRequestMetaData()
+	md6 := newRequestMetaData()
+
+	md1.KeyBundleID = "evm"
+
+	reqToObservations := map[string]protocolRoundTest{
+		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newCr(10, md1), newCr(20, md1), newCr(30, md1),
+			newCr(40, md1), newCr(50, md1), newCr(60, md1),
+			newCr(70, md1)},
+			expectedResult: values.NewInt64(40), expectedKeyBundleID: "evm"},
+
+		// Simulate a round where there are insufficient observations for req-6
+		md6.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newCr(110, md6), nil, newCr(130, md6),
+			newCr(140, md6), newCr(150, md6), nil, nil},
+			expectedResult: nil},
+	}
+
+	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
+}
+
+func Test_LeaderHasNoMatchingRequest(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := t.Context()
+
+	md1 := newRequestMetaData()
+	md7 := newRequestMetaData()
+
+	md1.KeyBundleID = "evm"
+
+	reqToObservations := map[string]protocolRoundTest{
+		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newCr(10, md1), newCr(20, md1), newCr(30, md1),
+			newCr(40, md1), newCr(50, md1), newCr(60, md1),
+			newCr(70, md1)},
+			expectedResult: values.NewInt64(40), expectedKeyBundleID: "evm"},
+
+		// Simulate a round where the leader has not yet received the observation for req-7
+		md7.RequestID(): {requests: []*oracle.ConsensusRequest{
+			nil, newCr(120, md7), newCr(130, md7),
+			newCr(140, md7), newCr(150, md7), newCr(160, md7),
+			newCr(170, md7)},
+			expectedResult: nil},
+	}
+
+	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
+}
+
+func newRequestMetaData() oracle.ConsensusRequestMetadata {
+	return oracle.ConsensusRequestMetadata{
+		RequestMetadata: capabilities.RequestMetadata{
+			WorkflowID:               "default-workflow-id",
+			WorkflowOwner:            "test-owner",
+			WorkflowExecutionID:      uuid.NewString(),
+			WorkflowName:             "test-workflow",
+			WorkflowDonID:            1,
+			WorkflowDonConfigVersion: 1,
+			ReferenceID:              "01",
+			DecodedWorkflowName:      "test-workflow-decoded",
+			SpendLimits:              nil,
+		},
+		KeyBundleID: "",
+	}
+}
+
+func newCr(observation int64, metaData oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
+	simpleConsensusInputs := &pb.SimpleConsensusInputs{
+		Observation: &pb.SimpleConsensusInputs_Value{Value: values.Proto(values.NewInt64(observation))},
+		Descriptors: &pb.ConsensusDescriptor{Descriptor_: &pb.ConsensusDescriptor_Aggregation{Aggregation: pb.AggregationType_AGGREGATION_TYPE_MEDIAN}},
+	}
+
+	return oracle.NewConsensusRequest(simpleConsensusInputs, time.Now().Add(1*time.Hour).UTC(), nil, metaData)
+}
+
+func runProtocolRoundTests(ctx context.Context, t *testing.T, lggr logger.Logger, n, f, batchSize int, reqToObservations map[string]protocolRoundTest) {
 	var reportingPlugins []ocr3types.ReportingPlugin[[]byte]
 	for i := 0; i < n; i++ {
-		pluginObs := map[string]*values.Int64{}
-		pluginRequestMetaData := make(map[string]metadata)
+		pluginObs := []*oracle.ConsensusRequest{}
 
-		for reqID, obsData := range reqToObservations {
-			observation := obsData.observations[i]
+		for _, obsData := range reqToObservations {
+			observation := obsData.requests[i]
 			if observation != nil {
-				pluginObs[reqID] = observation
-			}
-
-			pluginRequestMetaData[reqID] = metadata{
-				keyBundleID: obsData.keyBundleID,
+				pluginObs = append(pluginObs, observation)
 			}
 		}
-		reportingPlugin := createReportingPlugin(t, pluginObs, lggr, f, n, batchSize, pluginRequestMetaData)
+		reportingPlugin := createReportingPlugin(t, pluginObs, lggr, f, n, batchSize)
 		reportingPlugins = append(reportingPlugins, reportingPlugin)
 	}
 
@@ -177,7 +355,7 @@ func Test_ProtocolRounds(t *testing.T) {
 	}
 
 	// Create a map to hold the request ID to expected result
-	requestIDToOutcome := make(map[string]*testObservations)
+	requestIDToOutcome := make(map[string]*protocolRoundTest)
 	for reqID, obs := range reqToObservations {
 		if obs.expectedResult != nil {
 			requestIDToOutcome[reqID] = &obs
@@ -206,7 +384,7 @@ func Test_ProtocolRounds(t *testing.T) {
 		fmt.Printf("Expected outcome for request %s: %s, Actual outcome: %s\n", reqID, expectedProto, actualProto)
 		require.True(t, proto.Equal(actualProto, expectedProto), "expected outcome value to match expected value for request %s", reqID)
 
-		require.Equal(t, expectedOutcome.keyBundleID, outcome.Metadata.KeyBundleId)
+		require.Equal(t, expectedOutcome.expectedKeyBundleID, outcome.Metadata.KeyBundleId)
 
 		// Verify that the report info contains key bundle id
 		require.NotNil(t, report.ReportWithInfo.Info, "report info should not be nil")
@@ -216,30 +394,15 @@ func Test_ProtocolRounds(t *testing.T) {
 		require.NoError(t, err, "failed to unmarshal value from report")
 
 		keyBundleName := infos.Fields["keyBundleName"].GetStringValue()
-		assert.Equal(t, expectedOutcome.keyBundleID, keyBundleName, "keyBundle name should be equal")
+		assert.Equal(t, expectedOutcome.expectedKeyBundleID, keyBundleName, "keyBundle name should be equal")
 	}
 }
 
-type metadata struct {
-	keyBundleID string
-}
-
-func createReportingPlugin(t *testing.T, pluginObservations map[string]*values.Int64, lggr logger.Logger, f int, n int,
-	batchSize int, requestMetaData map[string]metadata) ocr3types.ReportingPlugin[[]byte] {
-	reqStore := requests.NewStore[*oracle.ConsensusRequest, oracle.ConsensusResponse]()
-	for reqID, obs := range pluginObservations {
-		input := &pb.SimpleConsensusInputs{
-			Observation: &pb.SimpleConsensusInputs_Value{
-				Value: values.Proto(obs),
-			},
-			Descriptors: &pb.ConsensusDescriptor{
-				Descriptor_: &pb.ConsensusDescriptor_Aggregation{
-					Aggregation: pb.AggregationType_AGGREGATION_TYPE_MEDIAN,
-				},
-			},
-			Default: nil,
-		}
-		req := oracle.NewConsensusRequest(reqID, input, time.Now(), nil, capabilities.RequestMetadata{}, requestMetaData[reqID].keyBundleID)
+func createReportingPlugin(t *testing.T, pluginObservations []*oracle.ConsensusRequest, lggr logger.Logger, f int, n int,
+	batchSize int) ocr3types.ReportingPlugin[[]byte] {
+	reqStore := requests.NewStore[*oracle.ConsensusRequest]()
+	for _, obs := range pluginObservations {
+		req := obs
 		err := reqStore.Add(req)
 		require.NoError(t, err, "failed to add request to store")
 	}
