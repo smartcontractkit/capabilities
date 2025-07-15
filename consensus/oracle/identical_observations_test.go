@@ -21,6 +21,7 @@ func TestHandleIdenticalAggregation(t *testing.T) {
 		inputValues []*valuespb.Value
 		wantValue   *valuespb.Value
 		wantErr     string
+		f           int
 	}{
 		{
 			name:        "NOK - Empty slice",
@@ -28,13 +29,12 @@ func TestHandleIdenticalAggregation(t *testing.T) {
 			wantErr:     "input slice cannot be empty",
 		},
 		{
-			name: "OK - Single string value",
+			name: "NOK - Single string value",
 			inputValues: []*valuespb.Value{
 				{Value: &valuespb.Value_StringValue{StringValue: "hello"}},
 			},
-			wantValue: &valuespb.Value{
-				Value: &valuespb.Value_StringValue{StringValue: "hello"},
-			},
+			f:       1,
+			wantErr: "no values met f+1 threshold",
 		},
 		{
 			name: "OK - Multiple identical string values",
@@ -43,6 +43,7 @@ func TestHandleIdenticalAggregation(t *testing.T) {
 				{Value: &valuespb.Value_StringValue{StringValue: "apple"}},
 				{Value: &valuespb.Value_StringValue{StringValue: "apple"}},
 			},
+			f: 1,
 			wantValue: &valuespb.Value{
 				Value: &valuespb.Value_StringValue{StringValue: "apple"},
 			},
@@ -53,6 +54,7 @@ func TestHandleIdenticalAggregation(t *testing.T) {
 				{Value: &valuespb.Value_Int64Value{Int64Value: 100}},
 				{Value: &valuespb.Value_Int64Value{Int64Value: 100}},
 			},
+			f: 1,
 			wantValue: &valuespb.Value{
 				Value: &valuespb.Value_Int64Value{Int64Value: 100},
 			},
@@ -63,6 +65,7 @@ func TestHandleIdenticalAggregation(t *testing.T) {
 				{Value: &valuespb.Value_BoolValue{BoolValue: true}},
 				{Value: &valuespb.Value_BoolValue{BoolValue: true}},
 			},
+			f: 1,
 			wantValue: &valuespb.Value{
 				Value: &valuespb.Value_BoolValue{BoolValue: true},
 			},
@@ -73,6 +76,7 @@ func TestHandleIdenticalAggregation(t *testing.T) {
 				{Value: &valuespb.Value_Float64Value{Float64Value: 3.14}},
 				{Value: &valuespb.Value_Float64Value{Float64Value: 3.14}},
 			},
+			f: 1,
 			wantValue: &valuespb.Value{
 				Value: &valuespb.Value_Float64Value{Float64Value: 3.14},
 			},
@@ -83,6 +87,7 @@ func TestHandleIdenticalAggregation(t *testing.T) {
 				{Value: &valuespb.Value_TimeValue{TimeValue: nowTime}},
 				{Value: &valuespb.Value_TimeValue{TimeValue: nowTime}},
 			},
+			f: 1,
 			wantValue: &valuespb.Value{
 				Value: &valuespb.Value_TimeValue{TimeValue: nowTime},
 			},
@@ -93,7 +98,8 @@ func TestHandleIdenticalAggregation(t *testing.T) {
 				{Value: &valuespb.Value_StringValue{StringValue: "alpha"}},
 				{Value: &valuespb.Value_StringValue{StringValue: "beta"}},
 			},
-			wantErr: "mismatch found",
+			f:       1,
+			wantErr: "no values met f+1 threshold",
 		},
 		{
 			name: "NOK - Mixed types",
@@ -102,7 +108,20 @@ func TestHandleIdenticalAggregation(t *testing.T) {
 				{Value: &valuespb.Value_StringValue{StringValue: "two"}},
 				{Value: &valuespb.Value_BoolValue{BoolValue: false}},
 			},
-			wantErr: "mismatch found",
+			f:       1,
+			wantErr: "no values met f+1 threshold",
+		},
+		{
+			name: "NOK - Mixed types and multiple options",
+			inputValues: []*valuespb.Value{
+				{Value: &valuespb.Value_Int64Value{Int64Value: 1}},
+				{Value: &valuespb.Value_Int64Value{Int64Value: 1}},
+				{Value: &valuespb.Value_StringValue{StringValue: "two"}},
+				{Value: &valuespb.Value_StringValue{StringValue: "two"}},
+				{Value: &valuespb.Value_BoolValue{BoolValue: false}},
+			},
+			f:       1,
+			wantErr: "not identical",
 		},
 		{
 			name: "OK - Slice with map values",
@@ -122,6 +141,7 @@ func TestHandleIdenticalAggregation(t *testing.T) {
 					},
 				}}},
 			},
+			f: 1,
 			wantValue: &valuespb.Value{
 				Value: &valuespb.Value_MapValue{MapValue: &valuespb.Map{
 					Fields: map[string]*valuespb.Value{
@@ -142,6 +162,7 @@ func TestHandleIdenticalAggregation(t *testing.T) {
 					Fields: []*valuespb.Value{{Value: &valuespb.Value_Int64Value{Int64Value: 1}}},
 				}}},
 			},
+			f: 1,
 			wantValue: &valuespb.Value{
 				Value: &valuespb.Value_ListValue{
 					ListValue: &valuespb.List{
@@ -158,7 +179,7 @@ func TestHandleIdenticalAggregation(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := handleIdenticalAggregation(tc.inputValues)
+			got, err := handleIdenticalAggregation(tc.inputValues, tc.f)
 
 			if tc.wantErr != "" {
 				require.Error(t, err)

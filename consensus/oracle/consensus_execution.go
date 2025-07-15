@@ -1,8 +1,6 @@
 package oracle
 
 import (
-	"bytes"
-	"crypto/sha256"
 	"errors"
 	"fmt"
 	"math/big"
@@ -39,6 +37,7 @@ func CalculateOutcomeForObservations(
 	observationProtos []*valuespb.Value,
 	consensusDescriptor *pb.ConsensusDescriptor,
 	minObservations int,
+	f int,
 ) (*valuespb.Value, error) {
 	filtered, consensusType, err := filterObservations(observationProtos, minObservations)
 	if err != nil {
@@ -50,7 +49,7 @@ func CalculateOutcomeForObservations(
 		aggregation := consensusDescriptor.GetAggregation()
 		switch aggregation {
 		case pb.AggregationType_AGGREGATION_TYPE_IDENTICAL:
-			return handleIdenticalAggregation(filtered)
+			return handleIdenticalAggregation(filtered, f)
 		case pb.AggregationType_AGGREGATION_TYPE_MEDIAN:
 			return handleMedianAggregation(filtered, consensusType)
 		case pb.AggregationType_AGGREGATION_TYPE_COMMON_PREFIX:
@@ -179,34 +178,45 @@ func handleMedianAggregation(observations []*valuespb.Value, medianType string) 
 	return medianResult, nil
 }
 
-func handleIdenticalAggregation(values []*valuespb.Value) (*valuespb.Value, error) {
+func handleIdenticalAggregation(values []*valuespb.Value, f int) (*valuespb.Value, error) {
 	if len(values) == 0 {
 		return nil, errors.New("input slice cannot be empty for identical aggregation")
 	}
 
+	identityMap := make(map[string]int, 0)
+
 	// Use deterministic marshaling for consistent byte representation
 	opts := proto.MarshalOptions{Deterministic: true}
 
-	firstValueBytes, err := opts.Marshal(values[0])
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal first value: %w", err)
-	}
-	firstValueHash := sha256.Sum256(firstValueBytes)
-
-	// Compare the first hash to the hash of each subsequent value
-	for i := 1; i < len(values); i++ {
-		currentValueBytes, err := opts.Marshal(values[i])
+	for _, value := range values {
+		b, err := opts.Marshal(value)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal value at index %d: %w", i, err)
+			return nil, fmt.Errorf("unable to marshal value: %w", err)
 		}
-		currentValueHash := sha256.Sum256(currentValueBytes)
+		identityMap[string(b)]++
+	}
 
-		if !bytes.Equal(firstValueHash[:], currentValueHash[:]) {
-			return nil, fmt.Errorf("values are not identical: mismatch found at index %d", i)
+	candidates := make([]string, 0, len(identityMap))
+	for key, count := range identityMap {
+		if count >= f+1 {
+			candidates = append(candidates, key)
 		}
 	}
 
-	return values[0], nil
+	if len(candidates) == 0 {
+		return nil, errors.New("no values met f+1 threshold")
+	}
+
+	if len(candidates) > 1 {
+		return nil, errors.New("not identical, multiple values with f+1 occurrences")
+	}
+
+	var identical valuespb.Value
+	if err := proto.Unmarshal([]byte(candidates[0]), &identical); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal candidate value: %w", err)
+	}
+
+	return &identical, nil
 }
 
 func handleCommonSuffixAggregation(_ []values.Value, _ string) (*valuespb.Value, error) {

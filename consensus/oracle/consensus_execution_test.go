@@ -21,6 +21,7 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 		observations    []*valuespb.Value
 		descriptor      *pb.ConsensusDescriptor
 		minObs          int
+		f               int
 		expectedOutcome *valuespb.Value
 		expectedError   error
 	}
@@ -138,6 +139,7 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 				tc.observations,
 				tc.descriptor,
 				tc.minObs,
+				tc.f,
 			)
 
 			if tc.expectedError != nil {
