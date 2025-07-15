@@ -248,7 +248,7 @@ func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeC
 			return nil, fmt.Errorf("could not unmarshal consensus descriptor for request %s: %w", requestID, err)
 		}
 
-		value, err := CalculateOutcomeForObservations(observations, consensusDescriptor, r.minimumObservations)
+		value, err := CalculateOutcomeForObservations(observations, consensusDescriptor, r.minimumObservations, r.f)
 		if err != nil {
 			return nil, fmt.Errorf("failed to calculate outcome for observations %s: %w", requestID, err)
 		}
