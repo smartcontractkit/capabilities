@@ -53,9 +53,9 @@ func CalculateOutcomeForObservations(
 		case pb.AggregationType_AGGREGATION_TYPE_MEDIAN:
 			return handleMedianAggregation(filtered, consensusType)
 		case pb.AggregationType_AGGREGATION_TYPE_COMMON_PREFIX:
-			return handleCommonPrefixAggregation(nil, consensusType)
+			return handleCommonPrefixAggregation(filtered, f)
 		case pb.AggregationType_AGGREGATION_TYPE_COMMON_SUFFIX:
-			return handleCommonSuffixAggregation(nil, consensusType)
+			return handleCommonSuffixAggregation(filtered, f)
 		default:
 			return nil, fmt.Errorf("unknown aggregation type: %s", aggregation)
 		}
@@ -219,12 +219,12 @@ func handleIdenticalAggregation(values []*valuespb.Value, f int) (*valuespb.Valu
 	return &identical, nil
 }
 
-func handleCommonSuffixAggregation(_ []values.Value, _ string) (*valuespb.Value, error) {
+func handleCommonSuffixAggregation(_ []*valuespb.Value, _ int) (*valuespb.Value, error) {
 	// TODO: Implement common suffix aggregation logic.
 	return nil, fmt.Errorf("common suffix aggregation type not supported")
 }
 
-func handleCommonPrefixAggregation(_ []values.Value, _ string) (*valuespb.Value, error) {
+func handleCommonPrefixAggregation(_ []*valuespb.Value, _ int) (*valuespb.Value, error) {
 	// TODO: Implement common prefix aggregation logic.
 	return nil, fmt.Errorf("common prefix aggregation type not supported")
 }

@@ -196,9 +196,8 @@ func TestHandleIdenticalAggregation(t *testing.T) {
 // Test_handleCommonPrefixAggregation tests the handleCommonPrefixAggregation function directly.
 func Test_handleCommonPrefixAggregation(t *testing.T) {
 	t.Run("common prefix aggregation: not yet supported", func(t *testing.T) {
-		observations := []values.Value{values.NewString("test")}
-		finalSelectedType := TypeString
-		outcome, err := handleCommonPrefixAggregation(observations, finalSelectedType)
+		observations := []*valuespb.Value{values.Proto(values.NewString("test"))}
+		outcome, err := handleCommonPrefixAggregation(observations, 0)
 		assert.Nil(t, outcome)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "common prefix aggregation type not supported")
@@ -208,9 +207,8 @@ func Test_handleCommonPrefixAggregation(t *testing.T) {
 // Test_handleCommonSuffixAggregation tests the handleCommonSuffixAggregation function directly.
 func Test_handleCommonSuffixAggregation(t *testing.T) {
 	t.Run("common suffix aggregation: not yet supported", func(t *testing.T) {
-		observations := []values.Value{values.NewString("test")}
-		finalSelectedType := TypeString
-		outcome, err := handleCommonSuffixAggregation(observations, finalSelectedType)
+		observations := []*valuespb.Value{values.Proto(values.NewString("test"))}
+		outcome, err := handleCommonSuffixAggregation(observations, 0)
 		assert.Nil(t, outcome)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "common suffix aggregation type not supported")
