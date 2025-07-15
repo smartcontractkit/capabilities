@@ -3,6 +3,7 @@ package oracle
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 
 	"google.golang.org/protobuf/proto"
@@ -27,7 +28,7 @@ var _ ocr3types.ReportingPlugin[[]byte] = (*reportingPlugin)(nil)
 
 type reportingPlugin struct {
 	batchSize int
-	s         *requests.Store[*ConsensusRequest]
+	store     *requests.Store[*ConsensusRequest]
 
 	f int
 	n int
@@ -37,9 +38,9 @@ type reportingPlugin struct {
 	lggr logger.Logger
 }
 
-func NewReportingPlugin(lggr logger.Logger, f int, n int, s *requests.Store[*ConsensusRequest], batchSize int) (*reportingPlugin, error) {
+func NewReportingPlugin(lggr logger.Logger, f int, n int, store *requests.Store[*ConsensusRequest], batchSize int) (*reportingPlugin, error) {
 	return &reportingPlugin{
-		s:                   s,
+		store:               store,
 		batchSize:           batchSize,
 		f:                   f,
 		n:                   n,
@@ -49,7 +50,7 @@ func NewReportingPlugin(lggr logger.Logger, f int, n int, s *requests.Store[*Con
 }
 
 func (r *reportingPlugin) Query(ctx context.Context, outctx ocr3types.OutcomeContext) (types.Query, error) {
-	batch, err := r.s.FirstN(r.batchSize)
+	batch, err := r.store.FirstN(r.batchSize)
 	if err != nil {
 		r.lggr.Errorw("could not retrieve batch", "error", err)
 		return nil, err
@@ -67,34 +68,41 @@ func (r *reportingPlugin) Query(ctx context.Context, outctx ocr3types.OutcomeCon
 	// a request in the query.
 	// To prevent this each node checks the consensus descriptor for a request in the query against the consensus descriptor
 	// it has for the request and only contributes an observation for the request if the consensus descriptor matches.
+	//
+	// The same reasoning applies to the metadata for the request, which is also included in the query.
 
 	var reqs []*oracletypes.Request
 	for _, rq := range batch {
-		serialisedConsensusDescriptor, err := proto.MarshalOptions{Deterministic: true}.Marshal(rq.input.Descriptors)
+		serialisedConsensusDescriptor, err := proto.MarshalOptions{Deterministic: true}.Marshal(rq.Input.Descriptors)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal consensus descriptor for request %s: %w", rq.ID(), err)
 		}
 
 		reqs = append(reqs, &oracletypes.Request{
-			Metadata: &oracletypes.RequestMetaData{
-				RequestId:                rq.ID(),
-				WorkflowExecutionId:      rq.Metadata.WorkflowExecutionID,
-				WorkflowStepReference:    rq.Metadata.ReferenceID,
-				WorkflowId:               rq.Metadata.WorkflowID,
-				WorkflowOwner:            rq.Metadata.WorkflowOwner,
-				WorkflowName:             rq.Metadata.WorkflowName,
-				WorkflowDonId:            rq.Metadata.WorkflowDonID,
-				WorkflowDonConfigVersion: rq.Metadata.WorkflowDonConfigVersion,
-				KeyBundleId:              rq.KeyBundleID,
-			},
+			Metadata:                   ToRequestMetaData(rq.Metadata),
 			RequestConsensusDescriptor: serialisedConsensusDescriptor,
 		})
 	}
 
-	r.lggr.Debugw("Query complete", "number of requests", len(reqs))
+	r.lggr.Debugw("consensus plugin query complete", "number of requests", len(reqs))
 	return proto.MarshalOptions{Deterministic: true}.Marshal(&oracletypes.Query{
 		Requests: reqs,
 	})
+}
+
+func ToRequestMetaData(metadata ConsensusRequestMetadata) *oracletypes.RequestMetaData {
+	return &oracletypes.RequestMetaData{
+		RequestId:                metadata.RequestID(),
+		WorkflowExecutionId:      metadata.WorkflowExecutionID,
+		WorkflowStepReference:    metadata.ReferenceID,
+		WorkflowId:               metadata.WorkflowID,
+		WorkflowOwner:            metadata.WorkflowOwner,
+		WorkflowName:             metadata.WorkflowName,
+		WorkflowDonId:            metadata.WorkflowDonID,
+		WorkflowDonConfigVersion: metadata.WorkflowDonConfigVersion,
+		ReportId:                 metadata.ReportID,
+		KeyBundleId:              metadata.KeyBundleID,
+	}
 }
 
 func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.OutcomeContext, query types.Query) (types.Observation, error) {
@@ -114,10 +122,11 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 		reqIDToQueryRequest[req.Metadata.RequestId] = req
 	}
 
-	reqs := r.s.GetByIDs(requestIDs)
+	reqs := r.store.GetByIDs(requestIDs)
 
-	// Observations for a request are only included if the consensus descriptor matches the one in the query
-	// to ensure that the leader node cannot unduly influence the outcome by choosing which consensus descriptor to associate with a request.
+	// Observations for a request are only included if the consensus descriptor and metadata match that one in the query
+	// to ensure that the leader node cannot unduly influence the outcome by choosing which consensus descriptor to associate with a request
+	// or what metadata to associate with a request.
 	var requestObservations []*oracletypes.RequestObservation
 	for _, req := range reqs {
 		queryRequest, ok := reqIDToQueryRequest[req.ID()]
@@ -125,7 +134,7 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 			return nil, fmt.Errorf("request %s not found in query", req.ID())
 		}
 
-		serialisedConsensusDescriptor, err := proto.MarshalOptions{Deterministic: true}.Marshal(req.input.Descriptors)
+		serialisedConsensusDescriptor, err := proto.MarshalOptions{Deterministic: true}.Marshal(req.Input.Descriptors)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal consensus descriptor for request %s: %w", req.ID(), err)
 		}
@@ -135,7 +144,22 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 			continue // Skip this request as the consensus descriptor does not match
 		}
 
-		switch obs := req.input.GetObservation().(type) {
+		serialisedRequestMetaData, err := proto.MarshalOptions{Deterministic: true}.Marshal(ToRequestMetaData(req.Metadata))
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal request metadata for request %s: %w", req.ID(), err)
+		}
+
+		serialisedQueryRequestMetaData, err := proto.MarshalOptions{Deterministic: true}.Marshal(queryRequest.Metadata)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal query request metadata for request %s: %w", req.ID(), err)
+		}
+
+		if !bytes.Equal(serialisedRequestMetaData, serialisedQueryRequestMetaData) {
+			r.lggr.Debugw("Metadata mismatch", "requestID", req.ID())
+			continue // Skip this request as the metadata does not match
+		}
+
+		switch obs := req.Input.GetObservation().(type) {
 		case *pb.SimpleConsensusInputs_Value:
 			marshalledValue, err := proto.MarshalOptions{Deterministic: true}.Marshal(obs.Value)
 			if err != nil {
@@ -147,10 +171,11 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 			})
 		case *pb.SimpleConsensusInputs_Error:
 			r.lggr.Debugw("observation is an error, skipping", "error", obs.Error, "requestID", req.ID())
+			return nil, errors.New(obs.Error)
 		default:
 			// Neither value nor error is set in the observation input, use the default if it exists
-			if req.input.Default != nil {
-				serialisedDefault, err := proto.MarshalOptions{Deterministic: true}.Marshal(req.input.Default)
+			if req.Input.Default != nil {
+				serialisedDefault, err := proto.MarshalOptions{Deterministic: true}.Marshal(req.Input.Default)
 				if err != nil {
 					return nil, fmt.Errorf("failed to marshal default value for request %s: %w", req.ID(), err)
 				}
@@ -166,7 +191,7 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 
 	observation := &oracletypes.Observation{Observations: requestObservations}
 
-	r.lggr.Debugw("Observation complete", "numObservations", len(requestObservations), "numOfRequestsInQuery", len(requestsQuery.Requests))
+	r.lggr.Debugw("consensus plugin observation complete", "numObservations", len(requestObservations), "numOfRequestsInQuery", len(requestsQuery.Requests))
 	return proto.MarshalOptions{Deterministic: true}.Marshal(observation)
 }
 
@@ -223,7 +248,7 @@ func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeC
 			return nil, fmt.Errorf("could not unmarshal consensus descriptor for request %s: %w", requestID, err)
 		}
 
-		value, err := CalculateOutcomeForObservations(observations, consensusDescriptor)
+		value, err := CalculateOutcomeForObservations(observations, consensusDescriptor, r.minimumObservations)
 		if err != nil {
 			return nil, fmt.Errorf("failed to calculate outcome for observations %s: %w", requestID, err)
 		}
@@ -266,14 +291,13 @@ func (r *reportingPlugin) Reports(ctx context.Context, seqNr uint64, outcome ocr
 			return nil, fmt.Errorf("failed to marshal request outcome for request id %s: %w", requestOutcome.Metadata.RequestId, err)
 		}
 
-		// TODO - request meta data - need to ensure this can't be manipulated by the leader node
 		info := &ocrtypes.ReportInfo{
 			Id: &ocrtypes.Id{
 				WorkflowExecutionId:      reqMetadata.WorkflowExecutionId,
 				WorkflowId:               reqMetadata.WorkflowId,
 				WorkflowOwner:            reqMetadata.WorkflowOwner,
 				WorkflowName:             reqMetadata.WorkflowName,
-				ReportId:                 "", // TODO confirm for value reports we would not use this, but for onchain reports we would
+				ReportId:                 reqMetadata.ReportId,
 				WorkflowDonId:            reqMetadata.WorkflowDonId,
 				WorkflowDonConfigVersion: reqMetadata.WorkflowDonConfigVersion,
 				KeyId:                    reqMetadata.KeyBundleId,
@@ -299,7 +323,7 @@ func (r *reportingPlugin) Reports(ctx context.Context, seqNr uint64, outcome ocr
 		})
 	}
 
-	r.lggr.Debug("Reports complete, number of reports", len(reports))
+	r.lggr.Debug("consensus plugin reports complete, number of reports", len(reports))
 	return reports, nil
 }
 

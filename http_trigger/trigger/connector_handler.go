@@ -43,7 +43,20 @@ const (
 )
 
 var _ core.GatewayConnectorHandler = &connectorHandler{}
-var registryABI = MustParseABI(workflow_registry_wrapper_v2.WorkflowRegistryABI)
+var registryABI = sync.OnceValue(func() abi.ABI {
+	parsedABI, err := abi.JSON(strings.NewReader(workflow_registry_wrapper_v2.WorkflowRegistryABI))
+	if err != nil {
+		panic(err)
+	}
+	return parsedABI
+})()
+var getWorkflowMethod = sync.OnceValue(func() abi.Method {
+	method, ok := registryABI.Methods["getWorkflow"]
+	if !ok {
+		panic("missing method getWorkflow in ABI")
+	}
+	return method
+})()
 
 type connectorHandler struct {
 	services.StateMachine
@@ -229,12 +242,7 @@ func (h *connectorHandler) fetchWorkflowByTag(ctx context.Context, gatewayID str
 		h.sendErrorResponse(ctx, gatewayID, requestID, jsonrpc.ErrInternal, "Failed to call contract")
 		return "", fmt.Errorf("failed to call contract: %w", err)
 	}
-	method, ok := registryABI.Methods["getWorkflow"]
-	if !ok {
-		h.sendErrorResponse(ctx, gatewayID, requestID, jsonrpc.ErrInternal, "Missing method getWorkflow in ABI")
-		return "", errors.New("missing method getWorkflow")
-	}
-	unpacked, err := method.Outputs.Unpack(data)
+	unpacked, err := getWorkflowMethod.Outputs.Unpack(data)
 	if err != nil {
 		h.sendErrorResponse(ctx, gatewayID, requestID, jsonrpc.ErrInternal, "Failed to unpack ABI response")
 		return "", fmt.Errorf("failed to unpack: %w", err)
@@ -380,12 +388,4 @@ func convertRawJSONToProto(raw json.RawMessage) (*structpb.Struct, error) {
 		return nil, fmt.Errorf("failed to convert map to structpb.Struct: %w", err)
 	}
 	return s, nil
-}
-
-func MustParseABI(abiStr string) abi.ABI {
-	abiParsed, err := abi.JSON(strings.NewReader(abiStr))
-	if err != nil {
-		panic(err)
-	}
-	return abiParsed
 }

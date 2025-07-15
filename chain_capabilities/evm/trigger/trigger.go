@@ -6,17 +6,19 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/services"
-
+	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives/evm"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 )
 
 const (
@@ -29,8 +31,11 @@ type LogTriggerService struct {
 	services.Service
 	srvcEng *services.Engine
 
-	EVMService             types.EVMService
-	lggr                   logger.Logger
+	EVMService        types.EVMService
+	lggr              logger.Logger
+	beholderProcessor beholder.ProtoProcessor
+	messageBuilder    *monitoring.MessageBuilder
+
 	triggers               LogTriggerStore
 	logTriggerPollInterval time.Duration
 	// limitAndSort defines the default sorting and limiting for all log queries.
@@ -39,7 +44,9 @@ type LogTriggerService struct {
 
 // NewLogTriggerService creates a new instance of logTriggerService.
 // TODO PLEX-1465: the core logic of RegisterLogTrigger/UnregisterLogTrigger/Close/etc. should be moved to the EVMService, so it can be used by other services as well.
-func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lggr logger.Logger, logTriggerPollInterval time.Duration) *LogTriggerService {
+func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lggr logger.Logger,
+	beholderProcessor beholder.ProtoProcessor, messageBuilder *monitoring.MessageBuilder,
+	logTriggerPollInterval time.Duration) *LogTriggerService {
 	// all queries to log poller will have the same limit and sort, so we can create it once and reuse it
 	limitAndSort := query.NewLimitAndSort(query.Limit{
 		Count: defaultLimitQueryLogSize,
@@ -48,6 +55,8 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 	lts := &LogTriggerService{
 		EVMService:             evmService,
 		lggr:                   lggr,
+		beholderProcessor:      beholderProcessor,
+		messageBuilder:         messageBuilder,
 		triggers:               store,
 		logTriggerPollInterval: logTriggerPollInterval,
 		limitAndSort:           limitAndSort,
@@ -60,7 +69,8 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 	return lts
 }
 
-func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID string, _ capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*evmcappb.Log], error) {
+func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID string, meta capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*evmcappb.Log], error) {
+	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	if triggerID == "" {
 		return nil, fmt.Errorf("no triggerID provided")
 	}
@@ -98,6 +108,8 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	}
 	expressions, confidence := lts.createLogRequest(ctx, input.GetAddresses(), eventSigs, topics2, topics3, topics4, input.GetConfidence())
 
+	monitoring.EmitInitiated(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerInitiated(read, input))
+
 	logCh := make(chan capabilities.TriggerAndId[*evmcappb.Log], defaultSendChannelBufferSize)
 	lts.srvcEng.Go(func(srvcCtx context.Context) {
 		subCtx, cancel := context.WithCancel(srvcCtx)
@@ -110,7 +122,7 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 				confidence:  confidence,
 			},
 		})
-		lts.startPolling(subCtx, triggerID, logCh)
+		lts.startPolling(subCtx, read, triggerID, input, logCh)
 	})
 
 	return logCh, nil
@@ -144,7 +156,7 @@ func (lts *LogTriggerService) generateFilterID(triggerID string) string {
 	return triggerID + suffixLogTriggerFilterID
 }
 
-func (lts *LogTriggerService) startPolling(ctx context.Context, triggerID string, logCh chan capabilities.TriggerAndId[*evmcappb.Log]) {
+func (lts *LogTriggerService) startPolling(ctx context.Context, read monitoring.ReadRequest, triggerID string, input *evmcappb.FilterLogTriggerRequest, logCh chan capabilities.TriggerAndId[*evmcappb.Log]) {
 	lts.lggr.Debugf("Starting polling for triggerID: %s, interval: %d", triggerID, lts.logTriggerPollInterval)
 	ticker := defaultTickerFactory.NewTicker(lts.logTriggerPollInterval)
 	defer ticker.Stop()
@@ -164,22 +176,25 @@ func (lts *LogTriggerService) startPolling(ctx context.Context, triggerID string
 			lts.lggr.Debugf("Awake, polling for triggerID: %s, currentOffset: %d", triggerID, state.lastBlock)
 			logs, err := lts.fetchLogsFromLogPoller(ctx, state)
 			if err != nil {
-				lts.lggr.Errorf("Failed to fetch logs for triggerID: %s, error: %v", triggerID, err)
-				//TODO PLEX-1457: should we sent an error to some o11y place?
+				summary := fmt.Sprintf("Failed to fetch logs for triggerID: %s, error: %v", triggerID, err)
+				monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(read, triggerID, summary, err.Error()))
+				// no logs fetched, so we continue to the next iteration
 				continue
 			}
 
 			finalizedBlockNumber, err := lts.getFinalizedBlockNumber(ctx, triggerID)
 			if err != nil {
-				lts.lggr.Errorf("Failed to get latest finalized block number for triggerID: %s, error: %v", triggerID, err)
-				//TODO PLEX-1457: should we sent an error to some o11y place?
+				summary := fmt.Sprintf("Failed to get latest finalized block number for triggerID: %s, error: %v", triggerID, err)
+				monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(read, triggerID, summary, err.Error()))
+				// no finalized block number, so we continue to the next iteration
 				continue
 			}
 
-			err = lts.sendLogsToWorkflows(logs, finalizedBlockNumber, triggerID, state, logCh)
+			err = lts.sendLogsToWorkflows(ctx, read, logs, finalizedBlockNumber, triggerID, state, logCh)
 			if err != nil {
-				lts.lggr.Errorf("Failed to send logs for triggerID: %s, error: %v", triggerID, err)
-				//TODO PLEX-1457: should we sent an error to some o11y place?
+				summary := fmt.Sprintf("Failed to send logs for triggerID: %s, error: %v", triggerID, err)
+				monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(read, triggerID, summary, err.Error()))
+				// serious error occurred while sending logs, so we break the loop
 				return
 			}
 
@@ -187,16 +202,19 @@ func (lts *LogTriggerService) startPolling(ctx context.Context, triggerID string
 			calculatedLatestBlock := lts.getLatestBlockNumber(logs, state.lastBlock, finalizedBlockNumber)
 			err = lts.triggers.Update(triggerID, calculatedLatestBlock, state.unfinalizedSentEventIDs)
 			if err != nil {
-				lts.lggr.Errorf("Failed to update last block for triggerID: %s, error: %v", triggerID, err)
-				//TODO PLEX-1457: should we sent an error to some o11y place?
+				summary := fmt.Sprintf("Failed to update last block for triggerID: %s, error: %v", triggerID, err)
+				monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(read, triggerID, summary, err.Error()))
+				// serious error occurred while updating the last processed block, so we break the loop
 				return
 			}
-			lts.lggr.Debugf("Finished updating BlockNumber for triggerID: %s, BlockNumber: %d", triggerID, calculatedLatestBlock)
+			successMessage := fmt.Sprintf("Finished updating BlockNumber for triggerID: %s, BlockNumber: %d, sent logs: %d", triggerID, calculatedLatestBlock, len(logs))
+			monitoring.LogAndEmitSuccess(ctx, successMessage, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerSuccess(read, triggerID, input, len(logs), calculatedLatestBlock.Int64()))
 		}
 	}
 }
 
-func (lts *LogTriggerService) sendLogsToWorkflows(logs []*evmtypes.Log,
+func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, read monitoring.ReadRequest,
+	logs []*evmtypes.Log,
 	finalizedBlockNumber *big.Int,
 	triggerID string,
 	trigger logTriggerState,
@@ -210,9 +228,10 @@ func (lts *LogTriggerService) sendLogsToWorkflows(logs []*evmtypes.Log,
 		lts.lggr.Debugf("Working with logId: %s, alreadySent: %t", logID, alreadySent)
 
 		if !alreadySent {
+			protoLog := evmcappb.ConvertLogToProto(log)
 			response := capabilities.TriggerAndId[*evmcappb.Log]{
 				Id:      lts.generateLogIdentifier(log),
-				Trigger: evmcappb.ConvertLogToProto(log),
+				Trigger: protoLog,
 			}
 			lts.lggr.Debugf("Sending log event for triggerID: %s, block number: %d, eventID: %s", triggerID, log.BlockNumber, response.Id)
 
@@ -224,8 +243,14 @@ func (lts *LogTriggerService) sendLogsToWorkflows(logs []*evmtypes.Log,
 					needsUpdate = true
 				}
 			default:
-				lts.lggr.Errorw("Callback channel full, dropping event", "triggerID", triggerID, "eventID", response.Id)
-				//TODO PLEX-1457: should we sent an error to some o11y place?
+				summary := fmt.Sprintf("Callback channel full (buffer size: %d), dropping event (triggerID: %s, eventID: %s)", defaultSendChannelBufferSize, triggerID, response.Id)
+				lts.lggr.Errorw(summary, "triggerID", triggerID, "eventID", response.Id)
+				monitoring.LogAndEmitError(
+					ctx,
+					lts.lggr,
+					lts.beholderProcessor,
+					lts.messageBuilder.BuildLogTriggerEventDroppedError(read, triggerID, log, summary, summary),
+				)
 			}
 		}
 	}
@@ -327,7 +352,8 @@ func (lts *LogTriggerService) makeEventByTopicFilter(topic uint64, topics [][]by
 	return &expr
 }
 
-func (lts *LogTriggerService) UnregisterLogTrigger(ctx context.Context, triggerID string, _ capabilities.RequestMetadata, _ *evmcappb.FilterLogTriggerRequest) error {
+func (lts *LogTriggerService) UnregisterLogTrigger(ctx context.Context, triggerID string, meta capabilities.RequestMetadata, _ *evmcappb.FilterLogTriggerRequest) error {
+	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	if triggerID == "" {
 		return fmt.Errorf("no triggerID provided")
 	}
@@ -342,6 +368,8 @@ func (lts *LogTriggerService) UnregisterLogTrigger(ctx context.Context, triggerI
 	err := lts.EVMService.UnregisterLogTracking(ctx, lts.generateFilterID(triggerID))
 	if err != nil {
 		//TODO PLEX-1456: once the clean up is implemented decide if we want to return an error here or just log it
+		summary := fmt.Sprintf("failed to unregister log-tracking: '%v' for triggerID: %s", err, triggerID)
+		monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(read, triggerID, summary, err.Error()))
 		return fmt.Errorf("failed to unregister log-tracking: '%w' for triggerID: %s", err, triggerID)
 	}
 	return nil

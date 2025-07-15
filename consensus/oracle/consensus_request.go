@@ -12,43 +12,39 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb"
 )
 
-type ConsensusRequest struct {
-	id string
+type ConsensusRequestMetadata struct {
+	capabilities.RequestMetadata
+	KeyBundleID string
+	ReportID    string
+}
 
-	input     *pb.SimpleConsensusInputs
+func (m ConsensusRequestMetadata) RequestID() string {
+	return m.WorkflowExecutionID + "-" + m.ReferenceID
+}
+
+type ConsensusRequest struct {
+	RequestID string
+	Input     *pb.SimpleConsensusInputs
 	ExpiresAt time.Time
 
 	CallbackCh chan ConsensusResponse
 
-	Metadata capabilities.RequestMetadata
-
-	KeyBundleID string
+	Metadata ConsensusRequestMetadata
 }
 
 func NewConsensusRequest(
-	id string,
 	input *pb.SimpleConsensusInputs,
 	expiresAt time.Time,
 	callbackCh chan ConsensusResponse,
-	metadata capabilities.RequestMetadata,
-	keyBundleID string,
+	metadata ConsensusRequestMetadata,
 ) *ConsensusRequest {
 	return &ConsensusRequest{
-		id:          id,
-		input:       input,
-		ExpiresAt:   expiresAt,
-		CallbackCh:  callbackCh,
-		Metadata:    metadata,
-		KeyBundleID: keyBundleID,
+		RequestID:  metadata.RequestID(),
+		Input:      input,
+		ExpiresAt:  expiresAt,
+		CallbackCh: callbackCh,
+		Metadata:   metadata,
 	}
-}
-
-func (r *ConsensusRequest) ID() string {
-	return r.id
-}
-
-func (r *ConsensusRequest) ExpiryTime() time.Time {
-	return r.ExpiresAt
 }
 
 func (r *ConsensusRequest) SendResponse(ctx context.Context, resp ConsensusResponse) {
@@ -62,21 +58,28 @@ func (r *ConsensusRequest) SendResponse(ctx context.Context, resp ConsensusRespo
 
 func (r *ConsensusRequest) SendTimeout(ctx context.Context) {
 	timeoutResponse := ConsensusResponse{
-		ReqID: r.ID(),
-		Err:   fmt.Errorf("timeout exceeded: could not process consensus request before expiry, requestID %s", r.ID()),
+		ReqID: r.RequestID,
+		Err:   fmt.Errorf("timeout exceeded: could not process consensus request before expiry, requestID %s", r.RequestID),
 	}
 	r.SendResponse(ctx, timeoutResponse)
 }
 
+func (r *ConsensusRequest) ID() string {
+	return r.RequestID
+}
+
+func (r *ConsensusRequest) ExpiryTime() time.Time {
+	return r.ExpiresAt
+}
+
 func (r *ConsensusRequest) Copy() *ConsensusRequest {
 	return &ConsensusRequest{
-		id:    r.id,
-		input: proto.Clone(r.input).(*pb.SimpleConsensusInputs),
+		RequestID: r.RequestID,
+		Input:     proto.Clone(r.Input).(*pb.SimpleConsensusInputs),
 
 		// No need to copy these, they're value types.
-		ExpiresAt:   r.ExpiresAt,
-		Metadata:    r.Metadata,
-		KeyBundleID: r.KeyBundleID,
+		ExpiresAt: r.ExpiresAt,
+		Metadata:  r.Metadata,
 
 		// Intentionally not copied, but are thread-safe.
 		CallbackCh: r.CallbackCh,
