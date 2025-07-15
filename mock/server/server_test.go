@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smartcontractkit/capabilities/libs/testutils"
 	"github.com/smartcontractkit/freeport"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -16,7 +17,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 
-	"github.com/smartcontractkit/capabilities/libs/testutils"
 	"github.com/smartcontractkit/capabilities/mock/internal/pb"
 	"github.com/smartcontractkit/capabilities/mock/utils"
 )
@@ -28,7 +28,6 @@ func Test_ServerTrigger(t *testing.T) {
 	capabilitiesRegistry := testutils.NewCapabilitiesRegistry(t)
 	capabilitiesServer := &MockServer{Lggr: logger}
 	require.NotNil(t, capabilitiesServer)
-
 	// Timeout is important to avoid hanging tests
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -50,9 +49,11 @@ type="trigger"
 		nil, // unused - pipelineRunner core.PipelineRunnerService
 		nil, // unused - relayerSet core.RelayerSet
 		nil, // unused - oracleFactory core.OracleFactory
+		nil, // unused - core.GatewayConnector
+		nil, // unused - core.Keystore
 	))
 
-	//Create trigger
+	// Create trigger
 	_, err := capabilitiesServer.MockRegistry.CreateCapability(ctx, &pb.CapabilityInfo{
 		ID:             "some-other-trigger@1.0.0",
 		CapabilityType: 1,
@@ -86,7 +87,7 @@ type="trigger"
 	require.NoError(t, capabilitiesRegistry.Contains([]string{"some-trigger@1.0.0"}))
 	require.NoError(t, capabilitiesRegistry.Contains([]string{"some-other-trigger@1.0.0"}))
 
-	//Register to trigger
+	// Register to trigger
 	r1, err := capabilitiesRegistry.GetTrigger(ctx, "some-trigger@1.0.0")
 	require.NoError(t, err)
 	r1Chan, err := r1.RegisterTrigger(ctx, capabilities.TriggerRegistrationRequest{
@@ -113,7 +114,7 @@ type="trigger"
 		}
 	}()
 
-	//Connect to grpc server
+	// Connect to grpc server
 	client, err := connectWithRetry(port, 5)
 	require.NoError(t, err)
 
@@ -156,9 +157,11 @@ type="target"
 		nil, // unused - pipelineRunner core.PipelineRunnerService
 		nil, // unused - relayerSet core.RelayerSet
 		nil, // unused - oracleFactory core.OracleFactory
+		nil, // unused - core.GatewayConnector
+		nil, // unused - core.Keystore
 	))
 
-	//Create trigger
+	// Create trigger
 	_, err := capabilitiesServer.MockRegistry.CreateCapability(ctx, &pb.CapabilityInfo{
 		ID:             "some-other-target@1.0.0",
 		CapabilityType: 4,
@@ -192,7 +195,7 @@ type="target"
 	require.NoError(t, capabilitiesRegistry.Contains([]string{"some-target@1.0.0"}))
 	require.NoError(t, capabilitiesRegistry.Contains([]string{"some-other-target@1.0.0"}))
 
-	//Register to target
+	// Register to target
 	r1, err := capabilitiesRegistry.GetTarget(ctx, "some-target@1.0.0")
 	require.NoError(t, err)
 	err = r1.RegisterToWorkflow(ctx, capabilities.RegisterToWorkflowRequest{
@@ -209,7 +212,7 @@ type="target"
 	})
 	require.NoError(t, err)
 
-	//Connect to grpc server
+	// Connect to grpc server
 	conn, err := grpc.NewClient(fmt.Sprintf("127.0.0.1:%d", port), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 	client := pb.NewMockCapabilityClient(conn)

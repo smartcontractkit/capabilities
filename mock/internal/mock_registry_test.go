@@ -5,10 +5,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smartcontractkit/libocr/ragep2p/types"
+	"github.com/stretchr/testify/require"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
-	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/capabilities/libs/testutils"
 
@@ -49,11 +51,11 @@ func (m *mockCapRegistry) Add(ctx context.Context, capability capabilities.BaseC
 	return nil
 }
 
-func (m *mockCapRegistry) Get(ctx context.Context, id string) (capabilities.BaseCapability, error) {
+func (m *mockCapRegistry) Get(_ context.Context, id string) (capabilities.BaseCapability, error) {
 	return m.caps[id], nil
 }
 
-func (m *mockCapRegistry) List(ctx context.Context) ([]capabilities.BaseCapability, error) {
+func (m *mockCapRegistry) List(_ context.Context) ([]capabilities.BaseCapability, error) {
 	var caps []capabilities.BaseCapability
 	for _, cap := range m.caps {
 		caps = append(caps, cap)
@@ -61,34 +63,22 @@ func (m *mockCapRegistry) List(ctx context.Context) ([]capabilities.BaseCapabili
 	return caps, nil
 }
 
-func (m *mockCapRegistry) GetConsensus(ctx context.Context, id string) (capabilities.ConsensusCapability, error) {
-	capability := m.caps[id]
-	if cons, ok := capability.(capabilities.ConsensusCapability); ok {
-		return cons, nil
-	}
-	return nil, nil
-}
-
-func (m *mockCapRegistry) GetAction(ctx context.Context, id string) (capabilities.ActionCapability, error) {
-	capability := m.caps[id]
-	if action, ok := capability.(capabilities.ActionCapability); ok {
-		return action, nil
-	}
-	return nil, nil
-}
-
-func (m *mockCapRegistry) GetTarget(ctx context.Context, id string) (capabilities.TargetCapability, error) {
-	capability := m.caps[id]
-	if target, ok := capability.(capabilities.TargetCapability); ok {
-		return target, nil
-	}
-	return nil, nil
-}
-
-func (m *mockCapRegistry) GetTrigger(ctx context.Context, id string) (capabilities.TriggerCapability, error) {
+func (m *mockCapRegistry) GetTrigger(_ context.Context, id string) (capabilities.TriggerCapability, error) {
 	capability := m.caps[id]
 	if trigger, ok := capability.(capabilities.TriggerCapability); ok {
 		return trigger, nil
+	}
+	return nil, nil
+}
+
+func (m *mockCapRegistry) NodeByPeerID(_ context.Context, peerID types.PeerID) (capabilities.Node, error) {
+	return capabilities.Node{}, nil
+}
+
+func (m *mockCapRegistry) GetExecutable(_ context.Context, id string) (capabilities.ExecutableCapability, error) {
+	capability := m.caps[id]
+	if target, ok := capability.(capabilities.TargetCapability); ok {
+		return target, nil
 	}
 	return nil, nil
 }
@@ -123,7 +113,7 @@ func TestMockRegistry_CreateCapabilities(t *testing.T) {
 
 		_, err := registry.CreateCapability(ctx, info)
 		require.NoError(t, err)
-		require.Contains(t, registry.Targets, "test-target")
+		require.Contains(t, registry.Executable, "test-target")
 	})
 
 	t.Run("create action capability", func(t *testing.T) {
@@ -136,7 +126,7 @@ func TestMockRegistry_CreateCapabilities(t *testing.T) {
 
 		_, err := registry.CreateCapability(ctx, info)
 		require.NoError(t, err)
-		require.Contains(t, registry.Action, "test-action")
+		require.Contains(t, registry.Executable, "test-action")
 	})
 
 	t.Run("create consensus capability", func(t *testing.T) {
@@ -149,7 +139,7 @@ func TestMockRegistry_CreateCapabilities(t *testing.T) {
 
 		_, err := registry.CreateCapability(ctx, info)
 		require.NoError(t, err)
-		require.Contains(t, registry.Consensus, "test-consensus")
+		require.Contains(t, registry.Executable, "test-consensus")
 	})
 }
 
@@ -235,7 +225,7 @@ func TestMockRegistry_Execute(t *testing.T) {
 	configBytes, err := utils.MapToBytes(config)
 	require.NoError(t, err)
 
-	executable := registry.Targets["test-target"]
+	executable := registry.Executable["test-target"]
 	executable.ExecuteTimeout = time.Millisecond * 50000
 	go func() {
 		<-executable.requestChan
