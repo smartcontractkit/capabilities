@@ -15,6 +15,8 @@ import (
 
 	triggercap "github.com/smartcontractkit/capabilities/http_trigger/trigger"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	triggersdk "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
@@ -120,6 +122,8 @@ func TestHTTPTrigger(t *testing.T) {
 	f := 1
 	numNodes := 3*f + 1
 	nodeKeys := nodeKeys(t, numNodes)
+	signingKey, err := crypto.GenerateKey()
+	require.NoError(t, err)
 
 	gatewayConfigStr := fmt.Sprintf(
 		triggerGatewayConfigTemplate,
@@ -134,7 +138,7 @@ func TestHTTPTrigger(t *testing.T) {
 
 	var triggerCaps []server.HTTPCapability
 	for i := 0; i < numNodes; i++ {
-		triggerCaps = append(triggerCaps, newTriggerHTTPCapability(ctx, t, nodeURL, nodeKeys[i], lggr))
+		triggerCaps = append(triggerCaps, newTriggerHTTPCapability(ctx, t, nodeURL, nodeKeys[i], signingKey, lggr))
 	}
 
 	payload := `{
@@ -160,12 +164,20 @@ func TestHTTPTrigger(t *testing.T) {
 	t.Logf("Received response: %s", string(body))
 }
 
-func newTriggerHTTPCapability(ctx context.Context, t *testing.T, nodeURL string, privateKey *ecdsa.PrivateKey, lggr logger.Logger) server.HTTPCapability {
+func newTriggerHTTPCapability(ctx context.Context, t *testing.T, nodeURL string, privateKey *ecdsa.PrivateKey, signingKey *ecdsa.PrivateKey, lggr logger.Logger) server.HTTPCapability {
 	gc := newTestGatewayConnector(t, "workflows", nodeURL, privateKey, lggr)
 	triggerCap := triggercap.NewService(lggr)
 	err := triggerCap.Initialise(ctx, triggerServiceConfigTemplate, nil, nil, nil, nil, nil, nil, gc, nil)
 	require.NoError(t, err)
 	err = triggerCap.Start(ctx)
 	require.NoError(t, err)
+	triggerCap.RegisterTrigger(ctx, "trigger-id", capabilities.RequestMetadata{WorkflowID: "0xe3c0f8139e9e4cf0b2c31c70f3f4ae12"}, &triggersdk.Config{
+		AuthorizedKeys: []*triggersdk.AuthorizedKey{
+			{
+				PublicKey: strings.ToLower(crypto.PubkeyToAddress(signingKey.PublicKey).Hex()),
+				Type:      triggersdk.KeyType_KEY_TYPE_ECDSA,
+			},
+		},
+	})
 	return triggerCap
 }

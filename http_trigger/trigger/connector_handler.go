@@ -70,7 +70,8 @@ func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config Se
 func (h *connectorHandler) Start(ctx context.Context) error {
 	h.lggr.Debug("Starting request handler")
 	return h.StartOnce(HandlerName, func() error {
-		return h.gatewayConnector.AddHandler(ctx, []string{gateway_common.MethodWorkflowExecute}, h)
+		// TODO: move this to chainlink-common
+		return h.gatewayConnector.AddHandler(ctx, []string{"workflows"}, h)
 	})
 }
 
