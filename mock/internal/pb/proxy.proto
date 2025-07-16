@@ -107,11 +107,12 @@ message CapabilityInfo{
 }
 
 message SendTriggerEventRequest{
-  string TriggerType = 1;
-  string ID = 2;
-  bytes Outputs = 3;
-  google.protobuf.Any Payload = 4;
-  OCRTriggerEvent  OCREvent = 5;
+  string TriggerID =1;
+  string TriggerType = 2;
+  string ID = 3;
+  bytes Outputs = 5;
+  google.protobuf.Any Payload = 6;
+  OCRTriggerEvent  OCREvent = 7;
 
 }
 message OCRTriggerEvent{

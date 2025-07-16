@@ -131,7 +131,7 @@ func (m *MockRegistry) CreateCapability(ctx context.Context, info *pb.Capability
 
 func (m *MockRegistry) SendTriggerEvent(ctx context.Context, request *pb.SendTriggerEventRequest) (*emptypb.Empty, error) {
 	m.mu.RLock()
-	t, found := m.Triggers[request.ID]
+	t, found := m.Triggers[request.TriggerID]
 	m.mu.RUnlock()
 	if !found {
 		return &emptypb.Empty{}, errors.New("cannot find trigger")
@@ -147,7 +147,7 @@ func (m *MockRegistry) SendTriggerEvent(ctx context.Context, request *pb.SendTri
 		return nil, err
 	}
 
-	m.lggr.Infow("Sending trigger event through mock trigger", "id", request.ID, "triggerType", request.TriggerType, "outputs", outputs)
+	m.lggr.Infow("Sending trigger event through mock trigger", "triggerID", request.TriggerID, "id", request.ID, "triggerType", request.TriggerType)
 
 	m.lggr.Debugf("Mock trigger %s has %d subscribers", t.ID, len(t.Subscribers))
 

@@ -175,7 +175,7 @@ func TestMockRegistry_SendTriggerEvent(t *testing.T) {
 	}
 	outputsBytes, err := utils.MapToBytes(outputs)
 	require.NoError(t, err)
-	payload := anypb.Any{
+	payload := &anypb.Any{
 		TypeUrl: "some-type",
 		Value:   []byte("some-payload"),
 	}
@@ -197,10 +197,11 @@ func TestMockRegistry_SendTriggerEvent(t *testing.T) {
 
 	go func() {
 		_, err = registry.SendTriggerEvent(ctx, &pb.SendTriggerEventRequest{
+			TriggerID:   "test-trigger",
 			TriggerType: "type-trigger",
-			ID:          "test-trigger",
+			ID:          "event1",
 			Outputs:     outputsBytes,
-			Payload:     &payload,
+			Payload:     payload,
 			OCREvent: &pb.OCRTriggerEvent{
 				ConfigDigest: ocrTriggerEvent.ConfigDigest,
 				SeqNr:        ocrTriggerEvent.SeqNr,
@@ -222,11 +223,10 @@ func TestMockRegistry_SendTriggerEvent(t *testing.T) {
 	select {
 	case resp := <-ch:
 		require.Equal(t, "type-trigger", resp.Event.TriggerType)
-		require.Equal(t, "test-trigger", resp.Event.ID)
 		require.Equal(t, "event1", resp.Event.ID)
 		require.Equal(t, outputs, resp.Event.Outputs)
 		require.Equal(t, payload, resp.Event.Payload)
-		require.Equal(t, ocrTriggerEvent, resp.Event.OCREvent)
+		require.Equal(t, &ocrTriggerEvent, resp.Event.OCREvent)
 	case <-time.After(time.Second):
 		t.Fatal("timeout waiting for trigger event")
 	}

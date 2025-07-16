@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
@@ -99,8 +100,27 @@ type="trigger"
 
 	e, err := values.NewMap(map[string]int{"some-key": 4231})
 	require.NoError(t, err)
-	payloadBytes, err := utils.MapToBytes(e)
+	outputs, err := utils.MapToBytes(e)
 	require.NoError(t, err)
+	payload := &anypb.Any{
+		TypeUrl: "some-type",
+		Value:   []byte("some-payload"),
+	}
+	ocrTriggerEvent := capabilities.OCRTriggerEvent{
+		ConfigDigest: []byte("ocr-config-digest"),
+		SeqNr:        32156,
+		Report:       []byte("ocr-report"),
+		Sigs: []capabilities.OCRAttributedOnchainSignature{
+			{
+				Signature: []byte("ocr-signature-1"),
+				Signer:    0,
+			},
+			{
+				Signature: []byte("ocr-signature-2"),
+				Signer:    1,
+			},
+		},
+	}
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -119,9 +139,24 @@ type="trigger"
 	require.NoError(t, err)
 
 	_, err = client.SendTriggerEvent(ctx, &pb.SendTriggerEventRequest{
-		ID:      "some-trigger@1.0.0",
-		EventID: "eventID",
-		Payload: payloadBytes,
+		TriggerID: "some-trigger@1.0.0",
+		ID:        "eventID",
+		Outputs:   outputs,
+		Payload:   payload,
+		OCREvent: &pb.OCRTriggerEvent{
+			ConfigDigest: ocrTriggerEvent.ConfigDigest,
+			SeqNr:        ocrTriggerEvent.SeqNr,
+			Report:       ocrTriggerEvent.Report,
+			Sigs: []*pb.OCRAttributedOnchainSignature{
+				{Signature: ocrTriggerEvent.Sigs[0].Signature,
+					Signer: ocrTriggerEvent.Sigs[0].Signer,
+				},
+				{
+					Signature: ocrTriggerEvent.Sigs[1].Signature,
+					Signer:    ocrTriggerEvent.Sigs[1].Signer,
+				},
+			},
+		},
 	})
 	require.NoError(t, err)
 
