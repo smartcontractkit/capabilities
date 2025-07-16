@@ -407,3 +407,83 @@ func TestMockRegistry_GetTriggerSubscribers(t *testing.T) {
 		require.Empty(t, resp.WorkflowIDs)
 	})
 }
+
+func TestMockRegistry_RemoveCapability(t *testing.T) {
+	t.Parallel()
+	lggr := testutils.NewLogger(t)
+	capRegistry := newMockCapRegistry()
+	registry := NewMockRegistry(lggr, capRegistry)
+
+	ctx := context.Background()
+
+	// Create capabilities of different types
+	triggerInfo := &pb.CapabilityInfo{
+		ID:             "test-trigger",
+		CapabilityType: pb.CapabilityType_Trigger,
+		Description:    "test trigger",
+		IsLocal:        true,
+	}
+
+	targetInfo := &pb.CapabilityInfo{
+		ID:             "test-target",
+		CapabilityType: pb.CapabilityType_Target,
+		Description:    "test target",
+		IsLocal:        true,
+	}
+
+	actionInfo := &pb.CapabilityInfo{
+		ID:             "test-action",
+		CapabilityType: pb.CapabilityType_Action,
+		Description:    "test action",
+		IsLocal:        true,
+	}
+
+	// Create the capabilities
+	_, err := registry.CreateCapability(ctx, triggerInfo)
+	require.NoError(t, err)
+	require.Contains(t, registry.Triggers, "test-trigger")
+
+	_, err = registry.CreateCapability(ctx, targetInfo)
+	require.NoError(t, err)
+	require.Contains(t, registry.Executables, "test-target")
+
+	_, err = registry.CreateCapability(ctx, actionInfo)
+	require.NoError(t, err)
+	require.Contains(t, registry.Executables, "test-action")
+
+	// Test removing trigger capability
+	removeReq := &pb.RemoveCapabilityRequest{
+		ID: "test-trigger",
+	}
+
+	_, err = registry.RemoveCapability(ctx, removeReq)
+	require.NoError(t, err)
+	require.NotContains(t, registry.Triggers, "test-trigger")
+
+	// Test removing target capability
+	removeReq = &pb.RemoveCapabilityRequest{
+		ID: "test-target",
+	}
+
+	_, err = registry.RemoveCapability(ctx, removeReq)
+	require.NoError(t, err)
+	require.NotContains(t, registry.Executables, "test-target")
+
+	// Test removing action capability
+	removeReq = &pb.RemoveCapabilityRequest{
+		ID: "test-action",
+	}
+
+	_, err = registry.RemoveCapability(ctx, removeReq)
+	require.NoError(t, err)
+	require.NotContains(t, registry.Executables, "test-action")
+
+	// Test removing non-existent capability
+	removeReq = &pb.RemoveCapabilityRequest{
+		ID: "non-existent-id",
+	}
+
+	_, err = registry.RemoveCapability(ctx, removeReq)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not found")
+}

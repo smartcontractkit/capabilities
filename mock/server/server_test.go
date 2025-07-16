@@ -27,12 +27,14 @@ func Test_ServerTrigger(t *testing.T) {
 	port := freeport.GetOne(t)
 	logger := testutils.NewLogger(t)
 	capabilitiesRegistry := testutils.NewCapabilitiesRegistry(t)
-	capabilitiesServer := &MockServer{Lggr: logger}
+	capabilitiesServer := New(logger)
 	require.NotNil(t, capabilitiesServer)
 	// Timeout is important to avoid hanging tests
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	servicetest.RunHealthy(t, capabilitiesServer)
+
+	require.Equal(t, capabilitiesServer.Name(), "MockServer", "server name should be MockServer")
 
 	require.NoError(t, capabilitiesServer.Initialise(
 		ctx,
