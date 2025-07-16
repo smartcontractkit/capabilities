@@ -27,7 +27,7 @@ import (
 type MockRegistry struct {
 	pb.UnimplementedMockCapabilityServer
 	Triggers             map[string]*Trigger
-	Executable           map[string]*Executable
+	Executables          map[string]*Executable
 	executableRequests   chan ExecutableRequest
 	mu                   sync.RWMutex
 	stopCh               services.StopChan
@@ -47,8 +47,8 @@ func (m *MockRegistry) RemoveCapability(ctx context.Context, info *pb.RemoveCapa
 		m.Triggers[info.ID] = nil
 		delete(m.Triggers, info.ID)
 	case capabilities.CapabilityTypeAction, capabilities.CapabilityTypeConsensus, capabilities.CapabilityTypeTarget:
-		m.Executable[info.ID] = nil
-		delete(m.Executable, info.ID)
+		m.Executables[info.ID] = nil
+		delete(m.Executables, info.ID)
 	default:
 		return &emptypb.Empty{}, errors.New("capability type not supported")
 	}
@@ -83,7 +83,7 @@ func (m *MockRegistry) GetTriggerSubscribers(ctx context.Context, request *pb.Ge
 func NewMockRegistry(lggr logger.Logger, capRegistry core.CapabilitiesRegistry) *MockRegistry {
 	return &MockRegistry{
 		Triggers:             make(map[string]*Trigger),
-		Executable:           make(map[string]*Executable),
+		Executables:          make(map[string]*Executable),
 		executableRequests:   make(chan ExecutableRequest),
 		mu:                   sync.RWMutex{},
 		stopCh:               make(services.StopChan),
@@ -142,20 +142,35 @@ func (m *MockRegistry) SendTriggerEvent(ctx context.Context, request *pb.SendTri
 		return &emptypb.Empty{}, nil
 	}
 
-	outputs, err := utils.BytesToMap(request.Payload)
+	outputs, err := utils.BytesToMap(request.Outputs)
 	if err != nil {
 		return nil, err
 	}
 
-	m.lggr.Infow("Sending trigger event through mock trigger", "id", request.ID, "a", request.EventID, "payload", outputs)
+	m.lggr.Infow("Sending trigger event through mock trigger", "id", request.ID, "triggerType", request.TriggerType, "outputs", outputs)
 
 	m.lggr.Debugf("Mock trigger %s has %d subscribers", t.ID, len(t.Subscribers))
 
+	sigs := make([]capabilities.OCRAttributedOnchainSignature, 0)
+	for _, s := range request.OCREvent.Sigs {
+		sigs = append(sigs, capabilities.OCRAttributedOnchainSignature{
+			Signature: s.Signature,
+			Signer:    s.Signer,
+		})
+	}
+
 	for triggerID, sub := range t.Subscribers {
 		event := capabilities.TriggerEvent{
-			TriggerType: t.ID,
-			ID:          request.EventID,
+			TriggerType: request.TriggerType,
+			ID:          request.ID,
 			Outputs:     outputs,
+			Payload:     request.Payload,
+			OCREvent: &capabilities.OCRTriggerEvent{
+				ConfigDigest: request.OCREvent.ConfigDigest,
+				SeqNr:        request.OCREvent.SeqNr,
+				Report:       request.OCREvent.Report,
+				Sigs:         sigs,
+			},
 		}
 
 		sub.Ch <- capabilities.TriggerResponse{
@@ -193,7 +208,9 @@ func (m *MockRegistry) RegisterTrigger(request *pb.TriggerRegistrationRequest, s
 			ReferenceID:              request.Metadata.ReferenceID,
 			DecodedWorkflowName:      request.Metadata.DecodedWorkflowName,
 		},
-		Config: config,
+		Config:  config,
+		Payload: request.Payload,
+		Method:  request.Method,
 	})
 
 	if err != nil {
@@ -245,7 +262,24 @@ func (m *MockRegistry) RegisterTrigger(request *pb.TriggerRegistrationRequest, s
 }
 
 func (m *MockRegistry) UnregisterTrigger(ctx context.Context, request *pb.TriggerRegistrationRequest) (*emptypb.Empty, error) {
-	return nil, nil
+	t, err := m.capabilitiesRegistry.GetTrigger(ctx, request.TriggerID)
+
+	if err != nil {
+		return &emptypb.Empty{}, err
+	}
+
+	config, err := utils.BytesToMap(request.Config)
+	if err != nil {
+		return nil, err
+	}
+
+	return &emptypb.Empty{}, t.UnregisterTrigger(ctx, capabilities.TriggerRegistrationRequest{
+		TriggerID: request.TriggerID,
+		Metadata:  capabilities.RequestMetadata{},
+		Config:    config,
+		Payload:   request.Payload,
+		Method:    request.Method,
+	})
 }
 
 func (m *MockRegistry) HookExecutables(server pb.MockCapability_HookExecutablesServer) error {
@@ -299,7 +333,7 @@ func (m *MockRegistry) RegisterToWorkflow(ctx context.Context, request *pb.Regis
 	var err error
 	switch request.CapabilityType {
 	case pb.CapabilityType_Target, pb.CapabilityType_Action, pb.CapabilityType_Consensus:
-		t, err = m.getExecutable(ctx, request.ID)
+		t, err = m.capabilitiesRegistry.GetExecutable(ctx, request.ID)
 	default:
 		return &emptypb.Empty{}, errors.New("capability type not supported")
 	}
@@ -308,9 +342,14 @@ func (m *MockRegistry) RegisterToWorkflow(ctx context.Context, request *pb.Regis
 		return &emptypb.Empty{}, err
 	}
 
+	config, err := utils.BytesToMap(request.Config)
+	if err != nil {
+		return nil, err
+	}
+
 	return &emptypb.Empty{}, t.RegisterToWorkflow(ctx, capabilities.RegisterToWorkflowRequest{
 		Metadata: capabilities.RegistrationMetadata{},
-		Config:   nil,
+		Config:   config,
 	})
 }
 
@@ -319,7 +358,7 @@ func (m *MockRegistry) UnregisterFromWorkflow(ctx context.Context, request *pb.U
 }
 
 func (m *MockRegistry) Execute(ctx context.Context, request *pb.ExecutableRequest) (*pb.CapabilityResponse, error) {
-	e, err := m.getExecutable(ctx, request.ID)
+	e, err := m.capabilitiesRegistry.GetExecutable(ctx, request.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -384,7 +423,7 @@ func (m *MockRegistry) createExecutable(ctx context.Context, info *pb.Capability
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.Executable[info.ID] = c
+	m.Executables[info.ID] = c
 
 	m.lggr.Infow("Created mock executable", "id", info.ID, "type", info.CapabilityType)
 	return &emptypb.Empty{}, nil
@@ -406,26 +445,10 @@ func (m *MockRegistry) createTrigger(ctx context.Context, info *pb.CapabilityInf
 }
 
 func (m *MockRegistry) GetTrigger(ctx context.Context, id string) (capabilities.TriggerCapability, error) {
-	t, ok := m.Triggers[id]
-	if !ok {
-		return nil, fmt.Errorf("cannot find trigger %s", id)
-	}
-	return t, nil
+	return m.capabilitiesRegistry.GetTrigger(ctx, id)
 }
 func (m *MockRegistry) GetExecutable(ctx context.Context, id string) (capabilities.Executable, error) {
-	t, ok := m.Executable[id]
-	if !ok {
-		return nil, fmt.Errorf("cannot find target %s", id)
-	}
-	return t, nil
-}
-
-func (m *MockRegistry) getExecutable(ctx context.Context, id string) (capabilities.ExecutableCapability, error) {
-	t, err := m.capabilitiesRegistry.GetExecutable(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	return t, nil
+	return m.capabilitiesRegistry.GetExecutable(ctx, id)
 }
 
 // FindCapabilityByID searches for a capability by ID in both Triggers and Executable maps
@@ -437,7 +460,7 @@ func (m *MockRegistry) findCapabilityByID(ctx context.Context, ID string) (capab
 		return trigger, trigger.CapabilityType, nil
 	}
 
-	if executable, found := m.Executable[ID]; found {
+	if executable, found := m.Executables[ID]; found {
 		return executable, executable.CapabilityType, nil
 	}
 
@@ -477,7 +500,7 @@ func (m *MockRegistry) findLocalMockExecutable(ID string) (*Executable, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	t, found := m.Executable[ID]
+	t, found := m.Executables[ID]
 	if !found {
 		return nil, fmt.Errorf("capability %s not found", ID)
 	}

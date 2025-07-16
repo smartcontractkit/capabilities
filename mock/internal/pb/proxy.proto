@@ -67,6 +67,8 @@ message TriggerRegistrationRequest{
   string TriggerID = 1;
   Metadata Metadata = 2;
   bytes Config = 3;
+   google.protobuf.Any Payload = 4;
+string      Method =5;
 }
 
 
@@ -105,10 +107,26 @@ message CapabilityInfo{
 }
 
 message SendTriggerEventRequest{
-  string ID = 1;
-  string EventID = 2;
-  bytes Payload = 3;
+  string TriggerType = 1;
+  string ID = 2;
+  bytes Outputs = 3;
+  google.protobuf.Any Payload = 4;
+  OCRTriggerEvent  OCREvent = 5;
+
 }
+message OCRTriggerEvent{
+  bytes ConfigDigest =1;
+   uint64   SeqNr        =2;
+   bytes   Report =3;
+   repeated OCRAttributedOnchainSignature  Sigs=4;
+}
+
+message OCRAttributedOnchainSignature{
+  bytes Signature =1;
+     uint32 Signer =2;
+}
+
+
 
 message RegisterToWorkflowRequest{
   string ID = 1;

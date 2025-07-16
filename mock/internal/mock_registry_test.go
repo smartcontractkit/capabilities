@@ -7,6 +7,7 @@ import (
 
 	"github.com/smartcontractkit/libocr/ragep2p/types"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
@@ -113,7 +114,7 @@ func TestMockRegistry_CreateCapabilities(t *testing.T) {
 
 		_, err := registry.CreateCapability(ctx, info)
 		require.NoError(t, err)
-		require.Contains(t, registry.Executable, "test-target")
+		require.Contains(t, registry.Executables, "test-target")
 	})
 
 	t.Run("create action capability", func(t *testing.T) {
@@ -126,7 +127,7 @@ func TestMockRegistry_CreateCapabilities(t *testing.T) {
 
 		_, err := registry.CreateCapability(ctx, info)
 		require.NoError(t, err)
-		require.Contains(t, registry.Executable, "test-action")
+		require.Contains(t, registry.Executables, "test-action")
 	})
 
 	t.Run("create consensus capability", func(t *testing.T) {
@@ -139,7 +140,7 @@ func TestMockRegistry_CreateCapabilities(t *testing.T) {
 
 		_, err := registry.CreateCapability(ctx, info)
 		require.NoError(t, err)
-		require.Contains(t, registry.Executable, "test-consensus")
+		require.Contains(t, registry.Executables, "test-consensus")
 	})
 }
 
@@ -167,28 +168,65 @@ func TestMockRegistry_SendTriggerEvent(t *testing.T) {
 
 	require.NoError(t, err)
 
-	payload := &values.Map{
+	outputs := &values.Map{
 		Underlying: map[string]values.Value{
 			"test": values.NewString("value"),
 		},
 	}
-	payloadBytes, err := utils.MapToBytes(payload)
+	outputsBytes, err := utils.MapToBytes(outputs)
 	require.NoError(t, err)
+	payload := anypb.Any{
+		TypeUrl: "some-type",
+		Value:   []byte("some-payload"),
+	}
+	ocrTriggerEvent := capabilities.OCRTriggerEvent{
+		ConfigDigest: []byte("ocr-config-digest"),
+		SeqNr:        32156,
+		Report:       []byte("ocr-report"),
+		Sigs: []capabilities.OCRAttributedOnchainSignature{
+			{
+				Signature: []byte("ocr-signature-1"),
+				Signer:    0,
+			},
+			{
+				Signature: []byte("ocr-signature-2"),
+				Signer:    1,
+			},
+		},
+	}
 
 	go func() {
 		_, err = registry.SendTriggerEvent(ctx, &pb.SendTriggerEventRequest{
-			ID:      "test-trigger",
-			EventID: "event1",
-			Payload: payloadBytes,
+			TriggerType: "type-trigger",
+			ID:          "test-trigger",
+			Outputs:     outputsBytes,
+			Payload:     &payload,
+			OCREvent: &pb.OCRTriggerEvent{
+				ConfigDigest: ocrTriggerEvent.ConfigDigest,
+				SeqNr:        ocrTriggerEvent.SeqNr,
+				Report:       ocrTriggerEvent.Report,
+				Sigs: []*pb.OCRAttributedOnchainSignature{
+					{Signature: ocrTriggerEvent.Sigs[0].Signature,
+						Signer: ocrTriggerEvent.Sigs[0].Signer,
+					},
+					{
+						Signature: ocrTriggerEvent.Sigs[1].Signature,
+						Signer:    ocrTriggerEvent.Sigs[1].Signer,
+					},
+				},
+			},
 		})
 		require.NoError(t, err)
 	}()
 
 	select {
 	case resp := <-ch:
-		require.Equal(t, "test-trigger", resp.Event.TriggerType)
+		require.Equal(t, "type-trigger", resp.Event.TriggerType)
+		require.Equal(t, "test-trigger", resp.Event.ID)
 		require.Equal(t, "event1", resp.Event.ID)
-		require.Equal(t, payload, resp.Event.Outputs)
+		require.Equal(t, outputs, resp.Event.Outputs)
+		require.Equal(t, payload, resp.Event.Payload)
+		require.Equal(t, ocrTriggerEvent, resp.Event.OCREvent)
 	case <-time.After(time.Second):
 		t.Fatal("timeout waiting for trigger event")
 	}
@@ -225,7 +263,7 @@ func TestMockRegistry_Execute(t *testing.T) {
 	configBytes, err := utils.MapToBytes(config)
 	require.NoError(t, err)
 
-	executable := registry.Executable["test-target"]
+	executable := registry.Executables["test-target"]
 	executable.ExecuteTimeout = time.Millisecond * 50000
 	go func() {
 		<-executable.requestChan

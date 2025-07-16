@@ -101,7 +101,7 @@ func (s *MockServer) Infos(ctx context.Context) ([]capabilities.CapabilityInfo, 
 	for _, c := range s.MockRegistry.Triggers {
 		infos = append(infos, c.CapabilityInfo)
 	}
-	for _, c := range s.MockRegistry.Executable {
+	for _, c := range s.MockRegistry.Executables {
 		infos = append(infos, c.CapabilityInfo)
 	}
 
