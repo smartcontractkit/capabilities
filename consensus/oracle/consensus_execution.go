@@ -3,6 +3,7 @@ package oracle
 import (
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"reflect"
 	"slices"
@@ -14,6 +15,11 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb"
+)
+
+var (
+	ErrNoValuesMetThreshold       = errors.New("no values met f+1 threshold")
+	ErrMultipleValuesMetThreshold = errors.New("not identical, multiple values with f+1 occurrences")
 )
 
 // Constants for type names used in aggregation logic.
@@ -211,14 +217,14 @@ func handleIdenticalAggregation(values []*valuespb.Value, f int) (*valuespb.Valu
 
 		if observation.count == f+1 {
 			if uniqueCandidate != nil {
-				return nil, errors.New("not identical, multiple values with f+1 occurrences")
+				return nil, ErrMultipleValuesMetThreshold
 			}
 			uniqueCandidate = observation.value
 		}
 	}
 
 	if uniqueCandidate == nil {
-		return nil, errors.New("no values met f+1 threshold")
+		return nil, ErrNoValuesMetThreshold
 	}
 
 	return uniqueCandidate, nil
@@ -229,9 +235,60 @@ func handleCommonSuffixAggregation(_ []*valuespb.Value, _ int) (*valuespb.Value,
 	return nil, fmt.Errorf("common suffix aggregation type not supported")
 }
 
-func handleCommonPrefixAggregation(_ []*valuespb.Value, _ int) (*valuespb.Value, error) {
-	// TODO: Implement common prefix aggregation logic.
-	return nil, fmt.Errorf("common prefix aggregation type not supported")
+func handleCommonPrefixAggregation(observations []*valuespb.Value, f int) (*valuespb.Value, error) {
+	var lists []*values.List
+	minListLength := math.MaxInt
+
+	for i, obsProto := range observations {
+		val, err := values.FromProto(obsProto)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal observation value at index %d: %w", i, err)
+		}
+
+		listVal, ok := val.(*values.List)
+		if !ok {
+			return nil, fmt.Errorf("observation at index %d is not a list; got %T", i, val)
+		}
+		lists = append(lists, listVal)
+
+		if len(listVal.Underlying) < minListLength {
+			minListLength = len(listVal.Underlying)
+		}
+	}
+
+	if len(lists) == 0 || minListLength == 0 {
+		return values.Proto(&values.List{}), nil
+	}
+
+	var commonPrefixElements []any
+	for i := 0; i < minListLength; i++ {
+		var elementsAtIndex []*valuespb.Value
+		for _, list := range lists {
+			element, err := values.Wrap(list.Underlying[i])
+			if err != nil {
+				return nil, fmt.Errorf("failed to wrap list element at index %d: %w", i, err)
+			}
+			elementsAtIndex = append(elementsAtIndex, values.Proto(element))
+		}
+
+		identicalValue, err := handleIdenticalAggregation(elementsAtIndex, f)
+		if err != nil {
+			break
+		}
+
+		unwrappedIdenticalValue, err := values.FromProto(identicalValue)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unwrap identical value at index %d: %w", i, err)
+		}
+		commonPrefixElements = append(commonPrefixElements, unwrappedIdenticalValue)
+	}
+
+	resultList, err := values.NewList(commonPrefixElements)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create result list: %w", err)
+	}
+
+	return values.Proto(resultList), nil
 }
 
 // countTypes takes a slice of valuespb.Value and returns a map
