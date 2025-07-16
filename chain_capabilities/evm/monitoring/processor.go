@@ -65,6 +65,13 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 		if err := p.metrics.OnLogTriggerError(ctx, msg); err != nil {
 			return fmt.Errorf("failed to publish LogTriggerError metrics: %w", err)
 		}
+	case *LogTriggerCleanUpError:
+		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
+			return fmt.Errorf("failed to emit LogTriggerCleanUpError log: %w", err)
+		}
+		if err := p.metrics.OnLogTriggerCleanUpError(ctx, msg); err != nil {
+			return fmt.Errorf("failed to publish LogTriggerCleanUpError metrics: %w", err)
+		}
 	case *LogTriggerEventDroppedError:
 		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
 			return fmt.Errorf("failed to emit TriggerEventDroppedError log: %w", err)
