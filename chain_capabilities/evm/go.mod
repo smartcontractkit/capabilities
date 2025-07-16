@@ -6,8 +6,8 @@ require (
 	github.com/ethereum/go-ethereum v1.15.11
 	github.com/google/go-cmp v0.7.0
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20250711131700-236a5b631ad7
-	github.com/smartcontractkit/chainlink-common v0.8.1-0.20250715172114-aa60670a917e
-	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250715171446-42e31e2bef64
+	github.com/smartcontractkit/chainlink-common v0.8.1-0.20250716123636-be1313fbd156
+	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250716123636-be1313fbd156
 	github.com/smartcontractkit/chainlink-evm v0.0.0-20250627135735-93e3b09aec5a
 	github.com/stretchr/testify v1.10.0
 	go.opentelemetry.io/otel v1.37.0
