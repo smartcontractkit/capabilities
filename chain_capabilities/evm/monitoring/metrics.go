@@ -27,6 +27,9 @@ type Metrics struct {
 	LogTriggerError struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
+	LogTriggerCleanUpError struct {
+		basic commoncapbeholder.MetricsCapBasic
+	}
 	LogTriggerEventDroppedError struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
@@ -95,6 +98,11 @@ func NewMetrics() (Metrics, error) {
 	m.LogTriggerError.basic, err = commoncapbeholder.NewMetricsCapBasic(ltErr)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create log trigger error metric: %w", err)
+	}
+	ltcuErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("log_trigger_clean_up_error"), commonbeholder.ToSchemaFullName(&LogTriggerCleanUpError{}))
+	m.LogTriggerCleanUpError.basic, err = commoncapbeholder.NewMetricsCapBasic(ltcuErr)
+	if err != nil {
+		return Metrics{}, fmt.Errorf("failed to create log trigger clean up error metric: %w", err)
 	}
 	ltedErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("log_trigger_event_dropped_error"), commonbeholder.ToSchemaFullName(&LogTriggerEventDroppedError{}))
 	m.LogTriggerEventDroppedError.basic, err = commoncapbeholder.NewMetricsCapBasic(ltedErr)
@@ -202,6 +210,12 @@ func (m *Metrics) OnLogTriggerSuccess(ctx context.Context, msg *LogTriggerSucces
 func (m *Metrics) OnLogTriggerError(ctx context.Context, msg *LogTriggerError) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
 	m.LogTriggerError.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
+	return nil
+}
+
+func (m *Metrics) OnLogTriggerCleanUpError(ctx context.Context, msg *LogTriggerCleanUpError) error {
+	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
+	m.LogTriggerCleanUpError.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
 	return nil
 }
 
@@ -322,6 +336,12 @@ func (r *LogTriggerSuccess) Attributes() []attribute.KeyValue {
 func (r *LogTriggerError) Attributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.String("trigger_id", r.GetTriggerID()),
+		attribute.String("summary", r.GetSummary()),
+	}, r.ExecutionContext.Attributes()...)
+}
+
+func (r *LogTriggerCleanUpError) Attributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
 		attribute.String("summary", r.GetSummary()),
 	}, r.ExecutionContext.Attributes()...)
 }
