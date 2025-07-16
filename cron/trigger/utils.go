@@ -43,7 +43,7 @@ func enforceFastestSchedule(lggr logger.Logger, clock clockwork.Clock, jobDef go
 	}
 
 	if nextRuns[1].Before(nextRuns[0].Add(maximumFastest)) {
-		return fmt.Errorf("maximum fastest cron schedule is %s", maximumFastest.String())
+		return fmt.Errorf("maximum fastest cron schedule is %s, but %s was found in the workflow", maximumFastest.String(), nextRuns[1].Sub(nextRuns[0]).String())
 	}
 
 	return nil
