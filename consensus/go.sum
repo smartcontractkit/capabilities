@@ -269,12 +269,12 @@ github.com/shopspring/decimal v1.4.0 h1:bxl37RwXBklmTi0C79JfXCEBD1cqqHt0bbgBAGFp
 github.com/shopspring/decimal v1.4.0/go.mod h1:gawqmDU56v4yIKSwfBSFip1HdCCXN8/+DMd9qYNcwME=
 github.com/sirupsen/logrus v1.4.1/go.mod h1:ni0Sbl8bgC9z8RoU9G6nDWqqs/fq4eDPysMBDgk/93Q=
 github.com/sirupsen/logrus v1.4.2/go.mod h1:tLMulIdttU9McNUspp0xgXVQah82FyeX6MwdIuYE2rE=
-github.com/smartcontractkit/capabilities/libs v0.0.0-20250613213914-93a34678e8e2 h1:aN7VVaO35OC1opTyruxDsiDz8p3YaBKPdCsqbZ71KiM=
-github.com/smartcontractkit/capabilities/libs v0.0.0-20250613213914-93a34678e8e2/go.mod h1:6gZ8Ub+e4i6DYVisQu0L4MytMNZA9a9O59OUhBhlAek=
+github.com/smartcontractkit/capabilities/libs v0.0.0-20250711131700-236a5b631ad7 h1:QPemruCphJmJMH09cO/aClkONPVqJeWcd0qJwDbmcOI=
+github.com/smartcontractkit/capabilities/libs v0.0.0-20250711131700-236a5b631ad7/go.mod h1:/zEPppsF8Q/iwWSFbZ5MoQj/BcfYXk/whR8y91PQD+0=
 github.com/smartcontractkit/chain-selectors v1.0.62 h1:KWLEyKQXHxGGHIlUfLrzjYldlB8hBjRZi9GP49WtgYs=
 github.com/smartcontractkit/chain-selectors v1.0.62/go.mod h1:xsKM0aN3YGcQKTPRPDDtPx2l4mlTN1Djmg0VVXV40b8=
-github.com/smartcontractkit/chainlink-common v0.7.1-0.20250710122011-7c14b396e486 h1:GimtkCfctGkR64rgJo5XqE4UhB+iK2GZFTRG5TmXlj0=
-github.com/smartcontractkit/chainlink-common v0.7.1-0.20250710122011-7c14b396e486/go.mod h1:Lj/JzrMdzdRXhQvYjbFWKpcnkC17O0Im4itGI1dN/kc=
+github.com/smartcontractkit/chainlink-common v0.7.1-0.20250711153012-4854126b2774 h1:BjQ8lpQhuSR9Ae6NfMdVzPK4vtqBdJXK7qDwSyht3Vc=
+github.com/smartcontractkit/chainlink-common v0.7.1-0.20250711153012-4854126b2774/go.mod h1:Lj/JzrMdzdRXhQvYjbFWKpcnkC17O0Im4itGI1dN/kc=
 github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250710122011-7c14b396e486 h1:C0FsSMvsV3Csimg9OZBhlyZWtFFAHiQL7ILDcI3iYxo=
 github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250710122011-7c14b396e486/go.mod h1:U1UAbPhy6D7Qz0wHKGPoQO+dpR0hsYjgUz8xwRrmKwI=
 github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb v0.0.0-20250710122011-7c14b396e486 h1:zNrE6HkhiMmox7Tkb7NLlQtd5etG36GC51LIZ0+oPjM=
