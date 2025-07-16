@@ -81,6 +81,14 @@ func (m *MessageBuilder) BuildLogTriggerError(r ReadRequest, triggerID string, s
 	}
 }
 
+func (m *MessageBuilder) BuildLogTriggerCleanUpError(r ReadRequest, summary, cause string) ErrorMessage {
+	return &LogTriggerCleanUpError{
+		Summary:          summary,
+		Cause:            cause,
+		ExecutionContext: m.BuildExecutionContext(r),
+	}
+}
+
 func (m *MessageBuilder) BuildLogTriggerEventDroppedError(r ReadRequest, triggerID string, log *evm.Log, summary, cause string) ErrorMessage {
 	return &LogTriggerEventDroppedError{
 		TriggerID:        triggerID,

@@ -151,6 +151,7 @@ func TestProcessor_Process_ErrorMessages(t *testing.T) {
 	}{
 		{"CallContractError", &monitoring.CallContractError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"LogTriggerError", &monitoring.LogTriggerError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
+		{"LogTriggerCleanUpError", &monitoring.LogTriggerCleanUpError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"LogTriggerEventDroppedError", &monitoring.LogTriggerEventDroppedError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"FilterLogsError", &monitoring.FilterLogsError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"BalanceAtError", &monitoring.BalanceAtError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
