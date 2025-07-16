@@ -121,6 +121,7 @@ func (lts *LogTriggerService) cleanUpStaleFilters(ctx context.Context) {
 }
 
 func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID string, meta capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*evmcappb.Log], error) {
+	lts.lggr.Debugf("RegisterLogTrigger called with triggerID: %s, input: %+v", triggerID, input)
 	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	if triggerID == "" {
 		return nil, fmt.Errorf("no triggerID provided")
@@ -137,7 +138,22 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	if len(input.GetTopics()) == 0 || len(input.GetTopics()[0].Values) == 0 {
 		return nil, fmt.Errorf("no valid event sig provided (at least one event sig is required in topics)")
 	}
+	// TODO PLEX-1577: remove the below validation once the ConvertAddressesFromProto fails for wrong addresses (!= 20 bytes).
+	for _, addr := range input.GetAddresses() {
+		if len(addr) != 20 {
+			return nil, fmt.Errorf("invalid EVM address: %x (must be 20 bytes, but it is %d)", addr, len(addr))
+		}
+	}
+	// TODO PLEX-1577: remove the below validation once the ConvertHashesFromProto fails for wrong hashes (!= 32 bytes).
+	for i, topicGroup := range input.GetTopics() {
+		for j, topic := range topicGroup.Values {
+			if len(topic) != 32 {
+				return nil, fmt.Errorf("invalid EVM topic at topics[%d].Values[%d]: %x (must be 32 bytes, but it is %d)", i, j, topic, len(topic))
+			}
+		}
+	}
 	eventSigs, topics2, topics3, topics4 := lts.getTopics(input)
+	lts.lggr.Debugw("RegisterLogTrigger input params", "addresses:", input.GetAddresses(), "eventSigs:", eventSigs, "topics2:", topics2, "topics3:", topics3, "topics4:", topics4, "confidence:", input.GetConfidence())
 
 	fromBlock, err := lts.getFinalizedBlockNumber(ctx, triggerID)
 	if err != nil {
@@ -145,6 +161,7 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	}
 
 	filterID := lts.generateFilterID(triggerID)
+	lts.lggr.Debugf("RegisterLogTracking id: %s", filterID)
 	filterQuery := evmtypes.LPFilterQuery{
 		Name:      filterID,
 		Addresses: evmservice.ConvertAddressesFromProto(input.GetAddresses()),
@@ -420,7 +437,7 @@ func (lts *LogTriggerService) UnregisterLogTrigger(ctx context.Context, triggerI
 	if !found {
 		return fmt.Errorf("no active trigger found for triggerID: %s", triggerID)
 	}
-	lts.lggr.Debugf("Unregistering triggerID: %s", triggerID)
+	lts.lggr.Debugf("UnregisterLogTrigger triggerID: %s", triggerID)
 	trigger.cancelFunc()
 	lts.triggers.Delete(triggerID)
 
