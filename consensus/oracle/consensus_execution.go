@@ -230,9 +230,50 @@ func handleIdenticalAggregation(values []*valuespb.Value, f int) (*valuespb.Valu
 	return uniqueCandidate, nil
 }
 
-func handleCommonSuffixAggregation(_ []*valuespb.Value, _ int) (*valuespb.Value, error) {
-	// TODO: Implement common suffix aggregation logic.
-	return nil, fmt.Errorf("common suffix aggregation type not supported")
+// handleCommonSuffixAggregation reverses the underlying lists in the slice of
+// observations and delegates logic to handleCommonPrefixAggregation and then
+// reverses the result a final time.
+func handleCommonSuffixAggregation(observations []*valuespb.Value, f int) (*valuespb.Value, error) {
+	var reversedObservations []*valuespb.Value
+	for i, obsProto := range observations {
+		val, err := values.FromProto(obsProto)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal observation value at index %d: %w", i, err)
+		}
+
+		listVal, ok := val.(*values.List)
+		if !ok {
+			return nil, fmt.Errorf("observation at index %d is not a list; got %T", i, val)
+		}
+
+		reversedList, err := reverseList(listVal)
+		if err != nil {
+			return nil, fmt.Errorf("failed to reverse list at index %d: %w", i, err)
+		}
+		reversedObservations = append(reversedObservations, values.Proto(reversedList))
+	}
+
+	commonPrefixOfReversed, err := handleCommonPrefixAggregation(reversedObservations, f)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find common prefix of reversed lists: %w", err)
+	}
+
+	commonPrefixList, err := values.FromProto(commonPrefixOfReversed)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal common prefix result: %w", err)
+	}
+
+	commonPrefixAsList, ok := commonPrefixList.(*values.List)
+	if !ok {
+		return nil, fmt.Errorf("common prefix result is not a list; got %T", commonPrefixList)
+	}
+
+	commonSuffixList, err := reverseList(commonPrefixAsList)
+	if err != nil {
+		return nil, fmt.Errorf("failed to reverse common prefix list to get suffix: %w", err)
+	}
+
+	return values.Proto(commonSuffixList), nil
 }
 
 func handleCommonPrefixAggregation(observations []*valuespb.Value, f int) (*valuespb.Value, error) {
@@ -409,4 +450,17 @@ func getMedian[T any](
 	}
 
 	return values.Proto(v), nil
+}
+
+// reverseList reverses the elements of a values.List and returns a new values.List.
+func reverseList(list *values.List) (*values.List, error) {
+	if list == nil {
+		return nil, errors.New("cannot reverse a nil list")
+	}
+
+	reversedElements := make([]any, len(list.Underlying))
+	for i, j := 0, len(list.Underlying)-1; i < len(list.Underlying); i, j = i+1, j-1 {
+		reversedElements[i] = list.Underlying[j]
+	}
+	return values.NewList(reversedElements)
 }

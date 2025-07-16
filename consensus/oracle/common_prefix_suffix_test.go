@@ -85,6 +85,82 @@ func Test_handleCommonPrefixAggregation(t *testing.T) {
 	}
 }
 
+func Test_handleCommonSuffixAggregation(t *testing.T) {
+	type testCase struct {
+		name       string
+		giveValues []*valuespb.Value
+		f          int
+		wantValue  *valuespb.Value
+		wantErr    string
+	}
+
+	testCases := []testCase{
+		{
+			name: "OK - common suffix of f+1 lists",
+			giveValues: []*valuespb.Value{
+				mustNewList("4", "2", "3", "1"),
+				mustNewList("5", "2", "3", "1"),
+				mustNewList("6", "2", "3", "1"),
+				mustNewList("7", "2", "3", "1"),
+			},
+			f:         3,
+			wantValue: mustNewList("2", "3", "1"),
+		},
+		{
+			name: "OK - insufficient lists with common prefix returns empty list",
+			giveValues: []*valuespb.Value{
+				mustNewList("4", "2", "3", "1"),
+				mustNewList("5", "1", "2", "0"),
+				mustNewList("6", "2", "3", "1"),
+				mustNewList("7", "2", "3", "1"),
+			},
+			f:         3,
+			wantValue: values.Proto(&values.List{}),
+		},
+		{
+			name:       "OK - no lists provided returns empty list",
+			giveValues: []*valuespb.Value{},
+			f:          3,
+			wantValue:  values.Proto(&values.List{}),
+		},
+		{
+			name: "OK - empty lists provided returns empty list",
+			giveValues: []*valuespb.Value{
+				mustNewList(),
+				mustNewList(),
+				mustNewList(),
+			},
+			f:         3,
+			wantValue: values.Proto(&values.List{}),
+		},
+		{
+			name: "NOK - non-list provided errors",
+			giveValues: []*valuespb.Value{
+				mustNewList(),
+				mustNewList(),
+				values.Proto(values.NewString("bad entry")),
+			},
+			f:       3,
+			wantErr: "is not a list",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := handleCommonSuffixAggregation(tc.giveValues, tc.f)
+
+			if tc.wantErr != "" {
+				require.Error(t, err)
+				require.ErrorContains(t, err, tc.wantErr)
+				return
+			}
+
+			require.NoError(t, err)
+			require.True(t, proto.Equal(tc.wantValue, got), "expected %v, got %v", tc.wantValue, got)
+		})
+	}
+}
+
 func mustNewList(elems ...any) *valuespb.Value {
 	l, err := values.NewList(elems)
 	if err != nil {
