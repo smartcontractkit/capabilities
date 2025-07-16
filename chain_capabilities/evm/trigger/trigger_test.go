@@ -108,7 +108,7 @@ func TestLogTriggerService_Close_WaitsForPollingGoroutine(t *testing.T) {
 // testing all the input parameters and some minor validations
 func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 	lggr := logger.Test(t)
-	service := NewLogTriggerService(nil, NewLogTriggerStore(), lggr, test.NopBeholderProcessor{}, nil, pollInterval)
+	service := NewLogTriggerService(nil, NewLogTriggerStore(), lggr, test.NopBeholderProcessor{}, &monitoring.MessageBuilder{}, pollInterval)
 
 	t.Run("missing triggerID", func(t *testing.T) {
 		_, err := service.RegisterLogTrigger(t.Context(), "", capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
@@ -120,7 +120,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 
 	t.Run("already registered triggerID", func(t *testing.T) {
 		store := NewLogTriggerStore()
-		service := NewLogTriggerService(nil, store, lggr, test.NopBeholderProcessor{}, nil, pollInterval)
+		service := NewLogTriggerService(nil, store, lggr, test.NopBeholderProcessor{}, &monitoring.MessageBuilder{}, pollInterval)
 		// we simulate a RegisterLogTrigger() by tampering the store
 		store.Write(triggerID, logTriggerState{})
 		_, err := service.RegisterLogTrigger(t.Context(), triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
@@ -171,7 +171,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 	t.Run("fail to get latest head", func(t *testing.T) {
 		evmService := initMocks(t)
 		evmService.EXPECT().HeaderByNumber(mock.Anything, mock.Anything).Return(nil, errors.New("mocked failure error"))
-		service := NewLogTriggerService(evmService, NewLogTriggerStore(), lggr, test.NopBeholderProcessor{}, nil, pollInterval)
+		service := NewLogTriggerService(evmService, NewLogTriggerStore(), lggr, test.NopBeholderProcessor{}, &monitoring.MessageBuilder{}, pollInterval)
 		_, err := service.RegisterLogTrigger(t.Context(), triggerID, capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
 			Topics:    topicsWithEventSig0,
@@ -184,7 +184,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 		evmService := initMocks(t)
 		evmService.EXPECT().HeaderByNumber(mock.Anything, mock.Anything).Return(&evmtypes.HeaderByNumberReply{Header: &finalizedExpHead}, nil)
 		evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(errors.New("mocking error, making register failing on purpose")).Once()
-		service := NewLogTriggerService(evmService, NewLogTriggerStore(), lggr, test.NopBeholderProcessor{}, nil, pollInterval)
+		service := NewLogTriggerService(evmService, NewLogTriggerStore(), lggr, test.NopBeholderProcessor{}, &monitoring.MessageBuilder{}, pollInterval)
 		_, err := service.RegisterLogTrigger(t.Context(), triggerID+"-logtracking", capabilities.RequestMetadata{}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: brokenAddresses,
 			Topics:    topicsWithEventSig0,
@@ -299,7 +299,7 @@ func TestGetTopics(t *testing.T) {
 }
 
 func TestCreateLogRequest(t *testing.T) {
-	service := NewLogTriggerService(nil, NewLogTriggerStore(), logger.Test(t), test.NopBeholderProcessor{}, nil, pollInterval)
+	service := NewLogTriggerService(nil, NewLogTriggerStore(), logger.Test(t), test.NopBeholderProcessor{}, &monitoring.MessageBuilder{}, pollInterval)
 
 	tests := []struct {
 		name                                            string
@@ -514,7 +514,7 @@ func TestFetchLogsFromLogPoller(t *testing.T) {
 	ctx := t.Context()
 	lggr := logger.Test(t)
 	evmService := evmmock.NewEVMService(t)
-	service := NewLogTriggerService(evmService, NewLogTriggerStore(), lggr, test.NopBeholderProcessor{}, nil, pollInterval)
+	service := NewLogTriggerService(evmService, NewLogTriggerStore(), lggr, test.NopBeholderProcessor{}, &monitoring.MessageBuilder{}, pollInterval)
 	fromBlock := big.NewInt(10)
 	state := logTriggerState{
 		lastBlock: fromBlock,
