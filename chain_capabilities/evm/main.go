@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"strings"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -167,6 +168,14 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 
 	c.lggr.Infof("Successfully initialised %s", CapabilityName)
 	return nil
+}
+
+// TODO: This function should already exists
+func removeAddressPrefix(s string) string {
+	if strings.HasPrefix(s, "0x") || strings.HasPrefix(s, "0X") {
+		return s[2:]
+	}
+	return s
 }
 
 func (c *capabilityGRPCService) Start(_ context.Context) error {

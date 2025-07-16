@@ -166,8 +166,10 @@ func setupDon(ctx context.Context, t *testing.T, lggr logger.Logger, workflowURL
 
 	evmConfig := CreateEvmCapabilityConfig(t, 1337, "evm", 3*time.Second)
 	workflowDon.AddStandardCapability("evm-capabilities", evmBinary, evmConfig)
+	workflowDon.AddStandardCapability("cron-capabilities", cronBinary, utils.GetCronConfig(t, 1))
 
 	workflowDon.AddOCR3NonStandardCapability()
+	workflowDon.AddTargetCapability(targetSink)
 
 	workflowDon.Initialise()
 
@@ -179,10 +181,13 @@ func setupDon(ctx context.Context, t *testing.T, lggr logger.Logger, workflowURL
 		workflowURL, configURL, urlToConfigBytes[configURL])
 
 	return messageEmitter, donContext
+		workflowURL, configURL, data)
 }
 
 func registerWorkflow(t *testing.T, donContext framework.DonContext, workflowName string, compressedBinary []byte,
 	secretsURL string, workflowDon *framework.DON, binaryURL string, configURL string, configBytes []byte) {
+	secretsURL string, workflowDon *framework.DON, binaryURL string, configURL string, configBytes []byte,
+) {
 	workflowID, err := workflows.GenerateWorkflowID(donContext.EthBlockchain.TransactionOpts().From[:], workflowName, compressedBinary, configBytes, secretsURL)
 	require.NoError(t, err)
 
@@ -212,6 +217,12 @@ func getBeholderLogsForWorkflow(beholderTester beholdertest.Observer, t *testing
 	}
 
 	return workflowLogs
+func getBeholderLogsForWorkflow(beholderTester tests.BeholderTester, t *testing.T, workflowName string) []*beholderpb.BaseMessage {
+	baseMessages, err := beholderTester.BaseMessagesForLabels(t, map[string]string{
+		"workflowName": workflowName,
+	})
+	require.NoError(t, err)
+	return baseMessages
 }
 
 type EVMCapabilityConfig struct {
@@ -223,7 +234,7 @@ type EVMCapabilityConfig struct {
 	NodeAddress            string        `json:"nodeAddress"`
 }
 
-func CreateEvmCapabilityConfig(t *testing.T, chainID uint64, network string, duration time.Duration) string {
+func CreateEvmCapabilityConfig(t *testing.T, chainID uint64, network string, duration time.Duration, forwarderAddress common.Address) string {
 	readContractConfig := EVMCapabilityConfig{
 		ChainID:                chainID,
 		Network:                network,
@@ -231,12 +242,15 @@ func CreateEvmCapabilityConfig(t *testing.T, chainID uint64, network string, dur
 		CREForwarderAddress:    "1234567890abcdef1234567890abcdef12345678", //fake address for testing
 		ReceiverGasMinimum:     1,
 		NodeAddress:            "fakeAddressForTesting", //fake address for testing
+		CREForwarderAddress:    forwarderAddress.Hex(),
+		ReceiverGasMinimum:     4000000,
 	}
 
 	configJSON, err := json.Marshal(readContractConfig)
 	if err != nil {
 		t.Fatalf("failed to marshal evm capability config: %v", err)
 	}
+	fmt.Println("EVM config :" + string(configJSON))
 
 	readCapabilityConfig := "'''" + string(configJSON) + "'''"
 	return readCapabilityConfig

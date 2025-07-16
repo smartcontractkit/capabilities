@@ -52,7 +52,7 @@ func TestWriteReport_InputValidation(t *testing.T) {
 			},
 		})
 		require.Error(t, err)
-		require.Equal(t, "received address is not 20 bytes long. Address in HEX: ", err.Error())
+		require.Equal(t, "received address is not 40 bytes long. Address in HEX: ", err.Error())
 	})
 	t.Run("Invalid report metadata", func(t *testing.T) {
 		_, _, service := createMocksAndCapability(t, lggr)

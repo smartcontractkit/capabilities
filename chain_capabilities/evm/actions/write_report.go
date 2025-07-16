@@ -60,6 +60,7 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 
 	txHashRetriever := NewTxHashRetriever(e.forwarderClient, e.lggr, transmissionID)
 
+	fmt.Printf(">>>>> Transamisson State: %d", transmissionInfo.State)
 	switch transmissionInfo.State {
 	case TransmissionStateNotAttempted:
 		e.lggr.Infow("transmission not attempted - attempting to push to txmgr", "request", request, "reportLen", len(request.Report.RawReport), "reportContextLen", len(request.Report.ReportContext), "nSignatures", len(request.Report.Sigs), "executionID", metadata.WorkflowExecutionID)
@@ -76,6 +77,7 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 		if err != nil {
 			return nil, err
 		}
+		fmt.Printf(">>>>> Transamisson State invalid receiver, found TX Hash: %x", *txHash)
 		return e.processUnrecoverableTxState(ctx, request, metadata, *txHash, transmissionInfo, transmissionID, true)
 	case TransmissionStateFailed:
 		receiverGasMinimum := e.ReceiverGasMinimum
@@ -263,7 +265,7 @@ func validateInputsAndReportMetadata(requestMetadata capabilities.RequestMetadat
 		return errors.New("nil SignedReport in WriteReportRequest")
 	}
 	if len(request.Receiver) != common.AddressLength {
-		return fmt.Errorf("received address is not 20 bytes long. Address in HEX: %s", hex.EncodeToString(request.Receiver))
+		return fmt.Errorf("received address is not 40 bytes long. Address in HEX: %s", hex.EncodeToString(request.Receiver))
 	}
 	if len(request.Report.Sigs) == 0 {
 		return fmt.Errorf("no signatures provided")
