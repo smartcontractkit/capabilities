@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
 	"math/big"
 	"testing"
 	"time"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 	_ "github.com/smartcontractkit/chainlink-common/pkg/beholder"
