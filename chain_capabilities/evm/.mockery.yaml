@@ -10,9 +10,9 @@ packages:
   github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus:
     interfaces:
       Poller:
-  github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/blocks_provider:
+  github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/height:
     interfaces:
-      HeaderByNumberProvider:
+      HeaderProvider:
   github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/oracle:
     interfaces:
       BlocksProvider:

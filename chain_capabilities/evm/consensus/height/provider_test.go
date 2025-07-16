@@ -1,4 +1,4 @@
-package blocks_provider
+package height
 
 import (
 	"math/big"
@@ -14,10 +14,10 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/blocks_provider/mocks"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/height/mocks"
 )
 
-func setHeaderByNumber(evmSvc *mocks.HeaderByNumberProvider, finalized, safe, latest int64) {
+func setHeaderByNumber(evmSvc *mocks.HeaderProvider, finalized, safe, latest int64) {
 	evmSvc.On("HeaderByNumber", mock.Anything, evm.HeaderByNumberRequest{Number: big.NewInt(rpc.FinalizedBlockNumber.Int64())}).
 		Return(&evm.HeaderByNumberReply{Header: &evm.Header{Number: big.NewInt(finalized)}}, nil)
 	evmSvc.On("HeaderByNumber", mock.Anything, evm.HeaderByNumberRequest{Number: big.NewInt(rpc.SafeBlockNumber.Int64())}).
@@ -29,7 +29,7 @@ func setHeaderByNumber(evmSvc *mocks.HeaderByNumberProvider, finalized, safe, la
 func TestBlocksProvider(t *testing.T) {
 	lggr, _ := logger.TestObserved(t, zapcore.DebugLevel)
 	t.Run("latest > safe > finalized", func(t *testing.T) {
-		evmSvc := mocks.NewHeaderByNumberProvider(t)
+		evmSvc := mocks.NewHeaderProvider(t)
 		setHeaderByNumber(evmSvc, 1, 2, 3)
 
 		bp := NewBlocksProvider(lggr, 1*time.Second, evmSvc)
@@ -48,7 +48,7 @@ func TestBlocksProvider(t *testing.T) {
 	})
 
 	t.Run("latest = safe = finalized", func(t *testing.T) {
-		evmSvc := mocks.NewHeaderByNumberProvider(t)
+		evmSvc := mocks.NewHeaderProvider(t)
 		setHeaderByNumber(evmSvc, 1, 1, 1)
 		bp := NewBlocksProvider(lggr, 1*time.Second, evmSvc)
 		require.NoError(t, bp.Start(t.Context()))
@@ -66,7 +66,7 @@ func TestBlocksProvider(t *testing.T) {
 	})
 
 	t.Run("latest < safe < finalized", func(t *testing.T) {
-		evmSvc := mocks.NewHeaderByNumberProvider(t)
+		evmSvc := mocks.NewHeaderProvider(t)
 		setHeaderByNumber(evmSvc, 3, 2, 1)
 		bp := NewBlocksProvider(lggr, 1*time.Second, evmSvc)
 		require.NoError(t, bp.Start(t.Context()))
@@ -84,7 +84,7 @@ func TestBlocksProvider(t *testing.T) {
 	})
 
 	t.Run("latest < safe > finalized", func(t *testing.T) {
-		evmSvc := mocks.NewHeaderByNumberProvider(t)
+		evmSvc := mocks.NewHeaderProvider(t)
 		setHeaderByNumber(evmSvc, 1, 3, 2)
 		bp := NewBlocksProvider(lggr, 1*time.Second, evmSvc)
 		require.NoError(t, bp.Start(t.Context()))
@@ -102,7 +102,7 @@ func TestBlocksProvider(t *testing.T) {
 	})
 
 	t.Run("safe < finalized < latest", func(t *testing.T) {
-		evmSvc := mocks.NewHeaderByNumberProvider(t)
+		evmSvc := mocks.NewHeaderProvider(t)
 		setHeaderByNumber(evmSvc, 2, 1, 3)
 		bp := NewBlocksProvider(lggr, 1*time.Second, evmSvc)
 		require.NoError(t, bp.Start(t.Context()))
