@@ -72,21 +72,24 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 }
 
 func (lts *LogTriggerService) StartCleanUp(ctx context.Context) {
-	duration := 30 * time.Second
-	ticker := time.NewTicker(duration)
-	lts.lggr.Debugf("Starting clean up of failed log poller filters every %s seconds", duration)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			lts.cleanUpStaleFilters(ctx)
+	go func() {
+		duration := 30 * time.Second
+		ticker := time.NewTicker(duration)
+		lts.lggr.Debugf("Starting clean up of failed log poller filters every %s seconds", duration)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				lts.cleanUpStaleFilters(ctx)
+			}
 		}
-	}
+	}()
 }
 
 func (lts *LogTriggerService) cleanUpStaleFilters(ctx context.Context) {
+	lts.lggr.Debugf("Starting cleanUpStaleFilters")
 	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: capabilities.RequestMetadata{
 		WorkflowID: "evm-log-trigger-cleanup", // fake workflow ID for monitoring purposes
 	}}
