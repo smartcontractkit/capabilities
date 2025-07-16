@@ -813,7 +813,7 @@ func toReceiptGasInfo(receipt evmtypes.Receipt) evmtypes.ReceiptGasInfo {
 func createMocksAndCapability(t *testing.T, lggr logger.Logger) (*mocks2.EVMService, *mocks.CREForwarderClient, *EVM) {
 	mockEVMService := mocks2.NewEVMService(t)
 	mockForwarderClient := mocks.NewCREForwarderClient(t)
-	mockEVMService.EXPECT().LatestAndFinalizedHead(mock.Anything).Return(evmtypes.Head{Number: big.NewInt(100)}, evmtypes.Head{Number: big.NewInt(200)}, nil).Maybe()
+	mockEVMService.EXPECT().HeaderByNumber(mock.Anything, mock.Anything).Return(&evmtypes.HeaderByNumberReply{Header: &evmtypes.Header{Number: big.NewInt(100)}}, nil).Maybe()
 	service := EVM{
 		keystoneForwarderAddress: common.BytesToAddress(test.RandomBytes(20)),
 		forwarderClient:          mockForwarderClient,

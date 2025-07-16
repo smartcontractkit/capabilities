@@ -16,8 +16,9 @@ import (
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/monitoring/mocks"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 	capmonitoring "github.com/smartcontractkit/capabilities/libs/monitoring"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 )
 
 func TestProcessor_Process_InitiatedMessages(t *testing.T) {
@@ -33,7 +34,7 @@ func TestProcessor_Process_InitiatedMessages(t *testing.T) {
 		{"EstimateGasInitiated", &monitoring.EstimateGasInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"GetTransactionByHashInitiated", &monitoring.GetTransactionByHashInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"GetTransactionReceiptInitiated", &monitoring.GetTransactionReceiptInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
-		{"LatestAndFinalizedHeadInitiated", &monitoring.LatestAndFinalizedHeadInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
+		{"HeaderByNumberInitiated", &monitoring.HeaderByNumberInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 	}
 
 	for _, tc := range initiated {
@@ -68,7 +69,7 @@ func TestProcessor_Process_InitiatedMessages_Error(t *testing.T) {
 		{"EstimateGasInitiated", &monitoring.EstimateGasInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"GetTransactionByHashInitiated", &monitoring.GetTransactionByHashInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"GetTransactionReceiptInitiated", &monitoring.GetTransactionReceiptInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
-		{"LatestAndFinalizedHeadInitiated", &monitoring.LatestAndFinalizedHeadInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
+		{"HeaderByNumberInitiated", &monitoring.HeaderByNumberInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 	}
 
 	for _, tc := range cases {
@@ -122,7 +123,7 @@ func TestProcessor_Process_SuccessMessages(t *testing.T) {
 		{"EstimateGasSuccess", &monitoring.EstimateGasSuccess{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"GetTransactionByHashSuccess", &monitoring.GetTransactionByHashSuccess{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"GetTransactionReceiptSuccess", &monitoring.GetTransactionReceiptSuccess{ExecutionContext: &capmonitoring.ExecutionContext{}}},
-		{"LatestAndFinalizedHeadSuccess", &monitoring.LatestAndFinalizedHeadSuccess{ExecutionContext: &capmonitoring.ExecutionContext{}}},
+		{"HeaderByNumberSuccess", &monitoring.HeaderByNumberSuccess{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 	}
 
 	for _, tc := range successMsgs {
@@ -156,7 +157,7 @@ func TestProcessor_Process_ErrorMessages(t *testing.T) {
 		{"EstimateGasError", &monitoring.EstimateGasError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"GetTransactionByHashError", &monitoring.GetTransactionByHashError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"GetTransactionReceiptError", &monitoring.GetTransactionReceiptError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
-		{"LatestAndFinalizedHeadError", &monitoring.LatestAndFinalizedHeadError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
+		{"HeaderByNumberError", &monitoring.HeaderByNumberError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 	}
 
 	for _, tc := range errorMsgs {

@@ -161,7 +161,12 @@ message GetTransactionReceiptError {
   monitoring.ExecutionContext execution_context = 20;
 }
 
-message LatestAndFinalizedHeadInitiated{
+message HeaderByNumberRequest {
+  int64 block_number = 1;
+}
+
+message HeaderByNumberInitiated{
+  HeaderByNumberRequest req = 1;
   monitoring.ExecutionContext execution_context = 20;
 }
 
@@ -171,14 +176,15 @@ message BlockData {
   uint64 block_timestamp = 3;
 }
 
-message LatestAndFinalizedHeadSuccess {
-  BlockData latest = 1;
-  BlockData finalized = 2;
+message HeaderByNumberSuccess {
+  HeaderByNumberRequest req = 1;
+  BlockData header = 2;
   monitoring.ExecutionContext execution_context = 20;
 }
 
-message LatestAndFinalizedHeadError {
-  string summary = 1;
-  string cause = 2;
+message HeaderByNumberError {
+  HeaderByNumberRequest req = 1;
+  string summary = 2;
+  string cause = 3;
   monitoring.ExecutionContext execution_context = 20;
 }

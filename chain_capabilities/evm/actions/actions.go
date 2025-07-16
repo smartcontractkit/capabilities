@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/shopspring/decimal"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 
 	"google.golang.org/protobuf/types/known/emptypb"
 
@@ -82,12 +83,25 @@ func (e EVM) CallContract(
 		return nil, err
 	}
 
-	blockNumber, needsBlockHeightConsensus, err := normalizeBlockNumber(input.GetBlockNumber())
+	blockNumber, needsBlockHeightConsensus, confidenceLevel, err := normalizeBlockNumber(input.GetBlockNumber())
 	if err != nil {
 		return nil, err
 	}
 
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildCallContractInitiated(read, callMsg, blockNumber.Int64()))
+
+	callContract := func(ctx context.Context, blockNumber *big.Int) ([]byte, error) {
+		// TODO: PLEX-1558 agree on RPC error content
+		resp, err := e.EVMService.CallContract(ctx, evmtypes.CallContractRequest{
+			Msg:             callMsg,
+			BlockNumber:     blockNumber,
+			ConfidenceLevel: confidenceLevel,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return resp.Data, nil
+	}
 
 	var request ctypes.Request
 	if needsBlockHeightConsensus {
@@ -98,12 +112,11 @@ func (e EVM) CallContract(
 				return nil, fmt.Errorf("error getting call block number: %w", err)
 			}
 
-			// TODO: PLEX-1558 agree on RPC error content
-			return e.EVMService.CallContract(ctx, callMsg, callBlockNumber)
+			return callContract(ctx, callBlockNumber)
 		})
 	} else {
 		request = ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
-			return e.EVMService.CallContract(ctx, callMsg, big.NewInt(int64(blockNumber)))
+			return callContract(ctx, big.NewInt(blockNumber.Int64()))
 		})
 	}
 
@@ -118,13 +131,16 @@ func (e EVM) CallContract(
 }
 
 func (e EVM) filterLogsToRequest(meta capabilities.RequestMetadata, ethFilterQuery evmtypes.FilterQuery) (ctypes.Request, error) {
-	filterLogs := func(ctx context.Context, query evmtypes.FilterQuery) ([]byte, error) {
-		ethLogs, err := e.EVMService.FilterLogs(ctx, query)
+	filterLogs := func(ctx context.Context, query evmtypes.FilterQuery, confidenceLevel primitives.ConfidenceLevel) ([]byte, error) {
+		reply, err := e.EVMService.FilterLogs(ctx, evmtypes.FilterLogsRequest{
+			FilterQuery:     query,
+			ConfidenceLevel: confidenceLevel,
+		})
 		if err != nil {
 			return nil, err
 		}
 
-		return proto.Marshal(&evm.FilterLogsReply{Logs: evm.ConvertLogsToProto(ethLogs)})
+		return proto.Marshal(&evm.FilterLogsReply{Logs: evm.ConvertLogsToProto(reply.Logs)})
 	}
 
 	// TODO: PLEX-1559 add validation for block range size and size of returned payload
@@ -134,23 +150,23 @@ func (e EVM) filterLogsToRequest(meta capabilities.RequestMetadata, ethFilterQue
 		}
 
 		return ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
-			return filterLogs(ctx, ethFilterQuery)
+			return filterLogs(ctx, ethFilterQuery, primitives.Unconfirmed)
 		}), nil
 	}
 
-	fromBlock, fromNeedsBlockHeightConsensus, err := normalizeBlockNumber(valuespb.NewBigIntFromInt(ethFilterQuery.FromBlock))
+	fromBlock, fromNeedsBlockHeightConsensus, _, err := normalizeBlockNumber(valuespb.NewBigIntFromInt(ethFilterQuery.FromBlock))
 	if err != nil {
 		return nil, fmt.Errorf("fromBlock is invalid: %w", err)
 	}
 
-	toBlock, toNeedsBlockHeightConsensus, err := normalizeBlockNumber(valuespb.NewBigIntFromInt(ethFilterQuery.ToBlock))
+	toBlock, toNeedsBlockHeightConsensus, confidenceLevel, err := normalizeBlockNumber(valuespb.NewBigIntFromInt(ethFilterQuery.ToBlock))
 	if err != nil {
 		return nil, fmt.Errorf("toBlock is invalid: %w", err)
 	}
 
 	if !fromNeedsBlockHeightConsensus && !toNeedsBlockHeightConsensus {
 		return ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
-			return filterLogs(ctx, ethFilterQuery)
+			return filterLogs(ctx, ethFilterQuery, confidenceLevel)
 		}), nil
 	}
 
@@ -168,7 +184,7 @@ func (e EVM) filterLogsToRequest(meta capabilities.RequestMetadata, ethFilterQue
 		ethFilterQuery.FromBlock = big.NewInt(callFromBlock.Int64())
 		ethFilterQuery.ToBlock = big.NewInt(callToBlock.Int64())
 
-		return filterLogs(ctx, ethFilterQuery)
+		return filterLogs(ctx, ethFilterQuery, confidenceLevel)
 	}), nil
 }
 
@@ -201,7 +217,7 @@ func (e EVM) FilterLogs(ctx context.Context, meta capabilities.RequestMetadata, 
 
 func (e EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, req *evm.BalanceAtRequest) (*evm.BalanceAtReply, error) {
 	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
-	blockNumber, needsBlockHeightConsensus, err := normalizeBlockNumber(req.GetBlockNumber())
+	blockNumber, needsBlockHeightConsensus, confidenceLevel, err := normalizeBlockNumber(req.GetBlockNumber())
 	if err != nil {
 		return nil, err
 	}
@@ -212,12 +228,16 @@ func (e EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, r
 		if err != nil {
 			return nil, fmt.Errorf("error getting call block number: %w", err)
 		}
-		balance, err := e.EVMService.BalanceAt(ctx, evmtypes.Address(req.GetAccount()), callBlockNumber)
+		reply, err := e.EVMService.BalanceAt(ctx, evmtypes.BalanceAtRequest{
+			Address:         evmtypes.Address(req.GetAccount()),
+			BlockNumber:     callBlockNumber,
+			ConfidenceLevel: confidenceLevel,
+		})
 		if err != nil {
 			return nil, err
 		}
 
-		pbBalance := valuespb.NewBigIntFromInt(balance)
+		pbBalance := valuespb.NewBigIntFromInt(reply.Balance)
 		return proto.Marshal(pbBalance)
 	}
 
@@ -344,23 +364,60 @@ func (e EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.Reques
 	return &evm.GetTransactionReceiptReply{Receipt: &receipt}, nil
 }
 
-// TODO implement as part of PLEX-1560
-func (e EVM) LatestAndFinalizedHead(
+func (e EVM) HeaderByNumber(
 	ctx context.Context,
-	req capabilities.RequestMetadata,
-	_ *emptypb.Empty,
-) (*evm.LatestAndFinalizedHeadReply, error) {
-	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: req}
-
-	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildLatestAndFinalizedHeadInitiated(read))
-	latest, fin, err := e.EVMService.LatestAndFinalizedHead(ctx)
+	meta capabilities.RequestMetadata,
+	req *evm.HeaderByNumberRequest,
+) (*evm.HeaderByNumberReply, error) {
+	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
+	blockNumber, needsBlockHeightConsensus, confidenceLevel, err := normalizeBlockNumber(req.GetBlockNumber())
 	if err != nil {
-		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildLatestAndFinalizedHeadError(read, "Failed to get latest and finalized head", err.Error()))
 		return nil, err
 	}
 
-	monitoring.LogAndEmitSuccess(ctx, "Successfully read LatestAndFinalizedHead", e.lggr, e.beholderProcessor, e.messageBuilder.BuildLatestAndFinalizedHeadSuccess(read, latest, fin))
-	return &evm.LatestAndFinalizedHeadReply{Latest: evm.ConvertHeadToProto(latest), Finalized: evm.ConvertHeadToProto(fin)}, nil
+	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildHeaderByNumberInitiated(read, blockNumber.Int64()))
+
+	headerByNumber := func(ctx context.Context, blockNumber *big.Int) ([]byte, error) {
+		reply, err := e.EVMService.HeaderByNumber(ctx, evmtypes.HeaderByNumberRequest{
+			Number:          blockNumber,
+			ConfidenceLevel: confidenceLevel,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		if reply.Header == nil {
+			return nil, fmt.Errorf("header is nil")
+		}
+
+		return proto.Marshal(&evm.HeaderByNumberReply{Header: evm.ConvertHeaderToProto(*reply.Header)})
+	}
+
+	var request ctypes.Request
+	if needsBlockHeightConsensus {
+		request = ctypes.NewLockableToBlockRequest(requestID(meta), func(ctx context.Context, height *ctypes.ChainHeight) ([]byte, error) {
+			callBlockNumber, err := getCallBlockNumber(blockNumber, height)
+			if err != nil {
+				return nil, fmt.Errorf("error getting call block number: %w", err)
+			}
+
+			return headerByNumber(ctx, callBlockNumber)
+		})
+	} else {
+		request = ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
+			return headerByNumber(ctx, big.NewInt(blockNumber.Int64()))
+		})
+	}
+
+	var reply evm.HeaderByNumberReply
+	err = e.readProto(ctx, request, &reply)
+	if err != nil {
+		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildHeaderByNumberError(read, blockNumber.Int64(), "Failed to get header by number", err.Error()))
+		return nil, err
+	}
+
+	monitoring.LogAndEmitSuccess(ctx, "Successfully got header by number", e.lggr, e.beholderProcessor, e.messageBuilder.BuildHeaderByNumberSuccess(read, blockNumber.Int64(), reply.Header))
+	return &reply, nil
 }
 
 func (e EVM) RegisterLogTracking(etx context.Context, _ capabilities.RequestMetadata, req *evm.RegisterLogTrackingRequest) (*emptypb.Empty, error) {
@@ -378,28 +435,34 @@ func (e EVM) UnregisterLogTracking(etx context.Context, _ capabilities.RequestMe
 // normalizeBlockNumber - returns:
 // number - normalized block number converted to a corresponding tag, if possible
 // needsBlockHeightConsensus - true, if DON Nodes need to agree on common height for corresponding tag, before agreeing on request reply.
-func normalizeBlockNumber(pbBlockNumber *valuespb.BigInt) (number rpc.BlockNumber, needsBlockHeightConsensus bool, err error) {
+func normalizeBlockNumber(pbBlockNumber *valuespb.BigInt) (number rpc.BlockNumber, needsBlockHeightConsensus bool, confidenceLevel primitives.ConfidenceLevel, err error) {
 	// Replicate EthClient API, that treats nil block number as latest
 	if pbBlockNumber == nil {
-		return rpc.LatestBlockNumber, true, nil
+		return rpc.LatestBlockNumber, true, primitives.Unconfirmed, nil
 	}
 
 	bigBlockNumber := valuespb.NewIntFromBigInt(pbBlockNumber)
 	if !bigBlockNumber.IsInt64() {
-		return 0, false, fmt.Errorf("block number %s is not an int64", bigBlockNumber)
+		return 0, false, primitives.Unconfirmed, fmt.Errorf("block number %s is not an int64", bigBlockNumber)
 	}
 
 	blockNumber := rpc.BlockNumber(bigBlockNumber.Int64())
 	if blockNumber > 0 {
-		return blockNumber, false, nil
+		return blockNumber, false, primitives.Unconfirmed, nil
 	}
 
 	switch blockNumber {
-	case rpc.SafeBlockNumber, rpc.FinalizedBlockNumber, rpc.LatestBlockNumber:
-		return blockNumber, true, nil
+	case rpc.SafeBlockNumber:
+		confidenceLevel = primitives.Safe
+	case rpc.FinalizedBlockNumber:
+		confidenceLevel = primitives.Finalized
+	case rpc.LatestBlockNumber:
+		confidenceLevel = primitives.Unconfirmed
 	default:
-		return 0, false, fmt.Errorf("block number %d is not supported", blockNumber)
+		return 0, false, primitives.Unconfirmed, fmt.Errorf("block number %d is not supported", blockNumber)
 	}
+
+	return blockNumber, true, confidenceLevel, nil
 }
 
 func getCallBlockNumber(requestedBlockNumber rpc.BlockNumber, chainHeight *ctypes.ChainHeight) (*big.Int, error) {

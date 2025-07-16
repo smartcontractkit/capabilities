@@ -181,26 +181,29 @@ func (m *MessageBuilder) BuildGetTransactionReceiptError(r ReadRequest, hash, su
 	return &GetTransactionReceiptError{Req: &GetTransactionReceiptRequest{Hash: hash}, Summary: summary, Cause: cause, ExecutionContext: m.BuildExecutionContext(r)}
 }
 
-func (m *MessageBuilder) BuildLatestAndFinalizedHeadInitiated(r ReadRequest) *LatestAndFinalizedHeadInitiated {
-	return &LatestAndFinalizedHeadInitiated{ExecutionContext: m.BuildExecutionContext(r)}
+func (m *MessageBuilder) BuildHeaderByNumberInitiated(r ReadRequest, blockNumber int64) *HeaderByNumberInitiated {
+	return &HeaderByNumberInitiated{ExecutionContext: m.BuildExecutionContext(r), Req: &HeaderByNumberRequest{BlockNumber: blockNumber}}
 }
 
-func (m *MessageBuilder) BuildLatestAndFinalizedHeadSuccess(r ReadRequest, latest, finalized evm.Head) Message {
-	return &LatestAndFinalizedHeadSuccess{Latest: &BlockData{
-		BlockHash:      common.Bytes2Hex(latest.Hash[:]),
-		BlockHeight:    latest.Number.String(),
-		BlockTimestamp: latest.Timestamp,
-	},
-		Finalized: &BlockData{
-			BlockHash:      common.Bytes2Hex(finalized.Hash[:]),
-			BlockHeight:    finalized.Number.String(),
-			BlockTimestamp: finalized.Timestamp,
+func (m *MessageBuilder) BuildHeaderByNumberSuccess(r ReadRequest, blockNumber int64, header *evmcap.Header) Message {
+	return &HeaderByNumberSuccess{
+		Req: &HeaderByNumberRequest{BlockNumber: blockNumber},
+		Header: &BlockData{
+			BlockHash:      common.Bytes2Hex(header.Hash[:]),
+			BlockHeight:    header.BlockNumber.String(),
+			BlockTimestamp: header.Timestamp,
 		},
-		ExecutionContext: m.BuildExecutionContext(r)}
+		ExecutionContext: m.BuildExecutionContext(r),
+	}
 }
 
-func (m *MessageBuilder) BuildLatestAndFinalizedHeadError(r ReadRequest, summary, cause string) ErrorMessage {
-	return &LatestAndFinalizedHeadError{Summary: summary, Cause: cause, ExecutionContext: m.BuildExecutionContext(r)}
+func (m *MessageBuilder) BuildHeaderByNumberError(r ReadRequest, blockNumber int64, summary, cause string) ErrorMessage {
+	return &HeaderByNumberError{
+		Req:              &HeaderByNumberRequest{BlockNumber: blockNumber},
+		Summary:          summary,
+		Cause:            cause,
+		ExecutionContext: m.BuildExecutionContext(r),
+	}
 }
 
 // BuildExecutionContext builds the shared ExecutionContext
