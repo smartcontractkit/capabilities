@@ -16,10 +16,11 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 
+	"github.com/smartcontractkit/freeport"
+
 	"github.com/smartcontractkit/capabilities/libs/testutils"
 	"github.com/smartcontractkit/capabilities/mock/internal/pb"
 	"github.com/smartcontractkit/capabilities/mock/utils"
-	"github.com/smartcontractkit/freeport"
 )
 
 func Test_ServerTrigger(t *testing.T) {
