@@ -169,23 +169,23 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 			return fmt.Errorf("failed to publish GetTransactionReceiptError metrics: %w", err)
 		}
 	// -- LatestAndFinalizedHead --
-	case *LatestAndFinalizedHeadInitiated:
+	case *HeaderByNumberInitiated:
 		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit LatestAndFinalizedHeadInitiated log: %w", err)
+			return fmt.Errorf("failed to emit HeaderByNumberInitiated log: %w", err)
 		}
-	case *LatestAndFinalizedHeadSuccess:
+	case *HeaderByNumberSuccess:
 		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit LatestAndFinalizedHeadSuccess log: %w", err)
+			return fmt.Errorf("failed to emit HeaderByNumberSuccess log: %w", err)
 		}
-		if err := p.metrics.OnLatestAndFinalizedHeadSuccess(ctx, msg); err != nil {
-			return fmt.Errorf("failed to publish LatestAndFinalizedHeadSuccess metrics: %w", err)
+		if err := p.metrics.OnHeaderByNumberSuccess(ctx, msg); err != nil {
+			return fmt.Errorf("failed to publish HeaderByNumberSuccess metrics: %w", err)
 		}
-	case *LatestAndFinalizedHeadError:
+	case *HeaderByNumberError:
 		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit LatestAndFinalizedHeadError log: %w", err)
+			return fmt.Errorf("failed to emit HeaderByNumberError log: %w", err)
 		}
-		if err := p.metrics.OnLatestAndFinalizedHeadError(ctx, msg); err != nil {
-			return fmt.Errorf("failed to publish LatestAndFinalizedHeadError metrics: %w", err)
+		if err := p.metrics.OnHeaderByNumberError(ctx, msg); err != nil {
+			return fmt.Errorf("failed to publish HeaderByNumberError metrics: %w", err)
 		}
 	default:
 		return nil

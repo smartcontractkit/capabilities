@@ -6,12 +6,14 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/smartcontractkit/chainlink-common/pkg/services"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query"
@@ -144,12 +146,18 @@ func (lts *LogTriggerService) getTopics(input *evmcappb.FilterLogTriggerRequest)
 }
 
 func (lts *LogTriggerService) getFinalizedBlockNumber(ctx context.Context, triggerID string) (*big.Int, error) {
-	_, finalized, err := lts.EVMService.LatestAndFinalizedHead(ctx)
+	reply, err := lts.EVMService.HeaderByNumber(ctx, evmtypes.HeaderByNumberRequest{
+		Number: big.NewInt(rpc.FinalizedBlockNumber.Int64()),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to register latest and finalized head: '%w' for triggerID: %s", err, triggerID)
 	}
-	lts.lggr.Debugf("Latest finalized block number: %s", finalized.Number)
-	return finalized.Number, nil
+
+	if reply.Header == nil {
+		return nil, fmt.Errorf("failed to register latest and finalized head: 'nil' for triggerID: %s", triggerID)
+	}
+	lts.lggr.Debugf("Latest finalized block number: %s", reply.Header.Number)
+	return reply.Header.Number, nil
 }
 
 func (lts *LogTriggerService) generateFilterID(triggerID string) string {
