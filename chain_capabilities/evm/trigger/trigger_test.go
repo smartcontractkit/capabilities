@@ -905,9 +905,10 @@ func TestCleanUpStaleFilters(t *testing.T) {
 		store := NewLogTriggerStore()
 		service := NewLogTriggerService(mockEVM, store, lggr, test.NopBeholderProcessor{}, &monitoring.MessageBuilder{}, 10*time.Millisecond)
 
-		liveFilterID := "live-filter"
-		staleFilterID := "stale-filter"
-		mockEVM.On("GetFiltersNames", mock.Anything).Return([]string{liveFilterID, staleFilterID}, nil).Once()
+		liveFilterID := service.generateFilterID("live-filter")
+		staleFilterID := service.generateFilterID("stale-filter")
+		otherFilterID := "other-filter-defined-outside-log-trigger-service-wont-be-removed"
+		mockEVM.On("GetFiltersNames", mock.Anything).Return([]string{liveFilterID, staleFilterID, otherFilterID}, nil).Once()
 		mockEVM.On("UnregisterLogTracking", mock.Anything, staleFilterID).Return(nil).Once()
 
 		// mimicking there's a live trigger with the filter registered to log poller
@@ -923,9 +924,10 @@ func TestCleanUpStaleFilters(t *testing.T) {
 		store := NewLogTriggerStore()
 		service := NewLogTriggerService(mockEVM, store, lggr, test.NopBeholderProcessor{}, &monitoring.MessageBuilder{}, 10*time.Millisecond)
 
-		liveFilterID := "live-filter"
-		staleFilterID := "stale-filter"
-		mockEVM.On("GetFiltersNames", mock.Anything).Return([]string{liveFilterID, staleFilterID}, nil).Twice()
+		liveFilterID := service.generateFilterID("live-filter")
+		staleFilterID := service.generateFilterID("stale-filter")
+		otherFilterID := "other-filter-defined-outside-log-trigger-service-wont-be-removed"
+		mockEVM.On("GetFiltersNames", mock.Anything).Return([]string{liveFilterID, staleFilterID, otherFilterID}, nil).Twice()
 		mockEVM.On("UnregisterLogTracking", mock.Anything, staleFilterID).Return(fmt.Errorf("some error")).Once()
 		mockEVM.On("UnregisterLogTracking", mock.Anything, staleFilterID).Return(nil).Once()
 

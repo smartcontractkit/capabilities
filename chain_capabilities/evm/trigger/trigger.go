@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/rpc"
@@ -24,7 +25,7 @@ import (
 )
 
 const (
-	suffixLogTriggerFilterID     = "-log-trigger"
+	suffixLogTriggerFilterID     = "-evm-log-trigger"
 	defaultSendChannelBufferSize = 1000
 	defaultLimitQueryLogSize     = 1000
 )
@@ -74,7 +75,7 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 func (lts *LogTriggerService) StartCleanUp(ctx context.Context) {
 	go func() {
 		duration := 30 * time.Second
-		ticker := time.NewTicker(duration)
+		ticker := services.NewTicker(duration)
 		lts.lggr.Debugf("Starting clean up of failed log poller filters every %s seconds", duration)
 		defer ticker.Stop()
 		for {
@@ -93,19 +94,21 @@ func (lts *LogTriggerService) cleanUpStaleFilters(ctx context.Context) {
 	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: capabilities.RequestMetadata{
 		WorkflowID: "evm-log-trigger-cleanup", // fake workflow ID for monitoring purposes
 	}}
-	names, err := lts.EVMService.GetFiltersNames(ctx)
+	filterNames, err := lts.EVMService.GetFiltersNames(ctx)
 	if err != nil {
 		summary := fmt.Sprintf("failed to get the filter names: '%v'", err)
 		monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerCleanUpError(read, summary, err.Error()))
 		return
 	}
 	toCleanUp := make(map[string]struct{})
-	for _, name := range names {
-		toCleanUp[name] = struct{}{}
+	for _, filterName := range filterNames {
+		//only add those that are from the log trigger
+		if strings.HasSuffix(filterName, suffixLogTriggerFilterID) {
+			toCleanUp[filterName] = struct{}{}
+		}
 	}
 
 	triggers := lts.triggers.ReadAll()
-
 	for triggerID, state := range triggers {
 		if _, exists := toCleanUp[state.filterID]; exists {
 			delete(triggers, triggerID)
