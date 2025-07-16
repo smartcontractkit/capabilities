@@ -78,7 +78,7 @@ func (m *mockCapRegistry) NodeByPeerID(_ context.Context, peerID types.PeerID) (
 
 func (m *mockCapRegistry) GetExecutable(_ context.Context, id string) (capabilities.ExecutableCapability, error) {
 	capability := m.caps[id]
-	if target, ok := capability.(capabilities.TargetCapability); ok {
+	if target, ok := capability.(capabilities.ExecutableCapability); ok {
 		return target, nil
 	}
 	return nil, nil
@@ -226,7 +226,7 @@ func TestMockRegistry_SendTriggerEvent(t *testing.T) {
 		require.Equal(t, "event1", resp.Event.ID)
 		require.Equal(t, outputs, resp.Event.Outputs)
 		require.Equal(t, payload, resp.Event.Payload)
-		require.Equal(t, &ocrTriggerEvent, resp.Event.OCREvent)
+		require.Equal(t, &ocrTriggerEvent, resp.Event.OCREvent) //nolint:all Ignore deprecation as we still need to support this for older capabilities
 	case <-time.After(time.Second):
 		t.Fatal("timeout waiting for trigger event")
 	}
