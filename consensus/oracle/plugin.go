@@ -281,7 +281,7 @@ func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeC
 			values = append(values, obs.Observation)
 		}
 
-		value, err := CalculateOutcomeForObservations(values, consensusDescriptor, r.minimumObservations, r.f)
+		value, err := CalculateOutcomeForObservations(r.lggr, values, consensusDescriptor, r.minimumObservations, r.f)
 		if err != nil {
 			// TODO - should the err from CalculateOutcomeForObservations need to be distinguishable between a consensus failure and an error?
 			r.lggr.Errorw("failed to calculate outcome for observations", "requestID", requestID, "error", err)
@@ -411,7 +411,6 @@ func createReportInfo(reqMetadata *oracletypes.RequestMetaData) ([]byte, error) 
 		"keyBundleName": reqMetadata.KeyBundleId,
 		InfoRequestID:   reqMetadata.RequestId,
 	})
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to create structpb for report info: %w", err)
 	}

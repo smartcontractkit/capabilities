@@ -11,9 +11,15 @@ import (
 	"github.com/shopspring/decimal"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb"
+)
+
+var (
+	ErrNoValuesMetThreshold       = errors.New("no values met f+1 threshold")
+	ErrMultipleValuesMetThreshold = errors.New("not identical, multiple values with f+1 occurrences")
 )
 
 // Constants for type names used in aggregation logic.
@@ -35,6 +41,7 @@ const (
 // It now supports median aggregation for Int64, Float64, Decimal, BigInt, and Time types. It assumes that the observationProtos
 // are already validated to ensure they all correctly unmarshal to a values.Value
 func CalculateOutcomeForObservations(
+	lggr logger.Logger,
 	observationProtos []*valuespb.Value,
 	consensusDescriptor *pb.ConsensusDescriptor,
 	minObservations int,
@@ -54,9 +61,9 @@ func CalculateOutcomeForObservations(
 		case pb.AggregationType_AGGREGATION_TYPE_MEDIAN:
 			return handleMedianAggregation(filtered, consensusType)
 		case pb.AggregationType_AGGREGATION_TYPE_COMMON_PREFIX:
-			return handleCommonPrefixAggregation(filtered, f)
+			return handleCommonPrefixAggregation(lggr, filtered, f)
 		case pb.AggregationType_AGGREGATION_TYPE_COMMON_SUFFIX:
-			return handleCommonSuffixAggregation(filtered, f)
+			return handleCommonSuffixAggregation(lggr, filtered, f)
 		default:
 			return nil, fmt.Errorf("unknown aggregation type: %s", aggregation)
 		}
@@ -212,27 +219,88 @@ func handleIdenticalAggregation(values []*valuespb.Value, f int) (*valuespb.Valu
 
 		if observation.count == f+1 {
 			if uniqueCandidate != nil {
-				return nil, errors.New("not identical, multiple values with f+1 occurrences")
+				return nil, ErrMultipleValuesMetThreshold
 			}
 			uniqueCandidate = observation.value
 		}
 	}
 
 	if uniqueCandidate == nil {
-		return nil, errors.New("no values met f+1 threshold")
+		return nil, ErrNoValuesMetThreshold
 	}
 
 	return uniqueCandidate, nil
 }
 
-func handleCommonSuffixAggregation(_ []*valuespb.Value, _ int) (*valuespb.Value, error) {
-	// TODO: Implement common suffix aggregation logic.
-	return nil, fmt.Errorf("common suffix aggregation type not supported")
+var ErrInsufficientObservations = errors.New("insufficient observations to reach consensus")
+
+// handleCommonSuffixAggregation reverses the underlying lists in the slice of
+// observations and delegates logic to handleCommonPrefixAggregation and then
+// reverses the result a final time.
+func handleCommonSuffixAggregation(lggr logger.Logger, observationSlices []*valuespb.Value, f int) (*valuespb.Value, error) {
+	var reversedObservations []*valuespb.Value
+	for i, obsProto := range observationSlices {
+		reversed, err := reverseListValue(obsProto)
+		if err != nil {
+			lggr.Warnf("skipping observations at index %d: %s", i, err)
+			continue
+		}
+		reversedObservations = append(reversedObservations, reversed)
+	}
+
+	commonPrefixOfReversed, err := handleCommonPrefixAggregation(lggr, reversedObservations, f)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find common prefix of reversed lists: %w", err)
+	}
+
+	return reverseListValue(commonPrefixOfReversed)
 }
 
-func handleCommonPrefixAggregation(_ []*valuespb.Value, _ int) (*valuespb.Value, error) {
-	// TODO: Implement common prefix aggregation logic.
-	return nil, fmt.Errorf("common prefix aggregation type not supported")
+func handleCommonPrefixAggregation(lggr logger.Logger, observations []*valuespb.Value, f int) (*valuespb.Value, error) {
+	var lists []*valuespb.List
+	var maxListLength int
+	for i, obsProto := range observations {
+		switch obsProto.Value.(type) {
+		case *valuespb.Value_ListValue:
+			list := obsProto.GetListValue()
+			lists = append(lists, list)
+			if len(list.GetFields()) > maxListLength {
+				maxListLength = len(list.GetFields())
+			}
+		default:
+			lggr.Warnf("value at index %d is of type %T", i, obsProto.Value)
+			continue
+		}
+	}
+
+	if len(lists) < f+1 {
+		return nil, ErrInsufficientObservations
+	}
+
+	var commonPrefixElements []*valuespb.Value
+	for i := range maxListLength {
+		var elementsAtIndex []*valuespb.Value
+		for _, list := range lists {
+			if len(list.GetFields()) > i {
+				elementsAtIndex = append(elementsAtIndex, list.GetFields()[i])
+			}
+		}
+
+		identicalValue, err := handleIdenticalAggregation(elementsAtIndex, f)
+		if err != nil {
+			break
+		}
+
+		commonPrefixElements = append(commonPrefixElements, identicalValue)
+	}
+
+	return &valuespb.Value{
+		Value: &valuespb.Value_ListValue{
+			ListValue: &valuespb.List{
+				Fields: commonPrefixElements,
+			},
+		},
+	}, nil
 }
 
 // countTypes takes a slice of valuespb.Value and returns a map
@@ -353,4 +421,27 @@ func getMedian[T any](
 	}
 
 	return values.Proto(v), nil
+}
+
+func reverseListValue(list *valuespb.Value) (*valuespb.Value, error) {
+	switch list.Value.(type) {
+	case *valuespb.Value_ListValue:
+		reversed := list.GetListValue().GetFields()
+		reverse(reversed)
+		return &valuespb.Value{
+			Value: &valuespb.Value_ListValue{
+				ListValue: &valuespb.List{
+					Fields: reversed,
+				},
+			},
+		}, nil
+	default:
+		return nil, fmt.Errorf("cannot reverse value of type %T", list.Value)
+	}
+}
+
+func reverse[T any](s []T) {
+	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
+		s[i], s[j] = s[j], s[i]
+	}
 }
