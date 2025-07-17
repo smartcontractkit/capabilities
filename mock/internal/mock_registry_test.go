@@ -515,15 +515,17 @@ func TestMockRegistry_SendTriggerEvent_IncompleteData(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		go func() {
-			_, err = registry.SendTriggerEvent(ctx, &pb.SendTriggerEventRequest{
-				TriggerID:   "test-trigger",
-				TriggerType: "type-trigger",
-				ID:          "event-no-outputs",
-				// Outputs field intentionally omitted
-			})
-			require.NoError(t, err)
-		}()
+		// Wait a moment to ensure registration is complete
+		time.Sleep(10 * time.Millisecond)
+
+		// Send event in the same goroutine to avoid race
+		_, err = registry.SendTriggerEvent(ctx, &pb.SendTriggerEventRequest{
+			TriggerID:   "test-trigger",
+			TriggerType: "type-trigger",
+			ID:          "event-no-outputs",
+			// Outputs field intentionally omitted
+		})
+		require.NoError(t, err)
 
 		select {
 		case resp := <-ch:
@@ -543,6 +545,9 @@ func TestMockRegistry_SendTriggerEvent_IncompleteData(t *testing.T) {
 		})
 		require.NoError(t, err)
 
+		// Wait a moment to ensure registration is complete
+		time.Sleep(10 * time.Millisecond)
+
 		outputs := &values.Map{
 			Underlying: map[string]values.Value{
 				"test": values.NewString("value"),
@@ -551,16 +556,15 @@ func TestMockRegistry_SendTriggerEvent_IncompleteData(t *testing.T) {
 		outputsBytes, err := utils.MapToBytes(outputs)
 		require.NoError(t, err)
 
-		go func() {
-			_, err = registry.SendTriggerEvent(ctx, &pb.SendTriggerEventRequest{
-				TriggerID:   "test-trigger",
-				TriggerType: "type-trigger",
-				ID:          "event-no-payload",
-				Outputs:     outputsBytes,
-				// Payload field intentionally omitted
-			})
-			require.NoError(t, err)
-		}()
+		// Send event in the same goroutine to avoid race
+		_, err = registry.SendTriggerEvent(ctx, &pb.SendTriggerEventRequest{
+			TriggerID:   "test-trigger",
+			TriggerType: "type-trigger",
+			ID:          "event-no-payload",
+			Outputs:     outputsBytes,
+			// Payload field intentionally omitted
+		})
+		require.NoError(t, err)
 
 		select {
 		case resp := <-ch:
@@ -581,6 +585,9 @@ func TestMockRegistry_SendTriggerEvent_IncompleteData(t *testing.T) {
 		})
 		require.NoError(t, err)
 
+		// Wait a moment to ensure registration is complete
+		time.Sleep(10 * time.Millisecond)
+
 		outputs := &values.Map{
 			Underlying: map[string]values.Value{
 				"test": values.NewString("value"),
@@ -594,17 +601,16 @@ func TestMockRegistry_SendTriggerEvent_IncompleteData(t *testing.T) {
 			Value:   []byte("some-payload"),
 		}
 
-		go func() {
-			_, err = registry.SendTriggerEvent(ctx, &pb.SendTriggerEventRequest{
-				TriggerID:   "test-trigger",
-				TriggerType: "type-trigger",
-				ID:          "event-no-ocr",
-				Outputs:     outputsBytes,
-				Payload:     payload,
-				// OCREvent field intentionally omitted
-			})
-			require.NoError(t, err)
-		}()
+		// Send event in the same goroutine to avoid race
+		_, err = registry.SendTriggerEvent(ctx, &pb.SendTriggerEventRequest{
+			TriggerID:   "test-trigger",
+			TriggerType: "type-trigger",
+			ID:          "event-no-ocr",
+			Outputs:     outputsBytes,
+			Payload:     payload,
+			// OCREvent field intentionally omitted
+		})
+		require.NoError(t, err)
 
 		select {
 		case resp := <-ch:
