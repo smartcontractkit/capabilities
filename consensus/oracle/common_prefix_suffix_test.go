@@ -69,21 +69,23 @@ func Test_handleCommonPrefixAggregation(t *testing.T) {
 			wantErr:    ErrInsufficientObservations.Error(),
 		},
 		{
-			name: "OK - empty lists provided returns empty",
+			name: "NOK - less than f+1 lists provided errors",
 			giveValues: []*valuespb.Value{
 				mustNewList(),
 				mustNewList(),
 				mustNewList(),
 			},
-			f:         3,
-			wantValue: mustNewList(),
+			f:       3,
+			wantErr: ErrInsufficientObservations.Error(),
 		},
 		{
-			name: "OK - nothing identical returns empty list",
+			name: "OK - f+1 empty lists returns empty list",
 			giveValues: []*valuespb.Value{
 				mustNewList(),
 				mustNewList(),
-				values.Proto(values.NewString("bad entry")),
+				mustNewList(),
+				mustNewList(),
+				values.Proto(values.NewString("bad entry")), // dropped
 			},
 			f:         3,
 			wantValue: mustNewList(),
@@ -177,8 +179,9 @@ func Test_handleCommonSuffixAggregation(t *testing.T) {
 			wantErr:    ErrInsufficientObservations.Error(),
 		},
 		{
-			name: "OK - empty lists provided returns empty list",
+			name: "OK - f+1 empty lists provided returns empty list",
 			giveValues: []*valuespb.Value{
+				mustNewList(),
 				mustNewList(),
 				mustNewList(),
 				mustNewList(),
@@ -187,14 +190,14 @@ func Test_handleCommonSuffixAggregation(t *testing.T) {
 			wantValue: values.Proto(&values.List{}),
 		},
 		{
-			name: "OK - nothing identical returns empty list",
+			name: "NOK - less than f+1 lists to select from",
 			giveValues: []*valuespb.Value{
 				mustNewList(),
 				mustNewList(),
-				values.Proto(values.NewString("bad entry")),
+				values.Proto(values.NewString("bad entry")), // dropped
 			},
-			f:         3,
-			wantValue: mustNewList(),
+			f:       3,
+			wantErr: ErrInsufficientObservations.Error(),
 		},
 	}
 

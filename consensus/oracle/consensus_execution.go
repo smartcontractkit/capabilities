@@ -306,7 +306,7 @@ func handleCommonPrefixAggregation(lggr logger.Logger, observations []*valuespb.
 		}
 	}
 
-	if len(lists) == 0 {
+	if len(lists) < f+1 {
 		return nil, ErrInsufficientObservations
 	}
 
