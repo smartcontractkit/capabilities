@@ -2,6 +2,7 @@ package trigger
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"testing"
 
@@ -17,7 +18,8 @@ import (
 )
 
 const (
-	publicKey = "0xA18B5D6DB47fB7b0974505D7aB544e24478B6e98"
+	publicKey     = "0xA18B5D6DB47fB7b0974505D7aB544e24478B6e98"
+	workflowOwner = "0xabcdef1234567890abcdef1234567890abcdef12"
 )
 
 type mockGatewayConnector struct {
@@ -52,9 +54,32 @@ func (m *mockGatewayConnector) AwaitConnection(ctx context.Context, gatewayID st
 
 // gatewayRequest creates a test request message with the given method
 func gatewayRequest(t *testing.T, method string) *jsonrpc.Request[json.RawMessage] {
+	var workflowID [32]byte
+	copy(workflowID[:], []byte("wf1"))
 	payload := gateway_common.HTTPTriggerRequest{
 		Workflow: gateway_common.WorkflowSelector{
-			WorkflowID: "wf1",
+			WorkflowID: "0x" + hex.EncodeToString(workflowID[:]),
+		},
+		Input: json.RawMessage(`{"key":"value"}`),
+	}
+	jsonPayload, err := json.Marshal(payload)
+	require.NoError(t, err)
+	jsonPayloadMsg := json.RawMessage(jsonPayload)
+	return &jsonrpc.Request[json.RawMessage]{
+		Version: "2.0",
+		ID:      "id",
+		Method:  method,
+		Params:  &jsonPayloadMsg,
+	}
+}
+
+// gatewayRequestByTag creates a test request message with the given method
+func gatewayRequestByTag(t *testing.T, method string, workflowOwner string) *jsonrpc.Request[json.RawMessage] {
+	payload := gateway_common.HTTPTriggerRequest{
+		Workflow: gateway_common.WorkflowSelector{
+			WorkflowOwner: workflowOwner,
+			WorkflowName:  "workflowName",
+			WorkflowTag:   "workflowTag",
 		},
 		Input: json.RawMessage(`{"key":"value"}`),
 	}
@@ -88,17 +113,21 @@ func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayCon
 		},
 	}
 	triggerCh := make(chan capabilities.TriggerAndId[*http.Payload], 1)
-	err = handler.RegisterWorkflow(t.Context(), "wf1", sdkCfg, triggerCh)
+	var workflowID [32]byte
+	copy(workflowID[:], []byte("wf1"))
+	workflowIDHex := "0x" + hex.EncodeToString(workflowID[:])
+	selector := gateway_common.WorkflowSelector{
+		WorkflowID:    workflowIDHex,
+		WorkflowOwner: "0xabcdef1234567890abcdef1234567890abcdef12",
+		WorkflowName:  "workflowName",
+		WorkflowTag:   "workflowTag",
+	}
+	err = handler.RegisterWorkflow(t.Context(), selector, sdkCfg, triggerCh)
 	require.NoError(t, err, "Failed to register workflow")
 	return handler, mockConnector, triggerCh
 }
 
-// TestHandleGatewayMessage_Success tests successful request processing
-func TestHandleGatewayMessage_Success(t *testing.T) {
-	lggr := logger.Test(t)
-	handler, connector, triggerCh := setup(t, lggr)
-	req := gatewayRequest(t, gateway_common.MethodWorkflowExecute)
-
+func requireWorkflowTriggered(t *testing.T, triggerCh <-chan capabilities.TriggerAndId[*http.Payload], req *jsonrpc.Request[json.RawMessage], connector *mockGatewayConnector, handler *connectorHandler) {
 	// Start a goroutine to assert that the correct trigger payload is received
 	done := make(chan struct{})
 	go func() {
@@ -113,6 +142,9 @@ func TestHandleGatewayMessage_Success(t *testing.T) {
 			// TODO: PRODCRE-305 validate triggerReq.Trigger.Key
 		}
 	}()
+	var workflowID [32]byte
+	copy(workflowID[:], []byte("wf1"))
+	workflowIDHex := "0x" + hex.EncodeToString(workflowID[:])
 	err := handler.HandleGatewayMessage(t.Context(), "gw1", req)
 	require.NoError(t, err)
 
@@ -128,9 +160,9 @@ func TestHandleGatewayMessage_Success(t *testing.T) {
 	require.NotNil(t, resp.Result)
 	err = json.Unmarshal(*resp.Result, &triggerResp)
 	require.NoError(t, err)
-	require.Equal(t, "wf1", triggerResp.WorkflowID)
+	require.Equal(t, workflowIDHex, triggerResp.WorkflowID)
 
-	executionID, err := workflows.EncodeExecutionID("wf1", req.ID)
+	executionID, err := workflows.EncodeExecutionID(workflowIDHex, req.ID)
 	require.NoError(t, err)
 	require.Equal(t, executionID, triggerResp.WorkflowExecutionID)
 	select {
@@ -138,6 +170,39 @@ func TestHandleGatewayMessage_Success(t *testing.T) {
 		t.Errorf("Test context was cancelled before trigger was received")
 	case <-done: // Ensure goroutine completes
 	}
+}
+
+// TestHandleGatewayMessage_Success tests successful request processing
+func TestHandleGatewayMessage_Success(t *testing.T) {
+	lggr := logger.Test(t)
+	handler, connector, triggerCh := setup(t, lggr)
+	req := gatewayRequest(t, gateway_common.MethodWorkflowExecute)
+	requireWorkflowTriggered(t, triggerCh, req, connector, handler)
+}
+
+// TestHandleGatewayMessage_ByTag tests successful request processing using
+// workflowOwner/Name/Tag combination
+func TestHandleGatewayMessage_ByTag(t *testing.T) {
+	lggr := logger.Test(t)
+	handler, connector, triggerCh := setup(t, lggr)
+	req := gatewayRequestByTag(t, gateway_common.MethodWorkflowExecute, workflowOwner)
+	requireWorkflowTriggered(t, triggerCh, req, connector, handler)
+}
+
+func TestHandleGatewayMessage_ByTag_WorkflowNotFound(t *testing.T) {
+	lggr := logger.Test(t)
+	handler, connector, triggerCh := setup(t, lggr)
+	req := gatewayRequestByTag(t, gateway_common.MethodWorkflowExecute, "0xffffffffffffffffffffffffffffffffffffffff") //unregistered workflow owner
+	err := handler.HandleGatewayMessage(t.Context(), "gw1", req)
+	require.NoError(t, err)
+	require.True(t, connector.SendToGatewayCalled, "Should send error response")
+	resp := connector.SendToGatewayArgs.Msg
+	require.Len(t, triggerCh, 0, "trigger channel should not receive any messages")
+	assertErrorResponse(t, connector, resp, jsonrpc.ErrInvalidRequest)
+	var triggerResp gateway_common.HTTPTriggerResponse
+	require.Nil(t, resp.Result, "Result should be nil in error response")
+	require.Empty(t, triggerResp.WorkflowID, "WorkflowID should be empty in error response")
+	require.Equal(t, req.ID, resp.ID, "Response ID should match request ID")
 }
 
 func assertErrorResponse(t *testing.T, connector *mockGatewayConnector, resp *jsonrpc.Response[json.RawMessage], code int64) {
@@ -156,6 +221,39 @@ func TestHandleGatewayMessage_InvalidRequest(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, connector.SendToGatewayCalled)
 	require.Len(t, triggerCh, 0, "trigger channel should not receive any messages")
+}
+
+func TestHandleGatewayMessage_MissingWorkflowName(t *testing.T) {
+	lggr := logger.Test(t)
+	handler, connector, triggerCh := setup(t, lggr)
+	var workflowID [32]byte
+	copy(workflowID[:], []byte("wf1"))
+	payload := gateway_common.HTTPTriggerRequest{
+		Workflow: gateway_common.WorkflowSelector{
+			WorkflowOwner: workflowOwner,
+			WorkflowTag:   "workflowTag",
+		},
+		Input: json.RawMessage(`{"key":"value"}`),
+	}
+	jsonPayload, err := json.Marshal(payload)
+	require.NoError(t, err)
+	jsonPayloadMsg := json.RawMessage(jsonPayload)
+	req := &jsonrpc.Request[json.RawMessage]{
+		Version: "2.0",
+		ID:      "id",
+		Method:  gateway_common.MethodWorkflowExecute,
+		Params:  &jsonPayloadMsg,
+	}
+	err = handler.HandleGatewayMessage(t.Context(), "gw1", req)
+	require.NoError(t, err)
+	require.True(t, connector.SendToGatewayCalled, "Should send error response")
+	resp := connector.SendToGatewayArgs.Msg
+	require.Len(t, triggerCh, 0, "trigger channel should not receive any messages")
+	assertErrorResponse(t, connector, resp, jsonrpc.ErrInvalidRequest)
+	var triggerResp gateway_common.HTTPTriggerResponse
+	require.Nil(t, resp.Result, "Result should be nil in error response")
+	require.Empty(t, triggerResp.WorkflowID, "WorkflowID should be empty in error response")
+	require.Equal(t, req.ID, resp.ID, "Response ID should match request ID")
 }
 
 func TestHandleGatewayMessage_MissingBody(t *testing.T) {
@@ -231,7 +329,7 @@ func TestProcessTrigger_MissingWorkflowID(t *testing.T) {
 	require.True(t, connector.SendToGatewayCalled, "Should send error response")
 	resp := connector.SendToGatewayArgs.Msg
 	require.Len(t, triggerCh, 0, "trigger channel should not receive any messages")
-	assertErrorResponse(t, connector, resp, jsonrpc.ErrInvalidParams)
+	assertErrorResponse(t, connector, resp, jsonrpc.ErrInvalidRequest)
 	var triggerResp gateway_common.HTTPTriggerResponse
 	require.Nil(t, resp.Result, "Result should be nil in error response")
 	require.Empty(t, triggerResp.WorkflowID, "WorkflowID should be empty in error response")
@@ -241,13 +339,16 @@ func TestProcessTrigger_MissingWorkflowID(t *testing.T) {
 func TestRegisterAndUnregisterWorkflow(t *testing.T) {
 	lggr := logger.Test(t)
 	handler, _, _ := setup(t, lggr)
-	_, ok := handler.workflows["wf1"]
+	var workflowID [32]byte
+	copy(workflowID[:], []byte("wf1"))
+	workflowIDHex := "0x" + hex.EncodeToString(workflowID[:])
+	_, ok := handler.workflowStore.getWorkflowByID(workflowIDHex)
 	require.True(t, ok, "workflow not registered")
-	err := handler.UnregisterWorkflow(context.Background(), "wf1")
+	err := handler.UnregisterWorkflow(context.Background(), workflowIDHex)
 	require.NoError(t, err, "UnregisterWorkflow failed")
-	_, ok = handler.workflows["wf1"]
+	_, ok = handler.workflowStore.getWorkflowByID(workflowIDHex)
 	require.False(t, ok, "workflow still registered after unregistering")
-	err = handler.UnregisterWorkflow(context.Background(), "wf1")
+	err = handler.UnregisterWorkflow(context.Background(), workflowIDHex)
 	require.Error(t, err, "UnregisterWorkflow should return error for non-existent workflow")
 }
 
@@ -326,8 +427,13 @@ func TestRegisterWorkflow_InvalidECDSAPublicKey(t *testing.T) {
 					invalidKey,
 				},
 			}
-
-			err := handler.RegisterWorkflow(context.Background(), "wf1", cfg, sendCh)
+			selector := gateway_common.WorkflowSelector{
+				WorkflowOwner: "0xabcdef1234567890abcdef1234567890abcdef12",
+				WorkflowName:  "workflowName",
+				WorkflowTag:   "workflowTag",
+				WorkflowID:    "workflowID",
+			}
+			err := handler.RegisterWorkflow(context.Background(), selector, cfg, sendCh)
 			require.Error(t, err)
 			require.Contains(t, err.Error(), tc.errorMsg)
 		})
