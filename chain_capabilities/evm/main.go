@@ -127,6 +127,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 	}
 
 	c.triggerService = trigger.NewLogTriggerService(evmRelayer, trigger.NewLogTriggerStore(), c.lggr, processor, messageBuilder, cfg.LogTriggerPollInterval)
+	c.triggerService.StartCleanUp(ctx)
 
 	// TODO PLEX-1560: populate with implementation
 	blocksProvider := &oracle.NullBlocksProvider{}
