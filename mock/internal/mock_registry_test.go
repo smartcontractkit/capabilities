@@ -487,3 +487,134 @@ func TestMockRegistry_RemoveCapability(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "not found")
 }
+
+func TestMockRegistry_SendTriggerEvent_IncompleteData(t *testing.T) {
+	t.Parallel()
+	lggr := testutils.NewLogger(t)
+	capRegistry := newMockCapRegistry()
+	registry := NewMockRegistry(lggr, capRegistry)
+
+	ctx := context.Background()
+
+	// Create a trigger capability
+	info := &pb.CapabilityInfo{
+		ID:             "test-trigger",
+		CapabilityType: pb.CapabilityType_Trigger,
+	}
+
+	_, err := registry.CreateCapability(ctx, info)
+	require.NoError(t, err)
+
+	subscriber := registry.Triggers["test-trigger"]
+
+	// Test case 1: Missing outputs
+	t.Run("missing outputs", func(t *testing.T) {
+		ch, err := subscriber.RegisterTrigger(context.Background(), capabilities.TriggerRegistrationRequest{
+			TriggerID: "test-trigger-no-outputs",
+			Metadata:  capabilities.RequestMetadata{},
+		})
+		require.NoError(t, err)
+
+		go func() {
+			_, err = registry.SendTriggerEvent(ctx, &pb.SendTriggerEventRequest{
+				TriggerID:   "test-trigger",
+				TriggerType: "type-trigger",
+				ID:          "event-no-outputs",
+				// Outputs field intentionally omitted
+			})
+			require.NoError(t, err)
+		}()
+
+		select {
+		case resp := <-ch:
+			require.Equal(t, "type-trigger", resp.Event.TriggerType)
+			require.Equal(t, "event-no-outputs", resp.Event.ID)
+			require.Equal(t, values.EmptyMap(), resp.Event.Outputs) // Should be empty
+		case <-time.After(time.Second):
+			t.Fatal("timeout waiting for trigger event")
+		}
+	})
+
+	// Test case 2: Missing payload
+	t.Run("missing payload", func(t *testing.T) {
+		ch, err := subscriber.RegisterTrigger(context.Background(), capabilities.TriggerRegistrationRequest{
+			TriggerID: "test-trigger-no-payload",
+			Metadata:  capabilities.RequestMetadata{},
+		})
+		require.NoError(t, err)
+
+		outputs := &values.Map{
+			Underlying: map[string]values.Value{
+				"test": values.NewString("value"),
+			},
+		}
+		outputsBytes, err := utils.MapToBytes(outputs)
+		require.NoError(t, err)
+
+		go func() {
+			_, err = registry.SendTriggerEvent(ctx, &pb.SendTriggerEventRequest{
+				TriggerID:   "test-trigger",
+				TriggerType: "type-trigger",
+				ID:          "event-no-payload",
+				Outputs:     outputsBytes,
+				// Payload field intentionally omitted
+			})
+			require.NoError(t, err)
+		}()
+
+		select {
+		case resp := <-ch:
+			require.Equal(t, "type-trigger", resp.Event.TriggerType)
+			require.Equal(t, "event-no-payload", resp.Event.ID)
+			require.Equal(t, outputs, resp.Event.Outputs)
+			require.Nil(t, resp.Event.Payload) // Should be nil
+		case <-time.After(time.Second):
+			t.Fatal("timeout waiting for trigger event")
+		}
+	})
+
+	// Test case 3: Missing OCR event
+	t.Run("missing OCR event", func(t *testing.T) {
+		ch, err := subscriber.RegisterTrigger(context.Background(), capabilities.TriggerRegistrationRequest{
+			TriggerID: "test-trigger-no-ocr",
+			Metadata:  capabilities.RequestMetadata{},
+		})
+		require.NoError(t, err)
+
+		outputs := &values.Map{
+			Underlying: map[string]values.Value{
+				"test": values.NewString("value"),
+			},
+		}
+		outputsBytes, err := utils.MapToBytes(outputs)
+		require.NoError(t, err)
+
+		payload := &anypb.Any{
+			TypeUrl: "some-type",
+			Value:   []byte("some-payload"),
+		}
+
+		go func() {
+			_, err = registry.SendTriggerEvent(ctx, &pb.SendTriggerEventRequest{
+				TriggerID:   "test-trigger",
+				TriggerType: "type-trigger",
+				ID:          "event-no-ocr",
+				Outputs:     outputsBytes,
+				Payload:     payload,
+				// OCREvent field intentionally omitted
+			})
+			require.NoError(t, err)
+		}()
+
+		select {
+		case resp := <-ch:
+			require.Equal(t, "type-trigger", resp.Event.TriggerType)
+			require.Equal(t, "event-no-ocr", resp.Event.ID)
+			require.Equal(t, outputs, resp.Event.Outputs)
+			require.Equal(t, payload, resp.Event.Payload)
+			require.Empty(t, resp.Event.OCREvent) // Should be empty
+		case <-time.After(time.Second):
+			t.Fatal("timeout waiting for trigger event")
+		}
+	})
+}

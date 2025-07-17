@@ -151,12 +151,20 @@ func (m *MockRegistry) SendTriggerEvent(ctx context.Context, request *pb.SendTri
 
 	m.lggr.Debugf("Mock trigger %s has %d subscribers", t.ID, len(t.Subscribers))
 
+	ocrEvent := &capabilities.OCRTriggerEvent{}
 	sigs := make([]capabilities.OCRAttributedOnchainSignature, 0)
-	for _, s := range request.OCREvent.Sigs {
-		sigs = append(sigs, capabilities.OCRAttributedOnchainSignature{
-			Signature: s.Signature,
-			Signer:    s.Signer,
-		})
+	if request.OCREvent != nil {
+		for _, s := range request.OCREvent.Sigs {
+			sigs = append(sigs, capabilities.OCRAttributedOnchainSignature{
+				Signature: s.Signature,
+				Signer:    s.Signer,
+			})
+		}
+
+		ocrEvent.Sigs = sigs
+		ocrEvent.ConfigDigest = request.OCREvent.ConfigDigest
+		ocrEvent.Report = request.OCREvent.Report
+		ocrEvent.SeqNr = request.OCREvent.SeqNr
 	}
 
 	for triggerID, sub := range t.Subscribers {
@@ -165,12 +173,7 @@ func (m *MockRegistry) SendTriggerEvent(ctx context.Context, request *pb.SendTri
 			ID:          request.ID,
 			Outputs:     outputs,
 			Payload:     request.Payload,
-			OCREvent: &capabilities.OCRTriggerEvent{
-				ConfigDigest: request.OCREvent.ConfigDigest,
-				SeqNr:        request.OCREvent.SeqNr,
-				Report:       request.OCREvent.Report,
-				Sigs:         sigs,
-			},
+			OCREvent:    ocrEvent,
 		}
 
 		sub.Ch <- capabilities.TriggerResponse{

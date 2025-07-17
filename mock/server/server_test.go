@@ -333,3 +333,86 @@ func connectWithRetry(port int, maxAttempts int) (pb.MockCapabilityClient, error
 	}
 	return nil, fmt.Errorf("failed to connect after %d attempts: %w", maxAttempts, lastErr)
 }
+
+func TestMockServer_Initialise_IncompleteData(t *testing.T) {
+	t.Parallel()
+	logger := testutils.NewLogger(t)
+	capabilitiesRegistry := testutils.NewCapabilitiesRegistry(t)
+	ctx := context.Background()
+
+	// Test case 1: Empty config
+	t.Run("empty config", func(t *testing.T) {
+		server := New(logger)
+		err := server.Initialise(ctx, "", nil, nil, capabilitiesRegistry, nil, nil, nil, nil, nil, nil)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "missing config")
+	})
+
+	// Test case 2: Config with no port
+	t.Run("missing port", func(t *testing.T) {
+		server := New(logger)
+		err := server.Initialise(ctx, `
+			[[DefaultMocks]]
+			id="some-trigger@1.0.0"
+			description="test trigger"
+			type="trigger"
+		`, nil, nil, capabilitiesRegistry, nil, nil, nil, nil, nil, nil)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "must specify a port number")
+	})
+
+	// Test case 3: Config with port but no default mocks (valid but empty)
+	t.Run("no default mocks", func(t *testing.T) {
+		server := New(logger)
+		err := server.Initialise(ctx, `
+			port=9999
+		`, nil, nil, capabilitiesRegistry, nil, nil, nil, nil, nil, nil)
+		require.NoError(t, err)
+		require.Empty(t, server.MockRegistry.Triggers)
+		require.Empty(t, server.MockRegistry.Executables)
+	})
+
+	// Test case 4: Config with invalid TOML syntax
+	t.Run("invalid TOML", func(t *testing.T) {
+		server := New(logger)
+		err := server.Initialise(ctx, `
+			port=9999
+			[[DefaultMocks] # Missing closing bracket
+			id="some-trigger@1.0.0"
+			description="test trigger"
+			type="trigger"
+		`, nil, nil, capabilitiesRegistry, nil, nil, nil, nil, nil, nil)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to unmarshal config")
+	})
+
+	// Test case 5: Config with missing fields in default mocks
+	t.Run("missing type field", func(t *testing.T) {
+		server := New(logger)
+		err := server.Initialise(ctx, `
+			port=9999
+			[[DefaultMocks]]
+			id="some-trigger@1.0.0"
+			description="test trigger"
+			# type field missing
+		`, nil, nil, capabilitiesRegistry, nil, nil, nil, nil, nil, nil)
+		require.Contains(t, err.Error(), "capability type not supported")
+		require.Empty(t, server.MockRegistry.Triggers)
+		require.Empty(t, server.MockRegistry.Executables)
+	})
+
+	// Test case 6: Config with invalid capability type
+	t.Run("invalid capability type", func(t *testing.T) {
+		server := New(logger)
+		err := server.Initialise(ctx, `
+			port=9999
+			[[DefaultMocks]]
+			id="some-trigger@1.0.0"
+			description="test trigger"
+			type="invalid-type"
+		`, nil, nil, capabilitiesRegistry, nil, nil, nil, nil, nil, nil)
+		require.Contains(t, err.Error(), "capability type not supported")
+		require.Empty(t, server.MockRegistry.Triggers)
+		require.Empty(t, server.MockRegistry.Executables)
+	})
+}
