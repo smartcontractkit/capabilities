@@ -1,31 +1,25 @@
 package trigger
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"testing"
 
-	gethcommon "github.com/ethereum/go-ethereum/common"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	evm "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
-	evmmocks "github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
-	"github.com/smartcontractkit/chainlink-evm/gethwrappers/workflow/generated/workflow_registry_wrapper_v2"
 )
 
 const (
-	publicKey = "0xA18B5D6DB47fB7b0974505D7aB544e24478B6e98"
+	publicKey     = "0xA18B5D6DB47fB7b0974505D7aB544e24478B6e98"
+	workflowOwner = "0xabcdef1234567890abcdef1234567890abcdef12"
 )
 
 type mockGatewayConnector struct {
@@ -80,12 +74,12 @@ func gatewayRequest(t *testing.T, method string) *jsonrpc.Request[json.RawMessag
 }
 
 // gatewayRequestByTag creates a test request message with the given method
-func gatewayRequestByTag(t *testing.T, method string) *jsonrpc.Request[json.RawMessage] {
+func gatewayRequestByTag(t *testing.T, method string, workflowOwner string) *jsonrpc.Request[json.RawMessage] {
 	payload := gateway_common.HTTPTriggerRequest{
 		Workflow: gateway_common.WorkflowSelector{
-			WorkflowOwner: "0xabcdef1234567890abcdef1234567890abcdef12",
+			WorkflowOwner: workflowOwner,
 			WorkflowName:  "workflowName",
-			WorkflowLabel: "workflowTag",
+			WorkflowTag:   "workflowTag",
 		},
 		Input: json.RawMessage(`{"key":"value"}`),
 	}
@@ -101,18 +95,13 @@ func gatewayRequestByTag(t *testing.T, method string) *jsonrpc.Request[json.RawM
 }
 
 // Helper for setting up proxy and mockConnector for SendRequest tests
-func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayConnector, <-chan capabilities.TriggerAndId[*http.Payload], *evmmocks.EVMService) {
+func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayConnector, <-chan capabilities.TriggerAndId[*http.Payload]) {
 	mockConnector := &mockGatewayConnector{}
-	cfg := ServiceConfig{
-		HomeChainID:             "1",
-		WorkflowRegistryAddress: "0x1234567890abcdef1234567890abcdef12345678",
-	}
-	evmService := evmmocks.NewEVMService(t)
+	cfg := ServiceConfig{}
 	handler, err := NewConnectorHandler(
 		lggr,
 		mockConnector,
 		cfg,
-		evmService,
 	)
 	require.NoError(t, err)
 	sdkCfg := &http.Config{
@@ -127,9 +116,15 @@ func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayCon
 	var workflowID [32]byte
 	copy(workflowID[:], []byte("wf1"))
 	workflowIDHex := "0x" + hex.EncodeToString(workflowID[:])
-	err = handler.RegisterWorkflow(t.Context(), workflowIDHex, sdkCfg, triggerCh)
+	selector := gateway_common.WorkflowSelector{
+		WorkflowID:    workflowIDHex,
+		WorkflowOwner: "0xabcdef1234567890abcdef1234567890abcdef12",
+		WorkflowName:  "workflowName",
+		WorkflowTag:   "workflowTag",
+	}
+	err = handler.RegisterWorkflow(t.Context(), selector, sdkCfg, triggerCh)
 	require.NoError(t, err, "Failed to register workflow")
-	return handler, mockConnector, triggerCh, evmService
+	return handler, mockConnector, triggerCh
 }
 
 func requireWorkflowTriggered(t *testing.T, triggerCh <-chan capabilities.TriggerAndId[*http.Payload], req *jsonrpc.Request[json.RawMessage], connector *mockGatewayConnector, handler *connectorHandler) {
@@ -180,7 +175,7 @@ func requireWorkflowTriggered(t *testing.T, triggerCh <-chan capabilities.Trigge
 // TestHandleGatewayMessage_Success tests successful request processing
 func TestHandleGatewayMessage_Success(t *testing.T) {
 	lggr := logger.Test(t)
-	handler, connector, triggerCh, _ := setup(t, lggr)
+	handler, connector, triggerCh := setup(t, lggr)
 	req := gatewayRequest(t, gateway_common.MethodWorkflowExecute)
 	requireWorkflowTriggered(t, triggerCh, req, connector, handler)
 }
@@ -189,88 +184,21 @@ func TestHandleGatewayMessage_Success(t *testing.T) {
 // workflowOwner/Name/Tag combination
 func TestHandleGatewayMessage_ByTag(t *testing.T) {
 	lggr := logger.Test(t)
-	handler, connector, triggerCh, evmService := setup(t, lggr)
-	req := gatewayRequestByTag(t, gateway_common.MethodWorkflowExecute)
-	method, ok := registryABI.Methods["getWorkflow"]
-	require.True(t, ok, "getWorkflow method should exist in registry ABI")
-	// Initialize WorkflowId with a random string (e.g., "randomworkflowid1234567890123456")
-	var workflowID [32]byte
-	copy(workflowID[:], []byte("wf1"))
-	view := workflow_registry_wrapper_v2.WorkflowRegistryWorkflowMetadataView{
-		WorkflowId: workflowID,
-	}
-	packed, err := method.Outputs.Pack(view)
-	require.NoError(t, err, "Failed to pack workflow metadata view")
-	evmService.EXPECT().CallContract(mock.Anything, mock.MatchedBy(func(msg interface{}) bool {
-		callMsg, ok := msg.(*evm.CallMsg)
-		if !ok {
-			return false
-		}
-		expectedTo := gethcommon.HexToAddress(handler.config.WorkflowRegistryAddress)
-		workflowOwner := gethcommon.HexToAddress("0xabcdef1234567890abcdef1234567890abcdef12")
-		expectedData, err := registryABI.Pack("getWorkflow", workflowOwner, "workflowName", "workflowTag")
-		require.NoError(t, err)
-		return callMsg.To == expectedTo &&
-			bytes.Equal(callMsg.Data, expectedData)
-	}), mock.Anything).Return(packed, nil).Once()
+	handler, connector, triggerCh := setup(t, lggr)
+	req := gatewayRequestByTag(t, gateway_common.MethodWorkflowExecute, workflowOwner)
 	requireWorkflowTriggered(t, triggerCh, req, connector, handler)
 }
 
 func TestHandleGatewayMessage_ByTag_WorkflowNotFound(t *testing.T) {
 	lggr := logger.Test(t)
-	handler, connector, triggerCh, evmService := setup(t, lggr)
-	req := gatewayRequestByTag(t, gateway_common.MethodWorkflowExecute)
-	method, ok := registryABI.Methods["getWorkflow"]
-	require.True(t, ok, "getWorkflow method should exist in registry ABI")
-	view := workflow_registry_wrapper_v2.WorkflowRegistryWorkflowMetadataView{}
-	packed, err := method.Outputs.Pack(view)
-	require.NoError(t, err, "Failed to pack workflow metadata view")
-	evmService.EXPECT().CallContract(mock.Anything, mock.MatchedBy(func(msg interface{}) bool {
-		callMsg, ok := msg.(*evm.CallMsg)
-		if !ok {
-			return false
-		}
-		expectedTo := gethcommon.HexToAddress(handler.config.WorkflowRegistryAddress)
-		workflowOwner := gethcommon.HexToAddress("0xabcdef1234567890abcdef1234567890abcdef12")
-		expectedData, err := registryABI.Pack("getWorkflow", workflowOwner, "workflowName", "workflowTag")
-		require.NoError(t, err)
-		return callMsg.To == expectedTo &&
-			bytes.Equal(callMsg.Data, expectedData)
-	}), mock.Anything).Return(packed, nil).Once()
-	err = handler.HandleGatewayMessage(t.Context(), "gw1", req)
-	require.NoError(t, err)
-	require.True(t, connector.SendToGatewayCalled, "Should send error response")
-	resp := connector.SendToGatewayArgs.Msg
-	require.Len(t, triggerCh, 0, "trigger channel should not receive any messages")
-	assertErrorResponse(t, connector, resp, jsonrpc.ErrInvalidRequest)
-	var triggerResp gateway_common.HTTPTriggerResponse
-	require.Nil(t, resp.Result, "Result should be nil in error response")
-	require.Empty(t, triggerResp.WorkflowID, "WorkflowID should be empty in error response")
-	require.Equal(t, req.ID, resp.ID, "Response ID should match request ID")
-}
-
-func TestHandleGatewayMessage_ByTag_CallContractError(t *testing.T) {
-	lggr := logger.Test(t)
-	handler, connector, triggerCh, evmService := setup(t, lggr)
-	req := gatewayRequestByTag(t, gateway_common.MethodWorkflowExecute)
-	evmService.EXPECT().CallContract(mock.Anything, mock.MatchedBy(func(msg interface{}) bool {
-		callMsg, ok := msg.(*evm.CallMsg)
-		if !ok {
-			return false
-		}
-		expectedTo := gethcommon.HexToAddress(handler.config.WorkflowRegistryAddress)
-		workflowOwner := gethcommon.HexToAddress("0xabcdef1234567890abcdef1234567890abcdef12")
-		expectedData, err := registryABI.Pack("getWorkflow", workflowOwner, "workflowName", "workflowTag")
-		require.NoError(t, err)
-		return callMsg.To == expectedTo &&
-			bytes.Equal(callMsg.Data, expectedData)
-	}), mock.Anything).Return(nil, errors.New("network error")).Once()
+	handler, connector, triggerCh := setup(t, lggr)
+	req := gatewayRequestByTag(t, gateway_common.MethodWorkflowExecute, "0xffffffffffffffffffffffffffffffffffffffff") //unregistered workflow owner
 	err := handler.HandleGatewayMessage(t.Context(), "gw1", req)
 	require.NoError(t, err)
 	require.True(t, connector.SendToGatewayCalled, "Should send error response")
 	resp := connector.SendToGatewayArgs.Msg
 	require.Len(t, triggerCh, 0, "trigger channel should not receive any messages")
-	assertErrorResponse(t, connector, resp, jsonrpc.ErrInternal)
+	assertErrorResponse(t, connector, resp, jsonrpc.ErrInvalidRequest)
 	var triggerResp gateway_common.HTTPTriggerResponse
 	require.Nil(t, resp.Result, "Result should be nil in error response")
 	require.Empty(t, triggerResp.WorkflowID, "WorkflowID should be empty in error response")
@@ -286,7 +214,7 @@ func assertErrorResponse(t *testing.T, connector *mockGatewayConnector, resp *js
 
 func TestHandleGatewayMessage_InvalidRequest(t *testing.T) {
 	lggr := logger.Test(t)
-	handler, connector, triggerCh, _ := setup(t, lggr)
+	handler, connector, triggerCh := setup(t, lggr)
 	// empty request
 	req := &jsonrpc.Request[json.RawMessage]{}
 	err := handler.HandleGatewayMessage(t.Context(), "gw1", req)
@@ -297,13 +225,13 @@ func TestHandleGatewayMessage_InvalidRequest(t *testing.T) {
 
 func TestHandleGatewayMessage_MissingWorkflowName(t *testing.T) {
 	lggr := logger.Test(t)
-	handler, connector, triggerCh, _ := setup(t, lggr)
+	handler, connector, triggerCh := setup(t, lggr)
 	var workflowID [32]byte
 	copy(workflowID[:], []byte("wf1"))
 	payload := gateway_common.HTTPTriggerRequest{
 		Workflow: gateway_common.WorkflowSelector{
-			WorkflowOwner: "0xabcdef1234567890abcdef1234567890abcdef12",
-			WorkflowLabel: "workflowTag",
+			WorkflowOwner: workflowOwner,
+			WorkflowTag:   "workflowTag",
 		},
 		Input: json.RawMessage(`{"key":"value"}`),
 	}
@@ -330,7 +258,7 @@ func TestHandleGatewayMessage_MissingWorkflowName(t *testing.T) {
 
 func TestHandleGatewayMessage_MissingBody(t *testing.T) {
 	lggr := logger.Test(t)
-	handler, connector, triggerCh, _ := setup(t, lggr)
+	handler, connector, triggerCh := setup(t, lggr)
 	// empty request
 	req := &jsonrpc.Request[json.RawMessage]{Method: gateway_common.MethodWorkflowExecute}
 	err := handler.HandleGatewayMessage(t.Context(), "gw1", req)
@@ -341,7 +269,7 @@ func TestHandleGatewayMessage_MissingBody(t *testing.T) {
 
 func TestHandleGatewayMessage_InvalidUserInputJSON(t *testing.T) {
 	lggr := logger.Test(t)
-	handler, connector, triggerCh, _ := setup(t, lggr)
+	handler, connector, triggerCh := setup(t, lggr)
 	req := gatewayRequest(t, gateway_common.MethodWorkflowExecute)
 	invalidJSON := json.RawMessage("invalid json")
 	req.Params = &invalidJSON
@@ -353,7 +281,7 @@ func TestHandleGatewayMessage_InvalidUserInputJSON(t *testing.T) {
 
 func TestHandleGatewayMessage_InvalidJSON(t *testing.T) {
 	lggr := logger.Test(t)
-	handler, connector, triggerCh, _ := setup(t, lggr)
+	handler, connector, triggerCh := setup(t, lggr)
 	req := gatewayRequest(t, gateway_common.MethodWorkflowExecute)
 	params := json.RawMessage(`{"workflow":{"workflowId":"wf1"},"input":{"key": {"invalid json"}}}`)
 	req.Params = &params
@@ -365,7 +293,7 @@ func TestHandleGatewayMessage_InvalidJSON(t *testing.T) {
 
 func TestHandleGatewayMessage_UnsupportedMethod(t *testing.T) {
 	lggr := logger.Test(t)
-	handler, connector, triggerCh, _ := setup(t, lggr)
+	handler, connector, triggerCh := setup(t, lggr)
 
 	// Create request with unsupported method
 	badMethodMsg := gatewayRequest(t, "unsupported_method")
@@ -377,7 +305,7 @@ func TestHandleGatewayMessage_UnsupportedMethod(t *testing.T) {
 
 func TestProcessTrigger_MissingWorkflowID(t *testing.T) {
 	lggr := logger.Test(t)
-	handler, connector, triggerCh, _ := setup(t, lggr)
+	handler, connector, triggerCh := setup(t, lggr)
 
 	// Create request with missing workflowID
 	payload := gateway_common.HTTPTriggerRequest{
@@ -410,15 +338,15 @@ func TestProcessTrigger_MissingWorkflowID(t *testing.T) {
 
 func TestRegisterAndUnregisterWorkflow(t *testing.T) {
 	lggr := logger.Test(t)
-	handler, _, _, _ := setup(t, lggr)
+	handler, _, _ := setup(t, lggr)
 	var workflowID [32]byte
 	copy(workflowID[:], []byte("wf1"))
 	workflowIDHex := "0x" + hex.EncodeToString(workflowID[:])
-	_, ok := handler.workflows[workflowIDHex]
+	_, ok := handler.workflowStore.getWorkflowByID(workflowIDHex)
 	require.True(t, ok, "workflow not registered")
 	err := handler.UnregisterWorkflow(context.Background(), workflowIDHex)
 	require.NoError(t, err, "UnregisterWorkflow failed")
-	_, ok = handler.workflows[workflowIDHex]
+	_, ok = handler.workflowStore.getWorkflowByID(workflowIDHex)
 	require.False(t, ok, "workflow still registered after unregistering")
 	err = handler.UnregisterWorkflow(context.Background(), workflowIDHex)
 	require.Error(t, err, "UnregisterWorkflow should return error for non-existent workflow")
@@ -426,7 +354,7 @@ func TestRegisterAndUnregisterWorkflow(t *testing.T) {
 
 func TestProcessTrigger_UnregisteredWorkflow(t *testing.T) {
 	lggr := logger.Test(t)
-	handler, connector, triggerCh, _ := setup(t, lggr)
+	handler, connector, triggerCh := setup(t, lggr)
 
 	// Create request with unregistered workflowID
 	payload := gateway_common.HTTPTriggerRequest{
@@ -459,7 +387,7 @@ func TestProcessTrigger_UnregisteredWorkflow(t *testing.T) {
 
 func TestRegisterWorkflow_InvalidECDSAPublicKey(t *testing.T) {
 	lggr := logger.Test(t)
-	handler, _, _, _ := setup(t, lggr)
+	handler, _, _ := setup(t, lggr)
 	sendCh := make(chan capabilities.TriggerAndId[*http.Payload], 1)
 
 	testCases := []struct {
@@ -499,8 +427,13 @@ func TestRegisterWorkflow_InvalidECDSAPublicKey(t *testing.T) {
 					invalidKey,
 				},
 			}
-
-			err := handler.RegisterWorkflow(context.Background(), "wf1", cfg, sendCh)
+			selector := gateway_common.WorkflowSelector{
+				WorkflowOwner: "0xabcdef1234567890abcdef1234567890abcdef12",
+				WorkflowName:  "workflowName",
+				WorkflowTag:   "workflowTag",
+				WorkflowID:    "workflowID",
+			}
+			err := handler.RegisterWorkflow(context.Background(), selector, cfg, sendCh)
 			require.Error(t, err)
 			require.Contains(t, err.Error(), tc.errorMsg)
 		})
@@ -509,12 +442,8 @@ func TestRegisterWorkflow_InvalidECDSAPublicKey(t *testing.T) {
 func TestConnectorHandler_Start_HealthReport_Ready_Name_Close(t *testing.T) {
 	lggr := logger.Test(t)
 	mockConnector := &mockGatewayConnector{}
-	cfg := ServiceConfig{
-		HomeChainID:             "1",
-		WorkflowRegistryAddress: "0x1234567890abcdef1234567890abcdef12345678",
-	}
-	evmService := evmmocks.NewEVMService(t)
-	handler, err := NewConnectorHandler(lggr, mockConnector, cfg, evmService)
+	cfg := ServiceConfig{}
+	handler, err := NewConnectorHandler(lggr, mockConnector, cfg)
 	require.NoError(t, err)
 
 	require.Error(t, handler.Ready())

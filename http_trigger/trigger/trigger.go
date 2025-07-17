@@ -3,15 +3,14 @@ package trigger
 import (
 	"context"
 	"encoding/json"
-	"errors"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
-	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
@@ -29,24 +28,12 @@ type ServiceConfig struct {
 	RateLimiter ratelimit.RateLimiterConfig `json:"incomingRateLimiter" `
 	// OutgoingRateLimiter is the configuration for outgoing messages from this node to the gateway.
 	// The sender is a workflow owner
-	OutgoingRateLimiter     ratelimit.RateLimiterConfig `json:"outgoingRateLimiter"`
-	HomeChainID             string                      `json:"homeChainId"`
-	WorkflowRegistryAddress string                      `json:"workflowRegistryAddress"`
-}
-
-func (c *ServiceConfig) Validate() error {
-	if c.HomeChainID == "" {
-		return errors.New("homeChainId must be set")
-	}
-	if c.WorkflowRegistryAddress == "" {
-		return errors.New("workflowRegistryAddress must be set")
-	}
-	return nil
+	OutgoingRateLimiter ratelimit.RateLimiterConfig `json:"outgoingRateLimiter"`
 }
 
 type ConnectorHandler interface {
 	services.Service
-	RegisterWorkflow(ctx context.Context, workflowID string, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error
+	RegisterWorkflow(ctx context.Context, workflowSelector gateway.WorkflowSelector, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error
 	UnregisterWorkflow(ctx context.Context, workflowID string) error
 }
 
@@ -70,7 +57,7 @@ func (s *service) Initialise(
 	_ core.KeyValueStore,
 	_ core.ErrorLog,
 	_ core.PipelineRunnerService,
-	relayerSet core.RelayerSet,
+	_ core.RelayerSet,
 	_ core.OracleFactory,
 	gc core.GatewayConnector,
 	_ core.Keystore,
@@ -82,21 +69,8 @@ func (s *service) Initialise(
 	if err != nil {
 		return err
 	}
-	err = serviceConfig.Validate()
-	if err != nil {
-		return err
-	}
 	s.cfg = serviceConfig
-	relayID := types.RelayID{Network: "evm", ChainID: s.cfg.HomeChainID}
-	relayer, err := relayerSet.Get(ctx, relayID)
-	if err != nil {
-		return err
-	}
-	evmService, err := relayer.EVM()
-	if err != nil {
-		return err
-	}
-	s.connectorHandler, err = NewConnectorHandler(s.lggr, gc, serviceConfig, evmService)
+	s.connectorHandler, err = NewConnectorHandler(s.lggr, gc, serviceConfig)
 	if err != nil {
 		return err
 	}
@@ -139,7 +113,13 @@ func (s *service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 		sendChannelBufferSize = defaultSendChannelBufferSize
 	}
 	sendCh := make(chan capabilities.TriggerAndId[*http.Payload], sendChannelBufferSize)
-	err := s.connectorHandler.RegisterWorkflow(ctx, metadata.WorkflowID, input, sendCh)
+	workflowSelector := gateway.WorkflowSelector{
+		WorkflowID:    metadata.WorkflowID,
+		WorkflowOwner: metadata.WorkflowOwner,
+		WorkflowName:  metadata.WorkflowName,
+		WorkflowTag:   metadata.WorkflowTag,
+	}
+	err := s.connectorHandler.RegisterWorkflow(ctx, workflowSelector, input, sendCh)
 	if err != nil {
 		return nil, err
 	}
