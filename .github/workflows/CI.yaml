@@ -51,8 +51,20 @@ jobs:
       - name: Get affected projects
         id: affected
         run: |
-          echo "Running affected-projects.sh with base: ${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }}"
-          echo "affected=$(./.github/scripts/affected-projects.sh ${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }})" >> $GITHUB_OUTPUT
+          # Redirect script's stderr to the workflow's stderr, capture only stdout for GITHUB_OUTPUT
+          JSON_OUTPUT=$(./.github/scripts/affected-projects.sh ${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }} 2>&1)
+
+          # Check if the output is valid JSON before setting the GITHUB_OUTPUT
+          # This will also catch any debug messages that accidentally went to stdout
+          if echo "$JSON_OUTPUT" | jq . >/dev/null 2>&1; then
+            echo "affected<<EOF_JSON" >> $GITHUB_OUTPUT
+            echo "$JSON_OUTPUT" >> $GITHUB_OUTPUT
+            echo "EOF_JSON" >> $GITHUB_OUTPUT
+          else
+            echo "Error: The script did not produce valid JSON output." >&2
+            echo "$JSON_OUTPUT" >&2 # Output the problematic content for debugging
+            exit 1
+          fi
 
       - name: Debug Affected Output
         run: |
