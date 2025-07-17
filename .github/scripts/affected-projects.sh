@@ -87,17 +87,4 @@ output+=" }"
 # Use jq to pretty-print and validate the final JSON output
 final_json_output=$(echo "$output" | jq '.')
 echo "DEBUG: Final JSON output to be passed to GITHUB_OUTPUT:" >&2
-echo "$final_json_output" >&2 # Pretty print for readability in logs, redirected to stderr
-
-# Check if the final output is valid JSON
-if ! echo "$final_json_output" | jq . > /dev/null 2>&1; then
-  echo "CRITICAL ERROR: The final JSON output is invalid!" >&2
-  echo "$final_json_output" >&2
-  exit 1
-fi
-
-# Write the output to GITHUB_OUTPUT using a multi-line format
-# The 'affected' key is the output name, and <<EOF_JSON is the delimiter.
-echo "affected<<EOF_JSON" >> $GITHUB_OUTPUT
-echo "$final_json_output" >> $GITHUB_OUTPUT
-echo "EOF_JSON" >> $GITHUB_OUTPUT
+echo "$final_json_output"
