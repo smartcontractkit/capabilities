@@ -1,7 +1,11 @@
 package action
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,9 +22,7 @@ import (
 	"github.com/smartcontractkit/capabilities/libs/testutils"
 )
 
-// TODO tests for request limits, failed consensus, slow request and timeouts etc.
-
-func TestCapability(t *testing.T) {
+func Test_SimpleConsensus(t *testing.T) {
 	lggr := logger.Test(t)
 	ctx := t.Context()
 
@@ -35,16 +37,7 @@ func TestCapability(t *testing.T) {
 
 	servicetest.Run(t, capability)
 
-	metadata := capabilities.RequestMetadata{
-		WorkflowID:               "",
-		WorkflowOwner:            "",
-		WorkflowExecutionID:      "wex-id",
-		WorkflowName:             "",
-		WorkflowDonID:            0,
-		WorkflowDonConfigVersion: 0,
-		ReferenceID:              "1",
-		DecodedWorkflowName:      "",
-	}
+	metadata := newRequestMetaData()
 
 	input := &pb.SimpleConsensusInputs{
 		Observation: &pb.SimpleConsensusInputs_Value{
@@ -66,6 +59,119 @@ func TestCapability(t *testing.T) {
 	expectedProto := values.Proto(expectedResult)
 
 	require.True(t, proto.Equal(result, expectedProto))
+}
+
+func Test_Report(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := t.Context()
+
+	capability := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute)
+
+	oracleFactory := testutils.NewOracleFactory(t, lggr)
+
+	err := capability.Initialise(ctx, "", nil, nil, nil, nil, nil,
+		oracleFactory, nil, nil)
+	require.NoError(t, err)
+
+	servicetest.Run(t, capability)
+
+	metadata := newRequestMetaData()
+
+	input := &pb.ReportRequest{
+		EncodedPayload: []byte("somerandom-payload"),
+		EncoderName:    "evm",
+		SigningAlgo:    "ecdsa",
+		HashingAlgo:    "keccak256",
+	}
+
+	result, err := capability.Report(ctx, metadata, input)
+	require.NoError(t, err)
+
+	require.True(t, strings.HasSuffix(string(result.RawReport), "somerandom-payload"))
+}
+
+func Test_ReportRequiresValidSigningAlgo(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := t.Context()
+
+	capability := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute)
+
+	oracleFactory := testutils.NewOracleFactory(t, lggr)
+
+	err := capability.Initialise(ctx, "", nil, nil, nil, nil, nil,
+		oracleFactory, nil, nil)
+	require.NoError(t, err)
+
+	servicetest.Run(t, capability)
+
+	metadata := newRequestMetaData()
+
+	input := &pb.ReportRequest{
+		EncodedPayload: []byte("somerandom-payload"),
+		EncoderName:    "evm",
+		SigningAlgo:    "invalid-signing-algo",
+		HashingAlgo:    "keccak256",
+	}
+
+	_, err = capability.Report(ctx, metadata, input)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "unsupported signing algorithm")
+}
+
+func Test_ReportRequiresValidHashingAlgo(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := t.Context()
+
+	capability := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute)
+
+	oracleFactory := testutils.NewOracleFactory(t, lggr)
+
+	err := capability.Initialise(ctx, "", nil, nil, nil, nil, nil,
+		oracleFactory, nil, nil)
+	require.NoError(t, err)
+
+	servicetest.Run(t, capability)
+
+	metadata := newRequestMetaData()
+
+	input := &pb.ReportRequest{
+		EncodedPayload: []byte("somerandom-payload"),
+		EncoderName:    "evm",
+		SigningAlgo:    "ecdsa",
+		HashingAlgo:    "invalid-hashing-algo",
+	}
+
+	_, err = capability.Report(ctx, metadata, input)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "unsupported hashing algorithm")
+}
+
+func Test_ReportRequiresValidEncoderName(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := t.Context()
+
+	capability := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute)
+
+	oracleFactory := testutils.NewOracleFactory(t, lggr)
+
+	err := capability.Initialise(ctx, "", nil, nil, nil, nil, nil,
+		oracleFactory, nil, nil)
+	require.NoError(t, err)
+
+	servicetest.Run(t, capability)
+
+	metadata := newRequestMetaData()
+
+	input := &pb.ReportRequest{
+		EncodedPayload: []byte("somerandom-payload"),
+		EncoderName:    "invalid-encoder-name",
+		SigningAlgo:    "ecdsa",
+		HashingAlgo:    "keccak256",
+	}
+
+	_, err = capability.Report(ctx, metadata, input)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "unsupported encoder name")
 }
 
 func Test_SimpleInputsSizeValidation(t *testing.T) {
@@ -108,4 +214,100 @@ func Test_SimpleInputsSizeValidation(t *testing.T) {
 	_, err = capability.Simple(ctx, metadata, input)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "request size exceeds maximum allowed size")
+}
+
+func Test_ToReportID(t *testing.T) {
+	tests := []struct {
+		name            string
+		stepReferenceID string
+		expectedID      string
+		expectError     bool
+	}{
+		{
+			name:            "Valid step reference ID",
+			stepReferenceID: "0",
+			expectedID:      "0000",
+			expectError:     false,
+		},
+		{
+			name:            "Valid step reference ID",
+			stepReferenceID: "1",
+			expectedID:      "0001",
+			expectError:     false,
+		},
+		{
+			name:            "Valid step reference ID",
+			stepReferenceID: "26",
+			expectedID:      "001a",
+			expectError:     false,
+		},
+		{
+			name:            "Valid step reference ID",
+			stepReferenceID: "614",
+			expectedID:      "0266",
+			expectError:     false,
+		},
+
+		{
+			name:            "Valid step reference ID",
+			stepReferenceID: "65535", // Exceeds 2 bytes when encoded as hex
+			expectedID:      "ffff",
+			expectError:     false,
+		},
+		{
+			name:            "Empty step reference ID",
+			stepReferenceID: "",
+			expectedID:      "",
+			expectError:     true,
+		},
+		{
+			name:            "Non-numeric step reference ID",
+			stepReferenceID: "abc",
+			expectedID:      "",
+			expectError:     true,
+		},
+		{
+			name:            "Step reference ID too large",
+			stepReferenceID: "65536", // Exceeds 2 bytes when encoded as hex
+			expectedID:      "",
+			expectError:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := toReportID(tt.stepReferenceID)
+			if tt.expectError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tt.expectedID, result)
+			}
+		})
+	}
+}
+
+func newRequestMetaData() capabilities.RequestMetadata {
+	return capabilities.RequestMetadata{
+
+		WorkflowID:    "0039525c34de895c8fa68006bd63f6ce4a45ef1bc66377e791c6a8ae803dc0e4",
+		WorkflowOwner: "1139525c34de895c8fa68006bd634387a9f1192a",
+
+		WorkflowExecutionID:      generateRandomHexString(32),
+		WorkflowName:             "a1b2c3d4e5f6a1b2c3d4",
+		WorkflowDonID:            1,
+		WorkflowDonConfigVersion: 1,
+		ReferenceID:              "01",
+		DecodedWorkflowName:      "test-workflow-decoded",
+		SpendLimits:              nil,
+	}
+}
+
+func generateRandomHexString(byteLength int) string {
+	randomBytes := make([]byte, byteLength)
+	_, err := rand.Read(randomBytes)
+	if err != nil {
+		panic(fmt.Sprintf("failed to generate random bytes: %v", err))
+	}
+	return hex.EncodeToString(randomBytes)
 }

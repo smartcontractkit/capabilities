@@ -2,13 +2,16 @@ package action
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/jonboulle/clockwork"
+	"golang.org/x/exp/maps"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -21,14 +24,19 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb"
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2/types"
 
-	oracle2 "github.com/smartcontractkit/capabilities/consensus/oracle"
+	"github.com/smartcontractkit/capabilities/consensus/oracle/types"
+
+	"github.com/smartcontractkit/capabilities/consensus/oracle"
 )
 
-const (
-	defaultRequestBatchSize             = 20
-	defaultMaxRequestSizeBytes          = 10 * 1024 // 10KB
-	defaultKeyBundleIDForValueConsensus = "evm"
-)
+const defaultRequestBatchSize = 20
+const defaultMaxRequestSizeBytes = 10 * 1024 // 10KB
+const defaultKeyBundleIDForValueConsensus = "evm"
+
+const KeyBundleIDEvm = "evm"
+const KeyBundleIDAptos = "aptos"
+const SigningAlgoEcdsa = "ecdsa"
+const HashingAlgoKeccak256 = "keccak256"
 
 type ConsensusCapabilityConfig struct {
 	RequestBatchSize             int
@@ -41,8 +49,8 @@ type consensusCapability struct {
 
 	lggr       logger.Logger
 	oracle     core.Oracle
-	reqStore   *requests.Store[*oracle2.ConsensusRequest]
-	reqHandler *requests.Handler[*oracle2.ConsensusRequest, oracle2.ConsensusResponse]
+	reqStore   *requests.Store[*oracle.ConsensusRequest]
+	reqHandler *requests.Handler[*oracle.ConsensusRequest, oracle.ConsensusResponse]
 
 	requestTimeout     time.Duration
 	requestTimeoutLock sync.RWMutex
@@ -50,18 +58,22 @@ type consensusCapability struct {
 	requestBatchSize          int
 	maxRequestSizeBytes       int
 	valueConsensusKeyBundleID string
+
+	stopCh services.StopChan
+	wg     sync.WaitGroup
 }
 
 // NewConsensusCapability creates a new ConsensusCapability with the given logger, clock, and response cache expiry time.  The
 // response cache expiry controls how long a response for a given request is cached before it is considered expired and evicted. This allows
 // the capability to respond to slow requests sent after consensus has been reached.
 func NewConsensusCapability(lggr logger.Logger, clock clockwork.Clock, responseCacheExpiry time.Duration) *consensusCapability {
-	reqStore := requests.NewStore[*oracle2.ConsensusRequest]()
+	reqStore := requests.NewStore[*oracle.ConsensusRequest]()
 
 	return &consensusCapability{
 		lggr:       lggr,
 		reqStore:   reqStore,
-		reqHandler: requests.NewHandler[*oracle2.ConsensusRequest, oracle2.ConsensusResponse](lggr, reqStore, clock, responseCacheExpiry),
+		reqHandler: requests.NewHandler[*oracle.ConsensusRequest, oracle.ConsensusResponse](lggr, reqStore, clock, responseCacheExpiry),
+		stopCh:     make(services.StopChan),
 	}
 }
 
@@ -73,49 +85,46 @@ func (c *consensusCapability) SetRequestTimeout(timeout time.Duration) {
 	c.requestTimeout = timeout
 }
 
+func (c *consensusCapability) publishPendingRequestsMetric(reqStore *requests.Store[*oracle.ConsensusRequest]) {
+	c.wg.Add(1)
+	go func() {
+		defer c.wg.Done()
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				pendingRequestsCount := reqStore.Len()
+				c.lggr.Debugw("Publishing pending requests metric", "count", pendingRequestsCount)
+
+			case <-c.stopCh:
+				return
+			}
+		}
+	}()
+}
+
 func (c *consensusCapability) Initialise(ctx context.Context, config string,
 	telemetryService core.TelemetryService,
 	store core.KeyValueStore, errorLog core.ErrorLog, pipelineRunner core.PipelineRunnerService,
 	relayerSet core.RelayerSet, oracleFactory core.OracleFactory,
-	gatewayConnector core.GatewayConnector, _ core.Keystore,
-) error {
+	gatewayConnector core.GatewayConnector, _ core.Keystore) error {
 	c.lggr.Debugf("Initialising Consensus Capability")
 
-	c.valueConsensusKeyBundleID = defaultKeyBundleIDForValueConsensus
-	c.requestBatchSize = defaultRequestBatchSize
-	c.maxRequestSizeBytes = defaultMaxRequestSizeBytes
-
-	var capabilityConfig ConsensusCapabilityConfig
-	err := json.Unmarshal([]byte(config), &capabilityConfig)
-	if err != nil {
-		return fmt.Errorf("failed to deserialize config into ConsensusCapabilityConfig: %w", err)
+	if err := c.setConfiguration(config); err != nil {
+		return fmt.Errorf("error setting consensus capability configuration: %w", err)
 	}
 
-	c.lggr.Debugw("Parsed Consensus Capability config", "config", capabilityConfig)
+	c.publishPendingRequestsMetric(c.reqStore)
 
-	if len(capabilityConfig.KeyBundleIDForValueConsensus) > 0 {
-		c.valueConsensusKeyBundleID = capabilityConfig.KeyBundleIDForValueConsensus
-	}
-
-	if capabilityConfig.RequestBatchSize > 0 {
-		c.requestBatchSize = capabilityConfig.RequestBatchSize
-	}
-
-	if capabilityConfig.MaxRequestSizeBytes > 0 {
-		c.maxRequestSizeBytes = capabilityConfig.MaxRequestSizeBytes
-	}
-
-	c.lggr.Debugf("Initialising Consensus Capability")
-
-	// TODO check pending requests metric is published
-
-	reportingPlugin, err := oracle2.NewReportingPluginFactory(c.lggr, c.reqStore, c.SetRequestTimeout,
+	reportingPlugin, err := oracle.NewReportingPluginFactory(c.lggr, c.reqStore, c.SetRequestTimeout,
 		c.requestBatchSize)
 	if err != nil {
 		return fmt.Errorf("error when creating reporting plugin factory: %w", err)
 	}
 
-	contractTransmitter := oracle2.NewContractTransmitter(c.lggr, c.SendResponse)
+	contractTransmitter := oracle.NewContractTransmitter(c.lggr, c.SendResponse)
 
 	// These values set to the maximum permitted, response time for config update is not critical
 	localOcrConfig := ocrtypes.LocalConfig{
@@ -154,55 +163,57 @@ func (c *consensusCapability) Initialise(ctx context.Context, config string,
 	return nil
 }
 
+func (c *consensusCapability) setConfiguration(config string) error {
+	c.valueConsensusKeyBundleID = defaultKeyBundleIDForValueConsensus
+	c.requestBatchSize = defaultRequestBatchSize
+	c.maxRequestSizeBytes = defaultMaxRequestSizeBytes
+
+	var capabilityConfig ConsensusCapabilityConfig
+	if len(config) > 0 {
+		err := json.Unmarshal([]byte(config), &capabilityConfig)
+		if err != nil {
+			return fmt.Errorf("failed to deserialize config into ConsensusCapabilityConfig: %w", err)
+		}
+	}
+
+	c.lggr.Debugw("Parsed Consensus Capability config", "config", capabilityConfig)
+
+	if len(capabilityConfig.KeyBundleIDForValueConsensus) > 0 {
+		c.valueConsensusKeyBundleID = capabilityConfig.KeyBundleIDForValueConsensus
+	}
+
+	if capabilityConfig.RequestBatchSize > 0 {
+		c.requestBatchSize = capabilityConfig.RequestBatchSize
+	}
+
+	if capabilityConfig.MaxRequestSizeBytes > 0 {
+		c.maxRequestSizeBytes = capabilityConfig.MaxRequestSizeBytes
+	}
+	return nil
+}
+
 func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.RequestMetadata, input *pb.SimpleConsensusInputs) (*valuespb.Value, error) {
-	consensusRequestMetaData := oracle2.ConsensusRequestMetadata{
+	lggr := c.requestLggr(metadata)
+
+	lggr.Debugw("received simple consensus request", "metadata", metadata, "input", input)
+
+	consensusRequestMetaData := oracle.ConsensusRequestMetadata{
 		RequestMetadata: metadata,
 		KeyBundleID:     c.valueConsensusKeyBundleID,
+		ReportID:        "0000", // Report ID is not used for value consensus, so we can use a dummy value
+		RequestType:     types.RequestType_VALUE_CONSENSUS,
 	}
 
 	if err := validateInputSize(consensusRequestMetaData, input, c.maxRequestSizeBytes); err != nil {
 		return nil, fmt.Errorf("failed to validate input size: %w", err)
 	}
 
-	lggr := logger.With(
-		c.lggr,
-		"workflowID", metadata.WorkflowID,
-		"executionID", metadata.WorkflowExecutionID,
-		"stepReferenceID", metadata.ReferenceID,
-		"workflowName", metadata.DecodedWorkflowName,
-	)
-
-	switch obs := input.GetObservation().(type) {
-	case *pb.SimpleConsensusInputs_Value:
-		val, err := values.FromProto(obs.Value)
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode observation value: %w", err)
-		}
-		lggr.Debugw("received observation value", "value", val)
-	case *pb.SimpleConsensusInputs_Error:
-		lggr.Debugw("observation is an error", "error", obs.Error)
-	default:
-		if input.Default != nil {
-			val, err := values.FromProto(input.Default)
-			if err != nil {
-				return nil, fmt.Errorf("failed to decode observation value: %w", err)
-			}
-			lggr.Debugw("serialised default value", "value", val)
-		} else {
-			lggr.Debugw("neither value, error or default is set in the observation input for request", "metadata", metadata)
-		}
+	value, err := logObservation(lggr, input, metadata)
+	if err != nil {
+		return value, err
 	}
 
-	c.requestTimeoutLock.RLock()
-	requestTimeout := c.requestTimeout
-	c.requestTimeoutLock.RUnlock()
-
-	callbackChan := make(chan oracle2.ConsensusResponse, 1)
-
-	c.reqHandler.SendRequest(ctx,
-		oracle2.NewConsensusRequest(input, time.Now().Add(requestTimeout), callbackChan,
-			consensusRequestMetaData,
-		))
+	callbackChan := c.sendRequest(ctx, input, consensusRequestMetaData)
 
 	select {
 	case <-ctx.Done():
@@ -212,20 +223,180 @@ func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.
 			return nil, response.Err
 		}
 
-		return response.Value, nil
+		// Remove the metadata prefix from the raw report to get the serialised value
+		serialisedValue := response.RawReport[oracle.ReportMetaDataPrependLength:]
+
+		valueProto := &valuespb.Value{}
+		if err := proto.Unmarshal(serialisedValue, valueProto); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal value for request %s: %w", consensusRequestMetaData.RequestID(), err)
+		}
+
+		c.lggr.Debugw("returning consensus response", "metadata", metadata)
+
+		return valueProto, nil
 	}
 }
 
-func (c *consensusCapability) Report(ctx context.Context, metadata capabilities.RequestMetadata, input *pb.ReportRequest) (*pb.ReportResponse, error) {
-	// TODO
-	return nil, errors.New("report method is not implemented for Consensus Capability")
+func (c *consensusCapability) Report(ctx context.Context, metadata capabilities.RequestMetadata, reportRequest *pb.ReportRequest) (*pb.ReportResponse, error) {
+	lggr := c.requestLggr(metadata)
+
+	lggr.Debug("received reporting request", "metadata", metadata)
+
+	stepReferenceID := metadata.ReferenceID
+	reportID, err := toReportID(stepReferenceID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert step reference ID to report ID: %w", err)
+	}
+
+	keyBundleID, err := validateReportRequest(reportRequest)
+	if err != nil {
+		return nil, fmt.Errorf("report request validation failed: %w", err)
+	}
+
+	consensusRequestMetaData := oracle.ConsensusRequestMetadata{
+		RequestMetadata: metadata,
+		KeyBundleID:     keyBundleID,
+		ReportID:        reportID,
+		RequestType:     types.RequestType_REPORT_GENERATION,
+	}
+
+	if err := validateInputSize(consensusRequestMetaData, reportRequest, c.maxRequestSizeBytes); err != nil {
+		return nil, fmt.Errorf("failed to validate input size: %w", err)
+	}
+
+	input := &pb.SimpleConsensusInputs{
+		Observation: &pb.SimpleConsensusInputs_Value{
+			Value: values.Proto(values.NewBytes(reportRequest.EncodedPayload)),
+		},
+		Descriptors: &pb.ConsensusDescriptor{
+			Descriptor_: &pb.ConsensusDescriptor_Aggregation{
+				Aggregation: pb.AggregationType_AGGREGATION_TYPE_IDENTICAL,
+			},
+		},
+		Default: nil,
+	}
+
+	callbackChan := c.sendRequest(ctx, input, consensusRequestMetaData)
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case response := <-callbackChan:
+		if response.Err != nil {
+			return nil, response.Err
+		}
+
+		var sigs []*pb.AttributedSignature
+
+		for _, s := range response.Sigs {
+			sigs = append(sigs, &pb.AttributedSignature{
+				Signature: s.Signature,
+				SignerId:  uint32(s.Signer),
+			})
+		}
+
+		c.lggr.Debugw("returning report", "metadata", metadata)
+
+		return &pb.ReportResponse{
+			ConfigDigest:  response.ConfigDigest[:],
+			SeqNr:         response.SeqNr,
+			ReportContext: response.ReportContext,
+			RawReport:     response.RawReport,
+			Sigs:          sigs,
+		}, nil
+	}
 }
 
-func (c *consensusCapability) SendResponse(ctx context.Context, requestID string, value *valuespb.Value) {
-	c.reqHandler.SendResponse(ctx, oracle2.ConsensusResponse{
-		ReqID: requestID,
-		Value: value,
-	})
+func (c *consensusCapability) sendRequest(ctx context.Context, input *pb.SimpleConsensusInputs, consensusRequestMetaData oracle.ConsensusRequestMetadata) <-chan oracle.ConsensusResponse {
+	// TODO - review all request timeout handling/setting https://smartcontract-it.atlassian.net/browse/CAPPL-1014
+	c.requestTimeoutLock.RLock()
+	requestTimeout := c.requestTimeout
+	c.requestTimeoutLock.RUnlock()
+
+	callbackChan := make(chan oracle.ConsensusResponse, 1)
+
+	c.reqHandler.SendRequest(ctx,
+		oracle.NewConsensusRequest(input, time.Now(), time.Now().Add(requestTimeout), callbackChan,
+			consensusRequestMetaData,
+		))
+	return callbackChan
+}
+
+func validateReportRequest(reportRequest *pb.ReportRequest) (string, error) {
+	supportedKeyBundleIDs := map[string]struct{}{
+		KeyBundleIDEvm:   {},
+		KeyBundleIDAptos: {},
+	}
+
+	keyBundleID := strings.ToLower(reportRequest.EncoderName)
+	if _, ok := supportedKeyBundleIDs[keyBundleID]; !ok {
+		return "", fmt.Errorf("unsupported encoder name '%s' for report request. Supported encoder names are: %v", reportRequest.EncoderName, maps.Keys(supportedKeyBundleIDs))
+	}
+
+	signingAlgo := strings.ToLower(reportRequest.SigningAlgo)
+	supportedSigningAlgorithms := map[string]struct{}{
+		SigningAlgoEcdsa: {},
+	}
+
+	if _, ok := supportedSigningAlgorithms[signingAlgo]; !ok {
+		return "", fmt.Errorf("unsupported signing algorithm '%s' for report request. Supported signing algorithms are: %v", reportRequest.SigningAlgo, maps.Keys(supportedSigningAlgorithms))
+	}
+
+	hashingAlgo := strings.ToLower(reportRequest.HashingAlgo)
+
+	supportedHashingAlgorithms := map[string]struct{}{
+		HashingAlgoKeccak256: {},
+	}
+
+	if _, ok := supportedHashingAlgorithms[hashingAlgo]; !ok {
+		return "", fmt.Errorf("unsupported hashing algorithm '%s' for report request. Supported hashing algorithms are: %v", reportRequest.HashingAlgo, maps.Keys(supportedHashingAlgorithms))
+	}
+	return keyBundleID, nil
+}
+
+func toReportID(stepReferenceID string) (string, error) {
+	// Parse the step reference to an int
+	if stepReferenceID == "" {
+		return "", fmt.Errorf("step reference ID is required for report request")
+	}
+
+	stepReferenceAsInt, err := strconv.Atoi(stepReferenceID)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse step reference ID '%s' to int: %w", stepReferenceID, err)
+	}
+
+	stepRefAsHex := fmt.Sprintf("%x", stepReferenceAsInt)
+
+	// Pad it with leading zeros so the string is at least 4 characters long
+	if len(stepRefAsHex) < 4 {
+		padding := 4
+		stepRefAsHex = fmt.Sprintf("%0*s", padding, stepRefAsHex) // Pad with zeros to the left
+	}
+
+	b, err := hex.DecodeString(stepRefAsHex)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode step reference ID '%s' to bytes: %w", stepReferenceID, err)
+	}
+
+	if len(b) != 2 {
+		return "", fmt.Errorf("step reference ID '%s' must be exactly 2 bytes long when encoded as hex, got %d bytes", stepReferenceID, len(b))
+	}
+	return stepRefAsHex, nil
+}
+
+func (c *consensusCapability) requestLggr(metadata capabilities.RequestMetadata) logger.Logger {
+	lggr := logger.With(
+		c.lggr,
+		"workflowID", metadata.WorkflowID,
+		"executionID", metadata.WorkflowExecutionID,
+		"stepReferenceID", metadata.ReferenceID,
+		"workflowName", metadata.DecodedWorkflowName,
+	)
+	return lggr
+}
+
+func (c *consensusCapability) SendResponse(ctx context.Context, response oracle.ConsensusResponse) {
+	c.reqHandler.SendResponse(ctx, response)
 }
 
 // Start is not called when running as remote standard capability, instead Initialise is called  (note Close is called)
@@ -234,6 +405,9 @@ func (c *consensusCapability) Start(ctx context.Context) error {
 }
 
 func (c *consensusCapability) Close() error {
+	close(c.stopCh)
+	c.wg.Wait()
+
 	err := c.reqHandler.Close()
 	if err != nil {
 		c.lggr.Errorw("error closing request handler", "err", err)
@@ -267,8 +441,8 @@ func (c *consensusCapability) Description() string {
 
 // validateInputSize checks that the size of the input and metadata does not exceed the maximum request size.  This is to
 // prevent excessively large requests that could cause issues in the consensus process.
-func validateInputSize(consensusRequestMetaData oracle2.ConsensusRequestMetadata, input *pb.SimpleConsensusInputs, maxRequestSizeBytes int) error {
-	requestMetaData := oracle2.ToRequestMetaData(consensusRequestMetaData)
+func validateInputSize(consensusRequestMetaData oracle.ConsensusRequestMetadata, input proto.Message, maxRequestSizeBytes int) error {
+	requestMetaData := oracle.ToRequestMetaData(consensusRequestMetaData)
 
 	serialisedInput, err := proto.Marshal(input)
 	if err != nil {
@@ -284,4 +458,28 @@ func validateInputSize(consensusRequestMetaData oracle2.ConsensusRequestMetadata
 		return fmt.Errorf("request size exceeds maximum allowed size of %d bytes: got %d bytes", maxRequestSizeBytes, len(serialisedInput)+len(serialisedMetadata))
 	}
 	return nil
+}
+
+func logObservation(lggr logger.Logger, input *pb.SimpleConsensusInputs, metadata capabilities.RequestMetadata) (*valuespb.Value, error) {
+	switch obs := input.GetObservation().(type) {
+	case *pb.SimpleConsensusInputs_Value:
+		val, err := values.FromProto(obs.Value)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode observation value: %w", err)
+		}
+		lggr.Debugw("received observation value", "value", val)
+	case *pb.SimpleConsensusInputs_Error:
+		lggr.Debugw("observation is an error", "error", obs.Error)
+	default:
+		if input.Default != nil {
+			val, err := values.FromProto(input.Default)
+			if err != nil {
+				return nil, fmt.Errorf("failed to decode observation value: %w", err)
+			}
+			lggr.Debugw("serialised default value", "value", val)
+		} else {
+			lggr.Debugw("neither value, error or default is set in the observation input for request", "metadata", metadata)
+		}
+	}
+	return nil, nil
 }
