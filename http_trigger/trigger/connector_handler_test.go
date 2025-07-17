@@ -245,8 +245,6 @@ func TestHandleGatewayMessage_InvalidRequest(t *testing.T) {
 func TestHandleGatewayMessage_MissingWorkflowName(t *testing.T) {
 	lggr := logger.Test(t)
 	handler, connector, triggerCh := setup(t, lggr)
-	var workflowID [32]byte
-	copy(workflowID[:], []byte("wf1"))
 	payload := gateway_common.HTTPTriggerRequest{
 		Workflow: gateway_common.WorkflowSelector{
 			WorkflowOwner: workflowOwner,

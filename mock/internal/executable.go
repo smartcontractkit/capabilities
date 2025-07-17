@@ -11,7 +11,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 )
 
-var _ capabilities.TargetCapability = (*Executable)(nil)
 var _ capabilities.ExecutableCapability = (*Executable)(nil)
 
 type ExecutableRequest struct {

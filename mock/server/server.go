@@ -54,7 +54,7 @@ func (s *MockServer) Name() string {
 	return "MockServer"
 }
 
-func (s *MockServer) Initialise(ctx context.Context, config string, telemetryService core.TelemetryService, store core.KeyValueStore, capabilityRegistry core.CapabilitiesRegistry, errorLog core.ErrorLog, pipelineRunner core.PipelineRunnerService, relayerSet core.RelayerSet, oracleFactory core.OracleFactory) error {
+func (s *MockServer) Initialise(ctx context.Context, config string, telemetryService core.TelemetryService, store core.KeyValueStore, capabilityRegistry core.CapabilitiesRegistry, errorLog core.ErrorLog, pipelineRunner core.PipelineRunnerService, relayerSet core.RelayerSet, oracleFactory core.OracleFactory, gatewayConnector core.GatewayConnector, p2pKeystore core.Keystore) error {
 	if len(config) < 1 {
 		return errors.New("missing config")
 	}
@@ -101,13 +101,7 @@ func (s *MockServer) Infos(ctx context.Context) ([]capabilities.CapabilityInfo, 
 	for _, c := range s.MockRegistry.Triggers {
 		infos = append(infos, c.CapabilityInfo)
 	}
-	for _, c := range s.MockRegistry.Action {
-		infos = append(infos, c.CapabilityInfo)
-	}
-	for _, c := range s.MockRegistry.Targets {
-		infos = append(infos, c.CapabilityInfo)
-	}
-	for _, c := range s.MockRegistry.Consensus {
+	for _, c := range s.MockRegistry.Executables {
 		infos = append(infos, c.CapabilityInfo)
 	}
 
