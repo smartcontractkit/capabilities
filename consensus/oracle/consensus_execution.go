@@ -239,9 +239,10 @@ var ErrInsufficientObservations = errors.New("insufficient observations to reach
 // reverses the result a final time.
 func handleCommonSuffixAggregation(lggr logger.Logger, observationSlices []*valuespb.Value, f int) (*valuespb.Value, error) {
 	var reversedObservations []*valuespb.Value
-	for _, obsProto := range observationSlices {
+	for i, obsProto := range observationSlices {
 		reversed, err := reverseListValue(obsProto)
 		if err != nil {
+			lggr.Warnf("skipping observations at index %d: %s", i, err)
 			continue
 		}
 		reversedObservations = append(reversedObservations, reversed)
