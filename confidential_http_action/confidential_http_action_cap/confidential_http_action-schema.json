@@ -121,36 +121,36 @@
                         "$ref": "#/$defs/Request"
                     }
                 },
-                "ciphertextTemplateNames": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "description": "Names of ciphertexts to be used in the request"
+                "secretTemplateValues": {
+                    "type": "object",
+                    "additionalProperties": true
                 }
             },
             "required": [
                 "requests",
-                "ciphertextTemplateNames"
+                "secretTemplateValues"
             ],
             "additionalProperties": false
         },
         "Output": {
-            "properties": {
-                "responses": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 255
+            "type": "array",
+            "items": {
+                "properties": {
+                    "payload": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 255
+                        }
                     }
-                }
-            },
-            "additionalProperties": false,
-            "type": "object",
-            "required": [
-                "payload"
-            ]
+                },
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                    "payload"
+                ]
+            }
         }
     },
     "type": "object",

@@ -9,7 +9,7 @@ import (
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/services"
+	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
 	action "github.com/smartcontractkit/capabilities/confidential_http_action/action"
@@ -26,24 +26,26 @@ type confidentialhttpaction interface {
 	Close() error
 }
 
-type CapabilitiesService struct {
-	services.StateMachine
-	action             confidentialhttpaction
+var _ loop.StandardCapabilities = (*capabilitiesServer)(nil)
+
+type capabilitiesServer struct {
+	action             capabilities.ExecutableCapability
 	lggr               logger.Logger
 	capabilityRegistry core.CapabilitiesRegistry
 }
 
-func main() {
-	loopserver.Serve(serviceName, func(lggr logger.Logger) *CapabilitiesService {
-		return &CapabilitiesService{lggr: lggr}
-	})
+func New(lggr logger.Logger) *capabilitiesServer {
+	return &capabilitiesServer{lggr: logger.Sugared(lggr)}
 }
 
-func (cs *CapabilitiesService) Start(ctx context.Context) error {
+func main() {
+	loopserver.Serve(serviceName, New)
+}
+func (cs *capabilitiesServer) Start(ctx context.Context) error {
 	return nil
 }
 
-func (cs *CapabilitiesService) Close() error {
+func (cs *capabilitiesServer) Close() error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	info, err := cs.action.Info(ctx)
@@ -57,15 +59,15 @@ func (cs *CapabilitiesService) Close() error {
 	return nil
 }
 
-func (cs *CapabilitiesService) HealthReport() map[string]error {
+func (cs *capabilitiesServer) HealthReport() map[string]error {
 	return map[string]error{cs.Name(): nil}
 }
 
-func (cs *CapabilitiesService) Name() string {
+func (cs *capabilitiesServer) Name() string {
 	return serviceName
 }
 
-func (cs *CapabilitiesService) Infos(ctx context.Context) ([]capabilities.CapabilityInfo, error) {
+func (cs *capabilitiesServer) Infos(ctx context.Context) ([]capabilities.CapabilityInfo, error) {
 	triggerInfo, err := cs.action.Info(ctx)
 	if err != nil {
 		return nil, err
@@ -76,7 +78,7 @@ func (cs *CapabilitiesService) Infos(ctx context.Context) ([]capabilities.Capabi
 	}, nil
 }
 
-func (cs *CapabilitiesService) Initialise(
+func (cs *capabilitiesServer) Initialise(
 	ctx context.Context,
 	config string,
 	_ core.TelemetryService,
@@ -86,29 +88,26 @@ func (cs *CapabilitiesService) Initialise(
 	_ core.PipelineRunnerService,
 	relayerSet core.RelayerSet,
 	oracleFactory core.OracleFactory,
-	_ core.GatewayConnector) error {
+	_ core.GatewayConnector,
+	keystore core.Keystore) error {
+
 	cs.lggr.Infof("Initialising %s", serviceName)
 	cs.lggr.Infof("Config: %s", config)
+
 	var capConfig cap.Config
 	err := json.Unmarshal([]byte(config), &capConfig)
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
-	cs.action, err = action.New(cs.lggr, capConfig)
-	if err != nil {
-		return fmt.Errorf("failed to create attested http action: %w", err)
-	}
-
-	if err = cs.action.Start(ctx); err != nil {
-		return fmt.Errorf("failed to start attested http action: %w", err)
-	}
-
 	if err := capabilityRegistry.Add(ctx, cs.action); err != nil {
 		return fmt.Errorf("failed to add attested http capability to the capability registry: %w", err)
 	}
 
-	cs.capabilityRegistry = capabilityRegistry
+	cs.action, err = action.New(cs.lggr, capConfig, keystore)
+	if err != nil {
+		return fmt.Errorf("failed to create attested http action: %w", err)
+	}
 
 	return nil
 }

@@ -291,8 +291,6 @@ github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250703141104-e7
 github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250703141104-e7b4552635a9/go.mod h1:U1UAbPhy6D7Qz0wHKGPoQO+dpR0hsYjgUz8xwRrmKwI=
 github.com/smartcontractkit/confidential-compute v0.0.0-20250708130941-f587a45277c2 h1:k8DAXcOIc3NA5GjpMqMed511DknP/vtZPc1qqN/wpg8=
 github.com/smartcontractkit/confidential-compute v0.0.0-20250708130941-f587a45277c2/go.mod h1:/pWAzv7kUcsY9WLizVBKxzDzvCpfEvca/TzL6mUQrlI=
-github.com/smartcontractkit/confidential-compute/capabilities/attestedhttp v0.0.0-20250708130941-f587a45277c2 h1:oPmuXtZrp0ovY5+eLbUtYrZ/tcNWXygMRyG4VifBzYI=
-github.com/smartcontractkit/confidential-compute/capabilities/attestedhttp v0.0.0-20250708130941-f587a45277c2/go.mod h1:5UhQCPScp4DBPrRLWlhPU1C7nBa3P0pakyZTzrTjUjY=
 github.com/smartcontractkit/freeport v0.1.1 h1:B5fhEtmgomdIhw03uPVbVTP6oPv27fBhZsoZZMSIS8I=
 github.com/smartcontractkit/freeport v0.1.1/go.mod h1:T4zH9R8R8lVWKfU7tUvYz2o2jMv1OpGCdpY2j2QZXzU=
 github.com/smartcontractkit/grpc-proxy v0.0.0-20240830132753-a7e17fec5ab7 h1:12ijqMM9tvYVEm+nR826WsrNi6zCKpwBhuApq127wHs=

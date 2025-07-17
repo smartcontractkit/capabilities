@@ -2,20 +2,26 @@ package target
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
 
+	"github.com/mitchellh/mapstructure"
 	cap "github.com/smartcontractkit/capabilities/confidential_http_action/confidential_http_action_cap"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/values"
-	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	enclaveclient "github.com/smartcontractkit/confidential-compute/enclave-client"
 	httpenclavetypes "github.com/smartcontractkit/confidential-compute/enclave/nitro-confidential-http-enclave/types"
+	"github.com/smartcontractkit/confidential-compute/types"
 	enclavetypes "github.com/smartcontractkit/confidential-compute/types"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 var (
@@ -31,15 +37,12 @@ func (c *capability) Info(_ context.Context) (capabilities.CapabilityInfo, error
 	return confidentialHttpActionInfo, nil
 }
 
-type Request struct {
-	Metadata capabilities.RequestMetadata
-	Config   *values.Map
-	Inputs   sdk.CapMap
-}
-
 type capability struct {
-	lggr          logger.Logger
-	enclaveClient enclaveclient.EnclaveClient[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse]
+	lggr              logger.Logger
+	enclaveClient     enclaveclient.EnclaveClient[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse]
+	keystore          core.Keystore
+	vaultDonPublicKey []byte
+	vaultDonID        []byte
 }
 
 // parseEnclaveType converts a string into an EnclaveType using case-insensitive matching.
@@ -112,14 +115,14 @@ func getVaultDONPublicKey(donID []byte) ([]byte, error) {
 	return dummyPublicKey, nil
 }
 
-// SignerCapability is (for now) a no-op implementation of the Signer interface. This will be replaced with a call to the p2pSigner capability.
-type SignerCapability struct{}
-
-func (s *SignerCapability) Sign(data []byte) ([]byte, error) {
-	return data, nil
+// Query the VaultDON to get the encrypted decryption key shares.
+// This is a placeholder function that simulates the process of getting encrypted shares.
+func GetEncryptedDecryptedShares(cipherTextOfSecrets [][]byte, masterPublicKey []byte, vaultDonID []byte) ([][][]byte, error) {
+	encryptedDecryptedShares := make([][][]byte, len(cipherTextOfSecrets))
+	return encryptedDecryptedShares, nil
 }
 
-func New(lggr logger.Logger, c cap.Config) (*capability, error) {
+func New(lggr logger.Logger, capConfig cap.Config, keystore core.Keystore) (*capability, error) {
 	httpClient := http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
@@ -127,30 +130,235 @@ func New(lggr logger.Logger, c cap.Config) (*capability, error) {
 			},
 		},
 	}
-	nodes, err := GetNodes(c)
+	nodes, err := GetNodes(capConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create enclave pool: %w", err)
 	}
 
-	vaultDONPublicKey, err := getVaultDONPublicKey(c.VaultDONID)
+	vaultDONPublicKey, err := getVaultDONPublicKey(capConfig.VaultDONID)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get VaultDON public key: %w", err)
 	}
 
-	pool, err := enclaveclient.NewPool[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse](nodes, vaultDONPublicKey, &SignerCapability{}, nil, nil, nil, &httpClient)
+	// Setting Signer to nil for now, as we plan to use only enclaveClient.executeBatch in this capability.
+	// The other nils are ok as they default to reasonable implementaitons in the enclaveClient.
+	pool, err := enclaveclient.NewPool[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse](nodes, vaultDONPublicKey, nil, nil, nil, nil, &httpClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create enclave pool: %w", err)
 	}
 	return &capability{
-		lggr:          lggr,
-		enclaveClient: pool,
+		lggr:              lggr,
+		enclaveClient:     pool,
+		keystore:          keystore,
+		vaultDonPublicKey: vaultDONPublicKey,
+		vaultDonID:        capConfig.VaultDONID,
 	}, nil
 }
 
 func (c *capability) Execute(ctx context.Context, rawRequest capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
 	c.lggr.Debugw("executing", "workflowID", rawRequest.Metadata.WorkflowID, "executionID", rawRequest.Metadata.WorkflowExecutionID, "workflowName", rawRequest.Metadata.WorkflowName, "workflowOwner", rawRequest.Metadata.WorkflowOwner)
-	return capabilities.CapabilityResponse{}, nil
+
+	// Parse user input.
+	if rawRequest.Inputs == nil {
+		return capabilities.CapabilityResponse{}, errors.New("missing inputs field")
+	}
+
+	reqID := sha256.Sum256([]byte(rawRequest.Metadata.WorkflowExecutionID))
+
+	// Fetch enclave params that can be used for this request.
+	enclaveParams, err := c.getEnclaveParams(ctx, reqID)
+
+	if err != nil {
+		return capabilities.CapabilityResponse{}, err
+	}
+
+	input, migrated, err := parseCapabilityRequestToInput(rawRequest)
+	if err != nil {
+		return capabilities.CapabilityResponse{}, err
+	}
+
+	publicData, cipherTextsOfSecrets := ConvertInputToHTTPEnclaveRequestData(*input)
+	if err != nil {
+		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to convert input to HTTP enclave request data: %w", err)
+	}
+	publicDataBytes, err := json.Marshal(publicData)
+	if err != nil {
+		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to marshal templates: %w", err)
+	}
+
+	encryptedDecyrptedShares, err := GetEncryptedDecryptedShares(cipherTextsOfSecrets, c.vaultDonPublicKey, c.vaultDonID)
+
+	computeReq := types.ComputeRequest{
+		RequestID:                    reqID,
+		PublicData:                   publicDataBytes,
+		Ciphertexts:                  cipherTextsOfSecrets,
+		MasterPublicKey:              c.vaultDonPublicKey,
+		EnclaveEphemeralPublicKey:    enclaveParams.EnclaveEphemeralPublicKey,
+		EncryptedDecryptionKeyShares: encryptedDecyrptedShares,
+	}
+	signedComputeReq, err := c.SignComputeRequest(ctx, computeReq)
+	if err != nil {
+		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to sign compute request: %w", err)
+	}
+
+	rawExecuteResponses, err := c.enclaveClient.ExecuteBatch(ctx, []types.SignedComputeRequest{*signedComputeReq}, [][32]byte{enclaveParams.EnclaveID})
+	if err != nil {
+		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to execute enclave request: %w", err)
+	}
+
+	capResponses := MapRawToResponse(rawExecuteResponses, http.StatusOK)
+
+	response := capabilities.CapabilityResponse{}
+	if err = SetResponse(&response, migrated, cap.Output{Responses: capResponses}); err != nil {
+		return response, fmt.Errorf("error when setting response: %w", err)
+	}
+
+	return response, nil
+}
+
+func MapRawToResponse(rawResponses []enclavetypes.RawExecuteResponse, statusCode int64) []cap.Response {
+	// Pre-allocate the slice with the correct capacity for efficiency.
+	responses := make([]cap.Response, 0, len(rawResponses))
+
+	for _, raw := range rawResponses {
+		resp := cap.Response{
+			// In Go, []byte is an alias for []uint8, so a direct conversion is not needed.
+			Body:       raw.Output,
+			StatusCode: statusCode,
+		}
+		responses = append(responses, resp)
+	}
+	return responses
+}
+
+func (c *capability) SignComputeRequest(ctx context.Context, computeRequest enclavetypes.ComputeRequest) (*enclavetypes.SignedComputeRequest, error) {
+	accounts, err := c.keystore.Accounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(accounts) == 0 {
+		return nil, errors.New("no accounts found in keystore")
+	}
+
+	var acct string
+	for _, a := range accounts {
+		if a == "capability-signing-key" {
+			acct = a
+			break
+		}
+	}
+	if acct == "" {
+		return nil, fmt.Errorf("no %s account found in keystore", "capability-signing-key")
+	}
+
+	hash := computeRequest.Hash()
+
+	sig, err := c.keystore.Sign(ctx, acct, hash[:])
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &types.SignedComputeRequest{
+		ComputeRequest: computeRequest,
+		Signature:      sig,
+	}, nil
+}
+
+func parseCapabilityRequestToInput(request capabilities.CapabilityRequest) (*cap.Input, bool, error) {
+	intermediateStruct := &structpb.Struct{}
+	migrated, err := FromValueOrAny(request.Inputs, request.Payload, intermediateStruct)
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to extract proto data: %w", err)
+	}
+	log.Printf("Data source was migrated: %t", migrated)
+
+	// 2. Convert the protobuf struct to a standard Go map.
+	dataMap := intermediateStruct.AsMap()
+
+	// 3. Decode the map into your final Go struct.
+	var result cap.Input
+	if err := mapstructure.Decode(dataMap, &result); err != nil {
+		return nil, false, fmt.Errorf("mapstructure failed to decode: %w", err)
+	}
+	return &result, migrated, nil
+}
+
+type EnclaveParams struct {
+	EnclaveID                 [32]byte
+	EnclaveEphemeralPublicKey []byte
+}
+
+func (c *capability) getEnclaveParams(ctx context.Context, reqID [32]byte) (*EnclaveParams, error) {
+	ephemeralPubKeyResponse, err := c.enclaveClient.GetPublicKeys(ctx, reqID, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get public keys: %w", err)
+	}
+
+	if len(ephemeralPubKeyResponse) == 0 || len(ephemeralPubKeyResponse[0].PublicKeys) == 0 {
+		return nil, fmt.Errorf("no enclave public keys found for request %x", reqID)
+	}
+
+	// Out of the enclave responses returned, pick the first response (this capability only uses one enclave).
+	// Then, select the most recently created public key from that enclave.
+	// Note that during the enclaveClient construction, we can set the enclave node selector to select a specific enclave based on criteria
+	// like the most recent public key, or any other such.
+	selectedEnclaveResponse := ephemeralPubKeyResponse[0]
+	var mostRecentPubKeyIndex, mostRecentPubKeyCreationTime int64
+	for i, time := range selectedEnclaveResponse.CreationTimes {
+		if time.UnixMicro() > mostRecentPubKeyCreationTime {
+			mostRecentPubKeyIndex = int64(i)
+		}
+	}
+	selectedEphemeralPublicKey := selectedEnclaveResponse.PublicKeys[mostRecentPubKeyIndex]
+	selectedEnclaveID := selectedEnclaveResponse.EnclaveID
+	c.lggr.Info(fmt.Sprintf("using enclave public key: %x for request %x", selectedEphemeralPublicKey, reqID))
+	return &EnclaveParams{
+		EnclaveID:                 selectedEnclaveID,
+		EnclaveEphemeralPublicKey: selectedEphemeralPublicKey,
+	}, nil
+}
+
+func ConvertInputToHTTPEnclaveRequestData(input cap.Input) (httpenclavetypes.HTTPEnclaveRequestData, [][]byte) {
+	// 1. Process the top-level secrets to get an ordered list of names.
+	secretNames := make([]string, 0, len(input.SecretTemplateValues))
+	for name := range input.SecretTemplateValues {
+		secretNames = append(secretNames, name)
+	}
+
+	// Sort the keys alphabetically. This is critical to ensure the
+	// index-based map is stable and deterministic.
+	sort.Strings(secretNames)
+
+	// 2. Create a simple slice of the secret values.
+	// The order here will match the sorted 'secretNames' list.
+	cipherTextsOfSecrets := make([][]byte, 0, len(secretNames))
+	for _, name := range secretNames {
+		value := input.SecretTemplateValues[name]
+		cipherTextsOfSecrets = append(cipherTextsOfSecrets, []byte(fmt.Sprintf("%v", value)))
+	}
+
+	// 3. Convert the list of requests.
+	convertedRequests := make([]httpenclavetypes.RequestTemplate, 0, len(input.Requests))
+	for _, req := range input.Requests {
+		convertedRequests = append(convertedRequests, httpenclavetypes.RequestTemplate{
+			URL:                  req.Url,
+			Method:               req.Method,
+			Body:                 req.Body,
+			Headers:              req.Headers,
+			TemplatePublicValues: req.PublicTemplateValues,
+			CustomRootCaCertPEM:  []byte(req.CustomRootCaCertPEM),
+		})
+	}
+
+	// 4. Assemble the final data structure.
+	outputData := httpenclavetypes.HTTPEnclaveRequestData{
+		Requests:                convertedRequests,
+		TemplateCiphertextNames: secretNames, // Use the sorted list
+	}
+
+	return outputData, cipherTextsOfSecrets
 }
 
 func (c *capability) Start(ctx context.Context) error {

@@ -5,12 +5,11 @@ go 1.24.2
 toolchain go1.24.3
 
 require (
-	github.com/go-viper/mapstructure/v2 v2.3.0
+	github.com/mitchellh/mapstructure v1.5.0
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20250703172529-b99ea55f5826
 	github.com/smartcontractkit/chainlink-common v0.7.1-0.20250703170050-bb77f59474b3
 	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250703141104-e7b4552635a9
 	github.com/smartcontractkit/confidential-compute v0.0.0-20250708130941-f587a45277c2
-	github.com/smartcontractkit/confidential-compute/capabilities/attestedhttp v0.0.0-20250708130941-f587a45277c2
 	google.golang.org/protobuf v1.36.6
 )
 
@@ -34,6 +33,7 @@ require (
 	github.com/go-playground/locales v0.13.0 // indirect
 	github.com/go-playground/universal-translator v0.17.0 // indirect
 	github.com/go-playground/validator/v10 v10.4.1 // indirect
+	github.com/go-viper/mapstructure/v2 v2.3.0 // indirect
 	github.com/goccy/go-yaml v1.12.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect

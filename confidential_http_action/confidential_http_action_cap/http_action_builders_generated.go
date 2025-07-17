@@ -117,55 +117,6 @@ func (c *simpleEnclave) URL() sdk.CapDefinition[string] {
 
 func (c *simpleEnclave) private() {}
 
-// OutputWrapper allows access to field from an sdk.CapDefinition[Output]
-func OutputWrapper(raw sdk.CapDefinition[Output]) OutputCap {
-	wrapped, ok := raw.(OutputCap)
-	if ok {
-		return wrapped
-	}
-	return &outputCap{CapDefinition: raw}
-}
-
-type OutputCap interface {
-	sdk.CapDefinition[Output]
-	Responses() sdk.CapDefinition[[]uint8]
-	private()
-}
-
-type outputCap struct {
-	sdk.CapDefinition[Output]
-}
-
-func (*outputCap) private() {}
-func (c *outputCap) Responses() sdk.CapDefinition[[]uint8] {
-	return sdk.AccessField[Output, []uint8](c.CapDefinition, "responses")
-}
-
-func ConstantOutput(value Output) OutputCap {
-	return &outputCap{CapDefinition: sdk.ConstantDefinition(value)}
-}
-
-func NewOutputFromFields(
-	responses sdk.CapDefinition[[]uint8]) OutputCap {
-	return &simpleOutput{
-		CapDefinition: sdk.ComponentCapDefinition[Output]{
-			"responses": responses.Ref(),
-		},
-		responses: responses,
-	}
-}
-
-type simpleOutput struct {
-	sdk.CapDefinition[Output]
-	responses sdk.CapDefinition[[]uint8]
-}
-
-func (c *simpleOutput) Responses() sdk.CapDefinition[[]uint8] {
-	return c.responses
-}
-
-func (c *simpleOutput) private() {}
-
 // RequestWrapper allows access to field from an sdk.CapDefinition[Request]
 func RequestWrapper(raw sdk.CapDefinition[Request]) RequestCap {
 	wrapped, ok := raw.(RequestCap)
@@ -282,15 +233,15 @@ func RequestPublicTemplateValuesWrapper(raw sdk.CapDefinition[RequestPublicTempl
 type RequestPublicTemplateValuesCap sdk.CapDefinition[RequestPublicTemplateValues]
 
 type HttpActionInput struct {
-	CiphertextTemplateNames sdk.CapDefinition[[]string]
-	Requests                sdk.CapDefinition[[]Request]
+	Requests             sdk.CapDefinition[[]Request]
+	SecretTemplateValues sdk.CapDefinition[InputSecretTemplateValues]
 }
 
 func (input HttpActionInput) ToSteps() sdk.StepInputs {
 	return sdk.StepInputs{
 		Mapping: map[string]any{
-			"ciphertextTemplateNames": input.CiphertextTemplateNames.Ref(),
-			"requests":                input.Requests.Ref(),
+			"requests":             input.Requests.Ref(),
+			"secretTemplateValues": input.SecretTemplateValues.Ref(),
 		},
 	}
 }
