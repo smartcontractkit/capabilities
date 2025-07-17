@@ -3,6 +3,7 @@ package oracle
 import (
 	"testing"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 	"github.com/stretchr/testify/require"
@@ -31,7 +32,27 @@ func Test_handleCommonPrefixAggregation(t *testing.T) {
 			wantValue: mustNewList("1", "2", "3"),
 		},
 		{
-			name: "OK - insufficient lists with common prefix returns empty list",
+			name: "OK - common prefix of f+1 lists mixed",
+			giveValues: []*valuespb.Value{
+				mustNewList("1", "2", "3", "4", "5", "6", "7", "8", "9"),
+				mustNewList("1", "2", "3", "4", "11", "42", "42"),
+				mustNewList("1", "2", "3", "4", "8", "9", "42"),
+				mustNewList("1", "2", "3", "100", "99"),
+				mustNewList("1", "2", "3", "10", "99"),
+				mustNewList("1", "2", "3", "110", "99"),
+				mustNewList("1", "2", "3", "1000", "99"),
+				mustNewList("1", "2", "3", "x", "99"),
+				mustNewList("1", "2", "3", "err", "99"),
+				mustNewList("1", "2", "3", "4", "err"),
+				mustNewList(),
+				mustNewList(42, 44, 45, 46),
+				mustNewList("bad", "values", "bad", "values"),
+			},
+			f:         7,
+			wantValue: mustNewList("1", "2", "3"),
+		},
+		{
+			name: "OK - fails identical consensus on first check returns empty slice",
 			giveValues: []*valuespb.Value{
 				mustNewList("1", "2", "3", "4"),
 				mustNewList("1", "2", "3", "5"),
@@ -39,39 +60,51 @@ func Test_handleCommonPrefixAggregation(t *testing.T) {
 				mustNewList("1", "2", "3", "7"),
 			},
 			f:         3,
-			wantValue: values.Proto(&values.List{}),
+			wantValue: mustNewList(),
 		},
 		{
-			name:       "OK - no lists provided returns empty list",
+			name:       "NOK - no lists provided returns error",
 			giveValues: []*valuespb.Value{},
 			f:          3,
-			wantValue:  values.Proto(&values.List{}),
+			wantErr:    ErrInsufficientObservations.Error(),
 		},
 		{
-			name: "OK - empty lists provided returns empty list",
+			name: "OK - empty lists provided returns empty",
 			giveValues: []*valuespb.Value{
 				mustNewList(),
 				mustNewList(),
 				mustNewList(),
 			},
 			f:         3,
-			wantValue: values.Proto(&values.List{}),
+			wantValue: mustNewList(),
 		},
 		{
-			name: "NOK - non-list provided errors",
+			name: "OK - nothing identical returns empty list",
 			giveValues: []*valuespb.Value{
 				mustNewList(),
 				mustNewList(),
 				values.Proto(values.NewString("bad entry")),
 			},
+			f:         3,
+			wantValue: mustNewList(),
+		},
+		{
+			name: "NOK - all non-lists provided",
+			giveValues: []*valuespb.Value{
+				values.Proto(values.NewInt64(42)),
+				values.Proto(values.NewInt64(99)),
+				values.Proto(values.NewString("bad entry")),
+				values.Proto(values.NewString("bad entry")),
+			},
 			f:       3,
-			wantErr: "is not a list",
+			wantErr: ErrInsufficientObservations.Error(),
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := handleCommonPrefixAggregation(tc.giveValues, tc.f)
+			lggr := logger.Test(t)
+			got, err := handleCommonPrefixAggregation(lggr, tc.giveValues, tc.f)
 
 			if tc.wantErr != "" {
 				require.Error(t, err)
@@ -107,7 +140,27 @@ func Test_handleCommonSuffixAggregation(t *testing.T) {
 			wantValue: mustNewList("2", "3", "1"),
 		},
 		{
-			name: "OK - insufficient lists with common prefix returns empty list",
+			name: "OK - common suffix of mixed lists",
+			giveValues: []*valuespb.Value{
+				mustNewList("1", "2", "3", "4", "5", "6", "7", "8", "9"),
+				mustNewList("1", "2", "3", "4", "11", "42", "42", "7", "8", "9"),
+				mustNewList("1", "2", "3", "4", "8", "9", "42", "7", "8", "9"),
+				mustNewList("1", "2", "3", "100", "99", "7", "8", "9"),
+				mustNewList("1", "2", "3", "10", "99", "7", "8", "9"),
+				mustNewList("1", "2", "3", "110", "99", "7", "8", "9"),
+				mustNewList("1", "2", "3", "1000", "99", "7", "8", "9"),
+				mustNewList("1", "2", "3", "x", "99"),
+				mustNewList("1", "2", "3", "err", "99"),
+				mustNewList("1", "2", "3", "4", "err", "7", "8", "9"),
+				mustNewList(),
+				mustNewList(42, 44, 45, 46),
+				mustNewList("bad", "values", "bad", "values"),
+			},
+			f:         7,
+			wantValue: mustNewList("7", "8", "9"),
+		},
+		{
+			name: "OK - fails identical consensus on first check returns empty slice",
 			giveValues: []*valuespb.Value{
 				mustNewList("4", "2", "3", "1"),
 				mustNewList("5", "1", "2", "0"),
@@ -115,13 +168,13 @@ func Test_handleCommonSuffixAggregation(t *testing.T) {
 				mustNewList("7", "2", "3", "1"),
 			},
 			f:         3,
-			wantValue: values.Proto(&values.List{}),
+			wantValue: mustNewList(),
 		},
 		{
-			name:       "OK - no lists provided returns empty list",
+			name:       "NOK - no lists provided returns error",
 			giveValues: []*valuespb.Value{},
 			f:          3,
-			wantValue:  values.Proto(&values.List{}),
+			wantErr:    ErrInsufficientObservations.Error(),
 		},
 		{
 			name: "OK - empty lists provided returns empty list",
@@ -134,20 +187,21 @@ func Test_handleCommonSuffixAggregation(t *testing.T) {
 			wantValue: values.Proto(&values.List{}),
 		},
 		{
-			name: "NOK - non-list provided errors",
+			name: "OK - nothing identical returns empty list",
 			giveValues: []*valuespb.Value{
 				mustNewList(),
 				mustNewList(),
 				values.Proto(values.NewString("bad entry")),
 			},
-			f:       3,
-			wantErr: "is not a list",
+			f:         3,
+			wantValue: mustNewList(),
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := handleCommonSuffixAggregation(tc.giveValues, tc.f)
+			lggr := logger.Test(t)
+			got, err := handleCommonSuffixAggregation(lggr, tc.giveValues, tc.f)
 
 			if tc.wantErr != "" {
 				require.Error(t, err)

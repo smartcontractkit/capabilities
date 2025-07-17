@@ -3,7 +3,6 @@ package oracle
 import (
 	"errors"
 	"fmt"
-	"math"
 	"math/big"
 	"reflect"
 	"slices"
@@ -12,6 +11,7 @@ import (
 	"github.com/shopspring/decimal"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb"
@@ -40,6 +40,7 @@ const (
 // CalculateOutcomeForObservations determines the outcome for a set of observations based on a consensus descriptor.
 // It now supports median aggregation for Int64, Float64, Decimal, BigInt, and Time types.
 func CalculateOutcomeForObservations(
+	lggr logger.Logger,
 	observationProtos []*valuespb.Value,
 	consensusDescriptor *pb.ConsensusDescriptor,
 	minObservations int,
@@ -59,9 +60,9 @@ func CalculateOutcomeForObservations(
 		case pb.AggregationType_AGGREGATION_TYPE_MEDIAN:
 			return handleMedianAggregation(filtered, consensusType)
 		case pb.AggregationType_AGGREGATION_TYPE_COMMON_PREFIX:
-			return handleCommonPrefixAggregation(filtered, f)
+			return handleCommonPrefixAggregation(lggr, filtered, f)
 		case pb.AggregationType_AGGREGATION_TYPE_COMMON_SUFFIX:
-			return handleCommonSuffixAggregation(filtered, f)
+			return handleCommonSuffixAggregation(lggr, filtered, f)
 		default:
 			return nil, fmt.Errorf("unknown aggregation type: %s", aggregation)
 		}
@@ -230,30 +231,36 @@ func handleIdenticalAggregation(values []*valuespb.Value, f int) (*valuespb.Valu
 	return uniqueCandidate, nil
 }
 
+var ErrInsufficientObservations = errors.New("insufficient observations to reach consensus")
+
 // handleCommonSuffixAggregation reverses the underlying lists in the slice of
 // observations and delegates logic to handleCommonPrefixAggregation and then
 // reverses the result a final time.
-func handleCommonSuffixAggregation(observations []*valuespb.Value, f int) (*valuespb.Value, error) {
+func handleCommonSuffixAggregation(lggr logger.Logger, observations []*valuespb.Value, f int) (*valuespb.Value, error) {
 	var reversedObservations []*valuespb.Value
 	for i, obsProto := range observations {
 		val, err := values.FromProto(obsProto)
 		if err != nil {
-			return nil, fmt.Errorf("failed to unmarshal observation value at index %d: %w", i, err)
+			lggr.Warnf("failed to unmarshal observation value at index %d: %s", i, err)
+			continue
 		}
 
 		listVal, ok := val.(*values.List)
 		if !ok {
-			return nil, fmt.Errorf("observation at index %d is not a list; got %T", i, val)
+			// ignore non-list values
+			lggr.Warnf("value at index %d is not a list", i)
+			continue
 		}
 
 		reversedList, err := reverseList(listVal)
 		if err != nil {
-			return nil, fmt.Errorf("failed to reverse list at index %d: %w", i, err)
+			lggr.Warnf("failed to reverse list at index %d: %s", i, err)
+			continue
 		}
 		reversedObservations = append(reversedObservations, values.Proto(reversedList))
 	}
 
-	commonPrefixOfReversed, err := handleCommonPrefixAggregation(reversedObservations, f)
+	commonPrefixOfReversed, err := handleCommonPrefixAggregation(lggr, reversedObservations, f)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find common prefix of reversed lists: %w", err)
 	}
@@ -276,40 +283,43 @@ func handleCommonSuffixAggregation(observations []*valuespb.Value, f int) (*valu
 	return values.Proto(commonSuffixList), nil
 }
 
-func handleCommonPrefixAggregation(observations []*valuespb.Value, f int) (*valuespb.Value, error) {
+func handleCommonPrefixAggregation(lggr logger.Logger, observations []*valuespb.Value, f int) (*valuespb.Value, error) {
 	var lists []*values.List
-	minListLength := math.MaxInt
-
+	var maxListLength int
 	for i, obsProto := range observations {
 		val, err := values.FromProto(obsProto)
 		if err != nil {
-			return nil, fmt.Errorf("failed to unmarshal observation value at index %d: %w", i, err)
+			lggr.Warnf("failed to unmarshal observation value at index %d: %s", i, err)
+			continue
 		}
 
 		listVal, ok := val.(*values.List)
 		if !ok {
-			return nil, fmt.Errorf("observation at index %d is not a list; got %T", i, val)
+			lggr.Warnf("observation at index %d is not a list; got %T", i, val)
+			continue
 		}
-		lists = append(lists, listVal)
 
-		if len(listVal.Underlying) < minListLength {
-			minListLength = len(listVal.Underlying)
+		lists = append(lists, listVal)
+		if len(listVal.Underlying) > maxListLength {
+			maxListLength = len(listVal.Underlying)
 		}
 	}
 
-	if len(lists) == 0 || minListLength == 0 {
-		return values.Proto(&values.List{}), nil
+	if len(lists) == 0 {
+		return nil, ErrInsufficientObservations
 	}
 
 	var commonPrefixElements []any
-	for i := 0; i < minListLength; i++ {
+	for i := range maxListLength {
 		var elementsAtIndex []*valuespb.Value
 		for _, list := range lists {
-			element, err := values.Wrap(list.Underlying[i])
-			if err != nil {
-				return nil, fmt.Errorf("failed to wrap list element at index %d: %w", i, err)
+			if len(list.Underlying) > i {
+				element, err := values.Wrap(list.Underlying[i])
+				if err != nil {
+					return nil, fmt.Errorf("failed to wrap list element at index %d: %w", i, err)
+				}
+				elementsAtIndex = append(elementsAtIndex, values.Proto(element))
 			}
-			elementsAtIndex = append(elementsAtIndex, values.Proto(element))
 		}
 
 		identicalValue, err := handleIdenticalAggregation(elementsAtIndex, f)
