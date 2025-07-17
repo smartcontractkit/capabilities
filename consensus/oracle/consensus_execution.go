@@ -257,24 +257,19 @@ func handleCommonSuffixAggregation(lggr logger.Logger, observationSlices []*valu
 }
 
 func handleCommonPrefixAggregation(lggr logger.Logger, observations []*valuespb.Value, f int) (*valuespb.Value, error) {
-	var lists []*values.List
+	var lists []*valuespb.List
 	var maxListLength int
 	for i, obsProto := range observations {
-		val, err := values.FromProto(obsProto)
-		if err != nil {
-			lggr.Warnf("failed to unmarshal observation value at index %d: %s", i, err)
+		switch obsProto.Value.(type) {
+		case *valuespb.Value_ListValue:
+			list := obsProto.GetListValue()
+			lists = append(lists, list)
+			if len(list.GetFields()) > maxListLength {
+				maxListLength = len(list.GetFields())
+			}
+		default:
+			lggr.Warnf("value at index %d is of type %T", i, obsProto.Value)
 			continue
-		}
-
-		listVal, ok := val.(*values.List)
-		if !ok {
-			lggr.Warnf("observation at index %d is not a list; got %T", i, val)
-			continue
-		}
-
-		lists = append(lists, listVal)
-		if len(listVal.Underlying) > maxListLength {
-			maxListLength = len(listVal.Underlying)
 		}
 	}
 
@@ -286,12 +281,8 @@ func handleCommonPrefixAggregation(lggr logger.Logger, observations []*valuespb.
 	for i := range maxListLength {
 		var elementsAtIndex []*valuespb.Value
 		for _, list := range lists {
-			if len(list.Underlying) > i {
-				element, err := values.Wrap(list.Underlying[i])
-				if err != nil {
-					return nil, fmt.Errorf("failed to wrap list element at index %d: %w", i, err)
-				}
-				elementsAtIndex = append(elementsAtIndex, values.Proto(element))
+			if len(list.GetFields()) > i {
+				elementsAtIndex = append(elementsAtIndex, list.GetFields()[i])
 			}
 		}
 
