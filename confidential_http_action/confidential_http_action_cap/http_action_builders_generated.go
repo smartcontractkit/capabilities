@@ -233,15 +233,15 @@ func RequestPublicTemplateValuesWrapper(raw sdk.CapDefinition[RequestPublicTempl
 type RequestPublicTemplateValuesCap sdk.CapDefinition[RequestPublicTemplateValues]
 
 type HttpActionInput struct {
-	Requests             sdk.CapDefinition[[]Request]
-	SecretTemplateValues sdk.CapDefinition[InputSecretTemplateValues]
+	Requests          sdk.CapDefinition[[]Request]
+	VaultDonSecretIds sdk.CapDefinition[[]string]
 }
 
 func (input HttpActionInput) ToSteps() sdk.StepInputs {
 	return sdk.StepInputs{
 		Mapping: map[string]any{
-			"requests":             input.Requests.Ref(),
-			"secretTemplateValues": input.SecretTemplateValues.Ref(),
+			"requests":          input.Requests.Ref(),
+			"vaultDonSecretIds": input.VaultDonSecretIds.Ref(),
 		},
 	}
 }

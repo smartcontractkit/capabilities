@@ -121,14 +121,17 @@
                         "$ref": "#/$defs/Request"
                     }
                 },
-                "secretTemplateValues": {
-                    "type": "object",
-                    "additionalProperties": true
+                "vaultDonSecretIds": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "List of Vault DON secret IDs to fetch secrets from"
                 }
             },
             "required": [
                 "requests",
-                "secretTemplateValues"
+                "vaultDonSecretIds"
             ],
             "additionalProperties": false
         },

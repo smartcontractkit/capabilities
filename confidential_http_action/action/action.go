@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"sort"
 	"strings"
 
 	"github.com/mitchellh/mapstructure"
@@ -117,9 +116,10 @@ func getVaultDONPublicKey(donID []byte) ([]byte, error) {
 
 // Query the VaultDON to get the encrypted decryption key shares.
 // This is a placeholder function that simulates the process of getting encrypted shares.
-func GetEncryptedDecryptedShares(cipherTextOfSecrets [][]byte, masterPublicKey []byte, vaultDonID []byte) ([][][]byte, error) {
-	encryptedDecryptedShares := make([][][]byte, len(cipherTextOfSecrets))
-	return encryptedDecryptedShares, nil
+func GetEncryptedDecryptedShares(vaultDonSecretIds []string, vaultDONPublicKey []byte, vaultDonID []byte) ([][]byte, [][][]byte, error) {
+	encryptedDecryptedShares := make([][][]byte, len(vaultDonSecretIds))
+	encryptedSecrets := make([][]byte, len(vaultDonSecretIds))
+	return encryptedSecrets, encryptedDecryptedShares, nil
 }
 
 func New(lggr logger.Logger, capConfig cap.Config, keystore core.Keystore) (*capability, error) {
@@ -178,7 +178,7 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		return capabilities.CapabilityResponse{}, err
 	}
 
-	publicData, cipherTextsOfSecrets := ConvertInputToHTTPEnclaveRequestData(*input)
+	publicData := ConvertInputToHTTPEnclaveRequestData(*input)
 	if err != nil {
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to convert input to HTTP enclave request data: %w", err)
 	}
@@ -187,12 +187,12 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to marshal templates: %w", err)
 	}
 
-	encryptedDecyrptedShares, err := GetEncryptedDecryptedShares(cipherTextsOfSecrets, c.vaultDonPublicKey, c.vaultDonID)
+	encryptedSecrets, encryptedDecyrptedShares, err := GetEncryptedDecryptedShares(input.VaultDonSecretIds, c.vaultDonPublicKey, c.vaultDonID)
 
 	computeReq := types.ComputeRequest{
 		RequestID:                    reqID,
 		PublicData:                   publicDataBytes,
-		Ciphertexts:                  cipherTextsOfSecrets,
+		Ciphertexts:                  encryptedSecrets,
 		MasterPublicKey:              c.vaultDonPublicKey,
 		EnclaveEphemeralPublicKey:    enclaveParams.EnclaveEphemeralPublicKey,
 		EncryptedDecryptionKeyShares: encryptedDecyrptedShares,
@@ -243,7 +243,7 @@ func (c *capability) SignComputeRequest(ctx context.Context, computeRequest encl
 
 	var acct string
 	for _, a := range accounts {
-		if a == "capability-signing-key" {
+		if a == core.P2PAccountKey {
 			acct = a
 			break
 		}
@@ -320,26 +320,7 @@ func (c *capability) getEnclaveParams(ctx context.Context, reqID [32]byte) (*Enc
 	}, nil
 }
 
-func ConvertInputToHTTPEnclaveRequestData(input cap.Input) (httpenclavetypes.HTTPEnclaveRequestData, [][]byte) {
-	// 1. Process the top-level secrets to get an ordered list of names.
-	secretNames := make([]string, 0, len(input.SecretTemplateValues))
-	for name := range input.SecretTemplateValues {
-		secretNames = append(secretNames, name)
-	}
-
-	// Sort the keys alphabetically. This is critical to ensure the
-	// index-based map is stable and deterministic.
-	sort.Strings(secretNames)
-
-	// 2. Create a simple slice of the secret values.
-	// The order here will match the sorted 'secretNames' list.
-	cipherTextsOfSecrets := make([][]byte, 0, len(secretNames))
-	for _, name := range secretNames {
-		value := input.SecretTemplateValues[name]
-		cipherTextsOfSecrets = append(cipherTextsOfSecrets, []byte(fmt.Sprintf("%v", value)))
-	}
-
-	// 3. Convert the list of requests.
+func ConvertInputToHTTPEnclaveRequestData(input cap.Input) httpenclavetypes.HTTPEnclaveRequestData {
 	convertedRequests := make([]httpenclavetypes.RequestTemplate, 0, len(input.Requests))
 	for _, req := range input.Requests {
 		convertedRequests = append(convertedRequests, httpenclavetypes.RequestTemplate{
@@ -352,13 +333,10 @@ func ConvertInputToHTTPEnclaveRequestData(input cap.Input) (httpenclavetypes.HTT
 		})
 	}
 
-	// 4. Assemble the final data structure.
-	outputData := httpenclavetypes.HTTPEnclaveRequestData{
+	return httpenclavetypes.HTTPEnclaveRequestData{
 		Requests:                convertedRequests,
-		TemplateCiphertextNames: secretNames, // Use the sorted list
+		TemplateCiphertextNames: input.VaultDonSecretIds,
 	}
-
-	return outputData, cipherTextsOfSecrets
 }
 
 func (c *capability) Start(ctx context.Context) error {
