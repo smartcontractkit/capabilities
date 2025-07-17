@@ -78,12 +78,12 @@ func (m *testGatewayConnector) SignMessage(ctx context.Context, msg []byte) ([]b
 	return msg, nil
 }
 
-func createTestGatewayAuthPublisher(t *testing.T) (*gatewayAuthPublisher, *testGatewayConnector, WorkflowStore, *ratelimit.RateLimiter) {
+func createTestGatewayAuthPublisher(t *testing.T) (*gatewayAuthPublisher, *testGatewayConnector, *workflowStore, *ratelimit.RateLimiter) {
 	lggr := logger.Test(t)
 	gc := &testGatewayConnector{
 		gatewayIDs: []string{"gateway1", "gateway2"},
 	}
-	workflowStore := NewWorkflowStore(lggr)
+	workflowStore := newWorkflowStore(lggr)
 
 	rateLimiterConfig := ratelimit.RateLimiterConfig{
 		GlobalRPS:      100.0,
@@ -111,12 +111,12 @@ func createTestGatewayAuthPublisher(t *testing.T) (*gatewayAuthPublisher, *testG
 	return publisher, gc, workflowStore, rateLimiter
 }
 
-func requireSendToGatewayCall(t *testing.T, call sendToGatewayCall, gatewayID string, workflowID string, keys []gateway.AuthorizedKey) {
+func requireSendToGatewayCall(t *testing.T, call sendToGatewayCall, gatewayID string, workflowSelector gateway.WorkflowSelector, keys []gateway.AuthorizedKey) {
 	require.Equal(t, gatewayID, call.gatewayID)
-	var authMetadata gateway.WorkflowAuthMetadata
+	var authMetadata gateway.WorkflowMetadata
 	err := json.Unmarshal(*call.msg.Result, &authMetadata)
 	require.NoError(t, err)
-	require.Equal(t, workflowID, authMetadata.WorkflowID)
+	require.Equal(t, workflowSelector, authMetadata.WorkflowSelector)
 	require.Equal(t, keys, authMetadata.AuthorizedKeys)
 }
 
@@ -125,7 +125,12 @@ func TestBroadcastWorkflow_Success(t *testing.T) {
 
 	publisher, gc, _, _ := createTestGatewayAuthPublisher(t)
 
-	workflowID := "test-workflow-123"
+	workflowSelector := gateway.WorkflowSelector{
+		WorkflowID:    "test-workflow-123",
+		WorkflowOwner: "test-owner",
+		WorkflowName:  "test-name",
+		WorkflowTag:   "test-tag",
+	}
 	keys := []gateway.AuthorizedKey{
 		{
 			KeyType:   "ECDSA",
@@ -136,15 +141,15 @@ func TestBroadcastWorkflow_Success(t *testing.T) {
 			PublicKey: "0xabcdef1234567890",
 		},
 	}
-	err := publisher.BroadcastWorkflow(t.Context(), workflowID, keys)
+	err := publisher.BroadcastWorkflow(t.Context(), workflowSelector, keys)
 
 	require.NoError(t, err)
 
 	// Verify SendToGateway was called for each gateway
 	calls := gc.sendToGatewayCalls
 	require.Equal(t, 2, len(calls))
-	requireSendToGatewayCall(t, calls[0], "gateway1", workflowID, keys)
-	requireSendToGatewayCall(t, calls[1], "gateway2", workflowID, keys)
+	requireSendToGatewayCall(t, calls[0], "gateway1", workflowSelector, keys)
+	requireSendToGatewayCall(t, calls[1], "gateway2", workflowSelector, keys)
 }
 
 func TestBroadcastWorkflow_GatewayIDsError(t *testing.T) {
@@ -152,12 +157,17 @@ func TestBroadcastWorkflow_GatewayIDsError(t *testing.T) {
 
 	publisher, gc, _, _ := createTestGatewayAuthPublisher(t)
 
-	workflowID := "test-workflow-123"
+	workflowSelector := gateway.WorkflowSelector{
+		WorkflowID:    "test-workflow-123",
+		WorkflowOwner: "test-owner",
+		WorkflowName:  "test-name",
+		WorkflowTag:   "test-tag",
+	}
 	keys := []gateway.AuthorizedKey{}
 	expectedError := fmt.Errorf("gateway connection failed")
 
 	gc.gatewayIDsError = expectedError
-	err := publisher.BroadcastWorkflow(t.Context(), workflowID, keys)
+	err := publisher.BroadcastWorkflow(t.Context(), workflowSelector, keys)
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to get gateway IDs")
@@ -168,12 +178,17 @@ func TestBroadcastWorkflow_SendToGatewayError(t *testing.T) {
 
 	publisher, gc, _, _ := createTestGatewayAuthPublisher(t)
 
-	workflowID := "test-workflow-123"
+	workflowSelector := gateway.WorkflowSelector{
+		WorkflowID:    "test-workflow-123",
+		WorkflowOwner: "test-owner",
+		WorkflowName:  "test-name",
+		WorkflowTag:   "test-tag",
+	}
 	keys := []gateway.AuthorizedKey{}
 	expectedError := fmt.Errorf("send failed")
 
 	gc.sendToGatewayError = expectedError
-	err := publisher.BroadcastWorkflow(t.Context(), workflowID, keys)
+	err := publisher.BroadcastWorkflow(t.Context(), workflowSelector, keys)
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "context canceled while awaiting connection to gateway")
@@ -196,10 +211,24 @@ func TestSendWorkflows_Success(t *testing.T) {
 	sendCh1 := make(chan capabilities.TriggerAndId[*http.Payload], 1)
 	sendCh2 := make(chan capabilities.TriggerAndId[*http.Payload], 1)
 
-	err := workflowStore.RegisterWorkflow("workflow1", authorizedKeys1, sendCh1)
-	require.NoError(t, err)
-	err = workflowStore.RegisterWorkflow("workflow2", authorizedKeys2, sendCh2)
-	require.NoError(t, err)
+	selector1 := gateway.WorkflowSelector{
+		WorkflowID:    "workflow1",
+		WorkflowOwner: "owner1",
+		WorkflowName:  "name1",
+		WorkflowTag:   "tag1",
+	}
+	selector2 := gateway.WorkflowSelector{
+		WorkflowID:    "workflow2",
+		WorkflowOwner: "owner2",
+		WorkflowName:  "name2",
+		WorkflowTag:   "tag2",
+	}
+
+	wf1 := newWorkflow(selector1, authorizedKeys1, sendCh1)
+	wf2 := newWorkflow(selector2, authorizedKeys2, sendCh2)
+
+	workflowStore.upsertWorkflow(wf1)
+	workflowStore.upsertWorkflow(wf2)
 
 	gatewayID := "gateway1"
 	rawParams := json.RawMessage(`{}`)
@@ -208,18 +237,18 @@ func TestSendWorkflows_Success(t *testing.T) {
 		Method: "test",
 		Params: &rawParams,
 	}
-	err = publisher.SendWorkflows(t.Context(), gatewayID, req)
+	err := publisher.SendWorkflows(t.Context(), gatewayID, req)
 	require.NoError(t, err)
 
 	calls := gc.sendToGatewayCalls
 	require.Equal(t, 1, len(calls))
-	var authMetadata []gateway.WorkflowAuthMetadata
+	var authMetadata []gateway.WorkflowMetadata
 	err = json.Unmarshal(*calls[0].msg.Result, &authMetadata)
 	require.NoError(t, err)
 	require.Len(t, authMetadata, 2)
 	found1, found2 := false, false
 	for _, metadata := range authMetadata {
-		switch metadata.WorkflowID {
+		switch metadata.WorkflowSelector.WorkflowID {
 		case "workflow1":
 			require.Equal(t, authorizedKeys1, metadata.AuthorizedKeys)
 			found1 = true

@@ -18,7 +18,8 @@ import (
 )
 
 const (
-	publicKey = "0xA18B5D6DB47fB7b0974505D7aB544e24478B6e98"
+	publicKey     = "0xA18B5D6DB47fB7b0974505D7aB544e24478B6e98"
+	workflowOwner = "0xabcdef1234567890abcdef1234567890abcdef12"
 )
 
 type mockGatewayConnector struct {
@@ -70,6 +71,27 @@ func gatewayRequest(t *testing.T, method string) *jsonrpc.Request[json.RawMessag
 	}
 }
 
+// gatewayRequestByTag creates a test request message with the given method
+func gatewayRequestByTag(t *testing.T, method string, workflowOwner string) *jsonrpc.Request[json.RawMessage] {
+	payload := gateway_common.HTTPTriggerRequest{
+		Workflow: gateway_common.WorkflowSelector{
+			WorkflowOwner: workflowOwner,
+			WorkflowName:  "workflowName",
+			WorkflowTag:   "workflowTag",
+		},
+		Input: json.RawMessage(`{"key":"value"}`),
+	}
+	jsonPayload, err := json.Marshal(payload)
+	require.NoError(t, err)
+	jsonPayloadMsg := json.RawMessage(jsonPayload)
+	return &jsonrpc.Request[json.RawMessage]{
+		Version: "2.0",
+		ID:      "id",
+		Method:  method,
+		Params:  &jsonPayloadMsg,
+	}
+}
+
 func rateLimiterConfig() ratelimit.RateLimiterConfig {
 	return ratelimit.RateLimiterConfig{
 		GlobalRPS:      100.0,
@@ -89,7 +111,7 @@ func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayCon
 	require.NoError(t, err)
 	orl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
 	require.NoError(t, err)
-	store := NewWorkflowStore(lggr)
+	store := newWorkflowStore(lggr)
 	authHandler := NewGatewayAuthPublisher(
 		lggr,
 		mockConnector,
@@ -116,17 +138,18 @@ func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayCon
 		},
 	}
 	triggerCh := make(chan capabilities.TriggerAndId[*http.Payload], 1)
-	err = handler.RegisterWorkflow(t.Context(), "wf1", "trigger1", sdkCfg, triggerCh)
+	selector := gateway_common.WorkflowSelector{
+		WorkflowID:    "wf1",
+		WorkflowOwner: "0xabcdef1234567890abcdef1234567890abcdef12",
+		WorkflowName:  "workflowName",
+		WorkflowTag:   "workflowTag",
+	}
+	err = handler.RegisterWorkflow(t.Context(), selector, sdkCfg, triggerCh)
 	require.NoError(t, err, "Failed to register workflow")
 	return handler, mockConnector, triggerCh
 }
 
-// TestHandleGatewayMessage_Success tests successful request processing
-func TestHandleGatewayMessage_Success(t *testing.T) {
-	lggr := logger.Test(t)
-	handler, connector, triggerCh := setup(t, lggr)
-	req := gatewayRequest(t, gateway_common.MethodWorkflowExecute)
-
+func requireWorkflowTriggered(t *testing.T, triggerCh <-chan capabilities.TriggerAndId[*http.Payload], req *jsonrpc.Request[json.RawMessage], connector *mockGatewayConnector, handler *connectorHandler) {
 	// Start a goroutine to assert that the correct trigger payload is received
 	done := make(chan struct{})
 	go func() {
@@ -168,6 +191,39 @@ func TestHandleGatewayMessage_Success(t *testing.T) {
 	}
 }
 
+// TestHandleGatewayMessage_Success tests successful request processing
+func TestHandleGatewayMessage_Success(t *testing.T) {
+	lggr := logger.Test(t)
+	handler, connector, triggerCh := setup(t, lggr)
+	req := gatewayRequest(t, gateway_common.MethodWorkflowExecute)
+	requireWorkflowTriggered(t, triggerCh, req, connector, handler)
+}
+
+// TestHandleGatewayMessage_ByTag tests successful request processing using
+// workflowOwner/Name/Tag combination
+func TestHandleGatewayMessage_ByTag(t *testing.T) {
+	lggr := logger.Test(t)
+	handler, connector, triggerCh := setup(t, lggr)
+	req := gatewayRequestByTag(t, gateway_common.MethodWorkflowExecute, workflowOwner)
+	requireWorkflowTriggered(t, triggerCh, req, connector, handler)
+}
+
+func TestHandleGatewayMessage_ByTag_WorkflowNotFound(t *testing.T) {
+	lggr := logger.Test(t)
+	handler, connector, triggerCh := setup(t, lggr)
+	req := gatewayRequestByTag(t, gateway_common.MethodWorkflowExecute, "0xffffffffffffffffffffffffffffffffffffffff") //unregistered workflow owner
+	err := handler.HandleGatewayMessage(t.Context(), "gw1", req)
+	require.NoError(t, err)
+	require.True(t, connector.SendToGatewayCalled, "Should send error response")
+	resp := connector.SendToGatewayArgs.Msg
+	require.Len(t, triggerCh, 0, "trigger channel should not receive any messages")
+	assertErrorResponse(t, connector, resp, jsonrpc.ErrInvalidRequest)
+	var triggerResp gateway_common.HTTPTriggerResponse
+	require.Nil(t, resp.Result, "Result should be nil in error response")
+	require.Empty(t, triggerResp.WorkflowID, "WorkflowID should be empty in error response")
+	require.Equal(t, req.ID, resp.ID, "Response ID should match request ID")
+}
+
 func assertErrorResponse(t *testing.T, connector *mockGatewayConnector, resp *jsonrpc.Response[json.RawMessage], code int64) {
 	require.Equal(t, "gw1", connector.SendToGatewayArgs.GatewayID)
 	require.Equal(t, "2.0", resp.Version)
@@ -184,6 +240,39 @@ func TestHandleGatewayMessage_InvalidRequest(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, connector.SendToGatewayCalled)
 	require.Len(t, triggerCh, 0, "trigger channel should not receive any messages")
+}
+
+func TestHandleGatewayMessage_MissingWorkflowName(t *testing.T) {
+	lggr := logger.Test(t)
+	handler, connector, triggerCh := setup(t, lggr)
+	var workflowID [32]byte
+	copy(workflowID[:], []byte("wf1"))
+	payload := gateway_common.HTTPTriggerRequest{
+		Workflow: gateway_common.WorkflowSelector{
+			WorkflowOwner: workflowOwner,
+			WorkflowTag:   "workflowTag",
+		},
+		Input: json.RawMessage(`{"key":"value"}`),
+	}
+	jsonPayload, err := json.Marshal(payload)
+	require.NoError(t, err)
+	jsonPayloadMsg := json.RawMessage(jsonPayload)
+	req := &jsonrpc.Request[json.RawMessage]{
+		Version: "2.0",
+		ID:      "id",
+		Method:  gateway_common.MethodWorkflowExecute,
+		Params:  &jsonPayloadMsg,
+	}
+	err = handler.HandleGatewayMessage(t.Context(), "gw1", req)
+	require.NoError(t, err)
+	require.True(t, connector.SendToGatewayCalled, "Should send error response")
+	resp := connector.SendToGatewayArgs.Msg
+	require.Len(t, triggerCh, 0, "trigger channel should not receive any messages")
+	assertErrorResponse(t, connector, resp, jsonrpc.ErrInvalidRequest)
+	var triggerResp gateway_common.HTTPTriggerResponse
+	require.Nil(t, resp.Result, "Result should be nil in error response")
+	require.Empty(t, triggerResp.WorkflowID, "WorkflowID should be empty in error response")
+	require.Equal(t, req.ID, resp.ID, "Response ID should match request ID")
 }
 
 func TestHandleGatewayMessage_MissingBody(t *testing.T) {
@@ -259,7 +348,7 @@ func TestProcessTrigger_MissingWorkflowID(t *testing.T) {
 	require.True(t, connector.SendToGatewayCalled, "Should send error response")
 	resp := connector.SendToGatewayArgs.Msg
 	require.Len(t, triggerCh, 0, "trigger channel should not receive any messages")
-	assertErrorResponse(t, connector, resp, jsonrpc.ErrInvalidParams)
+	assertErrorResponse(t, connector, resp, jsonrpc.ErrInvalidRequest)
 	var triggerResp gateway_common.HTTPTriggerResponse
 	require.Nil(t, resp.Result, "Result should be nil in error response")
 	require.Empty(t, triggerResp.WorkflowID, "WorkflowID should be empty in error response")
@@ -269,12 +358,12 @@ func TestProcessTrigger_MissingWorkflowID(t *testing.T) {
 func TestRegisterAndUnregisterWorkflow(t *testing.T) {
 	lggr := logger.Test(t)
 	handler, _, _ := setup(t, lggr)
-	_, err := handler.workflowMetadataStore.GetWorkflow("wf1")
-	require.NoError(t, err)
-	err = handler.UnregisterWorkflow(context.Background(), "wf1")
+	_, ok := handler.workflowStore.getWorkflowByID("wf1")
+	require.True(t, ok, "workflow not registered")
+	err := handler.UnregisterWorkflow(context.Background(), "wf1")
 	require.NoError(t, err, "UnregisterWorkflow failed")
-	_, err = handler.workflowMetadataStore.GetWorkflow("wf1")
-	require.Error(t, err)
+	_, ok = handler.workflowStore.getWorkflowByID("wf1")
+	require.False(t, ok, "workflow still registered after unregistering")
 	err = handler.UnregisterWorkflow(context.Background(), "wf1")
 	require.Error(t, err, "UnregisterWorkflow should return error for non-existent workflow")
 }
@@ -354,8 +443,13 @@ func TestRegisterWorkflow_InvalidECDSAPublicKey(t *testing.T) {
 					invalidKey,
 				},
 			}
-
-			err := handler.RegisterWorkflow(context.Background(), "wf1", "trigger1", cfg, sendCh)
+			selector := gateway_common.WorkflowSelector{
+				WorkflowOwner: "0xabcdef1234567890abcdef1234567890abcdef12",
+				WorkflowName:  "workflowName",
+				WorkflowTag:   "workflowTag",
+				WorkflowID:    "workflowID",
+			}
+			err := handler.RegisterWorkflow(context.Background(), selector, cfg, sendCh)
 			require.Error(t, err)
 			require.Contains(t, err.Error(), tc.errorMsg)
 		})
@@ -369,7 +463,7 @@ func TestConnectorHandler_Start_HealthReport_Ready_Name_Close(t *testing.T) {
 	require.NoError(t, err)
 	orl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
 	require.NoError(t, err)
-	store := NewWorkflowStore(lggr)
+	store := newWorkflowStore(lggr)
 	authHandler := NewGatewayAuthPublisher(
 		lggr,
 		mockConnector,
@@ -428,7 +522,13 @@ func TestHandleGatewayMessage_PullAuthMetadata(t *testing.T) {
 		},
 	}
 	triggerCh2 := make(chan capabilities.TriggerAndId[*http.Payload], 1)
-	err := handler.RegisterWorkflow(t.Context(), "wf2", "trigger2", sdkCfg2, triggerCh2)
+	selector := gateway_common.WorkflowSelector{
+		WorkflowOwner: "0xabcdef1234567890abcdef1234567890abcdef12",
+		WorkflowName:  "workflowName2",
+		WorkflowTag:   "workflowTag2",
+		WorkflowID:    "wf2",
+	}
+	err := handler.RegisterWorkflow(t.Context(), selector, sdkCfg2, triggerCh2)
 	require.NoError(t, err, "Failed to register second workflow")
 
 	// Create pull auth metadata request
@@ -453,24 +553,24 @@ func TestHandleGatewayMessage_PullAuthMetadata(t *testing.T) {
 	require.Nil(t, resp.Error, "Response should not contain an error")
 	require.NotNil(t, resp.Result, "Response should contain workflow auth metadata")
 
-	var workflowAuthMetadata []gateway_common.WorkflowAuthMetadata
-	err = json.Unmarshal(*resp.Result, &workflowAuthMetadata)
+	var workflowMetadata []gateway_common.WorkflowMetadata
+	err = json.Unmarshal(*resp.Result, &workflowMetadata)
 	require.NoError(t, err)
 
-	require.Len(t, workflowAuthMetadata, 2, "Should receive auth metadata for all registered workflows")
-	metadataByWorkflowID := make(map[string]gateway_common.WorkflowAuthMetadata)
-	for _, metadata := range workflowAuthMetadata {
-		metadataByWorkflowID[metadata.WorkflowID] = metadata
+	require.Len(t, workflowMetadata, 2, "Should receive auth metadata for all registered workflows")
+	metadataByWorkflowID := make(map[string]gateway_common.WorkflowMetadata)
+	for _, metadata := range workflowMetadata {
+		metadataByWorkflowID[metadata.WorkflowSelector.WorkflowID] = metadata
 	}
 	wf1Metadata, exists := metadataByWorkflowID["wf1"]
 	require.True(t, exists, "Should contain metadata for wf1")
-	require.Equal(t, "wf1", wf1Metadata.WorkflowID)
+	require.Equal(t, "wf1", wf1Metadata.WorkflowSelector.WorkflowID)
 	require.Len(t, wf1Metadata.AuthorizedKeys, 1)
 	require.Equal(t, publicKey, wf1Metadata.AuthorizedKeys[0].PublicKey)
 	require.Equal(t, "ecdsa", string(wf1Metadata.AuthorizedKeys[0].KeyType))
 	wf2Metadata, exists := metadataByWorkflowID["wf2"]
 	require.True(t, exists, "Should contain metadata for wf2")
-	require.Equal(t, "wf2", wf2Metadata.WorkflowID)
+	require.Equal(t, "wf2", wf2Metadata.WorkflowSelector.WorkflowID)
 	require.Len(t, wf2Metadata.AuthorizedKeys, 1)
 	require.Equal(t, "0xB18B5D6DB47fB7b0974505D7aB544e24478B6e99", wf2Metadata.AuthorizedKeys[0].PublicKey)
 	require.Equal(t, "ecdsa", string(wf2Metadata.AuthorizedKeys[0].KeyType))
@@ -517,7 +617,7 @@ func TestHandleGatewayMessage_PullAuthMetadata_EmptyWorkflows(t *testing.T) {
 	require.NoError(t, err)
 	orl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
 	require.NoError(t, err)
-	store := NewWorkflowStore(lggr)
+	store := newWorkflowStore(lggr)
 	authHandler := NewGatewayAuthPublisher(
 		lggr,
 		mockConnector,

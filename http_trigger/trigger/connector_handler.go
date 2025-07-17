@@ -33,26 +33,26 @@ var _ core.GatewayConnectorHandler = &connectorHandler{}
 
 type connectorHandler struct {
 	services.StateMachine
-	lggr                  logger.Logger
-	gatewayConnector      core.GatewayConnector
-	config                ServiceConfig
-	incomingRateLimiter   *ratelimit.RateLimiter
-	outgoingRateLimiter   *ratelimit.RateLimiter
-	gatewayAuthPublisher  GatewayAuthPublisher
-	workflowMetadataStore WorkflowStore
+	lggr                 logger.Logger
+	gatewayConnector     core.GatewayConnector
+	config               ServiceConfig
+	workflowStore        *workflowStore
+	incomingRateLimiter  *ratelimit.RateLimiter
+	outgoingRateLimiter  *ratelimit.RateLimiter
+	gatewayAuthPublisher GatewayAuthPublisher
 }
 
 func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config ServiceConfig,
 	outgoingRateLimiter *ratelimit.RateLimiter, incomingRateLimiter *ratelimit.RateLimiter,
-	workflowMetadataStore WorkflowStore, gatewayAuthPublisher GatewayAuthPublisher) (*connectorHandler, error) {
+	workflowStore *workflowStore, gatewayAuthPublisher GatewayAuthPublisher) (*connectorHandler, error) {
 	return &connectorHandler{
-		lggr:                  logger.Named(lggr, HandlerName),
-		gatewayConnector:      gc,
-		config:                config,
-		outgoingRateLimiter:   outgoingRateLimiter,
-		incomingRateLimiter:   incomingRateLimiter,
-		workflowMetadataStore: workflowMetadataStore,
-		gatewayAuthPublisher:  gatewayAuthPublisher,
+		lggr:                 logger.Named(lggr, HandlerName),
+		gatewayConnector:     gc,
+		config:               config,
+		outgoingRateLimiter:  outgoingRateLimiter,
+		incomingRateLimiter:  incomingRateLimiter,
+		workflowStore:        workflowStore,
+		gatewayAuthPublisher: gatewayAuthPublisher,
 	}, nil
 }
 
@@ -94,7 +94,7 @@ func (h *connectorHandler) ID(context.Context) (string, error) {
 	return HandlerName, nil
 }
 
-func (h *connectorHandler) RegisterWorkflow(ctx context.Context, workflowID string, triggerID string, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error {
+func (h *connectorHandler) RegisterWorkflow(ctx context.Context, workflowSelector gateway_common.WorkflowSelector, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error {
 	var authorizedKeys []gateway_common.AuthorizedKey
 	for _, key := range input.AuthorizedKeys {
 		switch key.Type {
@@ -110,22 +110,26 @@ func (h *connectorHandler) RegisterWorkflow(ctx context.Context, workflowID stri
 			return fmt.Errorf("unsupported key type: %s", key.Type)
 		}
 	}
-	err := h.workflowMetadataStore.RegisterWorkflow(workflowID, authorizedKeys, sendCh)
-	if err != nil {
-		return errors.Join(err, fmt.Errorf("failed to register workflow %s: %w", workflowID, err))
-	}
 	// Push the auth metadata to the gateway
 	// Error is non-critical. Retries will be handled by the authMetadataHandler.
-	err = h.gatewayAuthPublisher.BroadcastWorkflow(ctx, workflowID, authorizedKeys)
+	err := h.gatewayAuthPublisher.BroadcastWorkflow(ctx, workflowSelector, authorizedKeys)
 	if err != nil {
 		h.lggr.Errorw("Failed to push auth metadata to gateway", "error",
-			err, "workflowID", workflowID, "triggerID", triggerID)
+			err, "workflowID", workflowSelector.WorkflowID)
 	}
+	workflow := newWorkflow(workflowSelector, authorizedKeys, sendCh)
+	h.workflowStore.upsertWorkflow(workflow)
+	h.lggr.Debugf("Registered workflow %s", workflowSelector.WorkflowID)
 	return nil
 }
 
 func (h *connectorHandler) UnregisterWorkflow(ctx context.Context, workflowID string) error {
-	return h.workflowMetadataStore.UnregisterWorkflow(workflowID)
+	err := h.workflowStore.removeWorkflow(workflowID)
+	if err != nil {
+		return fmt.Errorf("failed to unregister workflow %s: %w", workflowID, err)
+	}
+	h.lggr.Debugf("Unregistered workflow %s", workflowID)
+	return nil
 }
 
 // HandleGatewayMessage processes incoming messages from gateways.
@@ -206,12 +210,19 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		return
 	}
 	// TODO: PRODCRE-305 validate JWT against authorized keys
-	// TODO: PRODCRE-475 support look-up of workflowID using workflowOwner/Label/Name
 	workflowID := triggerReq.Workflow.WorkflowID
+	var exists bool
 	if workflowID == "" {
-		l.Error("WorkflowID is required in HTTP trigger request")
-		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInvalidParams, "workflowID is required")
-		return
+		workflowID, exists = h.workflowStore.getWorkflowIDByReference(
+			triggerReq.Workflow.WorkflowOwner,
+			triggerReq.Workflow.WorkflowName,
+			triggerReq.Workflow.WorkflowTag,
+		)
+		if !exists {
+			l.Errorw("Workflow not registered", "workflowOwner", triggerReq.Workflow.WorkflowOwner, "workflowName", triggerReq.Workflow.WorkflowName, "workflowTag", triggerReq.Workflow.WorkflowTag)
+			h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInvalidRequest, "Workflow not registered")
+			return
+		}
 	}
 	l = logger.With(l, "workflowID", workflowID)
 	err = h.triggerWorkflow(ctx, workflowID, req.ID, gatewayID, input)
@@ -246,12 +257,12 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 }
 
 func (h *connectorHandler) triggerWorkflow(ctx context.Context, workflowID string, reqID string, gatewayID string, input *structpb.Struct) error {
-	workflow, err := h.workflowMetadataStore.GetWorkflow(workflowID)
-	if err != nil {
+	workflow, ok := h.workflowStore.getWorkflowByID(workflowID)
+	if !ok {
 		h.sendErrorResponse(ctx, gatewayID, reqID, jsonrpc.ErrInvalidRequest, "Workflow not registered")
 		return fmt.Errorf("workflowID %s not registered", workflowID)
 	}
-	err = workflow.trigger(ctx, capabilities.TriggerAndId[*http.Payload]{
+	err := workflow.trigger(ctx, capabilities.TriggerAndId[*http.Payload]{
 		// workflow engine does not process the request if the ID has already been used
 		Id: reqID,
 		Trigger: &http.Payload{
