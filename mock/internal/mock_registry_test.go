@@ -612,7 +612,7 @@ func TestMockRegistry_SendTriggerEvent_IncompleteData(t *testing.T) {
 			require.Equal(t, "event-no-ocr", resp.Event.ID)
 			require.Equal(t, outputs, resp.Event.Outputs)
 			require.Equal(t, payload, resp.Event.Payload)
-			require.Empty(t, resp.Event.OCREvent) // Should be empty
+			require.Empty(t, resp.Event.OCREvent) //nolint:all Ignore deprecation as we still need to support this for older capabilities
 		case <-time.After(time.Second):
 			t.Fatal("timeout waiting for trigger event")
 		}
