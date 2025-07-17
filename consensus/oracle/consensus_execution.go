@@ -20,6 +20,7 @@ import (
 var (
 	ErrNoValuesMetThreshold       = errors.New("no values met f+1 threshold")
 	ErrMultipleValuesMetThreshold = errors.New("not identical, multiple values with f+1 occurrences")
+	ErrInsufficientObservations   = errors.New("insufficient observations to reach consensus")
 )
 
 // Constants for type names used in aggregation logic.
@@ -232,8 +233,6 @@ func handleIdenticalAggregation(values []*valuespb.Value, f int) (*valuespb.Valu
 	return uniqueCandidate, nil
 }
 
-var ErrInsufficientObservations = errors.New("insufficient observations to reach consensus")
-
 // handleCommonSuffixAggregation reverses the underlying lists in the slice of
 // observations and delegates logic to handleCommonPrefixAggregation and then
 // reverses the result a final time.
@@ -294,13 +293,7 @@ func handleCommonPrefixAggregation(lggr logger.Logger, observations []*valuespb.
 		commonPrefixElements = append(commonPrefixElements, identicalValue)
 	}
 
-	return &valuespb.Value{
-		Value: &valuespb.Value_ListValue{
-			ListValue: &valuespb.List{
-				Fields: commonPrefixElements,
-			},
-		},
-	}, nil
+	return valuespb.NewListValue(commonPrefixElements), nil
 }
 
 // countTypes takes a slice of valuespb.Value and returns a map
@@ -428,13 +421,7 @@ func reverseListValue(list *valuespb.Value) (*valuespb.Value, error) {
 	case *valuespb.Value_ListValue:
 		reversed := list.GetListValue().GetFields()
 		reverse(reversed)
-		return &valuespb.Value{
-			Value: &valuespb.Value_ListValue{
-				ListValue: &valuespb.List{
-					Fields: reversed,
-				},
-			},
-		}, nil
+		return valuespb.NewListValue(reversed), nil
 	default:
 		return nil, fmt.Errorf("cannot reverse value of type %T", list.Value)
 	}
