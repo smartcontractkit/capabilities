@@ -57,11 +57,11 @@ jobs:
       - name: Debug Affected Output
         run: |
           echo "--- Raw 'affected' job output (steps.affected.outputs.affected) ---"
-          echo "${{ steps.affected.outputs.affected }}" # Print the raw output
+          echo "${{ steps.affected.outputs.affected }}" 
           echo "--- Parsed 'affected' job output (fromJson) ---"
-          echo "${{ toJSON(fromJson(steps.affected.outputs.affected)) }}" | jq '.' # Pretty print the parsed JSON
+          echo "${{ toJSON(fromJson(steps.affected.outputs.affected)) }}" | jq '.'
           echo "--- Specific properties from 'affected' output ---"
-          echo "Base: ${{ fromJson(steps.affected.outputs.affected).base }}" # Access specific properties
+          echo "Base: ${{ fromJson(steps.affected.outputs.affected).base }}" 
           echo "Projects: ${{ fromJson(steps.affected.outputs.affected).projects }}"
           echo "Run checks: ${{ fromJson(steps.affected.outputs.affected).run_checks }}"
           echo "Projects with build: ${{ fromJson(steps.affected.outputs.affected).projects_with_build }}"
