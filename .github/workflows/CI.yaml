@@ -51,11 +51,24 @@ jobs:
       - name: Get affected projects
         id: affected
         run: |
+          echo "Running affected-projects.sh with base: ${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }}"
           echo "affected=$(./.github/scripts/affected-projects.sh ${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }})" >> $GITHUB_OUTPUT
+
+      - name: Debug Affected Output
+        run: |
+          echo "--- Raw 'affected' job output (steps.affected.outputs.affected) ---"
+          echo "${{ steps.affected.outputs.affected }}" # Print the raw output
+          echo "--- Parsed 'affected' job output (fromJson) ---"
+          echo "${{ toJSON(fromJson(steps.affected.outputs.affected)) }}" | jq '.' # Pretty print the parsed JSON
+          echo "--- Specific properties from 'affected' output ---"
+          echo "Base: ${{ fromJson(steps.affected.outputs.affected).base }}" # Access specific properties
+          echo "Projects: ${{ fromJson(steps.affected.outputs.affected).projects }}"
+          echo "Run checks: ${{ fromJson(steps.affected.outputs.affected).run_checks }}"
+          echo "Projects with build: ${{ fromJson(steps.affected.outputs.affected).projects_with_build }}"
 
   build:
     needs: affected
-    if: ${{fromJson(needs.affected.outputs.nx).projects_with_build != null && contains(fromJson(needs.affected.outputs.nx).projects_with_build, fromJson(needs.affected.outputs.nx).projects_with_build[0])}}
+    if: ${{fromJson(needs.affected.outputs.nx).projects_with_build != '[]' && fromJson(needs.affected.outputs.nx).projects_with_build != null}}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -86,7 +99,7 @@ jobs:
 
   test:
     needs: affected
-    if: ${{fromJson(needs.affected.outputs.nx).projects_with_test != null && contains(fromJson(needs.affected.outputs.nx).projects_with_test, fromJson(needs.affected.outputs.nx).projects_with_test[0])}}
+    if: ${{fromJson(needs.affected.outputs.nx).projects_with_test != '[]' && fromJson(needs.affected.outputs.nx).projects_with_test != null}}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -125,7 +138,7 @@ jobs:
 
   race:
     needs: affected
-    if: ${{fromJson(needs.affected.outputs.nx).projects_with_race != null && contains(fromJson(needs.affected.outputs.nx).projects_with_race, fromJson(needs.affected.outputs.nx).projects_with_race[0])}}
+    if: ${{fromJson(needs.affected.outputs.nx).projects_with_race != null && fromJson(needs.affected.outputs.nx).projects_with_race != '[]'}}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
