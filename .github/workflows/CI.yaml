@@ -55,7 +55,6 @@ jobs:
           JSON_OUTPUT=$(./.github/scripts/affected-projects.sh ${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }} 2>&1)
 
           # Check if the output is valid JSON before setting the GITHUB_OUTPUT
-          # This will also catch any debug messages that accidentally went to stdout
           if echo "$JSON_OUTPUT" | jq . >/dev/null 2>&1; then
             echo "affected<<EOF_JSON" >> $GITHUB_OUTPUT
             echo "$JSON_OUTPUT" >> $GITHUB_OUTPUT
@@ -66,17 +65,10 @@ jobs:
             exit 1
           fi
 
-      - name: Debug Affected Output
+      - name: Print Affected Output
         run: |
           echo "--- Raw 'affected' job output (steps.affected.outputs.affected) ---"
           echo "${{ steps.affected.outputs.affected }}" 
-          echo "--- Parsed 'affected' job output (fromJson) ---"
-          echo "${{ toJSON(fromJson(steps.affected.outputs.affected)) }}" | jq '.'
-          echo "--- Specific properties from 'affected' output ---"
-          echo "Base: ${{ fromJson(steps.affected.outputs.affected).base }}" 
-          echo "Projects: ${{ fromJson(steps.affected.outputs.affected).projects }}"
-          echo "Run checks: ${{ fromJson(steps.affected.outputs.affected).run_checks }}"
-          echo "Projects with build: ${{ fromJson(steps.affected.outputs.affected).projects_with_build }}"
 
   build:
     needs: affected
