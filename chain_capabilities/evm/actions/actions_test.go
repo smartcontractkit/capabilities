@@ -28,11 +28,8 @@ import (
 	"google.golang.org/protobuf/testing/protocmp"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions/mocks"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
 )
-
-type nopProcessor struct{}
-
-func (nopProcessor) Process(_ context.Context, _ proto.Message, _ ...any) error { return nil }
 
 type evmWithMocks struct {
 	actions.EVM
@@ -45,7 +42,7 @@ func initMocks(t *testing.T) *evmWithMocks {
 	t.Helper()
 	evmSvc := evmmock.NewEVMService(t)
 	consensusHandler := mocks.NewConsensusHandler(t)
-	evm, err := actions.NewEVM(config.Config{}, evmSvc, commonlogger.Test(t), nopProcessor{}, &monitoring.MessageBuilder{}, consensusHandler)
+	evm, err := actions.NewEVM(config.Config{}, evmSvc, commonlogger.Test(t), test.NopBeholderProcessor{}, &monitoring.MessageBuilder{}, consensusHandler)
 	require.NoError(t, err)
 	return &evmWithMocks{
 		EVM:              evm,
@@ -308,5 +305,41 @@ func TestCapability_Register_Unregister_LogTracking(t *testing.T) {
 		_, err := svc.UnregisterLogTracking(t.Context(), capabilities.RequestMetadata{},
 			&evmcappb.UnregisterLogTrackingRequest{FilterName: "myFilter"})
 		assert.ErrorIs(t, err, assert.AnError)
+	})
+}
+
+func TestCapability_HeaderByNumber(t *testing.T) {
+	t.Run("happy-path", func(t *testing.T) {
+		svc := initMocks(t)
+
+		block := big.NewInt(123)
+		ch := make(chan any, 1)
+		header := evmtypes.Header{
+			Timestamp: 123,
+			Number:    block,
+		}
+		expectedReply := &evmcappb.HeaderByNumberReply{Header: evmcappb.ConvertHeaderToProto(header)}
+		asProto, err := proto.Marshal(expectedReply)
+		require.NoError(t, err)
+		ch <- asProto
+		svc.consensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
+
+		req := &evmcappb.HeaderByNumberRequest{BlockNumber: valuespb.NewBigIntFromInt(block)}
+		resp, err := svc.HeaderByNumber(t.Context(), capabilities.RequestMetadata{}, req)
+		require.NoError(t, err)
+		require.Empty(t, cmp.Diff(expectedReply, resp, protocmp.Transform()))
+	})
+	t.Run("On timeout returns error", func(t *testing.T) {
+		svc := initMocks(t)
+
+		block := big.NewInt(123)
+		ch := make(chan any, 1)
+		svc.consensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
+
+		req := &evmcappb.HeaderByNumberRequest{BlockNumber: valuespb.NewBigIntFromInt(block)}
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		_, err := svc.HeaderByNumber(ctx, capabilities.RequestMetadata{}, req)
+		require.ErrorContains(t, err, "context canceled")
 	})
 }

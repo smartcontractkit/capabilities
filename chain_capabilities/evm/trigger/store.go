@@ -11,6 +11,7 @@ import (
 )
 
 type filter struct {
+	filterID    string
 	expressions []query.Expression
 	confidence  primitives.ConfidenceLevel
 }

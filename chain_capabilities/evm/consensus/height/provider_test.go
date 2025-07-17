@@ -1,11 +1,11 @@
-package blocksprovider
+package height
 
 import (
-	"context"
 	"math/big"
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -13,28 +13,23 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
-	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/height/mocks"
 )
 
-type mockEVMService struct {
-	mock.Mock
-}
-
-func (m *mockEVMService) HeaderByNumber(ctx context.Context, blockNumber *big.Int, confidenceLevel primitives.ConfidenceLevel) (evm.Head, error) {
-	args := m.Called(ctx, blockNumber, confidenceLevel)
-	return args.Get(0).(evm.Head), args.Error(1)
-}
-
-func setHeaderByNumber(evmSvc *mockEVMService, finalized, safe, latest int64) {
-	evmSvc.On("HeaderByNumber", mock.Anything, mock.Anything, primitives.Finalized).Return(evm.Head{Number: big.NewInt(finalized)}, nil)
-	evmSvc.On("HeaderByNumber", mock.Anything, mock.Anything, primitives.Safe).Return(evm.Head{Number: big.NewInt(safe)}, nil)
-	evmSvc.On("HeaderByNumber", mock.Anything, mock.Anything, primitives.Unconfirmed).Return(evm.Head{Number: big.NewInt(latest)}, nil)
+func setHeaderByNumber(evmSvc *mocks.HeaderProvider, finalized, safe, latest int64) {
+	evmSvc.On("HeaderByNumber", mock.Anything, evm.HeaderByNumberRequest{Number: big.NewInt(rpc.FinalizedBlockNumber.Int64())}).
+		Return(&evm.HeaderByNumberReply{Header: &evm.Header{Number: big.NewInt(finalized)}}, nil)
+	evmSvc.On("HeaderByNumber", mock.Anything, evm.HeaderByNumberRequest{Number: big.NewInt(rpc.SafeBlockNumber.Int64())}).
+		Return(&evm.HeaderByNumberReply{Header: &evm.Header{Number: big.NewInt(safe)}}, nil)
+	evmSvc.On("HeaderByNumber", mock.Anything, evm.HeaderByNumberRequest{Number: nil}).
+		Return(&evm.HeaderByNumberReply{Header: &evm.Header{Number: big.NewInt(latest)}}, nil)
 }
 
 func TestBlocksProvider(t *testing.T) {
 	lggr, _ := logger.TestObserved(t, zapcore.DebugLevel)
 	t.Run("latest > safe > finalized", func(t *testing.T) {
-		evmSvc := new(mockEVMService)
+		evmSvc := mocks.NewHeaderProvider(t)
 		setHeaderByNumber(evmSvc, 1, 2, 3)
 
 		bp := NewBlocksProvider(lggr, 1*time.Second, evmSvc)
@@ -53,7 +48,7 @@ func TestBlocksProvider(t *testing.T) {
 	})
 
 	t.Run("latest = safe = finalized", func(t *testing.T) {
-		evmSvc := new(mockEVMService)
+		evmSvc := mocks.NewHeaderProvider(t)
 		setHeaderByNumber(evmSvc, 1, 1, 1)
 		bp := NewBlocksProvider(lggr, 1*time.Second, evmSvc)
 		require.NoError(t, bp.Start(t.Context()))
@@ -71,7 +66,7 @@ func TestBlocksProvider(t *testing.T) {
 	})
 
 	t.Run("latest < safe < finalized", func(t *testing.T) {
-		evmSvc := new(mockEVMService)
+		evmSvc := mocks.NewHeaderProvider(t)
 		setHeaderByNumber(evmSvc, 3, 2, 1)
 		bp := NewBlocksProvider(lggr, 1*time.Second, evmSvc)
 		require.NoError(t, bp.Start(t.Context()))
@@ -89,7 +84,7 @@ func TestBlocksProvider(t *testing.T) {
 	})
 
 	t.Run("latest < safe > finalized", func(t *testing.T) {
-		evmSvc := new(mockEVMService)
+		evmSvc := mocks.NewHeaderProvider(t)
 		setHeaderByNumber(evmSvc, 1, 3, 2)
 		bp := NewBlocksProvider(lggr, 1*time.Second, evmSvc)
 		require.NoError(t, bp.Start(t.Context()))
@@ -107,7 +102,7 @@ func TestBlocksProvider(t *testing.T) {
 	})
 
 	t.Run("safe < finalized < latest", func(t *testing.T) {
-		evmSvc := new(mockEVMService)
+		evmSvc := mocks.NewHeaderProvider(t)
 		setHeaderByNumber(evmSvc, 2, 1, 3)
 		bp := NewBlocksProvider(lggr, 1*time.Second, evmSvc)
 		require.NoError(t, bp.Start(t.Context()))

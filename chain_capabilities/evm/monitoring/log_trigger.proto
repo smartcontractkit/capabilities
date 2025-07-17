@@ -34,3 +34,9 @@ message LogTriggerEventDroppedError {
   string cause = 6;
   monitoring.ExecutionContext execution_context = 20;
 }
+
+message LogTriggerCleanUpError {
+  string summary = 5;
+  string cause = 6;
+  monitoring.ExecutionContext execution_context = 20;
+}
