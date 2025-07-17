@@ -10,11 +10,13 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
 
 const ServiceName = "HTTPTriggerCapability"
+const WorkflowRegistryContractName = "WorkflowRegistryV2"
 const defaultSendChannelBufferSize = uint32(1000)
 
 var _ server.HTTPCapability = &service{}
@@ -31,7 +33,7 @@ type ServiceConfig struct {
 
 type ConnectorHandler interface {
 	services.Service
-	RegisterWorkflow(ctx context.Context, workflowID string, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error
+	RegisterWorkflow(ctx context.Context, workflowSelector gateway.WorkflowSelector, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error
 	UnregisterWorkflow(ctx context.Context, workflowID string) error
 }
 
@@ -111,7 +113,13 @@ func (s *service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 		sendChannelBufferSize = defaultSendChannelBufferSize
 	}
 	sendCh := make(chan capabilities.TriggerAndId[*http.Payload], sendChannelBufferSize)
-	err := s.connectorHandler.RegisterWorkflow(ctx, metadata.WorkflowID, input, sendCh)
+	workflowSelector := gateway.WorkflowSelector{
+		WorkflowID:    metadata.WorkflowID,
+		WorkflowOwner: metadata.WorkflowOwner,
+		WorkflowName:  metadata.WorkflowName,
+		WorkflowTag:   metadata.WorkflowTag,
+	}
+	err := s.connectorHandler.RegisterWorkflow(ctx, workflowSelector, input, sendCh)
 	if err != nil {
 		return nil, err
 	}
