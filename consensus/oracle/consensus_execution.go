@@ -237,9 +237,9 @@ var ErrInsufficientObservations = errors.New("insufficient observations to reach
 // handleCommonSuffixAggregation reverses the underlying lists in the slice of
 // observations and delegates logic to handleCommonPrefixAggregation and then
 // reverses the result a final time.
-func handleCommonSuffixAggregation(lggr logger.Logger, observations []*valuespb.Value, f int) (*valuespb.Value, error) {
+func handleCommonSuffixAggregation(lggr logger.Logger, observationSlices []*valuespb.Value, f int) (*valuespb.Value, error) {
 	var reversedObservations []*valuespb.Value
-	for i, obsProto := range observations {
+	for i, obsProto := range observationSlices {
 		val, err := values.FromProto(obsProto)
 		if err != nil {
 			lggr.Warnf("failed to unmarshal observation value at index %d: %s", i, err)
@@ -310,7 +310,7 @@ func handleCommonPrefixAggregation(lggr logger.Logger, observations []*valuespb.
 		return nil, ErrInsufficientObservations
 	}
 
-	var commonPrefixElements []any
+	var commonPrefixElements []*valuespb.Value
 	for i := range maxListLength {
 		var elementsAtIndex []*valuespb.Value
 		for _, list := range lists {
@@ -328,19 +328,16 @@ func handleCommonPrefixAggregation(lggr logger.Logger, observations []*valuespb.
 			break
 		}
 
-		unwrappedIdenticalValue, err := values.FromProto(identicalValue)
-		if err != nil {
-			return nil, fmt.Errorf("failed to unwrap identical value at index %d: %w", i, err)
-		}
-		commonPrefixElements = append(commonPrefixElements, unwrappedIdenticalValue)
+		commonPrefixElements = append(commonPrefixElements, identicalValue)
 	}
 
-	resultList, err := values.NewList(commonPrefixElements)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create result list: %w", err)
-	}
-
-	return values.Proto(resultList), nil
+	return &valuespb.Value{
+		Value: &valuespb.Value_ListValue{
+			ListValue: &valuespb.List{
+				Fields: commonPrefixElements,
+			},
+		},
+	}, nil
 }
 
 // countTypes takes a slice of valuespb.Value and returns a map
