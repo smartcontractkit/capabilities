@@ -1,8 +1,6 @@
 module github.com/smartcontractkit/capabilities/workflows
 
-go 1.23.3
-
-toolchain go1.23.4
+go 1.23.4
 
 require github.com/smartcontractkit/chainlink-common v0.4.2-0.20250210122326-d2aaa393ca55
 
