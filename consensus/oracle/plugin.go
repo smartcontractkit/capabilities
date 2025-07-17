@@ -5,11 +5,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
+	"github.com/smartcontractkit/chainlink-common/pkg/values"
 	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb"
 	"github.com/smartcontractkit/libocr/quorumhelper"
@@ -25,6 +29,10 @@ import (
 )
 
 var _ ocr3types.ReportingPlugin[[]byte] = (*reportingPlugin)(nil)
+
+const InfoRequestID = "requestID"
+
+const ReportMetaDataPrependLength = 109
 
 type reportingPlugin struct {
 	batchSize int
@@ -102,6 +110,7 @@ func ToRequestMetaData(metadata ConsensusRequestMetadata) *oracletypes.RequestMe
 		WorkflowDonConfigVersion: metadata.WorkflowDonConfigVersion,
 		ReportId:                 metadata.ReportID,
 		KeyBundleId:              metadata.KeyBundleID,
+		RequestType:              metadata.RequestType,
 	}
 }
 
@@ -168,6 +177,7 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 			requestObservations = append(requestObservations, &oracletypes.RequestObservation{
 				Metadata:    queryRequest.Metadata,
 				Observation: marshalledValue,
+				ReceivedAt:  timestamppb.New(req.ReceivedAt),
 			})
 		case *pb.SimpleConsensusInputs_Error:
 			r.lggr.Debugw("observation is an error, skipping", "error", obs.Error, "requestID", req.ID())
@@ -182,6 +192,7 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 				requestObservations = append(requestObservations, &oracletypes.RequestObservation{
 					Metadata:    queryRequest.Metadata,
 					Observation: serialisedDefault,
+					ReceivedAt:  timestamppb.New(req.ReceivedAt),
 				})
 			} else {
 				r.lggr.Debugw("neither value, error or default is set in the observation input for request", "requestID", req.ID())
@@ -203,6 +214,11 @@ func (r *reportingPlugin) ObservationQuorum(ctx context.Context, outctx ocr3type
 	return quorumhelper.ObservationCountReachesObservationQuorum(quorumhelper.QuorumTwoFPlusOne, r.n, r.f, aos), nil
 }
 
+type timestampedObservation struct {
+	Observation *valuespb.Value
+	Timestamp   *timestamppb.Timestamp
+}
+
 func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeContext, query types.Query, attributedObservations []types.AttributedObservation) (ocr3types.Outcome, error) {
 	requestsQuery := &oracletypes.Query{}
 	err := proto.Unmarshal(query, requestsQuery)
@@ -211,7 +227,7 @@ func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeC
 	}
 
 	// Group attributed observations by request ID.
-	requestIDToObservations := make(map[string][]*valuespb.Value)
+	requestIDToObservations := make(map[string][]timestampedObservation)
 	for _, ao := range attributedObservations {
 		obs := &oracletypes.Observation{}
 		err := proto.Unmarshal(ao.Observation, obs)
@@ -229,7 +245,17 @@ func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeC
 				continue
 			}
 
-			requestIDToObservations[requestID] = append(requestIDToObservations[requestID], observationValue)
+			// Check the observation correctly marshals to a value to ensure it is a valid observation
+			_, err = values.FromProto(observationValue)
+			if err != nil {
+				r.lggr.Errorw("could not convert observation value proto to value", "error", err, "requestID", requestID, "observer", ao.Observer)
+				continue
+			}
+
+			requestIDToObservations[requestID] = append(requestIDToObservations[requestID], timestampedObservation{
+				Observation: observationValue,
+				Timestamp:   requestObservation.ReceivedAt,
+			})
 		}
 	}
 
@@ -248,9 +274,18 @@ func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeC
 			return nil, fmt.Errorf("could not unmarshal consensus descriptor for request %s: %w", requestID, err)
 		}
 
-		value, err := CalculateOutcomeForObservations(observations, consensusDescriptor, r.minimumObservations, r.f)
+		values := make([]*valuespb.Value, 0, len(observations))
+		timestamps := make([]*timestamppb.Timestamp, 0, len(observations))
+		for _, obs := range observations {
+			timestamps = append(timestamps, obs.Timestamp)
+			values = append(values, obs.Observation)
+		}
+
+		value, err := CalculateOutcomeForObservations(values, consensusDescriptor, r.minimumObservations, r.f)
 		if err != nil {
-			return nil, fmt.Errorf("failed to calculate outcome for observations %s: %w", requestID, err)
+			// TODO - should the err from CalculateOutcomeForObservations need to be distinguishable between a consensus failure and an error?
+			r.lggr.Errorw("failed to calculate outcome for observations", "requestID", requestID, "error", err)
+			continue
 		}
 
 		serialisedValue, err := proto.MarshalOptions{Deterministic: true}.Marshal(value)
@@ -259,8 +294,9 @@ func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeC
 		}
 
 		outcomes = append(outcomes, &oracletypes.RequestOutcome{
-			Metadata: request.Metadata,
-			Outcome:  serialisedValue,
+			Metadata:  request.Metadata,
+			Outcome:   serialisedValue,
+			Timestamp: calculateMedianTimestamp(timestamps),
 		})
 	}
 
@@ -272,6 +308,29 @@ func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeC
 	}
 
 	return serialisedOutcome, nil
+}
+
+func calculateMedianTimestamp(timestamps []*timestamppb.Timestamp) *timestamppb.Timestamp {
+	slices.SortFunc(timestamps, func(a, b *timestamppb.Timestamp) int {
+		if a.AsTime().Before(b.AsTime()) {
+			return -1
+		}
+		if a.AsTime().After(b.AsTime()) {
+			return 1
+		}
+		return 0
+	})
+	timestampCount := len(timestamps)
+	mid := timestampCount / 2
+
+	finalTimestamp := timestamps[mid]
+	if timestampCount%2 != 1 {
+		a := timestamps[mid-1].AsTime().Unix()
+		b := timestamps[mid].AsTime().Unix()
+		// a + (b-a) / 2 to avoid overflows
+		finalTimestamp = timestamppb.New(time.Unix(a+(b-a)/2, 0))
+	}
+	return finalTimestamp
 }
 
 func (r *reportingPlugin) Reports(ctx context.Context, seqNr uint64, outcome ocr3types.Outcome) ([]ocr3types.ReportPlus[[]byte], error) {
@@ -286,38 +345,55 @@ func (r *reportingPlugin) Reports(ctx context.Context, seqNr uint64, outcome ocr
 	for _, requestOutcome := range requestsOutcome.Outcomes {
 		reqMetadata := requestOutcome.Metadata
 
-		serialisedOutcome, err := proto.MarshalOptions{Deterministic: true}.Marshal(requestOutcome)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal request outcome for request id %s: %w", requestOutcome.Metadata.RequestId, err)
+		var report []byte
+		switch reqMetadata.RequestType {
+		case oracletypes.RequestType_VALUE_CONSENSUS:
+			report = requestOutcome.Outcome
+		case oracletypes.RequestType_REPORT_GENERATION:
+			// If the request type is report extract the report from the values.Value before signing it
+			serialisedValue := requestOutcome.Outcome
+			value := &valuespb.Value{}
+			if err := proto.Unmarshal(serialisedValue, value); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal value for request %s: %w", reqMetadata.RequestId, err)
+			}
+
+			report = value.GetBytesValue()
+			if report == nil {
+				return nil, fmt.Errorf("failed to get report bytes for request %s", reqMetadata.RequestId)
+			}
 		}
 
-		info := &ocrtypes.ReportInfo{
-			Id: &ocrtypes.Id{
-				WorkflowExecutionId:      reqMetadata.WorkflowExecutionId,
-				WorkflowId:               reqMetadata.WorkflowId,
-				WorkflowOwner:            reqMetadata.WorkflowOwner,
-				WorkflowName:             reqMetadata.WorkflowName,
-				ReportId:                 reqMetadata.ReportId,
-				WorkflowDonId:            reqMetadata.WorkflowDonId,
-				WorkflowDonConfigVersion: reqMetadata.WorkflowDonConfigVersion,
-				KeyId:                    reqMetadata.KeyBundleId,
-			},
-			ShouldReport: true,
+		meta := ocrtypes.Metadata{
+			Version:          1,
+			ExecutionID:      reqMetadata.WorkflowExecutionId,
+			Timestamp:        uint32(requestOutcome.Timestamp.AsTime().Unix()), // nolint
+			DONID:            reqMetadata.WorkflowDonId,
+			DONConfigVersion: reqMetadata.WorkflowDonConfigVersion,
+			WorkflowID:       reqMetadata.WorkflowId,
+			WorkflowName:     reqMetadata.WorkflowName,
+			WorkflowOwner:    reqMetadata.WorkflowOwner,
+			ReportID:         reqMetadata.ReportId,
 		}
 
-		// TODO - its as this point that an encoder should be applied for report generation
-
-		infob, err := marshalReportInfo(info, reqMetadata.KeyBundleId)
+		metadataPrepend, err := meta.Encode()
 		if err != nil {
-			r.lggr.Errorw("could not marshal id into ReportWithInfo for request", "requestID",
-				reqMetadata.RequestId, "error", err)
-			continue
+			return nil, fmt.Errorf("failed to encode metadata for request %s: %w", reqMetadata.RequestId, err)
+		}
+
+		reportWithMetaData := append(metadataPrepend, report...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to prepend metadata fields: %w", err)
+		}
+
+		info, err := createReportInfo(reqMetadata)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create report info for request %s: %w", reqMetadata.RequestId, err)
 		}
 
 		reports = append(reports, ocr3types.ReportPlus[[]byte]{
 			ReportWithInfo: ocr3types.ReportWithInfo[[]byte]{
-				Report: serialisedOutcome,
-				Info:   infob,
+				Report: reportWithMetaData,
+				Info:   info,
 			},
 			TransmissionScheduleOverride: nil,
 		})
@@ -325,6 +401,27 @@ func (r *reportingPlugin) Reports(ctx context.Context, seqNr uint64, outcome ocr
 
 	r.lggr.Debug("consensus plugin reports complete, number of reports", len(reports))
 	return reports, nil
+}
+
+// The report info is created as a map else the OCR3OnchainKeyringMultiChainAdapter will not work.
+// OCR3OnchainKeyringMultiChainAdapter (in core) requires that the key bundle id is added to the map with the key
+// "keyBundleName"
+func createReportInfo(reqMetadata *oracletypes.RequestMetaData) ([]byte, error) {
+	infos, err := structpb.NewStruct(map[string]any{
+		"keyBundleName": reqMetadata.KeyBundleId,
+		InfoRequestID:   reqMetadata.RequestId,
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to create structpb for report info: %w", err)
+	}
+
+	infoBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(infos)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal report info: %w", err)
+	}
+
+	return infoBytes, nil
 }
 
 func (r *reportingPlugin) ShouldAcceptAttestedReport(ctx context.Context, seqNr uint64, rwi ocr3types.ReportWithInfo[[]byte]) (bool, error) {
@@ -339,29 +436,4 @@ func (r *reportingPlugin) ShouldTransmitAcceptedReport(ctx context.Context, seqN
 
 func (r *reportingPlugin) Close() error {
 	return nil
-}
-
-// TODO for value consensus, multichain support is not required, so could arguably simplify and remove the use
-// of keybundleid.  If however we want to support report generation in the same capability this will be required.
-// If required make this reusable in common and use here as the multi key encoders in common rely on the encoding format being the same
-func marshalReportInfo(info *ocrtypes.ReportInfo, keyID string) ([]byte, error) {
-	p, err := proto.MarshalOptions{Deterministic: true}.Marshal(info)
-	if err != nil {
-		return nil, err
-	}
-
-	infos, err := structpb.NewStruct(map[string]any{
-		"keyBundleName": keyID,
-		"reportInfo":    p,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	ip, err := proto.MarshalOptions{Deterministic: true}.Marshal(infos)
-	if err != nil {
-		return nil, err
-	}
-
-	return ip, nil
 }

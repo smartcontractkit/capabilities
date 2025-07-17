@@ -6,6 +6,13 @@ option go_package = "consensus/oracle/types";
 
 package value_consensus_types;
 
+import "google/protobuf/timestamp.proto";
+
+enum RequestType {
+  VALUE_CONSENSUS = 0;
+  REPORT_GENERATION = 1;
+}
+
 message RequestMetaData {
   string request_id = 1;
   string workflow_execution_id = 2;
@@ -19,6 +26,8 @@ message RequestMetaData {
   string report_id = 9;
 
   string keyBundleId = 10;
+
+  RequestType request_type = 11;
 }
 
 message Request {
@@ -34,6 +43,7 @@ message Query {
 message RequestObservation {
   RequestMetaData metadata = 1;
   bytes observation = 2;
+  google.protobuf.Timestamp received_at = 3;
 }
 
 message Observation {
@@ -43,6 +53,7 @@ message Observation {
 message RequestOutcome {
   RequestMetaData metadata = 1;
   bytes outcome = 2;
+  google.protobuf.Timestamp timestamp = 3;
 }
 
 message Outcome {
