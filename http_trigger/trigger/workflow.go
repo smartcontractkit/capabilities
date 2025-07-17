@@ -20,7 +20,7 @@ var (
 type workflowStore struct {
 	mu                    sync.RWMutex
 	workflows             map[string]*workflow         // workflowID -> workflow metadata
-	workflowReferenceToID map[workflowReference]string // workflowReferenceID -> workflowID
+	workflowReferenceToID map[workflowReference]string // workflowReference -> workflowID
 	lggr                  logger.Logger
 }
 
