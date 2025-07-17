@@ -8,11 +8,9 @@ import (
 	"strings"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
-	evmservice "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
-
-	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2"
-	"github.com/smartcontractkit/chainlink-common/pkg/workflows/wasm/v2"
+	"github.com/smartcontractkit/cre-sdk-go/capabilities/blockchain/evm"
+	"github.com/smartcontractkit/cre-sdk-go/sdk"
+	"github.com/smartcontractkit/cre-sdk-go/sdk/wasm"
 	"gopkg.in/yaml.v3"
 )
 
@@ -58,7 +56,7 @@ func toByteSlices(addresses []string) [][]byte {
 	return result
 }
 
-func onTrigger(env *sdk.Environment[*runtimeConfig], _ sdk.Runtime, outputs *evmservice.Log) (string, error) {
+func onTrigger(env *sdk.Environment[*runtimeConfig], _ sdk.Runtime, outputs *evm.Log) (string, error) {
 	fmt.Println("OnTrigger called with outputs:", outputs)
 	decodedMessageString, err := printDecodedData(env.Config.Abi, env.Config.Event, outputs.Data)
 	if err != nil {
