@@ -5,6 +5,7 @@ package mockcap;
 
 
 import "google/protobuf/empty.proto";
+import "google/protobuf/any.proto";
 
 
 service MockCapability {
@@ -16,6 +17,9 @@ service MockCapability {
 
   // Create a mock capability and register it with the node
   rpc CreateCapability(CapabilityInfo) returns(google.protobuf.Empty) {}
+
+  // Remove a mock capability
+  rpc RemoveCapability(RemoveCapabilityRequest) returns(google.protobuf.Empty) {}
 
   // Send data through a mock trigger
   rpc SendTriggerEvent(SendTriggerEventRequest) returns(google.protobuf.Empty) {}
@@ -63,6 +67,8 @@ message TriggerRegistrationRequest{
   string TriggerID = 1;
   Metadata Metadata = 2;
   bytes Config = 3;
+   google.protobuf.Any Payload = 4;
+string      Method =5;
 }
 
 
@@ -75,8 +81,8 @@ message Metadata{
   uint32 WorkflowDonConfigVersion = 6;
   string ReferenceID = 7;
   string DecodedWorkflowName = 8;
+  repeated SpendLimit SpendLimit = 9;
 }
-
 
 message ListRequest {}
 message ListResponse {
@@ -101,10 +107,27 @@ message CapabilityInfo{
 }
 
 message SendTriggerEventRequest{
-  string ID = 1;
-  string EventID = 2;
-  bytes Payload = 3;
+  string TriggerID =1;
+  string TriggerType = 2;
+  string ID = 3;
+  bytes Outputs = 5;
+  google.protobuf.Any Payload = 6;
+  OCRTriggerEvent  OCREvent = 7;
+
 }
+message OCRTriggerEvent{
+  bytes ConfigDigest =1;
+   uint64   SeqNr        =2;
+   bytes   Report =3;
+   repeated OCRAttributedOnchainSignature  Sigs=4;
+}
+
+message OCRAttributedOnchainSignature{
+  bytes Signature =1;
+     uint32 Signer =2;
+}
+
+
 
 message RegisterToWorkflowRequest{
   string ID = 1;
@@ -130,6 +153,15 @@ message ExecutableRequest{
   Metadata RequestMetadata = 3;
   bytes Config = 4;
   bytes Inputs = 5;
+  google.protobuf.Any Payload = 6;
+  google.protobuf.Any ConfigPayload = 7;
+  string Method = 8;
+  string CapabilityId = 9;
+}
+
+message SpendLimit{
+  string SpendType = 1;
+  string Limit = 2;
 }
 
 message CapabilityResponse{
@@ -142,5 +174,6 @@ message ExecutableResponse{
   bytes Value = 3;
 }
 
-
-
+message RemoveCapabilityRequest{
+  string ID = 1;
+}

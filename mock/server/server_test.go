@@ -7,14 +7,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/smartcontractkit/freeport"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
+
+	"github.com/smartcontractkit/freeport"
 
 	"github.com/smartcontractkit/capabilities/libs/testutils"
 	"github.com/smartcontractkit/capabilities/mock/internal/pb"
@@ -26,13 +28,14 @@ func Test_ServerTrigger(t *testing.T) {
 	port := freeport.GetOne(t)
 	logger := testutils.NewLogger(t)
 	capabilitiesRegistry := testutils.NewCapabilitiesRegistry(t)
-	capabilitiesServer := &MockServer{Lggr: logger}
+	capabilitiesServer := New(logger)
 	require.NotNil(t, capabilitiesServer)
-
 	// Timeout is important to avoid hanging tests
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	servicetest.RunHealthy(t, capabilitiesServer)
+
+	require.Equal(t, capabilitiesServer.Name(), "MockServer", "server name should be MockServer")
 
 	require.NoError(t, capabilitiesServer.Initialise(
 		ctx,
@@ -50,9 +53,11 @@ type="trigger"
 		nil, // unused - pipelineRunner core.PipelineRunnerService
 		nil, // unused - relayerSet core.RelayerSet
 		nil, // unused - oracleFactory core.OracleFactory
+		nil, // unused - core.GatewayConnector
+		nil, // unused - core.Keystore
 	))
 
-	//Create trigger
+	// Create trigger
 	_, err := capabilitiesServer.MockRegistry.CreateCapability(ctx, &pb.CapabilityInfo{
 		ID:             "some-other-trigger@1.0.0",
 		CapabilityType: 1,
@@ -86,7 +91,7 @@ type="trigger"
 	require.NoError(t, capabilitiesRegistry.Contains([]string{"some-trigger@1.0.0"}))
 	require.NoError(t, capabilitiesRegistry.Contains([]string{"some-other-trigger@1.0.0"}))
 
-	//Register to trigger
+	// Register to trigger
 	r1, err := capabilitiesRegistry.GetTrigger(ctx, "some-trigger@1.0.0")
 	require.NoError(t, err)
 	r1Chan, err := r1.RegisterTrigger(ctx, capabilities.TriggerRegistrationRequest{
@@ -98,8 +103,27 @@ type="trigger"
 
 	e, err := values.NewMap(map[string]int{"some-key": 4231})
 	require.NoError(t, err)
-	payloadBytes, err := utils.MapToBytes(e)
+	outputs, err := utils.MapToBytes(e)
 	require.NoError(t, err)
+	payload := &anypb.Any{
+		TypeUrl: "some-type",
+		Value:   []byte("some-payload"),
+	}
+	ocrTriggerEvent := capabilities.OCRTriggerEvent{
+		ConfigDigest: []byte("ocr-config-digest"),
+		SeqNr:        32156,
+		Report:       []byte("ocr-report"),
+		Sigs: []capabilities.OCRAttributedOnchainSignature{
+			{
+				Signature: []byte("ocr-signature-1"),
+				Signer:    0,
+			},
+			{
+				Signature: []byte("ocr-signature-2"),
+				Signer:    1,
+			},
+		},
+	}
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -113,14 +137,29 @@ type="trigger"
 		}
 	}()
 
-	//Connect to grpc server
+	// Connect to grpc server
 	client, err := connectWithRetry(port, 5)
 	require.NoError(t, err)
 
 	_, err = client.SendTriggerEvent(ctx, &pb.SendTriggerEventRequest{
-		ID:      "some-trigger@1.0.0",
-		EventID: "eventID",
-		Payload: payloadBytes,
+		TriggerID: "some-trigger@1.0.0",
+		ID:        "eventID",
+		Outputs:   outputs,
+		Payload:   payload,
+		OCREvent: &pb.OCRTriggerEvent{
+			ConfigDigest: ocrTriggerEvent.ConfigDigest,
+			SeqNr:        ocrTriggerEvent.SeqNr,
+			Report:       ocrTriggerEvent.Report,
+			Sigs: []*pb.OCRAttributedOnchainSignature{
+				{Signature: ocrTriggerEvent.Sigs[0].Signature,
+					Signer: ocrTriggerEvent.Sigs[0].Signer,
+				},
+				{
+					Signature: ocrTriggerEvent.Sigs[1].Signature,
+					Signer:    ocrTriggerEvent.Sigs[1].Signer,
+				},
+			},
+		},
 	})
 	require.NoError(t, err)
 
@@ -156,9 +195,11 @@ type="target"
 		nil, // unused - pipelineRunner core.PipelineRunnerService
 		nil, // unused - relayerSet core.RelayerSet
 		nil, // unused - oracleFactory core.OracleFactory
+		nil, // unused - core.GatewayConnector
+		nil, // unused - core.Keystore
 	))
 
-	//Create trigger
+	// Create trigger
 	_, err := capabilitiesServer.MockRegistry.CreateCapability(ctx, &pb.CapabilityInfo{
 		ID:             "some-other-target@1.0.0",
 		CapabilityType: 4,
@@ -192,7 +233,7 @@ type="target"
 	require.NoError(t, capabilitiesRegistry.Contains([]string{"some-target@1.0.0"}))
 	require.NoError(t, capabilitiesRegistry.Contains([]string{"some-other-target@1.0.0"}))
 
-	//Register to target
+	// Register to target
 	r1, err := capabilitiesRegistry.GetTarget(ctx, "some-target@1.0.0")
 	require.NoError(t, err)
 	err = r1.RegisterToWorkflow(ctx, capabilities.RegisterToWorkflowRequest{
@@ -209,7 +250,7 @@ type="target"
 	})
 	require.NoError(t, err)
 
-	//Connect to grpc server
+	// Connect to grpc server
 	conn, err := grpc.NewClient(fmt.Sprintf("127.0.0.1:%d", port), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	require.NoError(t, err)
 	client := pb.NewMockCapabilityClient(conn)
@@ -291,4 +332,87 @@ func connectWithRetry(port int, maxAttempts int) (pb.MockCapabilityClient, error
 		}
 	}
 	return nil, fmt.Errorf("failed to connect after %d attempts: %w", maxAttempts, lastErr)
+}
+
+func TestMockServer_Initialise_IncompleteData(t *testing.T) {
+	t.Parallel()
+	logger := testutils.NewLogger(t)
+	capabilitiesRegistry := testutils.NewCapabilitiesRegistry(t)
+	ctx := context.Background()
+
+	// Test case 1: Empty config
+	t.Run("empty config", func(t *testing.T) {
+		server := New(logger)
+		err := server.Initialise(ctx, "", nil, nil, capabilitiesRegistry, nil, nil, nil, nil, nil, nil)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "missing config")
+	})
+
+	// Test case 2: Config with no port
+	t.Run("missing port", func(t *testing.T) {
+		server := New(logger)
+		err := server.Initialise(ctx, `
+			[[DefaultMocks]]
+			id="some-trigger@1.0.0"
+			description="test trigger"
+			type="trigger"
+		`, nil, nil, capabilitiesRegistry, nil, nil, nil, nil, nil, nil)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "must specify a port number")
+	})
+
+	// Test case 3: Config with port but no default mocks (valid but empty)
+	t.Run("no default mocks", func(t *testing.T) {
+		server := New(logger)
+		err := server.Initialise(ctx, `
+			port=9999
+		`, nil, nil, capabilitiesRegistry, nil, nil, nil, nil, nil, nil)
+		require.NoError(t, err)
+		require.Empty(t, server.MockRegistry.Triggers)
+		require.Empty(t, server.MockRegistry.Executables)
+	})
+
+	// Test case 4: Config with invalid TOML syntax
+	t.Run("invalid TOML", func(t *testing.T) {
+		server := New(logger)
+		err := server.Initialise(ctx, `
+			port=9999
+			[[DefaultMocks] # Missing closing bracket
+			id="some-trigger@1.0.0"
+			description="test trigger"
+			type="trigger"
+		`, nil, nil, capabilitiesRegistry, nil, nil, nil, nil, nil, nil)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to unmarshal config")
+	})
+
+	// Test case 5: Config with missing fields in default mocks
+	t.Run("missing type field", func(t *testing.T) {
+		server := New(logger)
+		err := server.Initialise(ctx, `
+			port=9999
+			[[DefaultMocks]]
+			id="some-trigger@1.0.0"
+			description="test trigger"
+			# type field missing
+		`, nil, nil, capabilitiesRegistry, nil, nil, nil, nil, nil, nil)
+		require.Contains(t, err.Error(), "capability type not supported")
+		require.Empty(t, server.MockRegistry.Triggers)
+		require.Empty(t, server.MockRegistry.Executables)
+	})
+
+	// Test case 6: Config with invalid capability type
+	t.Run("invalid capability type", func(t *testing.T) {
+		server := New(logger)
+		err := server.Initialise(ctx, `
+			port=9999
+			[[DefaultMocks]]
+			id="some-trigger@1.0.0"
+			description="test trigger"
+			type="invalid-type"
+		`, nil, nil, capabilitiesRegistry, nil, nil, nil, nil, nil, nil)
+		require.Contains(t, err.Error(), "capability type not supported")
+		require.Empty(t, server.MockRegistry.Triggers)
+		require.Empty(t, server.MockRegistry.Executables)
+	})
 }

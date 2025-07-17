@@ -9,6 +9,7 @@ package pb
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	anypb "google.golang.org/protobuf/types/known/anypb"
 	emptypb "google.golang.org/protobuf/types/known/emptypb"
 	reflect "reflect"
 	sync "sync"
@@ -282,6 +283,8 @@ type TriggerRegistrationRequest struct {
 	TriggerID     string                 `protobuf:"bytes,1,opt,name=TriggerID,proto3" json:"TriggerID,omitempty"`
 	Metadata      *Metadata              `protobuf:"bytes,2,opt,name=Metadata,proto3" json:"Metadata,omitempty"`
 	Config        []byte                 `protobuf:"bytes,3,opt,name=Config,proto3" json:"Config,omitempty"`
+	Payload       *anypb.Any             `protobuf:"bytes,4,opt,name=Payload,proto3" json:"Payload,omitempty"`
+	Method        string                 `protobuf:"bytes,5,opt,name=Method,proto3" json:"Method,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -337,6 +340,20 @@ func (x *TriggerRegistrationRequest) GetConfig() []byte {
 	return nil
 }
 
+func (x *TriggerRegistrationRequest) GetPayload() *anypb.Any {
+	if x != nil {
+		return x.Payload
+	}
+	return nil
+}
+
+func (x *TriggerRegistrationRequest) GetMethod() string {
+	if x != nil {
+		return x.Method
+	}
+	return ""
+}
+
 type Metadata struct {
 	state                    protoimpl.MessageState `protogen:"open.v1"`
 	WorkflowID               string                 `protobuf:"bytes,1,opt,name=WorkflowID,proto3" json:"WorkflowID,omitempty"`
@@ -347,6 +364,7 @@ type Metadata struct {
 	WorkflowDonConfigVersion uint32                 `protobuf:"varint,6,opt,name=WorkflowDonConfigVersion,proto3" json:"WorkflowDonConfigVersion,omitempty"`
 	ReferenceID              string                 `protobuf:"bytes,7,opt,name=ReferenceID,proto3" json:"ReferenceID,omitempty"`
 	DecodedWorkflowName      string                 `protobuf:"bytes,8,opt,name=DecodedWorkflowName,proto3" json:"DecodedWorkflowName,omitempty"`
+	SpendLimit               []*SpendLimit          `protobuf:"bytes,9,rep,name=SpendLimit,proto3" json:"SpendLimit,omitempty"`
 	unknownFields            protoimpl.UnknownFields
 	sizeCache                protoimpl.SizeCache
 }
@@ -435,6 +453,13 @@ func (x *Metadata) GetDecodedWorkflowName() string {
 		return x.DecodedWorkflowName
 	}
 	return ""
+}
+
+func (x *Metadata) GetSpendLimit() []*SpendLimit {
+	if x != nil {
+		return x.SpendLimit
+	}
+	return nil
 }
 
 type ListRequest struct {
@@ -631,9 +656,12 @@ func (x *CapabilityInfo) GetIsLocal() bool {
 
 type SendTriggerEventRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ID            string                 `protobuf:"bytes,1,opt,name=ID,proto3" json:"ID,omitempty"`
-	EventID       string                 `protobuf:"bytes,2,opt,name=EventID,proto3" json:"EventID,omitempty"`
-	Payload       []byte                 `protobuf:"bytes,3,opt,name=Payload,proto3" json:"Payload,omitempty"`
+	TriggerID     string                 `protobuf:"bytes,1,opt,name=TriggerID,proto3" json:"TriggerID,omitempty"`
+	TriggerType   string                 `protobuf:"bytes,2,opt,name=TriggerType,proto3" json:"TriggerType,omitempty"`
+	ID            string                 `protobuf:"bytes,3,opt,name=ID,proto3" json:"ID,omitempty"`
+	Outputs       []byte                 `protobuf:"bytes,5,opt,name=Outputs,proto3" json:"Outputs,omitempty"`
+	Payload       *anypb.Any             `protobuf:"bytes,6,opt,name=Payload,proto3" json:"Payload,omitempty"`
+	OCREvent      *OCRTriggerEvent       `protobuf:"bytes,7,opt,name=OCREvent,proto3" json:"OCREvent,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -668,6 +696,20 @@ func (*SendTriggerEventRequest) Descriptor() ([]byte, []int) {
 	return file_proxy_proto_rawDescGZIP(), []int{10}
 }
 
+func (x *SendTriggerEventRequest) GetTriggerID() string {
+	if x != nil {
+		return x.TriggerID
+	}
+	return ""
+}
+
+func (x *SendTriggerEventRequest) GetTriggerType() string {
+	if x != nil {
+		return x.TriggerType
+	}
+	return ""
+}
+
 func (x *SendTriggerEventRequest) GetID() string {
 	if x != nil {
 		return x.ID
@@ -675,18 +717,145 @@ func (x *SendTriggerEventRequest) GetID() string {
 	return ""
 }
 
-func (x *SendTriggerEventRequest) GetEventID() string {
+func (x *SendTriggerEventRequest) GetOutputs() []byte {
 	if x != nil {
-		return x.EventID
+		return x.Outputs
 	}
-	return ""
+	return nil
 }
 
-func (x *SendTriggerEventRequest) GetPayload() []byte {
+func (x *SendTriggerEventRequest) GetPayload() *anypb.Any {
 	if x != nil {
 		return x.Payload
 	}
 	return nil
+}
+
+func (x *SendTriggerEventRequest) GetOCREvent() *OCRTriggerEvent {
+	if x != nil {
+		return x.OCREvent
+	}
+	return nil
+}
+
+type OCRTriggerEvent struct {
+	state         protoimpl.MessageState           `protogen:"open.v1"`
+	ConfigDigest  []byte                           `protobuf:"bytes,1,opt,name=ConfigDigest,proto3" json:"ConfigDigest,omitempty"`
+	SeqNr         uint64                           `protobuf:"varint,2,opt,name=SeqNr,proto3" json:"SeqNr,omitempty"`
+	Report        []byte                           `protobuf:"bytes,3,opt,name=Report,proto3" json:"Report,omitempty"`
+	Sigs          []*OCRAttributedOnchainSignature `protobuf:"bytes,4,rep,name=Sigs,proto3" json:"Sigs,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OCRTriggerEvent) Reset() {
+	*x = OCRTriggerEvent{}
+	mi := &file_proxy_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OCRTriggerEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OCRTriggerEvent) ProtoMessage() {}
+
+func (x *OCRTriggerEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_proxy_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OCRTriggerEvent.ProtoReflect.Descriptor instead.
+func (*OCRTriggerEvent) Descriptor() ([]byte, []int) {
+	return file_proxy_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *OCRTriggerEvent) GetConfigDigest() []byte {
+	if x != nil {
+		return x.ConfigDigest
+	}
+	return nil
+}
+
+func (x *OCRTriggerEvent) GetSeqNr() uint64 {
+	if x != nil {
+		return x.SeqNr
+	}
+	return 0
+}
+
+func (x *OCRTriggerEvent) GetReport() []byte {
+	if x != nil {
+		return x.Report
+	}
+	return nil
+}
+
+func (x *OCRTriggerEvent) GetSigs() []*OCRAttributedOnchainSignature {
+	if x != nil {
+		return x.Sigs
+	}
+	return nil
+}
+
+type OCRAttributedOnchainSignature struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Signature     []byte                 `protobuf:"bytes,1,opt,name=Signature,proto3" json:"Signature,omitempty"`
+	Signer        uint32                 `protobuf:"varint,2,opt,name=Signer,proto3" json:"Signer,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OCRAttributedOnchainSignature) Reset() {
+	*x = OCRAttributedOnchainSignature{}
+	mi := &file_proxy_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OCRAttributedOnchainSignature) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OCRAttributedOnchainSignature) ProtoMessage() {}
+
+func (x *OCRAttributedOnchainSignature) ProtoReflect() protoreflect.Message {
+	mi := &file_proxy_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OCRAttributedOnchainSignature.ProtoReflect.Descriptor instead.
+func (*OCRAttributedOnchainSignature) Descriptor() ([]byte, []int) {
+	return file_proxy_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *OCRAttributedOnchainSignature) GetSignature() []byte {
+	if x != nil {
+		return x.Signature
+	}
+	return nil
+}
+
+func (x *OCRAttributedOnchainSignature) GetSigner() uint32 {
+	if x != nil {
+		return x.Signer
+	}
+	return 0
 }
 
 type RegisterToWorkflowRequest struct {
@@ -701,7 +870,7 @@ type RegisterToWorkflowRequest struct {
 
 func (x *RegisterToWorkflowRequest) Reset() {
 	*x = RegisterToWorkflowRequest{}
-	mi := &file_proxy_proto_msgTypes[11]
+	mi := &file_proxy_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -713,7 +882,7 @@ func (x *RegisterToWorkflowRequest) String() string {
 func (*RegisterToWorkflowRequest) ProtoMessage() {}
 
 func (x *RegisterToWorkflowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proxy_proto_msgTypes[11]
+	mi := &file_proxy_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -726,7 +895,7 @@ func (x *RegisterToWorkflowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegisterToWorkflowRequest.ProtoReflect.Descriptor instead.
 func (*RegisterToWorkflowRequest) Descriptor() ([]byte, []int) {
-	return file_proxy_proto_rawDescGZIP(), []int{11}
+	return file_proxy_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *RegisterToWorkflowRequest) GetID() string {
@@ -768,7 +937,7 @@ type RegistrationMetadata struct {
 
 func (x *RegistrationMetadata) Reset() {
 	*x = RegistrationMetadata{}
-	mi := &file_proxy_proto_msgTypes[12]
+	mi := &file_proxy_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -780,7 +949,7 @@ func (x *RegistrationMetadata) String() string {
 func (*RegistrationMetadata) ProtoMessage() {}
 
 func (x *RegistrationMetadata) ProtoReflect() protoreflect.Message {
-	mi := &file_proxy_proto_msgTypes[12]
+	mi := &file_proxy_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -793,7 +962,7 @@ func (x *RegistrationMetadata) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegistrationMetadata.ProtoReflect.Descriptor instead.
 func (*RegistrationMetadata) Descriptor() ([]byte, []int) {
-	return file_proxy_proto_rawDescGZIP(), []int{12}
+	return file_proxy_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *RegistrationMetadata) GetWorkflowID() string {
@@ -827,7 +996,7 @@ type UnregisterFromWorkflowRequest struct {
 
 func (x *UnregisterFromWorkflowRequest) Reset() {
 	*x = UnregisterFromWorkflowRequest{}
-	mi := &file_proxy_proto_msgTypes[13]
+	mi := &file_proxy_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -839,7 +1008,7 @@ func (x *UnregisterFromWorkflowRequest) String() string {
 func (*UnregisterFromWorkflowRequest) ProtoMessage() {}
 
 func (x *UnregisterFromWorkflowRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proxy_proto_msgTypes[13]
+	mi := &file_proxy_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -852,7 +1021,7 @@ func (x *UnregisterFromWorkflowRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UnregisterFromWorkflowRequest.ProtoReflect.Descriptor instead.
 func (*UnregisterFromWorkflowRequest) Descriptor() ([]byte, []int) {
-	return file_proxy_proto_rawDescGZIP(), []int{13}
+	return file_proxy_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *UnregisterFromWorkflowRequest) GetRegistrationMetadata() *RegistrationMetadata {
@@ -876,13 +1045,17 @@ type ExecutableRequest struct {
 	RequestMetadata *Metadata              `protobuf:"bytes,3,opt,name=RequestMetadata,proto3" json:"RequestMetadata,omitempty"`
 	Config          []byte                 `protobuf:"bytes,4,opt,name=Config,proto3" json:"Config,omitempty"`
 	Inputs          []byte                 `protobuf:"bytes,5,opt,name=Inputs,proto3" json:"Inputs,omitempty"`
+	Payload         *anypb.Any             `protobuf:"bytes,6,opt,name=Payload,proto3" json:"Payload,omitempty"`
+	ConfigPayload   *anypb.Any             `protobuf:"bytes,7,opt,name=ConfigPayload,proto3" json:"ConfigPayload,omitempty"`
+	Method          string                 `protobuf:"bytes,8,opt,name=Method,proto3" json:"Method,omitempty"`
+	CapabilityId    string                 `protobuf:"bytes,9,opt,name=CapabilityId,proto3" json:"CapabilityId,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
 
 func (x *ExecutableRequest) Reset() {
 	*x = ExecutableRequest{}
-	mi := &file_proxy_proto_msgTypes[14]
+	mi := &file_proxy_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -894,7 +1067,7 @@ func (x *ExecutableRequest) String() string {
 func (*ExecutableRequest) ProtoMessage() {}
 
 func (x *ExecutableRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proxy_proto_msgTypes[14]
+	mi := &file_proxy_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -907,7 +1080,7 @@ func (x *ExecutableRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecutableRequest.ProtoReflect.Descriptor instead.
 func (*ExecutableRequest) Descriptor() ([]byte, []int) {
-	return file_proxy_proto_rawDescGZIP(), []int{14}
+	return file_proxy_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ExecutableRequest) GetID() string {
@@ -945,6 +1118,86 @@ func (x *ExecutableRequest) GetInputs() []byte {
 	return nil
 }
 
+func (x *ExecutableRequest) GetPayload() *anypb.Any {
+	if x != nil {
+		return x.Payload
+	}
+	return nil
+}
+
+func (x *ExecutableRequest) GetConfigPayload() *anypb.Any {
+	if x != nil {
+		return x.ConfigPayload
+	}
+	return nil
+}
+
+func (x *ExecutableRequest) GetMethod() string {
+	if x != nil {
+		return x.Method
+	}
+	return ""
+}
+
+func (x *ExecutableRequest) GetCapabilityId() string {
+	if x != nil {
+		return x.CapabilityId
+	}
+	return ""
+}
+
+type SpendLimit struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SpendType     string                 `protobuf:"bytes,1,opt,name=SpendType,proto3" json:"SpendType,omitempty"`
+	Limit         string                 `protobuf:"bytes,2,opt,name=Limit,proto3" json:"Limit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SpendLimit) Reset() {
+	*x = SpendLimit{}
+	mi := &file_proxy_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SpendLimit) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SpendLimit) ProtoMessage() {}
+
+func (x *SpendLimit) ProtoReflect() protoreflect.Message {
+	mi := &file_proxy_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SpendLimit.ProtoReflect.Descriptor instead.
+func (*SpendLimit) Descriptor() ([]byte, []int) {
+	return file_proxy_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *SpendLimit) GetSpendType() string {
+	if x != nil {
+		return x.SpendType
+	}
+	return ""
+}
+
+func (x *SpendLimit) GetLimit() string {
+	if x != nil {
+		return x.Limit
+	}
+	return ""
+}
+
 type CapabilityResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Value         []byte                 `protobuf:"bytes,1,opt,name=Value,proto3" json:"Value,omitempty"`
@@ -954,7 +1207,7 @@ type CapabilityResponse struct {
 
 func (x *CapabilityResponse) Reset() {
 	*x = CapabilityResponse{}
-	mi := &file_proxy_proto_msgTypes[15]
+	mi := &file_proxy_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -966,7 +1219,7 @@ func (x *CapabilityResponse) String() string {
 func (*CapabilityResponse) ProtoMessage() {}
 
 func (x *CapabilityResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proxy_proto_msgTypes[15]
+	mi := &file_proxy_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -979,7 +1232,7 @@ func (x *CapabilityResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CapabilityResponse.ProtoReflect.Descriptor instead.
 func (*CapabilityResponse) Descriptor() ([]byte, []int) {
-	return file_proxy_proto_rawDescGZIP(), []int{15}
+	return file_proxy_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *CapabilityResponse) GetValue() []byte {
@@ -1000,7 +1253,7 @@ type ExecutableResponse struct {
 
 func (x *ExecutableResponse) Reset() {
 	*x = ExecutableResponse{}
-	mi := &file_proxy_proto_msgTypes[16]
+	mi := &file_proxy_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1012,7 +1265,7 @@ func (x *ExecutableResponse) String() string {
 func (*ExecutableResponse) ProtoMessage() {}
 
 func (x *ExecutableResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proxy_proto_msgTypes[16]
+	mi := &file_proxy_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1025,7 +1278,7 @@ func (x *ExecutableResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExecutableResponse.ProtoReflect.Descriptor instead.
 func (*ExecutableResponse) Descriptor() ([]byte, []int) {
-	return file_proxy_proto_rawDescGZIP(), []int{16}
+	return file_proxy_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ExecutableResponse) GetID() string {
@@ -1049,11 +1302,55 @@ func (x *ExecutableResponse) GetValue() []byte {
 	return nil
 }
 
+type RemoveCapabilityRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ID            string                 `protobuf:"bytes,1,opt,name=ID,proto3" json:"ID,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveCapabilityRequest) Reset() {
+	*x = RemoveCapabilityRequest{}
+	mi := &file_proxy_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveCapabilityRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveCapabilityRequest) ProtoMessage() {}
+
+func (x *RemoveCapabilityRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proxy_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveCapabilityRequest.ProtoReflect.Descriptor instead.
+func (*RemoveCapabilityRequest) Descriptor() ([]byte, []int) {
+	return file_proxy_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *RemoveCapabilityRequest) GetID() string {
+	if x != nil {
+		return x.ID
+	}
+	return ""
+}
+
 var File_proxy_proto protoreflect.FileDescriptor
 
 const file_proxy_proto_rawDesc = "" +
 	"\n" +
-	"\vproxy.proto\x12\amockcap\x1a\x1bgoogle/protobuf/empty.proto\"Z\n" +
+	"\vproxy.proto\x12\amockcap\x1a\x1bgoogle/protobuf/empty.proto\x1a\x19google/protobuf/any.proto\"Z\n" +
 	"\fTriggerEvent\x12 \n" +
 	"\vTriggerType\x18\x01 \x01(\tR\vTriggerType\x12\x0e\n" +
 	"\x02ID\x18\x02 \x01(\tR\x02ID\x12\x18\n" +
@@ -1064,11 +1361,13 @@ const file_proxy_proto_rawDesc = "" +
 	"\x1cGetTriggerSubscribersRequest\x12\x0e\n" +
 	"\x02ID\x18\x01 \x01(\tR\x02ID\"A\n" +
 	"\x1dGetTriggerSubscribersResponse\x12 \n" +
-	"\vWorkflowIDs\x18\x01 \x03(\tR\vWorkflowIDs\"\x81\x01\n" +
+	"\vWorkflowIDs\x18\x01 \x03(\tR\vWorkflowIDs\"\xc9\x01\n" +
 	"\x1aTriggerRegistrationRequest\x12\x1c\n" +
 	"\tTriggerID\x18\x01 \x01(\tR\tTriggerID\x12-\n" +
 	"\bMetadata\x18\x02 \x01(\v2\x11.mockcap.MetadataR\bMetadata\x12\x16\n" +
-	"\x06Config\x18\x03 \x01(\fR\x06Config\"\xdc\x02\n" +
+	"\x06Config\x18\x03 \x01(\fR\x06Config\x12.\n" +
+	"\aPayload\x18\x04 \x01(\v2\x14.google.protobuf.AnyR\aPayload\x12\x16\n" +
+	"\x06Method\x18\x05 \x01(\tR\x06Method\"\x91\x03\n" +
 	"\bMetadata\x12\x1e\n" +
 	"\n" +
 	"WorkflowID\x18\x01 \x01(\tR\n" +
@@ -1079,7 +1378,10 @@ const file_proxy_proto_rawDesc = "" +
 	"\rWorkflowDonID\x18\x05 \x01(\rR\rWorkflowDonID\x12:\n" +
 	"\x18WorkflowDonConfigVersion\x18\x06 \x01(\rR\x18WorkflowDonConfigVersion\x12 \n" +
 	"\vReferenceID\x18\a \x01(\tR\vReferenceID\x120\n" +
-	"\x13DecodedWorkflowName\x18\b \x01(\tR\x13DecodedWorkflowName\"\r\n" +
+	"\x13DecodedWorkflowName\x18\b \x01(\tR\x13DecodedWorkflowName\x123\n" +
+	"\n" +
+	"SpendLimit\x18\t \x03(\v2\x13.mockcap.SpendLimitR\n" +
+	"SpendLimit\"\r\n" +
 	"\vListRequest\"C\n" +
 	"\fListResponse\x123\n" +
 	"\bcapInfos\x18\x01 \x03(\v2\x17.mockcap.CapabilityInfoR\bcapInfos\"\x05\n" +
@@ -1089,11 +1391,22 @@ const file_proxy_proto_rawDesc = "" +
 	"\x0eCapabilityType\x18\x02 \x01(\x0e2\x17.mockcap.CapabilityTypeR\x0eCapabilityType\x12 \n" +
 	"\vDescription\x18\x03 \x01(\tR\vDescription\x12\x1e\n" +
 	"\x03DON\x18\x04 \x01(\v2\f.mockcap.DONR\x03DON\x12\x18\n" +
-	"\aIsLocal\x18\x05 \x01(\bR\aIsLocal\"]\n" +
-	"\x17SendTriggerEventRequest\x12\x0e\n" +
-	"\x02ID\x18\x01 \x01(\tR\x02ID\x12\x18\n" +
-	"\aEventID\x18\x02 \x01(\tR\aEventID\x12\x18\n" +
-	"\aPayload\x18\x03 \x01(\fR\aPayload\"\xd7\x01\n" +
+	"\aIsLocal\x18\x05 \x01(\bR\aIsLocal\"\xe9\x01\n" +
+	"\x17SendTriggerEventRequest\x12\x1c\n" +
+	"\tTriggerID\x18\x01 \x01(\tR\tTriggerID\x12 \n" +
+	"\vTriggerType\x18\x02 \x01(\tR\vTriggerType\x12\x0e\n" +
+	"\x02ID\x18\x03 \x01(\tR\x02ID\x12\x18\n" +
+	"\aOutputs\x18\x05 \x01(\fR\aOutputs\x12.\n" +
+	"\aPayload\x18\x06 \x01(\v2\x14.google.protobuf.AnyR\aPayload\x124\n" +
+	"\bOCREvent\x18\a \x01(\v2\x18.mockcap.OCRTriggerEventR\bOCREvent\"\x9f\x01\n" +
+	"\x0fOCRTriggerEvent\x12\"\n" +
+	"\fConfigDigest\x18\x01 \x01(\fR\fConfigDigest\x12\x14\n" +
+	"\x05SeqNr\x18\x02 \x01(\x04R\x05SeqNr\x12\x16\n" +
+	"\x06Report\x18\x03 \x01(\fR\x06Report\x12:\n" +
+	"\x04Sigs\x18\x04 \x03(\v2&.mockcap.OCRAttributedOnchainSignatureR\x04Sigs\"U\n" +
+	"\x1dOCRAttributedOnchainSignature\x12\x1c\n" +
+	"\tSignature\x18\x01 \x01(\fR\tSignature\x12\x16\n" +
+	"\x06Signer\x18\x02 \x01(\rR\x06Signer\"\xd7\x01\n" +
 	"\x19RegisterToWorkflowRequest\x12\x0e\n" +
 	"\x02ID\x18\x01 \x01(\tR\x02ID\x12?\n" +
 	"\x0eCapabilityType\x18\x02 \x01(\x0e2\x17.mockcap.CapabilityTypeR\x0eCapabilityType\x12Q\n" +
@@ -1107,19 +1420,29 @@ const file_proxy_proto_rawDesc = "" +
 	"\vReferenceID\x18\x03 \x01(\tR\vReferenceID\"\x8a\x01\n" +
 	"\x1dUnregisterFromWorkflowRequest\x12Q\n" +
 	"\x14RegistrationMetadata\x18\x01 \x01(\v2\x1d.mockcap.RegistrationMetadataR\x14RegistrationMetadata\x12\x16\n" +
-	"\x06Config\x18\x02 \x01(\fR\x06Config\"\xd1\x01\n" +
+	"\x06Config\x18\x02 \x01(\fR\x06Config\"\xf9\x02\n" +
 	"\x11ExecutableRequest\x12\x0e\n" +
 	"\x02ID\x18\x01 \x01(\tR\x02ID\x12?\n" +
 	"\x0eCapabilityType\x18\x02 \x01(\x0e2\x17.mockcap.CapabilityTypeR\x0eCapabilityType\x12;\n" +
 	"\x0fRequestMetadata\x18\x03 \x01(\v2\x11.mockcap.MetadataR\x0fRequestMetadata\x12\x16\n" +
 	"\x06Config\x18\x04 \x01(\fR\x06Config\x12\x16\n" +
-	"\x06Inputs\x18\x05 \x01(\fR\x06Inputs\"*\n" +
+	"\x06Inputs\x18\x05 \x01(\fR\x06Inputs\x12.\n" +
+	"\aPayload\x18\x06 \x01(\v2\x14.google.protobuf.AnyR\aPayload\x12:\n" +
+	"\rConfigPayload\x18\a \x01(\v2\x14.google.protobuf.AnyR\rConfigPayload\x12\x16\n" +
+	"\x06Method\x18\b \x01(\tR\x06Method\x12\"\n" +
+	"\fCapabilityId\x18\t \x01(\tR\fCapabilityId\"@\n" +
+	"\n" +
+	"SpendLimit\x12\x1c\n" +
+	"\tSpendType\x18\x01 \x01(\tR\tSpendType\x12\x14\n" +
+	"\x05Limit\x18\x02 \x01(\tR\x05Limit\"*\n" +
 	"\x12CapabilityResponse\x12\x14\n" +
 	"\x05Value\x18\x01 \x01(\fR\x05Value\"{\n" +
 	"\x12ExecutableResponse\x12\x0e\n" +
 	"\x02ID\x18\x01 \x01(\tR\x02ID\x12?\n" +
 	"\x0eCapabilityType\x18\x02 \x01(\x0e2\x17.mockcap.CapabilityTypeR\x0eCapabilityType\x12\x14\n" +
-	"\x05Value\x18\x03 \x01(\fR\x05Value*Q\n" +
+	"\x05Value\x18\x03 \x01(\fR\x05Value\")\n" +
+	"\x17RemoveCapabilityRequest\x12\x0e\n" +
+	"\x02ID\x18\x01 \x01(\tR\x02ID*Q\n" +
 	"\x0eCapabilityType\x12\v\n" +
 	"\aUnknown\x10\x00\x12\v\n" +
 	"\aTrigger\x10\x01\x12\n" +
@@ -1127,11 +1450,12 @@ const file_proxy_proto_rawDesc = "" +
 	"\x06Action\x10\x02\x12\r\n" +
 	"\tConsensus\x10\x03\x12\n" +
 	"\n" +
-	"\x06Target\x10\x042\xba\x06\n" +
+	"\x06Target\x10\x042\x8a\a\n" +
 	"\x0eMockCapability\x125\n" +
 	"\x04List\x12\x14.mockcap.ListRequest\x1a\x15.mockcap.ListResponse\"\x00\x12h\n" +
 	"\x15GetTriggerSubscribers\x12%.mockcap.GetTriggerSubscribersRequest\x1a&.mockcap.GetTriggerSubscribersResponse\"\x00\x12E\n" +
 	"\x10CreateCapability\x12\x17.mockcap.CapabilityInfo\x1a\x16.google.protobuf.Empty\"\x00\x12N\n" +
+	"\x10RemoveCapability\x12 .mockcap.RemoveCapabilityRequest\x1a\x16.google.protobuf.Empty\"\x00\x12N\n" +
 	"\x10SendTriggerEvent\x12 .mockcap.SendTriggerEventRequest\x1a\x16.google.protobuf.Empty\"\x00\x12T\n" +
 	"\x0fRegisterTrigger\x12#.mockcap.TriggerRegistrationRequest\x1a\x18.mockcap.TriggerResponse\"\x000\x01\x12R\n" +
 	"\x11UnregisterTrigger\x12#.mockcap.TriggerRegistrationRequest\x1a\x16.google.protobuf.Empty\"\x00\x12P\n" +
@@ -1153,7 +1477,7 @@ func file_proxy_proto_rawDescGZIP() []byte {
 }
 
 var file_proxy_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_proxy_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_proxy_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_proxy_proto_goTypes = []any{
 	(CapabilityType)(0),                   // 0: mockcap.CapabilityType
 	(*TriggerEvent)(nil),                  // 1: mockcap.TriggerEvent
@@ -1167,51 +1491,65 @@ var file_proxy_proto_goTypes = []any{
 	(*DON)(nil),                           // 9: mockcap.DON
 	(*CapabilityInfo)(nil),                // 10: mockcap.CapabilityInfo
 	(*SendTriggerEventRequest)(nil),       // 11: mockcap.SendTriggerEventRequest
-	(*RegisterToWorkflowRequest)(nil),     // 12: mockcap.RegisterToWorkflowRequest
-	(*RegistrationMetadata)(nil),          // 13: mockcap.RegistrationMetadata
-	(*UnregisterFromWorkflowRequest)(nil), // 14: mockcap.UnregisterFromWorkflowRequest
-	(*ExecutableRequest)(nil),             // 15: mockcap.ExecutableRequest
-	(*CapabilityResponse)(nil),            // 16: mockcap.CapabilityResponse
-	(*ExecutableResponse)(nil),            // 17: mockcap.ExecutableResponse
-	(*emptypb.Empty)(nil),                 // 18: google.protobuf.Empty
+	(*OCRTriggerEvent)(nil),               // 12: mockcap.OCRTriggerEvent
+	(*OCRAttributedOnchainSignature)(nil), // 13: mockcap.OCRAttributedOnchainSignature
+	(*RegisterToWorkflowRequest)(nil),     // 14: mockcap.RegisterToWorkflowRequest
+	(*RegistrationMetadata)(nil),          // 15: mockcap.RegistrationMetadata
+	(*UnregisterFromWorkflowRequest)(nil), // 16: mockcap.UnregisterFromWorkflowRequest
+	(*ExecutableRequest)(nil),             // 17: mockcap.ExecutableRequest
+	(*SpendLimit)(nil),                    // 18: mockcap.SpendLimit
+	(*CapabilityResponse)(nil),            // 19: mockcap.CapabilityResponse
+	(*ExecutableResponse)(nil),            // 20: mockcap.ExecutableResponse
+	(*RemoveCapabilityRequest)(nil),       // 21: mockcap.RemoveCapabilityRequest
+	(*anypb.Any)(nil),                     // 22: google.protobuf.Any
+	(*emptypb.Empty)(nil),                 // 23: google.protobuf.Empty
 }
 var file_proxy_proto_depIdxs = []int32{
 	1,  // 0: mockcap.TriggerResponse.TriggerEvent:type_name -> mockcap.TriggerEvent
 	6,  // 1: mockcap.TriggerRegistrationRequest.Metadata:type_name -> mockcap.Metadata
-	10, // 2: mockcap.ListResponse.capInfos:type_name -> mockcap.CapabilityInfo
-	0,  // 3: mockcap.CapabilityInfo.CapabilityType:type_name -> mockcap.CapabilityType
-	9,  // 4: mockcap.CapabilityInfo.DON:type_name -> mockcap.DON
-	0,  // 5: mockcap.RegisterToWorkflowRequest.CapabilityType:type_name -> mockcap.CapabilityType
-	13, // 6: mockcap.RegisterToWorkflowRequest.RegistrationMetadata:type_name -> mockcap.RegistrationMetadata
-	13, // 7: mockcap.UnregisterFromWorkflowRequest.RegistrationMetadata:type_name -> mockcap.RegistrationMetadata
-	0,  // 8: mockcap.ExecutableRequest.CapabilityType:type_name -> mockcap.CapabilityType
-	6,  // 9: mockcap.ExecutableRequest.RequestMetadata:type_name -> mockcap.Metadata
-	0,  // 10: mockcap.ExecutableResponse.CapabilityType:type_name -> mockcap.CapabilityType
-	7,  // 11: mockcap.MockCapability.List:input_type -> mockcap.ListRequest
-	3,  // 12: mockcap.MockCapability.GetTriggerSubscribers:input_type -> mockcap.GetTriggerSubscribersRequest
-	10, // 13: mockcap.MockCapability.CreateCapability:input_type -> mockcap.CapabilityInfo
-	11, // 14: mockcap.MockCapability.SendTriggerEvent:input_type -> mockcap.SendTriggerEventRequest
-	5,  // 15: mockcap.MockCapability.RegisterTrigger:input_type -> mockcap.TriggerRegistrationRequest
-	5,  // 16: mockcap.MockCapability.UnregisterTrigger:input_type -> mockcap.TriggerRegistrationRequest
-	17, // 17: mockcap.MockCapability.HookExecutables:input_type -> mockcap.ExecutableResponse
-	12, // 18: mockcap.MockCapability.RegisterToWorkflow:input_type -> mockcap.RegisterToWorkflowRequest
-	14, // 19: mockcap.MockCapability.UnregisterFromWorkflow:input_type -> mockcap.UnregisterFromWorkflowRequest
-	15, // 20: mockcap.MockCapability.Execute:input_type -> mockcap.ExecutableRequest
-	8,  // 21: mockcap.MockCapability.List:output_type -> mockcap.ListResponse
-	4,  // 22: mockcap.MockCapability.GetTriggerSubscribers:output_type -> mockcap.GetTriggerSubscribersResponse
-	18, // 23: mockcap.MockCapability.CreateCapability:output_type -> google.protobuf.Empty
-	18, // 24: mockcap.MockCapability.SendTriggerEvent:output_type -> google.protobuf.Empty
-	2,  // 25: mockcap.MockCapability.RegisterTrigger:output_type -> mockcap.TriggerResponse
-	18, // 26: mockcap.MockCapability.UnregisterTrigger:output_type -> google.protobuf.Empty
-	15, // 27: mockcap.MockCapability.HookExecutables:output_type -> mockcap.ExecutableRequest
-	18, // 28: mockcap.MockCapability.RegisterToWorkflow:output_type -> google.protobuf.Empty
-	18, // 29: mockcap.MockCapability.UnregisterFromWorkflow:output_type -> google.protobuf.Empty
-	16, // 30: mockcap.MockCapability.Execute:output_type -> mockcap.CapabilityResponse
-	21, // [21:31] is the sub-list for method output_type
-	11, // [11:21] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	22, // 2: mockcap.TriggerRegistrationRequest.Payload:type_name -> google.protobuf.Any
+	18, // 3: mockcap.Metadata.SpendLimit:type_name -> mockcap.SpendLimit
+	10, // 4: mockcap.ListResponse.capInfos:type_name -> mockcap.CapabilityInfo
+	0,  // 5: mockcap.CapabilityInfo.CapabilityType:type_name -> mockcap.CapabilityType
+	9,  // 6: mockcap.CapabilityInfo.DON:type_name -> mockcap.DON
+	22, // 7: mockcap.SendTriggerEventRequest.Payload:type_name -> google.protobuf.Any
+	12, // 8: mockcap.SendTriggerEventRequest.OCREvent:type_name -> mockcap.OCRTriggerEvent
+	13, // 9: mockcap.OCRTriggerEvent.Sigs:type_name -> mockcap.OCRAttributedOnchainSignature
+	0,  // 10: mockcap.RegisterToWorkflowRequest.CapabilityType:type_name -> mockcap.CapabilityType
+	15, // 11: mockcap.RegisterToWorkflowRequest.RegistrationMetadata:type_name -> mockcap.RegistrationMetadata
+	15, // 12: mockcap.UnregisterFromWorkflowRequest.RegistrationMetadata:type_name -> mockcap.RegistrationMetadata
+	0,  // 13: mockcap.ExecutableRequest.CapabilityType:type_name -> mockcap.CapabilityType
+	6,  // 14: mockcap.ExecutableRequest.RequestMetadata:type_name -> mockcap.Metadata
+	22, // 15: mockcap.ExecutableRequest.Payload:type_name -> google.protobuf.Any
+	22, // 16: mockcap.ExecutableRequest.ConfigPayload:type_name -> google.protobuf.Any
+	0,  // 17: mockcap.ExecutableResponse.CapabilityType:type_name -> mockcap.CapabilityType
+	7,  // 18: mockcap.MockCapability.List:input_type -> mockcap.ListRequest
+	3,  // 19: mockcap.MockCapability.GetTriggerSubscribers:input_type -> mockcap.GetTriggerSubscribersRequest
+	10, // 20: mockcap.MockCapability.CreateCapability:input_type -> mockcap.CapabilityInfo
+	21, // 21: mockcap.MockCapability.RemoveCapability:input_type -> mockcap.RemoveCapabilityRequest
+	11, // 22: mockcap.MockCapability.SendTriggerEvent:input_type -> mockcap.SendTriggerEventRequest
+	5,  // 23: mockcap.MockCapability.RegisterTrigger:input_type -> mockcap.TriggerRegistrationRequest
+	5,  // 24: mockcap.MockCapability.UnregisterTrigger:input_type -> mockcap.TriggerRegistrationRequest
+	20, // 25: mockcap.MockCapability.HookExecutables:input_type -> mockcap.ExecutableResponse
+	14, // 26: mockcap.MockCapability.RegisterToWorkflow:input_type -> mockcap.RegisterToWorkflowRequest
+	16, // 27: mockcap.MockCapability.UnregisterFromWorkflow:input_type -> mockcap.UnregisterFromWorkflowRequest
+	17, // 28: mockcap.MockCapability.Execute:input_type -> mockcap.ExecutableRequest
+	8,  // 29: mockcap.MockCapability.List:output_type -> mockcap.ListResponse
+	4,  // 30: mockcap.MockCapability.GetTriggerSubscribers:output_type -> mockcap.GetTriggerSubscribersResponse
+	23, // 31: mockcap.MockCapability.CreateCapability:output_type -> google.protobuf.Empty
+	23, // 32: mockcap.MockCapability.RemoveCapability:output_type -> google.protobuf.Empty
+	23, // 33: mockcap.MockCapability.SendTriggerEvent:output_type -> google.protobuf.Empty
+	2,  // 34: mockcap.MockCapability.RegisterTrigger:output_type -> mockcap.TriggerResponse
+	23, // 35: mockcap.MockCapability.UnregisterTrigger:output_type -> google.protobuf.Empty
+	17, // 36: mockcap.MockCapability.HookExecutables:output_type -> mockcap.ExecutableRequest
+	23, // 37: mockcap.MockCapability.RegisterToWorkflow:output_type -> google.protobuf.Empty
+	23, // 38: mockcap.MockCapability.UnregisterFromWorkflow:output_type -> google.protobuf.Empty
+	19, // 39: mockcap.MockCapability.Execute:output_type -> mockcap.CapabilityResponse
+	29, // [29:40] is the sub-list for method output_type
+	18, // [18:29] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_proxy_proto_init() }
@@ -1225,7 +1563,7 @@ func file_proxy_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proxy_proto_rawDesc), len(file_proxy_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   17,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
