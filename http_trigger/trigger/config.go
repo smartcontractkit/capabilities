@@ -3,14 +3,16 @@ package trigger
 import "github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 
 const (
-	defaultInitialIntervalMs     = 100    // 100 milliseconds
-	defaultDurationMs            = 30_000 // 30 seconds
-	defaultMultiplier            = 2.0
-	defaultGlobalRPS             = 100.0
-	defaultGlobalBurst           = 100
-	defaultPerSenderRPS          = 100.0
-	defaultPerSenderBurst        = 100
-	defaultAuthMetadataBatchSize = 50
+	defaultInitialIntervalMs            = 100    // 100 milliseconds
+	defaultDurationMs                   = 30_000 // 30 seconds
+	defaultMultiplier                   = 2.0
+	defaultGlobalRPS                    = 100.0
+	defaultGlobalBurst                  = 100
+	defaultPerSenderRPS                 = 100.0
+	defaultPerSenderBurst               = 100
+	defaultAuthMetadataBatchSize        = 50
+	defaultSendChannelBufferSize        = 1000
+	defaultMaxAuthorizedKeysPerWorkflow = 100
 )
 
 type ServiceConfig struct {
@@ -26,6 +28,10 @@ type ServiceConfig struct {
 	OutgoingRateLimiter ratelimit.RateLimiterConfig `json:"outgoingRateLimiter"`
 	// GatewayConfig defines the configuration for connecting to a gateway.
 	GatewayConnectionConfig GatewayConnectionConfig `json:"gatewayConnection"`
+	// MaxAuthorizedKeysPerWorkflow is the maximum number of authorized keys per workflow.
+	// This is used to limit the number of keys that can be registered per workflow.
+	// This impacts the size of the auth metadata sent to the gateway.
+	MaxAuthorizedKeysPerWorkflow uint16 `json:"maxAuthorizedKeysPerWorkflow"`
 }
 
 type GatewayConnectionConfig struct {
@@ -48,6 +54,12 @@ func applyDefaults(cfg ServiceConfig) ServiceConfig {
 	cfg.IncomingRateLimiter = incomingRateLimiterConfigDefaults(cfg.IncomingRateLimiter)
 	if cfg.AuthMetadataBatchSize == 0 {
 		cfg.AuthMetadataBatchSize = defaultAuthMetadataBatchSize
+	}
+	if cfg.SendChannelBufferSize == 0 {
+		cfg.SendChannelBufferSize = defaultSendChannelBufferSize
+	}
+	if cfg.MaxAuthorizedKeysPerWorkflow == 0 {
+		cfg.MaxAuthorizedKeysPerWorkflow = defaultMaxAuthorizedKeysPerWorkflow
 	}
 	return cfg
 }

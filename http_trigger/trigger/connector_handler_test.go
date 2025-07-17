@@ -105,7 +105,8 @@ func rateLimiterConfig() ratelimit.RateLimiterConfig {
 func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayConnector, <-chan capabilities.TriggerAndId[*http.Payload]) {
 	mockConnector := &mockGatewayConnector{}
 	cfg := ServiceConfig{
-		AuthMetadataBatchSize: 10,
+		AuthMetadataBatchSize:        10,
+		MaxAuthorizedKeysPerWorkflow: 3,
 	}
 	irl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
 	require.NoError(t, err)
@@ -453,6 +454,95 @@ func TestRegisterWorkflow_InvalidECDSAPublicKey(t *testing.T) {
 		})
 	}
 }
+
+func TestRegisterWorkflow_TooManyAuthorizedKeys(t *testing.T) {
+	lggr := logger.Test(t)
+
+	// Create a custom setup with a very low max authorized keys limit
+	mockConnector := &mockGatewayConnector{}
+	cfg := ServiceConfig{
+		AuthMetadataBatchSize:        10,
+		MaxAuthorizedKeysPerWorkflow: 2, // Set limit to 2 keys for testing
+	}
+	irl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
+	require.NoError(t, err)
+	orl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
+	require.NoError(t, err)
+	store := newWorkflowStore(lggr)
+	authHandler := NewGatewayAuthPublisher(
+		lggr,
+		mockConnector,
+		orl,
+		store,
+		cfg,
+	)
+	handler, err := NewConnectorHandler(
+		lggr,
+		mockConnector,
+		cfg,
+		orl,
+		irl,
+		store,
+		authHandler,
+	)
+	require.NoError(t, err)
+
+	sendCh := make(chan capabilities.TriggerAndId[*http.Payload], 1)
+
+	// Test case with exactly the maximum allowed keys (should succeed)
+	t.Run("exact max allowed keys", func(t *testing.T) {
+		cfg := &http.Config{
+			AuthorizedKeys: []*http.AuthorizedKey{
+				{
+					PublicKey: publicKey,
+					Type:      http.KeyType_KEY_TYPE_ECDSA,
+				},
+				{
+					PublicKey: "0xB28C9D8E47fB7b0974505D7aB544e24478B6e990",
+					Type:      http.KeyType_KEY_TYPE_ECDSA,
+				},
+			},
+		}
+		selector := gateway_common.WorkflowSelector{
+			WorkflowOwner: workflowOwner,
+			WorkflowName:  "workflowName",
+			WorkflowTag:   "workflowTag",
+			WorkflowID:    "workflowID-max",
+		}
+		err := handler.RegisterWorkflow(context.Background(), selector, cfg, sendCh)
+		require.NoError(t, err)
+	})
+
+	// Test case with more than the maximum allowed keys (should fail)
+	t.Run("too many authorized keys", func(t *testing.T) {
+		cfg := &http.Config{
+			AuthorizedKeys: []*http.AuthorizedKey{
+				{
+					PublicKey: publicKey,
+					Type:      http.KeyType_KEY_TYPE_ECDSA,
+				},
+				{
+					PublicKey: "0xB28C9D8E47fB7b0974505D7aB544e24478B6e990",
+					Type:      http.KeyType_KEY_TYPE_ECDSA,
+				},
+				{
+					PublicKey: "0xC39D8F9E47fB7b0974505D7aB544e24478B6eAA0",
+					Type:      http.KeyType_KEY_TYPE_ECDSA,
+				},
+			},
+		}
+		selector := gateway_common.WorkflowSelector{
+			WorkflowOwner: workflowOwner,
+			WorkflowName:  "workflowName",
+			WorkflowTag:   "workflowTag",
+			WorkflowID:    "workflowID-too-many",
+		}
+		err := handler.RegisterWorkflow(context.Background(), selector, cfg, sendCh)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "too many authorized keys: 3, max allowed: 2")
+	})
+}
+
 func TestConnectorHandler_Start_HealthReport_Ready_Name_Close(t *testing.T) {
 	lggr := logger.Test(t)
 	mockConnector := &mockGatewayConnector{}

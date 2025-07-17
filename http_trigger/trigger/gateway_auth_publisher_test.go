@@ -141,7 +141,7 @@ func TestBroadcastWorkflow_Success(t *testing.T) {
 			PublicKey: "0xabcdef1234567890",
 		},
 	}
-	err := publisher.BroadcastWorkflow(t.Context(), workflowSelector, keys)
+	err := publisher.BroadcastWorkflowMetadata(t.Context(), workflowSelector, keys)
 
 	require.NoError(t, err)
 
@@ -167,7 +167,7 @@ func TestBroadcastWorkflow_GatewayIDsError(t *testing.T) {
 	expectedError := fmt.Errorf("gateway connection failed")
 
 	gc.gatewayIDsError = expectedError
-	err := publisher.BroadcastWorkflow(t.Context(), workflowSelector, keys)
+	err := publisher.BroadcastWorkflowMetadata(t.Context(), workflowSelector, keys)
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "failed to get gateway IDs")
@@ -188,7 +188,7 @@ func TestBroadcastWorkflow_SendToGatewayError(t *testing.T) {
 	expectedError := fmt.Errorf("send failed")
 
 	gc.sendToGatewayError = expectedError
-	err := publisher.BroadcastWorkflow(t.Context(), workflowSelector, keys)
+	err := publisher.BroadcastWorkflowMetadata(t.Context(), workflowSelector, keys)
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "context canceled while awaiting connection to gateway")
@@ -237,7 +237,7 @@ func TestSendWorkflows_Success(t *testing.T) {
 		Method: "test",
 		Params: &rawParams,
 	}
-	err := publisher.SendWorkflows(t.Context(), gatewayID, req)
+	err := publisher.SendWorkflowMetadata(t.Context(), gatewayID, req)
 	require.NoError(t, err)
 
 	calls := gc.sendToGatewayCalls
@@ -273,7 +273,7 @@ func TestSendWorkflows_EmptyWorkflows(t *testing.T) {
 		Method: "test",
 		Params: &rawParams2,
 	}
-	err := publisher.SendWorkflows(t.Context(), gatewayID, req)
+	err := publisher.SendWorkflowMetadata(t.Context(), gatewayID, req)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "no workflows found")
 }
@@ -290,7 +290,7 @@ func TestSendWorkflows_InvalidRequestID(t *testing.T) {
 		Method: "test",
 		Params: &rawParams2,
 	}
-	err := publisher.SendWorkflows(t.Context(), gatewayID, req)
+	err := publisher.SendWorkflowMetadata(t.Context(), gatewayID, req)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "invalid request ID for workflow pull auth metadata")
 }

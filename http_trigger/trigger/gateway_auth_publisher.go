@@ -43,14 +43,14 @@ func NewGatewayAuthPublisher(
 }
 
 type GatewayAuthPublisher interface {
-	// SendWorkflows sends all workflows' authentication metadata to the gateway in batches
+	// SendWorkflowMetadata sends all workflows' authentication metadata to the gateway in batches
 	// It is expected to send a response back to the gateway using the gatewayConnector then return error
-	SendWorkflows(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage]) error
-	// BroadcastWorkflow sends the authentication metadata to the gateway.
-	BroadcastWorkflow(ctx context.Context, workflowSelector gateway.WorkflowSelector, keys []gateway.AuthorizedKey) error
+	SendWorkflowMetadata(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage]) error
+	// BroadcastWorkflowMetadata sends the authentication metadata to all gateways.
+	BroadcastWorkflowMetadata(ctx context.Context, workflowSelector gateway.WorkflowSelector, keys []gateway.AuthorizedKey) error
 }
 
-func (h *gatewayAuthPublisher) BroadcastWorkflow(ctx context.Context, workflowSelector gateway.WorkflowSelector, keys []gateway.AuthorizedKey) error {
+func (h *gatewayAuthPublisher) BroadcastWorkflowMetadata(ctx context.Context, workflowSelector gateway.WorkflowSelector, keys []gateway.AuthorizedKey) error {
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(h.cfg.GatewayConnectionConfig.MaxPushAuthMetadataDurationMs)*time.Millisecond)
 	defer cancel()
 	authData := gateway.WorkflowMetadata{
@@ -109,7 +109,7 @@ func (h *gatewayAuthPublisher) sendErrorResponse(ctx context.Context, gatewayID 
 	}
 }
 
-func (h *gatewayAuthPublisher) SendWorkflows(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage]) error {
+func (h *gatewayAuthPublisher) SendWorkflowMetadata(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage]) error {
 	if req.ID == "" {
 		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInvalidRequest, "empty request ID")
 		return errors.New("empty workflow ID")

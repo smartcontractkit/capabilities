@@ -96,6 +96,9 @@ func (h *connectorHandler) ID(context.Context) (string, error) {
 
 func (h *connectorHandler) RegisterWorkflow(ctx context.Context, workflowSelector gateway_common.WorkflowSelector, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error {
 	var authorizedKeys []gateway_common.AuthorizedKey
+	if len(input.AuthorizedKeys) > int(h.config.MaxAuthorizedKeysPerWorkflow) {
+		return fmt.Errorf("too many authorized keys: %d, max allowed: %d", len(input.AuthorizedKeys), h.config.MaxAuthorizedKeysPerWorkflow)
+	}
 	for _, key := range input.AuthorizedKeys {
 		switch key.Type {
 		case http.KeyType_KEY_TYPE_ECDSA:
@@ -112,7 +115,7 @@ func (h *connectorHandler) RegisterWorkflow(ctx context.Context, workflowSelecto
 	}
 	// Push the auth metadata to the gateway
 	// Error is non-critical. Retries will be handled by the authMetadataHandler.
-	err := h.gatewayAuthPublisher.BroadcastWorkflow(ctx, workflowSelector, authorizedKeys)
+	err := h.gatewayAuthPublisher.BroadcastWorkflowMetadata(ctx, workflowSelector, authorizedKeys)
 	if err != nil {
 		h.lggr.Errorw("Failed to push auth metadata to gateway", "error",
 			err, "workflowID", workflowSelector.WorkflowID)
@@ -151,7 +154,7 @@ func (h *connectorHandler) HandleGatewayMessage(ctx context.Context, gatewayID s
 		h.processTrigger(ctx, gatewayID, req)
 	case gateway_common.MethodWorkflowPullAuthMetadata:
 		// No retries here. Retries are orchestrated by the gateway node
-		err := h.gatewayAuthPublisher.SendWorkflows(ctx, gatewayID, req)
+		err := h.gatewayAuthPublisher.SendWorkflowMetadata(ctx, gatewayID, req)
 		if err != nil {
 			h.lggr.Errorw("Failed to handle pull auth metadata request", "error",
 				err, "gatewayID", gatewayID, "requestID", req.ID)

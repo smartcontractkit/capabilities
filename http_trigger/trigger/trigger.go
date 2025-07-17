@@ -16,7 +16,6 @@ import (
 )
 
 const ServiceName = "HTTPTriggerCapability"
-const defaultSendChannelBufferSize = uint16(1000)
 
 var _ server.HTTPCapability = &service{}
 
@@ -107,11 +106,7 @@ func (s *service) Description() string {
 }
 
 func (s *service) RegisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *http.Config) (<-chan capabilities.TriggerAndId[*http.Payload], error) {
-	sendChannelBufferSize := s.cfg.SendChannelBufferSize
-	if sendChannelBufferSize == 0 {
-		sendChannelBufferSize = defaultSendChannelBufferSize
-	}
-	sendCh := make(chan capabilities.TriggerAndId[*http.Payload], sendChannelBufferSize)
+	sendCh := make(chan capabilities.TriggerAndId[*http.Payload], s.cfg.SendChannelBufferSize)
 	workflowSelector := gateway.WorkflowSelector{
 		WorkflowID:    metadata.WorkflowID,
 		WorkflowOwner: metadata.WorkflowOwner,
