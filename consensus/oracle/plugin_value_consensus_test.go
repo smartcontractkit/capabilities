@@ -399,7 +399,7 @@ func runProtocolRoundTests(ctx context.Context, t *testing.T, lggr logger.Logger
 	// Get reports and verify the value selected
 	reports := allReports[0]
 	for _, report := range reports {
-		serialisedValue := report.ReportWithInfo.Report[oracle.ValuesConsensusMetaDataPrependLength:]
+		serialisedValue := report.ReportWithInfo.Report[oracle.ReportMetaDataPrependLength:]
 		actualProto := &valuespb.Value{}
 		err := proto.Unmarshal(serialisedValue, actualProto)
 		require.NoError(t, err, "failed to unmarshal value from report")
@@ -433,7 +433,7 @@ func verifyValueConsensusReport(t *testing.T, report ocr3types.ReportPlus[[]byte
 	}
 
 	// Verify the value in the report matches the expected result
-	serialisedValue := report.ReportWithInfo.Report[oracle.ValuesConsensusMetaDataPrependLength:]
+	serialisedValue := report.ReportWithInfo.Report[oracle.ReportMetaDataPrependLength:]
 	actualProto := &valuespb.Value{}
 	err := proto.Unmarshal(serialisedValue, actualProto)
 	require.NoError(t, err, "failed to unmarshal value from report")

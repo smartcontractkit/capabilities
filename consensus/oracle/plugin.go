@@ -32,7 +32,7 @@ var _ ocr3types.ReportingPlugin[[]byte] = (*reportingPlugin)(nil)
 
 const InfoRequestID = "requestID"
 
-const ValuesConsensusMetaDataPrependLength = 109
+const ReportMetaDataPrependLength = 109
 
 type reportingPlugin struct {
 	batchSize int
@@ -351,7 +351,7 @@ func (r *reportingPlugin) Reports(ctx context.Context, seqNr uint64, outcome ocr
 		case oracletypes.RequestType_VALUE_CONSENSUS:
 			report = requestOutcome.Outcome
 		case oracletypes.RequestType_REPORT_GENERATION:
-			// If the request type is report, we need to extract the report before signing it
+			// If the request type is report extract the report from the values.Value before signing it
 			serialisedValue := requestOutcome.Outcome
 			value := &valuespb.Value{}
 			if err := proto.Unmarshal(serialisedValue, value); err != nil {

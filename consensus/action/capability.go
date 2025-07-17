@@ -219,7 +219,7 @@ func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.
 		}
 
 		// Remove the metadata prefix from the raw report to get the serialised value
-		serialisedValue := response.RawReport[oracle.ValuesConsensusMetaDataPrependLength:]
+		serialisedValue := response.RawReport[oracle.ReportMetaDataPrependLength:]
 
 		valueProto := &valuespb.Value{}
 		if err := proto.Unmarshal(serialisedValue, valueProto); err != nil {

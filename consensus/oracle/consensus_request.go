@@ -11,14 +11,14 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
-	types2 "github.com/smartcontractkit/capabilities/consensus/oracle/types"
+	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
 )
 
 type ConsensusRequestMetadata struct {
 	capabilities.RequestMetadata
 	KeyBundleID string
 	ReportID    string
-	RequestType types2.RequestType
+	RequestType oracletypes.RequestType
 }
 
 func (m ConsensusRequestMetadata) RequestID() string {
