@@ -239,26 +239,12 @@ var ErrInsufficientObservations = errors.New("insufficient observations to reach
 // reverses the result a final time.
 func handleCommonSuffixAggregation(lggr logger.Logger, observationSlices []*valuespb.Value, f int) (*valuespb.Value, error) {
 	var reversedObservations []*valuespb.Value
-	for i, obsProto := range observationSlices {
-		val, err := values.FromProto(obsProto)
+	for _, obsProto := range observationSlices {
+		reversed, err := reverseListValue(obsProto)
 		if err != nil {
-			lggr.Warnf("failed to unmarshal observation value at index %d: %s", i, err)
 			continue
 		}
-
-		listVal, ok := val.(*values.List)
-		if !ok {
-			// ignore non-list values
-			lggr.Warnf("value at index %d is not a list", i)
-			continue
-		}
-
-		reversedList, err := reverseList(listVal)
-		if err != nil {
-			lggr.Warnf("failed to reverse list at index %d: %s", i, err)
-			continue
-		}
-		reversedObservations = append(reversedObservations, values.Proto(reversedList))
+		reversedObservations = append(reversedObservations, reversed)
 	}
 
 	commonPrefixOfReversed, err := handleCommonPrefixAggregation(lggr, reversedObservations, f)
@@ -266,22 +252,7 @@ func handleCommonSuffixAggregation(lggr logger.Logger, observationSlices []*valu
 		return nil, fmt.Errorf("failed to find common prefix of reversed lists: %w", err)
 	}
 
-	commonPrefixList, err := values.FromProto(commonPrefixOfReversed)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal common prefix result: %w", err)
-	}
-
-	commonPrefixAsList, ok := commonPrefixList.(*values.List)
-	if !ok {
-		return nil, fmt.Errorf("common prefix result is not a list; got %T", commonPrefixList)
-	}
-
-	commonSuffixList, err := reverseList(commonPrefixAsList)
-	if err != nil {
-		return nil, fmt.Errorf("failed to reverse common prefix list to get suffix: %w", err)
-	}
-
-	return values.Proto(commonSuffixList), nil
+	return reverseListValue(commonPrefixOfReversed)
 }
 
 func handleCommonPrefixAggregation(lggr logger.Logger, observations []*valuespb.Value, f int) (*valuespb.Value, error) {
@@ -460,15 +431,25 @@ func getMedian[T any](
 	return values.Proto(v), nil
 }
 
-// reverseList reverses the elements of a values.List and returns a new values.List.
-func reverseList(list *values.List) (*values.List, error) {
-	if list == nil {
-		return nil, errors.New("cannot reverse a nil list")
+func reverseListValue(list *valuespb.Value) (*valuespb.Value, error) {
+	switch list.Value.(type) {
+	case *valuespb.Value_ListValue:
+		reversed := list.GetListValue().GetFields()
+		reverse(reversed)
+		return &valuespb.Value{
+			Value: &valuespb.Value_ListValue{
+				ListValue: &valuespb.List{
+					Fields: reversed,
+				},
+			},
+		}, nil
+	default:
+		return nil, fmt.Errorf("cannot reverse value of type %T", list.Value)
 	}
+}
 
-	reversedElements := make([]any, len(list.Underlying))
-	for i, j := 0, len(list.Underlying)-1; i < len(list.Underlying); i, j = i+1, j-1 {
-		reversedElements[i] = list.Underlying[j]
+func reverse[T any](s []T) {
+	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
+		s[i], s[j] = s[j], s[i]
 	}
-	return values.NewList(reversedElements)
 }
