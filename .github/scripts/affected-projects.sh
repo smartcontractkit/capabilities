@@ -14,7 +14,6 @@ echo "DEBUG: Raw Nx affected projects output: $affected_projects" >&2 # Redirect
 
 # Check if affected_projects is empty or invalid JSON before processing
 if [ -z "$affected_projects" ] || ! echo "$affected_projects" | jq . > /dev/null 2>&1; then
-  echo "ERROR: 'nx show projects --affected --json --base=$base' returned empty or invalid JSON." >&2 # Redirect to stderr
   # Provide a default empty JSON or exit gracefully if this is an error condition for your workflow
   echo "{ \"base\": \"$base\", \"projects\": [], \"run_checks\": false }"
   exit 0
@@ -47,44 +46,31 @@ for target in "${targets[@]}"; do
 
   if [ $(echo "$projects_with_target" | jq 'length') -eq 0 ]; then # Use jq to get array length
     output+=" \"run_$target\": false, "
-    echo "DEBUG: run_$target set to false" >&2 # Redirect to stderr
   else
     output+=" \"run_$target\": true, "
-    echo "DEBUG: run_$target set to true" >&2 # Redirect to stderr
   fi
 done
 
 # Loop through each project and collect nested details
 for project in "${projects[@]}"; do
     project_info=$(./nx show project "$project" --json)
-    echo "DEBUG: Project info for '$project': $project_info" >&2 # Redirect to stderr
 
-    # Check if project_info is valid JSON before processing
     if echo "$project_info" | jq . > /dev/null 2>&1; then
       project_root=$(echo "$project_info" | jq -r '.root')
       project_go_sum=$(echo "$project_root/go.sum")
-      echo "DEBUG: Root for '$project': $project_root, go_sum: $project_go_sum" >&2 # Redirect to stderr
-
-      # Append the result to the output string in a nested JSON format
       output+="\"$project\": { \"root\": \"$project_root\", \"go_sum\": \"$project_go_sum\" },"
     else
-      echo "ERROR: 'nx show project $project --json' returned invalid JSON: $project_info" >&2 # Redirect to stderr
       output+="\"$project\": { \"root\": \"\", \"go_sum\": \"\" }," # Default to empty values if invalid
     fi
 done
 
 if [ ${#projects[@]} -eq 0 ]; then
   output+=" \"run_checks\": false"
-  echo "DEBUG: run_checks set to false (no affected projects)" >&2
 else
   output+=" \"run_checks\": true"
-  echo "DEBUG: run_checks set to true (affected projects found)" >&2
 fi
 
 # Remove the trailing comma and close the JSON object
 output+=" }"
 
-# Use jq to pretty-print and validate the final JSON output
-final_json_output=$(echo "$output" | jq '.')
-echo "DEBUG: Final JSON output to be passed to GITHUB_OUTPUT:" >&2
-echo "$final_json_output"
+echo $output
