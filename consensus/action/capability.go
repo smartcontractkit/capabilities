@@ -33,6 +33,11 @@ const defaultRequestBatchSize = 20
 const defaultMaxRequestSizeBytes = 10 * 1024 // 10KB
 const defaultKeyBundleIDForValueConsensus = "evm"
 
+const KeyBundleIDEvm = "evm"
+const KeyBundleIDAptos = "aptos"
+const SigningAlgoEcdsa = "ecdsa"
+const HashingAlgoKeccak256 = "keccak256"
+
 type ConsensusCapabilityConfig struct {
 	RequestBatchSize             int
 	MaxRequestSizeBytes          int
@@ -302,7 +307,7 @@ func (c *consensusCapability) Report(ctx context.Context, metadata capabilities.
 	}
 }
 
-func (c *consensusCapability) sendRequest(ctx context.Context, input *pb.SimpleConsensusInputs, consensusRequestMetaData oracle.ConsensusRequestMetadata) chan oracle.ConsensusResponse {
+func (c *consensusCapability) sendRequest(ctx context.Context, input *pb.SimpleConsensusInputs, consensusRequestMetaData oracle.ConsensusRequestMetadata) <-chan oracle.ConsensusResponse {
 	// TODO - review all request timeout handling/setting https://smartcontract-it.atlassian.net/browse/CAPPL-1014
 	c.requestTimeoutLock.RLock()
 	requestTimeout := c.requestTimeout
@@ -319,8 +324,8 @@ func (c *consensusCapability) sendRequest(ctx context.Context, input *pb.SimpleC
 
 func validateReportRequest(reportRequest *pb.ReportRequest) (string, error) {
 	supportedKeyBundleIDs := map[string]struct{}{
-		"evm":   {},
-		"aptos": {},
+		KeyBundleIDEvm:   {},
+		KeyBundleIDAptos: {},
 	}
 
 	keyBundleID := strings.ToLower(reportRequest.EncoderName)
@@ -330,7 +335,7 @@ func validateReportRequest(reportRequest *pb.ReportRequest) (string, error) {
 
 	signingAlgo := strings.ToLower(reportRequest.SigningAlgo)
 	supportedSigningAlgorithms := map[string]struct{}{
-		"ecdsa": {},
+		SigningAlgoEcdsa: {},
 	}
 
 	if _, ok := supportedSigningAlgorithms[signingAlgo]; !ok {
@@ -338,8 +343,9 @@ func validateReportRequest(reportRequest *pb.ReportRequest) (string, error) {
 	}
 
 	hashingAlgo := strings.ToLower(reportRequest.HashingAlgo)
+
 	supportedHashingAlgorithms := map[string]struct{}{
-		"keccak256": {},
+		HashingAlgoKeccak256: {},
 	}
 
 	if _, ok := supportedHashingAlgorithms[hashingAlgo]; !ok {

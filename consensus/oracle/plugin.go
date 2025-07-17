@@ -311,7 +311,6 @@ func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeC
 }
 
 func calculateMedianTimestamp(timestamps []*timestamppb.Timestamp) *timestamppb.Timestamp {
-	var finalTimestamp *timestamppb.Timestamp
 	slices.SortFunc(timestamps, func(a, b *timestamppb.Timestamp) int {
 		if a.AsTime().Before(b.AsTime()) {
 			return -1
@@ -323,9 +322,9 @@ func calculateMedianTimestamp(timestamps []*timestamppb.Timestamp) *timestamppb.
 	})
 	timestampCount := len(timestamps)
 	mid := timestampCount / 2
-	if timestampCount%2 == 1 {
-		finalTimestamp = timestamps[mid]
-	} else {
+
+	finalTimestamp := timestamps[mid]
+	if timestampCount%2 != 1 {
 		a := timestamps[mid-1].AsTime().Unix()
 		b := timestamps[mid].AsTime().Unix()
 		// a + (b-a) / 2 to avoid overflows
