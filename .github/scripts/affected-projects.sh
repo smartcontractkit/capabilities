@@ -10,8 +10,6 @@ base=$1
 
 affected_projects=$(./nx show projects --affected --json --base=$base)
 
-echo "DEBUG: Raw Nx affected projects output: $affected_projects" >&2 # Redirect to stderr
-
 projects=($(echo $affected_projects | jq -r '.[]'))
 
 # Initialize an output string
