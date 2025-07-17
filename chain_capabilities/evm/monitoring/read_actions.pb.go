@@ -1642,27 +1642,27 @@ func (x *GetTransactionReceiptError) GetExecutionContext() *monitoring.Execution
 	return nil
 }
 
-type LatestAndFinalizedHeadInitiated struct {
-	state            protoimpl.MessageState       `protogen:"open.v1"`
-	ExecutionContext *monitoring.ExecutionContext `protobuf:"bytes,20,opt,name=execution_context,json=executionContext,proto3" json:"execution_context,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+type HeaderByNumberRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	BlockNumber   int64                  `protobuf:"varint,1,opt,name=block_number,json=blockNumber,proto3" json:"block_number,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
-func (x *LatestAndFinalizedHeadInitiated) Reset() {
-	*x = LatestAndFinalizedHeadInitiated{}
+func (x *HeaderByNumberRequest) Reset() {
+	*x = HeaderByNumberRequest{}
 	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *LatestAndFinalizedHeadInitiated) String() string {
+func (x *HeaderByNumberRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*LatestAndFinalizedHeadInitiated) ProtoMessage() {}
+func (*HeaderByNumberRequest) ProtoMessage() {}
 
-func (x *LatestAndFinalizedHeadInitiated) ProtoReflect() protoreflect.Message {
+func (x *HeaderByNumberRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -1674,12 +1674,64 @@ func (x *LatestAndFinalizedHeadInitiated) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use LatestAndFinalizedHeadInitiated.ProtoReflect.Descriptor instead.
-func (*LatestAndFinalizedHeadInitiated) Descriptor() ([]byte, []int) {
+// Deprecated: Use HeaderByNumberRequest.ProtoReflect.Descriptor instead.
+func (*HeaderByNumberRequest) Descriptor() ([]byte, []int) {
 	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{27}
 }
 
-func (x *LatestAndFinalizedHeadInitiated) GetExecutionContext() *monitoring.ExecutionContext {
+func (x *HeaderByNumberRequest) GetBlockNumber() int64 {
+	if x != nil {
+		return x.BlockNumber
+	}
+	return 0
+}
+
+type HeaderByNumberInitiated struct {
+	state            protoimpl.MessageState       `protogen:"open.v1"`
+	Req              *HeaderByNumberRequest       `protobuf:"bytes,1,opt,name=req,proto3" json:"req,omitempty"`
+	ExecutionContext *monitoring.ExecutionContext `protobuf:"bytes,20,opt,name=execution_context,json=executionContext,proto3" json:"execution_context,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *HeaderByNumberInitiated) Reset() {
+	*x = HeaderByNumberInitiated{}
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HeaderByNumberInitiated) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HeaderByNumberInitiated) ProtoMessage() {}
+
+func (x *HeaderByNumberInitiated) ProtoReflect() protoreflect.Message {
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HeaderByNumberInitiated.ProtoReflect.Descriptor instead.
+func (*HeaderByNumberInitiated) Descriptor() ([]byte, []int) {
+	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *HeaderByNumberInitiated) GetReq() *HeaderByNumberRequest {
+	if x != nil {
+		return x.Req
+	}
+	return nil
+}
+
+func (x *HeaderByNumberInitiated) GetExecutionContext() *monitoring.ExecutionContext {
 	if x != nil {
 		return x.ExecutionContext
 	}
@@ -1697,7 +1749,7 @@ type BlockData struct {
 
 func (x *BlockData) Reset() {
 	*x = BlockData{}
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[28]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1709,7 +1761,7 @@ func (x *BlockData) String() string {
 func (*BlockData) ProtoMessage() {}
 
 func (x *BlockData) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[28]
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1722,7 +1774,7 @@ func (x *BlockData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BlockData.ProtoReflect.Descriptor instead.
 func (*BlockData) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{28}
+	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *BlockData) GetBlockHash() string {
@@ -1746,30 +1798,30 @@ func (x *BlockData) GetBlockTimestamp() uint64 {
 	return 0
 }
 
-type LatestAndFinalizedHeadSuccess struct {
+type HeaderByNumberSuccess struct {
 	state            protoimpl.MessageState       `protogen:"open.v1"`
-	Latest           *BlockData                   `protobuf:"bytes,1,opt,name=latest,proto3" json:"latest,omitempty"`
-	Finalized        *BlockData                   `protobuf:"bytes,2,opt,name=finalized,proto3" json:"finalized,omitempty"`
+	Req              *HeaderByNumberRequest       `protobuf:"bytes,1,opt,name=req,proto3" json:"req,omitempty"`
+	Header           *BlockData                   `protobuf:"bytes,2,opt,name=header,proto3" json:"header,omitempty"`
 	ExecutionContext *monitoring.ExecutionContext `protobuf:"bytes,20,opt,name=execution_context,json=executionContext,proto3" json:"execution_context,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
 
-func (x *LatestAndFinalizedHeadSuccess) Reset() {
-	*x = LatestAndFinalizedHeadSuccess{}
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[29]
+func (x *HeaderByNumberSuccess) Reset() {
+	*x = HeaderByNumberSuccess{}
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *LatestAndFinalizedHeadSuccess) String() string {
+func (x *HeaderByNumberSuccess) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*LatestAndFinalizedHeadSuccess) ProtoMessage() {}
+func (*HeaderByNumberSuccess) ProtoMessage() {}
 
-func (x *LatestAndFinalizedHeadSuccess) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[29]
+func (x *HeaderByNumberSuccess) ProtoReflect() protoreflect.Message {
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1780,56 +1832,57 @@ func (x *LatestAndFinalizedHeadSuccess) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use LatestAndFinalizedHeadSuccess.ProtoReflect.Descriptor instead.
-func (*LatestAndFinalizedHeadSuccess) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{29}
+// Deprecated: Use HeaderByNumberSuccess.ProtoReflect.Descriptor instead.
+func (*HeaderByNumberSuccess) Descriptor() ([]byte, []int) {
+	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{30}
 }
 
-func (x *LatestAndFinalizedHeadSuccess) GetLatest() *BlockData {
+func (x *HeaderByNumberSuccess) GetReq() *HeaderByNumberRequest {
 	if x != nil {
-		return x.Latest
+		return x.Req
 	}
 	return nil
 }
 
-func (x *LatestAndFinalizedHeadSuccess) GetFinalized() *BlockData {
+func (x *HeaderByNumberSuccess) GetHeader() *BlockData {
 	if x != nil {
-		return x.Finalized
+		return x.Header
 	}
 	return nil
 }
 
-func (x *LatestAndFinalizedHeadSuccess) GetExecutionContext() *monitoring.ExecutionContext {
+func (x *HeaderByNumberSuccess) GetExecutionContext() *monitoring.ExecutionContext {
 	if x != nil {
 		return x.ExecutionContext
 	}
 	return nil
 }
 
-type LatestAndFinalizedHeadError struct {
+type HeaderByNumberError struct {
 	state            protoimpl.MessageState       `protogen:"open.v1"`
-	Summary          string                       `protobuf:"bytes,1,opt,name=summary,proto3" json:"summary,omitempty"`
-	Cause            string                       `protobuf:"bytes,2,opt,name=cause,proto3" json:"cause,omitempty"`
+	Req              *HeaderByNumberRequest       `protobuf:"bytes,1,opt,name=req,proto3" json:"req,omitempty"`
+	Summary          string                       `protobuf:"bytes,2,opt,name=summary,proto3" json:"summary,omitempty"`
+	Cause            string                       `protobuf:"bytes,3,opt,name=cause,proto3" json:"cause,omitempty"`
 	ExecutionContext *monitoring.ExecutionContext `protobuf:"bytes,20,opt,name=execution_context,json=executionContext,proto3" json:"execution_context,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
 
-func (x *LatestAndFinalizedHeadError) Reset() {
-	*x = LatestAndFinalizedHeadError{}
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[30]
+func (x *HeaderByNumberError) Reset() {
+	*x = HeaderByNumberError{}
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *LatestAndFinalizedHeadError) String() string {
+func (x *HeaderByNumberError) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*LatestAndFinalizedHeadError) ProtoMessage() {}
+func (*HeaderByNumberError) ProtoMessage() {}
 
-func (x *LatestAndFinalizedHeadError) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[30]
+func (x *HeaderByNumberError) ProtoReflect() protoreflect.Message {
+	mi := &file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1840,26 +1893,33 @@ func (x *LatestAndFinalizedHeadError) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use LatestAndFinalizedHeadError.ProtoReflect.Descriptor instead.
-func (*LatestAndFinalizedHeadError) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{30}
+// Deprecated: Use HeaderByNumberError.ProtoReflect.Descriptor instead.
+func (*HeaderByNumberError) Descriptor() ([]byte, []int) {
+	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP(), []int{31}
 }
 
-func (x *LatestAndFinalizedHeadError) GetSummary() string {
+func (x *HeaderByNumberError) GetReq() *HeaderByNumberRequest {
+	if x != nil {
+		return x.Req
+	}
+	return nil
+}
+
+func (x *HeaderByNumberError) GetSummary() string {
 	if x != nil {
 		return x.Summary
 	}
 	return ""
 }
 
-func (x *LatestAndFinalizedHeadError) GetCause() string {
+func (x *HeaderByNumberError) GetCause() string {
 	if x != nil {
 		return x.Cause
 	}
 	return ""
 }
 
-func (x *LatestAndFinalizedHeadError) GetExecutionContext() *monitoring.ExecutionContext {
+func (x *HeaderByNumberError) GetExecutionContext() *monitoring.ExecutionContext {
 	if x != nil {
 		return x.ExecutionContext
 	}
@@ -1981,21 +2041,25 @@ const file_chain_capabilities_evm_monitoring_read_actions_proto_rawDesc = "" +
 	"\x03req\x18\x01 \x01(\v24.chain_capabilities.evm.GetTransactionReceiptRequestR\x03req\x12\x18\n" +
 	"\asummary\x18\x02 \x01(\tR\asummary\x12\x14\n" +
 	"\x05cause\x18\x03 \x01(\tR\x05cause\x12I\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"l\n" +
-	"\x1fLatestAndFinalizedHeadInitiated\x12I\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\":\n" +
+	"\x15HeaderByNumberRequest\x12!\n" +
+	"\fblock_number\x18\x01 \x01(\x03R\vblockNumber\"\xa5\x01\n" +
+	"\x17HeaderByNumberInitiated\x12?\n" +
+	"\x03req\x18\x01 \x01(\v2-.chain_capabilities.evm.HeaderByNumberRequestR\x03req\x12I\n" +
 	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"v\n" +
 	"\tBlockData\x12\x1d\n" +
 	"\n" +
 	"block_hash\x18\x01 \x01(\tR\tblockHash\x12!\n" +
 	"\fblock_height\x18\x02 \x01(\tR\vblockHeight\x12'\n" +
-	"\x0fblock_timestamp\x18\x03 \x01(\x04R\x0eblockTimestamp\"\xe6\x01\n" +
-	"\x1dLatestAndFinalizedHeadSuccess\x129\n" +
-	"\x06latest\x18\x01 \x01(\v2!.chain_capabilities.evm.BlockDataR\x06latest\x12?\n" +
-	"\tfinalized\x18\x02 \x01(\v2!.chain_capabilities.evm.BlockDataR\tfinalized\x12I\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\x98\x01\n" +
-	"\x1bLatestAndFinalizedHeadError\x12\x18\n" +
-	"\asummary\x18\x01 \x01(\tR\asummary\x12\x14\n" +
-	"\x05cause\x18\x02 \x01(\tR\x05cause\x12I\n" +
+	"\x0fblock_timestamp\x18\x03 \x01(\x04R\x0eblockTimestamp\"\xde\x01\n" +
+	"\x15HeaderByNumberSuccess\x12?\n" +
+	"\x03req\x18\x01 \x01(\v2-.chain_capabilities.evm.HeaderByNumberRequestR\x03req\x129\n" +
+	"\x06header\x18\x02 \x01(\v2!.chain_capabilities.evm.BlockDataR\x06header\x12I\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xd1\x01\n" +
+	"\x13HeaderByNumberError\x12?\n" +
+	"\x03req\x18\x01 \x01(\v2-.chain_capabilities.evm.HeaderByNumberRequestR\x03req\x12\x18\n" +
+	"\asummary\x18\x02 \x01(\tR\asummary\x12\x14\n" +
+	"\x05cause\x18\x03 \x01(\tR\x05cause\x12I\n" +
 	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContextBLZJgithub.com/smartcontractkit/capabilities/chain_capabilities/evm;monitoringb\x06proto3"
 
 var (
@@ -2010,91 +2074,94 @@ func file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescGZIP() []b
 	return file_chain_capabilities_evm_monitoring_read_actions_proto_rawDescData
 }
 
-var file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes = make([]protoimpl.MessageInfo, 31)
+var file_chain_capabilities_evm_monitoring_read_actions_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
 var file_chain_capabilities_evm_monitoring_read_actions_proto_goTypes = []any{
-	(*CallContractRequest)(nil),             // 0: chain_capabilities.evm.CallContractRequest
-	(*CallContractInitiated)(nil),           // 1: chain_capabilities.evm.CallContractInitiated
-	(*CallContractSuccess)(nil),             // 2: chain_capabilities.evm.CallContractSuccess
-	(*CallContractError)(nil),               // 3: chain_capabilities.evm.CallContractError
-	(*Topics)(nil),                          // 4: chain_capabilities.evm.Topics
-	(*FilterLogsRequest)(nil),               // 5: chain_capabilities.evm.FilterLogsRequest
-	(*FilterLogsInitiated)(nil),             // 6: chain_capabilities.evm.FilterLogsInitiated
-	(*FilterLogsSuccess)(nil),               // 7: chain_capabilities.evm.FilterLogsSuccess
-	(*FilterLogsError)(nil),                 // 8: chain_capabilities.evm.FilterLogsError
-	(*BalanceAtRequest)(nil),                // 9: chain_capabilities.evm.BalanceAtRequest
-	(*BalanceAtInitiated)(nil),              // 10: chain_capabilities.evm.BalanceAtInitiated
-	(*BalanceAtSuccess)(nil),                // 11: chain_capabilities.evm.BalanceAtSuccess
-	(*BalanceAtError)(nil),                  // 12: chain_capabilities.evm.BalanceAtError
-	(*EstimateGasRequest)(nil),              // 13: chain_capabilities.evm.EstimateGasRequest
-	(*EstimateGasInitiated)(nil),            // 14: chain_capabilities.evm.EstimateGasInitiated
-	(*EstimateGasSuccess)(nil),              // 15: chain_capabilities.evm.EstimateGasSuccess
-	(*EstimateGasError)(nil),                // 16: chain_capabilities.evm.EstimateGasError
-	(*Receipt)(nil),                         // 17: chain_capabilities.evm.Receipt
-	(*GetTransactionByHashRequest)(nil),     // 18: chain_capabilities.evm.GetTransactionByHashRequest
-	(*GetTransactionByHashInitiated)(nil),   // 19: chain_capabilities.evm.GetTransactionByHashInitiated
-	(*TransactionData)(nil),                 // 20: chain_capabilities.evm.TransactionData
-	(*GetTransactionByHashSuccess)(nil),     // 21: chain_capabilities.evm.GetTransactionByHashSuccess
-	(*GetTransactionByHashError)(nil),       // 22: chain_capabilities.evm.GetTransactionByHashError
-	(*GetTransactionReceiptRequest)(nil),    // 23: chain_capabilities.evm.GetTransactionReceiptRequest
-	(*GetTransactionReceiptInitiated)(nil),  // 24: chain_capabilities.evm.GetTransactionReceiptInitiated
-	(*GetTransactionReceiptSuccess)(nil),    // 25: chain_capabilities.evm.GetTransactionReceiptSuccess
-	(*GetTransactionReceiptError)(nil),      // 26: chain_capabilities.evm.GetTransactionReceiptError
-	(*LatestAndFinalizedHeadInitiated)(nil), // 27: chain_capabilities.evm.LatestAndFinalizedHeadInitiated
-	(*BlockData)(nil),                       // 28: chain_capabilities.evm.BlockData
-	(*LatestAndFinalizedHeadSuccess)(nil),   // 29: chain_capabilities.evm.LatestAndFinalizedHeadSuccess
-	(*LatestAndFinalizedHeadError)(nil),     // 30: chain_capabilities.evm.LatestAndFinalizedHeadError
-	(*monitoring.ExecutionContext)(nil),     // 31: monitoring.ExecutionContext
+	(*CallContractRequest)(nil),            // 0: chain_capabilities.evm.CallContractRequest
+	(*CallContractInitiated)(nil),          // 1: chain_capabilities.evm.CallContractInitiated
+	(*CallContractSuccess)(nil),            // 2: chain_capabilities.evm.CallContractSuccess
+	(*CallContractError)(nil),              // 3: chain_capabilities.evm.CallContractError
+	(*Topics)(nil),                         // 4: chain_capabilities.evm.Topics
+	(*FilterLogsRequest)(nil),              // 5: chain_capabilities.evm.FilterLogsRequest
+	(*FilterLogsInitiated)(nil),            // 6: chain_capabilities.evm.FilterLogsInitiated
+	(*FilterLogsSuccess)(nil),              // 7: chain_capabilities.evm.FilterLogsSuccess
+	(*FilterLogsError)(nil),                // 8: chain_capabilities.evm.FilterLogsError
+	(*BalanceAtRequest)(nil),               // 9: chain_capabilities.evm.BalanceAtRequest
+	(*BalanceAtInitiated)(nil),             // 10: chain_capabilities.evm.BalanceAtInitiated
+	(*BalanceAtSuccess)(nil),               // 11: chain_capabilities.evm.BalanceAtSuccess
+	(*BalanceAtError)(nil),                 // 12: chain_capabilities.evm.BalanceAtError
+	(*EstimateGasRequest)(nil),             // 13: chain_capabilities.evm.EstimateGasRequest
+	(*EstimateGasInitiated)(nil),           // 14: chain_capabilities.evm.EstimateGasInitiated
+	(*EstimateGasSuccess)(nil),             // 15: chain_capabilities.evm.EstimateGasSuccess
+	(*EstimateGasError)(nil),               // 16: chain_capabilities.evm.EstimateGasError
+	(*Receipt)(nil),                        // 17: chain_capabilities.evm.Receipt
+	(*GetTransactionByHashRequest)(nil),    // 18: chain_capabilities.evm.GetTransactionByHashRequest
+	(*GetTransactionByHashInitiated)(nil),  // 19: chain_capabilities.evm.GetTransactionByHashInitiated
+	(*TransactionData)(nil),                // 20: chain_capabilities.evm.TransactionData
+	(*GetTransactionByHashSuccess)(nil),    // 21: chain_capabilities.evm.GetTransactionByHashSuccess
+	(*GetTransactionByHashError)(nil),      // 22: chain_capabilities.evm.GetTransactionByHashError
+	(*GetTransactionReceiptRequest)(nil),   // 23: chain_capabilities.evm.GetTransactionReceiptRequest
+	(*GetTransactionReceiptInitiated)(nil), // 24: chain_capabilities.evm.GetTransactionReceiptInitiated
+	(*GetTransactionReceiptSuccess)(nil),   // 25: chain_capabilities.evm.GetTransactionReceiptSuccess
+	(*GetTransactionReceiptError)(nil),     // 26: chain_capabilities.evm.GetTransactionReceiptError
+	(*HeaderByNumberRequest)(nil),          // 27: chain_capabilities.evm.HeaderByNumberRequest
+	(*HeaderByNumberInitiated)(nil),        // 28: chain_capabilities.evm.HeaderByNumberInitiated
+	(*BlockData)(nil),                      // 29: chain_capabilities.evm.BlockData
+	(*HeaderByNumberSuccess)(nil),          // 30: chain_capabilities.evm.HeaderByNumberSuccess
+	(*HeaderByNumberError)(nil),            // 31: chain_capabilities.evm.HeaderByNumberError
+	(*monitoring.ExecutionContext)(nil),    // 32: monitoring.ExecutionContext
 }
 var file_chain_capabilities_evm_monitoring_read_actions_proto_depIdxs = []int32{
 	0,  // 0: chain_capabilities.evm.CallContractInitiated.req:type_name -> chain_capabilities.evm.CallContractRequest
-	31, // 1: chain_capabilities.evm.CallContractInitiated.execution_context:type_name -> monitoring.ExecutionContext
+	32, // 1: chain_capabilities.evm.CallContractInitiated.execution_context:type_name -> monitoring.ExecutionContext
 	0,  // 2: chain_capabilities.evm.CallContractSuccess.req:type_name -> chain_capabilities.evm.CallContractRequest
-	31, // 3: chain_capabilities.evm.CallContractSuccess.execution_context:type_name -> monitoring.ExecutionContext
+	32, // 3: chain_capabilities.evm.CallContractSuccess.execution_context:type_name -> monitoring.ExecutionContext
 	0,  // 4: chain_capabilities.evm.CallContractError.req:type_name -> chain_capabilities.evm.CallContractRequest
-	31, // 5: chain_capabilities.evm.CallContractError.execution_context:type_name -> monitoring.ExecutionContext
+	32, // 5: chain_capabilities.evm.CallContractError.execution_context:type_name -> monitoring.ExecutionContext
 	4,  // 6: chain_capabilities.evm.FilterLogsRequest.topics:type_name -> chain_capabilities.evm.Topics
 	5,  // 7: chain_capabilities.evm.FilterLogsInitiated.req:type_name -> chain_capabilities.evm.FilterLogsRequest
-	31, // 8: chain_capabilities.evm.FilterLogsInitiated.execution_context:type_name -> monitoring.ExecutionContext
+	32, // 8: chain_capabilities.evm.FilterLogsInitiated.execution_context:type_name -> monitoring.ExecutionContext
 	5,  // 9: chain_capabilities.evm.FilterLogsSuccess.req:type_name -> chain_capabilities.evm.FilterLogsRequest
-	31, // 10: chain_capabilities.evm.FilterLogsSuccess.execution_context:type_name -> monitoring.ExecutionContext
+	32, // 10: chain_capabilities.evm.FilterLogsSuccess.execution_context:type_name -> monitoring.ExecutionContext
 	5,  // 11: chain_capabilities.evm.FilterLogsError.req:type_name -> chain_capabilities.evm.FilterLogsRequest
-	31, // 12: chain_capabilities.evm.FilterLogsError.execution_context:type_name -> monitoring.ExecutionContext
+	32, // 12: chain_capabilities.evm.FilterLogsError.execution_context:type_name -> monitoring.ExecutionContext
 	9,  // 13: chain_capabilities.evm.BalanceAtInitiated.req:type_name -> chain_capabilities.evm.BalanceAtRequest
-	31, // 14: chain_capabilities.evm.BalanceAtInitiated.execution_context:type_name -> monitoring.ExecutionContext
+	32, // 14: chain_capabilities.evm.BalanceAtInitiated.execution_context:type_name -> monitoring.ExecutionContext
 	9,  // 15: chain_capabilities.evm.BalanceAtSuccess.req:type_name -> chain_capabilities.evm.BalanceAtRequest
-	31, // 16: chain_capabilities.evm.BalanceAtSuccess.execution_context:type_name -> monitoring.ExecutionContext
+	32, // 16: chain_capabilities.evm.BalanceAtSuccess.execution_context:type_name -> monitoring.ExecutionContext
 	9,  // 17: chain_capabilities.evm.BalanceAtError.req:type_name -> chain_capabilities.evm.BalanceAtRequest
-	31, // 18: chain_capabilities.evm.BalanceAtError.execution_context:type_name -> monitoring.ExecutionContext
+	32, // 18: chain_capabilities.evm.BalanceAtError.execution_context:type_name -> monitoring.ExecutionContext
 	13, // 19: chain_capabilities.evm.EstimateGasInitiated.req:type_name -> chain_capabilities.evm.EstimateGasRequest
-	31, // 20: chain_capabilities.evm.EstimateGasInitiated.execution_context:type_name -> monitoring.ExecutionContext
+	32, // 20: chain_capabilities.evm.EstimateGasInitiated.execution_context:type_name -> monitoring.ExecutionContext
 	13, // 21: chain_capabilities.evm.EstimateGasSuccess.req:type_name -> chain_capabilities.evm.EstimateGasRequest
-	31, // 22: chain_capabilities.evm.EstimateGasSuccess.execution_context:type_name -> monitoring.ExecutionContext
+	32, // 22: chain_capabilities.evm.EstimateGasSuccess.execution_context:type_name -> monitoring.ExecutionContext
 	13, // 23: chain_capabilities.evm.EstimateGasError.req:type_name -> chain_capabilities.evm.EstimateGasRequest
-	31, // 24: chain_capabilities.evm.EstimateGasError.execution_context:type_name -> monitoring.ExecutionContext
+	32, // 24: chain_capabilities.evm.EstimateGasError.execution_context:type_name -> monitoring.ExecutionContext
 	18, // 25: chain_capabilities.evm.GetTransactionByHashInitiated.req:type_name -> chain_capabilities.evm.GetTransactionByHashRequest
-	31, // 26: chain_capabilities.evm.GetTransactionByHashInitiated.execution_context:type_name -> monitoring.ExecutionContext
+	32, // 26: chain_capabilities.evm.GetTransactionByHashInitiated.execution_context:type_name -> monitoring.ExecutionContext
 	18, // 27: chain_capabilities.evm.GetTransactionByHashSuccess.req:type_name -> chain_capabilities.evm.GetTransactionByHashRequest
 	20, // 28: chain_capabilities.evm.GetTransactionByHashSuccess.transaction:type_name -> chain_capabilities.evm.TransactionData
-	31, // 29: chain_capabilities.evm.GetTransactionByHashSuccess.execution_context:type_name -> monitoring.ExecutionContext
+	32, // 29: chain_capabilities.evm.GetTransactionByHashSuccess.execution_context:type_name -> monitoring.ExecutionContext
 	18, // 30: chain_capabilities.evm.GetTransactionByHashError.req:type_name -> chain_capabilities.evm.GetTransactionByHashRequest
-	31, // 31: chain_capabilities.evm.GetTransactionByHashError.execution_context:type_name -> monitoring.ExecutionContext
+	32, // 31: chain_capabilities.evm.GetTransactionByHashError.execution_context:type_name -> monitoring.ExecutionContext
 	23, // 32: chain_capabilities.evm.GetTransactionReceiptInitiated.req:type_name -> chain_capabilities.evm.GetTransactionReceiptRequest
-	31, // 33: chain_capabilities.evm.GetTransactionReceiptInitiated.execution_context:type_name -> monitoring.ExecutionContext
+	32, // 33: chain_capabilities.evm.GetTransactionReceiptInitiated.execution_context:type_name -> monitoring.ExecutionContext
 	23, // 34: chain_capabilities.evm.GetTransactionReceiptSuccess.req:type_name -> chain_capabilities.evm.GetTransactionReceiptRequest
 	17, // 35: chain_capabilities.evm.GetTransactionReceiptSuccess.receipt:type_name -> chain_capabilities.evm.Receipt
-	31, // 36: chain_capabilities.evm.GetTransactionReceiptSuccess.execution_context:type_name -> monitoring.ExecutionContext
+	32, // 36: chain_capabilities.evm.GetTransactionReceiptSuccess.execution_context:type_name -> monitoring.ExecutionContext
 	23, // 37: chain_capabilities.evm.GetTransactionReceiptError.req:type_name -> chain_capabilities.evm.GetTransactionReceiptRequest
-	31, // 38: chain_capabilities.evm.GetTransactionReceiptError.execution_context:type_name -> monitoring.ExecutionContext
-	31, // 39: chain_capabilities.evm.LatestAndFinalizedHeadInitiated.execution_context:type_name -> monitoring.ExecutionContext
-	28, // 40: chain_capabilities.evm.LatestAndFinalizedHeadSuccess.latest:type_name -> chain_capabilities.evm.BlockData
-	28, // 41: chain_capabilities.evm.LatestAndFinalizedHeadSuccess.finalized:type_name -> chain_capabilities.evm.BlockData
-	31, // 42: chain_capabilities.evm.LatestAndFinalizedHeadSuccess.execution_context:type_name -> monitoring.ExecutionContext
-	31, // 43: chain_capabilities.evm.LatestAndFinalizedHeadError.execution_context:type_name -> monitoring.ExecutionContext
-	44, // [44:44] is the sub-list for method output_type
-	44, // [44:44] is the sub-list for method input_type
-	44, // [44:44] is the sub-list for extension type_name
-	44, // [44:44] is the sub-list for extension extendee
-	0,  // [0:44] is the sub-list for field type_name
+	32, // 38: chain_capabilities.evm.GetTransactionReceiptError.execution_context:type_name -> monitoring.ExecutionContext
+	27, // 39: chain_capabilities.evm.HeaderByNumberInitiated.req:type_name -> chain_capabilities.evm.HeaderByNumberRequest
+	32, // 40: chain_capabilities.evm.HeaderByNumberInitiated.execution_context:type_name -> monitoring.ExecutionContext
+	27, // 41: chain_capabilities.evm.HeaderByNumberSuccess.req:type_name -> chain_capabilities.evm.HeaderByNumberRequest
+	29, // 42: chain_capabilities.evm.HeaderByNumberSuccess.header:type_name -> chain_capabilities.evm.BlockData
+	32, // 43: chain_capabilities.evm.HeaderByNumberSuccess.execution_context:type_name -> monitoring.ExecutionContext
+	27, // 44: chain_capabilities.evm.HeaderByNumberError.req:type_name -> chain_capabilities.evm.HeaderByNumberRequest
+	32, // 45: chain_capabilities.evm.HeaderByNumberError.execution_context:type_name -> monitoring.ExecutionContext
+	46, // [46:46] is the sub-list for method output_type
+	46, // [46:46] is the sub-list for method input_type
+	46, // [46:46] is the sub-list for extension type_name
+	46, // [46:46] is the sub-list for extension extendee
+	0,  // [0:46] is the sub-list for field type_name
 }
 
 func init() { file_chain_capabilities_evm_monitoring_read_actions_proto_init() }
@@ -2108,7 +2175,7 @@ func file_chain_capabilities_evm_monitoring_read_actions_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_chain_capabilities_evm_monitoring_read_actions_proto_rawDesc), len(file_chain_capabilities_evm_monitoring_read_actions_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   31,
+			NumMessages:   32,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

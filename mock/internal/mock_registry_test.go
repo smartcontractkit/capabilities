@@ -5,10 +5,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smartcontractkit/libocr/ragep2p/types"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/anypb"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
-	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/capabilities/libs/testutils"
 
@@ -49,11 +52,11 @@ func (m *mockCapRegistry) Add(ctx context.Context, capability capabilities.BaseC
 	return nil
 }
 
-func (m *mockCapRegistry) Get(ctx context.Context, id string) (capabilities.BaseCapability, error) {
+func (m *mockCapRegistry) Get(_ context.Context, id string) (capabilities.BaseCapability, error) {
 	return m.caps[id], nil
 }
 
-func (m *mockCapRegistry) List(ctx context.Context) ([]capabilities.BaseCapability, error) {
+func (m *mockCapRegistry) List(_ context.Context) ([]capabilities.BaseCapability, error) {
 	var caps []capabilities.BaseCapability
 	for _, cap := range m.caps {
 		caps = append(caps, cap)
@@ -61,34 +64,22 @@ func (m *mockCapRegistry) List(ctx context.Context) ([]capabilities.BaseCapabili
 	return caps, nil
 }
 
-func (m *mockCapRegistry) GetConsensus(ctx context.Context, id string) (capabilities.ConsensusCapability, error) {
-	capability := m.caps[id]
-	if cons, ok := capability.(capabilities.ConsensusCapability); ok {
-		return cons, nil
-	}
-	return nil, nil
-}
-
-func (m *mockCapRegistry) GetAction(ctx context.Context, id string) (capabilities.ActionCapability, error) {
-	capability := m.caps[id]
-	if action, ok := capability.(capabilities.ActionCapability); ok {
-		return action, nil
-	}
-	return nil, nil
-}
-
-func (m *mockCapRegistry) GetTarget(ctx context.Context, id string) (capabilities.TargetCapability, error) {
-	capability := m.caps[id]
-	if target, ok := capability.(capabilities.TargetCapability); ok {
-		return target, nil
-	}
-	return nil, nil
-}
-
-func (m *mockCapRegistry) GetTrigger(ctx context.Context, id string) (capabilities.TriggerCapability, error) {
+func (m *mockCapRegistry) GetTrigger(_ context.Context, id string) (capabilities.TriggerCapability, error) {
 	capability := m.caps[id]
 	if trigger, ok := capability.(capabilities.TriggerCapability); ok {
 		return trigger, nil
+	}
+	return nil, nil
+}
+
+func (m *mockCapRegistry) NodeByPeerID(_ context.Context, peerID types.PeerID) (capabilities.Node, error) {
+	return capabilities.Node{}, nil
+}
+
+func (m *mockCapRegistry) GetExecutable(_ context.Context, id string) (capabilities.ExecutableCapability, error) {
+	capability := m.caps[id]
+	if target, ok := capability.(capabilities.ExecutableCapability); ok {
+		return target, nil
 	}
 	return nil, nil
 }
@@ -123,7 +114,7 @@ func TestMockRegistry_CreateCapabilities(t *testing.T) {
 
 		_, err := registry.CreateCapability(ctx, info)
 		require.NoError(t, err)
-		require.Contains(t, registry.Targets, "test-target")
+		require.Contains(t, registry.Executables, "test-target")
 	})
 
 	t.Run("create action capability", func(t *testing.T) {
@@ -136,7 +127,7 @@ func TestMockRegistry_CreateCapabilities(t *testing.T) {
 
 		_, err := registry.CreateCapability(ctx, info)
 		require.NoError(t, err)
-		require.Contains(t, registry.Action, "test-action")
+		require.Contains(t, registry.Executables, "test-action")
 	})
 
 	t.Run("create consensus capability", func(t *testing.T) {
@@ -149,7 +140,7 @@ func TestMockRegistry_CreateCapabilities(t *testing.T) {
 
 		_, err := registry.CreateCapability(ctx, info)
 		require.NoError(t, err)
-		require.Contains(t, registry.Consensus, "test-consensus")
+		require.Contains(t, registry.Executables, "test-consensus")
 	})
 }
 
@@ -177,28 +168,65 @@ func TestMockRegistry_SendTriggerEvent(t *testing.T) {
 
 	require.NoError(t, err)
 
-	payload := &values.Map{
+	outputs := &values.Map{
 		Underlying: map[string]values.Value{
 			"test": values.NewString("value"),
 		},
 	}
-	payloadBytes, err := utils.MapToBytes(payload)
+	outputsBytes, err := utils.MapToBytes(outputs)
 	require.NoError(t, err)
+	payload := &anypb.Any{
+		TypeUrl: "some-type",
+		Value:   []byte("some-payload"),
+	}
+	ocrTriggerEvent := capabilities.OCRTriggerEvent{
+		ConfigDigest: []byte("ocr-config-digest"),
+		SeqNr:        32156,
+		Report:       []byte("ocr-report"),
+		Sigs: []capabilities.OCRAttributedOnchainSignature{
+			{
+				Signature: []byte("ocr-signature-1"),
+				Signer:    0,
+			},
+			{
+				Signature: []byte("ocr-signature-2"),
+				Signer:    1,
+			},
+		},
+	}
 
 	go func() {
 		_, err = registry.SendTriggerEvent(ctx, &pb.SendTriggerEventRequest{
-			ID:      "test-trigger",
-			EventID: "event1",
-			Payload: payloadBytes,
+			TriggerID:   "test-trigger",
+			TriggerType: "type-trigger",
+			ID:          "event1",
+			Outputs:     outputsBytes,
+			Payload:     payload,
+			OCREvent: &pb.OCRTriggerEvent{
+				ConfigDigest: ocrTriggerEvent.ConfigDigest,
+				SeqNr:        ocrTriggerEvent.SeqNr,
+				Report:       ocrTriggerEvent.Report,
+				Sigs: []*pb.OCRAttributedOnchainSignature{
+					{Signature: ocrTriggerEvent.Sigs[0].Signature,
+						Signer: ocrTriggerEvent.Sigs[0].Signer,
+					},
+					{
+						Signature: ocrTriggerEvent.Sigs[1].Signature,
+						Signer:    ocrTriggerEvent.Sigs[1].Signer,
+					},
+				},
+			},
 		})
 		require.NoError(t, err)
 	}()
 
 	select {
 	case resp := <-ch:
-		require.Equal(t, "test-trigger", resp.Event.TriggerType)
+		require.Equal(t, "type-trigger", resp.Event.TriggerType)
 		require.Equal(t, "event1", resp.Event.ID)
-		require.Equal(t, payload, resp.Event.Outputs)
+		require.Equal(t, outputs, resp.Event.Outputs)
+		require.Equal(t, payload, resp.Event.Payload)
+		require.Equal(t, &ocrTriggerEvent, resp.Event.OCREvent) //nolint:all Ignore deprecation as we still need to support this for older capabilities
 	case <-time.After(time.Second):
 		t.Fatal("timeout waiting for trigger event")
 	}
@@ -235,7 +263,7 @@ func TestMockRegistry_Execute(t *testing.T) {
 	configBytes, err := utils.MapToBytes(config)
 	require.NoError(t, err)
 
-	executable := registry.Targets["test-target"]
+	executable := registry.Executables["test-target"]
 	executable.ExecuteTimeout = time.Millisecond * 50000
 	go func() {
 		<-executable.requestChan
@@ -377,5 +405,222 @@ func TestMockRegistry_GetTriggerSubscribers(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, resp)
 		require.Empty(t, resp.WorkflowIDs)
+	})
+}
+
+func TestMockRegistry_RemoveCapability(t *testing.T) {
+	t.Parallel()
+	lggr := testutils.NewLogger(t)
+	capRegistry := newMockCapRegistry()
+	registry := NewMockRegistry(lggr, capRegistry)
+
+	ctx := context.Background()
+
+	// Create capabilities of different types
+	triggerInfo := &pb.CapabilityInfo{
+		ID:             "test-trigger",
+		CapabilityType: pb.CapabilityType_Trigger,
+		Description:    "test trigger",
+		IsLocal:        true,
+	}
+
+	targetInfo := &pb.CapabilityInfo{
+		ID:             "test-target",
+		CapabilityType: pb.CapabilityType_Target,
+		Description:    "test target",
+		IsLocal:        true,
+	}
+
+	actionInfo := &pb.CapabilityInfo{
+		ID:             "test-action",
+		CapabilityType: pb.CapabilityType_Action,
+		Description:    "test action",
+		IsLocal:        true,
+	}
+
+	// Create the capabilities
+	_, err := registry.CreateCapability(ctx, triggerInfo)
+	require.NoError(t, err)
+	require.Contains(t, registry.Triggers, "test-trigger")
+
+	_, err = registry.CreateCapability(ctx, targetInfo)
+	require.NoError(t, err)
+	require.Contains(t, registry.Executables, "test-target")
+
+	_, err = registry.CreateCapability(ctx, actionInfo)
+	require.NoError(t, err)
+	require.Contains(t, registry.Executables, "test-action")
+
+	// Test removing trigger capability
+	removeReq := &pb.RemoveCapabilityRequest{
+		ID: "test-trigger",
+	}
+
+	_, err = registry.RemoveCapability(ctx, removeReq)
+	require.NoError(t, err)
+	require.NotContains(t, registry.Triggers, "test-trigger")
+
+	// Test removing target capability
+	removeReq = &pb.RemoveCapabilityRequest{
+		ID: "test-target",
+	}
+
+	_, err = registry.RemoveCapability(ctx, removeReq)
+	require.NoError(t, err)
+	require.NotContains(t, registry.Executables, "test-target")
+
+	// Test removing action capability
+	removeReq = &pb.RemoveCapabilityRequest{
+		ID: "test-action",
+	}
+
+	_, err = registry.RemoveCapability(ctx, removeReq)
+	require.NoError(t, err)
+	require.NotContains(t, registry.Executables, "test-action")
+
+	// Test removing non-existent capability
+	removeReq = &pb.RemoveCapabilityRequest{
+		ID: "non-existent-id",
+	}
+
+	_, err = registry.RemoveCapability(ctx, removeReq)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not found")
+}
+
+func TestMockRegistry_SendTriggerEvent_IncompleteData(t *testing.T) {
+	t.Parallel()
+	lggr := testutils.NewLogger(t)
+	capRegistry := newMockCapRegistry()
+	registry := NewMockRegistry(lggr, capRegistry)
+
+	ctx := context.Background()
+
+	// Create a trigger capability
+	info := &pb.CapabilityInfo{
+		ID:             "test-trigger",
+		CapabilityType: pb.CapabilityType_Trigger,
+	}
+
+	_, err := registry.CreateCapability(ctx, info)
+	require.NoError(t, err)
+
+	subscriber := registry.Triggers["test-trigger"]
+
+	// Test case 1: Missing outputs
+	t.Run("missing outputs", func(t *testing.T) {
+		ch, err := subscriber.RegisterTrigger(context.Background(), capabilities.TriggerRegistrationRequest{
+			TriggerID: "test-trigger-no-outputs",
+			Metadata:  capabilities.RequestMetadata{},
+		})
+		require.NoError(t, err)
+
+		// Wait a moment to ensure registration is complete
+		time.Sleep(10 * time.Millisecond)
+
+		// Send event in the same goroutine to avoid race
+		_, err = registry.SendTriggerEvent(ctx, &pb.SendTriggerEventRequest{
+			TriggerID:   "test-trigger",
+			TriggerType: "type-trigger",
+			ID:          "event-no-outputs",
+			// Outputs field intentionally omitted
+		})
+		require.NoError(t, err)
+
+		select {
+		case resp := <-ch:
+			require.Equal(t, "type-trigger", resp.Event.TriggerType)
+			require.Equal(t, "event-no-outputs", resp.Event.ID)
+			require.Equal(t, values.EmptyMap(), resp.Event.Outputs) // Should be empty
+		case <-time.After(time.Second):
+			t.Fatal("timeout waiting for trigger event")
+		}
+	})
+
+	// Test case 2: Missing payload
+	t.Run("missing payload", func(t *testing.T) {
+		ch, err := subscriber.RegisterTrigger(context.Background(), capabilities.TriggerRegistrationRequest{
+			TriggerID: "test-trigger-no-payload",
+			Metadata:  capabilities.RequestMetadata{},
+		})
+		require.NoError(t, err)
+
+		// Wait a moment to ensure registration is complete
+		time.Sleep(10 * time.Millisecond)
+
+		outputs := &values.Map{
+			Underlying: map[string]values.Value{
+				"test": values.NewString("value"),
+			},
+		}
+		outputsBytes, err := utils.MapToBytes(outputs)
+		require.NoError(t, err)
+
+		// Send event in the same goroutine to avoid race
+		_, err = registry.SendTriggerEvent(ctx, &pb.SendTriggerEventRequest{
+			TriggerID:   "test-trigger",
+			TriggerType: "type-trigger",
+			ID:          "event-no-payload",
+			Outputs:     outputsBytes,
+			// Payload field intentionally omitted
+		})
+		require.NoError(t, err)
+
+		select {
+		case resp := <-ch:
+			require.Equal(t, "type-trigger", resp.Event.TriggerType)
+			require.Equal(t, "event-no-payload", resp.Event.ID)
+			require.Equal(t, outputs, resp.Event.Outputs)
+			require.Nil(t, resp.Event.Payload) // Should be nil
+		case <-time.After(time.Second):
+			t.Fatal("timeout waiting for trigger event")
+		}
+	})
+
+	// Test case 3: Missing OCR event
+	t.Run("missing OCR event", func(t *testing.T) {
+		ch, err := subscriber.RegisterTrigger(context.Background(), capabilities.TriggerRegistrationRequest{
+			TriggerID: "test-trigger-no-ocr",
+			Metadata:  capabilities.RequestMetadata{},
+		})
+		require.NoError(t, err)
+
+		// Wait a moment to ensure registration is complete
+		time.Sleep(10 * time.Millisecond)
+
+		outputs := &values.Map{
+			Underlying: map[string]values.Value{
+				"test": values.NewString("value"),
+			},
+		}
+		outputsBytes, err := utils.MapToBytes(outputs)
+		require.NoError(t, err)
+
+		payload := &anypb.Any{
+			TypeUrl: "some-type",
+			Value:   []byte("some-payload"),
+		}
+
+		// Send event in the same goroutine to avoid race
+		_, err = registry.SendTriggerEvent(ctx, &pb.SendTriggerEventRequest{
+			TriggerID:   "test-trigger",
+			TriggerType: "type-trigger",
+			ID:          "event-no-ocr",
+			Outputs:     outputsBytes,
+			Payload:     payload,
+			// OCREvent field intentionally omitted
+		})
+		require.NoError(t, err)
+
+		select {
+		case resp := <-ch:
+			require.Equal(t, "type-trigger", resp.Event.TriggerType)
+			require.Equal(t, "event-no-ocr", resp.Event.ID)
+			require.Equal(t, outputs, resp.Event.Outputs)
+			require.Equal(t, payload, resp.Event.Payload)
+			require.Empty(t, resp.Event.OCREvent) //nolint:all Ignore deprecation as we still need to support this for older capabilities
+		case <-time.After(time.Second):
+			t.Fatal("timeout waiting for trigger event")
+		}
 	})
 }
