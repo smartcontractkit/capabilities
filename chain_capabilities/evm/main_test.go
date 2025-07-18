@@ -23,7 +23,6 @@ import (
 )
 
 func TestCapabilityGRPCService_Initialise(t *testing.T) {
-	t.Skip("Flaky test: see https://github.com/smartcontractkit/capabilities/actions/runs/16369335194/job/46253860195 ")
 	t.Helper()
 
 	lggr := logger.Test(t)
