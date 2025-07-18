@@ -11,16 +11,17 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/mitchellh/mapstructure"
-	cap "github.com/smartcontractkit/capabilities/confidential_http_action/confidential_http_action_cap"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
+	"github.com/smartcontractkit/chainlink-common/pkg/values"
+
+	"github.com/mitchellh/mapstructure"
+	cap "github.com/smartcontractkit/capabilities/confidential_http_action/confidential_http_action_cap"
 	enclaveclient "github.com/smartcontractkit/confidential-compute/enclave-client"
 	httpenclavetypes "github.com/smartcontractkit/confidential-compute/enclave/nitro-confidential-http-enclave/types"
 	"github.com/smartcontractkit/confidential-compute/types"
 	enclavetypes "github.com/smartcontractkit/confidential-compute/types"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 var (
@@ -173,12 +174,13 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		return capabilities.CapabilityResponse{}, err
 	}
 
-	input, migrated, err := parseCapabilityRequestToInput(rawRequest)
+	var input cap.Input
+	err = rawRequest.Inputs.UnwrapTo(&input)
 	if err != nil {
 		return capabilities.CapabilityResponse{}, err
 	}
 
-	publicData := ConvertInputToHTTPEnclaveRequestData(*input)
+	publicData := ConvertInputToHTTPEnclaveRequestData(input)
 	if err != nil {
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to convert input to HTTP enclave request data: %w", err)
 	}
@@ -207,29 +209,38 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to execute enclave request: %w", err)
 	}
 
-	capResponses := MapRawToResponse(rawExecuteResponses, http.StatusOK)
-
-	response := capabilities.CapabilityResponse{}
-	if err = SetResponse(&response, migrated, cap.Output{Responses: capResponses}); err != nil {
-		return response, fmt.Errorf("error when setting response: %w", err)
+	if len(rawExecuteResponses) != 1 {
+		return capabilities.CapabilityResponse{}, fmt.Errorf("expected one enclave response, got %d", len(rawExecuteResponses))
 	}
 
-	return response, nil
-}
-
-func MapRawToResponse(rawResponses []enclavetypes.RawExecuteResponse, statusCode int64) []cap.Response {
-	// Pre-allocate the slice with the correct capacity for efficiency.
-	responses := make([]cap.Response, 0, len(rawResponses))
-
-	for _, raw := range rawResponses {
-		resp := cap.Response{
-			// In Go, []byte is an alias for []uint8, so a direct conversion is not needed.
-			Body:       raw.Output,
-			StatusCode: statusCode,
-		}
-		responses = append(responses, resp)
+	// As with the enclave request data, output must be converted from the enclave type to the SDK type.
+	var responses []cap.OutputResponsesElem
+	err = mapstructure.Decode(rawExecuteResponses[0].Output, &responses)
+	if err != nil {
+		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to decode enclave response: %w", err)
 	}
-	return responses
+
+	var respBodies []string
+	for _, r := range responses {
+		respBodies = append(respBodies, string(r.Body))
+	}
+	c.lggr.Infow("confidentialhttpcap capability has validated an attested batch of HTTP responses",
+		"workflowID", rawRequest.Metadata.WorkflowID,
+		"executionID", rawRequest.Metadata.WorkflowExecutionID,
+		"workflowName", rawRequest.Metadata.WorkflowName,
+		"responses", respBodies,
+		"attestation", rawExecuteResponses[0].Attestation)
+
+	// Return the response.
+	valsMap, err := values.WrapMap(cap.Output{
+		Responses: responses,
+	})
+	if err != nil {
+		return capabilities.CapabilityResponse{}, err
+	}
+	return capabilities.CapabilityResponse{
+		Value: valsMap,
+	}, nil
 }
 
 func (c *capability) SignComputeRequest(ctx context.Context, computeRequest enclavetypes.ComputeRequest) (*enclavetypes.SignedComputeRequest, error) {
@@ -243,7 +254,7 @@ func (c *capability) SignComputeRequest(ctx context.Context, computeRequest encl
 
 	var acct string
 	for _, a := range accounts {
-		if a == core.P2PAccountKey {
+		if a == "test" /*core.P2PAccountKey*/ {
 			acct = a
 			break
 		}
@@ -264,25 +275,6 @@ func (c *capability) SignComputeRequest(ctx context.Context, computeRequest encl
 		ComputeRequest: computeRequest,
 		Signature:      sig,
 	}, nil
-}
-
-func parseCapabilityRequestToInput(request capabilities.CapabilityRequest) (*cap.Input, bool, error) {
-	intermediateStruct := &structpb.Struct{}
-	migrated, err := FromValueOrAny(request.Inputs, request.Payload, intermediateStruct)
-	if err != nil {
-		return nil, false, fmt.Errorf("failed to extract proto data: %w", err)
-	}
-	log.Printf("Data source was migrated: %t", migrated)
-
-	// 2. Convert the protobuf struct to a standard Go map.
-	dataMap := intermediateStruct.AsMap()
-
-	// 3. Decode the map into your final Go struct.
-	var result cap.Input
-	if err := mapstructure.Decode(dataMap, &result); err != nil {
-		return nil, false, fmt.Errorf("mapstructure failed to decode: %w", err)
-	}
-	return &result, migrated, nil
 }
 
 type EnclaveParams struct {

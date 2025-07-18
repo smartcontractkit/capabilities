@@ -117,6 +117,115 @@ func (c *simpleEnclave) URL() sdk.CapDefinition[string] {
 
 func (c *simpleEnclave) private() {}
 
+// OutputWrapper allows access to field from an sdk.CapDefinition[Output]
+func OutputWrapper(raw sdk.CapDefinition[Output]) OutputCap {
+	wrapped, ok := raw.(OutputCap)
+	if ok {
+		return wrapped
+	}
+	return &outputCap{CapDefinition: raw}
+}
+
+type OutputCap interface {
+	sdk.CapDefinition[Output]
+	Responses() sdk.CapDefinition[[]OutputResponsesElem]
+	private()
+}
+
+type outputCap struct {
+	sdk.CapDefinition[Output]
+}
+
+func (*outputCap) private() {}
+func (c *outputCap) Responses() sdk.CapDefinition[[]OutputResponsesElem] {
+	return sdk.AccessField[Output, []OutputResponsesElem](c.CapDefinition, "responses")
+}
+
+func ConstantOutput(value Output) OutputCap {
+	return &outputCap{CapDefinition: sdk.ConstantDefinition(value)}
+}
+
+func NewOutputFromFields(
+	responses sdk.CapDefinition[[]OutputResponsesElem]) OutputCap {
+	return &simpleOutput{
+		CapDefinition: sdk.ComponentCapDefinition[Output]{
+			"responses": responses.Ref(),
+		},
+		responses: responses,
+	}
+}
+
+type simpleOutput struct {
+	sdk.CapDefinition[Output]
+	responses sdk.CapDefinition[[]OutputResponsesElem]
+}
+
+func (c *simpleOutput) Responses() sdk.CapDefinition[[]OutputResponsesElem] {
+	return c.responses
+}
+
+func (c *simpleOutput) private() {}
+
+// OutputResponsesElemWrapper allows access to field from an sdk.CapDefinition[OutputResponsesElem]
+func OutputResponsesElemWrapper(raw sdk.CapDefinition[OutputResponsesElem]) OutputResponsesElemCap {
+	wrapped, ok := raw.(OutputResponsesElemCap)
+	if ok {
+		return wrapped
+	}
+	return &outputResponsesElemCap{CapDefinition: raw}
+}
+
+type OutputResponsesElemCap interface {
+	sdk.CapDefinition[OutputResponsesElem]
+	Body() sdk.CapDefinition[[]uint8]
+	StatusCode() sdk.CapDefinition[int64]
+	private()
+}
+
+type outputResponsesElemCap struct {
+	sdk.CapDefinition[OutputResponsesElem]
+}
+
+func (*outputResponsesElemCap) private() {}
+func (c *outputResponsesElemCap) Body() sdk.CapDefinition[[]uint8] {
+	return sdk.AccessField[OutputResponsesElem, []uint8](c.CapDefinition, "body")
+}
+func (c *outputResponsesElemCap) StatusCode() sdk.CapDefinition[int64] {
+	return sdk.AccessField[OutputResponsesElem, int64](c.CapDefinition, "statusCode")
+}
+
+func ConstantOutputResponsesElem(value OutputResponsesElem) OutputResponsesElemCap {
+	return &outputResponsesElemCap{CapDefinition: sdk.ConstantDefinition(value)}
+}
+
+func NewOutputResponsesElemFromFields(
+	body sdk.CapDefinition[[]uint8],
+	statusCode sdk.CapDefinition[int64]) OutputResponsesElemCap {
+	return &simpleOutputResponsesElem{
+		CapDefinition: sdk.ComponentCapDefinition[OutputResponsesElem]{
+			"body":       body.Ref(),
+			"statusCode": statusCode.Ref(),
+		},
+		body:       body,
+		statusCode: statusCode,
+	}
+}
+
+type simpleOutputResponsesElem struct {
+	sdk.CapDefinition[OutputResponsesElem]
+	body       sdk.CapDefinition[[]uint8]
+	statusCode sdk.CapDefinition[int64]
+}
+
+func (c *simpleOutputResponsesElem) Body() sdk.CapDefinition[[]uint8] {
+	return c.body
+}
+func (c *simpleOutputResponsesElem) StatusCode() sdk.CapDefinition[int64] {
+	return c.statusCode
+}
+
+func (c *simpleOutputResponsesElem) private() {}
+
 // RequestWrapper allows access to field from an sdk.CapDefinition[Request]
 func RequestWrapper(raw sdk.CapDefinition[Request]) RequestCap {
 	wrapped, ok := raw.(RequestCap)

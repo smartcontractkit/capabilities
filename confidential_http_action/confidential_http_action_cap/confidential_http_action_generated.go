@@ -145,9 +145,56 @@ func (j *Input) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-type Output []struct {
-	// Payload corresponds to the JSON schema field "payload".
-	Payload []uint8 `json:"payload" yaml:"payload" mapstructure:"payload"`
+type Output struct {
+	// Responses corresponds to the JSON schema field "responses".
+	Responses []OutputResponsesElem `json:"responses" yaml:"responses" mapstructure:"responses"`
+}
+
+type OutputResponsesElem struct {
+	// The body of the response
+	Body []uint8 `json:"body" yaml:"body" mapstructure:"body"`
+
+	// The HTTP status code of the response
+	StatusCode int64 `json:"statusCode" yaml:"statusCode" mapstructure:"statusCode"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *OutputResponsesElem) UnmarshalJSON(b []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["body"]; raw != nil && !ok {
+		return fmt.Errorf("field body in OutputResponsesElem: required")
+	}
+	if _, ok := raw["statusCode"]; raw != nil && !ok {
+		return fmt.Errorf("field statusCode in OutputResponsesElem: required")
+	}
+	type Plain OutputResponsesElem
+	var plain Plain
+	if err := json.Unmarshal(b, &plain); err != nil {
+		return err
+	}
+	*j = OutputResponsesElem(plain)
+	return nil
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *Output) UnmarshalJSON(b []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["responses"]; raw != nil && !ok {
+		return fmt.Errorf("field responses in Output: required")
+	}
+	type Plain Output
+	var plain Plain
+	if err := json.Unmarshal(b, &plain); err != nil {
+		return err
+	}
+	*j = Output(plain)
+	return nil
 }
 
 type Request struct {

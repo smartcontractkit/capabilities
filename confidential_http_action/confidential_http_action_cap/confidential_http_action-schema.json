@@ -136,24 +136,38 @@
             "additionalProperties": false
         },
         "Output": {
-            "type": "array",
-            "items": {
-                "properties": {
-                    "payload": {
-                        "type": "array",
-                        "items": {
-                            "type": "integer",
-                            "minimum": 0,
-                            "maximum": 255
-                        }
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "responses": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "statusCode": {
+                                "type": "integer",
+                                "description": "The HTTP status code of the response"
+                            },
+                            "body": {
+                                "type": "array",
+                                "items": {
+                                    "type": "integer",
+                                    "minimum": 0,
+                                    "maximum": 255
+                                },
+                                "description": "The body of the response"
+                            }
+                        },
+                        "required": [
+                            "statusCode",
+                            "body"
+                        ]
                     }
-                },
-                "additionalProperties": false,
-                "type": "object",
-                "required": [
-                    "payload"
-                ]
-            }
+                }
+            },
+            "required": [
+                "responses"
+            ]
         }
     },
     "type": "object",
