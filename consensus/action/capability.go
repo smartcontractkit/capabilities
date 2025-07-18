@@ -14,6 +14,7 @@ import (
 	"golang.org/x/exp/maps"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -27,6 +28,8 @@ import (
 	"github.com/smartcontractkit/capabilities/consensus/oracle/types"
 
 	"github.com/smartcontractkit/capabilities/consensus/oracle"
+
+	"go.opentelemetry.io/otel/metric"
 )
 
 const defaultRequestBatchSize = 20
@@ -63,18 +66,40 @@ type consensusCapability struct {
 	wg     sync.WaitGroup
 }
 
+type storeStatsCollector struct {
+	requestStoreRequests metric.Int64Gauge
+}
+
+func (s *storeStatsCollector) SetRequestCount(requestCount int) {
+	s.requestStoreRequests.Record(context.Background(), int64(requestCount))
+}
+
 // NewConsensusCapability creates a new ConsensusCapability with the given logger, clock, and response cache expiry time.  The
 // response cache expiry controls how long a response for a given request is cached before it is considered expired and evicted. This allows
 // the capability to respond to slow requests sent after consensus has been reached.
-func NewConsensusCapability(lggr logger.Logger, clock clockwork.Clock, responseCacheExpiry time.Duration) *consensusCapability {
-	reqStore := requests.NewStore[*oracle.ConsensusRequest]()
+func NewConsensusCapability(lggr logger.Logger, clock clockwork.Clock, responseCacheExpiry time.Duration) (*consensusCapability, error) {
+	reqStoreGauge := beholder.MetricInfo{
+		Name:        "capability_consensus_request_store_requests",
+		Unit:        "",
+		Description: "The number of requests in the capability consensus request store",
+	}
+
+	gauge, err := reqStoreGauge.NewInt64Gauge(beholder.GetMeter())
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request store gauge: %w", err)
+	}
+
+	reqStore := requests.NewStoreWithStatsCollector[*oracle.ConsensusRequest](
+		&storeStatsCollector{
+			requestStoreRequests: gauge,
+		})
 
 	return &consensusCapability{
 		lggr:       lggr,
 		reqStore:   reqStore,
 		reqHandler: requests.NewHandler[*oracle.ConsensusRequest, oracle.ConsensusResponse](lggr, reqStore, clock, responseCacheExpiry),
 		stopCh:     make(services.StopChan),
-	}
+	}, nil
 }
 
 // SetRequestTimeout is used by the reporting plugin to set the request timeout for consensus requests.  The plugin
