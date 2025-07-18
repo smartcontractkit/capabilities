@@ -44,13 +44,17 @@ message Observation {
   map<string, RequestObservation> observations = 2;
 }
 
+message RequestError {
+  repeated bytes errors = 1;
+}
+
 message RequestOutcome {
   string requestID = 1;
   oneof outcome {
     google.protobuf.Empty lockableToBlock = 2;
     bytes eventuallyConsistent = 3;
     values.v1.Decimal aggregatable = 4;
-    bytes error = 5;
+    RequestError error = 5;
   }
 }
 
@@ -65,6 +69,6 @@ message RequestReport {
     ChainHeight lockableToBlock = 2;
     bytes eventuallyConsistent = 3;
     values.v1.Decimal aggregatable = 4;
-    bytes error = 5;
+    RequestError error = 5;
   }
 }

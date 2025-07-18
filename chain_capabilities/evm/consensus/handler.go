@@ -2,6 +2,7 @@ package consensus
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -120,10 +121,19 @@ func (s *Handler) CompleteRequest(id string, report *types.RequestReport) error 
 	case *types.RequestReport_EventuallyConsistent:
 		return s.completeRequest(id, types.Reply{Value: report.GetEventuallyConsistent()})
 	case *types.RequestReport_Error:
-		return s.completeRequest(id, types.Reply{Err: types.ObservationError(report.GetError()).Err()})
+		return s.completeError(id, report.GetError())
 	default:
 		return fmt.Errorf("unknown request type %T", report.Report)
 	}
+}
+
+func (s *Handler) completeError(id string, protoErrors *types.RequestError) error {
+	requestErrors := make([]error, len(protoErrors.Errors))
+	for i, protoError := range protoErrors.Errors {
+		requestErrors[i] = types.ObservationError(protoError).Err()
+	}
+
+	return s.completeRequest(id, types.Reply{Err: errors.Join(requestErrors...)})
 }
 
 func (s *Handler) completeLockableRequest(id string, height *types.ChainHeight) error {

@@ -400,6 +400,50 @@ func (x *Observation) GetObservations() map[string]*RequestObservation {
 	return nil
 }
 
+type RequestError struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Errors        [][]byte               `protobuf:"bytes,1,rep,name=errors,proto3" json:"errors,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RequestError) Reset() {
+	*x = RequestError{}
+	mi := &file_ocr_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RequestError) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RequestError) ProtoMessage() {}
+
+func (x *RequestError) ProtoReflect() protoreflect.Message {
+	mi := &file_ocr_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RequestError.ProtoReflect.Descriptor instead.
+func (*RequestError) Descriptor() ([]byte, []int) {
+	return file_ocr_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *RequestError) GetErrors() [][]byte {
+	if x != nil {
+		return x.Errors
+	}
+	return nil
+}
+
 type RequestOutcome struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	RequestID string                 `protobuf:"bytes,1,opt,name=requestID,proto3" json:"requestID,omitempty"`
@@ -416,7 +460,7 @@ type RequestOutcome struct {
 
 func (x *RequestOutcome) Reset() {
 	*x = RequestOutcome{}
-	mi := &file_ocr_proto_msgTypes[5]
+	mi := &file_ocr_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -428,7 +472,7 @@ func (x *RequestOutcome) String() string {
 func (*RequestOutcome) ProtoMessage() {}
 
 func (x *RequestOutcome) ProtoReflect() protoreflect.Message {
-	mi := &file_ocr_proto_msgTypes[5]
+	mi := &file_ocr_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -441,7 +485,7 @@ func (x *RequestOutcome) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestOutcome.ProtoReflect.Descriptor instead.
 func (*RequestOutcome) Descriptor() ([]byte, []int) {
-	return file_ocr_proto_rawDescGZIP(), []int{5}
+	return file_ocr_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *RequestOutcome) GetRequestID() string {
@@ -485,7 +529,7 @@ func (x *RequestOutcome) GetAggregatable() *pb.Decimal {
 	return nil
 }
 
-func (x *RequestOutcome) GetError() []byte {
+func (x *RequestOutcome) GetError() *RequestError {
 	if x != nil {
 		if x, ok := x.Outcome.(*RequestOutcome_Error); ok {
 			return x.Error
@@ -511,7 +555,7 @@ type RequestOutcome_Aggregatable struct {
 }
 
 type RequestOutcome_Error struct {
-	Error []byte `protobuf:"bytes,5,opt,name=error,proto3,oneof"`
+	Error *RequestError `protobuf:"bytes,5,opt,name=error,proto3,oneof"`
 }
 
 func (*RequestOutcome_LockableToBlock) isRequestOutcome_Outcome() {}
@@ -532,7 +576,7 @@ type Outcome struct {
 
 func (x *Outcome) Reset() {
 	*x = Outcome{}
-	mi := &file_ocr_proto_msgTypes[6]
+	mi := &file_ocr_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -544,7 +588,7 @@ func (x *Outcome) String() string {
 func (*Outcome) ProtoMessage() {}
 
 func (x *Outcome) ProtoReflect() protoreflect.Message {
-	mi := &file_ocr_proto_msgTypes[6]
+	mi := &file_ocr_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -557,7 +601,7 @@ func (x *Outcome) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Outcome.ProtoReflect.Descriptor instead.
 func (*Outcome) Descriptor() ([]byte, []int) {
-	return file_ocr_proto_rawDescGZIP(), []int{6}
+	return file_ocr_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *Outcome) GetChainHeight() *ChainHeight {
@@ -590,7 +634,7 @@ type RequestReport struct {
 
 func (x *RequestReport) Reset() {
 	*x = RequestReport{}
-	mi := &file_ocr_proto_msgTypes[7]
+	mi := &file_ocr_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -602,7 +646,7 @@ func (x *RequestReport) String() string {
 func (*RequestReport) ProtoMessage() {}
 
 func (x *RequestReport) ProtoReflect() protoreflect.Message {
-	mi := &file_ocr_proto_msgTypes[7]
+	mi := &file_ocr_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -615,7 +659,7 @@ func (x *RequestReport) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestReport.ProtoReflect.Descriptor instead.
 func (*RequestReport) Descriptor() ([]byte, []int) {
-	return file_ocr_proto_rawDescGZIP(), []int{7}
+	return file_ocr_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *RequestReport) GetRequestID() string {
@@ -659,7 +703,7 @@ func (x *RequestReport) GetAggregatable() *pb.Decimal {
 	return nil
 }
 
-func (x *RequestReport) GetError() []byte {
+func (x *RequestReport) GetError() *RequestError {
 	if x != nil {
 		if x, ok := x.Report.(*RequestReport_Error); ok {
 			return x.Error
@@ -685,7 +729,7 @@ type RequestReport_Aggregatable struct {
 }
 
 type RequestReport_Error struct {
-	Error []byte `protobuf:"bytes,5,opt,name=error,proto3,oneof"`
+	Error *RequestError `protobuf:"bytes,5,opt,name=error,proto3,oneof"`
 }
 
 func (*RequestReport_LockableToBlock) isRequestReport_Report() {}
@@ -723,23 +767,25 @@ const file_ocr_proto_rawDesc = "" +
 	"\fobservations\x18\x02 \x03(\v2;.chain_capabilities.evm.types.Observation.ObservationsEntryR\fobservations\x1aq\n" +
 	"\x11ObservationsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12F\n" +
-	"\x05value\x18\x02 \x01(\v20.chain_capabilities.evm.types.RequestObservationR\x05value:\x028\x01\"\x85\x02\n" +
+	"\x05value\x18\x02 \x01(\v20.chain_capabilities.evm.types.RequestObservationR\x05value:\x028\x01\"&\n" +
+	"\fRequestError\x12\x16\n" +
+	"\x06errors\x18\x01 \x03(\fR\x06errors\"\xb1\x02\n" +
 	"\x0eRequestOutcome\x12\x1c\n" +
 	"\trequestID\x18\x01 \x01(\tR\trequestID\x12B\n" +
 	"\x0flockableToBlock\x18\x02 \x01(\v2\x16.google.protobuf.EmptyH\x00R\x0flockableToBlock\x124\n" +
 	"\x14eventuallyConsistent\x18\x03 \x01(\fH\x00R\x14eventuallyConsistent\x128\n" +
-	"\faggregatable\x18\x04 \x01(\v2\x12.values.v1.DecimalH\x00R\faggregatable\x12\x16\n" +
-	"\x05error\x18\x05 \x01(\fH\x00R\x05errorB\t\n" +
+	"\faggregatable\x18\x04 \x01(\v2\x12.values.v1.DecimalH\x00R\faggregatable\x12B\n" +
+	"\x05error\x18\x05 \x01(\v2*.chain_capabilities.evm.types.RequestErrorH\x00R\x05errorB\t\n" +
 	"\aoutcome\"\xa0\x01\n" +
 	"\aOutcome\x12K\n" +
 	"\vchainHeight\x18\x01 \x01(\v2).chain_capabilities.evm.types.ChainHeightR\vchainHeight\x12H\n" +
-	"\boutcomes\x18\x02 \x03(\v2,.chain_capabilities.evm.types.RequestOutcomeR\boutcomes\"\x96\x02\n" +
+	"\boutcomes\x18\x02 \x03(\v2,.chain_capabilities.evm.types.RequestOutcomeR\boutcomes\"\xc2\x02\n" +
 	"\rRequestReport\x12\x1c\n" +
 	"\trequestID\x18\x01 \x01(\tR\trequestID\x12U\n" +
 	"\x0flockableToBlock\x18\x02 \x01(\v2).chain_capabilities.evm.types.ChainHeightH\x00R\x0flockableToBlock\x124\n" +
 	"\x14eventuallyConsistent\x18\x03 \x01(\fH\x00R\x14eventuallyConsistent\x128\n" +
-	"\faggregatable\x18\x04 \x01(\v2\x12.values.v1.DecimalH\x00R\faggregatable\x12\x16\n" +
-	"\x05error\x18\x05 \x01(\fH\x00R\x05errorB\b\n" +
+	"\faggregatable\x18\x04 \x01(\v2\x12.values.v1.DecimalH\x00R\faggregatable\x12B\n" +
+	"\x05error\x18\x05 \x01(\v2*.chain_capabilities.evm.types.RequestErrorH\x00R\x05errorB\b\n" +
 	"\x06report*m\n" +
 	"\x0fObservationType\x12\v\n" +
 	"\aUNKNOWN\x10\x00\x12\x19\n" +
@@ -761,7 +807,7 @@ func file_ocr_proto_rawDescGZIP() []byte {
 }
 
 var file_ocr_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_ocr_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_ocr_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_ocr_proto_goTypes = []any{
 	(ObservationType)(0),            // 0: chain_capabilities.evm.types.ObservationType
 	(*ChainHeight)(nil),             // 1: chain_capabilities.evm.types.ChainHeight
@@ -769,31 +815,34 @@ var file_ocr_proto_goTypes = []any{
 	(*AggregatableObservation)(nil), // 3: chain_capabilities.evm.types.AggregatableObservation
 	(*RequestObservation)(nil),      // 4: chain_capabilities.evm.types.RequestObservation
 	(*Observation)(nil),             // 5: chain_capabilities.evm.types.Observation
-	(*RequestOutcome)(nil),          // 6: chain_capabilities.evm.types.RequestOutcome
-	(*Outcome)(nil),                 // 7: chain_capabilities.evm.types.Outcome
-	(*RequestReport)(nil),           // 8: chain_capabilities.evm.types.RequestReport
-	nil,                             // 9: chain_capabilities.evm.types.Observation.ObservationsEntry
-	(*pb.Decimal)(nil),              // 10: values.v1.Decimal
-	(*emptypb.Empty)(nil),           // 11: google.protobuf.Empty
+	(*RequestError)(nil),            // 6: chain_capabilities.evm.types.RequestError
+	(*RequestOutcome)(nil),          // 7: chain_capabilities.evm.types.RequestOutcome
+	(*Outcome)(nil),                 // 8: chain_capabilities.evm.types.Outcome
+	(*RequestReport)(nil),           // 9: chain_capabilities.evm.types.RequestReport
+	nil,                             // 10: chain_capabilities.evm.types.Observation.ObservationsEntry
+	(*pb.Decimal)(nil),              // 11: values.v1.Decimal
+	(*emptypb.Empty)(nil),           // 12: google.protobuf.Empty
 }
 var file_ocr_proto_depIdxs = []int32{
-	10, // 0: chain_capabilities.evm.types.AggregatableObservation.value:type_name -> values.v1.Decimal
-	11, // 1: chain_capabilities.evm.types.RequestObservation.lockableToBlock:type_name -> google.protobuf.Empty
+	11, // 0: chain_capabilities.evm.types.AggregatableObservation.value:type_name -> values.v1.Decimal
+	12, // 1: chain_capabilities.evm.types.RequestObservation.lockableToBlock:type_name -> google.protobuf.Empty
 	3,  // 2: chain_capabilities.evm.types.RequestObservation.aggregatable:type_name -> chain_capabilities.evm.types.AggregatableObservation
 	1,  // 3: chain_capabilities.evm.types.Observation.chainHeight:type_name -> chain_capabilities.evm.types.ChainHeight
-	9,  // 4: chain_capabilities.evm.types.Observation.observations:type_name -> chain_capabilities.evm.types.Observation.ObservationsEntry
-	11, // 5: chain_capabilities.evm.types.RequestOutcome.lockableToBlock:type_name -> google.protobuf.Empty
-	10, // 6: chain_capabilities.evm.types.RequestOutcome.aggregatable:type_name -> values.v1.Decimal
-	1,  // 7: chain_capabilities.evm.types.Outcome.chainHeight:type_name -> chain_capabilities.evm.types.ChainHeight
-	6,  // 8: chain_capabilities.evm.types.Outcome.outcomes:type_name -> chain_capabilities.evm.types.RequestOutcome
-	1,  // 9: chain_capabilities.evm.types.RequestReport.lockableToBlock:type_name -> chain_capabilities.evm.types.ChainHeight
-	10, // 10: chain_capabilities.evm.types.RequestReport.aggregatable:type_name -> values.v1.Decimal
-	4,  // 11: chain_capabilities.evm.types.Observation.ObservationsEntry.value:type_name -> chain_capabilities.evm.types.RequestObservation
-	12, // [12:12] is the sub-list for method output_type
-	12, // [12:12] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	10, // 4: chain_capabilities.evm.types.Observation.observations:type_name -> chain_capabilities.evm.types.Observation.ObservationsEntry
+	12, // 5: chain_capabilities.evm.types.RequestOutcome.lockableToBlock:type_name -> google.protobuf.Empty
+	11, // 6: chain_capabilities.evm.types.RequestOutcome.aggregatable:type_name -> values.v1.Decimal
+	6,  // 7: chain_capabilities.evm.types.RequestOutcome.error:type_name -> chain_capabilities.evm.types.RequestError
+	1,  // 8: chain_capabilities.evm.types.Outcome.chainHeight:type_name -> chain_capabilities.evm.types.ChainHeight
+	7,  // 9: chain_capabilities.evm.types.Outcome.outcomes:type_name -> chain_capabilities.evm.types.RequestOutcome
+	1,  // 10: chain_capabilities.evm.types.RequestReport.lockableToBlock:type_name -> chain_capabilities.evm.types.ChainHeight
+	11, // 11: chain_capabilities.evm.types.RequestReport.aggregatable:type_name -> values.v1.Decimal
+	6,  // 12: chain_capabilities.evm.types.RequestReport.error:type_name -> chain_capabilities.evm.types.RequestError
+	4,  // 13: chain_capabilities.evm.types.Observation.ObservationsEntry.value:type_name -> chain_capabilities.evm.types.RequestObservation
+	14, // [14:14] is the sub-list for method output_type
+	14, // [14:14] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_ocr_proto_init() }
@@ -807,13 +856,13 @@ func file_ocr_proto_init() {
 		(*RequestObservation_Aggregatable)(nil),
 		(*RequestObservation_Error)(nil),
 	}
-	file_ocr_proto_msgTypes[5].OneofWrappers = []any{
+	file_ocr_proto_msgTypes[6].OneofWrappers = []any{
 		(*RequestOutcome_LockableToBlock)(nil),
 		(*RequestOutcome_EventuallyConsistent)(nil),
 		(*RequestOutcome_Aggregatable)(nil),
 		(*RequestOutcome_Error)(nil),
 	}
-	file_ocr_proto_msgTypes[7].OneofWrappers = []any{
+	file_ocr_proto_msgTypes[8].OneofWrappers = []any{
 		(*RequestReport_LockableToBlock)(nil),
 		(*RequestReport_EventuallyConsistent)(nil),
 		(*RequestReport_Aggregatable)(nil),
@@ -825,7 +874,7 @@ func file_ocr_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ocr_proto_rawDesc), len(file_ocr_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   9,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

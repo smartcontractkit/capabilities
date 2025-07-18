@@ -356,8 +356,7 @@ func (rp *reportingPlugin) agreeOnAggregationMethod(requestID string, aos []attr
 	return mode[string, string](rp.config.N, rp.config.F, iterator)
 }
 
-func (rp *reportingPlugin) mostCommonValue(requestID string, aos []attributedObservation,
-	getValue func(*ctypes.RequestObservation) []byte) ([]byte, error) {
+func (rp *reportingPlugin) agreeOnEventuallyConsistentValue(requestID string, aos []attributedObservation) ([]byte, error) {
 	iterator := func(yield func(commontypes.OracleID, observation[[32]byte, []byte]) bool) {
 		for _, ob := range aos {
 			requestOb, ok := ob.Observation.Observations[requestID]
@@ -365,10 +364,14 @@ func (rp *reportingPlugin) mostCommonValue(requestID string, aos []attributedObs
 				continue
 			}
 
-			key := sha256.Sum256(getValue(requestOb))
+			if _, ok := requestOb.Observation.(*ctypes.RequestObservation_EventuallyConsistent); !ok {
+				continue
+			}
+
+			key := sha256.Sum256(requestOb.GetEventuallyConsistent())
 			yield(ob.Observer, observation[[32]byte, []byte]{
 				Key:   key,
-				Value: getValue(requestOb),
+				Value: requestOb.GetEventuallyConsistent(),
 			})
 		}
 	}
@@ -443,9 +446,7 @@ func (rp *reportingPlugin) Outcome(
 				Outcome:   &ctypes.RequestOutcome_Aggregatable{Aggregatable: value},
 			})
 		case ctypes.ObservationType_EVENTUALLY_CONSISTENT:
-			value, err := rp.mostCommonValue(requestID, aos, func(requestObservation *ctypes.RequestObservation) []byte {
-				return requestObservation.GetEventuallyConsistent()
-			})
+			value, err := rp.agreeOnEventuallyConsistentValue(requestID, aos)
 			if err != nil {
 				rp.logger.Infow("Could not determine request value", "requestID", requestID, "err", err)
 				continue
@@ -460,16 +461,14 @@ func (rp *reportingPlugin) Outcome(
 				Outcome:   &ctypes.RequestOutcome_LockableToBlock{LockableToBlock: &emptypb.Empty{}},
 			})
 		case ctypes.ObservationType_ERROR:
-			value, err := rp.mostCommonValue(requestID, aos, func(requestObservation *ctypes.RequestObservation) []byte {
-				return requestObservation.GetError()
-			})
+			requestErrors, err := modeForError(rp.config.N, rp.config.F, requestID, aos)
 			if err != nil {
 				rp.logger.Infow("Could not determine request error", "requestID", requestID, "err", err)
 				continue
 			}
 			outcome.Outcomes = append(outcome.Outcomes, &ctypes.RequestOutcome{
 				RequestID: requestID,
-				Outcome:   &ctypes.RequestOutcome_Error{Error: value},
+				Outcome:   &ctypes.RequestOutcome_Error{Error: &ctypes.RequestError{Errors: requestErrors}},
 			})
 		default:
 			return nil, fmt.Errorf("unsupported observation type: %s", observationType)

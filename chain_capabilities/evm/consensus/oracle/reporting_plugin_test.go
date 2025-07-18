@@ -488,7 +488,7 @@ func TestOutcome(t *testing.T) {
 	}
 }
 
-func TestMostCommonValue(t *testing.T) {
+func TestAgreeOnEventuallyConsistentValue(t *testing.T) {
 	const id = "request_1"
 	testCases := []struct {
 		name              string
@@ -551,9 +551,7 @@ func TestMostCommonValue(t *testing.T) {
 					},
 				})
 			}
-			value, err := plugin.mostCommonValue(id, nodesObservations, func(requestObservation *types.RequestObservation) []byte {
-				return requestObservation.GetEventuallyConsistent()
-			})
+			value, err := plugin.agreeOnEventuallyConsistentValue(id, nodesObservations)
 			if tc.expectedError == "" {
 				require.NoError(t, err)
 				require.Equal(t, tc.expectedValue, value)

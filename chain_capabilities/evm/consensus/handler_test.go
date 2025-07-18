@@ -2,6 +2,7 @@ package consensus
 
 import (
 	"context"
+	"errors"
 	"math/big"
 	"testing"
 	"time"
@@ -159,7 +160,7 @@ func TestCompleteRequest(t *testing.T) {
 				Name:    "Eventually Consistent Request with error",
 				Request: types.NewEventuallyConsistentRequest("req-1", nil),
 				Report: &types.RequestReport{
-					Report: &types.RequestReport_Error{Error: mustMarshalProto(t, status.Convert(assert.AnError).Proto())},
+					Report: &types.RequestReport_Error{Error: &types.RequestError{Errors: [][]byte{mustMarshalProto(t, status.Convert(assert.AnError).Proto())}}},
 				},
 				ExpectedReply: types.Reply{Err: assert.AnError},
 			},
@@ -175,9 +176,24 @@ func TestCompleteRequest(t *testing.T) {
 				Name:    "Aggregatable Request with error",
 				Request: types.NewAggregatableRequest("req-1", nil),
 				Report: &types.RequestReport{
-					Report: &types.RequestReport_Error{Error: mustMarshalProto(t, status.Convert(assert.AnError).Proto())},
+					Report: &types.RequestReport_Error{Error: &types.RequestError{Errors: [][]byte{mustMarshalProto(t, status.Convert(assert.AnError).Proto())}}},
 				},
 				ExpectedReply: types.Reply{Err: assert.AnError},
+			},
+			{
+				Name:    "Aggregatable Request with two errors",
+				Request: types.NewAggregatableRequest("req-1", nil),
+				Report: &types.RequestReport{
+					Report: &types.RequestReport_Error{Error: &types.RequestError{
+						Errors: [][]byte{
+							mustMarshalProto(t, status.Convert(errors.New("error-1")).Proto()),
+							mustMarshalProto(t, status.Convert(errors.New("error-2")).Proto()),
+						}}},
+				},
+				ExpectedReply: types.Reply{
+					Err: errors.Join(errors.New("rpc error: code = Unknown desc = error-1"),
+						errors.New("rpc error: code = Unknown desc = error-2")),
+				},
 			},
 		}
 		for _, tc := range testCases {
