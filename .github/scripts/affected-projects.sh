@@ -10,6 +10,9 @@ base=$1
 
 affected_projects=$(./nx show projects --affected --json --base=$base)
 
+# echo "Affected projects:"
+# echo "$affected_projects" | jq .
+
 projects=($(echo $affected_projects | jq -r '.[]'))
 
 # Initialize an output string

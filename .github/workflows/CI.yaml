@@ -51,28 +51,11 @@ jobs:
       - name: Get affected projects
         id: affected
         run: |
-          # Redirect script's stderr to the workflow's stderr, capture only stdout for GITHUB_OUTPUT
-          JSON_OUTPUT=$(./.github/scripts/affected-projects.sh ${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }} 2>&1)
-
-          # Check if the output is valid JSON before setting the GITHUB_OUTPUT
-          if echo "$JSON_OUTPUT" | jq . >/dev/null 2>&1; then
-            echo "affected<<EOF_JSON" >> $GITHUB_OUTPUT
-            echo "$JSON_OUTPUT" >> $GITHUB_OUTPUT
-            echo "EOF_JSON" >> $GITHUB_OUTPUT
-          else
-            echo "Error: The script did not produce valid JSON output." >&2
-            echo "$JSON_OUTPUT" >&2 # Output the problematic content for debugging
-            exit 1
-          fi
-
-      - name: Print Affected Output
-        run: |
-          echo "--- Raw 'affected' job output (steps.affected.outputs.affected) ---"
-          echo "${{ steps.affected.outputs.affected }}" 
+          echo "affected=$(./.github/scripts/affected-projects.sh ${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }})" >> $GITHUB_OUTPUT
 
   build:
     needs: affected
-    if: ${{fromJson(needs.affected.outputs.nx).projects_with_build != '[]' && fromJson(needs.affected.outputs.nx).projects_with_build != null}}
+    if: ${{fromJson(needs.affected.outputs.nx).projects_with_build != null && contains(fromJson(needs.affected.outputs.nx).projects_with_build, fromJson(needs.affected.outputs.nx).projects_with_build[0])}}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -103,7 +86,7 @@ jobs:
 
   test:
     needs: affected
-    if: ${{fromJson(needs.affected.outputs.nx).projects_with_test != '[]' && fromJson(needs.affected.outputs.nx).projects_with_test != null}}
+    if: ${{fromJson(needs.affected.outputs.nx).projects_with_test != null && contains(fromJson(needs.affected.outputs.nx).projects_with_test, fromJson(needs.affected.outputs.nx).projects_with_test[0])}}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -142,7 +125,7 @@ jobs:
 
   race:
     needs: affected
-    if: ${{fromJson(needs.affected.outputs.nx).projects_with_race != null && fromJson(needs.affected.outputs.nx).projects_with_race != '[]'}}
+    if: ${{fromJson(needs.affected.outputs.nx).projects_with_race != null && contains(fromJson(needs.affected.outputs.nx).projects_with_race, fromJson(needs.affected.outputs.nx).projects_with_race[0])}}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
