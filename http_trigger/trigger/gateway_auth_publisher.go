@@ -137,7 +137,7 @@ func (h *gatewayAuthPublisher) SendWorkflowMetadata(ctx context.Context, gateway
 		batchAuthData := make([]gateway.WorkflowMetadata, 0, len(batch))
 		for _, wf := range batch {
 			var keys []gateway.AuthorizedKey
-			for key, _ := range wf.authorizedKeys {
+			for key := range wf.authorizedKeys {
 				keys = append(keys, key)
 			}
 			batchAuthData = append(batchAuthData, gateway.WorkflowMetadata{
