@@ -26,7 +26,6 @@ import (
 )
 
 func Test_Consensus(t *testing.T) {
-	t.Skip("skipping consensys until all breaking changes are fixed")
 	ctx := t.Context()
 	beholderTester := beholdertest.NewObserver(t)
 
@@ -45,7 +44,7 @@ func Test_Consensus(t *testing.T) {
 	targetSink := framework.NewTargetSink("mock-target", "1.0.0")
 
 	numOfWorkflowNodes := 4
-	workflowName := "TestWf"
+	workflowName := "a1b2c3d4e5f6a1b2c3d4"
 
 	setupDon(ctx, t, lggr, wasmFile, targetSink, numOfWorkflowNodes, workflowName)
 
@@ -75,7 +74,7 @@ func Test_Consensus(t *testing.T) {
 			}
 		}
 
-		// Check if we have the expected number of identical consensus values for each trigger time
+		// Check if we have expected number of identical consensus values for each trigger time
 		for _, consensusValues := range triggerTimeIdenticalConsensusValue {
 			if len(consensusValues) == numOfWorkflowNodes {
 				if len(consensusValues) == numOfWorkflowNodes && allEqual(consensusValues) {
