@@ -191,6 +191,10 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 
 	encryptedSecrets, encryptedDecyrptedShares, err := GetEncryptedDecryptedShares(input.VaultDonSecretIds, c.vaultDonPublicKey, c.vaultDonID)
 
+	if err != nil {
+		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to get encrypted decryption key shares: %w", err)
+	}
+
 	computeReq := types.ComputeRequest{
 		RequestID:                    reqID,
 		PublicData:                   publicDataBytes,
@@ -254,7 +258,7 @@ func (c *capability) SignComputeRequest(ctx context.Context, computeRequest encl
 
 	var acct string
 	for _, a := range accounts {
-		if a == "test" /*core.P2PAccountKey*/ {
+		if a == core.P2PAccountKey {
 			acct = a
 			break
 		}

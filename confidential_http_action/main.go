@@ -67,6 +67,10 @@ func (cs *capabilitiesServer) Name() string {
 	return serviceName
 }
 
+func (cs *capabilitiesServer) Ready() error {
+	return nil
+}
+
 func (cs *capabilitiesServer) Infos(ctx context.Context) ([]capabilities.CapabilityInfo, error) {
 	triggerInfo, err := cs.action.Info(ctx)
 	if err != nil {
