@@ -38,6 +38,7 @@ func TestBlocksProvider(t *testing.T) {
 			require.NoError(t, bp.Close())
 		})
 
+		// TODO: switch to eventually
 		time.Sleep(2 * time.Second)
 
 		latestBlock, safeBlock, finalizedBlock := bp.GetLatest(), bp.GetSafe(), bp.GetFinalized()

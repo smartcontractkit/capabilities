@@ -55,7 +55,7 @@ type unknownRequest struct {
 	ID        string
 	ExpiresAt time.Time
 	Element   *list.Element[*unknownRequest]
-	Result    any
+	Reply     types.Reply
 }
 
 type requestCtx struct {
@@ -63,7 +63,7 @@ type requestCtx struct {
 	//nolint:containedctx // Justification: required to track request's timeout
 	Ctx        context.Context
 	Cancel     context.CancelFunc
-	ResultChan chan any
+	ResultChan chan types.Reply
 }
 
 func (r *requestCtx) ID() string {
@@ -114,11 +114,13 @@ func (s *Handler) GetRequest(id string) (types.Request, bool) {
 func (s *Handler) CompleteRequest(id string, report *types.RequestReport) error {
 	switch report.Report.(type) {
 	case *types.RequestReport_Aggregatable:
-		return s.completeRequest(id, report.GetAggregatable())
+		return s.completeRequest(id, types.Reply{Value: report.GetAggregatable()})
 	case *types.RequestReport_LockableToBlock:
 		return s.completeLockableRequest(id, report.GetLockableToBlock())
 	case *types.RequestReport_EventuallyConsistent:
-		return s.completeRequest(id, report.GetEventuallyConsistent())
+		return s.completeRequest(id, types.Reply{Value: report.GetEventuallyConsistent()})
+	case *types.RequestReport_Error:
+		return s.completeRequest(id, types.Reply{Err: types.ObservationError(report.GetError()).Err()})
 	default:
 		return fmt.Errorf("unknown request type %T", report.Report)
 	}
@@ -160,7 +162,7 @@ func (s *Handler) completeLockableRequest(id string, height *types.ChainHeight) 
 	return nil
 }
 
-func (s *Handler) completeRequest(id string, value any) error {
+func (s *Handler) completeRequest(id string, reply types.Reply) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	request := s.requests.Get(id)
@@ -168,7 +170,7 @@ func (s *Handler) completeRequest(id string, value any) error {
 		uRequest := &unknownRequest{
 			ID:        id,
 			ExpiresAt: time.Now().Add(s.unknownRequestTTL),
-			Result:    value,
+			Reply:     reply,
 		}
 		uRequest.Element = s.unknownRequestsOrderedByTimeout.PushBack(uRequest)
 		s.unknownRequestsResultByID[id] = uRequest
@@ -176,20 +178,20 @@ func (s *Handler) completeRequest(id string, value any) error {
 	}
 
 	s.requests.Evict(id)
-	request.ResultChan <- value // non blocking as ResultChan is buffered
+	request.ResultChan <- reply // non blocking as ResultChan is buffered
 
 	// cancel request to prevent further polling
 	request.Cancel()
 	return nil
 }
 
-func (s *Handler) Handle(ctx context.Context, request types.Request) (<-chan any, error) {
+func (s *Handler) Handle(ctx context.Context, request types.Request) (<-chan types.Reply, error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	ch := make(chan any, 1)
+	ch := make(chan types.Reply, 1)
 	uRequest, ok := s.unknownRequestsResultByID[request.ID()]
 	if ok {
-		ch <- uRequest.Result // non-blocking as ch is buffered
+		ch <- uRequest.Reply // non-blocking as ch is buffered
 		delete(s.unknownRequestsResultByID, request.ID())
 		s.unknownRequestsOrderedByTimeout.Remove(uRequest.Element)
 		return ch, nil

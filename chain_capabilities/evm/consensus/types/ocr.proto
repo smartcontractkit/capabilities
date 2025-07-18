@@ -13,11 +13,12 @@ message ChainHeight {
   int64 finalized = 3;
 }
 
-enum RequestType {
-  REQUEST_TYPE_UNKNOWN = 0;
-  REQUEST_TYPE_EVENTUALLY_CONSISTENT = 1;
-  REQUEST_TYPE_LOCKABLE_TO_BLOCK = 2;
-  REQUEST_TYPE_AGGREGATABLE = 3;
+enum ObservationType {
+  UNKNOWN = 0;
+  EVENTUALLY_CONSISTENT = 1;
+  LOCKABLE_TO_BLOCK = 2;
+  AGGREGATABLE = 3;
+  ERROR = 4;
 }
 
 message Query {
@@ -34,6 +35,7 @@ message RequestObservation {
     google.protobuf.Empty lockableToBlock = 1;
     bytes eventuallyConsistent = 2;
     AggregatableObservation aggregatable = 3;
+    bytes error = 4;
   }
 }
 
@@ -48,6 +50,7 @@ message RequestOutcome {
     google.protobuf.Empty lockableToBlock = 2;
     bytes eventuallyConsistent = 3;
     values.v1.Decimal aggregatable = 4;
+    bytes error = 5;
   }
 }
 
@@ -62,5 +65,6 @@ message RequestReport {
     ChainHeight lockableToBlock = 2;
     bytes eventuallyConsistent = 3;
     values.v1.Decimal aggregatable = 4;
+    bytes error = 5;
   }
 }
