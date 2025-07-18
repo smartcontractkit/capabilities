@@ -74,7 +74,7 @@ func Test_Consensus(t *testing.T) {
 			}
 		}
 
-		// Check if we have the expected number of identical consensus values for each trigger time
+		// Check if we have expected number of identical consensus values for each trigger time
 		for _, consensusValues := range triggerTimeIdenticalConsensusValue {
 			if len(consensusValues) == numOfWorkflowNodes {
 				if len(consensusValues) == numOfWorkflowNodes && allEqual(consensusValues) {
