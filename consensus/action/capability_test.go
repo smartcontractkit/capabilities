@@ -30,7 +30,8 @@ func Test_SimpleConsensus(t *testing.T) {
 
 	oracleFactory := testutils.NewOracleFactory(t, lggr)
 
-	err := capability.Initialise(ctx, "", nil, nil, nil, nil, nil,
+	err := capability.Initialise(ctx, "",
+		nil, nil, nil, nil, nil,
 		oracleFactory, nil, nil,
 	)
 	require.NoError(t, err)
