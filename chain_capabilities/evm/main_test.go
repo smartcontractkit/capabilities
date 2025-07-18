@@ -28,7 +28,7 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 	lggr := logger.Test(t)
 
 	evmSvc := evmmock.NewEVMService(t)
-	evmSvc.On("GetFiltersNames", mock.Anything).Return([]string{}, nil)
+	evmSvc.On("GetFiltersNames", mock.Anything).Maybe().Return([]string{}, nil)
 	relayer := relayermock.NewRelayer(t)
 	relayer.On("EVM").Return(evmSvc, nil)
 	relayer.On("GetChainInfo", mock.Anything).Return(types.ChainInfo{}, nil)

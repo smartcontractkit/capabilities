@@ -893,7 +893,7 @@ func TestCleanUpStaleFilters(t *testing.T) {
 		store := NewLogTriggerStore()
 		service := NewLogTriggerService(mockEVM, store, lggr, test.NopBeholderProcessor{}, &monitoring.MessageBuilder{}, 10*time.Millisecond)
 
-		mockEVM.On("GetFiltersNames", mock.Anything).Maybe().Return(nil, fmt.Errorf("some error")).Once()
+		mockEVM.On("GetFiltersNames", mock.Anything).Return(nil, fmt.Errorf("some error")).Once()
 
 		service.cleanUpStaleFilters(t.Context())
 		mockEVM.AssertNotCalled(t, "UnregisterLogTracking", mock.Anything, mock.Anything)
