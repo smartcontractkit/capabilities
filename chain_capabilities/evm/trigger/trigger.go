@@ -73,11 +73,10 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 }
 
 func (lts *LogTriggerService) StartCleanUp(ctx context.Context) {
-	lts.srvcEng.Go(func(srvcCtx context.Context) {
-		duration := 30 * time.Second
-		ticker := services.NewTicker(duration)
+	duration := 30 * time.Second
+	ticker := services.NewTicker(duration)
+	lts.srvcEng.GoTick(ticker, func(srvcCtx context.Context) {
 		lts.lggr.Debugf("Starting clean up of failed log poller filters every %s seconds", duration)
-		defer ticker.Stop()
 		for {
 			select {
 			case <-ctx.Done():
