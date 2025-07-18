@@ -8,14 +8,17 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	pb2 "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb"
+	"github.com/smartcontractkit/libocr/offchainreporting2plus/types"
+
+	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
 )
 
 type ConsensusRequestMetadata struct {
 	capabilities.RequestMetadata
 	KeyBundleID string
 	ReportID    string
+	RequestType oracletypes.RequestType
 }
 
 func (m ConsensusRequestMetadata) RequestID() string {
@@ -23,9 +26,10 @@ func (m ConsensusRequestMetadata) RequestID() string {
 }
 
 type ConsensusRequest struct {
-	RequestID string
-	Input     *pb.SimpleConsensusInputs
-	ExpiresAt time.Time
+	RequestID  string
+	Input      *pb.SimpleConsensusInputs
+	ReceivedAt time.Time
+	ExpiresAt  time.Time
 
 	CallbackCh chan ConsensusResponse
 
@@ -34,6 +38,7 @@ type ConsensusRequest struct {
 
 func NewConsensusRequest(
 	input *pb.SimpleConsensusInputs,
+	receivedAt time.Time,
 	expiresAt time.Time,
 	callbackCh chan ConsensusResponse,
 	metadata ConsensusRequestMetadata,
@@ -41,6 +46,7 @@ func NewConsensusRequest(
 	return &ConsensusRequest{
 		RequestID:  metadata.RequestID(),
 		Input:      input,
+		ReceivedAt: receivedAt,
 		ExpiresAt:  expiresAt,
 		CallbackCh: callbackCh,
 		Metadata:   metadata,
@@ -78,8 +84,9 @@ func (r *ConsensusRequest) Copy() *ConsensusRequest {
 		Input:     proto.Clone(r.Input).(*pb.SimpleConsensusInputs),
 
 		// No need to copy these, they're value types.
-		ExpiresAt: r.ExpiresAt,
-		Metadata:  r.Metadata,
+		ReceivedAt: r.ReceivedAt,
+		ExpiresAt:  r.ExpiresAt,
+		Metadata:   r.Metadata,
 
 		// Intentionally not copied, but are thread-safe.
 		CallbackCh: r.CallbackCh,
@@ -88,8 +95,14 @@ func (r *ConsensusRequest) Copy() *ConsensusRequest {
 
 type ConsensusResponse struct {
 	ReqID string
-	Value *pb2.Value
-	Err   error
+
+	ConfigDigest  types.ConfigDigest
+	SeqNr         uint64
+	ReportContext []byte
+	RawReport     []byte
+	Sigs          []types.AttributedOnchainSignature
+
+	Err error
 }
 
 func (r ConsensusResponse) RequestID() string {
