@@ -64,7 +64,7 @@ func (h *gatewayAuthPublisher) BroadcastWorkflowMetadata(ctx context.Context, wo
 	rawRes := json.RawMessage(payload)
 	gatewayResp := jsonrpc.Response[json.RawMessage]{
 		Version: jsonrpc.JsonRpcVersion,
-		ID:      gateway.GetRequestID(gateway.MethodWorkflowPushAuthMetadata, workflowSelector.WorkflowID),
+		ID:      gateway.GetRequestID(gateway.MethodPushWorkflowMetadata, workflowSelector.WorkflowID),
 		Result:  &rawRes,
 	}
 	gatewayIDs, err := h.gc.GatewayIDs(ctx)
@@ -115,7 +115,7 @@ func (h *gatewayAuthPublisher) SendWorkflowMetadata(ctx context.Context, gateway
 		return errors.New("empty workflow ID")
 	}
 	methodName := strings.Split(req.ID, "/")[0]
-	if methodName != gateway.MethodWorkflowPullAuthMetadata {
+	if methodName != gateway.MethodPullWorkflowMetadata {
 		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInvalidRequest, "invalid request ID for workflow pull auth metadata")
 		return fmt.Errorf("invalid request ID for workflow pull auth metadata: %s", req.ID)
 	}

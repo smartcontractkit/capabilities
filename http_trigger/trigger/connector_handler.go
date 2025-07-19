@@ -61,8 +61,8 @@ func (h *connectorHandler) Start(ctx context.Context) error {
 	return h.StartOnce(HandlerName, func() error {
 		return h.gatewayConnector.AddHandler(ctx, []string{
 			serviceName(gateway_common.MethodWorkflowExecute),
-			serviceName(gateway_common.MethodWorkflowPushAuthMetadata),
-			serviceName(gateway_common.MethodWorkflowPullAuthMetadata),
+			serviceName(gateway_common.MethodPullWorkflowMetadata),
+			serviceName(gateway_common.MethodPushWorkflowMetadata),
 		}, h)
 	})
 }
@@ -152,7 +152,7 @@ func (h *connectorHandler) HandleGatewayMessage(ctx context.Context, gatewayID s
 	switch req.Method {
 	case gateway_common.MethodWorkflowExecute:
 		h.processTrigger(ctx, gatewayID, req)
-	case gateway_common.MethodWorkflowPullAuthMetadata:
+	case gateway_common.MethodPullWorkflowMetadata:
 		// No retries here. Retries are orchestrated by the gateway node
 		err := h.gatewayAuthPublisher.SendWorkflowMetadata(ctx, gatewayID, req)
 		if err != nil {
