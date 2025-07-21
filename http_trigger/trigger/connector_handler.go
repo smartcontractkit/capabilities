@@ -96,6 +96,9 @@ func (h *connectorHandler) ID(context.Context) (string, error) {
 
 func (h *connectorHandler) RegisterWorkflow(ctx context.Context, workflowSelector gateway_common.WorkflowSelector, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error {
 	var authorizedKeys []gateway_common.AuthorizedKey
+	if len(input.AuthorizedKeys) == 0 {
+		return fmt.Errorf("no authorized keys")
+	}
 	if len(input.AuthorizedKeys) > int(h.config.MaxAuthorizedKeysPerWorkflow) {
 		return fmt.Errorf("too many authorized keys: %d, max allowed: %d", len(input.AuthorizedKeys), h.config.MaxAuthorizedKeysPerWorkflow)
 	}
@@ -107,7 +110,7 @@ func (h *connectorHandler) RegisterWorkflow(ctx context.Context, workflowSelecto
 			}
 			authorizedKeys = append(authorizedKeys, gateway_common.AuthorizedKey{
 				KeyType:   gateway_common.KeyTypeECDSA,
-				PublicKey: key.PublicKey,
+				PublicKey: strings.ToLower(key.PublicKey),
 			})
 		default:
 			return fmt.Errorf("unsupported key type: %s", key.Type)
@@ -199,7 +202,6 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 	if req.Params == nil {
 		req.Params = &json.RawMessage{}
 	}
-
 	err := json.Unmarshal(*req.Params, &triggerReq)
 	if err != nil {
 		h.lggr.Errorw("Failed to unmarshal HTTP trigger request", "error", err, "gatewayID", gatewayID, "requestID", req.ID)
@@ -212,7 +214,6 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrParse, "Invalid input JSON")
 		return
 	}
-	// TODO: PRODCRE-305 validate JWT against authorized keys
 	workflowID := triggerReq.Workflow.WorkflowID
 	var exists bool
 	if workflowID == "" {
@@ -228,7 +229,7 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		}
 	}
 	l = logger.With(l, "workflowID", workflowID)
-	err = h.triggerWorkflow(ctx, workflowID, req.ID, gatewayID, input)
+	err = h.triggerWorkflow(ctx, workflowID, req.ID, gatewayID, input, triggerReq.Key)
 	if err != nil {
 		l.Errorw("Failed to trigger workflow", "error", err)
 		return
@@ -259,18 +260,27 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 	h.sendResponse(ctx, gatewayID, resp)
 }
 
-func (h *connectorHandler) triggerWorkflow(ctx context.Context, workflowID string, reqID string, gatewayID string, input *structpb.Struct) error {
+func (h *connectorHandler) triggerWorkflow(ctx context.Context, workflowID string, reqID string, gatewayID string, input *structpb.Struct, key gateway_common.AuthorizedKey) error {
 	workflow, ok := h.workflowStore.getWorkflowByID(workflowID)
 	if !ok {
 		h.sendErrorResponse(ctx, gatewayID, reqID, jsonrpc.ErrInvalidRequest, "Workflow not registered")
 		return fmt.Errorf("workflowID %s not registered", workflowID)
 	}
-	err := workflow.trigger(ctx, capabilities.TriggerAndId[*http.Payload]{
+	executionID, err := workflows.EncodeExecutionID(workflowID, reqID)
+	if err != nil {
+		h.sendErrorResponse(ctx, gatewayID, reqID, jsonrpc.ErrInternal, "Internal server error")
+		return fmt.Errorf("failed to encode workflow execution ID: %w", err)
+	}
+	fmt.Printf("triggering workflow %s with key %s\n", workflowID, key.PublicKey)
+	err = workflow.trigger(ctx, capabilities.TriggerAndId[*http.Payload]{
 		// workflow engine does not process the request if the ID has already been used
-		Id: reqID,
+		Id: executionID,
 		Trigger: &http.Payload{
 			Input: input,
-			// TODO: PRODCRE-305 validate JWT against authorized keys
+			Key: &http.AuthorizedKey{
+				Type:      http.KeyType_KEY_TYPE_ECDSA,
+				PublicKey: key.PublicKey,
+			},
 		},
 	})
 	if err != nil {

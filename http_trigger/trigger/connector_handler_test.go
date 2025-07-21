@@ -3,6 +3,7 @@ package trigger
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -162,7 +163,8 @@ func requireWorkflowTriggered(t *testing.T, triggerCh <-chan capabilities.Trigge
 			input := triggerReq.Trigger.Input.AsMap()
 			require.Len(t, input, 1)
 			require.Equal(t, "value", input["key"])
-			// TODO: PRODCRE-305 validate triggerReq.Trigger.Key
+			require.Equal(t, http.KeyType_KEY_TYPE_ECDSA, triggerReq.Trigger.Key.Type)
+			require.Equal(t, publicKey, triggerReq.Trigger.Key.PublicKey)
 		}
 	}()
 	err := handler.HandleGatewayMessage(t.Context(), "gw1", req)
@@ -429,6 +431,24 @@ func TestRegisterWorkflow_InvalidECDSAPublicKey(t *testing.T) {
 			keyType:   http.KeyType_KEY_TYPE_UNSPECIFIED,
 			errorMsg:  "unsupported key type",
 		},
+		{
+			name:      "invalid EIP55 checksum - wrong case",
+			publicKey: "0xa18b5d6db47fb7b0974505d7ab544e24478b6e98", // all lowercase, should fail EIP55
+			keyType:   http.KeyType_KEY_TYPE_ECDSA,
+			errorMsg:  "invalid public key format: must be a valid EIP55 address",
+		},
+		{
+			name:      "invalid EIP55 checksum - all uppercase",
+			publicKey: "0xA18B5D6DB47FB7B0974505D7AB544E24478B6E98", // all uppercase, should fail EIP55
+			keyType:   http.KeyType_KEY_TYPE_ECDSA,
+			errorMsg:  "invalid public key format: must be a valid EIP55 address",
+		},
+		{
+			name:      "invalid EIP55 checksum - wrong mixed case",
+			publicKey: "0xA18b5D6Db47fB7B0974505D7aB544E24478B6E98", // wrong mixed case, should fail EIP55
+			keyType:   http.KeyType_KEY_TYPE_ECDSA,
+			errorMsg:  "invalid public key format: must be a valid EIP55 address",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -451,6 +471,40 @@ func TestRegisterWorkflow_InvalidECDSAPublicKey(t *testing.T) {
 			err := handler.RegisterWorkflow(context.Background(), selector, cfg, sendCh)
 			require.Error(t, err)
 			require.Contains(t, err.Error(), tc.errorMsg)
+		})
+	}
+}
+
+// TestRegisterWorkflow_ValidEIP55PublicKey tests that valid EIP55 addresses are accepted
+func TestRegisterWorkflow_ValidEIP55PublicKey(t *testing.T) {
+	lggr := logger.Test(t)
+	handler, _, _ := setup(t, lggr)
+	sendCh := make(chan capabilities.TriggerAndId[*http.Payload], 1)
+
+	validEIP55Keys := []string{
+		"0xA18B5D6DB47fB7b0974505D7aB544e24478B6e98", // Mixed case with valid EIP55 checksum
+		"0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed", // Another valid EIP55 address
+		"0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359", // Valid EIP55 address
+	}
+
+	for i, validKey := range validEIP55Keys {
+		t.Run(fmt.Sprintf("valid_eip55_key_%d", i), func(t *testing.T) {
+			cfg := &http.Config{
+				AuthorizedKeys: []*http.AuthorizedKey{
+					{
+						PublicKey: validKey,
+						Type:      http.KeyType_KEY_TYPE_ECDSA,
+					},
+				},
+			}
+			selector := gateway_common.WorkflowSelector{
+				WorkflowOwner: "0xabcdef1234567890abcdef1234567890abcdef12",
+				WorkflowName:  "workflowName",
+				WorkflowTag:   "workflowTag",
+				WorkflowID:    fmt.Sprintf("workflowID-%d", i),
+			}
+			err := handler.RegisterWorkflow(context.Background(), selector, cfg, sendCh)
+			require.NoError(t, err, "Valid EIP55 address should be accepted: %s", validKey)
 		})
 	}
 }

@@ -282,6 +282,8 @@ github.com/sirupsen/logrus v1.4.1/go.mod h1:ni0Sbl8bgC9z8RoU9G6nDWqqs/fq4eDPysMB
 github.com/sirupsen/logrus v1.4.2/go.mod h1:tLMulIdttU9McNUspp0xgXVQah82FyeX6MwdIuYE2rE=
 github.com/smartcontractkit/capabilities/libs v0.0.0-20250711131700-236a5b631ad7 h1:QPemruCphJmJMH09cO/aClkONPVqJeWcd0qJwDbmcOI=
 github.com/smartcontractkit/capabilities/libs v0.0.0-20250711131700-236a5b631ad7/go.mod h1:/zEPppsF8Q/iwWSFbZ5MoQj/BcfYXk/whR8y91PQD+0=
+github.com/smartcontractkit/chainlink-common v0.8.1-0.20250721221447-02e2d89d5bc6 h1:BF305UKM6GeDLMkzIhaeBVz7pkfJZtYzFEYy61apSdE=
+github.com/smartcontractkit/chainlink-common v0.8.1-0.20250721221447-02e2d89d5bc6/go.mod h1:zvXDX4I17B4DXIL+m/cEFaZzgxW9ikNAvyfsP5glFl0=
 github.com/smartcontractkit/chainlink-common/pkg/chipingress v0.0.1 h1:ca2z5OXgnbBPQRxpwXwBLJsUA1+cAp5ncfW4Ssvd6eY=
 github.com/smartcontractkit/chainlink-common/pkg/chipingress v0.0.1/go.mod h1:NZv/qKYGFRnkjOYBouajnDfFoZ+WDa6H2KNmSf1dnKc=
 github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250717142627-ae07002b923d h1:wQK8b6D04/uAO0gOLAPgqKSc9Y2uGBv3mizhjbpyuzU=

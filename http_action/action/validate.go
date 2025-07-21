@@ -94,13 +94,25 @@ func ValidatedRequest(input *http.Request, cfg common.ServiceConfig) (*http.Requ
 		timeoutMs = int32(cfg.LimitsConfig.MaxTimeoutMs) //nolint:gosec // G115 (validated in ApplyDefaultsAndValidate)
 	}
 
-	return &http.Request{
+	req := &http.Request{
 		Url:       url,
 		Method:    input.Method,
 		Headers:   input.Headers,
 		Body:      input.Body,
 		TimeoutMs: timeoutMs,
-	}, nil
+	}
+
+	if input.CacheSettings != nil {
+		req.CacheSettings = &http.CacheSettings{
+			ReadFromCache: input.CacheSettings.ReadFromCache,
+			StoreInCache:  input.CacheSettings.StoreInCache,
+			TtlMs:         input.CacheSettings.TtlMs,
+		}
+	} else {
+		req.CacheSettings = &http.CacheSettings{} // Default to empty cache settings if not provided
+	}
+
+	return req, nil
 }
 
 // getWithDefault returns the first non-zero (or non-default) value among the arguments for any comparable type
