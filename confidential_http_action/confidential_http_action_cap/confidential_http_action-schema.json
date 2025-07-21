@@ -1,5 +1,5 @@
 {
-    "$id": "https://github.com/smartcontractkit/capabilities/confidential_http_action/confidential-http-action@1.0.0",
+    "$id": "https://github.com/smartcontractkit/capabilities/confidential_http_action/confidential_http_action_cap/confidential-http-action@1.0.0",
     "description": "Confidential HTTP action",
     "$defs": {
         "Enclave": {

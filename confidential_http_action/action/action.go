@@ -1,4 +1,4 @@
-package target
+package action
 
 import (
 	"context"
@@ -127,7 +127,7 @@ func New(lggr logger.Logger, capConfig cap.Config, keystore core.Keystore) (*cap
 	httpClient := http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true, // for demo purposes only.
+				InsecureSkipVerify: false,
 			},
 		},
 	}
