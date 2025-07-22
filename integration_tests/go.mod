@@ -20,10 +20,10 @@ require (
 	github.com/smartcontractkit/capabilities/http_action v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/capabilities/http_trigger v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/capabilities/loadtestwritetarget v0.0.0-00010101000000-000000000000
-	github.com/smartcontractkit/chainlink-common v0.8.1-0.20250721221447-02e2d89d5bc6
+	github.com/smartcontractkit/chainlink-common v0.8.1-0.20250722141510-d5933fca450d
 	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250717142627-ae07002b923d
 	github.com/smartcontractkit/chainlink-evm v0.0.0-20250717140849-58bcb2816c08
-	github.com/smartcontractkit/chainlink/v2 v2.23.2-por-beta.1.0.20250721222013-924baaebff6a
+	github.com/smartcontractkit/chainlink/v2 v2.23.2-por-beta.1.0.20250722151955-8b27f50b32a7
 	github.com/stretchr/testify v1.10.0
 )
 

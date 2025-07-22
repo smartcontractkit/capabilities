@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 
 	"google.golang.org/protobuf/types/known/structpb"
 
@@ -31,15 +33,67 @@ const (
 
 var _ core.GatewayConnectorHandler = &connectorHandler{}
 
+// requestCacheEntry stores information about a processed request for idempotency
+type requestCacheEntry struct {
+	reqHash     string                             // digest of the JSON-RPC request payload
+	response    *jsonrpc.Response[json.RawMessage] // The response that was sent
+	workflowID  string
+	executionID string
+	timestamp   time.Time // When this request was processed
+}
+
+type requestCache struct {
+	mu      sync.RWMutex
+	entries map[string]*requestCacheEntry // key is req.ID
+	ttl     time.Duration
+}
+
+func newRequestCache(ttl time.Duration) *requestCache {
+	return &requestCache{
+		entries: make(map[string]*requestCacheEntry),
+		ttl:     ttl,
+	}
+}
+
+func (rc *requestCache) get(reqID string) (*requestCacheEntry, bool) {
+	rc.mu.RLock()
+	defer rc.mu.RUnlock()
+
+	entry, exists := rc.entries[reqID]
+	return entry, exists
+}
+
+func (rc *requestCache) put(reqID string, entry *requestCacheEntry) {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	entry.timestamp = time.Now()
+	rc.entries[reqID] = entry
+}
+
+func (rc *requestCache) cleanup() {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+
+	now := time.Now()
+	for reqID, entry := range rc.entries {
+		if now.Sub(entry.timestamp) > rc.ttl {
+			delete(rc.entries, reqID)
+		}
+	}
+}
+
 type connectorHandler struct {
 	services.StateMachine
 	lggr                 logger.Logger
 	gatewayConnector     core.GatewayConnector
 	config               ServiceConfig
 	workflowStore        *workflowStore
+	requestCache         *requestCache
 	incomingRateLimiter  *ratelimit.RateLimiter
 	outgoingRateLimiter  *ratelimit.RateLimiter
 	gatewayAuthPublisher GatewayAuthPublisher
+	wg                   sync.WaitGroup
+	stopChan             services.StopChan
 }
 
 func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config ServiceConfig,
@@ -52,13 +106,17 @@ func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config Se
 		outgoingRateLimiter:  outgoingRateLimiter,
 		incomingRateLimiter:  incomingRateLimiter,
 		workflowStore:        workflowStore,
+		requestCache:         newRequestCache(time.Duration(config.RequestCacheTTL) * time.Second),
 		gatewayAuthPublisher: gatewayAuthPublisher,
+		stopChan:             make(chan struct{}),
 	}, nil
 }
 
 func (h *connectorHandler) Start(ctx context.Context) error {
 	h.lggr.Debug("Starting request handler")
 	return h.StartOnce(HandlerName, func() error {
+		h.wg.Add(1)
+		go h.startRequestCacheCleanup(ctx)
 		return h.gatewayConnector.AddHandler(ctx, []string{
 			serviceName(gateway_common.MethodWorkflowExecute),
 			serviceName(gateway_common.MethodPullWorkflowMetadata),
@@ -71,9 +129,27 @@ func serviceName(method string) string {
 	return strings.Split(method, ".")[0]
 }
 
+func (h *connectorHandler) startRequestCacheCleanup(ctx context.Context) {
+	defer h.wg.Done()
+	ticker := time.NewTicker(h.requestCache.ttl)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-h.stopChan:
+			h.lggr.Debug("Request cache cleanup routine stopping due to context cancellation")
+			return
+		case <-ticker.C:
+			h.requestCache.cleanup()
+			h.lggr.Debugw("Cleaned up expired request cache entries", "interval", h.requestCache.ttl)
+		}
+	}
+}
+
 func (h *connectorHandler) Close() error {
 	h.lggr.Debug("Stopping request handler")
 	return h.StopOnce(HandlerName, func() error {
+		close(h.stopChan)
+		h.wg.Wait()
 		return nil
 	})
 }
@@ -207,7 +283,24 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		h.lggr.Errorw("Failed to unmarshal HTTP trigger request", "error", err, "gatewayID", gatewayID, "requestID", req.ID)
 		return
 	}
+
 	l := logger.With(h.lggr, "gatewayID", gatewayID, "requestID", req.ID, "method", req.Method)
+	reqHash, err := req.Digest()
+	if err != nil {
+		h.lggr.Errorw("Failed to compute request digest", "error", err, "gatewayID", gatewayID, "requestID", req.ID)
+		return
+	}
+	if cachedEntry, exists := h.requestCache.get(req.ID); exists {
+		if cachedEntry.reqHash == reqHash {
+			l.Debugw("Returning cached response for duplicate request", "workflowID", cachedEntry.workflowID, "executionID", cachedEntry.executionID)
+			h.sendResponse(ctx, gatewayID, cachedEntry.response)
+			return
+		} else {
+			l.Errorw("Request already in progress with different payload", "workflowID", cachedEntry.workflowID, "executionID", cachedEntry.executionID)
+			h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrConflict, "Request already in progress with different payload")
+			return
+		}
+	}
 	input, err := convertRawJSONToProto(triggerReq.Input)
 	if err != nil {
 		l.Errorw("Failed to convert input JSON to proto", "error", err)
@@ -229,11 +322,6 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		}
 	}
 	l = logger.With(l, "workflowID", workflowID)
-	err = h.triggerWorkflow(ctx, workflowID, req.ID, gatewayID, input, triggerReq.Key)
-	if err != nil {
-		l.Errorw("Failed to trigger workflow", "error", err)
-		return
-	}
 	workflowExecutionID, err := workflows.EncodeExecutionID(workflowID, req.ID)
 	if err != nil {
 		l.Errorw("Failed to generate workflow execution ID", "error", err)
@@ -257,6 +345,19 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		ID:      req.ID,
 		Result:  &payloadMsg,
 	}
+	err = h.triggerWorkflow(ctx, workflowID, req.ID, gatewayID, input, triggerReq.Key)
+	if err != nil {
+		l.Errorw("Failed to trigger workflow", "error", err)
+		return
+	}
+	cacheEntry := &requestCacheEntry{
+		reqHash:     reqHash,
+		response:    resp,
+		workflowID:  workflowID,
+		executionID: workflowExecutionID,
+	}
+	h.requestCache.put(req.ID, cacheEntry)
+
 	h.sendResponse(ctx, gatewayID, resp)
 }
 

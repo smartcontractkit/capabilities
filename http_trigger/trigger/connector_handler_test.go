@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -675,11 +676,11 @@ func TestHandleGatewayMessage_PullAuthMetadata(t *testing.T) {
 
 	// Create pull auth metadata request
 	// The request ID must start with the method name for validation
-	requestID := gateway_common.GetRequestID(gateway_common.MethodWorkflowPullAuthMetadata)
+	requestID := gateway_common.GetRequestID(gateway_common.MethodPullWorkflowMetadata)
 	req := &jsonrpc.Request[json.RawMessage]{
 		Version: "2.0",
 		ID:      requestID,
-		Method:  gateway_common.MethodWorkflowPullAuthMetadata,
+		Method:  gateway_common.MethodPullWorkflowMetadata,
 		Params:  nil, // Pull auth metadata doesn't need params
 	}
 
@@ -729,7 +730,7 @@ func TestHandleGatewayMessage_PullAuthMetadata_InvalidRequestID(t *testing.T) {
 	req := &jsonrpc.Request[json.RawMessage]{
 		Version: "2.0",
 		ID:      requestID,
-		Method:  gateway_common.MethodWorkflowPullAuthMetadata,
+		Method:  gateway_common.MethodPullWorkflowMetadata,
 		Params:  nil,
 	}
 
@@ -798,4 +799,205 @@ func TestHandleGatewayMessage_PullAuthMetadata_EmptyWorkflows(t *testing.T) {
 	require.Equal(t, requestID, resp.ID)
 	require.NotNil(t, resp.Error, "Response should contain an error")
 	require.Nil(t, resp.Result, "Response should not contain result")
+}
+
+func TestProcessTrigger_Idempotency_SamePayload(t *testing.T) {
+	lggr := logger.Test(t)
+	handler, connector, triggerCh := setup(t, lggr)
+
+	// Create a trigger request
+	payload := gateway_common.HTTPTriggerRequest{
+		Workflow: gateway_common.WorkflowSelector{
+			WorkflowID: "wf1",
+		},
+		Input: json.RawMessage(`{"key":"value"}`),
+	}
+	jsonPayload, err := json.Marshal(payload)
+	require.NoError(t, err)
+
+	params := json.RawMessage(jsonPayload)
+	req := &jsonrpc.Request[json.RawMessage]{
+		Version: "2.0",
+		ID:      "duplicate-request-id",
+		Method:  gateway_common.MethodWorkflowExecute,
+		Params:  &params,
+	}
+
+	// First request should process normally
+	handler.processTrigger(t.Context(), "gw1", req)
+	require.True(t, connector.SendToGatewayCalled, "Should send response")
+	firstResp := connector.SendToGatewayArgs.Msg
+	require.NotNil(t, firstResp.Result, "First response should contain result")
+	require.Nil(t, firstResp.Error, "First response should not contain error")
+	require.Len(t, triggerCh, 1, "trigger channel should receive one message")
+
+	// Drain the trigger channel
+	<-triggerCh
+
+	// Reset connector mock
+	connector.SendToGatewayCalled = false
+	connector.SendToGatewayArgs.GatewayID = ""
+	connector.SendToGatewayArgs.Msg = nil
+
+	// Second request with same ID and payload should return cached response
+	handler.processTrigger(t.Context(), "gw1", req)
+	require.True(t, connector.SendToGatewayCalled, "Should send cached response")
+	secondResp := connector.SendToGatewayArgs.Msg
+	require.NotNil(t, secondResp.Result, "Second response should contain result")
+	require.Nil(t, secondResp.Error, "Second response should not contain error")
+	require.Len(t, triggerCh, 0, "trigger channel should not receive another message")
+
+	// Verify responses are identical
+	require.Equal(t, firstResp.ID, secondResp.ID)
+	require.Equal(t, firstResp.Version, secondResp.Version)
+	require.JSONEq(t, string(*firstResp.Result), string(*secondResp.Result))
+}
+
+func TestProcessTrigger_Idempotency_DifferentPayload(t *testing.T) {
+	lggr := logger.Test(t)
+	handler, connector, triggerCh := setup(t, lggr)
+
+	// Create first trigger request
+	payload1 := gateway_common.HTTPTriggerRequest{
+		Workflow: gateway_common.WorkflowSelector{
+			WorkflowID: "wf1",
+		},
+		Input: json.RawMessage(`{"key":"value1"}`),
+	}
+	jsonPayload1, err := json.Marshal(payload1)
+	require.NoError(t, err)
+
+	params1 := json.RawMessage(jsonPayload1)
+	req1 := &jsonrpc.Request[json.RawMessage]{
+		Version: "2.0",
+		ID:      "same-request-id",
+		Method:  gateway_common.MethodWorkflowExecute,
+		Params:  &params1,
+	}
+
+	// First request should process normally
+	handler.processTrigger(t.Context(), "gw1", req1)
+	require.True(t, connector.SendToGatewayCalled, "Should send response")
+	firstResp := connector.SendToGatewayArgs.Msg
+	require.NotNil(t, firstResp.Result, "First response should contain result")
+	require.Nil(t, firstResp.Error, "First response should not contain error")
+	require.Len(t, triggerCh, 1, "trigger channel should receive one message")
+
+	// Drain the trigger channel
+	<-triggerCh
+
+	// Reset connector mock
+	connector.SendToGatewayCalled = false
+	connector.SendToGatewayArgs.GatewayID = ""
+	connector.SendToGatewayArgs.Msg = nil
+
+	// Create second trigger request with same ID but different payload
+	payload2 := gateway_common.HTTPTriggerRequest{
+		Workflow: gateway_common.WorkflowSelector{
+			WorkflowID: "wf1",
+		},
+		Input: json.RawMessage(`{"key":"value2"}`), // Different input
+	}
+	jsonPayload2, err := json.Marshal(payload2)
+	require.NoError(t, err)
+
+	params2 := json.RawMessage(jsonPayload2)
+	req2 := &jsonrpc.Request[json.RawMessage]{
+		Version: "2.0",
+		ID:      "same-request-id", // Same ID as first request
+		Method:  gateway_common.MethodWorkflowExecute,
+		Params:  &params2,
+	}
+
+	// Second request should return error about request in progress
+	handler.processTrigger(t.Context(), "gw1", req2)
+	require.True(t, connector.SendToGatewayCalled, "Should send error response")
+	secondResp := connector.SendToGatewayArgs.Msg
+	require.Nil(t, secondResp.Result, "Second response should not contain result")
+	require.NotNil(t, secondResp.Error, "Second response should contain error")
+	require.Contains(t, secondResp.Error.Message, "Request already in progress with different payload")
+	require.Len(t, triggerCh, 0, "trigger channel should not receive another message")
+}
+
+func TestRequestCache_ExpiryAndCleanup(t *testing.T) {
+	// Create a cache with short TTL for testing
+	shortTTL := 100 * time.Millisecond
+	cache := newRequestCache(shortTTL)
+
+	// Add an entry
+	entry := &requestCacheEntry{
+		payloadHash: "test-hash",
+		workflowID:  "test-workflow",
+		executionID: "test-execution",
+	}
+	cache.put("test-req-id", entry)
+
+	// Entry should exist immediately
+	retrievedEntry, exists := cache.get("test-req-id")
+	require.True(t, exists)
+	require.Equal(t, entry.payloadHash, retrievedEntry.payloadHash)
+
+	// Wait for expiry
+	time.Sleep(shortTTL + 50*time.Millisecond)
+
+	// Entry should be expired and removed on next access
+	_, exists = cache.get("test-req-id")
+	require.False(t, exists)
+
+	// Add multiple entries
+	cache.put("req1", &requestCacheEntry{payloadHash: "hash1"})
+	cache.put("req2", &requestCacheEntry{payloadHash: "hash2"})
+	cache.put("req3", &requestCacheEntry{payloadHash: "hash3"})
+
+	// Wait for expiry
+	time.Sleep(shortTTL + 50*time.Millisecond)
+
+	// Cleanup should remove all expired entries
+	cache.cleanup()
+	require.Equal(t, 0, len(cache.entries))
+}
+
+func TestComputePayloadHash_Consistency(t *testing.T) {
+	// Same payload should produce same hash
+	payload1 := gateway_common.HTTPTriggerRequest{
+		Workflow: gateway_common.WorkflowSelector{
+			WorkflowID:    "wf1",
+			WorkflowOwner: "owner",
+			WorkflowName:  "name",
+			WorkflowTag:   "tag",
+		},
+		Input: json.RawMessage(`{"key":"value"}`),
+	}
+
+	hash1 := computePayloadHash(payload1)
+	hash2 := computePayloadHash(payload1)
+	require.Equal(t, hash1, hash2, "Same payload should produce same hash")
+
+	// Different payload should produce different hash
+	payload2 := gateway_common.HTTPTriggerRequest{
+		Workflow: gateway_common.WorkflowSelector{
+			WorkflowID:    "wf1",
+			WorkflowOwner: "owner",
+			WorkflowName:  "name",
+			WorkflowTag:   "tag",
+		},
+		Input: json.RawMessage(`{"key":"different-value"}`),
+	}
+
+	hash3 := computePayloadHash(payload2)
+	require.NotEqual(t, hash1, hash3, "Different payload should produce different hash")
+
+	// Different workflow selector should produce different hash
+	payload3 := gateway_common.HTTPTriggerRequest{
+		Workflow: gateway_common.WorkflowSelector{
+			WorkflowID:    "wf2", // Different workflow ID
+			WorkflowOwner: "owner",
+			WorkflowName:  "name",
+			WorkflowTag:   "tag",
+		},
+		Input: json.RawMessage(`{"key":"value"}`),
+	}
+
+	hash4 := computePayloadHash(payload3)
+	require.NotEqual(t, hash1, hash4, "Different workflow selector should produce different hash")
 }

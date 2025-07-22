@@ -186,10 +186,13 @@ func sampleRequest(ctx context.Context, t *testing.T, env *testEnv) (*http.Reque
 	input := make(map[string]any)
 	input["key"] = "value"
 	input["count"] = 5.0
+	return createRequest(ctx, t, env, uuid.New().String(), input)
+}
+
+func createRequest(ctx context.Context, t *testing.T, env *testEnv, requestID string, input map[string]any) (*http.Request, string, map[string]any) {
 	marshalledInput, err := json.Marshal(input)
 	require.NoError(t, err)
 	rawInput := json.RawMessage(marshalledInput)
-	requestID := uuid.New().String()
 	req := jsonrpc.Request[gateway_common.HTTPTriggerRequest]{
 		Version: jsonrpc.JsonRpcVersion,
 		ID:      requestID,
@@ -216,47 +219,37 @@ func sampleRequest(ctx context.Context, t *testing.T, env *testEnv) (*http.Reque
 	return httpReq, requestID, input
 }
 
-func TestHTTPTrigger(t *testing.T) {
-	f := 1
-	numNodes := 3*f + 1
-	env := setupTestEnv(t, numNodes)
-	attemptCount := 0
-	sleepDuration := 100 * time.Millisecond
-	var req *http.Request
-	var resp *http.Response
-	var err error
-	var requestID string
-	var input map[string]any
-	var respBody jsonrpc.Response[gateway_common.HTTPTriggerResponse]
-	require.Eventually(t, func() bool {
-		req, requestID, input = sampleRequest(t.Context(), t, env)
-		resp, err = http.DefaultClient.Do(req)
-		require.NoError(t, err)
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			attemptCount++
-			t.Logf("Attempt #%d. Sleeping for %s", attemptCount, sleepDuration)
-			return false
-		}
-		body, err := io.ReadAll(resp.Body)
-		require.NoError(t, err)
-		err = json.Unmarshal(body, &respBody)
-		return true
-	}, 10*time.Second, sleepDuration)
+func makeRequestAndValidateResponse(t *testing.T, req *http.Request, expectedRequestID string, expectedWorkflowID string) *jsonrpc.Response[gateway_common.HTTPTriggerResponse] {
+	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
-	require.Equal(t, requestID, respBody.ID)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	var respBody jsonrpc.Response[gateway_common.HTTPTriggerResponse]
+	err = json.Unmarshal(body, &respBody)
+	require.NoError(t, err)
+
+	require.Equal(t, expectedRequestID, respBody.ID)
 	require.Equal(t, gateway_common.HTTPTriggerStatusAccepted, respBody.Result.Status)
-	executionID, err := workflows.EncodeExecutionID(env.workflowSelector.WorkflowID, requestID)
+
+	executionID, err := workflows.EncodeExecutionID(expectedWorkflowID, expectedRequestID)
 	require.NoError(t, err)
 	require.Equal(t, executionID, respBody.Result.WorkflowExecutionID)
-	require.Equal(t, env.workflowSelector.WorkflowID, respBody.Result.WorkflowID)
+	require.Equal(t, expectedWorkflowID, respBody.Result.WorkflowID)
 
+	return &respBody
+}
+
+func validateTriggersReceived(t *testing.T, env *testEnv, expectedExecutionID string, expectedInput map[string]any) {
 	for i, ch := range env.triggerChs {
 		select {
 		case payload := <-ch:
 			require.NotNil(t, payload)
-			require.Equal(t, executionID, payload.Id)
-			require.EqualValues(t, input, payload.Trigger.Input.AsMap())
+			require.Equal(t, expectedExecutionID, payload.Id)
+			require.EqualValues(t, expectedInput, payload.Trigger.Input.AsMap())
 			require.Equal(t, triggersdk.KeyType_KEY_TYPE_ECDSA, payload.Trigger.Key.Type)
 			require.Equal(t, strings.ToLower(crypto.PubkeyToAddress(env.signingKey.PublicKey).Hex()), payload.Trigger.Key.PublicKey)
 		default:
@@ -265,16 +258,82 @@ func TestHTTPTrigger(t *testing.T) {
 	}
 }
 
+func validateNoTriggersReceived(t *testing.T, env *testEnv) {
+	for i, ch := range env.triggerChs {
+		select {
+		case payload := <-ch:
+			t.Fatalf("Node %d unexpectedly received a trigger: %+v", i, payload)
+			//TODO: REMOVE TIME
+		case <-time.After(500 * time.Millisecond):
+			// Expected - no trigger should be received
+		}
+	}
+}
+
+func TestHTTPTrigger(t *testing.T) {
+	f := 1
+	numNodes := 3*f + 1
+	env := setupTestEnv(t, numNodes)
+	req, requestID, input := sampleRequest(t.Context(), t, env)
+	makeRequestAndValidateResponse(t, req, requestID, env.workflowSelector.WorkflowID)
+	executionID, err := workflows.EncodeExecutionID(env.workflowSelector.WorkflowID, requestID)
+	require.NoError(t, err)
+	validateTriggersReceived(t, env, executionID, input)
+}
+
+func TestHTTPTrigger_Idempotency(t *testing.T) {
+	f := 1
+	numNodes := 3*f + 1
+	env := setupTestEnv(t, numNodes)
+	requestID := uuid.New().String()
+	initialInput := map[string]any{
+		"key":   "value",
+		"count": 10.0,
+	}
+	req1, _, input1 := createRequest(t.Context(), t, env, requestID, initialInput)
+	makeRequestAndValidateResponse(t, req1, requestID, env.workflowSelector.WorkflowID)
+	executionID, err := workflows.EncodeExecutionID(env.workflowSelector.WorkflowID, requestID)
+	require.NoError(t, err)
+	validateTriggersReceived(t, env, executionID, input1)
+
+	// Step 2: Make the same request again (idempotent - should return cached response, no new trigger)
+	req2, _, _ := createRequest(t.Context(), t, env, requestID, initialInput)
+	makeRequestAndValidateResponse(t, req2, requestID, env.workflowSelector.WorkflowID)
+	validateNoTriggersReceived(t, env)
+
+	// Step 3: Make a request with the same ID but different payload (should error)
+	conflictingInput := map[string]any{
+		"key":   "different_value",
+		"count": 20.0,
+	}
+	req3, _, _ := createRequest(t.Context(), t, env, requestID, conflictingInput)
+	resp, err := http.DefaultClient.Do(req3)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	var respBody jsonrpc.Response[json.RawMessage]
+	err = json.Unmarshal(body, &respBody)
+	require.NoError(t, err)
+	require.Equal(t, requestID, respBody.ID)
+	require.Empty(t, respBody.Result)
+	require.Equal(t, jsonrpc.ErrConflict, respBody.Error.Code)
+	require.Equal(t, "Request already in progress with different payload", respBody.Error.Message)
+	validateNoTriggersReceived(t, env)
+}
+
 func TestHTTPTrigger_InsufficientNodes(t *testing.T) {
-	env := setupTestEnv(t, 2) // F+1 nodes = 4, but only 2 nodes
+	env := setupTestEnv(t, 2) // 3F+1 nodes = 4, but only 2 nodes
 	ctx, cancel := context.WithTimeout(env.ctx, 5*time.Second)
 	defer cancel()
 	req, requestID, input := sampleRequest(ctx, t, env)
 	executionID, err := workflows.EncodeExecutionID(env.workflowSelector.WorkflowID, requestID)
 	require.NoError(t, err)
 	_, err = http.DefaultClient.Do(req)
+	// Error is expected because insufficient nodes for 2f + 1 response
 	require.Error(t, err)
-
 	for i, ch := range env.triggerChs {
 		select {
 		case payload := <-ch:
