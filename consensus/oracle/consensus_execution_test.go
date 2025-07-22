@@ -16,6 +16,18 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb"
 )
 
+type s struct {
+	Val         int64   `consensus:"median"`
+	OtherField  string  `consensus:"identical"`
+	PrefixSlice []int64 `consensus:"common_prefix"`
+	SuffixSlice []int64 `consensus:"common_suffix"`
+	Nest        s1
+}
+
+type s1 struct {
+	Val uint8 `consensus:"median"`
+}
+
 func Test_CalculateOutcomeForObservations(t *testing.T) {
 	type testCase struct {
 		name            string
@@ -115,6 +127,125 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 			expectedOutcome: mustNewList("1", "2", "3"),
 		},
 		{
+			name: "fields map",
+			observations: []*valuespb.Value{
+				mustWrap(s{Val: 42}),
+				mustWrap(s{Val: 43}),
+				mustWrap(s{Val: 43}),
+				mustWrap(s{Val: 44}),
+				mustWrap(s{Val: 44}),
+			},
+			f: 3,
+			descriptor: &pb.ConsensusDescriptor{
+				Descriptor_: &pb.ConsensusDescriptor_FieldsMap{
+					FieldsMap: &pb.FieldsMap{
+						Fields: map[string]*pb.ConsensusDescriptor{
+							"Val": {
+								Descriptor_: &pb.ConsensusDescriptor_Aggregation{
+									Aggregation: pb.AggregationType_AGGREGATION_TYPE_MEDIAN,
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedOutcome: valuespb.NewMapValue(map[string]*valuespb.Value{
+				"Val": valuespb.NewInt64Value(43),
+			}),
+		},
+		{
+			name: "fields map - one field succeeds, one fails (all-or-nothing)",
+			observations: []*valuespb.Value{
+				mustWrap(s{Val: 42, OtherField: "A"}),
+				mustWrap(s{Val: 43, OtherField: "B"}),
+				mustWrap(s{Val: 43, OtherField: "C"}),
+				mustWrap(s{Val: 44, OtherField: "D"}),
+				mustWrap(s{Val: 44, OtherField: "E"}),
+			},
+			f: 3,
+			descriptor: &pb.ConsensusDescriptor{
+				Descriptor_: &pb.ConsensusDescriptor_FieldsMap{
+					FieldsMap: &pb.FieldsMap{
+						Fields: map[string]*pb.ConsensusDescriptor{
+							"Val": {
+								Descriptor_: &pb.ConsensusDescriptor_Aggregation{
+									Aggregation: pb.AggregationType_AGGREGATION_TYPE_MEDIAN,
+								},
+							},
+							"OtherField": {
+								Descriptor_: &pb.ConsensusDescriptor_Aggregation{
+									Aggregation: pb.AggregationType_AGGREGATION_TYPE_IDENTICAL,
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedOutcome: nil,
+			expectedError:   errors.New("aggregation for field 'OtherField' failed: no values met f+1 threshold"),
+		},
+		{
+			name: "fields map: all fields succeed with diverse types and aggregations",
+			observations: []*valuespb.Value{
+				mustWrap(s{Val: 10, OtherField: "common", PrefixSlice: []int64{1, 2, 3}, Nest: s1{Val: 100}, SuffixSlice: []int64{0, 2, 3}}),
+				mustWrap(s{Val: 20, OtherField: "common", PrefixSlice: []int64{1, 2, 4}, Nest: s1{Val: 100}, SuffixSlice: []int64{10, 2, 3}}),
+				mustWrap(s{Val: 30, OtherField: "common", PrefixSlice: []int64{1, 2, 5}, Nest: s1{Val: 100}, SuffixSlice: []int64{100, 2, 3}}),
+				mustWrap(s{Val: 40, OtherField: "common", PrefixSlice: []int64{1, 9, 8}, Nest: s1{Val: 101}, SuffixSlice: []int64{99, 2, 3}}),
+				mustWrap(s{Val: 50, OtherField: "common", PrefixSlice: []int64{1, 2, 6}, Nest: s1{Val: 102}, SuffixSlice: []int64{42, 2, 3}}),
+			},
+			descriptor: &pb.ConsensusDescriptor{
+				Descriptor_: &pb.ConsensusDescriptor_FieldsMap{
+					FieldsMap: &pb.FieldsMap{
+						Fields: map[string]*pb.ConsensusDescriptor{
+							"Val": {
+								Descriptor_: &pb.ConsensusDescriptor_Aggregation{
+									Aggregation: pb.AggregationType_AGGREGATION_TYPE_MEDIAN,
+								},
+							},
+							"OtherField": {
+								Descriptor_: &pb.ConsensusDescriptor_Aggregation{
+									Aggregation: pb.AggregationType_AGGREGATION_TYPE_IDENTICAL,
+								},
+							},
+							"PrefixSlice": {
+								Descriptor_: &pb.ConsensusDescriptor_Aggregation{
+									Aggregation: pb.AggregationType_AGGREGATION_TYPE_COMMON_PREFIX,
+								},
+							},
+							"Nest": {
+								Descriptor_: &pb.ConsensusDescriptor_FieldsMap{
+									FieldsMap: &pb.FieldsMap{
+										Fields: map[string]*pb.ConsensusDescriptor{
+											"Val": {
+												Descriptor_: &pb.ConsensusDescriptor_Aggregation{
+													Aggregation: pb.AggregationType_AGGREGATION_TYPE_MEDIAN,
+												},
+											},
+										},
+									},
+								},
+							},
+							"SuffixSlice": {
+								Descriptor_: &pb.ConsensusDescriptor_Aggregation{
+									Aggregation: pb.AggregationType_AGGREGATION_TYPE_COMMON_SUFFIX,
+								},
+							},
+						},
+					},
+				},
+			},
+			minObs: 5,
+			f:      3,
+			expectedOutcome: mustWrap(s{
+				Val:         30,
+				OtherField:  "common",
+				PrefixSlice: []int64{1, 2},
+				SuffixSlice: []int64{2, 3},
+				Nest:        s1{Val: 100},
+			}),
+			expectedError: nil,
+		},
+		{
 			name: "common suffix",
 			observations: []*valuespb.Value{
 				mustNewList("1", "2", "3", "4", "5", "6", "7", "8", "9"),
@@ -153,20 +284,6 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 			expectedOutcome: nil,
 			expectedError:   errors.New("unknown aggregation type"),
 		},
-		{
-			name: "unsupported consensus descriptor type (FieldsMap)",
-			observations: []*valuespb.Value{
-				values.Proto(values.NewInt64(10)),
-			},
-			descriptor: &pb.ConsensusDescriptor{
-				Descriptor_: &pb.ConsensusDescriptor_FieldsMap{
-					FieldsMap: &pb.FieldsMap{},
-				},
-			},
-			minObs:          1,
-			expectedOutcome: nil,
-			expectedError:   errors.New("TODO only primitive aggregation types are supported right now"),
-		},
 	}
 
 	for _, tc := range testCases {
@@ -188,7 +305,7 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 
 			if tc.expectedError == nil {
 				require.True(t, proto.Equal(outcome, tc.expectedOutcome),
-					"Outcome mismatch for %s\nExpected: %+v\nActual:   %+v", tc.name, tc.expectedOutcome, outcome)
+					"Outcome mismatch for test: %s\nExpected: %+v\nActual:   %+v", tc.name, tc.expectedOutcome, outcome)
 			}
 		})
 	}
@@ -197,11 +314,11 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 // Test_handleMedianAggregation tests the handleMedianAggregation function directly.
 func Test_handleMedianAggregation(t *testing.T) {
 	type testCase struct {
-		name              string
-		observations      []*valuespb.Value
-		finalSelectedType string
-		expectedOutcome   *valuespb.Value
-		expectedError     error
+		name            string
+		observations    []*valuespb.Value
+		expectedOutcome *valuespb.Value
+		expectedError   error
+		f               int
 	}
 
 	testCases := []testCase{
@@ -210,36 +327,36 @@ func Test_handleMedianAggregation(t *testing.T) {
 			observations: []*valuespb.Value{
 				values.Proto(values.NewInt64(30)), values.Proto(values.NewInt64(40)), values.Proto(values.NewInt64(10)), values.Proto(values.NewInt64(20)), values.Proto(values.NewInt64(50)),
 			},
-			finalSelectedType: TypeInt64,
-			expectedOutcome:   values.Proto(values.NewInt64(30)),
-			expectedError:     nil,
+			expectedOutcome: values.Proto(values.NewInt64(30)),
+			expectedError:   nil,
+			f:               3,
 		},
 		{
 			name: "int64 median: even number of values returns left value",
 			observations: []*valuespb.Value{
 				values.Proto(values.NewInt64(10)), values.Proto(values.NewInt64(20)), values.Proto(values.NewInt64(30)), values.Proto(values.NewInt64(40)),
 			},
-			finalSelectedType: TypeInt64,
-			expectedOutcome:   values.Proto(values.NewInt64(20)),
-			expectedError:     nil,
+			expectedOutcome: values.Proto(values.NewInt64(20)),
+			expectedError:   nil,
+			f:               3,
 		},
 		{
 			name: "float64 median: basic five values",
 			observations: []*valuespb.Value{
 				values.Proto(values.NewFloat64(30.5)), values.Proto(values.NewFloat64(40.5)), values.Proto(values.NewFloat64(10.5)), values.Proto(values.NewFloat64(20.5)), values.Proto(values.NewFloat64(50.5)),
 			},
-			finalSelectedType: TypeFloat64,
-			expectedOutcome:   values.Proto(values.NewFloat64(30.5)),
-			expectedError:     nil,
+			expectedOutcome: values.Proto(values.NewFloat64(30.5)),
+			expectedError:   nil,
+			f:               3,
 		},
 		{
 			name: "float64 median: even number of values returns left value",
 			observations: []*valuespb.Value{
 				values.Proto(values.NewFloat64(10.5)), values.Proto(values.NewFloat64(20.5)), values.Proto(values.NewFloat64(30.5)), values.Proto(values.NewFloat64(40.5)),
 			},
-			finalSelectedType: TypeFloat64,
-			expectedOutcome:   values.Proto(values.NewFloat64(20.5)),
-			expectedError:     nil,
+			expectedOutcome: values.Proto(values.NewFloat64(20.5)),
+			expectedError:   nil,
+			f:               3,
 		},
 		{
 			name: "decimal median: basic five values",
@@ -248,9 +365,9 @@ func Test_handleMedianAggregation(t *testing.T) {
 				values.Proto(values.NewDecimal(decimal.NewFromFloat(10.1))), values.Proto(values.NewDecimal(decimal.NewFromFloat(20.2))),
 				values.Proto(values.NewDecimal(decimal.NewFromFloat(50.5))),
 			},
-			finalSelectedType: TypeDecimal,
-			expectedOutcome:   values.Proto(values.NewDecimal(decimal.NewFromFloat(30.3))),
-			expectedError:     nil,
+			expectedOutcome: values.Proto(values.NewDecimal(decimal.NewFromFloat(30.3))),
+			expectedError:   nil,
+			f:               3,
 		},
 		{
 			name: "decimal median: even number of values returns left value",
@@ -258,9 +375,10 @@ func Test_handleMedianAggregation(t *testing.T) {
 				values.Proto(values.NewDecimal(decimal.NewFromFloat(10.1))), values.Proto(values.NewDecimal(decimal.NewFromFloat(20.2))),
 				values.Proto(values.NewDecimal(decimal.NewFromFloat(30.3))), values.Proto(values.NewDecimal(decimal.NewFromFloat(40.4))),
 			},
-			finalSelectedType: TypeDecimal,
-			expectedOutcome:   values.Proto(values.NewDecimal(decimal.NewFromFloat(20.2))),
-			expectedError:     nil,
+
+			expectedOutcome: values.Proto(values.NewDecimal(decimal.NewFromFloat(20.2))),
+			expectedError:   nil,
+			f:               3,
 		},
 		{
 			name: "bigint median: basic five values",
@@ -269,9 +387,9 @@ func Test_handleMedianAggregation(t *testing.T) {
 				values.Proto(values.NewBigInt(big.NewInt(100))), values.Proto(values.NewBigInt(big.NewInt(200))),
 				values.Proto(values.NewBigInt(big.NewInt(500))),
 			},
-			finalSelectedType: TypeBigInt,
-			expectedOutcome:   values.Proto(values.NewBigInt(big.NewInt(300))),
-			expectedError:     nil,
+			expectedOutcome: values.Proto(values.NewBigInt(big.NewInt(300))),
+			expectedError:   nil,
+			f:               3,
 		},
 		{
 			name: "bigint median: even number of values returns left value",
@@ -279,9 +397,9 @@ func Test_handleMedianAggregation(t *testing.T) {
 				values.Proto(values.NewBigInt(big.NewInt(100))), values.Proto(values.NewBigInt(big.NewInt(200))),
 				values.Proto(values.NewBigInt(big.NewInt(300))), values.Proto(values.NewBigInt(big.NewInt(400))),
 			},
-			finalSelectedType: TypeBigInt,
-			expectedOutcome:   values.Proto(values.NewBigInt(big.NewInt(200))),
-			expectedError:     nil,
+			expectedOutcome: values.Proto(values.NewBigInt(big.NewInt(200))),
+			expectedError:   nil,
+			f:               3,
 		},
 		{
 			name: "time median: basic five values",
@@ -292,9 +410,9 @@ func Test_handleMedianAggregation(t *testing.T) {
 				values.Proto(values.NewTime(parseTime(t, "2023-01-01T00:00:20Z"))),
 				values.Proto(values.NewTime(parseTime(t, "2023-01-01T00:00:50Z"))),
 			},
-			finalSelectedType: TypeTime,
-			expectedOutcome:   values.Proto(values.NewTime(parseTime(t, "2023-01-01T00:00:30Z"))),
-			expectedError:     nil,
+			expectedOutcome: values.Proto(values.NewTime(parseTime(t, "2023-01-01T00:00:30Z"))),
+			expectedError:   nil,
+			f:               3,
 		},
 		{
 			name: "time median: even number of values returns left value",
@@ -304,33 +422,38 @@ func Test_handleMedianAggregation(t *testing.T) {
 				values.Proto(values.NewTime(parseTime(t, "2023-01-01T00:00:30Z"))),
 				values.Proto(values.NewTime(parseTime(t, "2023-01-01T00:00:40Z"))),
 			},
-			finalSelectedType: TypeTime,
-			expectedOutcome:   values.Proto(values.NewTime(parseTime(t, "2023-01-01T00:00:20Z"))),
-			expectedError:     nil,
+			expectedOutcome: values.Proto(values.NewTime(parseTime(t, "2023-01-01T00:00:20Z"))),
+			expectedError:   nil,
+			f:               3,
 		},
 		{
 			name: "median: unsupported type for median aggregation (string)",
 			observations: []*valuespb.Value{
-				values.Proto(values.NewString("foo")), values.Proto(values.NewString("bar")), values.Proto(values.NewString("baz")),
+				values.Proto(values.NewString("foo")),
+				values.Proto(values.NewString("bar")),
+				values.Proto(values.NewString("baz")),
+				values.Proto(values.NewString("bah")),
+				values.Proto(values.NewString("cad")),
 			},
-			finalSelectedType: TypeString,
-			expectedOutcome:   nil,
-			expectedError:     errors.New("unsupported type for median aggregation: " + TypeString),
+			expectedOutcome: nil,
+			expectedError:   errors.New("unsupported type for median aggregation: " + TypeString),
+			f:               3,
 		},
 		{
-			name:              "empty filtered observations for median",
-			observations:      []*valuespb.Value{},
-			finalSelectedType: TypeFloat64,
-			expectedOutcome:   nil,
-			expectedError:     errors.New("no valid observations for median calculation"),
+			name:            "empty filtered observations for median",
+			observations:    []*valuespb.Value{},
+			expectedOutcome: nil,
+			expectedError:   errors.New("insufficient observations"),
+			f:               3,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			outcome, err := handleMedianAggregation(
+				logger.Test(t),
 				tc.observations,
-				tc.finalSelectedType,
+				tc.f,
 			)
 
 			if tc.expectedError != nil {
@@ -352,4 +475,12 @@ func parseTime(t *testing.T, s string) time.Time {
 	parsedTime, err := time.Parse(time.RFC3339, s)
 	require.NoError(t, err)
 	return parsedTime
+}
+
+func mustWrap(v any) *valuespb.Value {
+	wrapped, err := values.Wrap((v))
+	if err != nil {
+		panic(err)
+	}
+	return values.Proto(wrapped)
 }

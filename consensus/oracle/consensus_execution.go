@@ -48,11 +48,15 @@ func CalculateOutcomeForObservations(
 	minObservations int,
 	f int,
 ) (*valuespb.Value, error) {
-	filtered, consensusType, err := filterObservations(observationProtos, minObservations)
+	filtered, _, err := filterObservations(observationProtos, minObservations)
 	if err != nil {
 		return nil, err
 	}
 
+	return handleDescriptor(lggr, consensusDescriptor, filtered, f)
+}
+
+func handleDescriptor(lggr logger.Logger, consensusDescriptor *pb.ConsensusDescriptor, filtered []*valuespb.Value, f int) (*valuespb.Value, error) {
 	switch desc := consensusDescriptor.GetDescriptor_().(type) {
 	case *pb.ConsensusDescriptor_Aggregation:
 		aggregation := consensusDescriptor.GetAggregation()
@@ -60,7 +64,7 @@ func CalculateOutcomeForObservations(
 		case pb.AggregationType_AGGREGATION_TYPE_IDENTICAL:
 			return handleIdenticalAggregation(filtered, f)
 		case pb.AggregationType_AGGREGATION_TYPE_MEDIAN:
-			return handleMedianAggregation(filtered, consensusType)
+			return handleMedianAggregation(lggr, filtered, f)
 		case pb.AggregationType_AGGREGATION_TYPE_COMMON_PREFIX:
 			return handleCommonPrefixAggregation(lggr, filtered, f)
 		case pb.AggregationType_AGGREGATION_TYPE_COMMON_SUFFIX:
@@ -69,23 +73,65 @@ func CalculateOutcomeForObservations(
 			return nil, fmt.Errorf("unknown aggregation type: %s", aggregation)
 		}
 	case *pb.ConsensusDescriptor_FieldsMap:
-		// TODO: Implement aggregation for structured types (FieldsMap).
-		return nil, errors.New("TODO only primitive aggregation types are supported right now")
+		return handleFieldsMapAggregation(lggr, filtered, desc.FieldsMap.GetFields(), f)
 	default:
 		return nil, fmt.Errorf("unknown consensus descriptor type: %T", desc)
 	}
 }
 
-func handleMedianAggregation(observations []*valuespb.Value, medianType string) (*valuespb.Value, error) {
+func handleFieldsMapAggregation(
+	lggr logger.Logger,
+	observations []*valuespb.Value,
+	desc map[string]*pb.ConsensusDescriptor,
+	f int,
+) (*valuespb.Value, error) {
+	result := make(map[string]*valuespb.Value, 0)
+	for key, d := range desc {
+		var (
+			aggregated *valuespb.Value
+			err        error
+			obsForKey  = make([]*valuespb.Value, 0, len(observations))
+		)
+
+		for i, obs := range observations {
+			switch obs.Value.(type) {
+			case *valuespb.Value_MapValue:
+				fields := obs.GetMapValue().GetFields()
+				obsForKey = append(obsForKey, fields[key])
+			default:
+				lggr.Debugf("unsupported observation type at index %d for fields map: %T", i, obs.Value)
+				continue
+			}
+		}
+
+		aggregated, err = handleDescriptor(lggr, d, obsForKey, f)
+		if err != nil {
+			return nil, fmt.Errorf("aggregation for field '%s' failed: %w", key, err)
+		}
+		result[key] = aggregated
+	}
+	return valuespb.NewMapValue(result), nil
+}
+
+func handleMedianAggregation(
+	_ logger.Logger,
+	observations []*valuespb.Value,
+	f int,
+) (*valuespb.Value, error) {
 	var (
 		medianResult *valuespb.Value
 		err          error
 	)
 
+	filtered, medianType, err := filterObservations(observations, f+1)
+	if err != nil {
+		return nil, err
+	}
+
 	switch medianType {
 	case TypeInt64:
 		medianResult, err = getMedian(
-			observations,
+			filtered,
 			func(val *valuespb.Value) (int64, error) {
 				return val.GetInt64Value(), nil
 			},
@@ -98,6 +144,7 @@ func handleMedianAggregation(observations []*valuespb.Value, medianType string) 
 				}
 				return 0
 			},
+			f,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to calculate int64 median: %w", err)
@@ -105,7 +152,7 @@ func handleMedianAggregation(observations []*valuespb.Value, medianType string) 
 
 	case TypeFloat64:
 		medianResult, err = getMedian(
-			observations,
+			filtered,
 			func(val *valuespb.Value) (float64, error) {
 				return val.GetFloat64Value(), nil
 			},
@@ -118,6 +165,7 @@ func handleMedianAggregation(observations []*valuespb.Value, medianType string) 
 				}
 				return 0
 			},
+			f,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to calculate float64 median: %w", err)
@@ -125,7 +173,7 @@ func handleMedianAggregation(observations []*valuespb.Value, medianType string) 
 
 	case TypeDecimal:
 		medianResult, err = getMedian(
-			observations,
+			filtered,
 			func(val *valuespb.Value) (decimal.Decimal, error) {
 				var d decimal.Decimal
 				v, err := values.FromProto(val)
@@ -137,6 +185,7 @@ func handleMedianAggregation(observations []*valuespb.Value, medianType string) 
 			func(a, b decimal.Decimal) int {
 				return a.Cmp(b)
 			},
+			f,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to calculate decimal median: %w", err)
@@ -144,7 +193,7 @@ func handleMedianAggregation(observations []*valuespb.Value, medianType string) 
 
 	case TypeBigInt:
 		medianResult, err = getMedian(
-			observations,
+			filtered,
 			func(val *valuespb.Value) (*big.Int, error) {
 				var got big.Int
 				v, err := values.FromProto(val)
@@ -156,6 +205,7 @@ func handleMedianAggregation(observations []*valuespb.Value, medianType string) 
 			func(a, b *big.Int) int {
 				return a.Cmp(b)
 			},
+			f,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to calculate big.Int median: %w", err)
@@ -163,7 +213,7 @@ func handleMedianAggregation(observations []*valuespb.Value, medianType string) 
 
 	case TypeTime:
 		medianResult, err = getMedian(
-			observations,
+			filtered,
 			func(val *valuespb.Value) (time.Time, error) {
 				var got time.Time
 				v, err := values.FromProto(val)
@@ -175,6 +225,7 @@ func handleMedianAggregation(observations []*valuespb.Value, medianType string) 
 			func(a, b time.Time) int {
 				return a.Compare(b)
 			},
+			f,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to calculate time median: %w", err)
@@ -387,9 +438,10 @@ func getMedian[T any](
 	observations []*valuespb.Value,
 	unwrap func(val *valuespb.Value) (T, error),
 	compare func(a, b T) int,
+	f int,
 ) (*valuespb.Value, error) {
-	if len(observations) < 1 {
-		return nil, errors.New("no valid observations for median calculation")
+	if len(observations) < f+1 {
+		return nil, ErrInsufficientObservations
 	}
 
 	var unwrappedValues []T
