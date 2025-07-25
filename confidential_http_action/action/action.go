@@ -15,12 +15,14 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	cap "github.com/smartcontractkit/capabilities/confidential_http_action/confidential_http_action_cap"
 	enclaveclient "github.com/smartcontractkit/confidential-compute/enclave-client"
 	httpenclavetypes "github.com/smartcontractkit/confidential-compute/enclave/nitro-confidential-http-enclave/types"
-	"github.com/smartcontractkit/confidential-compute/types"
 	enclavetypes "github.com/smartcontractkit/confidential-compute/types"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/actions/vault"
 )
 
 var (
@@ -37,11 +39,12 @@ func (c *capability) Info(_ context.Context) (capabilities.CapabilityInfo, error
 }
 
 type capability struct {
-	lggr              logger.Logger
-	enclaveClient     enclaveclient.EnclaveClient[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse]
-	keystore          core.Keystore
-	vaultDonPublicKey []byte
-	vaultDonID        []byte
+	lggr               logger.Logger
+	enclaveClient      enclaveclient.EnclaveClient[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse]
+	keystore           core.Keystore
+	vaultDONPublicKey  []byte
+	vaultDONID         []byte
+	vaultDONCapability capabilities.ExecutableCapability
 }
 
 // parseEnclaveType converts a string into an EnclaveType using case-insensitive matching.
@@ -94,7 +97,7 @@ func GetNodes(config cap.Config) ([]enclavetypes.EnclaveNode, error) {
 // getVaultDONPublicKey is a placeholder function to simulate retrieving a DON's public key.
 // In a real implementation, this would involve a lookup process based on the DON ID.
 // For now, it returns a hardcoded public key to allow the program to compile.
-func getVaultDONPublicKey(donID []byte) ([]byte, error) {
+func getVaultDONPublicKey(DONID []byte) ([]byte, error) {
 	// This is a dummy public key for placeholder purposes.
 	// It's 32 bytes long, which is the standard length for an ed25519 public key.
 	dummyPublicKey := []byte{
@@ -104,21 +107,21 @@ func getVaultDONPublicKey(donID []byte) ([]byte, error) {
 		0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef,
 	}
 
-	// You could add logic here to check the donID if needed.
-	if len(donID) == 0 {
+	// You could add logic here to check the DONID if needed.
+	if len(DONID) == 0 {
 		return nil, fmt.Errorf("VaultDONID cannot be empty")
 	}
 
-	log.Printf("Placeholder: Looked up public key for DON ID: %x\n", donID)
+	log.Printf("Placeholder: Looked up public key for DON ID: %x\n", DONID)
 
 	return dummyPublicKey, nil
 }
 
 // Query the VaultDON to get the encrypted decryption key shares.
 // This is a placeholder function that simulates the process of getting encrypted shares.
-func GetEncryptedDecryptedShares(vaultDonSecretIds []string, vaultDONPublicKey []byte, vaultDonID []byte) ([][]byte, [][][]byte, error) {
-	encryptedDecryptedShares := make([][][]byte, len(vaultDonSecretIds))
-	encryptedSecrets := make([][]byte, len(vaultDonSecretIds))
+func GetEncryptedDecryptedShares(vaultDONSecretIds []string, vaultDONPublicKey []byte, vaultDONID []byte) ([][]byte, [][][]byte, error) {
+	encryptedDecryptedShares := make([][][]byte, len(vaultDONSecretIds))
+	encryptedSecrets := make([][]byte, len(vaultDONSecretIds))
 	return encryptedSecrets, encryptedDecryptedShares, nil
 }
 
@@ -126,6 +129,7 @@ func New(
 	lggr logger.Logger,
 	capConfig cap.Config,
 	keystore core.Keystore,
+	vaultDONCapability capabilities.ExecutableCapability,
 ) (*capability, error) {
 	httpClient := http.Client{
 		Transport: &http.Transport{
@@ -153,7 +157,7 @@ func New(
 	}
 
 	// Now delegate to NewWithEnclaveClient, which will NOT call getVaultDONPublicKey again.
-	return NewWithEnclaveClient(lggr, capConfig, keystore, pool, vaultDONPublicKey)
+	return NewWithEnclaveClient(lggr, capConfig, keystore, pool, vaultDONPublicKey, vaultDONCapability)
 }
 
 // NewWithEnclaveClient allows injecting a custom (e.g., mock) EnclaveClient for testing.
@@ -164,13 +168,15 @@ func NewWithEnclaveClient(
 	keystore core.Keystore,
 	enclaveClient enclaveclient.EnclaveClient[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse],
 	vaultDONPublicKey []byte,
+	vaultDONCapability capabilities.ExecutableCapability,
 ) (*capability, error) {
 	return &capability{
-		lggr:              lggr,
-		enclaveClient:     enclaveClient,
-		keystore:          keystore,
-		vaultDonPublicKey: vaultDONPublicKey,
-		vaultDonID:        capConfig.VaultDONID,
+		lggr:               lggr,
+		enclaveClient:      enclaveClient,
+		keystore:           keystore,
+		vaultDONPublicKey:  vaultDONPublicKey,
+		vaultDONID:         capConfig.VaultDONID,
+		vaultDONCapability: vaultDONCapability,
 	}, nil
 }
 
@@ -204,17 +210,20 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to marshal templates: %w", err)
 	}
 
-	encryptedSecrets, encryptedDecyrptedShares, err := GetEncryptedDecryptedShares(input.VaultDonSecretIds, c.vaultDonPublicKey, c.vaultDonID)
+	encryptedSecrets, encryptedDecyrptedShares, err := c.GetEncryptedDecryptedShares(
+		ctx,
+		input.VaultDONSecretIds,
+		enclaveParams.EnclaveEphemeralPublicKey)
 
 	if err != nil {
-		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to get encrypted decryption key shares: %w", err)
+		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to get encrypted decryption key shares from VaultDON: %w", err)
 	}
 
-	computeReq := types.ComputeRequest{
+	computeReq := enclavetypes.ComputeRequest{
 		RequestID:                    reqID,
 		PublicData:                   publicDataBytes,
 		Ciphertexts:                  encryptedSecrets,
-		MasterPublicKey:              c.vaultDonPublicKey,
+		MasterPublicKey:              c.vaultDONPublicKey,
 		EnclaveEphemeralPublicKey:    enclaveParams.EnclaveEphemeralPublicKey,
 		EncryptedDecryptionKeyShares: encryptedDecyrptedShares,
 	}
@@ -223,7 +232,7 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to sign compute request: %w", err)
 	}
 
-	rawExecuteResponses, err := c.enclaveClient.ExecuteBatch(ctx, []types.SignedComputeRequest{*signedComputeReq}, [][32]byte{enclaveParams.EnclaveID})
+	rawExecuteResponses, err := c.enclaveClient.ExecuteBatch(ctx, []enclavetypes.SignedComputeRequest{*signedComputeReq}, [][32]byte{enclaveParams.EnclaveID})
 	if err != nil {
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to execute enclave request: %w", err)
 	}
@@ -290,7 +299,7 @@ func (c *capability) SignComputeRequest(ctx context.Context, computeRequest encl
 		return nil, err
 	}
 
-	return &types.SignedComputeRequest{
+	return &enclavetypes.SignedComputeRequest{
 		ComputeRequest: computeRequest,
 		Signature:      sig,
 	}, nil
@@ -320,6 +329,7 @@ func (c *capability) getEnclaveParams(ctx context.Context, reqID [32]byte) (*Enc
 	for i, time := range selectedEnclaveResponse.CreationTimes {
 		if time.UnixMicro() > mostRecentPubKeyCreationTime {
 			mostRecentPubKeyIndex = int64(i)
+			mostRecentPubKeyCreationTime = time.UnixMicro()
 		}
 	}
 	selectedEphemeralPublicKey := selectedEnclaveResponse.PublicKeys[mostRecentPubKeyIndex]
@@ -346,8 +356,109 @@ func ConvertInputToHTTPEnclaveRequestData(input cap.Input) httpenclavetypes.HTTP
 
 	return httpenclavetypes.HTTPEnclaveRequestData{
 		Requests:                convertedRequests,
-		TemplateCiphertextNames: input.VaultDonSecretIds,
+		TemplateCiphertextNames: input.VaultDONSecretIds,
 	}
+}
+
+type VaultDONInput struct {
+	SecretIDs                 []string `json:"secretIds"`
+	EnclaveEphemeralPublicKey []byte   `json:"enclaveEphemeralPublicKey"`
+}
+
+type VaultDONOutput struct {
+	EncryptedSecrets             [][]byte   `json:"encryptedSecrets"`
+	EncryptedDecryptionKeyShares [][][]byte `json:"encryptedDecryptionKeyShares"`
+}
+
+func (c *capability) GetEncryptedDecryptedShares(
+	ctx context.Context,
+	vaultDONSecretIds []string,
+	enclaveEphemeralPublicKey []byte,
+) ([][]byte, [][][]byte, error) {
+	c.lggr.Debugw("Attempting to get encrypted decrypted shares from VaultDON capability",
+		"vaultDONSecretIds", vaultDONSecretIds,
+		"vaultDONID", fmt.Sprintf("%x", c.vaultDONID),
+		"enclaveEphemeralPublicKey", fmt.Sprintf("%x", enclaveEphemeralPublicKey[:8])) // Log first 8 bytes for brevity
+
+	if c.vaultDONCapability == nil {
+		return nil, nil, errors.New("VaultDON capability is not initialized")
+	}
+
+	secretRequests := make([]*vault.SecretRequest, len(vaultDONSecretIds))
+	for i, secretID := range vaultDONSecretIds {
+		secretRequests[i] = &vault.SecretRequest{
+			Id: &vault.SecretIdentifier{
+				Key:       secretID,
+				Namespace: "", // Assuming empty or derived from context if needed
+				Owner:     "", // Assuming empty or derived from context if needed
+			},
+			// Corrected: Set EncryptionKeys to be an array of 1 item with the enclaveEphemeralPublicKey
+			EncryptionKeys: []string{string(enclaveEphemeralPublicKey)},
+		}
+	}
+
+	vaultDONRequestPayload := &vault.GetSecretsRequest{
+		Requests: secretRequests,
+	}
+
+	inputAny, err := anypb.New(vaultDONRequestPayload)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to marshal VaultDON request payload to Any: %w", err)
+	}
+
+	// Create a CapabilityRequest for the VaultDON
+	vaultDONRequest := capabilities.CapabilityRequest{
+		Payload: inputAny, // Assign the *anypb.Any here
+		Method:  vault.MethodGetSecrets,
+		Metadata: capabilities.RequestMetadata{ // Corrected: Metadata is a struct value
+			WorkflowID:          "confidential-http-action-request", // Example ID
+			WorkflowExecutionID: "vault-don-secrets-fetch",          // Example ID
+		},
+	}
+
+	// Execute the VaultDON capability
+	vaultDONResponse, err := c.vaultDONCapability.Execute(ctx, vaultDONRequest)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to execute VaultDON capability: %w", err)
+	}
+
+	// Unwrap the response from the VaultDON using vault.GetSecretsResponse
+	var vaultDONOutput vault.GetSecretsResponse
+	err = vaultDONResponse.Payload.UnmarshalTo(&vaultDONOutput)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to unmarshal VaultDON response payload: %w", err)
+	}
+
+	// Process the responses from the VaultDON
+	encryptedSecrets := make([][]byte, 0)
+	encryptedDecryptedShares := make([][][]byte, 0)
+
+	for _, secretResp := range vaultDONOutput.Responses {
+		if secretResp.GetError() != "" {
+			c.lggr.Warnw("VaultDON returned an error for a secret", "secretID", secretResp.GetId().GetKey(), "error", secretResp.GetError())
+			continue // Skip this secret if there was an error
+		}
+
+		secretData := secretResp.GetData()
+		if secretData == nil {
+			c.lggr.Warnw("VaultDON returned no data for a secret", "secretID", secretResp.GetId().GetKey())
+			continue
+		}
+
+		encryptedSecretBytes := []byte(secretData.GetEncryptedValue())
+		encryptedSecrets = append(encryptedSecrets, encryptedSecretBytes)
+		encryptedDecryptedSharesForSecret := make([][]byte, 0)
+
+		if len(secretData.GetEncryptedDecryptionKeyShares()) != 1 {
+			return nil, nil, fmt.Errorf("expected exactly one set of encrypted decryption key shares for secret %s, got %d", secretResp.GetId().GetKey(), len(secretData.GetEncryptedDecryptionKeyShares()))
+		}
+		for _, shareStr := range secretData.GetEncryptedDecryptionKeyShares()[0].GetShares() {
+			encryptedDecryptedSharesForSecret = append(encryptedDecryptedSharesForSecret, []byte(shareStr))
+		}
+		encryptedDecryptedShares = append(encryptedDecryptedShares, encryptedDecryptedSharesForSecret)
+	}
+
+	return encryptedSecrets, encryptedDecryptedShares, nil
 }
 
 func (c *capability) Start(ctx context.Context) error {

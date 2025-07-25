@@ -2,7 +2,9 @@
   "name": "confidential_http_action",
   "projectType": "capability",
   "projectRoot": "capabilities/confidential_http_action",
-  "implicitDependencies": ["loopserver"],
+  "implicitDependencies": [
+    "loopserver"
+  ],
   "tags": [],
   "targets": {
     "lint": {
@@ -16,7 +18,7 @@
       "executor": "nx:run-commands",
       "options": {
         "cwd": "{projectRoot}",
-        "command": "go test ./... -coverpkg=./... -coverprofile=coverage.txt"
+        "command": "go test -v ./... -coverpkg=./... -coverprofile=coverage.txt"
       }
     },
     "race": {

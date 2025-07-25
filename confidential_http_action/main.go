@@ -104,14 +104,30 @@ func (cs *capabilitiesServer) Initialise(
 		return fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
+	if len(capConfig.VaultDONID) == 0 {
+		return fmt.Errorf("VaultDONID must be provided in capability config to retrieve VaultDON capability")
+	}
+	vaultDONIDStr := string(capConfig.VaultDONID)
+	vaultDONCap, err := capabilityRegistry.Get(ctx, vaultDONIDStr)
+	if err != nil {
+		return fmt.Errorf("failed to get VaultDON capability with ID '%s' from registry: %w", vaultDONIDStr, err)
+	}
+
+	var ok bool
+	var vaultDONCapability capabilities.ExecutableCapability
+	vaultDONCapability, ok = vaultDONCap.(capabilities.ExecutableCapability)
+	if !ok {
+		return fmt.Errorf("VaultDON capability with ID '%s' is not an ExecutableCapability", vaultDONIDStr)
+	}
+	cs.lggr.Infow("Successfully retrieved VaultDON capability", "vaultDONID", vaultDONIDStr)
+
+	cs.action, err = action.New(cs.lggr, capConfig, keystore, vaultDONCapability)
+	if err != nil {
+		return fmt.Errorf("failed to create confidential http action: %w", err)
+	}
+
 	if err := capabilityRegistry.Add(ctx, cs.action); err != nil {
 		return fmt.Errorf("failed to add attested http capability to the capability registry: %w", err)
 	}
-
-	cs.action, err = action.New(cs.lggr, capConfig, keystore)
-	if err != nil {
-		return fmt.Errorf("failed to create attested http action: %w", err)
-	}
-
 	return nil
 }

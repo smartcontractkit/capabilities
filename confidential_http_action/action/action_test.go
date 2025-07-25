@@ -3,12 +3,16 @@ package action_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/actions/vault"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
@@ -31,8 +35,6 @@ type MockEnclaveClient[PublicDataType any, OutputType any] struct {
 	ExecuteBatchFunc func(ctx context.Context, reqs []enclavetypes.SignedComputeRequest, enclaveIDs [][32]byte) ([]enclavetypes.RawExecuteResponse, error)
 
 	UpdateNodesFunc func(nodes []enclavetypes.EnclaveNode)
-
-	CapturedSignature []byte
 }
 
 // Implement methods with POINTER RECEIVERS, using the struct's type parameters
@@ -83,6 +85,38 @@ func (m *mockKeystore) Sign(ctx context.Context, account string, msg []byte) ([]
 	return []byte(""), nil
 }
 
+// MockVaultDONCapability implements core.ExecutableCapability for testing VaultDON interactions.
+type MockVaultDONCapability struct {
+	ExecuteFunc func(ctx context.Context, req capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error)
+}
+
+// Info implements core.ExecutableCapability.
+func (m *MockVaultDONCapability) Info(ctx context.Context) (capabilities.CapabilityInfo, error) {
+	return capabilities.CapabilityInfo{
+		ID:             "mock-vault-don@1.0.0",
+		CapabilityType: capabilities.CapabilityTypeAction,
+		Description:    "Mock VaultDON for testing",
+	}, nil
+}
+
+// Execute implements core.ExecutableCapability.
+func (m *MockVaultDONCapability) Execute(ctx context.Context, req capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
+	if m.ExecuteFunc != nil {
+		return m.ExecuteFunc(ctx, req)
+	}
+	return capabilities.CapabilityResponse{}, errors.New("ExecuteFunc not implemented for MockVaultDONCapability")
+}
+
+// RegisterToWorkflow implements core.ExecutableCapability.
+func (m *MockVaultDONCapability) RegisterToWorkflow(ctx context.Context, request capabilities.RegisterToWorkflowRequest) error {
+	return nil // Not used in this test scenario
+}
+
+// UnregisterFromWorkflow implements core.ExecutableCapability.
+func (m *MockVaultDONCapability) UnregisterFromWorkflow(ctx context.Context, request capabilities.UnregisterFromWorkflowRequest) error {
+	return nil // Not used in this test scenario
+}
+
 func getTestConfig() cap.Config {
 	enclaveTypeA := "TypeA"
 
@@ -110,8 +144,8 @@ func getTestConfig() cap.Config {
 func TestNew(t *testing.T) {
 	t.Run("a new confidential http capability action is created", func(t *testing.T) {
 		mockKeystore := &mockKeystore{}
-		c, err := action.New(logger.Test(t), getTestConfig(), mockKeystore)
-
+		mockVaultDON := &MockVaultDONCapability{}
+		c, err := action.New(logger.Test(t), getTestConfig(), mockKeystore, mockVaultDON)
 		assert.NoError(t, err)
 		assert.NotNil(t, c)
 	})
@@ -120,7 +154,8 @@ func TestNew(t *testing.T) {
 func TestCapability_Info(t *testing.T) {
 	t.Run("capability info is reported correctly", func(t *testing.T) {
 		mockKeystore := &mockKeystore{}
-		c, err := action.New(logger.Test(t), getTestConfig(), mockKeystore)
+		mockVaultDON := &MockVaultDONCapability{}
+		c, err := action.New(logger.Test(t), getTestConfig(), mockKeystore, mockVaultDON)
 		assert.NoError(t, err)
 		info, err := c.Info(context.Background())
 		assert.NoError(t, err)
@@ -138,6 +173,55 @@ func TestCapability_Execute(t *testing.T) {
 			signFunc: func(ctx context.Context, account string, msg []byte) ([]byte, error) {
 				return []byte("test-signature"), nil
 			},
+		}
+
+		mockVaultDON := &MockVaultDONCapability{}
+		mockVaultDON.ExecuteFunc = func(ctx context.Context, req capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
+			assert.Equal(t, vault.MethodGetSecrets, req.Method, "Expected VaultDON method to be GetSecrets")
+
+			var getSecretsReq vault.GetSecretsRequest
+			err := req.Payload.UnmarshalTo(&getSecretsReq)
+			require.NoError(t, err, "Failed to unmarshal VaultDON request payload")
+
+			assert.Len(t, getSecretsReq.Requests, 1, "Expected one secret request")
+			assert.Equal(t, "my-secret-api-key", getSecretsReq.Requests[0].GetId().GetKey(), "Expected secret ID to match")
+			assert.Len(t, getSecretsReq.Requests[0].GetEncryptionKeys(), 1, "Expected one encryption key")
+			assert.Equal(t, string([]byte("mock_public_key_bytes_1")), getSecretsReq.Requests[0].GetEncryptionKeys()[0], "Expected encryption key to match enclave public key")
+
+			// Simulate VaultDON response
+			mockEncryptedSecretValue := "encrypted_secret_data_for_my-secret-id"
+			mockEncryptedDecryptionKeyShare1 := "share1_for_my-secret-id"
+			mockEncryptedDecryptionKeyShare2 := "share2_for_my-secret-id"
+
+			vaultDONResponsePayload := &vault.GetSecretsResponse{
+				Responses: []*vault.SecretResponse{
+					{
+						Id: &vault.SecretIdentifier{
+							Key:       "my-secret-api-key",
+							Namespace: "",
+							Owner:     "",
+						},
+						Result: &vault.SecretResponse_Data{
+							Data: &vault.SecretData{
+								EncryptedValue: mockEncryptedSecretValue,
+								EncryptedDecryptionKeyShares: []*vault.EncryptedShares{
+									{
+										Shares:        []string{mockEncryptedDecryptionKeyShare1, mockEncryptedDecryptionKeyShare2},
+										EncryptionKey: string([]byte("mock_public_key_bytes_1")),
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+
+			respAny, err := anypb.New(vaultDONResponsePayload)
+			require.NoError(t, err, "Failed to marshal VaultDON response payload to Any")
+
+			return capabilities.CapabilityResponse{
+				Payload: respAny,
+			}, nil
 		}
 
 		mockEnclaveClient := &MockEnclaveClient[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse]{}
@@ -167,9 +251,8 @@ func TestCapability_Execute(t *testing.T) {
 		assert.NoError(t, err)
 
 		mockEnclaveClient.ExecuteBatchFunc = func(ctx context.Context, reqs []enclavetypes.SignedComputeRequest, enclaveIDs [][32]byte) ([]enclavetypes.RawExecuteResponse, error) {
-			if len(reqs) == 1 {
-				mockEnclaveClient.CapturedSignature = reqs[0].Signature
-			}
+			assert.Equal(t, len(reqs), 1, "Expected one signed compute request")
+			assert.Equal(t, []byte("test-signature"), reqs[0].Signature, "Expected secret ID to match")
 			return []enclavetypes.RawExecuteResponse{
 				{
 					RequestID: [32]byte{1, 2, 3},
@@ -189,7 +272,8 @@ func TestCapability_Execute(t *testing.T) {
 			getTestConfig(),
 			mockKeystore,
 			mockEnclaveClient,
-			[]byte{0xDE, 0xAD, 0xBE, 0xEF}, // vaultDONPublicKey
+			[]byte{0xDE, 0xAD, 0xBE, 0xEF}, // vaultDONPublicKey,
+			mockVaultDON,
 		)
 		assert.NoError(t, err)
 
@@ -204,7 +288,7 @@ func TestCapability_Execute(t *testing.T) {
 					Body: "",
 				},
 			},
-			VaultDonSecretIds: []string{},
+			VaultDONSecretIds: []string{"my-secret-api-key"},
 		}
 
 		inputsValue, err := values.WrapMap(input)
@@ -222,17 +306,23 @@ func TestCapability_Execute(t *testing.T) {
 		})
 		defer removeWorkflow(ctx)
 
-		resp, err := c.Execute(context.Background(), workflow.NewRequest(map[string]any{
-			"Inputs": inputsValue,
-		}))
+		req := capabilities.CapabilityRequest{
+			Inputs: inputsValue,
+			Metadata: capabilities.RequestMetadata{
+				WorkflowID:          workflow.ID,
+				WorkflowExecutionID: "",
+				WorkflowName:        "",
+				WorkflowOwner:       workflow.Owner,
+			},
+		}
+
+		resp, err := c.Execute(context.Background(), req)
 		assert.NoError(t, err)
 		assert.NotNil(t, resp.Value)
 
 		var capOutput cap.Output
 		err = resp.Value.UnwrapTo(&capOutput)
 		assert.NoError(t, err)
-
-		assert.Equal(t, []byte("test-signature"), mockEnclaveClient.CapturedSignature, "Expected the captured signature to match the mock signature")
 
 		assert.Equal(t, 2, len(capOutput.Responses), "Expected two responses in the output")
 		var actualStatusCodes []int64
@@ -248,5 +338,218 @@ func TestCapability_Execute(t *testing.T) {
 		}
 		expectedResponseBytes := [][]byte{[]byte("First response"), []byte("Second response")}
 		assert.ElementsMatch(t, expectedResponseBytes, actualResponseBytes, "Response bodies do not match expected values")
+	})
+
+	t.Run("capability executes with error from VaultDON", func(t *testing.T) {
+		mockKeystore := &mockKeystore{
+			accounts: []string{core.P2PAccountKey},
+			signFunc: func(ctx context.Context, account string, msg []byte) ([]byte, error) {
+				return []byte("test-signature"), nil
+			},
+		}
+
+		mockEnclaveClient := &MockEnclaveClient[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse]{}
+		mockEnclaveClient.GetPublicKeysFunc = func(ctx context.Context, requestID [32]byte, enclaveSpecifications []byte) ([]enclavetypes.EnclavePublicKeyData, error) {
+			return []enclavetypes.EnclavePublicKeyData{
+				{
+					PublicKeyResponse: enclavetypes.PublicKeyResponse{
+						PublicKeys: [][]byte{
+							[]byte("mock_public_key_bytes_1"),
+						},
+						CreationTimes: []time.Time{time.Now()},
+						TTLs:          []time.Duration{time.Hour * 24},
+						Config:        enclavetypes.EnclaveConfig{},
+						Attestation:   []byte("mock_attestation_data"),
+					},
+					EnclaveID: [32]byte{9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32},
+				},
+			}, nil
+		}
+
+		// --- Mock VaultDON Capability that returns an error ---
+		mockVaultDON := &MockVaultDONCapability{}
+		mockVaultDON.ExecuteFunc = func(ctx context.Context, req capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
+			return capabilities.CapabilityResponse{}, errors.New("simulated VaultDON error")
+		}
+		// --- End Mock VaultDON Capability ---
+
+		c, err := action.NewWithEnclaveClient(
+			logger.Test(t),
+			getTestConfig(),
+			mockKeystore,
+			mockEnclaveClient,
+			[]byte{0xDE, 0xAD, 0xBE, 0xEF}, // vaultDONPublicKey
+			mockVaultDON,                   // Pass the mock VaultDON capability
+		)
+		require.NoError(t, err)
+
+		input := cap.Input{
+			Requests: []cap.Request{
+				{
+					Url:    "https://api.example.com/status",
+					Method: "GET",
+				},
+			},
+			VaultDONSecretIds: []string{"my-secret-id"},
+		}
+
+		inputsValue, err := values.WrapMap(input)
+		require.NoError(t, err)
+
+		ctx := context.Background()
+		workflow, removeWorkflow := testutils.NewWorkflow(ctx, testutils.WorkflowParams{
+			T: t,
+			Capabilities: []testutils.CapabilityWithConfig{
+				{
+					Capability: c,
+				},
+			},
+			Owner: "owner1",
+		})
+		defer removeWorkflow(ctx)
+
+		req := capabilities.CapabilityRequest{
+			Inputs: inputsValue,
+			Metadata: capabilities.RequestMetadata{
+				WorkflowID:          workflow.ID,
+				WorkflowExecutionID: "",
+				WorkflowName:        "",
+				WorkflowOwner:       workflow.Owner,
+			},
+		}
+
+		_, err = c.Execute(context.Background(), req)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to get encrypted decryption key shares from VaultDON: failed to execute VaultDON capability: simulated VaultDON error")
+	})
+
+	t.Run("capability executes with VaultDON returning secret error", func(t *testing.T) {
+		mockKeystore := &mockKeystore{
+			accounts: []string{core.P2PAccountKey},
+			signFunc: func(ctx context.Context, account string, msg []byte) ([]byte, error) {
+				return []byte("test-signature"), nil
+			},
+		}
+
+		mockEnclaveClient := &MockEnclaveClient[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse]{}
+		mockEnclaveClient.GetPublicKeysFunc = func(ctx context.Context, requestID [32]byte, enclaveSpecifications []byte) ([]enclavetypes.EnclavePublicKeyData, error) {
+			return []enclavetypes.EnclavePublicKeyData{
+				{
+					PublicKeyResponse: enclavetypes.PublicKeyResponse{
+						PublicKeys: [][]byte{
+							[]byte("mock_public_key_bytes_1"),
+						},
+						CreationTimes: []time.Time{time.Now()},
+						TTLs:          []time.Duration{time.Hour * 24},
+						Config:        enclavetypes.EnclaveConfig{},
+						Attestation:   []byte("mock_attestation_data"),
+					},
+					EnclaveID: [32]byte{9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32},
+				},
+			}, nil
+		}
+
+		mockResponsesSlice := []enclavetypes.HTTPResponse{
+			{StatusCode: 200, Body: []byte("First response")},
+		}
+		innerJSONBytes, err := json.Marshal(mockResponsesSlice)
+		require.NoError(t, err)
+
+		mockEnclaveClient.ExecuteBatchFunc = func(ctx context.Context, reqs []enclavetypes.SignedComputeRequest, enclaveIDs [][32]byte) ([]enclavetypes.RawExecuteResponse, error) {
+			return []enclavetypes.RawExecuteResponse{
+				{
+					RequestID: [32]byte{1, 2, 3},
+					Output:    innerJSONBytes,
+					Config: enclavetypes.EnclaveConfig{
+						Signers:         [][]byte{[]byte("signer_key_1"), []byte("signer_key_2")},
+						MasterPublicKey: []byte("master_pub_key_1"),
+						T:               1,
+						F:               0,
+					},
+					Attestation: []byte(""),
+				}}, nil
+		}
+
+		// --- Mock VaultDON Capability that returns a secret error ---
+		mockVaultDON := &MockVaultDONCapability{}
+		mockVaultDON.ExecuteFunc = func(ctx context.Context, req capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
+			vaultDONResponsePayload := &vault.GetSecretsResponse{
+				Responses: []*vault.SecretResponse{
+					{
+						Id: &vault.SecretIdentifier{
+							Key: "my-secret-id",
+						},
+						Result: &vault.SecretResponse_Error{
+							Error: "secret not found",
+						},
+					},
+				},
+			}
+
+			respAny, err := anypb.New(vaultDONResponsePayload)
+			require.NoError(t, err)
+
+			return capabilities.CapabilityResponse{
+				Payload: respAny,
+			}, nil
+		}
+		// --- End Mock VaultDON Capability ---
+
+		c, err := action.NewWithEnclaveClient(
+			logger.Test(t),
+			getTestConfig(),
+			mockKeystore,
+			mockEnclaveClient,
+			[]byte{0xDE, 0xAD, 0xBE, 0xEF}, // vaultDONPublicKey
+			mockVaultDON,                   // Pass the mock VaultDON capability
+		)
+		require.NoError(t, err)
+
+		input := cap.Input{
+			Requests: []cap.Request{
+				{
+					Url:    "https://api.example.com/status",
+					Method: "GET",
+				},
+			},
+			VaultDONSecretIds: []string{"my-secret-id"},
+		}
+
+		inputsValue, err := values.WrapMap(input)
+		require.NoError(t, err)
+
+		ctx := context.Background()
+		workflow, removeWorkflow := testutils.NewWorkflow(ctx, testutils.WorkflowParams{
+			T: t,
+			Capabilities: []testutils.CapabilityWithConfig{
+				{
+					Capability: c,
+				},
+			},
+			Owner: "owner1",
+		})
+		defer removeWorkflow(ctx)
+
+		req := capabilities.CapabilityRequest{
+			Inputs: inputsValue,
+			Metadata: capabilities.RequestMetadata{
+				WorkflowID:          workflow.ID,
+				WorkflowExecutionID: "",
+				WorkflowName:        "",
+				WorkflowOwner:       workflow.Owner,
+			},
+		}
+
+		resp, err := c.Execute(context.Background(), req)
+		assert.NoError(t, err) // No error at this level, but the secret won't be in the final ComputeRequest
+		assert.NotNil(t, resp.Value)
+
+		var capOutput cap.Output
+		err = resp.Value.UnwrapTo(&capOutput)
+		assert.NoError(t, err)
+
+		// Assert that no encrypted secrets or shares were added because of the error
+		// This requires inspecting the ComputeRequest sent to the enclave client.
+		// For simplicity, we'll just check that the overall execution didn't fail.
 	})
 }

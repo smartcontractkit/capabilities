@@ -343,14 +343,14 @@ type RequestPublicTemplateValuesCap sdk.CapDefinition[RequestPublicTemplateValue
 
 type HttpActionInput struct {
 	Requests          sdk.CapDefinition[[]Request]
-	VaultDonSecretIds sdk.CapDefinition[[]string]
+	VaultDONSecretIds sdk.CapDefinition[[]string]
 }
 
 func (input HttpActionInput) ToSteps() sdk.StepInputs {
 	return sdk.StepInputs{
 		Mapping: map[string]any{
 			"requests":          input.Requests.Ref(),
-			"vaultDonSecretIds": input.VaultDonSecretIds.Ref(),
+			"vaultDONSecretIds": input.VaultDONSecretIds.Ref(),
 		},
 	}
 }

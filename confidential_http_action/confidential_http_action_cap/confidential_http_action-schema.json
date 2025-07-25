@@ -121,7 +121,7 @@
                         "$ref": "#/$defs/Request"
                     }
                 },
-                "vaultDonSecretIds": {
+                "vaultDONSecretIds": {
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -131,7 +131,7 @@
             },
             "required": [
                 "requests",
-                "vaultDonSecretIds"
+                "vaultDONSecretIds"
             ],
             "additionalProperties": false
         },

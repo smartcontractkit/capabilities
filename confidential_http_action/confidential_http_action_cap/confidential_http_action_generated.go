@@ -121,7 +121,7 @@ type Input struct {
 	Requests []Request `json:"requests" yaml:"requests" mapstructure:"requests"`
 
 	// List of Vault DON secret IDs to fetch secrets from
-	VaultDonSecretIds []string `json:"vaultDonSecretIds" yaml:"vaultDonSecretIds" mapstructure:"vaultDonSecretIds"`
+	VaultDONSecretIds []string `json:"vaultDONSecretIds" yaml:"vaultDONSecretIds" mapstructure:"vaultDONSecretIds"`
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
@@ -133,8 +133,8 @@ func (j *Input) UnmarshalJSON(b []byte) error {
 	if _, ok := raw["requests"]; raw != nil && !ok {
 		return fmt.Errorf("field requests in Input: required")
 	}
-	if _, ok := raw["vaultDonSecretIds"]; raw != nil && !ok {
-		return fmt.Errorf("field vaultDonSecretIds in Input: required")
+	if _, ok := raw["vaultDONSecretIds"]; raw != nil && !ok {
+		return fmt.Errorf("field vaultDONSecretIds in Input: required")
 	}
 	type Plain Input
 	var plain Plain
