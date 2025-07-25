@@ -456,6 +456,9 @@ func TestCapability_Execute(t *testing.T) {
 		require.NoError(t, err)
 
 		mockEnclaveClient.ExecuteBatchFunc = func(ctx context.Context, reqs []enclavetypes.SignedComputeRequest, enclaveIDs [][32]byte) ([]enclavetypes.RawExecuteResponse, error) {
+			assert.Equal(t, len(reqs), 1, "Expected one signed compute request")
+			assert.Equal(t, 0, len(reqs[0].Ciphertexts), "Expected no ciphertexts in the request")
+			assert.Equal(t, 0, len(reqs[0].EncryptedDecryptionKeyShares), "Expected no shares in the request")
 			return []enclavetypes.RawExecuteResponse{
 				{
 					RequestID: [32]byte{1, 2, 3},
@@ -549,7 +552,6 @@ func TestCapability_Execute(t *testing.T) {
 		assert.NoError(t, err)
 
 		// Assert that no encrypted secrets or shares were added because of the error
-		// This requires inspecting the ComputeRequest sent to the enclave client.
-		// For simplicity, we'll just check that the overall execution didn't fail.
+		// This requires inspecting the ComputeRequest sent to the enclave client (see the mockEnclaveClient that is used in this test)
 	})
 }
