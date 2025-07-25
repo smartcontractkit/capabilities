@@ -16,7 +16,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 
-	"github.com/mitchellh/mapstructure"
 	cap "github.com/smartcontractkit/capabilities/confidential_http_action/confidential_http_action_cap"
 	enclaveclient "github.com/smartcontractkit/confidential-compute/enclave-client"
 	httpenclavetypes "github.com/smartcontractkit/confidential-compute/enclave/nitro-confidential-http-enclave/types"
@@ -123,7 +122,11 @@ func GetEncryptedDecryptedShares(vaultDonSecretIds []string, vaultDONPublicKey [
 	return encryptedSecrets, encryptedDecryptedShares, nil
 }
 
-func New(lggr logger.Logger, capConfig cap.Config, keystore core.Keystore) (*capability, error) {
+func New(
+	lggr logger.Logger,
+	capConfig cap.Config,
+	keystore core.Keystore,
+) (*capability, error) {
 	httpClient := http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
@@ -136,21 +139,35 @@ func New(lggr logger.Logger, capConfig cap.Config, keystore core.Keystore) (*cap
 		return nil, fmt.Errorf("failed to create enclave pool: %w", err)
 	}
 
+	// Only get the public key here, and pass it to enclaveclient.NewPool.
 	vaultDONPublicKey, err := getVaultDONPublicKey(capConfig.VaultDONID)
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to get VaultDON public key: %w", err)
 	}
 
-	// Setting Signer to nil for now, as we plan to use only enclaveClient.executeBatch in this capability.
-	// The other nils are ok as they default to reasonable implementaitons in the enclaveClient.
-	pool, err := enclaveclient.NewPool[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse](nodes, vaultDONPublicKey, nil, nil, nil, nil, &httpClient)
+	pool, err := enclaveclient.NewPool[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse](
+		nodes, vaultDONPublicKey, nil, nil, nil, nil, &httpClient,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create enclave pool: %w", err)
 	}
+
+	// Now delegate to NewWithEnclaveClient, which will NOT call getVaultDONPublicKey again.
+	return NewWithEnclaveClient(lggr, capConfig, keystore, pool, vaultDONPublicKey)
+}
+
+// NewWithEnclaveClient allows injecting a custom (e.g., mock) EnclaveClient for testing.
+// Accepts vaultDONPublicKey as a parameter to avoid duplicate lookups.
+func NewWithEnclaveClient(
+	lggr logger.Logger,
+	capConfig cap.Config,
+	keystore core.Keystore,
+	enclaveClient enclaveclient.EnclaveClient[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse],
+	vaultDONPublicKey []byte,
+) (*capability, error) {
 	return &capability{
 		lggr:              lggr,
-		enclaveClient:     pool,
+		enclaveClient:     enclaveClient,
 		keystore:          keystore,
 		vaultDonPublicKey: vaultDONPublicKey,
 		vaultDonID:        capConfig.VaultDONID,
@@ -181,9 +198,7 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 	}
 
 	publicData := ConvertInputToHTTPEnclaveRequestData(input)
-	if err != nil {
-		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to convert input to HTTP enclave request data: %w", err)
-	}
+
 	publicDataBytes, err := json.Marshal(publicData)
 	if err != nil {
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to marshal templates: %w", err)
@@ -219,7 +234,7 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 
 	// As with the enclave request data, output must be converted from the enclave type to the SDK type.
 	var responses []cap.OutputResponsesElem
-	err = mapstructure.Decode(rawExecuteResponses[0].Output, &responses)
+	err = json.Unmarshal(rawExecuteResponses[0].Output, &responses)
 	if err != nil {
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to decode enclave response: %w", err)
 	}
