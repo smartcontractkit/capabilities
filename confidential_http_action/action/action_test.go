@@ -31,6 +31,8 @@ type MockEnclaveClient[PublicDataType any, OutputType any] struct {
 	ExecuteBatchFunc func(ctx context.Context, reqs []enclavetypes.SignedComputeRequest, enclaveIDs [][32]byte) ([]enclavetypes.RawExecuteResponse, error)
 
 	UpdateNodesFunc func(nodes []enclavetypes.EnclaveNode)
+
+	CapturedSignature []byte
 }
 
 // Implement methods with POINTER RECEIVERS, using the struct's type parameters
@@ -78,7 +80,7 @@ func (m *mockKeystore) Sign(ctx context.Context, account string, msg []byte) ([]
 	if m.signFunc != nil {
 		return m.signFunc(ctx, account, msg)
 	}
-	return []byte("mock-signature"), nil
+	return []byte(""), nil
 }
 
 func getTestConfig() cap.Config {
@@ -165,6 +167,9 @@ func TestCapability_Execute(t *testing.T) {
 		assert.NoError(t, err)
 
 		mockEnclaveClient.ExecuteBatchFunc = func(ctx context.Context, reqs []enclavetypes.SignedComputeRequest, enclaveIDs [][32]byte) ([]enclavetypes.RawExecuteResponse, error) {
+			if len(reqs) == 1 {
+				mockEnclaveClient.CapturedSignature = reqs[0].Signature
+			}
 			return []enclavetypes.RawExecuteResponse{
 				{
 					RequestID: [32]byte{1, 2, 3},
@@ -227,6 +232,8 @@ func TestCapability_Execute(t *testing.T) {
 		err = resp.Value.UnwrapTo(&capOutput)
 		assert.NoError(t, err)
 
+		assert.Equal(t, []byte("test-signature"), mockEnclaveClient.CapturedSignature, "Expected the captured signature to match the mock signature")
+
 		assert.Equal(t, 2, len(capOutput.Responses), "Expected two responses in the output")
 		var actualStatusCodes []int64
 		for _, res := range capOutput.Responses {
@@ -234,5 +241,12 @@ func TestCapability_Execute(t *testing.T) {
 		}
 		expectedStatusCodes := []int64{200, 500}
 		assert.ElementsMatch(t, expectedStatusCodes, actualStatusCodes, "StatusCodes do not match expected values")
+
+		var actualResponseBytes [][]byte
+		for _, res := range capOutput.Responses {
+			actualResponseBytes = append(actualResponseBytes, res.Body)
+		}
+		expectedResponseBytes := [][]byte{[]byte("First response"), []byte("Second response")}
+		assert.ElementsMatch(t, expectedResponseBytes, actualResponseBytes, "Response bodies do not match expected values")
 	})
 }
