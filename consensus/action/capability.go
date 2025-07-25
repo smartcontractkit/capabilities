@@ -110,26 +110,6 @@ func (c *consensusCapability) SetRequestTimeout(timeout time.Duration) {
 	c.requestTimeout = timeout
 }
 
-func (c *consensusCapability) publishPendingRequestsMetric(reqStore *requests.Store[*oracle.ConsensusRequest]) {
-	c.wg.Add(1)
-	go func() {
-		defer c.wg.Done()
-		ticker := time.NewTicker(5 * time.Second)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ticker.C:
-				pendingRequestsCount := reqStore.Len()
-				c.lggr.Debugw("Publishing pending requests metric", "count", pendingRequestsCount)
-
-			case <-c.stopCh:
-				return
-			}
-		}
-	}()
-}
-
 func (c *consensusCapability) Initialise(ctx context.Context, config string,
 	telemetryService core.TelemetryService,
 	store core.KeyValueStore, errorLog core.ErrorLog, pipelineRunner core.PipelineRunnerService,
@@ -140,8 +120,6 @@ func (c *consensusCapability) Initialise(ctx context.Context, config string,
 	if err := c.setConfiguration(config); err != nil {
 		return fmt.Errorf("error setting consensus capability configuration: %w", err)
 	}
-
-	c.publishPendingRequestsMetric(c.reqStore)
 
 	reportingPlugin, err := oracle.NewReportingPluginFactory(c.lggr, c.reqStore, c.SetRequestTimeout,
 		c.requestBatchSize)
