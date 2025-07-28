@@ -172,6 +172,22 @@ func getTestConfig() cap.Config {
 	}
 }
 
+func getTestInput() cap.Input {
+	return cap.Input{
+		Requests: []cap.Request{
+			{
+				Url:    "https://api.example.com/status",
+				Method: "GET",
+				Headers: []string{
+					"Content-Type: application/json",
+				},
+				Body: "",
+			},
+		},
+		VaultDONSecretIds: []string{"my-secret-api-key"},
+	}
+}
+
 func TestNew(t *testing.T) {
 	t.Run("a new confidential http capability action is created", func(t *testing.T) {
 		mockKeystore := &mockKeystore{}
@@ -276,19 +292,7 @@ func TestCapability_Execute(t *testing.T) {
 		)
 		assert.NoError(t, err)
 
-		input := cap.Input{
-			Requests: []cap.Request{
-				{
-					Url:    "https://api.example.com/status",
-					Method: "GET",
-					Headers: []string{
-						"Content-Type: application/json",
-					},
-					Body: "",
-				},
-			},
-			VaultDONSecretIds: []string{"my-secret-api-key"},
-		}
+		input := getTestInput()
 
 		inputsValue, err := values.WrapMap(input)
 		assert.NoError(t, err)
@@ -366,15 +370,7 @@ func TestCapability_Execute(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		input := cap.Input{
-			Requests: []cap.Request{
-				{
-					Url:    "https://api.example.com/status",
-					Method: "GET",
-				},
-			},
-			VaultDONSecretIds: []string{"my-secret-id"},
-		}
+		input := getTestInput()
 
 		inputsValue, err := values.WrapMap(input)
 		require.NoError(t, err)
@@ -458,15 +454,7 @@ func TestCapability_Execute(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		input := cap.Input{
-			Requests: []cap.Request{
-				{
-					Url:    "https://api.example.com/status",
-					Method: "GET",
-				},
-			},
-			VaultDONSecretIds: []string{"my-secret-id"},
-		}
+		input := getTestInput()
 
 		inputsValue, err := values.WrapMap(input)
 		require.NoError(t, err)
