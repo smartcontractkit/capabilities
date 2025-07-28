@@ -197,6 +197,47 @@ func getTestInput() cap.Input {
 	}
 }
 
+func setupAndExecuteAction(t *testing.T, mockEnclaveClient *MockEnclaveClient[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse], mockVaultDON *MockVaultDONCapability) (capabilities.CapabilityResponse, error) {
+	c, err := action.NewWithEnclaveClient(
+		logger.Test(t),
+		getTestConfig(),
+		getMockKeystore(),
+		mockEnclaveClient,
+		[]byte{0xDE, 0xAD, 0xBE, 0xEF}, // vaultDONPublicKey
+		mockVaultDON,
+	)
+	require.NoError(t, err)
+
+	input := getTestInput()
+
+	inputsValue, err := values.WrapMap(input)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	workflow, removeWorkflow := testutils.NewWorkflow(ctx, testutils.WorkflowParams{
+		T: t,
+		Capabilities: []testutils.CapabilityWithConfig{
+			{
+				Capability: c,
+			},
+		},
+		Owner: "owner1",
+	})
+	defer removeWorkflow(ctx)
+
+	req := capabilities.CapabilityRequest{
+		Inputs: inputsValue,
+		Metadata: capabilities.RequestMetadata{
+			WorkflowID:          workflow.ID,
+			WorkflowExecutionID: "",
+			WorkflowName:        "",
+			WorkflowOwner:       workflow.Owner,
+		},
+	}
+
+	return c.Execute(context.Background(), req)
+}
+
 func TestNew(t *testing.T) {
 	t.Run("a new confidential http capability action is created", func(t *testing.T) {
 		mockKeystore := &mockKeystore{}
@@ -284,44 +325,7 @@ func TestCapability_Execute(t *testing.T) {
 			return mockEnclaveClient.commonExecuteBatchReturn(t)
 		}
 
-		c, err := action.NewWithEnclaveClient(
-			logger.Test(t),
-			getTestConfig(),
-			getMockKeystore(),
-			mockEnclaveClient,
-			[]byte{0xDE, 0xAD, 0xBE, 0xEF}, // vaultDONPublicKey,
-			mockVaultDON,
-		)
-		assert.NoError(t, err)
-
-		input := getTestInput()
-
-		inputsValue, err := values.WrapMap(input)
-		assert.NoError(t, err)
-
-		ctx := context.Background()
-		workflow, removeWorkflow := testutils.NewWorkflow(ctx, testutils.WorkflowParams{
-			T: t,
-			Capabilities: []testutils.CapabilityWithConfig{
-				{
-					Capability: c,
-				},
-			},
-			Owner: "owner1",
-		})
-		defer removeWorkflow(ctx)
-
-		req := capabilities.CapabilityRequest{
-			Inputs: inputsValue,
-			Metadata: capabilities.RequestMetadata{
-				WorkflowID:          workflow.ID,
-				WorkflowExecutionID: "",
-				WorkflowName:        "",
-				WorkflowOwner:       workflow.Owner,
-			},
-		}
-
-		resp, err := c.Execute(context.Background(), req)
+		resp, err := setupAndExecuteAction(t, mockEnclaveClient, mockVaultDON)
 		assert.NoError(t, err)
 		assert.NotNil(t, resp.Value)
 
@@ -353,46 +357,8 @@ func TestCapability_Execute(t *testing.T) {
 		mockVaultDON.ExecuteFunc = func(ctx context.Context, req capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
 			return capabilities.CapabilityResponse{}, errors.New("simulated VaultDON error")
 		}
-		// --- End Mock VaultDON Capability ---
 
-		c, err := action.NewWithEnclaveClient(
-			logger.Test(t),
-			getTestConfig(),
-			getMockKeystore(),
-			mockEnclaveClient,
-			[]byte{0xDE, 0xAD, 0xBE, 0xEF}, // vaultDONPublicKey
-			mockVaultDON,                   // Pass the mock VaultDON capability
-		)
-		require.NoError(t, err)
-
-		input := getTestInput()
-
-		inputsValue, err := values.WrapMap(input)
-		require.NoError(t, err)
-
-		ctx := context.Background()
-		workflow, removeWorkflow := testutils.NewWorkflow(ctx, testutils.WorkflowParams{
-			T: t,
-			Capabilities: []testutils.CapabilityWithConfig{
-				{
-					Capability: c,
-				},
-			},
-			Owner: "owner1",
-		})
-		defer removeWorkflow(ctx)
-
-		req := capabilities.CapabilityRequest{
-			Inputs: inputsValue,
-			Metadata: capabilities.RequestMetadata{
-				WorkflowID:          workflow.ID,
-				WorkflowExecutionID: "",
-				WorkflowName:        "",
-				WorkflowOwner:       workflow.Owner,
-			},
-		}
-
-		_, err = c.Execute(context.Background(), req)
+		_, err := setupAndExecuteAction(t, mockEnclaveClient, mockVaultDON)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to get encrypted decryption key shares from VaultDON: failed to execute VaultDON capability: simulated VaultDON error")
 	})
@@ -430,46 +396,8 @@ func TestCapability_Execute(t *testing.T) {
 				Payload: respAny,
 			}, nil
 		}
-		// --- End Mock VaultDON Capability ---
 
-		c, err := action.NewWithEnclaveClient(
-			logger.Test(t),
-			getTestConfig(),
-			getMockKeystore(),
-			mockEnclaveClient,
-			[]byte{0xDE, 0xAD, 0xBE, 0xEF}, // vaultDONPublicKey
-			mockVaultDON,                   // Pass the mock VaultDON capability
-		)
-		require.NoError(t, err)
-
-		input := getTestInput()
-
-		inputsValue, err := values.WrapMap(input)
-		require.NoError(t, err)
-
-		ctx := context.Background()
-		workflow, removeWorkflow := testutils.NewWorkflow(ctx, testutils.WorkflowParams{
-			T: t,
-			Capabilities: []testutils.CapabilityWithConfig{
-				{
-					Capability: c,
-				},
-			},
-			Owner: "owner1",
-		})
-		defer removeWorkflow(ctx)
-
-		req := capabilities.CapabilityRequest{
-			Inputs: inputsValue,
-			Metadata: capabilities.RequestMetadata{
-				WorkflowID:          workflow.ID,
-				WorkflowExecutionID: "",
-				WorkflowName:        "",
-				WorkflowOwner:       workflow.Owner,
-			},
-		}
-
-		resp, err := c.Execute(context.Background(), req)
+		resp, err := setupAndExecuteAction(t, mockEnclaveClient, mockVaultDON)
 		assert.NoError(t, err) // No error at this level, but the secret won't be in the final ComputeRequest
 		assert.NotNil(t, resp.Value)
 
