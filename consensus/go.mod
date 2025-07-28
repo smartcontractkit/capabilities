@@ -1,8 +1,8 @@
 module github.com/smartcontractkit/capabilities/consensus
 
-go 1.24.2
+go 1.24.4
 
-toolchain go1.24.3
+toolchain go1.24.5
 
 require (
 	github.com/jonboulle/clockwork v0.4.0
@@ -80,6 +80,7 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v5 v5.2.0 // indirect
 	github.com/scylladb/go-reflectx v1.0.1 // indirect
 	github.com/smartcontractkit/chainlink-common/pkg/chipingress v0.0.1 // indirect
+	github.com/smartcontractkit/cre-sdk-go v0.2.0 // indirect
 	github.com/smartcontractkit/freeport v0.1.1 // indirect
 	github.com/smartcontractkit/grpc-proxy v0.0.0-20240830132753-a7e17fec5ab7 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect

@@ -421,6 +421,11 @@ func filterObservations(observationProtos []*valuespb.Value, minObservations int
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to unmarshal observation value: %w", err)
 		}
+
+		if obs == nil {
+			continue
+		}
+
 		if reflect.TypeOf(obs).String() == dominantType {
 			observations = append(observations, obsProto)
 		}

@@ -16,18 +16,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb"
 )
 
-type s struct {
-	Val         int64   `consensus:"median"`
-	OtherField  string  `consensus:"identical"`
-	PrefixSlice []int64 `consensus:"common_prefix"`
-	SuffixSlice []int64 `consensus:"common_suffix"`
-	Nest        s1
-}
-
-type s1 struct {
-	Val uint8 `consensus:"median"`
-}
-
 func Test_CalculateOutcomeForObservations(t *testing.T) {
 	type testCase struct {
 		name            string
