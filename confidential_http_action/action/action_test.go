@@ -25,7 +25,6 @@ import (
 )
 
 // MockEnclaveClient is a simple struct that implements the EnclaveClient interface.
-// It now also takes type parameters, just like the actual interface.
 type MockEnclaveClient[PublicDataType any, OutputType any] struct {
 	GetPublicKeysFunc func(ctx context.Context, requestID [32]byte, enclaveSpecifications []byte) ([]enclavetypes.EnclavePublicKeyData, error)
 
@@ -37,12 +36,22 @@ type MockEnclaveClient[PublicDataType any, OutputType any] struct {
 	UpdateNodesFunc func(nodes []enclavetypes.EnclaveNode)
 }
 
-// Implement methods with POINTER RECEIVERS, using the struct's type parameters
 func (m *MockEnclaveClient[PublicDataType, OutputType]) GetPublicKeys(ctx context.Context, requestID [32]byte, enclaveSpecifications []byte) ([]enclavetypes.EnclavePublicKeyData, error) {
-	if m.GetPublicKeysFunc != nil {
-		return m.GetPublicKeysFunc(ctx, requestID, enclaveSpecifications)
-	}
-	return nil, nil
+	return []enclavetypes.EnclavePublicKeyData{
+		{
+			PublicKeyResponse: enclavetypes.PublicKeyResponse{
+				PublicKeys: [][]byte{
+					[]byte("mock_public_key_bytes_1"),
+					[]byte("mock_public_key_bytes_2"),
+				},
+				CreationTimes: []time.Time{time.Now(), time.Now().Add(-time.Hour)},
+				TTLs:          []time.Duration{time.Hour * 24, time.Hour * 48},
+				Config:        enclavetypes.EnclaveConfig{},
+				Attestation:   []byte("mock_attestation_data"),
+			},
+			EnclaveID: [32]byte{9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32},
+		},
+	}, nil
 }
 
 func (m *MockEnclaveClient[PublicDataType, OutputType]) Execute(ctx context.Context, requestID [32]byte, publicData PublicDataType, ciphertexts [][]byte, encryptedDecryptionKeyShares [][][]byte, enclaveEphemeralPublicKey []byte, enclaveID [32]byte) (*enclavetypes.ExecuteResponse[OutputType], error) {
@@ -225,23 +234,6 @@ func TestCapability_Execute(t *testing.T) {
 		}
 
 		mockEnclaveClient := &MockEnclaveClient[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse]{}
-		mockEnclaveClient.GetPublicKeysFunc = func(ctx context.Context, requestID [32]byte, enclaveSpecifications []byte) ([]enclavetypes.EnclavePublicKeyData, error) {
-			return []enclavetypes.EnclavePublicKeyData{
-				{
-					PublicKeyResponse: enclavetypes.PublicKeyResponse{
-						PublicKeys: [][]byte{
-							[]byte("mock_public_key_bytes_1"),
-							[]byte("mock_public_key_bytes_2"),
-						},
-						CreationTimes: []time.Time{time.Now(), time.Now().Add(-time.Hour)},
-						TTLs:          []time.Duration{time.Hour * 24, time.Hour * 48},
-						Config:        enclavetypes.EnclaveConfig{},
-						Attestation:   []byte("mock_attestation_data"),
-					},
-					EnclaveID: [32]byte{9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32},
-				},
-			}, nil
-		}
 
 		mockResponsesSlice := []enclavetypes.HTTPResponse{
 			{StatusCode: 200, Body: []byte("First response")},
@@ -349,22 +341,6 @@ func TestCapability_Execute(t *testing.T) {
 		}
 
 		mockEnclaveClient := &MockEnclaveClient[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse]{}
-		mockEnclaveClient.GetPublicKeysFunc = func(ctx context.Context, requestID [32]byte, enclaveSpecifications []byte) ([]enclavetypes.EnclavePublicKeyData, error) {
-			return []enclavetypes.EnclavePublicKeyData{
-				{
-					PublicKeyResponse: enclavetypes.PublicKeyResponse{
-						PublicKeys: [][]byte{
-							[]byte("mock_public_key_bytes_1"),
-						},
-						CreationTimes: []time.Time{time.Now()},
-						TTLs:          []time.Duration{time.Hour * 24},
-						Config:        enclavetypes.EnclaveConfig{},
-						Attestation:   []byte("mock_attestation_data"),
-					},
-					EnclaveID: [32]byte{9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32},
-				},
-			}, nil
-		}
 
 		// --- Mock VaultDON Capability that returns an error ---
 		mockVaultDON := &MockVaultDONCapability{}
@@ -432,22 +408,6 @@ func TestCapability_Execute(t *testing.T) {
 		}
 
 		mockEnclaveClient := &MockEnclaveClient[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse]{}
-		mockEnclaveClient.GetPublicKeysFunc = func(ctx context.Context, requestID [32]byte, enclaveSpecifications []byte) ([]enclavetypes.EnclavePublicKeyData, error) {
-			return []enclavetypes.EnclavePublicKeyData{
-				{
-					PublicKeyResponse: enclavetypes.PublicKeyResponse{
-						PublicKeys: [][]byte{
-							[]byte("mock_public_key_bytes_1"),
-						},
-						CreationTimes: []time.Time{time.Now()},
-						TTLs:          []time.Duration{time.Hour * 24},
-						Config:        enclavetypes.EnclaveConfig{},
-						Attestation:   []byte("mock_attestation_data"),
-					},
-					EnclaveID: [32]byte{9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32},
-				},
-			}, nil
-		}
 
 		mockResponsesSlice := []enclavetypes.HTTPResponse{
 			{StatusCode: 200, Body: []byte("First response")},
@@ -551,7 +511,6 @@ func TestCapability_Execute(t *testing.T) {
 		err = resp.Value.UnwrapTo(&capOutput)
 		assert.NoError(t, err)
 
-		// Assert that no encrypted secrets or shares were added because of the error
-		// This requires inspecting the ComputeRequest sent to the enclave client (see the mockEnclaveClient that is used in this test)
+		// To assert that no encrypted secrets or shares were added because of the error, we check the mockEnclaveClient higher up in this test.
 	})
 }
