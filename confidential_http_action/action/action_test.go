@@ -116,6 +116,15 @@ func (m *mockKeystore) Sign(ctx context.Context, account string, msg []byte) ([]
 	return []byte(""), nil
 }
 
+func getMockKeystore() *mockKeystore {
+	return &mockKeystore{
+		accounts: []string{core.P2PAccountKey},
+		signFunc: func(ctx context.Context, account string, msg []byte) ([]byte, error) {
+			return []byte("test-signature"), nil
+		},
+	}
+}
+
 // MockVaultDONCapability implements core.ExecutableCapability for testing VaultDON interactions.
 type MockVaultDONCapability struct {
 	ExecuteFunc func(ctx context.Context, req capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error)
@@ -215,13 +224,6 @@ func TestCapability_Info(t *testing.T) {
 
 func TestCapability_Execute(t *testing.T) {
 	t.Run("capability executes without error", func(t *testing.T) {
-		mockKeystore := &mockKeystore{
-			accounts: []string{core.P2PAccountKey},
-			signFunc: func(ctx context.Context, account string, msg []byte) ([]byte, error) {
-				return []byte("test-signature"), nil
-			},
-		}
-
 		mockVaultDON := &MockVaultDONCapability{}
 		mockVaultDON.ExecuteFunc = func(ctx context.Context, req capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
 			assert.Equal(t, vault.MethodGetSecrets, req.Method, "Expected VaultDON method to be GetSecrets")
@@ -285,7 +287,7 @@ func TestCapability_Execute(t *testing.T) {
 		c, err := action.NewWithEnclaveClient(
 			logger.Test(t),
 			getTestConfig(),
-			mockKeystore,
+			getMockKeystore(),
 			mockEnclaveClient,
 			[]byte{0xDE, 0xAD, 0xBE, 0xEF}, // vaultDONPublicKey,
 			mockVaultDON,
@@ -344,13 +346,6 @@ func TestCapability_Execute(t *testing.T) {
 	})
 
 	t.Run("capability executes with error from VaultDON", func(t *testing.T) {
-		mockKeystore := &mockKeystore{
-			accounts: []string{core.P2PAccountKey},
-			signFunc: func(ctx context.Context, account string, msg []byte) ([]byte, error) {
-				return []byte("test-signature"), nil
-			},
-		}
-
 		mockEnclaveClient := &MockEnclaveClient[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse]{}
 
 		// --- Mock VaultDON Capability that returns an error ---
@@ -363,7 +358,7 @@ func TestCapability_Execute(t *testing.T) {
 		c, err := action.NewWithEnclaveClient(
 			logger.Test(t),
 			getTestConfig(),
-			mockKeystore,
+			getMockKeystore(),
 			mockEnclaveClient,
 			[]byte{0xDE, 0xAD, 0xBE, 0xEF}, // vaultDONPublicKey
 			mockVaultDON,                   // Pass the mock VaultDON capability
@@ -403,13 +398,6 @@ func TestCapability_Execute(t *testing.T) {
 	})
 
 	t.Run("capability executes with VaultDON returning secret error", func(t *testing.T) {
-		mockKeystore := &mockKeystore{
-			accounts: []string{core.P2PAccountKey},
-			signFunc: func(ctx context.Context, account string, msg []byte) ([]byte, error) {
-				return []byte("test-signature"), nil
-			},
-		}
-
 		mockEnclaveClient := &MockEnclaveClient[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse]{}
 
 		mockEnclaveClient.ExecuteBatchFunc = func(ctx context.Context, reqs []enclavetypes.SignedComputeRequest, enclaveIDs [][32]byte) ([]enclavetypes.RawExecuteResponse, error) {
@@ -447,7 +435,7 @@ func TestCapability_Execute(t *testing.T) {
 		c, err := action.NewWithEnclaveClient(
 			logger.Test(t),
 			getTestConfig(),
-			mockKeystore,
+			getMockKeystore(),
 			mockEnclaveClient,
 			[]byte{0xDE, 0xAD, 0xBE, 0xEF}, // vaultDONPublicKey
 			mockVaultDON,                   // Pass the mock VaultDON capability
