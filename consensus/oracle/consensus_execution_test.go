@@ -22,6 +22,7 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 		name            string
 		observations    []*valuespb.Value
 		descriptor      *pb.ConsensusDescriptor
+		defaultValue    *valuespb.Value
 		minObs          int
 		f               int
 		expectedOutcome *valuespb.Value
@@ -124,54 +125,23 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 				mustWrap(s{Val: 44}),
 				mustWrap(s{Val: 44}),
 			},
-			f: 2,
-			descriptor: &pb.ConsensusDescriptor{
-				Descriptor_: &pb.ConsensusDescriptor_FieldsMap{
-					FieldsMap: &pb.FieldsMap{
-						Fields: map[string]*pb.ConsensusDescriptor{
-							"Val": {
-								Descriptor_: &pb.ConsensusDescriptor_Aggregation{
-									Aggregation: pb.AggregationType_AGGREGATION_TYPE_MEDIAN,
-								},
-							},
-						},
-					},
-				},
-			},
-			expectedOutcome: valuespb.NewMapValue(map[string]*valuespb.Value{
-				"Val": valuespb.NewInt64Value(43),
-			}),
+			f:               2,
+			descriptor:      sdk.ConsensusAggregationFromTags[s]().Descriptor(),
+			expectedOutcome: mustWrap(s{Val: 43}),
 		},
 		{
-			name: "fields map - one field succeeds, one fails (all-or-nothing)",
-			observations: []*valuespb.Value{
+			name: "fields map one field succeeds one field returns default",
+			observations: []*valuespb.Value{ // identical consensus fails for OtherField
 				mustWrap(s{Val: 42, OtherField: "A"}),
 				mustWrap(s{Val: 43, OtherField: "B"}),
 				mustWrap(s{Val: 43, OtherField: "C"}),
 				mustWrap(s{Val: 44, OtherField: "D"}),
 				mustWrap(s{Val: 44, OtherField: "E"}),
 			},
-			f: 2,
-			descriptor: &pb.ConsensusDescriptor{
-				Descriptor_: &pb.ConsensusDescriptor_FieldsMap{
-					FieldsMap: &pb.FieldsMap{
-						Fields: map[string]*pb.ConsensusDescriptor{
-							"Val": {
-								Descriptor_: &pb.ConsensusDescriptor_Aggregation{
-									Aggregation: pb.AggregationType_AGGREGATION_TYPE_MEDIAN,
-								},
-							},
-							"OtherField": {
-								Descriptor_: &pb.ConsensusDescriptor_Aggregation{
-									Aggregation: pb.AggregationType_AGGREGATION_TYPE_IDENTICAL,
-								},
-							},
-						},
-					},
-				},
-			},
-			expectedOutcome: nil,
-			expectedError:   errors.New("aggregation for field 'OtherField' failed: no values met f+1 threshold"),
+			f:               2,
+			descriptor:      sdk.ConsensusAggregationFromTags[s]().Descriptor(),
+			defaultValue:    mustWrap(s{OtherField: "Z"}),
+			expectedOutcome: mustWrap(s{Val: 43, OtherField: "Z"}),
 		},
 		{
 			name: "fields map: all fields succeed with diverse types and aggregations",
@@ -241,6 +211,7 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 				logger.Test(t),
 				tc.observations,
 				tc.descriptor,
+				tc.defaultValue,
 				tc.minObs,
 				tc.f,
 			)

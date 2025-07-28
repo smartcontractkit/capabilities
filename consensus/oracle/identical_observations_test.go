@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 
@@ -179,7 +180,8 @@ func TestHandleIdenticalAggregation(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := handleIdenticalAggregation(tc.inputValues, tc.f)
+			lggr := logger.Test(t)
+			got, err := handleIdenticalAggregation(lggr, tc.inputValues, tc.f)
 
 			if tc.wantErr != "" {
 				require.Error(t, err)
