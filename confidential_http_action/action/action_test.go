@@ -68,6 +68,28 @@ func (m *MockEnclaveClient[PublicDataType, OutputType]) ExecuteBatch(ctx context
 	return nil, nil
 }
 
+func (m *MockEnclaveClient[PublicDataType, OutputType]) commonExecuteBatchReturn(t *testing.T) ([]enclavetypes.RawExecuteResponse, error) {
+	mockResponsesSlice := []enclavetypes.HTTPResponse{
+		{StatusCode: 200, Body: []byte("First response")},
+		{StatusCode: 500, Body: []byte("Second response")},
+	}
+	innerJSONBytes, err := json.Marshal(mockResponsesSlice)
+	assert.NoError(t, err)
+
+	return []enclavetypes.RawExecuteResponse{
+		{
+			RequestID: [32]byte{1, 2, 3},
+			Output:    innerJSONBytes,
+			Config: enclavetypes.EnclaveConfig{
+				Signers:         [][]byte{[]byte("signer_key_1"), []byte("signer_key_2")},
+				MasterPublicKey: []byte("master_pub_key_1"),
+				T:               1,
+				F:               0,
+			},
+			Attestation: []byte(""),
+		}}, nil
+}
+
 func (m *MockEnclaveClient[PublicDataType, OutputType]) UpdateNodes(nodes []enclavetypes.EnclaveNode) {
 	if m.UpdateNodesFunc != nil {
 		m.UpdateNodesFunc(nodes)
@@ -235,28 +257,13 @@ func TestCapability_Execute(t *testing.T) {
 
 		mockEnclaveClient := &MockEnclaveClient[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse]{}
 
-		mockResponsesSlice := []enclavetypes.HTTPResponse{
-			{StatusCode: 200, Body: []byte("First response")},
-			{StatusCode: 500, Body: []byte("Second response")},
-		}
-		innerJSONBytes, err := json.Marshal(mockResponsesSlice)
-		assert.NoError(t, err)
-
 		mockEnclaveClient.ExecuteBatchFunc = func(ctx context.Context, reqs []enclavetypes.SignedComputeRequest, enclaveIDs [][32]byte) ([]enclavetypes.RawExecuteResponse, error) {
 			assert.Equal(t, len(reqs), 1, "Expected one signed compute request")
+			assert.Equal(t, 1, len(reqs[0].Ciphertexts), "Expected one ciphertext in the request")
+			assert.Equal(t, 1, len(reqs[0].EncryptedDecryptionKeyShares), "Expected 1 set of shares in the request")
+			assert.Equal(t, 2, len(reqs[0].EncryptedDecryptionKeyShares[0]), "Expected 2 shares per ciphertext in the request")
 			assert.Equal(t, []byte("test-signature"), reqs[0].Signature, "Expected secret ID to match")
-			return []enclavetypes.RawExecuteResponse{
-				{
-					RequestID: [32]byte{1, 2, 3},
-					Output:    innerJSONBytes,
-					Config: enclavetypes.EnclaveConfig{
-						Signers:         [][]byte{[]byte("signer_key_1"), []byte("signer_key_2")},
-						MasterPublicKey: []byte("master_pub_key_1"),
-						T:               1,
-						F:               0,
-					},
-					Attestation: []byte(""),
-				}}, nil
+			return mockEnclaveClient.commonExecuteBatchReturn(t)
 		}
 
 		c, err := action.NewWithEnclaveClient(
@@ -409,28 +416,11 @@ func TestCapability_Execute(t *testing.T) {
 
 		mockEnclaveClient := &MockEnclaveClient[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse]{}
 
-		mockResponsesSlice := []enclavetypes.HTTPResponse{
-			{StatusCode: 200, Body: []byte("First response")},
-		}
-		innerJSONBytes, err := json.Marshal(mockResponsesSlice)
-		require.NoError(t, err)
-
 		mockEnclaveClient.ExecuteBatchFunc = func(ctx context.Context, reqs []enclavetypes.SignedComputeRequest, enclaveIDs [][32]byte) ([]enclavetypes.RawExecuteResponse, error) {
 			assert.Equal(t, len(reqs), 1, "Expected one signed compute request")
 			assert.Equal(t, 0, len(reqs[0].Ciphertexts), "Expected no ciphertexts in the request")
 			assert.Equal(t, 0, len(reqs[0].EncryptedDecryptionKeyShares), "Expected no shares in the request")
-			return []enclavetypes.RawExecuteResponse{
-				{
-					RequestID: [32]byte{1, 2, 3},
-					Output:    innerJSONBytes,
-					Config: enclavetypes.EnclaveConfig{
-						Signers:         [][]byte{[]byte("signer_key_1"), []byte("signer_key_2")},
-						MasterPublicKey: []byte("master_pub_key_1"),
-						T:               1,
-						F:               0,
-					},
-					Attestation: []byte(""),
-				}}, nil
+			return mockEnclaveClient.commonExecuteBatchReturn(t)
 		}
 
 		// --- Mock VaultDON Capability that returns a secret error ---
