@@ -381,9 +381,6 @@ func (r *reportingPlugin) Reports(ctx context.Context, seqNr uint64, outcome ocr
 		}
 
 		reportWithMetaData := append(metadataPrepend, report...)
-		if err != nil {
-			return nil, fmt.Errorf("failed to prepend metadata fields: %w", err)
-		}
 
 		info, err := createReportInfo(reqMetadata)
 		if err != nil {
