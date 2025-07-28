@@ -55,18 +55,10 @@ func Test_handleFieldsMapAggregation(t *testing.T) {
 				mustWrap(s{Val: 40}),
 				mustWrap(s{Val: 50}),
 			},
-			descriptor: map[string]*pb.ConsensusDescriptor{
-				"Val": {
-					Descriptor_: &pb.ConsensusDescriptor_Aggregation{
-						Aggregation: pb.AggregationType_AGGREGATION_TYPE_MEDIAN,
-					},
-				},
-			},
-			f: 3,
-			expectedOutcome: valuespb.NewMapValue(map[string]*valuespb.Value{
-				"Val": valuespb.NewInt64Value(30),
-			}),
-			expectedError: nil,
+			descriptor:      sdk.ConsensusAggregationFromTags[s]().Descriptor().GetFieldsMap().Fields,
+			f:               2,
+			expectedOutcome: mustWrap(s{Val: 30}),
+			expectedError:   nil,
 		},
 		{
 			name: "multiple fields, mixed aggregations",
@@ -77,66 +69,31 @@ func Test_handleFieldsMapAggregation(t *testing.T) {
 				mustWrap(s{Val: 40, OtherField: "abc", PrefixSlice: []int64{1, 2, 7}, SuffixSlice: []int64{4, 8, 9}}),
 				mustWrap(s{Val: 50, OtherField: "ghi", PrefixSlice: []int64{1, 2, 8}, SuffixSlice: []int64{3, 8, 9}}),
 			},
-			descriptor: map[string]*pb.ConsensusDescriptor{
-				"Val": {
-					Descriptor_: &pb.ConsensusDescriptor_Aggregation{
-						Aggregation: pb.AggregationType_AGGREGATION_TYPE_MEDIAN,
-					},
-				},
-				"OtherField": {
-					Descriptor_: &pb.ConsensusDescriptor_Aggregation{
-						Aggregation: pb.AggregationType_AGGREGATION_TYPE_IDENTICAL,
-					},
-				},
-				"PrefixSlice": {
-					Descriptor_: &pb.ConsensusDescriptor_Aggregation{
-						Aggregation: pb.AggregationType_AGGREGATION_TYPE_COMMON_PREFIX,
-					},
-				},
-				"SuffixSlice": {
-					Descriptor_: &pb.ConsensusDescriptor_Aggregation{
-						Aggregation: pb.AggregationType_AGGREGATION_TYPE_COMMON_SUFFIX,
-					},
-				},
-			},
-			f: 3,
-			expectedOutcome: valuespb.NewMapValue(map[string]*valuespb.Value{
-				"Val":         valuespb.NewInt64Value(30),
-				"OtherField":  valuespb.NewStringValue("abc"),
-				"PrefixSlice": mustNewList(int64(1), int64(2)),
-				"SuffixSlice": mustNewList(int64(8), int64(9)),
+			descriptor: sdk.ConsensusAggregationFromTags[s]().Descriptor().GetFieldsMap().Fields,
+			f:          2,
+			expectedOutcome: mustWrap(s{
+				Val:         30,
+				OtherField:  "abc",
+				PrefixSlice: []int64{1, 2},
+				SuffixSlice: []int64{8, 9},
 			}),
 			expectedError: nil,
 		},
 		{
-			name: "nested fields map",
+			name: "nested identical struct",
 			observations: []*valuespb.Value{
-				mustWrap(s{Nest: s1{Val: 10}}),
-				mustWrap(s{Nest: s1{Val: 20}}),
 				mustWrap(s{Nest: s1{Val: 30}}),
-				mustWrap(s{Nest: s1{Val: 40}}),
-				mustWrap(s{Nest: s1{Val: 50}}),
+				mustWrap(s{Nest: s1{Val: 30}}),
+				mustWrap(s{Nest: s1{Val: 30}}),
+				mustWrap(s{Nest: s1{Val: 30}}),
+				mustWrap(s{Nest: s1{Val: 30}}),
 			},
-			descriptor: map[string]*pb.ConsensusDescriptor{
-				"Nest": {
-					Descriptor_: &pb.ConsensusDescriptor_FieldsMap{
-						FieldsMap: &pb.FieldsMap{
-							Fields: map[string]*pb.ConsensusDescriptor{
-								"Val": {
-									Descriptor_: &pb.ConsensusDescriptor_Aggregation{
-										Aggregation: pb.AggregationType_AGGREGATION_TYPE_MEDIAN,
-									},
-								},
-							},
-						},
-					},
+			descriptor: sdk.ConsensusAggregationFromTags[s]().Descriptor().GetFieldsMap().Fields,
+			f:          2,
+			expectedOutcome: mustWrap(s{
+				Nest: s1{
+					Val: 30,
 				},
-			},
-			f: 3,
-			expectedOutcome: valuespb.NewMapValue(map[string]*valuespb.Value{
-				"Nest": valuespb.NewMapValue(map[string]*valuespb.Value{
-					"Val": valuespb.NewInt64Value(30),
-				}),
 			}),
 			expectedError: nil,
 		},
@@ -147,84 +104,43 @@ func Test_handleFieldsMapAggregation(t *testing.T) {
 				mustWrap(s{OtherField: "B"}),
 				mustWrap(s{OtherField: "C"}),
 				mustWrap(s{OtherField: "D"}),
+				mustWrap(s{OtherField: "E"}),
 			},
-			descriptor: map[string]*pb.ConsensusDescriptor{
-				"OtherField": {
-					Descriptor_: &pb.ConsensusDescriptor_Aggregation{
-						Aggregation: pb.AggregationType_AGGREGATION_TYPE_IDENTICAL,
-					},
-				},
-			},
-			f:               3,
+			descriptor:      sdk.ConsensusAggregationFromTags[s]().Descriptor().GetFieldsMap().Fields,
+			f:               2,
 			expectedOutcome: nil,
 			expectedError:   errors.New("aggregation for field 'OtherField' failed: no values met f+1 threshold"),
 		},
 		{
-			name:            "no observations, no description",
+			name:            "no observations and no description returns empty map",
 			observations:    []*valuespb.Value{},
-			descriptor:      map[string]*pb.ConsensusDescriptor{},
+			descriptor:      nil,
 			f:               3,
-			expectedOutcome: valuespb.NewMapValue(map[string]*valuespb.Value{}), // Expect an empty map if no observations for any key
+			expectedOutcome: mustWrap(map[string]any{}),
 			expectedError:   nil,
 		},
 		{
-			name:         "no observations with description errors",
-			observations: []*valuespb.Value{},
-			descriptor: map[string]*pb.ConsensusDescriptor{
-				"Val": {
-					Descriptor_: &pb.ConsensusDescriptor_Aggregation{
-						Aggregation: pb.AggregationType_AGGREGATION_TYPE_MEDIAN,
-					},
-				},
-			},
+			name:          "no observations with description errors",
+			observations:  []*valuespb.Value{},
+			descriptor:    sdk.ConsensusAggregationFromTags[s]().Descriptor().GetFieldsMap().Fields,
 			f:             3,
-			expectedError: errors.New("aggregation for field 'Val' failed: "),
+			expectedError: errors.New("aggregation for field"), // non-deterministic which field will error first
 		},
 		{
 			name: "observations with non-map types are skipped",
 			observations: []*valuespb.Value{
 				values.Proto(values.NewInt64(100)), // This will be skipped
+				mustWrap(struct{}{}),               // no Val field will be skipped
 				mustWrap(s{Val: 10}),
 				mustWrap(s{Val: 20}),
 				mustWrap(s{Val: 30}),
 				mustWrap(s{Val: 40}),
 				mustWrap(s{Val: 50}),
 			},
-			descriptor: map[string]*pb.ConsensusDescriptor{
-				"Val": {
-					Descriptor_: &pb.ConsensusDescriptor_Aggregation{
-						Aggregation: pb.AggregationType_AGGREGATION_TYPE_MEDIAN,
-					},
-				},
-			},
-			f: 3,
-			expectedOutcome: valuespb.NewMapValue(map[string]*valuespb.Value{
-				"Val": valuespb.NewInt64Value(30),
-			}),
-			expectedError: nil,
-		},
-		{
-			name: "missing field in some observations",
-			observations: []*valuespb.Value{
-				mustWrap(s{Val: 10}),
-				mustWrap(s{Val: 20}),
-				mustWrap(struct{}{}), // no Val field
-				mustWrap(s{Val: 30}),
-				mustWrap(s{Val: 40}),
-				mustWrap(s{Val: 50}),
-			},
-			descriptor: map[string]*pb.ConsensusDescriptor{
-				"Val": {
-					Descriptor_: &pb.ConsensusDescriptor_Aggregation{
-						Aggregation: pb.AggregationType_AGGREGATION_TYPE_MEDIAN,
-					},
-				},
-			},
-			f: 3,
-			expectedOutcome: valuespb.NewMapValue(map[string]*valuespb.Value{
-				"Val": valuespb.NewInt64Value(30), // The nil entry for the missing field will be filtered out.
-			}),
-			expectedError: nil,
+			descriptor:      sdk.ConsensusAggregationFromTags[s]().Descriptor().GetFieldsMap().Fields,
+			f:               2,
+			expectedOutcome: mustWrap(s{Val: 30}),
+			expectedError:   nil,
 		},
 		{
 			name: "all observations are non-map types fails for descriptor",
@@ -232,15 +148,9 @@ func Test_handleFieldsMapAggregation(t *testing.T) {
 				values.Proto(values.NewInt64(1)),
 				values.Proto(values.NewString("test")),
 			},
-			descriptor: map[string]*pb.ConsensusDescriptor{
-				"Val": {
-					Descriptor_: &pb.ConsensusDescriptor_Aggregation{
-						Aggregation: pb.AggregationType_AGGREGATION_TYPE_MEDIAN,
-					},
-				},
-			},
+			descriptor:    sdk.ConsensusAggregationFromTags[s]().Descriptor().GetFieldsMap().Fields,
 			f:             1,
-			expectedError: errors.New("aggregation for field 'Val' failed:"),
+			expectedError: errors.New("aggregation for field"), // non-deterministic which field will error first
 		},
 		{
 			name: "nested s2 fields map with slices",
@@ -261,9 +171,17 @@ func Test_handleFieldsMapAggregation(t *testing.T) {
 					InlineSlice: inlineSlice(),
 					Nest:        s1{Nest: s2{Names: []string{"n1", "n2"}}},
 				}),
+				mustWrap(s{
+					InlineSlice: inlineSlice(),
+					Nest:        s1{Nest: s2{Names: []string{"n1", "n2"}}},
+				}),
+				mustWrap(s{
+					InlineSlice: inlineSlice(),
+					Nest:        s1{Nest: s2{Names: []string{"n1", "n2"}}},
+				}),
 			},
 			descriptor: sdk.ConsensusAggregationFromTags[s]().Descriptor().GetFieldsMap().GetFields(),
-			f:          3,
+			f:          2,
 			expectedOutcome: mustWrap(s{
 				InlineSlice: inlineSlice(),
 				Nest: s1{Nest: s2{
@@ -294,12 +212,12 @@ func Test_handleFieldsMapAggregation(t *testing.T) {
 }
 
 func inlineSlice() []struct {
-	PrefixSlice []int64           "consensus_aggregation:\"common_prefix\""
-	Data        map[string]string "consensus_aggregation:\"identical\""
+	PrefixSlice []int64           `consensus_aggregation:"common_prefix"`
+	Data        map[string]string `consensus_aggregation:"identical"`
 } {
 	return []struct {
-		PrefixSlice []int64           "consensus_aggregation:\"common_prefix\""
-		Data        map[string]string "consensus_aggregation:\"identical\""
+		PrefixSlice []int64           `consensus_aggregation:"common_prefix"`
+		Data        map[string]string `consensus_aggregation:"identical"`
 	}{
 		{
 			PrefixSlice: []int64{1, 2, 3},

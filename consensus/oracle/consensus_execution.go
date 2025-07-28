@@ -123,7 +123,7 @@ func handleMedianAggregation(
 		err          error
 	)
 
-	filtered, medianType, err := filterObservations(observations, f+1)
+	filtered, medianType, err := filterObservations(observations, 2*f+1)
 	if err != nil {
 		return nil, err
 	}
@@ -310,16 +310,18 @@ func handleCommonPrefixAggregation(lggr logger.Logger, observations []*valuespb.
 	var lists []*valuespb.List
 	var maxListLength int
 	for i, obsProto := range observations {
-		switch obsProto.Value.(type) {
-		case *valuespb.Value_ListValue:
-			list := obsProto.GetListValue()
-			lists = append(lists, list)
-			if len(list.GetFields()) > maxListLength {
-				maxListLength = len(list.GetFields())
+		if obsProto != nil {
+			switch obsProto.Value.(type) {
+			case *valuespb.Value_ListValue:
+				list := obsProto.GetListValue()
+				lists = append(lists, list)
+				if len(list.GetFields()) > maxListLength {
+					maxListLength = len(list.GetFields())
+				}
+			default:
+				lggr.Warnf("value at index %d is of type %T", i, obsProto.Value)
+				continue
 			}
-		default:
-			lggr.Warnf("value at index %d is of type %T", i, obsProto.Value)
-			continue
 		}
 	}
 
@@ -474,14 +476,17 @@ func getMedian[T any](
 }
 
 func reverseListValue(list *valuespb.Value) (*valuespb.Value, error) {
-	switch list.Value.(type) {
-	case *valuespb.Value_ListValue:
-		reversed := list.GetListValue().GetFields()
-		reverse(reversed)
-		return valuespb.NewListValue(reversed), nil
-	default:
-		return nil, fmt.Errorf("cannot reverse value of type %T", list.Value)
+	if list != nil {
+		switch list.Value.(type) {
+		case *valuespb.Value_ListValue:
+			reversed := list.GetListValue().GetFields()
+			reverse(reversed)
+			return valuespb.NewListValue(reversed), nil
+		default:
+			return nil, fmt.Errorf("cannot reverse value of type %T", list.Value)
+		}
 	}
+	return new(valuespb.Value), nil
 }
 
 func reverse[T any](s []T) {

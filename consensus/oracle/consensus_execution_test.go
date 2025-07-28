@@ -14,6 +14,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb"
+	"github.com/smartcontractkit/cre-sdk-go/sdk"
 )
 
 func Test_CalculateOutcomeForObservations(t *testing.T) {
@@ -123,7 +124,7 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 				mustWrap(s{Val: 44}),
 				mustWrap(s{Val: 44}),
 			},
-			f: 3,
+			f: 2,
 			descriptor: &pb.ConsensusDescriptor{
 				Descriptor_: &pb.ConsensusDescriptor_FieldsMap{
 					FieldsMap: &pb.FieldsMap{
@@ -150,7 +151,7 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 				mustWrap(s{Val: 44, OtherField: "D"}),
 				mustWrap(s{Val: 44, OtherField: "E"}),
 			},
-			f: 3,
+			f: 2,
 			descriptor: &pb.ConsensusDescriptor{
 				Descriptor_: &pb.ConsensusDescriptor_FieldsMap{
 					FieldsMap: &pb.FieldsMap{
@@ -181,49 +182,9 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 				mustWrap(s{Val: 40, OtherField: "common", PrefixSlice: []int64{1, 9, 8}, Nest: s1{Val: 101}, SuffixSlice: []int64{99, 2, 3}}),
 				mustWrap(s{Val: 50, OtherField: "common", PrefixSlice: []int64{1, 2, 6}, Nest: s1{Val: 102}, SuffixSlice: []int64{42, 2, 3}}),
 			},
-			descriptor: &pb.ConsensusDescriptor{
-				Descriptor_: &pb.ConsensusDescriptor_FieldsMap{
-					FieldsMap: &pb.FieldsMap{
-						Fields: map[string]*pb.ConsensusDescriptor{
-							"Val": {
-								Descriptor_: &pb.ConsensusDescriptor_Aggregation{
-									Aggregation: pb.AggregationType_AGGREGATION_TYPE_MEDIAN,
-								},
-							},
-							"OtherField": {
-								Descriptor_: &pb.ConsensusDescriptor_Aggregation{
-									Aggregation: pb.AggregationType_AGGREGATION_TYPE_IDENTICAL,
-								},
-							},
-							"PrefixSlice": {
-								Descriptor_: &pb.ConsensusDescriptor_Aggregation{
-									Aggregation: pb.AggregationType_AGGREGATION_TYPE_COMMON_PREFIX,
-								},
-							},
-							"Nest": {
-								Descriptor_: &pb.ConsensusDescriptor_FieldsMap{
-									FieldsMap: &pb.FieldsMap{
-										Fields: map[string]*pb.ConsensusDescriptor{
-											"Val": {
-												Descriptor_: &pb.ConsensusDescriptor_Aggregation{
-													Aggregation: pb.AggregationType_AGGREGATION_TYPE_MEDIAN,
-												},
-											},
-										},
-									},
-								},
-							},
-							"SuffixSlice": {
-								Descriptor_: &pb.ConsensusDescriptor_Aggregation{
-									Aggregation: pb.AggregationType_AGGREGATION_TYPE_COMMON_SUFFIX,
-								},
-							},
-						},
-					},
-				},
-			},
-			minObs: 5,
-			f:      3,
+			descriptor: sdk.ConsensusAggregationFromTags[s]().Descriptor(),
+			minObs:     5,
+			f:          2,
 			expectedOutcome: mustWrap(s{
 				Val:         30,
 				OtherField:  "common",
@@ -317,7 +278,7 @@ func Test_handleMedianAggregation(t *testing.T) {
 			},
 			expectedOutcome: values.Proto(values.NewInt64(30)),
 			expectedError:   nil,
-			f:               3,
+			f:               2,
 		},
 		{
 			name: "int64 median: even number of values returns left value",
@@ -326,7 +287,7 @@ func Test_handleMedianAggregation(t *testing.T) {
 			},
 			expectedOutcome: values.Proto(values.NewInt64(20)),
 			expectedError:   nil,
-			f:               3,
+			f:               1,
 		},
 		{
 			name: "float64 median: basic five values",
@@ -335,7 +296,7 @@ func Test_handleMedianAggregation(t *testing.T) {
 			},
 			expectedOutcome: values.Proto(values.NewFloat64(30.5)),
 			expectedError:   nil,
-			f:               3,
+			f:               2,
 		},
 		{
 			name: "float64 median: even number of values returns left value",
@@ -344,7 +305,7 @@ func Test_handleMedianAggregation(t *testing.T) {
 			},
 			expectedOutcome: values.Proto(values.NewFloat64(20.5)),
 			expectedError:   nil,
-			f:               3,
+			f:               1,
 		},
 		{
 			name: "decimal median: basic five values",
@@ -355,7 +316,7 @@ func Test_handleMedianAggregation(t *testing.T) {
 			},
 			expectedOutcome: values.Proto(values.NewDecimal(decimal.NewFromFloat(30.3))),
 			expectedError:   nil,
-			f:               3,
+			f:               2,
 		},
 		{
 			name: "decimal median: even number of values returns left value",
@@ -366,7 +327,7 @@ func Test_handleMedianAggregation(t *testing.T) {
 
 			expectedOutcome: values.Proto(values.NewDecimal(decimal.NewFromFloat(20.2))),
 			expectedError:   nil,
-			f:               3,
+			f:               1,
 		},
 		{
 			name: "bigint median: basic five values",
@@ -377,7 +338,7 @@ func Test_handleMedianAggregation(t *testing.T) {
 			},
 			expectedOutcome: values.Proto(values.NewBigInt(big.NewInt(300))),
 			expectedError:   nil,
-			f:               3,
+			f:               2,
 		},
 		{
 			name: "bigint median: even number of values returns left value",
@@ -387,7 +348,7 @@ func Test_handleMedianAggregation(t *testing.T) {
 			},
 			expectedOutcome: values.Proto(values.NewBigInt(big.NewInt(200))),
 			expectedError:   nil,
-			f:               3,
+			f:               1,
 		},
 		{
 			name: "time median: basic five values",
@@ -400,7 +361,7 @@ func Test_handleMedianAggregation(t *testing.T) {
 			},
 			expectedOutcome: values.Proto(values.NewTime(parseTime(t, "2023-01-01T00:00:30Z"))),
 			expectedError:   nil,
-			f:               3,
+			f:               2,
 		},
 		{
 			name: "time median: even number of values returns left value",
@@ -412,7 +373,7 @@ func Test_handleMedianAggregation(t *testing.T) {
 			},
 			expectedOutcome: values.Proto(values.NewTime(parseTime(t, "2023-01-01T00:00:20Z"))),
 			expectedError:   nil,
-			f:               3,
+			f:               1,
 		},
 		{
 			name: "median: unsupported type for median aggregation (string)",
@@ -425,14 +386,14 @@ func Test_handleMedianAggregation(t *testing.T) {
 			},
 			expectedOutcome: nil,
 			expectedError:   errors.New("unsupported type for median aggregation: " + TypeString),
-			f:               3,
+			f:               2,
 		},
 		{
 			name:            "empty filtered observations for median",
 			observations:    []*valuespb.Value{},
 			expectedOutcome: nil,
 			expectedError:   errors.New("insufficient observations"),
-			f:               3,
+			f:               2,
 		},
 	}
 
