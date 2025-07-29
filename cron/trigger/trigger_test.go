@@ -1009,11 +1009,14 @@ func TestCronTrigger_CloseStartErrors(t *testing.T) {
 
 type PanicingClock struct {
 	clockwork.FakeClock
+	mu             sync.Mutex
 	callCount      int
 	panicAfterCall int // Panic after this many calls to a specific method
 }
 
 func (p *PanicingClock) Now() time.Time {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.callCount++
 	if p.callCount == p.panicAfterCall {
 		panic("clock panic in Now()")
