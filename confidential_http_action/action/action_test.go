@@ -203,7 +203,7 @@ func setupAndExecuteAction(t *testing.T, mockEnclaveClient *MockEnclaveClient[ht
 		getTestConfig(),
 		getMockKeystore(),
 		mockEnclaveClient,
-		[]byte{0xDE, 0xAD, 0xBE, 0xEF}, // vaultDONPublicKey
+		[]byte{0xDE, 0xAD, 0xBE, 0xEF}, // vaultDONMasterPublicKey
 		mockVaultDON,
 	)
 	require.NoError(t, err)
@@ -242,7 +242,7 @@ func TestNew(t *testing.T) {
 	t.Run("a new confidential http capability action is created", func(t *testing.T) {
 		mockKeystore := &mockKeystore{}
 		mockVaultDON := &MockVaultDONCapability{}
-		c, err := action.New(logger.Test(t), getTestConfig(), mockKeystore, mockVaultDON)
+		c, err := action.New(logger.Test(t), getTestConfig(), mockKeystore, mockVaultDON, []byte{0xDE, 0xAD, 0xBE, 0xEF})
 		assert.NoError(t, err)
 		assert.NotNil(t, c)
 	})
@@ -252,7 +252,7 @@ func TestCapability_Info(t *testing.T) {
 	t.Run("capability info is reported correctly", func(t *testing.T) {
 		mockKeystore := &mockKeystore{}
 		mockVaultDON := &MockVaultDONCapability{}
-		c, err := action.New(logger.Test(t), getTestConfig(), mockKeystore, mockVaultDON)
+		c, err := action.New(logger.Test(t), getTestConfig(), mockKeystore, mockVaultDON, []byte{0xDE, 0xAD, 0xBE, 0xEF})
 		assert.NoError(t, err)
 		info, err := c.Info(context.Background())
 		assert.NoError(t, err)

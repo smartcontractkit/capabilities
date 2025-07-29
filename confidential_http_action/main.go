@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
@@ -14,6 +15,7 @@ import (
 
 	action "github.com/smartcontractkit/capabilities/confidential_http_action/action"
 	cap "github.com/smartcontractkit/capabilities/confidential_http_action/confidential_http_action_cap"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/actions/vault"
 )
 
 const (
@@ -108,20 +110,27 @@ func (cs *capabilitiesServer) Initialise(
 		return fmt.Errorf("VaultDONID must be provided in capability config to retrieve VaultDON capability")
 	}
 	vaultDONIDStr := string(capConfig.VaultDONID)
-	vaultDONCap, err := capabilityRegistry.Get(ctx, vaultDONIDStr)
+	vaultDONCapability, err := capabilityRegistry.GetExecutable(ctx, vaultDONIDStr)
 	if err != nil {
 		return fmt.Errorf("failed to get VaultDON capability with ID '%s' from registry: %w", vaultDONIDStr, err)
 	}
 
-	var ok bool
-	var vaultDONCapability capabilities.ExecutableCapability
-	vaultDONCapability, ok = vaultDONCap.(capabilities.ExecutableCapability)
-	if !ok {
-		return fmt.Errorf("VaultDON capability with ID '%s' is not an ExecutableCapability", vaultDONIDStr)
+	vaultDONIDUint, err := strconv.ParseUint(vaultDONIDStr, 10, 32)
+	if err != nil {
+		return fmt.Errorf("failed to parse VaultDONID '%s' as uint32: %w", vaultDONIDStr, err)
 	}
-	cs.lggr.Infow("Successfully retrieved VaultDON capability", "vaultDONID", vaultDONIDStr)
 
-	cs.action, err = action.New(cs.lggr, capConfig, keystore, vaultDONCapability)
+	vaultDONCapConfig, err := capabilityRegistry.ConfigForCapability(ctx, vault.CapabilityID, uint32(vaultDONIDUint))
+	if err != nil {
+		return fmt.Errorf("failed to parse get VaultDON config: %w", err)
+	}
+
+	vaultDONMasterPublicKey, err := getVaultDONMasterPublicKey(vaultDONCapConfig)
+	if err != nil {
+		return fmt.Errorf("failed to get VaultDON master public key: %w", err)
+	}
+
+	cs.action, err = action.New(cs.lggr, capConfig, keystore, vaultDONCapability, vaultDONMasterPublicKey)
 	if err != nil {
 		return fmt.Errorf("failed to create confidential http action: %w", err)
 	}
@@ -130,4 +139,28 @@ func (cs *capabilitiesServer) Initialise(
 		return fmt.Errorf("failed to add attested http capability to the capability registry: %w", err)
 	}
 	return nil
+}
+
+func getVaultDONMasterPublicKey(vaultDONCapConfig capabilities.CapabilityConfiguration) ([]byte, error) {
+	var VaultDONMasterPublicKey []byte
+	if vaultDONCapConfig.DefaultConfig != nil {
+		// Access the Underlying map
+		if val, ok := vaultDONCapConfig.DefaultConfig.Underlying["masterPublicKey"]; ok {
+			// Unwrap the Value interface to its concrete type (string)
+			pk, err := val.Unwrap() // Unwrap returns any, error
+			if err != nil {
+				return nil, fmt.Errorf("Error unwrapping 'masterPublicKey': %w", err)
+			} else if finalPKBytes, ok := pk.([]byte); ok {
+				VaultDONMasterPublicKey = finalPKBytes
+				fmt.Printf("Successfully retrieved VaultDONMasterPublicKey: %s\n", VaultDONMasterPublicKey)
+			} else {
+				return nil, fmt.Errorf("'masterPublicKey' unwrapped to unexpected type: %T\n", pk)
+			}
+		} else {
+			return nil, fmt.Errorf("'masterPublicKey' key not found in DefaultConfig.")
+		}
+	} else {
+		return nil, fmt.Errorf("VaultDONCapConfig.DefaultConfig is nil, cannot retrieve 'masterPublicKey'.")
+	}
+	return VaultDONMasterPublicKey, nil
 }

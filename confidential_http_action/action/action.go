@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"strings"
 
@@ -39,12 +38,12 @@ func (c *capability) Info(_ context.Context) (capabilities.CapabilityInfo, error
 }
 
 type capability struct {
-	lggr               logger.Logger
-	enclaveClient      enclaveclient.EnclaveClient[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse]
-	keystore           core.Keystore
-	vaultDONPublicKey  []byte
-	vaultDONID         []byte
-	vaultDONCapability capabilities.ExecutableCapability
+	lggr                    logger.Logger
+	enclaveClient           enclaveclient.EnclaveClient[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse]
+	keystore                core.Keystore
+	vaultDONMasterPublicKey []byte
+	vaultDONID              []byte
+	vaultDONCapability      capabilities.ExecutableCapability
 }
 
 // parseEnclaveType converts a string into an EnclaveType using case-insensitive matching.
@@ -94,32 +93,9 @@ func GetNodes(config cap.Config) ([]enclavetypes.EnclaveNode, error) {
 	return nodes, nil
 }
 
-// getVaultDONPublicKey is a placeholder function to simulate retrieving a DON's public key.
-// In a real implementation, this would involve a lookup process based on the DON ID.
-// For now, it returns a hardcoded public key to allow the program to compile.
-func getVaultDONPublicKey(DONID []byte) ([]byte, error) {
-	// This is a dummy public key for placeholder purposes.
-	// It's 32 bytes long, which is the standard length for an ed25519 public key.
-	dummyPublicKey := []byte{
-		0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef,
-		0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef,
-		0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef,
-		0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef,
-	}
-
-	// You could add logic here to check the DONID if needed.
-	if len(DONID) == 0 {
-		return nil, fmt.Errorf("VaultDONID cannot be empty")
-	}
-
-	log.Printf("Placeholder: Looked up public key for DON ID: %x\n", DONID)
-
-	return dummyPublicKey, nil
-}
-
 // Query the VaultDON to get the encrypted decryption key shares.
 // This is a placeholder function that simulates the process of getting encrypted shares.
-func GetEncryptedDecryptedShares(vaultDONSecretIds []string, vaultDONPublicKey []byte, vaultDONID []byte) ([][]byte, [][][]byte, error) {
+func GetEncryptedDecryptedShares(vaultDONSecretIds []string, vaultDONMasterPublicKey []byte, vaultDONID []byte) ([][]byte, [][][]byte, error) {
 	encryptedDecryptedShares := make([][][]byte, len(vaultDONSecretIds))
 	encryptedSecrets := make([][]byte, len(vaultDONSecretIds))
 	return encryptedSecrets, encryptedDecryptedShares, nil
@@ -130,6 +106,7 @@ func New(
 	capConfig cap.Config,
 	keystore core.Keystore,
 	vaultDONCapability capabilities.ExecutableCapability,
+	vaultDONMasterPublicKey []byte,
 ) (*capability, error) {
 	httpClient := http.Client{
 		Transport: &http.Transport{
@@ -143,40 +120,34 @@ func New(
 		return nil, fmt.Errorf("failed to create enclave pool: %w", err)
 	}
 
-	// Only get the public key here, and pass it to enclaveclient.NewPool.
-	vaultDONPublicKey, err := getVaultDONPublicKey(capConfig.VaultDONID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get VaultDON public key: %w", err)
-	}
-
 	pool, err := enclaveclient.NewPool[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse](
-		nodes, vaultDONPublicKey, nil, nil, nil, nil, &httpClient,
+		nodes, vaultDONMasterPublicKey, nil, nil, nil, nil, &httpClient,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create enclave pool: %w", err)
 	}
 
-	// Now delegate to NewWithEnclaveClient, which will NOT call getVaultDONPublicKey again.
-	return NewWithEnclaveClient(lggr, capConfig, keystore, pool, vaultDONPublicKey, vaultDONCapability)
+	// Now delegate to NewWithEnclaveClient, which will NOT call getvaultDONMasterPublicKey again.
+	return NewWithEnclaveClient(lggr, capConfig, keystore, pool, vaultDONMasterPublicKey, vaultDONCapability)
 }
 
 // NewWithEnclaveClient allows injecting a custom (e.g., mock) EnclaveClient for testing.
-// Accepts vaultDONPublicKey as a parameter to avoid duplicate lookups.
+// Accepts vaultDONMasterPublicKey as a parameter to avoid duplicate lookups.
 func NewWithEnclaveClient(
 	lggr logger.Logger,
 	capConfig cap.Config,
 	keystore core.Keystore,
 	enclaveClient enclaveclient.EnclaveClient[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse],
-	vaultDONPublicKey []byte,
+	vaultDONMasterPublicKey []byte,
 	vaultDONCapability capabilities.ExecutableCapability,
 ) (*capability, error) {
 	return &capability{
-		lggr:               lggr,
-		enclaveClient:      enclaveClient,
-		keystore:           keystore,
-		vaultDONPublicKey:  vaultDONPublicKey,
-		vaultDONID:         capConfig.VaultDONID,
-		vaultDONCapability: vaultDONCapability,
+		lggr:                    lggr,
+		enclaveClient:           enclaveClient,
+		keystore:                keystore,
+		vaultDONMasterPublicKey: vaultDONMasterPublicKey,
+		vaultDONID:              capConfig.VaultDONID,
+		vaultDONCapability:      vaultDONCapability,
 	}, nil
 }
 
@@ -223,7 +194,7 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		RequestID:                    reqID,
 		PublicData:                   publicDataBytes,
 		Ciphertexts:                  encryptedSecrets,
-		MasterPublicKey:              c.vaultDONPublicKey,
+		MasterPublicKey:              c.vaultDONMasterPublicKey,
 		EnclaveEphemeralPublicKey:    enclaveParams.EnclaveEphemeralPublicKey,
 		EncryptedDecryptionKeyShares: encryptedDecyrptedShares,
 	}
