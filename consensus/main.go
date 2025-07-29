@@ -16,6 +16,11 @@ import (
 
 func main() {
 	loopserver.Serve("ConsensusCapability", func(lggr logger.Logger) loop.StandardCapabilities {
-		return server.NewConsensusServer(action.NewConsensusCapability(lggr, clockwork.NewRealClock(), 1*time.Minute))
+		capability, err := action.NewConsensusCapability(lggr, clockwork.NewRealClock(), 1*time.Minute)
+		if err != nil {
+			lggr.Fatalw("Failed to create ConsensusCapability", "error", err)
+		}
+
+		return server.NewConsensusServer(capability)
 	})
 }

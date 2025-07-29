@@ -7,10 +7,11 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -27,6 +28,7 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 	lggr := logger.Test(t)
 
 	evmSvc := evmmock.NewEVMService(t)
+	evmSvc.On("GetFiltersNames", mock.Anything).Maybe().Return([]string{}, nil)
 	relayer := relayermock.NewRelayer(t)
 	relayer.On("EVM").Return(evmSvc, nil)
 	relayer.On("GetChainInfo", mock.Anything).Return(types.ChainInfo{}, nil)

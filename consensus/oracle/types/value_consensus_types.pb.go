@@ -9,6 +9,7 @@ package types
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -20,6 +21,52 @@ const (
 	// Verify that runtime/protoimpl is sufficiently up-to-date.
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
+
+type RequestType int32
+
+const (
+	RequestType_VALUE_CONSENSUS   RequestType = 0
+	RequestType_REPORT_GENERATION RequestType = 1
+)
+
+// Enum value maps for RequestType.
+var (
+	RequestType_name = map[int32]string{
+		0: "VALUE_CONSENSUS",
+		1: "REPORT_GENERATION",
+	}
+	RequestType_value = map[string]int32{
+		"VALUE_CONSENSUS":   0,
+		"REPORT_GENERATION": 1,
+	}
+)
+
+func (x RequestType) Enum() *RequestType {
+	p := new(RequestType)
+	*p = x
+	return p
+}
+
+func (x RequestType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (RequestType) Descriptor() protoreflect.EnumDescriptor {
+	return file_value_consensus_types_proto_enumTypes[0].Descriptor()
+}
+
+func (RequestType) Type() protoreflect.EnumType {
+	return &file_value_consensus_types_proto_enumTypes[0]
+}
+
+func (x RequestType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use RequestType.Descriptor instead.
+func (RequestType) EnumDescriptor() ([]byte, []int) {
+	return file_value_consensus_types_proto_rawDescGZIP(), []int{0}
+}
 
 type RequestMetaData struct {
 	state                    protoimpl.MessageState `protogen:"open.v1"`
@@ -33,6 +80,7 @@ type RequestMetaData struct {
 	WorkflowDonConfigVersion uint32                 `protobuf:"varint,8,opt,name=workflow_don_config_version,json=workflowDonConfigVersion,proto3" json:"workflow_don_config_version,omitempty"`
 	ReportId                 string                 `protobuf:"bytes,9,opt,name=report_id,json=reportId,proto3" json:"report_id,omitempty"`
 	KeyBundleId              string                 `protobuf:"bytes,10,opt,name=keyBundleId,proto3" json:"keyBundleId,omitempty"`
+	RequestType              RequestType            `protobuf:"varint,11,opt,name=request_type,json=requestType,proto3,enum=value_consensus_types.RequestType" json:"request_type,omitempty"`
 	unknownFields            protoimpl.UnknownFields
 	sizeCache                protoimpl.SizeCache
 }
@@ -137,6 +185,13 @@ func (x *RequestMetaData) GetKeyBundleId() string {
 	return ""
 }
 
+func (x *RequestMetaData) GetRequestType() RequestType {
+	if x != nil {
+		return x.RequestType
+	}
+	return RequestType_VALUE_CONSENSUS
+}
+
 type Request struct {
 	state                      protoimpl.MessageState `protogen:"open.v1"`
 	Metadata                   *RequestMetaData       `protobuf:"bytes,1,opt,name=metadata,proto3" json:"metadata,omitempty"`
@@ -237,6 +292,7 @@ type RequestObservation struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Metadata      *RequestMetaData       `protobuf:"bytes,1,opt,name=metadata,proto3" json:"metadata,omitempty"`
 	Observation   []byte                 `protobuf:"bytes,2,opt,name=observation,proto3" json:"observation,omitempty"`
+	ReceivedAt    *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=received_at,json=receivedAt,proto3" json:"received_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -281,6 +337,13 @@ func (x *RequestObservation) GetMetadata() *RequestMetaData {
 func (x *RequestObservation) GetObservation() []byte {
 	if x != nil {
 		return x.Observation
+	}
+	return nil
+}
+
+func (x *RequestObservation) GetReceivedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ReceivedAt
 	}
 	return nil
 }
@@ -333,6 +396,7 @@ type RequestOutcome struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Metadata      *RequestMetaData       `protobuf:"bytes,1,opt,name=metadata,proto3" json:"metadata,omitempty"`
 	Outcome       []byte                 `protobuf:"bytes,2,opt,name=outcome,proto3" json:"outcome,omitempty"`
+	Timestamp     *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -377,6 +441,13 @@ func (x *RequestOutcome) GetMetadata() *RequestMetaData {
 func (x *RequestOutcome) GetOutcome() []byte {
 	if x != nil {
 		return x.Outcome
+	}
+	return nil
+}
+
+func (x *RequestOutcome) GetTimestamp() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Timestamp
 	}
 	return nil
 }
@@ -429,7 +500,7 @@ var File_value_consensus_types_proto protoreflect.FileDescriptor
 
 const file_value_consensus_types_proto_rawDesc = "" +
 	"\n" +
-	"\x1bvalue_consensus_types.proto\x12\x15value_consensus_types\"\xaf\x03\n" +
+	"\x1bvalue_consensus_types.proto\x12\x15value_consensus_types\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf6\x03\n" +
 	"\x0fRequestMetaData\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x122\n" +
@@ -443,22 +514,29 @@ const file_value_consensus_types_proto_rawDesc = "" +
 	"\x1bworkflow_don_config_version\x18\b \x01(\rR\x18workflowDonConfigVersion\x12\x1b\n" +
 	"\treport_id\x18\t \x01(\tR\breportId\x12 \n" +
 	"\vkeyBundleId\x18\n" +
-	" \x01(\tR\vkeyBundleId\"\x8f\x01\n" +
+	" \x01(\tR\vkeyBundleId\x12E\n" +
+	"\frequest_type\x18\v \x01(\x0e2\".value_consensus_types.RequestTypeR\vrequestType\"\x8f\x01\n" +
 	"\aRequest\x12B\n" +
 	"\bmetadata\x18\x01 \x01(\v2&.value_consensus_types.RequestMetaDataR\bmetadata\x12@\n" +
 	"\x1crequest_consensus_descriptor\x18\x02 \x01(\fR\x1arequestConsensusDescriptor\"C\n" +
 	"\x05Query\x12:\n" +
-	"\brequests\x18\x01 \x03(\v2\x1e.value_consensus_types.RequestR\brequests\"z\n" +
+	"\brequests\x18\x01 \x03(\v2\x1e.value_consensus_types.RequestR\brequests\"\xb7\x01\n" +
 	"\x12RequestObservation\x12B\n" +
 	"\bmetadata\x18\x01 \x01(\v2&.value_consensus_types.RequestMetaDataR\bmetadata\x12 \n" +
-	"\vobservation\x18\x02 \x01(\fR\vobservation\"\\\n" +
+	"\vobservation\x18\x02 \x01(\fR\vobservation\x12;\n" +
+	"\vreceived_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"receivedAt\"\\\n" +
 	"\vObservation\x12M\n" +
-	"\fobservations\x18\x01 \x03(\v2).value_consensus_types.RequestObservationR\fobservations\"n\n" +
+	"\fobservations\x18\x01 \x03(\v2).value_consensus_types.RequestObservationR\fobservations\"\xa8\x01\n" +
 	"\x0eRequestOutcome\x12B\n" +
 	"\bmetadata\x18\x01 \x01(\v2&.value_consensus_types.RequestMetaDataR\bmetadata\x12\x18\n" +
-	"\aoutcome\x18\x02 \x01(\fR\aoutcome\"L\n" +
+	"\aoutcome\x18\x02 \x01(\fR\aoutcome\x128\n" +
+	"\ttimestamp\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\"L\n" +
 	"\aOutcome\x12A\n" +
-	"\boutcomes\x18\x01 \x03(\v2%.value_consensus_types.RequestOutcomeR\boutcomesB\x18Z\x16consensus/oracle/typesb\x06proto3"
+	"\boutcomes\x18\x01 \x03(\v2%.value_consensus_types.RequestOutcomeR\boutcomes*9\n" +
+	"\vRequestType\x12\x13\n" +
+	"\x0fVALUE_CONSENSUS\x10\x00\x12\x15\n" +
+	"\x11REPORT_GENERATION\x10\x01B\x18Z\x16consensus/oracle/typesb\x06proto3"
 
 var (
 	file_value_consensus_types_proto_rawDescOnce sync.Once
@@ -472,28 +550,34 @@ func file_value_consensus_types_proto_rawDescGZIP() []byte {
 	return file_value_consensus_types_proto_rawDescData
 }
 
+var file_value_consensus_types_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_value_consensus_types_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_value_consensus_types_proto_goTypes = []any{
-	(*RequestMetaData)(nil),    // 0: value_consensus_types.RequestMetaData
-	(*Request)(nil),            // 1: value_consensus_types.Request
-	(*Query)(nil),              // 2: value_consensus_types.Query
-	(*RequestObservation)(nil), // 3: value_consensus_types.RequestObservation
-	(*Observation)(nil),        // 4: value_consensus_types.Observation
-	(*RequestOutcome)(nil),     // 5: value_consensus_types.RequestOutcome
-	(*Outcome)(nil),            // 6: value_consensus_types.Outcome
+	(RequestType)(0),              // 0: value_consensus_types.RequestType
+	(*RequestMetaData)(nil),       // 1: value_consensus_types.RequestMetaData
+	(*Request)(nil),               // 2: value_consensus_types.Request
+	(*Query)(nil),                 // 3: value_consensus_types.Query
+	(*RequestObservation)(nil),    // 4: value_consensus_types.RequestObservation
+	(*Observation)(nil),           // 5: value_consensus_types.Observation
+	(*RequestOutcome)(nil),        // 6: value_consensus_types.RequestOutcome
+	(*Outcome)(nil),               // 7: value_consensus_types.Outcome
+	(*timestamppb.Timestamp)(nil), // 8: google.protobuf.Timestamp
 }
 var file_value_consensus_types_proto_depIdxs = []int32{
-	0, // 0: value_consensus_types.Request.metadata:type_name -> value_consensus_types.RequestMetaData
-	1, // 1: value_consensus_types.Query.requests:type_name -> value_consensus_types.Request
-	0, // 2: value_consensus_types.RequestObservation.metadata:type_name -> value_consensus_types.RequestMetaData
-	3, // 3: value_consensus_types.Observation.observations:type_name -> value_consensus_types.RequestObservation
-	0, // 4: value_consensus_types.RequestOutcome.metadata:type_name -> value_consensus_types.RequestMetaData
-	5, // 5: value_consensus_types.Outcome.outcomes:type_name -> value_consensus_types.RequestOutcome
-	6, // [6:6] is the sub-list for method output_type
-	6, // [6:6] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	0, // 0: value_consensus_types.RequestMetaData.request_type:type_name -> value_consensus_types.RequestType
+	1, // 1: value_consensus_types.Request.metadata:type_name -> value_consensus_types.RequestMetaData
+	2, // 2: value_consensus_types.Query.requests:type_name -> value_consensus_types.Request
+	1, // 3: value_consensus_types.RequestObservation.metadata:type_name -> value_consensus_types.RequestMetaData
+	8, // 4: value_consensus_types.RequestObservation.received_at:type_name -> google.protobuf.Timestamp
+	4, // 5: value_consensus_types.Observation.observations:type_name -> value_consensus_types.RequestObservation
+	1, // 6: value_consensus_types.RequestOutcome.metadata:type_name -> value_consensus_types.RequestMetaData
+	8, // 7: value_consensus_types.RequestOutcome.timestamp:type_name -> google.protobuf.Timestamp
+	6, // 8: value_consensus_types.Outcome.outcomes:type_name -> value_consensus_types.RequestOutcome
+	9, // [9:9] is the sub-list for method output_type
+	9, // [9:9] is the sub-list for method input_type
+	9, // [9:9] is the sub-list for extension type_name
+	9, // [9:9] is the sub-list for extension extendee
+	0, // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_value_consensus_types_proto_init() }
@@ -506,13 +590,14 @@ func file_value_consensus_types_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_value_consensus_types_proto_rawDesc), len(file_value_consensus_types_proto_rawDesc)),
-			NumEnums:      0,
+			NumEnums:      1,
 			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
 		GoTypes:           file_value_consensus_types_proto_goTypes,
 		DependencyIndexes: file_value_consensus_types_proto_depIdxs,
+		EnumInfos:         file_value_consensus_types_proto_enumTypes,
 		MessageInfos:      file_value_consensus_types_proto_msgTypes,
 	}.Build()
 	File_value_consensus_types_proto = out.File

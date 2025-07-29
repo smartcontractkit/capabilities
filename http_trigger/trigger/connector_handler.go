@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sync"
 
 	"google.golang.org/protobuf/types/known/structpb"
 
@@ -39,9 +38,8 @@ type connectorHandler struct {
 	services.StateMachine
 	lggr                logger.Logger
 	gatewayConnector    core.GatewayConnector
-	workflowsMu         sync.RWMutex
-	workflows           map[string]*workflow // workflowID -> workflow metadata
 	config              ServiceConfig
+	workflowStore       *workflowStore
 	incomingRateLimiter *ratelimit.RateLimiter
 	outgoingRateLimiter *ratelimit.RateLimiter
 }
@@ -63,7 +61,7 @@ func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config Se
 		config:              config,
 		outgoingRateLimiter: outgoingRateLimiter,
 		incomingRateLimiter: incomingRateLimiter,
-		workflows:           make(map[string]*workflow),
+		workflowStore:       newWorkflowStore(lggr),
 	}, nil
 }
 
@@ -97,7 +95,7 @@ func (h *connectorHandler) ID(context.Context) (string, error) {
 	return HandlerName, nil
 }
 
-func (h *connectorHandler) RegisterWorkflow(ctx context.Context, workflowID string, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error {
+func (h *connectorHandler) RegisterWorkflow(ctx context.Context, workflowSelector gateway_common.WorkflowSelector, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error {
 	authorizedKeys := map[string]struct{}{}
 	for _, key := range input.AuthorizedKeys {
 		switch key.Type {
@@ -110,27 +108,17 @@ func (h *connectorHandler) RegisterWorkflow(ctx context.Context, workflowID stri
 			return fmt.Errorf("unsupported key type: %s", key.Type)
 		}
 	}
-
-	h.workflowsMu.Lock()
-	defer h.workflowsMu.Unlock()
-	_, ok := h.workflows[workflowID]
-	if ok {
-		h.lggr.Debugw("Workflow already registered, re-registering", "workflowID", workflowID)
-	}
-	h.workflows[workflowID] = newWorkflow(authorizedKeys, sendCh)
-	h.lggr.Debugf("Registered workflow %s", workflowID)
+	workflow := newWorkflow(workflowSelector, authorizedKeys, sendCh)
+	h.workflowStore.upsertWorkflow(workflow)
+	h.lggr.Debugf("Registered workflow %s", workflowSelector.WorkflowID)
 	return nil
 }
 
 func (h *connectorHandler) UnregisterWorkflow(ctx context.Context, workflowID string) error {
-	h.workflowsMu.Lock()
-	defer h.workflowsMu.Unlock()
-	workflow, ok := h.workflows[workflowID]
-	if !ok {
-		return fmt.Errorf("workflowID %s not registered", workflowID)
+	err := h.workflowStore.removeWorkflow(workflowID)
+	if err != nil {
+		return fmt.Errorf("failed to unregister workflow %s: %w", workflowID, err)
 	}
-	workflow.close()
-	delete(h.workflows, workflowID)
 	h.lggr.Debugf("Unregistered workflow %s", workflowID)
 	return nil
 }
@@ -206,12 +194,19 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		return
 	}
 	// TODO: PRODCRE-305 validate JWT against authorized keys
-	// TODO: PRODCRE-475 support look-up of workflowID using workflowOwner/Label/Name
 	workflowID := triggerReq.Workflow.WorkflowID
+	var exists bool
 	if workflowID == "" {
-		l.Error("WorkflowID is required in HTTP trigger request")
-		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInvalidParams, "workflowID is required")
-		return
+		workflowID, exists = h.workflowStore.getWorkflowIDByReference(
+			triggerReq.Workflow.WorkflowOwner,
+			triggerReq.Workflow.WorkflowName,
+			triggerReq.Workflow.WorkflowTag,
+		)
+		if !exists {
+			l.Errorw("Workflow not registered", "workflowOwner", triggerReq.Workflow.WorkflowOwner, "workflowName", triggerReq.Workflow.WorkflowName, "workflowTag", triggerReq.Workflow.WorkflowTag)
+			h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInvalidRequest, "Workflow not registered")
+			return
+		}
 	}
 	l = logger.With(l, "workflowID", workflowID)
 	err = h.triggerWorkflow(ctx, workflowID, req.ID, gatewayID, input)
@@ -246,9 +241,7 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 }
 
 func (h *connectorHandler) triggerWorkflow(ctx context.Context, workflowID string, reqID string, gatewayID string, input *structpb.Struct) error {
-	h.workflowsMu.RLock()
-	workflow, ok := h.workflows[workflowID]
-	h.workflowsMu.RUnlock()
+	workflow, ok := h.workflowStore.getWorkflowByID(workflowID)
 	if !ok {
 		h.sendErrorResponse(ctx, gatewayID, reqID, jsonrpc.ErrInvalidRequest, "Workflow not registered")
 		return fmt.Errorf("workflowID %s not registered", workflowID)

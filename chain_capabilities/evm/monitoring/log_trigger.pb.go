@@ -311,6 +311,66 @@ func (x *LogTriggerEventDroppedError) GetExecutionContext() *monitoring.Executio
 	return nil
 }
 
+type LogTriggerCleanUpError struct {
+	state            protoimpl.MessageState       `protogen:"open.v1"`
+	Summary          string                       `protobuf:"bytes,5,opt,name=summary,proto3" json:"summary,omitempty"`
+	Cause            string                       `protobuf:"bytes,6,opt,name=cause,proto3" json:"cause,omitempty"`
+	ExecutionContext *monitoring.ExecutionContext `protobuf:"bytes,20,opt,name=execution_context,json=executionContext,proto3" json:"execution_context,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *LogTriggerCleanUpError) Reset() {
+	*x = LogTriggerCleanUpError{}
+	mi := &file_log_trigger_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LogTriggerCleanUpError) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LogTriggerCleanUpError) ProtoMessage() {}
+
+func (x *LogTriggerCleanUpError) ProtoReflect() protoreflect.Message {
+	mi := &file_log_trigger_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LogTriggerCleanUpError.ProtoReflect.Descriptor instead.
+func (*LogTriggerCleanUpError) Descriptor() ([]byte, []int) {
+	return file_log_trigger_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *LogTriggerCleanUpError) GetSummary() string {
+	if x != nil {
+		return x.Summary
+	}
+	return ""
+}
+
+func (x *LogTriggerCleanUpError) GetCause() string {
+	if x != nil {
+		return x.Cause
+	}
+	return ""
+}
+
+func (x *LogTriggerCleanUpError) GetExecutionContext() *monitoring.ExecutionContext {
+	if x != nil {
+		return x.ExecutionContext
+	}
+	return nil
+}
+
 var File_log_trigger_proto protoreflect.FileDescriptor
 
 const file_log_trigger_proto_rawDesc = "" +
@@ -338,6 +398,10 @@ const file_log_trigger_proto_rawDesc = "" +
 	"\tlog_index\x18\x04 \x01(\x03R\blogIndex\x12\x18\n" +
 	"\asummary\x18\x05 \x01(\tR\asummary\x12\x14\n" +
 	"\x05cause\x18\x06 \x01(\tR\x05cause\x12I\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\x93\x01\n" +
+	"\x16LogTriggerCleanUpError\x12\x18\n" +
+	"\asummary\x18\x05 \x01(\tR\asummary\x12\x14\n" +
+	"\x05cause\x18\x06 \x01(\tR\x05cause\x12I\n" +
 	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContextBLZJgithub.com/smartcontractkit/capabilities/chain_capabilities/evm;monitoringb\x06proto3"
 
 var (
@@ -352,27 +416,29 @@ func file_log_trigger_proto_rawDescGZIP() []byte {
 	return file_log_trigger_proto_rawDescData
 }
 
-var file_log_trigger_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_log_trigger_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_log_trigger_proto_goTypes = []any{
 	(*TriggerInitiated)(nil),            // 0: chain_capabilities.evm.TriggerInitiated
 	(*LogTriggerSuccess)(nil),           // 1: chain_capabilities.evm.LogTriggerSuccess
 	(*LogTriggerError)(nil),             // 2: chain_capabilities.evm.LogTriggerError
 	(*LogTriggerEventDroppedError)(nil), // 3: chain_capabilities.evm.LogTriggerEventDroppedError
-	(*evm.FilterLogTriggerRequest)(nil), // 4: capabilities.blockchain.evm.v1alpha.FilterLogTriggerRequest
-	(*monitoring.ExecutionContext)(nil), // 5: monitoring.ExecutionContext
+	(*LogTriggerCleanUpError)(nil),      // 4: chain_capabilities.evm.LogTriggerCleanUpError
+	(*evm.FilterLogTriggerRequest)(nil), // 5: capabilities.blockchain.evm.v1alpha.FilterLogTriggerRequest
+	(*monitoring.ExecutionContext)(nil), // 6: monitoring.ExecutionContext
 }
 var file_log_trigger_proto_depIdxs = []int32{
-	4, // 0: chain_capabilities.evm.TriggerInitiated.req:type_name -> capabilities.blockchain.evm.v1alpha.FilterLogTriggerRequest
-	5, // 1: chain_capabilities.evm.TriggerInitiated.execution_context:type_name -> monitoring.ExecutionContext
-	4, // 2: chain_capabilities.evm.LogTriggerSuccess.req:type_name -> capabilities.blockchain.evm.v1alpha.FilterLogTriggerRequest
-	5, // 3: chain_capabilities.evm.LogTriggerSuccess.execution_context:type_name -> monitoring.ExecutionContext
-	5, // 4: chain_capabilities.evm.LogTriggerError.execution_context:type_name -> monitoring.ExecutionContext
-	5, // 5: chain_capabilities.evm.LogTriggerEventDroppedError.execution_context:type_name -> monitoring.ExecutionContext
-	6, // [6:6] is the sub-list for method output_type
-	6, // [6:6] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	5, // 0: chain_capabilities.evm.TriggerInitiated.req:type_name -> capabilities.blockchain.evm.v1alpha.FilterLogTriggerRequest
+	6, // 1: chain_capabilities.evm.TriggerInitiated.execution_context:type_name -> monitoring.ExecutionContext
+	5, // 2: chain_capabilities.evm.LogTriggerSuccess.req:type_name -> capabilities.blockchain.evm.v1alpha.FilterLogTriggerRequest
+	6, // 3: chain_capabilities.evm.LogTriggerSuccess.execution_context:type_name -> monitoring.ExecutionContext
+	6, // 4: chain_capabilities.evm.LogTriggerError.execution_context:type_name -> monitoring.ExecutionContext
+	6, // 5: chain_capabilities.evm.LogTriggerEventDroppedError.execution_context:type_name -> monitoring.ExecutionContext
+	6, // 6: chain_capabilities.evm.LogTriggerCleanUpError.execution_context:type_name -> monitoring.ExecutionContext
+	7, // [7:7] is the sub-list for method output_type
+	7, // [7:7] is the sub-list for method input_type
+	7, // [7:7] is the sub-list for extension type_name
+	7, // [7:7] is the sub-list for extension extendee
+	0, // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_log_trigger_proto_init() }
@@ -386,7 +452,7 @@ func file_log_trigger_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_log_trigger_proto_rawDesc), len(file_log_trigger_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

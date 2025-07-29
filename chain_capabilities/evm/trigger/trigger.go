@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/rpc"
@@ -24,7 +25,7 @@ import (
 )
 
 const (
-	suffixLogTriggerFilterID     = "-log-trigger"
+	suffixLogTriggerFilterID     = "-evm-log-trigger"
 	defaultSendChannelBufferSize = 1000
 	defaultLimitQueryLogSize     = 1000
 )
@@ -71,7 +72,53 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 	return lts
 }
 
+func (lts *LogTriggerService) StartCleanUp() {
+	duration := 30 * time.Second
+	ticker := services.NewTicker(duration)
+	lts.lggr.Debugf("Starting clean up of failed log poller filters every %s seconds", duration)
+	lts.srvcEng.GoTick(ticker, lts.cleanUpStaleFilters)
+}
+
+func (lts *LogTriggerService) cleanUpStaleFilters(ctx context.Context) {
+	lts.lggr.Debugf("Starting cleanUpStaleFilters")
+	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: capabilities.RequestMetadata{
+		WorkflowID: "evm-log-trigger-cleanup", // fake workflow ID for monitoring purposes
+	}}
+	filterNames, err := lts.EVMService.GetFiltersNames(ctx)
+	if err != nil {
+		summary := fmt.Sprintf("failed to get the filter names: '%v'", err)
+		monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerCleanUpError(read, summary, err.Error()))
+		return
+	}
+	toCleanUp := make(map[string]struct{})
+	for _, filterName := range filterNames {
+		//only add those that are from the log trigger
+		if strings.HasSuffix(filterName, suffixLogTriggerFilterID) {
+			toCleanUp[filterName] = struct{}{}
+		}
+	}
+
+	triggers := lts.triggers.ReadAll()
+	for triggerID, state := range triggers {
+		if _, exists := toCleanUp[state.filterID]; exists {
+			delete(triggers, triggerID)
+			delete(toCleanUp, state.filterID)
+		}
+	}
+
+	lts.lggr.Debugf("Found %d filters to clean up that are not live", len(toCleanUp))
+
+	for filterID := range toCleanUp {
+		lts.lggr.Debugf("Cleaning up filter %s", filterID)
+		if err := lts.EVMService.UnregisterLogTracking(ctx, filterID); err != nil {
+			summary := fmt.Sprintf("failed to unregister log-tracking from the clean up thread: '%v' source triggerID: %s", err, filterID)
+			monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerCleanUpError(read, summary, err.Error()))
+		}
+	}
+}
+
 func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID string, meta capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*evmcappb.Log], error) {
+	lts.lggr.Debugf("RegisterLogTrigger called with triggerID: %s, input: %+v", triggerID, input)
 	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	if triggerID == "" {
 		return nil, fmt.Errorf("no triggerID provided")
@@ -88,15 +135,32 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	if len(input.GetTopics()) == 0 || len(input.GetTopics()[0].Values) == 0 {
 		return nil, fmt.Errorf("no valid event sig provided (at least one event sig is required in topics)")
 	}
+	// TODO PLEX-1577: remove the below validation once the ConvertAddressesFromProto fails for wrong addresses (!= 20 bytes).
+	for _, addr := range input.GetAddresses() {
+		if len(addr) != 20 {
+			return nil, fmt.Errorf("invalid EVM address: %x (must be 20 bytes, but it is %d)", addr, len(addr))
+		}
+	}
+	// TODO PLEX-1577: remove the below validation once the ConvertHashesFromProto fails for wrong hashes (!= 32 bytes).
+	for i, topicGroup := range input.GetTopics() {
+		for j, topic := range topicGroup.Values {
+			if len(topic) != 32 {
+				return nil, fmt.Errorf("invalid EVM topic at topics[%d].Values[%d]: %x (must be 32 bytes, but it is %d)", i, j, topic, len(topic))
+			}
+		}
+	}
 	eventSigs, topics2, topics3, topics4 := lts.getTopics(input)
+	lts.lggr.Debugw("RegisterLogTrigger input params", "addresses:", input.GetAddresses(), "eventSigs:", eventSigs, "topics2:", topics2, "topics3:", topics3, "topics4:", topics4, "confidence:", input.GetConfidence())
 
 	fromBlock, err := lts.getFinalizedBlockNumber(ctx, triggerID)
 	if err != nil {
 		return nil, err
 	}
 
+	filterID := lts.generateFilterID(triggerID)
+	lts.lggr.Debugf("RegisterLogTracking id: %s", filterID)
 	filterQuery := evmtypes.LPFilterQuery{
-		Name:      lts.generateFilterID(triggerID),
+		Name:      filterID,
 		Addresses: evmservice.ConvertAddressesFromProto(input.GetAddresses()),
 		EventSigs: evmservice.ConvertHashesFromProto(eventSigs),
 		Topic2:    evmservice.ConvertHashesFromProto(topics2),
@@ -120,6 +184,7 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 			lastBlock:               fromBlock,
 			unfinalizedSentEventIDs: make(map[string]*big.Int),
 			filter: filter{
+				filterID:    filterID,
 				expressions: expressions,
 				confidence:  confidence,
 			},
@@ -147,7 +212,8 @@ func (lts *LogTriggerService) getTopics(input *evmcappb.FilterLogTriggerRequest)
 
 func (lts *LogTriggerService) getFinalizedBlockNumber(ctx context.Context, triggerID string) (*big.Int, error) {
 	reply, err := lts.EVMService.HeaderByNumber(ctx, evmtypes.HeaderByNumberRequest{
-		Number: big.NewInt(rpc.FinalizedBlockNumber.Int64()),
+		Number:          big.NewInt(rpc.FinalizedBlockNumber.Int64()),
+		ConfidenceLevel: primitives.Unconfirmed,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to register latest and finalized head: '%w' for triggerID: %s", err, triggerID)
@@ -369,13 +435,12 @@ func (lts *LogTriggerService) UnregisterLogTrigger(ctx context.Context, triggerI
 	if !found {
 		return fmt.Errorf("no active trigger found for triggerID: %s", triggerID)
 	}
-	lts.lggr.Debugf("Unregistering triggerID: %s", triggerID)
+	lts.lggr.Debugf("UnregisterLogTrigger triggerID: %s", triggerID)
 	trigger.cancelFunc()
 	lts.triggers.Delete(triggerID)
 
 	err := lts.EVMService.UnregisterLogTracking(ctx, lts.generateFilterID(triggerID))
 	if err != nil {
-		//TODO PLEX-1456: once the clean up is implemented decide if we want to return an error here or just log it
 		summary := fmt.Sprintf("failed to unregister log-tracking: '%v' for triggerID: %s", err, triggerID)
 		monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(read, triggerID, summary, err.Error()))
 		return fmt.Errorf("failed to unregister log-tracking: '%w' for triggerID: %s", err, triggerID)
