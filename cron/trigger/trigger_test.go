@@ -12,6 +12,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -1004,4 +1005,65 @@ func TestCronTrigger_CloseStartErrors(t *testing.T) {
 	require.NoError(t, err)
 	err = ts.Start(ctx)
 	require.Error(t, err)
+}
+
+type PanicingClock struct {
+	clockwork.FakeClock
+	callCount      int
+	panicAfterCall int // Panic after this many calls to a specific method
+}
+
+func (p *PanicingClock) Now() time.Time {
+	p.callCount++
+	if p.callCount == p.panicAfterCall {
+		panic("clock panic in Now()")
+	}
+	return p.FakeClock.Now()
+}
+
+func TestGocronNewTaskPanic(t *testing.T) {
+	panicClock := &PanicingClock{
+		FakeClock:      clockwork.NewFakeClock(),
+		panicAfterCall: 15, // Adjust based on actual call pattern, we want to panic on cron/trigger/trigger.go:201 call to Now()
+	}
+
+	config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
+	require.NoError(t, err)
+	logger, observedLogs := logger.TestObserved(t, zap.ErrorLevel)
+	ts := NewTriggerService(logger, panicClock)
+
+	triggerAPI := server.NewCronServer(ts)
+
+	_, _, err = registerTriggerToCronTriggerService(
+		t.Context(),
+		t,
+		triggerAPI,
+		everySecond,
+		makeTriggerID(1),
+		true,
+	)
+	require.NoError(t, err)
+	assert.Equal(t, len(ts.scheduler.Jobs()), 1)
+
+	// Start scheduling
+	err = ts.Initialise(t.Context(), string(config), nil, nil, nil, nil, nil, nil, nil, nil)
+	require.NoError(t, err)
+
+	panicClock.Advance(time.Second * 1)
+
+	ticker := time.NewTicker(time.Second * 1)
+	timeout := time.NewTimer(time.Second * 10)
+	for {
+		select {
+		case <-ticker.C:
+			logs := observedLogs.All()
+			for _, log := range logs {
+				if log.Message == "panic in gocron.NewTask function" && len(log.Context) > 0 && log.Context[0].Key == "err" && log.Context[0].String == "clock panic in Now()" {
+					return // Success, end the test
+				}
+			}
+		case <-timeout.C:
+			t.Fatal("timeout, no panic in gocron.NewTask function")
+		}
+	}
 }
