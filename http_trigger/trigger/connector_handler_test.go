@@ -769,12 +769,5 @@ func TestHandleGatewayMessage_PullAuthMetadata_EmptyWorkflows(t *testing.T) {
 	err = handler.HandleGatewayMessage(t.Context(), "gw1", req)
 	require.NoError(t, err)
 
-	require.True(t, mockConnector.SendToGatewayCalled)
-	require.Equal(t, "gw1", mockConnector.SendToGatewayArgs.GatewayID)
-
-	resp := mockConnector.SendToGatewayArgs.Msg
-	require.Equal(t, "2.0", resp.Version)
-	require.Equal(t, requestID, resp.ID)
-	require.NotNil(t, resp.Error, "Response should contain an error")
-	require.Nil(t, resp.Result, "Response should not contain result")
+	require.False(t, mockConnector.SendToGatewayCalled)
 }

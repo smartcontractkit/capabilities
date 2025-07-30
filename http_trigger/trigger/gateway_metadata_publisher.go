@@ -123,7 +123,6 @@ func (h *gatewayMetadataPublisher) SendWorkflowMetadata(ctx context.Context, gat
 	defer cancel()
 	workflows := h.workflowStore.getWorkflows()
 	if len(workflows) == 0 {
-		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInternal, "no workflows found")
 		return errors.New("no workflows found")
 	}
 	batchSize := int(h.cfg.MetadataBatchSize)
