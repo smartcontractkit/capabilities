@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb"
@@ -96,32 +97,47 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 			expectedError:   nil,
 		},
 		{
-			name: "common prefix aggregation: not yet supported",
+			name: "common prefix",
 			observations: []*valuespb.Value{
-				values.Proto(values.NewString("abc")),
+				mustNewList("1", "2", "3", "4"),
+				mustNewList("1", "2", "3", "5"),
+				mustNewList("1", "2", "3", "6"),
+				mustNewList("1", "2", "3", "7"),
+				mustNewList(),
+				mustNewList(42, 43, 44, 45),
 			},
+			f: 3,
 			descriptor: &pb.ConsensusDescriptor{
 				Descriptor_: &pb.ConsensusDescriptor_Aggregation{
 					Aggregation: pb.AggregationType_AGGREGATION_TYPE_COMMON_PREFIX,
 				},
 			},
-			minObs:          1,
-			expectedOutcome: nil,
-			expectedError:   errors.New("common prefix aggregation type not supported"),
+			expectedOutcome: mustNewList("1", "2", "3"),
 		},
 		{
-			name: "common suffix aggregation: not yet supported",
+			name: "common suffix",
 			observations: []*valuespb.Value{
-				values.Proto(values.NewString("xyz")),
+				mustNewList("1", "2", "3", "4", "5", "6", "7", "8", "9"),
+				mustNewList("1", "2", "3", "4", "11", "42", "42", "7", "8", "9"),
+				mustNewList("1", "2", "3", "4", "8", "9", "42", "7", "8", "9"),
+				mustNewList("1", "2", "3", "100", "99", "7", "8", "9"),
+				mustNewList("1", "2", "3", "10", "99", "7", "8", "9"),
+				mustNewList("1", "2", "3", "110", "99", "7", "8", "9"),
+				mustNewList("1", "2", "3", "1000", "99", "7", "8", "9"),
+				mustNewList("1", "2", "3", "x", "99"),
+				mustNewList("1", "2", "3", "err", "99"),
+				mustNewList("1", "2", "3", "4", "err", "7", "8", "9"),
+				mustNewList(),
+				mustNewList(42, 44, 45, 46),
+				mustNewList("bad", "values", "bad", "values"),
 			},
+			f: 7,
 			descriptor: &pb.ConsensusDescriptor{
 				Descriptor_: &pb.ConsensusDescriptor_Aggregation{
 					Aggregation: pb.AggregationType_AGGREGATION_TYPE_COMMON_SUFFIX,
 				},
 			},
-			minObs:          1,
-			expectedOutcome: nil,
-			expectedError:   errors.New("common suffix aggregation type not supported"),
+			expectedOutcome: mustNewList("7", "8", "9"),
 		},
 		{
 			name: "unknown aggregation type (UNSPECIFIED)",
@@ -156,6 +172,7 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			outcome, err := CalculateOutcomeForObservations(
+				logger.Test(t),
 				tc.observations,
 				tc.descriptor,
 				tc.minObs,
