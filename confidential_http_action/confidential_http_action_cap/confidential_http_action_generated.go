@@ -120,8 +120,8 @@ type Input struct {
 	// Requests corresponds to the JSON schema field "requests".
 	Requests []Request `json:"requests" yaml:"requests" mapstructure:"requests"`
 
-	// List of Vault DON secret IDs to fetch secrets from
-	VaultDONSecretIds []string `json:"vaultDONSecretIds" yaml:"vaultDONSecretIds" mapstructure:"vaultDONSecretIds"`
+	// List of Vault DON secrets to fetch
+	VaultDONSecrets []SecretIdentifier `json:"vaultDONSecrets" yaml:"vaultDONSecrets" mapstructure:"vaultDONSecrets"`
 }
 
 // UnmarshalJSON implements json.Unmarshaler.
@@ -133,8 +133,8 @@ func (j *Input) UnmarshalJSON(b []byte) error {
 	if _, ok := raw["requests"]; raw != nil && !ok {
 		return fmt.Errorf("field requests in Input: required")
 	}
-	if _, ok := raw["vaultDONSecretIds"]; raw != nil && !ok {
-		return fmt.Errorf("field vaultDONSecretIds in Input: required")
+	if _, ok := raw["vaultDONSecrets"]; raw != nil && !ok {
+		return fmt.Errorf("field vaultDONSecrets in Input: required")
 	}
 	type Plain Input
 	var plain Plain
@@ -244,5 +244,37 @@ func (j *Request) UnmarshalJSON(b []byte) error {
 		return err
 	}
 	*j = Request(plain)
+	return nil
+}
+
+type SecretIdentifier struct {
+	// The key of the secret
+	Key string `json:"key" yaml:"key" mapstructure:"key"`
+
+	// The namespace of the secret
+	Namespace string `json:"namespace" yaml:"namespace" mapstructure:"namespace"`
+
+	// The owner of the secret
+	Owner *string `json:"owner,omitempty" yaml:"owner,omitempty" mapstructure:"owner,omitempty"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (j *SecretIdentifier) UnmarshalJSON(b []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return err
+	}
+	if _, ok := raw["key"]; raw != nil && !ok {
+		return fmt.Errorf("field key in SecretIdentifier: required")
+	}
+	if _, ok := raw["namespace"]; raw != nil && !ok {
+		return fmt.Errorf("field namespace in SecretIdentifier: required")
+	}
+	type Plain SecretIdentifier
+	var plain Plain
+	if err := json.Unmarshal(b, &plain); err != nil {
+		return err
+	}
+	*j = SecretIdentifier(plain)
 	return nil
 }

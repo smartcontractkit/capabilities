@@ -89,6 +89,28 @@
                 "body"
             ]
         },
+        "SecretIdentifier": {
+            "type": "object",
+            "properties": {
+                "key": {
+                    "type": "string",
+                    "description": "The key of the secret"
+                },
+                "namespace": {
+                    "type": "string",
+                    "description": "The namespace of the secret"
+                },
+                "owner": {
+                    "type": "string",
+                    "description": "The owner of the secret"
+                }
+            },
+            "required": [
+                "key",
+                "namespace"
+            ],
+            "additionalProperties": false
+        },
         "Config": {
             "type": "object",
             "properties": {
@@ -121,17 +143,17 @@
                         "$ref": "#/$defs/Request"
                     }
                 },
-                "vaultDONSecretIds": {
+                "vaultDONSecrets": {
                     "type": "array",
                     "items": {
-                        "type": "string"
+                        "$ref": "#/$defs/SecretIdentifier"
                     },
-                    "description": "List of Vault DON secret IDs to fetch secrets from"
+                    "description": "List of Vault DON secrets to fetch"
                 }
             },
             "required": [
                 "requests",
-                "vaultDONSecretIds"
+                "vaultDONSecrets"
             ],
             "additionalProperties": false
         },

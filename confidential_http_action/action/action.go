@@ -183,8 +183,9 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 
 	encryptedSecrets, encryptedDecyrptedShares, err := c.GetEncryptedDecryptedShares(
 		ctx,
-		input.VaultDONSecretIds,
-		enclaveParams.EnclaveEphemeralPublicKey)
+		input.VaultDONSecrets,
+		enclaveParams.EnclaveEphemeralPublicKey,
+		rawRequest.Metadata.WorkflowOwner)
 
 	if err != nil {
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to get encrypted decryption key shares from VaultDON: %w", err)
@@ -325,9 +326,14 @@ func ConvertInputToHTTPEnclaveRequestData(input cap.Input) httpenclavetypes.HTTP
 		})
 	}
 
+	inputCiphertextNames := make([]string, 0, len(input.VaultDONSecrets))
+	for _, secret := range input.VaultDONSecrets {
+		inputCiphertextNames = append(inputCiphertextNames, secret.Key)
+	}
+
 	return httpenclavetypes.HTTPEnclaveRequestData{
 		Requests:                convertedRequests,
-		TemplateCiphertextNames: input.VaultDONSecretIds,
+		TemplateCiphertextNames: inputCiphertextNames,
 	}
 }
 
@@ -343,11 +349,11 @@ type VaultDONOutput struct {
 
 func (c *capability) GetEncryptedDecryptedShares(
 	ctx context.Context,
-	vaultDONSecretIds []string,
+	vaultDONSecrets []cap.SecretIdentifier,
 	enclaveEphemeralPublicKey []byte,
+	workflowOwner string,
 ) ([][]byte, [][][]byte, error) {
 	c.lggr.Debugw("Attempting to get encrypted decrypted shares from VaultDON capability",
-		"vaultDONSecretIds", vaultDONSecretIds,
 		"vaultDONID", fmt.Sprintf("%x", c.vaultDONID),
 		"enclaveEphemeralPublicKey", fmt.Sprintf("%x", enclaveEphemeralPublicKey[:8])) // Log first 8 bytes for brevity
 
@@ -355,16 +361,19 @@ func (c *capability) GetEncryptedDecryptedShares(
 		return nil, nil, errors.New("VaultDON capability is not initialized")
 	}
 
-	secretRequests := make([]*vault.SecretRequest, len(vaultDONSecretIds))
-	for i, secretID := range vaultDONSecretIds {
+	secretRequests := make([]*vault.SecretRequest, len(vaultDONSecrets))
+	for i, secret := range vaultDONSecrets {
 		secretRequests[i] = &vault.SecretRequest{
 			Id: &vault.SecretIdentifier{
-				Key:       secretID,
-				Namespace: "", // Assuming empty or derived from context if needed
-				Owner:     "", // Assuming empty or derived from context if needed
+				Key:       secret.Key,
+				Namespace: secret.Namespace,
+				Owner:     workflowOwner,
 			},
-			// Corrected: Set EncryptionKeys to be an array of 1 item with the enclaveEphemeralPublicKey
+			// Set EncryptionKeys to be an array of 1 item with the enclaveEphemeralPublicKey
 			EncryptionKeys: []string{string(enclaveEphemeralPublicKey)},
+		}
+		if secret.Owner != nil {
+			secretRequests[i].Id.Owner = *secret.Owner
 		}
 	}
 

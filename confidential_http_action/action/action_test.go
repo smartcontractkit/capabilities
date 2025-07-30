@@ -193,7 +193,12 @@ func getTestInput() cap.Input {
 				Body: "",
 			},
 		},
-		VaultDONSecretIds: []string{"my-secret-api-key"},
+		VaultDONSecrets: []cap.SecretIdentifier{
+			{
+				Key:       "my-secret-api-key",
+				Namespace: "default",
+				Owner:     nil},
+		},
 	}
 }
 

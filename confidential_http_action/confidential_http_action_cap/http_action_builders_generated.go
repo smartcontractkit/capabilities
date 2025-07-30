@@ -341,16 +341,87 @@ func RequestPublicTemplateValuesWrapper(raw sdk.CapDefinition[RequestPublicTempl
 
 type RequestPublicTemplateValuesCap sdk.CapDefinition[RequestPublicTemplateValues]
 
+// SecretIdentifierWrapper allows access to field from an sdk.CapDefinition[SecretIdentifier]
+func SecretIdentifierWrapper(raw sdk.CapDefinition[SecretIdentifier]) SecretIdentifierCap {
+	wrapped, ok := raw.(SecretIdentifierCap)
+	if ok {
+		return wrapped
+	}
+	return &secretIdentifierCap{CapDefinition: raw}
+}
+
+type SecretIdentifierCap interface {
+	sdk.CapDefinition[SecretIdentifier]
+	Key() sdk.CapDefinition[string]
+	Namespace() sdk.CapDefinition[string]
+	Owner() sdk.CapDefinition[string]
+	private()
+}
+
+type secretIdentifierCap struct {
+	sdk.CapDefinition[SecretIdentifier]
+}
+
+func (*secretIdentifierCap) private() {}
+func (c *secretIdentifierCap) Key() sdk.CapDefinition[string] {
+	return sdk.AccessField[SecretIdentifier, string](c.CapDefinition, "key")
+}
+func (c *secretIdentifierCap) Namespace() sdk.CapDefinition[string] {
+	return sdk.AccessField[SecretIdentifier, string](c.CapDefinition, "namespace")
+}
+func (c *secretIdentifierCap) Owner() sdk.CapDefinition[string] {
+	return sdk.AccessField[SecretIdentifier, string](c.CapDefinition, "owner")
+}
+
+func ConstantSecretIdentifier(value SecretIdentifier) SecretIdentifierCap {
+	return &secretIdentifierCap{CapDefinition: sdk.ConstantDefinition(value)}
+}
+
+func NewSecretIdentifierFromFields(
+	key sdk.CapDefinition[string],
+	namespace sdk.CapDefinition[string],
+	owner sdk.CapDefinition[string]) SecretIdentifierCap {
+	return &simpleSecretIdentifier{
+		CapDefinition: sdk.ComponentCapDefinition[SecretIdentifier]{
+			"key":       key.Ref(),
+			"namespace": namespace.Ref(),
+			"owner":     owner.Ref(),
+		},
+		key:       key,
+		namespace: namespace,
+		owner:     owner,
+	}
+}
+
+type simpleSecretIdentifier struct {
+	sdk.CapDefinition[SecretIdentifier]
+	key       sdk.CapDefinition[string]
+	namespace sdk.CapDefinition[string]
+	owner     sdk.CapDefinition[string]
+}
+
+func (c *simpleSecretIdentifier) Key() sdk.CapDefinition[string] {
+	return c.key
+}
+func (c *simpleSecretIdentifier) Namespace() sdk.CapDefinition[string] {
+	return c.namespace
+}
+func (c *simpleSecretIdentifier) Owner() sdk.CapDefinition[string] {
+	return c.owner
+}
+
+func (c *simpleSecretIdentifier) private() {}
+
 type HttpActionInput struct {
-	Requests          sdk.CapDefinition[[]Request]
-	VaultDONSecretIds sdk.CapDefinition[[]string]
+	Requests        sdk.CapDefinition[[]Request]
+	VaultDONSecrets sdk.CapDefinition[[]SecretIdentifier]
 }
 
 func (input HttpActionInput) ToSteps() sdk.StepInputs {
 	return sdk.StepInputs{
 		Mapping: map[string]any{
-			"requests":          input.Requests.Ref(),
-			"vaultDONSecretIds": input.VaultDONSecretIds.Ref(),
+			"requests":        input.Requests.Ref(),
+			"vaultDONSecrets": input.VaultDONSecrets.Ref(),
 		},
 	}
 }
