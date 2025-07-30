@@ -10,7 +10,7 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/oracle"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/poller"
-	chain_selectors "github.com/smartcontractkit/chain-selectors"
+	chainselectors "github.com/smartcontractkit/chain-selectors"
 
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
@@ -101,7 +101,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 		return fmt.Errorf("failed to fetch relayer for chainID %d from relayerSet: %w", cfg.ChainID, err)
 	}
 
-	cs, ok := chain_selectors.EvmChainIdToChainSelector()[cfg.ChainID]
+	cs, ok := chainselectors.EvmChainIdToChainSelector()[cfg.ChainID]
 	if !ok {
 		return fmt.Errorf("chain selector not found for chainID: %d", cfg.ChainID)
 	}
