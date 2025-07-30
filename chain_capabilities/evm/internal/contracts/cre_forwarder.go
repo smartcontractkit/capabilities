@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -64,12 +65,15 @@ func NewCREForwarderClient(EVMService types.EVMService, forwarderAddress common.
 }
 
 func (cfclient creForwarderClient) GetReportProcessedEvents(ctx context.Context, receiver common.Address, workflowExecutionID [32]byte, reportID [2]byte) ([]*evm.Log, error) {
-	latest, _, err := cfclient.evmService.LatestAndFinalizedHead(ctx)
+	latest, err := cfclient.evmService.HeaderByNumber(ctx, evm.HeaderByNumberRequest{Number: big.NewInt(rpc.LatestBlockNumber.Int64())})
 	if err != nil {
 		return nil, err
 	}
+	if latest.Header == nil {
+		return nil, fmt.Errorf("latest block header is nil")
+	}
 	sub := big.NewInt(int64(100))
-	fromBlock := new(big.Int).Sub(latest.Number, sub)
+	fromBlock := new(big.Int).Sub(latest.Header.Number, sub)
 	if fromBlock.Sign() == -1 {
 		fromBlock = big.NewInt(0)
 	}
@@ -84,7 +88,14 @@ func (cfclient creForwarderClient) GetReportProcessedEvents(ctx context.Context,
 		},
 		FromBlock: fromBlock,
 	}
-	return cfclient.evmService.FilterLogs(ctx, filterQuery)
+	reply, err := cfclient.evmService.FilterLogs(ctx, evmtypes.FilterLogsRequest{
+		FilterQuery: filterQuery, ConfidenceLevel: primitives.Unconfirmed,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return reply.Logs, nil
 }
 
 // padBytes2ToBytes32 right-pads a bytes2 value to 32 bytes (Solidity-compatible)
@@ -157,14 +168,17 @@ func (cfclient *creForwarderClient) GetTransmissionInfo(ctx context.Context, tra
 	if err != nil {
 		return TransmissionInfo{}, err
 	}
-	response, err := cfclient.evmService.CallContract(ctx, &evmtypes.CallMsg{
-		To:   cfclient.forwarderAddress,
-		Data: calldata,
-	}, big.NewInt(rpc.LatestBlockNumber.Int64()))
+	response, err := cfclient.evmService.CallContract(ctx, evmtypes.CallContractRequest{
+		Msg: &evmtypes.CallMsg{
+			To:   cfclient.forwarderAddress,
+			Data: calldata,
+		},
+		BlockNumber: big.NewInt(LatestBlock),
+	})
 	if err != nil {
 		return TransmissionInfo{}, err
 	}
-	return cfclient.forwarderCodec.DecodeQueryTransmissionInfo(response)
+	return cfclient.forwarderCodec.DecodeQueryTransmissionInfo(response.Data)
 }
 
 type creForwarderCodecImpl struct {

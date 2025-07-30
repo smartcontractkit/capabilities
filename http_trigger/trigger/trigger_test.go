@@ -11,6 +11,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 )
 
 func TestService_RegisterTrigger(t *testing.T) {
@@ -65,7 +66,10 @@ func TestService_RegisterTrigger(t *testing.T) {
 				require.Nil(t, ch)
 			} else {
 				require.Equal(t, tc.expectedChanBufSize, uint32(cap(ch))) //nolint:gosec // G115
-				require.Equal(t, meta.WorkflowID, mockHandler.lastWorkflowID)
+				require.Equal(t, meta.WorkflowID, mockHandler.lastWorkflowSelector.WorkflowID)
+				require.Equal(t, meta.WorkflowOwner, mockHandler.lastWorkflowSelector.WorkflowOwner)
+				require.Equal(t, meta.WorkflowName, mockHandler.lastWorkflowSelector.WorkflowName)
+				require.Equal(t, meta.WorkflowTag, mockHandler.lastWorkflowSelector.WorkflowTag)
 				require.Equal(t, input, mockHandler.lastInput)
 			}
 		})
@@ -93,7 +97,8 @@ func TestService_UnregisterTrigger(t *testing.T) {
 				unregisterErr: tt.handlerErr,
 			}
 			svc := NewService(logger.Test(t))
-			err := svc.Initialise(t.Context(), "{}", nil, nil, nil, nil, nil, nil, nil, nil)
+			cfg := "{}"
+			err := svc.Initialise(t.Context(), cfg, nil, nil, nil, nil, nil, nil, nil, nil)
 			require.NoError(t, err)
 			svc.connectorHandler = mockHandler
 
@@ -108,10 +113,12 @@ func TestService_UnregisterTrigger(t *testing.T) {
 		})
 	}
 }
+
 func TestService_Start_HealthReport_Ready_Close(t *testing.T) {
 	mockHandler := &mockConnectorHandler{}
 	svc := NewService(logger.Test(t))
-	err := svc.Initialise(t.Context(), `{}`, nil, nil, nil, nil, nil, nil, nil, nil)
+	cfg := "{}"
+	err := svc.Initialise(t.Context(), cfg, nil, nil, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	svc.connectorHandler = mockHandler
 
@@ -141,14 +148,14 @@ func TestService_Start_HealthReport_Ready_Close(t *testing.T) {
 
 // mockConnectorHandler implements minimal RegisterWorkflow/UnregisterWorkflow for testing
 type mockConnectorHandler struct {
-	registerErr    error
-	unregisterErr  error
-	lastWorkflowID string
-	lastInput      *http.Config
+	registerErr          error
+	unregisterErr        error
+	lastWorkflowSelector gateway_common.WorkflowSelector
+	lastInput            *http.Config
 }
 
-func (m *mockConnectorHandler) RegisterWorkflow(ctx context.Context, workflowID string, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error {
-	m.lastWorkflowID = workflowID
+func (m *mockConnectorHandler) RegisterWorkflow(ctx context.Context, workflowSelector gateway_common.WorkflowSelector, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error {
+	m.lastWorkflowSelector = workflowSelector
 	m.lastInput = input
 	return m.registerErr
 }
