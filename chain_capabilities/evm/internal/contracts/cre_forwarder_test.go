@@ -117,7 +117,7 @@ func TestCREForwarderClient_GetTransmissionInfo(t *testing.T) {
 		_, err := forwarderClient.GetTransmissionInfo(ctx, transmissionID)
 
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "Failed to decode getTransmissionInfo return data")
+		require.Contains(t, err.Error(), "failed to abi unpack getTransmissionInfo return data")
 	})
 }
 
@@ -240,7 +240,7 @@ func TestCREForwarderClient_InvokeOnReport(t *testing.T) {
 
 		_, err := forwarderClient.InvokeOnReport(ctx, receiverAddress, report, &evmcap.GasConfig{GasLimit: expectedGasLimit})
 		require.Error(t, err)
-		require.Contains(t, "failed to submit transaction: "+expectedError, err.Error())
+		require.Contains(t, err.Error(), "failed to submit transaction: "+expectedError)
 	})
 }
 
@@ -284,6 +284,11 @@ func (t TestEncoder) encodeTransmissionInfo(transmissionInfo contracts.Transmiss
 }
 
 func (t TestEncoder) encodeReport(receiver common.Address, report *workflowpb.ReportResponse) []byte {
-	data, _ := t.abi.Pack("report", receiver, report.RawReport, report.ReportContext, report.Sigs)
+	var sigs [][]byte
+	for _, sig := range report.Sigs {
+		sigs = append(sigs, sig.Signature)
+	}
+
+	data, _ := t.abi.Pack("report", receiver, report.RawReport, report.ReportContext, sigs)
 	return data
 }

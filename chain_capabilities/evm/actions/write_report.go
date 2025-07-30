@@ -204,16 +204,16 @@ func getTransmissionID(workflowExecutionID string, request *evm.WriteReportReque
 		return contracts.TransmissionID{}, err
 	}
 
-	if len(reportMetadata.ReportID) != 2 {
-		return contracts.TransmissionID{}, fmt.Errorf("report ID is of wrong lenght: %d bytes, expected 2 bytes", len(reportMetadata.ReportID))
+	reportID := common.Hex2Bytes(reportMetadata.ReportID)
+	if len(reportID) != 2 {
+		return contracts.TransmissionID{}, fmt.Errorf("report ID is of wrong length: %d bytes, expected 2 bytes", len(reportMetadata.ReportID))
 	}
 
 	transmissionID := contracts.TransmissionID{
 		Receiver:            common.BytesToAddress(request.Receiver),
 		WorkflowExecutionID: [32]byte(rawExecutionID),
+		ReportID:            [2]byte(reportID),
 	}
-
-	copy(transmissionID.ReportID[:], reportMetadata.ReportID[:2])
 	return transmissionID, nil
 }
 

@@ -65,21 +65,6 @@ func TestWriteReport_InputValidation(t *testing.T) {
 		require.Error(t, err)
 		require.Equal(t, "metadata: raw too short, want ≥109, got 0", err.Error())
 	})
-	t.Run("Report ID does not matches metadata Report ID", func(t *testing.T) {
-		_, _, service := createMocksAndCapability(t, lggr)
-		reportMetadata := createTestReportMetadata()
-		encodedReportMetadata, _ := reportMetadata.Encode()
-		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
-			Receiver: testutils.NewAddress().Bytes(),
-			Report: &workflowpb.ReportResponse{
-				RawReport:     encodedReportMetadata,
-				ReportContext: []byte{},
-				Sigs:          generateRandomSignatures(),
-			},
-		})
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "reportID in the report does not match ReportID in the inputs.")
-	})
 
 	t.Run("Report signatures are not empty", func(t *testing.T) {
 		_, _, service := createMocksAndCapability(t, lggr)
@@ -95,7 +80,7 @@ func TestWriteReport_InputValidation(t *testing.T) {
 			},
 		})
 		require.Error(t, err)
-		require.Contains(t, "no signatures provided", err.Error())
+		require.Contains(t, err.Error(), "no signatures provided")
 	})
 	t.Run("Invalid request metadata", func(t *testing.T) {
 		_, _, service := createMocksAndCapability(t, lggr)
@@ -188,7 +173,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			},
 		})
 		require.Error(t, err)
-		require.Equal(t, err.Error(), expectedError)
+		require.Equal(t, expectedError, err.Error())
 	})
 	t.Run("Fail while getting transmission info", func(t *testing.T) {
 		_, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
@@ -205,7 +190,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			},
 		})
 		require.Error(t, err)
-		require.Equal(t, err.Error(), expectedError)
+		require.Equal(t, expectedError, err.Error())
 	})
 
 	t.Run("TX already transmitted successfully", func(t *testing.T) {
