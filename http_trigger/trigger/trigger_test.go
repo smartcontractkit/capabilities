@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	gcmocks "github.com/smartcontractkit/chainlink-common/pkg/types/core/mocks"
 	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 )
 
@@ -53,7 +55,8 @@ func TestService_RegisterTrigger(t *testing.T) {
 			}
 			svc := NewService(logger.Test(t))
 			cfgStr := fmt.Sprintf(`{"sendChannelBufferSize": %d}`, tc.sendChannelBufSize)
-			err := svc.Initialise(t.Context(), cfgStr, nil, nil, nil, nil, nil, nil, nil, nil)
+			gc := mockedGatewayConnector(t)
+			err := svc.Initialise(t.Context(), cfgStr, nil, nil, nil, nil, nil, nil, gc, nil)
 			require.NoError(t, err)
 			svc.connectorHandler = mockHandler
 			ctx := context.Background()
@@ -98,7 +101,8 @@ func TestService_UnregisterTrigger(t *testing.T) {
 			}
 			svc := NewService(logger.Test(t))
 			cfg := "{}"
-			err := svc.Initialise(t.Context(), cfg, nil, nil, nil, nil, nil, nil, nil, nil)
+			gc := mockedGatewayConnector(t)
+			err := svc.Initialise(t.Context(), cfg, nil, nil, nil, nil, nil, nil, gc, nil)
 			require.NoError(t, err)
 			svc.connectorHandler = mockHandler
 
@@ -118,15 +122,12 @@ func TestService_Start_HealthReport_Ready_Close(t *testing.T) {
 	mockHandler := &mockConnectorHandler{}
 	svc := NewService(logger.Test(t))
 	cfg := "{}"
-	err := svc.Initialise(t.Context(), cfg, nil, nil, nil, nil, nil, nil, nil, nil)
+	gc := mockedGatewayConnector(t)
+	err := svc.Initialise(t.Context(), cfg, nil, nil, nil, nil, nil, nil, gc, nil)
 	require.NoError(t, err)
 	svc.connectorHandler = mockHandler
 
 	ctx := context.Background()
-
-	// Start the service
-	err = svc.Start(ctx)
-	require.NoError(t, err)
 
 	// HealthReport should report healthy
 	hr := svc.HealthReport()
@@ -172,4 +173,10 @@ func (m *mockConnectorHandler) Name() string {
 }
 func (m *mockConnectorHandler) Ready() error {
 	return nil
+}
+
+func mockedGatewayConnector(t *testing.T) *gcmocks.GatewayConnector {
+	gc := gcmocks.NewGatewayConnector(t)
+	gc.EXPECT().AddHandler(mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	return gc
 }

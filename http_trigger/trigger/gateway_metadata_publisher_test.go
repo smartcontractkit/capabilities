@@ -78,7 +78,7 @@ func (m *testGatewayConnector) SignMessage(ctx context.Context, msg []byte) ([]b
 	return msg, nil
 }
 
-func createTestGatewayAuthPublisher(t *testing.T) (*gatewayAuthPublisher, *testGatewayConnector, *workflowStore, *ratelimit.RateLimiter) {
+func createTestGatewayAuthPublisher(t *testing.T) (*gatewayMetadataPublisher, *testGatewayConnector, *workflowStore, *ratelimit.RateLimiter) {
 	lggr := logger.Test(t)
 	gc := &testGatewayConnector{
 		gatewayIDs: []string{"gateway1", "gateway2"},
@@ -95,10 +95,10 @@ func createTestGatewayAuthPublisher(t *testing.T) (*gatewayAuthPublisher, *testG
 	require.NoError(t, err)
 
 	cfg := ServiceConfig{
-		AuthMetadataBatchSize: 10,
+		MetadataBatchSize: 10,
 		GatewayConnectionConfig: GatewayConnectionConfig{
-			MaxPushAuthMetadataDurationMs: 5000,
-			MaxPullAuthMetadataDurationMs: 5000,
+			MaxPushMetadataDurationMs: 5000,
+			MaxPullMetadataDurationMs: 5000,
 			RetryConfig: RetryConfig{
 				InitialIntervalMs: 100,
 				MaxIntervalTimeMs: 5000,
@@ -106,7 +106,7 @@ func createTestGatewayAuthPublisher(t *testing.T) (*gatewayAuthPublisher, *testG
 			},
 		},
 	}
-	publisher := NewGatewayAuthPublisher(lggr, gc, rateLimiter, workflowStore, cfg)
+	publisher := NewGatewayMetadataPublisher(lggr, gc, rateLimiter, workflowStore, cfg)
 
 	return publisher, gc, workflowStore, rateLimiter
 }
@@ -233,7 +233,7 @@ func TestSendWorkflows_Success(t *testing.T) {
 	gatewayID := "gateway1"
 	rawParams := json.RawMessage(`{}`)
 	req := &jsonrpc.Request[json.RawMessage]{
-		ID:     gateway.GetRequestID(gateway.MethodWorkflowPullAuthMetadata, "requestID"),
+		ID:     gateway.GetRequestID(gateway.MethodPullWorkflowMetadata, "requestID"),
 		Method: "test",
 		Params: &rawParams,
 	}
@@ -269,7 +269,7 @@ func TestSendWorkflows_EmptyWorkflows(t *testing.T) {
 	gatewayID := "gateway1"
 	rawParams2 := json.RawMessage(`{}`)
 	req := &jsonrpc.Request[json.RawMessage]{
-		ID:     gateway.GetRequestID(gateway.MethodWorkflowPullAuthMetadata, "requestID"),
+		ID:     gateway.GetRequestID(gateway.MethodPullWorkflowMetadata, "requestID"),
 		Method: "test",
 		Params: &rawParams2,
 	}
@@ -292,7 +292,7 @@ func TestSendWorkflows_InvalidRequestID(t *testing.T) {
 	}
 	err := publisher.SendWorkflowMetadata(t.Context(), gatewayID, req)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "invalid request ID for workflow pull auth metadata")
+	require.Contains(t, err.Error(), "invalid request ID for workflow pull metadata")
 }
 
 func TestNextBackoff(t *testing.T) {

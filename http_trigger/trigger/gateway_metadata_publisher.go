@@ -16,9 +16,9 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 )
 
-var _ GatewayAuthPublisher = (*gatewayAuthPublisher)(nil)
+var _ GatewayMetadataPublisher = (*gatewayMetadataPublisher)(nil)
 
-type gatewayAuthPublisher struct {
+type gatewayMetadataPublisher struct {
 	lggr                logger.Logger
 	gc                  core.GatewayConnector
 	outgoingRateLimiter *ratelimit.RateLimiter
@@ -26,14 +26,14 @@ type gatewayAuthPublisher struct {
 	cfg                 ServiceConfig
 }
 
-func NewGatewayAuthPublisher(
+func NewGatewayMetadataPublisher(
 	lggr logger.Logger,
 	gc core.GatewayConnector,
 	outgoingRateLimiter *ratelimit.RateLimiter,
 	workflowStore *workflowStore,
 	cfg ServiceConfig,
-) *gatewayAuthPublisher {
-	return &gatewayAuthPublisher{
+) *gatewayMetadataPublisher {
+	return &gatewayMetadataPublisher{
 		lggr:                lggr,
 		gc:                  gc,
 		outgoingRateLimiter: outgoingRateLimiter,
@@ -42,29 +42,29 @@ func NewGatewayAuthPublisher(
 	}
 }
 
-type GatewayAuthPublisher interface {
-	// SendWorkflowMetadata sends all workflows' authentication metadata to the gateway in batches
+type GatewayMetadataPublisher interface {
+	// SendWorkflowMetadata sends all workflows' metadata to the gateway in batches
 	// It is expected to send a response back to the gateway using the gatewayConnector then return error
 	SendWorkflowMetadata(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage]) error
-	// BroadcastWorkflowMetadata sends the authentication metadata to all gateways.
+	// BroadcastWorkflowMetadata sends the metadata to all gateways.
 	BroadcastWorkflowMetadata(ctx context.Context, workflowSelector gateway.WorkflowSelector, keys []gateway.AuthorizedKey) error
 }
 
-func (h *gatewayAuthPublisher) BroadcastWorkflowMetadata(ctx context.Context, workflowSelector gateway.WorkflowSelector, keys []gateway.AuthorizedKey) error {
-	ctx, cancel := context.WithTimeout(ctx, time.Duration(h.cfg.GatewayConnectionConfig.MaxPushAuthMetadataDurationMs)*time.Millisecond)
+func (h *gatewayMetadataPublisher) BroadcastWorkflowMetadata(ctx context.Context, workflowSelector gateway.WorkflowSelector, keys []gateway.AuthorizedKey) error {
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(h.cfg.GatewayConnectionConfig.MaxPushMetadataDurationMs)*time.Millisecond)
 	defer cancel()
-	authData := gateway.WorkflowMetadata{
+	metadata := gateway.WorkflowMetadata{
 		WorkflowSelector: workflowSelector,
 		AuthorizedKeys:   keys,
 	}
-	payload, err := json.Marshal(authData)
+	payload, err := json.Marshal(metadata)
 	if err != nil {
-		return fmt.Errorf("failed to marshal auth metadata: %w", err)
+		return fmt.Errorf("failed to marshal metadata: %w", err)
 	}
 	rawRes := json.RawMessage(payload)
 	gatewayResp := jsonrpc.Response[json.RawMessage]{
 		Version: jsonrpc.JsonRpcVersion,
-		ID:      gateway.GetRequestID(gateway.MethodWorkflowPushAuthMetadata, workflowSelector.WorkflowID),
+		ID:      gateway.GetRequestID(gateway.MethodPushWorkflowMetadata, workflowSelector.WorkflowID),
 		Result:  &rawRes,
 	}
 	gatewayIDs, err := h.gc.GatewayIDs(ctx)
@@ -76,10 +76,10 @@ func (h *gatewayAuthPublisher) BroadcastWorkflowMetadata(ctx context.Context, wo
 		for {
 			err := h.sendResponse(ctx, gatewayID, &gatewayResp)
 			if err == nil {
-				h.lggr.Debugw("successfully sent auth metadata", "gatewayID", gatewayID)
+				h.lggr.Debugw("successfully sent metadata", "gatewayID", gatewayID)
 				break
 			}
-			h.lggr.Debugw("failed to send auth metadata to gateway. Retrying", "gatewayID", gatewayID, "error", err)
+			h.lggr.Debugw("failed to send metadata to gateway. Retrying", "gatewayID", gatewayID, "error", err)
 			select {
 			case <-ctx.Done():
 				return fmt.Errorf("context canceled while awaiting connection to gateway %s: %w", gatewayID, ctx.Err())
@@ -94,7 +94,7 @@ func (h *gatewayAuthPublisher) BroadcastWorkflowMetadata(ctx context.Context, wo
 	return nil
 }
 
-func (h *gatewayAuthPublisher) sendErrorResponse(ctx context.Context, gatewayID string, reqID string, code int64, message string) {
+func (h *gatewayMetadataPublisher) sendErrorResponse(ctx context.Context, gatewayID string, reqID string, code int64, message string) {
 	resp := &jsonrpc.Response[json.RawMessage]{
 		Version: jsonrpc.JsonRpcVersion,
 		ID:      reqID,
@@ -109,24 +109,24 @@ func (h *gatewayAuthPublisher) sendErrorResponse(ctx context.Context, gatewayID 
 	}
 }
 
-func (h *gatewayAuthPublisher) SendWorkflowMetadata(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage]) error {
+func (h *gatewayMetadataPublisher) SendWorkflowMetadata(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage]) error {
 	if req.ID == "" {
 		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInvalidRequest, "empty request ID")
 		return errors.New("empty workflow ID")
 	}
 	methodName := strings.Split(req.ID, "/")[0]
-	if methodName != gateway.MethodWorkflowPullAuthMetadata {
-		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInvalidRequest, "invalid request ID for workflow pull auth metadata")
-		return fmt.Errorf("invalid request ID for workflow pull auth metadata: %s", req.ID)
+	if methodName != gateway.MethodPullWorkflowMetadata {
+		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInvalidRequest, "invalid request ID for workflow pull metadata")
+		return fmt.Errorf("invalid request ID for workflow pull metadata: %s", req.ID)
 	}
-	ctx, cancel := context.WithTimeout(ctx, time.Duration(h.cfg.GatewayConnectionConfig.MaxPullAuthMetadataDurationMs)*time.Millisecond)
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(h.cfg.GatewayConnectionConfig.MaxPullMetadataDurationMs)*time.Millisecond)
 	defer cancel()
 	workflows := h.workflowStore.getWorkflows()
 	if len(workflows) == 0 {
 		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInternal, "no workflows found")
 		return errors.New("no workflows found")
 	}
-	batchSize := int(h.cfg.AuthMetadataBatchSize)
+	batchSize := int(h.cfg.MetadataBatchSize)
 	for i := 0; i < len(workflows); i += batchSize {
 		end := i + batchSize
 		if end > len(workflows) {
@@ -134,22 +134,22 @@ func (h *gatewayAuthPublisher) SendWorkflowMetadata(ctx context.Context, gateway
 		}
 		batch := workflows[i:end]
 
-		batchAuthData := make([]gateway.WorkflowMetadata, 0, len(batch))
+		batchData := make([]gateway.WorkflowMetadata, 0, len(batch))
 		for _, wf := range batch {
 			var keys []gateway.AuthorizedKey
 			for key := range wf.authorizedKeys {
 				keys = append(keys, key)
 			}
-			batchAuthData = append(batchAuthData, gateway.WorkflowMetadata{
+			batchData = append(batchData, gateway.WorkflowMetadata{
 				WorkflowSelector: wf.workflowSelector,
 				AuthorizedKeys:   keys,
 			})
 		}
 
-		payload, err := json.Marshal(batchAuthData)
+		payload, err := json.Marshal(batchData)
 		if err != nil {
-			h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInternal, "failed to marshal batch auth metadata")
-			return fmt.Errorf("failed to marshal batch auth metadata: %w", err)
+			h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInternal, "failed to marshal batch metadata")
+			return fmt.Errorf("failed to marshal batch metadata: %w", err)
 		}
 
 		rawRes := json.RawMessage(payload)
@@ -161,13 +161,13 @@ func (h *gatewayAuthPublisher) SendWorkflowMetadata(ctx context.Context, gateway
 
 		err = h.sendResponse(ctx, gatewayID, &gatewayResp)
 		if err != nil {
-			return fmt.Errorf("failed to send batch auth metadata to gateway for workflow: %w", err)
+			return fmt.Errorf("failed to send batch metadata to gateway for workflow: %w", err)
 		}
 	}
 	return nil
 }
 
-func (h *gatewayAuthPublisher) sendResponse(ctx context.Context, gatewayID string, resp *jsonrpc.Response[json.RawMessage]) error {
+func (h *gatewayMetadataPublisher) sendResponse(ctx context.Context, gatewayID string, resp *jsonrpc.Response[json.RawMessage]) error {
 	workflowAllow, globalAllow := h.outgoingRateLimiter.AllowVerbose(gatewayID)
 	if !workflowAllow {
 		return errors.New(errorOutgoingRatelimitSender)

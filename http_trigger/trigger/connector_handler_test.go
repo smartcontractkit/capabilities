@@ -105,7 +105,7 @@ func rateLimiterConfig() ratelimit.RateLimiterConfig {
 func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayConnector, <-chan capabilities.TriggerAndId[*http.Payload]) {
 	mockConnector := &mockGatewayConnector{}
 	cfg := ServiceConfig{
-		AuthMetadataBatchSize:        10,
+		MetadataBatchSize:            10,
 		MaxAuthorizedKeysPerWorkflow: 3,
 	}
 	irl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
@@ -113,7 +113,7 @@ func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayCon
 	orl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
 	require.NoError(t, err)
 	store := newWorkflowStore(lggr)
-	authHandler := NewGatewayAuthPublisher(
+	metadataPublisher := NewGatewayMetadataPublisher(
 		lggr,
 		mockConnector,
 		orl,
@@ -127,7 +127,7 @@ func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayCon
 		orl,
 		irl,
 		store,
-		authHandler,
+		metadataPublisher,
 	)
 	require.NoError(t, err)
 	sdkCfg := &http.Config{
@@ -461,7 +461,7 @@ func TestRegisterWorkflow_TooManyAuthorizedKeys(t *testing.T) {
 	// Create a custom setup with a very low max authorized keys limit
 	mockConnector := &mockGatewayConnector{}
 	cfg := ServiceConfig{
-		AuthMetadataBatchSize:        10,
+		MetadataBatchSize:            10,
 		MaxAuthorizedKeysPerWorkflow: 2, // Set limit to 2 keys for testing
 	}
 	irl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
@@ -469,7 +469,7 @@ func TestRegisterWorkflow_TooManyAuthorizedKeys(t *testing.T) {
 	orl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
 	require.NoError(t, err)
 	store := newWorkflowStore(lggr)
-	authHandler := NewGatewayAuthPublisher(
+	metadataPublisher := NewGatewayMetadataPublisher(
 		lggr,
 		mockConnector,
 		orl,
@@ -483,7 +483,7 @@ func TestRegisterWorkflow_TooManyAuthorizedKeys(t *testing.T) {
 		orl,
 		irl,
 		store,
-		authHandler,
+		metadataPublisher,
 	)
 	require.NoError(t, err)
 
@@ -552,7 +552,7 @@ func TestConnectorHandler_Start_HealthReport_Ready_Name_Close(t *testing.T) {
 	orl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
 	require.NoError(t, err)
 	store := newWorkflowStore(lggr)
-	authHandler := NewGatewayAuthPublisher(
+	metadataPublisher := NewGatewayMetadataPublisher(
 		lggr,
 		mockConnector,
 		orl,
@@ -566,7 +566,7 @@ func TestConnectorHandler_Start_HealthReport_Ready_Name_Close(t *testing.T) {
 		orl,
 		irl,
 		store,
-		authHandler,
+		metadataPublisher,
 	)
 	require.NoError(t, err)
 
@@ -621,11 +621,11 @@ func TestHandleGatewayMessage_PullAuthMetadata(t *testing.T) {
 
 	// Create pull auth metadata request
 	// The request ID must start with the method name for validation
-	requestID := gateway_common.GetRequestID(gateway_common.MethodWorkflowPullAuthMetadata)
+	requestID := gateway_common.GetRequestID(gateway_common.MethodPullWorkflowMetadata)
 	req := &jsonrpc.Request[json.RawMessage]{
 		Version: "2.0",
 		ID:      requestID,
-		Method:  gateway_common.MethodWorkflowPullAuthMetadata,
+		Method:  gateway_common.MethodPullWorkflowMetadata,
 		Params:  nil, // Pull auth metadata doesn't need params
 	}
 
@@ -675,7 +675,7 @@ func TestHandleGatewayMessage_PullAuthMetadata_InvalidRequestID(t *testing.T) {
 	req := &jsonrpc.Request[json.RawMessage]{
 		Version: "2.0",
 		ID:      requestID,
-		Method:  gateway_common.MethodWorkflowPullAuthMetadata,
+		Method:  gateway_common.MethodPullWorkflowMetadata,
 		Params:  nil,
 	}
 
@@ -706,7 +706,7 @@ func TestHandleGatewayMessage_PullAuthMetadata_EmptyWorkflows(t *testing.T) {
 	orl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
 	require.NoError(t, err)
 	store := newWorkflowStore(lggr)
-	authHandler := NewGatewayAuthPublisher(
+	metadataPublisher := NewGatewayMetadataPublisher(
 		lggr,
 		mockConnector,
 		orl,
@@ -720,16 +720,16 @@ func TestHandleGatewayMessage_PullAuthMetadata_EmptyWorkflows(t *testing.T) {
 		orl,
 		irl,
 		store,
-		authHandler,
+		metadataPublisher,
 	)
 	require.NoError(t, err)
 
 	// Create pull auth metadata request
-	requestID := gateway_common.GetRequestID(gateway_common.MethodWorkflowPullAuthMetadata)
+	requestID := gateway_common.GetRequestID(gateway_common.MethodPullWorkflowMetadata)
 	req := &jsonrpc.Request[json.RawMessage]{
 		Version: "2.0",
 		ID:      requestID,
-		Method:  gateway_common.MethodWorkflowPullAuthMetadata,
+		Method:  gateway_common.MethodPullWorkflowMetadata,
 		Params:  nil,
 	}
 

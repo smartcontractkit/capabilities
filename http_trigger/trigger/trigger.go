@@ -67,12 +67,12 @@ func (s *service) Initialise(
 		return err
 	}
 	workflowStore := newWorkflowStore(s.lggr)
-	authMetadataHandler := NewGatewayAuthPublisher(s.lggr, gc, outgoingRateLimiter, workflowStore, s.cfg)
-	s.connectorHandler, err = NewConnectorHandler(s.lggr, gc, s.cfg, outgoingRateLimiter, incomingRateLimiter, workflowStore, authMetadataHandler)
+	metadataPublisher := NewGatewayMetadataPublisher(s.lggr, gc, outgoingRateLimiter, workflowStore, s.cfg)
+	s.connectorHandler, err = NewConnectorHandler(s.lggr, gc, s.cfg, outgoingRateLimiter, incomingRateLimiter, workflowStore, metadataPublisher)
 	if err != nil {
 		return err
 	}
-	return nil
+	return s.Start(ctx)
 }
 
 func (s *service) Start(ctx context.Context) error {

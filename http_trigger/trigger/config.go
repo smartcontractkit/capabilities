@@ -10,14 +10,14 @@ const (
 	defaultGlobalBurst                  = 100
 	defaultPerSenderRPS                 = 100.0
 	defaultPerSenderBurst               = 100
-	defaultAuthMetadataBatchSize        = 50
+	defaultMetadataBatchSize            = 50
 	defaultSendChannelBufferSize        = 1000
 	defaultMaxAuthorizedKeysPerWorkflow = 100
 )
 
 type ServiceConfig struct {
-	// AuthMetadataBatchSize is the number of auth metadata items to send in a single batch to the gateway.
-	AuthMetadataBatchSize uint16 `json:"authMetadataBatchSize"`
+	// MetadataBatchSize is the number of metadata items to send in a single batch to the gateway.
+	MetadataBatchSize uint16 `json:"metadataBatchSize"`
 	// SendChannelBufferSize is the size of the channel used to trigger workflows.
 	SendChannelBufferSize uint16 `json:"sendChannelBufferSize"`
 	// IncomingRateLimiter configuration for messages incoming to this node from the gateway.
@@ -36,10 +36,10 @@ type ServiceConfig struct {
 
 type GatewayConnectionConfig struct {
 	RetryConfig RetryConfig `json:"retryConfig"`
-	// MaxPushAuthMetadataDurationMs is the maximum duration in milliseconds for broadcasting auth metadata to the gateway.
-	MaxPushAuthMetadataDurationMs uint32 `json:"maxPushAuthMetadataDurationMs"`
-	// MaxPullAuthMetadataDurationMs is the maximum duration in milliseconds for responding to pull auth metadata from the gateway.
-	MaxPullAuthMetadataDurationMs uint32 `json:"maxPullAuthMetadataDurationMs"`
+	// MaxPushMetadataDurationMs is the maximum duration in milliseconds for broadcasting metadata to the gateway.
+	MaxPushMetadataDurationMs uint32 `json:"maxPushMetadataDurationMs"`
+	// MaxPullMetadataDurationMs is the maximum duration in milliseconds for responding to pull metadata from the gateway.
+	MaxPullMetadataDurationMs uint32 `json:"maxPullMetadataDurationMs"`
 }
 
 type RetryConfig struct {
@@ -52,8 +52,8 @@ func applyDefaults(cfg ServiceConfig) ServiceConfig {
 	cfg.GatewayConnectionConfig = gatewayConnectionConfigDefaults(cfg.GatewayConnectionConfig)
 	cfg.OutgoingRateLimiter = outgoingRateLimiterConfigDefaults(cfg.OutgoingRateLimiter)
 	cfg.IncomingRateLimiter = incomingRateLimiterConfigDefaults(cfg.IncomingRateLimiter)
-	if cfg.AuthMetadataBatchSize == 0 {
-		cfg.AuthMetadataBatchSize = defaultAuthMetadataBatchSize
+	if cfg.MetadataBatchSize == 0 {
+		cfg.MetadataBatchSize = defaultMetadataBatchSize
 	}
 	if cfg.SendChannelBufferSize == 0 {
 		cfg.SendChannelBufferSize = defaultSendChannelBufferSize
@@ -74,11 +74,11 @@ func gatewayConnectionConfigDefaults(config GatewayConnectionConfig) GatewayConn
 	if config.RetryConfig.MaxIntervalTimeMs == 0 {
 		config.RetryConfig.MaxIntervalTimeMs = defaultDurationMs
 	}
-	if config.MaxPushAuthMetadataDurationMs == 0 {
-		config.MaxPushAuthMetadataDurationMs = defaultDurationMs
+	if config.MaxPushMetadataDurationMs == 0 {
+		config.MaxPushMetadataDurationMs = defaultDurationMs
 	}
-	if config.MaxPullAuthMetadataDurationMs == 0 {
-		config.MaxPullAuthMetadataDurationMs = defaultDurationMs
+	if config.MaxPullMetadataDurationMs == 0 {
+		config.MaxPullMetadataDurationMs = defaultDurationMs
 	}
 	return config
 }
