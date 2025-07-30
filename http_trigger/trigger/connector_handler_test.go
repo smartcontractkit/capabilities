@@ -53,12 +53,17 @@ func (m *mockGatewayConnector) AwaitConnection(ctx context.Context, gatewayID st
 }
 
 // gatewayRequest creates a test request message with the given method
-func gatewayRequest(t *testing.T, method string) *jsonrpc.Request[json.RawMessage] {
+func gatewayRequest(t *testing.T, method string) (*jsonrpc.Request[json.RawMessage], gateway_common.AuthorizedKey) {
+	key := gateway_common.AuthorizedKey{
+		KeyType:   gateway_common.KeyTypeECDSA,
+		PublicKey: publicKey,
+	}
 	payload := gateway_common.HTTPTriggerRequest{
 		Workflow: gateway_common.WorkflowSelector{
 			WorkflowID: "wf1",
 		},
 		Input: json.RawMessage(`{"key":"value"}`),
+		Key:   key,
 	}
 	jsonPayload, err := json.Marshal(payload)
 	require.NoError(t, err)
@@ -68,11 +73,15 @@ func gatewayRequest(t *testing.T, method string) *jsonrpc.Request[json.RawMessag
 		ID:      "id",
 		Method:  method,
 		Params:  &jsonPayloadMsg,
-	}
+	}, key
 }
 
 // gatewayRequestByTag creates a test request message with the given method
-func gatewayRequestByTag(t *testing.T, method string, workflowOwner string) *jsonrpc.Request[json.RawMessage] {
+func gatewayRequestByTag(t *testing.T, method string, workflowOwner string) (*jsonrpc.Request[json.RawMessage], gateway_common.AuthorizedKey) {
+	key := gateway_common.AuthorizedKey{
+		KeyType:   gateway_common.KeyTypeECDSA,
+		PublicKey: publicKey,
+	}
 	payload := gateway_common.HTTPTriggerRequest{
 		Workflow: gateway_common.WorkflowSelector{
 			WorkflowOwner: workflowOwner,
@@ -80,6 +89,7 @@ func gatewayRequestByTag(t *testing.T, method string, workflowOwner string) *jso
 			WorkflowTag:   "workflowTag",
 		},
 		Input: json.RawMessage(`{"key":"value"}`),
+		Key:   key,
 	}
 	jsonPayload, err := json.Marshal(payload)
 	require.NoError(t, err)
@@ -89,7 +99,7 @@ func gatewayRequestByTag(t *testing.T, method string, workflowOwner string) *jso
 		ID:      "id",
 		Method:  method,
 		Params:  &jsonPayloadMsg,
-	}
+	}, key
 }
 
 func rateLimiterConfig() ratelimit.RateLimiterConfig {
@@ -150,7 +160,7 @@ func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayCon
 	return handler, mockConnector, triggerCh
 }
 
-func requireWorkflowTriggered(t *testing.T, triggerCh <-chan capabilities.TriggerAndId[*http.Payload], req *jsonrpc.Request[json.RawMessage], connector *mockGatewayConnector, handler *connectorHandler) {
+func requireWorkflowTriggered(t *testing.T, triggerCh <-chan capabilities.TriggerAndId[*http.Payload], req *jsonrpc.Request[json.RawMessage], connector *mockGatewayConnector, handler *connectorHandler, key gateway_common.AuthorizedKey) {
 	// Start a goroutine to assert that the correct trigger payload is received
 	done := make(chan struct{})
 	go func() {
@@ -162,7 +172,9 @@ func requireWorkflowTriggered(t *testing.T, triggerCh <-chan capabilities.Trigge
 			input := triggerReq.Trigger.Input.AsMap()
 			require.Len(t, input, 1)
 			require.Equal(t, "value", input["key"])
-			// TODO: PRODCRE-305 validate triggerReq.Trigger.Key
+			require.NotNil(t, triggerReq.Trigger.Key, "Key should not be nil in trigger payload")
+			require.Equal(t, http.KeyType_KEY_TYPE_ECDSA, triggerReq.Trigger.Key.Type, "Key type should match")
+			require.Equal(t, key.PublicKey, triggerReq.Trigger.Key.PublicKey, "Public key should match")
 		}
 	}()
 	err := handler.HandleGatewayMessage(t.Context(), "gw1", req)
@@ -196,8 +208,8 @@ func requireWorkflowTriggered(t *testing.T, triggerCh <-chan capabilities.Trigge
 func TestHandleGatewayMessage_Success(t *testing.T) {
 	lggr := logger.Test(t)
 	handler, connector, triggerCh := setup(t, lggr)
-	req := gatewayRequest(t, gateway_common.MethodWorkflowExecute)
-	requireWorkflowTriggered(t, triggerCh, req, connector, handler)
+	req, key := gatewayRequest(t, gateway_common.MethodWorkflowExecute)
+	requireWorkflowTriggered(t, triggerCh, req, connector, handler, key)
 }
 
 // TestHandleGatewayMessage_ByTag tests successful request processing using
@@ -205,14 +217,14 @@ func TestHandleGatewayMessage_Success(t *testing.T) {
 func TestHandleGatewayMessage_ByTag(t *testing.T) {
 	lggr := logger.Test(t)
 	handler, connector, triggerCh := setup(t, lggr)
-	req := gatewayRequestByTag(t, gateway_common.MethodWorkflowExecute, workflowOwner)
-	requireWorkflowTriggered(t, triggerCh, req, connector, handler)
+	req, key := gatewayRequestByTag(t, gateway_common.MethodWorkflowExecute, workflowOwner)
+	requireWorkflowTriggered(t, triggerCh, req, connector, handler, key)
 }
 
 func TestHandleGatewayMessage_ByTag_WorkflowNotFound(t *testing.T) {
 	lggr := logger.Test(t)
 	handler, connector, triggerCh := setup(t, lggr)
-	req := gatewayRequestByTag(t, gateway_common.MethodWorkflowExecute, "0xffffffffffffffffffffffffffffffffffffffff") //unregistered workflow owner
+	req, _ := gatewayRequestByTag(t, gateway_common.MethodWorkflowExecute, "0xffffffffffffffffffffffffffffffffffffffff") //unregistered workflow owner
 	err := handler.HandleGatewayMessage(t.Context(), "gw1", req)
 	require.NoError(t, err)
 	require.True(t, connector.SendToGatewayCalled, "Should send error response")
@@ -288,7 +300,7 @@ func TestHandleGatewayMessage_MissingBody(t *testing.T) {
 func TestHandleGatewayMessage_InvalidUserInputJSON(t *testing.T) {
 	lggr := logger.Test(t)
 	handler, connector, triggerCh := setup(t, lggr)
-	req := gatewayRequest(t, gateway_common.MethodWorkflowExecute)
+	req, _ := gatewayRequest(t, gateway_common.MethodWorkflowExecute)
 	invalidJSON := json.RawMessage("invalid json")
 	req.Params = &invalidJSON
 	err := handler.HandleGatewayMessage(t.Context(), "gw1", req)
@@ -300,7 +312,7 @@ func TestHandleGatewayMessage_InvalidUserInputJSON(t *testing.T) {
 func TestHandleGatewayMessage_InvalidJSON(t *testing.T) {
 	lggr := logger.Test(t)
 	handler, connector, triggerCh := setup(t, lggr)
-	req := gatewayRequest(t, gateway_common.MethodWorkflowExecute)
+	req, _ := gatewayRequest(t, gateway_common.MethodWorkflowExecute)
 	params := json.RawMessage(`{"workflow":{"workflowId":"wf1"},"input":{"key": {"invalid json"}}}`)
 	req.Params = &params
 	err := handler.HandleGatewayMessage(t.Context(), "gw1", req)
@@ -314,7 +326,7 @@ func TestHandleGatewayMessage_UnsupportedMethod(t *testing.T) {
 	handler, connector, triggerCh := setup(t, lggr)
 
 	// Create request with unsupported method
-	badMethodMsg := gatewayRequest(t, "unsupported_method")
+	badMethodMsg, _ := gatewayRequest(t, "unsupported_method")
 	err := handler.HandleGatewayMessage(t.Context(), "gw1", badMethodMsg)
 	require.NoError(t, err)
 	require.False(t, connector.SendToGatewayCalled)
@@ -541,6 +553,27 @@ func TestRegisterWorkflow_TooManyAuthorizedKeys(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "too many authorized keys: 3, max allowed: 2")
 	})
+}
+
+func TestRegisterWorkflow_EmptyAuthorizedKeys(t *testing.T) {
+	lggr := logger.Test(t)
+	handler, _, _ := setup(t, lggr)
+
+	sendCh := make(chan capabilities.TriggerAndId[*http.Payload], 1)
+	selector := gateway_common.WorkflowSelector{
+		WorkflowID:    "test-workflow",
+		WorkflowOwner: workflowOwner,
+		WorkflowName:  "test-name",
+		WorkflowTag:   "test-tag",
+	}
+
+	cfg := &http.Config{
+		AuthorizedKeys: []*http.AuthorizedKey{},
+	}
+
+	err := handler.RegisterWorkflow(context.Background(), selector, cfg, sendCh)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no authorized keys")
 }
 
 func TestConnectorHandler_Start_HealthReport_Ready_Name_Close(t *testing.T) {
