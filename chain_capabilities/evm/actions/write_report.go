@@ -62,7 +62,7 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 
 	switch transmissionInfo.State {
 	case TransmissionStateNotAttempted:
-		e.lggr.Infow("transmission not attempted - attempting to push to txmgr", "request", request, "reportLen", len(request.Report.RawReport), "reportContextLen", len(request.Report.ReportContext), "nSignatures", len(request.Report.Signatures), "executionID", metadata.WorkflowExecutionID)
+		e.lggr.Infow("transmission not attempted - attempting to push to txmgr", "request", request, "reportLen", len(request.Report.RawReport), "reportContextLen", len(request.Report.ReportContext), "nSignatures", len(request.Report.Sigs), "executionID", metadata.WorkflowExecutionID)
 	case TransmissionStateSucceeded:
 		e.lggr.Infow("returning without a transmission attempt - report already onchain ", "executionID", metadata.WorkflowExecutionID)
 		txHash, err := txHashRetriever.GetHash(ctx)
@@ -90,7 +90,7 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 			}
 			return e.fetchTransactionReceiptAndCreateReply(ctx, *txHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED, nil)
 		}
-		e.lggr.Infow("retrying a failed transmission - attempting to push to txmgr", "request", request, "reportLen", len(request.Report.RawReport), "reportContextLen", len(request.Report.ReportContext), "nSignatures", len(request.Report.Signatures), "executionID", metadata.WorkflowExecutionID, "receiverGasMinimum", receiverGasMinimum, "transmissionGasLimit", transmissionInfo.GasLimit)
+		e.lggr.Infow("retrying a failed transmission - attempting to push to txmgr", "request", request, "reportLen", len(request.Report.RawReport), "reportContextLen", len(request.Report.ReportContext), "nSignatures", len(request.Report.Sigs), "executionID", metadata.WorkflowExecutionID, "receiverGasMinimum", receiverGasMinimum, "transmissionGasLimit", transmissionInfo.GasLimit)
 	default:
 		return fatalWriteReportReply(getInvalidStateErrorMessage(transmissionInfo.State)), nil
 	}
@@ -199,11 +199,21 @@ func getTransmissionID(workflowExecutionID string, request *evm.WriteReportReque
 		return contracts.TransmissionID{}, err
 	}
 
+	reportMetadata, err := decodeReportMetadata(request.Report.RawReport)
+	if err != nil {
+		return contracts.TransmissionID{}, err
+	}
+
+	if len(reportMetadata.ReportID) != 2 {
+		return contracts.TransmissionID{}, fmt.Errorf("report ID is of wrong lenght: %d bytes, expected 2 bytes", len(reportMetadata.ReportID))
+	}
+
 	transmissionID := contracts.TransmissionID{
 		Receiver:            common.BytesToAddress(request.Receiver),
 		WorkflowExecutionID: [32]byte(rawExecutionID),
-		ReportID:            [2]byte(request.Report.Id),
 	}
+
+	copy(transmissionID.ReportID[:], reportMetadata.ReportID[:2])
 	return transmissionID, nil
 }
 
@@ -255,7 +265,7 @@ func validateInputsAndReportMetadata(requestMetadata capabilities.RequestMetadat
 	if len(request.Receiver) != common.AddressLength {
 		return fmt.Errorf("received address is not 20 bytes long. Address in HEX: %s", hex.EncodeToString(request.Receiver))
 	}
-	if len(request.Report.Signatures) == 0 {
+	if len(request.Report.Sigs) == 0 {
 		return fmt.Errorf("no signatures provided")
 	}
 
@@ -287,11 +297,6 @@ func validateInputsAndReportMetadata(requestMetadata capabilities.RequestMetadat
 
 	if reportMetadata.WorkflowID != requestMetadata.WorkflowID {
 		return fmt.Errorf("workflowID in the report does not match WorkflowID in the request metadata. Report WorkflowID: %s, request WorkflowID: %s", reportMetadata.WorkflowID, requestMetadata.WorkflowID)
-	}
-
-	hexEncodedReportID := hex.EncodeToString(request.Report.Id)
-	if reportMetadata.ReportID != hexEncodedReportID {
-		return fmt.Errorf("reportID in the report does not match ReportID in the inputs. reportMetadata.ReportID: %x, Inputs.SignedReport.ID: %x", reportMetadata.ReportID, request.Report.Id)
 	}
 
 	return nil

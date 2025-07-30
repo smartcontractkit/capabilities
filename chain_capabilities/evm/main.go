@@ -10,6 +10,7 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/oracle"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/poller"
+	chain_selectors "github.com/smartcontractkit/chain-selectors"
 
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
@@ -50,6 +51,7 @@ const (
 
 type capabilityGRPCService struct {
 	capabilities.CapabilityInfo
+	chainSelector uint64
 	capability
 	lggr logger.Logger
 }
@@ -98,6 +100,13 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 	if err != nil {
 		return fmt.Errorf("failed to fetch relayer for chainID %d from relayerSet: %w", cfg.ChainID, err)
 	}
+
+	cs, ok := chain_selectors.EvmChainIdToChainSelector()[cfg.ChainID]
+	if !ok {
+		return fmt.Errorf("chain selector not found for chainID: %d", cfg.ChainID)
+	}
+
+	c.chainSelector = cs
 
 	chainInfo, err := relayer.GetChainInfo(ctx)
 	if err != nil {
@@ -176,6 +185,10 @@ func (c *capabilityGRPCService) HealthReport() map[string]error {
 
 func (c *capabilityGRPCService) Name() string {
 	return CapabilityName
+}
+
+func (c *capabilityGRPCService) ChainSelector() uint64 {
+	return c.chainSelector
 }
 
 func (c *capabilityGRPCService) Description() string {

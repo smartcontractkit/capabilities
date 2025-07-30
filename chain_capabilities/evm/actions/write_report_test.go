@@ -13,6 +13,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
+	workflowpb "github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts/mocks"
@@ -46,11 +47,8 @@ func TestWriteReport_InputValidation(t *testing.T) {
 	t.Run("Invalid receiver address", func(t *testing.T) {
 		_, _, service := createMocksAndCapability(t, lggr)
 		_, err := service.WriteReport(ctx, capabilities.RequestMetadata{}, &evm.WriteReportRequest{
-			Report: &evm.SignedReport{
-				RawReport:     []byte{},
-				ReportContext: []byte{},
-				Signatures:    generateRandomSignatures(),
-				Id:            []byte{},
+			Report: &workflowpb.ReportResponse{
+				Sigs: generateRandomSignatures(),
 			},
 		})
 		require.Error(t, err)
@@ -60,11 +58,8 @@ func TestWriteReport_InputValidation(t *testing.T) {
 		_, _, service := createMocksAndCapability(t, lggr)
 		_, err := service.WriteReport(ctx, capabilities.RequestMetadata{}, &evm.WriteReportRequest{
 			Receiver: testutils.NewAddress().Bytes(),
-			Report: &evm.SignedReport{
-				RawReport:     []byte{},
-				ReportContext: []byte{},
-				Signatures:    generateRandomSignatures(),
-				Id:            []byte{},
+			Report: &workflowpb.ReportResponse{
+				Sigs: generateRandomSignatures(),
 			},
 		})
 		require.Error(t, err)
@@ -76,11 +71,10 @@ func TestWriteReport_InputValidation(t *testing.T) {
 		encodedReportMetadata, _ := reportMetadata.Encode()
 		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
 			Receiver: testutils.NewAddress().Bytes(),
-			Report: &evm.SignedReport{
+			Report: &workflowpb.ReportResponse{
 				RawReport:     encodedReportMetadata,
 				ReportContext: []byte{},
-				Signatures:    generateRandomSignatures(),
-				Id:            test.RandomBytes(10),
+				Sigs:          generateRandomSignatures(),
 			},
 		})
 		require.Error(t, err)
@@ -94,11 +88,10 @@ func TestWriteReport_InputValidation(t *testing.T) {
 		encodedReportMetadata, _ := reportMetadata.Encode()
 		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
 			Receiver: testutils.NewAddress().Bytes(),
-			Report: &evm.SignedReport{
+			Report: &workflowpb.ReportResponse{
 				RawReport:     encodedReportMetadata,
 				ReportContext: []byte{},
-				Signatures:    [][]byte{},
-				Id:            []byte(reportMetadata.ReportID),
+				Sigs:          []*workflowpb.AttributedSignature{},
 			},
 		})
 		require.Error(t, err)
@@ -111,11 +104,10 @@ func TestWriteReport_InputValidation(t *testing.T) {
 		encodedReportMetadata, _ := reportMetadata.Encode()
 		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
 			Receiver: testutils.NewAddress().Bytes(),
-			Report: &evm.SignedReport{
+			Report: &workflowpb.ReportResponse{
 				RawReport:     encodedReportMetadata,
 				ReportContext: []byte{},
-				Signatures:    generateRandomSignatures(),
-				Id:            test.RandomBytes(10),
+				Sigs:          generateRandomSignatures(),
 			},
 		})
 		require.Error(t, err)
@@ -129,11 +121,10 @@ func TestWriteReport_InputValidation(t *testing.T) {
 		reportMetadata.WorkflowName = hex.EncodeToString(workflowName[:])
 		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
 			Receiver: testutils.NewAddress().Bytes(),
-			Report: &evm.SignedReport{
+			Report: &workflowpb.ReportResponse{
 				RawReport:     encodedReportMetadata,
 				ReportContext: []byte{},
-				Signatures:    generateRandomSignatures(),
-				Id:            []byte(reportMetadata.ReportID),
+				Sigs:          generateRandomSignatures(),
 			},
 		})
 		require.Error(t, err)
@@ -147,11 +138,10 @@ func TestWriteReport_InputValidation(t *testing.T) {
 		reportMetadata.WorkflowID = hex.EncodeToString(workflowID[:])
 		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
 			Receiver: testutils.NewAddress().Bytes(),
-			Report: &evm.SignedReport{
+			Report: &workflowpb.ReportResponse{
 				RawReport:     encodedReportMetadata,
 				ReportContext: []byte{},
-				Signatures:    generateRandomSignatures(),
-				Id:            []byte(reportMetadata.ReportID),
+				Sigs:          generateRandomSignatures(),
 			},
 		})
 		require.Error(t, err)
@@ -166,11 +156,10 @@ func TestWriteReport_InputValidation(t *testing.T) {
 		reportMetadata.ExecutionID = hex.EncodeToString(workflowID[:])
 		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
 			Receiver: testutils.NewAddress().Bytes(),
-			Report: &evm.SignedReport{
+			Report: &workflowpb.ReportResponse{
 				RawReport:     encodedReportMetadata,
 				ReportContext: []byte{},
-				Signatures:    generateRandomSignatures(),
-				Id:            []byte(reportMetadata.ReportID),
+				Sigs:          generateRandomSignatures(),
 			},
 		})
 		require.Error(t, err)
@@ -190,14 +179,12 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		mockForwarderClient.On("GetTransmissionInfo", ctx, mock.Anything).Return(contracts.TransmissionInfo{}, errors.New(expectedError))
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
-		reportID, _ := hex.DecodeString(reportMetadata.ReportID)
 		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
 			Receiver: testutils.NewAddress().Bytes(),
-			Report: &evm.SignedReport{
+			Report: &workflowpb.ReportResponse{
 				RawReport:     encodedReportMetadata,
 				ReportContext: []byte{},
-				Signatures:    generateRandomSignatures(),
-				Id:            reportID,
+				Sigs:          generateRandomSignatures(),
 			},
 		})
 		require.Error(t, err)
@@ -209,14 +196,12 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		mockForwarderClient.On("GetTransmissionInfo", ctx, mock.Anything).Return(contracts.TransmissionInfo{}, errors.New(expectedError))
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
-		reportID, _ := hex.DecodeString(reportMetadata.ReportID)
 		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
 			Receiver: testutils.NewAddress().Bytes(),
-			Report: &evm.SignedReport{
+			Report: &workflowpb.ReportResponse{
 				RawReport:     encodedReportMetadata,
 				ReportContext: []byte{},
-				Signatures:    generateRandomSignatures(),
-				Id:            reportID,
+				Sigs:          generateRandomSignatures(),
 			},
 		})
 		require.Error(t, err)
@@ -255,14 +240,13 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
-		reportID, _ := hex.DecodeString(reportMetadata.ReportID)
+
 		txResult, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
 			Receiver: testutils.NewAddress().Bytes(),
-			Report: &evm.SignedReport{
+			Report: &workflowpb.ReportResponse{
 				RawReport:     encodedReportMetadata,
 				ReportContext: []byte{},
-				Signatures:    generateRandomSignatures(),
-				Id:            reportID,
+				Sigs:          generateRandomSignatures(),
 			},
 		})
 		require.NoError(t, err)
@@ -281,14 +265,12 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
-		reportID, _ := hex.DecodeString(reportMetadata.ReportID)
 		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
 			Receiver: testutils.NewAddress().Bytes(),
-			Report: &evm.SignedReport{
+			Report: &workflowpb.ReportResponse{
 				RawReport:     encodedReportMetadata,
 				ReportContext: []byte{},
-				Signatures:    generateRandomSignatures(),
-				Id:            reportID,
+				Sigs:          generateRandomSignatures(),
 			},
 		})
 		require.Error(t, err)
@@ -307,14 +289,13 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
-		reportID, _ := hex.DecodeString(reportMetadata.ReportID)
+
 		txResult, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
 			Receiver: testutils.NewAddress().Bytes(),
-			Report: &evm.SignedReport{
+			Report: &workflowpb.ReportResponse{
 				RawReport:     encodedReportMetadata,
 				ReportContext: []byte{},
-				Signatures:    generateRandomSignatures(),
-				Id:            reportID,
+				Sigs:          generateRandomSignatures(),
 			},
 		})
 		require.NoError(t, err)
@@ -338,14 +319,13 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
-		reportID, _ := hex.DecodeString(reportMetadata.ReportID)
+
 		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
 			Receiver: testutils.NewAddress().Bytes(),
-			Report: &evm.SignedReport{
+			Report: &workflowpb.ReportResponse{
 				RawReport:     encodedReportMetadata,
 				ReportContext: []byte{},
-				Signatures:    generateRandomSignatures(),
-				Id:            reportID,
+				Sigs:          generateRandomSignatures(),
 			},
 		})
 		require.Error(t, err)
@@ -373,14 +353,13 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
-		reportID, _ := hex.DecodeString(reportMetadata.ReportID)
+
 		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
 			Receiver: testutils.NewAddress().Bytes(),
-			Report: &evm.SignedReport{
+			Report: &workflowpb.ReportResponse{
 				RawReport:     encodedReportMetadata,
 				ReportContext: []byte{},
-				Signatures:    generateRandomSignatures(),
-				Id:            reportID,
+				Sigs:          generateRandomSignatures(),
 			},
 		})
 		require.Error(t, err)
@@ -418,14 +397,13 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
-		reportID, _ := hex.DecodeString(reportMetadata.ReportID)
+
 		txResult, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
 			Receiver: testutils.NewAddress().Bytes(),
-			Report: &evm.SignedReport{
+			Report: &workflowpb.ReportResponse{
 				RawReport:     encodedReportMetadata,
 				ReportContext: []byte{},
-				Signatures:    generateRandomSignatures(),
-				Id:            reportID,
+				Sigs:          generateRandomSignatures(),
 			},
 		})
 		require.NoError(t, err)
@@ -442,12 +420,11 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		receiverAddress := testutils.NewAddress()
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
-		reportID, _ := hex.DecodeString(reportMetadata.ReportID)
-		signedReport := &evm.SignedReport{
+
+		signedReport := &workflowpb.ReportResponse{
 			RawReport:     encodedReportMetadata,
 			ReportContext: []byte{},
-			Signatures:    generateRandomSignatures(),
-			Id:            reportID,
+			Sigs:          generateRandomSignatures(),
 		}
 		writeReportRequest := &evm.WriteReportRequest{
 			Receiver: receiverAddress.Bytes(),
@@ -533,15 +510,14 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
-		reportID, _ := hex.DecodeString(reportMetadata.ReportID)
+
 		receiver := testutils.NewAddress().Bytes()
 		txResult, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
 			Receiver: receiver,
-			Report: &evm.SignedReport{
+			Report: &workflowpb.ReportResponse{
 				RawReport:     encodedReportMetadata,
 				ReportContext: []byte{},
-				Signatures:    generateRandomSignatures(),
-				Id:            reportID,
+				Sigs:          generateRandomSignatures(),
 			},
 		})
 		require.NoError(t, err)
@@ -559,12 +535,11 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		receiverAddress := testutils.NewAddress()
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
-		reportID, _ := hex.DecodeString(reportMetadata.ReportID)
-		signedReport := &evm.SignedReport{
+
+		signedReport := &workflowpb.ReportResponse{
 			RawReport:     encodedReportMetadata,
 			ReportContext: []byte{},
-			Signatures:    generateRandomSignatures(),
-			Id:            reportID,
+			Sigs:          generateRandomSignatures(),
 		}
 		writeReportRequest := &evm.WriteReportRequest{
 			Receiver: receiverAddress.Bytes(),
@@ -621,12 +596,11 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		receiverAddress := testutils.NewAddress()
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
-		reportID, _ := hex.DecodeString(reportMetadata.ReportID)
-		signedReport := &evm.SignedReport{
+
+		signedReport := &workflowpb.ReportResponse{
 			RawReport:     encodedReportMetadata,
 			ReportContext: []byte{},
-			Signatures:    generateRandomSignatures(),
-			Id:            reportID,
+			Sigs:          generateRandomSignatures(),
 		}
 		writeReportRequest := &evm.WriteReportRequest{
 			Receiver: receiverAddress.Bytes(),
@@ -655,12 +629,11 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		receiverAddress := testutils.NewAddress()
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
-		reportID, _ := hex.DecodeString(reportMetadata.ReportID)
-		signedReport := &evm.SignedReport{
+
+		signedReport := &workflowpb.ReportResponse{
 			RawReport:     encodedReportMetadata,
 			ReportContext: []byte{},
-			Signatures:    generateRandomSignatures(),
-			Id:            reportID,
+			Sigs:          generateRandomSignatures(),
 		}
 		writeReportRequest := &evm.WriteReportRequest{
 			Receiver: receiverAddress.Bytes(),
@@ -714,12 +687,11 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		receiverAddress := testutils.NewAddress()
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
-		reportID, _ := hex.DecodeString(reportMetadata.ReportID)
-		signedReport := &evm.SignedReport{
+
+		signedReport := &workflowpb.ReportResponse{
 			RawReport:     encodedReportMetadata,
 			ReportContext: []byte{},
-			Signatures:    generateRandomSignatures(),
-			Id:            reportID,
+			Sigs:          generateRandomSignatures(),
 		}
 		writeReportRequest := &evm.WriteReportRequest{
 			Receiver: receiverAddress.Bytes(),
@@ -785,14 +757,13 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
-		reportID, _ := hex.DecodeString(reportMetadata.ReportID)
+
 		txResult, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
 			Receiver: testutils.NewAddress().Bytes(),
-			Report: &evm.SignedReport{
+			Report: &workflowpb.ReportResponse{
 				RawReport:     encodedReportMetadata,
 				ReportContext: []byte{},
-				Signatures:    generateRandomSignatures(),
-				Id:            reportID,
+				Sigs:          generateRandomSignatures(),
 			},
 		})
 		require.NoError(t, err)
@@ -835,10 +806,10 @@ func equalWriteReportReply(t *testing.T, expected *evm.WriteReportReply, actual 
 	require.Equal(t, expected.ErrorMessage, actual.ErrorMessage)
 }
 
-func generateRandomSignatures() [][]byte {
-	return [][]byte{
-		{0x01, 0x02, 0x03, 0x04},
-		{0xAA, 0xBB, 0xCC, 0xDD},
+func generateRandomSignatures() []*workflowpb.AttributedSignature {
+	return []*workflowpb.AttributedSignature{
+		{Signature: []byte{0x01, 0x02, 0x03, 0x04}},
+		{Signature: []byte{0xAA, 0xBB, 0xCC, 0xDD}},
 	}
 }
 
