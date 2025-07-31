@@ -263,7 +263,6 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrParse, "Invalid input JSON")
 		return
 	}
-
 	workflowID, err := h.resolveWorkflowID(triggerReq.Workflow, l)
 	if err != nil {
 		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInvalidRequest, "Workflow not registered")
