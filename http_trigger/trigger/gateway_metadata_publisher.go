@@ -112,7 +112,7 @@ func (h *gatewayMetadataPublisher) sendErrorResponse(ctx context.Context, gatewa
 func (h *gatewayMetadataPublisher) SendWorkflowMetadata(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage]) error {
 	if req.ID == "" {
 		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInvalidRequest, "empty request ID")
-		return errors.New("empty workflow ID")
+		return errors.New("empty request ID")
 	}
 	methodName := strings.Split(req.ID, "/")[0]
 	if methodName != gateway.MethodPullWorkflowMetadata {
