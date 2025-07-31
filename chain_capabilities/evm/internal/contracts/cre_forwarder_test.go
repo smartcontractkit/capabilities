@@ -292,3 +292,92 @@ func (t TestEncoder) encodeReport(receiver common.Address, report *workflowpb.Re
 	data, _ := t.abi.Pack("report", receiver, report.RawReport, report.ReportContext, sigs)
 	return data
 }
+
+func TestCreForwarderCodecImpl_EncodeReport(t *testing.T) {
+	t.Parallel()
+	codec, err := contracts.NewCREForwarderCodec()
+	require.NoError(t, err)
+	receiver := common.BytesToAddress(test.RandomBytes(20))
+
+	t.Run("Successfully encode report with signatures", func(t *testing.T) {
+		report := &workflowpb.ReportResponse{
+			RawReport:     test.RandomBytes(100),
+			ReportContext: test.RandomBytes(50),
+			Sigs: []*workflowpb.AttributedSignature{
+				{Signature: test.RandomBytes(32)},
+				{Signature: test.RandomBytes(32)},
+			},
+		}
+
+		data, err := codec.EncodeReport(receiver, report)
+		require.NoError(t, err)
+		require.NotEmpty(t, data)
+		require.GreaterOrEqual(t, len(data), 4)
+	})
+
+	t.Run("Successfully encode report with empty signatures", func(t *testing.T) {
+		report := &workflowpb.ReportResponse{
+			RawReport:     test.RandomBytes(100),
+			ReportContext: test.RandomBytes(50),
+			Sigs:          []*workflowpb.AttributedSignature{},
+		}
+
+		data, err := codec.EncodeReport(receiver, report)
+		require.NoError(t, err)
+		require.NotEmpty(t, data)
+	})
+
+	t.Run("Successfully encode report with nil fields", func(t *testing.T) {
+		report := &workflowpb.ReportResponse{}
+
+		data, err := codec.EncodeReport(receiver, report)
+		require.NoError(t, err)
+		require.NotEmpty(t, data)
+		require.GreaterOrEqual(t, len(data), 4)
+	})
+}
+
+func TestCreForwarderCodecImpl_DecodeQueryTransmissionInfo(t *testing.T) {
+	t.Parallel()
+	codec, err := contracts.NewCREForwarderCodec()
+	require.NoError(t, err)
+	abi, err := forwarder.KeystoneForwarderMetaData.GetAbi()
+	require.NoError(t, err)
+
+	t.Run("success", func(t *testing.T) {
+		expected := contracts.TransmissionInfo{
+			State:           2,
+			Success:         true,
+			InvalidReceiver: false,
+			TransmissionId:  [32]byte(test.RandomBytes(32)),
+			Transmitter:     common.BytesToAddress(test.RandomBytes(20)),
+			GasLimit:        big.NewInt(1000),
+		}
+
+		data, err := abi.Methods["getTransmissionInfo"].Outputs.Pack(expected)
+		require.NoError(t, err)
+
+		result, err := codec.DecodeQueryTransmissionInfo(data)
+		require.NoError(t, err)
+		require.Equal(t, expected.State, result.State)
+		require.Equal(t, expected.Success, result.Success)
+		require.Equal(t, expected.InvalidReceiver, result.InvalidReceiver)
+	})
+
+	t.Run("unpack error", func(t *testing.T) {
+		_, err := codec.DecodeQueryTransmissionInfo([]byte("invalid"))
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to abi unpack")
+	})
+
+	t.Run("unmarshal error", func(t *testing.T) {
+		badData := map[string]any{"gasLimit": "not_a_number", "state": "not_a_number"}
+		data, err := abi.Methods["getTransmissionInfo"].Outputs.Pack(badData)
+		if err == nil {
+			_, err = codec.DecodeQueryTransmissionInfo(data)
+			if err != nil {
+				require.Contains(t, err.Error(), "failed to unmarshal")
+			}
+		}
+	})
+}

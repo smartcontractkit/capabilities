@@ -759,6 +759,61 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 	})
 }
 
+func TestGetTransmissionID(t *testing.T) {
+	t.Parallel()
+	workflowExecutionID := hex.EncodeToString(test.RandomBytes(32))
+	request := &evm.WriteReportRequest{}
+
+	t.Run("Successfully creates transmission ID", func(t *testing.T) {
+		reportMetadata := createTestReportMetadata()
+		encodedReportMetadata, err := reportMetadata.Encode()
+		require.NoError(t, err)
+
+		workflowExecutionID := reportMetadata.ExecutionID
+		request = &evm.WriteReportRequest{
+			Receiver: test.RandomBytes(20),
+			Report: &workflowpb.ReportResponse{
+				RawReport: encodedReportMetadata,
+			},
+		}
+
+		transmissionID, err := getTransmissionID(workflowExecutionID, request)
+		require.NoError(t, err)
+
+		expectedReceiver := common.BytesToAddress(request.Receiver)
+		expectedWorkflowID, _ := hex.DecodeString(workflowExecutionID)
+		expectedReportID, _ := hex.DecodeString(reportMetadata.ReportID)
+
+		require.Equal(t, expectedReceiver, transmissionID.Receiver)
+		require.Equal(t, [32]byte(expectedWorkflowID), transmissionID.WorkflowExecutionID)
+		require.Equal(t, [2]byte(expectedReportID), transmissionID.ReportID)
+	})
+
+	t.Run("Fails when decodeReportMetadata returns error", func(t *testing.T) {
+		request.Report = &workflowpb.ReportResponse{RawReport: []byte("invalid report data")}
+
+		_, err := getTransmissionID(workflowExecutionID, request)
+		require.Error(t, err)
+	})
+
+	t.Run("Fails when workflow execution ID is invalid hex", func(t *testing.T) {
+		reportMetadata := createTestReportMetadata()
+		encodedReportMetadata, err := reportMetadata.Encode()
+		require.NoError(t, err)
+
+		invalidWorkflowExecutionID := "invalid-hex-string"
+		request := &evm.WriteReportRequest{
+			Receiver: test.RandomBytes(20),
+			Report: &workflowpb.ReportResponse{
+				RawReport: encodedReportMetadata,
+			},
+		}
+
+		_, err = getTransmissionID(invalidWorkflowExecutionID, request)
+		require.Error(t, err)
+	})
+}
+
 func toReceiptGasInfo(receipt evmtypes.Receipt) evmtypes.ReceiptGasInfo {
 	return evmtypes.ReceiptGasInfo{
 		GasUsed:           receipt.GasUsed,
