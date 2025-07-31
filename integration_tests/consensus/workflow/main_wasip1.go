@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/smartcontractkit/cre-sdk-go/capabilities/scheduler/cron"
+	"github.com/smartcontractkit/cre-sdk-go/cre"
 	"github.com/smartcontractkit/cre-sdk-go/cre/wasm"
 )
 
