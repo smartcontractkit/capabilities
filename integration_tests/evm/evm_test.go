@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder/beholdertest"
+	"github.com/smartcontractkit/chainlink/v2/core/logger"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -21,7 +22,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/framework"
@@ -40,7 +40,7 @@ func Test_LogTrigger(t *testing.T) {
 	//t.Skip("Flaky Test: https://github.com/smartcontractkit/capabilities/actions/runs/16374733824/job/46271708609")
 	ctx := t.Context()
 	beholderTester := beholdertest.NewObserver(t)
-	lggr := logger.Test(t)
+	lggr := logger.TestLogger(t)
 	defer func() {
 		utils.CleanupCapabilitiesDir(lggr)
 	}()

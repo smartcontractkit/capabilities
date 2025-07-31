@@ -1,5 +1,4 @@
-//go:build wasip1
-
+// //go:build wasip1
 package main
 
 import (
@@ -12,6 +11,8 @@ import (
 	"github.com/smartcontractkit/cre-sdk-go/sdk"
 	"github.com/smartcontractkit/cre-sdk-go/sdk/wasm"
 	"gopkg.in/yaml.v3"
+
+	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 )
 
 type runtimeConfig struct {
@@ -26,9 +27,9 @@ type runtimeConfig struct {
 func RunSimpleEvmLogTriggerWorkflow(env *sdk.Environment[*runtimeConfig]) (sdk.Workflow[*runtimeConfig], error) {
 	fmt.Println("RunSimpleEvmLogTriggerWorkflow called")
 
-	cfg := &evm.FilterLogTriggerRequest{
+	cfg := &evmcappb.FilterLogTriggerRequest{
 		Addresses: toByteSlices(env.Config.Addresses),
-		Topics: []*evm.TopicValues{
+		Topics: []*evmcappb.TopicValues{
 			{
 				Values: toByteSlices(env.Config.Topics[0].Values),
 			},

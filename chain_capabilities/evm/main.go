@@ -148,6 +148,8 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 			ContractConfigConfirmations:        1,
 			ContractTransmitterTransmitTimeout: time.Second * 10,
 			DatabaseTimeout:                    time.Second * 10,
+			ContractConfigLoadTimeout:          time.Second * 10,
+			DefaultMaxDurationInitialization:   time.Second * 10,
 		},
 		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(logger.Sugared(c.lggr), c.consensusHandler, blocksProvider, OCRRoundBatchSize, OCRRoundMaxBatchSize),
 		ContractTransmitter:           oracle.NewContractTransmitter(c.lggr, c.consensusHandler),
