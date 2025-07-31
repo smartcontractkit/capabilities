@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+	chainselectors "github.com/smartcontractkit/chain-selectors"
+	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
+
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/oracle"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/poller"
-
-	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
-
-	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/trigger"
@@ -50,6 +50,7 @@ const (
 
 type capabilityGRPCService struct {
 	capabilities.CapabilityInfo
+	chainSelector uint64
 	capability
 	lggr logger.Logger
 }
@@ -99,6 +100,13 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 		return fmt.Errorf("failed to fetch relayer for chainID %d from relayerSet: %w", cfg.ChainID, err)
 	}
 
+	cs, ok := chainselectors.EvmChainIdToChainSelector()[cfg.ChainID]
+	if !ok {
+		return fmt.Errorf("chain selector not found for chainID: %d", cfg.ChainID)
+	}
+
+	c.chainSelector = cs
+
 	chainInfo, err := relayer.GetChainInfo(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to fetch chain info for chainID %d from relayer: %w", cfg.ChainID, err)
@@ -140,6 +148,8 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 			ContractConfigConfirmations:        1,
 			ContractTransmitterTransmitTimeout: time.Second * 10,
 			DatabaseTimeout:                    time.Second * 10,
+			ContractConfigLoadTimeout:          time.Second * 10,
+			DefaultMaxDurationInitialization:   time.Second * 10,
 		},
 		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(logger.Sugared(c.lggr), c.consensusHandler, blocksProvider, OCRRoundBatchSize, OCRRoundMaxBatchSize),
 		ContractTransmitter:           oracle.NewContractTransmitter(c.lggr, c.consensusHandler),
@@ -176,6 +186,10 @@ func (c *capabilityGRPCService) HealthReport() map[string]error {
 
 func (c *capabilityGRPCService) Name() string {
 	return CapabilityName
+}
+
+func (c *capabilityGRPCService) ChainSelector() uint64 {
+	return c.chainSelector
 }
 
 func (c *capabilityGRPCService) Description() string {
