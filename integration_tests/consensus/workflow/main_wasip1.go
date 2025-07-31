@@ -7,24 +7,24 @@ import (
 	"github.com/smartcontractkit/cre-sdk-go/cre/wasm"
 )
 
-func RunSimpleCronWorkflow(_ *sdk.Environment[struct{}]) (sdk.Workflow[struct{}], error) {
+func RunSimpleCronWorkflow(_ *cre.Environment[struct{}]) (cre.Workflow[struct{}], error) {
 	cfg := &cron.Config{
 		Schedule: "*/2 * * * * *", // every 2 seconds
 	}
 
-	return sdk.Workflow[struct{}]{
-		sdk.Handler(
+	return cre.Workflow[struct{}]{
+		cre.Handler(
 			cron.Trigger(cfg),
 			onTrigger,
 		),
 	}, nil
 }
 
-func onTrigger(env *sdk.Environment[struct{}], runtime sdk.Runtime, outputs *cron.Payload) (string, error) {
+func onTrigger(env *cre.Environment[struct{}], runtime cre.Runtime, outputs *cron.Payload) (string, error) {
 
 	var randomValue int64
 
-	consensusValue, err := sdk.RunInNodeMode(env, runtime, func(env *sdk.NodeEnvironment[struct{}], nrt sdk.NodeRuntime) (int64, error) {
+	consensusValue, err := cre.RunInNodeMode(env, runtime, func(env *cre.NodeEnvironment[struct{}], nrt cre.NodeRuntime) (int64, error) {
 		nr, err := nrt.Rand()
 		if err != nil {
 			return 0, err
@@ -33,7 +33,7 @@ func onTrigger(env *sdk.Environment[struct{}], runtime sdk.Runtime, outputs *cro
 		randomValue = nr.Int63n(10)
 
 		return randomValue, nil
-	}, sdk.ConsensusMedianAggregation[int64]()).Await()
+	}, cre.ConsensusMedianAggregation[int64]()).Await()
 
 	if err != nil {
 		env.Logger.Error(fmt.Sprintf("Error in RunInNodeMode: %v", err))
