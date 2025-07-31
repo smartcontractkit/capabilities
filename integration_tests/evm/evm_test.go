@@ -48,7 +48,7 @@ func Test_LogTrigger(t *testing.T) {
 	// prepping input params
 	workflowPath, err := filepath.Abs("./workflow")
 	require.NoError(t, err)
-	mainFile := filepath.Join(workflowPath, "main_logtrigger.go")
+	mainFile := filepath.Join(workflowPath, "main_logtrigger_wasip1.go")
 	wasmFile := filepath.Join(utils.CapabilitiesDir, "evm_logTrigger.wasm") // forcing cleanup on defer
 	utils.CreateWasmBinary(t, mainFile, wasmFile)
 	abiBytes, err := os.ReadFile("./contract/MessageEmitter.abi")

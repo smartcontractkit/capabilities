@@ -1,13 +1,10 @@
-//go:build wasip1
-
 package main
 
 import (
 	"fmt"
 
 	"github.com/smartcontractkit/cre-sdk-go/capabilities/scheduler/cron"
-	"github.com/smartcontractkit/cre-sdk-go/sdk"
-	"github.com/smartcontractkit/cre-sdk-go/sdk/wasm"
+	"github.com/smartcontractkit/cre-sdk-go/cre/wasm"
 )
 
 func RunSimpleCronWorkflow(_ *sdk.Environment[struct{}]) (sdk.Workflow[struct{}], error) {

@@ -38,7 +38,7 @@ func Test_Consensus(t *testing.T) {
 	require.NoError(t, err)
 
 	wasmFile := filepath.Join(readBalancesWithConfigPath, "consensus.wasm")
-	mainFile := filepath.Join(readBalancesWithConfigPath, "main.go")
+	mainFile := filepath.Join(readBalancesWithConfigPath, "main_wasip1.go")
 	utils.CreateWasmBinary(t, mainFile, wasmFile)
 
 	targetSink := framework.NewTargetSink("mock-target", "1.0.0")
