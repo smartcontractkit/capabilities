@@ -1130,6 +1130,8 @@ github.com/smartcontractkit/cre-sdk-go v0.3.0 h1:7btZvnEsFkzlF09ZXO7rfGcQ+nFdrYp
 github.com/smartcontractkit/cre-sdk-go v0.3.0/go.mod h1:HqCmnnjRZ0B3uAMify4/Wahaz6kvwoZ6SvD1989M9QQ=
 github.com/smartcontractkit/cre-sdk-go/capabilities/blockchain/evm v0.3.0 h1:+T4wQFRHdXAPGlN8ekBr/ZrO6xRx6thmVONAb9rnY6U=
 github.com/smartcontractkit/cre-sdk-go/capabilities/blockchain/evm v0.3.0/go.mod h1:Kn6pjLhWOOYrAQZ/9LoofexjMUZiwLniOKRznOKs1ws=
+github.com/smartcontractkit/cre-sdk-go/capabilities/scheduler/cron v0.2.1-0.20250729191525-ac1867f3ff34 h1:zIKBDVs/NtKEyhfzuqZUCG1b/5up6s6ZAvj0ktWS1lo=
+github.com/smartcontractkit/cre-sdk-go/capabilities/scheduler/cron v0.2.1-0.20250729191525-ac1867f3ff34/go.mod h1:WzBKJEsPkSF4ZWh0fpExImz7MHWit35nSkPgs/Z0RJo=
 github.com/smartcontractkit/freeport v0.1.1 h1:B5fhEtmgomdIhw03uPVbVTP6oPv27fBhZsoZZMSIS8I=
 github.com/smartcontractkit/freeport v0.1.1/go.mod h1:T4zH9R8R8lVWKfU7tUvYz2o2jMv1OpGCdpY2j2QZXzU=
 github.com/smartcontractkit/grpc-proxy v0.0.0-20240830132753-a7e17fec5ab7 h1:12ijqMM9tvYVEm+nR826WsrNi6zCKpwBhuApq127wHs=
