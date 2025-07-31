@@ -13,6 +13,7 @@ const (
 	defaultMetadataBatchSize            = 50
 	defaultSendChannelBufferSize        = 1000
 	defaultMaxAuthorizedKeysPerWorkflow = 100
+	defaultRequestCacheTTL              = 24 * 60 * 60 // 24 hours in seconds
 )
 
 type ServiceConfig struct {
@@ -32,6 +33,9 @@ type ServiceConfig struct {
 	// This is used to limit the number of keys that can be registered per workflow.
 	// This impacts the size of the auth metadata sent to the gateway.
 	MaxAuthorizedKeysPerWorkflow uint16 `json:"maxAuthorizedKeysPerWorkflow"`
+	// RequestCacheTTL is the time-to-live for cached request responses in milliseconds.
+	// Used for idempotency - cached responses are returned for duplicate requests within this time window.
+	RequestCacheTTL uint32 `json:"requestCacheTTL"`
 }
 
 type GatewayConnectionConfig struct {
@@ -60,6 +64,9 @@ func applyDefaults(cfg ServiceConfig) ServiceConfig {
 	}
 	if cfg.MaxAuthorizedKeysPerWorkflow == 0 {
 		cfg.MaxAuthorizedKeysPerWorkflow = defaultMaxAuthorizedKeysPerWorkflow
+	}
+	if cfg.RequestCacheTTL == 0 {
+		cfg.RequestCacheTTL = defaultRequestCacheTTL
 	}
 	return cfg
 }

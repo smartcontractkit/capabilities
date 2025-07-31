@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/mock"
@@ -60,7 +61,7 @@ func TestService_RegisterTrigger(t *testing.T) {
 			require.NoError(t, err)
 			svc.connectorHandler = mockHandler
 			ctx := context.Background()
-			meta := capabilities.RequestMetadata{WorkflowID: "wid"}
+			meta := capabilities.RequestMetadata{WorkflowID: "abcdef", WorkflowOwner: "123456", WorkflowName: "456789", WorkflowTag: "tag"}
 			input := &http.Config{}
 
 			ch, err := svc.RegisterTrigger(ctx, "tid", meta, input)
@@ -69,9 +70,9 @@ func TestService_RegisterTrigger(t *testing.T) {
 				require.Nil(t, ch)
 			} else {
 				require.Equal(t, tc.expectedChanBufSize, uint16(cap(ch))) //nolint:gosec // G115
-				require.Equal(t, meta.WorkflowID, mockHandler.lastWorkflowSelector.WorkflowID)
-				require.Equal(t, meta.WorkflowOwner, mockHandler.lastWorkflowSelector.WorkflowOwner)
-				require.Equal(t, meta.WorkflowName, mockHandler.lastWorkflowSelector.WorkflowName)
+				require.Equal(t, strings.ToLower(ensureHexPrefix(meta.WorkflowID)), mockHandler.lastWorkflowSelector.WorkflowID)
+				require.Equal(t, strings.ToLower(ensureHexPrefix(meta.WorkflowOwner)), mockHandler.lastWorkflowSelector.WorkflowOwner)
+				require.Equal(t, strings.ToLower(ensureHexPrefix(meta.WorkflowName)), mockHandler.lastWorkflowSelector.WorkflowName)
 				require.Equal(t, meta.WorkflowTag, mockHandler.lastWorkflowSelector.WorkflowTag)
 				require.Equal(t, input, mockHandler.lastInput)
 			}
