@@ -4,13 +4,18 @@ go 1.24.4
 
 replace github.com/smartcontractkit/capabilities/loadtestwritetarget => ../loadtestwritetarget
 
+replace github.com/smartcontractkit/capabilities/http_action => ../http_action
+
 replace github.com/fbsobreira/gotron-sdk => github.com/smartcontractkit/chainlink-tron/relayer/gotron-sdk v0.0.5-0.20250422175525-b7575d96bd4d
 
 require (
+	github.com/BurntSushi/toml v1.4.0
 	github.com/andybalholm/brotli v1.1.1
 	github.com/ethereum/go-ethereum v1.15.11
 	github.com/google/uuid v1.6.0
+	github.com/jonboulle/clockwork v0.5.0
 	github.com/pelletier/go-toml v1.9.5
+	github.com/smartcontractkit/capabilities/http_action v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/capabilities/loadtestwritetarget v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/chainlink-common v0.8.1-0.20250717091720-32d624d77eaf
 	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250716113058-ebc5e77f06ba
@@ -39,7 +44,6 @@ require (
 	github.com/99designs/go-keychain v0.0.0-20191008050251-8e49817e8af4 // indirect
 	github.com/99designs/keyring v1.2.1 // indirect
 	github.com/Azure/go-ntlmssp v0.0.0-20221128193559-754e69321358 // indirect
-	github.com/BurntSushi/toml v1.4.0 // indirect
 	github.com/DataDog/zstd v1.5.6-0.20230824185856-869dae002e5e // indirect
 	github.com/Depado/ginprom v1.8.0 // indirect
 	github.com/Masterminds/semver/v3 v3.3.1 // indirect
@@ -205,7 +209,6 @@ require (
 	github.com/jackpal/go-nat-pmp v1.0.2 // indirect
 	github.com/jmhodges/levigo v1.0.0 // indirect
 	github.com/jmoiron/sqlx v1.4.0 // indirect
-	github.com/jonboulle/clockwork v0.5.0 // indirect
 	github.com/jpillora/backoff v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
@@ -387,4 +390,5 @@ require (
 	pgregory.net/rapid v1.1.0 // indirect
 	rsc.io/tmplfunc v0.0.3 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
+	stathat.com/c/consistent v1.0.0 // indirect
 )
