@@ -60,6 +60,6 @@ func (c *requestCache) get(ctx context.Context, executionID string) (*requestCac
 }
 
 func (c *requestCache) cleanup(ctx context.Context) error {
-	// TODO: Implement cleanup
+	// TODO: PRODCRE-715 Periodically cleanup expired entries
 	return nil
 }
