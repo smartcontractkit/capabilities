@@ -20,13 +20,13 @@ import (
 
 	httpcap "github.com/smartcontractkit/capabilities/http_action/action"
 
+	"github.com/smartcontractkit/chainlink/v2/core/logger"
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway"
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/config"
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/connector"
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/network"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
@@ -219,7 +219,7 @@ func (*client) Close() error {
 
 func TestHTTPActionCapability(t *testing.T) {
 	ctx := t.Context()
-	lggr := logger.Test(t)
+	lggr := logger.TestLogger(t)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/test", func(w http.ResponseWriter, r *http.Request) {

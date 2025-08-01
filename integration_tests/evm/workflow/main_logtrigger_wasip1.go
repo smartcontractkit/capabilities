@@ -1,5 +1,3 @@
-//go:build wasip1
-
 package main
 
 import (
@@ -9,8 +7,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/smartcontractkit/cre-sdk-go/capabilities/blockchain/evm"
-	"github.com/smartcontractkit/cre-sdk-go/sdk"
-	"github.com/smartcontractkit/cre-sdk-go/sdk/wasm"
+	"github.com/smartcontractkit/cre-sdk-go/cre"
+	"github.com/smartcontractkit/cre-sdk-go/cre/wasm"
 	"gopkg.in/yaml.v3"
 )
 
@@ -23,7 +21,7 @@ type runtimeConfig struct {
 	Event string `yaml:"event"`
 }
 
-func RunSimpleEvmLogTriggerWorkflow(env *sdk.Environment[*runtimeConfig]) (sdk.Workflow[*runtimeConfig], error) {
+func RunSimpleEvmLogTriggerWorkflow(env *cre.Environment[*runtimeConfig]) (cre.Workflow[*runtimeConfig], error) {
 	fmt.Println("RunSimpleEvmLogTriggerWorkflow called")
 
 	cfg := &evm.FilterLogTriggerRequest{
@@ -32,15 +30,12 @@ func RunSimpleEvmLogTriggerWorkflow(env *sdk.Environment[*runtimeConfig]) (sdk.W
 			{
 				Values: toByteSlices(env.Config.Topics[0].Values),
 			},
-			//{}, //topic 2
-			//{}, //topic 3
-			//{}, //topic 4
 		},
-		Confidence: 1, //LATEST
+		Confidence: 1, // LATEST
 	}
-	return sdk.Workflow[*runtimeConfig]{
-		sdk.Handler(
-			evm.LogTrigger(cfg),
+	return cre.Workflow[*runtimeConfig]{
+		cre.Handler(
+			evm.LogTrigger(1, cfg),
 			onTrigger,
 		),
 	}, nil
@@ -56,7 +51,7 @@ func toByteSlices(addresses []string) [][]byte {
 	return result
 }
 
-func onTrigger(env *sdk.Environment[*runtimeConfig], _ sdk.Runtime, outputs *evm.Log) (string, error) {
+func onTrigger(env *cre.Environment[*runtimeConfig], _ cre.Runtime, outputs *evm.Log) (string, error) {
 	fmt.Println("OnTrigger called with outputs:", outputs)
 	decodedMessageString, err := printDecodedData(env.Config.Abi, env.Config.Event, outputs.Data)
 	if err != nil {

@@ -6,9 +6,10 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/stretchr/testify/require"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
-	"github.com/stretchr/testify/require"
 )
 
 func TestNormalizeBlockNumber(t *testing.T) {

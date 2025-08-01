@@ -20,12 +20,13 @@ import (
 
 	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 
+	"google.golang.org/protobuf/testing/protocmp"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	commonlogger "github.com/smartcontractkit/chainlink-common/pkg/logger"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	evmmock "github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
-	"google.golang.org/protobuf/testing/protocmp"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions/mocks"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
