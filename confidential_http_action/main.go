@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
@@ -15,7 +14,6 @@ import (
 
 	action "github.com/smartcontractkit/capabilities/confidential_http_action/action"
 	cap "github.com/smartcontractkit/capabilities/confidential_http_action/confidential_http_action_cap"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/actions/vault"
 )
 
 const (
@@ -109,26 +107,21 @@ func (cs *capabilitiesServer) Initialise(
 	if len(capConfig.VaultDONID) == 0 {
 		return fmt.Errorf("VaultDONID must be provided in capability config to retrieve VaultDON capability")
 	}
+
+	// TODO: change VaultDONID to VaultCapabilityID
 	vaultDONIDStr := string(capConfig.VaultDONID)
-	vaultDONCapability, err := capabilityRegistry.GetExecutable(ctx, vaultDONIDStr)
+	vaultDONCapability, err := capabilityRegistry.GetExecutable(ctx, "vault@1.0.0")
 	if err != nil {
 		return fmt.Errorf("failed to get VaultDON capability with ID '%s' from registry: %w", vaultDONIDStr, err)
 	}
 
-	vaultDONIDUint, err := strconv.ParseUint(vaultDONIDStr, 10, 32)
-	if err != nil {
-		return fmt.Errorf("failed to parse VaultDONID '%s' as uint32: %w", vaultDONIDStr, err)
-	}
+	// vaultDONIDUint, err := strconv.ParseUint(vaultDONIDStr, 10, 32)
+	// if err != nil {
+	// 	return fmt.Errorf("failed to parse VaultDONID '%s' as uint32: %w", vaultDONIDStr, err)
+	// }
 
-	vaultDONCapConfig, err := capabilityRegistry.ConfigForCapability(ctx, vault.CapabilityID, uint32(vaultDONIDUint))
-	if err != nil {
-		return fmt.Errorf("failed to parse get VaultDON config: %w", err)
-	}
-
-	vaultDONMasterPublicKey, err := getVaultDONMasterPublicKey(vaultDONCapConfig)
-	if err != nil {
-		return fmt.Errorf("failed to get VaultDON master public key: %w", err)
-	}
+	// TODO: this has to be fetched after the capability is initialized, due to a race condition in CRE.
+	vaultDONMasterPublicKey := []byte{}
 
 	cs.action, err = action.New(cs.lggr, capConfig, keystore, vaultDONCapability, vaultDONMasterPublicKey)
 	if err != nil {

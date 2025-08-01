@@ -3,11 +3,9 @@ package action
 import (
 	"context"
 	"crypto/sha256"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"strings"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -18,8 +16,11 @@ import (
 
 	cap "github.com/smartcontractkit/capabilities/confidential_http_action/confidential_http_action_cap"
 	enclaveclient "github.com/smartcontractkit/confidential-compute/enclave-client"
+	attestationvalidator "github.com/smartcontractkit/confidential-compute/enclave-client/attestation-validator"
 	httpenclavetypes "github.com/smartcontractkit/confidential-compute/enclave/nitro-confidential-http-enclave/types"
+	"github.com/smartcontractkit/confidential-compute/types"
 	enclavetypes "github.com/smartcontractkit/confidential-compute/types"
+	"github.com/smartcontractkit/confidential-compute/util"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/actions/vault"
 )
@@ -101,6 +102,15 @@ func GetEncryptedDecryptedShares(vaultDONSecretIds []string, vaultDONMasterPubli
 	return encryptedSecrets, encryptedDecryptedShares, nil
 }
 
+// TODO: this should not be default behavior. Move this to an optional config, or remove it entirely and run our tests in an enclave-hosted environment.
+type nilVal struct{}
+
+var _ attestationvalidator.AttestationValidator = (*nilVal)(nil)
+
+func (n nilVal) ValidateAttestation(attestation []byte, enclave *types.EnclaveNode, expectedUserData []byte, trustedMeasurements []byte) error {
+	return nil
+}
+
 func New(
 	lggr logger.Logger,
 	capConfig cap.Config,
@@ -108,20 +118,13 @@ func New(
 	vaultDONCapability capabilities.ExecutableCapability,
 	vaultDONMasterPublicKey []byte,
 ) (*capability, error) {
-	httpClient := http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: false,
-			},
-		},
-	}
 	nodes, err := GetNodes(capConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create enclave pool: %w", err)
 	}
 
 	pool, err := enclaveclient.NewPool[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse](
-		nodes, vaultDONMasterPublicKey, nil, nil, nil, nil, &httpClient,
+		nodes, vaultDONMasterPublicKey, nil, &nilVal{}, nil, nil, nil,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create enclave pool: %w", err)
@@ -364,7 +367,7 @@ func (c *capability) GetEncryptedDecryptedShares(
 				Owner:     "", // Assuming empty or derived from context if needed
 			},
 			// Corrected: Set EncryptionKeys to be an array of 1 item with the enclaveEphemeralPublicKey
-			EncryptionKeys: []string{string(enclaveEphemeralPublicKey)},
+			EncryptionKeys: []string{util.EncodeToString(enclaveEphemeralPublicKey)},
 		}
 	}
 
@@ -416,7 +419,10 @@ func (c *capability) GetEncryptedDecryptedShares(
 			continue
 		}
 
-		encryptedSecretBytes := []byte(secretData.GetEncryptedValue())
+		encryptedSecretBytes, err := util.DecodeString(secretData.GetEncryptedValue())
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to decode encrypted secret for secret ID %s: %w", secretResp.GetId().GetKey(), err)
+		}
 		encryptedSecrets = append(encryptedSecrets, encryptedSecretBytes)
 		encryptedDecryptedSharesForSecret := make([][]byte, 0)
 
@@ -424,7 +430,11 @@ func (c *capability) GetEncryptedDecryptedShares(
 			return nil, nil, fmt.Errorf("expected exactly one set of encrypted decryption key shares for secret %s, got %d", secretResp.GetId().GetKey(), len(secretData.GetEncryptedDecryptionKeyShares()))
 		}
 		for _, shareStr := range secretData.GetEncryptedDecryptionKeyShares()[0].GetShares() {
-			encryptedDecryptedSharesForSecret = append(encryptedDecryptedSharesForSecret, []byte(shareStr))
+			share, err := util.DecodeString(shareStr)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to decode encrypted decryption share for secret ID %s: %w", secretResp.GetId().GetKey(), err)
+			}
+			encryptedDecryptedSharesForSecret = append(encryptedDecryptedSharesForSecret, share)
 		}
 		encryptedDecryptedShares = append(encryptedDecryptedShares, encryptedDecryptedSharesForSecret)
 	}
