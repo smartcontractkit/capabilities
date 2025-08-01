@@ -16,12 +16,12 @@ import (
 	beholderpb "github.com/smartcontractkit/chainlink-common/pkg/beholder/pb"
 	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/pb"
-	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/tests"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 	kcr "github.com/smartcontractkit/chainlink-evm/gethwrappers/keystone/generated/capabilities_registry_1_1_0"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/framework"
+	"github.com/smartcontractkit/chainlink/v2/core/logger"
 	"github.com/smartcontractkit/chainlink/v2/core/services/registrysyncer"
 
 	"github.com/smartcontractkit/capabilities/integration_tests/readcontract/contract"
@@ -35,7 +35,7 @@ type ReadContractConfig struct {
 
 func Test_RemoteReadCapabilityWithoutConsensus(t *testing.T) {
 	ctx := t.Context()
-	lggr := logger.Test(t)
+	lggr := logger.TestLogger(t)
 
 	defer func() {
 		utils.CleanupCapabilitiesDir(lggr)
@@ -52,7 +52,7 @@ func Test_RemoteReadCapabilityMisconfiguredContractError(t *testing.T) {
 	beholderTester := tests.Beholder(t) //nolint:staticcheck
 
 	ctx := t.Context()
-	lggr := logger.Test(t)
+	lggr := logger.TestLogger(t)
 
 	defer func() {
 		utils.CleanupCapabilitiesDir(lggr)
