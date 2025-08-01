@@ -87,8 +87,12 @@ func (h *connectorHandler) startRequestCacheCleanup(ctx context.Context) {
 			h.lggr.Debug("Request cache cleanup routine stopping due to context cancellation")
 			return
 		case <-ticker.C:
-			h.requestCache.cleanup(ctx)
-			h.lggr.Debugw("Cleaned up expired request cache entries", "interval", h.requestCache.ttl)
+			err := h.requestCache.cleanup(ctx)
+			if err != nil {
+				h.lggr.Errorw("Failed to cleanup request cache", "error", err)
+			} else {
+				h.lggr.Debugw("Cleaned up expired request cache entries", "interval", h.requestCache.ttl)
+			}
 		}
 	}
 }
@@ -342,11 +346,10 @@ func (h *connectorHandler) handleRequestCaching(ctx context.Context, gatewayID s
 			l.Debugw("Returning cached response for duplicate request", "workflowID", cachedEntry.WorkflowID, "executionID", cachedEntry.ExecutionID)
 			h.sendResponse(ctx, gatewayID, cachedEntry.Response)
 			return true
-		} else {
-			l.Errorw("Request already in progress with different payload", "workflowID", cachedEntry.WorkflowID, "executionID", cachedEntry.ExecutionID)
-			h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrConflict, "Request already in progress with different payload")
-			return true
 		}
+		l.Errorw("Request already in progress with different payload", "workflowID", cachedEntry.WorkflowID, "executionID", cachedEntry.ExecutionID)
+		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrConflict, "Request already in progress with different payload")
+		return true
 	}
 	return false // not handled, continue processing
 }
