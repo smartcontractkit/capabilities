@@ -282,6 +282,8 @@ func (rp *reportingPlugin) agreeOnObservationType(requestID string, aos []attrib
 				observationType = ctypes.ObservationType_LOCKABLE_TO_BLOCK
 			case *ctypes.RequestObservation_Aggregatable:
 				observationType = ctypes.ObservationType_AGGREGATABLE
+			case *ctypes.RequestObservation_Error:
+				observationType = ctypes.ObservationType_ERROR
 			}
 			yield(ob.Observer, observation[ctypes.ObservationType, ctypes.ObservationType]{
 				Key:   observationType,

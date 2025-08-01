@@ -117,7 +117,7 @@ func (r *observableRequest[T]) SetObservation(observation T) {
 	r.observationExists = true
 }
 
-// TODO: test observation error
+// TODO PLEX-1626: test observation error
 type LockableToBlockRequest struct {
 	id      string
 	observe func(context.Context, *ChainHeight) ([]byte, error)

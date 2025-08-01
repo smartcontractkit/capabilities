@@ -166,7 +166,7 @@ func (s *Handler) completeLockableRequest(id string, height *types.ChainHeight) 
 	newRequestCtx.Request = newRequest
 	err := s.addRequestCtx(newRequestCtx)
 	if err != nil {
-		return fmt.Errorf("failed to readd locked request %s: %w", newRequest.ID(), err)
+		return fmt.Errorf("failed to add locked request %s: %w", newRequest.ID(), err)
 	}
 	s.lggr.Infof("locked request %s to height %v", id, height)
 	return nil
