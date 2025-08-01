@@ -16,7 +16,6 @@ import (
 )
 
 func Test_Signer(t *testing.T) {
-	t.Skip("flaky test: see https://github.com/smartcontractkit/capabilities/actions/runs/16368228691/job/46250345804?pr=177")
 	ctx := t.Context()
 	lggr := logger.TestLogger(t)
 	defer func() {
