@@ -281,7 +281,16 @@ func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeC
 			values = append(values, obs.Observation)
 		}
 
-		value, err := CalculateOutcomeForObservations(r.lggr, values, consensusDescriptor, r.minimumObservations, r.f)
+		// Retrieve the original ConsensusRequest from the store to get the default value
+		var defaultValue *valuespb.Value
+		if reqs := r.store.GetByIDs([]string{requestID}); len(reqs) == 1 {
+			originalRequest := reqs[0]
+			if originalRequest != nil && originalRequest.Input != nil {
+				defaultValue = originalRequest.Input.GetDefault()
+			}
+		}
+
+		value, err := CalculateOutcomeForObservations(r.lggr, values, consensusDescriptor, defaultValue, r.minimumObservations, r.f)
 		if err != nil {
 			// TODO - should the err from CalculateOutcomeForObservations need to be distinguishable between a consensus failure and an error?
 			r.lggr.Errorw("failed to calculate outcome for observations", "requestID", requestID, "error", err)
@@ -381,9 +390,6 @@ func (r *reportingPlugin) Reports(ctx context.Context, seqNr uint64, outcome ocr
 		}
 
 		reportWithMetaData := append(metadataPrepend, report...)
-		if err != nil {
-			return nil, fmt.Errorf("failed to prepend metadata fields: %w", err)
-		}
 
 		info, err := createReportInfo(reqMetadata)
 		if err != nil {

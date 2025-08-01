@@ -281,6 +281,8 @@ github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250718143957-41
 github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250718143957-41236f9ef8b4/go.mod h1:U1UAbPhy6D7Qz0wHKGPoQO+dpR0hsYjgUz8xwRrmKwI=
 github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb v0.0.0-20250718160737-52367713623f h1:1/3TZgbBTxAoxFa2PXNy5ZMBais1S5gSoUTxbOFXVlw=
 github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb v0.0.0-20250718160737-52367713623f/go.mod h1:LEZQ/SbFHseQJrLKVm6ELB8gyI4G8rVEH3SQzzZqFDk=
+github.com/smartcontractkit/cre-sdk-go v0.2.0 h1:HUAdjh0Aes7lPkUu0b0usPM0CspL9/liMSwByq1mkqk=
+github.com/smartcontractkit/cre-sdk-go v0.2.0/go.mod h1:epwEHXi7GF2jUF9DrIfUbhjTB/6eS88C6wm9YlEE7Zw=
 github.com/smartcontractkit/freeport v0.1.1 h1:B5fhEtmgomdIhw03uPVbVTP6oPv27fBhZsoZZMSIS8I=
 github.com/smartcontractkit/freeport v0.1.1/go.mod h1:T4zH9R8R8lVWKfU7tUvYz2o2jMv1OpGCdpY2j2QZXzU=
 github.com/smartcontractkit/grpc-proxy v0.0.0-20240830132753-a7e17fec5ab7 h1:12ijqMM9tvYVEm+nR826WsrNi6zCKpwBhuApq127wHs=
