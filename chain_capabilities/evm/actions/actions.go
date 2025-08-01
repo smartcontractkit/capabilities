@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/shopspring/decimal"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -19,14 +20,16 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
-	"google.golang.org/protobuf/proto"
 )
 
 type ConsensusHandler interface {

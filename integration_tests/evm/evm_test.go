@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder/beholdertest"
+	"github.com/smartcontractkit/chainlink/v2/core/logger"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -21,7 +22,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/framework"
@@ -37,10 +37,10 @@ import (
 // It deploys a contract that emits logs, sets up a workflow with that deployed contract to the log trigger, waits for the workflow to be ready,
 // emits a log event, and then checks that the workflow processes the log event correctly by counting the number of events logged by beholder.
 func Test_LogTrigger(t *testing.T) {
-	//t.Skip("Flaky Test: https://github.com/smartcontractkit/capabilities/actions/runs/16374733824/job/46271708609")
+	t.Skip("Flaky Test: https://github.com/smartcontractkit/capabilities/actions/runs/16374733824/job/46271708609")
 	ctx := t.Context()
 	beholderTester := beholdertest.NewObserver(t)
-	lggr := logger.Test(t)
+	lggr := logger.TestLogger(t)
 	defer func() {
 		utils.CleanupCapabilitiesDir(lggr)
 	}()
@@ -48,7 +48,7 @@ func Test_LogTrigger(t *testing.T) {
 	// prepping input params
 	workflowPath, err := filepath.Abs("./workflow")
 	require.NoError(t, err)
-	mainFile := filepath.Join(workflowPath, "main_logtrigger.go")
+	mainFile := filepath.Join(workflowPath, "main_logtrigger_wasip1.go")
 	wasmFile := filepath.Join(utils.CapabilitiesDir, "evm_logTrigger.wasm") // forcing cleanup on defer
 	utils.CreateWasmBinary(t, mainFile, wasmFile)
 	abiBytes, err := os.ReadFile("./contract/MessageEmitter.abi")
