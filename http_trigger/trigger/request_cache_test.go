@@ -64,7 +64,7 @@ func TestRequestCache_Add_Success(t *testing.T) {
 	err := cache.add(t.Context(), entry)
 	require.NoError(t, err)
 
-	retrieved, err := cache.get(t.Context(), entry.ExecutionID)
+	retrieved, err := cache.get(t.Context(), entry.RequestID)
 	require.NoError(t, err)
 	require.NotNil(t, entry)
 	require.Equal(t, entry.ExecutionID, retrieved.ExecutionID)
@@ -83,9 +83,9 @@ func TestRequestCache_Get_NotFound(t *testing.T) {
 	kvstore := newTestKVStore()
 	cache := newRequestCache(lggr, kvstore, time.Hour)
 
-	executionID := "0x789"
+	requestID := "0x789"
 
-	result, err := cache.get(t.Context(), executionID)
+	result, err := cache.get(t.Context(), requestID)
 	require.NoError(t, err)
 	require.Nil(t, result)
 }
@@ -97,13 +97,13 @@ func TestRequestCache_Get_NilValue(t *testing.T) {
 	kvstore := newTestKVStore()
 	cache := newRequestCache(lggr, kvstore, time.Hour)
 
-	executionID := "0x789"
+	requestID := "0x789"
 
 	// Store a nil value directly in the kvstore
-	err := kvstore.Store(t.Context(), executionID, nil)
+	err := kvstore.Store(t.Context(), requestID, nil)
 	require.NoError(t, err)
 
-	result, err := cache.get(t.Context(), executionID)
+	result, err := cache.get(t.Context(), requestID)
 	require.NoError(t, err)
 	require.Nil(t, result)
 }

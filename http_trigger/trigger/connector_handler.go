@@ -159,7 +159,7 @@ func (h *connectorHandler) validateAuthorizedKeys(inputKeys []*http.AuthorizedKe
 			}
 			authorizedKeys = append(authorizedKeys, gateway_common.AuthorizedKey{
 				KeyType:   gateway_common.KeyTypeECDSA,
-				PublicKey: key.PublicKey,
+				PublicKey: strings.ToLower(key.PublicKey),
 			})
 		default:
 			return nil, fmt.Errorf("unsupported key type: %s", key.Type)
@@ -330,7 +330,7 @@ func (h *connectorHandler) handleRequestCaching(ctx context.Context, gatewayID s
 		return true
 	}
 
-	cachedEntry, err := h.requestCache.get(ctx, workflowExecutionID)
+	cachedEntry, err := h.requestCache.get(ctx, req.ID)
 	if err != nil {
 		l.Errorw("Failed to get cached entry", "error", err)
 		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInternal, "Internal server error")

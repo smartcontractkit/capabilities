@@ -40,11 +40,11 @@ func (c *requestCache) add(ctx context.Context, entry requestCacheEntry) error {
 	if err != nil {
 		return err
 	}
-	return c.kvstore.Store(ctx, entry.ExecutionID, val)
+	return c.kvstore.Store(ctx, entry.RequestID, val)
 }
 
-func (c *requestCache) get(ctx context.Context, executionID string) (*requestCacheEntry, error) {
-	val, err := c.kvstore.Get(ctx, executionID)
+func (c *requestCache) get(ctx context.Context, requestID string) (*requestCacheEntry, error) {
+	val, err := c.kvstore.Get(ctx, requestID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil

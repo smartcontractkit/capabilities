@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -210,7 +211,7 @@ func requireWorkflowTriggered(t *testing.T, triggerCh <-chan capabilities.Trigge
 	case <-done: // Ensure goroutine completes
 	}
 
-	entry, err := requestCache.get(t.Context(), executionID)
+	entry, err := requestCache.get(t.Context(), req.ID)
 	require.NoError(t, err)
 	require.NotNil(t, entry)
 	require.Equal(t, executionID, entry.ExecutionID)
@@ -706,13 +707,13 @@ func TestHandleGatewayMessage_PullAuthMetadata(t *testing.T) {
 	require.True(t, exists, "Should contain metadata for wf1")
 	require.Equal(t, "0xabcdef", wf1Metadata.WorkflowSelector.WorkflowID)
 	require.Len(t, wf1Metadata.AuthorizedKeys, 1)
-	require.Equal(t, publicKey, wf1Metadata.AuthorizedKeys[0].PublicKey)
+	require.Equal(t, strings.ToLower(publicKey), wf1Metadata.AuthorizedKeys[0].PublicKey)
 	require.Equal(t, "ecdsa", string(wf1Metadata.AuthorizedKeys[0].KeyType))
 	wf2Metadata, exists := metadataByWorkflowID["wf2"]
 	require.True(t, exists, "Should contain metadata for wf2")
 	require.Equal(t, "wf2", wf2Metadata.WorkflowSelector.WorkflowID)
 	require.Len(t, wf2Metadata.AuthorizedKeys, 1)
-	require.Equal(t, "0xB18B5D6DB47fB7b0974505D7aB544e24478B6e99", wf2Metadata.AuthorizedKeys[0].PublicKey)
+	require.Equal(t, strings.ToLower("0xB18B5D6DB47fB7b0974505D7aB544e24478B6e99"), wf2Metadata.AuthorizedKeys[0].PublicKey)
 	require.Equal(t, "ecdsa", string(wf2Metadata.AuthorizedKeys[0].KeyType))
 }
 
