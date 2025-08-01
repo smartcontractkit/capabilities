@@ -159,7 +159,7 @@ func handleMedianAggregation(
 
 	// The Report function is guaranteed to receive at least 2f+1 distinct attributed
 	// observations. By assumption, up to f of these may be faulty, which includes
-	// being malformed. Conversely, there have to be at least f+1 valid paos.
+	// being malformed. Conversely, there have to be at least f+1 valid observations.
 	filtered, medianType, err := filterObservations(observations, f+1)
 	if err != nil {
 		return nil, err
