@@ -17,8 +17,11 @@ import (
 
 	cap "github.com/smartcontractkit/capabilities/confidential_http_action/confidential_http_action_cap"
 	enclaveclient "github.com/smartcontractkit/confidential-compute/enclave-client"
+	attestationvalidator "github.com/smartcontractkit/confidential-compute/enclave-client/attestation-validator"
 	httpenclavetypes "github.com/smartcontractkit/confidential-compute/enclave/nitro-confidential-http-enclave/types"
+	"github.com/smartcontractkit/confidential-compute/types"
 	enclavetypes "github.com/smartcontractkit/confidential-compute/types"
+	"github.com/smartcontractkit/confidential-compute/util"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/actions/vault"
 )
@@ -102,6 +105,15 @@ func GetEnclaveNodes(config cap.Config) ([]enclavetypes.EnclaveNode, error) {
 	return nodes, nil
 }
 
+// TODO: this should not be default behavior. Move this to an optional config, or remove it entirely and run our tests in an enclave-hosted environment.
+type nilVal struct{}
+
+var _ attestationvalidator.AttestationValidator = (*nilVal)(nil)
+
+func (n nilVal) ValidateAttestation(attestation []byte, enclave *types.EnclaveNode, expectedUserData []byte, trustedMeasurements []byte) error {
+	return nil
+}
+
 func New(
 	lggr logger.Logger,
 	capConfig cap.Config,
@@ -117,7 +129,7 @@ func New(
 	}
 
 	pool, err := enclaveclient.NewPool[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse](
-		nodes, vaultDONMasterPublicKey, nil, nil, nil, nil, nil,
+		nodes, vaultDONMasterPublicKey, nil, &nilVal{}, nil, nil, nil,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create enclave pool: %w", err)
@@ -377,8 +389,8 @@ func (c *capability) GetEncryptedDecryptionShares(
 				Namespace: secret.Namespace,
 				Owner:     workflowOwner,
 			},
-			// Set EncryptionKeys to be an array of 1 item with the enclaveEphemeralPublicKey
-			EncryptionKeys: []string{string(enclaveEphemeralPublicKey)},
+			// Corrected: Set EncryptionKeys to be an array of 1 item with the enclaveEphemeralPublicKey
+			EncryptionKeys: []string{util.EncodeToString(enclaveEphemeralPublicKey)},
 		}
 		if secret.Owner != nil {
 			secretRequests[i].Id.Owner = *secret.Owner
@@ -431,14 +443,22 @@ func (c *capability) GetEncryptedDecryptionShares(
 			return nil, nil, fmt.Errorf("VaultDON returned no data for secret %s", secretResp.GetId().GetKey())
 		}
 
-		encryptedSecrets = append(encryptedSecrets, []byte(secretData.GetEncryptedValue()))
-		encryptedDecryptionSharesForSecret := make([][]byte, 0)
+		encryptedSecretBytes, err := util.DecodeString(secretData.GetEncryptedValue())
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to decode encrypted secret for secret ID %s: %w", secretResp.GetId().GetKey(), err)
+		}
+		encryptedSecrets = append(encryptedSecrets, encryptedSecretBytes)
+		encryptedDecryptedSharesForSecret := make([][]byte, 0)
 
 		if len(secretData.GetEncryptedDecryptionKeyShares()) != 1 {
 			return nil, nil, fmt.Errorf("expected exactly one set of encrypted decryption key shares for secret %s, got %d", secretResp.GetId().GetKey(), len(secretData.GetEncryptedDecryptionKeyShares()))
 		}
 		for _, shareStr := range secretData.GetEncryptedDecryptionKeyShares()[0].GetShares() {
-			encryptedDecryptionSharesForSecret = append(encryptedDecryptionSharesForSecret, []byte(shareStr))
+			share, err := util.DecodeString(shareStr)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to decode encrypted decryption share for secret ID %s: %w", secretResp.GetId().GetKey(), err)
+			}
+			encryptedDecryptedSharesForSecret = append(encryptedDecryptedSharesForSecret, share)
 		}
 		minimumSharesRequired := c.vaultDON.cryptographyThreshold + c.vaultDON.possibleFaultyNodes
 		if len(encryptedDecryptionSharesForSecret) < minimumSharesRequired {

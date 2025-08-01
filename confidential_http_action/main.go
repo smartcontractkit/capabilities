@@ -9,13 +9,13 @@ import (
 
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/actions/vault"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
 	action "github.com/smartcontractkit/capabilities/confidential_http_action/action"
 	cap "github.com/smartcontractkit/capabilities/confidential_http_action/confidential_http_action_cap"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/actions/vault"
 )
 
 const (
@@ -115,15 +115,8 @@ func (cs *capabilitiesServer) Initialise(
 		return fmt.Errorf("failed to parse VaultDONID '%s' as uint32: %w", vaultDONIDStr, err)
 	}
 
-	vaultDONCapConfig, err := capabilityRegistry.ConfigForCapability(ctx, vault.CapabilityID, uint32(vaultDONIDUint))
-	if err != nil {
-		return fmt.Errorf("failed to parse get VaultDON config: %w", err)
-	}
-
-	vaultDONMasterPublicKey, err := getVaultDONMasterPublicKey(vaultDONCapConfig)
-	if err != nil {
-		return fmt.Errorf("failed to get VaultDON master public key: %w", err)
-	}
+	// TODO: this has to be fetched after the capability is initialized, due to a race condition in CRE.
+	vaultDONMasterPublicKey := []byte{}
 
 	vaultDonThreshold, err := getThreshold(vaultDONCapConfig)
 	if err != nil {
