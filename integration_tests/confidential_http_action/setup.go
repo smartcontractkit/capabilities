@@ -20,10 +20,14 @@ import (
 	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/actions/vault"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/actions/vault/mock"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/pb"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
+	"github.com/smartcontractkit/chainlink-common/pkg/values"
+	capabilities_registry "github.com/smartcontractkit/chainlink-evm/gethwrappers/keystone/generated/capabilities_registry_1_1_0"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/framework"
+	"github.com/smartcontractkit/chainlink/v2/core/services/registrysyncer"
 	attval "github.com/smartcontractkit/confidential-compute/enclave-client/attestation-validator"
 	"github.com/smartcontractkit/confidential-compute/types"
 	"github.com/smartcontractkit/confidential-compute/util"
@@ -70,8 +74,31 @@ func setupTestDon(ctx context.Context, t *testing.T, lggr logger.Logger,
 
 	c2 := fmt.Sprintf("'{\"VaultDONID\":\"%s\",\"Enclaves\":[{\"ID\":\"%s\",\"URL\":\"%s\",\"TrustedValues\":\"%s\",\"EnclaveType\":\"%s\",\"ExtraData\":\"%s\"}]}'",
 		util.EncodeToString([]byte(fmt.Sprintf("%d", workflowDonInfo.ID))), util.EncodeToString([]byte("123")), "http://localhost:8081", util.EncodeToString(encodedMeasurements), types.EnclaveTypeNitro, util.EncodeToString([]byte("")))
-
-	workflowDon.AddStandardCapability("confidential-http-action", actionPath, c2)
+	enclavesConfig := []any{
+		map[string]any{
+			"URL":       "foobar",
+			"EnclaveID": "foobar",
+			"ExtraData": []byte{0x01, 0x23}, // bytes(0x123)
+		},
+	}
+	defaultConfigMap, err := values.NewMap(map[string]any{
+		"Enclaves": enclavesConfig,
+	})
+	require.NoError(t, err)
+	label := "confidential-http-action"
+	workflowDon.AddPublishedStandardCapability(
+		label,
+		actionPath,
+		c2,
+		&pb.CapabilityConfig{
+			DefaultConfig: values.ProtoMap(defaultConfigMap),
+		},
+		capabilities_registry.CapabilitiesRegistryCapability{
+			LabelledName:   label,
+			Version:        "1.0.0",
+			CapabilityType: uint8(registrysyncer.ContractCapabilityTypeAction),
+		},
+	)
 
 	workflowDon.Initialise()
 
