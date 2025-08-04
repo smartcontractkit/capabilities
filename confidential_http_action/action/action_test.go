@@ -158,19 +158,19 @@ func (m *MockVaultDONCapability) UnregisterFromWorkflow(ctx context.Context, req
 }
 
 func getTestConfig() cap.Config {
-	enclaveTypeA := "TypeA"
+	enclaveTypeNitro := "NITRO" // Example enclave type, can be changed to SGX, TDX, etc.
 
 	return cap.Config{
 		Enclaves: []cap.Enclave{
 			{
-				EnclaveType:   &enclaveTypeA,
+				EnclaveType:   &enclaveTypeNitro,
 				ExtraData:     []uint8{0x01, 0x02, 0x03},
 				ID:            []uint8{0xAA, 0xBB},
 				TrustedValues: []uint8{0xDE, 0xAD, 0xBE, 0xEF},
 				URL:           "http://enclave-a.example.com",
 			},
 			{
-				EnclaveType:   nil, // Omitting EnclaveType for this one
+				EnclaveType:   &enclaveTypeNitro,
 				ExtraData:     []uint8{0x04, 0x05},
 				ID:            []uint8{0xCC, 0xDD},
 				TrustedValues: []uint8{0x11, 0x22, 0x33},

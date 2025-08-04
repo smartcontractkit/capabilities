@@ -3,13 +3,12 @@ package action
 import (
 	"context"
 	"crypto/sha256"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"strings"
 
+	"github.com/go-viper/mapstructure/v2"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
@@ -47,20 +46,20 @@ type capability struct {
 }
 
 // parseEnclaveType converts a string into an EnclaveType using case-insensitive matching.
-// It handles the case where the source type is a pointer and might be nil.
-// It defaults to AWS NITRO.
-func parseEnclaveType(typeStr *string) enclavetypes.EnclaveType {
+// It handles the case where the source type is a pointer and might be nil. If nil, returns error.
+func parseEnclaveType(typeStr *string) (*enclavetypes.EnclaveType, error) {
 	if typeStr == nil {
-		return enclavetypes.EnclaveTypeNitro
+		return nil, errors.New("enclave type cannot be nil")
 	}
 
 	// Convert input to upper case for case-insensitive matching.
 	upperType := strings.ToUpper(*typeStr)
 	switch enclavetypes.EnclaveType(upperType) {
 	case enclavetypes.EnclaveTypeNitro, enclavetypes.EnclaveTypeSGX, enclavetypes.EnclaveTypeTDX, enclavetypes.EnclaveTypeSEV:
-		return enclavetypes.EnclaveType(upperType)
+		et := enclavetypes.EnclaveType(upperType)
+		return &et, nil
 	default:
-		return enclavetypes.EnclaveTypeNitro // Default to AWS NITRO if no match found.
+		return nil, errors.New("invalid enclave type: " + *typeStr)
 	}
 }
 
@@ -80,25 +79,21 @@ func GetNodes(config cap.Config) ([]enclavetypes.EnclaveNode, error) {
 		}
 		copy(enclaveID[:], confEnclave.ID)
 
+		enclaveType, err := parseEnclaveType(confEnclave.EnclaveType)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse enclave type for enclave at index %d: %w", i, err)
+		}
 		node := enclavetypes.EnclaveNode{
 			EnclaveURL:       confEnclave.URL,
 			TrustedValues:    confEnclave.TrustedValues, // Directly compatible ( []uint8 is alias for []byte )
 			EnclaveExtraData: confEnclave.ExtraData,     // Directly compatible
-			EnclaveType:      parseEnclaveType(confEnclave.EnclaveType),
+			EnclaveType:      *enclaveType,
 			EnclaveID:        enclaveID,
 		}
 		nodes = append(nodes, node)
 	}
 
 	return nodes, nil
-}
-
-// Query the VaultDON to get the encrypted decryption key shares.
-// This is a placeholder function that simulates the process of getting encrypted shares.
-func GetEncryptedDecryptedShares(vaultDONSecretIds []string, vaultDONMasterPublicKey []byte, vaultDONID []byte) ([][]byte, [][][]byte, error) {
-	encryptedDecryptedShares := make([][][]byte, len(vaultDONSecretIds))
-	encryptedSecrets := make([][]byte, len(vaultDONSecretIds))
-	return encryptedSecrets, encryptedDecryptedShares, nil
 }
 
 func New(
@@ -108,20 +103,13 @@ func New(
 	vaultDONCapability capabilities.ExecutableCapability,
 	vaultDONMasterPublicKey []byte,
 ) (*capability, error) {
-	httpClient := http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: false,
-			},
-		},
-	}
 	nodes, err := GetNodes(capConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create enclave pool: %w", err)
 	}
 
 	pool, err := enclaveclient.NewPool[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse](
-		nodes, vaultDONMasterPublicKey, nil, nil, nil, nil, &httpClient,
+		nodes, vaultDONMasterPublicKey, nil, nil, nil, nil, nil,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create enclave pool: %w", err)
@@ -151,6 +139,16 @@ func NewWithEnclaveClient(
 	}, nil
 }
 
+func sanitizeLogString(s string) string {
+	// Remove newlines to prevent log injection/splitting
+	s = strings.ReplaceAll(s, "\n", "")
+	s = strings.ReplaceAll(s, "\r", "")
+	if len(s) > 256 {
+		s = s[:256] + "..."
+	}
+	return s
+}
+
 func (c *capability) Execute(ctx context.Context, rawRequest capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
 	c.lggr.Debugw("executing", "workflowID", rawRequest.Metadata.WorkflowID, "executionID", rawRequest.Metadata.WorkflowExecutionID, "workflowName", rawRequest.Metadata.WorkflowName, "workflowOwner", rawRequest.Metadata.WorkflowOwner)
 
@@ -174,7 +172,10 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		return capabilities.CapabilityResponse{}, err
 	}
 
-	publicData := ConvertInputToHTTPEnclaveRequestData(input)
+	publicData, err := ConvertInputToHTTPEnclaveRequestData(input)
+	if err != nil {
+		return capabilities.CapabilityResponse{}, err
+	}
 
 	publicDataBytes, err := json.Marshal(publicData)
 	if err != nil {
@@ -225,9 +226,9 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		respBodies = append(respBodies, string(r.Body))
 	}
 	c.lggr.Infow("confidentialhttpcap capability has validated an attested batch of HTTP responses",
-		"workflowID", rawRequest.Metadata.WorkflowID,
-		"executionID", rawRequest.Metadata.WorkflowExecutionID,
-		"workflowName", rawRequest.Metadata.WorkflowName,
+		"workflowID", sanitizeLogString(rawRequest.Metadata.WorkflowID),
+		"executionID", sanitizeLogString(rawRequest.Metadata.WorkflowExecutionID),
+		"workflowName", sanitizeLogString(rawRequest.Metadata.WorkflowName),
 		"responses", respBodies,
 		"attestation", rawExecuteResponses[0].Attestation)
 
@@ -313,17 +314,11 @@ func (c *capability) getEnclaveParams(ctx context.Context, reqID [32]byte) (*Enc
 	}, nil
 }
 
-func ConvertInputToHTTPEnclaveRequestData(input cap.Input) httpenclavetypes.HTTPEnclaveRequestData {
-	convertedRequests := make([]httpenclavetypes.RequestTemplate, 0, len(input.Requests))
-	for _, req := range input.Requests {
-		convertedRequests = append(convertedRequests, httpenclavetypes.RequestTemplate{
-			URL:                  req.Url,
-			Method:               req.Method,
-			Body:                 req.Body,
-			Headers:              req.Headers,
-			TemplatePublicValues: req.PublicTemplateValues,
-			CustomRootCaCertPEM:  []byte(req.CustomRootCaCertPEM),
-		})
+func ConvertInputToHTTPEnclaveRequestData(input cap.Input) (*httpenclavetypes.HTTPEnclaveRequestData, error) {
+	var convertedRequests []httpenclavetypes.RequestTemplate
+	err := mapstructure.Decode(input.Requests, &convertedRequests)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode requests: %w", err)
 	}
 
 	inputCiphertextNames := make([]string, 0, len(input.VaultDONSecrets))
@@ -331,10 +326,10 @@ func ConvertInputToHTTPEnclaveRequestData(input cap.Input) httpenclavetypes.HTTP
 		inputCiphertextNames = append(inputCiphertextNames, secret.Key)
 	}
 
-	return httpenclavetypes.HTTPEnclaveRequestData{
+	return &httpenclavetypes.HTTPEnclaveRequestData{
 		Requests:                convertedRequests,
 		TemplateCiphertextNames: inputCiphertextNames,
-	}
+	}, nil
 }
 
 type VaultDONInput struct {

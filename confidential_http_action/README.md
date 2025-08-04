@@ -24,6 +24,8 @@ TO BE FILLED
 
 ### Run all tests:
 
+TODO: Update this part when integration tests with real/mock DON, local CRE, etc. are ready.
+
 ```
 cd http
 go test ./... -v
