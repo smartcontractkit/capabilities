@@ -5,8 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"google.golang.org/protobuf/types/known/structpb"
 	"sort"
+
+	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/shopspring/decimal"
 	"github.com/smartcontractkit/chainlink-common/pkg/values/pb"
