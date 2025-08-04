@@ -7,7 +7,7 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20250711131700-236a5b631ad7
 	github.com/smartcontractkit/chain-selectors v1.0.62
-	github.com/smartcontractkit/chainlink-common v0.8.1-0.20250730004800-27955557aca6
+	github.com/smartcontractkit/chainlink-common v0.8.1-0.20250804131127-44c753efa7a4
 	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250730004800-27955557aca6
 	github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb v0.0.0-20250718160737-52367713623f
 	github.com/smartcontractkit/chainlink-evm v0.1.1-0.20250729200548-4a2805e0a3f1

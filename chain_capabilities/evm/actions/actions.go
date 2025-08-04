@@ -99,6 +99,7 @@ func (e EVM) CallContract(
 			Msg:             callMsg,
 			BlockNumber:     blockNumber,
 			ConfidenceLevel: confidenceLevel,
+			IsExternal:      true,
 		})
 		if err != nil {
 			return nil, err
@@ -137,6 +138,7 @@ func (e EVM) filterLogsToRequest(meta capabilities.RequestMetadata, ethFilterQue
 		reply, err := e.EVMService.FilterLogs(ctx, evmtypes.FilterLogsRequest{
 			FilterQuery:     query,
 			ConfidenceLevel: confidenceLevel,
+			IsExternal:      true,
 		})
 		if err != nil {
 			return nil, err
@@ -309,7 +311,10 @@ func (e EVM) GetTransactionByHash(ctx context.Context, meta capabilities.Request
 	}
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildGetTransactionByHashInitiated(read, common.Bytes2Hex(hash[:])))
 	request := ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
-		tx, err := e.EVMService.GetTransactionByHash(ctx, hash)
+		tx, err := e.EVMService.GetTransactionByHash(ctx, evmtypes.GetTransactionByHashRequest{
+			Hash:       hash,
+			IsExternal: true,
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -342,7 +347,10 @@ func (e EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.Reques
 	}
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildGetTransactionReceiptInitiated(read, common.Bytes2Hex(hash[:])))
 	request := ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
-		receipt, err := e.EVMService.GetTransactionReceipt(ctx, hash)
+		receipt, err := e.EVMService.GetTransactionReceipt(ctx, evmtypes.GeTransactionReceiptRequest{
+			Hash:       hash,
+			IsExternal: true,
+		})
 		if err != nil {
 			return nil, err
 		}
