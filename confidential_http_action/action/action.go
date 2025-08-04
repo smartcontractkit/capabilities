@@ -441,12 +441,16 @@ func (c *capability) Start(ctx context.Context) error {
 }
 
 func (c *capability) RegisterToWorkflow(_ context.Context, rawRequest capabilities.RegisterToWorkflowRequest) error {
-	c.lggr.Debugw("registering to workflow", "workflowID", rawRequest.Metadata.WorkflowID, "workflowOwner", rawRequest.Metadata.WorkflowOwner)
+	c.lggr.Debugw("registering to workflow",
+		"workflowID", sanitizeLogString(rawRequest.Metadata.WorkflowID),
+		"workflowOwner", sanitizeLogString(rawRequest.Metadata.WorkflowOwner))
 	return nil
 }
 
 func (c *capability) UnregisterFromWorkflow(_ context.Context, rawRequest capabilities.UnregisterFromWorkflowRequest) error {
-	c.lggr.Debugw("unregistering from workflow", "workflowID", rawRequest.Metadata.WorkflowID, "workflowOwner", rawRequest.Metadata.WorkflowOwner)
+	c.lggr.Debugw("unregistering from workflow",
+		"workflowID", sanitizeLogString(rawRequest.Metadata.WorkflowID),
+		"workflowOwner", sanitizeLogString(rawRequest.Metadata.WorkflowOwner))
 	return nil
 }
 
