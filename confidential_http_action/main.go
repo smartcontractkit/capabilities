@@ -109,12 +109,13 @@ func (cs *capabilitiesServer) Initialise(
 	if len(capConfig.VaultDONID) == 0 {
 		return fmt.Errorf("VaultDONID must be provided in capability config to retrieve VaultDON capability")
 	}
-	vaultDONIDStr := string(capConfig.VaultDONID)
-	vaultDONCapability, err := capabilityRegistry.GetExecutable(ctx, vaultDONIDStr)
+
+	vaultDONCapability, err := capabilityRegistry.GetExecutable(ctx, vault.CapabilityID)
 	if err != nil {
-		return fmt.Errorf("failed to get VaultDON capability with ID '%s' from registry: %w", vaultDONIDStr, err)
+		return fmt.Errorf("failed to get VaultDON capability with ID '%s' from registry: %w", vault.CapabilityID, err)
 	}
 
+	vaultDONIDStr := string(capConfig.VaultDONID)
 	vaultDONIDUint, err := strconv.ParseUint(vaultDONIDStr, 10, 32)
 	if err != nil {
 		return fmt.Errorf("failed to parse VaultDONID '%s' as uint32: %w", vaultDONIDStr, err)
@@ -149,18 +150,18 @@ func getVaultDONMasterPublicKey(vaultDONCapConfig capabilities.CapabilityConfigu
 			// Unwrap the Value interface to its concrete type (string)
 			pk, err := val.Unwrap() // Unwrap returns any, error
 			if err != nil {
-				return nil, fmt.Errorf("Error unwrapping 'masterPublicKey': %w", err)
+				return nil, fmt.Errorf("error unwrapping 'masterPublicKey': %w", err)
 			} else if finalPKBytes, ok := pk.([]byte); ok {
 				VaultDONMasterPublicKey = finalPKBytes
 				fmt.Printf("Successfully retrieved VaultDONMasterPublicKey: %s\n", VaultDONMasterPublicKey)
 			} else {
-				return nil, fmt.Errorf("'masterPublicKey' unwrapped to unexpected type: %T\n", pk)
+				return nil, fmt.Errorf("'masterPublicKey' unwrapped to unexpected type: %T", pk)
 			}
 		} else {
-			return nil, fmt.Errorf("'masterPublicKey' key not found in DefaultConfig.")
+			return nil, fmt.Errorf("'masterPublicKey' key not found in DefaultConfig")
 		}
 	} else {
-		return nil, fmt.Errorf("VaultDONCapConfig.DefaultConfig is nil, cannot retrieve 'masterPublicKey'.")
+		return nil, fmt.Errorf("vaultDONCapConfig.DefaultConfig is nil, cannot retrieve 'masterPublicKey'")
 	}
 	return VaultDONMasterPublicKey, nil
 }
