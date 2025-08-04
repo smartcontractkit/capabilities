@@ -762,6 +762,10 @@ func TestAggregateValue(t *testing.T) {
 }
 
 func TestReports(t *testing.T) {
+	info, err := createReportInfo()
+	if err != nil {
+		t.Fatalf("failed to create relay info: %v", err)
+	}
 	testCases := []struct {
 		name            string
 		outcome         *types.Outcome
@@ -798,6 +802,7 @@ func TestReports(t *testing.T) {
 							RequestID: "request_1",
 							Report:    &types.RequestReport_EventuallyConsistent{EventuallyConsistent: []byte("value_1")},
 						}),
+						Info: info,
 					},
 				},
 				{
@@ -806,6 +811,7 @@ func TestReports(t *testing.T) {
 							RequestID: "request_2",
 							Report:    &types.RequestReport_LockableToBlock{LockableToBlock: &types.ChainHeight{Latest: 15, Safe: 10, Finalized: 8}},
 						}),
+						Info: info,
 					},
 				},
 				{
@@ -814,6 +820,7 @@ func TestReports(t *testing.T) {
 							RequestID: "request_3",
 							Report:    &types.RequestReport_Aggregatable{Aggregatable: newDecimal(124, 2)},
 						}),
+						Info: info,
 					},
 				},
 			},
@@ -844,6 +851,7 @@ func TestReports(t *testing.T) {
 				require.Len(t, reports, len(tc.expectedReports))
 				for i := range reports {
 					require.Equal(t, tc.expectedReports[i].ReportWithInfo.Report, reports[i].ReportWithInfo.Report)
+					require.Equal(t, tc.expectedReports[i].ReportWithInfo.Info, reports[i].ReportWithInfo.Info)
 				}
 			}
 		})

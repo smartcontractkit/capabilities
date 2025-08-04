@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"sort"
 
+	"google.golang.org/protobuf/types/known/structpb"
+
 	"github.com/shopspring/decimal"
 	"github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 	"github.com/smartcontractkit/libocr/commontypes"
@@ -509,9 +511,32 @@ func (rp *reportingPlugin) Reports(ctx context.Context, seqNr uint64, rawOutcome
 		if err != nil {
 			return nil, fmt.Errorf("could not marshal request report: %w", err)
 		}
-		reports[i] = ocr3types.ReportPlus[[]byte]{ReportWithInfo: ocr3types.ReportWithInfo[[]byte]{Report: asProto}}
+		info, err := createReportInfo()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create report info for request, error: %w", err)
+		}
+		reports[i] = ocr3types.ReportPlus[[]byte]{
+			ReportWithInfo: ocr3types.ReportWithInfo[[]byte]{
+				Report: asProto,
+				Info:   info,
+			},
+		}
 	}
 	return reports, nil
+}
+
+func createReportInfo() ([]byte, error) {
+	infos, err := structpb.NewStruct(map[string]any{
+		"keyBundleName": "evm",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create structpb for report info: %w", err)
+	}
+	infoBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(infos)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal report info: %w", err)
+	}
+	return infoBytes, nil
 }
 
 func (rp *reportingPlugin) ShouldAcceptAttestedReport(
