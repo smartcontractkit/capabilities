@@ -141,7 +141,6 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 	}
 
 	c.triggerService = trigger.NewLogTriggerService(evmRelayer, trigger.NewLogTriggerStore(), c.lggr, processor, messageBuilder, cfg.LogTriggerPollInterval)
-	c.triggerService.StartCleanUp()
 
 	c.heightProvider = height.NewProvider(c.lggr, ChainHeightPollPeriod, evmRelayer)
 
@@ -162,7 +161,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 		return fmt.Errorf("error when creating oracle: %w", err)
 	}
 
-	services := []interface{ Start(context.Context) error }{c.consensusHandler, c.requestPoller, c.oracle, c.heightProvider}
+	services := []interface{ Start(context.Context) error }{c.consensusHandler, c.requestPoller, c.oracle, c.heightProvider, c.triggerService}
 	for _, service := range services {
 		if err := service.Start(ctx); err != nil {
 			return err
