@@ -448,7 +448,7 @@ func (c *capability) GetEncryptedDecryptionShares(
 			return nil, nil, fmt.Errorf("failed to decode encrypted secret for secret ID %s: %w", secretResp.GetId().GetKey(), err)
 		}
 		encryptedSecrets = append(encryptedSecrets, encryptedSecretBytes)
-		encryptedDecryptedSharesForSecret := make([][]byte, 0)
+		encryptedDecryptionSharesForSecret := make([][]byte, 0)
 
 		if len(secretData.GetEncryptedDecryptionKeyShares()) != 1 {
 			return nil, nil, fmt.Errorf("expected exactly one set of encrypted decryption key shares for secret %s, got %d", secretResp.GetId().GetKey(), len(secretData.GetEncryptedDecryptionKeyShares()))
@@ -458,7 +458,7 @@ func (c *capability) GetEncryptedDecryptionShares(
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to decode encrypted decryption share for secret ID %s: %w", secretResp.GetId().GetKey(), err)
 			}
-			encryptedDecryptedSharesForSecret = append(encryptedDecryptedSharesForSecret, share)
+			encryptedDecryptionSharesForSecret = append(encryptedDecryptionSharesForSecret, share)
 		}
 		minimumSharesRequired := c.vaultDON.cryptographyThreshold + c.vaultDON.possibleFaultyNodes
 		if len(encryptedDecryptionSharesForSecret) < minimumSharesRequired {

@@ -22,10 +22,13 @@ require (
 	github.com/smartcontractkit/chainlink-evm v0.1.1-0.20250729200548-4a2805e0a3f1
 	github.com/smartcontractkit/chainlink-protos/workflows/go v0.0.0-20250722225531-876fd6b94976
 	github.com/smartcontractkit/chainlink/v2 v2.23.2-por-beta.1.0.20250731090028-7f94ee14482e
+	github.com/smartcontractkit/confidential-compute v0.0.0-20250718142720-c00c59c98fff
 	github.com/smartcontractkit/cre-sdk-go v0.3.0
 	github.com/smartcontractkit/cre-sdk-go/capabilities/blockchain/evm v0.3.0
 	github.com/smartcontractkit/cre-sdk-go/capabilities/scheduler/cron v0.2.1-0.20250729191525-ac1867f3ff34
+	github.com/smartcontractkit/tdh2/go/tdh2 v0.0.0-20241009175230-e6634ab1b071
 	github.com/stretchr/testify v1.10.0
+	golang.org/x/crypto v0.40.0
 	google.golang.org/protobuf v1.36.6
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -305,7 +308,6 @@ require (
 	github.com/smartcontractkit/grpc-proxy v0.0.0-20240830132753-a7e17fec5ab7 // indirect
 	github.com/smartcontractkit/libocr v0.0.0-20250707144819-babe0ec4e358 // indirect
 	github.com/smartcontractkit/tdh2/go/ocr2/decryptionplugin v0.0.0-20241009055228-33d0c0bf38de // indirect
-	github.com/smartcontractkit/tdh2/go/tdh2 v0.0.0-20241009175230-e6634ab1b071 // indirect
 	github.com/smartcontractkit/wsrpc v0.8.5-0.20250502134807-c57d3d995945 // indirect
 	github.com/spf13/cast v1.7.1 // indirect
 	github.com/spf13/cobra v1.9.1 // indirect
@@ -367,7 +369,6 @@ require (
 	go.uber.org/ratelimit v0.3.1 // indirect
 	go.uber.org/zap v1.27.0 // indirect
 	golang.org/x/arch v0.11.0 // indirect
-	golang.org/x/crypto v0.40.0 // indirect
 	golang.org/x/exp v0.0.0-20250711185948-6ae5c78190dc // indirect
 	golang.org/x/mod v0.26.0 // indirect
 	golang.org/x/net v0.42.0 // indirect

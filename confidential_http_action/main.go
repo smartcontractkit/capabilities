@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
@@ -109,24 +108,18 @@ func (cs *capabilitiesServer) Initialise(
 		return fmt.Errorf("failed to get VaultDON capability with ID '%s' from registry: %w", vault.CapabilityID, err)
 	}
 
-	vaultDONIDStr := string(capConfig.VaultDONID)
-	vaultDONIDUint, err := strconv.ParseUint(vaultDONIDStr, 10, 32)
-	if err != nil {
-		return fmt.Errorf("failed to parse VaultDONID '%s' as uint32: %w", vaultDONIDStr, err)
-	}
+	// vaultDONIDStr := string(capConfig.VaultDONID)
+	// vaultDONIDUint, err := strconv.ParseUint(vaultDONIDStr, 10, 32)
+	// if err != nil {
+	// 	return fmt.Errorf("failed to parse VaultDONID '%s' as uint32: %w", vaultDONIDStr, err)
+	// }
 
 	// TODO: this has to be fetched after the capability is initialized, due to a race condition in CRE.
 	vaultDONMasterPublicKey := []byte{}
 
-	vaultDonThreshold, err := getThreshold(vaultDONCapConfig)
-	if err != nil {
-		return fmt.Errorf("failed to get VaultDON threshold: %w", err)
-	}
+	vaultDonThreshold := 3
 
-	vaultDONPossibleFaultyNodes, err := getVaultDONPossibleFaultyNodes(ctx, vaultDONCapability)
-	if err != nil {
-		return fmt.Errorf("failed to get VaultDON possible faulty nodes: %w", err)
-	}
+	vaultDONPossibleFaultyNodes := 1
 
 	cs.action, err = action.New(cs.lggr, capConfig, keystore, vaultDONCapability, vaultDONMasterPublicKey, vaultDonThreshold, vaultDONPossibleFaultyNodes)
 	if err != nil {

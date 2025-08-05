@@ -58,7 +58,7 @@ func Test_Signer(t *testing.T) {
 	require.NoError(t, err)
 	var valid bool
 	for _, p := range peers {
-		if ed25519.Verify(ed25519.PublicKey(p.PeerID.String()), digest[:], sig) {
+		if ed25519.Verify(ed25519.PublicKey(p.PeerID[:]), digest[:], sig) {
 			valid = true
 			break
 		}

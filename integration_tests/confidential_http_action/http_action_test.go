@@ -42,7 +42,9 @@ func Test_Confidential_HTTP_Action(t *testing.T) {
 			"headers": []string{"Content-Type: application/json", "Authorization: Bearer {{.my_secret}}"},
 			"body":    msg,
 		}},
-		"vaultDONSecretIds": []string{"my_secret"},
+		"vaultDONSecrets": []map[string]interface{}{{
+			"key": "my_secret",
+		}},
 	})
 	require.NoError(t, err)
 	triggerSink.SendOutput(params, uuid.New().String())
