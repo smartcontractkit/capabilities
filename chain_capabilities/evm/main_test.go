@@ -11,10 +11,9 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
-
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	relayermock "github.com/smartcontractkit/chainlink-common/pkg/types/core/mocks"
 	evmmock "github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	"github.com/smartcontractkit/chainlink-evm/pkg/testutils"
@@ -23,50 +22,46 @@ import (
 )
 
 func TestCapabilityGRPCService_Initialise(t *testing.T) {
-	t.Helper()
-
-	lggr := logger.Test(t)
-
-	evmSvc := evmmock.NewEVMService(t)
-	evmSvc.On("GetFiltersNames", mock.Anything).Maybe().Return([]string{}, nil)
-	relayer := relayermock.NewRelayer(t)
-	relayer.On("EVM").Return(evmSvc, nil)
-	relayer.On("GetChainInfo", mock.Anything).Return(types.ChainInfo{}, nil)
-
-	relayerSet := relayermock.NewRelayerSet(t)
-	relayerSet.On("Get", mock.Anything, mock.Anything).Return(relayer, nil)
-
-	svc := &capabilityGRPCService{lggr: lggr}
-	cfg := config.Config{ChainID: 1337, Network: "testnet", LogTriggerPollInterval: 60 * time.Second, CREForwarderAddress: common.Bytes2Hex(testutils.NewAddress().Bytes()), ReceiverGasMinimum: 1000}
-	cfgJSON, _ := json.Marshal(cfg)
-
-	err := svc.Initialise(t.Context(), string(cfgJSON),
-		nil, nil, nil, nil, relayerSet, nullOracleFactory{}, nil, nil)
-	require.NoError(t, err)
-
+	t.Parallel()
 	t.Run("happy-path", func(t *testing.T) {
-		t.Run("bad-json", func(t *testing.T) {
-			svc := &capabilityGRPCService{lggr: lggr}
-			err := svc.Initialise(t.Context(), "x", nil, nil, nil, nil, nil, nullOracleFactory{}, nil, nil)
-			assert.ErrorContains(t, err, "failed to parse")
-		})
-		t.Run("bad-interval", func(t *testing.T) {
-			cfgJSON, _ := json.Marshal(config.Config{ChainID: 1, Network: "net", LogTriggerPollInterval: -1})
-			svc := &capabilityGRPCService{lggr: lggr}
-			err := svc.Initialise(t.Context(), string(cfgJSON), nil, nil, nil, nil, nil, nullOracleFactory{}, nil, nil)
-			assert.ErrorContains(t, err, "logTriggerPollInterval must be positive, got: -1ns")
-		})
-		t.Run("relayerSet error", func(t *testing.T) {
-			relayerSet := relayermock.NewRelayerSet(t)
-			relayerSet.On("Get", mock.Anything, mock.Anything).Return(nil, assert.AnError)
+		evmSvc := evmmock.NewEVMService(t)
+		evmSvc.On("GetFiltersNames", mock.Anything).Maybe().Return([]string{}, nil)
+		relayer := relayermock.NewRelayer(t)
+		relayer.On("EVM").Return(evmSvc, nil)
+		relayer.On("GetChainInfo", mock.Anything).Return(types.ChainInfo{}, nil)
 
-			cfgJSON, _ := json.Marshal(config.Config{ChainID: 1, Network: "net", LogTriggerPollInterval: 60 * time.Second, CREForwarderAddress: common.Bytes2Hex(testutils.NewAddress().Bytes()), ReceiverGasMinimum: 1000})
-			svc := &capabilityGRPCService{lggr: lggr}
+		relayerSet := relayermock.NewRelayerSet(t)
+		relayerSet.On("Get", mock.Anything, mock.Anything).Return(relayer, nil)
+		svc := &capabilityGRPCService{lggr: logger.Test(t)}
+		cfg := config.Config{ChainID: 1337, Network: "testnet", LogTriggerPollInterval: 60 * time.Second, CREForwarderAddress: common.Bytes2Hex(testutils.NewAddress().Bytes()), ReceiverGasMinimum: 1000}
+		cfgJSON, _ := json.Marshal(cfg)
 
-			err := svc.Initialise(t.Context(), string(cfgJSON),
-				nil, nil, nil, nil, relayerSet, nil, nil, nil)
-			assert.ErrorIs(t, err, assert.AnError)
-		})
+		err := svc.Initialise(t.Context(), string(cfgJSON),
+			nil, nil, nil, nil, relayerSet, nullOracleFactory{}, nil, nil)
+		require.NoError(t, err)
+		require.NoError(t, svc.Close())
+	})
+	t.Run("bad-json", func(t *testing.T) {
+		svc := &capabilityGRPCService{lggr: logger.Test(t)}
+		err := svc.Initialise(t.Context(), "x", nil, nil, nil, nil, nil, nullOracleFactory{}, nil, nil)
+		assert.ErrorContains(t, err, "failed to parse")
+	})
+	t.Run("bad-interval", func(t *testing.T) {
+		cfgJSON, _ := json.Marshal(config.Config{ChainID: 1, Network: "net", LogTriggerPollInterval: -1})
+		svc := &capabilityGRPCService{lggr: logger.Test(t)}
+		err := svc.Initialise(t.Context(), string(cfgJSON), nil, nil, nil, nil, nil, nullOracleFactory{}, nil, nil)
+		assert.ErrorContains(t, err, "logTriggerPollInterval must be positive, got: -1ns")
+	})
+	t.Run("relayerSet error", func(t *testing.T) {
+		relayerSet := relayermock.NewRelayerSet(t)
+		relayerSet.On("Get", mock.Anything, mock.Anything).Return(nil, assert.AnError)
+
+		cfgJSON, _ := json.Marshal(config.Config{ChainID: 1, Network: "net", LogTriggerPollInterval: 60 * time.Second, CREForwarderAddress: common.Bytes2Hex(testutils.NewAddress().Bytes()), ReceiverGasMinimum: 1000})
+		svc := &capabilityGRPCService{lggr: logger.Test(t)}
+
+		err := svc.Initialise(t.Context(), string(cfgJSON),
+			nil, nil, nil, nil, relayerSet, nil, nil, nil)
+		assert.ErrorIs(t, err, assert.AnError)
 	})
 	t.Run("Misconfiguration", func(t *testing.T) {
 		t.Run("No Keystone forwarder address provided", func(t *testing.T) {
@@ -74,7 +69,7 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 			relayerSet.On("Get", mock.Anything, mock.Anything).Return(nil, assert.AnError)
 
 			cfgJSON, _ := json.Marshal(config.Config{ChainID: 1, Network: "net", ReceiverGasMinimum: 1000})
-			svc := &capabilityGRPCService{lggr: lggr}
+			svc := &capabilityGRPCService{lggr: logger.Test(t)}
 
 			err := svc.Initialise(t.Context(), string(cfgJSON),
 				nil, nil, nil, nil, relayerSet, nil, nil, nil)
@@ -86,7 +81,7 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 			relayerSet.On("Get", mock.Anything, mock.Anything).Return(nil, assert.AnError)
 
 			cfgJSON, _ := json.Marshal(config.Config{ChainID: 1, Network: "net", ReceiverGasMinimum: 1000})
-			svc := &capabilityGRPCService{lggr: lggr}
+			svc := &capabilityGRPCService{lggr: logger.Test(t)}
 
 			err := svc.Initialise(t.Context(), string(cfgJSON),
 				nil, nil, nil, nil, relayerSet, nil, nil, nil)
