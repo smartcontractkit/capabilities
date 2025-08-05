@@ -154,7 +154,7 @@ func sanitizeLogString(s string) string {
 }
 
 func (c *capability) Execute(ctx context.Context, rawRequest capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
-	c.lggr.Debugw("executing", "workflowID", rawRequest.Metadata.WorkflowID, "executionID", rawRequest.Metadata.WorkflowExecutionID, "workflowName", rawRequest.Metadata.WorkflowName, "workflowOwner", rawRequest.Metadata.WorkflowOwner)
+	c.lggr.Debugw("executing", "workflowID", sanitizeLogString(rawRequest.Metadata.WorkflowID), "executionID", sanitizeLogString(rawRequest.Metadata.WorkflowExecutionID), "workflowName", sanitizeLogString(rawRequest.Metadata.WorkflowName), "workflowOwner", sanitizeLogString(rawRequest.Metadata.WorkflowOwner))
 
 	// Parse user input.
 	if rawRequest.Inputs == nil {
