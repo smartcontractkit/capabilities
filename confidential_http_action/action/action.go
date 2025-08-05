@@ -409,14 +409,12 @@ func (c *capability) GetEncryptedDecryptionShares(
 
 	for _, secretResp := range vaultDONOutput.Responses {
 		if secretResp.GetError() != "" {
-			c.lggr.Warnw("VaultDON returned an error for a secret", "secretID", secretResp.GetId().GetKey(), "error", secretResp.GetError())
-			continue // Skip this secret if there was an error
+			return nil, nil, fmt.Errorf("VaultDON returned an error for secret %s: %s", secretResp.GetId().GetKey(), secretResp.GetError())
 		}
 
 		secretData := secretResp.GetData()
 		if secretData == nil {
-			c.lggr.Warnw("VaultDON returned no data for a secret", "secretID", secretResp.GetId().GetKey())
-			continue
+			return nil, nil, fmt.Errorf("VaultDON returned no data for secret %s", secretResp.GetId().GetKey())
 		}
 
 		encryptedSecrets = append(encryptedSecrets, []byte(secretData.GetEncryptedValue()))

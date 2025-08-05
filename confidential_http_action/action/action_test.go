@@ -369,13 +369,6 @@ func TestCapability_Execute(t *testing.T) {
 	t.Run("capability executes with VaultDON returning secret error", func(t *testing.T) {
 		mockEnclaveClient := &MockEnclaveClient[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse]{}
 
-		mockEnclaveClient.ExecuteBatchFunc = func(ctx context.Context, reqs []enclavetypes.SignedComputeRequest, enclaveIDs [][32]byte) ([]enclavetypes.RawExecuteResponse, error) {
-			assert.Equal(t, len(reqs), 1, "Expected one signed compute request")
-			assert.Equal(t, 0, len(reqs[0].Ciphertexts), "Expected no ciphertexts in the request")
-			assert.Equal(t, 0, len(reqs[0].EncryptedDecryptionKeyShares), "Expected no shares in the request")
-			return mockEnclaveClient.commonExecuteBatchReturn(t)
-		}
-
 		// --- Mock VaultDON Capability that returns a secret error ---
 		mockVaultDON := &MockVaultDONCapability{}
 		mockVaultDON.ExecuteFunc = func(ctx context.Context, req capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
@@ -400,15 +393,9 @@ func TestCapability_Execute(t *testing.T) {
 			}, nil
 		}
 
-		resp, err := setupAndExecuteAction(t, mockEnclaveClient, mockVaultDON, 1)
-		assert.NoError(t, err) // No error at this level, but the secret won't be in the final ComputeRequest
-		assert.NotNil(t, resp.Value)
-
-		var capOutput cap.Output
-		err = resp.Value.UnwrapTo(&capOutput)
-		assert.NoError(t, err)
-
-		// To assert that no encrypted secrets or shares were added because of the error, we check the mockEnclaveClient higher up in this test.
+		_, err := setupAndExecuteAction(t, mockEnclaveClient, mockVaultDON, 1)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to get encrypted decryption key shares from VaultDON: VaultDON returned an error for secret my-secret-id: secret not found")
 	})
 
 	t.Run("capability executes with VaultDON returning less number of shares than the threshold value", func(t *testing.T) {
