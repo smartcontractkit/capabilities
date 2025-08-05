@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/stretchr/testify/assert"
+	"github.com/smartcontractkit/chainlink-common/pkg/utils/tests"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zapcore"
@@ -32,44 +32,35 @@ func TestBlocksProvider(t *testing.T) {
 		evmSvc := mocks.NewHeaderProvider(t)
 		setHeaderByNumber(evmSvc, 1, 2, 3)
 
-		bp := NewBlocksProvider(lggr, 1*time.Second, evmSvc)
+		bp := NewProvider(lggr, 1*time.Second, evmSvc)
 		require.NoError(t, bp.Start(t.Context()))
 		t.Cleanup(func() {
 			require.NoError(t, bp.Close())
 		})
 
-		// TODO PLEX-1686: switch to eventually
-		time.Sleep(2 * time.Second)
-
-		latestBlock, safeBlock, finalizedBlock := bp.GetLatest(), bp.GetSafe(), bp.GetFinalized()
-
-		assert.Equal(t, int64(1), finalizedBlock)
-		assert.Equal(t, int64(2), safeBlock)
-		assert.Equal(t, int64(3), latestBlock)
+		tests.AssertEventually(t, func() bool { return bp.GetFinalized() == 1 })
+		tests.AssertEventually(t, func() bool { return bp.GetSafe() == 2 })
+		tests.AssertEventually(t, func() bool { return bp.GetLatest() == 3 })
 	})
 
 	t.Run("latest = safe = finalized", func(t *testing.T) {
 		evmSvc := mocks.NewHeaderProvider(t)
 		setHeaderByNumber(evmSvc, 1, 1, 1)
-		bp := NewBlocksProvider(lggr, 1*time.Second, evmSvc)
+		bp := NewProvider(lggr, 1*time.Second, evmSvc)
 		require.NoError(t, bp.Start(t.Context()))
 		t.Cleanup(func() {
 			require.NoError(t, bp.Close())
 		})
 
-		time.Sleep(2 * time.Second)
-
-		latestBlock, safeBlock, finalizedBlock := bp.GetLatest(), bp.GetSafe(), bp.GetFinalized()
-
-		assert.Equal(t, int64(1), latestBlock)
-		assert.Equal(t, int64(1), safeBlock)
-		assert.Equal(t, int64(1), finalizedBlock)
+		tests.AssertEventually(t, func() bool { return bp.GetFinalized() == 1 })
+		tests.AssertEventually(t, func() bool { return bp.GetSafe() == 1 })
+		tests.AssertEventually(t, func() bool { return bp.GetLatest() == 1 })
 	})
 
 	t.Run("latest < safe < finalized", func(t *testing.T) {
 		evmSvc := mocks.NewHeaderProvider(t)
 		setHeaderByNumber(evmSvc, 3, 2, 1)
-		bp := NewBlocksProvider(lggr, 1*time.Second, evmSvc)
+		bp := NewProvider(lggr, 1*time.Second, evmSvc)
 		require.NoError(t, bp.Start(t.Context()))
 		t.Cleanup(func() {
 			require.NoError(t, bp.Close())
@@ -77,46 +68,36 @@ func TestBlocksProvider(t *testing.T) {
 
 		time.Sleep(2 * time.Second)
 
-		latestBlock, safeBlock, finalizedBlock := bp.GetLatest(), bp.GetSafe(), bp.GetFinalized()
-
-		assert.Equal(t, int64(3), latestBlock)
-		assert.Equal(t, int64(3), safeBlock)
-		assert.Equal(t, int64(3), finalizedBlock)
+		tests.AssertEventually(t, func() bool { return bp.GetFinalized() == 3 })
+		tests.AssertEventually(t, func() bool { return bp.GetSafe() == 3 })
+		tests.AssertEventually(t, func() bool { return bp.GetLatest() == 3 })
 	})
 
 	t.Run("latest < safe > finalized", func(t *testing.T) {
 		evmSvc := mocks.NewHeaderProvider(t)
 		setHeaderByNumber(evmSvc, 1, 3, 2)
-		bp := NewBlocksProvider(lggr, 1*time.Second, evmSvc)
+		bp := NewProvider(lggr, 1*time.Second, evmSvc)
 		require.NoError(t, bp.Start(t.Context()))
 		t.Cleanup(func() {
 			require.NoError(t, bp.Close())
 		})
 
-		time.Sleep(2 * time.Second)
-
-		latestBlock, safeBlock, finalizedBlock := bp.GetLatest(), bp.GetSafe(), bp.GetFinalized()
-
-		assert.Equal(t, int64(3), latestBlock)
-		assert.Equal(t, int64(3), safeBlock)
-		assert.Equal(t, int64(1), finalizedBlock)
+		tests.AssertEventually(t, func() bool { return bp.GetFinalized() == 1 })
+		tests.AssertEventually(t, func() bool { return bp.GetSafe() == 3 })
+		tests.AssertEventually(t, func() bool { return bp.GetLatest() == 3 })
 	})
 
 	t.Run("safe < finalized < latest", func(t *testing.T) {
 		evmSvc := mocks.NewHeaderProvider(t)
 		setHeaderByNumber(evmSvc, 2, 1, 3)
-		bp := NewBlocksProvider(lggr, 1*time.Second, evmSvc)
+		bp := NewProvider(lggr, 1*time.Second, evmSvc)
 		require.NoError(t, bp.Start(t.Context()))
 		t.Cleanup(func() {
 			require.NoError(t, bp.Close())
 		})
 
-		time.Sleep(2 * time.Second)
-
-		latestBlock, safeBlock, finalizedBlock := bp.GetLatest(), bp.GetSafe(), bp.GetFinalized()
-
-		assert.Equal(t, int64(3), latestBlock)
-		assert.Equal(t, int64(2), safeBlock)
-		assert.Equal(t, int64(2), finalizedBlock)
+		tests.AssertEventually(t, func() bool { return bp.GetFinalized() == 2 })
+		tests.AssertEventually(t, func() bool { return bp.GetSafe() == 2 })
+		tests.AssertEventually(t, func() bool { return bp.GetLatest() == 3 })
 	})
 }

@@ -34,7 +34,7 @@ type Provider struct {
 	finalizedBlock int64
 }
 
-func NewBlocksProvider(lggr logger.Logger, pollPeriod time.Duration, evmService HeaderProvider) *Provider {
+func NewProvider(lggr logger.Logger, pollPeriod time.Duration, evmService HeaderProvider) *Provider {
 	b := &Provider{
 		pollPeriod: pollPeriod,
 		EVMService: evmService,
