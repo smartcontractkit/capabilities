@@ -114,6 +114,15 @@ func (n nilVal) ValidateAttestation(attestation []byte, enclave *types.EnclaveNo
 	return nil
 }
 
+// TODO: this should not be default behavior. Move this to an optional config, or remove it entirely and run our tests in an enclave-hosted environment.
+type nilVal struct{}
+
+var _ attestationvalidator.AttestationValidator = (*nilVal)(nil)
+
+func (n nilVal) ValidateAttestation(attestation []byte, enclave *types.EnclaveNode, expectedUserData []byte, trustedMeasurements []byte) error {
+	return nil
+}
+
 func New(
 	lggr logger.Logger,
 	capConfig cap.Config,
