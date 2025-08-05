@@ -130,7 +130,12 @@ func (cs *capabilitiesServer) Initialise(
 		return fmt.Errorf("failed to get VaultDON threshold: %w", err)
 	}
 
-	cs.action, err = action.New(cs.lggr, capConfig, keystore, vaultDONCapability, vaultDONMasterPublicKey, vaultDonThreshold)
+	vaultDONPossibleFaultyNodes, err := getVaultDONPossibleFaultyNodes(ctx, vaultDONCapability)
+	if err != nil {
+		return fmt.Errorf("failed to get VaultDON possible faulty nodes: %w", err)
+	}
+
+	cs.action, err = action.New(cs.lggr, capConfig, keystore, vaultDONCapability, vaultDONMasterPublicKey, vaultDonThreshold, vaultDONPossibleFaultyNodes)
 	if err != nil {
 		return fmt.Errorf("failed to create confidential http action: %w", err)
 	}
@@ -139,6 +144,14 @@ func (cs *capabilitiesServer) Initialise(
 		return fmt.Errorf("failed to add attested http capability to the capability registry: %w", err)
 	}
 	return nil
+}
+
+func getVaultDONPossibleFaultyNodes(ctx context.Context, vaultDONCapability capabilities.ExecutableCapability) (int, error) {
+	capabilityInfo, err := vaultDONCapability.Info(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get VaultDON capability info: %w", err)
+	}
+	return int(capabilityInfo.DON.F), nil
 }
 
 // The generic function to get a value from the configuration.

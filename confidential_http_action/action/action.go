@@ -36,14 +36,19 @@ func (c *capability) Info(_ context.Context) (capabilities.CapabilityInfo, error
 	return confidentialHttpActionInfo, nil
 }
 
+type VaultDON struct {
+	masterPublicKey       []byte
+	cryptographyThreshold int
+	possibleFaultyNodes   int
+	id                    []byte
+	capability            capabilities.ExecutableCapability
+}
+
 type capability struct {
-	lggr                    logger.Logger
-	enclaveClient           enclaveclient.EnclaveClient[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse]
-	keystore                core.Keystore
-	vaultDONMasterPublicKey []byte
-	vaultDonThreshold       int
-	vaultDONID              []byte
-	vaultDONCapability      capabilities.ExecutableCapability
+	lggr          logger.Logger
+	enclaveClient enclaveclient.EnclaveClient[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse]
+	keystore      core.Keystore
+	vaultDON      VaultDON
 }
 
 // parseEnclaveType converts a string into an EnclaveType using case-insensitive matching.
@@ -64,8 +69,8 @@ func parseEnclaveType(typeStr *string) (*enclavetypes.EnclaveType, error) {
 	}
 }
 
-// GetNodes transforms a slice of Enclave structs from the config into a slice of EnclaveNode structs.
-func GetNodes(config cap.Config) ([]enclavetypes.EnclaveNode, error) {
+// GetEnclaveNodes transforms a slice of Enclave structs from the config into a slice of EnclaveNode structs.
+func GetEnclaveNodes(config cap.Config) ([]enclavetypes.EnclaveNode, error) {
 	// Pre-allocate the slice with the correct capacity for efficiency.
 	nodes := make([]enclavetypes.EnclaveNode, 0, len(config.Enclaves))
 
@@ -104,8 +109,9 @@ func New(
 	vaultDONCapability capabilities.ExecutableCapability,
 	vaultDONMasterPublicKey []byte,
 	vaultDonThreshold int,
+	vaultDONPossibleFaultyNodes int,
 ) (*capability, error) {
-	nodes, err := GetNodes(capConfig)
+	nodes, err := GetEnclaveNodes(capConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create enclave pool: %w", err)
 	}
@@ -118,7 +124,7 @@ func New(
 	}
 
 	// Now delegate to NewWithEnclaveClient, which will NOT call getvaultDONMasterPublicKey again.
-	return NewWithEnclaveClient(lggr, capConfig, keystore, pool, vaultDONMasterPublicKey, vaultDonThreshold, vaultDONCapability)
+	return NewWithEnclaveClient(lggr, capConfig, keystore, pool, vaultDONMasterPublicKey, vaultDonThreshold, vaultDONPossibleFaultyNodes, vaultDONCapability)
 }
 
 // NewWithEnclaveClient allows injecting a custom (e.g., mock) EnclaveClient for testing.
@@ -129,17 +135,21 @@ func NewWithEnclaveClient(
 	keystore core.Keystore,
 	enclaveClient enclaveclient.EnclaveClient[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse],
 	vaultDONMasterPublicKey []byte,
-	vaultDonThreshold int,
+	vaultDONThreshold int,
+	vaultDONPossibleFaultyNodes int,
 	vaultDONCapability capabilities.ExecutableCapability,
 ) (*capability, error) {
 	return &capability{
-		lggr:                    lggr,
-		enclaveClient:           enclaveClient,
-		keystore:                keystore,
-		vaultDONMasterPublicKey: vaultDONMasterPublicKey,
-		vaultDonThreshold:       vaultDonThreshold,
-		vaultDONID:              capConfig.VaultDONID,
-		vaultDONCapability:      vaultDONCapability,
+		lggr:          lggr,
+		enclaveClient: enclaveClient,
+		keystore:      keystore,
+		vaultDON: VaultDON{
+			masterPublicKey:       vaultDONMasterPublicKey,
+			cryptographyThreshold: vaultDONThreshold,
+			possibleFaultyNodes:   vaultDONPossibleFaultyNodes,
+			id:                    capConfig.VaultDONID,
+			capability:            vaultDONCapability,
+		},
 	}, nil
 }
 
@@ -200,7 +210,7 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		RequestID:                    reqID,
 		PublicData:                   publicDataBytes,
 		Ciphertexts:                  encryptedSecrets,
-		MasterPublicKey:              c.vaultDONMasterPublicKey,
+		MasterPublicKey:              c.vaultDON.masterPublicKey,
 		EnclaveEphemeralPublicKey:    enclaveParams.EnclaveEphemeralPublicKey,
 		EncryptedDecryptionKeyShares: encryptedDecryptionShares,
 	}
@@ -352,10 +362,10 @@ func (c *capability) GetEncryptedDecryptionShares(
 	workflowOwner string,
 ) ([][]byte, [][][]byte, error) {
 	c.lggr.Debugw("Attempting to get encrypted decrypted shares from VaultDON capability",
-		"vaultDONID", fmt.Sprintf("%x", c.vaultDONID),
+		"vaultDONID", fmt.Sprintf("%x", c.vaultDON.id),
 		"enclaveEphemeralPublicKey", fmt.Sprintf("%x", enclaveEphemeralPublicKey[:8])) // Log first 8 bytes for brevity
 
-	if c.vaultDONCapability == nil {
+	if c.vaultDON.capability == nil {
 		return nil, nil, errors.New("VaultDON capability is not initialized")
 	}
 
@@ -395,7 +405,7 @@ func (c *capability) GetEncryptedDecryptionShares(
 	}
 
 	// Execute the VaultDON capability
-	vaultDONResponse, err := c.vaultDONCapability.Execute(ctx, vaultDONRequest)
+	vaultDONResponse, err := c.vaultDON.capability.Execute(ctx, vaultDONRequest)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to execute VaultDON capability: %w", err)
 	}
@@ -430,8 +440,9 @@ func (c *capability) GetEncryptedDecryptionShares(
 		for _, shareStr := range secretData.GetEncryptedDecryptionKeyShares()[0].GetShares() {
 			encryptedDecryptionSharesForSecret = append(encryptedDecryptionSharesForSecret, []byte(shareStr))
 		}
-		if len(encryptedDecryptionSharesForSecret) < c.vaultDonThreshold {
-			return nil, nil, fmt.Errorf("not enough encrypted decryption key shares for secret %s, expected at least %d, got %d", secretResp.GetId().GetKey(), c.vaultDonThreshold, len(encryptedDecryptionSharesForSecret))
+		minimumSharesRequired := c.vaultDON.cryptographyThreshold + c.vaultDON.possibleFaultyNodes
+		if len(encryptedDecryptionSharesForSecret) < minimumSharesRequired {
+			return nil, nil, fmt.Errorf("not enough encrypted decryption key shares for secret %s, expected at least %d, got %d", secretResp.GetId().GetKey(), minimumSharesRequired, len(encryptedDecryptionSharesForSecret))
 		}
 		encryptedDecryptionShares = append(encryptedDecryptionShares, encryptedDecryptionSharesForSecret)
 	}

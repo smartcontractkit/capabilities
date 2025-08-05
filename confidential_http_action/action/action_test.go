@@ -204,7 +204,8 @@ func getTestInput() cap.Input {
 func setupAndExecuteAction(t *testing.T,
 	mockEnclaveClient *MockEnclaveClient[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse],
 	mockVaultDON *MockVaultDONCapability,
-	mockVaultDONThreshold int) (capabilities.CapabilityResponse, error) {
+	mockVaultDONThreshold int,
+	mockVaultDONPossibleFaultyNodes int) (capabilities.CapabilityResponse, error) {
 	c, err := action.NewWithEnclaveClient(
 		logger.Test(t),
 		getTestConfig(),
@@ -212,6 +213,7 @@ func setupAndExecuteAction(t *testing.T,
 		mockEnclaveClient,
 		[]byte{0xDE, 0xAD, 0xBE, 0xEF}, // vaultDONMasterPublicKey
 		mockVaultDONThreshold,
+		mockVaultDONPossibleFaultyNodes,
 		mockVaultDON,
 	)
 	require.NoError(t, err)
@@ -250,7 +252,7 @@ func TestNew(t *testing.T) {
 	t.Run("a new confidential http capability action is created", func(t *testing.T) {
 		mockKeystore := &mockKeystore{}
 		mockVaultDON := &MockVaultDONCapability{}
-		c, err := action.New(logger.Test(t), getTestConfig(), mockKeystore, mockVaultDON, []byte{0xDE, 0xAD, 0xBE, 0xEF}, 1)
+		c, err := action.New(logger.Test(t), getTestConfig(), mockKeystore, mockVaultDON, []byte{0xDE, 0xAD, 0xBE, 0xEF}, 1, 0)
 		assert.NoError(t, err)
 		assert.NotNil(t, c)
 	})
@@ -260,7 +262,7 @@ func TestCapability_Info(t *testing.T) {
 	t.Run("capability info is reported correctly", func(t *testing.T) {
 		mockKeystore := &mockKeystore{}
 		mockVaultDON := &MockVaultDONCapability{}
-		c, err := action.New(logger.Test(t), getTestConfig(), mockKeystore, mockVaultDON, []byte{0xDE, 0xAD, 0xBE, 0xEF}, 1)
+		c, err := action.New(logger.Test(t), getTestConfig(), mockKeystore, mockVaultDON, []byte{0xDE, 0xAD, 0xBE, 0xEF}, 1, 0)
 		assert.NoError(t, err)
 		info, err := c.Info(context.Background())
 		assert.NoError(t, err)
@@ -340,7 +342,7 @@ func TestCapability_Execute(t *testing.T) {
 			return mockEnclaveClient.commonExecuteBatchReturn(t)
 		}
 
-		resp, err := setupAndExecuteAction(t, mockEnclaveClient, mockVaultDON, 1)
+		resp, err := setupAndExecuteAction(t, mockEnclaveClient, mockVaultDON, 1, 0)
 		assert.NoError(t, err)
 		assert.NotNil(t, resp.Value)
 
@@ -373,7 +375,7 @@ func TestCapability_Execute(t *testing.T) {
 			return capabilities.CapabilityResponse{}, errors.New("simulated VaultDON error")
 		}
 
-		_, err := setupAndExecuteAction(t, mockEnclaveClient, mockVaultDON, 1)
+		_, err := setupAndExecuteAction(t, mockEnclaveClient, mockVaultDON, 1, 0)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to get encrypted decryption key shares from VaultDON: failed to execute VaultDON capability: simulated VaultDON error")
 	})
@@ -405,7 +407,7 @@ func TestCapability_Execute(t *testing.T) {
 			}, nil
 		}
 
-		_, err := setupAndExecuteAction(t, mockEnclaveClient, mockVaultDON, 1)
+		_, err := setupAndExecuteAction(t, mockEnclaveClient, mockVaultDON, 1, 0)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to get encrypted decryption key shares from VaultDON: VaultDON returned an error for secret my-secret-id: secret not found")
 	})
@@ -425,7 +427,7 @@ func TestCapability_Execute(t *testing.T) {
 					{
 						Id: &vault.SecretIdentifier{
 							Key:       "my-secret-api-key",
-							Namespace: "",
+							Namespace: "my-namespace",
 							Owner:     "",
 						},
 						Result: &vault.SecretResponse_Data{
@@ -451,7 +453,7 @@ func TestCapability_Execute(t *testing.T) {
 			}, nil
 		}
 
-		_, err := setupAndExecuteAction(t, mockEnclaveClient, mockVaultDON, 3) // Set threshold to 3, but only 2 shares returned
+		_, err := setupAndExecuteAction(t, mockEnclaveClient, mockVaultDON, 2, 1) // Set cryptographyThreshold to 2, and 1 possible faulty node. So, in this case, we need at least 3 shares.
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to get encrypted decryption key shares from VaultDON: not enough encrypted decryption key shares for secret my-secret-api-key, expected at least 3, got 2")
 	})
