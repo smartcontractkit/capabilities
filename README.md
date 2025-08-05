@@ -1,4 +1,4 @@
-# Baku Capabilities
+# Capabilities
 
 This repo uses [`nx`](https://nx.dev/) for monorepo management and change-detection.
 
@@ -8,6 +8,12 @@ This repo uses [`nx`](https://nx.dev/) for monorepo management and change-detect
 - `libs` folder contains packages that are shared across capabilities. You should only create a package there if two or more capability sets need to share a dependency.
 
 ## Generating SDKs
+
+Each new capability must have a proto in [chainlink-protos/cre](https://github.com/smartcontractkit/chainlink-protos/blob/main/cre) annotated with [cre metadata](https://github.com/smartcontractkit/chainlink-protos/blob/main/cre/tools/generator/v1alpha/cre_metadata.proto)
+
+See Cron as the simplest example of how to generate a capability from the code generator.
+
+## Generating Leagacy SDKs
 
 Each new capability requires a corresponding SDK to be generated for it. This SDK can be used by workflow authors to write workflows using that capability in Go.
 

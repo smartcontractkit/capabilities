@@ -8,9 +8,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/framework"
+	"github.com/smartcontractkit/chainlink/v2/core/logger"
 
 	"github.com/smartcontractkit/capabilities/integration_tests/utils"
 )

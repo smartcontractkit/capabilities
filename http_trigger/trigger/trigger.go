@@ -3,6 +3,8 @@ package trigger
 import (
 	"context"
 	"encoding/json"
+	"strings"
+	"time"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
@@ -16,20 +18,8 @@ import (
 )
 
 const ServiceName = "HTTPTriggerCapability"
-const WorkflowRegistryContractName = "WorkflowRegistryV2"
-const defaultSendChannelBufferSize = uint32(1000)
 
 var _ server.HTTPCapability = &service{}
-
-type ServiceConfig struct {
-	SendChannelBufferSize uint32 `json:"sendChannelBufferSize"`
-	// RateLimiter configuration for messages incoming to this node from the gateway.
-	// The sender is a Gateway node, which is identified by the Gateway ID.
-	RateLimiter ratelimit.RateLimiterConfig `json:"incomingRateLimiter" `
-	// OutgoingRateLimiter is the configuration for outgoing messages from this node to the gateway.
-	// The sender is a workflow owner
-	OutgoingRateLimiter ratelimit.RateLimiterConfig `json:"outgoingRateLimiter"`
-}
 
 type ConnectorHandler interface {
 	services.Service
@@ -54,7 +44,7 @@ func (s *service) Initialise(
 	ctx context.Context,
 	config string,
 	_ core.TelemetryService,
-	_ core.KeyValueStore,
+	kvstore core.KeyValueStore,
 	_ core.ErrorLog,
 	_ core.PipelineRunnerService,
 	_ core.RelayerSet,
@@ -69,12 +59,23 @@ func (s *service) Initialise(
 	if err != nil {
 		return err
 	}
-	s.cfg = serviceConfig
-	s.connectorHandler, err = NewConnectorHandler(s.lggr, gc, serviceConfig)
+	s.cfg = applyDefaults(serviceConfig)
+	outgoingRateLimiter, err := ratelimit.NewRateLimiter(s.cfg.OutgoingRateLimiter)
 	if err != nil {
 		return err
 	}
-	return nil
+	incomingRateLimiter, err := ratelimit.NewRateLimiter(s.cfg.IncomingRateLimiter)
+	if err != nil {
+		return err
+	}
+	workflowStore := newWorkflowStore(s.lggr)
+	metadataPublisher := NewGatewayMetadataPublisher(s.lggr, gc, outgoingRateLimiter, workflowStore, s.cfg)
+	requestCache := newRequestCache(s.lggr, kvstore, time.Duration(s.cfg.RequestCacheTTL)*time.Second)
+	s.connectorHandler, err = NewConnectorHandler(s.lggr, gc, s.cfg, outgoingRateLimiter, incomingRateLimiter, workflowStore, metadataPublisher, requestCache)
+	if err != nil {
+		return err
+	}
+	return s.Start(ctx)
 }
 
 func (s *service) Start(ctx context.Context) error {
@@ -108,15 +109,11 @@ func (s *service) Description() string {
 }
 
 func (s *service) RegisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *http.Config) (<-chan capabilities.TriggerAndId[*http.Payload], error) {
-	sendChannelBufferSize := s.cfg.SendChannelBufferSize
-	if sendChannelBufferSize == 0 {
-		sendChannelBufferSize = defaultSendChannelBufferSize
-	}
-	sendCh := make(chan capabilities.TriggerAndId[*http.Payload], sendChannelBufferSize)
+	sendCh := make(chan capabilities.TriggerAndId[*http.Payload], s.cfg.SendChannelBufferSize)
 	workflowSelector := gateway.WorkflowSelector{
-		WorkflowID:    metadata.WorkflowID,
-		WorkflowOwner: metadata.WorkflowOwner,
-		WorkflowName:  metadata.WorkflowName,
+		WorkflowID:    strings.ToLower(ensureHexPrefix(metadata.WorkflowID)),
+		WorkflowOwner: strings.ToLower(ensureHexPrefix(metadata.WorkflowOwner)),
+		WorkflowName:  strings.ToLower(ensureHexPrefix(metadata.WorkflowName)),
 		WorkflowTag:   metadata.WorkflowTag,
 	}
 	err := s.connectorHandler.RegisterWorkflow(ctx, workflowSelector, input, sendCh)
@@ -132,4 +129,11 @@ func (s *service) UnregisterTrigger(ctx context.Context, triggerID string, metad
 		s.lggr.Errorf("Failed to unregister workflow %s: %v", metadata.WorkflowID, err)
 	}
 	return err
+}
+
+func ensureHexPrefix(s string) string {
+	if len(s) >= 2 && s[:2] == "0x" {
+		return s
+	}
+	return "0x" + s
 }

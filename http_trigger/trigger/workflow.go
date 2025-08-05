@@ -104,18 +104,32 @@ func (s *workflowStore) getWorkflowIDByReference(workflowOwner, workflowName, wo
 	return wID, exists
 }
 
+func (s *workflowStore) getWorkflows() []*workflow {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	workflows := make([]*workflow, 0, len(s.workflows))
+	for _, w := range s.workflows {
+		workflows = append(workflows, w)
+	}
+	return workflows
+}
+
 type workflow struct {
 	mu               sync.Mutex
 	workflowSelector gateway.WorkflowSelector
-	authorizedKeys   map[string]struct{}
+	authorizedKeys   map[gateway.AuthorizedKey]struct{}
 	sendCh           chan<- capabilities.TriggerAndId[*http.Payload]
 	closed           bool
 }
 
-func newWorkflow(workflowSelector gateway.WorkflowSelector, authorizedKeys map[string]struct{}, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) *workflow {
+func newWorkflow(workflowSelector gateway.WorkflowSelector, authorizedKeys []gateway.AuthorizedKey, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) *workflow {
+	authorizedKeysMap := make(map[gateway.AuthorizedKey]struct{})
+	for _, key := range authorizedKeys {
+		authorizedKeysMap[key] = struct{}{}
+	}
 	return &workflow{
 		workflowSelector: workflowSelector,
-		authorizedKeys:   authorizedKeys,
+		authorizedKeys:   authorizedKeysMap,
 		sendCh:           sendCh,
 		closed:           false,
 	}
@@ -131,14 +145,21 @@ func (w *workflow) close() {
 }
 
 func (w *workflow) trigger(ctx context.Context, trigger capabilities.TriggerAndId[*http.Payload]) error {
+	if trigger.Id == "" {
+		return fmt.Errorf("trigger ID cannot be empty: %v", trigger)
+	}
+	select {
+	case <-ctx.Done():
+		return errContextCanceled
+	default:
+	}
+
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.closed {
 		return errWorkflowClosed
 	}
 	select {
-	case <-ctx.Done():
-		return errContextCanceled
 	case w.sendCh <- trigger:
 		return nil
 	default:

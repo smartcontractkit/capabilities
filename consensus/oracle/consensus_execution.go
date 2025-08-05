@@ -43,24 +43,35 @@ const (
 // are already validated to ensure they all correctly unmarshal to a values.Value
 func CalculateOutcomeForObservations(
 	lggr logger.Logger,
-	observationProtos []*valuespb.Value,
+	observations []*valuespb.Value,
 	consensusDescriptor *pb.ConsensusDescriptor,
+	defaultValue *valuespb.Value,
 	minObservations int,
 	f int,
 ) (*valuespb.Value, error) {
-	filtered, consensusType, err := filterObservations(observationProtos, minObservations)
+	filtered, _, err := filterObservations(observations, minObservations)
 	if err != nil {
 		return nil, err
 	}
 
+	return handleDescriptor(lggr, consensusDescriptor, filtered, defaultValue, f)
+}
+
+func handleDescriptor(
+	lggr logger.Logger,
+	consensusDescriptor *pb.ConsensusDescriptor,
+	filtered []*valuespb.Value,
+	defaultValue *valuespb.Value,
+	f int,
+) (*valuespb.Value, error) {
 	switch desc := consensusDescriptor.GetDescriptor_().(type) {
 	case *pb.ConsensusDescriptor_Aggregation:
 		aggregation := consensusDescriptor.GetAggregation()
 		switch aggregation {
 		case pb.AggregationType_AGGREGATION_TYPE_IDENTICAL:
-			return handleIdenticalAggregation(filtered, f)
+			return handleIdenticalAggregation(lggr, filtered, f)
 		case pb.AggregationType_AGGREGATION_TYPE_MEDIAN:
-			return handleMedianAggregation(filtered, consensusType)
+			return handleMedianAggregation(lggr, filtered, f)
 		case pb.AggregationType_AGGREGATION_TYPE_COMMON_PREFIX:
 			return handleCommonPrefixAggregation(lggr, filtered, f)
 		case pb.AggregationType_AGGREGATION_TYPE_COMMON_SUFFIX:
@@ -69,23 +80,95 @@ func CalculateOutcomeForObservations(
 			return nil, fmt.Errorf("unknown aggregation type: %s", aggregation)
 		}
 	case *pb.ConsensusDescriptor_FieldsMap:
-		// TODO: Implement aggregation for structured types (FieldsMap).
-		return nil, errors.New("TODO only primitive aggregation types are supported right now")
+		return handleFieldsMapAggregation(lggr, filtered, desc.FieldsMap.GetFields(), defaultValue, f)
 	default:
 		return nil, fmt.Errorf("unknown consensus descriptor type: %T", desc)
 	}
 }
 
-func handleMedianAggregation(observations []*valuespb.Value, medianType string) (*valuespb.Value, error) {
+func handleFieldsMapAggregation(
+	lggr logger.Logger,
+	observations []*valuespb.Value,
+	desc map[string]*pb.ConsensusDescriptor,
+	defaultValue *valuespb.Value,
+	f int,
+) (*valuespb.Value, error) {
+	if len(observations) < f+1 {
+		return nil, ErrInsufficientObservations
+	}
+
+	result := make(map[string]*valuespb.Value, 0)
+	for key, d := range desc {
+		var (
+			aggregated *valuespb.Value
+			err        error
+			obsForKey  = make([]*valuespb.Value, 0, len(observations))
+		)
+
+		for i, obs := range observations {
+			if obs != nil {
+				switch obs.Value.(type) {
+				case *valuespb.Value_MapValue:
+					fields := obs.GetMapValue().GetFields()
+					obsForKey = append(obsForKey, fields[key])
+				default:
+					lggr.Debugf("unsupported observation type at index %d for key %s: %T", i, key, obs.Value)
+					continue
+				}
+			}
+			lggr.Debugf("ignoring nil observation at index %d for key %s", i, key)
+		}
+
+		var defaultForKey *valuespb.Value
+		if defaultValue != nil {
+			switch defaultValue.Value.(type) {
+			case *valuespb.Value_MapValue:
+				defaultForKey = defaultValue.GetMapValue().GetFields()[key]
+			default:
+				lggr.Debugf("missing default for key: %s", key)
+			}
+		}
+
+		aggregated, err = handleDescriptor(lggr, d, obsForKey, defaultForKey, f)
+		if err == nil {
+			result[key] = aggregated
+			continue
+		}
+
+		if defaultForKey != nil {
+			result[key] = defaultForKey
+			continue
+		}
+
+		return nil, fmt.Errorf("aggregation for field failed '%s': %w", key, err)
+	}
+
+	return valuespb.NewMapValue(result), nil
+}
+
+// TODO: CAPPL-1029 handle mixed observations of uint64 that are encoded as Int64 and BigInt
+func handleMedianAggregation(
+	_ logger.Logger,
+	observations []*valuespb.Value,
+	f int,
+) (*valuespb.Value, error) {
 	var (
 		medianResult *valuespb.Value
 		err          error
 	)
 
+	// The Report function is guaranteed to receive at least 2f+1 distinct attributed
+	// observations. By assumption, up to f of these may be faulty, which includes
+	// being malformed. Conversely, there have to be at least f+1 valid observations.
+	filtered, medianType, err := filterObservations(observations, f+1)
+	if err != nil {
+		return nil, err
+	}
+
 	switch medianType {
 	case TypeInt64:
 		medianResult, err = getMedian(
-			observations,
+			filtered,
 			func(val *valuespb.Value) (int64, error) {
 				return val.GetInt64Value(), nil
 			},
@@ -98,6 +181,7 @@ func handleMedianAggregation(observations []*valuespb.Value, medianType string) 
 				}
 				return 0
 			},
+			f,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to calculate int64 median: %w", err)
@@ -105,7 +189,7 @@ func handleMedianAggregation(observations []*valuespb.Value, medianType string) 
 
 	case TypeFloat64:
 		medianResult, err = getMedian(
-			observations,
+			filtered,
 			func(val *valuespb.Value) (float64, error) {
 				return val.GetFloat64Value(), nil
 			},
@@ -118,6 +202,7 @@ func handleMedianAggregation(observations []*valuespb.Value, medianType string) 
 				}
 				return 0
 			},
+			f,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to calculate float64 median: %w", err)
@@ -125,7 +210,7 @@ func handleMedianAggregation(observations []*valuespb.Value, medianType string) 
 
 	case TypeDecimal:
 		medianResult, err = getMedian(
-			observations,
+			filtered,
 			func(val *valuespb.Value) (decimal.Decimal, error) {
 				var d decimal.Decimal
 				v, err := values.FromProto(val)
@@ -137,6 +222,7 @@ func handleMedianAggregation(observations []*valuespb.Value, medianType string) 
 			func(a, b decimal.Decimal) int {
 				return a.Cmp(b)
 			},
+			f,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to calculate decimal median: %w", err)
@@ -144,7 +230,7 @@ func handleMedianAggregation(observations []*valuespb.Value, medianType string) 
 
 	case TypeBigInt:
 		medianResult, err = getMedian(
-			observations,
+			filtered,
 			func(val *valuespb.Value) (*big.Int, error) {
 				var got big.Int
 				v, err := values.FromProto(val)
@@ -156,6 +242,7 @@ func handleMedianAggregation(observations []*valuespb.Value, medianType string) 
 			func(a, b *big.Int) int {
 				return a.Cmp(b)
 			},
+			f,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to calculate big.Int median: %w", err)
@@ -163,7 +250,7 @@ func handleMedianAggregation(observations []*valuespb.Value, medianType string) 
 
 	case TypeTime:
 		medianResult, err = getMedian(
-			observations,
+			filtered,
 			func(val *valuespb.Value) (time.Time, error) {
 				var got time.Time
 				v, err := values.FromProto(val)
@@ -175,6 +262,7 @@ func handleMedianAggregation(observations []*valuespb.Value, medianType string) 
 			func(a, b time.Time) int {
 				return a.Compare(b)
 			},
+			f,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to calculate time median: %w", err)
@@ -187,7 +275,7 @@ func handleMedianAggregation(observations []*valuespb.Value, medianType string) 
 	return medianResult, nil
 }
 
-func handleIdenticalAggregation(values []*valuespb.Value, f int) (*valuespb.Value, error) {
+func handleIdenticalAggregation(_ logger.Logger, values []*valuespb.Value, f int) (*valuespb.Value, error) {
 	n := len(values)
 	if n == 0 {
 		return nil, errors.New("input slice cannot be empty for identical aggregation")
@@ -259,16 +347,18 @@ func handleCommonPrefixAggregation(lggr logger.Logger, observations []*valuespb.
 	var lists []*valuespb.List
 	var maxListLength int
 	for i, obsProto := range observations {
-		switch obsProto.Value.(type) {
-		case *valuespb.Value_ListValue:
-			list := obsProto.GetListValue()
-			lists = append(lists, list)
-			if len(list.GetFields()) > maxListLength {
-				maxListLength = len(list.GetFields())
+		if obsProto != nil {
+			switch obsProto.Value.(type) {
+			case *valuespb.Value_ListValue:
+				list := obsProto.GetListValue()
+				lists = append(lists, list)
+				if len(list.GetFields()) > maxListLength {
+					maxListLength = len(list.GetFields())
+				}
+			default:
+				lggr.Warnf("value at index %d is of type %T", i, obsProto.Value)
+				continue
 			}
-		default:
-			lggr.Warnf("value at index %d is of type %T", i, obsProto.Value)
-			continue
 		}
 	}
 
@@ -285,7 +375,7 @@ func handleCommonPrefixAggregation(lggr logger.Logger, observations []*valuespb.
 			}
 		}
 
-		identicalValue, err := handleIdenticalAggregation(elementsAtIndex, f)
+		identicalValue, err := handleIdenticalAggregation(lggr, elementsAtIndex, f)
 		if err != nil {
 			break
 		}
@@ -370,6 +460,11 @@ func filterObservations(observationProtos []*valuespb.Value, minObservations int
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to unmarshal observation value: %w", err)
 		}
+
+		if obs == nil {
+			continue
+		}
+
 		if reflect.TypeOf(obs).String() == dominantType {
 			observations = append(observations, obsProto)
 		}
@@ -387,9 +482,10 @@ func getMedian[T any](
 	observations []*valuespb.Value,
 	unwrap func(val *valuespb.Value) (T, error),
 	compare func(a, b T) int,
+	f int,
 ) (*valuespb.Value, error) {
-	if len(observations) < 1 {
-		return nil, errors.New("no valid observations for median calculation")
+	if len(observations) < f+1 {
+		return nil, ErrInsufficientObservations
 	}
 
 	var unwrappedValues []T
@@ -417,14 +513,17 @@ func getMedian[T any](
 }
 
 func reverseListValue(list *valuespb.Value) (*valuespb.Value, error) {
-	switch list.Value.(type) {
-	case *valuespb.Value_ListValue:
-		reversed := list.GetListValue().GetFields()
-		reverse(reversed)
-		return valuespb.NewListValue(reversed), nil
-	default:
-		return nil, fmt.Errorf("cannot reverse value of type %T", list.Value)
+	if list != nil {
+		switch list.Value.(type) {
+		case *valuespb.Value_ListValue:
+			reversed := list.GetListValue().GetFields()
+			reverse(reversed)
+			return valuespb.NewListValue(reversed), nil
+		default:
+			return nil, fmt.Errorf("cannot reverse value of type %T", list.Value)
+		}
 	}
+	return new(valuespb.Value), nil
 }
 
 func reverse[T any](s []T) {

@@ -2,9 +2,13 @@ package trigger
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+	"sync"
+	"time"
 
 	"google.golang.org/protobuf/types/known/structpb"
 
@@ -21,10 +25,6 @@ import (
 
 const (
 	HandlerName                  = "HTTPTriggerHandler"
-	defaultGlobalRPS             = 100.0
-	defaultGlobalBurst           = 100
-	defaultPerSenderRPS          = 100.0
-	defaultPerSenderBurst        = 100
 	errorOutgoingRatelimitGlobal = "global limit of outgoing gateways requests has been exceeded"
 	errorOutgoingRatelimitSender = "per-sender limit of outgoing gateways requests has been exceeded"
 	errorIncomingRatelimitGlobal = "message from gateway exceeded global rate limit"
@@ -36,45 +36,76 @@ var _ core.GatewayConnectorHandler = &connectorHandler{}
 
 type connectorHandler struct {
 	services.StateMachine
-	lggr                logger.Logger
-	gatewayConnector    core.GatewayConnector
-	config              ServiceConfig
-	workflowStore       *workflowStore
-	incomingRateLimiter *ratelimit.RateLimiter
-	outgoingRateLimiter *ratelimit.RateLimiter
+	lggr                     logger.Logger
+	gatewayConnector         core.GatewayConnector
+	config                   ServiceConfig
+	requestCache             *requestCache
+	workflowStore            *workflowStore
+	incomingRateLimiter      *ratelimit.RateLimiter
+	outgoingRateLimiter      *ratelimit.RateLimiter
+	gatewayMetadataPublisher GatewayMetadataPublisher
+	wg                       sync.WaitGroup
+	stopChan                 services.StopChan
 }
 
-func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config ServiceConfig) (*connectorHandler, error) {
-	outgoingRLCfg := outgoingRateLimiterConfigDefaults(config.OutgoingRateLimiter)
-	outgoingRateLimiter, err := ratelimit.NewRateLimiter(outgoingRLCfg)
-	if err != nil {
-		return nil, err
-	}
-	incomingRLCfg := incomingRateLimiterConfigDefaults(config.RateLimiter)
-	incomingRateLimiter, err := ratelimit.NewRateLimiter(incomingRLCfg)
-	if err != nil {
-		return nil, err
-	}
+func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config ServiceConfig,
+	outgoingRateLimiter *ratelimit.RateLimiter, incomingRateLimiter *ratelimit.RateLimiter,
+	workflowStore *workflowStore, gatewayMetadataPublisher GatewayMetadataPublisher, requestCache *requestCache) (*connectorHandler, error) {
 	return &connectorHandler{
-		lggr:                logger.Named(lggr, HandlerName),
-		gatewayConnector:    gc,
-		config:              config,
-		outgoingRateLimiter: outgoingRateLimiter,
-		incomingRateLimiter: incomingRateLimiter,
-		workflowStore:       newWorkflowStore(lggr),
+		lggr:                     logger.Named(lggr, HandlerName),
+		gatewayConnector:         gc,
+		config:                   config,
+		outgoingRateLimiter:      outgoingRateLimiter,
+		incomingRateLimiter:      incomingRateLimiter,
+		workflowStore:            workflowStore,
+		gatewayMetadataPublisher: gatewayMetadataPublisher,
+		requestCache:             requestCache,
+		stopChan:                 make(chan struct{}),
 	}, nil
 }
 
 func (h *connectorHandler) Start(ctx context.Context) error {
 	h.lggr.Debug("Starting request handler")
+	h.wg.Add(1)
+	go h.startRequestCacheCleanup(ctx)
 	return h.StartOnce(HandlerName, func() error {
-		return h.gatewayConnector.AddHandler(ctx, []string{gateway_common.MethodWorkflowExecute}, h)
+		return h.gatewayConnector.AddHandler(ctx, []string{
+			serviceName(gateway_common.MethodWorkflowExecute),
+			serviceName(gateway_common.MethodPullWorkflowMetadata),
+			serviceName(gateway_common.MethodPushWorkflowMetadata),
+		}, h)
 	})
+}
+
+func (h *connectorHandler) startRequestCacheCleanup(ctx context.Context) {
+	defer h.wg.Done()
+	ticker := time.NewTicker(h.requestCache.ttl)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-h.stopChan:
+			h.lggr.Debug("Request cache cleanup routine stopping due to context cancellation")
+			return
+		case <-ticker.C:
+			err := h.requestCache.cleanup(ctx)
+			if err != nil {
+				h.lggr.Errorw("Failed to cleanup request cache", "error", err)
+			} else {
+				h.lggr.Debugw("Cleaned up expired request cache entries", "interval", h.requestCache.ttl)
+			}
+		}
+	}
+}
+
+func serviceName(method string) string {
+	return strings.Split(method, ".")[0]
 }
 
 func (h *connectorHandler) Close() error {
 	h.lggr.Debug("Stopping request handler")
 	return h.StopOnce(HandlerName, func() error {
+		close(h.stopChan)
+		h.wg.Wait()
 		return nil
 	})
 }
@@ -96,22 +127,49 @@ func (h *connectorHandler) ID(context.Context) (string, error) {
 }
 
 func (h *connectorHandler) RegisterWorkflow(ctx context.Context, workflowSelector gateway_common.WorkflowSelector, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error {
-	authorizedKeys := map[string]struct{}{}
-	for _, key := range input.AuthorizedKeys {
+	authorizedKeys, err := h.validateAuthorizedKeys(input.AuthorizedKeys)
+	if err != nil {
+		return err
+	}
+
+	// Push workflow metadata to the gateway
+	// Error is non-critical. Retries will be handled by the metadata publisher.
+	err = h.gatewayMetadataPublisher.BroadcastWorkflowMetadata(ctx, workflowSelector, authorizedKeys)
+	if err != nil {
+		h.lggr.Errorw("Failed to push metadata to gateway", "error",
+			err, "workflowID", workflowSelector.WorkflowID)
+	}
+
+	workflow := newWorkflow(workflowSelector, authorizedKeys, sendCh)
+	h.workflowStore.upsertWorkflow(workflow)
+	h.lggr.Debugw("Registered workflow", "workflowID", workflowSelector.WorkflowID, "workflowOwner", workflowSelector.WorkflowOwner, "workflowName", workflowSelector.WorkflowName, "workflowTag", workflowSelector.WorkflowTag)
+	return nil
+}
+
+func (h *connectorHandler) validateAuthorizedKeys(inputKeys []*http.AuthorizedKey) ([]gateway_common.AuthorizedKey, error) {
+	if len(inputKeys) == 0 {
+		return nil, fmt.Errorf("no authorized keys")
+	}
+	if len(inputKeys) > int(h.config.MaxAuthorizedKeysPerWorkflow) {
+		return nil, fmt.Errorf("too many authorized keys: %d, max allowed: %d", len(inputKeys), h.config.MaxAuthorizedKeysPerWorkflow)
+	}
+
+	var authorizedKeys []gateway_common.AuthorizedKey
+	for _, key := range inputKeys {
 		switch key.Type {
 		case http.KeyType_KEY_TYPE_ECDSA:
 			if len(key.PublicKey) != ecdsaPubKeyHexLen || key.PublicKey[:2] != "0x" {
-				return fmt.Errorf("invalid public key format: must be 0x-prefixed hex string of length %d, got %q", ecdsaPubKeyHexLen, key.PublicKey)
+				return nil, fmt.Errorf("invalid public key format: must be 0x-prefixed hex string of length %d, got %q", ecdsaPubKeyHexLen, key.PublicKey)
 			}
-			authorizedKeys[key.PublicKey] = struct{}{}
+			authorizedKeys = append(authorizedKeys, gateway_common.AuthorizedKey{
+				KeyType:   gateway_common.KeyTypeECDSA,
+				PublicKey: strings.ToLower(key.PublicKey),
+			})
 		default:
-			return fmt.Errorf("unsupported key type: %s", key.Type)
+			return nil, fmt.Errorf("unsupported key type: %s", key.Type)
 		}
 	}
-	workflow := newWorkflow(workflowSelector, authorizedKeys, sendCh)
-	h.workflowStore.upsertWorkflow(workflow)
-	h.lggr.Debugf("Registered workflow %s", workflowSelector.WorkflowID)
-	return nil
+	return authorizedKeys, nil
 }
 
 func (h *connectorHandler) UnregisterWorkflow(ctx context.Context, workflowID string) error {
@@ -127,23 +185,37 @@ func (h *connectorHandler) UnregisterWorkflow(ctx context.Context, workflowID st
 // Always returns nil. Unless request is malformed or rate-limited, response is sent back to the
 // gateway using sendResponse method.
 func (h *connectorHandler) HandleGatewayMessage(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage]) error {
-	senderAllow, globalAllow := h.incomingRateLimiter.AllowVerbose(gatewayID)
-	if !senderAllow {
-		h.lggr.Errorw(errorIncomingRatelimitSender, "gatewayID", gatewayID)
-		return nil
-	}
-	if !globalAllow {
-		h.lggr.Errorw(errorIncomingRatelimitGlobal, "gatewayID", gatewayID)
+	if !h.checkIncomingRateLimit(gatewayID) {
 		return nil
 	}
 
 	switch req.Method {
 	case gateway_common.MethodWorkflowExecute:
 		h.processTrigger(ctx, gatewayID, req)
+	case gateway_common.MethodPullWorkflowMetadata:
+		// No retries here. Retries are orchestrated by the gateway node
+		err := h.gatewayMetadataPublisher.SendWorkflowMetadata(ctx, gatewayID, req)
+		if err != nil {
+			h.lggr.Errorw("Failed to handle pull metadata request", "error",
+				err, "gatewayID", gatewayID, "requestID", req.ID)
+		}
 	default:
 		h.lggr.Errorw("Unsupported method", "method", req.Method, "gatewayID", gatewayID)
 	}
 	return nil
+}
+
+func (h *connectorHandler) checkIncomingRateLimit(gatewayID string) bool {
+	senderAllow, globalAllow := h.incomingRateLimiter.AllowVerbose(gatewayID)
+	if !senderAllow {
+		h.lggr.Errorw(errorIncomingRatelimitSender, "gatewayID", gatewayID)
+		return false
+	}
+	if !globalAllow {
+		h.lggr.Errorw(errorIncomingRatelimitGlobal, "gatewayID", gatewayID)
+		return false
+	}
+	return true
 }
 
 func (h *connectorHandler) sendErrorResponse(ctx context.Context, gatewayID string, reqID string, code int64, message string) {
@@ -176,71 +248,157 @@ func (h *connectorHandler) sendResponse(ctx context.Context, gatewayID string, r
 }
 
 func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage]) {
-	var triggerReq gateway_common.HTTPTriggerRequest
 	if req.Params == nil {
-		req.Params = &json.RawMessage{}
+		h.lggr.Errorw("No params in request", "gatewayID", gatewayID, "requestID", req.ID)
+		return
 	}
-
+	var triggerReq gateway_common.HTTPTriggerRequest
 	err := json.Unmarshal(*req.Params, &triggerReq)
 	if err != nil {
 		h.lggr.Errorw("Failed to unmarshal HTTP trigger request", "error", err, "gatewayID", gatewayID, "requestID", req.ID)
 		return
 	}
+
 	l := logger.With(h.lggr, "gatewayID", gatewayID, "requestID", req.ID, "method", req.Method)
+
 	input, err := convertRawJSONToProto(triggerReq.Input)
 	if err != nil {
 		l.Errorw("Failed to convert input JSON to proto", "error", err)
 		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrParse, "Invalid input JSON")
 		return
 	}
-	// TODO: PRODCRE-305 validate JWT against authorized keys
-	workflowID := triggerReq.Workflow.WorkflowID
-	var exists bool
-	if workflowID == "" {
-		workflowID, exists = h.workflowStore.getWorkflowIDByReference(
-			triggerReq.Workflow.WorkflowOwner,
-			triggerReq.Workflow.WorkflowName,
-			triggerReq.Workflow.WorkflowTag,
-		)
-		if !exists {
-			l.Errorw("Workflow not registered", "workflowOwner", triggerReq.Workflow.WorkflowOwner, "workflowName", triggerReq.Workflow.WorkflowName, "workflowTag", triggerReq.Workflow.WorkflowTag)
-			h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInvalidRequest, "Workflow not registered")
-			return
-		}
+	workflowID, err := h.resolveWorkflowID(triggerReq.Workflow, l)
+	if err != nil {
+		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInvalidRequest, "Workflow not registered")
+		return
 	}
+
 	l = logger.With(l, "workflowID", workflowID)
-	err = h.triggerWorkflow(ctx, workflowID, req.ID, gatewayID, input)
+	workflowExecutionID, err := h.generateWorkflowExecutionID(workflowID, req.ID, l)
+	if err != nil {
+		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInternal, "Internal server error")
+		return
+	}
+
+	if handled := h.handleRequestCaching(ctx, gatewayID, req, workflowExecutionID, l); handled {
+		return
+	}
+
+	resp, err := h.prepareAndCacheResponse(ctx, gatewayID, req, workflowID, workflowExecutionID, l)
+	if err != nil {
+		return // Error already sent in the method
+	}
+
+	err = h.triggerWorkflow(ctx, workflowID, req.ID, gatewayID, input, triggerReq.Key)
 	if err != nil {
 		l.Errorw("Failed to trigger workflow", "error", err)
 		return
 	}
-	workflowExecutionID, err := workflows.EncodeExecutionID(workflowID, req.ID)
+
+	h.sendResponse(ctx, gatewayID, resp)
+}
+
+func (h *connectorHandler) resolveWorkflowID(workflow gateway_common.WorkflowSelector, l logger.Logger) (string, error) {
+	workflowID := workflow.WorkflowID
+	if workflowID != "" {
+		return workflowID, nil
+	}
+
+	workflowName := ensureHexPrefix(hex.EncodeToString([]byte(workflows.HashTruncateName(workflow.WorkflowName))))
+	resolvedID, exists := h.workflowStore.getWorkflowIDByReference(
+		workflow.WorkflowOwner,
+		workflowName,
+		workflow.WorkflowTag,
+	)
+	if !exists {
+		l.Errorw("Workflow not registered", "workflowOwner", workflow.WorkflowOwner, "workflowName", workflow.WorkflowName, "workflowTag", workflow.WorkflowTag)
+		return "", fmt.Errorf("workflow not found")
+	}
+	return resolvedID, nil
+}
+
+func (h *connectorHandler) generateWorkflowExecutionID(workflowID, reqID string, l logger.Logger) (string, error) {
+	workflowExecutionID, err := workflows.EncodeExecutionID(strings.TrimPrefix(workflowID, "0x"), reqID)
 	if err != nil {
 		l.Errorw("Failed to generate workflow execution ID", "error", err)
-		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInternal, "Internal server error")
-		return
+		return "", err
 	}
+	return ensureHexPrefix(workflowExecutionID), nil
+}
+
+func (h *connectorHandler) handleRequestCaching(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage], workflowExecutionID string, l logger.Logger) bool {
+	reqHash, err := req.Digest()
+	if err != nil {
+		h.lggr.Errorw("Failed to compute request digest", "error", err, "gatewayID", gatewayID, "requestID", req.ID)
+		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInternal, "Internal server error")
+		return true
+	}
+
+	cachedEntry, err := h.requestCache.get(ctx, req.ID)
+	if err != nil {
+		l.Errorw("Failed to get cached entry", "error", err)
+		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInternal, "Internal server error")
+		return true
+	}
+
+	if cachedEntry != nil {
+		if cachedEntry.ReqHash == reqHash {
+			l.Debugw("Returning cached response for duplicate request", "workflowID", cachedEntry.WorkflowID, "executionID", cachedEntry.ExecutionID)
+			h.sendResponse(ctx, gatewayID, cachedEntry.Response)
+			return true
+		}
+		l.Errorw("Request already in progress with different payload", "workflowID", cachedEntry.WorkflowID, "executionID", cachedEntry.ExecutionID)
+		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrConflict, "Request already in progress with different payload")
+		return true
+	}
+	return false // not handled, continue processing
+}
+
+func (h *connectorHandler) prepareAndCacheResponse(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage], workflowID, workflowExecutionID string, l logger.Logger) (*jsonrpc.Response[json.RawMessage], error) {
 	payload := &gateway_common.HTTPTriggerResponse{
 		WorkflowID:          workflowID,
 		WorkflowExecutionID: workflowExecutionID,
 		Status:              gateway_common.HTTPTriggerStatusAccepted,
 	}
+
 	jsonPayload, err := json.Marshal(payload)
 	if err != nil {
 		l.Errorw("Failed to marshal HTTP trigger response", "error", err)
 		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInternal, "Internal server error")
-		return
+		return nil, err
 	}
+
 	payloadMsg := json.RawMessage(jsonPayload)
 	resp := &jsonrpc.Response[json.RawMessage]{
 		Version: "2.0",
 		ID:      req.ID,
 		Result:  &payloadMsg,
 	}
-	h.sendResponse(ctx, gatewayID, resp)
+
+	reqHash, err := req.Digest()
+	if err != nil {
+		l.Errorw("Failed to compute request digest for caching", "error", err)
+		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInternal, "Internal server error")
+		return nil, err
+	}
+
+	err = h.requestCache.add(ctx, requestCacheEntry{
+		ReqHash:     reqHash,
+		Response:    resp,
+		WorkflowID:  workflowID,
+		ExecutionID: workflowExecutionID,
+		RequestID:   req.ID,
+	})
+	if err != nil {
+		l.Errorw("Failed to add request to cache", "error", err)
+		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInternal, "Internal server error")
+		return nil, err
+	}
+
+	return resp, nil
 }
 
-func (h *connectorHandler) triggerWorkflow(ctx context.Context, workflowID string, reqID string, gatewayID string, input *structpb.Struct) error {
+func (h *connectorHandler) triggerWorkflow(ctx context.Context, workflowID string, reqID string, gatewayID string, input *structpb.Struct, key gateway_common.AuthorizedKey) error {
 	workflow, ok := h.workflowStore.getWorkflowByID(workflowID)
 	if !ok {
 		h.sendErrorResponse(ctx, gatewayID, reqID, jsonrpc.ErrInvalidRequest, "Workflow not registered")
@@ -251,7 +409,10 @@ func (h *connectorHandler) triggerWorkflow(ctx context.Context, workflowID strin
 		Id: reqID,
 		Trigger: &http.Payload{
 			Input: input,
-			// TODO: PRODCRE-305 validate JWT against authorized keys
+			Key: &http.AuthorizedKey{
+				Type:      http.KeyType_KEY_TYPE_ECDSA,
+				PublicKey: key.PublicKey,
+			},
 		},
 	})
 	if err != nil {
@@ -263,37 +424,6 @@ func (h *connectorHandler) triggerWorkflow(ctx context.Context, workflowID strin
 		return err
 	}
 	return nil
-}
-
-func incomingRateLimiterConfigDefaults(config ratelimit.RateLimiterConfig) ratelimit.RateLimiterConfig {
-	if config.GlobalBurst == 0 {
-		config.GlobalBurst = defaultGlobalBurst
-	}
-	if config.GlobalRPS == 0 {
-		config.GlobalRPS = defaultGlobalRPS
-	}
-	if config.PerSenderBurst == 0 {
-		config.PerSenderBurst = defaultPerSenderBurst
-	}
-	if config.PerSenderRPS == 0 {
-		config.PerSenderRPS = defaultPerSenderRPS
-	}
-	return config
-}
-func outgoingRateLimiterConfigDefaults(config ratelimit.RateLimiterConfig) ratelimit.RateLimiterConfig {
-	if config.GlobalBurst == 0 {
-		config.GlobalBurst = defaultGlobalBurst
-	}
-	if config.GlobalRPS == 0 {
-		config.GlobalRPS = defaultGlobalRPS
-	}
-	if config.PerSenderBurst == 0 {
-		config.PerSenderBurst = defaultPerSenderBurst
-	}
-	if config.PerSenderRPS == 0 {
-		config.PerSenderRPS = defaultPerSenderRPS
-	}
-	return config
 }
 
 func convertRawJSONToProto(raw json.RawMessage) (*structpb.Struct, error) {

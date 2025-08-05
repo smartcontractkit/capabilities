@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"sort"
 
+	"google.golang.org/protobuf/types/known/structpb"
+
 	"github.com/shopspring/decimal"
 	"github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 	"github.com/smartcontractkit/libocr/commontypes"
@@ -147,27 +149,39 @@ func (rp *reportingPlugin) Observation(
 func (rp *reportingPlugin) observeRequest(observation *ctypes.Observation, rawRequest ctypes.Request) error {
 	switch rq := rawRequest.(type) {
 	case *ctypes.AggregatableRequest:
-		requestOb, ok := rq.GetObservation()
+		requestOb, observationErr, ok := rq.GetObservation()
 		if !ok {
 			return nil
 		}
-		observation.Observations[rq.ID()] = &ctypes.RequestObservation{
-			Observation: &ctypes.RequestObservation_Aggregatable{Aggregatable: requestOb},
+		if observationErr != nil {
+			observation.Observations[rq.ID()] = &ctypes.RequestObservation{
+				Observation: &ctypes.RequestObservation_Error{Error: observationErr},
+			}
+		} else {
+			observation.Observations[rq.ID()] = &ctypes.RequestObservation{
+				Observation: &ctypes.RequestObservation_Aggregatable{Aggregatable: requestOb},
+			}
 		}
 	case *ctypes.EventuallyConsistentRequest:
-		requestOb, ok := rq.GetObservation()
+		requestOb, observationErr, ok := rq.GetObservation()
 		if !ok {
 			return nil
 		}
-		observation.Observations[rq.ID()] = &ctypes.RequestObservation{
-			Observation: &ctypes.RequestObservation_EventuallyConsistent{EventuallyConsistent: requestOb},
+		if observationErr != nil {
+			observation.Observations[rq.ID()] = &ctypes.RequestObservation{
+				Observation: &ctypes.RequestObservation_Error{Error: observationErr},
+			}
+		} else {
+			observation.Observations[rq.ID()] = &ctypes.RequestObservation{
+				Observation: &ctypes.RequestObservation_EventuallyConsistent{EventuallyConsistent: requestOb},
+			}
 		}
 	case *ctypes.LockableToBlockRequest:
 		observation.Observations[rq.ID()] = &ctypes.RequestObservation{
 			Observation: &ctypes.RequestObservation_LockableToBlock{LockableToBlock: &emptypb.Empty{}},
 		}
 	default:
-		return fmt.Errorf("unsupported request type: %T", rq)
+		return fmt.Errorf("unsupported observation type: %T", rq)
 	}
 	return nil
 }
@@ -255,30 +269,32 @@ func (rp *reportingPlugin) ObservationQuorum(_ context.Context, outctx ocr3types
 	return quorumhelper.ObservationCountReachesObservationQuorum(quorumhelper.QuorumNMinusF, rp.config.N, rp.config.F, aos), nil
 }
 
-func (rp *reportingPlugin) agreeOnRequestType(requestID string, aos []attributedObservation) (ctypes.RequestType, error) {
-	iterator := func(yield func(commontypes.OracleID, observation[ctypes.RequestType, ctypes.RequestType]) bool) {
+func (rp *reportingPlugin) agreeOnObservationType(requestID string, aos []attributedObservation) (ctypes.ObservationType, error) {
+	iterator := func(yield func(commontypes.OracleID, observation[ctypes.ObservationType, ctypes.ObservationType]) bool) {
 		for _, ob := range aos {
 			requestOb, ok := ob.Observation.Observations[requestID]
 			if !ok || requestOb == nil {
 				continue
 			}
-			var requestType ctypes.RequestType
+			var observationType ctypes.ObservationType
 			switch requestOb.GetObservation().(type) {
 			case *ctypes.RequestObservation_EventuallyConsistent:
-				requestType = ctypes.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT
+				observationType = ctypes.ObservationType_EVENTUALLY_CONSISTENT
 			case *ctypes.RequestObservation_LockableToBlock:
-				requestType = ctypes.RequestType_REQUEST_TYPE_LOCKABLE_TO_BLOCK
+				observationType = ctypes.ObservationType_LOCKABLE_TO_BLOCK
 			case *ctypes.RequestObservation_Aggregatable:
-				requestType = ctypes.RequestType_REQUEST_TYPE_AGGREGATABLE
+				observationType = ctypes.ObservationType_AGGREGATABLE
+			case *ctypes.RequestObservation_Error:
+				observationType = ctypes.ObservationType_ERROR
 			}
-			yield(ob.Observer, observation[ctypes.RequestType, ctypes.RequestType]{
-				Key:   requestType,
-				Value: requestType,
+			yield(ob.Observer, observation[ctypes.ObservationType, ctypes.ObservationType]{
+				Key:   observationType,
+				Value: observationType,
 			})
 		}
 	}
 
-	return mode[ctypes.RequestType, ctypes.RequestType](rp.config.N, rp.config.F, iterator)
+	return mode[ctypes.ObservationType, ctypes.ObservationType](rp.config.N, rp.config.F, iterator)
 }
 
 func (rp *reportingPlugin) aggregateValue(requestID string, aos []attributedObservation) (*pb.Decimal, error) {
@@ -352,6 +368,10 @@ func (rp *reportingPlugin) agreeOnEventuallyConsistentValue(requestID string, ao
 				continue
 			}
 
+			if _, ok := requestOb.Observation.(*ctypes.RequestObservation_EventuallyConsistent); !ok {
+				continue
+			}
+
 			key := sha256.Sum256(requestOb.GetEventuallyConsistent())
 			yield(ob.Observer, observation[[32]byte, []byte]{
 				Key:   key,
@@ -411,14 +431,14 @@ func (rp *reportingPlugin) Outcome(
 	}
 
 	for _, requestID := range query.RequestIDs {
-		requestType, err := rp.agreeOnRequestType(requestID, aos)
+		observationType, err := rp.agreeOnObservationType(requestID, aos)
 		if err != nil {
-			rp.logger.Infow("Could not determine request type", "requestID", requestID, "err", err)
+			rp.logger.Infow("Could not determine observation type", "requestID", requestID, "err", err)
 			continue
 		}
 
-		switch requestType {
-		case ctypes.RequestType_REQUEST_TYPE_AGGREGATABLE:
+		switch observationType {
+		case ctypes.ObservationType_AGGREGATABLE:
 			value, err := rp.aggregateValue(requestID, aos)
 			if err != nil {
 				rp.logger.Infow("Could not determine request value", "requestID", requestID, "err", err)
@@ -429,7 +449,7 @@ func (rp *reportingPlugin) Outcome(
 				RequestID: requestID,
 				Outcome:   &ctypes.RequestOutcome_Aggregatable{Aggregatable: value},
 			})
-		case ctypes.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT:
+		case ctypes.ObservationType_EVENTUALLY_CONSISTENT:
 			value, err := rp.agreeOnEventuallyConsistentValue(requestID, aos)
 			if err != nil {
 				rp.logger.Infow("Could not determine request value", "requestID", requestID, "err", err)
@@ -439,13 +459,23 @@ func (rp *reportingPlugin) Outcome(
 				RequestID: requestID,
 				Outcome:   &ctypes.RequestOutcome_EventuallyConsistent{EventuallyConsistent: value},
 			})
-		case ctypes.RequestType_REQUEST_TYPE_LOCKABLE_TO_BLOCK:
+		case ctypes.ObservationType_LOCKABLE_TO_BLOCK:
 			outcome.Outcomes = append(outcome.Outcomes, &ctypes.RequestOutcome{
 				RequestID: requestID,
 				Outcome:   &ctypes.RequestOutcome_LockableToBlock{LockableToBlock: &emptypb.Empty{}},
 			})
+		case ctypes.ObservationType_ERROR:
+			requestErrors, err := modeForError(rp.config.N, rp.config.F, requestID, aos)
+			if err != nil {
+				rp.logger.Infow("Could not determine request error", "requestID", requestID, "err", err)
+				continue
+			}
+			outcome.Outcomes = append(outcome.Outcomes, &ctypes.RequestOutcome{
+				RequestID: requestID,
+				Outcome:   &ctypes.RequestOutcome_Error{Error: &ctypes.RequestError{Errors: requestErrors}},
+			})
 		default:
-			return nil, fmt.Errorf("unsupported request type: %s", requestType)
+			return nil, fmt.Errorf("unsupported observation type: %s", observationType)
 		}
 	}
 
@@ -471,17 +501,42 @@ func (rp *reportingPlugin) Reports(ctx context.Context, seqNr uint64, rawOutcome
 			report.Report = &ctypes.RequestReport_EventuallyConsistent{EventuallyConsistent: requestOutcome.GetEventuallyConsistent()}
 		case *ctypes.RequestOutcome_LockableToBlock:
 			report.Report = &ctypes.RequestReport_LockableToBlock{LockableToBlock: outcome.ChainHeight}
+		case *ctypes.RequestOutcome_Error:
+			report.Report = &ctypes.RequestReport_Error{Error: requestOutcome.GetError()}
 		default:
-			return nil, fmt.Errorf("unsupported request type: %T", requestOutcome.Outcome)
+			return nil, fmt.Errorf("unsupported observation type: %T", requestOutcome.Outcome)
 		}
 
 		asProto, err := proto.Marshal(&report)
 		if err != nil {
 			return nil, fmt.Errorf("could not marshal request report: %w", err)
 		}
-		reports[i] = ocr3types.ReportPlus[[]byte]{ReportWithInfo: ocr3types.ReportWithInfo[[]byte]{Report: asProto}}
+		info, err := createReportInfo()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create report info for request, error: %w", err)
+		}
+		reports[i] = ocr3types.ReportPlus[[]byte]{
+			ReportWithInfo: ocr3types.ReportWithInfo[[]byte]{
+				Report: asProto,
+				Info:   info,
+			},
+		}
 	}
 	return reports, nil
+}
+
+func createReportInfo() ([]byte, error) {
+	infos, err := structpb.NewStruct(map[string]any{
+		"keyBundleName": "evm",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create structpb for report info: %w", err)
+	}
+	infoBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(infos)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal report info: %w", err)
+	}
+	return infoBytes, nil
 }
 
 func (rp *reportingPlugin) ShouldAcceptAttestedReport(

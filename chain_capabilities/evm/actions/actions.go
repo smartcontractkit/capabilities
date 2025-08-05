@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/shopspring/decimal"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -19,20 +20,22 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
-	"google.golang.org/protobuf/proto"
 )
 
 type ConsensusHandler interface {
 	// Handle - returns a channel to the result of `request.GetObservation()`. This result is consistent across all nodes in
 	// the DON, even if individual RPC states differ.
-	Handle(ctx context.Context, request ctypes.Request) (<-chan any, error)
+	Handle(ctx context.Context, request ctypes.Request) (<-chan ctypes.Reply, error)
 }
 
 type EVM struct {
@@ -106,7 +109,6 @@ func (e EVM) CallContract(
 	var request ctypes.Request
 	if needsBlockHeightConsensus {
 		request = ctypes.NewLockableToBlockRequest(requestID(meta), func(ctx context.Context, height *ctypes.ChainHeight) ([]byte, error) {
-			// TODO: PLEX-1571 guarantee finality/safety of observed data for load balanced RPCs
 			callBlockNumber, err := getCallBlockNumber(blockNumber, height)
 			if err != nil {
 				return nil, fmt.Errorf("error getting call block number: %w", err)
@@ -515,10 +517,13 @@ func readType[T any](ctx context.Context, reader ConsensusHandler, request ctype
 	select {
 	case <-ctx.Done():
 		return zero, ctx.Err()
-	case rawData := <-resultCh:
-		data, ok := rawData.(T)
+	case reply := <-resultCh:
+		if reply.Err != nil {
+			return zero, reply.Err
+		}
+		data, ok := reply.Value.(T)
 		if !ok {
-			return zero, fmt.Errorf("unexpected result type: expected %T, got %T", zero, rawData)
+			return zero, fmt.Errorf("unexpected result type: expected %T, got %T", zero, reply.Value)
 		}
 
 		return data, nil

@@ -15,11 +15,11 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder/beholdertest"
 	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
 	events2 "github.com/smartcontractkit/chainlink-protos/workflows/go/events"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/framework"
+	"github.com/smartcontractkit/chainlink/v2/core/logger"
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/handlers/capabilities"
 
 	"github.com/smartcontractkit/capabilities/integration_tests/utils"
@@ -29,7 +29,7 @@ func Test_Consensus(t *testing.T) {
 	ctx := t.Context()
 	beholderTester := beholdertest.NewObserver(t)
 
-	lggr := logger.Test(t)
+	lggr := logger.TestLogger(t)
 	defer func() {
 		utils.CleanupCapabilitiesDir(lggr)
 	}()
@@ -38,7 +38,7 @@ func Test_Consensus(t *testing.T) {
 	require.NoError(t, err)
 
 	wasmFile := filepath.Join(readBalancesWithConfigPath, "consensus.wasm")
-	mainFile := filepath.Join(readBalancesWithConfigPath, "main.go")
+	mainFile := filepath.Join(readBalancesWithConfigPath, "main_wasip1.go")
 	utils.CreateWasmBinary(t, mainFile, wasmFile)
 
 	targetSink := framework.NewTargetSink("mock-target", "1.0.0")

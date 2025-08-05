@@ -4,22 +4,25 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	gcmocks "github.com/smartcontractkit/chainlink-common/pkg/types/core/mocks"
 	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 )
 
 func TestService_RegisterTrigger(t *testing.T) {
 	type testCase struct {
 		name                string
-		sendChannelBufSize  uint32
+		sendChannelBufSize  uint16
 		registerErr         error
-		expectedChanBufSize uint32
+		expectedChanBufSize uint16
 		expectErr           bool
 	}
 	tests := []testCase{
@@ -53,11 +56,12 @@ func TestService_RegisterTrigger(t *testing.T) {
 			}
 			svc := NewService(logger.Test(t))
 			cfgStr := fmt.Sprintf(`{"sendChannelBufferSize": %d}`, tc.sendChannelBufSize)
-			err := svc.Initialise(t.Context(), cfgStr, nil, nil, nil, nil, nil, nil, nil, nil)
+			gc := mockedGatewayConnector(t)
+			err := svc.Initialise(t.Context(), cfgStr, nil, nil, nil, nil, nil, nil, gc, nil)
 			require.NoError(t, err)
 			svc.connectorHandler = mockHandler
 			ctx := context.Background()
-			meta := capabilities.RequestMetadata{WorkflowID: "wid"}
+			meta := capabilities.RequestMetadata{WorkflowID: "abcdef", WorkflowOwner: "123456", WorkflowName: "456789", WorkflowTag: "tag"}
 			input := &http.Config{}
 
 			ch, err := svc.RegisterTrigger(ctx, "tid", meta, input)
@@ -65,10 +69,10 @@ func TestService_RegisterTrigger(t *testing.T) {
 				require.Error(t, err)
 				require.Nil(t, ch)
 			} else {
-				require.Equal(t, tc.expectedChanBufSize, uint32(cap(ch))) //nolint:gosec // G115
-				require.Equal(t, meta.WorkflowID, mockHandler.lastWorkflowSelector.WorkflowID)
-				require.Equal(t, meta.WorkflowOwner, mockHandler.lastWorkflowSelector.WorkflowOwner)
-				require.Equal(t, meta.WorkflowName, mockHandler.lastWorkflowSelector.WorkflowName)
+				require.Equal(t, tc.expectedChanBufSize, uint16(cap(ch))) //nolint:gosec // G115
+				require.Equal(t, strings.ToLower(ensureHexPrefix(meta.WorkflowID)), mockHandler.lastWorkflowSelector.WorkflowID)
+				require.Equal(t, strings.ToLower(ensureHexPrefix(meta.WorkflowOwner)), mockHandler.lastWorkflowSelector.WorkflowOwner)
+				require.Equal(t, strings.ToLower(ensureHexPrefix(meta.WorkflowName)), mockHandler.lastWorkflowSelector.WorkflowName)
 				require.Equal(t, meta.WorkflowTag, mockHandler.lastWorkflowSelector.WorkflowTag)
 				require.Equal(t, input, mockHandler.lastInput)
 			}
@@ -98,7 +102,8 @@ func TestService_UnregisterTrigger(t *testing.T) {
 			}
 			svc := NewService(logger.Test(t))
 			cfg := "{}"
-			err := svc.Initialise(t.Context(), cfg, nil, nil, nil, nil, nil, nil, nil, nil)
+			gc := mockedGatewayConnector(t)
+			err := svc.Initialise(t.Context(), cfg, nil, nil, nil, nil, nil, nil, gc, nil)
 			require.NoError(t, err)
 			svc.connectorHandler = mockHandler
 
@@ -118,15 +123,12 @@ func TestService_Start_HealthReport_Ready_Close(t *testing.T) {
 	mockHandler := &mockConnectorHandler{}
 	svc := NewService(logger.Test(t))
 	cfg := "{}"
-	err := svc.Initialise(t.Context(), cfg, nil, nil, nil, nil, nil, nil, nil, nil)
+	gc := mockedGatewayConnector(t)
+	err := svc.Initialise(t.Context(), cfg, nil, nil, nil, nil, nil, nil, gc, nil)
 	require.NoError(t, err)
 	svc.connectorHandler = mockHandler
 
 	ctx := context.Background()
-
-	// Start the service
-	err = svc.Start(ctx)
-	require.NoError(t, err)
 
 	// HealthReport should report healthy
 	hr := svc.HealthReport()
@@ -172,4 +174,10 @@ func (m *mockConnectorHandler) Name() string {
 }
 func (m *mockConnectorHandler) Ready() error {
 	return nil
+}
+
+func mockedGatewayConnector(t *testing.T) *gcmocks.GatewayConnector {
+	gc := gcmocks.NewGatewayConnector(t)
+	gc.EXPECT().AddHandler(mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	return gc
 }

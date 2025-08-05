@@ -23,23 +23,23 @@ func (_m *ConsensusHandler) EXPECT() *ConsensusHandler_Expecter {
 }
 
 // Handle provides a mock function with given fields: ctx, request
-func (_m *ConsensusHandler) Handle(ctx context.Context, request types.Request) (<-chan interface{}, error) {
+func (_m *ConsensusHandler) Handle(ctx context.Context, request types.Request) (<-chan types.Reply, error) {
 	ret := _m.Called(ctx, request)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Handle")
 	}
 
-	var r0 <-chan interface{}
+	var r0 <-chan types.Reply
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, types.Request) (<-chan interface{}, error)); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, types.Request) (<-chan types.Reply, error)); ok {
 		return rf(ctx, request)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, types.Request) <-chan interface{}); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, types.Request) <-chan types.Reply); ok {
 		r0 = rf(ctx, request)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(<-chan interface{})
+			r0 = ret.Get(0).(<-chan types.Reply)
 		}
 	}
 
@@ -71,12 +71,12 @@ func (_c *ConsensusHandler_Handle_Call) Run(run func(ctx context.Context, reques
 	return _c
 }
 
-func (_c *ConsensusHandler_Handle_Call) Return(_a0 <-chan interface{}, _a1 error) *ConsensusHandler_Handle_Call {
+func (_c *ConsensusHandler_Handle_Call) Return(_a0 <-chan types.Reply, _a1 error) *ConsensusHandler_Handle_Call {
 	_c.Call.Return(_a0, _a1)
 	return _c
 }
 
-func (_c *ConsensusHandler_Handle_Call) RunAndReturn(run func(context.Context, types.Request) (<-chan interface{}, error)) *ConsensusHandler_Handle_Call {
+func (_c *ConsensusHandler_Handle_Call) RunAndReturn(run func(context.Context, types.Request) (<-chan types.Reply, error)) *ConsensusHandler_Handle_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -67,10 +67,37 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 
 	t.Run("valid request gets validated and forwarded to client", func(t *testing.T) {
 		input := &http.Request{
+			Url:           "https://example.com",
+			Method:        "GET",
+			Headers:       map[string]string{"Content-Type": "application/json"},
+			TimeoutMs:     1000,
+			CacheSettings: &http.CacheSettings{},
+		}
+		expectedResponse := &http.Response{
+			StatusCode: 200,
+			Headers:    map[string]string{"Content-Type": "application/json"},
+			Body:       []byte(`{"result": "success"}`),
+		}
+		mockClient.Response = expectedResponse
+		mockClient.Err = nil
+
+		response, err := srv.SendRequest(context.Background(), metadata, input)
+		require.NoError(t, err)
+		assert.Equal(t, expectedResponse, response)
+		assert.Equal(t, input, mockClient.CapturedInput)
+	})
+
+	t.Run("valid request with cache settings gets validated and forwarded to client", func(t *testing.T) {
+		input := &http.Request{
 			Url:       "https://example.com",
 			Method:    "GET",
 			Headers:   map[string]string{"Content-Type": "application/json"},
 			TimeoutMs: 1000,
+			CacheSettings: &http.CacheSettings{
+				StoreInCache:  true,
+				ReadFromCache: true,
+				TtlMs:         10000, // 10 seconds
+			},
 		}
 		expectedResponse := &http.Response{
 			StatusCode: 200,
@@ -88,10 +115,11 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 
 	t.Run("empty headers are allowed", func(t *testing.T) {
 		input := &http.Request{
-			Url:       "https://example.com",
-			Method:    "GET",
-			Headers:   nil,
-			TimeoutMs: 1000,
+			Url:           "https://example.com",
+			Method:        "GET",
+			Headers:       nil,
+			TimeoutMs:     1000,
+			CacheSettings: &http.CacheSettings{},
 		}
 		expectedResponse := &http.Response{
 			StatusCode: 200,
