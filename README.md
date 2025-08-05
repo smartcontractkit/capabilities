@@ -2,6 +2,17 @@
 
 This repo uses [`nx`](https://nx.dev/) for monorepo management and change-detection.
 
+## Building Capabilities
+
+Build all:
+` ./nx run-many -t build`
+
+Build a specific capability:
+`./nx run cron:build`
+
+Binaries can be found in:
+`./bin/<platform>/`
+
 ## Code structure
 
 - With the exception of `libs`, each package in the root folder creates a binary that instantiates a **capability set** when added to the node through a `type="standardcapabilities"` job spec (**capability spec**). A capability set contains one or more capabilities that are centered around some functionality or shared resource, e.g., KV store, EVM chain, CRON, etc. So a KV store binary would instantiate `kvstore-read` action capability and `kvstore-write` target capability that shares an underlying KV store resource.
@@ -13,7 +24,7 @@ Each new capability must have a proto in [chainlink-protos/cre](https://github.c
 
 See Cron as the simplest example of how to generate a capability from the code generator.
 
-## Generating Leagacy SDKs
+## Generating Legacy SDKs
 
 Each new capability requires a corresponding SDK to be generated for it. This SDK can be used by workflow authors to write workflows using that capability in Go.
 
