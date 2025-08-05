@@ -420,8 +420,7 @@ func (c *capability) GetEncryptedDecryptedShares(
 			continue
 		}
 
-		encryptedSecretBytes := []byte(secretData.GetEncryptedValue())
-		encryptedSecrets = append(encryptedSecrets, encryptedSecretBytes)
+		encryptedSecrets = append(encryptedSecrets, []byte(secretData.GetEncryptedValue()))
 		encryptedDecryptedSharesForSecret := make([][]byte, 0)
 
 		if len(secretData.GetEncryptedDecryptionKeyShares()) != 1 {
