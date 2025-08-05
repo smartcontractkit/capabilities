@@ -17,6 +17,7 @@ require (
 	github.com/pelletier/go-toml v1.9.5
 	github.com/smartcontractkit/capabilities/http_action v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/capabilities/loadtestwritetarget v0.0.0-00010101000000-000000000000
+	github.com/smartcontractkit/chain-selectors v1.0.62
 	github.com/smartcontractkit/chainlink-common v0.8.1-0.20250730171647-bd8e6f054589
 	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250730171647-bd8e6f054589
 	github.com/smartcontractkit/chainlink-evm v0.1.1-0.20250729200548-4a2805e0a3f1
@@ -281,7 +282,6 @@ require (
 	github.com/shirou/gopsutil/v3 v3.24.3 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/sigurn/crc16 v0.0.0-20211026045750-20ab5afb07e3 // indirect
-	github.com/smartcontractkit/chain-selectors v1.0.62 // indirect
 	github.com/smartcontractkit/chainlink-aptos v0.0.0-20250626122206-319db248496a // indirect
 	github.com/smartcontractkit/chainlink-automation v0.8.1 // indirect
 	github.com/smartcontractkit/chainlink-ccip v0.1.1-solana.0.20250716191209-5639135b7716 // indirect
