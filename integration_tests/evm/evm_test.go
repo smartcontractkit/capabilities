@@ -12,10 +12,10 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder/beholdertest"
 	"github.com/smartcontractkit/chainlink/v2/core/logger"
+	"github.com/smartcontractkit/chainlink/v2/core/services/workflows/artifacts"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/common"
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
 
@@ -25,7 +25,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/framework"
-	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/handlers/capabilities"
 
 	"github.com/smartcontractkit/capabilities/integration_tests/evm/contract"
 	"github.com/smartcontractkit/capabilities/integration_tests/utils"
@@ -62,8 +61,36 @@ func Test_LogTrigger(t *testing.T) {
 
 	numOfWorkflowNodes := 4
 	workflowName := "TestWf"
+	configURL := "config.yaml"
+	compressedBinary, base64EncodedCompressedBinary := utils.GetCompressedWorkflowWasm(t, wasmFile)
+	store := newArtifactsStore()
+	store.SetValue(wasmFile, []byte(base64EncodedCompressedBinary))
 
-	messageEmitter, donContext := setupDon(ctx, t, lggr, wasmFile, abiString, eventName, topic0, numOfWorkflowNodes, workflowName)
+	donContext, workflowDON := setupDonWithEVMCapability(ctx, t, lggr, store.Fetch, numOfWorkflowNodes)
+
+	address, _, _, err := contract.DeployContract(donContext.EthBlockchain.TransactionOpts(), donContext.EthBlockchain.Client())
+	require.NoError(t, err)
+	lggr.Debugf("Deploy contract address: %s", address)
+
+	runtimeCfg, err := yaml.Marshal(runtimeConfig{
+		Addresses: []string{address.Hex()},
+		Topics: []struct {
+			Values []string `yaml:"values"`
+		}{
+			{Values: []string{topic0.Hex()}},
+		},
+		Abi:   abiString,
+		Event: eventName,
+	})
+	require.NoError(t, err)
+	store.SetValue(configURL, runtimeCfg)
+
+	//Instantiate the contract at the deployed address
+	messageEmitter, err := contract.NewContract(address, donContext.EthBlockchain.Client())
+	require.NoError(t, err)
+
+	registerWorkflow(t, donContext, workflowName, compressedBinary, "", workflowDON,
+		wasmFile, configURL, runtimeCfg)
 
 	// waiting time to ensure the logTrigger inside the workflow is ready to process messages
 	// TODO PLEX-1621: this wait time should be much lower, but in CI needs to be high enough to make log poller ready to work on the logs
@@ -112,46 +139,8 @@ type runtimeConfig struct {
 	Event string `yaml:"event,omitempty"`
 }
 
-func setupDon(ctx context.Context, t *testing.T, lggr logger.Logger, workflowURL string, abiString string, eventName string, topic0 common.Hash, numOfWorkflowNodes int, workflowName string) (*contract.Contract, framework.DonContext) {
-	configURL := "config.yaml"
-	compressedBinary, base64EncodedCompressedBinary := utils.GetCompressedWorkflowWasm(t, workflowURL)
-
-	urlToConfigBytes := map[string][]byte{}
-
-	syncerFetcherFunc := func(ctx context.Context, messageID string, req capabilities.Request) ([]byte, error) {
-		url := req.URL
-		switch url {
-		case workflowURL:
-			return []byte(base64EncodedCompressedBinary), nil
-		case configURL:
-			return urlToConfigBytes[configURL], nil
-		}
-		return nil, fmt.Errorf("unknown  url: %s", url)
-	}
-
-	donContext := framework.CreateDonContextWithWorkflowRegistry(ctx, t, syncerFetcherFunc, utils.NoopComputeFetcherFactory{})
-
-	address, _, _, err := contract.DeployContract(donContext.EthBlockchain.TransactionOpts(), donContext.EthBlockchain.Client())
-	require.NoError(t, err)
-	lggr.Debugf("Deploy contract address: %s", address)
-
-	runtimeCfg := runtimeConfig{
-		Addresses: []string{address.Hex()},
-		Topics: []struct {
-			Values []string `yaml:"values"`
-		}{
-			{Values: []string{topic0.Hex()}},
-		},
-		Abi:   abiString,
-		Event: eventName,
-	}
-	data, err := yaml.Marshal(runtimeCfg)
-	require.NoError(t, err)
-	urlToConfigBytes[configURL] = data
-
-	//Instantiate the contract at the deployed address
-	messageEmitter, err := contract.NewContract(address, donContext.EthBlockchain.Client())
-	require.NoError(t, err)
+func setupDonWithEVMCapability(ctx context.Context, t *testing.T, lggr logger.Logger, syncFetcher artifacts.FetcherFunc, numOfWorkflowNodes int) (framework.DonContext, *framework.DON) {
+	donContext := framework.CreateDonContextWithWorkflowRegistry(ctx, t, syncFetcher, utils.NoopComputeFetcherFactory{})
 
 	evmBinary, err := utils.DeployCapability(t, "chain_capabilities/evm")
 	require.NoError(t, err)
@@ -175,10 +164,7 @@ func setupDon(ctx context.Context, t *testing.T, lggr logger.Logger, workflowURL
 
 	donContext.WaitForCapabilitiesToBeExposed(t, workflowDon)
 
-	registerWorkflow(t, donContext, workflowName, compressedBinary, "", workflowDon,
-		workflowURL, configURL, urlToConfigBytes[configURL])
-
-	return messageEmitter, donContext
+	return donContext, workflowDon
 }
 
 func registerWorkflow(t *testing.T, donContext framework.DonContext, workflowName string, compressedBinary []byte,
