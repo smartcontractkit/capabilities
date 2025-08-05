@@ -195,7 +195,7 @@ func getTestInput() cap.Input {
 		VaultDONSecrets: []cap.SecretIdentifier{
 			{
 				Key:       "my-secret-api-key",
-				Namespace: "default",
+				Namespace: "my-namespace",
 				Owner:     nil},
 		},
 	}
@@ -291,7 +291,7 @@ func TestCapability_Execute(t *testing.T) {
 					{
 						Id: &vault.SecretIdentifier{
 							Key:       "my-secret-api-key",
-							Namespace: "",
+							Namespace: "my-namespace",
 							Owner:     "",
 						},
 						Result: &vault.SecretResponse_Data{
@@ -325,6 +325,18 @@ func TestCapability_Execute(t *testing.T) {
 			assert.Equal(t, 1, len(reqs[0].EncryptedDecryptionKeyShares), "Expected 1 set of shares in the request")
 			assert.Equal(t, 2, len(reqs[0].EncryptedDecryptionKeyShares[0]), "Expected 2 shares per ciphertext in the request")
 			assert.Equal(t, []byte("test-signature"), reqs[0].Signature, "Expected secret ID to match")
+
+			publicDataBytes := reqs[0].PublicData
+			assert.NotNil(t, publicDataBytes, "Expected public data to be set in the request")
+			var publicData httpenclavetypes.HTTPEnclaveRequestData
+			err := json.Unmarshal(publicDataBytes, &publicData)
+			assert.NoError(t, err, "Failed to unmarshal public data")
+			assert.Equal(t, "my-namespace.my-secret-api-key", publicData.TemplateCiphertextNames[0], "Expected template ciphertext name to match")
+			assert.Equal(t, "https://api.example.com/status", publicData.Requests[0].URL, "Expected request URL to match")
+			assert.Equal(t, "GET", publicData.Requests[0].Method, "Expected request method to match")
+			assert.Equal(t, "Content-Type: application/json", publicData.Requests[0].Headers[0], "Expected request header to match")
+			assert.Equal(t, "", publicData.Requests[0].Body, "Expected request body to match encrypted secret data")
+
 			return mockEnclaveClient.commonExecuteBatchReturn(t)
 		}
 

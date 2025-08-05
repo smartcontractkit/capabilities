@@ -327,7 +327,7 @@ func ConvertInputToHTTPEnclaveRequestData(input cap.Input) (*httpenclavetypes.HT
 
 	inputCiphertextNames := make([]string, 0, len(input.VaultDONSecrets))
 	for _, secret := range input.VaultDONSecrets {
-		inputCiphertextNames = append(inputCiphertextNames, secret.Key)
+		inputCiphertextNames = append(inputCiphertextNames, secret.Namespace+"."+secret.Key)
 	}
 
 	return &httpenclavetypes.HTTPEnclaveRequestData{
