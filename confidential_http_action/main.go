@@ -22,12 +22,6 @@ const (
 	serviceName = "ConfidentialHTTPCapability"
 )
 
-type confidentialhttpaction interface {
-	capabilities.ExecutableCapability
-	Start(context.Context) error
-	Close() error
-}
-
 var _ loop.StandardCapabilities = (*capabilitiesServer)(nil)
 
 type capabilitiesServer struct {
@@ -131,7 +125,12 @@ func (cs *capabilitiesServer) Initialise(
 		return fmt.Errorf("failed to get VaultDON master public key: %w", err)
 	}
 
-	cs.action, err = action.New(cs.lggr, capConfig, keystore, vaultDONCapability, vaultDONMasterPublicKey)
+	vaultDonThreshold, err := getThreshold(vaultDONCapConfig)
+	if err != nil {
+		return fmt.Errorf("failed to get VaultDON threshold: %w", err)
+	}
+
+	cs.action, err = action.New(cs.lggr, capConfig, keystore, vaultDONCapability, vaultDONMasterPublicKey, vaultDonThreshold)
 	if err != nil {
 		return fmt.Errorf("failed to create confidential http action: %w", err)
 	}
@@ -142,26 +141,39 @@ func (cs *capabilitiesServer) Initialise(
 	return nil
 }
 
-func getVaultDONMasterPublicKey(vaultDONCapConfig capabilities.CapabilityConfiguration) ([]byte, error) {
-	var VaultDONMasterPublicKey []byte
-	if vaultDONCapConfig.DefaultConfig != nil {
-		// Access the Underlying map
-		if val, ok := vaultDONCapConfig.DefaultConfig.Underlying["masterPublicKey"]; ok {
-			// Unwrap the Value interface to its concrete type (string)
-			pk, err := val.Unwrap() // Unwrap returns any, error
-			if err != nil {
-				return nil, fmt.Errorf("error unwrapping 'masterPublicKey': %w", err)
-			} else if finalPKBytes, ok := pk.([]byte); ok {
-				VaultDONMasterPublicKey = finalPKBytes
-				fmt.Printf("Successfully retrieved VaultDONMasterPublicKey: %s\n", VaultDONMasterPublicKey)
-			} else {
-				return nil, fmt.Errorf("'masterPublicKey' unwrapped to unexpected type: %T", pk)
-			}
-		} else {
-			return nil, fmt.Errorf("'masterPublicKey' key not found in DefaultConfig")
-		}
-	} else {
-		return nil, fmt.Errorf("vaultDONCapConfig.DefaultConfig is nil, cannot retrieve 'masterPublicKey'")
+// The generic function to get a value from the configuration.
+// It takes the key and the expected type as a string for error messages.
+func getValueFromConfig[T any](config capabilities.CapabilityConfiguration, key string) (T, error) {
+	var zero T // A zero-value of type T to return on error
+
+	if config.DefaultConfig == nil {
+		return zero, fmt.Errorf("config.DefaultConfig is nil, cannot retrieve '%s'", key)
 	}
-	return VaultDONMasterPublicKey, nil
+
+	val, ok := config.DefaultConfig.Underlying[key]
+	if !ok {
+		return zero, fmt.Errorf("'%s' key not found in DefaultConfig", key)
+	}
+
+	// Unwrap the Value interface
+	unwrappedValue, err := val.Unwrap()
+	if err != nil {
+		return zero, fmt.Errorf("error unwrapping '%s': %w", key, err)
+	}
+
+	// Type assertion to the generic type T
+	finalValue, ok := unwrappedValue.(T)
+	if !ok {
+		return zero, fmt.Errorf("'%s' unwrapped to unexpected type: %T, expected %T", key, unwrappedValue, zero)
+	}
+
+	return finalValue, nil
+}
+
+func getVaultDONMasterPublicKey(vaultDONCapConfig capabilities.CapabilityConfiguration) ([]byte, error) {
+	return getValueFromConfig[[]byte](vaultDONCapConfig, "masterPublicKey")
+}
+
+func getThreshold(vaultDONCapConfig capabilities.CapabilityConfiguration) (int, error) {
+	return getValueFromConfig[int](vaultDONCapConfig, "threshold")
 }

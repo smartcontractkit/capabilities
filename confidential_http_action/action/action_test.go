@@ -28,7 +28,6 @@ import (
 type MockEnclaveClient[PublicDataType any, OutputType any] struct {
 	GetPublicKeysFunc func(ctx context.Context, requestID [32]byte, enclaveSpecifications []byte) ([]enclavetypes.EnclavePublicKeyData, error)
 
-	// The ExecuteFunc's signature now correctly uses the struct's own type parameters
 	ExecuteFunc func(ctx context.Context, requestID [32]byte, publicData PublicDataType, ciphertexts [][]byte, encryptedDecryptionKeyShares [][][]byte, enclaveEphemeralPublicKey []byte, enclaveID [32]byte) (*enclavetypes.ExecuteResponse[OutputType], error)
 
 	ExecuteBatchFunc func(ctx context.Context, reqs []enclavetypes.SignedComputeRequest, enclaveIDs [][32]byte) ([]enclavetypes.RawExecuteResponse, error)
@@ -58,14 +57,14 @@ func (m *MockEnclaveClient[PublicDataType, OutputType]) Execute(ctx context.Cont
 	if m.ExecuteFunc != nil {
 		return m.ExecuteFunc(ctx, requestID, publicData, ciphertexts, encryptedDecryptionKeyShares, enclaveEphemeralPublicKey, enclaveID)
 	}
-	return nil, nil
+	return nil, errors.New("ExecuteFunc not implemented for MockEnclaveClient")
 }
 
 func (m *MockEnclaveClient[PublicDataType, OutputType]) ExecuteBatch(ctx context.Context, reqs []enclavetypes.SignedComputeRequest, enclaveIDs [][32]byte) ([]enclavetypes.RawExecuteResponse, error) {
 	if m.ExecuteBatchFunc != nil {
 		return m.ExecuteBatchFunc(ctx, reqs, enclaveIDs)
 	}
-	return nil, nil
+	return nil, errors.New("ExecuteBatchFunc not implemented for MockEnclaveClient")
 }
 
 func (m *MockEnclaveClient[PublicDataType, OutputType]) commonExecuteBatchReturn(t *testing.T) ([]enclavetypes.RawExecuteResponse, error) {
@@ -202,13 +201,17 @@ func getTestInput() cap.Input {
 	}
 }
 
-func setupAndExecuteAction(t *testing.T, mockEnclaveClient *MockEnclaveClient[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse], mockVaultDON *MockVaultDONCapability) (capabilities.CapabilityResponse, error) {
+func setupAndExecuteAction(t *testing.T,
+	mockEnclaveClient *MockEnclaveClient[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse],
+	mockVaultDON *MockVaultDONCapability,
+	mockVaultDONThreshold int) (capabilities.CapabilityResponse, error) {
 	c, err := action.NewWithEnclaveClient(
 		logger.Test(t),
 		getTestConfig(),
 		getMockKeystore(),
 		mockEnclaveClient,
 		[]byte{0xDE, 0xAD, 0xBE, 0xEF}, // vaultDONMasterPublicKey
+		mockVaultDONThreshold,
 		mockVaultDON,
 	)
 	require.NoError(t, err)
@@ -247,7 +250,7 @@ func TestNew(t *testing.T) {
 	t.Run("a new confidential http capability action is created", func(t *testing.T) {
 		mockKeystore := &mockKeystore{}
 		mockVaultDON := &MockVaultDONCapability{}
-		c, err := action.New(logger.Test(t), getTestConfig(), mockKeystore, mockVaultDON, []byte{0xDE, 0xAD, 0xBE, 0xEF})
+		c, err := action.New(logger.Test(t), getTestConfig(), mockKeystore, mockVaultDON, []byte{0xDE, 0xAD, 0xBE, 0xEF}, 1)
 		assert.NoError(t, err)
 		assert.NotNil(t, c)
 	})
@@ -257,7 +260,7 @@ func TestCapability_Info(t *testing.T) {
 	t.Run("capability info is reported correctly", func(t *testing.T) {
 		mockKeystore := &mockKeystore{}
 		mockVaultDON := &MockVaultDONCapability{}
-		c, err := action.New(logger.Test(t), getTestConfig(), mockKeystore, mockVaultDON, []byte{0xDE, 0xAD, 0xBE, 0xEF})
+		c, err := action.New(logger.Test(t), getTestConfig(), mockKeystore, mockVaultDON, []byte{0xDE, 0xAD, 0xBE, 0xEF}, 1)
 		assert.NoError(t, err)
 		info, err := c.Info(context.Background())
 		assert.NoError(t, err)
@@ -283,11 +286,6 @@ func TestCapability_Execute(t *testing.T) {
 			assert.Len(t, getSecretsReq.Requests[0].GetEncryptionKeys(), 1, "Expected one encryption key")
 			assert.Equal(t, string([]byte("mock_public_key_bytes_1")), getSecretsReq.Requests[0].GetEncryptionKeys()[0], "Expected encryption key to match enclave public key")
 
-			// Simulate VaultDON response
-			mockEncryptedSecretValue := "encrypted_secret_data_for_my-secret-id"
-			mockEncryptedDecryptionKeyShare1 := "share1_for_my-secret-id"
-			mockEncryptedDecryptionKeyShare2 := "share2_for_my-secret-id"
-
 			vaultDONResponsePayload := &vault.GetSecretsResponse{
 				Responses: []*vault.SecretResponse{
 					{
@@ -298,10 +296,10 @@ func TestCapability_Execute(t *testing.T) {
 						},
 						Result: &vault.SecretResponse_Data{
 							Data: &vault.SecretData{
-								EncryptedValue: mockEncryptedSecretValue,
+								EncryptedValue: "encrypted_secret_data_for_my-secret-id",
 								EncryptedDecryptionKeyShares: []*vault.EncryptedShares{
 									{
-										Shares:        []string{mockEncryptedDecryptionKeyShare1, mockEncryptedDecryptionKeyShare2},
+										Shares:        []string{"share1_for_my-secret-id", "share2_for_my-secret-id"},
 										EncryptionKey: string([]byte("mock_public_key_bytes_1")),
 									},
 								},
@@ -330,7 +328,7 @@ func TestCapability_Execute(t *testing.T) {
 			return mockEnclaveClient.commonExecuteBatchReturn(t)
 		}
 
-		resp, err := setupAndExecuteAction(t, mockEnclaveClient, mockVaultDON)
+		resp, err := setupAndExecuteAction(t, mockEnclaveClient, mockVaultDON, 1)
 		assert.NoError(t, err)
 		assert.NotNil(t, resp.Value)
 
@@ -363,7 +361,7 @@ func TestCapability_Execute(t *testing.T) {
 			return capabilities.CapabilityResponse{}, errors.New("simulated VaultDON error")
 		}
 
-		_, err := setupAndExecuteAction(t, mockEnclaveClient, mockVaultDON)
+		_, err := setupAndExecuteAction(t, mockEnclaveClient, mockVaultDON, 1)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to get encrypted decryption key shares from VaultDON: failed to execute VaultDON capability: simulated VaultDON error")
 	})
@@ -402,7 +400,7 @@ func TestCapability_Execute(t *testing.T) {
 			}, nil
 		}
 
-		resp, err := setupAndExecuteAction(t, mockEnclaveClient, mockVaultDON)
+		resp, err := setupAndExecuteAction(t, mockEnclaveClient, mockVaultDON, 1)
 		assert.NoError(t, err) // No error at this level, but the secret won't be in the final ComputeRequest
 		assert.NotNil(t, resp.Value)
 
@@ -411,5 +409,51 @@ func TestCapability_Execute(t *testing.T) {
 		assert.NoError(t, err)
 
 		// To assert that no encrypted secrets or shares were added because of the error, we check the mockEnclaveClient higher up in this test.
+	})
+
+	t.Run("capability executes with VaultDON returning less number of shares than the threshold value", func(t *testing.T) {
+		mockEnclaveClient := &MockEnclaveClient[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse]{}
+
+		mockEnclaveClient.ExecuteBatchFunc = func(ctx context.Context, reqs []enclavetypes.SignedComputeRequest, enclaveIDs [][32]byte) ([]enclavetypes.RawExecuteResponse, error) {
+			return mockEnclaveClient.commonExecuteBatchReturn(t)
+		}
+
+		// --- Mock VaultDON Capability that returns a secret error ---
+		mockVaultDON := &MockVaultDONCapability{}
+		mockVaultDON.ExecuteFunc = func(ctx context.Context, req capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
+			vaultDONResponsePayload := &vault.GetSecretsResponse{
+				Responses: []*vault.SecretResponse{
+					{
+						Id: &vault.SecretIdentifier{
+							Key:       "my-secret-api-key",
+							Namespace: "",
+							Owner:     "",
+						},
+						Result: &vault.SecretResponse_Data{
+							Data: &vault.SecretData{
+								EncryptedValue: "encrypted_secret_data_for_my-secret-id",
+								EncryptedDecryptionKeyShares: []*vault.EncryptedShares{
+									{
+										Shares:        []string{"share1_for_my-secret-id", "share2_for_my-secret-id"},
+										EncryptionKey: string([]byte("mock_public_key_bytes_1")),
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+
+			respAny, err := anypb.New(vaultDONResponsePayload)
+			require.NoError(t, err)
+
+			return capabilities.CapabilityResponse{
+				Payload: respAny,
+			}, nil
+		}
+
+		_, err := setupAndExecuteAction(t, mockEnclaveClient, mockVaultDON, 3) // Set threshold to 3, but only 2 shares returned
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to get encrypted decryption key shares from VaultDON: not enough encrypted decryption key shares for secret my-secret-api-key, expected at least 3, got 2")
 	})
 }

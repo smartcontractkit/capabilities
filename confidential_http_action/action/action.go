@@ -41,6 +41,7 @@ type capability struct {
 	enclaveClient           enclaveclient.EnclaveClient[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse]
 	keystore                core.Keystore
 	vaultDONMasterPublicKey []byte
+	vaultDonThreshold       int
 	vaultDONID              []byte
 	vaultDONCapability      capabilities.ExecutableCapability
 }
@@ -102,6 +103,7 @@ func New(
 	keystore core.Keystore,
 	vaultDONCapability capabilities.ExecutableCapability,
 	vaultDONMasterPublicKey []byte,
+	vaultDonThreshold int,
 ) (*capability, error) {
 	nodes, err := GetNodes(capConfig)
 	if err != nil {
@@ -116,7 +118,7 @@ func New(
 	}
 
 	// Now delegate to NewWithEnclaveClient, which will NOT call getvaultDONMasterPublicKey again.
-	return NewWithEnclaveClient(lggr, capConfig, keystore, pool, vaultDONMasterPublicKey, vaultDONCapability)
+	return NewWithEnclaveClient(lggr, capConfig, keystore, pool, vaultDONMasterPublicKey, vaultDonThreshold, vaultDONCapability)
 }
 
 // NewWithEnclaveClient allows injecting a custom (e.g., mock) EnclaveClient for testing.
@@ -127,6 +129,7 @@ func NewWithEnclaveClient(
 	keystore core.Keystore,
 	enclaveClient enclaveclient.EnclaveClient[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse],
 	vaultDONMasterPublicKey []byte,
+	vaultDonThreshold int,
 	vaultDONCapability capabilities.ExecutableCapability,
 ) (*capability, error) {
 	return &capability{
@@ -134,6 +137,7 @@ func NewWithEnclaveClient(
 		enclaveClient:           enclaveClient,
 		keystore:                keystore,
 		vaultDONMasterPublicKey: vaultDONMasterPublicKey,
+		vaultDonThreshold:       vaultDonThreshold,
 		vaultDONID:              capConfig.VaultDONID,
 		vaultDONCapability:      vaultDONCapability,
 	}, nil
@@ -182,7 +186,7 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to marshal templates: %w", err)
 	}
 
-	encryptedSecrets, encryptedDecyrptedShares, err := c.GetEncryptedDecryptedShares(
+	encryptedSecrets, encryptedDecryptionShares, err := c.GetEncryptedDecryptionShares(
 		ctx,
 		input.VaultDONSecrets,
 		enclaveParams.EnclaveEphemeralPublicKey,
@@ -198,7 +202,7 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		Ciphertexts:                  encryptedSecrets,
 		MasterPublicKey:              c.vaultDONMasterPublicKey,
 		EnclaveEphemeralPublicKey:    enclaveParams.EnclaveEphemeralPublicKey,
-		EncryptedDecryptionKeyShares: encryptedDecyrptedShares,
+		EncryptedDecryptionKeyShares: encryptedDecryptionShares,
 	}
 	signedComputeReq, err := c.SignComputeRequest(ctx, computeReq)
 	if err != nil {
@@ -337,12 +341,7 @@ type VaultDONInput struct {
 	EnclaveEphemeralPublicKey []byte   `json:"enclaveEphemeralPublicKey"`
 }
 
-type VaultDONOutput struct {
-	EncryptedSecrets             [][]byte   `json:"encryptedSecrets"`
-	EncryptedDecryptionKeyShares [][][]byte `json:"encryptedDecryptionKeyShares"`
-}
-
-func (c *capability) GetEncryptedDecryptedShares(
+func (c *capability) GetEncryptedDecryptionShares(
 	ctx context.Context,
 	vaultDONSecrets []cap.SecretIdentifier,
 	enclaveEphemeralPublicKey []byte,
@@ -406,7 +405,7 @@ func (c *capability) GetEncryptedDecryptedShares(
 
 	// Process the responses from the VaultDON
 	encryptedSecrets := make([][]byte, 0)
-	encryptedDecryptedShares := make([][][]byte, 0)
+	encryptedDecryptionShares := make([][][]byte, 0)
 
 	for _, secretResp := range vaultDONOutput.Responses {
 		if secretResp.GetError() != "" {
@@ -421,18 +420,21 @@ func (c *capability) GetEncryptedDecryptedShares(
 		}
 
 		encryptedSecrets = append(encryptedSecrets, []byte(secretData.GetEncryptedValue()))
-		encryptedDecryptedSharesForSecret := make([][]byte, 0)
+		encryptedDecryptionSharesForSecret := make([][]byte, 0)
 
 		if len(secretData.GetEncryptedDecryptionKeyShares()) != 1 {
 			return nil, nil, fmt.Errorf("expected exactly one set of encrypted decryption key shares for secret %s, got %d", secretResp.GetId().GetKey(), len(secretData.GetEncryptedDecryptionKeyShares()))
 		}
 		for _, shareStr := range secretData.GetEncryptedDecryptionKeyShares()[0].GetShares() {
-			encryptedDecryptedSharesForSecret = append(encryptedDecryptedSharesForSecret, []byte(shareStr))
+			encryptedDecryptionSharesForSecret = append(encryptedDecryptionSharesForSecret, []byte(shareStr))
 		}
-		encryptedDecryptedShares = append(encryptedDecryptedShares, encryptedDecryptedSharesForSecret)
+		if len(encryptedDecryptionSharesForSecret) < c.vaultDonThreshold {
+			return nil, nil, fmt.Errorf("not enough encrypted decryption key shares for secret %s, expected at least %d, got %d", secretResp.GetId().GetKey(), c.vaultDonThreshold, len(encryptedDecryptionSharesForSecret))
+		}
+		encryptedDecryptionShares = append(encryptedDecryptionShares, encryptedDecryptionSharesForSecret)
 	}
 
-	return encryptedSecrets, encryptedDecryptedShares, nil
+	return encryptedSecrets, encryptedDecryptionShares, nil
 }
 
 func (c *capability) Start(ctx context.Context) error {
