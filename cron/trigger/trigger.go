@@ -137,7 +137,9 @@ func (s *Service) Initialise(ctx context.Context, config string, _ core.Telemetr
 	_ core.PipelineRunnerService,
 	_ core.RelayerSet,
 	_ core.OracleFactory,
-	_ core.GatewayConnector) error {
+	_ core.GatewayConnector,
+	_ core.Keystore,
+) error {
 	s.lggr.Debugf("Initialising %s", ServiceName)
 
 	var cronConfig Config

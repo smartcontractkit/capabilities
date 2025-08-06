@@ -244,7 +244,7 @@ func successWithStandardCronIntervals(t *testing.T, useTypedAPI bool) {
 			require.NoError(t, err)
 
 			ts := NewTriggerService(logger.Nop(), fakeClock)
-			err = ts.Initialise(t.Context(), string(config), nil, nil, nil, nil, nil, nil, nil)
+			err = ts.Initialise(t.Context(), string(config), nil, nil, nil, nil, nil, nil, nil, nil)
 			require.NoError(t, err)
 
 			triggerAPI := server.NewCronServer(ts)
@@ -346,7 +346,7 @@ func TestCronTrigger_Load(t *testing.T) {
 	assert.Equal(t, len(ts.scheduler.Jobs()), numTriggers)
 
 	// Start scheduling
-	err = ts.Initialise(t.Context(), string(config), nil, nil, nil, nil, nil, nil, nil)
+	err = ts.Initialise(t.Context(), string(config), nil, nil, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	// Process "numExecutions" times
@@ -462,7 +462,7 @@ func testCronTriggerRegisterTriggerBeforeStart(t *testing.T, useTypedAPI bool) {
 	assert.Equal(t, len(ts.scheduler.Jobs()), 1)
 
 	// Start scheduling
-	err = ts.Initialise(t.Context(), string(config), nil, nil, nil, nil, nil, nil, nil)
+	err = ts.Initialise(t.Context(), string(config), nil, nil, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	// 1st process
@@ -533,7 +533,7 @@ func testCronTriggerTimeWindows(t *testing.T, useTypedAPI bool) {
 	assert.Equal(t, len(ts.scheduler.Jobs()), 1)
 
 	// Start scheduling
-	err = ts.Initialise(t.Context(), string(config), nil, nil, nil, nil, nil, nil, nil)
+	err = ts.Initialise(t.Context(), string(config), nil, nil, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	// Advance to 1ms past 9am
@@ -617,7 +617,7 @@ func testCronTriggerMultipleDifferentSchedules(t *testing.T, useTypedAPI bool) {
 	assert.Equal(t, len(ts.scheduler.Jobs()), 2)
 
 	// Start scheduling
-	err = ts.Initialise(t.Context(), string(config), nil, nil, nil, nil, nil, nil, nil)
+	err = ts.Initialise(t.Context(), string(config), nil, nil, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	fakeClock.Advance(time.Second)
@@ -729,7 +729,7 @@ func testCronTriggerTimeZone(t *testing.T, useTypedAPI bool) {
 	assert.Equal(t, len(ts.scheduler.Jobs()), 1)
 
 	// Start scheduling
-	err = ts.Initialise(t.Context(), string(config), nil, nil, nil, nil, nil, nil, nil)
+	err = ts.Initialise(t.Context(), string(config), nil, nil, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, err)
 
@@ -821,7 +821,7 @@ func testCronTriggerRegisterTrigger(t *testing.T, useTypedAPI bool) {
 		t.Run(tt.name, func(t *testing.T) {
 			fakeClock := clockwork.NewRealClock()
 			ts := NewTriggerService(logger.Nop(), fakeClock)
-			err := ts.Initialise(t.Context(), "", nil, nil, nil, nil, nil, nil, nil)
+			err := ts.Initialise(t.Context(), "", nil, nil, nil, nil, nil, nil, nil, nil)
 			require.NoError(t, err)
 			triggerAPI := server.NewCronServer(ts)
 			ctx := t.Context()
@@ -853,7 +853,7 @@ func TestCronTrigger_RegisterTriggerDuplicateError(t *testing.T) {
 	require.NoError(t, err)
 	fakeClock := clockwork.NewRealClock()
 	ts := NewTriggerService(logger.Nop(), fakeClock)
-	err = ts.Initialise(t.Context(), string(triggerConfig), nil, nil, nil, nil, nil, nil, nil)
+	err = ts.Initialise(t.Context(), string(triggerConfig), nil, nil, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	triggerAPI := server.NewCronServer(ts)
 
@@ -885,7 +885,7 @@ func TestCronTrigger_UnregisterTriggerError(t *testing.T) {
 	require.NoError(t, err)
 	fakeClock := clockwork.NewRealClock()
 	ts := NewTriggerService(logger.Nop(), fakeClock)
-	err = ts.Initialise(t.Context(), string(triggerConfig), nil, nil, nil, nil, nil, nil, nil)
+	err = ts.Initialise(t.Context(), string(triggerConfig), nil, nil, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	triggerAPI := server.NewCronServer(ts)
 
@@ -961,7 +961,7 @@ func TestCronTrigger_UnregisterTriggerError(t *testing.T) {
 
 	t.Run("NOK fails to unregister if closed", func(t *testing.T) {
 		ts := NewTriggerService(logger.Nop(), fakeClock)
-		err = ts.Initialise(t.Context(), string(triggerConfig), nil, nil, nil, nil, nil, nil, nil)
+		err = ts.Initialise(t.Context(), string(triggerConfig), nil, nil, nil, nil, nil, nil, nil, nil)
 		require.NoError(t, err)
 
 		triggerAPI := server.NewCronServer(ts)
