@@ -117,7 +117,7 @@ func waitUntilLogPollerFiltersArePresent(t *testing.T, lggr logger.SugaredLogger
 
 		url := database.URL()
 		//URLs for node: {postgresql  chainlink_dev:insecurepassword localhost:5432 /chainlink_test_1e5fa7a338864502a8f20dd47dbc26d8  false false sslmode=disable  }
-		fmt.Println("URLs for node:", url)
+		fmt.Println("URLs for node:", url.String())
 	}
 
 	results := make(map[int]bool)
@@ -152,6 +152,7 @@ INNER_LOOP:
 				url := database.URL()
 				//URLs for node: {postgresql  chainlink_dev:insecurepassword localhost:5432 /chainlink_test_1e5fa7a338864502a8f20dd47dbc26d8  false false sslmode=disable  }
 				fmt.Println("URLs for node:", url)
+				fmt.Println("URLs for node (String):", url.String())
 
 				dbName := strings.TrimPrefix(url.Path, "/")
 				port, err := strconv.Atoi(url.Port())
@@ -201,11 +202,12 @@ INNER_LOOP:
 }
 
 func NewORM(logger logger.Logger, chainID *big.Int, dbName string, externalPort int) (logpoller.ORM, *sqlx.DB, error) {
-	dsn := fmt.Sprintf("host=%s port=%d dbname=%s sslmode=disable", "127.0.0.1", externalPort, dbName)
+	dsn := fmt.Sprintf("host=%s port=%d dbname=%s sslmode=disable", "localhost", externalPort, dbName)
+	logger.Infof("Connecting to database %s", dsn)
 	//dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", "127.0.0.1", externalPort, "", "", dbName)
 	db, err := sqlx.Open("postgres", dsn)
 	if err != nil {
-		return nil, db, err
+		return nil, db, fmt.Errorf("failed to connect to database: %w", err)
 	}
 
 	db.MapperFunc(reflectx.CamelToSnakeASCII)
@@ -215,7 +217,7 @@ func NewORM(logger logger.Logger, chainID *big.Int, dbName string, externalPort 
 func getAllFilters(ctx context.Context, logger logger.Logger, chainID *big.Int, dbName string, externalPort int) (map[string]logpoller.Filter, error) {
 	orm, db, err := NewORM(logger, chainID, dbName, externalPort)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create ORM: %v", err)
 	}
 
 	defer db.Close()
