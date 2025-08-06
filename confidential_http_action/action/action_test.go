@@ -18,6 +18,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 	httpenclavetypes "github.com/smartcontractkit/confidential-compute/enclave/nitro-confidential-http-enclave/types"
 	enclavetypes "github.com/smartcontractkit/confidential-compute/types"
+	"github.com/smartcontractkit/confidential-compute/util"
 
 	action "github.com/smartcontractkit/capabilities/confidential_http_action/action"
 	cap "github.com/smartcontractkit/capabilities/confidential_http_action/confidential_http_action_cap"
@@ -286,7 +287,7 @@ func TestCapability_Execute(t *testing.T) {
 			assert.Len(t, getSecretsReq.Requests, 1, "Expected one secret request")
 			assert.Equal(t, "my-secret-api-key", getSecretsReq.Requests[0].GetId().GetKey(), "Expected secret ID to match")
 			assert.Len(t, getSecretsReq.Requests[0].GetEncryptionKeys(), 1, "Expected one encryption key")
-			assert.Equal(t, string([]byte("mock_public_key_bytes_1")), getSecretsReq.Requests[0].GetEncryptionKeys()[0], "Expected encryption key to match enclave public key")
+			assert.Equal(t, util.EncodeToString([]byte("mock_public_key_bytes_1")), getSecretsReq.Requests[0].GetEncryptionKeys()[0], "Expected encryption key to match enclave public key")
 
 			vaultDONResponsePayload := &vault.GetSecretsResponse{
 				Responses: []*vault.SecretResponse{
@@ -298,11 +299,11 @@ func TestCapability_Execute(t *testing.T) {
 						},
 						Result: &vault.SecretResponse_Data{
 							Data: &vault.SecretData{
-								EncryptedValue: "encrypted_secret_data_for_my-secret-id",
+								EncryptedValue: util.EncodeToString([]byte("encrypted_secret_data_for_my-secret-id")),
 								EncryptedDecryptionKeyShares: []*vault.EncryptedShares{
 									{
-										Shares:        []string{"share1_for_my-secret-id", "share2_for_my-secret-id"},
-										EncryptionKey: string([]byte("mock_public_key_bytes_1")),
+										Shares:        []string{util.EncodeToString([]byte("share1_for_my-secret-id")), util.EncodeToString([]byte("share2_for_my-secret-id"))},
+										EncryptionKey: util.EncodeToString([]byte("mock_public_key_bytes_1")),
 									},
 								},
 							},
@@ -432,11 +433,11 @@ func TestCapability_Execute(t *testing.T) {
 						},
 						Result: &vault.SecretResponse_Data{
 							Data: &vault.SecretData{
-								EncryptedValue: "encrypted_secret_data_for_my-secret-id",
+								EncryptedValue: util.EncodeToString([]byte("encrypted_secret_data_for_my-secret-id")),
 								EncryptedDecryptionKeyShares: []*vault.EncryptedShares{
 									{
-										Shares:        []string{"share1_for_my-secret-id", "share2_for_my-secret-id"},
-										EncryptionKey: string([]byte("mock_public_key_bytes_1")),
+										Shares:        []string{util.EncodeToString([]byte("share1_for_my-secret-id")), util.EncodeToString([]byte("share2_for_my-secret-id"))},
+										EncryptionKey: util.EncodeToString([]byte("mock_public_key_bytes_1")),
 									},
 								},
 							},
