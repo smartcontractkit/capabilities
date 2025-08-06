@@ -29,7 +29,7 @@ func newApp() *application {
 	var (
 		lggr, closeLggr = lggrCfg.New()
 
-		loopReg = plugins.NewLoopRegistry(lggr, "", false, nil, nil, nil, nil, nil, "")
+		loopReg = plugins.NewLoopRegistry(lggr, nil, nil)
 
 		cfg = plugins.NewRegistrarConfig(
 			loop.NewGRPCOpts(nil),
@@ -40,7 +40,7 @@ func newApp() *application {
 
 	return &application{
 		logger:          lggr,
-		closeLogger:     func() error { return closeLggr },
+		closeLogger:     closeLggr,
 		registrarConfig: cfg,
 	}
 

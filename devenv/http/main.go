@@ -20,8 +20,9 @@ var (
 )
 
 func init() {
+	logger.InitColor(true)
 	lggrCfg = logger.Config{
-		Level: zapcore.DebugLevel,
+		LogLevel: zapcore.DebugLevel,
 	}
 
 	// Set a default name for the loopp ID, which is used to identify the loop in the registry
