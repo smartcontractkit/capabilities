@@ -4,13 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jmoiron/sqlx"
+	"github.com/scylladb/go-reflectx"
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder/beholdertest"
+	"github.com/smartcontractkit/chainlink-evm/pkg/logpoller"
 	"github.com/smartcontractkit/chainlink/v2/core/logger"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -62,11 +67,10 @@ func Test_LogTrigger(t *testing.T) {
 	numOfWorkflowNodes := 4
 	workflowName := "TestWf"
 
-	messageEmitter, donContext := setupDon(ctx, t, lggr, wasmFile, abiString, eventName, topic0, numOfWorkflowNodes, workflowName)
+	messageEmitter, donContext, workflowDon := setupDon(ctx, t, lggr, wasmFile, abiString, eventName, topic0, numOfWorkflowNodes, workflowName)
 
 	// waiting time to ensure the logTrigger inside the workflow is ready to process messages
-	// TODO PLEX-1621: this wait time should be much lower, but in CI needs to be high enough to make log poller ready to work on the logs
-	time.Sleep(10 * time.Second)
+	waitUntilLogPollerFiltersArePresent(t, lggr, workflowDon, numOfWorkflowNodes)
 
 	// emitting single event we will be waiting from the workflow's LogTrigger
 	messageDataThatWillBeEmitted := "Data for log trigger"
@@ -102,6 +106,122 @@ func Test_LogTrigger(t *testing.T) {
 		"Expected to find %d events, but found %d", numOfWorkflowNodes, foundEvents)
 }
 
+func waitUntilLogPollerFiltersArePresent(t *testing.T, lggr logger.SugaredLogger, workflowDon *framework.DON, workderNodes int) {
+	// TODO PLEX-1621: this wait time should be much lower, but in CI needs to be high enough to make log poller ready to work on the logs
+	//time.Sleep(10 * time.Second)
+
+	nodes := workflowDon.GetAllNodes()
+	for _, node := range nodes {
+		config := node.GetConfig()
+		database := config.Database()
+
+		url := database.URL()
+		//URLs for node: {postgresql  chainlink_dev:insecurepassword localhost:5432 /chainlink_test_1e5fa7a338864502a8f20dd47dbc26d8  false false sslmode=disable  }
+		fmt.Println("URLs for node:", url)
+	}
+
+	results := make(map[int]bool)
+	ticker := 5 * time.Second
+	timeout := 2 * time.Minute
+
+INNER_LOOP:
+	for {
+		select {
+		case <-time.After(timeout):
+			t.Fatalf("timed out, when waiting for %.2f seconds, waiting for all nodes to have expected filters registered", timeout.Seconds())
+		case <-time.Tick(ticker):
+			if len(results) == len(nodes) {
+				lggr.Infof("All %d nodes in DON %d have expected filters registered", len(nodes), "roberto carlos")
+				break INNER_LOOP
+			}
+
+			//for _, node := range nodes {
+			//	config := node.GetConfig()
+			//	database := config.Database()
+			//
+			//	url := database.URL()
+			//	//URLs for node: {postgresql  chainlink_dev:insecurepassword localhost:5432 /chainlink_test_1e5fa7a338864502a8f20dd47dbc26d8  false false sslmode=disable  }
+			//	fmt.Println("URLs for node:", url)
+			//}
+
+			for i, node := range nodes {
+
+				config := node.GetConfig()
+				database := config.Database()
+
+				url := database.URL()
+				//URLs for node: {postgresql  chainlink_dev:insecurepassword localhost:5432 /chainlink_test_1e5fa7a338864502a8f20dd47dbc26d8  false false sslmode=disable  }
+				fmt.Println("URLs for node:", url)
+
+				dbName := strings.TrimPrefix(url.Path, "/")
+				port, err := strconv.Atoi(url.Port())
+				require.NoError(t, err)
+
+				//nodeIndex, nodeIndexErr := crenode.FindLabelValue(workerNode, crenode.IndexKey)
+				//if nodeIndexErr != nil {
+				//	return pkgerrors.Wrap(nodeIndexErr, "failed to find node index")
+				//}
+				//
+				//nodeIndexInt, nodeIdxErr := strconv.Atoi(nodeIndex)
+				//if nodeIdxErr != nil {
+				//	return pkgerrors.Wrap(nodeIdxErr, "failed to convert node index to int")
+				//}
+
+				if _, ok := results[i]; ok {
+					continue
+				}
+
+				lggr.Infof("Checking if all WorkflowRegistry filters are registered for worker node %d", i)
+				allFilters, filtersErr := getAllFilters(context.Background(), lggr, big.NewInt(1337), dbName, port)
+				if filtersErr != nil {
+					t.Fatalf("Failed to get all filters: %v", filtersErr)
+				}
+
+				for _, filter := range allFilters {
+					lggr.Infof("Filter found for node %d: Name: %s, EventSigs: %v", i, filter.Name, filter.EventSigs)
+					if strings.Contains(filter.Name, "WorkflowRegistry") {
+						if len(filter.EventSigs) == 6 {
+							lggr.Infof("Found all WorkflowRegistry filters for node %d", i)
+							results[i] = true
+							continue
+						}
+
+						lggr.Infof("Found only %d WorkflowRegistry filters for node %d", len(filter.EventSigs), i)
+					}
+				}
+			}
+
+			// return if we have results for all nodes, don't wait for next tick
+			if len(results) == workderNodes {
+				lggr.Infof("All %d nodes in DON %d have expected filters registered", workderNodes, "roberto carlos 2")
+				break INNER_LOOP
+			}
+		}
+	}
+}
+
+func NewORM(logger logger.Logger, chainID *big.Int, dbName string, externalPort int) (logpoller.ORM, *sqlx.DB, error) {
+	dsn := fmt.Sprintf("host=%s port=%d dbname=%s sslmode=disable", "127.0.0.1", externalPort, dbName)
+	//dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", "127.0.0.1", externalPort, "", "", dbName)
+	db, err := sqlx.Open("postgres", dsn)
+	if err != nil {
+		return nil, db, err
+	}
+
+	db.MapperFunc(reflectx.CamelToSnakeASCII)
+	return logpoller.NewORM(chainID, db, logger), db, nil
+}
+
+func getAllFilters(ctx context.Context, logger logger.Logger, chainID *big.Int, dbName string, externalPort int) (map[string]logpoller.Filter, error) {
+	orm, db, err := NewORM(logger, chainID, dbName, externalPort)
+	if err != nil {
+		return nil, err
+	}
+
+	defer db.Close()
+	return orm.LoadFilters(ctx)
+}
+
 type runtimeConfig struct {
 	Addresses []string `yaml:"addresses"`
 	Topics    []struct {
@@ -111,7 +231,7 @@ type runtimeConfig struct {
 	Event string `yaml:"event,omitempty"`
 }
 
-func setupDon(ctx context.Context, t *testing.T, lggr logger.Logger, workflowURL string, abiString string, eventName string, topic0 common.Hash, numOfWorkflowNodes int, workflowName string) (*contract.Contract, framework.DonContext) {
+func setupDon(ctx context.Context, t *testing.T, lggr logger.Logger, workflowURL string, abiString string, eventName string, topic0 common.Hash, numOfWorkflowNodes int, workflowName string) (*contract.Contract, framework.DonContext, *framework.DON) {
 	configURL := "config.yaml"
 	compressedBinary, base64EncodedCompressedBinary := utils.GetCompressedWorkflowWasm(t, workflowURL)
 
@@ -177,7 +297,7 @@ func setupDon(ctx context.Context, t *testing.T, lggr logger.Logger, workflowURL
 	registerWorkflow(t, donContext, workflowName, compressedBinary, "", workflowDon,
 		workflowURL, configURL, urlToConfigBytes[configURL])
 
-	return messageEmitter, donContext
+	return messageEmitter, donContext, workflowDon
 }
 
 func registerWorkflow(t *testing.T, donContext framework.DonContext, workflowName string, compressedBinary []byte,
