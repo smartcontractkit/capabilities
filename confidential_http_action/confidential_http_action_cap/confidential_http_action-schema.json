@@ -2,49 +2,6 @@
     "$id": "https://github.com/smartcontractkit/capabilities/confidential_http_action/confidential_http_action_cap/confidential-http-action@1.0.0",
     "description": "Confidential HTTP action",
     "$defs": {
-        "Enclave": {
-            "type": "object",
-            "properties": {
-                "ID": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 255
-                    }
-                },
-                "URL": {
-                    "type": "string"
-                },
-                "TrustedValues": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 255
-                    }
-                },
-                "EnclaveType": {
-                    "type": "string"
-                },
-                "ExtraData": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": 255
-                    }
-                }
-            },
-            "additionalProperties": false,
-            "required": [
-                "ID",
-                "URL",
-                "TrustedValues",
-                "Type",
-                "ExtraData"
-            ]
-        },
         "Request": {
             "type": "object",
             "properties": {
@@ -114,12 +71,6 @@
         "Config": {
             "type": "object",
             "properties": {
-                "Enclaves": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/$defs/Enclave"
-                    }
-                },
                 "VaultDONID": {
                     "type": "array",
                     "items": {
@@ -130,7 +81,6 @@
                 }
             },
             "required": [
-                "Enclaves",
                 "VaultDONID"
             ]
         },

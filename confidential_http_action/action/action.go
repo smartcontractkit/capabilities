@@ -51,6 +51,30 @@ type capability struct {
 	vaultDON      VaultDON
 }
 
+// Config corresponds to the JSON schema field "Config".
+type EnclavesConfig struct {
+	// Enclaves corresponds to the JSON schema field "Enclaves".
+	Enclaves []Enclave `json:"Enclaves" yaml:"Enclaves" mapstructure:"Enclaves"`
+}
+
+// Enclave corresponds to the JSON schema field "Enclave".
+type Enclave struct {
+	// EnclaveType corresponds to the JSON schema field "EnclaveType".
+	EnclaveType *string `json:"EnclaveType,omitempty" yaml:"EnclaveType,omitempty" mapstructure:"EnclaveType,omitempty"`
+
+	// ExtraData corresponds to the JSON schema field "ExtraData".
+	ExtraData []uint8 `json:"ExtraData" yaml:"ExtraData" mapstructure:"ExtraData"`
+
+	// ID corresponds to the JSON schema field "ID".
+	ID []uint8 `json:"ID" yaml:"ID" mapstructure:"ID"`
+
+	// TrustedValues corresponds to the JSON schema field "TrustedValues".
+	TrustedValues []uint8 `json:"TrustedValues" yaml:"TrustedValues" mapstructure:"TrustedValues"`
+
+	// URL corresponds to the JSON schema field "URL".
+	URL string `json:"URL" yaml:"URL" mapstructure:"URL"`
+}
+
 // parseEnclaveType converts a string into an EnclaveType using case-insensitive matching.
 // It handles the case where the source type is a pointer and might be nil. If nil, returns error.
 func parseEnclaveType(typeStr *string) (*enclavetypes.EnclaveType, error) {
@@ -70,11 +94,17 @@ func parseEnclaveType(typeStr *string) (*enclavetypes.EnclaveType, error) {
 }
 
 // GetEnclaveNodes transforms a slice of Enclave structs from the config into a slice of EnclaveNode structs.
-func GetEnclaveNodes(config cap.Config) ([]enclavetypes.EnclaveNode, error) {
-	// Pre-allocate the slice with the correct capacity for efficiency.
-	nodes := make([]enclavetypes.EnclaveNode, 0, len(config.Enclaves))
+func GetEnclaveNodes(localNodeConfigBytes []byte) ([]enclavetypes.EnclaveNode, error) {
+	var enclavesConfig EnclavesConfig
+	err := json.Unmarshal(localNodeConfigBytes, &enclavesConfig)
+	if err != nil {
+		return nil, fmt.Errorf("error unmarshaling config: %v", err)
+	}
 
-	for i, confEnclave := range config.Enclaves {
+	// Pre-allocate the slice with the correct capacity for efficiency.
+	nodes := make([]enclavetypes.EnclaveNode, 0, len(enclavesConfig.Enclaves))
+
+	for i, confEnclave := range enclavesConfig.Enclaves {
 		// The EnclaveID in EnclaveNode is a fixed-size [32]byte array.
 		// The ID in the source Enclave is a []byte slice.
 		// We must copy the data from the slice to the array.
@@ -105,13 +135,14 @@ func GetEnclaveNodes(config cap.Config) ([]enclavetypes.EnclaveNode, error) {
 func New(
 	lggr logger.Logger,
 	capConfig cap.Config,
+	localNodeConfigBytes []byte,
 	keystore core.Keystore,
 	vaultDONCapability capabilities.ExecutableCapability,
 	vaultDONMasterPublicKey []byte,
 	vaultDonThreshold int,
 	vaultDONPossibleFaultyNodes int,
 ) (*capability, error) {
-	nodes, err := GetEnclaveNodes(capConfig)
+	nodes, err := GetEnclaveNodes(localNodeConfigBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create enclave pool: %w", err)
 	}

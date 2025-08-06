@@ -100,6 +100,15 @@ func (cs *capabilitiesServer) Initialise(
 		return fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
+	localNode, err := capabilityRegistry.LocalNode(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get local node: %w", err)
+	}
+	if localNode.WorkflowDON.ID == 0 {
+		return fmt.Errorf("local node does not have a WorkflowDON ID, cannot initialise confidential http action capability")
+	}
+	localNodeConfigBytes := localNode.WorkflowDON.Config
+
 	if len(capConfig.VaultDONID) == 0 {
 		return fmt.Errorf("VaultDONID must be provided in capability config to retrieve VaultDON capability")
 	}
@@ -135,7 +144,7 @@ func (cs *capabilitiesServer) Initialise(
 		return fmt.Errorf("failed to get VaultDON possible faulty nodes: %w", err)
 	}
 
-	cs.action, err = action.New(cs.lggr, capConfig, keystore, vaultDONCapability, vaultDONMasterPublicKey, vaultDonThreshold, vaultDONPossibleFaultyNodes)
+	cs.action, err = action.New(cs.lggr, capConfig, localNodeConfigBytes, keystore, vaultDONCapability, vaultDONMasterPublicKey, vaultDonThreshold, vaultDONPossibleFaultyNodes)
 	if err != nil {
 		return fmt.Errorf("failed to create confidential http action: %w", err)
 	}

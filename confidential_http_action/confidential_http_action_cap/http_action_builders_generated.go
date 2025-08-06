@@ -13,7 +13,6 @@ func (cfg Config) New(w *sdk.WorkflowSpecFactory, ref string, input HttpActionIn
 		ID: "confidential-http-action@1.0.0", Ref: ref,
 		Inputs: input.ToSteps(),
 		Config: map[string]any{
-			"Enclaves":   cfg.Enclaves,
 			"VaultDONID": cfg.VaultDONID,
 		},
 		CapabilityType: capabilities.CapabilityTypeAction,
@@ -23,99 +22,6 @@ func (cfg Config) New(w *sdk.WorkflowSpecFactory, ref string, input HttpActionIn
 	raw := step.AddTo(w)
 	return OutputWrapper(raw)
 }
-
-// EnclaveWrapper allows access to field from an sdk.CapDefinition[Enclave]
-func EnclaveWrapper(raw sdk.CapDefinition[Enclave]) EnclaveCap {
-	wrapped, ok := raw.(EnclaveCap)
-	if ok {
-		return wrapped
-	}
-	return &enclaveCap{CapDefinition: raw}
-}
-
-type EnclaveCap interface {
-	sdk.CapDefinition[Enclave]
-	EnclaveType() sdk.CapDefinition[string]
-	ExtraData() sdk.CapDefinition[[]uint8]
-	ID() sdk.CapDefinition[[]uint8]
-	TrustedValues() sdk.CapDefinition[[]uint8]
-	URL() sdk.CapDefinition[string]
-	private()
-}
-
-type enclaveCap struct {
-	sdk.CapDefinition[Enclave]
-}
-
-func (*enclaveCap) private() {}
-func (c *enclaveCap) EnclaveType() sdk.CapDefinition[string] {
-	return sdk.AccessField[Enclave, string](c.CapDefinition, "EnclaveType")
-}
-func (c *enclaveCap) ExtraData() sdk.CapDefinition[[]uint8] {
-	return sdk.AccessField[Enclave, []uint8](c.CapDefinition, "ExtraData")
-}
-func (c *enclaveCap) ID() sdk.CapDefinition[[]uint8] {
-	return sdk.AccessField[Enclave, []uint8](c.CapDefinition, "ID")
-}
-func (c *enclaveCap) TrustedValues() sdk.CapDefinition[[]uint8] {
-	return sdk.AccessField[Enclave, []uint8](c.CapDefinition, "TrustedValues")
-}
-func (c *enclaveCap) URL() sdk.CapDefinition[string] {
-	return sdk.AccessField[Enclave, string](c.CapDefinition, "URL")
-}
-
-func ConstantEnclave(value Enclave) EnclaveCap {
-	return &enclaveCap{CapDefinition: sdk.ConstantDefinition(value)}
-}
-
-func NewEnclaveFromFields(
-	enclaveType sdk.CapDefinition[string],
-	extraData sdk.CapDefinition[[]uint8],
-	iD sdk.CapDefinition[[]uint8],
-	trustedValues sdk.CapDefinition[[]uint8],
-	uRL sdk.CapDefinition[string]) EnclaveCap {
-	return &simpleEnclave{
-		CapDefinition: sdk.ComponentCapDefinition[Enclave]{
-			"EnclaveType":   enclaveType.Ref(),
-			"ExtraData":     extraData.Ref(),
-			"ID":            iD.Ref(),
-			"TrustedValues": trustedValues.Ref(),
-			"URL":           uRL.Ref(),
-		},
-		enclaveType:   enclaveType,
-		extraData:     extraData,
-		iD:            iD,
-		trustedValues: trustedValues,
-		uRL:           uRL,
-	}
-}
-
-type simpleEnclave struct {
-	sdk.CapDefinition[Enclave]
-	enclaveType   sdk.CapDefinition[string]
-	extraData     sdk.CapDefinition[[]uint8]
-	iD            sdk.CapDefinition[[]uint8]
-	trustedValues sdk.CapDefinition[[]uint8]
-	uRL           sdk.CapDefinition[string]
-}
-
-func (c *simpleEnclave) EnclaveType() sdk.CapDefinition[string] {
-	return c.enclaveType
-}
-func (c *simpleEnclave) ExtraData() sdk.CapDefinition[[]uint8] {
-	return c.extraData
-}
-func (c *simpleEnclave) ID() sdk.CapDefinition[[]uint8] {
-	return c.iD
-}
-func (c *simpleEnclave) TrustedValues() sdk.CapDefinition[[]uint8] {
-	return c.trustedValues
-}
-func (c *simpleEnclave) URL() sdk.CapDefinition[string] {
-	return c.uRL
-}
-
-func (c *simpleEnclave) private() {}
 
 // OutputWrapper allows access to field from an sdk.CapDefinition[Output]
 func OutputWrapper(raw sdk.CapDefinition[Output]) OutputCap {

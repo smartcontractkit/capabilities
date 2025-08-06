@@ -156,11 +156,17 @@ func (m *MockVaultDONCapability) UnregisterFromWorkflow(ctx context.Context, req
 	return nil // Not used in this test scenario
 }
 
-func getTestConfig() cap.Config {
+func getTestCapConfig() cap.Config {
+	return cap.Config{
+		VaultDONID: []uint8{0xF0, 0x0B, 0xAA, 0x42},
+	}
+}
+
+func getTestEnclavesConfigBytes() []byte {
 	enclaveTypeNitro := "NITRO" // Example enclave type, can be changed to SGX, TDX, etc.
 
-	return cap.Config{
-		Enclaves: []cap.Enclave{
+	enclavesConfig := action.EnclavesConfig{
+		Enclaves: []action.Enclave{
 			{
 				EnclaveType:   &enclaveTypeNitro,
 				ExtraData:     []uint8{0x01, 0x02, 0x03},
@@ -176,8 +182,10 @@ func getTestConfig() cap.Config {
 				URL:           "https://enclave-b.example.com/api",
 			},
 		},
-		VaultDONID: []uint8{0xF0, 0x0B, 0xAA, 0x42},
 	}
+
+	enclavesConfigBytes, _ := json.MarshalIndent(enclavesConfig, "", "  ")
+	return enclavesConfigBytes
 }
 
 func getTestInput() cap.Input {
@@ -208,7 +216,7 @@ func setupAndExecuteAction(t *testing.T,
 	mockVaultDONPossibleFaultyNodes int) (capabilities.CapabilityResponse, error) {
 	c, err := action.NewWithEnclaveClient(
 		logger.Test(t),
-		getTestConfig(),
+		getTestCapConfig(),
 		getMockKeystore(),
 		mockEnclaveClient,
 		[]byte{0xDE, 0xAD, 0xBE, 0xEF}, // vaultDONMasterPublicKey
@@ -252,7 +260,7 @@ func TestNew(t *testing.T) {
 	t.Run("a new confidential http capability action is created", func(t *testing.T) {
 		mockKeystore := &mockKeystore{}
 		mockVaultDON := &MockVaultDONCapability{}
-		c, err := action.New(logger.Test(t), getTestConfig(), mockKeystore, mockVaultDON, []byte{0xDE, 0xAD, 0xBE, 0xEF}, 1, 0)
+		c, err := action.New(logger.Test(t), getTestCapConfig(), getTestEnclavesConfigBytes(), mockKeystore, mockVaultDON, []byte{0xDE, 0xAD, 0xBE, 0xEF}, 1, 0)
 		assert.NoError(t, err)
 		assert.NotNil(t, c)
 	})
@@ -262,7 +270,7 @@ func TestCapability_Info(t *testing.T) {
 	t.Run("capability info is reported correctly", func(t *testing.T) {
 		mockKeystore := &mockKeystore{}
 		mockVaultDON := &MockVaultDONCapability{}
-		c, err := action.New(logger.Test(t), getTestConfig(), mockKeystore, mockVaultDON, []byte{0xDE, 0xAD, 0xBE, 0xEF}, 1, 0)
+		c, err := action.New(logger.Test(t), getTestCapConfig(), getTestEnclavesConfigBytes(), mockKeystore, mockVaultDON, []byte{0xDE, 0xAD, 0xBE, 0xEF}, 1, 0)
 		assert.NoError(t, err)
 		info, err := c.Info(context.Background())
 		assert.NoError(t, err)

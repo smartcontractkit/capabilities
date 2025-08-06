@@ -8,9 +8,6 @@ import (
 )
 
 type Config struct {
-	// Enclaves corresponds to the JSON schema field "Enclaves".
-	Enclaves []Enclave `json:"Enclaves" yaml:"Enclaves" mapstructure:"Enclaves"`
-
 	// VaultDONID corresponds to the JSON schema field "VaultDONID".
 	VaultDONID []uint8 `json:"VaultDONID" yaml:"VaultDONID" mapstructure:"VaultDONID"`
 }
@@ -21,9 +18,6 @@ func (j *Config) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &raw); err != nil {
 		return err
 	}
-	if _, ok := raw["Enclaves"]; raw != nil && !ok {
-		return fmt.Errorf("field Enclaves in Config: required")
-	}
 	if _, ok := raw["VaultDONID"]; raw != nil && !ok {
 		return fmt.Errorf("field VaultDONID in Config: required")
 	}
@@ -33,50 +27,6 @@ func (j *Config) UnmarshalJSON(b []byte) error {
 		return err
 	}
 	*j = Config(plain)
-	return nil
-}
-
-type Enclave struct {
-	// EnclaveType corresponds to the JSON schema field "EnclaveType".
-	EnclaveType *string `json:"EnclaveType,omitempty" yaml:"EnclaveType,omitempty" mapstructure:"EnclaveType,omitempty"`
-
-	// ExtraData corresponds to the JSON schema field "ExtraData".
-	ExtraData []uint8 `json:"ExtraData" yaml:"ExtraData" mapstructure:"ExtraData"`
-
-	// ID corresponds to the JSON schema field "ID".
-	ID []uint8 `json:"ID" yaml:"ID" mapstructure:"ID"`
-
-	// TrustedValues corresponds to the JSON schema field "TrustedValues".
-	TrustedValues []uint8 `json:"TrustedValues" yaml:"TrustedValues" mapstructure:"TrustedValues"`
-
-	// URL corresponds to the JSON schema field "URL".
-	URL string `json:"URL" yaml:"URL" mapstructure:"URL"`
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (j *Enclave) UnmarshalJSON(b []byte) error {
-	var raw map[string]interface{}
-	if err := json.Unmarshal(b, &raw); err != nil {
-		return err
-	}
-	if _, ok := raw["ExtraData"]; raw != nil && !ok {
-		return fmt.Errorf("field ExtraData in Enclave: required")
-	}
-	if _, ok := raw["ID"]; raw != nil && !ok {
-		return fmt.Errorf("field ID in Enclave: required")
-	}
-	if _, ok := raw["TrustedValues"]; raw != nil && !ok {
-		return fmt.Errorf("field TrustedValues in Enclave: required")
-	}
-	if _, ok := raw["URL"]; raw != nil && !ok {
-		return fmt.Errorf("field URL in Enclave: required")
-	}
-	type Plain Enclave
-	var plain Plain
-	if err := json.Unmarshal(b, &plain); err != nil {
-		return err
-	}
-	*j = Enclave(plain)
 	return nil
 }
 
