@@ -186,9 +186,19 @@ INNER_LOOP:
 
 				for _, filter := range allFilters {
 					lggr.Infof("Filter found for node %d: Name: %s, EventSigs: %v", i, filter.Name, filter.EventSigs)
-					if strings.Contains(filter.Name, "WorkflowRegistry") {
-						if len(filter.EventSigs) == 6 {
-							lggr.Infof("Found all WorkflowRegistry filters for node %d", i)
+					//if strings.Contains(filter.Name, "WorkflowRegistry") {
+					//	if len(filter.EventSigs) == 6 {
+					//		lggr.Infof("Found all WorkflowRegistry filters for node %d", i)
+					//		results[i] = true
+					//		continue
+					//	}
+					//
+					//	lggr.Infof("Found only %d WorkflowRegistry filters for node %d", len(filter.EventSigs), i)
+					//}
+
+					if strings.Contains(filter.Name, "-evm-log-trigger") {
+						if len(filter.EventSigs) == 1 {
+							lggr.Infof("Found all filters for logTrigger for node %d", i)
 							results[i] = true
 							continue
 						}
