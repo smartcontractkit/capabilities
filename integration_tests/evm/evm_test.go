@@ -81,6 +81,7 @@ func Test_LogTrigger(t *testing.T) {
 	require.NoError(t, err)
 	lggr.Infof("Transaction mined in block: %d", receipt.BlockNumber.Uint64())
 
+	lggr.Info("About to start waiting for workflow logs to be emitted...")
 	// assertion to validate we get the expected number of events in beholder logs
 	foundEvents := 0
 	require.Eventually(t, func() bool {
@@ -104,6 +105,9 @@ func Test_LogTrigger(t *testing.T) {
 	}, 60*time.Second, // test takes in average 24 seconds to complete locally
 		1*time.Second,
 		"Expected to find %d events, but found %d", numOfWorkflowNodes, foundEvents)
+	lggr.Infof("Found %d events in beholder logs, as expected", foundEvents)
+	t.Fatal("Forcing an error to get the logs printed in the test output")
+
 }
 
 func waitUntilLogPollerFiltersArePresent(t *testing.T, lggr logger.SugaredLogger, workflowDon *framework.DON, workderNodes int) {
@@ -124,6 +128,7 @@ func waitUntilLogPollerFiltersArePresent(t *testing.T, lggr logger.SugaredLogger
 	ticker := 5 * time.Second
 	timeout := 2 * time.Minute
 
+	lggr.Infof("About to start waiting for all nodes to have expected filters registered, timeout: %.2f seconds", timeout.Seconds())
 INNER_LOOP:
 	for {
 		select {
@@ -131,7 +136,7 @@ INNER_LOOP:
 			t.Fatalf("timed out, when waiting for %.2f seconds, waiting for all nodes to have expected filters registered", timeout.Seconds())
 		case <-time.Tick(ticker):
 			if len(results) == len(nodes) {
-				lggr.Infof("All %d nodes in DON %d have expected filters registered", len(nodes), "roberto carlos")
+				lggr.Infof("All %d nodes in DON have expected filters registered", len(nodes))
 				break INNER_LOOP
 			}
 
@@ -185,7 +190,7 @@ INNER_LOOP:
 				}
 
 				for _, filter := range allFilters {
-					lggr.Infof("Filter found for node %d: Name: %s, EventSigs: %v", i, filter.Name, filter.EventSigs)
+					lggr.Infof("Filter found for node %d: Name: %s, EventSigs(%d): %v", i, filter.Name, len(filter.EventSigs), filter.EventSigs)
 					//if strings.Contains(filter.Name, "WorkflowRegistry") {
 					//	if len(filter.EventSigs) == 6 {
 					//		lggr.Infof("Found all WorkflowRegistry filters for node %d", i)
@@ -210,7 +215,7 @@ INNER_LOOP:
 
 			// return if we have results for all nodes, don't wait for next tick
 			if len(results) == workderNodes {
-				lggr.Infof("All %d nodes in DON %d have expected filters registered", workderNodes, "roberto carlos 2")
+				lggr.Infof("All %d nodes in DON have expected filters registered2", workderNodes)
 				break INNER_LOOP
 			}
 		}
