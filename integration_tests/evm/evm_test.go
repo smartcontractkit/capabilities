@@ -153,10 +153,16 @@ INNER_LOOP:
 				//URLs for node: {postgresql  chainlink_dev:insecurepassword localhost:5432 /chainlink_test_1e5fa7a338864502a8f20dd47dbc26d8  false false sslmode=disable  }
 				fmt.Println("URLs for node:", url)
 				fmt.Println("URLs for node (String):", url.String())
+				fmt.Printf("URLs for node (String): user and password: %s\n", url.User.String())
 
 				dbName := strings.TrimPrefix(url.Path, "/")
 				port, err := strconv.Atoi(url.Port())
 				require.NoError(t, err)
+
+				user := url.User.Username()
+				fmt.Printf("URLs for node (String) User name: %s\n", user)
+				password, _ := url.User.Password()
+				fmt.Printf("URLs for node (String) Password: %s\n", password)
 
 				//nodeIndex, nodeIndexErr := crenode.FindLabelValue(workerNode, crenode.IndexKey)
 				//if nodeIndexErr != nil {
@@ -173,7 +179,7 @@ INNER_LOOP:
 				}
 
 				lggr.Infof("Checking if all WorkflowRegistry filters are registered for worker node %d", i)
-				allFilters, filtersErr := getAllFilters(context.Background(), lggr, big.NewInt(1337), dbName, port)
+				allFilters, filtersErr := getAllFilters(context.Background(), lggr, big.NewInt(1337), dbName, port, user, password)
 				if filtersErr != nil {
 					t.Fatalf("Failed to get all filters: %v", filtersErr)
 				}
@@ -201,8 +207,8 @@ INNER_LOOP:
 	}
 }
 
-func NewORM(logger logger.Logger, chainID *big.Int, dbName string, externalPort int) (logpoller.ORM, *sqlx.DB, error) {
-	dsn := fmt.Sprintf("host=%s port=%d dbname=%s sslmode=disable", "localhost", externalPort, dbName)
+func NewORM(logger logger.Logger, chainID *big.Int, dbName string, externalPort int, user string, password string) (logpoller.ORM, *sqlx.DB, error) {
+	dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", "localhost", externalPort, user, password, dbName)
 	logger.Infof("Connecting to database %s", dsn)
 	//dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", "127.0.0.1", externalPort, "", "", dbName)
 	db, err := sqlx.Open("postgres", dsn)
@@ -214,8 +220,8 @@ func NewORM(logger logger.Logger, chainID *big.Int, dbName string, externalPort 
 	return logpoller.NewORM(chainID, db, logger), db, nil
 }
 
-func getAllFilters(ctx context.Context, logger logger.Logger, chainID *big.Int, dbName string, externalPort int) (map[string]logpoller.Filter, error) {
-	orm, db, err := NewORM(logger, chainID, dbName, externalPort)
+func getAllFilters(ctx context.Context, logger logger.Logger, chainID *big.Int, dbName string, externalPort int, user string, password string) (map[string]logpoller.Filter, error) {
+	orm, db, err := NewORM(logger, chainID, dbName, externalPort, user, password)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create ORM: %v", err)
 	}
