@@ -336,9 +336,8 @@ func (h *connectorHandler) handleRequestCaching(ctx context.Context, gatewayID s
 
 	cachedEntry, err := h.requestCache.get(ctx, req.ID)
 	if err != nil {
-		l.Errorw("Failed to get cached entry", "error", err)
-		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInternal, "Internal server error")
-		return true
+		l.Debugw("cached entry not found. Proceeding with request processing", "error", err)
+		return false // not handled, continue processing
 	}
 
 	if cachedEntry != nil {

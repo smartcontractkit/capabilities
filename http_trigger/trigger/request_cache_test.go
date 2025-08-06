@@ -86,7 +86,7 @@ func TestRequestCache_Get_NotFound(t *testing.T) {
 	requestID := "0x789"
 
 	result, err := cache.get(t.Context(), requestID)
-	require.NoError(t, err)
+	require.Error(t, err)
 	require.Nil(t, result)
 }
 

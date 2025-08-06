@@ -2,9 +2,7 @@ package trigger
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
-	"errors"
 	"time"
 
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
@@ -46,13 +44,10 @@ func (c *requestCache) add(ctx context.Context, entry requestCacheEntry) error {
 func (c *requestCache) get(ctx context.Context, requestID string) (*requestCacheEntry, error) {
 	val, err := c.kvstore.Get(ctx, requestID)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil
-		}
 		return nil, err
 	}
 	if val == nil {
-		return nil, err
+		return nil, nil
 	}
 	var entry requestCacheEntry
 	err = json.Unmarshal(val, &entry)
