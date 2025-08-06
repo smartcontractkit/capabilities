@@ -157,12 +157,12 @@ func (h *connectorHandler) validateAuthorizedKeys(inputKeys []*http.AuthorizedKe
 	var authorizedKeys []gateway_common.AuthorizedKey
 	for _, key := range inputKeys {
 		switch key.Type {
-		case http.KeyType_KEY_TYPE_ECDSA:
+		case http.KeyType_KEY_TYPE_ECDSA_EVM:
 			if len(key.PublicKey) != ecdsaPubKeyHexLen || key.PublicKey[:2] != "0x" {
 				return nil, fmt.Errorf("invalid public key format: must be 0x-prefixed hex string of length %d, got %q", ecdsaPubKeyHexLen, key.PublicKey)
 			}
 			authorizedKeys = append(authorizedKeys, gateway_common.AuthorizedKey{
-				KeyType:   gateway_common.KeyTypeECDSA,
+				KeyType:   gateway_common.KeyTypeECDSAEVM,
 				PublicKey: strings.ToLower(key.PublicKey),
 			})
 		default:
@@ -410,7 +410,7 @@ func (h *connectorHandler) triggerWorkflow(ctx context.Context, workflowID strin
 		Trigger: &http.Payload{
 			Input: input,
 			Key: &http.AuthorizedKey{
-				Type:      http.KeyType_KEY_TYPE_ECDSA,
+				Type:      http.KeyType_KEY_TYPE_ECDSA_EVM,
 				PublicKey: key.PublicKey,
 			},
 		},
