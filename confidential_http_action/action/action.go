@@ -3,6 +3,7 @@ package action
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -170,7 +171,16 @@ func getValueFromConfig[T any](config capabilities.CapabilityConfiguration, key 
 }
 
 func getVaultDONMasterPublicKey(vaultDONCapConfig capabilities.CapabilityConfiguration) ([]byte, error) {
-	return getValueFromConfig[[]byte](vaultDONCapConfig, "masterPublicKey")
+	// Vault DON stores keys as hex encoded strings
+	masterPublicKeyHexString, err := getValueFromConfig[string](vaultDONCapConfig, "masterPublicKey")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get masterPublicKey from VaultDON capability config: %w", err)
+	}
+	masterPublicKey, err := hex.DecodeString(masterPublicKeyHexString)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode masterPublicKey from hex: %w", err)
+	}
+	return masterPublicKey, nil
 }
 
 func getThreshold(vaultDONCapConfig capabilities.CapabilityConfiguration) (int, error) {
@@ -535,6 +545,8 @@ func (c *capability) GetEncryptedDecryptionShares(
 		return nil, nil, errors.New("VaultDON capability is not initialized")
 	}
 
+	enclaveEphemeralPublicKeyHex := hex.EncodeToString(enclaveEphemeralPublicKey)
+
 	secretRequests := make([]*vault.SecretRequest, len(vaultDONSecrets))
 	for i, secret := range vaultDONSecrets {
 		secretRequests[i] = &vault.SecretRequest{
@@ -544,7 +556,7 @@ func (c *capability) GetEncryptedDecryptionShares(
 				Owner:     workflowOwner,
 			},
 			// Set EncryptionKeys to be an array of 1 item with the enclaveEphemeralPublicKey
-			EncryptionKeys: []string{string(enclaveEphemeralPublicKey)},
+			EncryptionKeys: []string{string(enclaveEphemeralPublicKeyHex)},
 		}
 		if secret.Owner != nil {
 			secretRequests[i].Id.Owner = *secret.Owner
@@ -562,11 +574,11 @@ func (c *capability) GetEncryptedDecryptionShares(
 
 	// Create a CapabilityRequest for the VaultDON
 	vaultDONRequest := capabilities.CapabilityRequest{
-		Payload: inputAny, // Assign the *anypb.Any here
+		Payload: inputAny,
 		Method:  vault.MethodGetSecrets,
-		Metadata: capabilities.RequestMetadata{ // Corrected: Metadata is a struct value
-			WorkflowID:          "confidential-http-action-request", // Example ID
-			WorkflowExecutionID: "vault-don-secrets-fetch",          // Example ID
+		Metadata: capabilities.RequestMetadata{
+			WorkflowID:          "confidential-http-action-request",
+			WorkflowExecutionID: "vault-don-secrets-fetch",
 		},
 	}
 
@@ -604,7 +616,12 @@ func (c *capability) GetEncryptedDecryptionShares(
 			return nil, nil, fmt.Errorf("expected exactly one set of encrypted decryption key shares for secret %s, got %d", secretResp.GetId().GetKey(), len(secretData.GetEncryptedDecryptionKeyShares()))
 		}
 		for _, shareStr := range secretData.GetEncryptedDecryptionKeyShares()[0].GetShares() {
-			encryptedDecryptionSharesForSecret = append(encryptedDecryptionSharesForSecret, []byte(shareStr))
+			// Decode the hex-encoded shares back into a byte slice
+			shareBytes, err := hex.DecodeString(shareStr)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to decode hex-encoded share for secret %s: %w", secretResp.GetId().GetKey(), err)
+			}
+			encryptedDecryptionSharesForSecret = append(encryptedDecryptionSharesForSecret, shareBytes)
 		}
 		minimumSharesRequired := c.vaultDON.CryptographyThreshold + c.vaultDON.PossibleFaultyNodes
 		if len(encryptedDecryptionSharesForSecret) < minimumSharesRequired {
