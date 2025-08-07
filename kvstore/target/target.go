@@ -81,7 +81,7 @@ func evaluate(rawRequest capabilities.CapabilityRequest) (r KVWriteReport, err e
 }
 
 func (c *kvTarget) Execute(ctx context.Context, rawRequest capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
-	c.logger.Infow("Executing",
+	c.logger.Infow("Executing kvstore target",
 		"WorkflowID", rawRequest.Metadata.WorkflowID,
 		"WorkflowExecutionID", rawRequest.Metadata.WorkflowExecutionID,
 	)
@@ -90,7 +90,7 @@ func (c *kvTarget) Execute(ctx context.Context, rawRequest capabilities.Capabili
 	if err != nil {
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to decode signed report: %v", err)
 	}
-	c.logger.Debugw("Evaluated execute request",
+	c.logger.Debugw("Evaluated kvstore target execute request",
 		"WorkflowID", rawRequest.Metadata.WorkflowID,
 		"WorkflowExecutionID", rawRequest.Metadata.WorkflowExecutionID,
 	)
