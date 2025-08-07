@@ -63,9 +63,10 @@ func TestLogTriggerService_Close_WaitsForPollingGoroutine(t *testing.T) {
 		lggr := logger.Test(t)
 		evmService := initMocks(t)
 		evmService.EXPECT().HeaderByNumber(mock.Anything, mock.Anything).Return(&evmtypes.HeaderByNumberReply{Header: &finalizedExpHead}, nil)
-		evmService.On("QueryTrackedLogs", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]*evmtypes.Log{}, nil)
+		evmService.On("QueryTrackedLogs", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]*evmtypes.Log{}, nil).Maybe()
 		evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
 		evmService.On("UnregisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
+		evmService.EXPECT().GetFiltersNames(mock.Anything).Return([]string{}, nil).Maybe()
 		store := NewLogTriggerStore()
 		service := NewLogTriggerService(evmService, store, lggr, test.NopBeholderProcessor{}, &monitoring.MessageBuilder{},
 			10*time.Millisecond)

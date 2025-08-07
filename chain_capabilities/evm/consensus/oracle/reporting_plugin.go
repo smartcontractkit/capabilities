@@ -100,26 +100,16 @@ func (rp *reportingPlugin) Observation(
 		return nil, fmt.Errorf("too many request IDs: got %d, expected %d", len(query.RequestIDs), rp.config.MaxAllowedBatchSize)
 	}
 
-	observation := &ctypes.Observation{ChainHeight: &ctypes.ChainHeight{}, Observations: make(map[string]*ctypes.RequestObservation, len(query.RequestIDs))}
-	var err error
-	observation.ChainHeight.Finalized, err = rp.blocksProvider.GetFinalized()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get finalized block height: %w", err)
+	chainHeight := ctypes.ChainHeight{
+		Finalized: rp.blocksProvider.GetFinalized(),
+		Safe:      rp.blocksProvider.GetSafe(),
+		Latest:    rp.blocksProvider.GetLatest(),
 	}
-
-	observation.ChainHeight.Safe, err = rp.blocksProvider.GetSafe()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get safe block height: %w", err)
-	}
-
-	observation.ChainHeight.Latest, err = rp.blocksProvider.GetLatest()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get latest block height: %w", err)
-	}
+	observation := &ctypes.Observation{ChainHeight: &chainHeight, Observations: make(map[string]*ctypes.RequestObservation, len(query.RequestIDs))}
 
 	rp.populateHeightFromPreviousOutcome(observation, outctx)
 
-	err = validateChainHeight(observation.ChainHeight)
+	err := validateChainHeight(observation.ChainHeight)
 	if err != nil {
 		return nil, fmt.Errorf("invalid chain height: %w", err)
 	}

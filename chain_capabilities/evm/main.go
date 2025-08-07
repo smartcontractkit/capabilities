@@ -12,6 +12,7 @@ import (
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/height"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/oracle"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/poller"
 
@@ -40,12 +41,15 @@ const (
 	OCRRoundBatchSize = 50
 	// OCRRoundMaxBatchSize - defines max number of requests that this node will process in a round, if requested by another node.
 	// Needed to allow graceful roll out of OCRBatchSize increase.
-	OCRRoundMaxBatchSize = 500
-	PollingWorkersNum    = 10
-	PollPeriod           = 10 * time.Second
-	repoCLLCapabilities  = "https://raw.githubusercontent.com/smartcontractkit/capabilities"
-	versionRefsMain      = "refs/heads/main"
-	schemaBasePath       = repoCLLCapabilities + "/" + versionRefsMain + "/chain_capabilities/evm/monitoring"
+	OCRRoundMaxBatchSize  = 500
+	PollingWorkersNum     = 10
+	PollPeriod            = 10 * time.Second
+	UnknownRequestTTL     = 10 * time.Second
+	ChainHeightPollPeriod = time.Second
+
+	repoCLLCapabilities = "https://raw.githubusercontent.com/smartcontractkit/capabilities"
+	versionRefsMain     = "refs/heads/main"
+	schemaBasePath      = repoCLLCapabilities + "/" + versionRefsMain + "/chain_capabilities/evm/monitoring"
 )
 
 type capabilityGRPCService struct {
@@ -61,6 +65,7 @@ type capability struct {
 	consensusHandler *consensus.Handler
 	oracle           core.Oracle
 	triggerService   *trigger.LogTriggerService
+	heightProvider   *height.Provider
 }
 
 var _ evmcapserver.ClientCapability = &capabilityGRPCService{}
@@ -128,7 +133,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 	}
 
 	c.requestPoller = poller.NewPoller(c.lggr, PollingWorkersNum, PollPeriod)
-	c.consensusHandler = consensus.NewHandler(c.lggr, c.requestPoller, time.Second*10)
+	c.consensusHandler = consensus.NewHandler(c.lggr, c.requestPoller, UnknownRequestTTL)
 
 	c.EVM, err = actions.NewEVM(cfg, evmRelayer, c.lggr, processor, messageBuilder, c.consensusHandler)
 	if err != nil {
@@ -136,10 +141,8 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 	}
 
 	c.triggerService = trigger.NewLogTriggerService(evmRelayer, trigger.NewLogTriggerStore(), c.lggr, processor, messageBuilder, cfg.LogTriggerPollInterval)
-	c.triggerService.StartCleanUp()
 
-	// TODO PLEX-1560: populate with implementation
-	blocksProvider := &oracle.NullBlocksProvider{}
+	c.heightProvider = height.NewProvider(c.lggr, ChainHeightPollPeriod, evmRelayer)
 
 	c.oracle, err = oracleFactory.NewOracle(ctx, core.OracleArgs{
 		LocalConfig: ocrtypes.LocalConfig{
@@ -151,14 +154,14 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 			ContractConfigLoadTimeout:          time.Second * 10,
 			DefaultMaxDurationInitialization:   time.Second * 10,
 		},
-		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(logger.Sugared(c.lggr), c.consensusHandler, blocksProvider, OCRRoundBatchSize, OCRRoundMaxBatchSize),
+		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(logger.Sugared(c.lggr), c.consensusHandler, c.heightProvider, OCRRoundBatchSize, OCRRoundMaxBatchSize),
 		ContractTransmitter:           oracle.NewContractTransmitter(c.lggr, c.consensusHandler),
 	})
 	if err != nil {
 		return fmt.Errorf("error when creating oracle: %w", err)
 	}
 
-	services := []interface{ Start(context.Context) error }{c.consensusHandler, c.requestPoller, c.oracle}
+	services := []interface{ Start(context.Context) error }{c.consensusHandler, c.requestPoller, c.oracle, c.heightProvider, c.triggerService}
 	for _, service := range services {
 		if err := service.Start(ctx); err != nil {
 			return err
@@ -177,7 +180,7 @@ func (c *capabilityGRPCService) Start(_ context.Context) error {
 
 func (c *capabilityGRPCService) Close() error {
 	c.lggr.Infof("Closing %s", CapabilityName)
-	return errors.Join(c.requestPoller.Close(), c.consensusHandler.Close(), c.oracle.Close(context.Background()), c.triggerService.Close())
+	return errors.Join(c.requestPoller.Close(), c.consensusHandler.Close(), c.oracle.Close(context.Background()), c.triggerService.Close(), c.heightProvider.Close())
 }
 
 func (c *capabilityGRPCService) HealthReport() map[string]error {

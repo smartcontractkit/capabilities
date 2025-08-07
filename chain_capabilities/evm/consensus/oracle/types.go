@@ -5,9 +5,9 @@ import (
 )
 
 type BlocksProvider interface {
-	GetLatest() (int64, error)
-	GetSafe() (int64, error)
-	GetFinalized() (int64, error)
+	GetLatest() int64
+	GetSafe() int64
+	GetFinalized() int64
 }
 
 type RequestsHandler interface {
