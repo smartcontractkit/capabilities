@@ -41,6 +41,14 @@ func (s *testKVStore) Get(ctx context.Context, key string) ([]byte, error) {
 	}
 	return value, nil
 }
+
+func (s *testKVStore) PruneExpiredEntries(ctx context.Context, ttl time.Duration) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// For simplicity in tests, we'll just return 0 as no entries are expired
+	// In a real implementation, this would check timestamps and remove expired entries
+	return 0, nil
+}
 func TestRequestCache_Add_Success(t *testing.T) {
 	t.Parallel()
 
