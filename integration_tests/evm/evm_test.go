@@ -14,7 +14,6 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	"github.com/scylladb/go-reflectx"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/trigger"
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder/beholdertest"
 	"github.com/smartcontractkit/chainlink-evm/pkg/logpoller"
 	"github.com/smartcontractkit/chainlink/v2/core/logger"
@@ -35,6 +34,8 @@ import (
 
 	"github.com/smartcontractkit/capabilities/integration_tests/evm/contract"
 	"github.com/smartcontractkit/capabilities/integration_tests/utils"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/trigger"
 
 	events2 "github.com/smartcontractkit/chainlink-protos/workflows/go/events"
 )
