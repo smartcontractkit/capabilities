@@ -21,8 +21,8 @@ import (
 var _ loop.StandardCapabilities = (*capabilitiesServer)(nil)
 
 type capabilitiesServer struct {
-	Action             capabilities.ActionCapability
-	Target             capabilities.TargetCapability
+	Action             capabilities.ExecutableCapability
+	Target             capabilities.ExecutableCapability
 	oracle             core.Oracle
 	lggr               logger.SugaredLogger
 	capabilityRegistry core.CapabilitiesRegistry
@@ -97,6 +97,8 @@ func (cs *capabilitiesServer) Initialise(
 	_ core.PipelineRunnerService,
 	_ core.RelayerSet,
 	oracleFactory core.OracleFactory,
+	_ core.GatewayConnector,
+	_ core.Keystore,
 ) error {
 	cs.lggr.Debug("Initialising")
 

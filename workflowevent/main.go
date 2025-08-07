@@ -18,7 +18,7 @@ const (
 )
 
 type CapabilitiesService struct {
-	target             capabilities.TargetCapability
+	target             capabilities.ExecutableCapability
 	lggr               logger.Logger
 	capabilityRegistry core.CapabilitiesRegistry
 }
@@ -76,6 +76,8 @@ func (cs *CapabilitiesService) Initialise(
 	_ core.PipelineRunnerService,
 	_ core.RelayerSet,
 	_ core.OracleFactory,
+	_ core.GatewayConnector,
+	_ core.Keystore,
 ) error {
 	cs.lggr.Debugf("Initialising %s", serviceName)
 

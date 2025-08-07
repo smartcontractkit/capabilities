@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink/v2/plugins"
 )
 
@@ -29,7 +29,7 @@ func newApp() *application {
 	var (
 		lggr, closeLggr = lggrCfg.New()
 
-		loopReg = plugins.NewLoopRegistry(lggr, nil, nil)
+		loopReg = plugins.NewLoopRegistry(lggr, "", false, nil, nil, nil, nil, nil, "")
 
 		cfg = plugins.NewRegistrarConfig(
 			loop.NewGRPCOpts(nil),
@@ -40,7 +40,7 @@ func newApp() *application {
 
 	return &application{
 		logger:          lggr,
-		closeLogger:     closeLggr,
+		closeLogger:     func() error { return closeLggr },
 		registrarConfig: cfg,
 	}
 

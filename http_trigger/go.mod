@@ -5,8 +5,8 @@ go 1.24.2
 toolchain go1.24.3
 
 require (
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20250711131700-236a5b631ad7
-	github.com/smartcontractkit/chainlink-common v0.8.1-0.20250807194753-28707710ccfc
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20250807005622-32f1fcc70c7d
+	github.com/smartcontractkit/chainlink-common v0.8.1-0.20250807215209-605af6c00a4b
 	github.com/stretchr/testify v1.10.0
 	google.golang.org/protobuf v1.36.6
 )
