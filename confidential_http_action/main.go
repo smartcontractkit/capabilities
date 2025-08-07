@@ -2,10 +2,7 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"strconv"
-	"time"
 
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -14,8 +11,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
 	action "github.com/smartcontractkit/capabilities/confidential_http_action/action"
-	cap "github.com/smartcontractkit/capabilities/confidential_http_action/confidential_http_action_cap"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/actions/vault"
 )
 
 const (
@@ -25,9 +20,8 @@ const (
 var _ loop.StandardCapabilities = (*capabilitiesServer)(nil)
 
 type capabilitiesServer struct {
-	action             capabilities.ExecutableCapability
-	lggr               logger.Logger
-	capabilityRegistry core.CapabilitiesRegistry
+	action capabilities.ExecutableCapability
+	lggr   logger.Logger
 }
 
 func New(lggr logger.Logger) *capabilitiesServer {
@@ -42,16 +36,6 @@ func (cs *capabilitiesServer) Start(ctx context.Context) error {
 }
 
 func (cs *capabilitiesServer) Close() error {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	info, err := cs.action.Info(ctx)
-	if err != nil {
-		return err
-	}
-	err = cs.capabilityRegistry.Remove(ctx, info.ID)
-	if err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -68,6 +52,9 @@ func (cs *capabilitiesServer) Ready() error {
 }
 
 func (cs *capabilitiesServer) Infos(ctx context.Context) ([]capabilities.CapabilityInfo, error) {
+	if cs.action == nil {
+		return nil, fmt.Errorf("action capability not initialized")
+	}
 	triggerInfo, err := cs.action.Info(ctx)
 	if err != nil {
 		return nil, err
@@ -86,116 +73,19 @@ func (cs *capabilitiesServer) Initialise(
 	capabilityRegistry core.CapabilitiesRegistry,
 	_ core.ErrorLog,
 	_ core.PipelineRunnerService,
-	relayerSet core.RelayerSet,
-	oracleFactory core.OracleFactory,
+	_ core.RelayerSet,
+	_ core.OracleFactory,
 	_ core.GatewayConnector,
 	keystore core.Keystore) error {
 
 	cs.lggr.Infof("Initialising %s", serviceName)
 	cs.lggr.Infof("Config: %s", config)
 
-	var capConfig cap.Config
-	err := json.Unmarshal([]byte(config), &capConfig)
-	if err != nil {
-		return fmt.Errorf("failed to unmarshal config: %w", err)
-	}
-
-	localNode, err := capabilityRegistry.LocalNode(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get local node: %w", err)
-	}
-	if localNode.WorkflowDON.ID == 0 {
-		return fmt.Errorf("local node does not have a WorkflowDON ID, cannot initialise confidential http action capability")
-	}
-	localNodeConfigBytes := localNode.WorkflowDON.Config
-
-	if len(capConfig.VaultDONID) == 0 {
-		return fmt.Errorf("VaultDONID must be provided in capability config to retrieve VaultDON capability")
-	}
-
-	vaultDONCapability, err := capabilityRegistry.GetExecutable(ctx, vault.CapabilityID)
-	if err != nil {
-		return fmt.Errorf("failed to get VaultDON capability with ID '%s' from registry: %w", vault.CapabilityID, err)
-	}
-
-	vaultDONIDStr := string(capConfig.VaultDONID)
-	vaultDONIDUint, err := strconv.ParseUint(vaultDONIDStr, 10, 32)
-	if err != nil {
-		return fmt.Errorf("failed to parse VaultDONID '%s' as uint32: %w", vaultDONIDStr, err)
-	}
-
-	vaultDONCapConfig, err := capabilityRegistry.ConfigForCapability(ctx, vault.CapabilityID, uint32(vaultDONIDUint))
-	if err != nil {
-		return fmt.Errorf("failed to parse get VaultDON config: %w", err)
-	}
-
-	vaultDONMasterPublicKey, err := getVaultDONMasterPublicKey(vaultDONCapConfig)
-	if err != nil {
-		return fmt.Errorf("failed to get VaultDON master public key: %w", err)
-	}
-
-	vaultDonThreshold, err := getThreshold(vaultDONCapConfig)
-	if err != nil {
-		return fmt.Errorf("failed to get VaultDON threshold: %w", err)
-	}
-
-	vaultDONPossibleFaultyNodes, err := getVaultDONPossibleFaultyNodes(ctx, vaultDONCapability)
-	if err != nil {
-		return fmt.Errorf("failed to get VaultDON possible faulty nodes: %w", err)
-	}
-
-	cs.action, err = action.New(cs.lggr, capConfig, localNodeConfigBytes, keystore, vaultDONCapability, vaultDONMasterPublicKey, vaultDonThreshold, vaultDONPossibleFaultyNodes)
-	if err != nil {
-		return fmt.Errorf("failed to create confidential http action: %w", err)
-	}
-
+	// All dependencies needed to initialize the action are passed here.
+	// The action itself will handle the lazy initialization.
+	cs.action = action.New(cs.lggr, config, keystore, capabilityRegistry)
 	if err := capabilityRegistry.Add(ctx, cs.action); err != nil {
 		return fmt.Errorf("failed to add attested http capability to the capability registry: %w", err)
 	}
 	return nil
-}
-
-func getVaultDONPossibleFaultyNodes(ctx context.Context, vaultDONCapability capabilities.ExecutableCapability) (int, error) {
-	capabilityInfo, err := vaultDONCapability.Info(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("failed to get VaultDON capability info: %w", err)
-	}
-	return int(capabilityInfo.DON.F), nil
-}
-
-// The generic function to get a value from the configuration.
-// It takes the key and the expected type as a string for error messages.
-func getValueFromConfig[T any](config capabilities.CapabilityConfiguration, key string) (T, error) {
-	var zero T // A zero-value of type T to return on error
-
-	if config.DefaultConfig == nil {
-		return zero, fmt.Errorf("config.DefaultConfig is nil, cannot retrieve '%s'", key)
-	}
-
-	val, ok := config.DefaultConfig.Underlying[key]
-	if !ok {
-		return zero, fmt.Errorf("'%s' key not found in DefaultConfig", key)
-	}
-
-	// Unwrap the Value interface
-	unwrappedValue, err := val.Unwrap()
-	if err != nil {
-		return zero, fmt.Errorf("error unwrapping '%s': %w", key, err)
-	}
-
-	// Type assertion to the generic type T
-	finalValue, ok := unwrappedValue.(T)
-	if !ok {
-		return zero, fmt.Errorf("'%s' unwrapped to unexpected type: %T, expected %T", key, unwrappedValue, zero)
-	}
-
-	return finalValue, nil
-}
-
-func getVaultDONMasterPublicKey(vaultDONCapConfig capabilities.CapabilityConfiguration) ([]byte, error) {
-	return getValueFromConfig[[]byte](vaultDONCapConfig, "masterPublicKey")
-}
-
-func getThreshold(vaultDONCapConfig capabilities.CapabilityConfiguration) (int, error) {
-	return getValueFromConfig[int](vaultDONCapConfig, "threshold")
 }
