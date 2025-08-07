@@ -6,10 +6,10 @@ replace github.com/smartcontractkit/capabilities/loadtestwritetarget => ../loadt
 
 replace github.com/smartcontractkit/capabilities/http_action => ../http_action
 
+replace github.com/smartcontractkit/capabilities/chain_capabilities/evm => ../chain_capabilities/evm
+
 replace github.com/fbsobreira/gotron-sdk => github.com/smartcontractkit/chainlink-tron/relayer/gotron-sdk v0.0.5-0.20250422175525-b7575d96bd4d
 
-//replace github.com/smartcontractkit/chainlink/v2 => /Users/lautarofernandez/repos/chainlink/
-//dd026d23bdaaa2503bb235986ff26c42107b2c23
 require (
 	github.com/BurntSushi/toml v1.4.0
 	github.com/andybalholm/brotli v1.1.1
@@ -17,6 +17,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jonboulle/clockwork v0.5.0
 	github.com/pelletier/go-toml v1.9.5
+	github.com/smartcontractkit/capabilities/chain_capabilities/evm v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/capabilities/http_action v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/capabilities/loadtestwritetarget v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/chain-selectors v1.0.66
@@ -287,6 +288,7 @@ require (
 	github.com/shirou/gopsutil/v3 v3.24.3 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/sigurn/crc16 v0.0.0-20211026045750-20ab5afb07e3 // indirect
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20250711131700-236a5b631ad7 // indirect
 	github.com/smartcontractkit/chainlink-aptos v0.0.0-20250626122206-319db248496a // indirect
 	github.com/smartcontractkit/chainlink-automation v0.8.1 // indirect
 	github.com/smartcontractkit/chainlink-ccip v0.1.1-solana.0.20250731202037-a0d4a4f75964 // indirect

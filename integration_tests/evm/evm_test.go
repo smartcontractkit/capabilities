@@ -14,6 +14,7 @@ import (
 
 	"github.com/jmoiron/sqlx"
 	"github.com/scylladb/go-reflectx"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/trigger"
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder/beholdertest"
 	"github.com/smartcontractkit/chainlink-evm/pkg/logpoller"
 	"github.com/smartcontractkit/chainlink/v2/core/logger"
@@ -106,24 +107,10 @@ func Test_LogTrigger(t *testing.T) {
 		1*time.Second,
 		"Expected to find %d events, but found %d", numOfWorkflowNodes, foundEvents)
 	lggr.Infof("Found %d events in beholder logs, as expected", foundEvents)
-	t.Fatal("Forcing an error to get the logs printed in the test output")
-
 }
 
 func waitUntilLogPollerFiltersArePresent(t *testing.T, lggr logger.SugaredLogger, workflowDon *framework.DON, workderNodes int) {
-	// TODO PLEX-1621: this wait time should be much lower, but in CI needs to be high enough to make log poller ready to work on the logs
-	//time.Sleep(10 * time.Second)
-
 	nodes := workflowDon.GetAllNodes()
-	for _, node := range nodes {
-		config := node.GetConfig()
-		database := config.Database()
-
-		url := database.URL()
-		//URLs for node: {postgresql  chainlink_dev:insecurepassword localhost:5432 /chainlink_test_1e5fa7a338864502a8f20dd47dbc26d8  false false sslmode=disable  }
-		fmt.Println("URLs for node:", url.String())
-	}
-
 	results := make(map[int]bool)
 	ticker := 5 * time.Second
 	timeout := 2 * time.Minute
@@ -139,75 +126,37 @@ INNER_LOOP:
 				lggr.Infof("All %d nodes in DON have expected filters registered", len(nodes))
 				break INNER_LOOP
 			}
-
-			//for _, node := range nodes {
-			//	config := node.GetConfig()
-			//	database := config.Database()
-			//
-			//	url := database.URL()
-			//	//URLs for node: {postgresql  chainlink_dev:insecurepassword localhost:5432 /chainlink_test_1e5fa7a338864502a8f20dd47dbc26d8  false false sslmode=disable  }
-			//	fmt.Println("URLs for node:", url)
-			//}
-
 			for i, node := range nodes {
-
-				config := node.GetConfig()
-				database := config.Database()
-
-				url := database.URL()
-				//URLs for node: {postgresql  chainlink_dev:insecurepassword localhost:5432 /chainlink_test_1e5fa7a338864502a8f20dd47dbc26d8  false false sslmode=disable  }
-				fmt.Println("URLs for node:", url)
-				fmt.Println("URLs for node (String):", url.String())
-				fmt.Printf("URLs for node (String): user and password: %s\n", url.User.String())
-
-				dbName := strings.TrimPrefix(url.Path, "/")
-				port, err := strconv.Atoi(url.Port())
-				require.NoError(t, err)
-
-				user := url.User.Username()
-				fmt.Printf("URLs for node (String) User name: %s\n", user)
-				password, _ := url.User.Password()
-				fmt.Printf("URLs for node (String) Password: %s\n", password)
-
-				//nodeIndex, nodeIndexErr := crenode.FindLabelValue(workerNode, crenode.IndexKey)
-				//if nodeIndexErr != nil {
-				//	return pkgerrors.Wrap(nodeIndexErr, "failed to find node index")
-				//}
-				//
-				//nodeIndexInt, nodeIdxErr := strconv.Atoi(nodeIndex)
-				//if nodeIdxErr != nil {
-				//	return pkgerrors.Wrap(nodeIdxErr, "failed to convert node index to int")
-				//}
-
 				if _, ok := results[i]; ok {
+					// if we already have results for this node, skip it
+					lggr.Infof("Skipping node %d, already have results", i)
 					continue
 				}
 
-				lggr.Infof("Checking if all WorkflowRegistry filters are registered for worker node %d", i)
+				config := node.GetConfig()
+				database := config.Database()
+				url := database.URL()
+				dbName := strings.TrimPrefix(url.Path, "/") //DB name is randomly generated with a value like "/chainlink_test_4d336f432b854a12a395f96bd1f9bb03"
+				port, err := strconv.Atoi(url.Port())
+				require.NoError(t, err)
+				user := url.User.Username()
+				password, _ := url.User.Password()
+
+				lggr.Infof("Checking if all LogTrigger filters are registered for worker node %d", i)
 				allFilters, filtersErr := getAllFilters(context.Background(), lggr, big.NewInt(1337), dbName, port, user, password)
 				if filtersErr != nil {
 					t.Fatalf("Failed to get all filters: %v", filtersErr)
 				}
 
 				for _, filter := range allFilters {
-					lggr.Infof("Filter found for node %d: Name: %s, EventSigs(%d): %v", i, filter.Name, len(filter.EventSigs), filter.EventSigs)
-					//if strings.Contains(filter.Name, "WorkflowRegistry") {
-					//	if len(filter.EventSigs) == 6 {
-					//		lggr.Infof("Found all WorkflowRegistry filters for node %d", i)
-					//		results[i] = true
-					//		continue
-					//	}
-					//
-					//	lggr.Infof("Found only %d WorkflowRegistry filters for node %d", len(filter.EventSigs), i)
-					//}
-
-					if strings.Contains(filter.Name, "-evm-log-trigger") {
+					lggr.Debugf("Filter found for node %d: Name: %s, EventSigs(%d): %v", i, filter.Name, len(filter.EventSigs), filter.EventSigs)
+					if strings.Contains(filter.Name, trigger.SuffixLogTriggerFilterID) {
 						if len(filter.EventSigs) == 1 {
+							//for the purpose of this test, we know it's a single event signature for this filter
 							lggr.Infof("Found all filters for logTrigger for node %d", i)
 							results[i] = true
 							continue
 						}
-
 						lggr.Infof("Found only %d WorkflowRegistry filters for node %d", len(filter.EventSigs), i)
 					}
 				}
@@ -215,7 +164,7 @@ INNER_LOOP:
 
 			// return if we have results for all nodes, don't wait for next tick
 			if len(results) == workderNodes {
-				lggr.Infof("All %d nodes in DON have expected filters registered2", workderNodes)
+				lggr.Infof("All %d nodes in DON have expected filters registered, breaking", workderNodes)
 				break INNER_LOOP
 			}
 		}
@@ -224,8 +173,6 @@ INNER_LOOP:
 
 func NewORM(logger logger.Logger, chainID *big.Int, dbName string, externalPort int, user string, password string) (logpoller.ORM, *sqlx.DB, error) {
 	dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", "localhost", externalPort, user, password, dbName)
-	logger.Infof("Connecting to database %s", dsn)
-	//dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", "127.0.0.1", externalPort, "", "", dbName)
 	db, err := sqlx.Open("postgres", dsn)
 	if err != nil {
 		return nil, db, fmt.Errorf("failed to connect to database: %w", err)
