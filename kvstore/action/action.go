@@ -15,7 +15,7 @@ import (
 
 const ID = "kv-store-action@1.0.0"
 
-var _ capabilities.ActionCapability = (*capability)(nil)
+var _ capabilities.ExecutableCapability = (*capability)(nil)
 
 type capability struct {
 	logger        logger.Logger

@@ -7,7 +7,7 @@ toolchain go1.24.3
 require (
 	github.com/doyensec/safeurl v0.2.2
 	github.com/google/uuid v1.6.0
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20250711131700-236a5b631ad7
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20250807005622-32f1fcc70c7d
 	github.com/smartcontractkit/chainlink-common v0.8.1-0.20250807004500-14476cad7c2d
 	github.com/stretchr/testify v1.10.0
 	stathat.com/c/consistent v1.0.0
