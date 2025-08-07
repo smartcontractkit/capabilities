@@ -17,11 +17,11 @@ require (
 	github.com/pelletier/go-toml v1.9.5
 	github.com/smartcontractkit/capabilities/http_action v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/capabilities/loadtestwritetarget v0.0.0-00010101000000-000000000000
-	github.com/smartcontractkit/chainlink-common v0.8.1-0.20250807004500-14476cad7c2d
+	github.com/smartcontractkit/chainlink-common v0.8.1-0.20250807102811-ab73d0221b81
 	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250806152407-159881c7589c
 	github.com/smartcontractkit/chainlink-evm v0.1.1-0.20250801102619-bf75f8afcd90
 	github.com/smartcontractkit/chainlink-protos/workflows/go v0.0.0-20250722225531-876fd6b94976
-	github.com/smartcontractkit/chainlink/v2 v2.23.2-por-beta.1.0.20250806172354-4747a8ea30b5
+	github.com/smartcontractkit/chainlink/v2 v2.23.2-por-beta.1.0.20250807172200-9e2e0e31775f
 	github.com/smartcontractkit/cre-sdk-go v0.3.0
 	github.com/smartcontractkit/cre-sdk-go/capabilities/blockchain/evm v0.3.0
 	github.com/smartcontractkit/cre-sdk-go/capabilities/scheduler/cron v0.2.1-0.20250729191525-ac1867f3ff34
@@ -285,7 +285,7 @@ require (
 	github.com/smartcontractkit/chainlink-aptos v0.0.0-20250626122206-319db248496a // indirect
 	github.com/smartcontractkit/chainlink-automation v0.8.1 // indirect
 	github.com/smartcontractkit/chainlink-ccip v0.1.1-solana.0.20250805180409-111ef75e9257 // indirect
-	github.com/smartcontractkit/chainlink-ccip/chains/solana v0.0.0-20250707132450-d1f5f0be212a // indirect
+	github.com/smartcontractkit/chainlink-ccip/chains/solana v0.0.0-20250805210128-7f8a0f403c3a // indirect
 	github.com/smartcontractkit/chainlink-ccip/chains/solana/gobindings v0.0.0-20250804184440-c0506474fc44 // indirect
 	github.com/smartcontractkit/chainlink-common/pkg/chipingress v0.0.1 // indirect
 	github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb v0.0.0-20250806155403-1d805e639a0f // indirect
