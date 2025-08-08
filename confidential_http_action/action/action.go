@@ -3,9 +3,11 @@ package action
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/go-viper/mapstructure/v2"
@@ -128,8 +130,16 @@ func New(
 		return nil, fmt.Errorf("failed to create enclave pool: %w", err)
 	}
 
+	httpClient := http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true, // for demo purposes only.
+			},
+		},
+	}
+
 	pool, err := enclaveclient.NewPool[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse](
-		nodes, vaultDONMasterPublicKey, nil, &nilVal{}, nil, nil, nil,
+		nodes, vaultDONMasterPublicKey, nil, &nilVal{}, nil, nil, &httpClient,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create enclave pool: %w", err)
@@ -186,8 +196,7 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 	reqID := sha256.Sum256([]byte(rawRequest.Metadata.WorkflowExecutionID))
 
 	// Fetch enclave params that can be used for this request.
-	enclaveParams, err := c.getEnclaveParams(ctx, reqID)
-
+	enclaveParams, masterPublicKey, err := c.getEnclaveParams(context.Background(), reqID)
 	if err != nil {
 		return capabilities.CapabilityResponse{}, err
 	}
@@ -222,7 +231,7 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		RequestID:                    reqID,
 		PublicData:                   publicDataBytes,
 		Ciphertexts:                  encryptedSecrets,
-		MasterPublicKey:              c.vaultDON.masterPublicKey,
+		MasterPublicKey:              masterPublicKey,
 		EnclaveEphemeralPublicKey:    enclaveParams.EnclaveEphemeralPublicKey,
 		EncryptedDecryptionKeyShares: encryptedDecryptionShares,
 	}
@@ -309,14 +318,14 @@ type EnclaveParams struct {
 	EnclaveEphemeralPublicKey []byte
 }
 
-func (c *capability) getEnclaveParams(ctx context.Context, reqID [32]byte) (*EnclaveParams, error) {
+func (c *capability) getEnclaveParams(ctx context.Context, reqID [32]byte) (*EnclaveParams, []byte, error) {
 	ephemeralPubKeyResponse, err := c.enclaveClient.GetPublicKeys(ctx, reqID, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get public keys: %w", err)
+		return nil, nil, fmt.Errorf("failed to get public keys: %w", err)
 	}
 
 	if len(ephemeralPubKeyResponse) == 0 || len(ephemeralPubKeyResponse[0].PublicKeys) == 0 {
-		return nil, fmt.Errorf("no enclave public keys found for request %x", reqID)
+		return nil, nil, fmt.Errorf("no enclave public keys found for request %x", reqID)
 	}
 
 	// Out of the enclave responses returned, pick the first response (this capability only uses one enclave).
@@ -337,7 +346,7 @@ func (c *capability) getEnclaveParams(ctx context.Context, reqID [32]byte) (*Enc
 	return &EnclaveParams{
 		EnclaveID:                 selectedEnclaveID,
 		EnclaveEphemeralPublicKey: selectedEphemeralPublicKey,
-	}, nil
+	}, ephemeralPubKeyResponse[0].Config.MasterPublicKey, nil
 }
 
 func ConvertInputToHTTPEnclaveRequestData(input cap.Input) (*httpenclavetypes.HTTPEnclaveRequestData, error) {

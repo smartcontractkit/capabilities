@@ -37,11 +37,9 @@ import (
 const defaultTickInterval = 12 * time.Second
 
 func setupTestDon(ctx context.Context, t *testing.T, lggr logger.Logger,
-	workflowDonInfo framework.DonConfiguration, triggerSink framework.TriggerFactory, targetSink framework.TargetFactory, actionPath string) (workflowDon *framework.DON) {
+	workflowDonInfo framework.DonConfiguration, triggerSink framework.TriggerFactory, targetSink framework.TargetFactory, actionPath string,
+	publicKey *tdh2easy.PublicKey, privateShares []*tdh2easy.PrivateShare, url string) (workflowDon *framework.DON) {
 	donContext := framework.CreateDonContext(ctx, t)
-
-	_, publicKey, privateShares, err := tdh2easy.GenerateKeys(4, 4)
-	require.NoError(t, err)
 
 	// Start the minimal test server
 	testServer := NewMinimalTestServer(publicKey)
@@ -73,7 +71,7 @@ func setupTestDon(ctx context.Context, t *testing.T, lggr logger.Logger,
 	}
 
 	c2 := fmt.Sprintf("'{\"VaultDONID\":\"%s\",\"Enclaves\":[{\"ID\":\"%s\",\"URL\":\"%s\",\"TrustedValues\":\"%s\",\"EnclaveType\":\"%s\",\"ExtraData\":\"%s\"}]}'",
-		util.EncodeToString([]byte(fmt.Sprintf("%d", workflowDonInfo.ID))), util.EncodeToString([]byte("123")), "http://localhost:8081", util.EncodeToString(encodedMeasurements), types.EnclaveTypeNitro, util.EncodeToString([]byte("")))
+		util.EncodeToString([]byte(fmt.Sprintf("%d", workflowDonInfo.ID))), util.EncodeToString([]byte("123")), url, util.EncodeToString(encodedMeasurements), types.EnclaveTypeNitro, util.EncodeToString([]byte("")))
 	enclavesConfig := []any{
 		map[string]any{
 			"URL":       "foobar",

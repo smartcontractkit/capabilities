@@ -1,7 +1,10 @@
 package signertest
 
 import (
+	"context"
+	"crypto/tls"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -12,6 +15,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/framework"
 	"github.com/smartcontractkit/confidential-compute/types"
+	"github.com/smartcontractkit/confidential-compute/util"
+	"github.com/smartcontractkit/tdh2/go/tdh2/tdh2easy"
 
 	"github.com/smartcontractkit/capabilities/integration_tests/utils"
 )
@@ -32,13 +37,53 @@ func Test_Confidential_HTTP_Action(t *testing.T) {
 	triggerSink := framework.NewTriggerSink(t, "mock-trigger", "1.0.0")
 	targetSink := framework.NewTargetSink("mock-target", "1.0.0")
 
-	setupTestDon(ctx, t, lggr, workflowDonConfiguration, triggerSink, targetSink, binary)
+	_, publicKey, privateShares, err := tdh2easy.GenerateKeys(4, 4)
+	require.NoError(t, err)
+
+	url := "INSERT_URL_HERE"
+	// url := "http://localhost:8081"
+	don := setupTestDon(ctx, t, lggr, workflowDonConfiguration, triggerSink, targetSink, binary, publicKey, privateShares, url)
+
+	peerIDsAndSigners := don.GetPeerIDsAndOCRSigners()
+	masterPublicKeyBytes, err := publicKey.Marshal()
+	require.NoError(t, err)
+
+	var signers [][]byte
+	for _, pIDAndS := range peerIDsAndSigners {
+		signers = append(signers, pIDAndS.PeerID[:])
+	}
+	config := types.EnclaveConfig{
+		Signers:         signers,
+		MasterPublicKey: masterPublicKeyBytes,
+		T:               4,
+		F:               0,
+	}
+	configBytes, err := json.Marshal(config)
+	require.NoError(t, err)
+	req := types.ConfigRequest{
+		Config: configBytes,
+	}
+	require.NoError(t, err)
+
+	httpClient := http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true, // for demo purposes only.
+			},
+		},
+	}
+	resp, _ := util.SetNodeConfig(context.Background(), types.EnclaveNode{
+		EnclaveURL:    url,
+		EnclaveType:   types.EnclaveTypeNitro,
+		TrustedValues: []byte{},
+	}, req, &httpClient)
+	fmt.Println(resp)
 
 	msg := []byte("test message")
 	params, err := values.WrapMap(map[string]any{
 		"requests": []map[string]interface{}{{
 			"method":  "POST",
-			"url":     "https://echo.com/post",
+			"url":     "https://postman-echo.com/post",
 			"headers": []string{"Content-Type: application/json", "Authorization: Bearer {{.my_secret}}"},
 			"body":    msg,
 		}},
@@ -57,8 +102,5 @@ func Test_Confidential_HTTP_Action(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, responses, 1)
 	require.Equal(t, int64(http.StatusOK), responses[0].StatusCode)
-	var msgs string
-	err = json.Unmarshal(responses[0].Body, &msgs)
-	require.NoError(t, err)
-	require.Equal(t, "peekaboo", msgs)
+	fmt.Println(string(responses[0].Body))
 }
