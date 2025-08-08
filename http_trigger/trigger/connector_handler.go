@@ -70,9 +70,9 @@ func (h *connectorHandler) Start(ctx context.Context) error {
 	go h.startRequestCacheCleanup(ctx)
 	return h.StartOnce(HandlerName, func() error {
 		return h.gatewayConnector.AddHandler(ctx, []string{
-			serviceName(gateway_common.MethodWorkflowExecute),
-			serviceName(gateway_common.MethodPullWorkflowMetadata),
-			serviceName(gateway_common.MethodPushWorkflowMetadata),
+			gateway_common.MethodWorkflowExecute,
+			gateway_common.MethodPullWorkflowMetadata,
+			gateway_common.MethodPushWorkflowMetadata,
 		}, h)
 	})
 }
