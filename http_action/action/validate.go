@@ -105,8 +105,7 @@ func ValidatedRequest(input *http.Request, cfg common.ServiceConfig) (*http.Requ
 	if input.CacheSettings != nil {
 		req.CacheSettings = &http.CacheSettings{
 			ReadFromCache: input.CacheSettings.ReadFromCache,
-			StoreInCache:  input.CacheSettings.StoreInCache,
-			TtlMs:         input.CacheSettings.TtlMs,
+			MaxAgeMs:      input.CacheSettings.MaxAgeMs,
 		}
 	} else {
 		req.CacheSettings = &http.CacheSettings{} // Default to empty cache settings if not provided

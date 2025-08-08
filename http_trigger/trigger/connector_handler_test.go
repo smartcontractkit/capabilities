@@ -58,7 +58,7 @@ func (m *mockGatewayConnector) AwaitConnection(ctx context.Context, gatewayID st
 // gatewayRequest creates a test request message with the given method
 func gatewayRequest(t *testing.T, method string) (*jsonrpc.Request[json.RawMessage], gateway_common.AuthorizedKey) {
 	key := gateway_common.AuthorizedKey{
-		KeyType:   gateway_common.KeyTypeECDSA,
+		KeyType:   gateway_common.KeyTypeECDSAEVM,
 		PublicKey: publicKey,
 	}
 	payload := gateway_common.HTTPTriggerRequest{
@@ -82,7 +82,7 @@ func gatewayRequest(t *testing.T, method string) (*jsonrpc.Request[json.RawMessa
 // gatewayRequestByTag creates a test request message with the given method
 func gatewayRequestByTag(t *testing.T, method string, workflowOwner string) (*jsonrpc.Request[json.RawMessage], gateway_common.AuthorizedKey) {
 	key := gateway_common.AuthorizedKey{
-		KeyType:   gateway_common.KeyTypeECDSA,
+		KeyType:   gateway_common.KeyTypeECDSAEVM,
 		PublicKey: publicKey,
 	}
 	payload := gateway_common.HTTPTriggerRequest{
@@ -151,7 +151,7 @@ func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayCon
 		AuthorizedKeys: []*http.AuthorizedKey{
 			{
 				PublicKey: publicKey,
-				Type:      http.KeyType_KEY_TYPE_ECDSA,
+				Type:      http.KeyType_KEY_TYPE_ECDSA_EVM,
 			},
 		},
 	}
@@ -180,7 +180,7 @@ func requireWorkflowTriggered(t *testing.T, triggerCh <-chan capabilities.Trigge
 			require.Len(t, input, 1)
 			require.Equal(t, "value", input["key"])
 			require.NotNil(t, triggerReq.Trigger.Key, "Key should not be nil in trigger payload")
-			require.Equal(t, http.KeyType_KEY_TYPE_ECDSA, triggerReq.Trigger.Key.Type, "Key type should match")
+			require.Equal(t, http.KeyType_KEY_TYPE_ECDSA_EVM, triggerReq.Trigger.Key.Type, "Key type should match")
 			require.Equal(t, key.PublicKey, triggerReq.Trigger.Key.PublicKey, "Public key should match")
 		}
 	}()
@@ -440,13 +440,13 @@ func TestRegisterWorkflow_InvalidECDSAPublicKey(t *testing.T) {
 		{
 			name:      "invalid publicKey format (nothex)",
 			publicKey: "nothex",
-			keyType:   http.KeyType_KEY_TYPE_ECDSA,
+			keyType:   http.KeyType_KEY_TYPE_ECDSA_EVM,
 			errorMsg:  "invalid public key format",
 		},
 		{
 			name:      "invalid publicKey length",
 			publicKey: "0x123",
-			keyType:   http.KeyType_KEY_TYPE_ECDSA,
+			keyType:   http.KeyType_KEY_TYPE_ECDSA_EVM,
 			errorMsg:  "invalid public key format",
 		},
 		{
@@ -524,11 +524,11 @@ func TestRegisterWorkflow_TooManyAuthorizedKeys(t *testing.T) {
 			AuthorizedKeys: []*http.AuthorizedKey{
 				{
 					PublicKey: publicKey,
-					Type:      http.KeyType_KEY_TYPE_ECDSA,
+					Type:      http.KeyType_KEY_TYPE_ECDSA_EVM,
 				},
 				{
 					PublicKey: "0xB28C9D8E47fB7b0974505D7aB544e24478B6e990",
-					Type:      http.KeyType_KEY_TYPE_ECDSA,
+					Type:      http.KeyType_KEY_TYPE_ECDSA_EVM,
 				},
 			},
 		}
@@ -548,15 +548,15 @@ func TestRegisterWorkflow_TooManyAuthorizedKeys(t *testing.T) {
 			AuthorizedKeys: []*http.AuthorizedKey{
 				{
 					PublicKey: publicKey,
-					Type:      http.KeyType_KEY_TYPE_ECDSA,
+					Type:      http.KeyType_KEY_TYPE_ECDSA_EVM,
 				},
 				{
 					PublicKey: "0xB28C9D8E47fB7b0974505D7aB544e24478B6e990",
-					Type:      http.KeyType_KEY_TYPE_ECDSA,
+					Type:      http.KeyType_KEY_TYPE_ECDSA_EVM,
 				},
 				{
 					PublicKey: "0xC39D8F9E47fB7b0974505D7aB544e24478B6eAA0",
-					Type:      http.KeyType_KEY_TYPE_ECDSA,
+					Type:      http.KeyType_KEY_TYPE_ECDSA_EVM,
 				},
 			},
 		}
@@ -658,7 +658,7 @@ func TestHandleGatewayMessage_PullAuthMetadata(t *testing.T) {
 		AuthorizedKeys: []*http.AuthorizedKey{
 			{
 				PublicKey: "0xB18B5D6DB47fB7b0974505D7aB544e24478B6e99",
-				Type:      http.KeyType_KEY_TYPE_ECDSA,
+				Type:      http.KeyType_KEY_TYPE_ECDSA_EVM,
 			},
 		},
 	}
@@ -708,13 +708,13 @@ func TestHandleGatewayMessage_PullAuthMetadata(t *testing.T) {
 	require.Equal(t, "0xabcdef", wf1Metadata.WorkflowSelector.WorkflowID)
 	require.Len(t, wf1Metadata.AuthorizedKeys, 1)
 	require.Equal(t, strings.ToLower(publicKey), wf1Metadata.AuthorizedKeys[0].PublicKey)
-	require.Equal(t, "ecdsa", string(wf1Metadata.AuthorizedKeys[0].KeyType))
+	require.Equal(t, "ecdsa_evm", string(wf1Metadata.AuthorizedKeys[0].KeyType))
 	wf2Metadata, exists := metadataByWorkflowID["wf2"]
 	require.True(t, exists, "Should contain metadata for wf2")
 	require.Equal(t, "wf2", wf2Metadata.WorkflowSelector.WorkflowID)
 	require.Len(t, wf2Metadata.AuthorizedKeys, 1)
 	require.Equal(t, strings.ToLower("0xB18B5D6DB47fB7b0974505D7aB544e24478B6e99"), wf2Metadata.AuthorizedKeys[0].PublicKey)
-	require.Equal(t, "ecdsa", string(wf2Metadata.AuthorizedKeys[0].KeyType))
+	require.Equal(t, "ecdsa_evm", string(wf2Metadata.AuthorizedKeys[0].KeyType))
 }
 
 // TestHandleGatewayMessage_PullAuthMetadata_InvalidRequestID tests pull auth metadata with invalid request ID

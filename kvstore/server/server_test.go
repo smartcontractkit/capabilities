@@ -37,6 +37,8 @@ func Test_Server(t *testing.T) {
 			nil, // unused - pipelineRunner core.PipelineRunnerService
 			nil, // unused - relayerSet core.RelayerSet
 			testutils.NewOracleFactory(t, logger),
+			nil, // unused - gatewayConnector core.GatewayConnector
+			nil, // unused - keystore core.Keystore
 		))
 
 		capabilitiesInfos, err := capabilitiesServer.Infos(ctx)
@@ -121,6 +123,8 @@ func Test_Server(t *testing.T) {
 			nil, // unused - pipelineRunner core.PipelineRunnerService
 			nil, // unused - relayerSet core.RelayerSet
 			testutils.NewOracleFactory(t, logger),
+			nil, // unused - gatewayConnector core.GatewayConnector
+			nil, // unused - keystore core.Keystore
 		))
 
 		capabilitiesInfos, err := capabilitiesServer.Infos(ctx)
@@ -225,6 +229,8 @@ func Test_Server(t *testing.T) {
 			nil, // unused - pipelineRunner core.PipelineRunnerService
 			nil, // unused - relayerSet core.RelayerSet
 			testutils.NewOracleFactory(t, logger),
+			nil, // unused - gatewayConnector core.GatewayConnector
+			nil, // unused - keystore core.Keystore
 		))
 
 		capabilitiesInfos, err := capabilitiesServer.Infos(ctx)

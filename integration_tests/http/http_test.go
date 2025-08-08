@@ -322,12 +322,9 @@ func TestHTTPActionCapability(t *testing.T) {
 
 	t.Run("GET /random with caching enabled", func(t *testing.T) {
 		initialOutput, err := httpCapability.SendRequest(ctx, requestData, &httpclient.Request{
-			Url:    fmt.Sprintf("http://%s/random", listener.Addr().String()),
-			Method: "GET",
-			CacheSettings: &httpclient.CacheSettings{
-				StoreInCache: true,
-				TtlMs:        10000, // 10 seconds
-			},
+			Url:           fmt.Sprintf("http://%s/random", listener.Addr().String()),
+			Method:        "GET",
+			CacheSettings: &httpclient.CacheSettings{},
 		})
 		require.NoError(t, err)
 		require.NotNil(t, initialOutput)
@@ -340,6 +337,7 @@ func TestHTTPActionCapability(t *testing.T) {
 			Method: "GET",
 			CacheSettings: &httpclient.CacheSettings{
 				ReadFromCache: true,
+				MaxAgeMs:      10000,
 			},
 		})
 		require.NoError(t, err)
@@ -366,12 +364,9 @@ func TestHTTPActionCapability(t *testing.T) {
 
 	t.Run("GET /not-found returns 404", func(t *testing.T) {
 		output, err := httpCapability.SendRequest(ctx, requestData, &httpclient.Request{
-			Url:    fmt.Sprintf("http://%s/not-found", listener.Addr().String()),
-			Method: "GET",
-			CacheSettings: &httpclient.CacheSettings{
-				StoreInCache: true,
-				TtlMs:        10000, // 10 seconds
-			},
+			Url:           fmt.Sprintf("http://%s/not-found", listener.Addr().String()),
+			Method:        "GET",
+			CacheSettings: &httpclient.CacheSettings{},
 		})
 		require.NoError(t, err)
 		require.NotNil(t, output)
@@ -383,6 +378,7 @@ func TestHTTPActionCapability(t *testing.T) {
 			Method: "GET",
 			CacheSettings: &httpclient.CacheSettings{
 				ReadFromCache: true,
+				MaxAgeMs:      10000,
 			},
 		})
 		require.NoError(t, err)
@@ -394,12 +390,9 @@ func TestHTTPActionCapability(t *testing.T) {
 
 	t.Run("GET /error returns 500", func(t *testing.T) {
 		output, err := httpCapability.SendRequest(ctx, requestData, &httpclient.Request{
-			Url:    fmt.Sprintf("http://%s/error", listener.Addr().String()),
-			Method: "GET",
-			CacheSettings: &httpclient.CacheSettings{
-				StoreInCache: true,
-				TtlMs:        10000, // 10 seconds
-			},
+			Url:           fmt.Sprintf("http://%s/error", listener.Addr().String()),
+			Method:        "GET",
+			CacheSettings: &httpclient.CacheSettings{},
 		})
 		require.NoError(t, err)
 		require.NotNil(t, output)
@@ -411,6 +404,7 @@ func TestHTTPActionCapability(t *testing.T) {
 			Method: "GET",
 			CacheSettings: &httpclient.CacheSettings{
 				ReadFromCache: true,
+				MaxAgeMs:      10000,
 			},
 		})
 		require.NoError(t, err)

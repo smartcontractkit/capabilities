@@ -24,7 +24,7 @@ import (
 	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/pb"
 	"github.com/smartcontractkit/chainlink-common/pkg/custmsg"
-	commonlogger "github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
@@ -35,7 +35,6 @@ import (
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/compute"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/framework"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/webapi"
-	"github.com/smartcontractkit/chainlink/v2/core/logger"
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/handlers/capabilities"
 	"github.com/smartcontractkit/chainlink/v2/core/services/registrysyncer"
 )
@@ -71,7 +70,7 @@ type NullFetcherFactory struct{}
 
 var _ compute.FetcherFactory = &NullFetcherFactory{}
 
-func (n NullFetcherFactory) NewFetcher(_ commonlogger.Logger, _ custmsg.MessageEmitter) compute.FetcherFn {
+func (n NullFetcherFactory) NewFetcher(_ logger.Logger, _ custmsg.MessageEmitter) compute.FetcherFn {
 	return func(ctx context.Context, req *host.FetchRequest) (*host.FetchResponse, error) {
 		return nil, fmt.Errorf("no fetcher configured")
 	}
@@ -137,7 +136,7 @@ func runLoadTest(t *testing.T, numberOfNodes int, f uint8, numberOfWorkflows int
 	resultsDir string) {
 	ctx := t.Context()
 
-	lggr := logger.TestLogger(t)
+	lggr := logger.Test(t)
 	defer func() {
 		utils.CleanupCapabilitiesDir(lggr)
 	}()

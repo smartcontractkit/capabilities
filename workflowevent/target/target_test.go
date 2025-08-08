@@ -327,7 +327,7 @@ func TestCapability_Execute(t *testing.T) {
 		assert.Error(t, err)
 		assert.Equal(t, `decoding failed due to the following error(s):
 
-'otelEndpoint' expected type 'string', got unconvertible type 'values.BigInt', value: '&{123}'`, err.Error())
+'otelEndpoint' expected type 'string', got unconvertible type '*values.BigInt'`, err.Error())
 	})
 }
 
