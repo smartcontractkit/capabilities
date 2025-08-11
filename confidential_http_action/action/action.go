@@ -254,8 +254,11 @@ func (c *capability) initLazily(ctx context.Context) error {
 			c.initializationError = fmt.Errorf("failed to get local node: %w", err)
 			return
 		}
-		ownDonID := localNode.WorkflowDON.ID
-		ownCapabilityConfig, err := c.capabilityRegistry.ConfigForCapability(ctx, ID, ownDonID)
+		if localNode.WorkflowDON.ID == 0 {
+			c.initializationError = fmt.Errorf("local node does not have a WorkflowDON ID, cannot initialise confidential http action capability")
+			return
+		}
+		ownCapabilityConfig, err := c.capabilityRegistry.ConfigForCapability(ctx, ID, localNode.WorkflowDON.ID)
 		if err != nil {
 			c.initializationError = fmt.Errorf("failed to get confidential http capability config: %w", err)
 			return
