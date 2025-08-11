@@ -43,17 +43,30 @@ type reportingPlugin struct {
 
 	minimumObservations int
 
+	limits reportingPluginLimits
+
 	lggr logger.Logger
 }
 
-func NewReportingPlugin(lggr logger.Logger, f int, n int, store *requests.Store[*ConsensusRequest], batchSize int) (*reportingPlugin, error) {
+type reportingPluginLimits struct {
+	maxQueryLengthBytes       int
+	maxObservationLengthBytes int
+	maxOutcomeLengthBytes     int
+}
+
+func NewReportingPlugin(lggr logger.Logger, f int, n int, store *requests.Store[*ConsensusRequest], configProto *ocrtypes.ReportingPluginConfig) (*reportingPlugin, error) {
 	return &reportingPlugin{
 		store:               store,
-		batchSize:           batchSize,
+		batchSize:           int(configProto.MaxBatchSize),
 		f:                   f,
 		n:                   n,
 		minimumObservations: 2*f + 1,
 		lggr:                logger.Named(lggr, "CapabilityConsensusReportingPlugin"),
+		limits: reportingPluginLimits{
+			maxQueryLengthBytes:       int(configProto.MaxQueryLengthBytes),
+			maxObservationLengthBytes: int(configProto.MaxObservationLengthBytes),
+			maxOutcomeLengthBytes:     int(configProto.MaxOutcomeLengthBytes),
+		},
 	}, nil
 }
 
@@ -79,17 +92,37 @@ func (r *reportingPlugin) Query(ctx context.Context, outctx ocr3types.OutcomeCon
 	//
 	// The same reasoning applies to the metadata for the request, which is also included in the query.
 
+	seenIds := make(map[idKey]bool)
+	cachedQuerySize := 0
+
 	var reqs []*oracletypes.Request
 	for _, rq := range batch {
+		key := GetIDKey(rq)
+
+		// Simple duplicate elimination using a map
+		if seenIds[key] {
+			continue
+		}
+
 		serialisedConsensusDescriptor, err := proto.MarshalOptions{Deterministic: true}.Marshal(rq.Input.Descriptors)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal consensus descriptor for request %s: %w", rq.ID(), err)
 		}
 
-		reqs = append(reqs, &oracletypes.Request{
+		newReq := &oracletypes.Request{
 			Metadata:                   ToRequestMetaData(rq.Metadata),
 			RequestConsensusDescriptor: serialisedConsensusDescriptor,
-		})
+		}
+
+		// If the new id would exceed the max query size, stop adding more ids
+		ok, newSize := QueryBatchHasCapacity(cachedQuerySize, newReq, r.limits.maxQueryLengthBytes)
+		if !ok {
+			break
+		}
+
+		seenIds[key] = true
+		reqs = append(reqs, newReq)
+		cachedQuerySize = newSize
 	}
 
 	r.lggr.Debugw("consensus plugin query complete", "number of requests", len(reqs))
