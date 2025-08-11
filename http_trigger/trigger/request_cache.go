@@ -55,6 +55,11 @@ func (c *requestCache) get(ctx context.Context, requestID string) (*requestCache
 }
 
 func (c *requestCache) cleanup(ctx context.Context) error {
-	// TODO: PRODCRE-715 Periodically cleanup expired entries
+	pruned, err := c.kvstore.PruneExpiredEntries(ctx, c.ttl)
+	if err != nil {
+		c.lggr.Errorw("failed to cleanup request cache", "error", err)
+		return err
+	}
+	c.lggr.Infow("pruned expired entries from request cache", "pruned", pruned)
 	return nil
 }
