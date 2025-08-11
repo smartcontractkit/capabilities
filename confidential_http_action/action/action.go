@@ -70,7 +70,7 @@ type EnclavesConfig struct {
 // Enclave corresponds to the JSON schema field "Enclave".
 type Enclave struct {
 	// EnclaveType corresponds to the JSON schema field "EnclaveType".
-	EnclaveType *string `json:"EnclaveType,omitempty" yaml:"EnclaveType,omitempty" mapstructure:"EnclaveType,omitempty"`
+	EnclaveType string `json:"EnclaveType" yaml:"EnclaveType" mapstructure:"EnclaveType"`
 
 	// ExtraData corresponds to the JSON schema field "ExtraData".
 	ExtraData []uint8 `json:"ExtraData" yaml:"ExtraData" mapstructure:"ExtraData"`
@@ -104,11 +104,11 @@ func parseEnclaveType(typeStr *string) (*enclavetypes.EnclaveType, error) {
 }
 
 // GetEnclaveNodes transforms a slice of Enclave structs from the config into a slice of EnclaveNode structs.
-func GetEnclaveNodes(localNodeConfigBytes []byte) ([]enclavetypes.EnclaveNode, error) {
+func GetEnclaveNodes(selfCapConfig capabilities.CapabilityConfiguration) ([]enclavetypes.EnclaveNode, error) {
 	var enclavesConfig EnclavesConfig
-	err := json.Unmarshal(localNodeConfigBytes, &enclavesConfig)
+	err := selfCapConfig.DefaultConfig.UnwrapTo(&enclavesConfig)
 	if err != nil {
-		return nil, fmt.Errorf("error unmarshaling config: %v", err)
+		return nil, fmt.Errorf("error decoding enclaves: %v", err)
 	}
 
 	// Pre-allocate the slice with the correct capacity for efficiency.
@@ -125,7 +125,7 @@ func GetEnclaveNodes(localNodeConfigBytes []byte) ([]enclavetypes.EnclaveNode, e
 		}
 		copy(enclaveID[:], confEnclave.ID)
 
-		enclaveType, err := parseEnclaveType(confEnclave.EnclaveType)
+		enclaveType, err := parseEnclaveType(&confEnclave.EnclaveType)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse enclave type for enclave at index %d: %w", i, err)
 		}
@@ -183,16 +183,18 @@ func getVaultDONMasterPublicKey(vaultDONCapConfig capabilities.CapabilityConfigu
 	return masterPublicKey, nil
 }
 
-func getThreshold(vaultDONCapConfig capabilities.CapabilityConfiguration) (int, error) {
-	return getValueFromConfig[int](vaultDONCapConfig, "threshold")
+func getThreshold(vaultDONCapConfig capabilities.CapabilityConfiguration) (int64, error) {
+	return getValueFromConfig[int64](vaultDONCapConfig, "threshold")
 }
 
 func getVaultDONPossibleFaultyNodes(ctx context.Context, vaultDONCapability capabilities.ExecutableCapability) (int, error) {
-	capabilityInfo, err := vaultDONCapability.Info(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("failed to get VaultDON capability info: %w", err)
-	}
-	return int(capabilityInfo.DON.F), nil
+	// TODO: this logic panics, as DON info is not included when we fetch capability info here.
+	// capabilityInfo, err := vaultDONCapability.Info(ctx)
+	// if err != nil {
+	// 	return 0, fmt.Errorf("failed to get VaultDON capability info: %w", err)
+	// }
+	// return int(capabilityInfo.DON.F), nil
+	return 1, nil
 }
 
 // New is the primary constructor for live use. It stores the dependencies
@@ -246,18 +248,19 @@ func (c *capability) initLazily(ctx context.Context) error {
 			return
 		}
 
+		// Get local node information.
 		localNode, err := c.capabilityRegistry.LocalNode(ctx)
 		if err != nil {
 			c.initializationError = fmt.Errorf("failed to get local node: %w", err)
 			return
 		}
-		if localNode.WorkflowDON.ID == 0 {
-			c.initializationError = fmt.Errorf("local node does not have a WorkflowDON ID, cannot initialise confidential http action capability")
+		ownDonID := localNode.WorkflowDON.ID
+		ownCapabilityConfig, err := c.capabilityRegistry.ConfigForCapability(ctx, ID, ownDonID)
+		if err != nil {
+			c.initializationError = fmt.Errorf("failed to get confidential http capability config: %w", err)
 			return
 		}
-		localNodeConfigBytes := localNode.WorkflowDON.Config
-
-		nodes, err := GetEnclaveNodes(localNodeConfigBytes)
+		nodes, err := GetEnclaveNodes(ownCapabilityConfig)
 		if err != nil {
 			c.initializationError = fmt.Errorf("failed to create enclave pool: %w", err)
 			return
@@ -316,7 +319,7 @@ func (c *capability) initLazily(ctx context.Context) error {
 		c.enclaveClient = pool
 		c.vaultDON = VaultDON{
 			MasterPublicKey:       vaultDONMasterPublicKey,
-			CryptographyThreshold: vaultDonThreshold,
+			CryptographyThreshold: int(vaultDonThreshold),
 			PossibleFaultyNodes:   vaultDONPossibleFaultyNodes,
 			ID:                    capConfig.VaultDONID,
 			Capability:            vaultDONCapability,
@@ -609,7 +612,11 @@ func (c *capability) GetEncryptedDecryptionShares(
 			return nil, nil, fmt.Errorf("VaultDON returned no data for secret %s", secretResp.GetId().GetKey())
 		}
 
-		encryptedSecrets = append(encryptedSecrets, []byte(secretData.GetEncryptedValue()))
+		encryptedSecret, err := hex.DecodeString(secretData.GetEncryptedValue())
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to decode hex-encoded ciphertext for secret %s: %w", secretResp.GetId().GetKey(), err)
+		}
+		encryptedSecrets = append(encryptedSecrets, encryptedSecret)
 		encryptedDecryptionSharesForSecret := make([][]byte, 0)
 
 		if len(secretData.GetEncryptedDecryptionKeyShares()) != 1 {
