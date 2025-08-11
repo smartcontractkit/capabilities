@@ -44,6 +44,8 @@ type LimitsConfig struct {
 	MaxHeaderValueLength uint32 `json:"maxHeaderValueLength"`
 	// MaxRequestBytes is the maximum length of the request body.
 	MaxRequestBytes uint32 `json:"maxRequestBytes"`
+	// MaxCacheAgeMs is the maximum cache age in milliseconds.
+	MaxCacheAgeMs uint32 `json:"maxCacheAgeMs"`
 }
 
 // HTTPClientConfig defines configuration options for the HTTP client used in "direct" mode.
