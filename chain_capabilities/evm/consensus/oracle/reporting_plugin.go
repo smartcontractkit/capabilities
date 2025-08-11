@@ -18,9 +18,18 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-
 	ctypes "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+)
+
+const (
+	// OCRRoundBatchSize - max number of requests that this node will try to process in a single round
+	// TODO PLEX-1569: make configurable
+	OCRRoundBatchSize = 200
+	// OCRRoundMaxBatchSize - defines max number of requests that this node will process in a round, if requested by another node.
+	// Needed to allow graceful roll out of OCRBatchSize increase.
+	OCRRoundMaxBatchSize = 1000
 )
 
 var _ ocr3types.ReportingPlugin[[]byte] = (*reportingPlugin)(nil)
@@ -30,7 +39,8 @@ type Config struct {
 	BatchSize int // max number of requests that this node will try to process in a single round
 	// MaxAllowedBatchSize - defines max number of requests that this node will process in a round, if requested by another node.
 	// Needed to allow graceful roll out of BatchSize increase.
-	MaxAllowedBatchSize int
+	MaxAllowedBatchSize  int
+	MaxObservationLength int // max length of observation in bytes
 }
 
 type reportingPlugin struct {
@@ -119,16 +129,32 @@ func (rp *reportingPlugin) Observation(
 		"safe", observation.ChainHeight.Safe,
 		"latest", observation.ChainHeight.Latest)
 
-	for _, requestID := range query.RequestIDs {
+	const observationFieldProtoKey = 2
+	currentSize := proto.Size(observation)
+	for i, requestID := range query.RequestIDs {
 		request, ok := rp.requestsStore.GetRequest(requestID)
 		if !ok {
 			continue
 		}
 
-		err := rp.observeRequest(observation, request)
+		reqObservation, err := rp.getObservationForRequest(request)
 		if err != nil {
 			return nil, fmt.Errorf("failed to observe request: %w", err)
 		}
+
+		if reqObservation == nil {
+			rp.logger.Debugw("No observation for request", "requestID", requestID)
+			continue
+		}
+
+		newSize, ok := hasCapacityToAdd(currentSize, observationFieldProtoKey, requestID, reqObservation, rp.config.MaxObservationLength)
+		if !ok {
+			rp.logger.Info("Observation exceeds max size, skipping rest of the batch", "request_in_batch", len(query.RequestIDs), "requests_added", i+1, "currentSize", currentSize, "newSize", newSize)
+			break
+		}
+
+		currentSize = newSize
+		observation.Observations[requestID] = reqObservation
 	}
 
 	rp.logger.Debugw("Observation complete", "observation", observation)
@@ -136,44 +162,43 @@ func (rp *reportingPlugin) Observation(
 	return proto.Marshal(observation)
 }
 
-func (rp *reportingPlugin) observeRequest(observation *ctypes.Observation, rawRequest ctypes.Request) error {
+func (rp *reportingPlugin) getObservationForRequest(rawRequest ctypes.Request) (*ctypes.RequestObservation, error) {
 	switch rq := rawRequest.(type) {
 	case *ctypes.AggregatableRequest:
 		requestOb, observationErr, ok := rq.GetObservation()
 		if !ok {
-			return nil
+			return nil, nil
 		}
 		if observationErr != nil {
-			observation.Observations[rq.ID()] = &ctypes.RequestObservation{
+			return &ctypes.RequestObservation{
 				Observation: &ctypes.RequestObservation_Error{Error: observationErr},
-			}
+			}, nil
 		} else {
-			observation.Observations[rq.ID()] = &ctypes.RequestObservation{
+			return &ctypes.RequestObservation{
 				Observation: &ctypes.RequestObservation_Aggregatable{Aggregatable: requestOb},
-			}
+			}, nil
 		}
 	case *ctypes.EventuallyConsistentRequest:
 		requestOb, observationErr, ok := rq.GetObservation()
 		if !ok {
-			return nil
+			return nil, nil
 		}
 		if observationErr != nil {
-			observation.Observations[rq.ID()] = &ctypes.RequestObservation{
+			return &ctypes.RequestObservation{
 				Observation: &ctypes.RequestObservation_Error{Error: observationErr},
-			}
+			}, nil
 		} else {
-			observation.Observations[rq.ID()] = &ctypes.RequestObservation{
+			return &ctypes.RequestObservation{
 				Observation: &ctypes.RequestObservation_EventuallyConsistent{EventuallyConsistent: requestOb},
-			}
+			}, nil
 		}
 	case *ctypes.LockableToBlockRequest:
-		observation.Observations[rq.ID()] = &ctypes.RequestObservation{
+		return &ctypes.RequestObservation{
 			Observation: &ctypes.RequestObservation_LockableToBlock{LockableToBlock: &emptypb.Empty{}},
-		}
+		}, nil
 	default:
-		return fmt.Errorf("unsupported observation type: %T", rq)
+		return nil, fmt.Errorf("unsupported observation type: %T", rq)
 	}
-	return nil
 }
 
 func (rp *reportingPlugin) ValidateObservation(_ context.Context, outctx ocr3types.OutcomeContext, query types.Query, ao types.AttributedObservation) error {

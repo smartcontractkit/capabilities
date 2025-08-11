@@ -4,6 +4,7 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/tests"
 	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
@@ -15,8 +16,6 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/emptypb"
-
-	"github.com/google/go-cmp/cmp"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/oracle/mocks"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
@@ -171,7 +170,7 @@ func TestObservation(t *testing.T) {
 		id = "aggregatable_request_without_observation"
 		requestsStore.EXPECT().GetRequest(id).Return(types.NewAggregatableRequest(id, nil), true).Once()
 
-		plugin := newReportingPlugin(Config{MaxAllowedBatchSize: 50}, logger.Sugared(logger.Test(t)), blocksProvider, requestsStore)
+		plugin := newReportingPlugin(Config{MaxAllowedBatchSize: 50, MaxObservationLength: 1000}, logger.Sugared(logger.Test(t)), blocksProvider, requestsStore)
 		query := mustQuery(t, []string{"request_not_present_in_store", "request_without_observation", "request_with_observation", "lockable_request", "aggregatable_request", "aggregatable_request_without_observation"})
 		rawObservation, err := plugin.Observation(t.Context(), ocr3types.OutcomeContext{}, query)
 		require.NoError(t, err)
@@ -185,6 +184,60 @@ func TestObservation(t *testing.T) {
 				},
 				"lockable_request": {
 					Observation: &types.RequestObservation_LockableToBlock{LockableToBlock: &emptypb.Empty{}},
+				},
+				"aggregatable_request": {
+					Observation: &types.RequestObservation_Aggregatable{Aggregatable: &types.AggregatableObservation{
+						Method: types.AggregationMethodFPlusOneHighest,
+						Value:  newDecimal(123, 2),
+					}},
+				},
+			},
+		}
+		require.Empty(t, cmp.Diff(expectedObservation, &observation, protocmp.Transform()))
+	})
+	t.Run("Request remains in queue if adding it will exceed max observation size", func(t *testing.T) {
+		expectedChainHeight := &types.ChainHeight{
+			Latest:    10,
+			Safe:      9,
+			Finalized: 8,
+		}
+		blocksProvider := newBlockProvider(t, expectedChainHeight)
+		requestsStore := mocks.NewRequestsHandler(t)
+		addRequestWithObservation := func(id string, size int) {
+			withObservation := types.NewEventuallyConsistentRequest(id, nil)
+			withObservation.SetObservation(make([]byte, size))
+			requestsStore.EXPECT().GetRequest(id).Return(withObservation, true).Once()
+		}
+
+		const maxObservationLength = 1000
+		const requestsThatFitSize = 300
+		addRequestWithObservation("request_1", requestsThatFitSize)
+		addRequestWithObservation("request_2", requestsThatFitSize)
+
+		id := "aggregatable_request"
+		aggrWithObservation := types.NewAggregatableRequest(id, nil)
+		aggrWithObservation.SetObservation(&types.AggregatableObservation{
+			Method: types.AggregationMethodFPlusOneHighest,
+			Value:  newDecimal(123, 2),
+		})
+		requestsStore.EXPECT().GetRequest(id).Return(aggrWithObservation, true).Once()
+
+		addRequestWithObservation("large_request", 400)
+
+		plugin := newReportingPlugin(Config{MaxAllowedBatchSize: 50, MaxObservationLength: maxObservationLength}, logger.Sugared(logger.Test(t)), blocksProvider, requestsStore)
+		query := mustQuery(t, []string{"request_1", "request_2", "aggregatable_request", "large_request"})
+		rawObservation, err := plugin.Observation(t.Context(), ocr3types.OutcomeContext{}, query)
+		require.NoError(t, err)
+		var observation types.Observation
+		require.NoError(t, proto.Unmarshal(rawObservation, &observation))
+		expectedObservation := &types.Observation{
+			ChainHeight: expectedChainHeight,
+			Observations: map[string]*types.RequestObservation{
+				"request_1": {
+					Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: make([]byte, requestsThatFitSize)},
+				},
+				"request_2": {
+					Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: make([]byte, requestsThatFitSize)},
 				},
 				"aggregatable_request": {
 					Observation: &types.RequestObservation_Aggregatable{Aggregatable: &types.AggregatableObservation{
