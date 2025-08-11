@@ -173,7 +173,7 @@ func validateCacheSettings(cacheSettings *http.CacheSettings, cfg common.Service
 		return fmt.Errorf("MaxAgeMs cannot be negative")
 	}
 
-	if cacheSettings.MaxAgeMs > int64(cfg.LimitsConfig.MaxCacheAgeMs) {
+	if uint64(cacheSettings.MaxAgeMs) > uint64(cfg.LimitsConfig.MaxCacheAgeMs) {
 		return fmt.Errorf("MaxAgeMs cannot exceed %d milliseconds", cfg.LimitsConfig.MaxCacheAgeMs)
 	}
 
