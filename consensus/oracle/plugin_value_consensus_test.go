@@ -24,6 +24,7 @@ import (
 
 	"github.com/smartcontractkit/capabilities/consensus/oracle"
 	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
+	pbtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
@@ -41,6 +42,7 @@ type consensusPluginTest struct {
 const n = 7
 const f = 2
 const batchSize = 10
+const defaultMaxLengthBytes = 1000000 // 1 MB
 
 func Test_MismatchedLeaderConsensusDescriptor(t *testing.T) {
 	lggr := logger.Test(t)
@@ -453,7 +455,12 @@ func createReportingPlugin(t *testing.T, pluginObservations []*oracle.ConsensusR
 		require.NoError(t, err, "failed to add request to store")
 	}
 
-	reportingPlugin, err := oracle.NewReportingPlugin(lggr, f, n, reqStore, batchSize)
+	reportingPlugin, err := oracle.NewReportingPlugin(lggr, f, n, reqStore, &pbtypes.ReportingPluginConfig{
+		MaxQueryLengthBytes:       defaultMaxLengthBytes,
+		MaxObservationLengthBytes: defaultMaxLengthBytes,
+		MaxOutcomeLengthBytes:     defaultMaxLengthBytes,
+		MaxBatchSize:              uint32(batchSize),
+	})
 	require.NoError(t, err)
 	return reportingPlugin
 }
