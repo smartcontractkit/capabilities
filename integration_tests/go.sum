@@ -1086,8 +1086,8 @@ github.com/smartcontractkit/chainlink-ccip/chains/solana v0.0.0-20250805210128-7
 github.com/smartcontractkit/chainlink-ccip/chains/solana v0.0.0-20250805210128-7f8a0f403c3a/go.mod h1:Ve1xD71bl193YIZQEoJMmBqLGQJdNs29bwbuObwvbhQ=
 github.com/smartcontractkit/chainlink-ccip/chains/solana/gobindings v0.0.0-20250804184440-c0506474fc44 h1:S00lus9RPu5JuxKRtGEET+aIUfASahHpTRV5RgPARSI=
 github.com/smartcontractkit/chainlink-ccip/chains/solana/gobindings v0.0.0-20250804184440-c0506474fc44/go.mod h1:xtZNi6pOKdC3sLvokDvXOhgHzT+cyBqH/gWwvxTxqrg=
-github.com/smartcontractkit/chainlink-common v0.8.1-0.20250807215209-605af6c00a4b h1:TfjKipYmQoEPMnXxDS8srBrqf9+buYwOCVriZtnDAMY=
-github.com/smartcontractkit/chainlink-common v0.8.1-0.20250807215209-605af6c00a4b/go.mod h1:e4280rM099IzfjaPG9uxHdjXgY79cURgenW7+obyAq0=
+github.com/smartcontractkit/chainlink-common v0.9.0 h1:shmm7TV3LLskDmjul+UtvEIgVtk9VfZCdNeVmtiqmrY=
+github.com/smartcontractkit/chainlink-common v0.9.0/go.mod h1:e4280rM099IzfjaPG9uxHdjXgY79cURgenW7+obyAq0=
 github.com/smartcontractkit/chainlink-common/pkg/chipingress v0.0.1 h1:ca2z5OXgnbBPQRxpwXwBLJsUA1+cAp5ncfW4Ssvd6eY=
 github.com/smartcontractkit/chainlink-common/pkg/chipingress v0.0.1/go.mod h1:NZv/qKYGFRnkjOYBouajnDfFoZ+WDa6H2KNmSf1dnKc=
 github.com/smartcontractkit/chainlink-common/pkg/monitoring v0.0.0-20250415235644-8703639403c7 h1:9wh1G+WbXwPVqf0cfSRSgwIcaXTQgvYezylEAfwmrbw=
@@ -1098,8 +1098,8 @@ github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb v0.0.0-2025
 github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb v0.0.0-20250806155403-1d805e639a0f/go.mod h1:yMGYq2fDYWPXZjkVuzgRiZVv/NaifvQUqK7CY6kNgW0=
 github.com/smartcontractkit/chainlink-data-streams v0.1.2 h1:g/UmFJa/E1Zmc7NO20ob5SijxQen51DhnqTLr2f7BEc=
 github.com/smartcontractkit/chainlink-data-streams v0.1.2/go.mod h1:lxY97sDlDorQAmLGFo6x1tl8SQ2E7adsS0/wU8+mmTc=
-github.com/smartcontractkit/chainlink-evm v0.2.2 h1:3n3wnkZrzcIT83crye3xTP9NjREtEdiZSWNbat/SioE=
-github.com/smartcontractkit/chainlink-evm v0.2.2/go.mod h1:6y5OTe7zEVXKyVWzXWR/VlIrO/UDqcCrQJPmb5ms6RM=
+github.com/smartcontractkit/chainlink-evm v0.3.1 h1:o4DSoeHGxNCW2c9Xd0Qmu7rYQ8+Zf9Stv8Md+dHtqgg=
+github.com/smartcontractkit/chainlink-evm v0.3.1/go.mod h1:6y5OTe7zEVXKyVWzXWR/VlIrO/UDqcCrQJPmb5ms6RM=
 github.com/smartcontractkit/chainlink-evm/gethwrappers v0.0.0-20250808121824-2c3544aab8f3 h1:SRMNzCdQnF2x6+QlL5YSzVeWyJb/BXqMrg+zSGaBPVg=
 github.com/smartcontractkit/chainlink-evm/gethwrappers v0.0.0-20250808121824-2c3544aab8f3/go.mod h1:3Lsp38qxen9PABVF+O5eocveQev+hyo9HLAgRodBD4Q=
 github.com/smartcontractkit/chainlink-feeds v0.1.2-0.20250227211209-7cd000095135 h1:8u9xUrC+yHrTDexOKDd+jrA6LCzFFHeX1G82oj2fsSI=
@@ -1128,8 +1128,8 @@ github.com/smartcontractkit/chainlink-tron/relayer v0.0.11-0.20250805160549-9c22
 github.com/smartcontractkit/chainlink-tron/relayer v0.0.11-0.20250805160549-9c2255ee818e/go.mod h1:ZnAaAWtczhBbsmb6GafTmAi6ncsj6dpZwHEaBePWQeQ=
 github.com/smartcontractkit/chainlink-tron/relayer/gotron-sdk v0.0.5-0.20250422175525-b7575d96bd4d h1:qLmSOOtB/Ogn79eIDkuujOu8M5Jd747V1H7Brk/nTvo=
 github.com/smartcontractkit/chainlink-tron/relayer/gotron-sdk v0.0.5-0.20250422175525-b7575d96bd4d/go.mod h1:4WhGgCA0smBbBud5mK+jnDb2wwndMvoqaWBJ3OV/7Bw=
-github.com/smartcontractkit/chainlink/v2 v2.23.2-por-beta.1.0.20250812114831-dc659a04e742 h1:HReeo9d7DbWiIfxIkpX4hh9MCqBSd175+EcacwJVl4E=
-github.com/smartcontractkit/chainlink/v2 v2.23.2-por-beta.1.0.20250812114831-dc659a04e742/go.mod h1:JWo71KxjQH23EwltIsWFn//Q/NvpEtk9AOypMuUUtSs=
+github.com/smartcontractkit/chainlink/v2 v2.23.2-por-beta.1.0.20250812144606-b80ff7c02399 h1:RVIS2dOqetd03Vg34sBCrvistZash7c3uEfonPk1QV0=
+github.com/smartcontractkit/chainlink/v2 v2.23.2-por-beta.1.0.20250812144606-b80ff7c02399/go.mod h1:s17AjjfR5pCBG/WOi0F2cFuOZ4X6EglFbn9hNcbXGsI=
 github.com/smartcontractkit/cre-sdk-go v0.3.0 h1:7btZvnEsFkzlF09ZXO7rfGcQ+nFdrYp0LlahqntrTWw=
 github.com/smartcontractkit/cre-sdk-go v0.3.0/go.mod h1:HqCmnnjRZ0B3uAMify4/Wahaz6kvwoZ6SvD1989M9QQ=
 github.com/smartcontractkit/cre-sdk-go/capabilities/blockchain/evm v0.3.0 h1:+T4wQFRHdXAPGlN8ekBr/ZrO6xRx6thmVONAb9rnY6U=
