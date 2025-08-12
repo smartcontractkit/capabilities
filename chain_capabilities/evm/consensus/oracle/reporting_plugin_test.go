@@ -225,7 +225,7 @@ func TestObservation(t *testing.T) {
 		addRequestWithObservation("large_request", 400)
 
 		plugin := newReportingPlugin(Config{MaxAllowedBatchSize: 50, MaxObservationLength: maxObservationLength}, logger.Sugared(logger.Test(t)), blocksProvider, requestsStore)
-		query := mustQuery(t, []string{"request_1", "request_2", "aggregatable_request", "large_request"})
+		query := mustQuery(t, []string{"request_1", "request_2", "large_request", "aggregatable_request"})
 		rawObservation, err := plugin.Observation(t.Context(), ocr3types.OutcomeContext{}, query)
 		require.NoError(t, err)
 		var observation types.Observation

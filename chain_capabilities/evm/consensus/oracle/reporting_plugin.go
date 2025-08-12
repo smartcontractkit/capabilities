@@ -149,8 +149,8 @@ func (rp *reportingPlugin) Observation(
 
 		newSize, ok := hasCapacityToAdd(currentSize, observationFieldProtoKey, requestID, reqObservation, rp.config.MaxObservationLength)
 		if !ok {
-			rp.logger.Info("Observation exceeds max size, skipping rest of the batch", "request_in_batch", len(query.RequestIDs), "requests_added", i+1, "currentSize", currentSize, "newSize", newSize)
-			break
+			rp.logger.Info("Observation exceeds max size, skipping request", "id", requestID, "request_in_batch", len(query.RequestIDs), "requests_added", i+1, "currentSize", currentSize, "newSize", newSize)
+			continue
 		}
 
 		currentSize = newSize
