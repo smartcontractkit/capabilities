@@ -63,21 +63,64 @@ func calculateRequestSize(request *oracletypes.Request) int {
 func QueryBatchHasCapacity(cachedQuerySize int, request *oracletypes.Request, MaxQueryLengthBytes int) (bool, int) {
 	// Calculate size if we add one more request
 	newRequestSize := calculateRequestSize(request)
-
+	
 	// Add protobuf field overhead: tag (field number + wire type) + length prefix
 	// For repeated fields in protobuf, each element gets:
 	// - Tag: field number (1 for requests field) << 3 | wire type (2 for length-delimited)
 	// - Length: varint encoding of the message size
 	tagSize := varintSize(uint64(1<<3 | 2))
 	lengthSize := varintSize(uint64(newRequestSize))
-
+	
 	totalSizeWithNewRequest := cachedQuerySize + tagSize + lengthSize + newRequestSize
-
+	
 	// Check against limits
 	if totalSizeWithNewRequest > MaxQueryLengthBytes {
 		// Stop adding more requests
 		return false, cachedQuerySize
 	}
-
+	
 	return true, totalSizeWithNewRequest
+}
+
+// CalculateObservationsMessageSize calculates the marshalled size of an Observation message
+func CalculateObservationsMessageSize(obs *oracletypes.Observation) int {
+	if obs == nil {
+		return 0
+	}
+	
+	// Use proto.Size which gives us the exact marshalled size
+	return proto.Size(obs)
+}
+
+// calculateRequestObservationSize estimates the marshalled size of a RequestObservation
+func calculateRequestObservationSize(requestObs *oracletypes.RequestObservation) int {
+	if requestObs == nil {
+		return 0
+	}
+	
+	// Use proto.Size which gives us the exact marshalled size
+	return proto.Size(requestObs)
+}
+
+// ObservationsBatchHasCapacity checks if adding a new RequestObservation would exceed the size limit
+func ObservationsBatchHasCapacity(cachedObsSize int, newOb *oracletypes.RequestObservation, maxObservationLengthBytes int) (bool, int) {
+	// Calculate size if we add one more observation
+	newObservationSize := calculateRequestObservationSize(newOb)
+	
+	// Add protobuf field overhead: tag (field number + wire type) + length prefix
+	// For repeated fields in protobuf, each element gets:
+	// - Tag: field number (1 for observations field) << 3 | wire type (2 for length-delimited)
+	// - Length: varint encoding of the message size
+	tagSize := varintSize(uint64(1<<3 | 2))
+	lengthSize := varintSize(uint64(newObservationSize))
+	
+	totalSizeWithNewObservation := cachedObsSize + tagSize + lengthSize + newObservationSize
+	
+	// Check against limits
+	if totalSizeWithNewObservation > maxObservationLengthBytes {
+		// Stop adding more observations
+		return false, cachedObsSize
+	}
+	
+	return true, totalSizeWithNewObservation
 }
