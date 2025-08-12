@@ -79,24 +79,84 @@ func TestQueryBatchHasCapacity_SizeEstimation(t *testing.T) {
 				hasCapacity, estimatedTotalSize := QueryBatchHasCapacity(initialSize, tc.request, maxSize)
 				require.True(t, hasCapacity, "Should have capacity for single request")
 
-				// Create actual query with the request and measure real size
+				// Create actual query with the request and measure real marshalled bytes length
 				query := &oracletypes.Query{
 					Requests: []*oracletypes.Request{tc.request},
 				}
-				actualSize := proto.Size(query)
+				marshalledBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(query)
+				require.NoError(t, err, "Failed to marshal query")
+				actualMarshalledSize := len(marshalledBytes)
 
-				// The estimation should be very close to actual size
-				// Allow for small differences due to protobuf encoding details
-				sizeDiff := abs(estimatedTotalSize - actualSize)
-				tolerance := max(actualSize/20, 5) // 5% tolerance or minimum 5 bytes
+				t.Logf("Initial size: %d, Estimated total size: %d, Actual marshalled bytes length: %d", 
+					initialSize, estimatedTotalSize, actualMarshalledSize)
 				
-				t.Logf("Estimated size: %d, Actual size: %d, Difference: %d, Tolerance: %d", 
-					estimatedTotalSize, actualSize, sizeDiff, tolerance)
-				
-				require.LessOrEqual(t, sizeDiff, tolerance, 
-					"Size estimation should be within tolerance. Estimated: %d, Actual: %d, Diff: %d", 
-					estimatedTotalSize, actualSize, sizeDiff)
+				// The estimation should be exactly equal to actual marshalled bytes length
+				require.Equal(t, actualMarshalledSize, estimatedTotalSize,
+					"Size estimation should be exactly equal to actual marshalled bytes length. Estimated: %d, Actual: %d",
+					estimatedTotalSize, actualMarshalledSize)
 			})
+		}
+	})
+
+	t.Run("multiple requests deterministic size calculation", func(t *testing.T) {
+		// Start with empty query
+		initialSize := 0
+		
+		// Create multiple test requests with different sizes
+		requests := []*oracletypes.Request{
+			{
+				Metadata: &oracletypes.RequestMetaData{
+					RequestId: "req-1",
+				},
+				RequestConsensusDescriptor: []byte("small"),
+			},
+			{
+				Metadata: &oracletypes.RequestMetaData{
+					RequestId:               "req-2-with-longer-id",
+					WorkflowExecutionId:     "workflow-exec-123",
+					WorkflowStepReference:   "step-ref-456",
+					WorkflowId:              "workflow-789",
+					WorkflowOwner:           "owner@example.com",
+					WorkflowName:            "test-workflow",
+					WorkflowDonId:           12345,
+					WorkflowDonConfigVersion: 1,
+				},
+				RequestConsensusDescriptor: []byte("medium-sized-consensus-descriptor"),
+			},
+			{
+				Metadata: &oracletypes.RequestMetaData{
+					RequestId: "req-3-large",
+				},
+				RequestConsensusDescriptor: make([]byte, 500), // Large descriptor
+			},
+		}
+
+		var actualRequests []*oracletypes.Request
+		currentSize := initialSize
+		
+		// Add requests one by one and verify size calculation at each step
+		for i, newReq := range requests {
+			// Calculate estimated size after adding this request
+			maxSize := 10000 // Large enough limit
+			hasCapacity, estimatedSize := QueryBatchHasCapacity(currentSize, newReq, maxSize)
+			require.True(t, hasCapacity, "Should have capacity for request %d", i)
+			
+			// Actually add the request and calculate real marshalled bytes length
+			actualRequests = append(actualRequests, newReq)
+			queryWithAllData := &oracletypes.Query{Requests: actualRequests}
+			marshalledBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(queryWithAllData)
+			require.NoError(t, err, "Failed to marshal query at step %d", i+1)
+			actualSize := len(marshalledBytes)
+			
+			t.Logf("Step %d: Estimated size: %d, Actual marshalled bytes length: %d", i+1, estimatedSize, actualSize)
+			
+			// Verify exact match
+			require.Equal(t, actualSize, estimatedSize,
+				"Size estimation should be exactly equal at step %d. Estimated: %d, Actual: %d",
+				i+1, estimatedSize, actualSize)
+			
+			// Update current size for next iteration
+			currentSize = estimatedSize
 		}
 	})
 
@@ -287,6 +347,139 @@ func TestGetIDKey_DuplicateRecognition(t *testing.T) {
 		require.Len(t, processedRequests, 2, "Should process 2 unique requests (first two are duplicates)")
 		require.Equal(t, "req-1", processedRequests[0].RequestID, "First unique request should be processed")
 		require.Equal(t, "req-3", processedRequests[1].RequestID, "Second unique request should be processed")
+	})
+}
+
+func TestObservationsBatchHasCapacity_SizeEstimation(t *testing.T) {
+	t.Run("observations size estimation accuracy", func(t *testing.T) {
+		// Create test observation message
+		obs := &oracletypes.Observation{
+			Observations: []*oracletypes.RequestObservation{},
+		}
+
+		// Test initial size calculation
+		initialSize := CalculateObservationsMessageSize(obs)
+		require.GreaterOrEqual(t, initialSize, 0, "Empty observation should have non-negative size")
+
+		// Create a test RequestObservation
+		requestObs := &oracletypes.RequestObservation{
+			Metadata: &oracletypes.RequestMetaData{
+				RequestId:           "test-request-123",
+				WorkflowExecutionId: "exec-456",
+			},
+			Observation: []byte("test-observation-data"),
+		}
+
+		// Test capacity checking
+		maxSize := 1000
+		hasCapacity, estimatedNewSize := ObservationsBatchHasCapacity(initialSize, requestObs, maxSize)
+		require.True(t, hasCapacity, "Should have capacity for reasonable-sized observation")
+		require.Greater(t, estimatedNewSize, initialSize, "New size should be larger than initial size")
+
+		// Create actual observation with the request observation and calculate real marshalled bytes length
+		obsWithData := &oracletypes.Observation{
+			Observations: []*oracletypes.RequestObservation{requestObs},
+		}
+		marshalledBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(obsWithData)
+		require.NoError(t, err, "Failed to marshal observation")
+		actualMarshalledSize := len(marshalledBytes)
+
+		t.Logf("Initial size: %d, Estimated new size: %d, Actual marshalled bytes length: %d", 
+			initialSize, estimatedNewSize, actualMarshalledSize)
+
+		// The estimation should be exactly equal to actual marshalled bytes length
+		require.Equal(t, actualMarshalledSize, estimatedNewSize,
+			"Size estimation should be exactly equal to actual marshalled bytes length. Estimated: %d, Actual: %d",
+			estimatedNewSize, actualMarshalledSize)
+	})
+
+	t.Run("multiple observations deterministic size calculation", func(t *testing.T) {
+		// Start with empty observation
+		obs := &oracletypes.Observation{Observations: []*oracletypes.RequestObservation{}}
+		currentSize := CalculateObservationsMessageSize(obs)
+		
+		// Create multiple test RequestObservations with different sizes
+		observations := []*oracletypes.RequestObservation{
+			{
+				Metadata: &oracletypes.RequestMetaData{
+					RequestId:           "req-1",
+					WorkflowExecutionId: "exec-1",
+				},
+				Observation: []byte("small"),
+			},
+			{
+				Metadata: &oracletypes.RequestMetaData{
+					RequestId:               "req-2-with-longer-id",
+					WorkflowExecutionId:     "exec-2-longer",
+					WorkflowStepReference:   "step-ref",
+					WorkflowId:              "workflow-id",
+					WorkflowOwner:           "owner@example.com",
+					WorkflowName:            "test-workflow",
+					WorkflowDonId:           12345,
+					WorkflowDonConfigVersion: 1,
+				},
+				Observation: []byte("medium-sized-observation-data"),
+			},
+			{
+				Metadata: &oracletypes.RequestMetaData{
+					RequestId: "req-3",
+				},
+				Observation: make([]byte, 200), // Large observation
+			},
+		}
+
+		var actualObservations []*oracletypes.RequestObservation
+		
+		// Add observations one by one and verify size calculation at each step
+		for i, newObs := range observations {
+			// Calculate estimated size after adding this observation
+			maxSize := 10000 // Large enough limit
+			hasCapacity, estimatedSize := ObservationsBatchHasCapacity(currentSize, newObs, maxSize)
+			require.True(t, hasCapacity, "Should have capacity for observation %d", i)
+			
+			// Actually add the observation and calculate real marshalled bytes length
+			actualObservations = append(actualObservations, newObs)
+			obsWithAllData := &oracletypes.Observation{Observations: actualObservations}
+			marshalledBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(obsWithAllData)
+			require.NoError(t, err, "Failed to marshal observation at step %d", i+1)
+			actualSize := len(marshalledBytes)
+			
+			t.Logf("Step %d: Estimated size: %d, Actual marshalled bytes length: %d", i+1, estimatedSize, actualSize)
+			
+			// Verify exact match
+			require.Equal(t, actualSize, estimatedSize,
+				"Size estimation should be exactly equal at step %d. Estimated: %d, Actual: %d",
+				i+1, estimatedSize, actualSize)
+			
+			// Update current size for next iteration
+			currentSize = estimatedSize
+		}
+	})
+
+	t.Run("observations capacity limits respected", func(t *testing.T) {
+		obs := &oracletypes.Observation{Observations: []*oracletypes.RequestObservation{}}
+		initialSize := CalculateObservationsMessageSize(obs)
+
+		// Create a large observation
+		largeObs := &oracletypes.RequestObservation{
+			Metadata: &oracletypes.RequestMetaData{
+				RequestId: "test",
+			},
+			Observation: make([]byte, 500), // 500 bytes of data
+		}
+
+		actualObsSize := calculateRequestObservationSize(largeObs)
+		t.Logf("Large observation size: %d bytes", actualObsSize)
+
+		// Test with limit smaller than observation size
+		smallLimit := actualObsSize - 1
+		hasCapacity, _ := ObservationsBatchHasCapacity(initialSize, largeObs, smallLimit)
+		require.False(t, hasCapacity, "Should not have capacity when observation would exceed limit")
+
+		// Test with adequate limit
+		largeLimit := initialSize + actualObsSize + 100
+		hasCapacity, _ = ObservationsBatchHasCapacity(initialSize, largeObs, largeLimit)
+		require.True(t, hasCapacity, "Should have capacity when observation is within limit")
 	})
 }
 
