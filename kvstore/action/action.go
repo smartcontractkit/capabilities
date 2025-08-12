@@ -15,7 +15,7 @@ import (
 
 const ID = "kv-store-action@1.0.0"
 
-var _ capabilities.ActionCapability = (*capability)(nil)
+var _ capabilities.ExecutableCapability = (*capability)(nil)
 
 type capability struct {
 	logger        logger.Logger
@@ -52,7 +52,7 @@ func evaluate(rawRequest capabilities.CapabilityRequest) (*kvcap.ReadInputs, err
 }
 
 func (c *capability) Execute(ctx context.Context, rawRequest capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
-	c.logger.Infow("Executing",
+	c.logger.Infow("Executing kvstore action",
 		"WorkflowID", rawRequest.Metadata.WorkflowID,
 		"WorkflowExecutionID", rawRequest.Metadata.WorkflowExecutionID,
 	)
@@ -61,7 +61,7 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 	if err != nil {
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to decode signed report: %v", err)
 	}
-	c.logger.Debugw("Evaluated execute request",
+	c.logger.Debugw("Evaluated kvstore action execute request",
 		"WorkflowID", rawRequest.Metadata.WorkflowID,
 		"WorkflowExecutionID", rawRequest.Metadata.WorkflowExecutionID,
 	)

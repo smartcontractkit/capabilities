@@ -17,6 +17,7 @@ const (
 	defaultMaxHeaderKeyLength   = 256
 	defaultMaxHeaderValueLength = 1024
 	defaultMaxBodyLength        = 10 * 1024 * 1024 // 1 MB
+	defaultMaxCacheAgeMs        = 10 * 60 * 1000   // 10 minutes
 	defaultGlobalRPS            = 100.0
 	defaultGlobalBurst          = 100
 	defaultPerSenderRPS         = 100.0
@@ -41,6 +42,7 @@ func ApplyDefaultsAndValidate(cfg *common.ServiceConfig) (*common.ServiceConfig,
 	maxHeaderValueLength := getWithDefault(cfg.LimitsConfig.MaxHeaderValueLength, defaultMaxHeaderValueLength)
 	maxRequestBytes := getWithDefault(cfg.LimitsConfig.MaxRequestBytes, defaultMaxBodyLength)
 	maxResponseBytes := getWithDefault(cfg.LimitsConfig.MaxResponseBytes, defaultMaxBodyLength)
+	maxCacheAgeMs := getWithDefault(cfg.LimitsConfig.MaxCacheAgeMs, defaultMaxCacheAgeMs)
 
 	if cfg.LimitsConfig.MaxTimeoutMs > math.MaxInt32 {
 		return nil, fmt.Errorf("MaxTimeoutMs exceeds int32 maximum: %d", math.MaxInt32)
@@ -52,6 +54,7 @@ func ApplyDefaultsAndValidate(cfg *common.ServiceConfig) (*common.ServiceConfig,
 		MaxHeaderValueLength: maxHeaderValueLength,
 		MaxRequestBytes:      maxRequestBytes,
 		MaxResponseBytes:     maxResponseBytes,
+		MaxCacheAgeMs:        maxCacheAgeMs,
 	}
 	cfg.LimitsConfig = limitsConfig
 	cfg.OutgoingRateLimiter = ratelimit.RateLimiterConfig{
@@ -82,6 +85,11 @@ func ValidatedRequest(input *http.Request, cfg common.ServiceConfig) (*http.Requ
 		return nil, fmt.Errorf("input validation failed: %w", err)
 	}
 
+	err = validateCacheSettings(input.CacheSettings, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("cache settings validation failed: %w", err)
+	}
+
 	method := strings.ToUpper(strings.TrimSpace(input.Method))
 	if _, ok := allowedMethods[method]; !ok {
 		return nil, fmt.Errorf("invalid HTTP method: %s", method)
@@ -105,8 +113,7 @@ func ValidatedRequest(input *http.Request, cfg common.ServiceConfig) (*http.Requ
 	if input.CacheSettings != nil {
 		req.CacheSettings = &http.CacheSettings{
 			ReadFromCache: input.CacheSettings.ReadFromCache,
-			StoreInCache:  input.CacheSettings.StoreInCache,
-			TtlMs:         input.CacheSettings.TtlMs,
+			MaxAgeMs:      input.CacheSettings.MaxAgeMs,
 		}
 	} else {
 		req.CacheSettings = &http.CacheSettings{} // Default to empty cache settings if not provided
@@ -154,5 +161,25 @@ func validateInputMaxLimits(input *http.Request, cfg common.ServiceConfig) error
 	if uint32(len(input.Body)) > cfg.LimitsConfig.MaxRequestBytes { // nolint:gosec // G115
 		return fmt.Errorf("body too large: maximum allowed is %d bytes", cfg.LimitsConfig.MaxRequestBytes)
 	}
+	return nil
+}
+
+func validateCacheSettings(cacheSettings *http.CacheSettings, cfg common.ServiceConfig) error {
+	if cacheSettings == nil {
+		return nil
+	}
+
+	if cacheSettings.MaxAgeMs < 0 {
+		return fmt.Errorf("MaxAgeMs cannot be negative")
+	}
+
+	if uint64(cacheSettings.MaxAgeMs) > uint64(cfg.LimitsConfig.MaxCacheAgeMs) {
+		return fmt.Errorf("MaxAgeMs cannot exceed %d milliseconds", cfg.LimitsConfig.MaxCacheAgeMs)
+	}
+
+	if cacheSettings.ReadFromCache && cacheSettings.MaxAgeMs == 0 {
+		return fmt.Errorf("MaxAgeMs must be non-zero when ReadFromCache is true")
+	}
+
 	return nil
 }

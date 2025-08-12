@@ -105,8 +105,7 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 		TimeoutMs: uint32(input.TimeoutMs), //nolint:gosec // G115
 		CacheSettings: gc.CacheSettings{
 			ReadFromCache: input.CacheSettings.ReadFromCache,
-			StoreInCache:  input.CacheSettings.StoreInCache,
-			TTLMs:         input.CacheSettings.TtlMs,
+			MaxAgeMs:      input.CacheSettings.MaxAgeMs,
 		},
 	}
 

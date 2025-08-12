@@ -169,9 +169,8 @@ func TestGatewayOutboundProxy_SendRequest_MissingBodyToGateway(t *testing.T) {
 		Body:      []byte("test"),
 		TimeoutMs: 5000,
 		CacheSettings: &http.CacheSettings{
-			StoreInCache:  true,
 			ReadFromCache: true,
-			TtlMs:         10000, // 10 seconds
+			MaxAgeMs:      10000, // 10 seconds
 		},
 	}
 

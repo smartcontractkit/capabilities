@@ -43,7 +43,7 @@ type capability struct {
 	beholderClient *beholder.Client
 }
 
-func New(p Params) (capabilities.TargetCapability, error) {
+func New(p Params) (capabilities.ExecutableCapability, error) {
 	return &capability{
 		lggr: p.Logger,
 	}, nil
