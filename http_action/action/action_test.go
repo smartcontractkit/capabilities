@@ -84,7 +84,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 
 		response, err := srv.SendRequest(context.Background(), metadata, input)
 		require.NoError(t, err)
-		assert.Equal(t, expectedResponse, response)
+		assert.Equal(t, expectedResponse, response.Response)
 		assert.Equal(t, input, mockClient.CapturedInput)
 	})
 
@@ -109,7 +109,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 
 		response, err := srv.SendRequest(context.Background(), metadata, input)
 		require.NoError(t, err)
-		assert.Equal(t, expectedResponse, response)
+		assert.Equal(t, expectedResponse, response.Response)
 		assert.Equal(t, input, mockClient.CapturedInput)
 	})
 
@@ -130,7 +130,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 
 		response, err := srv.SendRequest(context.Background(), metadata, input)
 		require.NoError(t, err)
-		assert.Equal(t, expectedResponse, response)
+		assert.Equal(t, expectedResponse, response.Response)
 		assert.Equal(t, input, mockClient.CapturedInput)
 	})
 
@@ -144,7 +144,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 
 		response, err := srv.SendRequest(context.Background(), metadata, input)
 		require.Error(t, err)
-		assert.Nil(t, response)
+		assert.Nil(t, response.Response)
 		assert.Contains(t, err.Error(), "URL must not be empty")
 		assert.Nil(t, mockClient.CapturedInput)
 	})
@@ -161,7 +161,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 
 		response, err := srv.SendRequest(context.Background(), metadata, input)
 		require.Error(t, err)
-		assert.Nil(t, response)
+		assert.Nil(t, response.Response)
 		assert.Contains(t, err.Error(), "body too large")
 		assert.Nil(t, mockClient.CapturedInput)
 	})
@@ -176,7 +176,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 
 		response, err := srv.SendRequest(context.Background(), metadata, input)
 		require.Error(t, err)
-		assert.Nil(t, response)
+		assert.Nil(t, response.Response)
 		assert.Contains(t, err.Error(), "invalid HTTP method")
 		assert.Nil(t, mockClient.CapturedInput)
 	})
@@ -191,7 +191,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 
 		response, err := srv.SendRequest(context.Background(), metadata, input)
 		require.Error(t, err)
-		assert.Nil(t, response)
+		assert.Nil(t, response.Response)
 		assert.Contains(t, err.Error(), "timeout must be between")
 		assert.Nil(t, mockClient.CapturedInput)
 	})

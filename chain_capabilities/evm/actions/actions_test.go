@@ -130,7 +130,7 @@ func TestCapability_FilterLogs(t *testing.T) {
 		req := &evmcappb.FilterLogsRequest{FilterQuery: &evmcappb.FilterQuery{BlockHash: make([]byte, 32)}}
 		resp, err := svc.FilterLogs(t.Context(), capabilities.RequestMetadata{}, req)
 		require.NoError(t, err)
-		require.Empty(t, cmp.Diff(expectedReply, resp, protocmp.Transform()))
+		require.Empty(t, cmp.Diff(expectedReply, resp.Response, protocmp.Transform()))
 	})
 	t.Run("Returns error if both block hash and block range is used", func(t *testing.T) {
 		svc := initMocks(t)
@@ -173,7 +173,7 @@ func TestCapability_GetTransactionByHash(t *testing.T) {
 		req := &evmcappb.GetTransactionByHashRequest{Hash: make([]byte, 32)}
 		resp, err := svc.GetTransactionByHash(t.Context(), capabilities.RequestMetadata{}, req)
 		require.NoError(t, err)
-		require.Empty(t, cmp.Diff(evmcappb.GetTransactionByHashReply{Transaction: tx}, resp, protocmp.Transform()))
+		require.Empty(t, cmp.Diff(evmcappb.GetTransactionByHashReply{Transaction: tx}, resp.Response, protocmp.Transform()))
 	})
 	t.Run("Returns error on invalid hash", func(t *testing.T) {
 		svc := initMocks(t)
@@ -210,7 +210,7 @@ func TestCapability_GetTransactionReceipt(t *testing.T) {
 		req := &evmcappb.GetTransactionReceiptRequest{Hash: make([]byte, 32)}
 		resp, err := svc.GetTransactionReceipt(t.Context(), capabilities.RequestMetadata{}, req)
 		require.NoError(t, err)
-		require.Empty(t, cmp.Diff(evmcappb.GetTransactionReceiptReply{Receipt: receipt}, resp, protocmp.Transform()))
+		require.Empty(t, cmp.Diff(evmcappb.GetTransactionReceiptReply{Receipt: receipt}, resp.Response, protocmp.Transform()))
 	})
 	t.Run("Returns error on invalid hash", func(t *testing.T) {
 		svc := initMocks(t)
@@ -249,7 +249,7 @@ func TestCapability_EstimateGas(t *testing.T) {
 		req := &evmcappb.EstimateGasRequest{Msg: &evmcappb.CallMsg{Data: []byte{0xbe, 0xef}, From: make([]byte, common.AddressLength), To: make([]byte, common.AddressLength)}}
 		resp, err := svc.EstimateGas(t.Context(), capabilities.RequestMetadata{}, req)
 		require.NoError(t, err)
-		require.Empty(t, cmp.Diff(evmcappb.EstimateGasReply{Gas: 12300}, resp, protocmp.Transform()))
+		require.Empty(t, cmp.Diff(evmcappb.EstimateGasReply{Gas: 12300}, resp.Response, protocmp.Transform()))
 	})
 	t.Run("Returns error on invalid request", func(t *testing.T) {
 		svc := initMocks(t)
@@ -331,7 +331,7 @@ func TestCapability_HeaderByNumber(t *testing.T) {
 		req := &evmcappb.HeaderByNumberRequest{BlockNumber: valuespb.NewBigIntFromInt(block)}
 		resp, err := svc.HeaderByNumber(t.Context(), capabilities.RequestMetadata{}, req)
 		require.NoError(t, err)
-		require.Empty(t, cmp.Diff(expectedReply, resp, protocmp.Transform()))
+		require.Empty(t, cmp.Diff(expectedReply, resp.Response, protocmp.Transform()))
 	})
 	t.Run("On timeout returns error", func(t *testing.T) {
 		svc := initMocks(t)
