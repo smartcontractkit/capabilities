@@ -57,6 +57,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 			MaxHeaderKeyLength:   50,
 			MaxHeaderValueLength: 100,
 			MaxRequestBytes:      1024,
+			MaxCacheAgeMs:        600000, // 10 minutes
 		},
 	}
 	metadata := capabilities.RequestMetadata{
