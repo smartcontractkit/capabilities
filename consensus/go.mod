@@ -4,6 +4,8 @@ go 1.24.4
 
 toolchain go1.24.5
 
+replace github.com/smartcontractkit/capabilities/libs => ../libs
+
 require (
 	github.com/jonboulle/clockwork v0.4.0
 	github.com/shopspring/decimal v1.4.0
