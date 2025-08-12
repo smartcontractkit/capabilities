@@ -38,12 +38,17 @@ func decodeReportMetadata(data []byte) (ocrtypes.Metadata, error) {
 	return metadata, err
 }
 
-func (e EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMetadata, input *evm.WriteReportRequest) (*evm.WriteReportReply, error) {
+func (e EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMetadata, input *evm.WriteReportRequest) (*capabilities.ResponseAndMetadata[*evm.WriteReportReply], error) {
 	err := validateInputsAndReportMetadata(metadata, input)
 	if err != nil {
 		return nil, err
 	}
-	return e.executeWriteReport(ctx, metadata, input)
+	report, err := e.executeWriteReport(ctx, metadata, input)
+	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.WriteReportReply]{
+		Response:         report,
+		ResponseMetadata: capabilities.ResponseMetadata{},
+	}
+	return &responseAndMetadata, err
 }
 
 func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.RequestMetadata, request *evm.WriteReportRequest) (*evm.WriteReportReply, error) {

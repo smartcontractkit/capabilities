@@ -67,7 +67,7 @@ func TestCapability_CallContract(t *testing.T) {
 		req := &evmcappb.CallContractRequest{Call: msgProto, BlockNumber: valuespb.NewBigIntFromInt(block)}
 		resp, err := svc.CallContract(t.Context(), capabilities.RequestMetadata{}, req)
 		require.NoError(t, err)
-		require.Equal(t, []byte("ok"), resp.Data)
+		require.Equal(t, []byte("ok"), resp.Response.Data)
 	})
 	t.Run("On timeout returns error", func(t *testing.T) {
 		svc := initMocks(t)
@@ -100,7 +100,7 @@ func TestCapability_BalanceAt(t *testing.T) {
 		req := &evmcappb.BalanceAtRequest{Account: []byte("by_account"), BlockNumber: valuespb.NewBigIntFromInt(block)}
 		resp, err := svc.BalanceAt(t.Context(), capabilities.RequestMetadata{}, req)
 		require.NoError(t, err)
-		require.Equal(t, int64(1000), valuespb.NewIntFromBigInt(resp.Balance).Int64())
+		require.Equal(t, int64(1000), valuespb.NewIntFromBigInt(resp.Response.Balance).Int64())
 	})
 	t.Run("Returns error on timeout", func(t *testing.T) {
 		svc := initMocks(t)

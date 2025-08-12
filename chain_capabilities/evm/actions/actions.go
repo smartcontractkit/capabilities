@@ -21,10 +21,11 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 
 	"google.golang.org/protobuf/proto"
-
+	//"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
+	//"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm/server"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -37,6 +38,8 @@ type ConsensusHandler interface {
 	// the DON, even if individual RPC states differ.
 	Handle(ctx context.Context, request ctypes.Request) (<-chan ctypes.Reply, error)
 }
+
+//var _ server.ClientCapability = &EVM{}
 
 type EVM struct {
 	types.EVMService
@@ -78,7 +81,7 @@ func (e EVM) CallContract(
 	ctx context.Context,
 	meta capabilities.RequestMetadata,
 	input *evm.CallContractRequest,
-) (*evm.CallContractReply, error) {
+) (*capabilities.ResponseAndMetadata[*evm.CallContractReply], error) {
 	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 
 	callMsg, err := evm.ConvertCallMsgFromProto(input.GetCall())
@@ -130,7 +133,11 @@ func (e EVM) CallContract(
 	}
 
 	monitoring.LogAndEmitSuccess(ctx, "Successfully read CallContract", e.lggr, e.beholderProcessor, e.messageBuilder.BuildCallContractSuccess(read, callMsg, blockNumber.Int64()))
-	return &evm.CallContractReply{Data: data}, nil
+	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.CallContractReply]{
+		Response:         &evm.CallContractReply{Data: data},
+		ResponseMetadata: capabilities.ResponseMetadata{},
+	}
+	return &responseAndMetadata, nil
 }
 
 func (e EVM) filterLogsToRequest(meta capabilities.RequestMetadata, ethFilterQuery evmtypes.FilterQuery) (ctypes.Request, error) {
@@ -192,7 +199,7 @@ func (e EVM) filterLogsToRequest(meta capabilities.RequestMetadata, ethFilterQue
 	}), nil
 }
 
-func (e EVM) FilterLogs(ctx context.Context, meta capabilities.RequestMetadata, req *evm.FilterLogsRequest) (*evm.FilterLogsReply, error) {
+func (e EVM) FilterLogs(ctx context.Context, meta capabilities.RequestMetadata, req *evm.FilterLogsRequest) (*capabilities.ResponseAndMetadata[*evm.FilterLogsReply], error) {
 	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	ethFilterQuery, err := evm.ConvertFilterFromProto(req.GetFilterQuery())
 	if err != nil {
@@ -216,10 +223,14 @@ func (e EVM) FilterLogs(ctx context.Context, meta capabilities.RequestMetadata, 
 	// G115: integer overflow conversion int -> int32 (gosec)
 	// nolint:gosec
 	monitoring.LogAndEmitSuccess(ctx, "Successfully executed FilterLogs", e.lggr, e.beholderProcessor, e.messageBuilder.BuildFilterLogsSuccess(read, ethFilterQuery, int32(len(reply.Logs))))
-	return &reply, nil
+	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.FilterLogsReply]{
+		Response:         &reply,
+		ResponseMetadata: capabilities.ResponseMetadata{},
+	}
+	return &responseAndMetadata, nil
 }
 
-func (e EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, req *evm.BalanceAtRequest) (*evm.BalanceAtReply, error) {
+func (e EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, req *evm.BalanceAtRequest) (*capabilities.ResponseAndMetadata[*evm.BalanceAtReply], error) {
 	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	blockNumber, needsBlockHeightConsensus, confidenceLevel, err := normalizeBlockNumber(req.GetBlockNumber())
 	if err != nil {
@@ -263,10 +274,14 @@ func (e EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, r
 
 	monitoring.LogAndEmitSuccess(ctx, "Successfully read BalanceAt", e.lggr, e.beholderProcessor,
 		e.messageBuilder.BuildBalanceAtSuccess(read, common.Bytes2Hex(req.GetAccount()), blockNumber.Int64(), valuespb.NewIntFromBigInt(balance)))
-	return &evm.BalanceAtReply{Balance: balance}, nil
+	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.BalanceAtReply]{
+		Response:         &evm.BalanceAtReply{Balance: balance},
+		ResponseMetadata: capabilities.ResponseMetadata{},
+	}
+	return &responseAndMetadata, nil
 }
 
-func (e EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata, req *evm.EstimateGasRequest) (*evm.EstimateGasReply, error) {
+func (e EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata, req *evm.EstimateGasRequest) (*capabilities.ResponseAndMetadata[*evm.EstimateGasReply], error) {
 	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	msg, err := evm.ConvertCallMsgFromProto(req.GetMsg())
 	if err != nil {
@@ -300,10 +315,14 @@ func (e EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata,
 
 	logMsg := e.messageBuilder.BuildEstimateGasSuccess(read, common.Bytes2Hex(msg.From[:]), common.Bytes2Hex(msg.To[:]), msg.Data, rawEstimate.BigInt().Int64())
 	monitoring.LogAndEmitSuccess(ctx, "Successfully read EstimateGas", e.lggr, e.beholderProcessor, logMsg)
-	return &evm.EstimateGasReply{Gas: rawEstimate.BigInt().Uint64()}, nil
+	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.EstimateGasReply]{
+		Response:         &evm.EstimateGasReply{Gas: rawEstimate.BigInt().Uint64()},
+		ResponseMetadata: capabilities.ResponseMetadata{},
+	}
+	return &responseAndMetadata, nil
 }
 
-func (e EVM) GetTransactionByHash(ctx context.Context, meta capabilities.RequestMetadata, req *evm.GetTransactionByHashRequest) (*evm.GetTransactionByHashReply, error) {
+func (e EVM) GetTransactionByHash(ctx context.Context, meta capabilities.RequestMetadata, req *evm.GetTransactionByHashRequest) (*capabilities.ResponseAndMetadata[*evm.GetTransactionByHashReply], error) {
 	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	hash, err := evm.ConvertHashFromProto(req.GetHash())
 	if err != nil {
@@ -336,10 +355,14 @@ func (e EVM) GetTransactionByHash(ctx context.Context, meta capabilities.Request
 
 	monitoring.LogAndEmitSuccess(ctx, "Successfully read GetTransactionByHash", e.lggr, e.beholderProcessor,
 		e.messageBuilder.BuildGetTransactionByHashSuccess(read, common.Bytes2Hex(hash[:]), &tx))
-	return &evm.GetTransactionByHashReply{Transaction: &tx}, nil
+	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.GetTransactionByHashReply]{
+		Response:         &evm.GetTransactionByHashReply{Transaction: &tx},
+		ResponseMetadata: capabilities.ResponseMetadata{},
+	}
+	return &responseAndMetadata, nil
 }
 
-func (e EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.RequestMetadata, req *evm.GetTransactionReceiptRequest) (*evm.GetTransactionReceiptReply, error) {
+func (e EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.RequestMetadata, req *evm.GetTransactionReceiptRequest) (*capabilities.ResponseAndMetadata[*evm.GetTransactionReceiptReply], error) {
 	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	hash, err := evm.ConvertHashFromProto(req.GetHash())
 	if err != nil {
@@ -371,14 +394,18 @@ func (e EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.Reques
 
 	monitoring.LogAndEmitSuccess(ctx, "Successfully read GetTransactionReceiptSuccess", e.lggr, e.beholderProcessor,
 		e.messageBuilder.BuildGetTransactionReceiptSuccess(read, common.Bytes2Hex(hash[:]), &receipt))
-	return &evm.GetTransactionReceiptReply{Receipt: &receipt}, nil
+	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.GetTransactionReceiptReply]{
+		Response:         &evm.GetTransactionReceiptReply{Receipt: &receipt},
+		ResponseMetadata: capabilities.ResponseMetadata{},
+	}
+	return &responseAndMetadata, nil
 }
 
 func (e EVM) HeaderByNumber(
 	ctx context.Context,
 	meta capabilities.RequestMetadata,
 	req *evm.HeaderByNumberRequest,
-) (*evm.HeaderByNumberReply, error) {
+) (*capabilities.ResponseAndMetadata[*evm.HeaderByNumberReply], error) {
 	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	blockNumber, needsBlockHeightConsensus, confidenceLevel, err := normalizeBlockNumber(req.GetBlockNumber())
 	if err != nil {
@@ -427,19 +454,31 @@ func (e EVM) HeaderByNumber(
 	}
 
 	monitoring.LogAndEmitSuccess(ctx, "Successfully got header by number", e.lggr, e.beholderProcessor, e.messageBuilder.BuildHeaderByNumberSuccess(read, blockNumber.Int64(), reply.Header))
-	return &reply, nil
+	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.HeaderByNumberReply]{
+		Response:         &reply,
+		ResponseMetadata: capabilities.ResponseMetadata{},
+	}
+	return &responseAndMetadata, nil
 }
 
-func (e EVM) RegisterLogTracking(etx context.Context, _ capabilities.RequestMetadata, req *evm.RegisterLogTrackingRequest) (*emptypb.Empty, error) {
+func (e EVM) RegisterLogTracking(etx context.Context, _ capabilities.RequestMetadata, req *evm.RegisterLogTrackingRequest) (*capabilities.ResponseAndMetadata[*emptypb.Empty], error) {
 	filter, err := evm.ConvertLPFilterFromProto(req.GetFilter())
 	if err != nil {
 		return nil, err
 	}
-	return &emptypb.Empty{}, e.EVMService.RegisterLogTracking(etx, filter)
+	responseAndMetadata := capabilities.ResponseAndMetadata[*emptypb.Empty]{
+		Response:         &emptypb.Empty{},
+		ResponseMetadata: capabilities.ResponseMetadata{},
+	}
+	return &responseAndMetadata, e.EVMService.RegisterLogTracking(etx, filter)
 }
 
-func (e EVM) UnregisterLogTracking(etx context.Context, _ capabilities.RequestMetadata, req *evm.UnregisterLogTrackingRequest) (*emptypb.Empty, error) {
-	return &emptypb.Empty{}, e.EVMService.UnregisterLogTracking(etx, req.FilterName)
+func (e EVM) UnregisterLogTracking(etx context.Context, _ capabilities.RequestMetadata, req *evm.UnregisterLogTrackingRequest) (*capabilities.ResponseAndMetadata[*emptypb.Empty], error) {
+	responseAndMetadata := capabilities.ResponseAndMetadata[*emptypb.Empty]{
+		Response:         &emptypb.Empty{},
+		ResponseMetadata: capabilities.ResponseMetadata{},
+	}
+	return &responseAndMetadata, e.EVMService.UnregisterLogTracking(etx, req.FilterName)
 }
 
 // normalizeBlockNumber - returns:

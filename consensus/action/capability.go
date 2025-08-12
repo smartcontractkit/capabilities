@@ -17,10 +17,12 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/consensus/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
+
 	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb"
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2/types"
@@ -46,6 +48,8 @@ type ConsensusCapabilityConfig struct {
 	MaxRequestSizeBytes          int
 	KeyBundleIDForValueConsensus string
 }
+
+var _ server.ConsensusCapability = &consensusCapability{}
 
 type consensusCapability struct {
 	services.StateMachine
@@ -195,7 +199,7 @@ func (c *consensusCapability) setConfiguration(config string) error {
 	return nil
 }
 
-func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.RequestMetadata, input *pb.SimpleConsensusInputs) (*valuespb.Value, error) {
+func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.RequestMetadata, input *pb.SimpleConsensusInputs) (*capabilities.ResponseAndMetadata[*valuespb.Value], error) {
 	lggr := c.requestLggr(metadata)
 
 	lggr.Debugw("received simple consensus request", "metadata", metadata, "input", input)
@@ -213,7 +217,11 @@ func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.
 
 	value, err := logObservation(lggr, input, metadata)
 	if err != nil {
-		return value, err
+		responseAndMetadata := capabilities.ResponseAndMetadata[*valuespb.Value]{
+			Response:         value,
+			ResponseMetadata: capabilities.ResponseMetadata{},
+		}
+		return &responseAndMetadata, err
 	}
 
 	callbackChan := c.sendRequest(ctx, input, consensusRequestMetaData)
@@ -236,11 +244,15 @@ func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.
 
 		c.lggr.Debugw("returning consensus response", "metadata", metadata)
 
-		return valueProto, nil
+		responseAndMetadata := capabilities.ResponseAndMetadata[*valuespb.Value]{
+			Response:         valueProto,
+			ResponseMetadata: capabilities.ResponseMetadata{},
+		}
+		return &responseAndMetadata, nil
 	}
 }
 
-func (c *consensusCapability) Report(ctx context.Context, metadata capabilities.RequestMetadata, reportRequest *pb.ReportRequest) (*pb.ReportResponse, error) {
+func (c *consensusCapability) Report(ctx context.Context, metadata capabilities.RequestMetadata, reportRequest *pb.ReportRequest) (*capabilities.ResponseAndMetadata[*pb.ReportResponse], error) {
 	lggr := c.requestLggr(metadata)
 
 	lggr.Debug("received reporting request", "metadata", metadata)
@@ -300,13 +312,18 @@ func (c *consensusCapability) Report(ctx context.Context, metadata capabilities.
 
 		c.lggr.Debugw("returning report", "metadata", metadata)
 
-		return &pb.ReportResponse{
+		reportResponse := &pb.ReportResponse{
 			ConfigDigest:  response.ConfigDigest[:],
 			SeqNr:         response.SeqNr,
 			ReportContext: response.ReportContext,
 			RawReport:     response.RawReport,
 			Sigs:          sigs,
-		}, nil
+		}
+		responseAndMetadata := capabilities.ResponseAndMetadata[*pb.ReportResponse]{
+			Response:         reportResponse,
+			ResponseMetadata: capabilities.ResponseMetadata{},
+		}
+		return &responseAndMetadata, err
 	}
 }
 
