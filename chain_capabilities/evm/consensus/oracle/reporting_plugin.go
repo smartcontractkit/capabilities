@@ -173,11 +173,11 @@ func (rp *reportingPlugin) getObservationForRequest(rawRequest ctypes.Request) (
 			return &ctypes.RequestObservation{
 				Observation: &ctypes.RequestObservation_Error{Error: observationErr},
 			}, nil
-		} else {
-			return &ctypes.RequestObservation{
-				Observation: &ctypes.RequestObservation_Aggregatable{Aggregatable: requestOb},
-			}, nil
 		}
+		return &ctypes.RequestObservation{
+			Observation: &ctypes.RequestObservation_Aggregatable{Aggregatable: requestOb},
+		}, nil
+
 	case *ctypes.EventuallyConsistentRequest:
 		requestOb, observationErr, ok := rq.GetObservation()
 		if !ok {
@@ -187,11 +187,11 @@ func (rp *reportingPlugin) getObservationForRequest(rawRequest ctypes.Request) (
 			return &ctypes.RequestObservation{
 				Observation: &ctypes.RequestObservation_Error{Error: observationErr},
 			}, nil
-		} else {
-			return &ctypes.RequestObservation{
-				Observation: &ctypes.RequestObservation_EventuallyConsistent{EventuallyConsistent: requestOb},
-			}, nil
 		}
+		return &ctypes.RequestObservation{
+			Observation: &ctypes.RequestObservation_EventuallyConsistent{EventuallyConsistent: requestOb},
+		}, nil
+
 	case *ctypes.LockableToBlockRequest:
 		return &ctypes.RequestObservation{
 			Observation: &ctypes.RequestObservation_LockableToBlock{LockableToBlock: &emptypb.Empty{}},
