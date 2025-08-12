@@ -170,6 +170,10 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 	// to ensure that the leader node cannot unduly influence the outcome by choosing which consensus descriptor to associate with a request
 	// or what metadata to associate with a request.
 	var requestObservations []*oracletypes.RequestObservation
+	// Initialize cached size with the base message size
+	obs := &oracletypes.Observation{Observations: make([]*oracletypes.RequestObservation, 0, len(reqs))}
+	cachedObsSize := CalculateObservationsMessageSize(obs)
+
 	for _, req := range reqs {
 		queryRequest, ok := reqIDToQueryRequest[req.ID()]
 		if !ok {
@@ -201,17 +205,19 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 			continue // Skip this request as the metadata does not match
 		}
 
+		var newOb *oracletypes.RequestObservation = nil
 		switch obs := req.Input.GetObservation().(type) {
 		case *pb.SimpleConsensusInputs_Value:
 			marshalledValue, err := proto.MarshalOptions{Deterministic: true}.Marshal(obs.Value)
 			if err != nil {
 				return nil, fmt.Errorf("failed to marshal observation value for request %s: %w", req.ID(), err)
 			}
-			requestObservations = append(requestObservations, &oracletypes.RequestObservation{
+
+			newOb = &oracletypes.RequestObservation{
 				Metadata:    queryRequest.Metadata,
 				Observation: marshalledValue,
 				ReceivedAt:  timestamppb.New(req.ReceivedAt),
-			})
+			}
 		case *pb.SimpleConsensusInputs_Error:
 			r.lggr.Debugw("observation is an error, skipping", "error", obs.Error, "requestID", req.ID())
 			return nil, errors.New(obs.Error)
@@ -222,14 +228,25 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 				if err != nil {
 					return nil, fmt.Errorf("failed to marshal default value for request %s: %w", req.ID(), err)
 				}
-				requestObservations = append(requestObservations, &oracletypes.RequestObservation{
+
+				newOb = &oracletypes.RequestObservation{
 					Metadata:    queryRequest.Metadata,
 					Observation: serialisedDefault,
 					ReceivedAt:  timestamppb.New(req.ReceivedAt),
-				})
+				}
 			} else {
 				r.lggr.Debugw("neither value, error or default is set in the observation input for request", "requestID", req.ID())
 			}
+		}
+
+		if newOb != nil {
+			ok, newSize := ObservationsBatchHasCapacity(cachedObsSize, newOb, r.limits.maxObservationLengthBytes)
+			if !ok {
+				break
+			}
+
+			requestObservations = append(requestObservations, newOb)
+			cachedObsSize = newSize
 		}
 	}
 
