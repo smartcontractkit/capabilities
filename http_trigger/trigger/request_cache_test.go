@@ -13,6 +13,7 @@ import (
 
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 )
 
 type testKVStore struct {
@@ -86,6 +87,7 @@ func TestRequestCache_Add_Success(t *testing.T) {
 		Response: &jsonrpc.Response[json.RawMessage]{
 			Version: "2.0",
 			ID:      "req-123",
+			Method:  gateway_common.MethodWorkflowExecute,
 			Result:  &resultJSON,
 		},
 	}
