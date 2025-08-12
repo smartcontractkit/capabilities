@@ -110,6 +110,7 @@ func (s *service) Description() string {
 
 func (s *service) RegisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *http.Config) (<-chan capabilities.TriggerAndId[*http.Payload], error) {
 	sendCh := make(chan capabilities.TriggerAndId[*http.Payload], s.cfg.SendChannelBufferSize)
+    // TODO: remove this when testing frameworks (local CRE, capabilities integration tests framework) migrate to WR v2
 	if metadata.WorkflowTag == "" {
 		metadata.WorkflowTag = "TEMP_TAG"
 	}
