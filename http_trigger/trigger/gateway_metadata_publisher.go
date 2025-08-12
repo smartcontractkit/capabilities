@@ -65,6 +65,7 @@ func (h *gatewayMetadataPublisher) BroadcastWorkflowMetadata(ctx context.Context
 	gatewayResp := jsonrpc.Response[json.RawMessage]{
 		Version: jsonrpc.JsonRpcVersion,
 		ID:      gateway.GetRequestID(gateway.MethodPushWorkflowMetadata, workflowSelector.WorkflowID),
+		Method:  gateway.MethodPushWorkflowMetadata,
 		Result:  &rawRes,
 	}
 	gatewayIDs, err := h.gc.GatewayIDs(ctx)
@@ -98,6 +99,7 @@ func (h *gatewayMetadataPublisher) sendErrorResponse(ctx context.Context, gatewa
 	resp := &jsonrpc.Response[json.RawMessage]{
 		Version: jsonrpc.JsonRpcVersion,
 		ID:      reqID,
+		Method:  gateway.MethodPullWorkflowMetadata,
 		Error: &jsonrpc.WireError{
 			Code:    code,
 			Message: message,
@@ -155,6 +157,7 @@ func (h *gatewayMetadataPublisher) SendWorkflowMetadata(ctx context.Context, gat
 		gatewayResp := jsonrpc.Response[json.RawMessage]{
 			Version: jsonrpc.JsonRpcVersion,
 			ID:      req.ID,
+			Method:  gateway.MethodPullWorkflowMetadata,
 			Result:  &rawRes,
 		}
 

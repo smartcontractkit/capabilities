@@ -110,6 +110,9 @@ func (s *service) Description() string {
 
 func (s *service) RegisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *http.Config) (<-chan capabilities.TriggerAndId[*http.Payload], error) {
 	sendCh := make(chan capabilities.TriggerAndId[*http.Payload], s.cfg.SendChannelBufferSize)
+	if metadata.WorkflowTag == "" {
+		metadata.WorkflowTag = "TEMP_TAG"
+	}
 	workflowSelector := gateway.WorkflowSelector{
 		WorkflowID:    strings.ToLower(ensureHexPrefix(metadata.WorkflowID)),
 		WorkflowOwner: strings.ToLower(ensureHexPrefix(metadata.WorkflowOwner)),
