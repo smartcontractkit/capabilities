@@ -10,12 +10,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/beholder/beholdertest"
-	"github.com/smartcontractkit/chainlink/v2/core/logger"
-
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/smartcontractkit/chainlink-common/pkg/beholder/beholdertest"
+	"github.com/smartcontractkit/chainlink/v2/core/logger"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
 
@@ -30,6 +31,8 @@ import (
 	"github.com/smartcontractkit/capabilities/integration_tests/evm/contract"
 	"github.com/smartcontractkit/capabilities/integration_tests/utils"
 
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/trigger"
+
 	events2 "github.com/smartcontractkit/chainlink-protos/workflows/go/events"
 )
 
@@ -37,10 +40,9 @@ import (
 // It deploys a contract that emits logs, sets up a workflow with that deployed contract to the log trigger, waits for the workflow to be ready,
 // emits a log event, and then checks that the workflow processes the log event correctly by counting the number of events logged by beholder.
 func Test_LogTrigger(t *testing.T) {
-	t.Skip("Flaky Test: https://github.com/smartcontractkit/capabilities/actions/runs/16374733824/job/46271708609")
 	ctx := t.Context()
 	beholderTester := beholdertest.NewObserver(t)
-	lggr := logger.TestLogger(t)
+	lggr, obs := logger.TestLoggerObserved(t, zapcore.InfoLevel)
 	defer func() {
 		utils.CleanupCapabilitiesDir(lggr)
 	}()
@@ -65,9 +67,7 @@ func Test_LogTrigger(t *testing.T) {
 
 	messageEmitter, donContext := setupDon(ctx, t, lggr, wasmFile, abiString, eventName, topic0, numOfWorkflowNodes, workflowName)
 
-	// waiting time to ensure the logTrigger inside the workflow is ready to process messages
-	// TODO PLEX-1621: this wait time should be much lower, but in CI needs to be high enough to make log poller ready to work on the logs
-	time.Sleep(100 * time.Second)
+	waitUntilLogPollerFiltersArePresent(t, obs, lggr, numOfWorkflowNodes)
 
 	// emitting single event we will be waiting from the workflow's LogTrigger
 	messageDataThatWillBeEmitted := "Data for log trigger"
@@ -101,6 +101,24 @@ func Test_LogTrigger(t *testing.T) {
 	}, 60*time.Second, // test takes in average 24 seconds to complete locally
 		1*time.Second,
 		"Expected to find %d events, but found %d", numOfWorkflowNodes, foundEvents)
+}
+
+func waitUntilLogPollerFiltersArePresent(t *testing.T, obs *observer.ObservedLogs, lggr logger.Logger, numOfWorkflowNodes int) {
+	require.Eventually(t, func() bool {
+		logs := obs.
+			FilterMessageSnippet("Inserted filter").
+			Filter(func(e observer.LoggedEntry) bool {
+				for _, ctxField := range e.Context {
+					if ctxField.Key == "name" && strings.Contains(ctxField.String, trigger.SuffixLogTriggerFilterID) {
+						return true
+					}
+				}
+				return false
+			}).
+			All()
+		return len(logs) == numOfWorkflowNodes
+	}, 2*time.Minute,
+		3*time.Second, "Expected to find %d log poller filters", numOfWorkflowNodes)
 }
 
 type runtimeConfig struct {
