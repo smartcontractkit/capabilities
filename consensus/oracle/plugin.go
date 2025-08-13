@@ -92,7 +92,7 @@ func (r *reportingPlugin) Query(ctx context.Context, outctx ocr3types.OutcomeCon
 	//
 	// The same reasoning applies to the metadata for the request, which is also included in the query.
 
-	seenIds := make(map[idKey]bool)
+	seenIDs := make(map[IdKey]bool)
 	cachedQuerySize := 0
 
 	var reqs []*oracletypes.Request
@@ -100,7 +100,7 @@ func (r *reportingPlugin) Query(ctx context.Context, outctx ocr3types.OutcomeCon
 		key := GetIDKey(rq)
 
 		// Simple duplicate elimination using a map
-		if seenIds[key] {
+		if seenIDs[key] {
 			continue
 		}
 
@@ -120,7 +120,7 @@ func (r *reportingPlugin) Query(ctx context.Context, outctx ocr3types.OutcomeCon
 			break
 		}
 
-		seenIds[key] = true
+		seenIDs[key] = true
 		reqs = append(reqs, newReq)
 		cachedQuerySize = newSize
 	}
@@ -205,7 +205,7 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 			continue // Skip this request as the metadata does not match
 		}
 
-		var newOb *oracletypes.RequestObservation = nil
+		var newOb *oracletypes.RequestObservation
 		switch obs := req.Input.GetObservation().(type) {
 		case *pb.SimpleConsensusInputs_Value:
 			marshalledValue, err := proto.MarshalOptions{Deterministic: true}.Marshal(obs.Value)

@@ -5,8 +5,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// idKey represents a unique identifier for a ConsensusRequest used for deduplication
-type idKey struct {
+// IdKey represents a unique identifier for a ConsensusRequest used for deduplication
+type IdKey struct {
 	workflowExecutionID string
 	referenceID         string
 	workflowID          string
@@ -14,8 +14,8 @@ type idKey struct {
 }
 
 // GetIDKey creates a unique identifier from a ConsensusRequest for deduplication
-func GetIDKey(rq *ConsensusRequest) idKey {
-	return idKey{
+func GetIDKey(rq *ConsensusRequest) IdKey {
+	return IdKey{
 		workflowExecutionID: rq.Metadata.WorkflowExecutionID,
 		referenceID:         rq.Metadata.ReferenceID,
 		workflowID:          rq.Metadata.WorkflowID,
@@ -63,22 +63,25 @@ func calculateRequestSize(request *oracletypes.Request) int {
 func QueryBatchHasCapacity(cachedQuerySize int, request *oracletypes.Request, MaxQueryLengthBytes int) (bool, int) {
 	// Calculate size if we add one more request
 	newRequestSize := calculateRequestSize(request)
-	
+
 	// Add protobuf field overhead: tag (field number + wire type) + length prefix
 	// For repeated fields in protobuf, each element gets:
 	// - Tag: field number (1 for requests field) << 3 | wire type (2 for length-delimited)
 	// - Length: varint encoding of the message size
 	tagSize := varintSize(uint64(1<<3 | 2))
+	if newRequestSize < 0 {
+		return false, cachedQuerySize
+	}
 	lengthSize := varintSize(uint64(newRequestSize))
-	
+
 	totalSizeWithNewRequest := cachedQuerySize + tagSize + lengthSize + newRequestSize
-	
+
 	// Check against limits
 	if totalSizeWithNewRequest > MaxQueryLengthBytes {
 		// Stop adding more requests
 		return false, cachedQuerySize
 	}
-	
+
 	return true, totalSizeWithNewRequest
 }
 
@@ -87,7 +90,7 @@ func CalculateObservationsMessageSize(obs *oracletypes.Observation) int {
 	if obs == nil {
 		return 0
 	}
-	
+
 	// Use proto.Size which gives us the exact marshalled size
 	return proto.Size(obs)
 }
@@ -97,7 +100,7 @@ func calculateRequestObservationSize(requestObs *oracletypes.RequestObservation)
 	if requestObs == nil {
 		return 0
 	}
-	
+
 	// Use proto.Size which gives us the exact marshalled size
 	return proto.Size(requestObs)
 }
@@ -106,22 +109,25 @@ func calculateRequestObservationSize(requestObs *oracletypes.RequestObservation)
 func ObservationsBatchHasCapacity(cachedObsSize int, newOb *oracletypes.RequestObservation, maxObservationLengthBytes int) (bool, int) {
 	// Calculate size if we add one more observation
 	newObservationSize := calculateRequestObservationSize(newOb)
-	
+
 	// Add protobuf field overhead: tag (field number + wire type) + length prefix
 	// For repeated fields in protobuf, each element gets:
 	// - Tag: field number (1 for observations field) << 3 | wire type (2 for length-delimited)
 	// - Length: varint encoding of the message size
 	tagSize := varintSize(uint64(1<<3 | 2))
+	if newObservationSize < 0 {
+		return false, cachedObsSize
+	}
 	lengthSize := varintSize(uint64(newObservationSize))
-	
+
 	totalSizeWithNewObservation := cachedObsSize + tagSize + lengthSize + newObservationSize
-	
+
 	// Check against limits
 	if totalSizeWithNewObservation > maxObservationLengthBytes {
 		// Stop adding more observations
 		return false, cachedObsSize
 	}
-	
+
 	return true, totalSizeWithNewObservation
 }
 
@@ -130,7 +136,7 @@ func CalculateOutcomeMessageSize(outcome *oracletypes.Outcome) int {
 	if outcome == nil {
 		return 0
 	}
-	
+
 	// Use proto.Size which gives us the exact marshalled size
 	return proto.Size(outcome)
 }
@@ -140,7 +146,7 @@ func calculateRequestOutcomeSize(requestOutcome *oracletypes.RequestOutcome) int
 	if requestOutcome == nil {
 		return 0
 	}
-	
+
 	// Use proto.Size which gives us the exact marshalled size
 	return proto.Size(requestOutcome)
 }
@@ -149,21 +155,24 @@ func calculateRequestOutcomeSize(requestOutcome *oracletypes.RequestOutcome) int
 func OutcomeBatchHasCapacity(cachedOutcomeSize int, newRequestOutcome *oracletypes.RequestOutcome, maxOutcomeLengthBytes int) (bool, int) {
 	// Calculate size if we add one more outcome
 	newOutcomeSize := calculateRequestOutcomeSize(newRequestOutcome)
-	
+
 	// Add protobuf field overhead: tag (field number + wire type) + length prefix
 	// For repeated fields in protobuf, each element gets:
 	// - Tag: field number (1 for outcomes field) << 3 | wire type (2 for length-delimited)
 	// - Length: varint encoding of the message size
 	tagSize := varintSize(uint64(1<<3 | 2))
+	if newOutcomeSize < 0 {
+		return false, cachedOutcomeSize
+	}
 	lengthSize := varintSize(uint64(newOutcomeSize))
-	
+
 	totalSizeWithNewOutcome := cachedOutcomeSize + tagSize + lengthSize + newOutcomeSize
-	
+
 	// Check against limits
 	if totalSizeWithNewOutcome > maxOutcomeLengthBytes {
 		// Stop adding more outcomes
 		return false, cachedOutcomeSize
 	}
-	
+
 	return true, totalSizeWithNewOutcome
 }

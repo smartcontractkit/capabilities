@@ -458,7 +458,12 @@ func createReportingPlugin(t *testing.T, pluginObservations []*oracle.ConsensusR
 		MaxQueryLengthBytes:       defaultMaxLengthBytes,
 		MaxObservationLengthBytes: defaultMaxLengthBytes,
 		MaxOutcomeLengthBytes:     defaultMaxLengthBytes,
-		MaxBatchSize:              uint32(batchSize),
+		MaxBatchSize: func() uint32 {
+			if batchSize < 0 || batchSize > int(^uint32(0)) {
+				return 0
+			}
+			return uint32(batchSize)
+		}(),
 	})
 	require.NoError(t, err)
 	return reportingPlugin
