@@ -20,14 +20,10 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 
-	"google.golang.org/protobuf/proto"
-	//"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
-
-	//"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm/server"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -40,8 +36,6 @@ type ConsensusHandler interface {
 	// the DON, even if individual RPC states differ.
 	Handle(ctx context.Context, request ctypes.Request) (<-chan ctypes.Reply, error)
 }
-
-//var _ server.ClientCapability = &EVM{}
 
 type EVM struct {
 	types.EVMService
