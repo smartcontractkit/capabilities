@@ -33,17 +33,17 @@ func TestQueryBatchHasCapacity_SizeEstimation(t *testing.T) {
 				name: "medium request",
 				request: &oracletypes.Request{
 					Metadata: &oracletypes.RequestMetaData{
-						RequestId:               "test-request-with-longer-id",
-						WorkflowExecutionId:     "workflow-exec-123",
-						WorkflowStepReference:   "step-ref-456",
-						WorkflowId:              "workflow-789",
-						WorkflowOwner:           "owner@example.com",
-						WorkflowName:            "test-workflow",
-						WorkflowDonId:           12345,
+						RequestId:                "test-request-with-longer-id",
+						WorkflowExecutionId:      "workflow-exec-123",
+						WorkflowStepReference:    "step-ref-456",
+						WorkflowId:               "workflow-789",
+						WorkflowOwner:            "owner@example.com",
+						WorkflowName:             "test-workflow",
+						WorkflowDonId:            12345,
 						WorkflowDonConfigVersion: 1,
-						ReportId:                "report-abc",
-						KeyBundleId:             "key-bundle-def",
-						RequestType:             oracletypes.RequestType_VALUE_CONSENSUS,
+						ReportId:                 "report-abc",
+						KeyBundleId:              "key-bundle-def",
+						RequestType:              oracletypes.RequestType_VALUE_CONSENSUS,
 					},
 					RequestConsensusDescriptor: []byte("medium-sized-consensus-descriptor-data"),
 				},
@@ -52,17 +52,17 @@ func TestQueryBatchHasCapacity_SizeEstimation(t *testing.T) {
 				name: "large request",
 				request: &oracletypes.Request{
 					Metadata: &oracletypes.RequestMetaData{
-						RequestId:               "very-long-request-id-with-lots-of-characters-to-make-it-large",
-						WorkflowExecutionId:     "very-long-workflow-execution-id-with-many-characters",
-						WorkflowStepReference:   "very-long-workflow-step-reference-with-many-characters",
-						WorkflowId:              "very-long-workflow-id-with-many-characters",
-						WorkflowOwner:           "very-long-workflow-owner-email@example.com",
-						WorkflowName:            "very-long-workflow-name-with-many-characters",
-						WorkflowDonId:           4294967295, // max uint32
+						RequestId:                "very-long-request-id-with-lots-of-characters-to-make-it-large",
+						WorkflowExecutionId:      "very-long-workflow-execution-id-with-many-characters",
+						WorkflowStepReference:    "very-long-workflow-step-reference-with-many-characters",
+						WorkflowId:               "very-long-workflow-id-with-many-characters",
+						WorkflowOwner:            "very-long-workflow-owner-email@example.com",
+						WorkflowName:             "very-long-workflow-name-with-many-characters",
+						WorkflowDonId:            4294967295, // max uint32
 						WorkflowDonConfigVersion: 4294967295, // max uint32
-						ReportId:                "very-long-report-id-with-many-characters",
-						KeyBundleId:             "very-long-key-bundle-id-with-many-characters",
-						RequestType:             oracletypes.RequestType_REPORT_GENERATION,
+						ReportId:                 "very-long-report-id-with-many-characters",
+						KeyBundleId:              "very-long-key-bundle-id-with-many-characters",
+						RequestType:              oracletypes.RequestType_REPORT_GENERATION,
 					},
 					RequestConsensusDescriptor: make([]byte, 1000), // 1KB of data
 				},
@@ -87,9 +87,9 @@ func TestQueryBatchHasCapacity_SizeEstimation(t *testing.T) {
 				require.NoError(t, err, "Failed to marshal query")
 				actualMarshalledSize := len(marshalledBytes)
 
-				t.Logf("Initial size: %d, Estimated total size: %d, Actual marshalled bytes length: %d", 
+				t.Logf("Initial size: %d, Estimated total size: %d, Actual marshalled bytes length: %d",
 					initialSize, estimatedTotalSize, actualMarshalledSize)
-				
+
 				// The estimation should be exactly equal to actual marshalled bytes length
 				require.Equal(t, actualMarshalledSize, estimatedTotalSize,
 					"Size estimation should be exactly equal to actual marshalled bytes length. Estimated: %d, Actual: %d",
@@ -101,7 +101,7 @@ func TestQueryBatchHasCapacity_SizeEstimation(t *testing.T) {
 	t.Run("multiple requests deterministic size calculation", func(t *testing.T) {
 		// Start with empty query
 		initialSize := 0
-		
+
 		// Create multiple test requests with different sizes
 		requests := []*oracletypes.Request{
 			{
@@ -112,13 +112,13 @@ func TestQueryBatchHasCapacity_SizeEstimation(t *testing.T) {
 			},
 			{
 				Metadata: &oracletypes.RequestMetaData{
-					RequestId:               "req-2-with-longer-id",
-					WorkflowExecutionId:     "workflow-exec-123",
-					WorkflowStepReference:   "step-ref-456",
-					WorkflowId:              "workflow-789",
-					WorkflowOwner:           "owner@example.com",
-					WorkflowName:            "test-workflow",
-					WorkflowDonId:           12345,
+					RequestId:                "req-2-with-longer-id",
+					WorkflowExecutionId:      "workflow-exec-123",
+					WorkflowStepReference:    "step-ref-456",
+					WorkflowId:               "workflow-789",
+					WorkflowOwner:            "owner@example.com",
+					WorkflowName:             "test-workflow",
+					WorkflowDonId:            12345,
 					WorkflowDonConfigVersion: 1,
 				},
 				RequestConsensusDescriptor: []byte("medium-sized-consensus-descriptor"),
@@ -133,28 +133,28 @@ func TestQueryBatchHasCapacity_SizeEstimation(t *testing.T) {
 
 		var actualRequests []*oracletypes.Request
 		currentSize := initialSize
-		
+
 		// Add requests one by one and verify size calculation at each step
 		for i, newReq := range requests {
 			// Calculate estimated size after adding this request
 			maxSize := 10000 // Large enough limit
 			hasCapacity, estimatedSize := QueryBatchHasCapacity(currentSize, newReq, maxSize)
 			require.True(t, hasCapacity, "Should have capacity for request %d", i)
-			
+
 			// Actually add the request and calculate real marshalled bytes length
 			actualRequests = append(actualRequests, newReq)
 			queryWithAllData := &oracletypes.Query{Requests: actualRequests}
 			marshalledBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(queryWithAllData)
 			require.NoError(t, err, "Failed to marshal query at step %d", i+1)
 			actualSize := len(marshalledBytes)
-			
+
 			t.Logf("Step %d: Estimated size: %d, Actual marshalled bytes length: %d", i+1, estimatedSize, actualSize)
-			
+
 			// Verify exact match
 			require.Equal(t, actualSize, estimatedSize,
 				"Size estimation should be exactly equal at step %d. Estimated: %d, Actual: %d",
 				i+1, estimatedSize, actualSize)
-			
+
 			// Update current size for next iteration
 			currentSize = estimatedSize
 		}
@@ -296,7 +296,7 @@ func TestGetIDKey_DuplicateRecognition(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				request := &ConsensusRequest{Metadata: tc.metadata}
 				key := GetIDKey(request)
-				
+
 				require.NotEqual(t, baseKey, key, "Different metadata should produce different keys")
 			})
 		}
@@ -304,8 +304,8 @@ func TestGetIDKey_DuplicateRecognition(t *testing.T) {
 
 	t.Run("duplicate detection in map", func(t *testing.T) {
 		// Simulate the duplicate detection logic from plugin.go
-		seenIds := make(map[idKey]bool)
-		
+		seenIDs := make(map[IdKey]bool)
+
 		metadata := ConsensusRequestMetadata{
 			RequestMetadata: capabilities.RequestMetadata{
 				WorkflowExecutionID: "exec-123",
@@ -332,15 +332,15 @@ func TestGetIDKey_DuplicateRecognition(t *testing.T) {
 		}
 
 		var processedRequests []*ConsensusRequest
-		
+
 		for _, rq := range requests {
 			key := GetIDKey(rq)
-			
-			if seenIds[key] {
+
+			if seenIDs[key] {
 				continue // Skip duplicate
 			}
-			
-			seenIds[key] = true
+
+			seenIDs[key] = true
 			processedRequests = append(processedRequests, rq)
 		}
 
@@ -384,7 +384,7 @@ func TestObservationsBatchHasCapacity_SizeEstimation(t *testing.T) {
 		require.NoError(t, err, "Failed to marshal observation")
 		actualMarshalledSize := len(marshalledBytes)
 
-		t.Logf("Initial size: %d, Estimated new size: %d, Actual marshalled bytes length: %d", 
+		t.Logf("Initial size: %d, Estimated new size: %d, Actual marshalled bytes length: %d",
 			initialSize, estimatedNewSize, actualMarshalledSize)
 
 		// The estimation should be exactly equal to actual marshalled bytes length
@@ -397,7 +397,7 @@ func TestObservationsBatchHasCapacity_SizeEstimation(t *testing.T) {
 		// Start with empty observation
 		obs := &oracletypes.Observation{Observations: []*oracletypes.RequestObservation{}}
 		currentSize := CalculateObservationsMessageSize(obs)
-		
+
 		// Create multiple test RequestObservations with different sizes
 		observations := []*oracletypes.RequestObservation{
 			{
@@ -409,13 +409,13 @@ func TestObservationsBatchHasCapacity_SizeEstimation(t *testing.T) {
 			},
 			{
 				Metadata: &oracletypes.RequestMetaData{
-					RequestId:               "req-2-with-longer-id",
-					WorkflowExecutionId:     "exec-2-longer",
-					WorkflowStepReference:   "step-ref",
-					WorkflowId:              "workflow-id",
-					WorkflowOwner:           "owner@example.com",
-					WorkflowName:            "test-workflow",
-					WorkflowDonId:           12345,
+					RequestId:                "req-2-with-longer-id",
+					WorkflowExecutionId:      "exec-2-longer",
+					WorkflowStepReference:    "step-ref",
+					WorkflowId:               "workflow-id",
+					WorkflowOwner:            "owner@example.com",
+					WorkflowName:             "test-workflow",
+					WorkflowDonId:            12345,
 					WorkflowDonConfigVersion: 1,
 				},
 				Observation: []byte("medium-sized-observation-data"),
@@ -429,28 +429,28 @@ func TestObservationsBatchHasCapacity_SizeEstimation(t *testing.T) {
 		}
 
 		var actualObservations []*oracletypes.RequestObservation
-		
+
 		// Add observations one by one and verify size calculation at each step
 		for i, newObs := range observations {
 			// Calculate estimated size after adding this observation
 			maxSize := 10000 // Large enough limit
 			hasCapacity, estimatedSize := ObservationsBatchHasCapacity(currentSize, newObs, maxSize)
 			require.True(t, hasCapacity, "Should have capacity for observation %d", i)
-			
+
 			// Actually add the observation and calculate real marshalled bytes length
 			actualObservations = append(actualObservations, newObs)
 			obsWithAllData := &oracletypes.Observation{Observations: actualObservations}
 			marshalledBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(obsWithAllData)
 			require.NoError(t, err, "Failed to marshal observation at step %d", i+1)
 			actualSize := len(marshalledBytes)
-			
+
 			t.Logf("Step %d: Estimated size: %d, Actual marshalled bytes length: %d", i+1, estimatedSize, actualSize)
-			
+
 			// Verify exact match
 			require.Equal(t, actualSize, estimatedSize,
 				"Size estimation should be exactly equal at step %d. Estimated: %d, Actual: %d",
 				i+1, estimatedSize, actualSize)
-			
+
 			// Update current size for next iteration
 			currentSize = estimatedSize
 		}
@@ -517,7 +517,7 @@ func TestOutcomeBatchHasCapacity_SizeEstimation(t *testing.T) {
 		require.NoError(t, err, "Failed to marshal outcome")
 		actualMarshalledSize := len(marshalledBytes)
 
-		t.Logf("Initial size: %d, Estimated new size: %d, Actual marshalled bytes length: %d", 
+		t.Logf("Initial size: %d, Estimated new size: %d, Actual marshalled bytes length: %d",
 			initialSize, estimatedNewSize, actualMarshalledSize)
 
 		// The estimation should be exactly equal to actual marshalled bytes length
@@ -530,7 +530,7 @@ func TestOutcomeBatchHasCapacity_SizeEstimation(t *testing.T) {
 		// Start with empty outcome
 		outcome := &oracletypes.Outcome{Outcomes: []*oracletypes.RequestOutcome{}}
 		currentSize := CalculateOutcomeMessageSize(outcome)
-		
+
 		// Create multiple test RequestOutcomes with different sizes
 		outcomes := []*oracletypes.RequestOutcome{
 			{
@@ -542,13 +542,13 @@ func TestOutcomeBatchHasCapacity_SizeEstimation(t *testing.T) {
 			},
 			{
 				Metadata: &oracletypes.RequestMetaData{
-					RequestId:               "req-2-with-longer-id",
-					WorkflowExecutionId:     "exec-2-longer",
-					WorkflowStepReference:   "step-ref",
-					WorkflowId:              "workflow-id",
-					WorkflowOwner:           "owner@example.com",
-					WorkflowName:            "test-workflow",
-					WorkflowDonId:           12345,
+					RequestId:                "req-2-with-longer-id",
+					WorkflowExecutionId:      "exec-2-longer",
+					WorkflowStepReference:    "step-ref",
+					WorkflowId:               "workflow-id",
+					WorkflowOwner:            "owner@example.com",
+					WorkflowName:             "test-workflow",
+					WorkflowDonId:            12345,
 					WorkflowDonConfigVersion: 1,
 				},
 				Outcome: []byte("medium-sized-outcome-data"),
@@ -562,28 +562,28 @@ func TestOutcomeBatchHasCapacity_SizeEstimation(t *testing.T) {
 		}
 
 		var actualOutcomes []*oracletypes.RequestOutcome
-		
+
 		// Add outcomes one by one and verify size calculation at each step
 		for i, newOutcome := range outcomes {
 			// Calculate estimated size after adding this outcome
 			maxSize := 10000 // Large enough limit
 			hasCapacity, estimatedSize := OutcomeBatchHasCapacity(currentSize, newOutcome, maxSize)
 			require.True(t, hasCapacity, "Should have capacity for outcome %d", i)
-			
+
 			// Actually add the outcome and calculate real marshalled bytes length
 			actualOutcomes = append(actualOutcomes, newOutcome)
 			outcomeWithAllData := &oracletypes.Outcome{Outcomes: actualOutcomes}
 			marshalledBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(outcomeWithAllData)
 			require.NoError(t, err, "Failed to marshal outcome at step %d", i+1)
 			actualSize := len(marshalledBytes)
-			
+
 			t.Logf("Step %d: Estimated size: %d, Actual marshalled bytes length: %d", i+1, estimatedSize, actualSize)
-			
+
 			// Verify exact match
 			require.Equal(t, actualSize, estimatedSize,
 				"Size estimation should be exactly equal at step %d. Estimated: %d, Actual: %d",
 				i+1, estimatedSize, actualSize)
-			
+
 			// Update current size for next iteration
 			currentSize = estimatedSize
 		}
@@ -616,17 +616,4 @@ func TestOutcomeBatchHasCapacity_SizeEstimation(t *testing.T) {
 	})
 }
 
-// Helper functions
-func abs(x int) int {
-	if x < 0 {
-		return -x
-	}
-	return x
-}
 
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
