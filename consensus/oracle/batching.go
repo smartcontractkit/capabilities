@@ -124,3 +124,46 @@ func ObservationsBatchHasCapacity(cachedObsSize int, newOb *oracletypes.RequestO
 	
 	return true, totalSizeWithNewObservation
 }
+
+// CalculateOutcomeMessageSize calculates the marshalled size of an Outcome message
+func CalculateOutcomeMessageSize(outcome *oracletypes.Outcome) int {
+	if outcome == nil {
+		return 0
+	}
+	
+	// Use proto.Size which gives us the exact marshalled size
+	return proto.Size(outcome)
+}
+
+// calculateRequestOutcomeSize estimates the marshalled size of a RequestOutcome
+func calculateRequestOutcomeSize(requestOutcome *oracletypes.RequestOutcome) int {
+	if requestOutcome == nil {
+		return 0
+	}
+	
+	// Use proto.Size which gives us the exact marshalled size
+	return proto.Size(requestOutcome)
+}
+
+// OutcomeBatchHasCapacity checks if adding a new RequestOutcome would exceed the size limit
+func OutcomeBatchHasCapacity(cachedOutcomeSize int, newRequestOutcome *oracletypes.RequestOutcome, maxOutcomeLengthBytes int) (bool, int) {
+	// Calculate size if we add one more outcome
+	newOutcomeSize := calculateRequestOutcomeSize(newRequestOutcome)
+	
+	// Add protobuf field overhead: tag (field number + wire type) + length prefix
+	// For repeated fields in protobuf, each element gets:
+	// - Tag: field number (1 for outcomes field) << 3 | wire type (2 for length-delimited)
+	// - Length: varint encoding of the message size
+	tagSize := varintSize(uint64(1<<3 | 2))
+	lengthSize := varintSize(uint64(newOutcomeSize))
+	
+	totalSizeWithNewOutcome := cachedOutcomeSize + tagSize + lengthSize + newOutcomeSize
+	
+	// Check against limits
+	if totalSizeWithNewOutcome > maxOutcomeLengthBytes {
+		// Stop adding more outcomes
+		return false, cachedOutcomeSize
+	}
+	
+	return true, totalSizeWithNewOutcome
+}

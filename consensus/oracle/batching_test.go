@@ -483,6 +483,139 @@ func TestObservationsBatchHasCapacity_SizeEstimation(t *testing.T) {
 	})
 }
 
+func TestOutcomeBatchHasCapacity_SizeEstimation(t *testing.T) {
+	t.Run("outcome size estimation accuracy", func(t *testing.T) {
+		// Create test outcome message
+		outcome := &oracletypes.Outcome{
+			Outcomes: []*oracletypes.RequestOutcome{},
+		}
+
+		// Test initial size calculation
+		initialSize := CalculateOutcomeMessageSize(outcome)
+		require.GreaterOrEqual(t, initialSize, 0, "Empty outcome should have non-negative size")
+
+		// Create a test RequestOutcome
+		requestOutcome := &oracletypes.RequestOutcome{
+			Metadata: &oracletypes.RequestMetaData{
+				RequestId:           "test-request-123",
+				WorkflowExecutionId: "exec-456",
+			},
+			Outcome: []byte("test-outcome-data"),
+		}
+
+		// Test capacity checking
+		maxSize := 1000
+		hasCapacity, estimatedNewSize := OutcomeBatchHasCapacity(initialSize, requestOutcome, maxSize)
+		require.True(t, hasCapacity, "Should have capacity for reasonable-sized outcome")
+		require.Greater(t, estimatedNewSize, initialSize, "New size should be larger than initial size")
+
+		// Create actual outcome with the request outcome and calculate real marshalled bytes length
+		outcomeWithData := &oracletypes.Outcome{
+			Outcomes: []*oracletypes.RequestOutcome{requestOutcome},
+		}
+		marshalledBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(outcomeWithData)
+		require.NoError(t, err, "Failed to marshal outcome")
+		actualMarshalledSize := len(marshalledBytes)
+
+		t.Logf("Initial size: %d, Estimated new size: %d, Actual marshalled bytes length: %d", 
+			initialSize, estimatedNewSize, actualMarshalledSize)
+
+		// The estimation should be exactly equal to actual marshalled bytes length
+		require.Equal(t, actualMarshalledSize, estimatedNewSize,
+			"Size estimation should be exactly equal to actual marshalled bytes length. Estimated: %d, Actual: %d",
+			estimatedNewSize, actualMarshalledSize)
+	})
+
+	t.Run("multiple outcomes deterministic size calculation", func(t *testing.T) {
+		// Start with empty outcome
+		outcome := &oracletypes.Outcome{Outcomes: []*oracletypes.RequestOutcome{}}
+		currentSize := CalculateOutcomeMessageSize(outcome)
+		
+		// Create multiple test RequestOutcomes with different sizes
+		outcomes := []*oracletypes.RequestOutcome{
+			{
+				Metadata: &oracletypes.RequestMetaData{
+					RequestId:           "req-1",
+					WorkflowExecutionId: "exec-1",
+				},
+				Outcome: []byte("small"),
+			},
+			{
+				Metadata: &oracletypes.RequestMetaData{
+					RequestId:               "req-2-with-longer-id",
+					WorkflowExecutionId:     "exec-2-longer",
+					WorkflowStepReference:   "step-ref",
+					WorkflowId:              "workflow-id",
+					WorkflowOwner:           "owner@example.com",
+					WorkflowName:            "test-workflow",
+					WorkflowDonId:           12345,
+					WorkflowDonConfigVersion: 1,
+				},
+				Outcome: []byte("medium-sized-outcome-data"),
+			},
+			{
+				Metadata: &oracletypes.RequestMetaData{
+					RequestId: "req-3",
+				},
+				Outcome: make([]byte, 200), // Large outcome
+			},
+		}
+
+		var actualOutcomes []*oracletypes.RequestOutcome
+		
+		// Add outcomes one by one and verify size calculation at each step
+		for i, newOutcome := range outcomes {
+			// Calculate estimated size after adding this outcome
+			maxSize := 10000 // Large enough limit
+			hasCapacity, estimatedSize := OutcomeBatchHasCapacity(currentSize, newOutcome, maxSize)
+			require.True(t, hasCapacity, "Should have capacity for outcome %d", i)
+			
+			// Actually add the outcome and calculate real marshalled bytes length
+			actualOutcomes = append(actualOutcomes, newOutcome)
+			outcomeWithAllData := &oracletypes.Outcome{Outcomes: actualOutcomes}
+			marshalledBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(outcomeWithAllData)
+			require.NoError(t, err, "Failed to marshal outcome at step %d", i+1)
+			actualSize := len(marshalledBytes)
+			
+			t.Logf("Step %d: Estimated size: %d, Actual marshalled bytes length: %d", i+1, estimatedSize, actualSize)
+			
+			// Verify exact match
+			require.Equal(t, actualSize, estimatedSize,
+				"Size estimation should be exactly equal at step %d. Estimated: %d, Actual: %d",
+				i+1, estimatedSize, actualSize)
+			
+			// Update current size for next iteration
+			currentSize = estimatedSize
+		}
+	})
+
+	t.Run("outcome capacity limits respected", func(t *testing.T) {
+		outcome := &oracletypes.Outcome{Outcomes: []*oracletypes.RequestOutcome{}}
+		initialSize := CalculateOutcomeMessageSize(outcome)
+
+		// Create a large outcome
+		largeOutcome := &oracletypes.RequestOutcome{
+			Metadata: &oracletypes.RequestMetaData{
+				RequestId: "test",
+			},
+			Outcome: make([]byte, 500), // 500 bytes of data
+		}
+
+		actualOutcomeSize := calculateRequestOutcomeSize(largeOutcome)
+		t.Logf("Large outcome size: %d bytes", actualOutcomeSize)
+
+		// Test with limit smaller than outcome size
+		smallLimit := actualOutcomeSize - 1
+		hasCapacity, _ := OutcomeBatchHasCapacity(initialSize, largeOutcome, smallLimit)
+		require.False(t, hasCapacity, "Should not have capacity when outcome would exceed limit")
+
+		// Test with adequate limit
+		largeLimit := initialSize + actualOutcomeSize + 100
+		hasCapacity, _ = OutcomeBatchHasCapacity(initialSize, largeOutcome, largeLimit)
+		require.True(t, hasCapacity, "Should have capacity when outcome is within limit")
+	})
+}
+
 // Helper functions
 func abs(x int) int {
 	if x < 0 {
