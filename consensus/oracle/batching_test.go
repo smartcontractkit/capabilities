@@ -304,7 +304,7 @@ func TestGetIDKey_DuplicateRecognition(t *testing.T) {
 
 	t.Run("duplicate detection in map", func(t *testing.T) {
 		// Simulate the duplicate detection logic from plugin.go
-		seenIDs := make(map[IdKey]bool)
+		seenIDs := make(map[IDKey]bool)
 
 		metadata := ConsensusRequestMetadata{
 			RequestMetadata: capabilities.RequestMetadata{
@@ -615,5 +615,3 @@ func TestOutcomeBatchHasCapacity_SizeEstimation(t *testing.T) {
 		require.True(t, hasCapacity, "Should have capacity when outcome is within limit")
 	})
 }
-
-

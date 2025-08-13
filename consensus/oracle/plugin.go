@@ -93,7 +93,7 @@ func (r *reportingPlugin) Query(ctx context.Context, outctx ocr3types.OutcomeCon
 	//
 	// The same reasoning applies to the metadata for the request, which is also included in the query.
 
-	seenIDs := make(map[IdKey]bool)
+	seenIDs := make(map[IDKey]bool)
 	cachedQuerySize := 0
 
 	var reqs []*oracletypes.Request
