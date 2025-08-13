@@ -4,10 +4,6 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
-	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/utils/tests"
-	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 	"github.com/smartcontractkit/libocr/commontypes"
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2/types"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
@@ -16,6 +12,12 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/emptypb"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/utils/tests"
+	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
+
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/oracle/mocks"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"

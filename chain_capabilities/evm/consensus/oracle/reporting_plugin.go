@@ -7,20 +7,19 @@ import (
 	"fmt"
 	"sort"
 
-	"google.golang.org/protobuf/types/known/structpb"
+	ctypes "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
 
 	"github.com/shopspring/decimal"
-	"github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 	"github.com/smartcontractkit/libocr/commontypes"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 	"github.com/smartcontractkit/libocr/quorumhelper"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
-
-	ctypes "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 )
 
 const (

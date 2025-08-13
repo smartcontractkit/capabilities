@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -22,14 +23,14 @@ type runtimeConfig struct {
 	Event string `yaml:"event"`
 }
 
-func RunSimpleEvmLogTriggerWorkflow(env *cre.Environment[*runtimeConfig]) (cre.Workflow[*runtimeConfig], error) {
-	fmt.Println("RunSimpleEvmLogTriggerWorkflow called")
+func RunSimpleEvmLogTriggerWorkflow(config *runtimeConfig, lggr *slog.Logger, _ cre.SecretsProvider) (cre.Workflow[*runtimeConfig], error) {
+	lggr.Info("RunSimpleEvmLogTriggerWorkflow called")
 
 	cfg := &evm.FilterLogTriggerRequest{
-		Addresses: toByteSlices(env.Config.Addresses),
+		Addresses: toByteSlices(config.Addresses),
 		Topics: []*evm.TopicValues{
 			{
-				Values: toByteSlices(env.Config.Topics[0].Values),
+				Values: toByteSlices(config.Topics[0].Values),
 			},
 		},
 		Confidence: 1, // LATEST
@@ -52,15 +53,16 @@ func toByteSlices(addresses []string) [][]byte {
 	return result
 }
 
-func onTrigger(env *cre.Environment[*runtimeConfig], _ cre.Runtime, outputs *evm.Log) (string, error) {
-	fmt.Println("OnTrigger called with outputs:", outputs)
-	decodedMessageString, err := printDecodedData(env.Config.Abi, env.Config.Event, outputs.Data)
+func onTrigger(config *runtimeConfig, runtime cre.Runtime, outputs *evm.Log) (string, error) {
+	lggr := runtime.Logger()
+	lggr.Info("OnTrigger called with outputs:", outputs)
+	decodedMessageString, err := printDecodedData(config.Abi, config.Event, outputs.Data)
 	if err != nil {
-		fmt.Println("OnTrigger error:", err)
+		lggr.Error("OnTrigger error:", err)
 		return "", fmt.Errorf("error decoding log data: %w", err)
 	}
-	fmt.Println("OnTrigger called with decodedMessageString:", decodedMessageString)
-	env.Logger.Info(fmt.Sprintf("OnTrigger decoded message: %s", decodedMessageString))
+	lggr.Info("OnTrigger called with decodedMessageString:", decodedMessageString)
+	lggr.Info(fmt.Sprintf("OnTrigger decoded message: %s", decodedMessageString))
 	return "success", nil
 }
 

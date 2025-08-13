@@ -20,15 +20,16 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
-	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
+	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 )
 
 type ConsensusHandler interface {
@@ -330,6 +331,7 @@ func (e EVM) GetTransactionByHash(ctx context.Context, meta capabilities.Request
 			Hash:       hash,
 			IsExternal: true,
 		})
+
 		if err != nil {
 			return nil, err
 		}
@@ -370,6 +372,7 @@ func (e EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.Reques
 			Hash:       hash,
 			IsExternal: true,
 		})
+
 		if err != nil {
 			return nil, err
 		}

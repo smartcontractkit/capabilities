@@ -10,12 +10,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/smartcontractkit/cre-sdk-go/sdk"
+	"github.com/smartcontractkit/cre-sdk-go/cre"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/values"
-	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
-	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb"
+	pb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
+	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
+	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 )
 
 func Test_CalculateOutcomeForObservations(t *testing.T) {
@@ -127,7 +127,7 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 				mustWrap(s{Val: 44}),
 			},
 			f:               2,
-			descriptor:      sdk.ConsensusAggregationFromTags[s]().Descriptor(),
+			descriptor:      cre.ConsensusAggregationFromTags[s]().Descriptor(),
 			expectedOutcome: mustWrap(s{Val: 43}),
 		},
 		{
@@ -140,7 +140,7 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 				mustWrap(s{Val: 44, OtherField: "E"}),
 			},
 			f:               2,
-			descriptor:      sdk.ConsensusAggregationFromTags[s]().Descriptor(),
+			descriptor:      cre.ConsensusAggregationFromTags[s]().Descriptor(),
 			defaultValue:    mustWrap(s{OtherField: "Z"}),
 			expectedOutcome: mustWrap(s{Val: 43, OtherField: "Z"}),
 		},
@@ -153,7 +153,7 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 				mustWrap(s{Val: 40, OtherField: "common", PrefixSlice: []int64{1, 9, 8}, Nest: s1{Val: 101}, SuffixSlice: []int64{99, 2, 3}}),
 				mustWrap(s{Val: 50, OtherField: "common", PrefixSlice: []int64{1, 2, 6}, Nest: s1{Val: 102}, SuffixSlice: []int64{42, 2, 3}}),
 			},
-			descriptor: sdk.ConsensusAggregationFromTags[s]().Descriptor(),
+			descriptor: cre.ConsensusAggregationFromTags[s]().Descriptor(),
 			minObs:     5,
 			f:          2,
 			expectedOutcome: mustWrap(s{

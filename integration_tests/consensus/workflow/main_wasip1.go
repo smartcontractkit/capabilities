@@ -2,13 +2,14 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 
 	"github.com/smartcontractkit/cre-sdk-go/capabilities/scheduler/cron"
 	"github.com/smartcontractkit/cre-sdk-go/cre"
 	"github.com/smartcontractkit/cre-sdk-go/cre/wasm"
 )
 
-func RunSimpleCronWorkflow(_ *cre.Environment[struct{}]) (cre.Workflow[struct{}], error) {
+func RunSimpleCronWorkflow(_ struct{}, _ *slog.Logger, _ cre.SecretsProvider) (cre.Workflow[struct{}], error) {
 	cfg := &cron.Config{
 		Schedule: "*/2 * * * * *", // every 2 seconds
 	}
@@ -21,11 +22,11 @@ func RunSimpleCronWorkflow(_ *cre.Environment[struct{}]) (cre.Workflow[struct{}]
 	}, nil
 }
 
-func onTrigger(env *cre.Environment[struct{}], runtime cre.Runtime, outputs *cron.Payload) (string, error) {
+func onTrigger(config struct{}, runtime cre.Runtime, outputs *cron.Payload) (string, error) {
 
 	var randomValue int64
 
-	consensusValue, err := cre.RunInNodeMode(env, runtime, func(env *cre.NodeEnvironment[struct{}], nrt cre.NodeRuntime) (int64, error) {
+	consensusValue, err := cre.RunInNodeMode(config, runtime, func(_ struct{}, nrt cre.NodeRuntime) (int64, error) {
 		nr, err := nrt.Rand()
 		if err != nil {
 			return 0, err
@@ -36,10 +37,12 @@ func onTrigger(env *cre.Environment[struct{}], runtime cre.Runtime, outputs *cro
 		return randomValue, nil
 	}, cre.ConsensusMedianAggregation[int64]()).Await()
 
+	logger := runtime.Logger()
+
 	if err != nil {
-		env.Logger.Error(fmt.Sprintf("Error in RunInNodeMode: %v", err))
+		logger.Error(fmt.Sprintf("Error in RunInNodeMode: %v", err))
 	} else {
-		env.Logger.Info(fmt.Sprintf("V2 Workflow Execution Result: trigger time %s local value %d, consensus value %d", outputs.ScheduledExecutionTime, randomValue, consensusValue))
+		logger.Info(fmt.Sprintf("V2 Workflow Execution Result: trigger time %s local value %d, consensus value %d", outputs.ScheduledExecutionTime, randomValue, consensusValue))
 	}
 
 	return "complete", nil

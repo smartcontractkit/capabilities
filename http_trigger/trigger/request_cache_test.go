@@ -71,6 +71,7 @@ func (s *testKVStore) PruneExpiredEntries(ctx context.Context, ttl time.Duration
 
 	return s.prunedCount, nil
 }
+
 func TestRequestCache_Add_Success(t *testing.T) {
 	t.Parallel()
 
