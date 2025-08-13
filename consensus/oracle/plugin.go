@@ -311,6 +311,7 @@ func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeC
 	}
 
 	var outcomes []*oracletypes.RequestOutcome
+	cachedOutcomeSize := CalculateOutcomeMessageSize(&oracletypes.Outcome{Outcomes: outcomes})
 	for _, request := range requestsQuery.Requests {
 		requestID := request.Metadata.RequestId
 		observations := requestIDToObservations[requestID]
@@ -353,11 +354,19 @@ func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeC
 			return nil, fmt.Errorf("failed to marshal outcome value for request %s: %w", requestID, err)
 		}
 
-		outcomes = append(outcomes, &oracletypes.RequestOutcome{
+		newRequestOutcome := &oracletypes.RequestOutcome{
 			Metadata:  request.Metadata,
 			Outcome:   serialisedValue,
 			Timestamp: calculateMedianTimestamp(timestamps),
-		})
+		}
+
+		ok, newSize := OutcomeBatchHasCapacity(cachedOutcomeSize, newRequestOutcome, r.limits.maxOutcomeLengthBytes)
+		if !ok {
+			break
+		}
+
+		outcomes = append(outcomes, newRequestOutcome)
+		cachedOutcomeSize = newSize
 	}
 
 	serialisedOutcome, err := proto.MarshalOptions{Deterministic: true}.Marshal(&oracletypes.Outcome{
