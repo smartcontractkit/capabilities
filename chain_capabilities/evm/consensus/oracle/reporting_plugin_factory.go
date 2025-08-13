@@ -42,16 +42,18 @@ func (rpf *ReportingPluginFactory) NewReportingPlugin(
 	ocr3types.ReportingPluginInfo,
 	error,
 ) {
+	const maxObservationLength = ocr3types.MaxMaxObservationLength
 	cfg := Config{
 		ReportingPluginConfig: config,
 		BatchSize:             rpf.batchSize,
 		MaxAllowedBatchSize:   rpf.maxAllowedBatchSize,
+		MaxObservationLength:  maxObservationLength,
 	}
 	return newReportingPlugin(cfg, rpf.logger, rpf.blocksProvider, rpf.requestsStore), ocr3types.ReportingPluginInfo{
 		Name: "evm-reads-oracle",
 		Limits: ocr3types.ReportingPluginLimits{
 			MaxQueryLength:       ocr3types.MaxMaxQueryLength,
-			MaxObservationLength: ocr3types.MaxMaxObservationLength,
+			MaxObservationLength: maxObservationLength,
 			MaxOutcomeLength:     ocr3types.MaxMaxOutcomeLength,
 			MaxReportLength:      ocr3types.MaxMaxReportLength,
 			MaxReportCount:       ocr3types.MaxMaxReportCount,

@@ -126,6 +126,7 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 	gatewayResp := jsonrpc.Response[json.RawMessage]{
 		Version: "2.0",
 		ID:      requestID,
+		Method:  gc.MethodHTTPAction,
 		Result:  &rawRes,
 	}
 

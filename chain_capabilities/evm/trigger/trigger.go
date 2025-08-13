@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	suffixLogTriggerFilterID     = "-evm-log-trigger"
+	SuffixLogTriggerFilterID     = "-evm-log-trigger"
 	defaultSendChannelBufferSize = 1000
 	defaultLimitQueryLogSize     = 1000
 )
@@ -95,7 +95,7 @@ func (lts *LogTriggerService) cleanUpStaleFilters(ctx context.Context) {
 	toCleanUp := make(map[string]struct{})
 	for _, filterName := range filterNames {
 		//only add those that are from the log trigger
-		if strings.HasSuffix(filterName, suffixLogTriggerFilterID) {
+		if strings.HasSuffix(filterName, SuffixLogTriggerFilterID) {
 			toCleanUp[filterName] = struct{}{}
 		}
 	}
@@ -229,7 +229,7 @@ func (lts *LogTriggerService) getFinalizedBlockNumber(ctx context.Context, trigg
 }
 
 func (lts *LogTriggerService) generateFilterID(triggerID string) string {
-	return triggerID + suffixLogTriggerFilterID
+	return triggerID + SuffixLogTriggerFilterID
 }
 
 func (lts *LogTriggerService) startPolling(ctx context.Context, read monitoring.ReadRequest, triggerID string, input *evmcappb.FilterLogTriggerRequest, logCh chan capabilities.TriggerAndId[*evmcappb.Log]) {
