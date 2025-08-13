@@ -10,7 +10,7 @@ require (
 	github.com/jonboulle/clockwork v0.4.0
 	github.com/shopspring/decimal v1.4.0
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20250807005622-32f1fcc70c7d
-	github.com/smartcontractkit/chainlink-common v0.9.1-0.20250812130402-ba2883b8dd9b
+	github.com/smartcontractkit/chainlink-common v0.9.1-0.20250813154823-1652ea0f0500
 	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250806152407-159881c7589c
 	github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb v0.0.0-20250806155403-1d805e639a0f
 	github.com/smartcontractkit/cre-sdk-go v0.2.0

@@ -8,7 +8,7 @@ require (
 	github.com/doyensec/safeurl v0.2.2
 	github.com/google/uuid v1.6.0
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20250807005622-32f1fcc70c7d
-	github.com/smartcontractkit/chainlink-common v0.9.1-0.20250812130402-ba2883b8dd9b
+	github.com/smartcontractkit/chainlink-common v0.9.1-0.20250813154823-1652ea0f0500
 	github.com/stretchr/testify v1.10.0
 	stathat.com/c/consistent v1.0.0
 )
