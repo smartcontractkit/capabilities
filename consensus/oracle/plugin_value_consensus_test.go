@@ -11,8 +11,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	pbtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
@@ -20,14 +22,10 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb"
 	"github.com/smartcontractkit/libocr/commontypes"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
+	libocrTypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
 	"github.com/smartcontractkit/capabilities/consensus/oracle"
 	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
-	pbtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
-
-	"github.com/smartcontractkit/libocr/offchainreporting2plus/types"
-
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 type consensusPluginTest struct {
@@ -323,14 +321,14 @@ func runProtocolRoundTests(ctx context.Context, t *testing.T, lggr logger.Logger
 	query, err := leaderPlugin.Query(ctx, outCtx)
 	require.NoError(t, err)
 
-	var attributedObservations []types.AttributedObservation
+	var attributedObservations []libocrTypes.AttributedObservation
 	for oracleIdx, plugin := range reportingPlugins {
 		observation, err := plugin.Observation(ctx, outCtx, query)
 
 		fmt.Printf("Oracle %d observation: %v\n", oracleIdx, observation)
 
 		require.NoError(t, err, "failed to get observation from reporting plugin")
-		attributedObservations = append(attributedObservations, types.AttributedObservation{
+		attributedObservations = append(attributedObservations, libocrTypes.AttributedObservation{
 			Observation: observation,
 			Observer:    commontypes.OracleID(oracleIdx), //nolint:gosec // G115
 		})

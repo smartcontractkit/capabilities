@@ -1,12 +1,13 @@
 package oracle
 
 import (
-	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
 	"google.golang.org/protobuf/proto"
+
+	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
 )
 
-// IdKey represents a unique identifier for a ConsensusRequest used for deduplication
-type IdKey struct {
+// IDKey represents a unique identifier for a ConsensusRequest used for deduplication
+type IDKey struct {
 	workflowExecutionID string
 	referenceID         string
 	workflowID          string
@@ -14,8 +15,8 @@ type IdKey struct {
 }
 
 // GetIDKey creates a unique identifier from a ConsensusRequest for deduplication
-func GetIDKey(rq *ConsensusRequest) IdKey {
-	return IdKey{
+func GetIDKey(rq *ConsensusRequest) IDKey {
+	return IDKey{
 		workflowExecutionID: rq.Metadata.WorkflowExecutionID,
 		referenceID:         rq.Metadata.ReferenceID,
 		workflowID:          rq.Metadata.WorkflowID,
