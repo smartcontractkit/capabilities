@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -59,6 +60,8 @@ type capability struct {
 	initializationError error
 	capConfigRaw        string
 	capabilityRegistry  core.CapabilitiesRegistry
+	maxRetries          int
+	retryBackoffSeconds int
 }
 
 // Config corresponds to the JSON schema field "Config".
@@ -219,16 +222,20 @@ func NewTest(
 	keystore core.Keystore,
 	enclaveClient enclaveclient.EnclaveClient[httpenclavetypes.HTTPEnclaveRequestData, []enclavetypes.HTTPResponse],
 	vaultDON VaultDON,
+	maxRetries int,
+	retryBackoffSeconds int,
 ) *capability {
 	var initOnce sync.Once
 	initOnce.Do(func() {})
 
 	return &capability{
-		lggr:          lggr,
-		keystore:      keystore,
-		enclaveClient: enclaveClient,
-		vaultDON:      vaultDON,
-		initOnce:      &initOnce,
+		lggr:                lggr,
+		keystore:            keystore,
+		enclaveClient:       enclaveClient,
+		vaultDON:            vaultDON,
+		initOnce:            &initOnce,
+		maxRetries:          maxRetries,
+		retryBackoffSeconds: retryBackoffSeconds,
 	}
 }
 
@@ -395,7 +402,8 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to sign compute request: %w", err)
 	}
 
-	rawExecuteResponses, err := c.enclaveClient.ExecuteBatch(ctx, []enclavetypes.SignedComputeRequest{*signedComputeReq}, [][32]byte{enclaveParams.EnclaveID})
+	rawExecuteResponses, err := c.RetryableExecuteBatch(ctx, []enclavetypes.SignedComputeRequest{*signedComputeReq}, [][32]byte{enclaveParams.EnclaveID})
+
 	if err != nil {
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to execute enclave request: %w", err)
 	}
@@ -432,6 +440,32 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 	return capabilities.CapabilityResponse{
 		Value: valsMap,
 	}, nil
+}
+
+// RetryableExecuteBatch attempts to call ExecuteBatch a specified number of times with an exponential backoff.
+func (c *capability) RetryableExecuteBatch(ctx context.Context, requests []enclavetypes.SignedComputeRequest, enclaveIDs [][32]byte) ([]enclavetypes.RawExecuteResponse, error) {
+	var lastErr error
+	backoff := time.Duration(c.retryBackoffSeconds) * time.Second
+	for i := range c.maxRetries {
+		rawResponses, err := c.enclaveClient.ExecuteBatch(ctx, requests, enclaveIDs)
+		if err == nil {
+			return rawResponses, nil
+		}
+		lastErr = err
+
+		// Log the retry attempt for debugging purposes
+		c.lggr.Infof("Attempt %d failed, retrying in %v. Error: %v", i+1, backoff, err)
+
+		select {
+		case <-ctx.Done():
+			// If the context is canceled, stop retrying immediately
+			return nil, ctx.Err()
+		case <-time.After(backoff):
+			// Wait for the backoff duration before the next attempt
+		}
+		backoff *= 2 // Exponential backoff
+	}
+	return nil, fmt.Errorf("failed to execute enclave batch after %d retries: %w", c.maxRetries, lastErr)
 }
 
 func (c *capability) SignComputeRequest(ctx context.Context, computeRequest enclavetypes.ComputeRequest) (*enclavetypes.SignedComputeRequest, error) {
