@@ -5,10 +5,11 @@ import (
 	"crypto/rand"
 	"testing"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
 )
 
 func RandomBytes(n int) []byte {
