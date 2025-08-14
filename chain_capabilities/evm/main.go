@@ -52,6 +52,8 @@ const (
 	schemaBasePath      = repoCLLCapabilities + "/" + versionRefsMain + "/chain_capabilities/evm/monitoring"
 )
 
+var _ evmcapserver.ClientCapability = &capabilityGRPCService{}
+
 type capabilityGRPCService struct {
 	capabilities.CapabilityInfo
 	chainSelector uint64
