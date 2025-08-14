@@ -9,19 +9,21 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/jpillora/backoff"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/retry"
+
+	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
 )
 
 const (
@@ -45,15 +47,18 @@ func (e EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMetad
 	}
 	report, err := e.executeWriteReport(ctx, metadata, input)
 	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.WriteReportReply]{}
-	if err != nil && report != nil {
-		responseAndMetadata.Response = report
+	if err != nil {
+		return nil, err
+	}
+
+	if report != nil {
 		if report.TxStatus == evm.TxStatus_TX_STATUS_SUCCESS {
-			transactionFee := report.TransactionFee.String()
+			transactionFee := pb.NewIntFromBigInt(report.TransactionFee).String() // in wei
 			responseAndMetadata.ResponseMetadata = metering.GetResponseMetadata(metering.SpendValueEnum(transactionFee))
 		}
 	}
 	responseAndMetadata.Response = report
-	return &responseAndMetadata, err
+	return &responseAndMetadata, nil
 }
 
 func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.RequestMetadata, request *evm.WriteReportRequest) (*evm.WriteReportReply, error) {

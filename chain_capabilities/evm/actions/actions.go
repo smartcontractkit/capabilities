@@ -7,10 +7,11 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/shopspring/decimal"
 	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
+
+	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 
@@ -26,10 +27,11 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
 )
 
 type ConsensusHandler interface {

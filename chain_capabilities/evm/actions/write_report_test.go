@@ -5,11 +5,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"math/big"
+	"strconv"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
 	_ "github.com/ethereum/go-ethereum/common"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
@@ -153,14 +153,6 @@ func TestWriteReport_InputValidation(t *testing.T) {
 	})
 }
 
-// TODO lautaro remove this in favor of a common function
-func validateMetering(t *testing.T, metadata capabilities.ResponseMetadata, value metering.SpendValueEnum) {
-	require.Len(t, metadata.Metering, 1)
-	meteringNodeDetail := metadata.Metering[0]
-	require.Equal(t, metering.SpendUnit, meteringNodeDetail.SpendUnit)
-	require.Equal(t, string(value), meteringNodeDetail.SpendValue)
-}
-
 func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -202,6 +194,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		require.Equal(t, expectedError, err.Error())
 	})
 
+	expectedTxFee := big.NewInt(2000)
 	t.Run("TX already transmitted successfully", func(t *testing.T) {
 		evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
 
@@ -229,7 +222,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		evmServiceMock.EXPECT().GetTransactionReceipt(mock.Anything, evmtypes.GeTransactionReceiptRequest{Hash: txHash}).Return(&receipt, nil)
 
 		evmServiceMock.EXPECT().CalculateTransactionFee(ctx, toReceiptGasInfo(receipt)).Return(&evmtypes.TransactionFee{
-			TransactionFee: big.NewInt(2000),
+			TransactionFee: expectedTxFee,
 		}, nil)
 
 		reportMetadata := createTestReportMetadata()
@@ -248,11 +241,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TxStatus:                        evmcappb.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:                          receipt.TxHash[:],
 			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS.Enum(),
-			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
+			TransactionFee:                  pb.NewBigIntFromInt(expectedTxFee),
 		}, txResult.Response)
-
-		validateMetering(t, txResult.ResponseMetadata, metering.WriteReport)
-
+		test.ValidateMetering(t, txResult.ResponseMetadata, expectedTxFee.String())
 	})
 	t.Run("TX already transmitted successfully - Failed to fetch transmission details", func(t *testing.T) {
 		_, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
@@ -300,6 +291,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TxStatus:     evmcappb.TxStatus_TX_STATUS_FATAL,
 			ErrorMessage: ptr(getInvalidStateErrorMessage(invalidState)),
 		}, txResult.Response)
+		require.Empty(t, txResult.ResponseMetadata.Metering, "response metadata must not contain metering data for fatal errors")
 	})
 	t.Run("TX already transmitted successfully - Failed to fetch report emitted log", func(t *testing.T) {
 		_, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
@@ -389,7 +381,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		evmServiceMock.EXPECT().GetTransactionReceipt(ctx, evmtypes.GeTransactionReceiptRequest{Hash: txHash}).Return(&receipt, nil)
 
 		evmServiceMock.EXPECT().CalculateTransactionFee(ctx, toReceiptGasInfo(receipt)).Return(&evmtypes.TransactionFee{
-			TransactionFee: big.NewInt(2000),
+			TransactionFee: expectedTxFee,
 		}, nil)
 
 		reportMetadata := createTestReportMetadata()
@@ -408,8 +400,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TxStatus:                        evmcappb.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:                          receipt.TxHash[:],
 			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(),
-			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
+			TransactionFee:                  pb.NewBigIntFromInt(expectedTxFee),
 		}, txResult.Response)
+		test.ValidateMetering(t, txResult.ResponseMetadata, expectedTxFee.String())
 	})
 	t.Run("TX already transmitted successfully - Receiver contract reverted - not enough gas", func(t *testing.T) {
 		evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
@@ -474,6 +467,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(retryTxFee)),
 		}, txResult.Response)
+		test.ValidateMetering(t, txResult.ResponseMetadata, strconv.FormatInt(retryTxFee, 10))
 	})
 	t.Run("TX already transmitted successfully - Invalid receiver", func(t *testing.T) {
 		evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
@@ -502,7 +496,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		evmServiceMock.EXPECT().GetTransactionReceipt(ctx, evmtypes.GeTransactionReceiptRequest{Hash: txHash}).Return(&receipt, nil)
 
 		evmServiceMock.EXPECT().CalculateTransactionFee(ctx, toReceiptGasInfo(receipt)).Return(&evmtypes.TransactionFee{
-			TransactionFee: big.NewInt(2000),
+			TransactionFee: expectedTxFee,
 		}, nil)
 
 		reportMetadata := createTestReportMetadata()
@@ -522,9 +516,10 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TxStatus:                        evmcappb.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:                          receipt.TxHash[:],
 			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(),
-			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
+			TransactionFee:                  pb.NewBigIntFromInt(expectedTxFee),
 			ErrorMessage:                    getInvalidReceiverMessage(receiver),
 		}, txResult.Response)
+		test.ValidateMetering(t, txResult.ResponseMetadata, expectedTxFee.String())
 	})
 	t.Run("TX first transmission - Successful TX execution", func(t *testing.T) {
 		evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
@@ -586,6 +581,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(retryTxFee)),
 		}, txResult.Response)
+		test.ValidateMetering(t, txResult.ResponseMetadata, strconv.FormatInt(retryTxFee, 10))
 	})
 	t.Run("TX first transmission - Error submitting TX", func(t *testing.T) {
 		_, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
@@ -620,6 +616,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TxStatus:     evmcappb.TxStatus_TX_STATUS_FATAL,
 			ErrorMessage: &expectedError,
 		}, txResult.Response)
+		require.Empty(t, txResult.ResponseMetadata.Metering, "response metadata must not contain metering data for fatal errors")
 	})
 	t.Run("TX first transmission - Failed to get transmission info and then succeed", func(t *testing.T) {
 		evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
@@ -676,6 +673,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(retryTxFee)),
 			ErrorMessage:                    nil,
 		}, txResult.Response)
+		test.ValidateMetering(t, txResult.ResponseMetadata, strconv.FormatInt(retryTxFee, 10))
 	})
 
 	t.Run("TX first transmission - Invalid receiver", func(t *testing.T) {
@@ -739,6 +737,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(retryTxFee)),
 			ErrorMessage:                    getInvalidReceiverMessage(receiverAddress[:]),
 		}, txResult.Response)
+		test.ValidateMetering(t, txResult.ResponseMetadata, strconv.FormatInt(retryTxFee, 10))
 	})
 
 	t.Run("TX first transmission - Unexpected transmission state", func(t *testing.T) {
@@ -768,6 +767,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TxStatus:     evmcappb.TxStatus_TX_STATUS_FATAL,
 			ErrorMessage: ptr(getInvalidStateErrorMessage(invalidState)),
 		}, txResult.Response)
+		require.Empty(t, txResult.ResponseMetadata.Metering, "response metadata must not contain metering data for fatal errors")
 	})
 }
 

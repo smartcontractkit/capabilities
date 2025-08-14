@@ -16,8 +16,6 @@ const (
 	GetTransactionByHash  SpendValueEnum = "0.00001"
 	EstimateGas           SpendValueEnum = "0.00001"
 	CallContract          SpendValueEnum = "0.000025"
-	WriteReport           SpendValueEnum = "DYNAMIC"
-	FilterLogs            SpendValueEnum = "0.00001"
 )
 
 // GetMeteringNodeDetail returns a MeteringNodeDetail for a given SpendValueEnum.
