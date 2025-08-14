@@ -9,6 +9,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	_ "github.com/ethereum/go-ethereum/common"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
@@ -152,6 +153,14 @@ func TestWriteReport_InputValidation(t *testing.T) {
 	})
 }
 
+// TODO lautaro remove this in favor of a common function
+func validateMetering(t *testing.T, metadata capabilities.ResponseMetadata, value metering.SpendValueEnum) {
+	require.Len(t, metadata.Metering, 1)
+	meteringNodeDetail := metadata.Metering[0]
+	require.Equal(t, metering.SpendUnit, meteringNodeDetail.SpendUnit)
+	require.Equal(t, string(value), meteringNodeDetail.SpendValue)
+}
+
 func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -241,6 +250,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
 		}, txResult.Response)
+
+		validateMetering(t, txResult.ResponseMetadata, metering.WriteReport)
+
 	})
 	t.Run("TX already transmitted successfully - Failed to fetch transmission details", func(t *testing.T) {
 		_, mockForwarderClient, service := createMocksAndCapability(t, testLogger)

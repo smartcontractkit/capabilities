@@ -8,6 +8,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/google/go-cmp/cmp"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -68,6 +69,7 @@ func TestCapability_CallContract(t *testing.T) {
 		resp, err := svc.CallContract(t.Context(), capabilities.RequestMetadata{}, req)
 		require.NoError(t, err)
 		require.Equal(t, []byte("ok"), resp.Response.Data)
+		validateMetering(t, resp.ResponseMetadata, metering.CallContract)
 	})
 	t.Run("On timeout returns error", func(t *testing.T) {
 		svc := initMocks(t)
@@ -101,6 +103,7 @@ func TestCapability_BalanceAt(t *testing.T) {
 		resp, err := svc.BalanceAt(t.Context(), capabilities.RequestMetadata{}, req)
 		require.NoError(t, err)
 		require.Equal(t, int64(1000), valuespb.NewIntFromBigInt(resp.Response.Balance).Int64())
+		validateMetering(t, resp.ResponseMetadata, metering.BalanceAt)
 	})
 	t.Run("Returns error on timeout", func(t *testing.T) {
 		svc := initMocks(t)
@@ -131,6 +134,7 @@ func TestCapability_FilterLogs(t *testing.T) {
 		resp, err := svc.FilterLogs(t.Context(), capabilities.RequestMetadata{}, req)
 		require.NoError(t, err)
 		require.Empty(t, cmp.Diff(expectedReply, resp.Response, protocmp.Transform()))
+		require.Empty(t, resp.ResponseMetadata.Metering, "FilterLogs() should have one metering entry (it won't be exposed in the capabilities interface)")
 	})
 	t.Run("Returns error if both block hash and block range is used", func(t *testing.T) {
 		svc := initMocks(t)
@@ -174,6 +178,7 @@ func TestCapability_GetTransactionByHash(t *testing.T) {
 		resp, err := svc.GetTransactionByHash(t.Context(), capabilities.RequestMetadata{}, req)
 		require.NoError(t, err)
 		require.Empty(t, cmp.Diff(evmcappb.GetTransactionByHashReply{Transaction: tx}, resp.Response, protocmp.Transform()))
+		validateMetering(t, resp.ResponseMetadata, metering.GetTransactionByHash)
 	})
 	t.Run("Returns error on invalid hash", func(t *testing.T) {
 		svc := initMocks(t)
@@ -211,6 +216,7 @@ func TestCapability_GetTransactionReceipt(t *testing.T) {
 		resp, err := svc.GetTransactionReceipt(t.Context(), capabilities.RequestMetadata{}, req)
 		require.NoError(t, err)
 		require.Empty(t, cmp.Diff(evmcappb.GetTransactionReceiptReply{Receipt: receipt}, resp.Response, protocmp.Transform()))
+		validateMetering(t, resp.ResponseMetadata, metering.GetTransactionReceipt)
 	})
 	t.Run("Returns error on invalid hash", func(t *testing.T) {
 		svc := initMocks(t)
@@ -250,6 +256,7 @@ func TestCapability_EstimateGas(t *testing.T) {
 		resp, err := svc.EstimateGas(t.Context(), capabilities.RequestMetadata{}, req)
 		require.NoError(t, err)
 		require.Empty(t, cmp.Diff(evmcappb.EstimateGasReply{Gas: 12300}, resp.Response, protocmp.Transform()))
+		validateMetering(t, resp.ResponseMetadata, metering.EstimateGas)
 	})
 	t.Run("Returns error on invalid request", func(t *testing.T) {
 		svc := initMocks(t)
@@ -279,9 +286,10 @@ func TestCapability_Register_Unregister_LogTracking(t *testing.T) {
 		svc := initMocks(t)
 		svc.evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil)
 
-		_, err := svc.RegisterLogTracking(t.Context(), capabilities.RequestMetadata{},
+		resp, err := svc.RegisterLogTracking(t.Context(), capabilities.RequestMetadata{},
 			&evmcappb.RegisterLogTrackingRequest{Filter: filterProto})
 		require.NoError(t, err)
+		require.Len(t, resp.ResponseMetadata.Metering, 1, "RegisterLogTracking() should have one metering entry (it won't be exposed in the capabilities interface)")
 	})
 
 	t.Run("register error", func(t *testing.T) {
@@ -297,9 +305,10 @@ func TestCapability_Register_Unregister_LogTracking(t *testing.T) {
 		svc := initMocks(t)
 		svc.evmService.On("UnregisterLogTracking", mock.Anything, "myFilter").Return(nil)
 
-		_, err := svc.UnregisterLogTracking(t.Context(), capabilities.RequestMetadata{},
+		resp, err := svc.UnregisterLogTracking(t.Context(), capabilities.RequestMetadata{},
 			&evmcappb.UnregisterLogTrackingRequest{FilterName: "myFilter"})
 		require.NoError(t, err)
+		require.Len(t, resp.ResponseMetadata.Metering, 1, "UnregisterLogTracking() should have one metering entry (it won't be exposed in the capabilities interface)")
 	})
 
 	t.Run("unregister error", func(t *testing.T) {
@@ -332,6 +341,8 @@ func TestCapability_HeaderByNumber(t *testing.T) {
 		resp, err := svc.HeaderByNumber(t.Context(), capabilities.RequestMetadata{}, req)
 		require.NoError(t, err)
 		require.Empty(t, cmp.Diff(expectedReply, resp.Response, protocmp.Transform()))
+		t.Fatal("not working, debug me")
+		validateMetering(t, resp.ResponseMetadata, metering.HeaderByNumber)
 	})
 	t.Run("On timeout returns error", func(t *testing.T) {
 		svc := initMocks(t)
@@ -346,4 +357,11 @@ func TestCapability_HeaderByNumber(t *testing.T) {
 		_, err := svc.HeaderByNumber(ctx, capabilities.RequestMetadata{}, req)
 		require.ErrorContains(t, err, "context canceled")
 	})
+}
+
+func validateMetering(t *testing.T, metadata capabilities.ResponseMetadata, value metering.SpendValueEnum) {
+	require.Len(t, metadata.Metering, 1)
+	meteringNodeDetail := metadata.Metering[0]
+	require.Equal(t, metering.SpendUnit, meteringNodeDetail.SpendUnit)
+	require.Equal(t, string(value), meteringNodeDetail.SpendValue)
 }

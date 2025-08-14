@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/shopspring/decimal"
+	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 
@@ -25,10 +26,10 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
-	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 )
 
 type ConsensusHandler interface {
@@ -131,7 +132,7 @@ func (e EVM) CallContract(
 	monitoring.LogAndEmitSuccess(ctx, "Successfully read CallContract", e.lggr, e.beholderProcessor, e.messageBuilder.BuildCallContractSuccess(read, callMsg, blockNumber.Int64()))
 	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.CallContractReply]{
 		Response:         &evm.CallContractReply{Data: data},
-		ResponseMetadata: capabilities.ResponseMetadata{},
+		ResponseMetadata: metering.GetResponseMetadata(metering.CallContract),
 	}
 	return &responseAndMetadata, nil
 }
@@ -272,7 +273,7 @@ func (e EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, r
 		e.messageBuilder.BuildBalanceAtSuccess(read, common.Bytes2Hex(req.GetAccount()), blockNumber.Int64(), valuespb.NewIntFromBigInt(balance)))
 	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.BalanceAtReply]{
 		Response:         &evm.BalanceAtReply{Balance: balance},
-		ResponseMetadata: capabilities.ResponseMetadata{},
+		ResponseMetadata: metering.GetResponseMetadata(metering.BalanceAt),
 	}
 	return &responseAndMetadata, nil
 }
@@ -313,7 +314,7 @@ func (e EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata,
 	monitoring.LogAndEmitSuccess(ctx, "Successfully read EstimateGas", e.lggr, e.beholderProcessor, logMsg)
 	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.EstimateGasReply]{
 		Response:         &evm.EstimateGasReply{Gas: rawEstimate.BigInt().Uint64()},
-		ResponseMetadata: capabilities.ResponseMetadata{},
+		ResponseMetadata: metering.GetResponseMetadata(metering.EstimateGas),
 	}
 	return &responseAndMetadata, nil
 }
@@ -353,7 +354,7 @@ func (e EVM) GetTransactionByHash(ctx context.Context, meta capabilities.Request
 		e.messageBuilder.BuildGetTransactionByHashSuccess(read, common.Bytes2Hex(hash[:]), &tx))
 	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.GetTransactionByHashReply]{
 		Response:         &evm.GetTransactionByHashReply{Transaction: &tx},
-		ResponseMetadata: capabilities.ResponseMetadata{},
+		ResponseMetadata: metering.GetResponseMetadata(metering.GetTransactionByHash),
 	}
 	return &responseAndMetadata, nil
 }
@@ -392,7 +393,7 @@ func (e EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.Reques
 		e.messageBuilder.BuildGetTransactionReceiptSuccess(read, common.Bytes2Hex(hash[:]), &receipt))
 	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.GetTransactionReceiptReply]{
 		Response:         &evm.GetTransactionReceiptReply{Receipt: &receipt},
-		ResponseMetadata: capabilities.ResponseMetadata{},
+		ResponseMetadata: metering.GetResponseMetadata(metering.GetTransactionReceipt),
 	}
 	return &responseAndMetadata, nil
 }
@@ -452,7 +453,7 @@ func (e EVM) HeaderByNumber(
 	monitoring.LogAndEmitSuccess(ctx, "Successfully got header by number", e.lggr, e.beholderProcessor, e.messageBuilder.BuildHeaderByNumberSuccess(read, blockNumber.Int64(), reply.Header))
 	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.HeaderByNumberReply]{
 		Response:         &reply,
-		ResponseMetadata: capabilities.ResponseMetadata{},
+		ResponseMetadata: metering.GetResponseMetadata(metering.HeaderByNumber),
 	}
 	return &responseAndMetadata, nil
 }

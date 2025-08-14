@@ -11,7 +11,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/jpillora/backoff"
-
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
@@ -44,10 +44,15 @@ func (e EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMetad
 		return nil, err
 	}
 	report, err := e.executeWriteReport(ctx, metadata, input)
-	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.WriteReportReply]{
-		Response:         report,
-		ResponseMetadata: capabilities.ResponseMetadata{},
+	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.WriteReportReply]{}
+	if err != nil && report != nil {
+		responseAndMetadata.Response = report
+		if report.TxStatus == evm.TxStatus_TX_STATUS_SUCCESS {
+			transactionFee := report.TransactionFee.String()
+			responseAndMetadata.ResponseMetadata = metering.GetResponseMetadata(metering.SpendValueEnum(transactionFee))
+		}
 	}
+	responseAndMetadata.Response = report
 	return &responseAndMetadata, err
 }
 
