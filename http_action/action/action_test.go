@@ -84,7 +84,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 
 		response, err := srv.SendRequest(context.Background(), metadata, input)
 		require.NoError(t, err)
-		assert.Equal(t, expectedResponse, response)
+		assert.Equal(t, expectedResponse, response.Response)
 		assert.Equal(t, input, mockClient.CapturedInput)
 	})
 
@@ -109,7 +109,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 
 		response, err := srv.SendRequest(context.Background(), metadata, input)
 		require.NoError(t, err)
-		assert.Equal(t, expectedResponse, response)
+		assert.Equal(t, expectedResponse, response.Response)
 		assert.Equal(t, input, mockClient.CapturedInput)
 	})
 
@@ -130,7 +130,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 
 		response, err := srv.SendRequest(context.Background(), metadata, input)
 		require.NoError(t, err)
-		assert.Equal(t, expectedResponse, response)
+		assert.Equal(t, expectedResponse, response.Response)
 		assert.Equal(t, input, mockClient.CapturedInput)
 	})
 

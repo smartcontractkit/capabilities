@@ -299,9 +299,9 @@ func TestHTTPActionCapability(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.NotNil(t, output)
-		require.Equal(t, uint32(http.StatusOK), output.StatusCode)
-		require.Equal(t, "pong", string(output.Body))
-		require.Equal(t, "my-value", output.Headers["X-Custom-Header"])
+		require.Equal(t, uint32(http.StatusOK), output.Response.StatusCode)
+		require.Equal(t, "pong", string(output.Response.Body))
+		require.Equal(t, "my-value", output.Response.Headers["X-Custom-Header"])
 	})
 
 	t.Run("POST /post with body and headers", func(t *testing.T) {
@@ -314,8 +314,8 @@ func TestHTTPActionCapability(t *testing.T) {
 		output, err := httpCapability.SendRequest(ctx, requestData, input)
 		require.NoError(t, err)
 		require.NotNil(t, output)
-		require.Equal(t, uint32(http.StatusOK), output.StatusCode)
-		require.Equal(t, "Post received", string(output.Body))
+		require.Equal(t, uint32(http.StatusOK), output.Response.StatusCode)
+		require.Equal(t, "Post received", string(output.Response.Body))
 		require.Equal(t, "1", postHeaders.Get("X-Test"))
 		require.Equal(t, "abc", postBody)
 	})
@@ -328,9 +328,9 @@ func TestHTTPActionCapability(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.NotNil(t, initialOutput)
-		require.Equal(t, uint32(http.StatusOK), initialOutput.StatusCode)
-		require.NotEmpty(t, initialOutput.Body)
-		require.NotEmpty(t, initialOutput.Headers["X-Custom-Header"])
+		require.Equal(t, uint32(http.StatusOK), initialOutput.Response.StatusCode)
+		require.NotEmpty(t, initialOutput.Response.Body)
+		require.NotEmpty(t, initialOutput.Response.Headers["X-Custom-Header"])
 
 		cachedOutput, err := httpCapability.SendRequest(ctx, requestData, &httpclient.Request{
 			Url:    fmt.Sprintf("http://%s/random", listener.Addr().String()),
@@ -342,9 +342,9 @@ func TestHTTPActionCapability(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.NotNil(t, cachedOutput)
-		require.Equal(t, uint32(http.StatusOK), cachedOutput.StatusCode)
-		require.NotEmpty(t, cachedOutput.Body)
-		require.NotEmpty(t, cachedOutput.Headers["X-Custom-Header"])
+		require.Equal(t, uint32(http.StatusOK), cachedOutput.Response.StatusCode)
+		require.NotEmpty(t, cachedOutput.Response.Body)
+		require.NotEmpty(t, cachedOutput.Response.Headers["X-Custom-Header"])
 
 		freshOutput, err := httpCapability.SendRequest(ctx, requestData, &httpclient.Request{
 			Url:    fmt.Sprintf("http://%s/random", listener.Addr().String()),
@@ -352,14 +352,14 @@ func TestHTTPActionCapability(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.NotNil(t, freshOutput)
-		require.Equal(t, uint32(http.StatusOK), freshOutput.StatusCode)
-		require.NotEmpty(t, freshOutput.Body)
-		require.NotEmpty(t, freshOutput.Headers["X-Custom-Header"])
+		require.Equal(t, uint32(http.StatusOK), freshOutput.Response.StatusCode)
+		require.NotEmpty(t, freshOutput.Response.Body)
+		require.NotEmpty(t, freshOutput.Response.Headers["X-Custom-Header"])
 
-		require.Equal(t, initialOutput.Body, cachedOutput.Body)
-		require.Equal(t, initialOutput.Headers["X-Custom-Header"], cachedOutput.Headers["X-Custom-Header"])
-		require.NotEqual(t, initialOutput.Body, freshOutput.Body)
-		require.NotEqual(t, initialOutput.Headers["X-Custom-Header"], freshOutput.Headers["X-Custom-Header"])
+		require.Equal(t, initialOutput.Response.Body, cachedOutput.Response.Body)
+		require.Equal(t, initialOutput.Response.Headers["X-Custom-Header"], cachedOutput.Response.Headers["X-Custom-Header"])
+		require.NotEqual(t, initialOutput.Response.Body, freshOutput.Response.Body)
+		require.NotEqual(t, initialOutput.Response.Headers["X-Custom-Header"], freshOutput.Response.Headers["X-Custom-Header"])
 	})
 
 	t.Run("GET /not-found returns 404", func(t *testing.T) {
@@ -370,8 +370,8 @@ func TestHTTPActionCapability(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.NotNil(t, output)
-		require.Equal(t, uint32(http.StatusNotFound), output.StatusCode)
-		require.Equal(t, string(output.Body), "Not Found\n")
+		require.Equal(t, uint32(http.StatusNotFound), output.Response.StatusCode)
+		require.Equal(t, string(output.Response.Body), "Not Found\n")
 
 		cachedOutput, err := httpCapability.SendRequest(ctx, requestData, &httpclient.Request{
 			Url:    fmt.Sprintf("http://%s/not-found", listener.Addr().String()),
@@ -383,8 +383,8 @@ func TestHTTPActionCapability(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.NotNil(t, cachedOutput)
-		require.Equal(t, uint32(http.StatusNotFound), cachedOutput.StatusCode)
-		require.Equal(t, string(cachedOutput.Body), "Not Found\n")
+		require.Equal(t, uint32(http.StatusNotFound), cachedOutput.Response.StatusCode)
+		require.Equal(t, string(cachedOutput.Response.Body), "Not Found\n")
 		require.Equal(t, notFoundCounter, 1, "not-found endpoint should have been called once")
 	})
 
@@ -396,8 +396,8 @@ func TestHTTPActionCapability(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.NotNil(t, output)
-		require.Equal(t, uint32(http.StatusInternalServerError), output.StatusCode)
-		require.Equal(t, string(output.Body), "Internal Server Error\n")
+		require.Equal(t, uint32(http.StatusInternalServerError), output.Response.StatusCode)
+		require.Equal(t, string(output.Response.Body), "Internal Server Error\n")
 
 		cachedOutput, err := httpCapability.SendRequest(ctx, requestData, &httpclient.Request{
 			Url:    fmt.Sprintf("http://%s/error", listener.Addr().String()),
@@ -409,8 +409,8 @@ func TestHTTPActionCapability(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.NotNil(t, cachedOutput)
-		require.Equal(t, uint32(http.StatusInternalServerError), cachedOutput.StatusCode)
-		require.Equal(t, string(cachedOutput.Body), "Internal Server Error\n")
+		require.Equal(t, uint32(http.StatusInternalServerError), cachedOutput.Response.StatusCode)
+		require.Equal(t, string(cachedOutput.Response.Body), "Internal Server Error\n")
 		require.Equal(t, errorCounter, 2, "error endpoint should have been called twice. No caching on 500")
 	})
 }

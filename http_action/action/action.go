@@ -110,14 +110,19 @@ func (s *service) Description() string {
 	return "HTTP Actions Service"
 }
 
-func (s *service) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *http.Request) (*http.Response, error) {
+func (s *service) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *http.Request) (*capabilities.ResponseAndMetadata[*http.Response], error) {
 	s.lggr.Debugf("Received request with metadata: %v", metadata)
 	validatedInput, err := ValidatedRequest(input, s.cfg)
 	if err != nil {
 		s.lggr.Errorf("Failed to validate input: %v", err)
 		return nil, err
 	}
-	return s.client.SendRequest(ctx, metadata, validatedInput)
+	response, err := s.client.SendRequest(ctx, metadata, validatedInput)
+	responseAndMetadata := capabilities.ResponseAndMetadata[*http.Response]{
+		Response:         response,
+		ResponseMetadata: capabilities.ResponseMetadata{},
+	}
+	return &responseAndMetadata, err
 }
 
 // NewOutboundRequestClient creates an OutboundProxy based on the ServiceConfig.ProxyMode
