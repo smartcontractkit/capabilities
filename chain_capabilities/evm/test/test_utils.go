@@ -29,4 +29,5 @@ func ValidateMetering(t *testing.T, metadata capabilities.ResponseMetadata, valu
 	meteringNodeDetail := metadata.Metering[0]
 	require.Equal(t, metering.SpendUnit, meteringNodeDetail.SpendUnit)
 	require.Equal(t, value, meteringNodeDetail.SpendValue)
+	require.Empty(t, meteringNodeDetail.Peer2PeerID, "Peer2PeerID should be empty as it will be assigned by the engine")
 }
