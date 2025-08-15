@@ -240,7 +240,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TxHash:                          receipt.TxHash[:],
 			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
-		}, txResult)
+		}, txResult.Response)
 	})
 	t.Run("TX already transmitted successfully - Failed to fetch transmission details", func(t *testing.T) {
 		_, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
@@ -287,7 +287,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		equalWriteReportReply(t, &evm.WriteReportReply{
 			TxStatus:     evmcappb.TxStatus_TX_STATUS_FATAL,
 			ErrorMessage: ptr(getInvalidStateErrorMessage(invalidState)),
-		}, txResult)
+		}, txResult.Response)
 	})
 	t.Run("TX already transmitted successfully - Failed to fetch report emitted log", func(t *testing.T) {
 		_, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
@@ -397,7 +397,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TxHash:                          receipt.TxHash[:],
 			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
-		}, txResult)
+		}, txResult.Response)
 	})
 	t.Run("TX already transmitted successfully - Receiver contract reverted - not enough gas", func(t *testing.T) {
 		evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
@@ -461,7 +461,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TxHash:                          retryReceipt.TxHash[:],
 			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(retryTxFee)),
-		}, txResult)
+		}, txResult.Response)
 	})
 	t.Run("TX already transmitted successfully - Invalid receiver", func(t *testing.T) {
 		evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
@@ -512,7 +512,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
 			ErrorMessage:                    getInvalidReceiverMessage(receiver),
-		}, txResult)
+		}, txResult.Response)
 	})
 	t.Run("TX first transmission - Successful TX execution", func(t *testing.T) {
 		evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
@@ -573,7 +573,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TxHash:                          receipt.TxHash[:],
 			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(retryTxFee)),
-		}, txResult)
+		}, txResult.Response)
 	})
 	t.Run("TX first transmission - Error submitting TX", func(t *testing.T) {
 		_, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
@@ -607,7 +607,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		equalWriteReportReply(t, &evm.WriteReportReply{
 			TxStatus:     evmcappb.TxStatus_TX_STATUS_FATAL,
 			ErrorMessage: &expectedError,
-		}, txResult)
+		}, txResult.Response)
 	})
 	t.Run("TX first transmission - Failed to get transmission info and then succeed", func(t *testing.T) {
 		evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
@@ -663,7 +663,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(retryTxFee)),
 			ErrorMessage:                    nil,
-		}, txResult)
+		}, txResult.Response)
 	})
 
 	t.Run("TX first transmission - Invalid receiver", func(t *testing.T) {
@@ -726,7 +726,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(retryTxFee)),
 			ErrorMessage:                    getInvalidReceiverMessage(receiverAddress[:]),
-		}, txResult)
+		}, txResult.Response)
 	})
 
 	t.Run("TX first transmission - Unexpected transmission state", func(t *testing.T) {
@@ -755,7 +755,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		equalWriteReportReply(t, &evm.WriteReportReply{
 			TxStatus:     evmcappb.TxStatus_TX_STATUS_FATAL,
 			ErrorMessage: ptr(getInvalidStateErrorMessage(invalidState)),
-		}, txResult)
+		}, txResult.Response)
 	})
 }
 

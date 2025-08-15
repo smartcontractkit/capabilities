@@ -36,6 +36,7 @@ func (ts *store) Get(_ context.Context, key string) ([]byte, error) {
 	return ts.values[key], nil
 }
 
-func (ts *store) PruneExpiredEntries(ctx context.Context, ttl time.Duration) (int64, error) {
+func (ts *store) PruneExpiredEntries(_ context.Context, maxAge time.Duration) (int64, error) {
+	//do nothing for now, as this is a simple in-memory store
 	return 0, nil
 }

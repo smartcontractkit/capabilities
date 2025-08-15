@@ -60,7 +60,7 @@ func Test_SimpleConsensus(t *testing.T) {
 	require.NoError(t, err)
 	expectedProto := values.Proto(expectedResult)
 
-	require.True(t, proto.Equal(result, expectedProto))
+	require.True(t, proto.Equal(result.Response, expectedProto))
 }
 
 func Test_Report(t *testing.T) {
@@ -90,7 +90,7 @@ func Test_Report(t *testing.T) {
 	result, err := capability.Report(ctx, metadata, input)
 	require.NoError(t, err)
 
-	require.True(t, strings.HasSuffix(string(result.RawReport), "somerandom-payload"))
+	require.True(t, strings.HasSuffix(string(result.Response.RawReport), "somerandom-payload"))
 }
 
 func Test_ReportRequiresValidSigningAlgo(t *testing.T) {
