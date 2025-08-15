@@ -122,8 +122,10 @@ func (s *service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 	}
 	err := s.connectorHandler.RegisterWorkflow(ctx, workflowSelector, input, sendCh)
 	if err != nil {
+		gateway.IncrementHTTPTriggerRegisterFailureCount(ctx, s.lggr)
 		return nil, err
 	}
+	gateway.IncrementHTTPTriggerRegisterCount(ctx, s.lggr)
 	return sendCh, nil
 }
 
@@ -131,8 +133,11 @@ func (s *service) UnregisterTrigger(ctx context.Context, triggerID string, metad
 	err := s.connectorHandler.UnregisterWorkflow(ctx, metadata.WorkflowID)
 	if err != nil {
 		s.lggr.Errorf("Failed to unregister workflow %s: %v", metadata.WorkflowID, err)
+		gateway.IncrementHTTPTriggerUnregisterFailureCount(ctx, s.lggr)
+		return err
 	}
-	return err
+	gateway.IncrementHTTPTriggerUnregisterCount(ctx, s.lggr)
+	return nil
 }
 
 func ensureHexPrefix(s string) string {

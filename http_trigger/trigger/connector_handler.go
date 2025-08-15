@@ -87,11 +87,12 @@ func (h *connectorHandler) startRequestCacheCleanup(ctx context.Context) {
 			h.lggr.Debug("Request cache cleanup routine stopping due to context cancellation")
 			return
 		case <-ticker.C:
-			err := h.requestCache.cleanup(ctx)
+			count, err := h.requestCache.cleanup(ctx)
 			if err != nil {
 				h.lggr.Errorw("Failed to cleanup request cache", "error", err)
 			} else {
-				h.lggr.Debugw("Cleaned up expired request cache entries", "interval", h.requestCache.ttl)
+				h.lggr.Debugw("Cleaned up expired request cache entries", "interval", h.requestCache.ttl, "count", count)
+				gateway_common.IncrementHTTPTriggerRequestCacheCleanUpCount(ctx, count, h.lggr)
 			}
 		}
 	}
@@ -130,11 +131,16 @@ func (h *connectorHandler) RegisterWorkflow(ctx context.Context, workflowSelecto
 
 	// Push workflow metadata to the gateway
 	// Error is non-critical. Retries will be handled by the metadata publisher.
+	startTime := time.Now()
+	gateway_common.IncrementHTTPTriggerCapabilityBroadcastMetadataCount(ctx, h.lggr)
 	err = h.gatewayMetadataPublisher.BroadcastWorkflowMetadata(ctx, workflowSelector, authorizedKeys)
 	if err != nil {
 		h.lggr.Errorw("Failed to push metadata to gateway", "error",
 			err, "workflowID", workflowSelector.WorkflowID)
+		gateway_common.IncrementHTTPTriggerCapabilityBroadcastMetadataFailures(ctx, h.lggr)
 	}
+	latencyMs := time.Since(startTime).Milliseconds()
+	gateway_common.RecordHTTPTriggerCapabilityBroadcastMetadataLatency(ctx, latencyMs, h.lggr)
 
 	workflow := newWorkflow(workflowSelector, authorizedKeys, sendCh)
 	h.workflowStore.upsertWorkflow(workflow)
@@ -187,14 +193,22 @@ func (h *connectorHandler) HandleGatewayMessage(ctx context.Context, gatewayID s
 
 	switch req.Method {
 	case gateway_common.MethodWorkflowExecute:
+		startTime := time.Now()
 		h.processTrigger(ctx, gatewayID, req)
+		latencyMs := time.Since(startTime).Milliseconds()
+		gateway_common.RecordHTTPTriggerCapabilityRequestLatency(ctx, latencyMs, h.lggr)
 	case gateway_common.MethodPullWorkflowMetadata:
 		// No retries here. Retries are orchestrated by the gateway node
+		startTime := time.Now()
+		gateway_common.IncrementHTTPTriggerCapabilityPullMetadataCount(ctx, h.lggr)
 		err := h.gatewayMetadataPublisher.SendWorkflowMetadata(ctx, gatewayID, req)
 		if err != nil {
 			h.lggr.Errorw("Failed to handle pull metadata request", "error",
 				err, "gatewayID", gatewayID, "requestID", req.ID)
+			gateway_common.IncrementHTTPTriggerCapabilityPullMetadataFailures(ctx, h.lggr)
 		}
+		latencyMs := time.Since(startTime).Milliseconds()
+		gateway_common.RecordHTTPTriggerCapabilityPullMetadataLatency(ctx, latencyMs, h.lggr)
 	default:
 		h.lggr.Errorw("Unsupported method", "method", req.Method, "gatewayID", gatewayID)
 	}
@@ -205,10 +219,12 @@ func (h *connectorHandler) checkIncomingRateLimit(gatewayID string) bool {
 	senderAllow, globalAllow := h.incomingRateLimiter.AllowVerbose(gatewayID)
 	if !senderAllow {
 		h.lggr.Errorw(errorIncomingRatelimitSender, "gatewayID", gatewayID)
+		gateway_common.IncrementHTTPTriggerCapabilityGatewayNodeThrottled(context.Background(), h.lggr)
 		return false
 	}
 	if !globalAllow {
 		h.lggr.Errorw(errorIncomingRatelimitGlobal, "gatewayID", gatewayID)
+		gateway_common.IncrementHTTPTriggerCapabilityGatewayGlobalThrottled(context.Background(), h.lggr)
 		return false
 	}
 	return true
@@ -240,11 +256,15 @@ func (h *connectorHandler) sendResponse(ctx context.Context, gatewayID string, r
 	err := h.gatewayConnector.SendToGateway(ctx, gatewayID, resp)
 	if err != nil {
 		h.lggr.Errorw("Failed to send response to gateway", "error", err, "gatewayID", gatewayID)
+		gateway_common.IncrementHTTPTriggerCapabilityGatewaySendError(ctx, h.lggr)
 		return
 	}
+	gateway_common.IncrementHTTPTriggerCapabilityRequestSuccessCount(ctx, h.lggr)
 }
 
 func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage]) {
+	gateway_common.IncrementHTTPTriggerCapabilityRequestCount(ctx, h.lggr)
+
 	if req.Params == nil {
 		h.lggr.Errorw("No params in request", "gatewayID", gatewayID, "requestID", req.ID)
 		return
