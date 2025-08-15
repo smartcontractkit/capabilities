@@ -8,7 +8,7 @@ replace github.com/smartcontractkit/capabilities/libs => ../libs
 
 require (
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20250711131700-236a5b631ad7
-	github.com/smartcontractkit/chainlink-common v0.9.1-0.20250813130821-b873b0f57784
+	github.com/smartcontractkit/chainlink-common v0.9.1-0.20250814162251-c3e4f4feff91
 	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250806152407-159881c7589c
 	github.com/stretchr/testify v1.10.0
 )
