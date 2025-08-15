@@ -10,6 +10,7 @@ require (
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20250807005622-32f1fcc70c7d
 	github.com/smartcontractkit/chainlink-common v0.9.1-0.20250815154239-fde612e90c1e
 	github.com/stretchr/testify v1.10.0
+	go.opentelemetry.io/otel/metric v1.37.0
 	stathat.com/c/consistent v1.0.0
 )
 
@@ -97,7 +98,6 @@ require (
 	go.opentelemetry.io/otel/exporters/stdout/stdoutmetric v1.34.0 // indirect
 	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.34.0 // indirect
 	go.opentelemetry.io/otel/log v0.13.0 // indirect
-	go.opentelemetry.io/otel/metric v1.37.0 // indirect
 	go.opentelemetry.io/otel/sdk v1.37.0 // indirect
 	go.opentelemetry.io/otel/sdk/log v0.13.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.37.0 // indirect

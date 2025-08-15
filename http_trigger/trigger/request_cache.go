@@ -61,5 +61,5 @@ func (c *requestCache) cleanup(ctx context.Context) (int64, error) {
 		return 0, err
 	}
 	c.lggr.Infow("pruned expired entries from request cache", "pruned", pruned)
-	return int64(pruned), nil
+	return pruned, nil
 }
