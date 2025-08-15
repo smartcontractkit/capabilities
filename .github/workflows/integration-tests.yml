@@ -1,0 +1,48 @@
+name: Integration Tests
+
+on:
+  workflow_call:
+
+env:
+  GOPRIVATE: github.com/smartcontractkit/capabilities
+
+permissions:
+  contents: read
+
+jobs:
+  integration-test:
+    runs-on: ubuntu-latest
+    env:
+      DB_URL: postgresql://postgres:postgres@localhost:5432/chainlink_test?sslmode=disable
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Postgres
+        uses: ./.github/actions/setup-postgres
+
+      - name: Set up project environment
+        uses: ./.github/actions/setup
+        with:
+          project: integration_tests
+          go-module-file: ./integration_tests/go.mod
+          task: "integrationtest"
+
+      - name: Support private Go modules
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./.github/scripts/support-private-gomods.sh
+
+      - name: Setup Test DB
+        run: go run github.com/smartcontractkit/chainlink/v2 local db preparetest
+        working-directory: integration_tests
+        env:
+          CL_DATABASE_URL: ${{ env.DB_URL }}
+
+      - name: Run Integration Tests
+        env:
+          CL_DATABASE_URL: ${{ env.DB_URL }}
+        run: ./nx run integration_tests:test
