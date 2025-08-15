@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
@@ -33,4 +34,8 @@ func (ts *store) Get(_ context.Context, key string) ([]byte, error) {
 		return nil, fmt.Errorf("key not found: %s", key)
 	}
 	return ts.values[key], nil
+}
+
+func (ts *store) PruneExpiredEntries(ctx context.Context, ttl time.Duration) (int64, error) {
+	return 0, nil
 }

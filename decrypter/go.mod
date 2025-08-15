@@ -1,4 +1,4 @@
-module github.com/smartcontractkit/capabilities/p2psigner
+module github.com/smartcontractkit/capabilities/decrypter
 
 go 1.24.4
 

@@ -1,12 +1,13 @@
-package signertest
+package decryptertest
 
 import (
-	"crypto/ed25519"
-	"crypto/sha256"
+	cryptorand "crypto/rand"
+	"fmt"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/nacl/box"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
@@ -16,14 +17,14 @@ import (
 	"github.com/smartcontractkit/capabilities/integration_tests/utils"
 )
 
-func Test_Signer(t *testing.T) {
+func Test_Decrypter(t *testing.T) {
 	ctx := t.Context()
 	lggr := logger.TestLogger(t)
 	defer func() {
 		utils.CleanupCapabilitiesDir(lggr)
 	}()
 
-	signerBinary, err := utils.DeployCapability(t, "p2psigner")
+	decrypterBinary, err := utils.DeployCapability(t, "decrypter")
 	require.NoError(t, err)
 
 	workflowDonConfiguration, err := framework.NewDonConfiguration(framework.NewDonConfigurationParams{Name: "Workflow", NumNodes: 4, F: 1, AcceptsWorkflows: true})
@@ -32,19 +33,23 @@ func Test_Signer(t *testing.T) {
 	triggerSink := framework.NewTriggerSink(t, "mock-trigger", "1.0.0")
 	targetSink := framework.NewTargetSink("mock-target", "1.0.0")
 
-	don := setupTestDon(ctx, t, lggr, workflowDonConfiguration, triggerSink, targetSink, signerBinary)
-
-	peers := don.GetPeerIDsAndOCRSigners()
+	don := setupTestDon(ctx, t, lggr, workflowDonConfiguration, triggerSink, targetSink, decrypterBinary)
+	workflowPubKeys := don.GetWorkflowPublicKeys()
 
 	msg := []byte("test message")
-	digest := sha256.Sum256(msg)
-	signActionParams, err := values.WrapMap(map[string]any{
-		"SignInputs": map[string]any{
-			"digest": digest[:],
+	var ciphertexts [][]byte
+	for _, pubKey := range workflowPubKeys {
+		ciphertext, err := box.SealAnonymous(nil, msg, pubKey, cryptorand.Reader)
+		require.NoError(t, err)
+		ciphertexts = append(ciphertexts, ciphertext)
+	}
+	actionParams, err := values.WrapMap(map[string]any{
+		"DecryptInputs": map[string]any{
+			"ciphertexts": ciphertexts,
 		},
 	})
 	require.NoError(t, err)
-	triggerSink.SendOutput(signActionParams, uuid.New().String())
+	triggerSink.SendOutput(actionParams, uuid.New().String())
 
 	readresult := <-targetSink.Sink
 	require.NotNil(t, readresult)
@@ -54,15 +59,9 @@ func Test_Signer(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, core.StandardCapabilityAccount, accountID)
 
-	var sig []byte
-	err = readresult.Inputs.Underlying["signature"].UnwrapTo(&sig)
+	var plaintext []byte
+	fmt.Println("Out:", readresult.Inputs)
+	err = readresult.Inputs.Underlying["plaintext"].UnwrapTo(&plaintext)
 	require.NoError(t, err)
-	var valid bool
-	for _, p := range peers {
-		if ed25519.Verify(ed25519.PublicKey(p.PeerID[:]), digest[:], sig) {
-			valid = true
-			break
-		}
-	}
-	require.True(t, valid)
+	require.Equal(t, msg, plaintext)
 }

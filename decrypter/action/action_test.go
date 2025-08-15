@@ -13,9 +13,9 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 
+	"github.com/smartcontractkit/capabilities/decrypter/action"
+	"github.com/smartcontractkit/capabilities/decrypter/decryptercap"
 	"github.com/smartcontractkit/capabilities/libs/testutils"
-	"github.com/smartcontractkit/capabilities/p2psigner/action"
-	"github.com/smartcontractkit/capabilities/p2psigner/signercap"
 )
 
 type mockKeystore struct {
@@ -68,9 +68,9 @@ func TestCapability_Info(t *testing.T) {
 		assert.NoError(t, err)
 		info, err := c.Info(context.Background())
 		assert.NoError(t, err)
-		assert.Equal(t, "p2psigner-action@1.0.0", info.ID)
+		assert.Equal(t, "decrypter-action@1.0.0", info.ID)
 		assert.Equal(t, capabilities.CapabilityType("action"), info.CapabilityType)
-		assert.Equal(t, "Signs a message using the P2P signing key.", info.Description)
+		assert.Equal(t, "Decrypts a message using the workflow key.", info.Description)
 		assert.Equal(t, true, info.IsLocal)
 	})
 }
@@ -79,8 +79,8 @@ func TestCapability_Execute(t *testing.T) {
 	t.Run("capability executes without error", func(t *testing.T) {
 		mockKeystore := &mockKeystore{
 			accounts: []string{core.StandardCapabilityAccount},
-			signFunc: func(ctx context.Context, account string, msg []byte) ([]byte, error) {
-				return []byte("test-signature"), nil
+			decryptFunc: func(ctx context.Context, account string, msg []byte) ([]byte, error) {
+				return []byte("test-plaintext"), nil
 			},
 		}
 
@@ -90,12 +90,12 @@ func TestCapability_Execute(t *testing.T) {
 		})
 		assert.NoError(t, err)
 
-		digest := []byte("test-digest")
-		signInputs := signercap.SignInputs{
-			Digest: digest,
+		ctxt := []byte("test-ciphertext")
+		decryptInputs := decryptercap.DecryptInputs{
+			Ciphertexts: [][]byte{ctxt},
 		}
 
-		signInputsValue, err := values.WrapMap(signInputs)
+		decryptInputsValue, err := values.WrapMap(decryptInputs)
 		require.NoError(t, err)
 
 		ctx := context.Background()
@@ -111,17 +111,17 @@ func TestCapability_Execute(t *testing.T) {
 		defer removeWorkflow(ctx)
 
 		resp, err := c.Execute(context.Background(), workflow.NewRequest(map[string]any{
-			"SignInputs": signInputsValue,
+			"DecryptInputs": decryptInputsValue,
 		}))
 		assert.NoError(t, err)
 		assert.NotNil(t, resp.Value)
 
 		// Verify response structure
-		var signOutputs signercap.SignOutputs
-		err = resp.Value.UnwrapTo(&signOutputs)
+		var decryptOutputs decryptercap.DecryptOutputs
+		err = resp.Value.UnwrapTo(&decryptOutputs)
 		assert.NoError(t, err)
-		assert.Equal(t, core.StandardCapabilityAccount, signOutputs.AccountID)
-		assert.Equal(t, []byte("test-signature"), signOutputs.Signature)
+		assert.Equal(t, core.StandardCapabilityAccount, decryptOutputs.AccountID)
+		assert.Equal(t, []byte("test-plaintext"), decryptOutputs.Plaintext)
 	})
 
 	t.Run("capability errors when inputs is nil", func(t *testing.T) {
@@ -135,10 +135,10 @@ func TestCapability_Execute(t *testing.T) {
 			Inputs: nil,
 		})
 		assert.Error(t, err)
-		assert.Equal(t, "missing SignInputs in request", err.Error())
+		assert.Equal(t, "missing DecryptInputs in request", err.Error())
 	})
 
-	t.Run("capability errors when SignInputs is missing", func(t *testing.T) {
+	t.Run("capability errors when DecryptInputs is missing", func(t *testing.T) {
 		mockKeystore := &mockKeystore{}
 		c, err := action.New(action.Params{
 			Logger:   logger.Test(t),
@@ -148,10 +148,10 @@ func TestCapability_Execute(t *testing.T) {
 		_, err = c.Execute(context.Background(), capabilities.CapabilityRequest{
 			Inputs: &values.Map{Underlying: map[string]values.Value{}}})
 		assert.Error(t, err)
-		assert.Equal(t, "missing SignInputs in request", err.Error())
+		assert.Equal(t, "missing DecryptInputs in request", err.Error())
 	})
 
-	t.Run("capability errors when SignInputs is nil", func(t *testing.T) {
+	t.Run("capability errors when DecryptInputs is nil", func(t *testing.T) {
 		mockKeystore := &mockKeystore{}
 		c, err := action.New(action.Params{
 			Logger:   logger.Test(t),
@@ -161,10 +161,10 @@ func TestCapability_Execute(t *testing.T) {
 
 		_, err = c.Execute(context.Background(), capabilities.CapabilityRequest{
 			Inputs: &values.Map{Underlying: map[string]values.Value{
-				"SignInputs": nil,
+				"DecryptInputs": nil,
 			}}})
 		assert.Error(t, err)
-		assert.Equal(t, "missing SignInputs in request", err.Error())
+		assert.Equal(t, "missing DecryptInputs in request", err.Error())
 	})
 
 	t.Run("capability errors when keystore accounts fails", func(t *testing.T) {
@@ -179,17 +179,17 @@ func TestCapability_Execute(t *testing.T) {
 		})
 		assert.NoError(t, err)
 
-		digest := []byte("test-digest")
-		signInputs := signercap.SignInputs{
-			Digest: digest,
+		ctxt := []byte("test-ciphertext")
+		decryptInputs := decryptercap.DecryptInputs{
+			Ciphertexts: [][]byte{ctxt},
 		}
 
-		signInputsValue, err := values.WrapMap(signInputs)
+		decryptInputsValue, err := values.WrapMap(decryptInputs)
 		require.NoError(t, err)
 
 		_, err = c.Execute(context.Background(), capabilities.CapabilityRequest{
 			Inputs: &values.Map{Underlying: map[string]values.Value{
-				"SignInputs": signInputsValue,
+				"DecryptInputs": decryptInputsValue,
 			}},
 		})
 		assert.Error(t, err)
@@ -206,24 +206,24 @@ func TestCapability_Execute(t *testing.T) {
 		})
 		assert.NoError(t, err)
 
-		digest := []byte("test-digest")
-		signInputs := signercap.SignInputs{
-			Digest: digest,
+		ctxt := []byte("test-ciphertext")
+		decryptInputs := decryptercap.DecryptInputs{
+			Ciphertexts: [][]byte{ctxt},
 		}
 
-		signInputsValue, err := values.WrapMap(signInputs)
+		decryptInputsValue, err := values.WrapMap(decryptInputs)
 		require.NoError(t, err)
 
 		_, err = c.Execute(context.Background(), capabilities.CapabilityRequest{
 			Inputs: &values.Map{Underlying: map[string]values.Value{
-				"SignInputs": signInputsValue,
+				"DecryptInputs": decryptInputsValue,
 			}},
 		})
 		assert.Error(t, err)
 		assert.Equal(t, "no accounts found in keystore", err.Error())
 	})
 
-	t.Run("capability errors when P2P account not found", func(t *testing.T) {
+	t.Run("capability errors when StandardCapabilities account not found", func(t *testing.T) {
 		mockKeystore := &mockKeystore{
 			accounts: []string{"OTHER_ACCOUNT"},
 		}
@@ -233,17 +233,17 @@ func TestCapability_Execute(t *testing.T) {
 		})
 		assert.NoError(t, err)
 
-		digest := []byte("test-digest")
-		signInputs := signercap.SignInputs{
-			Digest: digest,
+		ctxt := []byte("test-ciphertext")
+		decryptInputs := decryptercap.DecryptInputs{
+			Ciphertexts: [][]byte{ctxt},
 		}
 
-		signInputsValue, err := values.WrapMap(signInputs)
+		decryptInputsValue, err := values.WrapMap(decryptInputs)
 		require.NoError(t, err)
 
 		_, err = c.Execute(context.Background(), capabilities.CapabilityRequest{
 			Inputs: &values.Map{Underlying: map[string]values.Value{
-				"SignInputs": signInputsValue,
+				"DecryptInputs": decryptInputsValue,
 			}},
 		})
 		assert.Error(t, err)
@@ -253,8 +253,8 @@ func TestCapability_Execute(t *testing.T) {
 	t.Run("capability errors when signing fails", func(t *testing.T) {
 		mockKeystore := &mockKeystore{
 			accounts: []string{core.StandardCapabilityAccount},
-			signFunc: func(ctx context.Context, account string, msg []byte) ([]byte, error) {
-				return nil, errors.New("signing error")
+			decryptFunc: func(ctx context.Context, account string, ctxt []byte) ([]byte, error) {
+				return nil, errors.New("decrypting error")
 			},
 		}
 		c, err := action.New(action.Params{
@@ -263,21 +263,21 @@ func TestCapability_Execute(t *testing.T) {
 		})
 		assert.NoError(t, err)
 
-		digest := []byte("test-digest")
-		signInputs := signercap.SignInputs{
-			Digest: digest,
+		ctxt := []byte("test-ciphertext")
+		decryptInputs := decryptercap.DecryptInputs{
+			Ciphertexts: [][]byte{ctxt},
 		}
 
-		signInputsValue, err := values.WrapMap(signInputs)
+		decryptInputsValue, err := values.WrapMap(decryptInputs)
 		require.NoError(t, err)
 
 		_, err = c.Execute(context.Background(), capabilities.CapabilityRequest{
 			Inputs: &values.Map{Underlying: map[string]values.Value{
-				"SignInputs": signInputsValue,
+				"DecryptInputs": decryptInputsValue,
 			}},
 		})
 		assert.Error(t, err)
-		assert.Equal(t, "signing error", err.Error())
+		assert.ErrorContains(t, err, "failed to decrypt any ciphertexts: failed to decrypt ciphertext")
 	})
 }
 

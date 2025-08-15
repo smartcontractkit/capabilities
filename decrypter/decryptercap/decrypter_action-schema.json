@@ -1,0 +1,68 @@
+{
+  "$id": "https://github.com/smartcontractkit/capabilities/decrypter/decryptercap/decrypter-action@1.0.0",
+  "description": "A test action that decrypts a payload",
+  "$defs": {
+    "DecryptInputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ciphertexts": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            }
+          }
+        }
+      },
+      "required": [
+        "ciphertexts"
+      ]
+    },
+    "DecryptOutputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Outputs of the Decrypter Action.",
+      "properties": {
+        "plaintext": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 255
+          }
+        },
+        "accountID": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "plaintext",
+        "accountID"
+      ]
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "inputs": {
+      "$ref": "#/$defs/DecryptInputs"
+    },
+    "outputs": {
+      "$ref": "#/$defs/DecryptOutputs"
+    },
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {},
+      "required": []
+    }
+  },
+  "required": [
+    "inputs",
+    "outputs"
+  ]
+}
