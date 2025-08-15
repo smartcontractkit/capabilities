@@ -7,15 +7,19 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/smartcontractkit/capabilities/integration_tests/utils"
 	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/framework"
 	"github.com/smartcontractkit/chainlink/v2/core/logger"
+	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/handlers/capabilities"
 )
 
 func setupTestDon(ctx context.Context, t *testing.T, lggr logger.Logger,
 	workflowDonInfo framework.DonConfiguration, triggerSink framework.TriggerFactory, targetSink framework.TargetFactory, decrypterPath string) (workflowDon *framework.DON) {
-	donContext := framework.CreateDonContext(ctx, t)
+
+	// Use a workflow DON context so that a workflow Key is spawned.
+	donContext := framework.CreateDonContextWithWorkflowRegistry(ctx, t, func(ctx context.Context, messageID string, req capabilities.Request) ([]byte, error) { return nil, nil }, utils.NoopComputeFetcherFactory{})
 
 	workflowDon = createTestWorkflowDon(ctx, t, lggr, workflowDonInfo, donContext, triggerSink, targetSink)
 
