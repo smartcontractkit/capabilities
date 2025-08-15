@@ -17,7 +17,6 @@ import (
 
 func setupTestDon(ctx context.Context, t *testing.T, lggr logger.Logger,
 	workflowDonInfo framework.DonConfiguration, triggerSink framework.TriggerFactory, targetSink framework.TargetFactory, decrypterPath string) (workflowDon *framework.DON) {
-
 	// Use a workflow DON context so that a workflow Key is spawned.
 	donContext := framework.CreateDonContextWithWorkflowRegistry(ctx, t, func(ctx context.Context, messageID string, req capabilities.Request) ([]byte, error) { return nil, nil }, utils.NoopComputeFetcherFactory{})
 

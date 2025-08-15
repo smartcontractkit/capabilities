@@ -35,6 +35,7 @@ func Test_Decrypter(t *testing.T) {
 
 	don := setupTestDon(ctx, t, lggr, workflowDonConfiguration, triggerSink, targetSink, decrypterBinary)
 	workflowPubKeys := don.GetWorkflowPublicKeys()
+	require.Len(t, workflowPubKeys, 4)
 
 	msg := []byte("test message")
 	var ciphertexts [][]byte
