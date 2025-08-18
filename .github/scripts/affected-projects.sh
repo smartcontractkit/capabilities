@@ -8,12 +8,18 @@ fi
 
 base=$1
 
-affected_projects=$(./nx show projects --affected --json --base=$base)
+affected_projects=$(./nx show projects --affected --json --base=$base --head=HEAD)
 
-echo "Affected projects:"
-echo "$affected_projects" | jq .
+echo "Affected projects:" >&2
+if echo "$affected_projects" | jq . >/dev/null 2>&1; then
+  echo "Valid JSON output:" >&2
+  echo "$affected_projects" | jq . >&2
+else
+  echo "Raw output (not valid JSON):" >&2
+  echo "$affected_projects" >&2
+fi
 
-echo "Parsing projects..."
+echo "Parsing projects..." >&2
 projects=($(echo $affected_projects | jq -r '.[]'))
 
 # Initialize an output string
@@ -39,12 +45,32 @@ done
 
 # Loop through each project and collect nested details
 for project in "${projects[@]}"; do
-    project_info=$(./nx show project "$project" --json)
-    project_root=$(echo $project_info | jq -r '.root')
-    project_go_sum=$(echo "$project_root/go.sum")
+  project_info=$(./nx show project "$project" --json)
+  project_root=$(echo $project_info | jq -r '.root')
+  
+  # Check if go.sum exists in project root
+  if [ -f "$project_root/go.sum" ]; then
+    project_go_sum="$project_root/go.sum"
+  else
+    # Look one level deeper for go.sum when not found on root level
+    found_go_sum=""
+    for subdir in "$project_root"/*/; do
+      if [ -f "$subdir/go.sum" ]; then
+        found_go_sum="$project_root/$subdir/go.sum"
+        project_root="$project_root/$subdir"
+        break
+      fi
+    done
+    
+    if [ -n "$found_go_sum" ]; then
+      project_go_sum="$found_go_sum"
+    else
+      project_go_sum="$project_root/go.sum"  # fallback to original path
+    fi
+  fi
 
-    # Append the result to the output string in a nested JSON format
-    output+="\"$project\": { \"root\": \"$project_root\", \"go_sum\": \"$project_go_sum\" },"
+  # Append the result to the output string in a nested JSON format
+  output+="\"$project\": { \"root\": \"$project_root\", \"go_sum\": \"$project_go_sum\" },"
 done
 
 if [ ${#projects[@]} -eq 0 ]; then
