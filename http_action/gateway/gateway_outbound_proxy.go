@@ -22,6 +22,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 	gc "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway/metrics"
 )
 
 const (
@@ -89,11 +90,11 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 
 	workflowAllow, globalAllow := p.outgoingRateLimiter.AllowVerbose(metadata.WorkflowOwner)
 	if !workflowAllow {
-		gc.IncrementHTTPActionWorkflowOwnerThrottled(ctx, lggr)
+		metrics.IncrementHTTPActionWorkflowOwnerThrottled(ctx, lggr)
 		return nil, errors.New(common.ErrorOutgoingRatelimitWorkflowOwner)
 	}
 	if !globalAllow {
-		gc.IncrementHTTPActionNodeThrottled(ctx, lggr)
+		metrics.IncrementHTTPActionNodeThrottled(ctx, lggr)
 		return nil, errors.New(common.ErrorOutgoingRatelimitGlobal)
 	}
 
@@ -134,12 +135,12 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 
 	selectedGateway, err := p.awaitConnection(ctx, lggr, gatewayReq.Hash())
 	if err != nil {
-		gc.IncrementHTTPActionCapabilityGatewayConnectionError(ctx, lggr)
+		metrics.IncrementHTTPActionCapabilityGatewayConnectionError(ctx, selectedGateway, lggr)
 		return nil, errors.Join(errors.New("failed to await connection to gateway"), err)
 	}
 
 	if err := p.gatewayConnector.SendToGateway(ctx, selectedGateway, &gatewayResp); err != nil {
-		gc.IncrementHTTPActionCapabilityGatewaySendError(ctx, lggr)
+		metrics.IncrementHTTPActionCapabilityGatewaySendError(ctx, selectedGateway, lggr)
 		return nil, errors.Join(errors.New("failed to send request to gateway"), err)
 	}
 
@@ -150,7 +151,7 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 			lggr.Errorw("error while receiving response from gateway", "errorMessage", resp.ErrorMessage)
 			return nil, errors.New(internalError)
 		}
-		gc.IncrementHTTPActionSuccessfulResponse(ctx, lggr)
+		metrics.IncrementHTTPActionSuccessfulResponse(ctx, lggr)
 		return &http.Response{
 			StatusCode: uint32(resp.StatusCode), //nolint:gosec // G115
 			Headers:    resp.Headers,
@@ -250,10 +251,10 @@ func (p *gatewayOutboundProxy) HandleGatewayMessage(ctx context.Context, gateway
 	senderAllow, globalAllow := p.incomingRateLimiter.AllowVerbose(gatewayID)
 	errorMsg := ""
 	if !senderAllow {
-		gc.IncrementHTTPActionCapabilityGatewayNodeThrottled(ctx, l)
+		metrics.IncrementHTTPActionCapabilityGatewayNodeThrottled(ctx, gatewayID, l)
 		errorMsg = common.ErrorIncomingRatelimitSender
 	} else if !globalAllow {
-		gc.IncrementHTTPActionCapabilityGatewayGlobalThrottled(ctx, l)
+		metrics.IncrementHTTPActionCapabilityGatewayGlobalThrottled(ctx, l)
 		errorMsg = common.ErrorIncomingRatelimitGlobal
 	}
 

@@ -9,12 +9,12 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http/server"
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
-
-	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway/metrics"
 )
 
 const ServiceName = "HTTPTriggerCapability"
@@ -122,10 +122,10 @@ func (s *service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 	}
 	err := s.connectorHandler.RegisterWorkflow(ctx, workflowSelector, input, sendCh)
 	if err != nil {
-		gateway.IncrementHTTPTriggerRegisterFailureCount(ctx, s.lggr)
+		metrics.IncrementHTTPTriggerRegisterFailureCount(ctx, s.lggr)
 		return nil, err
 	}
-	gateway.IncrementHTTPTriggerRegisterCount(ctx, s.lggr)
+	metrics.IncrementHTTPTriggerRegisterCount(ctx, s.lggr)
 	return sendCh, nil
 }
 
@@ -133,10 +133,10 @@ func (s *service) UnregisterTrigger(ctx context.Context, triggerID string, metad
 	err := s.connectorHandler.UnregisterWorkflow(ctx, metadata.WorkflowID)
 	if err != nil {
 		s.lggr.Errorf("Failed to unregister workflow %s: %v", metadata.WorkflowID, err)
-		gateway.IncrementHTTPTriggerUnregisterFailureCount(ctx, s.lggr)
+		metrics.IncrementHTTPTriggerDeregisterFailureCount(ctx, s.lggr)
 		return err
 	}
-	gateway.IncrementHTTPTriggerUnregisterCount(ctx, s.lggr)
+	metrics.IncrementHTTPTriggerDeregisterCount(ctx, s.lggr)
 	return nil
 }
 

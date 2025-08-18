@@ -13,7 +13,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	gc "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway/metrics"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
@@ -116,22 +116,22 @@ func (s *service) SendRequest(ctx context.Context, metadata capabilities.Request
 	s.lggr.Debugf("Received request with metadata: %v", metadata)
 	startTime := time.Now()
 
-	gc.IncrementHTTPActionRequestCount(ctx, s.lggr)
+	metrics.IncrementHTTPActionRequestCount(ctx, s.lggr)
 
 	validatedInput, err := ValidatedRequest(input, s.cfg)
 	if err != nil {
 		s.lggr.Errorf("Failed to validate input: %v", err)
-		gc.IncrementHTTPActionInputValidationFailures(ctx, s.lggr)
+		metrics.IncrementHTTPActionInputValidationFailures(ctx, s.lggr)
 		latencyMs := time.Since(startTime).Milliseconds()
-		gc.RecordHTTPActionRequestLatency(ctx, latencyMs, s.lggr)
+		metrics.RecordHTTPActionRequestLatency(ctx, latencyMs, s.lggr)
 		return nil, err
 	}
 	response, err := s.client.SendRequest(ctx, metadata, validatedInput)
 	latencyMs := time.Since(startTime).Milliseconds()
-	gc.RecordHTTPActionRequestLatency(ctx, latencyMs, s.lggr)
+	metrics.RecordHTTPActionRequestLatency(ctx, latencyMs, s.lggr)
 
 	if err != nil {
-		gc.IncrementHTTPActionExecutionError(ctx, s.lggr)
+		metrics.IncrementHTTPActionExecutionError(ctx, s.lggr)
 	}
 	responseAndMetadata := capabilities.ResponseAndMetadata[*http.Response]{
 		Response:         response,
