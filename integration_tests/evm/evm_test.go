@@ -37,7 +37,6 @@ import (
 )
 
 // Test_LogTrigger tests the log trigger functionality in the EVM capability.
-//
 // It deploys a contract that emits logs, sets up a workflow with that deployed contract to the log trigger, waits for the workflow to be ready,
 // emits a log event, and then checks that the workflow processes the log event correctly by counting the number of events logged by beholder.
 func Test_LogTrigger(t *testing.T) {

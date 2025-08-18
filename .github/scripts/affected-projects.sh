@@ -2,62 +2,106 @@
 
 # Check if a base input is provided
 if [ -z "$1" ]; then
-  echo "Please provide a branch."
+  echo "Please provide a base branch as the 1st argument." >&2
   exit 1
 fi
 
 base=$1
 
-affected_projects=$(./nx show projects --affected --json --base=$base)
+# --base and --head are necessary for comparison
+affected_projects=$(./nx show projects --affected --json --base=$base --head=HEAD)
 
-echo "Affected projects:"
-echo "$affected_projects" | jq .
+echo "Affected projects:" >&2
+if echo "$affected_projects" | jq . >/dev/null 2>&1; then
+  echo "Valid JSON output:" >&2
+  echo "$affected_projects" | jq . >&2
+else
+  echo "Raw output (not valid JSON):" >&2
+  echo "$affected_projects" >&2
+  exit 1
+fi
 
-echo "Parsing projects..."
+echo "Parsing projects..." >&2
 projects=($(echo $affected_projects | jq -r '.[]'))
+echo "Projects parsed." >&2
 
-# Initialize an output string
-output="{ \"base\": \"$base\", \"projects\": $affected_projects, "
+# Use jq to build JSON properly
+json_output=$(jq -n --arg base "$base" --argjson projects "$affected_projects" '{
+  "base": $base,
+  "projects": $projects
+}')
 
+echo "Adding target projects to JSON..." >&2
 targets=("test" "race" "build")
-
 for target in "${targets[@]}"; do
-  projects_with_target=$(./nx show projects --affected -t $target --json --base=$base)
+  # Add --head=HEAD to ensure consistency (compared against --base)
+  projects_with_target=$(./nx show projects --affected -t $target --json --base=$base --head=HEAD)
 
   if [ "$target" == "test" ]; then
     projects_with_target=$(echo $projects_with_target | jq 'del(.[] | select(. == "integration_tests"))')
   fi
 
-  output+="\"projects_with_$target\": $projects_with_target, "
+  json_output=$(echo "$json_output" | jq --argjson target_projects "$projects_with_target" --arg target "$target" \
+    '. + {"projects_with_\($target)": $target_projects}')
 
-  if [ ${#projects_with_target[@]} -eq 0 ]; then
-    output+=" \"run_$target\": false, "
+  # Check array length correctly using jq
+  projects_count=$(echo "$projects_with_target" | jq 'length')
+  if [ "$projects_count" -eq 0 ]; then
+    json_output=$(echo "$json_output" | jq --arg target "$target" \
+      '. + {"run_\($target)": false}')
   else
-    output+=" \"run_$target\": true, "
+    json_output=$(echo "$json_output" | jq --arg target "$target" \
+      '. + {"run_\($target)": true}')
   fi
+  echo "Target projects for '$target' added to JSON." >&2
 done
 
 # Loop through each project and collect nested details
+echo "Collecting project details..." >&2
 for project in "${projects[@]}"; do
+  if [ -n "$project" ]; then
     project_info=$(./nx show project "$project" --json)
     project_root=$(echo $project_info | jq -r '.root')
-    project_go_sum=$(echo "$project_root/go.sum")
+    
+    # Check if go.sum exists in project root
+    if [ -f "$project_root/go.sum" ]; then
+      project_go_sum="$project_root/go.sum"
+    else
+      # Look one level deeper for go.sum when not found on root level
+      found_go_sum=""
+      for subdir in "$project_root"/*/; do
+        if [ -f "$subdir/go.sum" ]; then
+          found_go_sum="${subdir}go.sum"
+          project_root="$subdir"
+          break
+        fi
+      done
+      
+      if [ -n "$found_go_sum" ]; then
+        project_go_sum="$found_go_sum"
+      else
+        project_go_sum="$project_root/go.sum"  # fallback to original path
+      fi
+    fi
 
-    # Append the result to the output string in a nested JSON format
-    output+="\"$project\": { \"root\": \"$project_root\", \"go_sum\": \"$project_go_sum\" },"
+    # Add project details to JSON using jq
+    json_output=$(echo "$json_output" | jq --arg project "$project" --arg root "$project_root" --arg go_sum "$project_go_sum" \
+      '. + {($project): {"root": $root, "go_sum": $go_sum}}')
+  fi
+  echo "Details for project '$project' added to JSON." >&2
 done
 
+# Add run_checks flag
+echo "Adding 'run_checks' flags..." >&2
 if [ ${#projects[@]} -eq 0 ]; then
-  output+=" \"run_checks\": false"
+  json_output=$(echo "$json_output" | jq '. + {"run_checks": false}')
 else
-  output+=" \"run_checks\": true"
+  json_output=$(echo "$json_output" | jq '. + {"run_checks": true}')
 fi
+echo "Run checks flag added." >&2
 
-# Remove the trailing comma and close the JSON object
-output+=" }"
-
-# echo "Affected projects details:"
-echo $output
+# Output the final JSON (this goes to stdout for GH Actions)
+echo "$json_output" | jq -c .
 # Outputs:
 # {
 #   "base": "main",
