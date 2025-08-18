@@ -18,6 +18,8 @@ importers:
         specifier: 19.8.2
         version: 19.8.2
 
+  consensus: {}
+
   cron: {}
 
   kvstore: {}

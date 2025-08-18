@@ -18,9 +18,9 @@ import (
 
 const ID = "kv-store-target@1.0.0"
 
-var _ capabilities.TargetCapability = (*capability)(nil)
+var _ capabilities.ExecutableCapability = (*kvTarget)(nil)
 
-type capability struct {
+type kvTarget struct {
 	logger        logger.Logger
 	requestsStore *kvrequests.RequestsStore
 }
@@ -30,14 +30,14 @@ type Params struct {
 	RequestsStore *kvrequests.RequestsStore
 }
 
-func New(p Params) *capability {
-	return &capability{
+func New(p Params) *kvTarget {
+	return &kvTarget{
 		logger:        p.Logger,
 		requestsStore: p.RequestsStore,
 	}
 }
 
-func (c *capability) Info(ctx context.Context) (capabilities.CapabilityInfo, error) {
+func (c *kvTarget) Info(ctx context.Context) (capabilities.CapabilityInfo, error) {
 	return capabilities.NewCapabilityInfo(ID, capabilities.CapabilityTypeTarget, "Writes KV-pairs from a SignedReport to a key-value store")
 }
 
@@ -80,8 +80,8 @@ func evaluate(rawRequest capabilities.CapabilityRequest) (r KVWriteReport, err e
 	return r, nil
 }
 
-func (c *capability) Execute(ctx context.Context, rawRequest capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
-	c.logger.Infow("Executing",
+func (c *kvTarget) Execute(ctx context.Context, rawRequest capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
+	c.logger.Infow("Executing kvstore target",
 		"WorkflowID", rawRequest.Metadata.WorkflowID,
 		"WorkflowExecutionID", rawRequest.Metadata.WorkflowExecutionID,
 	)
@@ -90,7 +90,7 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 	if err != nil {
 		return capabilities.CapabilityResponse{}, fmt.Errorf("failed to decode signed report: %v", err)
 	}
-	c.logger.Debugw("Evaluated execute request",
+	c.logger.Debugw("Evaluated kvstore target execute request",
 		"WorkflowID", rawRequest.Metadata.WorkflowID,
 		"WorkflowExecutionID", rawRequest.Metadata.WorkflowExecutionID,
 	)
@@ -143,7 +143,7 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 	}
 }
 
-func (c *capability) RegisterToWorkflow(ctx context.Context, request capabilities.RegisterToWorkflowRequest) error {
+func (c *kvTarget) RegisterToWorkflow(ctx context.Context, request capabilities.RegisterToWorkflowRequest) error {
 	r, err := kvrequests.NewRequest(kvrequests.RequestParams{
 		Namespace: request.Metadata.WorkflowOwner,
 		Type:      kvrequests.RequestTypeAddNamespaceReference,
@@ -155,7 +155,7 @@ func (c *capability) RegisterToWorkflow(ctx context.Context, request capabilitie
 	return c.requestsStore.Add(ctx, r)
 }
 
-func (c *capability) UnregisterFromWorkflow(ctx context.Context, request capabilities.UnregisterFromWorkflowRequest) error {
+func (c *kvTarget) UnregisterFromWorkflow(ctx context.Context, request capabilities.UnregisterFromWorkflowRequest) error {
 	r, err := kvrequests.NewRequest(kvrequests.RequestParams{
 		Namespace: request.Metadata.WorkflowOwner,
 		Type:      kvrequests.RequestTypeRemoveNamespaceReference,

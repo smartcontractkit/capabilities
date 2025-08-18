@@ -20,6 +20,7 @@ func customConfig() common.ServiceConfig {
 			MaxHeaderValueLength: 1024,             // 1024 bytes
 			MaxRequestBytes:      10 * 1024 * 1024, // 20 MB
 			MaxResponseBytes:     5 * 1024 * 1024,  // 5 MB
+			MaxCacheAgeMs:        600_000,          // 10 minutes
 		},
 	}
 }
@@ -39,6 +40,7 @@ func TestApplyDefaultsAndValidate(t *testing.T) {
 		require.Equal(t, uint32(defaultMaxHeaderValueLength), out.LimitsConfig.MaxHeaderValueLength)
 		require.Equal(t, uint32(defaultMaxBodyLength), out.LimitsConfig.MaxRequestBytes)
 		require.Equal(t, uint32(defaultMaxBodyLength), out.LimitsConfig.MaxResponseBytes)
+		require.Equal(t, uint32(defaultMaxCacheAgeMs), out.LimitsConfig.MaxCacheAgeMs)
 	})
 
 	t.Run("keeps custom values", func(t *testing.T) {
@@ -50,6 +52,7 @@ func TestApplyDefaultsAndValidate(t *testing.T) {
 				MaxHeaderValueLength: 56,
 				MaxRequestBytes:      78,
 				MaxResponseBytes:     90,
+				MaxCacheAgeMs:        123,
 			},
 		}
 		out, err := ApplyDefaultsAndValidate(cfg)
@@ -60,6 +63,7 @@ func TestApplyDefaultsAndValidate(t *testing.T) {
 		require.Equal(t, uint32(56), out.LimitsConfig.MaxHeaderValueLength)
 		require.Equal(t, uint32(78), out.LimitsConfig.MaxRequestBytes)
 		require.Equal(t, uint32(90), out.LimitsConfig.MaxResponseBytes)
+		require.Equal(t, uint32(123), out.LimitsConfig.MaxCacheAgeMs)
 	})
 
 	t.Run("returns error if MaxTimeoutMs exceeds int32", func(t *testing.T) {
@@ -151,5 +155,86 @@ func TestValidatedRequest(t *testing.T) {
 		input := &http.Request{Url: "https://foo", Method: "GET", TimeoutMs: 1000000001}
 		_, err := ValidatedRequest(input, customConfig)
 		require.ErrorContains(t, err, "timeout must be between 0 and")
+	})
+
+	t.Run("valid cache settings", func(t *testing.T) {
+		t.Parallel()
+		input := &http.Request{
+			Url:    "https://foo",
+			Method: "GET",
+			CacheSettings: &http.CacheSettings{
+				ReadFromCache: true,
+				MaxAgeMs:      30000, // 30 seconds
+			},
+		}
+		_, err := ValidatedRequest(input, customConfig)
+		require.NoError(t, err)
+	})
+
+	t.Run("cache settings with ReadFromCache=true but MaxAgeMs=0 fails", func(t *testing.T) {
+		t.Parallel()
+		input := &http.Request{
+			Url:    "https://foo",
+			Method: "GET",
+			CacheSettings: &http.CacheSettings{
+				ReadFromCache: true,
+				MaxAgeMs:      0,
+			},
+		}
+		_, err := ValidatedRequest(input, customConfig)
+		require.ErrorContains(t, err, "MaxAgeMs must be non-zero when ReadFromCache is true")
+	})
+
+	t.Run("cache settings with ReadFromCache=false and MaxAgeMs=0 is valid", func(t *testing.T) {
+		t.Parallel()
+		input := &http.Request{
+			Url:    "https://foo",
+			Method: "GET",
+			CacheSettings: &http.CacheSettings{
+				ReadFromCache: false,
+				MaxAgeMs:      0,
+			},
+		}
+		_, err := ValidatedRequest(input, customConfig)
+		require.NoError(t, err)
+	})
+
+	t.Run("cache settings with MaxAgeMs exceeding limit fails", func(t *testing.T) {
+		t.Parallel()
+		input := &http.Request{
+			Url:    "https://foo",
+			Method: "GET",
+			CacheSettings: &http.CacheSettings{
+				ReadFromCache: true,
+				MaxAgeMs:      700000, // More than 600,000 ms (10 minutes)
+			},
+		}
+		_, err := ValidatedRequest(input, customConfig)
+		require.ErrorContains(t, err, "MaxAgeMs cannot exceed 600000 milliseconds")
+	})
+
+	t.Run("cache settings with negative MaxAgeMs fails", func(t *testing.T) {
+		t.Parallel()
+		input := &http.Request{
+			Url:    "https://foo",
+			Method: "GET",
+			CacheSettings: &http.CacheSettings{
+				ReadFromCache: false,
+				MaxAgeMs:      -1,
+			},
+		}
+		_, err := ValidatedRequest(input, customConfig)
+		require.ErrorContains(t, err, "MaxAgeMs cannot be negative")
+	})
+
+	t.Run("nil cache settings is valid", func(t *testing.T) {
+		t.Parallel()
+		input := &http.Request{
+			Url:           "https://foo",
+			Method:        "GET",
+			CacheSettings: nil,
+		}
+		_, err := ValidatedRequest(input, customConfig)
+		require.NoError(t, err)
 	})
 }

@@ -7,13 +7,14 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/oracle"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/poller"
-
+	"github.com/ethereum/go-ethereum/common"
+	chainselectors "github.com/smartcontractkit/chain-selectors"
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
-	"github.com/ethereum/go-ethereum/common"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/height"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/oracle"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/poller"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/trigger"
@@ -37,19 +38,25 @@ const (
 	CapabilityName = "evm"
 	// OCRRoundBatchSize - max number of requests that this node will try to process in a single round
 	// TODO PLEX-1569: make configurable
-	OCRRoundBatchSize = 50
+	OCRRoundBatchSize = oracle.OCRRoundBatchSize
 	// OCRRoundMaxBatchSize - defines max number of requests that this node will process in a round, if requested by another node.
 	// Needed to allow graceful roll out of OCRBatchSize increase.
-	OCRRoundMaxBatchSize = 500
-	PollingWorkersNum    = 10
-	PollPeriod           = 10 * time.Second
-	repoCLLCapabilities  = "https://raw.githubusercontent.com/smartcontractkit/capabilities"
-	versionRefsMain      = "refs/heads/main"
-	schemaBasePath       = repoCLLCapabilities + "/" + versionRefsMain + "/chain_capabilities/evm/monitoring"
+	OCRRoundMaxBatchSize  = oracle.OCRRoundMaxBatchSize
+	PollingWorkersNum     = 10
+	PollPeriod            = 10 * time.Second
+	UnknownRequestTTL     = 10 * time.Second
+	ChainHeightPollPeriod = time.Second
+
+	repoCLLCapabilities = "https://raw.githubusercontent.com/smartcontractkit/capabilities"
+	versionRefsMain     = "refs/heads/main"
+	schemaBasePath      = repoCLLCapabilities + "/" + versionRefsMain + "/chain_capabilities/evm/monitoring"
 )
+
+var _ evmcapserver.ClientCapability = &capabilityGRPCService{}
 
 type capabilityGRPCService struct {
 	capabilities.CapabilityInfo
+	chainSelector uint64
 	capability
 	lggr logger.Logger
 }
@@ -60,6 +67,7 @@ type capability struct {
 	consensusHandler *consensus.Handler
 	oracle           core.Oracle
 	triggerService   *trigger.LogTriggerService
+	heightProvider   *height.Provider
 }
 
 var _ evmcapserver.ClientCapability = &capabilityGRPCService{}
@@ -78,6 +86,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 		return fmt.Errorf("failed to parse EVM capability config: %w", err)
 	}
 
+	c.lggr.Infof("Initialising %s, ChainId: %d, Network: %s", CapabilityName, cfg.ChainID, cfg.Network)
 	if cfg.LogTriggerPollInterval < 0 {
 		return fmt.Errorf("logTriggerPollInterval must be positive, got: %s", cfg.LogTriggerPollInterval)
 	}
@@ -98,6 +107,13 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 		return fmt.Errorf("failed to fetch relayer for chainID %d from relayerSet: %w", cfg.ChainID, err)
 	}
 
+	cs, ok := chainselectors.EvmChainIdToChainSelector()[cfg.ChainID]
+	if !ok {
+		return fmt.Errorf("chain selector not found for chainID: %d", cfg.ChainID)
+	}
+
+	c.chainSelector = cs
+
 	chainInfo, err := relayer.GetChainInfo(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to fetch chain info for chainID %d from relayer: %w", cfg.ChainID, err)
@@ -110,7 +126,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
 
-	if len(common.Hex2Bytes(cfg.CREForwarderAddress)) != 20 {
+	if !common.IsHexAddress(cfg.CREForwarderAddress) {
 		return fmt.Errorf("invalid cre forward address, it does not have 20 characters: %s", cfg.CREForwarderAddress)
 	}
 
@@ -119,7 +135,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 	}
 
 	c.requestPoller = poller.NewPoller(c.lggr, PollingWorkersNum, PollPeriod)
-	c.consensusHandler = consensus.NewHandler(c.lggr, c.requestPoller, time.Second*10)
+	c.consensusHandler = consensus.NewHandler(c.lggr, c.requestPoller, UnknownRequestTTL)
 
 	c.EVM, err = actions.NewEVM(cfg, evmRelayer, c.lggr, processor, messageBuilder, c.consensusHandler)
 	if err != nil {
@@ -128,8 +144,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 
 	c.triggerService = trigger.NewLogTriggerService(evmRelayer, trigger.NewLogTriggerStore(), c.lggr, processor, messageBuilder, cfg.LogTriggerPollInterval)
 
-	// TODO PLEX-1560: populate with implementation
-	blocksProvider := &oracle.NullBlocksProvider{}
+	c.heightProvider = height.NewProvider(c.lggr, ChainHeightPollPeriod, evmRelayer)
 
 	c.oracle, err = oracleFactory.NewOracle(ctx, core.OracleArgs{
 		LocalConfig: ocrtypes.LocalConfig{
@@ -138,15 +153,17 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 			ContractConfigConfirmations:        1,
 			ContractTransmitterTransmitTimeout: time.Second * 10,
 			DatabaseTimeout:                    time.Second * 10,
+			ContractConfigLoadTimeout:          time.Second * 10,
+			DefaultMaxDurationInitialization:   time.Second * 10,
 		},
-		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(logger.Sugared(c.lggr), c.consensusHandler, blocksProvider, OCRRoundBatchSize, OCRRoundMaxBatchSize),
+		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(logger.Sugared(c.lggr), c.consensusHandler, c.heightProvider, OCRRoundBatchSize, OCRRoundMaxBatchSize),
 		ContractTransmitter:           oracle.NewContractTransmitter(c.lggr, c.consensusHandler),
 	})
 	if err != nil {
 		return fmt.Errorf("error when creating oracle: %w", err)
 	}
 
-	services := []interface{ Start(context.Context) error }{c.consensusHandler, c.requestPoller, c.oracle}
+	services := []interface{ Start(context.Context) error }{c.consensusHandler, c.requestPoller, c.oracle, c.heightProvider, c.triggerService}
 	for _, service := range services {
 		if err := service.Start(ctx); err != nil {
 			return err
@@ -165,7 +182,7 @@ func (c *capabilityGRPCService) Start(_ context.Context) error {
 
 func (c *capabilityGRPCService) Close() error {
 	c.lggr.Infof("Closing %s", CapabilityName)
-	return errors.Join(c.requestPoller.Close(), c.consensusHandler.Close(), c.oracle.Close(context.Background()), c.triggerService.Close())
+	return errors.Join(c.requestPoller.Close(), c.consensusHandler.Close(), c.oracle.Close(context.Background()), c.triggerService.Close(), c.heightProvider.Close())
 }
 
 func (c *capabilityGRPCService) HealthReport() map[string]error {
@@ -174,6 +191,10 @@ func (c *capabilityGRPCService) HealthReport() map[string]error {
 
 func (c *capabilityGRPCService) Name() string {
 	return CapabilityName
+}
+
+func (c *capabilityGRPCService) ChainSelector() uint64 {
+	return c.chainSelector
 }
 
 func (c *capabilityGRPCService) Description() string {

@@ -10,14 +10,17 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/rpc"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 
 	evmcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
-
 	"github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
+	workflowpb "github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb"
 	"github.com/smartcontractkit/chainlink-evm/gethwrappers/keystone/generated/forwarder"
 )
 
@@ -62,34 +65,61 @@ func NewCREForwarderClient(EVMService types.EVMService, forwarderAddress common.
 	}, nil
 }
 
-func (cfclient creForwarderClient) GetReportProcessedEvents(ctx context.Context, receiver common.Address, workflowExecutionID [32]byte, reportID [2]byte) ([]*evm.Log, error) {
+func (cfclient *creForwarderClient) GetReportProcessedEvents(ctx context.Context, receiver common.Address, workflowExecutionID [32]byte, reportID [2]byte) ([]*evm.Log, error) {
+	latest, err := cfclient.evmService.HeaderByNumber(ctx, evm.HeaderByNumberRequest{Number: big.NewInt(rpc.LatestBlockNumber.Int64())})
+	if err != nil {
+		return nil, err
+	}
+	if latest.Header == nil {
+		return nil, fmt.Errorf("latest block header is nil")
+	}
+	sub := big.NewInt(int64(100))
+	fromBlock := new(big.Int).Sub(latest.Header.Number, sub)
+	if fromBlock.Sign() == -1 {
+		fromBlock = big.NewInt(0)
+	}
+
 	filterQuery := evmtypes.FilterQuery{
-		Addresses: []evmtypes.Address{evmtypes.Address(receiver)},
+		Addresses: []evmtypes.Address{evmtypes.Address(cfclient.forwarderAddress.Bytes())},
 		Topics: [][]evmtypes.Hash{
 			{cfclient.forwarderCodec.GetReportProcessedTopicHash()},
 			{evmtypes.Hash(common.LeftPadBytes(receiver.Bytes(), common.HashLength))},
 			{evmtypes.Hash(common.LeftPadBytes(workflowExecutionID[:], common.HashLength))},
-			{evmtypes.Hash(common.LeftPadBytes(reportID[:], common.HashLength))},
+			{padBytes2ToBytes32(reportID)},
 		},
-		ToBlock: big.NewInt(LatestBlock),
+		FromBlock: fromBlock,
 	}
-	return cfclient.evmService.FilterLogs(ctx, filterQuery)
+	reply, err := cfclient.evmService.FilterLogs(ctx, evmtypes.FilterLogsRequest{
+		FilterQuery: filterQuery, ConfidenceLevel: primitives.Unconfirmed,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return reply.Logs, nil
+}
+
+// padBytes2ToBytes32 right-pads a bytes2 value to 32 bytes (Solidity-compatible)
+func padBytes2ToBytes32(b2 [2]byte) common.Hash {
+	var padded [32]byte
+	copy(padded[:2], b2[:]) // copy first 2 bytes
+	return common.BytesToHash(padded[:])
 }
 
 type CREForwarderClient interface {
 	GetTransmissionInfo(ctx context.Context, transmissionID TransmissionID) (TransmissionInfo, error)
-	InvokeOnReport(ctx context.Context, receiverAddress common.Address, report *evmcap.SignedReport, gasConfig *evmcap.GasConfig) (*evmtypes.TransactionResult, error)
+	InvokeOnReport(ctx context.Context, receiverAddress common.Address, report *workflowpb.ReportResponse, gasConfig *evmcap.GasConfig) (*evmtypes.TransactionResult, error)
 	GetReportProcessedEvents(ctx context.Context, receiver common.Address, workflowExecutionID [32]byte, reportID [2]byte) ([]*evm.Log, error)
 }
 
 type CREForwarderCodec interface {
 	EncodeQueryTransmissionInputs(query QueryTransmissionInputs) ([]byte, error)
 	DecodeQueryTransmissionInfo(encodedData []byte) (TransmissionInfo, error)
-	EncodeReport(receiver common.Address, report *evmcap.SignedReport) ([]byte, error)
+	EncodeReport(receiver common.Address, report *workflowpb.ReportResponse) ([]byte, error)
 	GetReportProcessedTopicHash() evmtypes.Hash
 }
 
-func (cfc creForwarderCodecImpl) GetReportProcessedTopicHash() evmtypes.Hash {
+func (cfc *creForwarderCodecImpl) GetReportProcessedTopicHash() evmtypes.Hash {
 	return cfc.abi.Events["ReportProcessed"].ID
 }
 
@@ -100,7 +130,7 @@ type creForwarderClient struct {
 	logger           logger.Logger
 }
 
-func (cfclient *creForwarderClient) InvokeOnReport(ctx context.Context, receiverAddress common.Address, report *evmcap.SignedReport, gasConfig *evmcap.GasConfig) (*evmtypes.TransactionResult, error) {
+func (cfclient *creForwarderClient) InvokeOnReport(ctx context.Context, receiverAddress common.Address, report *workflowpb.ReportResponse, gasConfig *evmcap.GasConfig) (*evmtypes.TransactionResult, error) {
 	cfclient.logger.Debugw("Transaction raw report", "report", hex.EncodeToString(report.RawReport))
 
 	var resolvedGasConfig *evmtypes.GasConfig
@@ -122,8 +152,7 @@ func (cfclient *creForwarderClient) InvokeOnReport(ctx context.Context, receiver
 	if err != nil {
 		if errors.Is(err, types.ErrSettingTransactionGasLimitNotSupported) {
 			return cfclient.evmService.SubmitTransaction(ctx, evmtypes.SubmitTransactionRequest{
-				To:   cfclient.forwarderAddress,
-				Data: encodedReport,
+				To: cfclient.forwarderAddress, Data: encodedReport,
 			})
 		}
 		return nil, fmt.Errorf("failed to submit transaction: %w", err)
@@ -135,20 +164,22 @@ func (cfclient *creForwarderClient) GetTransmissionInfo(ctx context.Context, tra
 	queryInputs := QueryTransmissionInputs{
 		Receiver:            transmissionID.ReceiverHex(),
 		WorkflowExecutionID: transmissionID.WorkflowExecutionID,
-		ReportID:            transmissionID.ReportID,
-	}
+		ReportID:            transmissionID.ReportID}
 	calldata, err := cfclient.forwarderCodec.EncodeQueryTransmissionInputs(queryInputs)
 	if err != nil {
 		return TransmissionInfo{}, err
 	}
-	response, err := cfclient.evmService.CallContract(ctx, &evmtypes.CallMsg{
-		To:   cfclient.forwarderAddress,
-		Data: calldata,
-	}, big.NewInt(LatestBlock))
+	response, err := cfclient.evmService.CallContract(ctx, evmtypes.CallContractRequest{
+		Msg: &evmtypes.CallMsg{
+			To:   cfclient.forwarderAddress,
+			Data: calldata,
+		},
+		BlockNumber: big.NewInt(LatestBlock),
+	})
 	if err != nil {
 		return TransmissionInfo{}, err
 	}
-	return cfclient.forwarderCodec.DecodeQueryTransmissionInfo(response)
+	return cfclient.forwarderCodec.DecodeQueryTransmissionInfo(response.Data)
 }
 
 type creForwarderCodecImpl struct {
@@ -156,16 +187,21 @@ type creForwarderCodecImpl struct {
 }
 
 // EncodeReport implements KeystoneForwarderCodec.
-func (cfc *creForwarderCodecImpl) EncodeReport(receiver common.Address, report *evmcap.SignedReport) ([]byte, error) {
+func (cfc *creForwarderCodecImpl) EncodeReport(receiver common.Address, report *workflowpb.ReportResponse) ([]byte, error) {
 	// Note: The codec that ChainWriter uses to encode the parameters for the contract ABI cannot handle
 	// `nil` values, including for slices. Until the bug is fixed we need to ensure that there are no
 	// `nil` values passed in the request.
+	var signatures [][]byte
+	for _, sig := range report.Sigs {
+		signatures = append(signatures, sig.Signature)
+	}
+
 	req := struct {
 		Receiver      common.Address
 		RawReport     []byte
 		ReportContext []byte
 		Signatures    [][]byte
-	}{receiver, report.RawReport, report.ReportContext, report.Signatures}
+	}{receiver, report.RawReport, report.ReportContext, signatures}
 
 	if req.RawReport == nil {
 		req.RawReport = make([]byte, 0)
@@ -196,16 +232,22 @@ func (cfc *creForwarderCodecImpl) DecodeQueryTransmissionInfo(encodedData []byte
 	var transmissionInfo TransmissionInfo
 	values, err := cfc.abi.Methods["getTransmissionInfo"].Outputs.UnpackValues(encodedData)
 	if err != nil {
-		return TransmissionInfo{}, errors.Join(errors.New("Failed to decode getTransmissionInfo return data"), err)
+		return TransmissionInfo{}, errors.Join(errors.New("failed to abi unpack getTransmissionInfo return data"), err)
 	}
 	value := values[0]
 	bytes, err := json.Marshal(value)
-	//nolint:errcheck
-	json.Unmarshal(bytes, &transmissionInfo)
+	if err != nil {
+		return TransmissionInfo{}, errors.Join(errors.New("failed to marshal getTransmissionInfo return data"), err)
+	}
+
+	if err = json.Unmarshal(bytes, &transmissionInfo); err != nil {
+		return TransmissionInfo{}, errors.Join(errors.New("failed to unmarshal getTransmissionInfo return data"), err)
+	}
+
 	return transmissionInfo, err
 }
 
-// This ID holds the unique ID for searching a TX related to the report transmission to keystone forwarder
+// TransmissionID holds the unique ID for searching a TX related to the report transmission to keystone forwarder
 type TransmissionID struct {
 	Receiver            common.Address
 	ReportID            [2]byte
@@ -217,7 +259,7 @@ func (t TransmissionID) ReceiverHex() string {
 }
 
 func (t TransmissionID) GetIDPartsForDebugging() []interface{} {
-	return []interface{}{"receiver", common.Bytes2Hex(t.Receiver[:]), "reportID", t.ReportID, "workflowExecutionID", t.WorkflowExecutionID}
+	return []interface{}{"receiver", common.Bytes2Hex(t.Receiver[:]), "reportID", common.Bytes2Hex(t.ReportID[:]), "workflowExecutionID", common.Bytes2Hex(t.WorkflowExecutionID[:])}
 }
 
 func (t TransmissionID) GetDebugID() string {

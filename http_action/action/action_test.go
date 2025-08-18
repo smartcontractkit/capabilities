@@ -57,6 +57,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 			MaxHeaderKeyLength:   50,
 			MaxHeaderValueLength: 100,
 			MaxRequestBytes:      1024,
+			MaxCacheAgeMs:        600000, // 10 minutes
 		},
 	}
 	metadata := capabilities.RequestMetadata{
@@ -83,7 +84,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 
 		response, err := srv.SendRequest(context.Background(), metadata, input)
 		require.NoError(t, err)
-		assert.Equal(t, expectedResponse, response)
+		assert.Equal(t, expectedResponse, response.Response)
 		assert.Equal(t, input, mockClient.CapturedInput)
 	})
 
@@ -94,9 +95,8 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 			Headers:   map[string]string{"Content-Type": "application/json"},
 			TimeoutMs: 1000,
 			CacheSettings: &http.CacheSettings{
-				StoreInCache:  true,
 				ReadFromCache: true,
-				TtlMs:         10000, // 10 seconds
+				MaxAgeMs:      10000, // 10 seconds
 			},
 		}
 		expectedResponse := &http.Response{
@@ -109,7 +109,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 
 		response, err := srv.SendRequest(context.Background(), metadata, input)
 		require.NoError(t, err)
-		assert.Equal(t, expectedResponse, response)
+		assert.Equal(t, expectedResponse, response.Response)
 		assert.Equal(t, input, mockClient.CapturedInput)
 	})
 
@@ -130,7 +130,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 
 		response, err := srv.SendRequest(context.Background(), metadata, input)
 		require.NoError(t, err)
-		assert.Equal(t, expectedResponse, response)
+		assert.Equal(t, expectedResponse, response.Response)
 		assert.Equal(t, input, mockClient.CapturedInput)
 	})
 

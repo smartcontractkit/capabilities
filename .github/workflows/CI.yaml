@@ -152,38 +152,8 @@ jobs:
       - name: Race Test ${{ matrix.projects }}
         run: ./nx run ${{ matrix.projects }}:race
 
-  integrationtest:
-    env:
-      DB_URL: postgresql://postgres:postgres@localhost:5432/chainlink_test?sslmode=disable
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Setup Postgres
-        uses: ./.github/actions/setup-postgres
-      - name: Set up project environment
-        uses: ./.github/actions/setup
-        with:
-          project: integration_tests
-          go-module-file: ./integration_tests/go.mod
-          task: "integrationtest"
-      - name: Support private Go modules
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./.github/scripts/support-private-gomods.sh
-      - name: Setup DB
-        run: go run github.com/smartcontractkit/chainlink/v2 local db preparetest
-        working-directory: integration_tests
-        env:
-          CL_DATABASE_URL: ${{ env.DB_URL }}
-      - name: run integration_tests
-        env:
-          CL_DATABASE_URL: ${{ env.DB_URL }}
-        run: ./nx run integration_tests:test
+  integration-tests:
+    uses: ./.github/workflows/integration-tests.yml
 
   tidy-and-generate:
     needs: affected
@@ -298,7 +268,7 @@ jobs:
       - test
       - race
       - tidy-and-generate
-      - integrationtest
+      - integration-tests
       # - modgraph
     if: always()
     steps:

@@ -9,10 +9,14 @@
 *.dylib
 .DS_Store
 **/.tools
+*.wasm
 
 # IntelliJ IDE
 .idea
 .vscode/
+
+#Neovim
+.nvim.lua
 
 # Test binary, built with `go test -c`
 *.test

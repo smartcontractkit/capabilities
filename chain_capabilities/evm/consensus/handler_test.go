@@ -2,6 +2,7 @@ package consensus
 
 import (
 	"context"
+	"errors"
 	"math/big"
 	"testing"
 	"time"
@@ -13,6 +14,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zapcore"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/mocks"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
@@ -105,68 +108,103 @@ func TestCompleteRequest(t *testing.T) {
 		return handler
 	}
 
-	t.Run("Eventually consistent request: complete existing request", func(t *testing.T) {
-		const id = "req-1"
-		request := types.NewEventuallyConsistentRequest(id, nil)
-		poller := mocks.NewPoller(t)
-		poller.EXPECT().Enqueue(mock.Anything, mock.Anything).Once()
-		handler := newHandler(t, logger.Test(t), poller)
-		ch, err := handler.Handle(t.Context(), request)
-		require.NoError(t, err)
+	t.Run("Happy Path", func(t *testing.T) {
+		type testCase struct {
+			Name          string
+			Request       types.Request
+			Report        *types.RequestReport
+			ExpectedReply types.Reply
+		}
+		runTestCase := func(t *testing.T, tc testCase, requestAddedBeforeCompletion bool) {
+			poller := mocks.NewPoller(t)
+			handler := newHandler(t, logger.Test(t), poller)
+			var ch <-chan types.Reply
+			var err error
+			if requestAddedBeforeCompletion {
+				poller.EXPECT().Enqueue(mock.Anything, mock.Anything).Once()
+				ch, err = handler.Handle(t.Context(), tc.Request)
+				require.NoError(t, err)
+			}
 
-		report := []byte("result-data")
-		require.NoError(t, handler.CompleteRequest(id, &types.RequestReport{
-			Report: &types.RequestReport_EventuallyConsistent{EventuallyConsistent: report},
-		}))
+			require.NoError(t, handler.CompleteRequest(tc.Request.ID(), tc.Report))
+			if !requestAddedBeforeCompletion {
+				ch, err = handler.Handle(t.Context(), tc.Request)
+				require.NoError(t, err)
+			}
 
-		actualReport := <-ch
-		require.Equal(t, report, actualReport)
-		// ensure request was removed
-		ids, err := handler.GetRequestIDs(5)
-		require.NoError(t, err)
-		require.NotContains(t, ids, id)
+			actualReport := <-ch
+			if tc.ExpectedReply.Err != nil {
+				require.Contains(t, actualReport.Err.Error(), tc.ExpectedReply.Err.Error())
+			} else {
+				require.Equal(t, tc.ExpectedReply, actualReport)
+			}
+			// ensure request was removed
+			ids, err := handler.GetRequestIDs(5)
+			require.NoError(t, err)
+			require.NotContains(t, ids, tc.Request.ID())
+			// ensure unknown requests is cleaned
+			handler.lock.Lock()
+			defer handler.lock.Unlock()
+			require.Empty(t, handler.unknownRequestsResultByID)
+		}
+		testCases := []testCase{
+			{
+				Name:    "Eventually Consistent Request",
+				Request: types.NewEventuallyConsistentRequest("req-1", nil),
+				Report: &types.RequestReport{
+					Report: &types.RequestReport_EventuallyConsistent{EventuallyConsistent: []byte("result-data")},
+				},
+				ExpectedReply: types.Reply{Value: []byte("result-data")},
+			},
+			{
+				Name:    "Eventually Consistent Request with error",
+				Request: types.NewEventuallyConsistentRequest("req-1", nil),
+				Report: &types.RequestReport{
+					Report: &types.RequestReport_Error{Error: &types.RequestError{Errors: [][]byte{mustMarshalProto(t, status.Convert(assert.AnError).Proto())}}},
+				},
+				ExpectedReply: types.Reply{Err: assert.AnError},
+			},
+			{
+				Name:    "Aggregatable Request",
+				Request: types.NewAggregatableRequest("req-1", nil),
+				Report: &types.RequestReport{
+					Report: &types.RequestReport_Aggregatable{Aggregatable: &valuespb.Decimal{Coefficient: valuespb.NewBigIntFromInt(big.NewInt(100))}},
+				},
+				ExpectedReply: types.Reply{Value: &valuespb.Decimal{Coefficient: valuespb.NewBigIntFromInt(big.NewInt(100))}},
+			},
+			{
+				Name:    "Aggregatable Request with error",
+				Request: types.NewAggregatableRequest("req-1", nil),
+				Report: &types.RequestReport{
+					Report: &types.RequestReport_Error{Error: &types.RequestError{Errors: [][]byte{mustMarshalProto(t, status.Convert(assert.AnError).Proto())}}},
+				},
+				ExpectedReply: types.Reply{Err: assert.AnError},
+			},
+			{
+				Name:    "Aggregatable Request with two errors",
+				Request: types.NewAggregatableRequest("req-1", nil),
+				Report: &types.RequestReport{
+					Report: &types.RequestReport_Error{Error: &types.RequestError{
+						Errors: [][]byte{
+							mustMarshalProto(t, status.Convert(errors.New("error-1")).Proto()),
+							mustMarshalProto(t, status.Convert(errors.New("error-2")).Proto()),
+						}}},
+				},
+				ExpectedReply: types.Reply{
+					Err: errors.Join(errors.New("rpc error: code = Unknown desc = error-1"),
+						errors.New("rpc error: code = Unknown desc = error-2")),
+				},
+			},
+		}
+		for _, tc := range testCases {
+			t.Run(tc.Name+": complete existing request", func(t *testing.T) {
+				runTestCase(t, tc, true)
+			})
+			t.Run(tc.Name+": complete non-existing", func(t *testing.T) {
+				runTestCase(t, tc, false)
+			})
+		}
 	})
-	t.Run("Aggregatable request: complete existing request", func(t *testing.T) {
-		const id = "req-1"
-		request := types.NewAggregatableRequest(id, nil)
-		poller := mocks.NewPoller(t)
-		poller.EXPECT().Enqueue(mock.Anything, mock.Anything).Once()
-		handler := newHandler(t, logger.Test(t), poller)
-		ch, err := handler.Handle(t.Context(), request)
-		require.NoError(t, err)
-
-		report := &valuespb.Decimal{Coefficient: valuespb.NewBigIntFromInt(big.NewInt(100))}
-		require.NoError(t, handler.CompleteRequest(id, &types.RequestReport{
-			Report: &types.RequestReport_Aggregatable{Aggregatable: &valuespb.Decimal{Coefficient: valuespb.NewBigIntFromInt(big.NewInt(100))}},
-		}))
-
-		actualReport := <-ch
-		require.Equal(t, report, actualReport)
-		// ensure request was removed
-		ids, err := handler.GetRequestIDs(5)
-		require.NoError(t, err)
-		require.NotContains(t, ids, id)
-	})
-	t.Run("Eventually consistent request: complete non-existing", func(t *testing.T) {
-		const id = "non-existing-req"
-		report := []byte("non-existing-result")
-		handler := newHandler(t, logger.Test(t), nil)
-		require.NoError(t, handler.CompleteRequest(id, &types.RequestReport{
-			Report: &types.RequestReport_EventuallyConsistent{EventuallyConsistent: report},
-		}))
-
-		// enqueue non existing result to get saved outcome
-		request := types.NewEventuallyConsistentRequest(id, nil)
-		ch, err := handler.Handle(t.Context(), request)
-		require.NoError(t, err)
-		actualReport := <-ch
-		require.Equal(t, report, actualReport)
-		// ensure unknown requests is cleaned
-		handler.lock.Lock()
-		defer handler.lock.Unlock()
-		require.Empty(t, handler.unknownRequestsResultByID)
-	})
-
 	t.Run("Eventually consistent request: expire unknown", func(t *testing.T) {
 		handler := newHandler(t, logger.Test(t), nil)
 		require.NoError(t, handler.CompleteRequest("request_to_expire", &types.RequestReport{
@@ -265,6 +303,13 @@ func TestHandle(t *testing.T) {
 		_, err := handler.Handle(t.Context(), &unknownRequestType{id: "unknown-request-type"})
 		require.EqualError(t, err, "unknown request type *consensus.unknownRequestType")
 	})
+}
+
+func mustMarshalProto(t *testing.T, msg proto.Message) []byte {
+	t.Helper()
+	data, err := proto.Marshal(msg)
+	require.NoError(t, err)
+	return data
 }
 
 type unknownRequestType struct {

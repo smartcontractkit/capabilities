@@ -7,18 +7,21 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/jpillora/backoff"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
+	"github.com/smartcontractkit/chainlink-common/pkg/utils/retry"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/contracts"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 )
 
 const (
@@ -30,38 +33,22 @@ const (
 
 const UnknownIssueExecutingReceiverContractMessage = "unknown issue execution receiver contract"
 
-// TODO from chainlink/core/platform - we should have this in common
-// Observability keys
-const (
-	KeyCapabilityID        = "capabilityID"
-	KeyTriggerID           = "triggerID"
-	KeyWorkflowID          = "workflowID"
-	KeyWorkflowExecutionID = "workflowExecutionID"
-	KeyWorkflowName        = "workflowName"
-	KeyWorkflowVersion     = "workflowVersion"
-	KeyWorkflowOwner       = "workflowOwner"
-	KeyStepID              = "stepID"
-	KeyStepRef             = "stepRef"
-	KeyDonID               = "DonID"
-	KeyDonF                = "F"
-	KeyDonN                = "N"
-	KeyDonQ                = "Q"
-	KeyP2PID               = "p2pID"
-	ValueWorkflowVersion   = "1.0.0"
-	ValueWorkflowVersionV2 = "2.0.0"
-)
-
 func decodeReportMetadata(data []byte) (ocrtypes.Metadata, error) {
 	metadata, _, err := ocrtypes.Decode(data)
 	return metadata, err
 }
 
-func (e EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMetadata, input *evm.WriteReportRequest) (*evm.WriteReportReply, error) {
+func (e EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMetadata, input *evm.WriteReportRequest) (*capabilities.ResponseAndMetadata[*evm.WriteReportReply], error) {
 	err := validateInputsAndReportMetadata(metadata, input)
 	if err != nil {
 		return nil, err
 	}
-	return e.executeWriteReport(ctx, metadata, input)
+	report, err := e.executeWriteReport(ctx, metadata, input)
+	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.WriteReportReply]{
+		Response:         report,
+		ResponseMetadata: capabilities.ResponseMetadata{},
+	}
+	return &responseAndMetadata, err
 }
 
 func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.RequestMetadata, request *evm.WriteReportRequest) (*evm.WriteReportReply, error) {
@@ -70,8 +57,8 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 		return nil, err
 	}
 
-	// Check whether value was already transmitted on chain
-	transmissionInfo, err := e.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
+	var transmissionInfo contracts.TransmissionInfo
+	transmissionInfo, err = e.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +67,7 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 
 	switch transmissionInfo.State {
 	case TransmissionStateNotAttempted:
-		e.lggr.Infow("transmission not attempted - attempting to push to txmgr", "request", request, "reportLen", len(request.Report.RawReport), "reportContextLen", len(request.Report.ReportContext), "nSignatures", len(request.Report.Signatures), "executionID", metadata.WorkflowExecutionID)
+		e.lggr.Infow("transmission not attempted - attempting to push to txmgr", "request", request, "reportLen", len(request.Report.RawReport), "reportContextLen", len(request.Report.ReportContext), "nSignatures", len(request.Report.Sigs), "executionID", metadata.WorkflowExecutionID)
 	case TransmissionStateSucceeded:
 		e.lggr.Infow("returning without a transmission attempt - report already onchain ", "executionID", metadata.WorkflowExecutionID)
 		txHash, err := txHashRetriever.GetHash(ctx)
@@ -89,6 +76,7 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 		}
 		return e.fetchTransactionReceiptAndCreateReply(ctx, *txHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS, nil)
 	case TransmissionStateInvalidReceiver:
+		e.lggr.Infow("transmission already done by another node but failed due to invalid receiver, not reattempting")
 		txHash, err := txHashRetriever.GetHash(ctx)
 		if err != nil {
 			return nil, err
@@ -107,13 +95,12 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 			}
 			return e.fetchTransactionReceiptAndCreateReply(ctx, *txHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED, nil)
 		}
-		e.lggr.Infow("retrying a failed transmission - attempting to push to txmgr", "request", request, "reportLen", len(request.Report.RawReport), "reportContextLen", len(request.Report.ReportContext), "nSignatures", len(request.Report.Signatures), "executionID", metadata.WorkflowExecutionID, "receiverGasMinimum", receiverGasMinimum, "transmissionGasLimit", transmissionInfo.GasLimit)
+		e.lggr.Infow("retrying a failed transmission - attempting to push to txmgr", "request", request, "reportLen", len(request.Report.RawReport), "reportContextLen", len(request.Report.ReportContext), "nSignatures", len(request.Report.Sigs), "executionID", metadata.WorkflowExecutionID, "receiverGasMinimum", receiverGasMinimum, "transmissionGasLimit", transmissionInfo.GasLimit)
 	default:
 		return fatalWriteReportReply(getInvalidStateErrorMessage(transmissionInfo.State)), nil
 	}
 
 	e.lggr.Debugw("Submitting transaction for report", "request", request)
-
 	transactionResult, err := e.forwarderClient.InvokeOnReport(ctx, transmissionID.Receiver, request.Report, request.GasConfig)
 	if err != nil {
 		e.lggr.Error("Transaction failed", "request", request)
@@ -134,10 +121,30 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 		}, nil
 	}
 
-	// PLEX-1524 - improve this since it may be using an RPC that's lagging related to the one that submitted the TX.
-	transmissionInfo, err = e.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
+	strategy := retry.Strategy[contracts.TransmissionInfo]{
+		Backoff: &backoff.Backoff{
+			Factor: 2,
+			Max:    2 * time.Second,
+			Min:    100 * time.Millisecond,
+		},
+		MaxRetries: 5,
+	}
+	retryContext, cancelFunc := context.WithTimeout(ctx, 50*time.Second)
+	defer cancelFunc()
+
+	transmissionInfo, err = strategy.Do(retryContext, e.lggr, func(ctx context.Context) (contracts.TransmissionInfo, error) {
+		readTransmissionInfo, readTransmissionErr := e.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
+		if readTransmissionErr != nil {
+			return contracts.TransmissionInfo{}, readTransmissionErr
+		}
+		if readTransmissionInfo.State != TransmissionStateNotAttempted {
+			return readTransmissionInfo, nil
+		}
+		return contracts.TransmissionInfo{}, errors.New("transaction successfully executed but not yet seeing the transmission info updated, retrying getting transmission info")
+	})
+
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed getting transmission info after node submitted the report on chain, %w", err)
 	}
 
 	txHashRetriever.Reset()
@@ -197,17 +204,30 @@ func getTransmissionID(workflowExecutionID string, request *evm.WriteReportReque
 		return contracts.TransmissionID{}, err
 	}
 
+	reportMetadata, err := decodeReportMetadata(request.Report.RawReport)
+	if err != nil {
+		return contracts.TransmissionID{}, err
+	}
+
+	reportID := common.Hex2Bytes(reportMetadata.ReportID)
+	if len(reportID) != 2 {
+		return contracts.TransmissionID{}, fmt.Errorf("report ID is of wrong length: %d bytes, expected 2 bytes", len(reportMetadata.ReportID))
+	}
+
 	transmissionID := contracts.TransmissionID{
 		Receiver:            common.BytesToAddress(request.Receiver),
 		WorkflowExecutionID: [32]byte(rawExecutionID),
-		ReportID:            [2]byte(request.Report.Id),
+		ReportID:            [2]byte(reportID),
 	}
 	return transmissionID, nil
 }
 
 func (e EVM) fetchTransactionReceiptAndCreateReply(ctx context.Context, txHash evmtypes.Hash, receiverStatus evm.ReceiverContractExecutionStatus, errorMessage *string) (*evm.WriteReportReply, error) {
 	// TODO: PLEX-1524 - we need retry logic here in case the underlying RPC is lagging behind the one that submitted the TX.
-	txReceipt, err := e.EVMService.GetTransactionReceipt(ctx, txHash)
+	txReceipt, err := e.EVMService.GetTransactionReceipt(ctx, evmtypes.GeTransactionReceiptRequest{
+		Hash:       txHash,
+		IsExternal: false, // since we do not run consensus on the receipt itself, it's fine to skip additional versions for external receipts.
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -253,7 +273,7 @@ func validateInputsAndReportMetadata(requestMetadata capabilities.RequestMetadat
 	if len(request.Receiver) != common.AddressLength {
 		return fmt.Errorf("received address is not 20 bytes long. Address in HEX: %s", hex.EncodeToString(request.Receiver))
 	}
-	if len(request.Report.Signatures) == 0 {
+	if len(request.Report.Sigs) == 0 {
 		return fmt.Errorf("no signatures provided")
 	}
 
@@ -267,31 +287,24 @@ func validateInputsAndReportMetadata(requestMetadata capabilities.RequestMetadat
 	}
 
 	if reportMetadata.ExecutionID != requestMetadata.WorkflowExecutionID {
-		return fmt.Errorf("workflowExecutionID in the report does not match WorkflowExecutionID in the request metadata. Report WorkflowExecutionID: %+v, request WorkflowExecutionID: %+v", reportMetadata.ExecutionID, requestMetadata.WorkflowExecutionID)
+		return fmt.Errorf("workflowExecutionID in the report does not match WorkflowExecutionID in the request metadata. Report WorkflowExecutionID: %s, request WorkflowExecutionID: %s", reportMetadata.ExecutionID, requestMetadata.WorkflowExecutionID)
 	}
 
 	// case-insensitive verification of the owner address (so that a check-summed address matches its non-checksummed version).
 	if !strings.EqualFold(reportMetadata.WorkflowOwner, requestMetadata.WorkflowOwner) {
-		return fmt.Errorf("workflowOwner in the report does not match WorkflowOwner in the request metadata. Report WorkflowOwner: %+v, request WorkflowOwner: %+v", reportMetadata.WorkflowOwner, requestMetadata.WorkflowOwner)
+		return fmt.Errorf("workflowOwner in the report does not match WorkflowOwner in the request metadata. Report WorkflowOwner: %s, request WorkflowOwner: %s", reportMetadata.WorkflowOwner, requestMetadata.WorkflowOwner)
 	}
 
-	// workflowNames are padded to 10bytes
+	//	workflowNames are padded to 10bytes
 	decodedName := []byte(requestMetadata.WorkflowName)
-	if err != nil {
-		return err
-	}
 	var workflowName [20]byte
 	copy(workflowName[:], decodedName)
 	if !bytes.Equal([]byte(reportMetadata.WorkflowName[:]), workflowName[:]) {
-		return fmt.Errorf("workflowName in the report does not match WorkflowName in the request metadata. Report WorkflowName: %+v, request WorkflowName: %+v", reportMetadata.WorkflowName, hex.EncodeToString(workflowName[:]))
+		return fmt.Errorf("workflowName in the report does not match WorkflowName in the request metadata. Report WorkflowName: %s, request WorkflowName: %s", reportMetadata.WorkflowName, hex.EncodeToString(workflowName[:]))
 	}
 
 	if reportMetadata.WorkflowID != requestMetadata.WorkflowID {
-		return fmt.Errorf("workflowID in the report does not match WorkflowID in the request metadata. Report WorkflowID: %+v, request WorkflowID: %+v", reportMetadata.WorkflowID, requestMetadata.WorkflowID)
-	}
-
-	if !bytes.Equal([]byte(reportMetadata.ReportID), request.Report.Id) {
-		return fmt.Errorf("reportID in the report does not match ReportID in the inputs. reportMetadata.ReportID: %x, Inputs.SignedReport.ID: %x", reportMetadata.ReportID, request.Report.Id)
+		return fmt.Errorf("workflowID in the report does not match WorkflowID in the request metadata. Report WorkflowID: %s, request WorkflowID: %s", reportMetadata.WorkflowID, requestMetadata.WorkflowID)
 	}
 
 	return nil
@@ -331,7 +344,7 @@ func (thr *TxHashRetriever) GetHash(ctx context.Context) (*evmtypes.Hash, error)
 	}
 	if len(logs) == 0 {
 		thr.lggr.Debugw("no log associated to report transmission found", thr.transmissionID.GetIDPartsForDebugging()...)
-		return nil, nil
+		return nil, fmt.Errorf("no log found but a log was executed for transmission ID: %+v", thr.transmissionID)
 	}
 	thr.txHash = &logs[0].TxHash
 	return thr.txHash, nil

@@ -19,7 +19,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	httpcap "github.com/smartcontractkit/capabilities/http_action/action"
-
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway"
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/config"
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/connector"
@@ -39,7 +38,7 @@ import (
 const EthSignedMessagePrefix = "\x19Ethereum Signed Message:\n"
 
 const nodeConfigTemplate = `
-DonID = "%s"
+DonID = "test_don"
 AuthMinChallengeLen = 32
 AuthTimestampToleranceSec = 30
 NodeAddress = "%s" 
@@ -154,9 +153,10 @@ func newTestNetworkClient(t *testing.T, addr *net.TCPAddr, lggr logger.Logger) n
 	return c
 }
 
-func newTestGateway(t *testing.T, configStr string, c network.HTTPClient, lggr logger.Logger) gateway.Gateway {
+func newTestGateway(t *testing.T, publicKey string, c network.HTTPClient, lggr logger.Logger) gateway.Gateway {
+	gatewayConfigStr := fmt.Sprintf(gatewayConfigTemplate, publicKey)
 	var gatewayConfig *config.GatewayConfig
-	err := json.Unmarshal([]byte(configStr), &gatewayConfig)
+	err := json.Unmarshal([]byte(gatewayConfigStr), &gatewayConfig)
 	require.NoError(t, err)
 	gateway, err := gateway.NewGatewayFromConfig(gatewayConfig, gateway.NewHandlerFactory(nil, nil, c, lggr), lggr)
 	require.NoError(t, err)
@@ -164,13 +164,16 @@ func newTestGateway(t *testing.T, configStr string, c network.HTTPClient, lggr l
 	return gateway
 }
 
-func newTestGatewayConnector(t *testing.T, donID, nodeURL string, privateKey *ecdsa.PrivateKey, lggr logger.Logger) core.GatewayConnector {
-	signer := &client{privateKey: privateKey}
-	publicKey := strings.ToLower(crypto.PubkeyToAddress(privateKey.PublicKey).Hex())
-	nodeConfig := fmt.Sprintf(nodeConfigTemplate, donID, publicKey, nodeURL)
+func parseConnectorConfig(t *testing.T, tomlConfig string, nodeAddress string, nodeURL string) *connector.ConnectorConfig {
+	nodeConfig := fmt.Sprintf(tomlConfig, nodeAddress, nodeURL)
 	var cfg connector.ConnectorConfig
 	require.NoError(t, toml.Unmarshal([]byte(nodeConfig), &cfg))
-	gc, err := connector.NewGatewayConnector(&cfg, signer, clockwork.NewRealClock(), lggr)
+	return &cfg
+}
+
+func newTestGatewayConnector(t *testing.T, publicKey, nodeURL string, signer connector.Signer, lggr logger.Logger) core.GatewayConnector {
+	cfg := parseConnectorConfig(t, nodeConfigTemplate, publicKey, nodeURL)
+	gc, err := connector.NewGatewayConnector(cfg, signer, clockwork.NewRealClock(), lggr)
 	require.NoError(t, err)
 	servicetest.Run(t, gc)
 	return gc
@@ -274,10 +277,11 @@ func TestHTTPActionCapability(t *testing.T) {
 	privateKey, err := crypto.GenerateKey()
 	require.NoError(t, err)
 	publicKey := strings.ToLower(crypto.PubkeyToAddress(privateKey.PublicKey).Hex())
-	gatewayConfigStr := fmt.Sprintf(gatewayConfigTemplate, publicKey)
-	gateway := newTestGateway(t, gatewayConfigStr, netClient, lggr)
+	gateway := newTestGateway(t, publicKey, netClient, lggr)
 	nodeURL := fmt.Sprintf("ws://localhost:%d/node", gateway.GetNodePort())
-	gc := newTestGatewayConnector(t, "test_don", nodeURL, privateKey, lggr)
+
+	client := &client{privateKey: privateKey}
+	gc := newTestGatewayConnector(t, publicKey, nodeURL, client, lggr)
 	httpCapability := newTestHTTPCapability(ctx, t, gc, lggr)
 
 	requestData := capabilities.RequestMetadata{
@@ -294,9 +298,9 @@ func TestHTTPActionCapability(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.NotNil(t, output)
-		require.Equal(t, uint32(http.StatusOK), output.StatusCode)
-		require.Equal(t, "pong", string(output.Body))
-		require.Equal(t, "my-value", output.Headers["X-Custom-Header"])
+		require.Equal(t, uint32(http.StatusOK), output.Response.StatusCode)
+		require.Equal(t, "pong", string(output.Response.Body))
+		require.Equal(t, "my-value", output.Response.Headers["X-Custom-Header"])
 	})
 
 	t.Run("POST /post with body and headers", func(t *testing.T) {
@@ -309,39 +313,37 @@ func TestHTTPActionCapability(t *testing.T) {
 		output, err := httpCapability.SendRequest(ctx, requestData, input)
 		require.NoError(t, err)
 		require.NotNil(t, output)
-		require.Equal(t, uint32(http.StatusOK), output.StatusCode)
-		require.Equal(t, "Post received", string(output.Body))
+		require.Equal(t, uint32(http.StatusOK), output.Response.StatusCode)
+		require.Equal(t, "Post received", string(output.Response.Body))
 		require.Equal(t, "1", postHeaders.Get("X-Test"))
 		require.Equal(t, "abc", postBody)
 	})
 
 	t.Run("GET /random with caching enabled", func(t *testing.T) {
 		initialOutput, err := httpCapability.SendRequest(ctx, requestData, &httpclient.Request{
-			Url:    fmt.Sprintf("http://%s/random", listener.Addr().String()),
-			Method: "GET",
-			CacheSettings: &httpclient.CacheSettings{
-				StoreInCache: true,
-				TtlMs:        10000, // 10 seconds
-			},
+			Url:           fmt.Sprintf("http://%s/random", listener.Addr().String()),
+			Method:        "GET",
+			CacheSettings: &httpclient.CacheSettings{},
 		})
 		require.NoError(t, err)
 		require.NotNil(t, initialOutput)
-		require.Equal(t, uint32(http.StatusOK), initialOutput.StatusCode)
-		require.NotEmpty(t, initialOutput.Body)
-		require.NotEmpty(t, initialOutput.Headers["X-Custom-Header"])
+		require.Equal(t, uint32(http.StatusOK), initialOutput.Response.StatusCode)
+		require.NotEmpty(t, initialOutput.Response.Body)
+		require.NotEmpty(t, initialOutput.Response.Headers["X-Custom-Header"])
 
 		cachedOutput, err := httpCapability.SendRequest(ctx, requestData, &httpclient.Request{
 			Url:    fmt.Sprintf("http://%s/random", listener.Addr().String()),
 			Method: "GET",
 			CacheSettings: &httpclient.CacheSettings{
 				ReadFromCache: true,
+				MaxAgeMs:      10000,
 			},
 		})
 		require.NoError(t, err)
 		require.NotNil(t, cachedOutput)
-		require.Equal(t, uint32(http.StatusOK), cachedOutput.StatusCode)
-		require.NotEmpty(t, cachedOutput.Body)
-		require.NotEmpty(t, cachedOutput.Headers["X-Custom-Header"])
+		require.Equal(t, uint32(http.StatusOK), cachedOutput.Response.StatusCode)
+		require.NotEmpty(t, cachedOutput.Response.Body)
+		require.NotEmpty(t, cachedOutput.Response.Headers["X-Custom-Header"])
 
 		freshOutput, err := httpCapability.SendRequest(ctx, requestData, &httpclient.Request{
 			Url:    fmt.Sprintf("http://%s/random", listener.Addr().String()),
@@ -349,69 +351,65 @@ func TestHTTPActionCapability(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.NotNil(t, freshOutput)
-		require.Equal(t, uint32(http.StatusOK), freshOutput.StatusCode)
-		require.NotEmpty(t, freshOutput.Body)
-		require.NotEmpty(t, freshOutput.Headers["X-Custom-Header"])
+		require.Equal(t, uint32(http.StatusOK), freshOutput.Response.StatusCode)
+		require.NotEmpty(t, freshOutput.Response.Body)
+		require.NotEmpty(t, freshOutput.Response.Headers["X-Custom-Header"])
 
-		require.Equal(t, initialOutput.Body, cachedOutput.Body)
-		require.Equal(t, initialOutput.Headers["X-Custom-Header"], cachedOutput.Headers["X-Custom-Header"])
-		require.NotEqual(t, initialOutput.Body, freshOutput.Body)
-		require.NotEqual(t, initialOutput.Headers["X-Custom-Header"], freshOutput.Headers["X-Custom-Header"])
+		require.Equal(t, initialOutput.Response.Body, cachedOutput.Response.Body)
+		require.Equal(t, initialOutput.Response.Headers["X-Custom-Header"], cachedOutput.Response.Headers["X-Custom-Header"])
+		require.NotEqual(t, initialOutput.Response.Body, freshOutput.Response.Body)
+		require.NotEqual(t, initialOutput.Response.Headers["X-Custom-Header"], freshOutput.Response.Headers["X-Custom-Header"])
 	})
 
 	t.Run("GET /not-found returns 404", func(t *testing.T) {
 		output, err := httpCapability.SendRequest(ctx, requestData, &httpclient.Request{
-			Url:    fmt.Sprintf("http://%s/not-found", listener.Addr().String()),
-			Method: "GET",
-			CacheSettings: &httpclient.CacheSettings{
-				StoreInCache: true,
-				TtlMs:        10000, // 10 seconds
-			},
+			Url:           fmt.Sprintf("http://%s/not-found", listener.Addr().String()),
+			Method:        "GET",
+			CacheSettings: &httpclient.CacheSettings{},
 		})
 		require.NoError(t, err)
 		require.NotNil(t, output)
-		require.Equal(t, uint32(http.StatusNotFound), output.StatusCode)
-		require.Equal(t, string(output.Body), "Not Found\n")
+		require.Equal(t, uint32(http.StatusNotFound), output.Response.StatusCode)
+		require.Equal(t, string(output.Response.Body), "Not Found\n")
 
 		cachedOutput, err := httpCapability.SendRequest(ctx, requestData, &httpclient.Request{
 			Url:    fmt.Sprintf("http://%s/not-found", listener.Addr().String()),
 			Method: "GET",
 			CacheSettings: &httpclient.CacheSettings{
 				ReadFromCache: true,
+				MaxAgeMs:      10000,
 			},
 		})
 		require.NoError(t, err)
 		require.NotNil(t, cachedOutput)
-		require.Equal(t, uint32(http.StatusNotFound), cachedOutput.StatusCode)
-		require.Equal(t, string(cachedOutput.Body), "Not Found\n")
+		require.Equal(t, uint32(http.StatusNotFound), cachedOutput.Response.StatusCode)
+		require.Equal(t, string(cachedOutput.Response.Body), "Not Found\n")
 		require.Equal(t, notFoundCounter, 1, "not-found endpoint should have been called once")
 	})
 
 	t.Run("GET /error returns 500", func(t *testing.T) {
 		output, err := httpCapability.SendRequest(ctx, requestData, &httpclient.Request{
-			Url:    fmt.Sprintf("http://%s/error", listener.Addr().String()),
-			Method: "GET",
-			CacheSettings: &httpclient.CacheSettings{
-				StoreInCache: true,
-				TtlMs:        10000, // 10 seconds
-			},
+			Url:           fmt.Sprintf("http://%s/error", listener.Addr().String()),
+			Method:        "GET",
+			CacheSettings: &httpclient.CacheSettings{},
 		})
 		require.NoError(t, err)
 		require.NotNil(t, output)
-		require.Equal(t, uint32(http.StatusInternalServerError), output.StatusCode)
-		require.Equal(t, string(output.Body), "Internal Server Error\n")
+		require.Equal(t, uint32(http.StatusInternalServerError), output.Response.StatusCode)
+		require.Equal(t, string(output.Response.Body), "Internal Server Error\n")
 
 		cachedOutput, err := httpCapability.SendRequest(ctx, requestData, &httpclient.Request{
 			Url:    fmt.Sprintf("http://%s/error", listener.Addr().String()),
 			Method: "GET",
 			CacheSettings: &httpclient.CacheSettings{
 				ReadFromCache: true,
+				MaxAgeMs:      10000,
 			},
 		})
 		require.NoError(t, err)
 		require.NotNil(t, cachedOutput)
-		require.Equal(t, uint32(http.StatusInternalServerError), cachedOutput.StatusCode)
-		require.Equal(t, string(cachedOutput.Body), "Internal Server Error\n")
+		require.Equal(t, uint32(http.StatusInternalServerError), cachedOutput.Response.StatusCode)
+		require.Equal(t, string(cachedOutput.Response.Body), "Internal Server Error\n")
 		require.Equal(t, errorCounter, 2, "error endpoint should have been called twice. No caching on 500")
 	})
 }

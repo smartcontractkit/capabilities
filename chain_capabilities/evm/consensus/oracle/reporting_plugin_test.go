@@ -4,6 +4,7 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/tests"
 	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
@@ -15,8 +16,6 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/testing/protocmp"
 	"google.golang.org/protobuf/types/known/emptypb"
-
-	"github.com/google/go-cmp/cmp"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/oracle/mocks"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
@@ -137,7 +136,7 @@ func TestObservation(t *testing.T) {
 		plugin := newReportingPlugin(Config{MaxAllowedBatchSize: 1}, logger.Sugared(logger.Test(t)), blocksProvider, requestsStore)
 		requestsStore.EXPECT().GetRequest("1").Return(types.Request(nil), true)
 		_, err := plugin.Observation(t.Context(), ocr3types.OutcomeContext{}, mustQuery(t, []string{"1"}))
-		require.EqualError(t, err, "failed to observe request: unsupported request type: <nil>")
+		require.EqualError(t, err, "failed to observe request: unsupported observation type: <nil>")
 	})
 	t.Run("Happy path", func(t *testing.T) {
 		expectedChainHeight := &types.ChainHeight{
@@ -171,7 +170,7 @@ func TestObservation(t *testing.T) {
 		id = "aggregatable_request_without_observation"
 		requestsStore.EXPECT().GetRequest(id).Return(types.NewAggregatableRequest(id, nil), true).Once()
 
-		plugin := newReportingPlugin(Config{MaxAllowedBatchSize: 50}, logger.Sugared(logger.Test(t)), blocksProvider, requestsStore)
+		plugin := newReportingPlugin(Config{MaxAllowedBatchSize: 50, MaxObservationLength: 1000}, logger.Sugared(logger.Test(t)), blocksProvider, requestsStore)
 		query := mustQuery(t, []string{"request_not_present_in_store", "request_without_observation", "request_with_observation", "lockable_request", "aggregatable_request", "aggregatable_request_without_observation"})
 		rawObservation, err := plugin.Observation(t.Context(), ocr3types.OutcomeContext{}, query)
 		require.NoError(t, err)
@@ -185,6 +184,60 @@ func TestObservation(t *testing.T) {
 				},
 				"lockable_request": {
 					Observation: &types.RequestObservation_LockableToBlock{LockableToBlock: &emptypb.Empty{}},
+				},
+				"aggregatable_request": {
+					Observation: &types.RequestObservation_Aggregatable{Aggregatable: &types.AggregatableObservation{
+						Method: types.AggregationMethodFPlusOneHighest,
+						Value:  newDecimal(123, 2),
+					}},
+				},
+			},
+		}
+		require.Empty(t, cmp.Diff(expectedObservation, &observation, protocmp.Transform()))
+	})
+	t.Run("Request remains in queue if adding it will exceed max observation size", func(t *testing.T) {
+		expectedChainHeight := &types.ChainHeight{
+			Latest:    10,
+			Safe:      9,
+			Finalized: 8,
+		}
+		blocksProvider := newBlockProvider(t, expectedChainHeight)
+		requestsStore := mocks.NewRequestsHandler(t)
+		addRequestWithObservation := func(id string, size int) {
+			withObservation := types.NewEventuallyConsistentRequest(id, nil)
+			withObservation.SetObservation(make([]byte, size))
+			requestsStore.EXPECT().GetRequest(id).Return(withObservation, true).Once()
+		}
+
+		const maxObservationLength = 1000
+		const requestsThatFitSize = 300
+		addRequestWithObservation("request_1", requestsThatFitSize)
+		addRequestWithObservation("request_2", requestsThatFitSize)
+
+		id := "aggregatable_request"
+		aggrWithObservation := types.NewAggregatableRequest(id, nil)
+		aggrWithObservation.SetObservation(&types.AggregatableObservation{
+			Method: types.AggregationMethodFPlusOneHighest,
+			Value:  newDecimal(123, 2),
+		})
+		requestsStore.EXPECT().GetRequest(id).Return(aggrWithObservation, true).Once()
+
+		addRequestWithObservation("large_request", 400)
+
+		plugin := newReportingPlugin(Config{MaxAllowedBatchSize: 50, MaxObservationLength: maxObservationLength}, logger.Sugared(logger.Test(t)), blocksProvider, requestsStore)
+		query := mustQuery(t, []string{"request_1", "request_2", "large_request", "aggregatable_request"})
+		rawObservation, err := plugin.Observation(t.Context(), ocr3types.OutcomeContext{}, query)
+		require.NoError(t, err)
+		var observation types.Observation
+		require.NoError(t, proto.Unmarshal(rawObservation, &observation))
+		expectedObservation := &types.Observation{
+			ChainHeight: expectedChainHeight,
+			Observations: map[string]*types.RequestObservation{
+				"request_1": {
+					Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: make([]byte, requestsThatFitSize)},
+				},
+				"request_2": {
+					Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: make([]byte, requestsThatFitSize)},
 				},
 				"aggregatable_request": {
 					Observation: &types.RequestObservation_Aggregatable{Aggregatable: &types.AggregatableObservation{
@@ -356,7 +409,7 @@ func TestOutcome(t *testing.T) {
 			expectedError:     "could not determine chain height: not enough observations to calculate chain height. Got 1, expected at least 2",
 		},
 		{
-			name:       "not enough observations of a request to agree on request type",
+			name:       "not enough observations of a request to agree on observation type",
 			requestIDs: []string{"request_1", "request_2"},
 			nodesObservations: []map[string]*types.RequestObservation{
 				{
@@ -373,7 +426,7 @@ func TestOutcome(t *testing.T) {
 				},
 			},
 			expectedOutcome: &types.Outcome{ChainHeight: chainHeight},
-			expectedLogs:    []string{"Could not determine request type"},
+			expectedLogs:    []string{"Could not determine observation type"},
 		},
 		{
 			name:       "fails to determine request value",
@@ -396,7 +449,7 @@ func TestOutcome(t *testing.T) {
 			expectedLogs:    []string{"Could not determine request value"},
 		},
 		{
-			name:       "returns error on unsupported request type",
+			name:       "returns error on unsupported observation type",
 			requestIDs: []string{"request_1"},
 			nodesObservations: []map[string]*types.RequestObservation{
 				{
@@ -412,7 +465,7 @@ func TestOutcome(t *testing.T) {
 					"request_1": &types.RequestObservation{},
 				},
 			},
-			expectedError: "unsupported request type: REQUEST_TYPE_UNKNOWN",
+			expectedError: "unsupported observation type: UNKNOWN",
 		},
 		{
 			name:       "happy path",
@@ -488,7 +541,7 @@ func TestOutcome(t *testing.T) {
 	}
 }
 
-func TestAgreeOnRequestValue(t *testing.T) {
+func TestAgreeOnEventuallyConsistentValue(t *testing.T) {
 	const id = "request_1"
 	testCases := []struct {
 		name              string
@@ -562,13 +615,13 @@ func TestAgreeOnRequestValue(t *testing.T) {
 	}
 }
 
-func TestAgreeOnRequestType(t *testing.T) {
+func TestAgreeOnObservationType(t *testing.T) {
 	const id = "request_1"
 	testCases := []struct {
 		name          string
 		observations  []types.RequestObservation
 		expectedError string
-		expectedValue types.RequestType
+		expectedValue types.ObservationType
 	}{
 		{
 			name: "insufficient total number of observations",
@@ -595,7 +648,7 @@ func TestAgreeOnRequestType(t *testing.T) {
 				{Observation: &types.RequestObservation_LockableToBlock{}},
 				{Observation: &types.RequestObservation_EventuallyConsistent{}},
 			},
-			expectedValue: types.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT,
+			expectedValue: types.ObservationType_EVENTUALLY_CONSISTENT,
 		},
 		{
 			name: "Happy path aggregatable",
@@ -605,7 +658,7 @@ func TestAgreeOnRequestType(t *testing.T) {
 				{Observation: &types.RequestObservation_Aggregatable{}},
 				{Observation: &types.RequestObservation_EventuallyConsistent{}},
 			},
-			expectedValue: types.RequestType_REQUEST_TYPE_AGGREGATABLE,
+			expectedValue: types.ObservationType_AGGREGATABLE,
 		},
 		{
 			name: "Happy path lockable",
@@ -615,7 +668,7 @@ func TestAgreeOnRequestType(t *testing.T) {
 				{Observation: &types.RequestObservation_LockableToBlock{}},
 				{Observation: &types.RequestObservation_EventuallyConsistent{}},
 			},
-			expectedValue: types.RequestType_REQUEST_TYPE_LOCKABLE_TO_BLOCK,
+			expectedValue: types.ObservationType_LOCKABLE_TO_BLOCK,
 		},
 		{
 			name: "Happy path eventually consistent",
@@ -625,7 +678,7 @@ func TestAgreeOnRequestType(t *testing.T) {
 				{Observation: &types.RequestObservation_EventuallyConsistent{}},
 				{Observation: &types.RequestObservation_LockableToBlock{}},
 			},
-			expectedValue: types.RequestType_REQUEST_TYPE_EVENTUALLY_CONSISTENT,
+			expectedValue: types.ObservationType_EVENTUALLY_CONSISTENT,
 		},
 	}
 	for _, tc := range testCases {
@@ -641,7 +694,7 @@ func TestAgreeOnRequestType(t *testing.T) {
 					Observation: &types.Observation{Observations: map[string]*types.RequestObservation{id: ob}},
 				})
 			}
-			value, err := plugin.agreeOnRequestType(id, nodesObservations)
+			value, err := plugin.agreeOnObservationType(id, nodesObservations)
 			if tc.expectedError == "" {
 				require.NoError(t, err)
 				require.Equal(t, tc.expectedValue, value)
@@ -762,6 +815,10 @@ func TestAggregateValue(t *testing.T) {
 }
 
 func TestReports(t *testing.T) {
+	info, err := createReportInfo()
+	if err != nil {
+		t.Fatalf("failed to create relay info: %v", err)
+	}
 	testCases := []struct {
 		name            string
 		outcome         *types.Outcome
@@ -798,6 +855,7 @@ func TestReports(t *testing.T) {
 							RequestID: "request_1",
 							Report:    &types.RequestReport_EventuallyConsistent{EventuallyConsistent: []byte("value_1")},
 						}),
+						Info: info,
 					},
 				},
 				{
@@ -806,6 +864,7 @@ func TestReports(t *testing.T) {
 							RequestID: "request_2",
 							Report:    &types.RequestReport_LockableToBlock{LockableToBlock: &types.ChainHeight{Latest: 15, Safe: 10, Finalized: 8}},
 						}),
+						Info: info,
 					},
 				},
 				{
@@ -814,12 +873,13 @@ func TestReports(t *testing.T) {
 							RequestID: "request_3",
 							Report:    &types.RequestReport_Aggregatable{Aggregatable: newDecimal(124, 2)},
 						}),
+						Info: info,
 					},
 				},
 			},
 		},
 		{
-			name: "unsupported request type",
+			name: "unsupported observation type",
 			outcome: &types.Outcome{
 				Outcomes: []*types.RequestOutcome{
 					{
@@ -828,7 +888,7 @@ func TestReports(t *testing.T) {
 					},
 				},
 			},
-			expectedError: "unsupported request type: <nil>",
+			expectedError: "unsupported observation type: <nil>",
 		},
 	}
 
@@ -844,6 +904,7 @@ func TestReports(t *testing.T) {
 				require.Len(t, reports, len(tc.expectedReports))
 				for i := range reports {
 					require.Equal(t, tc.expectedReports[i].ReportWithInfo.Report, reports[i].ReportWithInfo.Report)
+					require.Equal(t, tc.expectedReports[i].ReportWithInfo.Info, reports[i].ReportWithInfo.Info)
 				}
 			}
 		})
