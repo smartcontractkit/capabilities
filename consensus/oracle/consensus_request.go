@@ -7,9 +7,10 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	"github.com/smartcontractkit/libocr/offchainreporting2plus/types"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb"
-	"github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
 	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
 )
