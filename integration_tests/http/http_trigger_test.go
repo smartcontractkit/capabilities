@@ -59,7 +59,7 @@ const triggerGatewayConfigTemplate = `
   "Dons": [
     {
       "DonId": "test_don",
-	  "F": 1,
+      "F": 1,
       "Handlers": [
 		{
 			"Name": "http-capabilities",
