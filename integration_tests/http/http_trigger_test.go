@@ -131,7 +131,6 @@ func nodeKeys(t *testing.T, numNodes int) []*ecdsa.PrivateKey {
 }
 
 type testEnv struct {
-	ctx         context.Context
 	lggr        logger.Logger
 	numNodes    int
 	nodeKeys    []*ecdsa.PrivateKey
@@ -171,7 +170,6 @@ func setupTestEnv(t *testing.T, numNodes int) *testEnv {
 		triggerChs = append(triggerChs, ch)
 	}
 	return &testEnv{
-		ctx:         ctx,
 		lggr:        lggr,
 		numNodes:    numNodes,
 		nodeKeys:    nodeKeys,
