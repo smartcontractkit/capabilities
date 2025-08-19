@@ -184,7 +184,7 @@ func setupTestEnv(t *testing.T, numNodes int) *testEnv {
 	}
 }
 
-func createSampleRequest(t *testing.T, url string, key *ecdsa.PrivateKey, workflow gateway_common.WorkflowSelector) (*http.Request, string, map[string]any) {
+func createSampleRequest(t *testing.T, url string, key *ecdsa.PrivateKey, workflow gateway_common.WorkflowSelector, requestID string) (*http.Request, string, map[string]any) {
 	input := make(map[string]any)
 	input["key"] = "value"
 	input["count"] = 5.0
@@ -192,7 +192,6 @@ func createSampleRequest(t *testing.T, url string, key *ecdsa.PrivateKey, workfl
 	require.NoError(t, err)
 	rawInput := json.RawMessage(marshalledInput)
 
-	requestID := uuid.New().String()
 	req := jsonrpc.Request[gateway_common.HTTPTriggerRequest]{
 		Version: jsonrpc.JsonRpcVersion,
 		ID:      requestID,
@@ -220,7 +219,7 @@ func sampleRequest(t *testing.T, url string, key *ecdsa.PrivateKey) (*http.Reque
 	workflow := gateway_common.WorkflowSelector{
 		WorkflowID: workflowID,
 	}
-	return createSampleRequest(t, url, key, workflow)
+	return createSampleRequest(t, url, key, workflow, uuid.New().String())
 }
 
 func sampleRequestWithReference(t *testing.T, url string, key *ecdsa.PrivateKey) (*http.Request, string, map[string]any) {
@@ -229,7 +228,7 @@ func sampleRequestWithReference(t *testing.T, url string, key *ecdsa.PrivateKey)
 		WorkflowName:  workflowName,
 		WorkflowTag:   workflowTag,
 	}
-	return createSampleRequest(t, url, key, workflow)
+	return createSampleRequest(t, url, key, workflow, uuid.New().String())
 }
 
 func TestHTTPTrigger(t *testing.T) {
@@ -243,6 +242,10 @@ func TestHTTPTrigger(t *testing.T) {
 
 	t.Run("WithWorkflowReference", func(t *testing.T) {
 		testHTTPTriggerWithWorkflowReference(t, env)
+	})
+
+	t.Run("RequestDeduplication", func(t *testing.T) {
+		testHTTPTriggerRequestDeduplication(t, env)
 	})
 }
 
@@ -297,6 +300,45 @@ func testHTTPTriggerWithWorkflowReference(t *testing.T, env *testEnv) {
 
 	executionID := validateHTTPTriggerResponse(t, body, requestID, workflowID)
 	assertTriggerPayload(t, env, executionID, input)
+}
+
+func testHTTPTriggerRequestDeduplication(t *testing.T, env *testEnv) {
+	// Use a fixed request ID for deduplication testing
+	fixedRequestID := "deduplication-test-request-id"
+
+	workflow := gateway_common.WorkflowSelector{
+		WorkflowID: workflowID,
+	}
+
+	// Make the first request
+	request, _, input := createSampleRequest(t, env.userURL, env.signingKey, workflow, fixedRequestID)
+
+	var body []byte
+	require.Eventually(t, func() bool {
+		resp, err := http.DefaultClient.Do(request)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		body, err = io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		return resp.StatusCode == http.StatusOK
+	}, 30*time.Second, 100*time.Millisecond)
+
+	executionID := validateHTTPTriggerResponse(t, body, fixedRequestID, workflowID)
+	assertTriggerPayload(t, env, executionID, input)
+
+	resp, err := http.DefaultClient.Do(request)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	body, err = io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	_ = validateHTTPTriggerResponse(t, body, fixedRequestID, workflowID)
+
+	// This request should be deduplicated, so no new triggers should be sent to the nodes
+	for i, ch := range env.triggerChs {
+		require.Equal(t, 0, len(ch), "Node %d should not have received any new trigger payloads due to deduplication", i)
+	}
 }
 
 // validateHTTPTriggerResponse validates the HTTP response and returns the execution ID for further assertions
