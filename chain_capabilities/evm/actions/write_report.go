@@ -6,10 +6,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math/big"
 	"strings"
 	"time"
 
 	"github.com/jpillora/backoff"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
@@ -22,8 +24,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
-
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
 )
 
 const (
@@ -53,12 +53,26 @@ func (e EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMetad
 
 	if report != nil {
 		if report.TxStatus == evm.TxStatus_TX_STATUS_SUCCESS {
-			transactionFee := pb.NewIntFromBigInt(report.TransactionFee).String() // in wei
-			responseAndMetadata.ResponseMetadata = metering.GetResponseMetadata(metering.SpendValueEnum(transactionFee))
+			transactionFee, err := e.getFee(ctx, report.TxHash)
+			if err != nil {
+				return nil, err
+			}
+			responseAndMetadata.ResponseMetadata = metering.GetResponseMetadataWriteReport(transactionFee, e.chainSelector)
 		}
 	}
 	responseAndMetadata.Response = report
 	return &responseAndMetadata, nil
+}
+
+func (e EVM) getFee(ctx context.Context, hash []byte) (*big.Float, error) {
+	transactionID := string(hash)
+	feeInWei, errTxFee := e.EVMService.GetTransactionFee(ctx, transactionID)
+	if errTxFee != nil {
+		return nil, fmt.Errorf("failed to get transaction fee: %w", errTxFee)
+	}
+	feeInEth := new(big.Float).Quo(new(big.Float).SetInt(feeInWei.TransactionFee), big.NewFloat(1e18))
+	e.lggr.Debugw("WriteReport fee", "feeInEth", feeInEth.String(), "feeInWei", feeInWei.TransactionFee.String())
+	return feeInEth, nil
 }
 
 func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.RequestMetadata, request *evm.WriteReportRequest) (*evm.WriteReportReply, error) {

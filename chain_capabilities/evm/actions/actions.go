@@ -43,6 +43,7 @@ type ConsensusHandler interface {
 type EVM struct {
 	types.EVMService
 	ConsensusHandler         ConsensusHandler
+	chainSelector            uint64
 	keystoneForwarderAddress common.Address
 	forwarderClient          contracts.CREForwarderClient
 	ReceiverGasMinimum       uint64
@@ -53,7 +54,7 @@ type EVM struct {
 }
 
 func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, beholderProcessor beholder.ProtoProcessor,
-	messageBuilder *monitoring.MessageBuilder, handler ConsensusHandler) (EVM, error) {
+	messageBuilder *monitoring.MessageBuilder, handler ConsensusHandler, chainSelector uint64) (EVM, error) {
 	keystoneForwarderAddress := common.HexToAddress(cfg.CREForwarderAddress)
 	kfc, err := contracts.NewCREForwarderClient(evmService, keystoneForwarderAddress, lggr)
 	if err != nil {
@@ -69,6 +70,7 @@ func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, 
 		beholderProcessor:        beholderProcessor,
 		messageBuilder:           messageBuilder,
 		ConsensusHandler:         handler,
+		chainSelector:            chainSelector,
 	}, nil
 }
 
@@ -82,6 +84,10 @@ func (e EVM) CallContract(
 	input *evm.CallContractRequest,
 ) (*capabilities.ResponseAndMetadata[*evm.CallContractReply], error) {
 	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
+
+	if err := metering.CheckHasFunds(meta, metering.ActionSpendUnit, string(metering.CallContract)); err != nil {
+		return nil, err
+	}
 
 	callMsg, err := evm.ConvertCallMsgFromProto(input.GetCall())
 	if err != nil {
@@ -231,6 +237,11 @@ func (e EVM) FilterLogs(ctx context.Context, meta capabilities.RequestMetadata, 
 
 func (e EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, req *evm.BalanceAtRequest) (*capabilities.ResponseAndMetadata[*evm.BalanceAtReply], error) {
 	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
+
+	if err := metering.CheckHasFunds(meta, metering.ActionSpendUnit, string(metering.BalanceAt)); err != nil {
+		return nil, err
+	}
+
 	blockNumber, needsBlockHeightConsensus, confidenceLevel, err := normalizeBlockNumber(req.GetBlockNumber())
 	if err != nil {
 		return nil, err
@@ -282,6 +293,11 @@ func (e EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, r
 
 func (e EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata, req *evm.EstimateGasRequest) (*capabilities.ResponseAndMetadata[*evm.EstimateGasReply], error) {
 	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
+
+	if err := metering.CheckHasFunds(meta, metering.ActionSpendUnit, string(metering.EstimateGas)); err != nil {
+		return nil, err
+	}
+
 	msg, err := evm.ConvertCallMsgFromProto(req.GetMsg())
 	if err != nil {
 		return nil, err
@@ -323,6 +339,11 @@ func (e EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata,
 
 func (e EVM) GetTransactionByHash(ctx context.Context, meta capabilities.RequestMetadata, req *evm.GetTransactionByHashRequest) (*capabilities.ResponseAndMetadata[*evm.GetTransactionByHashReply], error) {
 	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
+
+	if err := metering.CheckHasFunds(meta, metering.ActionSpendUnit, string(metering.GetTransactionByHash)); err != nil {
+		return nil, err
+	}
+
 	hash, err := evm.ConvertHashFromProto(req.GetHash())
 	if err != nil {
 		return nil, err
@@ -363,6 +384,11 @@ func (e EVM) GetTransactionByHash(ctx context.Context, meta capabilities.Request
 
 func (e EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.RequestMetadata, req *evm.GetTransactionReceiptRequest) (*capabilities.ResponseAndMetadata[*evm.GetTransactionReceiptReply], error) {
 	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
+
+	if err := metering.CheckHasFunds(meta, metering.ActionSpendUnit, string(metering.GetTransactionReceipt)); err != nil {
+		return nil, err
+	}
+
 	hash, err := evm.ConvertHashFromProto(req.GetHash())
 	if err != nil {
 		return nil, err
@@ -406,6 +432,11 @@ func (e EVM) HeaderByNumber(
 	req *evm.HeaderByNumberRequest,
 ) (*capabilities.ResponseAndMetadata[*evm.HeaderByNumberReply], error) {
 	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
+
+	if err := metering.CheckHasFunds(meta, metering.ActionSpendUnit, string(metering.HeaderByNumber)); err != nil {
+		return nil, err
+	}
+
 	blockNumber, needsBlockHeightConsensus, confidenceLevel, err := normalizeBlockNumber(req.GetBlockNumber())
 	if err != nil {
 		return nil, err

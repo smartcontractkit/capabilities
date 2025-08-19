@@ -47,7 +47,7 @@ func initMocks(t *testing.T) *evmWithMocks {
 	t.Helper()
 	evmSvc := evmmock.NewEVMService(t)
 	consensusHandler := mocks.NewConsensusHandler(t)
-	evm, err := actions.NewEVM(config.Config{}, evmSvc, commonlogger.Test(t), test.NopBeholderProcessor{}, &monitoring.MessageBuilder{}, consensusHandler)
+	evm, err := actions.NewEVM(config.Config{}, evmSvc, commonlogger.Test(t), test.NopBeholderProcessor{}, &monitoring.MessageBuilder{}, consensusHandler, 1)
 	require.NoError(t, err)
 	return &evmWithMocks{
 		EVM:              evm,
@@ -68,7 +68,7 @@ func TestCapability_CallContract(t *testing.T) {
 		svc.consensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
 		req := &evmcappb.CallContractRequest{Call: msgProto, BlockNumber: valuespb.NewBigIntFromInt(block)}
-		resp, err := svc.CallContract(t.Context(), capabilities.RequestMetadata{}, req)
+		resp, err := svc.CallContract(t.Context(), test.GetMetadataWithFunds(), req)
 		require.NoError(t, err)
 		require.Equal(t, []byte("ok"), resp.Response.Data)
 		test.ValidateMetering(t, resp.ResponseMetadata, string(metering.CallContract))
@@ -85,7 +85,7 @@ func TestCapability_CallContract(t *testing.T) {
 		req := &evmcappb.CallContractRequest{Call: msgProto, BlockNumber: valuespb.NewBigIntFromInt(block)}
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
-		_, err := svc.CallContract(ctx, capabilities.RequestMetadata{}, req)
+		_, err := svc.CallContract(ctx, test.GetMetadataWithFunds(), req)
 		require.ErrorContains(t, err, "context canceled")
 	})
 }
@@ -102,7 +102,7 @@ func TestCapability_BalanceAt(t *testing.T) {
 		svc.consensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
 		req := &evmcappb.BalanceAtRequest{Account: []byte("by_account"), BlockNumber: valuespb.NewBigIntFromInt(block)}
-		resp, err := svc.BalanceAt(t.Context(), capabilities.RequestMetadata{}, req)
+		resp, err := svc.BalanceAt(t.Context(), test.GetMetadataWithFunds(), req)
 		require.NoError(t, err)
 		require.Equal(t, int64(1000), valuespb.NewIntFromBigInt(resp.Response.Balance).Int64())
 		test.ValidateMetering(t, resp.ResponseMetadata, string(metering.BalanceAt))
@@ -116,7 +116,7 @@ func TestCapability_BalanceAt(t *testing.T) {
 		req := &evmcappb.BalanceAtRequest{Account: []byte("by_account"), BlockNumber: valuespb.NewBigIntFromInt(block)}
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
-		_, err := svc.BalanceAt(ctx, capabilities.RequestMetadata{}, req)
+		_, err := svc.BalanceAt(ctx, test.GetMetadataWithFunds(), req)
 		require.ErrorContains(t, err, "context canceled")
 	})
 }
@@ -177,7 +177,7 @@ func TestCapability_GetTransactionByHash(t *testing.T) {
 		svc.consensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
 		req := &evmcappb.GetTransactionByHashRequest{Hash: make([]byte, 32)}
-		resp, err := svc.GetTransactionByHash(t.Context(), capabilities.RequestMetadata{}, req)
+		resp, err := svc.GetTransactionByHash(t.Context(), test.GetMetadataWithFunds(), req)
 		require.NoError(t, err)
 		require.Empty(t, cmp.Diff(evmcappb.GetTransactionByHashReply{Transaction: tx}, resp.Response, protocmp.Transform()))
 		test.ValidateMetering(t, resp.ResponseMetadata, string(metering.GetTransactionByHash))
@@ -186,7 +186,7 @@ func TestCapability_GetTransactionByHash(t *testing.T) {
 		svc := initMocks(t)
 
 		req := &evmcappb.GetTransactionByHashRequest{Hash: make([]byte, 2)}
-		_, err := svc.GetTransactionByHash(t.Context(), capabilities.RequestMetadata{}, req)
+		_, err := svc.GetTransactionByHash(t.Context(), test.GetMetadataWithFunds(), req)
 		require.ErrorContains(t, err, "invalid hash: got 2 bytes, expected 32")
 	})
 	t.Run("Returns error on timeout", func(t *testing.T) {
@@ -198,7 +198,7 @@ func TestCapability_GetTransactionByHash(t *testing.T) {
 		req := &evmcappb.GetTransactionByHashRequest{Hash: make([]byte, 32)}
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
-		_, err := svc.GetTransactionByHash(ctx, capabilities.RequestMetadata{}, req)
+		_, err := svc.GetTransactionByHash(ctx, test.GetMetadataWithFunds(), req)
 		require.ErrorContains(t, err, "context canceled")
 	})
 }
@@ -215,7 +215,7 @@ func TestCapability_GetTransactionReceipt(t *testing.T) {
 		svc.consensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
 		req := &evmcappb.GetTransactionReceiptRequest{Hash: make([]byte, 32)}
-		resp, err := svc.GetTransactionReceipt(t.Context(), capabilities.RequestMetadata{}, req)
+		resp, err := svc.GetTransactionReceipt(t.Context(), test.GetMetadataWithFunds(), req)
 		require.NoError(t, err)
 		require.Empty(t, cmp.Diff(evmcappb.GetTransactionReceiptReply{Receipt: receipt}, resp.Response, protocmp.Transform()))
 		test.ValidateMetering(t, resp.ResponseMetadata, string(metering.GetTransactionReceipt))
@@ -224,7 +224,7 @@ func TestCapability_GetTransactionReceipt(t *testing.T) {
 		svc := initMocks(t)
 
 		req := &evmcappb.GetTransactionReceiptRequest{Hash: make([]byte, 2)}
-		_, err := svc.GetTransactionReceipt(t.Context(), capabilities.RequestMetadata{}, req)
+		_, err := svc.GetTransactionReceipt(t.Context(), test.GetMetadataWithFunds(), req)
 		require.ErrorContains(t, err, "invalid hash: got 2 bytes, expected 32")
 	})
 	t.Run("Returns error on timeout", func(t *testing.T) {
@@ -236,7 +236,7 @@ func TestCapability_GetTransactionReceipt(t *testing.T) {
 		req := &evmcappb.GetTransactionReceiptRequest{Hash: make([]byte, 32)}
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
-		_, err := svc.GetTransactionReceipt(ctx, capabilities.RequestMetadata{}, req)
+		_, err := svc.GetTransactionReceipt(ctx, test.GetMetadataWithFunds(), req)
 		require.ErrorContains(t, err, "context canceled")
 	})
 }
@@ -255,7 +255,7 @@ func TestCapability_EstimateGas(t *testing.T) {
 		svc.consensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
 		req := &evmcappb.EstimateGasRequest{Msg: &evmcappb.CallMsg{Data: []byte{0xbe, 0xef}, From: make([]byte, common.AddressLength), To: make([]byte, common.AddressLength)}}
-		resp, err := svc.EstimateGas(t.Context(), capabilities.RequestMetadata{}, req)
+		resp, err := svc.EstimateGas(t.Context(), test.GetMetadataWithFunds(), req)
 		require.NoError(t, err)
 		require.Empty(t, cmp.Diff(evmcappb.EstimateGasReply{Gas: 12300}, resp.Response, protocmp.Transform()))
 		test.ValidateMetering(t, resp.ResponseMetadata, string(metering.EstimateGas))
@@ -264,7 +264,7 @@ func TestCapability_EstimateGas(t *testing.T) {
 		svc := initMocks(t)
 
 		req := &evmcappb.EstimateGasRequest{Msg: nil}
-		_, err := svc.EstimateGas(t.Context(), capabilities.RequestMetadata{}, req)
+		_, err := svc.EstimateGas(t.Context(), test.GetMetadataWithFunds(), req)
 		require.ErrorContains(t, err, "call msg can't be nil")
 	})
 	t.Run("Returns error on timeout", func(t *testing.T) {
@@ -276,7 +276,7 @@ func TestCapability_EstimateGas(t *testing.T) {
 		req := &evmcappb.EstimateGasRequest{Msg: &evmcappb.CallMsg{Data: []byte{0xbe, 0xef}, From: make([]byte, common.AddressLength), To: make([]byte, common.AddressLength)}}
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
-		_, err := svc.EstimateGas(ctx, capabilities.RequestMetadata{}, req)
+		_, err := svc.EstimateGas(ctx, test.GetMetadataWithFunds(), req)
 		require.ErrorContains(t, err, "context canceled")
 	})
 }
@@ -340,7 +340,7 @@ func TestCapability_HeaderByNumber(t *testing.T) {
 		svc.consensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
 		req := &evmcappb.HeaderByNumberRequest{BlockNumber: valuespb.NewBigIntFromInt(block)}
-		resp, err := svc.HeaderByNumber(t.Context(), capabilities.RequestMetadata{}, req)
+		resp, err := svc.HeaderByNumber(t.Context(), test.GetMetadataWithFunds(), req)
 		require.NoError(t, err)
 		require.Empty(t, cmp.Diff(expectedReply, resp.Response, protocmp.Transform()))
 		test.ValidateMetering(t, resp.ResponseMetadata, string(metering.HeaderByNumber))
@@ -355,7 +355,7 @@ func TestCapability_HeaderByNumber(t *testing.T) {
 		req := &evmcappb.HeaderByNumberRequest{BlockNumber: valuespb.NewBigIntFromInt(block)}
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
-		_, err := svc.HeaderByNumber(ctx, capabilities.RequestMetadata{}, req)
+		_, err := svc.HeaderByNumber(ctx, test.GetMetadataWithFunds(), req)
 		require.ErrorContains(t, err, "context canceled")
 	})
 }
