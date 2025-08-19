@@ -1,8 +1,9 @@
-package http_test
+package http
 
 import (
 	"context"
 	"crypto/ecdsa"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
@@ -19,6 +21,7 @@ import (
 	triggercap "github.com/smartcontractkit/capabilities/http_trigger/trigger"
 
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway"
+	"github.com/smartcontractkit/chainlink/v2/core/utils"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	triggersdk "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
@@ -55,27 +58,32 @@ const triggerGatewayConfigTemplate = `
   },
   "Dons": [
     {
-      "DonId": "workflows",
-      "HandlerName": "http-capabilities",
+      "DonId": "test_don",
 	  "F": 1,
-      "HandlerConfig": {
-        "MaxAllowedMessageAgeSec": 1000,
-        "NodeRateLimiter": {
-          "GlobalBurst": 10,
-          "GlobalRPS": 50,
-          "PerSenderBurst": 10,
-          "PerSenderRPS": 10
-        },
-		"UserRateLimiter": {
-		  "GlobalBurst": 10,
-          "GlobalRPS": 50,
-          "PerSenderBurst": 10,
-          "PerSenderRPS": 10	
-		}
-      },
-      "Members": [
-		%s
-      ]
+      "Handlers": [
+		{
+			"Name": "http-capabilities",
+			"ServiceName": "workflows",
+			"Config": {
+				"MaxTriggerRequestDurationMs": 5000,
+				"MetadataPullIntervalMs": 1000,
+				"MetadataAggregationIntervalMs": 1000,
+				"NodeRateLimiter": {
+					"GlobalBurst": 10,
+					"GlobalRPS": 50,
+					"PerSenderBurst": 10,
+					"PerSenderRPS": 10
+				},
+				"UserRateLimiter": {
+					"GlobalBurst": 10,
+					"GlobalRPS": 50,
+					"PerSenderBurst": 10,
+					"PerSenderRPS": 10	
+				}
+			}
+	    }
+	  ],
+      "Members": [%s]
     }
   ]
 }
@@ -102,6 +110,15 @@ const triggerServiceConfigTemplate = `
 	}
 }
 `
+
+const workflowID = "0xe3c0f8139e9e4cf0b2c31c70f3f4ae12"
+
+// Workflow reference constants for testing
+const (
+	workflowOwner = "0x1234567890123456789012345678901234567890"
+	workflowName  = "test-workflow"
+	workflowTag   = "production"
+)
 
 func nodeKeys(t *testing.T, numNodes int) []*ecdsa.PrivateKey {
 	var keys []*ecdsa.PrivateKey
@@ -142,7 +159,7 @@ func setupTestEnv(t *testing.T, numNodes int) *testEnv {
 		triggerGatewayConfigTemplate,
 		strings.Join(membersStr, ","),
 	)
-	gateway := newTestGateway(t, gatewayConfigStr, nil, lggr)
+	gateway := newTestGatewayFromConfig(t, gatewayConfigStr, nil, lggr)
 	nodeURL := fmt.Sprintf("ws://localhost:%d/node", gateway.GetNodePort())
 	userURL := fmt.Sprintf("http://localhost:%d/user", gateway.GetUserPort())
 
@@ -167,7 +184,7 @@ func setupTestEnv(t *testing.T, numNodes int) *testEnv {
 	}
 }
 
-func sampleRequest(t *testing.T) (string, string, string, map[string]any) {
+func createSampleRequest(t *testing.T, url string, key *ecdsa.PrivateKey, workflow gateway_common.WorkflowSelector) (*http.Request, string, map[string]any) {
 	input := make(map[string]any)
 	input["key"] = "value"
 	input["count"] = 5.0
@@ -175,85 +192,142 @@ func sampleRequest(t *testing.T) (string, string, string, map[string]any) {
 	require.NoError(t, err)
 	rawInput := json.RawMessage(marshalledInput)
 
-	workflowID := "0xe3c0f8139e9e4cf0b2c31c70f3f4ae12"
-	requestID := "8f73d3a4-6d7c-4d1d-b9f2-28c8f630fa27"
+	requestID := uuid.New().String()
 	req := jsonrpc.Request[gateway_common.HTTPTriggerRequest]{
 		Version: jsonrpc.JsonRpcVersion,
 		ID:      requestID,
-		Method:  "workflows.execute",
+		Method:  gateway_common.MethodWorkflowExecute,
 		Params: &gateway_common.HTTPTriggerRequest{
-			Workflow: gateway_common.WorkflowSelector{
-				WorkflowID: workflowID,
-			},
-			Input: rawInput,
+			Workflow: workflow,
+			Input:    rawInput,
 		},
 	}
 	payloadBytes, err := json.Marshal(req)
 	require.NoError(t, err)
 	payload := string(payloadBytes)
-	return payload, requestID, workflowID, input
+	unsignedToken, err := utils.CreateRequestJWT(req)
+	require.NoError(t, err)
+	signedToken, err := unsignedToken.SignedString(key)
+	require.NoError(t, err)
+	httpReq, err := http.NewRequestWithContext(t.Context(), http.MethodPost, url, strings.NewReader(payload))
+	require.NoError(t, err)
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", signedToken))
+	return httpReq, requestID, input
+}
+
+func sampleRequest(t *testing.T, url string, key *ecdsa.PrivateKey) (*http.Request, string, map[string]any) {
+	workflow := gateway_common.WorkflowSelector{
+		WorkflowID: workflowID,
+	}
+	return createSampleRequest(t, url, key, workflow)
+}
+
+func sampleRequestWithReference(t *testing.T, url string, key *ecdsa.PrivateKey) (*http.Request, string, map[string]any) {
+	workflow := gateway_common.WorkflowSelector{
+		WorkflowOwner: workflowOwner,
+		WorkflowName:  workflowName,
+		WorkflowTag:   workflowTag,
+	}
+	return createSampleRequest(t, url, key, workflow)
 }
 
 func TestHTTPTrigger(t *testing.T) {
 	f := 1
 	numNodes := 3*f + 1
 	env := setupTestEnv(t, numNodes)
-	payload, requestID, workflowID, input := sampleRequest(t)
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, env.userURL, strings.NewReader(payload))
-	require.NoError(t, err)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-	var respBody jsonrpc.Response[gateway_common.HTTPTriggerResponse]
-	err = json.Unmarshal(body, &respBody)
-	require.NoError(t, err)
-	require.Equal(t, requestID, respBody.ID)
-	require.Equal(t, gateway_common.HTTPTriggerStatusAccepted, respBody.Result.Status)
-	executionID, err := workflows.EncodeExecutionID(workflowID, requestID)
-	require.NoError(t, err)
-	require.Equal(t, executionID, respBody.Result.WorkflowExecutionID)
-	require.Equal(t, workflowID, respBody.Result.WorkflowID)
+	t.Run("WithWorkflowID", func(t *testing.T) {
+		testHTTPTriggerWithWorkflowID(t, env)
+	})
 
-	for i, ch := range env.triggerChs {
-		select {
-		case payload := <-ch:
-			require.NotNil(t, payload)
-			require.Equal(t, executionID, payload.Id)
-			require.EqualValues(t, input, payload.Trigger.Input.AsMap())
-			// TODO: Uncomment when signed
-			// require.Equal(t, triggersdk.KeyType_KEY_TYPE_ECDSA, payload.Trigger.Key.Type)
-		default:
-			t.Fatalf("Node %d did not receive a trigger in time", i)
-		}
-	}
+	t.Run("WithWorkflowReference", func(t *testing.T) {
+		testHTTPTriggerWithWorkflowReference(t, env)
+	})
 }
 
 func TestHTTPTrigger_InsufficientNodes(t *testing.T) {
-	env := setupTestEnv(t, 2) // F+1 nodes = 4, but only 2 nodes
-	payload, requestID, workflowID, input := sampleRequest(t)
-	executionID, err := workflows.EncodeExecutionID(workflowID, requestID)
+	env := setupTestEnv(t, 2) // 3 nodes required for successful workflow execution, but only 2 nodes
+	var requestID string
+	var req *http.Request
+	var input map[string]any
+	require.Eventually(t, func() bool {
+		req, requestID, input = sampleRequest(t, env.userURL, env.signingKey)
+		_, err := http.DefaultClient.Do(req)
+		return err != nil // request times out and returns an error if threshold of node responses is not met
+	}, 30*time.Second, 100*time.Millisecond)
+	executionID, err := workflows.EncodeExecutionID(strings.TrimPrefix(workflowID, "0x"), requestID)
 	require.NoError(t, err)
-	ctx, cancel := context.WithTimeout(env.ctx, 5*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, env.userURL, strings.NewReader(payload))
-	require.NoError(t, err)
-	req.Header.Set("Content-Type", "application/json")
-	_, err = http.DefaultClient.Do(req)
-	require.Error(t, err)
+	assertTriggerPayload(t, env, executionID, input) // workflows are still triggered even if not all nodes are available
+}
 
+func testHTTPTriggerWithWorkflowID(t *testing.T, env *testEnv) {
+	var req *http.Request
+	var requestID string
+	var input map[string]any
+	var body []byte
+	require.Eventually(t, func() bool {
+		req, requestID, input = sampleRequest(t, env.userURL, env.signingKey)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		body, err = io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		return resp.StatusCode == http.StatusOK
+	}, 30*time.Second, 100*time.Millisecond)
+
+	executionID := validateHTTPTriggerResponse(t, body, requestID, workflowID)
+	assertTriggerPayload(t, env, executionID, input)
+}
+
+func testHTTPTriggerWithWorkflowReference(t *testing.T, env *testEnv) {
+	var req *http.Request
+	var requestID string
+	var input map[string]any
+	var body []byte
+	require.Eventually(t, func() bool {
+		req, requestID, input = sampleRequestWithReference(t, env.userURL, env.signingKey)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		body, err = io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		return resp.StatusCode == http.StatusOK
+	}, 30*time.Second, 100*time.Millisecond)
+
+	executionID := validateHTTPTriggerResponse(t, body, requestID, workflowID)
+	assertTriggerPayload(t, env, executionID, input)
+}
+
+// validateHTTPTriggerResponse validates the HTTP response and returns the execution ID for further assertions
+func validateHTTPTriggerResponse(t *testing.T, body []byte, requestID string, expectedWorkflowID string) string {
+	var respBody jsonrpc.Response[gateway_common.HTTPTriggerResponse]
+	err := json.Unmarshal(body, &respBody)
+	require.NoError(t, err)
+	require.Equal(t, requestID, respBody.ID)
+	require.Equal(t, gateway_common.HTTPTriggerStatusAccepted, respBody.Result.Status)
+
+	require.NotEmpty(t, respBody.Result.WorkflowID)
+	workflowIDFromResponse := respBody.Result.WorkflowID
+	require.Equal(t, expectedWorkflowID, workflowIDFromResponse)
+
+	executionID, err := workflows.EncodeExecutionID(strings.TrimPrefix(workflowIDFromResponse, "0x"), requestID)
+	require.NoError(t, err)
+	require.Equal(t, "0x"+executionID, respBody.Result.WorkflowExecutionID)
+
+	return executionID
+}
+
+func assertTriggerPayload(t *testing.T, env *testEnv, executionID string, input map[string]any) {
 	for i, ch := range env.triggerChs {
 		select {
 		case payload := <-ch:
 			require.NotNil(t, payload)
-			require.Equal(t, executionID, payload.Id)
+			require.Equal(t, "0x"+executionID, payload.Id)
 			require.EqualValues(t, input, payload.Trigger.Input.AsMap())
-			// TODO: Uncomment when signed
-			// require.Equal(t, triggersdk.KeyType_KEY_TYPE_ECDSA, payload.Trigger.Key.Type)
+			require.Equal(t, triggersdk.KeyType_KEY_TYPE_ECDSA_EVM, payload.Trigger.Key.Type)
+			publicKey := strings.ToLower(crypto.PubkeyToAddress(env.signingKey.PublicKey).Hex())
+			require.Equal(t, publicKey, payload.Trigger.Key.PublicKey)
 		default:
 			t.Fatalf("Node %d did not receive a trigger in time", i)
 		}
@@ -261,17 +335,23 @@ func TestHTTPTrigger_InsufficientNodes(t *testing.T) {
 }
 
 func newTriggerHTTPCapability(ctx context.Context, t *testing.T, nodeURL string, privateKey *ecdsa.PrivateKey, signingKey *ecdsa.PrivateKey, lggr logger.Logger) (server.HTTPCapability, <-chan capabilities.TriggerAndId[*triggersdk.Payload]) {
-	gc := newTestGatewayConnector(t, "workflows", nodeURL, privateKey, lggr)
+	publicKey := strings.ToLower(crypto.PubkeyToAddress(privateKey.PublicKey).Hex())
+	client := &client{privateKey: privateKey}
+	gc := newTestGatewayConnector(t, publicKey, nodeURL, client, lggr)
 	triggerCap := triggercap.NewService(lggr)
-	err := triggerCap.Initialise(ctx, triggerServiceConfigTemplate, nil, nil, nil, nil, nil, nil, gc, nil)
+	kvStore := newTestKeyValueStore()
+	err := triggerCap.Initialise(ctx, triggerServiceConfigTemplate, nil, kvStore, nil, nil, nil, nil, gc, nil)
 	require.NoError(t, err)
-	err = triggerCap.Start(ctx)
-	require.NoError(t, err)
-	ch, err := triggerCap.RegisterTrigger(ctx, "trigger-id", capabilities.RequestMetadata{WorkflowID: "0xe3c0f8139e9e4cf0b2c31c70f3f4ae12"}, &triggersdk.Config{
+	ch, err := triggerCap.RegisterTrigger(ctx, "trigger-id", capabilities.RequestMetadata{
+		WorkflowID:    workflowID,
+		WorkflowName:  hex.EncodeToString([]byte(workflows.HashTruncateName(workflowName))),
+		WorkflowOwner: workflowOwner,
+		WorkflowTag:   workflowTag,
+	}, &triggersdk.Config{
 		AuthorizedKeys: []*triggersdk.AuthorizedKey{
 			{
 				PublicKey: strings.ToLower(crypto.PubkeyToAddress(signingKey.PublicKey).Hex()),
-				Type:      triggersdk.KeyType_KEY_TYPE_ECDSA,
+				Type:      triggersdk.KeyType_KEY_TYPE_ECDSA_EVM,
 			},
 		},
 	})

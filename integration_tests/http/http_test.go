@@ -1,4 +1,4 @@
-package http_test
+package http
 
 import (
 	"context"
@@ -79,22 +79,27 @@ const gatewayConfigTemplate = `
   "Dons": [
     {
       "DonId": "test_don",
-      "HandlerName": "http-capabilities",
-      "HandlerConfig": {
-        "MaxAllowedMessageAgeSec": 1000,
-        "NodeRateLimiter": {
-          "GlobalBurst": 10,
-          "GlobalRPS": 50,
-          "PerSenderBurst": 10,
-          "PerSenderRPS": 10
-        },
-		"UserRateLimiter": {
-		  "GlobalBurst": 10,
-          "GlobalRPS": 50,
-          "PerSenderBurst": 10,
-          "PerSenderRPS": 10	
+	  "F": 1,
+      "Handlers": [
+		{
+			"Name": "http-capabilities",
+			"ServiceName": "workflows",
+			"Config": {
+				"NodeRateLimiter": {
+					"GlobalBurst": 10,
+					"GlobalRPS": 50,
+					"PerSenderBurst": 10,
+					"PerSenderRPS": 10
+				},
+				"UserRateLimiter": {
+					"GlobalBurst": 10,
+					"GlobalRPS": 50,
+					"PerSenderBurst": 10,
+					"PerSenderRPS": 10	
+				}
+			}
 		}
-      },
+	  ],
       "Members": [
         {
           "Address": "%s",
@@ -155,6 +160,10 @@ func newTestNetworkClient(t *testing.T, addr *net.TCPAddr, lggr logger.Logger) n
 
 func newTestGateway(t *testing.T, publicKey string, c network.HTTPClient, lggr logger.Logger) gateway.Gateway {
 	gatewayConfigStr := fmt.Sprintf(gatewayConfigTemplate, publicKey)
+	return newTestGatewayFromConfig(t, gatewayConfigStr, c, lggr)
+}
+
+func newTestGatewayFromConfig(t *testing.T, gatewayConfigStr string, c network.HTTPClient, lggr logger.Logger) gateway.Gateway {
 	var gatewayConfig *config.GatewayConfig
 	err := json.Unmarshal([]byte(gatewayConfigStr), &gatewayConfig)
 	require.NoError(t, err)

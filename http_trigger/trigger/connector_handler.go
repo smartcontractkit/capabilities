@@ -401,7 +401,7 @@ func (h *connectorHandler) triggerWorkflow(ctx context.Context, workflowID strin
 		h.sendErrorResponse(ctx, gatewayID, reqID, jsonrpc.ErrInvalidRequest, "Workflow not registered")
 		return fmt.Errorf("workflowID %s not registered", workflowID)
 	}
-	executionID, err := workflows.EncodeExecutionID(workflowID, reqID)
+	executionID, err := h.generateWorkflowExecutionID(workflowID, reqID, h.lggr)
 	if err != nil {
 		h.sendErrorResponse(ctx, gatewayID, reqID, jsonrpc.ErrInternal, "Internal server error")
 		return fmt.Errorf("failed to encode workflow execution ID: %w", err)
