@@ -83,7 +83,7 @@ const triggerGatewayConfigTemplate = `
 			}
 	    }
 	  ],
-      "Members": [%s]
+      "Members": [ %s ]
     }
   ]
 }
