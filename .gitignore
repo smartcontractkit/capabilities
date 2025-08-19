@@ -9,6 +9,7 @@
 *.dylib
 .DS_Store
 **/.tools
+*.wasm
 
 # IntelliJ IDE
 .idea
