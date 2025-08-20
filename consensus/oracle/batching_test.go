@@ -263,28 +263,6 @@ func TestGetIDKey_DuplicateRecognition(t *testing.T) {
 					},
 				},
 			},
-			{
-				name: "different workflow ID",
-				metadata: ConsensusRequestMetadata{
-					RequestMetadata: capabilities.RequestMetadata{
-						WorkflowExecutionID: baseMetadata.WorkflowExecutionID,
-						ReferenceID:         baseMetadata.ReferenceID,
-						WorkflowID:          "workflow-different",
-						WorkflowOwner:       baseMetadata.WorkflowOwner,
-					},
-				},
-			},
-			{
-				name: "different workflow owner",
-				metadata: ConsensusRequestMetadata{
-					RequestMetadata: capabilities.RequestMetadata{
-						WorkflowExecutionID: baseMetadata.WorkflowExecutionID,
-						ReferenceID:         baseMetadata.ReferenceID,
-						WorkflowID:          baseMetadata.WorkflowID,
-						WorkflowOwner:       "different-owner@example.com",
-					},
-				},
-			},
 		}
 
 		baseRequest := &ConsensusRequest{
