@@ -8,8 +8,6 @@ import (
 type IDKey struct {
 	workflowExecutionID string
 	referenceID         string
-	workflowID          string
-	workflowOwner       string
 }
 
 // GetIDKey creates a unique identifier from a ConsensusRequest for deduplication
@@ -17,8 +15,6 @@ func GetIDKey(rq *ConsensusRequest) IDKey {
 	return IDKey{
 		workflowExecutionID: rq.Metadata.WorkflowExecutionID,
 		referenceID:         rq.Metadata.ReferenceID,
-		workflowID:          rq.Metadata.WorkflowID,
-		workflowOwner:       rq.Metadata.WorkflowOwner,
 	}
 }
 
