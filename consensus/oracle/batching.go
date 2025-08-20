@@ -75,7 +75,7 @@ func BatchHasCapacity(cachedSize int, message proto.Message, maxSizeBytes int) (
 
 	totalSizeWithNewMessage := cachedSize + tagSize + lengthSize + newMessageSize
 
-	// Check against limits
+	// Check against config
 	if totalSizeWithNewMessage > maxSizeBytes {
 		// Stop adding more messages
 		return false, cachedSize

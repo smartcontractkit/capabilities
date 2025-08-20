@@ -43,7 +43,7 @@ type reportingPlugin struct {
 
 	minimumObservations int
 
-	limits reportingPluginLimits
+	config *ocrtypes.ReportingPluginConfig
 
 	lggr logger.Logger
 }
@@ -62,11 +62,7 @@ func NewReportingPlugin(lggr logger.Logger, f int, n int, store *requests.Store[
 		n:                   n,
 		minimumObservations: 2*f + 1,
 		lggr:                logger.Named(lggr, "CapabilityConsensusReportingPlugin"),
-		limits: reportingPluginLimits{
-			maxQueryLengthBytes:       int(configProto.MaxQueryLengthBytes),
-			maxObservationLengthBytes: int(configProto.MaxObservationLengthBytes),
-			maxOutcomeLengthBytes:     int(configProto.MaxOutcomeLengthBytes),
-		},
+		config:              configProto,
 	}, nil
 }
 
@@ -115,7 +111,7 @@ func (r *reportingPlugin) Query(ctx context.Context, outctx ocr3types.OutcomeCon
 		}
 
 		// If the new id would exceed the max query size, stop adding more ids
-		ok, newSize := BatchHasCapacity(cachedQuerySize, newReq, r.limits.maxQueryLengthBytes)
+		ok, newSize := BatchHasCapacity(cachedQuerySize, newReq, int(r.config.MaxQueryLengthBytes))
 		if !ok {
 			break
 		}
@@ -240,7 +236,7 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 		}
 
 		if newOb != nil {
-			ok, newSize := BatchHasCapacity(cachedObsSize, newOb, r.limits.maxObservationLengthBytes)
+			ok, newSize := BatchHasCapacity(cachedObsSize, newOb, int(r.config.MaxObservationLengthBytes))
 			if !ok {
 				break
 			}
@@ -359,7 +355,7 @@ func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeC
 			Timestamp: calculateMedianTimestamp(timestamps),
 		}
 
-		ok, newSize := BatchHasCapacity(cachedOutcomeSize, newRequestOutcome, r.limits.maxOutcomeLengthBytes)
+		ok, newSize := BatchHasCapacity(cachedOutcomeSize, newRequestOutcome, int(r.config.MaxOutcomeLengthBytes))
 		if !ok {
 			break
 		}
