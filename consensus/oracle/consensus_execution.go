@@ -24,22 +24,18 @@ var (
 )
 
 // Constants for type names used in aggregation logic.
-const (
-	TypeInt64   = "*values.Int64"
-	TypeFloat64 = "*values.Float64"
-	TypeDecimal = "*values.Decimal"
-	TypeBigInt  = "*values.BigInt"
-	TypeString  = "*values.String"
-	TypeBool    = "*values.Bool"
-	TypeBytes   = "*values.Bytes"
-	TypeMap     = "*values.Map"
-	TypeList    = "*values.List"
-	TypeTime    = "*values.Time"
-	TypeNil     = "<nil>" // Represents a nil values.Value or protobuf value
+var (
+	typeInt64   = reflect.TypeOf((*valuespb.Value_Int64Value)(nil))
+	typeUint64  = reflect.TypeOf((*valuespb.Value_Uint64Value)(nil))
+	typeFloat64 = reflect.TypeOf((*valuespb.Value_Float64Value)(nil))
+	typeDecimal = reflect.TypeOf((*valuespb.Value_DecimalValue)(nil))
+	typeBigInt  = reflect.TypeOf((*valuespb.Value_BigintValue)(nil))
+	typeString  = reflect.TypeOf((*valuespb.Value_StringValue)(nil))
+	typeTime    = reflect.TypeOf((*valuespb.Value_TimeValue)(nil))
 )
 
 // CalculateOutcomeForObservations determines the outcome for a set of observations based on a consensus descriptor.
-// It now supports median aggregation for Int64, Float64, Decimal, BigInt, and Time types. It assumes that the observationProtos
+// It now supports median aggregation for Int64, Uint64, Float64, Decimal, BigInt, and Time types. It assumes that the observationProtos
 // are already validated to ensure they all correctly unmarshal to a values.Value
 func CalculateOutcomeForObservations(
 	lggr logger.Logger,
@@ -146,7 +142,6 @@ func handleFieldsMapAggregation(
 	return valuespb.NewMapValue(result), nil
 }
 
-// TODO: CAPPL-1029 handle mixed observations of uint64 that are encoded as Int64 and BigInt
 func handleMedianAggregation(
 	_ logger.Logger,
 	observations []*valuespb.Value,
@@ -166,7 +161,28 @@ func handleMedianAggregation(
 	}
 
 	switch medianType {
-	case TypeInt64:
+	case typeUint64:
+		medianResult, err = getMedian(
+			filtered,
+			func(val *valuespb.Value) (uint64, error) {
+				return val.GetUint64Value(), nil
+			},
+			func(a, b uint64) int {
+				if a < b {
+					return -1
+				}
+				if a > b {
+					return 1
+				}
+				return 0
+			},
+			f,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to calculate uint64 median: %w", err)
+		}
+
+	case typeInt64:
 		medianResult, err = getMedian(
 			filtered,
 			func(val *valuespb.Value) (int64, error) {
@@ -187,7 +203,7 @@ func handleMedianAggregation(
 			return nil, fmt.Errorf("failed to calculate int64 median: %w", err)
 		}
 
-	case TypeFloat64:
+	case typeFloat64:
 		medianResult, err = getMedian(
 			filtered,
 			func(val *valuespb.Value) (float64, error) {
@@ -208,7 +224,7 @@ func handleMedianAggregation(
 			return nil, fmt.Errorf("failed to calculate float64 median: %w", err)
 		}
 
-	case TypeDecimal:
+	case typeDecimal:
 		medianResult, err = getMedian(
 			filtered,
 			func(val *valuespb.Value) (decimal.Decimal, error) {
@@ -228,7 +244,7 @@ func handleMedianAggregation(
 			return nil, fmt.Errorf("failed to calculate decimal median: %w", err)
 		}
 
-	case TypeBigInt:
+	case typeBigInt:
 		medianResult, err = getMedian(
 			filtered,
 			func(val *valuespb.Value) (*big.Int, error) {
@@ -248,7 +264,7 @@ func handleMedianAggregation(
 			return nil, fmt.Errorf("failed to calculate big.Int median: %w", err)
 		}
 
-	case TypeTime:
+	case typeTime:
 		medianResult, err = getMedian(
 			filtered,
 			func(val *valuespb.Value) (time.Time, error) {
@@ -386,91 +402,46 @@ func handleCommonPrefixAggregation(lggr logger.Logger, observations []*valuespb.
 	return valuespb.NewListValue(commonPrefixElements), nil
 }
 
-// countTypes takes a slice of valuespb.Value and returns a map
-// where keys are the constant string names of the corresponding values.Value types
-// and values are their counts.
-func countTypes(observationProtos []*valuespb.Value) map[string]int {
-	typeCounts := make(map[string]int)
-
-	for _, obsProto := range observationProtos {
-		if obsProto == nil || obsProto.Value == nil {
-			typeCounts[TypeNil]++
-			continue
-		}
-
-		var typeName string
-		switch obsProto.Value.(type) {
-		case *valuespb.Value_StringValue:
-			typeName = TypeString
-		case *valuespb.Value_BoolValue:
-			typeName = TypeBool
-		case *valuespb.Value_BytesValue:
-			typeName = TypeBytes
-		case *valuespb.Value_MapValue:
-			typeName = TypeMap
-		case *valuespb.Value_ListValue:
-			typeName = TypeList
-		case *valuespb.Value_DecimalValue:
-			typeName = TypeDecimal
-		case *valuespb.Value_Int64Value:
-			typeName = TypeInt64
-		case *valuespb.Value_BigintValue:
-			typeName = TypeBigInt
-		case *valuespb.Value_TimeValue:
-			typeName = TypeTime
-		case *valuespb.Value_Float64Value:
-			typeName = TypeFloat64
-		default:
-			// Fallback for unknown or unhandled types (should be rare with a complete protobuf definition)
-			typeName = fmt.Sprintf("unknown_proto_type_%T", obsProto.Value)
-		}
-		typeCounts[typeName]++
-	}
-	return typeCounts
-}
-
 // filterObservations returns all the observations that meet the minimum observation
 // threshold of the same underlying type.  Errors if no single type meets the
 // threshold.
-func filterObservations(observationProtos []*valuespb.Value, minObservations int) ([]*valuespb.Value, string, error) {
+func filterObservations(observationProtos []*valuespb.Value, minObservations int) ([]*valuespb.Value, reflect.Type, error) {
 	if len(observationProtos) < minObservations {
-		return nil, "", fmt.Errorf("insufficient observations (%d) to meet minimum (%d)", len(observationProtos), minObservations)
+		return nil, nil, fmt.Errorf("insufficient observations (%d) to meet minimum (%d)", len(observationProtos), minObservations)
 	}
 
-	typeCounts := countTypes(observationProtos)
+	var dominantType reflect.Type
+	var highestCount int
+	var highestCountEqual bool
 
-	var dominantType string
-	var maxCount int
-	for typeName, count := range typeCounts {
-		if count >= minObservations {
-			if count > maxCount {
-				maxCount = count
-				dominantType = typeName
-			}
-		}
-	}
+	observationsByType := map[reflect.Type][]*valuespb.Value{}
 
-	if dominantType == "" || dominantType == TypeNil {
-		return nil, "", fmt.Errorf("no single type met the minimum observation threshold of %d", minObservations)
-	}
-
-	observations := make([]*valuespb.Value, 0, len(observationProtos))
-	for _, obsProto := range observationProtos {
-		obs, err := values.FromProto(obsProto)
-		if err != nil {
-			return nil, "", fmt.Errorf("failed to unmarshal observation value: %w", err)
-		}
-
-		if obs == nil {
+	for _, observation := range observationProtos {
+		if observation.Value == nil {
 			continue
 		}
 
-		if reflect.TypeOf(obs).String() == dominantType {
-			observations = append(observations, obsProto)
+		tpe := reflect.TypeOf(observation.Value)
+		observationsByType[tpe] = append(observationsByType[tpe], observation)
+		count := len(observationsByType[tpe])
+		if count > highestCount {
+			highestCount = count
+			dominantType = tpe
+			highestCountEqual = false
+		} else if count == highestCount {
+			highestCountEqual = true
 		}
 	}
 
-	return observations, dominantType, nil
+	if highestCount < minObservations {
+		return nil, nil, fmt.Errorf("no single type met the minimum observation threshold of %d", minObservations)
+	}
+
+	if highestCountEqual {
+		return nil, nil, ErrMultipleValuesMetThreshold
+	}
+
+	return observationsByType[dominantType], dominantType, nil
 }
 
 // getMedian is a generic helper function that calculates the median
