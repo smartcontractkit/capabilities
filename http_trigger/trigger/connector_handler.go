@@ -20,7 +20,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
-	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway/metrics"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
 )
 
@@ -45,13 +44,14 @@ type connectorHandler struct {
 	incomingRateLimiter      *ratelimit.RateLimiter
 	outgoingRateLimiter      *ratelimit.RateLimiter
 	gatewayMetadataPublisher GatewayMetadataPublisher
+	metrics                  *Metrics
 	wg                       sync.WaitGroup
 	stopChan                 services.StopChan
 }
 
 func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config ServiceConfig,
 	outgoingRateLimiter *ratelimit.RateLimiter, incomingRateLimiter *ratelimit.RateLimiter,
-	workflowStore *workflowStore, gatewayMetadataPublisher GatewayMetadataPublisher, requestCache *requestCache) (*connectorHandler, error) {
+	workflowStore *workflowStore, gatewayMetadataPublisher GatewayMetadataPublisher, requestCache *requestCache, metrics *Metrics) (*connectorHandler, error) {
 	return &connectorHandler{
 		lggr:                     logger.Named(lggr, HandlerName),
 		gatewayConnector:         gc,
@@ -61,6 +61,7 @@ func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config Se
 		workflowStore:            workflowStore,
 		gatewayMetadataPublisher: gatewayMetadataPublisher,
 		requestCache:             requestCache,
+		metrics:                  metrics,
 		stopChan:                 make(chan struct{}),
 	}, nil
 }
@@ -93,7 +94,7 @@ func (h *connectorHandler) startRequestCacheCleanup(ctx context.Context) {
 				h.lggr.Errorw("Failed to cleanup request cache", "error", err)
 			} else {
 				h.lggr.Debugw("Cleaned up expired request cache entries", "interval", h.requestCache.ttl, "count", count)
-				metrics.IncrementHTTPTriggerRequestCacheCleanUpCount(ctx, count, h.lggr)
+				h.metrics.IncrementRequestCacheCleanUpCount(ctx, count, h.lggr)
 			}
 		}
 	}
@@ -133,15 +134,15 @@ func (h *connectorHandler) RegisterWorkflow(ctx context.Context, workflowSelecto
 	// Push workflow metadata to the gateway
 	// Error is non-critical. Retries will be handled by the metadata publisher.
 	startTime := time.Now()
-	metrics.IncrementHTTPTriggerCapabilityBroadcastMetadataCount(ctx, h.lggr)
+	h.metrics.IncrementBroadcastMetadataCount(ctx, h.lggr)
 	err = h.gatewayMetadataPublisher.BroadcastWorkflowMetadata(ctx, workflowSelector, authorizedKeys)
 	if err != nil {
 		h.lggr.Errorw("Failed to push metadata to gateway", "error",
 			err, "workflowID", workflowSelector.WorkflowID)
-		metrics.IncrementHTTPTriggerCapabilityBroadcastMetadataFailures(ctx, h.lggr)
+		h.metrics.IncrementBroadcastMetadataFailures(ctx, h.lggr)
 	}
 	latencyMs := time.Since(startTime).Milliseconds()
-	metrics.RecordHTTPTriggerCapabilityBroadcastMetadataLatency(ctx, latencyMs, h.lggr)
+	h.metrics.RecordBroadcastMetadataLatency(ctx, latencyMs, h.lggr)
 
 	workflow := newWorkflow(workflowSelector, authorizedKeys, sendCh)
 	h.workflowStore.upsertWorkflow(workflow)
@@ -197,19 +198,19 @@ func (h *connectorHandler) HandleGatewayMessage(ctx context.Context, gatewayID s
 		startTime := time.Now()
 		h.processTrigger(ctx, gatewayID, req)
 		latencyMs := time.Since(startTime).Milliseconds()
-		metrics.RecordHTTPTriggerCapabilityRequestLatency(ctx, latencyMs, h.lggr)
+		h.metrics.RecordRequestLatency(ctx, latencyMs, h.lggr)
 	case gateway_common.MethodPullWorkflowMetadata:
 		// No retries here. Retries are orchestrated by the gateway node
 		startTime := time.Now()
-		metrics.IncrementHTTPTriggerCapabilityPullMetadataCount(ctx, h.lggr)
+		h.metrics.IncrementPullMetadataCount(ctx, h.lggr)
 		err := h.gatewayMetadataPublisher.SendWorkflowMetadata(ctx, gatewayID, req)
 		if err != nil {
 			h.lggr.Errorw("Failed to handle pull metadata request", "error",
 				err, "gatewayID", gatewayID, "requestID", req.ID)
-			metrics.IncrementHTTPTriggerCapabilityPullMetadataFailures(ctx, h.lggr)
+			h.metrics.IncrementPullMetadataFailures(ctx, h.lggr)
 		}
 		latencyMs := time.Since(startTime).Milliseconds()
-		metrics.RecordHTTPTriggerCapabilityPullMetadataLatency(ctx, latencyMs, h.lggr)
+		h.metrics.RecordPullMetadataLatency(ctx, latencyMs, h.lggr)
 	default:
 		h.lggr.Errorw("Unsupported method", "method", req.Method, "gatewayID", gatewayID)
 	}
@@ -220,12 +221,12 @@ func (h *connectorHandler) checkIncomingRateLimit(gatewayID string) bool {
 	senderAllow, globalAllow := h.incomingRateLimiter.AllowVerbose(gatewayID)
 	if !senderAllow {
 		h.lggr.Errorw(errorIncomingRatelimitSender, "gatewayID", gatewayID)
-		metrics.IncrementHTTPTriggerCapabilityGatewayNodeThrottled(context.Background(), gatewayID, h.lggr)
+		h.metrics.IncrementGatewayNodeThrottled(context.Background(), gatewayID, h.lggr)
 		return false
 	}
 	if !globalAllow {
 		h.lggr.Errorw(errorIncomingRatelimitGlobal, "gatewayID", gatewayID)
-		metrics.IncrementHTTPTriggerCapabilityGatewayGlobalThrottled(context.Background(), h.lggr)
+		h.metrics.IncrementGatewayGlobalThrottled(context.Background(), h.lggr)
 		return false
 	}
 	return true
@@ -257,14 +258,14 @@ func (h *connectorHandler) sendResponse(ctx context.Context, gatewayID string, r
 	err := h.gatewayConnector.SendToGateway(ctx, gatewayID, resp)
 	if err != nil {
 		h.lggr.Errorw("Failed to send response to gateway", "error", err, "gatewayID", gatewayID)
-		metrics.IncrementHTTPTriggerCapabilityGatewaySendError(ctx, h.lggr)
+		h.metrics.IncrementGatewaySendError(ctx, h.lggr)
 		return
 	}
-	metrics.IncrementHTTPTriggerCapabilityRequestSuccessCount(ctx, h.lggr)
+	h.metrics.IncrementRequestSuccessCount(ctx, h.lggr)
 }
 
 func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage]) {
-	metrics.IncrementHTTPTriggerCapabilityRequestCount(ctx, h.lggr)
+	h.metrics.IncrementRequestCount(ctx, h.lggr)
 
 	if req.Params == nil {
 		h.lggr.Errorw("No params in request", "gatewayID", gatewayID, "requestID", req.ID)

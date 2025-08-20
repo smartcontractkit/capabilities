@@ -13,7 +13,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway/metrics"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
@@ -25,14 +24,16 @@ var _ services.Service = &service{}
 var _ server.ClientCapability = &service{}
 
 type service struct {
-	lggr   logger.SugaredLogger
-	client common.OutboundRequestClient
-	cfg    common.ServiceConfig
+	lggr    logger.SugaredLogger
+	client  common.OutboundRequestClient
+	cfg     common.ServiceConfig
+	metrics *common.Metrics
 }
 
 func NewService(lggr logger.Logger) *service {
 	return &service{
-		lggr: logger.Sugared(logger.Named(lggr, ServiceName)),
+		lggr:    logger.Sugared(logger.Named(lggr, ServiceName)),
+		metrics: common.NewMetrics(),
 	}
 }
 
@@ -61,7 +62,7 @@ func (s *service) Initialise(
 	}
 	s.cfg = *serviceConfig
 
-	outboundRequestClient, err := NewOutboundRequestClient(gc, s.cfg, s.lggr)
+	outboundRequestClient, err := NewOutboundRequestClient(gc, s.cfg, s.lggr, s.metrics)
 	if err != nil {
 		return err
 	}
@@ -116,22 +117,22 @@ func (s *service) SendRequest(ctx context.Context, metadata capabilities.Request
 	s.lggr.Debugf("Received request with metadata: %v", metadata)
 	startTime := time.Now()
 
-	metrics.IncrementHTTPActionRequestCount(ctx, s.lggr)
+	s.metrics.IncrementRequestCount(ctx, s.lggr)
 
 	validatedInput, err := ValidatedRequest(input, s.cfg)
 	if err != nil {
 		s.lggr.Errorf("Failed to validate input: %v", err)
-		metrics.IncrementHTTPActionInputValidationFailures(ctx, s.lggr)
+		s.metrics.IncrementInputValidationFailures(ctx, s.lggr)
 		latencyMs := time.Since(startTime).Milliseconds()
-		metrics.RecordHTTPActionRequestLatency(ctx, latencyMs, s.lggr)
+		s.metrics.RecordRequestLatency(ctx, latencyMs, s.lggr)
 		return nil, err
 	}
 	response, err := s.client.SendRequest(ctx, metadata, validatedInput)
 	latencyMs := time.Since(startTime).Milliseconds()
-	metrics.RecordHTTPActionRequestLatency(ctx, latencyMs, s.lggr)
+	s.metrics.RecordRequestLatency(ctx, latencyMs, s.lggr)
 
 	if err != nil {
-		metrics.IncrementHTTPActionExecutionError(ctx, s.lggr)
+		s.metrics.IncrementExecutionError(ctx, s.lggr)
 	}
 	responseAndMetadata := capabilities.ResponseAndMetadata[*http.Response]{
 		Response:         response,
@@ -141,12 +142,12 @@ func (s *service) SendRequest(ctx context.Context, metadata capabilities.Request
 }
 
 // NewOutboundRequestClient creates an OutboundProxy based on the ServiceConfig.ProxyMode
-func NewOutboundRequestClient(gatewayConnector core.GatewayConnector, serviceConfig common.ServiceConfig, lggr logger.Logger) (common.OutboundRequestClient, error) {
+func NewOutboundRequestClient(gatewayConnector core.GatewayConnector, serviceConfig common.ServiceConfig, lggr logger.Logger, metrics *common.Metrics) (common.OutboundRequestClient, error) {
 	switch serviceConfig.ProxyMode {
 	case "direct":
 		return common.NewHTTPClientProxy(serviceConfig, lggr)
 	case "gateway":
-		return gateway.NewGatewayOutboundProxy(gatewayConnector, serviceConfig, lggr)
+		return gateway.NewGatewayOutboundProxy(gatewayConnector, serviceConfig, lggr, metrics)
 	default:
 		return nil, errors.New("invalid ProxyMode: " + serviceConfig.ProxyMode)
 	}

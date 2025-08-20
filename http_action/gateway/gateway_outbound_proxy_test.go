@@ -118,6 +118,7 @@ func setupSendRequestTest(t *testing.T) (*gatewayOutboundProxy, *mockGatewayConn
 			IncomingRateLimiter: rateLimiterConfig(),
 		},
 		lggr,
+		common.NewMetrics(),
 		gateway_common.WithFixedStart(),
 	)
 	require.NoError(t, err)
