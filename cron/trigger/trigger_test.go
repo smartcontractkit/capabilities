@@ -36,7 +36,7 @@ const (
 	everySecond        = "* * * * * *"
 	everyEvenSecond    = "*/2 * * * * *"
 
-	// Workflow IDs
+	// Workflow ID
 	workflowID1 = "workflow-id-1"
 
 	// Trigger IDs

@@ -1,0 +1,293 @@
+name: CI-no-nx-wip
+
+on: [push]
+
+# env:
+#   # Ensure that a cached go version is used:
+#   # https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md#go
+#   GO_VERSION: 1.24
+#   GOPRIVATE: github.com/smartcontractkit/capabilities
+
+jobs: 
+  affected:
+    runs-on: ubuntu-latest
+    outputs:
+      # `modules_names` is a list of affected modules returned from the script
+      affected: ${{ steps.resolved-modules.outputs.module_names }}
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      
+      - name: Detect changes
+        uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        id: affected
+        with:
+          # Paths to files will be available in `${FILTER_NAME}_files` output variable.
+          # Paths will be formatted as JSON array
+          list-files: json
+          # Detect changes in all files `**` besides the excluded ones (i.e. '!mock/**')
+          filters: |
+            capabilities:
+              - '**'
+              - '!mock/**'
+              - '!workflows/**'
+              - '!script/**'
+              - '!**/README.md'
+              - '!**/CHANGELOG.md'
+              - '!*.nix'
+              - '!sonar-project.properties'
+              - '!LICENSE'
+              - '!.github/**'
+              
+      - name: Resolve affected files to affected modules
+        id: resolved-modules
+        env:
+          AFFECTED_FILES: '${{ steps.affected.outputs.capabilities_files }}'
+        shell: bash
+        run: |
+          # Ensure the "Detects changes" step returns JSON (`with.list-files: json`)
+          # suffix `_files` (i.e.`capabilities_files`) is a valid way to get a list of files
+          ignored_paths='["workflows"]'
+          bash ./.github/scripts/map-affected-files-to-modules.sh "$AFFECTED_FILES" "$ignored_paths"
+
+  # build:
+  #   needs: affected
+  #   if: ${{ fromJson(needs.affected.outputs.affected) != null }}
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     contents: read
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       projects: ${{fromJson(needs.affected.outputs.nx).projects_with_build}}
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         fetch-depth: 0
+  #         persist-credentials: false
+
+  #     - name: Set up project environment
+  #       uses: ./.github/actions/setup
+  #       with:
+  #         project: ${{ matrix.projects }}
+  #         go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
+  #         task: "build"
+
+  #     - name: Support private Go modules
+  #       env:
+  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #       run: ./.github/scripts/support-private-gomods.sh
+
+  #     - name: Build ${{ matrix.projects }}
+  #       run: ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} build
+
+  # test:
+  #   needs: affected
+  #   if: ${{fromJson(needs.affected.outputs.nx).projects_with_test != null && contains(fromJson(needs.affected.outputs.nx).projects_with_test, fromJson(needs.affected.outputs.nx).projects_with_test[0])}}
+  #   runs-on: ubuntu-latest
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       projects: ${{fromJson(needs.affected.outputs.nx).projects_with_test}}
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         fetch-depth: 0
+  #         persist-credentials: false
+
+  #     - name: Set up project environment
+  #       uses: ./.github/actions/setup
+  #       with:
+  #         project: ${{ matrix.projects }}
+  #         go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
+  #         task: "test"
+
+  #     - name: Support private Go modules
+  #       env:
+  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #       run: ./.github/scripts/support-private-gomods.sh
+
+  #     - name: Unit Test ${{ matrix.projects }}
+  #       run: ./nx run ${{ matrix.projects }}:test
+
+  #     - name: Upload Unit Tests Artifacts
+  #       if: always()
+  #       uses: actions/upload-artifact@v4.4.3
+  #       with:
+  #         # name artifacts differently per each report
+  #         name: ${{ matrix.projects }}_go_test_results
+  #         # the path to a generated report (per directory)
+  #         path: |
+  #           ./${{fromJson(needs.affected.outputs.nx)[matrix.projects].root}}/coverage.txt
+
+  # race:
+  #   needs: affected
+  #   if: ${{fromJson(needs.affected.outputs.nx).projects_with_race != null && contains(fromJson(needs.affected.outputs.nx).projects_with_race, fromJson(needs.affected.outputs.nx).projects_with_race[0])}}
+  #   runs-on: ubuntu-latest
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       projects: ${{fromJson(needs.affected.outputs.nx).projects_with_race}}
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         fetch-depth: 0
+  #         persist-credentials: false
+
+  #     - name: Set up project environment
+  #       uses: ./.github/actions/setup
+  #       with:
+  #         project: ${{ matrix.projects }}
+  #         go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
+  #         task: "race"
+
+  #     - name: Support private Go modules
+  #       env:
+  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #       run: ./.github/scripts/support-private-gomods.sh
+
+  #     - name: Race Test ${{ matrix.projects }}
+  #       run: ./nx run ${{ matrix.projects }}:race
+
+  # integration-tests:
+  #   uses: ./.github/workflows/integration-tests.yml
+
+  # tidy-and-generate:
+  #   needs: affected
+  #   if: ${{fromJson(needs.affected.outputs.nx).run_checks}}
+  #   runs-on: ubuntu-latest
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       projects: ${{fromJson(needs.affected.outputs.nx).projects}}
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         fetch-depth: 0
+  #         persist-credentials: false
+
+  #     - name: Set up project environment
+  #       uses: ./.github/actions/setup
+  #       with:
+  #         project: ${{ matrix.projects }}
+  #         go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
+  #         task: "tidy-and-generate"
+
+  #     - name: Support private Go modules
+  #       env:
+  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #       run: ./.github/scripts/support-private-gomods.sh
+
+  #     - name: Install mockery
+  #       run: go install github.com/vektra/mockery/v2/...@v2.53.3
+
+  #     - name: Run "tidy" and "generate"
+  #       run: |
+  #         ./nx run ${{ matrix.projects }}:tidy
+  #         ./.github/scripts/nx-run-if-exists.sh ${{ matrix.projects }} generate
+
+  #     - name: Ensure no diff
+  #       run: |
+  #         git diff
+  #         git diff --stat --exit-code
+
+  # lint:
+  #   needs: affected
+  #   if: ${{fromJson(needs.affected.outputs.nx).run_checks}}
+  #   runs-on: ubuntu-latest
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       projects: ${{fromJson(needs.affected.outputs.nx).projects}}
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         fetch-depth: 0
+  #         persist-credentials: false
+
+  #     - name: Set up project environment
+  #       id: setup
+  #       uses: ./.github/actions/setup
+  #       with:
+  #         project: ${{ matrix.projects }}
+  #         go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
+  #         task: "lint"
+
+  #     - name: Support private Go modules
+  #       env:
+  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #       run: ./.github/scripts/support-private-gomods.sh
+
+  #     - name: Golangci Lint (${{ matrix.projects }})
+  #       uses: golangci/golangci-lint-action@38e1018663fa5173f3968ea0777460d3de38f256 # v5.3.0
+  #       with:
+  #         version: v1.64.7
+  #         working-directory: ${{fromJson(needs.affected.outputs.nx)[matrix.projects].root}}
+  #         args: --timeout=15m --out-format colored-line-number,checkstyle:golangci-lint-report.xml
+
+  #     - name: Upload Golangci Lint artifacts
+  #       if: always()
+  #       uses: actions/upload-artifact@v4.4.3
+  #       with:
+  #         # name artifacts differently per each report
+  #         name: ${{ matrix.projects }}_golangci-lint-report
+  #         # the path to a generated report (per directory)
+  #         path: |
+  #           ./${{fromJson(needs.affected.outputs.nx)[matrix.projects].root}}/golangci-lint-report.xml
+
+  # modgraph:
+  #   runs-on: ubuntu-latest
+  #   name: modgraph
+  #   if: false
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         persist-credentials: false
+
+  #     - name: Setup Go
+  #       uses: actions/setup-go@v5
+
+  #     - name: Support private Go modules
+  #       env:
+  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  #       run: ./.github/scripts/support-private-gomods.sh
+
+  #     - run: make modgraph
+
+  #     - name: Ensure clean modgraph
+  #       run: git diff --minimal --exit-code
+
+  # checks:
+  #   runs-on: ubuntu-latest
+  #   needs:
+  #     - lint
+  #     - build
+  #     - test
+  #     - race
+  #     - tidy-and-generate
+  #     - integration-tests
+  #     # - modgraph
+  #   if: always()
+  #   steps:
+  #     - name: All tests ok
+  #       if: ${{ !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
+  #       run: exit 0
+  #     - name: Some tests failed or were cancelled
+  #       if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+  #       run: exit 1
+
+  # sonarqube:
+  #   name: SonarQube Scan
+  #   needs: [test, lint]
+  #   if: ${{ always() && github.actor != 'dependabot[bot]' }}
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: SonarQube Scan
+  #       uses: smartcontractkit/.github/actions/ci-sonarqube-go@5f4a9c9c3407dd499a1ebbc658a45b9beb9bf675 # v0.3.0
+  #       with:
+  #         include-lint: "true"
+  #         sonar-token: ${{ secrets.SONAR_TOKEN }}
+  #         sonar-host-url: ${{ secrets.SONAR_HOST_URL }}
