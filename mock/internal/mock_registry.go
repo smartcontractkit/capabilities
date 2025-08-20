@@ -200,7 +200,7 @@ func (m *MockRegistry) RegisterTrigger(request *pb.TriggerRegistrationRequest, s
 	}
 
 	triggerResponsesChan, err := t.RegisterTrigger(server.Context(), capabilities.TriggerRegistrationRequest{
-		TriggerID: request.TriggerID,
+		TriggerID: request.RegistrationTriggerID,
 		Metadata: capabilities.RequestMetadata{
 			WorkflowID:               request.Metadata.WorkflowID,
 			WorkflowOwner:            request.Metadata.WorkflowOwner,
