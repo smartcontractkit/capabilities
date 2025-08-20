@@ -48,12 +48,6 @@ type reportingPlugin struct {
 	lggr logger.Logger
 }
 
-type reportingPluginLimits struct {
-	maxQueryLengthBytes       int
-	maxObservationLengthBytes int
-	maxOutcomeLengthBytes     int
-}
-
 func NewReportingPlugin(lggr logger.Logger, f int, n int, store *requests.Store[*ConsensusRequest], configProto *ocrtypes.ReportingPluginConfig) (*reportingPlugin, error) {
 	return &reportingPlugin{
 		store:               store,
