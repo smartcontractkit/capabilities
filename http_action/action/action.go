@@ -61,16 +61,16 @@ func (s *service) Initialise(
 	}
 	s.cfg = *serviceConfig
 
+	s.metrics, err = common.NewMetrics()
+	if err != nil {
+		return err
+	}
+
 	outboundRequestClient, err := NewOutboundRequestClient(gc, s.cfg, s.lggr, s.metrics)
 	if err != nil {
 		return err
 	}
 	s.client = outboundRequestClient
-
-	s.metrics, err = common.NewMetrics()
-	if err != nil {
-		return err
-	}
 
 	return s.Start(ctx)
 }
