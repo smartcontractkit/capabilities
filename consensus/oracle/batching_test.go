@@ -160,7 +160,7 @@ func TestQueryBatchHasCapacity_SizeEstimation(t *testing.T) {
 		}
 	})
 
-	t.Run("capacity limits respected", func(t *testing.T) {
+	t.Run("capacity config respected", func(t *testing.T) {
 		request := &oracletypes.Request{
 			Metadata: &oracletypes.RequestMetaData{
 				RequestId: "test",
@@ -168,7 +168,7 @@ func TestQueryBatchHasCapacity_SizeEstimation(t *testing.T) {
 			RequestConsensusDescriptor: make([]byte, 100),
 		}
 
-		// First, calculate the actual size of the request to set realistic limits
+		// First, calculate the actual size of the request to set realistic config
 		actualRequestSize := CalculateMessageSize(request)
 		t.Logf("Actual request size: %d bytes", actualRequestSize)
 
@@ -456,7 +456,7 @@ func TestObservationsBatchHasCapacity_SizeEstimation(t *testing.T) {
 		}
 	})
 
-	t.Run("observations capacity limits respected", func(t *testing.T) {
+	t.Run("observations capacity config respected", func(t *testing.T) {
 		obs := &oracletypes.Observation{Observations: []*oracletypes.RequestObservation{}}
 		initialSize := CalculateMessageSize(obs)
 
@@ -589,7 +589,7 @@ func TestOutcomeBatchHasCapacity_SizeEstimation(t *testing.T) {
 		}
 	})
 
-	t.Run("outcome capacity limits respected", func(t *testing.T) {
+	t.Run("outcome capacity config respected", func(t *testing.T) {
 		outcome := &oracletypes.Outcome{Outcomes: []*oracletypes.RequestOutcome{}}
 		initialSize := CalculateMessageSize(outcome)
 
