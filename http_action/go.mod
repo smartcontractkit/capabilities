@@ -10,7 +10,6 @@ require (
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20250807005622-32f1fcc70c7d
 	github.com/smartcontractkit/chainlink-common v0.9.1-0.20250813154823-1652ea0f0500
 	github.com/stretchr/testify v1.10.0
-	github.com/test-go/testify v1.1.4
 	go.opentelemetry.io/otel v1.37.0
 	go.opentelemetry.io/otel/metric v1.37.0
 	stathat.com/c/consistent v1.0.0
