@@ -329,7 +329,6 @@ func (c *consensusCapability) Report(ctx context.Context, metadata capabilities.
 }
 
 func (c *consensusCapability) sendRequest(ctx context.Context, input *pb.SimpleConsensusInputs, consensusRequestMetaData oracle.ConsensusRequestMetadata) <-chan oracle.ConsensusResponse {
-	// TODO - review all request timeout handling/setting https://smartcontract-it.atlassian.net/browse/CAPPL-1014
 	c.requestTimeoutLock.RLock()
 	requestTimeout := c.requestTimeout
 	c.requestTimeoutLock.RUnlock()
