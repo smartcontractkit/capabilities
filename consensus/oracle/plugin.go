@@ -115,7 +115,7 @@ func (r *reportingPlugin) Query(ctx context.Context, outctx ocr3types.OutcomeCon
 		}
 
 		// If the new id would exceed the max query size, stop adding more ids
-		ok, newSize := QueryBatchHasCapacity(cachedQuerySize, newReq, r.limits.maxQueryLengthBytes)
+		ok, newSize := BatchHasCapacity(cachedQuerySize, newReq, r.limits.maxQueryLengthBytes)
 		if !ok {
 			break
 		}
@@ -172,7 +172,7 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 	var requestObservations []*oracletypes.RequestObservation
 	// Initialize cached size with the base message size
 	obs := &oracletypes.Observation{Observations: make([]*oracletypes.RequestObservation, 0, len(reqs))}
-	cachedObsSize := CalculateObservationsMessageSize(obs)
+	cachedObsSize := CalculateMessageSize(obs)
 
 	for _, req := range reqs {
 		queryRequest, ok := reqIDToQueryRequest[req.ID()]
@@ -240,7 +240,7 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 		}
 
 		if newOb != nil {
-			ok, newSize := ObservationsBatchHasCapacity(cachedObsSize, newOb, r.limits.maxObservationLengthBytes)
+			ok, newSize := BatchHasCapacity(cachedObsSize, newOb, r.limits.maxObservationLengthBytes)
 			if !ok {
 				break
 			}
@@ -310,7 +310,7 @@ func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeC
 	}
 
 	var outcomes []*oracletypes.RequestOutcome
-	cachedOutcomeSize := CalculateOutcomeMessageSize(&oracletypes.Outcome{Outcomes: outcomes})
+	cachedOutcomeSize := CalculateMessageSize(&oracletypes.Outcome{Outcomes: outcomes})
 	for _, request := range requestsQuery.Requests {
 		requestID := request.Metadata.RequestId
 		observations := requestIDToObservations[requestID]
@@ -359,7 +359,7 @@ func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeC
 			Timestamp: calculateMedianTimestamp(timestamps),
 		}
 
-		ok, newSize := OutcomeBatchHasCapacity(cachedOutcomeSize, newRequestOutcome, r.limits.maxOutcomeLengthBytes)
+		ok, newSize := BatchHasCapacity(cachedOutcomeSize, newRequestOutcome, r.limits.maxOutcomeLengthBytes)
 		if !ok {
 			break
 		}
