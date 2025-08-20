@@ -230,20 +230,16 @@ func sampleRequestWithReference(t *testing.T, url string, key *ecdsa.PrivateKey)
 }
 
 func TestHTTPTrigger(t *testing.T) {
-	f := 1
-	numNodes := 3*f + 1
-	env := setupTestEnv(t, numNodes)
-
 	t.Run("WithWorkflowID", func(t *testing.T) {
-		testHTTPTriggerWithWorkflowID(t, env)
+		testHTTPTriggerWithWorkflowID(t)
 	})
 
 	t.Run("WithWorkflowReference", func(t *testing.T) {
-		testHTTPTriggerWithWorkflowReference(t, env)
+		testHTTPTriggerWithWorkflowReference(t)
 	})
 
 	t.Run("RequestDeduplication", func(t *testing.T) {
-		testHTTPTriggerRequestDeduplication(t, env)
+		testHTTPTriggerRequestDeduplication(t)
 	})
 }
 
@@ -262,7 +258,10 @@ func TestHTTPTrigger_InsufficientNodes(t *testing.T) {
 	assertTriggerPayload(t, env, executionID, input) // workflows are still triggered even if not all nodes are available
 }
 
-func testHTTPTriggerWithWorkflowID(t *testing.T, env *testEnv) {
+func testHTTPTriggerWithWorkflowID(t *testing.T) {
+	f := 1
+	numNodes := 3*f + 1
+	env := setupTestEnv(t, numNodes)
 	var req *http.Request
 	var requestID string
 	var input map[string]any
@@ -281,7 +280,10 @@ func testHTTPTriggerWithWorkflowID(t *testing.T, env *testEnv) {
 	assertTriggerPayload(t, env, executionID, input)
 }
 
-func testHTTPTriggerWithWorkflowReference(t *testing.T, env *testEnv) {
+func testHTTPTriggerWithWorkflowReference(t *testing.T) {
+	f := 1
+	numNodes := 3*f + 1
+	env := setupTestEnv(t, numNodes)
 	var req *http.Request
 	var requestID string
 	var input map[string]any
@@ -300,16 +302,19 @@ func testHTTPTriggerWithWorkflowReference(t *testing.T, env *testEnv) {
 	assertTriggerPayload(t, env, executionID, input)
 }
 
-func testHTTPTriggerRequestDeduplication(t *testing.T, env *testEnv) {
-	// Use a fixed request ID for deduplication testing
-	fixedRequestID := "deduplication-test-request-id"
+func testHTTPTriggerRequestDeduplication(t *testing.T) {
+	f := 1
+	numNodes := 3*f + 1
+	env := setupTestEnv(t, numNodes)
+
+	requestID := uuid.New().String()
 
 	workflow := gateway_common.WorkflowSelector{
 		WorkflowID: workflowID,
 	}
 
 	// Make the first request
-	request, _, input := createSampleRequest(t, env.userURL, env.signingKey, workflow, fixedRequestID)
+	request, _, input := createSampleRequest(t, env.userURL, env.signingKey, workflow, requestID)
 
 	var body []byte
 	require.Eventually(t, func() bool {
@@ -321,7 +326,7 @@ func testHTTPTriggerRequestDeduplication(t *testing.T, env *testEnv) {
 		return resp.StatusCode == http.StatusOK
 	}, 30*time.Second, 100*time.Millisecond)
 
-	executionID := validateHTTPTriggerResponse(t, body, fixedRequestID, workflowID)
+	executionID := validateHTTPTriggerResponse(t, body, requestID, workflowID)
 	assertTriggerPayload(t, env, executionID, input)
 
 	resp, err := http.DefaultClient.Do(request)
@@ -331,7 +336,7 @@ func testHTTPTriggerRequestDeduplication(t *testing.T, env *testEnv) {
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	_ = validateHTTPTriggerResponse(t, body, fixedRequestID, workflowID)
+	_ = validateHTTPTriggerResponse(t, body, requestID, workflowID)
 
 	// This request should be deduplicated, so no new triggers should be sent to the nodes
 	for i, ch := range env.triggerChs {
