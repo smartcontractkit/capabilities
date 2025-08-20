@@ -36,8 +36,7 @@ type service struct {
 
 func NewService(lggr logger.Logger) *service {
 	return &service{
-		lggr:    logger.Sugared(logger.Named(lggr, ServiceName)),
-		metrics: NewMetrics(),
+		lggr: logger.Sugared(logger.Named(lggr, ServiceName)),
 	}
 }
 
@@ -73,6 +72,10 @@ func (s *service) Initialise(
 	metadataPublisher := NewGatewayMetadataPublisher(s.lggr, gc, outgoingRateLimiter, workflowStore, s.cfg)
 	requestCache := newRequestCache(s.lggr, kvstore, time.Duration(s.cfg.RequestCacheTTL)*time.Second)
 	s.connectorHandler, err = NewConnectorHandler(s.lggr, gc, s.cfg, outgoingRateLimiter, incomingRateLimiter, workflowStore, metadataPublisher, requestCache, s.metrics)
+	if err != nil {
+		return err
+	}
+	s.metrics, err = NewMetrics()
 	if err != nil {
 		return err
 	}

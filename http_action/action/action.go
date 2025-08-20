@@ -32,8 +32,7 @@ type service struct {
 
 func NewService(lggr logger.Logger) *service {
 	return &service{
-		lggr:    logger.Sugared(logger.Named(lggr, ServiceName)),
-		metrics: common.NewMetrics(),
+		lggr: logger.Sugared(logger.Named(lggr, ServiceName)),
 	}
 }
 
@@ -68,12 +67,12 @@ func (s *service) Initialise(
 	}
 	s.client = outboundRequestClient
 
-	err = s.Start(ctx)
+	s.metrics, err = common.NewMetrics()
 	if err != nil {
 		return err
 	}
 
-	return nil
+	return s.Start(ctx)
 }
 
 func (s *service) Start(ctx context.Context) error {

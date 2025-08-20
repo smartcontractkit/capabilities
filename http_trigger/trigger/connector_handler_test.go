@@ -115,6 +115,12 @@ func rateLimiterConfig() ratelimit.RateLimiterConfig {
 	}
 }
 
+func newMetrics(t *testing.T) *Metrics {
+	m, err := NewMetrics()
+	require.NoError(t, err)
+	return m
+}
+
 // Helper for setting up proxy and mockConnector for SendRequest tests
 func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayConnector, <-chan capabilities.TriggerAndId[*http.Payload], *requestCache) {
 	mockConnector := &mockGatewayConnector{}
@@ -146,7 +152,7 @@ func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayCon
 		store,
 		metadataPublisher,
 		requestCache,
-		NewMetrics(),
+		newMetrics(t),
 	)
 	require.NoError(t, err)
 	sdkCfg := &http.Config{
@@ -515,7 +521,7 @@ func TestRegisterWorkflow_TooManyAuthorizedKeys(t *testing.T) {
 		store,
 		metadataPublisher,
 		requestCache,
-		NewMetrics(),
+		newMetrics(t),
 	)
 	require.NoError(t, err)
 
@@ -623,7 +629,7 @@ func TestConnectorHandler_Start_HealthReport_Ready_Name_Close(t *testing.T) {
 		store,
 		metadataPublisher,
 		requestCache,
-		NewMetrics(),
+		newMetrics(t),
 	)
 	require.NoError(t, err)
 
@@ -781,7 +787,7 @@ func TestHandleGatewayMessage_PullAuthMetadata_EmptyWorkflows(t *testing.T) {
 		store,
 		metadataPublisher,
 		requestCache,
-		NewMetrics(),
+		newMetrics(t),
 	)
 	require.NoError(t, err)
 
@@ -877,7 +883,7 @@ func TestConnectorHandler_StartRequestCacheCleanup(t *testing.T) {
 		store,
 		metadataPublisher,
 		requestCache,
-		NewMetrics(),
+		newMetrics(t),
 	)
 	require.NoError(t, err)
 
