@@ -21,15 +21,15 @@ require (
 	github.com/smartcontractkit/capabilities/http_action v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/capabilities/loadtestwritetarget v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/chain-selectors v1.0.67
-	github.com/smartcontractkit/chainlink-common v0.9.1-0.20250819154659-73aa8dc9bf8c
-	github.com/smartcontractkit/chainlink-evm v0.3.1
+	github.com/smartcontractkit/chainlink-common v0.9.3
+	github.com/smartcontractkit/chainlink-evm v0.3.2
 	github.com/smartcontractkit/chainlink-evm/gethwrappers v0.0.0-20250808121824-2c3544aab8f3
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20250819150450-95ef563f6e6d
 	github.com/smartcontractkit/chainlink-protos/workflows/go v0.0.0-20250722225531-876fd6b94976
-	github.com/smartcontractkit/chainlink/v2 v2.26.0-debug-tracing.0.20250820172453-726e477448b5
-	github.com/smartcontractkit/cre-sdk-go v0.5.1-0.20250819152717-94f939278fa2
-	github.com/smartcontractkit/cre-sdk-go/capabilities/blockchain/evm v0.5.1-0.20250819153331-c4f575c4b596
-	github.com/smartcontractkit/cre-sdk-go/capabilities/scheduler/cron v0.5.1-0.20250818141131-0b979c98bab0
+	github.com/smartcontractkit/chainlink/v2 v2.26.0-debug-tracing.0.20250821121906-52f5372c5da8
+	github.com/smartcontractkit/cre-sdk-go v0.5.1-0.20250821154918-5c93d76162c5
+	github.com/smartcontractkit/cre-sdk-go/capabilities/blockchain/evm v0.5.1-0.20250821154918-5c93d76162c5
+	github.com/smartcontractkit/cre-sdk-go/capabilities/scheduler/cron v0.5.1-0.20250821154918-5c93d76162c5
 	github.com/stretchr/testify v1.10.0
 	go.uber.org/zap v1.27.0
 	google.golang.org/protobuf v1.36.7
