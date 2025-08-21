@@ -28,7 +28,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
-	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
+	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 )
 
 type ConsensusHandler interface {

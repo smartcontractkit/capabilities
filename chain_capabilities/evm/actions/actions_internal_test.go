@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
-	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
+	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 
