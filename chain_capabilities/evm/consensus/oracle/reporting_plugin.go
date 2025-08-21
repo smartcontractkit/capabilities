@@ -131,6 +131,7 @@ func (rp *reportingPlugin) Observation(
 
 	const observationFieldProtoKey = 2
 	currentSize := proto.Size(observation)
+	requestsWithObservations := make([]string, 0, len(query.RequestIDs))
 	for i, requestID := range query.RequestIDs {
 		request, ok := rp.requestsStore.GetRequest(requestID)
 		if !ok {
@@ -155,10 +156,10 @@ func (rp *reportingPlugin) Observation(
 
 		currentSize = newSize
 		observation.Observations[requestID] = reqObservation
+		requestsWithObservations = append(requestsWithObservations, requestID)
 	}
 
-	rp.logger.Debugw("Observation complete", "observation", observation)
-
+	rp.logger.Debugw("Observation complete", "observation", requestsWithObservations)
 	return proto.Marshal(observation)
 }
 
@@ -421,6 +422,7 @@ func (rp *reportingPlugin) Outcome(
 	rawQuery types.Query,
 	rawAOs []types.AttributedObservation,
 ) (ocr3types.Outcome, error) {
+	rp.logger.Info("Processing outcome")
 	aos := make([]attributedObservation, len(rawAOs))
 	for i, ao := range rawAOs {
 		aos[i] = attributedObservation{
@@ -445,6 +447,7 @@ func (rp *reportingPlugin) Outcome(
 		return nil, fmt.Errorf("failed to unmarshal request IDs: %w", err)
 	}
 
+	requestsWithOutcome := map[string]string{}
 	for _, requestID := range query.RequestIDs {
 		observationType, err := rp.agreeOnObservationType(requestID, aos)
 		if err != nil {
@@ -460,6 +463,7 @@ func (rp *reportingPlugin) Outcome(
 				continue
 			}
 
+			requestsWithOutcome[requestID] = observationType.String()
 			outcome.Outcomes = append(outcome.Outcomes, &ctypes.RequestOutcome{
 				RequestID: requestID,
 				Outcome:   &ctypes.RequestOutcome_Aggregatable{Aggregatable: value},
@@ -470,11 +474,14 @@ func (rp *reportingPlugin) Outcome(
 				rp.logger.Infow("Could not determine request value", "requestID", requestID, "err", err)
 				continue
 			}
+
+			requestsWithOutcome[requestID] = observationType.String()
 			outcome.Outcomes = append(outcome.Outcomes, &ctypes.RequestOutcome{
 				RequestID: requestID,
 				Outcome:   &ctypes.RequestOutcome_EventuallyConsistent{EventuallyConsistent: value},
 			})
 		case ctypes.ObservationType_LOCKABLE_TO_BLOCK:
+			requestsWithOutcome[requestID] = observationType.String()
 			outcome.Outcomes = append(outcome.Outcomes, &ctypes.RequestOutcome{
 				RequestID: requestID,
 				Outcome:   &ctypes.RequestOutcome_LockableToBlock{LockableToBlock: &emptypb.Empty{}},
@@ -485,6 +492,7 @@ func (rp *reportingPlugin) Outcome(
 				rp.logger.Infow("Could not determine request error", "requestID", requestID, "err", err)
 				continue
 			}
+			requestsWithOutcome[requestID] = observationType.String()
 			outcome.Outcomes = append(outcome.Outcomes, &ctypes.RequestOutcome{
 				RequestID: requestID,
 				Outcome:   &ctypes.RequestOutcome_Error{Error: &ctypes.RequestError{Errors: requestErrors}},
@@ -493,6 +501,8 @@ func (rp *reportingPlugin) Outcome(
 			return nil, fmt.Errorf("unsupported observation type: %s", observationType)
 		}
 	}
+
+	rp.logger.Debugw("Outcome complete", "outcome", requestsWithOutcome)
 
 	return proto.Marshal(&outcome)
 }
