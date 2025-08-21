@@ -36,9 +36,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./.github/scripts/support-private-gomods.sh
 
-      - name: Setup Test DB
-        run: go run github.com/smartcontractkit/chainlink/v2 local db preparetest
-        working-directory: integration_tests
+      - name: Setup DB
+        shell: bash
+        run: go run github.com/smartcontractkit/chainlink/core/store/cmd/preparetest
         env:
           CL_DATABASE_URL: ${{ env.DB_URL }}
 
