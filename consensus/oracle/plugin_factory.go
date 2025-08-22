@@ -80,7 +80,7 @@ func (o *factory) NewReportingPlugin(_ context.Context, config ocr3types.Reporti
 		configProto.RequestTimeout = durationpb.New(defaultRequestExpiry)
 	}
 	o.setRequestTimeout(configProto.RequestTimeout.AsDuration())
-	rp, err := NewReportingPlugin(o.lggr, config.F, config.N, o.store, int(configProto.MaxBatchSize))
+	rp, err := NewReportingPlugin(o.lggr, config.F, config.N, o.store, &configProto)
 	rpInfo := ocr3types.ReportingPluginInfo{
 		Name: "Consensus Capability Plugin",
 		Limits: ocr3types.ReportingPluginLimits{

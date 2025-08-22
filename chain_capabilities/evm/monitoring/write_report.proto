@@ -1,0 +1,48 @@
+syntax = "proto3";
+package chain_capabilities.evm;
+option go_package = "github.com/smartcontractkit/capabilities/chain_capabilities/evm;monitoring";
+
+import "libs/monitoring/execution_context.proto";
+
+
+message WriteReportInitiated {
+  WriteReportRequest req = 1;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message WriteReportSuccess {
+  WriteReportRequest req = 1;
+  int32 log_count = 2;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message WriteReportError {
+  WriteReportRequest req = 1;
+  string summary = 2;
+  string cause = 3;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message WriteReportRequest {
+  bytes receiver = 1;
+  ReportResponse report = 2;
+  optional GasConfig gas_config = 3;
+}
+
+message GasConfig {
+  uint64 gas_limit = 1;
+}
+
+message ReportResponse {
+  bytes config_digest = 1;
+  uint64 seq_nr = 2;
+  bytes report_context = 3; // combination of seq_nr and config_digest
+  bytes raw_report = 4;
+  repeated AttributedSignature sigs = 5;
+}
+
+message AttributedSignature {
+  bytes signature = 1;
+  uint32 signer_id = 2;
+}
+

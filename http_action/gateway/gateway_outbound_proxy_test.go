@@ -118,10 +118,17 @@ func setupSendRequestTest(t *testing.T) (*gatewayOutboundProxy, *mockGatewayConn
 			IncomingRateLimiter: rateLimiterConfig(),
 		},
 		lggr,
+		newMetrics(t),
 		gateway_common.WithFixedStart(),
 	)
 	require.NoError(t, err)
 	return proxy, mockConnector, readyCh
+}
+
+func newMetrics(t *testing.T) *common.Metrics {
+	m, err := common.NewMetrics()
+	require.NoError(t, err)
+	return m
 }
 
 func TestGatewayOutboundProxy_SendRequest_Success(t *testing.T) {
