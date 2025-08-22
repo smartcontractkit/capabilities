@@ -274,8 +274,7 @@ func TestSendWorkflows_EmptyWorkflows(t *testing.T) {
 		Params: &rawParams2,
 	}
 	err := publisher.SendWorkflowMetadata(t.Context(), gatewayID, req)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "no workflows found")
+	require.NoError(t, err)
 }
 
 func TestSendWorkflows_InvalidRequestID(t *testing.T) {
