@@ -52,3 +52,20 @@ func GetMetadataWithFunds() capabilities.RequestMetadata {
 		},
 	}
 }
+
+func GetMetadataWithNoFunds() capabilities.RequestMetadata {
+	return capabilities.RequestMetadata{
+		SpendLimits: []capabilities.SpendLimit{
+			{
+				SpendType: metering.ActionSpendUnit,
+				Limit:     "0",
+			},
+		},
+	}
+}
+
+func GetMetadataWithMissingSpendUnit() capabilities.RequestMetadata {
+	return capabilities.RequestMetadata{
+		SpendLimits: []capabilities.SpendLimit{},
+	}
+}

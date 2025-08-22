@@ -73,6 +73,21 @@ func TestCapability_CallContract(t *testing.T) {
 		require.Equal(t, []byte("ok"), resp.Response.Data)
 		test.ValidateMetering(t, resp.ResponseMetadata, string(metering.CallContract))
 	})
+
+	t.Run("no-funds", func(t *testing.T) {
+		svc := initMocks(t)
+		req := &evmcappb.CallContractRequest{}
+		_, err := svc.CallContract(t.Context(), test.GetMetadataWithNoFunds(), req)
+		require.ErrorContains(t, err, "insufficient CRE funds: current limit is 0, action spend 2.5")
+	})
+
+	t.Run("missing-limit-resource", func(t *testing.T) {
+		svc := initMocks(t)
+		req := &evmcappb.CallContractRequest{}
+		_, err := svc.CallContract(t.Context(), test.GetMetadataWithMissingSpendUnit(), req)
+		require.ErrorContains(t, err, "no spend limit found for action RPC_EVM")
+	})
+
 	t.Run("On timeout returns error", func(t *testing.T) {
 		svc := initMocks(t)
 		msg := evmtypes.CallMsg{Data: []byte{0xbe, 0xef}}
@@ -107,6 +122,21 @@ func TestCapability_BalanceAt(t *testing.T) {
 		require.Equal(t, int64(1000), valuespb.NewIntFromBigInt(resp.Response.Balance).Int64())
 		test.ValidateMetering(t, resp.ResponseMetadata, string(metering.BalanceAt))
 	})
+
+	t.Run("no-funds", func(t *testing.T) {
+		svc := initMocks(t)
+		req := &evmcappb.BalanceAtRequest{}
+		_, err := svc.BalanceAt(t.Context(), test.GetMetadataWithNoFunds(), req)
+		require.ErrorContains(t, err, "insufficient CRE funds: current limit is 0, action spend 1")
+	})
+
+	t.Run("missing-limit-resource", func(t *testing.T) {
+		svc := initMocks(t)
+		req := &evmcappb.BalanceAtRequest{}
+		_, err := svc.BalanceAt(t.Context(), test.GetMetadataWithMissingSpendUnit(), req)
+		require.ErrorContains(t, err, "no spend limit found for action RPC_EVM")
+	})
+
 	t.Run("Returns error on timeout", func(t *testing.T) {
 		svc := initMocks(t)
 		block := big.NewInt(123)
@@ -182,6 +212,21 @@ func TestCapability_GetTransactionByHash(t *testing.T) {
 		require.Empty(t, cmp.Diff(evmcappb.GetTransactionByHashReply{Transaction: tx}, resp.Response, protocmp.Transform()))
 		test.ValidateMetering(t, resp.ResponseMetadata, string(metering.GetTransactionByHash))
 	})
+
+	t.Run("no-funds", func(t *testing.T) {
+		svc := initMocks(t)
+		req := &evmcappb.GetTransactionByHashRequest{}
+		_, err := svc.GetTransactionByHash(t.Context(), test.GetMetadataWithNoFunds(), req)
+		require.ErrorContains(t, err, "insufficient CRE funds: current limit is 0, action spend 1")
+	})
+
+	t.Run("missing-limit-resource", func(t *testing.T) {
+		svc := initMocks(t)
+		req := &evmcappb.GetTransactionByHashRequest{}
+		_, err := svc.GetTransactionByHash(t.Context(), test.GetMetadataWithMissingSpendUnit(), req)
+		require.ErrorContains(t, err, "no spend limit found for action RPC_EVM")
+	})
+
 	t.Run("Returns error on invalid hash", func(t *testing.T) {
 		svc := initMocks(t)
 
@@ -220,6 +265,21 @@ func TestCapability_GetTransactionReceipt(t *testing.T) {
 		require.Empty(t, cmp.Diff(evmcappb.GetTransactionReceiptReply{Receipt: receipt}, resp.Response, protocmp.Transform()))
 		test.ValidateMetering(t, resp.ResponseMetadata, string(metering.GetTransactionReceipt))
 	})
+
+	t.Run("no-funds", func(t *testing.T) {
+		svc := initMocks(t)
+		req := &evmcappb.GetTransactionReceiptRequest{}
+		_, err := svc.GetTransactionReceipt(t.Context(), test.GetMetadataWithNoFunds(), req)
+		require.ErrorContains(t, err, "insufficient CRE funds: current limit is 0, action spend 1")
+	})
+
+	t.Run("missing-limit-resource", func(t *testing.T) {
+		svc := initMocks(t)
+		req := &evmcappb.GetTransactionReceiptRequest{}
+		_, err := svc.GetTransactionReceipt(t.Context(), test.GetMetadataWithMissingSpendUnit(), req)
+		require.ErrorContains(t, err, "no spend limit found for action RPC_EVM")
+	})
+
 	t.Run("Returns error on invalid hash", func(t *testing.T) {
 		svc := initMocks(t)
 
@@ -260,6 +320,21 @@ func TestCapability_EstimateGas(t *testing.T) {
 		require.Empty(t, cmp.Diff(evmcappb.EstimateGasReply{Gas: 12300}, resp.Response, protocmp.Transform()))
 		test.ValidateMetering(t, resp.ResponseMetadata, string(metering.EstimateGas))
 	})
+
+	t.Run("no-funds", func(t *testing.T) {
+		svc := initMocks(t)
+		req := &evmcappb.EstimateGasRequest{}
+		_, err := svc.EstimateGas(t.Context(), test.GetMetadataWithNoFunds(), req)
+		require.ErrorContains(t, err, "insufficient CRE funds: current limit is 0, action spend 1")
+	})
+
+	t.Run("missing-limit-resource", func(t *testing.T) {
+		svc := initMocks(t)
+		req := &evmcappb.EstimateGasRequest{}
+		_, err := svc.EstimateGas(t.Context(), test.GetMetadataWithMissingSpendUnit(), req)
+		require.ErrorContains(t, err, "no spend limit found for action RPC_EVM")
+	})
+
 	t.Run("Returns error on invalid request", func(t *testing.T) {
 		svc := initMocks(t)
 
@@ -345,6 +420,21 @@ func TestCapability_HeaderByNumber(t *testing.T) {
 		require.Empty(t, cmp.Diff(expectedReply, resp.Response, protocmp.Transform()))
 		test.ValidateMetering(t, resp.ResponseMetadata, string(metering.HeaderByNumber))
 	})
+
+	t.Run("no-funds", func(t *testing.T) {
+		svc := initMocks(t)
+		req := &evmcappb.HeaderByNumberRequest{}
+		_, err := svc.HeaderByNumber(t.Context(), test.GetMetadataWithNoFunds(), req)
+		require.ErrorContains(t, err, "insufficient CRE funds: current limit is 0, action spend 1")
+	})
+
+	t.Run("missing-limit-resource", func(t *testing.T) {
+		svc := initMocks(t)
+		req := &evmcappb.HeaderByNumberRequest{}
+		_, err := svc.HeaderByNumber(t.Context(), test.GetMetadataWithMissingSpendUnit(), req)
+		require.ErrorContains(t, err, "no spend limit found for action RPC_EVM")
+	})
+
 	t.Run("On timeout returns error", func(t *testing.T) {
 		svc := initMocks(t)
 
