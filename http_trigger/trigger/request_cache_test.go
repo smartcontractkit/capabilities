@@ -149,8 +149,9 @@ func TestRequestCache_Cleanup_Success(t *testing.T) {
 	// Simulate that 5 entries were pruned
 	kvstore.setPrunedCount(5)
 
-	err := cache.cleanup(t.Context())
+	count, err := cache.cleanup(t.Context())
 	require.NoError(t, err)
+	require.Equal(t, int64(5), count)
 }
 
 func TestRequestCache_Cleanup_Error(t *testing.T) {
@@ -164,7 +165,8 @@ func TestRequestCache_Cleanup_Error(t *testing.T) {
 	expectedErr := errors.New("database connection failed")
 	kvstore.setPruneError(expectedErr)
 
-	err := cache.cleanup(t.Context())
+	count, err := cache.cleanup(t.Context())
 	require.Error(t, err)
 	require.Equal(t, expectedErr, err)
+	require.Equal(t, int64(0), count)
 }
