@@ -44,6 +44,7 @@ type gatewayOutboundProxy struct {
 	responses               *responses
 	selectorOpts            []func(*gc.RoundRobinSelector)
 	gatewayConnectionConfig common.GatewayConnectionConfig
+	metrics                 *common.Metrics
 }
 
 func applyDefaults(cfg common.GatewayConnectionConfig) common.GatewayConnectionConfig {
@@ -59,7 +60,7 @@ func applyDefaults(cfg common.GatewayConnectionConfig) common.GatewayConnectionC
 	return cfg
 }
 
-func NewGatewayOutboundProxy(gatewayConnector core.GatewayConnector, config common.ServiceConfig, lggr logger.Logger, opts ...func(*gc.RoundRobinSelector)) (*gatewayOutboundProxy, error) {
+func NewGatewayOutboundProxy(gatewayConnector core.GatewayConnector, config common.ServiceConfig, lggr logger.Logger, metrics *common.Metrics, opts ...func(*gc.RoundRobinSelector)) (*gatewayOutboundProxy, error) {
 	outgoingRateLimiter, err := ratelimit.NewRateLimiter(config.OutgoingRateLimiter)
 	if err != nil {
 		return nil, err
@@ -77,6 +78,7 @@ func NewGatewayOutboundProxy(gatewayConnector core.GatewayConnector, config comm
 		lggr:                    lggr,
 		selectorOpts:            opts,
 		gatewayConnectionConfig: applyDefaults(config.GatewayConnectionConfig),
+		metrics:                 metrics,
 	}, nil
 }
 
@@ -89,9 +91,11 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 
 	workflowAllow, globalAllow := p.outgoingRateLimiter.AllowVerbose(metadata.WorkflowOwner)
 	if !workflowAllow {
+		p.metrics.IncrementWorkflowOwnerThrottled(ctx, lggr)
 		return nil, errors.New(common.ErrorOutgoingRatelimitWorkflowOwner)
 	}
 	if !globalAllow {
+		p.metrics.IncrementNodeThrottled(ctx, lggr)
 		return nil, errors.New(common.ErrorOutgoingRatelimitGlobal)
 	}
 
@@ -132,10 +136,12 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 
 	selectedGateway, err := p.awaitConnection(ctx, lggr, gatewayReq.Hash())
 	if err != nil {
+		p.metrics.IncrementGatewayConnectionError(ctx, selectedGateway, lggr)
 		return nil, errors.Join(errors.New("failed to await connection to gateway"), err)
 	}
 
 	if err := p.gatewayConnector.SendToGateway(ctx, selectedGateway, &gatewayResp); err != nil {
+		p.metrics.IncrementGatewaySendError(ctx, selectedGateway, lggr)
 		return nil, errors.Join(errors.New("failed to send request to gateway"), err)
 	}
 
@@ -146,6 +152,7 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 			lggr.Errorw("error while receiving response from gateway", "errorMessage", resp.ErrorMessage)
 			return nil, errors.New(internalError)
 		}
+		p.metrics.IncrementSuccessfulResponse(ctx, lggr)
 		return &http.Response{
 			StatusCode: uint32(resp.StatusCode), //nolint:gosec // G115
 			Headers:    resp.Headers,
@@ -245,8 +252,10 @@ func (p *gatewayOutboundProxy) HandleGatewayMessage(ctx context.Context, gateway
 	senderAllow, globalAllow := p.incomingRateLimiter.AllowVerbose(gatewayID)
 	errorMsg := ""
 	if !senderAllow {
+		p.metrics.IncrementGatewayNodeThrottled(ctx, gatewayID, l)
 		errorMsg = common.ErrorIncomingRatelimitSender
 	} else if !globalAllow {
+		p.metrics.IncrementGatewayGlobalThrottled(ctx, l)
 		errorMsg = common.ErrorIncomingRatelimitGlobal
 	}
 

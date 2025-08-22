@@ -46,6 +46,25 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 		if err := p.metrics.OnCallContractError(ctx, msg); err != nil {
 			return fmt.Errorf("failed to publish CallContractError metrics: %w", err)
 		}
+	// -- WriteReport --
+	case *WriteReportInitiated:
+		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
+			return fmt.Errorf("failed to emit WriteReportInitiated log: %w", err)
+		}
+	case *WriteReportSuccess:
+		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
+			return fmt.Errorf("failed to emit WriteReportSuccess log: %w", err)
+		}
+		if err := p.metrics.OnWriteReportSuccess(ctx, msg); err != nil {
+			return fmt.Errorf("failed to publish WriteReportSuccess metrics: %w", err)
+		}
+	case *WriteReportError:
+		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
+			return fmt.Errorf("failed to emit WriteReportError log: %w", err)
+		}
+		if err := p.metrics.OnWriteReportError(ctx, msg); err != nil {
+			return fmt.Errorf("failed to publish WriteReportError metrics: %w", err)
+		}
 	// -- LogTrigger --
 	case *TriggerInitiated:
 		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {

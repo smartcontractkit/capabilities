@@ -12,11 +12,12 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/smartcontractkit/libocr/quorumhelper"
+
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb"
-	"github.com/smartcontractkit/libocr/quorumhelper"
 
 	"github.com/smartcontractkit/libocr/offchainreporting2/types"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
@@ -43,17 +44,20 @@ type reportingPlugin struct {
 
 	minimumObservations int
 
+	config *ocrtypes.ReportingPluginConfig
+
 	lggr logger.Logger
 }
 
-func NewReportingPlugin(lggr logger.Logger, f int, n int, store *requests.Store[*ConsensusRequest], batchSize int) (*reportingPlugin, error) {
+func NewReportingPlugin(lggr logger.Logger, f int, n int, store *requests.Store[*ConsensusRequest], configProto *ocrtypes.ReportingPluginConfig) (*reportingPlugin, error) {
 	return &reportingPlugin{
 		store:               store,
-		batchSize:           batchSize,
+		batchSize:           int(configProto.MaxBatchSize),
 		f:                   f,
 		n:                   n,
 		minimumObservations: 2*f + 1,
 		lggr:                logger.Named(lggr, "CapabilityConsensusReportingPlugin"),
+		config:              configProto,
 	}, nil
 }
 
@@ -79,17 +83,37 @@ func (r *reportingPlugin) Query(ctx context.Context, outctx ocr3types.OutcomeCon
 	//
 	// The same reasoning applies to the metadata for the request, which is also included in the query.
 
+	seenIDs := make(map[IDKey]bool)
+	cachedQuerySize := 0
+
 	var reqs []*oracletypes.Request
 	for _, rq := range batch {
+		key := GetIDKey(rq)
+
+		// Simple duplicate elimination using a map
+		if seenIDs[key] {
+			continue
+		}
+
 		serialisedConsensusDescriptor, err := proto.MarshalOptions{Deterministic: true}.Marshal(rq.Input.Descriptors)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal consensus descriptor for request %s: %w", rq.ID(), err)
 		}
 
-		reqs = append(reqs, &oracletypes.Request{
+		newReq := &oracletypes.Request{
 			Metadata:                   ToRequestMetaData(rq.Metadata),
 			RequestConsensusDescriptor: serialisedConsensusDescriptor,
-		})
+		}
+
+		// If the new id would exceed the max query size, stop adding more ids
+		ok, newSize := BatchHasCapacity(cachedQuerySize, newReq, int(r.config.MaxQueryLengthBytes))
+		if !ok {
+			break
+		}
+
+		seenIDs[key] = true
+		reqs = append(reqs, newReq)
+		cachedQuerySize = newSize
 	}
 
 	r.lggr.Debugw("consensus plugin query complete", "number of requests", len(reqs))
@@ -137,6 +161,10 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 	// to ensure that the leader node cannot unduly influence the outcome by choosing which consensus descriptor to associate with a request
 	// or what metadata to associate with a request.
 	var requestObservations []*oracletypes.RequestObservation
+	// Initialize cached size with the base message size
+	obs := &oracletypes.Observation{Observations: make([]*oracletypes.RequestObservation, 0, len(reqs))}
+	cachedObsSize := CalculateMessageSize(obs)
+
 	for _, req := range reqs {
 		queryRequest, ok := reqIDToQueryRequest[req.ID()]
 		if !ok {
@@ -168,17 +196,19 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 			continue // Skip this request as the metadata does not match
 		}
 
+		var newOb *oracletypes.RequestObservation
 		switch obs := req.Input.GetObservation().(type) {
 		case *pb.SimpleConsensusInputs_Value:
 			marshalledValue, err := proto.MarshalOptions{Deterministic: true}.Marshal(obs.Value)
 			if err != nil {
 				return nil, fmt.Errorf("failed to marshal observation value for request %s: %w", req.ID(), err)
 			}
-			requestObservations = append(requestObservations, &oracletypes.RequestObservation{
+
+			newOb = &oracletypes.RequestObservation{
 				Metadata:    queryRequest.Metadata,
 				Observation: marshalledValue,
 				ReceivedAt:  timestamppb.New(req.ReceivedAt),
-			})
+			}
 		case *pb.SimpleConsensusInputs_Error:
 			r.lggr.Debugw("observation is an error, skipping", "error", obs.Error, "requestID", req.ID())
 			return nil, errors.New(obs.Error)
@@ -189,14 +219,25 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 				if err != nil {
 					return nil, fmt.Errorf("failed to marshal default value for request %s: %w", req.ID(), err)
 				}
-				requestObservations = append(requestObservations, &oracletypes.RequestObservation{
+
+				newOb = &oracletypes.RequestObservation{
 					Metadata:    queryRequest.Metadata,
 					Observation: serialisedDefault,
 					ReceivedAt:  timestamppb.New(req.ReceivedAt),
-				})
+				}
 			} else {
 				r.lggr.Debugw("neither value, error or default is set in the observation input for request", "requestID", req.ID())
 			}
+		}
+
+		if newOb != nil {
+			ok, newSize := BatchHasCapacity(cachedObsSize, newOb, int(r.config.MaxObservationLengthBytes))
+			if !ok {
+				break
+			}
+
+			requestObservations = append(requestObservations, newOb)
+			cachedObsSize = newSize
 		}
 	}
 
@@ -260,6 +301,7 @@ func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeC
 	}
 
 	var outcomes []*oracletypes.RequestOutcome
+	cachedOutcomeSize := CalculateMessageSize(&oracletypes.Outcome{Outcomes: outcomes})
 	for _, request := range requestsQuery.Requests {
 		requestID := request.Metadata.RequestId
 		observations := requestIDToObservations[requestID]
@@ -302,11 +344,19 @@ func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeC
 			return nil, fmt.Errorf("failed to marshal outcome value for request %s: %w", requestID, err)
 		}
 
-		outcomes = append(outcomes, &oracletypes.RequestOutcome{
+		newRequestOutcome := &oracletypes.RequestOutcome{
 			Metadata:  request.Metadata,
 			Outcome:   serialisedValue,
 			Timestamp: calculateMedianTimestamp(timestamps),
-		})
+		}
+
+		ok, newSize := BatchHasCapacity(cachedOutcomeSize, newRequestOutcome, int(r.config.MaxOutcomeLengthBytes))
+		if !ok {
+			break
+		}
+
+		outcomes = append(outcomes, newRequestOutcome)
+		cachedOutcomeSize = newSize
 	}
 
 	serialisedOutcome, err := proto.MarshalOptions{Deterministic: true}.Marshal(&oracletypes.Outcome{

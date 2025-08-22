@@ -9,12 +9,11 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http/server"
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
-
-	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
 
 const ServiceName = "HTTPTriggerCapability"
@@ -32,6 +31,7 @@ type service struct {
 	lggr             logger.SugaredLogger
 	cfg              ServiceConfig
 	connectorHandler ConnectorHandler
+	metrics          *Metrics
 }
 
 func NewService(lggr logger.Logger) *service {
@@ -71,7 +71,11 @@ func (s *service) Initialise(
 	workflowStore := newWorkflowStore(s.lggr)
 	metadataPublisher := NewGatewayMetadataPublisher(s.lggr, gc, outgoingRateLimiter, workflowStore, s.cfg)
 	requestCache := newRequestCache(s.lggr, kvstore, time.Duration(s.cfg.RequestCacheTTL)*time.Second)
-	s.connectorHandler, err = NewConnectorHandler(s.lggr, gc, s.cfg, outgoingRateLimiter, incomingRateLimiter, workflowStore, metadataPublisher, requestCache)
+	s.connectorHandler, err = NewConnectorHandler(s.lggr, gc, s.cfg, outgoingRateLimiter, incomingRateLimiter, workflowStore, metadataPublisher, requestCache, s.metrics)
+	if err != nil {
+		return err
+	}
+	s.metrics, err = NewMetrics()
 	if err != nil {
 		return err
 	}
@@ -122,8 +126,10 @@ func (s *service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 	}
 	err := s.connectorHandler.RegisterWorkflow(ctx, workflowSelector, input, sendCh)
 	if err != nil {
+		s.metrics.IncrementRegisterFailureCount(ctx, s.lggr)
 		return nil, err
 	}
+	s.metrics.IncrementRegisterCount(ctx, s.lggr)
 	return sendCh, nil
 }
 
@@ -131,8 +137,11 @@ func (s *service) UnregisterTrigger(ctx context.Context, triggerID string, metad
 	err := s.connectorHandler.UnregisterWorkflow(ctx, metadata.WorkflowID)
 	if err != nil {
 		s.lggr.Errorf("Failed to unregister workflow %s: %v", metadata.WorkflowID, err)
+		s.metrics.IncrementDeregisterFailureCount(ctx, s.lggr)
+		return err
 	}
-	return err
+	s.metrics.IncrementDeregisterCount(ctx, s.lggr)
+	return nil
 }
 
 func ensureHexPrefix(s string) string {
