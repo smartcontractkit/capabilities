@@ -292,7 +292,7 @@ func (e EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, r
 func (e EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata, req *evm.EstimateGasRequest) (*capabilities.ResponseAndMetadata[*evm.EstimateGasReply], error) {
 	if err := metering.CheckHasFunds(meta, metering.ActionSpendUnit, string(metering.EstimateGas)); err != nil {
 		return nil, err
-  }
+	}
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	msg, err := evm.ConvertCallMsgFromProto(req.GetMsg())
 	if err != nil {
