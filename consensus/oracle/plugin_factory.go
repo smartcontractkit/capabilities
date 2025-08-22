@@ -6,9 +6,10 @@ import (
 
 	"google.golang.org/protobuf/types/known/durationpb"
 
+	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
-	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
 
 	"google.golang.org/protobuf/proto"
 
@@ -80,7 +81,7 @@ func (o *factory) NewReportingPlugin(_ context.Context, config ocr3types.Reporti
 		configProto.RequestTimeout = durationpb.New(defaultRequestExpiry)
 	}
 	o.setRequestTimeout(configProto.RequestTimeout.AsDuration())
-	rp, err := NewReportingPlugin(o.lggr, config.F, config.N, o.store, int(configProto.MaxBatchSize))
+	rp, err := NewReportingPlugin(o.lggr, config.F, config.N, o.store, &configProto)
 	rpInfo := ocr3types.ReportingPluginInfo{
 		Name: "Consensus Capability Plugin",
 		Limits: ocr3types.ReportingPluginLimits{

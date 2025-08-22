@@ -17,6 +17,7 @@ import (
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts/mocks"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
 
 	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
@@ -831,6 +832,8 @@ func createMocksAndCapability(t *testing.T, lggr logger.Logger) (*mocks2.EVMServ
 		lggr:                     lggr,
 		EVMService:               mockEVMService,
 		ReceiverGasMinimum:       ConfiguredReceiverGasMinimum,
+		beholderProcessor:        test.NopBeholderProcessor{},
+		messageBuilder:           &monitoring.MessageBuilder{},
 	}
 	return mockEVMService, mockForwarderClient, &service
 }
