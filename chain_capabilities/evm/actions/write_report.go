@@ -12,6 +12,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/jpillora/backoff"
+
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
