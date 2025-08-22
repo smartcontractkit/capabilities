@@ -38,12 +38,17 @@ func decodeReportMetadata(data []byte) (ocrtypes.Metadata, error) {
 	return metadata, err
 }
 
-func (e EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMetadata, input *evm.WriteReportRequest) (*evm.WriteReportReply, error) {
+func (e EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMetadata, input *evm.WriteReportRequest) (*capabilities.ResponseAndMetadata[*evm.WriteReportReply], error) {
 	err := validateInputsAndReportMetadata(metadata, input)
 	if err != nil {
 		return nil, err
 	}
-	return e.executeWriteReport(ctx, metadata, input)
+	report, err := e.executeWriteReport(ctx, metadata, input)
+	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.WriteReportReply]{
+		Response:         report,
+		ResponseMetadata: capabilities.ResponseMetadata{},
+	}
+	return &responseAndMetadata, err
 }
 
 func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.RequestMetadata, request *evm.WriteReportRequest) (*evm.WriteReportReply, error) {
@@ -219,7 +224,10 @@ func getTransmissionID(workflowExecutionID string, request *evm.WriteReportReque
 
 func (e EVM) fetchTransactionReceiptAndCreateReply(ctx context.Context, txHash evmtypes.Hash, receiverStatus evm.ReceiverContractExecutionStatus, errorMessage *string) (*evm.WriteReportReply, error) {
 	// TODO: PLEX-1524 - we need retry logic here in case the underlying RPC is lagging behind the one that submitted the TX.
-	txReceipt, err := e.EVMService.GetTransactionReceipt(ctx, txHash)
+	txReceipt, err := e.EVMService.GetTransactionReceipt(ctx, evmtypes.GeTransactionReceiptRequest{
+		Hash:       txHash,
+		IsExternal: false, // since we do not run consensus on the receipt itself, it's fine to skip additional versions for external receipts.
+	})
 	if err != nil {
 		return nil, err
 	}

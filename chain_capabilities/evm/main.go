@@ -38,10 +38,10 @@ const (
 	CapabilityName = "evm"
 	// OCRRoundBatchSize - max number of requests that this node will try to process in a single round
 	// TODO PLEX-1569: make configurable
-	OCRRoundBatchSize = 50
+	OCRRoundBatchSize = oracle.OCRRoundBatchSize
 	// OCRRoundMaxBatchSize - defines max number of requests that this node will process in a round, if requested by another node.
 	// Needed to allow graceful roll out of OCRBatchSize increase.
-	OCRRoundMaxBatchSize  = 500
+	OCRRoundMaxBatchSize  = oracle.OCRRoundMaxBatchSize
 	PollingWorkersNum     = 10
 	PollPeriod            = 10 * time.Second
 	UnknownRequestTTL     = 10 * time.Second
@@ -51,6 +51,8 @@ const (
 	versionRefsMain     = "refs/heads/main"
 	schemaBasePath      = repoCLLCapabilities + "/" + versionRefsMain + "/chain_capabilities/evm/monitoring"
 )
+
+var _ evmcapserver.ClientCapability = &capabilityGRPCService{}
 
 type capabilityGRPCService struct {
 	capabilities.CapabilityInfo

@@ -2,9 +2,11 @@ package action
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/capabilities/http_action/common"
@@ -12,6 +14,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	gcmocks "github.com/smartcontractkit/chainlink-common/pkg/types/core/mocks"
 )
 
 type MockOutboundRequestClient struct {
@@ -48,6 +51,15 @@ func (m *MockOutboundRequestClient) Ready() error {
 func TestSendRequest_ValidatesInput(t *testing.T) {
 	lggr := logger.Test(t)
 	srv := NewService(lggr)
+	cfg := common.ServiceConfig{
+		ProxyMode: "gateway",
+	}
+	cfgStr, err := json.Marshal(cfg)
+	require.NoError(t, err)
+	gc := gcmocks.NewGatewayConnector(t)
+	gc.EXPECT().AddHandler(mock.Anything, mock.Anything, mock.Anything).Return(nil)
+	err = srv.Initialise(t.Context(), string(cfgStr), nil, nil, nil, nil, nil, nil, gc, nil)
+	require.NoError(t, err)
 	mockClient := &MockOutboundRequestClient{}
 	srv.client = mockClient
 	srv.cfg = common.ServiceConfig{
@@ -57,6 +69,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 			MaxHeaderKeyLength:   50,
 			MaxHeaderValueLength: 100,
 			MaxRequestBytes:      1024,
+			MaxCacheAgeMs:        600000, // 10 minutes
 		},
 	}
 	metadata := capabilities.RequestMetadata{
@@ -83,7 +96,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 
 		response, err := srv.SendRequest(context.Background(), metadata, input)
 		require.NoError(t, err)
-		assert.Equal(t, expectedResponse, response)
+		assert.Equal(t, expectedResponse, response.Response)
 		assert.Equal(t, input, mockClient.CapturedInput)
 	})
 
@@ -108,7 +121,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 
 		response, err := srv.SendRequest(context.Background(), metadata, input)
 		require.NoError(t, err)
-		assert.Equal(t, expectedResponse, response)
+		assert.Equal(t, expectedResponse, response.Response)
 		assert.Equal(t, input, mockClient.CapturedInput)
 	})
 
@@ -129,7 +142,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 
 		response, err := srv.SendRequest(context.Background(), metadata, input)
 		require.NoError(t, err)
-		assert.Equal(t, expectedResponse, response)
+		assert.Equal(t, expectedResponse, response.Response)
 		assert.Equal(t, input, mockClient.CapturedInput)
 	})
 

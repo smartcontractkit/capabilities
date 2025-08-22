@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
+	chainselectors "github.com/smartcontractkit/chain-selectors"
 	"github.com/smartcontractkit/cre-sdk-go/capabilities/blockchain/evm"
 	"github.com/smartcontractkit/cre-sdk-go/cre"
 	"github.com/smartcontractkit/cre-sdk-go/cre/wasm"
@@ -35,7 +36,7 @@ func RunSimpleEvmLogTriggerWorkflow(env *cre.Environment[*runtimeConfig]) (cre.W
 	}
 	return cre.Workflow[*runtimeConfig]{
 		cre.Handler(
-			evm.LogTrigger(1, cfg),
+			evm.LogTrigger(chainselectors.GETH_TESTNET.Selector, cfg),
 			onTrigger,
 		),
 	}, nil

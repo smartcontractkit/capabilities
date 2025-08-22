@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -114,6 +115,12 @@ func rateLimiterConfig() ratelimit.RateLimiterConfig {
 	}
 }
 
+func newMetrics(t *testing.T) *Metrics {
+	m, err := NewMetrics()
+	require.NoError(t, err)
+	return m
+}
+
 // Helper for setting up proxy and mockConnector for SendRequest tests
 func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayConnector, <-chan capabilities.TriggerAndId[*http.Payload], *requestCache) {
 	mockConnector := &mockGatewayConnector{}
@@ -145,6 +152,7 @@ func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayCon
 		store,
 		metadataPublisher,
 		requestCache,
+		newMetrics(t),
 	)
 	require.NoError(t, err)
 	sdkCfg := &http.Config{
@@ -513,6 +521,7 @@ func TestRegisterWorkflow_TooManyAuthorizedKeys(t *testing.T) {
 		store,
 		metadataPublisher,
 		requestCache,
+		newMetrics(t),
 	)
 	require.NoError(t, err)
 
@@ -620,6 +629,7 @@ func TestConnectorHandler_Start_HealthReport_Ready_Name_Close(t *testing.T) {
 		store,
 		metadataPublisher,
 		requestCache,
+		newMetrics(t),
 	)
 	require.NoError(t, err)
 
@@ -777,6 +787,7 @@ func TestHandleGatewayMessage_PullAuthMetadata_EmptyWorkflows(t *testing.T) {
 		store,
 		metadataPublisher,
 		requestCache,
+		newMetrics(t),
 	)
 	require.NoError(t, err)
 
@@ -806,4 +817,91 @@ func TestConnectorHandler_RequestCacheDuplicateDetection(t *testing.T) {
 	require.NoError(t, err)
 	// No trigger should be sent again
 	require.Empty(t, triggerCh)
+}
+
+// mockKVStoreWithCleanupTracking tracks when PruneExpiredEntries is called
+type mockKVStoreWithCleanupTracking struct {
+	*testKVStore
+	cleanupCalled bool
+	cleanupCount  int
+	mu            sync.RWMutex
+}
+
+func newMockKVStoreWithCleanupTracking() *mockKVStoreWithCleanupTracking {
+	return &mockKVStoreWithCleanupTracking{
+		testKVStore: newTestKVStore(),
+	}
+}
+
+func (m *mockKVStoreWithCleanupTracking) PruneExpiredEntries(ctx context.Context, ttl time.Duration) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cleanupCalled = true
+	m.cleanupCount++
+	return 0, nil
+}
+
+func (m *mockKVStoreWithCleanupTracking) wasCleanupCalled() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.cleanupCalled
+}
+
+func (m *mockKVStoreWithCleanupTracking) getCleanupCount() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.cleanupCount
+}
+
+func TestConnectorHandler_StartRequestCacheCleanup(t *testing.T) {
+	lggr := logger.Test(t)
+	mockConnector := &mockGatewayConnector{}
+	cfg := ServiceConfig{}
+	irl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
+	require.NoError(t, err)
+	orl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
+	require.NoError(t, err)
+	store := newWorkflowStore(lggr)
+	metadataPublisher := NewGatewayMetadataPublisher(
+		lggr,
+		mockConnector,
+		orl,
+		store,
+		cfg,
+	)
+
+	shortTTL := 10 * time.Millisecond
+	kvstore := newMockKVStoreWithCleanupTracking()
+	requestCache := newRequestCache(logger.Sugared(lggr), kvstore, shortTTL)
+
+	handler, err := NewConnectorHandler(
+		lggr,
+		mockConnector,
+		cfg,
+		orl,
+		irl,
+		store,
+		metadataPublisher,
+		requestCache,
+		newMetrics(t),
+	)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	// Start the handler - this should start the cleanup routine
+	err = handler.Start(ctx)
+	require.NoError(t, err)
+	defer func() {
+		err := handler.Close()
+		require.NoError(t, err)
+	}()
+
+	// Wait for at least one cleanup cycle to run
+	// The cleanup routine should run every 10ms, so we wait a bit longer
+	time.Sleep(50 * time.Millisecond)
+
+	require.True(t, kvstore.wasCleanupCalled(), "request cache cleanup should be called when handler starts")
+	require.GreaterOrEqual(t, kvstore.getCleanupCount(), 1, "cleanup should be called at least once")
 }

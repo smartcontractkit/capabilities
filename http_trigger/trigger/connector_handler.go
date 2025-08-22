@@ -44,13 +44,14 @@ type connectorHandler struct {
 	incomingRateLimiter      *ratelimit.RateLimiter
 	outgoingRateLimiter      *ratelimit.RateLimiter
 	gatewayMetadataPublisher GatewayMetadataPublisher
+	metrics                  *Metrics
 	wg                       sync.WaitGroup
 	stopChan                 services.StopChan
 }
 
 func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config ServiceConfig,
 	outgoingRateLimiter *ratelimit.RateLimiter, incomingRateLimiter *ratelimit.RateLimiter,
-	workflowStore *workflowStore, gatewayMetadataPublisher GatewayMetadataPublisher, requestCache *requestCache) (*connectorHandler, error) {
+	workflowStore *workflowStore, gatewayMetadataPublisher GatewayMetadataPublisher, requestCache *requestCache, metrics *Metrics) (*connectorHandler, error) {
 	return &connectorHandler{
 		lggr:                     logger.Named(lggr, HandlerName),
 		gatewayConnector:         gc,
@@ -60,6 +61,7 @@ func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config Se
 		workflowStore:            workflowStore,
 		gatewayMetadataPublisher: gatewayMetadataPublisher,
 		requestCache:             requestCache,
+		metrics:                  metrics,
 		stopChan:                 make(chan struct{}),
 	}, nil
 }
@@ -70,9 +72,9 @@ func (h *connectorHandler) Start(ctx context.Context) error {
 	go h.startRequestCacheCleanup(ctx)
 	return h.StartOnce(HandlerName, func() error {
 		return h.gatewayConnector.AddHandler(ctx, []string{
-			serviceName(gateway_common.MethodWorkflowExecute),
-			serviceName(gateway_common.MethodPullWorkflowMetadata),
-			serviceName(gateway_common.MethodPushWorkflowMetadata),
+			gateway_common.MethodWorkflowExecute,
+			gateway_common.MethodPullWorkflowMetadata,
+			gateway_common.MethodPushWorkflowMetadata,
 		}, h)
 	})
 }
@@ -87,18 +89,15 @@ func (h *connectorHandler) startRequestCacheCleanup(ctx context.Context) {
 			h.lggr.Debug("Request cache cleanup routine stopping due to context cancellation")
 			return
 		case <-ticker.C:
-			err := h.requestCache.cleanup(ctx)
+			count, err := h.requestCache.cleanup(ctx)
 			if err != nil {
 				h.lggr.Errorw("Failed to cleanup request cache", "error", err)
 			} else {
-				h.lggr.Debugw("Cleaned up expired request cache entries", "interval", h.requestCache.ttl)
+				h.lggr.Debugw("Cleaned up expired request cache entries", "interval", h.requestCache.ttl, "count", count)
+				h.metrics.IncrementRequestCacheCleanUpCount(ctx, count, h.lggr)
 			}
 		}
 	}
-}
-
-func serviceName(method string) string {
-	return strings.Split(method, ".")[0]
 }
 
 func (h *connectorHandler) Close() error {
@@ -134,11 +133,16 @@ func (h *connectorHandler) RegisterWorkflow(ctx context.Context, workflowSelecto
 
 	// Push workflow metadata to the gateway
 	// Error is non-critical. Retries will be handled by the metadata publisher.
+	startTime := time.Now()
+	h.metrics.IncrementBroadcastMetadataCount(ctx, h.lggr)
 	err = h.gatewayMetadataPublisher.BroadcastWorkflowMetadata(ctx, workflowSelector, authorizedKeys)
 	if err != nil {
 		h.lggr.Errorw("Failed to push metadata to gateway", "error",
 			err, "workflowID", workflowSelector.WorkflowID)
+		h.metrics.IncrementBroadcastMetadataFailures(ctx, h.lggr)
 	}
+	latencyMs := time.Since(startTime).Milliseconds()
+	h.metrics.RecordBroadcastMetadataLatency(ctx, latencyMs, h.lggr)
 
 	workflow := newWorkflow(workflowSelector, authorizedKeys, sendCh)
 	h.workflowStore.upsertWorkflow(workflow)
@@ -191,14 +195,22 @@ func (h *connectorHandler) HandleGatewayMessage(ctx context.Context, gatewayID s
 
 	switch req.Method {
 	case gateway_common.MethodWorkflowExecute:
+		startTime := time.Now()
 		h.processTrigger(ctx, gatewayID, req)
+		latencyMs := time.Since(startTime).Milliseconds()
+		h.metrics.RecordRequestLatency(ctx, latencyMs, h.lggr)
 	case gateway_common.MethodPullWorkflowMetadata:
 		// No retries here. Retries are orchestrated by the gateway node
+		startTime := time.Now()
+		h.metrics.IncrementPullMetadataCount(ctx, h.lggr)
 		err := h.gatewayMetadataPublisher.SendWorkflowMetadata(ctx, gatewayID, req)
 		if err != nil {
 			h.lggr.Errorw("Failed to handle pull metadata request", "error",
 				err, "gatewayID", gatewayID, "requestID", req.ID)
+			h.metrics.IncrementPullMetadataFailures(ctx, h.lggr)
 		}
+		latencyMs := time.Since(startTime).Milliseconds()
+		h.metrics.RecordPullMetadataLatency(ctx, latencyMs, h.lggr)
 	default:
 		h.lggr.Errorw("Unsupported method", "method", req.Method, "gatewayID", gatewayID)
 	}
@@ -209,10 +221,12 @@ func (h *connectorHandler) checkIncomingRateLimit(gatewayID string) bool {
 	senderAllow, globalAllow := h.incomingRateLimiter.AllowVerbose(gatewayID)
 	if !senderAllow {
 		h.lggr.Errorw(errorIncomingRatelimitSender, "gatewayID", gatewayID)
+		h.metrics.IncrementGatewayNodeThrottled(context.Background(), gatewayID, h.lggr)
 		return false
 	}
 	if !globalAllow {
 		h.lggr.Errorw(errorIncomingRatelimitGlobal, "gatewayID", gatewayID)
+		h.metrics.IncrementGatewayGlobalThrottled(context.Background(), h.lggr)
 		return false
 	}
 	return true
@@ -222,6 +236,7 @@ func (h *connectorHandler) sendErrorResponse(ctx context.Context, gatewayID stri
 	resp := &jsonrpc.Response[json.RawMessage]{
 		Version: "2.0",
 		ID:      reqID,
+		Method:  gateway_common.MethodWorkflowExecute,
 		Error: &jsonrpc.WireError{
 			Code:    code,
 			Message: message,
@@ -243,11 +258,15 @@ func (h *connectorHandler) sendResponse(ctx context.Context, gatewayID string, r
 	err := h.gatewayConnector.SendToGateway(ctx, gatewayID, resp)
 	if err != nil {
 		h.lggr.Errorw("Failed to send response to gateway", "error", err, "gatewayID", gatewayID)
+		h.metrics.IncrementGatewaySendError(ctx, h.lggr)
 		return
 	}
+	h.metrics.IncrementRequestSuccessCount(ctx, h.lggr)
 }
 
 func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage]) {
+	h.metrics.IncrementRequestCount(ctx, h.lggr)
+
 	if req.Params == nil {
 		h.lggr.Errorw("No params in request", "gatewayID", gatewayID, "requestID", req.ID)
 		return
@@ -371,6 +390,7 @@ func (h *connectorHandler) prepareAndCacheResponse(ctx context.Context, gatewayI
 	resp := &jsonrpc.Response[json.RawMessage]{
 		Version: "2.0",
 		ID:      req.ID,
+		Method:  gateway_common.MethodWorkflowExecute,
 		Result:  &payloadMsg,
 	}
 
