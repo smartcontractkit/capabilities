@@ -11,23 +11,21 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
-
-	"github.com/smartcontractkit/libocr/commontypes"
-	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	pbtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/values"
 	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb"
+	"github.com/smartcontractkit/libocr/commontypes"
+	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
+	libocrTypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
 	"github.com/smartcontractkit/capabilities/consensus/oracle"
 	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
-
-	"github.com/smartcontractkit/libocr/offchainreporting2plus/types"
-
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 type consensusPluginTest struct {
@@ -41,6 +39,7 @@ type consensusPluginTest struct {
 const n = 7
 const f = 2
 const batchSize = 10
+const defaultMaxLengthBytes = 1000000 // 1 MB
 
 func Test_MismatchedLeaderConsensusDescriptor(t *testing.T) {
 	lggr := logger.Test(t)
@@ -322,14 +321,14 @@ func runProtocolRoundTests(ctx context.Context, t *testing.T, lggr logger.Logger
 	query, err := leaderPlugin.Query(ctx, outCtx)
 	require.NoError(t, err)
 
-	var attributedObservations []types.AttributedObservation
+	var attributedObservations []libocrTypes.AttributedObservation
 	for oracleIdx, plugin := range reportingPlugins {
 		observation, err := plugin.Observation(ctx, outCtx, query)
 
 		fmt.Printf("Oracle %d observation: %v\n", oracleIdx, observation)
 
 		require.NoError(t, err, "failed to get observation from reporting plugin")
-		attributedObservations = append(attributedObservations, types.AttributedObservation{
+		attributedObservations = append(attributedObservations, libocrTypes.AttributedObservation{
 			Observation: observation,
 			Observer:    commontypes.OracleID(oracleIdx), //nolint:gosec // G115
 		})
@@ -453,7 +452,17 @@ func createReportingPlugin(t *testing.T, pluginObservations []*oracle.ConsensusR
 		require.NoError(t, err, "failed to add request to store")
 	}
 
-	reportingPlugin, err := oracle.NewReportingPlugin(lggr, f, n, reqStore, batchSize)
+	reportingPlugin, err := oracle.NewReportingPlugin(lggr, f, n, reqStore, &pbtypes.ReportingPluginConfig{
+		MaxQueryLengthBytes:       defaultMaxLengthBytes,
+		MaxObservationLengthBytes: defaultMaxLengthBytes,
+		MaxOutcomeLengthBytes:     defaultMaxLengthBytes,
+		MaxBatchSize: func() uint32 {
+			if batchSize < 0 || batchSize > int(^uint32(0)) {
+				return 0
+			}
+			return uint32(batchSize)
+		}(),
+	})
 	require.NoError(t, err)
 	return reportingPlugin
 }
