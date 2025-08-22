@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
@@ -161,16 +162,42 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 
 	filterID := lts.generateFilterID(triggerID)
 	lts.lggr.Debugf("RegisterLogTracking id: %s", filterID)
+
+	addresses, err := evmservice.ConvertAddressesFromProto(input.GetAddresses())
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert addresses: %w", err)
+	}
+
+	sigs, err := evmservice.ConvertHashesFromProto(eventSigs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert eventSigs: %w", err)
+	}
+
+	t2, err := evmservice.ConvertHashesFromProto(topics2)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert topics2: %w", err)
+	}
+
+	t3, err := evmservice.ConvertHashesFromProto(topics3)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert topics3: %w", err)
+	}
+
+	t4, err := evmservice.ConvertHashesFromProto(topics4)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert topics4: %w", err)
+	}
+
 	filterQuery := evmtypes.LPFilterQuery{
 		Name:      filterID,
-		Addresses: evmservice.ConvertAddressesFromProto(input.GetAddresses()),
-		EventSigs: evmservice.ConvertHashesFromProto(eventSigs),
-		Topic2:    evmservice.ConvertHashesFromProto(topics2),
-		Topic3:    evmservice.ConvertHashesFromProto(topics3),
-		Topic4:    evmservice.ConvertHashesFromProto(topics4),
+		Addresses: addresses,
+		EventSigs: sigs,
+		Topic2:    t2,
+		Topic3:    t3,
+		Topic4:    t4,
 	}
-	err = lts.EVMService.RegisterLogTracking(ctx, filterQuery)
-	if err != nil {
+
+	if err = lts.EVMService.RegisterLogTracking(ctx, filterQuery); err != nil {
 		return nil, fmt.Errorf("failed to register log-tracking: '%w' for triggerID: %s, addresses: %v, eventSig: %v, topic2: %v, topic3: %v, topic4: %v",
 			err, triggerID, filterQuery.Addresses, filterQuery.EventSigs, filterQuery.Topic2, filterQuery.Topic3, filterQuery.Topic4)
 	}
@@ -299,12 +326,17 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 	var needsUpdate bool
 
 	for _, log := range logs {
+		if log == nil {
+			lts.lggr.Errorf("Received nil log for triggerID: %s, skipping", triggerID)
+			continue
+		}
+
 		logID := lts.generateLogIdentifier(log)
 		_, alreadySent := trigger.unfinalizedSentEventIDs[logID]
 		lts.lggr.Debugf("Working with logId: %s, alreadySent: %t", logID, alreadySent)
 
 		if !alreadySent {
-			protoLog := evmcappb.ConvertLogToProto(log)
+			protoLog := evmcappb.ConvertLogToProto(*log)
 			response := capabilities.TriggerAndId[*evmcappb.Log]{
 				Id:      lts.generateLogIdentifier(log),
 				Trigger: protoLog,

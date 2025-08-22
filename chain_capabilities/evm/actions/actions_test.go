@@ -27,7 +27,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
-	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
+	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 )
 
 func TestCapability_CallContract(t *testing.T) {

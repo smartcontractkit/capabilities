@@ -22,14 +22,17 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
-	"google.golang.org/protobuf/proto"
 
+	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
+	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
 )
@@ -161,7 +164,12 @@ func (e EVM) filterLogsToRequest(meta capabilities.RequestMetadata, ethFilterQue
 			return nil, err
 		}
 
-		return proto.Marshal(&evm.FilterLogsReply{Logs: evm.ConvertLogsToProto(reply.Logs)})
+		logs, err := evm.ConvertLogsToProto(reply.Logs)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert logs to proto: %w", err)
+		}
+
+		return proto.Marshal(&evm.FilterLogsReply{Logs: logs})
 	}
 
 	if ethFilterQuery.BlockHash != (evmtypes.Hash{}) {
