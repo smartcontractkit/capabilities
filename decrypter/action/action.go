@@ -8,8 +8,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
-	"github.com/smartcontractkit/chainlink-common/pkg/values"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk"
+	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 
 	"github.com/smartcontractkit/capabilities/decrypter/decryptercap"
 )
@@ -46,18 +46,12 @@ func New(p Params) (capabilities.ExecutableCapability, error) {
 	}, nil
 }
 
-func (c *capability) Info(_ context.Context) (capabilities.CapabilityInfo, error) {
+func (ca *capability) Info(_ context.Context) (capabilities.CapabilityInfo, error) {
 	return actionInfo, nil
 }
 
-func (c *capability) Execute(ctx context.Context, rawRequest capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
-	c.lggr.Debugw(
-		"executing decrypter action",
-		"workflowID", rawRequest.Metadata.WorkflowID,
-		"executionID", rawRequest.Metadata.WorkflowExecutionID,
-		"workflowName", rawRequest.Metadata.WorkflowName,
-		"workflowOwner", rawRequest.Metadata.WorkflowOwner,
-	)
+func (ca *capability) Execute(ctx context.Context, rawRequest capabilities.CapabilityRequest) (capabilities.CapabilityResponse, error) {
+	ca.lggr.Debugw("executing decrypter action")
 
 	var input decryptercap.DecryptInputs
 	if rawRequest.Inputs == nil || rawRequest.Inputs.Underlying == nil || rawRequest.Inputs.Underlying["DecryptInputs"] == nil {
@@ -67,7 +61,7 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 		return capabilities.CapabilityResponse{}, err
 	}
 
-	accounts, err := c.keystore.Accounts(ctx)
+	accounts, err := ca.keystore.Accounts(ctx)
 	if err != nil {
 		return capabilities.CapabilityResponse{}, err
 	}
@@ -91,7 +85,7 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 	var plaintext []byte
 	var decryptErrors []error
 	for _, ciphertext := range input.Ciphertexts {
-		p, err := c.keystore.Decrypt(ctx, acct, ciphertext)
+		p, err := ca.keystore.Decrypt(ctx, acct, ciphertext)
 		if err != nil {
 			decryptErrors = append(decryptErrors, fmt.Errorf("failed to decrypt ciphertext %v: %w", ciphertext, err))
 			continue
@@ -116,12 +110,12 @@ func (c *capability) Execute(ctx context.Context, rawRequest capabilities.Capabi
 	}, nil
 }
 
-func (c *capability) RegisterToWorkflow(_ context.Context, rawRequest capabilities.RegisterToWorkflowRequest) error {
-	c.lggr.Debugw("registering to workflow", "workflowID", rawRequest.Metadata.WorkflowID, "workflowOwner", rawRequest.Metadata.WorkflowOwner)
+func (ca *capability) RegisterToWorkflow(_ context.Context, rawRequest capabilities.RegisterToWorkflowRequest) error {
+	ca.lggr.Debugw("registering to workflow", "workflowID", rawRequest.Metadata.WorkflowID, "workflowOwner", rawRequest.Metadata.WorkflowOwner)
 	return nil
 }
 
-func (c *capability) UnregisterFromWorkflow(_ context.Context, rawRequest capabilities.UnregisterFromWorkflowRequest) error {
-	c.lggr.Debugw("unregistering from workflow", "workflowID", rawRequest.Metadata.WorkflowID, "workflowOwner", rawRequest.Metadata.WorkflowOwner)
+func (ca *capability) UnregisterFromWorkflow(_ context.Context, rawRequest capabilities.UnregisterFromWorkflowRequest) error {
+	ca.lggr.Debugw("unregistering from workflow", "workflowID", rawRequest.Metadata.WorkflowID, "workflowOwner", rawRequest.Metadata.WorkflowOwner)
 	return nil
 }

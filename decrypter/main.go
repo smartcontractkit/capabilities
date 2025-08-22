@@ -27,46 +27,7 @@ func New(lggr logger.Logger) *capabilitiesServer {
 	return &capabilitiesServer{lggr: logger.Sugared(lggr)}
 }
 
-func (cs *capabilitiesServer) Start(ctx context.Context) error {
-	return nil
-}
-
-func (cs *capabilitiesServer) Close() error {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
-	err := cs.capabilityRegistry.Remove(ctx, "")
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (cs *capabilitiesServer) Ready() error {
-	return nil
-}
-
-func (cs *capabilitiesServer) HealthReport() map[string]error {
-	return map[string]error{cs.Name(): nil}
-}
-
-func (cs *capabilitiesServer) Name() string {
-	return cs.lggr.Name()
-}
-
-func (cs *capabilitiesServer) Infos(ctx context.Context) ([]capabilities.CapabilityInfo, error) {
-	actionInfo, err := cs.action.Info(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return []capabilities.CapabilityInfo{
-		actionInfo,
-	}, nil
-}
-
-func (cs *capabilitiesServer) Initialise(
+func (c *capabilitiesServer) Initialise(
 	ctx context.Context,
 	_ string,
 	_ core.TelemetryService,
@@ -79,24 +40,63 @@ func (cs *capabilitiesServer) Initialise(
 	_ core.GatewayConnector,
 	keystore core.Keystore,
 ) error {
-	cs.lggr.Debug("Initialising")
+	c.lggr.Debug("Initialising")
 
 	var err error
-	cs.action, err = action.New(action.Params{
-		Logger:   cs.lggr,
+	c.action, err = action.New(action.Params{
+		Logger:   c.lggr,
 		Keystore: keystore,
 	})
 	if err != nil {
 		return err
 	}
 
-	if err := capabilityRegistry.Add(ctx, cs.action); err != nil {
+	if err := capabilityRegistry.Add(ctx, c.action); err != nil {
 		return fmt.Errorf("failed to add decrypter capability to the capability registry: %w", err)
 	}
 
-	cs.capabilityRegistry = capabilityRegistry
+	c.capabilityRegistry = capabilityRegistry
 
 	return nil
+}
+
+func (c *capabilitiesServer) Start(ctx context.Context) error {
+	return nil
+}
+
+func (c *capabilitiesServer) Close() error {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	err := c.capabilityRegistry.Remove(ctx, "")
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *capabilitiesServer) Ready() error {
+	return nil
+}
+
+func (c *capabilitiesServer) HealthReport() map[string]error {
+	return map[string]error{c.Name(): nil}
+}
+
+func (c *capabilitiesServer) Name() string {
+	return c.lggr.Name()
+}
+
+func (c *capabilitiesServer) Infos(ctx context.Context) ([]capabilities.CapabilityInfo, error) {
+	actionInfo, err := c.action.Info(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return []capabilities.CapabilityInfo{
+		actionInfo,
+	}, nil
 }
 
 func main() {
