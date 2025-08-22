@@ -10,9 +10,9 @@ import (
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
 
-	_ "github.com/smartcontractkit/chainlink-common/pkg/beholder"
-
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
+
+	_ "github.com/smartcontractkit/chainlink-common/pkg/beholder"
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -965,7 +965,7 @@ func assemblyDataMessage(address evmtypes.Address, blockNumber *big.Int) string 
 func createTriggerResponse(log *evmtypes.Log, service *LogTriggerService) capabilities.TriggerAndId[*evmcappb.Log] {
 	return capabilities.TriggerAndId[*evmcappb.Log]{
 		Id:      service.generateLogIdentifier(log),
-		Trigger: evmcappb.ConvertLogToProto(log),
+		Trigger: evmcappb.ConvertLogToProto(*log),
 	}
 }
 

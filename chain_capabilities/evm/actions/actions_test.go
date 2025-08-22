@@ -382,7 +382,11 @@ func TestCapability_HeaderByNumber(t *testing.T) {
 			Timestamp: 123,
 			Number:    block,
 		}
-		expectedReply := &evmcappb.HeaderByNumberReply{Header: evmcappb.ConvertHeaderToProto(header)}
+
+		h, err := evmcappb.ConvertHeaderToProto(&header)
+		require.NoError(t, err)
+
+		expectedReply := &evmcappb.HeaderByNumberReply{Header: h}
 		asProto, err := proto.Marshal(expectedReply)
 		require.NoError(t, err)
 		ch <- types.Reply{Value: asProto}
