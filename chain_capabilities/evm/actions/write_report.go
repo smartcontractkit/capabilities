@@ -10,15 +10,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/jpillora/backoff"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/retry"
-
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
-
-	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
@@ -55,10 +54,29 @@ func (e EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMetad
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport while checking if the report exists or trying to publish on chain", err.Error()))
 		return nil, err
 	}
+	responseMetadata := capabilities.ResponseMetadata{}
+	if report.TxStatus == evm.TxStatus_TX_STATUS_SUCCESS {
+		transactionFee, err := e.getFee(ctx, report.TxHash)
+		if err != nil {
+			monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport when checking inclusion fee", err.Error()))
+			return nil, err
+		}
+		responseMetadata = metering.GetResponseMetadataWriteReport(transactionFee, e.chainSelector)
+	}
+
 	monitoring.LogAndEmitSuccess(ctx, "Successfully WriteReport execution", e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportSuccess(telemetryContext, input))
 	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.WriteReportReply]{
 		Response:         report,
-		ResponseMetadata: capabilities.ResponseMetadata{},
+		ResponseMetadata: responseMetadata,
+	}
+	return &responseAndMetadata, err
+}
+
+func (e EVM) getFee(ctx context.Context, hash []byte) (*big.Float, error) {
+	transactionID := string(hash)
+	feeInWei, errTxFee := e.EVMService.GetTransactionFee(ctx, transactionID)
+	if errTxFee != nil {
+		return nil, fmt.Errorf("failed to get transaction fee: %w", errTxFee)
 	}
 	feeInEth := new(big.Float).Quo(new(big.Float).SetInt(feeInWei.TransactionFee), big.NewFloat(1e18))
 	e.lggr.Debugw("WriteReport fee", "feeInEth", feeInEth.String(), "feeInWei", feeInWei.TransactionFee.String())
