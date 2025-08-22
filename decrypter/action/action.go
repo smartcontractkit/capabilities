@@ -15,23 +15,22 @@ import (
 )
 
 var (
-	ID         = "decrypter-action@1.0.0"
 	actionInfo = capabilities.MustNewCapabilityInfo(
-		ID,
+		"decrypter-action@1.0.0",
 		capabilities.CapabilityTypeAction,
 		"Decrypts a message using the workflow key.",
 	)
 )
 
 type Params struct {
-	Logger   logger.Logger
 	Keystore core.Keystore
+	Logger   logger.Logger
 }
 
 type Request struct {
+	Inputs   sdk.CapMap
 	Metadata capabilities.RequestMetadata
 	Config   *values.Map
-	Inputs   sdk.CapMap
 }
 
 type capability struct {
@@ -39,11 +38,8 @@ type capability struct {
 	keystore core.Keystore
 }
 
-func New(p Params) (capabilities.ExecutableCapability, error) {
-	return &capability{
-		lggr:     p.Logger,
-		keystore: p.Keystore,
-	}, nil
+func New(params Params) (cap capabilities.ExecutableCapability, err error) {
+	return &capability{lggr: params.Logger, keystore: params.Keystore}, nil
 }
 
 func (ca *capability) Info(_ context.Context) (capabilities.CapabilityInfo, error) {
