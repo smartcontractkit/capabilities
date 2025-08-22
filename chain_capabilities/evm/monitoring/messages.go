@@ -91,53 +91,53 @@ func convertAttributedSignature(attributedSignatures []*sdkpb.AttributedSignatur
 	return convertedSignatures
 }
 
-func (m *MessageBuilder) BuildWriteReportSuccess(r TelemetryContext, req *evmcap.WriteReportRequest) *WriteReportSuccess {
+func (m *MessageBuilder) BuildWriteReportSuccess(tc TelemetryContext, req *evmcap.WriteReportRequest) *WriteReportSuccess {
 	return &WriteReportSuccess{
 		Req:              convertWriteReportRequest(req),
-		ExecutionContext: m.BuildExecutionContext(r),
+		ExecutionContext: m.BuildExecutionContext(tc),
 	}
 }
 
-func (m *MessageBuilder) BuildWriteReportError(r TelemetryContext, req *evmcap.WriteReportRequest, summary, cause string) ErrorMessage {
+func (m *MessageBuilder) BuildWriteReportError(tc TelemetryContext, req *evmcap.WriteReportRequest, summary, cause string) ErrorMessage {
 	return &WriteReportError{
 		Req:              convertWriteReportRequest(req),
-		ExecutionContext: m.BuildExecutionContext(r),
+		ExecutionContext: m.BuildExecutionContext(tc),
 		Summary:          summary,
 		Cause:            cause,
 	}
 }
 
-func (m *MessageBuilder) BuildLogTriggerInitiated(r TelemetryContext, req *evmcap.FilterLogTriggerRequest) *TriggerInitiated {
-	return &TriggerInitiated{Req: req, ExecutionContext: m.BuildExecutionContext(r)}
+func (m *MessageBuilder) BuildLogTriggerInitiated(tc TelemetryContext, req *evmcap.FilterLogTriggerRequest) *TriggerInitiated {
+	return &TriggerInitiated{Req: req, ExecutionContext: m.BuildExecutionContext(tc)}
 }
 
-func (m *MessageBuilder) BuildLogTriggerSuccess(r TelemetryContext, triggerID string, req *evmcap.FilterLogTriggerRequest, logCount int, latestOffsetBlock int64) Message {
+func (m *MessageBuilder) BuildLogTriggerSuccess(tc TelemetryContext, triggerID string, req *evmcap.FilterLogTriggerRequest, logCount int, latestOffsetBlock int64) Message {
 	return &LogTriggerSuccess{
 		TriggerID:         triggerID,
 		Req:               req,
 		LogCount:          int32(logCount), // nolint:gosec // G115: integer overflow conversion int -> int32 (gosec)
 		LatestOffsetBlock: latestOffsetBlock,
-		ExecutionContext:  m.BuildExecutionContext(r)}
+		ExecutionContext:  m.BuildExecutionContext(tc)}
 }
 
-func (m *MessageBuilder) BuildLogTriggerError(r TelemetryContext, triggerID string, summary, cause string) ErrorMessage {
+func (m *MessageBuilder) BuildLogTriggerError(tc TelemetryContext, triggerID string, summary, cause string) ErrorMessage {
 	return &LogTriggerError{
 		TriggerID:        triggerID,
 		Summary:          summary,
 		Cause:            cause,
-		ExecutionContext: m.BuildExecutionContext(r),
+		ExecutionContext: m.BuildExecutionContext(tc),
 	}
 }
 
-func (m *MessageBuilder) BuildLogTriggerCleanUpError(r TelemetryContext, summary, cause string) ErrorMessage {
+func (m *MessageBuilder) BuildLogTriggerCleanUpError(tc TelemetryContext, summary, cause string) ErrorMessage {
 	return &LogTriggerCleanUpError{
 		Summary:          summary,
 		Cause:            cause,
-		ExecutionContext: m.BuildExecutionContext(r),
+		ExecutionContext: m.BuildExecutionContext(tc),
 	}
 }
 
-func (m *MessageBuilder) BuildLogTriggerEventDroppedError(r TelemetryContext, triggerID string, log *evm.Log, summary, cause string) ErrorMessage {
+func (m *MessageBuilder) BuildLogTriggerEventDroppedError(tc TelemetryContext, triggerID string, log *evm.Log, summary, cause string) ErrorMessage {
 	return &LogTriggerEventDroppedError{
 		TriggerID:        triggerID,
 		TxHash:           common.Bytes2Hex(log.TxHash[:]),
@@ -145,51 +145,51 @@ func (m *MessageBuilder) BuildLogTriggerEventDroppedError(r TelemetryContext, tr
 		LogIndex:         int64(log.LogIndex),
 		Summary:          summary,
 		Cause:            cause,
-		ExecutionContext: m.BuildExecutionContext(r),
+		ExecutionContext: m.BuildExecutionContext(tc),
 	}
 }
 
-func (m *MessageBuilder) BuildFilterLogsInitiated(r TelemetryContext, fq evmtypes.FilterQuery) *FilterLogsInitiated {
-	return &FilterLogsInitiated{Req: toFilterLogsRequest(fq), ExecutionContext: m.BuildExecutionContext(r)}
+func (m *MessageBuilder) BuildFilterLogsInitiated(tc TelemetryContext, fq evmtypes.FilterQuery) *FilterLogsInitiated {
+	return &FilterLogsInitiated{Req: toFilterLogsRequest(fq), ExecutionContext: m.BuildExecutionContext(tc)}
 }
 
-func (m *MessageBuilder) BuildFilterLogsSuccess(r TelemetryContext, fq evmtypes.FilterQuery, count int32) Message {
-	return &FilterLogsSuccess{Req: toFilterLogsRequest(fq), LogCount: count, ExecutionContext: m.BuildExecutionContext(r)}
+func (m *MessageBuilder) BuildFilterLogsSuccess(tc TelemetryContext, fq evmtypes.FilterQuery, count int32) Message {
+	return &FilterLogsSuccess{Req: toFilterLogsRequest(fq), LogCount: count, ExecutionContext: m.BuildExecutionContext(tc)}
 }
 
-func (m *MessageBuilder) BuildFilterLogsError(r TelemetryContext, fq evmtypes.FilterQuery, summary, cause string) ErrorMessage {
-	return &FilterLogsError{Req: toFilterLogsRequest(fq), Summary: summary, Cause: cause, ExecutionContext: m.BuildExecutionContext(r)}
+func (m *MessageBuilder) BuildFilterLogsError(tc TelemetryContext, fq evmtypes.FilterQuery, summary, cause string) ErrorMessage {
+	return &FilterLogsError{Req: toFilterLogsRequest(fq), Summary: summary, Cause: cause, ExecutionContext: m.BuildExecutionContext(tc)}
 }
 
-func (m *MessageBuilder) BuildBalanceAtInitiated(r TelemetryContext, account string, bn int64) *BalanceAtInitiated {
-	return &BalanceAtInitiated{Req: &BalanceAtRequest{Account: account, BlockNumber: bn}, ExecutionContext: m.BuildExecutionContext(r)}
+func (m *MessageBuilder) BuildBalanceAtInitiated(tc TelemetryContext, account string, bn int64) *BalanceAtInitiated {
+	return &BalanceAtInitiated{Req: &BalanceAtRequest{Account: account, BlockNumber: bn}, ExecutionContext: m.BuildExecutionContext(tc)}
 }
 
-func (m *MessageBuilder) BuildBalanceAtSuccess(r TelemetryContext, account string, bn int64, bal *big.Int) Message {
-	return &BalanceAtSuccess{Req: &BalanceAtRequest{Account: account, BlockNumber: bn}, Balance: bal.String(), ExecutionContext: m.BuildExecutionContext(r)}
+func (m *MessageBuilder) BuildBalanceAtSuccess(tc TelemetryContext, account string, bn int64, bal *big.Int) Message {
+	return &BalanceAtSuccess{Req: &BalanceAtRequest{Account: account, BlockNumber: bn}, Balance: bal.String(), ExecutionContext: m.BuildExecutionContext(tc)}
 }
 
-func (m *MessageBuilder) BuildBalanceAtError(r TelemetryContext, account string, bn int64, summary, cause string) ErrorMessage {
-	return &BalanceAtError{Req: &BalanceAtRequest{Account: account, BlockNumber: bn}, Summary: summary, Cause: cause, ExecutionContext: m.BuildExecutionContext(r)}
+func (m *MessageBuilder) BuildBalanceAtError(tc TelemetryContext, account string, bn int64, summary, cause string) ErrorMessage {
+	return &BalanceAtError{Req: &BalanceAtRequest{Account: account, BlockNumber: bn}, Summary: summary, Cause: cause, ExecutionContext: m.BuildExecutionContext(tc)}
 }
 
-func (m *MessageBuilder) BuildEstimateGasInitiated(r TelemetryContext, from, to string, data []byte) *EstimateGasInitiated {
-	return &EstimateGasInitiated{Req: &EstimateGasRequest{From: from, To: to, Data: data}, ExecutionContext: m.BuildExecutionContext(r)}
+func (m *MessageBuilder) BuildEstimateGasInitiated(tc TelemetryContext, from, to string, data []byte) *EstimateGasInitiated {
+	return &EstimateGasInitiated{Req: &EstimateGasRequest{From: from, To: to, Data: data}, ExecutionContext: m.BuildExecutionContext(tc)}
 }
 
-func (m *MessageBuilder) BuildEstimateGasSuccess(r TelemetryContext, from, to string, data []byte, gas int64) Message {
-	return &EstimateGasSuccess{Req: &EstimateGasRequest{From: from, To: to, Data: data}, Gas: gas, ExecutionContext: m.BuildExecutionContext(r)}
+func (m *MessageBuilder) BuildEstimateGasSuccess(tc TelemetryContext, from, to string, data []byte, gas int64) Message {
+	return &EstimateGasSuccess{Req: &EstimateGasRequest{From: from, To: to, Data: data}, Gas: gas, ExecutionContext: m.BuildExecutionContext(tc)}
 }
 
-func (m *MessageBuilder) BuildEstimateGasError(r TelemetryContext, from, to string, data []byte, summary, cause string) ErrorMessage {
-	return &EstimateGasError{Req: &EstimateGasRequest{From: from, To: to, Data: data}, Summary: summary, Cause: cause, ExecutionContext: m.BuildExecutionContext(r)}
+func (m *MessageBuilder) BuildEstimateGasError(tc TelemetryContext, from, to string, data []byte, summary, cause string) ErrorMessage {
+	return &EstimateGasError{Req: &EstimateGasRequest{From: from, To: to, Data: data}, Summary: summary, Cause: cause, ExecutionContext: m.BuildExecutionContext(tc)}
 }
 
-func (m *MessageBuilder) BuildGetTransactionByHashInitiated(r TelemetryContext, hash string) *GetTransactionByHashInitiated {
-	return &GetTransactionByHashInitiated{Req: &GetTransactionByHashRequest{Hash: hash}, ExecutionContext: m.BuildExecutionContext(r)}
+func (m *MessageBuilder) BuildGetTransactionByHashInitiated(tc TelemetryContext, hash string) *GetTransactionByHashInitiated {
+	return &GetTransactionByHashInitiated{Req: &GetTransactionByHashRequest{Hash: hash}, ExecutionContext: m.BuildExecutionContext(tc)}
 }
 
-func (m *MessageBuilder) BuildGetTransactionByHashSuccess(r TelemetryContext, hash string, tx *evmcap.Transaction) Message {
+func (m *MessageBuilder) BuildGetTransactionByHashSuccess(tc TelemetryContext, hash string, tx *evmcap.Transaction) Message {
 	txData := &TransactionData{
 		TxHash:  common.Bytes2Hex(tx.Hash[:]),
 		TxNonce: tx.Nonce,
@@ -201,18 +201,18 @@ func (m *MessageBuilder) BuildGetTransactionByHashSuccess(r TelemetryContext, ha
 	if tx.Value != nil {
 		txData.Value = valuespb.NewIntFromBigInt(tx.Value).Uint64()
 	}
-	return &GetTransactionByHashSuccess{Req: &GetTransactionByHashRequest{Hash: hash}, Transaction: txData, ExecutionContext: m.BuildExecutionContext(r)}
+	return &GetTransactionByHashSuccess{Req: &GetTransactionByHashRequest{Hash: hash}, Transaction: txData, ExecutionContext: m.BuildExecutionContext(tc)}
 }
 
-func (m *MessageBuilder) BuildGetTransactionByHashError(r TelemetryContext, hash, summary, cause string) ErrorMessage {
-	return &GetTransactionByHashError{Req: &GetTransactionByHashRequest{Hash: hash}, Summary: summary, Cause: cause, ExecutionContext: m.BuildExecutionContext(r)}
+func (m *MessageBuilder) BuildGetTransactionByHashError(tc TelemetryContext, hash, summary, cause string) ErrorMessage {
+	return &GetTransactionByHashError{Req: &GetTransactionByHashRequest{Hash: hash}, Summary: summary, Cause: cause, ExecutionContext: m.BuildExecutionContext(tc)}
 }
 
-func (m *MessageBuilder) BuildGetTransactionReceiptInitiated(r TelemetryContext, hash string) *GetTransactionReceiptInitiated {
-	return &GetTransactionReceiptInitiated{Req: &GetTransactionReceiptRequest{Hash: hash}, ExecutionContext: m.BuildExecutionContext(r)}
+func (m *MessageBuilder) BuildGetTransactionReceiptInitiated(tc TelemetryContext, hash string) *GetTransactionReceiptInitiated {
+	return &GetTransactionReceiptInitiated{Req: &GetTransactionReceiptRequest{Hash: hash}, ExecutionContext: m.BuildExecutionContext(tc)}
 }
 
-func (m *MessageBuilder) BuildGetTransactionReceiptSuccess(r TelemetryContext, hash string, receipt *evmcap.Receipt) Message {
+func (m *MessageBuilder) BuildGetTransactionReceiptSuccess(tc TelemetryContext, hash string, receipt *evmcap.Receipt) Message {
 	receiptData := &Receipt{
 		Status:           receipt.Status,
 		TxHash:           common.BytesToHash(receipt.TxHash[:]).String(),
@@ -230,18 +230,18 @@ func (m *MessageBuilder) BuildGetTransactionReceiptSuccess(r TelemetryContext, h
 		receiptData.EffectiveGasPrice = valuespb.NewIntFromBigInt(receipt.EffectiveGasPrice).Uint64()
 	}
 
-	return &GetTransactionReceiptSuccess{Req: &GetTransactionReceiptRequest{Hash: hash}, Receipt: receiptData, ExecutionContext: m.BuildExecutionContext(r)}
+	return &GetTransactionReceiptSuccess{Req: &GetTransactionReceiptRequest{Hash: hash}, Receipt: receiptData, ExecutionContext: m.BuildExecutionContext(tc)}
 }
 
-func (m *MessageBuilder) BuildGetTransactionReceiptError(r TelemetryContext, hash, summary, cause string) ErrorMessage {
-	return &GetTransactionReceiptError{Req: &GetTransactionReceiptRequest{Hash: hash}, Summary: summary, Cause: cause, ExecutionContext: m.BuildExecutionContext(r)}
+func (m *MessageBuilder) BuildGetTransactionReceiptError(tc TelemetryContext, hash, summary, cause string) ErrorMessage {
+	return &GetTransactionReceiptError{Req: &GetTransactionReceiptRequest{Hash: hash}, Summary: summary, Cause: cause, ExecutionContext: m.BuildExecutionContext(tc)}
 }
 
-func (m *MessageBuilder) BuildHeaderByNumberInitiated(r TelemetryContext, blockNumber int64) *HeaderByNumberInitiated {
-	return &HeaderByNumberInitiated{ExecutionContext: m.BuildExecutionContext(r), Req: &HeaderByNumberRequest{BlockNumber: blockNumber}}
+func (m *MessageBuilder) BuildHeaderByNumberInitiated(tc TelemetryContext, blockNumber int64) *HeaderByNumberInitiated {
+	return &HeaderByNumberInitiated{ExecutionContext: m.BuildExecutionContext(tc), Req: &HeaderByNumberRequest{BlockNumber: blockNumber}}
 }
 
-func (m *MessageBuilder) BuildHeaderByNumberSuccess(r TelemetryContext, blockNumber int64, header *evmcap.Header) Message {
+func (m *MessageBuilder) BuildHeaderByNumberSuccess(tc TelemetryContext, blockNumber int64, header *evmcap.Header) Message {
 	return &HeaderByNumberSuccess{
 		Req: &HeaderByNumberRequest{BlockNumber: blockNumber},
 		Header: &BlockData{
@@ -249,21 +249,21 @@ func (m *MessageBuilder) BuildHeaderByNumberSuccess(r TelemetryContext, blockNum
 			BlockHeight:    header.BlockNumber.String(),
 			BlockTimestamp: header.Timestamp,
 		},
-		ExecutionContext: m.BuildExecutionContext(r),
+		ExecutionContext: m.BuildExecutionContext(tc),
 	}
 }
 
-func (m *MessageBuilder) BuildHeaderByNumberError(r TelemetryContext, blockNumber int64, summary, cause string) ErrorMessage {
+func (m *MessageBuilder) BuildHeaderByNumberError(tc TelemetryContext, blockNumber int64, summary, cause string) ErrorMessage {
 	return &HeaderByNumberError{
 		Req:              &HeaderByNumberRequest{BlockNumber: blockNumber},
 		Summary:          summary,
 		Cause:            cause,
-		ExecutionContext: m.BuildExecutionContext(r),
+		ExecutionContext: m.BuildExecutionContext(tc),
 	}
 }
 
 // BuildExecutionContext builds the shared ExecutionContext
-func (m *MessageBuilder) BuildExecutionContext(request TelemetryContext) *capmonitoring.ExecutionContext {
+func (m *MessageBuilder) BuildExecutionContext(tc TelemetryContext) *capmonitoring.ExecutionContext {
 	ex := &capmonitoring.ExecutionContext{
 		MetaSourceId: m.nodeAddress,
 
@@ -274,19 +274,19 @@ func (m *MessageBuilder) BuildExecutionContext(request TelemetryContext) *capmon
 		MetaNetworkNameFull: m.ChainInfo.NetworkNameFull,
 
 		// Workflow
-		MetaWorkflowId:               request.WorkflowID,
-		MetaWorkflowOwner:            request.WorkflowOwner,
-		MetaWorkflowExecutionId:      request.WorkflowExecutionID,
-		MetaWorkflowName:             request.WorkflowName,
-		MetaWorkflowDonId:            request.WorkflowDonID,
-		MetaWorkflowDonConfigVersion: request.WorkflowDonConfigVersion,
-		MetaReferenceId:              request.ReferenceID,
+		MetaWorkflowId:               tc.WorkflowID,
+		MetaWorkflowOwner:            tc.WorkflowOwner,
+		MetaWorkflowExecutionId:      tc.WorkflowExecutionID,
+		MetaWorkflowName:             tc.WorkflowName,
+		MetaWorkflowDonId:            tc.WorkflowDonID,
+		MetaWorkflowDonConfigVersion: tc.WorkflowDonConfigVersion,
+		MetaReferenceId:              tc.ReferenceID,
 		// Capability
 		MetaCapabilityType: string(m.CapInfo.CapabilityType),
 		MetaCapabilityId:   m.CapInfo.ID,
 		// G115: integer overflow conversion uint64 -> int64 (gosec)
 		// nolint:gosec
-		MetaCapabilityTimestampStart: uint64(request.TsStart),
+		MetaCapabilityTimestampStart: uint64(tc.TsStart),
 		// G115: integer overflow conversion uint64 -> int64 (gosec)
 		// nolint:gosec
 		MetaCapabilityTimestampEmit: uint64(time.Now().UnixMilli()),
