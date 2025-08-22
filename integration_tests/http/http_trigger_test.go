@@ -373,8 +373,8 @@ func assertTriggerPayload(t *testing.T, env *testEnv, executionID string, input 
 			require.Equal(t, triggersdk.KeyType_KEY_TYPE_ECDSA_EVM, payload.Trigger.Key.Type)
 			publicKey := strings.ToLower(crypto.PubkeyToAddress(env.signingKey.PublicKey).Hex())
 			require.Equal(t, publicKey, payload.Trigger.Key.PublicKey)
-		default:
-			t.Fatalf("Node %d did not receive a trigger in time", i)
+		case <-time.After(1 * time.Minute):
+			t.Fatalf("Node %d did not receive a trigger within 1 minute", i)
 		}
 	}
 }
