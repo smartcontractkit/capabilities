@@ -48,6 +48,8 @@ message TriggerEvent{
   string TriggerType = 1;
   string ID = 2;
   bytes Outputs = 3;
+  google.protobuf.Any Payload = 4;
+  OCRTriggerEvent OCREvent = 5;
 }
 
 message TriggerResponse{

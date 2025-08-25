@@ -277,11 +277,20 @@ func (m *MockRegistry) UnregisterTrigger(ctx context.Context, request *pb.Trigge
 	}
 
 	return &emptypb.Empty{}, t.UnregisterTrigger(ctx, capabilities.TriggerRegistrationRequest{
-		TriggerID: request.TriggerID,
-		Metadata:  capabilities.RequestMetadata{},
-		Config:    config,
-		Payload:   request.Payload,
-		Method:    request.Method,
+		TriggerID: request.RegistrationTriggerID,
+		Metadata: capabilities.RequestMetadata{
+			WorkflowID:               request.Metadata.WorkflowID,
+			WorkflowOwner:            request.Metadata.WorkflowOwner,
+			WorkflowExecutionID:      request.Metadata.WorkflowExecutionID,
+			WorkflowName:             request.Metadata.WorkflowName,
+			WorkflowDonID:            request.Metadata.WorkflowDonID,
+			WorkflowDonConfigVersion: request.Metadata.WorkflowDonConfigVersion,
+			ReferenceID:              request.Metadata.ReferenceID,
+			DecodedWorkflowName:      request.Metadata.DecodedWorkflowName,
+		},
+		Config:  config,
+		Payload: request.Payload,
+		Method:  request.Method,
 	})
 }
 
