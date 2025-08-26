@@ -7,20 +7,16 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/shopspring/decimal"
-	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
-
-	"github.com/ethereum/go-ethereum/common"
-
-	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
-
-	"google.golang.org/protobuf/types/known/emptypb"
-
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
 	ctypes "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
+	"google.golang.org/protobuf/types/known/emptypb"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 
 	"google.golang.org/protobuf/proto"
 
@@ -372,7 +368,7 @@ func (e EVM) GetTransactionByHash(ctx context.Context, meta capabilities.Request
 		return nil, err
 	}
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
-	hash, err := evm.ConvertHashFromProto(req.GetHash())
+	hash, err := evmservice.ConvertHashFromProto(req.GetHash())
 	if err != nil {
 		return nil, err
 	}
@@ -415,7 +411,7 @@ func (e EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.Reques
 		return nil, err
 	}
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
-	hash, err := evm.ConvertHashFromProto(req.GetHash())
+	hash, err := evmservice.ConvertHashFromProto(req.GetHash())
 	if err != nil {
 		return nil, err
 	}
@@ -481,7 +477,12 @@ func (e EVM) HeaderByNumber(
 			return nil, fmt.Errorf("header is nil")
 		}
 
-		return proto.Marshal(&evm.HeaderByNumberReply{Header: evm.ConvertHeaderToProto(*reply.Header)})
+		header, err := evm.ConvertHeaderToProto(reply.Header)
+		if err != nil {
+			return nil, err
+		}
+
+		return proto.Marshal(&evm.HeaderByNumberReply{Header: header})
 	}
 
 	var request ctypes.Request
