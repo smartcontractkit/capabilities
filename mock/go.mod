@@ -6,7 +6,7 @@ toolchain go1.24.4
 
 require (
 	github.com/pelletier/go-toml/v2 v2.2.4
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20250711131700-236a5b631ad7
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20250818145037-1adb7a405c6a
 	github.com/smartcontractkit/chainlink-common v0.9.1-0.20250813154823-1652ea0f0500
 	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250806152407-159881c7589c
 	github.com/smartcontractkit/freeport v0.1.1
