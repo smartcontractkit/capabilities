@@ -217,6 +217,7 @@ func (m *MockRegistry) RegisterTrigger(request *pb.TriggerRegistrationRequest, s
 	})
 
 	if err != nil {
+		m.lggr.Error("could not register trigger", "err", err)
 		return err
 	}
 
