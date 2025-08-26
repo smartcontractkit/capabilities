@@ -13,56 +13,28 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
-
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
 
 	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 
 	"google.golang.org/protobuf/testing/protocmp"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	commonlogger "github.com/smartcontractkit/chainlink-common/pkg/logger"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
-	evmmock "github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
-
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions/mocks"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
 )
-
-type evmWithMocks struct {
-	actions.EVM
-	evmService       *evmmock.EVMService
-	consensusHandler *mocks.ConsensusHandler
-}
-
-func initMocks(t *testing.T) *evmWithMocks {
-	t.Helper()
-	t.Helper()
-	evmSvc := evmmock.NewEVMService(t)
-	consensusHandler := mocks.NewConsensusHandler(t)
-	evm, err := actions.NewEVM(config.Config{}, evmSvc, commonlogger.Test(t), test.NopBeholderProcessor{}, &monitoring.MessageBuilder{}, consensusHandler)
-	require.NoError(t, err)
-	return &evmWithMocks{
-		EVM:              evm,
-		evmService:       evmSvc,
-		consensusHandler: consensusHandler,
-	}
-}
 
 func TestCapability_CallContract(t *testing.T) {
 	t.Run("happy-path", func(t *testing.T) {
-		svc := initMocks(t)
+		svc := actions.InitMocks(t)
 		msg := evmtypes.CallMsg{Data: []byte{0xbe, 0xef}}
 		msgProto, _ := evmcappb.ConvertCallMsgToProto(&msg)
 
 		block := big.NewInt(123)
 		ch := make(chan types.Reply, 1)
 		ch <- types.Reply{Value: []byte("ok")}
-		svc.consensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
+		svc.ConsensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
 		req := &evmcappb.CallContractRequest{Call: msgProto, BlockNumber: valuespb.NewBigIntFromInt(block)}
 		resp, err := svc.CallContract(t.Context(), capabilities.RequestMetadata{}, req)
@@ -70,13 +42,13 @@ func TestCapability_CallContract(t *testing.T) {
 		require.Equal(t, []byte("ok"), resp.Response.Data)
 	})
 	t.Run("On timeout returns error", func(t *testing.T) {
-		svc := initMocks(t)
+		svc := actions.InitMocks(t)
 		msg := evmtypes.CallMsg{Data: []byte{0xbe, 0xef}}
 		msgProto, _ := evmcappb.ConvertCallMsgToProto(&msg)
 
 		block := big.NewInt(123)
 		ch := make(chan types.Reply, 1)
-		svc.consensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
+		svc.ConsensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
 		req := &evmcappb.CallContractRequest{Call: msgProto, BlockNumber: valuespb.NewBigIntFromInt(block)}
 		ctx, cancel := context.WithCancel(t.Context())
@@ -88,14 +60,14 @@ func TestCapability_CallContract(t *testing.T) {
 
 func TestCapability_BalanceAt(t *testing.T) {
 	t.Run("happy-path", func(t *testing.T) {
-		svc := initMocks(t)
+		svc := actions.InitMocks(t)
 
 		block := big.NewInt(123)
 		ch := make(chan types.Reply, 1)
 		balance, err := proto.Marshal(valuespb.NewBigIntFromInt(big.NewInt(1000)))
 		require.NoError(t, err)
 		ch <- types.Reply{Value: balance}
-		svc.consensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
+		svc.ConsensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
 		req := &evmcappb.BalanceAtRequest{Account: []byte("by_account"), BlockNumber: valuespb.NewBigIntFromInt(block)}
 		resp, err := svc.BalanceAt(t.Context(), capabilities.RequestMetadata{}, req)
@@ -103,10 +75,10 @@ func TestCapability_BalanceAt(t *testing.T) {
 		require.Equal(t, int64(1000), valuespb.NewIntFromBigInt(resp.Response.Balance).Int64())
 	})
 	t.Run("Returns error on timeout", func(t *testing.T) {
-		svc := initMocks(t)
+		svc := actions.InitMocks(t)
 		block := big.NewInt(123)
 		ch := make(chan types.Reply, 1)
-		svc.consensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
+		svc.ConsensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
 		req := &evmcappb.BalanceAtRequest{Account: []byte("by_account"), BlockNumber: valuespb.NewBigIntFromInt(block)}
 		ctx, cancel := context.WithCancel(t.Context())
@@ -118,14 +90,14 @@ func TestCapability_BalanceAt(t *testing.T) {
 
 func TestCapability_FilterLogs(t *testing.T) {
 	t.Run("happy-path", func(t *testing.T) {
-		svc := initMocks(t)
+		svc := actions.InitMocks(t)
 
 		ch := make(chan types.Reply, 1)
 		expectedReply := &evmcappb.FilterLogsReply{Logs: []*evmcappb.Log{{Address: []byte("0xabc"), Data: []byte("0xdef")}}}
 		logs, err := proto.Marshal(expectedReply)
 		require.NoError(t, err)
 		ch <- types.Reply{Value: logs}
-		svc.consensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
+		svc.ConsensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
 		req := &evmcappb.FilterLogsRequest{FilterQuery: &evmcappb.FilterQuery{BlockHash: make([]byte, 32)}}
 		resp, err := svc.FilterLogs(t.Context(), capabilities.RequestMetadata{}, req)
@@ -133,22 +105,22 @@ func TestCapability_FilterLogs(t *testing.T) {
 		require.Empty(t, cmp.Diff(expectedReply, resp.Response, protocmp.Transform()))
 	})
 	t.Run("Returns error if both block hash and block range is used", func(t *testing.T) {
-		svc := initMocks(t)
+		svc := actions.InitMocks(t)
 		req := &evmcappb.FilterLogsRequest{FilterQuery: &evmcappb.FilterQuery{BlockHash: bytes.Repeat([]byte{1}, 32), FromBlock: valuespb.NewBigIntFromInt(big.NewInt(1))}}
 		_, err := svc.FilterLogs(t.Context(), capabilities.RequestMetadata{}, req)
 		require.ErrorContains(t, err, "cannot specify both block hash and block range")
 	})
 	t.Run("Returns error if block hash is of invalid length", func(t *testing.T) {
-		svc := initMocks(t)
+		svc := actions.InitMocks(t)
 		req := &evmcappb.FilterLogsRequest{FilterQuery: &evmcappb.FilterQuery{BlockHash: make([]byte, 2)}}
 		_, err := svc.FilterLogs(t.Context(), capabilities.RequestMetadata{}, req)
 		require.ErrorContains(t, err, "invalid hash: got 2 bytes, expected 32")
 	})
 	t.Run("Returns error on timeout", func(t *testing.T) {
-		svc := initMocks(t)
+		svc := actions.InitMocks(t)
 
 		ch := make(chan types.Reply, 1)
-		svc.consensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
+		svc.ConsensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
 		req := &evmcappb.FilterLogsRequest{FilterQuery: &evmcappb.FilterQuery{}}
 		ctx, cancel := context.WithCancel(t.Context())
@@ -160,7 +132,7 @@ func TestCapability_FilterLogs(t *testing.T) {
 
 func TestCapability_GetTransactionByHash(t *testing.T) {
 	t.Run("happy-path", func(t *testing.T) {
-		svc := initMocks(t)
+		svc := actions.InitMocks(t)
 
 		ch := make(chan types.Reply, 1)
 		tx := &evmcappb.Transaction{Nonce: 12}
@@ -168,7 +140,7 @@ func TestCapability_GetTransactionByHash(t *testing.T) {
 
 		require.NoError(t, err)
 		ch <- types.Reply{Value: transaction}
-		svc.consensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
+		svc.ConsensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
 		req := &evmcappb.GetTransactionByHashRequest{Hash: make([]byte, 32)}
 		resp, err := svc.GetTransactionByHash(t.Context(), capabilities.RequestMetadata{}, req)
@@ -176,17 +148,17 @@ func TestCapability_GetTransactionByHash(t *testing.T) {
 		require.Empty(t, cmp.Diff(evmcappb.GetTransactionByHashReply{Transaction: tx}, resp.Response, protocmp.Transform()))
 	})
 	t.Run("Returns error on invalid hash", func(t *testing.T) {
-		svc := initMocks(t)
+		svc := actions.InitMocks(t)
 
 		req := &evmcappb.GetTransactionByHashRequest{Hash: make([]byte, 2)}
 		_, err := svc.GetTransactionByHash(t.Context(), capabilities.RequestMetadata{}, req)
 		require.ErrorContains(t, err, "invalid hash: got 2 bytes, expected 32")
 	})
 	t.Run("Returns error on timeout", func(t *testing.T) {
-		svc := initMocks(t)
+		svc := actions.InitMocks(t)
 
 		ch := make(chan types.Reply, 1)
-		svc.consensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
+		svc.ConsensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
 		req := &evmcappb.GetTransactionByHashRequest{Hash: make([]byte, 32)}
 		ctx, cancel := context.WithCancel(t.Context())
@@ -198,14 +170,14 @@ func TestCapability_GetTransactionByHash(t *testing.T) {
 
 func TestCapability_GetTransactionReceipt(t *testing.T) {
 	t.Run("happy-path", func(t *testing.T) {
-		svc := initMocks(t)
+		svc := actions.InitMocks(t)
 
 		ch := make(chan types.Reply, 1)
 		receipt := &evmcappb.Receipt{Status: 12}
 		rawReceipt, err := proto.Marshal(receipt)
 		require.NoError(t, err)
 		ch <- types.Reply{Value: rawReceipt}
-		svc.consensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
+		svc.ConsensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
 		req := &evmcappb.GetTransactionReceiptRequest{Hash: make([]byte, 32)}
 		resp, err := svc.GetTransactionReceipt(t.Context(), capabilities.RequestMetadata{}, req)
@@ -213,17 +185,17 @@ func TestCapability_GetTransactionReceipt(t *testing.T) {
 		require.Empty(t, cmp.Diff(evmcappb.GetTransactionReceiptReply{Receipt: receipt}, resp.Response, protocmp.Transform()))
 	})
 	t.Run("Returns error on invalid hash", func(t *testing.T) {
-		svc := initMocks(t)
+		svc := actions.InitMocks(t)
 
 		req := &evmcappb.GetTransactionReceiptRequest{Hash: make([]byte, 2)}
 		_, err := svc.GetTransactionReceipt(t.Context(), capabilities.RequestMetadata{}, req)
 		require.ErrorContains(t, err, "invalid hash: got 2 bytes, expected 32")
 	})
 	t.Run("Returns error on timeout", func(t *testing.T) {
-		svc := initMocks(t)
+		svc := actions.InitMocks(t)
 
 		ch := make(chan types.Reply, 1)
-		svc.consensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
+		svc.ConsensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
 		req := &evmcappb.GetTransactionReceiptRequest{Hash: make([]byte, 32)}
 		ctx, cancel := context.WithCancel(t.Context())
@@ -235,7 +207,7 @@ func TestCapability_GetTransactionReceipt(t *testing.T) {
 
 func TestCapability_EstimateGas(t *testing.T) {
 	t.Run("happy-path", func(t *testing.T) {
-		svc := initMocks(t)
+		svc := actions.InitMocks(t)
 
 		ch := make(chan types.Reply, 1)
 		ch <- types.Reply{
@@ -244,7 +216,7 @@ func TestCapability_EstimateGas(t *testing.T) {
 				Exponent:    2,
 			},
 		}
-		svc.consensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
+		svc.ConsensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
 		req := &evmcappb.EstimateGasRequest{Msg: &evmcappb.CallMsg{Data: []byte{0xbe, 0xef}, From: make([]byte, common.AddressLength), To: make([]byte, common.AddressLength)}}
 		resp, err := svc.EstimateGas(t.Context(), capabilities.RequestMetadata{}, req)
@@ -252,17 +224,17 @@ func TestCapability_EstimateGas(t *testing.T) {
 		require.Empty(t, cmp.Diff(evmcappb.EstimateGasReply{Gas: 12300}, resp.Response, protocmp.Transform()))
 	})
 	t.Run("Returns error on invalid request", func(t *testing.T) {
-		svc := initMocks(t)
+		svc := actions.InitMocks(t)
 
 		req := &evmcappb.EstimateGasRequest{Msg: nil}
 		_, err := svc.EstimateGas(t.Context(), capabilities.RequestMetadata{}, req)
 		require.ErrorContains(t, err, "call msg can't be nil")
 	})
 	t.Run("Returns error on timeout", func(t *testing.T) {
-		svc := initMocks(t)
+		svc := actions.InitMocks(t)
 
 		ch := make(chan types.Reply, 1)
-		svc.consensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
+		svc.ConsensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
 		req := &evmcappb.EstimateGasRequest{Msg: &evmcappb.CallMsg{Data: []byte{0xbe, 0xef}, From: make([]byte, common.AddressLength), To: make([]byte, common.AddressLength)}}
 		ctx, cancel := context.WithCancel(t.Context())
@@ -276,8 +248,8 @@ func TestCapability_Register_Unregister_LogTracking(t *testing.T) {
 	filterProto := &evmcappb.LPFilter{} // empty is enough for proto→types conversion
 
 	t.Run("register happy-path", func(t *testing.T) {
-		svc := initMocks(t)
-		svc.evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil)
+		svc := actions.InitMocks(t)
+		svc.EvmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil)
 
 		_, err := svc.RegisterLogTracking(t.Context(), capabilities.RequestMetadata{},
 			&evmcappb.RegisterLogTrackingRequest{Filter: filterProto})
@@ -285,8 +257,8 @@ func TestCapability_Register_Unregister_LogTracking(t *testing.T) {
 	})
 
 	t.Run("register error", func(t *testing.T) {
-		svc := initMocks(t)
-		svc.evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(assert.AnError)
+		svc := actions.InitMocks(t)
+		svc.EvmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(assert.AnError)
 
 		_, err := svc.RegisterLogTracking(t.Context(), capabilities.RequestMetadata{},
 			&evmcappb.RegisterLogTrackingRequest{Filter: filterProto})
@@ -294,8 +266,8 @@ func TestCapability_Register_Unregister_LogTracking(t *testing.T) {
 	})
 
 	t.Run("unregister happy-path", func(t *testing.T) {
-		svc := initMocks(t)
-		svc.evmService.On("UnregisterLogTracking", mock.Anything, "myFilter").Return(nil)
+		svc := actions.InitMocks(t)
+		svc.EvmService.On("UnregisterLogTracking", mock.Anything, "myFilter").Return(nil)
 
 		_, err := svc.UnregisterLogTracking(t.Context(), capabilities.RequestMetadata{},
 			&evmcappb.UnregisterLogTrackingRequest{FilterName: "myFilter"})
@@ -303,8 +275,8 @@ func TestCapability_Register_Unregister_LogTracking(t *testing.T) {
 	})
 
 	t.Run("unregister error", func(t *testing.T) {
-		svc := initMocks(t)
-		svc.evmService.On("UnregisterLogTracking", mock.Anything, "myFilter").Return(assert.AnError)
+		svc := actions.InitMocks(t)
+		svc.EvmService.On("UnregisterLogTracking", mock.Anything, "myFilter").Return(assert.AnError)
 
 		_, err := svc.UnregisterLogTracking(t.Context(), capabilities.RequestMetadata{},
 			&evmcappb.UnregisterLogTrackingRequest{FilterName: "myFilter"})
@@ -314,7 +286,7 @@ func TestCapability_Register_Unregister_LogTracking(t *testing.T) {
 
 func TestCapability_HeaderByNumber(t *testing.T) {
 	t.Run("happy-path", func(t *testing.T) {
-		svc := initMocks(t)
+		svc := actions.InitMocks(t)
 
 		block := big.NewInt(123)
 		ch := make(chan types.Reply, 1)
@@ -326,7 +298,7 @@ func TestCapability_HeaderByNumber(t *testing.T) {
 		asProto, err := proto.Marshal(expectedReply)
 		require.NoError(t, err)
 		ch <- types.Reply{Value: asProto}
-		svc.consensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
+		svc.ConsensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
 		req := &evmcappb.HeaderByNumberRequest{BlockNumber: valuespb.NewBigIntFromInt(block)}
 		resp, err := svc.HeaderByNumber(t.Context(), capabilities.RequestMetadata{}, req)
@@ -334,11 +306,11 @@ func TestCapability_HeaderByNumber(t *testing.T) {
 		require.Empty(t, cmp.Diff(expectedReply, resp.Response, protocmp.Transform()))
 	})
 	t.Run("On timeout returns error", func(t *testing.T) {
-		svc := initMocks(t)
+		svc := actions.InitMocks(t)
 
 		block := big.NewInt(123)
 		ch := make(chan types.Reply, 1)
-		svc.consensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
+		svc.ConsensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
 		req := &evmcappb.HeaderByNumberRequest{BlockNumber: valuespb.NewBigIntFromInt(block)}
 		ctx, cancel := context.WithCancel(t.Context())
