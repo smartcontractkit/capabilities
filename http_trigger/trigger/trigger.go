@@ -71,11 +71,11 @@ func (s *service) Initialise(
 	workflowStore := newWorkflowStore(s.lggr)
 	metadataPublisher := NewGatewayMetadataPublisher(s.lggr, gc, outgoingRateLimiter, workflowStore, s.cfg)
 	requestCache := newRequestCache(s.lggr, kvstore, time.Duration(s.cfg.RequestCacheTTL)*time.Second)
-	s.connectorHandler, err = NewConnectorHandler(s.lggr, gc, s.cfg, outgoingRateLimiter, incomingRateLimiter, workflowStore, metadataPublisher, requestCache, s.metrics)
+	s.metrics, err = NewMetrics()
 	if err != nil {
 		return err
 	}
-	s.metrics, err = NewMetrics()
+	s.connectorHandler, err = NewConnectorHandler(s.lggr, gc, s.cfg, outgoingRateLimiter, incomingRateLimiter, workflowStore, metadataPublisher, requestCache, s.metrics)
 	if err != nil {
 		return err
 	}

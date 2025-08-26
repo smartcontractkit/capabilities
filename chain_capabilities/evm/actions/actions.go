@@ -7,9 +7,11 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/shopspring/decimal"
+	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
+
+	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 
@@ -28,7 +30,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
-	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
 )
 
 const (
@@ -45,6 +48,7 @@ type ConsensusHandler interface {
 type EVM struct {
 	types.EVMService
 	ConsensusHandler         ConsensusHandler
+	chainSelector            uint64
 	keystoneForwarderAddress common.Address
 	forwarderClient          contracts.CREForwarderClient
 	ReceiverGasMinimum       uint64
@@ -55,7 +59,7 @@ type EVM struct {
 }
 
 func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, beholderProcessor beholder.ProtoProcessor,
-	messageBuilder *monitoring.MessageBuilder, handler ConsensusHandler) (EVM, error) {
+	messageBuilder *monitoring.MessageBuilder, handler ConsensusHandler, chainSelector uint64) (EVM, error) {
 	keystoneForwarderAddress := common.HexToAddress(cfg.CREForwarderAddress)
 	kfc, err := contracts.NewCREForwarderClient(evmService, keystoneForwarderAddress, lggr)
 	if err != nil {
@@ -71,6 +75,7 @@ func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, 
 		beholderProcessor:        beholderProcessor,
 		messageBuilder:           messageBuilder,
 		ConsensusHandler:         handler,
+		chainSelector:            chainSelector,
 	}, nil
 }
 
@@ -84,6 +89,10 @@ func (e EVM) CallContract(
 	input *evm.CallContractRequest,
 ) (*capabilities.ResponseAndMetadata[*evm.CallContractReply], error) {
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
+
+	if err := metering.CheckHasFunds(meta, metering.ActionSpendUnit, string(metering.CallContract)); err != nil {
+		return nil, err
+	}
 
 	callMsg, err := evm.ConvertCallMsgFromProto(input.GetCall())
 	if err != nil {
@@ -136,7 +145,7 @@ func (e EVM) CallContract(
 	monitoring.LogAndEmitSuccess(ctx, "Successfully read CallContract", e.lggr, e.beholderProcessor, e.messageBuilder.BuildCallContractSuccess(telemetryContext, callMsg, blockNumber.Int64()))
 	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.CallContractReply]{
 		Response:         &evm.CallContractReply{Data: data},
-		ResponseMetadata: capabilities.ResponseMetadata{},
+		ResponseMetadata: metering.GetResponseMetadata(metering.CallContract),
 	}
 	return &responseAndMetadata, nil
 }
@@ -253,6 +262,9 @@ func (e EVM) FilterLogs(ctx context.Context, meta capabilities.RequestMetadata, 
 }
 
 func (e EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, req *evm.BalanceAtRequest) (*capabilities.ResponseAndMetadata[*evm.BalanceAtReply], error) {
+	if err := metering.CheckHasFunds(meta, metering.ActionSpendUnit, string(metering.BalanceAt)); err != nil {
+		return nil, err
+	}
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	blockNumber, needsBlockHeightConsensus, confidenceLevel, err := normalizeBlockNumber(req.GetBlockNumber())
 	if err != nil {
@@ -298,12 +310,15 @@ func (e EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, r
 		e.messageBuilder.BuildBalanceAtSuccess(telemetryContext, common.Bytes2Hex(req.GetAccount()), blockNumber.Int64(), valuespb.NewIntFromBigInt(balance)))
 	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.BalanceAtReply]{
 		Response:         &evm.BalanceAtReply{Balance: balance},
-		ResponseMetadata: capabilities.ResponseMetadata{},
+		ResponseMetadata: metering.GetResponseMetadata(metering.BalanceAt),
 	}
 	return &responseAndMetadata, nil
 }
 
 func (e EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata, req *evm.EstimateGasRequest) (*capabilities.ResponseAndMetadata[*evm.EstimateGasReply], error) {
+	if err := metering.CheckHasFunds(meta, metering.ActionSpendUnit, string(metering.EstimateGas)); err != nil {
+		return nil, err
+	}
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	msg, err := evm.ConvertCallMsgFromProto(req.GetMsg())
 	if err != nil {
@@ -339,12 +354,15 @@ func (e EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata,
 	monitoring.LogAndEmitSuccess(ctx, "Successfully read EstimateGas", e.lggr, e.beholderProcessor, logMsg)
 	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.EstimateGasReply]{
 		Response:         &evm.EstimateGasReply{Gas: rawEstimate.BigInt().Uint64()},
-		ResponseMetadata: capabilities.ResponseMetadata{},
+		ResponseMetadata: metering.GetResponseMetadata(metering.EstimateGas),
 	}
 	return &responseAndMetadata, nil
 }
 
 func (e EVM) GetTransactionByHash(ctx context.Context, meta capabilities.RequestMetadata, req *evm.GetTransactionByHashRequest) (*capabilities.ResponseAndMetadata[*evm.GetTransactionByHashReply], error) {
+	if err := metering.CheckHasFunds(meta, metering.ActionSpendUnit, string(metering.GetTransactionByHash)); err != nil {
+		return nil, err
+	}
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	hash, err := evm.ConvertHashFromProto(req.GetHash())
 	if err != nil {
@@ -379,12 +397,15 @@ func (e EVM) GetTransactionByHash(ctx context.Context, meta capabilities.Request
 		e.messageBuilder.BuildGetTransactionByHashSuccess(telemetryContext, common.Bytes2Hex(hash[:]), &tx))
 	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.GetTransactionByHashReply]{
 		Response:         &evm.GetTransactionByHashReply{Transaction: &tx},
-		ResponseMetadata: capabilities.ResponseMetadata{},
+		ResponseMetadata: metering.GetResponseMetadata(metering.GetTransactionByHash),
 	}
 	return &responseAndMetadata, nil
 }
 
 func (e EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.RequestMetadata, req *evm.GetTransactionReceiptRequest) (*capabilities.ResponseAndMetadata[*evm.GetTransactionReceiptReply], error) {
+	if err := metering.CheckHasFunds(meta, metering.ActionSpendUnit, string(metering.GetTransactionReceipt)); err != nil {
+		return nil, err
+	}
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	hash, err := evm.ConvertHashFromProto(req.GetHash())
 	if err != nil {
@@ -418,7 +439,7 @@ func (e EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.Reques
 		e.messageBuilder.BuildGetTransactionReceiptSuccess(telemetryContext, common.Bytes2Hex(hash[:]), &receipt))
 	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.GetTransactionReceiptReply]{
 		Response:         &evm.GetTransactionReceiptReply{Receipt: &receipt},
-		ResponseMetadata: capabilities.ResponseMetadata{},
+		ResponseMetadata: metering.GetResponseMetadata(metering.GetTransactionReceipt),
 	}
 	return &responseAndMetadata, nil
 }
@@ -428,6 +449,9 @@ func (e EVM) HeaderByNumber(
 	meta capabilities.RequestMetadata,
 	req *evm.HeaderByNumberRequest,
 ) (*capabilities.ResponseAndMetadata[*evm.HeaderByNumberReply], error) {
+	if err := metering.CheckHasFunds(meta, metering.ActionSpendUnit, string(metering.HeaderByNumber)); err != nil {
+		return nil, err
+	}
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	blockNumber, needsBlockHeightConsensus, confidenceLevel, err := normalizeBlockNumber(req.GetBlockNumber())
 	if err != nil {
@@ -478,7 +502,7 @@ func (e EVM) HeaderByNumber(
 	monitoring.LogAndEmitSuccess(ctx, "Successfully got header by number", e.lggr, e.beholderProcessor, e.messageBuilder.BuildHeaderByNumberSuccess(telemetryContext, blockNumber.Int64(), reply.Header))
 	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.HeaderByNumberReply]{
 		Response:         &reply,
-		ResponseMetadata: capabilities.ResponseMetadata{},
+		ResponseMetadata: metering.GetResponseMetadata(metering.HeaderByNumber),
 	}
 	return &responseAndMetadata, nil
 }

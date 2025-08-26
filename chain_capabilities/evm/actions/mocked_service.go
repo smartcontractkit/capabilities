@@ -23,7 +23,7 @@ func InitMocks(t *testing.T) *EvmWithMocks {
 	t.Helper()
 	evmSvc := evmmock.NewEVMService(t)
 	consensusHandler := mocks.NewConsensusHandler(t)
-	evm, err := NewEVM(config.Config{}, evmSvc, commonlogger.Test(t), test.NopBeholderProcessor{}, &monitoring.MessageBuilder{}, consensusHandler)
+	evm, err := NewEVM(config.Config{}, evmSvc, commonlogger.Test(t), test.NopBeholderProcessor{}, &monitoring.MessageBuilder{}, consensusHandler, 1)
 	require.NoError(t, err)
 	return &EvmWithMocks{
 		EVM:              evm,
