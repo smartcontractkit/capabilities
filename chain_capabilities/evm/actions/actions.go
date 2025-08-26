@@ -10,11 +10,12 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/shopspring/decimal"
+	"google.golang.org/protobuf/types/known/emptypb"
+
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
 	ctypes "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
-	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 
