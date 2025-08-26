@@ -308,7 +308,7 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		return // Error already sent in the method
 	}
 
-	err = h.triggerWorkflow(ctx, workflowID, req.ID, gatewayID, input, triggerReq.Key)
+	err = h.triggerWorkflow(ctx, workflowID, req.ID, gatewayID, workflowExecutionID, input, triggerReq.Key)
 	if err != nil {
 		l.Errorw("Failed to trigger workflow", "error", err)
 		return
@@ -417,7 +417,7 @@ func (h *connectorHandler) prepareAndCacheResponse(ctx context.Context, gatewayI
 	return resp, nil
 }
 
-func (h *connectorHandler) triggerWorkflow(ctx context.Context, workflowID string, reqID string, gatewayID string, input *structpb.Struct, key gateway_common.AuthorizedKey) error {
+func (h *connectorHandler) triggerWorkflow(ctx context.Context, workflowID string, reqID string, gatewayID string, executionID string, input *structpb.Struct, key gateway_common.AuthorizedKey) error {
 	workflow, ok := h.workflowStore.getWorkflowByID(workflowID)
 	if !ok {
 		h.sendErrorResponse(ctx, gatewayID, reqID, jsonrpc.ErrInvalidRequest, "Workflow not registered")
@@ -425,7 +425,7 @@ func (h *connectorHandler) triggerWorkflow(ctx context.Context, workflowID strin
 	}
 	err := workflow.trigger(ctx, capabilities.TriggerAndId[*http.Payload]{
 		// workflow engine does not process the request if the ID has already been used
-		Id: reqID,
+		Id: executionID,
 		Trigger: &http.Payload{
 			Input: input,
 			Key: &http.AuthorizedKey{
