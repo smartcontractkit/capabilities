@@ -78,7 +78,7 @@ func (e EVM) CallContract(
 	meta capabilities.RequestMetadata,
 	input *evm.CallContractRequest,
 ) (*capabilities.ResponseAndMetadata[*evm.CallContractReply], error) {
-	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
+	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 
 	callMsg, err := evm.ConvertCallMsgFromProto(input.GetCall())
 	if err != nil {
@@ -90,7 +90,7 @@ func (e EVM) CallContract(
 		return nil, err
 	}
 
-	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildCallContractInitiated(read, callMsg, blockNumber.Int64()))
+	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildCallContractInitiated(telemetryContext, callMsg, blockNumber.Int64()))
 
 	callContract := func(ctx context.Context, blockNumber *big.Int) ([]byte, error) {
 		// TODO: PLEX-1558 agree on RPC error content
@@ -124,11 +124,11 @@ func (e EVM) CallContract(
 
 	data, err := readType[[]byte](ctx, e.ConsensusHandler, request)
 	if err != nil {
-		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildCallContractError(read, callMsg, blockNumber.Int64(), "Failed to read CallContract", err.Error()))
+		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildCallContractError(telemetryContext, callMsg, blockNumber.Int64(), "Failed to read CallContract", err.Error()))
 		return nil, err
 	}
 
-	monitoring.LogAndEmitSuccess(ctx, "Successfully read CallContract", e.lggr, e.beholderProcessor, e.messageBuilder.BuildCallContractSuccess(read, callMsg, blockNumber.Int64()))
+	monitoring.LogAndEmitSuccess(ctx, "Successfully read CallContract", e.lggr, e.beholderProcessor, e.messageBuilder.BuildCallContractSuccess(telemetryContext, callMsg, blockNumber.Int64()))
 	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.CallContractReply]{
 		Response:         &evm.CallContractReply{Data: data},
 		ResponseMetadata: capabilities.ResponseMetadata{},
@@ -196,7 +196,7 @@ func (e EVM) filterLogsToRequest(meta capabilities.RequestMetadata, ethFilterQue
 }
 
 func (e EVM) FilterLogs(ctx context.Context, meta capabilities.RequestMetadata, req *evm.FilterLogsRequest) (*capabilities.ResponseAndMetadata[*evm.FilterLogsReply], error) {
-	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
+	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	ethFilterQuery, err := evm.ConvertFilterFromProto(req.GetFilterQuery())
 	if err != nil {
 		return nil, err
@@ -207,18 +207,18 @@ func (e EVM) FilterLogs(ctx context.Context, meta capabilities.RequestMetadata, 
 		return nil, err
 	}
 
-	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildFilterLogsInitiated(read, ethFilterQuery))
+	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildFilterLogsInitiated(telemetryContext, ethFilterQuery))
 
 	var reply evm.FilterLogsReply
 	err = e.readProto(ctx, request, &reply)
 	if err != nil {
-		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildFilterLogsError(read, ethFilterQuery, "Failed to FilterLogs", err.Error()))
+		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildFilterLogsError(telemetryContext, ethFilterQuery, "Failed to FilterLogs", err.Error()))
 		return nil, err
 	}
 
 	// G115: integer overflow conversion int -> int32 (gosec)
 	// nolint:gosec
-	monitoring.LogAndEmitSuccess(ctx, "Successfully executed FilterLogs", e.lggr, e.beholderProcessor, e.messageBuilder.BuildFilterLogsSuccess(read, ethFilterQuery, int32(len(reply.Logs))))
+	monitoring.LogAndEmitSuccess(ctx, "Successfully executed FilterLogs", e.lggr, e.beholderProcessor, e.messageBuilder.BuildFilterLogsSuccess(telemetryContext, ethFilterQuery, int32(len(reply.Logs))))
 	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.FilterLogsReply]{
 		Response:         &reply,
 		ResponseMetadata: capabilities.ResponseMetadata{},
@@ -227,12 +227,12 @@ func (e EVM) FilterLogs(ctx context.Context, meta capabilities.RequestMetadata, 
 }
 
 func (e EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, req *evm.BalanceAtRequest) (*capabilities.ResponseAndMetadata[*evm.BalanceAtReply], error) {
-	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
+	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	blockNumber, needsBlockHeightConsensus, confidenceLevel, err := normalizeBlockNumber(req.GetBlockNumber())
 	if err != nil {
 		return nil, err
 	}
-	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildBalanceAtInitiated(read, common.Bytes2Hex(req.GetAccount()), blockNumber.Int64()))
+	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildBalanceAtInitiated(telemetryContext, common.Bytes2Hex(req.GetAccount()), blockNumber.Int64()))
 
 	balanceAt := func(ctx context.Context, height *ctypes.ChainHeight) ([]byte, error) {
 		callBlockNumber, err := getCallBlockNumber(blockNumber, height)
@@ -263,13 +263,13 @@ func (e EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, r
 
 	balance := new(valuespb.BigInt)
 	if err := e.readProto(ctx, request, balance); err != nil {
-		errMsg := e.messageBuilder.BuildBalanceAtError(read, common.Bytes2Hex(req.GetAccount()), blockNumber.Int64(), "Failed to read BalanceAt", err.Error())
+		errMsg := e.messageBuilder.BuildBalanceAtError(telemetryContext, common.Bytes2Hex(req.GetAccount()), blockNumber.Int64(), "Failed to read BalanceAt", err.Error())
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, errMsg)
 		return nil, err
 	}
 
 	monitoring.LogAndEmitSuccess(ctx, "Successfully read BalanceAt", e.lggr, e.beholderProcessor,
-		e.messageBuilder.BuildBalanceAtSuccess(read, common.Bytes2Hex(req.GetAccount()), blockNumber.Int64(), valuespb.NewIntFromBigInt(balance)))
+		e.messageBuilder.BuildBalanceAtSuccess(telemetryContext, common.Bytes2Hex(req.GetAccount()), blockNumber.Int64(), valuespb.NewIntFromBigInt(balance)))
 	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.BalanceAtReply]{
 		Response:         &evm.BalanceAtReply{Balance: balance},
 		ResponseMetadata: capabilities.ResponseMetadata{},
@@ -278,13 +278,13 @@ func (e EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, r
 }
 
 func (e EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata, req *evm.EstimateGasRequest) (*capabilities.ResponseAndMetadata[*evm.EstimateGasReply], error) {
-	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
+	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	msg, err := evm.ConvertCallMsgFromProto(req.GetMsg())
 	if err != nil {
 		return nil, err
 	}
 
-	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildEstimateGasInitiated(read, common.Bytes2Hex(msg.From[:]), common.Bytes2Hex(msg.To[:]), msg.Data))
+	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildEstimateGasInitiated(telemetryContext, common.Bytes2Hex(msg.From[:]), common.Bytes2Hex(msg.To[:]), msg.Data))
 
 	request := ctypes.NewAggregatableRequest(requestID(meta), func(ctx context.Context) (*ctypes.AggregatableObservation, error) {
 		rawEstimate, err := e.EVMService.EstimateGas(ctx, msg)
@@ -305,11 +305,11 @@ func (e EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata,
 
 	rawEstimate, err := readDecimal(ctx, e.ConsensusHandler, request)
 	if err != nil {
-		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildEstimateGasError(read, common.Bytes2Hex(msg.From[:]), common.Bytes2Hex(msg.To[:]), msg.Data, "Failed to execute EstimateGas", err.Error()))
+		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildEstimateGasError(telemetryContext, common.Bytes2Hex(msg.From[:]), common.Bytes2Hex(msg.To[:]), msg.Data, "Failed to execute EstimateGas", err.Error()))
 		return nil, err
 	}
 
-	logMsg := e.messageBuilder.BuildEstimateGasSuccess(read, common.Bytes2Hex(msg.From[:]), common.Bytes2Hex(msg.To[:]), msg.Data, rawEstimate.BigInt().Int64())
+	logMsg := e.messageBuilder.BuildEstimateGasSuccess(telemetryContext, common.Bytes2Hex(msg.From[:]), common.Bytes2Hex(msg.To[:]), msg.Data, rawEstimate.BigInt().Int64())
 	monitoring.LogAndEmitSuccess(ctx, "Successfully read EstimateGas", e.lggr, e.beholderProcessor, logMsg)
 	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.EstimateGasReply]{
 		Response:         &evm.EstimateGasReply{Gas: rawEstimate.BigInt().Uint64()},
@@ -319,12 +319,12 @@ func (e EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata,
 }
 
 func (e EVM) GetTransactionByHash(ctx context.Context, meta capabilities.RequestMetadata, req *evm.GetTransactionByHashRequest) (*capabilities.ResponseAndMetadata[*evm.GetTransactionByHashReply], error) {
-	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
+	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	hash, err := evm.ConvertHashFromProto(req.GetHash())
 	if err != nil {
 		return nil, err
 	}
-	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildGetTransactionByHashInitiated(read, common.Bytes2Hex(hash[:])))
+	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildGetTransactionByHashInitiated(telemetryContext, common.Bytes2Hex(hash[:])))
 	request := ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
 		tx, err := e.EVMService.GetTransactionByHash(ctx, evmtypes.GetTransactionByHashRequest{
 			Hash:       hash,
@@ -344,13 +344,13 @@ func (e EVM) GetTransactionByHash(ctx context.Context, meta capabilities.Request
 
 	var tx evm.Transaction
 	if err := e.readProto(ctx, request, &tx); err != nil {
-		errMsg := e.messageBuilder.BuildGetTransactionByHashError(read, common.Bytes2Hex(hash[:]), "Failed to execute GetTransactionByHash", err.Error())
+		errMsg := e.messageBuilder.BuildGetTransactionByHashError(telemetryContext, common.Bytes2Hex(hash[:]), "Failed to execute GetTransactionByHash", err.Error())
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, errMsg)
 		return nil, err
 	}
 
 	monitoring.LogAndEmitSuccess(ctx, "Successfully read GetTransactionByHash", e.lggr, e.beholderProcessor,
-		e.messageBuilder.BuildGetTransactionByHashSuccess(read, common.Bytes2Hex(hash[:]), &tx))
+		e.messageBuilder.BuildGetTransactionByHashSuccess(telemetryContext, common.Bytes2Hex(hash[:]), &tx))
 	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.GetTransactionByHashReply]{
 		Response:         &evm.GetTransactionByHashReply{Transaction: &tx},
 		ResponseMetadata: capabilities.ResponseMetadata{},
@@ -359,12 +359,12 @@ func (e EVM) GetTransactionByHash(ctx context.Context, meta capabilities.Request
 }
 
 func (e EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.RequestMetadata, req *evm.GetTransactionReceiptRequest) (*capabilities.ResponseAndMetadata[*evm.GetTransactionReceiptReply], error) {
-	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
+	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	hash, err := evm.ConvertHashFromProto(req.GetHash())
 	if err != nil {
 		return nil, err
 	}
-	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildGetTransactionReceiptInitiated(read, common.Bytes2Hex(hash[:])))
+	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildGetTransactionReceiptInitiated(telemetryContext, common.Bytes2Hex(hash[:])))
 	request := ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
 		receipt, err := e.EVMService.GetTransactionReceipt(ctx, evmtypes.GeTransactionReceiptRequest{
 			Hash:       hash,
@@ -384,12 +384,12 @@ func (e EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.Reques
 
 	var receipt evm.Receipt
 	if err := e.readProto(ctx, request, &receipt); err != nil {
-		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildGetTransactionReceiptError(read, common.Bytes2Hex(hash[:]), "Failed to get latest and finalized head", err.Error()))
+		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildGetTransactionReceiptError(telemetryContext, common.Bytes2Hex(hash[:]), "Failed to get latest and finalized head", err.Error()))
 		return nil, err
 	}
 
 	monitoring.LogAndEmitSuccess(ctx, "Successfully read GetTransactionReceiptSuccess", e.lggr, e.beholderProcessor,
-		e.messageBuilder.BuildGetTransactionReceiptSuccess(read, common.Bytes2Hex(hash[:]), &receipt))
+		e.messageBuilder.BuildGetTransactionReceiptSuccess(telemetryContext, common.Bytes2Hex(hash[:]), &receipt))
 	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.GetTransactionReceiptReply]{
 		Response:         &evm.GetTransactionReceiptReply{Receipt: &receipt},
 		ResponseMetadata: capabilities.ResponseMetadata{},
@@ -402,13 +402,13 @@ func (e EVM) HeaderByNumber(
 	meta capabilities.RequestMetadata,
 	req *evm.HeaderByNumberRequest,
 ) (*capabilities.ResponseAndMetadata[*evm.HeaderByNumberReply], error) {
-	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
+	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	blockNumber, needsBlockHeightConsensus, confidenceLevel, err := normalizeBlockNumber(req.GetBlockNumber())
 	if err != nil {
 		return nil, err
 	}
 
-	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildHeaderByNumberInitiated(read, blockNumber.Int64()))
+	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildHeaderByNumberInitiated(telemetryContext, blockNumber.Int64()))
 
 	headerByNumber := func(ctx context.Context, blockNumber *big.Int) ([]byte, error) {
 		reply, err := e.EVMService.HeaderByNumber(ctx, evmtypes.HeaderByNumberRequest{
@@ -445,11 +445,11 @@ func (e EVM) HeaderByNumber(
 	var reply evm.HeaderByNumberReply
 	err = e.readProto(ctx, request, &reply)
 	if err != nil {
-		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildHeaderByNumberError(read, blockNumber.Int64(), "Failed to get header by number", err.Error()))
+		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildHeaderByNumberError(telemetryContext, blockNumber.Int64(), "Failed to get header by number", err.Error()))
 		return nil, err
 	}
 
-	monitoring.LogAndEmitSuccess(ctx, "Successfully got header by number", e.lggr, e.beholderProcessor, e.messageBuilder.BuildHeaderByNumberSuccess(read, blockNumber.Int64(), reply.Header))
+	monitoring.LogAndEmitSuccess(ctx, "Successfully got header by number", e.lggr, e.beholderProcessor, e.messageBuilder.BuildHeaderByNumberSuccess(telemetryContext, blockNumber.Int64(), reply.Header))
 	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.HeaderByNumberReply]{
 		Response:         &reply,
 		ResponseMetadata: capabilities.ResponseMetadata{},

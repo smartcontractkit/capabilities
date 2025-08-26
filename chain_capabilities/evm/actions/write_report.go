@@ -22,6 +22,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 )
 
 const (
@@ -39,11 +40,19 @@ func decodeReportMetadata(data []byte) (ocrtypes.Metadata, error) {
 }
 
 func (e EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMetadata, input *evm.WriteReportRequest) (*capabilities.ResponseAndMetadata[*evm.WriteReportReply], error) {
+	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: metadata}
+	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportInitiated(telemetryContext, input))
 	err := validateInputsAndReportMetadata(metadata, input)
 	if err != nil {
+		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport due to invalid request", err.Error()))
 		return nil, err
 	}
 	report, err := e.executeWriteReport(ctx, metadata, input)
+	if err != nil {
+		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport while checking if the report exists or trying to publish on chain", err.Error()))
+		return nil, err
+	}
+	monitoring.LogAndEmitSuccess(ctx, "Successfully WriteReport execution", e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportSuccess(telemetryContext, input))
 	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.WriteReportReply]{
 		Response:         report,
 		ResponseMetadata: capabilities.ResponseMetadata{},
@@ -104,17 +113,6 @@ func (e EVM) executeWriteReport(ctx context.Context, metadata capabilities.Reque
 	transactionResult, err := e.forwarderClient.InvokeOnReport(ctx, transmissionID.Receiver, request.Report, request.GasConfig)
 	if err != nil {
 		e.lggr.Error("Transaction failed", "request", request)
-		// TODO add beholder ticket.
-		// msg := "transaction failed to be written to the forwarder, transmission ID: " + transmissionID.GetDebugID()
-		// err = c.emitter.With(
-		// 	KeyWorkflowID, metadata.WorkflowID,
-		// 	KeyWorkflowName, metadata.DecodedWorkflowName,
-		// 	KeyWorkflowOwner, metadata.WorkflowOwner,
-		// 	KeyWorkflowExecutionID, metadata.WorkflowExecutionID,
-		// ).Emit(ctx, msg)
-		// if err != nil {
-		// 	c.lggr.Errorf("failed to send custom message with msg: %s, err: %v", msg, err)
-		// }
 		return &evm.WriteReportReply{
 			TxStatus:     evm.TxStatus_TX_STATUS_FATAL,
 			ErrorMessage: ptr(err.Error()),
@@ -173,17 +171,6 @@ func (e EVM) processUnrecoverableTxState(ctx context.Context, request *evm.Write
 		e.lggr.Infow("returning without a transmission attempt - transmission already attempted, receiver was marked as invalid", "executionID", metadata.WorkflowExecutionID)
 	} else {
 		e.lggr.Errorw("Transaction written to the forwarder, but failed to be written to the consumer contract", "request", request, "transmissionState", transmissionInfo.State)
-		// TODO Add link to configure emitter in the capability.
-		// msg := "transaction written to the forwarder, but failed to be written to the consumer contract, transaction hash: " + common.Bytes2Hex((*txHash)[:])
-		// err = c.emitter.With(
-		// 	KeyWorkflowID, metadata.WorkflowID,
-		// 	KeyWorkflowName, metadata.DecodedWorkflowName,
-		// 	KeyWorkflowOwner, metadata.WorkflowOwner,
-		// 	KeyWorkflowExecutionID, metadata.WorkflowExecutionID,
-		// ).Emit(ctx, msg)
-		// if err != nil {
-		// 	c.lggr.Errorf("failed to send custom message with msg: %s, err: %v", msg, err)
-		// }
 	}
 	var message *string
 	if transmissionInfo.State == TransmissionStateInvalidReceiver {

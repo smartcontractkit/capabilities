@@ -587,7 +587,7 @@ func TestSendLogsToWorkflows(t *testing.T) {
 		state, _ := service.triggers.Read(triggerID)
 		logCh := make(chan capabilities.TriggerAndId[*evmcappb.Log], len(expectedLogs))
 
-		err := service.sendLogsToWorkflows(t.Context(), monitoring.ReadRequest{}, expectedLogs, finalizedBlockNumber, triggerID, state, logCh)
+		err := service.sendLogsToWorkflows(t.Context(), monitoring.TelemetryContext{}, expectedLogs, finalizedBlockNumber, triggerID, state, logCh)
 		require.NoError(t, err)
 		require.Len(t, logCh, len(expectedLogs))
 		actualLog1 := <-logCh
@@ -614,7 +614,7 @@ func TestSendLogsToWorkflows(t *testing.T) {
 			unfinalizedSentEventIDs: map[string]*big.Int{},
 		})
 		state, _ := service.triggers.Read(triggerID)
-		err := service.sendLogsToWorkflows(t.Context(), monitoring.ReadRequest{}, expectedLogs, big.NewInt(0), triggerID, state, logCh)
+		err := service.sendLogsToWorkflows(t.Context(), monitoring.TelemetryContext{}, expectedLogs, big.NewInt(0), triggerID, state, logCh)
 		require.NoError(t, err)
 		require.Len(t, logCh, 1)
 		actualLog1 := <-logCh
@@ -637,7 +637,7 @@ func TestSendLogsToWorkflows(t *testing.T) {
 			unfinalizedSentEventIDs: map[string]*big.Int{},
 		})
 		triggerState, _ := service.triggers.Read(triggerID)
-		err := service.sendLogsToWorkflows(t.Context(), monitoring.ReadRequest{}, []*evmtypes.Log{expectedLog2}, finalizedBlockNumber, triggerID, triggerState, logCh)
+		err := service.sendLogsToWorkflows(t.Context(), monitoring.TelemetryContext{}, []*evmtypes.Log{expectedLog2}, finalizedBlockNumber, triggerID, triggerState, logCh)
 		require.NoError(t, err)
 		require.Len(t, logCh, 1)
 		actualLog2 := <-logCh
@@ -653,7 +653,7 @@ func TestSendLogsToWorkflows(t *testing.T) {
 		require.Len(t, triggerState.unfinalizedSentEventIDs, 1, "expected one unfinalized sent event ID to be stored")
 		require.Contains(t, triggerState.unfinalizedSentEventIDs, service.generateLogIdentifier(expectedLog2), "expected the unfinalized log to be stored in the trigger state")
 		// Verify that the unfinalized log is not sent again
-		err = service.sendLogsToWorkflows(t.Context(), monitoring.ReadRequest{}, []*evmtypes.Log{expectedLog2}, finalizedBlockNumber, triggerID, triggerState, logCh)
+		err = service.sendLogsToWorkflows(t.Context(), monitoring.TelemetryContext{}, []*evmtypes.Log{expectedLog2}, finalizedBlockNumber, triggerID, triggerState, logCh)
 		require.NoError(t, err)
 		require.Len(t, logCh, 0)
 		select {
@@ -674,7 +674,7 @@ func TestSendLogsToWorkflows(t *testing.T) {
 		})
 		triggerState, _ := service.triggers.Read(triggerID)
 		logCh := make(chan capabilities.TriggerAndId[*evmcappb.Log], len(expectedLogs))
-		err := service.sendLogsToWorkflows(t.Context(), monitoring.ReadRequest{}, []*evmtypes.Log{}, finalizedBlockNumber, triggerID, triggerState, logCh)
+		err := service.sendLogsToWorkflows(t.Context(), monitoring.TelemetryContext{}, []*evmtypes.Log{}, finalizedBlockNumber, triggerID, triggerState, logCh)
 		require.NoError(t, err)
 		require.Len(t, logCh, 0)
 		select {
@@ -696,7 +696,7 @@ func TestSendLogsToWorkflows(t *testing.T) {
 			unfinalizedSentEventIDs: map[string]*big.Int{},
 		}
 		logCh := make(chan capabilities.TriggerAndId[*evmcappb.Log], len(expectedLogs))
-		err := service.sendLogsToWorkflows(t.Context(), monitoring.ReadRequest{}, expectedLogs, finalizedBlockNumber, triggerID, state, logCh)
+		err := service.sendLogsToWorkflows(t.Context(), monitoring.TelemetryContext{}, expectedLogs, finalizedBlockNumber, triggerID, state, logCh)
 		require.Error(t, err)
 		require.ErrorContains(t, err, "failed to update unfinalized sent event IDs for triggerID: trigger-1: cannot find trigger with ID \"trigger-1\"")
 	})

@@ -83,13 +83,13 @@ func (lts *LogTriggerService) start(_ context.Context) error {
 
 func (lts *LogTriggerService) cleanUpStaleFilters(ctx context.Context) {
 	lts.lggr.Debugf("Starting cleanUpStaleFilters")
-	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: capabilities.RequestMetadata{
+	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: capabilities.RequestMetadata{
 		WorkflowID: "evm-log-trigger-cleanup", // fake workflow ID for monitoring purposes
 	}}
 	filterNames, err := lts.EVMService.GetFiltersNames(ctx)
 	if err != nil {
 		summary := fmt.Sprintf("failed to get the filter names: '%v'", err)
-		monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerCleanUpError(read, summary, err.Error()))
+		monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerCleanUpError(telemetryContext, summary, err.Error()))
 		return
 	}
 	toCleanUp := make(map[string]struct{})
@@ -114,14 +114,14 @@ func (lts *LogTriggerService) cleanUpStaleFilters(ctx context.Context) {
 		lts.lggr.Debugf("Cleaning up filter %s", filterID)
 		if err := lts.EVMService.UnregisterLogTracking(ctx, filterID); err != nil {
 			summary := fmt.Sprintf("failed to unregister log-tracking from the clean up thread: '%v' source triggerID: %s", err, filterID)
-			monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerCleanUpError(read, summary, err.Error()))
+			monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerCleanUpError(telemetryContext, summary, err.Error()))
 		}
 	}
 }
 
 func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID string, meta capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*evmcappb.Log], error) {
 	lts.lggr.Debugf("RegisterLogTrigger called with triggerID: %s, input: %+v", triggerID, input)
-	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
+	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	if triggerID == "" {
 		return nil, fmt.Errorf("no triggerID provided")
 	}
@@ -176,7 +176,7 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	}
 	expressions, confidence := lts.createLogRequest(ctx, input.GetAddresses(), eventSigs, topics2, topics3, topics4, input.GetConfidence())
 
-	monitoring.EmitInitiated(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerInitiated(read, input))
+	monitoring.EmitInitiated(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerInitiated(telemetryContext, input))
 
 	logCh := make(chan capabilities.TriggerAndId[*evmcappb.Log], defaultSendChannelBufferSize)
 	lts.srvcEng.Go(func(srvcCtx context.Context) {
@@ -191,7 +191,7 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 				confidence:  confidence,
 			},
 		})
-		lts.startPolling(subCtx, read, triggerID, input, logCh)
+		lts.startPolling(subCtx, telemetryContext, triggerID, input, logCh)
 	})
 
 	return logCh, nil
@@ -232,7 +232,7 @@ func (lts *LogTriggerService) generateFilterID(triggerID string) string {
 	return triggerID + SuffixLogTriggerFilterID
 }
 
-func (lts *LogTriggerService) startPolling(ctx context.Context, read monitoring.ReadRequest, triggerID string, input *evmcappb.FilterLogTriggerRequest, logCh chan capabilities.TriggerAndId[*evmcappb.Log]) {
+func (lts *LogTriggerService) startPolling(ctx context.Context, telemetryContext monitoring.TelemetryContext, triggerID string, input *evmcappb.FilterLogTriggerRequest, logCh chan capabilities.TriggerAndId[*evmcappb.Log]) {
 	lts.lggr.Debugf("Starting polling for triggerID: %s, interval: %d", triggerID, lts.logTriggerPollInterval)
 	ticker := defaultTickerFactory.NewTicker(lts.logTriggerPollInterval)
 	defer ticker.Stop()
@@ -253,7 +253,7 @@ func (lts *LogTriggerService) startPolling(ctx context.Context, read monitoring.
 			logs, err := lts.fetchLogsFromLogPoller(ctx, state)
 			if err != nil {
 				summary := fmt.Sprintf("Failed to fetch logs for triggerID: %s, error: %v", triggerID, err)
-				monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(read, triggerID, summary, err.Error()))
+				monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(telemetryContext, triggerID, summary, err.Error()))
 				// no logs fetched, so we continue to the next iteration
 				continue
 			}
@@ -261,15 +261,15 @@ func (lts *LogTriggerService) startPolling(ctx context.Context, read monitoring.
 			finalizedBlockNumber, err := lts.getFinalizedBlockNumber(ctx, triggerID)
 			if err != nil {
 				summary := fmt.Sprintf("Failed to get latest finalized block number for triggerID: %s, error: %v", triggerID, err)
-				monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(read, triggerID, summary, err.Error()))
+				monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(telemetryContext, triggerID, summary, err.Error()))
 				// no finalized block number, so we continue to the next iteration
 				continue
 			}
 
-			err = lts.sendLogsToWorkflows(ctx, read, logs, finalizedBlockNumber, triggerID, state, logCh)
+			err = lts.sendLogsToWorkflows(ctx, telemetryContext, logs, finalizedBlockNumber, triggerID, state, logCh)
 			if err != nil {
 				summary := fmt.Sprintf("Failed to send logs for triggerID: %s, error: %v", triggerID, err)
-				monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(read, triggerID, summary, err.Error()))
+				monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(telemetryContext, triggerID, summary, err.Error()))
 				// serious error occurred while sending logs, so we break the loop
 				return
 			}
@@ -279,17 +279,17 @@ func (lts *LogTriggerService) startPolling(ctx context.Context, read monitoring.
 			err = lts.triggers.Update(triggerID, calculatedLatestBlock, state.unfinalizedSentEventIDs)
 			if err != nil {
 				summary := fmt.Sprintf("Failed to update last block for triggerID: %s, error: %v", triggerID, err)
-				monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(read, triggerID, summary, err.Error()))
+				monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(telemetryContext, triggerID, summary, err.Error()))
 				// serious error occurred while updating the last processed block, so we break the loop
 				return
 			}
 			successMessage := fmt.Sprintf("Finished updating BlockNumber for triggerID: %s, BlockNumber: %d, sent logs: %d", triggerID, calculatedLatestBlock, len(logs))
-			monitoring.LogAndEmitSuccess(ctx, successMessage, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerSuccess(read, triggerID, input, len(logs), calculatedLatestBlock.Int64()))
+			monitoring.LogAndEmitSuccess(ctx, successMessage, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerSuccess(telemetryContext, triggerID, input, len(logs), calculatedLatestBlock.Int64()))
 		}
 	}
 }
 
-func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, read monitoring.ReadRequest,
+func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetryContext monitoring.TelemetryContext,
 	logs []*evmtypes.Log,
 	finalizedBlockNumber *big.Int,
 	triggerID string,
@@ -325,7 +325,7 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, read moni
 					ctx,
 					lts.lggr,
 					lts.beholderProcessor,
-					lts.messageBuilder.BuildLogTriggerEventDroppedError(read, triggerID, log, summary, summary),
+					lts.messageBuilder.BuildLogTriggerEventDroppedError(telemetryContext, triggerID, log, summary, summary),
 				)
 			}
 		}
@@ -429,7 +429,7 @@ func (lts *LogTriggerService) makeEventByTopicFilter(topic uint64, topics [][]by
 }
 
 func (lts *LogTriggerService) UnregisterLogTrigger(ctx context.Context, triggerID string, meta capabilities.RequestMetadata, _ *evmcappb.FilterLogTriggerRequest) error {
-	read := monitoring.ReadRequest{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
+	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	if triggerID == "" {
 		return fmt.Errorf("no triggerID provided")
 	}
@@ -444,7 +444,7 @@ func (lts *LogTriggerService) UnregisterLogTrigger(ctx context.Context, triggerI
 	err := lts.EVMService.UnregisterLogTracking(ctx, lts.generateFilterID(triggerID))
 	if err != nil {
 		summary := fmt.Sprintf("failed to unregister log-tracking: '%v' for triggerID: %s", err, triggerID)
-		monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(read, triggerID, summary, err.Error()))
+		monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(telemetryContext, triggerID, summary, err.Error()))
 		return fmt.Errorf("failed to unregister log-tracking: '%w' for triggerID: %s", err, triggerID)
 	}
 	return nil
