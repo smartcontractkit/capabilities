@@ -137,7 +137,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 	c.requestPoller = poller.NewPoller(c.lggr, PollingWorkersNum, PollPeriod)
 	c.consensusHandler = consensus.NewHandler(c.lggr, c.requestPoller, UnknownRequestTTL)
 
-	c.EVM, err = actions.NewEVM(cfg, evmRelayer, c.lggr, processor, messageBuilder, c.consensusHandler)
+	c.EVM, err = actions.NewEVM(cfg, evmRelayer, c.lggr, processor, messageBuilder, c.consensusHandler, c.chainSelector)
 	if err != nil {
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
