@@ -34,6 +34,11 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
 )
 
+const (
+	// TODO PLEX-1569: make configurable
+	filterLogsMaxBlockRange = 100
+)
+
 type ConsensusHandler interface {
 	// Handle - returns a channel to the result of `request.GetObservation()`. This result is consistent across all nodes in
 	// the DON, even if individual RPC states differ.
@@ -159,7 +164,6 @@ func (e EVM) filterLogsToRequest(meta capabilities.RequestMetadata, ethFilterQue
 		return proto.Marshal(&evm.FilterLogsReply{Logs: evm.ConvertLogsToProto(reply.Logs)})
 	}
 
-	// TODO: PLEX-1559 add validation for block range size and size of returned payload
 	if ethFilterQuery.BlockHash != (evmtypes.Hash{}) {
 		if ethFilterQuery.FromBlock != nil || ethFilterQuery.ToBlock != nil {
 			return nil, errors.New("cannot specify both block hash and block range")
@@ -181,6 +185,10 @@ func (e EVM) filterLogsToRequest(meta capabilities.RequestMetadata, ethFilterQue
 	}
 
 	if !fromNeedsBlockHeightConsensus && !toNeedsBlockHeightConsensus {
+		err = validateBlockRange(ethFilterQuery.FromBlock, ethFilterQuery.ToBlock)
+		if err != nil {
+			return nil, err
+		}
 		return ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
 			return filterLogs(ctx, ethFilterQuery, confidenceLevel)
 		}), nil
@@ -197,11 +205,29 @@ func (e EVM) filterLogsToRequest(meta capabilities.RequestMetadata, ethFilterQue
 			return nil, fmt.Errorf("error getting callToBlock: %w", err)
 		}
 
+		err = validateBlockRange(callFromBlock, callToBlock)
+		if err != nil {
+			return nil, err
+		}
+
 		ethFilterQuery.FromBlock = big.NewInt(callFromBlock.Int64())
 		ethFilterQuery.ToBlock = big.NewInt(callToBlock.Int64())
 
 		return filterLogs(ctx, ethFilterQuery, confidenceLevel)
 	}), nil
+}
+
+func validateBlockRange(fromBlock, toBlock *big.Int) error {
+	rangeSize := big.NewInt(0).Sub(toBlock, fromBlock)
+	if rangeSize.Sign() < 0 {
+		return fmt.Errorf("toBlock %s is less than fromBlock %s", toBlock.String(), fromBlock.String())
+	}
+
+	if rangeSize.Cmp(big.NewInt(filterLogsMaxBlockRange)) > 0 {
+		return fmt.Errorf("block range size %s exceeds maximum allowed range of %d", rangeSize.String(), filterLogsMaxBlockRange)
+	}
+
+	return nil
 }
 
 func (e EVM) FilterLogs(ctx context.Context, meta capabilities.RequestMetadata, req *evm.FilterLogsRequest) (*capabilities.ResponseAndMetadata[*evm.FilterLogsReply], error) {
