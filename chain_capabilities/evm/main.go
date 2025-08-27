@@ -41,11 +41,7 @@ const (
 	OCRRoundBatchSize = oracle.OCRRoundBatchSize
 	// OCRRoundMaxBatchSize - defines max number of requests that this node will process in a round, if requested by another node.
 	// Needed to allow graceful roll out of OCRBatchSize increase.
-	OCRRoundMaxBatchSize  = oracle.OCRRoundMaxBatchSize
-	PollingWorkersNum     = 10
-	PollPeriod            = 10 * time.Second
-	UnknownRequestTTL     = 10 * time.Second
-	ChainHeightPollPeriod = time.Second
+	OCRRoundMaxBatchSize = oracle.OCRRoundMaxBatchSize
 
 	repoCLLCapabilities = "https://raw.githubusercontent.com/smartcontractkit/capabilities"
 	versionRefsMain     = "refs/heads/main"
@@ -81,15 +77,12 @@ func main() {
 func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string, _ core.TelemetryService, _ core.KeyValueStore, _ core.ErrorLog, _ core.PipelineRunnerService, relayerSet core.RelayerSet, oracleFactory core.OracleFactory, _ core.GatewayConnector, _ core.Keystore) error {
 	c.lggr.Infof("Initialising %s", CapabilityName)
 
-	var cfg config.Config
-	if err := json.Unmarshal([]byte(configStr), &cfg); err != nil {
-		return fmt.Errorf("failed to parse EVM capability config: %w", err)
+	cfg, err := c.unmarshalConfig(configStr)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
 	c.lggr.Infof("Initialising %s, ChainId: %d, Network: %s", CapabilityName, cfg.ChainID, cfg.Network)
-	if cfg.LogTriggerPollInterval < 0 {
-		return fmt.Errorf("logTriggerPollInterval must be positive, got: %s", cfg.LogTriggerPollInterval)
-	}
 
 	client := beholder.GetClient().ForName("evm_capability")
 	metrics, err := monitoring.NewMetrics()
@@ -126,25 +119,17 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
 
-	if !common.IsHexAddress(cfg.CREForwarderAddress) {
-		return fmt.Errorf("invalid cre forward address, it does not have 20 characters: %s", cfg.CREForwarderAddress)
-	}
+	c.requestPoller = poller.NewPoller(c.lggr, cfg.ObservationPollersNumber, cfg.ObservationPollPeriod)
+	c.consensusHandler = consensus.NewHandler(c.lggr, c.requestPoller, cfg.UnknownRequestsTTL)
 
-	if cfg.ReceiverGasMinimum == 0 {
-		return fmt.Errorf("invalid ReceiverGasMinimum value. It must be greater than 0. Provided ReceiverGasMinimum %d", cfg.ReceiverGasMinimum)
-	}
-
-	c.requestPoller = poller.NewPoller(c.lggr, PollingWorkersNum, PollPeriod)
-	c.consensusHandler = consensus.NewHandler(c.lggr, c.requestPoller, UnknownRequestTTL)
-
-	c.EVM, err = actions.NewEVM(cfg, evmRelayer, c.lggr, processor, messageBuilder, c.consensusHandler, c.chainSelector)
+	c.EVM, err = actions.NewEVM(*cfg, evmRelayer, c.lggr, processor, messageBuilder, c.consensusHandler, c.chainSelector)
 	if err != nil {
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
 
 	c.triggerService = trigger.NewLogTriggerService(evmRelayer, trigger.NewLogTriggerStore(), c.lggr, processor, messageBuilder, cfg.LogTriggerPollInterval)
 
-	c.heightProvider = height.NewProvider(c.lggr, ChainHeightPollPeriod, evmRelayer)
+	c.heightProvider = height.NewProvider(c.lggr, cfg.ChainHeightPollPeriod, evmRelayer)
 
 	c.oracle, err = oracleFactory.NewOracle(ctx, core.OracleArgs{
 		LocalConfig: ocrtypes.LocalConfig{
@@ -172,6 +157,47 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 
 	c.lggr.Infof("Successfully initialised %s", CapabilityName)
 	return nil
+}
+
+func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Config, error) {
+	var cfg config.Config
+	if err := json.Unmarshal([]byte(configStr), &cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse EVM capability config: %w", err)
+	}
+
+	if cfg.LogTriggerPollInterval < 0 {
+		return nil, fmt.Errorf("logTriggerPollInterval must be positive, got: %s", cfg.LogTriggerPollInterval)
+	}
+
+	if !common.IsHexAddress(cfg.CREForwarderAddress) {
+		return nil, fmt.Errorf("invalid cre forward address, it does not have 20 characters: %s", cfg.CREForwarderAddress)
+	}
+
+	if cfg.ReceiverGasMinimum == 0 {
+		return nil, fmt.Errorf("invalid ReceiverGasMinimum value. It must be greater than 0. Provided ReceiverGasMinimum %d", cfg.ReceiverGasMinimum)
+	}
+
+	if cfg.ObservationPollersNumber == 0 {
+		cfg.ObservationPollersNumber = 10
+		c.lggr.Infof("ObservationPollersNumber is zero, setting to %d.", cfg.ObservationPollersNumber)
+	}
+
+	if cfg.ObservationPollPeriod == 0 {
+		cfg.ObservationPollPeriod = 2 * time.Second
+		c.lggr.Infof("ObservationPollPeriod is zero, setting to %s.", cfg.ObservationPollPeriod)
+	}
+
+	if cfg.ChainHeightPollPeriod == 0 {
+		cfg.ChainHeightPollPeriod = time.Second
+		c.lggr.Infof("ChainHeightPollPeriod is zero, setting to %s.", cfg.ChainHeightPollPeriod)
+	}
+
+	if cfg.UnknownRequestsTTL == 0 {
+		cfg.UnknownRequestsTTL = 10 * time.Second
+		c.lggr.Infof("UnknownRequestsTTL is zero, setting to %s.", cfg.UnknownRequestsTTL)
+	}
+
+	return &cfg, nil
 }
 
 func (c *capabilityGRPCService) Start(_ context.Context) error {

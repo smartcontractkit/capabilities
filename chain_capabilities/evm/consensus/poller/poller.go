@@ -33,7 +33,7 @@ type Poller struct {
 	engine *services.Engine
 
 	lggr       logger.SugaredLogger
-	maxWorkers int
+	maxWorkers uint
 	pollPeriod time.Duration
 
 	mutex       sync.Mutex
@@ -43,7 +43,7 @@ type Poller struct {
 	retryQueue  *list.List[requestToRetry]
 }
 
-func NewPoller(lggr logger.Logger, maxWorkers int, pollPeriod time.Duration) *Poller {
+func NewPoller(lggr logger.Logger, maxWorkers uint, pollPeriod time.Duration) *Poller {
 	p := &Poller{
 		maxWorkers: maxWorkers,
 		pollPeriod: pollPeriod,
