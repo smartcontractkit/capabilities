@@ -9,12 +9,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/structpb"
 
+	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
 
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/values"
-	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb"
+	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 
 	"github.com/smartcontractkit/capabilities/consensus/oracle"
 )
@@ -195,9 +195,9 @@ func newRR(rawBytes []byte, metaData oracle.ConsensusRequestMetadata) *oracle.Co
 }
 
 func newRRts(rawBytes []byte, metaData oracle.ConsensusRequestMetadata, recievedAt time.Time) *oracle.ConsensusRequest {
-	simpleConsensusInputs := &pb.SimpleConsensusInputs{
-		Observation: &pb.SimpleConsensusInputs_Value{Value: values.Proto(values.NewBytes(rawBytes))},
-		Descriptors: &pb.ConsensusDescriptor{Descriptor_: &pb.ConsensusDescriptor_Aggregation{Aggregation: pb.AggregationType_AGGREGATION_TYPE_IDENTICAL}},
+	simpleConsensusInputs := &sdk.SimpleConsensusInputs{
+		Observation: &sdk.SimpleConsensusInputs_Value{Value: values.Proto(values.NewBytes(rawBytes))},
+		Descriptors: &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL}},
 	}
 
 	return oracle.NewConsensusRequest(simpleConsensusInputs, recievedAt, time.Now().Add(1*time.Hour).UTC(), nil, metaData)

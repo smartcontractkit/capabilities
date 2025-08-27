@@ -12,9 +12,9 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/values"
-	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
-	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb"
+	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
+	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
+	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 )
 
 var (
@@ -44,7 +44,7 @@ const (
 func CalculateOutcomeForObservations(
 	lggr logger.Logger,
 	observations []*valuespb.Value,
-	consensusDescriptor *pb.ConsensusDescriptor,
+	consensusDescriptor *sdk.ConsensusDescriptor,
 	defaultValue *valuespb.Value,
 	minObservations int,
 	f int,
@@ -59,27 +59,27 @@ func CalculateOutcomeForObservations(
 
 func handleDescriptor(
 	lggr logger.Logger,
-	consensusDescriptor *pb.ConsensusDescriptor,
+	consensusDescriptor *sdk.ConsensusDescriptor,
 	filtered []*valuespb.Value,
 	defaultValue *valuespb.Value,
 	f int,
 ) (*valuespb.Value, error) {
 	switch desc := consensusDescriptor.GetDescriptor_().(type) {
-	case *pb.ConsensusDescriptor_Aggregation:
+	case *sdk.ConsensusDescriptor_Aggregation:
 		aggregation := consensusDescriptor.GetAggregation()
 		switch aggregation {
-		case pb.AggregationType_AGGREGATION_TYPE_IDENTICAL:
+		case sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL:
 			return handleIdenticalAggregation(lggr, filtered, f)
-		case pb.AggregationType_AGGREGATION_TYPE_MEDIAN:
+		case sdk.AggregationType_AGGREGATION_TYPE_MEDIAN:
 			return handleMedianAggregation(lggr, filtered, f)
-		case pb.AggregationType_AGGREGATION_TYPE_COMMON_PREFIX:
+		case sdk.AggregationType_AGGREGATION_TYPE_COMMON_PREFIX:
 			return handleCommonPrefixAggregation(lggr, filtered, f)
-		case pb.AggregationType_AGGREGATION_TYPE_COMMON_SUFFIX:
+		case sdk.AggregationType_AGGREGATION_TYPE_COMMON_SUFFIX:
 			return handleCommonSuffixAggregation(lggr, filtered, f)
 		default:
 			return nil, fmt.Errorf("unknown aggregation type: %s", aggregation)
 		}
-	case *pb.ConsensusDescriptor_FieldsMap:
+	case *sdk.ConsensusDescriptor_FieldsMap:
 		return handleFieldsMapAggregation(lggr, filtered, desc.FieldsMap.GetFields(), defaultValue, f)
 	default:
 		return nil, fmt.Errorf("unknown consensus descriptor type: %T", desc)
@@ -89,7 +89,7 @@ func handleDescriptor(
 func handleFieldsMapAggregation(
 	lggr logger.Logger,
 	observations []*valuespb.Value,
-	desc map[string]*pb.ConsensusDescriptor,
+	desc map[string]*sdk.ConsensusDescriptor,
 	defaultValue *valuespb.Value,
 	f int,
 ) (*valuespb.Value, error) {

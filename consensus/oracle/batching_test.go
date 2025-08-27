@@ -7,8 +7,8 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	"github.com/smartcontractkit/chainlink-common/pkg/values"
-	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb"
+	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
+	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 
 	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
 )
@@ -205,9 +205,9 @@ func TestGetIDKey_DuplicateRecognition(t *testing.T) {
 
 		request1 := &ConsensusRequest{
 			Metadata: metadata,
-			Input: &pb.SimpleConsensusInputs{
+			Input: &sdk.SimpleConsensusInputs{
 				// Different input data
-				Observation: &pb.SimpleConsensusInputs_Value{
+				Observation: &sdk.SimpleConsensusInputs_Value{
 					Value: value1Pb,
 				},
 			},
@@ -215,9 +215,9 @@ func TestGetIDKey_DuplicateRecognition(t *testing.T) {
 
 		request2 := &ConsensusRequest{
 			Metadata: metadata,
-			Input: &pb.SimpleConsensusInputs{
+			Input: &sdk.SimpleConsensusInputs{
 				// Different input data but same metadata
-				Observation: &pb.SimpleConsensusInputs_Value{
+				Observation: &sdk.SimpleConsensusInputs_Value{
 					Value: value2Pb,
 				},
 			},
