@@ -2,9 +2,13 @@ module github.com/smartcontractkit/capabilities/integration_tests
 
 go 1.24.5
 
+toolchain go1.24.6
+
 replace github.com/smartcontractkit/capabilities/loadtestwritetarget => ../loadtestwritetarget
 
 replace github.com/smartcontractkit/capabilities/http_action => ../http_action
+
+replace github.com/smartcontractkit/capabilities/http_trigger => ../http_trigger
 
 replace github.com/smartcontractkit/capabilities/chain_capabilities/evm => ../chain_capabilities/evm
 
@@ -19,14 +23,15 @@ require (
 	github.com/pelletier/go-toml v1.9.5
 	github.com/smartcontractkit/capabilities/chain_capabilities/evm v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/capabilities/http_action v0.0.0-00010101000000-000000000000
+	github.com/smartcontractkit/capabilities/http_trigger v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/capabilities/loadtestwritetarget v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/chain-selectors v1.0.67
-	github.com/smartcontractkit/chainlink-common v0.9.4-0.20250821162631-e3e586f8b5d6
+	github.com/smartcontractkit/chainlink-common v0.9.4-0.20250827130112-75577ebd4ed4
 	github.com/smartcontractkit/chainlink-evm v0.3.2
 	github.com/smartcontractkit/chainlink-evm/gethwrappers v0.0.0-20250808121824-2c3544aab8f3
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20250819150450-95ef563f6e6d
 	github.com/smartcontractkit/chainlink-protos/workflows/go v0.0.0-20250722225531-876fd6b94976
-	github.com/smartcontractkit/chainlink/v2 v2.26.0-debug-tracing.0.20250822150140-145b6ee66086
+	github.com/smartcontractkit/chainlink/v2 v2.26.0-debug-tracing.0.20250828145341-c7f076b5fc76
 	github.com/smartcontractkit/cre-sdk-go v0.5.1-0.20250821154918-5c93d76162c5
 	github.com/smartcontractkit/cre-sdk-go/capabilities/blockchain/evm v0.5.1-0.20250821154918-5c93d76162c5
 	github.com/smartcontractkit/cre-sdk-go/capabilities/scheduler/cron v0.5.1-0.20250821154918-5c93d76162c5
@@ -131,7 +136,7 @@ require (
 	github.com/gagliardetto/binary v0.8.0 // indirect
 	github.com/gagliardetto/solana-go v1.13.0 // indirect
 	github.com/gagliardetto/treeout v0.1.4 // indirect
-	github.com/gagliardetto/utilz v0.1.1 // indirect
+	github.com/gagliardetto/utilz v0.1.3 // indirect
 	github.com/gedex/inflector v0.0.0-20170307190818-16278e9db813 // indirect
 	github.com/getsentry/sentry-go v0.27.0 // indirect
 	github.com/gibson042/canonicaljson-go v1.0.3 // indirect
@@ -290,7 +295,7 @@ require (
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20250820131008-1c65f4ea06da // indirect
 	github.com/smartcontractkit/chainlink-aptos v0.0.0-20250818164129-fa2e60d95157 // indirect
 	github.com/smartcontractkit/chainlink-automation v0.8.1 // indirect
-	github.com/smartcontractkit/chainlink-ccip v0.1.1-solana.0.20250814153237-9a6c5a35e950 // indirect
+	github.com/smartcontractkit/chainlink-ccip v0.1.1-solana.0.20250825135846-84f0d5167f8f // indirect
 	github.com/smartcontractkit/chainlink-ccip/chains/solana v0.0.0-20250805210128-7f8a0f403c3a // indirect
 	github.com/smartcontractkit/chainlink-ccip/chains/solana/gobindings v0.0.0-20250804184440-c0506474fc44 // indirect
 	github.com/smartcontractkit/chainlink-common/pkg/chipingress v0.0.1 // indirect

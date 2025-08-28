@@ -23,8 +23,8 @@ type runtimeConfig struct {
 	Event string `yaml:"event"`
 }
 
-func RunSimpleEvmLogTriggerWorkflow(config *runtimeConfig, lggr *slog.Logger, _ cre.SecretsProvider) (cre.Workflow[*runtimeConfig], error) {
-	lggr.Info("RunSimpleEvmLogTriggerWorkflow called")
+func RunSimpleEvmLogTriggerWorkflow(config *runtimeConfig, _ *slog.Logger, _ cre.SecretsProvider) (cre.Workflow[*runtimeConfig], error) {
+	fmt.Println("RunSimpleEvmLogTriggerWorkflow called")
 
 	cfg := &evm.FilterLogTriggerRequest{
 		Addresses: toByteSlices(config.Addresses),
@@ -54,14 +54,14 @@ func toByteSlices(addresses []string) [][]byte {
 }
 
 func onTrigger(config *runtimeConfig, runtime cre.Runtime, outputs *evm.Log) (string, error) {
+	fmt.Println("OnTrigger called with outputs:", outputs)
 	lggr := runtime.Logger()
-	lggr.Info("OnTrigger called with outputs:", outputs)
 	decodedMessageString, err := printDecodedData(config.Abi, config.Event, outputs.Data)
 	if err != nil {
 		lggr.Error("OnTrigger error:", err)
 		return "", fmt.Errorf("error decoding log data: %w", err)
 	}
-	lggr.Info("OnTrigger called with decodedMessageString:", decodedMessageString)
+	fmt.Println("OnTrigger called with decodedMessageString:", decodedMessageString)
 	lggr.Info(fmt.Sprintf("OnTrigger decoded message: %s", decodedMessageString))
 	return "success", nil
 }
