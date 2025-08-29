@@ -1008,7 +1008,7 @@ func TestCronTrigger_CloseStartErrors(t *testing.T) {
 }
 
 type PanicingClock struct {
-	clockwork.FakeClock
+	*clockwork.FakeClock
 	mu             sync.Mutex
 	callCount      int
 	panicAfterCall int // Panic after this many calls to a specific method
