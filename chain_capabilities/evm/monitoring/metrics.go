@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/common"
 	"go.opentelemetry.io/otel/attribute"
 
 	commoncapbeholder "github.com/smartcontractkit/capabilities/libs/monitoring"
@@ -19,6 +20,12 @@ type Metrics struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
 	CallContractError struct {
+		basic commoncapbeholder.MetricsCapBasic
+	}
+	WriteReportSuccess struct {
+		basic commoncapbeholder.MetricsCapBasic
+	}
+	WriteReportError struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
 	LogTriggerSuccess struct {
@@ -86,6 +93,17 @@ func NewMetrics() (Metrics, error) {
 	m.CallContractError.basic, err = commoncapbeholder.NewMetricsCapBasic(ccErr)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create call contract error metric: %w", err)
+	}
+	// -- WriteReport --
+	wrSuccess := commoncapbeholder.NewMetricsInfoCapBasic(ns("write_report_success"), commonbeholder.ToSchemaFullName(&WriteReportSuccess{}))
+	m.WriteReportSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(wrSuccess)
+	if err != nil {
+		return Metrics{}, fmt.Errorf("failed to create write report success metric: %w", err)
+	}
+	wrErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("write_report_error"), commonbeholder.ToSchemaFullName(&WriteReportError{}))
+	m.WriteReportError.basic, err = commoncapbeholder.NewMetricsCapBasic(wrErr)
+	if err != nil {
+		return Metrics{}, fmt.Errorf("failed to create write report error metric: %w", err)
 	}
 
 	// -- LogTrigger --
@@ -196,6 +214,20 @@ func (m *Metrics) OnCallContractSuccess(ctx context.Context, msg *CallContractSu
 func (m *Metrics) OnCallContractError(ctx context.Context, msg *CallContractError) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
 	m.CallContractError.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
+	return nil
+}
+
+// -- WriteReport --
+
+func (m *Metrics) OnWriteReportSuccess(ctx context.Context, msg *WriteReportSuccess) error {
+	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
+	m.WriteReportSuccess.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
+	return nil
+}
+
+func (m *Metrics) OnWriteReportError(ctx context.Context, msg *WriteReportError) error {
+	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
+	m.WriteReportError.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
 	return nil
 }
 
@@ -326,6 +358,19 @@ func (r *CallContractError) Attributes() []attribute.KeyValue {
 	}, r.ExecutionContext.Attributes()...)
 }
 
+func (r *WriteReportSuccess) Attributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
+		attribute.String("receiver", getReceiver(r.Req.GetReceiver())),
+	}, r.ExecutionContext.Attributes()...)
+}
+
+func (r *WriteReportError) Attributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
+		attribute.String("receiver", getReceiver(r.Req.GetReceiver())),
+		attribute.String("summary", r.GetSummary()),
+	}, r.ExecutionContext.Attributes()...)
+}
+
 func (r *LogTriggerSuccess) Attributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.String("trigger_id", r.GetTriggerID()),
@@ -440,4 +485,11 @@ func (r *HeaderByNumberError) Attributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.Int64("block_number", r.Req.GetBlockNumber()),
 	}, r.ExecutionContext.Attributes()...)
+}
+
+func getReceiver(receiver []byte) string {
+	if receiver != nil {
+		return common.Bytes2Hex(receiver)
+	}
+	return "nil receiver"
 }

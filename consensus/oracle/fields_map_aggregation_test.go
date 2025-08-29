@@ -7,12 +7,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/smartcontractkit/cre-sdk-go/sdk"
-
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/values"
-	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
-	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb"
+	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
+	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
+	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
+	"github.com/smartcontractkit/cre-sdk-go/cre"
 )
 
 type s struct {
@@ -40,7 +39,7 @@ func Test_handleFieldsMapAggregation(t *testing.T) {
 	type testCase struct {
 		name            string
 		observations    []*valuespb.Value
-		descriptor      map[string]*pb.ConsensusDescriptor
+		descriptor      map[string]*sdk.ConsensusDescriptor
 		defaultValue    *valuespb.Value
 		f               int
 		expectedOutcome *valuespb.Value
@@ -48,7 +47,7 @@ func Test_handleFieldsMapAggregation(t *testing.T) {
 	}
 
 	lggr := logger.Test(t)
-	desc := sdk.ConsensusAggregationFromTags[s]()
+	desc := cre.ConsensusAggregationFromTags[s]()
 	require.NoError(t, desc.Err(), "failed to get aggregation desc from tags")
 
 	testCases := []testCase{

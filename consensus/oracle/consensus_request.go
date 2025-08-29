@@ -7,10 +7,10 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb"
 
 	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
 )
@@ -28,7 +28,7 @@ func (m ConsensusRequestMetadata) RequestID() string {
 
 type ConsensusRequest struct {
 	RequestID  string
-	Input      *pb.SimpleConsensusInputs
+	Input      *sdk.SimpleConsensusInputs
 	ReceivedAt time.Time
 	ExpiresAt  time.Time
 
@@ -38,7 +38,7 @@ type ConsensusRequest struct {
 }
 
 func NewConsensusRequest(
-	input *pb.SimpleConsensusInputs,
+	input *sdk.SimpleConsensusInputs,
 	receivedAt time.Time,
 	expiresAt time.Time,
 	callbackCh chan ConsensusResponse,
@@ -82,7 +82,7 @@ func (r *ConsensusRequest) ExpiryTime() time.Time {
 func (r *ConsensusRequest) Copy() *ConsensusRequest {
 	return &ConsensusRequest{
 		RequestID: r.RequestID,
-		Input:     proto.Clone(r.Input).(*pb.SimpleConsensusInputs),
+		Input:     proto.Clone(r.Input).(*sdk.SimpleConsensusInputs),
 
 		// No need to copy these, they're value types.
 		ReceivedAt: r.ReceivedAt,

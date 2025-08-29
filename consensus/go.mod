@@ -1,22 +1,19 @@
 module github.com/smartcontractkit/capabilities/consensus
 
-go 1.24.4
-
-toolchain go1.24.5
+go 1.24.5
 
 require (
 	github.com/jonboulle/clockwork v0.4.0
 	github.com/shopspring/decimal v1.4.0
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20250818145037-1adb7a405c6a
-	github.com/smartcontractkit/chainlink-common v0.9.1-0.20250813154823-1652ea0f0500
-	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250806152407-159881c7589c
-	github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb v0.0.0-20250806155403-1d805e639a0f
-	github.com/smartcontractkit/cre-sdk-go v0.2.0
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20250826145536-b98e2b5c07cc
+	github.com/smartcontractkit/chainlink-common v0.9.4-0.20250826163729-3241d73e9ae3
+	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20250819150450-95ef563f6e6d
+	github.com/smartcontractkit/cre-sdk-go v0.5.1-0.20250821154918-5c93d76162c5
 	github.com/smartcontractkit/libocr v0.0.0-20250513175559-61c382d6cee4
 	github.com/stretchr/testify v1.10.0
 	go.opentelemetry.io/otel/metric v1.37.0
 	golang.org/x/exp v0.0.0-20250711185948-6ae5c78190dc
-	google.golang.org/protobuf v1.36.6
+	google.golang.org/protobuf v1.36.7
 )
 
 require (
@@ -38,7 +35,7 @@ require (
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.25.0 // indirect
-	github.com/go-viper/mapstructure/v2 v2.3.0 // indirect
+	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect

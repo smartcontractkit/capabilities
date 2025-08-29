@@ -17,6 +17,7 @@ import (
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts/mocks"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
 
 	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
@@ -195,6 +196,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 
 	t.Run("TX already transmitted successfully", func(t *testing.T) {
 		evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
+		evmServiceMock.EXPECT().GetTransactionFee(mock.Anything, mock.Anything).Return(&evmtypes.TransactionFee{TransactionFee: big.NewInt(300)}, nil).Maybe()
 
 		transmissionInfo := contracts.TransmissionInfo{
 			Success:         true,
@@ -241,6 +243,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
 		}, txResult.Response)
+		test.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003")
 	})
 	t.Run("TX already transmitted successfully - Failed to fetch transmission details", func(t *testing.T) {
 		_, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
@@ -288,6 +291,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TxStatus:     evmcappb.TxStatus_TX_STATUS_FATAL,
 			ErrorMessage: ptr(getInvalidStateErrorMessage(invalidState)),
 		}, txResult.Response)
+		require.Empty(t, txResult.ResponseMetadata.Metering, "response metadata must not contain metering data for fatal errors")
 	})
 	t.Run("TX already transmitted successfully - Failed to fetch report emitted log", func(t *testing.T) {
 		_, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
@@ -352,6 +356,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 	})
 	t.Run("TX already transmitted successfully - Receiver contract reverted - enough gas", func(t *testing.T) {
 		evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
+		evmServiceMock.EXPECT().GetTransactionFee(mock.Anything, mock.Anything).Return(&evmtypes.TransactionFee{TransactionFee: big.NewInt(300)}, nil).Maybe()
 
 		transmissionInfo := contracts.TransmissionInfo{
 			Success:         false,
@@ -398,9 +403,11 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
 		}, txResult.Response)
+		test.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003")
 	})
 	t.Run("TX already transmitted successfully - Receiver contract reverted - not enough gas", func(t *testing.T) {
 		evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
+		evmServiceMock.EXPECT().GetTransactionFee(mock.Anything, mock.Anything).Return(&evmtypes.TransactionFee{TransactionFee: big.NewInt(300)}, nil).Maybe()
 
 		receiverAddress := testutils.NewAddress()
 		reportMetadata := createTestReportMetadata()
@@ -462,9 +469,11 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(retryTxFee)),
 		}, txResult.Response)
+		test.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003")
 	})
 	t.Run("TX already transmitted successfully - Invalid receiver", func(t *testing.T) {
 		evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
+		evmServiceMock.EXPECT().GetTransactionFee(mock.Anything, mock.Anything).Return(&evmtypes.TransactionFee{TransactionFee: big.NewInt(300)}, nil).Maybe()
 
 		transmissionInfo := contracts.TransmissionInfo{
 			Success:         false,
@@ -513,9 +522,11 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
 			ErrorMessage:                    getInvalidReceiverMessage(receiver),
 		}, txResult.Response)
+		test.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003")
 	})
 	t.Run("TX first transmission - Successful TX execution", func(t *testing.T) {
 		evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
+		evmServiceMock.EXPECT().GetTransactionFee(mock.Anything, mock.Anything).Return(&evmtypes.TransactionFee{TransactionFee: big.NewInt(300)}, nil).Maybe()
 
 		receiverAddress := testutils.NewAddress()
 		reportMetadata := createTestReportMetadata()
@@ -574,6 +585,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(retryTxFee)),
 		}, txResult.Response)
+		test.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003")
 	})
 	t.Run("TX first transmission - Error submitting TX", func(t *testing.T) {
 		_, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
@@ -608,9 +620,12 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TxStatus:     evmcappb.TxStatus_TX_STATUS_FATAL,
 			ErrorMessage: &expectedError,
 		}, txResult.Response)
+		require.Empty(t, txResult.ResponseMetadata.Metering, "response metadata must not contain metering data for fatal errors")
 	})
 	t.Run("TX first transmission - Failed to get transmission info and then succeed", func(t *testing.T) {
 		evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
+		evmServiceMock.EXPECT().GetTransactionFee(mock.Anything, mock.Anything).Return(&evmtypes.TransactionFee{TransactionFee: big.NewInt(300)}, nil).Maybe()
+
 		receiverAddress := testutils.NewAddress()
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
@@ -664,10 +679,12 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(retryTxFee)),
 			ErrorMessage:                    nil,
 		}, txResult.Response)
+		test.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003")
 	})
 
 	t.Run("TX first transmission - Invalid receiver", func(t *testing.T) {
 		evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
+		evmServiceMock.EXPECT().GetTransactionFee(mock.Anything, mock.Anything).Return(&evmtypes.TransactionFee{TransactionFee: big.NewInt(300)}, nil).Maybe()
 
 		receiverAddress := testutils.NewAddress()
 		reportMetadata := createTestReportMetadata()
@@ -727,6 +744,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(retryTxFee)),
 			ErrorMessage:                    getInvalidReceiverMessage(receiverAddress[:]),
 		}, txResult.Response)
+		test.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003")
 	})
 
 	t.Run("TX first transmission - Unexpected transmission state", func(t *testing.T) {
@@ -756,6 +774,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TxStatus:     evmcappb.TxStatus_TX_STATUS_FATAL,
 			ErrorMessage: ptr(getInvalidStateErrorMessage(invalidState)),
 		}, txResult.Response)
+		require.Empty(t, txResult.ResponseMetadata.Metering, "response metadata must not contain metering data for fatal errors")
 	})
 }
 
@@ -831,6 +850,9 @@ func createMocksAndCapability(t *testing.T, lggr logger.Logger) (*mocks2.EVMServ
 		lggr:                     lggr,
 		EVMService:               mockEVMService,
 		ReceiverGasMinimum:       ConfiguredReceiverGasMinimum,
+		chainSelector:            1,
+		beholderProcessor:        test.NopBeholderProcessor{},
+		messageBuilder:           &monitoring.MessageBuilder{},
 	}
 	return mockEVMService, mockForwarderClient, &service
 }
