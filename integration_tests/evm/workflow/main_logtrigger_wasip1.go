@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -22,14 +23,18 @@ type runtimeConfig struct {
 	Event string `yaml:"event"`
 }
 
-func RunSimpleEvmLogTriggerWorkflow(env *cre.Environment[*runtimeConfig]) (cre.Workflow[*runtimeConfig], error) {
-	fmt.Println("RunSimpleEvmLogTriggerWorkflow called")
+func RunSimpleEvmLogTriggerWorkflow(
+	config *runtimeConfig,
+	logger *slog.Logger,
+	_ cre.SecretsProvider,
+) (cre.Workflow[*runtimeConfig], error) {
+	_ = logger // not used directly; we log via runtime inside handlers
 
 	cfg := &evm.FilterLogTriggerRequest{
-		Addresses: toByteSlices(env.Config.Addresses),
+		Addresses: toByteSlices(config.Addresses),
 		Topics: []*evm.TopicValues{
 			{
-				Values: toByteSlices(env.Config.Topics[0].Values),
+				Values: toByteSlices(config.Topics[0].Values),
 			},
 		},
 		Confidence: 1, // LATEST
@@ -52,15 +57,16 @@ func toByteSlices(addresses []string) [][]byte {
 	return result
 }
 
-func onTrigger(env *cre.Environment[*runtimeConfig], _ cre.Runtime, outputs *evm.Log) (string, error) {
-	fmt.Println("OnTrigger called with outputs:", outputs)
-	decodedMessageString, err := printDecodedData(env.Config.Abi, env.Config.Event, outputs.Data)
+func onTrigger(config *runtimeConfig, runtime cre.Runtime, outputs *evm.Log) (string, error) {
+	runtime.Logger().With().Info(fmt.Sprintf("OnTrigger called with outputs: %+v", outputs))
+
+	decodedMessageString, err := printDecodedData(config.Abi, config.Event, outputs.Data)
 	if err != nil {
-		fmt.Println("OnTrigger error:", err)
+		runtime.Logger().With().Error(fmt.Sprintf("Error decoding log data: %v", err))
 		return "", fmt.Errorf("error decoding log data: %w", err)
 	}
-	fmt.Println("OnTrigger called with decodedMessageString:", decodedMessageString)
-	env.Logger.Info(fmt.Sprintf("OnTrigger decoded message: %s", decodedMessageString))
+
+	runtime.Logger().With().Info(fmt.Sprintf("OnTrigger decoded message: %s", decodedMessageString))
 	return "success", nil
 }
 
@@ -71,8 +77,7 @@ func printDecodedData(eventABI string, eventName string, data []byte) (string, e
 	}
 	event := parsedABI.Events[eventName]
 	values := make(map[string]interface{})
-	err = event.Inputs.UnpackIntoMap(values, data)
-	if err != nil {
+	if err := event.Inputs.UnpackIntoMap(values, data); err != nil {
 		return "", err
 	}
 
@@ -91,7 +96,7 @@ func printDecodedData(eventABI string, eventName string, data []byte) (string, e
 func main() {
 	wasm.NewRunner(func(b []byte) (*runtimeConfig, error) {
 		cfg := &runtimeConfig{}
-		if err := yaml.Unmarshal(b, &cfg); err != nil {
+		if err := yaml.Unmarshal(b, cfg); err != nil {
 			return nil, fmt.Errorf("error unmarshalling config: %w", err)
 		}
 		return cfg, nil

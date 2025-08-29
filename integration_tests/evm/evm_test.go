@@ -13,12 +13,13 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/smartcontractkit/chainlink-common/pkg/beholder/beholdertest"
-	"github.com/smartcontractkit/chainlink/v2/core/logger"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/beholder/beholdertest"
+	"github.com/smartcontractkit/chainlink/v2/core/logger"
 
 	"github.com/stretchr/testify/require"
 
