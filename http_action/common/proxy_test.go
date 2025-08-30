@@ -2,7 +2,6 @@ package common
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"net"
 	"net/http"
@@ -14,24 +13,36 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/smartcontractkit/capabilities/http_action/validate"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	httpactions "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
+	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 )
+
+func newTestValidator(t *testing.T) ResponseValidator {
+	lggr := logger.Test(t)
+	limitsFactory := limits.Factory{
+		Logger: lggr,
+	}
+
+	validator, err := validate.NewValidator(lggr, limitsFactory)
+	require.NoError(t, err)
+	return validator
+}
 
 func TestNewHTTPClientProxy(t *testing.T) {
 	t.Run("with default config", func(t *testing.T) {
-		cfg := ServiceConfig{
-			OutgoingRateLimiter: rateLimiterConfig(),
-		}
+		cfg := ServiceConfig{}
 		lggr := logger.Test(t)
-		proxy, err := NewHTTPClientProxy(cfg, lggr)
+		validator := newTestValidator(t)
+		proxy, err := NewHTTPClientProxy(cfg, lggr, validator)
 		require.NoError(t, err)
 		require.NotNil(t, proxy)
 		require.NotNil(t, proxy.client)
-		require.Equal(t, []int{80, 443}, proxy.cfg.HTTPClientConfig.AllowedPorts)
-		require.Equal(t, []string{"http", "https"}, proxy.cfg.HTTPClientConfig.AllowedSchemes)
 	})
 
 	t.Run("with custom config", func(t *testing.T) {
@@ -42,13 +53,10 @@ func TestNewHTTPClientProxy(t *testing.T) {
 				BlockedIPs:     []string{"192.168.1.1"},
 				AllowedIPs:     []string{"10.0.0.1"},
 			},
-			LimitsConfig: LimitsConfig{
-				MaxResponseBytes: 1024,
-			},
-			OutgoingRateLimiter: rateLimiterConfig(),
 		}
 		lggr := logger.Test(t)
-		proxy, err := NewHTTPClientProxy(cfg, lggr)
+		validator := newTestValidator(t)
+		proxy, err := NewHTTPClientProxy(cfg, lggr, validator)
 		require.NoError(t, err)
 		require.NotNil(t, proxy)
 		require.NotNil(t, proxy.client)
@@ -88,25 +96,21 @@ func TestSendRequest(t *testing.T) {
 		}
 	}))
 	defer server.Close()
+	metadata := capabilities.RequestMetadata{
+		WorkflowID:          "wf1",
+		WorkflowExecutionID: "exec1",
+		WorkflowOwner:       "owner1",
+	}
+	ctx := contexts.WithCRE(t.Context(), contexts.CRE{Owner: metadata.WorkflowOwner, Workflow: metadata.WorkflowID})
 
 	t.Run("successful request", func(t *testing.T) {
 		cfg := ServiceConfig{
-			LimitsConfig: LimitsConfig{
-				MaxResponseBytes: 1024,
-			},
-			HTTPClientConfig:    validClientCfg(t, server.URL),
-			OutgoingRateLimiter: rateLimiterConfig(),
+			HTTPClientConfig: validClientCfg(t, server.URL),
 		}
 		lggr := logger.Test(t)
-		proxy, err := NewHTTPClientProxy(cfg, lggr)
+		validator := newTestValidator(t)
+		proxy, err := NewHTTPClientProxy(cfg, lggr, validator)
 		require.NoError(t, err)
-
-		ctx := context.Background()
-		metadata := capabilities.RequestMetadata{
-			WorkflowID:          "wf1",
-			WorkflowExecutionID: "exec1",
-			WorkflowOwner:       "owner1",
-		}
 
 		input := &httpactions.Request{
 			Method:    http.MethodGet,
@@ -130,22 +134,12 @@ func TestSendRequest(t *testing.T) {
 
 	t.Run("echo request", func(t *testing.T) {
 		cfg := ServiceConfig{
-			LimitsConfig: LimitsConfig{
-				MaxResponseBytes: 1024,
-			},
-			HTTPClientConfig:    validClientCfg(t, server.URL),
-			OutgoingRateLimiter: rateLimiterConfig(),
+			HTTPClientConfig: validClientCfg(t, server.URL),
 		}
 		lggr := logger.Test(t)
-		proxy, err := NewHTTPClientProxy(cfg, lggr)
+		validator := newTestValidator(t)
+		proxy, err := NewHTTPClientProxy(cfg, lggr, validator)
 		require.NoError(t, err)
-
-		ctx := context.Background()
-		metadata := capabilities.RequestMetadata{
-			WorkflowID:          "wf1",
-			WorkflowExecutionID: "exec1",
-			WorkflowOwner:       "owner1",
-		}
 
 		input := &httpactions.Request{
 			Method:    http.MethodPost,
@@ -166,22 +160,12 @@ func TestSendRequest(t *testing.T) {
 
 	t.Run("timeout", func(t *testing.T) {
 		cfg := ServiceConfig{
-			LimitsConfig: LimitsConfig{
-				MaxResponseBytes: 1024,
-			},
-			HTTPClientConfig:    validClientCfg(t, server.URL),
-			OutgoingRateLimiter: rateLimiterConfig(),
+			HTTPClientConfig: validClientCfg(t, server.URL),
 		}
 		lggr := logger.Test(t)
-		proxy, err := NewHTTPClientProxy(cfg, lggr)
+		validator := newTestValidator(t)
+		proxy, err := NewHTTPClientProxy(cfg, lggr, validator)
 		require.NoError(t, err)
-
-		ctx := context.Background()
-		metadata := capabilities.RequestMetadata{
-			WorkflowID:          "wf1",
-			WorkflowExecutionID: "exec1",
-			WorkflowOwner:       "owner1",
-		}
 
 		input := &httpactions.Request{
 			Method:    http.MethodGet,
@@ -202,22 +186,12 @@ func TestSendRequest(t *testing.T) {
 
 	t.Run("invalid url", func(t *testing.T) {
 		cfg := ServiceConfig{
-			LimitsConfig: LimitsConfig{
-				MaxResponseBytes: 1024,
-			},
-			HTTPClientConfig:    validClientCfg(t, server.URL),
-			OutgoingRateLimiter: rateLimiterConfig(),
+			HTTPClientConfig: validClientCfg(t, server.URL),
 		}
 		lggr := logger.Test(t)
-		proxy, err := NewHTTPClientProxy(cfg, lggr)
+		validator := newTestValidator(t)
+		proxy, err := NewHTTPClientProxy(cfg, lggr, validator)
 		require.NoError(t, err)
-
-		ctx := context.Background()
-		metadata := capabilities.RequestMetadata{
-			WorkflowID:          "wf1",
-			WorkflowExecutionID: "exec1",
-			WorkflowOwner:       "owner1",
-		}
 
 		input := &httpactions.Request{
 			Method:    http.MethodGet,
@@ -235,28 +209,20 @@ func TestSendRequest(t *testing.T) {
 		// Create a local test server that returns a large response
 		largeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
-			// Write a response larger than our limit
-			_, _ = w.Write(bytes.Repeat([]byte("a"), 100))
+			// Write a response larger than our limit (over 1MB to trigger the validator)
+			_, _ = w.Write(bytes.Repeat([]byte("a"), 2*1024*1024))
 		}))
 		defer largeServer.Close()
 
 		cfg := ServiceConfig{
-			LimitsConfig: LimitsConfig{
-				MaxResponseBytes: 50, // Limit to 50 bytes
-			},
-			HTTPClientConfig:    validClientCfg(t, largeServer.URL),
-			OutgoingRateLimiter: rateLimiterConfig(),
+			HTTPClientConfig: validClientCfg(t, largeServer.URL),
 		}
 		lggr := logger.Test(t)
-		proxy, err := NewHTTPClientProxy(cfg, lggr)
-		require.NoError(t, err)
 
-		ctx := context.Background()
-		metadata := capabilities.RequestMetadata{
-			WorkflowID:          "wf1",
-			WorkflowExecutionID: "exec1",
-			WorkflowOwner:       "owner1",
-		}
+		// Use the validator that rejects responses > 1MB
+		validator := newTestValidator(t)
+		proxy, err := NewHTTPClientProxy(cfg, lggr, validator)
+		require.NoError(t, err)
 
 		input := &httpactions.Request{
 			Method:    http.MethodGet,
@@ -265,12 +231,11 @@ func TestSendRequest(t *testing.T) {
 			Body:      []byte{},
 		}
 
-		response, err := proxy.SendRequest(ctx, metadata, input)
+		_, err = proxy.SendRequest(ctx, metadata, input)
 
-		require.NoError(t, err)
-		// Only the first MaxResponseBytes should be read
-		require.Equal(t, 50, len(response.Body))
-		require.Equal(t, string(bytes.Repeat([]byte("a"), 50)), string(response.Body))
+		// Should get an error because response is too large
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "ResponseSizeLimit limited")
 	})
 }
 

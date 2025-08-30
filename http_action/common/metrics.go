@@ -19,8 +19,7 @@ const (
 type Metrics struct {
 	requestCount            metric.Int64Counter
 	inputValidationFailures metric.Int64Counter
-	workflowOwnerThrottled  metric.Int64Counter
-	nodeThrottled           metric.Int64Counter
+	workflowThrottled       metric.Int64Counter
 	gatewayConnectionError  metric.Int64Counter
 	gatewaySendError        metric.Int64Counter
 	successfulResponse      metric.Int64Counter
@@ -59,20 +58,12 @@ func (m *Metrics) init() error {
 		return fmt.Errorf("failed to create validation failure metric: %w", err)
 	}
 
-	m.workflowOwnerThrottled, err = meter.Int64Counter(
-		"http_action_workflow_owner_throttled_count",
-		metric.WithDescription("Number of HTTP action requests exceeding per-workflow-owner rate limit"),
+	m.workflowThrottled, err = meter.Int64Counter(
+		"http_action_workflow_throttled_count",
+		metric.WithDescription("Number of HTTP action requests exceeding per-workflow rate limit"),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create workflow owner throttled metric: %w", err)
-	}
-
-	m.nodeThrottled, err = meter.Int64Counter(
-		"http_action_node_throttled_count",
-		metric.WithDescription("Number of HTTP action requests exceeding global rate limit"),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create node throttled metric: %w", err)
 	}
 
 	m.gatewayConnectionError, err = meter.Int64Counter(
@@ -142,12 +133,8 @@ func (m *Metrics) IncrementInputValidationFailures(ctx context.Context, lggr log
 	m.inputValidationFailures.Add(ctx, 1)
 }
 
-func (m *Metrics) IncrementWorkflowOwnerThrottled(ctx context.Context, lggr logger.Logger) {
-	m.workflowOwnerThrottled.Add(ctx, 1)
-}
-
-func (m *Metrics) IncrementNodeThrottled(ctx context.Context, lggr logger.Logger) {
-	m.nodeThrottled.Add(ctx, 1)
+func (m *Metrics) IncrementWorkflowThrottled(ctx context.Context, lggr logger.Logger) {
+	m.workflowThrottled.Add(ctx, 1)
 }
 
 func (m *Metrics) IncrementGatewayConnectionError(ctx context.Context, nodeAddress string, lggr logger.Logger) {

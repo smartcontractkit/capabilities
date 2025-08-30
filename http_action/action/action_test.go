@@ -10,10 +10,15 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/capabilities/http_action/common"
+	"github.com/smartcontractkit/capabilities/http_action/validate"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	gcmocks "github.com/smartcontractkit/chainlink-common/pkg/types/core/mocks"
 )
 
@@ -48,7 +53,16 @@ func (m *MockOutboundRequestClient) Ready() error {
 	return nil
 }
 
-func TestSendRequest_ValidatesInput(t *testing.T) {
+// testSetup contains the test setup for service validation tests
+type testSetup struct {
+	service    *service
+	mockClient *MockOutboundRequestClient
+	metadata   capabilities.RequestMetadata
+	ctx        context.Context
+}
+
+// setupServiceTest creates a fresh test setup for service validation tests
+func setupServiceTest(t *testing.T) *testSetup {
 	lggr := logger.Test(t)
 	srv := NewService(lggr)
 	cfg := common.ServiceConfig{
@@ -60,25 +74,42 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 	gc.EXPECT().AddHandler(mock.Anything, mock.Anything, mock.Anything).Return(nil)
 	err = srv.Initialise(t.Context(), string(cfgStr), nil, nil, nil, nil, nil, nil, gc, nil)
 	require.NoError(t, err)
+
 	mockClient := &MockOutboundRequestClient{}
 	srv.client = mockClient
-	srv.cfg = common.ServiceConfig{
-		LimitsConfig: common.LimitsConfig{
-			MaxTimeoutMs:         5000,
-			MaxHeaderCount:       10,
-			MaxHeaderKeyLength:   50,
-			MaxHeaderValueLength: 100,
-			MaxRequestBytes:      1024,
-			MaxCacheAgeMs:        600000, // 10 minutes
-		},
+	srv.cfg = common.ServiceConfig{}
+
+	limitsFactory := limits.Factory{
+		Logger: logger.Test(t),
 	}
+	srv.limitsFactory = limitsFactory
+
+	srv.rateLimiter, err = limitsFactory.MakeRateLimiter(cresettings.Default.PerWorkflow.HTTPAction.RateLimit)
+	require.NoError(t, err)
+
+	srv.validator, err = validate.NewValidator(logger.Test(t), limitsFactory)
+	require.NoError(t, err)
+
 	metadata := capabilities.RequestMetadata{
 		WorkflowID:          "workflow123",
 		WorkflowExecutionID: "execution123",
 		WorkflowOwner:       "owner123",
 	}
+	ctx := contexts.WithCRE(t.Context(), contexts.CRE{Owner: metadata.WorkflowOwner, Workflow: metadata.WorkflowID})
+
+	return &testSetup{
+		service:    srv,
+		mockClient: mockClient,
+		metadata:   metadata,
+		ctx:        ctx,
+	}
+}
+
+func TestSendRequest_ValidatesInput(t *testing.T) {
 
 	t.Run("valid request gets validated and forwarded to client", func(t *testing.T) {
+		setup := setupServiceTest(t)
+
 		input := &http.Request{
 			Url:           "https://example.com",
 			Method:        "GET",
@@ -91,16 +122,18 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 			Headers:    map[string]string{"Content-Type": "application/json"},
 			Body:       []byte(`{"result": "success"}`),
 		}
-		mockClient.Response = expectedResponse
-		mockClient.Err = nil
+		setup.mockClient.Response = expectedResponse
+		setup.mockClient.Err = nil
 
-		response, err := srv.SendRequest(context.Background(), metadata, input)
+		response, err := setup.service.SendRequest(setup.ctx, setup.metadata, input)
 		require.NoError(t, err)
 		assert.Equal(t, expectedResponse, response.Response)
-		assert.Equal(t, input, mockClient.CapturedInput)
+		assert.Equal(t, input, setup.mockClient.CapturedInput)
 	})
 
 	t.Run("valid request with cache settings gets validated and forwarded to client", func(t *testing.T) {
+		setup := setupServiceTest(t)
+
 		input := &http.Request{
 			Url:       "https://example.com",
 			Method:    "GET",
@@ -116,16 +149,18 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 			Headers:    map[string]string{"Content-Type": "application/json"},
 			Body:       []byte(`{"result": "success"}`),
 		}
-		mockClient.Response = expectedResponse
-		mockClient.Err = nil
+		setup.mockClient.Response = expectedResponse
+		setup.mockClient.Err = nil
 
-		response, err := srv.SendRequest(context.Background(), metadata, input)
+		response, err := setup.service.SendRequest(setup.ctx, setup.metadata, input)
 		require.NoError(t, err)
 		assert.Equal(t, expectedResponse, response.Response)
-		assert.Equal(t, input, mockClient.CapturedInput)
+		assert.Equal(t, input, setup.mockClient.CapturedInput)
 	})
 
 	t.Run("empty headers are allowed", func(t *testing.T) {
+		setup := setupServiceTest(t)
+
 		input := &http.Request{
 			Url:           "https://example.com",
 			Method:        "GET",
@@ -137,74 +172,94 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 			StatusCode: 200,
 			Body:       []byte(`{"result": "success"}`),
 		}
-		mockClient.Response = expectedResponse
-		mockClient.Err = nil
+		setup.mockClient.Response = expectedResponse
+		setup.mockClient.Err = nil
 
-		response, err := srv.SendRequest(context.Background(), metadata, input)
+		response, err := setup.service.SendRequest(setup.ctx, setup.metadata, input)
 		require.NoError(t, err)
 		assert.Equal(t, expectedResponse, response.Response)
-		assert.Equal(t, input, mockClient.CapturedInput)
+		assert.Equal(t, input, setup.mockClient.CapturedInput)
 	})
 
 	t.Run("invalid URL fails validation and doesn't call client", func(t *testing.T) {
+		setup := setupServiceTest(t)
+
 		input := &http.Request{
 			Url:       "",
 			Method:    "GET",
 			TimeoutMs: 1000,
 		}
-		mockClient.CapturedInput = nil
+		setup.mockClient.CapturedInput = nil
 
-		response, err := srv.SendRequest(context.Background(), metadata, input)
+		response, err := setup.service.SendRequest(setup.ctx, setup.metadata, input)
 		require.Error(t, err)
 		assert.Nil(t, response)
 		assert.Contains(t, err.Error(), "URL must not be empty")
-		assert.Nil(t, mockClient.CapturedInput)
+		assert.Nil(t, setup.mockClient.CapturedInput)
 	})
 
-	t.Run("request with body exceeding limit fails validation", func(t *testing.T) {
-		largeBody := make([]byte, 1025)
-		input := &http.Request{
-			Url:       "https://example.com",
-			Method:    "POST",
-			Body:      largeBody,
-			TimeoutMs: 1000,
-		}
-		mockClient.CapturedInput = nil
+	t.Run("request with large body gets processed", func(t *testing.T) {
+		setup := setupServiceTest(t)
 
-		response, err := srv.SendRequest(context.Background(), metadata, input)
-		require.Error(t, err)
-		assert.Nil(t, response)
-		assert.Contains(t, err.Error(), "body too large")
-		assert.Nil(t, mockClient.CapturedInput)
+		allowedSize := cresettings.Default.PerWorkflow.HTTPAction.RequestSizeLimit.DefaultValue / 2
+		largeBody := make([]byte, allowedSize)
+		input := &http.Request{
+			Url:           "https://example.com",
+			Method:        "POST",
+			Body:          largeBody,
+			TimeoutMs:     1000,
+			CacheSettings: &http.CacheSettings{},
+		}
+		expectedResponse := &http.Response{
+			StatusCode: 200,
+			Body:       []byte(`{"result": "success"}`),
+		}
+		setup.mockClient.Response = expectedResponse
+		setup.mockClient.Err = nil
+
+		response, err := setup.service.SendRequest(setup.ctx, setup.metadata, input)
+		require.NoError(t, err)
+		assert.Equal(t, expectedResponse, response.Response)
+		assert.Equal(t, input, setup.mockClient.CapturedInput)
 	})
 
 	t.Run("invalid HTTP method fails validation", func(t *testing.T) {
+		setup := setupServiceTest(t)
+
 		input := &http.Request{
 			Url:       "https://example.com",
 			Method:    "CONNECT",
 			TimeoutMs: 1000,
 		}
-		mockClient.CapturedInput = nil
+		setup.mockClient.CapturedInput = nil
 
-		response, err := srv.SendRequest(context.Background(), metadata, input)
+		response, err := setup.service.SendRequest(setup.ctx, setup.metadata, input)
 		require.Error(t, err)
 		assert.Nil(t, response)
 		assert.Contains(t, err.Error(), "invalid HTTP method")
-		assert.Nil(t, mockClient.CapturedInput)
+		assert.Nil(t, setup.mockClient.CapturedInput)
 	})
 
-	t.Run("timeout exceeding limit fails validation", func(t *testing.T) {
-		input := &http.Request{
-			Url:       "https://example.com",
-			Method:    "GET",
-			TimeoutMs: 10000,
-		}
-		mockClient.CapturedInput = nil
+	t.Run("request with normal timeout gets processed", func(t *testing.T) {
+		setup := setupServiceTest(t)
 
-		response, err := srv.SendRequest(context.Background(), metadata, input)
-		require.Error(t, err)
-		assert.Nil(t, response)
-		assert.Contains(t, err.Error(), "timeout must be between")
-		assert.Nil(t, mockClient.CapturedInput)
+		allowedTimeout := int32(cresettings.Default.PerWorkflow.HTTPAction.ConnectionTimeout.DefaultValue.Milliseconds() / 2) //nolint:gosec
+		input := &http.Request{
+			Url:           "https://example.com",
+			Method:        "GET",
+			TimeoutMs:     allowedTimeout,
+			CacheSettings: &http.CacheSettings{},
+		}
+		expectedResponse := &http.Response{
+			StatusCode: 200,
+			Body:       []byte(`{"result": "success"}`),
+		}
+		setup.mockClient.Response = expectedResponse
+		setup.mockClient.Err = nil
+
+		response, err := setup.service.SendRequest(setup.ctx, setup.metadata, input)
+		require.NoError(t, err)
+		assert.Equal(t, expectedResponse, response.Response)
+		assert.Equal(t, input, setup.mockClient.CapturedInput)
 	})
 }

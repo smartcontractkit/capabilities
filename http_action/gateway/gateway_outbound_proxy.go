@@ -40,11 +40,10 @@ type gatewayOutboundProxy struct {
 	gatewayConnector        core.GatewayConnector
 	lggr                    logger.Logger
 	incomingRateLimiter     *ratelimit.RateLimiter
-	outgoingRateLimiter     *ratelimit.RateLimiter
 	responses               *responses
-	selectorOpts            []func(*gc.RoundRobinSelector)
 	gatewayConnectionConfig common.GatewayConnectionConfig
 	metrics                 *common.Metrics
+	validator               common.ResponseValidator
 }
 
 func applyDefaults(cfg common.GatewayConnectionConfig) common.GatewayConnectionConfig {
@@ -60,11 +59,7 @@ func applyDefaults(cfg common.GatewayConnectionConfig) common.GatewayConnectionC
 	return cfg
 }
 
-func NewGatewayOutboundProxy(gatewayConnector core.GatewayConnector, config common.ServiceConfig, lggr logger.Logger, metrics *common.Metrics, opts ...func(*gc.RoundRobinSelector)) (*gatewayOutboundProxy, error) {
-	outgoingRateLimiter, err := ratelimit.NewRateLimiter(config.OutgoingRateLimiter)
-	if err != nil {
-		return nil, err
-	}
+func NewGatewayOutboundProxy(gatewayConnector core.GatewayConnector, config common.ServiceConfig, lggr logger.Logger, metrics *common.Metrics, validator common.ResponseValidator) (*gatewayOutboundProxy, error) {
 	incomingRateLimiter, err := ratelimit.NewRateLimiter(config.IncomingRateLimiter)
 	if err != nil {
 		return nil, err
@@ -73,12 +68,11 @@ func NewGatewayOutboundProxy(gatewayConnector core.GatewayConnector, config comm
 	return &gatewayOutboundProxy{
 		gatewayConnector:        gatewayConnector,
 		responses:               newResponses(),
-		outgoingRateLimiter:     outgoingRateLimiter,
 		incomingRateLimiter:     incomingRateLimiter,
 		lggr:                    lggr,
-		selectorOpts:            opts,
 		gatewayConnectionConfig: applyDefaults(config.GatewayConnectionConfig),
 		metrics:                 metrics,
+		validator:               validator,
 	}, nil
 }
 
@@ -88,16 +82,6 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 	lggr := logger.With(p.lggr, "requestID", requestID, "workflowID", metadata.WorkflowID, "workflowExecutionID", metadata.WorkflowExecutionID, "workflowOwner", metadata.WorkflowOwner)
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(input.TimeoutMs)*time.Millisecond)
 	defer cancel()
-
-	workflowAllow, globalAllow := p.outgoingRateLimiter.AllowVerbose(metadata.WorkflowOwner)
-	if !workflowAllow {
-		p.metrics.IncrementWorkflowOwnerThrottled(ctx, lggr)
-		return nil, errors.New(common.ErrorOutgoingRatelimitWorkflowOwner)
-	}
-	if !globalAllow {
-		p.metrics.IncrementNodeThrottled(ctx, lggr)
-		return nil, errors.New(common.ErrorOutgoingRatelimitGlobal)
-	}
 
 	gatewayReq := gc.OutboundHTTPRequest{
 		WorkflowID: metadata.WorkflowID,
@@ -152,12 +136,18 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 			lggr.Errorw("error while receiving response from gateway", "errorMessage", resp.ErrorMessage)
 			return nil, errors.New(internalError)
 		}
-		p.metrics.IncrementSuccessfulResponse(ctx, lggr)
-		return &http.Response{
+		response := &http.Response{
 			StatusCode: uint32(resp.StatusCode), //nolint:gosec // G115
 			Headers:    resp.Headers,
 			Body:       resp.Body,
-		}, nil
+		}
+
+		if err := p.validator.ValidateResponseSize(ctx, response.Body); err != nil {
+			return nil, err
+		}
+
+		p.metrics.IncrementSuccessfulResponse(ctx, lggr)
+		return response, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
