@@ -19,8 +19,6 @@ import (
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
 
-	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
-
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions"
 
 	"google.golang.org/protobuf/testing/protocmp"
