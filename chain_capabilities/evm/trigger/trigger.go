@@ -138,20 +138,7 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	if len(input.GetTopics()) == 0 || len(input.GetTopics()[0].Values) == 0 {
 		return nil, fmt.Errorf("no valid event sig provided (at least one event sig is required in topics)")
 	}
-	// TODO PLEX-1577: remove the below validation once the ConvertAddressesFromProto fails for wrong addresses (!= 20 bytes).
-	for _, addr := range input.GetAddresses() {
-		if len(addr) != 20 {
-			return nil, fmt.Errorf("invalid EVM address: %x (must be 20 bytes, but it is %d)", addr, len(addr))
-		}
-	}
-	// TODO PLEX-1577: remove the below validation once the ConvertHashesFromProto fails for wrong hashes (!= 32 bytes).
-	for i, topicGroup := range input.GetTopics() {
-		for j, topic := range topicGroup.Values {
-			if len(topic) != 32 {
-				return nil, fmt.Errorf("invalid EVM topic at topics[%d].Values[%d]: %x (must be 32 bytes, but it is %d)", i, j, topic, len(topic))
-			}
-		}
-	}
+
 	eventSigs, topics2, topics3, topics4 := lts.getTopics(input)
 	lts.lggr.Debugw("RegisterLogTrigger input params", "addresses:", input.GetAddresses(), "eventSigs:", eventSigs, "topics2:", topics2, "topics3:", topics3, "topics4:", topics4, "confidence:", input.GetConfidence())
 
