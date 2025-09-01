@@ -23,7 +23,7 @@ var _ OutboundRequestClient = &httpClientProxy{}
 const ClientName = "HTTPClientProxy"
 
 type OutboundRequestClient interface {
-	SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *httpcap.Request) (*httpcap.Response, error)
+	SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *httpcap.Request, startTime time.Time) (*httpcap.Response, error)
 	services.Service
 }
 
@@ -37,14 +37,15 @@ type httpClientProxy struct {
 	client    *safeurl.WrappedClient
 	cfg       ServiceConfig
 	lggr      logger.Logger
-	validator ResponseValidator // Add validator for response validation
+	validator ResponseValidator
+	metrics   *Metrics
 }
 
 func disableRedirects(req *http.Request, via []*http.Request) error {
 	return errors.New("redirects are not allowed")
 }
 
-func NewHTTPClientProxy(cfg ServiceConfig, lggr logger.Logger, validator ResponseValidator) (*httpClientProxy, error) {
+func NewHTTPClientProxy(cfg ServiceConfig, lggr logger.Logger, validator ResponseValidator, metrics *Metrics) (*httpClientProxy, error) {
 	safeConfig := safeurl.
 		GetConfigBuilder().
 		SetAllowedIPs(cfg.HTTPClientConfig.AllowedIPs...).
@@ -61,6 +62,7 @@ func NewHTTPClientProxy(cfg ServiceConfig, lggr logger.Logger, validator Respons
 		client:    safeurl.Client(safeConfig),
 		lggr:      lggr,
 		validator: validator,
+		metrics:   metrics,
 	}, nil
 }
 
@@ -72,7 +74,7 @@ func headers(req *httpcap.Request) map[string][]string {
 	return headers
 }
 
-func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *httpcap.Request) (*httpcap.Response, error) {
+func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *httpcap.Request, startTime time.Time) (*httpcap.Response, error) {
 	requestID := uuid.New().String()
 	lggr := logger.With(h.lggr, "requestID", requestID, "workflowID", metadata.WorkflowID, "workflowExecutionID", metadata.WorkflowExecutionID, "workflowOwner", metadata.WorkflowOwner)
 
@@ -81,25 +83,31 @@ func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities
 
 	req, err := http.NewRequestWithContext(timeoutCtx, input.Method, input.Url, bytes.NewReader(input.Body))
 	if err != nil {
+		h.metrics.IncrementExecutionError(ctx, ProxyModeDirect, lggr)
 		return nil, err
 	}
 
 	req.Header = http.Header(headers(input))
 
 	lggr.Debugw("Sending HTTP request")
+	externalStartTime := time.Now()
 	resp, err := h.client.Do(req)
 	if err != nil {
+		h.metrics.IncrementExternalEndpointError(ctx, ProxyModeDirect, lggr)
 		return nil, err
 	}
 	defer resp.Body.Close()
+	externalLatency := time.Since(externalStartTime).Milliseconds()
 	lggr.Debugw("Received HTTP response", "status", resp.Status, "statusCode", resp.StatusCode)
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
+		h.metrics.IncrementExternalEndpointError(ctx, ProxyModeDirect, lggr)
 		return nil, err
 	}
 
 	if err := h.validator.ValidateResponseSize(ctx, body); err != nil {
+		h.metrics.IncrementExternalEndpointError(ctx, ProxyModeDirect, lggr)
 		return nil, err
 	}
 
@@ -116,6 +124,8 @@ func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities
 		Headers:    headers,
 		Body:       body,
 	}
+	totalLatency := time.Since(startTime).Milliseconds()
+	h.metrics.RecordRequestLatency(ctx, totalLatency, externalLatency, ProxyModeDirect, lggr)
 
 	return outputs, nil
 }

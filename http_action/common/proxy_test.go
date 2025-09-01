@@ -34,12 +34,19 @@ func newTestValidator(t *testing.T) ResponseValidator {
 	return validator
 }
 
+func newTestMetrics(t *testing.T) *Metrics {
+	m, err := NewMetrics()
+	require.NoError(t, err)
+	return m
+}
+
 func TestNewHTTPClientProxy(t *testing.T) {
 	t.Run("with default config", func(t *testing.T) {
 		cfg := ServiceConfig{}
 		lggr := logger.Test(t)
 		validator := newTestValidator(t)
-		proxy, err := NewHTTPClientProxy(cfg, lggr, validator)
+		metrics := newTestMetrics(t)
+		proxy, err := NewHTTPClientProxy(cfg, lggr, validator, metrics)
 		require.NoError(t, err)
 		require.NotNil(t, proxy)
 		require.NotNil(t, proxy.client)
@@ -56,7 +63,8 @@ func TestNewHTTPClientProxy(t *testing.T) {
 		}
 		lggr := logger.Test(t)
 		validator := newTestValidator(t)
-		proxy, err := NewHTTPClientProxy(cfg, lggr, validator)
+		metrics := newTestMetrics(t)
+		proxy, err := NewHTTPClientProxy(cfg, lggr, validator, metrics)
 		require.NoError(t, err)
 		require.NotNil(t, proxy)
 		require.NotNil(t, proxy.client)
@@ -109,7 +117,8 @@ func TestSendRequest(t *testing.T) {
 		}
 		lggr := logger.Test(t)
 		validator := newTestValidator(t)
-		proxy, err := NewHTTPClientProxy(cfg, lggr, validator)
+		metrics := newTestMetrics(t)
+		proxy, err := NewHTTPClientProxy(cfg, lggr, validator, metrics)
 		require.NoError(t, err)
 
 		input := &httpactions.Request{
@@ -123,7 +132,7 @@ func TestSendRequest(t *testing.T) {
 			Body: []byte("success"),
 		}
 
-		response, err := proxy.SendRequest(ctx, metadata, input)
+		response, err := proxy.SendRequest(ctx, metadata, input, time.Now())
 
 		require.NoError(t, err)
 		require.Equal(t, uint32(200), response.StatusCode)
@@ -138,7 +147,8 @@ func TestSendRequest(t *testing.T) {
 		}
 		lggr := logger.Test(t)
 		validator := newTestValidator(t)
-		proxy, err := NewHTTPClientProxy(cfg, lggr, validator)
+		metrics := newTestMetrics(t)
+		proxy, err := NewHTTPClientProxy(cfg, lggr, validator, metrics)
 		require.NoError(t, err)
 
 		input := &httpactions.Request{
@@ -151,7 +161,7 @@ func TestSendRequest(t *testing.T) {
 			Body: []byte("echo"),
 		}
 
-		response, err := proxy.SendRequest(ctx, metadata, input)
+		response, err := proxy.SendRequest(ctx, metadata, input, time.Now())
 
 		require.NoError(t, err)
 		require.Equal(t, uint32(200), response.StatusCode)
@@ -164,7 +174,8 @@ func TestSendRequest(t *testing.T) {
 		}
 		lggr := logger.Test(t)
 		validator := newTestValidator(t)
-		proxy, err := NewHTTPClientProxy(cfg, lggr, validator)
+		metrics := newTestMetrics(t)
+		proxy, err := NewHTTPClientProxy(cfg, lggr, validator, metrics)
 		require.NoError(t, err)
 
 		input := &httpactions.Request{
@@ -177,7 +188,7 @@ func TestSendRequest(t *testing.T) {
 			Body: []byte{},
 		}
 
-		_, err = proxy.SendRequest(ctx, metadata, input)
+		_, err = proxy.SendRequest(ctx, metadata, input, time.Now())
 
 		// We should get a timeout error
 		require.Error(t, err)
@@ -190,7 +201,8 @@ func TestSendRequest(t *testing.T) {
 		}
 		lggr := logger.Test(t)
 		validator := newTestValidator(t)
-		proxy, err := NewHTTPClientProxy(cfg, lggr, validator)
+		metrics := newTestMetrics(t)
+		proxy, err := NewHTTPClientProxy(cfg, lggr, validator, metrics)
 		require.NoError(t, err)
 
 		input := &httpactions.Request{
@@ -200,7 +212,7 @@ func TestSendRequest(t *testing.T) {
 			Body:      []byte{},
 		}
 
-		_, err = proxy.SendRequest(ctx, metadata, input)
+		_, err = proxy.SendRequest(ctx, metadata, input, time.Now())
 
 		require.Error(t, err)
 	})
@@ -221,7 +233,8 @@ func TestSendRequest(t *testing.T) {
 
 		// Use the validator that rejects responses > 1MB
 		validator := newTestValidator(t)
-		proxy, err := NewHTTPClientProxy(cfg, lggr, validator)
+		metrics := newTestMetrics(t)
+		proxy, err := NewHTTPClientProxy(cfg, lggr, validator, metrics)
 		require.NoError(t, err)
 
 		input := &httpactions.Request{
@@ -231,7 +244,7 @@ func TestSendRequest(t *testing.T) {
 			Body:      []byte{},
 		}
 
-		_, err = proxy.SendRequest(ctx, metadata, input)
+		_, err = proxy.SendRequest(ctx, metadata, input, time.Now())
 
 		// Should get an error because response is too large
 		require.Error(t, err)

@@ -77,7 +77,7 @@ func NewGatewayOutboundProxy(gatewayConnector core.GatewayConnector, config comm
 }
 
 // SendRequest sends a request to gateway node and blocks until response is received
-func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *http.Request) (*http.Response, error) {
+func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *http.Request, startTime time.Time) (*http.Response, error) {
 	requestID := common.GetRequestID(gc.MethodHTTPAction, metadata.WorkflowID, metadata.WorkflowExecutionID)
 	lggr := logger.With(p.lggr, "requestID", requestID, "workflowID", metadata.WorkflowID, "workflowExecutionID", metadata.WorkflowExecutionID, "workflowOwner", metadata.WorkflowOwner)
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(input.TimeoutMs)*time.Millisecond)
@@ -99,11 +99,13 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 
 	payload, err := json.Marshal(gatewayReq)
 	if err != nil {
+		p.metrics.IncrementExecutionError(ctx, common.ProxyModeGateway, lggr)
 		return nil, fmt.Errorf("failed to marshal fetch request: %w", err)
 	}
 
 	responseCh, err := p.responses.new(requestID)
 	if err != nil {
+		p.metrics.IncrementExecutionError(ctx, common.ProxyModeGateway, lggr)
 		return nil, fmt.Errorf("duplicate message received for ID: %s", requestID)
 	}
 	defer p.responses.cleanup(requestID)
@@ -120,10 +122,9 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 
 	selectedGateway, err := p.awaitConnection(ctx, lggr, gatewayReq.Hash())
 	if err != nil {
-		p.metrics.IncrementGatewayConnectionError(ctx, selectedGateway, lggr)
+		p.metrics.IncrementGatewaySendError(ctx, selectedGateway, lggr)
 		return nil, errors.Join(errors.New("failed to await connection to gateway"), err)
 	}
-
 	if err := p.gatewayConnector.SendToGateway(ctx, selectedGateway, &gatewayResp); err != nil {
 		p.metrics.IncrementGatewaySendError(ctx, selectedGateway, lggr)
 		return nil, errors.Join(errors.New("failed to send request to gateway"), err)
@@ -134,6 +135,11 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 		lggr.Debugw("received response from gateway")
 		if resp.ErrorMessage != "" {
 			lggr.Errorw("error while receiving response from gateway", "errorMessage", resp.ErrorMessage)
+			if resp.IsExternalEndpointError {
+				p.metrics.IncrementExternalEndpointError(ctx, common.ProxyModeGateway, lggr)
+			} else {
+				p.metrics.IncrementExecutionError(ctx, common.ProxyModeGateway, lggr)
+			}
 			return nil, errors.New(internalError)
 		}
 		response := &http.Response{
@@ -143,12 +149,17 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 		}
 
 		if err := p.validator.ValidateResponseSize(ctx, response.Body); err != nil {
+			p.metrics.IncrementExternalEndpointError(ctx, common.ProxyModeGateway, lggr)
 			return nil, err
 		}
 
-		p.metrics.IncrementSuccessfulResponse(ctx, lggr)
+		endTime := time.Now()
+		totalLatency := endTime.Sub(startTime).Milliseconds()
+		p.metrics.RecordRequestLatency(ctx, totalLatency, resp.ExternalEndpointLatency.Milliseconds(), common.ProxyModeGateway, lggr)
+
 		return response, nil
 	case <-ctx.Done():
+		p.metrics.IncrementExecutionError(ctx, common.ProxyModeGateway, lggr)
 		return nil, ctx.Err()
 	}
 }

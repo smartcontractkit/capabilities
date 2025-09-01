@@ -1,6 +1,42 @@
 package common
 
-import "github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
+)
+
+type ProxyMode int
+
+const (
+	ProxyModeDirect ProxyMode = iota
+	ProxyModeGateway
+)
+
+func (p ProxyMode) String() string {
+	switch p {
+	case ProxyModeDirect:
+		return "direct"
+	case ProxyModeGateway:
+		return "gateway"
+	default:
+		return "unknown"
+	}
+}
+
+// ParseProxyMode parses a string into a ProxyMode
+func ParseProxyMode(s string) (ProxyMode, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "direct":
+		return ProxyModeDirect, nil
+	case "gateway":
+		return ProxyModeGateway, nil
+	default:
+		return 0, fmt.Errorf("invalid proxy mode: %q, must be either 'direct' or 'gateway'", s)
+	}
+}
 
 const (
 	defaultGlobalRPS      = 100.0
@@ -15,7 +51,7 @@ type ServiceConfig struct {
 	// The sender is a Gateway node, which is identified by the Gateway ID.
 	IncomingRateLimiter ratelimit.RateLimiterConfig `json:"incomingRateLimiter"`
 	// ProxyMode is the mode of the outbound proxy. can be "gateway", "direct"
-	ProxyMode string `json:"proxyMode"`
+	ProxyMode ProxyMode `json:"proxyMode"`
 	// GatewayConnectionConfig defines the configuration for connecting to a gateway.
 	GatewayConnectionConfig GatewayConnectionConfig `json:"gatewayConnection"`
 	// HTTPClientConfig defines the configuration for the HTTP client used in "direct" mode.
@@ -46,6 +82,54 @@ type HTTPClientConfig struct {
 	AllowedIPs []string `json:"allowedIPs"`
 	// AllowedIPsCIDR is a list of CIDR blocks that are explicitly allowed to be accessed.
 	AllowedIPsCIDR []string `json:"allowedIPsCIDR"`
+}
+
+// UnmarshalJSON implements custom JSON unmarshaling for ServiceConfig.
+// The ProxyMode is parsed from string to ProxyMode.
+func (cfg *ServiceConfig) UnmarshalJSON(data []byte) error {
+	type tempServiceConfig struct {
+		IncomingRateLimiter     ratelimit.RateLimiterConfig `json:"incomingRateLimiter"`
+		ProxyMode               string                      `json:"proxyMode"`
+		GatewayConnectionConfig GatewayConnectionConfig     `json:"gatewayConnection"`
+		HTTPClientConfig        HTTPClientConfig            `json:"httpClient"`
+	}
+
+	var temp tempServiceConfig
+	if err := json.Unmarshal(data, &temp); err != nil {
+		return err
+	}
+
+	proxyMode, err := ParseProxyMode(temp.ProxyMode)
+	if err != nil {
+		return fmt.Errorf("failed to parse proxyMode: %w", err)
+	}
+
+	cfg.IncomingRateLimiter = temp.IncomingRateLimiter
+	cfg.ProxyMode = proxyMode
+	cfg.GatewayConnectionConfig = temp.GatewayConnectionConfig
+	cfg.HTTPClientConfig = temp.HTTPClientConfig
+
+	return nil
+}
+
+// MarshalJSON implements custom JSON marshaling for ServiceConfig.
+// The ProxyMode is serialized as string.
+func (cfg ServiceConfig) MarshalJSON() ([]byte, error) {
+	type tempServiceConfig struct {
+		IncomingRateLimiter     ratelimit.RateLimiterConfig `json:"incomingRateLimiter"`
+		ProxyMode               string                      `json:"proxyMode"`
+		GatewayConnectionConfig GatewayConnectionConfig     `json:"gatewayConnection"`
+		HTTPClientConfig        HTTPClientConfig            `json:"httpClient"`
+	}
+
+	temp := tempServiceConfig{
+		IncomingRateLimiter:     cfg.IncomingRateLimiter,
+		ProxyMode:               cfg.ProxyMode.String(),
+		GatewayConnectionConfig: cfg.GatewayConnectionConfig,
+		HTTPClientConfig:        cfg.HTTPClientConfig,
+	}
+
+	return json.Marshal(temp)
 }
 
 func (cfg *ServiceConfig) ApplyDefault() {

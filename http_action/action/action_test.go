@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -36,7 +37,7 @@ func (m *MockOutboundRequestClient) Close() error {
 	return nil
 }
 
-func (m *MockOutboundRequestClient) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *http.Request) (*http.Response, error) {
+func (m *MockOutboundRequestClient) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *http.Request, startTime time.Time) (*http.Response, error) {
 	m.CapturedInput = input
 	return m.Response, m.Err
 }
@@ -66,7 +67,7 @@ func setupServiceTest(t *testing.T) *testSetup {
 	lggr := logger.Test(t)
 	srv := NewService(lggr)
 	cfg := common.ServiceConfig{
-		ProxyMode: "gateway",
+		ProxyMode: common.ProxyModeGateway,
 	}
 	cfgStr, err := json.Marshal(cfg)
 	require.NoError(t, err)

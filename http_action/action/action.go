@@ -149,14 +149,13 @@ func (s *service) SendRequest(ctx context.Context, metadata capabilities.Request
 		s.metrics.IncrementInputValidationFailures(ctx, s.lggr)
 		return nil, err
 	}
-	response, err := s.client.SendRequest(ctx, metadata, validatedInput)
-	latencyMs := time.Since(startTime).Milliseconds()
-	s.metrics.RecordRequestLatency(ctx, latencyMs, s.lggr)
 
+	response, err := s.client.SendRequest(ctx, metadata, validatedInput, startTime)
 	if err != nil {
-		s.metrics.IncrementExecutionError(ctx, s.lggr)
 		return nil, err
 	}
+
+	s.metrics.IncrementSuccessfulResponse(ctx, s.cfg.ProxyMode, response.StatusCode, s.lggr)
 
 	responseAndMetadata := capabilities.ResponseAndMetadata[*http.Response]{
 		Response:         response,
@@ -168,12 +167,12 @@ func (s *service) SendRequest(ctx context.Context, metadata capabilities.Request
 // NewOutboundRequestClient creates an OutboundProxy based on the ServiceConfig.ProxyMode
 func NewOutboundRequestClient(gatewayConnector core.GatewayConnector, serviceConfig common.ServiceConfig, lggr logger.Logger, metrics *common.Metrics, validator common.ResponseValidator) (common.OutboundRequestClient, error) {
 	switch serviceConfig.ProxyMode {
-	case "direct":
-		return common.NewHTTPClientProxy(serviceConfig, lggr, validator)
-	case "gateway":
+	case common.ProxyModeDirect:
+		return common.NewHTTPClientProxy(serviceConfig, lggr, validator, metrics)
+	case common.ProxyModeGateway:
 		return gateway.NewGatewayOutboundProxy(gatewayConnector, serviceConfig, lggr, metrics, validator)
 	default:
-		return nil, errors.New("invalid ProxyMode: " + serviceConfig.ProxyMode)
+		return nil, errors.New("invalid ProxyMode: " + serviceConfig.ProxyMode.String())
 	}
 }
 

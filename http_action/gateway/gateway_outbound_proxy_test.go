@@ -167,7 +167,7 @@ func TestGatewayOutboundProxy_SendRequest_Success(t *testing.T) {
 	}()
 
 	ctx := contexts.WithCRE(t.Context(), contexts.CRE{Owner: metadata.WorkflowOwner, Workflow: metadata.WorkflowID})
-	output, err := proxy.SendRequest(ctx, metadata, input)
+	output, err := proxy.SendRequest(ctx, metadata, input, time.Now())
 	require.NoError(t, err)
 	require.NotNil(t, output)
 	assert.Equal(t, uint32(200), output.StatusCode)
@@ -200,7 +200,7 @@ func TestGatewayOutboundProxy_SendRequest_MissingBodyToGateway(t *testing.T) {
 		simulateGatewayMessage(t, proxy, id, 200, "ok", "", false)
 	}()
 
-	_, err := proxy.SendRequest(t.Context(), metadata, input)
+	_, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
 	require.Error(t, err)
 }
 
@@ -224,7 +224,7 @@ func TestGatewayOutboundProxy_SendRequest_Timeout(t *testing.T) {
 	// Do not send a response, should timeout
 	start := time.Now()
 	ctx := contexts.WithCRE(t.Context(), contexts.CRE{Owner: metadata.WorkflowOwner, Workflow: metadata.WorkflowID})
-	output, err := proxy.SendRequest(ctx, metadata, input)
+	output, err := proxy.SendRequest(ctx, metadata, input, time.Now())
 	elapsed := time.Since(start)
 	require.Error(t, err)
 	require.Nil(t, output)
@@ -255,7 +255,7 @@ func TestGatewayOutboundProxy_SendRequest_ExecutionError(t *testing.T) {
 	}()
 
 	ctx := contexts.WithCRE(t.Context(), contexts.CRE{Owner: metadata.WorkflowOwner, Workflow: metadata.WorkflowID})
-	output, err := proxy.SendRequest(ctx, metadata, input)
+	output, err := proxy.SendRequest(ctx, metadata, input, time.Now())
 	require.Error(t, err)
 	require.Nil(t, output)
 	assert.Equal(t, "internal error", err.Error())
@@ -284,7 +284,7 @@ func TestGatewayOutboundProxy_SendRequest_RateLimitError(t *testing.T) {
 	}()
 
 	ctx := contexts.WithCRE(t.Context(), contexts.CRE{Owner: metadata.WorkflowOwner, Workflow: metadata.WorkflowID})
-	output, err := proxy.SendRequest(ctx, metadata, input)
+	output, err := proxy.SendRequest(ctx, metadata, input, time.Now())
 	require.Error(t, err)
 	require.Nil(t, output)
 	assert.Contains(t, err.Error(), "internal error")
