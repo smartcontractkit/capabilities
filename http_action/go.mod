@@ -2,8 +2,6 @@ module github.com/smartcontractkit/capabilities/http_action
 
 go 1.24.5
 
-replace github.com/smartcontractkit/chainlink-common => ../../chainlink-common
-
 require (
 	github.com/doyensec/safeurl v0.2.2
 	github.com/google/uuid v1.6.0
