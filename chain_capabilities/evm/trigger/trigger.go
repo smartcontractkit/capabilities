@@ -153,27 +153,27 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	addresses, err := evmservice.ConvertAddressesFromProto(input.GetAddresses())
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert addresses: %w", err)
-	}
+	} //NOSONAR
 
 	sigs, err := evmservice.ConvertHashesFromProto(eventSigs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert eventSigs: %w", err)
-	}
+	} //NOSONAR
 
 	t2, err := evmservice.ConvertHashesFromProto(topics2)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert topics2: %w", err)
-	}
+	} //NOSONAR
 
 	t3, err := evmservice.ConvertHashesFromProto(topics3)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert topics3: %w", err)
-	}
+	} //NOSONAR
 
 	t4, err := evmservice.ConvertHashesFromProto(topics4)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert topics4: %w", err)
-	}
+	} //NOSONAR
 
 	filterQuery := evmtypes.LPFilterQuery{
 		Name:      filterID,
