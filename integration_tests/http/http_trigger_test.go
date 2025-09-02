@@ -369,9 +369,10 @@ func assertTriggerPayload(t *testing.T, env *testEnv, executionID string, expect
 		case payload := <-ch:
 			require.NotNil(t, payload)
 			require.Equal(t, "0x"+executionID, payload.Id)
-			marshalledExpectedInput, err := json.Marshal(expectedInput)
+			var actualInput map[string]interface{}
+			err := json.Unmarshal(payload.Trigger.Input, &actualInput)
 			require.NoError(t, err)
-			require.Equal(t, string(marshalledExpectedInput), string(payload.Trigger.Input))
+			require.Equal(t, expectedInput, actualInput)
 			require.Equal(t, triggersdk.KeyType_KEY_TYPE_ECDSA_EVM, payload.Trigger.Key.Type)
 			publicKey := strings.ToLower(crypto.PubkeyToAddress(env.signingKey.PublicKey).Hex())
 			require.Equal(t, publicKey, payload.Trigger.Key.PublicKey)
