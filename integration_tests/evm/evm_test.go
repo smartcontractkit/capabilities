@@ -41,7 +41,6 @@ import (
 // It deploys a contract that emits logs, sets up a workflow with that deployed contract to the log trigger, waits for the workflow to be ready,
 // emits a log event, and then checks that the workflow processes the log event correctly by counting the number of events logged by beholder.
 func Test_LogTrigger(t *testing.T) {
-	t.Skip("needs to be fixed")
 	ctx := t.Context()
 	beholderTester := beholdertest.NewObserver(t)
 	lggr, obs := logger.TestLoggerObserved(t, zapcore.InfoLevel)
@@ -95,6 +94,7 @@ func Test_LogTrigger(t *testing.T) {
 			// Expect only one log line
 			require.Len(t, logs, 1, "Expected exactly one log line per workflow (it's printed inside the onTrigger() function of the workflow)")
 			log := logs[0]
+			fmt.Printf("Log line: %s\n", log.GetMessage())
 			if strings.Contains(log.GetMessage(), messageDataThatWillBeEmitted) {
 				foundEvents++
 			}
@@ -121,6 +121,7 @@ func waitUntilLogPollerFiltersArePresent(t *testing.T, obs *observer.ObservedLog
 		return len(logs) == numOfWorkflowNodes
 	}, 2*time.Minute,
 		3*time.Second, "Expected to find %d log poller filters", numOfWorkflowNodes)
+	lggr.Infof("Log Poller filters are present")
 }
 
 type runtimeConfig struct {
