@@ -363,13 +363,15 @@ func validateHTTPTriggerResponse(t *testing.T, body []byte, requestID string, ex
 	return executionID
 }
 
-func assertTriggerPayload(t *testing.T, env *testEnv, executionID string, input map[string]any) {
+func assertTriggerPayload(t *testing.T, env *testEnv, executionID string, expectedInput map[string]any) {
 	for i, ch := range env.triggerChs {
 		select {
 		case payload := <-ch:
 			require.NotNil(t, payload)
 			require.Equal(t, "0x"+executionID, payload.Id)
-			require.EqualValues(t, input, payload.Trigger.Input.AsMap())
+			marshalledExpectedInput, err := json.Marshal(expectedInput)
+			require.NoError(t, err)
+			require.Equal(t, string(marshalledExpectedInput), string(payload.Trigger.Input))
 			require.Equal(t, triggersdk.KeyType_KEY_TYPE_ECDSA_EVM, payload.Trigger.Key.Type)
 			publicKey := strings.ToLower(crypto.PubkeyToAddress(env.signingKey.PublicKey).Hex())
 			require.Equal(t, publicKey, payload.Trigger.Key.PublicKey)
