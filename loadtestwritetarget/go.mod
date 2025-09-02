@@ -1,12 +1,12 @@
 module github.com/smartcontractkit/capabilities/loadtestwritetarget
 
-go 1.24.2
+go 1.24.5
 
 toolchain go1.24.6
 
 require (
-	github.com/smartcontractkit/capabilities/libs/loopserver v0.0.0-20250402163239-224ad2061432
-	github.com/smartcontractkit/chainlink-common v0.8.1-0.20250807143422-b74219c46eeb
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20250902122836-28fd635adf1f
+	github.com/smartcontractkit/chainlink-common v0.9.4-0.20250902122332-1d271aac7c9f
 )
 
 require (
@@ -30,7 +30,7 @@ require (
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.25.0 // indirect
-	github.com/go-viper/mapstructure/v2 v2.3.0 // indirect
+	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/goccy/go-yaml v1.12.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
@@ -79,7 +79,7 @@ require (
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/smartcontractkit/chain-selectors v1.0.62 // indirect
 	github.com/smartcontractkit/chainlink-common/pkg/chipingress v0.0.1 // indirect
-	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250806152407-159881c7589c // indirect
+	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20250819150450-95ef563f6e6d // indirect
 	github.com/smartcontractkit/freeport v0.1.1 // indirect
 	github.com/smartcontractkit/grpc-proxy v0.0.0-20240830132753-a7e17fec5ab7 // indirect
 	github.com/smartcontractkit/libocr v0.0.0-20250408131511-c90716988ee0 // indirect
@@ -121,7 +121,7 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20250324211829-b45e905df463 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250519155744-55703ea1f237 // indirect
 	google.golang.org/grpc v1.73.0 // indirect
-	google.golang.org/protobuf v1.36.6 // indirect
+	google.golang.org/protobuf v1.36.7 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )

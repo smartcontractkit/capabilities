@@ -1,18 +1,18 @@
 module github.com/smartcontractkit/capabilities/cron
 
-go 1.24.2
+go 1.24.5
 
 require (
 	github.com/go-co-op/gocron/v2 v2.16.4
 	github.com/google/uuid v1.6.0
 	github.com/jonboulle/clockwork v0.5.0
 	github.com/prometheus/client_golang v1.22.0
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20250807005622-32f1fcc70c7d
-	github.com/smartcontractkit/chainlink-common v0.9.1-0.20250812165231-694386faccdd
-	github.com/smartcontractkit/chainlink-common/pkg/values v0.0.0-20250806152407-159881c7589c
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20250902122836-28fd635adf1f
+	github.com/smartcontractkit/chainlink-common v0.9.1-0.20250815213003-2c539bada27a
+	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20250815182425-f8fca0955840
 	github.com/stretchr/testify v1.11.1
 	go.uber.org/zap v1.27.0
-	google.golang.org/protobuf v1.36.6
+	google.golang.org/protobuf v1.36.7
 )
 
 require (
@@ -34,7 +34,7 @@ require (
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.25.0 // indirect
-	github.com/go-viper/mapstructure/v2 v2.3.0 // indirect
+	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus v1.0.1 // indirect
@@ -78,7 +78,6 @@ require (
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/smartcontractkit/chain-selectors v1.0.62 // indirect
 	github.com/smartcontractkit/chainlink-common/pkg/chipingress v0.0.1 // indirect
-	github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb v0.0.0-20250806155403-1d805e639a0f // indirect
 	github.com/smartcontractkit/freeport v0.1.1 // indirect
 	github.com/smartcontractkit/grpc-proxy v0.0.0-20240830132753-a7e17fec5ab7 // indirect
 	github.com/smartcontractkit/libocr v0.0.0-20250408131511-c90716988ee0 // indirect

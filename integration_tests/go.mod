@@ -24,7 +24,7 @@ require (
 	github.com/smartcontractkit/capabilities/http_trigger v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/capabilities/loadtestwritetarget v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/chain-selectors v1.0.67
-	github.com/smartcontractkit/chainlink-common v0.9.4-0.20250901094903-99c1fc59d32c
+	github.com/smartcontractkit/chainlink-common v0.9.4-0.20250902122332-1d271aac7c9f
 	github.com/smartcontractkit/chainlink-evm v0.3.2
 	github.com/smartcontractkit/chainlink-evm/gethwrappers v0.0.0-20250827130336-5922343458be
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20250825203428-49a301ac36ca
@@ -290,7 +290,7 @@ require (
 	github.com/shirou/gopsutil/v3 v3.24.3 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/sigurn/crc16 v0.0.0-20211026045750-20ab5afb07e3 // indirect
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20250807005622-32f1fcc70c7d // indirect
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20250902122836-28fd635adf1f // indirect
 	github.com/smartcontractkit/chainlink-aptos v0.0.0-20250818164129-fa2e60d95157 // indirect
 	github.com/smartcontractkit/chainlink-automation v0.8.1 // indirect
 	github.com/smartcontractkit/chainlink-ccip v0.1.1-solana.0.20250825135846-84f0d5167f8f // indirect
