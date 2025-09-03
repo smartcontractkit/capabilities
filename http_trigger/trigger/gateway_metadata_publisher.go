@@ -14,6 +14,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
+	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 )
 
 var _ GatewayMetadataPublisher = (*gatewayMetadataPublisher)(nil)
@@ -24,6 +25,7 @@ type gatewayMetadataPublisher struct {
 	outgoingRateLimiter *ratelimit.RateLimiter
 	workflowStore       *workflowStore
 	cfg                 ServiceConfig
+	metrics             *Metrics
 }
 
 func NewGatewayMetadataPublisher(
@@ -32,6 +34,7 @@ func NewGatewayMetadataPublisher(
 	outgoingRateLimiter *ratelimit.RateLimiter,
 	workflowStore *workflowStore,
 	cfg ServiceConfig,
+	metrics *Metrics,
 ) *gatewayMetadataPublisher {
 	return &gatewayMetadataPublisher{
 		lggr:                lggr,
@@ -39,6 +42,7 @@ func NewGatewayMetadataPublisher(
 		outgoingRateLimiter: outgoingRateLimiter,
 		workflowStore:       workflowStore,
 		cfg:                 cfg,
+		metrics:             metrics,
 	}
 }
 
@@ -75,7 +79,7 @@ func (h *gatewayMetadataPublisher) BroadcastWorkflowMetadata(ctx context.Context
 	for _, gatewayID := range gatewayIDs {
 		backoff := time.Duration(h.cfg.GatewayConnectionConfig.RetryConfig.InitialIntervalMs) * time.Millisecond
 		for {
-			err := h.sendResponse(ctx, gatewayID, &gatewayResp)
+			err := h.sendResponse(ctx, gatewayID, &gatewayResp, gateway_common.MethodPushWorkflowMetadata)
 			if err == nil {
 				h.lggr.Debugw("successfully sent metadata", "gatewayID", gatewayID)
 				break
@@ -95,7 +99,7 @@ func (h *gatewayMetadataPublisher) BroadcastWorkflowMetadata(ctx context.Context
 	return nil
 }
 
-func (h *gatewayMetadataPublisher) sendErrorResponse(ctx context.Context, gatewayID string, reqID string, code int64, message string) {
+func (h *gatewayMetadataPublisher) sendErrorResponse(ctx context.Context, gatewayID string, reqID string, code int64, message string, methodName string) {
 	resp := &jsonrpc.Response[json.RawMessage]{
 		Version: jsonrpc.JsonRpcVersion,
 		ID:      reqID,
@@ -105,7 +109,7 @@ func (h *gatewayMetadataPublisher) sendErrorResponse(ctx context.Context, gatewa
 			Message: message,
 		},
 	}
-	err := h.sendResponse(ctx, gatewayID, resp)
+	err := h.sendResponse(ctx, gatewayID, resp, methodName)
 	if err != nil {
 		h.lggr.Errorw("failed to send error response to gateway", "gatewayID", gatewayID, "error", err)
 	}
@@ -113,12 +117,12 @@ func (h *gatewayMetadataPublisher) sendErrorResponse(ctx context.Context, gatewa
 
 func (h *gatewayMetadataPublisher) SendWorkflowMetadata(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage]) error {
 	if req.ID == "" {
-		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInvalidRequest, "empty request ID")
+		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInvalidRequest, "empty request ID", gateway_common.MethodPullWorkflowMetadata)
 		return errors.New("empty request ID")
 	}
 	methodName := strings.Split(req.ID, "/")[0]
 	if methodName != gateway.MethodPullWorkflowMetadata {
-		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInvalidRequest, "invalid request ID for workflow pull metadata")
+		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInvalidRequest, "invalid request ID for workflow pull metadata", gateway_common.MethodPullWorkflowMetadata)
 		return fmt.Errorf("invalid request ID for workflow pull metadata: %s", req.ID)
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(h.cfg.GatewayConnectionConfig.MaxPullMetadataDurationMs)*time.Millisecond)
@@ -150,7 +154,7 @@ func (h *gatewayMetadataPublisher) SendWorkflowMetadata(ctx context.Context, gat
 
 		payload, err := json.Marshal(batchData)
 		if err != nil {
-			h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInternal, "failed to marshal batch metadata")
+			h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInternal, "failed to marshal batch metadata", gateway_common.MethodPullWorkflowMetadata)
 			return fmt.Errorf("failed to marshal batch metadata: %w", err)
 		}
 
@@ -162,7 +166,7 @@ func (h *gatewayMetadataPublisher) SendWorkflowMetadata(ctx context.Context, gat
 			Result:  &rawRes,
 		}
 
-		err = h.sendResponse(ctx, gatewayID, &gatewayResp)
+		err = h.sendResponse(ctx, gatewayID, &gatewayResp, gateway_common.MethodPullWorkflowMetadata)
 		if err != nil {
 			return fmt.Errorf("failed to send batch metadata to gateway for workflow: %w", err)
 		}
@@ -170,7 +174,7 @@ func (h *gatewayMetadataPublisher) SendWorkflowMetadata(ctx context.Context, gat
 	return nil
 }
 
-func (h *gatewayMetadataPublisher) sendResponse(ctx context.Context, gatewayID string, resp *jsonrpc.Response[json.RawMessage]) error {
+func (h *gatewayMetadataPublisher) sendResponse(ctx context.Context, gatewayID string, resp *jsonrpc.Response[json.RawMessage], methodName string) error {
 	workflowAllow, globalAllow := h.outgoingRateLimiter.AllowVerbose(gatewayID)
 	if !workflowAllow {
 		return errors.New(errorOutgoingRatelimitSender)
@@ -178,8 +182,10 @@ func (h *gatewayMetadataPublisher) sendResponse(ctx context.Context, gatewayID s
 	if !globalAllow {
 		return errors.New(errorOutgoingRatelimitGlobal)
 	}
+	h.metrics.IncrementGatewayRequestCount(ctx, gatewayID, methodName, h.lggr)
 	err := h.gc.SendToGateway(ctx, gatewayID, resp)
 	if err != nil {
+		h.metrics.IncrementGatewaySendError(ctx, gatewayID, methodName, h.lggr)
 		return fmt.Errorf("failed to send response to gateway %s: %w", gatewayID, err)
 	}
 	return nil

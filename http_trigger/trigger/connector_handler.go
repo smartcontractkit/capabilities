@@ -189,7 +189,7 @@ func (h *connectorHandler) UnregisterWorkflow(ctx context.Context, workflowID st
 // Always returns nil. Unless request is malformed or rate-limited, response is sent back to the
 // gateway using sendResponse method.
 func (h *connectorHandler) HandleGatewayMessage(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage]) error {
-	if !h.checkIncomingRateLimit(gatewayID) {
+	if !h.checkIncomingRateLimit(ctx, gatewayID) {
 		return nil
 	}
 
@@ -217,16 +217,16 @@ func (h *connectorHandler) HandleGatewayMessage(ctx context.Context, gatewayID s
 	return nil
 }
 
-func (h *connectorHandler) checkIncomingRateLimit(gatewayID string) bool {
+func (h *connectorHandler) checkIncomingRateLimit(ctx context.Context, gatewayID string) bool {
 	senderAllow, globalAllow := h.incomingRateLimiter.AllowVerbose(gatewayID)
 	if !senderAllow {
 		h.lggr.Errorw(errorIncomingRatelimitSender, "gatewayID", gatewayID)
-		h.metrics.IncrementGatewayNodeThrottled(context.Background(), gatewayID, h.lggr)
+		h.metrics.IncrementGatewayNodeThrottled(ctx, gatewayID, h.lggr)
 		return false
 	}
 	if !globalAllow {
 		h.lggr.Errorw(errorIncomingRatelimitGlobal, "gatewayID", gatewayID)
-		h.metrics.IncrementGatewayGlobalThrottled(context.Background(), h.lggr)
+		h.metrics.IncrementGatewayGlobalThrottled(ctx, h.lggr)
 		return false
 	}
 	return true
@@ -255,13 +255,13 @@ func (h *connectorHandler) sendResponse(ctx context.Context, gatewayID string, r
 		h.lggr.Errorw(errorOutgoingRatelimitGlobal, "gatewayID", gatewayID)
 		return
 	}
+	h.metrics.IncrementGatewayRequestCount(ctx, gatewayID, gateway_common.MethodWorkflowExecute, h.lggr)
 	err := h.gatewayConnector.SendToGateway(ctx, gatewayID, resp)
 	if err != nil {
 		h.lggr.Errorw("Failed to send response to gateway", "error", err, "gatewayID", gatewayID)
-		h.metrics.IncrementGatewaySendError(ctx, h.lggr)
+		h.metrics.IncrementGatewaySendError(ctx, gatewayID, gateway_common.MethodWorkflowExecute, h.lggr)
 		return
 	}
-	h.metrics.IncrementRequestSuccessCount(ctx, h.lggr)
 }
 
 func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage]) {

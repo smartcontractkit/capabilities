@@ -106,7 +106,9 @@ func createTestGatewayAuthPublisher(t *testing.T) (*gatewayMetadataPublisher, *t
 			},
 		},
 	}
-	publisher := NewGatewayMetadataPublisher(lggr, gc, rateLimiter, workflowStore, cfg)
+	metrics, err := NewMetrics()
+	require.NoError(t, err)
+	publisher := NewGatewayMetadataPublisher(lggr, gc, rateLimiter, workflowStore, cfg, metrics)
 
 	return publisher, gc, workflowStore, rateLimiter
 }

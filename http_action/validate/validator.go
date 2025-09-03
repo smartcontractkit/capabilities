@@ -22,7 +22,7 @@ var allowedMethods = map[string]struct{}{
 	"PATCH":  {},
 }
 
-const defaultTimeoutMs = 30_000
+const defaultTimeoutMs = 5_000
 
 // Validator handles validation of HTTP requests and responses with proper limiters
 type Validator struct {

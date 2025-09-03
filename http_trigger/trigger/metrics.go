@@ -13,6 +13,7 @@ import (
 
 const (
 	AttrNodeAddress = "node_address"
+	AttrMethodName  = "method_name"
 )
 
 // Metrics contains metrics for HTTP triggers
@@ -22,10 +23,11 @@ type Metrics struct {
 	registerFailureCount      metric.Int64Counter
 	deregisterFailureCount    metric.Int64Counter
 	requestCacheCleanUpCount  metric.Int64Counter
+	requestCacheSize          metric.Int64Gauge
 	requestCount              metric.Int64Counter
 	gatewayGlobalThrottled    metric.Int64Counter
 	gatewayNodeThrottled      metric.Int64Counter
-	requestSuccessCount       metric.Int64Counter
+	gatewayRequestCount       metric.Int64Counter
 	gatewaySendError          metric.Int64Counter
 	broadcastMetadataCount    metric.Int64Counter
 	broadcastMetadataFailures metric.Int64Counter
@@ -89,6 +91,14 @@ func (m *Metrics) init() error {
 		return fmt.Errorf("failed to create HTTP trigger request cache cleanup count metric: %w", err)
 	}
 
+	m.requestCacheSize, err = meter.Int64Gauge(
+		"http_trigger_request_cache_size",
+		metric.WithDescription("Current size of HTTP trigger request cache"),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create HTTP trigger request cache size metric: %w", err)
+	}
+
 	m.requestCount, err = meter.Int64Counter(
 		"http_trigger_capability_request_count",
 		metric.WithDescription("Number of HTTP trigger requests processed"),
@@ -113,12 +123,12 @@ func (m *Metrics) init() error {
 		return fmt.Errorf("failed to create HTTP trigger capability gateway node throttled metric: %w", err)
 	}
 
-	m.requestSuccessCount, err = meter.Int64Counter(
-		"http_trigger_capability_request_success_count",
-		metric.WithDescription("Number of successful HTTP trigger responses sent to gateway"),
+	m.gatewayRequestCount, err = meter.Int64Counter(
+		"http_trigger_capability_gateway_request_count",
+		metric.WithDescription("Number of HTTP trigger requests sent to gateway"),
 	)
 	if err != nil {
-		return fmt.Errorf("failed to create HTTP trigger capability request success count metric: %w", err)
+		return fmt.Errorf("failed to create HTTP trigger capability gateway request count metric: %w", err)
 	}
 
 	m.gatewaySendError, err = meter.Int64Counter(
@@ -220,12 +230,14 @@ func (m *Metrics) IncrementGatewayNodeThrottled(ctx context.Context, nodeAddress
 	m.gatewayNodeThrottled.Add(ctx, 1, metric.WithAttributes(attribute.String(AttrNodeAddress, nodeAddress)))
 }
 
-func (m *Metrics) IncrementRequestSuccessCount(ctx context.Context, lggr logger.Logger) {
-	m.requestSuccessCount.Add(ctx, 1)
+func (m *Metrics) IncrementGatewayRequestCount(ctx context.Context, nodeAddress string, methodName string, lggr logger.Logger) {
+	m.gatewayRequestCount.Add(ctx, 1, metric.WithAttributes(attribute.String(AttrNodeAddress, nodeAddress),
+		attribute.String(AttrMethodName, methodName)))
 }
 
-func (m *Metrics) IncrementGatewaySendError(ctx context.Context, lggr logger.Logger) {
-	m.gatewaySendError.Add(ctx, 1)
+func (m *Metrics) IncrementGatewaySendError(ctx context.Context, nodeAddress string, methodName string, lggr logger.Logger) {
+	m.gatewaySendError.Add(ctx, 1, metric.WithAttributes(attribute.String(AttrNodeAddress, nodeAddress),
+		attribute.String(AttrMethodName, methodName)))
 }
 
 func (m *Metrics) IncrementBroadcastMetadataCount(ctx context.Context, lggr logger.Logger) {
@@ -254,4 +266,8 @@ func (m *Metrics) RecordPullMetadataLatency(ctx context.Context, latencyMs int64
 
 func (m *Metrics) RecordRequestLatency(ctx context.Context, latencyMs int64, lggr logger.Logger) {
 	m.requestLatency.Record(ctx, latencyMs)
+}
+
+func (m *Metrics) RecordRequestCacheSize(ctx context.Context, size int64, lggr logger.Logger) {
+	m.requestCacheSize.Record(ctx, size)
 }

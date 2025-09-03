@@ -120,6 +120,7 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 		Result:  &rawRes,
 	}
 
+	p.metrics.IncrementRequestCount(ctx, lggr)
 	selectedGateway, err := p.awaitConnection(ctx, lggr, gatewayReq.Hash())
 	if err != nil {
 		p.metrics.IncrementGatewaySendError(ctx, selectedGateway, lggr)
@@ -153,8 +154,7 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 			return nil, err
 		}
 
-		endTime := time.Now()
-		totalLatency := endTime.Sub(startTime).Milliseconds()
+		totalLatency := time.Since(startTime).Milliseconds()
 		p.metrics.RecordRequestLatency(ctx, totalLatency, resp.ExternalEndpointLatency.Milliseconds(), common.ProxyModeGateway, lggr)
 
 		return response, nil
