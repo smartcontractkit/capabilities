@@ -10,8 +10,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	"github.com/smartcontractkit/cre-sdk-go/cre"
+
+	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
@@ -262,6 +263,24 @@ func Test_handleMedianAggregation(t *testing.T) {
 			f:               1,
 		},
 		{
+			name: "uint64 median: basic five values",
+			observations: []*valuespb.Value{
+				values.Proto(values.NewUint64(30)), values.Proto(values.NewUint64(40)), values.Proto(values.NewUint64(10)), values.Proto(values.NewUint64(20)), values.Proto(values.NewUint64(50)),
+			},
+			expectedOutcome: values.Proto(values.NewUint64(30)),
+			expectedError:   nil,
+			f:               2,
+		},
+		{
+			name: "uint64 median: even number of values returns left value",
+			observations: []*valuespb.Value{
+				values.Proto(values.NewUint64(10)), values.Proto(values.NewUint64(20)), values.Proto(values.NewUint64(30)), values.Proto(values.NewUint64(40)),
+			},
+			expectedOutcome: values.Proto(values.NewUint64(20)),
+			expectedError:   nil,
+			f:               1,
+		},
+		{
 			name: "float64 median: basic five values",
 			observations: []*valuespb.Value{
 				values.Proto(values.NewFloat64(30.5)), values.Proto(values.NewFloat64(40.5)), values.Proto(values.NewFloat64(10.5)), values.Proto(values.NewFloat64(20.5)), values.Proto(values.NewFloat64(50.5)),
@@ -357,7 +376,7 @@ func Test_handleMedianAggregation(t *testing.T) {
 				values.Proto(values.NewString("cad")),
 			},
 			expectedOutcome: nil,
-			expectedError:   errors.New("unsupported type for median aggregation: " + TypeString),
+			expectedError:   errors.New("unsupported type for median aggregation: " + typeString.Name()),
 			f:               2,
 		},
 		{
@@ -399,7 +418,7 @@ func parseTime(t *testing.T, s string) time.Time {
 }
 
 func mustWrap(v any) *valuespb.Value {
-	wrapped, err := values.Wrap((v))
+	wrapped, err := values.Wrap(v)
 	if err != nil {
 		panic(err)
 	}

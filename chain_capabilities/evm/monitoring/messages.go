@@ -9,8 +9,8 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	evmcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
-	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
-	sdkpb "github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb"
+	sdkpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
+	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
 	capmonitoring "github.com/smartcontractkit/capabilities/libs/monitoring"
 

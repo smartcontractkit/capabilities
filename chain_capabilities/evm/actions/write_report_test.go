@@ -13,7 +13,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
-	workflowpb "github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb"
+	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts/mocks"
@@ -24,8 +24,8 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
-	"github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 	"github.com/smartcontractkit/chainlink-evm/pkg/testutils"
+	"github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
 	"github.com/stretchr/testify/mock"
 
@@ -847,7 +847,7 @@ func createMocksAndCapability(t *testing.T, lggr logger.Logger) (*mocks2.EVMServ
 	service := EVM{
 		keystoneForwarderAddress: common.BytesToAddress(test.RandomBytes(20)),
 		forwarderClient:          mockForwarderClient,
-		lggr:                     lggr,
+		lggr:                     logger.Sugared(lggr),
 		EVMService:               mockEVMService,
 		ReceiverGasMinimum:       ConfiguredReceiverGasMinimum,
 		chainSelector:            1,

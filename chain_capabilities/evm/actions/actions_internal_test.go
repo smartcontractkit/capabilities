@@ -11,10 +11,11 @@ import (
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
-	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
+	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions/mocks"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"

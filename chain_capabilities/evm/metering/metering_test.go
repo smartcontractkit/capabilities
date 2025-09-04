@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+
 	"github.com/stretchr/testify/assert"
 )
 
@@ -161,7 +163,7 @@ func TestCheckHasFunds(t *testing.T) {
 			},
 			unit:        "INVALID_UNIT",
 			actionSpend: "5",
-			expectError: "no spend limit found for action INVALID_UNIT",
+			expectError: "", // empty limit is ignored, request allowed
 		},
 		{
 			name: "invalid limit value",
@@ -189,7 +191,8 @@ func TestCheckHasFunds(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			err := CheckHasFunds(test.meta, test.unit, test.actionSpend)
+			lggr := logger.Sugared(logger.Test(t))
+			err := CheckHasFunds(lggr, test.meta, test.unit, test.actionSpend)
 			if test.expectError != "" {
 				assert.Error(t, err)
 				assert.ErrorContains(t, err, test.expectError)

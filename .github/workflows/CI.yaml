@@ -182,7 +182,7 @@ jobs:
         run: ./.github/scripts/support-private-gomods.sh
 
       - name: Install mockery
-        run: go install github.com/vektra/mockery/v2/...@v2.53.3
+        run: go install github.com/vektra/mockery/v2/...@v2.53.5
 
       - name: Run "tidy" and "generate"
         run: |
