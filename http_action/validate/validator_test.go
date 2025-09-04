@@ -9,6 +9,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 )
 
@@ -63,11 +64,11 @@ func TestValidatedRequest(t *testing.T) {
 		require.ErrorContains(t, err, "URL must not be empty")
 	})
 
-	t.Run("timeout default", func(t *testing.T) {
+	t.Run("timeout exceeds limit", func(t *testing.T) {
 		t.Parallel()
 		validator := testValidator(t)
-		input := &http.Request{Url: "https://foo", Method: "GET", TimeoutMs: 0}
-		// The default timeout (30s) exceeds the 10s limit, so this should fail
+		input := &http.Request{Url: "https://foo", Method: "GET",
+			TimeoutMs: int32(cresettings.Default.PerWorkflow.HTTPAction.ConnectionTimeout.DefaultValue.Milliseconds() + 1)} //nolint:gosec // G115
 		_, err := validator.ValidatedRequest(ctx, input)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "ConnectionTimeout limited")

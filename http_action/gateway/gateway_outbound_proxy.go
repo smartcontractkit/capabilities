@@ -27,8 +27,8 @@ import (
 const (
 	internalError = "internal error"
 
-	defaultGatewayConnectionInitialIntervalMs = 100    // 100 milliseconds
-	defaultGatewayConnectionMaxElapsedTimeMs  = 30_000 // 30 seconds
+	defaultGatewayConnectionInitialIntervalMs = 100 // 100 milliseconds
+	defaultGatewayConnectionMaxElapsedTimeMs  = 5_000
 	defaultGatewayConnectionMultiplier        = 2.0
 )
 
