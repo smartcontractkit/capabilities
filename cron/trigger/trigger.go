@@ -62,11 +62,12 @@ type Service struct {
 }
 
 func (s *Service) RegisterLegacyTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) (<-chan capabilities.TriggerAndId[*crontypedapi.LegacyPayload], error) { //nolint:staticcheck
+	panic("expected")
 	ch, err := s.RegisterTrigger(ctx, triggerID, metadata, input)
 	if err != nil {
 		return nil, err
 	}
-	mapped := make(chan capabilities.TriggerAndId[*crontypedapi.LegacyPayload]) //nolint
+	mapped := make(chan capabilities.TriggerAndId[*crontypedapi.LegacyPayload]) // nolint
 	go func() {
 		defer close(mapped)
 		for {
@@ -166,6 +167,7 @@ func (s *Service) Initialise(ctx context.Context, config string, _ core.Telemetr
 }
 
 func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) (<-chan capabilities.TriggerAndId[*crontypedapi.Payload], error) {
+	panic("expected")
 	_, ok := s.triggers.Read(triggerID)
 	if ok {
 		return nil, fmt.Errorf("triggerId %s already registered", triggerID)
