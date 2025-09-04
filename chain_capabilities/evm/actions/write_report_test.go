@@ -847,7 +847,7 @@ func createMocksAndCapability(t *testing.T, lggr logger.Logger) (*mocks2.EVMServ
 	service := EVM{
 		keystoneForwarderAddress: common.BytesToAddress(test.RandomBytes(20)),
 		forwarderClient:          mockForwarderClient,
-		lggr:                     lggr,
+		lggr:                     logger.Sugared(lggr),
 		EVMService:               mockEVMService,
 		ReceiverGasMinimum:       ConfiguredReceiverGasMinimum,
 		chainSelector:            1,
