@@ -19,7 +19,6 @@ import (
 	httpactions "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 )
 
@@ -265,14 +264,5 @@ func validClientCfg(t *testing.T, urlStr string) HTTPClientConfig {
 	return HTTPClientConfig{
 		AllowedPorts: []int{port},
 		AllowedIPs:   []string{"127.0.0.1"},
-	}
-}
-
-func rateLimiterConfig() ratelimit.RateLimiterConfig {
-	return ratelimit.RateLimiterConfig{
-		GlobalRPS:      1000,
-		GlobalBurst:    1000,
-		PerSenderRPS:   1000,
-		PerSenderBurst: 1000,
 	}
 }

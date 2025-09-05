@@ -35,7 +35,6 @@ type Validator struct {
 
 // NewValidator creates a new Validator with initialized limiters
 func NewValidator(lggr logger.Logger, limitsFactory limits.Factory) (*Validator, error) {
-
 	responseSizeLimiter, err := limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.HTTPAction.ResponseSizeLimit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create response size limiter: %w", err)
@@ -126,10 +125,7 @@ func (v *Validator) validateInputWithLimiters(ctx context.Context, input *http.R
 
 	// Check connection timeout limit
 	timeout := time.Duration(input.TimeoutMs) * time.Millisecond
-	if err := v.connectionTimeoutLimiter.Check(ctx, timeout); err != nil {
-		return err
-	}
-	return nil
+	return v.connectionTimeoutLimiter.Check(ctx, timeout)
 }
 
 // validateCacheSettings validates cache settings using the cache age limiter
