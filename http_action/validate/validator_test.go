@@ -74,6 +74,23 @@ func TestValidatedRequest(t *testing.T) {
 		require.Contains(t, err.Error(), "ConnectionTimeout limited")
 	})
 
+	t.Run("request size exceeds limit", func(t *testing.T) {
+		t.Parallel()
+		validator := testValidator(t)
+
+		exceedingSize := cresettings.Default.PerWorkflow.HTTPAction.RequestSizeLimit.DefaultValue + 1000
+		largeBody := make([]byte, exceedingSize)
+		input := &http.Request{
+			Url:       "https://foo",
+			Method:    "POST",
+			Body:      largeBody,
+			TimeoutMs: 1000,
+		}
+		_, err := validator.ValidatedRequest(ctx, input)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "RequestSizeLimit limited")
+	})
+
 	t.Run("invalid HTTP method", func(t *testing.T) {
 		t.Parallel()
 		validator := testValidator(t)
@@ -146,6 +163,26 @@ func TestValidatedRequest(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, out.CacheSettings) // Default empty cache settings are added
 	})
+
+	t.Run("cache age exceeds limit", func(t *testing.T) {
+		t.Parallel()
+		validator := testValidator(t)
+
+		exceedingAgeMs := int32(cresettings.Default.PerWorkflow.HTTPAction.CacheAgeLimit.DefaultValue.Milliseconds() + 1000) //nolint:gosec
+		input := &http.Request{
+			Url:       "https://foo",
+			Method:    "GET",
+			TimeoutMs: 5000,
+			CacheSettings: &http.CacheSettings{
+				ReadFromCache: true,
+				MaxAgeMs:      exceedingAgeMs,
+			},
+		}
+		_, err := validator.ValidatedRequest(ctx, input)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "cache age validation failed")
+		require.Contains(t, err.Error(), "CacheAgeLimit limited")
+	})
 }
 
 func TestValidateResponseSize(t *testing.T) {
@@ -158,5 +195,17 @@ func TestValidateResponseSize(t *testing.T) {
 		response := []byte("small response")
 		err := validator.ValidateResponseSize(ctx, response)
 		require.NoError(t, err)
+	})
+
+	t.Run("response size exceeds limit", func(t *testing.T) {
+		t.Parallel()
+		validator := testValidator(t)
+
+		exceedingSize := cresettings.Default.PerWorkflow.HTTPAction.ResponseSizeLimit.DefaultValue + 1000
+		largeResponse := make([]byte, exceedingSize)
+
+		err := validator.ValidateResponseSize(ctx, largeResponse)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "ResponseSizeLimit limited")
 	})
 }
