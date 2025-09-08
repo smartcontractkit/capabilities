@@ -997,7 +997,7 @@ func TestExecuteWriteReport_MeteringMetadata(t *testing.T) {
 			TransactionFee: big.NewInt(2000),
 		}, nil)
 
-		reply, responseMetadata, err := service.executeWriteReport(ctx, writeReportRequest, capabilitiesMetadata)
+		reply, responseMetadata, err := service.executeWriteReport(ctx, writeReportRequest, capabilitiesMetadata, monitoring.TelemetryContext{})
 		require.NoError(t, err)
 		require.NotNil(t, reply)
 		require.Equal(t, evmcappb.TxStatus_TX_STATUS_SUCCESS, reply.TxStatus)
@@ -1061,7 +1061,7 @@ func TestExecuteWriteReport_MeteringMetadata(t *testing.T) {
 			TransactionFee: big.NewInt(2000),
 		}, nil)
 
-		reply, responseMetadata, err := service.executeWriteReport(ctx, writeReportRequest, capabilitiesMetadata)
+		reply, responseMetadata, err := service.executeWriteReport(ctx, writeReportRequest, capabilitiesMetadata, monitoring.TelemetryContext{})
 		require.NoError(t, err)
 		require.NotNil(t, reply)
 		require.Equal(t, evmcappb.TxStatus_TX_STATUS_SUCCESS, reply.TxStatus)
@@ -1122,7 +1122,7 @@ func TestExecuteWriteReport_TransmissionStates(t *testing.T) {
 			TransactionFee: big.NewInt(2000),
 		}, nil)
 
-		reply, responseMetadata, err := service.executeWriteReport(ctx, writeReportRequest, capabilitiesMetadata)
+		reply, responseMetadata, err := service.executeWriteReport(ctx, writeReportRequest, capabilitiesMetadata, monitoring.TelemetryContext{})
 		require.NoError(t, err)
 		require.NotNil(t, reply)
 		require.Equal(t, evmcappb.TxStatus_TX_STATUS_SUCCESS, reply.TxStatus)
@@ -1154,7 +1154,7 @@ func TestExecuteWriteReport_TransmissionStates(t *testing.T) {
 		expectedError := "transmission info error"
 		mockForwarderClient.On("GetTransmissionInfo", ctx, transmissionID).Return(contracts.TransmissionInfo{}, errors.New(expectedError))
 
-		reply, responseMetadata, err := service.executeWriteReport(ctx, writeReportRequest, capabilitiesMetadata)
+		reply, responseMetadata, err := service.executeWriteReport(ctx, writeReportRequest, capabilitiesMetadata, monitoring.TelemetryContext{})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), expectedError)
 		require.Nil(t, reply)
