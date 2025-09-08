@@ -1,6 +1,7 @@
 package monitoring
 
 import (
+	"fmt"
 	"math/big"
 	"time"
 
@@ -104,6 +105,20 @@ func (m *MessageBuilder) BuildWriteReportError(tc TelemetryContext, req *evmcap.
 		ExecutionContext: m.BuildExecutionContext(tc),
 		Summary:          summary,
 		Cause:            cause,
+	}
+}
+
+func (m *MessageBuilder) BuildWriteReportTxFeeCalculationError(tc TelemetryContext, req *evmcap.WriteReportRequest, txIdempotencyKey, cause string) ErrorMessage {
+	summary := "Failed to calculate transaction fee"
+	if txIdempotencyKey != "" {
+		summary = fmt.Sprintf("Failed to calculate transaction fee for tx: %s", txIdempotencyKey)
+	}
+	return &WriteReportTxFeeCalculationError{
+		Req:              convertWriteReportRequest(req),
+		ExecutionContext: m.BuildExecutionContext(tc),
+		Summary:          summary,
+		Cause:            cause,
+		TxIdempotencyKey: txIdempotencyKey,
 	}
 }
 

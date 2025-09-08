@@ -50,7 +50,7 @@ func (e EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMetad
 		return nil, err
 	}
 
-	report, billingMetadata, err := e.executeWriteReport(ctx, input, metadata)
+	report, billingMetadata, err := e.executeWriteReport(ctx, input, metadata, telemetryContext)
 	if err != nil {
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport while checking if the report exists or trying to publish on chain", err.Error()))
 		return nil, err
@@ -78,7 +78,7 @@ func (e EVM) getFee(ctx context.Context, txIdempotencyKey string) (*big.Float, e
 	return feeInEth, nil
 }
 
-func (e EVM) executeWriteReport(ctx context.Context, request *evm.WriteReportRequest, metadata capabilities.RequestMetadata) (*evm.WriteReportReply, capabilities.ResponseMetadata, error) {
+func (e EVM) executeWriteReport(ctx context.Context, request *evm.WriteReportRequest, metadata capabilities.RequestMetadata, telemetryContext monitoring.TelemetryContext) (*evm.WriteReportReply, capabilities.ResponseMetadata, error) {
 	transmissionID, err := getTransmissionID(metadata.WorkflowExecutionID, request)
 	if err != nil {
 		return nil, capabilities.ResponseMetadata{}, err
@@ -171,8 +171,7 @@ func (e EVM) executeWriteReport(ctx context.Context, request *evm.WriteReportReq
 	var meteringMetadata capabilities.ResponseMetadata
 	transactionFee, err := e.getFee(ctx, transactionResult.TxIdempotencyKey)
 	if err != nil {
-		e.lggr.Errorw("cannot calculate transaction fee: %w", "error", err)
-		// TODO add tx fee calculation failure metric
+		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportTxFeeCalculationError(telemetryContext, request, transactionResult.TxIdempotencyKey, err.Error()))
 	} else {
 		meteringMetadata = metering.GetResponseMetadataWriteReport(transactionFee, e.chainSelector)
 	}
