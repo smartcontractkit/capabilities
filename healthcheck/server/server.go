@@ -187,6 +187,7 @@ func (c *CronTriggerTester) register(ctx context.Context) error {
 	c.triggerCh = triggerCh
 	CronHealthCheckRegistrationCount.Inc()
 	c.Lggr.Info("Registered cron trigger")
+	go c.monitor()
 	return nil
 }
 
@@ -230,8 +231,6 @@ func (c *CronTriggerTester) stateMachine(ctx context.Context) error {
 				}
 				state = StateRegister
 			}
-		case <-c.triggerCh:
-			CronHealthCheckTriggersCount.Inc()
 		}
 	}
 }
