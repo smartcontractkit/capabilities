@@ -10,8 +10,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/shopspring/decimal"
-	"google.golang.org/protobuf/types/known/emptypb"
-
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
 	ctypes "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
@@ -515,26 +513,6 @@ func (e EVM) HeaderByNumber(
 		ResponseMetadata: metering.GetResponseMetadata(metering.HeaderByNumber),
 	}
 	return &responseAndMetadata, nil
-}
-
-func (e EVM) RegisterLogTracking(etx context.Context, _ capabilities.RequestMetadata, req *evm.RegisterLogTrackingRequest) (*capabilities.ResponseAndMetadata[*emptypb.Empty], error) {
-	filter, err := evm.ConvertLPFilterFromProto(req.GetFilter())
-	if err != nil {
-		return nil, err
-	}
-	responseAndMetadata := capabilities.ResponseAndMetadata[*emptypb.Empty]{
-		Response:         &emptypb.Empty{},
-		ResponseMetadata: capabilities.ResponseMetadata{},
-	}
-	return &responseAndMetadata, e.EVMService.RegisterLogTracking(etx, filter)
-}
-
-func (e EVM) UnregisterLogTracking(etx context.Context, _ capabilities.RequestMetadata, req *evm.UnregisterLogTrackingRequest) (*capabilities.ResponseAndMetadata[*emptypb.Empty], error) {
-	responseAndMetadata := capabilities.ResponseAndMetadata[*emptypb.Empty]{
-		Response:         &emptypb.Empty{},
-		ResponseMetadata: capabilities.ResponseMetadata{},
-	}
-	return &responseAndMetadata, e.EVMService.UnregisterLogTracking(etx, req.FilterName)
 }
 
 // normalizeBlockNumber - returns:
