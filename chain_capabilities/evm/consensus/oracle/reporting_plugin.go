@@ -10,13 +10,14 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/shopspring/decimal"
-	"github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 	"github.com/smartcontractkit/libocr/commontypes"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 	"github.com/smartcontractkit/libocr/quorumhelper"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/values/pb"
 
 	ctypes "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
 
@@ -36,10 +37,7 @@ var _ ocr3types.ReportingPlugin[[]byte] = (*reportingPlugin)(nil)
 
 type Config struct {
 	ocr3types.ReportingPluginConfig
-	BatchSize int // max number of requests that this node will try to process in a single round
-	// MaxAllowedBatchSize - defines max number of requests that this node will process in a round, if requested by another node.
-	// Needed to allow graceful roll out of BatchSize increase.
-	MaxAllowedBatchSize  int
+	BatchSize            int // max number of requests that this node will try to process in a single round
 	MaxObservationLength int // max length of observation in bytes
 }
 
@@ -106,8 +104,8 @@ func (rp *reportingPlugin) Observation(
 		return nil, fmt.Errorf("failed to unmarshal request IDs: %w", err)
 	}
 
-	if len(query.RequestIDs) > rp.config.MaxAllowedBatchSize {
-		return nil, fmt.Errorf("too many request IDs: got %d, expected %d", len(query.RequestIDs), rp.config.MaxAllowedBatchSize)
+	if len(query.RequestIDs) > rp.config.BatchSize {
+		return nil, fmt.Errorf("too many request IDs: got %d, expected %d", len(query.RequestIDs), rp.config.BatchSize)
 	}
 
 	chainHeight := ctypes.ChainHeight{
