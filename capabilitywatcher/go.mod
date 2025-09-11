@@ -1,4 +1,4 @@
-module github.com/smartcontractkit/capabilities/healthcheck
+module github.com/smartcontractkit/capabilities/capabilitywatcher
 
 go 1.24.2
 

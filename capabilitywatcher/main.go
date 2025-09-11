@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/smartcontractkit/capabilities/healthcheck/server"
+	"github.com/smartcontractkit/capabilities/capabilitywatcher/server"
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
 )
 

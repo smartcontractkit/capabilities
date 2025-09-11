@@ -1,7 +1,7 @@
 {
-  "name": "healthcheck",
+  "name": "capabilitywatcher",
   "projectType": "capability",
-  "projectRoot": "capabilities/healthcheck",
+  "projectRoot": "capabilities/capabilitywatcher",
   "implicitDependencies": ["loopserver"],
   "tags": [],
   "targets": {
