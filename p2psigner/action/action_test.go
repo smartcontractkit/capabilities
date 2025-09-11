@@ -11,7 +11,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
-	"github.com/smartcontractkit/chainlink-common/pkg/values"
+	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 
 	"github.com/smartcontractkit/capabilities/libs/testutils"
 	"github.com/smartcontractkit/capabilities/p2psigner/action"
@@ -22,6 +22,10 @@ type mockKeystore struct {
 	accounts     []string
 	signFunc     func(ctx context.Context, account string, msg []byte) ([]byte, error)
 	accountsFunc func(ctx context.Context) ([]string, error)
+}
+
+func (m *mockKeystore) Decrypt(ctx context.Context, account string, encrypted []byte) (decrypted []byte, err error) {
+	panic("not used by tests")
 }
 
 func (m *mockKeystore) Accounts(ctx context.Context) ([]string, error) {

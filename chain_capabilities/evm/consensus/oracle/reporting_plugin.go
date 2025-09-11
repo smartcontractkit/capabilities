@@ -17,7 +17,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/values/pb"
+	"github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
 	ctypes "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
 
@@ -37,7 +37,10 @@ var _ ocr3types.ReportingPlugin[[]byte] = (*reportingPlugin)(nil)
 
 type Config struct {
 	ocr3types.ReportingPluginConfig
-	BatchSize            int // max number of requests that this node will try to process in a single round
+	BatchSize int // max number of requests that this node will try to process in a single round
+	// MaxAllowedBatchSize - defines max number of requests that this node will process in a round, if requested by another node.
+	// Needed to allow graceful roll out of BatchSize increase.
+	MaxAllowedBatchSize  int
 	MaxObservationLength int // max length of observation in bytes
 }
 
@@ -104,8 +107,8 @@ func (rp *reportingPlugin) Observation(
 		return nil, fmt.Errorf("failed to unmarshal request IDs: %w", err)
 	}
 
-	if len(query.RequestIDs) > rp.config.BatchSize {
-		return nil, fmt.Errorf("too many request IDs: got %d, expected %d", len(query.RequestIDs), rp.config.BatchSize)
+	if len(query.RequestIDs) > rp.config.MaxAllowedBatchSize {
+		return nil, fmt.Errorf("too many request IDs: got %d, expected %d", len(query.RequestIDs), rp.config.MaxAllowedBatchSize)
 	}
 
 	chainHeight := ctypes.ChainHeight{

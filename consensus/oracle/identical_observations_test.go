@@ -2,6 +2,7 @@ package oracle
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -195,78 +196,6 @@ func TestHandleIdenticalAggregation(t *testing.T) {
 	}
 }
 
-func Test_countTypes(t *testing.T) {
-	type testCase struct {
-		name           string
-		observations   []*valuespb.Value
-		expectedCounts map[string]int
-	}
-
-	testCases := []testCase{
-		{
-			name:           "empty slice",
-			observations:   []*valuespb.Value{},
-			expectedCounts: map[string]int{},
-		},
-		{
-			name: "slice with single type (int64)",
-			observations: []*valuespb.Value{
-				values.Proto(values.NewInt64(1)),
-				values.Proto(values.NewInt64(2)),
-				values.Proto(values.NewInt64(3)),
-			},
-			expectedCounts: map[string]int{TypeInt64: 3},
-		},
-		{
-			name: "slice with mixed types",
-			observations: []*valuespb.Value{
-				values.Proto(values.NewInt64(1)),
-				values.Proto(values.NewFloat64(1.0)),
-				values.Proto(values.NewInt64(2)),
-				values.Proto(values.NewString("hello")),
-				values.Proto(values.NewFloat64(2.0)),
-			},
-			expectedCounts: map[string]int{
-				TypeInt64:   2,
-				TypeFloat64: 2,
-				TypeString:  1,
-			},
-		},
-		{
-			name: "slice with nil values",
-			observations: []*valuespb.Value{
-				values.Proto(values.NewInt64(1)),
-				values.Proto(nil),
-				values.Proto(values.NewFloat64(1.0)),
-				values.Proto(nil),
-				values.Proto(values.NewInt64(2)),
-			},
-			expectedCounts: map[string]int{
-				TypeInt64:   2,
-				TypeFloat64: 1,
-				TypeNil:     2,
-			},
-		},
-		{
-			name: "slice with only nil values",
-			observations: []*valuespb.Value{
-				values.Proto(nil),
-				values.Proto(nil),
-			},
-			expectedCounts: map[string]int{
-				TypeNil: 2,
-			},
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			counts := countTypes(tc.observations)
-			assert.Equal(t, tc.expectedCounts, counts)
-		})
-	}
-}
-
 func assertDeepEqualValuesSlice(t *testing.T, expected, actual []*valuespb.Value) {
 	require.Len(t, actual, len(expected), "Slice length mismatch")
 	for i := range expected {
@@ -280,7 +209,7 @@ func Test_filterObservations(t *testing.T) {
 		observationProtos    []*valuespb.Value
 		minObservations      int
 		expectedObservations []*valuespb.Value
-		expectedTypeName     string
+		expectedType         reflect.Type
 		expectedError        error
 	}
 
@@ -300,8 +229,8 @@ func Test_filterObservations(t *testing.T) {
 				values.Proto(values.NewInt64(20)),
 				values.Proto(values.NewInt64(30)),
 			},
-			expectedTypeName: TypeInt64,
-			expectedError:    nil,
+			expectedType:  typeInt64,
+			expectedError: nil,
 		},
 		{
 			name: "insufficient total observations (initial check)",
@@ -311,7 +240,7 @@ func Test_filterObservations(t *testing.T) {
 			},
 			minObservations:      3,
 			expectedObservations: nil,
-			expectedTypeName:     "",
+			expectedType:         nil,
 			expectedError:        errors.New("insufficient observations (2) to meet minimum (3)"),
 		},
 		{
@@ -324,7 +253,7 @@ func Test_filterObservations(t *testing.T) {
 			},
 			minObservations:      3,
 			expectedObservations: nil,
-			expectedTypeName:     "",
+			expectedType:         nil,
 			expectedError:        errors.New("no single type met the minimum observation threshold of 3"),
 		},
 		{
@@ -336,7 +265,7 @@ func Test_filterObservations(t *testing.T) {
 			},
 			minObservations:      2,
 			expectedObservations: nil,
-			expectedTypeName:     "",
+			expectedType:         nil,
 			expectedError:        errors.New("no single type met the minimum observation threshold of 2"),
 		},
 		{
@@ -352,8 +281,8 @@ func Test_filterObservations(t *testing.T) {
 				values.Proto(values.NewFloat64(2.2)),
 				values.Proto(values.NewFloat64(3.3)),
 			},
-			expectedTypeName: TypeFloat64,
-			expectedError:    nil,
+			expectedType:  typeFloat64,
+			expectedError: nil,
 		},
 		{
 			name: "mixed types but only dominant passes filter",
@@ -368,23 +297,23 @@ func Test_filterObservations(t *testing.T) {
 				values.Proto(values.NewInt64(100)),
 				values.Proto(values.NewInt64(200)),
 			},
-			expectedTypeName: TypeInt64,
-			expectedError:    nil,
+			expectedType:  typeInt64,
+			expectedError: nil,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			actualObservations, actualTypeName, err := filterObservations(tc.observationProtos, tc.minObservations)
+			actualObservations, actualType, err := filterObservations(tc.observationProtos, tc.minObservations)
 
 			if tc.expectedError != nil {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tc.expectedError.Error())
 				assert.Nil(t, actualObservations)
-				assert.Empty(t, actualTypeName)
+				assert.Nil(t, actualType)
 			} else {
 				require.NoError(t, err)
-				assert.Equal(t, tc.expectedTypeName, actualTypeName)
+				assert.Equal(t, tc.expectedType.Name(), actualType.Name())
 				assertDeepEqualValuesSlice(t, tc.expectedObservations, actualObservations)
 			}
 		})

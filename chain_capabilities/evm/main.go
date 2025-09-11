@@ -36,12 +36,6 @@ import (
 
 const (
 	CapabilityName = "evm"
-	// OCRRoundBatchSize - max number of requests that this node will try to process in a single round
-	// TODO PLEX-1569: make configurable
-	OCRRoundBatchSize = oracle.OCRRoundBatchSize
-	// OCRRoundMaxBatchSize - defines max number of requests that this node will process in a round, if requested by another node.
-	// Needed to allow graceful roll out of OCRBatchSize increase.
-	OCRRoundMaxBatchSize = oracle.OCRRoundMaxBatchSize
 
 	repoCLLCapabilities = "https://raw.githubusercontent.com/smartcontractkit/capabilities"
 	versionRefsMain     = "refs/heads/main"
@@ -141,7 +135,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 			ContractConfigLoadTimeout:          time.Second * 10,
 			DefaultMaxDurationInitialization:   time.Second * 10,
 		},
-		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(logger.Sugared(c.lggr), c.consensusHandler, c.heightProvider, OCRRoundBatchSize, OCRRoundMaxBatchSize),
+		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(logger.Sugared(c.lggr), c.consensusHandler, c.heightProvider),
 		ContractTransmitter:           oracle.NewContractTransmitter(c.lggr, c.consensusHandler),
 	})
 	if err != nil {

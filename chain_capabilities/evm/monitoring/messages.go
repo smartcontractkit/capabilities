@@ -1,6 +1,7 @@
 package monitoring
 
 import (
+	"fmt"
 	"math/big"
 	"time"
 
@@ -9,8 +10,8 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	evmcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
-	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
-	sdkpb "github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb"
+	sdkpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
+	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
 	capmonitoring "github.com/smartcontractkit/capabilities/libs/monitoring"
 
@@ -104,6 +105,20 @@ func (m *MessageBuilder) BuildWriteReportError(tc TelemetryContext, req *evmcap.
 		ExecutionContext: m.BuildExecutionContext(tc),
 		Summary:          summary,
 		Cause:            cause,
+	}
+}
+
+func (m *MessageBuilder) BuildWriteReportTxFeeCalculationError(tc TelemetryContext, req *evmcap.WriteReportRequest, txIdempotencyKey, cause string) ErrorMessage {
+	summary := "Failed to calculate transaction fee"
+	if txIdempotencyKey != "" {
+		summary = fmt.Sprintf("Failed to calculate transaction fee for tx: %s", txIdempotencyKey)
+	}
+	return &WriteReportTxFeeCalculationError{
+		Req:              convertWriteReportRequest(req),
+		ExecutionContext: m.BuildExecutionContext(tc),
+		Summary:          summary,
+		Cause:            cause,
+		TxIdempotencyKey: txIdempotencyKey,
 	}
 }
 

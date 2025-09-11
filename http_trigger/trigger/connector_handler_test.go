@@ -184,7 +184,9 @@ func requireWorkflowTriggered(t *testing.T, triggerCh <-chan capabilities.Trigge
 		case <-t.Context().Done():
 			t.Errorf("Test context was cancelled before trigger was received")
 		case triggerReq := <-triggerCh:
-			input := triggerReq.Trigger.Input.AsMap()
+			var input map[string]any
+			err := json.Unmarshal(triggerReq.Trigger.Input, &input)
+			require.NoError(t, err)
 			require.Len(t, input, 1)
 			require.Equal(t, "value", input["key"])
 			require.NotNil(t, triggerReq.Trigger.Key, "Key should not be nil in trigger payload")

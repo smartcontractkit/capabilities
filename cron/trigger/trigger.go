@@ -188,7 +188,6 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 			defer func() {
 				if r := recover(); r != nil {
 					s.lggr.Errorw("panic in gocron.NewTask function", "err", r, "stack", string(debug.Stack()))
-					panic(r)
 				}
 			}()
 			trigger, ok := s.triggers.Read(triggerID)
