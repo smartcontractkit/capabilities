@@ -27,15 +27,15 @@ type CapabilityWatcherServer struct {
 	// Service management
 	runningServices map[string]context.CancelFunc
 	servicesMutex   sync.Mutex
-	serverCtx       context.Context
 	serverCancel    context.CancelFunc
 }
 
 // Start begins the health check monitoring process
 func (s *CapabilityWatcherServer) Start(ctx context.Context) error {
 	s.Lggr.Info("Starting capability watcher server")
-	s.serverCtx, s.serverCancel = context.WithCancel(ctx)
-	go s.runLoop(s.serverCtx)
+	serverCtx, serverCancel := context.WithCancel(context.Background())
+	s.serverCancel = serverCancel
+	go s.runLoop(serverCtx)
 	return nil
 }
 
@@ -162,9 +162,9 @@ func (s *CapabilityWatcherServer) checkCapability(ctx context.Context, c capabil
 	// Start service for specific capability types
 	switch info.ID {
 	case "cron-trigger@1.0.0":
-		return s.startCronTriggerService(info.ID)
+		return s.startCronTriggerService(ctx, info.ID)
 	case "http-actions@1.0.0-alpha":
-		return s.startHTTPActionService(info.ID)
+		return s.startHTTPActionService(ctx, info.ID)
 	default:
 		s.Lggr.Infof("No service defined for capability: %s", info.ID)
 	}
@@ -172,8 +172,8 @@ func (s *CapabilityWatcherServer) checkCapability(ctx context.Context, c capabil
 	return nil
 }
 
-func (s *CapabilityWatcherServer) startCronTriggerService(capID string) error {
-	serviceCtx, cancel := context.WithCancel(s.serverCtx)
+func (s *CapabilityWatcherServer) startCronTriggerService(ctx context.Context, capID string) error {
+	serviceCtx, cancel := context.WithCancel(ctx)
 
 	s.servicesMutex.Lock()
 	s.runningServices[capID] = cancel
@@ -207,8 +207,8 @@ func (s *CapabilityWatcherServer) startCronTriggerService(capID string) error {
 }
 
 // checkHttpAction performs health check specifically for HTTP action capability
-func (s *CapabilityWatcherServer) startHTTPActionService(capID string) error {
-	serviceCtx, cancel := context.WithCancel(s.serverCtx)
+func (s *CapabilityWatcherServer) startHTTPActionService(ctx context.Context, capID string) error {
+	serviceCtx, cancel := context.WithCancel(ctx)
 
 	s.servicesMutex.Lock()
 	s.runningServices[capID] = cancel

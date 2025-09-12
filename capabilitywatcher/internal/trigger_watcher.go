@@ -271,23 +271,18 @@ func (t *TriggerWatcher) unregister(ctx context.Context) error {
 func (t *TriggerWatcher) monitor() {
 	t.lggr.Infof("Starting monitor for trigger: %s", t.triggerID)
 
-	for {
-		select {
-		case m, ok := <-t.triggerCh:
-			if !ok {
-				t.lggr.Infof("Trigger channel closed for: %s", t.triggerID)
-				return
-			}
-			triggerEventsReceivedTotal.WithLabelValues(t.triggerID).Inc()
+	for m := range t.triggerCh {
+		triggerEventsReceivedTotal.WithLabelValues(t.triggerID).Inc()
 
-			if m.Err != nil {
-				t.lggr.Errorf("Error received from trigger: %s, %v", t.triggerID, m.Err)
-				triggerEventsErrorsTotal.WithLabelValues(t.triggerID).Inc()
-				continue
-			}
-			t.triggerChecker.Assert(m)
-
-			t.lggr.Debugf("Received trigger event for: %s", t.triggerID)
+		if m.Err != nil {
+			t.lggr.Errorf("Error received from trigger: %s, %v", t.triggerID, m.Err)
+			triggerEventsErrorsTotal.WithLabelValues(t.triggerID).Inc()
+			continue
 		}
+		t.triggerChecker.Assert(m)
+
+		t.lggr.Debugf("Received trigger event for: %s", t.triggerID)
 	}
+
+	t.lggr.Infof("Trigger channel closed for: %s", t.triggerID)
 }
