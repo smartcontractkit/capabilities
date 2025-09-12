@@ -24,20 +24,39 @@ type CapabilityWatcherServer struct {
 	Lggr        logger.Logger
 	capRegistry core.CapabilitiesRegistry
 
-	runningChecks map[string]bool
-	checksMutex   sync.Mutex
+	// Service management
+	runningServices map[string]context.CancelFunc
+	servicesMutex   sync.Mutex
+	serverCtx       context.Context
+	serverCancel    context.CancelFunc
 }
 
 // Start begins the health check monitoring process
 func (s *CapabilityWatcherServer) Start(ctx context.Context) error {
-	s.Lggr.Info("Starting health check server")
-	go s.runLoop(ctx) // Use the provided context instead of creating a new one
+	s.Lggr.Info("Starting capability watcher server")
+	s.serverCtx, s.serverCancel = context.WithCancel(ctx)
+	go s.runLoop(s.serverCtx)
 	return nil
 }
 
 // Close shuts down the health check server
 func (s *CapabilityWatcherServer) Close() error {
-	s.Lggr.Info("Closing health check server")
+	s.Lggr.Info("Closing capability watcher server")
+
+	// Cancel all running services
+	s.servicesMutex.Lock()
+	for capID, cancelFunc := range s.runningServices {
+		s.Lggr.Infof("Stopping service for capability: %s", capID)
+		cancelFunc()
+	}
+	s.runningServices = make(map[string]context.CancelFunc)
+	s.servicesMutex.Unlock()
+
+	// Cancel server context
+	if s.serverCancel != nil {
+		s.serverCancel()
+	}
+
 	return nil
 }
 
@@ -58,7 +77,7 @@ func (s *CapabilityWatcherServer) Name() string {
 
 // Initialise sets up the health check server with required dependencies
 func (s *CapabilityWatcherServer) Initialise(ctx context.Context, config string, telemetryService core.TelemetryService, store core.KeyValueStore, capabilityRegistry core.CapabilitiesRegistry, errorLog core.ErrorLog, pipelineRunner core.PipelineRunnerService, relayerSet core.RelayerSet, oracleFactory core.OracleFactory, gatewayConnector core.GatewayConnector, p2pKeystore core.Keystore) error {
-	s.Lggr.Info("Initializing health check server")
+	s.Lggr.Info("Initializing capability watcher server")
 
 	if capabilityRegistry == nil {
 		return errors.New("capability registry cannot be nil")
@@ -70,27 +89,23 @@ func (s *CapabilityWatcherServer) Initialise(ctx context.Context, config string,
 
 // Infos returns information about the capabilities provided by this server
 func (s *CapabilityWatcherServer) Infos(ctx context.Context) ([]capabilities.CapabilityInfo, error) {
-	return []capabilities.CapabilityInfo{
-		{
-			ID:             "healthcheck",
-			CapabilityType: "trigger",
-			Description:    "Health check proof of concept",
-			IsLocal:        true,
-		},
-	}, nil
+	return []capabilities.CapabilityInfo{}, nil
 }
 
-// New creates a new HealthCheckServer instance
+// New creates a new CapabilityWatcherServer instance
 func New(lggr logger.Logger) *CapabilityWatcherServer {
+	if lggr == nil {
+		panic("logger cannot be nil")
+	}
 	return &CapabilityWatcherServer{
-		Lggr:          logger.Sugared(lggr),
-		runningChecks: make(map[string]bool),
+		Lggr:            logger.Sugared(lggr),
+		runningServices: make(map[string]context.CancelFunc),
 	}
 }
 
 // runLoop continuously monitors capabilities and performs health checks
 func (s *CapabilityWatcherServer) runLoop(ctx context.Context) {
-	s.Lggr.Info("Starting capability checker loop")
+	s.Lggr.Info("Starting capability watcher loop")
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
@@ -124,75 +139,104 @@ func (s *CapabilityWatcherServer) performChecks(ctx context.Context) {
 
 // checkCapability performs health check on a single capability
 func (s *CapabilityWatcherServer) checkCapability(ctx context.Context, c capabilities.BaseCapability) error {
-	// Get capability information
 	info, err := c.Info(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get capability info: %w", err)
 	}
 
-	// Only check local capabilities
 	if !info.IsLocal {
 		s.Lggr.Debugf("Skipping remote capability: %s", info.ID)
 		return nil
 	}
 
-	// Check if this capability check is already running
-	s.checksMutex.Lock()
-	isRunning := s.runningChecks[info.ID]
-	s.checksMutex.Unlock()
+	// Check if service is already running
+	s.servicesMutex.Lock()
+	_, isRunning := s.runningServices[info.ID]
+	s.servicesMutex.Unlock()
 
 	if isRunning {
-		s.Lggr.Debugf("Health check already running for capability: %s", info.ID)
+		s.Lggr.Debugf("Service already running for capability: %s", info.ID)
 		return nil
 	}
 
-	s.Lggr.Infof("Performing health check for local capability: %s", info.ID)
-
-	// Handle specific capability types
+	// Start service for specific capability types
 	switch info.ID {
 	case "cron-trigger@1.0.0":
-		s.checkCronTrigger(ctx)
+		return s.startCronTriggerService(info.ID)
 	case "http-actions@1.0.0-alpha":
-		s.checkHttpAction(ctx)
+		return s.startHttpActionService(info.ID)
 	default:
-		s.Lggr.Infof("No specific health check for capability: %s", info.ID)
+		s.Lggr.Infof("No service defined for capability: %s", info.ID)
 	}
 
 	return nil
 }
 
-// checkCronTrigger performs health check specifically for cron trigger capability
-func (s *CapabilityWatcherServer) checkCronTrigger(ctx context.Context) error {
-	s.checksMutex.Lock()
-	s.runningChecks["cron-trigger@1.0.0"] = true // TODO: make the lock less hacky + add cleanup
-	s.checksMutex.Unlock()
+func (s *CapabilityWatcherServer) startCronTriggerService(capID string) error {
+	serviceCtx, cancel := context.WithCancel(s.serverCtx)
 
-	cronWatcher, err := internal.NewTriggerWatcher(s.Lggr, s.capRegistry, "cron-trigger@1.0.0", checks.CronChecker{})
+	s.servicesMutex.Lock()
+	s.runningServices[capID] = cancel
+	s.servicesMutex.Unlock()
+
+	cronWatcher, err := internal.NewTriggerWatcher(s.Lggr, s.capRegistry, capID, checks.CronChecker{})
 	if err != nil {
+		cancel()
+		s.servicesMutex.Lock()
+		delete(s.runningServices, capID)
+		s.servicesMutex.Unlock()
 		return fmt.Errorf("failed to create cron trigger watcher: %w", err)
 	}
 
-	// Run the watcher with the provided context
-	cronWatcher.Run(ctx)
-	s.Lggr.Debug("Cron trigger health check completed successfully")
+	// Start service in goroutine
+	go func() {
+		defer func() {
+			s.servicesMutex.Lock()
+			delete(s.runningServices, capID)
+			s.servicesMutex.Unlock()
+			s.Lggr.Infof("Cron trigger service stopped: %s", capID)
+		}()
+
+		s.Lggr.Infof("Starting cron trigger service: %s", capID)
+		if err := cronWatcher.Run(serviceCtx); err != nil && !errors.Is(err, context.Canceled) {
+			s.Lggr.Errorf("Cron trigger service error: %v", err)
+		}
+	}()
 
 	return nil
 }
 
-// checkReadContract performs health check specifically for cron trigger capability
-func (s *CapabilityWatcherServer) checkHttpAction(ctx context.Context) error {
-	s.checksMutex.Lock()
-	s.runningChecks["http-actions@1.0.0-alpha"] = true // TODO: make the lock less hacky + add cleanup
-	s.checksMutex.Unlock()
+// checkHttpAction performs health check specifically for HTTP action capability
+func (s *CapabilityWatcherServer) startHttpActionService(capID string) error {
+	serviceCtx, cancel := context.WithCancel(s.serverCtx)
 
-	cronWatcher, err := internal.NewExecutableWatcher(s.Lggr, s.capRegistry, "http-actions@1.0.0-alpha", checks.HttpActionChecker{})
+	s.servicesMutex.Lock()
+	s.runningServices[capID] = cancel
+	s.servicesMutex.Unlock()
+
+	httpWatcher, err := internal.NewExecutableWatcher(s.Lggr, s.capRegistry, capID, checks.HttpActionChecker{})
 	if err != nil {
-		return fmt.Errorf("failed to create read contract watcher: %w", err)
+		cancel()
+		s.servicesMutex.Lock()
+		delete(s.runningServices, capID)
+		s.servicesMutex.Unlock()
+		return fmt.Errorf("failed to create HTTP action watcher: %w", err)
 	}
 
-	// Run the watcher with the provided context
-	cronWatcher.Run(ctx)
-	s.Lggr.Debug("Read contract executable health check completed successfully")
+	// Start service in goroutine
+	go func() {
+		defer func() {
+			s.servicesMutex.Lock()
+			delete(s.runningServices, capID)
+			s.servicesMutex.Unlock()
+			s.Lggr.Infof("HTTP action service stopped: %s", capID)
+		}()
+
+		s.Lggr.Infof("Starting HTTP action service: %s", capID)
+		if err := httpWatcher.Run(serviceCtx); err != nil && !errors.Is(err, context.Canceled) {
+			s.Lggr.Errorf("HTTP action service error: %v", err)
+		}
+	}()
 
 	return nil
 }

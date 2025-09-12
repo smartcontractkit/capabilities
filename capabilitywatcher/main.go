@@ -6,5 +6,5 @@ import (
 )
 
 func main() {
-	loopserver.Serve("HealthCheck", server.New)
+	loopserver.Serve("CapabilityWatcher", server.New)
 }
