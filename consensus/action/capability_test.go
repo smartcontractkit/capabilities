@@ -16,8 +16,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
-	"github.com/smartcontractkit/chainlink-common/pkg/values"
-	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb"
+	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
+	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 
 	"github.com/smartcontractkit/capabilities/libs/testutils"
 )
@@ -41,13 +41,13 @@ func Test_SimpleConsensus(t *testing.T) {
 
 	metadata := newRequestMetaData()
 
-	input := &pb.SimpleConsensusInputs{
-		Observation: &pb.SimpleConsensusInputs_Value{
+	input := &sdk.SimpleConsensusInputs{
+		Observation: &sdk.SimpleConsensusInputs_Value{
 			Value: values.Proto(values.NewInt64(10)),
 		},
-		Descriptors: &pb.ConsensusDescriptor{
-			Descriptor_: &pb.ConsensusDescriptor_Aggregation{
-				Aggregation: pb.AggregationType_AGGREGATION_TYPE_MEDIAN,
+		Descriptors: &sdk.ConsensusDescriptor{
+			Descriptor_: &sdk.ConsensusDescriptor_Aggregation{
+				Aggregation: sdk.AggregationType_AGGREGATION_TYPE_MEDIAN,
 			},
 		},
 		Default: nil,
@@ -80,7 +80,7 @@ func Test_Report(t *testing.T) {
 
 	metadata := newRequestMetaData()
 
-	input := &pb.ReportRequest{
+	input := &sdk.ReportRequest{
 		EncodedPayload: []byte("somerandom-payload"),
 		EncoderName:    "evm",
 		SigningAlgo:    "ecdsa",
@@ -110,7 +110,7 @@ func Test_ReportRequiresValidSigningAlgo(t *testing.T) {
 
 	metadata := newRequestMetaData()
 
-	input := &pb.ReportRequest{
+	input := &sdk.ReportRequest{
 		EncodedPayload: []byte("somerandom-payload"),
 		EncoderName:    "evm",
 		SigningAlgo:    "invalid-signing-algo",
@@ -139,7 +139,7 @@ func Test_ReportRequiresValidHashingAlgo(t *testing.T) {
 
 	metadata := newRequestMetaData()
 
-	input := &pb.ReportRequest{
+	input := &sdk.ReportRequest{
 		EncodedPayload: []byte("somerandom-payload"),
 		EncoderName:    "evm",
 		SigningAlgo:    "ecdsa",
@@ -168,7 +168,7 @@ func Test_ReportRequiresValidEncoderName(t *testing.T) {
 
 	metadata := newRequestMetaData()
 
-	input := &pb.ReportRequest{
+	input := &sdk.ReportRequest{
 		EncodedPayload: []byte("somerandom-payload"),
 		EncoderName:    "invalid-encoder-name",
 		SigningAlgo:    "ecdsa",
@@ -213,9 +213,9 @@ func Test_SimpleInputsSizeValidation(t *testing.T) {
 		DecodedWorkflowName:      "",
 	}
 
-	input := &pb.SimpleConsensusInputs{
-		Observation: &pb.SimpleConsensusInputs_Value{Value: values.Proto(values.NewInt64(34))},
-		Descriptors: &pb.ConsensusDescriptor{Descriptor_: &pb.ConsensusDescriptor_Aggregation{Aggregation: pb.AggregationType_AGGREGATION_TYPE_IDENTICAL}},
+	input := &sdk.SimpleConsensusInputs{
+		Observation: &sdk.SimpleConsensusInputs_Value{Value: values.Proto(values.NewInt64(34))},
+		Descriptors: &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL}},
 	}
 
 	_, err = capability.Simple(ctx, metadata, input)

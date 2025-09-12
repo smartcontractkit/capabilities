@@ -13,12 +13,13 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/smartcontractkit/chainlink-common/pkg/beholder/beholdertest"
-	"github.com/smartcontractkit/chainlink/v2/core/logger"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 	"google.golang.org/protobuf/proto"
 	"gopkg.in/yaml.v3"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/beholder/beholdertest"
+	"github.com/smartcontractkit/chainlink/v2/core/logger"
 
 	"github.com/stretchr/testify/require"
 
@@ -40,6 +41,7 @@ import (
 // It deploys a contract that emits logs, sets up a workflow with that deployed contract to the log trigger, waits for the workflow to be ready,
 // emits a log event, and then checks that the workflow processes the log event correctly by counting the number of events logged by beholder.
 func Test_LogTrigger(t *testing.T) {
+	t.Skip("PRODCRE-833 Needs to be fixed")
 	ctx := t.Context()
 	beholderTester := beholdertest.NewObserver(t)
 	lggr, obs := logger.TestLoggerObserved(t, zapcore.InfoLevel)

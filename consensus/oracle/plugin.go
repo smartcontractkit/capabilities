@@ -12,12 +12,12 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	"github.com/smartcontractkit/libocr/quorumhelper"
 
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
-	"github.com/smartcontractkit/chainlink-common/pkg/values"
-	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
-	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb"
+	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
+	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
 	"github.com/smartcontractkit/libocr/offchainreporting2/types"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
@@ -198,7 +198,7 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 
 		var newOb *oracletypes.RequestObservation
 		switch obs := req.Input.GetObservation().(type) {
-		case *pb.SimpleConsensusInputs_Value:
+		case *sdk.SimpleConsensusInputs_Value:
 			marshalledValue, err := proto.MarshalOptions{Deterministic: true}.Marshal(obs.Value)
 			if err != nil {
 				return nil, fmt.Errorf("failed to marshal observation value for request %s: %w", req.ID(), err)
@@ -209,7 +209,7 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 				Observation: marshalledValue,
 				ReceivedAt:  timestamppb.New(req.ReceivedAt),
 			}
-		case *pb.SimpleConsensusInputs_Error:
+		case *sdk.SimpleConsensusInputs_Error:
 			r.lggr.Debugw("observation is an error, skipping", "error", obs.Error, "requestID", req.ID())
 			return nil, errors.New(obs.Error)
 		default:
@@ -310,7 +310,7 @@ func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeC
 			continue
 		}
 
-		consensusDescriptor := &pb.ConsensusDescriptor{}
+		consensusDescriptor := &sdk.ConsensusDescriptor{}
 		err := proto.Unmarshal(request.RequestConsensusDescriptor, consensusDescriptor)
 		if err != nil {
 			return nil, fmt.Errorf("could not unmarshal consensus descriptor for request %s: %w", requestID, err)

@@ -10,19 +10,20 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/smartcontractkit/cre-sdk-go/sdk"
+	"github.com/smartcontractkit/cre-sdk-go/cre"
+
+	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/values"
-	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
-	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb"
+	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
+	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 )
 
 func Test_CalculateOutcomeForObservations(t *testing.T) {
 	type testCase struct {
 		name            string
 		observations    []*valuespb.Value
-		descriptor      *pb.ConsensusDescriptor
+		descriptor      *sdk.ConsensusDescriptor
 		defaultValue    *valuespb.Value
 		minObs          int
 		f               int
@@ -37,9 +38,9 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 				values.Proto(values.NewInt64(10)),
 				values.Proto(values.NewInt64(20)),
 			},
-			descriptor: &pb.ConsensusDescriptor{
-				Descriptor_: &pb.ConsensusDescriptor_Aggregation{
-					Aggregation: pb.AggregationType_AGGREGATION_TYPE_MEDIAN,
+			descriptor: &sdk.ConsensusDescriptor{
+				Descriptor_: &sdk.ConsensusDescriptor_Aggregation{
+					Aggregation: sdk.AggregationType_AGGREGATION_TYPE_MEDIAN,
 				},
 			},
 			minObs:          3,
@@ -55,9 +56,9 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 				values.Proto(values.NewInt64(20)),
 				values.Proto(values.NewInt64(50)),
 			},
-			descriptor: &pb.ConsensusDescriptor{
-				Descriptor_: &pb.ConsensusDescriptor_Aggregation{
-					Aggregation: pb.AggregationType_AGGREGATION_TYPE_MEDIAN,
+			descriptor: &sdk.ConsensusDescriptor{
+				Descriptor_: &sdk.ConsensusDescriptor_Aggregation{
+					Aggregation: sdk.AggregationType_AGGREGATION_TYPE_MEDIAN,
 				},
 			},
 			minObs:          5,
@@ -74,9 +75,9 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 				values.Proto(values.NewInt64(50)), // spurious
 				values.Proto(values.NewString("malicious")),
 			},
-			descriptor: &pb.ConsensusDescriptor{
-				Descriptor_: &pb.ConsensusDescriptor_Aggregation{
-					Aggregation: pb.AggregationType_AGGREGATION_TYPE_IDENTICAL,
+			descriptor: &sdk.ConsensusDescriptor{
+				Descriptor_: &sdk.ConsensusDescriptor_Aggregation{
+					Aggregation: sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL,
 				},
 			},
 			minObs:          5,
@@ -91,9 +92,9 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 				values.Proto(values.NewInt64(20)), values.Proto(values.NewFloat64(2.0)),
 				values.Proto(values.NewInt64(30)), values.Proto(values.NewInt64(40)),
 			},
-			descriptor: &pb.ConsensusDescriptor{
-				Descriptor_: &pb.ConsensusDescriptor_Aggregation{
-					Aggregation: pb.AggregationType_AGGREGATION_TYPE_MEDIAN,
+			descriptor: &sdk.ConsensusDescriptor{
+				Descriptor_: &sdk.ConsensusDescriptor_Aggregation{
+					Aggregation: sdk.AggregationType_AGGREGATION_TYPE_MEDIAN,
 				},
 			},
 			expectedOutcome: values.Proto(values.NewInt64(20)),
@@ -110,9 +111,9 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 				mustNewList(42, 43, 44, 45),
 			},
 			f: 3,
-			descriptor: &pb.ConsensusDescriptor{
-				Descriptor_: &pb.ConsensusDescriptor_Aggregation{
-					Aggregation: pb.AggregationType_AGGREGATION_TYPE_COMMON_PREFIX,
+			descriptor: &sdk.ConsensusDescriptor{
+				Descriptor_: &sdk.ConsensusDescriptor_Aggregation{
+					Aggregation: sdk.AggregationType_AGGREGATION_TYPE_COMMON_PREFIX,
 				},
 			},
 			expectedOutcome: mustNewList("1", "2", "3"),
@@ -127,7 +128,7 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 				mustWrap(s{Val: 44}),
 			},
 			f:               2,
-			descriptor:      sdk.ConsensusAggregationFromTags[s]().Descriptor(),
+			descriptor:      cre.ConsensusAggregationFromTags[s]().Descriptor(),
 			expectedOutcome: mustWrap(s{Val: 43}),
 		},
 		{
@@ -140,7 +141,7 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 				mustWrap(s{Val: 44, OtherField: "E"}),
 			},
 			f:               2,
-			descriptor:      sdk.ConsensusAggregationFromTags[s]().Descriptor(),
+			descriptor:      cre.ConsensusAggregationFromTags[s]().Descriptor(),
 			defaultValue:    mustWrap(s{OtherField: "Z"}),
 			expectedOutcome: mustWrap(s{Val: 43, OtherField: "Z"}),
 		},
@@ -153,7 +154,7 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 				mustWrap(s{Val: 40, OtherField: "common", PrefixSlice: []int64{1, 9, 8}, Nest: s1{Val: 101}, SuffixSlice: []int64{99, 2, 3}}),
 				mustWrap(s{Val: 50, OtherField: "common", PrefixSlice: []int64{1, 2, 6}, Nest: s1{Val: 102}, SuffixSlice: []int64{42, 2, 3}}),
 			},
-			descriptor: sdk.ConsensusAggregationFromTags[s]().Descriptor(),
+			descriptor: cre.ConsensusAggregationFromTags[s]().Descriptor(),
 			minObs:     5,
 			f:          2,
 			expectedOutcome: mustWrap(s{
@@ -183,9 +184,9 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 				mustNewList("bad", "values", "bad", "values"),
 			},
 			f: 7,
-			descriptor: &pb.ConsensusDescriptor{
-				Descriptor_: &pb.ConsensusDescriptor_Aggregation{
-					Aggregation: pb.AggregationType_AGGREGATION_TYPE_COMMON_SUFFIX,
+			descriptor: &sdk.ConsensusDescriptor{
+				Descriptor_: &sdk.ConsensusDescriptor_Aggregation{
+					Aggregation: sdk.AggregationType_AGGREGATION_TYPE_COMMON_SUFFIX,
 				},
 			},
 			expectedOutcome: mustNewList("7", "8", "9"),
@@ -195,9 +196,9 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 			observations: []*valuespb.Value{
 				values.Proto(values.NewInt64(10)),
 			},
-			descriptor: &pb.ConsensusDescriptor{
-				Descriptor_: &pb.ConsensusDescriptor_Aggregation{
-					Aggregation: pb.AggregationType_AGGREGATION_TYPE_UNSPECIFIED,
+			descriptor: &sdk.ConsensusDescriptor{
+				Descriptor_: &sdk.ConsensusDescriptor_Aggregation{
+					Aggregation: sdk.AggregationType_AGGREGATION_TYPE_UNSPECIFIED,
 				},
 			},
 			minObs:          1,
@@ -258,6 +259,24 @@ func Test_handleMedianAggregation(t *testing.T) {
 				values.Proto(values.NewInt64(10)), values.Proto(values.NewInt64(20)), values.Proto(values.NewInt64(30)), values.Proto(values.NewInt64(40)),
 			},
 			expectedOutcome: values.Proto(values.NewInt64(20)),
+			expectedError:   nil,
+			f:               1,
+		},
+		{
+			name: "uint64 median: basic five values",
+			observations: []*valuespb.Value{
+				values.Proto(values.NewUint64(30)), values.Proto(values.NewUint64(40)), values.Proto(values.NewUint64(10)), values.Proto(values.NewUint64(20)), values.Proto(values.NewUint64(50)),
+			},
+			expectedOutcome: values.Proto(values.NewUint64(30)),
+			expectedError:   nil,
+			f:               2,
+		},
+		{
+			name: "uint64 median: even number of values returns left value",
+			observations: []*valuespb.Value{
+				values.Proto(values.NewUint64(10)), values.Proto(values.NewUint64(20)), values.Proto(values.NewUint64(30)), values.Proto(values.NewUint64(40)),
+			},
+			expectedOutcome: values.Proto(values.NewUint64(20)),
 			expectedError:   nil,
 			f:               1,
 		},
@@ -357,7 +376,7 @@ func Test_handleMedianAggregation(t *testing.T) {
 				values.Proto(values.NewString("cad")),
 			},
 			expectedOutcome: nil,
-			expectedError:   errors.New("unsupported type for median aggregation: " + TypeString),
+			expectedError:   errors.New("unsupported type for median aggregation: " + typeString.Name()),
 			f:               2,
 		},
 		{
@@ -399,7 +418,7 @@ func parseTime(t *testing.T, s string) time.Time {
 }
 
 func mustWrap(v any) *valuespb.Value {
-	wrapped, err := values.Wrap((v))
+	wrapped, err := values.Wrap(v)
 	if err != nil {
 		panic(err)
 	}

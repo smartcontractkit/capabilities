@@ -21,12 +21,12 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
-	"github.com/smartcontractkit/chainlink-common/pkg/values"
+	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
+	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2/types"
 
-	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
-	"github.com/smartcontractkit/chainlink-common/pkg/workflows/sdk/v2/pb"
+	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
 	"github.com/smartcontractkit/capabilities/consensus/oracle/types"
 
@@ -200,7 +200,7 @@ func (c *consensusCapability) setConfiguration(config string) error {
 	return nil
 }
 
-func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.RequestMetadata, input *pb.SimpleConsensusInputs) (*capabilities.ResponseAndMetadata[*valuespb.Value], error) {
+func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.RequestMetadata, input *sdk.SimpleConsensusInputs) (*capabilities.ResponseAndMetadata[*valuespb.Value], error) {
 	lggr := c.requestLggr(metadata)
 
 	lggr.Debugw("received simple consensus request", "metadata", metadata, "input", input)
@@ -253,7 +253,7 @@ func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.
 	}
 }
 
-func (c *consensusCapability) Report(ctx context.Context, metadata capabilities.RequestMetadata, reportRequest *pb.ReportRequest) (*capabilities.ResponseAndMetadata[*pb.ReportResponse], error) {
+func (c *consensusCapability) Report(ctx context.Context, metadata capabilities.RequestMetadata, reportRequest *sdk.ReportRequest) (*capabilities.ResponseAndMetadata[*sdk.ReportResponse], error) {
 	lggr := c.requestLggr(metadata)
 
 	lggr.Debug("received reporting request", "metadata", metadata)
@@ -280,13 +280,13 @@ func (c *consensusCapability) Report(ctx context.Context, metadata capabilities.
 		return nil, fmt.Errorf("failed to validate input size: %w", err)
 	}
 
-	input := &pb.SimpleConsensusInputs{
-		Observation: &pb.SimpleConsensusInputs_Value{
+	input := &sdk.SimpleConsensusInputs{
+		Observation: &sdk.SimpleConsensusInputs_Value{
 			Value: values.Proto(values.NewBytes(reportRequest.EncodedPayload)),
 		},
-		Descriptors: &pb.ConsensusDescriptor{
-			Descriptor_: &pb.ConsensusDescriptor_Aggregation{
-				Aggregation: pb.AggregationType_AGGREGATION_TYPE_IDENTICAL,
+		Descriptors: &sdk.ConsensusDescriptor{
+			Descriptor_: &sdk.ConsensusDescriptor_Aggregation{
+				Aggregation: sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL,
 			},
 		},
 		Default: nil,
@@ -302,10 +302,10 @@ func (c *consensusCapability) Report(ctx context.Context, metadata capabilities.
 			return nil, response.Err
 		}
 
-		var sigs []*pb.AttributedSignature
+		var sigs []*sdk.AttributedSignature
 
 		for _, s := range response.Sigs {
-			sigs = append(sigs, &pb.AttributedSignature{
+			sigs = append(sigs, &sdk.AttributedSignature{
 				Signature: s.Signature,
 				SignerId:  uint32(s.Signer),
 			})
@@ -313,14 +313,14 @@ func (c *consensusCapability) Report(ctx context.Context, metadata capabilities.
 
 		c.lggr.Debugw("returning report", "metadata", metadata)
 
-		reportResponse := &pb.ReportResponse{
+		reportResponse := &sdk.ReportResponse{
 			ConfigDigest:  response.ConfigDigest[:],
 			SeqNr:         response.SeqNr,
 			ReportContext: response.ReportContext,
 			RawReport:     response.RawReport,
 			Sigs:          sigs,
 		}
-		responseAndMetadata := capabilities.ResponseAndMetadata[*pb.ReportResponse]{
+		responseAndMetadata := capabilities.ResponseAndMetadata[*sdk.ReportResponse]{
 			Response:         reportResponse,
 			ResponseMetadata: capabilities.ResponseMetadata{},
 		}
@@ -328,7 +328,7 @@ func (c *consensusCapability) Report(ctx context.Context, metadata capabilities.
 	}
 }
 
-func (c *consensusCapability) sendRequest(ctx context.Context, input *pb.SimpleConsensusInputs, consensusRequestMetaData oracle.ConsensusRequestMetadata) <-chan oracle.ConsensusResponse {
+func (c *consensusCapability) sendRequest(ctx context.Context, input *sdk.SimpleConsensusInputs, consensusRequestMetaData oracle.ConsensusRequestMetadata) <-chan oracle.ConsensusResponse {
 	c.requestTimeoutLock.RLock()
 	requestTimeout := c.requestTimeout
 	c.requestTimeoutLock.RUnlock()
@@ -342,7 +342,7 @@ func (c *consensusCapability) sendRequest(ctx context.Context, input *pb.SimpleC
 	return callbackChan
 }
 
-func validateReportRequest(reportRequest *pb.ReportRequest) (string, error) {
+func validateReportRequest(reportRequest *sdk.ReportRequest) (string, error) {
 	supportedKeyBundleIDs := map[string]struct{}{
 		KeyBundleIDEvm:   {},
 		KeyBundleIDAptos: {},
@@ -480,15 +480,15 @@ func validateInputSize(consensusRequestMetaData oracle.ConsensusRequestMetadata,
 	return nil
 }
 
-func logObservation(lggr logger.Logger, input *pb.SimpleConsensusInputs, metadata capabilities.RequestMetadata) (*valuespb.Value, error) {
+func logObservation(lggr logger.Logger, input *sdk.SimpleConsensusInputs, metadata capabilities.RequestMetadata) (*valuespb.Value, error) {
 	switch obs := input.GetObservation().(type) {
-	case *pb.SimpleConsensusInputs_Value:
+	case *sdk.SimpleConsensusInputs_Value:
 		val, err := values.FromProto(obs.Value)
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode observation value: %w", err)
 		}
 		lggr.Debugw("received observation value", "value", val)
-	case *pb.SimpleConsensusInputs_Error:
+	case *sdk.SimpleConsensusInputs_Error:
 		lggr.Debugw("observation is an error", "error", obs.Error)
 	default:
 		if input.Default != nil {

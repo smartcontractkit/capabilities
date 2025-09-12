@@ -1,4 +1,4 @@
-package http_test
+package http
 
 import (
 	"context"
@@ -18,15 +18,15 @@ import (
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
 
-	httpcap "github.com/smartcontractkit/capabilities/http_action/action"
-
-	"github.com/smartcontractkit/chainlink/v2/core/logger"
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway"
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/config"
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/connector"
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/network"
 
+	httpcap "github.com/smartcontractkit/capabilities/http_action/action"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
@@ -80,22 +80,27 @@ const gatewayConfigTemplate = `
   "Dons": [
     {
       "DonId": "test_don",
-      "HandlerName": "http-capabilities",
-      "HandlerConfig": {
-        "MaxAllowedMessageAgeSec": 1000,
-        "NodeRateLimiter": {
-          "GlobalBurst": 10,
-          "GlobalRPS": 50,
-          "PerSenderBurst": 10,
-          "PerSenderRPS": 10
-        },
-		"UserRateLimiter": {
-		  "GlobalBurst": 10,
-          "GlobalRPS": 50,
-          "PerSenderBurst": 10,
-          "PerSenderRPS": 10	
+	  "F": 1,
+      "Handlers": [
+		{
+			"Name": "http-capabilities",
+			"ServiceName": "workflows",
+			"Config": {
+				"NodeRateLimiter": {
+					"GlobalBurst": 10,
+					"GlobalRPS": 50,
+					"PerSenderBurst": 10,
+					"PerSenderRPS": 10
+				},
+				"UserRateLimiter": {
+					"GlobalBurst": 10,
+					"GlobalRPS": 50,
+					"PerSenderBurst": 10,
+					"PerSenderRPS": 10	
+				}
+			}
 		}
-      },
+	  ],
       "Members": [
         {
           "Address": "%s",
@@ -156,10 +161,14 @@ func newTestNetworkClient(t *testing.T, addr *net.TCPAddr, lggr logger.Logger) n
 
 func newTestGateway(t *testing.T, publicKey string, c network.HTTPClient, lggr logger.Logger) gateway.Gateway {
 	gatewayConfigStr := fmt.Sprintf(gatewayConfigTemplate, publicKey)
+	return newTestGatewayFromConfig(t, gatewayConfigStr, c, lggr)
+}
+
+func newTestGatewayFromConfig(t *testing.T, gatewayConfigStr string, c network.HTTPClient, lggr logger.Logger) gateway.Gateway {
 	var gatewayConfig *config.GatewayConfig
 	err := json.Unmarshal([]byte(gatewayConfigStr), &gatewayConfig)
 	require.NoError(t, err)
-	gateway, err := gateway.NewGatewayFromConfig(gatewayConfig, gateway.NewHandlerFactory(nil, nil, c, lggr), lggr)
+	gateway, err := gateway.NewGatewayFromConfig(gatewayConfig, gateway.NewHandlerFactory(nil, nil, c, nil, nil, lggr), lggr)
 	require.NoError(t, err)
 	servicetest.Run(t, gateway)
 	return gateway
@@ -219,7 +228,7 @@ func (*client) Close() error {
 
 func TestHTTPActionCapability(t *testing.T) {
 	ctx := t.Context()
-	lggr := logger.TestLogger(t)
+	lggr := logger.Test(t)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/test", func(w http.ResponseWriter, r *http.Request) {

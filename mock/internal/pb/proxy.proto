@@ -48,6 +48,8 @@ message TriggerEvent{
   string TriggerType = 1;
   string ID = 2;
   bytes Outputs = 3;
+  google.protobuf.Any Payload = 4;
+  OCRTriggerEvent OCREvent = 5;
 }
 
 message TriggerResponse{
@@ -60,15 +62,16 @@ message GetTriggerSubscribersRequest{
 }
 
 message GetTriggerSubscribersResponse{
-  repeated string WorkflowIDs=1;
+  repeated string WorkflowIDs = 1;
 }
 
 message TriggerRegistrationRequest{
   string TriggerID = 1;
   Metadata Metadata = 2;
   bytes Config = 3;
-   google.protobuf.Any Payload = 4;
-string      Method =5;
+  google.protobuf.Any Payload = 4;
+  string Method = 5;
+  string RegistrationTriggerID =6;
 }
 
 
@@ -107,7 +110,7 @@ message CapabilityInfo{
 }
 
 message SendTriggerEventRequest{
-  string TriggerID =1;
+  string TriggerID = 1;
   string TriggerType = 2;
   string ID = 3;
   bytes Outputs = 5;
@@ -116,15 +119,15 @@ message SendTriggerEventRequest{
 
 }
 message OCRTriggerEvent{
-  bytes ConfigDigest =1;
-   uint64   SeqNr        =2;
-   bytes   Report =3;
-   repeated OCRAttributedOnchainSignature  Sigs=4;
+  bytes ConfigDigest = 1;
+  uint64   SeqNr = 2;
+  bytes   Report = 3;
+  repeated OCRAttributedOnchainSignature  Sigs = 4;
 }
 
 message OCRAttributedOnchainSignature{
-  bytes Signature =1;
-     uint32 Signer =2;
+  bytes Signature = 1;
+  uint32 Signer = 2;
 }
 
 
