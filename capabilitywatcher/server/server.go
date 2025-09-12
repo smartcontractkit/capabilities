@@ -153,7 +153,7 @@ func (s *CapabilityWatcherServer) checkCapability(ctx context.Context, c capabil
 	switch info.ID {
 	case "cron-trigger@1.0.0":
 		return s.checkCronTrigger(ctx)
-	case "read-contract@1.0.0":
+	case "http-actions@1.0.0-alpha":
 		return s.checkCronTrigger(ctx)
 	default:
 		s.Lggr.Debugf("No specific health check for capability: %s", info.ID)
@@ -168,9 +168,7 @@ func (s *CapabilityWatcherServer) checkCronTrigger(ctx context.Context) error {
 	s.runningChecks["cron-trigger@1.0.0"] = true // TODO: make the lock less hacky + add cleanup
 	s.checksMutex.Unlock()
 
-	cc := checks.CronChecker{}
-
-	cronWatcher, err := internal.NewTriggerWatcher(s.Lggr, s.capRegistry, "cron-trigger@1.0.0", cc)
+	cronWatcher, err := internal.NewTriggerWatcher(s.Lggr, s.capRegistry, "cron-trigger@1.0.0", checks.CronChecker{})
 	if err != nil {
 		return fmt.Errorf("failed to create cron trigger watcher: %w", err)
 	}
@@ -183,14 +181,12 @@ func (s *CapabilityWatcherServer) checkCronTrigger(ctx context.Context) error {
 }
 
 // checkReadContract performs health check specifically for cron trigger capability
-func (s *CapabilityWatcherServer) checkReadContract(ctx context.Context) error {
+func (s *CapabilityWatcherServer) checkCustomCompute(ctx context.Context) error {
 	s.checksMutex.Lock()
-	s.runningChecks["read-contract@1.0.0"] = true // TODO: make the lock less hacky + add cleanup
+	s.runningChecks["http-actions@1.0.0-alpha"] = true // TODO: make the lock less hacky + add cleanup
 	s.checksMutex.Unlock()
 
-	cc := checks.ReadContractChecker{}
-
-	cronWatcher, err := internal.NewExecutableWatcher(s.Lggr, s.capRegistry, "read-contract@1.0.0", cc)
+	cronWatcher, err := internal.NewExecutableWatcher(s.Lggr, s.capRegistry, "http-actions@1.0.0-alpha", checks.HttpActionChecker{})
 	if err != nil {
 		return fmt.Errorf("failed to create read contract watcher: %w", err)
 	}

@@ -1,15 +1,16 @@
 module github.com/smartcontractkit/capabilities/capabilitywatcher
 
-go 1.24.2
+go 1.24.5
 
-toolchain go1.24.4
+toolchain go1.24.6
 
 require (
 	github.com/google/uuid v1.6.0
 	github.com/prometheus/client_golang v1.22.0
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20250711131700-236a5b631ad7
 	github.com/smartcontractkit/chainlink-common v0.8.1-0.20250807143422-b74219c46eeb
-	google.golang.org/protobuf v1.36.6
+	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20250911132915-5296c67ccb9a
+	google.golang.org/protobuf v1.36.7
 )
 
 require (
@@ -31,7 +32,7 @@ require (
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.25.0 // indirect
-	github.com/go-viper/mapstructure/v2 v2.3.0 // indirect
+	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus v1.0.1 // indirect

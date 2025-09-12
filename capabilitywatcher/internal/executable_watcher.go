@@ -136,6 +136,13 @@ func (e *ExecutableWatcher) Run(ctx context.Context) error {
 					state = StateUnregisterFromWorkflow
 				}
 				e.checker.Assert(response)
+				e.lggr.Debugf("Received response for executable %s", e.executableID)
+				e.lggr.Debugf("Response: %s", response)
+				e.lggr.Debugf("Response metadata: %s", response.Metadata)
+				e.lggr.Debugf("Response payload: %s", response.Payload)
+				if response.Payload != nil {
+					e.lggr.Debugf("Response payload bytes: %s", response.Payload)
+				}
 			case StateUnregisterFromWorkflow:
 				if err := e.unregisterFromWorkflow(ctx); err != nil {
 					return fmt.Errorf("failed to unregister executable: %w", err)
