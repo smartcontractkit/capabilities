@@ -6,8 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/smartcontractkit/capabilities/http_action/common"
 	"google.golang.org/protobuf/types/known/durationpb"
+
+	"github.com/smartcontractkit/capabilities/http_action/common"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
@@ -134,7 +135,7 @@ func getWithDefault[T comparable](cfgVal, defaultVal T) T {
 }
 
 func validateInputMaxLimits(input *http.Request, cfg common.ServiceConfig) error {
-	if input.Timeout.AsDuration().Milliseconds() < 0 || uint32(input.Timeout.AsDuration().Milliseconds()) > cfg.LimitsConfig.MaxTimeoutMs {
+	if input.Timeout.AsDuration().Milliseconds() < 0 || uint32(input.Timeout.AsDuration().Milliseconds()) > cfg.LimitsConfig.MaxTimeoutMs { // nolint:gosec // G115
 		return fmt.Errorf("timeout must be between 0 and %d milliseconds", cfg.LimitsConfig.MaxTimeoutMs)
 	}
 	if len(input.Headers) > math.MaxUint32 {
@@ -175,7 +176,7 @@ func validateCacheSettings(cacheSettings *http.CacheSettings, cfg common.Service
 		return fmt.Errorf("MaxAgeMs cannot be negative")
 	}
 
-	if uint64(cacheSettings.MaxAge.AsDuration().Milliseconds()) > uint64(cfg.LimitsConfig.MaxCacheAgeMs) {
+	if uint64(cacheSettings.MaxAge.AsDuration().Milliseconds()) > uint64(cfg.LimitsConfig.MaxCacheAgeMs) { // nolint:gosec // G115
 		return fmt.Errorf("MaxAgeMs cannot exceed %d milliseconds", cfg.LimitsConfig.MaxCacheAgeMs)
 	}
 

@@ -109,7 +109,7 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 		TimeoutMs: uint32(input.Timeout.AsDuration()), //nolint:gosec // G115
 		CacheSettings: gc.CacheSettings{
 			ReadFromCache: input.CacheSettings.Store,
-			MaxAgeMs:      int32(input.CacheSettings.MaxAge.AsDuration().Milliseconds()),
+			MaxAgeMs:      int32(input.CacheSettings.MaxAge.AsDuration().Milliseconds()), //nolint:gosec // G115
 		},
 	}
 
