@@ -31,5 +31,4 @@ func (c CronChecker) NewRegistrationRequest() (capabilities.TriggerRegistrationR
 }
 
 func (c CronChecker) Assert(_ capabilities.TriggerResponse) {
-	return
 }

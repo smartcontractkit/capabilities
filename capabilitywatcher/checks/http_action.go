@@ -8,20 +8,20 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 )
 
-var _ internal.ExecutableChecker = (*HttpActionChecker)(nil)
+var _ internal.ExecutableChecker = (*HTTPActionChecker)(nil)
 
-type HttpActionChecker struct {
+type HTTPActionChecker struct {
 }
 
-func (r HttpActionChecker) CreateRegisterToWorkflowRequest() (capabilities.RegisterToWorkflowRequest, error) {
+func (r HTTPActionChecker) CreateRegisterToWorkflowRequest() (capabilities.RegisterToWorkflowRequest, error) {
 	return capabilities.RegisterToWorkflowRequest{}, nil // NOOP
 }
 
-func (r HttpActionChecker) CreateUnregisterFromWorkflowRequest() (capabilities.UnregisterFromWorkflowRequest, error) {
+func (r HTTPActionChecker) CreateUnregisterFromWorkflowRequest() (capabilities.UnregisterFromWorkflowRequest, error) {
 	return capabilities.UnregisterFromWorkflowRequest{}, nil // NOOP
 }
 
-func (r HttpActionChecker) CreateExecuteRequest() (capabilities.CapabilityRequest, error) {
+func (r HTTPActionChecker) CreateExecuteRequest() (capabilities.CapabilityRequest, error) {
 	payload, err := anypb.New(&http.Request{
 		Url:       "https://httpbin.org/get?somerandomnumber=1234",
 		Method:    "GET",
@@ -41,6 +41,5 @@ func (r HttpActionChecker) CreateExecuteRequest() (capabilities.CapabilityReques
 	}, nil
 }
 
-func (r HttpActionChecker) Assert(response capabilities.CapabilityResponse) {
-	return
+func (r HTTPActionChecker) Assert(response capabilities.CapabilityResponse) {
 }

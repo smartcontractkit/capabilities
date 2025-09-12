@@ -164,7 +164,7 @@ func (s *CapabilityWatcherServer) checkCapability(ctx context.Context, c capabil
 	case "cron-trigger@1.0.0":
 		return s.startCronTriggerService(info.ID)
 	case "http-actions@1.0.0-alpha":
-		return s.startHttpActionService(info.ID)
+		return s.startHTTPActionService(info.ID)
 	default:
 		s.Lggr.Infof("No service defined for capability: %s", info.ID)
 	}
@@ -207,14 +207,14 @@ func (s *CapabilityWatcherServer) startCronTriggerService(capID string) error {
 }
 
 // checkHttpAction performs health check specifically for HTTP action capability
-func (s *CapabilityWatcherServer) startHttpActionService(capID string) error {
+func (s *CapabilityWatcherServer) startHTTPActionService(capID string) error {
 	serviceCtx, cancel := context.WithCancel(s.serverCtx)
 
 	s.servicesMutex.Lock()
 	s.runningServices[capID] = cancel
 	s.servicesMutex.Unlock()
 
-	httpWatcher, err := internal.NewExecutableWatcher(s.Lggr, s.capRegistry, capID, checks.HttpActionChecker{})
+	httpWatcher, err := internal.NewExecutableWatcher(s.Lggr, s.capRegistry, capID, checks.HTTPActionChecker{})
 	if err != nil {
 		cancel()
 		s.servicesMutex.Lock()
