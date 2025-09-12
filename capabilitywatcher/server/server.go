@@ -19,7 +19,7 @@ import (
 // Ensure HealthCheckServer implements the StandardCapabilities interface
 var _ loop.StandardCapabilities = (*CapabilityWatcherServer)(nil)
 
-// HealthCheckServer monitors the health of local capabilities in the node
+// CapabilityWatcherServer monitors the health of local capabilities in the node
 type CapabilityWatcherServer struct {
 	Lggr        logger.Logger
 	capRegistry core.CapabilitiesRegistry
@@ -90,8 +90,7 @@ func New(lggr logger.Logger) *CapabilityWatcherServer {
 
 // runLoop continuously monitors capabilities and performs health checks
 func (s *CapabilityWatcherServer) runLoop(ctx context.Context) {
-	s.Lggr.Info("Starting health check monitoring loop")
-
+	s.Lggr.Info("Starting capability checker loop")
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
@@ -147,16 +146,16 @@ func (s *CapabilityWatcherServer) checkCapability(ctx context.Context, c capabil
 		return nil
 	}
 
-	s.Lggr.Debugf("Performing health check for local capability: %s", info.ID)
+	s.Lggr.Infof("Performing health check for local capability: %s", info.ID)
 
 	// Handle specific capability types
 	switch info.ID {
 	case "cron-trigger@1.0.0":
-		return s.checkCronTrigger(ctx)
+		s.checkCronTrigger(ctx)
 	case "http-actions@1.0.0-alpha":
-		return s.checkHttpAction(ctx)
+		s.checkHttpAction(ctx)
 	default:
-		s.Lggr.Debugf("No specific health check for capability: %s", info.ID)
+		s.Lggr.Infof("No specific health check for capability: %s", info.ID)
 	}
 
 	return nil
