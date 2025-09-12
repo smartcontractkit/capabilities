@@ -160,6 +160,7 @@ func NewTriggerWatcher(
 		capabilitiesRegistry:       capabilitiesRegistry,
 		triggerID:                  triggerID,
 		triggerRegistrationRequest: triggerRegistrationRequest,
+		triggerChecker:             triggerChecker,
 		// Defaults
 		idleSteps:  5,
 		tickPeriod: 30 * time.Second,

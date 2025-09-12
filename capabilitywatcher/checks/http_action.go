@@ -1,11 +1,11 @@
 package checks
 
 import (
-	"github.com/smartcontractkit/capabilities/capabilitywatcher/internal"
-	"google.golang.org/protobuf/types/known/anypb"
-
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
+	"google.golang.org/protobuf/types/known/anypb"
+
+	"github.com/smartcontractkit/capabilities/capabilitywatcher/internal"
 )
 
 var _ internal.ExecutableChecker = (*HTTPActionChecker)(nil)

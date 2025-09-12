@@ -2,11 +2,11 @@ package checks
 
 import (
 	"github.com/google/uuid"
-	"github.com/smartcontractkit/capabilities/capabilitywatcher/internal"
-	"google.golang.org/protobuf/types/known/anypb"
-
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron"
+	"google.golang.org/protobuf/types/known/anypb"
+
+	"github.com/smartcontractkit/capabilities/capabilitywatcher/internal"
 )
 
 var _ internal.TriggerChecker = (*CronChecker)(nil)
