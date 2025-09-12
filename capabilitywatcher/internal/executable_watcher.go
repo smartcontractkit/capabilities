@@ -5,9 +5,93 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
+)
+
+var (
+	// Built-in metrics with executable_id labels
+	// Counter metrics
+	executableRegistrationsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "capability_checker_executable_registrations_total",
+			Help: "Total number of executable registrations to workflow",
+		},
+		[]string{"executable_id"},
+	)
+	executableUnregistrationsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "capability_checker_executable_unregistrations_total",
+			Help: "Total number of executable unregistrations from workflow",
+		},
+		[]string{"executable_id"},
+	)
+	executableExecutionsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "capability_checker_executable_executions_total",
+			Help: "Total number of executable executions",
+		},
+		[]string{"executable_id"},
+	)
+	executableExecutionErrorsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "capability_checker_executable_execution_errors_total",
+			Help: "Total number of executable execution errors",
+		},
+		[]string{"executable_id"},
+	)
+	executableRegistrationErrorsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "capability_checker_executable_registration_errors_total",
+			Help: "Total number of failed executable registration attempts",
+		},
+		[]string{"executable_id"},
+	)
+	executableUnregistrationErrorsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "capability_checker_executable_unregistration_errors_total",
+			Help: "Total number of failed executable unregistration attempts",
+		},
+		[]string{"executable_id"},
+	)
+
+	// Histogram metrics
+	executableRegistrationDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "capability_checker_executable_registration_duration_milliseconds",
+			Help:    "Time taken to register executables to workflow",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"executable_id"},
+	)
+	executableUnregistrationDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "capability_checker_executable_unregistration_duration_milliseconds",
+			Help:    "Time taken to unregister executables from workflow",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"executable_id"},
+	)
+	executableExecutionDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "capability_checker_executable_execution_duration_milliseconds",
+			Help:    "Time taken to execute executables",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"executable_id"},
+	)
+	executableLifecycleDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "capability_checker_executable_lifecycle_duration_seconds",
+			Help:    "Full cycle time from register to execute to unregister",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"executable_id"},
+	)
 )
 
 // ExecutableState represents the current state of the executable watcher state machine
@@ -111,7 +195,7 @@ func (e *ExecutableWatcher) Run(ctx context.Context) error {
 
 	state := StateRegisterToWorkflow
 	executeCount := 0
-
+	lifecycleTimeStart := time.Now()
 	for {
 		select {
 		case <-ctx.Done():
@@ -119,17 +203,22 @@ func (e *ExecutableWatcher) Run(ctx context.Context) error {
 		case <-ticker.C:
 			switch state {
 			case StateRegisterToWorkflow:
+				lifecycleTimeStart = time.Now()
 				if err := e.registerToWorkflow(ctx); err != nil {
+					executableRegistrationErrorsTotal.WithLabelValues(e.executableID).Inc()
 					return fmt.Errorf("failed to register executable: %w", err)
 				}
+				executableRegistrationsTotal.WithLabelValues(e.executableID).Inc()
 				state = StateExecute
 				executeCount = 0
 			case StateExecute:
 				executeCount++
 				response, err := e.execute(ctx)
 				if err != nil {
+					executableExecutionErrorsTotal.WithLabelValues(e.executableID).Inc()
 					return fmt.Errorf("failed to execute executable: %w", err)
 				}
+				executableExecutionsTotal.WithLabelValues(e.executableID).Inc()
 				e.lggr.Debugf("execute state %d of %d for executable %s", executeCount, e.executeSteps, e.executableID)
 
 				if executeCount >= e.executeSteps {
@@ -145,9 +234,12 @@ func (e *ExecutableWatcher) Run(ctx context.Context) error {
 				}
 			case StateUnregisterFromWorkflow:
 				if err := e.unregisterFromWorkflow(ctx); err != nil {
+					executableUnregistrationErrorsTotal.WithLabelValues(e.executableID).Inc()
 					return fmt.Errorf("failed to unregister executable: %w", err)
 				}
+				executableUnregistrationsTotal.WithLabelValues(e.executableID).Inc()
 				state = StateRegisterToWorkflow
+				executableLifecycleDuration.WithLabelValues(e.executableID).Observe(time.Since(lifecycleTimeStart).Seconds())
 			}
 		}
 	}
@@ -158,7 +250,13 @@ func (e *ExecutableWatcher) registerToWorkflow(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return e.executableCapability.RegisterToWorkflow(ctx, registrationRequest)
+
+	start := time.Now()
+	err = e.executableCapability.RegisterToWorkflow(ctx, registrationRequest)
+	if err == nil {
+		executableRegistrationDuration.WithLabelValues(e.executableID).Observe(float64(time.Since(start).Milliseconds()))
+	}
+	return err
 }
 
 func (e *ExecutableWatcher) unregisterFromWorkflow(ctx context.Context) error {
@@ -166,7 +264,13 @@ func (e *ExecutableWatcher) unregisterFromWorkflow(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return e.executableCapability.UnregisterFromWorkflow(ctx, unregistrationRequest)
+
+	start := time.Now()
+	err = e.executableCapability.UnregisterFromWorkflow(ctx, unregistrationRequest)
+	if err == nil {
+		executableUnregistrationDuration.WithLabelValues(e.executableID).Observe(float64(time.Since(start).Milliseconds()))
+	}
+	return err
 }
 
 func (e *ExecutableWatcher) execute(ctx context.Context) (capabilities.CapabilityResponse, error) {
@@ -174,5 +278,10 @@ func (e *ExecutableWatcher) execute(ctx context.Context) (capabilities.Capabilit
 	if err != nil {
 		return capabilities.CapabilityResponse{}, err
 	}
-	return e.executableCapability.Execute(ctx, request)
+	start := time.Now()
+	res, err := e.executableCapability.Execute(ctx, request)
+	if err == nil {
+		executableExecutionDuration.WithLabelValues(e.executableID).Observe(float64(time.Since(start).Milliseconds()))
+	}
+	return res, err
 }

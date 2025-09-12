@@ -13,83 +13,83 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
 
-type TriggerChecker interface {
-	NewRegistrationRequest() (capabilities.TriggerRegistrationRequest, error)
-	Assert(capabilities.TriggerResponse)
-}
-
 var (
 	// Built-in metrics with trigger_id labels
 	// Counter metrics
 	triggerRegistrationsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "healthcheck_trigger_registrations_total",
+			Name: "capability_checker_trigger_registrations_total",
 			Help: "Total number of trigger registrations",
 		},
 		[]string{"trigger_id"},
 	)
 	triggerUnregistrationsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "healthcheck_trigger_unregistrations_total",
+			Name: "capability_checker_trigger_unregistrations_total",
 			Help: "Total number of trigger unregistrations",
 		},
 		[]string{"trigger_id"},
 	)
 	triggerEventsReceivedTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "healthcheck_trigger_events_received_total",
+			Name: "capability_checker_trigger_events_received_total",
 			Help: "Total number of trigger events received",
 		},
 		[]string{"trigger_id"},
 	)
 	triggerEventsErrorsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "healthcheck_trigger_events_errors_total",
+			Name: "capability_checker_trigger_events_errors_total",
 			Help: "Total number of trigger error events received",
 		},
 		[]string{"trigger_id"},
 	)
 	triggerRegistrationErrorsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "healthcheck_trigger_registration_errors_total",
+			Name: "capability_checker_trigger_registration_errors_total",
 			Help: "Total number of failed trigger registration attempts",
 		},
 		[]string{"trigger_id"},
 	)
 	triggerUnregistrationErrorsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "healthcheck_trigger_unregistration_errors_total",
+			Name: "capability_checker_trigger_unregistration_errors_total",
 			Help: "Total number of failed trigger unregistration attempts",
 		},
 		[]string{"trigger_id"},
 	)
 
 	// Histogram metrics
-	triggerRegistrationDurationSeconds = promauto.NewHistogramVec(
+	triggerRegistrationDuration = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "healthcheck_trigger_registration_duration_seconds",
+			Name:    "capability_checker_trigger_registration_duration_milliseconds",
 			Help:    "Time taken to register triggers",
 			Buckets: prometheus.DefBuckets,
 		},
 		[]string{"trigger_id"},
 	)
-	triggerUnregistrationDurationSeconds = promauto.NewHistogramVec(
+	triggerUnregistrationDuration = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "healthcheck_trigger_unregistration_duration_seconds",
+			Name:    "capability_checker_trigger_unregistration_duration_milliseconds",
 			Help:    "Time taken to unregister triggers",
 			Buckets: prometheus.DefBuckets,
 		},
 		[]string{"trigger_id"},
 	)
-	triggerLifecycleDurationSeconds = promauto.NewHistogramVec(
+	triggerLifecycleDuration = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "healthcheck_trigger_lifecycle_duration_seconds",
+			Name:    "capability_checker_trigger_lifecycle_duration_seconds",
 			Help:    "Full cycle time from register to idle to unregister",
 			Buckets: prometheus.DefBuckets,
 		},
 		[]string{"trigger_id"},
 	)
 )
+
+type TriggerChecker interface {
+	NewRegistrationRequest() (capabilities.TriggerRegistrationRequest, error)
+	Assert(capabilities.TriggerResponse)
+}
 
 // TriggerWatcher manages the lifecycle of a trigger capability with configurable idle periods.
 // It operates as a state machine that cycles between registering, idling, and unregistering triggers.
@@ -232,7 +232,7 @@ func (t *TriggerWatcher) initTriggerCapability(ctx context.Context) error {
 func (t *TriggerWatcher) register(ctx context.Context) error {
 	t.lifecycleStartTime = time.Now()
 	triggerCh, err := t.triggerCapability.RegisterTrigger(ctx, t.triggerRegistrationRequest)
-	triggerRegistrationDurationSeconds.WithLabelValues(t.triggerID).Observe(float64(time.Since(t.lifecycleStartTime).Milliseconds()))
+	triggerRegistrationDuration.WithLabelValues(t.triggerID).Observe(float64(time.Since(t.lifecycleStartTime).Milliseconds()))
 	if err != nil {
 		triggerRegistrationErrorsTotal.WithLabelValues(t.triggerID).Inc()
 		t.lggr.Errorf("Failed to register trigger '%s': %v", t.triggerID, err)
@@ -251,7 +251,7 @@ func (t *TriggerWatcher) register(ctx context.Context) error {
 func (t *TriggerWatcher) unregister(ctx context.Context) error {
 	start := time.Now()
 	err := t.triggerCapability.UnregisterTrigger(ctx, t.triggerRegistrationRequest)
-	triggerUnregistrationDurationSeconds.WithLabelValues(t.triggerID).Observe(float64(time.Since(start).Milliseconds()))
+	triggerUnregistrationDuration.WithLabelValues(t.triggerID).Observe(float64(time.Since(start).Milliseconds()))
 	if err != nil {
 		triggerUnregistrationErrorsTotal.WithLabelValues(t.triggerID).Inc()
 		t.lggr.Errorf("Failed to unregister trigger '%s': %v", t.triggerID, err)
@@ -261,7 +261,7 @@ func (t *TriggerWatcher) unregister(ctx context.Context) error {
 	triggerUnregistrationsTotal.WithLabelValues(t.triggerID).Inc()
 	// Record full lifecycle duration
 	if !t.lifecycleStartTime.IsZero() {
-		triggerLifecycleDurationSeconds.WithLabelValues(t.triggerID).Observe(float64(time.Since(t.lifecycleStartTime)))
+		triggerLifecycleDuration.WithLabelValues(t.triggerID).Observe(time.Since(t.lifecycleStartTime).Seconds())
 	}
 	t.lggr.Infof("Successfully unregistered trigger: %s", t.triggerID)
 	return nil
