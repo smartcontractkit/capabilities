@@ -154,7 +154,7 @@ func (s *CapabilityWatcherServer) checkCapability(ctx context.Context, c capabil
 	case "cron-trigger@1.0.0":
 		return s.checkCronTrigger(ctx)
 	case "http-actions@1.0.0-alpha":
-		return s.checkCronTrigger(ctx)
+		return s.checkHttpAction(ctx)
 	default:
 		s.Lggr.Debugf("No specific health check for capability: %s", info.ID)
 	}
@@ -181,7 +181,7 @@ func (s *CapabilityWatcherServer) checkCronTrigger(ctx context.Context) error {
 }
 
 // checkReadContract performs health check specifically for cron trigger capability
-func (s *CapabilityWatcherServer) checkCustomCompute(ctx context.Context) error {
+func (s *CapabilityWatcherServer) checkHttpAction(ctx context.Context) error {
 	s.checksMutex.Lock()
 	s.runningChecks["http-actions@1.0.0-alpha"] = true // TODO: make the lock less hacky + add cleanup
 	s.checksMutex.Unlock()
