@@ -25,7 +25,7 @@ func (r HTTPActionChecker) CreateExecuteRequest() (capabilities.CapabilityReques
 	payload, err := anypb.New(&http.Request{
 		Url:       "https://httpbin.org/get?somerandomnumber=1234",
 		Method:    "GET",
-		TimeoutMs: 10000,
+		TimeoutMs: 25000,
 	})
 	if err != nil {
 		return capabilities.CapabilityRequest{}, err
