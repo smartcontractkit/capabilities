@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"net/http" // aliased below to avoid conflict
-	"time"
 
 	"github.com/doyensec/safeurl"
 	"github.com/google/uuid"
@@ -91,7 +90,7 @@ func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities
 		return nil, errors.New(ErrorOutgoingRatelimitGlobal)
 	}
 
-	timeoutCtx, cancel := context.WithTimeout(ctx, time.Duration(input.TimeoutMs)*time.Millisecond)
+	timeoutCtx, cancel := context.WithTimeout(ctx, input.Timeout.AsDuration())
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(timeoutCtx, input.Method, input.Url, bytes.NewReader(input.Body))

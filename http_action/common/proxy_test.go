@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	httpactions "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
@@ -109,9 +110,9 @@ func TestSendRequest(t *testing.T) {
 		}
 
 		input := &httpactions.Request{
-			Method:    http.MethodGet,
-			Url:       server.URL,
-			TimeoutMs: 1000,
+			Method:  http.MethodGet,
+			Url:     server.URL,
+			Timeout: durationpb.New(1000 * time.Millisecond),
 			Headers: map[string]string{
 				"Content-Type": "text/plain",
 				"User-Agent":   "test-client",
@@ -148,9 +149,9 @@ func TestSendRequest(t *testing.T) {
 		}
 
 		input := &httpactions.Request{
-			Method:    http.MethodPost,
-			Url:       server.URL,
-			TimeoutMs: 1000,
+			Method:  http.MethodPost,
+			Url:     server.URL,
+			Timeout: durationpb.New(1000 * time.Millisecond),
 			Headers: map[string]string{
 				"Content-Type": "text/plain",
 			},
@@ -184,9 +185,9 @@ func TestSendRequest(t *testing.T) {
 		}
 
 		input := &httpactions.Request{
-			Method:    http.MethodGet,
-			Url:       server.URL,
-			TimeoutMs: 100, // Set timeout to 100ms, which should be less than the server delay
+			Method:  http.MethodGet,
+			Url:     server.URL,
+			Timeout: durationpb.New(100 * time.Millisecond), // Set timeout to 100ms, which should be less than the server delay
 			Headers: map[string]string{
 				"User-Agent": "timeout-client",
 			},
@@ -220,10 +221,10 @@ func TestSendRequest(t *testing.T) {
 		}
 
 		input := &httpactions.Request{
-			Method:    http.MethodGet,
-			Url:       "http://invalid-url-that-does-not-exist.example",
-			TimeoutMs: 1000,
-			Body:      []byte{},
+			Method:  http.MethodGet,
+			Url:     "http://invalid-url-that-does-not-exist.example",
+			Timeout: durationpb.New(1000 * time.Millisecond),
+			Body:    []byte{},
 		}
 
 		_, err = proxy.SendRequest(ctx, metadata, input)
@@ -259,10 +260,10 @@ func TestSendRequest(t *testing.T) {
 		}
 
 		input := &httpactions.Request{
-			Method:    http.MethodGet,
-			Url:       largeServer.URL,
-			TimeoutMs: 1000,
-			Body:      []byte{},
+			Method:  http.MethodGet,
+			Url:     largeServer.URL,
+			Timeout: durationpb.New(1000 * time.Millisecond),
+			Body:    []byte{},
 		}
 
 		response, err := proxy.SendRequest(ctx, metadata, input)
