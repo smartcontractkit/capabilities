@@ -71,7 +71,7 @@ func (rp *reportingPlugin) Query(ctx context.Context, outctx ocr3types.OutcomeCo
 		return types.Query{}, fmt.Errorf("failed to get request ready for processing IDs: %w", err)
 	}
 
-	rp.logger.Debugw("Query complete", "ids", ids)
+	rp.logger.Debugw("Query complete", "ids", ids, "cfg", rp.config)
 	return proto.Marshal(&ctypes.Query{RequestIDs: ids})
 }
 
