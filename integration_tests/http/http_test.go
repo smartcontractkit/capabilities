@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway"
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/config"
@@ -345,8 +346,8 @@ func TestHTTPActionCapability(t *testing.T) {
 			Url:    fmt.Sprintf("http://%s/random", listener.Addr().String()),
 			Method: "GET",
 			CacheSettings: &httpclient.CacheSettings{
-				ReadFromCache: true,
-				MaxAgeMs:      10000,
+				Store:  true,
+				MaxAge: durationpb.New(10000 * time.Millisecond),
 			},
 		})
 		require.NoError(t, err)
@@ -386,8 +387,8 @@ func TestHTTPActionCapability(t *testing.T) {
 			Url:    fmt.Sprintf("http://%s/not-found", listener.Addr().String()),
 			Method: "GET",
 			CacheSettings: &httpclient.CacheSettings{
-				ReadFromCache: true,
-				MaxAgeMs:      10000,
+				Store:  true,
+				MaxAge: durationpb.New(10000 * time.Millisecond),
 			},
 		})
 		require.NoError(t, err)
@@ -412,8 +413,8 @@ func TestHTTPActionCapability(t *testing.T) {
 			Url:    fmt.Sprintf("http://%s/error", listener.Addr().String()),
 			Method: "GET",
 			CacheSettings: &httpclient.CacheSettings{
-				ReadFromCache: true,
-				MaxAgeMs:      10000,
+				Store:  true,
+				MaxAge: durationpb.New(10000 * time.Millisecond),
 			},
 		})
 		require.NoError(t, err)

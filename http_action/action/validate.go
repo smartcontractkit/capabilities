@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"time"
+
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/smartcontractkit/capabilities/http_action/common"
 
@@ -97,23 +100,23 @@ func ValidatedRequest(input *http.Request, cfg common.ServiceConfig) (*http.Requ
 
 	input.Method = method
 
-	timeoutMs := input.TimeoutMs
-	if timeoutMs == 0 {
-		timeoutMs = int32(cfg.LimitsConfig.MaxTimeoutMs) //nolint:gosec // G115 (validated in ApplyDefaultsAndValidate)
+	timeoutMs := input.Timeout
+	if timeoutMs == nil || timeoutMs.AsDuration() == 0 {
+		timeoutMs = durationpb.New(time.Duration(cfg.LimitsConfig.MaxTimeoutMs) * time.Millisecond)
 	}
 
 	req := &http.Request{
-		Url:       url,
-		Method:    input.Method,
-		Headers:   input.Headers,
-		Body:      input.Body,
-		TimeoutMs: timeoutMs,
+		Url:     url,
+		Method:  input.Method,
+		Headers: input.Headers,
+		Body:    input.Body,
+		Timeout: timeoutMs,
 	}
 
 	if input.CacheSettings != nil {
 		req.CacheSettings = &http.CacheSettings{
-			ReadFromCache: input.CacheSettings.ReadFromCache,
-			MaxAgeMs:      input.CacheSettings.MaxAgeMs,
+			Store:  input.CacheSettings.Store,
+			MaxAge: input.CacheSettings.MaxAge,
 		}
 	} else {
 		req.CacheSettings = &http.CacheSettings{} // Default to empty cache settings if not provided
@@ -132,7 +135,7 @@ func getWithDefault[T comparable](cfgVal, defaultVal T) T {
 }
 
 func validateInputMaxLimits(input *http.Request, cfg common.ServiceConfig) error {
-	if input.TimeoutMs < 0 || uint32(input.TimeoutMs) > cfg.LimitsConfig.MaxTimeoutMs {
+	if input.Timeout.AsDuration().Milliseconds() < 0 || uint32(input.Timeout.AsDuration().Milliseconds()) > cfg.LimitsConfig.MaxTimeoutMs { // nolint:gosec // G115
 		return fmt.Errorf("timeout must be between 0 and %d milliseconds", cfg.LimitsConfig.MaxTimeoutMs)
 	}
 	if len(input.Headers) > math.MaxUint32 {
@@ -169,15 +172,15 @@ func validateCacheSettings(cacheSettings *http.CacheSettings, cfg common.Service
 		return nil
 	}
 
-	if cacheSettings.MaxAgeMs < 0 {
+	if cacheSettings.MaxAge.AsDuration() < 0 {
 		return fmt.Errorf("MaxAgeMs cannot be negative")
 	}
 
-	if uint64(cacheSettings.MaxAgeMs) > uint64(cfg.LimitsConfig.MaxCacheAgeMs) {
+	if uint64(cacheSettings.MaxAge.AsDuration().Milliseconds()) > uint64(cfg.LimitsConfig.MaxCacheAgeMs) { // nolint:gosec // G115
 		return fmt.Errorf("MaxAgeMs cannot exceed %d milliseconds", cfg.LimitsConfig.MaxCacheAgeMs)
 	}
 
-	if cacheSettings.ReadFromCache && cacheSettings.MaxAgeMs == 0 {
+	if cacheSettings.Store && cacheSettings.MaxAge.AsDuration() == 0 {
 		return fmt.Errorf("MaxAgeMs must be non-zero when ReadFromCache is true")
 	}
 
