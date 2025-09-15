@@ -33,7 +33,7 @@ type CapabilityWatcherServer struct {
 // Start begins the health check monitoring process
 func (s *CapabilityWatcherServer) Start(ctx context.Context) error {
 	s.Lggr.Info("Starting capability watcher server")
-	serverCtx, serverCancel := context.WithCancel(context.Background())
+	serverCtx, serverCancel := context.WithCancel(ctx)
 	s.serverCancel = serverCancel
 	go s.runLoop(serverCtx)
 	return nil
@@ -50,24 +50,57 @@ func (s *CapabilityWatcherServer) Close() error {
 		cancelFunc()
 	}
 	s.runningServices = make(map[string]context.CancelFunc)
-	s.servicesMutex.Unlock()
 
-	// Cancel server context
+	// Cancel server context and set to nil
 	if s.serverCancel != nil {
 		s.serverCancel()
+		s.serverCancel = nil
 	}
+	s.servicesMutex.Unlock()
 
 	return nil
 }
 
 // Ready returns whether the server is ready to serve requests
 func (s *CapabilityWatcherServer) Ready() error {
+	s.servicesMutex.Lock()
+	defer s.servicesMutex.Unlock()
+	if s.serverCancel == nil {
+		return errors.New("capability watcher server is not running")
+	}
 	return nil
 }
 
 // HealthReport returns the current health status of monitored components
 func (s *CapabilityWatcherServer) HealthReport() map[string]error {
-	return nil
+	s.servicesMutex.Lock()
+	defer s.servicesMutex.Unlock()
+
+	healthReport := make(map[string]error)
+
+	// Check overall server health
+	if s.serverCancel == nil {
+		healthReport["server"] = errors.New("capability watcher server is not running")
+		return healthReport
+	}
+
+	// Server is running
+	healthReport["server"] = nil
+
+	// Report on running services
+	for capID := range s.runningServices {
+		// Service is running (no error)
+		healthReport[capID] = nil
+	}
+
+	// If no services are running, indicate this
+	if len(s.runningServices) == 0 {
+		healthReport["services"] = errors.New("no capability services are currently running")
+	} else {
+		healthReport["services"] = nil
+	}
+
+	return healthReport
 }
 
 // Name returns the name of this server
