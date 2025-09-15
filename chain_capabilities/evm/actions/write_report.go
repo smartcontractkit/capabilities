@@ -61,7 +61,7 @@ func (e EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMetad
 		Response:         report,
 		ResponseMetadata: billingMetadata,
 	}
-	return &responseAndMetadata, capabilities.NewRemoteReportableError(err)
+	return &responseAndMetadata, nil
 }
 
 func (e EVM) getFee(ctx context.Context, txIdempotencyKey string) (*big.Float, error) {
