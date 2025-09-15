@@ -1,6 +1,7 @@
 package trigger
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -10,9 +11,9 @@ import (
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
 
-	_ "github.com/smartcontractkit/chainlink-common/pkg/beholder"
-
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
+
+	_ "github.com/smartcontractkit/chainlink-common/pkg/beholder"
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -827,6 +828,97 @@ func createLog(index uint32, number *big.Int, address evmtypes.Address, message 
 	}
 }
 
+func TestRegisterLogTrigger_ConversionFailures_Compact(t *testing.T) {
+	t.Parallel()
+	lggr := logger.Test(t)
+	evmService := initMocks(t)
+
+	evmService.EXPECT().
+		HeaderByNumber(mock.Anything, mock.Anything).
+		Return(&evmtypes.HeaderByNumberReply{Header: &finalizedExpHead}, nil).
+		Maybe()
+
+	svc := NewLogTriggerService(evmService, NewLogTriggerStore(), lggr, test.NopBeholderProcessor{}, &monitoring.MessageBuilder{}, pollInterval)
+
+	makeBytes := func(n int) []byte { return bytes.Repeat([]byte{0xAB}, n) }
+	validAddr := makeBytes(evmtypes.AddressLength)
+	validSig := makeBytes(evmtypes.HashLength)
+	invalidAddr := makeBytes(evmtypes.AddressLength - 1)
+	invalidHash := makeBytes(evmtypes.HashLength - 1)
+
+	cases := []struct {
+		name string
+		req  *evmcappb.FilterLogTriggerRequest
+		want string
+	}{
+		{
+			name: "addresses",
+			req: &evmcappb.FilterLogTriggerRequest{
+				Addresses: [][]byte{invalidAddr},
+				Topics:    []*evmcappb.TopicValues{{Values: [][]byte{validSig}}},
+			},
+			want: "failed to convert addresses:",
+		},
+		{
+			name: "eventSigs",
+			req: &evmcappb.FilterLogTriggerRequest{
+				Addresses: [][]byte{validAddr},
+				Topics:    []*evmcappb.TopicValues{{Values: [][]byte{invalidHash}}},
+			},
+			want: "failed to convert eventSigs:",
+		},
+		{
+			name: "topics2",
+			req: &evmcappb.FilterLogTriggerRequest{
+				Addresses: [][]byte{validAddr},
+				Topics: []*evmcappb.TopicValues{
+					{Values: [][]byte{validSig}},
+					{Values: [][]byte{invalidHash}},
+				},
+			},
+			want: "failed to convert topics2:",
+		},
+		{
+			name: "topics3",
+			req: &evmcappb.FilterLogTriggerRequest{
+				Addresses: [][]byte{validAddr},
+				Topics: []*evmcappb.TopicValues{
+					{Values: [][]byte{validSig}},
+					{Values: [][]byte{validSig}},
+					{Values: [][]byte{invalidHash}},
+				},
+			},
+			want: "failed to convert topics3:",
+		},
+		{
+			name: "topics4",
+			req: &evmcappb.FilterLogTriggerRequest{
+				Addresses: [][]byte{validAddr},
+				Topics: []*evmcappb.TopicValues{
+					{Values: [][]byte{validSig}},
+					{Values: [][]byte{validSig}},
+					{Values: [][]byte{validSig}},
+					{Values: [][]byte{invalidHash}},
+				},
+			},
+			want: "failed to convert topics4:",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := svc.RegisterLogTrigger(
+				t.Context(),
+				"conv-fail-"+tc.name,
+				capabilities.RequestMetadata{},
+				tc.req,
+			)
+			require.Error(t, err)
+			require.ErrorContains(t, err, tc.want)
+		})
+	}
+}
+
 func TestGenerateLogIdentifier_DifferentLogsProduceDifferentIDs(t *testing.T) {
 	service := &LogTriggerService{}
 	createLog := func(txHash, blockHash string, logIndex uint32) *evmtypes.Log {
@@ -965,7 +1057,7 @@ func assemblyDataMessage(address evmtypes.Address, blockNumber *big.Int) string 
 func createTriggerResponse(log *evmtypes.Log, service *LogTriggerService) capabilities.TriggerAndId[*evmcappb.Log] {
 	return capabilities.TriggerAndId[*evmcappb.Log]{
 		Id:      service.generateLogIdentifier(log),
-		Trigger: evmcappb.ConvertLogToProto(log),
+		Trigger: evmcappb.ConvertLogToProto(*log),
 	}
 }
 

@@ -20,7 +20,7 @@ import (
 	crontypedapi "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/values"
+	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 )
 
 const (
@@ -1008,7 +1008,7 @@ func TestCronTrigger_CloseStartErrors(t *testing.T) {
 }
 
 type PanicingClock struct {
-	clockwork.FakeClock
+	*clockwork.FakeClock
 	mu             sync.Mutex
 	callCount      int
 	panicAfterCall int // Panic after this many calls to a specific method

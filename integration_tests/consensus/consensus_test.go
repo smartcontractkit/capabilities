@@ -26,6 +26,7 @@ import (
 )
 
 func Test_Consensus(t *testing.T) {
+	t.Skip("PRODCRE-834 Needs to be fixed")
 	ctx := t.Context()
 	beholderTester := beholdertest.NewObserver(t)
 

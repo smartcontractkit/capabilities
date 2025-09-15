@@ -65,6 +65,13 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 		if err := p.metrics.OnWriteReportError(ctx, msg); err != nil {
 			return fmt.Errorf("failed to publish WriteReportError metrics: %w", err)
 		}
+	case *WriteReportTxFeeCalculationError:
+		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
+			return fmt.Errorf("failed to emit WriteReportTxFeeCalculationError log: %w", err)
+		}
+		if err := p.metrics.OnWriteReportTxFeeCalculationError(ctx, msg); err != nil {
+			return fmt.Errorf("failed to publish WriteReportTxFeeCalculationError metrics: %w", err)
+		}
 	// -- LogTrigger --
 	case *TriggerInitiated:
 		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {

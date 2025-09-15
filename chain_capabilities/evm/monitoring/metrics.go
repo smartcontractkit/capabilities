@@ -28,6 +28,9 @@ type Metrics struct {
 	WriteReportError struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
+	WriteReportTxFeeCalculationError struct {
+		basic commoncapbeholder.MetricsCapBasic
+	}
 	LogTriggerSuccess struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
@@ -104,6 +107,11 @@ func NewMetrics() (Metrics, error) {
 	m.WriteReportError.basic, err = commoncapbeholder.NewMetricsCapBasic(wrErr)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create write report error metric: %w", err)
+	}
+	wrTxFeeErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("write_report_tx_fee_calculation_error"), commonbeholder.ToSchemaFullName(&WriteReportTxFeeCalculationError{}))
+	m.WriteReportTxFeeCalculationError.basic, err = commoncapbeholder.NewMetricsCapBasic(wrTxFeeErr)
+	if err != nil {
+		return Metrics{}, fmt.Errorf("failed to create write report tx fee calculation error metric: %w", err)
 	}
 
 	// -- LogTrigger --
@@ -228,6 +236,12 @@ func (m *Metrics) OnWriteReportSuccess(ctx context.Context, msg *WriteReportSucc
 func (m *Metrics) OnWriteReportError(ctx context.Context, msg *WriteReportError) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
 	m.WriteReportError.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
+	return nil
+}
+
+func (m *Metrics) OnWriteReportTxFeeCalculationError(ctx context.Context, msg *WriteReportTxFeeCalculationError) error {
+	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
+	m.WriteReportTxFeeCalculationError.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
 	return nil
 }
 
@@ -369,6 +383,17 @@ func (r *WriteReportError) Attributes() []attribute.KeyValue {
 		attribute.String("receiver", getReceiver(r.Req.GetReceiver())),
 		attribute.String("summary", r.GetSummary()),
 	}, r.ExecutionContext.Attributes()...)
+}
+
+func (r *WriteReportTxFeeCalculationError) Attributes() []attribute.KeyValue {
+	attributes := []attribute.KeyValue{
+		attribute.String("receiver", getReceiver(r.Req.GetReceiver())),
+		attribute.String("summary", r.GetSummary()),
+	}
+	if r.GetTxIdempotencyKey() != "" {
+		attributes = append(attributes, attribute.String("tx_idempotency_key", r.GetTxIdempotencyKey()))
+	}
+	return append(attributes, r.ExecutionContext.Attributes()...)
 }
 
 func (r *LogTriggerSuccess) Attributes() []attribute.KeyValue {

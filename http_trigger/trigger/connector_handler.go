@@ -10,8 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"google.golang.org/protobuf/types/known/structpb"
-
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
@@ -280,12 +278,6 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 
 	l := logger.With(h.lggr, "gatewayID", gatewayID, "requestID", req.ID, "method", req.Method)
 
-	input, err := convertRawJSONToProto(triggerReq.Input)
-	if err != nil {
-		l.Errorw("Failed to convert input JSON to proto", "error", err)
-		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrParse, "Invalid input JSON")
-		return
-	}
 	workflowID, err := h.resolveWorkflowID(triggerReq.Workflow, l)
 	if err != nil {
 		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInvalidRequest, "Workflow not registered")
@@ -308,6 +300,7 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		return // Error already sent in the method
 	}
 
+	input := []byte(triggerReq.Input)
 	err = h.triggerWorkflow(ctx, workflowID, req.ID, gatewayID, workflowExecutionID, input, triggerReq.Key)
 	if err != nil {
 		l.Errorw("Failed to trigger workflow", "error", err)
@@ -417,7 +410,7 @@ func (h *connectorHandler) prepareAndCacheResponse(ctx context.Context, gatewayI
 	return resp, nil
 }
 
-func (h *connectorHandler) triggerWorkflow(ctx context.Context, workflowID string, reqID string, gatewayID string, executionID string, input *structpb.Struct, key gateway_common.AuthorizedKey) error {
+func (h *connectorHandler) triggerWorkflow(ctx context.Context, workflowID string, reqID string, gatewayID string, executionID string, input []byte, key gateway_common.AuthorizedKey) error {
 	workflow, ok := h.workflowStore.getWorkflowByID(workflowID)
 	if !ok {
 		h.sendErrorResponse(ctx, gatewayID, reqID, jsonrpc.ErrInvalidRequest, "Workflow not registered")
@@ -443,17 +436,4 @@ func (h *connectorHandler) triggerWorkflow(ctx context.Context, workflowID strin
 		return err
 	}
 	return nil
-}
-
-func convertRawJSONToProto(raw json.RawMessage) (*structpb.Struct, error) {
-	var m map[string]interface{}
-	if err := json.Unmarshal(raw, &m); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal raw JSON: %w", err)
-	}
-
-	s, err := structpb.NewStruct(m)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert map to structpb.Struct: %w", err)
-	}
-	return s, nil
 }

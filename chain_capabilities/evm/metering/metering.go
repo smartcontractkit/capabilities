@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
 
 const (
@@ -65,7 +66,7 @@ func compareStringNumbers(limitStr, actionSpendStr string) (bool, error) {
 	return limit >= actionSpend, nil
 }
 
-func CheckHasFunds(meta capabilities.RequestMetadata, unit string, actionSpendStr string) error {
+func CheckHasFunds(lggr logger.SugaredLogger, meta capabilities.RequestMetadata, unit string, actionSpendStr string) error {
 	var limitStr string
 	for _, spendLimit := range meta.SpendLimits {
 		if string(spendLimit.SpendType) == unit {
@@ -74,7 +75,8 @@ func CheckHasFunds(meta capabilities.RequestMetadata, unit string, actionSpendSt
 		}
 	}
 	if limitStr == "" {
-		return fmt.Errorf("no spend limit found for action %s", unit)
+		lggr.Warnf("no spend limit found for action %s - allowing request", unit)
+		return nil
 	}
 	hasFunds, err := compareStringNumbers(limitStr, actionSpendStr)
 	if err != nil {

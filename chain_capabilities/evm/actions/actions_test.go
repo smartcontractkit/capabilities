@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -19,15 +18,15 @@ import (
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
 
-	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
-
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions"
 
 	"google.golang.org/protobuf/testing/protocmp"
 
+	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
-	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
+	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 )
 
 func TestCapability_CallContract(t *testing.T) {
@@ -54,14 +53,6 @@ func TestCapability_CallContract(t *testing.T) {
 		_, err := svc.CallContract(t.Context(), test.GetMetadataWithNoFunds(), req)
 		require.ErrorContains(t, err, "insufficient CRE funds: current limit is 0, action spend 2.5")
 	})
-
-	t.Run("missing-limit-resource", func(t *testing.T) {
-		svc := actions.InitMocks(t)
-		req := &evmcappb.CallContractRequest{}
-		_, err := svc.CallContract(t.Context(), test.GetMetadataWithMissingSpendUnit(), req)
-		require.ErrorContains(t, err, "no spend limit found for action RPC_EVM")
-	})
-
 	t.Run("On timeout returns error", func(t *testing.T) {
 		svc := actions.InitMocks(t)
 		msg := evmtypes.CallMsg{Data: []byte{0xbe, 0xef}}
@@ -103,14 +94,6 @@ func TestCapability_BalanceAt(t *testing.T) {
 		_, err := svc.BalanceAt(t.Context(), test.GetMetadataWithNoFunds(), req)
 		require.ErrorContains(t, err, "insufficient CRE funds: current limit is 0, action spend 1")
 	})
-
-	t.Run("missing-limit-resource", func(t *testing.T) {
-		svc := actions.InitMocks(t)
-		req := &evmcappb.BalanceAtRequest{}
-		_, err := svc.BalanceAt(t.Context(), test.GetMetadataWithMissingSpendUnit(), req)
-		require.ErrorContains(t, err, "no spend limit found for action RPC_EVM")
-	})
-
 	t.Run("Returns error on timeout", func(t *testing.T) {
 		svc := actions.InitMocks(t)
 		block := big.NewInt(123)
@@ -130,37 +113,62 @@ func TestCapability_FilterLogs(t *testing.T) {
 		svc := actions.InitMocks(t)
 
 		ch := make(chan types.Reply, 1)
-		expectedReply := &evmcappb.FilterLogsReply{Logs: []*evmcappb.Log{{Address: []byte("0xabc"), Data: []byte("0xdef")}}}
+		expectedReply := &evmcappb.FilterLogsReply{
+			Logs: []*evmcappb.Log{{Address: []byte("0xabc"), Data: []byte("0xdef")}},
+		}
 		logs, err := proto.Marshal(expectedReply)
 		require.NoError(t, err)
 		ch <- types.Reply{Value: logs}
 		svc.ConsensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
-		req := &evmcappb.FilterLogsRequest{FilterQuery: &evmcappb.FilterQuery{BlockHash: make([]byte, 32)}}
+		req := &evmcappb.FilterLogsRequest{
+			FilterQuery: &evmcappb.FilterQuery{
+				BlockHash: make([]byte, 32),
+				Topics:    []*evmcappb.Topics{},
+			},
+		}
 		resp, err := svc.FilterLogs(t.Context(), capabilities.RequestMetadata{}, req)
 		require.NoError(t, err)
 		require.Empty(t, cmp.Diff(expectedReply, resp.Response, protocmp.Transform()))
 		require.Empty(t, resp.ResponseMetadata.Metering, "FilterLogs() should have one metering entry (it won't be exposed in the capabilities interface)")
 	})
+
 	t.Run("Returns error if both block hash and block range is used", func(t *testing.T) {
 		svc := actions.InitMocks(t)
-		req := &evmcappb.FilterLogsRequest{FilterQuery: &evmcappb.FilterQuery{BlockHash: bytes.Repeat([]byte{1}, 32), FromBlock: valuespb.NewBigIntFromInt(big.NewInt(1))}}
+		req := &evmcappb.FilterLogsRequest{
+			FilterQuery: &evmcappb.FilterQuery{
+				BlockHash: bytes.Repeat([]byte{1}, 32),
+				FromBlock: valuespb.NewBigIntFromInt(big.NewInt(1)),
+				Topics:    []*evmcappb.Topics{},
+			},
+		}
 		_, err := svc.FilterLogs(t.Context(), capabilities.RequestMetadata{}, req)
 		require.ErrorContains(t, err, "cannot specify both block hash and block range")
 	})
+
 	t.Run("Returns error if block hash is of invalid length", func(t *testing.T) {
 		svc := actions.InitMocks(t)
-		req := &evmcappb.FilterLogsRequest{FilterQuery: &evmcappb.FilterQuery{BlockHash: make([]byte, 2)}}
+		req := &evmcappb.FilterLogsRequest{
+			FilterQuery: &evmcappb.FilterQuery{
+				BlockHash: make([]byte, 2),
+				Topics:    []*evmcappb.Topics{},
+			},
+		}
 		_, err := svc.FilterLogs(t.Context(), capabilities.RequestMetadata{}, req)
 		require.ErrorContains(t, err, "invalid hash: got 2 bytes, expected 32")
 	})
+
 	t.Run("Returns error on timeout", func(t *testing.T) {
 		svc := actions.InitMocks(t)
 
 		ch := make(chan types.Reply, 1)
 		svc.ConsensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
 
-		req := &evmcappb.FilterLogsRequest{FilterQuery: &evmcappb.FilterQuery{}}
+		req := &evmcappb.FilterLogsRequest{
+			FilterQuery: &evmcappb.FilterQuery{
+				Topics: []*evmcappb.Topics{},
+			},
+		}
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
 		_, err := svc.FilterLogs(ctx, capabilities.RequestMetadata{}, req)
@@ -193,14 +201,6 @@ func TestCapability_GetTransactionByHash(t *testing.T) {
 		_, err := svc.GetTransactionByHash(t.Context(), test.GetMetadataWithNoFunds(), req)
 		require.ErrorContains(t, err, "insufficient CRE funds: current limit is 0, action spend 1")
 	})
-
-	t.Run("missing-limit-resource", func(t *testing.T) {
-		svc := actions.InitMocks(t)
-		req := &evmcappb.GetTransactionByHashRequest{}
-		_, err := svc.GetTransactionByHash(t.Context(), test.GetMetadataWithMissingSpendUnit(), req)
-		require.ErrorContains(t, err, "no spend limit found for action RPC_EVM")
-	})
-
 	t.Run("Returns error on invalid hash", func(t *testing.T) {
 		svc := actions.InitMocks(t)
 
@@ -246,14 +246,6 @@ func TestCapability_GetTransactionReceipt(t *testing.T) {
 		_, err := svc.GetTransactionReceipt(t.Context(), test.GetMetadataWithNoFunds(), req)
 		require.ErrorContains(t, err, "insufficient CRE funds: current limit is 0, action spend 1")
 	})
-
-	t.Run("missing-limit-resource", func(t *testing.T) {
-		svc := actions.InitMocks(t)
-		req := &evmcappb.GetTransactionReceiptRequest{}
-		_, err := svc.GetTransactionReceipt(t.Context(), test.GetMetadataWithMissingSpendUnit(), req)
-		require.ErrorContains(t, err, "no spend limit found for action RPC_EVM")
-	})
-
 	t.Run("Returns error on invalid hash", func(t *testing.T) {
 		svc := actions.InitMocks(t)
 
@@ -301,14 +293,6 @@ func TestCapability_EstimateGas(t *testing.T) {
 		_, err := svc.EstimateGas(t.Context(), test.GetMetadataWithNoFunds(), req)
 		require.ErrorContains(t, err, "insufficient CRE funds: current limit is 0, action spend 1")
 	})
-
-	t.Run("missing-limit-resource", func(t *testing.T) {
-		svc := actions.InitMocks(t)
-		req := &evmcappb.EstimateGasRequest{}
-		_, err := svc.EstimateGas(t.Context(), test.GetMetadataWithMissingSpendUnit(), req)
-		require.ErrorContains(t, err, "no spend limit found for action RPC_EVM")
-	})
-
 	t.Run("Returns error on invalid request", func(t *testing.T) {
 		svc := actions.InitMocks(t)
 
@@ -330,48 +314,6 @@ func TestCapability_EstimateGas(t *testing.T) {
 	})
 }
 
-func TestCapability_Register_Unregister_LogTracking(t *testing.T) {
-	filterProto := &evmcappb.LPFilter{} // empty is enough for proto→types conversion
-
-	t.Run("register happy-path", func(t *testing.T) {
-		svc := actions.InitMocks(t)
-		svc.EvmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil)
-
-		resp, err := svc.RegisterLogTracking(t.Context(), capabilities.RequestMetadata{},
-			&evmcappb.RegisterLogTrackingRequest{Filter: filterProto})
-		require.NoError(t, err)
-		require.Empty(t, resp.ResponseMetadata.Metering, "RegisterLogTracking() should have one metering entry (it won't be exposed in the capabilities interface)")
-	})
-
-	t.Run("register error", func(t *testing.T) {
-		svc := actions.InitMocks(t)
-		svc.EvmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(assert.AnError)
-
-		_, err := svc.RegisterLogTracking(t.Context(), capabilities.RequestMetadata{},
-			&evmcappb.RegisterLogTrackingRequest{Filter: filterProto})
-		assert.ErrorIs(t, err, assert.AnError)
-	})
-
-	t.Run("unregister happy-path", func(t *testing.T) {
-		svc := actions.InitMocks(t)
-		svc.EvmService.On("UnregisterLogTracking", mock.Anything, "myFilter").Return(nil)
-
-		resp, err := svc.UnregisterLogTracking(t.Context(), capabilities.RequestMetadata{},
-			&evmcappb.UnregisterLogTrackingRequest{FilterName: "myFilter"})
-		require.NoError(t, err)
-		require.Empty(t, resp.ResponseMetadata.Metering, "UnregisterLogTracking() should have one metering entry (it won't be exposed in the capabilities interface)")
-	})
-
-	t.Run("unregister error", func(t *testing.T) {
-		svc := actions.InitMocks(t)
-		svc.EvmService.On("UnregisterLogTracking", mock.Anything, "myFilter").Return(assert.AnError)
-
-		_, err := svc.UnregisterLogTracking(t.Context(), capabilities.RequestMetadata{},
-			&evmcappb.UnregisterLogTrackingRequest{FilterName: "myFilter"})
-		assert.ErrorIs(t, err, assert.AnError)
-	})
-}
-
 func TestCapability_HeaderByNumber(t *testing.T) {
 	t.Run("happy-path", func(t *testing.T) {
 		svc := actions.InitMocks(t)
@@ -382,7 +324,11 @@ func TestCapability_HeaderByNumber(t *testing.T) {
 			Timestamp: 123,
 			Number:    block,
 		}
-		expectedReply := &evmcappb.HeaderByNumberReply{Header: evmcappb.ConvertHeaderToProto(header)}
+
+		h, err := evmcappb.ConvertHeaderToProto(&header)
+		require.NoError(t, err)
+
+		expectedReply := &evmcappb.HeaderByNumberReply{Header: h}
 		asProto, err := proto.Marshal(expectedReply)
 		require.NoError(t, err)
 		ch <- types.Reply{Value: asProto}
@@ -401,14 +347,6 @@ func TestCapability_HeaderByNumber(t *testing.T) {
 		_, err := svc.HeaderByNumber(t.Context(), test.GetMetadataWithNoFunds(), req)
 		require.ErrorContains(t, err, "insufficient CRE funds: current limit is 0, action spend 1")
 	})
-
-	t.Run("missing-limit-resource", func(t *testing.T) {
-		svc := actions.InitMocks(t)
-		req := &evmcappb.HeaderByNumberRequest{}
-		_, err := svc.HeaderByNumber(t.Context(), test.GetMetadataWithMissingSpendUnit(), req)
-		require.ErrorContains(t, err, "no spend limit found for action RPC_EVM")
-	})
-
 	t.Run("On timeout returns error", func(t *testing.T) {
 		svc := actions.InitMocks(t)
 

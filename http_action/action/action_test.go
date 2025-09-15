@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/smartcontractkit/capabilities/http_action/common"
 	"github.com/smartcontractkit/capabilities/http_action/validate"
@@ -114,7 +116,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 			Url:           "https://example.com",
 			Method:        "GET",
 			Headers:       map[string]string{"Content-Type": "application/json"},
-			TimeoutMs:     1000,
+			Timeout:       durationpb.New(1000 * time.Millisecond),
 			CacheSettings: &http.CacheSettings{},
 		}
 		expectedResponse := &http.Response{
@@ -135,13 +137,13 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 		setup := setupServiceTest(t)
 
 		input := &http.Request{
-			Url:       "https://example.com",
-			Method:    "GET",
-			Headers:   map[string]string{"Content-Type": "application/json"},
-			TimeoutMs: 1000,
+			Url:     "https://example.com",
+			Method:  "GET",
+			Headers: map[string]string{"Content-Type": "application/json"},
+			Timeout: durationpb.New(1000 * time.Millisecond),
 			CacheSettings: &http.CacheSettings{
-				ReadFromCache: true,
-				MaxAgeMs:      10000, // 10 seconds
+				Store:  true,
+				MaxAge: durationpb.New(10 * time.Second), // 10 seconds
 			},
 		}
 		expectedResponse := &http.Response{
@@ -165,7 +167,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 			Url:           "https://example.com",
 			Method:        "GET",
 			Headers:       nil,
-			TimeoutMs:     1000,
+			Timeout:       durationpb.New(1000 * time.Millisecond),
 			CacheSettings: &http.CacheSettings{},
 		}
 		expectedResponse := &http.Response{
@@ -185,9 +187,9 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 		setup := setupServiceTest(t)
 
 		input := &http.Request{
-			Url:       "",
-			Method:    "GET",
-			TimeoutMs: 1000,
+			Url:     "",
+			Method:  "GET",
+			Timeout: durationpb.New(1000 * time.Millisecond),
 		}
 		setup.mockClient.CapturedInput = nil
 
@@ -200,14 +202,13 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 
 	t.Run("request with large body gets processed", func(t *testing.T) {
 		setup := setupServiceTest(t)
-
 		allowedSize := cresettings.Default.PerWorkflow.HTTPAction.RequestSizeLimit.DefaultValue / 2
 		largeBody := make([]byte, allowedSize)
 		input := &http.Request{
 			Url:           "https://example.com",
 			Method:        "POST",
 			Body:          largeBody,
-			TimeoutMs:     1000,
+			Timeout:       durationpb.New(1000 * time.Millisecond),
 			CacheSettings: &http.CacheSettings{},
 		}
 		expectedResponse := &http.Response{
@@ -227,9 +228,9 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 		setup := setupServiceTest(t)
 
 		input := &http.Request{
-			Url:       "https://example.com",
-			Method:    "CONNECT",
-			TimeoutMs: 1000,
+			Url:     "https://example.com",
+			Method:  "CONNECT",
+			Timeout: durationpb.New(1000 * time.Millisecond),
 		}
 		setup.mockClient.CapturedInput = nil
 
@@ -242,12 +243,11 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 
 	t.Run("request with normal timeout gets processed", func(t *testing.T) {
 		setup := setupServiceTest(t)
-
-		allowedTimeout := int32(cresettings.Default.PerWorkflow.HTTPAction.ConnectionTimeout.DefaultValue.Milliseconds() / 2) //nolint:gosec
+		allowedTimeout := cresettings.Default.PerWorkflow.HTTPAction.ConnectionTimeout.DefaultValue / 2
 		input := &http.Request{
 			Url:           "https://example.com",
 			Method:        "GET",
-			TimeoutMs:     allowedTimeout,
+			Timeout:       durationpb.New(allowedTimeout),
 			CacheSettings: &http.CacheSettings{},
 		}
 		expectedResponse := &http.Response{

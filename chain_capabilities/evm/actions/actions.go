@@ -7,29 +7,29 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/shopspring/decimal"
-	valuespb "github.com/smartcontractkit/chainlink-common/pkg/values/pb"
-
-	"github.com/ethereum/go-ethereum/common"
-
-	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
-
-	"google.golang.org/protobuf/types/known/emptypb"
-
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
 	ctypes "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/rpc"
+
+	"github.com/shopspring/decimal"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
+
+	"google.golang.org/protobuf/proto"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
-	"google.golang.org/protobuf/proto"
 
+	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
+	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
 )
@@ -53,7 +53,7 @@ type EVM struct {
 	forwarderClient          contracts.CREForwarderClient
 	ReceiverGasMinimum       uint64
 
-	lggr              logger.Logger
+	lggr              logger.SugaredLogger
 	beholderProcessor beholder.ProtoProcessor
 	messageBuilder    *monitoring.MessageBuilder
 }
@@ -71,7 +71,7 @@ func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, 
 		keystoneForwarderAddress: keystoneForwarderAddress,
 		forwarderClient:          kfc,
 		ReceiverGasMinimum:       cfg.ReceiverGasMinimum,
-		lggr:                     lggr,
+		lggr:                     logger.Sugared(lggr),
 		beholderProcessor:        beholderProcessor,
 		messageBuilder:           messageBuilder,
 		ConsensusHandler:         handler,
@@ -90,7 +90,7 @@ func (e EVM) CallContract(
 ) (*capabilities.ResponseAndMetadata[*evm.CallContractReply], error) {
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 
-	if err := metering.CheckHasFunds(meta, metering.ActionSpendUnit, string(metering.CallContract)); err != nil {
+	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.CallContract)); err != nil {
 		return nil, err
 	}
 
@@ -161,7 +161,12 @@ func (e EVM) filterLogsToRequest(meta capabilities.RequestMetadata, ethFilterQue
 			return nil, err
 		}
 
-		return proto.Marshal(&evm.FilterLogsReply{Logs: evm.ConvertLogsToProto(reply.Logs)})
+		logs, err := evm.ConvertLogsToProto(reply.Logs)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert logs to proto: %w", err)
+		}
+
+		return proto.Marshal(&evm.FilterLogsReply{Logs: logs})
 	}
 
 	if ethFilterQuery.BlockHash != (evmtypes.Hash{}) {
@@ -262,7 +267,7 @@ func (e EVM) FilterLogs(ctx context.Context, meta capabilities.RequestMetadata, 
 }
 
 func (e EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, req *evm.BalanceAtRequest) (*capabilities.ResponseAndMetadata[*evm.BalanceAtReply], error) {
-	if err := metering.CheckHasFunds(meta, metering.ActionSpendUnit, string(metering.BalanceAt)); err != nil {
+	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.BalanceAt)); err != nil {
 		return nil, err
 	}
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
@@ -316,7 +321,7 @@ func (e EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, r
 }
 
 func (e EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata, req *evm.EstimateGasRequest) (*capabilities.ResponseAndMetadata[*evm.EstimateGasReply], error) {
-	if err := metering.CheckHasFunds(meta, metering.ActionSpendUnit, string(metering.EstimateGas)); err != nil {
+	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.EstimateGas)); err != nil {
 		return nil, err
 	}
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
@@ -360,11 +365,11 @@ func (e EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata,
 }
 
 func (e EVM) GetTransactionByHash(ctx context.Context, meta capabilities.RequestMetadata, req *evm.GetTransactionByHashRequest) (*capabilities.ResponseAndMetadata[*evm.GetTransactionByHashReply], error) {
-	if err := metering.CheckHasFunds(meta, metering.ActionSpendUnit, string(metering.GetTransactionByHash)); err != nil {
+	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.GetTransactionByHash)); err != nil {
 		return nil, err
 	}
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
-	hash, err := evm.ConvertHashFromProto(req.GetHash())
+	hash, err := evmservice.ConvertHashFromProto(req.GetHash())
 	if err != nil {
 		return nil, err
 	}
@@ -403,11 +408,11 @@ func (e EVM) GetTransactionByHash(ctx context.Context, meta capabilities.Request
 }
 
 func (e EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.RequestMetadata, req *evm.GetTransactionReceiptRequest) (*capabilities.ResponseAndMetadata[*evm.GetTransactionReceiptReply], error) {
-	if err := metering.CheckHasFunds(meta, metering.ActionSpendUnit, string(metering.GetTransactionReceipt)); err != nil {
+	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.GetTransactionReceipt)); err != nil {
 		return nil, err
 	}
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
-	hash, err := evm.ConvertHashFromProto(req.GetHash())
+	hash, err := evmservice.ConvertHashFromProto(req.GetHash())
 	if err != nil {
 		return nil, err
 	}
@@ -449,7 +454,7 @@ func (e EVM) HeaderByNumber(
 	meta capabilities.RequestMetadata,
 	req *evm.HeaderByNumberRequest,
 ) (*capabilities.ResponseAndMetadata[*evm.HeaderByNumberReply], error) {
-	if err := metering.CheckHasFunds(meta, metering.ActionSpendUnit, string(metering.HeaderByNumber)); err != nil {
+	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.HeaderByNumber)); err != nil {
 		return nil, err
 	}
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
@@ -473,7 +478,12 @@ func (e EVM) HeaderByNumber(
 			return nil, fmt.Errorf("header is nil")
 		}
 
-		return proto.Marshal(&evm.HeaderByNumberReply{Header: evm.ConvertHeaderToProto(*reply.Header)})
+		header, err := evm.ConvertHeaderToProto(reply.Header)
+		if err != nil {
+			return nil, err
+		}
+
+		return proto.Marshal(&evm.HeaderByNumberReply{Header: header})
 	}
 
 	var request ctypes.Request
@@ -505,26 +515,6 @@ func (e EVM) HeaderByNumber(
 		ResponseMetadata: metering.GetResponseMetadata(metering.HeaderByNumber),
 	}
 	return &responseAndMetadata, nil
-}
-
-func (e EVM) RegisterLogTracking(etx context.Context, _ capabilities.RequestMetadata, req *evm.RegisterLogTrackingRequest) (*capabilities.ResponseAndMetadata[*emptypb.Empty], error) {
-	filter, err := evm.ConvertLPFilterFromProto(req.GetFilter())
-	if err != nil {
-		return nil, err
-	}
-	responseAndMetadata := capabilities.ResponseAndMetadata[*emptypb.Empty]{
-		Response:         &emptypb.Empty{},
-		ResponseMetadata: capabilities.ResponseMetadata{},
-	}
-	return &responseAndMetadata, e.EVMService.RegisterLogTracking(etx, filter)
-}
-
-func (e EVM) UnregisterLogTracking(etx context.Context, _ capabilities.RequestMetadata, req *evm.UnregisterLogTrackingRequest) (*capabilities.ResponseAndMetadata[*emptypb.Empty], error) {
-	responseAndMetadata := capabilities.ResponseAndMetadata[*emptypb.Empty]{
-		Response:         &emptypb.Empty{},
-		ResponseMetadata: capabilities.ResponseMetadata{},
-	}
-	return &responseAndMetadata, e.EVMService.UnregisterLogTracking(etx, req.FilterName)
 }
 
 // normalizeBlockNumber - returns:
