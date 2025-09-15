@@ -176,7 +176,6 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 
 func (c *capabilityGRPCService) Start(_ context.Context) error {
 	c.lggr.Infof("Start %s", CapabilityName)
-	// TODO PLEX-1456: implement the clean up call here
 	return nil
 }
 

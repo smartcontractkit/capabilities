@@ -23,6 +23,14 @@ message WriteReportError {
   monitoring.ExecutionContext execution_context = 20;
 }
 
+message WriteReportTxFeeCalculationError {
+  WriteReportRequest req = 1;
+  string summary = 2;
+  string cause = 3;
+  string tx_idempotency_key = 4;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
 message WriteReportRequest {
   bytes receiver = 1;
   ReportResponse report = 2;

@@ -12,6 +12,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
+	durationpb "google.golang.org/protobuf/types/known/durationpb"
 )
 
 var allowedMethods = map[string]struct{}{
@@ -70,8 +71,8 @@ func (v *Validator) ValidatedRequest(ctx context.Context, input *http.Request) (
 	if url == "" {
 		return nil, fmt.Errorf("URL must not be empty")
 	}
-	if input.TimeoutMs == 0 {
-		input.TimeoutMs = defaultTimeoutMs
+	if input.Timeout == nil || input.Timeout.AsDuration() == 0 {
+		input.Timeout = durationpb.New(time.Duration(defaultTimeoutMs) * time.Millisecond)
 	}
 
 	err := v.validateInputWithLimiters(ctx, input)
@@ -79,7 +80,7 @@ func (v *Validator) ValidatedRequest(ctx context.Context, input *http.Request) (
 		return nil, fmt.Errorf("input validation failed: %w", err)
 	}
 
-	err = v.validateCacheSettings(ctx, input.CacheSettings)
+	cacheSettings, err := v.validatedCacheSettings(ctx, input.CacheSettings)
 	if err != nil {
 		return nil, fmt.Errorf("cache settings validation failed: %w", err)
 	}
@@ -92,20 +93,12 @@ func (v *Validator) ValidatedRequest(ctx context.Context, input *http.Request) (
 	input.Method = method
 
 	req := &http.Request{
-		Url:       url,
-		Method:    input.Method,
-		Headers:   input.Headers,
-		Body:      input.Body,
-		TimeoutMs: input.TimeoutMs,
-	}
-
-	if input.CacheSettings != nil {
-		req.CacheSettings = &http.CacheSettings{
-			ReadFromCache: input.CacheSettings.ReadFromCache,
-			MaxAgeMs:      input.CacheSettings.MaxAgeMs,
-		}
-	} else {
-		req.CacheSettings = &http.CacheSettings{} // Default to empty cache settings if not provided
+		Url:           url,
+		Method:        input.Method,
+		Headers:       input.Headers,
+		Body:          input.Body,
+		Timeout:       input.Timeout,
+		CacheSettings: cacheSettings,
 	}
 
 	return req, nil
@@ -122,32 +115,31 @@ func (v *Validator) validateInputWithLimiters(ctx context.Context, input *http.R
 	if err := v.requestSizeLimiter.Check(ctx, requestSize); err != nil {
 		return err
 	}
-
-	// Check connection timeout limit
-	timeout := time.Duration(input.TimeoutMs) * time.Millisecond
-	return v.connectionTimeoutLimiter.Check(ctx, timeout)
+	return v.connectionTimeoutLimiter.Check(ctx, input.Timeout.AsDuration())
 }
 
 // validateCacheSettings validates cache settings using the cache age limiter
-func (v *Validator) validateCacheSettings(ctx context.Context, cacheSettings *http.CacheSettings) error {
+func (v *Validator) validatedCacheSettings(ctx context.Context, cacheSettings *http.CacheSettings) (*http.CacheSettings, error) {
 	if cacheSettings == nil {
-		return nil
+		return &http.CacheSettings{
+			Store:  false,
+			MaxAge: durationpb.New(0),
+		}, nil
 	}
 
-	if cacheSettings.MaxAgeMs < 0 {
-		return fmt.Errorf("MaxAgeMs cannot be negative")
+	if cacheSettings.MaxAge == nil {
+		cacheSettings.MaxAge = durationpb.New(0)
 	}
 
-	cacheAge := time.Duration(cacheSettings.MaxAgeMs) * time.Millisecond
-	if err := v.cacheAgeLimiter.Check(ctx, cacheAge); err != nil {
-		return fmt.Errorf("cache age validation failed: %w", err)
+	if cacheSettings.MaxAge.AsDuration() < 0 {
+		return nil, fmt.Errorf("MaxAge cannot be negative")
 	}
 
-	if cacheSettings.ReadFromCache && cacheSettings.MaxAgeMs == 0 {
-		return fmt.Errorf("MaxAgeMs must be non-zero when ReadFromCache is true")
+	if err := v.cacheAgeLimiter.Check(ctx, cacheSettings.MaxAge.AsDuration()); err != nil {
+		return nil, fmt.Errorf("cache age validation failed: %w", err)
 	}
 
-	return nil
+	return cacheSettings, nil
 }
 
 // ValidateResponseSize checks if the response size is within limits

@@ -3,8 +3,10 @@ package validate
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
+	durationpb "google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
@@ -41,11 +43,11 @@ func TestValidatedRequest(t *testing.T) {
 		t.Parallel()
 		validator := testValidator(t)
 		input := &http.Request{
-			Url:       "https://example.com",
-			Method:    "POST",
-			Headers:   map[string]string{"Content-Type": "application/json"},
-			Body:      []byte(`{"foo":"bar"}`),
-			TimeoutMs: 1000,
+			Url:     "https://example.com",
+			Method:  "POST",
+			Headers: map[string]string{"Content-Type": "application/json"},
+			Body:    []byte(`{"foo":"bar"}`),
+			Timeout: durationpb.New(1000 * time.Millisecond),
 		}
 		out, err := validator.ValidatedRequest(ctx, input)
 		require.NoError(t, err)
@@ -53,7 +55,7 @@ func TestValidatedRequest(t *testing.T) {
 		require.Equal(t, "POST", out.Method)
 		require.Equal(t, input.Headers, out.Headers)
 		require.Equal(t, input.Body, out.Body)
-		require.Equal(t, int32(1000), out.TimeoutMs)
+		require.Equal(t, time.Duration(1000)*time.Millisecond, out.Timeout.AsDuration())
 	})
 
 	t.Run("empty URL", func(t *testing.T) {
@@ -68,7 +70,7 @@ func TestValidatedRequest(t *testing.T) {
 		t.Parallel()
 		validator := testValidator(t)
 		input := &http.Request{Url: "https://foo", Method: "GET",
-			TimeoutMs: int32(cresettings.Default.PerWorkflow.HTTPAction.ConnectionTimeout.DefaultValue.Milliseconds() + 1)} //nolint:gosec // G115
+			Timeout: durationpb.New(cresettings.Default.PerWorkflow.HTTPAction.ConnectionTimeout.DefaultValue + time.Second)}
 		_, err := validator.ValidatedRequest(ctx, input)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "ConnectionTimeout limited")
@@ -81,10 +83,10 @@ func TestValidatedRequest(t *testing.T) {
 		exceedingSize := cresettings.Default.PerWorkflow.HTTPAction.RequestSizeLimit.DefaultValue + 1000
 		largeBody := make([]byte, exceedingSize)
 		input := &http.Request{
-			Url:       "https://foo",
-			Method:    "POST",
-			Body:      largeBody,
-			TimeoutMs: 1000,
+			Url:     "https://foo",
+			Method:  "POST",
+			Body:    largeBody,
+			Timeout: durationpb.New(1000 * time.Millisecond),
 		}
 		_, err := validator.ValidatedRequest(ctx, input)
 		require.Error(t, err)
@@ -94,7 +96,7 @@ func TestValidatedRequest(t *testing.T) {
 	t.Run("invalid HTTP method", func(t *testing.T) {
 		t.Parallel()
 		validator := testValidator(t)
-		input := &http.Request{Url: "https://foo", Method: "INVALID", TimeoutMs: 1000}
+		input := &http.Request{Url: "https://foo", Method: "INVALID", Timeout: durationpb.New(1000 * time.Millisecond)}
 		_, err := validator.ValidatedRequest(ctx, input)
 		require.ErrorContains(t, err, "invalid HTTP method")
 	})
@@ -102,52 +104,56 @@ func TestValidatedRequest(t *testing.T) {
 	t.Run("valid cache settings", func(t *testing.T) {
 		t.Parallel()
 		validator := testValidator(t)
+		cacheAge := cresettings.Default.PerWorkflow.HTTPAction.CacheAgeLimit.DefaultValue / 2
 		input := &http.Request{
-			Url:       "https://foo",
-			Method:    "GET",
-			TimeoutMs: 5000,
+			Url:     "https://foo",
+			Method:  "GET",
+			Timeout: durationpb.New(5000 * time.Millisecond),
 			CacheSettings: &http.CacheSettings{
-				ReadFromCache: true,
-				MaxAgeMs:      30000, // 30 seconds
+				Store:  true,
+				MaxAge: durationpb.New(cacheAge),
 			},
 		}
 		out, err := validator.ValidatedRequest(ctx, input)
 		require.NoError(t, err)
 		require.NotNil(t, out.CacheSettings)
-		require.True(t, out.CacheSettings.ReadFromCache)
-		require.Equal(t, int32(30000), out.CacheSettings.MaxAgeMs)
+		require.True(t, out.CacheSettings.Store)
+		require.Equal(t, cacheAge, out.CacheSettings.MaxAge.AsDuration())
 	})
 
-	t.Run("cache settings with ReadFromCache=true but MaxAgeMs=0 fails", func(t *testing.T) {
+	t.Run("cache settings with Store=true but MaxAge=0 is valid", func(t *testing.T) {
 		t.Parallel()
 		validator := testValidator(t)
 		input := &http.Request{
-			Url:       "https://foo",
-			Method:    "GET",
-			TimeoutMs: 5000, // 5 seconds, well under the 10s limit
+			Url:     "https://foo",
+			Method:  "GET",
+			Timeout: durationpb.New(5000 * time.Millisecond),
 			CacheSettings: &http.CacheSettings{
-				ReadFromCache: true,
-				MaxAgeMs:      0,
+				Store:  true,
+				MaxAge: durationpb.New(0),
 			},
 		}
-		_, err := validator.ValidatedRequest(ctx, input)
-		require.ErrorContains(t, err, "MaxAgeMs must be non-zero when ReadFromCache is true")
+		out, err := validator.ValidatedRequest(ctx, input)
+		require.NoError(t, err)
+		require.NotNil(t, out.CacheSettings)
+		require.True(t, out.CacheSettings.Store)
+		require.Equal(t, time.Duration(0), out.CacheSettings.MaxAge.AsDuration())
 	})
 
-	t.Run("cache settings with negative MaxAgeMs fails", func(t *testing.T) {
+	t.Run("cache settings with negative MaxAge fails", func(t *testing.T) {
 		t.Parallel()
 		validator := testValidator(t)
 		input := &http.Request{
-			Url:       "https://foo",
-			Method:    "GET",
-			TimeoutMs: 5000, // 5 seconds, well under the 10s limit
+			Url:     "https://foo",
+			Method:  "GET",
+			Timeout: durationpb.New(5000 * time.Millisecond),
 			CacheSettings: &http.CacheSettings{
-				ReadFromCache: false,
-				MaxAgeMs:      -1,
+				Store:  false,
+				MaxAge: durationpb.New(-1 * time.Second),
 			},
 		}
 		_, err := validator.ValidatedRequest(ctx, input)
-		require.ErrorContains(t, err, "MaxAgeMs cannot be negative")
+		require.ErrorContains(t, err, "MaxAge cannot be negative")
 	})
 
 	t.Run("nil cache settings is valid", func(t *testing.T) {
@@ -156,26 +162,28 @@ func TestValidatedRequest(t *testing.T) {
 		input := &http.Request{
 			Url:           "https://foo",
 			Method:        "GET",
-			TimeoutMs:     5000,
+			Timeout:       durationpb.New(5000 * time.Millisecond),
 			CacheSettings: nil,
 		}
 		out, err := validator.ValidatedRequest(ctx, input)
 		require.NoError(t, err)
 		require.NotNil(t, out.CacheSettings) // Default empty cache settings are added
+		require.False(t, out.CacheSettings.Store)
+		require.Equal(t, time.Duration(0), out.CacheSettings.MaxAge.AsDuration())
 	})
 
 	t.Run("cache age exceeds limit", func(t *testing.T) {
 		t.Parallel()
 		validator := testValidator(t)
 
-		exceedingAgeMs := int32(cresettings.Default.PerWorkflow.HTTPAction.CacheAgeLimit.DefaultValue.Milliseconds() + 1000) //nolint:gosec
+		exceedingAge := cresettings.Default.PerWorkflow.HTTPAction.CacheAgeLimit.DefaultValue + time.Second
 		input := &http.Request{
-			Url:       "https://foo",
-			Method:    "GET",
-			TimeoutMs: 5000,
+			Url:     "https://foo",
+			Method:  "GET",
+			Timeout: durationpb.New(5000 * time.Millisecond),
 			CacheSettings: &http.CacheSettings{
-				ReadFromCache: true,
-				MaxAgeMs:      exceedingAgeMs,
+				Store:  true,
+				MaxAge: durationpb.New(exceedingAge),
 			},
 		}
 		_, err := validator.ValidatedRequest(ctx, input)

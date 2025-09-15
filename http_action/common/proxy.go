@@ -78,7 +78,7 @@ func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities
 	requestID := uuid.New().String()
 	lggr := logger.With(h.lggr, "requestID", requestID, "workflowID", metadata.WorkflowID, "workflowExecutionID", metadata.WorkflowExecutionID, "workflowOwner", metadata.WorkflowOwner)
 
-	timeoutCtx, cancel := context.WithTimeout(ctx, time.Duration(input.TimeoutMs)*time.Millisecond)
+	timeoutCtx, cancel := context.WithTimeout(ctx, input.Timeout.AsDuration())
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(timeoutCtx, input.Method, input.Url, bytes.NewReader(input.Body))
