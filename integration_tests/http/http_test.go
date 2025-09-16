@@ -26,9 +26,11 @@ import (
 
 	httpcap "github.com/smartcontractkit/capabilities/http_action/action"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
 	"github.com/ethereum/go-ethereum/crypto"
@@ -192,7 +194,10 @@ func newTestGatewayConnector(t *testing.T, publicKey, nodeURL string, signer con
 
 // Helper to create and initialize the HTTP capability
 func newTestHTTPCapability(ctx context.Context, t *testing.T, gc core.GatewayConnector, lggr logger.Logger) server.ClientCapability {
-	httpCapability := httpcap.NewService(lggr)
+	httpCapability := httpcap.NewService(lggr, limits.Factory{
+		Logger: lggr,
+		Meter:  beholder.GetMeter(),
+	})
 	err := httpCapability.Initialise(ctx, serviceConfigTemplate, nil, nil, nil, nil, nil, nil, gc, nil)
 	require.NoError(t, err)
 	return httpCapability
