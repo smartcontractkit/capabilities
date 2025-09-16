@@ -10,7 +10,6 @@ import (
 	"github.com/smartcontractkit/capabilities/http_action/gateway"
 	"github.com/smartcontractkit/capabilities/http_action/validate"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http/server"
@@ -40,9 +39,10 @@ type service struct {
 	validator     *validate.Validator
 }
 
-func NewService(lggr logger.Logger) *service {
+func NewService(lggr logger.Logger, limitsFactory limits.Factory) *service {
 	return &service{
-		lggr: logger.Sugared(logger.Named(lggr, ServiceName)),
+		lggr:          logger.Sugared(logger.Named(lggr, ServiceName)),
+		limitsFactory: limitsFactory,
 	}
 }
 
@@ -69,11 +69,6 @@ func (s *service) Initialise(
 	s.metrics, err = common.NewMetrics()
 	if err != nil {
 		return err
-	}
-
-	s.limitsFactory = limits.Factory{
-		Meter:  beholder.GetMeter(),
-		Logger: s.lggr.Named("LimitsFactory"),
 	}
 
 	s.validator, err = validate.NewValidator(s.lggr, s.limitsFactory)

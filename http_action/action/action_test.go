@@ -69,7 +69,7 @@ type testSetup struct {
 // setupServiceTest creates a fresh test setup for service validation tests
 func setupServiceTest(t *testing.T) *testSetup {
 	lggr := logger.Test(t)
-	srv := NewService(lggr)
+	srv := NewService(lggr, limits.Factory{})
 	cfg := common.ServiceConfig{
 		ProxyMode: common.ProxyModeGateway,
 	}
