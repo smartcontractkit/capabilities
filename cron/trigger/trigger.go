@@ -10,8 +10,10 @@ import (
 
 	"github.com/go-co-op/gocron/v2"
 	"github.com/jonboulle/clockwork"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron/server"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -21,6 +23,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
+	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
+	workflowsevents "github.com/smartcontractkit/chainlink-protos/workflows/go/v2"
 )
 
 const ServiceName = "CronCapabilities"
@@ -46,9 +50,10 @@ type Response struct {
 }
 
 type cronTrigger struct {
-	ch      chan<- capabilities.TriggerAndId[*crontypedapi.Payload]
-	job     gocron.Job
-	nextRun time.Time
+	ch         chan<- capabilities.TriggerAndId[*crontypedapi.Payload]
+	job        gocron.Job
+	nextRun    time.Time
+	workflowID string
 }
 
 type Service struct {
@@ -204,6 +209,19 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 
 			s.lggr.Debugw("task callback sending trigger response", "executionID", metadata.WorkflowExecutionID, "triggerID", triggerID, "scheduledExecTimeUTC", scheduledExecutionTimeUTC.Format(time.RFC3339Nano), "actualExecTimeUTC", currentTimeUTC.Format(time.RFC3339Nano))
 
+			// Generate deterministic workflow execution ID and emit TriggerExecutionStarted event
+			workflowExecutionID, execIDErr := workflows.EncodeExecutionID(trigger.workflowID, response.Id)
+			if execIDErr != nil {
+				s.lggr.Errorw("failed to generate execution ID", "err", execIDErr, "triggerID", triggerID, "workflowID", trigger.workflowID, "triggerEventID", response.Id)
+				// Continue with execution even if we can't generate ID or emit event
+			} else {
+				// Emit TriggerExecutionStarted event
+				if emitErr := EmitTriggerExecutionStarted(ctx, response.Id, workflowExecutionID); emitErr != nil {
+					s.lggr.Errorw("failed to emit trigger execution started event", "err", emitErr, "triggerID", triggerID, "workflowExecutionID", workflowExecutionID)
+					// Continue with execution even if event emission fails
+				}
+			}
+
 			nextExecutionTime, nextRunErr := job.NextRun()
 			if nextRunErr != nil {
 				// .NextRun() will error if the job no longer exists
@@ -212,9 +230,10 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 			}
 
 			s.triggers.Write(triggerID, cronTrigger{
-				ch:      callbackCh,
-				job:     job,
-				nextRun: nextExecutionTime,
+				ch:         callbackCh,
+				job:        job,
+				nextRun:    nextExecutionTime,
+				workflowID: metadata.WorkflowID,
 			})
 
 			select {
@@ -254,9 +273,10 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 	}
 
 	s.triggers.Write(triggerID, cronTrigger{
-		ch:      callbackCh,
-		job:     job,
-		nextRun: firstRunTime,
+		ch:         callbackCh,
+		job:        job,
+		nextRun:    firstRunTime,
+		workflowID: metadata.WorkflowID,
 	})
 
 	s.lggr.Debugw("Trigger registered", "workflowId", metadata.WorkflowID, "triggerId", triggerID, "jobId", job.ID())
@@ -280,6 +300,27 @@ func createTriggerResponse(scheduledExecutionTime time.Time) capabilities.Trigge
 		},
 		Id: triggerEventID,
 	}
+}
+
+// EmitTriggerExecutionStarted emits a TriggerExecutionStarted event via beholder
+func EmitTriggerExecutionStarted(ctx context.Context, triggerID, workflowExecutionID string) error {
+	event := &workflowsevents.TriggerExecutionStarted{
+		TriggerID:           triggerID,
+		WorkflowExecutionID: workflowExecutionID,
+		Timestamp:           time.Now().Format(time.RFC3339),
+	}
+
+	// Marshal the protobuf message
+	b, err := proto.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("failed to marshal TriggerExecutionStarted event: %w", err)
+	}
+
+	// Emit via beholder
+	return beholder.GetEmitter().Emit(ctx, b,
+		"beholder_data_schema", "workflows.v2.trigger_execution_started", // required
+		"beholder_domain", "platform", // required
+		"beholder_entity", "workflows.v2.TriggerExecutionStarted") // required
 }
 
 func (s *Service) UnregisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) error {
@@ -322,9 +363,10 @@ func (s *Service) Start(ctx context.Context) error {
 	for triggerID, trigger := range s.triggers.ReadAll() {
 		nextExecutionTime, err := trigger.job.NextRun()
 		s.triggers.Write(triggerID, cronTrigger{
-			ch:      trigger.ch,
-			job:     trigger.job,
-			nextRun: nextExecutionTime,
+			ch:         trigger.ch,
+			job:        trigger.job,
+			nextRun:    nextExecutionTime,
+			workflowID: trigger.workflowID,
 		})
 		if err != nil {
 			s.lggr.Errorw("Unable to get next run time", "err", err, "triggerID", triggerID)
