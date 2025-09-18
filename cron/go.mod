@@ -10,6 +10,7 @@ require (
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20250902122836-28fd635adf1f
 	github.com/smartcontractkit/chainlink-common v0.9.1-0.20250815213003-2c539bada27a
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20250815182425-f8fca0955840
+	github.com/smartcontractkit/chainlink-protos/workflows/go v0.0.0-20250913230317-2174239444ff
 	github.com/stretchr/testify v1.11.1
 	go.uber.org/zap v1.27.0
 	google.golang.org/protobuf v1.36.7
@@ -25,6 +26,7 @@ require (
 	github.com/cloudevents/sdk-go/binding/format/protobuf/v2 v2.16.1 // indirect
 	github.com/cloudevents/sdk-go/v2 v2.16.1 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
+	github.com/dominikbraun/graph v0.23.0 // indirect
 	github.com/fatih/color v1.18.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.5.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.8 // indirect
@@ -114,4 +116,5 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250519155744-55703ea1f237 // indirect
 	google.golang.org/grpc v1.73.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
+	sigs.k8s.io/yaml v1.4.0 // indirect
 )

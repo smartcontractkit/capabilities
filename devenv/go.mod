@@ -11,7 +11,6 @@ require (
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20250819150450-95ef563f6e6d
 	github.com/smartcontractkit/chainlink/v2 v2.26.0-debug-tracing.0.20250902134347-4939821bd4b3
 	go.uber.org/zap v1.27.0
-
 )
 
 require (
