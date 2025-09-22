@@ -54,7 +54,6 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 	logTriggerPollInterval time.Duration,
 	logTriggerSendChannelBufferSize uint64,
 	logTriggerLimitQueryLogSize uint64) (*LogTriggerService, error) {
-
 	if logTriggerPollInterval < 0 {
 		return nil, fmt.Errorf("logTriggerPollInterval must be positive, got: %s", logTriggerPollInterval)
 	}
