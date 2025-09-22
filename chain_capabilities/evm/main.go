@@ -87,9 +87,6 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 	}
 
 	c.lggr.Infof("Initialising %s, ChainId: %d, Network: %s", CapabilityName, cfg.ChainID, cfg.Network)
-	//if cfg.LogTriggerPollInterval < 0 {
-	//	return fmt.Errorf("logTriggerPollInterval must be positive, got: %s", cfg.LogTriggerPollInterval)
-	//}
 
 	client := beholder.GetClient().ForName("evm_capability")
 	metrics, err := monitoring.NewMetrics()
