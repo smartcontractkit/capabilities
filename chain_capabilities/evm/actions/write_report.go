@@ -47,13 +47,13 @@ func (e EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMetad
 	err := validateInputsAndReportMetadata(metadata, input)
 	if err != nil {
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport due to invalid request", err.Error()))
-		return nil, err
+		return nil, capabilities.NewRemoteReportableError(err)
 	}
 
 	report, billingMetadata, err := e.executeWriteReport(ctx, input, metadata, telemetryContext)
 	if err != nil {
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport while checking if the report exists or trying to publish on chain", err.Error()))
-		return nil, err
+		return nil, capabilities.NewRemoteReportableError(err)
 	}
 
 	monitoring.LogAndEmitSuccess(ctx, "Successfully WriteReport execution", e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportSuccess(telemetryContext, input))
@@ -61,7 +61,7 @@ func (e EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMetad
 		Response:         report,
 		ResponseMetadata: billingMetadata,
 	}
-	return &responseAndMetadata, err
+	return &responseAndMetadata, nil
 }
 
 func (e EVM) getFee(ctx context.Context, txIdempotencyKey string) (*big.Float, error) {

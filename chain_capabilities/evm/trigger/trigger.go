@@ -40,8 +40,9 @@ type LogTriggerService struct {
 	beholderProcessor beholder.ProtoProcessor
 	messageBuilder    *monitoring.MessageBuilder
 
-	triggers               LogTriggerStore
-	logTriggerPollInterval time.Duration
+	triggers                        LogTriggerStore
+	logTriggerPollInterval          time.Duration
+	logTriggerSendChannelBufferSize uint64
 	// limitAndSort defines the default sorting and limiting for all log queries.
 	limitAndSort query.LimitAndSort
 }
@@ -50,20 +51,39 @@ type LogTriggerService struct {
 // TODO PLEX-1465: the core logic of RegisterLogTrigger/UnregisterLogTrigger/Close/etc. should be moved to the EVMService, so it can be used by other services as well.
 func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lggr logger.Logger,
 	beholderProcessor beholder.ProtoProcessor, messageBuilder *monitoring.MessageBuilder,
-	logTriggerPollInterval time.Duration) *LogTriggerService {
+	logTriggerPollInterval time.Duration,
+	logTriggerSendChannelBufferSize uint64,
+	logTriggerLimitQueryLogSize uint64) (*LogTriggerService, error) {
+	if logTriggerPollInterval < 0 {
+		return nil, fmt.Errorf("logTriggerPollInterval must be positive, got: %s", logTriggerPollInterval)
+	}
+
+	currentSendChannelBufferSize := uint64(defaultSendChannelBufferSize)
+	if logTriggerSendChannelBufferSize != 0 {
+		currentSendChannelBufferSize = logTriggerSendChannelBufferSize
+	}
+	currentLimitQueryLogSize := uint64(defaultLimitQueryLogSize)
+	if logTriggerLimitQueryLogSize != 0 {
+		if logTriggerLimitQueryLogSize > currentSendChannelBufferSize {
+			return nil, fmt.Errorf("logTriggerLimitQueryLogSize (%d) must be less than logTriggerSendChannelBufferSize (%d)", logTriggerLimitQueryLogSize, currentSendChannelBufferSize)
+		}
+		currentLimitQueryLogSize = logTriggerLimitQueryLogSize
+	}
+
 	// all queries to log poller will have the same limit and sort, so we can create it once and reuse it
 	limitAndSort := query.NewLimitAndSort(query.Limit{
-		Count: defaultLimitQueryLogSize,
+		Count: currentLimitQueryLogSize,
 	}, query.NewSortByBlock(query.Asc))
 
 	lts := &LogTriggerService{
-		EVMService:             evmService,
-		lggr:                   lggr,
-		beholderProcessor:      beholderProcessor,
-		messageBuilder:         messageBuilder,
-		triggers:               store,
-		logTriggerPollInterval: logTriggerPollInterval,
-		limitAndSort:           limitAndSort,
+		EVMService:                      evmService,
+		lggr:                            lggr,
+		beholderProcessor:               beholderProcessor,
+		messageBuilder:                  messageBuilder,
+		triggers:                        store,
+		logTriggerPollInterval:          logTriggerPollInterval,
+		logTriggerSendChannelBufferSize: currentSendChannelBufferSize,
+		limitAndSort:                    limitAndSort,
 	}
 
 	lts.Service, lts.srvcEng = services.Config{
@@ -71,7 +91,7 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 		Start: lts.start,
 	}.NewServiceEngine(lggr)
 
-	return lts
+	return lts, nil
 }
 
 func (lts *LogTriggerService) start(_ context.Context) error {
@@ -192,7 +212,7 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 
 	monitoring.EmitInitiated(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerInitiated(telemetryContext, input))
 
-	logCh := make(chan capabilities.TriggerAndId[*evmcappb.Log], defaultSendChannelBufferSize)
+	logCh := make(chan capabilities.TriggerAndId[*evmcappb.Log], lts.logTriggerSendChannelBufferSize)
 	lts.srvcEng.Go(func(srvcCtx context.Context) {
 		subCtx, cancel := context.WithCancel(srvcCtx)
 		lts.triggers.Write(triggerID, logTriggerState{
@@ -338,7 +358,7 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 					needsUpdate = true
 				}
 			default:
-				summary := fmt.Sprintf("Callback channel full (buffer size: %d), dropping event (triggerID: %s, eventID: %s)", defaultSendChannelBufferSize, triggerID, response.Id)
+				summary := fmt.Sprintf("Callback channel full (buffer size: %d), dropping event (triggerID: %s, eventID: %s)", lts.logTriggerSendChannelBufferSize, triggerID, response.Id)
 				lts.lggr.Errorw(summary, "triggerID", triggerID, "eventID", response.Id)
 				monitoring.LogAndEmitError(
 					ctx,
