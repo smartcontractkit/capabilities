@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 
 	evmcapocr3types "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/consensus/ocr3/types"
 )
@@ -39,7 +40,6 @@ func (rpf *ReportingPluginFactory) NewReportingPlugin(
 	ocr3types.ReportingPluginInfo,
 	error,
 ) {
-
 	offchainCfg, err := readConfig(config.OffchainConfig)
 	if err != nil {
 		return nil, ocr3types.ReportingPluginInfo{}, fmt.Errorf("failed to read reporting plugin config: %w", err)
@@ -49,7 +49,7 @@ func (rpf *ReportingPluginFactory) NewReportingPlugin(
 
 	cfg := Config{
 		ReportingPluginConfig: config,
-		BatchSize:             int(offchainCfg.MaxBatchSize),
+		MaxBatchSize:          int(offchainCfg.MaxBatchSize),
 		MaxObservationLength:  int(offchainCfg.MaxObservationLengthBytes),
 	}
 	return newReportingPlugin(cfg, rpf.logger, rpf.blocksProvider, rpf.requestsStore), ocr3types.ReportingPluginInfo{

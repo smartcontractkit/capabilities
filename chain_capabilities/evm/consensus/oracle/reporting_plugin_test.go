@@ -87,7 +87,7 @@ func TestObservation(t *testing.T) {
 		require.ErrorContains(t, err, "failed to unmarshal request IDs: proto")
 	})
 	t.Run("Error if query exceeds max batch size", func(t *testing.T) {
-		plugin := newReportingPlugin(Config{BatchSize: 1, MaxAllowedBatchSize: 2}, logger.Sugared(logger.Test(t)), nil, nil)
+		plugin := newReportingPlugin(Config{MaxBatchSize: 2}, logger.Sugared(logger.Test(t)), nil, nil)
 		_, err := plugin.Observation(t.Context(), ocr3types.OutcomeContext{}, mustQuery(t, []string{"1", "2", "3"}))
 		require.EqualError(t, err, "too many request IDs: got 3, expected 2")
 	})
@@ -134,7 +134,7 @@ func TestObservation(t *testing.T) {
 			Finalized: 8,
 		})
 		requestsStore := mocks.NewRequestsHandler(t)
-		plugin := newReportingPlugin(Config{MaxAllowedBatchSize: 1}, logger.Sugared(logger.Test(t)), blocksProvider, requestsStore)
+		plugin := newReportingPlugin(Config{MaxBatchSize: 1}, logger.Sugared(logger.Test(t)), blocksProvider, requestsStore)
 		requestsStore.EXPECT().GetRequest("1").Return(types.Request(nil), true)
 		_, err := plugin.Observation(t.Context(), ocr3types.OutcomeContext{}, mustQuery(t, []string{"1"}))
 		require.EqualError(t, err, "failed to observe request: unsupported observation type: <nil>")
@@ -171,7 +171,7 @@ func TestObservation(t *testing.T) {
 		id = "aggregatable_request_without_observation"
 		requestsStore.EXPECT().GetRequest(id).Return(types.NewAggregatableRequest(id, nil), true).Once()
 
-		plugin := newReportingPlugin(Config{MaxAllowedBatchSize: 50, MaxObservationLength: 1000}, logger.Sugared(logger.Test(t)), blocksProvider, requestsStore)
+		plugin := newReportingPlugin(Config{MaxBatchSize: 50, MaxObservationLength: 1000}, logger.Sugared(logger.Test(t)), blocksProvider, requestsStore)
 		query := mustQuery(t, []string{"request_not_present_in_store", "request_without_observation", "request_with_observation", "lockable_request", "aggregatable_request", "aggregatable_request_without_observation"})
 		rawObservation, err := plugin.Observation(t.Context(), ocr3types.OutcomeContext{}, query)
 		require.NoError(t, err)
@@ -225,7 +225,7 @@ func TestObservation(t *testing.T) {
 
 		addRequestWithObservation("large_request", 400)
 
-		plugin := newReportingPlugin(Config{MaxAllowedBatchSize: 50, MaxObservationLength: maxObservationLength}, logger.Sugared(logger.Test(t)), blocksProvider, requestsStore)
+		plugin := newReportingPlugin(Config{MaxBatchSize: 50, MaxObservationLength: maxObservationLength}, logger.Sugared(logger.Test(t)), blocksProvider, requestsStore)
 		query := mustQuery(t, []string{"request_1", "request_2", "large_request", "aggregatable_request"})
 		rawObservation, err := plugin.Observation(t.Context(), ocr3types.OutcomeContext{}, query)
 		require.NoError(t, err)

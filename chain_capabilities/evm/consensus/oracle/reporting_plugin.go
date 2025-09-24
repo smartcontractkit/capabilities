@@ -37,10 +37,7 @@ var _ ocr3types.ReportingPlugin[[]byte] = (*reportingPlugin)(nil)
 
 type Config struct {
 	ocr3types.ReportingPluginConfig
-	BatchSize int // max number of requests that this node will try to process in a single round
-	// MaxAllowedBatchSize - defines max number of requests that this node will process in a round, if requested by another node.
-	// Needed to allow graceful roll out of BatchSize increase.
-	MaxAllowedBatchSize  int
+	MaxBatchSize         int // max number of requests that this node will try to process in a single round
 	MaxObservationLength int // max length of observation in bytes
 }
 
@@ -66,12 +63,12 @@ func newReportingPlugin(
 }
 
 func (rp *reportingPlugin) Query(ctx context.Context, outctx ocr3types.OutcomeContext) (types.Query, error) {
-	ids, err := rp.requestsStore.GetRequestIDs(rp.config.BatchSize)
+	ids, err := rp.requestsStore.GetRequestIDs(rp.config.MaxBatchSize)
 	if err != nil {
 		return types.Query{}, fmt.Errorf("failed to get request ready for processing IDs: %w", err)
 	}
 
-	rp.logger.Debugw("Query complete", "ids", ids, "cfg", rp.config)
+	rp.logger.Debugw("Query complete", "ids", ids)
 	return proto.Marshal(&ctypes.Query{RequestIDs: ids})
 }
 
@@ -107,8 +104,8 @@ func (rp *reportingPlugin) Observation(
 		return nil, fmt.Errorf("failed to unmarshal request IDs: %w", err)
 	}
 
-	if len(query.RequestIDs) > rp.config.MaxAllowedBatchSize {
-		return nil, fmt.Errorf("too many request IDs: got %d, expected %d", len(query.RequestIDs), rp.config.MaxAllowedBatchSize)
+	if len(query.RequestIDs) > rp.config.MaxBatchSize {
+		return nil, fmt.Errorf("too many request IDs: got %d, expected %d", len(query.RequestIDs), rp.config.MaxBatchSize)
 	}
 
 	chainHeight := ctypes.ChainHeight{
