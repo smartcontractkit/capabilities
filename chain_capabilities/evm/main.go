@@ -113,7 +113,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
 
-	c.requestPoller = poller.NewPoller(c.lggr, cfg.ObservationPollersNumber, cfg.ObservationPollPeriod)
+	c.requestPoller = poller.NewPoller(c.lggr, cfg.ObservationPollerWorkersCount, cfg.ObservationPollPeriod)
 	c.consensusHandler = consensus.NewHandler(c.lggr, c.requestPoller, cfg.UnknownRequestsTTL)
 
 	c.EVM, err = actions.NewEVM(*cfg, evmRelayer, c.lggr, processor, messageBuilder, c.consensusHandler, c.chainSelector)
@@ -171,9 +171,9 @@ func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Confi
 		return nil, fmt.Errorf("invalid ReceiverGasMinimum value. It must be greater than 0. Provided ReceiverGasMinimum %d", cfg.ReceiverGasMinimum)
 	}
 
-	if cfg.ObservationPollersNumber == 0 {
-		cfg.ObservationPollersNumber = 10
-		c.lggr.Infof("ObservationPollersNumber is zero, setting to %d.", cfg.ObservationPollersNumber)
+	if cfg.ObservationPollerWorkersCount == 0 {
+		cfg.ObservationPollerWorkersCount = 10
+		c.lggr.Infof("ObservationPollerWorkersCount is zero, setting to %d.", cfg.ObservationPollerWorkersCount)
 	}
 
 	if cfg.ObservationPollPeriod == 0 {
