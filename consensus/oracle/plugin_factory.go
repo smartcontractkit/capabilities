@@ -6,6 +6,7 @@ import (
 
 	"google.golang.org/protobuf/types/known/durationpb"
 
+	"github.com/smartcontractkit/capabilities/consensus/metrics"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
@@ -34,17 +35,19 @@ type factory struct {
 	setRequestTimeout SetRequestTimeout
 	batchSize         int
 	lggr              logger.Logger
+	metrics           *metrics.Metrics
 
 	services.StateMachine
 }
 
-func NewReportingPluginFactory(lggr logger.Logger, s *requests.Store[*ConsensusRequest],
+func NewReportingPluginFactory(lggr logger.Logger, metrics *metrics.Metrics, s *requests.Store[*ConsensusRequest],
 	setRequestTimeout SetRequestTimeout, batchSize int) (*factory, error) {
 	return &factory{
 		store:             s,
 		setRequestTimeout: setRequestTimeout,
 		batchSize:         batchSize,
 		lggr:              logger.Named(lggr, "ConsensusCapabilityPluginFactory"),
+		metrics:           metrics,
 	}, nil
 }
 
@@ -80,7 +83,7 @@ func (o *factory) NewReportingPlugin(_ context.Context, config ocr3types.Reporti
 		configProto.RequestTimeout = durationpb.New(defaultRequestExpiry)
 	}
 	o.setRequestTimeout(configProto.RequestTimeout.AsDuration())
-	rp, err := NewReportingPlugin(o.lggr, config.F, config.N, o.store, &configProto)
+	rp, err := NewReportingPlugin(o.lggr, o.metrics, config.F, config.N, o.store, &configProto)
 	rpInfo := ocr3types.ReportingPluginInfo{
 		Name: "Consensus Capability Plugin",
 		Limits: ocr3types.ReportingPluginLimits{

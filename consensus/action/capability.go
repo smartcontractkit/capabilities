@@ -14,7 +14,7 @@ import (
 	"golang.org/x/exp/maps"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
+	"github.com/smartcontractkit/capabilities/consensus/metrics"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/consensus/server"
@@ -66,6 +66,8 @@ type consensusCapability struct {
 	requestBatchSize          int
 	maxRequestSizeBytes       int
 	valueConsensusKeyBundleID string
+
+	metrics *metrics.Metrics
 }
 
 type storeStatsCollector struct {
@@ -80,26 +82,22 @@ func (s *storeStatsCollector) SetRequestCount(requestCount int) {
 // response cache expiry controls how long a response for a given request is cached before it is considered expired and evicted. This allows
 // the capability to respond to slow requests sent after consensus has been reached.
 func NewConsensusCapability(lggr logger.Logger, clock clockwork.Clock, responseCacheExpiry time.Duration) (*consensusCapability, error) {
-	reqStoreGauge := beholder.MetricInfo{
-		Name:        "capability_consensus_request_store_requests",
-		Unit:        "",
-		Description: "The number of requests in the capability consensus request store",
-	}
 
-	gauge, err := reqStoreGauge.NewInt64Gauge(beholder.GetMeter())
+	metrics, err := metrics.NewMetrics()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request store gauge: %w", err)
+		return nil, fmt.Errorf("error creating metrics: %w", err)
 	}
 
 	reqStore := requests.NewStoreWithStatsCollector[*oracle.ConsensusRequest](
 		&storeStatsCollector{
-			requestStoreRequests: gauge,
+			requestStoreRequests: metrics.PendingConsensusRequests,
 		})
 
 	return &consensusCapability{
 		lggr:       lggr,
 		reqStore:   reqStore,
 		reqHandler: requests.NewHandler[*oracle.ConsensusRequest, oracle.ConsensusResponse](lggr, reqStore, clock, responseCacheExpiry),
+		metrics:    metrics,
 	}, nil
 }
 
@@ -122,7 +120,7 @@ func (c *consensusCapability) Initialise(ctx context.Context, config string,
 		return fmt.Errorf("error setting consensus capability configuration: %w", err)
 	}
 
-	reportingPlugin, err := oracle.NewReportingPluginFactory(c.lggr, c.reqStore, c.SetRequestTimeout,
+	reportingPlugin, err := oracle.NewReportingPluginFactory(c.lggr, c.metrics, c.reqStore, c.SetRequestTimeout,
 		c.requestBatchSize)
 	if err != nil {
 		return fmt.Errorf("error when creating reporting plugin factory: %w", err)
@@ -142,8 +140,7 @@ func (c *consensusCapability) Initialise(ctx context.Context, config string,
 	}
 
 	oracle, err := oracleFactory.NewOracle(ctx, core.OracleArgs{
-		LocalConfig: localOcrConfig,
-
+		LocalConfig:                   localOcrConfig,
 		ReportingPluginFactoryService: reportingPlugin,
 		ContractTransmitter:           contractTransmitter,
 	})

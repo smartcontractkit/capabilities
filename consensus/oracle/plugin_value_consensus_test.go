@@ -14,6 +14,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 
+	"github.com/smartcontractkit/capabilities/consensus/metrics"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	pbtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
@@ -533,7 +534,10 @@ func createReportingPlugin(t *testing.T, pluginObservations []*oracle.ConsensusR
 		require.NoError(t, err, "failed to add request to store")
 	}
 
-	reportingPlugin, err := oracle.NewReportingPlugin(lggr, f, n, reqStore, &pbtypes.ReportingPluginConfig{
+	metrics, err := metrics.NewMetrics()
+	require.NoError(t, err)
+
+	reportingPlugin, err := oracle.NewReportingPlugin(lggr, metrics, f, n, reqStore, &pbtypes.ReportingPluginConfig{
 		MaxQueryLengthBytes:       defaultMaxLengthBytes,
 		MaxObservationLengthBytes: defaultMaxLengthBytes,
 		MaxOutcomeLengthBytes:     defaultMaxLengthBytes,
