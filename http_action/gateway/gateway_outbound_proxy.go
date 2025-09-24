@@ -86,7 +86,7 @@ func NewGatewayOutboundProxy(gatewayConnector core.GatewayConnector, config comm
 func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *http.Request) (*http.Response, error) {
 	requestID := common.GetRequestID(gc.MethodHTTPAction, metadata.WorkflowID, metadata.WorkflowExecutionID)
 	lggr := logger.With(p.lggr, "requestID", requestID, "workflowID", metadata.WorkflowID, "workflowExecutionID", metadata.WorkflowExecutionID, "workflowOwner", metadata.WorkflowOwner)
-	ctx, cancel := context.WithTimeout(ctx, time.Duration(input.TimeoutMs)*time.Millisecond)
+	ctx, cancel := context.WithTimeout(ctx, input.Timeout.AsDuration())
 	defer cancel()
 
 	workflowAllow, globalAllow := p.outgoingRateLimiter.AllowVerbose(metadata.WorkflowOwner)
@@ -106,10 +106,10 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 		Headers:    input.Headers,
 		Body:       input.Body,
 		// Casting is safe because input to this function is already validated
-		TimeoutMs: uint32(input.TimeoutMs), //nolint:gosec // G115
+		TimeoutMs: uint32(input.Timeout.AsDuration()), //nolint:gosec // G115
 		CacheSettings: gc.CacheSettings{
-			ReadFromCache: input.CacheSettings.ReadFromCache,
-			MaxAgeMs:      input.CacheSettings.MaxAgeMs,
+			ReadFromCache: input.CacheSettings.Store,
+			MaxAgeMs:      int32(input.CacheSettings.MaxAge.AsDuration().Milliseconds()), //nolint:gosec // G115
 		},
 	}
 

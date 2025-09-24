@@ -7,15 +7,15 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/shopspring/decimal"
-	"google.golang.org/protobuf/types/known/emptypb"
-
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
 	ctypes "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/rpc"
+
+	"github.com/shopspring/decimal"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 
@@ -91,17 +91,17 @@ func (e EVM) CallContract(
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 
 	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.CallContract)); err != nil {
-		return nil, err
+		return nil, capabilities.NewRemoteReportableError(err)
 	}
 
 	callMsg, err := evm.ConvertCallMsgFromProto(input.GetCall())
 	if err != nil {
-		return nil, err
+		return nil, capabilities.NewRemoteReportableError(err)
 	}
 
 	blockNumber, needsBlockHeightConsensus, confidenceLevel, err := normalizeBlockNumber(input.GetBlockNumber())
 	if err != nil {
-		return nil, err
+		return nil, capabilities.NewRemoteReportableError(err)
 	}
 
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildCallContractInitiated(telemetryContext, callMsg, blockNumber.Int64()))
@@ -115,7 +115,7 @@ func (e EVM) CallContract(
 			IsExternal:      true,
 		})
 		if err != nil {
-			return nil, err
+			return nil, capabilities.NewRemoteReportableError(err)
 		}
 		return resp.Data, nil
 	}
@@ -125,7 +125,7 @@ func (e EVM) CallContract(
 		request = ctypes.NewLockableToBlockRequest(requestID(meta), func(ctx context.Context, height *ctypes.ChainHeight) ([]byte, error) {
 			callBlockNumber, err := getCallBlockNumber(blockNumber, height)
 			if err != nil {
-				return nil, fmt.Errorf("error getting call block number: %w", err)
+				return nil, capabilities.NewRemoteReportableError(fmt.Errorf("error getting call block number: %w", err))
 			}
 
 			return callContract(ctx, callBlockNumber)
@@ -139,7 +139,7 @@ func (e EVM) CallContract(
 	data, err := readType[[]byte](ctx, e.ConsensusHandler, request)
 	if err != nil {
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildCallContractError(telemetryContext, callMsg, blockNumber.Int64(), "Failed to read CallContract", err.Error()))
-		return nil, err
+		return nil, capabilities.NewRemoteReportableError(err)
 	}
 
 	monitoring.LogAndEmitSuccess(ctx, "Successfully read CallContract", e.lggr, e.beholderProcessor, e.messageBuilder.BuildCallContractSuccess(telemetryContext, callMsg, blockNumber.Int64()))
@@ -239,12 +239,12 @@ func (e EVM) FilterLogs(ctx context.Context, meta capabilities.RequestMetadata, 
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	ethFilterQuery, err := evm.ConvertFilterFromProto(req.GetFilterQuery())
 	if err != nil {
-		return nil, err
+		return nil, capabilities.NewRemoteReportableError(err)
 	}
 
 	request, err := e.filterLogsToRequest(meta, ethFilterQuery)
 	if err != nil {
-		return nil, err
+		return nil, capabilities.NewRemoteReportableError(err)
 	}
 
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildFilterLogsInitiated(telemetryContext, ethFilterQuery))
@@ -253,7 +253,7 @@ func (e EVM) FilterLogs(ctx context.Context, meta capabilities.RequestMetadata, 
 	err = e.readProto(ctx, request, &reply)
 	if err != nil {
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildFilterLogsError(telemetryContext, ethFilterQuery, "Failed to FilterLogs", err.Error()))
-		return nil, err
+		return nil, capabilities.NewRemoteReportableError(err)
 	}
 
 	// G115: integer overflow conversion int -> int32 (gosec)
@@ -273,7 +273,7 @@ func (e EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, r
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	blockNumber, needsBlockHeightConsensus, confidenceLevel, err := normalizeBlockNumber(req.GetBlockNumber())
 	if err != nil {
-		return nil, err
+		return nil, capabilities.NewRemoteReportableError(err)
 	}
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildBalanceAtInitiated(telemetryContext, common.Bytes2Hex(req.GetAccount()), blockNumber.Int64()))
 
@@ -288,7 +288,7 @@ func (e EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, r
 			ConfidenceLevel: confidenceLevel,
 		})
 		if err != nil {
-			return nil, err
+			return nil, capabilities.NewRemoteReportableError(err)
 		}
 
 		pbBalance := valuespb.NewBigIntFromInt(reply.Balance)
@@ -308,7 +308,7 @@ func (e EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, r
 	if err := e.readProto(ctx, request, balance); err != nil {
 		errMsg := e.messageBuilder.BuildBalanceAtError(telemetryContext, common.Bytes2Hex(req.GetAccount()), blockNumber.Int64(), "Failed to read BalanceAt", err.Error())
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, errMsg)
-		return nil, err
+		return nil, capabilities.NewRemoteReportableError(err)
 	}
 
 	monitoring.LogAndEmitSuccess(ctx, "Successfully read BalanceAt", e.lggr, e.beholderProcessor,
@@ -322,12 +322,12 @@ func (e EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, r
 
 func (e EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata, req *evm.EstimateGasRequest) (*capabilities.ResponseAndMetadata[*evm.EstimateGasReply], error) {
 	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.EstimateGas)); err != nil {
-		return nil, err
+		return nil, capabilities.NewRemoteReportableError(err)
 	}
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	msg, err := evm.ConvertCallMsgFromProto(req.GetMsg())
 	if err != nil {
-		return nil, err
+		return nil, capabilities.NewRemoteReportableError(err)
 	}
 
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildEstimateGasInitiated(telemetryContext, common.Bytes2Hex(msg.From[:]), common.Bytes2Hex(msg.To[:]), msg.Data))
@@ -335,7 +335,7 @@ func (e EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata,
 	request := ctypes.NewAggregatableRequest(requestID(meta), func(ctx context.Context) (*ctypes.AggregatableObservation, error) {
 		rawEstimate, err := e.EVMService.EstimateGas(ctx, msg)
 		if err != nil {
-			return nil, err
+			return nil, capabilities.NewRemoteReportableError(err)
 		}
 
 		estimate := &valuespb.Decimal{
@@ -352,7 +352,7 @@ func (e EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata,
 	rawEstimate, err := readDecimal(ctx, e.ConsensusHandler, request)
 	if err != nil {
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildEstimateGasError(telemetryContext, common.Bytes2Hex(msg.From[:]), common.Bytes2Hex(msg.To[:]), msg.Data, "Failed to execute EstimateGas", err.Error()))
-		return nil, err
+		return nil, capabilities.NewRemoteReportableError(err)
 	}
 
 	logMsg := e.messageBuilder.BuildEstimateGasSuccess(telemetryContext, common.Bytes2Hex(msg.From[:]), common.Bytes2Hex(msg.To[:]), msg.Data, rawEstimate.BigInt().Int64())
@@ -366,12 +366,12 @@ func (e EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata,
 
 func (e EVM) GetTransactionByHash(ctx context.Context, meta capabilities.RequestMetadata, req *evm.GetTransactionByHashRequest) (*capabilities.ResponseAndMetadata[*evm.GetTransactionByHashReply], error) {
 	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.GetTransactionByHash)); err != nil {
-		return nil, err
+		return nil, capabilities.NewRemoteReportableError(err)
 	}
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	hash, err := evmservice.ConvertHashFromProto(req.GetHash())
 	if err != nil {
-		return nil, err
+		return nil, capabilities.NewRemoteReportableError(err)
 	}
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildGetTransactionByHashInitiated(telemetryContext, common.Bytes2Hex(hash[:])))
 	request := ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
@@ -380,12 +380,12 @@ func (e EVM) GetTransactionByHash(ctx context.Context, meta capabilities.Request
 			IsExternal: true,
 		})
 		if err != nil {
-			return nil, err
+			return nil, capabilities.NewRemoteReportableError(err)
 		}
 
 		protoTx, err := evm.ConvertTransactionToProto(tx)
 		if err != nil {
-			return nil, err
+			return nil, capabilities.NewRemoteReportableError(err)
 		}
 
 		return proto.MarshalOptions{Deterministic: true}.Marshal(protoTx)
@@ -395,7 +395,7 @@ func (e EVM) GetTransactionByHash(ctx context.Context, meta capabilities.Request
 	if err := e.readProto(ctx, request, &tx); err != nil {
 		errMsg := e.messageBuilder.BuildGetTransactionByHashError(telemetryContext, common.Bytes2Hex(hash[:]), "Failed to execute GetTransactionByHash", err.Error())
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, errMsg)
-		return nil, err
+		return nil, capabilities.NewRemoteReportableError(err)
 	}
 
 	monitoring.LogAndEmitSuccess(ctx, "Successfully read GetTransactionByHash", e.lggr, e.beholderProcessor,
@@ -409,12 +409,12 @@ func (e EVM) GetTransactionByHash(ctx context.Context, meta capabilities.Request
 
 func (e EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.RequestMetadata, req *evm.GetTransactionReceiptRequest) (*capabilities.ResponseAndMetadata[*evm.GetTransactionReceiptReply], error) {
 	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.GetTransactionReceipt)); err != nil {
-		return nil, err
+		return nil, capabilities.NewRemoteReportableError(err)
 	}
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	hash, err := evmservice.ConvertHashFromProto(req.GetHash())
 	if err != nil {
-		return nil, err
+		return nil, capabilities.NewRemoteReportableError(err)
 	}
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildGetTransactionReceiptInitiated(telemetryContext, common.Bytes2Hex(hash[:])))
 	request := ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
@@ -423,12 +423,12 @@ func (e EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.Reques
 			IsExternal: true,
 		})
 		if err != nil {
-			return nil, err
+			return nil, capabilities.NewRemoteReportableError(err)
 		}
 
 		protoReceipt, err := evm.ConvertReceiptToProto(receipt)
 		if err != nil {
-			return nil, err
+			return nil, capabilities.NewRemoteReportableError(err)
 		}
 
 		return proto.MarshalOptions{Deterministic: true}.Marshal(protoReceipt)
@@ -437,7 +437,7 @@ func (e EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.Reques
 	var receipt evm.Receipt
 	if err := e.readProto(ctx, request, &receipt); err != nil {
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildGetTransactionReceiptError(telemetryContext, common.Bytes2Hex(hash[:]), "Failed to get latest and finalized head", err.Error()))
-		return nil, err
+		return nil, capabilities.NewRemoteReportableError(err)
 	}
 
 	monitoring.LogAndEmitSuccess(ctx, "Successfully read GetTransactionReceiptSuccess", e.lggr, e.beholderProcessor,
@@ -455,12 +455,12 @@ func (e EVM) HeaderByNumber(
 	req *evm.HeaderByNumberRequest,
 ) (*capabilities.ResponseAndMetadata[*evm.HeaderByNumberReply], error) {
 	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.HeaderByNumber)); err != nil {
-		return nil, err
+		return nil, capabilities.NewRemoteReportableError(err)
 	}
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	blockNumber, needsBlockHeightConsensus, confidenceLevel, err := normalizeBlockNumber(req.GetBlockNumber())
 	if err != nil {
-		return nil, err
+		return nil, capabilities.NewRemoteReportableError(err)
 	}
 
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildHeaderByNumberInitiated(telemetryContext, blockNumber.Int64()))
@@ -471,16 +471,16 @@ func (e EVM) HeaderByNumber(
 			ConfidenceLevel: confidenceLevel,
 		})
 		if err != nil {
-			return nil, err
+			return nil, capabilities.NewRemoteReportableError(err)
 		}
 
 		if reply.Header == nil {
-			return nil, fmt.Errorf("header is nil")
+			return nil, capabilities.NewRemoteReportableError(fmt.Errorf("header is nil"))
 		}
 
 		header, err := evm.ConvertHeaderToProto(reply.Header)
 		if err != nil {
-			return nil, err
+			return nil, capabilities.NewRemoteReportableError(err)
 		}
 
 		return proto.Marshal(&evm.HeaderByNumberReply{Header: header})
@@ -506,7 +506,7 @@ func (e EVM) HeaderByNumber(
 	err = e.readProto(ctx, request, &reply)
 	if err != nil {
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildHeaderByNumberError(telemetryContext, blockNumber.Int64(), "Failed to get header by number", err.Error()))
-		return nil, err
+		return nil, capabilities.NewRemoteReportableError(err)
 	}
 
 	monitoring.LogAndEmitSuccess(ctx, "Successfully got header by number", e.lggr, e.beholderProcessor, e.messageBuilder.BuildHeaderByNumberSuccess(telemetryContext, blockNumber.Int64(), reply.Header))
@@ -515,26 +515,6 @@ func (e EVM) HeaderByNumber(
 		ResponseMetadata: metering.GetResponseMetadata(metering.HeaderByNumber),
 	}
 	return &responseAndMetadata, nil
-}
-
-func (e EVM) RegisterLogTracking(etx context.Context, _ capabilities.RequestMetadata, req *evm.RegisterLogTrackingRequest) (*capabilities.ResponseAndMetadata[*emptypb.Empty], error) {
-	filter, err := evm.ConvertLPFilterFromProto(req.GetFilter())
-	if err != nil {
-		return nil, err
-	}
-	responseAndMetadata := capabilities.ResponseAndMetadata[*emptypb.Empty]{
-		Response:         &emptypb.Empty{},
-		ResponseMetadata: capabilities.ResponseMetadata{},
-	}
-	return &responseAndMetadata, e.EVMService.RegisterLogTracking(etx, filter)
-}
-
-func (e EVM) UnregisterLogTracking(etx context.Context, _ capabilities.RequestMetadata, req *evm.UnregisterLogTrackingRequest) (*capabilities.ResponseAndMetadata[*emptypb.Empty], error) {
-	responseAndMetadata := capabilities.ResponseAndMetadata[*emptypb.Empty]{
-		Response:         &emptypb.Empty{},
-		ResponseMetadata: capabilities.ResponseMetadata{},
-	}
-	return &responseAndMetadata, e.EVMService.UnregisterLogTracking(etx, req.FilterName)
 }
 
 // normalizeBlockNumber - returns:

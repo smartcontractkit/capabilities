@@ -7,10 +7,14 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 )
 
+// Deprecated: Use ServeNew instead.
 func Serve[T loop.StandardCapabilities](serviceName string, createPluginServer func(logger.Logger) T) {
+	ServeNew[T](serviceName, func(s *loop.Server) T { return createPluginServer(s.Logger) })
+}
+
+func ServeNew[T loop.StandardCapabilities](serviceName string, newServer func(*loop.Server) T) {
 	s := loop.MustNewStartedServer(serviceName)
 	defer s.Stop()
-
 	s.Logger.Infof("Starting %s", serviceName)
 
 	stopCh := make(chan struct{})
@@ -20,7 +24,7 @@ func Serve[T loop.StandardCapabilities](serviceName string, createPluginServer f
 		HandshakeConfig: loop.StandardCapabilitiesHandshakeConfig(),
 		Plugins: map[string]plugin.Plugin{
 			loop.PluginStandardCapabilitiesName: &loop.StandardCapabilitiesLoop{
-				PluginServer: createPluginServer(s.Logger),
+				PluginServer: newServer(s),
 				BrokerConfig: loop.BrokerConfig{Logger: s.Logger, StopCh: stopCh, GRPCOpts: s.GRPCOpts},
 			},
 		},

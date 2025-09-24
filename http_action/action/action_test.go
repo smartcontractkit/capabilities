@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/smartcontractkit/capabilities/http_action/common"
 
@@ -83,7 +85,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 			Url:           "https://example.com",
 			Method:        "GET",
 			Headers:       map[string]string{"Content-Type": "application/json"},
-			TimeoutMs:     1000,
+			Timeout:       durationpb.New(1000 * time.Millisecond),
 			CacheSettings: &http.CacheSettings{},
 		}
 		expectedResponse := &http.Response{
@@ -102,13 +104,13 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 
 	t.Run("valid request with cache settings gets validated and forwarded to client", func(t *testing.T) {
 		input := &http.Request{
-			Url:       "https://example.com",
-			Method:    "GET",
-			Headers:   map[string]string{"Content-Type": "application/json"},
-			TimeoutMs: 1000,
+			Url:     "https://example.com",
+			Method:  "GET",
+			Headers: map[string]string{"Content-Type": "application/json"},
+			Timeout: durationpb.New(1000 * time.Millisecond),
 			CacheSettings: &http.CacheSettings{
-				ReadFromCache: true,
-				MaxAgeMs:      10000, // 10 seconds
+				Store:  true,
+				MaxAge: durationpb.New(10 * time.Second), // 10 seconds
 			},
 		}
 		expectedResponse := &http.Response{
@@ -130,7 +132,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 			Url:           "https://example.com",
 			Method:        "GET",
 			Headers:       nil,
-			TimeoutMs:     1000,
+			Timeout:       durationpb.New(1000 * time.Millisecond),
 			CacheSettings: &http.CacheSettings{},
 		}
 		expectedResponse := &http.Response{
@@ -148,9 +150,9 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 
 	t.Run("invalid URL fails validation and doesn't call client", func(t *testing.T) {
 		input := &http.Request{
-			Url:       "",
-			Method:    "GET",
-			TimeoutMs: 1000,
+			Url:     "",
+			Method:  "GET",
+			Timeout: durationpb.New(1000 * time.Millisecond),
 		}
 		mockClient.CapturedInput = nil
 
@@ -164,10 +166,10 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 	t.Run("request with body exceeding limit fails validation", func(t *testing.T) {
 		largeBody := make([]byte, 1025)
 		input := &http.Request{
-			Url:       "https://example.com",
-			Method:    "POST",
-			Body:      largeBody,
-			TimeoutMs: 1000,
+			Url:     "https://example.com",
+			Method:  "POST",
+			Body:    largeBody,
+			Timeout: durationpb.New(1000 * time.Millisecond),
 		}
 		mockClient.CapturedInput = nil
 
@@ -180,9 +182,9 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 
 	t.Run("invalid HTTP method fails validation", func(t *testing.T) {
 		input := &http.Request{
-			Url:       "https://example.com",
-			Method:    "CONNECT",
-			TimeoutMs: 1000,
+			Url:     "https://example.com",
+			Method:  "CONNECT",
+			Timeout: durationpb.New(1000 * time.Millisecond),
 		}
 		mockClient.CapturedInput = nil
 
@@ -195,9 +197,9 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 
 	t.Run("timeout exceeding limit fails validation", func(t *testing.T) {
 		input := &http.Request{
-			Url:       "https://example.com",
-			Method:    "GET",
-			TimeoutMs: 10000,
+			Url:     "https://example.com",
+			Method:  "GET",
+			Timeout: durationpb.New(10000 * time.Millisecond),
 		}
 		mockClient.CapturedInput = nil
 

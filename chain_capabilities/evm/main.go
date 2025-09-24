@@ -121,7 +121,11 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
 
-	c.triggerService = trigger.NewLogTriggerService(evmRelayer, trigger.NewLogTriggerStore(), c.lggr, processor, messageBuilder, cfg.LogTriggerPollInterval)
+	c.triggerService, err = trigger.NewLogTriggerService(evmRelayer, trigger.NewLogTriggerStore(), c.lggr, processor, messageBuilder,
+		cfg.LogTriggerPollInterval, cfg.LogTriggerSendChannelBufferSize, cfg.LogTriggerLimitQueryLogSize)
+	if err != nil {
+		return fmt.Errorf("error when creating trigger: %w", err)
+	}
 
 	c.heightProvider = height.NewProvider(c.lggr, cfg.ChainHeightPollPeriod, evmRelayer)
 
@@ -196,7 +200,6 @@ func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Confi
 
 func (c *capabilityGRPCService) Start(_ context.Context) error {
 	c.lggr.Infof("Start %s", CapabilityName)
-	// TODO PLEX-1456: implement the clean up call here
 	return nil
 }
 

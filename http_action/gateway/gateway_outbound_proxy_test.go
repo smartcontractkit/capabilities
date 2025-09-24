@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/smartcontractkit/capabilities/http_action/common"
 
@@ -144,7 +145,7 @@ func TestGatewayOutboundProxy_SendRequest_Success(t *testing.T) {
 		Method:        "GET",
 		Headers:       map[string]string{"X-Test": "1"},
 		Body:          []byte("test"),
-		TimeoutMs:     5000,
+		Timeout:       durationpb.New(5000 * time.Millisecond),
 		CacheSettings: &http.CacheSettings{},
 	}
 
@@ -170,14 +171,14 @@ func TestGatewayOutboundProxy_SendRequest_MissingBodyToGateway(t *testing.T) {
 		WorkflowOwner:       "owner1",
 	}
 	input := &http.Request{
-		Url:       "http://example.com",
-		Method:    "GET",
-		Headers:   map[string]string{"X-Test": "1"},
-		Body:      []byte("test"),
-		TimeoutMs: 5000,
+		Url:     "http://example.com",
+		Method:  "GET",
+		Headers: map[string]string{"X-Test": "1"},
+		Body:    []byte("test"),
+		Timeout: durationpb.New(5000 * time.Millisecond),
 		CacheSettings: &http.CacheSettings{
-			ReadFromCache: true,
-			MaxAgeMs:      10000, // 10 seconds
+			Store:  true,
+			MaxAge: durationpb.New(10 * time.Second), // 10 seconds
 		},
 	}
 
@@ -204,7 +205,7 @@ func TestGatewayOutboundProxy_SendRequest_Timeout(t *testing.T) {
 		Method:        "GET",
 		Headers:       map[string]string{"X-Test": "1"},
 		Body:          []byte("test"),
-		TimeoutMs:     100, // short timeout
+		Timeout:       durationpb.New(100 * time.Millisecond), // short timeout
 		CacheSettings: &http.CacheSettings{},
 	}
 
@@ -231,7 +232,7 @@ func TestGatewayOutboundProxy_SendRequest_ExecutionError(t *testing.T) {
 		Method:        "GET",
 		Headers:       map[string]string{"X-Test": "1"},
 		Body:          []byte("test"),
-		TimeoutMs:     5000,
+		Timeout:       durationpb.New(5000 * time.Millisecond),
 		CacheSettings: &http.CacheSettings{},
 	}
 
@@ -259,7 +260,7 @@ func TestGatewayOutboundProxy_SendRequest_RateLimitError(t *testing.T) {
 		Method:        "GET",
 		Headers:       map[string]string{"X-Test": "1"},
 		Body:          []byte("test"),
-		TimeoutMs:     5000,
+		Timeout:       durationpb.New(5000 * time.Millisecond),
 		CacheSettings: &http.CacheSettings{},
 	}
 

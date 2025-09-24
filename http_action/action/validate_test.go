@@ -3,8 +3,10 @@ package action
 import (
 	"math"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/smartcontractkit/capabilities/http_action/common"
 
@@ -83,11 +85,11 @@ func TestValidatedRequest(t *testing.T) {
 	t.Run("valid input", func(t *testing.T) {
 		t.Parallel()
 		input := &http.Request{
-			Url:       "https://example.com",
-			Method:    "POST",
-			Headers:   map[string]string{"Content-Type": "application/json"},
-			Body:      []byte(`{"foo":"bar"}`),
-			TimeoutMs: 1000,
+			Url:     "https://example.com",
+			Method:  "POST",
+			Headers: map[string]string{"Content-Type": "application/json"},
+			Body:    []byte(`{"foo":"bar"}`),
+			Timeout: durationpb.New(1000 * time.Millisecond),
 		}
 		out, err := ValidatedRequest(input, customConfig)
 		require.NoError(t, err)
@@ -95,7 +97,7 @@ func TestValidatedRequest(t *testing.T) {
 		require.Equal(t, "POST", out.Method)
 		require.Equal(t, input.Headers, out.Headers)
 		require.Equal(t, input.Body, out.Body)
-		require.Equal(t, int32(1000), out.TimeoutMs)
+		require.Equal(t, int64(1000), out.Timeout.AsDuration().Milliseconds())
 	})
 
 	t.Run("empty URL", func(t *testing.T) {
@@ -107,10 +109,10 @@ func TestValidatedRequest(t *testing.T) {
 
 	t.Run("timeout default and custom", func(t *testing.T) {
 		t.Parallel()
-		input := &http.Request{Url: "https://foo", Method: "GET", TimeoutMs: 0}
+		input := &http.Request{Url: "https://foo", Method: "GET", Timeout: durationpb.New(0 * time.Millisecond)}
 		out, err := ValidatedRequest(input, customConfig)
 		require.NoError(t, err)
-		require.Equal(t, int32(customConfig.LimitsConfig.MaxTimeoutMs), out.TimeoutMs) //nolint:gosec // G115
+		require.Equal(t, int64(customConfig.LimitsConfig.MaxTimeoutMs), out.Timeout.AsDuration().Milliseconds()) //nolint:gosec // G115
 	})
 
 	t.Run("header count limits", func(t *testing.T) {
@@ -152,7 +154,7 @@ func TestValidatedRequest(t *testing.T) {
 
 	t.Run("timeout limit", func(t *testing.T) {
 		t.Parallel()
-		input := &http.Request{Url: "https://foo", Method: "GET", TimeoutMs: 1000000001}
+		input := &http.Request{Url: "https://foo", Method: "GET", Timeout: durationpb.New(1000000001 * time.Millisecond)}
 		_, err := ValidatedRequest(input, customConfig)
 		require.ErrorContains(t, err, "timeout must be between 0 and")
 	})
@@ -163,8 +165,8 @@ func TestValidatedRequest(t *testing.T) {
 			Url:    "https://foo",
 			Method: "GET",
 			CacheSettings: &http.CacheSettings{
-				ReadFromCache: true,
-				MaxAgeMs:      30000, // 30 seconds
+				Store:  true,
+				MaxAge: durationpb.New(30 * time.Second), // 30 seconds
 			},
 		}
 		_, err := ValidatedRequest(input, customConfig)
@@ -177,8 +179,8 @@ func TestValidatedRequest(t *testing.T) {
 			Url:    "https://foo",
 			Method: "GET",
 			CacheSettings: &http.CacheSettings{
-				ReadFromCache: true,
-				MaxAgeMs:      0,
+				Store:  true,
+				MaxAge: durationpb.New(0 * time.Second),
 			},
 		}
 		_, err := ValidatedRequest(input, customConfig)
@@ -191,8 +193,8 @@ func TestValidatedRequest(t *testing.T) {
 			Url:    "https://foo",
 			Method: "GET",
 			CacheSettings: &http.CacheSettings{
-				ReadFromCache: false,
-				MaxAgeMs:      0,
+				Store:  false,
+				MaxAge: durationpb.New(0 * time.Second),
 			},
 		}
 		_, err := ValidatedRequest(input, customConfig)
@@ -205,8 +207,8 @@ func TestValidatedRequest(t *testing.T) {
 			Url:    "https://foo",
 			Method: "GET",
 			CacheSettings: &http.CacheSettings{
-				ReadFromCache: true,
-				MaxAgeMs:      700000, // More than 600,000 ms (10 minutes)
+				Store:  true,
+				MaxAge: durationpb.New(700000 * time.Millisecond), // More than 600,000 ms (10 minutes)
 			},
 		}
 		_, err := ValidatedRequest(input, customConfig)
@@ -219,8 +221,8 @@ func TestValidatedRequest(t *testing.T) {
 			Url:    "https://foo",
 			Method: "GET",
 			CacheSettings: &http.CacheSettings{
-				ReadFromCache: false,
-				MaxAgeMs:      -1,
+				Store:  false,
+				MaxAge: durationpb.New(-1 * time.Millisecond),
 			},
 		}
 		_, err := ValidatedRequest(input, customConfig)

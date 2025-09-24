@@ -1,5 +1,13 @@
 .PHONY: modgraph
 modgraph:
-	go install github.com/jmank88/gomods@v0.1.5
-	go install github.com/jmank88/modgraph@8b0e2b07928b34a6e9d67639061ecd712ea8ee89
+	go install github.com/jmank88/gomods@v0.1.6
+	go install github.com/jmank88/modgraph@v0.1.1
 	./modgraph > go.md
+
+.PHONY: gomods
+gomods: ## Install gomods
+	go install github.com/jmank88/gomods@v0.1.6
+
+.PHONY: gomodtidy
+gomodtidy: gomods ## Run go mod tidy on all modules.
+	gomods tidy

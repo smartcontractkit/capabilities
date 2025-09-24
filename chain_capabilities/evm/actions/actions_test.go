@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -312,48 +311,6 @@ func TestCapability_EstimateGas(t *testing.T) {
 		cancel()
 		_, err := svc.EstimateGas(ctx, test.GetMetadataWithFunds(), req)
 		require.ErrorContains(t, err, "context canceled")
-	})
-}
-
-func TestCapability_Register_Unregister_LogTracking(t *testing.T) {
-	filterProto := &evmcappb.LPFilter{} // empty is enough for proto→types conversion
-
-	t.Run("register happy-path", func(t *testing.T) {
-		svc := actions.InitMocks(t)
-		svc.EvmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil)
-
-		resp, err := svc.RegisterLogTracking(t.Context(), capabilities.RequestMetadata{},
-			&evmcappb.RegisterLogTrackingRequest{Filter: filterProto})
-		require.NoError(t, err)
-		require.Empty(t, resp.ResponseMetadata.Metering, "RegisterLogTracking() should have one metering entry (it won't be exposed in the capabilities interface)")
-	})
-
-	t.Run("register error", func(t *testing.T) {
-		svc := actions.InitMocks(t)
-		svc.EvmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(assert.AnError)
-
-		_, err := svc.RegisterLogTracking(t.Context(), capabilities.RequestMetadata{},
-			&evmcappb.RegisterLogTrackingRequest{Filter: filterProto})
-		assert.ErrorIs(t, err, assert.AnError)
-	})
-
-	t.Run("unregister happy-path", func(t *testing.T) {
-		svc := actions.InitMocks(t)
-		svc.EvmService.On("UnregisterLogTracking", mock.Anything, "myFilter").Return(nil)
-
-		resp, err := svc.UnregisterLogTracking(t.Context(), capabilities.RequestMetadata{},
-			&evmcappb.UnregisterLogTrackingRequest{FilterName: "myFilter"})
-		require.NoError(t, err)
-		require.Empty(t, resp.ResponseMetadata.Metering, "UnregisterLogTracking() should have one metering entry (it won't be exposed in the capabilities interface)")
-	})
-
-	t.Run("unregister error", func(t *testing.T) {
-		svc := actions.InitMocks(t)
-		svc.EvmService.On("UnregisterLogTracking", mock.Anything, "myFilter").Return(assert.AnError)
-
-		_, err := svc.UnregisterLogTracking(t.Context(), capabilities.RequestMetadata{},
-			&evmcappb.UnregisterLogTrackingRequest{FilterName: "myFilter"})
-		assert.ErrorIs(t, err, assert.AnError)
 	})
 }
 
