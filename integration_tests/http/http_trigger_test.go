@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 
 	triggercap "github.com/smartcontractkit/capabilities/http_trigger/trigger"
 
@@ -386,7 +387,7 @@ func newTriggerHTTPCapability(ctx context.Context, t *testing.T, nodeURL string,
 	publicKey := strings.ToLower(crypto.PubkeyToAddress(privateKey.PublicKey).Hex())
 	client := &client{privateKey: privateKey}
 	gc := newTestGatewayConnector(t, publicKey, nodeURL, client, lggr)
-	triggerCap := triggercap.NewService(lggr)
+	triggerCap := triggercap.NewService(lggr, limits.Factory{Logger: lggr})
 	kvStore := newTestKeyValueStore()
 	err := triggerCap.Initialise(ctx, triggerServiceConfigTemplate, nil, kvStore, nil, nil, nil, nil, gc, nil)
 	require.NoError(t, err)

@@ -13,6 +13,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	gcmocks "github.com/smartcontractkit/chainlink-common/pkg/types/core/mocks"
 	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 )
@@ -54,7 +55,7 @@ func TestService_RegisterTrigger(t *testing.T) {
 			mockHandler := &mockConnectorHandler{
 				registerErr: tc.registerErr,
 			}
-			svc := NewService(logger.Test(t))
+			svc := NewService(logger.Test(t), limits.Factory{Logger: logger.Test(t)})
 			cfgStr := fmt.Sprintf(`{"sendChannelBufferSize": %d}`, tc.sendChannelBufSize)
 			gc := mockedGatewayConnector(t)
 			err := svc.Initialise(t.Context(), cfgStr, nil, nil, nil, nil, nil, nil, gc, nil)
@@ -100,7 +101,7 @@ func TestService_UnregisterTrigger(t *testing.T) {
 			mockHandler := &mockConnectorHandler{
 				unregisterErr: tt.handlerErr,
 			}
-			svc := NewService(logger.Test(t))
+			svc := NewService(logger.Test(t), limits.Factory{Logger: logger.Test(t)})
 			cfg := "{}"
 			gc := mockedGatewayConnector(t)
 			err := svc.Initialise(t.Context(), cfg, nil, nil, nil, nil, nil, nil, gc, nil)
@@ -121,7 +122,7 @@ func TestService_UnregisterTrigger(t *testing.T) {
 
 func TestService_Start_HealthReport_Ready_Close(t *testing.T) {
 	mockHandler := &mockConnectorHandler{}
-	svc := NewService(logger.Test(t))
+	svc := NewService(logger.Test(t), limits.Factory{Logger: logger.Test(t)})
 	cfg := "{}"
 	gc := mockedGatewayConnector(t)
 	err := svc.Initialise(t.Context(), cfg, nil, nil, nil, nil, nil, nil, gc, nil)

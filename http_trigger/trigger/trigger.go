@@ -12,6 +12,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 )
@@ -32,11 +33,13 @@ type service struct {
 	cfg              ServiceConfig
 	connectorHandler ConnectorHandler
 	metrics          *Metrics
+	limitsFactory    limits.Factory
 }
 
-func NewService(lggr logger.Logger) *service {
+func NewService(lggr logger.Logger, limitsFactory limits.Factory) *service {
 	return &service{
-		lggr: logger.Sugared(logger.Named(lggr, ServiceName)),
+		lggr:          logger.Sugared(logger.Named(lggr, ServiceName)),
+		limitsFactory: limitsFactory,
 	}
 }
 

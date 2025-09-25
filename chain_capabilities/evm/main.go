@@ -30,6 +30,7 @@ import (
 	evmcapserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
@@ -48,11 +49,12 @@ type capabilityGRPCService struct {
 	capabilities.CapabilityInfo
 	chainSelector uint64
 	capability
-	lggr logger.Logger
+	lggr          logger.Logger
+	limitsFactory limits.Factory
 }
 
 type capability struct {
-	actions.EVM
+	*actions.EVM
 	requestPoller    *poller.Poller
 	consensusHandler *consensus.Handler
 	oracle           core.Oracle
@@ -63,8 +65,8 @@ type capability struct {
 var _ evmcapserver.ClientCapability = &capabilityGRPCService{}
 
 func main() {
-	loopserver.Serve(CapabilityName, func(lggr logger.Logger) loop.StandardCapabilities {
-		return evmcapserver.NewClientServer(&capabilityGRPCService{lggr: lggr})
+	loopserver.ServeNew(CapabilityName, func(s *loop.Server) loop.StandardCapabilities {
+		return evmcapserver.NewClientServer(&capabilityGRPCService{lggr: s.Logger, limitsFactory: s.LimitsFactory})
 	})
 }
 
@@ -116,13 +118,13 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 	c.requestPoller = poller.NewPoller(c.lggr, cfg.ObservationPollerWorkersCount, cfg.ObservationPollPeriod)
 	c.consensusHandler = consensus.NewHandler(c.lggr, c.requestPoller, cfg.UnknownRequestsTTL)
 
-	c.EVM, err = actions.NewEVM(*cfg, evmRelayer, c.lggr, processor, messageBuilder, c.consensusHandler, c.chainSelector)
+	c.EVM, err = actions.NewEVM(*cfg, evmRelayer, c.lggr, processor, messageBuilder, c.consensusHandler, c.chainSelector, c.limitsFactory)
 	if err != nil {
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
 
 	c.triggerService, err = trigger.NewLogTriggerService(evmRelayer, trigger.NewLogTriggerStore(), c.lggr, processor, messageBuilder,
-		cfg.LogTriggerPollInterval, cfg.LogTriggerSendChannelBufferSize, cfg.LogTriggerLimitQueryLogSize)
+		cfg.LogTriggerPollInterval, cfg.LogTriggerSendChannelBufferSize, cfg.LogTriggerLimitQueryLogSize, c.limitsFactory)
 	if err != nil {
 		return fmt.Errorf("error when creating trigger: %w", err)
 	}

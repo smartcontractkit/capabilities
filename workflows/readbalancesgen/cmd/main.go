@@ -3,9 +3,8 @@ package main
 import (
 	"encoding/hex"
 	"encoding/json"
-	"math/big"
-
 	"fmt"
+	"math/big"
 	"time"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/wasm"
@@ -122,7 +121,7 @@ func BuildWorkflow(runner *wasm.Runner) *sdk.WorkflowSpecFactory {
 
 			gotT, err := time.Parse(time.RFC3339Nano, payload.ScheduledExecutionTime)
 			if err != nil {
-				return computeOutput{}, fmt.Errorf("could not convert ScheduledExecutionTime", gotT)
+				return computeOutput{}, fmt.Errorf("could not convert ScheduledExecutionTime: %s", gotT)
 			}
 
 			return computeOutput{
@@ -179,12 +178,11 @@ func BuildWorkflow(runner *wasm.Runner) *sdk.WorkflowSpecFactory {
 		SignedReport: consensus,
 	}
 
-	timeout := int64(cfg.TimeoutSec)
 	chainwriter.TargetConfig{
 		Address:        cfg.PorCacheAddress, // Eth mainnet cache
 		DeltaStage:     cfg.DeltaStage,
 		Schedule:       "oneAtATime",
-		CreStepTimeout: &timeout,
+		CreStepTimeout: int64(cfg.TimeoutSec),
 	}.New(workflow, cfg.WriteCapID, targetInput)
 
 	return workflow

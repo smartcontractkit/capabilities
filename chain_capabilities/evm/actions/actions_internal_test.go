@@ -7,13 +7,13 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
-	"github.com/stretchr/testify/require"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
+	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
@@ -194,7 +194,7 @@ func TestFilterLogs(t *testing.T) {
 				FromBlock: big.NewInt(1),
 				ToBlock:   big.NewInt(102),
 			},
-			ExpectedFilterLogsToRequestError: "block range size 101 exceeds maximum allowed range of 100",
+			ExpectedFilterLogsToRequestError: "PerWorkflow.ChainRead.LogQueryBlockLimit limited for workflow[wf-id]: cannot use 101, limit is 100",
 		},
 		{
 			Name: "Eventually consistent happy path",
@@ -217,7 +217,7 @@ func TestFilterLogs(t *testing.T) {
 				FromBlock: big.NewInt(rpc.FinalizedBlockNumber.Int64()),
 				ToBlock:   big.NewInt(rpc.LatestBlockNumber.Int64()),
 			},
-			ExpectedCaptureObservationError: "block range size 192 exceeds maximum allowed range of 100",
+			ExpectedCaptureObservationError: "PerWorkflow.ChainRead.LogQueryBlockLimit limited for workflow[wf-id]: cannot use 192, limit is 100",
 		},
 	}
 	for _, tc := range testCases {
@@ -226,7 +226,8 @@ func TestFilterLogs(t *testing.T) {
 			if tc.ExpectedFilterLogsRequest != nil {
 				svc.EvmService.EXPECT().FilterLogs(mock.Anything, *tc.ExpectedFilterLogsRequest).Return(&evmtypes.FilterLogsReply{}, nil).Once()
 			}
-			request, err := svc.EVM.filterLogsToRequest(capabilities.RequestMetadata{}, tc.EthFilterQuery)
+			ctx := contexts.WithCRE(t.Context(), contexts.CRE{Workflow: "wf-id"})
+			request, err := svc.EVM.filterLogsToRequest(ctx, capabilities.RequestMetadata{}, tc.EthFilterQuery)
 			if tc.ExpectedFilterLogsToRequestError != "" {
 				require.ErrorContains(t, err, tc.ExpectedFilterLogsToRequestError)
 				return
@@ -238,7 +239,7 @@ func TestFilterLogs(t *testing.T) {
 			}
 
 			eventuallyConsistent := request.(*types.EventuallyConsistentRequest)
-			err = eventuallyConsistent.CaptureObservation(t.Context())
+			err = eventuallyConsistent.CaptureObservation(ctx)
 			if tc.ExpectedCaptureObservationError != "" {
 				require.ErrorContains(t, err, tc.ExpectedCaptureObservationError)
 				return

@@ -7,36 +7,29 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
-	ctypes "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rpc"
-
 	"github.com/shopspring/decimal"
-
-	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
-
 	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
-
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
+	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
+	ctypes "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
-)
-
-const (
-	// TODO PLEX-1569: make configurable
-	filterLogsMaxBlockRange = 100
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 )
 
 type ConsensusHandler interface {
@@ -56,17 +49,22 @@ type EVM struct {
 	lggr              logger.SugaredLogger
 	beholderProcessor beholder.ProtoProcessor
 	messageBuilder    *monitoring.MessageBuilder
+
+	readPayloadSizeLimiter limits.BoundLimiter[commoncfg.Size]
+	logQueryBlockLimit     limits.BoundLimiter[uint64]
+	reportSizeLimit        limits.BoundLimiter[commoncfg.Size]
+	txGasLimit             limits.BoundLimiter[uint64]
 }
 
 func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, beholderProcessor beholder.ProtoProcessor,
-	messageBuilder *monitoring.MessageBuilder, handler ConsensusHandler, chainSelector uint64) (EVM, error) {
+	messageBuilder *monitoring.MessageBuilder, handler ConsensusHandler, chainSelector uint64, limitsFactory limits.Factory) (*EVM, error) {
 	keystoneForwarderAddress := common.HexToAddress(cfg.CREForwarderAddress)
 	kfc, err := contracts.NewCREForwarderClient(evmService, keystoneForwarderAddress, lggr)
 	if err != nil {
-		return EVM{}, err
+		return &EVM{}, err
 	}
 
-	return EVM{
+	e := &EVM{
 		EVMService:               evmService,
 		keystoneForwarderAddress: keystoneForwarderAddress,
 		forwarderClient:          kfc,
@@ -76,14 +74,32 @@ func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, 
 		messageBuilder:           messageBuilder,
 		ConsensusHandler:         handler,
 		chainSelector:            chainSelector,
-	}, nil
+	}
+	return e, e.initLimiters(limitsFactory)
+}
+
+func (e *EVM) initLimiters(limitsFactory limits.Factory) (err error) {
+	e.readPayloadSizeLimiter, err = limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainRead.PayloadSizeLimit)
+	if err != nil {
+		return
+	}
+	e.logQueryBlockLimit, err = limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainRead.LogQueryBlockLimit)
+	if err != nil {
+		return
+	}
+	e.reportSizeLimit, err = limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainWrite.ReportSizeLimit)
+	if err != nil {
+		return
+	}
+	e.txGasLimit, err = limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainWrite.EVM.TransactionGasLimit)
+	return
 }
 
 func requestID(meta capabilities.RequestMetadata) string {
 	return meta.WorkflowExecutionID + ":" + meta.ReferenceID
 }
 
-func (e EVM) CallContract(
+func (e *EVM) CallContract(
 	ctx context.Context,
 	meta capabilities.RequestMetadata,
 	input *evm.CallContractRequest,
@@ -150,7 +166,7 @@ func (e EVM) CallContract(
 	return &responseAndMetadata, nil
 }
 
-func (e EVM) filterLogsToRequest(meta capabilities.RequestMetadata, ethFilterQuery evmtypes.FilterQuery) (ctypes.Request, error) {
+func (e *EVM) filterLogsToRequest(ctx context.Context, meta capabilities.RequestMetadata, ethFilterQuery evmtypes.FilterQuery) (ctypes.Request, error) {
 	filterLogs := func(ctx context.Context, query evmtypes.FilterQuery, confidenceLevel primitives.ConfidenceLevel) ([]byte, error) {
 		reply, err := e.EVMService.FilterLogs(ctx, evmtypes.FilterLogsRequest{
 			FilterQuery:     query,
@@ -166,7 +182,14 @@ func (e EVM) filterLogsToRequest(meta capabilities.RequestMetadata, ethFilterQue
 			return nil, fmt.Errorf("failed to convert logs to proto: %w", err)
 		}
 
-		return proto.Marshal(&evm.FilterLogsReply{Logs: logs})
+		b, err := proto.Marshal(&evm.FilterLogsReply{Logs: logs})
+		if err != nil {
+			return nil, err
+		}
+		if err = e.readPayloadSizeLimiter.Check(ctx, commoncfg.SizeOf(b)); err != nil {
+			return nil, err
+		}
+		return b, nil
 	}
 
 	if ethFilterQuery.BlockHash != (evmtypes.Hash{}) {
@@ -190,7 +213,7 @@ func (e EVM) filterLogsToRequest(meta capabilities.RequestMetadata, ethFilterQue
 	}
 
 	if !fromNeedsBlockHeightConsensus && !toNeedsBlockHeightConsensus {
-		err = validateBlockRange(ethFilterQuery.FromBlock, ethFilterQuery.ToBlock)
+		err = e.validateBlockRange(ctx, ethFilterQuery.FromBlock, ethFilterQuery.ToBlock)
 		if err != nil {
 			return nil, err
 		}
@@ -210,7 +233,7 @@ func (e EVM) filterLogsToRequest(meta capabilities.RequestMetadata, ethFilterQue
 			return nil, fmt.Errorf("error getting callToBlock: %w", err)
 		}
 
-		err = validateBlockRange(callFromBlock, callToBlock)
+		err = e.validateBlockRange(ctx, callFromBlock, callToBlock)
 		if err != nil {
 			return nil, err
 		}
@@ -222,20 +245,21 @@ func (e EVM) filterLogsToRequest(meta capabilities.RequestMetadata, ethFilterQue
 	}), nil
 }
 
-func validateBlockRange(fromBlock, toBlock *big.Int) error {
+func (e *EVM) validateBlockRange(ctx context.Context, fromBlock, toBlock *big.Int) error {
 	rangeSize := big.NewInt(0).Sub(toBlock, fromBlock)
 	if rangeSize.Sign() < 0 {
 		return fmt.Errorf("toBlock %s is less than fromBlock %s", toBlock.String(), fromBlock.String())
 	}
 
-	if rangeSize.Cmp(big.NewInt(filterLogsMaxBlockRange)) > 0 {
-		return fmt.Errorf("block range size %s exceeds maximum allowed range of %d", rangeSize.String(), filterLogsMaxBlockRange)
+	if !rangeSize.IsUint64() {
+		return fmt.Errorf("block range size %s overflows uint64", rangeSize)
 	}
 
-	return nil
+	return e.logQueryBlockLimit.Check(ctx, rangeSize.Uint64())
 }
 
-func (e EVM) FilterLogs(ctx context.Context, meta capabilities.RequestMetadata, req *evm.FilterLogsRequest) (*capabilities.ResponseAndMetadata[*evm.FilterLogsReply], error) {
+func (e *EVM) FilterLogs(ctx context.Context, meta capabilities.RequestMetadata, req *evm.FilterLogsRequest) (*capabilities.ResponseAndMetadata[*evm.FilterLogsReply], error) {
+	ctx = meta.ContextWithCRE(ctx)
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 
 	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.FilterLogs)); err != nil {
@@ -247,7 +271,7 @@ func (e EVM) FilterLogs(ctx context.Context, meta capabilities.RequestMetadata, 
 		return nil, capabilities.NewRemoteReportableError(err)
 	}
 
-	request, err := e.filterLogsToRequest(meta, ethFilterQuery)
+	request, err := e.filterLogsToRequest(ctx, meta, ethFilterQuery)
 	if err != nil {
 		return nil, capabilities.NewRemoteReportableError(err)
 	}
@@ -271,7 +295,7 @@ func (e EVM) FilterLogs(ctx context.Context, meta capabilities.RequestMetadata, 
 	return &responseAndMetadata, nil
 }
 
-func (e EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, req *evm.BalanceAtRequest) (*capabilities.ResponseAndMetadata[*evm.BalanceAtReply], error) {
+func (e *EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, req *evm.BalanceAtRequest) (*capabilities.ResponseAndMetadata[*evm.BalanceAtReply], error) {
 	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.BalanceAt)); err != nil {
 		return nil, err
 	}
@@ -325,7 +349,7 @@ func (e EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, r
 	return &responseAndMetadata, nil
 }
 
-func (e EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata, req *evm.EstimateGasRequest) (*capabilities.ResponseAndMetadata[*evm.EstimateGasReply], error) {
+func (e *EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata, req *evm.EstimateGasRequest) (*capabilities.ResponseAndMetadata[*evm.EstimateGasReply], error) {
 	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.EstimateGas)); err != nil {
 		return nil, capabilities.NewRemoteReportableError(err)
 	}
@@ -369,7 +393,7 @@ func (e EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata,
 	return &responseAndMetadata, nil
 }
 
-func (e EVM) GetTransactionByHash(ctx context.Context, meta capabilities.RequestMetadata, req *evm.GetTransactionByHashRequest) (*capabilities.ResponseAndMetadata[*evm.GetTransactionByHashReply], error) {
+func (e *EVM) GetTransactionByHash(ctx context.Context, meta capabilities.RequestMetadata, req *evm.GetTransactionByHashRequest) (*capabilities.ResponseAndMetadata[*evm.GetTransactionByHashReply], error) {
 	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.GetTransactionByHash)); err != nil {
 		return nil, capabilities.NewRemoteReportableError(err)
 	}
@@ -412,7 +436,7 @@ func (e EVM) GetTransactionByHash(ctx context.Context, meta capabilities.Request
 	return &responseAndMetadata, nil
 }
 
-func (e EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.RequestMetadata, req *evm.GetTransactionReceiptRequest) (*capabilities.ResponseAndMetadata[*evm.GetTransactionReceiptReply], error) {
+func (e *EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.RequestMetadata, req *evm.GetTransactionReceiptRequest) (*capabilities.ResponseAndMetadata[*evm.GetTransactionReceiptReply], error) {
 	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.GetTransactionReceipt)); err != nil {
 		return nil, capabilities.NewRemoteReportableError(err)
 	}
@@ -454,7 +478,7 @@ func (e EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.Reques
 	return &responseAndMetadata, nil
 }
 
-func (e EVM) HeaderByNumber(
+func (e *EVM) HeaderByNumber(
 	ctx context.Context,
 	meta capabilities.RequestMetadata,
 	req *evm.HeaderByNumberRequest,
@@ -587,7 +611,7 @@ func readDecimal(ctx context.Context, handler ConsensusHandler, request ctypes.R
 	return decimal.NewFromBigInt(valuespb.NewIntFromBigInt(rawDecimal.Coefficient), rawDecimal.Exponent), nil
 }
 
-func (e EVM) readProto(ctx context.Context, request ctypes.Request, into proto.Message) (err error) {
+func (e *EVM) readProto(ctx context.Context, request ctypes.Request, into proto.Message) (err error) {
 	data, err := readType[[]byte](ctx, e.ConsensusHandler, request)
 	if err != nil {
 		return err

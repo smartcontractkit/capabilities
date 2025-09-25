@@ -16,6 +16,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 
@@ -26,7 +27,7 @@ func Test_SimpleConsensus(t *testing.T) {
 	lggr := logger.Test(t)
 	ctx := t.Context()
 
-	capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute)
+	capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute, limits.Factory{Logger: lggr})
 	require.NoError(t, err)
 
 	oracleFactory := testutils.NewOracleFactory(t, lggr)
@@ -67,7 +68,7 @@ func Test_Report(t *testing.T) {
 	lggr := logger.Test(t)
 	ctx := t.Context()
 
-	capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute)
+	capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute, limits.Factory{Logger: lggr})
 	require.NoError(t, err)
 
 	oracleFactory := testutils.NewOracleFactory(t, lggr)
@@ -97,7 +98,7 @@ func Test_ReportRequiresValidSigningAlgo(t *testing.T) {
 	lggr := logger.Test(t)
 	ctx := t.Context()
 
-	capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute)
+	capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute, limits.Factory{Logger: lggr})
 	require.NoError(t, err)
 
 	oracleFactory := testutils.NewOracleFactory(t, lggr)
@@ -126,7 +127,7 @@ func Test_ReportRequiresValidHashingAlgo(t *testing.T) {
 	lggr := logger.Test(t)
 	ctx := t.Context()
 
-	capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute)
+	capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute, limits.Factory{Logger: lggr})
 	require.NoError(t, err)
 
 	oracleFactory := testutils.NewOracleFactory(t, lggr)
@@ -155,7 +156,7 @@ func Test_ReportRequiresValidEncoderName(t *testing.T) {
 	lggr := logger.Test(t)
 	ctx := t.Context()
 
-	capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute)
+	capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute, limits.Factory{Logger: lggr})
 	require.NoError(t, err)
 
 	oracleFactory := testutils.NewOracleFactory(t, lggr)
@@ -184,7 +185,7 @@ func Test_SimpleInputsSizeValidation(t *testing.T) {
 	lggr := logger.Test(t)
 	ctx := t.Context()
 
-	capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute)
+	capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute, limits.Factory{Logger: lggr})
 	require.NoError(t, err)
 
 	oracleFactory := testutils.NewOracleFactory(t, lggr)
@@ -203,7 +204,7 @@ func Test_SimpleInputsSizeValidation(t *testing.T) {
 	servicetest.Run(t, capability)
 
 	metadata := capabilities.RequestMetadata{
-		WorkflowID:               "",
+		WorkflowID:               "wf-id",
 		WorkflowOwner:            "",
 		WorkflowExecutionID:      "wex-id",
 		WorkflowName:             "",
@@ -220,7 +221,7 @@ func Test_SimpleInputsSizeValidation(t *testing.T) {
 
 	_, err = capability.Simple(ctx, metadata, input)
 	require.Error(t, err)
-	require.ErrorContains(t, err, "request size exceeds maximum allowed size")
+	require.ErrorContains(t, err, "PerWorkflow.ConsensusObservationSizeLimit limited for workflow[wf-id]: cannot use 47b, limit is 2b")
 }
 
 func Test_ToReportID(t *testing.T) {

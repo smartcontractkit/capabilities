@@ -25,8 +25,10 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/consensus/server"
+	"github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/services"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
@@ -37,7 +39,7 @@ import (
 )
 
 const defaultRequestBatchSize = 20
-const defaultMaxRequestSizeBytes = 10 * 1024 // 10KB
+
 const defaultKeyBundleIDForValueConsensus = "evm"
 
 const KeyBundleIDEvm = "evm"
@@ -54,18 +56,17 @@ type ConsensusCapabilityConfig struct {
 var _ server.ConsensusCapability = &consensusCapability{}
 
 type consensusCapability struct {
-	services.StateMachine
-
-	lggr       logger.Logger
-	oracle     core.Oracle
-	reqStore   *requests.Store[*oracle.ConsensusRequest]
-	reqHandler *requests.Handler[*oracle.ConsensusRequest, oracle.ConsensusResponse]
+	lggr          logger.Logger
+	oracle        core.Oracle
+	reqStore      *requests.Store[*oracle.ConsensusRequest]
+	reqHandler    *requests.Handler[*oracle.ConsensusRequest, oracle.ConsensusResponse]
+	limitsFactory limits.Factory
 
 	requestTimeout     time.Duration
 	requestTimeoutLock sync.RWMutex
 
 	requestBatchSize          int
-	maxRequestSizeBytes       int
+	maxRequestSizeBytes       limits.BoundLimiter[config.Size]
 	valueConsensusKeyBundleID string
 
 	metrics *metrics.Metrics
@@ -82,7 +83,7 @@ func (s *storeStatsCollector) SetRequestCount(requestCount int) {
 // NewConsensusCapability creates a new ConsensusCapability with the given logger, clock, and response cache expiry time.  The
 // response cache expiry controls how long a response for a given request is cached before it is considered expired and evicted. This allows
 // the capability to respond to slow requests sent after consensus has been reached.
-func NewConsensusCapability(lggr logger.Logger, clock clockwork.Clock, responseCacheExpiry time.Duration) (*consensusCapability, error) {
+func NewConsensusCapability(lggr logger.Logger, clock clockwork.Clock, responseCacheExpiry time.Duration, limitsFactory limits.Factory) (*consensusCapability, error) {
 	metrics, err := metrics.NewMetrics()
 	if err != nil {
 		return nil, fmt.Errorf("error creating metrics: %w", err)
@@ -94,10 +95,11 @@ func NewConsensusCapability(lggr logger.Logger, clock clockwork.Clock, responseC
 		})
 
 	return &consensusCapability{
-		lggr:       lggr,
-		reqStore:   reqStore,
-		reqHandler: requests.NewHandler[*oracle.ConsensusRequest, oracle.ConsensusResponse](lggr, reqStore, clock, responseCacheExpiry),
-		metrics:    metrics,
+		lggr:          lggr,
+		reqStore:      reqStore,
+		reqHandler:    requests.NewHandler[*oracle.ConsensusRequest, oracle.ConsensusResponse](lggr, reqStore, clock, responseCacheExpiry),
+		metrics:       metrics,
+		limitsFactory: limitsFactory,
 	}, nil
 }
 
@@ -164,14 +166,13 @@ func (c *consensusCapability) Initialise(ctx context.Context, config string,
 	return nil
 }
 
-func (c *consensusCapability) setConfiguration(config string) error {
+func (c *consensusCapability) setConfiguration(cfg string) error {
 	c.valueConsensusKeyBundleID = defaultKeyBundleIDForValueConsensus
 	c.requestBatchSize = defaultRequestBatchSize
-	c.maxRequestSizeBytes = defaultMaxRequestSizeBytes
 
 	var capabilityConfig ConsensusCapabilityConfig
-	if len(config) > 0 {
-		err := json.Unmarshal([]byte(config), &capabilityConfig)
+	if len(cfg) > 0 {
+		err := json.Unmarshal([]byte(cfg), &capabilityConfig)
 		if err != nil {
 			return fmt.Errorf("failed to deserialize config into ConsensusCapabilityConfig: %w", err)
 		}
@@ -188,12 +189,18 @@ func (c *consensusCapability) setConfiguration(config string) error {
 	}
 
 	if capabilityConfig.MaxRequestSizeBytes > 0 {
-		c.maxRequestSizeBytes = capabilityConfig.MaxRequestSizeBytes
+		cresettings.Default.PerWorkflow.ConsensusObservationSizeLimit.DefaultValue = config.Size(capabilityConfig.MaxRequestSizeBytes)
 	}
+	maxRequestSizeBytes, err := limits.MakeBoundLimiter(c.limitsFactory, cresettings.Default.PerWorkflow.ConsensusObservationSizeLimit)
+	if err != nil {
+		return err
+	}
+	c.maxRequestSizeBytes = maxRequestSizeBytes
 	return nil
 }
 
 func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.RequestMetadata, input *sdk.SimpleConsensusInputs) (*capabilities.ResponseAndMetadata[*valuespb.Value], error) {
+	ctx = metadata.ContextWithCRE(ctx)
 	lggr := c.requestLggr(metadata)
 
 	lggr.Debugw("received simple consensus request", "metadata", metadata, "input", input)
@@ -205,7 +212,7 @@ func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.
 		RequestType:     types.RequestType_VALUE_CONSENSUS,
 	}
 
-	requestSize, err := validateRequestSize(consensusRequestMetaData, input, c.maxRequestSizeBytes)
+	requestSize, err := c.validateRequestSize(ctx, consensusRequestMetaData, input)
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate input size: %w", err)
 	}
@@ -249,6 +256,7 @@ func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.
 }
 
 func (c *consensusCapability) Report(ctx context.Context, metadata capabilities.RequestMetadata, reportRequest *sdk.ReportRequest) (*capabilities.ResponseAndMetadata[*sdk.ReportResponse], error) {
+	ctx = metadata.ContextWithCRE(ctx)
 	lggr := c.requestLggr(metadata)
 
 	lggr.Debug("received reporting request", "metadata", metadata)
@@ -271,7 +279,7 @@ func (c *consensusCapability) Report(ctx context.Context, metadata capabilities.
 		RequestType:     types.RequestType_REPORT_GENERATION,
 	}
 
-	requestSize, err := validateRequestSize(consensusRequestMetaData, reportRequest, c.maxRequestSizeBytes)
+	requestSize, err := c.validateRequestSize(ctx, consensusRequestMetaData, reportRequest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate input size: %w", err)
 	}
@@ -455,7 +463,7 @@ func (c *consensusCapability) Description() string {
 
 // validateRequestSize ensures the combined size of input and metadata does not exceed the allowed limit.
 // This prevents oversized requests that could disrupt the consensus process.
-func validateRequestSize(consensusRequestMetaData oracle.ConsensusRequestMetadata, input proto.Message, maxRequestSizeBytes int) (int, error) {
+func (c *consensusCapability) validateRequestSize(ctx context.Context, consensusRequestMetaData oracle.ConsensusRequestMetadata, input proto.Message) (int, error) {
 	requestMetaData := oracle.ToRequestMetaData(consensusRequestMetaData)
 
 	serialisedInput, err := proto.Marshal(input)
@@ -467,13 +475,8 @@ func validateRequestSize(consensusRequestMetaData oracle.ConsensusRequestMetadat
 	if err != nil {
 		return 0, fmt.Errorf("failed to serialise metadata: %w", err)
 	}
-
-	requestSize := len(serialisedInput) + len(serialisedMetadata)
-
-	if requestSize > maxRequestSizeBytes {
-		return 0, fmt.Errorf("request size exceeds maximum allowed size of %d bytes: got %d bytes", maxRequestSizeBytes, len(serialisedInput)+len(serialisedMetadata))
-	}
-	return requestSize, nil
+	size := config.Size(len(serialisedInput) + len(serialisedMetadata))
+	return int(size), c.maxRequestSizeBytes.Check(ctx, size)
 }
 
 func logObservation(lggr logger.Logger, input *sdk.SimpleConsensusInputs, metadata capabilities.RequestMetadata) (*valuespb.Value, error) {

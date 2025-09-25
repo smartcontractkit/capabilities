@@ -37,6 +37,7 @@ type mockGatewayConnector struct {
 func (m *mockGatewayConnector) AddHandler(ctx context.Context, methods []string, handler core.GatewayConnectorHandler) error {
 	return nil
 }
+func (m *mockGatewayConnector) RemoveHandler(ctx context.Context, methods []string) error { return nil }
 func (m *mockGatewayConnector) SendToGateway(ctx context.Context, gatewayID string, resp *jsonrpc.Response[json.RawMessage]) error {
 	m.SendToGatewayCalled = true
 	m.SendToGatewayArgs.GatewayID = gatewayID
