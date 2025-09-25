@@ -15,6 +15,7 @@ import (
 var _ core.CapabilitiesRegistry = (*capabilitiesRegistry)(nil)
 
 type capabilitiesRegistry struct {
+	core.UnimplementedCapabilitiesRegistry
 	mu           sync.RWMutex
 	capabilities map[string]interface{}
 	t            *testing.T
