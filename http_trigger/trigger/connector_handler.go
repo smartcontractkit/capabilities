@@ -10,6 +10,9 @@ import (
 	"sync"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
@@ -19,6 +22,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
+	workflowsevents "github.com/smartcontractkit/chainlink-protos/workflows/go/v2"
 )
 
 const (
@@ -300,6 +304,12 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		return // Error already sent in the method
 	}
 
+	// Emit TriggerExecutionStarted event
+	if emitErr := EmitTriggerExecutionStarted(ctx, req.ID, workflowExecutionID); emitErr != nil {
+		l.Errorw("failed to emit trigger execution started event", "error", emitErr, "workflowID", workflowID, "workflowExecutionID", workflowExecutionID)
+		// Continue with execution even if event emission fails
+	}
+
 	input := []byte(triggerReq.Input)
 	err = h.triggerWorkflow(ctx, workflowID, req.ID, gatewayID, workflowExecutionID, input, triggerReq.Key)
 	if err != nil {
@@ -436,4 +446,25 @@ func (h *connectorHandler) triggerWorkflow(ctx context.Context, workflowID strin
 		return err
 	}
 	return nil
+}
+
+// EmitTriggerExecutionStarted emits a TriggerExecutionStarted event via beholder
+func EmitTriggerExecutionStarted(ctx context.Context, triggerID, workflowExecutionID string) error {
+	event := &workflowsevents.TriggerExecutionStarted{
+		TriggerID:           triggerID,
+		WorkflowExecutionID: workflowExecutionID,
+		Timestamp:           time.Now().Format(time.RFC3339),
+	}
+
+	// Marshal the protobuf message
+	b, err := proto.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("failed to marshal TriggerExecutionStarted event: %w", err)
+	}
+
+	// Emit via beholder
+	return beholder.GetEmitter().Emit(ctx, b,
+		"beholder_data_schema", "workflows.v2.trigger_execution_started", // required
+		"beholder_domain", "platform", // required
+		"beholder_entity", "workflows.v2.TriggerExecutionStarted") // required
 }

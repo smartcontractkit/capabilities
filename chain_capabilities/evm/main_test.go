@@ -41,16 +41,55 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, svc.Close())
 	})
+	t.Run("happy-path-with-triggers-params", func(t *testing.T) {
+		evmSvc := evmmock.NewEVMService(t)
+		evmSvc.On("GetFiltersNames", mock.Anything).Maybe().Return([]string{}, nil)
+		relayer := relayermock.NewRelayer(t)
+		relayer.On("EVM").Return(evmSvc, nil)
+		relayer.On("GetChainInfo", mock.Anything).Return(types.ChainInfo{}, nil)
+
+		relayerSet := relayermock.NewRelayerSet(t)
+		relayerSet.On("Get", mock.Anything, mock.Anything).Return(relayer, nil)
+		svc := &capabilityGRPCService{lggr: logger.Test(t)}
+		cfg := config.Config{ChainID: 1337, Network: "testnet", LogTriggerPollInterval: 60 * time.Second, LogTriggerSendChannelBufferSize: 100, LogTriggerLimitQueryLogSize: 10, CREForwarderAddress: common.Bytes2Hex(testutils.NewAddress().Bytes()), ReceiverGasMinimum: 1000}
+		cfgJSON, _ := json.Marshal(cfg)
+
+		err := svc.Initialise(t.Context(), string(cfgJSON),
+			nil, nil, nil, nil, relayerSet, nullOracleFactory{}, nil, nil)
+		require.NoError(t, err)
+		require.NoError(t, svc.Close())
+	})
 	t.Run("bad-json", func(t *testing.T) {
 		svc := &capabilityGRPCService{lggr: logger.Test(t)}
 		err := svc.Initialise(t.Context(), "x", nil, nil, nil, nil, nil, nullOracleFactory{}, nil, nil)
 		assert.ErrorContains(t, err, "failed to parse")
 	})
-	t.Run("bad-interval", func(t *testing.T) {
-		cfgJSON, _ := json.Marshal(config.Config{ChainID: 1, Network: "net", LogTriggerPollInterval: -1})
+	t.Run("bad-trigger-params", func(t *testing.T) {
+		evmSvc := evmmock.NewEVMService(t)
+		evmSvc.On("GetFiltersNames", mock.Anything).Maybe().Return([]string{}, nil)
+		relayer := relayermock.NewRelayer(t)
+		relayer.On("EVM").Return(evmSvc, nil)
+		relayer.On("GetChainInfo", mock.Anything).Return(types.ChainInfo{}, nil)
+
+		relayerSet := relayermock.NewRelayerSet(t)
+		relayerSet.On("Get", mock.Anything, mock.Anything).Return(relayer, nil)
 		svc := &capabilityGRPCService{lggr: logger.Test(t)}
-		err := svc.Initialise(t.Context(), string(cfgJSON), nil, nil, nil, nil, nil, nullOracleFactory{}, nil, nil)
-		assert.ErrorContains(t, err, "logTriggerPollInterval must be positive, got: -1ns")
+
+		cfg := config.Config{ChainID: 1337, Network: "testnet", LogTriggerPollInterval: -1, CREForwarderAddress: common.Bytes2Hex(testutils.NewAddress().Bytes()), ReceiverGasMinimum: 1000}
+		cfgJSON, _ := json.Marshal(cfg)
+		err := svc.Initialise(t.Context(), string(cfgJSON), nil, nil, nil, nil, relayerSet, nullOracleFactory{}, nil, nil)
+		assert.ErrorContains(t, err, "error when creating trigger: logTriggerPollInterval must be positive, got: -1ns")
+
+		cfg = config.Config{ChainID: 1337, Network: "testnet", LogTriggerPollInterval: 60 * time.Second, CREForwarderAddress: common.Bytes2Hex(testutils.NewAddress().Bytes()), ReceiverGasMinimum: 1000, LogTriggerLimitQueryLogSize: uint64(1001)}
+		cfgJSON, _ = json.Marshal(cfg)
+		err = svc.Initialise(t.Context(), string(cfgJSON), nil, nil, nil, nil, relayerSet, nullOracleFactory{}, nil, nil)
+		assert.ErrorContains(t, err, "error when creating trigger: logTriggerLimitQueryLogSize (1001) must be less than logTriggerSendChannelBufferSize (1000)")
+
+		cfg = config.Config{ChainID: 1337, Network: "testnet", LogTriggerPollInterval: 60 * time.Second, CREForwarderAddress: common.Bytes2Hex(testutils.NewAddress().Bytes()), ReceiverGasMinimum: 1000,
+			LogTriggerSendChannelBufferSize: 5, LogTriggerLimitQueryLogSize: uint64(10)}
+		cfgJSON, _ = json.Marshal(cfg)
+		err = svc.Initialise(t.Context(), string(cfgJSON), nil, nil, nil, nil, relayerSet, nullOracleFactory{}, nil, nil)
+		assert.ErrorContains(t, err, "error when creating trigger: logTriggerLimitQueryLogSize (10) must be less than logTriggerSendChannelBufferSize (5)")
 	})
 	t.Run("relayerSet error", func(t *testing.T) {
 		relayerSet := relayermock.NewRelayerSet(t)

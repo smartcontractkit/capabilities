@@ -11,7 +11,6 @@ require (
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20250819150450-95ef563f6e6d
 	github.com/smartcontractkit/chainlink/v2 v2.26.0-debug-tracing.0.20250902134347-4939821bd4b3
 	go.uber.org/zap v1.27.0
-
 )
 
 require (
@@ -69,7 +68,7 @@ require (
 	github.com/cosmos/btcutil v1.0.5 // indirect
 	github.com/cosmos/cosmos-db v1.1.1 // indirect
 	github.com/cosmos/cosmos-proto v1.0.0-beta.5 // indirect
-	github.com/cosmos/cosmos-sdk v0.50.13 // indirect
+	github.com/cosmos/cosmos-sdk v0.50.14 // indirect
 	github.com/cosmos/go-bip39 v1.0.0 // indirect
 	github.com/cosmos/gogoproto v1.7.0 // indirect
 	github.com/cosmos/ics23/go v0.11.0 // indirect
