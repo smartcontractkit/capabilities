@@ -343,3 +343,24 @@ func TestNextBackoff(t *testing.T) {
 		})
 	}
 }
+
+func TestSendWorkflowMetadata_NilRequest(t *testing.T) {
+	testGatewayConnector := &testGatewayConnector{}
+	rateLimiterConfig := ratelimit.RateLimiterConfig{
+		GlobalRPS:      100.0,
+		GlobalBurst:    100,
+		PerSenderRPS:   100.0,
+		PerSenderBurst: 100,
+	}
+	outgoingRateLimiter, err := ratelimit.NewRateLimiter(rateLimiterConfig)
+	require.NoError(t, err)
+
+	workflowStore := newWorkflowStore(logger.Test(t))
+	cfg := ServiceConfig{}
+	publisher := NewGatewayMetadataPublisher(logger.Test(t), testGatewayConnector, outgoingRateLimiter, workflowStore, cfg)
+
+	// Test nil request
+	err = publisher.SendWorkflowMetadata(t.Context(), "gateway1", nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "request cannot be nil")
+}

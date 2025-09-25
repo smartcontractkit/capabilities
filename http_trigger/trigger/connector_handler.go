@@ -128,6 +128,9 @@ func (h *connectorHandler) ID(context.Context) (string, error) {
 }
 
 func (h *connectorHandler) RegisterWorkflow(ctx context.Context, workflowSelector gateway_common.WorkflowSelector, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error {
+	if input == nil {
+		return errors.New("input config cannot be nil")
+	}
 	authorizedKeys, err := h.validateAuthorizedKeys(input.AuthorizedKeys)
 	if err != nil {
 		return err
@@ -191,6 +194,9 @@ func (h *connectorHandler) UnregisterWorkflow(ctx context.Context, workflowID st
 // Always returns nil. Unless request is malformed or rate-limited, response is sent back to the
 // gateway using sendResponse method.
 func (h *connectorHandler) HandleGatewayMessage(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage]) error {
+	if req == nil {
+		return errors.New("request cannot be nil")
+	}
 	if !h.checkIncomingRateLimit(ctx, gatewayID) {
 		return nil
 	}
@@ -268,6 +274,11 @@ func (h *connectorHandler) sendResponse(ctx context.Context, gatewayID string, r
 
 func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage]) {
 	h.metrics.IncrementRequestCount(ctx, h.lggr)
+
+	if req == nil {
+		h.lggr.Errorw("Request cannot be nil", "gatewayID", gatewayID)
+		return
+	}
 
 	if req.Params == nil {
 		h.lggr.Errorw("No params in request", "gatewayID", gatewayID, "requestID", req.ID)

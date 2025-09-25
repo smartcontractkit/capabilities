@@ -353,7 +353,6 @@ func (m *mockGatewayConnector) AwaitConnection(ctx context.Context, gateway stri
 func (m *mockGatewayConnector) AddHandler(ctx context.Context, methods []string, handler core.GatewayConnectorHandler) error {
 	return m.AddHandlerErr
 }
-
 func TestGatewayOutboundProxy_nextBackoff(t *testing.T) {
 	proxy := &gatewayOutboundProxy{
 		gatewayConnectionConfig: common.GatewayConnectionConfig{
@@ -366,6 +365,37 @@ func TestGatewayOutboundProxy_nextBackoff(t *testing.T) {
 	assert.Equal(t, 200*time.Millisecond, res)
 	res = proxy.nextBackoff(600 * time.Millisecond)
 	assert.Equal(t, 1000*time.Millisecond, res) // capped at max
+}
+
+func TestGatewayOutboundProxy_awaitConnection_RetryLimits(t *testing.T) {
+	t.Run("respects context timeout - prevents infinite retry", func(t *testing.T) {
+		mockConnector := &mockGatewayConnector{
+			GatewayIDsVal: []string{"gateway1", "gateway2"},
+			// Provide enough errors so that timeout can be triggered
+			AwaitErrs: make([]error, 20),
+		}
+		for i := range mockConnector.AwaitErrs {
+			mockConnector.AwaitErrs[i] = errors.New("connection failed")
+		}
+
+		proxy := &gatewayOutboundProxy{
+			gatewayConnector: mockConnector,
+			gatewayConnectionConfig: common.GatewayConnectionConfig{
+				InitialIntervalMs: 50,
+				MaxElapsedTimeMs:  1000,
+				Multiplier:        2.0,
+			},
+		}
+
+		// Set a context timeout that's shorter than what would be needed for infinite retries
+		ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+		defer cancel()
+		gateway, err := proxy.awaitConnection(ctx, logger.Test(t), "testHash")
+
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "context deadline exceeded")
+		require.Empty(t, gateway)
+	})
 }
 
 func rateLimiterConfig() ratelimit.RateLimiterConfig {
