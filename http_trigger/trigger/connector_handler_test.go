@@ -922,3 +922,38 @@ func TestConnectorHandler_StartRequestCacheCleanup(t *testing.T) {
 	require.True(t, kvstore.wasCleanupCalled(), "request cache cleanup should be called when handler starts")
 	require.GreaterOrEqual(t, kvstore.getCleanupCount(), 1, "cleanup should be called at least once")
 }
+
+func TestRegisterWorkflow_NilInput(t *testing.T) {
+	lggr := logger.Test(t)
+	handler, _, _, _ := setup(t, lggr)
+
+	workflowSelector := gateway_common.WorkflowSelector{
+		WorkflowID:    "test-workflow",
+		WorkflowOwner: "test-owner",
+		WorkflowName:  "test-name",
+		WorkflowTag:   "test-tag",
+	}
+
+	sendCh := make(chan capabilities.TriggerAndId[*http.Payload], 1)
+
+	err := handler.RegisterWorkflow(context.Background(), workflowSelector, nil, sendCh)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "input config cannot be nil")
+}
+
+func TestProcessTrigger_NilRequest(t *testing.T) {
+	lggr := logger.Test(t)
+	handler, _, _, _ := setup(t, lggr)
+
+	// Test nil request - this should not panic
+	handler.processTrigger(context.Background(), "gateway1", nil)
+}
+
+func TestHandleGatewayMessage_NilRequest(t *testing.T) {
+	lggr := logger.Test(t)
+	handler, _, _, _ := setup(t, lggr)
+
+	err := handler.HandleGatewayMessage(context.Background(), "gateway1", nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "request cannot be nil")
+}

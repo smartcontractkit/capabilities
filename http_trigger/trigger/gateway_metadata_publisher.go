@@ -116,6 +116,9 @@ func (h *gatewayMetadataPublisher) sendErrorResponse(ctx context.Context, gatewa
 }
 
 func (h *gatewayMetadataPublisher) SendWorkflowMetadata(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage]) error {
+	if req == nil {
+		return errors.New("request cannot be nil")
+	}
 	if req.ID == "" {
 		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInvalidRequest, "empty request ID", gateway_common.MethodPullWorkflowMetadata)
 		return errors.New("empty request ID")
