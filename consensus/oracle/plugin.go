@@ -3,7 +3,6 @@ package oracle
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -211,7 +210,7 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 			}
 		case *sdk.SimpleConsensusInputs_Error:
 			r.lggr.Debugw("observation is an error, skipping", "error", obs.Error, "requestID", req.ID())
-			return nil, errors.New(obs.Error)
+			continue
 		default:
 			// Neither value nor error is set in the observation input, use the default if it exists
 			if req.Input.Default != nil {
@@ -319,6 +318,11 @@ func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeC
 		values := make([]*valuespb.Value, 0, len(observations))
 		timestamps := make([]*timestamppb.Timestamp, 0, len(observations))
 		for _, obs := range observations {
+			if obs.Observation == nil || obs.Timestamp == nil {
+				r.lggr.Errorw("observation or timestamp is nil for request, skipping", "requestID", requestID)
+				continue
+			}
+
 			timestamps = append(timestamps, obs.Timestamp)
 			values = append(values, obs.Observation)
 		}

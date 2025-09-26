@@ -66,9 +66,6 @@ type consensusCapability struct {
 	requestBatchSize          int
 	maxRequestSizeBytes       int
 	valueConsensusKeyBundleID string
-
-	stopCh services.StopChan
-	wg     sync.WaitGroup
 }
 
 type storeStatsCollector struct {
@@ -103,7 +100,6 @@ func NewConsensusCapability(lggr logger.Logger, clock clockwork.Clock, responseC
 		lggr:       lggr,
 		reqStore:   reqStore,
 		reqHandler: requests.NewHandler[*oracle.ConsensusRequest, oracle.ConsensusResponse](lggr, reqStore, clock, responseCacheExpiry),
-		stopCh:     make(services.StopChan),
 	}, nil
 }
 
@@ -212,7 +208,7 @@ func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.
 		RequestType:     types.RequestType_VALUE_CONSENSUS,
 	}
 
-	if err := validateInputSize(consensusRequestMetaData, input, c.maxRequestSizeBytes); err != nil {
+	if err := validateRequestSize(consensusRequestMetaData, input, c.maxRequestSizeBytes); err != nil {
 		return nil, fmt.Errorf("failed to validate input size: %w", err)
 	}
 
@@ -276,7 +272,7 @@ func (c *consensusCapability) Report(ctx context.Context, metadata capabilities.
 		RequestType:     types.RequestType_REPORT_GENERATION,
 	}
 
-	if err := validateInputSize(consensusRequestMetaData, reportRequest, c.maxRequestSizeBytes); err != nil {
+	if err := validateRequestSize(consensusRequestMetaData, reportRequest, c.maxRequestSizeBytes); err != nil {
 		return nil, fmt.Errorf("failed to validate input size: %w", err)
 	}
 
@@ -425,9 +421,6 @@ func (c *consensusCapability) Start(ctx context.Context) error {
 }
 
 func (c *consensusCapability) Close() error {
-	close(c.stopCh)
-	c.wg.Wait()
-
 	err := c.reqHandler.Close()
 	if err != nil {
 		c.lggr.Errorw("error closing request handler", "err", err)
@@ -459,9 +452,9 @@ func (c *consensusCapability) Description() string {
 	return "Consensus Capability"
 }
 
-// validateInputSize checks that the size of the input and metadata does not exceed the maximum request size.  This is to
-// prevent excessively large requests that could cause issues in the consensus process.
-func validateInputSize(consensusRequestMetaData oracle.ConsensusRequestMetadata, input proto.Message, maxRequestSizeBytes int) error {
+// validateRequestSize ensures the combined size of input and metadata does not exceed the allowed limit.
+// This prevents oversized requests that could disrupt the consensus process.
+func validateRequestSize(consensusRequestMetaData oracle.ConsensusRequestMetadata, input proto.Message, maxRequestSizeBytes int) error {
 	requestMetaData := oracle.ToRequestMetaData(consensusRequestMetaData)
 
 	serialisedInput, err := proto.Marshal(input)

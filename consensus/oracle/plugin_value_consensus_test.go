@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -167,6 +168,66 @@ func Test_ReceivedAllObservationsFromAllNodes(t *testing.T) {
 	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
 }
 
+func Test_ReceivedObservationsWithErrors(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := t.Context()
+
+	md1 := newRequestMetaData()
+	md2 := newRequestMetaData()
+
+	md1.KeyBundleID = "evm"
+
+	reqToObservations := map[string]consensusPluginTest{
+		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newCr(10, md1), newCrWithError(errors.New("its broken"), md1), newCr(30, md1),
+			newCr(40, md1), newCr(50, md1), newCr(60, md1),
+			newCr(70, md1)},
+			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
+				verifyValueConsensusReport(t, report, infos, values.NewInt64(40), "evm")
+			}},
+
+		md2.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newCr(110, md2), newCr(120, md2), newCr(130, md2),
+			newCr(140, md2), newCr(150, md2), newCr(160, md2),
+			newCrWithError(errors.New("its broken"), md2)},
+			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
+				verifyValueConsensusReport(t, report, infos, values.NewInt64(130), "")
+			}},
+	}
+
+	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
+}
+
+func Test_ReceivedObservationsWithDefaults(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := t.Context()
+
+	md1 := newRequestMetaData()
+	md2 := newRequestMetaData()
+
+	md1.KeyBundleID = "evm"
+
+	reqToObservations := map[string]consensusPluginTest{
+		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newCr(10, md1), newCr(20, md1), newCr(30, md1),
+			newCr(40, md1), newCrWithDefault(50, md1), newCr(60, md1),
+			newCr(70, md1)},
+			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
+				verifyValueConsensusReport(t, report, infos, values.NewInt64(40), "evm")
+			}},
+
+		md2.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newCrWithDefault(110, md2), newCr(120, md2), newCr(130, md2),
+			newCr(140, md2), newCr(150, md2), newCrWithDefault(160, md2),
+			newCr(170, md2)},
+			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
+				verifyValueConsensusReport(t, report, infos, values.NewInt64(140), "")
+			}},
+	}
+
+	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
+}
+
 func Test_MissingButSufficientObservations(t *testing.T) {
 	lggr := logger.Test(t)
 	ctx := t.Context()
@@ -289,6 +350,26 @@ func generateRandomHexString(byteLength int) string {
 func newCr(observation int64, metaData oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
 	simpleConsensusInputs := &sdk.SimpleConsensusInputs{
 		Observation: &sdk.SimpleConsensusInputs_Value{Value: values.Proto(values.NewInt64(observation))},
+		Descriptors: &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_MEDIAN}},
+	}
+
+	return oracle.NewConsensusRequest(simpleConsensusInputs, time.Now(), time.Now().Add(1*time.Hour).UTC(), nil, metaData)
+}
+
+func newCrWithError(err error, metaData oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
+	simpleConsensusInputs := &sdk.SimpleConsensusInputs{
+		Observation: &sdk.SimpleConsensusInputs_Error{
+			Error: err.Error(),
+		},
+		Descriptors: &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_MEDIAN}},
+	}
+
+	return oracle.NewConsensusRequest(simpleConsensusInputs, time.Now(), time.Now().Add(1*time.Hour).UTC(), nil, metaData)
+}
+
+func newCrWithDefault(def int64, metaData oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
+	simpleConsensusInputs := &sdk.SimpleConsensusInputs{
+		Default:     values.Proto(values.NewInt64(def)),
 		Descriptors: &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_MEDIAN}},
 	}
 
