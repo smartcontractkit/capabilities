@@ -357,7 +357,9 @@ func TestSendWorkflowMetadata_NilRequest(t *testing.T) {
 
 	workflowStore := newWorkflowStore(logger.Test(t))
 	cfg := ServiceConfig{}
-	publisher := NewGatewayMetadataPublisher(logger.Test(t), testGatewayConnector, outgoingRateLimiter, workflowStore, cfg)
+	metrics, err := NewMetrics()
+	require.NoError(t, err)
+	publisher := NewGatewayMetadataPublisher(logger.Test(t), testGatewayConnector, outgoingRateLimiter, workflowStore, cfg, metrics)
 
 	// Test nil request
 	err = publisher.SendWorkflowMetadata(t.Context(), "gateway1", nil)
