@@ -12,6 +12,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/smartcontractkit/capabilities/consensus/metrics"
+	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	"github.com/smartcontractkit/libocr/quorumhelper"
 
@@ -24,8 +25,6 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-
-	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
 )
 
 var _ ocr3types.ReportingPlugin[[]byte] = (*reportingPlugin)(nil)

@@ -11,10 +11,13 @@ import (
 	"time"
 
 	"github.com/jonboulle/clockwork"
+	"go.opentelemetry.io/otel/metric"
 	"golang.org/x/exp/maps"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/capabilities/consensus/metrics"
+	"github.com/smartcontractkit/capabilities/consensus/oracle"
+	"github.com/smartcontractkit/capabilities/consensus/oracle/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/consensus/server"
@@ -23,16 +26,9 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
-
-	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2/types"
-
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
-	"github.com/smartcontractkit/capabilities/consensus/oracle/types"
-
-	"github.com/smartcontractkit/capabilities/consensus/oracle"
-
-	"go.opentelemetry.io/otel/metric"
+	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2/types"
 )
 
 const defaultRequestBatchSize = 20
