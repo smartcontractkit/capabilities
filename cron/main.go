@@ -11,7 +11,6 @@ import (
 
 func main() {
 	loopserver.Serve(trigger.ServiceName, func(lggr logger.Logger) loop.StandardCapabilities {
-
 		triggerService, err := trigger.NewTriggerService(lggr, nil)
 		if err != nil {
 			lggr.Fatalw("Failed to create cron trigger service", "error", err)
