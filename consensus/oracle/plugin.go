@@ -23,7 +23,6 @@ import (
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
-
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 
 	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
