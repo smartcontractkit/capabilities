@@ -5,13 +5,14 @@ go 1.24.5
 require (
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-plugin v1.6.3
-	github.com/smartcontractkit/chainlink-common v0.9.6-0.20250925164243-ae45911b332e
+	github.com/smartcontractkit/chainlink-common v0.9.6-0.20250930100900-fa49f2b2de53
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20250911124514-5874cc6d62b2
 	github.com/smartcontractkit/libocr v0.0.0-20250707144819-babe0ec4e358
 	github.com/stretchr/testify v1.10.0
 	github.com/urfave/cli/v2 v2.27.6
 	go.opentelemetry.io/otel v1.37.0
 	go.opentelemetry.io/otel/metric v1.37.0
+	go.opentelemetry.io/otel/sdk/metric v1.37.0
 	google.golang.org/protobuf v1.36.7
 )
 
@@ -102,7 +103,6 @@ require (
 	go.opentelemetry.io/otel/log v0.13.0 // indirect
 	go.opentelemetry.io/otel/sdk v1.37.0 // indirect
 	go.opentelemetry.io/otel/sdk/log v0.13.0 // indirect
-	go.opentelemetry.io/otel/sdk/metric v1.37.0 // indirect
 	go.opentelemetry.io/otel/trace v1.37.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.6.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
