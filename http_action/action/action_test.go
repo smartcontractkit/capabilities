@@ -77,7 +77,7 @@ func setupServiceTest(t *testing.T) *testSetup {
 	require.NoError(t, err)
 	gc := gcmocks.NewGatewayConnector(t)
 	gc.EXPECT().AddHandler(mock.Anything, mock.Anything, mock.Anything).Return(nil)
-	err = srv.Initialise(t.Context(), string(cfgStr), nil, nil, nil, nil, nil, nil, gc, nil)
+	err = srv.Initialise(t.Context(), string(cfgStr), nil, nil, nil, nil, nil, nil, nil, gc, nil)
 	require.NoError(t, err)
 
 	mockClient := &MockOutboundRequestClient{}

@@ -4,7 +4,7 @@ go 1.24.5
 
 require (
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20250807005622-32f1fcc70c7d
-	github.com/smartcontractkit/chainlink-common v0.9.5-0.20250904133043-17f17c8f8a30
+	github.com/smartcontractkit/chainlink-common v0.9.5-0.20250926092627-35e72cc1e11f
 	github.com/smartcontractkit/chainlink-protos/workflows/go v0.0.0-20250918131840-564fe2776a35
 	github.com/stretchr/testify v1.10.0
 	go.opentelemetry.io/otel v1.37.0
@@ -76,8 +76,8 @@ require (
 	github.com/scylladb/go-reflectx v1.0.1 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/smartcontractkit/chain-selectors v1.0.67 // indirect
-	github.com/smartcontractkit/chainlink-common/pkg/chipingress v0.0.1 // indirect
-	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20250829155125-f4655b0b4605 // indirect
+	github.com/smartcontractkit/chainlink-common/pkg/chipingress v0.0.4 // indirect
+	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20250911124514-5874cc6d62b2 // indirect
 	github.com/smartcontractkit/freeport v0.1.3-0.20250716200817-cb5dfd0e369e // indirect
 	github.com/smartcontractkit/grpc-proxy v0.0.0-20240830132753-a7e17fec5ab7 // indirect
 	github.com/smartcontractkit/libocr v0.0.0-20250707144819-babe0ec4e358 // indirect

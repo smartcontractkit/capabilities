@@ -78,6 +78,10 @@ func (m *testGatewayConnector) SignMessage(ctx context.Context, msg []byte) ([]b
 	return msg, nil
 }
 
+func (m *testGatewayConnector) RemoveHandler(ctx context.Context, methods []string) error {
+	return nil
+}
+
 func createTestGatewayAuthPublisher(t *testing.T) (*gatewayMetadataPublisher, *testGatewayConnector, *workflowStore, *ratelimit.RateLimiter) {
 	lggr := logger.Test(t)
 	gc := &testGatewayConnector{

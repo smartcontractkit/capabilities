@@ -45,6 +45,7 @@ func (s *service) Initialise(
 	config string,
 	_ core.TelemetryService,
 	kvstore core.KeyValueStore,
+	_ core.CapabilitiesRegistry,
 	_ core.ErrorLog,
 	_ core.PipelineRunnerService,
 	_ core.RelayerSet,

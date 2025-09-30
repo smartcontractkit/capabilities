@@ -32,7 +32,7 @@ func Test_SimpleConsensus(t *testing.T) {
 	oracleFactory := testutils.NewOracleFactory(t, lggr)
 
 	err = capability.Initialise(ctx, "",
-		nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil,
 		oracleFactory, nil, nil,
 	)
 	require.NoError(t, err)
@@ -72,7 +72,7 @@ func Test_Report(t *testing.T) {
 
 	oracleFactory := testutils.NewOracleFactory(t, lggr)
 
-	err = capability.Initialise(ctx, "", nil, nil, nil, nil, nil,
+	err = capability.Initialise(ctx, "", nil, nil, nil, nil, nil, nil,
 		oracleFactory, nil, nil)
 	require.NoError(t, err)
 
@@ -102,7 +102,7 @@ func Test_ReportRequiresValidSigningAlgo(t *testing.T) {
 
 	oracleFactory := testutils.NewOracleFactory(t, lggr)
 
-	err = capability.Initialise(ctx, "", nil, nil, nil, nil, nil,
+	err = capability.Initialise(ctx, "", nil, nil, nil, nil, nil, nil,
 		oracleFactory, nil, nil)
 	require.NoError(t, err)
 
@@ -131,7 +131,7 @@ func Test_ReportRequiresValidHashingAlgo(t *testing.T) {
 
 	oracleFactory := testutils.NewOracleFactory(t, lggr)
 
-	err = capability.Initialise(ctx, "", nil, nil, nil, nil, nil,
+	err = capability.Initialise(ctx, "", nil, nil, nil, nil, nil, nil,
 		oracleFactory, nil, nil)
 	require.NoError(t, err)
 
@@ -160,7 +160,7 @@ func Test_ReportRequiresValidEncoderName(t *testing.T) {
 
 	oracleFactory := testutils.NewOracleFactory(t, lggr)
 
-	err = capability.Initialise(ctx, "", nil, nil, nil, nil, nil,
+	err = capability.Initialise(ctx, "", nil, nil, nil, nil, nil, nil,
 		oracleFactory, nil, nil)
 	require.NoError(t, err)
 
@@ -196,7 +196,7 @@ func Test_SimpleInputsSizeValidation(t *testing.T) {
 	capConfigJSON, err := json.Marshal(capConfig)
 	require.NoError(t, err)
 
-	err = capability.Initialise(ctx, string(capConfigJSON), nil, nil, nil, nil, nil,
+	err = capability.Initialise(ctx, string(capConfigJSON), nil, nil, nil, nil, nil, nil,
 		oracleFactory, nil, nil)
 	require.NoError(t, err)
 

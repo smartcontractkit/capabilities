@@ -56,6 +56,10 @@ func (m *mockGatewayConnector) AwaitConnection(ctx context.Context, gatewayID st
 	return nil
 }
 
+func (m *mockGatewayConnector) RemoveHandler(ctx context.Context, methods []string) error {
+	return nil
+}
+
 // gatewayRequest creates a test request message with the given method
 func gatewayRequest(t *testing.T, method string) (*jsonrpc.Request[json.RawMessage], gateway_common.AuthorizedKey) {
 	key := gateway_common.AuthorizedKey{

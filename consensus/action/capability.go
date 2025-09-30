@@ -110,7 +110,7 @@ func (c *consensusCapability) SetRequestTimeout(timeout time.Duration) {
 
 func (c *consensusCapability) Initialise(ctx context.Context, config string,
 	telemetryService core.TelemetryService,
-	store core.KeyValueStore, errorLog core.ErrorLog, pipelineRunner core.PipelineRunnerService,
+	store core.KeyValueStore, capabilityRegistry core.CapabilitiesRegistry, errorLog core.ErrorLog, pipelineRunner core.PipelineRunnerService,
 	relayerSet core.RelayerSet, oracleFactory core.OracleFactory,
 	gatewayConnector core.GatewayConnector, _ core.Keystore) error {
 	c.lggr.Debugf("Initialising Consensus Capability")

@@ -146,6 +146,7 @@ func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock) (*Servic
 
 func (s *Service) Initialise(ctx context.Context, config string, _ core.TelemetryService,
 	_ core.KeyValueStore,
+	_ core.CapabilitiesRegistry,
 	_ core.ErrorLog,
 	_ core.PipelineRunnerService,
 	_ core.RelayerSet,
