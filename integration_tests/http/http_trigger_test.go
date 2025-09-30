@@ -388,7 +388,7 @@ func newTriggerHTTPCapability(ctx context.Context, t *testing.T, nodeURL string,
 	gc := newTestGatewayConnector(t, publicKey, nodeURL, client, lggr)
 	triggerCap := triggercap.NewService(lggr)
 	kvStore := newTestKeyValueStore()
-	err := triggerCap.Initialise(ctx, triggerServiceConfigTemplate, nil, kvStore, nil, nil, nil, nil, gc, nil)
+	err := triggerCap.Initialise(ctx, triggerServiceConfigTemplate, nil, kvStore, nil, nil, nil, nil, nil, gc, nil)
 	require.NoError(t, err)
 	ch, err := triggerCap.RegisterTrigger(ctx, "trigger-id", capabilities.RequestMetadata{
 		WorkflowID:    workflowID,

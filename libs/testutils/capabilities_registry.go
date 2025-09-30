@@ -148,3 +148,7 @@ func (r *capabilitiesRegistry) Contains(capabilityIDs []string) error {
 func (r *capabilitiesRegistry) NodeByPeerID(ctx context.Context, peerID types.PeerID) (capabilities.Node, error) {
 	return capabilities.Node{}, errors.New("unimplemented")
 }
+
+func (r *capabilitiesRegistry) DONsForCapability(ctx context.Context, capabilityID string) ([]capabilities.DONWithNodes, error) {
+	return nil, errors.New("unimplemented")
+}

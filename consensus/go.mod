@@ -2,11 +2,13 @@ module github.com/smartcontractkit/capabilities/consensus
 
 go 1.24.5
 
+replace github.com/smartcontractkit/capabilities/libs => ../libs
+
 require (
 	github.com/jonboulle/clockwork v0.5.0
 	github.com/shopspring/decimal v1.4.0
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20250826145536-b98e2b5c07cc
-	github.com/smartcontractkit/chainlink-common v0.9.5-0.20250926092627-35e72cc1e11f
+	github.com/smartcontractkit/chainlink-common v0.9.6-0.20250930190606-392d60932e60
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20250911124514-5874cc6d62b2
 	github.com/smartcontractkit/cre-sdk-go v0.5.1-0.20250821154918-5c93d76162c5
 	github.com/smartcontractkit/libocr v0.0.0-20250707144819-babe0ec4e358
