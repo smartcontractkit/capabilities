@@ -221,6 +221,7 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 				return
 			}
 
+			s.metrics.RecordTriggerExecutionTime(ctx)
 			scheduledExecutionTimeUTC := trigger.nextRun.UTC()
 			currentTimeUTC := s.clock.Now().UTC()
 

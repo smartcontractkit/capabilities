@@ -6,6 +6,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 )
@@ -15,6 +16,7 @@ type Metrics struct {
 	PendingConsensusRequests metric.Int64Gauge
 	batchCapacityExceeded    metric.Int64Counter
 	batchRequestsTotal       metric.Int64Counter
+	requestSizeHistogram     metric.Float64Histogram
 }
 
 // NewMetrics creates a new instance of Metrics
@@ -24,6 +26,17 @@ func NewMetrics() (*Metrics, error) {
 		return nil, err
 	}
 	return m, nil
+}
+
+func MetricViews() []sdkmetric.View {
+	return []sdkmetric.View{
+		sdkmetric.NewView(
+			sdkmetric.Instrument{Name: "consensus_capability_request_size_bytes"},
+			sdkmetric.Stream{Aggregation: sdkmetric.AggregationExplicitBucketHistogram{
+				Boundaries: []float64{0, 10, 100, 1000, 10000, 100000, 1000000},
+			}},
+		),
+	}
 }
 
 func (m *Metrics) init() error {
@@ -54,6 +67,14 @@ func (m *Metrics) init() error {
 		return fmt.Errorf("failed to create batch requests total counter: %w", err)
 	}
 
+	m.requestSizeHistogram, err = meter.Float64Histogram(
+		"consensus_capability_request_size_bytes",
+		metric.WithDescription("Histogram of consensus request sizes in bytes"),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create request size histogram: %w", err)
+	}
+
 	return nil
 }
 
@@ -67,4 +88,8 @@ func (m *Metrics) IncBatchCapacityExceeded(ctx context.Context, step string) {
 
 func (m *Metrics) IncBatchRequestsTotal(ctx context.Context, step string) {
 	m.batchRequestsTotal.Add(ctx, 1, metric.WithAttributes(attribute.String("step", step)))
+}
+
+func (m *Metrics) RecordRequestSize(ctx context.Context, size float64) {
+	m.requestSizeHistogram.Record(ctx, size)
 }

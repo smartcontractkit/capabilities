@@ -4,20 +4,34 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 )
 
 // Metrics contains metrics for consensus capability
 type Metrics struct {
-	activeTriggersGauge metric.Int64Gauge
-	triggeredCount      metric.Int64Counter
+	activeTriggersGauge          metric.Int64Gauge
+	triggeredCount               metric.Int64Counter
+	triggerDistributionHistogram metric.Float64Histogram
 
 	activeTriggers int64
 	mux            sync.Mutex
+}
+
+func MetricViews() []sdkmetric.View {
+	return []sdkmetric.View{
+		sdkmetric.NewView(
+			sdkmetric.Instrument{Name: "cron_capability_trigger_distribution"},
+			sdkmetric.Stream{Aggregation: sdkmetric.AggregationExplicitBucketHistogram{
+				Boundaries: []float64{0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 59},
+			}},
+		),
+	}
 }
 
 // NewMetrics creates a new instance of Metrics
@@ -49,6 +63,14 @@ func (m *Metrics) init() error {
 		return fmt.Errorf("failed to create triggered count counter: %w", err)
 	}
 
+	m.triggerDistributionHistogram, err = meter.Float64Histogram(
+		"cron_capability_trigger_distribution",
+		metric.WithDescription("Distribution of trigger execution times over 5 second intervals"),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create trigger distribution histogram: %w", err)
+	}
+
 	return nil
 }
 
@@ -68,4 +90,11 @@ func (m *Metrics) DecActiveTriggersGauge(ctx context.Context) {
 
 func (m *Metrics) IncTriggeredCount(ctx context.Context, status string) {
 	m.triggeredCount.Add(ctx, 1, metric.WithAttributes(attribute.String("status", status)))
+}
+
+func (m *Metrics) RecordTriggerExecutionTime(ctx context.Context) {
+	now := time.Now()
+	// Get the current second within the minute (0-59)
+	seconds := now.Second()
+	m.triggerDistributionHistogram.Record(ctx, float64(seconds))
 }

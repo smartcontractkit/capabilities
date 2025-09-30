@@ -204,9 +204,11 @@ func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.
 		RequestType:     types.RequestType_VALUE_CONSENSUS,
 	}
 
-	if err := validateRequestSize(consensusRequestMetaData, input, c.maxRequestSizeBytes); err != nil {
+	requestSize, err := validateRequestSize(consensusRequestMetaData, input, c.maxRequestSizeBytes)
+	if err != nil {
 		return nil, fmt.Errorf("failed to validate input size: %w", err)
 	}
+	c.metrics.RecordRequestSize(ctx, float64(requestSize))
 
 	value, err := logObservation(lggr, input, metadata)
 	if err != nil {
@@ -267,10 +269,12 @@ func (c *consensusCapability) Report(ctx context.Context, metadata capabilities.
 		ReportID:        reportID,
 		RequestType:     types.RequestType_REPORT_GENERATION,
 	}
-
-	if err := validateRequestSize(consensusRequestMetaData, reportRequest, c.maxRequestSizeBytes); err != nil {
+	
+	requestSize, err := validateRequestSize(consensusRequestMetaData, reportRequest, c.maxRequestSizeBytes)
+	if err != nil {
 		return nil, fmt.Errorf("failed to validate input size: %w", err)
 	}
+	c.metrics.RecordRequestSize(ctx, float64(requestSize))
 
 	input := &sdk.SimpleConsensusInputs{
 		Observation: &sdk.SimpleConsensusInputs_Value{
@@ -450,23 +454,25 @@ func (c *consensusCapability) Description() string {
 
 // validateRequestSize ensures the combined size of input and metadata does not exceed the allowed limit.
 // This prevents oversized requests that could disrupt the consensus process.
-func validateRequestSize(consensusRequestMetaData oracle.ConsensusRequestMetadata, input proto.Message, maxRequestSizeBytes int) error {
+func validateRequestSize(consensusRequestMetaData oracle.ConsensusRequestMetadata, input proto.Message, maxRequestSizeBytes int) (int, error) {
 	requestMetaData := oracle.ToRequestMetaData(consensusRequestMetaData)
 
 	serialisedInput, err := proto.Marshal(input)
 	if err != nil {
-		return fmt.Errorf("failed to serialise input: %w", err)
+		return 0, fmt.Errorf("failed to serialise input: %w", err)
 	}
 
 	serialisedMetadata, err := proto.Marshal(requestMetaData)
 	if err != nil {
-		return fmt.Errorf("failed to serialise metadata: %w", err)
+		return 0, fmt.Errorf("failed to serialise metadata: %w", err)
 	}
 
-	if len(serialisedInput)+len(serialisedMetadata) > maxRequestSizeBytes {
-		return fmt.Errorf("request size exceeds maximum allowed size of %d bytes: got %d bytes", maxRequestSizeBytes, len(serialisedInput)+len(serialisedMetadata))
+	requestSize := len(serialisedInput) + len(serialisedMetadata)
+
+	if requestSize > maxRequestSizeBytes {
+		return 0, fmt.Errorf("request size exceeds maximum allowed size of %d bytes: got %d bytes", maxRequestSizeBytes, len(serialisedInput)+len(serialisedMetadata))
 	}
-	return nil
+	return requestSize, nil
 }
 
 func logObservation(lggr logger.Logger, input *sdk.SimpleConsensusInputs, metadata capabilities.RequestMetadata) (*valuespb.Value, error) {
