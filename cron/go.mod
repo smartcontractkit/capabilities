@@ -8,7 +8,7 @@ require (
 	github.com/jonboulle/clockwork v0.5.0
 	github.com/prometheus/client_golang v1.22.0
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20250902122836-28fd635adf1f
-	github.com/smartcontractkit/chainlink-common v0.9.5-0.20250926092627-35e72cc1e11f
+	github.com/smartcontractkit/chainlink-common v0.9.6-0.20250930190606-392d60932e60
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20250911124514-5874cc6d62b2
 	github.com/smartcontractkit/chainlink-protos/workflows/go v0.0.0-20250913230317-2174239444ff
 	github.com/stretchr/testify v1.11.1
