@@ -55,7 +55,10 @@ func CalculateMessageSize(message proto.Message) int {
 }
 
 // BatchHasCapacity checks if adding a new proto message would exceed the size limit
-func BatchHasCapacity(cachedSize int, message proto.Message, maxSizeBytes int) (bool, int) {
+func BatchHasCapacity(cachedSize int, message proto.Message, maxSizeBytes int, incBatchRequestsMetric func(),
+	incBatchSizeExceededMetric func()) (bool, int) {
+	incBatchRequestsMetric()
+
 	// Calculate size if we add one more message
 	newMessageSize := proto.Size(message)
 
@@ -73,6 +76,7 @@ func BatchHasCapacity(cachedSize int, message proto.Message, maxSizeBytes int) (
 
 	// Check against config
 	if totalSizeWithNewMessage > maxSizeBytes {
+		incBatchSizeExceededMetric()
 		// Stop adding more messages
 		return false, cachedSize
 	}

@@ -11,6 +11,9 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/smartcontractkit/capabilities/consensus/metrics"
+	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
+
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	"github.com/smartcontractkit/libocr/quorumhelper"
 
@@ -22,10 +25,7 @@ import (
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
-
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-
-	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
 )
 
 var _ ocr3types.ReportingPlugin[[]byte] = (*reportingPlugin)(nil)
@@ -43,12 +43,13 @@ type reportingPlugin struct {
 
 	minimumObservations int
 
-	config *ocrtypes.ReportingPluginConfig
+	config  *ocrtypes.ReportingPluginConfig
+	metrics *metrics.Metrics
 
 	lggr logger.Logger
 }
 
-func NewReportingPlugin(lggr logger.Logger, f int, n int, store *requests.Store[*ConsensusRequest], configProto *ocrtypes.ReportingPluginConfig) (*reportingPlugin, error) {
+func NewReportingPlugin(lggr logger.Logger, metrics *metrics.Metrics, f int, n int, store *requests.Store[*ConsensusRequest], configProto *ocrtypes.ReportingPluginConfig) (*reportingPlugin, error) {
 	return &reportingPlugin{
 		store:               store,
 		batchSize:           int(configProto.MaxBatchSize),
@@ -57,6 +58,7 @@ func NewReportingPlugin(lggr logger.Logger, f int, n int, store *requests.Store[
 		minimumObservations: 2*f + 1,
 		lggr:                logger.Named(lggr, "CapabilityConsensusReportingPlugin"),
 		config:              configProto,
+		metrics:             metrics,
 	}, nil
 }
 
@@ -105,7 +107,9 @@ func (r *reportingPlugin) Query(ctx context.Context, outctx ocr3types.OutcomeCon
 		}
 
 		// If the new id would exceed the max query size, stop adding more ids
-		ok, newSize := BatchHasCapacity(cachedQuerySize, newReq, int(r.config.MaxQueryLengthBytes))
+		ok, newSize := BatchHasCapacity(cachedQuerySize, newReq, int(r.config.MaxQueryLengthBytes),
+			func() { r.metrics.IncBatchRequestsTotal(ctx, "query") },
+			func() { r.metrics.IncBatchCapacityExceeded(ctx, "query") })
 		if !ok {
 			break
 		}
@@ -230,7 +234,9 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 		}
 
 		if newOb != nil {
-			ok, newSize := BatchHasCapacity(cachedObsSize, newOb, int(r.config.MaxObservationLengthBytes))
+			ok, newSize := BatchHasCapacity(cachedObsSize, newOb, int(r.config.MaxObservationLengthBytes),
+				func() { r.metrics.IncBatchRequestsTotal(ctx, "observation") },
+				func() { r.metrics.IncBatchCapacityExceeded(ctx, "observation") })
 			if !ok {
 				break
 			}
@@ -354,7 +360,10 @@ func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeC
 			Timestamp: calculateMedianTimestamp(timestamps),
 		}
 
-		ok, newSize := BatchHasCapacity(cachedOutcomeSize, newRequestOutcome, int(r.config.MaxOutcomeLengthBytes))
+		ok, newSize := BatchHasCapacity(cachedOutcomeSize, newRequestOutcome, int(r.config.MaxOutcomeLengthBytes),
+			func() { r.metrics.IncBatchRequestsTotal(ctx, "outcome") },
+			func() { r.metrics.IncBatchCapacityExceeded(ctx, "outcome") })
+
 		if !ok {
 			break
 		}

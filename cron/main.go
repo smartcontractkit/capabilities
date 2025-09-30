@@ -11,6 +11,11 @@ import (
 
 func main() {
 	loopserver.Serve(trigger.ServiceName, func(lggr logger.Logger) loop.StandardCapabilities {
-		return server.NewCronServer(trigger.NewTriggerService(lggr, nil))
+		triggerService, err := trigger.NewTriggerService(lggr, nil)
+		if err != nil {
+			lggr.Fatalw("Failed to create cron trigger service", "error", err)
+		}
+
+		return server.NewCronServer(triggerService)
 	})
 }

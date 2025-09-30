@@ -76,7 +76,7 @@ func TestQueryBatchHasCapacity_SizeEstimation(t *testing.T) {
 				maxSize := 10000 // 10KB limit
 
 				// Get estimated size from our function
-				hasCapacity, estimatedTotalSize := BatchHasCapacity(initialSize, tc.request, maxSize)
+				hasCapacity, estimatedTotalSize := BatchHasCapacity(initialSize, tc.request, maxSize, func() {}, func() {})
 				require.True(t, hasCapacity, "Should have capacity for single request")
 
 				// Create actual query with the request and measure real marshalled bytes length
@@ -138,7 +138,7 @@ func TestQueryBatchHasCapacity_SizeEstimation(t *testing.T) {
 		for i, newReq := range requests {
 			// Calculate estimated size after adding this request
 			maxSize := 10000 // Large enough limit
-			hasCapacity, estimatedSize := BatchHasCapacity(currentSize, newReq, maxSize)
+			hasCapacity, estimatedSize := BatchHasCapacity(currentSize, newReq, maxSize, func() {}, func() {})
 			require.True(t, hasCapacity, "Should have capacity for request %d", i)
 
 			// Actually add the request and calculate real marshalled bytes length
@@ -174,17 +174,17 @@ func TestQueryBatchHasCapacity_SizeEstimation(t *testing.T) {
 
 		// Test with limit smaller than request size
 		smallLimit := actualRequestSize - 1
-		hasCapacity, _ := BatchHasCapacity(0, request, smallLimit)
+		hasCapacity, _ := BatchHasCapacity(0, request, smallLimit, func() {}, func() {})
 		require.False(t, hasCapacity, "Should not have capacity when request exceeds limit")
 
 		// Test with adequate limit
 		largeLimit := actualRequestSize + 100
-		hasCapacity, _ = BatchHasCapacity(0, request, largeLimit)
+		hasCapacity, _ = BatchHasCapacity(0, request, largeLimit, func() {}, func() {})
 		require.True(t, hasCapacity, "Should have capacity when request is within limit")
 
 		// Test cumulative size checking - use current size that would cause overflow
 		currentSize := largeLimit - actualRequestSize + 1
-		hasCapacity, _ = BatchHasCapacity(currentSize, request, largeLimit)
+		hasCapacity, _ = BatchHasCapacity(currentSize, request, largeLimit, func() {}, func() {})
 		require.False(t, hasCapacity, "Should not have capacity when cumulative size would exceed limit")
 	})
 }
@@ -350,7 +350,7 @@ func TestObservationsBatchHasCapacity_SizeEstimation(t *testing.T) {
 
 		// Test capacity checking
 		maxSize := 1000
-		hasCapacity, estimatedNewSize := BatchHasCapacity(initialSize, requestObs, maxSize)
+		hasCapacity, estimatedNewSize := BatchHasCapacity(initialSize, requestObs, maxSize, func() {}, func() {})
 		require.True(t, hasCapacity, "Should have capacity for reasonable-sized observation")
 		require.Greater(t, estimatedNewSize, initialSize, "New size should be larger than initial size")
 
@@ -412,7 +412,7 @@ func TestObservationsBatchHasCapacity_SizeEstimation(t *testing.T) {
 		for i, newObs := range observations {
 			// Calculate estimated size after adding this observation
 			maxSize := 10000 // Large enough limit
-			hasCapacity, estimatedSize := BatchHasCapacity(currentSize, newObs, maxSize)
+			hasCapacity, estimatedSize := BatchHasCapacity(currentSize, newObs, maxSize, func() {}, func() {})
 			require.True(t, hasCapacity, "Should have capacity for observation %d", i)
 
 			// Actually add the observation and calculate real marshalled bytes length
@@ -451,12 +451,12 @@ func TestObservationsBatchHasCapacity_SizeEstimation(t *testing.T) {
 
 		// Test with limit smaller than observation size
 		smallLimit := actualObsSize - 1
-		hasCapacity, _ := BatchHasCapacity(initialSize, largeObs, smallLimit)
+		hasCapacity, _ := BatchHasCapacity(initialSize, largeObs, smallLimit, func() {}, func() {})
 		require.False(t, hasCapacity, "Should not have capacity when observation would exceed limit")
 
 		// Test with adequate limit
 		largeLimit := initialSize + actualObsSize + 100
-		hasCapacity, _ = BatchHasCapacity(initialSize, largeObs, largeLimit)
+		hasCapacity, _ = BatchHasCapacity(initialSize, largeObs, largeLimit, func() {}, func() {})
 		require.True(t, hasCapacity, "Should have capacity when observation is within limit")
 	})
 }
@@ -483,7 +483,7 @@ func TestOutcomeBatchHasCapacity_SizeEstimation(t *testing.T) {
 
 		// Test capacity checking
 		maxSize := 1000
-		hasCapacity, estimatedNewSize := BatchHasCapacity(initialSize, requestOutcome, maxSize)
+		hasCapacity, estimatedNewSize := BatchHasCapacity(initialSize, requestOutcome, maxSize, func() {}, func() {})
 		require.True(t, hasCapacity, "Should have capacity for reasonable-sized outcome")
 		require.Greater(t, estimatedNewSize, initialSize, "New size should be larger than initial size")
 
@@ -545,7 +545,7 @@ func TestOutcomeBatchHasCapacity_SizeEstimation(t *testing.T) {
 		for i, newOutcome := range outcomes {
 			// Calculate estimated size after adding this outcome
 			maxSize := 10000 // Large enough limit
-			hasCapacity, estimatedSize := BatchHasCapacity(currentSize, newOutcome, maxSize)
+			hasCapacity, estimatedSize := BatchHasCapacity(currentSize, newOutcome, maxSize, func() {}, func() {})
 			require.True(t, hasCapacity, "Should have capacity for outcome %d", i)
 
 			// Actually add the outcome and calculate real marshalled bytes length
@@ -584,12 +584,12 @@ func TestOutcomeBatchHasCapacity_SizeEstimation(t *testing.T) {
 
 		// Test with limit smaller than outcome size
 		smallLimit := actualOutcomeSize - 1
-		hasCapacity, _ := BatchHasCapacity(initialSize, largeOutcome, smallLimit)
+		hasCapacity, _ := BatchHasCapacity(initialSize, largeOutcome, smallLimit, func() {}, func() {})
 		require.False(t, hasCapacity, "Should not have capacity when outcome would exceed limit")
 
 		// Test with adequate limit
 		largeLimit := initialSize + actualOutcomeSize + 100
-		hasCapacity, _ = BatchHasCapacity(initialSize, largeOutcome, largeLimit)
+		hasCapacity, _ = BatchHasCapacity(initialSize, largeOutcome, largeLimit, func() {}, func() {})
 		require.True(t, hasCapacity, "Should have capacity when outcome is within limit")
 	})
 }

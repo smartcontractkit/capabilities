@@ -64,6 +64,7 @@ type Service struct {
 	scheduler gocron.Scheduler
 	triggers  *cronStore
 	labeler   custmsg.MessageEmitter
+	metrics   *Metrics
 }
 
 func (s *Service) RegisterLegacyTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) (<-chan capabilities.TriggerAndId[*crontypedapi.LegacyPayload], error) { //nolint:staticcheck
@@ -102,11 +103,16 @@ var _ services.Service = &Service{}
 
 // NewTriggerService creates a new trigger service.  Optionally, a clock can be passed in for testing, if nil
 // the system clock will be used.
-func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock) *Service {
+func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock) (*Service, error) {
 	lggr := logger.Named(parentLggr, "Service")
 
+	metrics, err := NewMetrics()
+	if err != nil {
+		return nil, fmt.Errorf("error creating metrics: %w", err)
+	}
+
 	var options []gocron.SchedulerOption
-	options = append(options, gocron.WithMonitor(NewCronMonitor()))
+	options = append(options, gocron.WithMonitor(NewCronMonitor(metrics)))
 	// Set scheduler location to UTC for consistency across nodes.
 	options = append(options, gocron.WithLocation(time.UTC))
 	// Adapt chainlink logger to gocron logger interface.
@@ -120,7 +126,7 @@ func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock) *Service
 
 	scheduler, err := gocron.NewScheduler(options...)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("error creating scheduler: %w", err)
 	}
 
 	return &Service{
@@ -134,7 +140,8 @@ func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock) *Service
 			"capabilityVersion", cronTriggerInfo.Version(),
 			"capabilityName", cronTriggerInfo.ID,
 		),
-	}
+		metrics: metrics,
+	}, nil
 }
 
 func (s *Service) Initialise(ctx context.Context, config string, _ core.TelemetryService,
@@ -280,7 +287,7 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 	})
 
 	s.lggr.Debugw("Trigger registered", "workflowId", metadata.WorkflowID, "triggerId", triggerID, "jobId", job.ID())
-	PromTotalTriggersCount.Inc()
+	s.metrics.IncActiveTriggersGauge(ctx)
 	return callbackCh, nil
 }
 
@@ -348,7 +355,7 @@ func (s *Service) UnregisterTrigger(ctx context.Context, triggerID string, metad
 	s.triggers.Delete(triggerID)
 
 	s.lggr.Debugw("UnregisterTrigger", "triggerId", triggerID, "jobId", jobID)
-	PromTotalTriggersCount.Dec()
+	s.metrics.DecActiveTriggersGauge(ctx)
 	return nil
 }
 
@@ -375,8 +382,6 @@ func (s *Service) Start(ctx context.Context) error {
 
 	s.lggr.Info(s.Name() + " started")
 
-	PromRunningServices.Inc()
-
 	return nil
 }
 
@@ -398,8 +403,6 @@ func (s *Service) Close() error {
 	s.scheduler = nil
 
 	s.lggr.Info(s.Name() + " closed")
-
-	PromRunningServices.Dec()
 
 	return nil
 }
