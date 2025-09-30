@@ -15,6 +15,7 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/smartcontractkit/capabilities/consensus/metrics"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	pbtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
