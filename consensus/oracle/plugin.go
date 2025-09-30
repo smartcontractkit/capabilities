@@ -13,6 +13,7 @@ import (
 
 	"github.com/smartcontractkit/capabilities/consensus/metrics"
 	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
+
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	"github.com/smartcontractkit/libocr/quorumhelper"
 
