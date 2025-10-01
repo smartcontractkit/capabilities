@@ -359,15 +359,36 @@ func handleCommonSuffixAggregation(lggr logger.Logger, observationSlices []*valu
 	return reverseListValue(commonPrefixOfReversed)
 }
 
-func handleCommonPrefixAggregation(lggr logger.Logger, observations []*valuespb.Value, f int) (*valuespb.Value, error) {
-	var lists []*valuespb.List
+// handleCommonPrefixAggregation finds the longest common prefix among a set of
+// observations.
+//
+// It iterates through the sets index by index. At each index,
+// it performs an identical aggregation check on the corresponding observations
+// aggregated from all sets.
+//
+// A set of observations is only carried forward to the next index check if its
+// observation at the current index matches the consensus value.
+//
+// The process stops when either:
+// 1. The identical aggregation fails to reach the f+1 threshold (ErrNoValuesMetThreshold).
+// 2. The number of remaining consensus-matching lists drops below the f+1 threshold.
+//
+// This ensures that the common prefix is robustly determined by the longest sequence
+// of elements that at least f+1 lists agree on.
+func handleCommonPrefixAggregation(
+	lggr logger.Logger,
+	observations []*valuespb.Value,
+	f int,
+) (*valuespb.Value, error) {
+	// Transform slice of values to slice of lists
+	var currentLists []*valuespb.List
 	var maxListLength int
 	for i, obsProto := range observations {
 		if obsProto != nil {
 			switch obsProto.Value.(type) {
 			case *valuespb.Value_ListValue:
 				list := obsProto.GetListValue()
-				lists = append(lists, list)
+				currentLists = append(currentLists, list)
 				if len(list.GetFields()) > maxListLength {
 					maxListLength = len(list.GetFields())
 				}
@@ -378,14 +399,17 @@ func handleCommonPrefixAggregation(lggr logger.Logger, observations []*valuespb.
 		}
 	}
 
-	if len(lists) < f+1 {
+	if len(currentLists) < f+1 {
 		return nil, ErrInsufficientObservations
 	}
 
 	var commonPrefixElements []*valuespb.Value
+	var nextLists []*valuespb.List
+
 	for i := range maxListLength {
+		// Aggregate observations at index
 		var elementsAtIndex []*valuespb.Value
-		for _, list := range lists {
+		for _, list := range currentLists {
 			if len(list.GetFields()) > i {
 				elementsAtIndex = append(elementsAtIndex, list.GetFields()[i])
 			}
@@ -393,10 +417,31 @@ func handleCommonPrefixAggregation(lggr logger.Logger, observations []*valuespb.
 
 		identicalValue, err := handleIdenticalAggregation(lggr, elementsAtIndex, f)
 		if err != nil {
+			// Consensus failed at this index, so the common prefix ends here.
+			break
+		}
+
+		// Update the set of lists to select from for the next index (i+1)
+		nextLists = make([]*valuespb.List, 0, len(currentLists))
+		for _, list := range currentLists {
+			if len(list.GetFields()) > i {
+				// Check if the current list element matches the identical consensus value
+				if proto.Equal(list.GetFields()[i], identicalValue) {
+					nextLists = append(nextLists, list)
+				}
+			}
+		}
+
+		// If the filtered set of lists no longer meets the f+1 threshold,
+		// the common prefix must end here.
+		if len(nextLists) < f+1 {
 			break
 		}
 
 		commonPrefixElements = append(commonPrefixElements, identicalValue)
+
+		// Update the list of observations for the next iteration
+		currentLists = nextLists
 	}
 
 	return valuespb.NewListValue(commonPrefixElements), nil
