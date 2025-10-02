@@ -28,6 +28,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
+
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
@@ -269,7 +270,7 @@ func (c *consensusCapability) Report(ctx context.Context, metadata capabilities.
 		ReportID:        reportID,
 		RequestType:     types.RequestType_REPORT_GENERATION,
 	}
-	
+
 	requestSize, err := validateRequestSize(consensusRequestMetaData, reportRequest, c.maxRequestSizeBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to validate input size: %w", err)
