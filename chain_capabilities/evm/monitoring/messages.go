@@ -75,7 +75,7 @@ func convertWriteReportRequest(req *evmcap.WriteReportRequest) *WriteReportReque
 			ConfigDigest:  req.Report.ConfigDigest,
 			SeqNr:         req.Report.SeqNr,
 			ReportContext: req.Report.ReportContext,
-			RawReport:     req.Report.ReportContext,
+			RawReport:     req.Report.RawReport,
 			Sigs:          convertAttributedSignature(req.Report.Sigs),
 		},
 	}
