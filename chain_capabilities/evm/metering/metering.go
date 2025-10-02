@@ -24,6 +24,7 @@ const (
 	GetTransactionByHash  SpendValueCredits = "1"
 	EstimateGas           SpendValueCredits = "1"
 	CallContract          SpendValueCredits = "2.5"
+	FilterLogs            SpendValueCredits = "2.5"
 )
 
 // GetMeteringNodeDetail returns a MeteringNodeDetail for a given SpendValueCredits.

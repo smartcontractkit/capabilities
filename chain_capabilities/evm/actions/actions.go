@@ -237,6 +237,11 @@ func validateBlockRange(fromBlock, toBlock *big.Int) error {
 
 func (e EVM) FilterLogs(ctx context.Context, meta capabilities.RequestMetadata, req *evm.FilterLogsRequest) (*capabilities.ResponseAndMetadata[*evm.FilterLogsReply], error) {
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
+
+	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.FilterLogs)); err != nil {
+		return nil, capabilities.NewRemoteReportableError(err)
+	}
+
 	ethFilterQuery, err := evm.ConvertFilterFromProto(req.GetFilterQuery())
 	if err != nil {
 		return nil, capabilities.NewRemoteReportableError(err)
