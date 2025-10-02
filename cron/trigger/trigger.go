@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime/debug"
+	"strconv"
 	"time"
 
 	"github.com/go-co-op/gocron/v2"
@@ -28,6 +29,17 @@ import (
 )
 
 const ServiceName = "CronCapabilities"
+
+// Constants for trigger emission labels
+const (
+	KeyTriggerID           = "trigger_id"
+	KeyWorkflowID          = "workflow_id"
+	KeyWorkflowOwner       = "workflow_owner"
+	KeyWorkflowName        = "workflow_name"
+	KeyWorkflowExecutionID = "workflow_execution_id"
+	KeyDonID               = "don_id"
+	KeyDonVersion          = "don_version"
+)
 
 const (
 	defaultSendChannelBufferSize          = 1000
@@ -223,7 +235,16 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 				// Continue with execution even if we can't generate ID or emit event
 			} else {
 				// Emit TriggerExecutionStarted event
-				if emitErr := EmitTriggerExecutionStarted(ctx, response.Id, workflowExecutionID); emitErr != nil {
+				labeler := custmsg.NewLabeler().With(
+					KeyTriggerID, response.Id,
+					KeyWorkflowID, trigger.workflowID,
+					KeyWorkflowExecutionID, workflowExecutionID,
+					KeyWorkflowOwner, metadata.WorkflowOwner,
+					KeyWorkflowName, metadata.WorkflowName,
+					KeyDonID, strconv.Itoa(int(metadata.WorkflowDonID)),
+					KeyDonVersion, strconv.Itoa(int(metadata.WorkflowDonConfigVersion)),
+				)
+				if emitErr := emitTriggerExecutionStarted(ctx, labeler); emitErr != nil {
 					s.lggr.Errorw("failed to emit trigger execution started event", "err", emitErr, "triggerID", triggerID, "workflowExecutionID", workflowExecutionID)
 					// Continue with execution even if event emission fails
 				}
@@ -309,12 +330,43 @@ func createTriggerResponse(scheduledExecutionTime time.Time) capabilities.Trigge
 	}
 }
 
-// EmitTriggerExecutionStarted emits a TriggerExecutionStarted event via beholder
-func EmitTriggerExecutionStarted(ctx context.Context, triggerID, workflowExecutionID string) error {
+// emitTriggerExecutionStarted emits a TriggerExecutionStarted event via beholder using the provided labeler
+func emitTriggerExecutionStarted(ctx context.Context, labeler custmsg.MessageEmitter) error {
+	labels := labeler.Labels()
+
+	// Required fields
+	triggerID, ok := labels[KeyTriggerID]
+	if !ok {
+		return fmt.Errorf("missing required field: %s", KeyTriggerID)
+	}
+	workflowID, ok := labels[KeyWorkflowID]
+	if !ok {
+		return fmt.Errorf("missing required field: %s", KeyWorkflowID)
+	}
+	workflowExecutionID, ok := labels[KeyWorkflowExecutionID]
+	if !ok {
+		return fmt.Errorf("missing required field: %s", KeyWorkflowExecutionID)
+	}
+
 	event := &workflowsevents.TriggerExecutionStarted{
 		TriggerID:           triggerID,
 		WorkflowExecutionID: workflowExecutionID,
-		Timestamp:           time.Now().Format(time.RFC3339),
+		Workflow: &workflowsevents.WorkflowKey{
+			WorkflowID:    workflowID,
+			WorkflowOwner: labels[KeyWorkflowOwner],
+			WorkflowName:  labels[KeyWorkflowName],
+		},
+		Timestamp: time.Now().Format(time.RFC3339),
+	}
+
+	// Optional CRE info
+	if donIDStr, exists := labels[KeyDonID]; exists {
+		if donID, err := strconv.ParseInt(donIDStr, 10, 32); err == nil {
+			event.CreInfo = &workflowsevents.CreInfo{
+				DonID:      int32(donID),
+				DonVersion: labels[KeyDonVersion],
+			}
+		}
 	}
 
 	// Marshal the protobuf message
