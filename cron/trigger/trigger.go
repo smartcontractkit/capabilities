@@ -360,7 +360,8 @@ func emitTriggerExecutionStarted(ctx context.Context, labeler custmsg.MessageEmi
 		Timestamp: time.Now().Format(time.RFC3339),
 	}
 
-	// Optional CRE info
+	// Optional; downstream consumers could infer from csa public key
+	// as of now Beholder/ChiP autohydrates csa public key
 	if donIDStr, exists := labels[KeyDonID]; exists {
 		if donID, err := strconv.ParseInt(donIDStr, 10, 32); err == nil {
 			event.CreInfo = &workflowsevents.CreInfo{
