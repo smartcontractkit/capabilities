@@ -8,6 +8,7 @@ modgraph:
 gomods: ## Install gomods
 	go install github.com/jmank88/gomods@v0.1.6
 
+
 .PHONY: gomodtidy
 gomodtidy: gomods ## Run go mod tidy on all modules.
 	gomods tidy
