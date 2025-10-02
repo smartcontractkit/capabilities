@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime/debug"
+	"strconv"
 	"time"
 
 	"github.com/go-co-op/gocron/v2"
@@ -28,6 +29,17 @@ import (
 )
 
 const ServiceName = "CronCapabilities"
+
+// Constants for trigger emission labels
+const (
+	KeyTriggerID           = "trigger_id"
+	KeyWorkflowID          = "workflow_id"
+	KeyWorkflowOwner       = "workflow_owner"
+	KeyWorkflowName        = "workflow_name"
+	KeyWorkflowExecutionID = "workflow_execution_id"
+	KeyDonID               = "don_id"
+	KeyDonVersion          = "don_version"
+)
 
 const (
 	defaultSendChannelBufferSize          = 1000
@@ -64,6 +76,7 @@ type Service struct {
 	scheduler gocron.Scheduler
 	triggers  *cronStore
 	labeler   custmsg.MessageEmitter
+	metrics   *Metrics
 }
 
 func (s *Service) RegisterLegacyTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) (<-chan capabilities.TriggerAndId[*crontypedapi.LegacyPayload], error) { //nolint:staticcheck
@@ -102,11 +115,16 @@ var _ services.Service = &Service{}
 
 // NewTriggerService creates a new trigger service.  Optionally, a clock can be passed in for testing, if nil
 // the system clock will be used.
-func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock) *Service {
+func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock) (*Service, error) {
 	lggr := logger.Named(parentLggr, "Service")
 
+	metrics, err := NewMetrics()
+	if err != nil {
+		return nil, fmt.Errorf("error creating metrics: %w", err)
+	}
+
 	var options []gocron.SchedulerOption
-	options = append(options, gocron.WithMonitor(NewCronMonitor()))
+	options = append(options, gocron.WithMonitor(NewCronMonitor(metrics)))
 	// Set scheduler location to UTC for consistency across nodes.
 	options = append(options, gocron.WithLocation(time.UTC))
 	// Adapt chainlink logger to gocron logger interface.
@@ -120,7 +138,7 @@ func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock) *Service
 
 	scheduler, err := gocron.NewScheduler(options...)
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("error creating scheduler: %w", err)
 	}
 
 	return &Service{
@@ -134,7 +152,8 @@ func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock) *Service
 			"capabilityVersion", cronTriggerInfo.Version(),
 			"capabilityName", cronTriggerInfo.ID,
 		),
-	}
+		metrics: metrics,
+	}, nil
 }
 
 func (s *Service) Initialise(ctx context.Context, config string, _ core.TelemetryService,
@@ -202,6 +221,7 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 				return
 			}
 
+			s.metrics.RecordTriggerExecutionTime(ctx)
 			scheduledExecutionTimeUTC := trigger.nextRun.UTC()
 			currentTimeUTC := s.clock.Now().UTC()
 
@@ -216,7 +236,16 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 				// Continue with execution even if we can't generate ID or emit event
 			} else {
 				// Emit TriggerExecutionStarted event
-				if emitErr := EmitTriggerExecutionStarted(ctx, response.Id, workflowExecutionID); emitErr != nil {
+				labeler := custmsg.NewLabeler().With(
+					KeyTriggerID, response.Id,
+					KeyWorkflowID, trigger.workflowID,
+					KeyWorkflowExecutionID, workflowExecutionID,
+					KeyWorkflowOwner, metadata.WorkflowOwner,
+					KeyWorkflowName, metadata.WorkflowName,
+					KeyDonID, strconv.Itoa(int(metadata.WorkflowDonID)),
+					KeyDonVersion, strconv.Itoa(int(metadata.WorkflowDonConfigVersion)),
+				)
+				if emitErr := emitTriggerExecutionStarted(ctx, labeler); emitErr != nil {
 					s.lggr.Errorw("failed to emit trigger execution started event", "err", emitErr, "triggerID", triggerID, "workflowExecutionID", workflowExecutionID)
 					// Continue with execution even if event emission fails
 				}
@@ -280,7 +309,7 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 	})
 
 	s.lggr.Debugw("Trigger registered", "workflowId", metadata.WorkflowID, "triggerId", triggerID, "jobId", job.ID())
-	PromTotalTriggersCount.Inc()
+	s.metrics.IncActiveTriggersGauge(ctx)
 	return callbackCh, nil
 }
 
@@ -302,12 +331,43 @@ func createTriggerResponse(scheduledExecutionTime time.Time) capabilities.Trigge
 	}
 }
 
-// EmitTriggerExecutionStarted emits a TriggerExecutionStarted event via beholder
-func EmitTriggerExecutionStarted(ctx context.Context, triggerID, workflowExecutionID string) error {
+// emitTriggerExecutionStarted emits a TriggerExecutionStarted event via beholder using the provided labeler
+func emitTriggerExecutionStarted(ctx context.Context, labeler custmsg.MessageEmitter) error {
+	labels := labeler.Labels()
+
+	// Required fields
+	triggerID, ok := labels[KeyTriggerID]
+	if !ok {
+		return fmt.Errorf("missing required field: %s", KeyTriggerID)
+	}
+	workflowID, ok := labels[KeyWorkflowID]
+	if !ok {
+		return fmt.Errorf("missing required field: %s", KeyWorkflowID)
+	}
+	workflowExecutionID, ok := labels[KeyWorkflowExecutionID]
+	if !ok {
+		return fmt.Errorf("missing required field: %s", KeyWorkflowExecutionID)
+	}
+
 	event := &workflowsevents.TriggerExecutionStarted{
 		TriggerID:           triggerID,
 		WorkflowExecutionID: workflowExecutionID,
-		Timestamp:           time.Now().Format(time.RFC3339),
+		Workflow: &workflowsevents.WorkflowKey{
+			WorkflowID:    workflowID,
+			WorkflowOwner: labels[KeyWorkflowOwner],
+			WorkflowName:  labels[KeyWorkflowName],
+		},
+		Timestamp: time.Now().Format(time.RFC3339),
+	}
+
+	// Optional CRE info
+	if donIDStr, exists := labels[KeyDonID]; exists {
+		if donID, err := strconv.ParseInt(donIDStr, 10, 32); err == nil {
+			event.CreInfo = &workflowsevents.CreInfo{
+				DonID:      int32(donID),
+				DonVersion: labels[KeyDonVersion],
+			}
+		}
 	}
 
 	// Marshal the protobuf message
@@ -348,7 +408,7 @@ func (s *Service) UnregisterTrigger(ctx context.Context, triggerID string, metad
 	s.triggers.Delete(triggerID)
 
 	s.lggr.Debugw("UnregisterTrigger", "triggerId", triggerID, "jobId", jobID)
-	PromTotalTriggersCount.Dec()
+	s.metrics.DecActiveTriggersGauge(ctx)
 	return nil
 }
 
@@ -375,8 +435,6 @@ func (s *Service) Start(ctx context.Context) error {
 
 	s.lggr.Info(s.Name() + " started")
 
-	PromRunningServices.Inc()
-
 	return nil
 }
 
@@ -398,8 +456,6 @@ func (s *Service) Close() error {
 	s.scheduler = nil
 
 	s.lggr.Info(s.Name() + " closed")
-
-	PromRunningServices.Dec()
 
 	return nil
 }

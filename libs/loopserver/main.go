@@ -3,6 +3,8 @@ package loopserver
 import (
 	"github.com/hashicorp/go-plugin"
 
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 )
@@ -13,7 +15,12 @@ func Serve[T loop.StandardCapabilities](serviceName string, createPluginServer f
 }
 
 func ServeNew[T loop.StandardCapabilities](serviceName string, newServer func(*loop.Server) T) {
-	s := loop.MustNewStartedServer(serviceName)
+	ServeNewWithOtelViews(serviceName, newServer, nil)
+}
+
+func ServeNewWithOtelViews[T loop.StandardCapabilities](serviceName string, newServer func(*loop.Server) T,
+	otelViews []sdkmetric.View) {
+	s := loop.MustNewStartedServerWithOtelViews(serviceName, otelViews)
 	defer s.Stop()
 	s.Logger.Infof("Starting %s", serviceName)
 
