@@ -15,6 +15,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
+	"github.com/smartcontractkit/chainlink-common/pkg/custmsg"
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
@@ -32,6 +33,15 @@ const (
 	errorIncomingRatelimitGlobal = "message from gateway exceeded global rate limit"
 	errorIncomingRatelimitSender = "message from gateway exceeded per sender rate limit"
 	ecdsaPubKeyHexLen            = 42 // 2 (0x prefix) + 40 (hex digits)
+)
+
+// Constants for trigger emission labels
+const (
+	KeyTriggerID           = "trigger_id"
+	KeyWorkflowID          = "workflow_id"
+	KeyWorkflowOwner       = "workflow_owner"
+	KeyWorkflowName        = "workflow_name"
+	KeyWorkflowExecutionID = "workflow_execution_id"
 )
 
 var _ core.GatewayConnectorHandler = &connectorHandler{}
@@ -293,14 +303,14 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 
 	l := logger.With(h.lggr, "gatewayID", gatewayID, "requestID", req.ID, "method", req.Method)
 
-	workflowID, err := h.resolveWorkflowID(triggerReq.Workflow, l)
+	workflowMetadata, err := h.resolveWorkflowMetadata(triggerReq.Workflow, l)
 	if err != nil {
 		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInvalidRequest, "Workflow not registered")
 		return
 	}
 
-	l = logger.With(l, "workflowID", workflowID)
-	workflowExecutionID, err := h.generateWorkflowExecutionID(workflowID, req.ID, l)
+	l = logger.With(l, "workflowID", workflowMetadata.WorkflowID)
+	workflowExecutionID, err := h.generateWorkflowExecutionID(workflowMetadata.WorkflowID, req.ID, l)
 	if err != nil {
 		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInternal, "Internal server error")
 		return
@@ -310,19 +320,26 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		return
 	}
 
-	resp, err := h.prepareAndCacheResponse(ctx, gatewayID, req, workflowID, workflowExecutionID, l)
+	resp, err := h.prepareAndCacheResponse(ctx, gatewayID, req, workflowMetadata.WorkflowID, workflowExecutionID, l)
 	if err != nil {
 		return // Error already sent in the method
 	}
 
 	// Emit TriggerExecutionStarted event
-	if emitErr := EmitTriggerExecutionStarted(ctx, req.ID, workflowExecutionID); emitErr != nil {
-		l.Errorw("failed to emit trigger execution started event", "error", emitErr, "workflowID", workflowID, "workflowExecutionID", workflowExecutionID)
+	labeler := custmsg.NewLabeler().With(
+		KeyTriggerID, req.ID,
+		KeyWorkflowID, workflowMetadata.WorkflowID,
+		KeyWorkflowExecutionID, workflowExecutionID,
+		KeyWorkflowOwner, workflowMetadata.WorkflowOwner,
+		KeyWorkflowName, workflowMetadata.WorkflowName,
+	)
+	if emitErr := emitTriggerExecutionStarted(ctx, labeler); emitErr != nil {
+		l.Errorw("failed to emit trigger execution started event", "error", emitErr, "workflowID", workflowMetadata.WorkflowID, "workflowExecutionID", workflowExecutionID)
 		// Continue with execution even if event emission fails
 	}
 
 	input := []byte(triggerReq.Input)
-	err = h.triggerWorkflow(ctx, workflowID, req.ID, gatewayID, workflowExecutionID, input, triggerReq.Key)
+	err = h.triggerWorkflow(ctx, workflowMetadata.WorkflowID, req.ID, gatewayID, workflowExecutionID, input, triggerReq.Key)
 	if err != nil {
 		l.Errorw("Failed to trigger workflow", "error", err)
 		return
@@ -331,10 +348,24 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 	h.sendResponse(ctx, gatewayID, resp)
 }
 
-func (h *connectorHandler) resolveWorkflowID(workflow gateway_common.WorkflowSelector, l logger.Logger) (string, error) {
+type WorkflowMetadata struct {
+	WorkflowID    string
+	WorkflowOwner string
+	WorkflowName  string
+	WorkflowTag   string
+}
+
+func (h *connectorHandler) resolveWorkflowMetadata(workflow gateway_common.WorkflowSelector, l logger.Logger) (WorkflowMetadata, error) {
+	metadata := WorkflowMetadata{
+		WorkflowID:    workflow.WorkflowID,
+		WorkflowOwner: workflow.WorkflowOwner,
+		WorkflowName:  workflow.WorkflowName,
+		WorkflowTag:   workflow.WorkflowTag,
+	}
+
 	workflowID := workflow.WorkflowID
 	if workflowID != "" {
-		return workflowID, nil
+		return metadata, nil
 	}
 
 	workflowName := ensureHexPrefix(hex.EncodeToString([]byte(workflows.HashTruncateName(workflow.WorkflowName))))
@@ -345,9 +376,11 @@ func (h *connectorHandler) resolveWorkflowID(workflow gateway_common.WorkflowSel
 	)
 	if !exists {
 		l.Errorw("Workflow not registered", "workflowOwner", workflow.WorkflowOwner, "workflowName", workflow.WorkflowName, "workflowTag", workflow.WorkflowTag)
-		return "", fmt.Errorf("workflow not found")
+		return WorkflowMetadata{}, fmt.Errorf("workflow not found")
 	}
-	return resolvedID, nil
+
+	metadata.WorkflowID = resolvedID
+	return metadata, nil
 }
 
 func (h *connectorHandler) generateWorkflowExecutionID(workflowID, reqID string, l logger.Logger) (string, error) {
@@ -459,12 +492,33 @@ func (h *connectorHandler) triggerWorkflow(ctx context.Context, workflowID strin
 	return nil
 }
 
-// EmitTriggerExecutionStarted emits a TriggerExecutionStarted event via beholder
-func EmitTriggerExecutionStarted(ctx context.Context, triggerID, workflowExecutionID string) error {
+// emitTriggerExecutionStarted emits a TriggerExecutionStarted event via beholder using the provided labeler
+func emitTriggerExecutionStarted(ctx context.Context, labeler custmsg.MessageEmitter) error {
+	labels := labeler.Labels()
+
+	// Required fields
+	triggerID, ok := labels[KeyTriggerID]
+	if !ok {
+		return fmt.Errorf("missing required field: %s", KeyTriggerID)
+	}
+	workflowID, ok := labels[KeyWorkflowID]
+	if !ok {
+		return fmt.Errorf("missing required field: %s", KeyWorkflowID)
+	}
+	workflowExecutionID, ok := labels[KeyWorkflowExecutionID]
+	if !ok {
+		return fmt.Errorf("missing required field: %s", KeyWorkflowExecutionID)
+	}
+
 	event := &workflowsevents.TriggerExecutionStarted{
 		TriggerID:           triggerID,
 		WorkflowExecutionID: workflowExecutionID,
-		Timestamp:           time.Now().Format(time.RFC3339),
+		Workflow: &workflowsevents.WorkflowKey{
+			WorkflowID:    workflowID,
+			WorkflowOwner: labels[KeyWorkflowOwner],
+			WorkflowName:  labels[KeyWorkflowName],
+		},
+		Timestamp: time.Now().Format(time.RFC3339),
 	}
 
 	// Marshal the protobuf message

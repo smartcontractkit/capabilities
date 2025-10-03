@@ -88,6 +88,8 @@ func (s *Handler) start(Ctx context.Context) error {
 
 // GetRequestIDs - returns `limit` of request IDs in ascending order by number of attempts. Requests remain in the queue.
 func (s *Handler) GetRequestIDs(limit int) ([]string, error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
 	request, err := s.requests.FirstN(limit)
 	if err != nil {
 		return nil, err

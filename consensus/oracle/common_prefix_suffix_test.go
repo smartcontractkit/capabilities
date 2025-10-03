@@ -33,6 +33,27 @@ func Test_handleCommonPrefixAggregation(t *testing.T) {
 			wantValue: mustNewList("1", "2", "3"),
 		},
 		{
+			name: "OK - common prefix with one list disregarded after first index",
+			giveValues: []*valuespb.Value{
+				mustNewList("1", "2", "3"),
+				mustNewList("1", "3", "2"),
+				mustNewList("3", "2", "1"),
+			},
+			f:         1,
+			wantValue: mustNewList("1"),
+		},
+		{
+			name: "OK - common prefix with one list disregarded after second index",
+			giveValues: []*valuespb.Value{
+				mustNewList("1", "2", "3"),
+				mustNewList("1", "3", "2"),
+				mustNewList("3", "2", "1"),
+				mustNewList("1", "2", "err"),
+			},
+			f:         1,
+			wantValue: mustNewList("1", "2"),
+		},
+		{
 			name: "OK - common prefix of f+1 lists mixed",
 			giveValues: []*valuespb.Value{
 				mustNewList("1", "2", "3", "4", "5", "6", "7", "8", "9"),

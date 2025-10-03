@@ -244,7 +244,8 @@ func successWithStandardCronIntervals(t *testing.T, useTypedAPI bool) {
 			config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
 			require.NoError(t, err)
 
-			ts := NewTriggerService(logger.Nop(), fakeClock)
+			ts, err := NewTriggerService(logger.Nop(), fakeClock)
+			require.NoError(t, err)
 			err = ts.Initialise(t.Context(), string(config), nil, nil, nil, nil, nil, nil, nil, nil)
 			require.NoError(t, err)
 
@@ -321,7 +322,8 @@ func TestCronTrigger_Load(t *testing.T) {
 	config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
 	require.NoError(t, err)
 
-	ts := NewTriggerService(logger.Nop(), fakeClock)
+	ts, err := NewTriggerService(logger.Nop(), fakeClock)
+	require.NoError(t, err)
 
 	triggerAPI := server.NewCronServer(ts)
 
@@ -444,7 +446,8 @@ func testCronTriggerRegisterTriggerBeforeStart(t *testing.T, useTypedAPI bool) {
 	fakeClock := clockwork.NewRealClock()
 	config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
 	require.NoError(t, err)
-	ts := NewTriggerService(logger.Nop(), fakeClock)
+	ts, err := NewTriggerService(logger.Nop(), fakeClock)
+	require.NoError(t, err)
 
 	triggerAPI := server.NewCronServer(ts)
 
@@ -516,7 +519,8 @@ func testCronTriggerTimeWindows(t *testing.T, useTypedAPI bool) {
 
 	config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
 	require.NoError(t, err)
-	ts := NewTriggerService(logger.Nop(), fakeClock)
+	ts, err := NewTriggerService(logger.Nop(), fakeClock)
+	require.NoError(t, err)
 	triggerAPI := server.NewCronServer(ts)
 
 	ctx := t.Context()
@@ -591,7 +595,8 @@ func testCronTriggerMultipleDifferentSchedules(t *testing.T, useTypedAPI bool) {
 	}
 	config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
 	require.NoError(t, err)
-	ts := NewTriggerService(logger.Nop(), fakeClock)
+	ts, err := NewTriggerService(logger.Nop(), fakeClock)
+	require.NoError(t, err)
 	triggerAPI := server.NewCronServer(ts)
 	ctx := t.Context()
 
@@ -713,7 +718,8 @@ func testCronTriggerTimeZone(t *testing.T, useTypedAPI bool) {
 
 	config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
 	require.NoError(t, err)
-	ts := NewTriggerService(logger.Nop(), fakeClock)
+	ts, err := NewTriggerService(logger.Nop(), fakeClock)
+	require.NoError(t, err)
 	triggerAPI := server.NewCronServer(ts)
 	ctx := t.Context()
 
@@ -821,8 +827,9 @@ func testCronTriggerRegisterTrigger(t *testing.T, useTypedAPI bool) {
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
 			fakeClock := clockwork.NewRealClock()
-			ts := NewTriggerService(logger.Nop(), fakeClock)
-			err := ts.Initialise(t.Context(), "", nil, nil, nil, nil, nil, nil, nil, nil)
+			ts, err := NewTriggerService(logger.Nop(), fakeClock)
+			require.NoError(t, err)
+			err = ts.Initialise(t.Context(), "", nil, nil, nil, nil, nil, nil, nil, nil)
 			require.NoError(t, err)
 			triggerAPI := server.NewCronServer(ts)
 			ctx := t.Context()
@@ -853,7 +860,8 @@ func TestCronTrigger_RegisterTriggerDuplicateError(t *testing.T) {
 	triggerConfig, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
 	require.NoError(t, err)
 	fakeClock := clockwork.NewRealClock()
-	ts := NewTriggerService(logger.Nop(), fakeClock)
+	ts, err := NewTriggerService(logger.Nop(), fakeClock)
+	require.NoError(t, err)
 	err = ts.Initialise(t.Context(), string(triggerConfig), nil, nil, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	triggerAPI := server.NewCronServer(ts)
@@ -885,7 +893,8 @@ func TestCronTrigger_UnregisterTriggerError(t *testing.T) {
 	triggerConfig, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
 	require.NoError(t, err)
 	fakeClock := clockwork.NewRealClock()
-	ts := NewTriggerService(logger.Nop(), fakeClock)
+	ts, err := NewTriggerService(logger.Nop(), fakeClock)
+	require.NoError(t, err)
 	err = ts.Initialise(t.Context(), string(triggerConfig), nil, nil, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	triggerAPI := server.NewCronServer(ts)
@@ -961,7 +970,8 @@ func TestCronTrigger_UnregisterTriggerError(t *testing.T) {
 	})
 
 	t.Run("NOK fails to unregister if closed", func(t *testing.T) {
-		ts := NewTriggerService(logger.Nop(), fakeClock)
+		ts, err := NewTriggerService(logger.Nop(), fakeClock)
+		require.NoError(t, err)
 		err = ts.Initialise(t.Context(), string(triggerConfig), nil, nil, nil, nil, nil, nil, nil, nil)
 		require.NoError(t, err)
 
@@ -996,10 +1006,11 @@ func TestCronTrigger_UnregisterTriggerError(t *testing.T) {
 
 func TestCronTrigger_CloseStartErrors(t *testing.T) {
 	fakeClock := clockwork.NewRealClock()
-	ts := NewTriggerService(logger.Nop(), fakeClock)
+	ts, err := NewTriggerService(logger.Nop(), fakeClock)
+	require.NoError(t, err)
 	ctx := t.Context()
 
-	err := ts.Start(ctx)
+	err = ts.Start(ctx)
 	require.NoError(t, err)
 	err = ts.Close()
 	require.NoError(t, err)
@@ -1033,7 +1044,8 @@ func TestGocronNewTaskPanic(t *testing.T) {
 	config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
 	require.NoError(t, err)
 	logger, observedLogs := logger.TestObserved(t, zap.ErrorLevel)
-	ts := NewTriggerService(logger, panicClock)
+	ts, err := NewTriggerService(logger, panicClock)
+	require.NoError(t, err)
 
 	triggerAPI := server.NewCronServer(ts)
 
