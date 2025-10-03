@@ -174,6 +174,16 @@ func TestCapability_FilterLogs(t *testing.T) {
 		_, err := svc.FilterLogs(ctx, capabilities.RequestMetadata{}, req)
 		require.ErrorContains(t, err, "context canceled")
 	})
+	t.Run("no-funds", func(t *testing.T) {
+		svc := actions.InitMocks(t)
+		req := &evmcappb.FilterLogsRequest{
+			FilterQuery: &evmcappb.FilterQuery{
+				Topics: []*evmcappb.Topics{},
+			},
+		}
+		_, err := svc.FilterLogs(t.Context(), test.GetMetadataWithNoFunds(), req)
+		require.ErrorContains(t, err, "insufficient CRE funds: current limit is 0, action spend 2.5")
+	})
 }
 
 func TestCapability_GetTransactionByHash(t *testing.T) {
