@@ -10,9 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"google.golang.org/protobuf/proto"
-
-	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/custmsg"
@@ -20,10 +17,11 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
+	"github.com/smartcontractkit/chainlink-common/pkg/services/orgresolver"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
-	workflowsevents "github.com/smartcontractkit/chainlink-protos/workflows/go/v2"
+	"github.com/smartcontractkit/chainlink-common/pkg/workflows/events"
 )
 
 const (
@@ -33,15 +31,6 @@ const (
 	errorIncomingRatelimitGlobal = "message from gateway exceeded global rate limit"
 	errorIncomingRatelimitSender = "message from gateway exceeded per sender rate limit"
 	ecdsaPubKeyHexLen            = 42 // 2 (0x prefix) + 40 (hex digits)
-)
-
-// Constants for trigger emission labels
-const (
-	KeyTriggerID           = "trigger_id"
-	KeyWorkflowID          = "workflow_id"
-	KeyWorkflowOwner       = "workflow_owner"
-	KeyWorkflowName        = "workflow_name"
-	KeyWorkflowExecutionID = "workflow_execution_id"
 )
 
 var _ core.GatewayConnectorHandler = &connectorHandler{}
@@ -59,11 +48,12 @@ type connectorHandler struct {
 	metrics                  *Metrics
 	wg                       sync.WaitGroup
 	stopChan                 services.StopChan
+	orgResolver              orgresolver.OrgResolver // Optional org resolver for fetching organization IDs
 }
 
 func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config ServiceConfig,
 	outgoingRateLimiter *ratelimit.RateLimiter, incomingRateLimiter *ratelimit.RateLimiter,
-	workflowStore *workflowStore, gatewayMetadataPublisher GatewayMetadataPublisher, requestCache *requestCache, metrics *Metrics) (*connectorHandler, error) {
+	workflowStore *workflowStore, gatewayMetadataPublisher GatewayMetadataPublisher, requestCache *requestCache, metrics *Metrics, orgResolver orgresolver.OrgResolver) (*connectorHandler, error) {
 	return &connectorHandler{
 		lggr:                     logger.Named(lggr, HandlerName),
 		gatewayConnector:         gc,
@@ -75,6 +65,7 @@ func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config Se
 		requestCache:             requestCache,
 		metrics:                  metrics,
 		stopChan:                 make(chan struct{}),
+		orgResolver:              orgResolver,
 	}, nil
 }
 
@@ -327,13 +318,24 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 
 	// Emit TriggerExecutionStarted event
 	labeler := custmsg.NewLabeler().With(
-		KeyTriggerID, req.ID,
-		KeyWorkflowID, workflowMetadata.WorkflowID,
-		KeyWorkflowExecutionID, workflowExecutionID,
-		KeyWorkflowOwner, workflowMetadata.WorkflowOwner,
-		KeyWorkflowName, workflowMetadata.WorkflowName,
+		events.KeyTriggerID, req.ID,
+		events.KeyWorkflowID, workflowMetadata.WorkflowID,
+		events.KeyWorkflowExecutionID, workflowExecutionID,
+		events.KeyWorkflowOwner, workflowMetadata.WorkflowOwner,
+		events.KeyWorkflowName, workflowMetadata.WorkflowName,
 	)
-	if emitErr := emitTriggerExecutionStarted(ctx, labeler); emitErr != nil {
+
+	// Try to fetch organization ID if org resolver is available
+	if h.orgResolver != nil && workflowMetadata.WorkflowOwner != "" {
+		if orgID, orgErr := h.orgResolver.Get(ctx, workflowMetadata.WorkflowOwner); orgErr != nil {
+			l.Warnw("Failed to fetch organization ID from org resolver", "workflowOwner", workflowMetadata.WorkflowOwner, "error", orgErr)
+		} else if orgID != "" {
+			labeler = labeler.With(events.KeyOrganizationID, orgID)
+			l.Debugw("Successfully fetched organization ID", "workflowOwner", workflowMetadata.WorkflowOwner, "orgID", orgID)
+		}
+	}
+
+	if emitErr := events.EmitTriggerExecutionStarted(ctx, labeler); emitErr != nil {
 		l.Errorw("failed to emit trigger execution started event", "error", emitErr, "workflowID", workflowMetadata.WorkflowID, "workflowExecutionID", workflowExecutionID)
 		// Continue with execution even if event emission fails
 	}
@@ -490,46 +492,4 @@ func (h *connectorHandler) triggerWorkflow(ctx context.Context, workflowID strin
 		return err
 	}
 	return nil
-}
-
-// emitTriggerExecutionStarted emits a TriggerExecutionStarted event via beholder using the provided labeler
-func emitTriggerExecutionStarted(ctx context.Context, labeler custmsg.MessageEmitter) error {
-	labels := labeler.Labels()
-
-	// Required fields
-	triggerID, ok := labels[KeyTriggerID]
-	if !ok {
-		return fmt.Errorf("missing required field: %s", KeyTriggerID)
-	}
-	workflowID, ok := labels[KeyWorkflowID]
-	if !ok {
-		return fmt.Errorf("missing required field: %s", KeyWorkflowID)
-	}
-	workflowExecutionID, ok := labels[KeyWorkflowExecutionID]
-	if !ok {
-		return fmt.Errorf("missing required field: %s", KeyWorkflowExecutionID)
-	}
-
-	event := &workflowsevents.TriggerExecutionStarted{
-		TriggerID:           triggerID,
-		WorkflowExecutionID: workflowExecutionID,
-		Workflow: &workflowsevents.WorkflowKey{
-			WorkflowID:    workflowID,
-			WorkflowOwner: labels[KeyWorkflowOwner],
-			WorkflowName:  labels[KeyWorkflowName],
-		},
-		Timestamp: time.Now().Format(time.RFC3339),
-	}
-
-	// Marshal the protobuf message
-	b, err := proto.Marshal(event)
-	if err != nil {
-		return fmt.Errorf("failed to marshal TriggerExecutionStarted event: %w", err)
-	}
-
-	// Emit via beholder
-	return beholder.GetEmitter().Emit(ctx, b,
-		"beholder_data_schema", "workflows.v2.trigger_execution_started", // required
-		"beholder_domain", "platform", // required
-		"beholder_entity", "workflows.v2.TriggerExecutionStarted") // required
 }

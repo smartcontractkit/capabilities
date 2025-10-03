@@ -156,6 +156,7 @@ func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayCon
 		metadataPublisher,
 		requestCache,
 		newMetrics(t),
+		nil,
 	)
 	require.NoError(t, err)
 	sdkCfg := &http.Config{
@@ -530,6 +531,7 @@ func TestRegisterWorkflow_TooManyAuthorizedKeys(t *testing.T) {
 		metadataPublisher,
 		requestCache,
 		newMetrics(t),
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -641,6 +643,7 @@ func TestConnectorHandler_Start_HealthReport_Ready_Name_Close(t *testing.T) {
 		metadataPublisher,
 		requestCache,
 		newMetrics(t),
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -802,6 +805,7 @@ func TestHandleGatewayMessage_PullAuthMetadata_EmptyWorkflows(t *testing.T) {
 		metadataPublisher,
 		requestCache,
 		newMetrics(t),
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -901,6 +905,7 @@ func TestConnectorHandler_StartRequestCacheCleanup(t *testing.T) {
 		metadataPublisher,
 		requestCache,
 		newMetrics(t),
+		nil,
 	)
 	require.NoError(t, err)
 
