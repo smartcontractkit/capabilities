@@ -18,7 +18,6 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	httpactions "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
-	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 )
@@ -109,7 +108,6 @@ func TestSendRequest(t *testing.T) {
 		WorkflowExecutionID: "exec1",
 		WorkflowOwner:       "owner1",
 	}
-	ctx := contexts.WithCRE(t.Context(), contexts.CRE{Owner: metadata.WorkflowOwner, Workflow: metadata.WorkflowID})
 
 	t.Run("successful request", func(t *testing.T) {
 		cfg := ServiceConfig{
@@ -132,7 +130,7 @@ func TestSendRequest(t *testing.T) {
 			Body: []byte("success"),
 		}
 
-		response, err := proxy.SendRequest(ctx, metadata, input, time.Now())
+		response, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
 
 		require.NoError(t, err)
 		require.Equal(t, uint32(200), response.StatusCode)
@@ -161,7 +159,7 @@ func TestSendRequest(t *testing.T) {
 			Body: []byte("echo"),
 		}
 
-		response, err := proxy.SendRequest(ctx, metadata, input, time.Now())
+		response, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
 
 		require.NoError(t, err)
 		require.Equal(t, uint32(200), response.StatusCode)
@@ -188,7 +186,7 @@ func TestSendRequest(t *testing.T) {
 			Body: []byte{},
 		}
 
-		_, err = proxy.SendRequest(ctx, metadata, input, time.Now())
+		_, err = proxy.SendRequest(t.Context(), metadata, input, time.Now())
 
 		// We should get a timeout error
 		require.Error(t, err)
@@ -212,7 +210,7 @@ func TestSendRequest(t *testing.T) {
 			Body:    []byte{},
 		}
 
-		_, err = proxy.SendRequest(ctx, metadata, input, time.Now())
+		_, err = proxy.SendRequest(t.Context(), metadata, input, time.Now())
 
 		require.Error(t, err)
 	})
@@ -244,7 +242,7 @@ func TestSendRequest(t *testing.T) {
 			Body:    []byte{},
 		}
 
-		_, err = proxy.SendRequest(ctx, metadata, input, time.Now())
+		_, err = proxy.SendRequest(t.Context(), metadata, input, time.Now())
 
 		// Should get an error because response is too large
 		require.Error(t, err)

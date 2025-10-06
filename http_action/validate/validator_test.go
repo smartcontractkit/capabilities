@@ -1,12 +1,11 @@
 package validate
 
 import (
-	"context"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
-	durationpb "google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
@@ -37,7 +36,7 @@ func TestValidatorCreation(t *testing.T) {
 
 func TestValidatedRequest(t *testing.T) {
 	t.Parallel()
-	ctx := contexts.WithCRE(context.Background(), contexts.CRE{Owner: "test-owner", Workflow: "test-workflow"})
+	ctx := contexts.WithCRE(t.Context(), contexts.CRE{Owner: "test-owner", Workflow: "test-workflow"})
 
 	t.Run("valid input", func(t *testing.T) {
 		t.Parallel()
@@ -195,7 +194,7 @@ func TestValidatedRequest(t *testing.T) {
 
 func TestValidateResponseSize(t *testing.T) {
 	t.Parallel()
-	ctx := contexts.WithCRE(context.Background(), contexts.CRE{Owner: "test-owner", Workflow: "test-workflow"})
+	ctx := contexts.WithCRE(t.Context(), contexts.CRE{Owner: "test-owner", Workflow: "test-workflow"})
 
 	t.Run("valid response size", func(t *testing.T) {
 		t.Parallel()

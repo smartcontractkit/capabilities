@@ -7,9 +7,10 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/smartcontractkit/libocr/ragep2p/types"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
-	"github.com/smartcontractkit/libocr/ragep2p/types"
 )
 
 var _ core.CapabilitiesRegistry = (*capabilitiesRegistry)(nil)

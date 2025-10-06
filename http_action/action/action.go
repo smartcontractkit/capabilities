@@ -14,7 +14,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http/server"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
@@ -128,11 +127,12 @@ func (s *service) Description() string {
 
 func (s *service) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *http.Request) (*capabilities.ResponseAndMetadata[*http.Response], error) {
 	s.lggr.Debugf("Received request with metadata: %v", metadata)
+	ctx = metadata.ContextWithCRE(ctx)
 	startTime := time.Now()
 	s.metrics.IncrementRequestCount(ctx, s.lggr)
 	// set the context with the workflow owner and workflow id
 	// these are required for request/response/rate limit checks
-	ctx = contexts.WithCRE(ctx, contexts.CRE{Owner: metadata.WorkflowOwner, Workflow: metadata.WorkflowID})
+	ctx = metadata.ContextWithCRE(ctx)
 
 	if err := s.CheckRateLimit(ctx, metadata); err != nil {
 		return nil, err

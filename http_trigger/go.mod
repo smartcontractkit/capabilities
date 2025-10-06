@@ -3,7 +3,7 @@ module github.com/smartcontractkit/capabilities/http_trigger
 go 1.24.5
 
 require (
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20250807005622-32f1fcc70c7d
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20250923110103-f972e0402334
 	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251003215432-a8795d634f42
 	github.com/stretchr/testify v1.10.0
 	go.opentelemetry.io/otel v1.37.0

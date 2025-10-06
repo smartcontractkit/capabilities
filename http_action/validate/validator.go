@@ -144,6 +144,5 @@ func (v *Validator) validatedCacheSettings(ctx context.Context, cacheSettings *h
 
 // ValidateResponseSize checks if the response size is within limits
 func (v *Validator) ValidateResponseSize(ctx context.Context, response []byte) error {
-	responseSize := config.Size(len(response))
-	return v.responseSizeLimiter.Check(ctx, responseSize)
+	return v.responseSizeLimiter.Check(ctx, config.SizeOf(response))
 }
