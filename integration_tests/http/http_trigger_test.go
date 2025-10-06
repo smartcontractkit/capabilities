@@ -253,7 +253,7 @@ func TestHTTPTrigger_InsufficientNodes(t *testing.T) {
 	require.Eventually(t, func() bool {
 		_, err := http.DefaultClient.Do(req)
 		return err != nil // request times out and returns an error if threshold of node responses is not met
-	}, 30*time.Second, 1000*time.Millisecond)
+	}, 30*time.Second, time.Second)
 	executionID, err := workflows.EncodeExecutionID(strings.TrimPrefix(workflowID, "0x"), requestID)
 	require.NoError(t, err)
 	assertTriggerPayload(t, env, executionID, input) // workflows are still triggered even if not all nodes are available
@@ -275,7 +275,7 @@ func testHTTPTriggerWithWorkflowID(t *testing.T) {
 		body, err = io.ReadAll(resp.Body)
 		require.NoError(t, err)
 		return resp.StatusCode == http.StatusOK
-	}, 30*time.Second, 1000*time.Millisecond)
+	}, 30*time.Second, time.Second)
 
 	executionID := validateHTTPTriggerResponse(t, body, requestID, workflowID)
 	assertTriggerPayload(t, env, executionID, input)
@@ -297,7 +297,7 @@ func testHTTPTriggerWithWorkflowReference(t *testing.T) {
 		body, err = io.ReadAll(resp.Body)
 		require.NoError(t, err)
 		return resp.StatusCode == http.StatusOK
-	}, 30*time.Second, 1000*time.Millisecond)
+	}, 30*time.Second, time.Second)
 
 	executionID := validateHTTPTriggerResponse(t, body, requestID, workflowID)
 	assertTriggerPayload(t, env, executionID, input)
@@ -325,7 +325,7 @@ func testHTTPTriggerRequestDeduplication(t *testing.T) {
 		body, err = io.ReadAll(resp.Body)
 		require.NoError(t, err)
 		return resp.StatusCode == http.StatusOK
-	}, 30*time.Second, 1000*time.Millisecond)
+	}, 30*time.Second, time.Second)
 
 	executionID := validateHTTPTriggerResponse(t, body, requestID, workflowID)
 	assertTriggerPayload(t, env, executionID, input)
@@ -408,6 +408,6 @@ func newTriggerHTTPCapability(ctx context.Context, t *testing.T, nodeURL string,
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
 		return triggerCap.Ready() == nil
-	}, 30*time.Second, 1000*time.Millisecond)
+	}, 30*time.Second, time.Second)
 	return triggerCap, ch
 }

@@ -359,7 +359,7 @@ func TestGatewayOutboundProxy_nextBackoff(t *testing.T) {
 	res := proxy.nextBackoff(b)
 	assert.Equal(t, 200*time.Millisecond, res)
 	res = proxy.nextBackoff(600 * time.Millisecond)
-	assert.Equal(t, 1000*time.Millisecond, res) // capped at max
+	assert.Equal(t, time.Second, res) // capped at max
 }
 
 func TestGatewayOutboundProxy_awaitConnection_RetryLimits(t *testing.T) {
