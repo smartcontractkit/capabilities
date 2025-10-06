@@ -128,7 +128,6 @@ flowchart LR
 	chainlink/v2 --> chainlink-data-streams
 	chainlink/v2 --> chainlink-evm
 	chainlink/v2 --> chainlink-feeds
-	chainlink/v2 --> chainlink-protos/linking-service/go
 	chainlink/v2 --> chainlink-protos/orchestrator
 	chainlink/v2 --> chainlink-solana
 	chainlink/v2 --> chainlink-sui
