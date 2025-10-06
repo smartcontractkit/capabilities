@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/rpc"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -18,6 +17,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/custmsg"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
+	"github.com/smartcontractkit/chainlink-common/pkg/services/orgresolver"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -26,7 +26,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
-	workflowsevents "github.com/smartcontractkit/chainlink-protos/workflows/go/v2"
+	"github.com/smartcontractkit/chainlink-common/pkg/workflows/events"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 )
@@ -35,15 +35,6 @@ const (
 	SuffixLogTriggerFilterID     = "-evm-log-trigger"
 	defaultSendChannelBufferSize = 1000
 	defaultLimitQueryLogSize     = 1000
-
-	// Metadata keys for trigger execution events
-	KeyTriggerID           = "trigger_id"
-	KeyWorkflowID          = "workflow_id"
-	KeyWorkflowOwner       = "workflow_owner"
-	KeyWorkflowName        = "workflow_name"
-	KeyWorkflowExecutionID = "workflow_execution_id"
-	KeyDonID               = "don_id"
-	KeyDonVersion          = "don_version"
 )
 
 type LogTriggerService struct {
@@ -58,11 +49,12 @@ type LogTriggerService struct {
 	triggers                        LogTriggerStore
 	logTriggerPollInterval          time.Duration
 	logTriggerSendChannelBufferSize uint64
-	// limitAndSort defines the default sorting and limiting for all log queries.
+
 	limitAndSort               query.LimitAndSort
 	filterAddressLimiter       limits.BoundLimiter[int]
 	filterTopicsPerSlotLimiter limits.BoundLimiter[int]
 	eventRateLimit             limits.RateLimiter
+	orgResolver                orgresolver.OrgResolver // Optional org resolver for fetching organization IDs
 }
 
 // NewLogTriggerService creates a new instance of logTriggerService.
@@ -71,7 +63,8 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 	beholderProcessor beholder.ProtoProcessor, messageBuilder *monitoring.MessageBuilder,
 	logTriggerPollInterval time.Duration,
 	logTriggerSendChannelBufferSize uint64,
-	logTriggerLimitQueryLogSize uint64, limitsFactory limits.Factory) (*LogTriggerService, error) {
+	logTriggerLimitQueryLogSize uint64, limitsFactory limits.Factory,
+	orgResolver orgresolver.OrgResolver) (*LogTriggerService, error) {
 	if logTriggerPollInterval < 0 {
 		return nil, fmt.Errorf("logTriggerPollInterval must be positive, got: %s", logTriggerPollInterval)
 	}
@@ -102,6 +95,7 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 		logTriggerPollInterval:          logTriggerPollInterval,
 		logTriggerSendChannelBufferSize: currentSendChannelBufferSize,
 		limitAndSort:                    limitAndSort,
+		orgResolver:                     orgResolver,
 	}
 	if err := lts.initLimiters(limitsFactory); err != nil {
 		return nil, err
@@ -411,8 +405,6 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 			continue
 		}
 
-		lts.lggr.Debugf("Sending log event for triggerID: %s, block number: %d, eventID: %s", triggerID, log.BlockNumber, response.Id)
-
 		workflowExecutionID, err := workflows.EncodeExecutionID(telemetryContext.RequestMetadata.WorkflowID, response.Id)
 		if err != nil {
 			lts.lggr.Errorw("failed to generate execution ID", "err", err, "triggerID", triggerID, "workflowID", telemetryContext.RequestMetadata.WorkflowID, "eventID", response.Id)
@@ -421,22 +413,32 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 		}
 
 		labeler := custmsg.NewLabeler().With(
-			KeyTriggerID, response.Id,
-			KeyWorkflowID, telemetryContext.RequestMetadata.WorkflowID,
-			KeyWorkflowExecutionID, workflowExecutionID,
-			KeyWorkflowOwner, telemetryContext.RequestMetadata.WorkflowOwner,
-			KeyWorkflowName, telemetryContext.RequestMetadata.WorkflowName,
+			events.KeyTriggerID, response.Id,
+			events.KeyWorkflowID, telemetryContext.RequestMetadata.WorkflowID,
+			events.KeyWorkflowExecutionID, workflowExecutionID,
+			events.KeyWorkflowOwner, telemetryContext.RequestMetadata.WorkflowOwner,
+			events.KeyWorkflowName, telemetryContext.RequestMetadata.WorkflowName,
 		)
 
 		// add DON metadata if available
 		if telemetryContext.RequestMetadata.WorkflowDonID != 0 {
-			labeler = labeler.With(KeyDonID, strconv.Itoa(int(telemetryContext.RequestMetadata.WorkflowDonID)))
+			labeler = labeler.With(events.KeyDonID, strconv.Itoa(int(telemetryContext.RequestMetadata.WorkflowDonID)))
 		}
 		if telemetryContext.RequestMetadata.WorkflowDonConfigVersion != 0 {
-			labeler = labeler.With(KeyDonVersion, strconv.Itoa(int(telemetryContext.RequestMetadata.WorkflowDonConfigVersion)))
+			labeler = labeler.With(events.KeyDonVersion, strconv.Itoa(int(telemetryContext.RequestMetadata.WorkflowDonConfigVersion)))
 		}
 
-		if emitErr := emitTriggerExecutionStarted(ctx, labeler); emitErr != nil {
+		// Try to fetch organization ID if org resolver is available
+		if lts.orgResolver != nil && telemetryContext.RequestMetadata.WorkflowOwner != "" {
+			if orgID, orgErr := lts.orgResolver.Get(ctx, telemetryContext.RequestMetadata.WorkflowOwner); orgErr != nil {
+				lts.lggr.Warnw("Failed to fetch organization ID from org resolver", "workflowOwner", telemetryContext.RequestMetadata.WorkflowOwner, "error", orgErr)
+			} else if orgID != "" {
+				labeler = labeler.With(events.KeyOrganizationID, orgID)
+				lts.lggr.Debugw("Successfully fetched organization ID", "workflowOwner", telemetryContext.RequestMetadata.WorkflowOwner, "orgID", orgID)
+			}
+		}
+
+		if emitErr := events.EmitTriggerExecutionStarted(ctx, labeler); emitErr != nil {
 			lts.lggr.Errorw("failed to emit trigger execution started event", "err", emitErr, "triggerID", triggerID, "workflowExecutionID", workflowExecutionID)
 			// continue with execution even if event emission fails
 		}
@@ -607,54 +609,3 @@ func (r realTicker) Stop() {
 }
 
 var defaultTickerFactory tickerFactory = realTickerFactory{}
-
-// emitTriggerExecutionStarted emits a TriggerExecutionStarted event via beholder using the provided labeler
-func emitTriggerExecutionStarted(ctx context.Context, labeler custmsg.MessageEmitter) error {
-	labels := labeler.Labels()
-
-	// Required fields
-	triggerID, ok := labels[KeyTriggerID]
-	if !ok {
-		return fmt.Errorf("missing required field: %s", KeyTriggerID)
-	}
-	workflowID, ok := labels[KeyWorkflowID]
-	if !ok {
-		return fmt.Errorf("missing required field: %s", KeyWorkflowID)
-	}
-	workflowExecutionID, ok := labels[KeyWorkflowExecutionID]
-	if !ok {
-		return fmt.Errorf("missing required field: %s", KeyWorkflowExecutionID)
-	}
-
-	event := &workflowsevents.TriggerExecutionStarted{
-		TriggerID:           triggerID,
-		WorkflowExecutionID: workflowExecutionID,
-		Workflow: &workflowsevents.WorkflowKey{
-			WorkflowID:    workflowID,
-			WorkflowOwner: labels[KeyWorkflowOwner],
-			WorkflowName:  labels[KeyWorkflowName],
-		},
-		Timestamp: time.Now().Format(time.RFC3339),
-	}
-
-	if donIDStr, exists := labels[KeyDonID]; exists {
-		if donID, err := strconv.ParseInt(donIDStr, 10, 32); err == nil {
-			event.CreInfo = &workflowsevents.CreInfo{
-				DonID:      int32(donID),
-				DonVersion: labels[KeyDonVersion],
-			}
-		}
-	}
-
-	// Marshal the protobuf message
-	b, err := proto.Marshal(event)
-	if err != nil {
-		return fmt.Errorf("failed to marshal TriggerExecutionStarted event: %w", err)
-	}
-
-	// Emit via beholder
-	return beholder.GetEmitter().Emit(ctx, b,
-		"beholder_data_schema", "workflows.v2.trigger_execution_started", // required
-		"beholder_domain", "platform", // required
-		"beholder_entity", "workflows.v2.TriggerExecutionStarted") // required
-}
