@@ -1044,7 +1044,7 @@ func TestNewLogTriggerService(t *testing.T) {
 	})
 	t.Run("ok initialize buffer only", func(t *testing.T) {
 		lggr := logger.Test(t)
-		trigger, err := NewLogTriggerService(evmService, store, lggr, beholderProcessor, messageBuilder, 10*time.Second, 10000, 0, limits.Factory{Logger: lggr})
+		trigger, err := NewLogTriggerService(evmService, store, lggr, beholderProcessor, messageBuilder, 10*time.Second, 10000, 0, limits.Factory{Logger: lggr}, nil)
 		require.NoError(t, err)
 		require.Equal(t, 10*time.Second, trigger.logTriggerPollInterval)
 		require.Equal(t, uint64(10000), trigger.logTriggerSendChannelBufferSize)

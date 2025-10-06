@@ -9,9 +9,6 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/smartcontractkit/chainlink-common/pkg/services"
-	"github.com/smartcontractkit/chainlink-common/pkg/services/orgresolver"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -20,6 +17,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/custmsg"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
+	"github.com/smartcontractkit/chainlink-common/pkg/services/orgresolver"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -56,7 +54,7 @@ type LogTriggerService struct {
 	filterAddressLimiter       limits.BoundLimiter[int]
 	filterTopicsPerSlotLimiter limits.BoundLimiter[int]
 	eventRateLimit             limits.RateLimiter
-	orgResolver  orgresolver.OrgResolver // Optional org resolver for fetching organization IDs
+	orgResolver                orgresolver.OrgResolver // Optional org resolver for fetching organization IDs
 }
 
 // NewLogTriggerService creates a new instance of logTriggerService.
@@ -65,7 +63,7 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 	beholderProcessor beholder.ProtoProcessor, messageBuilder *monitoring.MessageBuilder,
 	logTriggerPollInterval time.Duration,
 	logTriggerSendChannelBufferSize uint64,
-	logTriggerLimitQueryLogSize uint64, limitsFactory limits.Factory, 
+	logTriggerLimitQueryLogSize uint64, limitsFactory limits.Factory,
 	orgResolver orgresolver.OrgResolver) (*LogTriggerService, error) {
 	if logTriggerPollInterval < 0 {
 		return nil, fmt.Errorf("logTriggerPollInterval must be positive, got: %s", logTriggerPollInterval)
