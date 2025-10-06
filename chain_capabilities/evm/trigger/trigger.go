@@ -188,18 +188,21 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	if lenAddrs == 0 {
 		return nil, fmt.Errorf("no valid addresses provided (at least one address is required)")
 	}
-
 	if err := lts.filterAddressLimiter.Check(ctx, lenAddrs); err != nil {
 		return nil, err
 	}
-	if err := lts.filterTopicsPerSlotLimiter.Check(ctx, lenAddrs); err != nil {
-		return nil, err
+
+	lenTopics := len(input.GetTopics())
+	if lenTopics > 4 {
+		return nil, fmt.Errorf("there can be at most 4 topics provided, got %d instead", lenTopics)
 	}
-	if len(input.GetTopics()) > 4 {
-		return nil, fmt.Errorf("there can be at most 4 topics provided, got %d instead", len(input.GetTopics()))
-	}
-	if len(input.GetTopics()) == 0 || len(input.GetTopics()[0].Values) == 0 {
+	if lenTopics == 0 || len(input.GetTopics()[0].Values) == 0 {
 		return nil, fmt.Errorf("no valid event sig provided (at least one event sig is required in topics)")
+	}
+	for i, topic := range input.GetTopics() {
+		if err := lts.filterTopicsPerSlotLimiter.Check(ctx, len(topic.Values)); err != nil {
+			return nil, fmt.Errorf("topic %d: %w", i, err)
+		}
 	}
 
 	eventSigs, topics2, topics3, topics4 := lts.getTopics(input)
