@@ -39,8 +39,8 @@ type ReadContractGRPCService struct {
 }
 
 func main() {
-	loopserver.Serve(serviceName, func(lggr logger.Logger) *ReadContractGRPCService {
-		return &ReadContractGRPCService{lggr: lggr}
+	loopserver.ServeNew(serviceName, func(s *loop.Server) loop.StandardCapabilities {
+		return &ReadContractGRPCService{lggr: s.Logger}
 	})
 }
 

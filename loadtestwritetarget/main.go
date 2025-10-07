@@ -6,6 +6,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
@@ -30,8 +31,8 @@ type LoadTestWriteTargetGRPCService struct {
 }
 
 func main() {
-	loopserver.Serve(serviceName, func(lggr logger.Logger) *LoadTestWriteTargetGRPCService {
-		return &LoadTestWriteTargetGRPCService{lggr: lggr}
+	loopserver.ServeNew(serviceName, func(s *loop.Server) loop.StandardCapabilities {
+		return &LoadTestWriteTargetGRPCService{lggr: s.Logger}
 	})
 }
 

@@ -88,5 +88,7 @@ func (cs *capabilitiesServer) Initialise(ctx context.Context, dependencies core.
 }
 
 func main() {
-	loopserver.Serve("Signer", New)
+	loopserver.ServeNew("Signer", func(s *loop.Server) loop.StandardCapabilities {
+		return New(s.Logger)
+	})
 }

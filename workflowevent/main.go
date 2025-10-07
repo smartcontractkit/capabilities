@@ -7,6 +7,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
@@ -24,8 +25,8 @@ type CapabilitiesService struct {
 }
 
 func main() {
-	loopserver.Serve(serviceName, func(lggr logger.Logger) *CapabilitiesService {
-		return &CapabilitiesService{lggr: lggr}
+	loopserver.ServeNew(serviceName, func(s *loop.Server) loop.StandardCapabilities {
+		return &CapabilitiesService{lggr: s.Logger}
 	})
 }
 
