@@ -16,7 +16,6 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
-	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
@@ -167,8 +166,7 @@ func TestGatewayOutboundProxy_SendRequest_Success(t *testing.T) {
 		simulateGatewayMessage(t, proxy, id, 200, "ok", "", true)
 	}()
 
-	ctx := contexts.WithCRE(t.Context(), contexts.CRE{Owner: metadata.WorkflowOwner, Workflow: metadata.WorkflowID})
-	output, err := proxy.SendRequest(ctx, metadata, input, time.Now())
+	output, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
 	require.NoError(t, err)
 	require.NotNil(t, output)
 	assert.Equal(t, uint32(200), output.StatusCode)
@@ -224,8 +222,7 @@ func TestGatewayOutboundProxy_SendRequest_Timeout(t *testing.T) {
 
 	// Do not send a response, should timeout
 	start := time.Now()
-	ctx := contexts.WithCRE(t.Context(), contexts.CRE{Owner: metadata.WorkflowOwner, Workflow: metadata.WorkflowID})
-	output, err := proxy.SendRequest(ctx, metadata, input, time.Now())
+	output, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
 	elapsed := time.Since(start)
 	require.Error(t, err)
 	require.Nil(t, output)
@@ -255,8 +252,7 @@ func TestGatewayOutboundProxy_SendRequest_ExecutionError(t *testing.T) {
 		simulateGatewayMessage(t, proxy, id, 500, "ok", "some error", true)
 	}()
 
-	ctx := contexts.WithCRE(t.Context(), contexts.CRE{Owner: metadata.WorkflowOwner, Workflow: metadata.WorkflowID})
-	output, err := proxy.SendRequest(ctx, metadata, input, time.Now())
+	output, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
 	require.Error(t, err)
 	require.Nil(t, output)
 	assert.Equal(t, "internal error", err.Error())
@@ -284,8 +280,7 @@ func TestGatewayOutboundProxy_SendRequest_RateLimitError(t *testing.T) {
 		simulateGatewayMessage(t, proxy, id, 429, "", "global limit of outgoing gateways requests has been exceeded", true)
 	}()
 
-	ctx := contexts.WithCRE(t.Context(), contexts.CRE{Owner: metadata.WorkflowOwner, Workflow: metadata.WorkflowID})
-	output, err := proxy.SendRequest(ctx, metadata, input, time.Now())
+	output, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
 	require.Error(t, err)
 	require.Nil(t, output)
 	assert.Contains(t, err.Error(), "internal error")
@@ -364,7 +359,7 @@ func TestGatewayOutboundProxy_nextBackoff(t *testing.T) {
 	res := proxy.nextBackoff(b)
 	assert.Equal(t, 200*time.Millisecond, res)
 	res = proxy.nextBackoff(600 * time.Millisecond)
-	assert.Equal(t, 1000*time.Millisecond, res) // capped at max
+	assert.Equal(t, time.Second, res) // capped at max
 }
 
 func TestGatewayOutboundProxy_awaitConnection_RetryLimits(t *testing.T) {

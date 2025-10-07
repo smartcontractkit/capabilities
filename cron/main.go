@@ -10,7 +10,7 @@ import (
 
 func main() {
 	loopserver.ServeNewWithOtelViews(trigger.ServiceName, func(s *loop.Server) loop.StandardCapabilities {
-		triggerService, err := trigger.NewTriggerService(s.Logger, nil)
+		triggerService, err := trigger.NewTriggerService(s.Logger, nil, nil)
 		if err != nil {
 			s.Logger.Fatalw("Failed to create cron trigger service", "error", err)
 		}

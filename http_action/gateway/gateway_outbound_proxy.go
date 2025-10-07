@@ -78,6 +78,7 @@ func NewGatewayOutboundProxy(gatewayConnector core.GatewayConnector, config comm
 
 // SendRequest sends a request to gateway node and blocks until response is received
 func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *http.Request, startTime time.Time) (*http.Response, error) {
+	ctx = metadata.ContextWithCRE(ctx)
 	requestID := common.GetRequestID(gc.MethodHTTPAction, metadata.WorkflowID, metadata.WorkflowExecutionID)
 	lggr := logger.With(p.lggr, "requestID", requestID, "workflowID", metadata.WorkflowID, "workflowExecutionID", metadata.WorkflowExecutionID, "workflowOwner", metadata.WorkflowOwner)
 	ctx, cancel := context.WithTimeout(ctx, input.Timeout.AsDuration())

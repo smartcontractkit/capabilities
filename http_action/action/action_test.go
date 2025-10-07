@@ -16,8 +16,6 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
-	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
-
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
@@ -108,7 +106,6 @@ func setupServiceTest(t *testing.T) *testSetup {
 }
 
 func TestSendRequest_ValidatesInput(t *testing.T) {
-	ctx := contexts.WithCRE(t.Context(), contexts.CRE{Owner: WorkflowOwner, Workflow: WorkflowID})
 	t.Run("valid request gets validated and forwarded to client", func(t *testing.T) {
 		setup := setupServiceTest(t)
 
@@ -127,7 +124,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 		setup.mockClient.Response = expectedResponse
 		setup.mockClient.Err = nil
 
-		response, err := setup.service.SendRequest(ctx, setup.metadata, input)
+		response, err := setup.service.SendRequest(t.Context(), setup.metadata, input)
 		require.NoError(t, err)
 		assert.Equal(t, expectedResponse, response.Response)
 		assert.Equal(t, input, setup.mockClient.CapturedInput)
@@ -154,7 +151,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 		setup.mockClient.Response = expectedResponse
 		setup.mockClient.Err = nil
 
-		response, err := setup.service.SendRequest(ctx, setup.metadata, input)
+		response, err := setup.service.SendRequest(t.Context(), setup.metadata, input)
 		require.NoError(t, err)
 		assert.Equal(t, expectedResponse, response.Response)
 		assert.Equal(t, input, setup.mockClient.CapturedInput)
@@ -177,7 +174,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 		setup.mockClient.Response = expectedResponse
 		setup.mockClient.Err = nil
 
-		response, err := setup.service.SendRequest(ctx, setup.metadata, input)
+		response, err := setup.service.SendRequest(t.Context(), setup.metadata, input)
 		require.NoError(t, err)
 		assert.Equal(t, expectedResponse, response.Response)
 		assert.Equal(t, input, setup.mockClient.CapturedInput)
@@ -193,7 +190,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 		}
 		setup.mockClient.CapturedInput = nil
 
-		response, err := setup.service.SendRequest(ctx, setup.metadata, input)
+		response, err := setup.service.SendRequest(t.Context(), setup.metadata, input)
 		require.Error(t, err)
 		assert.Nil(t, response)
 		assert.Contains(t, err.Error(), "URL must not be empty")
@@ -219,7 +216,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 		setup.mockClient.Response = expectedResponse
 		setup.mockClient.Err = nil
 
-		response, err := setup.service.SendRequest(ctx, setup.metadata, input)
+		response, err := setup.service.SendRequest(t.Context(), setup.metadata, input)
 		require.NoError(t, err)
 		assert.Equal(t, expectedResponse, response.Response)
 		assert.Equal(t, input, setup.mockClient.CapturedInput)
@@ -235,7 +232,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 		}
 		setup.mockClient.CapturedInput = nil
 
-		response, err := setup.service.SendRequest(ctx, setup.metadata, input)
+		response, err := setup.service.SendRequest(t.Context(), setup.metadata, input)
 		require.Error(t, err)
 		assert.Nil(t, response)
 		assert.Contains(t, err.Error(), "invalid HTTP method")
@@ -259,7 +256,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 		setup.mockClient.Response = expectedResponse
 		setup.mockClient.Err = nil
 
-		response, err := setup.service.SendRequest(ctx, setup.metadata, input)
+		response, err := setup.service.SendRequest(t.Context(), setup.metadata, input)
 		require.NoError(t, err)
 		assert.Equal(t, expectedResponse, response.Response)
 		assert.Equal(t, input, setup.mockClient.CapturedInput)

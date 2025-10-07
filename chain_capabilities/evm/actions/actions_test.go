@@ -22,9 +22,8 @@ import (
 
 	"google.golang.org/protobuf/testing/protocmp"
 
-	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
-
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 )
@@ -127,7 +126,7 @@ func TestCapability_FilterLogs(t *testing.T) {
 				Topics:    []*evmcappb.Topics{},
 			},
 		}
-		resp, err := svc.FilterLogs(t.Context(), capabilities.RequestMetadata{}, req)
+		resp, err := svc.FilterLogs(t.Context(), capabilities.RequestMetadata{WorkflowID: "wf-id"}, req)
 		require.NoError(t, err)
 		require.Empty(t, cmp.Diff(expectedReply, resp.Response, protocmp.Transform()))
 		require.Empty(t, resp.ResponseMetadata.Metering, "FilterLogs() should have one metering entry (it won't be exposed in the capabilities interface)")

@@ -16,6 +16,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
+	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/retry"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -41,7 +42,8 @@ func decodeReportMetadata(data []byte) (ocrtypes.Metadata, error) {
 	return metadata, err
 }
 
-func (e EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMetadata, input *evm.WriteReportRequest) (*capabilities.ResponseAndMetadata[*evm.WriteReportReply], error) {
+func (e *EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMetadata, input *evm.WriteReportRequest) (*capabilities.ResponseAndMetadata[*evm.WriteReportReply], error) {
+	ctx = metadata.ContextWithCRE(ctx)
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: metadata}
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportInitiated(telemetryContext, input))
 	err := validateInputsAndReportMetadata(metadata, input)
@@ -64,7 +66,7 @@ func (e EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMetad
 	return &responseAndMetadata, nil
 }
 
-func (e EVM) getFee(ctx context.Context, txIdempotencyKey string) (*big.Float, error) {
+func (e *EVM) getFee(ctx context.Context, txIdempotencyKey string) (*big.Float, error) {
 	if txIdempotencyKey == "" {
 		return nil, fmt.Errorf("txIdempotencyKey is empty, cannot retrieve transaction fee")
 	}
@@ -78,10 +80,23 @@ func (e EVM) getFee(ctx context.Context, txIdempotencyKey string) (*big.Float, e
 	return feeInEth, nil
 }
 
-func (e EVM) executeWriteReport(ctx context.Context, request *evm.WriteReportRequest, metadata capabilities.RequestMetadata, telemetryContext monitoring.TelemetryContext) (*evm.WriteReportReply, capabilities.ResponseMetadata, error) {
+func (e *EVM) executeWriteReport(ctx context.Context, request *evm.WriteReportRequest, metadata capabilities.RequestMetadata, telemetryContext monitoring.TelemetryContext) (*evm.WriteReportReply, capabilities.ResponseMetadata, error) {
 	transmissionID, err := getTransmissionID(metadata.WorkflowExecutionID, request)
 	if err != nil {
 		return nil, capabilities.ResponseMetadata{}, err
+	}
+
+	if request.GasConfig == nil {
+		request.GasConfig = &evm.GasConfig{}
+		request.GasConfig.GasLimit, err = e.txGasLimit.Limit(ctx)
+		if err != nil {
+			return nil, capabilities.ResponseMetadata{}, err
+		}
+	} else {
+		err = e.txGasLimit.Check(ctx, request.GasConfig.GasLimit)
+		if err != nil {
+			return nil, capabilities.ResponseMetadata{}, err
+		}
 	}
 
 	var transmissionInfo contracts.TransmissionInfo
@@ -128,6 +143,11 @@ func (e EVM) executeWriteReport(ctx context.Context, request *evm.WriteReportReq
 		e.lggr.Infow("retrying a failed transmission - attempting to push to txmgr", "request", request, "reportLen", len(request.Report.RawReport), "reportContextLen", len(request.Report.ReportContext), "nSignatures", len(request.Report.Sigs), "executionID", metadata.WorkflowExecutionID, "receiverGasMinimum", receiverGasMinimum, "transmissionGasLimit", transmissionInfo.GasLimit)
 	default:
 		return fatalWriteReportReply(getInvalidStateErrorMessage(transmissionInfo.State)), capabilities.ResponseMetadata{}, nil
+	}
+
+	err = e.reportSizeLimit.Check(ctx, commoncfg.SizeOf(request.Report.RawReport))
+	if err != nil {
+		return nil, capabilities.ResponseMetadata{}, err
 	}
 
 	e.lggr.Debugw("Submitting transaction for report", "request", request)
@@ -196,7 +216,7 @@ func getInvalidStateErrorMessage(state uint8) string {
 	return fmt.Sprintf("unexpected transmission state: %v", state)
 }
 
-func (e EVM) processUnrecoverableTxState(ctx context.Context, request *evm.WriteReportRequest, metadata capabilities.RequestMetadata, txHash evmtypes.Hash, transmissionInfo contracts.TransmissionInfo, transmissionID contracts.TransmissionID, txAttemptedLocally bool) (*evm.WriteReportReply, error) {
+func (e *EVM) processUnrecoverableTxState(ctx context.Context, request *evm.WriteReportRequest, metadata capabilities.RequestMetadata, txHash evmtypes.Hash, transmissionInfo contracts.TransmissionInfo, transmissionID contracts.TransmissionID, txAttemptedLocally bool) (*evm.WriteReportReply, error) {
 	if !txAttemptedLocally {
 		e.lggr.Infow("returning without a transmission attempt - transmission already attempted, receiver was marked as invalid", "executionID", metadata.WorkflowExecutionID)
 	} else {
@@ -239,7 +259,7 @@ func getTransmissionID(workflowExecutionID string, request *evm.WriteReportReque
 	return transmissionID, nil
 }
 
-func (e EVM) fetchTransactionReceiptAndCreateReply(ctx context.Context, txHash evmtypes.Hash, receiverStatus evm.ReceiverContractExecutionStatus, errorMessage *string) (*evm.WriteReportReply, error) {
+func (e *EVM) fetchTransactionReceiptAndCreateReply(ctx context.Context, txHash evmtypes.Hash, receiverStatus evm.ReceiverContractExecutionStatus, errorMessage *string) (*evm.WriteReportReply, error) {
 	// TODO: PLEX-1524 - we need retry logic here in case the underlying RPC is lagging behind the one that submitted the TX.
 	txReceipt, err := e.EVMService.GetTransactionReceipt(ctx, evmtypes.GeTransactionReceiptRequest{
 		Hash:       txHash,
@@ -268,7 +288,6 @@ func (e EVM) fetchTransactionReceiptAndCreateReply(ctx context.Context, txHash e
 	}, nil
 }
 
-// TODO remove this should already exists in some common
 func ptr(s string) *string {
 	return &s
 }

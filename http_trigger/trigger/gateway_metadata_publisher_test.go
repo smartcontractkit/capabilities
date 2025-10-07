@@ -46,6 +46,8 @@ func (m *testGatewayConnector) AddHandler(ctx context.Context, methods []string,
 	return nil
 }
 
+func (m *testGatewayConnector) RemoveHandler(ctx context.Context, methods []string) error { return nil }
+
 func (m *testGatewayConnector) Close() error {
 	return nil
 }

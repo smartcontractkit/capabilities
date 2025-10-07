@@ -11,35 +11,22 @@ import (
 
 	"github.com/go-co-op/gocron/v2"
 	"github.com/jonboulle/clockwork"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
-
-	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron/server"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/triggers/cron"
 	crontypedapi "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/custmsg"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
+	"github.com/smartcontractkit/chainlink-common/pkg/services/orgresolver"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
-	workflowsevents "github.com/smartcontractkit/chainlink-protos/workflows/go/v2"
+	"github.com/smartcontractkit/chainlink-common/pkg/workflows/events"
 )
 
 const ServiceName = "CronCapabilities"
-
-// Constants for trigger emission labels
-const (
-	KeyTriggerID           = "trigger_id"
-	KeyWorkflowID          = "workflow_id"
-	KeyWorkflowOwner       = "workflow_owner"
-	KeyWorkflowName        = "workflow_name"
-	KeyWorkflowExecutionID = "workflow_execution_id"
-	KeyDonID               = "don_id"
-	KeyDonVersion          = "don_version"
-)
 
 const (
 	defaultSendChannelBufferSize          = 1000
@@ -70,13 +57,14 @@ type cronTrigger struct {
 
 type Service struct {
 	capabilities.CapabilityInfo
-	config    Config
-	clock     clockwork.Clock
-	lggr      logger.Logger
-	scheduler gocron.Scheduler
-	triggers  *cronStore
-	labeler   custmsg.MessageEmitter
-	metrics   *Metrics
+	config      Config
+	clock       clockwork.Clock
+	lggr        logger.Logger
+	scheduler   gocron.Scheduler
+	triggers    *cronStore
+	labeler     custmsg.MessageEmitter
+	metrics     *Metrics
+	orgResolver orgresolver.OrgResolver
 }
 
 func (s *Service) RegisterLegacyTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) (<-chan capabilities.TriggerAndId[*crontypedapi.LegacyPayload], error) { //nolint:staticcheck
@@ -114,8 +102,8 @@ func (s *Service) UnregisterLegacyTrigger(ctx context.Context, triggerID string,
 var _ services.Service = &Service{}
 
 // NewTriggerService creates a new trigger service.  Optionally, a clock can be passed in for testing, if nil
-// the system clock will be used.
-func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock) (*Service, error) {
+// the system clock will be used. The orgResolver is optional and can be nil, but should be set in live environments.
+func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock, orgResolver orgresolver.OrgResolver) (*Service, error) {
 	lggr := logger.Named(parentLggr, "Service")
 
 	metrics, err := NewMetrics()
@@ -152,7 +140,8 @@ func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock) (*Servic
 			"capabilityVersion", cronTriggerInfo.Version(),
 			"capabilityName", cronTriggerInfo.ID,
 		),
-		metrics: metrics,
+		metrics:     metrics,
+		orgResolver: orgResolver,
 	}, nil
 }
 
@@ -235,17 +224,29 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 				s.lggr.Errorw("failed to generate execution ID", "err", execIDErr, "triggerID", triggerID, "workflowID", trigger.workflowID, "triggerEventID", response.Id)
 				// Continue with execution even if we can't generate ID or emit event
 			} else {
+				// Try to fetch organization ID if org resolver is available
+				var orgID string
+				if s.orgResolver != nil && metadata.WorkflowOwner != "" {
+					if fetchedOrgID, orgErr := s.orgResolver.Get(ctx, metadata.WorkflowOwner); orgErr != nil {
+						s.lggr.Warnw("Failed to fetch organization ID from org resolver", "workflowOwner", metadata.WorkflowOwner, "error", orgErr)
+					} else if fetchedOrgID != "" {
+						orgID = fetchedOrgID
+						s.lggr.Debugw("Successfully fetched organization ID", "workflowOwner", metadata.WorkflowOwner, "orgID", orgID)
+					}
+				}
+
 				// Emit TriggerExecutionStarted event
 				labeler := custmsg.NewLabeler().With(
-					KeyTriggerID, response.Id,
-					KeyWorkflowID, trigger.workflowID,
-					KeyWorkflowExecutionID, workflowExecutionID,
-					KeyWorkflowOwner, metadata.WorkflowOwner,
-					KeyWorkflowName, metadata.WorkflowName,
-					KeyDonID, strconv.Itoa(int(metadata.WorkflowDonID)),
-					KeyDonVersion, strconv.Itoa(int(metadata.WorkflowDonConfigVersion)),
+					events.KeyTriggerID, response.Id,
+					events.KeyWorkflowID, trigger.workflowID,
+					events.KeyWorkflowExecutionID, workflowExecutionID,
+					events.KeyWorkflowOwner, metadata.WorkflowOwner,
+					events.KeyWorkflowName, metadata.WorkflowName,
+					events.KeyDonID, strconv.Itoa(int(metadata.WorkflowDonID)),
+					events.KeyDonVersion, strconv.Itoa(int(metadata.WorkflowDonConfigVersion)),
+					events.KeyOrganizationID, orgID,
 				)
-				if emitErr := emitTriggerExecutionStarted(ctx, labeler); emitErr != nil {
+				if emitErr := events.EmitTriggerExecutionStarted(ctx, labeler); emitErr != nil {
 					s.lggr.Errorw("failed to emit trigger execution started event", "err", emitErr, "triggerID", triggerID, "workflowExecutionID", workflowExecutionID)
 					// Continue with execution even if event emission fails
 				}
@@ -329,59 +330,6 @@ func createTriggerResponse(scheduledExecutionTime time.Time) capabilities.Trigge
 		},
 		Id: triggerEventID,
 	}
-}
-
-// emitTriggerExecutionStarted emits a TriggerExecutionStarted event via beholder using the provided labeler
-func emitTriggerExecutionStarted(ctx context.Context, labeler custmsg.MessageEmitter) error {
-	labels := labeler.Labels()
-
-	// Required fields
-	triggerID, ok := labels[KeyTriggerID]
-	if !ok {
-		return fmt.Errorf("missing required field: %s", KeyTriggerID)
-	}
-	workflowID, ok := labels[KeyWorkflowID]
-	if !ok {
-		return fmt.Errorf("missing required field: %s", KeyWorkflowID)
-	}
-	workflowExecutionID, ok := labels[KeyWorkflowExecutionID]
-	if !ok {
-		return fmt.Errorf("missing required field: %s", KeyWorkflowExecutionID)
-	}
-
-	event := &workflowsevents.TriggerExecutionStarted{
-		TriggerID:           triggerID,
-		WorkflowExecutionID: workflowExecutionID,
-		Workflow: &workflowsevents.WorkflowKey{
-			WorkflowID:    workflowID,
-			WorkflowOwner: labels[KeyWorkflowOwner],
-			WorkflowName:  labels[KeyWorkflowName],
-		},
-		Timestamp: time.Now().Format(time.RFC3339),
-	}
-
-	// Optional; downstream consumers could infer from csa public key
-	// as of now Beholder/ChiP autohydrates csa public key
-	if donIDStr, exists := labels[KeyDonID]; exists {
-		if donID, err := strconv.ParseInt(donIDStr, 10, 32); err == nil {
-			event.CreInfo = &workflowsevents.CreInfo{
-				DonID:      int32(donID),
-				DonVersion: labels[KeyDonVersion],
-			}
-		}
-	}
-
-	// Marshal the protobuf message
-	b, err := proto.Marshal(event)
-	if err != nil {
-		return fmt.Errorf("failed to marshal TriggerExecutionStarted event: %w", err)
-	}
-
-	// Emit via beholder
-	return beholder.GetEmitter().Emit(ctx, b,
-		"beholder_data_schema", "workflows.v2.trigger_execution_started", // required
-		"beholder_domain", "platform", // required
-		"beholder_entity", "workflows.v2.TriggerExecutionStarted") // required
 }
 
 func (s *Service) UnregisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) error {

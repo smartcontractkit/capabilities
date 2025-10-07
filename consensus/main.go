@@ -15,7 +15,7 @@ import (
 
 func main() {
 	loopserver.ServeNewWithOtelViews("ConsensusCapability", func(s *loop.Server) loop.StandardCapabilities {
-		capability, err := action.NewConsensusCapability(s.Logger, clockwork.NewRealClock(), 1*time.Minute)
+		capability, err := action.NewConsensusCapability(s.Logger, clockwork.NewRealClock(), 1*time.Minute, s.LimitsFactory)
 		if err != nil {
 			s.Logger.Fatalw("Failed to create ConsensusCapability", "error", err)
 		}

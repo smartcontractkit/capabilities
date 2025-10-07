@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 
 	triggercap "github.com/smartcontractkit/capabilities/http_trigger/trigger"
 
@@ -111,7 +112,7 @@ const triggerServiceConfigTemplate = `
 }
 `
 
-const workflowID = "0xe3c0f8139e9e4cf0b2c31c70f3f4ae12"
+const workflowID = "0x217ca1cb7b52136b3baedb2a13e4609fa86439b87a1bc48fea6d95f19444cf72"
 
 // Workflow reference constants for testing
 const (
@@ -248,11 +249,11 @@ func TestHTTPTrigger_InsufficientNodes(t *testing.T) {
 	var requestID string
 	var req *http.Request
 	var input map[string]any
+	req, requestID, input = sampleRequest(t, env.userURL, env.signingKey)
 	require.Eventually(t, func() bool {
-		req, requestID, input = sampleRequest(t, env.userURL, env.signingKey)
 		_, err := http.DefaultClient.Do(req)
 		return err != nil // request times out and returns an error if threshold of node responses is not met
-	}, 30*time.Second, 100*time.Millisecond)
+	}, 30*time.Second, time.Second)
 	executionID, err := workflows.EncodeExecutionID(strings.TrimPrefix(workflowID, "0x"), requestID)
 	require.NoError(t, err)
 	assertTriggerPayload(t, env, executionID, input) // workflows are still triggered even if not all nodes are available
@@ -274,7 +275,7 @@ func testHTTPTriggerWithWorkflowID(t *testing.T) {
 		body, err = io.ReadAll(resp.Body)
 		require.NoError(t, err)
 		return resp.StatusCode == http.StatusOK
-	}, 30*time.Second, 100*time.Millisecond)
+	}, 30*time.Second, time.Second)
 
 	executionID := validateHTTPTriggerResponse(t, body, requestID, workflowID)
 	assertTriggerPayload(t, env, executionID, input)
@@ -296,7 +297,7 @@ func testHTTPTriggerWithWorkflowReference(t *testing.T) {
 		body, err = io.ReadAll(resp.Body)
 		require.NoError(t, err)
 		return resp.StatusCode == http.StatusOK
-	}, 30*time.Second, 100*time.Millisecond)
+	}, 30*time.Second, time.Second)
 
 	executionID := validateHTTPTriggerResponse(t, body, requestID, workflowID)
 	assertTriggerPayload(t, env, executionID, input)
@@ -324,11 +325,12 @@ func testHTTPTriggerRequestDeduplication(t *testing.T) {
 		body, err = io.ReadAll(resp.Body)
 		require.NoError(t, err)
 		return resp.StatusCode == http.StatusOK
-	}, 30*time.Second, 100*time.Millisecond)
+	}, 30*time.Second, time.Second)
 
 	executionID := validateHTTPTriggerResponse(t, body, requestID, workflowID)
 	assertTriggerPayload(t, env, executionID, input)
 
+	request, _, _ = createSampleRequest(t, env.userURL, env.signingKey, workflow, requestID)
 	resp, err := http.DefaultClient.Do(request)
 	require.NoError(t, err)
 	defer resp.Body.Close()
@@ -386,7 +388,7 @@ func newTriggerHTTPCapability(ctx context.Context, t *testing.T, nodeURL string,
 	publicKey := strings.ToLower(crypto.PubkeyToAddress(privateKey.PublicKey).Hex())
 	client := &client{privateKey: privateKey}
 	gc := newTestGatewayConnector(t, publicKey, nodeURL, client, lggr)
-	triggerCap := triggercap.NewService(lggr)
+	triggerCap := triggercap.NewService(lggr, limits.Factory{Logger: lggr})
 	kvStore := newTestKeyValueStore()
 	err := triggerCap.Initialise(ctx, triggerServiceConfigTemplate, nil, kvStore, nil, nil, nil, nil, gc, nil)
 	require.NoError(t, err)
@@ -406,6 +408,6 @@ func newTriggerHTTPCapability(ctx context.Context, t *testing.T, nodeURL string,
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
 		return triggerCap.Ready() == nil
-	}, 30*time.Second, 100*time.Millisecond)
+	}, 30*time.Second, time.Second)
 	return triggerCap, ch
 }
