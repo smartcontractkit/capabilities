@@ -262,3 +262,45 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 		assert.Equal(t, input, setup.mockClient.CapturedInput)
 	})
 }
+
+func TestInitialise_NilConfig(t *testing.T) {
+	t.Run("empty config string should return error", func(t *testing.T) {
+		lggr := logger.Test(t)
+		srv := NewService(lggr, limits.Factory{})
+		gc := gcmocks.NewGatewayConnector(t)
+
+		err := srv.Initialise(context.Background(), "", nil, nil, nil, nil, nil, nil, gc, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unexpected end of JSON input")
+	})
+
+	t.Run("invalid JSON config should return error", func(t *testing.T) {
+		lggr := logger.Test(t)
+		srv := NewService(lggr, limits.Factory{})
+		gc := gcmocks.NewGatewayConnector(t)
+
+		err := srv.Initialise(context.Background(), "invalid json", nil, nil, nil, nil, nil, nil, gc, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid character")
+	})
+
+	t.Run("empty object config should return error due to missing proxyMode", func(t *testing.T) {
+		lggr := logger.Test(t)
+		srv := NewService(lggr, limits.Factory{})
+		gc := gcmocks.NewGatewayConnector(t)
+
+		err := srv.Initialise(context.Background(), "{}", nil, nil, nil, nil, nil, nil, gc, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid proxy mode")
+	})
+
+	t.Run("null config string should return error due to missing proxyMode", func(t *testing.T) {
+		lggr := logger.Test(t)
+		srv := NewService(lggr, limits.Factory{})
+		gc := gcmocks.NewGatewayConnector(t)
+
+		err := srv.Initialise(context.Background(), "null", nil, nil, nil, nil, nil, nil, gc, nil)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid proxy mode")
+	})
+}

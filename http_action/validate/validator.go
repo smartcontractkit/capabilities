@@ -67,6 +67,10 @@ func NewValidator(lggr logger.Logger, limitsFactory limits.Factory) (*Validator,
 
 // ValidatedRequest validates the HTTP request fields and applies default values where necessary.
 func (v *Validator) ValidatedRequest(ctx context.Context, input *http.Request) (*http.Request, error) {
+	if input == nil {
+		return nil, fmt.Errorf("input cannot be nil")
+	}
+
 	url := strings.TrimSpace(input.Url)
 	if url == "" {
 		return nil, fmt.Errorf("URL must not be empty")
