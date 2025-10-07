@@ -121,7 +121,7 @@ func (h *connectorHandler) Ready() error {
 }
 
 func (h *connectorHandler) Name() string {
-	return HandlerName
+	return h.lggr.Name()
 }
 
 func (h *connectorHandler) ID(context.Context) (string, error) {

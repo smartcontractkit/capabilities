@@ -51,7 +51,7 @@ func (s *MockServer) HealthReport() map[string]error {
 }
 
 func (s *MockServer) Name() string {
-	return "MockServer"
+	return s.Lggr.Name()
 }
 
 func (s *MockServer) Initialise(ctx context.Context, config string, telemetryService core.TelemetryService, store core.KeyValueStore, capabilityRegistry core.CapabilitiesRegistry, errorLog core.ErrorLog, pipelineRunner core.PipelineRunnerService, relayerSet core.RelayerSet, oracleFactory core.OracleFactory, gatewayConnector core.GatewayConnector, p2pKeystore core.Keystore) error {
@@ -110,6 +110,6 @@ func (s *MockServer) Infos(ctx context.Context) ([]capabilities.CapabilityInfo, 
 
 func New(lggr logger.Logger) *MockServer {
 	return &MockServer{
-		Lggr: logger.Sugared(lggr),
+		Lggr: logger.Sugared(lggr).Named("MockServer"),
 	}
 }
