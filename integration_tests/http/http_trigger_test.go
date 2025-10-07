@@ -28,6 +28,7 @@ import (
 	triggersdk "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
 )
@@ -390,7 +391,11 @@ func newTriggerHTTPCapability(ctx context.Context, t *testing.T, nodeURL string,
 	gc := newTestGatewayConnector(t, publicKey, nodeURL, client, lggr)
 	triggerCap := triggercap.NewService(lggr, limits.Factory{Logger: lggr})
 	kvStore := newTestKeyValueStore()
-	err := triggerCap.Initialise(ctx, triggerServiceConfigTemplate, nil, kvStore, nil, nil, nil, nil, gc, nil)
+	err := triggerCap.Initialise(ctx, core.StandardCapabilitiesDependencies{
+		Config:           triggerServiceConfigTemplate,
+		Store:            kvStore,
+		GatewayConnector: gc,
+	})
 	require.NoError(t, err)
 	ch, err := triggerCap.RegisterTrigger(ctx, "trigger-id", capabilities.RequestMetadata{
 		WorkflowID:    workflowID,

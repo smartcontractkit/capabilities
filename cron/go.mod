@@ -7,7 +7,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jonboulle/clockwork v0.5.0
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20250930133443-a868d4d9dee8
-	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251003215432-a8795d634f42
+	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251007172033-a76cb023759b
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20250911124514-5874cc6d62b2
 	github.com/stretchr/testify v1.11.1
 	go.opentelemetry.io/otel v1.37.0

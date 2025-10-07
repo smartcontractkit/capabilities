@@ -70,10 +70,10 @@ func main() {
 	})
 }
 
-func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string, _ core.TelemetryService, _ core.KeyValueStore, _ core.ErrorLog, _ core.PipelineRunnerService, relayerSet core.RelayerSet, oracleFactory core.OracleFactory, _ core.GatewayConnector, _ core.Keystore) error {
+func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
 	c.lggr.Infof("Initialising %s", CapabilityName)
 
-	cfg, err := c.unmarshalConfig(configStr)
+	cfg, err := c.unmarshalConfig(dependencies.Config)
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal config: %w", err)
 	}
@@ -91,7 +91,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 	}
 
 	relayID := types.NewRelayID(cfg.Network, fmt.Sprintf("%d", cfg.ChainID))
-	relayer, err := relayerSet.Get(ctx, relayID)
+	relayer, err := dependencies.RelayerSet.Get(ctx, relayID)
 	if err != nil {
 		return fmt.Errorf("failed to fetch relayer for chainID %d from relayerSet: %w", cfg.ChainID, err)
 	}
@@ -132,7 +132,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 
 	c.heightProvider = height.NewProvider(c.lggr, cfg.ChainHeightPollPeriod, evmRelayer)
 
-	c.oracle, err = oracleFactory.NewOracle(ctx, core.OracleArgs{
+	c.oracle, err = dependencies.OracleFactory.NewOracle(ctx, core.OracleArgs{
 		LocalConfig: ocrtypes.LocalConfig{
 			BlockchainTimeout:                  time.Second * 20,
 			ContractConfigTrackerPollInterval:  time.Second * 10,
@@ -149,8 +149,8 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 		return fmt.Errorf("error when creating oracle: %w", err)
 	}
 
-	services := []interface{ Start(context.Context) error }{c.consensusHandler, c.requestPoller, c.oracle, c.heightProvider, c.triggerService}
-	for _, service := range services {
+	startServices := []interface{ Start(context.Context) error }{c.consensusHandler, c.requestPoller, c.oracle, c.heightProvider, c.triggerService}
+	for _, service := range startServices {
 		if err := service.Start(ctx); err != nil {
 			return err
 		}

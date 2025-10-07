@@ -109,14 +109,14 @@ func (s *CapabilityWatcherServer) Name() string {
 }
 
 // Initialise sets up the health check server with required dependencies
-func (s *CapabilityWatcherServer) Initialise(ctx context.Context, config string, telemetryService core.TelemetryService, store core.KeyValueStore, capabilityRegistry core.CapabilitiesRegistry, errorLog core.ErrorLog, pipelineRunner core.PipelineRunnerService, relayerSet core.RelayerSet, oracleFactory core.OracleFactory, gatewayConnector core.GatewayConnector, p2pKeystore core.Keystore) error {
+func (s *CapabilityWatcherServer) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
 	s.Lggr.Info("Initializing capability watcher server")
 
-	if capabilityRegistry == nil {
+	if dependencies.CapabilityRegistry == nil {
 		return errors.New("capability registry cannot be nil")
 	}
 
-	s.capRegistry = capabilityRegistry
+	s.capRegistry = dependencies.CapabilityRegistry
 	return s.Start(ctx)
 }
 

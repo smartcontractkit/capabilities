@@ -43,22 +43,11 @@ func NewService(lggr logger.Logger, limitsFactory limits.Factory) *service {
 	}
 }
 
-func (s *service) Initialise(
-	ctx context.Context,
-	config string,
-	_ core.TelemetryService,
-	kvstore core.KeyValueStore,
-	_ core.ErrorLog,
-	_ core.PipelineRunnerService,
-	_ core.RelayerSet,
-	_ core.OracleFactory,
-	gc core.GatewayConnector,
-	_ core.Keystore,
-) error {
+func (s *service) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
 	s.lggr.Debugf("Initialising %s", ServiceName)
 
 	var serviceConfig ServiceConfig
-	err := json.Unmarshal([]byte(config), &serviceConfig)
+	err := json.Unmarshal([]byte(dependencies.Config), &serviceConfig)
 	if err != nil {
 		return err
 	}
@@ -76,9 +65,9 @@ func (s *service) Initialise(
 	if err != nil {
 		return err
 	}
-	metadataPublisher := NewGatewayMetadataPublisher(s.lggr, gc, outgoingRateLimiter, workflowStore, s.cfg, s.metrics)
-	requestCache := newRequestCache(s.lggr, kvstore, time.Duration(s.cfg.RequestCacheTTL)*time.Second)
-	s.connectorHandler, err = NewConnectorHandler(s.lggr, gc, s.cfg, outgoingRateLimiter, incomingRateLimiter, workflowStore, metadataPublisher, requestCache, s.metrics, nil)
+	metadataPublisher := NewGatewayMetadataPublisher(s.lggr, dependencies.GatewayConnector, outgoingRateLimiter, workflowStore, s.cfg, s.metrics)
+	requestCache := newRequestCache(s.lggr, dependencies.Store, time.Duration(s.cfg.RequestCacheTTL)*time.Second)
+	s.connectorHandler, err = NewConnectorHandler(s.lggr, dependencies.GatewayConnector, s.cfg, outgoingRateLimiter, incomingRateLimiter, workflowStore, metadataPublisher, requestCache, s.metrics, nil)
 	if err != nil {
 		return err
 	}

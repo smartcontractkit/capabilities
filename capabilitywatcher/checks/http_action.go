@@ -1,9 +1,12 @@
 package checks
 
 import (
+	"time"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 	"google.golang.org/protobuf/types/known/anypb"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/smartcontractkit/capabilities/capabilitywatcher/internal"
 )
@@ -23,9 +26,9 @@ func (r HTTPActionChecker) CreateUnregisterFromWorkflowRequest() (capabilities.U
 
 func (r HTTPActionChecker) CreateExecuteRequest() (capabilities.CapabilityRequest, error) {
 	payload, err := anypb.New(&http.Request{
-		Url:       "https://httpbin.org/get?somerandomnumber=1234",
-		Method:    "GET",
-		TimeoutMs: 25000,
+		Url:     "https://httpbin.org/get?somerandomnumber=1234",
+		Method:  "GET",
+		Timeout: durationpb.New(25 * time.Second),
 	})
 	if err != nil {
 		return capabilities.CapabilityRequest{}, err

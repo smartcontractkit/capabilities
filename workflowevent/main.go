@@ -66,19 +66,7 @@ func (cs *CapabilitiesService) Infos(ctx context.Context) ([]capabilities.Capabi
 	}, nil
 }
 
-func (cs *CapabilitiesService) Initialise(
-	ctx context.Context,
-	_ string,
-	_ core.TelemetryService,
-	_ core.KeyValueStore,
-	capabilityRegistry core.CapabilitiesRegistry,
-	_ core.ErrorLog,
-	_ core.PipelineRunnerService,
-	_ core.RelayerSet,
-	_ core.OracleFactory,
-	_ core.GatewayConnector,
-	_ core.Keystore,
-) error {
+func (cs *CapabilitiesService) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
 	cs.lggr.Debugf("Initialising %s", serviceName)
 
 	target, err := target.New(target.Params{
@@ -90,11 +78,11 @@ func (cs *CapabilitiesService) Initialise(
 
 	cs.target = target
 
-	if err := capabilityRegistry.Add(ctx, cs.target); err != nil {
+	if err := dependencies.CapabilityRegistry.Add(ctx, cs.target); err != nil {
 		return fmt.Errorf("error when adding telemetry target to the registry: %w", err)
 	}
 
-	cs.capabilityRegistry = capabilityRegistry
+	cs.capabilityRegistry = dependencies.CapabilityRegistry
 
 	return nil
 }

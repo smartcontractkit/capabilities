@@ -45,21 +45,10 @@ func NewService(lggr logger.Logger, limitsFactory limits.Factory) *service {
 	}
 }
 
-func (s *service) Initialise(
-	ctx context.Context,
-	config string,
-	_ core.TelemetryService,
-	_ core.KeyValueStore,
-	_ core.ErrorLog,
-	_ core.PipelineRunnerService,
-	_ core.RelayerSet,
-	_ core.OracleFactory,
-	gc core.GatewayConnector,
-	_ core.Keystore,
-) error {
+func (s *service) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
 	s.lggr.Debugf("Initialising %s", ServiceName)
 
-	err := json.Unmarshal([]byte(config), &s.cfg)
+	err := json.Unmarshal([]byte(dependencies.Config), &s.cfg)
 	if err != nil {
 		return err
 	}
@@ -75,7 +64,7 @@ func (s *service) Initialise(
 		return err
 	}
 
-	s.client, err = NewOutboundRequestClient(gc, s.cfg, s.lggr, s.metrics, s.validator)
+	s.client, err = NewOutboundRequestClient(dependencies.GatewayConnector, s.cfg, s.lggr, s.metrics, s.validator)
 	if err != nil {
 		return err
 	}

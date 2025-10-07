@@ -19,6 +19,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	gcmocks "github.com/smartcontractkit/chainlink-common/pkg/types/core/mocks"
 )
 
@@ -75,7 +76,10 @@ func setupServiceTest(t *testing.T) *testSetup {
 	require.NoError(t, err)
 	gc := gcmocks.NewGatewayConnector(t)
 	gc.EXPECT().AddHandler(mock.Anything, mock.Anything, mock.Anything).Return(nil)
-	err = srv.Initialise(t.Context(), string(cfgStr), nil, nil, nil, nil, nil, nil, gc, nil)
+	err = srv.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
+		Config:           string(cfgStr),
+		GatewayConnector: gc,
+	})
 	require.NoError(t, err)
 
 	mockClient := &MockOutboundRequestClient{}

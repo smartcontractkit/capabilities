@@ -76,18 +76,6 @@ func (cs *LoadTestWriteTargetGRPCService) Infos(ctx context.Context) ([]capabili
 	}, nil
 }
 
-func (cs *LoadTestWriteTargetGRPCService) Initialise(
-	ctx context.Context,
-	config string,
-	_ core.TelemetryService,
-	_ core.KeyValueStore,
-	capabilityRegistry core.CapabilitiesRegistry,
-	_ core.ErrorLog,
-	_ core.PipelineRunnerService,
-	relayerSet core.RelayerSet,
-	oracleFactory core.OracleFactory,
-	_ core.GatewayConnector,
-	_ core.Keystore,
-) error {
+func (cs *LoadTestWriteTargetGRPCService) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
 	return nil
 }

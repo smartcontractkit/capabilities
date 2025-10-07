@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
 	"github.com/smartcontractkit/capabilities/kvstore/server"
 	"github.com/smartcontractkit/capabilities/libs/testutils"
@@ -27,19 +28,11 @@ func Test_Server(t *testing.T) {
 		defer cancel()
 		servicetest.RunHealthy(t, capabilitiesServer)
 
-		require.NoError(t, capabilitiesServer.Initialise(
-			ctx,
-			"",  // unused - empty config
-			nil, // unused - telemetryService core.TelemetryService
-			testutils.NewStore(t),
-			capabilitiesRegistry,
-			nil, // unused - errorLog core.ErrorLog
-			nil, // unused - pipelineRunner core.PipelineRunnerService
-			nil, // unused - relayerSet core.RelayerSet
-			testutils.NewOracleFactory(t, logger),
-			nil, // unused - gatewayConnector core.GatewayConnector
-			nil, // unused - keystore core.Keystore
-		))
+		require.NoError(t, capabilitiesServer.Initialise(ctx, core.StandardCapabilitiesDependencies{
+			Store:              testutils.NewStore(t),
+			CapabilityRegistry: capabilitiesRegistry,
+			OracleFactory:      testutils.NewOracleFactory(t, logger),
+		}))
 
 		capabilitiesInfos, err := capabilitiesServer.Infos(ctx)
 		require.NoError(t, err)
@@ -113,19 +106,11 @@ func Test_Server(t *testing.T) {
 		defer cancel()
 		servicetest.RunHealthy(t, capabilitiesServer)
 
-		require.NoError(t, capabilitiesServer.Initialise(
-			ctx,
-			"",  // unused - empty config
-			nil, // unused - telemetryService core.TelemetryService
-			testutils.NewStore(t),
-			capabilitiesRegistry,
-			nil, // unused - errorLog core.ErrorLog
-			nil, // unused - pipelineRunner core.PipelineRunnerService
-			nil, // unused - relayerSet core.RelayerSet
-			testutils.NewOracleFactory(t, logger),
-			nil, // unused - gatewayConnector core.GatewayConnector
-			nil, // unused - keystore core.Keystore
-		))
+		require.NoError(t, capabilitiesServer.Initialise(ctx, core.StandardCapabilitiesDependencies{
+			Store:              testutils.NewStore(t),
+			CapabilityRegistry: capabilitiesRegistry,
+			OracleFactory:      testutils.NewOracleFactory(t, logger),
+		}))
 
 		capabilitiesInfos, err := capabilitiesServer.Infos(ctx)
 		require.NoError(t, err)
@@ -219,19 +204,11 @@ func Test_Server(t *testing.T) {
 		defer cancel()
 		servicetest.RunHealthy(t, capabilitiesServer)
 
-		require.NoError(t, capabilitiesServer.Initialise(
-			ctx,
-			"",  // unused - empty config
-			nil, // unused - telemetryService core.TelemetryService
-			testutils.NewStore(t),
-			capabilitiesRegistry,
-			nil, // unused - errorLog core.ErrorLog
-			nil, // unused - pipelineRunner core.PipelineRunnerService
-			nil, // unused - relayerSet core.RelayerSet
-			testutils.NewOracleFactory(t, logger),
-			nil, // unused - gatewayConnector core.GatewayConnector
-			nil, // unused - keystore core.Keystore
-		))
+		require.NoError(t, capabilitiesServer.Initialise(ctx, core.StandardCapabilitiesDependencies{
+			Store:              testutils.NewStore(t),
+			CapabilityRegistry: capabilitiesRegistry,
+			OracleFactory:      testutils.NewOracleFactory(t, logger),
+		}))
 
 		capabilitiesInfos, err := capabilitiesServer.Infos(ctx)
 		require.NoError(t, err)

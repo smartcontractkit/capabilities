@@ -198,7 +198,10 @@ func newTestHTTPCapability(ctx context.Context, t *testing.T, gc core.GatewayCon
 		Logger: lggr,
 		Meter:  beholder.GetMeter(),
 	})
-	err := httpCapability.Initialise(ctx, serviceConfigTemplate, nil, nil, nil, nil, nil, nil, gc, nil)
+	err := httpCapability.Initialise(ctx, core.StandardCapabilitiesDependencies{
+		Config:           serviceConfigTemplate,
+		GatewayConnector: gc,
+	})
 	require.NoError(t, err)
 	return httpCapability
 }

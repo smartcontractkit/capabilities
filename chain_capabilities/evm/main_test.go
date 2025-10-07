@@ -36,8 +36,11 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 		cfg := config.Config{ChainID: 1337, Network: "testnet", LogTriggerPollInterval: 60 * time.Second, CREForwarderAddress: testutils.NewAddress().String(), ReceiverGasMinimum: 1000}
 		cfgJSON, _ := json.Marshal(cfg)
 
-		err := svc.Initialise(t.Context(), string(cfgJSON),
-			nil, nil, nil, nil, relayerSet, nullOracleFactory{}, nil, nil)
+		err := svc.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
+			Config:        string(cfgJSON),
+			RelayerSet:    relayerSet,
+			OracleFactory: nullOracleFactory{},
+		})
 		require.NoError(t, err)
 		require.NoError(t, svc.Close())
 	})
@@ -54,14 +57,20 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 		cfg := config.Config{ChainID: 1337, Network: "testnet", LogTriggerPollInterval: 60 * time.Second, LogTriggerSendChannelBufferSize: 100, LogTriggerLimitQueryLogSize: 10, CREForwarderAddress: common.Bytes2Hex(testutils.NewAddress().Bytes()), ReceiverGasMinimum: 1000}
 		cfgJSON, _ := json.Marshal(cfg)
 
-		err := svc.Initialise(t.Context(), string(cfgJSON),
-			nil, nil, nil, nil, relayerSet, nullOracleFactory{}, nil, nil)
+		err := svc.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
+			Config:        string(cfgJSON),
+			RelayerSet:    relayerSet,
+			OracleFactory: nullOracleFactory{},
+		})
 		require.NoError(t, err)
 		require.NoError(t, svc.Close())
 	})
 	t.Run("bad-json", func(t *testing.T) {
 		svc := &capabilityGRPCService{lggr: logger.Test(t)}
-		err := svc.Initialise(t.Context(), "x", nil, nil, nil, nil, nil, nullOracleFactory{}, nil, nil)
+		err := svc.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
+			Config:        "x",
+			OracleFactory: nullOracleFactory{},
+		})
 		assert.ErrorContains(t, err, "failed to parse")
 	})
 	t.Run("bad-trigger-params", func(t *testing.T) {
@@ -77,18 +86,30 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 
 		cfg := config.Config{ChainID: 1337, Network: "testnet", LogTriggerPollInterval: -1, CREForwarderAddress: common.Bytes2Hex(testutils.NewAddress().Bytes()), ReceiverGasMinimum: 1000}
 		cfgJSON, _ := json.Marshal(cfg)
-		err := svc.Initialise(t.Context(), string(cfgJSON), nil, nil, nil, nil, relayerSet, nullOracleFactory{}, nil, nil)
+		err := svc.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
+			Config:        string(cfgJSON),
+			RelayerSet:    relayerSet,
+			OracleFactory: nullOracleFactory{},
+		})
 		assert.ErrorContains(t, err, "failed to unmarshal config: logTriggerPollInterval must be positive, got: -1ns")
 
 		cfg = config.Config{ChainID: 1337, Network: "testnet", LogTriggerPollInterval: 60 * time.Second, CREForwarderAddress: common.Bytes2Hex(testutils.NewAddress().Bytes()), ReceiverGasMinimum: 1000, LogTriggerLimitQueryLogSize: uint64(1001)}
 		cfgJSON, _ = json.Marshal(cfg)
-		err = svc.Initialise(t.Context(), string(cfgJSON), nil, nil, nil, nil, relayerSet, nullOracleFactory{}, nil, nil)
+		err = svc.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
+			Config:        string(cfgJSON),
+			RelayerSet:    relayerSet,
+			OracleFactory: nullOracleFactory{},
+		})
 		assert.ErrorContains(t, err, "error when creating trigger: logTriggerLimitQueryLogSize (1001) must be less than logTriggerSendChannelBufferSize (1000)")
 
 		cfg = config.Config{ChainID: 1337, Network: "testnet", LogTriggerPollInterval: 60 * time.Second, CREForwarderAddress: common.Bytes2Hex(testutils.NewAddress().Bytes()), ReceiverGasMinimum: 1000,
 			LogTriggerSendChannelBufferSize: 5, LogTriggerLimitQueryLogSize: uint64(10)}
 		cfgJSON, _ = json.Marshal(cfg)
-		err = svc.Initialise(t.Context(), string(cfgJSON), nil, nil, nil, nil, relayerSet, nullOracleFactory{}, nil, nil)
+		err = svc.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
+			Config:        string(cfgJSON),
+			RelayerSet:    relayerSet,
+			OracleFactory: nullOracleFactory{},
+		})
 		assert.ErrorContains(t, err, "error when creating trigger: logTriggerLimitQueryLogSize (10) must be less than logTriggerSendChannelBufferSize (5)")
 	})
 	t.Run("relayerSet error", func(t *testing.T) {
@@ -98,8 +119,10 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 		cfgJSON, _ := json.Marshal(config.Config{ChainID: 1, Network: "net", LogTriggerPollInterval: 60 * time.Second, CREForwarderAddress: testutils.NewAddress().String(), ReceiverGasMinimum: 1000})
 		svc := &capabilityGRPCService{lggr: logger.Test(t)}
 
-		err := svc.Initialise(t.Context(), string(cfgJSON),
-			nil, nil, nil, nil, relayerSet, nil, nil, nil)
+		err := svc.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
+			Config:     string(cfgJSON),
+			RelayerSet: relayerSet,
+		})
 		assert.ErrorIs(t, err, assert.AnError)
 	})
 	t.Run("Misconfiguration", func(t *testing.T) {
@@ -107,8 +130,9 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 			cfgJSON, _ := json.Marshal(config.Config{ChainID: 1, Network: "net", ReceiverGasMinimum: 1000})
 			svc := &capabilityGRPCService{lggr: logger.Test(t)}
 
-			err := svc.Initialise(t.Context(), string(cfgJSON),
-				nil, nil, nil, nil, nil, nil, nil, nil)
+			err := svc.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
+				Config: string(cfgJSON),
+			})
 			assert.ErrorContains(t, err, "invalid cre forward address, it does not have 20 characters")
 		})
 
@@ -116,8 +140,9 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 			cfgJSON, _ := json.Marshal(config.Config{ChainID: 1, Network: "net", ReceiverGasMinimum: 0, CREForwarderAddress: testutils.NewAddress().String()})
 			svc := &capabilityGRPCService{lggr: logger.Test(t)}
 
-			err := svc.Initialise(t.Context(), string(cfgJSON),
-				nil, nil, nil, nil, nil, nil, nil, nil)
+			err := svc.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
+				Config: string(cfgJSON),
+			})
 			assert.ErrorContains(t, err, "invalid ReceiverGasMinimum value. It must be greater than 0. Provided ReceiverGasMinimum 0")
 		})
 	})

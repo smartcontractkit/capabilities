@@ -87,19 +87,7 @@ func (cs *capabilitiesServer) Infos(ctx context.Context) ([]capabilities.Capabil
 	}, nil
 }
 
-func (cs *capabilitiesServer) Initialise(
-	ctx context.Context,
-	_ string,
-	_ core.TelemetryService,
-	_ core.KeyValueStore,
-	capabilityRegistry core.CapabilitiesRegistry,
-	_ core.ErrorLog,
-	_ core.PipelineRunnerService,
-	_ core.RelayerSet,
-	oracleFactory core.OracleFactory,
-	_ core.GatewayConnector,
-	_ core.Keystore,
-) error {
+func (cs *capabilitiesServer) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
 	cs.lggr.Debug("Initialising")
 
 	requestsStore, err := kvrequests.New(cs.lggr)
@@ -116,16 +104,16 @@ func (cs *capabilitiesServer) Initialise(
 		RequestsStore: requestsStore,
 	})
 
-	cs.capabilityRegistry = capabilityRegistry
+	cs.capabilityRegistry = dependencies.CapabilityRegistry
 
-	if err := capabilityRegistry.Add(ctx, cs.Action); err != nil {
+	if err := dependencies.CapabilityRegistry.Add(ctx, cs.Action); err != nil {
 		return fmt.Errorf("error when adding kv store action to the registry: %w", err)
 	}
-	if err := capabilityRegistry.Add(ctx, cs.Target); err != nil {
+	if err := dependencies.CapabilityRegistry.Add(ctx, cs.Target); err != nil {
 		return fmt.Errorf("error when adding kv store target to the registry: %w", err)
 	}
 
-	oracle, err := oracleFactory.NewOracle(ctx, core.OracleArgs{
+	oracle, err := dependencies.OracleFactory.NewOracle(ctx, core.OracleArgs{
 		LocalConfig: ocrtypes.LocalConfig{
 			BlockchainTimeout:                  time.Second * 20,
 			ContractConfigTrackerPollInterval:  time.Second * 10,

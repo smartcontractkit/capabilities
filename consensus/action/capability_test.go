@@ -17,6 +17,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 
@@ -32,10 +33,9 @@ func Test_SimpleConsensus(t *testing.T) {
 
 	oracleFactory := testutils.NewOracleFactory(t, lggr)
 
-	err = capability.Initialise(ctx, "",
-		nil, nil, nil, nil, nil,
-		oracleFactory, nil, nil,
-	)
+	err = capability.Initialise(ctx, core.StandardCapabilitiesDependencies{
+		OracleFactory: oracleFactory,
+	})
 	require.NoError(t, err)
 
 	servicetest.Run(t, capability)
@@ -73,8 +73,9 @@ func Test_Report(t *testing.T) {
 
 	oracleFactory := testutils.NewOracleFactory(t, lggr)
 
-	err = capability.Initialise(ctx, "", nil, nil, nil, nil, nil,
-		oracleFactory, nil, nil)
+	err = capability.Initialise(ctx, core.StandardCapabilitiesDependencies{
+		OracleFactory: oracleFactory,
+	})
 	require.NoError(t, err)
 
 	servicetest.Run(t, capability)
@@ -103,8 +104,9 @@ func Test_ReportRequiresValidSigningAlgo(t *testing.T) {
 
 	oracleFactory := testutils.NewOracleFactory(t, lggr)
 
-	err = capability.Initialise(ctx, "", nil, nil, nil, nil, nil,
-		oracleFactory, nil, nil)
+	err = capability.Initialise(ctx, core.StandardCapabilitiesDependencies{
+		OracleFactory: oracleFactory,
+	})
 	require.NoError(t, err)
 
 	servicetest.Run(t, capability)
@@ -132,8 +134,9 @@ func Test_ReportRequiresValidHashingAlgo(t *testing.T) {
 
 	oracleFactory := testutils.NewOracleFactory(t, lggr)
 
-	err = capability.Initialise(ctx, "", nil, nil, nil, nil, nil,
-		oracleFactory, nil, nil)
+	err = capability.Initialise(ctx, core.StandardCapabilitiesDependencies{
+		OracleFactory: oracleFactory,
+	})
 	require.NoError(t, err)
 
 	servicetest.Run(t, capability)
@@ -161,8 +164,9 @@ func Test_ReportRequiresValidEncoderName(t *testing.T) {
 
 	oracleFactory := testutils.NewOracleFactory(t, lggr)
 
-	err = capability.Initialise(ctx, "", nil, nil, nil, nil, nil,
-		oracleFactory, nil, nil)
+	err = capability.Initialise(ctx, core.StandardCapabilitiesDependencies{
+		OracleFactory: oracleFactory,
+	})
 	require.NoError(t, err)
 
 	servicetest.Run(t, capability)
@@ -197,8 +201,10 @@ func Test_SimpleInputsSizeValidation(t *testing.T) {
 	capConfigJSON, err := json.Marshal(capConfig)
 	require.NoError(t, err)
 
-	err = capability.Initialise(ctx, string(capConfigJSON), nil, nil, nil, nil, nil,
-		oracleFactory, nil, nil)
+	err = capability.Initialise(ctx, core.StandardCapabilitiesDependencies{
+		Config:        string(capConfigJSON),
+		OracleFactory: oracleFactory,
+	})
 	require.NoError(t, err)
 
 	servicetest.Run(t, capability)

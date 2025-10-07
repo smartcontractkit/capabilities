@@ -145,22 +145,14 @@ func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock, orgResol
 	}, nil
 }
 
-func (s *Service) Initialise(ctx context.Context, config string, _ core.TelemetryService,
-	_ core.KeyValueStore,
-	_ core.ErrorLog,
-	_ core.PipelineRunnerService,
-	_ core.RelayerSet,
-	_ core.OracleFactory,
-	_ core.GatewayConnector,
-	_ core.Keystore,
-) error {
+func (s *Service) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
 	s.lggr.Debugf("Initialising %s", ServiceName)
 
 	var cronConfig Config
-	if len(config) > 0 {
-		err := json.Unmarshal([]byte(config), &cronConfig)
+	if len(dependencies.Config) > 0 {
+		err := json.Unmarshal([]byte(dependencies.Config), &cronConfig)
 		if err != nil {
-			return fmt.Errorf("failed to unmarshal config: %s %w", config, err)
+			return fmt.Errorf("failed to unmarshal config: %s %w", dependencies.Config, err)
 		}
 	}
 
