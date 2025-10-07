@@ -84,6 +84,10 @@ func (m *mockCapRegistry) GetExecutable(_ context.Context, id string) (capabilit
 	return nil, nil
 }
 
+func (m *mockCapRegistry) DONsForCapability(_ context.Context, capabilityID string) ([]capabilities.DONWithNodes, error) {
+	return []capabilities.DONWithNodes{}, nil
+}
+
 func TestMockRegistry_CreateCapabilities(t *testing.T) {
 	lggr := testutils.NewLogger(t)
 	capRegistry := newMockCapRegistry()
