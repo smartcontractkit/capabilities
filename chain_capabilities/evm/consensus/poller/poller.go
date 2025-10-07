@@ -2,6 +2,7 @@ package poller
 
 import (
 	"context"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -107,6 +108,21 @@ func (p *Poller) close() error {
 	return nil
 }
 
+func (p *Poller) safeCaptureObservation(ctx context.Context, request requestToPoll) {
+	defer func() {
+		if r := recover(); r != nil {
+			p.lggr.Error("panic capturing request observation", "request", request.ID(), "panic", r, "stack", string(debug.Stack()))
+		}
+	}()
+	err := request.CaptureObservation(ctx)
+	if err != nil {
+		p.lggr.Warnw("failed to capture observation", "err", err, "requestID", request.ID())
+	} else {
+		// TODO: some requests might need only one successful read (finalized data)
+		p.lggr.Debugw("captured observation", "requestID", request.ID())
+	}
+}
+
 // processRequest fetches observations and adds requestToPoll into retry queue if needed.
 func (p *Poller) processRequest(request requestToPoll) {
 	ctx, cancel := p.engine.Ctx(request.Ctx)
@@ -116,13 +132,7 @@ func (p *Poller) processRequest(request requestToPoll) {
 		return
 	}
 
-	err := request.CaptureObservation(ctx)
-	if err != nil {
-		p.lggr.Warnw("failed to capture observation", "err", err, "requestID", request.ID())
-	} else {
-		// TODO: some requests might need only one successful read (finalized data)
-		p.lggr.Debugw("captured observation", "requestID", request.ID())
-	}
+	p.safeCaptureObservation(ctx, request)
 
 	p.mutex.Lock()
 	p.retryQueue.PushBack(requestToRetry{
