@@ -6,7 +6,7 @@ require (
 	github.com/doyensec/safeurl v0.2.2
 	github.com/google/uuid v1.6.0
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20250916115355-f5de98284267
-	github.com/smartcontractkit/chainlink-common v0.9.6-0.20250925193709-e5e26ad34fa6
+	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251002161429-f0c57dab20d5
 	github.com/stretchr/testify v1.10.0
 	go.opentelemetry.io/otel v1.37.0
 	go.opentelemetry.io/otel/metric v1.37.0
