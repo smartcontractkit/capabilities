@@ -140,11 +140,11 @@ func (h *httpClientProxy) Close() error {
 }
 
 func (h *httpClientProxy) HealthReport() map[string]error {
-	return map[string]error{ClientName: nil}
+	return map[string]error{h.Name(): nil}
 }
 
 func (h *httpClientProxy) Name() string {
-	return ClientName
+	return h.lggr.Name()
 }
 
 func (h *httpClientProxy) Ready() error {

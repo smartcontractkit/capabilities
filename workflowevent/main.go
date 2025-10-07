@@ -48,11 +48,11 @@ func (cs *CapabilitiesService) Ready() error {
 }
 
 func (cs *CapabilitiesService) HealthReport() map[string]error {
-	return nil
+	return map[string]error{cs.Name(): nil}
 }
 
 func (cs *CapabilitiesService) Name() string {
-	return serviceName
+	return cs.lggr.Name()
 }
 
 func (cs *CapabilitiesService) Infos(ctx context.Context) ([]capabilities.CapabilityInfo, error) {

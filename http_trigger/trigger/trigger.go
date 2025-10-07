@@ -97,7 +97,7 @@ func (s *service) Ready() error {
 }
 
 func (s *service) Name() string {
-	return ServiceName
+	return s.lggr.Name()
 }
 
 func (s *service) Description() string {

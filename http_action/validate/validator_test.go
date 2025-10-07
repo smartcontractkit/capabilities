@@ -57,6 +57,13 @@ func TestValidatedRequest(t *testing.T) {
 		require.Equal(t, time.Duration(1000)*time.Millisecond, out.Timeout.AsDuration())
 	})
 
+	t.Run("nil input", func(t *testing.T) {
+		t.Parallel()
+		validator := testValidator(t)
+		_, err := validator.ValidatedRequest(ctx, nil)
+		require.ErrorContains(t, err, "input cannot be nil")
+	})
+
 	t.Run("empty URL", func(t *testing.T) {
 		t.Parallel()
 		validator := testValidator(t)

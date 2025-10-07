@@ -105,7 +105,7 @@ func (s *CapabilityWatcherServer) HealthReport() map[string]error {
 
 // Name returns the name of this server
 func (s *CapabilityWatcherServer) Name() string {
-	return "CapabilityWatcherServer"
+	return s.Lggr.Name()
 }
 
 // Initialise sets up the health check server with required dependencies
@@ -131,7 +131,7 @@ func New(lggr logger.Logger) *CapabilityWatcherServer {
 		panic("logger cannot be nil")
 	}
 	return &CapabilityWatcherServer{
-		Lggr:            logger.Sugared(lggr),
+		Lggr:            logger.Sugared(lggr).Named("CapabilityWatcherServer"),
 		runningServices: make(map[string]context.CancelFunc),
 	}
 }

@@ -66,7 +66,7 @@ var _ evmcapserver.ClientCapability = &capabilityGRPCService{}
 
 func main() {
 	loopserver.ServeNew(CapabilityName, func(s *loop.Server) loop.StandardCapabilities {
-		return evmcapserver.NewClientServer(&capabilityGRPCService{lggr: s.Logger, limitsFactory: s.LimitsFactory})
+		return evmcapserver.NewClientServer(&capabilityGRPCService{lggr: s.Logger.Named(CapabilityName), limitsFactory: s.LimitsFactory})
 	})
 }
 
@@ -212,11 +212,11 @@ func (c *capabilityGRPCService) Close() error {
 }
 
 func (c *capabilityGRPCService) HealthReport() map[string]error {
-	return map[string]error{}
+	return map[string]error{c.Name(): nil}
 }
 
 func (c *capabilityGRPCService) Name() string {
-	return CapabilityName
+	return c.lggr.Name()
 }
 
 func (c *capabilityGRPCService) ChainSelector() uint64 {
