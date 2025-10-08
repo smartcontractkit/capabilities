@@ -14,6 +14,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 
 	"github.com/smartcontractkit/freeport"
@@ -37,25 +38,16 @@ func Test_ServerTrigger(t *testing.T) {
 
 	require.Equal(t, capabilitiesServer.Name(), "MockServer", "server name should be MockServer")
 
-	require.NoError(t, capabilitiesServer.Initialise(
-		ctx,
-		fmt.Sprintf(`
+	require.NoError(t, capabilitiesServer.Initialise(ctx, core.StandardCapabilitiesDependencies{
+		Config: fmt.Sprintf(`
 port=%d
 [[DefaultMocks]]
 id="some-trigger@1.0.0"
 description="bogus trigger description"
 type="trigger"
-`, port), // unused - empty config
-		nil, // unused - telemetryService core.TelemetryService
-		nil, // unused - store core.Store
-		capabilitiesRegistry,
-		nil, // unused - errorLog core.ErrorLog
-		nil, // unused - pipelineRunner core.PipelineRunnerService
-		nil, // unused - relayerSet core.RelayerSet
-		nil, // unused - oracleFactory core.OracleFactory
-		nil, // unused - core.GatewayConnector
-		nil, // unused - core.Keystore
-	))
+`, port),
+		CapabilityRegistry: capabilitiesRegistry,
+	}))
 
 	// Create trigger
 	_, err := capabilitiesServer.MockRegistry.CreateCapability(ctx, &pb.CapabilityInfo{
@@ -179,25 +171,16 @@ func Test_ServerExecutable(t *testing.T) {
 	defer cancel()
 	servicetest.RunHealthy(t, capabilitiesServer)
 
-	require.NoError(t, capabilitiesServer.Initialise(
-		ctx,
-		fmt.Sprintf(`
+	require.NoError(t, capabilitiesServer.Initialise(ctx, core.StandardCapabilitiesDependencies{
+		Config: fmt.Sprintf(`
 port=%d
 [[DefaultMocks]]
 id="some-target@1.0.0"
 description="bogus target description"
 type="target"
-`, port), // unused - empty config
-		nil, // unused - telemetryService core.TelemetryService
-		nil, // unused - store core.Store
-		capabilitiesRegistry,
-		nil, // unused - errorLog core.ErrorLog
-		nil, // unused - pipelineRunner core.PipelineRunnerService
-		nil, // unused - relayerSet core.RelayerSet
-		nil, // unused - oracleFactory core.OracleFactory
-		nil, // unused - core.GatewayConnector
-		nil, // unused - core.Keystore
-	))
+`, port),
+		CapabilityRegistry: capabilitiesRegistry,
+	}))
 
 	// Create trigger
 	_, err := capabilitiesServer.MockRegistry.CreateCapability(ctx, &pb.CapabilityInfo{
@@ -343,7 +326,9 @@ func TestMockServer_Initialise_IncompleteData(t *testing.T) {
 	// Test case 1: Empty config
 	t.Run("empty config", func(t *testing.T) {
 		server := New(logger)
-		err := server.Initialise(ctx, "", nil, nil, capabilitiesRegistry, nil, nil, nil, nil, nil, nil)
+		err := server.Initialise(ctx, core.StandardCapabilitiesDependencies{
+			CapabilityRegistry: capabilitiesRegistry,
+		})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "missing config")
 	})
@@ -351,12 +336,15 @@ func TestMockServer_Initialise_IncompleteData(t *testing.T) {
 	// Test case 2: Config with no port
 	t.Run("missing port", func(t *testing.T) {
 		server := New(logger)
-		err := server.Initialise(ctx, `
+		err := server.Initialise(ctx, core.StandardCapabilitiesDependencies{
+			Config: `
 			[[DefaultMocks]]
 			id="some-trigger@1.0.0"
 			description="test trigger"
 			type="trigger"
-		`, nil, nil, capabilitiesRegistry, nil, nil, nil, nil, nil, nil)
+		`,
+			CapabilityRegistry: capabilitiesRegistry,
+		})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "must specify a port number")
 	})
@@ -364,9 +352,12 @@ func TestMockServer_Initialise_IncompleteData(t *testing.T) {
 	// Test case 3: Config with port but no default mocks (valid but empty)
 	t.Run("no default mocks", func(t *testing.T) {
 		server := New(logger)
-		err := server.Initialise(ctx, `
+		err := server.Initialise(ctx, core.StandardCapabilitiesDependencies{
+			Config: `
 			port=9999
-		`, nil, nil, capabilitiesRegistry, nil, nil, nil, nil, nil, nil)
+		`,
+			CapabilityRegistry: capabilitiesRegistry,
+		})
 		require.NoError(t, err)
 		require.Empty(t, server.MockRegistry.Triggers)
 		require.Empty(t, server.MockRegistry.Executables)
@@ -375,13 +366,16 @@ func TestMockServer_Initialise_IncompleteData(t *testing.T) {
 	// Test case 4: Config with invalid TOML syntax
 	t.Run("invalid TOML", func(t *testing.T) {
 		server := New(logger)
-		err := server.Initialise(ctx, `
+		err := server.Initialise(ctx, core.StandardCapabilitiesDependencies{
+			Config: `
 			port=9999
 			[[DefaultMocks] # Missing closing bracket
 			id="some-trigger@1.0.0"
 			description="test trigger"
 			type="trigger"
-		`, nil, nil, capabilitiesRegistry, nil, nil, nil, nil, nil, nil)
+		`,
+			CapabilityRegistry: capabilitiesRegistry,
+		})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to unmarshal config")
 	})
@@ -389,13 +383,16 @@ func TestMockServer_Initialise_IncompleteData(t *testing.T) {
 	// Test case 5: Config with missing fields in default mocks
 	t.Run("missing type field", func(t *testing.T) {
 		server := New(logger)
-		err := server.Initialise(ctx, `
+		err := server.Initialise(ctx, core.StandardCapabilitiesDependencies{
+			Config: `
 			port=9999
 			[[DefaultMocks]]
 			id="some-trigger@1.0.0"
 			description="test trigger"
 			# type field missing
-		`, nil, nil, capabilitiesRegistry, nil, nil, nil, nil, nil, nil)
+		`,
+			CapabilityRegistry: capabilitiesRegistry,
+		})
 		require.Contains(t, err.Error(), "capability type not supported")
 		require.Empty(t, server.MockRegistry.Triggers)
 		require.Empty(t, server.MockRegistry.Executables)
@@ -404,13 +401,16 @@ func TestMockServer_Initialise_IncompleteData(t *testing.T) {
 	// Test case 6: Config with invalid capability type
 	t.Run("invalid capability type", func(t *testing.T) {
 		server := New(logger)
-		err := server.Initialise(ctx, `
+		err := server.Initialise(ctx, core.StandardCapabilitiesDependencies{
+			Config: `
 			port=9999
 			[[DefaultMocks]]
 			id="some-trigger@1.0.0"
 			description="test trigger"
 			type="invalid-type"
-		`, nil, nil, capabilitiesRegistry, nil, nil, nil, nil, nil, nil)
+		`,
+			CapabilityRegistry: capabilitiesRegistry,
+		})
 		require.Contains(t, err.Error(), "capability type not supported")
 		require.Empty(t, server.MockRegistry.Triggers)
 		require.Empty(t, server.MockRegistry.Executables)

@@ -84,6 +84,10 @@ func (m *mockCapRegistry) GetExecutable(_ context.Context, id string) (capabilit
 	return nil, nil
 }
 
+func (m *mockCapRegistry) DONsForCapability(_ context.Context, capabilityID string) ([]capabilities.DONWithNodes, error) {
+	return []capabilities.DONWithNodes{}, nil
+}
+
 func TestMockRegistry_CreateCapabilities(t *testing.T) {
 	lggr := testutils.NewLogger(t)
 	capRegistry := newMockCapRegistry()
@@ -226,7 +230,6 @@ func TestMockRegistry_SendTriggerEvent(t *testing.T) {
 		require.Equal(t, "event1", resp.Event.ID)
 		require.Equal(t, outputs, resp.Event.Outputs)
 		require.Equal(t, payload, resp.Event.Payload)
-		require.Equal(t, &ocrTriggerEvent, resp.Event.OCREvent) //nolint:all Ignore deprecation as we still need to support this for older capabilities
 	case <-time.After(time.Second):
 		t.Fatal("timeout waiting for trigger event")
 	}
@@ -618,7 +621,6 @@ func TestMockRegistry_SendTriggerEvent_IncompleteData(t *testing.T) {
 			require.Equal(t, "event-no-ocr", resp.Event.ID)
 			require.Equal(t, outputs, resp.Event.Outputs)
 			require.Equal(t, payload, resp.Event.Payload)
-			require.Empty(t, resp.Event.OCREvent) //nolint:all Ignore deprecation as we still need to support this for older capabilities
 		case <-time.After(time.Second):
 			t.Fatal("timeout waiting for trigger event")
 		}

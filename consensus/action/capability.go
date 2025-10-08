@@ -111,14 +111,10 @@ func (c *consensusCapability) SetRequestTimeout(timeout time.Duration) {
 	c.requestTimeout = timeout
 }
 
-func (c *consensusCapability) Initialise(ctx context.Context, config string,
-	telemetryService core.TelemetryService,
-	store core.KeyValueStore, errorLog core.ErrorLog, pipelineRunner core.PipelineRunnerService,
-	relayerSet core.RelayerSet, oracleFactory core.OracleFactory,
-	gatewayConnector core.GatewayConnector, _ core.Keystore) error {
+func (c *consensusCapability) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
 	c.lggr.Debugf("Initialising Consensus Capability")
 
-	if err := c.setConfiguration(config); err != nil {
+	if err := c.setConfiguration(dependencies.Config); err != nil {
 		return fmt.Errorf("error setting consensus capability configuration: %w", err)
 	}
 
@@ -141,7 +137,7 @@ func (c *consensusCapability) Initialise(ctx context.Context, config string,
 		DefaultMaxDurationInitialization:   time.Second * 60,
 	}
 
-	oracle, err := oracleFactory.NewOracle(ctx, core.OracleArgs{
+	oracle, err := dependencies.OracleFactory.NewOracle(ctx, core.OracleArgs{
 		LocalConfig:                   localOcrConfig,
 		ReportingPluginFactoryService: reportingPlugin,
 		ContractTransmitter:           contractTransmitter,

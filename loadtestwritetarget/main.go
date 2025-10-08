@@ -6,6 +6,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
@@ -30,8 +31,8 @@ type LoadTestWriteTargetGRPCService struct {
 }
 
 func main() {
-	loopserver.Serve(serviceName, func(lggr logger.Logger) *LoadTestWriteTargetGRPCService {
-		return &LoadTestWriteTargetGRPCService{lggr: lggr}
+	loopserver.ServeNew(serviceName, func(s *loop.Server) loop.StandardCapabilities {
+		return &LoadTestWriteTargetGRPCService{lggr: s.Logger}
 	})
 }
 
@@ -76,18 +77,6 @@ func (cs *LoadTestWriteTargetGRPCService) Infos(ctx context.Context) ([]capabili
 	}, nil
 }
 
-func (cs *LoadTestWriteTargetGRPCService) Initialise(
-	ctx context.Context,
-	config string,
-	_ core.TelemetryService,
-	_ core.KeyValueStore,
-	capabilityRegistry core.CapabilitiesRegistry,
-	_ core.ErrorLog,
-	_ core.PipelineRunnerService,
-	relayerSet core.RelayerSet,
-	oracleFactory core.OracleFactory,
-	_ core.GatewayConnector,
-	_ core.Keystore,
-) error {
+func (cs *LoadTestWriteTargetGRPCService) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
 	return nil
 }
