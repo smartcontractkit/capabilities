@@ -33,7 +33,7 @@ type CapabilityWatcherServer struct {
 // Start begins the health check monitoring process
 func (s *CapabilityWatcherServer) Start(ctx context.Context) error {
 	s.Lggr.Info("Starting capability watcher server")
-	go s.runLoop(context.Background())
+	go s.runLoop(ctx)
 	return nil
 }
 
@@ -115,7 +115,7 @@ func (s *CapabilityWatcherServer) Initialise(ctx context.Context, config string,
 	}
 
 	s.capRegistry = capabilityRegistry
-	return s.Start(ctx)
+	return s.Start(context.Background())
 }
 
 // Infos returns information about the capabilities provided by this server
