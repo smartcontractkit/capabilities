@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
+
 	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
