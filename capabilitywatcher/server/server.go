@@ -145,8 +145,8 @@ func (s *CapabilityWatcherServer) runLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			s.Lggr.Info("Health check loop stopped due to context cancellation")
-			return
+			// s.Lggr.Info("Health check loop stopped due to context cancellation")
+			// return
 		case <-ticker.C:
 			s.performChecks(ctx)
 		}
