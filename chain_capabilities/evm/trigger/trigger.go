@@ -536,7 +536,8 @@ func (lts *LogTriggerService) createLogRequest(_ context.Context, addresses []ev
 		if len(t) == 0 {
 			continue
 		}
-
+		// G115: integer overflow conversion uint64 -> int64 (gosec)
+		// nolint:gosec
 		expressions = append(expressions, evm.NewEventByTopicFilter(uint64(i+1), []evm.HashedValueComparator{{
 			Values:   t,
 			Operator: primitives.Eq,
