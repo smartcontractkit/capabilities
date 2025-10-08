@@ -511,12 +511,20 @@ func (lts *LogTriggerService) createLogRequest(_ context.Context, addresses, eve
 
 	var addressFilters []query.Expression
 	for _, addr := range addresses {
+		if len(addr) != evmtypes.AddressLength {
+			lts.lggr.Warnf("Skipping address %x, invalid length: %d", addr, len(addr))
+			continue
+		}
 		addressFilters = append(addressFilters, evm.NewAddressFilter(evmtypes.Address(addr)))
 	}
 	expressions = append(expressions, query.Or(addressFilters...))
 
 	var topicFilters []query.Expression
 	for _, topic := range eventSigs {
+		if len(topic) != evmtypes.HashLength {
+			lts.lggr.Warnf("Skipping eventSig %x, invalid length: %d", topic, len(topic))
+			continue
+		}
 		topicFilters = append(topicFilters, evm.NewEventSigFilter(evmtypes.Hash(topic)))
 	}
 	expressions = append(expressions, query.Or(topicFilters...))
