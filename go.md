@@ -28,7 +28,6 @@ flowchart LR
 	capabilities/kvstore --> capabilities/libs
 	click capabilities/kvstore href "https://github.com/smartcontractkit/capabilities"
 	capabilities/libs --> chainlink-common
-	capabilities/libs --> chainlink-common/pkg/values
 	click capabilities/libs href "https://github.com/smartcontractkit/capabilities"
 	capabilities/loadtestwritetarget --> capabilities/libs
 	click capabilities/loadtestwritetarget href "https://github.com/smartcontractkit/capabilities"
