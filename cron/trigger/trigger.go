@@ -103,7 +103,7 @@ var _ services.Service = &Service{}
 
 // NewTriggerService creates a new trigger service.  Optionally, a clock can be passed in for testing, if nil
 // the system clock will be used. The orgResolver is optional and can be nil, but should be set in live environments.
-func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock, orgResolver orgresolver.OrgResolver) (*Service, error) {
+func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock) (*Service, error) {
 	lggr := logger.Named(parentLggr, "Service")
 
 	metrics, err := NewMetrics()
@@ -140,8 +140,7 @@ func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock, orgResol
 			"capabilityVersion", cronTriggerInfo.Version(),
 			"capabilityName", cronTriggerInfo.ID,
 		),
-		metrics:     metrics,
-		orgResolver: orgResolver,
+		metrics: metrics,
 	}, nil
 }
 
@@ -161,6 +160,7 @@ func (s *Service) Initialise(ctx context.Context, dependencies core.StandardCapa
 	}
 
 	s.config = cronConfig
+	s.orgResolver = dependencies.OrgResolver
 
 	err := s.Start(ctx)
 	if err != nil {
