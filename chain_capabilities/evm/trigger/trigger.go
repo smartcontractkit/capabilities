@@ -126,9 +126,6 @@ func (lts *LogTriggerService) initLimiters(limitsFactory limits.Factory) (err er
 		return
 	}
 	lts.eventPayloadSizeLimiter, err = limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.LogTrigger.EventSizeLimit)
-	if err != nil {
-		return
-	}
 	return
 }
 
@@ -498,21 +495,8 @@ func (lts *LogTriggerService) checkLimitsOnLog(ctx context.Context, telemetryCon
 		return false
 	}
 
-	protoLogBytes, err := proto.Marshal(protoLog)
-	if err != nil {
-		summary := fmt.Sprintf("Can't get the bytes for the log, dropping event (triggerID: %s, eventID: %s)", triggerID, eventID)
-		lts.lggr.Errorw(summary, "triggerID", triggerID, "eventID", eventID, "err", err)
-		monitoring.LogAndEmitError(
-			ctx,
-			lts.lggr,
-			lts.beholderProcessor,
-			lts.messageBuilder.BuildLogTriggerEventDroppedError(telemetryContext, triggerID, log, summary, err.Error()),
-		)
-		return false
-	}
-
-	protoLogSize := commoncfg.SizeOf(protoLogBytes)
-	if err = lts.eventPayloadSizeLimiter.Check(ctx, protoLogSize); err != nil {
+	protoLogSize := commoncfg.Size(proto.Size(protoLog))
+	if err := lts.eventPayloadSizeLimiter.Check(ctx, protoLogSize); err != nil {
 		summary := fmt.Sprintf("Size limited, log size is too big (current size %d), dropping event (triggerID: %s, eventID: %s)", protoLogSize, triggerID, eventID)
 		lts.lggr.Errorw(summary, "triggerID", triggerID, "eventID", eventID, "protoLogSize", protoLogSize, "err", err)
 		monitoring.LogAndEmitError(
