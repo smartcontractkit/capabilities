@@ -60,12 +60,12 @@ func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, 
 	messageBuilder *monitoring.MessageBuilder, handler ConsensusHandler, chainSelector uint64, limitsFactory limits.Factory) (*EVM, error) {
 	keystoneForwarderAddress := common.HexToAddress(cfg.CREForwarderAddress)
 	if keystoneForwarderAddress == (common.Address{}) {
-		return &EVM{}, errors.New("keystone forwarder address is not set")
+		return &EVM{}, capabilities.NewRemoteReportableError(errors.New("keystone forwarder address is not set"))
 	}
 
 	kfc, err := contracts.NewCREForwarderClient(evmService, keystoneForwarderAddress, lggr)
 	if err != nil {
-		return &EVM{}, err
+		return &EVM{}, capabilities.NewRemoteReportableError(err)
 	}
 
 	e := &EVM{
