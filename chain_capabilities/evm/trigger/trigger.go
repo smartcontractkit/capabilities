@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/rpc"
+	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -54,6 +56,7 @@ type LogTriggerService struct {
 	filterAddressLimiter       limits.BoundLimiter[int]
 	filterTopicsPerSlotLimiter limits.BoundLimiter[int]
 	eventRateLimit             limits.RateLimiter
+	eventPayloadSizeLimiter    limits.BoundLimiter[commoncfg.Size]
 	orgResolver                orgresolver.OrgResolver // Optional org resolver for fetching organization IDs
 }
 
@@ -119,6 +122,10 @@ func (lts *LogTriggerService) initLimiters(limitsFactory limits.Factory) (err er
 		return
 	}
 	lts.eventRateLimit, err = limitsFactory.MakeRateLimiter(cresettings.Default.PerWorkflow.LogTrigger.EventRateLimit)
+	if err != nil {
+		return
+	}
+	lts.eventPayloadSizeLimiter, err = limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.LogTrigger.EventSizeLimit)
 	return
 }
 
@@ -379,9 +386,9 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 			continue
 		}
 
-		logID := lts.generateLogIdentifier(log)
-		_, alreadySent := trigger.unfinalizedSentEventIDs[logID]
-		lts.lggr.Debugf("Working with logId: %s, alreadySent: %t", logID, alreadySent)
+		eventID := lts.generateLogIdentifier(log)
+		_, alreadySent := trigger.unfinalizedSentEventIDs[eventID]
+		lts.lggr.Debugf("Working with eventID: %s, alreadySent: %t", eventID, alreadySent)
 
 		if alreadySent {
 			continue
@@ -393,15 +400,8 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 			Trigger: protoLog,
 		}
 
-		if err := lts.eventRateLimit.AllowErr(ctx); err != nil {
-			summary := fmt.Sprintf("Rate limited, dropping event (triggerID: %s, eventID: %s)", triggerID, response.Id)
-			lts.lggr.Errorw(summary, "triggerID", triggerID, "eventID", response.Id, "err", err)
-			monitoring.LogAndEmitError(
-				ctx,
-				lts.lggr,
-				lts.beholderProcessor,
-				lts.messageBuilder.BuildLogTriggerEventDroppedError(telemetryContext, triggerID, log, summary, err.Error()),
-			)
+		checksLimitsOk := lts.checkLimitsOnLog(ctx, telemetryContext, protoLog, triggerID, eventID, log)
+		if !checksLimitsOk {
 			continue
 		}
 
@@ -447,7 +447,7 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 		case logCh <- response:
 			if log.BlockNumber.Cmp(finalizedBlockNumber) > 0 {
 				// log's block number is unfinalized and needs to be tracked
-				trigger.unfinalizedSentEventIDs[logID] = log.BlockNumber
+				trigger.unfinalizedSentEventIDs[eventID] = log.BlockNumber
 				needsUpdate = true
 			}
 		default:
@@ -478,6 +478,38 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 		}
 	}
 	return nil
+}
+
+// checkLimitsOnLog checks the rate limit and payload size limit for a single log event, it should not error as we
+// want to continue processing other logs even if one fails the limits
+func (lts *LogTriggerService) checkLimitsOnLog(ctx context.Context, telemetryContext monitoring.TelemetryContext, protoLog *evmcappb.Log, triggerID string, eventID string, log *evmtypes.Log) bool {
+	if err := lts.eventRateLimit.AllowErr(ctx); err != nil {
+		summary := fmt.Sprintf("Rate limited, dropping event (triggerID: %s, eventID: %s)", triggerID, eventID)
+		lts.lggr.Errorw(summary, "triggerID", triggerID, "eventID", eventID, "err", err)
+		monitoring.LogAndEmitError(
+			ctx,
+			lts.lggr,
+			lts.beholderProcessor,
+			lts.messageBuilder.BuildLogTriggerEventDroppedError(telemetryContext, triggerID, log, summary, err.Error()),
+		)
+		return false
+	}
+
+	protoLogSize := commoncfg.Size(proto.Size(protoLog))
+	if err := lts.eventPayloadSizeLimiter.Check(ctx, protoLogSize); err != nil {
+		summary := fmt.Sprintf("Size limited, log size is too big (current size %d), dropping event (triggerID: %s, eventID: %s)", protoLogSize, triggerID, eventID)
+		lts.lggr.Errorw(summary, "triggerID", triggerID, "eventID", eventID, "protoLogSize", protoLogSize, "err", err)
+		monitoring.LogAndEmitError(
+			ctx,
+			lts.lggr,
+			lts.beholderProcessor,
+			lts.messageBuilder.BuildLogTriggerEventDroppedError(telemetryContext, triggerID, log, summary, err.Error()),
+		)
+		return false
+	}
+
+	// all checks passed, no limit fired
+	return true
 }
 
 // generateLogIdentifier creates the trigger event id, a unique identifier for the log based on its transaction hash, block hash, and index

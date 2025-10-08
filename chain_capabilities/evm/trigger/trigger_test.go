@@ -11,6 +11,8 @@ import (
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
@@ -602,9 +604,14 @@ func TestSendLogsToWorkflows(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, logCh, len(expectedLogs))
 		actualLog1 := <-logCh
-		require.Equal(t, createTriggerResponse(expectedLog1, service), actualLog1)
+		expectedResponse1 := createTriggerResponse(expectedLog1, service)
+		require.Equal(t, expectedResponse1.Id, actualLog1.Id)
+		require.True(t, proto.Equal(expectedResponse1.Trigger, actualLog1.Trigger), "proto logs differ for 1st log")
+
 		actualLog2 := <-logCh
-		require.Equal(t, createTriggerResponse(expectedLog2, service), actualLog2)
+		expectedResponse2 := createTriggerResponse(expectedLog2, service)
+		require.Equal(t, expectedResponse2.Id, actualLog2.Id)
+		require.True(t, proto.Equal(expectedResponse2.Trigger, actualLog2.Trigger), "proto logs differ for 2nd log")
 		select {
 		case msg := <-logCh:
 			t.Fatalf("unexpected message received: %+v", msg)
@@ -630,7 +637,9 @@ func TestSendLogsToWorkflows(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, logCh, 1)
 		actualLog1 := <-logCh
-		require.Equal(t, createTriggerResponse(expectedLog1, service), actualLog1)
+		expectedResponse1 := createTriggerResponse(expectedLog1, service)
+		require.Equal(t, expectedResponse1.Id, actualLog1.Id)
+		require.True(t, proto.Equal(expectedResponse1.Trigger, actualLog1.Trigger), "proto logs differ for 1st log")
 		select {
 		case msg := <-logCh:
 			t.Fatalf("unexpected message received: %+v", msg)
@@ -654,7 +663,10 @@ func TestSendLogsToWorkflows(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, logCh, 1)
 		actualLog2 := <-logCh
-		require.Equal(t, createTriggerResponse(expectedLog2, service), actualLog2)
+		expectedResponse2 := createTriggerResponse(expectedLog2, service)
+		require.Equal(t, expectedResponse2.Id, actualLog2.Id)
+		require.True(t, proto.Equal(expectedResponse2.Trigger, actualLog2.Trigger), "proto logs differ for 1st log")
+
 		select {
 		case msg := <-logCh:
 			t.Fatalf("unexpected message received: %+v", msg)
