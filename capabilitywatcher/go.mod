@@ -4,12 +4,10 @@ go 1.24.5
 
 toolchain go1.24.6
 
-replace github.com/smartcontractkit/capabilities/libs => ../libs
-
 require (
 	github.com/google/uuid v1.6.0
 	github.com/prometheus/client_golang v1.22.0
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20250711131700-236a5b631ad7
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20251008153844-75f78ccdea96
 	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251008120326-8fd3a49fa416
 	google.golang.org/protobuf v1.36.7
 )

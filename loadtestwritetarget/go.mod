@@ -4,10 +4,8 @@ go 1.24.5
 
 toolchain go1.24.6
 
-replace github.com/smartcontractkit/capabilities/libs => ../libs
-
 require (
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20250902122836-28fd635adf1f
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20251008151345-29b06a2ad833
 	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251008120326-8fd3a49fa416
 )
 

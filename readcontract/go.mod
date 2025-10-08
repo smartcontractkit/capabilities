@@ -6,7 +6,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jonboulle/clockwork v0.5.0
 	github.com/prometheus/client_golang v1.22.0
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20250902122836-28fd635adf1f
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20251008151345-29b06a2ad833
 	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251008120326-8fd3a49fa416
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20250911124514-5874cc6d62b2
 	github.com/stretchr/testify v1.10.0
@@ -114,5 +114,3 @@ require (
 	google.golang.org/protobuf v1.36.7 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/smartcontractkit/capabilities/libs => ../libs
