@@ -147,8 +147,8 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return fmt.Errorf("error when creating oracle: %w", err)
 	}
 
-	services := []interface{ Start(context.Context) error }{c.consensusHandler, c.requestPoller, c.oracle, c.heightProvider, c.triggerService}
-	for _, service := range services {
+	startServices := []interface{ Start(context.Context) error }{c.consensusHandler, c.requestPoller, c.oracle, c.heightProvider, c.triggerService}
+	for _, service := range startServices {
 		if err := service.Start(ctx); err != nil {
 			return err
 		}
