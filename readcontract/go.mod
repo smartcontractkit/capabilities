@@ -7,12 +7,13 @@ require (
 	github.com/jonboulle/clockwork v0.5.0
 	github.com/prometheus/client_golang v1.22.0
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20250902122836-28fd635adf1f
-	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251007172033-a76cb023759b
+	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251007200533-32ee550b9b37
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20250911124514-5874cc6d62b2
 	github.com/stretchr/testify v1.10.0
 )
 
 require (
+	github.com/BurntSushi/toml v1.5.0 // indirect
 	github.com/XSAM/otelsql v0.37.0 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
