@@ -532,20 +532,16 @@ func (lts *LogTriggerService) createLogRequest(_ context.Context, addresses []ev
 		confidenceLevel = primitives.Safe
 	}
 
-	expressions = append(expressions, evm.NewEventByTopicFilter(1, []evm.HashedValueComparator{{
-		Values:   topics2,
-		Operator: primitives.Eq,
-	}}))
+	for i, t := range [][]evmtypes.Hash{topics2, topics3, topics4} {
+		if len(t) == 0 {
+			continue
+		}
 
-	expressions = append(expressions, evm.NewEventByTopicFilter(2, []evm.HashedValueComparator{{
-		Values:   topics3,
-		Operator: primitives.Eq,
-	}}))
-
-	expressions = append(expressions, evm.NewEventByTopicFilter(3, []evm.HashedValueComparator{{
-		Values:   topics4,
-		Operator: primitives.Eq,
-	}}))
+		expressions = append(expressions, evm.NewEventByTopicFilter(uint64(i+1), []evm.HashedValueComparator{{
+			Values:   t,
+			Operator: primitives.Eq,
+		}}))
+	}
 
 	return expressions, confidenceLevel
 }
