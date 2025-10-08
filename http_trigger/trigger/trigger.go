@@ -12,6 +12,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
+	"github.com/smartcontractkit/chainlink-common/pkg/services/orgresolver"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
@@ -34,6 +35,7 @@ type service struct {
 	connectorHandler ConnectorHandler
 	metrics          *Metrics
 	limitsFactory    limits.Factory
+	orgResolver      orgresolver.OrgResolver
 }
 
 func NewService(lggr logger.Logger, limitsFactory limits.Factory) *service {
@@ -52,6 +54,7 @@ func (s *service) Initialise(ctx context.Context, dependencies core.StandardCapa
 		return err
 	}
 	s.cfg = applyDefaults(serviceConfig)
+	s.orgResolver = dependencies.OrgResolver
 	outgoingRateLimiter, err := ratelimit.NewRateLimiter(s.cfg.OutgoingRateLimiter)
 	if err != nil {
 		return err
@@ -67,7 +70,7 @@ func (s *service) Initialise(ctx context.Context, dependencies core.StandardCapa
 	}
 	metadataPublisher := NewGatewayMetadataPublisher(s.lggr, dependencies.GatewayConnector, outgoingRateLimiter, workflowStore, s.cfg, s.metrics)
 	requestCache := newRequestCache(s.lggr, dependencies.Store, time.Duration(s.cfg.RequestCacheTTL)*time.Second)
-	s.connectorHandler, err = NewConnectorHandler(s.lggr, dependencies.GatewayConnector, s.cfg, outgoingRateLimiter, incomingRateLimiter, workflowStore, metadataPublisher, requestCache, s.metrics, nil)
+	s.connectorHandler, err = NewConnectorHandler(s.lggr, dependencies.GatewayConnector, s.cfg, outgoingRateLimiter, incomingRateLimiter, workflowStore, metadataPublisher, requestCache, s.metrics, s.orgResolver)
 	if err != nil {
 		return err
 	}

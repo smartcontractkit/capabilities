@@ -247,7 +247,7 @@ func successWithStandardCronIntervals(t *testing.T, useTypedAPI bool) {
 			config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
 			require.NoError(t, err)
 
-			ts, err := NewTriggerService(logger.Nop(), fakeClock, nil)
+			ts, err := NewTriggerService(logger.Nop(), fakeClock)
 			require.NoError(t, err)
 			err = ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
 				Config: string(config),
@@ -327,7 +327,7 @@ func TestCronTrigger_Load(t *testing.T) {
 	config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
 	require.NoError(t, err)
 
-	ts, err := NewTriggerService(logger.Nop(), fakeClock, nil)
+	ts, err := NewTriggerService(logger.Nop(), fakeClock)
 	require.NoError(t, err)
 
 	triggerAPI := server.NewCronServer(ts)
@@ -453,7 +453,7 @@ func testCronTriggerRegisterTriggerBeforeStart(t *testing.T, useTypedAPI bool) {
 	fakeClock := clockwork.NewRealClock()
 	config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
 	require.NoError(t, err)
-	ts, err := NewTriggerService(logger.Nop(), fakeClock, nil)
+	ts, err := NewTriggerService(logger.Nop(), fakeClock)
 	require.NoError(t, err)
 
 	triggerAPI := server.NewCronServer(ts)
@@ -528,7 +528,7 @@ func testCronTriggerTimeWindows(t *testing.T, useTypedAPI bool) {
 
 	config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
 	require.NoError(t, err)
-	ts, err := NewTriggerService(logger.Nop(), fakeClock, nil)
+	ts, err := NewTriggerService(logger.Nop(), fakeClock)
 	require.NoError(t, err)
 	triggerAPI := server.NewCronServer(ts)
 
@@ -606,7 +606,7 @@ func testCronTriggerMultipleDifferentSchedules(t *testing.T, useTypedAPI bool) {
 	}
 	config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
 	require.NoError(t, err)
-	ts, err := NewTriggerService(logger.Nop(), fakeClock, nil)
+	ts, err := NewTriggerService(logger.Nop(), fakeClock)
 	require.NoError(t, err)
 	triggerAPI := server.NewCronServer(ts)
 	ctx := t.Context()
@@ -731,7 +731,7 @@ func testCronTriggerTimeZone(t *testing.T, useTypedAPI bool) {
 
 	config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
 	require.NoError(t, err)
-	ts, err := NewTriggerService(logger.Nop(), fakeClock, nil)
+	ts, err := NewTriggerService(logger.Nop(), fakeClock)
 	require.NoError(t, err)
 	triggerAPI := server.NewCronServer(ts)
 	ctx := t.Context()
@@ -841,7 +841,7 @@ func testCronTriggerRegisterTrigger(t *testing.T, useTypedAPI bool) {
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
 			fakeClock := clockwork.NewRealClock()
-			ts, err := NewTriggerService(logger.Nop(), fakeClock, nil)
+			ts, err := NewTriggerService(logger.Nop(), fakeClock)
 			require.NoError(t, err)
 			err = ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{})
 			require.NoError(t, err)
@@ -874,7 +874,7 @@ func TestCronTrigger_RegisterTriggerDuplicateError(t *testing.T) {
 	triggerConfig, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
 	require.NoError(t, err)
 	fakeClock := clockwork.NewRealClock()
-	ts, err := NewTriggerService(logger.Nop(), fakeClock, nil)
+	ts, err := NewTriggerService(logger.Nop(), fakeClock)
 	require.NoError(t, err)
 	err = ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
 		Config: string(triggerConfig),
@@ -909,7 +909,7 @@ func TestCronTrigger_UnregisterTriggerError(t *testing.T) {
 	triggerConfig, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
 	require.NoError(t, err)
 	fakeClock := clockwork.NewRealClock()
-	ts, err := NewTriggerService(logger.Nop(), fakeClock, nil)
+	ts, err := NewTriggerService(logger.Nop(), fakeClock)
 	require.NoError(t, err)
 	err = ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
 		Config: string(triggerConfig),
@@ -988,7 +988,7 @@ func TestCronTrigger_UnregisterTriggerError(t *testing.T) {
 	})
 
 	t.Run("NOK fails to unregister if closed", func(t *testing.T) {
-		ts, err := NewTriggerService(logger.Nop(), fakeClock, nil)
+		ts, err := NewTriggerService(logger.Nop(), fakeClock)
 		require.NoError(t, err)
 		err = ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
 			Config: string(triggerConfig),
@@ -1026,7 +1026,7 @@ func TestCronTrigger_UnregisterTriggerError(t *testing.T) {
 
 func TestCronTrigger_CloseStartErrors(t *testing.T) {
 	fakeClock := clockwork.NewRealClock()
-	ts, err := NewTriggerService(logger.Nop(), fakeClock, nil)
+	ts, err := NewTriggerService(logger.Nop(), fakeClock)
 	require.NoError(t, err)
 	ctx := t.Context()
 
@@ -1064,7 +1064,7 @@ func TestGocronNewTaskPanic(t *testing.T) {
 	config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
 	require.NoError(t, err)
 	logger, observedLogs := logger.TestObserved(t, zap.ErrorLevel)
-	ts, err := NewTriggerService(logger, panicClock, nil)
+	ts, err := NewTriggerService(logger, panicClock)
 	require.NoError(t, err)
 
 	triggerAPI := server.NewCronServer(ts)
@@ -1137,104 +1137,3 @@ func (m *MockOrgResolver) Name() string {
 
 // Ensure MockOrgResolver implements the interface
 var _ orgresolver.OrgResolver = (*MockOrgResolver)(nil)
-
-func TestCronTrigger_WithOrgResolver(t *testing.T) {
-	// Create a mock org resolver
-	mockOrgResolver := &MockOrgResolver{}
-	mockOrgResolver.On("Get", mock.Anything, "test-owner").Return("org-123", nil)
-
-	// Create clock for testing
-	fakeClock := clockwork.NewFakeClock()
-
-	// Create the cron trigger service with org resolver
-	service, err := NewTriggerService(logger.Test(t), fakeClock, mockOrgResolver)
-	require.NoError(t, err)
-
-	// Start the service
-	ctx := context.Background()
-	err = service.Start(ctx)
-	require.NoError(t, err)
-	defer service.Close()
-
-	// Setup test trigger
-	triggerID := "test-trigger"
-	metadata := capabilities.RequestMetadata{
-		WorkflowID:               "test-workflow",
-		WorkflowOwner:            "test-owner",
-		WorkflowName:             "test-workflow-name",
-		WorkflowDonID:            1,
-		WorkflowDonConfigVersion: 1,
-		WorkflowExecutionID:      "test-execution",
-	}
-
-	config := &crontypedapi.Config{
-		Schedule: "*/5 * * * * *", // Every 5 seconds
-	}
-
-	// Register the trigger
-	triggerCh, err := service.RegisterTrigger(ctx, triggerID, metadata, config)
-	require.NoError(t, err)
-
-	// Advance the clock to trigger the cron job
-	fakeClock.Advance(6 * time.Second)
-
-	// Wait for the trigger to fire
-	select {
-	case trigger := <-triggerCh:
-		assert.NotNil(t, trigger)
-		// The trigger ID is generated by the cron trigger based on schedule time, not the registration ID
-		assert.NotEmpty(t, trigger.Id)
-		// The important thing is that we received a trigger event
-	case <-time.After(2 * time.Second):
-		t.Fatal("Expected trigger to fire but it didn't")
-	}
-
-	// Verify that the org resolver was called
-	mockOrgResolver.AssertExpectations(t)
-}
-
-func TestCronTrigger_WithoutOrgResolver(t *testing.T) {
-	// Create clock for testing
-	fakeClock := clockwork.NewFakeClock()
-
-	// Create the cron trigger service without org resolver (nil)
-	service, err := NewTriggerService(logger.Test(t), fakeClock, nil)
-	require.NoError(t, err)
-
-	// Start the service
-	ctx := context.Background()
-	err = service.Start(ctx)
-	require.NoError(t, err)
-	defer service.Close()
-
-	// Setup test trigger
-	triggerID := "test-trigger"
-	metadata := capabilities.RequestMetadata{
-		WorkflowID:               "test-workflow",
-		WorkflowOwner:            "test-owner",
-		WorkflowName:             "test-workflow-name",
-		WorkflowDonID:            1,
-		WorkflowDonConfigVersion: 1,
-		WorkflowExecutionID:      "test-execution",
-	}
-
-	config := &crontypedapi.Config{
-		Schedule: "*/5 * * * * *", // Every 5 seconds
-	}
-
-	// Register the trigger
-	triggerCh, err := service.RegisterTrigger(ctx, triggerID, metadata, config)
-	require.NoError(t, err)
-
-	// Advance the clock to trigger the cron job
-	fakeClock.Advance(6 * time.Second)
-
-	// Wait for the trigger to fire
-	select {
-	case trigger := <-triggerCh:
-		assert.NotNil(t, trigger)
-		assert.NotEmpty(t, trigger.Id)
-	case <-time.After(2 * time.Second):
-		t.Fatal("Expected trigger to fire but it didn't")
-	}
-}
