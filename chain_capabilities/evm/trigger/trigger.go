@@ -248,7 +248,7 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 		return nil, fmt.Errorf("failed to register log-tracking: '%w' for triggerID: %s, addresses: %v, eventSig: %v, topic2: %v, topic3: %v, topic4: %v",
 			err, triggerID, filterQuery.Addresses, filterQuery.EventSigs, filterQuery.Topic2, filterQuery.Topic3, filterQuery.Topic4)
 	}
-	expressions, confidence := lts.createLogRequest(ctx, input.GetAddresses(), eventSigs, topics2, topics3, topics4, input.GetConfidence())
+	expressions, confidence := lts.createLogRequest(ctx, addresses, sigs, t2, t3, t4, input.GetConfidence())
 
 	monitoring.EmitInitiated(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerInitiated(telemetryContext, input))
 
@@ -506,26 +506,18 @@ func (lts *LogTriggerService) fetchLogsFromLogPoller(ctx context.Context, trigge
 	return logs, nil
 }
 
-func (lts *LogTriggerService) createLogRequest(_ context.Context, addresses, eventSigs, topics2, topics3, topics4 [][]byte, confidence evmcappb.ConfidenceLevel) ([]query.Expression, primitives.ConfidenceLevel) {
+func (lts *LogTriggerService) createLogRequest(_ context.Context, addresses []evmtypes.Address, eventSigs, topics2, topics3, topics4 []evmtypes.Hash, confidence evmcappb.ConfidenceLevel) ([]query.Expression, primitives.ConfidenceLevel) {
 	var expressions []query.Expression
 
 	var addressFilters []query.Expression
 	for _, addr := range addresses {
-		if len(addr) != evmtypes.AddressLength {
-			lts.lggr.Warnf("Skipping address %x, invalid length: %d", addr, len(addr))
-			continue
-		}
-		addressFilters = append(addressFilters, evm.NewAddressFilter(evmtypes.Address(addr)))
+		addressFilters = append(addressFilters, evm.NewAddressFilter(addr))
 	}
 	expressions = append(expressions, query.Or(addressFilters...))
 
 	var topicFilters []query.Expression
 	for _, topic := range eventSigs {
-		if len(topic) != evmtypes.HashLength {
-			lts.lggr.Warnf("Skipping eventSig %x, invalid length: %d", topic, len(topic))
-			continue
-		}
-		topicFilters = append(topicFilters, evm.NewEventSigFilter(evmtypes.Hash(topic)))
+		topicFilters = append(topicFilters, evm.NewEventSigFilter(topic))
 	}
 	expressions = append(expressions, query.Or(topicFilters...))
 
@@ -540,18 +532,25 @@ func (lts *LogTriggerService) createLogRequest(_ context.Context, addresses, eve
 		confidenceLevel = primitives.Safe
 	}
 
-	if expr := lts.makeEventByTopicFilter(1, topics2); expr != nil {
-		expressions = append(expressions, *expr)
-	}
-	if expr := lts.makeEventByTopicFilter(2, topics3); expr != nil {
-		expressions = append(expressions, *expr)
-	}
-	if expr := lts.makeEventByTopicFilter(3, topics4); expr != nil {
-		expressions = append(expressions, *expr)
-	}
+	expressions = append(expressions, evm.NewEventByTopicFilter(1, []evm.HashedValueComparator{{
+		Values:   topics2,
+		Operator: primitives.Eq,
+	}}))
+
+	expressions = append(expressions, evm.NewEventByTopicFilter(2, []evm.HashedValueComparator{{
+		Values:   topics3,
+		Operator: primitives.Eq,
+	}}))
+
+	expressions = append(expressions, evm.NewEventByTopicFilter(3, []evm.HashedValueComparator{{
+		Values:   topics4,
+		Operator: primitives.Eq,
+	}}))
+
 	return expressions, confidenceLevel
 }
 
+// TODO remove
 func (lts *LogTriggerService) makeEventByTopicFilter(topic uint64, topics [][]byte) *query.Expression {
 	if len(topics) == 0 {
 		return nil

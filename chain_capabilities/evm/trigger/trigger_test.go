@@ -13,6 +13,8 @@ import (
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 
+	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
+
 	_ "github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
@@ -365,11 +367,26 @@ func TestCreateLogRequest(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			expressions, confidence := service.createLogRequest(t.Context(), tc.addresses,
-				tc.eventSigs,
-				tc.topics2,
-				tc.topics3,
-				tc.topics4,
+			addrs, err := evmservice.ConvertAddressesFromProto(tc.addresses)
+			require.NoError(t, err)
+
+			eventSigs, err := evmservice.ConvertHashesFromProto(tc.eventSigs)
+			require.NoError(t, err)
+
+			topics2, err := evmservice.ConvertHashesFromProto(tc.topics2)
+			require.NoError(t, err)
+
+			topics3, err := evmservice.ConvertHashesFromProto(tc.topics3)
+			require.NoError(t, err)
+
+			topics4, err := evmservice.ConvertHashesFromProto(tc.topics4)
+			require.NoError(t, err)
+
+			expressions, confidence := service.createLogRequest(t.Context(), addrs,
+				eventSigs,
+				topics2,
+				topics3,
+				topics4,
 				tc.confidence)
 			require.NotNil(t, expressions)
 			require.Len(t, expressions, len(tc.expectedExpressions))
