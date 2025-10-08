@@ -43,9 +43,17 @@ func Test_RemoteReadCapabilityWithoutConsensus(t *testing.T) {
 
 	targetSink := readValueFromContractFunction(ctx, t, lggr, "GetValue", 4)
 
-	readresult := <-targetSink.Sink
-	require.NotNil(t, readresult)
-	require.Equal(t, CreateExpectedValue(t, []int64{21, 42, 63}), readresult.Inputs)
+	// Use a timeout mechanism to avoid indefinite blocking
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	select {
+	case readresult := <-targetSink.Sink:
+		require.NotNil(t, readresult)
+		require.Equal(t, CreateExpectedValue(t, []int64{21, 42, 63}), readresult.Inputs)
+	case <-ctxWithTimeout.Done():
+		t.Fatal("timeout waiting for read result from target sink")
+	}
 }
 
 func Test_RemoteReadCapabilityMisconfiguredContractError(t *testing.T) {

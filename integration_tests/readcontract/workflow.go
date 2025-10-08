@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	types2 "github.com/smartcontractkit/chainlink-common/pkg/types"
-	"github.com/smartcontractkit/chainlink-common/pkg/types/evm"
+	types "github.com/smartcontractkit/chainlink-evm/pkg/config"
 	"github.com/smartcontractkit/chainlink/v2/core/services/job"
 	"github.com/smartcontractkit/chainlink/v2/core/testdata/testspecs"
 )
@@ -101,11 +101,11 @@ func CreateContractReaderConfig(contractName string, contractFuncName string, co
 
 	marshalledABIJson = marshalledABIJson[1 : len(marshalledABIJson)-1]
 
-	contractReaderConfig := evm.ContractReaderConfig{
-		Contracts: map[string]evm.ChainContractReader{
+	contractReaderConfig := types.ChainReaderConfig{
+		Contracts: map[string]types.ChainContractReader{
 			contractName: {
 				ContractABI: string(marshalledABIJson),
-				Configs: map[string]*evm.ChainReaderDefinition{
+				Configs: map[string]*types.ChainReaderDefinition{
 					contractFuncName: {
 						ChainSpecificName: contractFuncName,
 					},
