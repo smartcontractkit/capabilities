@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/smartcontractkit/capabilities/kvstore/server"
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 )
 
