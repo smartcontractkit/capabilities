@@ -5,7 +5,7 @@ go 1.24.5
 toolchain go1.24.6
 
 require (
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20250820131008-1c65f4ea06da
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20251008151345-29b06a2ad833
 	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251008120326-8fd3a49fa416
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20250911124514-5874cc6d62b2
 	github.com/smartcontractkit/libocr v0.0.0-20250707144819-babe0ec4e358
@@ -125,5 +125,3 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
-
-replace github.com/smartcontractkit/capabilities/libs => ../libs

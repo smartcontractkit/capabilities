@@ -4,7 +4,7 @@ go 1.24.5
 
 require (
 	github.com/pelletier/go-toml/v2 v2.2.4
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20250902122836-28fd635adf1f
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20251008151345-29b06a2ad833
 	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251008120326-8fd3a49fa416
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20250911124514-5874cc6d62b2
 	github.com/smartcontractkit/freeport v0.1.3-0.20250716200817-cb5dfd0e369e
@@ -123,5 +123,3 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
-
-replace github.com/smartcontractkit/capabilities/libs => ../libs

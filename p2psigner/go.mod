@@ -5,7 +5,7 @@ go 1.24.5
 replace github.com/fbsobreira/gotron-sdk => github.com/smartcontractkit/chainlink-tron/relayer/gotron-sdk v0.0.5-0.20250422175525-b7575d96bd4d
 
 require (
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20250820131008-1c65f4ea06da
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20251008151345-29b06a2ad833
 	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251008120326-8fd3a49fa416
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20250911124514-5874cc6d62b2
 	github.com/stretchr/testify v1.10.0
@@ -125,5 +125,3 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
-
-replace github.com/smartcontractkit/capabilities/libs => ../libs
