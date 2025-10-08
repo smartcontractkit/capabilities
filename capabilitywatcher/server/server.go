@@ -27,7 +27,6 @@ type CapabilityWatcherServer struct {
 	// Service management
 	runningServices map[string]context.CancelFunc
 	servicesMutex   sync.Mutex
-	serverCancel    context.CancelFunc
 }
 
 // Start begins the health check monitoring process
@@ -49,11 +48,6 @@ func (s *CapabilityWatcherServer) Close() error {
 	}
 	s.runningServices = make(map[string]context.CancelFunc)
 
-	// Cancel server context and set to nil
-	if s.serverCancel != nil {
-		s.serverCancel()
-		s.serverCancel = nil
-	}
 	s.servicesMutex.Unlock()
 
 	return nil
@@ -63,9 +57,6 @@ func (s *CapabilityWatcherServer) Close() error {
 func (s *CapabilityWatcherServer) Ready() error {
 	s.servicesMutex.Lock()
 	defer s.servicesMutex.Unlock()
-	if s.serverCancel == nil {
-		return errors.New("capability watcher server is not running")
-	}
 	return nil
 }
 
@@ -75,12 +66,6 @@ func (s *CapabilityWatcherServer) HealthReport() map[string]error {
 	defer s.servicesMutex.Unlock()
 
 	healthReport := make(map[string]error)
-
-	// Check overall server health
-	if s.serverCancel == nil {
-		healthReport["server"] = errors.New("capability watcher server is not running")
-		return healthReport
-	}
 
 	// Server is running
 	healthReport["server"] = nil
