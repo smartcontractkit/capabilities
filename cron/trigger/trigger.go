@@ -237,6 +237,9 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 					events.KeyDonID, strconv.Itoa(int(metadata.WorkflowDonID)),
 					events.KeyDonVersion, strconv.Itoa(int(metadata.WorkflowDonConfigVersion)),
 					events.KeyOrganizationID, orgID,
+					events.KeyWorkflowRegistryChainSelector, metadata.WorkflowRegistryChainSelector,
+					events.KeyWorkflowRegistryAddress, metadata.WorkflowRegistryAddress,
+					events.KeyEngineVersion, metadata.EngineVersion,
 				)
 				if emitErr := events.EmitTriggerExecutionStarted(ctx, labeler); emitErr != nil {
 					s.lggr.Errorw("failed to emit trigger execution started event", "err", emitErr, "triggerID", triggerID, "workflowExecutionID", workflowExecutionID)

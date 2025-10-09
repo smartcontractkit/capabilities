@@ -4,7 +4,7 @@ go 1.24.5
 
 require (
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20250923110103-f972e0402334
-	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251008175659-392db6d97fdb
+	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251009153055-c381b51a6d6e
 	github.com/stretchr/testify v1.10.0
 	go.opentelemetry.io/otel v1.37.0
 	go.opentelemetry.io/otel/metric v1.37.0

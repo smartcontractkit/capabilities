@@ -22,9 +22,22 @@ const ServiceName = "HTTPTriggerCapability"
 
 var _ server.HTTPCapability = &service{}
 
+type WorkflowRegistrationInput struct {
+	WorkflowSelector gateway.WorkflowSelector
+	Config           *http.Config
+	Metadata         WorkflowRegistrationMetadata
+}
+
+type WorkflowRegistrationMetadata struct {
+	WorkflowRegistryChainSelector string
+	WorkflowRegistryAddress       string
+	EngineVersion                 string
+	WorkflowDONID                 uint32
+}
+
 type ConnectorHandler interface {
 	services.Service
-	RegisterWorkflow(ctx context.Context, workflowSelector gateway.WorkflowSelector, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error
+	RegisterWorkflow(ctx context.Context, input WorkflowRegistrationInput, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error
 	UnregisterWorkflow(ctx context.Context, workflowID string) error
 }
 
@@ -119,7 +132,19 @@ func (s *service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 		WorkflowName:  strings.ToLower(ensureHexPrefix(metadata.WorkflowName)),
 		WorkflowTag:   metadata.WorkflowTag,
 	}
-	err := s.connectorHandler.RegisterWorkflow(ctx, workflowSelector, input, sendCh)
+
+	registrationInput := WorkflowRegistrationInput{
+		WorkflowSelector: workflowSelector,
+		Config:           input,
+		Metadata: WorkflowRegistrationMetadata{
+			WorkflowRegistryChainSelector: metadata.WorkflowRegistryChainSelector,
+			WorkflowRegistryAddress:       metadata.WorkflowRegistryAddress,
+			EngineVersion:                 metadata.EngineVersion,
+			WorkflowDONID:                 metadata.WorkflowDonID,
+		},
+	}
+
+	err := s.connectorHandler.RegisterWorkflow(ctx, registrationInput, sendCh)
 	if err != nil {
 		s.metrics.IncrementRegisterFailureCount(ctx, s.lggr)
 		return nil, err

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -128,11 +129,11 @@ func (h *connectorHandler) ID(context.Context) (string, error) {
 	return HandlerName, nil
 }
 
-func (h *connectorHandler) RegisterWorkflow(ctx context.Context, workflowSelector gateway_common.WorkflowSelector, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error {
-	if input == nil {
+func (h *connectorHandler) RegisterWorkflow(ctx context.Context, input WorkflowRegistrationInput, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error {
+	if input.Config == nil {
 		return errors.New("input config cannot be nil")
 	}
-	authorizedKeys, err := h.validateAuthorizedKeys(input.AuthorizedKeys)
+	authorizedKeys, err := h.validateAuthorizedKeys(input.Config.AuthorizedKeys)
 	if err != nil {
 		return err
 	}
@@ -141,18 +142,18 @@ func (h *connectorHandler) RegisterWorkflow(ctx context.Context, workflowSelecto
 	// Error is non-critical. Retries will be handled by the metadata publisher.
 	startTime := time.Now()
 	h.metrics.IncrementBroadcastMetadataCount(ctx, h.lggr)
-	err = h.gatewayMetadataPublisher.BroadcastWorkflowMetadata(ctx, workflowSelector, authorizedKeys)
+	err = h.gatewayMetadataPublisher.BroadcastWorkflowMetadata(ctx, input.WorkflowSelector, authorizedKeys)
 	if err != nil {
 		h.lggr.Errorw("Failed to push metadata to gateway", "error",
-			err, "workflowID", workflowSelector.WorkflowID)
+			err, "workflowID", input.WorkflowSelector.WorkflowID)
 		h.metrics.IncrementBroadcastMetadataFailures(ctx, h.lggr)
 	}
 	latencyMs := time.Since(startTime).Milliseconds()
 	h.metrics.RecordBroadcastMetadataLatency(ctx, latencyMs, h.lggr)
 
-	workflow := newWorkflow(workflowSelector, authorizedKeys, sendCh)
+	workflow := newWorkflowWithMetadata(input.WorkflowSelector, authorizedKeys, sendCh, input.Metadata)
 	h.workflowStore.upsertWorkflow(workflow)
-	h.lggr.Debugw("Registered workflow", "workflowID", workflowSelector.WorkflowID, "workflowOwner", workflowSelector.WorkflowOwner, "workflowName", workflowSelector.WorkflowName, "workflowTag", workflowSelector.WorkflowTag)
+	h.lggr.Debugw("Registered workflow", "workflowID", input.WorkflowSelector.WorkflowID, "workflowOwner", input.WorkflowSelector.WorkflowOwner, "workflowName", input.WorkflowSelector.WorkflowName, "workflowTag", input.WorkflowSelector.WorkflowTag)
 	return nil
 }
 
@@ -323,6 +324,10 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		events.KeyWorkflowExecutionID, workflowExecutionID,
 		events.KeyWorkflowOwner, workflowMetadata.WorkflowOwner,
 		events.KeyWorkflowName, workflowMetadata.WorkflowName,
+		events.KeyWorkflowRegistryChainSelector, workflowMetadata.WorkflowRegistryChainSelector,
+		events.KeyWorkflowRegistryAddress, workflowMetadata.WorkflowRegistryAddress,
+		events.KeyEngineVersion, workflowMetadata.EngineVersion,
+		events.KeyDonID, strconv.Itoa(int(workflowMetadata.WorkflowDONID)),
 	)
 
 	// Try to fetch organization ID if org resolver is available
@@ -351,10 +356,14 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 }
 
 type WorkflowMetadata struct {
-	WorkflowID    string
-	WorkflowOwner string
-	WorkflowName  string
-	WorkflowTag   string
+	WorkflowID                    string
+	WorkflowOwner                 string
+	WorkflowName                  string
+	WorkflowTag                   string
+	WorkflowRegistryChainSelector string
+	WorkflowRegistryAddress       string
+	EngineVersion                 string
+	WorkflowDONID                 uint32
 }
 
 func (h *connectorHandler) resolveWorkflowMetadata(workflow gateway_common.WorkflowSelector, l logger.Logger) (WorkflowMetadata, error) {
@@ -367,6 +376,8 @@ func (h *connectorHandler) resolveWorkflowMetadata(workflow gateway_common.Workf
 
 	workflowID := workflow.WorkflowID
 	if workflowID != "" {
+		// Get the workflow from store to access metadata
+		h.populateMetadataFromWorkflow(workflowID, &metadata, l)
 		return metadata, nil
 	}
 
@@ -382,7 +393,27 @@ func (h *connectorHandler) resolveWorkflowMetadata(workflow gateway_common.Workf
 	}
 
 	metadata.WorkflowID = resolvedID
+	// Get the workflow from store to access metadata
+	h.populateMetadataFromWorkflow(resolvedID, &metadata, l)
 	return metadata, nil
+}
+
+// populateMetadataFromWorkflow retrieves metadata from the workflow store and populates the WorkflowMetadata struct
+func (h *connectorHandler) populateMetadataFromWorkflow(workflowID string, metadata *WorkflowMetadata, l logger.Logger) {
+	if w, exists := h.workflowStore.getWorkflowByID(workflowID); exists {
+		metadata.WorkflowRegistryChainSelector = w.metadata.WorkflowRegistryChainSelector
+		metadata.WorkflowRegistryAddress = w.metadata.WorkflowRegistryAddress
+		metadata.EngineVersion = w.metadata.EngineVersion
+		metadata.WorkflowDONID = w.metadata.WorkflowDONID
+		l.Debugw("Retrieved workflow metadata",
+			"workflowID", workflowID,
+			"registryChainSelector", metadata.WorkflowRegistryChainSelector,
+			"registryAddress", metadata.WorkflowRegistryAddress,
+			"engineVersion", metadata.EngineVersion,
+			"donID", metadata.WorkflowDONID)
+	} else {
+		l.Warnw("Workflow not found in store", "workflowID", workflowID)
+	}
 }
 
 func (h *connectorHandler) generateWorkflowExecutionID(workflowID, reqID string, l logger.Logger) (string, error) {
