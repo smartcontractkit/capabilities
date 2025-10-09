@@ -100,6 +100,9 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 		limitAndSort:                    limitAndSort,
 		orgResolver:                     orgResolver,
 	}
+	if lts.orgResolver == nil {
+		lts.lggr.Warn("OrgResolver is nil, EVM log trigger capability will not be able to fetch organization ID")
+	}
 	if err := lts.initLimiters(limitsFactory); err != nil {
 		return nil, err
 	}

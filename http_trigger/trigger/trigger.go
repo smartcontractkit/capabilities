@@ -68,6 +68,9 @@ func (s *service) Initialise(ctx context.Context, dependencies core.StandardCapa
 	}
 	s.cfg = applyDefaults(serviceConfig)
 	s.orgResolver = dependencies.OrgResolver
+	if s.orgResolver == nil {
+		s.lggr.Warn("OrgResolver is nil, HTTP trigger capability will not be able to fetch organization ID")
+	}
 	outgoingRateLimiter, err := ratelimit.NewRateLimiter(s.cfg.OutgoingRateLimiter)
 	if err != nil {
 		return err
