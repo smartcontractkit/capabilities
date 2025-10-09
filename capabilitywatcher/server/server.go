@@ -9,6 +9,7 @@ import (
 
 	"github.com/smartcontractkit/capabilities/capabilitywatcher/checks"
 	"github.com/smartcontractkit/capabilities/capabilitywatcher/internal"
+	"github.com/smartcontractkit/chainlink-common/pkg/services"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -27,12 +28,13 @@ type CapabilityWatcherServer struct {
 	// Service management
 	runningServices map[string]context.CancelFunc
 	servicesMutex   sync.Mutex
+	stopCh          services.StopChan
 }
 
 // Start begins the health check monitoring process
-func (s *CapabilityWatcherServer) Start(ctx context.Context) error {
+func (s *CapabilityWatcherServer) Start(_ context.Context) error {
 	s.Lggr.Info("Starting capability watcher server")
-	go s.runLoop(ctx)
+	go s.runLoop()
 	return nil
 }
 
@@ -49,15 +51,19 @@ func (s *CapabilityWatcherServer) Close() error {
 	s.runningServices = make(map[string]context.CancelFunc)
 
 	s.servicesMutex.Unlock()
+	close(s.stopCh)
 
 	return nil
 }
 
 // Ready returns whether the server is ready to serve requests
 func (s *CapabilityWatcherServer) Ready() error {
-	s.servicesMutex.Lock()
-	defer s.servicesMutex.Unlock()
-	return nil
+	select {
+	case <-s.stopCh:
+		return errors.New("server is not running")
+	default:
+		return nil
+	}
 }
 
 // HealthReport returns the current health status of monitored components
@@ -116,19 +122,22 @@ func New(lggr logger.Logger) *CapabilityWatcherServer {
 	return &CapabilityWatcherServer{
 		Lggr:            logger.Sugared(lggr).Named("CapabilityWatcherServer"),
 		runningServices: make(map[string]context.CancelFunc),
+		stopCh:          make(services.StopChan),
 	}
 }
 
 // runLoop continuously monitors capabilities and performs health checks
-func (s *CapabilityWatcherServer) runLoop(ctx context.Context) {
+func (s *CapabilityWatcherServer) runLoop() {
 	s.Lggr.Info("Starting capability watcher loop")
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
+	ctx, cancel := s.stopCh.NewCtx()
+	defer cancel()
 
 	for {
 		select {
-		case <-ctx.Done():
-			s.Lggr.Info("Health check loop stopped due to context cancellation")
+		case <-s.stopCh:
+			s.Lggr.Info("Health check loop stopped")
 			return
 		case <-ticker.C:
 			s.performChecks(ctx)
