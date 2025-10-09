@@ -161,6 +161,9 @@ func (s *Service) Initialise(ctx context.Context, dependencies core.StandardCapa
 
 	s.config = cronConfig
 	s.orgResolver = dependencies.OrgResolver
+	if s.orgResolver == nil {
+		s.lggr.Warn("OrgResolver is nil, cron capability will not be able to fetch organization ID")
+	}
 
 	err := s.Start(ctx)
 	if err != nil {
