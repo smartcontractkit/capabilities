@@ -34,12 +34,12 @@ func (r *capabilitiesRegistry) LocalNode(ctx context.Context) (capabilities.Node
 	return capabilities.Node{}, nil
 }
 
-func (r *capabilitiesRegistry) ConfigForCapability(ctx context.Context, name string, version uint32) (capabilities.CapabilityConfiguration, error) {
+func (r *capabilitiesRegistry) ConfigForCapability(ctx context.Context, capabilityID string, donID uint32) (capabilities.CapabilityConfiguration, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	capability, exists := r.capabilities[name]
+	capability, exists := r.capabilities[capabilityID]
 	if !exists {
-		return capabilities.CapabilityConfiguration{}, fmt.Errorf("capability %s not found", name)
+		return capabilities.CapabilityConfiguration{}, fmt.Errorf("capability %s not found", capabilityID)
 	}
 	return capability.(capabilities.CapabilityConfiguration), nil
 }
@@ -148,4 +148,8 @@ func (r *capabilitiesRegistry) Contains(capabilityIDs []string) error {
 
 func (r *capabilitiesRegistry) NodeByPeerID(ctx context.Context, peerID types.PeerID) (capabilities.Node, error) {
 	return capabilities.Node{}, errors.New("unimplemented")
+}
+
+func (r *capabilitiesRegistry) DONsForCapability(ctx context.Context, capabilityID string) ([]capabilities.DONWithNodes, error) {
+	return []capabilities.DONWithNodes{}, nil
 }

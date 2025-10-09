@@ -6,7 +6,7 @@ require (
 	github.com/jonboulle/clockwork v0.5.0
 	github.com/shopspring/decimal v1.4.0
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20250930133443-a868d4d9dee8
-	github.com/smartcontractkit/chainlink-common v0.9.6-0.20250930100900-fa49f2b2de53
+	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251008120326-8fd3a49fa416
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20250911124514-5874cc6d62b2
 	github.com/smartcontractkit/cre-sdk-go v0.5.1-0.20250821154918-5c93d76162c5
 	github.com/smartcontractkit/libocr v0.0.0-20250707144819-babe0ec4e358
@@ -80,7 +80,7 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1 // indirect
 	github.com/scylladb/go-reflectx v1.0.1 // indirect
 	github.com/smartcontractkit/chain-selectors v1.0.67 // indirect
-	github.com/smartcontractkit/chainlink-common/pkg/chipingress v0.0.4 // indirect
+	github.com/smartcontractkit/chainlink-common/pkg/chipingress v0.0.6 // indirect
 	github.com/smartcontractkit/freeport v0.1.3-0.20250716200817-cb5dfd0e369e // indirect
 	github.com/smartcontractkit/grpc-proxy v0.0.0-20240830132753-a7e17fec5ab7 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect

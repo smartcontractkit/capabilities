@@ -103,7 +103,7 @@ var _ services.Service = &Service{}
 
 // NewTriggerService creates a new trigger service.  Optionally, a clock can be passed in for testing, if nil
 // the system clock will be used. The orgResolver is optional and can be nil, but should be set in live environments.
-func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock, orgResolver orgresolver.OrgResolver) (*Service, error) {
+func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock) (*Service, error) {
 	lggr := logger.Named(parentLggr, "Service")
 
 	metrics, err := NewMetrics()
@@ -140,27 +140,18 @@ func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock, orgResol
 			"capabilityVersion", cronTriggerInfo.Version(),
 			"capabilityName", cronTriggerInfo.ID,
 		),
-		metrics:     metrics,
-		orgResolver: orgResolver,
+		metrics: metrics,
 	}, nil
 }
 
-func (s *Service) Initialise(ctx context.Context, config string, _ core.TelemetryService,
-	_ core.KeyValueStore,
-	_ core.ErrorLog,
-	_ core.PipelineRunnerService,
-	_ core.RelayerSet,
-	_ core.OracleFactory,
-	_ core.GatewayConnector,
-	_ core.Keystore,
-) error {
+func (s *Service) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
 	s.lggr.Debugf("Initialising %s", ServiceName)
 
 	var cronConfig Config
-	if len(config) > 0 {
-		err := json.Unmarshal([]byte(config), &cronConfig)
+	if len(dependencies.Config) > 0 {
+		err := json.Unmarshal([]byte(dependencies.Config), &cronConfig)
 		if err != nil {
-			return fmt.Errorf("failed to unmarshal config: %s %w", config, err)
+			return fmt.Errorf("failed to unmarshal config: %s %w", dependencies.Config, err)
 		}
 	}
 
@@ -169,6 +160,7 @@ func (s *Service) Initialise(ctx context.Context, config string, _ core.Telemetr
 	}
 
 	s.config = cronConfig
+	s.orgResolver = dependencies.OrgResolver
 
 	err := s.Start(ctx)
 	if err != nil {

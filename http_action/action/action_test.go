@@ -19,6 +19,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	gcmocks "github.com/smartcontractkit/chainlink-common/pkg/types/core/mocks"
 )
 
@@ -75,7 +76,10 @@ func setupServiceTest(t *testing.T) *testSetup {
 	require.NoError(t, err)
 	gc := gcmocks.NewGatewayConnector(t)
 	gc.EXPECT().AddHandler(mock.Anything, mock.Anything, mock.Anything).Return(nil)
-	err = srv.Initialise(t.Context(), string(cfgStr), nil, nil, nil, nil, nil, nil, gc, nil)
+	err = srv.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
+		Config:           string(cfgStr),
+		GatewayConnector: gc,
+	})
 	require.NoError(t, err)
 
 	mockClient := &MockOutboundRequestClient{}
@@ -269,7 +273,10 @@ func TestInitialise_NilConfig(t *testing.T) {
 		srv := NewService(lggr, limits.Factory{})
 		gc := gcmocks.NewGatewayConnector(t)
 
-		err := srv.Initialise(context.Background(), "", nil, nil, nil, nil, nil, nil, gc, nil)
+		err := srv.Initialise(context.Background(), core.StandardCapabilitiesDependencies{
+			Config:           "",
+			GatewayConnector: gc,
+		})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "unexpected end of JSON input")
 	})
@@ -279,7 +286,10 @@ func TestInitialise_NilConfig(t *testing.T) {
 		srv := NewService(lggr, limits.Factory{})
 		gc := gcmocks.NewGatewayConnector(t)
 
-		err := srv.Initialise(context.Background(), "invalid json", nil, nil, nil, nil, nil, nil, gc, nil)
+		err := srv.Initialise(context.Background(), core.StandardCapabilitiesDependencies{
+			Config:           "invalid json",
+			GatewayConnector: gc,
+		})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "invalid character")
 	})
@@ -289,7 +299,10 @@ func TestInitialise_NilConfig(t *testing.T) {
 		srv := NewService(lggr, limits.Factory{})
 		gc := gcmocks.NewGatewayConnector(t)
 
-		err := srv.Initialise(context.Background(), "{}", nil, nil, nil, nil, nil, nil, gc, nil)
+		err := srv.Initialise(context.Background(), core.StandardCapabilitiesDependencies{
+			Config:           "{}",
+			GatewayConnector: gc,
+		})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "invalid proxy mode")
 	})
@@ -299,7 +312,10 @@ func TestInitialise_NilConfig(t *testing.T) {
 		srv := NewService(lggr, limits.Factory{})
 		gc := gcmocks.NewGatewayConnector(t)
 
-		err := srv.Initialise(context.Background(), "null", nil, nil, nil, nil, nil, nil, gc, nil)
+		err := srv.Initialise(context.Background(), core.StandardCapabilitiesDependencies{
+			Config:           "null",
+			GatewayConnector: gc,
+		})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "invalid proxy mode")
 	})

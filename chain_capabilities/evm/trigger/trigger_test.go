@@ -11,7 +11,11 @@ import (
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
+
+	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 
 	_ "github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
@@ -365,11 +369,26 @@ func TestCreateLogRequest(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			expressions, confidence := service.createLogRequest(t.Context(), tc.addresses,
-				tc.eventSigs,
-				tc.topics2,
-				tc.topics3,
-				tc.topics4,
+			addrs, err := evmservice.ConvertAddressesFromProto(tc.addresses)
+			require.NoError(t, err)
+
+			eventSigs, err := evmservice.ConvertHashesFromProto(tc.eventSigs)
+			require.NoError(t, err)
+
+			topics2, err := evmservice.ConvertHashesFromProto(tc.topics2)
+			require.NoError(t, err)
+
+			topics3, err := evmservice.ConvertHashesFromProto(tc.topics3)
+			require.NoError(t, err)
+
+			topics4, err := evmservice.ConvertHashesFromProto(tc.topics4)
+			require.NoError(t, err)
+
+			expressions, confidence := service.createLogRequest(t.Context(), addrs,
+				eventSigs,
+				topics2,
+				topics3,
+				topics4,
 				tc.confidence)
 			require.NotNil(t, expressions)
 			require.Len(t, expressions, len(tc.expectedExpressions))
@@ -585,9 +604,14 @@ func TestSendLogsToWorkflows(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, logCh, len(expectedLogs))
 		actualLog1 := <-logCh
-		require.Equal(t, createTriggerResponse(expectedLog1, service), actualLog1)
+		expectedResponse1 := createTriggerResponse(expectedLog1, service)
+		require.Equal(t, expectedResponse1.Id, actualLog1.Id)
+		require.True(t, proto.Equal(expectedResponse1.Trigger, actualLog1.Trigger), "proto logs differ for 1st log")
+
 		actualLog2 := <-logCh
-		require.Equal(t, createTriggerResponse(expectedLog2, service), actualLog2)
+		expectedResponse2 := createTriggerResponse(expectedLog2, service)
+		require.Equal(t, expectedResponse2.Id, actualLog2.Id)
+		require.True(t, proto.Equal(expectedResponse2.Trigger, actualLog2.Trigger), "proto logs differ for 2nd log")
 		select {
 		case msg := <-logCh:
 			t.Fatalf("unexpected message received: %+v", msg)
@@ -613,7 +637,9 @@ func TestSendLogsToWorkflows(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, logCh, 1)
 		actualLog1 := <-logCh
-		require.Equal(t, createTriggerResponse(expectedLog1, service), actualLog1)
+		expectedResponse1 := createTriggerResponse(expectedLog1, service)
+		require.Equal(t, expectedResponse1.Id, actualLog1.Id)
+		require.True(t, proto.Equal(expectedResponse1.Trigger, actualLog1.Trigger), "proto logs differ for 1st log")
 		select {
 		case msg := <-logCh:
 			t.Fatalf("unexpected message received: %+v", msg)
@@ -637,7 +663,10 @@ func TestSendLogsToWorkflows(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, logCh, 1)
 		actualLog2 := <-logCh
-		require.Equal(t, createTriggerResponse(expectedLog2, service), actualLog2)
+		expectedResponse2 := createTriggerResponse(expectedLog2, service)
+		require.Equal(t, expectedResponse2.Id, actualLog2.Id)
+		require.True(t, proto.Equal(expectedResponse2.Trigger, actualLog2.Trigger), "proto logs differ for 1st log")
+
 		select {
 		case msg := <-logCh:
 			t.Fatalf("unexpected message received: %+v", msg)

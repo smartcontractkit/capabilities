@@ -39,8 +39,8 @@ type ReadContractGRPCService struct {
 }
 
 func main() {
-	loopserver.Serve(serviceName, func(lggr logger.Logger) *ReadContractGRPCService {
-		return &ReadContractGRPCService{lggr: lggr}
+	loopserver.ServeNew(serviceName, func(s *loop.Server) loop.StandardCapabilities {
+		return &ReadContractGRPCService{lggr: s.Logger}
 	})
 }
 
@@ -93,35 +93,23 @@ func (cs *ReadContractGRPCService) Infos(ctx context.Context) ([]capabilities.Ca
 	}, nil
 }
 
-func (cs *ReadContractGRPCService) Initialise(
-	ctx context.Context,
-	config string,
-	_ core.TelemetryService,
-	_ core.KeyValueStore,
-	capabilityRegistry core.CapabilitiesRegistry,
-	_ core.ErrorLog,
-	_ core.PipelineRunnerService,
-	relayerSet core.RelayerSet,
-	oracleFactory core.OracleFactory,
-	_ core.GatewayConnector,
-	_ core.Keystore,
-) error {
+func (cs *ReadContractGRPCService) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
 	cs.lggr.Infof("Initialising %s", serviceName)
 
 	var readContractConfig actions.ReadContractConfig
-	err := json.Unmarshal([]byte(config), &readContractConfig)
+	err := json.Unmarshal([]byte(dependencies.Config), &readContractConfig)
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
 	relayID := types.NewRelayID(readContractConfig.Network, fmt.Sprintf("%d", readContractConfig.ChainID))
-	relayer, err := relayerSet.Get(ctx, relayID)
+	relayer, err := dependencies.RelayerSet.Get(ctx, relayID)
 	if err != nil {
 		return fmt.Errorf("failed to fetch relayer for chainID %d from relayerSet: %w", readContractConfig.ChainID, err)
 	}
 
 	cs.action, err = actions.NewReadContractAction(ctx, cs.lggr, readContractConfig, &readContractRelayer{relayer},
-		oracleFactory, clockwork.NewRealClock())
+		dependencies.OracleFactory, clockwork.NewRealClock())
 	if err != nil {
 		return fmt.Errorf("failed to create read contract action: %w", err)
 	}
@@ -130,11 +118,11 @@ func (cs *ReadContractGRPCService) Initialise(
 		return fmt.Errorf("failed to start read contract action: %w", err)
 	}
 
-	if err := capabilityRegistry.Add(ctx, cs.action); err != nil {
+	if err := dependencies.CapabilityRegistry.Add(ctx, cs.action); err != nil {
 		return fmt.Errorf("failed to add read contract capability to the capability registry: %w", err)
 	}
 
-	cs.capabilityRegistry = capabilityRegistry
+	cs.capabilityRegistry = dependencies.CapabilityRegistry
 
 	return nil
 }
