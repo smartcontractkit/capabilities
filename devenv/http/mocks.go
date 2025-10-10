@@ -3,9 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"time"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
 
 var _ core.KeyValueStore = (*store)(nil)
@@ -13,6 +14,10 @@ var _ core.KeyValueStore = (*store)(nil)
 type store struct {
 	logger   logger.Logger
 	internal map[string]any
+}
+
+func (s *store) PruneExpiredEntries(ctx context.Context, maxAge time.Duration) (int64, error) {
+	return 0, nil
 }
 
 func NewStore(lggr logger.Logger) *store {
