@@ -1,6 +1,11 @@
 package oracle
 
-import "github.com/smartcontractkit/capabilities/kvstore/kvrequests"
+import (
+	"maps"
+	"slices"
+
+	"github.com/smartcontractkit/capabilities/kvstore/kvrequests"
+)
 
 type Outcome struct {
 	// This is the local (in-memory) namespaced key-value store
@@ -26,10 +31,8 @@ func (o *Outcome) AddNamespaceReferences(namespace string, workflowID string) {
 	}
 
 	// Check if the reference is already assigned
-	for _, reference := range o.NamespaceReferences[namespace] {
-		if reference == workflowID {
-			return
-		}
+	if slices.Contains(o.NamespaceReferences[namespace], workflowID) {
+		return
 	}
 
 	o.NamespaceReferences[namespace] = append(o.NamespaceReferences[namespace], workflowID)
@@ -58,9 +61,7 @@ func (o *Outcome) Write(namespace string, kvPairs kvrequests.KVPairs) {
 		o.Namespaces[namespace] = make(kvrequests.KVPairs)
 	}
 
-	for key, value := range kvPairs {
-		o.Namespaces[namespace][key] = value
-	}
+	maps.Copy(o.Namespaces[namespace], kvPairs)
 }
 
 func (o *Outcome) Read(namespace string, kvPairs kvrequests.KVPairs) kvrequests.KVPairs {

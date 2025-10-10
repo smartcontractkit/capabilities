@@ -84,7 +84,7 @@ func registerTriggerToCronTriggerService(
 		return triggerEventsCh, request, err
 	}
 
-	config, err := values.NewMap(map[string]interface{}{
+	config, err := values.NewMap(map[string]any{
 		"schedule": schedule,
 	})
 	require.NoError(t, err)
@@ -338,7 +338,7 @@ func TestCronTrigger_Load(t *testing.T) {
 	var unregisterRequests [numTriggers]capabilities.TriggerRegistrationRequest
 
 	// Register triggers
-	for triggerIdx := 0; triggerIdx < numTriggers; triggerIdx++ {
+	for triggerIdx := range numTriggers {
 		callback, unregisterRequest, err := registerTriggerToCronTriggerService(
 			ctx,
 			t,
@@ -366,10 +366,10 @@ func TestCronTrigger_Load(t *testing.T) {
 
 	wg := sync.WaitGroup{}
 
-	for triggerIdx := 0; triggerIdx < numTriggers; triggerIdx++ {
+	for triggerIdx := range numTriggers {
 		wg.Add(1)
 		go func(tIdx int) {
-			for execIdx := 0; execIdx < numExecutions; execIdx++ {
+			for execIdx := range numExecutions {
 				msg := <-callbacks[tIdx]
 				response := upwrapCronTriggerEvent(t, msg.Event, false)
 				scheduledExecutionTime, _ := time.Parse(time.RFC3339Nano, response.Payload.ScheduledExecutionTime)
@@ -391,7 +391,7 @@ func TestCronTrigger_Load(t *testing.T) {
 	defer mu.Unlock()
 
 	// Unregister the trigger and check that events no longer go on the callback
-	for i := 0; i < numTriggers; i++ {
+	for i := range numTriggers {
 		require.NoError(t, triggerAPI.UnregisterTrigger(ctx, unregisterRequests[i]))
 	}
 
@@ -400,7 +400,7 @@ func TestCronTrigger_Load(t *testing.T) {
 
 	// Wait a second to ensure no more events
 	time.Sleep(time.Second * 5)
-	for i := 0; i < numTriggers; i++ {
+	for i := range numTriggers {
 		_, open := <-callbacks[i]
 		require.False(t, open)
 	}
@@ -410,8 +410,8 @@ func TestCronTrigger_Load(t *testing.T) {
 
 	var scheduledActualDelta [numTriggers * numExecutions]int64
 
-	for execIdx := 0; execIdx < numExecutions; execIdx++ {
-		for triggerIdx := 0; triggerIdx < numTriggers; triggerIdx++ {
+	for execIdx := range numExecutions {
+		for triggerIdx := range numTriggers {
 			// Check all scheduled execution times at each process are the same across all triggers
 			if triggerIdx > 0 {
 				require.True(t, scheduledExecTimes[0][execIdx].Equal(scheduledExecTimes[triggerIdx][execIdx]))
@@ -884,7 +884,7 @@ func TestCronTrigger_RegisterTriggerDuplicateError(t *testing.T) {
 
 	ctx := t.Context()
 
-	config, err := values.NewMap(map[string]interface{}{
+	config, err := values.NewMap(map[string]any{
 		"schedule": everySecond,
 	})
 	require.NoError(t, err)
@@ -920,7 +920,7 @@ func TestCronTrigger_UnregisterTriggerError(t *testing.T) {
 	t.Run("OK if trigger not found", func(t *testing.T) {
 		ctx := t.Context()
 
-		config, err := values.NewMap(map[string]interface{}{
+		config, err := values.NewMap(map[string]any{
 			"schedule": everySecond,
 		})
 		require.NoError(t, err)
@@ -941,7 +941,7 @@ func TestCronTrigger_UnregisterTriggerError(t *testing.T) {
 	t.Run("OK register then unregister", func(t *testing.T) {
 		ctx := t.Context()
 
-		config, err := values.NewMap(map[string]interface{}{
+		config, err := values.NewMap(map[string]any{
 			"schedule": everySecond,
 		})
 		require.NoError(t, err)
@@ -964,7 +964,7 @@ func TestCronTrigger_UnregisterTriggerError(t *testing.T) {
 	t.Run("OK register then unregister multiple times", func(t *testing.T) {
 		ctx := t.Context()
 
-		config, err := values.NewMap(map[string]interface{}{
+		config, err := values.NewMap(map[string]any{
 			"schedule": everySecond,
 		})
 		require.NoError(t, err)
@@ -998,7 +998,7 @@ func TestCronTrigger_UnregisterTriggerError(t *testing.T) {
 		triggerAPI := server.NewCronServer(ts)
 		ctx := t.Context()
 
-		config, err := values.NewMap(map[string]interface{}{
+		config, err := values.NewMap(map[string]any{
 			"schedule": everySecond,
 		})
 		require.NoError(t, err)

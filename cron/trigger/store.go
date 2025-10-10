@@ -1,6 +1,7 @@
 package trigger
 
 import (
+	"maps"
 	"sync"
 )
 
@@ -35,9 +36,7 @@ func (cs *cronStore) ReadAll() (values map[string]cronTrigger) {
 	cs.mu.RLock()
 	defer cs.mu.RUnlock()
 	tCopy := map[string]cronTrigger{}
-	for key, value := range cs.triggers {
-		tCopy[key] = value
-	}
+	maps.Copy(tCopy, cs.triggers)
 	return tCopy
 }
 

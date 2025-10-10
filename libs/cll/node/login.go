@@ -15,7 +15,7 @@ func Login(nodeID int) error {
 
 	fmt.Printf("Logging in to Node %d.", nodeID)
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		// Login to the node
 		cmd := exec.Command( //nolint:gosec
 			constants.ChainlinkBinaryLocation,

@@ -124,7 +124,7 @@ const (
 
 func nodeKeys(t *testing.T, numNodes int) []*ecdsa.PrivateKey {
 	var keys []*ecdsa.PrivateKey
-	for i := 0; i < numNodes; i++ {
+	for range numNodes {
 		privateKey, err := crypto.GenerateKey()
 		require.NoError(t, err)
 		keys = append(keys, privateKey)
@@ -166,7 +166,7 @@ func setupTestEnv(t *testing.T, numNodes int) *testEnv {
 
 	var triggerCaps []server.HTTPCapability
 	var triggerChs []<-chan capabilities.TriggerAndId[*triggersdk.Payload]
-	for i := 0; i < numNodes; i++ {
+	for i := range numNodes {
 		triggerCap, ch := newTriggerHTTPCapability(ctx, t, nodeURL, nodeKeys[i], signingKey, lggr)
 		triggerCaps = append(triggerCaps, triggerCap)
 		triggerChs = append(triggerChs, ch)
@@ -372,7 +372,7 @@ func assertTriggerPayload(t *testing.T, env *testEnv, executionID string, expect
 		case payload := <-ch:
 			require.NotNil(t, payload)
 			require.Equal(t, "0x"+executionID, payload.Id)
-			var actualInput map[string]interface{}
+			var actualInput map[string]any
 			err := json.Unmarshal(payload.Trigger.Input, &actualInput)
 			require.NoError(t, err)
 			require.Equal(t, expectedInput, actualInput)

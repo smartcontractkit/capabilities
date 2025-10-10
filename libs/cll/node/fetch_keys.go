@@ -19,8 +19,8 @@ type P2PKeys struct {
 func extractP2PKeys(text string) (*P2PKeys, error) {
 	var id, peerID, publicKey string
 
-	lines := strings.Split(text, "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(text, "\n")
+	for line := range lines {
 		line = strings.TrimSpace(line)
 		switch {
 		case strings.HasPrefix(line, "ID:"):
@@ -41,8 +41,8 @@ func extractP2PKeys(text string) (*P2PKeys, error) {
 }
 
 func extractEthAddress(text string) string {
-	lines := strings.Split(text, "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(text, "\n")
+	for line := range lines {
 		if strings.HasPrefix(line, "Address:") {
 			return strings.TrimSpace(line[len("Address:"):])
 		}
@@ -52,8 +52,8 @@ func extractEthAddress(text string) string {
 }
 
 func extractCSAKey(text string) string {
-	lines := strings.Split(text, "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(text, "\n")
+	for line := range lines {
 		if strings.HasPrefix(line, "Public key:") {
 			value := strings.TrimSpace(line[len("Public key:"):])
 			return extractKey(value)
@@ -81,8 +81,8 @@ type OCR2Keys struct {
 func extractOcrPubKeys(text string) (*OCR2Keys, error) {
 	var ocrKeyBundleID, ocrOnchainPubkey, ocrOffchainPubkey, ocrConfigPubkey string
 
-	lines := strings.Split(text, "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(text, "\n")
+	for line := range lines {
 		line = strings.TrimSpace(line)
 		switch {
 		case strings.HasPrefix(line, "ID:"):

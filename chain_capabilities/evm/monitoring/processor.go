@@ -272,8 +272,8 @@ func LogAndEmitError(
 
 // attrsToErrorKV converts a slice of KeyValue into
 // a flat []interface{} of alternating key and value for loggr kvs.
-func attrsToErrorKV(attrs []attribute.KeyValue) []interface{} {
-	kvs := make([]interface{}, 0, len(attrs)*2)
+func attrsToErrorKV(attrs []attribute.KeyValue) []any {
+	kvs := make([]any, 0, len(attrs)*2)
 	for _, attr := range attrs {
 		if !attr.Valid() {
 			continue

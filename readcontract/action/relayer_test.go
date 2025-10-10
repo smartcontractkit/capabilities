@@ -59,7 +59,7 @@ type RelayerNewContractReaderCall struct {
 // NewContractReader is a helper method to define mock.On call
 //   - _a0 context.Context
 //   - contractReaderConfig []byte
-func (_e *RelayerExpecter) NewContractReader(_a0 interface{}, contractReaderConfig interface{}) *RelayerNewContractReaderCall {
+func (_e *RelayerExpecter) NewContractReader(_a0 any, contractReaderConfig any) *RelayerNewContractReaderCall {
 	return &RelayerNewContractReaderCall{Call: _e.mock.On("NewContractReader", _a0, contractReaderConfig)}
 }
 
