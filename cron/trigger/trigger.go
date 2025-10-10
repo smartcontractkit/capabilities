@@ -222,12 +222,19 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 				// Try to fetch organization ID if org resolver is available
 				var orgID string
 				if s.orgResolver != nil && metadata.WorkflowOwner != "" {
-					if fetchedOrgID, orgErr := s.orgResolver.Get(ctx, metadata.WorkflowOwner); orgErr != nil {
-						s.lggr.Warnw("Failed to fetch organization ID from org resolver", "workflowOwner", metadata.WorkflowOwner, "error", orgErr)
-					} else if fetchedOrgID != "" {
-						orgID = fetchedOrgID
-						s.lggr.Debugw("Successfully fetched organization ID", "workflowOwner", metadata.WorkflowOwner, "orgID", orgID)
-					}
+					func() {
+						defer func() {
+							if r := recover(); r != nil {
+								s.lggr.Warnw("Panic while fetching organization ID from org resolver", "workflowOwner", metadata.WorkflowOwner, "panic", r)
+							}
+						}()
+						if fetchedOrgID, orgErr := s.orgResolver.Get(ctx, metadata.WorkflowOwner); orgErr != nil {
+							s.lggr.Warnw("Failed to fetch organization ID from org resolver", "workflowOwner", metadata.WorkflowOwner, "error", orgErr)
+						} else if fetchedOrgID != "" {
+							orgID = fetchedOrgID
+							s.lggr.Debugw("Successfully fetched organization ID", "workflowOwner", metadata.WorkflowOwner, "orgID", orgID)
+						}
+					}()
 				}
 
 				// Emit TriggerExecutionStarted event
