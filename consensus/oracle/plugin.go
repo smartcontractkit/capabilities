@@ -69,18 +69,18 @@ func (r *reportingPlugin) Query(ctx context.Context, outctx ocr3types.OutcomeCon
 		return nil, err
 	}
 
-	// To achieve a deterministic Outcome requires that each node has access to the same set of request observations AND
-	// consensus descriptors. Variations in the latter would result in different nodes producing different outcomes.  As
+	// To achieve a deterministic Outcome requires that each node has access to the same set of request observations, defaults and
+	// consensus descriptors. Variations in the latter 2 would result in different nodes producing different outcomes.  As
 	// the order of arrival of requests at each node is non-deterministic, relying on the request set at each node to provide
 	// the consensus descriptors for a node would result in different nodes producing different outcomes for the same set
 	// of observations.
 	//
-	// The solution to this problem is to embed the consensus descriptor in the query.  With this done, all nodes
-	// will have access to the same consensus descriptor set when calculating the outcome.  One issue with this is that
-	// it would allow the leader node to unduly influence the outcome by choosing which consensus descriptor to associate with
+	// The solution to this problem is to embed the consensus descriptor and default into the query.  With this done, all nodes
+	// will have access to the same consensus descriptor set and default when calculating the outcome.  One issue with this is that
+	// it would allow the leader node to unduly influence the outcome by choosing which consensus descriptor and/or default to associate with
 	// a request in the query.
-	// To prevent this each node checks the consensus descriptor for a request in the query against the consensus descriptor
-	// it has for the request and only contributes an observation for the request if the consensus descriptor matches.
+	// To prevent this each node checks the consensus descriptor and default for a request in the query against the consensus descriptor
+	// and default it has for the request and only contributes an observation for the request if they match.
 	//
 	// The same reasoning applies to the metadata for the request, which is also included in the query.
 
@@ -101,9 +101,18 @@ func (r *reportingPlugin) Query(ctx context.Context, outctx ocr3types.OutcomeCon
 			return nil, fmt.Errorf("failed to marshal consensus descriptor for request %s: %w", rq.ID(), err)
 		}
 
+		var serialisedDefault []byte
+		if rq.Input.Default != nil {
+			serialisedDefault, err = proto.MarshalOptions{Deterministic: true}.Marshal(rq.Input.Default)
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal default for request %s: %w", rq.ID(), err)
+			}
+		}
+
 		newReq := &oracletypes.Request{
 			Metadata:                   ToRequestMetaData(rq.Metadata),
 			RequestConsensusDescriptor: serialisedConsensusDescriptor,
+			RequestDefault:             serialisedDefault,
 		}
 
 		// If the new id would exceed the max query size, stop adding more ids
@@ -160,9 +169,9 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 
 	reqs := r.store.GetByIDs(requestIDs)
 
-	// Observations for a request are only included if the consensus descriptor and metadata match that one in the query
-	// to ensure that the leader node cannot unduly influence the outcome by choosing which consensus descriptor to associate with a request
-	// or what metadata to associate with a request.
+	// Observations for a request are only included if the consensus descriptor, metadata and default match those one in the query
+	// to ensure that the leader node cannot unduly influence the outcome by choosing which consensus descriptor, default or metadata
+	// to associate with a request.
 	var requestObservations []*oracletypes.RequestObservation
 	// Initialize cached size with the base message size
 	obs := &oracletypes.Observation{Observations: make([]*oracletypes.RequestObservation, 0, len(reqs))}
@@ -199,6 +208,29 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 			continue // Skip this request as the metadata does not match
 		}
 
+		if queryRequest.RequestDefault != nil {
+			if req.Input.Default == nil {
+				r.lggr.Debugw("Default value mismatch - query has default but request does not", "requestID", req.ID())
+				continue // Skip this request as the default does not match
+			}
+
+			serialisedDefault, err := proto.MarshalOptions{Deterministic: true}.Marshal(req.Input.Default)
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal default for request %s: %w", req.ID(), err)
+			}
+
+			if !bytes.Equal(queryRequest.RequestDefault, serialisedDefault) {
+				r.lggr.Debugw("Default value mismatch", "requestID", req.ID())
+				continue // Skip this request as the default does not match
+			}
+		} else {
+			if req.Input.Default != nil {
+				r.lggr.Debugw("Default value mismatch - request has default but query does not", "requestID", req.ID())
+				continue // Skip this request as the default does not match
+			}
+		}
+
+		// Now we know the consensus descriptor, metadata and default match, we can include the observation (if it exists)
 		var newOb *oracletypes.RequestObservation
 		switch obs := req.Input.GetObservation().(type) {
 		case *sdk.SimpleConsensusInputs_Value:
@@ -333,12 +365,13 @@ func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeC
 			values = append(values, obs.Observation)
 		}
 
-		// Retrieve the original ConsensusRequest from the store to get the default value
+		// Get the default value from the query request if it exists
 		var defaultValue *valuespb.Value
-		if reqs := r.store.GetByIDs([]string{requestID}); len(reqs) == 1 {
-			originalRequest := reqs[0]
-			if originalRequest != nil && originalRequest.Input != nil {
-				defaultValue = originalRequest.Input.GetDefault()
+		if request.RequestDefault != nil {
+			defaultValue = &valuespb.Value{}
+			err := proto.Unmarshal(request.RequestDefault, defaultValue)
+			if err != nil {
+				return nil, fmt.Errorf("could not unmarshal default value for request %s: %w", requestID, err)
 			}
 		}
 

@@ -33,6 +33,7 @@ message RequestMetaData {
 message Request {
   RequestMetaData metadata = 1;
   bytes request_consensus_descriptor = 2;
+  bytes request_default = 3;
 }
 
 
