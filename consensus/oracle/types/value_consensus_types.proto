@@ -51,12 +51,30 @@ message Observation {
   repeated RequestObservation observations = 1;
 }
 
+// TODO as part of https://smartcontract-it.atlassian.net/browse/CAPPL-1076 add additional statuses  (errored, failed etc.....):
+enum RequestStatus {
+  REQUEST_STATUS_CONSENSUS_SUCCESS = 0;
+  REQUEST_STATUS_CONSENSUS_PENDING = 1;
+}
+
 message RequestOutcome {
   RequestMetaData metadata = 1;
   bytes outcome = 2;
   google.protobuf.Timestamp timestamp = 3;
+  RequestStatus status = 4;
+}
+
+message HistoricalRequestOutcome {
+  string request_id = 1;
+  RequestStatus status = 2;
+  uint64 first_seen_at_seq_nr = 3;
 }
 
 message Outcome {
   repeated RequestOutcome outcomes = 1;
+
+  // A record of recent historical request outcomes, expired based on the sequence number of the consensus round in which they were first seen.
+  // It does not include the actual outcome data to save space in the plugin outcome.  (Note, this prevents it from being used by nodes to recover from
+  // missed outcomes, but that is not a use case we currently support and there are different options to address this use case, i.e. a decentralised store)
+  repeated HistoricalRequestOutcome historical_outcomes = 2;
 }

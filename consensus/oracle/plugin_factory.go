@@ -83,7 +83,23 @@ func (o *factory) NewReportingPlugin(_ context.Context, config ocr3types.Reporti
 		configProto.RequestTimeout = durationpb.New(defaultRequestExpiry)
 	}
 	o.setRequestTimeout(configProto.RequestTimeout.AsDuration())
-	rp, err := NewReportingPlugin(o.lggr, o.metrics, config.F, config.N, o.store, &configProto)
+
+	// TODO move this value to config.  Historical outcomes prevent the reporting plugin from processing a request more than once by allowing the plugin
+	// to determine if an outcome has already been reported for a given request in the recent past.  The recent past i.e. 'size' of history to retain (the span), needs
+	// to take into consideration the likelihood of a request being re-submitted after a certain number of rounds versus the storage cost of retaining history in the
+	// the plugins outcome.
+
+	// An example of a scenario that could result in a request being resubmitted for reprocessing if there is insufficient history to prevent is:
+	//
+	// Due to the async nature of the transmit call, it is possible, in the case where a second round occurs before 2f+1
+	// nodes have received the transmit call for a given round, for a second possibly different outcome to be generated, which if a node
+	// misses the previous transmit call altogether, will result in it seeing a different outcome.
+
+	historicalOutcomeExpirySeqNrSpan := uint64(4)
+
+	o.lggr.Debug("Setting outcome expiry seq nr span", "historicalOutcomeExpirySeqNrSpan", historicalOutcomeExpirySeqNrSpan, "requestTimeout", configProto.RequestTimeout.AsDuration(), "estimatedRoundInterval", config.EstimatedRoundInterval)
+
+	rp, err := NewReportingPlugin(o.lggr, o.metrics, config.F, config.N, o.store, &configProto, historicalOutcomeExpirySeqNrSpan)
 	rpInfo := ocr3types.ReportingPluginInfo{
 		Name: "Consensus Capability Plugin",
 		Limits: ocr3types.ReportingPluginLimits{

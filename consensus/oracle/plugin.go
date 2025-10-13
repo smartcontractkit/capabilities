@@ -43,30 +43,48 @@ type reportingPlugin struct {
 
 	minimumObservations int
 
+	// outcomeExpirySeqNrSpan is the duration, expressed as a seq number span, after which a request outcome will be pruned from the plugins outcome
+	outcomeExpirySeqNrSpan uint64
+
 	config  *ocrtypes.ReportingPluginConfig
 	metrics *metrics.Metrics
 
 	lggr logger.Logger
 }
 
-func NewReportingPlugin(lggr logger.Logger, metrics *metrics.Metrics, f int, n int, store *requests.Store[*ConsensusRequest], configProto *ocrtypes.ReportingPluginConfig) (*reportingPlugin, error) {
+// NewReportingPlugin creates a new reporting plugin for the OCR3 capability
+// historicalOutcomeExpirySeqNrSpan is the duration, expressed as a seq number span, after which a request outcome will be pruned
+// from the plugins outcome
+func NewReportingPlugin(lggr logger.Logger, metrics *metrics.Metrics, f int, n int, store *requests.Store[*ConsensusRequest],
+	configProto *ocrtypes.ReportingPluginConfig, historicalOutcomeExpirySeqNrSpan uint64) (*reportingPlugin, error) {
 	return &reportingPlugin{
-		store:               store,
-		batchSize:           int(configProto.MaxBatchSize),
-		f:                   f,
-		n:                   n,
-		minimumObservations: 2*f + 1,
-		lggr:                logger.Named(lggr, "CapabilityConsensusReportingPlugin"),
-		config:              configProto,
-		metrics:             metrics,
+		store:                  store,
+		batchSize:              int(configProto.MaxBatchSize),
+		f:                      f,
+		n:                      n,
+		minimumObservations:    2*f + 1,
+		outcomeExpirySeqNrSpan: historicalOutcomeExpirySeqNrSpan,
+		lggr:                   logger.Named(lggr, "CapabilityConsensusReportingPlugin"),
+		config:                 configProto,
+		metrics:                metrics,
 	}, nil
 }
 
 func (r *reportingPlugin) Query(ctx context.Context, outctx ocr3types.OutcomeContext) (types.Query, error) {
-	batch, err := r.store.FirstN(r.batchSize)
+	allRequests, err := r.getAllRequests()
 	if err != nil {
-		r.lggr.Errorw("could not retrieve batch", "error", err)
-		return nil, err
+		return nil, fmt.Errorf("failed to get all requests: %w", err)
+	}
+
+	// Get only those requests that are pending consensus to prevent completed requests being included in the new query
+	pendingRequests, err := r.getPendingRequests(outctx, allRequests)
+	if err != nil {
+		return nil, fmt.Errorf("failed to remove completed requests: %w", err)
+	}
+
+	// Take the first batchSize requests after filtering out completed requests
+	if len(pendingRequests) > r.batchSize {
+		pendingRequests = pendingRequests[:r.batchSize]
 	}
 
 	// To achieve a deterministic Outcome requires that each node has access to the same set of request observations, defaults and
@@ -88,7 +106,7 @@ func (r *reportingPlugin) Query(ctx context.Context, outctx ocr3types.OutcomeCon
 	cachedQuerySize := 0
 
 	var reqs []*oracletypes.Request
-	for _, rq := range batch {
+	for _, rq := range pendingRequests {
 		key := GetIDKey(rq)
 
 		// Simple duplicate elimination using a map
@@ -132,6 +150,56 @@ func (r *reportingPlugin) Query(ctx context.Context, outctx ocr3types.OutcomeCon
 	return proto.MarshalOptions{Deterministic: true}.Marshal(&oracletypes.Query{
 		Requests: reqs,
 	})
+}
+
+// Removes any requests that have already been completed (successfully/failed/errored) from the batch
+// leaving only those requests that are pending consensus.
+func (r *reportingPlugin) getPendingRequests(outctx ocr3types.OutcomeContext, allRequests []*ConsensusRequest) ([]*ConsensusRequest, error) {
+	var pendingRequests []*ConsensusRequest
+	if outctx.PreviousOutcome == nil {
+		return allRequests, nil
+	}
+
+	prevOutcome := &oracletypes.Outcome{}
+	err := proto.Unmarshal(outctx.PreviousOutcome, prevOutcome)
+	if err != nil {
+		r.lggr.Errorw("could not unmarshal previous outcome", "error", err)
+		return nil, err
+	}
+
+	// Remove any requests from the batch that are already in the previous outcome and not marked as pending
+	// This ensures that requests that have been completed (whether successfully/failed/errored) are not included in the new query
+	requestIDToHistoricalOutcome := make(map[string]*oracletypes.HistoricalRequestOutcome)
+	for _, ro := range prevOutcome.HistoricalOutcomes {
+		requestIDToHistoricalOutcome[ro.RequestId] = ro
+	}
+
+	for _, rq := range allRequests {
+		previousRequestOutcome, exists := requestIDToHistoricalOutcome[rq.ID()]
+		// If the request ID exists in the historical outcome and is not marked as pending, skip it
+		if exists && previousRequestOutcome.Status != oracletypes.RequestStatus_REQUEST_STATUS_CONSENSUS_PENDING {
+			continue
+		}
+
+		pendingRequests = append(pendingRequests, rq)
+	}
+
+	return pendingRequests, nil
+}
+
+// TODO move this onto the store
+func (r *reportingPlugin) getAllRequests() ([]*ConsensusRequest, error) {
+	storeSize := r.store.Len()
+	if storeSize == 0 {
+		return nil, nil
+	}
+
+	// Get all pending requests
+	batch, err := r.store.FirstN(storeSize)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch consensus requests from store: %w", err)
+	}
+	return batch, nil
 }
 
 func ToRequestMetaData(metadata ConsensusRequestMetadata) *oracletypes.RequestMetaData {
@@ -183,51 +251,15 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 			return nil, fmt.Errorf("request %s not found in query", req.ID())
 		}
 
-		serialisedConsensusDescriptor, err := proto.MarshalOptions{Deterministic: true}.Marshal(req.Input.Descriptors)
+		match, err := requestDescriptorMetadataAndDefaultMatch(r.lggr, req, queryRequest)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal consensus descriptor for request %s: %w", req.ID(), err)
+			return nil, fmt.Errorf("failed to compare request and query for request %s: %w", req.ID(), err)
 		}
 
-		if !bytes.Equal(queryRequest.RequestConsensusDescriptor, serialisedConsensusDescriptor) {
-			r.lggr.Debugw("Consensus descriptor mismatch", "requestID", req.ID())
-			continue // Skip this request as the consensus descriptor does not match
-		}
-
-		serialisedRequestMetaData, err := proto.MarshalOptions{Deterministic: true}.Marshal(ToRequestMetaData(req.Metadata))
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal request metadata for request %s: %w", req.ID(), err)
-		}
-
-		serialisedQueryRequestMetaData, err := proto.MarshalOptions{Deterministic: true}.Marshal(queryRequest.Metadata)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal query request metadata for request %s: %w", req.ID(), err)
-		}
-
-		if !bytes.Equal(serialisedRequestMetaData, serialisedQueryRequestMetaData) {
-			r.lggr.Debugw("Metadata mismatch", "requestID", req.ID())
-			continue // Skip this request as the metadata does not match
-		}
-
-		if queryRequest.RequestDefault != nil {
-			if req.Input.Default == nil {
-				r.lggr.Debugw("Default value mismatch - query has default but request does not", "requestID", req.ID())
-				continue // Skip this request as the default does not match
-			}
-
-			serialisedDefault, err := proto.MarshalOptions{Deterministic: true}.Marshal(req.Input.Default)
-			if err != nil {
-				return nil, fmt.Errorf("failed to marshal default for request %s: %w", req.ID(), err)
-			}
-
-			if !bytes.Equal(queryRequest.RequestDefault, serialisedDefault) {
-				r.lggr.Debugw("Default value mismatch", "requestID", req.ID())
-				continue // Skip this request as the default does not match
-			}
-		} else {
-			if req.Input.Default != nil {
-				r.lggr.Debugw("Default value mismatch - request has default but query does not", "requestID", req.ID())
-				continue // Skip this request as the default does not match
-			}
+		// If the consensus descriptor, metadata or default do not match that of the query skip this request
+		if !match {
+			// TODO - for DoS protection will mark the request as mismatched in subsequent PR
+			continue
 		}
 
 		// Now we know the consensus descriptor, metadata and default match, we can include the observation (if it exists)
@@ -284,6 +316,58 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 	return proto.MarshalOptions{Deterministic: true}.Marshal(observation)
 }
 
+func requestDescriptorMetadataAndDefaultMatch(lggr logger.Logger, req *ConsensusRequest,
+	queryRequest *oracletypes.Request) (bool, error) {
+	serialisedConsensusDescriptor, err := proto.MarshalOptions{Deterministic: true}.Marshal(req.Input.Descriptors)
+	if err != nil {
+		return false, fmt.Errorf("failed to marshal consensus descriptor for request %s: %w", req.ID(), err)
+	}
+
+	if !bytes.Equal(queryRequest.RequestConsensusDescriptor, serialisedConsensusDescriptor) {
+		lggr.Debugw("Consensus descriptor mismatch", "requestID", req.ID())
+		return false, nil
+	}
+
+	serialisedRequestMetaData, err := proto.MarshalOptions{Deterministic: true}.Marshal(ToRequestMetaData(req.Metadata))
+	if err != nil {
+		return false, fmt.Errorf("failed to marshal request metadata for request %s: %w", req.ID(), err)
+	}
+
+	serialisedQueryRequestMetaData, err := proto.MarshalOptions{Deterministic: true}.Marshal(queryRequest.Metadata)
+	if err != nil {
+		return false, fmt.Errorf("failed to marshal query request metadata for request %s: %w", req.ID(), err)
+	}
+
+	if !bytes.Equal(serialisedRequestMetaData, serialisedQueryRequestMetaData) {
+		lggr.Debugw("Metadata mismatch", "requestID", req.ID())
+		return false, nil
+	}
+
+	if queryRequest.RequestDefault != nil {
+		if req.Input.Default == nil {
+			lggr.Debugw("Default value mismatch - query has default but request does not", "requestID", req.ID())
+			return false, nil
+		}
+
+		serialisedDefault, err := proto.MarshalOptions{Deterministic: true}.Marshal(req.Input.Default)
+		if err != nil {
+			return false, fmt.Errorf("failed to marshal default for request %s: %w", req.ID(), err)
+		}
+
+		if !bytes.Equal(queryRequest.RequestDefault, serialisedDefault) {
+			lggr.Debugw("Default value mismatch", "requestID", req.ID())
+			return false, nil
+		}
+	} else {
+		if req.Input.Default != nil {
+			lggr.Debugw("Default value mismatch - request has default but query does not", "requestID", req.ID())
+			return false, nil
+		}
+	}
+
+	return true, nil
+}
+
 func (r *reportingPlugin) ValidateObservation(ctx context.Context, outctx ocr3types.OutcomeContext, query types.Query, ao types.AttributedObservation) error {
 	return nil
 }
@@ -304,51 +388,21 @@ func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeC
 		return nil, err
 	}
 
-	// Group attributed observations by request ID.
-	requestIDToObservations := make(map[string][]timestampedObservation)
-	for _, ao := range attributedObservations {
-		obs := &oracletypes.Observation{}
-		err := proto.Unmarshal(ao.Observation, obs)
-		if err != nil {
-			r.lggr.Errorw("could not unmarshal observation from observer", "error", err, "observer", ao.Observer)
-			continue
-		}
-
-		for _, requestObservation := range obs.Observations {
-			requestID := requestObservation.Metadata.RequestId
-			observationValue := &valuespb.Value{}
-			err := proto.Unmarshal(requestObservation.Observation, observationValue)
-			if err != nil {
-				r.lggr.Errorw("could not unmarshal observation for request from observer", "error", err, "requestID", requestID, "observer", ao.Observer)
-				continue
-			}
-
-			// Check the observation correctly marshals to a value to ensure it is a valid observation
-			_, err = values.FromProto(observationValue)
-			if err != nil {
-				r.lggr.Errorw("could not convert observation value proto to value", "error", err, "requestID", requestID, "observer", ao.Observer)
-				continue
-			}
-
-			requestIDToObservations[requestID] = append(requestIDToObservations[requestID], timestampedObservation{
-				Observation: observationValue,
-				Timestamp:   requestObservation.ReceivedAt,
-			})
-		}
+	historicalOutcomes, requestIDToHistoricalOutcome, err := getNonExpiredHistoricalRequestOutcomes(r.lggr, outctx, r.outcomeExpirySeqNrSpan)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get previous outcomes: %w", err)
 	}
 
+	requestIDToObservations := groupAttributedObservationsByRequestID(r.lggr, attributedObservations)
+
 	var outcomes []*oracletypes.RequestOutcome
-	cachedOutcomeSize := CalculateMessageSize(&oracletypes.Outcome{Outcomes: outcomes})
+	cachedOutcomeSize := CalculateMessageSize(&oracletypes.Outcome{Outcomes: outcomes, HistoricalOutcomes: historicalOutcomes})
 	for _, request := range requestsQuery.Requests {
 		requestID := request.Metadata.RequestId
 		observations := requestIDToObservations[requestID]
-		if len(observations) < r.minimumObservations {
-			r.lggr.Debugw("insufficient observations for request", "requestID", requestID, "numObservations", len(observations))
-			continue
-		}
 
 		consensusDescriptor := &sdk.ConsensusDescriptor{}
-		err := proto.Unmarshal(request.RequestConsensusDescriptor, consensusDescriptor)
+		err = proto.Unmarshal(request.RequestConsensusDescriptor, consensusDescriptor)
 		if err != nil {
 			return nil, fmt.Errorf("could not unmarshal consensus descriptor for request %s: %w", requestID, err)
 		}
@@ -375,44 +429,157 @@ func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeC
 			}
 		}
 
+		var requestOutcome *oracletypes.RequestOutcome
+		var historicalRequestOutcome *oracletypes.HistoricalRequestOutcome
 		value, err := CalculateOutcomeForObservations(r.lggr, values, consensusDescriptor, defaultValue, r.minimumObservations, r.f)
 		if err != nil {
-			// TODO - should the err from CalculateOutcomeForObservations need to be distinguishable between a consensus failure and an error?
+			// TODO - pending this JIRA https://smartcontract-it.atlassian.net/browse/CAPPL-1076 mark the request as
+			// pending so it is included in the next round. Subsequent PR for the latter JIRA will address better consensus failure and
+			// error handling separately to avoid unnecessary consensus retries for the request and address DoS (+allow request to fail fast if consensus is not possible).
 			r.lggr.Errorw("failed to calculate outcome for observations", "requestID", requestID, "error", err)
-			continue
+			historicalRequestOutcome = &oracletypes.HistoricalRequestOutcome{
+				RequestId:        request.Metadata.RequestId,
+				Status:           oracletypes.RequestStatus_REQUEST_STATUS_CONSENSUS_PENDING,
+				FirstSeenAtSeqNr: outctx.SeqNr,
+			}
+		} else {
+			serialisedValue, err := proto.MarshalOptions{Deterministic: true}.Marshal(value)
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal outcome value for request %s: %w", requestID, err)
+			}
+			requestOutcome = &oracletypes.RequestOutcome{
+				Metadata:  request.Metadata,
+				Outcome:   serialisedValue,
+				Timestamp: calculateMedianTimestamp(timestamps),
+				Status:    oracletypes.RequestStatus_REQUEST_STATUS_CONSENSUS_SUCCESS,
+			}
+
+			historicalRequestOutcome = &oracletypes.HistoricalRequestOutcome{
+				RequestId:        request.Metadata.RequestId,
+				Status:           oracletypes.RequestStatus_REQUEST_STATUS_CONSENSUS_SUCCESS,
+				FirstSeenAtSeqNr: outctx.SeqNr,
+			}
 		}
 
-		serialisedValue, err := proto.MarshalOptions{Deterministic: true}.Marshal(value)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal outcome value for request %s: %w", requestID, err)
+		if existingHistoricalRequestOutcome, ok := requestIDToHistoricalOutcome[requestID]; ok {
+			// If the request already exists in the historical outcomes update the status only
+			existingHistoricalRequestOutcome.Status = historicalRequestOutcome.Status
+			historicalRequestOutcome = nil
 		}
 
-		newRequestOutcome := &oracletypes.RequestOutcome{
-			Metadata:  request.Metadata,
-			Outcome:   serialisedValue,
-			Timestamp: calculateMedianTimestamp(timestamps),
-		}
-
-		ok, newSize := BatchHasCapacity(cachedOutcomeSize, newRequestOutcome, int(r.config.MaxOutcomeLengthBytes),
-			func() { r.metrics.IncBatchRequestsTotal(ctx, "outcome") },
-			func() { r.metrics.IncBatchCapacityExceeded(ctx, "outcome") })
-
-		if !ok {
+		hasCapacity, newOutcomeSize := r.checkOutcomeBatchHasCapacity(ctx, cachedOutcomeSize, requestOutcome, historicalRequestOutcome)
+		if !hasCapacity {
 			break
 		}
 
-		outcomes = append(outcomes, newRequestOutcome)
-		cachedOutcomeSize = newSize
+		cachedOutcomeSize = newOutcomeSize
+
+		if requestOutcome != nil {
+			outcomes = append(outcomes, requestOutcome)
+		}
+
+		if historicalRequestOutcome != nil {
+			historicalOutcomes = append(historicalOutcomes, historicalRequestOutcome)
+		}
 	}
 
 	serialisedOutcome, err := proto.MarshalOptions{Deterministic: true}.Marshal(&oracletypes.Outcome{
-		Outcomes: outcomes,
+		Outcomes:           outcomes,
+		HistoricalOutcomes: historicalOutcomes,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal outcome: %w", err)
 	}
 
 	return serialisedOutcome, nil
+}
+
+func (r *reportingPlugin) checkOutcomeBatchHasCapacity(ctx context.Context, existingOutcomeSize int, requestOutcome *oracletypes.RequestOutcome,
+	historicalRequestOutcome *oracletypes.HistoricalRequestOutcome) (bool, int) {
+	if requestOutcome != nil {
+		ok, newSize := BatchHasCapacity(existingOutcomeSize, requestOutcome, int(r.config.MaxOutcomeLengthBytes),
+			func() { r.metrics.IncBatchRequestsTotal(ctx, "outcome") },
+			func() { r.metrics.IncBatchCapacityExceeded(ctx, "outcome") })
+
+		if !ok {
+			r.lggr.Debugw("max outcome batch size reached, skipping other requests", "requestID", requestOutcome.Metadata.RequestId)
+			return false, 0
+		}
+
+		existingOutcomeSize = newSize
+	}
+
+	if historicalRequestOutcome != nil {
+		ok, newSize := BatchHasCapacity(existingOutcomeSize, historicalRequestOutcome, int(r.config.MaxOutcomeLengthBytes),
+			func() { r.metrics.IncBatchRequestsTotal(ctx, "outcome") },
+			func() { r.metrics.IncBatchCapacityExceeded(ctx, "outcome") })
+
+		if !ok {
+			r.lggr.Debugw("max outcome batch size reached when adding historical request outcome, skipping other requests", "requestID", historicalRequestOutcome.RequestId)
+			return false, 0
+		}
+
+		existingOutcomeSize = newSize
+	}
+
+	return true, existingOutcomeSize
+}
+
+func getNonExpiredHistoricalRequestOutcomes(lggr logger.Logger, outctx ocr3types.OutcomeContext, outcomeExpirySeqNrSpan uint64) ([]*oracletypes.HistoricalRequestOutcome, map[string]*oracletypes.HistoricalRequestOutcome, error) {
+	var nonExpiredHistoricalOutcomes []*oracletypes.HistoricalRequestOutcome
+	requestIDToHistoricalOutcome := map[string]*oracletypes.HistoricalRequestOutcome{}
+	if outctx.PreviousOutcome != nil {
+		prevOutcome := &oracletypes.Outcome{}
+		err := proto.Unmarshal(outctx.PreviousOutcome, prevOutcome)
+		if err != nil {
+			lggr.Errorw("could not unmarshal previous outcome", "error", err)
+			return nil, nil, err
+		}
+
+		for _, ho := range prevOutcome.HistoricalOutcomes {
+			if outctx.SeqNr-ho.FirstSeenAtSeqNr <= outcomeExpirySeqNrSpan {
+				nonExpiredHistoricalOutcomes = append(nonExpiredHistoricalOutcomes, ho)
+				requestIDToHistoricalOutcome[ho.RequestId] = ho
+			}
+		}
+	}
+
+	return nonExpiredHistoricalOutcomes, requestIDToHistoricalOutcome, nil
+}
+
+func groupAttributedObservationsByRequestID(lggr logger.Logger, attributedObservations []types.AttributedObservation) map[string][]timestampedObservation {
+	requestIDToObservations := make(map[string][]timestampedObservation)
+	for _, ao := range attributedObservations {
+		obs := &oracletypes.Observation{}
+		err := proto.Unmarshal(ao.Observation, obs)
+		if err != nil {
+			lggr.Errorw("could not unmarshal observation from observer", "error", err, "observer", ao.Observer)
+			continue
+		}
+
+		for _, requestObservation := range obs.Observations {
+			requestID := requestObservation.Metadata.RequestId
+			observationValue := &valuespb.Value{}
+			err = proto.Unmarshal(requestObservation.Observation, observationValue)
+			if err != nil {
+				lggr.Errorw("could not unmarshal observation for request from observer", "error", err, "requestID", requestID, "observer", ao.Observer)
+				continue
+			}
+
+			// Check the observation correctly marshals to a value to ensure it is a valid observation
+			_, err = values.FromProto(observationValue)
+			if err != nil {
+				lggr.Errorw("could not convert observation value proto to value", "error", err, "requestID", requestID, "observer", ao.Observer)
+				continue
+			}
+
+			requestIDToObservations[requestID] = append(requestIDToObservations[requestID], timestampedObservation{
+				Observation: observationValue,
+				Timestamp:   requestObservation.ReceivedAt,
+			})
+		}
+	}
+	return requestIDToObservations
 }
 
 func calculateMedianTimestamp(timestamps []*timestamppb.Timestamp) *timestamppb.Timestamp {
@@ -448,8 +615,14 @@ func (r *reportingPlugin) Reports(ctx context.Context, seqNr uint64, outcome ocr
 	var reports []ocr3types.ReportPlus[[]byte]
 
 	for _, requestOutcome := range requestsOutcome.Outcomes {
-		reqMetadata := requestOutcome.Metadata
+		// TODO as part of https://smartcontract-it.atlassian.net/browse/CAPPL-1076
+		// handle other status outcomes
+		if requestOutcome.Status != oracletypes.RequestStatus_REQUEST_STATUS_CONSENSUS_SUCCESS {
+			r.lggr.Debugw("skipping report generation for request as outcome status is not success", "requestID", requestOutcome.Metadata.RequestId, "status", requestOutcome.Status.String())
+			continue
+		}
 
+		reqMetadata := requestOutcome.Metadata
 		var report []byte
 		switch reqMetadata.RequestType {
 		case oracletypes.RequestType_VALUE_CONSENSUS:

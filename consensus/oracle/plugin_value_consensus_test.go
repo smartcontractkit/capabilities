@@ -368,6 +368,27 @@ func Test_LeaderHasNoMatchingRequest(t *testing.T) {
 	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
 }
 
+func Test_WithOutcomeContext(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := t.Context()
+
+	md1 := newRequestMetaData()
+
+	md1.KeyBundleID = "evm"
+
+	reqToObservations := map[string]consensusPluginTest{
+		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newCr(10, md1), newCr(20, md1), newCr(30, md1),
+			newCr(40, md1), newCr(50, md1), newCr(60, md1),
+			newCr(70, md1)},
+			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
+				verifyValueConsensusReport(t, report, infos, values.NewInt64(40), "evm")
+			}},
+	}
+
+	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
+}
+
 func newRequestMetaData() oracle.ConsensusRequestMetadata {
 	return oracle.ConsensusRequestMetadata{
 		RequestMetadata: capabilities.RequestMetadata{
@@ -427,35 +448,48 @@ func newCrWithObsAndDef(observation int64, def int64, metaData oracle.ConsensusR
 	return oracle.NewConsensusRequest(simpleConsensusInputs, time.Now(), time.Now().Add(1*time.Hour).UTC(), nil, metaData)
 }
 
-func runProtocolRoundTests(ctx context.Context, t *testing.T, lggr logger.Logger, n, f, batchSize int, reqToObservations map[string]consensusPluginTest) {
-	var reportingPlugins []ocr3types.ReportingPlugin[[]byte]
-	for i := range n {
-		pluginObs := []*oracle.ConsensusRequest{}
+type pluginAndRequestStore struct {
+	plugin ocr3types.ReportingPlugin[[]byte]
+	store  *requests.Store[*oracle.ConsensusRequest]
+}
 
-		for _, obsData := range reqToObservations {
-			observation := obsData.requests[i]
-			if observation != nil {
-				pluginObs = append(pluginObs, observation)
-			}
-		}
-		reportingPlugin := createReportingPlugin(t, pluginObs, lggr, f, n, batchSize)
-		reportingPlugins = append(reportingPlugins, reportingPlugin)
+func runProtocolRoundTests(ctx context.Context, t *testing.T, lggr logger.Logger, n, f, batchSize int,
+	reqToObservations map[string]consensusPluginTest) {
+	pluginAndRequestStores := createPluginsAndStores(n, t, lggr, f, batchSize, 5)
+
+	addRequestsToAllStores(pluginAndRequestStores, reqToObservations, t)
+	runProtocolRoundTestsWithPlugins(ctx, t, reqToObservations, pluginAndRequestStores, ocr3types.OutcomeContext{})
+}
+
+func createPluginsAndStores(n int, t *testing.T, lggr logger.Logger, f int, batchSize int, outcomeExpirySpan uint64) []pluginAndRequestStore {
+	var pluginAndRequestStores []pluginAndRequestStore
+
+	for i := 0; i < n; i++ {
+		reportingPlugin, reqStore := createReportingPlugin(t, lggr, f, n, batchSize, outcomeExpirySpan)
+		pluginAndRequestStores = append(pluginAndRequestStores, pluginAndRequestStore{
+			plugin: reportingPlugin,
+			store:  reqStore,
+		})
 	}
+	return pluginAndRequestStores
+}
 
+// runProtocolRoundTestsWithPlugins simulates a single protocol round with the provided reporting plugins and request stores
+// It verifies that all plugins reach the same outcome and that the reports generated are as expected according to the test
+// and returns the outcome
+func runProtocolRoundTestsWithPlugins(ctx context.Context, t *testing.T,
+	reqToObservations map[string]consensusPluginTest, pluginAndRequestStores []pluginAndRequestStore, previousOutcome ocr3types.OutcomeContext) ocr3types.Outcome {
 	// Simulate a protocol round
-
 	// Select the first reporting plugin as the leader, note that setting the observation to nil for the leader
 	// will result in a nil outcome for that request
-	leaderPlugin := reportingPlugins[0]
+	leaderPlugin := pluginAndRequestStores[0].plugin
 
-	outCtx := ocr3types.OutcomeContext{}
-
-	query, err := leaderPlugin.Query(ctx, outCtx)
+	query, err := leaderPlugin.Query(ctx, previousOutcome)
 	require.NoError(t, err)
 
 	var attributedObservations []libocrTypes.AttributedObservation
-	for oracleIdx, plugin := range reportingPlugins {
-		observation, err := plugin.Observation(ctx, outCtx, query)
+	for oracleIdx, plugin := range pluginAndRequestStores {
+		observation, err := plugin.plugin.Observation(ctx, previousOutcome, query)
 
 		fmt.Printf("Oracle %d observation: %v\n", oracleIdx, observation)
 
@@ -466,22 +500,22 @@ func runProtocolRoundTests(ctx context.Context, t *testing.T, lggr logger.Logger
 		})
 	}
 
-	for _, plugin := range reportingPlugins {
+	for _, pluginAndStore := range pluginAndRequestStores {
 		for _, obs := range attributedObservations {
-			err := plugin.ValidateObservation(ctx, outCtx, query, obs)
+			err := pluginAndStore.plugin.ValidateObservation(ctx, previousOutcome, query, obs)
 			require.NoError(t, err, "failed to validate observation from reporting plugin")
 		}
 	}
 
-	for _, plugin := range reportingPlugins {
-		quorumReached, err := plugin.ObservationQuorum(ctx, outCtx, query, attributedObservations)
+	for _, pluginAndStore := range pluginAndRequestStores {
+		quorumReached, err := pluginAndStore.plugin.ObservationQuorum(ctx, previousOutcome, query, attributedObservations)
 		require.NoError(t, err, "failed to validate observation from reporting plugin")
 		require.True(t, quorumReached, "quorum should be reached for observation")
 	}
 
 	var nodeOutcomes []ocr3types.Outcome
-	for _, plugin := range reportingPlugins {
-		outcome, err := plugin.Outcome(ctx, outCtx, query, attributedObservations)
+	for _, pluginAndStore := range pluginAndRequestStores {
+		outcome, err := pluginAndStore.plugin.Outcome(ctx, previousOutcome, query, attributedObservations)
 		if err != nil {
 			continue
 		}
@@ -496,15 +530,22 @@ func runProtocolRoundTests(ctx context.Context, t *testing.T, lggr logger.Logger
 	}
 
 	var allReports [][]ocr3types.ReportPlus[[]byte]
-	for _, plugin := range reportingPlugins {
-		reports, err := plugin.Reports(ctx, 0, nodeOutcomes[0])
+	for _, pluginAndStore := range pluginAndRequestStores {
+		reports, err := pluginAndStore.plugin.Reports(ctx, 0, nodeOutcomes[0])
 		require.NoError(t, err, "failed to report outcome from reporting plugin")
 
 		outcome := &oracletypes.Outcome{}
 		err = proto.Unmarshal(nodeOutcomes[0], outcome)
 		require.NoError(t, err, "failed to unmarshal value from outcome")
 
-		require.Len(t, reports, len(outcome.Outcomes), "reporting plugin returned wrong number of reports")
+		var successfulOutcomes []ocr3types.Outcome
+		for _, ro := range outcome.Outcomes {
+			if ro.Status == oracletypes.RequestStatus_REQUEST_STATUS_CONSENSUS_SUCCESS {
+				successfulOutcomes = append(successfulOutcomes, ro.Outcome)
+			}
+		}
+
+		require.Len(t, reports, len(successfulOutcomes), "reporting plugin returned wrong number of reports")
 		allReports = append(allReports, reports)
 	}
 
@@ -547,6 +588,32 @@ func runProtocolRoundTests(ctx context.Context, t *testing.T, lggr logger.Logger
 
 		expectedOutcome.verifyReport(t, report, &infos)
 	}
+
+	return nodeOutcomes[0]
+}
+
+func addRequestsToAllStores(pluginAndRequestStores []pluginAndRequestStore, reqToObservations map[string]consensusPluginTest, t *testing.T) {
+	for i := 0; i < len(pluginAndRequestStores); i++ {
+		var pluginObs []*oracle.ConsensusRequest
+
+		for _, obsData := range reqToObservations {
+			observation := obsData.requests[i]
+			if observation != nil {
+				pluginObs = append(pluginObs, observation)
+			}
+		}
+		for _, obs := range pluginObs {
+			req := obs
+			err := pluginAndRequestStores[i].store.Add(req)
+			require.NoError(t, err, "failed to add request to store")
+		}
+	}
+}
+
+func removeRequestFromAllStores(pluginAndRequestStores []pluginAndRequestStore, requestID string) {
+	for i := 0; i < len(pluginAndRequestStores); i++ {
+		pluginAndRequestStores[i].store.Evict(requestID)
+	}
 }
 
 func verifyValueConsensusReport(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct, expectedResult *values.Int64,
@@ -575,14 +642,9 @@ func verifyValueConsensusReport(t *testing.T, report ocr3types.ReportPlus[[]byte
 	require.True(t, proto.Equal(actualProto, expectedProto), "expected outcome value to match expected value")
 }
 
-func createReportingPlugin(t *testing.T, pluginObservations []*oracle.ConsensusRequest, lggr logger.Logger, f int, n int,
-	batchSize int) ocr3types.ReportingPlugin[[]byte] {
+func createReportingPlugin(t *testing.T, lggr logger.Logger, f int, n int,
+	batchSize int, outcomeExpirySpan uint64) (ocr3types.ReportingPlugin[[]byte], *requests.Store[*oracle.ConsensusRequest]) {
 	reqStore := requests.NewStore[*oracle.ConsensusRequest]()
-	for _, obs := range pluginObservations {
-		req := obs
-		err := reqStore.Add(req)
-		require.NoError(t, err, "failed to add request to store")
-	}
 
 	metrics, err := metrics.NewMetrics()
 	require.NoError(t, err)
@@ -597,7 +659,7 @@ func createReportingPlugin(t *testing.T, pluginObservations []*oracle.ConsensusR
 			}
 			return uint32(batchSize)
 		}(),
-	})
+	}, outcomeExpirySpan)
 	require.NoError(t, err)
-	return reportingPlugin
+	return reportingPlugin, reqStore
 }
