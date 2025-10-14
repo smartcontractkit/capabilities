@@ -34,9 +34,6 @@ import (
 type consensusPluginTest struct {
 	requests     []*oracle.ConsensusRequest
 	verifyReport func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct)
-
-	//expectedResult      *values.Int64
-	//expectedKeyBundleID string
 }
 
 const n = 7
@@ -200,31 +197,82 @@ func Test_ReceivedObservationsWithErrors(t *testing.T) {
 	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
 }
 
-func Test_ReceivedObservationsWithDefaults(t *testing.T) {
+func Test_ReceivedObservationsWithMatchingDefaults(t *testing.T) {
 	lggr := logger.Test(t)
 	ctx := t.Context()
 
 	md1 := newRequestMetaData()
-	md2 := newRequestMetaData()
-
 	md1.KeyBundleID = "evm"
 
 	reqToObservations := map[string]consensusPluginTest{
 		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
-			newCr(10, md1), newCr(20, md1), newCr(30, md1),
-			newCr(40, md1), newCrWithDefault(50, md1), newCr(60, md1),
-			newCr(70, md1)},
+			newCrWithObsAndDef(10, 17, md1), newCrWithObsAndDef(20, 17, md1), newCrWithObsAndDef(30, 17, md1),
+			newCrWithObsAndDef(40, 17, md1), newCrWithObsAndDef(50, 17, md1), newCrWithObsAndDef(60, 17, md1),
+			newCrWithObsAndDef(70, 17, md1)},
 			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
 				verifyValueConsensusReport(t, report, infos, values.NewInt64(40), "evm")
 			}},
+	}
 
-		md2.RequestID(): {requests: []*oracle.ConsensusRequest{
-			newCrWithDefault(110, md2), newCr(120, md2), newCr(130, md2),
-			newCr(140, md2), newCr(150, md2), newCrWithDefault(160, md2),
-			newCr(170, md2)},
+	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
+}
+
+// In this test some nodes have observations that match the default, and some have observations that do not match the default
+// The consensus should be reached as there are sufficient observations with defaults that match the leader's default
+func Test_ReceivedObservationsWithSomeMisMatchedDefaults_SufficientForConsensus(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := t.Context()
+
+	md1 := newRequestMetaData()
+	md1.KeyBundleID = "evm"
+
+	reqToObservations := map[string]consensusPluginTest{
+		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newCrWithObsAndDef(10, 17, md1), newCrWithObsAndDef(20, 17, md1), newCrWithObsAndDef(30, 17, md1),
+			newCrWithObsAndDef(40, 16, md1), newCrWithObsAndDef(50, 17, md1), newCrWithObsAndDef(60, 17, md1),
+			newCrWithObsAndDef(70, 17, md1)},
 			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
-				verifyValueConsensusReport(t, report, infos, values.NewInt64(140), "")
+				verifyValueConsensusReport(t, report, infos, values.NewInt64(30), "evm")
 			}},
+	}
+
+	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
+}
+
+// In this test some nodes have observations that match the default, and some have observations that do not match the default
+// The consensus should not be reached as there are insufficient observations with defaults that match the leader's default
+func Test_ReceivedObservationsWithSomeMisMatchedDefaults_InsufficientForConsensus(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := t.Context()
+
+	md1 := newRequestMetaData()
+	md1.KeyBundleID = "evm"
+
+	reqToObservations := map[string]consensusPluginTest{
+		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newCrWithObsAndDef(10, 17, md1), newCrWithObsAndDef(20, 12, md1), newCrWithObsAndDef(30, 17, md1),
+			newCrWithObsAndDef(40, 16, md1), newCrWithObsAndDef(50, 17, md1), newCrWithObsAndDef(60, 11, md1),
+			newCrWithObsAndDef(70, 17, md1)},
+			verifyReport: nil},
+	}
+
+	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
+}
+
+// In this test other nodes have observations that do not match the leader's default
+func Test_LeaderNodeMisMatchedDefault_InsufficientForConsensus(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := t.Context()
+
+	md1 := newRequestMetaData()
+	md1.KeyBundleID = "evm"
+
+	reqToObservations := map[string]consensusPluginTest{
+		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newCrWithObsAndDef(10, 14, md1), newCrWithObsAndDef(20, 17, md1), newCrWithObsAndDef(30, 17, md1),
+			newCrWithObsAndDef(40, 17, md1), newCrWithObsAndDef(50, 17, md1), newCrWithObsAndDef(60, 17, md1),
+			newCrWithObsAndDef(70, 17, md1)},
+			verifyReport: nil},
 	}
 
 	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
@@ -369,8 +417,9 @@ func newCrWithError(err error, metaData oracle.ConsensusRequestMetadata) *oracle
 	return oracle.NewConsensusRequest(simpleConsensusInputs, time.Now(), time.Now().Add(1*time.Hour).UTC(), nil, metaData)
 }
 
-func newCrWithDefault(def int64, metaData oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
+func newCrWithObsAndDef(observation int64, def int64, metaData oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
 	simpleConsensusInputs := &sdk.SimpleConsensusInputs{
+		Observation: &sdk.SimpleConsensusInputs_Value{Value: values.Proto(values.NewInt64(observation))},
 		Default:     values.Proto(values.NewInt64(def)),
 		Descriptors: &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_MEDIAN}},
 	}
