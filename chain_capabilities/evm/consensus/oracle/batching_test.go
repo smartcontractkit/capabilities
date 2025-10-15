@@ -22,7 +22,7 @@ func TestObservationSizeIsAdditive(t *testing.T) {
 	}
 	ob := &types.Observation{ChainHeight: &chainHeight, Observations: make(map[string]*types.RequestObservation)}
 	calculatedWireSize := proto.Size(ob)
-	for i := 0; i < OCRRoundMaxBatchSize; i++ {
+	for i := range OCRRoundMaxBatchSize {
 		id := fmt.Sprintf("request_%d", i)
 		payloadSize := rand.Intn(12000)
 		requestOb := &types.RequestObservation{

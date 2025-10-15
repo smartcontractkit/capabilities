@@ -136,7 +136,8 @@ func (s *service) SendRequest(ctx context.Context, metadata capabilities.Request
 
 	response, err := s.client.SendRequest(ctx, metadata, validatedInput, startTime)
 	if err != nil {
-		return nil, err
+		s.lggr.Errorf("Failed to send request: %v", err)
+		return nil, capabilities.NewRemoteReportableError(err)
 	}
 
 	s.metrics.IncrementSuccessfulResponse(ctx, s.cfg.ProxyMode, response.StatusCode, s.lggr)

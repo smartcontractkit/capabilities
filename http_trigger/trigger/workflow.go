@@ -120,6 +120,7 @@ type workflow struct {
 	authorizedKeys   map[gateway.AuthorizedKey]struct{}
 	sendCh           chan<- capabilities.TriggerAndId[*http.Payload]
 	closed           bool
+	metadata         WorkflowRegistrationMetadata
 }
 
 func newWorkflow(workflowSelector gateway.WorkflowSelector, authorizedKeys []gateway.AuthorizedKey, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) *workflow {
@@ -132,6 +133,21 @@ func newWorkflow(workflowSelector gateway.WorkflowSelector, authorizedKeys []gat
 		authorizedKeys:   authorizedKeysMap,
 		sendCh:           sendCh,
 		closed:           false,
+		metadata:         WorkflowRegistrationMetadata{},
+	}
+}
+
+func newWorkflowWithMetadata(workflowSelector gateway.WorkflowSelector, authorizedKeys []gateway.AuthorizedKey, sendCh chan<- capabilities.TriggerAndId[*http.Payload], metadata WorkflowRegistrationMetadata) *workflow {
+	authorizedKeysMap := make(map[gateway.AuthorizedKey]struct{})
+	for _, key := range authorizedKeys {
+		authorizedKeysMap[key] = struct{}{}
+	}
+	return &workflow{
+		workflowSelector: workflowSelector,
+		authorizedKeys:   authorizedKeysMap,
+		sendCh:           sendCh,
+		closed:           false,
+		metadata:         metadata,
 	}
 }
 

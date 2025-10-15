@@ -169,12 +169,21 @@ func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayCon
 		},
 	}
 	sendCh := make(chan capabilities.TriggerAndId[*http.Payload], 1)
-	err = handler.RegisterWorkflow(context.Background(), gateway_common.WorkflowSelector{
-		WorkflowID:    ensureHexPrefix("abcdef"),
-		WorkflowOwner: ensureHexPrefix("123456"),
-		WorkflowName:  ensureHexPrefix(hex.EncodeToString([]byte(workflows.HashTruncateName("workflowName")))),
-		WorkflowTag:   "workflowTag",
-	}, sdkCfg, sendCh)
+	err = handler.RegisterWorkflow(context.Background(), WorkflowRegistrationInput{
+		WorkflowSelector: gateway_common.WorkflowSelector{
+			WorkflowID:    ensureHexPrefix("abcdef"),
+			WorkflowOwner: ensureHexPrefix("123456"),
+			WorkflowName:  ensureHexPrefix(hex.EncodeToString([]byte(workflows.HashTruncateName("workflowName")))),
+			WorkflowTag:   "workflowTag",
+		},
+		Config: sdkCfg,
+		Metadata: WorkflowRegistrationMetadata{
+			WorkflowRegistryChainSelector: "test-chain-selector",
+			WorkflowRegistryAddress:       "test-registry-address",
+			EngineVersion:                 "1.0.0",
+			WorkflowDONID:                 42,
+		},
+	}, sendCh)
 	require.NoError(t, err)
 
 	return handler, mockConnector, sendCh, requestCache
@@ -489,7 +498,11 @@ func TestRegisterWorkflow_InvalidECDSAPublicKey(t *testing.T) {
 				WorkflowTag:   "workflowTag",
 				WorkflowID:    "workflowID",
 			}
-			err := handler.RegisterWorkflow(context.Background(), selector, cfg, sendCh)
+			err := handler.RegisterWorkflow(context.Background(), WorkflowRegistrationInput{
+				WorkflowSelector: selector,
+				Config:           cfg,
+				Metadata:         WorkflowRegistrationMetadata{},
+			}, sendCh)
 			require.Error(t, err)
 			require.Contains(t, err.Error(), tc.errorMsg)
 		})
@@ -558,7 +571,11 @@ func TestRegisterWorkflow_TooManyAuthorizedKeys(t *testing.T) {
 			WorkflowTag:   "workflowTag",
 			WorkflowID:    "workflowID-max",
 		}
-		err := handler.RegisterWorkflow(context.Background(), selector, cfg, sendCh)
+		err := handler.RegisterWorkflow(context.Background(), WorkflowRegistrationInput{
+			WorkflowSelector: selector,
+			Config:           cfg,
+			Metadata:         WorkflowRegistrationMetadata{},
+		}, sendCh)
 		require.NoError(t, err)
 	})
 
@@ -586,7 +603,11 @@ func TestRegisterWorkflow_TooManyAuthorizedKeys(t *testing.T) {
 			WorkflowTag:   "workflowTag",
 			WorkflowID:    "workflowID-too-many",
 		}
-		err := handler.RegisterWorkflow(context.Background(), selector, cfg, sendCh)
+		err := handler.RegisterWorkflow(context.Background(), WorkflowRegistrationInput{
+			WorkflowSelector: selector,
+			Config:           cfg,
+			Metadata:         WorkflowRegistrationMetadata{},
+		}, sendCh)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "too many authorized keys: 3, max allowed: 2")
 	})
@@ -608,7 +629,11 @@ func TestRegisterWorkflow_EmptyAuthorizedKeys(t *testing.T) {
 		AuthorizedKeys: []*http.AuthorizedKey{},
 	}
 
-	err := handler.RegisterWorkflow(context.Background(), selector, cfg, sendCh)
+	err := handler.RegisterWorkflow(context.Background(), WorkflowRegistrationInput{
+		WorkflowSelector: selector,
+		Config:           cfg,
+		Metadata:         WorkflowRegistrationMetadata{},
+	}, sendCh)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "no authorized keys")
 }
@@ -694,7 +719,11 @@ func TestHandleGatewayMessage_PullAuthMetadata(t *testing.T) {
 		WorkflowTag:   "workflowTag2",
 		WorkflowID:    "wf2",
 	}
-	err := handler.RegisterWorkflow(t.Context(), selector, sdkCfg2, triggerCh2)
+	err := handler.RegisterWorkflow(t.Context(), WorkflowRegistrationInput{
+		WorkflowSelector: selector,
+		Config:           sdkCfg2,
+		Metadata:         WorkflowRegistrationMetadata{},
+	}, triggerCh2)
 	require.NoError(t, err, "Failed to register second workflow")
 
 	// Create pull auth metadata request
@@ -942,7 +971,11 @@ func TestRegisterWorkflow_NilInput(t *testing.T) {
 
 	sendCh := make(chan capabilities.TriggerAndId[*http.Payload], 1)
 
-	err := handler.RegisterWorkflow(context.Background(), workflowSelector, nil, sendCh)
+	err := handler.RegisterWorkflow(context.Background(), WorkflowRegistrationInput{
+		WorkflowSelector: workflowSelector,
+		Config:           nil,
+		Metadata:         WorkflowRegistrationMetadata{},
+	}, sendCh)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "input config cannot be nil")
 }

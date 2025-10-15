@@ -262,7 +262,7 @@ func TestCapability_Execute(t *testing.T) {
 		})
 		assert.NoError(t, err)
 
-		config, err := values.NewMap(map[string]interface{}{
+		config, err := values.NewMap(map[string]any{
 			"otelEndpoint": "redpanda:1234",
 		})
 		assert.NoError(t, err)
@@ -313,7 +313,7 @@ func TestCapability_Execute(t *testing.T) {
 		})
 		assert.NoError(t, err)
 
-		config, err := values.NewMap(map[string]interface{}{
+		config, err := values.NewMap(map[string]any{
 			"otelEndpoint": big.NewInt(123),
 		})
 		assert.NoError(t, err)

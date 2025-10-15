@@ -78,7 +78,7 @@ func TestTrigger_ConcurrentAccess(t *testing.T) {
 	concurrent := 10
 
 	// Test concurrent registrations
-	for i := 0; i < concurrent; i++ {
+	for i := range concurrent {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
@@ -99,7 +99,7 @@ func TestTrigger_ConcurrentAccess(t *testing.T) {
 	trigger.mu.RUnlock()
 
 	// Test concurrent unregistrations
-	for i := 0; i < concurrent; i++ {
+	for i := range concurrent {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
@@ -138,7 +138,7 @@ func TestTrigger_ChannelBuffering(t *testing.T) {
 	trigger.mu.RUnlock()
 
 	// Test that the channel is buffered to 1000
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		sub.Ch <- capabilities.TriggerResponse{
 			Event: capabilities.TriggerEvent{
 				ID: fmt.Sprintf("event-%d", i),
@@ -147,7 +147,7 @@ func TestTrigger_ChannelBuffering(t *testing.T) {
 	}
 
 	// Verify we can receive all messages
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		select {
 		case resp := <-ch:
 			assert.Contains(t, resp.Event.ID, "event-")

@@ -13,6 +13,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
+	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
 
@@ -27,15 +28,13 @@ type CapabilityWatcherServer struct {
 	// Service management
 	runningServices map[string]context.CancelFunc
 	servicesMutex   sync.Mutex
-	serverCancel    context.CancelFunc
+	stopCh          services.StopChan
 }
 
 // Start begins the health check monitoring process
-func (s *CapabilityWatcherServer) Start(ctx context.Context) error {
+func (s *CapabilityWatcherServer) Start(_ context.Context) error {
 	s.Lggr.Info("Starting capability watcher server")
-	serverCtx, serverCancel := context.WithCancel(ctx)
-	s.serverCancel = serverCancel
-	go s.runLoop(serverCtx)
+	go s.runLoop()
 	return nil
 }
 
@@ -51,24 +50,20 @@ func (s *CapabilityWatcherServer) Close() error {
 	}
 	s.runningServices = make(map[string]context.CancelFunc)
 
-	// Cancel server context and set to nil
-	if s.serverCancel != nil {
-		s.serverCancel()
-		s.serverCancel = nil
-	}
 	s.servicesMutex.Unlock()
+	close(s.stopCh)
 
 	return nil
 }
 
 // Ready returns whether the server is ready to serve requests
 func (s *CapabilityWatcherServer) Ready() error {
-	s.servicesMutex.Lock()
-	defer s.servicesMutex.Unlock()
-	if s.serverCancel == nil {
-		return errors.New("capability watcher server is not running")
+	select {
+	case <-s.stopCh:
+		return errors.New("server is not running")
+	default:
+		return nil
 	}
-	return nil
 }
 
 // HealthReport returns the current health status of monitored components
@@ -77,12 +72,6 @@ func (s *CapabilityWatcherServer) HealthReport() map[string]error {
 	defer s.servicesMutex.Unlock()
 
 	healthReport := make(map[string]error)
-
-	// Check overall server health
-	if s.serverCancel == nil {
-		healthReport["server"] = errors.New("capability watcher server is not running")
-		return healthReport
-	}
 
 	// Server is running
 	healthReport["server"] = nil
@@ -133,19 +122,22 @@ func New(lggr logger.Logger) *CapabilityWatcherServer {
 	return &CapabilityWatcherServer{
 		Lggr:            logger.Sugared(lggr).Named("CapabilityWatcherServer"),
 		runningServices: make(map[string]context.CancelFunc),
+		stopCh:          make(services.StopChan),
 	}
 }
 
 // runLoop continuously monitors capabilities and performs health checks
-func (s *CapabilityWatcherServer) runLoop(ctx context.Context) {
+func (s *CapabilityWatcherServer) runLoop() {
 	s.Lggr.Info("Starting capability watcher loop")
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
+	ctx, cancel := s.stopCh.NewCtx()
+	defer cancel()
 
 	for {
 		select {
-		case <-ctx.Done():
-			s.Lggr.Info("Health check loop stopped due to context cancellation")
+		case <-s.stopCh:
+			s.Lggr.Info("Health check loop stopped")
 			return
 		case <-ticker.C:
 			s.performChecks(ctx)

@@ -13,7 +13,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 )
 
-// Metrics contains metrics for consensus capability
+// Metrics contains metrics for cron capability
 type Metrics struct {
 	activeTriggersGauge          metric.Int64Gauge
 	triggeredCount               metric.Int64Counter

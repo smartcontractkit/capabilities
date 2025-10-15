@@ -18,13 +18,13 @@ var _ core.CapabilitiesRegistry = (*capabilitiesRegistry)(nil)
 type capabilitiesRegistry struct {
 	core.UnimplementedCapabilitiesRegistry
 	mu           sync.RWMutex
-	capabilities map[string]interface{}
+	capabilities map[string]any
 	t            *testing.T
 }
 
 func NewCapabilitiesRegistry(t *testing.T) *capabilitiesRegistry {
 	return &capabilitiesRegistry{
-		capabilities: make(map[string]interface{}),
+		capabilities: make(map[string]any),
 		t:            t,
 	}
 }

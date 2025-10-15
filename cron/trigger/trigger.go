@@ -161,6 +161,9 @@ func (s *Service) Initialise(ctx context.Context, dependencies core.StandardCapa
 
 	s.config = cronConfig
 	s.orgResolver = dependencies.OrgResolver
+	if s.orgResolver == nil {
+		s.lggr.Warn("OrgResolver is nil, cron capability will not be able to fetch organization ID")
+	}
 
 	err := s.Start(ctx)
 	if err != nil {
@@ -219,12 +222,19 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 				// Try to fetch organization ID if org resolver is available
 				var orgID string
 				if s.orgResolver != nil && metadata.WorkflowOwner != "" {
-					if fetchedOrgID, orgErr := s.orgResolver.Get(ctx, metadata.WorkflowOwner); orgErr != nil {
-						s.lggr.Warnw("Failed to fetch organization ID from org resolver", "workflowOwner", metadata.WorkflowOwner, "error", orgErr)
-					} else if fetchedOrgID != "" {
-						orgID = fetchedOrgID
-						s.lggr.Debugw("Successfully fetched organization ID", "workflowOwner", metadata.WorkflowOwner, "orgID", orgID)
-					}
+					func() {
+						defer func() {
+							if r := recover(); r != nil {
+								s.lggr.Warnw("Panic while fetching organization ID from org resolver", "workflowOwner", metadata.WorkflowOwner, "panic", r)
+							}
+						}()
+						if fetchedOrgID, orgErr := s.orgResolver.Get(ctx, metadata.WorkflowOwner); orgErr != nil {
+							s.lggr.Warnw("Failed to fetch organization ID from org resolver", "workflowOwner", metadata.WorkflowOwner, "error", orgErr)
+						} else if fetchedOrgID != "" {
+							orgID = fetchedOrgID
+							s.lggr.Debugw("Successfully fetched organization ID", "workflowOwner", metadata.WorkflowOwner, "orgID", orgID)
+						}
+					}()
 				}
 
 				// Emit TriggerExecutionStarted event
@@ -237,6 +247,9 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 					events.KeyDonID, strconv.Itoa(int(metadata.WorkflowDonID)),
 					events.KeyDonVersion, strconv.Itoa(int(metadata.WorkflowDonConfigVersion)),
 					events.KeyOrganizationID, orgID,
+					events.KeyWorkflowRegistryChainSelector, metadata.WorkflowRegistryChainSelector,
+					events.KeyWorkflowRegistryAddress, metadata.WorkflowRegistryAddress,
+					events.KeyEngineVersion, metadata.EngineVersion,
 				)
 				if emitErr := events.EmitTriggerExecutionStarted(ctx, labeler); emitErr != nil {
 					s.lggr.Errorw("failed to emit trigger execution started event", "err", emitErr, "triggerID", triggerID, "workflowExecutionID", workflowExecutionID)

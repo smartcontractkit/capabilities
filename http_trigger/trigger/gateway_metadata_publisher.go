@@ -137,10 +137,7 @@ func (h *gatewayMetadataPublisher) SendWorkflowMetadata(ctx context.Context, gat
 	}
 	batchSize := int(h.cfg.MetadataBatchSize)
 	for i := 0; i < len(workflows); i += batchSize {
-		end := i + batchSize
-		if end > len(workflows) {
-			end = len(workflows)
-		}
+		end := min(i+batchSize, len(workflows))
 		batch := workflows[i:end]
 
 		batchData := make([]gateway.WorkflowMetadata, 0, len(batch))

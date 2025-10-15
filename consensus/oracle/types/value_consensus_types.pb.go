@@ -196,6 +196,7 @@ type Request struct {
 	state                      protoimpl.MessageState `protogen:"open.v1"`
 	Metadata                   *RequestMetaData       `protobuf:"bytes,1,opt,name=metadata,proto3" json:"metadata,omitempty"`
 	RequestConsensusDescriptor []byte                 `protobuf:"bytes,2,opt,name=request_consensus_descriptor,json=requestConsensusDescriptor,proto3" json:"request_consensus_descriptor,omitempty"`
+	RequestDefault             []byte                 `protobuf:"bytes,3,opt,name=request_default,json=requestDefault,proto3" json:"request_default,omitempty"`
 	unknownFields              protoimpl.UnknownFields
 	sizeCache                  protoimpl.SizeCache
 }
@@ -240,6 +241,13 @@ func (x *Request) GetMetadata() *RequestMetaData {
 func (x *Request) GetRequestConsensusDescriptor() []byte {
 	if x != nil {
 		return x.RequestConsensusDescriptor
+	}
+	return nil
+}
+
+func (x *Request) GetRequestDefault() []byte {
+	if x != nil {
+		return x.RequestDefault
 	}
 	return nil
 }
@@ -515,10 +523,11 @@ const file_value_consensus_types_proto_rawDesc = "" +
 	"\treport_id\x18\t \x01(\tR\breportId\x12 \n" +
 	"\vkeyBundleId\x18\n" +
 	" \x01(\tR\vkeyBundleId\x12E\n" +
-	"\frequest_type\x18\v \x01(\x0e2\".value_consensus_types.RequestTypeR\vrequestType\"\x8f\x01\n" +
+	"\frequest_type\x18\v \x01(\x0e2\".value_consensus_types.RequestTypeR\vrequestType\"\xb8\x01\n" +
 	"\aRequest\x12B\n" +
 	"\bmetadata\x18\x01 \x01(\v2&.value_consensus_types.RequestMetaDataR\bmetadata\x12@\n" +
-	"\x1crequest_consensus_descriptor\x18\x02 \x01(\fR\x1arequestConsensusDescriptor\"C\n" +
+	"\x1crequest_consensus_descriptor\x18\x02 \x01(\fR\x1arequestConsensusDescriptor\x12'\n" +
+	"\x0frequest_default\x18\x03 \x01(\fR\x0erequestDefault\"C\n" +
 	"\x05Query\x12:\n" +
 	"\brequests\x18\x01 \x03(\v2\x1e.value_consensus_types.RequestR\brequests\"\xb7\x01\n" +
 	"\x12RequestObservation\x12B\n" +

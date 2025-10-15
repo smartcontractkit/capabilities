@@ -104,7 +104,7 @@ func (o *oracle) Start(ctx context.Context) error {
 				// More complex cases can be added later.
 				attributedObservations := make([]ocrtypes.AttributedObservation, config.N)
 				n := uint8(math.Min(float64(config.N), 4))
-				for i := uint8(0); i < n; i++ {
+				for i := range n {
 					attributedObservations[i] = ocrtypes.AttributedObservation{
 						Observation: observation,
 						Observer:    commontypes.OracleID(i),

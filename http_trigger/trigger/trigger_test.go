@@ -66,7 +66,16 @@ func TestService_RegisterTrigger(t *testing.T) {
 			require.NoError(t, err)
 			svc.connectorHandler = mockHandler
 			ctx := context.Background()
-			meta := capabilities.RequestMetadata{WorkflowID: "abcdef", WorkflowOwner: "123456", WorkflowName: "456789", WorkflowTag: "tag"}
+			meta := capabilities.RequestMetadata{
+				WorkflowID:                    "abcdef",
+				WorkflowOwner:                 "123456",
+				WorkflowName:                  "456789",
+				WorkflowTag:                   "tag",
+				WorkflowRegistryChainSelector: "test-chain-selector",
+				WorkflowRegistryAddress:       "test-registry-address",
+				EngineVersion:                 "1.0.0",
+				WorkflowDonID:                 42,
+			}
 			input := &http.Config{}
 
 			ch, err := svc.RegisterTrigger(ctx, "tid", meta, input)
@@ -80,6 +89,10 @@ func TestService_RegisterTrigger(t *testing.T) {
 				require.Equal(t, strings.ToLower(ensureHexPrefix(meta.WorkflowName)), mockHandler.lastWorkflowSelector.WorkflowName)
 				require.Equal(t, meta.WorkflowTag, mockHandler.lastWorkflowSelector.WorkflowTag)
 				require.Equal(t, input, mockHandler.lastInput)
+				require.Equal(t, meta.WorkflowRegistryChainSelector, mockHandler.lastMetadata.WorkflowRegistryChainSelector)
+				require.Equal(t, meta.WorkflowRegistryAddress, mockHandler.lastMetadata.WorkflowRegistryAddress)
+				require.Equal(t, meta.EngineVersion, mockHandler.lastMetadata.EngineVersion)
+				require.Equal(t, meta.WorkflowDonID, mockHandler.lastMetadata.WorkflowDONID)
 			}
 		})
 	}
@@ -165,11 +178,13 @@ type mockConnectorHandler struct {
 	unregisterErr        error
 	lastWorkflowSelector gateway_common.WorkflowSelector
 	lastInput            *http.Config
+	lastMetadata         WorkflowRegistrationMetadata
 }
 
-func (m *mockConnectorHandler) RegisterWorkflow(ctx context.Context, workflowSelector gateway_common.WorkflowSelector, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error {
-	m.lastWorkflowSelector = workflowSelector
-	m.lastInput = input
+func (m *mockConnectorHandler) RegisterWorkflow(ctx context.Context, input WorkflowRegistrationInput, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error {
+	m.lastWorkflowSelector = input.WorkflowSelector
+	m.lastInput = input.Config
+	m.lastMetadata = input.Metadata
 	return m.registerErr
 }
 func (m *mockConnectorHandler) UnregisterWorkflow(ctx context.Context, workflowID string) error {

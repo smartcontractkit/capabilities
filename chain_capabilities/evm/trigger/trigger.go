@@ -100,6 +100,9 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 		limitAndSort:                    limitAndSort,
 		orgResolver:                     orgResolver,
 	}
+	if lts.orgResolver == nil {
+		lts.lggr.Warn("OrgResolver is nil, EVM log trigger capability will not be able to fetch organization ID")
+	}
 	if err := lts.initLimiters(limitsFactory); err != nil {
 		return nil, err
 	}
@@ -426,6 +429,15 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 		}
 		if telemetryContext.RequestMetadata.WorkflowDonConfigVersion != 0 {
 			labeler = labeler.With(events.KeyDonVersion, strconv.Itoa(int(telemetryContext.RequestMetadata.WorkflowDonConfigVersion)))
+		}
+		if telemetryContext.RequestMetadata.WorkflowRegistryChainSelector != "" {
+			labeler = labeler.With(events.KeyWorkflowRegistryChainSelector, telemetryContext.RequestMetadata.WorkflowRegistryChainSelector)
+		}
+		if telemetryContext.RequestMetadata.WorkflowRegistryAddress != "" {
+			labeler = labeler.With(events.KeyWorkflowRegistryAddress, telemetryContext.RequestMetadata.WorkflowRegistryAddress)
+		}
+		if telemetryContext.RequestMetadata.EngineVersion != "" {
+			labeler = labeler.With(events.KeyEngineVersion, telemetryContext.RequestMetadata.EngineVersion)
 		}
 
 		// Try to fetch organization ID if org resolver is available
