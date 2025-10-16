@@ -1,6 +1,7 @@
 name: CI
 
-on: [push]
+on:
+  push:
 
 env:
   # Ensure that a cached go version is used:
@@ -196,7 +197,7 @@ jobs:
 
   lint:
     needs: affected
-    if: ${{fromJson(needs.affected.outputs.nx).run_checks}}
+    # Temporarily running for all projects
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -205,7 +206,26 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        projects: ${{fromJson(needs.affected.outputs.nx).projects}}
+        projects:
+          [
+            "evm",
+            "loadtestwritetarget",
+            "capabilitywatcher",
+            "integration_tests",
+            "loopserver",
+            "testutils",
+            "workflowevent",
+            "http_trigger",
+            "readcontract",
+            "http_action",
+            "consensus",
+            "p2psigner",
+            "workflows",
+            "cll",
+            "kvstore",
+            "cron",
+            "mock",
+          ]
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
