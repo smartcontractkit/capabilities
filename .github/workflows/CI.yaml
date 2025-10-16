@@ -261,8 +261,7 @@ jobs:
           echo "version=${version}" | tee -a "$GITHUB_OUTPUT"
 
       - name: golangci-lint (${{ matrix.projects }})
-        # uses: smartcontractkit/.github/actions/ci-lint-go@ci-lint-go/3.1.0
-        uses: smartcontractkit/.github/actions/ci-lint-go@dx-2114/golangci-lint-stdout # TODO
+        uses: smartcontractkit/.github/actions/ci-lint-go@ci-lint-go/3.1.0
         with:
           checkout-repo: false
           golangci-lint-version: v${{ steps.get-version.outputs.version }}
