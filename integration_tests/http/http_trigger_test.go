@@ -255,9 +255,7 @@ func TestHTTPTrigger_InsufficientNodes(t *testing.T) {
 		_, err := http.DefaultClient.Do(req)
 		return err != nil // request times out and returns an error if threshold of node responses is not met
 	}, 30*time.Second, time.Second)
-	executionID, err := workflows.EncodeExecutionID(strings.TrimPrefix(workflowID, "0x"), requestID)
-	require.NoError(t, err)
-	assertTriggerPayload(t, env, executionID, input) // workflows are still triggered even if not all nodes are available
+	assertTriggerPayload(t, env, requestID, input) // workflows are still triggered even if not all nodes are available
 }
 
 func testHTTPTriggerWithWorkflowID(t *testing.T) {
@@ -278,8 +276,8 @@ func testHTTPTriggerWithWorkflowID(t *testing.T) {
 		return resp.StatusCode == http.StatusOK
 	}, 30*time.Second, time.Second)
 
-	executionID := validateHTTPTriggerResponse(t, body, requestID, workflowID)
-	assertTriggerPayload(t, env, executionID, input)
+	validateHTTPTriggerResponse(t, body, requestID, workflowID)
+	assertTriggerPayload(t, env, requestID, input)
 }
 
 func testHTTPTriggerWithWorkflowReference(t *testing.T) {
@@ -300,8 +298,8 @@ func testHTTPTriggerWithWorkflowReference(t *testing.T) {
 		return resp.StatusCode == http.StatusOK
 	}, 30*time.Second, time.Second)
 
-	executionID := validateHTTPTriggerResponse(t, body, requestID, workflowID)
-	assertTriggerPayload(t, env, executionID, input)
+	validateHTTPTriggerResponse(t, body, requestID, workflowID)
+	assertTriggerPayload(t, env, requestID, input)
 }
 
 func testHTTPTriggerRequestDeduplication(t *testing.T) {
@@ -328,8 +326,8 @@ func testHTTPTriggerRequestDeduplication(t *testing.T) {
 		return resp.StatusCode == http.StatusOK
 	}, 30*time.Second, time.Second)
 
-	executionID := validateHTTPTriggerResponse(t, body, requestID, workflowID)
-	assertTriggerPayload(t, env, executionID, input)
+	validateHTTPTriggerResponse(t, body, requestID, workflowID)
+	assertTriggerPayload(t, env, requestID, input)
 
 	request, _, _ = createSampleRequest(t, env.userURL, env.signingKey, workflow, requestID)
 	resp, err := http.DefaultClient.Do(request)
@@ -339,7 +337,7 @@ func testHTTPTriggerRequestDeduplication(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	_ = validateHTTPTriggerResponse(t, body, requestID, workflowID)
+	validateHTTPTriggerResponse(t, body, requestID, workflowID)
 
 	// This request should be deduplicated, so no new triggers should be sent to the nodes
 	for i, ch := range env.triggerChs {
@@ -348,7 +346,7 @@ func testHTTPTriggerRequestDeduplication(t *testing.T) {
 }
 
 // validateHTTPTriggerResponse validates the HTTP response and returns the execution ID for further assertions
-func validateHTTPTriggerResponse(t *testing.T, body []byte, requestID string, expectedWorkflowID string) string {
+func validateHTTPTriggerResponse(t *testing.T, body []byte, requestID string, expectedWorkflowID string) {
 	var respBody jsonrpc.Response[gateway_common.HTTPTriggerResponse]
 	err := json.Unmarshal(body, &respBody)
 	require.NoError(t, err)
@@ -362,16 +360,14 @@ func validateHTTPTriggerResponse(t *testing.T, body []byte, requestID string, ex
 	executionID, err := workflows.EncodeExecutionID(strings.TrimPrefix(workflowIDFromResponse, "0x"), requestID)
 	require.NoError(t, err)
 	require.Equal(t, "0x"+executionID, respBody.Result.WorkflowExecutionID)
-
-	return executionID
 }
 
-func assertTriggerPayload(t *testing.T, env *testEnv, executionID string, expectedInput map[string]any) {
+func assertTriggerPayload(t *testing.T, env *testEnv, requestID string, expectedInput map[string]any) {
 	for i, ch := range env.triggerChs {
 		select {
 		case payload := <-ch:
 			require.NotNil(t, payload)
-			require.Equal(t, "0x"+executionID, payload.Id)
+			require.Equal(t, requestID, payload.Id)
 			var actualInput map[string]any
 			err := json.Unmarshal(payload.Trigger.Input, &actualInput)
 			require.NoError(t, err)
