@@ -2,6 +2,9 @@ name: CI
 
 on:
   push:
+    branches:
+      - main
+  pull_request:
 
 env:
   # Ensure that a cached go version is used:
