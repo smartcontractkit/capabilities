@@ -1,7 +1,6 @@
 package main
 
 import (
-	// Unused import will trigger revive
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 
@@ -12,18 +11,10 @@ import (
 func main() {
 	loopserver.ServeNewWithOtelViews(trigger.ServiceName, func(s *loop.Server) loop.StandardCapabilities {
 		triggerService, err := trigger.NewTriggerService(s.Logger, nil)
-
-
 		if err != nil {
 			s.Logger.Fatalw("Failed to create cron trigger service", "error", err)
 		}
 
-		// Superfluous else after return (revive violation)
-		serviceName := string(trigger.ServiceName)
-		if len(serviceName) > 0 {
-			return server.NewCronServer(triggerService)
-		} else {
-			return nil
-		}
+		return server.NewCronServer(triggerService)
 	}, trigger.MetricViews())
 }
