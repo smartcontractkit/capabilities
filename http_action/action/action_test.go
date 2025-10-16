@@ -91,9 +91,6 @@ func setupServiceTest(t *testing.T) *testSetup {
 	}
 	srv.limitsFactory = limitsFactory
 
-	srv.rateLimiter, err = limitsFactory.MakeRateLimiter(cresettings.Default.PerWorkflow.HTTPAction.RateLimit)
-	require.NoError(t, err)
-
 	srv.validator, err = validate.NewValidator(logger.Test(t), limitsFactory)
 	require.NoError(t, err)
 

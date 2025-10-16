@@ -16,8 +16,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http/server"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/settings"
-	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
@@ -35,7 +33,6 @@ type service struct {
 	cfg           common.ServiceConfig
 	metrics       *common.Metrics
 	limitsFactory limits.Factory
-	rateLimiter   limits.RateLimiter
 	validator     *validate.Validator
 }
 
@@ -66,11 +63,6 @@ func (s *service) Initialise(ctx context.Context, dependencies core.StandardCapa
 	}
 
 	s.client, err = NewOutboundRequestClient(dependencies.GatewayConnector, s.cfg, s.lggr, s.metrics, s.validator)
-	if err != nil {
-		return err
-	}
-
-	s.rateLimiter, err = s.limitsFactory.MakeRateLimiter(cresettings.Default.PerWorkflow.HTTPAction.RateLimit)
 	if err != nil {
 		return err
 	}
@@ -121,13 +113,8 @@ func (s *service) SendRequest(ctx context.Context, metadata capabilities.Request
 	startTime := time.Now()
 	s.metrics.IncrementRequestCount(ctx, s.lggr)
 	// set the context with the workflow owner and workflow id
-	// these are required for request/response/rate limit checks
+	// these are required for request/response checks
 	ctx = metadata.ContextWithCRE(ctx)
-
-	if err := s.CheckRateLimit(ctx, metadata); err != nil {
-		return nil, fmt.Errorf("rate limit exceeded for workflow %s (ID: %s, Owner: %s, ExecutionID: %s): %w",
-			metadata.WorkflowName, metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowExecutionID, err)
-	}
 
 	validatedInput, err := s.validator.ValidatedRequest(ctx, input)
 	if err != nil {
@@ -164,19 +151,4 @@ func NewOutboundRequestClient(gatewayConnector core.GatewayConnector, serviceCon
 	default:
 		return nil, errors.New("invalid ProxyMode: " + serviceConfig.ProxyMode.String())
 	}
-}
-
-func (s *service) CheckRateLimit(ctx context.Context, metadata capabilities.RequestMetadata) error {
-	if err := s.rateLimiter.AllowErr(ctx); err != nil {
-		var rl limits.ErrorRateLimited
-		if errors.As(err, &rl) {
-			if rl.Scope == settings.ScopeWorkflow {
-				s.metrics.IncrementWorkflowThrottled(ctx, s.lggr)
-			} else {
-				s.lggr.Errorf("failed to start execution: unexpected rate limit for scope %s", rl.Scope)
-			}
-		}
-		return err
-	}
-	return nil
 }

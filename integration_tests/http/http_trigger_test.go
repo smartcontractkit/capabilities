@@ -231,6 +231,26 @@ func sampleRequestWithReference(t *testing.T, url string, key *ecdsa.PrivateKey)
 	return createSampleRequest(t, url, key, workflow, uuid.New().String())
 }
 
+func sampleRequestWithoutPrefix(t *testing.T, url string, key *ecdsa.PrivateKey) (*http.Request, string, map[string]any) {
+	// Strip 0x prefix from workflowID to test normalization
+	workflowIDWithoutPrefix := strings.TrimPrefix(workflowID, "0x")
+	workflow := gateway_common.WorkflowSelector{
+		WorkflowID: workflowIDWithoutPrefix,
+	}
+	return createSampleRequest(t, url, key, workflow, uuid.New().String())
+}
+
+func sampleRequestWithReferenceWithoutPrefix(t *testing.T, url string, key *ecdsa.PrivateKey) (*http.Request, string, map[string]any) {
+	// Strip 0x prefix from workflowOwner to test normalization
+	workflowOwnerWithoutPrefix := strings.TrimPrefix(workflowOwner, "0x")
+	workflow := gateway_common.WorkflowSelector{
+		WorkflowOwner: workflowOwnerWithoutPrefix,
+		WorkflowName:  workflowName,
+		WorkflowTag:   workflowTag,
+	}
+	return createSampleRequest(t, url, key, workflow, uuid.New().String())
+}
+
 func TestHTTPTrigger(t *testing.T) {
 	t.Run("WithWorkflowID", func(t *testing.T) {
 		testHTTPTriggerWithWorkflowID(t)
@@ -238,6 +258,14 @@ func TestHTTPTrigger(t *testing.T) {
 
 	t.Run("WithWorkflowReference", func(t *testing.T) {
 		testHTTPTriggerWithWorkflowReference(t)
+	})
+
+	t.Run("WithWorkflowIDWithoutPrefix", func(t *testing.T) {
+		testHTTPTriggerWithWorkflowIDWithoutPrefix(t)
+	})
+
+	t.Run("WithWorkflowReferenceWithoutPrefix", func(t *testing.T) {
+		testHTTPTriggerWithWorkflowReferenceWithoutPrefix(t)
 	})
 
 	t.Run("RequestDeduplication", func(t *testing.T) {
@@ -258,7 +286,11 @@ func TestHTTPTrigger_InsufficientNodes(t *testing.T) {
 	assertTriggerPayload(t, env, requestID, input) // workflows are still triggered even if not all nodes are available
 }
 
-func testHTTPTriggerWithWorkflowID(t *testing.T) {
+// requestGeneratorFunc is a function type for generating test requests
+type requestGeneratorFunc func(t *testing.T, url string, key *ecdsa.PrivateKey) (*http.Request, string, map[string]any)
+
+// runHTTPTriggerTest is a helper function that runs a standard HTTP trigger test with the given request generator
+func runHTTPTriggerTest(t *testing.T, reqGen requestGeneratorFunc) {
 	f := 1
 	numNodes := 3*f + 1
 	env := setupTestEnv(t, numNodes)
@@ -267,7 +299,7 @@ func testHTTPTriggerWithWorkflowID(t *testing.T) {
 	var input map[string]any
 	var body []byte
 	require.Eventually(t, func() bool {
-		req, requestID, input = sampleRequest(t, env.userURL, env.signingKey)
+		req, requestID, input = reqGen(t, env.userURL, env.signingKey)
 		resp, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
 		defer resp.Body.Close()
@@ -280,26 +312,20 @@ func testHTTPTriggerWithWorkflowID(t *testing.T) {
 	assertTriggerPayload(t, env, requestID, input)
 }
 
-func testHTTPTriggerWithWorkflowReference(t *testing.T) {
-	f := 1
-	numNodes := 3*f + 1
-	env := setupTestEnv(t, numNodes)
-	var req *http.Request
-	var requestID string
-	var input map[string]any
-	var body []byte
-	require.Eventually(t, func() bool {
-		req, requestID, input = sampleRequestWithReference(t, env.userURL, env.signingKey)
-		resp, err := http.DefaultClient.Do(req)
-		require.NoError(t, err)
-		defer resp.Body.Close()
-		body, err = io.ReadAll(resp.Body)
-		require.NoError(t, err)
-		return resp.StatusCode == http.StatusOK
-	}, 30*time.Second, time.Second)
+func testHTTPTriggerWithWorkflowID(t *testing.T) {
+	runHTTPTriggerTest(t, sampleRequest)
+}
 
-	validateHTTPTriggerResponse(t, body, requestID, workflowID)
-	assertTriggerPayload(t, env, requestID, input)
+func testHTTPTriggerWithWorkflowReference(t *testing.T) {
+	runHTTPTriggerTest(t, sampleRequestWithReference)
+}
+
+func testHTTPTriggerWithWorkflowIDWithoutPrefix(t *testing.T) {
+	runHTTPTriggerTest(t, sampleRequestWithoutPrefix)
+}
+
+func testHTTPTriggerWithWorkflowReferenceWithoutPrefix(t *testing.T) {
+	runHTTPTriggerTest(t, sampleRequestWithReferenceWithoutPrefix)
 }
 
 func testHTTPTriggerRequestDeduplication(t *testing.T) {

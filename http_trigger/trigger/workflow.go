@@ -90,10 +90,7 @@ func validateWorkflowSelector(ws gateway.WorkflowSelector) error {
 	if err := validateHexPrefixedField("workflowOwner", ws.WorkflowOwner, expectedWorkflowOwnerLen); err != nil {
 		return err
 	}
-	if err := validateHexPrefixedField("workflowName", ws.WorkflowName, workflowNameHashLength); err != nil {
-		return err
-	}
-	return nil
+	return validateHexPrefixedField("workflowName", ws.WorkflowName, workflowNameHashLength)
 }
 
 // validateHexPrefixedField validates that a field is non-empty, has 0x prefix, and matches expected length
