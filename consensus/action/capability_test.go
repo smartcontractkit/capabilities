@@ -227,7 +227,7 @@ func Test_SimpleInputsSizeValidation(t *testing.T) {
 
 	_, err = capability.Simple(ctx, metadata, input)
 	require.Error(t, err)
-	require.ErrorContains(t, err, "PerWorkflow.ConsensusObservationSizeLimit limited for workflow[wf-id]: cannot use 47b, limit is 2b")
+	require.ErrorContains(t, err, "PerWorkflow.Consensus.ObservationSizeLimit limited for workflow[wf-id]: cannot use 47b, limit is 2b")
 }
 
 func Test_ToReportID(t *testing.T) {
