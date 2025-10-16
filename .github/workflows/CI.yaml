@@ -55,7 +55,12 @@ jobs:
       - name: Get affected projects
         id: affected
         run: |
-          echo "affected=$(./.github/scripts/affected-projects.sh ${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }})" >> $GITHUB_OUTPUT
+          if [[ "${GITHUB_REF_NAME}" == "main" ]]; then
+            BASE="origin/main~1"
+          else
+            BASE="origin/main"
+          fi
+          echo "affected=$(./.github/scripts/affected-projects.sh $BASE)" >> $GITHUB_OUTPUT
 
   build:
     needs: affected
