@@ -9,6 +9,7 @@ import (
 )
 
 func main() {
+	// This is a temporery change to test linting in CI
 	loopserver.ServeNewWithOtelViews(trigger.ServiceName, func(s *loop.Server) loop.StandardCapabilities {
 		triggerService, err := trigger.NewTriggerService(s.Logger, nil)
 		if err != nil {
