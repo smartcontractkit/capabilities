@@ -226,7 +226,7 @@ func TestGatewayOutboundProxy_SendRequest_Timeout(t *testing.T) {
 	elapsed := time.Since(start)
 	require.Error(t, err)
 	require.Nil(t, output)
-	assert.Contains(t, err.Error(), "context deadline exceeded")
+	assert.Contains(t, err.Error(), "internal error")
 	assert.GreaterOrEqual(t, elapsed.Milliseconds(), int64(100))
 }
 

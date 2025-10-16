@@ -21,6 +21,7 @@ import (
 var _ OutboundRequestClient = &httpClientProxy{}
 
 const ClientName = "HTTPClientProxy"
+const internalError = "internal error"
 
 type OutboundRequestClient interface {
 	SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *httpcap.Request, startTime time.Time) (*httpcap.Response, error)
@@ -85,7 +86,8 @@ func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities
 	req, err := http.NewRequestWithContext(timeoutCtx, input.Method, input.Url, bytes.NewReader(input.Body))
 	if err != nil {
 		h.metrics.IncrementExecutionError(ctx, ProxyModeDirect, lggr)
-		return nil, err
+		lggr.Errorf("failed to create request: %v", err)
+		return nil, errors.New(internalError)
 	}
 
 	req.Header = http.Header(headers(input))

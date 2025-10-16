@@ -59,7 +59,7 @@ func NewService(lggr logger.Logger, limitsFactory limits.Factory) *service {
 }
 
 func (s *service) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
-	s.lggr.Debugf("Initialising %s", ServiceName)
+	s.lggr.Debugf("Initialising %s. config: %s", ServiceName, dependencies.Config)
 
 	var serviceConfig ServiceConfig
 	err := json.Unmarshal([]byte(dependencies.Config), &serviceConfig)
@@ -124,6 +124,12 @@ func (s *service) Description() string {
 }
 
 func (s *service) RegisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *http.Config) (<-chan capabilities.TriggerAndId[*http.Payload], error) {
+	s.lggr.Infow("RegisterTrigger called",
+		"triggerID", triggerID,
+		"workflowID", metadata.WorkflowID,
+		"workflowOwner", metadata.WorkflowOwner,
+		"workflowName", metadata.WorkflowName,
+		"workflowTag", metadata.WorkflowTag)
 	sendCh := make(chan capabilities.TriggerAndId[*http.Payload], s.cfg.SendChannelBufferSize)
 	// TODO: remove this when testing frameworks (local CRE, capabilities integration tests framework) migrate to WR v2
 	if metadata.WorkflowTag == "" {
@@ -157,7 +163,13 @@ func (s *service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 }
 
 func (s *service) UnregisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *http.Config) error {
-	err := s.connectorHandler.UnregisterWorkflow(ctx, metadata.WorkflowID)
+	s.lggr.Infow("UnregisterTrigger called",
+		"triggerID", triggerID,
+		"workflowID", metadata.WorkflowID,
+		"workflowOwner", metadata.WorkflowOwner,
+		"workflowName", metadata.WorkflowName,
+		"workflowTag", metadata.WorkflowTag)
+	err := s.connectorHandler.UnregisterWorkflow(ctx, ensureHexPrefix(metadata.WorkflowID))
 	if err != nil {
 		s.lggr.Errorf("Failed to unregister workflow %s: %v", metadata.WorkflowID, err)
 		s.metrics.IncrementDeregisterFailureCount(ctx, s.lggr)

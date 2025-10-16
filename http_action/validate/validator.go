@@ -3,6 +3,7 @@ package validate
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -24,6 +25,7 @@ var allowedMethods = map[string]struct{}{
 }
 
 const defaultTimeoutMs = 5_000
+const internalError = "internal error"
 
 // Validator handles validation of HTTP requests and responses with proper limiters
 type Validator struct {
@@ -90,6 +92,9 @@ func (v *Validator) ValidatedRequest(ctx context.Context, input *http.Request) (
 	}
 
 	method := strings.ToUpper(strings.TrimSpace(input.Method))
+	if method == "" {
+		return nil, fmt.Errorf("method cannot be empty")
+	}
 	if _, ok := allowedMethods[method]; !ok {
 		return nil, fmt.Errorf("invalid HTTP method: %s", method)
 	}
@@ -112,7 +117,8 @@ func (v *Validator) ValidatedRequest(ctx context.Context, input *http.Request) (
 func (v *Validator) validateInputWithLimiters(ctx context.Context, input *http.Request) error {
 	marshaled, err := json.Marshal(input)
 	if err != nil {
-		return fmt.Errorf("failed to marshal request for size calculation: %w", err)
+		v.lggr.Errorf("failed to marshal request for size calculation: %v", err)
+		return errors.New(internalError)
 	}
 
 	requestSize := config.Size(len(marshaled))

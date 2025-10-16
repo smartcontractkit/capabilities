@@ -216,23 +216,25 @@ func TestSendWorkflows_Success(t *testing.T) {
 	sendCh2 := make(chan capabilities.TriggerAndId[*http.Payload], 1)
 
 	selector1 := gateway.WorkflowSelector{
-		WorkflowID:    "workflow1",
-		WorkflowOwner: "owner1",
-		WorkflowName:  "name1",
+		WorkflowID:    testWorkflowID1,
+		WorkflowOwner: testWorkflowOwner1,
+		WorkflowName:  testWorkflowName1,
 		WorkflowTag:   "tag1",
 	}
 	selector2 := gateway.WorkflowSelector{
-		WorkflowID:    "workflow2",
-		WorkflowOwner: "owner2",
-		WorkflowName:  "name2",
+		WorkflowID:    testWorkflowID2,
+		WorkflowOwner: testWorkflowOwner2,
+		WorkflowName:  testWorkflowName2,
 		WorkflowTag:   "tag2",
 	}
 
 	wf1 := newWorkflow(selector1, authorizedKeys1, sendCh1)
 	wf2 := newWorkflow(selector2, authorizedKeys2, sendCh2)
 
-	workflowStore.upsertWorkflow(wf1)
-	workflowStore.upsertWorkflow(wf2)
+	err := workflowStore.upsertWorkflow(wf1)
+	require.NoError(t, err)
+	err = workflowStore.upsertWorkflow(wf2)
+	require.NoError(t, err)
 
 	gatewayID := "gateway1"
 	rawParams := json.RawMessage(`{}`)
@@ -241,7 +243,7 @@ func TestSendWorkflows_Success(t *testing.T) {
 		Method: "test",
 		Params: &rawParams,
 	}
-	err := publisher.SendWorkflowMetadata(t.Context(), gatewayID, req)
+	err = publisher.SendWorkflowMetadata(t.Context(), gatewayID, req)
 	require.NoError(t, err)
 
 	calls := gc.sendToGatewayCalls
@@ -253,10 +255,10 @@ func TestSendWorkflows_Success(t *testing.T) {
 	found1, found2 := false, false
 	for _, metadata := range authMetadata {
 		switch metadata.WorkflowSelector.WorkflowID {
-		case "workflow1":
+		case testWorkflowID1:
 			require.Equal(t, authorizedKeys1, metadata.AuthorizedKeys)
 			found1 = true
-		case "workflow2":
+		case testWorkflowID2:
 			require.ElementsMatch(t, authorizedKeys2, metadata.AuthorizedKeys)
 			found2 = true
 		}

@@ -58,8 +58,8 @@ type Request struct {
 }
 
 type CacheSettings struct {
-    ReadFromCache bool  `json:"readFromCache"` // Enable cache reading
-    MaxAgeMs      int64 `json:"maxAgeMs"`      // Cached entry max age in milliseconds
+    Store         bool  `json:"store"`     // Enable cache reading
+    MaxAgeMs      int64 `json:"maxAgeMs"`  // Cached entry max age in milliseconds
 }
 ```
 
@@ -93,9 +93,8 @@ type Response struct {
 - `body`: Size must not exceed `maxRequestBytes`
 
 #### 3.3.4 Cache Settings Validation
-- `maxAgeMs`: Must be non-negative and not exceed configured `maxCacheAgeMs`
-- `maxAgeMs`: Must be non-zero when `readFromCache` is true
-- `readFromCache`: Can be true or false; when true, requires valid `maxAgeMs`
+- `maxAgeMs`: Must be non-negative and not exceed configured `maxCacheAgeMs`.
+- `store`: Can be true or false;
 
 ---
 

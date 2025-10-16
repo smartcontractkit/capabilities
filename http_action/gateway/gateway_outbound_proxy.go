@@ -85,29 +85,32 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 	defer cancel()
 
 	gatewayReq := gc.OutboundHTTPRequest{
-		WorkflowID: metadata.WorkflowID,
-		URL:        input.Url,
-		Method:     input.Method,
-		Headers:    input.Headers,
-		Body:       input.Body,
+		WorkflowID:    metadata.WorkflowID,
+		WorkflowOwner: metadata.WorkflowOwner,
+		URL:           input.Url,
+		Method:        input.Method,
+		Headers:       input.Headers,
+		Body:          input.Body,
 		// Casting is safe because input to this function is already validated
 		TimeoutMs: uint32(input.Timeout.AsDuration()), //nolint:gosec // G115
 		CacheSettings: gc.CacheSettings{
-			ReadFromCache: input.CacheSettings.Store,
-			MaxAgeMs:      int32(input.CacheSettings.MaxAge.AsDuration().Milliseconds()), //nolint:gosec // G115
+			Store:    input.CacheSettings.Store,
+			MaxAgeMs: int32(input.CacheSettings.MaxAge.AsDuration().Milliseconds()), //nolint:gosec // G115
 		},
 	}
 
 	payload, err := json.Marshal(gatewayReq)
 	if err != nil {
 		p.metrics.IncrementExecutionError(ctx, common.ProxyModeGateway, lggr)
-		return nil, fmt.Errorf("failed to marshal fetch request: %w", err)
+		lggr.Errorf("failed to marshal fetch request: %v", err)
+		return nil, errors.New(internalError)
 	}
 
 	responseCh, err := p.responses.new(requestID)
 	if err != nil {
 		p.metrics.IncrementExecutionError(ctx, common.ProxyModeGateway, lggr)
-		return nil, fmt.Errorf("duplicate message received for ID: %s", requestID)
+		lggr.Errorf("duplicate message received for ID: %s", requestID)
+		return nil, errors.New(internalError)
 	}
 	defer p.responses.cleanup(requestID)
 
@@ -125,11 +128,13 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 	selectedGateway, err := p.awaitConnection(ctx, lggr, gatewayReq.Hash())
 	if err != nil {
 		p.metrics.IncrementGatewaySendError(ctx, selectedGateway, lggr)
-		return nil, errors.Join(errors.New("failed to await connection to gateway"), err)
+		lggr.Errorf("failed to await connection to gateway: %v", err)
+		return nil, errors.New(internalError)
 	}
 	if err := p.gatewayConnector.SendToGateway(ctx, selectedGateway, &gatewayResp); err != nil {
 		p.metrics.IncrementGatewaySendError(ctx, selectedGateway, lggr)
-		return nil, errors.Join(errors.New("failed to send request to gateway"), err)
+		lggr.Errorf("failed to send request to gateway: %v", err)
+		return nil, errors.New(internalError)
 	}
 
 	select {
@@ -161,7 +166,8 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 		return response, nil
 	case <-ctx.Done():
 		p.metrics.IncrementExecutionError(ctx, common.ProxyModeGateway, lggr)
-		return nil, ctx.Err()
+		lggr.Errorf("context done: %v", ctx.Err())
+		return nil, errors.New(internalError)
 	}
 }
 
