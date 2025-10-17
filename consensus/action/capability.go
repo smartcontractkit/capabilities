@@ -184,10 +184,11 @@ func (c *consensusCapability) setConfiguration(cfg string) error {
 		c.requestBatchSize = capabilityConfig.RequestBatchSize
 	}
 
+	limit := cresettings.Default.PerWorkflow.Consensus.ObservationSizeLimit // make a copy
 	if capabilityConfig.MaxRequestSizeBytes > 0 {
-		cresettings.Default.PerWorkflow.ConsensusObservationSizeLimit.DefaultValue = config.Size(capabilityConfig.MaxRequestSizeBytes)
+		limit.DefaultValue = config.Size(capabilityConfig.MaxRequestSizeBytes)
 	}
-	maxRequestSizeBytes, err := limits.MakeBoundLimiter(c.limitsFactory, cresettings.Default.PerWorkflow.ConsensusObservationSizeLimit)
+	maxRequestSizeBytes, err := limits.MakeBoundLimiter(c.limitsFactory, limit)
 	if err != nil {
 		return err
 	}
