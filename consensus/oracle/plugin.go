@@ -53,17 +53,15 @@ type reportingPlugin struct {
 }
 
 // NewReportingPlugin creates a new reporting plugin for the OCR3 capability
-// historicalOutcomeExpirySeqNrSpan is the duration, expressed as a seq number span, after which a request outcome will be pruned
-// from the plugins outcome
 func NewReportingPlugin(lggr logger.Logger, metrics *metrics.Metrics, f int, n int, store *requests.Store[*ConsensusRequest],
-	configProto *ocrtypes.ReportingPluginConfig, historicalOutcomeExpirySeqNrSpan uint64) (*reportingPlugin, error) {
+	configProto *ocrtypes.ReportingPluginConfig) (*reportingPlugin, error) {
 	return &reportingPlugin{
 		store:                  store,
 		batchSize:              int(configProto.MaxBatchSize),
 		f:                      f,
 		n:                      n,
 		minimumObservations:    2*f + 1,
-		outcomeExpirySeqNrSpan: historicalOutcomeExpirySeqNrSpan,
+		outcomeExpirySeqNrSpan: configProto.HistoricalOutcomeExpirySeqNrSpan,
 		lggr:                   logger.Named(lggr, "CapabilityConsensusReportingPlugin"),
 		config:                 configProto,
 		metrics:                metrics,
@@ -71,7 +69,7 @@ func NewReportingPlugin(lggr logger.Logger, metrics *metrics.Metrics, f int, n i
 }
 
 func (r *reportingPlugin) Query(ctx context.Context, outctx ocr3types.OutcomeContext) (types.Query, error) {
-	allRequests, err := r.getAllRequests()
+	allRequests, err := r.store.All()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get all requests: %w", err)
 	}
@@ -185,21 +183,6 @@ func (r *reportingPlugin) getPendingRequests(outctx ocr3types.OutcomeContext, al
 	}
 
 	return pendingRequests, nil
-}
-
-// TODO move this onto the store
-func (r *reportingPlugin) getAllRequests() ([]*ConsensusRequest, error) {
-	storeSize := r.store.Len()
-	if storeSize == 0 {
-		return nil, nil
-	}
-
-	// Get all pending requests
-	batch, err := r.store.FirstN(storeSize)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch consensus requests from store: %w", err)
-	}
-	return batch, nil
 }
 
 func ToRequestMetaData(metadata ConsensusRequestMetadata) *oracletypes.RequestMetaData {

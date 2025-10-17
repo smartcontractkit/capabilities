@@ -18,11 +18,12 @@ import (
 )
 
 const (
-	defaultMaxPhaseOutputBytes     = 1_000_000 // 1 MB
-	defaultMaxReportCount          = 20
-	defaultBatchSize               = 20
-	defaultOutcomePruningThreshold = 3600
-	defaultRequestExpiry           = 20 * time.Second
+	defaultMaxPhaseOutputBytes              = 1_000_000 // 1 MB
+	defaultMaxReportCount                   = 20
+	defaultBatchSize                        = 20
+	defaultOutcomePruningThreshold          = 3600
+	defaultRequestExpiry                    = 20 * time.Second
+	defaultHistoricalOutcomeExpirySeqNrSpan = uint64(4)
 )
 
 type SetRequestTimeout func(timeout time.Duration)
@@ -84,10 +85,10 @@ func (o *factory) NewReportingPlugin(_ context.Context, config ocr3types.Reporti
 	}
 	o.setRequestTimeout(configProto.RequestTimeout.AsDuration())
 
-	// TODO move this value to config.  Historical outcomes prevent the reporting plugin from processing a request more than once by allowing the plugin
+	// Historical outcomes prevent the reporting plugin from processing a request more than once by allowing the plugin
 	// to determine if an outcome has already been reported for a given request in the recent past.  The recent past i.e. 'size' of history to retain (the span), needs
 	// to take into consideration the likelihood of a request being re-submitted after a certain number of rounds versus the storage cost of retaining history in the
-	// the plugins outcome.
+	// plugins outcome.
 
 	// An example of a scenario that could result in a request being resubmitted for reprocessing if there is insufficient history to prevent is:
 	//
@@ -95,11 +96,11 @@ func (o *factory) NewReportingPlugin(_ context.Context, config ocr3types.Reporti
 	// nodes have received the transmit call for a given round, for a second possibly different outcome to be generated, which if a node
 	// misses the previous transmit call altogether, will result in it seeing a different outcome.
 
-	historicalOutcomeExpirySeqNrSpan := uint64(4)
+	if configProto.HistoricalOutcomeExpirySeqNrSpan == 0 {
+		configProto.HistoricalOutcomeExpirySeqNrSpan = defaultHistoricalOutcomeExpirySeqNrSpan
+	}
 
-	o.lggr.Debug("Setting outcome expiry seq nr span", "historicalOutcomeExpirySeqNrSpan", historicalOutcomeExpirySeqNrSpan, "requestTimeout", configProto.RequestTimeout.AsDuration(), "estimatedRoundInterval", config.EstimatedRoundInterval)
-
-	rp, err := NewReportingPlugin(o.lggr, o.metrics, config.F, config.N, o.store, &configProto, historicalOutcomeExpirySeqNrSpan)
+	rp, err := NewReportingPlugin(o.lggr, o.metrics, config.F, config.N, o.store, &configProto)
 	rpInfo := ocr3types.ReportingPluginInfo{
 		Name: "Consensus Capability Plugin",
 		Limits: ocr3types.ReportingPluginLimits{

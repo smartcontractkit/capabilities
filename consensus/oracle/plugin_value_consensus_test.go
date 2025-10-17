@@ -659,7 +659,8 @@ func createReportingPlugin(t *testing.T, lggr logger.Logger, f int, n int,
 			}
 			return uint32(batchSize)
 		}(),
-	}, outcomeExpirySpan)
+		HistoricalOutcomeExpirySeqNrSpan: outcomeExpirySpan,
+	})
 	require.NoError(t, err)
 	return reportingPlugin, reqStore
 }
