@@ -1,4 +1,4 @@
-package oracle
+package plugin
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/smartcontractkit/capabilities/consensus/metrics"
-
+	"github.com/smartcontractkit/capabilities/consensus/oracle"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -29,7 +29,7 @@ const (
 type SetRequestTimeout func(timeout time.Duration)
 
 type factory struct {
-	store *requests.Store[*ConsensusRequest]
+	store *requests.Store[*oracle.ConsensusRequest]
 
 	// Request timeout is set by the plugin factory and used by the reporting plugin to set the timeout for requests
 	// created in the capability
@@ -41,7 +41,7 @@ type factory struct {
 	services.StateMachine
 }
 
-func NewReportingPluginFactory(lggr logger.Logger, metrics *metrics.Metrics, s *requests.Store[*ConsensusRequest],
+func NewReportingPluginFactory(lggr logger.Logger, metrics *metrics.Metrics, s *requests.Store[*oracle.ConsensusRequest],
 	setRequestTimeout SetRequestTimeout, batchSize int) (*factory, error) {
 	return &factory{
 		store:             s,

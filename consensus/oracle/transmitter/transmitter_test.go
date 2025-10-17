@@ -1,4 +1,4 @@
-package oracle
+package transmitter
 
 import (
 	"context"
@@ -12,6 +12,9 @@ import (
 	"github.com/smartcontractkit/libocr/commontypes"
 	"github.com/smartcontractkit/libocr/offchainreporting2/types"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
+
+	"github.com/smartcontractkit/capabilities/consensus/oracle"
+	"github.com/smartcontractkit/capabilities/consensus/oracle/plugin"
 )
 
 func Test_Transmit(t *testing.T) {
@@ -26,7 +29,7 @@ func Test_Transmit(t *testing.T) {
 		{Signature: []byte("signature-1"), Signer: commontypes.OracleID(1)},
 	}
 
-	sendResponse := func(ctx context.Context, response ConsensusResponse) {
+	sendResponse := func(ctx context.Context, response oracle.ConsensusResponse) {
 		sendResponseCalled = true
 		require.NotEmpty(t, response.ReqID, "Request ID should not be empty")
 		require.NotEmpty(t, response.ConfigDigest, "Config Digest should not be empty")
@@ -45,7 +48,7 @@ func Test_Transmit(t *testing.T) {
 
 	info := &structpb.Struct{
 		Fields: map[string]*structpb.Value{
-			InfoRequestID: structpb.NewStringValue("test-request-id"),
+			plugin.InfoRequestID: structpb.NewStringValue("test-request-id"),
 		},
 	}
 	infoBytes, err := proto.Marshal(info)

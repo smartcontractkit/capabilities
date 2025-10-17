@@ -1,4 +1,4 @@
-package oracle_test
+package plugin_test
 
 import (
 	"testing"

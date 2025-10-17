@@ -1,4 +1,4 @@
-package oracle_test
+package plugin_test
 
 import (
 	"bytes"
@@ -17,6 +17,7 @@ import (
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 
 	"github.com/smartcontractkit/capabilities/consensus/oracle"
+	"github.com/smartcontractkit/capabilities/consensus/oracle/plugin"
 )
 
 func Test_Report_MedianTimeStamp(t *testing.T) {
@@ -90,7 +91,7 @@ func Test_ReceivedIdenticalReportFromAllNodes(t *testing.T) {
 			newRR([]byte("somerandombytes"), md1)},
 			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
 				require.True(t, bytes.HasSuffix(report.ReportWithInfo.Report, []byte("somerandombytes")), "Report does not end with 'somerandombytes'")
-				require.Equal(t, md1.RequestID(), infos.AsMap()[oracle.InfoRequestID], "RequestID does not match md1.RequestID")
+				require.Equal(t, md1.RequestID(), infos.AsMap()[plugin.InfoRequestID], "RequestID does not match md1.RequestID")
 				require.Equal(t, md1.KeyBundleID, infos.AsMap()["keyBundleName"], "KeyBundleID does not match md1.KeyBundleID")
 
 				meta, _, err := ocrtypes.Decode(report.ReportWithInfo.Report)
@@ -123,7 +124,7 @@ func Test_ReceivedIdenticalReportFromSufficientNodes(t *testing.T) {
 			newRR([]byte("somerandombytes2"), md1)},
 			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
 				require.True(t, bytes.HasSuffix(report.ReportWithInfo.Report, []byte("somerandombytes")), "Report does not end with 'somerandombytes'")
-				require.Equal(t, md1.RequestID(), infos.AsMap()[oracle.InfoRequestID], "RequestID does not match md1.RequestID")
+				require.Equal(t, md1.RequestID(), infos.AsMap()[plugin.InfoRequestID], "RequestID does not match md1.RequestID")
 				require.Equal(t, md1.KeyBundleID, infos.AsMap()["keyBundleName"], "KeyBundleID does not match md1.KeyBundleID")
 
 				meta, _, err := ocrtypes.Decode(report.ReportWithInfo.Report)
@@ -159,7 +160,7 @@ func Test_SufficientAndInsufficentReportsInSingleRound(t *testing.T) {
 			newRR([]byte("somerandombytes"), md1)},
 			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
 				require.True(t, bytes.HasSuffix(report.ReportWithInfo.Report, []byte("somerandombytes")), "Report does not end with 'somerandombytes'")
-				require.Equal(t, md1.RequestID(), infos.AsMap()[oracle.InfoRequestID], "RequestID does not match md1.RequestID")
+				require.Equal(t, md1.RequestID(), infos.AsMap()[plugin.InfoRequestID], "RequestID does not match md1.RequestID")
 			}},
 
 		md2.RequestID(): {requests: []*oracle.ConsensusRequest{

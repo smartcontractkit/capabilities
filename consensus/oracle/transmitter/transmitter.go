@@ -1,4 +1,4 @@
-package oracle
+package transmitter
 
 import (
 	"context"
@@ -12,11 +12,14 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/libocr/offchainreporting2/types"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
+
+	"github.com/smartcontractkit/capabilities/consensus/oracle"
+	"github.com/smartcontractkit/capabilities/consensus/oracle/plugin"
 )
 
 var _ ocr3types.ContractTransmitter[[]byte] = (*ContractTransmitter)(nil)
 
-type SendResponse func(ctx context.Context, response ConsensusResponse)
+type SendResponse func(ctx context.Context, response oracle.ConsensusResponse)
 
 type ContractTransmitter struct {
 	lggr         logger.Logger
@@ -31,7 +34,7 @@ func (c *ContractTransmitter) Transmit(ctx context.Context, configDigest types.C
 		return fmt.Errorf("failed to unmarshal report info: %w", err)
 	}
 	infoMap := unmarshalledInfo.AsMap()
-	requestID, ok := infoMap[InfoRequestID]
+	requestID, ok := infoMap[plugin.InfoRequestID]
 	if !ok {
 		return errors.New("infoRequestID not found in report info")
 	}
@@ -44,7 +47,7 @@ func (c *ContractTransmitter) Transmit(ctx context.Context, configDigest types.C
 	// report context is the config digest + the sequence number padded with zeros
 	repContext := report.GenerateReportContext(seqNr, configDigest)
 
-	response := ConsensusResponse{
+	response := oracle.ConsensusResponse{
 		ReqID:         requestIDStr,
 		ConfigDigest:  configDigest,
 		SeqNr:         seqNr,

@@ -1,4 +1,4 @@
-package oracle
+package plugin
 
 import (
 	"testing"
@@ -10,6 +10,7 @@ import (
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 
+	"github.com/smartcontractkit/capabilities/consensus/oracle"
 	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
 )
 
@@ -191,7 +192,7 @@ func TestQueryBatchHasCapacity_SizeEstimation(t *testing.T) {
 
 func TestGetIDKey_DuplicateRecognition(t *testing.T) {
 	t.Run("identical requests produce same key", func(t *testing.T) {
-		metadata := ConsensusRequestMetadata{
+		metadata := oracle.ConsensusRequestMetadata{
 			RequestMetadata: capabilities.RequestMetadata{
 				WorkflowExecutionID: "exec-123",
 				ReferenceID:         "ref-456",
@@ -203,7 +204,7 @@ func TestGetIDKey_DuplicateRecognition(t *testing.T) {
 		value1Pb := values.Proto(values.NewString("value1"))
 		value2Pb := values.Proto(values.NewString("value2"))
 
-		request1 := &ConsensusRequest{
+		request1 := &oracle.ConsensusRequest{
 			Metadata: metadata,
 			Input: &sdk.SimpleConsensusInputs{
 				// Different input data
@@ -213,7 +214,7 @@ func TestGetIDKey_DuplicateRecognition(t *testing.T) {
 			},
 		}
 
-		request2 := &ConsensusRequest{
+		request2 := &oracle.ConsensusRequest{
 			Metadata: metadata,
 			Input: &sdk.SimpleConsensusInputs{
 				// Different input data but same metadata
@@ -239,11 +240,11 @@ func TestGetIDKey_DuplicateRecognition(t *testing.T) {
 
 		testCases := []struct {
 			name     string
-			metadata ConsensusRequestMetadata
+			metadata oracle.ConsensusRequestMetadata
 		}{
 			{
 				name: "different execution ID",
-				metadata: ConsensusRequestMetadata{
+				metadata: oracle.ConsensusRequestMetadata{
 					RequestMetadata: capabilities.RequestMetadata{
 						WorkflowExecutionID: "exec-different",
 						ReferenceID:         baseMetadata.ReferenceID,
@@ -254,7 +255,7 @@ func TestGetIDKey_DuplicateRecognition(t *testing.T) {
 			},
 			{
 				name: "different reference ID",
-				metadata: ConsensusRequestMetadata{
+				metadata: oracle.ConsensusRequestMetadata{
 					RequestMetadata: capabilities.RequestMetadata{
 						WorkflowExecutionID: baseMetadata.WorkflowExecutionID,
 						ReferenceID:         "ref-different",
@@ -265,14 +266,14 @@ func TestGetIDKey_DuplicateRecognition(t *testing.T) {
 			},
 		}
 
-		baseRequest := &ConsensusRequest{
-			Metadata: ConsensusRequestMetadata{RequestMetadata: baseMetadata},
+		baseRequest := &oracle.ConsensusRequest{
+			Metadata: oracle.ConsensusRequestMetadata{RequestMetadata: baseMetadata},
 		}
 		baseKey := GetIDKey(baseRequest)
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				request := &ConsensusRequest{Metadata: tc.metadata}
+				request := &oracle.ConsensusRequest{Metadata: tc.metadata}
 				key := GetIDKey(request)
 
 				require.NotEqual(t, baseKey, key, "Different metadata should produce different keys")
@@ -284,7 +285,7 @@ func TestGetIDKey_DuplicateRecognition(t *testing.T) {
 		// Simulate the duplicate detection logic from plugin.go
 		seenIDs := make(map[IDKey]bool)
 
-		metadata := ConsensusRequestMetadata{
+		metadata := oracle.ConsensusRequestMetadata{
 			RequestMetadata: capabilities.RequestMetadata{
 				WorkflowExecutionID: "exec-123",
 				ReferenceID:         "ref-456",
@@ -293,11 +294,11 @@ func TestGetIDKey_DuplicateRecognition(t *testing.T) {
 			},
 		}
 
-		requests := []*ConsensusRequest{
+		requests := []*oracle.ConsensusRequest{
 			{Metadata: metadata, RequestID: "req-1"},
 			{Metadata: metadata, RequestID: "req-2"}, // Same metadata, different ID
 			{
-				Metadata: ConsensusRequestMetadata{
+				Metadata: oracle.ConsensusRequestMetadata{
 					RequestMetadata: capabilities.RequestMetadata{
 						WorkflowExecutionID: "exec-different",
 						ReferenceID:         "ref-456",
@@ -309,7 +310,7 @@ func TestGetIDKey_DuplicateRecognition(t *testing.T) {
 			}, // Different metadata
 		}
 
-		var processedRequests []*ConsensusRequest
+		var processedRequests []*oracle.ConsensusRequest
 
 		for _, rq := range requests {
 			key := GetIDKey(rq)

@@ -1,4 +1,4 @@
-package oracle_test
+package plugin_test
 
 import (
 	"bytes"
@@ -15,6 +15,7 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/smartcontractkit/capabilities/consensus/metrics"
+	"github.com/smartcontractkit/capabilities/consensus/oracle/plugin"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	pbtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
@@ -590,7 +591,7 @@ func runProtocolRoundTestsWithPlugins(ctx context.Context, t *testing.T,
 	// Get reports and verify the value selected
 	reports := allReports[0]
 	for _, report := range reports {
-		serialisedValue := report.ReportWithInfo.Report[oracle.ReportMetaDataPrependLength:]
+		serialisedValue := report.ReportWithInfo.Report[plugin.ReportMetaDataPrependLength:]
 		actualProto := &valuespb.Value{}
 		err := proto.Unmarshal(serialisedValue, actualProto)
 		require.NoError(t, err, "failed to unmarshal value from report")
@@ -599,7 +600,7 @@ func runProtocolRoundTestsWithPlugins(ctx context.Context, t *testing.T,
 		err = proto.Unmarshal(report.ReportWithInfo.Info, &infos)
 		require.NoError(t, err, "failed to unmarshal value from report")
 
-		reqID := infos.Fields[oracle.InfoRequestID].GetStringValue()
+		reqID := infos.Fields[plugin.InfoRequestID].GetStringValue()
 
 		expectedOutcome, ok := requestIDToOutcome[reqID]
 		require.True(t, ok, "got unexpected result for request %s", reqID)
@@ -641,7 +642,7 @@ func verifyValueConsensusReport(t *testing.T, report ocr3types.ReportPlus[[]byte
 
 	// Verify that the report info contains request ID
 	require.NotNil(t, infos, "report info should not be nil")
-	require.Contains(t, infos.Fields, oracle.InfoRequestID, "report info should contain request ID")
+	require.Contains(t, infos.Fields, plugin.InfoRequestID, "report info should contain request ID")
 
 	if expectedKeyBundleName != "" {
 		require.Contains(t, infos.Fields, "keyBundleName", "report info should contain key bundle name")
@@ -650,7 +651,7 @@ func verifyValueConsensusReport(t *testing.T, report ocr3types.ReportPlus[[]byte
 	}
 
 	// Verify the value in the report matches the expected result
-	serialisedValue := report.ReportWithInfo.Report[oracle.ReportMetaDataPrependLength:]
+	serialisedValue := report.ReportWithInfo.Report[plugin.ReportMetaDataPrependLength:]
 	actualProto := &valuespb.Value{}
 	err := proto.Unmarshal(serialisedValue, actualProto)
 	require.NoError(t, err, "failed to unmarshal value from report")
@@ -667,7 +668,7 @@ func createReportingPlugin(t *testing.T, lggr logger.Logger, f int, n int,
 	metricsInstance, err := metrics.NewMetrics()
 	require.NoError(t, err)
 
-	reportingPlugin, err := oracle.NewReportingPlugin(lggr, metricsInstance, f, n, reqStore, &pbtypes.ReportingPluginConfig{
+	reportingPlugin, err := plugin.NewReportingPlugin(lggr, metricsInstance, f, n, reqStore, &pbtypes.ReportingPluginConfig{
 		MaxQueryLengthBytes:       defaultMaxLengthBytes,
 		MaxObservationLengthBytes: defaultMaxLengthBytes,
 		MaxOutcomeLengthBytes:     defaultMaxLengthBytes,
