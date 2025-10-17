@@ -234,7 +234,6 @@ func Test_HistoricalOutcomesAreRemovedOnExpiry(t *testing.T) {
 
 				require.Equal(t, requestIDToHistoricalOutcome[successfulRequest.RequestID()].Status, oracletypes.RequestStatus_REQUEST_STATUS_CONSENSUS_SUCCESS)
 			}
-
 		}
 
 		previousOutcome = runProtocolRoundTestsWithPlugins(ctx, t, reqToObservations, pluginsAndStores, ocr3types.OutcomeContext{
