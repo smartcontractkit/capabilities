@@ -5,8 +5,8 @@ go 1.25.3
 require (
 	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20251008151345-29b06a2ad833
-	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251017171836-ff801687c245
-	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20251008161434-22d9bd439bba
+	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251017191235-d92205a61574
+	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20251016184633-215666be5318
 	github.com/smartcontractkit/freeport v0.1.3-0.20250716200817-cb5dfd0e369e
 	github.com/smartcontractkit/libocr v0.0.0-20250912173940-f3ab0246e23d
 	github.com/stretchr/testify v1.10.0

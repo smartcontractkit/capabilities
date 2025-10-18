@@ -1,14 +1,12 @@
 module github.com/smartcontractkit/capabilities/capabilitywatcher
 
-go 1.24.5
-
-toolchain go1.24.6
+go 1.25.3
 
 require (
 	github.com/google/uuid v1.6.0
 	github.com/prometheus/client_golang v1.22.0
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20251008153844-75f78ccdea96
-	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251008120326-8fd3a49fa416
+	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251017191235-d92205a61574
 	google.golang.org/protobuf v1.36.7
 )
 
@@ -74,10 +72,11 @@ require (
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/smartcontractkit/chain-selectors v1.0.67 // indirect
 	github.com/smartcontractkit/chainlink-common/pkg/chipingress v0.0.6 // indirect
-	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20250911132915-5296c67ccb9a // indirect
+	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20251016184633-215666be5318 // indirect
+	github.com/smartcontractkit/chainlink-protos/linking-service/go v0.0.0-20251002192024-d2ad9222409b // indirect
 	github.com/smartcontractkit/freeport v0.1.3-0.20250716200817-cb5dfd0e369e // indirect
 	github.com/smartcontractkit/grpc-proxy v0.0.0-20240830132753-a7e17fec5ab7 // indirect
-	github.com/smartcontractkit/libocr v0.0.0-20250707144819-babe0ec4e358 // indirect
+	github.com/smartcontractkit/libocr v0.0.0-20250912173940-f3ab0246e23d // indirect
 	github.com/stretchr/testify v1.10.0 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
