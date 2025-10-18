@@ -3,7 +3,7 @@ module github.com/smartcontractkit/capabilities/devenv
 go 1.25.3
 
 require (
-	github.com/go-chi/chi/v5 v5.0.7
+	github.com/go-chi/chi/v5 v5.2.2
 	github.com/moby/moby v27.3.1+incompatible
 	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251017191235-d92205a61574
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20251016184633-215666be5318
