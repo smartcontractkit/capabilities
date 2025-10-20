@@ -419,7 +419,6 @@ func generateRandomHexString(byteLength int) string {
 }
 
 func newCr(t *testing.T, observation int64, metaData oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
-
 	defaultVal, err := values.Wrap(nil)
 	require.NoError(t, err, "failed to wrap default value")
 
