@@ -44,7 +44,7 @@ func Test_Report_MedianTimeStamp(t *testing.T) {
 			}},
 	}
 
-	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
+	runProtocolRoundTests(ctx, t, lggr, n, f, reqToObservations)
 }
 
 // Test_MedianTimeStampsWithMismatchedObservationsIncludesAllTimestampsInCalculation checks that the median timestamp
@@ -74,7 +74,7 @@ func Test_Report_MedianTimeStampWithMismatchedObservationsIncludesAllTimestampsI
 			}},
 	}
 
-	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
+	runProtocolRoundTests(ctx, t, lggr, n, f, reqToObservations)
 }
 
 func Test_ReceivedIdenticalReportFromAllNodes(t *testing.T) {
@@ -107,7 +107,7 @@ func Test_ReceivedIdenticalReportFromAllNodes(t *testing.T) {
 			}},
 	}
 
-	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
+	runProtocolRoundTests(ctx, t, lggr, n, f, reqToObservations)
 }
 
 func Test_ReceivedIdenticalReportFromSufficientNodes(t *testing.T) {
@@ -140,7 +140,7 @@ func Test_ReceivedIdenticalReportFromSufficientNodes(t *testing.T) {
 			}},
 	}
 
-	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
+	runProtocolRoundTests(ctx, t, lggr, n, f, reqToObservations)
 }
 
 func Test_SufficientAndInsufficentReportsInSingleRound(t *testing.T) {
@@ -167,13 +167,13 @@ func Test_SufficientAndInsufficentReportsInSingleRound(t *testing.T) {
 			newRR([]byte("somerandombytes2"), md2), newRR([]byte("somerandombytes4"), md2), newRR([]byte("somerandombytes3"), md2),
 			newRR([]byte("somerandombytes"), md2), newRR([]byte("somerandombytes"), md2), newRR([]byte("somerandombytes3"), md2),
 			newRR([]byte("somerandombytes2"), md2)},
-			verifyReport: nil},
+			expectedConsensusFailureMessage: "no values met f+1 threshold"},
 	}
 
-	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
+	runProtocolRoundTests(ctx, t, lggr, n, f, reqToObservations)
 }
 
-func Test_ReceivedIdenticalReportFromInSufficientNodes(t *testing.T) {
+func Test_ReceivedIdenticalMultipleQualifyingSetsOfIdenticalValues(t *testing.T) {
 	lggr := logger.Test(t)
 	ctx := t.Context()
 
@@ -185,10 +185,10 @@ func Test_ReceivedIdenticalReportFromInSufficientNodes(t *testing.T) {
 			newRR([]byte("somerandombytes2"), md1), newRR([]byte("somerandombytes"), md1), newRR([]byte("somerandombytes"), md1),
 			newRR([]byte("somerandombytes2"), md1), newRR([]byte("somerandombytes"), md1), newRR([]byte("somerandombytes"), md1),
 			newRR([]byte("somerandombytes2"), md1)},
-			verifyReport: nil},
+			expectedConsensusFailureMessage: "not identical, multiple values with f+1 occurrences"},
 	}
 
-	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
+	runProtocolRoundTests(ctx, t, lggr, n, f, reqToObservations)
 }
 
 func newRR(rawBytes []byte, metaData oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {

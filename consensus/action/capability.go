@@ -121,7 +121,7 @@ func (c *consensusCapability) Initialise(ctx context.Context, dependencies core.
 	}
 
 	reportingPlugin, err := plugin.NewReportingPluginFactory(c.lggr, c.metrics, c.reqStore, c.SetRequestTimeout,
-		c.requestBatchSize)
+		c.requestBatchSize, defaultKeyBundleIDForValueConsensus)
 	if err != nil {
 		return fmt.Errorf("error when creating reporting plugin factory: %w", err)
 	}

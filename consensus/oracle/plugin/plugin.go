@@ -20,13 +20,10 @@ import (
 var _ ocr3types.ReportingPlugin[[]byte] = (*reportingPlugin)(nil)
 
 type reportingPlugin struct {
-	batchSize int
-	store     *requests.Store[*oracle.ConsensusRequest]
+	store *requests.Store[*oracle.ConsensusRequest]
 
 	f int
 	n int
-
-	minimumObservations int
 
 	// outcomeExpirySeqNrSpan is the duration, expressed as a seq number span, after which a request outcome will be pruned from the plugins outcome
 	outcomeExpirySeqNrSpan uint64
@@ -34,22 +31,24 @@ type reportingPlugin struct {
 	config  *ocrtypes.ReportingPluginConfig
 	metrics *metrics.Metrics
 
+	// defaultKeyBundleIDForConsensusFailure is the key bundle ID to be used when reporting consensus failures before consensus is reached on request metadata
+	defaultKeyBundleIDForConsensusFailure string
+
 	lggr logger.Logger
 }
 
 // NewReportingPlugin creates a new reporting plugin for the OCR3 capability
 func NewReportingPlugin(lggr logger.Logger, metrics *metrics.Metrics, f int, n int, store *requests.Store[*oracle.ConsensusRequest],
-	configProto *ocrtypes.ReportingPluginConfig) (*reportingPlugin, error) {
+	configProto *ocrtypes.ReportingPluginConfig, defaultKeyBundleIDForConsensusFailure string) (*reportingPlugin, error) {
 	return &reportingPlugin{
-		store:                  store,
-		batchSize:              int(configProto.MaxBatchSize),
-		f:                      f,
-		n:                      n,
-		minimumObservations:    2*f + 1,
-		outcomeExpirySeqNrSpan: configProto.HistoricalOutcomeExpirySeqNrSpan,
-		lggr:                   logger.Named(lggr, "CapabilityConsensusReportingPlugin"),
-		config:                 configProto,
-		metrics:                metrics,
+		store:                                 store,
+		f:                                     f,
+		n:                                     n,
+		outcomeExpirySeqNrSpan:                configProto.HistoricalOutcomeExpirySeqNrSpan,
+		lggr:                                  logger.Named(lggr, "CapabilityConsensusReportingPlugin"),
+		config:                                configProto,
+		metrics:                               metrics,
+		defaultKeyBundleIDForConsensusFailure: defaultKeyBundleIDForConsensusFailure,
 	}, nil
 }
 

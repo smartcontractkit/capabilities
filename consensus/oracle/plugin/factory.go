@@ -19,9 +19,8 @@ import (
 
 const (
 	defaultMaxPhaseOutputBytes              = 1_000_000 // 1 MB
-	defaultMaxReportCount                   = 20
-	defaultBatchSize                        = 20
-	defaultOutcomePruningThreshold          = 3600
+	defaultMaxReportLengthBytes             = 100_000   // 100 KB
+	defaultMaxReportCount                   = 100
 	defaultRequestExpiry                    = 20 * time.Second
 	defaultHistoricalOutcomeExpirySeqNrSpan = uint64(4)
 )
@@ -38,17 +37,20 @@ type factory struct {
 	lggr              logger.Logger
 	metrics           *metrics.Metrics
 
+	defaultKeyBundleIDForConsensusFailure string
+
 	services.StateMachine
 }
 
 func NewReportingPluginFactory(lggr logger.Logger, metrics *metrics.Metrics, s *requests.Store[*oracle.ConsensusRequest],
-	setRequestTimeout SetRequestTimeout, batchSize int) (*factory, error) {
+	setRequestTimeout SetRequestTimeout, batchSize int, defaultKeyBundleIDForConsensusFailure string) (*factory, error) {
 	return &factory{
-		store:             s,
-		setRequestTimeout: setRequestTimeout,
-		batchSize:         batchSize,
-		lggr:              logger.Named(lggr, "ConsensusCapabilityPluginFactory"),
-		metrics:           metrics,
+		store:                                 s,
+		setRequestTimeout:                     setRequestTimeout,
+		batchSize:                             batchSize,
+		lggr:                                  logger.Named(lggr, "ConsensusCapabilityPluginFactory"),
+		metrics:                               metrics,
+		defaultKeyBundleIDForConsensusFailure: defaultKeyBundleIDForConsensusFailure,
 	}, nil
 }
 
@@ -69,13 +71,7 @@ func (o *factory) NewReportingPlugin(_ context.Context, config ocr3types.Reporti
 		configProto.MaxOutcomeLengthBytes = defaultMaxPhaseOutputBytes
 	}
 	if configProto.MaxReportLengthBytes <= 0 {
-		configProto.MaxReportLengthBytes = defaultMaxPhaseOutputBytes
-	}
-	if configProto.MaxBatchSize <= 0 {
-		configProto.MaxBatchSize = defaultBatchSize
-	}
-	if configProto.OutcomePruningThreshold <= 0 {
-		configProto.OutcomePruningThreshold = defaultOutcomePruningThreshold
+		configProto.MaxReportLengthBytes = defaultMaxReportLengthBytes
 	}
 	if configProto.MaxReportCount <= 0 {
 		configProto.MaxReportCount = defaultMaxReportCount
@@ -100,7 +96,7 @@ func (o *factory) NewReportingPlugin(_ context.Context, config ocr3types.Reporti
 		configProto.HistoricalOutcomeExpirySeqNrSpan = defaultHistoricalOutcomeExpirySeqNrSpan
 	}
 
-	rp, err := NewReportingPlugin(o.lggr, o.metrics, config.F, config.N, o.store, &configProto)
+	rp, err := NewReportingPlugin(o.lggr, o.metrics, config.F, config.N, o.store, &configProto, o.defaultKeyBundleIDForConsensusFailure)
 	rpInfo := ocr3types.ReportingPluginInfo{
 		Name: "Consensus Capability Plugin",
 		Limits: ocr3types.ReportingPluginLimits{
