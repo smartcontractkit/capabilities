@@ -54,15 +54,15 @@ func Test_DuplicateOutcomePrevention(t *testing.T) {
 
 	reqToObservations := map[string]consensusPluginTest{
 		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
-			newCr(10, md1), newCr(20, md1), newCr(30, md1),
-			newCr(40, md1), newCr(50, md1), newCr(60, md1),
-			newCr(70, md1)},
+			newCr(t, 10, md1), newCr(t, 20, md1), newCr(t, 30, md1),
+			newCr(t, 40, md1), newCr(t, 50, md1), newCr(t, 60, md1),
+			newCr(t, 70, md1)},
 			verifyReport: verifier1.Verify,
 		},
 		md2.RequestID(): {requests: []*oracle.ConsensusRequest{
-			newCr(110, md2), newCr(120, md2), newCr(130, md2),
-			newCr(140, md2), newCr(150, md2), newCr(160, md2),
-			newCr(170, md2)},
+			newCr(t, 110, md2), newCr(t, 120, md2), newCr(t, 130, md2),
+			newCr(t, 140, md2), newCr(t, 150, md2), newCr(t, 160, md2),
+			newCr(t, 170, md2)},
 			verifyReport: verifier2.Verify,
 		},
 	}
@@ -112,16 +112,16 @@ func Test_HistoricalOutcomesAreRemovedOnExpiry(t *testing.T) {
 	reqToObservations := map[string]consensusPluginTest{
 		// Consensus will succeed
 		successfulRequest.RequestID(): {requests: []*oracle.ConsensusRequest{
-			newCr(10, successfulRequest), newCr(20, successfulRequest), newCr(30, successfulRequest),
-			newCr(40, successfulRequest), newCr(50, successfulRequest), newCr(60, successfulRequest),
-			newCr(70, successfulRequest)},
+			newCr(t, 10, successfulRequest), newCr(t, 20, successfulRequest), newCr(t, 30, successfulRequest),
+			newCr(t, 40, successfulRequest), newCr(t, 50, successfulRequest), newCr(t, 60, successfulRequest),
+			newCr(t, 70, successfulRequest)},
 			verifyReport: reportVerifier1.Verify,
 		},
 
 		// Consensus will fail as insufficient observations and the request will remain pending
 		pendingRequest.RequestID(): {requests: []*oracle.ConsensusRequest{
-			newCr(110, pendingRequest), nil, newCr(130, pendingRequest),
-			newCr(140, pendingRequest), nil, newCr(160, pendingRequest),
+			newCr(t, 110, pendingRequest), nil, newCr(t, 130, pendingRequest),
+			newCr(t, 140, pendingRequest), nil, newCr(t, 160, pendingRequest),
 			nil},
 			verifyReport: reportVerifier2.Verify,
 		},
@@ -176,9 +176,9 @@ func Test_HistoricalOutcomesAreRemovedOnExpiry(t *testing.T) {
 			// Simulate the observations arriving for the pending request
 			updatedPendingRequestObservations := map[string]consensusPluginTest{
 				pendingRequest.RequestID(): {requests: []*oracle.ConsensusRequest{
-					newCr(110, pendingRequest), newCr(120, pendingRequest), newCr(130, pendingRequest),
-					newCr(140, pendingRequest), newCr(150, pendingRequest), newCr(160, pendingRequest),
-					newCr(170, pendingRequest)},
+					newCr(t, 110, pendingRequest), newCr(t, 120, pendingRequest), newCr(t, 130, pendingRequest),
+					newCr(t, 140, pendingRequest), newCr(t, 150, pendingRequest), newCr(t, 160, pendingRequest),
+					newCr(t, 170, pendingRequest)},
 					verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
 						verifyValueConsensusReport(t, report, infos, values.NewInt64(140), "")
 					}},
