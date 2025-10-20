@@ -326,15 +326,14 @@ func requestDescriptorMetadataAndDefaultMatch(lggr logger.Logger, req *Consensus
 		return false, nil
 	}
 
-	if queryRequest.RequestDefault != nil {
-		if req.Input.Default == nil {
+	serialisedDefault, err := proto.MarshalOptions{Deterministic: true}.Marshal(req.Input.Default)
+	if err != nil {
+		return false, fmt.Errorf("failed to marshal default for request %s: %w", req.ID(), err)
+	}
+	if len(queryRequest.RequestDefault) > 0 {
+		if len(serialisedDefault) == 0 {
 			lggr.Debugw("Default value mismatch - query has default but request does not", "requestID", req.ID())
 			return false, nil
-		}
-
-		serialisedDefault, err := proto.MarshalOptions{Deterministic: true}.Marshal(req.Input.Default)
-		if err != nil {
-			return false, fmt.Errorf("failed to marshal default for request %s: %w", req.ID(), err)
 		}
 
 		if !bytes.Equal(queryRequest.RequestDefault, serialisedDefault) {
@@ -342,7 +341,7 @@ func requestDescriptorMetadataAndDefaultMatch(lggr logger.Logger, req *Consensus
 			return false, nil
 		}
 	} else {
-		if req.Input.Default != nil {
+		if len(serialisedDefault) > 0 {
 			lggr.Debugw("Default value mismatch - request has default but query does not", "requestID", req.ID())
 			return false, nil
 		}
