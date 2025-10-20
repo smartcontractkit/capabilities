@@ -142,7 +142,7 @@ func Test_ReceivedAllObservationsFromAllNodes(t *testing.T) {
 	ctx := t.Context()
 
 	md1 := newRequestMetaData()
-	//	md2 := newRequestMetaData()
+	md2 := newRequestMetaData()
 
 	md1.KeyBundleID = "evm"
 
@@ -155,13 +155,13 @@ func Test_ReceivedAllObservationsFromAllNodes(t *testing.T) {
 				verifyValueConsensusReport(t, report, infos, values.NewInt64(40), "evm")
 			}},
 
-		//		md2.RequestID(): {requests: []*oracle.ConsensusRequest{
-		//			newCr(110, md2), newCr(120, md2), newCr(130, md2),
-		//			newCr(140, md2), newCr(150, md2), newCr(160, md2),
-		//			newCr(170, md2)},
-		//			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
-		//				verifyValueConsensusReport(t, report, infos, values.NewInt64(140), "")
-		//			}},
+		md2.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newCr(t, 110, md2), newCr(t, 120, md2), newCr(t, 130, md2),
+			newCr(t, 140, md2), newCr(t, 150, md2), newCr(t, 160, md2),
+			newCr(t, 170, md2)},
+			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
+				verifyValueConsensusReport(t, report, infos, values.NewInt64(140), "")
+			}},
 	}
 
 	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
