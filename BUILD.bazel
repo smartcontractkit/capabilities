@@ -1,6 +1,4 @@
 load("@gazelle//:def.bzl", "gazelle")
 
 # Top-level Gazelle target; run with: bazel run //:gazelle
-gazelle(
-    name = "gazelle",
-)
+gazelle(name = "gazelle")
