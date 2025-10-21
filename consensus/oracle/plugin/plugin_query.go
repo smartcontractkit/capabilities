@@ -62,8 +62,13 @@ func (r *reportingPlugin) Query(ctx context.Context, outctx ocr3types.OutcomeCon
 			return nil, fmt.Errorf("failed to marshal consensus descriptor for request %s: %w", rq.ID(), err)
 		}
 
+		isDefaultNil, err := isNilOrEmptySlice(rq.Input.Default)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check if default is nil for request %s: %w", rq.ID(), err)
+		}
+
 		var serialisedDefault []byte
-		if rq.Input.Default != nil {
+		if !isDefaultNil {
 			serialisedDefault, err = proto.MarshalOptions{Deterministic: true}.Marshal(rq.Input.Default)
 			if err != nil {
 				return nil, fmt.Errorf("failed to marshal default for request %s: %w", rq.ID(), err)

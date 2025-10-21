@@ -42,6 +42,85 @@ const f = 2
 const batchSize = 10
 const defaultMaxLengthBytes = 1000000 // 1 MB
 
+// nillable observation and nillable default value, -1 indicates the value should be set as nil
+func newSliceCr(t *testing.T, observation []byte, def []byte, metaData oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
+
+	observationVal, err := values.Wrap(observation)
+	require.NoError(t, err, "failed to wrap nil value")
+
+	defaultVal, err := values.Wrap(def)
+	require.NoError(t, err, "failed to wrap nil value")
+
+	simpleConsensusInputs := &sdk.SimpleConsensusInputs{
+		Observation: &sdk.SimpleConsensusInputs_Value{Value: values.Proto(observationVal)},
+		Default:     values.Proto(defaultVal),
+		Descriptors: &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL}},
+	}
+
+	return oracle.NewConsensusRequest(serializeDeserialize(t, simpleConsensusInputs), time.Now(), time.Now().Add(1*time.Hour).UTC(), nil, metaData)
+}
+
+func Test_SliceObservationAndDefaults(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := t.Context()
+
+	md1 := newRequestMetaData()
+	md2 := newRequestMetaData()
+
+	reqToObservations := map[string]*consensusPluginTest{
+		// Test with observations and defaults as byte slices
+		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newSliceCr(t, []byte("stuff"), []byte("otherstuff"), md1),
+			newSliceCr(t, []byte("stuff"), []byte("otherstuff"), md1),
+			newSliceCr(t, []byte("stuff"), []byte("otherstuff"), md1),
+			newSliceCr(t, []byte("stuff"), []byte("otherstuff"), md1),
+			newSliceCr(t, []byte("stuff"), []byte("otherstuff"), md1),
+			newSliceCr(t, []byte("stuff"), []byte("otherstuff"), md1),
+			newSliceCr(t, []byte("stuff"), []byte("otherstuff"), md1)},
+			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
+				val, err := values.Wrap([]byte("stuff"))
+				require.NoError(t, err)
+
+				verifyValueConsensusReport(t, report, infos, val, "")
+			}},
+
+		// Test with just defaults as byte slices
+		md2.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newSliceCr(t, nil, []byte("otherstuff"), md2),
+			newSliceCr(t, nil, []byte("otherstuff"), md2),
+			newSliceCr(t, nil, []byte("otherstuff"), md2),
+			newSliceCr(t, nil, []byte("otherstuff"), md2),
+			newSliceCr(t, nil, []byte("otherstuff"), md2),
+			newSliceCr(t, nil, []byte("otherstuff"), md2),
+			newSliceCr(t, nil, []byte("otherstuff"), md2)},
+			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
+				val, err := values.Wrap([]byte("otherstuff"))
+				require.NoError(t, err)
+
+				verifyValueConsensusReport(t, report, infos, val, "")
+			}},
+
+		// Test with a mixture of observations and defaults as byte slices
+		md2.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newSliceCr(t, nil, []byte("otherstuff"), md2),
+			newSliceCr(t, nil, []byte("otherstuff"), md2),
+			newSliceCr(t, []byte("stuff"), []byte("otherstuff"), md2),
+			newSliceCr(t, nil, []byte("otherstuff"), md2),
+			newSliceCr(t, nil, []byte("otherstuff"), md2),
+			newSliceCr(t, []byte("stuff"), []byte("otherstuff"), md2),
+			newSliceCr(t, nil, []byte("otherstuff"), md2)},
+			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
+				val, err := values.Wrap([]byte("otherstuff"))
+				require.NoError(t, err)
+
+				verifyValueConsensusReport(t, report, infos, val, "")
+			}},
+	}
+
+	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
+
+}
+
 func Test_MismatchedLeaderConsensusDescriptor(t *testing.T) {
 	lggr := logger.Test(t)
 	ctx := t.Context()
@@ -138,36 +217,47 @@ func Test_MismatchedNonLeaderMetaData(t *testing.T) {
 	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, protocolRoundTests)
 }
 
-/*
-func Test_ReceivedAllObservationsOrDefaultFromAllNodes(t *testing.T) {
+func Test_ObservationDefaults(t *testing.T) {
 	lggr := logger.Test(t)
 	ctx := t.Context()
 
 	md1 := newRequestMetaData()
-	//	md2 := newRequestMetaData()
+	md2 := newRequestMetaData()
+	md3 := newRequestMetaData()
 
 	md1.KeyBundleID = "evm"
 
-	reqToObservations := map[string]consensusPluginTest{
+	reqToObservations := map[string]*consensusPluginTest{
+		// Test a mixture of nil and non-nil observations with defaults
 		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
-			newNillableCr(t, -1, 10, md1), newNillableCr(t, 20, 20, md1), newNillableCr(t, -1, 30, md1),
-			newNillableCr(t, 40, 40, md1), newNillableCr(t, -1, 50, md1), newNillableCr(t, -1, 60, md1),
-			newNillableCr(t, 70, 70, md1)},
+			newNillableCr(t, -1, 40, md1), newNillableCr(t, 20, 40, md1), newNillableCr(t, -1, 40, md1),
+			newNillableCr(t, -1, 40, md1), newNillableCr(t, -1, 40, md1), newNillableCr(t, -1, 40, md1),
+			newNillableCr(t, 70, 40, md1)},
 			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
 				verifyValueConsensusReport(t, report, infos, values.NewInt64(40), "evm")
 			}},
 
-			md2.RequestID(): {requests: []*oracle.ConsensusRequest{
-				newNillableCr(t, 110, 110, md2), newNillableCr(t, 120, 120, md2), newNillableCr(t, 130, 130, md2),
-				newNillableCr(t, 140, 140, md2), newNillableCr(t, 150, 150, md2), newNillableCr(t, 160, 160, md2),
-				newNillableCr(t, 170, 170, md2)},
-				verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
-					verifyValueConsensusReport(t, report, infos, values.NewInt64(140), "")
-				}},
+		// Test obs and default nil observations
+		md2.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newNillableCr(t, 110, 100, md2), newNillableCr(t, 120, 100, md2), newNillableCr(t, -1, -1, md2),
+			newNillableCr(t, -1, 100, md2), newNillableCr(t, 150, -1, md2), newNillableCr(t, 160, 100, md2),
+			newNillableCr(t, 170, 100, md2)},
+			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
+				verifyValueConsensusReport(t, report, infos, values.NewInt64(120), "")
+			}},
+
+		// Test insufficient non-nil observations but with sufficient matching defaults
+		md3.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newNillableCr(t, 10, 40, md3), newNillableCr(t, 20, 40, md3), newNillableCr(t, 30, 40, md3),
+			newNillableCr(t, 35, 40, md3), newNillableCr(t, -1, 40, md3), newNillableCr(t, -1, 40, md3),
+			newNillableCr(t, -1, 40, md3)},
+			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
+				verifyValueConsensusReport(t, report, infos, values.NewInt64(35), "")
+			}},
 	}
 
 	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
-} */
+}
 
 func Test_ReceivedAllObservationsFromAllNodes(t *testing.T) {
 	lggr := logger.Test(t)
@@ -703,7 +793,7 @@ func removeRequestFromAllStores(pluginAndRequestStores []pluginAndRequestStore, 
 	}
 }
 
-func verifyValueConsensusReport(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct, expectedResult *values.Int64,
+func verifyValueConsensusReport(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct, expectedResult values.Value,
 	expectedKeyBundleName string) {
 	require.NotNil(t, report.ReportWithInfo, "report should not be nil")
 	require.NotNil(t, report.ReportWithInfo.Report, "report value should not be nil")
