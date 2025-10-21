@@ -1,0 +1,26 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "kvrequests",
+    srcs = [
+        "kvrequests.go",
+        "request.go",
+    ],
+    importpath = "github.com/smartcontractkit/capabilities/kvstore/kvrequests",
+    visibility = ["//visibility:public"],
+    deps = ["@com_github_smartcontractkit_chainlink_common//pkg/logger"],
+)
+
+go_test(
+    name = "kvrequests_test",
+    srcs = [
+        "kvrequests_test.go",
+        "request_test.go",
+    ],
+    embed = [":kvrequests"],
+    deps = [
+        "//libs/testutils",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
+)

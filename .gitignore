@@ -51,3 +51,8 @@ bin
 # Used for changesets
 node_modules
 
+# Bazel monorepo tool
+bazel-capabilities
+bazel-bin
+bazel-out
+bazel-testlogs

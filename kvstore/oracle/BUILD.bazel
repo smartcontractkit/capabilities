@@ -1,0 +1,22 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "oracle",
+    srcs = [
+        "contract_transmitter.go",
+        "outcome.go",
+        "processed_observations.go",
+        "reporting_plugin.go",
+        "reporting_plugin_factory.go",
+    ],
+    importpath = "github.com/smartcontractkit/capabilities/kvstore/oracle",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//kvstore/kvrequests",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_smartcontractkit_libocr//commontypes",
+        "@com_github_smartcontractkit_libocr//offchainreporting2plus/ocr3types",
+        "@com_github_smartcontractkit_libocr//offchainreporting2plus/types",
+        "@com_github_smartcontractkit_libocr//quorumhelper",
+    ],
+)

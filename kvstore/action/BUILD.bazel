@@ -1,0 +1,15 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "action",
+    srcs = ["action.go"],
+    importpath = "github.com/smartcontractkit/capabilities/kvstore/action",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//kvstore/kvcap",
+        "//kvstore/kvrequests",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_smartcontractkit_chainlink_protos_cre_go//values",
+    ],
+)

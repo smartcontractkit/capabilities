@@ -1,0 +1,31 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "server",
+    srcs = ["server.go"],
+    importpath = "github.com/smartcontractkit/capabilities/kvstore/server",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//kvstore/action",
+        "//kvstore/kvrequests",
+        "//kvstore/oracle",
+        "//kvstore/target",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_smartcontractkit_chainlink_common//pkg/loop",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types/core",
+        "@com_github_smartcontractkit_libocr//offchainreporting2/types",
+    ],
+)
+
+go_test(
+    name = "server_test",
+    srcs = ["server_test.go"],
+    deps = [
+        ":server",
+        "//libs/testutils",
+        "@com_github_smartcontractkit_chainlink_common//pkg/services/servicetest",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types/core",
+        "@com_github_stretchr_testify//require",
+    ],
+)

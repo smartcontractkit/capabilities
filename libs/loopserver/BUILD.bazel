@@ -1,0 +1,14 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "loopserver",
+    srcs = ["main.go"],
+    importpath = "github.com/smartcontractkit/capabilities/libs/loopserver",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_hashicorp_go_plugin//:go-plugin",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_smartcontractkit_chainlink_common//pkg/loop",
+        "@io_opentelemetry_go_otel_sdk_metric//:metric",
+    ],
+)

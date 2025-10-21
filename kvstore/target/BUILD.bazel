@@ -1,0 +1,30 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "target",
+    srcs = ["target.go"],
+    importpath = "github.com/smartcontractkit/capabilities/kvstore/target",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//kvstore/kvcap",
+        "//kvstore/kvrequests",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_smartcontractkit_chainlink_protos_cre_go//values",
+        "@com_github_smartcontractkit_chainlink_protos_cre_go//values/pb",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
+
+go_test(
+    name = "target_test",
+    srcs = ["target_test.go"],
+    deps = [
+        ":target",
+        "//kvstore/kvrequests",
+        "//libs/testutils",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
+        "@com_github_smartcontractkit_chainlink_protos_cre_go//values",
+        "@com_github_stretchr_testify//assert",
+    ],
+)
