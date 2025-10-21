@@ -16,19 +16,6 @@ import (
 	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
 )
 
-type reportVerifier struct {
-	verifyReport   func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct)
-	reportExpected bool
-}
-
-func (r *reportVerifier) Verify(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
-	if r.reportExpected {
-		r.verifyReport(t, report, infos)
-	} else {
-		t.Errorf("unexpected report: %v", report)
-	}
-}
-
 func Test_DuplicateOutcomePrevention(t *testing.T) {
 	lggr := logger.Test(t)
 	ctx := t.Context()
@@ -38,32 +25,22 @@ func Test_DuplicateOutcomePrevention(t *testing.T) {
 
 	md1.KeyBundleID = "evm"
 
-	verifier1 := &reportVerifier{
-		reportExpected: true,
-		verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
-			verifyValueConsensusReport(t, report, infos, values.NewInt64(40), "evm")
-		},
-	}
-
-	verifier2 := &reportVerifier{
-		reportExpected: true,
-		verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
-			verifyValueConsensusReport(t, report, infos, values.NewInt64(140), "")
-		},
-	}
-
-	reqToObservations := map[string]consensusPluginTest{
+	reqToObservations := map[string]*consensusPluginTest{
 		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
 			newCr(t, 10, md1), newCr(t, 20, md1), newCr(t, 30, md1),
 			newCr(t, 40, md1), newCr(t, 50, md1), newCr(t, 60, md1),
 			newCr(t, 70, md1)},
-			verifyReport: verifier1.Verify,
+			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
+				verifyValueConsensusReport(t, report, infos, values.NewInt64(40), "evm")
+			},
 		},
 		md2.RequestID(): {requests: []*oracle.ConsensusRequest{
 			newCr(t, 110, md2), newCr(t, 120, md2), newCr(t, 130, md2),
 			newCr(t, 140, md2), newCr(t, 150, md2), newCr(t, 160, md2),
 			newCr(t, 170, md2)},
-			verifyReport: verifier2.Verify,
+			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
+				verifyValueConsensusReport(t, report, infos, values.NewInt64(140), "")
+			},
 		},
 	}
 
@@ -76,8 +53,11 @@ func Test_DuplicateOutcomePrevention(t *testing.T) {
 		SeqNr: seqNr,
 	})
 
-	verifier1.reportExpected = false
-	verifier2.reportExpected = false
+	outcome1 := reqToObservations[md1.RequestID()]
+	outcome1.verifyReport = nil
+
+	outcome2 := reqToObservations[md2.RequestID()]
+	outcome2.verifyReport = nil
 
 	seqNr++
 	runProtocolRoundTestsWithPlugins(ctx, t, reqToObservations, pluginsAndStores, ocr3types.OutcomeContext{
@@ -95,27 +75,21 @@ func Test_HistoricalOutcomesAreRemovedOnExpiry(t *testing.T) {
 
 	successfulRequest.KeyBundleID = "evm"
 
-	reportVerifier1 := &reportVerifier{
-		reportExpected: true,
-		verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
-			verifyValueConsensusReport(t, report, infos, values.NewInt64(40), "evm")
-		},
+	verifyReport1 := func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
+		verifyValueConsensusReport(t, report, infos, values.NewInt64(40), "evm")
 	}
 
-	reportVerifier2 := &reportVerifier{
-		reportExpected: true,
-		verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
-			verifyValueConsensusReport(t, report, infos, values.NewInt64(140), "")
-		},
+	verifyReport2 := func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
+		verifyValueConsensusReport(t, report, infos, values.NewInt64(140), "")
 	}
 
-	reqToObservations := map[string]consensusPluginTest{
+	reqToObservations := map[string]*consensusPluginTest{
 		// Consensus will succeed
 		successfulRequest.RequestID(): {requests: []*oracle.ConsensusRequest{
 			newCr(t, 10, successfulRequest), newCr(t, 20, successfulRequest), newCr(t, 30, successfulRequest),
 			newCr(t, 40, successfulRequest), newCr(t, 50, successfulRequest), newCr(t, 60, successfulRequest),
 			newCr(t, 70, successfulRequest)},
-			verifyReport: reportVerifier1.Verify,
+			verifyReport: verifyReport1,
 		},
 
 		// Consensus will fail as insufficient observations and the request will remain pending
@@ -123,7 +97,7 @@ func Test_HistoricalOutcomesAreRemovedOnExpiry(t *testing.T) {
 			newCr(t, 110, pendingRequest), nil, newCr(t, 130, pendingRequest),
 			newCr(t, 140, pendingRequest), nil, newCr(t, 160, pendingRequest),
 			nil},
-			verifyReport: reportVerifier2.Verify,
+			verifyReport: verifyReport2,
 		},
 	}
 
@@ -149,8 +123,13 @@ func Test_HistoricalOutcomesAreRemovedOnExpiry(t *testing.T) {
 
 		switch seqNr {
 		case 1:
-			reportVerifier1.reportExpected = true
-			reportVerifier2.reportExpected = false
+
+			outcome1 := reqToObservations[successfulRequest.RequestID()]
+			outcome1.verifyReport = verifyReport1
+
+			outcome2 := reqToObservations[pendingRequest.RequestID()]
+			outcome2.verifyReport = nil
+
 			verifyOutcome = func(t *testing.T, outcome *oracletypes.Outcome, requestIDToOutcome map[string]*oracletypes.RequestOutcome,
 				requestIDToHistoricalOutcome map[string]*oracletypes.HistoricalRequestOutcome) {
 				require.Len(t, outcome.Outcomes, 1)
@@ -161,10 +140,14 @@ func Test_HistoricalOutcomesAreRemovedOnExpiry(t *testing.T) {
 		case 2:
 
 			// Submit the original successfully processed request here to ensure the that the plugin uses historical outcomes to prevent duplicate outcome
-			addRequestsToAllStores(pluginsAndStores, map[string]consensusPluginTest{successfulRequest.RequestID(): reqToObservations[successfulRequest.RequestID()]}, t)
+			addRequestsToAllStores(pluginsAndStores, map[string]*consensusPluginTest{successfulRequest.RequestID(): reqToObservations[successfulRequest.RequestID()]}, t)
 
-			reportVerifier1.reportExpected = false
-			reportVerifier2.reportExpected = false
+			outcome1 := reqToObservations[successfulRequest.RequestID()]
+			outcome1.verifyReport = nil
+
+			outcome2 := reqToObservations[pendingRequest.RequestID()]
+			outcome2.verifyReport = nil
+
 			verifyOutcome = func(t *testing.T, outcome *oracletypes.Outcome,
 				requestIDToOutcome map[string]*oracletypes.RequestOutcome,
 				requestIDToHistoricalOutcome map[string]*oracletypes.HistoricalRequestOutcome) {
@@ -174,7 +157,7 @@ func Test_HistoricalOutcomesAreRemovedOnExpiry(t *testing.T) {
 
 		case 3:
 			// Simulate the observations arriving for the pending request
-			updatedPendingRequestObservations := map[string]consensusPluginTest{
+			updatedPendingRequestObservations := map[string]*consensusPluginTest{
 				pendingRequest.RequestID(): {requests: []*oracle.ConsensusRequest{
 					newCr(t, 110, pendingRequest), newCr(t, 120, pendingRequest), newCr(t, 130, pendingRequest),
 					newCr(t, 140, pendingRequest), newCr(t, 150, pendingRequest), newCr(t, 160, pendingRequest),
@@ -187,8 +170,12 @@ func Test_HistoricalOutcomesAreRemovedOnExpiry(t *testing.T) {
 			removeRequestFromAllStores(pluginsAndStores, pendingRequest.RequestID())
 			addRequestsToAllStores(pluginsAndStores, updatedPendingRequestObservations, t)
 
-			reportVerifier1.reportExpected = false
-			reportVerifier2.reportExpected = true
+			outcome1 := reqToObservations[successfulRequest.RequestID()]
+			outcome1.verifyReport = nil
+
+			outcome2 := reqToObservations[pendingRequest.RequestID()]
+			outcome2.verifyReport = verifyReport2
+
 			verifyOutcome = func(t *testing.T, outcome *oracletypes.Outcome,
 				requestIDToOutcome map[string]*oracletypes.RequestOutcome,
 				requestIDToHistoricalOutcome map[string]*oracletypes.HistoricalRequestOutcome) {
@@ -196,8 +183,12 @@ func Test_HistoricalOutcomesAreRemovedOnExpiry(t *testing.T) {
 				require.Len(t, outcome.HistoricalOutcomes, 2)
 			}
 		case 4:
-			reportVerifier1.reportExpected = false
-			reportVerifier2.reportExpected = false
+			outcome1 := reqToObservations[successfulRequest.RequestID()]
+			outcome1.verifyReport = nil
+
+			outcome2 := reqToObservations[pendingRequest.RequestID()]
+			outcome2.verifyReport = nil
+
 			verifyOutcome = func(t *testing.T, outcome *oracletypes.Outcome,
 				requestIDToOutcome map[string]*oracletypes.RequestOutcome,
 				requestIDToHistoricalOutcome map[string]*oracletypes.HistoricalRequestOutcome) {
@@ -212,8 +203,11 @@ func Test_HistoricalOutcomesAreRemovedOnExpiry(t *testing.T) {
 
 		case 5:
 			// By this point the historical record of the outcomes for the requests should have been removed
-			reportVerifier1.reportExpected = false
-			reportVerifier2.reportExpected = false
+			outcome1 := reqToObservations[successfulRequest.RequestID()]
+			outcome1.verifyReport = nil
+
+			outcome2 := reqToObservations[pendingRequest.RequestID()]
+			outcome2.verifyReport = nil
 			verifyOutcome = func(t *testing.T, outcome *oracletypes.Outcome,
 				requestIDToOutcome map[string]*oracletypes.RequestOutcome,
 				requestIDToHistoricalOutcome map[string]*oracletypes.HistoricalRequestOutcome) {
@@ -223,10 +217,13 @@ func Test_HistoricalOutcomesAreRemovedOnExpiry(t *testing.T) {
 		case 6:
 			// Simulate what would happen if the historical outcome expiry span was too small and the outcome for the first request was removed too early
 			// followed by a resubmission of the request
-			addRequestsToAllStores(pluginsAndStores, map[string]consensusPluginTest{successfulRequest.RequestID(): reqToObservations[successfulRequest.RequestID()]}, t)
+			addRequestsToAllStores(pluginsAndStores, map[string]*consensusPluginTest{successfulRequest.RequestID(): reqToObservations[successfulRequest.RequestID()]}, t)
 
-			reportVerifier1.reportExpected = true
-			reportVerifier2.reportExpected = false
+			outcome1 := reqToObservations[successfulRequest.RequestID()]
+			outcome1.verifyReport = verifyReport1
+
+			outcome2 := reqToObservations[pendingRequest.RequestID()]
+			outcome2.verifyReport = nil
 			verifyOutcome = func(t *testing.T, outcome *oracletypes.Outcome, requestIDToOutcome map[string]*oracletypes.RequestOutcome,
 				requestIDToHistoricalOutcome map[string]*oracletypes.HistoricalRequestOutcome) {
 				require.Len(t, outcome.Outcomes, 1)
