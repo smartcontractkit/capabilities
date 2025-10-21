@@ -9,16 +9,21 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/time/rate"
 	"stathat.com/c/consistent"
 
 	"github.com/smartcontractkit/capabilities/http_action/common"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
+	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 	gc "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
@@ -36,10 +41,14 @@ var _ core.GatewayConnectorHandler = &gatewayOutboundProxy{}
 var _ common.OutboundRequestClient = &gatewayOutboundProxy{}
 
 type gatewayOutboundProxy struct {
-	services.StateMachine
+	services.Service
+	eng                     *services.Engine
 	gatewayConnector        core.GatewayConnector
-	lggr                    logger.Logger
 	incomingRateLimiter     *ratelimit.RateLimiter
+	incomingConfig          ratelimit.RateLimiterConfig
+	limits                  settings.Getter
+	globalLimit             settings.Setting[commoncfg.Rate]
+	senderLimit             settings.Setting[commoncfg.Rate]
 	responses               *responses
 	gatewayConnectionConfig common.GatewayConnectionConfig
 	metrics                 *common.Metrics
@@ -59,28 +68,42 @@ func applyDefaults(cfg common.GatewayConnectionConfig) common.GatewayConnectionC
 	return cfg
 }
 
-func NewGatewayOutboundProxy(gatewayConnector core.GatewayConnector, config common.ServiceConfig, lggr logger.Logger, metrics *common.Metrics, validator common.ResponseValidator) (*gatewayOutboundProxy, error) {
-	incomingRateLimiter, err := ratelimit.NewRateLimiter(config.IncomingRateLimiter)
+func NewGatewayOutboundProxy(gatewayConnector core.GatewayConnector, config common.ServiceConfig, lggr logger.Logger, metrics *common.Metrics, validator common.ResponseValidator, limitsFactory limits.Factory) (*gatewayOutboundProxy, error) {
+	incomingCfg := config.IncomingRateLimiter
+	incomingRateLimiter, err := ratelimit.NewRateLimiter(incomingCfg)
 	if err != nil {
 		return nil, err
 	}
 
-	return &gatewayOutboundProxy{
+	globalLimit := cresettings.Default.GatewayUnauthenticatedRequestRateLimit // copy
+	globalLimit.DefaultValue = commoncfg.Rate{Limit: rate.Limit(incomingCfg.GlobalRPS), Burst: incomingCfg.GlobalBurst}
+	senderLimit := cresettings.Default.GatewayUnauthenticatedRequestRateLimitPerIP // copy
+	senderLimit.DefaultValue = commoncfg.Rate{Limit: rate.Limit(incomingCfg.PerSenderRPS), Burst: incomingCfg.PerSenderBurst}
+
+	p := &gatewayOutboundProxy{
 		gatewayConnector:        gatewayConnector,
 		responses:               newResponses(),
 		incomingRateLimiter:     incomingRateLimiter,
-		lggr:                    lggr,
+		incomingConfig:          incomingCfg,
+		limits:                  limitsFactory.Settings,
+		globalLimit:             globalLimit,
+		senderLimit:             senderLimit,
 		gatewayConnectionConfig: applyDefaults(config.GatewayConnectionConfig),
 		metrics:                 metrics,
 		validator:               validator,
-	}, nil
+	}
+	p.Service, p.eng = services.Config{
+		Name:  "GatewayOutboundProxy",
+		Start: p.start,
+	}.NewServiceEngine(lggr)
+	return p, nil
 }
 
 // SendRequest sends a request to gateway node and blocks until response is received
 func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *http.Request, startTime time.Time) (*http.Response, error) {
 	ctx = metadata.ContextWithCRE(ctx)
 	requestID := common.GetRequestID(gc.MethodHTTPAction, metadata.WorkflowID, metadata.WorkflowExecutionID)
-	lggr := logger.With(p.lggr, "requestID", requestID, "workflowID", metadata.WorkflowID, "workflowExecutionID", metadata.WorkflowExecutionID, "workflowOwner", metadata.WorkflowOwner)
+	lggr := logger.With(p.eng, "requestID", requestID, "workflowID", metadata.WorkflowID, "workflowExecutionID", metadata.WorkflowExecutionID, "workflowOwner", metadata.WorkflowOwner)
 	ctx, cancel := context.WithTimeout(ctx, input.Timeout.AsDuration())
 	defer cancel()
 
@@ -238,7 +261,7 @@ func (p *gatewayOutboundProxy) attemptGatewayConnection(ctx context.Context, lgg
 // HandleGatewayMessage processes incoming messages from the Gateway,
 // which are in response to a HandleSingleNodeRequest call.
 func (p *gatewayOutboundProxy) HandleGatewayMessage(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage]) error {
-	l := logger.With(p.lggr, "gatewayID", gatewayID, "method", req.Method, "requestID", req.ID)
+	l := logger.With(p.eng, "gatewayID", gatewayID, "method", req.Method, "requestID", req.ID)
 	l.Debugw("handling incomming gateway message")
 	if req.Params == nil {
 		req.Params = &json.RawMessage{}
@@ -291,25 +314,27 @@ func (p *gatewayOutboundProxy) ID(ctx context.Context) (string, error) {
 	return p.Name(), nil
 }
 
-func (p *gatewayOutboundProxy) Start(ctx context.Context) error {
-	p.lggr.Debug("Starting GatewayOutboundProxy...")
-	return p.StartOnce("GatewayOutboundProxy", func() error {
-		return p.gatewayConnector.AddHandler(ctx, []string{gc.MethodHTTPAction}, p)
-	})
+func (p *gatewayOutboundProxy) start(ctx context.Context) error {
+	p.eng.GoTick(services.TickerConfig{}.NewTicker(5*time.Second), p.updateIncomingRateLimiter)
+	return p.gatewayConnector.AddHandler(ctx, []string{gc.MethodHTTPAction}, p)
 }
 
-func (p *gatewayOutboundProxy) Close() error {
-	return p.StopOnce("GatewayOutboundProxy", func() error {
-		return nil
-	})
-}
-
-func (p *gatewayOutboundProxy) HealthReport() map[string]error {
-	return map[string]error{p.Name(): p.Healthy()}
-}
-
-func (p *gatewayOutboundProxy) Name() string {
-	return p.lggr.Name()
+func (p *gatewayOutboundProxy) updateIncomingRateLimiter(ctx context.Context) {
+	global, err := p.globalLimit.GetOrDefault(ctx, p.limits)
+	if err != nil {
+		p.eng.Warnw("Failed to update global rate limit", "err", err)
+	} else {
+		p.incomingConfig.GlobalRPS = float64(global.Limit)
+		p.incomingConfig.GlobalBurst = global.Burst
+	}
+	sender, err := p.senderLimit.GetOrDefault(ctx, p.limits)
+	if err != nil {
+		p.eng.Warnw("Failed to update per sender rate limit", "err", err)
+	} else {
+		p.incomingConfig.PerSenderRPS = float64(sender.Limit)
+		p.incomingConfig.PerSenderBurst = sender.Burst
+	}
+	p.incomingRateLimiter.SetConfig(p.incomingConfig)
 }
 
 func newResponses() *responses {

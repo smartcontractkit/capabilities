@@ -62,7 +62,7 @@ func (s *service) Initialise(ctx context.Context, dependencies core.StandardCapa
 		return err
 	}
 
-	s.client, err = NewOutboundRequestClient(dependencies.GatewayConnector, s.cfg, s.lggr, s.metrics, s.validator)
+	s.client, err = NewOutboundRequestClient(dependencies.GatewayConnector, s.cfg, s.lggr, s.metrics, s.validator, s.limitsFactory)
 	if err != nil {
 		return err
 	}
@@ -142,12 +142,12 @@ func (s *service) SendRequest(ctx context.Context, metadata capabilities.Request
 }
 
 // NewOutboundRequestClient creates an OutboundProxy based on the ServiceConfig.ProxyMode
-func NewOutboundRequestClient(gatewayConnector core.GatewayConnector, serviceConfig common.ServiceConfig, lggr logger.Logger, metrics *common.Metrics, validator common.ResponseValidator) (common.OutboundRequestClient, error) {
+func NewOutboundRequestClient(gatewayConnector core.GatewayConnector, serviceConfig common.ServiceConfig, lggr logger.Logger, metrics *common.Metrics, validator common.ResponseValidator, limitsFactory limits.Factory) (common.OutboundRequestClient, error) {
 	switch serviceConfig.ProxyMode {
 	case common.ProxyModeDirect:
 		return common.NewHTTPClientProxy(serviceConfig, lggr, validator, metrics)
 	case common.ProxyModeGateway:
-		return gateway.NewGatewayOutboundProxy(gatewayConnector, serviceConfig, lggr, metrics, validator)
+		return gateway.NewGatewayOutboundProxy(gatewayConnector, serviceConfig, lggr, metrics, validator, limitsFactory)
 	default:
 		return nil, errors.New("invalid ProxyMode: " + serviceConfig.ProxyMode.String())
 	}

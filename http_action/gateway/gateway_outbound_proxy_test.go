@@ -132,6 +132,7 @@ func setupSendRequestTest(t *testing.T) (*gatewayOutboundProxy, *mockGatewayConn
 		lggr,
 		newMetrics(t),
 		newTestValidator(t),
+		limits.Factory{Logger: lggr},
 	)
 	require.NoError(t, err)
 	return proxy, mockConnector, readyCh
