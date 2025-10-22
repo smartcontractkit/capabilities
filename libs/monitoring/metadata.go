@@ -18,19 +18,29 @@ type ChainInfo struct {
 	NetworkNameFull string
 }
 
-// Attributes returns common attributes used for metrics
-func (x *ExecutionContext) Attributes() []attribute.KeyValue {
-	// Decode workflow name attribute for output
-	workflowName := x.decodeWorkflowName()
-
+func (x *ExecutionContext) MetricsAttributes() []attribute.KeyValue {
 	return []attribute.KeyValue{
-		// Execution Context - Source
-		attribute.String("source_id", ValOrUnknown(x.GetMetaSourceId())),
 		// Execution Context - Chain
 		attribute.String("chain_family_name", ValOrUnknown(x.GetMetaChainFamilyName())),
 		attribute.String("chain_id", ValOrUnknown(x.GetMetaChainId())),
 		attribute.String("network_name", ValOrUnknown(x.GetMetaNetworkName())),
 		attribute.String("network_name_full", ValOrUnknown(x.GetMetaNetworkNameFull())),
+		attribute.Int64("workflow_don_id", int64(x.GetMetaWorkflowDonId())),
+		attribute.String("capability_type", ValOrUnknown(x.GetMetaCapabilityType())),
+		attribute.String("capability_id", ValOrUnknown(x.GetMetaCapabilityId())),
+	}
+}
+
+// Attributes returns common attributes used for logging
+func (x *ExecutionContext) Attributes() []attribute.KeyValue {
+	attrs := x.MetricsAttributes()
+
+	// Decode workflow name attribute for output
+	workflowName := x.decodeWorkflowName()
+
+	return append(attrs,
+		// Execution Context - Source
+		attribute.String("source_id", ValOrUnknown(x.GetMetaSourceId())),
 		// Execution Context - Workflow (capabilities.RequestMetadata)
 		attribute.String("workflow_id", ValOrUnknown(x.GetMetaWorkflowId())),
 		attribute.String("workflow_owner", ValOrUnknown(x.GetMetaWorkflowOwner())),
@@ -39,13 +49,9 @@ func (x *ExecutionContext) Attributes() []attribute.KeyValue {
 		// TODO: enable this when sufficiently tested (PromQL queries like alerts might need to change if this is used)
 		//attribute.String("workflow_execution_id_short", ValShortOrUnknown(x.GetMetaWorkflowExecutionId(), WorkflowExecutionIDShortLen)),
 		attribute.String("workflow_name", ValOrUnknown(workflowName)),
-		attribute.Int64("workflow_don_id", int64(x.GetMetaWorkflowDonId())),
 		attribute.Int64("workflow_don_config_version", int64(x.GetMetaWorkflowDonConfigVersion())),
 		attribute.String("reference_id", ValOrUnknown(x.GetMetaReferenceId())),
-		// Execution Context - Capability
-		attribute.String("capability_type", ValOrUnknown(x.GetMetaCapabilityType())),
-		attribute.String("capability_id", ValOrUnknown(x.GetMetaCapabilityId())),
-	}
+	)
 }
 
 // decodeWorkflowName decodes the workflow name from hex string to raw string (underlying, output)
