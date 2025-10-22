@@ -193,17 +193,26 @@ func (m *ProcessorMock) Process(ctx context.Context, pm proto.Message, _ ...any)
 
 type stubSuccessMessage struct{ *emptypb.Empty }
 
-func (s *stubSuccessMessage) Attributes() []attribute.KeyValue {
+func (s *stubSuccessMessage) LogAttributes() []attribute.KeyValue {
 	return []attribute.KeyValue{attribute.String("foo", "bar")}
+}
+
+func (s *stubSuccessMessage) MetricAttributes() []attribute.KeyValue {
+	return []attribute.KeyValue{attribute.String("foo_metric", "bar_metric")}
 }
 
 // stubErrorMessage implements monitoring.ErrorMessage via embedded Empty
 // and GetSummary/GetCause.
 type stubErrorMessage struct{ *emptypb.Empty }
 
-func (s *stubErrorMessage) Attributes() []attribute.KeyValue {
+func (s *stubErrorMessage) LogAttributes() []attribute.KeyValue {
 	return []attribute.KeyValue{attribute.String("key", "val"), attribute.String("summary", "summaryString")}
 }
+
+func (s *stubErrorMessage) MetricAttributes() []attribute.KeyValue {
+	return []attribute.KeyValue{attribute.String("key", "val")}
+}
+
 func (s *stubErrorMessage) GetSummary() string { return "summary" }
 func (s *stubErrorMessage) GetCause() string   { return "cause" }
 
