@@ -44,7 +44,6 @@ const defaultMaxLengthBytes = 1000000 // 1 MB
 
 // nillable observation and nillable default value, -1 indicates the value should be set as nil
 func newSliceCr(t *testing.T, observation []byte, def []byte, metaData oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
-
 	observationVal, err := values.Wrap(observation)
 	require.NoError(t, err, "failed to wrap nil value")
 
@@ -118,7 +117,6 @@ func Test_SliceObservationAndDefaults(t *testing.T) {
 	}
 
 	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
-
 }
 
 func Test_MismatchedLeaderConsensusDescriptor(t *testing.T) {
@@ -590,7 +588,6 @@ func newCrWithObsAndDef(t *testing.T, observation int64, def int64, metaData ora
 
 // nillable observation and nillable default value, -1 indicates the value should be set as nil
 func newNillableCr(t *testing.T, observation int64, def int64, metaData oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
-
 	observationVal, err := values.Wrap(nil)
 	require.NoError(t, err, "failed to wrap nil value")
 
