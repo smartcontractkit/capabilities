@@ -24,6 +24,12 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
 
+type Metrics interface {
+	RecordOutcomeChainHeight(ctx context.Context, height *ctypes.ChainHeight)
+	RecordRoundObservationSize(ctx context.Context, size int)
+	RecordRequestObservationSize(ctx context.Context, size int)
+}
+
 const (
 	// OCRRoundBatchSize - max number of requests that this node will try to process in a single round
 	// TODO PLEX-1569: make configurable
@@ -46,6 +52,7 @@ type reportingPlugin struct {
 	logger         logger.SugaredLogger
 	blocksProvider BlocksProvider
 	requestsStore  RequestsHandler
+	metrics        Metrics
 }
 
 func newReportingPlugin(
@@ -53,12 +60,14 @@ func newReportingPlugin(
 	logger logger.SugaredLogger,
 	blocksProvider BlocksProvider,
 	requestsStore RequestsHandler,
+	metrics Metrics,
 ) *reportingPlugin {
 	return &reportingPlugin{
 		config:         config,
 		logger:         logger,
 		blocksProvider: blocksProvider,
 		requestsStore:  requestsStore,
+		metrics:        metrics,
 	}
 }
 
@@ -87,7 +96,6 @@ func (rp *reportingPlugin) populateHeightFromPreviousOutcome(
 		return
 	}
 
-	// TODO PLEX-1572: report observed chain height
 	prevChainHeight := previousOutcome.ChainHeight
 	observation.ChainHeight.Finalized = max(observation.ChainHeight.Finalized, prevChainHeight.Finalized)
 	observation.ChainHeight.Safe = max(observation.ChainHeight.Safe, prevChainHeight.Safe, observation.ChainHeight.Finalized)
@@ -151,13 +159,22 @@ func (rp *reportingPlugin) Observation(
 			continue
 		}
 
+		requestApproxSize := newSize - currentSize
+		rp.metrics.RecordRequestObservationSize(ctx, requestApproxSize)
+
 		currentSize = newSize
 		observation.Observations[requestID] = reqObservation
 	}
 
 	rp.logger.Debugw("Observation complete", "observation", observation)
 
-	return proto.Marshal(observation)
+	rawObservation, err := proto.Marshal(observation)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal observation: %w", err)
+	}
+
+	rp.metrics.RecordRoundObservationSize(ctx, len(rawObservation))
+	return rawObservation, nil
 }
 
 func (rp *reportingPlugin) getObservationForRequest(rawRequest ctypes.Request) (*ctypes.RequestObservation, error) {
@@ -500,6 +517,8 @@ func (rp *reportingPlugin) Reports(ctx context.Context, seqNr uint64, rawOutcome
 	if err := proto.Unmarshal(rawOutcome, &outcome); err != nil {
 		return nil, fmt.Errorf("could not unmarshal proposed outcome: %w", err)
 	}
+
+	rp.metrics.RecordOutcomeChainHeight(ctx, outcome.ChainHeight)
 
 	reports := make([]ocr3types.ReportPlus[[]byte], len(outcome.Outcomes))
 	for i, requestOutcome := range outcome.Outcomes {

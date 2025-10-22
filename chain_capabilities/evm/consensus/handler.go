@@ -19,6 +19,10 @@ type Poller interface {
 	Enqueue(ctx context.Context, request types.ObservableRequest)
 }
 
+type Metrics interface {
+	SetRequestCount(requestCount int)
+}
+
 type Handler struct {
 	// service state management
 	services.Service
@@ -34,9 +38,9 @@ type Handler struct {
 	unknownRequestTTL               time.Duration
 }
 
-func NewHandler(lggr logger.Logger, poller Poller, unknownRequestTTL time.Duration) *Handler {
+func NewHandler(lggr logger.Logger, poller Poller, metrics Metrics, unknownRequestTTL time.Duration) *Handler {
 	r := &Handler{
-		requests:                        requests.NewStore[*requestCtx](),
+		requests:                        requests.NewStoreWithStatsCollector[*requestCtx](metrics),
 		unknownRequestsResultByID:       make(map[string]*unknownRequest),
 		unknownRequestsOrderedByTimeout: list.New[*unknownRequest](),
 		unknownRequestTTL:               unknownRequestTTL,
