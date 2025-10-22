@@ -2,6 +2,8 @@
 ```mermaid
 flowchart LR
 
+	capabilities --> chainlink-common
+	click capabilities href "https://github.com/smartcontractkit/capabilities"
 	capabilities/capabilitywatcher --> capabilities/libs
 	click capabilities/capabilitywatcher href "https://github.com/smartcontractkit/capabilities"
 	capabilities/chain_capabilities/evm --> capabilities/libs
@@ -23,8 +25,6 @@ flowchart LR
 	capabilities/integration_tests --> chainlink/v2
 	capabilities/integration_tests --> cre-sdk-go/capabilities/blockchain/evm
 	click capabilities/integration_tests href "https://github.com/smartcontractkit/capabilities"
-	capabilities/kvstore --> capabilities/libs
-	click capabilities/kvstore href "https://github.com/smartcontractkit/capabilities"
 	capabilities/libs --> chainlink-common
 	click capabilities/libs href "https://github.com/smartcontractkit/capabilities"
 	capabilities/loadtestwritetarget --> capabilities/libs
@@ -163,6 +163,7 @@ flowchart LR
 	click wsrpc href "https://github.com/smartcontractkit/wsrpc"
 
 	subgraph capabilities-repo[capabilities]
+		 capabilities
 		 capabilities/capabilitywatcher
 		 capabilities/chain_capabilities/evm
 		 capabilities/consensus
@@ -170,7 +171,6 @@ flowchart LR
 		 capabilities/http_action
 		 capabilities/http_trigger
 		 capabilities/integration_tests
-		 capabilities/kvstore
 		 capabilities/libs
 		 capabilities/loadtestwritetarget
 		 capabilities/mock
