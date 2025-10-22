@@ -11,6 +11,7 @@ import (
 	ctypes "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
+	"github.com/smartcontractkit/chainlink-common/pkg/types"
 )
 
 type EvmConsensusMetrics interface {
@@ -31,7 +32,7 @@ var _ EvmConsensusMetrics = (*evmConsensusMetrics)(nil)
 
 // evmConsensusMetrics contains evmConsensusMetrics for consensus capability
 type evmConsensusMetrics struct {
-	chainID                     string
+	chainInfo                   types.ChainInfo
 	outcomeChainSafeHeight      metric.Int64Gauge
 	outcomeChainLatestHeight    metric.Int64Gauge
 	outcomeChainFinalizedHeight metric.Int64Gauge
@@ -43,9 +44,9 @@ type evmConsensusMetrics struct {
 }
 
 // NewEvmConsensusMetrics creates a new instance of evmConsensusMetrics
-func NewEvmConsensusMetrics(chainID string) (*evmConsensusMetrics, error) {
+func NewEvmConsensusMetrics(chainInfo types.ChainInfo) (*evmConsensusMetrics, error) {
 	m := &evmConsensusMetrics{
-		chainID: chainID,
+		chainInfo: chainInfo,
 	}
 	if err := m.init(); err != nil {
 		return nil, err
@@ -141,34 +142,39 @@ func (m *evmConsensusMetrics) init() error {
 	return nil
 }
 
-func (m *evmConsensusMetrics) chainIDAttr() metric.MeasurementOption {
-	return metric.WithAttributes(attribute.String("chainID", m.chainID))
+func (m *evmConsensusMetrics) chainAttributes() metric.MeasurementOption {
+	return metric.WithAttributes(
+		attribute.String("chain_id", m.chainInfo.ChainID),
+		attribute.String("family_name", m.chainInfo.FamilyName),
+		attribute.String("network_name", m.chainInfo.NetworkName),
+		attribute.String("network_name_full", m.chainInfo.NetworkNameFull),
+	)
 }
 
 func (m *evmConsensusMetrics) RecordOutcomeChainHeight(ctx context.Context, height *ctypes.ChainHeight) {
 	if height != nil {
-		m.outcomeChainSafeHeight.Record(ctx, height.Safe, m.chainIDAttr())
-		m.outcomeChainLatestHeight.Record(ctx, height.Latest, m.chainIDAttr())
-		m.outcomeChainFinalizedHeight.Record(ctx, height.Finalized, m.chainIDAttr())
+		m.outcomeChainSafeHeight.Record(ctx, height.Safe, m.chainAttributes())
+		m.outcomeChainLatestHeight.Record(ctx, height.Latest, m.chainAttributes())
+		m.outcomeChainFinalizedHeight.Record(ctx, height.Finalized, m.chainAttributes())
 	}
 }
 
 func (m *evmConsensusMetrics) RecordRoundObservationSize(ctx context.Context, size int) {
-	m.roundObservationSize.Record(ctx, int64(size), m.chainIDAttr())
+	m.roundObservationSize.Record(ctx, int64(size), m.chainAttributes())
 }
 
 func (m *evmConsensusMetrics) RecordRequestObservationSize(ctx context.Context, size int) {
-	m.requestObservationSize.Record(ctx, int64(size), m.chainIDAttr())
+	m.requestObservationSize.Record(ctx, int64(size), m.chainAttributes())
 }
 
 func (m *evmConsensusMetrics) RecordQueueSize(ctx context.Context, size int) {
-	m.queueSize.Record(ctx, int64(size), m.chainIDAttr())
+	m.queueSize.Record(ctx, int64(size), m.chainAttributes())
 }
 
 func (m *evmConsensusMetrics) RecordRetryQueueSize(ctx context.Context, size int) {
-	m.retryQueueSize.Record(ctx, int64(size), m.chainIDAttr())
+	m.retryQueueSize.Record(ctx, int64(size), m.chainAttributes())
 }
 
 func (m *evmConsensusMetrics) SetRequestCount(requestCount int) {
-	m.requestCount.Record(context.Background(), int64(requestCount), m.chainIDAttr())
+	m.requestCount.Record(context.Background(), int64(requestCount), m.chainAttributes())
 }

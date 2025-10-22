@@ -5,12 +5,14 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	commontTypes "github.com/smartcontractkit/chainlink-common/pkg/types"
+
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/metrics"
 	ctypes "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
 )
 
 func TestEvmConsensusMetrics_AllMetrics(t *testing.T) {
-	m, err := metrics.NewEvmConsensusMetrics("fake-chain-id")
+	m, err := metrics.NewEvmConsensusMetrics(commontTypes.ChainInfo{ChainID: "fake-chain-id"})
 	assert.NoError(t, err)
 	ctx := t.Context()
 
