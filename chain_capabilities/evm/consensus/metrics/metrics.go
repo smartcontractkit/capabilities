@@ -30,7 +30,6 @@ type EvmConsensusMetrics interface {
 
 var _ EvmConsensusMetrics = (*evmConsensusMetrics)(nil)
 
-// evmConsensusMetrics contains evmConsensusMetrics for consensus capability
 type evmConsensusMetrics struct {
 	chainInfo                   types.ChainInfo
 	outcomeChainSafeHeight      metric.Int64Gauge
@@ -43,7 +42,6 @@ type evmConsensusMetrics struct {
 	requestCount                metric.Int64Gauge
 }
 
-// NewEvmConsensusMetrics creates a new instance of evmConsensusMetrics
 func NewEvmConsensusMetrics(chainInfo types.ChainInfo) (*evmConsensusMetrics, error) {
 	m := &evmConsensusMetrics{
 		chainInfo: chainInfo,
