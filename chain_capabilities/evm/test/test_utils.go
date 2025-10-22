@@ -66,7 +66,7 @@ func GetMetadataWithNoFunds() capabilities.RequestMetadata {
 }
 
 func GetEvmConsensusMetrics(t *testing.T) metrics.EvmConsensusMetrics {
-	m, err := metrics.NewEvmConsensusMetrics()
+	m, err := metrics.NewEvmConsensusMetrics("fake-chain-id")
 	require.NoError(t, err, "failed to create metrics")
 	return m
 }
