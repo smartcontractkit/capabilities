@@ -759,7 +759,7 @@ func runProtocolRoundTestsWithPlugins(ctx context.Context, t *testing.T,
 		}
 	}
 
-	// Verify all expected reports where received
+	// Verify all expected reports were received
 	for reqID, outcome := range requestIDToOutcome {
 		if outcome.verifyReport != nil {
 			require.True(t, receivedReportForRequestIDs[reqID], "expected report for request ID %s was not received", reqID)
