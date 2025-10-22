@@ -4,11 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/metrics"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/metrics"
 
 	evmcapocr3types "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/consensus/ocr3/types"
 )
