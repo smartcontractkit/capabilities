@@ -20,6 +20,8 @@ import (
 
 	"github.com/smartcontractkit/capabilities/consensus/metrics"
 	"github.com/smartcontractkit/capabilities/consensus/oracle"
+	"github.com/smartcontractkit/capabilities/consensus/oracle/plugin"
+	"github.com/smartcontractkit/capabilities/consensus/oracle/transmitter"
 	"github.com/smartcontractkit/capabilities/consensus/oracle/types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -118,13 +120,13 @@ func (c *consensusCapability) Initialise(ctx context.Context, dependencies core.
 		return fmt.Errorf("error setting consensus capability configuration: %w", err)
 	}
 
-	reportingPlugin, err := oracle.NewReportingPluginFactory(c.lggr, c.metrics, c.reqStore, c.SetRequestTimeout,
+	reportingPlugin, err := plugin.NewReportingPluginFactory(c.lggr, c.metrics, c.reqStore, c.SetRequestTimeout,
 		c.requestBatchSize)
 	if err != nil {
 		return fmt.Errorf("error when creating reporting plugin factory: %w", err)
 	}
 
-	contractTransmitter := oracle.NewContractTransmitter(c.lggr, c.SendResponse)
+	contractTransmitter := transmitter.NewContractTransmitter(c.lggr, c.SendResponse)
 
 	// These values set to the maximum permitted, response time for config update is not critical
 	localOcrConfig := ocrtypes.LocalConfig{
@@ -235,7 +237,7 @@ func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.
 		}
 
 		// Remove the metadata prefix from the raw report to get the serialised value
-		serialisedValue := response.RawReport[oracle.ReportMetaDataPrependLength:]
+		serialisedValue := response.RawReport[plugin.ReportMetaDataPrependLength:]
 
 		valueProto := &valuespb.Value{}
 		if err := proto.Unmarshal(serialisedValue, valueProto); err != nil {
@@ -461,7 +463,7 @@ func (c *consensusCapability) Description() string {
 // validateRequestSize ensures the combined size of input and metadata does not exceed the allowed limit.
 // This prevents oversized requests that could disrupt the consensus process.
 func (c *consensusCapability) validateRequestSize(ctx context.Context, consensusRequestMetaData oracle.ConsensusRequestMetadata, input proto.Message) (int, error) {
-	requestMetaData := oracle.ToRequestMetaData(consensusRequestMetaData)
+	requestMetaData := plugin.ToRequestMetaData(consensusRequestMetaData)
 
 	serialisedInput, err := proto.Marshal(input)
 	if err != nil {
