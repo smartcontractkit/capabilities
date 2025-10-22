@@ -18,6 +18,20 @@ type ChainInfo struct {
 	NetworkNameFull string
 }
 
+func DistinctAttributes(in []attribute.KeyValue) []attribute.KeyValue {
+	set := make(map[attribute.Key]attribute.Value, len(in))
+	result := make([]attribute.KeyValue, 0, len(in))
+	for _, attr := range in {
+		if _, ok := set[attr.Key]; ok {
+			continue
+		}
+		set[attr.Key] = attr.Value
+		result = append(result, attr)
+	}
+
+	return result
+}
+
 func (x *ExecutionContext) MetricsAttributes() []attribute.KeyValue {
 	return []attribute.KeyValue{
 		// Execution Context - Chain
@@ -31,8 +45,8 @@ func (x *ExecutionContext) MetricsAttributes() []attribute.KeyValue {
 	}
 }
 
-// Attributes returns common attributes used for logging
-func (x *ExecutionContext) Attributes() []attribute.KeyValue {
+// LogAttributes returns common attributes used for logging
+func (x *ExecutionContext) LogAttributes() []attribute.KeyValue {
 	attrs := x.MetricsAttributes()
 
 	// Decode workflow name attribute for output
