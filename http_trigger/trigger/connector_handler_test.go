@@ -705,7 +705,7 @@ func TestRegisterWorkflow_EmptyAuthorizedKeys(t *testing.T) {
 		Metadata:         WorkflowRegistrationMetadata{},
 	}, sendCh)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "no authorized keys")
+	require.Contains(t, err.Error(), "HTTP trigger requires at least one authorized key")
 }
 
 func TestConnectorHandler_Start_HealthReport_Ready_Name_Close(t *testing.T) {
