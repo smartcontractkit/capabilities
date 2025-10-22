@@ -1,4 +1,5 @@
+# gazelle:proto package
+# gazelle:proto_group pb
 load("@gazelle//:def.bzl", "gazelle")
 
-# Top-level Gazelle target; run with: bazel run //:gazelle
 gazelle(name = "gazelle")
