@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/metrics"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -64,8 +65,8 @@ func GetMetadataWithNoFunds() capabilities.RequestMetadata {
 	}
 }
 
-func GetMetadataWithMissingSpendUnit() capabilities.RequestMetadata {
-	return capabilities.RequestMetadata{
-		SpendLimits: []capabilities.SpendLimit{},
-	}
+func GetEvmConsensusMetrics(t *testing.T) metrics.EvmConsensusMetrics {
+	m, err := metrics.NewEvmConsensusMetrics()
+	require.NoError(t, err, "failed to create metrics")
+	return m
 }

@@ -13,6 +13,7 @@ import (
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/height"
+	consMetrics "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/metrics"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/oracle"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/poller"
 
@@ -63,9 +64,9 @@ type capability struct {
 var _ evmcapserver.ClientCapability = &capabilityGRPCService{}
 
 func main() {
-	loopserver.ServeNew(CapabilityName, func(s *loop.Server) loop.StandardCapabilities {
+	loopserver.ServeNewWithOtelViews(CapabilityName, func(s *loop.Server) loop.StandardCapabilities {
 		return evmcapserver.NewClientServer(&capabilityGRPCService{lggr: s.Logger.Named(CapabilityName), limitsFactory: s.LimitsFactory})
-	})
+	}, consMetrics.MetricViews())
 }
 
 func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
@@ -113,8 +114,12 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
 
-	c.requestPoller = poller.NewPoller(c.lggr, cfg.ObservationPollerWorkersCount, cfg.ObservationPollPeriod)
-	c.consensusHandler = consensus.NewHandler(c.lggr, c.requestPoller, cfg.UnknownRequestsTTL)
+	consensusMetrics, err := consMetrics.NewEvmConsensusMetrics()
+	if err != nil {
+		return fmt.Errorf("failed to create evm consensus metrics: %w", err)
+	}
+	c.requestPoller = poller.NewPoller(c.lggr, consensusMetrics, cfg.ObservationPollerWorkersCount, cfg.ObservationPollPeriod)
+	c.consensusHandler = consensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, cfg.UnknownRequestsTTL)
 
 	c.EVM, err = actions.NewEVM(*cfg, evmRelayer, c.lggr, processor, messageBuilder, c.consensusHandler, c.chainSelector, c.limitsFactory)
 	if err != nil {
@@ -140,7 +145,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 			ContractConfigLoadTimeout:          time.Second * 10,
 			DefaultMaxDurationInitialization:   time.Second * 10,
 		},
-		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(logger.Sugared(c.lggr), c.consensusHandler, c.heightProvider),
+		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(logger.Sugared(c.lggr), c.consensusHandler, c.heightProvider, consensusMetrics),
 		ContractTransmitter:           oracle.NewContractTransmitter(c.lggr, c.consensusHandler),
 	})
 	if err != nil {

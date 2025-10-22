@@ -9,13 +9,9 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/list"
 
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/metrics"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
 )
-
-type Metrics interface {
-	RecordQueueSize(ctx context.Context, size int)
-	RecordRetryQueueSize(ctx context.Context, size int)
-}
 
 type requestToPoll struct {
 	types.ObservableRequest
@@ -40,7 +36,7 @@ type Poller struct {
 	lggr       logger.SugaredLogger
 	maxWorkers uint
 	pollPeriod time.Duration
-	metrics    Metrics
+	metrics    metrics.EvmConsensusMetrics
 
 	mutex       sync.Mutex
 	inputNotify chan struct{}
@@ -49,7 +45,7 @@ type Poller struct {
 	retryQueue  *list.List[requestToRetry]
 }
 
-func NewPoller(lggr logger.Logger, metrics Metrics, maxWorkers uint, pollPeriod time.Duration) *Poller {
+func NewPoller(lggr logger.Logger, metrics metrics.EvmConsensusMetrics, maxWorkers uint, pollPeriod time.Duration) *Poller {
 	p := &Poller{
 		maxWorkers: maxWorkers,
 		pollPeriod: pollPeriod,

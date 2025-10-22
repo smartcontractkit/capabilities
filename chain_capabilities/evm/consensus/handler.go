@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/metrics"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
@@ -19,10 +20,6 @@ type Poller interface {
 	Enqueue(ctx context.Context, request types.ObservableRequest)
 }
 
-type Metrics interface {
-	SetRequestCount(requestCount int)
-}
-
 type Handler struct {
 	// service state management
 	services.Service
@@ -32,19 +29,21 @@ type Handler struct {
 	lock     sync.RWMutex
 	requests *requests.Store[*requestCtx]
 	poller   Poller
+	metrics  metrics.EvmConsensusMetrics
 
 	unknownRequestsResultByID       map[string]*unknownRequest
 	unknownRequestsOrderedByTimeout *list.List[*unknownRequest]
 	unknownRequestTTL               time.Duration
 }
 
-func NewHandler(lggr logger.Logger, poller Poller, metrics Metrics, unknownRequestTTL time.Duration) *Handler {
+func NewHandler(lggr logger.Logger, poller Poller, metrics metrics.EvmConsensusMetrics, unknownRequestTTL time.Duration) *Handler {
 	r := &Handler{
 		requests:                        requests.NewStoreWithStatsCollector[*requestCtx](metrics),
 		unknownRequestsResultByID:       make(map[string]*unknownRequest),
 		unknownRequestsOrderedByTimeout: list.New[*unknownRequest](),
 		unknownRequestTTL:               unknownRequestTTL,
 		poller:                          poller,
+		metrics:                         metrics,
 	}
 
 	r.Service, r.engine = services.Config{

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/metrics"
 	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/shopspring/decimal"
@@ -23,12 +24,6 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
-
-type Metrics interface {
-	RecordOutcomeChainHeight(ctx context.Context, height *ctypes.ChainHeight)
-	RecordRoundObservationSize(ctx context.Context, size int)
-	RecordRequestObservationSize(ctx context.Context, size int)
-}
 
 const (
 	// OCRRoundBatchSize - max number of requests that this node will try to process in a single round
@@ -52,7 +47,7 @@ type reportingPlugin struct {
 	logger         logger.SugaredLogger
 	blocksProvider BlocksProvider
 	requestsStore  RequestsHandler
-	metrics        Metrics
+	metrics        metrics.EvmConsensusMetrics
 }
 
 func newReportingPlugin(
@@ -60,7 +55,7 @@ func newReportingPlugin(
 	logger logger.SugaredLogger,
 	blocksProvider BlocksProvider,
 	requestsStore RequestsHandler,
-	metrics Metrics,
+	metrics metrics.EvmConsensusMetrics,
 ) *reportingPlugin {
 	return &reportingPlugin{
 		config:         config,
