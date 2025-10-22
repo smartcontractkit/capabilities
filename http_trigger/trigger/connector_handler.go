@@ -162,7 +162,7 @@ func (h *connectorHandler) RegisterWorkflow(ctx context.Context, input WorkflowR
 
 func (h *connectorHandler) validateAuthorizedKeys(inputKeys []*http.AuthorizedKey) ([]gateway_common.AuthorizedKey, error) {
 	if len(inputKeys) == 0 {
-		return nil, fmt.Errorf("no authorized keys")
+		return nil, fmt.Errorf("HTTP trigger requires at least one authorized key to sign JSON-RPC requests. Add AuthorizedKeys to your http.Trigger configuration with ECDSA EVM public keys (0x-prefixed hex strings)")
 	}
 	if len(inputKeys) > int(h.config.MaxAuthorizedKeysPerWorkflow) {
 		return nil, fmt.Errorf("too many authorized keys: %d, max allowed: %d", len(inputKeys), h.config.MaxAuthorizedKeysPerWorkflow)

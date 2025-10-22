@@ -42,6 +42,83 @@ const f = 2
 const batchSize = 10
 const defaultMaxLengthBytes = 1000000 // 1 MB
 
+// nillable observation and nillable default value, -1 indicates the value should be set as nil
+func newSliceCr(t *testing.T, observation []byte, def []byte, metaData oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
+	observationVal, err := values.Wrap(observation)
+	require.NoError(t, err, "failed to wrap nil value")
+
+	defaultVal, err := values.Wrap(def)
+	require.NoError(t, err, "failed to wrap nil value")
+
+	simpleConsensusInputs := &sdk.SimpleConsensusInputs{
+		Observation: &sdk.SimpleConsensusInputs_Value{Value: values.Proto(observationVal)},
+		Default:     values.Proto(defaultVal),
+		Descriptors: &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL}},
+	}
+
+	return oracle.NewConsensusRequest(serializeDeserialize(t, simpleConsensusInputs), time.Now(), time.Now().Add(1*time.Hour).UTC(), nil, metaData)
+}
+
+func Test_SliceObservationAndDefaults(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := t.Context()
+
+	md1 := newRequestMetaData()
+	md2 := newRequestMetaData()
+
+	reqToObservations := map[string]*consensusPluginTest{
+		// Test with observations and defaults as byte slices
+		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newSliceCr(t, []byte("stuff"), []byte("otherstuff"), md1),
+			newSliceCr(t, []byte("stuff"), []byte("otherstuff"), md1),
+			newSliceCr(t, []byte("stuff"), []byte("otherstuff"), md1),
+			newSliceCr(t, []byte("stuff"), []byte("otherstuff"), md1),
+			newSliceCr(t, []byte("stuff"), []byte("otherstuff"), md1),
+			newSliceCr(t, []byte("stuff"), []byte("otherstuff"), md1),
+			newSliceCr(t, []byte("stuff"), []byte("otherstuff"), md1)},
+			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
+				val, err := values.Wrap([]byte("stuff"))
+				require.NoError(t, err)
+
+				verifyValueConsensusReport(t, report, infos, val, "")
+			}},
+
+		// Test with just defaults as byte slices
+		md2.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newSliceCr(t, nil, []byte("otherstuff"), md2),
+			newSliceCr(t, nil, []byte("otherstuff"), md2),
+			newSliceCr(t, nil, []byte("otherstuff"), md2),
+			newSliceCr(t, nil, []byte("otherstuff"), md2),
+			newSliceCr(t, nil, []byte("otherstuff"), md2),
+			newSliceCr(t, nil, []byte("otherstuff"), md2),
+			newSliceCr(t, nil, []byte("otherstuff"), md2)},
+			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
+				val, err := values.Wrap([]byte("otherstuff"))
+				require.NoError(t, err)
+
+				verifyValueConsensusReport(t, report, infos, val, "")
+			}},
+
+		// Test with a mixture of observations and defaults as byte slices
+		md2.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newSliceCr(t, nil, []byte("otherstuff"), md2),
+			newSliceCr(t, nil, []byte("otherstuff"), md2),
+			newSliceCr(t, []byte("stuff"), []byte("otherstuff"), md2),
+			newSliceCr(t, nil, []byte("otherstuff"), md2),
+			newSliceCr(t, nil, []byte("otherstuff"), md2),
+			newSliceCr(t, []byte("stuff"), []byte("otherstuff"), md2),
+			newSliceCr(t, nil, []byte("otherstuff"), md2)},
+			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
+				val, err := values.Wrap([]byte("otherstuff"))
+				require.NoError(t, err)
+
+				verifyValueConsensusReport(t, report, infos, val, "")
+			}},
+	}
+
+	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
+}
+
 func Test_MismatchedLeaderConsensusDescriptor(t *testing.T) {
 	lggr := logger.Test(t)
 	ctx := t.Context()
@@ -57,7 +134,7 @@ func Test_MismatchedLeaderConsensusDescriptor(t *testing.T) {
 		return oracle.NewConsensusRequest(simpleConsensusInputs, time.Now().Add(1*time.Hour).UTC(), time.Now(), nil, metaData)
 	}
 
-	protocolRoundTests := map[string]consensusPluginTest{
+	protocolRoundTests := map[string]*consensusPluginTest{
 		metaData.RequestID(): {requests: []*oracle.ConsensusRequest{
 			newCrIdenticalConsensus(110, metaData), newCr(t, 120, metaData), newCr(t, 130, metaData),
 			newCr(t, 140, metaData), newCr(t, 150, metaData), newCr(t, 160, metaData),
@@ -83,7 +160,7 @@ func Test_MismatchedNonLeaderConsensusDescriptor(t *testing.T) {
 		return oracle.NewConsensusRequest(simpleConsensusInputs, time.Now().Add(1*time.Hour).UTC(), time.Now(), nil, metaData)
 	}
 
-	protocolRoundTests := map[string]consensusPluginTest{
+	protocolRoundTests := map[string]*consensusPluginTest{
 		metaData.RequestID(): {requests: []*oracle.ConsensusRequest{
 			newCr(t, 110, metaData), newCr(t, 120, metaData), newCr(t, 130, metaData),
 			newCr(t, 140, metaData), newCrIdenticalConsensus(150, metaData), newCr(t, 160, metaData),
@@ -105,7 +182,7 @@ func Test_MismatchedLeaderMetaData(t *testing.T) {
 
 	leaderMetaData.WorkflowDonID = 2
 
-	protocolRoundTests := map[string]consensusPluginTest{
+	protocolRoundTests := map[string]*consensusPluginTest{
 		metaData.RequestID(): {requests: []*oracle.ConsensusRequest{
 			newCr(t, 110, leaderMetaData), newCr(t, 120, metaData), newCr(t, 130, metaData),
 			newCr(t, 140, metaData), newCr(t, 150, metaData), newCr(t, 160, metaData),
@@ -125,7 +202,7 @@ func Test_MismatchedNonLeaderMetaData(t *testing.T) {
 
 	misMatchedMetaData.WorkflowDonID = 2
 
-	protocolRoundTests := map[string]consensusPluginTest{
+	protocolRoundTests := map[string]*consensusPluginTest{
 		metaData.RequestID(): {requests: []*oracle.ConsensusRequest{
 			newCr(t, 110, metaData), newCr(t, 120, metaData), newCr(t, 130, metaData),
 			newCr(t, 140, metaData), newCr(t, 150, misMatchedMetaData), newCr(t, 160, metaData),
@@ -138,6 +215,48 @@ func Test_MismatchedNonLeaderMetaData(t *testing.T) {
 	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, protocolRoundTests)
 }
 
+func Test_ObservationDefaults(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := t.Context()
+
+	md1 := newRequestMetaData()
+	md2 := newRequestMetaData()
+	md3 := newRequestMetaData()
+
+	md1.KeyBundleID = "evm"
+
+	reqToObservations := map[string]*consensusPluginTest{
+		// Test a mixture of nil and non-nil observations with defaults
+		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newNillableCr(t, -1, 40, md1), newNillableCr(t, 20, 40, md1), newNillableCr(t, -1, 40, md1),
+			newNillableCr(t, -1, 40, md1), newNillableCr(t, -1, 40, md1), newNillableCr(t, -1, 40, md1),
+			newNillableCr(t, 70, 40, md1)},
+			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
+				verifyValueConsensusReport(t, report, infos, values.NewInt64(40), "evm")
+			}},
+
+		// Test obs and default nil observations
+		md2.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newNillableCr(t, 110, 100, md2), newNillableCr(t, 120, 100, md2), newNillableCr(t, -1, -1, md2),
+			newNillableCr(t, -1, 100, md2), newNillableCr(t, 150, -1, md2), newNillableCr(t, 160, 100, md2),
+			newNillableCr(t, 170, 100, md2)},
+			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
+				verifyValueConsensusReport(t, report, infos, values.NewInt64(120), "")
+			}},
+
+		// Test insufficient non-nil observations but with sufficient matching defaults
+		md3.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newNillableCr(t, 10, 40, md3), newNillableCr(t, 20, 40, md3), newNillableCr(t, 30, 40, md3),
+			newNillableCr(t, 35, 40, md3), newNillableCr(t, -1, 40, md3), newNillableCr(t, -1, 40, md3),
+			newNillableCr(t, -1, 40, md3)},
+			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
+				verifyValueConsensusReport(t, report, infos, values.NewInt64(35), "")
+			}},
+	}
+
+	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
+}
+
 func Test_ReceivedAllObservationsFromAllNodes(t *testing.T) {
 	lggr := logger.Test(t)
 	ctx := t.Context()
@@ -147,7 +266,7 @@ func Test_ReceivedAllObservationsFromAllNodes(t *testing.T) {
 
 	md1.KeyBundleID = "evm"
 
-	reqToObservations := map[string]consensusPluginTest{
+	reqToObservations := map[string]*consensusPluginTest{
 		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
 			newCr(t, 10, md1), newCr(t, 20, md1), newCr(t, 30, md1),
 			newCr(t, 40, md1), newCr(t, 50, md1), newCr(t, 60, md1),
@@ -177,7 +296,7 @@ func Test_ReceivedObservationsWithErrors(t *testing.T) {
 
 	md1.KeyBundleID = "evm"
 
-	reqToObservations := map[string]consensusPluginTest{
+	reqToObservations := map[string]*consensusPluginTest{
 		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
 			newCr(t, 10, md1), newCrWithError(t, errors.New("its broken"), md1), newCr(t, 30, md1),
 			newCr(t, 40, md1), newCr(t, 50, md1), newCr(t, 60, md1),
@@ -205,7 +324,7 @@ func Test_ReceivedObservationsWithMatchingDefaults(t *testing.T) {
 	md1 := newRequestMetaData()
 	md1.KeyBundleID = "evm"
 
-	reqToObservations := map[string]consensusPluginTest{
+	reqToObservations := map[string]*consensusPluginTest{
 		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
 			newCrWithObsAndDef(t, 10, 17, md1), newCrWithObsAndDef(t, 20, 17, md1), newCrWithObsAndDef(t, 30, 17, md1),
 			newCrWithObsAndDef(t, 40, 17, md1), newCrWithObsAndDef(t, 50, 17, md1), newCrWithObsAndDef(t, 60, 17, md1),
@@ -227,7 +346,7 @@ func Test_ReceivedObservationsWithSomeMisMatchedDefaults_SufficientForConsensus(
 	md1 := newRequestMetaData()
 	md1.KeyBundleID = "evm"
 
-	reqToObservations := map[string]consensusPluginTest{
+	reqToObservations := map[string]*consensusPluginTest{
 		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
 			newCrWithObsAndDef(t, 10, 17, md1), newCrWithObsAndDef(t, 20, 17, md1), newCrWithObsAndDef(t, 30, 17, md1),
 			newCrWithObsAndDef(t, 40, 16, md1), newCrWithObsAndDef(t, 50, 17, md1), newCrWithObsAndDef(t, 60, 17, md1),
@@ -249,7 +368,7 @@ func Test_ReceivedObservationsWithSomeMisMatchedDefaults_InsufficientForConsensu
 	md1 := newRequestMetaData()
 	md1.KeyBundleID = "evm"
 
-	reqToObservations := map[string]consensusPluginTest{
+	reqToObservations := map[string]*consensusPluginTest{
 		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
 			newCrWithObsAndDef(t, 10, 17, md1), newCrWithObsAndDef(t, 20, 12, md1), newCrWithObsAndDef(t, 30, 17, md1),
 			newCrWithObsAndDef(t, 40, 16, md1), newCrWithObsAndDef(t, 50, 17, md1), newCrWithObsAndDef(t, 60, 11, md1),
@@ -268,7 +387,7 @@ func Test_LeaderNodeMisMatchedDefault_InsufficientForConsensus(t *testing.T) {
 	md1 := newRequestMetaData()
 	md1.KeyBundleID = "evm"
 
-	reqToObservations := map[string]consensusPluginTest{
+	reqToObservations := map[string]*consensusPluginTest{
 		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
 			newCrWithObsAndDef(t, 10, 14, md1), newCrWithObsAndDef(t, 20, 17, md1), newCrWithObsAndDef(t, 30, 17, md1),
 			newCrWithObsAndDef(t, 40, 17, md1), newCrWithObsAndDef(t, 50, 17, md1), newCrWithObsAndDef(t, 60, 17, md1),
@@ -286,7 +405,7 @@ func Test_MissingButSufficientObservations(t *testing.T) {
 	md4 := newRequestMetaData()
 	md5 := newRequestMetaData()
 
-	reqToObservations := map[string]consensusPluginTest{
+	reqToObservations := map[string]*consensusPluginTest{
 
 		// Simulate some rounds where some nodes have not yet received the observation for req-3 and req-4
 		md3.RequestID(): {requests: []*oracle.ConsensusRequest{
@@ -321,7 +440,7 @@ func Test_InsufficientObservations(t *testing.T) {
 
 	md1.KeyBundleID = "evm"
 
-	reqToObservations := map[string]consensusPluginTest{
+	reqToObservations := map[string]*consensusPluginTest{
 		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
 			newCr(t, 10, md1), newCr(t, 20, md1), newCr(t, 30, md1),
 			newCr(t, 40, md1), newCr(t, 50, md1), newCr(t, 60, md1),
@@ -349,7 +468,7 @@ func Test_LeaderHasNoMatchingRequest(t *testing.T) {
 
 	md1.KeyBundleID = "evm"
 
-	reqToObservations := map[string]consensusPluginTest{
+	reqToObservations := map[string]*consensusPluginTest{
 		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
 			newCr(t, 10, md1), newCr(t, 20, md1), newCr(t, 30, md1),
 			newCr(t, 40, md1), newCr(t, 50, md1), newCr(t, 60, md1),
@@ -377,7 +496,7 @@ func Test_WithOutcomeContext(t *testing.T) {
 
 	md1.KeyBundleID = "evm"
 
-	reqToObservations := map[string]consensusPluginTest{
+	reqToObservations := map[string]*consensusPluginTest{
 		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
 			newCr(t, 10, md1), newCr(t, 20, md1), newCr(t, 30, md1),
 			newCr(t, 40, md1), newCr(t, 50, md1), newCr(t, 60, md1),
@@ -467,13 +586,40 @@ func newCrWithObsAndDef(t *testing.T, observation int64, def int64, metaData ora
 	return oracle.NewConsensusRequest(serializeDeserialize(t, simpleConsensusInputs), time.Now(), time.Now().Add(1*time.Hour).UTC(), nil, metaData)
 }
 
+// nillable observation and nillable default value, -1 indicates the value should be set as nil
+func newNillableCr(t *testing.T, observation int64, def int64, metaData oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
+	observationVal, err := values.Wrap(nil)
+	require.NoError(t, err, "failed to wrap nil value")
+
+	defaultVal, err := values.Wrap(nil)
+	require.NoError(t, err, "failed to wrap nil value")
+
+	if observation != -1 {
+		observationVal, err = values.Wrap(values.NewInt64(observation))
+		require.NoError(t, err, "failed to wrap observation value")
+	}
+
+	if def != -1 {
+		defaultVal, err = values.Wrap(values.NewInt64(def))
+		require.NoError(t, err, "failed to wrap default value")
+	}
+
+	simpleConsensusInputs := &sdk.SimpleConsensusInputs{
+		Observation: &sdk.SimpleConsensusInputs_Value{Value: values.Proto(observationVal)},
+		Default:     values.Proto(defaultVal),
+		Descriptors: &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_MEDIAN}},
+	}
+
+	return oracle.NewConsensusRequest(serializeDeserialize(t, simpleConsensusInputs), time.Now(), time.Now().Add(1*time.Hour).UTC(), nil, metaData)
+}
+
 type pluginAndRequestStore struct {
 	plugin ocr3types.ReportingPlugin[[]byte]
 	store  *requests.Store[*oracle.ConsensusRequest]
 }
 
 func runProtocolRoundTests(ctx context.Context, t *testing.T, lggr logger.Logger, n, f, batchSize int,
-	reqToObservations map[string]consensusPluginTest) {
+	reqToObservations map[string]*consensusPluginTest) {
 	pluginAndRequestStores := createPluginsAndStores(n, t, lggr, f, batchSize, 5)
 
 	addRequestsToAllStores(pluginAndRequestStores, reqToObservations, t)
@@ -497,7 +643,7 @@ func createPluginsAndStores(n int, t *testing.T, lggr logger.Logger, f int, batc
 // It verifies that all plugins reach the same outcome and that the reports generated are as expected according to the test
 // and returns the outcome
 func runProtocolRoundTestsWithPlugins(ctx context.Context, t *testing.T,
-	reqToObservations map[string]consensusPluginTest, pluginAndRequestStores []pluginAndRequestStore, previousOutcome ocr3types.OutcomeContext) ocr3types.Outcome {
+	reqToObservations map[string]*consensusPluginTest, pluginAndRequestStores []pluginAndRequestStore, previousOutcome ocr3types.OutcomeContext) ocr3types.Outcome {
 	// Simulate a protocol round
 	// Select the first reporting plugin as the leader, note that setting the observation to nil for the leader
 	// will result in a nil outcome for that request
@@ -581,15 +727,12 @@ func runProtocolRoundTestsWithPlugins(ctx context.Context, t *testing.T,
 	// Create a map to hold the request ID to expected result
 	requestIDToOutcome := make(map[string]*consensusPluginTest)
 	for reqID, obs := range reqToObservations {
-		if obs.verifyReport != nil {
-			requestIDToOutcome[reqID] = &obs
-		} else {
-			requestIDToOutcome[reqID] = nil // No expected result for this request
-		}
+		requestIDToOutcome[reqID] = obs
 	}
 
 	// Get reports and verify the value selected
 	reports := allReports[0]
+	receivedReportForRequestIDs := map[string]bool{}
 	for _, report := range reports {
 		serialisedValue := report.ReportWithInfo.Report[plugin.ReportMetaDataPrependLength:]
 		actualProto := &valuespb.Value{}
@@ -602,16 +745,28 @@ func runProtocolRoundTestsWithPlugins(ctx context.Context, t *testing.T,
 
 		reqID := infos.Fields[plugin.InfoRequestID].GetStringValue()
 
+		receivedReportForRequestIDs[reqID] = true
 		expectedOutcome, ok := requestIDToOutcome[reqID]
-		require.True(t, ok, "got unexpected result for request %s", reqID)
+		require.True(t, ok, "got report for a request without a test outcome %s", reqID)
 
-		expectedOutcome.verifyReport(t, report, &infos)
+		if expectedOutcome.verifyReport != nil {
+			expectedOutcome.verifyReport(t, report, &infos)
+		} else {
+			require.FailNow(t, "not expecting report for request %s", reqID)
+		}
+	}
+
+	// Verify all expected reports were received
+	for reqID, outcome := range requestIDToOutcome {
+		if outcome.verifyReport != nil {
+			require.True(t, receivedReportForRequestIDs[reqID], "expected report for request ID %s was not received", reqID)
+		}
 	}
 
 	return nodeOutcomes[0]
 }
 
-func addRequestsToAllStores(pluginAndRequestStores []pluginAndRequestStore, reqToObservations map[string]consensusPluginTest, t *testing.T) {
+func addRequestsToAllStores(pluginAndRequestStores []pluginAndRequestStore, reqToObservations map[string]*consensusPluginTest, t *testing.T) {
 	for i := 0; i < len(pluginAndRequestStores); i++ {
 		var pluginObs []*oracle.ConsensusRequest
 
@@ -635,7 +790,7 @@ func removeRequestFromAllStores(pluginAndRequestStores []pluginAndRequestStore, 
 	}
 }
 
-func verifyValueConsensusReport(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct, expectedResult *values.Int64,
+func verifyValueConsensusReport(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct, expectedResult values.Value,
 	expectedKeyBundleName string) {
 	require.NotNil(t, report.ReportWithInfo, "report should not be nil")
 	require.NotNil(t, report.ReportWithInfo.Report, "report value should not be nil")

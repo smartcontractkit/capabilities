@@ -32,7 +32,7 @@ func Test_Report_MedianTimeStamp(t *testing.T) {
 	timestamp2 := now.Add(2 * time.Second)
 	timestamp3 := now.Add(3 * time.Second)
 
-	reqToObservations := map[string]consensusPluginTest{
+	reqToObservations := map[string]*consensusPluginTest{
 		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
 			newRRts([]byte("somerandombytes"), md1, timestamp2), newRRts([]byte("somerandombytes"), md1, timestamp3), newRRts([]byte("somerandombytes"), md1, timestamp1),
 			newRRts([]byte("somerandombytes"), md1, timestamp3), newRRts([]byte("somerandombytes"), md1, timestamp1), newRRts([]byte("somerandombytes"), md1, timestamp2),
@@ -62,7 +62,7 @@ func Test_Report_MedianTimeStampWithMismatchedObservationsIncludesAllTimestampsI
 	timestamp2 := now.Add(2 * time.Second)
 	timestamp3 := now.Add(3 * time.Second)
 
-	reqToObservations := map[string]consensusPluginTest{
+	reqToObservations := map[string]*consensusPluginTest{
 		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
 			newRRts([]byte("somerandombytes"), md1, timestamp1), newRRts([]byte("somerandombytes"), md1, timestamp1), newRRts([]byte("somerandombytes"), md1, timestamp1),
 			newRRts([]byte("somerandombytes2"), md1, timestamp2), newRRts([]byte("somerandombytes2"), md1, timestamp2), newRRts([]byte("somerandombytes"), md1, timestamp3),
@@ -84,7 +84,7 @@ func Test_ReceivedIdenticalReportFromAllNodes(t *testing.T) {
 	md1 := newRequestMetaData()
 	md1.KeyBundleID = "evm"
 
-	reqToObservations := map[string]consensusPluginTest{
+	reqToObservations := map[string]*consensusPluginTest{
 		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
 			newRR([]byte("somerandombytes"), md1), newRR([]byte("somerandombytes"), md1), newRR([]byte("somerandombytes"), md1),
 			newRR([]byte("somerandombytes"), md1), newRR([]byte("somerandombytes"), md1), newRR([]byte("somerandombytes"), md1),
@@ -117,7 +117,7 @@ func Test_ReceivedIdenticalReportFromSufficientNodes(t *testing.T) {
 	md1 := newRequestMetaData()
 	md1.KeyBundleID = "evm"
 
-	reqToObservations := map[string]consensusPluginTest{
+	reqToObservations := map[string]*consensusPluginTest{
 		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
 			newRR([]byte("somerandombytes2"), md1), newRR([]byte("somerandombytes"), md1), newRR([]byte("somerandombytes"), md1),
 			newRR([]byte("somerandombytes"), md1), newRR([]byte("somerandombytes"), md1), newRR([]byte("somerandombytes"), md1),
@@ -153,7 +153,7 @@ func Test_SufficientAndInsufficentReportsInSingleRound(t *testing.T) {
 	md2 := newRequestMetaData()
 	md2.KeyBundleID = "evm"
 
-	reqToObservations := map[string]consensusPluginTest{
+	reqToObservations := map[string]*consensusPluginTest{
 		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
 			newRR([]byte("somerandombytes"), md1), newRR([]byte("somerandombytes"), md1), newRR([]byte("somerandombytes"), md1),
 			newRR([]byte("somerandombytes"), md1), newRR([]byte("somerandombytes"), md1), newRR([]byte("somerandombytes"), md1),
@@ -180,7 +180,7 @@ func Test_ReceivedIdenticalReportFromInSufficientNodes(t *testing.T) {
 	md1 := newRequestMetaData()
 	md1.KeyBundleID = "evm"
 
-	reqToObservations := map[string]consensusPluginTest{
+	reqToObservations := map[string]*consensusPluginTest{
 		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
 			newRR([]byte("somerandombytes2"), md1), newRR([]byte("somerandombytes"), md1), newRR([]byte("somerandombytes"), md1),
 			newRR([]byte("somerandombytes2"), md1), newRR([]byte("somerandombytes"), md1), newRR([]byte("somerandombytes"), md1),
