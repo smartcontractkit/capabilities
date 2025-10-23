@@ -9,6 +9,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/list"
 
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/metrics"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
 )
 
@@ -35,6 +36,7 @@ type Poller struct {
 	lggr       logger.SugaredLogger
 	maxWorkers uint
 	pollPeriod time.Duration
+	metrics    metrics.EvmConsensusMetrics
 
 	mutex       sync.Mutex
 	inputNotify chan struct{}
@@ -43,10 +45,11 @@ type Poller struct {
 	retryQueue  *list.List[requestToRetry]
 }
 
-func NewPoller(lggr logger.Logger, maxWorkers uint, pollPeriod time.Duration) *Poller {
+func NewPoller(lggr logger.Logger, metrics metrics.EvmConsensusMetrics, maxWorkers uint, pollPeriod time.Duration) *Poller {
 	p := &Poller{
 		maxWorkers: maxWorkers,
 		pollPeriod: pollPeriod,
+		metrics:    metrics,
 
 		inputNotify: make(chan struct{}, 1),
 		requests:    list.New[requestToPoll](),
@@ -66,27 +69,28 @@ func NewPoller(lggr logger.Logger, maxWorkers uint, pollPeriod time.Duration) *P
 
 func (p *Poller) Enqueue(ctx context.Context, request types.ObservableRequest) {
 	p.mutex.Lock()
-	p.enqueueUnsafe(requestToPoll{
+	p.enqueueUnsafe(ctx, requestToPoll{
 		ObservableRequest: request,
 		Ctx:               ctx,
 	})
 	p.mutex.Unlock()
 }
 
-func (p *Poller) popFirst() *requestToPoll {
+func (p *Poller) popFirst(ctx context.Context) *requestToPoll {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 	if p.requests.Len() == 0 {
 		return nil
 	}
 
-	// TODO PLEX-1572: report requests queue size to beholder
 	result := p.requests.Remove(p.requests.Front())
+	p.metrics.RecordQueueSize(ctx, p.requests.Len())
 	return &result
 }
 
-func (p *Poller) enqueueUnsafe(rq requestToPoll) {
+func (p *Poller) enqueueUnsafe(ctx context.Context, rq requestToPoll) {
 	p.requests.PushBack(rq)
+	p.metrics.RecordQueueSize(ctx, p.requests.Len())
 	select {
 	case p.inputNotify <- struct{}{}:
 	default:
@@ -129,6 +133,7 @@ func (p *Poller) processRequest(request requestToPoll) {
 		requestToPoll: request,
 		LastAttemptAt: time.Now(),
 	})
+	p.metrics.RecordRetryQueueSize(ctx, p.requests.Len())
 	p.mutex.Unlock()
 }
 
@@ -156,7 +161,7 @@ func (p *Poller) scheduleProcessing(ctx context.Context) {
 
 		// push whole queue to the channel for concurrent processing
 		for {
-			request := p.popFirst()
+			request := p.popFirst(ctx)
 			if request == nil {
 				break
 			}
@@ -185,10 +190,10 @@ func (p *Poller) scheduleReadyForReprocessing(ctx context.Context, now time.Time
 			return
 		}
 
-		// TODO PLEX-1572: report retryQueue queue size to beholder
 		p.retryQueue.Remove(request)
+		p.metrics.RecordRetryQueueSize(ctx, p.retryQueue.Len())
 
-		p.enqueueUnsafe(request.Value.requestToPoll)
+		p.enqueueUnsafe(ctx, request.Value.requestToPoll)
 	}
 }
 
