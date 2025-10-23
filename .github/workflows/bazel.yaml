@@ -15,26 +15,6 @@ env:
   GOPRIVATE: github.com/smartcontractkit/capabilities
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Cache Bazel
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/bazel
-            ~/.cache/bazel/_bazel_root
-          key: bazel-cache-${{ runner.os }}-${{ hashFiles('**/.bazelversion', '**/MODULE.bazel', '**/BUILD.bazel') }}-${{ github.ref }}-
-          restore-keys: |
-            bazel-cache-${{ runner.os }}-${{ hashFiles('**/.bazelversion', '**/MODULE.bazel', '**/BUILD.bazel') }}-
-            bazel-cache-${{ runner.os }}-
-      - run: bazel build //...
-
   test:
     runs-on: ubuntu-latest
     steps:
