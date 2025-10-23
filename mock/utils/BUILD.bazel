@@ -1,0 +1,15 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "utils",
+    srcs = ["utils.go"],
+    importpath = "github.com/smartcontractkit/capabilities/mock/utils",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//mock/internal/pb",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
+        "@com_github_smartcontractkit_chainlink_protos_cre_go//values",
+        "@com_github_smartcontractkit_chainlink_protos_cre_go//values/pb",
+        "@org_golang_google_protobuf//proto",
+    ],
+)

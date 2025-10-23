@@ -1,0 +1,19 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "mock_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/smartcontractkit/capabilities/mock",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//libs/loopserver",
+        "//mock/server",
+        "@com_github_smartcontractkit_chainlink_common//pkg/loop",
+    ],
+)
+
+go_binary(
+    name = "mock",
+    embed = [":mock_lib"],
+    visibility = ["//visibility:public"],
+)

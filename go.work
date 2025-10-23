@@ -12,7 +12,7 @@ use (
 	./http_trigger
 	// ./integration_tests
 	./loadtestwritetarget
-	// ./mock
+	./mock
 	./p2psigner
 	./readcontract
 	./workflowevent

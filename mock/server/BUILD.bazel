@@ -1,0 +1,38 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "server",
+    srcs = ["server.go"],
+    importpath = "github.com/smartcontractkit/capabilities/mock/server",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//mock/internal",
+        "//mock/internal/pb",
+        "//mock/utils",
+        "@com_github_pelletier_go_toml_v2//:go-toml",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_smartcontractkit_chainlink_common//pkg/loop",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types/core",
+    ],
+)
+
+go_test(
+    name = "server_test",
+    srcs = ["server_test.go"],
+    embed = [":server"],
+    deps = [
+        "//libs/testutils",
+        "//mock/internal/pb",
+        "//mock/utils",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
+        "@com_github_smartcontractkit_chainlink_common//pkg/services/servicetest",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types/core",
+        "@com_github_smartcontractkit_chainlink_protos_cre_go//values",
+        "@com_github_smartcontractkit_freeport//:freeport",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_protobuf//types/known/anypb",
+    ],
+)
