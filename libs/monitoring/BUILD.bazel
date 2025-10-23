@@ -19,15 +19,17 @@ go_library(
     name = "monitoring",
     srcs = [
         "common.go",
+        "execution_context.pb.go",
         "generate.go",
         "metadata.go",
     ],
-    embed = [":monitoring_go_proto"],
     importpath = "github.com/smartcontractkit/capabilities/libs/monitoring",
     visibility = ["//visibility:public"],
     deps = [
         "@com_github_smartcontractkit_chainlink_common//pkg/beholder",
         "@io_opentelemetry_go_otel//attribute",
         "@io_opentelemetry_go_otel_metric//:metric",
+        "@org_golang_google_protobuf//reflect/protoreflect",
+        "@org_golang_google_protobuf//runtime/protoimpl",
     ],
 )

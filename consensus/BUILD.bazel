@@ -1,0 +1,22 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "consensus_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/smartcontractkit/capabilities/consensus",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//consensus/action",
+        "//consensus/metrics",
+        "//libs/loopserver",
+        "@com_github_jonboulle_clockwork//:clockwork",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/v2/consensus/server",
+        "@com_github_smartcontractkit_chainlink_common//pkg/loop",
+    ],
+)
+
+go_binary(
+    name = "consensus",
+    embed = [":consensus_lib"],
+    visibility = ["//visibility:public"],
+)

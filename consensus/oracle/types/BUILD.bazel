@@ -1,0 +1,32 @@
+load("@rules_go//go:def.bzl", "go_library")
+load("@rules_go//proto:def.bzl", "go_proto_library")
+load("@rules_proto//proto:defs.bzl", "proto_library")
+
+proto_library(
+    name = "types_proto",
+    srcs = ["value_consensus_types.proto"],
+    visibility = ["//visibility:public"],
+    deps = ["@com_google_protobuf//:timestamp_proto"],
+)
+
+go_proto_library(
+    name = "types_go_proto",
+    importpath = "consensus/oracle/types",
+    proto = ":types_proto",
+    visibility = ["//visibility:public"],
+)
+
+go_library(
+    name = "types",
+    srcs = [
+        "generate.go",
+        "value_consensus_types.pb.go",
+    ],
+    importpath = "github.com/smartcontractkit/capabilities/consensus/oracle/types",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@org_golang_google_protobuf//reflect/protoreflect",
+        "@org_golang_google_protobuf//runtime/protoimpl",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)

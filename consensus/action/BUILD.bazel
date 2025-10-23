@@ -1,0 +1,50 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "action",
+    srcs = ["capability.go"],
+    importpath = "github.com/smartcontractkit/capabilities/consensus/action",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//consensus/metrics",
+        "//consensus/oracle",
+        "//consensus/oracle/plugin",
+        "//consensus/oracle/transmitter",
+        "//consensus/oracle/types",
+        "@com_github_jonboulle_clockwork//:clockwork",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/consensus/requests",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/v2/consensus/server",
+        "@com_github_smartcontractkit_chainlink_common//pkg/config",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_smartcontractkit_chainlink_common//pkg/settings/cresettings",
+        "@com_github_smartcontractkit_chainlink_common//pkg/settings/limits",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types/core",
+        "@com_github_smartcontractkit_chainlink_protos_cre_go//sdk",
+        "@com_github_smartcontractkit_chainlink_protos_cre_go//values",
+        "@com_github_smartcontractkit_chainlink_protos_cre_go//values/pb",
+        "@com_github_smartcontractkit_libocr//offchainreporting2/types",
+        "@io_opentelemetry_go_otel_metric//:metric",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_x_exp//maps",
+    ],
+)
+
+go_test(
+    name = "action_test",
+    srcs = ["capability_test.go"],
+    embed = [":action"],
+    deps = [
+        "//libs/testutils",
+        "@com_github_jonboulle_clockwork//:clockwork",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_smartcontractkit_chainlink_common//pkg/services/servicetest",
+        "@com_github_smartcontractkit_chainlink_common//pkg/settings/limits",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types/core",
+        "@com_github_smartcontractkit_chainlink_protos_cre_go//sdk",
+        "@com_github_smartcontractkit_chainlink_protos_cre_go//values",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
