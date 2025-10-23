@@ -241,7 +241,7 @@ func Test_Server(t *testing.T) {
 		})
 		defer removeWorkflow2(ctx)
 
-		value := []byte("foo")
+		value := []byte("bar")
 
 		// WRITE with workflow 1
 		response, err := capabilitiesServer.Target.Execute(ctx, workflow1.NewRequest(map[string]any{
