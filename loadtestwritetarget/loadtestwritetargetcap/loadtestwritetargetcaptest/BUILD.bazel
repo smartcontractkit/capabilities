@@ -1,0 +1,12 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "loadtestwritetargetcaptest",
+    srcs = ["writetarget_action_mock_generated.go"],
+    importpath = "github.com/smartcontractkit/capabilities/loadtestwritetarget/loadtestwritetargetcap/loadtestwritetargetcaptest",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//loadtestwritetarget/loadtestwritetargetcap",
+        "@com_github_smartcontractkit_chainlink_common//pkg/workflows/sdk/testutils",
+    ],
+)

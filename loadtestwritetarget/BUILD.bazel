@@ -1,0 +1,22 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "loadtestwritetarget_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/smartcontractkit/capabilities/loadtestwritetarget",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//libs/loopserver",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_smartcontractkit_chainlink_common//pkg/loop",
+        "@com_github_smartcontractkit_chainlink_common//pkg/services",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types/core",
+    ],
+)
+
+go_binary(
+    name = "loadtestwritetarget",
+    embed = [":loadtestwritetarget_lib"],
+    visibility = ["//visibility:public"],
+)

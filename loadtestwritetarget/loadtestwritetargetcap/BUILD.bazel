@@ -1,0 +1,18 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "loadtestwritetargetcap",
+    srcs = [
+        "gen.go",
+        "loadtest_writetarget_action_generated.go",
+        "writetarget_action_builders_generated.go",
+    ],
+    importpath = "github.com/smartcontractkit/capabilities/loadtestwritetarget/loadtestwritetargetcap",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/cli/cmd",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/consensus/ocr3/ocr3cap",
+        "@com_github_smartcontractkit_chainlink_common//pkg/workflows/sdk",
+    ],
+)

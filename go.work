@@ -11,7 +11,7 @@ use (
 	./http_action
 	./http_trigger
 	// ./integration_tests
-	// ./loadtestwritetarget
+	./loadtestwritetarget
 	// ./mock
 	./p2psigner
 	./readcontract
