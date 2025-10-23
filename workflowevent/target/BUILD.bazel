@@ -1,0 +1,32 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "target",
+    srcs = ["target.go"],
+    importpath = "github.com/smartcontractkit/capabilities/workflowevent/target",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//workflowevent/workfloweventcap",
+        "@com_github_smartcontractkit_chainlink_common//pkg/beholder",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_smartcontractkit_chainlink_common//pkg/workflows/sdk",
+        "@com_github_smartcontractkit_chainlink_protos_cre_go//values",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
+
+go_test(
+    name = "target_test",
+    srcs = ["target_test.go"],
+    embed = [":target"],
+    deps = [
+        "//libs/testutils",
+        "@com_github_smartcontractkit_chainlink_common//pkg/beholder",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_smartcontractkit_chainlink_protos_cre_go//values",
+        "@com_github_stretchr_testify//assert",
+        "@org_golang_google_protobuf//proto",
+    ],
+)

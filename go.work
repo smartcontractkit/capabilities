@@ -15,7 +15,7 @@ use (
 	// ./mock
 	./p2psigner
 	./readcontract
-	// ./workflowevent
+	./workflowevent
 	// ./workflows
 	// ./workflows/readbalancesgen/cmd
 )
