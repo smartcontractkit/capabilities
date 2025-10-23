@@ -1,0 +1,17 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "server",
+    srcs = ["server.go"],
+    importpath = "github.com/smartcontractkit/capabilities/capabilitywatcher/server",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//capabilitywatcher/checks",
+        "//capabilitywatcher/internal",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_smartcontractkit_chainlink_common//pkg/loop",
+        "@com_github_smartcontractkit_chainlink_common//pkg/services",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types/core",
+    ],
+)

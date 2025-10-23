@@ -2,12 +2,12 @@ go 1.25.3
 
 use (
 	.
-	// ./capabilitywatcher
+	./capabilitywatcher
 	// ./chain_capabilities/evm
+	./cron
 	./consensus
     ./kvstore
     ./libs
-	// ./cron
 	// ./http_action
 	// ./http_trigger
 	// ./integration_tests

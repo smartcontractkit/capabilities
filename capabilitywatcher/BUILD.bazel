@@ -1,0 +1,19 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "capabilitywatcher_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/smartcontractkit/capabilities/capabilitywatcher",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//capabilitywatcher/server",
+        "//libs/loopserver",
+        "@com_github_smartcontractkit_chainlink_common//pkg/loop",
+    ],
+)
+
+go_binary(
+    name = "capabilitywatcher",
+    embed = [":capabilitywatcher_lib"],
+    visibility = ["//visibility:public"],
+)
