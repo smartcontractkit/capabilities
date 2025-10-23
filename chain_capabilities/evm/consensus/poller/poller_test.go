@@ -12,6 +12,7 @@ import (
 	"go.uber.org/zap/zapcore"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
 )
 
 func TestPoller_ObservesRequestUntilCanceled(t *testing.T) {
@@ -23,7 +24,7 @@ func TestPoller_ObservesRequestUntilCanceled(t *testing.T) {
 
 	// Create poller with short poll period for faster testing
 	pollPeriod := 10 * time.Millisecond
-	poller := NewPoller(lggr, 1, pollPeriod)
+	poller := NewPoller(lggr, test.GetEvmConsensusMetrics(t), 1, pollPeriod)
 
 	// Start the poller
 	require.NoError(t, poller.Start(t.Context()))

@@ -9,6 +9,8 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/metrics"
+
 	evmcapocr3types "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/consensus/ocr3/types"
 )
 
@@ -18,17 +20,20 @@ type ReportingPluginFactory struct {
 	logger         logger.SugaredLogger
 	requestsStore  RequestsHandler
 	blocksProvider BlocksProvider
+	metrics        metrics.EvmConsensusMetrics
 }
 
 func NewReportingPluginFactory(
 	logger logger.SugaredLogger,
 	requestsStore RequestsHandler,
 	blocksProvider BlocksProvider,
+	metrics metrics.EvmConsensusMetrics,
 ) *ReportingPluginFactory {
 	return &ReportingPluginFactory{
 		logger:         logger,
 		requestsStore:  requestsStore,
 		blocksProvider: blocksProvider,
+		metrics:        metrics,
 	}
 }
 
@@ -52,7 +57,8 @@ func (rpf *ReportingPluginFactory) NewReportingPlugin(
 		MaxBatchSize:          int(offchainCfg.MaxBatchSize),
 		MaxObservationLength:  int(offchainCfg.MaxObservationLengthBytes),
 	}
-	return newReportingPlugin(cfg, rpf.logger, rpf.blocksProvider, rpf.requestsStore), ocr3types.ReportingPluginInfo{
+
+	return newReportingPlugin(cfg, rpf.logger, rpf.blocksProvider, rpf.requestsStore, rpf.metrics), ocr3types.ReportingPluginInfo{
 		Name: "evm-reads-oracle",
 		Limits: ocr3types.ReportingPluginLimits{
 			MaxQueryLength:       int(offchainCfg.MaxQueryLengthBytes),

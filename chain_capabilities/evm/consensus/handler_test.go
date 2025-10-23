@@ -20,12 +20,13 @@ import (
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/mocks"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
 )
 
 func TestGetRequestIDs(t *testing.T) {
 	poller := mocks.NewPoller(t)
 	poller.EXPECT().Enqueue(mock.Anything, mock.Anything)
-	handler := NewHandler(logger.Test(t), poller, time.Second)
+	handler := NewHandler(logger.Test(t), poller, test.GetEvmConsensusMetrics(t), time.Second)
 	addRequestToHandler := func(t *testing.T, ctx context.Context, id string) {
 		request := types.NewEventuallyConsistentRequest(id, nil)
 		_, err := handler.Handle(ctx, request)
@@ -71,7 +72,7 @@ func TestGetRequestIDs(t *testing.T) {
 func TestGetRequest(t *testing.T) {
 	poller := mocks.NewPoller(t)
 	poller.EXPECT().Enqueue(mock.Anything, mock.Anything).Maybe()
-	handler := NewHandler(logger.Test(t), poller, time.Second)
+	handler := NewHandler(logger.Test(t), poller, test.GetEvmConsensusMetrics(t), time.Second)
 	addRequestToHandler := func(t *testing.T, ctx context.Context, id string) {
 		request := types.NewAggregatableRequest(id, nil)
 		_, err := handler.Handle(ctx, request)
@@ -101,7 +102,7 @@ func TestGetRequest(t *testing.T) {
 
 func TestCompleteRequest(t *testing.T) {
 	newHandler := func(t *testing.T, lggr logger.Logger, poller Poller) *Handler {
-		handler := NewHandler(lggr, poller, time.Second)
+		handler := NewHandler(lggr, poller, test.GetEvmConsensusMetrics(t), time.Second)
 		require.NoError(t, handler.Start(t.Context()))
 		t.Cleanup(func() {
 			require.NoError(t, handler.Close())
@@ -275,7 +276,7 @@ func TestCompleteRequest(t *testing.T) {
 
 func TestHandle(t *testing.T) {
 	poller := mocks.NewPoller(t)
-	handler := NewHandler(logger.Test(t), poller, time.Second)
+	handler := NewHandler(logger.Test(t), poller, test.GetEvmConsensusMetrics(t), time.Second)
 	require.NoError(t, handler.Start(t.Context()))
 	t.Cleanup(func() {
 		require.NoError(t, handler.Close())
