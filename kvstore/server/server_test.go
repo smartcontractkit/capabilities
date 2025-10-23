@@ -241,12 +241,10 @@ func Test_Server(t *testing.T) {
 		})
 		defer removeWorkflow2(ctx)
 
-		value := []byte("bar")
-
 		// WRITE with workflow 1
 		response, err := capabilitiesServer.Target.Execute(ctx, workflow1.NewRequest(map[string]any{
 			"signedReport": testutils.NewReport(t, map[string][]byte{
-				"key": value,
+				"key": []byte("foo"),
 			}),
 		}))
 		require.NoError(t, err)
@@ -263,7 +261,7 @@ func Test_Server(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Equal(t, workflow1.NewResponse(map[string]any{
-			"key": value,
+			"key": []byte("foo"),
 		}), response)
 	})
 }
