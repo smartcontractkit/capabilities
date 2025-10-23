@@ -1,0 +1,2 @@
+# This BUILD file allows Bazel to recognize the libs directory as a package
+# The actual Go libraries are defined in subdirectories
