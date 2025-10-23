@@ -1,0 +1,15 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "mocks",
+    srcs = [
+        "logger.go",
+        "proto_emitter.go",
+    ],
+    importpath = "github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/monitoring/mocks",
+    visibility = ["//chain_capabilities/evm:__subpackages__"],
+    deps = [
+        "@com_github_stretchr_testify//mock",
+        "@org_golang_google_protobuf//reflect/protoreflect",
+    ],
+)

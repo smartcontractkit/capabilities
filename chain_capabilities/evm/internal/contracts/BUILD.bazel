@@ -1,0 +1,43 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "contracts",
+    srcs = [
+        "cre_forwarder.go",
+        "gen.go",
+    ],
+    importpath = "github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts",
+    visibility = ["//chain_capabilities/evm:__subpackages__"],
+    deps = [
+        "@com_github_ethereum_go_ethereum//accounts/abi",
+        "@com_github_ethereum_go_ethereum//common",
+        "@com_github_ethereum_go_ethereum//rpc",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/v2/chain-capabilities/evm",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types/chains/evm",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types/query/primitives",
+        "@com_github_smartcontractkit_chainlink_evm_gethwrappers//keystone/generated/forwarder",
+        "@com_github_smartcontractkit_chainlink_protos_cre_go//sdk",
+    ],
+)
+
+go_test(
+    name = "contracts_test",
+    srcs = ["cre_forwarder_test.go"],
+    deps = [
+        ":contracts",
+        "//chain_capabilities/evm/test",
+        "@com_github_ethereum_go_ethereum//accounts/abi",
+        "@com_github_ethereum_go_ethereum//common",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/v2/chain-capabilities/evm",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types/chains/evm",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types/mocks",
+        "@com_github_smartcontractkit_chainlink_evm_gethwrappers//keystone/generated/forwarder",
+        "@com_github_smartcontractkit_chainlink_protos_cre_go//sdk",
+        "@com_github_stretchr_testify//mock",
+        "@com_github_stretchr_testify//require",
+    ],
+)

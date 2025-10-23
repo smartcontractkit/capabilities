@@ -3,7 +3,7 @@ go 1.25.3
 use (
 	.
 	./capabilitywatcher
-	// ./chain_capabilities/evm
+	./chain_capabilities/evm
 	./cron
 	./consensus
     ./kvstore

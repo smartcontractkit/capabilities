@@ -1,0 +1,14 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "test",
+    srcs = ["test_utils.go"],
+    importpath = "github.com/smartcontractkit/capabilities/chain_capabilities/evm/test",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//chain_capabilities/evm/metering",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//proto",
+    ],
+)

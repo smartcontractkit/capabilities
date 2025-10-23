@@ -1,0 +1,12 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "mocks",
+    srcs = ["header_provider.go"],
+    importpath = "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/height/mocks",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_smartcontractkit_chainlink_common//pkg/types/chains/evm",
+        "@com_github_stretchr_testify//mock",
+    ],
+)

@@ -1,0 +1,23 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "metering",
+    srcs = ["metering.go"],
+    importpath = "github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+    ],
+)
+
+go_test(
+    name = "metering_test",
+    srcs = ["metering_test.go"],
+    embed = [":metering"],
+    deps = [
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_stretchr_testify//assert",
+    ],
+)

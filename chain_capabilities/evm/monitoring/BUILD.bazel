@@ -1,0 +1,49 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "monitoring",
+    srcs = [
+        "generate.go",
+        "log_trigger.pb.go",
+        "messages.go",
+        "metrics.go",
+        "processor.go",
+        "read_actions.pb.go",
+        "write_report.pb.go",
+    ],
+    importpath = "github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//libs/monitoring",
+        "@com_github_ethereum_go_ethereum//common",
+        "@com_github_smartcontractkit_chainlink_common//pkg/beholder",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/v2/chain-capabilities/evm",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types/chains/evm",
+        "@com_github_smartcontractkit_chainlink_protos_cre_go//sdk",
+        "@com_github_smartcontractkit_chainlink_protos_cre_go//values/pb",
+        "@io_opentelemetry_go_otel//attribute",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//reflect/protoreflect",
+        "@org_golang_google_protobuf//runtime/protoimpl",
+    ],
+)
+
+go_test(
+    name = "monitoring_test",
+    srcs = ["monitoring_test.go"],
+    deps = [
+        ":monitoring",
+        "//chain_capabilities/evm/internal/monitoring/mocks",
+        "//libs/monitoring",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//mock",
+        "@com_github_stretchr_testify//require",
+        "@io_opentelemetry_go_otel//attribute",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//reflect/protoreflect",
+        "@org_golang_google_protobuf//types/known/emptypb",
+    ],
+)

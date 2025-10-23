@@ -1,0 +1,30 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "height",
+    srcs = ["provider.go"],
+    importpath = "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/height",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_ethereum_go_ethereum//rpc",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_smartcontractkit_chainlink_common//pkg/services",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types/chains/evm",
+    ],
+)
+
+go_test(
+    name = "height_test",
+    srcs = ["provider_test.go"],
+    embed = [":height"],
+    deps = [
+        "//chain_capabilities/evm/consensus/height/mocks",
+        "@com_github_ethereum_go_ethereum//rpc",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types/chains/evm",
+        "@com_github_smartcontractkit_chainlink_common//pkg/utils/tests",
+        "@com_github_stretchr_testify//mock",
+        "@com_github_stretchr_testify//require",
+        "@org_uber_go_zap//zapcore",
+    ],
+)

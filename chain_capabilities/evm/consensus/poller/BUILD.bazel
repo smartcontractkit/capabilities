@@ -1,0 +1,28 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "poller",
+    srcs = ["poller.go"],
+    importpath = "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/poller",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//chain_capabilities/evm/consensus/types",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_smartcontractkit_chainlink_common//pkg/services",
+        "@com_github_smartcontractkit_chainlink_common//pkg/utils/list",
+    ],
+)
+
+go_test(
+    name = "poller_test",
+    srcs = ["poller_test.go"],
+    embed = [":poller"],
+    deps = [
+        "//chain_capabilities/evm/consensus/types",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_smartcontractkit_chainlink_common//pkg/utils/tests",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+        "@org_uber_go_zap//zapcore",
+    ],
+)

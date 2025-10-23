@@ -1,0 +1,15 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "gen_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types/gen",
+    visibility = ["//visibility:private"],
+    deps = ["@com_github_smartcontractkit_chainlink_protos_cre_go//installer/pkg"],
+)
+
+go_binary(
+    name = "gen",
+    embed = [":gen_lib"],
+    visibility = ["//visibility:public"],
+)
