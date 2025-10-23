@@ -1,0 +1,33 @@
+name: Bazel
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+
+
+env:
+  GOPRIVATE: github.com/smartcontractkit/capabilities
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Cache Bazel
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            ~/.cache/bazel/_bazel_root
+          key: bazel-cache-${{ runner.os }}-${{ hashFiles('**/.bazelversion', '**/MODULE.bazel', '**/BUILD.bazel') }}
+          restore-keys: |
+            bazel-cache-${{ runner.os }}-
+      - run: bazel build //...
