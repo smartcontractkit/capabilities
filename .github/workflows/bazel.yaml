@@ -1,5 +1,8 @@
 name: Bazel
 
+permissions:
+  contents: read
+
 on:
   push:
     branches:
@@ -7,7 +10,6 @@ on:
   pull_request:
   merge_group:
   workflow_dispatch:
-
 
 env:
   GOPRIVATE: github.com/smartcontractkit/capabilities
