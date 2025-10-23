@@ -1,0 +1,63 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "trigger",
+    srcs = [
+        "config.go",
+        "connector_handler.go",
+        "gateway_metadata_publisher.go",
+        "metrics.go",
+        "request_cache.go",
+        "trigger.go",
+        "workflow.go",
+    ],
+    importpath = "github.com/smartcontractkit/capabilities/http_trigger/trigger",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_smartcontractkit_chainlink_common//pkg/beholder",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/v2/triggers/http",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/v2/triggers/http/server",
+        "@com_github_smartcontractkit_chainlink_common//pkg/custmsg",
+        "@com_github_smartcontractkit_chainlink_common//pkg/jsonrpc2",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_smartcontractkit_chainlink_common//pkg/ratelimit",
+        "@com_github_smartcontractkit_chainlink_common//pkg/services",
+        "@com_github_smartcontractkit_chainlink_common//pkg/services/orgresolver",
+        "@com_github_smartcontractkit_chainlink_common//pkg/settings/limits",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types/core",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types/gateway",
+        "@com_github_smartcontractkit_chainlink_common//pkg/workflows",
+        "@com_github_smartcontractkit_chainlink_common//pkg/workflows/events",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel_metric//:metric",
+    ],
+)
+
+go_test(
+    name = "trigger_test",
+    srcs = [
+        "config_test.go",
+        "connector_handler_test.go",
+        "gateway_metadata_publisher_test.go",
+        "metrics_test.go",
+        "request_cache_test.go",
+        "trigger_test.go",
+        "workflow_test.go",
+    ],
+    embed = [":trigger"],
+    deps = [
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/v2/triggers/http",
+        "@com_github_smartcontractkit_chainlink_common//pkg/jsonrpc2",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_smartcontractkit_chainlink_common//pkg/ratelimit",
+        "@com_github_smartcontractkit_chainlink_common//pkg/settings/limits",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types/core",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types/core/mocks",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types/gateway",
+        "@com_github_smartcontractkit_chainlink_common//pkg/workflows",
+        "@com_github_stretchr_testify//mock",
+        "@com_github_stretchr_testify//require",
+    ],
+)

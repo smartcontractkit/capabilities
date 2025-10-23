@@ -1,0 +1,20 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "http_action_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/smartcontractkit/capabilities/http_action",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//http_action/action",
+        "//libs/loopserver",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/v2/actions/http/server",
+        "@com_github_smartcontractkit_chainlink_common//pkg/loop",
+    ],
+)
+
+go_binary(
+    name = "http_action",
+    embed = [":http_action_lib"],
+    visibility = ["//visibility:public"],
+)

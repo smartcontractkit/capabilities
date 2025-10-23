@@ -1,0 +1,20 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "http_trigger_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/smartcontractkit/capabilities/http_trigger",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//http_trigger/trigger",
+        "//libs/loopserver",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/v2/triggers/http/server",
+        "@com_github_smartcontractkit_chainlink_common//pkg/loop",
+    ],
+)
+
+go_binary(
+    name = "http_trigger",
+    embed = [":http_trigger_lib"],
+    visibility = ["//visibility:public"],
+)

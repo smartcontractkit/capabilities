@@ -1,0 +1,31 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "validate",
+    srcs = ["validator.go"],
+    importpath = "github.com/smartcontractkit/capabilities/http_action/validate",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/v2/actions/http",
+        "@com_github_smartcontractkit_chainlink_common//pkg/config",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_smartcontractkit_chainlink_common//pkg/settings/cresettings",
+        "@com_github_smartcontractkit_chainlink_common//pkg/settings/limits",
+        "@org_golang_google_protobuf//types/known/durationpb",
+    ],
+)
+
+go_test(
+    name = "validate_test",
+    srcs = ["validator_test.go"],
+    embed = [":validate"],
+    deps = [
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/v2/actions/http",
+        "@com_github_smartcontractkit_chainlink_common//pkg/contexts",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_smartcontractkit_chainlink_common//pkg/settings/cresettings",
+        "@com_github_smartcontractkit_chainlink_common//pkg/settings/limits",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//types/known/durationpb",
+    ],
+)

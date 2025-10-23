@@ -1,0 +1,44 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "common",
+    srcs = [
+        "errors.go",
+        "metrics.go",
+        "proxy.go",
+        "service_config.go",
+        "util.go",
+    ],
+    importpath = "github.com/smartcontractkit/capabilities/http_action/common",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_doyensec_safeurl//:safeurl",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_smartcontractkit_chainlink_common//pkg/beholder",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/v2/actions/http",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_smartcontractkit_chainlink_common//pkg/ratelimit",
+        "@com_github_smartcontractkit_chainlink_common//pkg/services",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel_metric//:metric",
+    ],
+)
+
+go_test(
+    name = "common_test",
+    srcs = [
+        "metrics_test.go",
+        "proxy_test.go",
+    ],
+    embed = [":common"],
+    deps = [
+        "//http_action/validate",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/v2/actions/http",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_smartcontractkit_chainlink_common//pkg/settings/limits",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//types/known/durationpb",
+    ],
+)

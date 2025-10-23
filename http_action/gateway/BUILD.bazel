@@ -1,0 +1,41 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "gateway",
+    srcs = ["gateway_outbound_proxy.go"],
+    importpath = "github.com/smartcontractkit/capabilities/http_action/gateway",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//http_action/common",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/v2/actions/http",
+        "@com_github_smartcontractkit_chainlink_common//pkg/jsonrpc2",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_smartcontractkit_chainlink_common//pkg/ratelimit",
+        "@com_github_smartcontractkit_chainlink_common//pkg/services",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types/core",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types/gateway",
+        "@com_stathat_c_consistent//:consistent",
+    ],
+)
+
+go_test(
+    name = "gateway_test",
+    srcs = ["gateway_outbound_proxy_test.go"],
+    embed = [":gateway"],
+    deps = [
+        "//http_action/common",
+        "//http_action/validate",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/v2/actions/http",
+        "@com_github_smartcontractkit_chainlink_common//pkg/jsonrpc2",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_smartcontractkit_chainlink_common//pkg/ratelimit",
+        "@com_github_smartcontractkit_chainlink_common//pkg/settings/limits",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types/core",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types/gateway",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//types/known/durationpb",
+    ],
+)
