@@ -96,23 +96,6 @@ const memberTemplate = `{
     "Name": "test_node_%d"
 }`
 
-const triggerServiceConfigTemplate = `
-{
-	"incomingRateLimiter": {
-		"globalBurst": 10,
-		"globalRPS": 50,
-		"perSenderBurst": 10,
-		"perSenderRPS": 10
-	},
-	"outgoingRateLimiter": {
-		"globalBurst": 10,
-		"globalRPS": 50,
-		"perSenderBurst": 10,
-		"perSenderRPS": 10
-	}
-}
-`
-
 const workflowID = "0x217ca1cb7b52136b3baedb2a13e4609fa86439b87a1bc48fea6d95f19444cf72"
 
 // Workflow reference constants for testing
@@ -414,7 +397,7 @@ func newTriggerHTTPCapability(ctx context.Context, t *testing.T, nodeURL string,
 	triggerCap := triggercap.NewService(lggr, limits.Factory{Logger: lggr})
 	kvStore := newTestKeyValueStore()
 	err := triggerCap.Initialise(ctx, core.StandardCapabilitiesDependencies{
-		Config:           triggerServiceConfigTemplate,
+		Config:           "",
 		Store:            kvStore,
 		GatewayConnector: gc,
 	})

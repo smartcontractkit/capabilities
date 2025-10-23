@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-
-	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 )
 
 type ProxyMode int
@@ -38,18 +36,8 @@ func ParseProxyMode(s string) (ProxyMode, error) {
 	}
 }
 
-const (
-	defaultGlobalRPS      = 100.0
-	defaultGlobalBurst    = 100
-	defaultPerSenderRPS   = 100.0
-	defaultPerSenderBurst = 100
-)
-
 // ServiceConfig defines the configuration for the HTTP Actions service.
 type ServiceConfig struct {
-	// IncomingRateLimiter configuration for messages incoming to this node from the gateway.
-	// The sender is a Gateway node, which is identified by the Gateway ID.
-	IncomingRateLimiter ratelimit.RateLimiterConfig `json:"incomingRateLimiter"`
 	// ProxyMode is the mode of the outbound proxy. can be "gateway", "direct"
 	ProxyMode ProxyMode `json:"proxyMode"`
 	// GatewayConnectionConfig defines the configuration for connecting to a gateway.
@@ -88,10 +76,9 @@ type HTTPClientConfig struct {
 // The ProxyMode is parsed from string to ProxyMode.
 func (cfg *ServiceConfig) UnmarshalJSON(data []byte) error {
 	type tempServiceConfig struct {
-		IncomingRateLimiter     ratelimit.RateLimiterConfig `json:"incomingRateLimiter"`
-		ProxyMode               string                      `json:"proxyMode"`
-		GatewayConnectionConfig GatewayConnectionConfig     `json:"gatewayConnection"`
-		HTTPClientConfig        HTTPClientConfig            `json:"httpClient"`
+		ProxyMode               string                  `json:"proxyMode"`
+		GatewayConnectionConfig GatewayConnectionConfig `json:"gatewayConnection"`
+		HTTPClientConfig        HTTPClientConfig        `json:"httpClient"`
 	}
 
 	var temp tempServiceConfig
@@ -104,7 +91,6 @@ func (cfg *ServiceConfig) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("failed to parse proxyMode: %w", err)
 	}
 
-	cfg.IncomingRateLimiter = temp.IncomingRateLimiter
 	cfg.ProxyMode = proxyMode
 	cfg.GatewayConnectionConfig = temp.GatewayConnectionConfig
 	cfg.HTTPClientConfig = temp.HTTPClientConfig
@@ -116,14 +102,12 @@ func (cfg *ServiceConfig) UnmarshalJSON(data []byte) error {
 // The ProxyMode is serialized as string.
 func (cfg ServiceConfig) MarshalJSON() ([]byte, error) {
 	type tempServiceConfig struct {
-		IncomingRateLimiter     ratelimit.RateLimiterConfig `json:"incomingRateLimiter"`
-		ProxyMode               string                      `json:"proxyMode"`
-		GatewayConnectionConfig GatewayConnectionConfig     `json:"gatewayConnection"`
-		HTTPClientConfig        HTTPClientConfig            `json:"httpClient"`
+		ProxyMode               string                  `json:"proxyMode"`
+		GatewayConnectionConfig GatewayConnectionConfig `json:"gatewayConnection"`
+		HTTPClientConfig        HTTPClientConfig        `json:"httpClient"`
 	}
 
 	temp := tempServiceConfig{
-		IncomingRateLimiter:     cfg.IncomingRateLimiter,
 		ProxyMode:               cfg.ProxyMode.String(),
 		GatewayConnectionConfig: cfg.GatewayConnectionConfig,
 		HTTPClientConfig:        cfg.HTTPClientConfig,
@@ -133,25 +117,10 @@ func (cfg ServiceConfig) MarshalJSON() ([]byte, error) {
 }
 
 func (cfg *ServiceConfig) ApplyDefault() {
-	cfg.IncomingRateLimiter = ratelimit.RateLimiterConfig{
-		GlobalRPS:      getWithDefault(cfg.IncomingRateLimiter.GlobalRPS, defaultGlobalRPS),
-		GlobalBurst:    getWithDefault(cfg.IncomingRateLimiter.GlobalBurst, defaultGlobalBurst),
-		PerSenderRPS:   getWithDefault(cfg.IncomingRateLimiter.PerSenderRPS, defaultPerSenderRPS),
-		PerSenderBurst: getWithDefault(cfg.IncomingRateLimiter.PerSenderBurst, defaultPerSenderBurst),
-	}
-
 	if len(cfg.HTTPClientConfig.AllowedPorts) == 0 {
-		cfg.HTTPClientConfig.AllowedPorts = []int{80, 443}
+		cfg.HTTPClientConfig.AllowedPorts = []int{443}
 	}
 	if len(cfg.HTTPClientConfig.AllowedSchemes) == 0 {
-		cfg.HTTPClientConfig.AllowedSchemes = []string{"http", "https"}
+		cfg.HTTPClientConfig.AllowedSchemes = []string{"https"}
 	}
-}
-
-func getWithDefault[T comparable](cfgVal, defaultVal T) T {
-	var zero T
-	if cfgVal != zero {
-		return cfgVal
-	}
-	return defaultVal
 }

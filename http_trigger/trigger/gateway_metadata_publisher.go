@@ -11,7 +11,6 @@ import (
 
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
@@ -20,29 +19,26 @@ import (
 var _ GatewayMetadataPublisher = (*gatewayMetadataPublisher)(nil)
 
 type gatewayMetadataPublisher struct {
-	lggr                logger.Logger
-	gc                  core.GatewayConnector
-	outgoingRateLimiter *ratelimit.RateLimiter
-	workflowStore       *workflowStore
-	cfg                 ServiceConfig
-	metrics             *Metrics
+	lggr          logger.Logger
+	gc            core.GatewayConnector
+	workflowStore *workflowStore
+	cfg           ServiceConfig
+	metrics       *Metrics
 }
 
 func NewGatewayMetadataPublisher(
 	lggr logger.Logger,
 	gc core.GatewayConnector,
-	outgoingRateLimiter *ratelimit.RateLimiter,
 	workflowStore *workflowStore,
 	cfg ServiceConfig,
 	metrics *Metrics,
 ) *gatewayMetadataPublisher {
 	return &gatewayMetadataPublisher{
-		lggr:                lggr,
-		gc:                  gc,
-		outgoingRateLimiter: outgoingRateLimiter,
-		workflowStore:       workflowStore,
-		cfg:                 cfg,
-		metrics:             metrics,
+		lggr:          lggr,
+		gc:            gc,
+		workflowStore: workflowStore,
+		cfg:           cfg,
+		metrics:       metrics,
 	}
 }
 
@@ -175,13 +171,6 @@ func (h *gatewayMetadataPublisher) SendWorkflowMetadata(ctx context.Context, gat
 }
 
 func (h *gatewayMetadataPublisher) sendResponse(ctx context.Context, gatewayID string, resp *jsonrpc.Response[json.RawMessage], methodName string) error {
-	workflowAllow, globalAllow := h.outgoingRateLimiter.AllowVerbose(gatewayID)
-	if !workflowAllow {
-		return errors.New(errorOutgoingRatelimitSender)
-	}
-	if !globalAllow {
-		return errors.New(errorOutgoingRatelimitGlobal)
-	}
 	h.metrics.IncrementGatewayRequestCount(ctx, gatewayID, methodName, h.lggr)
 	err := h.gc.SendToGateway(ctx, gatewayID, resp)
 	if err != nil {

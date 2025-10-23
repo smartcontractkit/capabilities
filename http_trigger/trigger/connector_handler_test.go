@@ -14,7 +14,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
@@ -159,15 +158,6 @@ func gatewayRequestByTagWithoutPrefix(t *testing.T, method string, workflowOwner
 	}, key
 }
 
-func rateLimiterConfig() ratelimit.RateLimiterConfig {
-	return ratelimit.RateLimiterConfig{
-		GlobalRPS:      100.0,
-		GlobalBurst:    100,
-		PerSenderRPS:   100.0,
-		PerSenderBurst: 100,
-	}
-}
-
 func newMetrics(t *testing.T) *Metrics {
 	m, err := NewMetrics()
 	require.NoError(t, err)
@@ -181,17 +171,12 @@ func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayCon
 		MetadataBatchSize:            10,
 		MaxAuthorizedKeysPerWorkflow: 3,
 	}
-	irl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
-	require.NoError(t, err)
-	orl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
-	require.NoError(t, err)
 	store := newWorkflowStore(lggr)
 	metrics, err := NewMetrics()
 	require.NoError(t, err)
 	metadataPublisher := NewGatewayMetadataPublisher(
 		lggr,
 		mockConnector,
-		orl,
 		store,
 		cfg,
 		metrics,
@@ -203,8 +188,6 @@ func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayCon
 		lggr,
 		mockConnector,
 		cfg,
-		orl,
-		irl,
 		store,
 		metadataPublisher,
 		requestCache,
@@ -588,17 +571,12 @@ func TestRegisterWorkflow_TooManyAuthorizedKeys(t *testing.T) {
 		MetadataBatchSize:            10,
 		MaxAuthorizedKeysPerWorkflow: 2, // Set limit to 2 keys for testing
 	}
-	irl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
-	require.NoError(t, err)
-	orl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
-	require.NoError(t, err)
 	store := newWorkflowStore(lggr)
 	metrics, err := NewMetrics()
 	require.NoError(t, err)
 	metadataPublisher := NewGatewayMetadataPublisher(
 		lggr,
 		mockConnector,
-		orl,
 		store,
 		cfg,
 		metrics,
@@ -609,8 +587,6 @@ func TestRegisterWorkflow_TooManyAuthorizedKeys(t *testing.T) {
 		lggr,
 		mockConnector,
 		cfg,
-		orl,
-		irl,
 		store,
 		metadataPublisher,
 		requestCache,
@@ -712,17 +688,12 @@ func TestConnectorHandler_Start_HealthReport_Ready_Name_Close(t *testing.T) {
 	lggr := logger.Test(t)
 	mockConnector := &mockGatewayConnector{}
 	cfg := ServiceConfig{}
-	irl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
-	require.NoError(t, err)
-	orl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
-	require.NoError(t, err)
 	store := newWorkflowStore(lggr)
 	metrics, err := NewMetrics()
 	require.NoError(t, err)
 	metadataPublisher := NewGatewayMetadataPublisher(
 		lggr,
 		mockConnector,
-		orl,
 		store,
 		cfg,
 		metrics,
@@ -733,8 +704,6 @@ func TestConnectorHandler_Start_HealthReport_Ready_Name_Close(t *testing.T) {
 		lggr,
 		mockConnector,
 		cfg,
-		orl,
-		irl,
 		store,
 		metadataPublisher,
 		requestCache,
@@ -878,17 +847,12 @@ func TestHandleGatewayMessage_PullAuthMetadata_EmptyWorkflows(t *testing.T) {
 	// Create handler without registering any workflows
 	mockConnector := &mockGatewayConnector{}
 	cfg := ServiceConfig{}
-	irl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
-	require.NoError(t, err)
-	orl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
-	require.NoError(t, err)
 	store := newWorkflowStore(lggr)
 	metrics, err := NewMetrics()
 	require.NoError(t, err)
 	metadataPublisher := NewGatewayMetadataPublisher(
 		lggr,
 		mockConnector,
-		orl,
 		store,
 		cfg,
 		metrics,
@@ -899,8 +863,6 @@ func TestHandleGatewayMessage_PullAuthMetadata_EmptyWorkflows(t *testing.T) {
 		lggr,
 		mockConnector,
 		cfg,
-		orl,
-		irl,
 		store,
 		metadataPublisher,
 		requestCache,
@@ -975,17 +937,12 @@ func TestConnectorHandler_StartRequestCacheCleanup(t *testing.T) {
 	lggr := logger.Test(t)
 	mockConnector := &mockGatewayConnector{}
 	cfg := ServiceConfig{}
-	irl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
-	require.NoError(t, err)
-	orl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
-	require.NoError(t, err)
 	store := newWorkflowStore(lggr)
 	metrics, err := NewMetrics()
 	require.NoError(t, err)
 	metadataPublisher := NewGatewayMetadataPublisher(
 		lggr,
 		mockConnector,
-		orl,
 		store,
 		cfg,
 		metrics,
@@ -999,8 +956,6 @@ func TestConnectorHandler_StartRequestCacheCleanup(t *testing.T) {
 		lggr,
 		mockConnector,
 		cfg,
-		orl,
-		irl,
 		store,
 		metadataPublisher,
 		requestCache,

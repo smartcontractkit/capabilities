@@ -16,7 +16,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/custmsg"
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/orgresolver"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
@@ -26,12 +25,8 @@ import (
 )
 
 const (
-	HandlerName                  = "HTTPTriggerHandler"
-	errorOutgoingRatelimitGlobal = "global limit of outgoing gateways requests has been exceeded"
-	errorOutgoingRatelimitSender = "per-sender limit of outgoing gateways requests has been exceeded"
-	errorIncomingRatelimitGlobal = "message from gateway exceeded global rate limit"
-	errorIncomingRatelimitSender = "message from gateway exceeded per sender rate limit"
-	ecdsaPubKeyHexLen            = 42 // 2 (0x prefix) + 40 (hex digits)
+	HandlerName       = "HTTPTriggerHandler"
+	ecdsaPubKeyHexLen = 42 // 2 (0x prefix) + 40 (hex digits)
 )
 
 var _ core.GatewayConnectorHandler = &connectorHandler{}
@@ -43,8 +38,6 @@ type connectorHandler struct {
 	config                   ServiceConfig
 	requestCache             *requestCache
 	workflowStore            *workflowStore
-	incomingRateLimiter      *ratelimit.RateLimiter
-	outgoingRateLimiter      *ratelimit.RateLimiter
 	gatewayMetadataPublisher GatewayMetadataPublisher
 	metrics                  *Metrics
 	wg                       sync.WaitGroup
@@ -53,14 +46,11 @@ type connectorHandler struct {
 }
 
 func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config ServiceConfig,
-	outgoingRateLimiter *ratelimit.RateLimiter, incomingRateLimiter *ratelimit.RateLimiter,
 	workflowStore *workflowStore, gatewayMetadataPublisher GatewayMetadataPublisher, requestCache *requestCache, metrics *Metrics, orgResolver orgresolver.OrgResolver) (*connectorHandler, error) {
 	return &connectorHandler{
 		lggr:                     logger.Named(lggr, HandlerName),
 		gatewayConnector:         gc,
 		config:                   config,
-		outgoingRateLimiter:      outgoingRateLimiter,
-		incomingRateLimiter:      incomingRateLimiter,
 		workflowStore:            workflowStore,
 		gatewayMetadataPublisher: gatewayMetadataPublisher,
 		requestCache:             requestCache,
@@ -202,9 +192,6 @@ func (h *connectorHandler) HandleGatewayMessage(ctx context.Context, gatewayID s
 	if req == nil {
 		return errors.New("request cannot be nil")
 	}
-	if !h.checkIncomingRateLimit(ctx, gatewayID) {
-		return nil
-	}
 
 	switch req.Method {
 	case gateway_common.MethodWorkflowExecute:
@@ -230,21 +217,6 @@ func (h *connectorHandler) HandleGatewayMessage(ctx context.Context, gatewayID s
 	return nil
 }
 
-func (h *connectorHandler) checkIncomingRateLimit(ctx context.Context, gatewayID string) bool {
-	senderAllow, globalAllow := h.incomingRateLimiter.AllowVerbose(gatewayID)
-	if !senderAllow {
-		h.lggr.Errorw(errorIncomingRatelimitSender, "gatewayID", gatewayID)
-		h.metrics.IncrementGatewayNodeThrottled(ctx, gatewayID, h.lggr)
-		return false
-	}
-	if !globalAllow {
-		h.lggr.Errorw(errorIncomingRatelimitGlobal, "gatewayID", gatewayID)
-		h.metrics.IncrementGatewayGlobalThrottled(ctx, h.lggr)
-		return false
-	}
-	return true
-}
-
 func (h *connectorHandler) sendErrorResponse(ctx context.Context, gatewayID string, reqID string, code int64, message string) {
 	resp := &jsonrpc.Response[json.RawMessage]{
 		Version: "2.0",
@@ -259,15 +231,6 @@ func (h *connectorHandler) sendErrorResponse(ctx context.Context, gatewayID stri
 }
 
 func (h *connectorHandler) sendResponse(ctx context.Context, gatewayID string, resp *jsonrpc.Response[json.RawMessage]) {
-	senderAllow, globalAllow := h.outgoingRateLimiter.AllowVerbose(gatewayID)
-	if !senderAllow {
-		h.lggr.Errorw(errorOutgoingRatelimitSender, "gatewayID", gatewayID, "requestID", resp.ID)
-		return
-	}
-	if !globalAllow {
-		h.lggr.Errorw(errorOutgoingRatelimitGlobal, "gatewayID", gatewayID, "requestID", resp.ID)
-		return
-	}
 	h.metrics.IncrementGatewayRequestCount(ctx, gatewayID, gateway_common.MethodWorkflowExecute, h.lggr)
 	err := h.gatewayConnector.SendToGateway(ctx, gatewayID, resp)
 	if err != nil {

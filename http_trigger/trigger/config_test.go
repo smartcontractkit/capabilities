@@ -54,9 +54,4 @@ func TestServiceConfig_AllDefaults(t *testing.T) {
 	require.Equal(t, uint16(defaultMaxAuthorizedKeysPerWorkflow), appliedCfg.MaxAuthorizedKeysPerWorkflow)
 	require.Equal(t, uint32(defaultRequestCacheTTL), appliedCfg.RequestCacheTTL)
 
-	// Verify rate limiter defaults
-	require.Equal(t, float64(defaultGlobalRPS), appliedCfg.IncomingRateLimiter.GlobalRPS)
-	require.Equal(t, int(defaultGlobalBurst), appliedCfg.IncomingRateLimiter.GlobalBurst)
-	require.Equal(t, float64(defaultPerSenderRPS), appliedCfg.IncomingRateLimiter.PerSenderRPS)
-	require.Equal(t, int(defaultPerSenderBurst), appliedCfg.IncomingRateLimiter.PerSenderBurst)
 }
