@@ -1,5 +1,5 @@
 # https://registry.bazel.build/modules/rules_go
-bazel_dep(name = "rules_go", version = "0.57.0")
+bazel_dep(name = "rules_go", version = "0.57.0", repo_name = "rules_go")
 
 # https://github.com/bazel-contrib/rules_go/blob/v0.57.0/go/private/extensions.bzl
 go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
@@ -7,10 +7,9 @@ go_sdk.download(version = "1.25.3")
 
 # https://registry.bazel.build/modules/protobuf
 bazel_dep(name = "protobuf", version = "31.1", repo_name = "com_google_protobuf")
-bazel_dep(name = "rules_proto", version = "7.1.0")
 
-# https://registry.bazel.build/modules/gazelle
-bazel_dep(name = "gazelle", version = "0.45.0")
+# https://registry.bazel.build/modules/rules_proto
+bazel_dep(name = "rules_proto", version = "7.1.0")
 bazel_dep(name = "toolchains_protoc", version = "0.5.0")
 
 # Prevent version skew by matching protoc version to protobuf version, as C++ is the only lang that
@@ -22,12 +21,15 @@ protoc.toolchain(
     version = "v31.1",
 )
 
+# https://registry.bazel.build/modules/gazelle
+bazel_dep(name = "gazelle", version = "0.45.0")
+
 # https://github.com/bazel-contrib/bazel-gazelle/blob/master/extensions.md#go_deps
 go_deps = use_extension("@gazelle//:extensions.bzl", "go_deps")
 go_deps.from_file(go_work = "//:go.work")
 go_deps.gazelle_default_attributes(
     directives = [
-        "gazelle:proto disable",  # Disable global proto generation for external dependencies
+        "gazelle:proto disable",  # Disable proto file generation for external dependencies
     ],
 )
 use_repo(
