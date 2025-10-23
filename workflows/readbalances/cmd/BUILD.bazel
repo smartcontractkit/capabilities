@@ -1,0 +1,23 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "cmd_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/smartcontractkit/capabilities/workflows/readbalances/cmd",
+    visibility = ["//visibility:private"],
+    deps = [
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/actions/readcontract",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/consensus/ocr3/aggregators",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/consensus/ocr3/ocr3cap",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/targets/chainwriter",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/triggers/cron",
+        "@com_github_smartcontractkit_chainlink_common//pkg/workflows/sdk",
+        "@com_github_smartcontractkit_chainlink_common//pkg/workflows/wasm",
+    ],
+)
+
+go_binary(
+    name = "cmd",
+    embed = [":cmd_lib"],
+    visibility = ["//visibility:public"],
+)

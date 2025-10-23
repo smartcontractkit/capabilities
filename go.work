@@ -16,6 +16,6 @@ use (
 	./p2psigner
 	./readcontract
 	./workflowevent
-	// ./workflows
-	// ./workflows/readbalancesgen/cmd
+	./workflows
+	./workflows/readbalancesgen/cmd
 )
