@@ -27,7 +27,8 @@ jobs:
           path: |
             ~/.cache/bazel
             ~/.cache/bazel/_bazel_root
-          key: bazel-cache-${{ runner.os }}-${{ hashFiles('**/.bazelversion', '**/MODULE.bazel', '**/BUILD.bazel') }}
+          key: bazel-cache-${{ runner.os }}-${{ hashFiles('**/.bazelversion', '**/MODULE.bazel', '**/BUILD.bazel') }}-${{ github.ref }}-
           restore-keys: |
+            bazel-cache-${{ runner.os }}-${{ hashFiles('**/.bazelversion', '**/MODULE.bazel', '**/BUILD.bazel') }}-
             bazel-cache-${{ runner.os }}-
       - run: bazel build //...
