@@ -1,0 +1,50 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "action",
+    srcs = [
+        "read_contract_action.go",
+        "service_cache.go",
+    ],
+    importpath = "github.com/smartcontractkit/capabilities/readcontract/action",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_jonboulle_clockwork//:clockwork",
+        "@com_github_prometheus_client_golang//prometheus",
+        "@com_github_prometheus_client_golang//prometheus/promauto",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/actions/readcontract",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_smartcontractkit_chainlink_common//pkg/services",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types/core",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types/query/primitives",
+        "@com_github_smartcontractkit_chainlink_protos_cre_go//values",
+    ],
+)
+
+go_test(
+    name = "action_test",
+    srcs = [
+        "read_contract_action_test.go",
+        "relayer_test.go",
+        "service_cache_test.go",
+    ],
+    deps = [
+        ":action",
+        "//libs/testutils",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_jonboulle_clockwork//:clockwork",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/actions/readcontract",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_smartcontractkit_chainlink_common//pkg/services",
+        "@com_github_smartcontractkit_chainlink_common//pkg/services/servicetest",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types/query/primitives",
+        "@com_github_smartcontractkit_chainlink_protos_cre_go//values",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//mock",
+        "@com_github_stretchr_testify//require",
+    ],
+)

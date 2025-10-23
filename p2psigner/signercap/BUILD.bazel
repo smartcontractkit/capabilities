@@ -1,0 +1,17 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "signercap",
+    srcs = [
+        "action_builders_generated.go",
+        "gen.go",
+        "signer_action_generated.go",
+    ],
+    importpath = "github.com/smartcontractkit/capabilities/p2psigner/signercap",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/cli/cmd",
+        "@com_github_smartcontractkit_chainlink_common//pkg/workflows/sdk",
+    ],
+)

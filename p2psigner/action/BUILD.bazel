@@ -1,0 +1,32 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "action",
+    srcs = ["action.go"],
+    importpath = "github.com/smartcontractkit/capabilities/p2psigner/action",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//p2psigner/signercap",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types/core",
+        "@com_github_smartcontractkit_chainlink_common//pkg/workflows/sdk",
+        "@com_github_smartcontractkit_chainlink_protos_cre_go//values",
+    ],
+)
+
+go_test(
+    name = "action_test",
+    srcs = ["action_test.go"],
+    deps = [
+        ":action",
+        "//libs/testutils",
+        "//p2psigner/signercap",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types/core",
+        "@com_github_smartcontractkit_chainlink_protos_cre_go//values",
+        "@com_github_stretchr_testify//assert",
+        "@com_github_stretchr_testify//require",
+    ],
+)

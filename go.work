@@ -13,8 +13,8 @@ use (
 	// ./integration_tests
 	// ./loadtestwritetarget
 	// ./mock
-	// ./p2psigner
-	// ./readcontract
+	./p2psigner
+	./readcontract
 	// ./workflowevent
 	// ./workflows
 	// ./workflows/readbalancesgen/cmd
