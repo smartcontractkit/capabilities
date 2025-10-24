@@ -314,7 +314,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		}
 		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(transmissionInfo, nil)
 
-		expectedError := "Error getting report emitted log"
+		expectedError := "max retry attempts reached"
 		mockForwarderClient.EXPECT().GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, errors.New(expectedError))
 
 		reportMetadata := createTestReportMetadata()

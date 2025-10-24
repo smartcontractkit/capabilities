@@ -369,7 +369,29 @@ func (thr *TxHashRetriever) GetHash(ctx context.Context) (*evmtypes.Hash, error)
 		return thr.txHash, nil
 	}
 
-	logs, err := thr.keystoneForwarderClient.GetReportProcessedEvents(ctx, thr.transmissionID.Receiver, thr.transmissionID.WorkflowExecutionID, thr.transmissionID.ReportID)
+	// Retry strategy for GetReportProcessedEvents to handle RPC lag
+	strategy := retry.Strategy[[]*evmtypes.Log]{
+		Backoff: &backoff.Backoff{
+			Factor: 2,
+			Max:    2 * time.Second,
+			Min:    100 * time.Millisecond,
+		},
+		MaxRetries: 5,
+	}
+	retryContext, cancelFunc := context.WithTimeout(ctx, 12*time.Second)
+	defer cancelFunc()
+
+	logs, err := strategy.Do(retryContext, thr.lggr, func(ctx context.Context) ([]*evmtypes.Log, error) {
+		retrievedLogs, retrieveErr := thr.keystoneForwarderClient.GetReportProcessedEvents(ctx, thr.transmissionID.Receiver, thr.transmissionID.WorkflowExecutionID, thr.transmissionID.ReportID)
+		if retrieveErr != nil {
+			return nil, retrieveErr
+		}
+		if len(retrievedLogs) == 0 {
+			return nil, errors.New("no logs found yet, retrying")
+		}
+		return retrievedLogs, nil
+	})
+
 	if err != nil {
 		thr.lggr.Debugw(failedToRetrieveTxHashErrorMessage, thr.transmissionID.GetIDPartsForDebugging()...)
 		return nil, errors.Join(err, fmt.Errorf("%s: %w", failedToRetrieveTxHashErrorMessage, err))
