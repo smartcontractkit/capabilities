@@ -174,5 +174,8 @@ func (m *evmConsensusMetrics) RecordRetryQueueSize(ctx context.Context, size int
 }
 
 func (m *evmConsensusMetrics) SetRequestCount(requestCount int) {
+	if requestCount == 0 {
+		return
+	}
 	m.requestCount.Record(context.Background(), int64(requestCount), m.chainAttributes())
 }
