@@ -896,8 +896,8 @@ func TestIntegration_RegisterAndUnregisterLogTrigger(t *testing.T) {
 		}
 		registerAndUnregisterLogTriggerIntegration(t, topicsInput, expectedFilter)
 	})
-
 }
+
 func registerAndUnregisterLogTriggerIntegration(t *testing.T, topicsInput []*evmcappb.TopicValues, expectedFilter evmtypes.LPFilterQuery) {
 	evmService := initMocks(t)
 	evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).
