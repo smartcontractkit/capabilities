@@ -338,6 +338,34 @@ func TestCreateLogRequest(t *testing.T) {
 			},
 		},
 		{
+			name:               "safe confidence, single address and 2 eventSig and empty topics",
+			addresses:          addresses,
+			eventSigs:          [][]byte{eventSig0Example, eventSig0Example},
+			confidence:         evmcappb.ConfidenceLevel_CONFIDENCE_LEVEL_SAFE,
+			expectedConfidence: primitives.Safe,
+			expectedExpressions: []query.Expression{
+				evm.NewAddressFilter(evmtypes.Address(expectedAddress)),
+				query.Or(
+					evm.NewEventSigFilter(evmtypes.Hash(eventSig0Example)),
+					evm.NewEventSigFilter(evmtypes.Hash(eventSig0Example)),
+				),
+			},
+		},
+		{
+			name:               "safe confidence, 2 address and single eventSig and empty topics",
+			addresses:          [][]byte{expectedAddress, expectedAddress},
+			eventSigs:          [][]byte{eventSig0Example},
+			confidence:         evmcappb.ConfidenceLevel_CONFIDENCE_LEVEL_SAFE,
+			expectedConfidence: primitives.Safe,
+			expectedExpressions: []query.Expression{
+				query.Or(
+					evm.NewAddressFilter(evmtypes.Address(expectedAddress)),
+					evm.NewAddressFilter(evmtypes.Address(expectedAddress)),
+				),
+				evm.NewEventSigFilter(evmtypes.Hash(eventSig0Example)),
+			},
+		},
+		{
 			name:               "latest confidence, single address and single eventSig and empty topics",
 			addresses:          addresses,
 			eventSigs:          [][]byte{eventSig0Example},
@@ -360,9 +388,60 @@ func TestCreateLogRequest(t *testing.T) {
 			expectedExpressions: []query.Expression{
 				evm.NewAddressFilter(evmtypes.Address(expectedAddress)),
 				evm.NewEventSigFilter(evmtypes.Hash(eventSig0Example)),
-				*service.makeEventByTopicFilter(1, [][]byte{eventSig0Example}),
-				*service.makeEventByTopicFilter(2, [][]byte{eventSig0Example}),
-				*service.makeEventByTopicFilter(3, [][]byte{eventSig0Example}),
+				*service.makeEventByTopicFilter(1, []evmtypes.Hash{evmtypes.Hash(eventSig0Example)}),
+				*service.makeEventByTopicFilter(2, []evmtypes.Hash{evmtypes.Hash(eventSig0Example)}),
+				*service.makeEventByTopicFilter(3, []evmtypes.Hash{evmtypes.Hash(eventSig0Example)}),
+			},
+		},
+		{
+			name:               "finalized confidence, single address and single eventSig and a topic for 1, 3 (omitting 2)",
+			addresses:          addresses,
+			eventSigs:          [][]byte{eventSig0Example},
+			topics2:            [][]byte{eventSig0Example},
+			topics4:            [][]byte{eventSig0Example},
+			confidence:         evmcappb.ConfidenceLevel_CONFIDENCE_LEVEL_FINALIZED,
+			expectedConfidence: primitives.Finalized,
+			expectedExpressions: []query.Expression{
+				evm.NewAddressFilter(evmtypes.Address(expectedAddress)),
+				evm.NewEventSigFilter(evmtypes.Hash(eventSig0Example)),
+				*service.makeEventByTopicFilter(1, []evmtypes.Hash{evmtypes.Hash(eventSig0Example)}),
+				*service.makeEventByTopicFilter(3, []evmtypes.Hash{evmtypes.Hash(eventSig0Example)}),
+			},
+		},
+		{
+			name:               "finalized confidence, single address and single eventSig and a topic for 2 (multiple topics)",
+			addresses:          addresses,
+			eventSigs:          [][]byte{eventSig0Example},
+			topics2:            [][]byte{eventSig0Example, eventSig0Example},
+			confidence:         evmcappb.ConfidenceLevel_CONFIDENCE_LEVEL_FINALIZED,
+			expectedConfidence: primitives.Finalized,
+			expectedExpressions: []query.Expression{
+				evm.NewAddressFilter(evmtypes.Address(expectedAddress)),
+				evm.NewEventSigFilter(evmtypes.Hash(eventSig0Example)),
+				*service.makeEventByTopicFilter(1, []evmtypes.Hash{evmtypes.Hash(eventSig0Example), evmtypes.Hash(eventSig0Example)}),
+			},
+		},
+		{
+			name:               "safe confidence, multiple address, eventSig and topics 1, 2, 3",
+			addresses:          [][]byte{expectedAddress, expectedAddress},
+			eventSigs:          [][]byte{eventSig0Example, eventSig0Example},
+			topics2:            [][]byte{eventSig0Example, eventSig0Example},
+			topics3:            [][]byte{eventSig0Example, eventSig0Example},
+			topics4:            [][]byte{eventSig0Example, eventSig0Example},
+			confidence:         evmcappb.ConfidenceLevel_CONFIDENCE_LEVEL_SAFE,
+			expectedConfidence: primitives.Safe,
+			expectedExpressions: []query.Expression{
+				query.Or(
+					evm.NewAddressFilter(evmtypes.Address(expectedAddress)),
+					evm.NewAddressFilter(evmtypes.Address(expectedAddress)),
+				),
+				query.Or(
+					evm.NewEventSigFilter(evmtypes.Hash(eventSig0Example)),
+					evm.NewEventSigFilter(evmtypes.Hash(eventSig0Example)),
+				),
+				*service.makeEventByTopicFilter(1, []evmtypes.Hash{evmtypes.Hash(eventSig0Example), evmtypes.Hash(eventSig0Example)}),
+				*service.makeEventByTopicFilter(2, []evmtypes.Hash{evmtypes.Hash(eventSig0Example), evmtypes.Hash(eventSig0Example)}),
+				*service.makeEventByTopicFilter(3, []evmtypes.Hash{evmtypes.Hash(eventSig0Example), evmtypes.Hash(eventSig0Example)}),
 			},
 		},
 	}
@@ -408,22 +487,36 @@ func TestMakeEventByTopicFilter(t *testing.T) {
 	service := &LogTriggerService{}
 	type testCase struct {
 		name            string
-		topics          [][]byte
+		topics          []evmtypes.Hash
+		expected        query.Expression
 		isNilExpression bool
 	}
 	tests := []testCase{
 		{
 			name:            "zero topics",
-			topics:          [][]byte{},
+			topics:          []evmtypes.Hash{},
 			isNilExpression: true,
 		},
 		{
 			name:   "one topic",
-			topics: [][]byte{eventSig0Example},
+			topics: []evmtypes.Hash{evmtypes.Hash(eventSig0Example)},
+			expected: evm.NewEventByTopicFilter(10, []evm.HashedValueComparator{{
+				Values:   []evmtypes.Hash{evmtypes.Hash(eventSig0Example)},
+				Operator: primitives.Eq,
+			}}),
 		},
 		{
 			name:   "two topics",
-			topics: [][]byte{eventSig0Example, eventSig0Example},
+			topics: []evmtypes.Hash{evmtypes.Hash(eventSig0Example), evmtypes.Hash(eventSig0Example)},
+			expected: query.Or(
+				evm.NewEventByTopicFilter(10, []evm.HashedValueComparator{{
+					Values:   []evmtypes.Hash{evmtypes.Hash(eventSig0Example)},
+					Operator: primitives.Eq,
+				}}),
+				evm.NewEventByTopicFilter(10, []evm.HashedValueComparator{{
+					Values:   []evmtypes.Hash{evmtypes.Hash(eventSig0Example)},
+					Operator: primitives.Eq,
+				}})),
 		},
 	}
 	for _, tc := range tests {
@@ -433,12 +526,15 @@ func TestMakeEventByTopicFilter(t *testing.T) {
 				require.Nil(t, expr)
 				return
 			}
-			ebt, ok := expr.Primitive.(*evm.EventByTopic)
-			require.True(t, ok)
-			require.Equal(t, ebt.Topic, uint64(10))
-			require.Len(t, ebt.HashedValueComparers, 1)
-			require.Len(t, ebt.HashedValueComparers[0].Values, len(tc.topics))
-			require.Equal(t, primitives.Eq, ebt.HashedValueComparers[0].Operator)
+			require.NotNil(t, expr)
+			require.Equal(t, tc.expected, *expr)
+			//
+			//ebt, ok := expr.Primitive.(*evm.EventByTopic)
+			//require.True(t, ok)
+			//require.Equal(t, ebt.Topic, uint64(10))
+			//require.Len(t, ebt.HashedValueComparers, 1)
+			//require.Len(t, ebt.HashedValueComparers[0].Values, len(tc.topics))
+			//require.Equal(t, primitives.Eq, ebt.HashedValueComparers[0].Operator)
 		})
 	}
 }

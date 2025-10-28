@@ -577,34 +577,33 @@ func (lts *LogTriggerService) createLogRequest(_ context.Context, addresses []ev
 	}
 
 	for i, t := range [][]evmtypes.Hash{topics2, topics3, topics4} {
-		if len(t) == 0 {
-			continue
-		}
 		// G115: integer overflow conversion uint64 -> int64 (gosec)
 		// nolint:gosec
-		expressions = append(expressions, evm.NewEventByTopicFilter(uint64(i+1), []evm.HashedValueComparator{{
-			Values:   t,
-			Operator: primitives.Eq,
-		}}))
+		topic := uint64(i + 1)
+		topicExpression := lts.makeEventByTopicFilter(topic, t)
+		if topicExpression == nil {
+			continue
+		}
+		expressions = append(expressions, *topicExpression)
 	}
 
 	return expressions, confidenceLevel
 }
 
-// TODO remove
-func (lts *LogTriggerService) makeEventByTopicFilter(topic uint64, topics [][]byte) *query.Expression {
+func (lts *LogTriggerService) makeEventByTopicFilter(topicIndex uint64, topics []evmtypes.Hash) *query.Expression {
 	if len(topics) == 0 {
 		return nil
 	}
-	values := make([]evmtypes.Hash, 0, len(topics))
+	var singleTopicFilters []query.Expression
 	for _, topic := range topics {
-		values = append(values, evmtypes.Hash(topic))
+		tf := evm.NewEventByTopicFilter(topicIndex, []evm.HashedValueComparator{{
+			Values:   []evmtypes.Hash{topic},
+			Operator: primitives.Eq,
+		}})
+		singleTopicFilters = append(singleTopicFilters, tf)
 	}
-	expr := evm.NewEventByTopicFilter(topic, []evm.HashedValueComparator{{
-		Values:   values,
-		Operator: primitives.Eq,
-	}})
-	return &expr
+	orExpression := query.Or(singleTopicFilters...)
+	return &orExpression
 }
 
 func (lts *LogTriggerService) UnregisterLogTrigger(ctx context.Context, triggerID string, meta capabilities.RequestMetadata, _ *evmcappb.FilterLogTriggerRequest) error {
