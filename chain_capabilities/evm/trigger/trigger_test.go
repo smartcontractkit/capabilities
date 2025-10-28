@@ -831,7 +831,6 @@ func TestSendLogsToWorkflows(t *testing.T) {
 }
 
 func TestIntegration_RegisterAndUnregisterLogTrigger(t *testing.T) {
-	//t.Parallel()
 	t.Run("register and unregister log trigger integration", func(t *testing.T) {
 		topicsInput := []*evmcappb.TopicValues{
 			{Values: [][]byte{eventSig0Example}},
