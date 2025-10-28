@@ -1,0 +1,7 @@
+# This file declares the tools/patches directory as a Bazel package
+# and makes the patch files within it available to the rest of the build system.
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "go_ethereum_secp256k1.patch",
+])

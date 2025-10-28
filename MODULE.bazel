@@ -36,6 +36,11 @@ go_deps.gazelle_default_attributes(
         "gazelle:proto disable",  # Disable proto file generation for external dependencies
     ],
 )
+# Override the go_ethereum/crypto/secp256k1 package to use the embedded C sources and headers
+go_deps.module_override(
+    patches = ["//tools/patches:go_ethereum_secp256k1.patch"],
+    path = "github.com/ethereum/go-ethereum",
+)
 use_repo(
     go_deps,
     "com_github_doyensec_safeurl",

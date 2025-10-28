@@ -1,0 +1,16 @@
+--- crypto/secp256k1/BUILD.bazel
++++ crypto/secp256k1/BUILD.bazel
+@@ -10,6 +10,12 @@
+         "scalar_mult_nocgo.go",
+         "secp256.go",
+     ],
++    # Embed C sources and headers. Build fails without them.
++    embedsrcs = glob([
++        "libsecp256k1/src/**/*.c",
++        "libsecp256k1/src/**/*.h",
++        "libsecp256k1/include/*.h",
++    ]),
+     cgo = True,
+     copts = [
+         "-Icrypto/secp256k1/libsecp256k1",
+
