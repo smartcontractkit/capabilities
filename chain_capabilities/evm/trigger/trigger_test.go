@@ -303,6 +303,22 @@ func TestGetTopics(t *testing.T) {
 		require.Equal(t, [][]byte{[]byte("topic3")}, topics3)
 		require.Equal(t, [][]byte{[]byte("topic4")}, topics4)
 	})
+
+	t.Run("eventSigs, topic2 and topic4 provided (no topic3)", func(t *testing.T) {
+		input := &evmcappb.FilterLogTriggerRequest{
+			Topics: []*evmcappb.TopicValues{
+				{Values: [][]byte{[]byte("eventSig1")}},
+				{Values: [][]byte{[]byte("topic2")}},
+				{},
+				{Values: [][]byte{[]byte("topic4")}},
+			},
+		}
+		eventSigs, topics2, topics3, topics4 := service.getTopics(input)
+		require.Equal(t, [][]byte{[]byte("eventSig1")}, eventSigs)
+		require.Equal(t, [][]byte{[]byte("topic2")}, topics2)
+		require.Nil(t, topics3)
+		require.Equal(t, [][]byte{[]byte("topic4")}, topics4)
+	})
 }
 
 func TestCreateLogRequest(t *testing.T) {
@@ -815,8 +831,66 @@ func TestSendLogsToWorkflows(t *testing.T) {
 }
 
 func TestIntegration_RegisterAndUnregisterLogTrigger(t *testing.T) {
+	//t.Parallel()
+	t.Run("register and unregister log trigger integration", func(t *testing.T) {
+		topicsInput := []*evmcappb.TopicValues{
+			{Values: [][]byte{eventSig0Example}},
+		}
+		expectedFilter := evmtypes.LPFilterQuery{
+			Name:      "trigger-integration-evm-log-trigger",
+			Addresses: []evmtypes.Address{evmtypes.Address(expectedAddress)},
+			EventSigs: []evmtypes.Hash{evmtypes.Hash(eventSig0Example)},
+			Topic2:    []evmtypes.Hash{},
+			Topic3:    []evmtypes.Hash{},
+			Topic4:    []evmtypes.Hash{},
+		}
+		registerAndUnregisterLogTriggerIntegration(t, topicsInput, expectedFilter)
+	})
+	t.Run("register and unregister log trigger integration with empty topics 2-4", func(t *testing.T) {
+		topicsInput := []*evmcappb.TopicValues{
+			{Values: [][]byte{eventSig0Example}},
+			{},
+			{},
+			{},
+		}
+		expectedFilter := evmtypes.LPFilterQuery{
+			Name:      "trigger-integration-evm-log-trigger",
+			Addresses: []evmtypes.Address{evmtypes.Address(expectedAddress)},
+			EventSigs: []evmtypes.Hash{evmtypes.Hash(eventSig0Example)},
+			Topic2:    []evmtypes.Hash{},
+			Topic3:    []evmtypes.Hash{},
+			Topic4:    []evmtypes.Hash{},
+		}
+		registerAndUnregisterLogTriggerIntegration(t, topicsInput, expectedFilter)
+	})
+	t.Run("register and unregister log trigger integration with empty topics 2,3", func(t *testing.T) {
+		topicsInput := []*evmcappb.TopicValues{
+			{Values: [][]byte{eventSig0Example}},
+			{},
+			{},
+			{Values: [][]byte{eventSig0Example}},
+		}
+		expectedFilter := evmtypes.LPFilterQuery{
+			Name:      "trigger-integration-evm-log-trigger",
+			Addresses: []evmtypes.Address{evmtypes.Address(expectedAddress)},
+			EventSigs: []evmtypes.Hash{evmtypes.Hash(eventSig0Example)},
+			Topic2:    []evmtypes.Hash{},
+			Topic3:    []evmtypes.Hash{},
+			Topic4:    []evmtypes.Hash{evmtypes.Hash(eventSig0Example)},
+		}
+		registerAndUnregisterLogTriggerIntegration(t, topicsInput, expectedFilter)
+	})
+}
+func registerAndUnregisterLogTriggerIntegration(t *testing.T, topicsInput []*evmcappb.TopicValues, expectedFilter evmtypes.LPFilterQuery) {
 	evmService := initMocks(t)
-	evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
+	evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).
+		Run(func(args mock.Arguments) {
+			filter := args.Get(1)
+			require.NotNil(t, filter, "expected filter to be not nil")
+			filterTyped, ok := filter.(evmtypes.LPFilterQuery)
+			require.True(t, ok, "expected filter to be of type evmtypes.LPFilterQuery")
+			require.Equal(t, expectedFilter, filterTyped, "expected filter to match the provided topics input")
+		}).Return(nil).Once()
 	evmService.On("UnregisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
 
 	// two calls, one for the starting offset and a second one for the next block
@@ -850,7 +924,7 @@ func TestIntegration_RegisterAndUnregisterLogTrigger(t *testing.T) {
 	ctx := t.Context()
 	ch, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{WorkflowID: "wf-id"}, &evmcappb.FilterLogTriggerRequest{
 		Addresses: addresses,
-		Topics:    topicsWithEventSig0,
+		Topics:    topicsInput,
 	})
 	require.NoError(t, err)
 	time.Sleep(10 * time.Millisecond) // let it run a bit more
