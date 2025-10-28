@@ -528,13 +528,6 @@ func TestMakeEventByTopicFilter(t *testing.T) {
 			}
 			require.NotNil(t, expr)
 			require.Equal(t, tc.expected, *expr)
-			//
-			//ebt, ok := expr.Primitive.(*evm.EventByTopic)
-			//require.True(t, ok)
-			//require.Equal(t, ebt.Topic, uint64(10))
-			//require.Len(t, ebt.HashedValueComparers, 1)
-			//require.Len(t, ebt.HashedValueComparers[0].Values, len(tc.topics))
-			//require.Equal(t, primitives.Eq, ebt.HashedValueComparers[0].Operator)
 		})
 	}
 }
