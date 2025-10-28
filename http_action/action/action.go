@@ -119,8 +119,9 @@ func (s *service) SendRequest(ctx context.Context, metadata capabilities.Request
 	validatedInput, err := s.validator.ValidatedRequest(ctx, input)
 	if err != nil {
 		s.metrics.IncrementInputValidationFailures(ctx, s.lggr)
-		return nil, fmt.Errorf("input validation failed for workflow %s (ID: %s, Owner: %s, ExecutionID: %s): %w",
-			metadata.WorkflowName, metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowExecutionID, err)
+		return nil, capabilities.NewRemoteReportableError(
+			fmt.Errorf("input validation failed for workflow %s (ID: %s, Owner: %s, ExecutionID: %s): %w",
+				metadata.WorkflowName, metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowExecutionID, err))
 	}
 
 	response, err := s.client.SendRequest(ctx, metadata, validatedInput, startTime)
@@ -138,7 +139,8 @@ func (s *service) SendRequest(ctx context.Context, metadata capabilities.Request
 	}
 	s.lggr.Debugf("Processed request for workflow %s (ID: %s, Owner: %s, ExecutionID: %s)",
 		metadata.WorkflowName, metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowExecutionID)
-	return &responseAndMetadata, err
+
+	return &responseAndMetadata, nil
 }
 
 // NewOutboundRequestClient creates an OutboundProxy based on the ServiceConfig.ProxyMode
