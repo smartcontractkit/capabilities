@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum/rpc"
+	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
@@ -17,6 +19,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/custmsg"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
+	"github.com/smartcontractkit/chainlink-common/pkg/services/orgresolver"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -25,7 +28,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
-	workflowsevents "github.com/smartcontractkit/chainlink-protos/workflows/go/v2"
+	"github.com/smartcontractkit/chainlink-common/pkg/workflows/events"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 )
@@ -34,15 +37,6 @@ const (
 	SuffixLogTriggerFilterID     = "-evm-log-trigger"
 	defaultSendChannelBufferSize = 1000
 	defaultLimitQueryLogSize     = 1000
-
-	// Metadata keys for trigger execution events
-	KeyTriggerID           = "trigger_id"
-	KeyWorkflowID          = "workflow_id"
-	KeyWorkflowOwner       = "workflow_owner"
-	KeyWorkflowName        = "workflow_name"
-	KeyWorkflowExecutionID = "workflow_execution_id"
-	KeyDonID               = "don_id"
-	KeyDonVersion          = "don_version"
 )
 
 type LogTriggerService struct {
@@ -57,11 +51,13 @@ type LogTriggerService struct {
 	triggers                        LogTriggerStore
 	logTriggerPollInterval          time.Duration
 	logTriggerSendChannelBufferSize uint64
-	// limitAndSort defines the default sorting and limiting for all log queries.
+
 	limitAndSort               query.LimitAndSort
 	filterAddressLimiter       limits.BoundLimiter[int]
 	filterTopicsPerSlotLimiter limits.BoundLimiter[int]
 	eventRateLimit             limits.RateLimiter
+	eventPayloadSizeLimiter    limits.BoundLimiter[commoncfg.Size]
+	orgResolver                orgresolver.OrgResolver // Optional org resolver for fetching organization IDs
 }
 
 // NewLogTriggerService creates a new instance of logTriggerService.
@@ -70,7 +66,8 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 	beholderProcessor beholder.ProtoProcessor, messageBuilder *monitoring.MessageBuilder,
 	logTriggerPollInterval time.Duration,
 	logTriggerSendChannelBufferSize uint64,
-	logTriggerLimitQueryLogSize uint64, limitsFactory limits.Factory) (*LogTriggerService, error) {
+	logTriggerLimitQueryLogSize uint64, limitsFactory limits.Factory,
+	orgResolver orgresolver.OrgResolver) (*LogTriggerService, error) {
 	if logTriggerPollInterval < 0 {
 		return nil, fmt.Errorf("logTriggerPollInterval must be positive, got: %s", logTriggerPollInterval)
 	}
@@ -101,6 +98,10 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 		logTriggerPollInterval:          logTriggerPollInterval,
 		logTriggerSendChannelBufferSize: currentSendChannelBufferSize,
 		limitAndSort:                    limitAndSort,
+		orgResolver:                     orgResolver,
+	}
+	if lts.orgResolver == nil {
+		lts.lggr.Warn("OrgResolver is nil, EVM log trigger capability will not be able to fetch organization ID")
 	}
 	if err := lts.initLimiters(limitsFactory); err != nil {
 		return nil, err
@@ -124,6 +125,10 @@ func (lts *LogTriggerService) initLimiters(limitsFactory limits.Factory) (err er
 		return
 	}
 	lts.eventRateLimit, err = limitsFactory.MakeRateLimiter(cresettings.Default.PerWorkflow.LogTrigger.EventRateLimit)
+	if err != nil {
+		return
+	}
+	lts.eventPayloadSizeLimiter, err = limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.LogTrigger.EventSizeLimit)
 	return
 }
 
@@ -178,29 +183,29 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	ctx = meta.ContextWithCRE(ctx)
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	if triggerID == "" {
-		return nil, fmt.Errorf("no triggerID provided")
+		return nil, capabilities.NewRemoteReportableError(fmt.Errorf("no triggerID provided"))
 	}
 	if _, exists := lts.triggers.Read(triggerID); exists {
-		return nil, fmt.Errorf("triggerID %q is already registered", triggerID)
+		return nil, capabilities.NewRemoteReportableError(fmt.Errorf("triggerID %q is already registered", triggerID))
 	}
 	lenAddrs := len(input.GetAddresses())
 	if lenAddrs == 0 {
-		return nil, fmt.Errorf("no valid addresses provided (at least one address is required)")
+		return nil, capabilities.NewRemoteReportableError(fmt.Errorf("no valid addresses provided (at least one address is required)"))
 	}
 	if err := lts.filterAddressLimiter.Check(ctx, lenAddrs); err != nil {
-		return nil, err
+		return nil, capabilities.NewRemoteReportableError(err)
 	}
 
 	lenTopics := len(input.GetTopics())
 	if lenTopics > 4 {
-		return nil, fmt.Errorf("there can be at most 4 topics provided, got %d instead", lenTopics)
+		return nil, capabilities.NewRemoteReportableError(fmt.Errorf("there can be at most 4 topics provided, got %d instead", lenTopics))
 	}
 	if lenTopics == 0 || len(input.GetTopics()[0].Values) == 0 {
-		return nil, fmt.Errorf("no valid event sig provided (at least one event sig is required in topics)")
+		return nil, capabilities.NewRemoteReportableError(fmt.Errorf("no valid event sig provided (at least one event sig is required in topics)"))
 	}
 	for i, topic := range input.GetTopics() {
 		if err := lts.filterTopicsPerSlotLimiter.Check(ctx, len(topic.Values)); err != nil {
-			return nil, fmt.Errorf("topic %d: %w", i, err)
+			return nil, capabilities.NewRemoteReportableError(fmt.Errorf("topic %d: %w", i, err))
 		}
 	}
 
@@ -209,7 +214,7 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 
 	fromBlock, err := lts.getFinalizedBlockNumber(ctx, triggerID)
 	if err != nil {
-		return nil, err
+		return nil, capabilities.NewRemoteReportableError(err)
 	}
 
 	filterID := lts.generateFilterID(triggerID)
@@ -217,27 +222,27 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 
 	addresses, err := evmservice.ConvertAddressesFromProto(input.GetAddresses())
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert addresses: %w", err)
+		return nil, capabilities.NewRemoteReportableError(fmt.Errorf("failed to convert addresses: %w", err))
 	}
 
 	sigs, err := evmservice.ConvertHashesFromProto(eventSigs)
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert eventSigs: %w", err)
+		return nil, capabilities.NewRemoteReportableError(fmt.Errorf("failed to convert eventSigs: %w", err))
 	}
 
 	t2, err := evmservice.ConvertHashesFromProto(topics2)
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert topics2: %w", err)
+		return nil, capabilities.NewRemoteReportableError(fmt.Errorf("failed to convert topics2: %w", err))
 	}
 
 	t3, err := evmservice.ConvertHashesFromProto(topics3)
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert topics3: %w", err)
+		return nil, capabilities.NewRemoteReportableError(fmt.Errorf("failed to convert topics3: %w", err))
 	}
 
 	t4, err := evmservice.ConvertHashesFromProto(topics4)
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert topics4: %w", err)
+		return nil, capabilities.NewRemoteReportableError(fmt.Errorf("failed to convert topics4: %w", err))
 	}
 
 	filterQuery := evmtypes.LPFilterQuery{
@@ -250,10 +255,10 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	}
 
 	if err = lts.EVMService.RegisterLogTracking(ctx, filterQuery); err != nil {
-		return nil, fmt.Errorf("failed to register log-tracking: '%w' for triggerID: %s, addresses: %v, eventSig: %v, topic2: %v, topic3: %v, topic4: %v",
-			err, triggerID, filterQuery.Addresses, filterQuery.EventSigs, filterQuery.Topic2, filterQuery.Topic3, filterQuery.Topic4)
+		return nil, capabilities.NewRemoteReportableError(fmt.Errorf("failed to register log-tracking: '%w' for triggerID: %s, addresses: %v, eventSig: %v, topic2: %v, topic3: %v, topic4: %v",
+			err, triggerID, filterQuery.Addresses, filterQuery.EventSigs, filterQuery.Topic2, filterQuery.Topic3, filterQuery.Topic4))
 	}
-	expressions, confidence := lts.createLogRequest(ctx, input.GetAddresses(), eventSigs, topics2, topics3, topics4, input.GetConfidence())
+	expressions, confidence := lts.createLogRequest(ctx, addresses, sigs, t2, t3, t4, input.GetConfidence())
 
 	monitoring.EmitInitiated(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerInitiated(telemetryContext, input))
 
@@ -382,9 +387,9 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 			continue
 		}
 
-		logID := lts.generateLogIdentifier(log)
-		_, alreadySent := trigger.unfinalizedSentEventIDs[logID]
-		lts.lggr.Debugf("Working with logId: %s, alreadySent: %t", logID, alreadySent)
+		eventID := lts.generateLogIdentifier(log)
+		_, alreadySent := trigger.unfinalizedSentEventIDs[eventID]
+		lts.lggr.Debugf("Working with eventID: %s, alreadySent: %t", eventID, alreadySent)
 
 		if alreadySent {
 			continue
@@ -396,19 +401,10 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 			Trigger: protoLog,
 		}
 
-		if err := lts.eventRateLimit.AllowErr(ctx); err != nil {
-			summary := fmt.Sprintf("Rate limited, dropping event (triggerID: %s, eventID: %s)", triggerID, response.Id)
-			lts.lggr.Errorw(summary, "triggerID", triggerID, "eventID", response.Id, "err", err)
-			monitoring.LogAndEmitError(
-				ctx,
-				lts.lggr,
-				lts.beholderProcessor,
-				lts.messageBuilder.BuildLogTriggerEventDroppedError(telemetryContext, triggerID, log, summary, err.Error()),
-			)
+		checksLimitsOk := lts.checkLimitsOnLog(ctx, telemetryContext, protoLog, triggerID, eventID, log)
+		if !checksLimitsOk {
 			continue
 		}
-
-		lts.lggr.Debugf("Sending log event for triggerID: %s, block number: %d, eventID: %s", triggerID, log.BlockNumber, response.Id)
 
 		workflowExecutionID, err := workflows.EncodeExecutionID(telemetryContext.RequestMetadata.WorkflowID, response.Id)
 		if err != nil {
@@ -418,22 +414,41 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 		}
 
 		labeler := custmsg.NewLabeler().With(
-			KeyTriggerID, response.Id,
-			KeyWorkflowID, telemetryContext.RequestMetadata.WorkflowID,
-			KeyWorkflowExecutionID, workflowExecutionID,
-			KeyWorkflowOwner, telemetryContext.RequestMetadata.WorkflowOwner,
-			KeyWorkflowName, telemetryContext.RequestMetadata.WorkflowName,
+			events.KeyTriggerID, response.Id,
+			events.KeyWorkflowID, telemetryContext.RequestMetadata.WorkflowID,
+			events.KeyWorkflowExecutionID, workflowExecutionID,
+			events.KeyWorkflowOwner, telemetryContext.RequestMetadata.WorkflowOwner,
+			events.KeyWorkflowName, telemetryContext.RequestMetadata.WorkflowName,
 		)
 
 		// add DON metadata if available
 		if telemetryContext.RequestMetadata.WorkflowDonID != 0 {
-			labeler = labeler.With(KeyDonID, strconv.Itoa(int(telemetryContext.RequestMetadata.WorkflowDonID)))
+			labeler = labeler.With(events.KeyDonID, strconv.Itoa(int(telemetryContext.RequestMetadata.WorkflowDonID)))
 		}
 		if telemetryContext.RequestMetadata.WorkflowDonConfigVersion != 0 {
-			labeler = labeler.With(KeyDonVersion, strconv.Itoa(int(telemetryContext.RequestMetadata.WorkflowDonConfigVersion)))
+			labeler = labeler.With(events.KeyDonVersion, strconv.Itoa(int(telemetryContext.RequestMetadata.WorkflowDonConfigVersion)))
+		}
+		if telemetryContext.RequestMetadata.WorkflowRegistryChainSelector != "" {
+			labeler = labeler.With(events.KeyWorkflowRegistryChainSelector, telemetryContext.RequestMetadata.WorkflowRegistryChainSelector)
+		}
+		if telemetryContext.RequestMetadata.WorkflowRegistryAddress != "" {
+			labeler = labeler.With(events.KeyWorkflowRegistryAddress, telemetryContext.RequestMetadata.WorkflowRegistryAddress)
+		}
+		if telemetryContext.RequestMetadata.EngineVersion != "" {
+			labeler = labeler.With(events.KeyEngineVersion, telemetryContext.RequestMetadata.EngineVersion)
 		}
 
-		if emitErr := emitTriggerExecutionStarted(ctx, labeler); emitErr != nil {
+		// Try to fetch organization ID if org resolver is available
+		if lts.orgResolver != nil && telemetryContext.RequestMetadata.WorkflowOwner != "" {
+			if orgID, orgErr := lts.orgResolver.Get(ctx, telemetryContext.RequestMetadata.WorkflowOwner); orgErr != nil {
+				lts.lggr.Warnw("Failed to fetch organization ID from org resolver", "workflowOwner", telemetryContext.RequestMetadata.WorkflowOwner, "error", orgErr)
+			} else if orgID != "" {
+				labeler = labeler.With(events.KeyOrganizationID, orgID)
+				lts.lggr.Debugw("Successfully fetched organization ID", "workflowOwner", telemetryContext.RequestMetadata.WorkflowOwner, "orgID", orgID)
+			}
+		}
+
+		if emitErr := events.EmitTriggerExecutionStarted(ctx, labeler); emitErr != nil {
 			lts.lggr.Errorw("failed to emit trigger execution started event", "err", emitErr, "triggerID", triggerID, "workflowExecutionID", workflowExecutionID)
 			// continue with execution even if event emission fails
 		}
@@ -442,7 +457,7 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 		case logCh <- response:
 			if log.BlockNumber.Cmp(finalizedBlockNumber) > 0 {
 				// log's block number is unfinalized and needs to be tracked
-				trigger.unfinalizedSentEventIDs[logID] = log.BlockNumber
+				trigger.unfinalizedSentEventIDs[eventID] = log.BlockNumber
 				needsUpdate = true
 			}
 		default:
@@ -475,6 +490,38 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 	return nil
 }
 
+// checkLimitsOnLog checks the rate limit and payload size limit for a single log event, it should not error as we
+// want to continue processing other logs even if one fails the limits
+func (lts *LogTriggerService) checkLimitsOnLog(ctx context.Context, telemetryContext monitoring.TelemetryContext, protoLog *evmcappb.Log, triggerID string, eventID string, log *evmtypes.Log) bool {
+	if err := lts.eventRateLimit.AllowErr(ctx); err != nil {
+		summary := fmt.Sprintf("Rate limited, dropping event (triggerID: %s, eventID: %s)", triggerID, eventID)
+		lts.lggr.Errorw(summary, "triggerID", triggerID, "eventID", eventID, "err", err)
+		monitoring.LogAndEmitError(
+			ctx,
+			lts.lggr,
+			lts.beholderProcessor,
+			lts.messageBuilder.BuildLogTriggerEventDroppedError(telemetryContext, triggerID, log, summary, err.Error()),
+		)
+		return false
+	}
+
+	protoLogSize := commoncfg.Size(proto.Size(protoLog))
+	if err := lts.eventPayloadSizeLimiter.Check(ctx, protoLogSize); err != nil {
+		summary := fmt.Sprintf("Size limited, log size is too big (current size %d), dropping event (triggerID: %s, eventID: %s)", protoLogSize, triggerID, eventID)
+		lts.lggr.Errorw(summary, "triggerID", triggerID, "eventID", eventID, "protoLogSize", protoLogSize, "err", err)
+		monitoring.LogAndEmitError(
+			ctx,
+			lts.lggr,
+			lts.beholderProcessor,
+			lts.messageBuilder.BuildLogTriggerEventDroppedError(telemetryContext, triggerID, log, summary, err.Error()),
+		)
+		return false
+	}
+
+	// all checks passed, no limit fired
+	return true
+}
+
 // generateLogIdentifier creates the trigger event id, a unique identifier for the log based on its transaction hash, block hash, and index
 func (lts *LogTriggerService) generateLogIdentifier(log *evmtypes.Log) string {
 	return fmt.Sprintf("%x:%x:%d", log.TxHash, log.BlockHash, log.LogIndex)
@@ -501,18 +548,18 @@ func (lts *LogTriggerService) fetchLogsFromLogPoller(ctx context.Context, trigge
 	return logs, nil
 }
 
-func (lts *LogTriggerService) createLogRequest(_ context.Context, addresses, eventSigs, topics2, topics3, topics4 [][]byte, confidence evmcappb.ConfidenceLevel) ([]query.Expression, primitives.ConfidenceLevel) {
+func (lts *LogTriggerService) createLogRequest(_ context.Context, addresses []evmtypes.Address, eventSigs, topics2, topics3, topics4 []evmtypes.Hash, confidence evmcappb.ConfidenceLevel) ([]query.Expression, primitives.ConfidenceLevel) {
 	var expressions []query.Expression
 
 	var addressFilters []query.Expression
 	for _, addr := range addresses {
-		addressFilters = append(addressFilters, evm.NewAddressFilter(evmtypes.Address(addr)))
+		addressFilters = append(addressFilters, evm.NewAddressFilter(addr))
 	}
 	expressions = append(expressions, query.Or(addressFilters...))
 
 	var topicFilters []query.Expression
 	for _, topic := range eventSigs {
-		topicFilters = append(topicFilters, evm.NewEventSigFilter(evmtypes.Hash(topic)))
+		topicFilters = append(topicFilters, evm.NewEventSigFilter(topic))
 	}
 	expressions = append(expressions, query.Or(topicFilters...))
 
@@ -527,41 +574,44 @@ func (lts *LogTriggerService) createLogRequest(_ context.Context, addresses, eve
 		confidenceLevel = primitives.Safe
 	}
 
-	if expr := lts.makeEventByTopicFilter(1, topics2); expr != nil {
-		expressions = append(expressions, *expr)
+	for i, t := range [][]evmtypes.Hash{topics2, topics3, topics4} {
+		// G115: integer overflow conversion uint64 -> int64 (gosec)
+		// nolint:gosec
+		topic := uint64(i + 1)
+		topicExpression := lts.makeEventByTopicFilter(topic, t)
+		if topicExpression == nil {
+			continue
+		}
+		expressions = append(expressions, *topicExpression)
 	}
-	if expr := lts.makeEventByTopicFilter(2, topics3); expr != nil {
-		expressions = append(expressions, *expr)
-	}
-	if expr := lts.makeEventByTopicFilter(3, topics4); expr != nil {
-		expressions = append(expressions, *expr)
-	}
+
 	return expressions, confidenceLevel
 }
 
-func (lts *LogTriggerService) makeEventByTopicFilter(topic uint64, topics [][]byte) *query.Expression {
+func (lts *LogTriggerService) makeEventByTopicFilter(topicIndex uint64, topics []evmtypes.Hash) *query.Expression {
 	if len(topics) == 0 {
 		return nil
 	}
-	values := make([]evmtypes.Hash, 0, len(topics))
+	var singleTopicFilters []query.Expression
 	for _, topic := range topics {
-		values = append(values, evmtypes.Hash(topic))
+		tf := evm.NewEventByTopicFilter(topicIndex, []evm.HashedValueComparator{{
+			Values:   []evmtypes.Hash{topic},
+			Operator: primitives.Eq,
+		}})
+		singleTopicFilters = append(singleTopicFilters, tf)
 	}
-	expr := evm.NewEventByTopicFilter(topic, []evm.HashedValueComparator{{
-		Values:   values,
-		Operator: primitives.Eq,
-	}})
-	return &expr
+	orExpression := query.Or(singleTopicFilters...)
+	return &orExpression
 }
 
 func (lts *LogTriggerService) UnregisterLogTrigger(ctx context.Context, triggerID string, meta capabilities.RequestMetadata, _ *evmcappb.FilterLogTriggerRequest) error {
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	if triggerID == "" {
-		return fmt.Errorf("no triggerID provided")
+		return capabilities.NewRemoteReportableError(fmt.Errorf("no triggerID provided"))
 	}
 	trigger, found := lts.triggers.Read(triggerID)
 	if !found {
-		return fmt.Errorf("no active trigger found for triggerID: %s", triggerID)
+		return capabilities.NewRemoteReportableError(fmt.Errorf("no active trigger found for triggerID: %s", triggerID))
 	}
 	lts.lggr.Debugf("UnregisterLogTrigger triggerID: %s", triggerID)
 	trigger.cancelFunc()
@@ -571,7 +621,7 @@ func (lts *LogTriggerService) UnregisterLogTrigger(ctx context.Context, triggerI
 	if err != nil {
 		summary := fmt.Sprintf("failed to unregister log-tracking: '%v' for triggerID: %s", err, triggerID)
 		monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(telemetryContext, triggerID, summary, err.Error()))
-		return fmt.Errorf("failed to unregister log-tracking: '%w' for triggerID: %s", err, triggerID)
+		return capabilities.NewRemoteReportableError(fmt.Errorf("failed to unregister log-tracking: '%w' for triggerID: %s", err, triggerID))
 	}
 	return nil
 }
@@ -604,54 +654,3 @@ func (r realTicker) Stop() {
 }
 
 var defaultTickerFactory tickerFactory = realTickerFactory{}
-
-// emitTriggerExecutionStarted emits a TriggerExecutionStarted event via beholder using the provided labeler
-func emitTriggerExecutionStarted(ctx context.Context, labeler custmsg.MessageEmitter) error {
-	labels := labeler.Labels()
-
-	// Required fields
-	triggerID, ok := labels[KeyTriggerID]
-	if !ok {
-		return fmt.Errorf("missing required field: %s", KeyTriggerID)
-	}
-	workflowID, ok := labels[KeyWorkflowID]
-	if !ok {
-		return fmt.Errorf("missing required field: %s", KeyWorkflowID)
-	}
-	workflowExecutionID, ok := labels[KeyWorkflowExecutionID]
-	if !ok {
-		return fmt.Errorf("missing required field: %s", KeyWorkflowExecutionID)
-	}
-
-	event := &workflowsevents.TriggerExecutionStarted{
-		TriggerID:           triggerID,
-		WorkflowExecutionID: workflowExecutionID,
-		Workflow: &workflowsevents.WorkflowKey{
-			WorkflowID:    workflowID,
-			WorkflowOwner: labels[KeyWorkflowOwner],
-			WorkflowName:  labels[KeyWorkflowName],
-		},
-		Timestamp: time.Now().Format(time.RFC3339),
-	}
-
-	if donIDStr, exists := labels[KeyDonID]; exists {
-		if donID, err := strconv.ParseInt(donIDStr, 10, 32); err == nil {
-			event.CreInfo = &workflowsevents.CreInfo{
-				DonID:      int32(donID),
-				DonVersion: labels[KeyDonVersion],
-			}
-		}
-	}
-
-	// Marshal the protobuf message
-	b, err := proto.Marshal(event)
-	if err != nil {
-		return fmt.Errorf("failed to marshal TriggerExecutionStarted event: %w", err)
-	}
-
-	// Emit via beholder
-	return beholder.GetEmitter().Emit(ctx, b,
-		"beholder_data_schema", "workflows.v2.trigger_execution_started", // required
-		"beholder_domain", "platform", // required
-		"beholder_entity", "workflows.v2.TriggerExecutionStarted") // required
-}

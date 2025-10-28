@@ -11,6 +11,7 @@ import (
 
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -20,6 +21,8 @@ import (
 	crontypedapi "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/services/orgresolver"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 )
 
@@ -81,7 +84,7 @@ func registerTriggerToCronTriggerService(
 		return triggerEventsCh, request, err
 	}
 
-	config, err := values.NewMap(map[string]interface{}{
+	config, err := values.NewMap(map[string]any{
 		"schedule": schedule,
 	})
 	require.NoError(t, err)
@@ -246,7 +249,9 @@ func successWithStandardCronIntervals(t *testing.T, useTypedAPI bool) {
 
 			ts, err := NewTriggerService(logger.Nop(), fakeClock)
 			require.NoError(t, err)
-			err = ts.Initialise(t.Context(), string(config), nil, nil, nil, nil, nil, nil, nil, nil)
+			err = ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
+				Config: string(config),
+			})
 			require.NoError(t, err)
 
 			triggerAPI := server.NewCronServer(ts)
@@ -333,7 +338,7 @@ func TestCronTrigger_Load(t *testing.T) {
 	var unregisterRequests [numTriggers]capabilities.TriggerRegistrationRequest
 
 	// Register triggers
-	for triggerIdx := 0; triggerIdx < numTriggers; triggerIdx++ {
+	for triggerIdx := range numTriggers {
 		callback, unregisterRequest, err := registerTriggerToCronTriggerService(
 			ctx,
 			t,
@@ -349,7 +354,9 @@ func TestCronTrigger_Load(t *testing.T) {
 	assert.Equal(t, len(ts.scheduler.Jobs()), numTriggers)
 
 	// Start scheduling
-	err = ts.Initialise(t.Context(), string(config), nil, nil, nil, nil, nil, nil, nil, nil)
+	err = ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
+		Config: string(config),
+	})
 	require.NoError(t, err)
 
 	// Process "numExecutions" times
@@ -359,10 +366,10 @@ func TestCronTrigger_Load(t *testing.T) {
 
 	wg := sync.WaitGroup{}
 
-	for triggerIdx := 0; triggerIdx < numTriggers; triggerIdx++ {
+	for triggerIdx := range numTriggers {
 		wg.Add(1)
 		go func(tIdx int) {
-			for execIdx := 0; execIdx < numExecutions; execIdx++ {
+			for execIdx := range numExecutions {
 				msg := <-callbacks[tIdx]
 				response := upwrapCronTriggerEvent(t, msg.Event, false)
 				scheduledExecutionTime, _ := time.Parse(time.RFC3339Nano, response.Payload.ScheduledExecutionTime)
@@ -384,7 +391,7 @@ func TestCronTrigger_Load(t *testing.T) {
 	defer mu.Unlock()
 
 	// Unregister the trigger and check that events no longer go on the callback
-	for i := 0; i < numTriggers; i++ {
+	for i := range numTriggers {
 		require.NoError(t, triggerAPI.UnregisterTrigger(ctx, unregisterRequests[i]))
 	}
 
@@ -393,7 +400,7 @@ func TestCronTrigger_Load(t *testing.T) {
 
 	// Wait a second to ensure no more events
 	time.Sleep(time.Second * 5)
-	for i := 0; i < numTriggers; i++ {
+	for i := range numTriggers {
 		_, open := <-callbacks[i]
 		require.False(t, open)
 	}
@@ -403,8 +410,8 @@ func TestCronTrigger_Load(t *testing.T) {
 
 	var scheduledActualDelta [numTriggers * numExecutions]int64
 
-	for execIdx := 0; execIdx < numExecutions; execIdx++ {
-		for triggerIdx := 0; triggerIdx < numTriggers; triggerIdx++ {
+	for execIdx := range numExecutions {
+		for triggerIdx := range numTriggers {
 			// Check all scheduled execution times at each process are the same across all triggers
 			if triggerIdx > 0 {
 				require.True(t, scheduledExecTimes[0][execIdx].Equal(scheduledExecTimes[triggerIdx][execIdx]))
@@ -466,7 +473,9 @@ func testCronTriggerRegisterTriggerBeforeStart(t *testing.T, useTypedAPI bool) {
 	assert.Equal(t, len(ts.scheduler.Jobs()), 1)
 
 	// Start scheduling
-	err = ts.Initialise(t.Context(), string(config), nil, nil, nil, nil, nil, nil, nil, nil)
+	err = ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
+		Config: string(config),
+	})
 	require.NoError(t, err)
 
 	// 1st process
@@ -538,7 +547,9 @@ func testCronTriggerTimeWindows(t *testing.T, useTypedAPI bool) {
 	assert.Equal(t, len(ts.scheduler.Jobs()), 1)
 
 	// Start scheduling
-	err = ts.Initialise(t.Context(), string(config), nil, nil, nil, nil, nil, nil, nil, nil)
+	err = ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
+		Config: string(config),
+	})
 	require.NoError(t, err)
 
 	// Advance to 1ms past 9am
@@ -623,7 +634,9 @@ func testCronTriggerMultipleDifferentSchedules(t *testing.T, useTypedAPI bool) {
 	assert.Equal(t, len(ts.scheduler.Jobs()), 2)
 
 	// Start scheduling
-	err = ts.Initialise(t.Context(), string(config), nil, nil, nil, nil, nil, nil, nil, nil)
+	err = ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
+		Config: string(config),
+	})
 	require.NoError(t, err)
 
 	fakeClock.Advance(time.Second)
@@ -736,8 +749,9 @@ func testCronTriggerTimeZone(t *testing.T, useTypedAPI bool) {
 	assert.Equal(t, len(ts.scheduler.Jobs()), 1)
 
 	// Start scheduling
-	err = ts.Initialise(t.Context(), string(config), nil, nil, nil, nil, nil, nil, nil, nil)
-	require.NoError(t, err)
+	err = ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
+		Config: string(config),
+	})
 	require.NoError(t, err)
 
 	// Advance to 1ms before trigger
@@ -829,7 +843,7 @@ func testCronTriggerRegisterTrigger(t *testing.T, useTypedAPI bool) {
 			fakeClock := clockwork.NewRealClock()
 			ts, err := NewTriggerService(logger.Nop(), fakeClock)
 			require.NoError(t, err)
-			err = ts.Initialise(t.Context(), "", nil, nil, nil, nil, nil, nil, nil, nil)
+			err = ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{})
 			require.NoError(t, err)
 			triggerAPI := server.NewCronServer(ts)
 			ctx := t.Context()
@@ -862,13 +876,15 @@ func TestCronTrigger_RegisterTriggerDuplicateError(t *testing.T) {
 	fakeClock := clockwork.NewRealClock()
 	ts, err := NewTriggerService(logger.Nop(), fakeClock)
 	require.NoError(t, err)
-	err = ts.Initialise(t.Context(), string(triggerConfig), nil, nil, nil, nil, nil, nil, nil, nil)
+	err = ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
+		Config: string(triggerConfig),
+	})
 	require.NoError(t, err)
 	triggerAPI := server.NewCronServer(ts)
 
 	ctx := t.Context()
 
-	config, err := values.NewMap(map[string]interface{}{
+	config, err := values.NewMap(map[string]any{
 		"schedule": everySecond,
 	})
 	require.NoError(t, err)
@@ -895,14 +911,16 @@ func TestCronTrigger_UnregisterTriggerError(t *testing.T) {
 	fakeClock := clockwork.NewRealClock()
 	ts, err := NewTriggerService(logger.Nop(), fakeClock)
 	require.NoError(t, err)
-	err = ts.Initialise(t.Context(), string(triggerConfig), nil, nil, nil, nil, nil, nil, nil, nil)
+	err = ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
+		Config: string(triggerConfig),
+	})
 	require.NoError(t, err)
 	triggerAPI := server.NewCronServer(ts)
 
 	t.Run("OK if trigger not found", func(t *testing.T) {
 		ctx := t.Context()
 
-		config, err := values.NewMap(map[string]interface{}{
+		config, err := values.NewMap(map[string]any{
 			"schedule": everySecond,
 		})
 		require.NoError(t, err)
@@ -923,7 +941,7 @@ func TestCronTrigger_UnregisterTriggerError(t *testing.T) {
 	t.Run("OK register then unregister", func(t *testing.T) {
 		ctx := t.Context()
 
-		config, err := values.NewMap(map[string]interface{}{
+		config, err := values.NewMap(map[string]any{
 			"schedule": everySecond,
 		})
 		require.NoError(t, err)
@@ -946,7 +964,7 @@ func TestCronTrigger_UnregisterTriggerError(t *testing.T) {
 	t.Run("OK register then unregister multiple times", func(t *testing.T) {
 		ctx := t.Context()
 
-		config, err := values.NewMap(map[string]interface{}{
+		config, err := values.NewMap(map[string]any{
 			"schedule": everySecond,
 		})
 		require.NoError(t, err)
@@ -972,13 +990,15 @@ func TestCronTrigger_UnregisterTriggerError(t *testing.T) {
 	t.Run("NOK fails to unregister if closed", func(t *testing.T) {
 		ts, err := NewTriggerService(logger.Nop(), fakeClock)
 		require.NoError(t, err)
-		err = ts.Initialise(t.Context(), string(triggerConfig), nil, nil, nil, nil, nil, nil, nil, nil)
+		err = ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
+			Config: string(triggerConfig),
+		})
 		require.NoError(t, err)
 
 		triggerAPI := server.NewCronServer(ts)
 		ctx := t.Context()
 
-		config, err := values.NewMap(map[string]interface{}{
+		config, err := values.NewMap(map[string]any{
 			"schedule": everySecond,
 		})
 		require.NoError(t, err)
@@ -1061,7 +1081,9 @@ func TestGocronNewTaskPanic(t *testing.T) {
 	assert.Equal(t, len(ts.scheduler.Jobs()), 1)
 
 	// Start scheduling
-	err = ts.Initialise(t.Context(), string(config), nil, nil, nil, nil, nil, nil, nil, nil)
+	err = ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
+		Config: string(config),
+	})
 	require.NoError(t, err)
 
 	panicClock.Advance(time.Second * 1)
@@ -1082,3 +1104,36 @@ func TestGocronNewTaskPanic(t *testing.T) {
 		}
 	}
 }
+
+// MockOrgResolver is a mock implementation of the OrgResolver interface
+type MockOrgResolver struct {
+	mock.Mock
+}
+
+func (m *MockOrgResolver) Get(ctx context.Context, owner string) (string, error) {
+	args := m.Called(ctx, owner)
+	return args.String(0), args.Error(1)
+}
+
+func (m *MockOrgResolver) Start(ctx context.Context) error {
+	return nil
+}
+
+func (m *MockOrgResolver) Close() error {
+	return nil
+}
+
+func (m *MockOrgResolver) HealthReport() map[string]error {
+	return map[string]error{}
+}
+
+func (m *MockOrgResolver) Ready() error {
+	return nil
+}
+
+func (m *MockOrgResolver) Name() string {
+	return "MockOrgResolver"
+}
+
+// Ensure MockOrgResolver implements the interface
+var _ orgresolver.OrgResolver = (*MockOrgResolver)(nil)

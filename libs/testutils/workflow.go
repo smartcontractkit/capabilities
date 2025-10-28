@@ -14,12 +14,12 @@ import (
 
 type TriggerWithConfig struct {
 	Capability capabilities.TriggerCapability
-	Config     map[string]interface{}
+	Config     map[string]any
 }
 
 type CapabilityWithConfig struct {
 	Capability capabilities.ExecutableCapability
-	Config     map[string]interface{}
+	Config     map[string]any
 }
 
 // workflow represents a single workflow and is used to generate capability requests

@@ -165,7 +165,7 @@ func runLoadTest(t *testing.T, numberOfNodes int, f uint8, numberOfWorkflows int
 
 	workflowName := "LoadWf"
 
-	for numWorkflowsRegistered := 0; numWorkflowsRegistered < numberOfWorkflows; numWorkflowsRegistered++ {
+	for numWorkflowsRegistered := range numberOfWorkflows {
 		registerWorkflowOnDon(workflowName+strconv.Itoa(numWorkflowsRegistered), getNextCronSchedule(), numWorkflowsRegistered+1)
 
 		workflowCountCh <- numWorkflowsRegistered + 1

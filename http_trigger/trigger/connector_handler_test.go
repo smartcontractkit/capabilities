@@ -2,7 +2,6 @@ package trigger
 
 import (
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"strings"
 	"sync"
@@ -15,15 +14,13 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
 )
 
 const (
-	publicKey     = "0xA18B5D6DB47fB7b0974505D7aB544e24478B6e98"
-	workflowOwner = "0xabcdef1234567890abcdef1234567890abcdef12"
+	publicKey = "0xA18B5D6DB47fB7b0974505D7aB544e24478B6e98"
 )
 
 type mockGatewayConnector struct {
@@ -65,7 +62,7 @@ func gatewayRequest(t *testing.T, method string) (*jsonrpc.Request[json.RawMessa
 	}
 	payload := gateway_common.HTTPTriggerRequest{
 		Workflow: gateway_common.WorkflowSelector{
-			WorkflowID: "0xabcdef",
+			WorkflowID: testWorkflowID,
 		},
 		Input: json.RawMessage(`{"key":"value"}`),
 		Key:   key,
@@ -91,7 +88,7 @@ func gatewayRequestByTag(t *testing.T, method string, workflowOwner string) (*js
 		Workflow: gateway_common.WorkflowSelector{
 			WorkflowOwner: workflowOwner,
 			WorkflowName:  "workflowName",
-			WorkflowTag:   "workflowTag",
+			WorkflowTag:   testWorkflowTag,
 		},
 		Input: json.RawMessage(`{"key":"value"}`),
 		Key:   key,
@@ -107,13 +104,58 @@ func gatewayRequestByTag(t *testing.T, method string, workflowOwner string) (*js
 	}, key
 }
 
-func rateLimiterConfig() ratelimit.RateLimiterConfig {
-	return ratelimit.RateLimiterConfig{
-		GlobalRPS:      100.0,
-		GlobalBurst:    100,
-		PerSenderRPS:   100.0,
-		PerSenderBurst: 100,
+// gatewayRequestWithoutPrefix creates a test request with workflowID lacking 0x prefix
+func gatewayRequestWithoutPrefix(t *testing.T, method string) (*jsonrpc.Request[json.RawMessage], gateway_common.AuthorizedKey) {
+	key := gateway_common.AuthorizedKey{
+		KeyType:   gateway_common.KeyTypeECDSAEVM,
+		PublicKey: publicKey,
 	}
+	// Strip 0x prefix from workflowID to test normalization
+	workflowIDWithoutPrefix := strings.TrimPrefix(testWorkflowID, "0x")
+	payload := gateway_common.HTTPTriggerRequest{
+		Workflow: gateway_common.WorkflowSelector{
+			WorkflowID: workflowIDWithoutPrefix,
+		},
+		Input: json.RawMessage(`{"key":"value"}`),
+		Key:   key,
+	}
+	jsonPayload, err := json.Marshal(payload)
+	require.NoError(t, err)
+	jsonPayloadMsg := json.RawMessage(jsonPayload)
+	return &jsonrpc.Request[json.RawMessage]{
+		Version: "2.0",
+		ID:      "id",
+		Method:  method,
+		Params:  &jsonPayloadMsg,
+	}, key
+}
+
+// gatewayRequestByTagWithoutPrefix creates a test request with workflowOwner lacking 0x prefix
+func gatewayRequestByTagWithoutPrefix(t *testing.T, method string, workflowOwner string) (*jsonrpc.Request[json.RawMessage], gateway_common.AuthorizedKey) {
+	key := gateway_common.AuthorizedKey{
+		KeyType:   gateway_common.KeyTypeECDSAEVM,
+		PublicKey: publicKey,
+	}
+	// Strip 0x prefix from workflowOwner to test normalization
+	workflowOwnerWithoutPrefix := strings.TrimPrefix(workflowOwner, "0x")
+	payload := gateway_common.HTTPTriggerRequest{
+		Workflow: gateway_common.WorkflowSelector{
+			WorkflowOwner: workflowOwnerWithoutPrefix,
+			WorkflowName:  "workflowName",
+			WorkflowTag:   testWorkflowTag,
+		},
+		Input: json.RawMessage(`{"key":"value"}`),
+		Key:   key,
+	}
+	jsonPayload, err := json.Marshal(payload)
+	require.NoError(t, err)
+	jsonPayloadMsg := json.RawMessage(jsonPayload)
+	return &jsonrpc.Request[json.RawMessage]{
+		Version: "2.0",
+		ID:      "id",
+		Method:  method,
+		Params:  &jsonPayloadMsg,
+	}, key
 }
 
 func newMetrics(t *testing.T) *Metrics {
@@ -129,17 +171,12 @@ func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayCon
 		MetadataBatchSize:            10,
 		MaxAuthorizedKeysPerWorkflow: 3,
 	}
-	irl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
-	require.NoError(t, err)
-	orl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
-	require.NoError(t, err)
 	store := newWorkflowStore(lggr)
 	metrics, err := NewMetrics()
 	require.NoError(t, err)
 	metadataPublisher := NewGatewayMetadataPublisher(
 		lggr,
 		mockConnector,
-		orl,
 		store,
 		cfg,
 		metrics,
@@ -151,12 +188,11 @@ func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayCon
 		lggr,
 		mockConnector,
 		cfg,
-		orl,
-		irl,
 		store,
 		metadataPublisher,
 		requestCache,
 		newMetrics(t),
+		nil,
 	)
 	require.NoError(t, err)
 	sdkCfg := &http.Config{
@@ -168,12 +204,21 @@ func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayCon
 		},
 	}
 	sendCh := make(chan capabilities.TriggerAndId[*http.Payload], 1)
-	err = handler.RegisterWorkflow(context.Background(), gateway_common.WorkflowSelector{
-		WorkflowID:    ensureHexPrefix("abcdef"),
-		WorkflowOwner: ensureHexPrefix("123456"),
-		WorkflowName:  ensureHexPrefix(hex.EncodeToString([]byte(workflows.HashTruncateName("workflowName")))),
-		WorkflowTag:   "workflowTag",
-	}, sdkCfg, sendCh)
+	err = handler.RegisterWorkflow(context.Background(), WorkflowRegistrationInput{
+		WorkflowSelector: gateway_common.WorkflowSelector{
+			WorkflowID:    testWorkflowID,
+			WorkflowOwner: testWorkflowOwner,
+			WorkflowName:  testWorkflowName,
+			WorkflowTag:   testWorkflowTag,
+		},
+		Config: sdkCfg,
+		Metadata: WorkflowRegistrationMetadata{
+			WorkflowRegistryChainSelector: "test-chain-selector",
+			WorkflowRegistryAddress:       "test-registry-address",
+			EngineVersion:                 "1.0.0",
+			WorkflowDONID:                 42,
+		},
+	}, sendCh)
 	require.NoError(t, err)
 
 	return handler, mockConnector, sendCh, requestCache
@@ -213,9 +258,9 @@ func requireWorkflowTriggered(t *testing.T, triggerCh <-chan capabilities.Trigge
 	require.NotNil(t, resp.Result)
 	err = json.Unmarshal(*resp.Result, &triggerResp)
 	require.NoError(t, err)
-	require.Equal(t, "0xabcdef", triggerResp.WorkflowID)
+	require.Equal(t, testWorkflowID, triggerResp.WorkflowID)
 
-	executionID, err := workflows.EncodeExecutionID("abcdef", req.ID)
+	executionID, err := workflows.EncodeExecutionID(strings.TrimPrefix(testWorkflowID, "0x"), req.ID)
 	require.NoError(t, err)
 	executionID = ensureHexPrefix(executionID)
 	require.Equal(t, executionID, triggerResp.WorkflowExecutionID)
@@ -245,7 +290,25 @@ func TestHandleGatewayMessage_Success(t *testing.T) {
 func TestHandleGatewayMessage_ByTag(t *testing.T) {
 	lggr := logger.Test(t)
 	handler, connector, triggerCh, requestCache := setup(t, lggr)
-	req, key := gatewayRequestByTag(t, gateway_common.MethodWorkflowExecute, "0x123456")
+	req, key := gatewayRequestByTag(t, gateway_common.MethodWorkflowExecute, testWorkflowOwner)
+	requireWorkflowTriggered(t, triggerCh, req, connector, handler, key, requestCache)
+}
+
+// TestHandleGatewayMessage_WithoutPrefix tests successful request processing
+// with workflowID that lacks 0x prefix (should be normalized)
+func TestHandleGatewayMessage_WithoutPrefix(t *testing.T) {
+	lggr := logger.Test(t)
+	handler, connector, triggerCh, requestCache := setup(t, lggr)
+	req, key := gatewayRequestWithoutPrefix(t, gateway_common.MethodWorkflowExecute)
+	requireWorkflowTriggered(t, triggerCh, req, connector, handler, key, requestCache)
+}
+
+// TestHandleGatewayMessage_ByTagWithoutPrefix tests successful request processing using
+// workflowOwner/Name/Tag combination where workflowOwner lacks 0x prefix (should be normalized)
+func TestHandleGatewayMessage_ByTagWithoutPrefix(t *testing.T) {
+	lggr := logger.Test(t)
+	handler, connector, triggerCh, requestCache := setup(t, lggr)
+	req, key := gatewayRequestByTagWithoutPrefix(t, gateway_common.MethodWorkflowExecute, testWorkflowOwner)
 	requireWorkflowTriggered(t, triggerCh, req, connector, handler, key, requestCache)
 }
 
@@ -288,8 +351,8 @@ func TestHandleGatewayMessage_MissingWorkflowName(t *testing.T) {
 	handler, connector, triggerCh, _ := setup(t, lggr)
 	payload := gateway_common.HTTPTriggerRequest{
 		Workflow: gateway_common.WorkflowSelector{
-			WorkflowOwner: workflowOwner,
-			WorkflowTag:   "workflowTag",
+			WorkflowOwner: testWorkflowOwner,
+			WorkflowTag:   testWorkflowTag,
 		},
 		Input: json.RawMessage(`{"key":"value"}`),
 	}
@@ -397,13 +460,13 @@ func TestProcessTrigger_MissingWorkflowID(t *testing.T) {
 func TestRegisterAndUnregisterWorkflow(t *testing.T) {
 	lggr := logger.Test(t)
 	handler, _, _, _ := setup(t, lggr)
-	_, ok := handler.workflowStore.getWorkflowByID("0xabcdef")
+	_, ok := handler.workflowStore.getWorkflowByID(testWorkflowID)
 	require.True(t, ok, "workflow not registered")
-	err := handler.UnregisterWorkflow(context.Background(), "0xabcdef")
+	err := handler.UnregisterWorkflow(context.Background(), testWorkflowID)
 	require.NoError(t, err, "UnregisterWorkflow failed")
-	_, ok = handler.workflowStore.getWorkflowByID("0xabcdef")
+	_, ok = handler.workflowStore.getWorkflowByID(testWorkflowID)
 	require.False(t, ok, "workflow still registered after unregistering")
-	err = handler.UnregisterWorkflow(context.Background(), "0xabcdef")
+	err = handler.UnregisterWorkflow(context.Background(), testWorkflowID)
 	require.Error(t, err, "UnregisterWorkflow should return error for non-existent workflow")
 }
 
@@ -488,7 +551,11 @@ func TestRegisterWorkflow_InvalidECDSAPublicKey(t *testing.T) {
 				WorkflowTag:   "workflowTag",
 				WorkflowID:    "workflowID",
 			}
-			err := handler.RegisterWorkflow(context.Background(), selector, cfg, sendCh)
+			err := handler.RegisterWorkflow(context.Background(), WorkflowRegistrationInput{
+				WorkflowSelector: selector,
+				Config:           cfg,
+				Metadata:         WorkflowRegistrationMetadata{},
+			}, sendCh)
 			require.Error(t, err)
 			require.Contains(t, err.Error(), tc.errorMsg)
 		})
@@ -504,17 +571,12 @@ func TestRegisterWorkflow_TooManyAuthorizedKeys(t *testing.T) {
 		MetadataBatchSize:            10,
 		MaxAuthorizedKeysPerWorkflow: 2, // Set limit to 2 keys for testing
 	}
-	irl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
-	require.NoError(t, err)
-	orl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
-	require.NoError(t, err)
 	store := newWorkflowStore(lggr)
 	metrics, err := NewMetrics()
 	require.NoError(t, err)
 	metadataPublisher := NewGatewayMetadataPublisher(
 		lggr,
 		mockConnector,
-		orl,
 		store,
 		cfg,
 		metrics,
@@ -525,12 +587,11 @@ func TestRegisterWorkflow_TooManyAuthorizedKeys(t *testing.T) {
 		lggr,
 		mockConnector,
 		cfg,
-		orl,
-		irl,
 		store,
 		metadataPublisher,
 		requestCache,
 		newMetrics(t),
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -551,12 +612,16 @@ func TestRegisterWorkflow_TooManyAuthorizedKeys(t *testing.T) {
 			},
 		}
 		selector := gateway_common.WorkflowSelector{
-			WorkflowOwner: workflowOwner,
-			WorkflowName:  "workflowName",
-			WorkflowTag:   "workflowTag",
-			WorkflowID:    "workflowID-max",
+			WorkflowOwner: testWorkflowOwner,
+			WorkflowName:  testWorkflowName,
+			WorkflowTag:   testWorkflowTag,
+			WorkflowID:    testWorkflowID,
 		}
-		err := handler.RegisterWorkflow(context.Background(), selector, cfg, sendCh)
+		err := handler.RegisterWorkflow(context.Background(), WorkflowRegistrationInput{
+			WorkflowSelector: selector,
+			Config:           cfg,
+			Metadata:         WorkflowRegistrationMetadata{},
+		}, sendCh)
 		require.NoError(t, err)
 	})
 
@@ -579,12 +644,16 @@ func TestRegisterWorkflow_TooManyAuthorizedKeys(t *testing.T) {
 			},
 		}
 		selector := gateway_common.WorkflowSelector{
-			WorkflowOwner: workflowOwner,
-			WorkflowName:  "workflowName",
-			WorkflowTag:   "workflowTag",
-			WorkflowID:    "workflowID-too-many",
+			WorkflowOwner: testWorkflowOwner,
+			WorkflowName:  testWorkflowName,
+			WorkflowTag:   testWorkflowTag,
+			WorkflowID:    testWorkflowID,
 		}
-		err := handler.RegisterWorkflow(context.Background(), selector, cfg, sendCh)
+		err := handler.RegisterWorkflow(context.Background(), WorkflowRegistrationInput{
+			WorkflowSelector: selector,
+			Config:           cfg,
+			Metadata:         WorkflowRegistrationMetadata{},
+		}, sendCh)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "too many authorized keys: 3, max allowed: 2")
 	})
@@ -596,36 +665,35 @@ func TestRegisterWorkflow_EmptyAuthorizedKeys(t *testing.T) {
 
 	sendCh := make(chan capabilities.TriggerAndId[*http.Payload], 1)
 	selector := gateway_common.WorkflowSelector{
-		WorkflowID:    "test-workflow",
-		WorkflowOwner: workflowOwner,
-		WorkflowName:  "test-name",
-		WorkflowTag:   "test-tag",
+		WorkflowID:    testWorkflowID,
+		WorkflowOwner: testWorkflowOwner,
+		WorkflowName:  testWorkflowName,
+		WorkflowTag:   testWorkflowTag,
 	}
 
 	cfg := &http.Config{
 		AuthorizedKeys: []*http.AuthorizedKey{},
 	}
 
-	err := handler.RegisterWorkflow(context.Background(), selector, cfg, sendCh)
+	err := handler.RegisterWorkflow(context.Background(), WorkflowRegistrationInput{
+		WorkflowSelector: selector,
+		Config:           cfg,
+		Metadata:         WorkflowRegistrationMetadata{},
+	}, sendCh)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "no authorized keys")
+	require.Contains(t, err.Error(), "HTTP trigger requires at least one authorized key")
 }
 
 func TestConnectorHandler_Start_HealthReport_Ready_Name_Close(t *testing.T) {
 	lggr := logger.Test(t)
 	mockConnector := &mockGatewayConnector{}
 	cfg := ServiceConfig{}
-	irl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
-	require.NoError(t, err)
-	orl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
-	require.NoError(t, err)
 	store := newWorkflowStore(lggr)
 	metrics, err := NewMetrics()
 	require.NoError(t, err)
 	metadataPublisher := NewGatewayMetadataPublisher(
 		lggr,
 		mockConnector,
-		orl,
 		store,
 		cfg,
 		metrics,
@@ -636,12 +704,11 @@ func TestConnectorHandler_Start_HealthReport_Ready_Name_Close(t *testing.T) {
 		lggr,
 		mockConnector,
 		cfg,
-		orl,
-		irl,
 		store,
 		metadataPublisher,
 		requestCache,
 		newMetrics(t),
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -686,12 +753,16 @@ func TestHandleGatewayMessage_PullAuthMetadata(t *testing.T) {
 	}
 	triggerCh2 := make(chan capabilities.TriggerAndId[*http.Payload], 1)
 	selector := gateway_common.WorkflowSelector{
-		WorkflowOwner: "0xabcdef1234567890abcdef1234567890abcdef12",
-		WorkflowName:  "workflowName2",
-		WorkflowTag:   "workflowTag2",
-		WorkflowID:    "wf2",
+		WorkflowOwner: testWorkflowOwner2,
+		WorkflowName:  testWorkflowName2,
+		WorkflowTag:   testWorkflowTag,
+		WorkflowID:    testWorkflowID2,
 	}
-	err := handler.RegisterWorkflow(t.Context(), selector, sdkCfg2, triggerCh2)
+	err := handler.RegisterWorkflow(t.Context(), WorkflowRegistrationInput{
+		WorkflowSelector: selector,
+		Config:           sdkCfg2,
+		Metadata:         WorkflowRegistrationMetadata{},
+	}, triggerCh2)
 	require.NoError(t, err, "Failed to register second workflow")
 
 	// Create pull auth metadata request
@@ -725,15 +796,15 @@ func TestHandleGatewayMessage_PullAuthMetadata(t *testing.T) {
 	for _, metadata := range workflowMetadata {
 		metadataByWorkflowID[metadata.WorkflowSelector.WorkflowID] = metadata
 	}
-	wf1Metadata, exists := metadataByWorkflowID["0xabcdef"]
+	wf1Metadata, exists := metadataByWorkflowID[testWorkflowID]
 	require.True(t, exists, "Should contain metadata for wf1")
-	require.Equal(t, "0xabcdef", wf1Metadata.WorkflowSelector.WorkflowID)
+	require.Equal(t, testWorkflowID, wf1Metadata.WorkflowSelector.WorkflowID)
 	require.Len(t, wf1Metadata.AuthorizedKeys, 1)
 	require.Equal(t, strings.ToLower(publicKey), wf1Metadata.AuthorizedKeys[0].PublicKey)
 	require.Equal(t, "ecdsa_evm", string(wf1Metadata.AuthorizedKeys[0].KeyType))
-	wf2Metadata, exists := metadataByWorkflowID["wf2"]
+	wf2Metadata, exists := metadataByWorkflowID[testWorkflowID2]
 	require.True(t, exists, "Should contain metadata for wf2")
-	require.Equal(t, "wf2", wf2Metadata.WorkflowSelector.WorkflowID)
+	require.Equal(t, testWorkflowID2, wf2Metadata.WorkflowSelector.WorkflowID)
 	require.Len(t, wf2Metadata.AuthorizedKeys, 1)
 	require.Equal(t, strings.ToLower("0xB18B5D6DB47fB7b0974505D7aB544e24478B6e99"), wf2Metadata.AuthorizedKeys[0].PublicKey)
 	require.Equal(t, "ecdsa_evm", string(wf2Metadata.AuthorizedKeys[0].KeyType))
@@ -776,17 +847,12 @@ func TestHandleGatewayMessage_PullAuthMetadata_EmptyWorkflows(t *testing.T) {
 	// Create handler without registering any workflows
 	mockConnector := &mockGatewayConnector{}
 	cfg := ServiceConfig{}
-	irl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
-	require.NoError(t, err)
-	orl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
-	require.NoError(t, err)
 	store := newWorkflowStore(lggr)
 	metrics, err := NewMetrics()
 	require.NoError(t, err)
 	metadataPublisher := NewGatewayMetadataPublisher(
 		lggr,
 		mockConnector,
-		orl,
 		store,
 		cfg,
 		metrics,
@@ -797,12 +863,11 @@ func TestHandleGatewayMessage_PullAuthMetadata_EmptyWorkflows(t *testing.T) {
 		lggr,
 		mockConnector,
 		cfg,
-		orl,
-		irl,
 		store,
 		metadataPublisher,
 		requestCache,
 		newMetrics(t),
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -872,17 +937,12 @@ func TestConnectorHandler_StartRequestCacheCleanup(t *testing.T) {
 	lggr := logger.Test(t)
 	mockConnector := &mockGatewayConnector{}
 	cfg := ServiceConfig{}
-	irl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
-	require.NoError(t, err)
-	orl, err := ratelimit.NewRateLimiter(rateLimiterConfig())
-	require.NoError(t, err)
 	store := newWorkflowStore(lggr)
 	metrics, err := NewMetrics()
 	require.NoError(t, err)
 	metadataPublisher := NewGatewayMetadataPublisher(
 		lggr,
 		mockConnector,
-		orl,
 		store,
 		cfg,
 		metrics,
@@ -896,12 +956,11 @@ func TestConnectorHandler_StartRequestCacheCleanup(t *testing.T) {
 		lggr,
 		mockConnector,
 		cfg,
-		orl,
-		irl,
 		store,
 		metadataPublisher,
 		requestCache,
 		newMetrics(t),
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -937,7 +996,11 @@ func TestRegisterWorkflow_NilInput(t *testing.T) {
 
 	sendCh := make(chan capabilities.TriggerAndId[*http.Payload], 1)
 
-	err := handler.RegisterWorkflow(context.Background(), workflowSelector, nil, sendCh)
+	err := handler.RegisterWorkflow(context.Background(), WorkflowRegistrationInput{
+		WorkflowSelector: workflowSelector,
+		Config:           nil,
+		Metadata:         WorkflowRegistrationMetadata{},
+	}, sendCh)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "input config cannot be nil")
 }

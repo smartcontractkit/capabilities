@@ -28,6 +28,7 @@ import (
 	triggersdk "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
 )
@@ -95,23 +96,6 @@ const memberTemplate = `{
     "Name": "test_node_%d"
 }`
 
-const triggerServiceConfigTemplate = `
-{
-	"incomingRateLimiter": {
-		"globalBurst": 10,
-		"globalRPS": 50,
-		"perSenderBurst": 10,
-		"perSenderRPS": 10
-	},
-	"outgoingRateLimiter": {
-		"globalBurst": 10,
-		"globalRPS": 50,
-		"perSenderBurst": 10,
-		"perSenderRPS": 10
-	}
-}
-`
-
 const workflowID = "0x217ca1cb7b52136b3baedb2a13e4609fa86439b87a1bc48fea6d95f19444cf72"
 
 // Workflow reference constants for testing
@@ -123,7 +107,7 @@ const (
 
 func nodeKeys(t *testing.T, numNodes int) []*ecdsa.PrivateKey {
 	var keys []*ecdsa.PrivateKey
-	for i := 0; i < numNodes; i++ {
+	for range numNodes {
 		privateKey, err := crypto.GenerateKey()
 		require.NoError(t, err)
 		keys = append(keys, privateKey)
@@ -165,7 +149,7 @@ func setupTestEnv(t *testing.T, numNodes int) *testEnv {
 
 	var triggerCaps []server.HTTPCapability
 	var triggerChs []<-chan capabilities.TriggerAndId[*triggersdk.Payload]
-	for i := 0; i < numNodes; i++ {
+	for i := range numNodes {
 		triggerCap, ch := newTriggerHTTPCapability(ctx, t, nodeURL, nodeKeys[i], signingKey, lggr)
 		triggerCaps = append(triggerCaps, triggerCap)
 		triggerChs = append(triggerChs, ch)
@@ -230,6 +214,26 @@ func sampleRequestWithReference(t *testing.T, url string, key *ecdsa.PrivateKey)
 	return createSampleRequest(t, url, key, workflow, uuid.New().String())
 }
 
+func sampleRequestWithoutPrefix(t *testing.T, url string, key *ecdsa.PrivateKey) (*http.Request, string, map[string]any) {
+	// Strip 0x prefix from workflowID to test normalization
+	workflowIDWithoutPrefix := strings.TrimPrefix(workflowID, "0x")
+	workflow := gateway_common.WorkflowSelector{
+		WorkflowID: workflowIDWithoutPrefix,
+	}
+	return createSampleRequest(t, url, key, workflow, uuid.New().String())
+}
+
+func sampleRequestWithReferenceWithoutPrefix(t *testing.T, url string, key *ecdsa.PrivateKey) (*http.Request, string, map[string]any) {
+	// Strip 0x prefix from workflowOwner to test normalization
+	workflowOwnerWithoutPrefix := strings.TrimPrefix(workflowOwner, "0x")
+	workflow := gateway_common.WorkflowSelector{
+		WorkflowOwner: workflowOwnerWithoutPrefix,
+		WorkflowName:  workflowName,
+		WorkflowTag:   workflowTag,
+	}
+	return createSampleRequest(t, url, key, workflow, uuid.New().String())
+}
+
 func TestHTTPTrigger(t *testing.T) {
 	t.Run("WithWorkflowID", func(t *testing.T) {
 		testHTTPTriggerWithWorkflowID(t)
@@ -237,6 +241,14 @@ func TestHTTPTrigger(t *testing.T) {
 
 	t.Run("WithWorkflowReference", func(t *testing.T) {
 		testHTTPTriggerWithWorkflowReference(t)
+	})
+
+	t.Run("WithWorkflowIDWithoutPrefix", func(t *testing.T) {
+		testHTTPTriggerWithWorkflowIDWithoutPrefix(t)
+	})
+
+	t.Run("WithWorkflowReferenceWithoutPrefix", func(t *testing.T) {
+		testHTTPTriggerWithWorkflowReferenceWithoutPrefix(t)
 	})
 
 	t.Run("RequestDeduplication", func(t *testing.T) {
@@ -254,53 +266,49 @@ func TestHTTPTrigger_InsufficientNodes(t *testing.T) {
 		_, err := http.DefaultClient.Do(req)
 		return err != nil // request times out and returns an error if threshold of node responses is not met
 	}, 30*time.Second, time.Second)
-	executionID, err := workflows.EncodeExecutionID(strings.TrimPrefix(workflowID, "0x"), requestID)
-	require.NoError(t, err)
-	assertTriggerPayload(t, env, executionID, input) // workflows are still triggered even if not all nodes are available
+	assertTriggerPayload(t, env, requestID, input) // workflows are still triggered even if not all nodes are available
+}
+
+// requestGeneratorFunc is a function type for generating test requests
+type requestGeneratorFunc func(t *testing.T, url string, key *ecdsa.PrivateKey) (*http.Request, string, map[string]any)
+
+// runHTTPTriggerTest is a helper function that runs a standard HTTP trigger test with the given request generator
+func runHTTPTriggerTest(t *testing.T, reqGen requestGeneratorFunc) {
+	f := 1
+	numNodes := 3*f + 1
+	env := setupTestEnv(t, numNodes)
+	var req *http.Request
+	var requestID string
+	var input map[string]any
+	var body []byte
+	require.Eventually(t, func() bool {
+		req, requestID, input = reqGen(t, env.userURL, env.signingKey)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		body, err = io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		return resp.StatusCode == http.StatusOK
+	}, 30*time.Second, time.Second)
+
+	validateHTTPTriggerResponse(t, body, requestID, workflowID)
+	assertTriggerPayload(t, env, requestID, input)
 }
 
 func testHTTPTriggerWithWorkflowID(t *testing.T) {
-	f := 1
-	numNodes := 3*f + 1
-	env := setupTestEnv(t, numNodes)
-	var req *http.Request
-	var requestID string
-	var input map[string]any
-	var body []byte
-	require.Eventually(t, func() bool {
-		req, requestID, input = sampleRequest(t, env.userURL, env.signingKey)
-		resp, err := http.DefaultClient.Do(req)
-		require.NoError(t, err)
-		defer resp.Body.Close()
-		body, err = io.ReadAll(resp.Body)
-		require.NoError(t, err)
-		return resp.StatusCode == http.StatusOK
-	}, 30*time.Second, time.Second)
-
-	executionID := validateHTTPTriggerResponse(t, body, requestID, workflowID)
-	assertTriggerPayload(t, env, executionID, input)
+	runHTTPTriggerTest(t, sampleRequest)
 }
 
 func testHTTPTriggerWithWorkflowReference(t *testing.T) {
-	f := 1
-	numNodes := 3*f + 1
-	env := setupTestEnv(t, numNodes)
-	var req *http.Request
-	var requestID string
-	var input map[string]any
-	var body []byte
-	require.Eventually(t, func() bool {
-		req, requestID, input = sampleRequestWithReference(t, env.userURL, env.signingKey)
-		resp, err := http.DefaultClient.Do(req)
-		require.NoError(t, err)
-		defer resp.Body.Close()
-		body, err = io.ReadAll(resp.Body)
-		require.NoError(t, err)
-		return resp.StatusCode == http.StatusOK
-	}, 30*time.Second, time.Second)
+	runHTTPTriggerTest(t, sampleRequestWithReference)
+}
 
-	executionID := validateHTTPTriggerResponse(t, body, requestID, workflowID)
-	assertTriggerPayload(t, env, executionID, input)
+func testHTTPTriggerWithWorkflowIDWithoutPrefix(t *testing.T) {
+	runHTTPTriggerTest(t, sampleRequestWithoutPrefix)
+}
+
+func testHTTPTriggerWithWorkflowReferenceWithoutPrefix(t *testing.T) {
+	runHTTPTriggerTest(t, sampleRequestWithReferenceWithoutPrefix)
 }
 
 func testHTTPTriggerRequestDeduplication(t *testing.T) {
@@ -327,8 +335,8 @@ func testHTTPTriggerRequestDeduplication(t *testing.T) {
 		return resp.StatusCode == http.StatusOK
 	}, 30*time.Second, time.Second)
 
-	executionID := validateHTTPTriggerResponse(t, body, requestID, workflowID)
-	assertTriggerPayload(t, env, executionID, input)
+	validateHTTPTriggerResponse(t, body, requestID, workflowID)
+	assertTriggerPayload(t, env, requestID, input)
 
 	request, _, _ = createSampleRequest(t, env.userURL, env.signingKey, workflow, requestID)
 	resp, err := http.DefaultClient.Do(request)
@@ -338,7 +346,7 @@ func testHTTPTriggerRequestDeduplication(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	_ = validateHTTPTriggerResponse(t, body, requestID, workflowID)
+	validateHTTPTriggerResponse(t, body, requestID, workflowID)
 
 	// This request should be deduplicated, so no new triggers should be sent to the nodes
 	for i, ch := range env.triggerChs {
@@ -347,7 +355,7 @@ func testHTTPTriggerRequestDeduplication(t *testing.T) {
 }
 
 // validateHTTPTriggerResponse validates the HTTP response and returns the execution ID for further assertions
-func validateHTTPTriggerResponse(t *testing.T, body []byte, requestID string, expectedWorkflowID string) string {
+func validateHTTPTriggerResponse(t *testing.T, body []byte, requestID string, expectedWorkflowID string) {
 	var respBody jsonrpc.Response[gateway_common.HTTPTriggerResponse]
 	err := json.Unmarshal(body, &respBody)
 	require.NoError(t, err)
@@ -361,17 +369,15 @@ func validateHTTPTriggerResponse(t *testing.T, body []byte, requestID string, ex
 	executionID, err := workflows.EncodeExecutionID(strings.TrimPrefix(workflowIDFromResponse, "0x"), requestID)
 	require.NoError(t, err)
 	require.Equal(t, "0x"+executionID, respBody.Result.WorkflowExecutionID)
-
-	return executionID
 }
 
-func assertTriggerPayload(t *testing.T, env *testEnv, executionID string, expectedInput map[string]any) {
+func assertTriggerPayload(t *testing.T, env *testEnv, requestID string, expectedInput map[string]any) {
 	for i, ch := range env.triggerChs {
 		select {
 		case payload := <-ch:
 			require.NotNil(t, payload)
-			require.Equal(t, "0x"+executionID, payload.Id)
-			var actualInput map[string]interface{}
+			require.Equal(t, requestID, payload.Id)
+			var actualInput map[string]any
 			err := json.Unmarshal(payload.Trigger.Input, &actualInput)
 			require.NoError(t, err)
 			require.Equal(t, expectedInput, actualInput)
@@ -390,7 +396,11 @@ func newTriggerHTTPCapability(ctx context.Context, t *testing.T, nodeURL string,
 	gc := newTestGatewayConnector(t, publicKey, nodeURL, client, lggr)
 	triggerCap := triggercap.NewService(lggr, limits.Factory{Logger: lggr})
 	kvStore := newTestKeyValueStore()
-	err := triggerCap.Initialise(ctx, triggerServiceConfigTemplate, nil, kvStore, nil, nil, nil, nil, gc, nil)
+	err := triggerCap.Initialise(ctx, core.StandardCapabilitiesDependencies{
+		Config:           "",
+		Store:            kvStore,
+		GatewayConnector: gc,
+	})
 	require.NoError(t, err)
 	ch, err := triggerCap.RegisterTrigger(ctx, "trigger-id", capabilities.RequestMetadata{
 		WorkflowID:    workflowID,

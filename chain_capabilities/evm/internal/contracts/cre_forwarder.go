@@ -258,8 +258,8 @@ func (t TransmissionID) ReceiverHex() string {
 	return common.Bytes2Hex(t.Receiver[:])
 }
 
-func (t TransmissionID) GetIDPartsForDebugging() []interface{} {
-	return []interface{}{"receiver", common.Bytes2Hex(t.Receiver[:]), "reportID", common.Bytes2Hex(t.ReportID[:]), "workflowExecutionID", common.Bytes2Hex(t.WorkflowExecutionID[:])}
+func (t TransmissionID) GetIDPartsForDebugging() []any {
+	return []any{"receiver", common.Bytes2Hex(t.Receiver[:]), "reportID", common.Bytes2Hex(t.ReportID[:]), "workflowExecutionID", common.Bytes2Hex(t.WorkflowExecutionID[:])}
 }
 
 func (t TransmissionID) GetDebugID() string {

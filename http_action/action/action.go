@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/smartcontractkit/capabilities/http_action/common"
@@ -15,8 +16,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http/server"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/settings"
-	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
@@ -34,7 +33,6 @@ type service struct {
 	cfg           common.ServiceConfig
 	metrics       *common.Metrics
 	limitsFactory limits.Factory
-	rateLimiter   limits.RateLimiter
 	validator     *validate.Validator
 }
 
@@ -45,21 +43,10 @@ func NewService(lggr logger.Logger, limitsFactory limits.Factory) *service {
 	}
 }
 
-func (s *service) Initialise(
-	ctx context.Context,
-	config string,
-	_ core.TelemetryService,
-	_ core.KeyValueStore,
-	_ core.ErrorLog,
-	_ core.PipelineRunnerService,
-	_ core.RelayerSet,
-	_ core.OracleFactory,
-	gc core.GatewayConnector,
-	_ core.Keystore,
-) error {
-	s.lggr.Debugf("Initialising %s", ServiceName)
+func (s *service) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
+	s.lggr.Debugf("Initialising %s. config: %s", ServiceName, dependencies.Config)
 
-	err := json.Unmarshal([]byte(config), &s.cfg)
+	err := json.Unmarshal([]byte(dependencies.Config), &s.cfg)
 	if err != nil {
 		return err
 	}
@@ -75,12 +62,7 @@ func (s *service) Initialise(
 		return err
 	}
 
-	s.client, err = NewOutboundRequestClient(gc, s.cfg, s.lggr, s.metrics, s.validator)
-	if err != nil {
-		return err
-	}
-
-	s.rateLimiter, err = s.limitsFactory.MakeRateLimiter(cresettings.Default.PerWorkflow.HTTPAction.RateLimit)
+	s.client, err = NewOutboundRequestClient(dependencies.GatewayConnector, s.cfg, s.lggr, s.metrics, s.validator)
 	if err != nil {
 		return err
 	}
@@ -118,7 +100,7 @@ func (s *service) Ready() error {
 }
 
 func (s *service) Name() string {
-	return ServiceName
+	return s.lggr.Name()
 }
 
 func (s *service) Description() string {
@@ -131,23 +113,22 @@ func (s *service) SendRequest(ctx context.Context, metadata capabilities.Request
 	startTime := time.Now()
 	s.metrics.IncrementRequestCount(ctx, s.lggr)
 	// set the context with the workflow owner and workflow id
-	// these are required for request/response/rate limit checks
+	// these are required for request/response checks
 	ctx = metadata.ContextWithCRE(ctx)
-
-	if err := s.CheckRateLimit(ctx, metadata); err != nil {
-		return nil, err
-	}
 
 	validatedInput, err := s.validator.ValidatedRequest(ctx, input)
 	if err != nil {
-		s.lggr.Errorf("Failed to validate input: %v", err)
 		s.metrics.IncrementInputValidationFailures(ctx, s.lggr)
-		return nil, err
+		return nil, capabilities.NewRemoteReportableError(
+			fmt.Errorf("input validation failed for workflow %s (ID: %s, Owner: %s, ExecutionID: %s): %w",
+				metadata.WorkflowName, metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowExecutionID, err))
 	}
 
 	response, err := s.client.SendRequest(ctx, metadata, validatedInput, startTime)
 	if err != nil {
-		return nil, err
+		return nil, capabilities.NewRemoteReportableError(
+			fmt.Errorf("request failed for workflow %s (ID: %s, Owner: %s, ExecutionID: %s): %w",
+				metadata.WorkflowName, metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowExecutionID, err))
 	}
 
 	s.metrics.IncrementSuccessfulResponse(ctx, s.cfg.ProxyMode, response.StatusCode, s.lggr)
@@ -156,7 +137,10 @@ func (s *service) SendRequest(ctx context.Context, metadata capabilities.Request
 		Response:         response,
 		ResponseMetadata: capabilities.ResponseMetadata{},
 	}
-	return &responseAndMetadata, err
+	s.lggr.Debugf("Processed request for workflow %s (ID: %s, Owner: %s, ExecutionID: %s)",
+		metadata.WorkflowName, metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowExecutionID)
+
+	return &responseAndMetadata, nil
 }
 
 // NewOutboundRequestClient creates an OutboundProxy based on the ServiceConfig.ProxyMode
@@ -169,19 +153,4 @@ func NewOutboundRequestClient(gatewayConnector core.GatewayConnector, serviceCon
 	default:
 		return nil, errors.New("invalid ProxyMode: " + serviceConfig.ProxyMode.String())
 	}
-}
-
-func (s *service) CheckRateLimit(ctx context.Context, metadata capabilities.RequestMetadata) error {
-	if err := s.rateLimiter.AllowErr(ctx); err != nil {
-		var rl limits.ErrorRateLimited
-		if errors.As(err, &rl) {
-			if rl.Scope == settings.ScopeWorkflow {
-				s.metrics.IncrementWorkflowThrottled(ctx, s.lggr)
-			} else {
-				s.lggr.Errorf("failed to start execution: unexpected rate limit for scope %s", rl.Scope)
-			}
-		}
-		return err
-	}
-	return nil
 }

@@ -20,6 +20,8 @@ import (
 
 	"github.com/smartcontractkit/capabilities/consensus/metrics"
 	"github.com/smartcontractkit/capabilities/consensus/oracle"
+	"github.com/smartcontractkit/capabilities/consensus/oracle/plugin"
+	"github.com/smartcontractkit/capabilities/consensus/oracle/transmitter"
 	"github.com/smartcontractkit/capabilities/consensus/oracle/types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -111,24 +113,20 @@ func (c *consensusCapability) SetRequestTimeout(timeout time.Duration) {
 	c.requestTimeout = timeout
 }
 
-func (c *consensusCapability) Initialise(ctx context.Context, config string,
-	telemetryService core.TelemetryService,
-	store core.KeyValueStore, errorLog core.ErrorLog, pipelineRunner core.PipelineRunnerService,
-	relayerSet core.RelayerSet, oracleFactory core.OracleFactory,
-	gatewayConnector core.GatewayConnector, _ core.Keystore) error {
+func (c *consensusCapability) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
 	c.lggr.Debugf("Initialising Consensus Capability")
 
-	if err := c.setConfiguration(config); err != nil {
+	if err := c.setConfiguration(dependencies.Config); err != nil {
 		return fmt.Errorf("error setting consensus capability configuration: %w", err)
 	}
 
-	reportingPlugin, err := oracle.NewReportingPluginFactory(c.lggr, c.metrics, c.reqStore, c.SetRequestTimeout,
+	reportingPlugin, err := plugin.NewReportingPluginFactory(c.lggr, c.metrics, c.reqStore, c.SetRequestTimeout,
 		c.requestBatchSize)
 	if err != nil {
 		return fmt.Errorf("error when creating reporting plugin factory: %w", err)
 	}
 
-	contractTransmitter := oracle.NewContractTransmitter(c.lggr, c.SendResponse)
+	contractTransmitter := transmitter.NewContractTransmitter(c.lggr, c.SendResponse)
 
 	// These values set to the maximum permitted, response time for config update is not critical
 	localOcrConfig := ocrtypes.LocalConfig{
@@ -141,7 +139,7 @@ func (c *consensusCapability) Initialise(ctx context.Context, config string,
 		DefaultMaxDurationInitialization:   time.Second * 60,
 	}
 
-	oracle, err := oracleFactory.NewOracle(ctx, core.OracleArgs{
+	oracle, err := dependencies.OracleFactory.NewOracle(ctx, core.OracleArgs{
 		LocalConfig:                   localOcrConfig,
 		ReportingPluginFactoryService: reportingPlugin,
 		ContractTransmitter:           contractTransmitter,
@@ -188,10 +186,11 @@ func (c *consensusCapability) setConfiguration(cfg string) error {
 		c.requestBatchSize = capabilityConfig.RequestBatchSize
 	}
 
+	limit := cresettings.Default.PerWorkflow.Consensus.ObservationSizeLimit // make a copy
 	if capabilityConfig.MaxRequestSizeBytes > 0 {
-		cresettings.Default.PerWorkflow.ConsensusObservationSizeLimit.DefaultValue = config.Size(capabilityConfig.MaxRequestSizeBytes)
+		limit.DefaultValue = config.Size(capabilityConfig.MaxRequestSizeBytes)
 	}
-	maxRequestSizeBytes, err := limits.MakeBoundLimiter(c.limitsFactory, cresettings.Default.PerWorkflow.ConsensusObservationSizeLimit)
+	maxRequestSizeBytes, err := limits.MakeBoundLimiter(c.limitsFactory, limit)
 	if err != nil {
 		return err
 	}
@@ -238,7 +237,7 @@ func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.
 		}
 
 		// Remove the metadata prefix from the raw report to get the serialised value
-		serialisedValue := response.RawReport[oracle.ReportMetaDataPrependLength:]
+		serialisedValue := response.RawReport[plugin.ReportMetaDataPrependLength:]
 
 		valueProto := &valuespb.Value{}
 		if err := proto.Unmarshal(serialisedValue, valueProto); err != nil {
@@ -464,7 +463,7 @@ func (c *consensusCapability) Description() string {
 // validateRequestSize ensures the combined size of input and metadata does not exceed the allowed limit.
 // This prevents oversized requests that could disrupt the consensus process.
 func (c *consensusCapability) validateRequestSize(ctx context.Context, consensusRequestMetaData oracle.ConsensusRequestMetadata, input proto.Message) (int, error) {
-	requestMetaData := oracle.ToRequestMetaData(consensusRequestMetaData)
+	requestMetaData := plugin.ToRequestMetaData(consensusRequestMetaData)
 
 	serialisedInput, err := proto.Marshal(input)
 	if err != nil {

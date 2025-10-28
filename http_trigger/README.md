@@ -181,8 +181,6 @@ type ServiceConfig struct {
     MaxAuthorizedKeysPerWorkflow  uint32            `json:"maxAuthorizedKeysPerWorkflow"`
     MetadataBatchSize            uint32            `json:"metadataBatchSize"`
     RequestCacheTTL              time.Duration     `json:"requestCacheTTL"`
-    IncomingRateLimiter          RateLimiterConfig `json:"incomingRateLimiter"`
-    OutgoingRateLimiter          RateLimiterConfig `json:"outgoingRateLimiter"`
     GatewayConnectionConfig      GatewayConfig     `json:"gatewayConnection"`
 }
 ```
@@ -193,20 +191,7 @@ type ServiceConfig struct {
 - **`maxAuthorizedKeysPerWorkflow`**: Maximum number of authorized keys per workflow
 - **`metadataBatchSize`**: Number of workflows to include in each metadata batch sent to gateways
 - **`requestCacheTTL`**: Time-to-live for cached requests (deduplication window)
-- **`incomingRateLimiter`**: Rate limits for messages received from gateways
-- **`outgoingRateLimiter`**: Rate limits for messages sent to gateways
 - **`gatewayConnectionConfig`**: Gateway connection and retry configuration
-
-### Rate Limiter Configuration
-
-```go
-type RateLimiterConfig struct {
-    GlobalRPS      float64 `json:"globalRPS"`      // Global requests per second
-    GlobalBurst    int     `json:"globalBurst"`    // Global burst capacity
-    PerSenderRPS   float64 `json:"perSenderRPS"`   // Per-sender requests per second
-    PerSenderBurst int     `json:"perSenderBurst"` // Per-sender burst capacity
-}
-```
 
 ### Gateway Connection Configuration
 
@@ -232,18 +217,6 @@ type RetryConfig struct {
   "maxAuthorizedKeysPerWorkflow": 10,
   "metadataBatchSize": 100,
   "requestCacheTTL": "1h",
-  "incomingRateLimiter": {
-    "perSenderRPS": 100.0,
-    "perSenderBurst": 100,
-    "globalRPS": 1000.0,
-    "globalBurst": 1000
-  },
-  "outgoingRateLimiter": {
-    "perSenderRPS": 100.0,
-    "perSenderBurst": 100,
-    "globalRPS": 1000.0,
-    "globalBurst": 1000
-  },
   "gatewayConnection": {
     "maxPushMetadataDurationMs": 30000,
     "maxPullMetadataDurationMs": 60000,

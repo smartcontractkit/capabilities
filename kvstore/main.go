@@ -3,8 +3,12 @@ package main
 import (
 	"github.com/smartcontractkit/capabilities/kvstore/server"
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/loop"
 )
 
 func main() {
-	loopserver.Serve("KVStoreCapabilities", server.New)
+	loopserver.ServeNew("KVStoreCapabilities", func(s *loop.Server) loop.StandardCapabilities {
+		return server.New(s.Logger)
+	})
 }

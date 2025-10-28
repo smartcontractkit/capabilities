@@ -6,42 +6,27 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"google.golang.org/protobuf/proto"
-
-	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/custmsg"
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
+	"github.com/smartcontractkit/chainlink-common/pkg/services/orgresolver"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
-	workflowsevents "github.com/smartcontractkit/chainlink-protos/workflows/go/v2"
+	"github.com/smartcontractkit/chainlink-common/pkg/workflows/events"
 )
 
 const (
-	HandlerName                  = "HTTPTriggerHandler"
-	errorOutgoingRatelimitGlobal = "global limit of outgoing gateways requests has been exceeded"
-	errorOutgoingRatelimitSender = "per-sender limit of outgoing gateways requests has been exceeded"
-	errorIncomingRatelimitGlobal = "message from gateway exceeded global rate limit"
-	errorIncomingRatelimitSender = "message from gateway exceeded per sender rate limit"
-	ecdsaPubKeyHexLen            = 42 // 2 (0x prefix) + 40 (hex digits)
-)
-
-// Constants for trigger emission labels
-const (
-	KeyTriggerID           = "trigger_id"
-	KeyWorkflowID          = "workflow_id"
-	KeyWorkflowOwner       = "workflow_owner"
-	KeyWorkflowName        = "workflow_name"
-	KeyWorkflowExecutionID = "workflow_execution_id"
+	HandlerName       = "HTTPTriggerHandler"
+	ecdsaPubKeyHexLen = 42 // 2 (0x prefix) + 40 (hex digits)
 )
 
 var _ core.GatewayConnectorHandler = &connectorHandler{}
@@ -53,28 +38,25 @@ type connectorHandler struct {
 	config                   ServiceConfig
 	requestCache             *requestCache
 	workflowStore            *workflowStore
-	incomingRateLimiter      *ratelimit.RateLimiter
-	outgoingRateLimiter      *ratelimit.RateLimiter
 	gatewayMetadataPublisher GatewayMetadataPublisher
 	metrics                  *Metrics
 	wg                       sync.WaitGroup
 	stopChan                 services.StopChan
+	orgResolver              orgresolver.OrgResolver // Optional org resolver for fetching organization IDs
 }
 
 func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config ServiceConfig,
-	outgoingRateLimiter *ratelimit.RateLimiter, incomingRateLimiter *ratelimit.RateLimiter,
-	workflowStore *workflowStore, gatewayMetadataPublisher GatewayMetadataPublisher, requestCache *requestCache, metrics *Metrics) (*connectorHandler, error) {
+	workflowStore *workflowStore, gatewayMetadataPublisher GatewayMetadataPublisher, requestCache *requestCache, metrics *Metrics, orgResolver orgresolver.OrgResolver) (*connectorHandler, error) {
 	return &connectorHandler{
 		lggr:                     logger.Named(lggr, HandlerName),
 		gatewayConnector:         gc,
 		config:                   config,
-		outgoingRateLimiter:      outgoingRateLimiter,
-		incomingRateLimiter:      incomingRateLimiter,
 		workflowStore:            workflowStore,
 		gatewayMetadataPublisher: gatewayMetadataPublisher,
 		requestCache:             requestCache,
 		metrics:                  metrics,
 		stopChan:                 make(chan struct{}),
+		orgResolver:              orgResolver,
 	}, nil
 }
 
@@ -130,18 +112,18 @@ func (h *connectorHandler) Ready() error {
 }
 
 func (h *connectorHandler) Name() string {
-	return HandlerName
+	return h.lggr.Name()
 }
 
 func (h *connectorHandler) ID(context.Context) (string, error) {
 	return HandlerName, nil
 }
 
-func (h *connectorHandler) RegisterWorkflow(ctx context.Context, workflowSelector gateway_common.WorkflowSelector, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error {
-	if input == nil {
+func (h *connectorHandler) RegisterWorkflow(ctx context.Context, input WorkflowRegistrationInput, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error {
+	if input.Config == nil {
 		return errors.New("input config cannot be nil")
 	}
-	authorizedKeys, err := h.validateAuthorizedKeys(input.AuthorizedKeys)
+	authorizedKeys, err := h.validateAuthorizedKeys(input.Config.AuthorizedKeys)
 	if err != nil {
 		return err
 	}
@@ -150,24 +132,27 @@ func (h *connectorHandler) RegisterWorkflow(ctx context.Context, workflowSelecto
 	// Error is non-critical. Retries will be handled by the metadata publisher.
 	startTime := time.Now()
 	h.metrics.IncrementBroadcastMetadataCount(ctx, h.lggr)
-	err = h.gatewayMetadataPublisher.BroadcastWorkflowMetadata(ctx, workflowSelector, authorizedKeys)
+	err = h.gatewayMetadataPublisher.BroadcastWorkflowMetadata(ctx, input.WorkflowSelector, authorizedKeys)
 	if err != nil {
 		h.lggr.Errorw("Failed to push metadata to gateway", "error",
-			err, "workflowID", workflowSelector.WorkflowID)
+			err, "workflowID", input.WorkflowSelector.WorkflowID)
 		h.metrics.IncrementBroadcastMetadataFailures(ctx, h.lggr)
 	}
 	latencyMs := time.Since(startTime).Milliseconds()
 	h.metrics.RecordBroadcastMetadataLatency(ctx, latencyMs, h.lggr)
 
-	workflow := newWorkflow(workflowSelector, authorizedKeys, sendCh)
-	h.workflowStore.upsertWorkflow(workflow)
-	h.lggr.Debugw("Registered workflow", "workflowID", workflowSelector.WorkflowID, "workflowOwner", workflowSelector.WorkflowOwner, "workflowName", workflowSelector.WorkflowName, "workflowTag", workflowSelector.WorkflowTag)
+	workflow := newWorkflowWithMetadata(input.WorkflowSelector, authorizedKeys, sendCh, input.Metadata)
+	if err := h.workflowStore.upsertWorkflow(workflow); err != nil {
+		return fmt.Errorf("failed to register workflow (ID: %s, Owner: %s, Name: %s): %w",
+			input.WorkflowSelector.WorkflowID, input.WorkflowSelector.WorkflowOwner, input.WorkflowSelector.WorkflowName, err)
+	}
+	h.lggr.Debugw("Registered workflow", "workflowID", input.WorkflowSelector.WorkflowID, "workflowOwner", input.WorkflowSelector.WorkflowOwner, "workflowName", input.WorkflowSelector.WorkflowName, "workflowTag", input.WorkflowSelector.WorkflowTag)
 	return nil
 }
 
 func (h *connectorHandler) validateAuthorizedKeys(inputKeys []*http.AuthorizedKey) ([]gateway_common.AuthorizedKey, error) {
 	if len(inputKeys) == 0 {
-		return nil, fmt.Errorf("no authorized keys")
+		return nil, fmt.Errorf("HTTP trigger requires at least one authorized key to sign JSON-RPC requests. Add AuthorizedKeys to your http.Trigger configuration with ECDSA EVM public keys (0x-prefixed hex strings)")
 	}
 	if len(inputKeys) > int(h.config.MaxAuthorizedKeysPerWorkflow) {
 		return nil, fmt.Errorf("too many authorized keys: %d, max allowed: %d", len(inputKeys), h.config.MaxAuthorizedKeysPerWorkflow)
@@ -207,9 +192,6 @@ func (h *connectorHandler) HandleGatewayMessage(ctx context.Context, gatewayID s
 	if req == nil {
 		return errors.New("request cannot be nil")
 	}
-	if !h.checkIncomingRateLimit(ctx, gatewayID) {
-		return nil
-	}
 
 	switch req.Method {
 	case gateway_common.MethodWorkflowExecute:
@@ -235,21 +217,6 @@ func (h *connectorHandler) HandleGatewayMessage(ctx context.Context, gatewayID s
 	return nil
 }
 
-func (h *connectorHandler) checkIncomingRateLimit(ctx context.Context, gatewayID string) bool {
-	senderAllow, globalAllow := h.incomingRateLimiter.AllowVerbose(gatewayID)
-	if !senderAllow {
-		h.lggr.Errorw(errorIncomingRatelimitSender, "gatewayID", gatewayID)
-		h.metrics.IncrementGatewayNodeThrottled(ctx, gatewayID, h.lggr)
-		return false
-	}
-	if !globalAllow {
-		h.lggr.Errorw(errorIncomingRatelimitGlobal, "gatewayID", gatewayID)
-		h.metrics.IncrementGatewayGlobalThrottled(ctx, h.lggr)
-		return false
-	}
-	return true
-}
-
 func (h *connectorHandler) sendErrorResponse(ctx context.Context, gatewayID string, reqID string, code int64, message string) {
 	resp := &jsonrpc.Response[json.RawMessage]{
 		Version: "2.0",
@@ -264,19 +231,10 @@ func (h *connectorHandler) sendErrorResponse(ctx context.Context, gatewayID stri
 }
 
 func (h *connectorHandler) sendResponse(ctx context.Context, gatewayID string, resp *jsonrpc.Response[json.RawMessage]) {
-	senderAllow, globalAllow := h.outgoingRateLimiter.AllowVerbose(gatewayID)
-	if !senderAllow {
-		h.lggr.Errorw(errorOutgoingRatelimitSender, "gatewayID", gatewayID)
-		return
-	}
-	if !globalAllow {
-		h.lggr.Errorw(errorOutgoingRatelimitGlobal, "gatewayID", gatewayID)
-		return
-	}
 	h.metrics.IncrementGatewayRequestCount(ctx, gatewayID, gateway_common.MethodWorkflowExecute, h.lggr)
 	err := h.gatewayConnector.SendToGateway(ctx, gatewayID, resp)
 	if err != nil {
-		h.lggr.Errorw("Failed to send response to gateway", "error", err, "gatewayID", gatewayID)
+		h.lggr.Errorw("Failed to send response to gateway", "error", err, "gatewayID", gatewayID, "requestID", resp.ID)
 		h.metrics.IncrementGatewaySendError(ctx, gatewayID, gateway_common.MethodWorkflowExecute, h.lggr)
 		return
 	}
@@ -310,12 +268,13 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 	}
 
 	l = logger.With(l, "workflowID", workflowMetadata.WorkflowID)
-	workflowExecutionID, err := h.generateWorkflowExecutionID(workflowMetadata.WorkflowID, req.ID, l)
+	workflowExecutionID, err := h.generateWorkflowExecutionID(strings.TrimPrefix(workflowMetadata.WorkflowID, "0x"), req.ID, l)
 	if err != nil {
 		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInternal, "Internal server error")
 		return
 	}
 
+	l = logger.With(l, "workflowExecutionID", workflowExecutionID)
 	if handled := h.handleRequestCaching(ctx, gatewayID, req, workflowExecutionID, l); handled {
 		return
 	}
@@ -327,19 +286,35 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 
 	// Emit TriggerExecutionStarted event
 	labeler := custmsg.NewLabeler().With(
-		KeyTriggerID, req.ID,
-		KeyWorkflowID, workflowMetadata.WorkflowID,
-		KeyWorkflowExecutionID, workflowExecutionID,
-		KeyWorkflowOwner, workflowMetadata.WorkflowOwner,
-		KeyWorkflowName, workflowMetadata.WorkflowName,
+		events.KeyTriggerID, req.ID,
+		events.KeyWorkflowID, workflowMetadata.WorkflowID,
+		events.KeyWorkflowExecutionID, workflowExecutionID,
+		events.KeyWorkflowOwner, workflowMetadata.WorkflowOwner,
+		events.KeyWorkflowName, workflowMetadata.WorkflowName,
+		events.KeyWorkflowRegistryChainSelector, workflowMetadata.WorkflowRegistryChainSelector,
+		events.KeyWorkflowRegistryAddress, workflowMetadata.WorkflowRegistryAddress,
+		events.KeyEngineVersion, workflowMetadata.EngineVersion,
+		events.KeyDonID, strconv.Itoa(int(workflowMetadata.WorkflowDONID)),
 	)
-	if emitErr := emitTriggerExecutionStarted(ctx, labeler); emitErr != nil {
-		l.Errorw("failed to emit trigger execution started event", "error", emitErr, "workflowID", workflowMetadata.WorkflowID, "workflowExecutionID", workflowExecutionID)
+
+	// Try to fetch organization ID if org resolver is available
+	if h.orgResolver != nil && workflowMetadata.WorkflowOwner != "" {
+		if orgID, orgErr := h.orgResolver.Get(ctx, workflowMetadata.WorkflowOwner); orgErr != nil {
+			l.Warnw("Failed to fetch organization ID from org resolver", "workflowOwner", workflowMetadata.WorkflowOwner, "error", orgErr)
+		} else if orgID != "" {
+			labeler = labeler.With(events.KeyOrganizationID, orgID)
+			l.Debugw("Successfully fetched organization ID", "workflowOwner", workflowMetadata.WorkflowOwner, "orgID", orgID)
+		}
+	}
+
+	if emitErr := events.EmitTriggerExecutionStarted(ctx, labeler); emitErr != nil {
+		l.Errorw("failed to emit trigger execution started event", "error", emitErr)
 		// Continue with execution even if event emission fails
 	}
 
+	l.Debugw("Triggering workflow")
 	input := []byte(triggerReq.Input)
-	err = h.triggerWorkflow(ctx, workflowMetadata.WorkflowID, req.ID, gatewayID, workflowExecutionID, input, triggerReq.Key)
+	err = h.triggerWorkflow(ctx, workflowMetadata.WorkflowID, req.ID, gatewayID, input, triggerReq.Key)
 	if err != nil {
 		l.Errorw("Failed to trigger workflow", "error", err)
 		return
@@ -349,38 +324,67 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 }
 
 type WorkflowMetadata struct {
-	WorkflowID    string
-	WorkflowOwner string
-	WorkflowName  string
-	WorkflowTag   string
+	WorkflowID                    string
+	WorkflowOwner                 string
+	WorkflowName                  string
+	WorkflowTag                   string
+	WorkflowRegistryChainSelector string
+	WorkflowRegistryAddress       string
+	EngineVersion                 string
+	WorkflowDONID                 uint32
 }
 
 func (h *connectorHandler) resolveWorkflowMetadata(workflow gateway_common.WorkflowSelector, l logger.Logger) (WorkflowMetadata, error) {
+	// Normalize workflowID and workflowOwner before any operations
+	normalizedWorkflowID := normalizeHex(workflow.WorkflowID, expectedWorkflowIDLen)
+	normalizedWorkflowOwner := normalizeHex(workflow.WorkflowOwner, expectedWorkflowOwnerLen)
+	hashedWorkflowName := ensureHexPrefix(hex.EncodeToString([]byte(workflows.HashTruncateName(workflow.WorkflowName))))
+
 	metadata := WorkflowMetadata{
-		WorkflowID:    workflow.WorkflowID,
-		WorkflowOwner: workflow.WorkflowOwner,
+		WorkflowID:    normalizedWorkflowID,
+		WorkflowOwner: normalizedWorkflowOwner,
 		WorkflowName:  workflow.WorkflowName,
 		WorkflowTag:   workflow.WorkflowTag,
 	}
 
-	workflowID := workflow.WorkflowID
-	if workflowID != "" {
+	if workflow.WorkflowID != "" {
+		// Get the workflow from store to access metadata
+		h.populateMetadataFromWorkflow(normalizedWorkflowID, &metadata, l)
 		return metadata, nil
 	}
 
-	workflowName := ensureHexPrefix(hex.EncodeToString([]byte(workflows.HashTruncateName(workflow.WorkflowName))))
 	resolvedID, exists := h.workflowStore.getWorkflowIDByReference(
-		workflow.WorkflowOwner,
-		workflowName,
+		normalizedWorkflowOwner,
+		hashedWorkflowName,
 		workflow.WorkflowTag,
 	)
 	if !exists {
-		l.Errorw("Workflow not registered", "workflowOwner", workflow.WorkflowOwner, "workflowName", workflow.WorkflowName, "workflowTag", workflow.WorkflowTag)
+		l.Errorw("Workflow not registered", "workflowOwner", normalizedWorkflowOwner, "workflowName", hashedWorkflowName, "workflowTag", workflow.WorkflowTag)
 		return WorkflowMetadata{}, fmt.Errorf("workflow not found")
 	}
 
 	metadata.WorkflowID = resolvedID
+	// Get the workflow from store to access metadata
+	h.populateMetadataFromWorkflow(resolvedID, &metadata, l)
 	return metadata, nil
+}
+
+// populateMetadataFromWorkflow retrieves metadata from the workflow store and populates the WorkflowMetadata struct
+func (h *connectorHandler) populateMetadataFromWorkflow(workflowID string, metadata *WorkflowMetadata, l logger.Logger) {
+	if w, exists := h.workflowStore.getWorkflowByID(workflowID); exists {
+		metadata.WorkflowRegistryChainSelector = w.metadata.WorkflowRegistryChainSelector
+		metadata.WorkflowRegistryAddress = w.metadata.WorkflowRegistryAddress
+		metadata.EngineVersion = w.metadata.EngineVersion
+		metadata.WorkflowDONID = w.metadata.WorkflowDONID
+		l.Debugw("Retrieved workflow metadata",
+			"workflowID", workflowID,
+			"registryChainSelector", metadata.WorkflowRegistryChainSelector,
+			"registryAddress", metadata.WorkflowRegistryAddress,
+			"engineVersion", metadata.EngineVersion,
+			"donID", metadata.WorkflowDONID)
+	} else {
+		l.Warnw("Workflow not found in store", "workflowID", workflowID)
+	}
 }
 
 func (h *connectorHandler) generateWorkflowExecutionID(workflowID, reqID string, l logger.Logger) (string, error) {
@@ -464,7 +468,7 @@ func (h *connectorHandler) prepareAndCacheResponse(ctx context.Context, gatewayI
 	return resp, nil
 }
 
-func (h *connectorHandler) triggerWorkflow(ctx context.Context, workflowID string, reqID string, gatewayID string, executionID string, input []byte, key gateway_common.AuthorizedKey) error {
+func (h *connectorHandler) triggerWorkflow(ctx context.Context, workflowID string, reqID string, gatewayID string, input []byte, key gateway_common.AuthorizedKey) error {
 	workflow, ok := h.workflowStore.getWorkflowByID(workflowID)
 	if !ok {
 		h.sendErrorResponse(ctx, gatewayID, reqID, jsonrpc.ErrInvalidRequest, "Workflow not registered")
@@ -472,7 +476,7 @@ func (h *connectorHandler) triggerWorkflow(ctx context.Context, workflowID strin
 	}
 	err := workflow.trigger(ctx, capabilities.TriggerAndId[*http.Payload]{
 		// workflow engine does not process the request if the ID has already been used
-		Id: executionID,
+		Id: reqID,
 		Trigger: &http.Payload{
 			Input: input,
 			Key: &http.AuthorizedKey{
@@ -490,46 +494,4 @@ func (h *connectorHandler) triggerWorkflow(ctx context.Context, workflowID strin
 		return err
 	}
 	return nil
-}
-
-// emitTriggerExecutionStarted emits a TriggerExecutionStarted event via beholder using the provided labeler
-func emitTriggerExecutionStarted(ctx context.Context, labeler custmsg.MessageEmitter) error {
-	labels := labeler.Labels()
-
-	// Required fields
-	triggerID, ok := labels[KeyTriggerID]
-	if !ok {
-		return fmt.Errorf("missing required field: %s", KeyTriggerID)
-	}
-	workflowID, ok := labels[KeyWorkflowID]
-	if !ok {
-		return fmt.Errorf("missing required field: %s", KeyWorkflowID)
-	}
-	workflowExecutionID, ok := labels[KeyWorkflowExecutionID]
-	if !ok {
-		return fmt.Errorf("missing required field: %s", KeyWorkflowExecutionID)
-	}
-
-	event := &workflowsevents.TriggerExecutionStarted{
-		TriggerID:           triggerID,
-		WorkflowExecutionID: workflowExecutionID,
-		Workflow: &workflowsevents.WorkflowKey{
-			WorkflowID:    workflowID,
-			WorkflowOwner: labels[KeyWorkflowOwner],
-			WorkflowName:  labels[KeyWorkflowName],
-		},
-		Timestamp: time.Now().Format(time.RFC3339),
-	}
-
-	// Marshal the protobuf message
-	b, err := proto.Marshal(event)
-	if err != nil {
-		return fmt.Errorf("failed to marshal TriggerExecutionStarted event: %w", err)
-	}
-
-	// Emit via beholder
-	return beholder.GetEmitter().Emit(ctx, b,
-		"beholder_data_schema", "workflows.v2.trigger_execution_started", // required
-		"beholder_domain", "platform", // required
-		"beholder_entity", "workflows.v2.TriggerExecutionStarted") // required
 }

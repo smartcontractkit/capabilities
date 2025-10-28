@@ -19,6 +19,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	gcmocks "github.com/smartcontractkit/chainlink-common/pkg/types/core/mocks"
 )
 
@@ -75,7 +76,10 @@ func setupServiceTest(t *testing.T) *testSetup {
 	require.NoError(t, err)
 	gc := gcmocks.NewGatewayConnector(t)
 	gc.EXPECT().AddHandler(mock.Anything, mock.Anything, mock.Anything).Return(nil)
-	err = srv.Initialise(t.Context(), string(cfgStr), nil, nil, nil, nil, nil, nil, gc, nil)
+	err = srv.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
+		Config:           string(cfgStr),
+		GatewayConnector: gc,
+	})
 	require.NoError(t, err)
 
 	mockClient := &MockOutboundRequestClient{}
@@ -86,9 +90,6 @@ func setupServiceTest(t *testing.T) *testSetup {
 		Logger: logger.Test(t),
 	}
 	srv.limitsFactory = limitsFactory
-
-	srv.rateLimiter, err = limitsFactory.MakeRateLimiter(cresettings.Default.PerWorkflow.HTTPAction.RateLimit)
-	require.NoError(t, err)
 
 	srv.validator, err = validate.NewValidator(logger.Test(t), limitsFactory)
 	require.NoError(t, err)
@@ -260,5 +261,59 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, expectedResponse, response.Response)
 		assert.Equal(t, input, setup.mockClient.CapturedInput)
+	})
+}
+
+func TestInitialise_NilConfig(t *testing.T) {
+	t.Run("empty config string should return error", func(t *testing.T) {
+		lggr := logger.Test(t)
+		srv := NewService(lggr, limits.Factory{})
+		gc := gcmocks.NewGatewayConnector(t)
+
+		err := srv.Initialise(context.Background(), core.StandardCapabilitiesDependencies{
+			Config:           "",
+			GatewayConnector: gc,
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unexpected end of JSON input")
+	})
+
+	t.Run("invalid JSON config should return error", func(t *testing.T) {
+		lggr := logger.Test(t)
+		srv := NewService(lggr, limits.Factory{})
+		gc := gcmocks.NewGatewayConnector(t)
+
+		err := srv.Initialise(context.Background(), core.StandardCapabilitiesDependencies{
+			Config:           "invalid json",
+			GatewayConnector: gc,
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid character")
+	})
+
+	t.Run("empty object config should return error due to missing proxyMode", func(t *testing.T) {
+		lggr := logger.Test(t)
+		srv := NewService(lggr, limits.Factory{})
+		gc := gcmocks.NewGatewayConnector(t)
+
+		err := srv.Initialise(context.Background(), core.StandardCapabilitiesDependencies{
+			Config:           "{}",
+			GatewayConnector: gc,
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid proxy mode")
+	})
+
+	t.Run("null config string should return error due to missing proxyMode", func(t *testing.T) {
+		lggr := logger.Test(t)
+		srv := NewService(lggr, limits.Factory{})
+		gc := gcmocks.NewGatewayConnector(t)
+
+		err := srv.Initialise(context.Background(), core.StandardCapabilitiesDependencies{
+			Config:           "null",
+			GatewayConnector: gc,
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid proxy mode")
 	})
 }

@@ -1,15 +1,9 @@
 package trigger
 
-import "github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
-
 const (
 	defaultInitialIntervalMs            = 100    // 100 milliseconds
 	defaultDurationMs                   = 30_000 // 30 seconds
 	defaultMultiplier                   = 2.0
-	defaultGlobalRPS                    = 100.0
-	defaultGlobalBurst                  = 100
-	defaultPerSenderRPS                 = 100.0
-	defaultPerSenderBurst               = 100
 	defaultMetadataBatchSize            = 50
 	defaultSendChannelBufferSize        = 1000
 	defaultMaxAuthorizedKeysPerWorkflow = 100
@@ -21,12 +15,6 @@ type ServiceConfig struct {
 	MetadataBatchSize uint16 `json:"metadataBatchSize"`
 	// SendChannelBufferSize is the size of the channel used to trigger workflows.
 	SendChannelBufferSize uint16 `json:"sendChannelBufferSize"`
-	// IncomingRateLimiter configuration for messages incoming to this node from the gateway.
-	// The sender is a Gateway node, which is identified by the Gateway ID.
-	IncomingRateLimiter ratelimit.RateLimiterConfig `json:"incomingRateLimiter" `
-	// OutgoingRateLimiter is the configuration for outgoing messages from this node to the gateway.
-	// The sender is a workflow owner
-	OutgoingRateLimiter ratelimit.RateLimiterConfig `json:"outgoingRateLimiter"`
 	// GatewayConfig defines the configuration for connecting to a gateway.
 	GatewayConnectionConfig GatewayConnectionConfig `json:"gatewayConnection"`
 	// MaxAuthorizedKeysPerWorkflow is the maximum number of authorized keys per workflow.
@@ -54,8 +42,6 @@ type RetryConfig struct {
 
 func applyDefaults(cfg ServiceConfig) ServiceConfig {
 	cfg.GatewayConnectionConfig = gatewayConnectionConfigDefaults(cfg.GatewayConnectionConfig)
-	cfg.OutgoingRateLimiter = outgoingRateLimiterConfigDefaults(cfg.OutgoingRateLimiter)
-	cfg.IncomingRateLimiter = incomingRateLimiterConfigDefaults(cfg.IncomingRateLimiter)
 	if cfg.MetadataBatchSize == 0 {
 		cfg.MetadataBatchSize = defaultMetadataBatchSize
 	}
@@ -86,37 +72,6 @@ func gatewayConnectionConfigDefaults(config GatewayConnectionConfig) GatewayConn
 	}
 	if config.MaxPullMetadataDurationMs == 0 {
 		config.MaxPullMetadataDurationMs = defaultDurationMs
-	}
-	return config
-}
-
-func incomingRateLimiterConfigDefaults(config ratelimit.RateLimiterConfig) ratelimit.RateLimiterConfig {
-	if config.GlobalBurst == 0 {
-		config.GlobalBurst = defaultGlobalBurst
-	}
-	if config.GlobalRPS == 0 {
-		config.GlobalRPS = defaultGlobalRPS
-	}
-	if config.PerSenderBurst == 0 {
-		config.PerSenderBurst = defaultPerSenderBurst
-	}
-	if config.PerSenderRPS == 0 {
-		config.PerSenderRPS = defaultPerSenderRPS
-	}
-	return config
-}
-func outgoingRateLimiterConfigDefaults(config ratelimit.RateLimiterConfig) ratelimit.RateLimiterConfig {
-	if config.GlobalBurst == 0 {
-		config.GlobalBurst = defaultGlobalBurst
-	}
-	if config.GlobalRPS == 0 {
-		config.GlobalRPS = defaultGlobalRPS
-	}
-	if config.PerSenderBurst == 0 {
-		config.PerSenderBurst = defaultPerSenderBurst
-	}
-	if config.PerSenderRPS == 0 {
-		config.PerSenderRPS = defaultPerSenderRPS
 	}
 	return config
 }

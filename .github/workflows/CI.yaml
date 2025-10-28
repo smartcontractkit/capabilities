@@ -1,11 +1,16 @@
 name: CI
 
-on: [push]
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  merge_group:
 
 env:
   # Ensure that a cached go version is used:
   # https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md#go
-  GO_VERSION: 1.24
+  GO_VERSION: 1.25
   GOPRIVATE: github.com/smartcontractkit/capabilities
 
 jobs:
@@ -51,7 +56,12 @@ jobs:
       - name: Get affected projects
         id: affected
         run: |
-          echo "affected=$(./.github/scripts/affected-projects.sh ${{ fromJSON('["origin/main", "origin/main~1"]')[github.ref == 'refs/heads/main'] }})" >> $GITHUB_OUTPUT
+          if [[ "${GITHUB_REF_NAME}" == "main" ]]; then
+            BASE="origin/main~1"
+          else
+            BASE="origin/main"
+          fi
+          echo "affected=$(./.github/scripts/affected-projects.sh $BASE)" >> $GITHUB_OUTPUT
 
   build:
     needs: affected
@@ -198,12 +208,17 @@ jobs:
     needs: affected
     if: ${{fromJson(needs.affected.outputs.nx).run_checks}}
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      actions: read
     strategy:
       fail-fast: false
       matrix:
         projects: ${{fromJson(needs.affected.outputs.nx).projects}}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -221,22 +236,19 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./.github/scripts/support-private-gomods.sh
 
-      - name: Golangci Lint (${{ matrix.projects }})
-        uses: golangci/golangci-lint-action@38e1018663fa5173f3968ea0777460d3de38f256 # v5.3.0
-        with:
-          version: v1.64.7
-          working-directory: ${{fromJson(needs.affected.outputs.nx)[matrix.projects].root}}
-          args: --timeout=15m --out-format colored-line-number,checkstyle:golangci-lint-report.xml
+      - name: Get golangci-lint version from asdf
+        id: get-version
+        run: |
+          version=$(grep '^golangci-lint ' .tool-versions | awk '{print $2}')
+          echo "version=${version}" | tee -a "$GITHUB_OUTPUT"
 
-      - name: Upload Golangci Lint artifacts
-        if: always()
-        uses: actions/upload-artifact@v4.4.3
+      - name: golangci-lint (${{ matrix.projects }})
+        uses: smartcontractkit/.github/actions/ci-lint-go@ci-lint-go/3.1.0
         with:
-          # name artifacts differently per each report
-          name: ${{ matrix.projects }}_golangci-lint-report
-          # the path to a generated report (per directory)
-          path: |
-            ./${{fromJson(needs.affected.outputs.nx)[matrix.projects].root}}/golangci-lint-report.xml
+          checkout-repo: false
+          golangci-lint-config: ${{ github.workspace }}/.golangci.yml
+          golangci-lint-version: v${{ steps.get-version.outputs.version }}
+          go-directory: ${{fromJson(needs.affected.outputs.nx)[matrix.projects].root}}
 
   modgraph:
     runs-on: ubuntu-latest

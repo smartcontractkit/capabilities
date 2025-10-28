@@ -14,6 +14,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	gcmocks "github.com/smartcontractkit/chainlink-common/pkg/types/core/mocks"
 	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 )
@@ -58,11 +59,23 @@ func TestService_RegisterTrigger(t *testing.T) {
 			svc := NewService(logger.Test(t), limits.Factory{Logger: logger.Test(t)})
 			cfgStr := fmt.Sprintf(`{"sendChannelBufferSize": %d}`, tc.sendChannelBufSize)
 			gc := mockedGatewayConnector(t)
-			err := svc.Initialise(t.Context(), cfgStr, nil, nil, nil, nil, nil, nil, gc, nil)
+			err := svc.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
+				Config:           cfgStr,
+				GatewayConnector: gc,
+			})
 			require.NoError(t, err)
 			svc.connectorHandler = mockHandler
 			ctx := context.Background()
-			meta := capabilities.RequestMetadata{WorkflowID: "abcdef", WorkflowOwner: "123456", WorkflowName: "456789", WorkflowTag: "tag"}
+			meta := capabilities.RequestMetadata{
+				WorkflowID:                    "abcdef",
+				WorkflowOwner:                 "123456",
+				WorkflowName:                  "456789",
+				WorkflowTag:                   "tag",
+				WorkflowRegistryChainSelector: "test-chain-selector",
+				WorkflowRegistryAddress:       "test-registry-address",
+				EngineVersion:                 "1.0.0",
+				WorkflowDonID:                 42,
+			}
 			input := &http.Config{}
 
 			ch, err := svc.RegisterTrigger(ctx, "tid", meta, input)
@@ -76,6 +89,10 @@ func TestService_RegisterTrigger(t *testing.T) {
 				require.Equal(t, strings.ToLower(ensureHexPrefix(meta.WorkflowName)), mockHandler.lastWorkflowSelector.WorkflowName)
 				require.Equal(t, meta.WorkflowTag, mockHandler.lastWorkflowSelector.WorkflowTag)
 				require.Equal(t, input, mockHandler.lastInput)
+				require.Equal(t, meta.WorkflowRegistryChainSelector, mockHandler.lastMetadata.WorkflowRegistryChainSelector)
+				require.Equal(t, meta.WorkflowRegistryAddress, mockHandler.lastMetadata.WorkflowRegistryAddress)
+				require.Equal(t, meta.EngineVersion, mockHandler.lastMetadata.EngineVersion)
+				require.Equal(t, meta.WorkflowDonID, mockHandler.lastMetadata.WorkflowDONID)
 			}
 		})
 	}
@@ -104,7 +121,10 @@ func TestService_UnregisterTrigger(t *testing.T) {
 			svc := NewService(logger.Test(t), limits.Factory{Logger: logger.Test(t)})
 			cfg := "{}"
 			gc := mockedGatewayConnector(t)
-			err := svc.Initialise(t.Context(), cfg, nil, nil, nil, nil, nil, nil, gc, nil)
+			err := svc.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
+				Config:           cfg,
+				GatewayConnector: gc,
+			})
 			require.NoError(t, err)
 			svc.connectorHandler = mockHandler
 
@@ -120,12 +140,30 @@ func TestService_UnregisterTrigger(t *testing.T) {
 	}
 }
 
+func TestService_Initialise_EmptyConfig(t *testing.T) {
+	svc := NewService(logger.Test(t), limits.Factory{Logger: logger.Test(t)})
+	gc := mockedGatewayConnector(t)
+
+	err := svc.Initialise(context.Background(), core.StandardCapabilitiesDependencies{
+		Config:           "",
+		GatewayConnector: gc,
+	})
+	require.NoError(t, err)
+
+	require.NotNil(t, svc.cfg)
+	require.NotNil(t, svc.connectorHandler)
+	require.NotNil(t, svc.metrics)
+}
+
 func TestService_Start_HealthReport_Ready_Close(t *testing.T) {
 	mockHandler := &mockConnectorHandler{}
 	svc := NewService(logger.Test(t), limits.Factory{Logger: logger.Test(t)})
 	cfg := "{}"
 	gc := mockedGatewayConnector(t)
-	err := svc.Initialise(t.Context(), cfg, nil, nil, nil, nil, nil, nil, gc, nil)
+	err := svc.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
+		Config:           cfg,
+		GatewayConnector: gc,
+	})
 	require.NoError(t, err)
 	svc.connectorHandler = mockHandler
 
@@ -155,11 +193,13 @@ type mockConnectorHandler struct {
 	unregisterErr        error
 	lastWorkflowSelector gateway_common.WorkflowSelector
 	lastInput            *http.Config
+	lastMetadata         WorkflowRegistrationMetadata
 }
 
-func (m *mockConnectorHandler) RegisterWorkflow(ctx context.Context, workflowSelector gateway_common.WorkflowSelector, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error {
-	m.lastWorkflowSelector = workflowSelector
-	m.lastInput = input
+func (m *mockConnectorHandler) RegisterWorkflow(ctx context.Context, input WorkflowRegistrationInput, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error {
+	m.lastWorkflowSelector = input.WorkflowSelector
+	m.lastInput = input.Config
+	m.lastMetadata = input.Metadata
 	return m.registerErr
 }
 func (m *mockConnectorHandler) UnregisterWorkflow(ctx context.Context, workflowID string) error {

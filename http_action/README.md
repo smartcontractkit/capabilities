@@ -58,8 +58,8 @@ type Request struct {
 }
 
 type CacheSettings struct {
-    ReadFromCache bool  `json:"readFromCache"` // Enable cache reading
-    MaxAgeMs      int64 `json:"maxAgeMs"`      // Cached entry max age in milliseconds
+    Store         bool  `json:"store"`     // Enable cache reading
+    MaxAgeMs      int64 `json:"maxAgeMs"`  // Cached entry max age in milliseconds
 }
 ```
 
@@ -93,9 +93,8 @@ type Response struct {
 - `body`: Size must not exceed `maxRequestBytes`
 
 #### 3.3.4 Cache Settings Validation
-- `maxAgeMs`: Must be non-negative and not exceed configured `maxCacheAgeMs`
-- `maxAgeMs`: Must be non-zero when `readFromCache` is true
-- `readFromCache`: Can be true or false; when true, requires valid `maxAgeMs`
+- `maxAgeMs`: Must be non-negative and not exceed configured `maxCacheAgeMs`.
+- `store`: Can be true or false;
 
 ---
 
@@ -105,27 +104,13 @@ type Response struct {
 
 ```go
 type ServiceConfig struct {
-    IncomingRateLimiter     RateLimiterConfig       `json:"incomingRateLimiter"`
-    OutgoingRateLimiter     RateLimiterConfig       `json:"outgoingRateLimiter"`
-    LimitsConfig            LimitsConfig            `json:"limits"`
     ProxyMode               string                  `json:"proxyMode"`
     GatewayConnectionConfig GatewayConnectionConfig `json:"gatewayConnection"`
     HTTPClientConfig        HTTPClientConfig        `json:"httpClient"`
 }
 ```
 
-### 4.2 Rate Limiter Configuration
-
-```go
-type RateLimiterConfig struct {
-    GlobalRPS      float64 `json:"globalRPS"`      // Global requests per second
-    GlobalBurst    int     `json:"globalBurst"`    // Global burst capacity
-    PerSenderRPS   float64 `json:"perSenderRPS"`   // Per-sender requests per second
-    PerSenderBurst int     `json:"perSenderBurst"` // Per-sender burst capacity
-}
-```
-
-### 4.3 Limits Configuration
+### 4.2 Limits Configuration
 
 ```go
 type LimitsConfig struct {
@@ -168,27 +153,6 @@ type GatewayConnectionConfig struct {
 
 ```json
 {
-  "incomingRateLimiter": {
-    "globalRPS": 100.0,
-    "globalBurst": 100,
-    "perSenderRPS": 100.0,
-    "perSenderBurst": 100
-  },
-  "outgoingRateLimiter": {
-    "globalRPS": 100.0,
-    "globalBurst": 100,
-    "perSenderRPS": 5.0,
-    "perSenderBurst": 50
-  },
-  "limits": {
-    "maxTimeoutMs": 20000,
-    "maxResponseBytes": 10485760,
-    "maxHeaderCount": 50,
-    "maxHeaderKeyLength": 256,
-    "maxHeaderValueLength": 1024,
-    "maxRequestBytes": 10485760,
-    "maxCacheAgeMs": 600000
-  },
   "proxyMode": "gateway",
   "gatewayConnection": {
     "initialIntervalMs": 100,
@@ -202,27 +166,6 @@ type GatewayConnectionConfig struct {
 
 ```json
 {
-  "incomingRateLimiter": {
-    "globalRPS": 100.0,
-    "globalBurst": 100,
-    "perSenderRPS": 100.0,
-    "perSenderBurst": 100
-  },
-  "outgoingRateLimiter": {
-    "globalRPS": 100.0,
-    "globalBurst": 100,
-    "perSenderRPS": 5.0,
-    "perSenderBurst": 50
-  },
-  "limits": {
-    "maxTimeoutMs": 20000,
-    "maxResponseBytes": 10485760,
-    "maxHeaderCount": 50,
-    "maxHeaderKeyLength": 256,
-    "maxHeaderValueLength": 1024,
-    "maxRequestBytes": 10485760,
-    "maxCacheAgeMs": 600000
-  },
   "proxyMode": "direct",
   "httpClient": {
     "blockedIPs": [],

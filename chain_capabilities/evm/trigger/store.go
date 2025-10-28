@@ -3,6 +3,7 @@ package trigger
 import (
 	"context"
 	"fmt"
+	"maps"
 	"math/big"
 	"sync"
 
@@ -60,9 +61,7 @@ func (cs *logTriggerStore) ReadAll() (values map[string]logTriggerState) {
 	cs.mu.RLock()
 	defer cs.mu.RUnlock()
 	tCopy := map[string]logTriggerState{}
-	for key, value := range cs.triggers {
-		tCopy[key] = value
-	}
+	maps.Copy(tCopy, cs.triggers)
 	return tCopy
 }
 

@@ -66,39 +66,29 @@ func (cs *capabilitiesServer) Infos(ctx context.Context) ([]capabilities.Capabil
 	}, nil
 }
 
-func (cs *capabilitiesServer) Initialise(
-	ctx context.Context,
-	_ string,
-	_ core.TelemetryService,
-	_ core.KeyValueStore,
-	capabilityRegistry core.CapabilitiesRegistry,
-	_ core.ErrorLog,
-	_ core.PipelineRunnerService,
-	_ core.RelayerSet,
-	oracleFactory core.OracleFactory,
-	_ core.GatewayConnector,
-	keystore core.Keystore,
-) error {
+func (cs *capabilitiesServer) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
 	cs.lggr.Debug("Initialising")
 
 	var err error
 	cs.action, err = action.New(action.Params{
 		Logger:   cs.lggr,
-		Keystore: keystore,
+		Keystore: dependencies.P2PKeystore,
 	})
 	if err != nil {
 		return err
 	}
 
-	if err := capabilityRegistry.Add(ctx, cs.action); err != nil {
+	if err := dependencies.CapabilityRegistry.Add(ctx, cs.action); err != nil {
 		return fmt.Errorf("failed to add P2P signer capability to the capability registry: %w", err)
 	}
 
-	cs.capabilityRegistry = capabilityRegistry
+	cs.capabilityRegistry = dependencies.CapabilityRegistry
 
 	return nil
 }
 
 func main() {
-	loopserver.Serve("Signer", New)
+	loopserver.ServeNew("Signer", func(s *loop.Server) loop.StandardCapabilities {
+		return New(s.Logger)
+	})
 }

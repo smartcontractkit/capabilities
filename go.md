@@ -12,8 +12,6 @@ flowchart LR
 	click capabilities/consensus href "https://github.com/smartcontractkit/capabilities"
 	capabilities/cron --> capabilities/libs
 	click capabilities/cron href "https://github.com/smartcontractkit/capabilities"
-	capabilities/devenv --> chainlink/v2
-	click capabilities/devenv href "https://github.com/smartcontractkit/capabilities"
 	capabilities/http_action --> capabilities/libs
 	click capabilities/http_action href "https://github.com/smartcontractkit/capabilities"
 	capabilities/http_trigger --> capabilities/libs
@@ -28,7 +26,6 @@ flowchart LR
 	capabilities/kvstore --> capabilities/libs
 	click capabilities/kvstore href "https://github.com/smartcontractkit/capabilities"
 	capabilities/libs --> chainlink-common
-	capabilities/libs --> chainlink-common/pkg/values
 	click capabilities/libs href "https://github.com/smartcontractkit/capabilities"
 	capabilities/loadtestwritetarget --> capabilities/libs
 	click capabilities/loadtestwritetarget href "https://github.com/smartcontractkit/capabilities"
@@ -51,7 +48,6 @@ flowchart LR
 	chainlink-automation --> chainlink-common
 	click chainlink-automation href "https://github.com/smartcontractkit/chainlink-automation"
 	chainlink-ccip --> chainlink-common
-	chainlink-ccip --> chainlink-common/pkg/values
 	chainlink-ccip --> chainlink-protos/rmn/v1.6/go
 	click chainlink-ccip href "https://github.com/smartcontractkit/chainlink-ccip"
 	chainlink-ccip/chains/solana --> chainlink-ccip
@@ -63,6 +59,7 @@ flowchart LR
 	chainlink-common --> chainlink-common/pkg/chipingress
 	chainlink-common --> chainlink-protos/billing/go
 	chainlink-common --> chainlink-protos/cre/go
+	chainlink-common --> chainlink-protos/linking-service/go
 	chainlink-common --> chainlink-protos/storage-service
 	chainlink-common --> freeport
 	chainlink-common --> grpc-proxy
@@ -117,6 +114,7 @@ flowchart LR
 	click chainlink-solana href "https://github.com/smartcontractkit/chainlink-solana"
 	chainlink-sui --> chainlink-aptos
 	chainlink-sui --> chainlink-ccip
+	chainlink-sui --> chainlink-common/pkg/values
 	click chainlink-sui href "https://github.com/smartcontractkit/chainlink-sui"
 	chainlink-ton --> chainlink-ccip
 	click chainlink-ton href "https://github.com/smartcontractkit/chainlink-ton"
@@ -127,7 +125,6 @@ flowchart LR
 	chainlink/v2 --> chainlink-data-streams
 	chainlink/v2 --> chainlink-evm
 	chainlink/v2 --> chainlink-feeds
-	chainlink/v2 --> chainlink-protos/linking-service/go
 	chainlink/v2 --> chainlink-protos/orchestrator
 	chainlink/v2 --> chainlink-solana
 	chainlink/v2 --> chainlink-sui
@@ -170,7 +167,6 @@ flowchart LR
 		 capabilities/chain_capabilities/evm
 		 capabilities/consensus
 		 capabilities/cron
-		 capabilities/devenv
 		 capabilities/http_action
 		 capabilities/http_trigger
 		 capabilities/integration_tests

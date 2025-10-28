@@ -111,8 +111,9 @@ func handleFieldsMapAggregation(
 					lggr.Debugf("unsupported observation type at index %d for key %s: %T", i, key, obs.Value)
 					continue
 				}
+			} else {
+				lggr.Debugf("ignoring nil observation at index %d for key %s", i, key)
 			}
-			lggr.Debugf("ignoring nil observation at index %d for key %s", i, key)
 		}
 
 		var defaultForKey *valuespb.Value

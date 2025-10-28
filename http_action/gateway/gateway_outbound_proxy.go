@@ -17,7 +17,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
@@ -39,7 +38,6 @@ type gatewayOutboundProxy struct {
 	services.StateMachine
 	gatewayConnector        core.GatewayConnector
 	lggr                    logger.Logger
-	incomingRateLimiter     *ratelimit.RateLimiter
 	responses               *responses
 	gatewayConnectionConfig common.GatewayConnectionConfig
 	metrics                 *common.Metrics
@@ -60,15 +58,9 @@ func applyDefaults(cfg common.GatewayConnectionConfig) common.GatewayConnectionC
 }
 
 func NewGatewayOutboundProxy(gatewayConnector core.GatewayConnector, config common.ServiceConfig, lggr logger.Logger, metrics *common.Metrics, validator common.ResponseValidator) (*gatewayOutboundProxy, error) {
-	incomingRateLimiter, err := ratelimit.NewRateLimiter(config.IncomingRateLimiter)
-	if err != nil {
-		return nil, err
-	}
-
 	return &gatewayOutboundProxy{
 		gatewayConnector:        gatewayConnector,
 		responses:               newResponses(),
-		incomingRateLimiter:     incomingRateLimiter,
 		lggr:                    lggr,
 		gatewayConnectionConfig: applyDefaults(config.GatewayConnectionConfig),
 		metrics:                 metrics,
@@ -85,29 +77,32 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 	defer cancel()
 
 	gatewayReq := gc.OutboundHTTPRequest{
-		WorkflowID: metadata.WorkflowID,
-		URL:        input.Url,
-		Method:     input.Method,
-		Headers:    input.Headers,
-		Body:       input.Body,
+		WorkflowID:    metadata.WorkflowID,
+		WorkflowOwner: metadata.WorkflowOwner,
+		URL:           input.Url,
+		Method:        input.Method,
+		Headers:       input.Headers,
+		Body:          input.Body,
 		// Casting is safe because input to this function is already validated
 		TimeoutMs: uint32(input.Timeout.AsDuration()), //nolint:gosec // G115
 		CacheSettings: gc.CacheSettings{
-			ReadFromCache: input.CacheSettings.Store,
-			MaxAgeMs:      int32(input.CacheSettings.MaxAge.AsDuration().Milliseconds()), //nolint:gosec // G115
+			Store:    input.CacheSettings.Store,
+			MaxAgeMs: int32(input.CacheSettings.MaxAge.AsDuration().Milliseconds()), //nolint:gosec // G115
 		},
 	}
 
 	payload, err := json.Marshal(gatewayReq)
 	if err != nil {
 		p.metrics.IncrementExecutionError(ctx, common.ProxyModeGateway, lggr)
-		return nil, fmt.Errorf("failed to marshal fetch request: %w", err)
+		lggr.Errorf("failed to marshal fetch request: %v", err)
+		return nil, errors.New(internalError)
 	}
 
 	responseCh, err := p.responses.new(requestID)
 	if err != nil {
 		p.metrics.IncrementExecutionError(ctx, common.ProxyModeGateway, lggr)
-		return nil, fmt.Errorf("duplicate message received for ID: %s", requestID)
+		lggr.Errorf("duplicate message received for ID: %s", requestID)
+		return nil, errors.New(internalError)
 	}
 	defer p.responses.cleanup(requestID)
 
@@ -125,11 +120,13 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 	selectedGateway, err := p.awaitConnection(ctx, lggr, gatewayReq.Hash())
 	if err != nil {
 		p.metrics.IncrementGatewaySendError(ctx, selectedGateway, lggr)
-		return nil, errors.Join(errors.New("failed to await connection to gateway"), err)
+		lggr.Errorf("failed to await connection to gateway: %v", err)
+		return nil, errors.New(internalError)
 	}
 	if err := p.gatewayConnector.SendToGateway(ctx, selectedGateway, &gatewayResp); err != nil {
 		p.metrics.IncrementGatewaySendError(ctx, selectedGateway, lggr)
-		return nil, errors.Join(errors.New("failed to send request to gateway"), err)
+		lggr.Errorf("failed to send request to gateway: %v", err)
+		return nil, errors.New(internalError)
 	}
 
 	select {
@@ -161,7 +158,8 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 		return response, nil
 	case <-ctx.Done():
 		p.metrics.IncrementExecutionError(ctx, common.ProxyModeGateway, lggr)
-		return nil, ctx.Err()
+		lggr.Errorf("context done: %v", ctx.Err())
+		return nil, errors.New(internalError)
 	}
 }
 
@@ -251,22 +249,6 @@ func (p *gatewayOutboundProxy) HandleGatewayMessage(ctx context.Context, gateway
 		return nil
 	}
 
-	senderAllow, globalAllow := p.incomingRateLimiter.AllowVerbose(gatewayID)
-	errorMsg := ""
-	if !senderAllow {
-		p.metrics.IncrementGatewayNodeThrottled(ctx, gatewayID, l)
-		errorMsg = common.ErrorIncomingRatelimitSender
-	} else if !globalAllow {
-		p.metrics.IncrementGatewayGlobalThrottled(ctx, l)
-		errorMsg = common.ErrorIncomingRatelimitGlobal
-	}
-
-	if errorMsg != "" {
-		l.Errorw("request rate-limited")
-		msg = gc.OutboundHTTPResponse{
-			ErrorMessage: errorMsg,
-		}
-	}
 	switch req.Method {
 	case gc.MethodHTTPAction:
 		select {

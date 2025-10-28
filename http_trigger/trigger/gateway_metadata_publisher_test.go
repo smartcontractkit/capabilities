@@ -13,7 +13,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 )
@@ -80,21 +79,12 @@ func (m *testGatewayConnector) SignMessage(ctx context.Context, msg []byte) ([]b
 	return msg, nil
 }
 
-func createTestGatewayAuthPublisher(t *testing.T) (*gatewayMetadataPublisher, *testGatewayConnector, *workflowStore, *ratelimit.RateLimiter) {
+func createTestGatewayAuthPublisher(t *testing.T) (*gatewayMetadataPublisher, *testGatewayConnector, *workflowStore) {
 	lggr := logger.Test(t)
 	gc := &testGatewayConnector{
 		gatewayIDs: []string{"gateway1", "gateway2"},
 	}
 	workflowStore := newWorkflowStore(lggr)
-
-	rateLimiterConfig := ratelimit.RateLimiterConfig{
-		GlobalRPS:      100.0,
-		GlobalBurst:    100,
-		PerSenderRPS:   100.0,
-		PerSenderBurst: 100,
-	}
-	rateLimiter, err := ratelimit.NewRateLimiter(rateLimiterConfig)
-	require.NoError(t, err)
 
 	cfg := ServiceConfig{
 		MetadataBatchSize: 10,
@@ -110,9 +100,9 @@ func createTestGatewayAuthPublisher(t *testing.T) (*gatewayMetadataPublisher, *t
 	}
 	metrics, err := NewMetrics()
 	require.NoError(t, err)
-	publisher := NewGatewayMetadataPublisher(lggr, gc, rateLimiter, workflowStore, cfg, metrics)
+	publisher := NewGatewayMetadataPublisher(lggr, gc, workflowStore, cfg, metrics)
 
-	return publisher, gc, workflowStore, rateLimiter
+	return publisher, gc, workflowStore
 }
 
 func requireSendToGatewayCall(t *testing.T, call sendToGatewayCall, gatewayID string, workflowSelector gateway.WorkflowSelector, keys []gateway.AuthorizedKey) {
@@ -127,7 +117,7 @@ func requireSendToGatewayCall(t *testing.T, call sendToGatewayCall, gatewayID st
 func TestBroadcastWorkflow_Success(t *testing.T) {
 	t.Parallel()
 
-	publisher, gc, _, _ := createTestGatewayAuthPublisher(t)
+	publisher, gc, _ := createTestGatewayAuthPublisher(t)
 
 	workflowSelector := gateway.WorkflowSelector{
 		WorkflowID:    "test-workflow-123",
@@ -159,7 +149,7 @@ func TestBroadcastWorkflow_Success(t *testing.T) {
 func TestBroadcastWorkflow_GatewayIDsError(t *testing.T) {
 	t.Parallel()
 
-	publisher, gc, _, _ := createTestGatewayAuthPublisher(t)
+	publisher, gc, _ := createTestGatewayAuthPublisher(t)
 
 	workflowSelector := gateway.WorkflowSelector{
 		WorkflowID:    "test-workflow-123",
@@ -180,7 +170,7 @@ func TestBroadcastWorkflow_GatewayIDsError(t *testing.T) {
 func TestBroadcastWorkflow_SendToGatewayError(t *testing.T) {
 	t.Parallel()
 
-	publisher, gc, _, _ := createTestGatewayAuthPublisher(t)
+	publisher, gc, _ := createTestGatewayAuthPublisher(t)
 
 	workflowSelector := gateway.WorkflowSelector{
 		WorkflowID:    "test-workflow-123",
@@ -202,7 +192,7 @@ func TestBroadcastWorkflow_SendToGatewayError(t *testing.T) {
 func TestSendWorkflows_Success(t *testing.T) {
 	t.Parallel()
 
-	publisher, gc, workflowStore, _ := createTestGatewayAuthPublisher(t)
+	publisher, gc, workflowStore := createTestGatewayAuthPublisher(t)
 
 	// Register some test workflows
 	authorizedKeys1 := []gateway.AuthorizedKey{
@@ -216,23 +206,25 @@ func TestSendWorkflows_Success(t *testing.T) {
 	sendCh2 := make(chan capabilities.TriggerAndId[*http.Payload], 1)
 
 	selector1 := gateway.WorkflowSelector{
-		WorkflowID:    "workflow1",
-		WorkflowOwner: "owner1",
-		WorkflowName:  "name1",
+		WorkflowID:    testWorkflowID1,
+		WorkflowOwner: testWorkflowOwner1,
+		WorkflowName:  testWorkflowName1,
 		WorkflowTag:   "tag1",
 	}
 	selector2 := gateway.WorkflowSelector{
-		WorkflowID:    "workflow2",
-		WorkflowOwner: "owner2",
-		WorkflowName:  "name2",
+		WorkflowID:    testWorkflowID2,
+		WorkflowOwner: testWorkflowOwner2,
+		WorkflowName:  testWorkflowName2,
 		WorkflowTag:   "tag2",
 	}
 
 	wf1 := newWorkflow(selector1, authorizedKeys1, sendCh1)
 	wf2 := newWorkflow(selector2, authorizedKeys2, sendCh2)
 
-	workflowStore.upsertWorkflow(wf1)
-	workflowStore.upsertWorkflow(wf2)
+	err := workflowStore.upsertWorkflow(wf1)
+	require.NoError(t, err)
+	err = workflowStore.upsertWorkflow(wf2)
+	require.NoError(t, err)
 
 	gatewayID := "gateway1"
 	rawParams := json.RawMessage(`{}`)
@@ -241,7 +233,7 @@ func TestSendWorkflows_Success(t *testing.T) {
 		Method: "test",
 		Params: &rawParams,
 	}
-	err := publisher.SendWorkflowMetadata(t.Context(), gatewayID, req)
+	err = publisher.SendWorkflowMetadata(t.Context(), gatewayID, req)
 	require.NoError(t, err)
 
 	calls := gc.sendToGatewayCalls
@@ -253,10 +245,10 @@ func TestSendWorkflows_Success(t *testing.T) {
 	found1, found2 := false, false
 	for _, metadata := range authMetadata {
 		switch metadata.WorkflowSelector.WorkflowID {
-		case "workflow1":
+		case testWorkflowID1:
 			require.Equal(t, authorizedKeys1, metadata.AuthorizedKeys)
 			found1 = true
-		case "workflow2":
+		case testWorkflowID2:
 			require.ElementsMatch(t, authorizedKeys2, metadata.AuthorizedKeys)
 			found2 = true
 		}
@@ -268,7 +260,7 @@ func TestSendWorkflows_Success(t *testing.T) {
 func TestSendWorkflows_EmptyWorkflows(t *testing.T) {
 	t.Parallel()
 
-	publisher, _, _, _ := createTestGatewayAuthPublisher(t)
+	publisher, _, _ := createTestGatewayAuthPublisher(t)
 
 	gatewayID := "gateway1"
 	rawParams2 := json.RawMessage(`{}`)
@@ -284,7 +276,7 @@ func TestSendWorkflows_EmptyWorkflows(t *testing.T) {
 func TestSendWorkflows_InvalidRequestID(t *testing.T) {
 	t.Parallel()
 
-	publisher, _, _, _ := createTestGatewayAuthPublisher(t)
+	publisher, _, _ := createTestGatewayAuthPublisher(t)
 
 	gatewayID := "gateway1"
 	rawParams2 := json.RawMessage(`{}`)
@@ -348,20 +340,12 @@ func TestNextBackoff(t *testing.T) {
 
 func TestSendWorkflowMetadata_NilRequest(t *testing.T) {
 	testGatewayConnector := &testGatewayConnector{}
-	rateLimiterConfig := ratelimit.RateLimiterConfig{
-		GlobalRPS:      100.0,
-		GlobalBurst:    100,
-		PerSenderRPS:   100.0,
-		PerSenderBurst: 100,
-	}
-	outgoingRateLimiter, err := ratelimit.NewRateLimiter(rateLimiterConfig)
-	require.NoError(t, err)
 
 	workflowStore := newWorkflowStore(logger.Test(t))
 	cfg := ServiceConfig{}
 	metrics, err := NewMetrics()
 	require.NoError(t, err)
-	publisher := NewGatewayMetadataPublisher(logger.Test(t), testGatewayConnector, outgoingRateLimiter, workflowStore, cfg, metrics)
+	publisher := NewGatewayMetadataPublisher(logger.Test(t), testGatewayConnector, workflowStore, cfg, metrics)
 
 	// Test nil request
 	err = publisher.SendWorkflowMetadata(t.Context(), "gateway1", nil)

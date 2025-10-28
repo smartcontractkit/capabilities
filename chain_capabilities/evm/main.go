@@ -13,6 +13,7 @@ import (
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/height"
+	consMetrics "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/metrics"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/oracle"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/poller"
 
@@ -43,8 +44,6 @@ const (
 	schemaBasePath      = repoCLLCapabilities + "/" + versionRefsMain + "/chain_capabilities/evm/monitoring"
 )
 
-var _ evmcapserver.ClientCapability = &capabilityGRPCService{}
-
 type capabilityGRPCService struct {
 	capabilities.CapabilityInfo
 	chainSelector uint64
@@ -65,15 +64,15 @@ type capability struct {
 var _ evmcapserver.ClientCapability = &capabilityGRPCService{}
 
 func main() {
-	loopserver.ServeNew(CapabilityName, func(s *loop.Server) loop.StandardCapabilities {
-		return evmcapserver.NewClientServer(&capabilityGRPCService{lggr: s.Logger, limitsFactory: s.LimitsFactory})
-	})
+	loopserver.ServeNewWithOtelViews(CapabilityName, func(s *loop.Server) loop.StandardCapabilities {
+		return evmcapserver.NewClientServer(&capabilityGRPCService{lggr: s.Logger.Named(CapabilityName), limitsFactory: s.LimitsFactory})
+	}, consMetrics.MetricViews())
 }
 
-func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string, _ core.TelemetryService, _ core.KeyValueStore, _ core.ErrorLog, _ core.PipelineRunnerService, relayerSet core.RelayerSet, oracleFactory core.OracleFactory, _ core.GatewayConnector, _ core.Keystore) error {
+func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
 	c.lggr.Infof("Initialising %s", CapabilityName)
 
-	cfg, err := c.unmarshalConfig(configStr)
+	cfg, err := c.unmarshalConfig(dependencies.Config)
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal config: %w", err)
 	}
@@ -91,7 +90,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 	}
 
 	relayID := types.NewRelayID(cfg.Network, fmt.Sprintf("%d", cfg.ChainID))
-	relayer, err := relayerSet.Get(ctx, relayID)
+	relayer, err := dependencies.RelayerSet.Get(ctx, relayID)
 	if err != nil {
 		return fmt.Errorf("failed to fetch relayer for chainID %d from relayerSet: %w", cfg.ChainID, err)
 	}
@@ -115,23 +114,28 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
 
-	c.requestPoller = poller.NewPoller(c.lggr, cfg.ObservationPollerWorkersCount, cfg.ObservationPollPeriod)
-	c.consensusHandler = consensus.NewHandler(c.lggr, c.requestPoller, cfg.UnknownRequestsTTL)
+	consensusMetrics, err := consMetrics.NewEvmConsensusMetrics(chainInfo)
+	if err != nil {
+		return fmt.Errorf("failed to create evm consensus metrics: %w", err)
+	}
+	c.requestPoller = poller.NewPoller(c.lggr, consensusMetrics, cfg.ObservationPollerWorkersCount, cfg.ObservationPollPeriod)
+	c.consensusHandler = consensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, cfg.UnknownRequestsTTL)
 
 	c.EVM, err = actions.NewEVM(*cfg, evmRelayer, c.lggr, processor, messageBuilder, c.consensusHandler, c.chainSelector, c.limitsFactory)
 	if err != nil {
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
 
+	// TODO: add org resolver
 	c.triggerService, err = trigger.NewLogTriggerService(evmRelayer, trigger.NewLogTriggerStore(), c.lggr, processor, messageBuilder,
-		cfg.LogTriggerPollInterval, cfg.LogTriggerSendChannelBufferSize, cfg.LogTriggerLimitQueryLogSize, c.limitsFactory)
+		cfg.LogTriggerPollInterval, cfg.LogTriggerSendChannelBufferSize, cfg.LogTriggerLimitQueryLogSize, c.limitsFactory, dependencies.OrgResolver)
 	if err != nil {
 		return fmt.Errorf("error when creating trigger: %w", err)
 	}
 
 	c.heightProvider = height.NewProvider(c.lggr, cfg.ChainHeightPollPeriod, evmRelayer)
 
-	c.oracle, err = oracleFactory.NewOracle(ctx, core.OracleArgs{
+	c.oracle, err = dependencies.OracleFactory.NewOracle(ctx, core.OracleArgs{
 		LocalConfig: ocrtypes.LocalConfig{
 			BlockchainTimeout:                  time.Second * 20,
 			ContractConfigTrackerPollInterval:  time.Second * 10,
@@ -141,15 +145,15 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, configStr string
 			ContractConfigLoadTimeout:          time.Second * 10,
 			DefaultMaxDurationInitialization:   time.Second * 10,
 		},
-		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(logger.Sugared(c.lggr), c.consensusHandler, c.heightProvider),
+		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(logger.Sugared(c.lggr), c.consensusHandler, c.heightProvider, consensusMetrics),
 		ContractTransmitter:           oracle.NewContractTransmitter(c.lggr, c.consensusHandler),
 	})
 	if err != nil {
 		return fmt.Errorf("error when creating oracle: %w", err)
 	}
 
-	services := []interface{ Start(context.Context) error }{c.consensusHandler, c.requestPoller, c.oracle, c.heightProvider, c.triggerService}
-	for _, service := range services {
+	startServices := []interface{ Start(context.Context) error }{c.consensusHandler, c.requestPoller, c.oracle, c.heightProvider, c.triggerService}
+	for _, service := range startServices {
 		if err := service.Start(ctx); err != nil {
 			return err
 		}
@@ -211,11 +215,11 @@ func (c *capabilityGRPCService) Close() error {
 }
 
 func (c *capabilityGRPCService) HealthReport() map[string]error {
-	return map[string]error{}
+	return map[string]error{c.Name(): nil}
 }
 
 func (c *capabilityGRPCService) Name() string {
-	return CapabilityName
+	return c.lggr.Name()
 }
 
 func (c *capabilityGRPCService) ChainSelector() uint64 {

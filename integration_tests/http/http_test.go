@@ -90,16 +90,16 @@ const gatewayConfigTemplate = `
 			"ServiceName": "workflows",
 			"Config": {
 				"NodeRateLimiter": {
-					"GlobalBurst": 10,
+					"GlobalBurst": 50,
 					"GlobalRPS": 50,
-					"PerSenderBurst": 10,
-					"PerSenderRPS": 10
+					"PerSenderBurst": 50,
+					"PerSenderRPS": 50
 				},
 				"UserRateLimiter": {
-					"GlobalBurst": 10,
+					"GlobalBurst": 50,
 					"GlobalRPS": 50,
-					"PerSenderBurst": 10,
-					"PerSenderRPS": 10	
+					"PerSenderBurst": 50,
+					"PerSenderRPS": 50	
 				}
 			}
 		}
@@ -117,19 +117,7 @@ const gatewayConfigTemplate = `
 
 const serviceConfigTemplate = `
 {
-	"proxyMode": "gateway",
-	"incomingRateLimiter": {
-		"globalBurst": 10,
-		"globalRPS": 50,
-		"perSenderBurst": 10,
-		"perSenderRPS": 10
-	},
-	"outgoingRateLimiter": {
-		"globalBurst": 10,
-		"globalRPS": 50,
-		"perSenderBurst": 10,
-		"perSenderRPS": 10
-	}
+	"proxyMode": "gateway"
 }
 `
 
@@ -171,7 +159,7 @@ func newTestGatewayFromConfig(t *testing.T, gatewayConfigStr string, c network.H
 	var gatewayConfig *config.GatewayConfig
 	err := json.Unmarshal([]byte(gatewayConfigStr), &gatewayConfig)
 	require.NoError(t, err)
-	gateway, err := gateway.NewGatewayFromConfig(gatewayConfig, gateway.NewHandlerFactory(nil, nil, c, nil, nil, lggr), lggr)
+	gateway, err := gateway.NewGatewayFromConfig(gatewayConfig, gateway.NewHandlerFactory(nil, nil, c, nil, nil, lggr, limits.Factory{Logger: lggr}), lggr)
 	require.NoError(t, err)
 	servicetest.Run(t, gateway)
 	return gateway
@@ -198,7 +186,10 @@ func newTestHTTPCapability(ctx context.Context, t *testing.T, gc core.GatewayCon
 		Logger: lggr,
 		Meter:  beholder.GetMeter(),
 	})
-	err := httpCapability.Initialise(ctx, serviceConfigTemplate, nil, nil, nil, nil, nil, nil, gc, nil)
+	err := httpCapability.Initialise(ctx, core.StandardCapabilitiesDependencies{
+		Config:           serviceConfigTemplate,
+		GatewayConnector: gc,
+	})
 	require.NoError(t, err)
 	return httpCapability
 }
@@ -332,9 +323,11 @@ func TestHTTPActionCapability(t *testing.T) {
 	t.Run("GET /random with caching enabled", func(t *testing.T) {
 		requestMetadata := generateRandomRequestMetadata()
 		initialOutput, err := httpCapability.SendRequest(ctx, requestMetadata, &httpclient.Request{
-			Url:           fmt.Sprintf("http://%s/random", listener.Addr().String()),
-			Method:        "GET",
-			CacheSettings: &httpclient.CacheSettings{},
+			Url:    fmt.Sprintf("http://%s/random", listener.Addr().String()),
+			Method: "GET",
+			CacheSettings: &httpclient.CacheSettings{
+				Store: true,
+			},
 		})
 		require.NoError(t, err)
 		require.NotNil(t, initialOutput)
@@ -346,7 +339,6 @@ func TestHTTPActionCapability(t *testing.T) {
 			Url:    fmt.Sprintf("http://%s/random", listener.Addr().String()),
 			Method: "GET",
 			CacheSettings: &httpclient.CacheSettings{
-				Store:  true,
 				MaxAge: durationpb.New(10000 * time.Millisecond),
 			},
 		})
@@ -375,9 +367,11 @@ func TestHTTPActionCapability(t *testing.T) {
 	t.Run("GET /not-found returns 404", func(t *testing.T) {
 		requestMetadata := generateRandomRequestMetadata()
 		output, err := httpCapability.SendRequest(ctx, requestMetadata, &httpclient.Request{
-			Url:           fmt.Sprintf("http://%s/not-found", listener.Addr().String()),
-			Method:        "GET",
-			CacheSettings: &httpclient.CacheSettings{},
+			Url:    fmt.Sprintf("http://%s/not-found", listener.Addr().String()),
+			Method: "GET",
+			CacheSettings: &httpclient.CacheSettings{
+				Store: true,
+			},
 		})
 		require.NoError(t, err)
 		require.NotNil(t, output)
@@ -401,9 +395,11 @@ func TestHTTPActionCapability(t *testing.T) {
 
 	t.Run("GET /error returns 500", func(t *testing.T) {
 		output, err := httpCapability.SendRequest(ctx, generateRandomRequestMetadata(), &httpclient.Request{
-			Url:           fmt.Sprintf("http://%s/error", listener.Addr().String()),
-			Method:        "GET",
-			CacheSettings: &httpclient.CacheSettings{},
+			Url:    fmt.Sprintf("http://%s/error", listener.Addr().String()),
+			Method: "GET",
+			CacheSettings: &httpclient.CacheSettings{
+				Store: true,
+			},
 		})
 		require.NoError(t, err)
 		require.NotNil(t, output)
@@ -423,6 +419,84 @@ func TestHTTPActionCapability(t *testing.T) {
 		require.Equal(t, uint32(http.StatusInternalServerError), cachedOutput.Response.StatusCode)
 		require.Equal(t, string(cachedOutput.Response.Body), "Internal Server Error\n")
 		require.Equal(t, errorCounter, 2, "error endpoint should have been called twice. No caching on 500")
+	})
+
+	t.Run("Caching works across workflows for same owner", func(t *testing.T) {
+		workflow1Metadata := generateRandomRequestMetadata()
+		initialOutput, err := httpCapability.SendRequest(ctx, workflow1Metadata, &httpclient.Request{
+			Url:    fmt.Sprintf("http://%s/random", listener.Addr().String()),
+			Method: "GET",
+			CacheSettings: &httpclient.CacheSettings{
+				Store: true,
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, initialOutput)
+		require.Equal(t, uint32(http.StatusOK), initialOutput.Response.StatusCode)
+		initialBody := string(initialOutput.Response.Body)
+		initialHeader := initialOutput.Response.Headers["X-Custom-Header"]
+		require.NotEmpty(t, initialBody)
+		require.NotEmpty(t, initialHeader)
+
+		// Second request: different workflow ID but same owner, should retrieve from cache
+		workflow2Metadata := capabilities.RequestMetadata{
+			WorkflowOwner:       workflow1Metadata.WorkflowOwner, // Same owner
+			WorkflowID:          "0x2222222222222222222222222222222222222222222222222222222222222222",
+			WorkflowExecutionID: fmt.Sprintf("execution_%s", uuid.New().String()),
+		}
+
+		cachedOutput, err := httpCapability.SendRequest(ctx, workflow2Metadata, &httpclient.Request{
+			Url:    fmt.Sprintf("http://%s/random", listener.Addr().String()),
+			Method: "GET",
+			CacheSettings: &httpclient.CacheSettings{
+				MaxAge: durationpb.New(10000 * time.Millisecond),
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, cachedOutput)
+		require.Equal(t, uint32(http.StatusOK), cachedOutput.Response.StatusCode)
+
+		// Verify cached response matches the first response (same random UUID)
+		require.Equal(t, initialBody, string(cachedOutput.Response.Body),
+			"Cache should work across different workflows for the same owner")
+		require.Equal(t, initialHeader, cachedOutput.Response.Headers["X-Custom-Header"],
+			"Cached headers should match across different workflows for the same owner")
+	})
+
+	t.Run("Caching does not work across different workflow owners", func(t *testing.T) {
+		owner1Metadata := generateRandomRequestMetadata()
+		firstOutput, err := httpCapability.SendRequest(ctx, owner1Metadata, &httpclient.Request{
+			Url:    fmt.Sprintf("http://%s/random", listener.Addr().String()),
+			Method: "GET",
+			CacheSettings: &httpclient.CacheSettings{
+				Store: true,
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, firstOutput)
+		require.Equal(t, uint32(http.StatusOK), firstOutput.Response.StatusCode)
+		firstBody := string(firstOutput.Response.Body)
+		firstHeader := firstOutput.Response.Headers["X-Custom-Header"]
+		require.NotEmpty(t, firstBody)
+		require.NotEmpty(t, firstHeader)
+
+		owner2Metadata := generateRandomRequestMetadata()
+		secondOutput, err := httpCapability.SendRequest(ctx, owner2Metadata, &httpclient.Request{
+			Url:    fmt.Sprintf("http://%s/random", listener.Addr().String()),
+			Method: "GET",
+			CacheSettings: &httpclient.CacheSettings{
+				MaxAge: durationpb.New(10000 * time.Millisecond),
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, secondOutput)
+		require.Equal(t, uint32(http.StatusOK), secondOutput.Response.StatusCode)
+
+		// Verify different response (fresh request, not cached)
+		require.NotEqual(t, firstBody, string(secondOutput.Response.Body),
+			"Cache should NOT work across different workflow owners - should get fresh response")
+		require.NotEqual(t, firstHeader, secondOutput.Response.Headers["X-Custom-Header"],
+			"Headers should be different for different workflow owners - not from cache")
 	})
 }
 

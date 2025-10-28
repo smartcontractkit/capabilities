@@ -51,24 +51,24 @@ func (s *MockServer) HealthReport() map[string]error {
 }
 
 func (s *MockServer) Name() string {
-	return "MockServer"
+	return s.Lggr.Name()
 }
 
-func (s *MockServer) Initialise(ctx context.Context, config string, telemetryService core.TelemetryService, store core.KeyValueStore, capabilityRegistry core.CapabilitiesRegistry, errorLog core.ErrorLog, pipelineRunner core.PipelineRunnerService, relayerSet core.RelayerSet, oracleFactory core.OracleFactory, gatewayConnector core.GatewayConnector, p2pKeystore core.Keystore) error {
-	if len(config) < 1 {
+func (s *MockServer) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
+	if len(dependencies.Config) < 1 {
 		return errors.New("missing config")
 	}
 	var mockConfig Config
-	err := toml.Unmarshal([]byte(config), &mockConfig)
+	err := toml.Unmarshal([]byte(dependencies.Config), &mockConfig)
 	if err != nil {
-		return fmt.Errorf("failed to unmarshal config: %s %w", config, err)
+		return fmt.Errorf("failed to unmarshal config: %s %w", dependencies.Config, err)
 	}
 
 	if mockConfig.Port == 0 {
 		return errors.New("must specify a port number")
 	}
 
-	s.MockRegistry = internal.NewMockRegistry(s.Lggr, capabilityRegistry)
+	s.MockRegistry = internal.NewMockRegistry(s.Lggr, dependencies.CapabilityRegistry)
 
 	for _, m := range mockConfig.DefaultMocks {
 		capType := utils.ToMockServerEnum(capabilities.CapabilityType(m.Type))
@@ -110,6 +110,6 @@ func (s *MockServer) Infos(ctx context.Context) ([]capabilities.CapabilityInfo, 
 
 func New(lggr logger.Logger) *MockServer {
 	return &MockServer{
-		Lggr: logger.Sugared(lggr),
+		Lggr: logger.Sugared(lggr).Named("MockServer"),
 	}
 }

@@ -10,8 +10,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
+	"github.com/smartcontractkit/chainlink-common/pkg/services/orgresolver"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
@@ -21,9 +21,22 @@ const ServiceName = "HTTPTriggerCapability"
 
 var _ server.HTTPCapability = &service{}
 
+type WorkflowRegistrationInput struct {
+	WorkflowSelector gateway.WorkflowSelector
+	Config           *http.Config
+	Metadata         WorkflowRegistrationMetadata
+}
+
+type WorkflowRegistrationMetadata struct {
+	WorkflowRegistryChainSelector string
+	WorkflowRegistryAddress       string
+	EngineVersion                 string
+	WorkflowDONID                 uint32
+}
+
 type ConnectorHandler interface {
 	services.Service
-	RegisterWorkflow(ctx context.Context, workflowSelector gateway.WorkflowSelector, input *http.Config, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error
+	RegisterWorkflow(ctx context.Context, input WorkflowRegistrationInput, sendCh chan<- capabilities.TriggerAndId[*http.Payload]) error
 	UnregisterWorkflow(ctx context.Context, workflowID string) error
 }
 
@@ -34,6 +47,7 @@ type service struct {
 	connectorHandler ConnectorHandler
 	metrics          *Metrics
 	limitsFactory    limits.Factory
+	orgResolver      orgresolver.OrgResolver
 }
 
 func NewService(lggr logger.Logger, limitsFactory limits.Factory) *service {
@@ -43,42 +57,30 @@ func NewService(lggr logger.Logger, limitsFactory limits.Factory) *service {
 	}
 }
 
-func (s *service) Initialise(
-	ctx context.Context,
-	config string,
-	_ core.TelemetryService,
-	kvstore core.KeyValueStore,
-	_ core.ErrorLog,
-	_ core.PipelineRunnerService,
-	_ core.RelayerSet,
-	_ core.OracleFactory,
-	gc core.GatewayConnector,
-	_ core.Keystore,
-) error {
-	s.lggr.Debugf("Initialising %s", ServiceName)
+func (s *service) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
+	s.lggr.Debugf("Initialising %s. config: %s", ServiceName, dependencies.Config)
 
 	var serviceConfig ServiceConfig
-	err := json.Unmarshal([]byte(config), &serviceConfig)
-	if err != nil {
-		return err
+	if dependencies.Config != "" {
+		err := json.Unmarshal([]byte(dependencies.Config), &serviceConfig)
+		if err != nil {
+			return err
+		}
 	}
 	s.cfg = applyDefaults(serviceConfig)
-	outgoingRateLimiter, err := ratelimit.NewRateLimiter(s.cfg.OutgoingRateLimiter)
-	if err != nil {
-		return err
-	}
-	incomingRateLimiter, err := ratelimit.NewRateLimiter(s.cfg.IncomingRateLimiter)
-	if err != nil {
-		return err
+	s.orgResolver = dependencies.OrgResolver
+	if s.orgResolver == nil {
+		s.lggr.Warn("OrgResolver is nil, HTTP trigger capability will not be able to fetch organization ID")
 	}
 	workflowStore := newWorkflowStore(s.lggr)
+	var err error
 	s.metrics, err = NewMetrics()
 	if err != nil {
 		return err
 	}
-	metadataPublisher := NewGatewayMetadataPublisher(s.lggr, gc, outgoingRateLimiter, workflowStore, s.cfg, s.metrics)
-	requestCache := newRequestCache(s.lggr, kvstore, time.Duration(s.cfg.RequestCacheTTL)*time.Second)
-	s.connectorHandler, err = NewConnectorHandler(s.lggr, gc, s.cfg, outgoingRateLimiter, incomingRateLimiter, workflowStore, metadataPublisher, requestCache, s.metrics)
+	metadataPublisher := NewGatewayMetadataPublisher(s.lggr, dependencies.GatewayConnector, workflowStore, s.cfg, s.metrics)
+	requestCache := newRequestCache(s.lggr, dependencies.Store, time.Duration(s.cfg.RequestCacheTTL)*time.Second)
+	s.connectorHandler, err = NewConnectorHandler(s.lggr, dependencies.GatewayConnector, s.cfg, workflowStore, metadataPublisher, requestCache, s.metrics, s.orgResolver)
 	if err != nil {
 		return err
 	}
@@ -108,7 +110,7 @@ func (s *service) Ready() error {
 }
 
 func (s *service) Name() string {
-	return ServiceName
+	return s.lggr.Name()
 }
 
 func (s *service) Description() string {
@@ -116,6 +118,12 @@ func (s *service) Description() string {
 }
 
 func (s *service) RegisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *http.Config) (<-chan capabilities.TriggerAndId[*http.Payload], error) {
+	s.lggr.Infow("RegisterTrigger called",
+		"triggerID", triggerID,
+		"workflowID", metadata.WorkflowID,
+		"workflowOwner", metadata.WorkflowOwner,
+		"workflowName", metadata.WorkflowName,
+		"workflowTag", metadata.WorkflowTag)
 	sendCh := make(chan capabilities.TriggerAndId[*http.Payload], s.cfg.SendChannelBufferSize)
 	// TODO: remove this when testing frameworks (local CRE, capabilities integration tests framework) migrate to WR v2
 	if metadata.WorkflowTag == "" {
@@ -127,7 +135,19 @@ func (s *service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 		WorkflowName:  strings.ToLower(ensureHexPrefix(metadata.WorkflowName)),
 		WorkflowTag:   metadata.WorkflowTag,
 	}
-	err := s.connectorHandler.RegisterWorkflow(ctx, workflowSelector, input, sendCh)
+
+	registrationInput := WorkflowRegistrationInput{
+		WorkflowSelector: workflowSelector,
+		Config:           input,
+		Metadata: WorkflowRegistrationMetadata{
+			WorkflowRegistryChainSelector: metadata.WorkflowRegistryChainSelector,
+			WorkflowRegistryAddress:       metadata.WorkflowRegistryAddress,
+			EngineVersion:                 metadata.EngineVersion,
+			WorkflowDONID:                 metadata.WorkflowDonID,
+		},
+	}
+
+	err := s.connectorHandler.RegisterWorkflow(ctx, registrationInput, sendCh)
 	if err != nil {
 		s.metrics.IncrementRegisterFailureCount(ctx, s.lggr)
 		return nil, err
@@ -137,7 +157,13 @@ func (s *service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 }
 
 func (s *service) UnregisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *http.Config) error {
-	err := s.connectorHandler.UnregisterWorkflow(ctx, metadata.WorkflowID)
+	s.lggr.Infow("UnregisterTrigger called",
+		"triggerID", triggerID,
+		"workflowID", metadata.WorkflowID,
+		"workflowOwner", metadata.WorkflowOwner,
+		"workflowName", metadata.WorkflowName,
+		"workflowTag", metadata.WorkflowTag)
+	err := s.connectorHandler.UnregisterWorkflow(ctx, ensureHexPrefix(metadata.WorkflowID))
 	if err != nil {
 		s.lggr.Errorf("Failed to unregister workflow %s: %v", metadata.WorkflowID, err)
 		s.metrics.IncrementDeregisterFailureCount(ctx, s.lggr)

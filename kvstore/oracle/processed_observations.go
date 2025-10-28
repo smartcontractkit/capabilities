@@ -1,6 +1,8 @@
 package oracle
 
 import (
+	"slices"
+
 	"github.com/smartcontractkit/libocr/commontypes"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -24,14 +26,12 @@ func (po *ProcessedObservation) Observe(request kvrequests.Request, observer com
 		return
 	}
 
-	for _, existingObserver := range po.observers {
-		if existingObserver == observer {
-			po.lggr.Infow("Observer already observed",
-				"po.observationCount", po.observationCount,
-				"observers", po.observers,
-			)
-			return
-		}
+	if slices.Contains(po.observers, observer) {
+		po.lggr.Infow("Observer already observed",
+			"po.observationCount", po.observationCount,
+			"observers", po.observers,
+		)
+		return
 	}
 
 	po.observers = append(po.observers, observer)

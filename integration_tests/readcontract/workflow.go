@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	types2 "github.com/smartcontractkit/chainlink-common/pkg/types"
+	types "github.com/smartcontractkit/chainlink-evm/pkg/config"
 	"github.com/smartcontractkit/chainlink/v2/core/services/job"
-	"github.com/smartcontractkit/chainlink/v2/core/services/relay/evm/types"
 	"github.com/smartcontractkit/chainlink/v2/core/testdata/testspecs"
 )
 
