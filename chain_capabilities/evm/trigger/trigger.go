@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ethereum/go-ethereum/rpc"
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"google.golang.org/protobuf/proto"
 
