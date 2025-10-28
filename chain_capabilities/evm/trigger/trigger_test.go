@@ -879,6 +879,24 @@ func TestIntegration_RegisterAndUnregisterLogTrigger(t *testing.T) {
 		}
 		registerAndUnregisterLogTriggerIntegration(t, topicsInput, expectedFilter)
 	})
+	t.Run("register and unregister log trigger integration with single topic 2, empty topic 3, and multiple topic 4", func(t *testing.T) {
+		topicsInput := []*evmcappb.TopicValues{
+			{Values: [][]byte{eventSig0Example}},
+			{Values: [][]byte{eventSig0Example}},
+			{},
+			{Values: [][]byte{eventSig0Example, eventSig0Example}},
+		}
+		expectedFilter := evmtypes.LPFilterQuery{
+			Name:      "trigger-integration-evm-log-trigger",
+			Addresses: []evmtypes.Address{evmtypes.Address(expectedAddress)},
+			EventSigs: []evmtypes.Hash{evmtypes.Hash(eventSig0Example)},
+			Topic2:    []evmtypes.Hash{evmtypes.Hash(eventSig0Example)},
+			Topic3:    []evmtypes.Hash{},
+			Topic4:    []evmtypes.Hash{evmtypes.Hash(eventSig0Example), evmtypes.Hash(eventSig0Example)},
+		}
+		registerAndUnregisterLogTriggerIntegration(t, topicsInput, expectedFilter)
+	})
+
 }
 func registerAndUnregisterLogTriggerIntegration(t *testing.T, topicsInput []*evmcappb.TopicValues, expectedFilter evmtypes.LPFilterQuery) {
 	evmService := initMocks(t)
