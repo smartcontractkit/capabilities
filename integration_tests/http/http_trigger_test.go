@@ -3,6 +3,7 @@ package http
 import (
 	"context"
 	"crypto/ecdsa"
+	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -56,7 +57,7 @@ const triggerGatewayConfigTemplate = `
     "MaxRequestBytes": 20000,
     "ReadTimeoutMillis": 1000,
     "RequestTimeoutMillis": 1000,
-    "WriteTimeoutMillis": 1000
+    "WriteTimeoutMillis": 10000
   },
   "Dons": [
     {
@@ -96,14 +97,20 @@ const memberTemplate = `{
     "Name": "test_node_%d"
 }`
 
-const workflowID = "0x217ca1cb7b52136b3baedb2a13e4609fa86439b87a1bc48fea6d95f19444cf72"
-
 // Workflow reference constants for testing
 const (
 	workflowOwner = "0x1234567890123456789012345678901234567890"
 	workflowName  = "test-workflow"
 	workflowTag   = "production"
 )
+
+// generateWorkflowID generates a random 32-byte hex workflow ID with 0x prefix
+func generateWorkflowID(t *testing.T) string {
+	bytes := make([]byte, 32)
+	_, err := rand.Read(bytes)
+	require.NoError(t, err)
+	return "0x" + hex.EncodeToString(bytes)
+}
 
 func nodeKeys(t *testing.T, numNodes int) []*ecdsa.PrivateKey {
 	var keys []*ecdsa.PrivateKey
@@ -116,25 +123,27 @@ func nodeKeys(t *testing.T, numNodes int) []*ecdsa.PrivateKey {
 }
 
 type testEnv struct {
-	lggr        logger.Logger
-	numNodes    int
-	nodeKeys    []*ecdsa.PrivateKey
-	signingKey  *ecdsa.PrivateKey
-	gateway     gateway.Gateway
-	nodeURL     string
-	userURL     string
-	triggerCaps []server.HTTPCapability
-	triggerChs  []<-chan capabilities.TriggerAndId[*triggersdk.Payload]
+	lggr           logger.Logger
+	numNodes       int
+	numFaultyNodes int
+	nodeKeys       []*ecdsa.PrivateKey
+	signingKey     *ecdsa.PrivateKey
+	gateway        gateway.Gateway
+	nodeURL        string
+	userURL        string
+	workflowID     string
+	triggerCaps    []server.HTTPCapability
+	triggerChs     []<-chan capabilities.TriggerAndId[*triggersdk.Payload]
 }
 
-func setupTestEnv(t *testing.T, numNodes int) *testEnv {
+func setupTestEnv(t *testing.T, numHonestNodes int, numFaultyNodes int) *testEnv {
 	ctx := t.Context()
 	lggr := logger.Test(t)
-	nodeKeys := nodeKeys(t, numNodes)
+	nodeKeys := nodeKeys(t, numHonestNodes+numFaultyNodes)
 	signingKey, err := crypto.GenerateKey()
 	require.NoError(t, err)
 
-	membersStr := make([]string, 0, numNodes)
+	membersStr := make([]string, 0, len(nodeKeys))
 	for i, key := range nodeKeys {
 		membersStr = append(membersStr, fmt.Sprintf(memberTemplate, crypto.PubkeyToAddress(key.PublicKey).Hex(), i))
 	}
@@ -146,24 +155,27 @@ func setupTestEnv(t *testing.T, numNodes int) *testEnv {
 	gateway := newTestGatewayFromConfig(t, gatewayConfigStr, nil, lggr)
 	nodeURL := fmt.Sprintf("ws://localhost:%d/node", gateway.GetNodePort())
 	userURL := fmt.Sprintf("http://localhost:%d/user", gateway.GetUserPort())
+	workflowID := generateWorkflowID(t)
 
 	var triggerCaps []server.HTTPCapability
 	var triggerChs []<-chan capabilities.TriggerAndId[*triggersdk.Payload]
-	for i := range numNodes {
-		triggerCap, ch := newTriggerHTTPCapability(ctx, t, nodeURL, nodeKeys[i], signingKey, lggr)
+	for i := range numHonestNodes {
+		triggerCap, ch := newTriggerHTTPCapability(ctx, t, nodeURL, nodeKeys[i], signingKey, workflowID, lggr)
 		triggerCaps = append(triggerCaps, triggerCap)
 		triggerChs = append(triggerChs, ch)
 	}
 	return &testEnv{
-		lggr:        lggr,
-		numNodes:    numNodes,
-		nodeKeys:    nodeKeys,
-		signingKey:  signingKey,
-		gateway:     gateway,
-		nodeURL:     nodeURL,
-		userURL:     userURL,
-		triggerCaps: triggerCaps,
-		triggerChs:  triggerChs,
+		lggr:           lggr,
+		numNodes:       numHonestNodes,
+		numFaultyNodes: numFaultyNodes,
+		nodeKeys:       nodeKeys,
+		signingKey:     signingKey,
+		gateway:        gateway,
+		nodeURL:        nodeURL,
+		userURL:        userURL,
+		workflowID:     workflowID,
+		triggerCaps:    triggerCaps,
+		triggerChs:     triggerChs,
 	}
 }
 
@@ -198,7 +210,7 @@ func createSampleRequest(t *testing.T, url string, key *ecdsa.PrivateKey, workfl
 	return httpReq, requestID, input
 }
 
-func sampleRequest(t *testing.T, url string, key *ecdsa.PrivateKey) (*http.Request, string, map[string]any) {
+func sampleRequest(t *testing.T, url string, key *ecdsa.PrivateKey, workflowID string) (*http.Request, string, map[string]any) {
 	workflow := gateway_common.WorkflowSelector{
 		WorkflowID: workflowID,
 	}
@@ -214,7 +226,7 @@ func sampleRequestWithReference(t *testing.T, url string, key *ecdsa.PrivateKey)
 	return createSampleRequest(t, url, key, workflow, uuid.New().String())
 }
 
-func sampleRequestWithoutPrefix(t *testing.T, url string, key *ecdsa.PrivateKey) (*http.Request, string, map[string]any) {
+func sampleRequestWithoutPrefix(t *testing.T, url string, key *ecdsa.PrivateKey, workflowID string) (*http.Request, string, map[string]any) {
 	// Strip 0x prefix from workflowID to test normalization
 	workflowIDWithoutPrefix := strings.TrimPrefix(workflowID, "0x")
 	workflow := gateway_common.WorkflowSelector{
@@ -257,32 +269,40 @@ func TestHTTPTrigger(t *testing.T) {
 }
 
 func TestHTTPTrigger_InsufficientNodes(t *testing.T) {
-	env := setupTestEnv(t, 2) // 3 nodes required for successful workflow execution, but only 2 nodes
+	// 2 honest nodes and 1 faulty node
+	// f + 1 = 2 is enough for workflow metadata aggregation
+	// (f + n) // 2 + 1 = 3 is required for consensus
+	// 2 honest nodes is not enough to reach consensus
+	env := setupTestEnv(t, 2, 1)
 	var requestID string
 	var req *http.Request
 	var input map[string]any
-	req, requestID, input = sampleRequest(t, env.userURL, env.signingKey)
 	require.Eventually(t, func() bool {
-		_, err := http.DefaultClient.Do(req)
-		return err != nil // request times out and returns an error if threshold of node responses is not met
+		req, requestID, input = sampleRequest(t, env.userURL, env.signingKey, env.workflowID)
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		_, err = io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		return resp.StatusCode == http.StatusServiceUnavailable
 	}, 30*time.Second, time.Second)
 	assertTriggerPayload(t, env, requestID, input) // workflows are still triggered even if not all nodes are available
 }
 
-// requestGeneratorFunc is a function type for generating test requests
-type requestGeneratorFunc func(t *testing.T, url string, key *ecdsa.PrivateKey) (*http.Request, string, map[string]any)
+// requestGeneratorFunc is a function type that generates a request given a test environment
+type requestGeneratorFunc func(t *testing.T, env *testEnv) (*http.Request, string, map[string]any)
 
 // runHTTPTriggerTest is a helper function that runs a standard HTTP trigger test with the given request generator
 func runHTTPTriggerTest(t *testing.T, reqGen requestGeneratorFunc) {
 	f := 1
 	numNodes := 3*f + 1
-	env := setupTestEnv(t, numNodes)
+	env := setupTestEnv(t, numNodes, 0)
 	var req *http.Request
 	var requestID string
 	var input map[string]any
 	var body []byte
 	require.Eventually(t, func() bool {
-		req, requestID, input = reqGen(t, env.userURL, env.signingKey)
+		req, requestID, input = reqGen(t, env)
 		resp, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
 		defer resp.Body.Close()
@@ -291,35 +311,43 @@ func runHTTPTriggerTest(t *testing.T, reqGen requestGeneratorFunc) {
 		return resp.StatusCode == http.StatusOK
 	}, 30*time.Second, time.Second)
 
-	validateHTTPTriggerResponse(t, body, requestID, workflowID)
+	validateHTTPTriggerResponse(t, body, requestID, env.workflowID)
 	assertTriggerPayload(t, env, requestID, input)
 }
 
 func testHTTPTriggerWithWorkflowID(t *testing.T) {
-	runHTTPTriggerTest(t, sampleRequest)
+	runHTTPTriggerTest(t, func(t *testing.T, env *testEnv) (*http.Request, string, map[string]any) {
+		return sampleRequest(t, env.userURL, env.signingKey, env.workflowID)
+	})
 }
 
 func testHTTPTriggerWithWorkflowReference(t *testing.T) {
-	runHTTPTriggerTest(t, sampleRequestWithReference)
+	runHTTPTriggerTest(t, func(t *testing.T, env *testEnv) (*http.Request, string, map[string]any) {
+		return sampleRequestWithReference(t, env.userURL, env.signingKey)
+	})
 }
 
 func testHTTPTriggerWithWorkflowIDWithoutPrefix(t *testing.T) {
-	runHTTPTriggerTest(t, sampleRequestWithoutPrefix)
+	runHTTPTriggerTest(t, func(t *testing.T, env *testEnv) (*http.Request, string, map[string]any) {
+		return sampleRequestWithoutPrefix(t, env.userURL, env.signingKey, env.workflowID)
+	})
 }
 
 func testHTTPTriggerWithWorkflowReferenceWithoutPrefix(t *testing.T) {
-	runHTTPTriggerTest(t, sampleRequestWithReferenceWithoutPrefix)
+	runHTTPTriggerTest(t, func(t *testing.T, env *testEnv) (*http.Request, string, map[string]any) {
+		return sampleRequestWithReferenceWithoutPrefix(t, env.userURL, env.signingKey)
+	})
 }
 
 func testHTTPTriggerRequestDeduplication(t *testing.T) {
 	f := 1
 	numNodes := 3*f + 1
-	env := setupTestEnv(t, numNodes)
+	env := setupTestEnv(t, numNodes, 0)
 
 	requestID := uuid.New().String()
 
 	workflow := gateway_common.WorkflowSelector{
-		WorkflowID: workflowID,
+		WorkflowID: env.workflowID,
 	}
 
 	// Make the first request
@@ -335,7 +363,7 @@ func testHTTPTriggerRequestDeduplication(t *testing.T) {
 		return resp.StatusCode == http.StatusOK
 	}, 30*time.Second, time.Second)
 
-	validateHTTPTriggerResponse(t, body, requestID, workflowID)
+	validateHTTPTriggerResponse(t, body, requestID, env.workflowID)
 	assertTriggerPayload(t, env, requestID, input)
 
 	request, _, _ = createSampleRequest(t, env.userURL, env.signingKey, workflow, requestID)
@@ -346,7 +374,7 @@ func testHTTPTriggerRequestDeduplication(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	validateHTTPTriggerResponse(t, body, requestID, workflowID)
+	validateHTTPTriggerResponse(t, body, requestID, env.workflowID)
 
 	// This request should be deduplicated, so no new triggers should be sent to the nodes
 	for i, ch := range env.triggerChs {
@@ -390,7 +418,7 @@ func assertTriggerPayload(t *testing.T, env *testEnv, requestID string, expected
 	}
 }
 
-func newTriggerHTTPCapability(ctx context.Context, t *testing.T, nodeURL string, privateKey *ecdsa.PrivateKey, signingKey *ecdsa.PrivateKey, lggr logger.Logger) (server.HTTPCapability, <-chan capabilities.TriggerAndId[*triggersdk.Payload]) {
+func newTriggerHTTPCapability(ctx context.Context, t *testing.T, nodeURL string, privateKey *ecdsa.PrivateKey, signingKey *ecdsa.PrivateKey, workflowID string, lggr logger.Logger) (server.HTTPCapability, <-chan capabilities.TriggerAndId[*triggersdk.Payload]) {
 	publicKey := strings.ToLower(crypto.PubkeyToAddress(privateKey.PublicKey).Hex())
 	client := &client{privateKey: privateKey}
 	gc := newTestGatewayConnector(t, publicKey, nodeURL, client, lggr)
