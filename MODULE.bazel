@@ -36,11 +36,28 @@ go_deps.gazelle_default_attributes(
         "gazelle:proto disable",  # Disable proto file generation for external dependencies
     ],
 )
+go_deps.gazelle_override(
+    directives = [
+        "gazelle:proto disable",  # Disable proto file generation for external dependencies
+        "gazelle:exclude deps",  # Exclude the deps directory so BUILD files are not generated for vendored dependencies
+    ],
+    path = "github.com/marcboeker/go-duckdb",
+)
 
 # Override the go_ethereum/crypto/secp256k1 package to use the embedded C sources and headers
 go_deps.module_override(
-    patches = ["//tools/patches:go_ethereum_secp256k1.patch"],
+    patches = ["//tools/patches/go-ethereum:go-ethereum.patch"],
     path = "github.com/ethereum/go-ethereum",
+)
+
+# Override the marcboeker/go-duckdb package to correctly include the C libraries
+go_deps.module_override(
+    patch_strip = 1,
+    patches = [
+        # Patch the BUILD.bazel file to correctly include the C libraries
+        "//tools/patches/go-duckdb:go-duckdb.patch",
+    ],
+    path = "github.com/marcboeker/go-duckdb",
 )
 use_repo(
     go_deps,

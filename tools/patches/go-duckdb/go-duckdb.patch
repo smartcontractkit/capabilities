@@ -1,0 +1,40 @@
+--- a/BUILD.bazel
++++ b/BUILD.bazel
+@@ -3,6 +3,27 @@
+ # gazelle:proto disable
+ # gazelle:exclude deps
+ 
++cc_library(
++    name = "c_duckdb",
++    visibility = ["//visibility:public"],
++    srcs = select({
++        "@io_bazel_rules_go//go/platform:darwin_arm64": ["deps/darwin_arm64/libduckdb.a"],
++        "@io_bazel_rules_go//go/platform:darwin_amd64": ["deps/darwin_amd64/libduckdb.a"],
++        "@io_bazel_rules_go//go/platform:linux_amd64": ["deps/linux_amd64/libduckdb.a"],
++        "@io_bazel_rules_go//go/platform:linux_arm64": ["deps/linux_arm64/libduckdb.a"],
++        "@io_bazel_rules_go//go/platform:windows_amd64": ["deps/windows_amd64/libduckdb.a"],
++        "//conditions:default": [],
++    }),
++    copts = select({
++        "@io_bazel_rules_go//go/platform:darwin_arm64": ["-DDUCKDB_STATIC_BUILD"],
++        "@io_bazel_rules_go//go/platform:darwin_amd64": ["-DDUCKDB_STATIC_BUILD"],
++        "@io_bazel_rules_go//go/platform:linux_amd64": ["-DDUCKDB_STATIC_BUILD"],
++        "@io_bazel_rules_go//go/platform:linux_arm64": ["-DDUCKDB_STATIC_BUILD"],
++        "@io_bazel_rules_go//go/platform:windows_amd64": ["-DDUCKDB_STATIC_BUILD"],
++        "//conditions:default": [],
++    }),
++)
++
+ go_library(
+     name = "go-duckdb",
+     srcs = [
+@@ -122,6 +145,9 @@
+         ],
+         "//conditions:default": [],
+     }),
++    cdeps = [
++        ":c_duckdb",
++    ],
+     importpath = "github.com/marcboeker/go-duckdb",
+     visibility = ["//visibility:public"],
+     deps = [
