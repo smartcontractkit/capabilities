@@ -6,12 +6,12 @@ require (
 	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20251023190209-61f60e422f91
 	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251017191235-d92205a61574
-	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20251016184633-215666be5318
+	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20251021010742-3f8d3dba17d8
 	github.com/smartcontractkit/freeport v0.1.3-0.20250716200817-cb5dfd0e369e
 	github.com/smartcontractkit/libocr v0.0.0-20250912173940-f3ab0246e23d
-	github.com/stretchr/testify v1.10.0
+	github.com/stretchr/testify v1.11.1
 	google.golang.org/grpc v1.74.2
-	google.golang.org/protobuf v1.36.7
+	google.golang.org/protobuf v1.36.8
 )
 
 require (

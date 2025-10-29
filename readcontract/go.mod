@@ -8,8 +8,8 @@ require (
 	github.com/prometheus/client_golang v1.22.0
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20251023190209-61f60e422f91
 	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251017191235-d92205a61574
-	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20251016184633-215666be5318
-	github.com/stretchr/testify v1.10.0
+	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20251021010742-3f8d3dba17d8
+	github.com/stretchr/testify v1.11.1
 )
 
 require (
@@ -112,6 +112,6 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20250528174236-200df99c418a // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250603155806-513f23925822 // indirect
 	google.golang.org/grpc v1.74.2 // indirect
-	google.golang.org/protobuf v1.36.7 // indirect
+	google.golang.org/protobuf v1.36.8 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

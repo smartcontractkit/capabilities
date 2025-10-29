@@ -8,13 +8,13 @@ require (
 	github.com/jonboulle/clockwork v0.5.0
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20251009230932-4a8bcf6901b9
 	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251017191235-d92205a61574
-	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20251016184633-215666be5318
+	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20251021010742-3f8d3dba17d8
 	github.com/stretchr/testify v1.11.1
 	go.opentelemetry.io/otel v1.37.0
 	go.opentelemetry.io/otel/metric v1.37.0
 	go.opentelemetry.io/otel/sdk/metric v1.37.0
 	go.uber.org/zap v1.27.0
-	google.golang.org/protobuf v1.36.7
+	google.golang.org/protobuf v1.36.8
 )
 
 require (

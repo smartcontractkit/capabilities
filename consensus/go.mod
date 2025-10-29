@@ -7,15 +7,15 @@ require (
 	github.com/shopspring/decimal v1.4.0
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20250930133443-a868d4d9dee8
 	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251017191235-d92205a61574
-	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20251016184633-215666be5318
+	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20251021010742-3f8d3dba17d8
 	github.com/smartcontractkit/cre-sdk-go v0.9.0
 	github.com/smartcontractkit/libocr v0.0.0-20250912173940-f3ab0246e23d
-	github.com/stretchr/testify v1.10.0
+	github.com/stretchr/testify v1.11.1
 	go.opentelemetry.io/otel v1.37.0
 	go.opentelemetry.io/otel/metric v1.37.0
 	go.opentelemetry.io/otel/sdk/metric v1.37.0
 	golang.org/x/exp v0.0.0-20250711185948-6ae5c78190dc
-	google.golang.org/protobuf v1.36.7
+	google.golang.org/protobuf v1.36.8
 )
 
 require (

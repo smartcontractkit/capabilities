@@ -5,10 +5,10 @@ go 1.25.3
 require (
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20251023190209-61f60e422f91
 	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251017191235-d92205a61574
-	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20251016184633-215666be5318
+	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20251021010742-3f8d3dba17d8
 	github.com/smartcontractkit/libocr v0.0.0-20250912173940-f3ab0246e23d
-	github.com/stretchr/testify v1.10.0
-	google.golang.org/protobuf v1.36.7
+	github.com/stretchr/testify v1.11.1
+	google.golang.org/protobuf v1.36.8
 )
 
 require (
