@@ -357,7 +357,7 @@ func (lts *LogTriggerService) startPolling(ctx context.Context, telemetryContext
 			}
 
 			lts.lggr.Debugf("Finished sending events for triggerID: %s, about to update latest block number (current offset: %d, latest finalized block: %d)", triggerID, state.lastBlock, finalizedBlockNumber)
-			calculatedLatestBlock := lts.getLatestBlockNumber(logs, state.lastBlock, finalizedBlockNumber)
+			calculatedLatestBlock := lts.getLatestBlockNumber(logs, state.lastBlock, finalizedBlockNumber, triggerID)
 			err = lts.triggers.Update(triggerID, calculatedLatestBlock, state.unfinalizedSentEventIDs)
 			if err != nil {
 				summary := fmt.Sprintf("Failed to update last block for triggerID: %s, error: %v", triggerID, err)
@@ -377,8 +377,9 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 	triggerID string,
 	trigger logTriggerState,
 	logCh chan capabilities.TriggerAndId[*evmcappb.Log]) error {
-	lts.lggr.Debugf("Got %d logs, sending them to the workflow trigger ID: %s", len(logs), triggerID)
+	lts.lggr.Debugf("Sending logs to workflow, triggerID: %s, finalizedBlockNumber: %d, logs size %d", triggerID, finalizedBlockNumber, len(logs))
 	var needsUpdate bool
+	sentCount := 0
 
 	for _, log := range logs {
 		if log == nil {
@@ -440,10 +441,10 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 		// Try to fetch organization ID if org resolver is available
 		if lts.orgResolver != nil && telemetryContext.RequestMetadata.WorkflowOwner != "" {
 			if orgID, orgErr := lts.orgResolver.Get(ctx, telemetryContext.RequestMetadata.WorkflowOwner); orgErr != nil {
-				lts.lggr.Warnw("Failed to fetch organization ID from org resolver", "workflowOwner", telemetryContext.RequestMetadata.WorkflowOwner, "error", orgErr, "triggerID", triggerID)
+				lts.lggr.Warnw("Failed to fetch organization ID from org resolver", "workflowOwner", telemetryContext.WorkflowOwner, "error", orgErr, "triggerID", triggerID)
 			} else if orgID != "" {
 				labeler = labeler.With(events.KeyOrganizationID, orgID)
-				lts.lggr.Debugw("Successfully fetched organization ID", "workflowOwner", telemetryContext.RequestMetadata.WorkflowOwner, "orgID", orgID, "triggerID", triggerID)
+				lts.lggr.Debugw("Successfully fetched organization ID", "workflowOwner", telemetryContext.WorkflowOwner, "orgID", orgID, "triggerID", triggerID)
 			}
 		}
 
@@ -454,6 +455,7 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 
 		select {
 		case logCh <- response:
+			sentCount++
 			if log.BlockNumber.Cmp(finalizedBlockNumber) > 0 {
 				// log's block number is unfinalized and needs to be tracked
 				trigger.unfinalizedSentEventIDs[eventID] = log.BlockNumber
@@ -486,6 +488,7 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 			return fmt.Errorf("failed to update unfinalized sent event IDs for triggerID: %s: %w", triggerID, err)
 		}
 	}
+	lts.lggr.Debugf("Total logs successfully sent for triggerID: %s: %d (originally got: %d)", triggerID, sentCount, len(logs))
 	return nil
 }
 
@@ -526,15 +529,20 @@ func (lts *LogTriggerService) generateLogIdentifier(log *evmtypes.Log) string {
 	return fmt.Sprintf("%x:%x:%d", log.TxHash, log.BlockHash, log.LogIndex)
 }
 
-func (lts *LogTriggerService) getLatestBlockNumber(logs []*evmtypes.Log, currentBlockNumber *big.Int, finalizedBlockNumber *big.Int) *big.Int {
+func (lts *LogTriggerService) getLatestBlockNumber(logs []*evmtypes.Log, currentBlockNumber *big.Int, finalizedBlockNumber *big.Int, triggerID string) *big.Int {
+	result := currentBlockNumber
 	for _, l := range logs {
 		// it has to iterate over all logs to update the last block number, as it could be multiple addresses with different block numbers among them
 		blockNumber := l.BlockNumber
-		if blockNumber.Cmp(currentBlockNumber) > 0 && blockNumber.Cmp(finalizedBlockNumber) <= 0 {
-			currentBlockNumber = blockNumber
+		if blockNumber.Cmp(result) > 0 && blockNumber.Cmp(finalizedBlockNumber) <= 0 {
+			result = blockNumber
 		}
 	}
-	return currentBlockNumber
+	lts.lggr.Debugf("getLatestBlockNumber result: %v (logs size: %d, currentBlockNumber: %v, finalizedBlockNumber: %v, triggerID: %s)",
+		result,
+		len(logs), currentBlockNumber, finalizedBlockNumber, triggerID)
+
+	return result
 }
 
 func (lts *LogTriggerService) fetchLogsFromLogPoller(ctx context.Context, triggerState logTriggerState) ([]*evmtypes.Log, error) {
