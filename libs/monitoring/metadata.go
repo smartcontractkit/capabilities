@@ -58,13 +58,11 @@ func (x *ExecutionContext) LogAttributes() []attribute.KeyValue {
 		// Execution Context - Workflow (capabilities.RequestMetadata)
 		attribute.String("workflow_id", ValOrUnknown(x.GetMetaWorkflowId())),
 		attribute.String("workflow_owner", ValOrUnknown(x.GetMetaWorkflowOwner())),
-		// Notice: We lower the cardinality on the WorkflowExecutionID so it can be used by metrics
-		// This label has good chances to be unique per workflow, in a reasonable bounded time window
-		// TODO: enable this when sufficiently tested (PromQL queries like alerts might need to change if this is used)
-		//attribute.String("workflow_execution_id_short", ValShortOrUnknown(x.GetMetaWorkflowExecutionId(), WorkflowExecutionIDShortLen)),
+		attribute.String("workflow_execution_id", x.GetMetaWorkflowExecutionId()),
 		attribute.String("workflow_name", ValOrUnknown(workflowName)),
 		attribute.Int64("workflow_don_config_version", int64(x.GetMetaWorkflowDonConfigVersion())),
 		attribute.String("reference_id", ValOrUnknown(x.GetMetaReferenceId())),
+		attribute.String("request_id", RequestID(ValOrUnknown(x.GetMetaWorkflowExecutionId()), ValOrUnknown(x.GetMetaReferenceId()))),
 	)
 }
 
