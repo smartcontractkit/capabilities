@@ -339,6 +339,10 @@ func (e *mockEmitter) Emit(ctx context.Context, body []byte, attrKVs ...any) err
 	return e.EmitFn(ctx, body, attrKVs...)
 }
 
+func (e *mockEmitter) Close() error {
+	return nil
+}
+
 func TestCapability_UnregisterFromWorkflow(t *testing.T) {
 	t.Run("unregister from workflow does not error", func(t *testing.T) {
 		c, err := New(Params{Logger: logger.Test(t)})

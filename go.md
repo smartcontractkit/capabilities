@@ -79,7 +79,18 @@ flowchart LR
 	click chainlink-protos/svr href "https://github.com/smartcontractkit/chainlink-protos"
 	chainlink-protos/workflows/go
 	click chainlink-protos/workflows/go href "https://github.com/smartcontractkit/chainlink-protos"
-	chainlink-tron/relayer
+	chainlink-solana --> chainlink-ccip/chains/solana
+	chainlink-solana --> chainlink-common/pkg/monitoring
+	chainlink-solana --> chainlink-framework/capabilities
+	chainlink-solana --> chainlink-framework/multinode
+	click chainlink-solana href "https://github.com/smartcontractkit/chainlink-solana"
+	chainlink-sui --> chainlink-aptos
+	chainlink-sui --> chainlink-ccip
+	chainlink-sui --> chainlink-common/pkg/values
+	click chainlink-sui href "https://github.com/smartcontractkit/chainlink-sui"
+	chainlink-ton --> chainlink-ccip
+	click chainlink-ton href "https://github.com/smartcontractkit/chainlink-ton"
+	chainlink-tron/relayer --> chainlink-common
 	click chainlink-tron/relayer href "https://github.com/smartcontractkit/chainlink-tron"
 	cre-sdk-go --> chainlink-protos/cre/go
 	click cre-sdk-go href "https://github.com/smartcontractkit/cre-sdk-go"

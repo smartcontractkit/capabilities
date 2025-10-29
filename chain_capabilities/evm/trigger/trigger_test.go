@@ -52,9 +52,9 @@ var (
 		{Values: [][]byte{eventSig0Example}},
 	}
 
-	triggerID        = "trigger-1"
-	finalizedExpHead = evmtypes.Header{Number: big.NewInt(25)}
-	pollInterval     = 10 * time.Millisecond
+	triggerID         = "trigger-1"
+	finalizedExpBlock = evmtypes.LPBlock{FinalizedBlockNumber: 25}
+	pollInterval      = 10 * time.Millisecond
 )
 
 func initMocks(t *testing.T) *evmmock.EVMService {
@@ -68,7 +68,7 @@ func TestLogTriggerService_Close_WaitsForPollingGoroutine(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
 		evmService := initMocks(t)
-		evmService.EXPECT().HeaderByNumber(mock.Anything, mock.Anything).Return(&evmtypes.HeaderByNumberReply{Header: &finalizedExpHead}, nil)
+		evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(&finalizedExpBlock, nil)
 		evmService.On("QueryTrackedLogs", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]*evmtypes.Log{}, nil).Maybe()
 		evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
 		evmService.On("UnregisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
@@ -176,7 +176,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 
 	t.Run("fail to get latest head", func(t *testing.T) {
 		evmService := initMocks(t)
-		evmService.EXPECT().HeaderByNumber(mock.Anything, mock.Anything).Return(nil, errors.New("mocked failure error"))
+		evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(nil, errors.New("mocked failure error"))
 		service := createTriggerObject(t, evmService, NewLogTriggerStore())
 		ctx := t.Context()
 		_, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{WorkflowID: "wf-id"}, &evmcappb.FilterLogTriggerRequest{
@@ -184,12 +184,12 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 			Topics:    topicsWithEventSig0,
 		})
 		require.Error(t, err)
-		require.Equal(t, err.Error(), "failed to register latest and finalized head: 'mocked failure error' for triggerID: trigger-1")
+		require.Equal(t, err.Error(), "failed to register latest and finalized log pollers block: 'mocked failure error' for triggerID: trigger-1")
 	})
 
 	t.Run("fail to register log-tracking", func(t *testing.T) {
 		evmService := initMocks(t)
-		evmService.EXPECT().HeaderByNumber(mock.Anything, mock.Anything).Return(&evmtypes.HeaderByNumberReply{Header: &finalizedExpHead}, nil)
+		evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(&finalizedExpBlock, nil)
 		evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(errors.New("mocking error, making register failing on purpose")).Once()
 		service := createTriggerObject(t, evmService, NewLogTriggerStore())
 		ctx := t.Context()
@@ -557,10 +557,10 @@ func TestGetFinalizedBlockNumber(t *testing.T) {
 			lggr:       logger.Test(t),
 			EVMService: evmService,
 		}
-		evmService.EXPECT().HeaderByNumber(mock.Anything, mock.Anything).Return(&evmtypes.HeaderByNumberReply{Header: &finalizedExpHead}, nil)
+		evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(&finalizedExpBlock, nil)
 		fromBlock, err := service.getFinalizedBlockNumber(ctx, triggerID)
 		require.NoError(t, err)
-		require.Equal(t, finalizedExpHead.Number, fromBlock)
+		require.Equal(t, big.NewInt(finalizedExpBlock.FinalizedBlockNumber), fromBlock)
 	})
 	t.Run("fails getting latest block number", func(t *testing.T) {
 		evmService := initMocks(t)
@@ -568,10 +568,10 @@ func TestGetFinalizedBlockNumber(t *testing.T) {
 			lggr:       logger.Test(t),
 			EVMService: evmService,
 		}
-		evmService.EXPECT().HeaderByNumber(mock.Anything, mock.Anything).Return(nil, errors.New("mocked failure error for LatestAndFinalizedHead"))
+		evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(nil, errors.New("mocked failure error for LatestAndFinalizedHead"))
 		_, err := service.getFinalizedBlockNumber(ctx, triggerID)
 		require.Error(t, err)
-		require.ErrorContains(t, err, "failed to register latest and finalized head: 'mocked failure error for LatestAndFinalizedHead' for triggerID: trigger-1")
+		require.ErrorContains(t, err, "failed to register latest and finalized log pollers block: 'mocked failure error for LatestAndFinalizedHead' for triggerID: trigger-1")
 	})
 }
 
@@ -911,11 +911,11 @@ func registerAndUnregisterLogTriggerIntegration(t *testing.T, topicsInput []*evm
 	evmService.On("UnregisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
 
 	// two calls, one for the starting offset and a second one for the next block
-	evmService.EXPECT().HeaderByNumber(mock.Anything, mock.Anything).Return(&evmtypes.HeaderByNumberReply{Header: &evmtypes.Header{Number: big.NewInt(25)}}, nil).Twice()
+	evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(&evmtypes.LPBlock{FinalizedBlockNumber: 25}, nil).Twice()
 	// single call, for fetching the latest finalized head and check if the offset has to be adjusted
-	evmService.EXPECT().HeaderByNumber(mock.Anything, mock.Anything).Return(&evmtypes.HeaderByNumberReply{Header: &evmtypes.Header{Number: big.NewInt(26)}}, nil).Once()
+	evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(&evmtypes.LPBlock{FinalizedBlockNumber: 26}, nil).Once()
 	// Mocking the QueryTrackedLogs method to return logs for the test (1st call) and then a second log for the next block (2nd call)
-	nextBlockNumber := new(big.Int).Add(finalizedExpHead.Number, big.NewInt(1))
+	nextBlockNumber := new(big.Int).Add(big.NewInt(finalizedExpBlock.FinalizedBlockNumber), big.NewInt(1))
 	message := []byte(assemblyDataMessage(evmtypes.Address(expectedAddress), nextBlockNumber))
 	nextBlockNumber2 := new(big.Int).Add(nextBlockNumber, big.NewInt(1))
 	message2 := []byte(assemblyDataMessage(evmtypes.Address(expectedAddress), nextBlockNumber2))
@@ -1031,8 +1031,8 @@ func TestRegisterLogTrigger_ConversionFailures_Compact(t *testing.T) {
 	evmService := initMocks(t)
 
 	evmService.EXPECT().
-		HeaderByNumber(mock.Anything, mock.Anything).
-		Return(&evmtypes.HeaderByNumberReply{Header: &finalizedExpHead}, nil).
+		GetLatestLPBlock(mock.Anything).
+		Return(&finalizedExpBlock, nil).
 		Maybe()
 
 	svc := createTriggerObject(t, evmService, NewLogTriggerStore())
