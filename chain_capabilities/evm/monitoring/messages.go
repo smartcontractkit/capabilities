@@ -126,8 +126,8 @@ func (m *MessageBuilder) BuildWriteReportTxFeeCalculationError(tc TelemetryConte
 	}
 }
 
-func (m *MessageBuilder) BuildLogTriggerInitiated(tc TelemetryContext, req *evmcap.FilterLogTriggerRequest) *TriggerInitiated {
-	return &TriggerInitiated{Req: req, ExecutionContext: m.BuildExecutionContext(tc)}
+func (m *MessageBuilder) BuildLogTriggerInitiated(tc TelemetryContext, req *evmcap.FilterLogTriggerRequest) *LogTriggerInitiated {
+	return &LogTriggerInitiated{Req: req, ExecutionContext: m.BuildExecutionContext(tc)}
 }
 
 func (m *MessageBuilder) BuildLogTriggerSuccess(tc TelemetryContext, triggerID string, req *evmcap.FilterLogTriggerRequest, logCount int, latestOffsetBlock int64) Message {

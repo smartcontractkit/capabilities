@@ -5,7 +5,7 @@ option go_package = "github.com/smartcontractkit/capabilities/chain_capabilities
 import "capabilities/blockchain/evm/v1alpha/client.proto";
 import "libs/monitoring/execution_context.proto";
 
-message TriggerInitiated{
+message LogTriggerInitiated{
   capabilities.blockchain.evm.v1alpha.FilterLogTriggerRequest req = 1;
   monitoring.ExecutionContext execution_context = 20;
 }

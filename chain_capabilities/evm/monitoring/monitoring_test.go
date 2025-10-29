@@ -29,7 +29,7 @@ func TestProcessor_Process_InitiatedMessages(t *testing.T) {
 	}{
 		{"CallContractInitiated", &monitoring.CallContractInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"WriteReportInitiated", &monitoring.WriteReportInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
-		{"TriggerInitiated", &monitoring.TriggerInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
+		{"LogTriggerInitiated", &monitoring.LogTriggerInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"FilterLogsInitiated", &monitoring.FilterLogsInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"BalanceAtInitiated", &monitoring.BalanceAtInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"EstimateGasInitiated", &monitoring.EstimateGasInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
@@ -65,7 +65,7 @@ func TestProcessor_Process_InitiatedMessages_Error(t *testing.T) {
 	}{
 		{"CallContractInitiated", &monitoring.CallContractInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"WriteReportInitiated", &monitoring.WriteReportInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
-		{"TriggerInitiated", &monitoring.TriggerInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
+		{"LogTriggerInitiated", &monitoring.LogTriggerInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"FilterLogsInitiated", &monitoring.FilterLogsInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"BalanceAtInitiated", &monitoring.BalanceAtInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"EstimateGasInitiated", &monitoring.EstimateGasInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
