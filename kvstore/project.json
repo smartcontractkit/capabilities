@@ -9,7 +9,7 @@
       "executor": "nx:run-commands",
       "options": {
         "cwd": "{projectRoot}",
-        "command": "GOWORK=off golangci-lint run ./..."
+        "command": "env GOWORK=off golangci-lint run ./..."
       }
     },
     "test": {
