@@ -1026,9 +1026,9 @@ func TestHandleGatewayMessage_NilRequest(t *testing.T) {
 // from the stored workflow is used, even if the incoming request has zeros or missing values.
 // This is a regression test for the bug where workflowOwner was being set to zeros.
 func TestResolveWorkflowMetadata_PreservesStoredWorkflowOwner(t *testing.T) {
-	lggr := logger.Test(t)
-	handler, _, _, _ := setup(t, lggr)
 	t.Run("empty workflowOwner", func(t *testing.T) {
+		lggr := logger.Test(t)
+		handler, _, _, _ := setup(t, lggr)
 		workflowSelector := gateway_common.WorkflowSelector{
 			WorkflowID:    testWorkflowID,
 			WorkflowOwner: "", // empty
@@ -1042,6 +1042,8 @@ func TestResolveWorkflowMetadata_PreservesStoredWorkflowOwner(t *testing.T) {
 		require.Equal(t, testWorkflowTag, metadata.WorkflowTag, "workflowTag should be retrieved from stored workflow")
 	})
 	t.Run("registry metadata populated", func(t *testing.T) {
+		lggr := logger.Test(t)
+		handler, _, _, _ := setup(t, lggr)
 		workflowSelector := gateway_common.WorkflowSelector{
 			WorkflowID: testWorkflowID,
 		}
