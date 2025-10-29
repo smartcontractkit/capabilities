@@ -577,7 +577,7 @@ func TestGetFinalizedBlockNumber(t *testing.T) {
 
 func TestGetLatestBlockNumber(t *testing.T) {
 	t.Run("single log extracts value correctly", func(t *testing.T) {
-		service := &LogTriggerService{}
+		service := &LogTriggerService{lggr: logger.Test(t)}
 		logs := []*evmtypes.Log{
 			{
 				BlockNumber: big.NewInt(5),
@@ -589,7 +589,7 @@ func TestGetLatestBlockNumber(t *testing.T) {
 	})
 
 	t.Run("multiple logs with different block numbers mixed up", func(t *testing.T) {
-		service := &LogTriggerService{}
+		service := &LogTriggerService{lggr: logger.Test(t)}
 		addr1 := stringToAddressBytes("addr1")
 		addr2 := stringToAddressBytes("addr2")
 		logs := []*evmtypes.Log{
@@ -612,7 +612,7 @@ func TestGetLatestBlockNumber(t *testing.T) {
 	})
 
 	t.Run("multiple logs with unfinalized blocks return highest one", func(t *testing.T) {
-		service := &LogTriggerService{}
+		service := &LogTriggerService{lggr: logger.Test(t)}
 		addr1 := stringToAddressBytes("addr1")
 		addr2 := stringToAddressBytes("addr2")
 		logs := []*evmtypes.Log{

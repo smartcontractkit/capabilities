@@ -538,7 +538,8 @@ func (lts *LogTriggerService) getLatestBlockNumber(logs []*evmtypes.Log, current
 			result = blockNumber
 		}
 	}
-	lts.lggr.Debugf("getLatestBlockNumber result: %v (logs size: %d, currentBlockNumber: %v, finalizedBlockNumber: %v, triggerID: %s)",
+
+	lts.lggr.Debugf("getLatestBlockNumber result: %d (logs size: %d, currentBlockNumber: %d, finalizedBlockNumber: %d, triggerID: %s)",
 		result,
 		len(logs), currentBlockNumber, finalizedBlockNumber, triggerID)
 
