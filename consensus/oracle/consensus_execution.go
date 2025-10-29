@@ -510,12 +510,16 @@ func getMedian[T any](
 	for _, v := range observations {
 		unwrapped, err := unwrap(v)
 		if err != nil {
-			// Is possible the value could be corrupt and fail to unwrap, so log warning as this should not happen and skip
+			// It's possible the value could be corrupt and fail to unwrap, so skip and log warning as this should not happen
 			lggr.Warnf("failed to unwrap observation during median calculation: %s", err)
 		} else {
 			unwrappedValues = append(unwrappedValues, unwrapped)
 		}
+	}
 
+	// As values are filtered for unwrapping errors, need to re-check the number of observations is still sufficient for consensus
+	if len(unwrappedValues) < f+1 {
+		return nil, ErrInsufficientObservations
 	}
 
 	slices.SortFunc(unwrappedValues, compare)
