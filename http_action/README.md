@@ -201,10 +201,10 @@ go test -race ./...
 
 ```bash
 # Build for Linux amd64
-CGO_ENABLED='0' GOOS='linux' GOARCH='amd64' go build -o ./bin/amd64/http_action .
+CGO_ENABLED='0' GOOS='linux' GOARCH='amd64' GOWORK=off go build -o ./bin/amd64/http_action .
 
 # Build for Linux arm64  
-CGO_ENABLED='0' GOOS='linux' GOARCH='arm64' go build -o ./bin/arm64/http_action .
+CGO_ENABLED='0' GOOS='linux' GOARCH='arm64' GOWORK=off go build -o ./bin/arm64/http_action .
 
 # Build for current platform
 go build -o ./http_action .
