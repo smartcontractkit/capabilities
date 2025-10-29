@@ -8,21 +8,21 @@
       "executor": "nx:run-commands",
       "options": {
         "cwd": "{projectRoot}",
-        "command": "golangci-lint run ./..."
+        "command": "env GOWORK=off golangci-lint run ./..."
       }
     },
     "race": {
       "executor": "nx:run-commands",
       "options": {
         "cwd": "{projectRoot}",
-        "command": "go test -race ./..."
+        "command": "GOWORK=off go test -race ./..."
       }
     },
     "test": {
       "executor": "nx:run-commands",
       "options": {
         "cwd": "{projectRoot}",
-        "command": "go test ./... -coverpkg=./... -coverprofile=coverage.txt"
+        "command": "GOWORK=off go test ./... -coverpkg=./... -coverprofile=coverage.txt"
       }
     },
     "tidy": {
