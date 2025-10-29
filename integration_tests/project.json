@@ -9,21 +9,21 @@
       "executor": "nx:run-commands",
       "options": {
         "cwd": "{projectRoot}",
-        "command": "golangci-lint run ./..."
+        "command": "GOWORK=off golangci-lint run ./..."
       }
     },
     "test": {
       "executor": "nx:run-commands",
       "options": {
         "cwd": "{projectRoot}",
-        "command": "go test ./..."
+        "command": "GOWORK=off go test ./..."
       }
     },
     "tidy": {
       "executor": "nx:run-commands",
       "options": {
         "cwd": "{projectRoot}",
-        "command": "go mod tidy"
+        "command": "GOWORK=off go mod tidy"
       }
     }
   }
