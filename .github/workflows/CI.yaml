@@ -244,6 +244,8 @@ jobs:
 
       - name: golangci-lint (${{ matrix.projects }})
         uses: smartcontractkit/.github/actions/ci-lint-go@ci-lint-go/3.1.0
+        env:
+          GOWORK: off
         with:
           checkout-repo: false
           golangci-lint-config: ${{ github.workspace }}/.golangci.yml
