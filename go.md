@@ -42,7 +42,6 @@ flowchart LR
 	chainlink-common --> chainlink-protos/cre/go
 	chainlink-common --> chainlink-protos/linking-service/go
 	chainlink-common --> chainlink-protos/storage-service
-	chainlink-common --> chainlink-protos/workflows/go
 	chainlink-common --> freeport
 	chainlink-common --> grpc-proxy
 	chainlink-common --> libocr
@@ -67,7 +66,7 @@ flowchart LR
 	click chainlink-framework/metrics href "https://github.com/smartcontractkit/chainlink-framework"
 	chainlink-framework/multinode
 	click chainlink-framework/multinode href "https://github.com/smartcontractkit/chainlink-framework"
-	chainlink-protos/billing/go
+	chainlink-protos/billing/go --> chainlink-protos/workflows/go
 	click chainlink-protos/billing/go href "https://github.com/smartcontractkit/chainlink-protos"
 	chainlink-protos/cre/go
 	click chainlink-protos/cre/go href "https://github.com/smartcontractkit/chainlink-protos"
@@ -79,18 +78,7 @@ flowchart LR
 	click chainlink-protos/svr href "https://github.com/smartcontractkit/chainlink-protos"
 	chainlink-protos/workflows/go
 	click chainlink-protos/workflows/go href "https://github.com/smartcontractkit/chainlink-protos"
-	chainlink-solana --> chainlink-ccip/chains/solana
-	chainlink-solana --> chainlink-common/pkg/monitoring
-	chainlink-solana --> chainlink-framework/capabilities
-	chainlink-solana --> chainlink-framework/multinode
-	click chainlink-solana href "https://github.com/smartcontractkit/chainlink-solana"
-	chainlink-sui --> chainlink-aptos
-	chainlink-sui --> chainlink-ccip
-	chainlink-sui --> chainlink-common/pkg/values
-	click chainlink-sui href "https://github.com/smartcontractkit/chainlink-sui"
-	chainlink-ton --> chainlink-ccip
-	click chainlink-ton href "https://github.com/smartcontractkit/chainlink-ton"
-	chainlink-tron/relayer --> chainlink-common
+	chainlink-tron/relayer
 	click chainlink-tron/relayer href "https://github.com/smartcontractkit/chainlink-tron"
 	cre-sdk-go --> chainlink-protos/cre/go
 	click cre-sdk-go href "https://github.com/smartcontractkit/cre-sdk-go"
