@@ -58,7 +58,7 @@ func (x *ExecutionContext) LogAttributes() []attribute.KeyValue {
 		// Execution Context - Workflow (capabilities.RequestMetadata)
 		attribute.String("workflow_id", ValOrUnknown(x.GetMetaWorkflowId())),
 		attribute.String("workflow_owner", ValOrUnknown(x.GetMetaWorkflowOwner())),
-		attribute.String("workflow_execution_id", x.GetMetaWorkflowExecutionId()),
+		attribute.String("workflow_execution_id", ValOrUnknown(x.GetMetaWorkflowExecutionId())),
 		attribute.String("workflow_name", ValOrUnknown(workflowName)),
 		attribute.Int64("workflow_don_config_version", int64(x.GetMetaWorkflowDonConfigVersion())),
 		attribute.String("reference_id", ValOrUnknown(x.GetMetaReferenceId())),
