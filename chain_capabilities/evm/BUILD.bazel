@@ -10,6 +10,7 @@ go_library(
         "//chain_capabilities/evm/config",
         "//chain_capabilities/evm/consensus",
         "//chain_capabilities/evm/consensus/height",
+        "//chain_capabilities/evm/consensus/metrics",
         "//chain_capabilities/evm/consensus/oracle",
         "//chain_capabilities/evm/consensus/poller",
         "//chain_capabilities/evm/monitoring",

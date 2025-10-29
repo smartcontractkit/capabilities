@@ -1,0 +1,27 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "metrics",
+    srcs = ["metrics.go"],
+    importpath = "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/metrics",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//chain_capabilities/evm/consensus/types",
+        "@com_github_smartcontractkit_chainlink_common//pkg/beholder",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types",
+        "@io_opentelemetry_go_otel//attribute",
+        "@io_opentelemetry_go_otel_metric//:metric",
+        "@io_opentelemetry_go_otel_sdk_metric//:metric",
+    ],
+)
+
+go_test(
+    name = "metrics_test",
+    srcs = ["metrics_test.go"],
+    deps = [
+        ":metrics",
+        "//chain_capabilities/evm/consensus/types",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types",
+        "@com_github_stretchr_testify//assert",
+    ],
+)
