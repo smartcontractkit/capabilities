@@ -209,7 +209,7 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	}
 
 	eventSigs, topics2, topics3, topics4 := lts.getTopics(input)
-	lts.lggr.Debugw("RegisterLogTrigger input params", "addresses:", input.GetAddresses(), "eventSigs:", eventSigs, "topics2:", topics2, "topics3:", topics3, "topics4:", topics4, "confidence:", input.GetConfidence())
+	lts.lggr.Debugw("RegisterLogTrigger input params", "addresses:", input.GetAddresses(), "eventSigs:", eventSigs, "topics2:", topics2, "topics3:", topics3, "topics4:", topics4, "confidence:", input.GetConfidence(), "triggerID:", triggerID)
 
 	fromBlock, err := lts.getFinalizedBlockNumber(ctx, triggerID)
 	if err != nil {
@@ -305,7 +305,7 @@ func (lts *LogTriggerService) getFinalizedBlockNumber(ctx context.Context, trigg
 	if reply == nil {
 		return nil, fmt.Errorf("failed to register latest and finalized log pollers block: 'nil' for triggerID: %s", triggerID)
 	}
-	lts.lggr.Debugf("Latest finalized block number: %d", reply.FinalizedBlockNumber)
+	lts.lggr.Debugf("Latest finalized block number: %d, triggerID: %s", reply.FinalizedBlockNumber, triggerID)
 
 	return big.NewInt(reply.FinalizedBlockNumber), nil
 }
@@ -388,7 +388,7 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 
 		eventID := lts.generateLogIdentifier(log)
 		_, alreadySent := trigger.unfinalizedSentEventIDs[eventID]
-		lts.lggr.Debugf("Working with eventID: %s, alreadySent: %t", eventID, alreadySent)
+		lts.lggr.Debugf("Working with triggerID: %s, eventID: %s, alreadySent: %t", triggerID, eventID, alreadySent)
 
 		if alreadySent {
 			continue
@@ -440,10 +440,10 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 		// Try to fetch organization ID if org resolver is available
 		if lts.orgResolver != nil && telemetryContext.RequestMetadata.WorkflowOwner != "" {
 			if orgID, orgErr := lts.orgResolver.Get(ctx, telemetryContext.RequestMetadata.WorkflowOwner); orgErr != nil {
-				lts.lggr.Warnw("Failed to fetch organization ID from org resolver", "workflowOwner", telemetryContext.RequestMetadata.WorkflowOwner, "error", orgErr)
+				lts.lggr.Warnw("Failed to fetch organization ID from org resolver", "workflowOwner", telemetryContext.RequestMetadata.WorkflowOwner, "error", orgErr, "triggerID", triggerID)
 			} else if orgID != "" {
 				labeler = labeler.With(events.KeyOrganizationID, orgID)
-				lts.lggr.Debugw("Successfully fetched organization ID", "workflowOwner", telemetryContext.RequestMetadata.WorkflowOwner, "orgID", orgID)
+				lts.lggr.Debugw("Successfully fetched organization ID", "workflowOwner", telemetryContext.RequestMetadata.WorkflowOwner, "orgID", orgID, "triggerID", triggerID)
 			}
 		}
 
