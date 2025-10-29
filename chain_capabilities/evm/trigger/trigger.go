@@ -183,29 +183,29 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	ctx = meta.ContextWithCRE(ctx)
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	if triggerID == "" {
-		return nil, fmt.Errorf("no triggerID provided")
+		return nil, capabilities.NewRemoteReportableError(fmt.Errorf("no triggerID provided"))
 	}
 	if _, exists := lts.triggers.Read(triggerID); exists {
-		return nil, fmt.Errorf("triggerID %q is already registered", triggerID)
+		return nil, capabilities.NewRemoteReportableError(fmt.Errorf("triggerID %q is already registered", triggerID))
 	}
 	lenAddrs := len(input.GetAddresses())
 	if lenAddrs == 0 {
-		return nil, fmt.Errorf("no valid addresses provided (at least one address is required)")
+		return nil, capabilities.NewRemoteReportableError(fmt.Errorf("no valid addresses provided (at least one address is required)"))
 	}
 	if err := lts.filterAddressLimiter.Check(ctx, lenAddrs); err != nil {
-		return nil, err
+		return nil, capabilities.NewRemoteReportableError(err)
 	}
 
 	lenTopics := len(input.GetTopics())
 	if lenTopics > 4 {
-		return nil, fmt.Errorf("there can be at most 4 topics provided, got %d instead", lenTopics)
+		return nil, capabilities.NewRemoteReportableError(fmt.Errorf("there can be at most 4 topics provided, got %d instead", lenTopics))
 	}
 	if lenTopics == 0 || len(input.GetTopics()[0].Values) == 0 {
-		return nil, fmt.Errorf("no valid event sig provided (at least one event sig is required in topics)")
+		return nil, capabilities.NewRemoteReportableError(fmt.Errorf("no valid event sig provided (at least one event sig is required in topics)"))
 	}
 	for i, topic := range input.GetTopics() {
 		if err := lts.filterTopicsPerSlotLimiter.Check(ctx, len(topic.Values)); err != nil {
-			return nil, fmt.Errorf("topic %d: %w", i, err)
+			return nil, capabilities.NewRemoteReportableError(fmt.Errorf("topic %d: %w", i, err))
 		}
 	}
 
@@ -214,7 +214,7 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 
 	fromBlock, err := lts.getFinalizedBlockNumber(ctx, triggerID)
 	if err != nil {
-		return nil, err
+		return nil, capabilities.NewRemoteReportableError(err)
 	}
 
 	filterID := lts.generateFilterID(triggerID)
@@ -222,27 +222,27 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 
 	addresses, err := evmservice.ConvertAddressesFromProto(input.GetAddresses())
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert addresses: %w", err)
+		return nil, capabilities.NewRemoteReportableError(fmt.Errorf("failed to convert addresses: %w", err))
 	}
 
 	sigs, err := evmservice.ConvertHashesFromProto(eventSigs)
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert eventSigs: %w", err)
+		return nil, capabilities.NewRemoteReportableError(fmt.Errorf("failed to convert eventSigs: %w", err))
 	}
 
 	t2, err := evmservice.ConvertHashesFromProto(topics2)
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert topics2: %w", err)
+		return nil, capabilities.NewRemoteReportableError(fmt.Errorf("failed to convert topics2: %w", err))
 	}
 
 	t3, err := evmservice.ConvertHashesFromProto(topics3)
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert topics3: %w", err)
+		return nil, capabilities.NewRemoteReportableError(fmt.Errorf("failed to convert topics3: %w", err))
 	}
 
 	t4, err := evmservice.ConvertHashesFromProto(topics4)
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert topics4: %w", err)
+		return nil, capabilities.NewRemoteReportableError(fmt.Errorf("failed to convert topics4: %w", err))
 	}
 
 	filterQuery := evmtypes.LPFilterQuery{
@@ -255,8 +255,8 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	}
 
 	if err = lts.EVMService.RegisterLogTracking(ctx, filterQuery); err != nil {
-		return nil, fmt.Errorf("failed to register log-tracking: '%w' for triggerID: %s, addresses: %v, eventSig: %v, topic2: %v, topic3: %v, topic4: %v",
-			err, triggerID, filterQuery.Addresses, filterQuery.EventSigs, filterQuery.Topic2, filterQuery.Topic3, filterQuery.Topic4)
+		return nil, capabilities.NewRemoteReportableError(fmt.Errorf("failed to register log-tracking: '%w' for triggerID: %s, addresses: %v, eventSig: %v, topic2: %v, topic3: %v, topic4: %v",
+			err, triggerID, filterQuery.Addresses, filterQuery.EventSigs, filterQuery.Topic2, filterQuery.Topic3, filterQuery.Topic4))
 	}
 	expressions, confidence := lts.createLogRequest(ctx, addresses, sigs, t2, t3, t4, input.GetConfidence())
 
@@ -577,44 +577,43 @@ func (lts *LogTriggerService) createLogRequest(_ context.Context, addresses []ev
 	}
 
 	for i, t := range [][]evmtypes.Hash{topics2, topics3, topics4} {
-		if len(t) == 0 {
-			continue
-		}
 		// G115: integer overflow conversion uint64 -> int64 (gosec)
 		// nolint:gosec
-		expressions = append(expressions, evm.NewEventByTopicFilter(uint64(i+1), []evm.HashedValueComparator{{
-			Values:   t,
-			Operator: primitives.Eq,
-		}}))
+		topic := uint64(i + 1)
+		topicExpression := lts.makeEventByTopicFilter(topic, t)
+		if topicExpression == nil {
+			continue
+		}
+		expressions = append(expressions, *topicExpression)
 	}
 
 	return expressions, confidenceLevel
 }
 
-// TODO remove
-func (lts *LogTriggerService) makeEventByTopicFilter(topic uint64, topics [][]byte) *query.Expression {
+func (lts *LogTriggerService) makeEventByTopicFilter(topicIndex uint64, topics []evmtypes.Hash) *query.Expression {
 	if len(topics) == 0 {
 		return nil
 	}
-	values := make([]evmtypes.Hash, 0, len(topics))
+	var singleTopicFilters []query.Expression
 	for _, topic := range topics {
-		values = append(values, evmtypes.Hash(topic))
+		tf := evm.NewEventByTopicFilter(topicIndex, []evm.HashedValueComparator{{
+			Values:   []evmtypes.Hash{topic},
+			Operator: primitives.Eq,
+		}})
+		singleTopicFilters = append(singleTopicFilters, tf)
 	}
-	expr := evm.NewEventByTopicFilter(topic, []evm.HashedValueComparator{{
-		Values:   values,
-		Operator: primitives.Eq,
-	}})
-	return &expr
+	orExpression := query.Or(singleTopicFilters...)
+	return &orExpression
 }
 
 func (lts *LogTriggerService) UnregisterLogTrigger(ctx context.Context, triggerID string, meta capabilities.RequestMetadata, _ *evmcappb.FilterLogTriggerRequest) error {
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	if triggerID == "" {
-		return fmt.Errorf("no triggerID provided")
+		return capabilities.NewRemoteReportableError(fmt.Errorf("no triggerID provided"))
 	}
 	trigger, found := lts.triggers.Read(triggerID)
 	if !found {
-		return fmt.Errorf("no active trigger found for triggerID: %s", triggerID)
+		return capabilities.NewRemoteReportableError(fmt.Errorf("no active trigger found for triggerID: %s", triggerID))
 	}
 	lts.lggr.Debugf("UnregisterLogTrigger triggerID: %s", triggerID)
 	trigger.cancelFunc()
@@ -624,7 +623,7 @@ func (lts *LogTriggerService) UnregisterLogTrigger(ctx context.Context, triggerI
 	if err != nil {
 		summary := fmt.Sprintf("failed to unregister log-tracking: '%v' for triggerID: %s", err, triggerID)
 		monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(telemetryContext, triggerID, summary, err.Error()))
-		return fmt.Errorf("failed to unregister log-tracking: '%w' for triggerID: %s", err, triggerID)
+		return capabilities.NewRemoteReportableError(fmt.Errorf("failed to unregister log-tracking: '%w' for triggerID: %s", err, triggerID))
 	}
 	return nil
 }

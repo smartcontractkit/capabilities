@@ -36,7 +36,11 @@ type MessageBuilder struct {
 
 type Message interface {
 	proto.Message
-	Attributes() []attribute.KeyValue
+	// LogAttributes - Defines list of key value pairs to be included in a log line for the Message
+	LogAttributes() []attribute.KeyValue
+	// MetricAttributes - defines a subset of Attributes key value pairs to be added as labels to metrics that correspond to the Message
+	// *MUST NOT* include high cardinality values as it will *KILL* metrics collector.
+	MetricAttributes() []attribute.KeyValue
 }
 
 type ErrorMessage interface {

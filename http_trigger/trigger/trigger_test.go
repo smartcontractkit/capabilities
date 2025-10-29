@@ -140,6 +140,21 @@ func TestService_UnregisterTrigger(t *testing.T) {
 	}
 }
 
+func TestService_Initialise_EmptyConfig(t *testing.T) {
+	svc := NewService(logger.Test(t), limits.Factory{Logger: logger.Test(t)})
+	gc := mockedGatewayConnector(t)
+
+	err := svc.Initialise(context.Background(), core.StandardCapabilitiesDependencies{
+		Config:           "",
+		GatewayConnector: gc,
+	})
+	require.NoError(t, err)
+
+	require.NotNil(t, svc.cfg)
+	require.NotNil(t, svc.connectorHandler)
+	require.NotNil(t, svc.metrics)
+}
+
 func TestService_Start_HealthReport_Ready_Close(t *testing.T) {
 	mockHandler := &mockConnectorHandler{}
 	svc := NewService(logger.Test(t), limits.Factory{Logger: logger.Test(t)})

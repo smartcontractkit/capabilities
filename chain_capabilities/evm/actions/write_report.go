@@ -369,9 +369,38 @@ func (thr *TxHashRetriever) GetHash(ctx context.Context) (*evmtypes.Hash, error)
 		return thr.txHash, nil
 	}
 
-	logs, err := thr.keystoneForwarderClient.GetReportProcessedEvents(ctx, thr.transmissionID.Receiver, thr.transmissionID.WorkflowExecutionID, thr.transmissionID.ReportID)
+	// Retry strategy for GetReportProcessedEvents to handle RPC lag
+	strategy := retry.Strategy[[]*evmtypes.Log]{
+		Backoff: &backoff.Backoff{
+			Factor: 2,
+			Max:    2 * time.Second,
+			Min:    100 * time.Millisecond,
+		},
+		MaxRetries: 5,
+	}
+	retryContext, cancelFunc := context.WithTimeout(ctx, 12*time.Second)
+	defer cancelFunc()
+
+	var lastErr error
+	logs, err := strategy.Do(retryContext, thr.lggr, func(ctx context.Context) ([]*evmtypes.Log, error) {
+		retrievedLogs, retrieveErr := thr.keystoneForwarderClient.GetReportProcessedEvents(ctx, thr.transmissionID.Receiver, thr.transmissionID.WorkflowExecutionID, thr.transmissionID.ReportID)
+		if retrieveErr != nil {
+			lastErr = retrieveErr
+			return nil, retrieveErr
+		}
+		if len(retrievedLogs) == 0 {
+			lastErr = errors.New("no logs found yet, retrying")
+			return nil, lastErr
+		}
+		return retrievedLogs, nil
+	})
+
 	if err != nil {
 		thr.lggr.Debugw(failedToRetrieveTxHashErrorMessage, thr.transmissionID.GetIDPartsForDebugging()...)
+		// Return the original error from GetReportProcessedEvents, not the retry wrapper
+		if lastErr != nil {
+			return nil, errors.Join(lastErr, fmt.Errorf("%s: %w", failedToRetrieveTxHashErrorMessage, lastErr))
+		}
 		return nil, errors.Join(err, fmt.Errorf("%s: %w", failedToRetrieveTxHashErrorMessage, err))
 	}
 	if len(logs) > 1 {

@@ -233,7 +233,7 @@ func LogAndEmitSuccess(
 	beholderProcessor beholder.ProtoProcessor,
 	m Message,
 ) {
-	lggr.Infow(successMessage, attrsToErrorKV(m.Attributes())...)
+	lggr.Infow(successMessage, attrsToErrorKV(m.LogAttributes())...)
 	if err := beholderProcessor.Process(ctx, m); err != nil {
 		lggr.Errorw(fmt.Sprintf("Failed to process %s message", getMessageName(m)), "err", err)
 	}
@@ -256,15 +256,16 @@ func LogAndEmitError(
 	beholderProcessor beholder.ProtoProcessor,
 	eM ErrorMessage,
 ) {
-	attributes := eM.Attributes()
-	for i := 0; i < len(attributes); i++ {
-		if attributes[i].Key == "summary" {
-			attributes = append(attributes[:i], attributes[i+1:]...)
+	// exclude summary to avoid duplicating potentially large error msg, when logged localy
+	localLogAttributes := eM.LogAttributes()
+	for i := 0; i < len(localLogAttributes); i++ {
+		if localLogAttributes[i].Key == "summary" {
+			localLogAttributes = append(localLogAttributes[:i], localLogAttributes[i+1:]...)
 			break
 		}
 	}
 
-	lggr.Errorw(eM.GetSummary()+" err: "+eM.GetCause(), attrsToErrorKV(attributes)...)
+	lggr.Errorw(eM.GetSummary()+" err: "+eM.GetCause(), attrsToErrorKV(localLogAttributes)...)
 	if err := beholderProcessor.Process(ctx, eM); err != nil {
 		lggr.Errorw(fmt.Sprintf("Failed to process %s message", getMessageName(eM)), "err", err)
 	}

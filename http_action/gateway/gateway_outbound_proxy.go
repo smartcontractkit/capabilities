@@ -17,7 +17,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
@@ -39,7 +38,6 @@ type gatewayOutboundProxy struct {
 	services.StateMachine
 	gatewayConnector        core.GatewayConnector
 	lggr                    logger.Logger
-	incomingRateLimiter     *ratelimit.RateLimiter
 	responses               *responses
 	gatewayConnectionConfig common.GatewayConnectionConfig
 	metrics                 *common.Metrics
@@ -60,15 +58,9 @@ func applyDefaults(cfg common.GatewayConnectionConfig) common.GatewayConnectionC
 }
 
 func NewGatewayOutboundProxy(gatewayConnector core.GatewayConnector, config common.ServiceConfig, lggr logger.Logger, metrics *common.Metrics, validator common.ResponseValidator) (*gatewayOutboundProxy, error) {
-	incomingRateLimiter, err := ratelimit.NewRateLimiter(config.IncomingRateLimiter)
-	if err != nil {
-		return nil, err
-	}
-
 	return &gatewayOutboundProxy{
 		gatewayConnector:        gatewayConnector,
 		responses:               newResponses(),
-		incomingRateLimiter:     incomingRateLimiter,
 		lggr:                    lggr,
 		gatewayConnectionConfig: applyDefaults(config.GatewayConnectionConfig),
 		metrics:                 metrics,
@@ -257,22 +249,6 @@ func (p *gatewayOutboundProxy) HandleGatewayMessage(ctx context.Context, gateway
 		return nil
 	}
 
-	senderAllow, globalAllow := p.incomingRateLimiter.AllowVerbose(gatewayID)
-	errorMsg := ""
-	if !senderAllow {
-		p.metrics.IncrementGatewayNodeThrottled(ctx, gatewayID, l)
-		errorMsg = common.ErrorIncomingRatelimitSender
-	} else if !globalAllow {
-		p.metrics.IncrementGatewayGlobalThrottled(ctx, l)
-		errorMsg = common.ErrorIncomingRatelimitGlobal
-	}
-
-	if errorMsg != "" {
-		l.Errorw("request rate-limited")
-		msg = gc.OutboundHTTPResponse{
-			ErrorMessage: errorMsg,
-		}
-	}
 	switch req.Method {
 	case gc.MethodHTTPAction:
 		select {

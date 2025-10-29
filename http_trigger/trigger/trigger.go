@@ -10,7 +10,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/orgresolver"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
@@ -62,31 +61,26 @@ func (s *service) Initialise(ctx context.Context, dependencies core.StandardCapa
 	s.lggr.Debugf("Initialising %s. config: %s", ServiceName, dependencies.Config)
 
 	var serviceConfig ServiceConfig
-	err := json.Unmarshal([]byte(dependencies.Config), &serviceConfig)
-	if err != nil {
-		return err
+	if dependencies.Config != "" {
+		err := json.Unmarshal([]byte(dependencies.Config), &serviceConfig)
+		if err != nil {
+			return err
+		}
 	}
 	s.cfg = applyDefaults(serviceConfig)
 	s.orgResolver = dependencies.OrgResolver
 	if s.orgResolver == nil {
 		s.lggr.Warn("OrgResolver is nil, HTTP trigger capability will not be able to fetch organization ID")
 	}
-	outgoingRateLimiter, err := ratelimit.NewRateLimiter(s.cfg.OutgoingRateLimiter)
-	if err != nil {
-		return err
-	}
-	incomingRateLimiter, err := ratelimit.NewRateLimiter(s.cfg.IncomingRateLimiter)
-	if err != nil {
-		return err
-	}
 	workflowStore := newWorkflowStore(s.lggr)
+	var err error
 	s.metrics, err = NewMetrics()
 	if err != nil {
 		return err
 	}
-	metadataPublisher := NewGatewayMetadataPublisher(s.lggr, dependencies.GatewayConnector, outgoingRateLimiter, workflowStore, s.cfg, s.metrics)
+	metadataPublisher := NewGatewayMetadataPublisher(s.lggr, dependencies.GatewayConnector, workflowStore, s.cfg, s.metrics)
 	requestCache := newRequestCache(s.lggr, dependencies.Store, time.Duration(s.cfg.RequestCacheTTL)*time.Second)
-	s.connectorHandler, err = NewConnectorHandler(s.lggr, dependencies.GatewayConnector, s.cfg, outgoingRateLimiter, incomingRateLimiter, workflowStore, metadataPublisher, requestCache, s.metrics, s.orgResolver)
+	s.connectorHandler, err = NewConnectorHandler(s.lggr, dependencies.GatewayConnector, s.cfg, workflowStore, metadataPublisher, requestCache, s.metrics, s.orgResolver)
 	if err != nil {
 		return err
 	}

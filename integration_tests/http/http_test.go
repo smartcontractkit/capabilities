@@ -117,19 +117,7 @@ const gatewayConfigTemplate = `
 
 const serviceConfigTemplate = `
 {
-	"proxyMode": "gateway",
-	"incomingRateLimiter": {
-		"globalBurst": 50,
-		"globalRPS": 50,
-		"perSenderBurst": 50,
-		"perSenderRPS": 50
-	},
-	"outgoingRateLimiter": {
-		"globalBurst": 50,
-		"globalRPS": 50,
-		"perSenderBurst": 50,
-		"perSenderRPS": 50
-	}
+	"proxyMode": "gateway"
 }
 `
 

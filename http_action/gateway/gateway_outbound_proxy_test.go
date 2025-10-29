@@ -17,7 +17,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/ratelimit"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 
 	jsonrpc "github.com/smartcontractkit/chainlink-common/pkg/jsonrpc2"
@@ -126,9 +125,7 @@ func setupSendRequestTest(t *testing.T) (*gatewayOutboundProxy, *mockGatewayConn
 	lggr := logger.Test(t)
 	proxy, err := NewGatewayOutboundProxy(
 		mockConnector,
-		common.ServiceConfig{
-			IncomingRateLimiter: rateLimiterConfig(),
-		},
+		common.ServiceConfig{},
 		lggr,
 		newMetrics(t),
 		newTestValidator(t),
@@ -258,34 +255,6 @@ func TestGatewayOutboundProxy_SendRequest_ExecutionError(t *testing.T) {
 	assert.Equal(t, "internal error", err.Error())
 }
 
-func TestGatewayOutboundProxy_SendRequest_RateLimitError(t *testing.T) {
-	proxy, _, readyCh := setupSendRequestTest(t)
-
-	metadata := capabilities.RequestMetadata{
-		WorkflowID:          "wf1",
-		WorkflowExecutionID: "exec1",
-		WorkflowOwner:       "owner1",
-	}
-	input := &http.Request{
-		Url:           "http://example.com",
-		Method:        "GET",
-		Headers:       map[string]string{"X-Test": "1"},
-		Body:          []byte("test"),
-		Timeout:       durationpb.New(5000 * time.Millisecond),
-		CacheSettings: &http.CacheSettings{},
-	}
-
-	go func() {
-		id := <-readyCh
-		simulateGatewayMessage(t, proxy, id, 429, "", "global limit of outgoing gateways requests has been exceeded", true)
-	}()
-
-	output, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
-	require.Error(t, err)
-	require.Nil(t, output)
-	assert.Contains(t, err.Error(), "internal error")
-}
-
 func simulateGatewayMessage(t *testing.T, proxy *gatewayOutboundProxy, id string, statusCode int, body string, errorMessage string, includeBody bool) {
 	req := jsonrpc.Request[json.RawMessage]{
 		ID:      id,
@@ -391,13 +360,4 @@ func TestGatewayOutboundProxy_awaitConnection_RetryLimits(t *testing.T) {
 		require.Contains(t, err.Error(), "context deadline exceeded")
 		require.Empty(t, gateway)
 	})
-}
-
-func rateLimiterConfig() ratelimit.RateLimiterConfig {
-	return ratelimit.RateLimiterConfig{
-		GlobalRPS:      100.0,
-		GlobalBurst:    100,
-		PerSenderRPS:   100.0,
-		PerSenderBurst: 100,
-	}
 }

@@ -215,13 +215,13 @@ func NewMetrics() (Metrics, error) {
 
 func (m *Metrics) OnCallContractSuccess(ctx context.Context, msg *CallContractSuccess) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.CallContractSuccess.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
+	m.CallContractSuccess.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
 	return nil
 }
 
 func (m *Metrics) OnCallContractError(ctx context.Context, msg *CallContractError) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.CallContractError.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
+	m.CallContractError.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
 	return nil
 }
 
@@ -229,19 +229,19 @@ func (m *Metrics) OnCallContractError(ctx context.Context, msg *CallContractErro
 
 func (m *Metrics) OnWriteReportSuccess(ctx context.Context, msg *WriteReportSuccess) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.WriteReportSuccess.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
+	m.WriteReportSuccess.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
 	return nil
 }
 
 func (m *Metrics) OnWriteReportError(ctx context.Context, msg *WriteReportError) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.WriteReportError.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
+	m.WriteReportError.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
 	return nil
 }
 
 func (m *Metrics) OnWriteReportTxFeeCalculationError(ctx context.Context, msg *WriteReportTxFeeCalculationError) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.WriteReportTxFeeCalculationError.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
+	m.WriteReportTxFeeCalculationError.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
 	return nil
 }
 
@@ -249,25 +249,25 @@ func (m *Metrics) OnWriteReportTxFeeCalculationError(ctx context.Context, msg *W
 
 func (m *Metrics) OnLogTriggerSuccess(ctx context.Context, msg *LogTriggerSuccess) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.LogTriggerSuccess.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
+	m.LogTriggerSuccess.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
 	return nil
 }
 
 func (m *Metrics) OnLogTriggerError(ctx context.Context, msg *LogTriggerError) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.LogTriggerError.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
+	m.LogTriggerError.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
 	return nil
 }
 
 func (m *Metrics) OnLogTriggerCleanUpError(ctx context.Context, msg *LogTriggerCleanUpError) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.LogTriggerCleanUpError.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
+	m.LogTriggerCleanUpError.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
 	return nil
 }
 
 func (m *Metrics) OnTriggerEventDroppedError(ctx context.Context, msg *LogTriggerEventDroppedError) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.LogTriggerEventDroppedError.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
+	m.LogTriggerEventDroppedError.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
 	return nil
 }
 
@@ -275,13 +275,13 @@ func (m *Metrics) OnTriggerEventDroppedError(ctx context.Context, msg *LogTrigge
 
 func (m *Metrics) OnFilterLogsSuccess(ctx context.Context, msg *FilterLogsSuccess) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.FilterLogsSuccess.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
+	m.FilterLogsSuccess.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
 	return nil
 }
 
 func (m *Metrics) OnFilterLogsError(ctx context.Context, msg *FilterLogsError) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.FilterLogsError.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
+	m.FilterLogsError.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
 	return nil
 }
 
@@ -289,13 +289,13 @@ func (m *Metrics) OnFilterLogsError(ctx context.Context, msg *FilterLogsError) e
 
 func (m *Metrics) OnBalanceAtSuccess(ctx context.Context, msg *BalanceAtSuccess) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.BalanceAtSuccess.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
+	m.BalanceAtSuccess.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
 	return nil
 }
 
 func (m *Metrics) OnBalanceAtError(ctx context.Context, msg *BalanceAtError) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.BalanceAtError.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
+	m.BalanceAtError.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
 	return nil
 }
 
@@ -303,13 +303,13 @@ func (m *Metrics) OnBalanceAtError(ctx context.Context, msg *BalanceAtError) err
 
 func (m *Metrics) OnEstimateGasSuccess(ctx context.Context, msg *EstimateGasSuccess) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.EstimateGasSuccess.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
+	m.EstimateGasSuccess.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
 	return nil
 }
 
 func (m *Metrics) OnEstimateGasError(ctx context.Context, msg *EstimateGasError) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.EstimateGasError.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
+	m.EstimateGasError.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
 	return nil
 }
 
@@ -317,13 +317,13 @@ func (m *Metrics) OnEstimateGasError(ctx context.Context, msg *EstimateGasError)
 
 func (m *Metrics) OnGetTransactionByHashSuccess(ctx context.Context, msg *GetTransactionByHashSuccess) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.GetTxByHashSuccess.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
+	m.GetTxByHashSuccess.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
 	return nil
 }
 
 func (m *Metrics) OnGetTransactionByHashError(ctx context.Context, msg *GetTransactionByHashError) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.GetTxByHashError.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
+	m.GetTxByHashError.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
 	return nil
 }
 
@@ -331,13 +331,13 @@ func (m *Metrics) OnGetTransactionByHashError(ctx context.Context, msg *GetTrans
 
 func (m *Metrics) OnGetTransactionReceiptSuccess(ctx context.Context, msg *GetTransactionReceiptSuccess) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.GetReceiptSuccess.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
+	m.GetReceiptSuccess.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
 	return nil
 }
 
 func (m *Metrics) OnGetTransactionReceiptError(ctx context.Context, msg *GetTransactionReceiptError) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.GetReceiptError.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
+	m.GetReceiptError.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
 	return nil
 }
 
@@ -345,47 +345,61 @@ func (m *Metrics) OnGetTransactionReceiptError(ctx context.Context, msg *GetTran
 
 func (m *Metrics) OnHeaderByNumberSuccess(ctx context.Context, msg *HeaderByNumberSuccess) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.HeaderByNumberSuccess.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
+	m.HeaderByNumberSuccess.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
 	return nil
 }
 
 func (m *Metrics) OnHeaderByNumberError(ctx context.Context, msg *HeaderByNumberError) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.HeaderByNumberError.basic.RecordEmit(ctx, start, emit, msg.Attributes()...)
+	m.HeaderByNumberError.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
 	return nil
 }
 
-// Attributes methods attach metric labels for each message type
-
-func (r *CallContractSuccess) Attributes() []attribute.KeyValue {
+func (r *CallContractSuccess) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.Int64("block_number", r.Req.GetBlockNumber()),
 		attribute.String("contract_address", r.Req.GetContractAddress()),
-	}, r.ExecutionContext.Attributes()...)
+	}, r.ExecutionContext.LogAttributes()...)
 }
 
-func (r *CallContractError) Attributes() []attribute.KeyValue {
+func (r *CallContractSuccess) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *CallContractError) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.Int64("block_number", r.Req.GetBlockNumber()),
 		attribute.String("contract_address", r.Req.GetContractAddress()),
 		attribute.String("summary", r.GetSummary()),
-	}, r.ExecutionContext.Attributes()...)
+	}, r.ExecutionContext.LogAttributes()...)
 }
 
-func (r *WriteReportSuccess) Attributes() []attribute.KeyValue {
+func (r *CallContractError) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *WriteReportSuccess) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.String("receiver", getReceiver(r.Req.GetReceiver())),
-	}, r.ExecutionContext.Attributes()...)
+	}, r.ExecutionContext.LogAttributes()...)
 }
 
-func (r *WriteReportError) Attributes() []attribute.KeyValue {
+func (r *WriteReportSuccess) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *WriteReportError) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.String("receiver", getReceiver(r.Req.GetReceiver())),
 		attribute.String("summary", r.GetSummary()),
-	}, r.ExecutionContext.Attributes()...)
+	}, r.ExecutionContext.LogAttributes()...)
 }
 
-func (r *WriteReportTxFeeCalculationError) Attributes() []attribute.KeyValue {
+func (r *WriteReportError) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *WriteReportTxFeeCalculationError) LogAttributes() []attribute.KeyValue {
 	attributes := []attribute.KeyValue{
 		attribute.String("receiver", getReceiver(r.Req.GetReceiver())),
 		attribute.String("summary", r.GetSummary()),
@@ -393,123 +407,191 @@ func (r *WriteReportTxFeeCalculationError) Attributes() []attribute.KeyValue {
 	if r.GetTxIdempotencyKey() != "" {
 		attributes = append(attributes, attribute.String("tx_idempotency_key", r.GetTxIdempotencyKey()))
 	}
-	return append(attributes, r.ExecutionContext.Attributes()...)
+	return append(attributes, r.ExecutionContext.LogAttributes()...)
 }
 
-func (r *LogTriggerSuccess) Attributes() []attribute.KeyValue {
+func (r *WriteReportTxFeeCalculationError) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *LogTriggerSuccess) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.String("trigger_id", r.GetTriggerID()),
 		attribute.Int64("log_count", int64(r.GetLogCount())),
-	}, r.ExecutionContext.Attributes()...)
+	}, r.ExecutionContext.LogAttributes()...)
 }
 
-func (r *LogTriggerError) Attributes() []attribute.KeyValue {
+func (r *LogTriggerSuccess) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *LogTriggerError) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.String("trigger_id", r.GetTriggerID()),
 		attribute.String("summary", r.GetSummary()),
-	}, r.ExecutionContext.Attributes()...)
+	}, r.ExecutionContext.LogAttributes()...)
 }
 
-func (r *LogTriggerCleanUpError) Attributes() []attribute.KeyValue {
+func (r *LogTriggerError) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *LogTriggerCleanUpError) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.String("summary", r.GetSummary()),
-	}, r.ExecutionContext.Attributes()...)
+	}, r.ExecutionContext.LogAttributes()...)
 }
 
-func (r *LogTriggerEventDroppedError) Attributes() []attribute.KeyValue {
+func (r *LogTriggerCleanUpError) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *LogTriggerEventDroppedError) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.String("trigger_id", r.GetTriggerID()),
 		attribute.String("tx_hash", r.GetTxHash()),
 		attribute.String("block_hash", r.GetBlockHash()),
 		attribute.Int64("log_index", r.GetLogIndex()),
 		attribute.String("summary", r.GetSummary()),
-	}, r.ExecutionContext.Attributes()...)
+	}, r.ExecutionContext.LogAttributes()...)
 }
 
-func (r *FilterLogsSuccess) Attributes() []attribute.KeyValue {
+func (r *LogTriggerEventDroppedError) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *FilterLogsSuccess) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.Int64("from_block", r.Req.GetFromBlock()),
 		attribute.Int64("to_block", r.Req.GetToBlock()),
 		attribute.Int64("log_count", int64(r.GetLogCount())),
-	}, r.ExecutionContext.Attributes()...)
+	}, r.ExecutionContext.LogAttributes()...)
 }
 
-func (r *FilterLogsError) Attributes() []attribute.KeyValue {
+func (r *FilterLogsSuccess) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *FilterLogsError) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.Int64("from_block", r.Req.GetFromBlock()),
 		attribute.Int64("to_block", r.Req.GetToBlock()),
 		attribute.String("summary", r.GetSummary()),
-	}, r.ExecutionContext.Attributes()...)
+	}, r.ExecutionContext.LogAttributes()...)
 }
 
-func (r *BalanceAtSuccess) Attributes() []attribute.KeyValue {
+func (r *FilterLogsError) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *BalanceAtSuccess) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.String("account", r.Req.GetAccount()),
 		attribute.Int64("block_number", r.Req.GetBlockNumber()),
 		attribute.String("balance", r.GetBalance()),
-	}, r.ExecutionContext.Attributes()...)
+	}, r.ExecutionContext.LogAttributes()...)
 }
 
-func (r *BalanceAtError) Attributes() []attribute.KeyValue {
+func (r *BalanceAtSuccess) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *BalanceAtError) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.String("account", r.Req.GetAccount()),
 		attribute.Int64("block_number", r.Req.GetBlockNumber()),
 		attribute.String("summary", r.GetSummary()),
-	}, r.ExecutionContext.Attributes()...)
+	}, r.ExecutionContext.LogAttributes()...)
 }
 
-func (r *EstimateGasSuccess) Attributes() []attribute.KeyValue {
+func (r *BalanceAtError) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *EstimateGasSuccess) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.String("from", r.Req.GetFrom()),
 		attribute.String("to", r.Req.GetTo()),
 		attribute.Int64("gas", r.GetGas()),
-	}, r.ExecutionContext.Attributes()...)
+	}, r.ExecutionContext.LogAttributes()...)
 }
 
-func (r *EstimateGasError) Attributes() []attribute.KeyValue {
+func (r *EstimateGasSuccess) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *EstimateGasError) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.String("from", r.Req.GetFrom()),
 		attribute.String("to", r.Req.GetTo()),
 		attribute.String("summary", r.GetSummary()),
-	}, r.ExecutionContext.Attributes()...)
+	}, r.ExecutionContext.LogAttributes()...)
 }
 
-func (r *GetTransactionByHashSuccess) Attributes() []attribute.KeyValue {
+func (r *EstimateGasError) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *GetTransactionByHashSuccess) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.String("hash", r.Req.GetHash()),
-	}, r.ExecutionContext.Attributes()...)
+	}, r.ExecutionContext.LogAttributes()...)
 }
 
-func (r *GetTransactionByHashError) Attributes() []attribute.KeyValue {
-	return append([]attribute.KeyValue{
-		attribute.String("hash", r.Req.GetHash()),
-		attribute.String("summary", r.GetSummary()),
-	}, r.ExecutionContext.Attributes()...)
+func (r *GetTransactionByHashSuccess) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
 }
 
-func (r *GetTransactionReceiptSuccess) Attributes() []attribute.KeyValue {
-	return append([]attribute.KeyValue{
-		attribute.String("hash", r.Req.GetHash()),
-	}, r.ExecutionContext.Attributes()...)
-}
-
-func (r *GetTransactionReceiptError) Attributes() []attribute.KeyValue {
+func (r *GetTransactionByHashError) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.String("hash", r.Req.GetHash()),
 		attribute.String("summary", r.GetSummary()),
-	}, r.ExecutionContext.Attributes()...)
+	}, r.ExecutionContext.LogAttributes()...)
 }
 
-func (r *HeaderByNumberSuccess) Attributes() []attribute.KeyValue {
-	return append([]attribute.KeyValue{
-		attribute.Int64("block_number", r.Req.GetBlockNumber()),
-	}, r.ExecutionContext.Attributes()...)
+func (r *GetTransactionByHashError) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
 }
 
-func (r *HeaderByNumberError) Attributes() []attribute.KeyValue {
+func (r *GetTransactionReceiptSuccess) LogAttributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
+		attribute.String("hash", r.Req.GetHash()),
+	}, r.ExecutionContext.LogAttributes()...)
+}
+
+func (r *GetTransactionReceiptSuccess) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *GetTransactionReceiptError) LogAttributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
+		attribute.String("hash", r.Req.GetHash()),
+		attribute.String("summary", r.GetSummary()),
+	}, r.ExecutionContext.LogAttributes()...)
+}
+
+func (r *GetTransactionReceiptError) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *HeaderByNumberSuccess) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.Int64("block_number", r.Req.GetBlockNumber()),
-	}, r.ExecutionContext.Attributes()...)
+	}, r.ExecutionContext.LogAttributes()...)
+}
+
+func (r *HeaderByNumberSuccess) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *HeaderByNumberError) LogAttributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
+		attribute.Int64("block_number", r.Req.GetBlockNumber()),
+	}, r.ExecutionContext.LogAttributes()...)
+}
+
+func (r *HeaderByNumberError) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
 }
 
 func getReceiver(receiver []byte) string {
