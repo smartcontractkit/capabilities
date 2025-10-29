@@ -10,6 +10,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	evmcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	sdkpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
@@ -52,6 +53,12 @@ type ErrorMessage interface {
 // NewMessageBuilder creates a new builder
 func NewMessageBuilder(chainInfo types.ChainInfo, capInfo capabilities.CapabilityInfo, nodeAddress string) *MessageBuilder {
 	return &MessageBuilder{ChainInfo: chainInfo, CapInfo: capInfo, nodeAddress: nodeAddress}
+}
+
+func (m *MessageBuilder) RequestLggr(lggr logger.SugaredLogger, telemetryContext TelemetryContext) logger.SugaredLogger {
+	attrs := m.BuildExecutionContext(telemetryContext).LogAttributes()
+	lggrAttrs := attrsToErrorKV(attrs)
+	return lggr.With(lggrAttrs...)
 }
 
 func (m *MessageBuilder) BuildCallContractInitiated(tc TelemetryContext, msg *evm.CallMsg, bn int64) *CallContractInitiated {

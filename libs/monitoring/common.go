@@ -94,3 +94,7 @@ func (m *MetricsCapBasic) RecordEmit(ctx context.Context, start, emit uint64, at
 	m.capTimestampEmit.Record(ctx, int64(emit), attrs)
 	m.capDuration.Record(ctx, int64(emit-start), attrs)
 }
+
+func RequestID(workflowExecutionID, reference string) string {
+	return workflowExecutionID + ":" + reference
+}
