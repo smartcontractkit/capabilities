@@ -4,10 +4,8 @@ on:
   push:
     branches:
       - main
-  # Temporarily disable pull requests and merge groups
-  # REMOVE BEFORE MERGING
-  # pull_request:
-  # merge_group:
+  pull_request:
+  merge_group:
 
 env:
   # Ensure that a cached go version is used:
