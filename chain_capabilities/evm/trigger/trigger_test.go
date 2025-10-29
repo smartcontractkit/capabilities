@@ -584,7 +584,7 @@ func TestGetLatestBlockNumber(t *testing.T) {
 			},
 		}
 		currentBlock := big.NewInt(0)
-		latestBlock := service.getLatestBlockNumber(logs, currentBlock, big.NewInt(10))
+		latestBlock := service.getLatestBlockNumber(logs, currentBlock, big.NewInt(10), "triggerID")
 		require.Equal(t, big.NewInt(5), latestBlock)
 	})
 
@@ -607,7 +607,7 @@ func TestGetLatestBlockNumber(t *testing.T) {
 			},
 		}
 		currentBlock := big.NewInt(0)
-		latestBlock := service.getLatestBlockNumber(logs, currentBlock, big.NewInt(10))
+		latestBlock := service.getLatestBlockNumber(logs, currentBlock, big.NewInt(10), "triggerID")
 		require.Equal(t, big.NewInt(3), latestBlock)
 	})
 
@@ -630,7 +630,7 @@ func TestGetLatestBlockNumber(t *testing.T) {
 			},
 		}
 		currentBlock := big.NewInt(0)
-		latestBlock := service.getLatestBlockNumber(logs, currentBlock, big.NewInt(2))
+		latestBlock := service.getLatestBlockNumber(logs, currentBlock, big.NewInt(2), "triggerID")
 		require.Equal(t, big.NewInt(2), latestBlock)
 	})
 }
