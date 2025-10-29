@@ -42,10 +42,9 @@ func CalculateOutcomeForObservations(
 	observations []*valuespb.Value,
 	consensusDescriptor *sdk.ConsensusDescriptor,
 	defaultValue *valuespb.Value,
-	minObservations int,
 	f int,
 ) (*valuespb.Value, error) {
-	filtered, _, err := filterObservations(observations, minObservations)
+	filtered, _, err := filterObservations(observations, f+1)
 	if err != nil {
 		return nil, err
 	}
@@ -456,12 +455,7 @@ func filterObservations(observationProtos []*valuespb.Value, minObservations int
 		return nil, nil, fmt.Errorf("insufficient observations (%d) to meet minimum (%d)", len(observationProtos), minObservations)
 	}
 
-	var dominantType reflect.Type
-	var highestCount int
-	var highestCountEqual bool
-
 	observationsByType := map[reflect.Type][]*valuespb.Value{}
-
 	for _, observation := range observationProtos {
 		if observation.Value == nil {
 			continue
@@ -469,22 +463,22 @@ func filterObservations(observationProtos []*valuespb.Value, minObservations int
 
 		tpe := reflect.TypeOf(observation.Value)
 		observationsByType[tpe] = append(observationsByType[tpe], observation)
-		count := len(observationsByType[tpe])
-		if count > highestCount {
-			highestCount = count
-			dominantType = tpe
-			highestCountEqual = false
-		} else if count == highestCount {
-			highestCountEqual = true
+	}
+
+	var dominantType reflect.Type
+	for tpe, obsOfType := range observationsByType {
+		if len(obsOfType) >= minObservations {
+			if dominantType == nil {
+				dominantType = tpe
+			} else {
+				// More than one type meets the threshold
+				return nil, nil, ErrMultipleValuesMetThreshold
+			}
 		}
 	}
 
-	if highestCount < minObservations {
-		return nil, nil, fmt.Errorf("no single type met the minimum observation threshold of %d", minObservations)
-	}
-
-	if highestCountEqual {
-		return nil, nil, ErrMultipleValuesMetThreshold
+	if dominantType == nil {
+		return nil, nil, ErrNoValuesMetThreshold
 	}
 
 	return observationsByType[dominantType], dominantType, nil
