@@ -1021,3 +1021,37 @@ func TestHandleGatewayMessage_NilRequest(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "request cannot be nil")
 }
+
+// TestResolveWorkflowMetadata_PreservesStoredWorkflowOwner tests that the workflowOwner
+// from the stored workflow is used, even if the incoming request has zeros or missing values.
+// This is a regression test for the bug where workflowOwner was being set to zeros.
+func TestResolveWorkflowMetadata_PreservesStoredWorkflowOwner(t *testing.T) {
+	t.Run("empty workflowOwner", func(t *testing.T) {
+		lggr := logger.Test(t)
+		handler, _, _, _ := setup(t, lggr)
+		workflowSelector := gateway_common.WorkflowSelector{
+			WorkflowID:    testWorkflowID,
+			WorkflowOwner: "", // empty
+		}
+		metadata, err := handler.resolveWorkflowMetadata(workflowSelector, lggr)
+		require.NoError(t, err)
+		require.Equal(t, testWorkflowID, metadata.WorkflowID)
+		// The stored workflowOwner should be used
+		require.Equal(t, testWorkflowOwner, metadata.WorkflowOwner, "workflowOwner should be retrieved from stored workflow")
+		require.Equal(t, testWorkflowName, metadata.WorkflowName, "workflowName should be retrieved from stored workflow")
+		require.Equal(t, testWorkflowTag, metadata.WorkflowTag, "workflowTag should be retrieved from stored workflow")
+	})
+	t.Run("registry metadata populated", func(t *testing.T) {
+		lggr := logger.Test(t)
+		handler, _, _, _ := setup(t, lggr)
+		workflowSelector := gateway_common.WorkflowSelector{
+			WorkflowID: testWorkflowID,
+		}
+		metadata, err := handler.resolveWorkflowMetadata(workflowSelector, lggr)
+		require.NoError(t, err)
+		require.Equal(t, "test-chain-selector", metadata.WorkflowRegistryChainSelector)
+		require.Equal(t, "test-registry-address", metadata.WorkflowRegistryAddress)
+		require.Equal(t, "1.0.0", metadata.EngineVersion)
+		require.Equal(t, uint32(42), metadata.WorkflowDONID)
+	})
+}

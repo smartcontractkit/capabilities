@@ -73,9 +73,9 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 			return fmt.Errorf("failed to publish WriteReportTxFeeCalculationError metrics: %w", err)
 		}
 	// -- LogTrigger --
-	case *TriggerInitiated:
+	case *LogTriggerInitiated:
 		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit TriggerInitiated log: %w", err)
+			return fmt.Errorf("failed to emit LogTriggerInitiated log: %w", err)
 		}
 	case *LogTriggerSuccess:
 		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {

@@ -577,19 +577,19 @@ func TestGetFinalizedBlockNumber(t *testing.T) {
 
 func TestGetLatestBlockNumber(t *testing.T) {
 	t.Run("single log extracts value correctly", func(t *testing.T) {
-		service := &LogTriggerService{}
+		service := &LogTriggerService{lggr: logger.Test(t)}
 		logs := []*evmtypes.Log{
 			{
 				BlockNumber: big.NewInt(5),
 			},
 		}
 		currentBlock := big.NewInt(0)
-		latestBlock := service.getLatestBlockNumber(logs, currentBlock, big.NewInt(10))
+		latestBlock := service.getLatestBlockNumber(logs, currentBlock, big.NewInt(10), "triggerID")
 		require.Equal(t, big.NewInt(5), latestBlock)
 	})
 
 	t.Run("multiple logs with different block numbers mixed up", func(t *testing.T) {
-		service := &LogTriggerService{}
+		service := &LogTriggerService{lggr: logger.Test(t)}
 		addr1 := stringToAddressBytes("addr1")
 		addr2 := stringToAddressBytes("addr2")
 		logs := []*evmtypes.Log{
@@ -607,12 +607,12 @@ func TestGetLatestBlockNumber(t *testing.T) {
 			},
 		}
 		currentBlock := big.NewInt(0)
-		latestBlock := service.getLatestBlockNumber(logs, currentBlock, big.NewInt(10))
+		latestBlock := service.getLatestBlockNumber(logs, currentBlock, big.NewInt(10), "triggerID")
 		require.Equal(t, big.NewInt(3), latestBlock)
 	})
 
 	t.Run("multiple logs with unfinalized blocks return highest one", func(t *testing.T) {
-		service := &LogTriggerService{}
+		service := &LogTriggerService{lggr: logger.Test(t)}
 		addr1 := stringToAddressBytes("addr1")
 		addr2 := stringToAddressBytes("addr2")
 		logs := []*evmtypes.Log{
@@ -630,7 +630,7 @@ func TestGetLatestBlockNumber(t *testing.T) {
 			},
 		}
 		currentBlock := big.NewInt(0)
-		latestBlock := service.getLatestBlockNumber(logs, currentBlock, big.NewInt(2))
+		latestBlock := service.getLatestBlockNumber(logs, currentBlock, big.NewInt(2), "triggerID")
 		require.Equal(t, big.NewInt(2), latestBlock)
 	})
 }
