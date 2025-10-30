@@ -1,5 +1,7 @@
 load("@rules_go//go:def.bzl", "go_test")
 
+# gazelle:exclude workflow
+
 go_test(
     name = "evm_test",
     srcs = ["evm_test.go"],

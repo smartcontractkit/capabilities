@@ -4,7 +4,7 @@ go_library(
     name = "readcontract_lib",
     srcs = ["main.go"],
     importpath = "github.com/smartcontractkit/capabilities/readcontract",
-    visibility = ["//visibility:private"],
+    visibility = ["//visibility:public"],
     deps = [
         "//libs/loopserver",
         "//readcontract/action",

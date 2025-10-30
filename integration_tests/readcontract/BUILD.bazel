@@ -1,0 +1,44 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "readcontract",
+    srcs = ["workflow.go"],
+    importpath = "github.com/smartcontractkit/capabilities/integration_tests/readcontract",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_smartcontractkit_chainlink_common//pkg/types",
+        "@com_github_smartcontractkit_chainlink_evm//pkg/config",
+        "@com_github_smartcontractkit_chainlink_v2//core/services/job",
+        "@com_github_smartcontractkit_chainlink_v2//core/testdata/testspecs",
+        "@com_github_stretchr_testify//require",
+    ],
+)
+
+go_test(
+    name = "readcontract_test",
+    srcs = ["readcontract_test.go"],
+    embed = [":readcontract"],
+    data = [
+        "//readcontract:readcontract",
+    ],
+    env = {
+        "CL_DATABASE_URL": "postgresql://postgres:postgres@localhost:5432/chainlink_test?sslmode=disable",
+    },
+    deps = [
+        "//readcontract:readcontract_lib",
+        "//integration_tests/readcontract/contract",
+        "//integration_tests/utils",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_smartcontractkit_chainlink_common//pkg/beholder/pb",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/pb",
+        "@com_github_smartcontractkit_chainlink_common//pkg/services/servicetest",
+        "@com_github_smartcontractkit_chainlink_common//pkg/utils/tests",
+        "@com_github_smartcontractkit_chainlink_evm_gethwrappers//keystone/generated/capabilities_registry_1_1_0",
+        "@com_github_smartcontractkit_chainlink_protos_cre_go//values",
+        "@com_github_smartcontractkit_chainlink_v2//core/capabilities/integration_tests/framework",
+        "@com_github_smartcontractkit_chainlink_v2//core/logger",
+        "@com_github_smartcontractkit_chainlink_v2//core/services/registrysyncer",
+        "@com_github_stretchr_testify//require",
+    ],
+)
