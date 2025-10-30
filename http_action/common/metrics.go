@@ -16,19 +16,18 @@ const (
 	AttrProxyMode   = "proxy_mode"
 	AttrStatusCode  = "status_code"
 	AttrMethodName  = "method_name"
+	AttrSuccess     = "success"
 )
 
 // Metrics contains metrics for HTTP actions
 type Metrics struct {
 	requestCount                    metric.Int64Counter
 	inputValidationFailures         metric.Int64Counter
-	workflowThrottled               metric.Int64Counter
 	gatewaySendError                metric.Int64Counter
 	gatewaySendCount                metric.Int64Counter
 	successfulResponse              metric.Int64Counter
 	executionError                  metric.Int64Counter
-	gatewayNodeThrottled            metric.Int64Counter
-	gatewayGlobalThrottled          metric.Int64Counter
+	executionTimeout                metric.Int64Counter
 	externalEndpointError           metric.Int64Counter
 	requestLatency                  metric.Int64Histogram
 	requestLatencyExcludingExternal metric.Int64Histogram
@@ -64,14 +63,6 @@ func (m *Metrics) init() error {
 		return fmt.Errorf("failed to create validation failure metric: %w", err)
 	}
 
-	m.workflowThrottled, err = meter.Int64Counter(
-		"http_action_workflow_throttled_count",
-		metric.WithDescription("Number of HTTP action requests exceeding per-workflow rate limit"),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create workflow owner throttled metric: %w", err)
-	}
-
 	m.gatewaySendError, err = meter.Int64Counter(
 		"http_action_capability_gateway_send_error_count",
 		metric.WithDescription("Number of HTTP action gateway send and connection errors"),
@@ -104,20 +95,12 @@ func (m *Metrics) init() error {
 		return fmt.Errorf("failed to create execution error metric: %w", err)
 	}
 
-	m.gatewayNodeThrottled, err = meter.Int64Counter(
-		"http_action_capability_gateway_node_throttled_count",
-		metric.WithDescription("Number of throttled requests while receiving HTTP action response from gateway. Per-gateway-node rate limit"),
+	m.executionTimeout, err = meter.Int64Counter(
+		"http_action_execution_timeout_count",
+		metric.WithDescription("Number of HTTP action execution timeouts"),
 	)
 	if err != nil {
-		return fmt.Errorf("failed to create capability gateway node throttled metric: %w", err)
-	}
-
-	m.gatewayGlobalThrottled, err = meter.Int64Counter(
-		"http_action_capability_gateway_global_throttled_count",
-		metric.WithDescription("Number of throttled requests while receiving HTTP action response from gateway. Global limit"),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create capability gateway global throttled metric: %w", err)
+		return fmt.Errorf("failed to create execution timeout metric: %w", err)
 	}
 
 	m.externalEndpointError, err = meter.Int64Counter(
@@ -163,10 +146,6 @@ func (m *Metrics) IncrementInputValidationFailures(ctx context.Context, lggr log
 	m.inputValidationFailures.Add(ctx, 1)
 }
 
-func (m *Metrics) IncrementWorkflowThrottled(ctx context.Context, lggr logger.Logger) {
-	m.workflowThrottled.Add(ctx, 1)
-}
-
 func (m *Metrics) IncrementGatewaySendError(ctx context.Context, nodeAddress string, lggr logger.Logger) {
 	m.executionError.Add(ctx, 1, metric.WithAttributes(attribute.String(AttrProxyMode, ProxyModeGateway.String())))
 	m.gatewaySendError.Add(ctx, 1, metric.WithAttributes(attribute.String(AttrNodeAddress, nodeAddress)))
@@ -182,12 +161,9 @@ func (m *Metrics) IncrementExecutionError(ctx context.Context, proxyMode ProxyMo
 	m.executionError.Add(ctx, 1, metric.WithAttributes(attribute.String(AttrProxyMode, proxyMode.String())))
 }
 
-func (m *Metrics) IncrementGatewayNodeThrottled(ctx context.Context, nodeAddress string, lggr logger.Logger) {
-	m.gatewayNodeThrottled.Add(ctx, 1, metric.WithAttributes(attribute.String(AttrNodeAddress, nodeAddress)))
-}
-
-func (m *Metrics) IncrementGatewayGlobalThrottled(ctx context.Context, lggr logger.Logger) {
-	m.gatewayGlobalThrottled.Add(ctx, 1)
+func (m *Metrics) IncrementExecutionTimeout(ctx context.Context, proxyMode ProxyMode, lggr logger.Logger) {
+	m.executionTimeout.Add(ctx, 1, metric.WithAttributes(attribute.String(AttrProxyMode, proxyMode.String())))
+	m.executionError.Add(ctx, 1, metric.WithAttributes(attribute.String(AttrProxyMode, proxyMode.String())))
 }
 
 func (m *Metrics) IncrementExternalEndpointError(ctx context.Context, proxyMode ProxyMode, lggr logger.Logger) {
@@ -198,8 +174,11 @@ func (m *Metrics) IncrementGatewaySendCount(ctx context.Context, nodeAddress str
 	m.gatewaySendCount.Add(ctx, 1, metric.WithAttributes(attribute.String(AttrNodeAddress, nodeAddress)))
 }
 
-func (m *Metrics) RecordRequestLatency(ctx context.Context, totalLatencyMs, externalLatencyMs int64, proxyMode ProxyMode, lggr logger.Logger) {
-	attrs := metric.WithAttributes(attribute.String(AttrProxyMode, proxyMode.String()))
+func (m *Metrics) RecordRequestLatency(ctx context.Context, totalLatencyMs, externalLatencyMs int64, proxyMode ProxyMode, success bool, lggr logger.Logger) {
+	attrs := metric.WithAttributes(
+		attribute.String(AttrProxyMode, proxyMode.String()),
+		attribute.Bool(AttrSuccess, success),
+	)
 	latencyMsExcludingExternal := totalLatencyMs - externalLatencyMs
 	m.requestLatency.Record(ctx, totalLatencyMs, attrs)
 	m.requestLatencyExcludingExternal.Record(ctx, latencyMsExcludingExternal, attrs)

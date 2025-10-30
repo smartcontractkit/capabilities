@@ -163,7 +163,7 @@ func TestGatewayOutboundProxy_SendRequest_Success(t *testing.T) {
 		simulateGatewayMessage(t, proxy, id, 200, "ok", "", true)
 	}()
 
-	output, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
+	output, _, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
 	require.NoError(t, err)
 	require.NotNil(t, output)
 	assert.Equal(t, uint32(200), output.StatusCode)
@@ -196,7 +196,7 @@ func TestGatewayOutboundProxy_SendRequest_MissingBodyToGateway(t *testing.T) {
 		simulateGatewayMessage(t, proxy, id, 200, "ok", "", false)
 	}()
 
-	_, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
+	_, _, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
 	require.Error(t, err)
 }
 
@@ -219,7 +219,7 @@ func TestGatewayOutboundProxy_SendRequest_Timeout(t *testing.T) {
 
 	// Do not send a response, should timeout
 	start := time.Now()
-	output, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
+	output, _, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
 	elapsed := time.Since(start)
 	require.Error(t, err)
 	require.Nil(t, output)
@@ -249,10 +249,10 @@ func TestGatewayOutboundProxy_SendRequest_ExecutionError(t *testing.T) {
 		simulateGatewayMessage(t, proxy, id, 500, "ok", "some error", true)
 	}()
 
-	output, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
+	output, _, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
 	require.Error(t, err)
 	require.Nil(t, output)
-	assert.Equal(t, "internal error", err.Error())
+	assert.Equal(t, "internal error: gateway returned error", err.Error())
 }
 
 func simulateGatewayMessage(t *testing.T, proxy *gatewayOutboundProxy, id string, statusCode int, body string, errorMessage string, includeBody bool) {
