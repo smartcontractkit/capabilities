@@ -1,0 +1,34 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "p2psigner",
+    srcs = [
+        "setup.go",
+        "workflow.go",
+    ],
+    importpath = "github.com/smartcontractkit/capabilities/integration_tests/p2psigner",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
+        "@com_github_smartcontractkit_chainlink_common//pkg/services/servicetest",
+        "@com_github_smartcontractkit_chainlink_v2//core/capabilities/integration_tests/framework",
+        "@com_github_smartcontractkit_chainlink_v2//core/logger",
+        "@com_github_smartcontractkit_chainlink_v2//core/services/job",
+        "@com_github_smartcontractkit_chainlink_v2//core/testdata/testspecs",
+        "@com_github_stretchr_testify//require",
+    ],
+)
+
+go_test(
+    name = "p2psigner_test",
+    srcs = ["signer_test.go"],
+    embed = [":p2psigner"],
+    deps = [
+        "//integration_tests/utils",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_smartcontractkit_chainlink_protos_cre_go//values",
+        "@com_github_smartcontractkit_chainlink_v2//core/capabilities/integration_tests/framework",
+        "@com_github_smartcontractkit_chainlink_v2//core/logger",
+        "@com_github_stretchr_testify//require",
+    ],
+)

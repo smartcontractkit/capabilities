@@ -1,0 +1,50 @@
+--- a/core/store/migrate/BUILD.bazel
++++ b/core/store/migrate/BUILD.bazel
+@@ -1,12 +1,35 @@
+ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+ 
+ go_library(
++    name = "migrations",
++    srcs = glob(["migrations/*.go"]),
++    importpath = "github.com/smartcontractkit/chainlink/v2/core/store/migrate/migrations",
++    importpath_aliases = [
++        "github.com/smartcontractkit/chainlink/core/store/migrate/migrations",
++    ],
++    visibility = ["//visibility:public"],
++    deps = [
++        "//core/config/env",
++        "@com_github_google_uuid//:uuid",
++        "@com_github_jmoiron_sqlx//:sqlx",
++        "@com_github_pkg_errors//:errors",
++        "@com_github_pressly_goose_v3//:goose",
++    ],
++)
++
++go_library(
+     name = "migrate",
+     srcs = ["migrate.go"],
++    embedsrcs = glob([
++        "migrations/*",
++    ]),
+     importpath = "github.com/smartcontractkit/chainlink/v2/core/store/migrate",
+-    importpath_aliases = ["github.com/smartcontractkit/chainlink/core/store/migrate"],
++    importpath_aliases = [
++        "github.com/smartcontractkit/chainlink/core/store/migrate",
++    ],
+     visibility = ["//visibility:public"],
+     deps = [
++        ":migrations",
+         "//core/config/env",
+         "//core/services/pg",
+         "@com_github_pkg_errors//:errors",
+@@ -14,8 +37,9 @@
+         "@com_github_pressly_goose_v3//database",
+         "@com_github_smartcontractkit_chainlink_common//pkg/sqlutil",
+         "@com_github_smartcontractkit_chainlink_evm//pkg/config/toml",
+-        "@com_github_smartcontractkit_chainlink_v2//core/store/migrate/migrations",
+         "@in_gopkg_guregu_null_v4//:null_v4",
++        "@com_github_google_uuid//:uuid",
++        "@com_github_jmoiron_sqlx//:sqlx",
+     ],
+ )
+ 

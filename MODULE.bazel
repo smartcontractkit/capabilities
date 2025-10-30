@@ -49,6 +49,13 @@ go_deps.gazelle_override(
     ],
     path = "github.com/bytecodealliance/wasmtime-go/v28",
 )
+go_deps.gazelle_override(
+    directives = [
+        "gazelle:proto disable",  # Disable proto file generation for external dependencies
+        "gazelle:exclude core/store/migrate/migrations",  # Exclude the directory so BUILD files are not generated
+    ],
+    path = "github.com/smartcontractkit/chainlink/v2",
+)
 
 # Override the ethereum/go-ethereum/crypto/secp256k1 package to use the embedded C dependencies
 go_deps.module_override(
@@ -73,6 +80,17 @@ go_deps.module_override(
         "//tools:patches/wasmtime-go.patch",
     ],
     path = "github.com/bytecodealliance/wasmtime-go/v28",
+)
+
+# Override the smartcontractkit/chainlink/v2 package to correctly include the database migrations.
+# Ideally, BUILD.bazel would exist there, so this patch would not be necessary.
+go_deps.module_override(
+    patch_strip = 1,
+    patches = [
+        # Patch the BUILD.bazel file to correctly include the C libraries
+        "//tools:patches/chainlink.patch",
+    ],
+    path = "github.com/smartcontractkit/chainlink/v2",
 )
 
 use_repo(
