@@ -1,0 +1,22 @@
+load("@rules_go//go:def.bzl", "go_test")
+
+go_test(
+    name = "consensus_test",
+    srcs = ["consensus_test.go"],
+    data = [
+        "workflow/main_wasip1.go",
+    ],
+    deps = [
+        "//integration_tests/utils",
+        "@com_github_smartcontractkit_chainlink_common//pkg/beholder/beholdertest",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
+        "@com_github_smartcontractkit_chainlink_common//pkg/services/servicetest",
+        "@com_github_smartcontractkit_chainlink_common//pkg/workflows",
+        "@com_github_smartcontractkit_chainlink_protos_workflows_go//events",
+        "@com_github_smartcontractkit_chainlink_v2//core/capabilities/integration_tests/framework",
+        "@com_github_smartcontractkit_chainlink_v2//core/logger",
+        "@com_github_smartcontractkit_chainlink_v2//core/services/gateway/handlers/capabilities",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//proto",
+    ],
+)
