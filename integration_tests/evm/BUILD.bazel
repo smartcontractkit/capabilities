@@ -1,0 +1,30 @@
+load("@rules_go//go:def.bzl", "go_test")
+
+go_test(
+    name = "evm_test",
+    srcs = ["evm_test.go"],
+    data = [
+        "workflow/main_logtrigger_wasip1.go",
+    ],
+    deps = [
+        "//chain_capabilities/evm/trigger",
+        "//integration_tests/evm/contract",
+        "//integration_tests/utils",
+        "@com_github_ethereum_go_ethereum//accounts/abi",
+        "@com_github_ethereum_go_ethereum//accounts/abi/bind",
+        "@com_github_ethereum_go_ethereum//common",
+        "@com_github_smartcontractkit_chainlink_common//pkg/beholder/beholdertest",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
+        "@com_github_smartcontractkit_chainlink_common//pkg/services/servicetest",
+        "@com_github_smartcontractkit_chainlink_common//pkg/workflows",
+        "@com_github_smartcontractkit_chainlink_protos_workflows_go//events",
+        "@com_github_smartcontractkit_chainlink_v2//core/capabilities/integration_tests/framework",
+        "@com_github_smartcontractkit_chainlink_v2//core/logger",
+        "@com_github_smartcontractkit_chainlink_v2//core/services/gateway/handlers/capabilities",
+        "@com_github_stretchr_testify//require",
+        "@in_gopkg_yaml_v3//:yaml_v3",
+        "@org_golang_google_protobuf//proto",
+        "@org_uber_go_zap//zapcore",
+        "@org_uber_go_zap//zaptest/observer",
+    ],
+)
