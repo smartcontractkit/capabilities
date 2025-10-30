@@ -2,6 +2,4 @@
 # and makes the patch files within it available to the rest of the build system.
 package(default_visibility = ["//visibility:public"])
 
-exports_files([
-    "go-duckdb.patch",
-])
+exports_files(glob(["**/*.patch"]))

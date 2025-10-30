@@ -10,7 +10,7 @@ use (
     ./libs
 	./http_action
 	./http_trigger
-	// ./integration_tests
+	./integration_tests
 	./loadtestwritetarget
 	./mock
 	./p2psigner

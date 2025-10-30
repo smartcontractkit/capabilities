@@ -2,7 +2,7 @@ module github.com/smartcontractkit/capabilities/p2psigner
 
 go 1.25.3
 
-replace github.com/fbsobreira/gotron-sdk => github.com/smartcontractkit/chainlink-tron/relayer/gotron-sdk v0.0.5-0.20250528121202-292529af39df
+replace github.com/fbsobreira/gotron-sdk => github.com/smartcontractkit/chainlink-tron/relayer/gotron-sdk v0.0.5-0.20251014124537-af6b1684fe15
 
 require (
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20251023190209-61f60e422f91

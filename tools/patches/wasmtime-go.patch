@@ -1,0 +1,10 @@
+--- a/BUILD.bazel
++++ b/BUILD.bazel
+@@ -36,6 +36,7 @@
+         "wasi.go",
+         "wat2wasm.go",
+     ],
++    embedsrcs = glob(["build/**/*"]),
+     cgo = True,
+     clinkopts = select({
+         "@io_bazel_rules_go//go/platform:aix": [

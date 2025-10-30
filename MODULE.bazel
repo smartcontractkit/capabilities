@@ -39,28 +39,46 @@ go_deps.gazelle_default_attributes(
 go_deps.gazelle_override(
     directives = [
         "gazelle:proto disable",  # Disable proto file generation for external dependencies
-        "gazelle:exclude deps",  # Exclude the deps directory so BUILD files are not generated for vendored dependencies
+        "gazelle:exclude deps",  # Exclude the directory so BUILD files are not generated for vendored dependencies
+    ],
+    path = "github.com/marcboeker/go-duckdb",
+)
+go_deps.gazelle_override(
+    directives = [
+        "gazelle:exclude build",  # Exclude the directory so BUILD files are not generated for vendored dependencies
+    ],
+    path = "github.com/bytecodealliance/wasmtime-go/v28",
+)
+
+# Override the ethereum/go-ethereum/crypto/secp256k1 package to use the embedded C dependencies
+go_deps.module_override(
+    patches = ["//tools:patches/go-ethereum.patch"],
+    path = "github.com/ethereum/go-ethereum",
+)
+
+# Override the marcboeker/go-duckdb package to correctly include the C dependencies
+go_deps.module_override(
+    patch_strip = 1,
+    patches = [
+        "//tools:patches/go-duckdb.patch",
     ],
     path = "github.com/marcboeker/go-duckdb",
 )
 
-# Override the go_ethereum/crypto/secp256k1 package to use the embedded C sources and headers
-go_deps.module_override(
-    patches = ["//tools/patches/go-ethereum:go-ethereum.patch"],
-    path = "github.com/ethereum/go-ethereum",
-)
-
-# Override the marcboeker/go-duckdb package to correctly include the C libraries
+# Override the bytecodealliance/wasmtime-go/v28 package to correctly include the C dependencies
 go_deps.module_override(
     patch_strip = 1,
     patches = [
         # Patch the BUILD.bazel file to correctly include the C libraries
-        "//tools/patches/go-duckdb:go-duckdb.patch",
+        "//tools:patches/wasmtime-go.patch",
     ],
-    path = "github.com/marcboeker/go-duckdb",
+    path = "github.com/bytecodealliance/wasmtime-go/v28",
 )
+
 use_repo(
     go_deps,
+    "com_github_andybalholm_brotli",
+    "com_github_burntsushi_toml",
     "com_github_doyensec_safeurl",
     "com_github_ethereum_go_ethereum",
     "com_github_go_co_op_gocron_v2",
@@ -69,20 +87,30 @@ use_repo(
     "com_github_hashicorp_go_plugin",
     "com_github_jonboulle_clockwork",
     "com_github_jpillora_backoff",
+    "com_github_pelletier_go_toml",
     "com_github_pelletier_go_toml_v2",
     "com_github_prometheus_client_golang",
     "com_github_shopspring_decimal",
+    "com_github_smartcontractkit_capabilities_chain_capabilities_evm",
+    "com_github_smartcontractkit_capabilities_http_action",
+    "com_github_smartcontractkit_capabilities_http_trigger",
     "com_github_smartcontractkit_capabilities_libs",
+    "com_github_smartcontractkit_capabilities_loadtestwritetarget",
     "com_github_smartcontractkit_chain_selectors",
     "com_github_smartcontractkit_chainlink_common",
     "com_github_smartcontractkit_chainlink_evm",
     "com_github_smartcontractkit_chainlink_evm_gethwrappers",
     "com_github_smartcontractkit_chainlink_protos_cre_go",
+    "com_github_smartcontractkit_chainlink_protos_workflows_go",
+    "com_github_smartcontractkit_chainlink_v2",
     "com_github_smartcontractkit_cre_sdk_go",
+    "com_github_smartcontractkit_cre_sdk_go_capabilities_blockchain_evm",
+    "com_github_smartcontractkit_cre_sdk_go_capabilities_scheduler_cron",
     "com_github_smartcontractkit_freeport",
     "com_github_smartcontractkit_libocr",
     "com_github_stretchr_testify",
     "com_stathat_c_consistent",
+    "in_gopkg_yaml_v3",
     "io_opentelemetry_go_otel",
     "io_opentelemetry_go_otel_metric",
     "io_opentelemetry_go_otel_sdk_metric",

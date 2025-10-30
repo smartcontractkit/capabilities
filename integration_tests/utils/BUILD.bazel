@@ -1,0 +1,21 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "utils",
+    srcs = [
+        "cron.go",
+        "deploy.go",
+        "fetcher.go",
+        "wasm.go",
+    ],
+    importpath = "github.com/smartcontractkit/capabilities/integration_tests/utils",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_andybalholm_brotli//:brotli",
+        "@com_github_smartcontractkit_chainlink_common//pkg/custmsg",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_smartcontractkit_chainlink_common//pkg/workflows/wasm/host",
+        "@com_github_smartcontractkit_chainlink_v2//core/capabilities/compute",
+        "@com_github_stretchr_testify//require",
+    ],
+)
