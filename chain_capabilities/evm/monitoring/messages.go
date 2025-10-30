@@ -89,6 +89,9 @@ func convertWriteReportRequest(req *evmcap.WriteReportRequest) *WriteReportReque
 			RawReport:     req.Report.RawReport,
 			Sigs:          convertAttributedSignature(req.Report.Sigs),
 		},
+		GasConfig: &GasConfig{
+			GasLimit: req.GasConfig.GetGasLimit(),
+		},
 	}
 }
 
