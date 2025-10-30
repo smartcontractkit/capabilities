@@ -1,7 +1,5 @@
 load("@rules_go//go:def.bzl", "go_test")
 
-# gazelle:exclude workflow
-
 go_test(
     name = "consensus_test",
     srcs = ["consensus_test.go"],

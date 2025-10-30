@@ -90,7 +90,6 @@ func readValueFromContractFunction(ctx context.Context, t *testing.T, lggr logge
 	require.NoError(t, err)
 
 	readContractBinary, err := utils.DeployCapability(t, "readcontract")
-	fmt.Println("readContractBinary: ", readContractBinary)
 	require.NoError(t, err)
 
 	workflowDonConfiguration, err := framework.NewDonConfiguration(framework.NewDonConfigurationParams{Name: "Workflow", NumNodes: numOfWorkflowNodes, F: 1, AcceptsWorkflows: true})
@@ -120,8 +119,6 @@ func readValueFromContractFunction(ctx context.Context, t *testing.T, lggr logge
 	readCapabilityConfig, err := CreateReadContractCapabilityConfig(chainID, network)
 	require.NoError(t, err)
 
-	fmt.Println("readCapabilityConfig: ", readCapabilityConfig)
-
 	readCapabilityDon.AddPublishedStandardCapability("readcontract-capability", readContractBinary, readCapabilityConfig,
 		&pb.CapabilityConfig{}, kcr.CapabilitiesRegistryCapability{
 			LabelledName:   fmt.Sprintf("read-contract-%s-%d", network, chainID),
@@ -129,15 +126,11 @@ func readValueFromContractFunction(ctx context.Context, t *testing.T, lggr logge
 			CapabilityType: uint8(registrysyncer.ContractCapabilityTypeAction),
 		})
 
-	fmt.Println("workflowDon.Initialise()")
 	workflowDon.Initialise()
-
-	fmt.Println("readCapabilityDon.Initialise()")
 	readCapabilityDon.Initialise()
 	servicetest.Run(t, readCapabilityDon)
 	servicetest.Run(t, workflowDon)
 
-	fmt.Println("donContext.WaitForCapabilitiesToBeExposed(t, readCapabilityDon, workflowDon)")
 	donContext.WaitForCapabilitiesToBeExposed(t, readCapabilityDon, workflowDon)
 
 	workflowJob := CreateWorkflowJobForTest(t, workflowName, workflowOwnerID, network, strconv.FormatUint(chainID, 10),
@@ -145,7 +138,6 @@ func readValueFromContractFunction(ctx context.Context, t *testing.T, lggr logge
 
 	err = workflowDon.AddJob(ctx, &workflowJob)
 	require.NoError(t, err)
-	fmt.Println("workflowDon.AddJob(ctx, &workflowJob)")
 
 	contractReadActionParams, err := values.WrapMap(map[string]any{
 		"ConfidenceLevel": "unconfirmed",
