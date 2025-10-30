@@ -159,7 +159,7 @@ func newTestGatewayFromConfig(t *testing.T, gatewayConfigStr string, c network.H
 	var gatewayConfig *config.GatewayConfig
 	err := json.Unmarshal([]byte(gatewayConfigStr), &gatewayConfig)
 	require.NoError(t, err)
-	gateway, err := gateway.NewGatewayFromConfig(gatewayConfig, gateway.NewHandlerFactory(nil, nil, c, nil, nil, lggr, limits.Factory{Logger: lggr}), lggr)
+	gateway, err := gateway.NewGatewayFromConfig(gatewayConfig, gateway.NewHandlerFactory(nil, nil, c, nil, nil, lggr, limits.Factory{Logger: lggr}), lggr, limits.Factory{Logger: lggr})
 	require.NoError(t, err)
 	servicetest.Run(t, gateway)
 	return gateway

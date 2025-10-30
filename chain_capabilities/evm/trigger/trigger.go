@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ethereum/go-ethereum/rpc"
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"google.golang.org/protobuf/proto"
 
@@ -210,7 +209,7 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	}
 
 	eventSigs, topics2, topics3, topics4 := lts.getTopics(input)
-	lts.lggr.Debugw("RegisterLogTrigger input params", "addresses:", input.GetAddresses(), "eventSigs:", eventSigs, "topics2:", topics2, "topics3:", topics3, "topics4:", topics4, "confidence:", input.GetConfidence())
+	lts.lggr.Debugw("RegisterLogTrigger input params", "addresses:", input.GetAddresses(), "eventSigs:", eventSigs, "topics2:", topics2, "topics3:", topics3, "topics4:", topics4, "confidence:", input.GetConfidence(), "triggerID:", triggerID)
 
 	fromBlock, err := lts.getFinalizedBlockNumber(ctx, triggerID)
 	if err != nil {
@@ -298,19 +297,17 @@ func (lts *LogTriggerService) getTopics(input *evmcappb.FilterLogTriggerRequest)
 }
 
 func (lts *LogTriggerService) getFinalizedBlockNumber(ctx context.Context, triggerID string) (*big.Int, error) {
-	reply, err := lts.EVMService.HeaderByNumber(ctx, evmtypes.HeaderByNumberRequest{
-		Number:          big.NewInt(rpc.FinalizedBlockNumber.Int64()),
-		ConfidenceLevel: primitives.Unconfirmed,
-	})
+	reply, err := lts.EVMService.GetLatestLPBlock(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to register latest and finalized head: '%w' for triggerID: %s", err, triggerID)
+		return nil, fmt.Errorf("failed to register latest and finalized log pollers block: '%w' for triggerID: %s", err, triggerID)
 	}
 
-	if reply.Header == nil {
-		return nil, fmt.Errorf("failed to register latest and finalized head: 'nil' for triggerID: %s", triggerID)
+	if reply == nil {
+		return nil, fmt.Errorf("failed to register latest and finalized log pollers block: 'nil' for triggerID: %s", triggerID)
 	}
-	lts.lggr.Debugf("Latest finalized block number: %s", reply.Header.Number)
-	return reply.Header.Number, nil
+	lts.lggr.Debugf("Latest finalized block number: %d, triggerID: %s", reply.FinalizedBlockNumber, triggerID)
+
+	return big.NewInt(reply.FinalizedBlockNumber), nil
 }
 
 func (lts *LogTriggerService) generateFilterID(triggerID string) string {
@@ -360,7 +357,7 @@ func (lts *LogTriggerService) startPolling(ctx context.Context, telemetryContext
 			}
 
 			lts.lggr.Debugf("Finished sending events for triggerID: %s, about to update latest block number (current offset: %d, latest finalized block: %d)", triggerID, state.lastBlock, finalizedBlockNumber)
-			calculatedLatestBlock := lts.getLatestBlockNumber(logs, state.lastBlock, finalizedBlockNumber)
+			calculatedLatestBlock := lts.getLatestBlockNumber(logs, state.lastBlock, finalizedBlockNumber, triggerID)
 			err = lts.triggers.Update(triggerID, calculatedLatestBlock, state.unfinalizedSentEventIDs)
 			if err != nil {
 				summary := fmt.Sprintf("Failed to update last block for triggerID: %s, error: %v", triggerID, err)
@@ -380,8 +377,9 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 	triggerID string,
 	trigger logTriggerState,
 	logCh chan capabilities.TriggerAndId[*evmcappb.Log]) error {
-	lts.lggr.Debugf("Got %d logs, sending them to the workflow trigger ID: %s", len(logs), triggerID)
+	lts.lggr.Debugf("Sending logs to workflow, triggerID: %s, finalizedBlockNumber: %d, logs size %d", triggerID, finalizedBlockNumber, len(logs))
 	var needsUpdate bool
+	sentCount := 0
 
 	for _, log := range logs {
 		if log == nil {
@@ -391,7 +389,7 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 
 		eventID := lts.generateLogIdentifier(log)
 		_, alreadySent := trigger.unfinalizedSentEventIDs[eventID]
-		lts.lggr.Debugf("Working with eventID: %s, alreadySent: %t", eventID, alreadySent)
+		lts.lggr.Debugf("Working with triggerID: %s, eventID: %s, alreadySent: %t", triggerID, eventID, alreadySent)
 
 		if alreadySent {
 			continue
@@ -443,10 +441,10 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 		// Try to fetch organization ID if org resolver is available
 		if lts.orgResolver != nil && telemetryContext.RequestMetadata.WorkflowOwner != "" {
 			if orgID, orgErr := lts.orgResolver.Get(ctx, telemetryContext.RequestMetadata.WorkflowOwner); orgErr != nil {
-				lts.lggr.Warnw("Failed to fetch organization ID from org resolver", "workflowOwner", telemetryContext.RequestMetadata.WorkflowOwner, "error", orgErr)
+				lts.lggr.Warnw("Failed to fetch organization ID from org resolver", "workflowOwner", telemetryContext.WorkflowOwner, "error", orgErr, "triggerID", triggerID)
 			} else if orgID != "" {
 				labeler = labeler.With(events.KeyOrganizationID, orgID)
-				lts.lggr.Debugw("Successfully fetched organization ID", "workflowOwner", telemetryContext.RequestMetadata.WorkflowOwner, "orgID", orgID)
+				lts.lggr.Debugw("Successfully fetched organization ID", "workflowOwner", telemetryContext.WorkflowOwner, "orgID", orgID, "triggerID", triggerID)
 			}
 		}
 
@@ -457,6 +455,7 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 
 		select {
 		case logCh <- response:
+			sentCount++
 			if log.BlockNumber.Cmp(finalizedBlockNumber) > 0 {
 				// log's block number is unfinalized and needs to be tracked
 				trigger.unfinalizedSentEventIDs[eventID] = log.BlockNumber
@@ -489,6 +488,7 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 			return fmt.Errorf("failed to update unfinalized sent event IDs for triggerID: %s: %w", triggerID, err)
 		}
 	}
+	lts.lggr.Debugf("Total logs successfully sent for triggerID: %s: %d (originally got: %d)", triggerID, sentCount, len(logs))
 	return nil
 }
 
@@ -529,15 +529,21 @@ func (lts *LogTriggerService) generateLogIdentifier(log *evmtypes.Log) string {
 	return fmt.Sprintf("%x:%x:%d", log.TxHash, log.BlockHash, log.LogIndex)
 }
 
-func (lts *LogTriggerService) getLatestBlockNumber(logs []*evmtypes.Log, currentBlockNumber *big.Int, finalizedBlockNumber *big.Int) *big.Int {
+func (lts *LogTriggerService) getLatestBlockNumber(logs []*evmtypes.Log, currentBlockNumber *big.Int, finalizedBlockNumber *big.Int, triggerID string) *big.Int {
+	result := currentBlockNumber
 	for _, l := range logs {
 		// it has to iterate over all logs to update the last block number, as it could be multiple addresses with different block numbers among them
 		blockNumber := l.BlockNumber
-		if blockNumber.Cmp(currentBlockNumber) > 0 && blockNumber.Cmp(finalizedBlockNumber) <= 0 {
-			currentBlockNumber = blockNumber
+		if blockNumber.Cmp(result) > 0 && blockNumber.Cmp(finalizedBlockNumber) <= 0 {
+			result = blockNumber
 		}
 	}
-	return currentBlockNumber
+
+	lts.lggr.Debugf("getLatestBlockNumber result: %d (logs size: %d, currentBlockNumber: %d, finalizedBlockNumber: %d, triggerID: %s)",
+		result,
+		len(logs), currentBlockNumber, finalizedBlockNumber, triggerID)
+
+	return result
 }
 
 func (lts *LogTriggerService) fetchLogsFromLogPoller(ctx context.Context, triggerState logTriggerState) ([]*evmtypes.Log, error) {
@@ -577,34 +583,33 @@ func (lts *LogTriggerService) createLogRequest(_ context.Context, addresses []ev
 	}
 
 	for i, t := range [][]evmtypes.Hash{topics2, topics3, topics4} {
-		if len(t) == 0 {
-			continue
-		}
 		// G115: integer overflow conversion uint64 -> int64 (gosec)
 		// nolint:gosec
-		expressions = append(expressions, evm.NewEventByTopicFilter(uint64(i+1), []evm.HashedValueComparator{{
-			Values:   t,
-			Operator: primitives.Eq,
-		}}))
+		topic := uint64(i + 1)
+		topicExpression := lts.makeEventByTopicFilter(topic, t)
+		if topicExpression == nil {
+			continue
+		}
+		expressions = append(expressions, *topicExpression)
 	}
 
 	return expressions, confidenceLevel
 }
 
-// TODO remove
-func (lts *LogTriggerService) makeEventByTopicFilter(topic uint64, topics [][]byte) *query.Expression {
+func (lts *LogTriggerService) makeEventByTopicFilter(topicIndex uint64, topics []evmtypes.Hash) *query.Expression {
 	if len(topics) == 0 {
 		return nil
 	}
-	values := make([]evmtypes.Hash, 0, len(topics))
+	var singleTopicFilters []query.Expression
 	for _, topic := range topics {
-		values = append(values, evmtypes.Hash(topic))
+		tf := evm.NewEventByTopicFilter(topicIndex, []evm.HashedValueComparator{{
+			Values:   []evmtypes.Hash{topic},
+			Operator: primitives.Eq,
+		}})
+		singleTopicFilters = append(singleTopicFilters, tf)
 	}
-	expr := evm.NewEventByTopicFilter(topic, []evm.HashedValueComparator{{
-		Values:   values,
-		Operator: primitives.Eq,
-	}})
-	return &expr
+	orExpression := query.Or(singleTopicFilters...)
+	return &orExpression
 }
 
 func (lts *LogTriggerService) UnregisterLogTrigger(ctx context.Context, triggerID string, meta capabilities.RequestMetadata, _ *evmcappb.FilterLogTriggerRequest) error {

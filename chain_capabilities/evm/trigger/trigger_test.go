@@ -52,9 +52,9 @@ var (
 		{Values: [][]byte{eventSig0Example}},
 	}
 
-	triggerID        = "trigger-1"
-	finalizedExpHead = evmtypes.Header{Number: big.NewInt(25)}
-	pollInterval     = 10 * time.Millisecond
+	triggerID         = "trigger-1"
+	finalizedExpBlock = evmtypes.LPBlock{FinalizedBlockNumber: 25}
+	pollInterval      = 10 * time.Millisecond
 )
 
 func initMocks(t *testing.T) *evmmock.EVMService {
@@ -68,7 +68,7 @@ func TestLogTriggerService_Close_WaitsForPollingGoroutine(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
 		evmService := initMocks(t)
-		evmService.EXPECT().HeaderByNumber(mock.Anything, mock.Anything).Return(&evmtypes.HeaderByNumberReply{Header: &finalizedExpHead}, nil)
+		evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(&finalizedExpBlock, nil)
 		evmService.On("QueryTrackedLogs", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]*evmtypes.Log{}, nil).Maybe()
 		evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
 		evmService.On("UnregisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
@@ -176,7 +176,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 
 	t.Run("fail to get latest head", func(t *testing.T) {
 		evmService := initMocks(t)
-		evmService.EXPECT().HeaderByNumber(mock.Anything, mock.Anything).Return(nil, errors.New("mocked failure error"))
+		evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(nil, errors.New("mocked failure error"))
 		service := createTriggerObject(t, evmService, NewLogTriggerStore())
 		ctx := t.Context()
 		_, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{WorkflowID: "wf-id"}, &evmcappb.FilterLogTriggerRequest{
@@ -184,12 +184,12 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 			Topics:    topicsWithEventSig0,
 		})
 		require.Error(t, err)
-		require.Equal(t, err.Error(), "failed to register latest and finalized head: 'mocked failure error' for triggerID: trigger-1")
+		require.Equal(t, err.Error(), "failed to register latest and finalized log pollers block: 'mocked failure error' for triggerID: trigger-1")
 	})
 
 	t.Run("fail to register log-tracking", func(t *testing.T) {
 		evmService := initMocks(t)
-		evmService.EXPECT().HeaderByNumber(mock.Anything, mock.Anything).Return(&evmtypes.HeaderByNumberReply{Header: &finalizedExpHead}, nil)
+		evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(&finalizedExpBlock, nil)
 		evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(errors.New("mocking error, making register failing on purpose")).Once()
 		service := createTriggerObject(t, evmService, NewLogTriggerStore())
 		ctx := t.Context()
@@ -303,6 +303,22 @@ func TestGetTopics(t *testing.T) {
 		require.Equal(t, [][]byte{[]byte("topic3")}, topics3)
 		require.Equal(t, [][]byte{[]byte("topic4")}, topics4)
 	})
+
+	t.Run("eventSigs, topic2 and topic4 provided (no topic3)", func(t *testing.T) {
+		input := &evmcappb.FilterLogTriggerRequest{
+			Topics: []*evmcappb.TopicValues{
+				{Values: [][]byte{[]byte("eventSig1")}},
+				{Values: [][]byte{[]byte("topic2")}},
+				{},
+				{Values: [][]byte{[]byte("topic4")}},
+			},
+		}
+		eventSigs, topics2, topics3, topics4 := service.getTopics(input)
+		require.Equal(t, [][]byte{[]byte("eventSig1")}, eventSigs)
+		require.Equal(t, [][]byte{[]byte("topic2")}, topics2)
+		require.Nil(t, topics3)
+		require.Equal(t, [][]byte{[]byte("topic4")}, topics4)
+	})
 }
 
 func TestCreateLogRequest(t *testing.T) {
@@ -338,6 +354,34 @@ func TestCreateLogRequest(t *testing.T) {
 			},
 		},
 		{
+			name:               "safe confidence, single address and 2 eventSig and empty topics",
+			addresses:          addresses,
+			eventSigs:          [][]byte{eventSig0Example, eventSig0Example},
+			confidence:         evmcappb.ConfidenceLevel_CONFIDENCE_LEVEL_SAFE,
+			expectedConfidence: primitives.Safe,
+			expectedExpressions: []query.Expression{
+				evm.NewAddressFilter(evmtypes.Address(expectedAddress)),
+				query.Or(
+					evm.NewEventSigFilter(evmtypes.Hash(eventSig0Example)),
+					evm.NewEventSigFilter(evmtypes.Hash(eventSig0Example)),
+				),
+			},
+		},
+		{
+			name:               "safe confidence, 2 address and single eventSig and empty topics",
+			addresses:          [][]byte{expectedAddress, expectedAddress},
+			eventSigs:          [][]byte{eventSig0Example},
+			confidence:         evmcappb.ConfidenceLevel_CONFIDENCE_LEVEL_SAFE,
+			expectedConfidence: primitives.Safe,
+			expectedExpressions: []query.Expression{
+				query.Or(
+					evm.NewAddressFilter(evmtypes.Address(expectedAddress)),
+					evm.NewAddressFilter(evmtypes.Address(expectedAddress)),
+				),
+				evm.NewEventSigFilter(evmtypes.Hash(eventSig0Example)),
+			},
+		},
+		{
 			name:               "latest confidence, single address and single eventSig and empty topics",
 			addresses:          addresses,
 			eventSigs:          [][]byte{eventSig0Example},
@@ -360,9 +404,60 @@ func TestCreateLogRequest(t *testing.T) {
 			expectedExpressions: []query.Expression{
 				evm.NewAddressFilter(evmtypes.Address(expectedAddress)),
 				evm.NewEventSigFilter(evmtypes.Hash(eventSig0Example)),
-				*service.makeEventByTopicFilter(1, [][]byte{eventSig0Example}),
-				*service.makeEventByTopicFilter(2, [][]byte{eventSig0Example}),
-				*service.makeEventByTopicFilter(3, [][]byte{eventSig0Example}),
+				*service.makeEventByTopicFilter(1, []evmtypes.Hash{evmtypes.Hash(eventSig0Example)}),
+				*service.makeEventByTopicFilter(2, []evmtypes.Hash{evmtypes.Hash(eventSig0Example)}),
+				*service.makeEventByTopicFilter(3, []evmtypes.Hash{evmtypes.Hash(eventSig0Example)}),
+			},
+		},
+		{
+			name:               "finalized confidence, single address and single eventSig and a topic for 1, 3 (omitting 2)",
+			addresses:          addresses,
+			eventSigs:          [][]byte{eventSig0Example},
+			topics2:            [][]byte{eventSig0Example},
+			topics4:            [][]byte{eventSig0Example},
+			confidence:         evmcappb.ConfidenceLevel_CONFIDENCE_LEVEL_FINALIZED,
+			expectedConfidence: primitives.Finalized,
+			expectedExpressions: []query.Expression{
+				evm.NewAddressFilter(evmtypes.Address(expectedAddress)),
+				evm.NewEventSigFilter(evmtypes.Hash(eventSig0Example)),
+				*service.makeEventByTopicFilter(1, []evmtypes.Hash{evmtypes.Hash(eventSig0Example)}),
+				*service.makeEventByTopicFilter(3, []evmtypes.Hash{evmtypes.Hash(eventSig0Example)}),
+			},
+		},
+		{
+			name:               "finalized confidence, single address and single eventSig and a topic for 2 (multiple topics)",
+			addresses:          addresses,
+			eventSigs:          [][]byte{eventSig0Example},
+			topics2:            [][]byte{eventSig0Example, eventSig0Example},
+			confidence:         evmcappb.ConfidenceLevel_CONFIDENCE_LEVEL_FINALIZED,
+			expectedConfidence: primitives.Finalized,
+			expectedExpressions: []query.Expression{
+				evm.NewAddressFilter(evmtypes.Address(expectedAddress)),
+				evm.NewEventSigFilter(evmtypes.Hash(eventSig0Example)),
+				*service.makeEventByTopicFilter(1, []evmtypes.Hash{evmtypes.Hash(eventSig0Example), evmtypes.Hash(eventSig0Example)}),
+			},
+		},
+		{
+			name:               "safe confidence, multiple address, eventSig and topics 1, 2, 3",
+			addresses:          [][]byte{expectedAddress, expectedAddress},
+			eventSigs:          [][]byte{eventSig0Example, eventSig0Example},
+			topics2:            [][]byte{eventSig0Example, eventSig0Example},
+			topics3:            [][]byte{eventSig0Example, eventSig0Example},
+			topics4:            [][]byte{eventSig0Example, eventSig0Example},
+			confidence:         evmcappb.ConfidenceLevel_CONFIDENCE_LEVEL_SAFE,
+			expectedConfidence: primitives.Safe,
+			expectedExpressions: []query.Expression{
+				query.Or(
+					evm.NewAddressFilter(evmtypes.Address(expectedAddress)),
+					evm.NewAddressFilter(evmtypes.Address(expectedAddress)),
+				),
+				query.Or(
+					evm.NewEventSigFilter(evmtypes.Hash(eventSig0Example)),
+					evm.NewEventSigFilter(evmtypes.Hash(eventSig0Example)),
+				),
+				*service.makeEventByTopicFilter(1, []evmtypes.Hash{evmtypes.Hash(eventSig0Example), evmtypes.Hash(eventSig0Example)}),
+				*service.makeEventByTopicFilter(2, []evmtypes.Hash{evmtypes.Hash(eventSig0Example), evmtypes.Hash(eventSig0Example)}),
+				*service.makeEventByTopicFilter(3, []evmtypes.Hash{evmtypes.Hash(eventSig0Example), evmtypes.Hash(eventSig0Example)}),
 			},
 		},
 	}
@@ -408,22 +503,36 @@ func TestMakeEventByTopicFilter(t *testing.T) {
 	service := &LogTriggerService{}
 	type testCase struct {
 		name            string
-		topics          [][]byte
+		topics          []evmtypes.Hash
+		expected        query.Expression
 		isNilExpression bool
 	}
 	tests := []testCase{
 		{
 			name:            "zero topics",
-			topics:          [][]byte{},
+			topics:          []evmtypes.Hash{},
 			isNilExpression: true,
 		},
 		{
 			name:   "one topic",
-			topics: [][]byte{eventSig0Example},
+			topics: []evmtypes.Hash{evmtypes.Hash(eventSig0Example)},
+			expected: evm.NewEventByTopicFilter(10, []evm.HashedValueComparator{{
+				Values:   []evmtypes.Hash{evmtypes.Hash(eventSig0Example)},
+				Operator: primitives.Eq,
+			}}),
 		},
 		{
 			name:   "two topics",
-			topics: [][]byte{eventSig0Example, eventSig0Example},
+			topics: []evmtypes.Hash{evmtypes.Hash(eventSig0Example), evmtypes.Hash(eventSig0Example)},
+			expected: query.Or(
+				evm.NewEventByTopicFilter(10, []evm.HashedValueComparator{{
+					Values:   []evmtypes.Hash{evmtypes.Hash(eventSig0Example)},
+					Operator: primitives.Eq,
+				}}),
+				evm.NewEventByTopicFilter(10, []evm.HashedValueComparator{{
+					Values:   []evmtypes.Hash{evmtypes.Hash(eventSig0Example)},
+					Operator: primitives.Eq,
+				}})),
 		},
 	}
 	for _, tc := range tests {
@@ -433,12 +542,8 @@ func TestMakeEventByTopicFilter(t *testing.T) {
 				require.Nil(t, expr)
 				return
 			}
-			ebt, ok := expr.Primitive.(*evm.EventByTopic)
-			require.True(t, ok)
-			require.Equal(t, ebt.Topic, uint64(10))
-			require.Len(t, ebt.HashedValueComparers, 1)
-			require.Len(t, ebt.HashedValueComparers[0].Values, len(tc.topics))
-			require.Equal(t, primitives.Eq, ebt.HashedValueComparers[0].Operator)
+			require.NotNil(t, expr)
+			require.Equal(t, tc.expected, *expr)
 		})
 	}
 }
@@ -452,10 +557,10 @@ func TestGetFinalizedBlockNumber(t *testing.T) {
 			lggr:       logger.Test(t),
 			EVMService: evmService,
 		}
-		evmService.EXPECT().HeaderByNumber(mock.Anything, mock.Anything).Return(&evmtypes.HeaderByNumberReply{Header: &finalizedExpHead}, nil)
+		evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(&finalizedExpBlock, nil)
 		fromBlock, err := service.getFinalizedBlockNumber(ctx, triggerID)
 		require.NoError(t, err)
-		require.Equal(t, finalizedExpHead.Number, fromBlock)
+		require.Equal(t, big.NewInt(finalizedExpBlock.FinalizedBlockNumber), fromBlock)
 	})
 	t.Run("fails getting latest block number", func(t *testing.T) {
 		evmService := initMocks(t)
@@ -463,28 +568,28 @@ func TestGetFinalizedBlockNumber(t *testing.T) {
 			lggr:       logger.Test(t),
 			EVMService: evmService,
 		}
-		evmService.EXPECT().HeaderByNumber(mock.Anything, mock.Anything).Return(nil, errors.New("mocked failure error for LatestAndFinalizedHead"))
+		evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(nil, errors.New("mocked failure error for LatestAndFinalizedHead"))
 		_, err := service.getFinalizedBlockNumber(ctx, triggerID)
 		require.Error(t, err)
-		require.ErrorContains(t, err, "failed to register latest and finalized head: 'mocked failure error for LatestAndFinalizedHead' for triggerID: trigger-1")
+		require.ErrorContains(t, err, "failed to register latest and finalized log pollers block: 'mocked failure error for LatestAndFinalizedHead' for triggerID: trigger-1")
 	})
 }
 
 func TestGetLatestBlockNumber(t *testing.T) {
 	t.Run("single log extracts value correctly", func(t *testing.T) {
-		service := &LogTriggerService{}
+		service := &LogTriggerService{lggr: logger.Test(t)}
 		logs := []*evmtypes.Log{
 			{
 				BlockNumber: big.NewInt(5),
 			},
 		}
 		currentBlock := big.NewInt(0)
-		latestBlock := service.getLatestBlockNumber(logs, currentBlock, big.NewInt(10))
+		latestBlock := service.getLatestBlockNumber(logs, currentBlock, big.NewInt(10), "triggerID")
 		require.Equal(t, big.NewInt(5), latestBlock)
 	})
 
 	t.Run("multiple logs with different block numbers mixed up", func(t *testing.T) {
-		service := &LogTriggerService{}
+		service := &LogTriggerService{lggr: logger.Test(t)}
 		addr1 := stringToAddressBytes("addr1")
 		addr2 := stringToAddressBytes("addr2")
 		logs := []*evmtypes.Log{
@@ -502,12 +607,12 @@ func TestGetLatestBlockNumber(t *testing.T) {
 			},
 		}
 		currentBlock := big.NewInt(0)
-		latestBlock := service.getLatestBlockNumber(logs, currentBlock, big.NewInt(10))
+		latestBlock := service.getLatestBlockNumber(logs, currentBlock, big.NewInt(10), "triggerID")
 		require.Equal(t, big.NewInt(3), latestBlock)
 	})
 
 	t.Run("multiple logs with unfinalized blocks return highest one", func(t *testing.T) {
-		service := &LogTriggerService{}
+		service := &LogTriggerService{lggr: logger.Test(t)}
 		addr1 := stringToAddressBytes("addr1")
 		addr2 := stringToAddressBytes("addr2")
 		logs := []*evmtypes.Log{
@@ -525,7 +630,7 @@ func TestGetLatestBlockNumber(t *testing.T) {
 			},
 		}
 		currentBlock := big.NewInt(0)
-		latestBlock := service.getLatestBlockNumber(logs, currentBlock, big.NewInt(2))
+		latestBlock := service.getLatestBlockNumber(logs, currentBlock, big.NewInt(2), "triggerID")
 		require.Equal(t, big.NewInt(2), latestBlock)
 	})
 }
@@ -726,16 +831,91 @@ func TestSendLogsToWorkflows(t *testing.T) {
 }
 
 func TestIntegration_RegisterAndUnregisterLogTrigger(t *testing.T) {
+	t.Run("register and unregister log trigger integration", func(t *testing.T) {
+		topicsInput := []*evmcappb.TopicValues{
+			{Values: [][]byte{eventSig0Example}},
+		}
+		expectedFilter := evmtypes.LPFilterQuery{
+			Name:      "trigger-integration-evm-log-trigger",
+			Addresses: []evmtypes.Address{evmtypes.Address(expectedAddress)},
+			EventSigs: []evmtypes.Hash{evmtypes.Hash(eventSig0Example)},
+			Topic2:    []evmtypes.Hash{},
+			Topic3:    []evmtypes.Hash{},
+			Topic4:    []evmtypes.Hash{},
+		}
+		registerAndUnregisterLogTriggerIntegration(t, topicsInput, expectedFilter)
+	})
+	t.Run("register and unregister log trigger integration with empty topics 2-4", func(t *testing.T) {
+		topicsInput := []*evmcappb.TopicValues{
+			{Values: [][]byte{eventSig0Example}},
+			{},
+			{},
+			{},
+		}
+		expectedFilter := evmtypes.LPFilterQuery{
+			Name:      "trigger-integration-evm-log-trigger",
+			Addresses: []evmtypes.Address{evmtypes.Address(expectedAddress)},
+			EventSigs: []evmtypes.Hash{evmtypes.Hash(eventSig0Example)},
+			Topic2:    []evmtypes.Hash{},
+			Topic3:    []evmtypes.Hash{},
+			Topic4:    []evmtypes.Hash{},
+		}
+		registerAndUnregisterLogTriggerIntegration(t, topicsInput, expectedFilter)
+	})
+	t.Run("register and unregister log trigger integration with empty topics 2,3", func(t *testing.T) {
+		topicsInput := []*evmcappb.TopicValues{
+			{Values: [][]byte{eventSig0Example}},
+			{},
+			{},
+			{Values: [][]byte{eventSig0Example}},
+		}
+		expectedFilter := evmtypes.LPFilterQuery{
+			Name:      "trigger-integration-evm-log-trigger",
+			Addresses: []evmtypes.Address{evmtypes.Address(expectedAddress)},
+			EventSigs: []evmtypes.Hash{evmtypes.Hash(eventSig0Example)},
+			Topic2:    []evmtypes.Hash{},
+			Topic3:    []evmtypes.Hash{},
+			Topic4:    []evmtypes.Hash{evmtypes.Hash(eventSig0Example)},
+		}
+		registerAndUnregisterLogTriggerIntegration(t, topicsInput, expectedFilter)
+	})
+	t.Run("register and unregister log trigger integration with single topic 2, empty topic 3, and multiple topic 4", func(t *testing.T) {
+		topicsInput := []*evmcappb.TopicValues{
+			{Values: [][]byte{eventSig0Example}},
+			{Values: [][]byte{eventSig0Example}},
+			{},
+			{Values: [][]byte{eventSig0Example, eventSig0Example}},
+		}
+		expectedFilter := evmtypes.LPFilterQuery{
+			Name:      "trigger-integration-evm-log-trigger",
+			Addresses: []evmtypes.Address{evmtypes.Address(expectedAddress)},
+			EventSigs: []evmtypes.Hash{evmtypes.Hash(eventSig0Example)},
+			Topic2:    []evmtypes.Hash{evmtypes.Hash(eventSig0Example)},
+			Topic3:    []evmtypes.Hash{},
+			Topic4:    []evmtypes.Hash{evmtypes.Hash(eventSig0Example), evmtypes.Hash(eventSig0Example)},
+		}
+		registerAndUnregisterLogTriggerIntegration(t, topicsInput, expectedFilter)
+	})
+}
+
+func registerAndUnregisterLogTriggerIntegration(t *testing.T, topicsInput []*evmcappb.TopicValues, expectedFilter evmtypes.LPFilterQuery) {
 	evmService := initMocks(t)
-	evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
+	evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).
+		Run(func(args mock.Arguments) {
+			filter := args.Get(1)
+			require.NotNil(t, filter, "expected filter to be not nil")
+			filterTyped, ok := filter.(evmtypes.LPFilterQuery)
+			require.True(t, ok, "expected filter to be of type evmtypes.LPFilterQuery")
+			require.Equal(t, expectedFilter, filterTyped, "expected filter to match the provided topics input")
+		}).Return(nil).Once()
 	evmService.On("UnregisterLogTracking", mock.Anything, mock.Anything).Return(nil).Once()
 
 	// two calls, one for the starting offset and a second one for the next block
-	evmService.EXPECT().HeaderByNumber(mock.Anything, mock.Anything).Return(&evmtypes.HeaderByNumberReply{Header: &evmtypes.Header{Number: big.NewInt(25)}}, nil).Twice()
+	evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(&evmtypes.LPBlock{FinalizedBlockNumber: 25}, nil).Twice()
 	// single call, for fetching the latest finalized head and check if the offset has to be adjusted
-	evmService.EXPECT().HeaderByNumber(mock.Anything, mock.Anything).Return(&evmtypes.HeaderByNumberReply{Header: &evmtypes.Header{Number: big.NewInt(26)}}, nil).Once()
+	evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(&evmtypes.LPBlock{FinalizedBlockNumber: 26}, nil).Once()
 	// Mocking the QueryTrackedLogs method to return logs for the test (1st call) and then a second log for the next block (2nd call)
-	nextBlockNumber := new(big.Int).Add(finalizedExpHead.Number, big.NewInt(1))
+	nextBlockNumber := new(big.Int).Add(big.NewInt(finalizedExpBlock.FinalizedBlockNumber), big.NewInt(1))
 	message := []byte(assemblyDataMessage(evmtypes.Address(expectedAddress), nextBlockNumber))
 	nextBlockNumber2 := new(big.Int).Add(nextBlockNumber, big.NewInt(1))
 	message2 := []byte(assemblyDataMessage(evmtypes.Address(expectedAddress), nextBlockNumber2))
@@ -761,7 +941,7 @@ func TestIntegration_RegisterAndUnregisterLogTrigger(t *testing.T) {
 	ctx := t.Context()
 	ch, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{WorkflowID: "wf-id"}, &evmcappb.FilterLogTriggerRequest{
 		Addresses: addresses,
-		Topics:    topicsWithEventSig0,
+		Topics:    topicsInput,
 	})
 	require.NoError(t, err)
 	time.Sleep(10 * time.Millisecond) // let it run a bit more
@@ -851,8 +1031,8 @@ func TestRegisterLogTrigger_ConversionFailures_Compact(t *testing.T) {
 	evmService := initMocks(t)
 
 	evmService.EXPECT().
-		HeaderByNumber(mock.Anything, mock.Anything).
-		Return(&evmtypes.HeaderByNumberReply{Header: &finalizedExpHead}, nil).
+		GetLatestLPBlock(mock.Anything).
+		Return(&finalizedExpBlock, nil).
 		Maybe()
 
 	svc := createTriggerObject(t, evmService, NewLogTriggerStore())

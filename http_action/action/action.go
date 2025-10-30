@@ -143,7 +143,8 @@ func (s *service) SendRequest(ctx context.Context, metadata capabilities.Request
 	}
 	s.lggr.Debugf("Processed request for workflow %s (ID: %s, Owner: %s, ExecutionID: %s)",
 		metadata.WorkflowName, metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowExecutionID)
-	return &responseAndMetadata, err
+
+	return &responseAndMetadata, nil
 }
 
 // NewOutboundRequestClient creates an OutboundProxy based on the ServiceConfig.ProxyMode
