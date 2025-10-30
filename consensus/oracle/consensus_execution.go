@@ -144,7 +144,7 @@ func handleFieldsMapAggregation(
 }
 
 func handleMedianAggregation(
-	_ logger.Logger,
+	lggr logger.Logger,
 	observations []*valuespb.Value,
 	f int,
 ) (*valuespb.Value, error) {
@@ -163,7 +163,7 @@ func handleMedianAggregation(
 
 	switch medianType {
 	case typeUint64:
-		medianResult, err = getMedian(
+		medianResult, err = getMedian(lggr,
 			filtered,
 			func(val *valuespb.Value) (uint64, error) {
 				return val.GetUint64Value(), nil
@@ -184,7 +184,7 @@ func handleMedianAggregation(
 		}
 
 	case typeInt64:
-		medianResult, err = getMedian(
+		medianResult, err = getMedian(lggr,
 			filtered,
 			func(val *valuespb.Value) (int64, error) {
 				return val.GetInt64Value(), nil
@@ -205,7 +205,7 @@ func handleMedianAggregation(
 		}
 
 	case typeFloat64:
-		medianResult, err = getMedian(
+		medianResult, err = getMedian(lggr,
 			filtered,
 			func(val *valuespb.Value) (float64, error) {
 				return val.GetFloat64Value(), nil
@@ -226,7 +226,7 @@ func handleMedianAggregation(
 		}
 
 	case typeDecimal:
-		medianResult, err = getMedian(
+		medianResult, err = getMedian(lggr,
 			filtered,
 			func(val *valuespb.Value) (decimal.Decimal, error) {
 				var d decimal.Decimal
@@ -246,7 +246,7 @@ func handleMedianAggregation(
 		}
 
 	case typeBigInt:
-		medianResult, err = getMedian(
+		medianResult, err = getMedian(lggr,
 			filtered,
 			func(val *valuespb.Value) (*big.Int, error) {
 				var got big.Int
@@ -266,7 +266,7 @@ func handleMedianAggregation(
 		}
 
 	case typeTime:
-		medianResult, err = getMedian(
+		medianResult, err = getMedian(lggr,
 			filtered,
 			func(val *valuespb.Value) (time.Time, error) {
 				var got time.Time
@@ -496,6 +496,7 @@ func filterObservations(observationProtos []*valuespb.Value, minObservations int
 //
 // For an even number of elements, we take the left of the two middle elements.
 func getMedian[T any](
+	lggr logger.Logger,
 	observations []*valuespb.Value,
 	unwrap func(val *valuespb.Value) (T, error),
 	compare func(a, b T) int,
@@ -509,9 +510,16 @@ func getMedian[T any](
 	for _, v := range observations {
 		unwrapped, err := unwrap(v)
 		if err != nil {
-			return nil, err
+			// It's possible the value could be corrupt and fail to unwrap, so skip and log warning as this should not happen
+			lggr.Warnf("failed to unwrap observation during median calculation: %s", err)
+		} else {
+			unwrappedValues = append(unwrappedValues, unwrapped)
 		}
-		unwrappedValues = append(unwrappedValues, unwrapped)
+	}
+
+	// As values are filtered for unwrapping errors, need to re-check the number of observations is still sufficient for consensus
+	if len(unwrappedValues) < f+1 {
+		return nil, ErrInsufficientObservations
 	}
 
 	slices.SortFunc(unwrappedValues, compare)

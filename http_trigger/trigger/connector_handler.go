@@ -372,12 +372,20 @@ func (h *connectorHandler) resolveWorkflowMetadata(workflow gateway_common.Workf
 // populateMetadataFromWorkflow retrieves metadata from the workflow store and populates the WorkflowMetadata struct
 func (h *connectorHandler) populateMetadataFromWorkflow(workflowID string, metadata *WorkflowMetadata, l logger.Logger) {
 	if w, exists := h.workflowStore.getWorkflowByID(workflowID); exists {
+		// Populate workflow selector fields from stored workflow
+		metadata.WorkflowOwner = w.workflowSelector.WorkflowOwner
+		metadata.WorkflowName = w.workflowSelector.WorkflowName
+		metadata.WorkflowTag = w.workflowSelector.WorkflowTag
+		// Populate registry-related metadata
 		metadata.WorkflowRegistryChainSelector = w.metadata.WorkflowRegistryChainSelector
 		metadata.WorkflowRegistryAddress = w.metadata.WorkflowRegistryAddress
 		metadata.EngineVersion = w.metadata.EngineVersion
 		metadata.WorkflowDONID = w.metadata.WorkflowDONID
 		l.Debugw("Retrieved workflow metadata",
 			"workflowID", workflowID,
+			"workflowOwner", metadata.WorkflowOwner,
+			"workflowName", metadata.WorkflowName,
+			"workflowTag", metadata.WorkflowTag,
 			"registryChainSelector", metadata.WorkflowRegistryChainSelector,
 			"registryAddress", metadata.WorkflowRegistryAddress,
 			"engineVersion", metadata.EngineVersion,

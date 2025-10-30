@@ -30,6 +30,7 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
+	commonMon "github.com/smartcontractkit/capabilities/libs/monitoring"
 )
 
 type ConsensusHandler interface {
@@ -100,7 +101,7 @@ func (e *EVM) initLimiters(limitsFactory limits.Factory) (err error) {
 }
 
 func requestID(meta capabilities.RequestMetadata) string {
-	return meta.WorkflowExecutionID + ":" + meta.ReferenceID
+	return commonMon.RequestID(meta.WorkflowExecutionID, meta.ReferenceID)
 }
 
 func (e *EVM) CallContract(

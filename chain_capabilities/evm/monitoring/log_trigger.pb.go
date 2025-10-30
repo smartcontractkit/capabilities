@@ -23,7 +23,7 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-type TriggerInitiated struct {
+type LogTriggerInitiated struct {
 	state            protoimpl.MessageState       `protogen:"open.v1"`
 	Req              *evm.FilterLogTriggerRequest `protobuf:"bytes,1,opt,name=req,proto3" json:"req,omitempty"`
 	ExecutionContext *monitoring.ExecutionContext `protobuf:"bytes,20,opt,name=execution_context,json=executionContext,proto3" json:"execution_context,omitempty"`
@@ -31,20 +31,20 @@ type TriggerInitiated struct {
 	sizeCache        protoimpl.SizeCache
 }
 
-func (x *TriggerInitiated) Reset() {
-	*x = TriggerInitiated{}
+func (x *LogTriggerInitiated) Reset() {
+	*x = LogTriggerInitiated{}
 	mi := &file_log_trigger_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *TriggerInitiated) String() string {
+func (x *LogTriggerInitiated) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*TriggerInitiated) ProtoMessage() {}
+func (*LogTriggerInitiated) ProtoMessage() {}
 
-func (x *TriggerInitiated) ProtoReflect() protoreflect.Message {
+func (x *LogTriggerInitiated) ProtoReflect() protoreflect.Message {
 	mi := &file_log_trigger_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -56,19 +56,19 @@ func (x *TriggerInitiated) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use TriggerInitiated.ProtoReflect.Descriptor instead.
-func (*TriggerInitiated) Descriptor() ([]byte, []int) {
+// Deprecated: Use LogTriggerInitiated.ProtoReflect.Descriptor instead.
+func (*LogTriggerInitiated) Descriptor() ([]byte, []int) {
 	return file_log_trigger_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *TriggerInitiated) GetReq() *evm.FilterLogTriggerRequest {
+func (x *LogTriggerInitiated) GetReq() *evm.FilterLogTriggerRequest {
 	if x != nil {
 		return x.Req
 	}
 	return nil
 }
 
-func (x *TriggerInitiated) GetExecutionContext() *monitoring.ExecutionContext {
+func (x *LogTriggerInitiated) GetExecutionContext() *monitoring.ExecutionContext {
 	if x != nil {
 		return x.ExecutionContext
 	}
@@ -375,8 +375,8 @@ var File_log_trigger_proto protoreflect.FileDescriptor
 
 const file_log_trigger_proto_rawDesc = "" +
 	"\n" +
-	"\x11log_trigger.proto\x12\x16chain_capabilities.evm\x1a0capabilities/blockchain/evm/v1alpha/client.proto\x1a'libs/monitoring/execution_context.proto\"\xad\x01\n" +
-	"\x10TriggerInitiated\x12N\n" +
+	"\x11log_trigger.proto\x12\x16chain_capabilities.evm\x1a0capabilities/blockchain/evm/v1alpha/client.proto\x1a'libs/monitoring/execution_context.proto\"\xb0\x01\n" +
+	"\x13LogTriggerInitiated\x12N\n" +
 	"\x03req\x18\x01 \x01(\v2<.capabilities.blockchain.evm.v1alpha.FilterLogTriggerRequestR\x03req\x12I\n" +
 	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\x97\x02\n" +
 	"\x11LogTriggerSuccess\x12\x1c\n" +
@@ -418,7 +418,7 @@ func file_log_trigger_proto_rawDescGZIP() []byte {
 
 var file_log_trigger_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_log_trigger_proto_goTypes = []any{
-	(*TriggerInitiated)(nil),            // 0: chain_capabilities.evm.TriggerInitiated
+	(*LogTriggerInitiated)(nil),         // 0: chain_capabilities.evm.LogTriggerInitiated
 	(*LogTriggerSuccess)(nil),           // 1: chain_capabilities.evm.LogTriggerSuccess
 	(*LogTriggerError)(nil),             // 2: chain_capabilities.evm.LogTriggerError
 	(*LogTriggerEventDroppedError)(nil), // 3: chain_capabilities.evm.LogTriggerEventDroppedError
@@ -427,8 +427,8 @@ var file_log_trigger_proto_goTypes = []any{
 	(*monitoring.ExecutionContext)(nil), // 6: monitoring.ExecutionContext
 }
 var file_log_trigger_proto_depIdxs = []int32{
-	5, // 0: chain_capabilities.evm.TriggerInitiated.req:type_name -> capabilities.blockchain.evm.v1alpha.FilterLogTriggerRequest
-	6, // 1: chain_capabilities.evm.TriggerInitiated.execution_context:type_name -> monitoring.ExecutionContext
+	5, // 0: chain_capabilities.evm.LogTriggerInitiated.req:type_name -> capabilities.blockchain.evm.v1alpha.FilterLogTriggerRequest
+	6, // 1: chain_capabilities.evm.LogTriggerInitiated.execution_context:type_name -> monitoring.ExecutionContext
 	5, // 2: chain_capabilities.evm.LogTriggerSuccess.req:type_name -> capabilities.blockchain.evm.v1alpha.FilterLogTriggerRequest
 	6, // 3: chain_capabilities.evm.LogTriggerSuccess.execution_context:type_name -> monitoring.ExecutionContext
 	6, // 4: chain_capabilities.evm.LogTriggerError.execution_context:type_name -> monitoring.ExecutionContext

@@ -23,7 +23,6 @@ type Metrics struct {
 	registerFailureCount      metric.Int64Counter
 	deregisterFailureCount    metric.Int64Counter
 	requestCacheCleanUpCount  metric.Int64Counter
-	requestCacheSize          metric.Int64Gauge
 	requestCount              metric.Int64Counter
 	gatewayGlobalThrottled    metric.Int64Counter
 	gatewayNodeThrottled      metric.Int64Counter
@@ -89,14 +88,6 @@ func (m *Metrics) init() error {
 	)
 	if err != nil {
 		return fmt.Errorf("failed to create HTTP trigger request cache cleanup count metric: %w", err)
-	}
-
-	m.requestCacheSize, err = meter.Int64Gauge(
-		"http_trigger_request_cache_size",
-		metric.WithDescription("Current size of HTTP trigger request cache"),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create HTTP trigger request cache size metric: %w", err)
 	}
 
 	m.requestCount, err = meter.Int64Counter(
@@ -266,8 +257,4 @@ func (m *Metrics) RecordPullMetadataLatency(ctx context.Context, latencyMs int64
 
 func (m *Metrics) RecordRequestLatency(ctx context.Context, latencyMs int64, lggr logger.Logger) {
 	m.requestLatency.Record(ctx, latencyMs)
-}
-
-func (m *Metrics) RecordRequestCacheSize(ctx context.Context, size int64, lggr logger.Logger) {
-	m.requestCacheSize.Record(ctx, size)
 }

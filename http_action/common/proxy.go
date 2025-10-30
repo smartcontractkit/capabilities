@@ -24,7 +24,7 @@ const ClientName = "HTTPClientProxy"
 const internalError = "internal error"
 
 type OutboundRequestClient interface {
-	SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *httpcap.Request, startTime time.Time) (*httpcap.Response, error)
+	SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *httpcap.Request, startTime time.Time) (*httpcap.Response, time.Duration, error)
 	services.Service
 }
 
@@ -75,7 +75,7 @@ func headers(req *httpcap.Request) map[string][]string {
 	return headers
 }
 
-func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *httpcap.Request, startTime time.Time) (*httpcap.Response, error) {
+func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *httpcap.Request, startTime time.Time) (*httpcap.Response, time.Duration, error) {
 	ctx = metadata.ContextWithCRE(ctx)
 	requestID := uuid.New().String()
 	lggr := logger.With(h.lggr, "requestID", requestID, "workflowID", metadata.WorkflowID, "workflowExecutionID", metadata.WorkflowExecutionID, "workflowOwner", metadata.WorkflowOwner)
@@ -87,7 +87,7 @@ func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities
 	if err != nil {
 		h.metrics.IncrementExecutionError(ctx, ProxyModeDirect, lggr)
 		lggr.Errorf("failed to create request: %v", err)
-		return nil, errors.New(internalError)
+		return nil, 0, errors.New(internalError)
 	}
 
 	req.Header = http.Header(headers(input))
@@ -97,21 +97,21 @@ func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities
 	resp, err := h.client.Do(req)
 	if err != nil {
 		h.metrics.IncrementExternalEndpointError(ctx, ProxyModeDirect, lggr)
-		return nil, err
+		return nil, 0, err
 	}
 	defer resp.Body.Close()
-	externalLatency := time.Since(externalStartTime).Milliseconds()
+	externalLatency := time.Since(externalStartTime)
 	lggr.Debugw("Received HTTP response", "status", resp.Status, "statusCode", resp.StatusCode)
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		h.metrics.IncrementExternalEndpointError(ctx, ProxyModeDirect, lggr)
-		return nil, err
+		return nil, 0, err
 	}
 
 	if err := h.validator.ValidateResponseSize(ctx, body); err != nil {
 		h.metrics.IncrementExternalEndpointError(ctx, ProxyModeDirect, lggr)
-		return nil, err
+		return nil, 0, err
 	}
 
 	headers := make(map[string]string)
@@ -127,10 +127,8 @@ func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities
 		Headers:    headers,
 		Body:       body,
 	}
-	totalLatency := time.Since(startTime).Milliseconds()
-	h.metrics.RecordRequestLatency(ctx, totalLatency, externalLatency, ProxyModeDirect, lggr)
 
-	return outputs, nil
+	return outputs, externalLatency, nil
 }
 
 func (h *httpClientProxy) Start(ctx context.Context) error {
