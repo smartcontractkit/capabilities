@@ -1,10 +1,33 @@
 --- a/BUILD.bazel
 +++ b/BUILD.bazel
-@@ -36,6 +36,7 @@
+@@ -2,6 +2,19 @@
+ 
+ # gazelle:exclude build
+ 
++cc_library(
++    name = "c_wasmtime",
++    visibility = ["//visibility:public"],
++    srcs = select({
++        "@io_bazel_rules_go//go/platform:darwin_arm64": ["build/macos-aarch64/libwasmtime.a"],
++        "@io_bazel_rules_go//go/platform:darwin_amd64": ["build/macos-x86_64/libwasmtime.a"],
++        "@io_bazel_rules_go//go/platform:linux_amd64": ["build/linux-x86_64/libwasmtime.a"],
++        "@io_bazel_rules_go//go/platform:linux_arm64": ["build/linux-aarch64/libwasmtime.a"],
++        "@io_bazel_rules_go//go/platform:windows_amd64": ["build/windows-x86_64/libwasmtime.a"],
++        "//conditions:default": [],
++    }),
++)
++
+ go_library(
+     name = "wasmtime-go",
+     srcs = [
+@@ -36,6 +49,10 @@
          "wasi.go",
          "wat2wasm.go",
      ],
 +    embedsrcs = glob(["build/**/*"]),
++    cdeps = [
++        ":c_wasmtime",
++    ],
      cgo = True,
      clinkopts = select({
          "@io_bazel_rules_go//go/platform:aix": [

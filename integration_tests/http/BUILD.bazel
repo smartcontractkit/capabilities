@@ -1,0 +1,46 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "http",
+    srcs = ["kvstore.go"],
+    importpath = "github.com/smartcontractkit/capabilities/integration_tests/http",
+    visibility = ["//visibility:public"],
+    deps = ["@com_github_smartcontractkit_chainlink_common//pkg/types/core"],
+)
+
+go_test(
+    name = "http_test",
+    srcs = [
+        "http_test.go",
+        "http_trigger_test.go",
+    ],
+    embed = [":http"],
+    deps = [
+        "//http_action/action",
+        "//http_trigger/trigger",
+        "@com_github_burntsushi_toml//:toml",
+        "@com_github_ethereum_go_ethereum//crypto",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_jonboulle_clockwork//:clockwork",
+        "@com_github_smartcontractkit_chainlink_common//pkg/beholder",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/v2/actions/http",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/v2/actions/http/server",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/v2/triggers/http",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/v2/triggers/http/server",
+        "@com_github_smartcontractkit_chainlink_common//pkg/jsonrpc2",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_smartcontractkit_chainlink_common//pkg/services/servicetest",
+        "@com_github_smartcontractkit_chainlink_common//pkg/settings/limits",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types/core",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types/gateway",
+        "@com_github_smartcontractkit_chainlink_common//pkg/workflows",
+        "@com_github_smartcontractkit_chainlink_v2//core/services/gateway",
+        "@com_github_smartcontractkit_chainlink_v2//core/services/gateway/config",
+        "@com_github_smartcontractkit_chainlink_v2//core/services/gateway/connector",
+        "@com_github_smartcontractkit_chainlink_v2//core/services/gateway/network",
+        "@com_github_smartcontractkit_chainlink_v2//core/utils",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//types/known/durationpb",
+    ],
+)
