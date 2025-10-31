@@ -9,3 +9,4 @@ build:ci --@rules_go//go/config:race
 # Linux-specific: Disable PIE to avoid conflict with static linking
 # This flag is only supported on Linux/GCC, not macOS
 build:ci-linux --linkopt=-Wl,-no-pie
+build:ci-linux --host_linkopt=-Wl,-no-pie
