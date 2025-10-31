@@ -10,5 +10,3 @@ build:ci --@rules_go//go/config:race
 # This avoids the "-pie and -static are incompatible" error
 # PIE is enabled by default and provides ASLR security benefits
 build:ci-linux --features=-static_link_cpp_runtimes
-build:ci-linux --linkopt=-Wl,--no-static
-build:ci-linux --host_linkopt=-Wl,--no-static
