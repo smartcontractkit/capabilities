@@ -1,0 +1,87 @@
+--- a/field/asm/element_4w/BUILD.bazel
++++ b/field/asm/element_4w/BUILD.bazel
+@@ -1,5 +1,14 @@
+ load("@io_bazel_rules_go//go:def.bzl", "go_library")
+ 
++filegroup(
++    name = "element_4w_files",
++    srcs = [
++        "element_4w_amd64.s",
++        "element_4w_arm64.s",
++    ],
++    visibility = ["//visibility:public"],
++)
++
+ go_library(
+     name = "element_4w",
+     srcs = [
+
+--- a/ecc/bls12-381/fr/BUILD.bazel
++++ b/ecc/bls12-381/fr/BUILD.bazel
+@@ -17,6 +17,9 @@
+         "vector_amd64.go",
+         "vector_purego.go",
+     ],
++    embedsrcs = [
++        "//field/asm/element_4w:element_4w_files",
++    ],
+     importpath = "github.com/consensys/gnark-crypto/ecc/bls12-381/fr",
+     visibility = ["//visibility:public"],
+     deps = [
+
+--- a/ecc/stark-curve/fp/BUILD.bazel
++++ b/ecc/stark-curve/fp/BUILD.bazel
+@@ -16,6 +16,9 @@
+         "vector_amd64.go",
+         "vector_purego.go",
+     ],
++    embedsrcs = [
++        "//field/asm/element_4w:element_4w_files",
++    ],
+     importpath = "github.com/consensys/gnark-crypto/ecc/stark-curve/fp",
+     visibility = ["//visibility:public"],
+     deps = [
+
+--- a/ecc/stark-curve/fr/BUILD.bazel
++++ b/ecc/stark-curve/fr/BUILD.bazel
+@@ -15,6 +15,9 @@
+         "vector_amd64.go",
+         "vector_purego.go",
+     ],
++    embedsrcs = [
++        "//field/asm/element_4w:element_4w_files",
++    ],
+     importpath = "github.com/consensys/gnark-crypto/ecc/stark-curve/fr",
+     visibility = ["//visibility:public"],
+     deps = [
+
+--- a/field/asm/element_6w/BUILD.bazel
++++ b/field/asm/element_6w/BUILD.bazel
+@@ -1,5 +1,14 @@
+ load("@io_bazel_rules_go//go:def.bzl", "go_library")
+ 
++filegroup(
++    name = "element_6w_files",
++    srcs = [
++        "element_6w_amd64.s",
++        "element_6w_arm64.s",
++    ],
++    visibility = ["//visibility:public"],
++)
++
+ go_library(
+     name = "element_6w",
+     srcs = [
+
+--- a/ecc/bls12-381/fp/BUILD.bazel
++++ b/ecc/bls12-381/fp/BUILD.bazel
+@@ -15,6 +15,9 @@
+         "vector.go",
+         "vector_purego.go",
+     ],
++    embedsrcs = [
++        "//field/asm/element_6w:element_6w_files",
++    ],
+     importpath = "github.com/consensys/gnark-crypto/ecc/bls12-381/fp",
+     visibility = ["//visibility:public"],
+     deps = [

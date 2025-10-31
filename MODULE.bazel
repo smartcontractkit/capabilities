@@ -80,6 +80,15 @@ go_deps.module_override(
     path = "github.com/bytecodealliance/wasmtime-go/v28",
 )
 
+# Override the consensys/gnark-crypto package to correctly include all dependencies
+go_deps.module_override(
+    patch_strip = 1,
+    patches = [
+        "//tools:patches/gnark-crypto.patch", # Patch the BUILD.bazel files
+    ],
+    path = "github.com/consensys/gnark-crypto",
+)
+
 # Override the smartcontractkit/chainlink/v2 package to correctly include the database migrations.
 # Ideally, BUILD.bazel would exist there, so this patch would not be necessary.
 go_deps.module_override(

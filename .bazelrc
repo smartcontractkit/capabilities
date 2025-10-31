@@ -1,4 +1,3 @@
-build --define gotags=purego
 build --linkopt=-Wl,-no_warn_duplicate_libraries # Ignore duplicate libraries warning
 build --host_linkopt=-Wl,-no_warn_duplicate_libraries # Ignore duplicate libraries warning for host tools
 
