@@ -2,15 +2,7 @@ build --define gotags=purego
 build --linkopt=-Wl,-no_warn_duplicate_libraries # Ignore duplicate libraries warning
 build --host_linkopt=-Wl,-no_warn_duplicate_libraries # Ignore duplicate libraries warning for host tools
 
-# Default build platform is Macs
-build --platforms=@rules_go//go/toolchain:darwin_arm64_cgo
-
 # Builds for Linux
-build:linux-amd64 --platforms=@rules_go//go/toolchain:linux_amd64_cgo
-build:linux-amd64 --linkopt=-extldflags=-no-pie # Disable PIE to avoid conflict with static linking
-build:linux-arm64 --platforms=@rules_go//go/toolchain:linux_arm64_cgo
-build:linux-arm64 --linkopt=-extldflags=-no-pie # Disable PIE to avoid conflict with static linking
-
-# Builds for Macs
-build:darwin-amd64 --platforms=@rules_go//go/toolchain:darwin_amd64_cgo # Intel Macs
-build:darwin-arm64 --platforms=@rules_go//go/toolchain:darwin_arm64_cgo # Apple Silicon Macs (M1/M2/M3)
+build:ci --linkopt=-extldflags=-no-pie # Disable PIE to avoid conflict with static linking
+build:ci --test_output=errors
+build:ci --@rules_go//go/config:race
