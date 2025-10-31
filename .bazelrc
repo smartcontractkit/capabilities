@@ -7,7 +7,9 @@ build --platforms=@rules_go//go/toolchain:darwin_arm64_cgo
 
 # Builds for Linux
 build:linux-amd64 --platforms=@rules_go//go/toolchain:linux_amd64_cgo
+build:linux-amd64 --linkopt=-extldflags=-no-pie # Disable PIE to avoid conflict with static linking
 build:linux-arm64 --platforms=@rules_go//go/toolchain:linux_arm64_cgo
+build:linux-arm64 --linkopt=-extldflags=-no-pie # Disable PIE to avoid conflict with static linking
 
 # Builds for Macs
 build:darwin-amd64 --platforms=@rules_go//go/toolchain:darwin_amd64_cgo # Intel Macs

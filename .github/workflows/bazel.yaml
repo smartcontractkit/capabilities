@@ -34,4 +34,4 @@ jobs:
             bazel-cache-${{ runner.os }}-${{ github.ref }}-
             bazel-cache-${{ runner.os }}-refs/heads/main-
             bazel-cache-${{ runner.os }}-
-      - run: bazel test //... --platforms=@rules_go//go/toolchain:linux_amd64_cgo
+      - run: bazel test //... --config=linux-amd64 --test_output=errors
