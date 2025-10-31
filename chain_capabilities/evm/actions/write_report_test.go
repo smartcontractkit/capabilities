@@ -745,6 +745,65 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		}, txResult.Response)
 		require.Empty(t, txResult.ResponseMetadata.Metering, "response metadata must not contain metering data for fatal errors")
 	})
+	t.Run("TX already transmitted successfully - Receiver contract reverted - sets default error message when nil", func(t *testing.T) {
+		ctx := t.Context()
+		testLogger := logger.Test(t)
+		evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
+		evmServiceMock.EXPECT().GetTransactionFee(mock.Anything, mock.Anything).Return(&evmtypes.TransactionFee{TransactionFee: big.NewInt(300)}, nil).Maybe()
+
+		transmissionInfo := contracts.TransmissionInfo{
+			Success:         false,
+			InvalidReceiver: false,
+			State:           TransmissionStateFailed,
+			GasLimit:        big.NewInt(EnoughReceiverGas),
+		}
+		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(transmissionInfo, nil)
+
+		txHash := evmtypes.Hash(test.RandomBytes(32))
+
+		logs := append([]*evmtypes.Log{}, &evmtypes.Log{
+			TxHash: txHash,
+		})
+		mockForwarderClient.EXPECT().GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(logs, nil)
+
+		receipt := evmtypes.Receipt{
+			Status:            uint64(TransmissionStateSucceeded),
+			TxHash:            txHash,
+			GasUsed:           1000,
+			EffectiveGasPrice: big.NewInt(2),
+		}
+		evmServiceMock.EXPECT().GetTransactionReceipt(mock.Anything, evmtypes.GeTransactionReceiptRequest{Hash: txHash}).Return(&receipt, nil)
+		evmServiceMock.EXPECT().CalculateTransactionFee(mock.Anything, toReceiptGasInfo(receipt)).Return(&evmtypes.TransactionFee{
+			TransactionFee: big.NewInt(2000),
+		}, nil)
+
+		reportMetadata := createTestReportMetadata()
+		encodedReportMetadata, _ := reportMetadata.Encode()
+
+		txResult, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
+			Receiver: testutils.NewAddress().Bytes(),
+			Report: &workflowpb.ReportResponse{
+				RawReport:     encodedReportMetadata,
+				ReportContext: []byte{},
+				Sigs:          generateRandomSignatures(),
+			},
+			GasConfig: &evm.GasConfig{
+				GasLimit: 100 * EnoughReceiverGas,
+			},
+		})
+		require.NoError(t, err)
+
+		equalWriteReportReply(t, &evm.WriteReportReply{
+			TxStatus:                        evmcappb.TxStatus_TX_STATUS_SUCCESS,
+			TxHash:                          receipt.TxHash[:],
+			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(),
+			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
+			ErrorMessage:                    ptr("Receiver contract execution failure"),
+		}, txResult.Response)
+
+		require.Len(t, txResult.ResponseMetadata.Metering, 0)
+	})
+
 }
 
 func TestGetTransmissionID(t *testing.T) {
