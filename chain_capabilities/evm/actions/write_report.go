@@ -166,16 +166,13 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		if request.GasConfig != nil && request.GasConfig.GasLimit > 0 {
 			receiverGasMinimum = request.GasConfig.GasLimit - contracts.ForwarderContractLogicGasCost
 		}
-		if transmissionInfo.GasLimit.Uint64() > receiverGasMinimum {
-			e.lggr.Infow("returning without a transmission attempt - transmission already attempted and failed, sufficient gas was provided", "executionID", metadata.WorkflowExecutionID, "receiverGasMinimum", receiverGasMinimum, "transmissionGasLimit", transmissionInfo.GasLimit)
-			txHash, err := txHashRetriever.GetHash(ctx)
-			if err != nil {
-				return nil, capabilities.ResponseMetadata{}, err
-			}
-			reply, err := e.fetchTransactionReceiptAndCreateReply(ctx, *txHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED, nil)
-			return reply, capabilities.ResponseMetadata{}, err
+		e.lggr.Infow("returning without a transmission attempt - transmission already attempted and failed", "executionID", metadata.WorkflowExecutionID, "receiverGasMinimum", receiverGasMinimum, "transmissionGasLimit", transmissionInfo.GasLimit)
+		txHash, err := txHashRetriever.GetHash(ctx)
+		if err != nil {
+			return nil, capabilities.ResponseMetadata{}, err
 		}
-		e.lggr.Infow("retrying a failed transmission - attempting to push to txmgr", "request", request, "reportLen", len(request.Report.RawReport), "reportContextLen", len(request.Report.ReportContext), "nSignatures", len(request.Report.Sigs), "executionID", metadata.WorkflowExecutionID, "receiverGasMinimum", receiverGasMinimum, "transmissionGasLimit", transmissionInfo.GasLimit)
+		reply, err := e.fetchTransactionReceiptAndCreateReply(ctx, *txHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED, nil)
+		return reply, capabilities.ResponseMetadata{}, err
 	default:
 		return fatalWriteReportReply(getInvalidStateErrorMessage(transmissionInfo.State)), capabilities.ResponseMetadata{}, nil
 	}
@@ -188,7 +185,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 	e.lggr.Debugw("Submitting transaction for report", "request", request)
 	transactionResult, err := e.forwarderClient.InvokeOnReport(ctx, transmissionID.Receiver, request.Report, request.GasConfig)
 	if err != nil {
-		e.lggr.Error("Transaction failed", "request", request)
+		e.lggr.Errorw("Transaction failed", "request", request, "error", err)
 		return &evm.WriteReportReply{
 			TxStatus:     evm.TxStatus_TX_STATUS_FATAL,
 			ErrorMessage: ptr(err.Error()),
@@ -252,17 +249,19 @@ func getInvalidStateErrorMessage(state uint8) string {
 }
 
 func (e *WriteReport) processUnrecoverableTxState(ctx context.Context, request *evm.WriteReportRequest, metadata capabilities.RequestMetadata, txHash evmtypes.Hash, transmissionInfo contracts.TransmissionInfo, transmissionID contracts.TransmissionID, txAttemptedLocally bool) (*evm.WriteReportReply, error) {
-	if !txAttemptedLocally {
-		e.lggr.Infow("returning without a transmission attempt - transmission already attempted, receiver was marked as invalid", "executionID", metadata.WorkflowExecutionID)
-	} else {
-		e.lggr.Errorw("Transaction written to the forwarder, but failed to be written to the consumer contract", "request", request, "transmissionState", transmissionInfo.State)
-	}
 	var message *string
 	if transmissionInfo.State == TransmissionStateInvalidReceiver {
 		message = getInvalidReceiverMessage(transmissionID.Receiver[:])
 	} else {
 		message = ptr(UnknownIssueExecutingReceiverContractMessage)
 	}
+
+	if !txAttemptedLocally {
+		e.lggr.Infow("returning without a transmission attempt - transmission already attempted, receiver was marked as invalid", "executionID", metadata.WorkflowExecutionID, "message", message)
+	} else {
+		e.lggr.Errorw("Transaction written to the forwarder, but failed to be written to the consumer contract", "request", request, "transmissionState", transmissionInfo.State, "message", message)
+	}
+
 	return e.fetchTransactionReceiptAndCreateReply(ctx, txHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED, message)
 }
 
@@ -311,9 +310,11 @@ func (e *WriteReport) fetchTransactionReceiptAndCreateReply(ctx context.Context,
 		return nil, err
 	}
 	message := errorMessage
-	if receiverStatus.Enum() == evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum() && errorMessage == nil {
+	if receiverStatus == evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED && errorMessage == nil {
 		message = ptr("Receiver contract execution failure")
 	}
+
+	e.lggr.Infow("Successfully fetched tx receipt", "txHash", txHash, "txStatus", evm.TxStatus_TX_STATUS_SUCCESS, "transactionFeeWei", transactionFee.TransactionFee.String(), "receiverStatus", receiverStatus, "errorMessage", message)
 	return &evm.WriteReportReply{
 		TxHash:                          (txHash)[:],
 		TxStatus:                        evm.TxStatus_TX_STATUS_SUCCESS,
