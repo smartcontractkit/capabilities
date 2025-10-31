@@ -5,8 +5,3 @@ build --host_linkopt=-Wl,-no_warn_duplicate_libraries # Ignore duplicate librari
 # CI configuration
 build:ci --test_output=errors
 build:ci --@rules_go//go/config:race
-
-# Linux-specific: Prevent static linking to allow PIE (default on modern Linux)
-# This avoids the "-pie and -static are incompatible" error
-# PIE is enabled by default and provides ASLR security benefits
-build:ci-linux --features=-static_link_cpp_runtimes

@@ -16,7 +16,7 @@ env:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -34,4 +34,4 @@ jobs:
             bazel-cache-${{ runner.os }}-${{ github.ref }}-
             bazel-cache-${{ runner.os }}-refs/heads/main-
             bazel-cache-${{ runner.os }}-
-      - run: bazel test //... --config=ci --config=ci-linux
+      - run: bazel test //... --config=ci
