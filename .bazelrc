@@ -1,5 +1,6 @@
 build --linkopt=-Wl,-no_warn_duplicate_libraries # Ignore duplicate libraries warning
 build --host_linkopt=-Wl,-no_warn_duplicate_libraries # Ignore duplicate libraries warning for host tools
+build --disk_cache=$HOME/bazel_disk_cache
 
 # CI configuration
 build:ci --test_output=errors
