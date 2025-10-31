@@ -4,4 +4,3 @@ load("@gazelle//:def.bzl", "gazelle")
 # See https://github.com/bazel-contrib/rules_go/blob/master/proto/core.rst#id7 for more details.
 # gazelle:proto disable_global
 gazelle(name = "gazelle")
-

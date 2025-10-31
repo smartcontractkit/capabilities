@@ -14,6 +14,7 @@ go_library(
         "//chain_capabilities/evm/internal/contracts",
         "//chain_capabilities/evm/metering",
         "//chain_capabilities/evm/monitoring",
+        "//libs/monitoring",
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_ethereum_go_ethereum//rpc",
         "@com_github_jpillora_backoff//:backoff",
