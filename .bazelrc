@@ -1,1 +1,2 @@
 build --define gotags=purego
+build --linkopt=-Wl,-no_warn_duplicate_libraries # Ignore duplicate libraries warning
