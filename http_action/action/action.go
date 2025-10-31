@@ -119,19 +119,23 @@ func (s *service) SendRequest(ctx context.Context, metadata capabilities.Request
 	validatedInput, err := s.validator.ValidatedRequest(ctx, input)
 	if err != nil {
 		s.metrics.IncrementInputValidationFailures(ctx, s.lggr)
+		s.metrics.RecordRequestLatency(ctx, time.Since(startTime).Milliseconds(), 0, s.cfg.ProxyMode, false, s.lggr)
 		return nil, capabilities.NewRemoteReportableError(
-			fmt.Errorf("input validation failed for workflow %s (ID: %s, Owner: %s, ExecutionID: %s): %w",
+			fmt.Errorf("input validation failed for workflowID %s (Owner: %s, Name: %s, ExecutionID: %s): %w",
 				metadata.WorkflowName, metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowExecutionID, err))
 	}
 
-	response, err := s.client.SendRequest(ctx, metadata, validatedInput, startTime)
+	response, externalEndpointLatency, err := s.client.SendRequest(ctx, metadata, validatedInput, startTime)
 	if err != nil {
+		s.lggr.Errorw("request failed", "error", err, "workflowID", metadata.WorkflowID, "workflowOwner", metadata.WorkflowOwner, "workflowExecutionID", metadata.WorkflowExecutionID)
+		s.metrics.RecordRequestLatency(ctx, time.Since(startTime).Milliseconds(), externalEndpointLatency.Milliseconds(), s.cfg.ProxyMode, false, s.lggr)
 		return nil, capabilities.NewRemoteReportableError(
-			fmt.Errorf("request failed for workflow %s (ID: %s, Owner: %s, ExecutionID: %s): %w",
+			fmt.Errorf("request failed for workflowID %s (Owner: %s, Name: %s, ExecutionID: %s): %w",
 				metadata.WorkflowName, metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowExecutionID, err))
 	}
 
 	s.metrics.IncrementSuccessfulResponse(ctx, s.cfg.ProxyMode, response.StatusCode, s.lggr)
+	s.metrics.RecordRequestLatency(ctx, time.Since(startTime).Milliseconds(), externalEndpointLatency.Milliseconds(), s.cfg.ProxyMode, true, s.lggr)
 
 	responseAndMetadata := capabilities.ResponseAndMetadata[*http.Response]{
 		Response:         response,

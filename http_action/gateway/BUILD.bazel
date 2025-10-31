@@ -2,7 +2,10 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "gateway",
-    srcs = ["gateway_outbound_proxy.go"],
+    srcs = [
+        "gateway_outbound_proxy.go",
+        "internal_error.go",
+    ],
     importpath = "github.com/smartcontractkit/capabilities/http_action/gateway",
     visibility = ["//visibility:public"],
     deps = [

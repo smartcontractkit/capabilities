@@ -41,9 +41,9 @@ func (m *MockOutboundRequestClient) Close() error {
 	return nil
 }
 
-func (m *MockOutboundRequestClient) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *http.Request, startTime time.Time) (*http.Response, error) {
+func (m *MockOutboundRequestClient) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *http.Request, startTime time.Time) (*http.Response, time.Duration, error) {
 	m.CapturedInput = input
-	return m.Response, m.Err
+	return m.Response, 0, m.Err
 }
 
 func (m *MockOutboundRequestClient) HealthReport() map[string]error {

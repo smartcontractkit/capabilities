@@ -67,18 +67,18 @@ const gatewayConfigTemplate = `
     "Port": 0,
     "HandshakeTimeoutMillis": 2000,
     "MaxRequestBytes": 20000,
-    "ReadTimeoutMillis": 1000,
-    "RequestTimeoutMillis": 1000,
-    "WriteTimeoutMillis": 1000
+    "ReadTimeoutMillis": 5000,
+    "RequestTimeoutMillis": 5000,
+    "WriteTimeoutMillis": 10000
   },
   "UserServerConfig": {
     "Path": "/user",
     "Port": 0,
     "ContentTypeHeader": "application/jsonrpc",
     "MaxRequestBytes": 20000,
-    "ReadTimeoutMillis": 1000,
-    "RequestTimeoutMillis": 1000,
-    "WriteTimeoutMillis": 1000
+    "ReadTimeoutMillis": 5000,
+    "RequestTimeoutMillis": 5000,
+    "WriteTimeoutMillis": 10000
   },
   "Dons": [
     {
