@@ -2,7 +2,10 @@ build --define gotags=purego
 build --linkopt=-Wl,-no_warn_duplicate_libraries # Ignore duplicate libraries warning
 build --host_linkopt=-Wl,-no_warn_duplicate_libraries # Ignore duplicate libraries warning for host tools
 
-# Builds for Linux
-build:ci --linkopt=-extldflags=-no-pie # Disable PIE to avoid conflict with static linking
+# CI configuration
 build:ci --test_output=errors
 build:ci --@rules_go//go/config:race
+
+# Linux-specific: Disable PIE to avoid conflict with static linking
+# This flag is only supported on Linux/GCC, not macOS
+build:ci-linux --linkopt=-Wl,-no-pie
