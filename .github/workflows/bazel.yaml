@@ -25,16 +25,24 @@ jobs:
           persist-credentials: false
       - name: Bazel info
         run: bazel info
-      - name: Cache Bazel
-        uses: actions/cache@v4
+      - uses: bazel-contrib/setup-bazel@4fd964a13a440a8aeb0be47350db2fc640f19ca8 # 0.15.0
         with:
-          path: |
-            ~/.bazelisk                     # Bazel executable downloads
-            ~/.cache/bazel/repository/cache # Repository Cache (External deps)
-            ~/bazel_disk_cache              # Custom Disk Cache location
-          key: bazel-cache-${{ runner.os }}-${{ github.ref }}-${{ hashFiles('**/.bazelversion', '**/MODULE.bazel', '**/BUILD.bazel') }}-
-          restore-keys: |
-            bazel-cache-${{ runner.os }}-${{ github.ref }}-
-            bazel-cache-${{ runner.os }}-refs/heads/main-
-            bazel-cache-${{ runner.os }}-
+          # Avoid downloading Bazel every time.
+          bazelisk-cache: true
+          # Share repository cache between workflows.
+          repository-cache: true
+          # Store build cache per workflow.
+          disk-cache: ${{ github.workflow }}
+      # - name: Cache Bazel
+      #   uses: actions/cache@v4
+      #   with:
+      #     path: |
+      #       ~/.bazelisk                     # Bazel executable downloads
+      #       ~/.cache/bazel/repository/cache # Repository Cache (External deps)
+      #       ~/bazel_disk_cache              # Custom Disk Cache location
+      #     key: bazel-cache-${{ runner.os }}-${{ github.ref }}-${{ hashFiles('**/.bazelversion', '**/MODULE.bazel', '**/BUILD.bazel') }}-
+      #     restore-keys: |
+      #       bazel-cache-${{ runner.os }}-${{ github.ref }}-
+      #       bazel-cache-${{ runner.os }}-refs/heads/main-
+      #       bazel-cache-${{ runner.os }}-
       - run: bazel test //... --config=ci
