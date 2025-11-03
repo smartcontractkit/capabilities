@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum/rpc"
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"google.golang.org/protobuf/proto"
 
@@ -297,17 +298,21 @@ func (lts *LogTriggerService) getTopics(input *evmcappb.FilterLogTriggerRequest)
 }
 
 func (lts *LogTriggerService) getFinalizedBlockNumber(ctx context.Context, triggerID string) (*big.Int, error) {
-	reply, err := lts.EVMService.GetLatestLPBlock(ctx)
+	reply, err := lts.EVMService.HeaderByNumber(ctx, evmtypes.HeaderByNumberRequest{
+		Number:          big.NewInt(rpc.FinalizedBlockNumber.Int64()),
+		ConfidenceLevel: primitives.Unconfirmed,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to register latest and finalized log pollers block: '%w' for triggerID: %s", err, triggerID)
+		return nil, fmt.Errorf("failed to register latest and finalized head: '%w' for triggerID: %s", err, triggerID)
 	}
 
-	if reply == nil {
-		return nil, fmt.Errorf("failed to register latest and finalized log pollers block: 'nil' for triggerID: %s", triggerID)
+	if reply.Header == nil {
+		return nil, fmt.Errorf("failed to register latest and finalized head: 'nil' for triggerID: %s", triggerID)
 	}
-	lts.lggr.Debugf("Latest finalized block number: %d, triggerID: %s", reply.FinalizedBlockNumber, triggerID)
 
-	return big.NewInt(reply.FinalizedBlockNumber), nil
+	lts.lggr.Debugf("Latest finalized block number: %d, triggerID: %s", reply.Header.Number, triggerID)
+
+	return reply.Header.Number, nil
 }
 
 func (lts *LogTriggerService) generateFilterID(triggerID string) string {
