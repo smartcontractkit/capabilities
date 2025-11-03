@@ -10,6 +10,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//chain_capabilities/evm/monitoring",
+        "@com_github_ethereum_go_ethereum//rpc",
         "@com_github_smartcontractkit_chainlink_common//pkg/beholder",
         "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
         "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/v2/chain-capabilities/evm",

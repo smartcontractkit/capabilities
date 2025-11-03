@@ -84,7 +84,7 @@ go_deps.module_override(
 go_deps.module_override(
     patch_strip = 1,
     patches = [
-        "//tools:patches/gnark-crypto.patch", # Patch the BUILD.bazel files
+        "//tools:patches/gnark-crypto.patch",  # Patch the BUILD.bazel files
     ],
     path = "github.com/consensys/gnark-crypto",
 )
