@@ -1,12 +1,16 @@
 # https://registry.bazel.build/modules/rules_go
 bazel_dep(name = "rules_go", version = "0.57.0", repo_name = "rules_go")
 
+# https://registry.bazel.build/modules/aspect_rules_lint
+bazel_dep(name = "aspect_rules_lint", version = "1.10.2")
+
 # https://registry.bazel.build/modules/gazelle
 bazel_dep(name = "gazelle", version = "0.45.0")
 
 # https://github.com/bazel-contrib/rules_go/blob/v0.57.0/go/private/extensions.bzl
 go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.download(version = "1.25.3")
+go_sdk.nogo(nogo = "//:my_nogo")
 
 # https://registry.bazel.build/modules/protobuf
 bazel_dep(name = "protobuf", version = "31.1", repo_name = "com_google_protobuf")
@@ -57,7 +61,7 @@ go_deps.gazelle_override(
 
 # Override the ethereum/go-ethereum/crypto/secp256k1 package to use the embedded C dependencies
 go_deps.module_override(
-    patches = ["//tools:patches/go-ethereum.patch"],
+    patches = ["//bazel:patches/go-ethereum.patch"],
     path = "github.com/ethereum/go-ethereum",
 )
 
@@ -65,7 +69,7 @@ go_deps.module_override(
 go_deps.module_override(
     patch_strip = 1,
     patches = [
-        "//tools:patches/go-duckdb.patch",
+        "//bazel:patches/go-duckdb.patch",
     ],
     path = "github.com/marcboeker/go-duckdb",
 )
@@ -75,7 +79,7 @@ go_deps.module_override(
     patch_strip = 1,
     patches = [
         # Patch the BUILD.bazel file to correctly include the C libraries
-        "//tools:patches/wasmtime-go.patch",
+        "//bazel:patches/wasmtime-go.patch",
     ],
     path = "github.com/bytecodealliance/wasmtime-go/v28",
 )
@@ -84,7 +88,7 @@ go_deps.module_override(
 go_deps.module_override(
     patch_strip = 1,
     patches = [
-        "//tools:patches/gnark-crypto.patch",  # Patch the BUILD.bazel files
+        "//bazel:patches/gnark-crypto.patch",  # Patch the BUILD.bazel files
     ],
     path = "github.com/consensys/gnark-crypto",
 )
@@ -95,7 +99,7 @@ go_deps.module_override(
     patch_strip = 1,
     patches = [
         # Patch the BUILD.bazel file to correctly include the C libraries
-        "//tools:patches/chainlink.patch",
+        "//bazel:patches/chainlink.patch",
     ],
     path = "github.com/smartcontractkit/chainlink/v2",
 )
@@ -142,5 +146,6 @@ use_repo(
     "org_golang_google_grpc",
     "org_golang_google_protobuf",
     "org_golang_x_exp",
+    "org_golang_x_tools",
     "org_uber_go_zap",
 )

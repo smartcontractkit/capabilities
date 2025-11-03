@@ -1,6 +1,16 @@
 load("@gazelle//:def.bzl", "gazelle")
+load("@rules_go//go:def.bzl", "nogo")
 
 # The `disable_global` directive stops proto file (re)generation inside of bazel builds and uses the already generated .pb.go files.
 # See https://github.com/bazel-contrib/rules_go/blob/master/proto/core.rst#id7 for more details.
 # gazelle:proto disable_global
 gazelle(name = "gazelle")
+
+nogo(
+    name = "my_nogo",
+    visibility = ["//visibility:public"],  # must have public visibility
+    # For demonstration purposes only. Uncomment a line in kvstore/main.go for an example of a static analysis violation.
+    deps = [
+        "@org_golang_x_tools//go/analysis/passes/appends:go_default_library",
+    ],
+)
