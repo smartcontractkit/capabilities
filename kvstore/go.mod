@@ -4,7 +4,7 @@ go 1.25.3
 
 require (
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20251008151345-29b06a2ad833
-	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251103172000-d5d077b45137
+	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251104231304-6cbcde243424
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20251021010742-3f8d3dba17d8
 	github.com/smartcontractkit/libocr v0.0.0-20250912173940-f3ab0246e23d
 	github.com/stretchr/testify v1.11.1
@@ -42,7 +42,7 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.26.3 // indirect
 	github.com/hashicorp/go-hclog v1.6.3 // indirect
-	github.com/hashicorp/go-plugin v1.6.3 // indirect
+	github.com/hashicorp/go-plugin v1.7.0 // indirect
 	github.com/hashicorp/yamux v0.1.2 // indirect
 	github.com/iancoleman/strcase v0.3.0 // indirect
 	github.com/invopop/jsonschema v0.13.0 // indirect
