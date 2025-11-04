@@ -4,8 +4,8 @@ go 1.25.3
 
 require (
 	github.com/google/uuid v1.6.0
-	github.com/hashicorp/go-plugin v1.6.3
-	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251103172000-d5d077b45137
+	github.com/hashicorp/go-plugin v1.7.0
+	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251104231304-6cbcde243424
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20251021010742-3f8d3dba17d8
 	github.com/smartcontractkit/libocr v0.0.0-20250912173940-f3ab0246e23d
 	github.com/stretchr/testify v1.11.1

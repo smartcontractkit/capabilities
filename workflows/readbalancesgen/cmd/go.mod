@@ -4,7 +4,7 @@ go 1.25.3
 
 require (
 	github.com/ethereum/go-ethereum v1.15.3
-	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251103172000-d5d077b45137
+	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251104231304-6cbcde243424
 )
 
 require (
