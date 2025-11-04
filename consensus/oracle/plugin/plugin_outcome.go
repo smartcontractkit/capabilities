@@ -156,12 +156,12 @@ func formatValuesForLogging(ctx context.Context, lggr logger.Logger, obsValues [
 		typedValues = append(typedValues, tv)
 	}
 
-	valuesJson, err := json.Encode(ctx, typedValues)
+	valuesJSON, err := json.Encode(ctx, typedValues)
 	if err != nil {
 		lggr.Warnw("could not marshal observation values to json", "error", err)
 		return "could not marshal observation values"
 	}
-	return string(valuesJson)
+	return string(valuesJSON)
 }
 
 // verifyMetadataDescriptorAndDefaultMatchConsensus checks if the observation's metadata, descriptor and default match the consensus.
