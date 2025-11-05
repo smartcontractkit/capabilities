@@ -1,5 +1,8 @@
 load("@rules_go//go:def.bzl", "go_library")
 
+# gazelle:exclude gen.go
+# gazelle:exclude kvcaptest
+
 filegroup(
     name = "schemas",
     srcs = [
@@ -12,10 +15,10 @@ filegroup(
 go_library(
     name = "kvcap",
     srcs = [
-        "kvcaptest/read_action_mock_generated.go",
-        "kvcaptest/write_target_mock_generated.go",
         "kv_read_action_generated.go",
         "kv_write_target_generated.go",
+        "kvcaptest/read_action_mock_generated.go",  # keep
+        "kvcaptest/write_target_mock_generated.go",  # keep
         "read_action_builders_generated.go",
         "write_target_builders_generated.go",
     ],
@@ -23,7 +26,6 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
-        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/cli/cmd",
         "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/consensus/ocr3/ocr3cap",
         "@com_github_smartcontractkit_chainlink_common//pkg/workflows/sdk",
     ],

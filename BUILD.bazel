@@ -19,16 +19,16 @@ nogo(
 sh_binary(
     name = "generate-types",
     srcs = ["//bazel:custom_scripts/generate_types.sh"],
+    args = [
+        "$(location @com_github_smartcontractkit_chainlink_common//pkg/capabilities/cli/cmd/generate-types:generate-types)",
+    ],
     data = [
-        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/cli/cmd/generate-types",
         "//kvstore/kvcap:schemas",
         "//loadtestwritetarget/loadtestwritetargetcap:schemas",
         "//mock/mockcap:schemas",
         "//p2psigner/signercap:schemas",
         "//workflowevent/workfloweventcap:schemas",
-    ],
-    args = [
-        "$(location @com_github_smartcontractkit_chainlink_common//pkg/capabilities/cli/cmd/generate-types:generate-types)",
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/cli/cmd/generate-types",
     ],
     visibility = ["//visibility:public"],
 )

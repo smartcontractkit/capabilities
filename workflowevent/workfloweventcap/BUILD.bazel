@@ -1,5 +1,8 @@
 load("@rules_go//go:def.bzl", "go_library")
 
+# gazelle:exclude gen.go
+# gazelle:exclude workfloweventcaptest
+
 filegroup(
     name = "schemas",
     srcs = [
@@ -11,15 +14,14 @@ filegroup(
 go_library(
     name = "workfloweventcap",
     srcs = [
-        "workfloweventcaptest/target_mock_generated.go",
         "target_builders_generated.go",
         "workflowevent_target_generated.go",
+        "workfloweventcaptest/target_mock_generated.go",  # keep
     ],
     importpath = "github.com/smartcontractkit/capabilities/workflowevent/workfloweventcap",
     visibility = ["//visibility:public"],
     deps = [
         "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
-        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/cli/cmd",
         "@com_github_smartcontractkit_chainlink_common//pkg/workflows/sdk",
     ],
 )

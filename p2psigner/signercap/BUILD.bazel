@@ -1,4 +1,7 @@
-load("@rules_go//go:def.bzl", "go_binary", "go_library")
+load("@rules_go//go:def.bzl", "go_library")
+
+# gazelle:exclude gen.go
+# gazelle:exclude signercaptest
 
 filegroup(
     name = "schemas",
@@ -11,16 +14,14 @@ filegroup(
 go_library(
     name = "signercap",
     srcs = [
-        "signercaptest/action_mock_generated.go",
         "action_builders_generated.go",
         "signer_action_generated.go",
+        "signercaptest/action_mock_generated.go",  # keep
     ],
     importpath = "github.com/smartcontractkit/capabilities/p2psigner/signercap",
     visibility = ["//visibility:public"],
     deps = [
-        # ":generated_cap_types",
         "@com_github_smartcontractkit_chainlink_common//pkg/capabilities",
-        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/cli/cmd",
         "@com_github_smartcontractkit_chainlink_common//pkg/workflows/sdk",
     ],
 )
