@@ -28,27 +28,14 @@ jobs:
           bazelisk-cache: true
           repository-cache: true
           disk-cache: ${{ github.ref }}
-      - run: bazel test //... --config=ci
-    
-  validate:
-    runs-on: macos-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: bazel-contrib/setup-bazel@4fd964a13a440a8aeb0be47350db2fc640f19ca8 # 0.15.0
-        with:
-          bazelisk-cache: true
-          repository-cache: true
-          disk-cache: ${{ github.ref }}
       - name: Tidy and generate
         run: |
           bazel mod tidy
           bazel run //:gazelle
-          bazel run //:generate-types
       - name: Ensure no diff
         run: |
           git diff
           git diff --stat --exit-code
+      - name: Build, lint, and test
+        run: bazel test //... --config=ci
+

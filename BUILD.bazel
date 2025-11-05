@@ -21,7 +21,7 @@ sh_binary(
     srcs = ["//bazel:custom_scripts/generate_types.sh"],
     args = [
         "$(location @com_github_smartcontractkit_chainlink_common//pkg/capabilities/cli/cmd/generate-types:generate-types)",
-        "$(location @rules_go//go:go)",
+        "$(location @rules_go//tools/go_sdk)/bin/go",
     ],
     data = [
         "//kvstore/kvcap:schemas",
@@ -29,7 +29,7 @@ sh_binary(
         "//mock/mockcap:schemas",
         "//p2psigner/signercap:schemas",
         "//workflowevent/workfloweventcap:schemas",
-        "@rules_go//go",
+        "@rules_go//tools/go_sdk",
         "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/cli/cmd/generate-types",
     ],
     visibility = ["//visibility:public"],
