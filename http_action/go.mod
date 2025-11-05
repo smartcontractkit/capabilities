@@ -5,7 +5,7 @@ go 1.25.3
 require (
 	github.com/doyensec/safeurl v0.2.2
 	github.com/google/uuid v1.6.0
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20251105201112-2498ce92235b
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20251105202054-e299af591b47
 	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251105200931-fdbfd5296201
 	github.com/stretchr/testify v1.11.1
 	go.opentelemetry.io/otel v1.38.0
