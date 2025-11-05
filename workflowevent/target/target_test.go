@@ -335,6 +335,8 @@ type mockEmitter struct {
 	EmitFn func(ctx context.Context, body []byte, attrKVs ...any) error
 }
 
+func (e *mockEmitter) Close() error { return nil }
+
 func (e *mockEmitter) Emit(ctx context.Context, body []byte, attrKVs ...any) error {
 	return e.EmitFn(ctx, body, attrKVs...)
 }
