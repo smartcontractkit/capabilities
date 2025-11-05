@@ -1,9 +1,17 @@
 load("@rules_go//go:def.bzl", "go_library")
 
+filegroup(
+    name = "schemas",
+    srcs = [
+        "loadtest_writetarget_action-schema.json",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 go_library(
     name = "loadtestwritetargetcap",
     srcs = [
-        "gen.go",
+        "loadtestwritetargetcaptest/writetarget_action_mock_generated.go",
         "loadtest_writetarget_action_generated.go",
         "writetarget_action_builders_generated.go",
     ],

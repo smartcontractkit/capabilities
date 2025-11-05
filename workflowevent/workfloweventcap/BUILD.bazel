@@ -1,9 +1,17 @@
 load("@rules_go//go:def.bzl", "go_library")
 
+filegroup(
+    name = "schemas",
+    srcs = [
+        "workflowevent_target-schema.json",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 go_library(
     name = "workfloweventcap",
     srcs = [
-        "gen.go",
+        "workfloweventcaptest/target_mock_generated.go",
         "target_builders_generated.go",
         "workflowevent_target_generated.go",
     ],

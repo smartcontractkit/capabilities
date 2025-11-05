@@ -1,9 +1,17 @@
 load("@rules_go//go:def.bzl", "go_library")
 
+filegroup(
+    name = "schemas",
+    srcs = [
+        "mock_trigger-schema.json",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 go_library(
     name = "mockcap",
     srcs = [
-        "gen.go",
+        "mockcaptest/trigger_mock_generated.go",
         "mock_trigger_generated.go",
         "trigger_builders_generated.go",
     ],

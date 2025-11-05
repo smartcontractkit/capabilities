@@ -8,9 +8,27 @@ gazelle(name = "gazelle")
 
 nogo(
     name = "my_nogo",
-    visibility = ["//visibility:public"],  # must have public visibility
+    visibility = ["//visibility:public"],
     # For demonstration purposes only. Uncomment a line in kvstore/main.go for an example of a static analysis violation.
     deps = [
         "@org_golang_x_tools//go/analysis/passes/appends:go_default_library",
     ],
+)
+
+# Generate all types
+sh_binary(
+    name = "generate-types",
+    srcs = ["//bazel:custom_scripts/generate_types.sh"],
+    data = [
+        "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/cli/cmd/generate-types",
+        "//kvstore/kvcap:schemas",
+        "//loadtestwritetarget/loadtestwritetargetcap:schemas",
+        "//mock/mockcap:schemas",
+        "//p2psigner/signercap:schemas",
+        "//workflowevent/workfloweventcap:schemas",
+    ],
+    args = [
+        "$(location @com_github_smartcontractkit_chainlink_common//pkg/capabilities/cli/cmd/generate-types:generate-types)",
+    ],
+    visibility = ["//visibility:public"],
 )

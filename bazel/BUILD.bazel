@@ -2,4 +2,5 @@
 # and makes the patch files within it available to the rest of the build system.
 package(default_visibility = ["//visibility:public"])
 
-exports_files(glob(["**/*.patch"]))
+exports_files(glob(["patches/*.patch"]))
+exports_files(glob(["custom_scripts/*.sh"]))

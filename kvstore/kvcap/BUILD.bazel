@@ -1,9 +1,19 @@
 load("@rules_go//go:def.bzl", "go_library")
 
+filegroup(
+    name = "schemas",
+    srcs = [
+        "kv_read_action-schema.json",
+        "kv_write_target-schema.json",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 go_library(
     name = "kvcap",
     srcs = [
-        "gen.go",
+        "kvcaptest/read_action_mock_generated.go",
+        "kvcaptest/write_target_mock_generated.go",
         "kv_read_action_generated.go",
         "kv_write_target_generated.go",
         "read_action_builders_generated.go",
