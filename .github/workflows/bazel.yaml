@@ -31,11 +31,11 @@ jobs:
       - name: Tidy and generate
         run: |
           bazel mod tidy
-          bazel run //:gazelle --define=CGO_ENABLED=0 --define=GOOS=linux --define=GOARCH=amd64 
+          bazel run //:gazelle --platforms=@rules_go//go/toolchain:linux_amd64
       - name: Ensure no diff
         run: |
           git diff
           git diff --stat --exit-code
       - name: Build, lint, and test
-        run: bazel test //... --config=ci
+        run: bazel test //... --platforms=@rules_go//go/toolchain:linux_amd64 --config=ci
 
