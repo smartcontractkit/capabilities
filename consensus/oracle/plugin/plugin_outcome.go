@@ -3,7 +3,6 @@ package plugin
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"slices"
 	"time"
 
@@ -120,13 +119,8 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, requestI
 	return outcome.AddSuccessfulConsensusRequestOutcomeToBatch(ctx, consensusMDD.Metadata, value, timestamp)
 }
 
-type valueWithType struct {
-	Type  string      `json:"type"`
-	Value interface{} `json:"value"`
-}
-
 func formatValuesForLogging(ctx context.Context, lggr logger.Logger, obsValues []*valuespb.Value) string {
-	var typedValues []*valueWithType
+	var unwrappedValues []any
 	for _, protoVal := range obsValues {
 		val, err := values.FromProto(protoVal)
 		if err != nil {
@@ -134,29 +128,19 @@ func formatValuesForLogging(ctx context.Context, lggr logger.Logger, obsValues [
 			continue
 		}
 
-		var tv *valueWithType
 		if val == nil {
-			tv = &valueWithType{
-				Type:  "nil",
-				Value: nil,
-			}
+			unwrappedValues = append(unwrappedValues, nil)
 		} else {
 			unwrappedValue, err := val.Unwrap()
 			if err != nil {
 				lggr.Warnw("could not unwrap observation value", "error", err)
 				continue
 			}
-
-			tv = &valueWithType{
-				Type:  reflect.TypeOf(unwrappedValue).String(),
-				Value: unwrappedValue,
-			}
+			unwrappedValues = append(unwrappedValues, unwrappedValue)
 		}
-
-		typedValues = append(typedValues, tv)
 	}
 
-	valuesJSON, err := json.Encode(ctx, typedValues)
+	valuesJSON, err := json.Encode(ctx, unwrappedValues)
 	if err != nil {
 		lggr.Warnw("could not marshal observation values to json", "error", err)
 		return "could not marshal observation values"
