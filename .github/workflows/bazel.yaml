@@ -43,10 +43,12 @@ jobs:
           bazelisk-cache: true
           repository-cache: true
           disk-cache: ${{ github.ref }}
-      - run: |
+      - name: Tidy and generate
+        run: |
           bazel mod tidy
           bazel run //:gazelle
           bazel run //:generate-types
-      - run: |
+      - name: Ensure no diff
+        run: |
           git diff
           git diff --stat --exit-code
