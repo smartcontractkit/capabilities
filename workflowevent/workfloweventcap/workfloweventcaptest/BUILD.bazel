@@ -1,0 +1,12 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "workfloweventcaptest",
+    srcs = ["target_mock_generated.go"],
+    importpath = "github.com/smartcontractkit/capabilities/workflowevent/workfloweventcap/workfloweventcaptest",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//workflowevent/workfloweventcap",
+        "@com_github_smartcontractkit_chainlink_common//pkg/workflows/sdk/testutils",
+    ],
+)

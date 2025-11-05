@@ -1,7 +1,6 @@
 load("@rules_go//go:def.bzl", "go_library")
 
 # gazelle:exclude gen.go
-# gazelle:exclude signercaptest
 
 filegroup(
     name = "schemas",
@@ -16,7 +15,6 @@ go_library(
     srcs = [
         "action_builders_generated.go",
         "signer_action_generated.go",
-        "signercaptest/action_mock_generated.go",  # keep
     ],
     importpath = "github.com/smartcontractkit/capabilities/p2psigner/signercap",
     visibility = ["//visibility:public"],

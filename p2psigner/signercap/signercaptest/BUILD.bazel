@@ -1,0 +1,12 @@
+load("@rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "signercaptest",
+    srcs = ["action_mock_generated.go"],
+    importpath = "github.com/smartcontractkit/capabilities/p2psigner/signercap/signercaptest",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//p2psigner/signercap",
+        "@com_github_smartcontractkit_chainlink_common//pkg/workflows/sdk/testutils",
+    ],
+)

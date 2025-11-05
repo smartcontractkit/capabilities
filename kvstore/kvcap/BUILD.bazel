@@ -1,7 +1,6 @@
 load("@rules_go//go:def.bzl", "go_library")
 
 # gazelle:exclude gen.go
-# gazelle:exclude kvcaptest
 
 filegroup(
     name = "schemas",
@@ -17,8 +16,6 @@ go_library(
     srcs = [
         "kv_read_action_generated.go",
         "kv_write_target_generated.go",
-        "kvcaptest/read_action_mock_generated.go",  # keep
-        "kvcaptest/write_target_mock_generated.go",  # keep
         "read_action_builders_generated.go",
         "write_target_builders_generated.go",
     ],
