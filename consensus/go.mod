@@ -5,8 +5,8 @@ go 1.25.3
 require (
 	github.com/jonboulle/clockwork v0.5.0
 	github.com/shopspring/decimal v1.4.0
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20250930133443-a868d4d9dee8
-	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251104231304-6cbcde243424
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20251105201112-2498ce92235b
+	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251105200931-fdbfd5296201
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20251021010742-3f8d3dba17d8
 	github.com/smartcontractkit/cre-sdk-go v0.9.0
 	github.com/smartcontractkit/libocr v0.0.0-20250912173940-f3ab0246e23d

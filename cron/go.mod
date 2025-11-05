@@ -6,8 +6,8 @@ require (
 	github.com/go-co-op/gocron/v2 v2.16.4
 	github.com/google/uuid v1.6.0
 	github.com/jonboulle/clockwork v0.5.0
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20251009230932-4a8bcf6901b9
-	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251104231304-6cbcde243424
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20251105201112-2498ce92235b
+	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251105200931-fdbfd5296201
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20251021010742-3f8d3dba17d8
 	github.com/stretchr/testify v1.11.1
 	go.opentelemetry.io/otel v1.38.0

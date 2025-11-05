@@ -9,12 +9,12 @@ import (
 )
 
 func main() {
-	loopserver.ServeNewWithOtelViews(trigger.ServiceName, func(s *loop.Server) loop.StandardCapabilities {
+	loopserver.ServeNew(trigger.ServiceName, func(s *loop.Server) loop.StandardCapabilities {
 		triggerService, err := trigger.NewTriggerService(s.Logger, nil)
 		if err != nil {
 			s.Logger.Fatalw("Failed to create cron trigger service", "error", err)
 		}
 
 		return server.NewCronServer(triggerService)
-	}, trigger.MetricViews())
+	}, loop.WithOtelViews(trigger.MetricViews()))
 }

@@ -5,9 +5,9 @@ go 1.25.3
 require (
 	github.com/ethereum/go-ethereum v1.16.2
 	github.com/google/go-cmp v0.7.0
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20251029163136-cc7d29bfa08a
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20251105201112-2498ce92235b
 	github.com/smartcontractkit/chain-selectors v1.0.67
-	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251104231304-6cbcde243424
+	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251105200931-fdbfd5296201
 	github.com/smartcontractkit/chainlink-evm v0.3.4-0.20251020152820-5fb041bf92b7
 	github.com/smartcontractkit/chainlink-evm/gethwrappers v0.0.0-20250827130336-5922343458be
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20251021010742-3f8d3dba17d8
