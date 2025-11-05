@@ -2,6 +2,8 @@
 set -euo pipefail
 
 GO_GENERATOR_TOOL="$1"
+GO_EXECUTABLE_PATH="$2"
+export PATH="${GO_EXECUTABLE_PATH}:${PATH}"
 
 find "." -name "*-schema.json" | while read -r SCHEMA_FILE_PATH; do
     echo "Processing schema file: ${SCHEMA_FILE_PATH}"
