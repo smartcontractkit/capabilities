@@ -71,7 +71,7 @@ message ConsensusFailedOutcome {
 message Outcome {
   repeated ConsensusOutcome outcomes = 1;
 
-  // A record of the seq nr when the outcome was calculated for recent historical outcomes
+  // A record of the sequence number when the outcome for each request ID was calculated, used for tracking recent historical outcomes
   map<string, uint64> historical_outcomes = 2;
 }
 

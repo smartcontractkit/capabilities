@@ -99,7 +99,7 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, requestI
 
 	if len(errors) >= r.f+1 {
 		consensusFailedMsg := fmt.Sprintf(
-			"consensus calculation failed: received %d errors which is >= f+1 (%d) for requestID %s\nconsensus metadata, descriptor and default: %+v\nerrors received: %+v",
+			"consensus calculation failed: received %d errors which is >= f+1 (%d) for requestID %s; Consensus metadata, descriptor and default: %+v; Errors received: %+v",
 			len(errors), r.f+1, requestID, consensusMDD, errors,
 		)
 		return outcome.FailConsensusWithDefaultCheck(ctx, r.lggr, requestID, consensusFailedMsg, consensusMDD, timestamp)
@@ -110,7 +110,7 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, requestI
 	if err != nil {
 		valuesJSON := formatValuesForLogging(ctx, r.lggr, obsValues)
 		consensusFailedMsg := fmt.Sprintf(
-			"consensus calculation failed: %v\nconsensus metadata, descriptor and default:\n %+v\nvalues received: %s\nerrors received: %+v",
+			"consensus calculation failed: %v; Consensus metadata, descriptor and default: %+v; Values received: %s; Errors received: %+v",
 			err, consensusMDD, valuesJSON, errors,
 		)
 		return outcome.FailConsensusWithDefaultCheck(ctx, r.lggr, requestID, consensusFailedMsg, consensusMDD, timestamp)

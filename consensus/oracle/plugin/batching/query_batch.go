@@ -58,7 +58,7 @@ func (qb *QueryBatch) SerialiseQueryBatch() ([]byte, error) {
 		return nil, fmt.Errorf("failed to serialise batch of request ids: %w", err)
 	}
 
-	qb.lggr.Debugw("serialised batch of request ids", "numRequests", len(qb.RequestIDs),
+	qb.lggr.Debugw("serialised batch of request ids", "RequestIDs", qb.RequestIDs,
 		"actualSizeBytes", len(serialisedBatch), "calculatedSizeBytes", qb.currentSerialisedBatchSize,
 		"maxQueryLengthBytes", qb.maxQueryLengthBytes)
 
