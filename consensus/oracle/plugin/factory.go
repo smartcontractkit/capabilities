@@ -33,7 +33,6 @@ type factory struct {
 	// Request timeout is set by the plugin factory and used by the reporting plugin to set the timeout for requests
 	// created in the capability
 	setRequestTimeout SetRequestTimeout
-	batchSize         int
 	lggr              logger.Logger
 	metrics           *metrics.Metrics
 
@@ -43,11 +42,10 @@ type factory struct {
 }
 
 func NewReportingPluginFactory(lggr logger.Logger, metrics *metrics.Metrics, s *requests.Store[*oracle.ConsensusRequest],
-	setRequestTimeout SetRequestTimeout, batchSize int, defaultKeyBundleIDForConsensusFailure string) (*factory, error) {
+	setRequestTimeout SetRequestTimeout, defaultKeyBundleIDForConsensusFailure string) (*factory, error) {
 	return &factory{
 		store:                                 s,
 		setRequestTimeout:                     setRequestTimeout,
-		batchSize:                             batchSize,
 		lggr:                                  logger.Named(lggr, "ConsensusCapabilityPluginFactory"),
 		metrics:                               metrics,
 		defaultKeyBundleIDForConsensusFailure: defaultKeyBundleIDForConsensusFailure,
