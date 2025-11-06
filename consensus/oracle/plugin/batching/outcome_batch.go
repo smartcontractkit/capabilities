@@ -21,16 +21,12 @@ import (
 type OutcomeBatch struct {
 	oracletypes.Outcome
 
-	lggr logger.Logger
-
+	lggr    logger.Logger
 	metrics metrics
 
-	outctx ocr3types.OutcomeContext
-
-	maxOutcomeLengthBytes int
-
-	currentSerialisedBatchSize int
-
+	outctx                         ocr3types.OutcomeContext
+	maxOutcomeLengthBytes          int
+	currentSerialisedBatchSize     int
 	keybundleIDForConsensusFailure string
 }
 
