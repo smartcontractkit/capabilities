@@ -62,7 +62,6 @@ message ConsensusSuccessOutcome {
   google.protobuf.Timestamp timestamp = 3;
 }
 
-
 message ConsensusFailedOutcome {
   string requestID = 1;
   string failure_message = 2;
