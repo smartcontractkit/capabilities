@@ -599,7 +599,7 @@ func (x *ConsensusFailedOutcome) GetKeyBundleId() string {
 type Outcome struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	Outcomes []*ConsensusOutcome    `protobuf:"bytes,1,rep,name=outcomes,proto3" json:"outcomes,omitempty"`
-	// A record of the seq nr when the outcome was calculated for recent historical outcomes
+	// A record of the sequence number when the outcome for each request ID was calculated, used for tracking recent historical outcomes
 	HistoricalOutcomes map[string]uint64 `protobuf:"bytes,2,rep,name=historical_outcomes,json=historicalOutcomes,proto3" json:"historical_outcomes,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
