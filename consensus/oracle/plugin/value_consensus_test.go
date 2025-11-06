@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -15,31 +14,32 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/smartcontractkit/capabilities/consensus/metrics"
+	"github.com/smartcontractkit/capabilities/consensus/oracle"
 	"github.com/smartcontractkit/capabilities/consensus/oracle/plugin"
+	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	pbtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
+
 	"github.com/smartcontractkit/libocr/commontypes"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
 	libocrTypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
-
-	"github.com/smartcontractkit/capabilities/consensus/oracle"
-	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
 )
 
 type consensusPluginTest struct {
-	requests     []*oracle.ConsensusRequest
-	verifyReport func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct)
+	requests                        []*oracle.ConsensusRequest
+	verifyReport                    func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct)
+	expectedConsensusFailureMessage string
 }
 
 const n = 7
 const f = 2
-const batchSize = 10
 const defaultMaxLengthBytes = 1000000 // 1 MB
 
 // nillable observation and nillable default value, -1 indicates the value should be set as nil
@@ -57,6 +57,57 @@ func newSliceCr(t *testing.T, observation []byte, def []byte, metaData oracle.Co
 	}
 
 	return oracle.NewConsensusRequest(serializeDeserialize(t, simpleConsensusInputs), time.Now(), time.Now().Add(1*time.Hour).UTC(), nil, metaData)
+}
+
+func Test_InsufficientIdenticalObservations(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := t.Context()
+
+	md1 := newRequestMetaData()
+
+	reqToObservations := map[string]*consensusPluginTest{
+		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newIdenticalCr(t, 110, md1), newIdenticalCr(t, 110, md1),
+			newIdenticalCr(t, 120, md1), newIdenticalCr(t, 120, md1),
+			newIdenticalCr(t, 130, md1), newIdenticalCr(t, 130, md1),
+			newIdenticalCr(t, 140, md1), newIdenticalCr(t, 140, md1),
+		},
+			expectedConsensusFailureMessage: "no values met f+1 threshold"},
+	}
+
+	runProtocolRoundTests(ctx, t, lggr, n, f, reqToObservations)
+}
+
+func Test_InsufficientIdenticalMapObservations(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := t.Context()
+
+	md1 := newRequestMetaData()
+
+	type testStruct struct {
+		Field1 int
+	}
+
+	reqToObservations := map[string]*consensusPluginTest{
+		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newIdenticalValueCr(t, mustWrap(t, testStruct{Field1: 100}), md1),
+			newIdenticalValueCr(t, mustWrap(t, testStruct{Field1: 110}), md1),
+			newIdenticalValueCr(t, mustWrap(t, testStruct{Field1: 120}), md1),
+			newIdenticalValueCr(t, mustWrap(t, testStruct{Field1: 130}), md1),
+			newIdenticalValueCr(t, mustWrap(t, testStruct{Field1: 140}), md1),
+			newIdenticalValueCr(t, mustWrap(t, testStruct{Field1: 150}), md1),
+			newIdenticalValueCr(t, mustWrap(t, testStruct{Field1: 160}), md1),
+		},
+			expectedConsensusFailureMessage: "no values met f+1 threshold"},
+	}
+
+	runProtocolRoundTests(ctx, t, lggr, n, f, reqToObservations)
+}
+
+func mustWrap(t *testing.T, v any) values.Value {
+	val, err := values.Wrap(v)
+	require.NoError(t, err)
+	return val
 }
 
 func Test_SliceObservationAndDefaults(t *testing.T) {
@@ -85,15 +136,15 @@ func Test_SliceObservationAndDefaults(t *testing.T) {
 
 		// Test with just defaults as byte slices
 		md2.RequestID(): {requests: []*oracle.ConsensusRequest{
-			newSliceCr(t, nil, []byte("otherstuff"), md2),
-			newSliceCr(t, nil, []byte("otherstuff"), md2),
-			newSliceCr(t, nil, []byte("otherstuff"), md2),
-			newSliceCr(t, nil, []byte("otherstuff"), md2),
-			newSliceCr(t, nil, []byte("otherstuff"), md2),
-			newSliceCr(t, nil, []byte("otherstuff"), md2),
-			newSliceCr(t, nil, []byte("otherstuff"), md2)},
+			newSliceCr(t, []byte{}, []byte("otherstuff"), md2),
+			newSliceCr(t, []byte{}, []byte("otherstuff"), md2),
+			newSliceCr(t, []byte{}, []byte("otherstuff"), md2),
+			newSliceCr(t, []byte{}, []byte("otherstuff"), md2),
+			newSliceCr(t, []byte{}, []byte("otherstuff"), md2),
+			newSliceCr(t, []byte{}, []byte("otherstuff"), md2),
+			newSliceCr(t, []byte{}, []byte("otherstuff"), md2)},
 			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
-				val, err := values.Wrap([]byte("otherstuff"))
+				val, err := values.Wrap([]byte{})
 				require.NoError(t, err)
 
 				verifyValueConsensusReport(t, report, infos, val, "")
@@ -101,13 +152,13 @@ func Test_SliceObservationAndDefaults(t *testing.T) {
 
 		// Test with a mixture of observations and defaults as byte slices
 		md2.RequestID(): {requests: []*oracle.ConsensusRequest{
-			newSliceCr(t, nil, []byte("otherstuff"), md2),
-			newSliceCr(t, nil, []byte("otherstuff"), md2),
+			newSliceCr(t, []byte("guff"), []byte("otherstuff"), md2),
+			newSliceCr(t, []byte("somestuff"), []byte("otherstuff"), md2),
 			newSliceCr(t, []byte("stuff"), []byte("otherstuff"), md2),
 			newSliceCr(t, nil, []byte("otherstuff"), md2),
 			newSliceCr(t, nil, []byte("otherstuff"), md2),
 			newSliceCr(t, []byte("stuff"), []byte("otherstuff"), md2),
-			newSliceCr(t, nil, []byte("otherstuff"), md2)},
+			newSliceCr(t, []byte("somestuff"), []byte("otherstuff"), md2)},
 			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
 				val, err := values.Wrap([]byte("otherstuff"))
 				require.NoError(t, err)
@@ -116,7 +167,7 @@ func Test_SliceObservationAndDefaults(t *testing.T) {
 			}},
 	}
 
-	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
+	runProtocolRoundTests(ctx, t, lggr, n, f, reqToObservations)
 }
 
 func Test_MismatchedLeaderConsensusDescriptor(t *testing.T) {
@@ -125,24 +176,17 @@ func Test_MismatchedLeaderConsensusDescriptor(t *testing.T) {
 
 	metaData := newRequestMetaData()
 
-	newCrIdenticalConsensus := func(observation int64, metaData oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
-		simpleConsensusInputs := &sdk.SimpleConsensusInputs{
-			Observation: &sdk.SimpleConsensusInputs_Value{Value: values.Proto(values.NewInt64(observation))},
-			Descriptors: &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL}},
-		}
-
-		return oracle.NewConsensusRequest(simpleConsensusInputs, time.Now().Add(1*time.Hour).UTC(), time.Now(), nil, metaData)
-	}
-
 	protocolRoundTests := map[string]*consensusPluginTest{
 		metaData.RequestID(): {requests: []*oracle.ConsensusRequest{
-			newCrIdenticalConsensus(110, metaData), newCr(t, 120, metaData), newCr(t, 130, metaData),
+			newIdenticalCr(t, 110, metaData), newCr(t, 120, metaData), newCr(t, 130, metaData),
 			newCr(t, 140, metaData), newCr(t, 150, metaData), newCr(t, 160, metaData),
 			newCr(t, 170, metaData)},
-			verifyReport: nil},
+			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
+				verifyValueConsensusReport(t, report, infos, values.NewInt64(140), "")
+			}},
 	}
 
-	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, protocolRoundTests)
+	runProtocolRoundTests(ctx, t, lggr, n, f, protocolRoundTests)
 }
 
 func Test_MismatchedNonLeaderConsensusDescriptor(t *testing.T) {
@@ -170,7 +214,7 @@ func Test_MismatchedNonLeaderConsensusDescriptor(t *testing.T) {
 			}},
 	}
 
-	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, protocolRoundTests)
+	runProtocolRoundTests(ctx, t, lggr, n, f, protocolRoundTests)
 }
 
 func Test_MismatchedLeaderMetaData(t *testing.T) {
@@ -187,10 +231,13 @@ func Test_MismatchedLeaderMetaData(t *testing.T) {
 			newCr(t, 110, leaderMetaData), newCr(t, 120, metaData), newCr(t, 130, metaData),
 			newCr(t, 140, metaData), newCr(t, 150, metaData), newCr(t, 160, metaData),
 			newCr(t, 170, metaData)},
-			verifyReport: nil},
+			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
+				verifyValueConsensusReport(t, report, infos, values.NewInt64(140), "")
+			},
+		},
 	}
 
-	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, protocolRoundTests)
+	runProtocolRoundTests(ctx, t, lggr, n, f, protocolRoundTests)
 }
 
 func Test_MismatchedNonLeaderMetaData(t *testing.T) {
@@ -212,7 +259,7 @@ func Test_MismatchedNonLeaderMetaData(t *testing.T) {
 			}},
 	}
 
-	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, protocolRoundTests)
+	runProtocolRoundTests(ctx, t, lggr, n, f, protocolRoundTests)
 }
 
 func Test_ObservationDefaults(t *testing.T) {
@@ -246,15 +293,15 @@ func Test_ObservationDefaults(t *testing.T) {
 
 		// Test insufficient non-nil observations but with sufficient matching defaults
 		md3.RequestID(): {requests: []*oracle.ConsensusRequest{
-			newNillableCr(t, 10, 40, md3), newNillableCr(t, 20, 40, md3), newNillableCr(t, 30, 40, md3),
-			newNillableCr(t, 35, 40, md3), newNillableCr(t, -1, 40, md3), newNillableCr(t, -1, 40, md3),
+			newNillableCr(t, 10, 40, md3), newNillableCr(t, -1, 40, md3), newNillableCr(t, 30, 40, md3),
+			newNillableCr(t, -1, 40, md3), newNillableCr(t, -1, 40, md3), newNillableCr(t, -1, 40, md3),
 			newNillableCr(t, -1, 40, md3)},
 			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
-				verifyValueConsensusReport(t, report, infos, values.NewInt64(35), "")
+				verifyValueConsensusReport(t, report, infos, values.NewInt64(40), "")
 			}},
 	}
 
-	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
+	runProtocolRoundTests(ctx, t, lggr, n, f, reqToObservations)
 }
 
 func Test_ReceivedAllObservationsFromAllNodes(t *testing.T) {
@@ -284,37 +331,7 @@ func Test_ReceivedAllObservationsFromAllNodes(t *testing.T) {
 			}},
 	}
 
-	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
-}
-
-func Test_ReceivedObservationsWithErrors(t *testing.T) {
-	lggr := logger.Test(t)
-	ctx := t.Context()
-
-	md1 := newRequestMetaData()
-	md2 := newRequestMetaData()
-
-	md1.KeyBundleID = "evm"
-
-	reqToObservations := map[string]*consensusPluginTest{
-		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
-			newCr(t, 10, md1), newCrWithError(t, errors.New("its broken"), md1), newCr(t, 30, md1),
-			newCr(t, 40, md1), newCr(t, 50, md1), newCr(t, 60, md1),
-			newCr(t, 70, md1)},
-			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
-				verifyValueConsensusReport(t, report, infos, values.NewInt64(40), "evm")
-			}},
-
-		md2.RequestID(): {requests: []*oracle.ConsensusRequest{
-			newCr(t, 110, md2), newCr(t, 120, md2), newCr(t, 130, md2),
-			newCr(t, 140, md2), newCr(t, 150, md2), newCr(t, 160, md2),
-			newCrWithError(t, errors.New("its broken"), md2)},
-			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
-				verifyValueConsensusReport(t, report, infos, values.NewInt64(130), "")
-			}},
-	}
-
-	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
+	runProtocolRoundTests(ctx, t, lggr, n, f, reqToObservations)
 }
 
 func Test_ReceivedObservationsWithMatchingDefaults(t *testing.T) {
@@ -334,7 +351,7 @@ func Test_ReceivedObservationsWithMatchingDefaults(t *testing.T) {
 			}},
 	}
 
-	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
+	runProtocolRoundTests(ctx, t, lggr, n, f, reqToObservations)
 }
 
 // In this test some nodes have observations that match the default, and some have observations that do not match the default
@@ -356,7 +373,7 @@ func Test_ReceivedObservationsWithSomeMisMatchedDefaults_SufficientForConsensus(
 			}},
 	}
 
-	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
+	runProtocolRoundTests(ctx, t, lggr, n, f, reqToObservations)
 }
 
 // In this test some nodes have observations that match the default, and some have observations that do not match the default
@@ -371,16 +388,41 @@ func Test_ReceivedObservationsWithSomeMisMatchedDefaults_InsufficientForConsensu
 	reqToObservations := map[string]*consensusPluginTest{
 		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
 			newCrWithObsAndDef(t, 10, 17, md1), newCrWithObsAndDef(t, 20, 12, md1), newCrWithObsAndDef(t, 30, 17, md1),
-			newCrWithObsAndDef(t, 40, 16, md1), newCrWithObsAndDef(t, 50, 17, md1), newCrWithObsAndDef(t, 60, 11, md1),
-			newCrWithObsAndDef(t, 70, 17, md1)},
-			verifyReport: nil},
+			newCrWithObsAndDef(t, 40, 16, md1), newCrWithObsAndDef(t, 50, 15, md1), newCrWithObsAndDef(t, 60, 11, md1),
+			newCrWithObsAndDef(t, 70, 15, md1)},
+			expectedConsensusFailureMessage: "failed to calculate consensus metadata, descriptor and default for request: no values met f+1 threshold"},
 	}
 
-	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
+	runProtocolRoundTests(ctx, t, lggr, n, f, reqToObservations)
 }
 
-// In this test other nodes have observations that do not match the leader's default
-func Test_LeaderNodeMisMatchedDefault_InsufficientForConsensus(t *testing.T) {
+func Test_MisMatchedDefaults_SufficientForConsensus_ReturnsDefault(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := t.Context()
+
+	md1 := newRequestMetaData()
+	md1.KeyBundleID = "evm"
+
+	md2 := md1
+	md2.WorkflowOwner = generateRandomHexString(20)
+
+	md3 := md1
+	md3.WorkflowOwner = generateRandomHexString(20)
+
+	reqToObservations := map[string]*consensusPluginTest{
+		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newIdenticalCrWithDefault(t, 10, 14, md2), newIdenticalCrWithDefault(t, 20, 17, md3), newIdenticalCrWithDefault(t, 30, 17, md3),
+			newIdenticalCrWithDefault(t, 40, 16, md1), newIdenticalCrWithDefault(t, 50, 17, md3), newIdenticalCrWithDefault(t, 60, 15, md1),
+			newIdenticalCrWithDefault(t, 70, 19, md1)},
+			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
+				verifyValueConsensusReport(t, report, infos, values.NewInt64(17), "evm")
+			}},
+	}
+
+	runProtocolRoundTests(ctx, t, lggr, n, f, reqToObservations)
+}
+
+func Test_MisMatchedDefaults_InsufficientForConsensus(t *testing.T) {
 	lggr := logger.Test(t)
 	ctx := t.Context()
 
@@ -389,13 +431,13 @@ func Test_LeaderNodeMisMatchedDefault_InsufficientForConsensus(t *testing.T) {
 
 	reqToObservations := map[string]*consensusPluginTest{
 		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
-			newCrWithObsAndDef(t, 10, 14, md1), newCrWithObsAndDef(t, 20, 17, md1), newCrWithObsAndDef(t, 30, 17, md1),
-			newCrWithObsAndDef(t, 40, 17, md1), newCrWithObsAndDef(t, 50, 17, md1), newCrWithObsAndDef(t, 60, 17, md1),
+			newCrWithObsAndDef(t, 10, 14, md1), newCrWithObsAndDef(t, 20, 15, md1), newCrWithObsAndDef(t, 30, 15, md1),
+			newCrWithObsAndDef(t, 40, 16, md1), newCrWithObsAndDef(t, 50, 16, md1), newCrWithObsAndDef(t, 60, 17, md1),
 			newCrWithObsAndDef(t, 70, 17, md1)},
-			verifyReport: nil},
+			expectedConsensusFailureMessage: "failed to calculate consensus metadata, descriptor and default for request: no values met f+1 threshold"},
 	}
 
-	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
+	runProtocolRoundTests(ctx, t, lggr, n, f, reqToObservations)
 }
 
 func Test_MissingButSufficientObservations(t *testing.T) {
@@ -428,7 +470,7 @@ func Test_MissingButSufficientObservations(t *testing.T) {
 			verifyReport: nil},
 	}
 
-	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
+	runProtocolRoundTests(ctx, t, lggr, n, f, reqToObservations)
 }
 
 func Test_InsufficientObservations(t *testing.T) {
@@ -456,7 +498,7 @@ func Test_InsufficientObservations(t *testing.T) {
 			verifyReport: nil},
 	}
 
-	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
+	runProtocolRoundTests(ctx, t, lggr, n, f, reqToObservations)
 }
 
 func Test_LeaderHasNoMatchingRequest(t *testing.T) {
@@ -485,7 +527,7 @@ func Test_LeaderHasNoMatchingRequest(t *testing.T) {
 			verifyReport: nil},
 	}
 
-	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
+	runProtocolRoundTests(ctx, t, lggr, n, f, reqToObservations)
 }
 
 func Test_WithOutcomeContext(t *testing.T) {
@@ -506,7 +548,7 @@ func Test_WithOutcomeContext(t *testing.T) {
 			}},
 	}
 
-	runProtocolRoundTests(ctx, t, lggr, n, f, batchSize, reqToObservations)
+	runProtocolRoundTests(ctx, t, lggr, n, f, reqToObservations)
 }
 
 func newRequestMetaData() oracle.ConsensusRequestMetadata {
@@ -538,13 +580,37 @@ func generateRandomHexString(byteLength int) string {
 	return hex.EncodeToString(randomBytes)
 }
 
-func newCr(t *testing.T, observation int64, metaData oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
-	defaultVal, err := values.Wrap(nil)
-	require.NoError(t, err, "failed to wrap default value")
-
+func newIdenticalCr(t *testing.T, observation int64, metaData oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
 	simpleConsensusInputs := &sdk.SimpleConsensusInputs{
 		Observation: &sdk.SimpleConsensusInputs_Value{Value: values.Proto(values.NewInt64(observation))},
-		Default:     values.Proto(defaultVal),
+		Descriptors: &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL}},
+	}
+
+	return oracle.NewConsensusRequest(serializeDeserialize(t, simpleConsensusInputs), time.Now(), time.Now().Add(1*time.Hour).UTC(), nil, metaData)
+}
+
+func newIdenticalValueCr(t *testing.T, observation values.Value, metaData oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
+	simpleConsensusInputs := &sdk.SimpleConsensusInputs{
+		Observation: &sdk.SimpleConsensusInputs_Value{Value: values.Proto(observation)},
+		Descriptors: &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL}},
+	}
+
+	return oracle.NewConsensusRequest(serializeDeserialize(t, simpleConsensusInputs), time.Now(), time.Now().Add(1*time.Hour).UTC(), nil, metaData)
+}
+
+func newIdenticalCrWithDefault(t *testing.T, observation int64, defaultObs int64, metaData oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
+	simpleConsensusInputs := &sdk.SimpleConsensusInputs{
+		Observation: &sdk.SimpleConsensusInputs_Value{Value: values.Proto(values.NewInt64(observation))},
+		Default:     values.Proto(values.NewInt64(defaultObs)),
+		Descriptors: &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL}},
+	}
+
+	return oracle.NewConsensusRequest(serializeDeserialize(t, simpleConsensusInputs), time.Now(), time.Now().Add(1*time.Hour).UTC(), nil, metaData)
+}
+
+func newCr(t *testing.T, observation int64, metaData oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
+	simpleConsensusInputs := &sdk.SimpleConsensusInputs{
+		Observation: &sdk.SimpleConsensusInputs_Value{Value: values.Proto(values.NewInt64(observation))},
 		Descriptors: &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_MEDIAN}},
 	}
 
@@ -562,14 +628,22 @@ func serializeDeserialize(t *testing.T, simpleConsensusInputs *sdk.SimpleConsens
 }
 
 func newCrWithError(t *testing.T, crErr error, metaData oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
-	defaultVal, err := values.Wrap(nil)
-	require.NoError(t, err, "failed to wrap default value")
-
 	simpleConsensusInputs := &sdk.SimpleConsensusInputs{
 		Observation: &sdk.SimpleConsensusInputs_Error{
 			Error: crErr.Error(),
 		},
-		Default:     values.Proto(defaultVal),
+		Descriptors: &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_MEDIAN}},
+	}
+
+	return oracle.NewConsensusRequest(serializeDeserialize(t, simpleConsensusInputs), time.Now(), time.Now().Add(1*time.Hour).UTC(), nil, metaData)
+}
+
+func newCrWithErrorAndDefault(t *testing.T, crErr error, def int64, metaData oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
+	simpleConsensusInputs := &sdk.SimpleConsensusInputs{
+		Observation: &sdk.SimpleConsensusInputs_Error{
+			Error: crErr.Error(),
+		},
+		Default:     values.Proto(values.NewInt64(def)),
 		Descriptors: &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_MEDIAN}},
 	}
 
@@ -591,23 +665,27 @@ func newNillableCr(t *testing.T, observation int64, def int64, metaData oracle.C
 	observationVal, err := values.Wrap(nil)
 	require.NoError(t, err, "failed to wrap nil value")
 
-	defaultVal, err := values.Wrap(nil)
-	require.NoError(t, err, "failed to wrap nil value")
+	var defaultVal values.Value
 
 	if observation != -1 {
 		observationVal, err = values.Wrap(values.NewInt64(observation))
 		require.NoError(t, err, "failed to wrap observation value")
 	}
 
+	var simpleConsensusInputs *sdk.SimpleConsensusInputs
 	if def != -1 {
 		defaultVal, err = values.Wrap(values.NewInt64(def))
 		require.NoError(t, err, "failed to wrap default value")
-	}
-
-	simpleConsensusInputs := &sdk.SimpleConsensusInputs{
-		Observation: &sdk.SimpleConsensusInputs_Value{Value: values.Proto(observationVal)},
-		Default:     values.Proto(defaultVal),
-		Descriptors: &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_MEDIAN}},
+		simpleConsensusInputs = &sdk.SimpleConsensusInputs{
+			Observation: &sdk.SimpleConsensusInputs_Value{Value: values.Proto(observationVal)},
+			Default:     values.Proto(defaultVal),
+			Descriptors: &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_MEDIAN}},
+		}
+	} else {
+		simpleConsensusInputs = &sdk.SimpleConsensusInputs{
+			Observation: &sdk.SimpleConsensusInputs_Value{Value: values.Proto(observationVal)},
+			Descriptors: &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_MEDIAN}},
+		}
 	}
 
 	return oracle.NewConsensusRequest(serializeDeserialize(t, simpleConsensusInputs), time.Now(), time.Now().Add(1*time.Hour).UTC(), nil, metaData)
@@ -618,19 +696,18 @@ type pluginAndRequestStore struct {
 	store  *requests.Store[*oracle.ConsensusRequest]
 }
 
-func runProtocolRoundTests(ctx context.Context, t *testing.T, lggr logger.Logger, n, f, batchSize int,
-	reqToObservations map[string]*consensusPluginTest) {
-	pluginAndRequestStores := createPluginsAndStores(n, t, lggr, f, batchSize, 5)
+func runProtocolRoundTests(ctx context.Context, t *testing.T, lggr logger.Logger, n, f int, reqToObservations map[string]*consensusPluginTest) {
+	pluginAndRequestStores := createPluginsAndStores(n, t, lggr, f, 5)
 
 	addRequestsToAllStores(pluginAndRequestStores, reqToObservations, t)
 	runProtocolRoundTestsWithPlugins(ctx, t, reqToObservations, pluginAndRequestStores, ocr3types.OutcomeContext{})
 }
 
-func createPluginsAndStores(n int, t *testing.T, lggr logger.Logger, f int, batchSize int, outcomeExpirySpan uint64) []pluginAndRequestStore {
+func createPluginsAndStores(n int, t *testing.T, lggr logger.Logger, f int, outcomeExpirySpan uint64) []pluginAndRequestStore {
 	var pluginAndRequestStores []pluginAndRequestStore
 
 	for i := 0; i < n; i++ {
-		reportingPlugin, reqStore := createReportingPlugin(t, lggr, f, n, batchSize, outcomeExpirySpan)
+		reportingPlugin, reqStore := createReportingPlugin(t, lggr, f, n, outcomeExpirySpan)
 		pluginAndRequestStores = append(pluginAndRequestStores, pluginAndRequestStore{
 			plugin: reportingPlugin,
 			store:  reqStore,
@@ -703,14 +780,7 @@ func runProtocolRoundTestsWithPlugins(ctx context.Context, t *testing.T,
 		err = proto.Unmarshal(nodeOutcomes[0], outcome)
 		require.NoError(t, err, "failed to unmarshal value from outcome")
 
-		var successfulOutcomes []ocr3types.Outcome
-		for _, ro := range outcome.Outcomes {
-			if ro.Status == oracletypes.RequestStatus_REQUEST_STATUS_CONSENSUS_SUCCESS {
-				successfulOutcomes = append(successfulOutcomes, ro.Outcome)
-			}
-		}
-
-		require.Len(t, reports, len(successfulOutcomes), "reporting plugin returned wrong number of reports")
+		require.Len(t, reports, len(outcome.Outcomes), "reporting plugin returned wrong number of reports")
 		allReports = append(allReports, reports)
 	}
 
@@ -733,26 +803,44 @@ func runProtocolRoundTestsWithPlugins(ctx context.Context, t *testing.T,
 	// Get reports and verify the value selected
 	reports := allReports[0]
 	receivedReportForRequestIDs := map[string]bool{}
+	receivedFailureMessageForRequestIDs := map[string]bool{}
 	for _, report := range reports {
-		serialisedValue := report.ReportWithInfo.Report[plugin.ReportMetaDataPrependLength:]
-		actualProto := &valuespb.Value{}
-		err := proto.Unmarshal(serialisedValue, actualProto)
-		require.NoError(t, err, "failed to unmarshal value from report")
 
 		var infos structpb.Struct
 		err = proto.Unmarshal(report.ReportWithInfo.Info, &infos)
 		require.NoError(t, err, "failed to unmarshal value from report")
 
-		reqID := infos.Fields[plugin.InfoRequestID].GetStringValue()
+		infoMap := infos.AsMap()
 
-		receivedReportForRequestIDs[reqID] = true
-		expectedOutcome, ok := requestIDToOutcome[reqID]
-		require.True(t, ok, "got report for a request without a test outcome %s", reqID)
+		if failureMessage, exists := infoMap[plugin.InfoConsensusFailureMessage]; exists {
+			reqID := infos.Fields[plugin.InfoRequestID].GetStringValue()
+			expectedOutcome, ok := requestIDToOutcome[reqID]
+			require.True(t, ok, "got report for a request without a test outcome %s", reqID)
 
-		if expectedOutcome.verifyReport != nil {
-			expectedOutcome.verifyReport(t, report, &infos)
+			if len(expectedOutcome.expectedConsensusFailureMessage) == 0 {
+				require.FailNow(t, "not expecting failure message for request %s", reqID)
+			}
+
+			receivedFailureMessageForRequestIDs[reqID] = true
+
+			require.Contains(t, failureMessage.(string), expectedOutcome.expectedConsensusFailureMessage)
 		} else {
-			require.FailNow(t, "not expecting report for request %s", reqID)
+			serialisedValue := report.ReportWithInfo.Report[plugin.ReportMetaDataPrependLength:]
+			actualProto := &valuespb.Value{}
+			err := proto.Unmarshal(serialisedValue, actualProto)
+			require.NoError(t, err, "failed to unmarshal value from report")
+
+			reqID := infos.Fields[plugin.InfoRequestID].GetStringValue()
+
+			receivedReportForRequestIDs[reqID] = true
+			expectedOutcome, ok := requestIDToOutcome[reqID]
+			require.True(t, ok, "got report for a request without a test outcome %s", reqID)
+
+			if expectedOutcome.verifyReport != nil {
+				expectedOutcome.verifyReport(t, report, &infos)
+			} else {
+				require.FailNow(t, "not expecting report for request %s", reqID)
+			}
 		}
 	}
 
@@ -760,6 +848,13 @@ func runProtocolRoundTestsWithPlugins(ctx context.Context, t *testing.T,
 	for reqID, outcome := range requestIDToOutcome {
 		if outcome.verifyReport != nil {
 			require.True(t, receivedReportForRequestIDs[reqID], "expected report for request ID %s was not received", reqID)
+		}
+	}
+
+	// Verify all expected failure messages were received
+	for reqID, outcome := range requestIDToOutcome {
+		if len(outcome.expectedConsensusFailureMessage) > 0 {
+			require.True(t, receivedFailureMessageForRequestIDs[reqID], "expected failure message for request ID %s was not received", reqID)
 		}
 	}
 
@@ -817,24 +912,19 @@ func verifyValueConsensusReport(t *testing.T, report ocr3types.ReportPlus[[]byte
 }
 
 func createReportingPlugin(t *testing.T, lggr logger.Logger, f int, n int,
-	batchSize int, outcomeExpirySpan uint64) (ocr3types.ReportingPlugin[[]byte], *requests.Store[*oracle.ConsensusRequest]) {
+	outcomeExpirySpan uint64) (ocr3types.ReportingPlugin[[]byte], *requests.Store[*oracle.ConsensusRequest]) {
 	reqStore := requests.NewStore[*oracle.ConsensusRequest]()
 
 	metricsInstance, err := metrics.NewMetrics()
 	require.NoError(t, err)
 
 	reportingPlugin, err := plugin.NewReportingPlugin(lggr, metricsInstance, f, n, reqStore, &pbtypes.ReportingPluginConfig{
-		MaxQueryLengthBytes:       defaultMaxLengthBytes,
-		MaxObservationLengthBytes: defaultMaxLengthBytes,
-		MaxOutcomeLengthBytes:     defaultMaxLengthBytes,
-		MaxBatchSize: func() uint32 {
-			if batchSize < 0 || batchSize > int(^uint32(0)) {
-				return 0
-			}
-			return uint32(batchSize)
-		}(),
+		MaxQueryLengthBytes:              defaultMaxLengthBytes,
+		MaxObservationLengthBytes:        defaultMaxLengthBytes,
+		MaxOutcomeLengthBytes:            defaultMaxLengthBytes,
+		MaxReportLengthBytes:             defaultMaxLengthBytes,
 		HistoricalOutcomeExpirySeqNrSpan: outcomeExpirySpan,
-	})
+	}, "evm")
 	require.NoError(t, err)
 	return reportingPlugin, reqStore
 }

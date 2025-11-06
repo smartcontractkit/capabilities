@@ -7,13 +7,14 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 
+	"github.com/smartcontractkit/capabilities/consensus/oracle"
+	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
-	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
 
-	"github.com/smartcontractkit/capabilities/consensus/oracle"
-	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
+	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
 )
 
 func Test_DuplicateOutcomePrevention(t *testing.T) {
@@ -44,7 +45,7 @@ func Test_DuplicateOutcomePrevention(t *testing.T) {
 		},
 	}
 
-	pluginsAndStores := createPluginsAndStores(n, t, lggr, f, batchSize, 5)
+	pluginsAndStores := createPluginsAndStores(n, t, lggr, f, 5)
 
 	addRequestsToAllStores(pluginsAndStores, reqToObservations, t)
 
@@ -92,7 +93,7 @@ func Test_HistoricalOutcomesAreRemovedOnExpiry(t *testing.T) {
 			verifyReport: verifyReport1,
 		},
 
-		// Consensus will fail as insufficient observations and the request will remain pending
+		// Consensus will remain pending as < 2f+1 observations are received initially
 		pendingRequest.RequestID(): {requests: []*oracle.ConsensusRequest{
 			newCr(t, 110, pendingRequest), nil, newCr(t, 130, pendingRequest),
 			newCr(t, 140, pendingRequest), nil, newCr(t, 160, pendingRequest),
@@ -102,24 +103,22 @@ func Test_HistoricalOutcomesAreRemovedOnExpiry(t *testing.T) {
 	}
 
 	historicalOutcomeExpirySpan := uint64(3)
-	pluginsAndStores := createPluginsAndStores(n, t, lggr, f, batchSize, historicalOutcomeExpirySpan)
+	pluginsAndStores := createPluginsAndStores(n, t, lggr, f, historicalOutcomeExpirySpan)
 
 	addRequestsToAllStores(pluginsAndStores, reqToObservations, t)
 
-	postProtocolRound := func(t *testing.T, outcome *oracletypes.Outcome, requestIDToOutcome map[string]*oracletypes.RequestOutcome,
-		requestIDToHistoricalOutcome map[string]*oracletypes.HistoricalRequestOutcome) {
+	postProtocolRound := func(t *testing.T, outcome *oracletypes.Outcome, requestIDToOutcome map[string]*oracletypes.ConsensusSuccessOutcome,
+		requestIDToHistoricalOutcome map[string]uint64) {
 		// If a request is successful post round remove it here
-		for requestID, ro := range requestIDToOutcome {
-			if ro.Status == oracletypes.RequestStatus_REQUEST_STATUS_CONSENSUS_SUCCESS {
-				removeRequestFromAllStores(pluginsAndStores, requestID)
-			}
+		for requestID := range requestIDToOutcome {
+			removeRequestFromAllStores(pluginsAndStores, requestID)
 		}
 	}
 
 	var previousOutcome []byte
-	for seqNr := uint64(1); seqNr <= 6; seqNr++ {
-		var verifyOutcome func(t *testing.T, outcome *oracletypes.Outcome, requestIDToOutcome map[string]*oracletypes.RequestOutcome,
-			requestIDToHistoricalOutcome map[string]*oracletypes.HistoricalRequestOutcome)
+	for seqNr := uint64(1); seqNr <= 10; seqNr++ {
+		var verifyOutcome func(t *testing.T, outcome *oracletypes.Outcome, requestIDToOutcome map[string]*oracletypes.ConsensusSuccessOutcome,
+			requestIDToHistoricalOutcome map[string]uint64)
 
 		switch seqNr {
 		case 1:
@@ -130,12 +129,12 @@ func Test_HistoricalOutcomesAreRemovedOnExpiry(t *testing.T) {
 			outcome2 := reqToObservations[pendingRequest.RequestID()]
 			outcome2.verifyReport = nil
 
-			verifyOutcome = func(t *testing.T, outcome *oracletypes.Outcome, requestIDToOutcome map[string]*oracletypes.RequestOutcome,
-				requestIDToHistoricalOutcome map[string]*oracletypes.HistoricalRequestOutcome) {
+			verifyOutcome = func(t *testing.T, outcome *oracletypes.Outcome, requestIDToOutcome map[string]*oracletypes.ConsensusSuccessOutcome,
+				requestIDToHistoricalOutcome map[string]uint64) {
 				require.Len(t, outcome.Outcomes, 1)
-				require.Len(t, outcome.HistoricalOutcomes, 2)
+				require.Len(t, outcome.HistoricalOutcomes, 1)
 
-				require.Equal(t, requestIDToHistoricalOutcome[successfulRequest.RequestID()].Status, oracletypes.RequestStatus_REQUEST_STATUS_CONSENSUS_SUCCESS)
+				require.NotNil(t, requestIDToHistoricalOutcome[successfulRequest.RequestID()])
 			}
 		case 2:
 
@@ -149,10 +148,10 @@ func Test_HistoricalOutcomesAreRemovedOnExpiry(t *testing.T) {
 			outcome2.verifyReport = nil
 
 			verifyOutcome = func(t *testing.T, outcome *oracletypes.Outcome,
-				requestIDToOutcome map[string]*oracletypes.RequestOutcome,
-				requestIDToHistoricalOutcome map[string]*oracletypes.HistoricalRequestOutcome) {
+				requestIDToOutcome map[string]*oracletypes.ConsensusSuccessOutcome,
+				requestIDToHistoricalOutcome map[string]uint64) {
 				require.Len(t, outcome.Outcomes, 0)
-				require.Len(t, outcome.HistoricalOutcomes, 2)
+				require.Len(t, outcome.HistoricalOutcomes, 1)
 			}
 
 		case 3:
@@ -177,8 +176,8 @@ func Test_HistoricalOutcomesAreRemovedOnExpiry(t *testing.T) {
 			outcome2.verifyReport = verifyReport2
 
 			verifyOutcome = func(t *testing.T, outcome *oracletypes.Outcome,
-				requestIDToOutcome map[string]*oracletypes.RequestOutcome,
-				requestIDToHistoricalOutcome map[string]*oracletypes.HistoricalRequestOutcome) {
+				requestIDToOutcome map[string]*oracletypes.ConsensusSuccessOutcome,
+				requestIDToHistoricalOutcome map[string]uint64) {
 				require.Len(t, outcome.Outcomes, 1)
 				require.Len(t, outcome.HistoricalOutcomes, 2)
 			}
@@ -190,8 +189,8 @@ func Test_HistoricalOutcomesAreRemovedOnExpiry(t *testing.T) {
 			outcome2.verifyReport = nil
 
 			verifyOutcome = func(t *testing.T, outcome *oracletypes.Outcome,
-				requestIDToOutcome map[string]*oracletypes.RequestOutcome,
-				requestIDToHistoricalOutcome map[string]*oracletypes.HistoricalRequestOutcome) {
+				requestIDToOutcome map[string]*oracletypes.ConsensusSuccessOutcome,
+				requestIDToHistoricalOutcome map[string]uint64) {
 				require.Len(t, outcome.Outcomes, 0)
 				require.Len(t, outcome.HistoricalOutcomes, 2)
 			}
@@ -202,35 +201,33 @@ func Test_HistoricalOutcomesAreRemovedOnExpiry(t *testing.T) {
 			removeRequestFromAllStores(pluginsAndStores, successfulRequest.RequestID())
 
 		case 5:
-			// By this point the historical record of the outcomes for the requests should have been removed
+			// By this point the historical record of the first outcome should have expired, but the historical record of the second outcome should still exist
 			outcome1 := reqToObservations[successfulRequest.RequestID()]
 			outcome1.verifyReport = nil
 
 			outcome2 := reqToObservations[pendingRequest.RequestID()]
 			outcome2.verifyReport = nil
 			verifyOutcome = func(t *testing.T, outcome *oracletypes.Outcome,
-				requestIDToOutcome map[string]*oracletypes.RequestOutcome,
-				requestIDToHistoricalOutcome map[string]*oracletypes.HistoricalRequestOutcome) {
+				requestIDToOutcome map[string]*oracletypes.ConsensusSuccessOutcome,
+				requestIDToHistoricalOutcome map[string]uint64) {
 				require.Len(t, outcome.Outcomes, 0)
-				require.Len(t, outcome.HistoricalOutcomes, 0)
+				require.Len(t, outcome.HistoricalOutcomes, 1)
 			}
-		case 6:
-			// Simulate what would happen if the historical outcome expiry span was too small and the outcome for the first request was removed too early
-			// followed by a resubmission of the request
-			addRequestsToAllStores(pluginsAndStores, map[string]*consensusPluginTest{successfulRequest.RequestID(): reqToObservations[successfulRequest.RequestID()]}, t)
-
+		case 6, 7, 8, 9, 10:
+			// Eventually by this round all historical outcomes should have expired
 			outcome1 := reqToObservations[successfulRequest.RequestID()]
-			outcome1.verifyReport = verifyReport1
+			outcome1.verifyReport = nil
 
 			outcome2 := reqToObservations[pendingRequest.RequestID()]
 			outcome2.verifyReport = nil
-			verifyOutcome = func(t *testing.T, outcome *oracletypes.Outcome, requestIDToOutcome map[string]*oracletypes.RequestOutcome,
-				requestIDToHistoricalOutcome map[string]*oracletypes.HistoricalRequestOutcome) {
-				require.Len(t, outcome.Outcomes, 1)
-				require.Len(t, outcome.HistoricalOutcomes, 1)
-
-				require.Equal(t, requestIDToHistoricalOutcome[successfulRequest.RequestID()].Status, oracletypes.RequestStatus_REQUEST_STATUS_CONSENSUS_SUCCESS)
+			verifyOutcome = func(t *testing.T, outcome *oracletypes.Outcome, requestIDToOutcome map[string]*oracletypes.ConsensusSuccessOutcome,
+				requestIDToHistoricalOutcome map[string]uint64) {
+				if seqNr == 10 {
+					require.Len(t, outcome.Outcomes, 0)
+					require.Len(t, outcome.HistoricalOutcomes, 0)
+				}
 			}
+
 		}
 
 		previousOutcome = runProtocolRoundTestsWithPlugins(ctx, t, reqToObservations, pluginsAndStores, ocr3types.OutcomeContext{
@@ -241,18 +238,17 @@ func Test_HistoricalOutcomesAreRemovedOnExpiry(t *testing.T) {
 		err := proto.Unmarshal(previousOutcome, requestsOutcome)
 		require.NoError(t, err)
 
-		requestIDToOutcome := make(map[string]*oracletypes.RequestOutcome)
+		requestIDToOutcome := make(map[string]*oracletypes.ConsensusSuccessOutcome)
 		for _, ro := range requestsOutcome.Outcomes {
-			requestIDToOutcome[ro.Metadata.RequestId] = ro
+			switch v := ro.GetOutcome().(type) {
+			case *oracletypes.ConsensusOutcome_Success:
+				requestIDToOutcome[v.Success.Metadata.RequestId] = v.Success
+			default:
+				t.Fatalf("expected ConsensusSuccessOutcome, got %T", v)
+			}
 		}
 
-		requestIDToHistoricalOutcome := make(map[string]*oracletypes.HistoricalRequestOutcome)
-		for _, ho := range requestsOutcome.HistoricalOutcomes {
-			requestIDToHistoricalOutcome[ho.RequestId] = ho
-		}
-
-		verifyOutcome(t, requestsOutcome, requestIDToOutcome, requestIDToHistoricalOutcome)
-
-		postProtocolRound(t, requestsOutcome, requestIDToOutcome, requestIDToHistoricalOutcome)
+		verifyOutcome(t, requestsOutcome, requestIDToOutcome, requestsOutcome.HistoricalOutcomes)
+		postProtocolRound(t, requestsOutcome, requestIDToOutcome, requestsOutcome.HistoricalOutcomes)
 	}
 }

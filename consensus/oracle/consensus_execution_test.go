@@ -25,7 +25,6 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 		observations    []*valuespb.Value
 		descriptor      *sdk.ConsensusDescriptor
 		defaultValue    *valuespb.Value
-		minObs          int
 		f               int
 		expectedOutcome *valuespb.Value
 		expectedError   error
@@ -43,7 +42,7 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 					Aggregation: sdk.AggregationType_AGGREGATION_TYPE_MEDIAN,
 				},
 			},
-			minObs:          3,
+			f:               2,
 			expectedOutcome: nil,
 			expectedError:   errors.New("insufficient observations"),
 		},
@@ -61,7 +60,7 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 					Aggregation: sdk.AggregationType_AGGREGATION_TYPE_MEDIAN,
 				},
 			},
-			minObs:          5,
+			f:               4,
 			expectedOutcome: values.Proto(values.NewInt64(30)),
 			expectedError:   nil,
 		},
@@ -80,13 +79,28 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 					Aggregation: sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL,
 				},
 			},
-			minObs:          5,
 			f:               3,
 			expectedOutcome: values.Proto(values.NewInt64(42)),
 			expectedError:   nil,
 		},
 		{
-			name: "median: mixed types, one dominant (int64) - handled by filtering",
+			name: "median: mixed types, two eligible types (int64, float64) - error returned",
+			f:    1,
+			observations: []*valuespb.Value{
+				values.Proto(values.NewInt64(10)), values.Proto(values.NewFloat64(1.0)),
+				values.Proto(values.NewInt64(20)), values.Proto(values.NewFloat64(2.0)),
+				values.Proto(values.NewInt64(30)), values.Proto(values.NewInt64(40)),
+			},
+			descriptor: &sdk.ConsensusDescriptor{
+				Descriptor_: &sdk.ConsensusDescriptor_Aggregation{
+					Aggregation: sdk.AggregationType_AGGREGATION_TYPE_MEDIAN,
+				},
+			},
+			expectedError: ErrMultipleValuesMetThreshold,
+		},
+		{
+			name: "median: mixed types, one eligible type (int64) - handled by filtering",
+			f:    2,
 			observations: []*valuespb.Value{
 				values.Proto(values.NewInt64(10)), values.Proto(values.NewFloat64(1.0)),
 				values.Proto(values.NewInt64(20)), values.Proto(values.NewFloat64(2.0)),
@@ -155,7 +169,6 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 				mustWrap(s{Val: 50, OtherField: "common", PrefixSlice: []int64{1, 2, 6}, Nest: s1{Val: 102}, SuffixSlice: []int64{42, 2, 3}}),
 			},
 			descriptor: cre.ConsensusAggregationFromTags[s]().Descriptor(),
-			minObs:     5,
 			f:          2,
 			expectedOutcome: mustWrap(s{
 				Val:         30,
@@ -201,7 +214,6 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 					Aggregation: sdk.AggregationType_AGGREGATION_TYPE_UNSPECIFIED,
 				},
 			},
-			minObs:          1,
 			expectedOutcome: nil,
 			expectedError:   errors.New("unknown aggregation type"),
 		},
@@ -214,7 +226,6 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 				tc.observations,
 				tc.descriptor,
 				tc.defaultValue,
-				tc.minObs,
 				tc.f,
 			)
 

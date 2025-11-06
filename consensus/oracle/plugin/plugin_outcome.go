@@ -6,15 +6,16 @@ import (
 	"slices"
 	"time"
 
+	"github.com/cloudevents/sdk-go/v2/event/datacodec/json"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/smartcontractkit/capabilities/consensus/oracle"
+	"github.com/smartcontractkit/capabilities/consensus/oracle/plugin/batching"
 	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
-
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
-
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
+
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
 	"github.com/smartcontractkit/libocr/offchainreporting2/types"
@@ -23,179 +24,181 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
 
-type timestampedObservation struct {
-	Observation *valuespb.Value
-	Timestamp   *timestamppb.Timestamp
-}
-
 func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeContext, query types.Query, attributedObservations []types.AttributedObservation) (ocr3types.Outcome, error) {
 	requestsQuery := &oracletypes.Query{}
 	err := proto.Unmarshal(query, requestsQuery)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to unmarshal query: %w", err)
 	}
 
-	historicalOutcomes, requestIDToHistoricalOutcome, err := getNonExpiredHistoricalRequestOutcomes(r.lggr, outctx, r.outcomeExpirySeqNrSpan)
+	outcome, err := batching.NewOutcomeBatch(ctx, r.lggr, outctx, r.outcomeExpirySeqNrSpan, int(r.config.MaxOutcomeLengthBytes), r.defaultKeyBundleIDForConsensusFailure,
+		r.metrics)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get previous outcomes: %w", err)
+		return nil, fmt.Errorf("failed to create new outcome batch: %w", err)
 	}
 
 	requestIDToObservations := groupAttributedObservationsByRequestID(r.lggr, attributedObservations)
 
-	var outcomes []*oracletypes.RequestOutcome
-	cachedOutcomeSize := CalculateMessageSize(&oracletypes.Outcome{Outcomes: outcomes, HistoricalOutcomes: historicalOutcomes})
-	for _, request := range requestsQuery.Requests {
-		requestID := request.Metadata.RequestId
+	for _, requestID := range requestsQuery.RequestIDs {
 		observations := requestIDToObservations[requestID]
 
-		consensusDescriptor := &sdk.ConsensusDescriptor{}
-		err = proto.Unmarshal(request.RequestConsensusDescriptor, consensusDescriptor)
-		if err != nil {
-			return nil, fmt.Errorf("could not unmarshal consensus descriptor for request %s: %w", requestID, err)
+		// 2f+1 or more observations have been received, calculate the outcome for the request
+		if len(observations) >= 2*r.f+1 {
+			hasCapacity, err := r.addRequestOutcomeToBatch(ctx, requestID, observations, outcome)
+			if err != nil {
+				return nil, fmt.Errorf("failed to add request outcome to batch for request %s: %w", requestID, err)
+			}
+
+			if !hasCapacity {
+				break
+			}
+		}
+	}
+
+	return outcome.SerialiseOutcomeBatch()
+}
+
+// addRequestOutcomeToBatch adds the outcome for a single request to the outcome batch. Returns false if batch does not have capacity to add the outcome.
+func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, requestID string, observations []*oracletypes.RequestObservation, outcome *batching.OutcomeBatch) (bool, error) {
+	consensusMDD, err := r.calculateConsensusMetadataDescriptorAndDefault(observations)
+	if err != nil {
+		return outcome.AddFailedConsensusRequestOutcomeToBatch(ctx, requestID, fmt.Sprintf("failed to calculate consensus metadata, descriptor and default for request: %v", err))
+	}
+
+	var errors []string
+	var obsValues []*valuespb.Value
+	var timestamps []*timestamppb.Timestamp
+
+	for _, obs := range observations {
+		// Does the observation have a timestamp?
+		if obs.ReceivedAt == nil {
+			r.lggr.Warnw("observation missing receivedAt timestamp", "requestID", requestID, "observerMetadata", obs.Metadata)
+			continue
 		}
 
-		values := make([]*valuespb.Value, 0, len(observations))
-		timestamps := make([]*timestamppb.Timestamp, 0, len(observations))
-		for _, obs := range observations {
-			if obs.Observation == nil || obs.Timestamp == nil {
-				r.lggr.Errorw("observation or timestamp is nil for request, skipping", "requestID", requestID)
+		// Does the observation's metadata, descriptor and default match the consensus?
+		if !verifyMetadataDescriptorAndDefaultMatchConsensus(obs, consensusMDD) {
+			r.lggr.Warnw("observation metadata, descriptor or default does not match consensus", "requestID", requestID, "observation", obs, "consensusMDD", consensusMDD)
+			continue
+		}
+
+		// Is the observation an error or a value?
+		switch inputObservation := obs.Input.GetObservation().(type) {
+		case *sdk.SimpleConsensusInputs_Value:
+			obsValues = append(obsValues, inputObservation.Value)
+			timestamps = append(timestamps, obs.ReceivedAt)
+		case *sdk.SimpleConsensusInputs_Error:
+			errors = append(errors, inputObservation.Error)
+		}
+	}
+
+	timestamp := &timestamppb.Timestamp{}
+	if len(timestamps) > 0 {
+		timestamp = calculateMedianTimestamp(timestamps)
+	}
+
+	if len(errors) >= r.f+1 {
+		consensusFailedMsg := fmt.Sprintf(
+			"consensus calculation failed: received %d errors which is >= f+1 (%d) for requestID %s\nconsensus metadata, descriptor and default: %+v\nerrors received: %+v",
+			len(errors), r.f+1, requestID, consensusMDD, errors,
+		)
+		return outcome.FailConsensusWithDefaultCheck(ctx, r.lggr, requestID, consensusFailedMsg, consensusMDD, timestamp)
+	}
+
+	value, err := oracle.CalculateOutcomeForObservations(r.lggr, obsValues, consensusMDD.Input.Descriptors, consensusMDD.Input.Default, r.f)
+
+	if err != nil {
+		valuesJSON := formatValuesForLogging(ctx, r.lggr, obsValues)
+		consensusFailedMsg := fmt.Sprintf(
+			"consensus calculation failed: %v\nconsensus metadata, descriptor and default:\n %+v\nvalues received: %s\nerrors received: %+v",
+			err, consensusMDD, valuesJSON, errors,
+		)
+		return outcome.FailConsensusWithDefaultCheck(ctx, r.lggr, requestID, consensusFailedMsg, consensusMDD, timestamp)
+	}
+
+	return outcome.AddSuccessfulConsensusRequestOutcomeToBatch(ctx, consensusMDD.Metadata, value, timestamp)
+}
+
+func formatValuesForLogging(ctx context.Context, lggr logger.Logger, obsValues []*valuespb.Value) string {
+	var unwrappedValues []any
+	for _, protoVal := range obsValues {
+		val, err := values.FromProto(protoVal)
+		if err != nil {
+			lggr.Warnw("could not convert observation value from proto", "error", err)
+			continue
+		}
+
+		if val == nil {
+			unwrappedValues = append(unwrappedValues, nil)
+		} else {
+			unwrappedValue, err := val.Unwrap()
+			if err != nil {
+				lggr.Warnw("could not unwrap observation value", "error", err)
 				continue
 			}
-
-			timestamps = append(timestamps, obs.Timestamp)
-			values = append(values, obs.Observation)
-		}
-
-		// Get the default value from the query request if it exists
-		var defaultValue *valuespb.Value
-		if request.RequestDefault != nil {
-			defaultValue = &valuespb.Value{}
-			err := proto.Unmarshal(request.RequestDefault, defaultValue)
-			if err != nil {
-				return nil, fmt.Errorf("could not unmarshal default value for request %s: %w", requestID, err)
-			}
-		}
-
-		var requestOutcome *oracletypes.RequestOutcome
-		var historicalRequestOutcome *oracletypes.HistoricalRequestOutcome
-		value, err := oracle.CalculateOutcomeForObservations(r.lggr, values, consensusDescriptor, defaultValue, r.minimumObservations, r.f)
-		if err != nil {
-			// TODO - pending this JIRA https://smartcontract-it.atlassian.net/browse/CAPPL-1076 mark the request as
-			// pending so it is included in the next round. Subsequent PR for the latter JIRA will address better consensus failure and
-			// error handling separately to avoid unnecessary consensus retries for the request and address DoS (+allow request to fail fast if consensus is not possible).
-			r.lggr.Errorw("failed to calculate outcome for observations", "requestID", requestID, "error", err)
-			historicalRequestOutcome = &oracletypes.HistoricalRequestOutcome{
-				RequestId:        request.Metadata.RequestId,
-				Status:           oracletypes.RequestStatus_REQUEST_STATUS_CONSENSUS_PENDING,
-				FirstSeenAtSeqNr: outctx.SeqNr,
-			}
-		} else {
-			serialisedValue, err := proto.MarshalOptions{Deterministic: true}.Marshal(value)
-			if err != nil {
-				return nil, fmt.Errorf("failed to marshal outcome value for request %s: %w", requestID, err)
-			}
-			requestOutcome = &oracletypes.RequestOutcome{
-				Metadata:  request.Metadata,
-				Outcome:   serialisedValue,
-				Timestamp: calculateMedianTimestamp(timestamps),
-				Status:    oracletypes.RequestStatus_REQUEST_STATUS_CONSENSUS_SUCCESS,
-			}
-
-			historicalRequestOutcome = &oracletypes.HistoricalRequestOutcome{
-				RequestId:        request.Metadata.RequestId,
-				Status:           oracletypes.RequestStatus_REQUEST_STATUS_CONSENSUS_SUCCESS,
-				FirstSeenAtSeqNr: outctx.SeqNr,
-			}
-		}
-
-		if existingHistoricalRequestOutcome, ok := requestIDToHistoricalOutcome[requestID]; ok {
-			// If the request already exists in the historical outcomes update the status only
-			existingHistoricalRequestOutcome.Status = historicalRequestOutcome.Status
-			historicalRequestOutcome = nil
-		}
-
-		hasCapacity, newOutcomeSize := r.checkOutcomeBatchHasCapacity(ctx, cachedOutcomeSize, requestOutcome, historicalRequestOutcome)
-		if !hasCapacity {
-			break
-		}
-
-		cachedOutcomeSize = newOutcomeSize
-
-		if requestOutcome != nil {
-			outcomes = append(outcomes, requestOutcome)
-		}
-
-		if historicalRequestOutcome != nil {
-			historicalOutcomes = append(historicalOutcomes, historicalRequestOutcome)
+			unwrappedValues = append(unwrappedValues, unwrappedValue)
 		}
 	}
 
-	serialisedOutcome, err := proto.MarshalOptions{Deterministic: true}.Marshal(&oracletypes.Outcome{
-		Outcomes:           outcomes,
-		HistoricalOutcomes: historicalOutcomes,
-	})
+	valuesJSON, err := json.Encode(ctx, unwrappedValues)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal outcome: %w", err)
+		lggr.Warnw("could not marshal observation values to json", "error", err)
+		return "could not marshal observation values"
 	}
-
-	return serialisedOutcome, nil
+	return string(valuesJSON)
 }
 
-func (r *reportingPlugin) checkOutcomeBatchHasCapacity(ctx context.Context, existingOutcomeSize int, requestOutcome *oracletypes.RequestOutcome,
-	historicalRequestOutcome *oracletypes.HistoricalRequestOutcome) (bool, int) {
-	if requestOutcome != nil {
-		ok, newSize := BatchHasCapacity(existingOutcomeSize, requestOutcome, int(r.config.MaxOutcomeLengthBytes),
-			func() { r.metrics.IncBatchRequestsTotal(ctx, "outcome") },
-			func() { r.metrics.IncBatchCapacityExceeded(ctx, "outcome") })
-
-		if !ok {
-			r.lggr.Debugw("max outcome batch size reached, skipping other requests", "requestID", requestOutcome.Metadata.RequestId)
-			return false, 0
-		}
-
-		existingOutcomeSize = newSize
+// verifyMetadataDescriptorAndDefaultMatchConsensus checks if the observation's metadata, descriptor and default match the consensus.
+func verifyMetadataDescriptorAndDefaultMatchConsensus(obs *oracletypes.RequestObservation, consensusMDD *oracletypes.RequestObservation) bool {
+	obsMDD := &oracletypes.RequestObservation{
+		Metadata: obs.Metadata,
+		Input: &sdk.SimpleConsensusInputs{
+			Descriptors: obs.Input.Descriptors,
+			Default:     obs.Input.Default,
+		},
 	}
 
-	if historicalRequestOutcome != nil {
-		ok, newSize := BatchHasCapacity(existingOutcomeSize, historicalRequestOutcome, int(r.config.MaxOutcomeLengthBytes),
-			func() { r.metrics.IncBatchRequestsTotal(ctx, "outcome") },
-			func() { r.metrics.IncBatchCapacityExceeded(ctx, "outcome") })
-
-		if !ok {
-			r.lggr.Debugw("max outcome batch size reached when adding historical request outcome, skipping other requests", "requestID", historicalRequestOutcome.RequestId)
-			return false, 0
-		}
-
-		existingOutcomeSize = newSize
-	}
-
-	return true, existingOutcomeSize
+	return proto.Equal(obsMDD, consensusMDD)
 }
 
-func getNonExpiredHistoricalRequestOutcomes(lggr logger.Logger, outctx ocr3types.OutcomeContext, outcomeExpirySeqNrSpan uint64) ([]*oracletypes.HistoricalRequestOutcome, map[string]*oracletypes.HistoricalRequestOutcome, error) {
-	var nonExpiredHistoricalOutcomes []*oracletypes.HistoricalRequestOutcome
-	requestIDToHistoricalOutcome := map[string]*oracletypes.HistoricalRequestOutcome{}
-	if outctx.PreviousOutcome != nil {
-		prevOutcome := &oracletypes.Outcome{}
-		err := proto.Unmarshal(outctx.PreviousOutcome, prevOutcome)
+func (r *reportingPlugin) calculateConsensusMetadataDescriptorAndDefault(observations []*oracletypes.RequestObservation) (*oracletypes.RequestObservation, error) {
+	var allObservationsMDDBytes []*valuespb.Value
+	for _, obs := range observations {
+		mddBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(&oracletypes.RequestObservation{
+			Metadata: obs.Metadata,
+			Input: &sdk.SimpleConsensusInputs{
+				Descriptors: obs.Input.Descriptors,
+				Default:     obs.Input.Default,
+			},
+		})
 		if err != nil {
-			lggr.Errorw("could not unmarshal previous outcome", "error", err)
-			return nil, nil, err
+			r.lggr.Errorw("could not marshal RequestObservation", "error", err)
+			continue
 		}
 
-		for _, ho := range prevOutcome.HistoricalOutcomes {
-			if outctx.SeqNr-ho.FirstSeenAtSeqNr <= outcomeExpirySeqNrSpan {
-				nonExpiredHistoricalOutcomes = append(nonExpiredHistoricalOutcomes, ho)
-				requestIDToHistoricalOutcome[ho.RequestId] = ho
-			}
-		}
+		// Wrapped here to allow reuse of the existing CalculateOutcomeForObservations function for identical aggregation
+		allObservationsMDDBytes = append(allObservationsMDDBytes, values.Proto(values.NewBytes(mddBytes)))
 	}
 
-	return nonExpiredHistoricalOutcomes, requestIDToHistoricalOutcome, nil
+	consensusMDDBytes, err := oracle.CalculateOutcomeForObservations(r.lggr, allObservationsMDDBytes,
+		&sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL}},
+		nil, r.f)
+
+	if err != nil {
+		return nil, err
+	}
+
+	consensusMDD := &oracletypes.RequestObservation{}
+	err = proto.Unmarshal(consensusMDDBytes.GetBytesValue(), consensusMDD)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal consensus metadata, descriptor and default for request: %w", err)
+	}
+
+	return consensusMDD, nil
 }
 
-func groupAttributedObservationsByRequestID(lggr logger.Logger, attributedObservations []types.AttributedObservation) map[string][]timestampedObservation {
-	requestIDToObservations := make(map[string][]timestampedObservation)
+func groupAttributedObservationsByRequestID(lggr logger.Logger, attributedObservations []types.AttributedObservation) map[string][]*oracletypes.RequestObservation {
+	requestIDToObservations := make(map[string][]*oracletypes.RequestObservation)
 	for _, ao := range attributedObservations {
 		obs := &oracletypes.Observation{}
 		err := proto.Unmarshal(ao.Observation, obs)
@@ -204,28 +207,12 @@ func groupAttributedObservationsByRequestID(lggr logger.Logger, attributedObserv
 			continue
 		}
 
-		for _, requestObservation := range obs.Observations {
-			requestID := requestObservation.Metadata.RequestId
-			observationValue := &valuespb.Value{}
-			err = proto.Unmarshal(requestObservation.Observation, observationValue)
-			if err != nil {
-				lggr.Errorw("could not unmarshal observation for request from observer", "error", err, "requestID", requestID, "observer", ao.Observer)
-				continue
-			}
-
-			// Check the observation correctly marshals to a value to ensure it is a valid observation
-			_, err = values.FromProto(observationValue)
-			if err != nil {
-				lggr.Errorw("could not convert observation value proto to value", "error", err, "requestID", requestID, "observer", ao.Observer)
-				continue
-			}
-
-			requestIDToObservations[requestID] = append(requestIDToObservations[requestID], timestampedObservation{
-				Observation: observationValue,
-				Timestamp:   requestObservation.ReceivedAt,
-			})
+		// Observations will be added in the same order as received in the attributedObservations slice
+		for requestID, reqObservation := range obs.Observations {
+			requestIDToObservations[requestID] = append(requestIDToObservations[requestID], reqObservation)
 		}
 	}
+
 	return requestIDToObservations
 }
 

@@ -254,7 +254,7 @@ func Test_filterObservations(t *testing.T) {
 			minObservations:      3,
 			expectedObservations: nil,
 			expectedType:         nil,
-			expectedError:        errors.New("no single type met the minimum observation threshold of 3"),
+			expectedError:        errors.New("no values met f+1 threshold"),
 		},
 		{
 			name: "dominant type is TypeNil",
@@ -266,7 +266,7 @@ func Test_filterObservations(t *testing.T) {
 			minObservations:      2,
 			expectedObservations: nil,
 			expectedType:         nil,
-			expectedError:        errors.New("no single type met the minimum observation threshold of 2"),
+			expectedError:        errors.New("no values met f+1 threshold"),
 		},
 		{
 			name: "all observations are of dominant type",

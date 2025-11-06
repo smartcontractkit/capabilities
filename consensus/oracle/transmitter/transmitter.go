@@ -28,6 +28,7 @@ type ContractTransmitter struct {
 
 func (c *ContractTransmitter) Transmit(ctx context.Context, configDigest types.ConfigDigest, seqNr uint64,
 	rwi ocr3types.ReportWithInfo[[]byte], signatures []types.AttributedOnchainSignature) error {
+
 	unmarshalledInfo := new(structpb.Struct)
 	err := proto.Unmarshal(rwi.Info, unmarshalledInfo)
 	if err != nil {
@@ -44,19 +45,38 @@ func (c *ContractTransmitter) Transmit(ctx context.Context, configDigest types.C
 		return errors.New("infoRequestID is not a string")
 	}
 
-	// report context is the config digest + the sequence number padded with zeros
-	repContext := report.GenerateReportContext(seqNr, configDigest)
+	if failureMessage, exists := infoMap[plugin.InfoConsensusFailureMessage]; exists {
+		failureMessageStr, ok := failureMessage.(string)
+		if !ok {
+			return errors.New("message is not a string")
+		}
 
-	response := oracle.ConsensusResponse{
-		ReqID:         requestIDStr,
-		ConfigDigest:  configDigest,
-		SeqNr:         seqNr,
-		ReportContext: repContext,
-		RawReport:     rwi.Report,
-		Sigs:          signatures,
+		c.lggr.Debugw("received consensus failure message report", "requestID", requestIDStr,
+			"failureMessage", failureMessageStr)
+
+		response := oracle.ConsensusResponse{
+			ReqID: requestIDStr,
+			SeqNr: seqNr,
+			Err:   errors.New(failureMessageStr),
+		}
+
+		c.sendResponse(ctx, response)
+	} else {
+		c.lggr.Debugw("received consensus success report", "requestID", requestIDStr)
+		// report context is the config digest + the sequence number padded with zeros
+		repContext := report.GenerateReportContext(seqNr, configDigest)
+
+		response := oracle.ConsensusResponse{
+			ReqID:         requestIDStr,
+			ConfigDigest:  configDigest,
+			SeqNr:         seqNr,
+			ReportContext: repContext,
+			RawReport:     rwi.Report,
+			Sigs:          signatures,
+		}
+
+		c.sendResponse(ctx, response)
 	}
-
-	c.sendResponse(ctx, response)
 
 	return nil
 }
