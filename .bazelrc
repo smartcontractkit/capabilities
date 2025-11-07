@@ -1,4 +1,4 @@
 # CI configuration
 common:ci --platforms=@rules_go//go/toolchain:linux_amd64_cgo
 common:ci --linkopt="-fuse-ld=bfd"
-test:ci --@rules_go//go/config:race
+common:ci --@rules_go//go/config:race
