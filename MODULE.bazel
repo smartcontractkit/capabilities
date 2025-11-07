@@ -1,5 +1,5 @@
 # https://registry.bazel.build/modules/rules_go
-bazel_dep(name = "rules_go", version = "0.57.0", repo_name = "rules_go")
+bazel_dep(name = "rules_go", version = "0.58.3", repo_name = "rules_go")
 
 # https://registry.bazel.build/modules/aspect_rules_lint
 bazel_dep(name = "aspect_rules_lint", version = "1.10.2")
@@ -7,7 +7,7 @@ bazel_dep(name = "aspect_rules_lint", version = "1.10.2")
 # https://registry.bazel.build/modules/gazelle
 bazel_dep(name = "gazelle", version = "0.45.0")
 
-# https://github.com/bazel-contrib/rules_go/blob/v0.57.0/go/private/extensions.bzl
+# https://github.com/bazel-contrib/rules_go/blob/v0.58.3/go/private/extensions.bzl
 go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.download(version = "1.25.3")
 go_sdk.nogo(nogo = "//:my_nogo")
