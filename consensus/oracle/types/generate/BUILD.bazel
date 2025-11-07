@@ -1,0 +1,15 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "generate_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/smartcontractkit/capabilities/consensus/oracle/types/generate",
+    visibility = ["//visibility:private"],
+    deps = ["@com_github_smartcontractkit_chainlink_protos_cre_go//installer/pkg"],
+)
+
+go_binary(
+    name = "generate",
+    embed = [":generate_lib"],
+    visibility = ["//visibility:public"],
+)

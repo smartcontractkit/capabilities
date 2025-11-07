@@ -3,7 +3,6 @@ load("@rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "plugin",
     srcs = [
-        "batching.go",
         "factory.go",
         "plugin.go",
         "plugin_observation.go",
@@ -16,7 +15,9 @@ go_library(
     deps = [
         "//consensus/metrics",
         "//consensus/oracle",
+        "//consensus/oracle/plugin/batching",
         "//consensus/oracle/types",
+        "@com_github_cloudevents_sdk_go_v2//event/datacodec/json",
         "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/consensus/ocr3/types",
         "@com_github_smartcontractkit_chainlink_common//pkg/capabilities/consensus/requests",
         "@com_github_smartcontractkit_chainlink_common//pkg/logger",
@@ -37,13 +38,13 @@ go_library(
 go_test(
     name = "plugin_test",
     srcs = [
-        "batching_test.go",
         "duplicate_outcomes_test.go",
+        "errors_consensus_test.go",
         "report_generation_test.go",
         "value_consensus_test.go",
     ],
-    embed = [":plugin"],
     deps = [
+        ":plugin",
         "//consensus/metrics",
         "//consensus/oracle",
         "//consensus/oracle/types",

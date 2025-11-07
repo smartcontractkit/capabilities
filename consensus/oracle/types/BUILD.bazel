@@ -25,6 +25,7 @@ go_library(
     importpath = "github.com/smartcontractkit/capabilities/consensus/oracle/types",
     visibility = ["//visibility:public"],
     deps = [
+        "@com_github_smartcontractkit_chainlink_protos_cre_go//sdk",
         "@org_golang_google_protobuf//reflect/protoreflect",
         "@org_golang_google_protobuf//runtime/protoimpl",
         "@org_golang_google_protobuf//types/known/timestamppb",

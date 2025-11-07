@@ -1,0 +1,42 @@
+load("@rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "batching",
+    srcs = [
+        "batching.go",
+        "observation_batch.go",
+        "outcome_batch.go",
+        "query_batch.go",
+    ],
+    importpath = "github.com/smartcontractkit/capabilities/consensus/oracle/plugin/batching",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//consensus/oracle/types",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_smartcontractkit_chainlink_protos_cre_go//values",
+        "@com_github_smartcontractkit_chainlink_protos_cre_go//values/pb",
+        "@com_github_smartcontractkit_libocr//offchainreporting2plus/ocr3types",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)
+
+go_test(
+    name = "batching_test",
+    srcs = [
+        "observation_batch_test.go",
+        "outcome_batch_test.go",
+        "query_batch_test.go",
+    ],
+    deps = [
+        ":batching",
+        "//consensus/oracle/types",
+        "@com_github_google_uuid//:uuid",
+        "@com_github_smartcontractkit_chainlink_common//pkg/logger",
+        "@com_github_smartcontractkit_chainlink_protos_cre_go//values",
+        "@com_github_smartcontractkit_libocr//offchainreporting2plus/ocr3types",
+        "@com_github_stretchr_testify//require",
+        "@org_golang_google_protobuf//proto",
+        "@org_golang_google_protobuf//types/known/timestamppb",
+    ],
+)

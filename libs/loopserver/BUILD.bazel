@@ -6,9 +6,13 @@ go_library(
     importpath = "github.com/smartcontractkit/capabilities/libs/loopserver",
     visibility = ["//visibility:public"],
     deps = [
+        "@com_github_cenkalti_backoff_v5//:backoff",
         "@com_github_hashicorp_go_plugin//:go-plugin",
         "@com_github_smartcontractkit_chainlink_common//pkg/logger",
         "@com_github_smartcontractkit_chainlink_common//pkg/loop",
+        "@com_github_smartcontractkit_chainlink_common//pkg/settings/cresettings",
+        "@com_github_smartcontractkit_chainlink_common//pkg/timeutil",
+        "@com_github_smartcontractkit_chainlink_common//pkg/types/core",
         "@io_opentelemetry_go_otel_sdk_metric//:metric",
     ],
 )
