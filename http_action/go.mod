@@ -5,8 +5,8 @@ go 1.25.3
 require (
 	github.com/doyensec/safeurl v0.2.2
 	github.com/google/uuid v1.6.0
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20250916115355-f5de98284267
-	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251029194056-36ed00900afe
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20251105202054-e299af591b47
+	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251105200931-fdbfd5296201
 	github.com/stretchr/testify v1.11.1
 	go.opentelemetry.io/otel v1.38.0
 	go.opentelemetry.io/otel/metric v1.38.0
@@ -41,7 +41,7 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.26.3 // indirect
 	github.com/hashicorp/go-hclog v1.6.3 // indirect
-	github.com/hashicorp/go-plugin v1.6.3 // indirect
+	github.com/hashicorp/go-plugin v1.7.0 // indirect
 	github.com/hashicorp/yamux v0.1.2 // indirect
 	github.com/invopop/jsonschema v0.13.0 // indirect
 	github.com/jackc/chunkreader/v2 v2.0.1 // indirect

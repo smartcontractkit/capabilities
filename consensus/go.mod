@@ -3,10 +3,12 @@ module github.com/smartcontractkit/capabilities/consensus
 go 1.25.3
 
 require (
+	github.com/cloudevents/sdk-go/v2 v2.16.1
+	github.com/google/uuid v1.6.0
 	github.com/jonboulle/clockwork v0.5.0
 	github.com/shopspring/decimal v1.4.0
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20250930133443-a868d4d9dee8
-	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251104231304-6cbcde243424
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20251105202054-e299af591b47
+	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251105200931-fdbfd5296201
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20251021010742-3f8d3dba17d8
 	github.com/smartcontractkit/cre-sdk-go v0.9.0
 	github.com/smartcontractkit/libocr v0.0.0-20250912173940-f3ab0246e23d
@@ -27,7 +29,6 @@ require (
 	github.com/cenkalti/backoff/v5 v5.0.2 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudevents/sdk-go/binding/format/protobuf/v2 v2.16.1 // indirect
-	github.com/cloudevents/sdk-go/v2 v2.16.1 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/fatih/color v1.18.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.7.0 // indirect
@@ -41,7 +42,6 @@ require (
 	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus v1.0.1 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.26.3 // indirect

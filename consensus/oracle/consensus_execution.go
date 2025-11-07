@@ -42,22 +42,6 @@ func CalculateOutcomeForObservations(
 	observations []*valuespb.Value,
 	consensusDescriptor *sdk.ConsensusDescriptor,
 	defaultValue *valuespb.Value,
-	minObservations int,
-	f int,
-) (*valuespb.Value, error) {
-	filtered, _, err := filterObservations(observations, minObservations)
-	if err != nil {
-		return nil, err
-	}
-
-	return handleDescriptor(lggr, consensusDescriptor, filtered, defaultValue, f)
-}
-
-func handleDescriptor(
-	lggr logger.Logger,
-	consensusDescriptor *sdk.ConsensusDescriptor,
-	filtered []*valuespb.Value,
-	defaultValue *valuespb.Value,
 	f int,
 ) (*valuespb.Value, error) {
 	switch desc := consensusDescriptor.GetDescriptor_().(type) {
@@ -65,18 +49,18 @@ func handleDescriptor(
 		aggregation := consensusDescriptor.GetAggregation()
 		switch aggregation {
 		case sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL:
-			return handleIdenticalAggregation(lggr, filtered, f)
+			return handleIdenticalAggregation(lggr, observations, f)
 		case sdk.AggregationType_AGGREGATION_TYPE_MEDIAN:
-			return handleMedianAggregation(lggr, filtered, f)
+			return handleMedianAggregation(lggr, observations, f)
 		case sdk.AggregationType_AGGREGATION_TYPE_COMMON_PREFIX:
-			return handleCommonPrefixAggregation(lggr, filtered, f)
+			return handleCommonPrefixAggregation(lggr, observations, f)
 		case sdk.AggregationType_AGGREGATION_TYPE_COMMON_SUFFIX:
-			return handleCommonSuffixAggregation(lggr, filtered, f)
+			return handleCommonSuffixAggregation(lggr, observations, f)
 		default:
 			return nil, fmt.Errorf("unknown aggregation type: %s", aggregation)
 		}
 	case *sdk.ConsensusDescriptor_FieldsMap:
-		return handleFieldsMapAggregation(lggr, filtered, desc.FieldsMap.GetFields(), defaultValue, f)
+		return handleFieldsMapAggregation(lggr, observations, desc.FieldsMap.GetFields(), defaultValue, f)
 	default:
 		return nil, fmt.Errorf("unknown consensus descriptor type: %T", desc)
 	}
@@ -126,7 +110,7 @@ func handleFieldsMapAggregation(
 			}
 		}
 
-		aggregated, err = handleDescriptor(lggr, d, obsForKey, defaultForKey, f)
+		aggregated, err = CalculateOutcomeForObservations(lggr, obsForKey, d, defaultForKey, f)
 		if err == nil {
 			result[key] = aggregated
 			continue
@@ -456,12 +440,7 @@ func filterObservations(observationProtos []*valuespb.Value, minObservations int
 		return nil, nil, fmt.Errorf("insufficient observations (%d) to meet minimum (%d)", len(observationProtos), minObservations)
 	}
 
-	var dominantType reflect.Type
-	var highestCount int
-	var highestCountEqual bool
-
 	observationsByType := map[reflect.Type][]*valuespb.Value{}
-
 	for _, observation := range observationProtos {
 		if observation.Value == nil {
 			continue
@@ -469,22 +448,21 @@ func filterObservations(observationProtos []*valuespb.Value, minObservations int
 
 		tpe := reflect.TypeOf(observation.Value)
 		observationsByType[tpe] = append(observationsByType[tpe], observation)
-		count := len(observationsByType[tpe])
-		if count > highestCount {
-			highestCount = count
+	}
+
+	var dominantType reflect.Type
+	for tpe, obsOfType := range observationsByType {
+		if len(obsOfType) >= minObservations {
+			if dominantType != nil {
+				// More than one type meets the threshold
+				return nil, nil, ErrMultipleValuesMetThreshold
+			}
 			dominantType = tpe
-			highestCountEqual = false
-		} else if count == highestCount {
-			highestCountEqual = true
 		}
 	}
 
-	if highestCount < minObservations {
-		return nil, nil, fmt.Errorf("no single type met the minimum observation threshold of %d", minObservations)
-	}
-
-	if highestCountEqual {
-		return nil, nil, ErrMultipleValuesMetThreshold
+	if dominantType == nil {
+		return nil, nil, ErrNoValuesMetThreshold
 	}
 
 	return observationsByType[dominantType], dominantType, nil

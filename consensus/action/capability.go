@@ -40,8 +40,6 @@ import (
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2/types"
 )
 
-const defaultRequestBatchSize = 20
-
 const defaultKeyBundleIDForValueConsensus = "evm"
 
 const KeyBundleIDEvm = "evm"
@@ -67,7 +65,6 @@ type consensusCapability struct {
 	requestTimeout     time.Duration
 	requestTimeoutLock sync.RWMutex
 
-	requestBatchSize          int
 	maxRequestSizeBytes       limits.BoundLimiter[config.Size]
 	valueConsensusKeyBundleID string
 
@@ -121,7 +118,7 @@ func (c *consensusCapability) Initialise(ctx context.Context, dependencies core.
 	}
 
 	reportingPlugin, err := plugin.NewReportingPluginFactory(c.lggr, c.metrics, c.reqStore, c.SetRequestTimeout,
-		c.requestBatchSize)
+		defaultKeyBundleIDForValueConsensus)
 	if err != nil {
 		return fmt.Errorf("error when creating reporting plugin factory: %w", err)
 	}
@@ -166,7 +163,6 @@ func (c *consensusCapability) Initialise(ctx context.Context, dependencies core.
 
 func (c *consensusCapability) setConfiguration(cfg string) error {
 	c.valueConsensusKeyBundleID = defaultKeyBundleIDForValueConsensus
-	c.requestBatchSize = defaultRequestBatchSize
 
 	var capabilityConfig ConsensusCapabilityConfig
 	if len(cfg) > 0 {
@@ -180,10 +176,6 @@ func (c *consensusCapability) setConfiguration(cfg string) error {
 
 	if len(capabilityConfig.KeyBundleIDForValueConsensus) > 0 {
 		c.valueConsensusKeyBundleID = capabilityConfig.KeyBundleIDForValueConsensus
-	}
-
-	if capabilityConfig.RequestBatchSize > 0 {
-		c.requestBatchSize = capabilityConfig.RequestBatchSize
 	}
 
 	limit := cresettings.Default.PerWorkflow.Consensus.ObservationSizeLimit // make a copy

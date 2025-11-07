@@ -64,9 +64,9 @@ type capability struct {
 var _ evmcapserver.ClientCapability = &capabilityGRPCService{}
 
 func main() {
-	loopserver.ServeNewWithOtelViews(CapabilityName, func(s *loop.Server) loop.StandardCapabilities {
+	loopserver.ServeNew(CapabilityName, func(s *loop.Server) loop.StandardCapabilities {
 		return evmcapserver.NewClientServer(&capabilityGRPCService{lggr: s.Logger.Named(CapabilityName), limitsFactory: s.LimitsFactory})
-	}, consMetrics.MetricViews())
+	}, loop.WithOtelViews(consMetrics.MetricViews()))
 }
 
 func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {

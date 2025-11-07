@@ -11,3 +11,7 @@ gomods: ## Install gomods
 .PHONY: gomodtidy
 gomodtidy: gomods ## Run go mod tidy on all modules.
 	gomods tidy
+
+.PHONY: tidy
+tidy: gomodtidy ## Tidy all modules and add to git.
+	git add '**go.*'

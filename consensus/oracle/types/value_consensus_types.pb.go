@@ -7,6 +7,7 @@
 package types
 
 import (
+	sdk "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -66,53 +67,6 @@ func (x RequestType) Number() protoreflect.EnumNumber {
 // Deprecated: Use RequestType.Descriptor instead.
 func (RequestType) EnumDescriptor() ([]byte, []int) {
 	return file_value_consensus_types_proto_rawDescGZIP(), []int{0}
-}
-
-// TODO as part of https://smartcontract-it.atlassian.net/browse/CAPPL-1076 add additional statuses  (errored, failed etc.....):
-type RequestStatus int32
-
-const (
-	RequestStatus_REQUEST_STATUS_CONSENSUS_SUCCESS RequestStatus = 0
-	RequestStatus_REQUEST_STATUS_CONSENSUS_PENDING RequestStatus = 1
-)
-
-// Enum value maps for RequestStatus.
-var (
-	RequestStatus_name = map[int32]string{
-		0: "REQUEST_STATUS_CONSENSUS_SUCCESS",
-		1: "REQUEST_STATUS_CONSENSUS_PENDING",
-	}
-	RequestStatus_value = map[string]int32{
-		"REQUEST_STATUS_CONSENSUS_SUCCESS": 0,
-		"REQUEST_STATUS_CONSENSUS_PENDING": 1,
-	}
-)
-
-func (x RequestStatus) Enum() *RequestStatus {
-	p := new(RequestStatus)
-	*p = x
-	return p
-}
-
-func (x RequestStatus) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (RequestStatus) Descriptor() protoreflect.EnumDescriptor {
-	return file_value_consensus_types_proto_enumTypes[1].Descriptor()
-}
-
-func (RequestStatus) Type() protoreflect.EnumType {
-	return &file_value_consensus_types_proto_enumTypes[1]
-}
-
-func (x RequestStatus) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use RequestStatus.Descriptor instead.
-func (RequestStatus) EnumDescriptor() ([]byte, []int) {
-	return file_value_consensus_types_proto_rawDescGZIP(), []int{1}
 }
 
 type RequestMetaData struct {
@@ -239,76 +193,16 @@ func (x *RequestMetaData) GetRequestType() RequestType {
 	return RequestType_VALUE_CONSENSUS
 }
 
-type Request struct {
-	state                      protoimpl.MessageState `protogen:"open.v1"`
-	Metadata                   *RequestMetaData       `protobuf:"bytes,1,opt,name=metadata,proto3" json:"metadata,omitempty"`
-	RequestConsensusDescriptor []byte                 `protobuf:"bytes,2,opt,name=request_consensus_descriptor,json=requestConsensusDescriptor,proto3" json:"request_consensus_descriptor,omitempty"`
-	RequestDefault             []byte                 `protobuf:"bytes,3,opt,name=request_default,json=requestDefault,proto3" json:"request_default,omitempty"`
-	unknownFields              protoimpl.UnknownFields
-	sizeCache                  protoimpl.SizeCache
-}
-
-func (x *Request) Reset() {
-	*x = Request{}
-	mi := &file_value_consensus_types_proto_msgTypes[1]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *Request) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*Request) ProtoMessage() {}
-
-func (x *Request) ProtoReflect() protoreflect.Message {
-	mi := &file_value_consensus_types_proto_msgTypes[1]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use Request.ProtoReflect.Descriptor instead.
-func (*Request) Descriptor() ([]byte, []int) {
-	return file_value_consensus_types_proto_rawDescGZIP(), []int{1}
-}
-
-func (x *Request) GetMetadata() *RequestMetaData {
-	if x != nil {
-		return x.Metadata
-	}
-	return nil
-}
-
-func (x *Request) GetRequestConsensusDescriptor() []byte {
-	if x != nil {
-		return x.RequestConsensusDescriptor
-	}
-	return nil
-}
-
-func (x *Request) GetRequestDefault() []byte {
-	if x != nil {
-		return x.RequestDefault
-	}
-	return nil
-}
-
 type Query struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Requests      []*Request             `protobuf:"bytes,1,rep,name=requests,proto3" json:"requests,omitempty"`
+	RequestIDs    []string               `protobuf:"bytes,1,rep,name=requestIDs,proto3" json:"requestIDs,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Query) Reset() {
 	*x = Query{}
-	mi := &file_value_consensus_types_proto_msgTypes[2]
+	mi := &file_value_consensus_types_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -320,7 +214,7 @@ func (x *Query) String() string {
 func (*Query) ProtoMessage() {}
 
 func (x *Query) ProtoReflect() protoreflect.Message {
-	mi := &file_value_consensus_types_proto_msgTypes[2]
+	mi := &file_value_consensus_types_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -333,28 +227,28 @@ func (x *Query) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Query.ProtoReflect.Descriptor instead.
 func (*Query) Descriptor() ([]byte, []int) {
-	return file_value_consensus_types_proto_rawDescGZIP(), []int{2}
+	return file_value_consensus_types_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *Query) GetRequests() []*Request {
+func (x *Query) GetRequestIDs() []string {
 	if x != nil {
-		return x.Requests
+		return x.RequestIDs
 	}
 	return nil
 }
 
 type RequestObservation struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Metadata      *RequestMetaData       `protobuf:"bytes,1,opt,name=metadata,proto3" json:"metadata,omitempty"`
-	Observation   []byte                 `protobuf:"bytes,2,opt,name=observation,proto3" json:"observation,omitempty"`
-	ReceivedAt    *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=received_at,json=receivedAt,proto3" json:"received_at,omitempty"`
+	state         protoimpl.MessageState     `protogen:"open.v1"`
+	Metadata      *RequestMetaData           `protobuf:"bytes,1,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	Input         *sdk.SimpleConsensusInputs `protobuf:"bytes,2,opt,name=input,proto3" json:"input,omitempty"`
+	ReceivedAt    *timestamppb.Timestamp     `protobuf:"bytes,3,opt,name=received_at,json=receivedAt,proto3" json:"received_at,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RequestObservation) Reset() {
 	*x = RequestObservation{}
-	mi := &file_value_consensus_types_proto_msgTypes[3]
+	mi := &file_value_consensus_types_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -366,7 +260,7 @@ func (x *RequestObservation) String() string {
 func (*RequestObservation) ProtoMessage() {}
 
 func (x *RequestObservation) ProtoReflect() protoreflect.Message {
-	mi := &file_value_consensus_types_proto_msgTypes[3]
+	mi := &file_value_consensus_types_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -379,7 +273,7 @@ func (x *RequestObservation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestObservation.ProtoReflect.Descriptor instead.
 func (*RequestObservation) Descriptor() ([]byte, []int) {
-	return file_value_consensus_types_proto_rawDescGZIP(), []int{3}
+	return file_value_consensus_types_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *RequestObservation) GetMetadata() *RequestMetaData {
@@ -389,9 +283,9 @@ func (x *RequestObservation) GetMetadata() *RequestMetaData {
 	return nil
 }
 
-func (x *RequestObservation) GetObservation() []byte {
+func (x *RequestObservation) GetInput() *sdk.SimpleConsensusInputs {
 	if x != nil {
-		return x.Observation
+		return x.Input
 	}
 	return nil
 }
@@ -404,15 +298,15 @@ func (x *RequestObservation) GetReceivedAt() *timestamppb.Timestamp {
 }
 
 type Observation struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Observations  []*RequestObservation  `protobuf:"bytes,1,rep,name=observations,proto3" json:"observations,omitempty"`
+	state         protoimpl.MessageState         `protogen:"open.v1"`
+	Observations  map[string]*RequestObservation `protobuf:"bytes,1,rep,name=observations,proto3" json:"observations,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Observation) Reset() {
 	*x = Observation{}
-	mi := &file_value_consensus_types_proto_msgTypes[4]
+	mi := &file_value_consensus_types_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -424,7 +318,7 @@ func (x *Observation) String() string {
 func (*Observation) ProtoMessage() {}
 
 func (x *Observation) ProtoReflect() protoreflect.Message {
-	mi := &file_value_consensus_types_proto_msgTypes[4]
+	mi := &file_value_consensus_types_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -437,40 +331,94 @@ func (x *Observation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Observation.ProtoReflect.Descriptor instead.
 func (*Observation) Descriptor() ([]byte, []int) {
-	return file_value_consensus_types_proto_rawDescGZIP(), []int{4}
+	return file_value_consensus_types_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *Observation) GetObservations() []*RequestObservation {
+func (x *Observation) GetObservations() map[string]*RequestObservation {
 	if x != nil {
 		return x.Observations
 	}
 	return nil
 }
 
-type RequestOutcome struct {
+// this message is used when calculating the current batch size and serves no other purpose
+type ObservationMapEntry struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Metadata      *RequestMetaData       `protobuf:"bytes,1,opt,name=metadata,proto3" json:"metadata,omitempty"`
-	Outcome       []byte                 `protobuf:"bytes,2,opt,name=outcome,proto3" json:"outcome,omitempty"`
-	Timestamp     *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
-	Status        RequestStatus          `protobuf:"varint,4,opt,name=status,proto3,enum=value_consensus_types.RequestStatus" json:"status,omitempty"`
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Value         *RequestObservation    `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *RequestOutcome) Reset() {
-	*x = RequestOutcome{}
+func (x *ObservationMapEntry) Reset() {
+	*x = ObservationMapEntry{}
+	mi := &file_value_consensus_types_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ObservationMapEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ObservationMapEntry) ProtoMessage() {}
+
+func (x *ObservationMapEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_value_consensus_types_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ObservationMapEntry.ProtoReflect.Descriptor instead.
+func (*ObservationMapEntry) Descriptor() ([]byte, []int) {
+	return file_value_consensus_types_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ObservationMapEntry) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *ObservationMapEntry) GetValue() *RequestObservation {
+	if x != nil {
+		return x.Value
+	}
+	return nil
+}
+
+type ConsensusOutcome struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Outcome:
+	//
+	//	*ConsensusOutcome_Success
+	//	*ConsensusOutcome_Failure
+	Outcome       isConsensusOutcome_Outcome `protobuf_oneof:"outcome"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConsensusOutcome) Reset() {
+	*x = ConsensusOutcome{}
 	mi := &file_value_consensus_types_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *RequestOutcome) String() string {
+func (x *ConsensusOutcome) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*RequestOutcome) ProtoMessage() {}
+func (*ConsensusOutcome) ProtoMessage() {}
 
-func (x *RequestOutcome) ProtoReflect() protoreflect.Message {
+func (x *ConsensusOutcome) ProtoReflect() protoreflect.Message {
 	mi := &file_value_consensus_types_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -482,62 +430,75 @@ func (x *RequestOutcome) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use RequestOutcome.ProtoReflect.Descriptor instead.
-func (*RequestOutcome) Descriptor() ([]byte, []int) {
+// Deprecated: Use ConsensusOutcome.ProtoReflect.Descriptor instead.
+func (*ConsensusOutcome) Descriptor() ([]byte, []int) {
 	return file_value_consensus_types_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *RequestOutcome) GetMetadata() *RequestMetaData {
-	if x != nil {
-		return x.Metadata
-	}
-	return nil
-}
-
-func (x *RequestOutcome) GetOutcome() []byte {
+func (x *ConsensusOutcome) GetOutcome() isConsensusOutcome_Outcome {
 	if x != nil {
 		return x.Outcome
 	}
 	return nil
 }
 
-func (x *RequestOutcome) GetTimestamp() *timestamppb.Timestamp {
+func (x *ConsensusOutcome) GetSuccess() *ConsensusSuccessOutcome {
 	if x != nil {
-		return x.Timestamp
+		if x, ok := x.Outcome.(*ConsensusOutcome_Success); ok {
+			return x.Success
+		}
 	}
 	return nil
 }
 
-func (x *RequestOutcome) GetStatus() RequestStatus {
+func (x *ConsensusOutcome) GetFailure() *ConsensusFailedOutcome {
 	if x != nil {
-		return x.Status
+		if x, ok := x.Outcome.(*ConsensusOutcome_Failure); ok {
+			return x.Failure
+		}
 	}
-	return RequestStatus_REQUEST_STATUS_CONSENSUS_SUCCESS
+	return nil
 }
 
-type HistoricalRequestOutcome struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	RequestId        string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
-	Status           RequestStatus          `protobuf:"varint,2,opt,name=status,proto3,enum=value_consensus_types.RequestStatus" json:"status,omitempty"`
-	FirstSeenAtSeqNr uint64                 `protobuf:"varint,3,opt,name=first_seen_at_seq_nr,json=firstSeenAtSeqNr,proto3" json:"first_seen_at_seq_nr,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+type isConsensusOutcome_Outcome interface {
+	isConsensusOutcome_Outcome()
 }
 
-func (x *HistoricalRequestOutcome) Reset() {
-	*x = HistoricalRequestOutcome{}
+type ConsensusOutcome_Success struct {
+	Success *ConsensusSuccessOutcome `protobuf:"bytes,1,opt,name=success,proto3,oneof"`
+}
+
+type ConsensusOutcome_Failure struct {
+	Failure *ConsensusFailedOutcome `protobuf:"bytes,2,opt,name=failure,proto3,oneof"`
+}
+
+func (*ConsensusOutcome_Success) isConsensusOutcome_Outcome() {}
+
+func (*ConsensusOutcome_Failure) isConsensusOutcome_Outcome() {}
+
+type ConsensusSuccessOutcome struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Metadata      *RequestMetaData       `protobuf:"bytes,1,opt,name=metadata,proto3" json:"metadata,omitempty"`
+	Outcome       []byte                 `protobuf:"bytes,2,opt,name=outcome,proto3" json:"outcome,omitempty"`
+	Timestamp     *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConsensusSuccessOutcome) Reset() {
+	*x = ConsensusSuccessOutcome{}
 	mi := &file_value_consensus_types_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *HistoricalRequestOutcome) String() string {
+func (x *ConsensusSuccessOutcome) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*HistoricalRequestOutcome) ProtoMessage() {}
+func (*ConsensusSuccessOutcome) ProtoMessage() {}
 
-func (x *HistoricalRequestOutcome) ProtoReflect() protoreflect.Message {
+func (x *ConsensusSuccessOutcome) ProtoReflect() protoreflect.Message {
 	mi := &file_value_consensus_types_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -549,46 +510,104 @@ func (x *HistoricalRequestOutcome) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use HistoricalRequestOutcome.ProtoReflect.Descriptor instead.
-func (*HistoricalRequestOutcome) Descriptor() ([]byte, []int) {
+// Deprecated: Use ConsensusSuccessOutcome.ProtoReflect.Descriptor instead.
+func (*ConsensusSuccessOutcome) Descriptor() ([]byte, []int) {
 	return file_value_consensus_types_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *HistoricalRequestOutcome) GetRequestId() string {
+func (x *ConsensusSuccessOutcome) GetMetadata() *RequestMetaData {
 	if x != nil {
-		return x.RequestId
+		return x.Metadata
+	}
+	return nil
+}
+
+func (x *ConsensusSuccessOutcome) GetOutcome() []byte {
+	if x != nil {
+		return x.Outcome
+	}
+	return nil
+}
+
+func (x *ConsensusSuccessOutcome) GetTimestamp() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Timestamp
+	}
+	return nil
+}
+
+type ConsensusFailedOutcome struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	RequestID      string                 `protobuf:"bytes,1,opt,name=requestID,proto3" json:"requestID,omitempty"`
+	FailureMessage string                 `protobuf:"bytes,2,opt,name=failure_message,json=failureMessage,proto3" json:"failure_message,omitempty"`
+	KeyBundleId    string                 `protobuf:"bytes,3,opt,name=keyBundleId,proto3" json:"keyBundleId,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ConsensusFailedOutcome) Reset() {
+	*x = ConsensusFailedOutcome{}
+	mi := &file_value_consensus_types_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConsensusFailedOutcome) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConsensusFailedOutcome) ProtoMessage() {}
+
+func (x *ConsensusFailedOutcome) ProtoReflect() protoreflect.Message {
+	mi := &file_value_consensus_types_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConsensusFailedOutcome.ProtoReflect.Descriptor instead.
+func (*ConsensusFailedOutcome) Descriptor() ([]byte, []int) {
+	return file_value_consensus_types_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ConsensusFailedOutcome) GetRequestID() string {
+	if x != nil {
+		return x.RequestID
 	}
 	return ""
 }
 
-func (x *HistoricalRequestOutcome) GetStatus() RequestStatus {
+func (x *ConsensusFailedOutcome) GetFailureMessage() string {
 	if x != nil {
-		return x.Status
+		return x.FailureMessage
 	}
-	return RequestStatus_REQUEST_STATUS_CONSENSUS_SUCCESS
+	return ""
 }
 
-func (x *HistoricalRequestOutcome) GetFirstSeenAtSeqNr() uint64 {
+func (x *ConsensusFailedOutcome) GetKeyBundleId() string {
 	if x != nil {
-		return x.FirstSeenAtSeqNr
+		return x.KeyBundleId
 	}
-	return 0
+	return ""
 }
 
 type Outcome struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
-	Outcomes []*RequestOutcome      `protobuf:"bytes,1,rep,name=outcomes,proto3" json:"outcomes,omitempty"`
-	// A record of recent historical request outcomes, expired based on the sequence number of the consensus round in which they were first seen.
-	// It does not include the actual outcome data to save space in the plugin outcome.  (Note, this prevents it from being used by nodes to recover from
-	// missed outcomes, but that is not a use case we currently support and there are different options to address this use case, i.e. a decentralised store)
-	HistoricalOutcomes []*HistoricalRequestOutcome `protobuf:"bytes,2,rep,name=historical_outcomes,json=historicalOutcomes,proto3" json:"historical_outcomes,omitempty"`
+	Outcomes []*ConsensusOutcome    `protobuf:"bytes,1,rep,name=outcomes,proto3" json:"outcomes,omitempty"`
+	// A record of the sequence number when the outcome for each request ID was calculated, used for tracking recent historical outcomes
+	HistoricalOutcomes map[string]uint64 `protobuf:"bytes,2,rep,name=historical_outcomes,json=historicalOutcomes,proto3" json:"historical_outcomes,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"varint,2,opt,name=value"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
 
 func (x *Outcome) Reset() {
 	*x = Outcome{}
-	mi := &file_value_consensus_types_proto_msgTypes[7]
+	mi := &file_value_consensus_types_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -600,7 +619,7 @@ func (x *Outcome) String() string {
 func (*Outcome) ProtoMessage() {}
 
 func (x *Outcome) ProtoReflect() protoreflect.Message {
-	mi := &file_value_consensus_types_proto_msgTypes[7]
+	mi := &file_value_consensus_types_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -613,28 +632,81 @@ func (x *Outcome) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Outcome.ProtoReflect.Descriptor instead.
 func (*Outcome) Descriptor() ([]byte, []int) {
-	return file_value_consensus_types_proto_rawDescGZIP(), []int{7}
+	return file_value_consensus_types_proto_rawDescGZIP(), []int{8}
 }
 
-func (x *Outcome) GetOutcomes() []*RequestOutcome {
+func (x *Outcome) GetOutcomes() []*ConsensusOutcome {
 	if x != nil {
 		return x.Outcomes
 	}
 	return nil
 }
 
-func (x *Outcome) GetHistoricalOutcomes() []*HistoricalRequestOutcome {
+func (x *Outcome) GetHistoricalOutcomes() map[string]uint64 {
 	if x != nil {
 		return x.HistoricalOutcomes
 	}
 	return nil
 }
 
+// this message is used when calculating the current batch size and serves no other purpose
+type HistoricalOutcomeMapEntry struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Value         uint64                 `protobuf:"varint,2,opt,name=value,proto3" json:"value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HistoricalOutcomeMapEntry) Reset() {
+	*x = HistoricalOutcomeMapEntry{}
+	mi := &file_value_consensus_types_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HistoricalOutcomeMapEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HistoricalOutcomeMapEntry) ProtoMessage() {}
+
+func (x *HistoricalOutcomeMapEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_value_consensus_types_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HistoricalOutcomeMapEntry.ProtoReflect.Descriptor instead.
+func (*HistoricalOutcomeMapEntry) Descriptor() ([]byte, []int) {
+	return file_value_consensus_types_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *HistoricalOutcomeMapEntry) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *HistoricalOutcomeMapEntry) GetValue() uint64 {
+	if x != nil {
+		return x.Value
+	}
+	return 0
+}
+
 var File_value_consensus_types_proto protoreflect.FileDescriptor
 
 const file_value_consensus_types_proto_rawDesc = "" +
 	"\n" +
-	"\x1bvalue_consensus_types.proto\x12\x15value_consensus_types\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf6\x03\n" +
+	"\x1bvalue_consensus_types.proto\x12\x15value_consensus_types\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x15sdk/v1alpha/sdk.proto\"\xf6\x03\n" +
 	"\x0fRequestMetaData\x12\x1d\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tR\trequestId\x122\n" +
@@ -649,39 +721,48 @@ const file_value_consensus_types_proto_rawDesc = "" +
 	"\treport_id\x18\t \x01(\tR\breportId\x12 \n" +
 	"\vkeyBundleId\x18\n" +
 	" \x01(\tR\vkeyBundleId\x12E\n" +
-	"\frequest_type\x18\v \x01(\x0e2\".value_consensus_types.RequestTypeR\vrequestType\"\xb8\x01\n" +
-	"\aRequest\x12B\n" +
-	"\bmetadata\x18\x01 \x01(\v2&.value_consensus_types.RequestMetaDataR\bmetadata\x12@\n" +
-	"\x1crequest_consensus_descriptor\x18\x02 \x01(\fR\x1arequestConsensusDescriptor\x12'\n" +
-	"\x0frequest_default\x18\x03 \x01(\fR\x0erequestDefault\"C\n" +
-	"\x05Query\x12:\n" +
-	"\brequests\x18\x01 \x03(\v2\x1e.value_consensus_types.RequestR\brequests\"\xb7\x01\n" +
+	"\frequest_type\x18\v \x01(\x0e2\".value_consensus_types.RequestTypeR\vrequestType\"'\n" +
+	"\x05Query\x12\x1e\n" +
+	"\n" +
+	"requestIDs\x18\x01 \x03(\tR\n" +
+	"requestIDs\"\xcf\x01\n" +
 	"\x12RequestObservation\x12B\n" +
-	"\bmetadata\x18\x01 \x01(\v2&.value_consensus_types.RequestMetaDataR\bmetadata\x12 \n" +
-	"\vobservation\x18\x02 \x01(\fR\vobservation\x12;\n" +
+	"\bmetadata\x18\x01 \x01(\v2&.value_consensus_types.RequestMetaDataR\bmetadata\x128\n" +
+	"\x05input\x18\x02 \x01(\v2\".sdk.v1alpha.SimpleConsensusInputsR\x05input\x12;\n" +
 	"\vreceived_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"receivedAt\"\\\n" +
-	"\vObservation\x12M\n" +
-	"\fobservations\x18\x01 \x03(\v2).value_consensus_types.RequestObservationR\fobservations\"\xe6\x01\n" +
-	"\x0eRequestOutcome\x12B\n" +
+	"receivedAt\"\xd3\x01\n" +
+	"\vObservation\x12X\n" +
+	"\fobservations\x18\x01 \x03(\v24.value_consensus_types.Observation.ObservationsEntryR\fobservations\x1aj\n" +
+	"\x11ObservationsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12?\n" +
+	"\x05value\x18\x02 \x01(\v2).value_consensus_types.RequestObservationR\x05value:\x028\x01\"h\n" +
+	"\x13ObservationMapEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12?\n" +
+	"\x05value\x18\x02 \x01(\v2).value_consensus_types.RequestObservationR\x05value\"\xb4\x01\n" +
+	"\x10ConsensusOutcome\x12J\n" +
+	"\asuccess\x18\x01 \x01(\v2..value_consensus_types.ConsensusSuccessOutcomeH\x00R\asuccess\x12I\n" +
+	"\afailure\x18\x02 \x01(\v2-.value_consensus_types.ConsensusFailedOutcomeH\x00R\afailureB\t\n" +
+	"\aoutcome\"\xb1\x01\n" +
+	"\x17ConsensusSuccessOutcome\x12B\n" +
 	"\bmetadata\x18\x01 \x01(\v2&.value_consensus_types.RequestMetaDataR\bmetadata\x12\x18\n" +
 	"\aoutcome\x18\x02 \x01(\fR\aoutcome\x128\n" +
-	"\ttimestamp\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\x12<\n" +
-	"\x06status\x18\x04 \x01(\x0e2$.value_consensus_types.RequestStatusR\x06status\"\xa7\x01\n" +
-	"\x18HistoricalRequestOutcome\x12\x1d\n" +
-	"\n" +
-	"request_id\x18\x01 \x01(\tR\trequestId\x12<\n" +
-	"\x06status\x18\x02 \x01(\x0e2$.value_consensus_types.RequestStatusR\x06status\x12.\n" +
-	"\x14first_seen_at_seq_nr\x18\x03 \x01(\x04R\x10firstSeenAtSeqNr\"\xae\x01\n" +
-	"\aOutcome\x12A\n" +
-	"\boutcomes\x18\x01 \x03(\v2%.value_consensus_types.RequestOutcomeR\boutcomes\x12`\n" +
-	"\x13historical_outcomes\x18\x02 \x03(\v2/.value_consensus_types.HistoricalRequestOutcomeR\x12historicalOutcomes*9\n" +
+	"\ttimestamp\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\"\x81\x01\n" +
+	"\x16ConsensusFailedOutcome\x12\x1c\n" +
+	"\trequestID\x18\x01 \x01(\tR\trequestID\x12'\n" +
+	"\x0ffailure_message\x18\x02 \x01(\tR\x0efailureMessage\x12 \n" +
+	"\vkeyBundleId\x18\x03 \x01(\tR\vkeyBundleId\"\xfe\x01\n" +
+	"\aOutcome\x12C\n" +
+	"\boutcomes\x18\x01 \x03(\v2'.value_consensus_types.ConsensusOutcomeR\boutcomes\x12g\n" +
+	"\x13historical_outcomes\x18\x02 \x03(\v26.value_consensus_types.Outcome.HistoricalOutcomesEntryR\x12historicalOutcomes\x1aE\n" +
+	"\x17HistoricalOutcomesEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\x04R\x05value:\x028\x01\"C\n" +
+	"\x19HistoricalOutcomeMapEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\x04R\x05value*9\n" +
 	"\vRequestType\x12\x13\n" +
 	"\x0fVALUE_CONSENSUS\x10\x00\x12\x15\n" +
-	"\x11REPORT_GENERATION\x10\x01*[\n" +
-	"\rRequestStatus\x12$\n" +
-	" REQUEST_STATUS_CONSENSUS_SUCCESS\x10\x00\x12$\n" +
-	" REQUEST_STATUS_CONSENSUS_PENDING\x10\x01B\x18Z\x16consensus/oracle/typesb\x06proto3"
+	"\x11REPORT_GENERATION\x10\x01B\x18Z\x16consensus/oracle/typesb\x06proto3"
 
 var (
 	file_value_consensus_types_proto_rawDescOnce sync.Once
@@ -695,39 +776,44 @@ func file_value_consensus_types_proto_rawDescGZIP() []byte {
 	return file_value_consensus_types_proto_rawDescData
 }
 
-var file_value_consensus_types_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_value_consensus_types_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_value_consensus_types_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_value_consensus_types_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_value_consensus_types_proto_goTypes = []any{
-	(RequestType)(0),                 // 0: value_consensus_types.RequestType
-	(RequestStatus)(0),               // 1: value_consensus_types.RequestStatus
-	(*RequestMetaData)(nil),          // 2: value_consensus_types.RequestMetaData
-	(*Request)(nil),                  // 3: value_consensus_types.Request
-	(*Query)(nil),                    // 4: value_consensus_types.Query
-	(*RequestObservation)(nil),       // 5: value_consensus_types.RequestObservation
-	(*Observation)(nil),              // 6: value_consensus_types.Observation
-	(*RequestOutcome)(nil),           // 7: value_consensus_types.RequestOutcome
-	(*HistoricalRequestOutcome)(nil), // 8: value_consensus_types.HistoricalRequestOutcome
-	(*Outcome)(nil),                  // 9: value_consensus_types.Outcome
-	(*timestamppb.Timestamp)(nil),    // 10: google.protobuf.Timestamp
+	(RequestType)(0),                  // 0: value_consensus_types.RequestType
+	(*RequestMetaData)(nil),           // 1: value_consensus_types.RequestMetaData
+	(*Query)(nil),                     // 2: value_consensus_types.Query
+	(*RequestObservation)(nil),        // 3: value_consensus_types.RequestObservation
+	(*Observation)(nil),               // 4: value_consensus_types.Observation
+	(*ObservationMapEntry)(nil),       // 5: value_consensus_types.ObservationMapEntry
+	(*ConsensusOutcome)(nil),          // 6: value_consensus_types.ConsensusOutcome
+	(*ConsensusSuccessOutcome)(nil),   // 7: value_consensus_types.ConsensusSuccessOutcome
+	(*ConsensusFailedOutcome)(nil),    // 8: value_consensus_types.ConsensusFailedOutcome
+	(*Outcome)(nil),                   // 9: value_consensus_types.Outcome
+	(*HistoricalOutcomeMapEntry)(nil), // 10: value_consensus_types.HistoricalOutcomeMapEntry
+	nil,                               // 11: value_consensus_types.Observation.ObservationsEntry
+	nil,                               // 12: value_consensus_types.Outcome.HistoricalOutcomesEntry
+	(*sdk.SimpleConsensusInputs)(nil), // 13: sdk.v1alpha.SimpleConsensusInputs
+	(*timestamppb.Timestamp)(nil),     // 14: google.protobuf.Timestamp
 }
 var file_value_consensus_types_proto_depIdxs = []int32{
 	0,  // 0: value_consensus_types.RequestMetaData.request_type:type_name -> value_consensus_types.RequestType
-	2,  // 1: value_consensus_types.Request.metadata:type_name -> value_consensus_types.RequestMetaData
-	3,  // 2: value_consensus_types.Query.requests:type_name -> value_consensus_types.Request
-	2,  // 3: value_consensus_types.RequestObservation.metadata:type_name -> value_consensus_types.RequestMetaData
-	10, // 4: value_consensus_types.RequestObservation.received_at:type_name -> google.protobuf.Timestamp
-	5,  // 5: value_consensus_types.Observation.observations:type_name -> value_consensus_types.RequestObservation
-	2,  // 6: value_consensus_types.RequestOutcome.metadata:type_name -> value_consensus_types.RequestMetaData
-	10, // 7: value_consensus_types.RequestOutcome.timestamp:type_name -> google.protobuf.Timestamp
-	1,  // 8: value_consensus_types.RequestOutcome.status:type_name -> value_consensus_types.RequestStatus
-	1,  // 9: value_consensus_types.HistoricalRequestOutcome.status:type_name -> value_consensus_types.RequestStatus
-	7,  // 10: value_consensus_types.Outcome.outcomes:type_name -> value_consensus_types.RequestOutcome
-	8,  // 11: value_consensus_types.Outcome.historical_outcomes:type_name -> value_consensus_types.HistoricalRequestOutcome
-	12, // [12:12] is the sub-list for method output_type
-	12, // [12:12] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	1,  // 1: value_consensus_types.RequestObservation.metadata:type_name -> value_consensus_types.RequestMetaData
+	13, // 2: value_consensus_types.RequestObservation.input:type_name -> sdk.v1alpha.SimpleConsensusInputs
+	14, // 3: value_consensus_types.RequestObservation.received_at:type_name -> google.protobuf.Timestamp
+	11, // 4: value_consensus_types.Observation.observations:type_name -> value_consensus_types.Observation.ObservationsEntry
+	3,  // 5: value_consensus_types.ObservationMapEntry.value:type_name -> value_consensus_types.RequestObservation
+	7,  // 6: value_consensus_types.ConsensusOutcome.success:type_name -> value_consensus_types.ConsensusSuccessOutcome
+	8,  // 7: value_consensus_types.ConsensusOutcome.failure:type_name -> value_consensus_types.ConsensusFailedOutcome
+	1,  // 8: value_consensus_types.ConsensusSuccessOutcome.metadata:type_name -> value_consensus_types.RequestMetaData
+	14, // 9: value_consensus_types.ConsensusSuccessOutcome.timestamp:type_name -> google.protobuf.Timestamp
+	6,  // 10: value_consensus_types.Outcome.outcomes:type_name -> value_consensus_types.ConsensusOutcome
+	12, // 11: value_consensus_types.Outcome.historical_outcomes:type_name -> value_consensus_types.Outcome.HistoricalOutcomesEntry
+	3,  // 12: value_consensus_types.Observation.ObservationsEntry.value:type_name -> value_consensus_types.RequestObservation
+	13, // [13:13] is the sub-list for method output_type
+	13, // [13:13] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_value_consensus_types_proto_init() }
@@ -735,13 +821,17 @@ func file_value_consensus_types_proto_init() {
 	if File_value_consensus_types_proto != nil {
 		return
 	}
+	file_value_consensus_types_proto_msgTypes[5].OneofWrappers = []any{
+		(*ConsensusOutcome_Success)(nil),
+		(*ConsensusOutcome_Failure)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_value_consensus_types_proto_rawDesc), len(file_value_consensus_types_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   8,
+			NumEnums:      1,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -2,11 +2,10 @@ syntax = "proto3";
 
 option go_package = "consensus/oracle/types";
 
-
-
 package value_consensus_types;
 
 import "google/protobuf/timestamp.proto";
+import "sdk/v1alpha/sdk.proto";
 
 enum RequestType {
   VALUE_CONSENSUS = 0;
@@ -30,51 +29,54 @@ message RequestMetaData {
   RequestType request_type = 11;
 }
 
-message Request {
-  RequestMetaData metadata = 1;
-  bytes request_consensus_descriptor = 2;
-  bytes request_default = 3;
-}
-
-
 message Query {
-  repeated Request requests = 1;
+  repeated string requestIDs = 1;
 }
 
 message RequestObservation {
   RequestMetaData metadata = 1;
-  bytes observation = 2;
+  sdk.v1alpha.SimpleConsensusInputs input = 2;
   google.protobuf.Timestamp received_at = 3;
 }
 
 message Observation {
-  repeated RequestObservation observations = 1;
+  map<string,RequestObservation> observations = 1;
 }
 
-// TODO as part of https://smartcontract-it.atlassian.net/browse/CAPPL-1076 add additional statuses  (errored, failed etc.....):
-enum RequestStatus {
-  REQUEST_STATUS_CONSENSUS_SUCCESS = 0;
-  REQUEST_STATUS_CONSENSUS_PENDING = 1;
+// this message is used when calculating the current batch size and serves no other purpose
+message ObservationMapEntry {
+  string key = 1;
+  RequestObservation value = 2;
 }
 
-message RequestOutcome {
+message ConsensusOutcome {
+  oneof outcome {
+    ConsensusSuccessOutcome success = 1;
+    ConsensusFailedOutcome failure = 2;
+  }
+}
+
+message ConsensusSuccessOutcome {
   RequestMetaData metadata = 1;
   bytes outcome = 2;
   google.protobuf.Timestamp timestamp = 3;
-  RequestStatus status = 4;
 }
 
-message HistoricalRequestOutcome {
-  string request_id = 1;
-  RequestStatus status = 2;
-  uint64 first_seen_at_seq_nr = 3;
+message ConsensusFailedOutcome {
+  string requestID = 1;
+  string failure_message = 2;
+  string keyBundleId = 3;
 }
 
 message Outcome {
-  repeated RequestOutcome outcomes = 1;
+  repeated ConsensusOutcome outcomes = 1;
 
-  // A record of recent historical request outcomes, expired based on the sequence number of the consensus round in which they were first seen.
-  // It does not include the actual outcome data to save space in the plugin outcome.  (Note, this prevents it from being used by nodes to recover from
-  // missed outcomes, but that is not a use case we currently support and there are different options to address this use case, i.e. a decentralised store)
-  repeated HistoricalRequestOutcome historical_outcomes = 2;
+  // A record of the sequence number when the outcome for each request ID was calculated, used for tracking recent historical outcomes
+  map<string, uint64> historical_outcomes = 2;
+}
+
+// this message is used when calculating the current batch size and serves no other purpose
+message HistoricalOutcomeMapEntry {
+  string key = 1;
+  uint64 value = 2;
 }

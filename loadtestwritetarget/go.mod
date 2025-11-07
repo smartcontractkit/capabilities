@@ -3,8 +3,8 @@ module github.com/smartcontractkit/capabilities/loadtestwritetarget
 go 1.25.3
 
 require (
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20251008151345-29b06a2ad833
-	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251104231304-6cbcde243424
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20251105202054-e299af591b47
+	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251105200931-fdbfd5296201
 )
 
 require (
