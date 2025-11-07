@@ -23,6 +23,18 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Cache apt packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/apt/archives
+          key: apt-${{ runner.os }}-g++-multilib
+          restore-keys: |
+            apt-${{ runner.os }}-
+      - name: Install C++ Linker Dependencies
+        run: |
+          sudo mkdir -p ~/.cache/apt/archives
+          sudo apt-get update -o Dir::Cache::Archives=~/.cache/apt/archives
+          sudo apt-get install -y -o Dir::Cache::Archives=~/.cache/apt/archives g++-multilib
       - uses: bazel-contrib/setup-bazel@4fd964a13a440a8aeb0be47350db2fc640f19ca8 # 0.15.0
         with:
           bazelisk-cache: true
@@ -31,9 +43,7 @@ jobs:
       - name: Tidy and generate
         run: |
           bazel mod tidy
-          bazel run //:gazelle \
-            --platforms=@rules_go//go/toolchain:linux_amd64_cgo \
-            --linkopt=-no-pie 
+          bazel run //:gazelle --platforms=@rules_go//go/toolchain:linux_amd64_cgo --linkopt=-no-pie
       - name: Ensure no diff
         run: |
           git diff
