@@ -59,8 +59,8 @@ func Test_Server(t *testing.T) {
 
 		response, err := capabilitiesServer.Target.Execute(ctx, workflow.NewRequest(map[string]any{
 			"signedReport": testutils.NewReport(t, map[string][]byte{
-				"key":  []byte("value"),
-				"key2": []byte("value2"),
+				"key":  []byte("bar"),
+				"key2": []byte("foo"),
 			}),
 		}))
 		require.NoError(t, err)
@@ -76,8 +76,8 @@ func Test_Server(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Equal(t, workflow.NewResponse(map[string]any{
-			"key":  []byte("value"),
-			"key2": []byte("value2"),
+			"key":  []byte("bar"),
+			"key2": []byte("foo"),
 			"key3": []byte(""),
 		}), response)
 		removeWorkflow(ctx)
