@@ -411,6 +411,17 @@ func (r *WriteReportError) MetricAttributes() []attribute.KeyValue {
 	return r.ExecutionContext.MetricsAttributes()
 }
 
+func (r *WriteReportUserError) LogAttributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
+		attribute.String("receiver", getReceiver(r.Req.GetReceiver())),
+		attribute.String("summary", r.GetSummary()),
+	}, r.ExecutionContext.LogAttributes()...)
+}
+
+func (r *WriteReportUserError) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
 func (r *WriteReportTxFeeCalculationError) LogAttributes() []attribute.KeyValue {
 	attributes := []attribute.KeyValue{
 		attribute.String("receiver", getReceiver(r.Req.GetReceiver())),

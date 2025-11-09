@@ -126,6 +126,15 @@ func (m *MessageBuilder) BuildWriteReportError(tc TelemetryContext, req *evmcap.
 	}
 }
 
+func (m *MessageBuilder) BuildWriteReportUserError(tc TelemetryContext, req *evmcap.WriteReportRequest, summary, cause string) ErrorMessage {
+	return &WriteReportUserError{
+		Req:              convertWriteReportRequest(req),
+		ExecutionContext: m.BuildExecutionContext(tc),
+		Summary:          summary,
+		Cause:            cause,
+	}
+}
+
 func (m *MessageBuilder) BuildWriteReportTxFeeCalculationError(tc TelemetryContext, req *evmcap.WriteReportRequest, txIdempotencyKey, cause string) ErrorMessage {
 	summary := "Failed to calculate transaction fee"
 	if txIdempotencyKey != "" {

@@ -39,6 +39,7 @@ const (
 )
 
 const UnknownIssueExecutingReceiverContractMessage = "unknown issue execution receiver contract"
+const UserError = "User error:"
 
 func decodeReportMetadata(data []byte) (ocrtypes.Metadata, error) {
 	metadata, _, err := ocrtypes.Decode(data)
@@ -63,15 +64,21 @@ func (e *EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMeta
 	ctx = metadata.ContextWithCRE(ctx)
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: metadata}
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportInitiated(telemetryContext, input))
-	err := validateInputsAndReportMetadata(metadata, input)
+	err := e.validateInputsAndReportMetadata(ctx, metadata, input)
 	if err != nil {
-		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport due to invalid request", err.Error()))
+		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportUserError(telemetryContext, input, "Failed to WriteReport User Error due to invalid request", err.Error()))
 		return nil, capabilities.NewRemoteReportableError(err)
 	}
 
 	report, billingMetadata, err := e.executeWriteReport(ctx, input, metadata, telemetryContext)
 	if err != nil {
-		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport while checking if the report exists or trying to publish on chain", err.Error()))
+		var errorMessage monitoring.ErrorMessage
+		if isUserErrorWriteReport(err) {
+			errorMessage = e.messageBuilder.BuildWriteReportUserError(telemetryContext, input, "Failed to WriteReport User Error", err.Error())
+		} else {
+			errorMessage = e.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport while checking if the report exists or trying to publish on chain", err.Error())
+		}
+		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, errorMessage)
 		return nil, capabilities.NewRemoteReportableError(err)
 	}
 
@@ -130,7 +137,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 	} else {
 		err = e.txGasLimit.Check(ctx, request.GasConfig.GasLimit)
 		if err != nil {
-			return nil, capabilities.ResponseMetadata{}, err
+			return nil, capabilities.ResponseMetadata{}, fmt.Errorf(UserError+" report size exceeds limit (gasLimit=%d): %w", request.GasConfig.GasLimit, err)
 		}
 	}
 
@@ -179,7 +186,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 
 	err = e.reportSizeLimit.Check(ctx, commoncfg.SizeOf(request.Report.RawReport))
 	if err != nil {
-		return nil, capabilities.ResponseMetadata{}, err
+		return nil, capabilities.ResponseMetadata{}, fmt.Errorf(UserError+" report size exceeds limit: %w", err)
 	}
 
 	e.lggr.Debugw("Submitting transaction for report", "request", request)
@@ -335,7 +342,7 @@ func fatalWriteReportReply(message string) *evm.WriteReportReply {
 	}
 }
 
-func validateInputsAndReportMetadata(requestMetadata capabilities.RequestMetadata, request *evm.WriteReportRequest) error {
+func (e *EVM) validateInputsAndReportMetadata(ctx context.Context, requestMetadata capabilities.RequestMetadata, request *evm.WriteReportRequest) error {
 	if request == nil {
 		return errors.New("nil WriteReportRequest")
 	}
@@ -449,4 +456,8 @@ func (thr *TxHashRetriever) GetHash(ctx context.Context) (*evmtypes.Hash, error)
 	}
 	thr.txHash = &logs[0].TxHash
 	return thr.txHash, nil
+}
+
+func isUserErrorWriteReport(err error) bool {
+	return strings.HasPrefix(err.Error(), UserError)
 }
