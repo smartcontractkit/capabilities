@@ -73,6 +73,10 @@ func (m *MessageBuilder) BuildCallContractError(tc TelemetryContext, msg *evm.Ca
 	return &CallContractError{Req: &CallContractRequest{BlockNumber: bn, ContractAddress: common.Bytes2Hex(msg.To[:])}, Summary: summary, Cause: cause, ExecutionContext: m.BuildExecutionContext(tc)}
 }
 
+func (m *MessageBuilder) BuildCallContractUserError(tc TelemetryContext, msg *evm.CallMsg, bn int64, summary, cause string) ErrorMessage {
+	return &CallContractUserError{Req: &CallContractRequest{BlockNumber: bn, ContractAddress: common.Bytes2Hex(msg.To[:])}, Summary: summary, Cause: cause, ExecutionContext: m.BuildExecutionContext(tc)}
+}
+
 func (m *MessageBuilder) BuildWriteReportInitiated(tc TelemetryContext, req *evmcap.WriteReportRequest) *WriteReportInitiated {
 	return &WriteReportInitiated{
 		Req:              convertWriteReportRequest(req),
@@ -190,6 +194,10 @@ func (m *MessageBuilder) BuildFilterLogsError(tc TelemetryContext, fq evmtypes.F
 	return &FilterLogsError{Req: toFilterLogsRequest(fq), Summary: summary, Cause: cause, ExecutionContext: m.BuildExecutionContext(tc)}
 }
 
+func (m *MessageBuilder) BuildFilterLogsUserError(tc TelemetryContext, fq evmtypes.FilterQuery, summary, cause string) ErrorMessage {
+	return &FilterLogsUserError{Req: toFilterLogsRequest(fq), Summary: summary, Cause: cause, ExecutionContext: m.BuildExecutionContext(tc)}
+}
+
 func (m *MessageBuilder) BuildBalanceAtInitiated(tc TelemetryContext, account string, bn int64) *BalanceAtInitiated {
 	return &BalanceAtInitiated{Req: &BalanceAtRequest{Account: account, BlockNumber: bn}, ExecutionContext: m.BuildExecutionContext(tc)}
 }
@@ -202,6 +210,10 @@ func (m *MessageBuilder) BuildBalanceAtError(tc TelemetryContext, account string
 	return &BalanceAtError{Req: &BalanceAtRequest{Account: account, BlockNumber: bn}, Summary: summary, Cause: cause, ExecutionContext: m.BuildExecutionContext(tc)}
 }
 
+func (m *MessageBuilder) BuildBalanceAtUserError(tc TelemetryContext, account string, bn int64, summary, cause string) ErrorMessage {
+	return &BalanceAtUserError{Req: &BalanceAtRequest{Account: account, BlockNumber: bn}, Summary: summary, Cause: cause, ExecutionContext: m.BuildExecutionContext(tc)}
+}
+
 func (m *MessageBuilder) BuildEstimateGasInitiated(tc TelemetryContext, from, to string, data []byte) *EstimateGasInitiated {
 	return &EstimateGasInitiated{Req: &EstimateGasRequest{From: from, To: to, Data: data}, ExecutionContext: m.BuildExecutionContext(tc)}
 }
@@ -212,6 +224,10 @@ func (m *MessageBuilder) BuildEstimateGasSuccess(tc TelemetryContext, from, to s
 
 func (m *MessageBuilder) BuildEstimateGasError(tc TelemetryContext, from, to string, data []byte, summary, cause string) ErrorMessage {
 	return &EstimateGasError{Req: &EstimateGasRequest{From: from, To: to, Data: data}, Summary: summary, Cause: cause, ExecutionContext: m.BuildExecutionContext(tc)}
+}
+
+func (m *MessageBuilder) BuildEstimateGasUserError(tc TelemetryContext, from, to string, data []byte, summary, cause string) ErrorMessage {
+	return &EstimateGasUserError{Req: &EstimateGasRequest{From: from, To: to, Data: data}, Summary: summary, Cause: cause, ExecutionContext: m.BuildExecutionContext(tc)}
 }
 
 func (m *MessageBuilder) BuildGetTransactionByHashInitiated(tc TelemetryContext, hash string) *GetTransactionByHashInitiated {
@@ -235,6 +251,10 @@ func (m *MessageBuilder) BuildGetTransactionByHashSuccess(tc TelemetryContext, h
 
 func (m *MessageBuilder) BuildGetTransactionByHashError(tc TelemetryContext, hash, summary, cause string) ErrorMessage {
 	return &GetTransactionByHashError{Req: &GetTransactionByHashRequest{Hash: hash}, Summary: summary, Cause: cause, ExecutionContext: m.BuildExecutionContext(tc)}
+}
+
+func (m *MessageBuilder) BuildGetTransactionByHashUserError(tc TelemetryContext, hash, summary, cause string) ErrorMessage {
+	return &GetTransactionByHashUserError{Req: &GetTransactionByHashRequest{Hash: hash}, Summary: summary, Cause: cause, ExecutionContext: m.BuildExecutionContext(tc)}
 }
 
 func (m *MessageBuilder) BuildGetTransactionReceiptInitiated(tc TelemetryContext, hash string) *GetTransactionReceiptInitiated {
@@ -266,6 +286,10 @@ func (m *MessageBuilder) BuildGetTransactionReceiptError(tc TelemetryContext, ha
 	return &GetTransactionReceiptError{Req: &GetTransactionReceiptRequest{Hash: hash}, Summary: summary, Cause: cause, ExecutionContext: m.BuildExecutionContext(tc)}
 }
 
+func (m *MessageBuilder) BuildGetTransactionReceiptUserError(tc TelemetryContext, hash, summary, cause string) ErrorMessage {
+	return &GetTransactionReceiptUserError{Req: &GetTransactionReceiptRequest{Hash: hash}, Summary: summary, Cause: cause, ExecutionContext: m.BuildExecutionContext(tc)}
+}
+
 func (m *MessageBuilder) BuildHeaderByNumberInitiated(tc TelemetryContext, blockNumber int64) *HeaderByNumberInitiated {
 	return &HeaderByNumberInitiated{ExecutionContext: m.BuildExecutionContext(tc), Req: &HeaderByNumberRequest{BlockNumber: blockNumber}}
 }
@@ -289,6 +313,10 @@ func (m *MessageBuilder) BuildHeaderByNumberError(tc TelemetryContext, blockNumb
 		Cause:            cause,
 		ExecutionContext: m.BuildExecutionContext(tc),
 	}
+}
+
+func (m *MessageBuilder) BuildHeaderByNumberUserError(tc TelemetryContext, blockNumber int64, summary, cause string) ErrorMessage {
+	return &HeaderByNumberUserError{Req: &HeaderByNumberRequest{BlockNumber: blockNumber}, Summary: summary, Cause: cause, ExecutionContext: m.BuildExecutionContext(tc)}
 }
 
 // BuildExecutionContext builds the shared ExecutionContext

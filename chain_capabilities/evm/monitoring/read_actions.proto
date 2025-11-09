@@ -26,6 +26,13 @@ message CallContractError {
   monitoring.ExecutionContext execution_context = 20;
 }
 
+message CallContractUserError {
+  CallContractRequest req = 1;
+  string summary = 2;
+  string cause = 3;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
 message Topics {
   repeated string topic = 1; // in [32]byte fix-sized array format
 }
@@ -56,6 +63,13 @@ message FilterLogsError {
   monitoring.ExecutionContext execution_context = 20;
 }
 
+message FilterLogsUserError {
+  FilterLogsRequest req = 1;
+  string summary = 2;
+  string cause = 3;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
 message BalanceAtRequest {
   string account = 1;
   int64 block_number = 2;
@@ -79,6 +93,13 @@ message BalanceAtError {
   monitoring.ExecutionContext execution_context = 20;
 }
 
+message BalanceAtUserError {
+  BalanceAtRequest req = 1;
+  string summary = 2;
+  string cause = 3;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
 message EstimateGasRequest {
   string from = 1;
   string to = 2;
@@ -94,6 +115,12 @@ message EstimateGasSuccess {
   monitoring.ExecutionContext execution_context = 20;
 }
 message EstimateGasError {
+  EstimateGasRequest req = 1;
+  string summary = 2;
+  string cause = 3;
+  monitoring.ExecutionContext execution_context = 20;
+}
+message EstimateGasUserError {
   EstimateGasRequest req = 1;
   string summary = 2;
   string cause = 3;
@@ -138,6 +165,12 @@ message GetTransactionByHashError {
   string cause = 3;
   monitoring.ExecutionContext execution_context = 20;
 }
+message GetTransactionByHashUserError {
+  GetTransactionByHashRequest req = 1;
+  string summary = 2;
+  string cause = 3;
+  monitoring.ExecutionContext execution_context = 20;
+}
 
 message GetTransactionReceiptRequest {
   string hash = 1;
@@ -155,6 +188,12 @@ message GetTransactionReceiptSuccess {
 }
 
 message GetTransactionReceiptError {
+  GetTransactionReceiptRequest req = 1;
+  string summary = 2;
+  string cause = 3;
+  monitoring.ExecutionContext execution_context = 20;
+}
+message GetTransactionReceiptUserError {
   GetTransactionReceiptRequest req = 1;
   string summary = 2;
   string cause = 3;
@@ -183,6 +222,12 @@ message HeaderByNumberSuccess {
 }
 
 message HeaderByNumberError {
+  HeaderByNumberRequest req = 1;
+  string summary = 2;
+  string cause = 3;
+  monitoring.ExecutionContext execution_context = 20;
+}
+message HeaderByNumberUserError {
   HeaderByNumberRequest req = 1;
   string summary = 2;
   string cause = 3;

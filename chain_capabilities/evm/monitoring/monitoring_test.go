@@ -153,16 +153,23 @@ func TestProcessor_Process_ErrorMessages(t *testing.T) {
 		msg  proto.Message
 	}{
 		{"CallContractError", &monitoring.CallContractError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
+		{"CallContractUserError", &monitoring.CallContractUserError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"WriteReportError", &monitoring.WriteReportError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"LogTriggerError", &monitoring.LogTriggerError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"LogTriggerCleanUpError", &monitoring.LogTriggerCleanUpError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"LogTriggerEventDroppedError", &monitoring.LogTriggerEventDroppedError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"FilterLogsError", &monitoring.FilterLogsError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
+		{"FilterLogsUserError", &monitoring.FilterLogsUserError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"BalanceAtError", &monitoring.BalanceAtError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
+		{"BalanceAtUserError", &monitoring.BalanceAtUserError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"EstimateGasError", &monitoring.EstimateGasError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
+		{"EstimateGasUserError", &monitoring.EstimateGasUserError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"GetTransactionByHashError", &monitoring.GetTransactionByHashError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
+		{"GetTransactionByHashUserError", &monitoring.GetTransactionByHashUserError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"GetTransactionReceiptError", &monitoring.GetTransactionReceiptError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
+		{"GetTransactionReceiptUserError", &monitoring.GetTransactionReceiptUserError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"HeaderByNumberError", &monitoring.HeaderByNumberError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
+		{"HeaderByNumberUserError", &monitoring.HeaderByNumberUserError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 	}
 
 	for _, tc := range errorMsgs {

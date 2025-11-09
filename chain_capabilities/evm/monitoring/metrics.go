@@ -378,6 +378,18 @@ func (r *CallContractError) MetricAttributes() []attribute.KeyValue {
 	return r.ExecutionContext.MetricsAttributes()
 }
 
+func (r *CallContractUserError) LogAttributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
+		attribute.Int64("block_number", r.Req.GetBlockNumber()),
+		attribute.String("contract_address", r.Req.GetContractAddress()),
+		attribute.String("summary", r.GetSummary()),
+	}, r.ExecutionContext.LogAttributes()...)
+}
+
+func (r *CallContractUserError) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
 func (r *WriteReportSuccess) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.String("receiver", getReceiver(r.Req.GetReceiver())),
@@ -484,6 +496,18 @@ func (r *FilterLogsError) MetricAttributes() []attribute.KeyValue {
 	return r.ExecutionContext.MetricsAttributes()
 }
 
+func (r *FilterLogsUserError) LogAttributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
+		attribute.Int64("from_block", r.Req.GetFromBlock()),
+		attribute.Int64("to_block", r.Req.GetToBlock()),
+		attribute.String("summary", r.GetSummary()),
+	}, r.ExecutionContext.LogAttributes()...)
+}
+
+func (r *FilterLogsUserError) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
 func (r *BalanceAtSuccess) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.String("account", r.Req.GetAccount()),
@@ -505,6 +529,18 @@ func (r *BalanceAtError) LogAttributes() []attribute.KeyValue {
 }
 
 func (r *BalanceAtError) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *BalanceAtUserError) LogAttributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
+		attribute.String("account", r.Req.GetAccount()),
+		attribute.Int64("block_number", r.Req.GetBlockNumber()),
+		attribute.String("summary", r.GetSummary()),
+	}, r.ExecutionContext.LogAttributes()...)
+}
+
+func (r *BalanceAtUserError) MetricAttributes() []attribute.KeyValue {
 	return r.ExecutionContext.MetricsAttributes()
 }
 
@@ -532,6 +568,18 @@ func (r *EstimateGasError) MetricAttributes() []attribute.KeyValue {
 	return r.ExecutionContext.MetricsAttributes()
 }
 
+func (r *EstimateGasUserError) LogAttributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
+		attribute.String("from", r.Req.GetFrom()),
+		attribute.String("to", r.Req.GetTo()),
+		attribute.String("summary", r.GetSummary()),
+	}, r.ExecutionContext.LogAttributes()...)
+}
+
+func (r *EstimateGasUserError) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
 func (r *GetTransactionByHashSuccess) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.String("hash", r.Req.GetHash()),
@@ -550,6 +598,16 @@ func (r *GetTransactionByHashError) LogAttributes() []attribute.KeyValue {
 }
 
 func (r *GetTransactionByHashError) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *GetTransactionByHashUserError) LogAttributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
+		attribute.String("hash", r.Req.GetHash()),
+		attribute.String("summary", r.GetSummary()),
+	}, r.ExecutionContext.LogAttributes()...)
+}
+func (r *GetTransactionByHashUserError) MetricAttributes() []attribute.KeyValue {
 	return r.ExecutionContext.MetricsAttributes()
 }
 
@@ -574,6 +632,16 @@ func (r *GetTransactionReceiptError) MetricAttributes() []attribute.KeyValue {
 	return r.ExecutionContext.MetricsAttributes()
 }
 
+func (r *GetTransactionReceiptUserError) LogAttributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
+		attribute.String("hash", r.Req.GetHash()),
+		attribute.String("summary", r.GetSummary()),
+	}, r.ExecutionContext.LogAttributes()...)
+}
+func (r *GetTransactionReceiptUserError) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
 func (r *HeaderByNumberSuccess) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.Int64("block_number", r.Req.GetBlockNumber()),
@@ -591,6 +659,16 @@ func (r *HeaderByNumberError) LogAttributes() []attribute.KeyValue {
 }
 
 func (r *HeaderByNumberError) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *HeaderByNumberUserError) LogAttributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
+		attribute.Int64("block_number", r.Req.GetBlockNumber()),
+		attribute.String("summary", r.GetSummary()),
+	}, r.ExecutionContext.LogAttributes()...)
+}
+func (r *HeaderByNumberUserError) MetricAttributes() []attribute.KeyValue {
 	return r.ExecutionContext.MetricsAttributes()
 }
 
