@@ -1,4 +1,6 @@
 load("@rules_go//go:def.bzl", "go_library")
+load("@rules_go//proto:def.bzl", "go_proto_library")
+load("@rules_proto//proto:defs.bzl", "proto_library")
 
 go_library(
     name = "pb",
@@ -18,4 +20,25 @@ go_library(
         "@org_golang_google_protobuf//types/known/anypb",
         "@org_golang_google_protobuf//types/known/emptypb",
     ],
+)
+
+proto_library(
+    name = "pb_proto",
+    srcs = ["proxy.proto"],
+    visibility = ["//mock:__subpackages__"],
+    deps = [
+        "@com_google_protobuf//:any_proto",
+        "@com_google_protobuf//:empty_proto",
+    ],
+)
+
+go_proto_library(
+    name = "pb_go_proto",
+    compilers = [
+        "@rules_go//proto:go_grpc_v2",
+        "@rules_go//proto:go_proto",
+    ],
+    importpath = "github.com/smartcontractkit/capabilities/mock/internal/pb",
+    proto = ":pb_proto",
+    visibility = ["//mock:__subpackages__"],
 )
