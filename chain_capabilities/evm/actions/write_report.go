@@ -39,7 +39,7 @@ const (
 )
 
 const UnknownIssueExecutingReceiverContractMessage = "unknown issue execution receiver contract"
-const UserError = "User error:"
+const userError = "user error:"
 
 func decodeReportMetadata(data []byte) (ocrtypes.Metadata, error) {
 	metadata, _, err := ocrtypes.Decode(data)
@@ -137,7 +137,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 	} else {
 		err = e.txGasLimit.Check(ctx, request.GasConfig.GasLimit)
 		if err != nil {
-			return nil, capabilities.ResponseMetadata{}, fmt.Errorf(UserError+" report size exceeds limit (gasLimit=%d): %w", request.GasConfig.GasLimit, err)
+			return nil, capabilities.ResponseMetadata{}, fmt.Errorf(userError+" report size exceeds limit (gasLimit=%d): %w", request.GasConfig.GasLimit, err)
 		}
 	}
 
@@ -186,7 +186,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 
 	err = e.reportSizeLimit.Check(ctx, commoncfg.SizeOf(request.Report.RawReport))
 	if err != nil {
-		return nil, capabilities.ResponseMetadata{}, fmt.Errorf(UserError+" report size exceeds limit: %w", err)
+		return nil, capabilities.ResponseMetadata{}, fmt.Errorf(userError+" report size exceeds limit: %w", err)
 	}
 
 	e.lggr.Debugw("Submitting transaction for report", "request", request)
@@ -459,5 +459,5 @@ func (thr *TxHashRetriever) GetHash(ctx context.Context) (*evmtypes.Hash, error)
 }
 
 func isUserErrorWriteReport(err error) bool {
-	return strings.HasPrefix(err.Error(), UserError)
+	return strings.HasPrefix(err.Error(), userError)
 }
