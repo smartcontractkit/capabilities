@@ -66,19 +66,14 @@ func (e *EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMeta
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportInitiated(telemetryContext, input))
 	err := e.validateInputsAndReportMetadata(metadata, input)
 	if err != nil {
-		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportUserError(telemetryContext, input, "Failed to WriteReport User Error due to invalid request", err.Error()))
+		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport User Error due to invalid request", err.Error(), true))
 		return nil, capabilities.NewRemoteReportableError(err)
 	}
 
 	report, billingMetadata, err := e.executeWriteReport(ctx, input, metadata, telemetryContext)
 	if err != nil {
-		var errorMessage monitoring.ErrorMessage
-		if isUserErrorWriteReport(err) {
-			errorMessage = e.messageBuilder.BuildWriteReportUserError(telemetryContext, input, "Failed to WriteReport User Error", err.Error())
-		} else {
-			errorMessage = e.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport while checking if the report exists or trying to publish on chain", err.Error())
-		}
-		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, errorMessage)
+		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor,
+			e.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport while checking if the report exists or trying to publish on chain", err.Error(), isUserErrorWriteReport(err)))
 		return nil, capabilities.NewRemoteReportableError(err)
 	}
 

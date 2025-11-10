@@ -160,13 +160,8 @@ func (e *EVM) CallContract(
 
 	data, err := readType[[]byte](ctx, e.ConsensusHandler, request)
 	if err != nil {
-		var errorMessage monitoring.ErrorMessage
-		if isUserError(err) {
-			errorMessage = e.messageBuilder.BuildCallContractUserError(telemetryContext, callMsg, blockNumber.Int64(), "Failed to read CallContract User Error", err.Error())
-		} else {
-			errorMessage = e.messageBuilder.BuildCallContractError(telemetryContext, callMsg, blockNumber.Int64(), "Failed to read CallContract", err.Error())
-		}
-		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, errorMessage)
+		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor,
+			e.messageBuilder.BuildCallContractError(telemetryContext, callMsg, blockNumber.Int64(), "Failed to read CallContract", err.Error(), isUserError(err)))
 		return nil, capabilities.NewRemoteReportableError(err)
 	}
 
@@ -293,13 +288,8 @@ func (e *EVM) FilterLogs(ctx context.Context, meta capabilities.RequestMetadata,
 	var reply evm.FilterLogsReply
 	err = e.readProto(ctx, request, &reply)
 	if err != nil {
-		var errorMessage monitoring.ErrorMessage
-		if isUserError(err) {
-			errorMessage = e.messageBuilder.BuildFilterLogsUserError(telemetryContext, ethFilterQuery, "Failed to FilterLogs User Error", err.Error())
-		} else {
-			errorMessage = e.messageBuilder.BuildFilterLogsError(telemetryContext, ethFilterQuery, "Failed to FilterLogs", err.Error())
-		}
-		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, errorMessage)
+		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor,
+			e.messageBuilder.BuildFilterLogsError(telemetryContext, ethFilterQuery, "Failed to FilterLogs", err.Error(), isUserError(err)))
 		return nil, capabilities.NewRemoteReportableError(err)
 	}
 
@@ -359,13 +349,8 @@ func (e *EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, 
 
 	balance := new(valuespb.BigInt)
 	if err := e.readProto(ctx, request, balance); err != nil {
-		var errMsg monitoring.ErrorMessage
-		if isUserError(err) {
-			errMsg = e.messageBuilder.BuildBalanceAtUserError(telemetryContext, common.Bytes2Hex(req.GetAccount()), blockNumber.Int64(), "Failed to read BalanceAt User Error", err.Error())
-		} else {
-			errMsg = e.messageBuilder.BuildBalanceAtError(telemetryContext, common.Bytes2Hex(req.GetAccount()), blockNumber.Int64(), "Failed to read BalanceAt", err.Error())
-		}
-		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, errMsg)
+		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor,
+			e.messageBuilder.BuildBalanceAtError(telemetryContext, common.Bytes2Hex(req.GetAccount()), blockNumber.Int64(), "Failed to read BalanceAt", err.Error(), isUserError(err)))
 		return nil, capabilities.NewRemoteReportableError(err)
 	}
 
@@ -409,13 +394,8 @@ func (e *EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata
 
 	rawEstimate, err := readDecimal(ctx, e.ConsensusHandler, request)
 	if err != nil {
-		var errMsg monitoring.ErrorMessage
-		if isUserError(err) {
-			errMsg = e.messageBuilder.BuildEstimateGasUserError(telemetryContext, common.Bytes2Hex(msg.From[:]), common.Bytes2Hex(msg.To[:]), msg.Data, "Failed to execute EstimateGas User Error", err.Error())
-		} else {
-			errMsg = e.messageBuilder.BuildEstimateGasError(telemetryContext, common.Bytes2Hex(msg.From[:]), common.Bytes2Hex(msg.To[:]), msg.Data, "Failed to execute EstimateGas", err.Error())
-		}
-		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, errMsg)
+		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor,
+			e.messageBuilder.BuildEstimateGasError(telemetryContext, common.Bytes2Hex(msg.From[:]), common.Bytes2Hex(msg.To[:]), msg.Data, "Failed to execute EstimateGas", err.Error(), isUserError(err)))
 		return nil, capabilities.NewRemoteReportableError(err)
 	}
 
@@ -457,13 +437,8 @@ func (e *EVM) GetTransactionByHash(ctx context.Context, meta capabilities.Reques
 
 	var tx evm.Transaction
 	if err := e.readProto(ctx, request, &tx); err != nil {
-		var errMsg monitoring.ErrorMessage
-		if isUserError(err) {
-			errMsg = e.messageBuilder.BuildGetTransactionByHashUserError(telemetryContext, common.Bytes2Hex(hash[:]), "Failed to execute GetTransactionByHash User Error", err.Error())
-		} else {
-			errMsg = e.messageBuilder.BuildGetTransactionByHashError(telemetryContext, common.Bytes2Hex(hash[:]), "Failed to execute GetTransactionByHash", err.Error())
-		}
-		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, errMsg)
+		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor,
+			e.messageBuilder.BuildGetTransactionByHashError(telemetryContext, common.Bytes2Hex(hash[:]), "Failed to execute GetTransactionByHash", err.Error(), isUserError(err)))
 		return nil, capabilities.NewRemoteReportableError(err)
 	}
 
@@ -505,13 +480,8 @@ func (e *EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.Reque
 
 	var receipt evm.Receipt
 	if err := e.readProto(ctx, request, &receipt); err != nil {
-		var errMsg monitoring.ErrorMessage
-		if isUserError(err) {
-			errMsg = e.messageBuilder.BuildGetTransactionReceiptUserError(telemetryContext, common.Bytes2Hex(hash[:]), "Failed to get latest and finalized head User Error", err.Error())
-		} else {
-			errMsg = e.messageBuilder.BuildGetTransactionReceiptError(telemetryContext, common.Bytes2Hex(hash[:]), "Failed to get latest and finalized head", err.Error())
-		}
-		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, errMsg)
+		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor,
+			e.messageBuilder.BuildGetTransactionReceiptError(telemetryContext, common.Bytes2Hex(hash[:]), "Failed to get latest and finalized head", err.Error(), isUserError(err)))
 		return nil, capabilities.NewRemoteReportableError(err)
 	}
 
@@ -580,13 +550,8 @@ func (e *EVM) HeaderByNumber(
 	var reply evm.HeaderByNumberReply
 	err = e.readProto(ctx, request, &reply)
 	if err != nil {
-		var errMsg monitoring.ErrorMessage
-		if isUserError(err) {
-			errMsg = e.messageBuilder.BuildHeaderByNumberUserError(telemetryContext, blockNumber.Int64(), "Failed to get header by number User Error", err.Error())
-		} else {
-			errMsg = e.messageBuilder.BuildHeaderByNumberError(telemetryContext, blockNumber.Int64(), "Failed to get header by number", err.Error())
-		}
-		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, errMsg)
+		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor,
+			e.messageBuilder.BuildHeaderByNumberError(telemetryContext, blockNumber.Int64(), "Failed to get header by number", err.Error(), isUserError(err)))
 		return nil, capabilities.NewRemoteReportableError(err)
 	}
 

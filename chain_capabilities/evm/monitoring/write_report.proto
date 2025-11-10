@@ -20,13 +20,7 @@ message WriteReportError {
   WriteReportRequest req = 1;
   string summary = 2;
   string cause = 3;
-  monitoring.ExecutionContext execution_context = 20;
-}
-
-message WriteReportUserError {
-  WriteReportRequest req = 1;
-  string summary = 2;
-  string cause = 3;
+  bool isUserError = 4;
   monitoring.ExecutionContext execution_context = 20;
 }
 
