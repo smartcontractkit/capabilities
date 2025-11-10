@@ -23,6 +23,7 @@ message CallContractError {
   CallContractRequest req = 1;
   string summary = 2;
   string cause = 3;
+  bool isUserError = 4;
   monitoring.ExecutionContext execution_context = 20;
 }
 
@@ -53,6 +54,7 @@ message FilterLogsError {
   FilterLogsRequest req = 1;
   string summary = 2;
   string cause = 3;
+  bool isUserError = 4;
   monitoring.ExecutionContext execution_context = 20;
 }
 
@@ -76,6 +78,7 @@ message BalanceAtError {
   BalanceAtRequest req = 1;
   string summary = 2;
   string cause = 3;
+  bool isUserError = 4;
   monitoring.ExecutionContext execution_context = 20;
 }
 
@@ -97,6 +100,7 @@ message EstimateGasError {
   EstimateGasRequest req = 1;
   string summary = 2;
   string cause = 3;
+  bool isUserError = 4;
   monitoring.ExecutionContext execution_context = 20;
 }
 
@@ -136,6 +140,7 @@ message GetTransactionByHashError {
   GetTransactionByHashRequest req = 1;
   string summary = 2;
   string cause = 3;
+  bool isUserError = 4;
   monitoring.ExecutionContext execution_context = 20;
 }
 
@@ -158,6 +163,7 @@ message GetTransactionReceiptError {
   GetTransactionReceiptRequest req = 1;
   string summary = 2;
   string cause = 3;
+  bool isUserError = 4;
   monitoring.ExecutionContext execution_context = 20;
 }
 
@@ -186,5 +192,6 @@ message HeaderByNumberError {
   HeaderByNumberRequest req = 1;
   string summary = 2;
   string cause = 3;
+  bool isUserError = 4;
   monitoring.ExecutionContext execution_context = 20;
 }

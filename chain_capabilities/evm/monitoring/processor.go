@@ -43,8 +43,10 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
 			return fmt.Errorf("failed to emit CallContractError log: %w", err)
 		}
-		if err := p.metrics.OnCallContractError(ctx, msg); err != nil {
-			return fmt.Errorf("failed to publish CallContractError metrics: %w", err)
+		if !msg.GetIsUserError() {
+			if err := p.metrics.OnCallContractError(ctx, msg); err != nil {
+				return fmt.Errorf("failed to publish CallContractError metrics: %w", err)
+			}
 		}
 	// -- WriteReport --
 	case *WriteReportInitiated:
@@ -62,8 +64,10 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
 			return fmt.Errorf("failed to emit WriteReportError log: %w", err)
 		}
-		if err := p.metrics.OnWriteReportError(ctx, msg); err != nil {
-			return fmt.Errorf("failed to publish WriteReportError metrics: %w", err)
+		if !msg.GetIsUserError() {
+			if err := p.metrics.OnWriteReportError(ctx, msg); err != nil {
+				return fmt.Errorf("failed to publish WriteReportError metrics: %w", err)
+			}
 		}
 	case *WriteReportTxFeeCalculationError:
 		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
@@ -102,8 +106,10 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
 			return fmt.Errorf("failed to emit TriggerEventDroppedError log: %w", err)
 		}
-		if err := p.metrics.OnTriggerEventDroppedError(ctx, msg); err != nil {
-			return fmt.Errorf("failed to publish TriggerEventDroppedError metrics: %w", err)
+		if !msg.GetIsLimitError() {
+			if err := p.metrics.OnTriggerEventDroppedError(ctx, msg); err != nil {
+				return fmt.Errorf("failed to publish TriggerEventDroppedError metrics: %w", err)
+			}
 		}
 	// -- FilterLogs --
 	case *FilterLogsInitiated:
@@ -121,9 +127,10 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
 			return fmt.Errorf("failed to emit FilterLogsError log: %w", err)
 		}
-
-		if err := p.metrics.OnFilterLogsError(ctx, msg); err != nil {
-			return fmt.Errorf("failed to publish FilterLogsError metrics: %w", err)
+		if !msg.GetIsUserError() {
+			if err := p.metrics.OnFilterLogsError(ctx, msg); err != nil {
+				return fmt.Errorf("failed to publish FilterLogsError metrics: %w", err)
+			}
 		}
 	// --- BalanceAt ---
 	case *BalanceAtInitiated:
@@ -141,8 +148,10 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
 			return fmt.Errorf("failed to emit BalanceAtError log: %w", err)
 		}
-		if err := p.metrics.OnBalanceAtError(ctx, msg); err != nil {
-			return fmt.Errorf("failed to publish BalanceAtError metrics: %w", err)
+		if !msg.GetIsUserError() {
+			if err := p.metrics.OnBalanceAtError(ctx, msg); err != nil {
+				return fmt.Errorf("failed to publish BalanceAtError metrics: %w", err)
+			}
 		}
 	// -- EstimateGas --
 	case *EstimateGasInitiated:
@@ -160,8 +169,10 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
 			return fmt.Errorf("failed to emit EstimateGasError log: %w", err)
 		}
-		if err := p.metrics.OnEstimateGasError(ctx, msg); err != nil {
-			return fmt.Errorf("failed to publish EstimateGasError metrics: %w", err)
+		if !msg.GetIsUserError() {
+			if err := p.metrics.OnEstimateGasError(ctx, msg); err != nil {
+				return fmt.Errorf("failed to publish EstimateGasError metrics: %w", err)
+			}
 		}
 	// -- GetTransactionByHash --
 	case *GetTransactionByHashInitiated:
@@ -179,8 +190,10 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
 			return fmt.Errorf("failed to emit GetTransactionByHashError log: %w", err)
 		}
-		if err := p.metrics.OnGetTransactionByHashError(ctx, msg); err != nil {
-			return fmt.Errorf("failed to publish GetTransactionByHashError metrics: %w", err)
+		if !msg.GetIsUserError() {
+			if err := p.metrics.OnGetTransactionByHashError(ctx, msg); err != nil {
+				return fmt.Errorf("failed to publish GetTransactionByHashError metrics: %w", err)
+			}
 		}
 	// -- GetTransactionReceipt --
 	case *GetTransactionReceiptInitiated:
@@ -198,8 +211,10 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
 			return fmt.Errorf("failed to emit GetTransactionReceiptError log: %w", err)
 		}
-		if err := p.metrics.OnGetTransactionReceiptError(ctx, msg); err != nil {
-			return fmt.Errorf("failed to publish GetTransactionReceiptError metrics: %w", err)
+		if !msg.GetIsUserError() {
+			if err := p.metrics.OnGetTransactionReceiptError(ctx, msg); err != nil {
+				return fmt.Errorf("failed to publish GetTransactionReceiptError metrics: %w", err)
+			}
 		}
 	// -- LatestAndFinalizedHead --
 	case *HeaderByNumberInitiated:
@@ -217,8 +232,10 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
 			return fmt.Errorf("failed to emit HeaderByNumberError log: %w", err)
 		}
-		if err := p.metrics.OnHeaderByNumberError(ctx, msg); err != nil {
-			return fmt.Errorf("failed to publish HeaderByNumberError metrics: %w", err)
+		if !msg.GetIsUserError() {
+			if err := p.metrics.OnHeaderByNumberError(ctx, msg); err != nil {
+				return fmt.Errorf("failed to publish HeaderByNumberError metrics: %w", err)
+			}
 		}
 	default:
 		return nil

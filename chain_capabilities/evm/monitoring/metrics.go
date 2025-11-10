@@ -371,6 +371,7 @@ func (r *CallContractError) LogAttributes() []attribute.KeyValue {
 		attribute.Int64("block_number", r.Req.GetBlockNumber()),
 		attribute.String("contract_address", r.Req.GetContractAddress()),
 		attribute.String("summary", r.GetSummary()),
+		attribute.Bool("isUserError", r.GetIsUserError()),
 	}, r.ExecutionContext.LogAttributes()...)
 }
 
@@ -392,6 +393,7 @@ func (r *WriteReportError) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.String("receiver", getReceiver(r.Req.GetReceiver())),
 		attribute.String("summary", r.GetSummary()),
+		attribute.Bool("isUserError", r.GetIsUserError()),
 	}, r.ExecutionContext.LogAttributes()...)
 }
 
@@ -453,6 +455,7 @@ func (r *LogTriggerEventDroppedError) LogAttributes() []attribute.KeyValue {
 		attribute.String("block_hash", r.GetBlockHash()),
 		attribute.Int64("log_index", r.GetLogIndex()),
 		attribute.String("summary", r.GetSummary()),
+		attribute.Bool("is_limit_error", r.GetIsLimitError()),
 	}, r.ExecutionContext.LogAttributes()...)
 }
 
@@ -477,6 +480,7 @@ func (r *FilterLogsError) LogAttributes() []attribute.KeyValue {
 		attribute.Int64("from_block", r.Req.GetFromBlock()),
 		attribute.Int64("to_block", r.Req.GetToBlock()),
 		attribute.String("summary", r.GetSummary()),
+		attribute.Bool("is_user_error", r.GetIsUserError()),
 	}, r.ExecutionContext.LogAttributes()...)
 }
 
@@ -501,6 +505,7 @@ func (r *BalanceAtError) LogAttributes() []attribute.KeyValue {
 		attribute.String("account", r.Req.GetAccount()),
 		attribute.Int64("block_number", r.Req.GetBlockNumber()),
 		attribute.String("summary", r.GetSummary()),
+		attribute.Bool("is_user_error", r.GetIsUserError()),
 	}, r.ExecutionContext.LogAttributes()...)
 }
 
@@ -525,6 +530,7 @@ func (r *EstimateGasError) LogAttributes() []attribute.KeyValue {
 		attribute.String("from", r.Req.GetFrom()),
 		attribute.String("to", r.Req.GetTo()),
 		attribute.String("summary", r.GetSummary()),
+		attribute.Bool("is_user_error", r.GetIsUserError()),
 	}, r.ExecutionContext.LogAttributes()...)
 }
 
@@ -546,6 +552,7 @@ func (r *GetTransactionByHashError) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.String("hash", r.Req.GetHash()),
 		attribute.String("summary", r.GetSummary()),
+		attribute.Bool("is_user_error", r.GetIsUserError()),
 	}, r.ExecutionContext.LogAttributes()...)
 }
 
@@ -567,6 +574,7 @@ func (r *GetTransactionReceiptError) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.String("hash", r.Req.GetHash()),
 		attribute.String("summary", r.GetSummary()),
+		attribute.Bool("is_user_error", r.GetIsUserError()),
 	}, r.ExecutionContext.LogAttributes()...)
 }
 
@@ -587,6 +595,7 @@ func (r *HeaderByNumberSuccess) MetricAttributes() []attribute.KeyValue {
 func (r *HeaderByNumberError) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.Int64("block_number", r.Req.GetBlockNumber()),
+		attribute.Bool("is_user_error", r.GetIsUserError()),
 	}, r.ExecutionContext.LogAttributes()...)
 }
 

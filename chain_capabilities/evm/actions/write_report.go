@@ -39,6 +39,7 @@ const (
 )
 
 const UnknownIssueExecutingReceiverContractMessage = "unknown issue execution receiver contract"
+const userError = "user error:"
 
 func decodeReportMetadata(data []byte) (ocrtypes.Metadata, error) {
 	metadata, _, err := ocrtypes.Decode(data)
@@ -63,15 +64,16 @@ func (e *EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMeta
 	ctx = metadata.ContextWithCRE(ctx)
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: metadata}
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportInitiated(telemetryContext, input))
-	err := validateInputsAndReportMetadata(metadata, input)
+	err := e.validateInputsAndReportMetadata(metadata, input)
 	if err != nil {
-		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport due to invalid request", err.Error()))
+		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport User Error due to invalid request", err.Error(), true))
 		return nil, capabilities.NewRemoteReportableError(err)
 	}
 
 	report, billingMetadata, err := e.executeWriteReport(ctx, input, metadata, telemetryContext)
 	if err != nil {
-		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport while checking if the report exists or trying to publish on chain", err.Error()))
+		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor,
+			e.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport while checking if the report exists or trying to publish on chain", err.Error(), isUserErrorWriteReport(err)))
 		return nil, capabilities.NewRemoteReportableError(err)
 	}
 
@@ -130,7 +132,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 	} else {
 		err = e.txGasLimit.Check(ctx, request.GasConfig.GasLimit)
 		if err != nil {
-			return nil, capabilities.ResponseMetadata{}, err
+			return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s report size exceeds limit (gasLimit=%d): %w", userError, request.GasConfig.GasLimit, err)
 		}
 	}
 
@@ -179,7 +181,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 
 	err = e.reportSizeLimit.Check(ctx, commoncfg.SizeOf(request.Report.RawReport))
 	if err != nil {
-		return nil, capabilities.ResponseMetadata{}, err
+		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s report size exceeds limit: %w", userError, err)
 	}
 
 	e.lggr.Debugw("Submitting transaction for report", "request", request)
@@ -277,12 +279,12 @@ func getTransmissionID(workflowExecutionID string, request *evm.WriteReportReque
 
 	reportMetadata, err := decodeReportMetadata(request.Report.RawReport)
 	if err != nil {
-		return contracts.TransmissionID{}, err
+		return contracts.TransmissionID{}, fmt.Errorf("%s failed to decode report metadata: %v", userError, err)
 	}
 
 	reportID := common.Hex2Bytes(reportMetadata.ReportID)
 	if len(reportID) != 2 {
-		return contracts.TransmissionID{}, fmt.Errorf("report ID is of wrong length: %d bytes, expected 2 bytes", len(reportMetadata.ReportID))
+		return contracts.TransmissionID{}, fmt.Errorf("%s report ID is of wrong length: %d bytes, expected 2 bytes", userError, len(reportMetadata.ReportID))
 	}
 
 	transmissionID := contracts.TransmissionID{
@@ -335,7 +337,7 @@ func fatalWriteReportReply(message string) *evm.WriteReportReply {
 	}
 }
 
-func validateInputsAndReportMetadata(requestMetadata capabilities.RequestMetadata, request *evm.WriteReportRequest) error {
+func (e *EVM) validateInputsAndReportMetadata(requestMetadata capabilities.RequestMetadata, request *evm.WriteReportRequest) error {
 	if request == nil {
 		return errors.New("nil WriteReportRequest")
 	}
@@ -449,4 +451,8 @@ func (thr *TxHashRetriever) GetHash(ctx context.Context) (*evmtypes.Hash, error)
 	}
 	thr.txHash = &logs[0].TxHash
 	return thr.txHash, nil
+}
+
+func isUserErrorWriteReport(err error) bool {
+	return strings.HasPrefix(err.Error(), userError)
 }
