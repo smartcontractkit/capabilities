@@ -113,6 +113,14 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 		if err := p.metrics.OnTriggerEventDroppedError(ctx, msg); err != nil {
 			return fmt.Errorf("failed to publish TriggerEventDroppedError metrics: %w", err)
 		}
+	case *LogTriggerEventRateLimitError:
+		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
+			return fmt.Errorf("failed to emit LogTriggerEventRateLimitError log: %w", err)
+		}
+	case *LogTriggerEventPayloadLimitError:
+		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
+			return fmt.Errorf("failed to emit LogTriggerEventPayloadLimitError log: %w", err)
+		}
 	// -- FilterLogs --
 	case *FilterLogsInitiated:
 		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {

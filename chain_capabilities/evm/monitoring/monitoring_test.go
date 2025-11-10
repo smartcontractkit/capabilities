@@ -159,6 +159,8 @@ func TestProcessor_Process_ErrorMessages(t *testing.T) {
 		{"LogTriggerError", &monitoring.LogTriggerError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"LogTriggerCleanUpError", &monitoring.LogTriggerCleanUpError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"LogTriggerEventDroppedError", &monitoring.LogTriggerEventDroppedError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
+		{"LogTriggerEventRateLimitError", &monitoring.LogTriggerEventRateLimitError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
+		{"LogTriggerEventPayloadLimitError", &monitoring.LogTriggerEventPayloadLimitError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"FilterLogsError", &monitoring.FilterLogsError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"FilterLogsUserError", &monitoring.FilterLogsUserError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"BalanceAtError", &monitoring.BalanceAtError{ExecutionContext: &capmonitoring.ExecutionContext{}}},

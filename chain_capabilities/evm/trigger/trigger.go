@@ -502,7 +502,7 @@ func (lts *LogTriggerService) checkLimitsOnLog(ctx context.Context, telemetryCon
 			ctx,
 			lts.lggr,
 			lts.beholderProcessor,
-			lts.messageBuilder.BuildLogTriggerEventDroppedError(telemetryContext, triggerID, log, summary, err.Error()),
+			lts.messageBuilder.BuildLogTriggerEventRateLimitError(telemetryContext, triggerID, log, summary, err.Error()),
 		)
 		return false
 	}
@@ -515,7 +515,7 @@ func (lts *LogTriggerService) checkLimitsOnLog(ctx context.Context, telemetryCon
 			ctx,
 			lts.lggr,
 			lts.beholderProcessor,
-			lts.messageBuilder.BuildLogTriggerEventDroppedError(telemetryContext, triggerID, log, summary, err.Error()),
+			lts.messageBuilder.BuildLogTriggerEventPayloadLimitError(telemetryContext, triggerID, log, summary, err.Error()),
 		)
 		return false
 	}

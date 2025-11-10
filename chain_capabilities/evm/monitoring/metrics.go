@@ -483,6 +483,26 @@ func (r *LogTriggerEventDroppedError) MetricAttributes() []attribute.KeyValue {
 	return r.ExecutionContext.MetricsAttributes()
 }
 
+func (r *LogTriggerEventRateLimitError) LogAttributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
+		attribute.String("trigger_id", r.GetTriggerID()),
+		attribute.String("summary", r.GetSummary()),
+	}, r.ExecutionContext.LogAttributes()...)
+}
+func (r *LogTriggerEventRateLimitError) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *LogTriggerEventPayloadLimitError) LogAttributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
+		attribute.String("trigger_id", r.GetTriggerID()),
+		attribute.String("summary", r.GetSummary()),
+	}, r.ExecutionContext.LogAttributes()...)
+}
+func (r *LogTriggerEventPayloadLimitError) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
 func (r *FilterLogsSuccess) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.Int64("from_block", r.Req.GetFromBlock()),

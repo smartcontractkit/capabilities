@@ -311,6 +311,190 @@ func (x *LogTriggerEventDroppedError) GetExecutionContext() *monitoring.Executio
 	return nil
 }
 
+type LogTriggerEventRateLimitError struct {
+	state            protoimpl.MessageState       `protogen:"open.v1"`
+	TriggerID        string                       `protobuf:"bytes,1,opt,name=triggerID,proto3" json:"triggerID,omitempty"`
+	TxHash           string                       `protobuf:"bytes,2,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
+	BlockHash        string                       `protobuf:"bytes,3,opt,name=block_hash,json=blockHash,proto3" json:"block_hash,omitempty"`
+	LogIndex         int64                        `protobuf:"varint,4,opt,name=log_index,json=logIndex,proto3" json:"log_index,omitempty"`
+	Summary          string                       `protobuf:"bytes,5,opt,name=summary,proto3" json:"summary,omitempty"`
+	Cause            string                       `protobuf:"bytes,6,opt,name=cause,proto3" json:"cause,omitempty"`
+	ExecutionContext *monitoring.ExecutionContext `protobuf:"bytes,20,opt,name=execution_context,json=executionContext,proto3" json:"execution_context,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *LogTriggerEventRateLimitError) Reset() {
+	*x = LogTriggerEventRateLimitError{}
+	mi := &file_log_trigger_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LogTriggerEventRateLimitError) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LogTriggerEventRateLimitError) ProtoMessage() {}
+
+func (x *LogTriggerEventRateLimitError) ProtoReflect() protoreflect.Message {
+	mi := &file_log_trigger_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LogTriggerEventRateLimitError.ProtoReflect.Descriptor instead.
+func (*LogTriggerEventRateLimitError) Descriptor() ([]byte, []int) {
+	return file_log_trigger_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *LogTriggerEventRateLimitError) GetTriggerID() string {
+	if x != nil {
+		return x.TriggerID
+	}
+	return ""
+}
+
+func (x *LogTriggerEventRateLimitError) GetTxHash() string {
+	if x != nil {
+		return x.TxHash
+	}
+	return ""
+}
+
+func (x *LogTriggerEventRateLimitError) GetBlockHash() string {
+	if x != nil {
+		return x.BlockHash
+	}
+	return ""
+}
+
+func (x *LogTriggerEventRateLimitError) GetLogIndex() int64 {
+	if x != nil {
+		return x.LogIndex
+	}
+	return 0
+}
+
+func (x *LogTriggerEventRateLimitError) GetSummary() string {
+	if x != nil {
+		return x.Summary
+	}
+	return ""
+}
+
+func (x *LogTriggerEventRateLimitError) GetCause() string {
+	if x != nil {
+		return x.Cause
+	}
+	return ""
+}
+
+func (x *LogTriggerEventRateLimitError) GetExecutionContext() *monitoring.ExecutionContext {
+	if x != nil {
+		return x.ExecutionContext
+	}
+	return nil
+}
+
+type LogTriggerEventPayloadLimitError struct {
+	state            protoimpl.MessageState       `protogen:"open.v1"`
+	TriggerID        string                       `protobuf:"bytes,1,opt,name=triggerID,proto3" json:"triggerID,omitempty"`
+	TxHash           string                       `protobuf:"bytes,2,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
+	BlockHash        string                       `protobuf:"bytes,3,opt,name=block_hash,json=blockHash,proto3" json:"block_hash,omitempty"`
+	LogIndex         int64                        `protobuf:"varint,4,opt,name=log_index,json=logIndex,proto3" json:"log_index,omitempty"`
+	Summary          string                       `protobuf:"bytes,5,opt,name=summary,proto3" json:"summary,omitempty"`
+	Cause            string                       `protobuf:"bytes,6,opt,name=cause,proto3" json:"cause,omitempty"`
+	ExecutionContext *monitoring.ExecutionContext `protobuf:"bytes,20,opt,name=execution_context,json=executionContext,proto3" json:"execution_context,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *LogTriggerEventPayloadLimitError) Reset() {
+	*x = LogTriggerEventPayloadLimitError{}
+	mi := &file_log_trigger_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LogTriggerEventPayloadLimitError) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LogTriggerEventPayloadLimitError) ProtoMessage() {}
+
+func (x *LogTriggerEventPayloadLimitError) ProtoReflect() protoreflect.Message {
+	mi := &file_log_trigger_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LogTriggerEventPayloadLimitError.ProtoReflect.Descriptor instead.
+func (*LogTriggerEventPayloadLimitError) Descriptor() ([]byte, []int) {
+	return file_log_trigger_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *LogTriggerEventPayloadLimitError) GetTriggerID() string {
+	if x != nil {
+		return x.TriggerID
+	}
+	return ""
+}
+
+func (x *LogTriggerEventPayloadLimitError) GetTxHash() string {
+	if x != nil {
+		return x.TxHash
+	}
+	return ""
+}
+
+func (x *LogTriggerEventPayloadLimitError) GetBlockHash() string {
+	if x != nil {
+		return x.BlockHash
+	}
+	return ""
+}
+
+func (x *LogTriggerEventPayloadLimitError) GetLogIndex() int64 {
+	if x != nil {
+		return x.LogIndex
+	}
+	return 0
+}
+
+func (x *LogTriggerEventPayloadLimitError) GetSummary() string {
+	if x != nil {
+		return x.Summary
+	}
+	return ""
+}
+
+func (x *LogTriggerEventPayloadLimitError) GetCause() string {
+	if x != nil {
+		return x.Cause
+	}
+	return ""
+}
+
+func (x *LogTriggerEventPayloadLimitError) GetExecutionContext() *monitoring.ExecutionContext {
+	if x != nil {
+		return x.ExecutionContext
+	}
+	return nil
+}
+
 type LogTriggerCleanUpError struct {
 	state            protoimpl.MessageState       `protogen:"open.v1"`
 	Summary          string                       `protobuf:"bytes,5,opt,name=summary,proto3" json:"summary,omitempty"`
@@ -322,7 +506,7 @@ type LogTriggerCleanUpError struct {
 
 func (x *LogTriggerCleanUpError) Reset() {
 	*x = LogTriggerCleanUpError{}
-	mi := &file_log_trigger_proto_msgTypes[4]
+	mi := &file_log_trigger_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -334,7 +518,7 @@ func (x *LogTriggerCleanUpError) String() string {
 func (*LogTriggerCleanUpError) ProtoMessage() {}
 
 func (x *LogTriggerCleanUpError) ProtoReflect() protoreflect.Message {
-	mi := &file_log_trigger_proto_msgTypes[4]
+	mi := &file_log_trigger_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -347,7 +531,7 @@ func (x *LogTriggerCleanUpError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogTriggerCleanUpError.ProtoReflect.Descriptor instead.
 func (*LogTriggerCleanUpError) Descriptor() ([]byte, []int) {
-	return file_log_trigger_proto_rawDescGZIP(), []int{4}
+	return file_log_trigger_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *LogTriggerCleanUpError) GetSummary() string {
@@ -398,6 +582,24 @@ const file_log_trigger_proto_rawDesc = "" +
 	"\tlog_index\x18\x04 \x01(\x03R\blogIndex\x12\x18\n" +
 	"\asummary\x18\x05 \x01(\tR\asummary\x12\x14\n" +
 	"\x05cause\x18\x06 \x01(\tR\x05cause\x12I\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\x8d\x02\n" +
+	"\x1dLogTriggerEventRateLimitError\x12\x1c\n" +
+	"\ttriggerID\x18\x01 \x01(\tR\ttriggerID\x12\x17\n" +
+	"\atx_hash\x18\x02 \x01(\tR\x06txHash\x12\x1d\n" +
+	"\n" +
+	"block_hash\x18\x03 \x01(\tR\tblockHash\x12\x1b\n" +
+	"\tlog_index\x18\x04 \x01(\x03R\blogIndex\x12\x18\n" +
+	"\asummary\x18\x05 \x01(\tR\asummary\x12\x14\n" +
+	"\x05cause\x18\x06 \x01(\tR\x05cause\x12I\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\x90\x02\n" +
+	" LogTriggerEventPayloadLimitError\x12\x1c\n" +
+	"\ttriggerID\x18\x01 \x01(\tR\ttriggerID\x12\x17\n" +
+	"\atx_hash\x18\x02 \x01(\tR\x06txHash\x12\x1d\n" +
+	"\n" +
+	"block_hash\x18\x03 \x01(\tR\tblockHash\x12\x1b\n" +
+	"\tlog_index\x18\x04 \x01(\x03R\blogIndex\x12\x18\n" +
+	"\asummary\x18\x05 \x01(\tR\asummary\x12\x14\n" +
+	"\x05cause\x18\x06 \x01(\tR\x05cause\x12I\n" +
 	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\x93\x01\n" +
 	"\x16LogTriggerCleanUpError\x12\x18\n" +
 	"\asummary\x18\x05 \x01(\tR\asummary\x12\x14\n" +
@@ -416,29 +618,33 @@ func file_log_trigger_proto_rawDescGZIP() []byte {
 	return file_log_trigger_proto_rawDescData
 }
 
-var file_log_trigger_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_log_trigger_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_log_trigger_proto_goTypes = []any{
-	(*LogTriggerInitiated)(nil),         // 0: chain_capabilities.evm.LogTriggerInitiated
-	(*LogTriggerSuccess)(nil),           // 1: chain_capabilities.evm.LogTriggerSuccess
-	(*LogTriggerError)(nil),             // 2: chain_capabilities.evm.LogTriggerError
-	(*LogTriggerEventDroppedError)(nil), // 3: chain_capabilities.evm.LogTriggerEventDroppedError
-	(*LogTriggerCleanUpError)(nil),      // 4: chain_capabilities.evm.LogTriggerCleanUpError
-	(*evm.FilterLogTriggerRequest)(nil), // 5: capabilities.blockchain.evm.v1alpha.FilterLogTriggerRequest
-	(*monitoring.ExecutionContext)(nil), // 6: monitoring.ExecutionContext
+	(*LogTriggerInitiated)(nil),              // 0: chain_capabilities.evm.LogTriggerInitiated
+	(*LogTriggerSuccess)(nil),                // 1: chain_capabilities.evm.LogTriggerSuccess
+	(*LogTriggerError)(nil),                  // 2: chain_capabilities.evm.LogTriggerError
+	(*LogTriggerEventDroppedError)(nil),      // 3: chain_capabilities.evm.LogTriggerEventDroppedError
+	(*LogTriggerEventRateLimitError)(nil),    // 4: chain_capabilities.evm.LogTriggerEventRateLimitError
+	(*LogTriggerEventPayloadLimitError)(nil), // 5: chain_capabilities.evm.LogTriggerEventPayloadLimitError
+	(*LogTriggerCleanUpError)(nil),           // 6: chain_capabilities.evm.LogTriggerCleanUpError
+	(*evm.FilterLogTriggerRequest)(nil),      // 7: capabilities.blockchain.evm.v1alpha.FilterLogTriggerRequest
+	(*monitoring.ExecutionContext)(nil),      // 8: monitoring.ExecutionContext
 }
 var file_log_trigger_proto_depIdxs = []int32{
-	5, // 0: chain_capabilities.evm.LogTriggerInitiated.req:type_name -> capabilities.blockchain.evm.v1alpha.FilterLogTriggerRequest
-	6, // 1: chain_capabilities.evm.LogTriggerInitiated.execution_context:type_name -> monitoring.ExecutionContext
-	5, // 2: chain_capabilities.evm.LogTriggerSuccess.req:type_name -> capabilities.blockchain.evm.v1alpha.FilterLogTriggerRequest
-	6, // 3: chain_capabilities.evm.LogTriggerSuccess.execution_context:type_name -> monitoring.ExecutionContext
-	6, // 4: chain_capabilities.evm.LogTriggerError.execution_context:type_name -> monitoring.ExecutionContext
-	6, // 5: chain_capabilities.evm.LogTriggerEventDroppedError.execution_context:type_name -> monitoring.ExecutionContext
-	6, // 6: chain_capabilities.evm.LogTriggerCleanUpError.execution_context:type_name -> monitoring.ExecutionContext
-	7, // [7:7] is the sub-list for method output_type
-	7, // [7:7] is the sub-list for method input_type
-	7, // [7:7] is the sub-list for extension type_name
-	7, // [7:7] is the sub-list for extension extendee
-	0, // [0:7] is the sub-list for field type_name
+	7, // 0: chain_capabilities.evm.LogTriggerInitiated.req:type_name -> capabilities.blockchain.evm.v1alpha.FilterLogTriggerRequest
+	8, // 1: chain_capabilities.evm.LogTriggerInitiated.execution_context:type_name -> monitoring.ExecutionContext
+	7, // 2: chain_capabilities.evm.LogTriggerSuccess.req:type_name -> capabilities.blockchain.evm.v1alpha.FilterLogTriggerRequest
+	8, // 3: chain_capabilities.evm.LogTriggerSuccess.execution_context:type_name -> monitoring.ExecutionContext
+	8, // 4: chain_capabilities.evm.LogTriggerError.execution_context:type_name -> monitoring.ExecutionContext
+	8, // 5: chain_capabilities.evm.LogTriggerEventDroppedError.execution_context:type_name -> monitoring.ExecutionContext
+	8, // 6: chain_capabilities.evm.LogTriggerEventRateLimitError.execution_context:type_name -> monitoring.ExecutionContext
+	8, // 7: chain_capabilities.evm.LogTriggerEventPayloadLimitError.execution_context:type_name -> monitoring.ExecutionContext
+	8, // 8: chain_capabilities.evm.LogTriggerCleanUpError.execution_context:type_name -> monitoring.ExecutionContext
+	9, // [9:9] is the sub-list for method output_type
+	9, // [9:9] is the sub-list for method input_type
+	9, // [9:9] is the sub-list for extension type_name
+	9, // [9:9] is the sub-list for extension extendee
+	0, // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_log_trigger_proto_init() }
@@ -452,7 +658,7 @@ func file_log_trigger_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_log_trigger_proto_rawDesc), len(file_log_trigger_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -35,6 +35,26 @@ message LogTriggerEventDroppedError {
   monitoring.ExecutionContext execution_context = 20;
 }
 
+message LogTriggerEventRateLimitError {
+  string triggerID = 1;
+  string tx_hash = 2;
+  string block_hash = 3;
+  int64 log_index = 4;
+  string summary = 5;
+  string cause = 6;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message LogTriggerEventPayloadLimitError {
+  string triggerID = 1;
+  string tx_hash = 2;
+  string block_hash = 3;
+  int64 log_index = 4;
+  string summary = 5;
+  string cause = 6;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
 message LogTriggerCleanUpError {
   string summary = 5;
   string cause = 6;

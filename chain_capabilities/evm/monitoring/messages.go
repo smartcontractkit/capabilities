@@ -191,6 +191,30 @@ func (m *MessageBuilder) BuildLogTriggerEventDroppedError(tc TelemetryContext, t
 	}
 }
 
+func (m *MessageBuilder) BuildLogTriggerEventRateLimitError(tc TelemetryContext, triggerID string, log *evm.Log, summary, cause string) ErrorMessage {
+	return &LogTriggerEventRateLimitError{
+		TriggerID:        triggerID,
+		TxHash:           common.Bytes2Hex(log.TxHash[:]),
+		BlockHash:        common.Bytes2Hex(log.BlockHash[:]),
+		LogIndex:         int64(log.LogIndex),
+		Summary:          summary,
+		Cause:            cause,
+		ExecutionContext: m.BuildExecutionContext(tc),
+	}
+}
+
+func (m *MessageBuilder) BuildLogTriggerEventPayloadLimitError(tc TelemetryContext, triggerID string, log *evm.Log, summary, cause string) ErrorMessage {
+	return &LogTriggerEventPayloadLimitError{
+		TriggerID:        triggerID,
+		TxHash:           common.Bytes2Hex(log.TxHash[:]),
+		BlockHash:        common.Bytes2Hex(log.BlockHash[:]),
+		LogIndex:         int64(log.LogIndex),
+		Summary:          summary,
+		Cause:            cause,
+		ExecutionContext: m.BuildExecutionContext(tc),
+	}
+}
+
 func (m *MessageBuilder) BuildFilterLogsInitiated(tc TelemetryContext, fq evmtypes.FilterQuery) *FilterLogsInitiated {
 	return &FilterLogsInitiated{Req: toFilterLogsRequest(fq), ExecutionContext: m.BuildExecutionContext(tc)}
 }
