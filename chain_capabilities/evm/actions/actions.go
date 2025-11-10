@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -24,6 +23,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
+	"github.com/smartcontractkit/chainlink-framework/multinode"
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
@@ -672,9 +672,8 @@ func (e *EVM) readProto(ctx context.Context, request ctypes.Request, into proto.
 }
 
 func isUserError(err error) bool {
-	lower := strings.ToLower(err.Error())
-	return !strings.Contains(lower, "context deadline exceeded") &&
-		!strings.Contains(lower, "no live nodes available")
+	return errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, multinode.ErrNodeError)
 }
 
 func readType[T any](ctx context.Context, reader ConsensusHandler, request ctypes.Request) (T, error) {
