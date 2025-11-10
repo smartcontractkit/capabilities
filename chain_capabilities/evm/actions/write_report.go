@@ -284,7 +284,7 @@ func getTransmissionID(workflowExecutionID string, request *evm.WriteReportReque
 
 	reportMetadata, err := decodeReportMetadata(request.Report.RawReport)
 	if err != nil {
-		return contracts.TransmissionID{}, err
+		return contracts.TransmissionID{}, fmt.Errorf("%s failed to decode report metadata: %v", userError, err)
 	}
 
 	reportID := common.Hex2Bytes(reportMetadata.ReportID)
