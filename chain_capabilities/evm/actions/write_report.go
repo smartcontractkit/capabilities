@@ -64,7 +64,7 @@ func (e *EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMeta
 	ctx = metadata.ContextWithCRE(ctx)
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: metadata}
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportInitiated(telemetryContext, input))
-	err := e.validateInputsAndReportMetadata(ctx, metadata, input)
+	err := e.validateInputsAndReportMetadata(metadata, input)
 	if err != nil {
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportUserError(telemetryContext, input, "Failed to WriteReport User Error due to invalid request", err.Error()))
 		return nil, capabilities.NewRemoteReportableError(err)
@@ -342,7 +342,7 @@ func fatalWriteReportReply(message string) *evm.WriteReportReply {
 	}
 }
 
-func (e *EVM) validateInputsAndReportMetadata(ctx context.Context, requestMetadata capabilities.RequestMetadata, request *evm.WriteReportRequest) error {
+func (e *EVM) validateInputsAndReportMetadata(requestMetadata capabilities.RequestMetadata, request *evm.WriteReportRequest) error {
 	if request == nil {
 		return errors.New("nil WriteReportRequest")
 	}
