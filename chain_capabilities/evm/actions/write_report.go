@@ -137,7 +137,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 	} else {
 		err = e.txGasLimit.Check(ctx, request.GasConfig.GasLimit)
 		if err != nil {
-			return nil, capabilities.ResponseMetadata{}, fmt.Errorf(userError+" report size exceeds limit (gasLimit=%d): %w", request.GasConfig.GasLimit, err)
+			return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s report size exceeds limit (gasLimit=%d): %w", userError, request.GasConfig.GasLimit, err)
 		}
 	}
 
@@ -186,7 +186,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 
 	err = e.reportSizeLimit.Check(ctx, commoncfg.SizeOf(request.Report.RawReport))
 	if err != nil {
-		return nil, capabilities.ResponseMetadata{}, fmt.Errorf(userError+" report size exceeds limit: %w", err)
+		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s report size exceeds limit: %w", userError, err)
 	}
 
 	e.lggr.Debugw("Submitting transaction for report", "request", request)
