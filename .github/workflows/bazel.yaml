@@ -22,6 +22,8 @@ jobs:
         # these env vars are set (and exposed) when it is a self-hosted runner with extras=s3-cache
         if: ${{ env.RUNS_ON_INSTANCE_ID != '' && env.ACTIONS_CACHE_URL != '' }}
         uses: runs-on/action@66d4449b717b5462159659523d1241051ff470b9 # v1
+        with:
+          show_costs: true
       - name: Check out repository
         uses: actions/checkout@v4
         with:
@@ -43,6 +45,8 @@ jobs:
           external-cache: true
           bazelisk-cache: true
           repository-cache: true
+      - run: bazelisk
+      - run: bazel version
       - name: Tidy and generate
         run: |
           bazel mod tidy
