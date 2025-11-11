@@ -17,10 +17,10 @@ import (
 	"github.com/smartcontractkit/capabilities/consensus/oracle"
 	"github.com/smartcontractkit/capabilities/consensus/oracle/plugin"
 	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
-
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	pbtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
+	"github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
@@ -697,17 +697,17 @@ type pluginAndRequestStore struct {
 }
 
 func runProtocolRoundTests(ctx context.Context, t *testing.T, lggr logger.Logger, n, f int, reqToObservations map[string]*consensusPluginTest) {
-	pluginAndRequestStores := createPluginsAndStores(n, t, lggr, f, 5)
+	pluginAndRequestStores := createPluginsAndStores(n, t, lggr, f, 5, 1000)
 
 	addRequestsToAllStores(pluginAndRequestStores, reqToObservations, t)
 	runProtocolRoundTestsWithPlugins(ctx, t, reqToObservations, pluginAndRequestStores, ocr3types.OutcomeContext{})
 }
 
-func createPluginsAndStores(n int, t *testing.T, lggr logger.Logger, f int, outcomeExpirySpan uint64) []pluginAndRequestStore {
+func createPluginsAndStores(n int, t *testing.T, lggr logger.Logger, f int, outcomeExpirySpan uint64, maxRequestOutcomeSize int) []pluginAndRequestStore {
 	var pluginAndRequestStores []pluginAndRequestStore
 
 	for i := 0; i < n; i++ {
-		reportingPlugin, reqStore := createReportingPlugin(t, lggr, f, n, outcomeExpirySpan)
+		reportingPlugin, reqStore := createReportingPlugin(t, lggr, f, n, outcomeExpirySpan, maxRequestOutcomeSize)
 		pluginAndRequestStores = append(pluginAndRequestStores, pluginAndRequestStore{
 			plugin: reportingPlugin,
 			store:  reqStore,
@@ -912,7 +912,7 @@ func verifyValueConsensusReport(t *testing.T, report ocr3types.ReportPlus[[]byte
 }
 
 func createReportingPlugin(t *testing.T, lggr logger.Logger, f int, n int,
-	outcomeExpirySpan uint64) (ocr3types.ReportingPlugin[[]byte], *requests.Store[*oracle.ConsensusRequest]) {
+	outcomeExpirySpan uint64, maxRequestOutcomeSize int) (ocr3types.ReportingPlugin[[]byte], *requests.Store[*oracle.ConsensusRequest]) {
 	reqStore := requests.NewStore[*oracle.ConsensusRequest]()
 
 	metricsInstance, err := metrics.NewMetrics()
@@ -924,7 +924,26 @@ func createReportingPlugin(t *testing.T, lggr logger.Logger, f int, n int,
 		MaxOutcomeLengthBytes:            defaultMaxLengthBytes,
 		MaxReportLengthBytes:             defaultMaxLengthBytes,
 		HistoricalOutcomeExpirySeqNrSpan: outcomeExpirySpan,
-	}, "evm")
+	}, "evm", boundLimiter{limit: maxRequestOutcomeSize})
 	require.NoError(t, err)
 	return reportingPlugin, reqStore
+}
+
+type boundLimiter struct {
+	limit int
+}
+
+func (b boundLimiter) Close() error {
+	return nil
+}
+
+func (b boundLimiter) Limit(ctx context.Context) (config.Size, error) {
+	return config.Size(b.limit), nil
+}
+
+func (b boundLimiter) Check(ctx context.Context, n2 config.Size) error {
+	if int(n2) > b.limit {
+		return fmt.Errorf("request size %d exceeds limit of %d", n2, b.limit)
+	}
+	return nil
 }

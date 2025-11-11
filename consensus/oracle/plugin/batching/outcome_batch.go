@@ -2,12 +2,15 @@ package batching
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
+	"github.com/smartcontractkit/chainlink-common/pkg/config"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 
@@ -18,11 +21,14 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
 
+const FailureMessageTruncated = ":TRUNCATED"
+
 type OutcomeBatch struct {
 	oracletypes.Outcome
 
-	lggr    logger.Logger
-	metrics metrics
+	lggr                  logger.Logger
+	metrics               metrics
+	maxRequestOutcomeSize limits.BoundLimiter[config.Size]
 
 	outctx                         ocr3types.OutcomeContext
 	maxOutcomeLengthBytes          int
@@ -31,7 +37,7 @@ type OutcomeBatch struct {
 }
 
 func NewOutcomeBatch(ctx context.Context, lggr logger.Logger, outctx ocr3types.OutcomeContext, outcomeExpirySeqNrSpan uint64, maxOutcomeLengthBytes int,
-	keybundleIDForConsensusFailure string, metrics metrics) (*OutcomeBatch, error) {
+	keybundleIDForConsensusFailure string, metrics metrics, maxRequestOutcomeSize limits.BoundLimiter[config.Size]) (*OutcomeBatch, error) {
 	metrics.IncBatchRequestsTotal(ctx, "outcome")
 	historicalOutcomes, err := getNonExpiredHistoricalRequestOutcomes(lggr, outctx, outcomeExpirySeqNrSpan)
 	if err != nil {
@@ -50,6 +56,7 @@ func NewOutcomeBatch(ctx context.Context, lggr logger.Logger, outctx ocr3types.O
 		keybundleIDForConsensusFailure: keybundleIDForConsensusFailure,
 		metrics:                        metrics,
 		maxOutcomeLengthBytes:          maxOutcomeLengthBytes,
+		maxRequestOutcomeSize:          maxRequestOutcomeSize,
 	}, nil
 }
 
@@ -100,6 +107,17 @@ func (o *OutcomeBatch) AddFailedConsensusRequestOutcomeToBatch(ctx context.Conte
 		},
 	}
 
+	requestOutcomeSizeLimit, err := o.maxRequestOutcomeSize.Limit(ctx)
+	if err != nil {
+		errMsg := fmt.Sprintf("failed to get max request outcome size limit when adding failed consensus outcome for request %s to batch: %v", requestID, err)
+		o.lggr.Error(errMsg)
+		return false, errors.New(errMsg)
+	}
+
+	if proto.Size(requestOutcome) > int(requestOutcomeSizeLimit) {
+		requestOutcome = o.truncateFailedRequestOutcome(requestOutcome.GetFailure(), requestOutcomeSizeLimit)
+	}
+
 	hasCapacity := o.checkOutcomeBatchHasCapacity(ctx, requestID, requestOutcome, o.outctx.SeqNr)
 	if !hasCapacity {
 		o.metrics.IncBatchCapacityExceeded(ctx, "outcome")
@@ -110,6 +128,42 @@ func (o *OutcomeBatch) AddFailedConsensusRequestOutcomeToBatch(ctx context.Conte
 	o.HistoricalOutcomes[requestID] = o.outctx.SeqNr
 
 	return true, nil
+}
+
+func (o *OutcomeBatch) truncateFailedRequestOutcome(failedRequestOutcome *oracletypes.ConsensusFailedOutcome, requestOutcomeSizeLimit config.Size) *oracletypes.ConsensusOutcome {
+
+	// Truncate the failure message so the request outcome fits within the request outcome size limit
+	requestOutcomeWithoutFailureMessage := &oracletypes.ConsensusOutcome{Outcome: &oracletypes.ConsensusOutcome_Failure{
+		Failure: &oracletypes.ConsensusFailedOutcome{
+			RequestID:   failedRequestOutcome.RequestID,
+			KeyBundleId: failedRequestOutcome.KeyBundleId,
+		},
+	},
+	}
+	sizeOfRequestOutcomeWithoutFailureMessage := proto.Size(requestOutcomeWithoutFailureMessage)
+
+	allowedFailureMessageSize := int(requestOutcomeSizeLimit) - sizeOfRequestOutcomeWithoutFailureMessage - len(FailureMessageTruncated)
+
+	if allowedFailureMessageSize <= 0 {
+		o.lggr.Warn("unable to fit any part of failure message within request outcome size limit", "requestID", failedRequestOutcome.RequestID,
+			"maxRequestOutcomeSize", requestOutcomeSizeLimit, "failure message", failedRequestOutcome.FailureMessage)
+		return requestOutcomeWithoutFailureMessage
+	}
+
+	truncatedFailureMessage := failedRequestOutcome.FailureMessage[:allowedFailureMessageSize] + FailureMessageTruncated
+	o.lggr.Warnw("truncated failure message to fit within request outcome size limit", "requestID", failedRequestOutcome.RequestID,
+		"originalSize", len(failedRequestOutcome.FailureMessage), "truncatedSize", len(truncatedFailureMessage),
+		"maxRequestOutcomeSize", requestOutcomeSizeLimit, "failure message", failedRequestOutcome.FailureMessage)
+
+	return &oracletypes.ConsensusOutcome{
+		Outcome: &oracletypes.ConsensusOutcome_Failure{
+			Failure: &oracletypes.ConsensusFailedOutcome{
+				RequestID:      failedRequestOutcome.RequestID,
+				KeyBundleId:    failedRequestOutcome.KeyBundleId,
+				FailureMessage: truncatedFailureMessage,
+			},
+		},
+	}
 }
 
 // FailConsensusWithDefaultCheck handles a consensus failure by checking if a default value is available to use.

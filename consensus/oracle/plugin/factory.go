@@ -11,8 +11,10 @@ import (
 	"github.com/smartcontractkit/capabilities/consensus/oracle"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
+	"github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
 )
@@ -37,18 +39,21 @@ type factory struct {
 	metrics           *metrics.Metrics
 
 	defaultKeyBundleIDForConsensusFailure string
+	maxRequestOutcomeSize                 limits.BoundLimiter[config.Size]
 
 	services.StateMachine
 }
 
 func NewReportingPluginFactory(lggr logger.Logger, metrics *metrics.Metrics, s *requests.Store[*oracle.ConsensusRequest],
-	setRequestTimeout SetRequestTimeout, defaultKeyBundleIDForConsensusFailure string) (*factory, error) {
+	setRequestTimeout SetRequestTimeout, defaultKeyBundleIDForConsensusFailure string,
+	maxRequestOutcomeSize limits.BoundLimiter[config.Size]) (*factory, error) {
 	return &factory{
 		store:                                 s,
 		setRequestTimeout:                     setRequestTimeout,
 		lggr:                                  logger.Named(lggr, "ConsensusCapabilityPluginFactory"),
 		metrics:                               metrics,
 		defaultKeyBundleIDForConsensusFailure: defaultKeyBundleIDForConsensusFailure,
+		maxRequestOutcomeSize:                 maxRequestOutcomeSize,
 	}, nil
 }
 
@@ -94,7 +99,8 @@ func (o *factory) NewReportingPlugin(_ context.Context, config ocr3types.Reporti
 		configProto.HistoricalOutcomeExpirySeqNrSpan = defaultHistoricalOutcomeExpirySeqNrSpan
 	}
 
-	rp, err := NewReportingPlugin(o.lggr, o.metrics, config.F, config.N, o.store, &configProto, o.defaultKeyBundleIDForConsensusFailure)
+	rp, err := NewReportingPlugin(o.lggr, o.metrics, config.F, config.N, o.store, &configProto, o.defaultKeyBundleIDForConsensusFailure,
+		o.maxRequestOutcomeSize)
 	rpInfo := ocr3types.ReportingPluginInfo{
 		Name: "Consensus Capability Plugin",
 		Limits: ocr3types.ReportingPluginLimits{
