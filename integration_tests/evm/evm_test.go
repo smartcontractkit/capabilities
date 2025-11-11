@@ -66,9 +66,11 @@ func Test_LogTrigger(t *testing.T) {
 	numOfWorkflowNodes := 4
 	workflowName := "TestWf"
 
+	lggr.Infof("Setting up DON and workflow...")
 	messageEmitter, donContext := setupDon(ctx, t, lggr, wasmFile, abiString, eventName, topic0, numOfWorkflowNodes, workflowName)
-
+	lggr.Infof("Waiting for log poller filters to be present...")
 	waitUntilLogPollerFiltersArePresent(t, obs, lggr, numOfWorkflowNodes)
+	lggr.Infof("Log poller filters are present.")
 
 	// emitting single event we will be waiting from the workflow's LogTrigger
 	messageDataThatWillBeEmitted := "Data for log trigger"
@@ -80,6 +82,7 @@ func Test_LogTrigger(t *testing.T) {
 	lggr.Infof("Transaction mined in block: %d", receipt.BlockNumber.Uint64())
 
 	// assertion to validate we get the expected number of events in beholder logs
+	lggr.Infof("Waiting for workflow logs to be emitted...")
 	foundEvents := 0
 	require.Eventually(t, func() bool {
 		lggr.Info("Waiting for workflow logs to be emitted...")
@@ -94,6 +97,7 @@ func Test_LogTrigger(t *testing.T) {
 			// Expect only one log line
 			require.Len(t, logs, 1, "Expected exactly one log line per workflow (it's printed inside the onTrigger() function of the workflow)")
 			log := logs[0]
+			lggr.Infow("Beholder log line", "message", log.GetMessage(), "nodeTimestamp", log.GetNodeTimestamp())
 			if strings.Contains(log.GetMessage(), messageDataThatWillBeEmitted) {
 				foundEvents++
 			}
