@@ -27,16 +27,6 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Restore Bazel cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/bazel
-            ~/.cache/bazelisk
-          key: ${{ runner.os }}-bazel-${{ github.ref }}-${{ hashFiles('**/BUILD.bazel', '**/MODULE.bazel', '**/*.bzl', '.bazelrc') }}
-          restore-keys: |
-            ${{ runner.os }}-bazel-${{ github.ref }}-
-            ${{ runner.os }}-bazel-
 
       - name: Install Bazel
         # install for self-hosted runners only, as github-hosted already have bazel installed
@@ -44,7 +34,6 @@ jobs:
         run: |
           npm install -g @bazel/bazelisk
           bazel version
-
       - name: Bazel mod tidy
         run: |
           bazel mod tidy
@@ -52,6 +41,19 @@ jobs:
         run: |
           git diff
           git diff --stat --exit-code
+
+      # Restore Bazel cache after Bazel mod tidy to fail faster on errors
+      - name: Restore Bazel cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/bazel
+            ~/.cache/bazelisk
+          key: ${{ runner.os }}-bazel_cache-${{ github.ref }}-${{ hashFiles('**/BUILD.bazel', '**/MODULE.bazel', '**/*.bzl', '.bazelrc') }}
+          restore-keys: |
+            ${{ runner.os }}-bazel_cache-${{ github.ref }}-
+            ${{ runner.os }}-bazel_cache-
+
       - name: Bazel (re)generate
         run: |
           bazel run //:gazelle --config=ci
