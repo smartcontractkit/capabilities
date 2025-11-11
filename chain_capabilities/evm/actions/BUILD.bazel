@@ -32,6 +32,7 @@ go_library(
         "@com_github_smartcontractkit_chainlink_common//pkg/types/chains/evm",
         "@com_github_smartcontractkit_chainlink_common//pkg/types/query/primitives",
         "@com_github_smartcontractkit_chainlink_common//pkg/utils/retry",
+        "@com_github_smartcontractkit_chainlink_framework_multinode//:multinode",
         "@com_github_smartcontractkit_chainlink_protos_cre_go//values/pb",
         "@org_golang_google_protobuf//proto",
     ],

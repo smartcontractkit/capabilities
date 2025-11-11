@@ -130,6 +130,7 @@ use_repo(
     "com_github_smartcontractkit_chainlink_common",
     "com_github_smartcontractkit_chainlink_evm",
     "com_github_smartcontractkit_chainlink_evm_gethwrappers",
+    "com_github_smartcontractkit_chainlink_framework_multinode",
     "com_github_smartcontractkit_chainlink_protos_cre_go",
     "com_github_smartcontractkit_chainlink_protos_workflows_go",
     "com_github_smartcontractkit_chainlink_v2",
