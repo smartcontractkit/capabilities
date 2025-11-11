@@ -131,7 +131,6 @@ func (o *OutcomeBatch) AddFailedConsensusRequestOutcomeToBatch(ctx context.Conte
 }
 
 func (o *OutcomeBatch) truncateFailedRequestOutcome(failedRequestOutcome *oracletypes.ConsensusFailedOutcome, requestOutcomeSizeLimit config.Size) *oracletypes.ConsensusOutcome {
-
 	// Truncate the failure message so the request outcome fits within the request outcome size limit
 	requestOutcomeWithoutFailureMessage := &oracletypes.ConsensusOutcome{Outcome: &oracletypes.ConsensusOutcome_Failure{
 		Failure: &oracletypes.ConsensusFailedOutcome{
