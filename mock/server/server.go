@@ -39,6 +39,9 @@ func (s *MockServer) Start(ctx context.Context) error {
 }
 
 func (s *MockServer) Close() error {
+	if s.MockRegistry != nil {
+		return s.MockRegistry.Stop()
+	}
 	return nil
 }
 

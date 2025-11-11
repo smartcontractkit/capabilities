@@ -31,7 +31,10 @@ type MockRegistry struct {
 	executableRequests   chan ExecutableRequest
 	mu                   sync.RWMutex
 	stopCh               services.StopChan
+	stopOnce             sync.Once
 	grpcServer           *grpc.Server
+	listener             net.Listener
+	stopped              bool
 	lggr                 logger.Logger
 	capabilitiesRegistry core.CapabilitiesRegistry
 }
@@ -527,6 +530,9 @@ func (m *MockRegistry) Start(port int) error {
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
+	m.mu.Lock()
+	m.listener = lis
+	m.mu.Unlock()
 	m.grpcServer = grpc.NewServer([]grpc.ServerOption{
 		grpc.KeepaliveParams(keepalive.ServerParameters{
 			Time:    30 * time.Second, // Send keepalive ping every 30s
@@ -535,7 +541,35 @@ func (m *MockRegistry) Start(port int) error {
 	}...)
 	pb.RegisterMockCapabilityServer(m.grpcServer, m)
 	if err2 := m.grpcServer.Serve(lis); err2 != nil {
-		m.lggr.Error("gRPC server failed to serve: ", err2)
+		m.mu.RLock()
+		stopped := m.stopped
+		m.mu.RUnlock()
+		if !stopped {
+			m.lggr.Error("gRPC server failed to serve: ", err2)
+		}
 	}
+	return nil
+}
+
+func (m *MockRegistry) Stop() error {
+	m.mu.Lock()
+	m.stopped = true
+	if m.grpcServer != nil {
+		m.grpcServer.GracefulStop()
+		m.grpcServer = nil
+	}
+	listener := m.listener
+	m.listener = nil
+	m.mu.Unlock()
+
+	if listener != nil {
+		if err := listener.Close(); err != nil {
+			return err
+		}
+	}
+
+	m.stopOnce.Do(func() {
+		close(m.stopCh)
+	})
 	return nil
 }
