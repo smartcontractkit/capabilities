@@ -29,24 +29,18 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      # - name: Cache Bazel
-      #   uses: actions/cache@v4
-      #   with:
-      #     path: |
-      #       ~/.cache/bazel
-      #       ~/.cache/bazelisk
-      #     key: ${{ runner.os }}-bazel-${{ github.ref }}-${{ hashFiles('**/BUILD.bazel', '**/MODULE.bazel', '**/*.bzl', '.bazelrc') }}
-      #     restore-keys: |
-      #       ${{ runner.os }}-bazel-${{ github.ref }}-
-      #       ${{ runner.os }}-bazel-
-      - uses: bazel-contrib/setup-bazel@4fd964a13a440a8aeb0be47350db2fc640f19ca8 # 0.15.0
+      - name: Cache Bazel
+        uses: actions/cache@v4
         with:
-          disk-cache: ${{ github.workflow }}
-          external-cache: true
-          bazelisk-cache: true
-          repository-cache: true
-      - run: bazelisk
-      - run: bazel version
+          path: |
+            ~/.cache/bazel
+            ~/.cache/bazelisk
+          key: ${{ runner.os }}-bazel-${{ github.ref }}-${{ hashFiles('**/BUILD.bazel', '**/MODULE.bazel', '**/*.bzl', '.bazelrc') }}
+          restore-keys: |
+            ${{ runner.os }}-bazel-${{ github.ref }}-
+            ${{ runner.os }}-bazel-
+      - name: Install Bazel
+        run: npm install -g @bazel/bazelisk
       - name: Tidy and generate
         run: |
           bazel mod tidy
