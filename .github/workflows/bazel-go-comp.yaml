@@ -51,10 +51,10 @@ jobs:
           path: |
             ~/.cache/bazel
             ~/.cache/bazelisk
-          key: bazel_cache-runner_${{ runner.os }}-ref_${{ github.ref }}-hash_${{ hashFiles('**/BUILD.bazel', '**/MODULE.bazel', '**/*.bzl', '.bazelrc') }}
+          key: bazel_cache2-runner_${{ runner.os }}-ref_${{ github.ref }}-hash_${{ hashFiles('**/MODULE.bazel.lock') }}
           restore-keys: |
-            bazel_cache-runner_${{ runner.os }}-ref_${{ github.ref }}-
-            bazel_cache-runner_${{ runner.os }}-
+            bazel_cache2-runner_${{ runner.os }}-ref_${{ github.ref }}-
+            bazel_cache2-runner_${{ runner.os }}-
 
       - name: Bazel (re)generate
         run: |
@@ -109,10 +109,10 @@ jobs:
           path: |
             ${{ steps.go-cache-paths.outputs.GOMODCACHE }}
             ${{ steps.go-cache-paths.outputs.GOCACHE }}
-          key: go_cache-runner_${{ runner.os }}-ref_${{ github.ref }}-hash_${{ hashFiles('**/go.sum') }}
+          key: go_cache2-runner_${{ runner.os }}-ref_${{ github.ref }}-hash_${{ hashFiles('**/go.sum') }}
           restore-keys: |
-            go_cache-runner_${{ runner.os }}-ref_${{ github.ref }}-
-            go_cache-runner_${{ runner.os }}-
+            go_cache2-runner_${{ runner.os }}-ref_${{ github.ref }}-
+            go_cache2-runner_${{ runner.os }}-
 
 
       - name: Support private Go modules
