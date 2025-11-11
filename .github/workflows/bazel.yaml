@@ -45,14 +45,14 @@ jobs:
           npm install -g @bazel/bazelisk
           bazel version
 
-      - name: Tidy and generate
+      - name: Bazel mod tidy
         run: |
           bazel mod tidy
       - name: Ensure no diff
         run: |
           git diff
           git diff --stat --exit-code
-      - name: (Re)generate
+      - name: Bazel (re)generate
         run: |
           bazel run //:gazelle --config=ci
       - name: Ensure no diff
