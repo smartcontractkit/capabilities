@@ -17,12 +17,8 @@ env:
 
 jobs:
   bazel_test:
-    runs-on: runs-on=${{ github.run_id }}/runner=8cpu-linux-arm64/spot=false/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}/runner=8cpu-linux-arm64/spot=false
     steps:
-      - name: Enable S3 Cache for Self-Hosted Runners
-        # these env vars are set (and exposed) when it is a self-hosted runner with extras=s3-cache
-        if: ${{ env.RUNS_ON_INSTANCE_ID != '' && env.ACTIONS_CACHE_URL != '' }}
-        uses: runs-on/action@66d4449b717b5462159659523d1241051ff470b9 # v1
       - name: Check out repository
         uses: actions/checkout@v4
         with:
@@ -34,7 +30,6 @@ jobs:
         if: ${{ env.RUNS_ON_INSTANCE_ID != '' }}
         run: |
           npm install -g @bazel/bazelisk
-          bazel version
       - name: Tidy
         run: |
           bazel mod tidy
@@ -43,39 +38,25 @@ jobs:
           git diff
           git diff --stat --exit-code
 
-      # Restore Bazel cache after Bazel mod tidy to fail faster on errors
-      - name: Restore Bazel cache
-        id: bazel-cache-restore
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            ~/.cache/bazel
-            ~/.cache/bazelisk
-          key: bazel_cache2-runner_${{ runner.os }}-ref_${{ github.ref }}-hash_${{ hashFiles('**/MODULE.bazel.lock') }}
-          restore-keys: |
-            bazel_cache2-runner_${{ runner.os }}-ref_${{ github.ref }}-
-            bazel_cache2-runner_${{ runner.os }}-
-
       - name: Bazel (re)generate
         run: |
-          bazel run //:gazelle --config=ci
+          bazel run //:gazelle --config=ci \
+            --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_API_KEY }} \
+            --build_metadata=ROLE=CI \
+            --build_metadata=COMMIT_SHA=${{ github.sha }} \
+            --build_metadata=BRANCH_NAME=${{ github.head_ref || github.ref_name }}
       - name: Ensure no diff
         run: |
           git diff
           git diff --stat --exit-code
 
       - name: Test
-        run: bazel test //... --config=ci
-
-      - name: Save Bazel cache
-        uses: actions/cache/save@v4
-        # Save the cache even if the tests fail. This allows re-running only the failed tests.
-        if: always()
-        with:
-          path: |
-            ~/.cache/bazel
-            ~/.cache/bazelisk
-          key: ${{ steps.bazel-cache-restore.outputs.cache-primary-key }}
+        run: |
+          bazel test //... --config=ci \
+            --remote_header=x-buildbuddy-api-key=${{ secrets.BUILDBUDDY_API_KEY }} \
+            --build_metadata=ROLE=CI \
+            --build_metadata=COMMIT_SHA=${{ github.sha }} \
+            --build_metadata=BRANCH_NAME=${{ github.head_ref || github.ref_name }}
 
   go_test:
     runs-on: runs-on=${{ github.run_id }}/runner=8cpu-linux-arm64/spot=false/extras=s3-cache
