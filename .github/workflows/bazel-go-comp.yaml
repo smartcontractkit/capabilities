@@ -125,7 +125,3 @@ jobs:
           CL_DATABASE_URL: ${{ env.DB_URL }}
         run: GOWORK=off gomods -go test -race ./...
 
-      - name: Build
-        env:
-          CL_DATABASE_URL: ${{ env.DB_URL }}
-        run: GOWORK=off gomods -go build .
