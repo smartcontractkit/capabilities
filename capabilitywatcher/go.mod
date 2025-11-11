@@ -6,7 +6,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/prometheus/client_golang v1.22.0
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20251105202054-e299af591b47
-	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251105200931-fdbfd5296201
+	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251110151008-7a3012c1b096
 	google.golang.org/protobuf v1.36.8
 )
 
