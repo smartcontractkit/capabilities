@@ -82,9 +82,10 @@ func Test_LogTrigger(t *testing.T) {
 	lggr.Infof("Transaction mined in block: %d", receipt.BlockNumber.Uint64())
 
 	// assertion to validate we get the expected number of events in beholder logs
+	foundEvents := 0
 	lggr.Infof("Waiting for workflow logs to be emitted...")
 	require.Eventually(t, func() bool {
-		foundEvents := 0 // as the logs will bring from the inception of the WF we need to restart the counter on each iteration
+		foundEvents = 0 // as the logs will bring from the inception of the WF we need to restart the counter on each iteration
 		lggr.Info("Waiting for workflow logs to be emitted...")
 		workflowLogs := getBeholderLogsForWorkflow(beholderTester, t)
 		// Wait until we have the logs for all workflows
