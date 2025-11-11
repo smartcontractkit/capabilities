@@ -1,4 +1,4 @@
-name: Go
+name: go
 
 permissions:
   contents: read
@@ -17,9 +17,7 @@ env:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
-    env:
-      DB_URL: postgresql://postgres:postgres@localhost:5432/chainlink_test?sslmode=disable
+    runs-on: runs-on=${{ github.run_id }}/runner=8cpu-linux-arm64/spot=false
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -42,23 +40,24 @@ jobs:
       - name: Install protoc-gen-go grpc
         shell: bash
         run: |
-          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.7
-          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
           go install github.com/jmank88/gomods@v0.1.6
           echo "gomodcache=$(go env GOMODCACHE)" >> $GITHUB_OUTPUT
           echo "gobuildcache=$(go env GOCACHE)" >> $GITHUB_OUTPUT
 
-      - name: Install protoc
-        shell: bash
+      - name: Tidy
         run: |
-          PROTOC_VERSION=29.3
-          curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip
-          unzip protoc-${PROTOC_VERSION}-linux-x86_64.zip -d protoc3
-          sudo mv protoc3/bin/* /usr/local/bin/
-          sudo mv protoc3/include/* /usr/local/include/
-          rm -rf protoc3 protoc-${PROTOC_VERSION}-linux-x86_64.zip
+          gomods tidy
+      - name: Ensure no diff
+        run: |
+          git diff
+          git diff --stat --exit-code
 
-      - name: Run All Go Tests
+      - name: Test
         env:
           CL_DATABASE_URL: ${{ env.DB_URL }}
-        run: gomods -go test ./... GOWORK=off
+        run: gomods -go test -race ./... GOWORK=off
+
+      - name: Build
+        env:
+          CL_DATABASE_URL: ${{ env.DB_URL }}
+        run: gomods -go build .
