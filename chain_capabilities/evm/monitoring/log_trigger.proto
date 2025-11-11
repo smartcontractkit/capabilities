@@ -32,6 +32,7 @@ message LogTriggerEventDroppedError {
   int64 log_index = 4;
   string summary = 5;
   string cause = 6;
+  bool isLimitError = 7;
   monitoring.ExecutionContext execution_context = 20;
 }
 

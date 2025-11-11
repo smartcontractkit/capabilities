@@ -139,6 +139,7 @@ type WriteReportError struct {
 	Req              *WriteReportRequest          `protobuf:"bytes,1,opt,name=req,proto3" json:"req,omitempty"`
 	Summary          string                       `protobuf:"bytes,2,opt,name=summary,proto3" json:"summary,omitempty"`
 	Cause            string                       `protobuf:"bytes,3,opt,name=cause,proto3" json:"cause,omitempty"`
+	IsUserError      bool                         `protobuf:"varint,4,opt,name=isUserError,proto3" json:"isUserError,omitempty"`
 	ExecutionContext *monitoring.ExecutionContext `protobuf:"bytes,20,opt,name=execution_context,json=executionContext,proto3" json:"execution_context,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
@@ -193,6 +194,13 @@ func (x *WriteReportError) GetCause() string {
 		return x.Cause
 	}
 	return ""
+}
+
+func (x *WriteReportError) GetIsUserError() bool {
+	if x != nil {
+		return x.IsUserError
+	}
+	return false
 }
 
 func (x *WriteReportError) GetExecutionContext() *monitoring.ExecutionContext {
@@ -521,11 +529,12 @@ const file_chain_capabilities_evm_monitoring_write_report_proto_rawDesc = "" +
 	"\x12WriteReportSuccess\x12<\n" +
 	"\x03req\x18\x01 \x01(\v2*.chain_capabilities.evm.WriteReportRequestR\x03req\x12\x1b\n" +
 	"\tlog_count\x18\x02 \x01(\x05R\blogCount\x12I\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xcb\x01\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xed\x01\n" +
 	"\x10WriteReportError\x12<\n" +
 	"\x03req\x18\x01 \x01(\v2*.chain_capabilities.evm.WriteReportRequestR\x03req\x12\x18\n" +
 	"\asummary\x18\x02 \x01(\tR\asummary\x12\x14\n" +
-	"\x05cause\x18\x03 \x01(\tR\x05cause\x12I\n" +
+	"\x05cause\x18\x03 \x01(\tR\x05cause\x12 \n" +
+	"\visUserError\x18\x04 \x01(\bR\visUserError\x12I\n" +
 	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\x89\x02\n" +
 	" WriteReportTxFeeCalculationError\x12<\n" +
 	"\x03req\x18\x01 \x01(\v2*.chain_capabilities.evm.WriteReportRequestR\x03req\x12\x18\n" +
