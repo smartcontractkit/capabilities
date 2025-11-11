@@ -16,7 +16,7 @@ env:
 
 jobs:
   test:
-    runs-on: runs-on=${{ github.run_id }}/runner=8cpu-linux-arm64/spot=false/extras=s3-cache
+    runs-on: runs-on=${{ github.run_id }}/runner=16cpu-linux-arm64/spot=false/extras=s3-cache
     steps:
       - name: Enable S3 Cache for Self-Hosted Runners
         # these env vars are set (and exposed) when it is a self-hosted runner with extras=s3-cache
@@ -33,10 +33,10 @@ jobs:
           path: |
             ~/.cache/bazel
             ~/.cache/bazelisk
-          key: ${{ runner.os }}-bazel2-${{ github.ref }}-${{ hashFiles('**/BUILD.bazel', '**/MODULE.bazel', '**/*.bzl', '.bazelrc') }}
+          key: ${{ runner.os }}-bazel-${{ github.ref }}-${{ hashFiles('**/BUILD.bazel', '**/MODULE.bazel', '**/*.bzl', '.bazelrc') }}
           restore-keys: |
-            ${{ runner.os }}-bazel2-${{ github.ref }}-
-            ${{ runner.os }}-bazel2-
+            ${{ runner.os }}-bazel-${{ github.ref }}-
+            ${{ runner.os }}-bazel-
 
       - name: Install Bazel
         # install for self-hosted runners only, as github-hosted already have bazel installed
@@ -68,4 +68,4 @@ jobs:
           path: |
             ~/.cache/bazel
             ~/.cache/bazelisk
-          key: ${{ runner.os }}-bazel2-${{ github.ref }}-${{ hashFiles('**/BUILD.bazel', '**/MODULE.bazel', '**/*.bzl', '.bazelrc') }}
+          key: ${{ runner.os }}-bazel-${{ github.ref }}-${{ hashFiles('**/BUILD.bazel', '**/MODULE.bazel', '**/*.bzl', '.bazelrc') }}
