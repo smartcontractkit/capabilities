@@ -9,14 +9,14 @@ load("@rules_go//go:def.bzl", "nogo")
 # gazelle:resolve go github.com/smartcontractkit/capabilities/mock/internal/pb //mock/internal/pb:pb
 gazelle(name = "gazelle")
 
-nogo(
-    name = "my_nogo",
-    visibility = ["//visibility:public"],
-    # For demonstration purposes only. Uncomment a line in kvstore/main.go for an example of a static analysis violation.
-    deps = [
-        "@org_golang_x_tools//go/analysis/passes/appends:go_default_library",
-    ],
-)
+# nogo(
+#     name = "my_nogo",
+#     visibility = ["//visibility:public"],
+#     # For demonstration purposes only. Uncomment a line in kvstore/main.go for an example of a static analysis violation.
+#     deps = [
+#         "@org_golang_x_tools//go/analysis/passes/appends:go_default_library",
+#     ],
+# )
 
 # Generate all types
 # sh_binary(

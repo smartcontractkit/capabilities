@@ -10,7 +10,7 @@ bazel_dep(name = "gazelle", version = "0.45.0")
 # https://github.com/bazel-contrib/rules_go/blob/v0.58.3/go/private/extensions.bzl
 go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.download(version = "1.25.3")
-go_sdk.nogo(nogo = "//:my_nogo")
+# go_sdk.nogo(nogo = "//:my_nogo")
 
 # https://registry.bazel.build/modules/protobuf
 bazel_dep(name = "protobuf", version = "31.1", repo_name = "com_google_protobuf")
