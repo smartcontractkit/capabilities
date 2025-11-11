@@ -16,23 +16,33 @@ env:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: runs-on=${{ github.run_id }}/cpu=4/ram=16/family=m6idn/spot=false/image=ubuntu24-full-x64/extras=s3-cache
     steps:
+      - name: Enable S3 Cache for Self-Hosted Runners
+        # these env vars are set (and exposed) when it is a self-hosted runner with extras=s3-cache
+        if: ${{ env.RUNS_ON_INSTANCE_ID != '' && env.ACTIONS_CACHE_URL != '' }}
+        uses: runs-on/action@66d4449b717b5462159659523d1241051ff470b9 # v1
       - name: Check out repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Cache Bazel
-        uses: actions/cache@v4
+      # - name: Cache Bazel
+      #   uses: actions/cache@v4
+      #   with:
+      #     path: |
+      #       ~/.cache/bazel
+      #       ~/.cache/bazelisk
+      #     key: ${{ runner.os }}-bazel-${{ github.ref }}-${{ hashFiles('**/BUILD.bazel', '**/MODULE.bazel', '**/*.bzl', '.bazelrc') }}
+      #     restore-keys: |
+      #       ${{ runner.os }}-bazel-${{ github.ref }}-
+      #       ${{ runner.os }}-bazel-
+      - uses: bazel-contrib/setup-bazel@4fd964a13a440a8aeb0be47350db2fc640f19ca8 # 0.15.0
         with:
-          path: |
-            ~/.cache/bazel
-            ~/.cache/bazelisk
-          key: ${{ runner.os }}-bazel-${{ github.ref }}-${{ hashFiles('**/BUILD.bazel', '**/MODULE.bazel', '**/*.bzl', '.bazelrc') }}
-          restore-keys: |
-            ${{ runner.os }}-bazel-${{ github.ref }}-
-            ${{ runner.os }}-bazel-
+          disk-cache: ${{ github.workflow }}
+          external-cache: true
+          bazelisk-cache: true
+          repository-cache: true
       - name: Tidy and generate
         run: |
           bazel mod tidy
