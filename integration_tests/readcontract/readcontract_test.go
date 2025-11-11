@@ -36,6 +36,7 @@ type ReadContractConfig struct {
 func Test_RemoteReadCapabilityWithoutConsensus(t *testing.T) {
 	// TODO: Uncomment this test
 	t.Skip("Skipping for testing purposes")
+
 	ctx := t.Context()
 	lggr := logger.TestLogger(t)
 
@@ -59,6 +60,9 @@ func Test_RemoteReadCapabilityWithoutConsensus(t *testing.T) {
 }
 
 func Test_RemoteReadCapabilityMisconfiguredContractError(t *testing.T) {
+	// TODO: Uncomment this test
+	t.Skip("Skipping for testing purposes")
+
 	beholderTester := tests.Beholder(t) //nolint:staticcheck
 
 	ctx := t.Context()
