@@ -227,6 +227,7 @@ type LogTriggerEventDroppedError struct {
 	LogIndex         int64                        `protobuf:"varint,4,opt,name=log_index,json=logIndex,proto3" json:"log_index,omitempty"`
 	Summary          string                       `protobuf:"bytes,5,opt,name=summary,proto3" json:"summary,omitempty"`
 	Cause            string                       `protobuf:"bytes,6,opt,name=cause,proto3" json:"cause,omitempty"`
+	IsLimitError     bool                         `protobuf:"varint,7,opt,name=isLimitError,proto3" json:"isLimitError,omitempty"`
 	ExecutionContext *monitoring.ExecutionContext `protobuf:"bytes,20,opt,name=execution_context,json=executionContext,proto3" json:"execution_context,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
@@ -302,6 +303,13 @@ func (x *LogTriggerEventDroppedError) GetCause() string {
 		return x.Cause
 	}
 	return ""
+}
+
+func (x *LogTriggerEventDroppedError) GetIsLimitError() bool {
+	if x != nil {
+		return x.IsLimitError
+	}
+	return false
 }
 
 func (x *LogTriggerEventDroppedError) GetExecutionContext() *monitoring.ExecutionContext {
@@ -389,7 +397,7 @@ const file_log_trigger_proto_rawDesc = "" +
 	"\ttriggerID\x18\x01 \x01(\tR\ttriggerID\x12\x18\n" +
 	"\asummary\x18\x05 \x01(\tR\asummary\x12\x14\n" +
 	"\x05cause\x18\x06 \x01(\tR\x05cause\x12I\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\x8b\x02\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xaf\x02\n" +
 	"\x1bLogTriggerEventDroppedError\x12\x1c\n" +
 	"\ttriggerID\x18\x01 \x01(\tR\ttriggerID\x12\x17\n" +
 	"\atx_hash\x18\x02 \x01(\tR\x06txHash\x12\x1d\n" +
@@ -397,7 +405,8 @@ const file_log_trigger_proto_rawDesc = "" +
 	"block_hash\x18\x03 \x01(\tR\tblockHash\x12\x1b\n" +
 	"\tlog_index\x18\x04 \x01(\x03R\blogIndex\x12\x18\n" +
 	"\asummary\x18\x05 \x01(\tR\asummary\x12\x14\n" +
-	"\x05cause\x18\x06 \x01(\tR\x05cause\x12I\n" +
+	"\x05cause\x18\x06 \x01(\tR\x05cause\x12\"\n" +
+	"\fisLimitError\x18\a \x01(\bR\fisLimitError\x12I\n" +
 	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\x93\x01\n" +
 	"\x16LogTriggerCleanUpError\x12\x18\n" +
 	"\asummary\x18\x05 \x01(\tR\asummary\x12\x14\n" +

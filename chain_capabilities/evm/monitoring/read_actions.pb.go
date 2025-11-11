@@ -183,6 +183,7 @@ type CallContractError struct {
 	Req              *CallContractRequest         `protobuf:"bytes,1,opt,name=req,proto3" json:"req,omitempty"`
 	Summary          string                       `protobuf:"bytes,2,opt,name=summary,proto3" json:"summary,omitempty"`
 	Cause            string                       `protobuf:"bytes,3,opt,name=cause,proto3" json:"cause,omitempty"`
+	IsUserError      bool                         `protobuf:"varint,4,opt,name=isUserError,proto3" json:"isUserError,omitempty"`
 	ExecutionContext *monitoring.ExecutionContext `protobuf:"bytes,20,opt,name=execution_context,json=executionContext,proto3" json:"execution_context,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
@@ -237,6 +238,13 @@ func (x *CallContractError) GetCause() string {
 		return x.Cause
 	}
 	return ""
+}
+
+func (x *CallContractError) GetIsUserError() bool {
+	if x != nil {
+		return x.IsUserError
+	}
+	return false
 }
 
 func (x *CallContractError) GetExecutionContext() *monitoring.ExecutionContext {
@@ -483,6 +491,7 @@ type FilterLogsError struct {
 	Req              *FilterLogsRequest           `protobuf:"bytes,1,opt,name=req,proto3" json:"req,omitempty"`
 	Summary          string                       `protobuf:"bytes,2,opt,name=summary,proto3" json:"summary,omitempty"`
 	Cause            string                       `protobuf:"bytes,3,opt,name=cause,proto3" json:"cause,omitempty"`
+	IsUserError      bool                         `protobuf:"varint,4,opt,name=isUserError,proto3" json:"isUserError,omitempty"`
 	ExecutionContext *monitoring.ExecutionContext `protobuf:"bytes,20,opt,name=execution_context,json=executionContext,proto3" json:"execution_context,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
@@ -537,6 +546,13 @@ func (x *FilterLogsError) GetCause() string {
 		return x.Cause
 	}
 	return ""
+}
+
+func (x *FilterLogsError) GetIsUserError() bool {
+	if x != nil {
+		return x.IsUserError
+	}
+	return false
 }
 
 func (x *FilterLogsError) GetExecutionContext() *monitoring.ExecutionContext {
@@ -715,6 +731,7 @@ type BalanceAtError struct {
 	Req              *BalanceAtRequest            `protobuf:"bytes,1,opt,name=req,proto3" json:"req,omitempty"`
 	Summary          string                       `protobuf:"bytes,2,opt,name=summary,proto3" json:"summary,omitempty"`
 	Cause            string                       `protobuf:"bytes,3,opt,name=cause,proto3" json:"cause,omitempty"`
+	IsUserError      bool                         `protobuf:"varint,4,opt,name=isUserError,proto3" json:"isUserError,omitempty"`
 	ExecutionContext *monitoring.ExecutionContext `protobuf:"bytes,20,opt,name=execution_context,json=executionContext,proto3" json:"execution_context,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
@@ -769,6 +786,13 @@ func (x *BalanceAtError) GetCause() string {
 		return x.Cause
 	}
 	return ""
+}
+
+func (x *BalanceAtError) GetIsUserError() bool {
+	if x != nil {
+		return x.IsUserError
+	}
+	return false
 }
 
 func (x *BalanceAtError) GetExecutionContext() *monitoring.ExecutionContext {
@@ -955,6 +979,7 @@ type EstimateGasError struct {
 	Req              *EstimateGasRequest          `protobuf:"bytes,1,opt,name=req,proto3" json:"req,omitempty"`
 	Summary          string                       `protobuf:"bytes,2,opt,name=summary,proto3" json:"summary,omitempty"`
 	Cause            string                       `protobuf:"bytes,3,opt,name=cause,proto3" json:"cause,omitempty"`
+	IsUserError      bool                         `protobuf:"varint,4,opt,name=isUserError,proto3" json:"isUserError,omitempty"`
 	ExecutionContext *monitoring.ExecutionContext `protobuf:"bytes,20,opt,name=execution_context,json=executionContext,proto3" json:"execution_context,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
@@ -1009,6 +1034,13 @@ func (x *EstimateGasError) GetCause() string {
 		return x.Cause
 	}
 	return ""
+}
+
+func (x *EstimateGasError) GetIsUserError() bool {
+	if x != nil {
+		return x.IsUserError
+	}
+	return false
 }
 
 func (x *EstimateGasError) GetExecutionContext() *monitoring.ExecutionContext {
@@ -1355,6 +1387,7 @@ type GetTransactionByHashError struct {
 	Req              *GetTransactionByHashRequest `protobuf:"bytes,1,opt,name=req,proto3" json:"req,omitempty"`
 	Summary          string                       `protobuf:"bytes,2,opt,name=summary,proto3" json:"summary,omitempty"`
 	Cause            string                       `protobuf:"bytes,3,opt,name=cause,proto3" json:"cause,omitempty"`
+	IsUserError      bool                         `protobuf:"varint,4,opt,name=isUserError,proto3" json:"isUserError,omitempty"`
 	ExecutionContext *monitoring.ExecutionContext `protobuf:"bytes,20,opt,name=execution_context,json=executionContext,proto3" json:"execution_context,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
@@ -1409,6 +1442,13 @@ func (x *GetTransactionByHashError) GetCause() string {
 		return x.Cause
 	}
 	return ""
+}
+
+func (x *GetTransactionByHashError) GetIsUserError() bool {
+	if x != nil {
+		return x.IsUserError
+	}
+	return false
 }
 
 func (x *GetTransactionByHashError) GetExecutionContext() *monitoring.ExecutionContext {
@@ -1579,6 +1619,7 @@ type GetTransactionReceiptError struct {
 	Req              *GetTransactionReceiptRequest `protobuf:"bytes,1,opt,name=req,proto3" json:"req,omitempty"`
 	Summary          string                        `protobuf:"bytes,2,opt,name=summary,proto3" json:"summary,omitempty"`
 	Cause            string                        `protobuf:"bytes,3,opt,name=cause,proto3" json:"cause,omitempty"`
+	IsUserError      bool                          `protobuf:"varint,4,opt,name=isUserError,proto3" json:"isUserError,omitempty"`
 	ExecutionContext *monitoring.ExecutionContext  `protobuf:"bytes,20,opt,name=execution_context,json=executionContext,proto3" json:"execution_context,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
@@ -1633,6 +1674,13 @@ func (x *GetTransactionReceiptError) GetCause() string {
 		return x.Cause
 	}
 	return ""
+}
+
+func (x *GetTransactionReceiptError) GetIsUserError() bool {
+	if x != nil {
+		return x.IsUserError
+	}
+	return false
 }
 
 func (x *GetTransactionReceiptError) GetExecutionContext() *monitoring.ExecutionContext {
@@ -1863,6 +1911,7 @@ type HeaderByNumberError struct {
 	Req              *HeaderByNumberRequest       `protobuf:"bytes,1,opt,name=req,proto3" json:"req,omitempty"`
 	Summary          string                       `protobuf:"bytes,2,opt,name=summary,proto3" json:"summary,omitempty"`
 	Cause            string                       `protobuf:"bytes,3,opt,name=cause,proto3" json:"cause,omitempty"`
+	IsUserError      bool                         `protobuf:"varint,4,opt,name=isUserError,proto3" json:"isUserError,omitempty"`
 	ExecutionContext *monitoring.ExecutionContext `protobuf:"bytes,20,opt,name=execution_context,json=executionContext,proto3" json:"execution_context,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
@@ -1919,6 +1968,13 @@ func (x *HeaderByNumberError) GetCause() string {
 	return ""
 }
 
+func (x *HeaderByNumberError) GetIsUserError() bool {
+	if x != nil {
+		return x.IsUserError
+	}
+	return false
+}
+
 func (x *HeaderByNumberError) GetExecutionContext() *monitoring.ExecutionContext {
 	if x != nil {
 		return x.ExecutionContext
@@ -1939,11 +1995,12 @@ const file_chain_capabilities_evm_monitoring_read_actions_proto_rawDesc = "" +
 	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\x9f\x01\n" +
 	"\x13CallContractSuccess\x12=\n" +
 	"\x03req\x18\x01 \x01(\v2+.chain_capabilities.evm.CallContractRequestR\x03req\x12I\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xcd\x01\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xef\x01\n" +
 	"\x11CallContractError\x12=\n" +
 	"\x03req\x18\x01 \x01(\v2+.chain_capabilities.evm.CallContractRequestR\x03req\x12\x18\n" +
 	"\asummary\x18\x02 \x01(\tR\asummary\x12\x14\n" +
-	"\x05cause\x18\x03 \x01(\tR\x05cause\x12I\n" +
+	"\x05cause\x18\x03 \x01(\tR\x05cause\x12 \n" +
+	"\visUserError\x18\x04 \x01(\bR\visUserError\x12I\n" +
 	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\x1e\n" +
 	"\x06Topics\x12\x14\n" +
 	"\x05topic\x18\x01 \x03(\tR\x05topic\"\xc2\x01\n" +
@@ -1961,11 +2018,12 @@ const file_chain_capabilities_evm_monitoring_read_actions_proto_rawDesc = "" +
 	"\x11FilterLogsSuccess\x12;\n" +
 	"\x03req\x18\x01 \x01(\v2).chain_capabilities.evm.FilterLogsRequestR\x03req\x12\x1b\n" +
 	"\tlog_count\x18\x02 \x01(\x05R\blogCount\x12I\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xc9\x01\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xeb\x01\n" +
 	"\x0fFilterLogsError\x12;\n" +
 	"\x03req\x18\x01 \x01(\v2).chain_capabilities.evm.FilterLogsRequestR\x03req\x12\x18\n" +
 	"\asummary\x18\x02 \x01(\tR\asummary\x12\x14\n" +
-	"\x05cause\x18\x03 \x01(\tR\x05cause\x12I\n" +
+	"\x05cause\x18\x03 \x01(\tR\x05cause\x12 \n" +
+	"\visUserError\x18\x04 \x01(\bR\visUserError\x12I\n" +
 	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"O\n" +
 	"\x10BalanceAtRequest\x12\x18\n" +
 	"\aaccount\x18\x01 \x01(\tR\aaccount\x12!\n" +
@@ -1976,11 +2034,12 @@ const file_chain_capabilities_evm_monitoring_read_actions_proto_rawDesc = "" +
 	"\x10BalanceAtSuccess\x12:\n" +
 	"\x03req\x18\x01 \x01(\v2(.chain_capabilities.evm.BalanceAtRequestR\x03req\x12\x18\n" +
 	"\abalance\x18\x02 \x01(\tR\abalance\x12I\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xc7\x01\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xe9\x01\n" +
 	"\x0eBalanceAtError\x12:\n" +
 	"\x03req\x18\x01 \x01(\v2(.chain_capabilities.evm.BalanceAtRequestR\x03req\x12\x18\n" +
 	"\asummary\x18\x02 \x01(\tR\asummary\x12\x14\n" +
-	"\x05cause\x18\x03 \x01(\tR\x05cause\x12I\n" +
+	"\x05cause\x18\x03 \x01(\tR\x05cause\x12 \n" +
+	"\visUserError\x18\x04 \x01(\bR\visUserError\x12I\n" +
 	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"L\n" +
 	"\x12EstimateGasRequest\x12\x12\n" +
 	"\x04from\x18\x01 \x01(\tR\x04from\x12\x0e\n" +
@@ -1992,11 +2051,12 @@ const file_chain_capabilities_evm_monitoring_read_actions_proto_rawDesc = "" +
 	"\x12EstimateGasSuccess\x12<\n" +
 	"\x03req\x18\x01 \x01(\v2*.chain_capabilities.evm.EstimateGasRequestR\x03req\x12\x10\n" +
 	"\x03gas\x18\x02 \x01(\x03R\x03gas\x12I\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xcb\x01\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xed\x01\n" +
 	"\x10EstimateGasError\x12<\n" +
 	"\x03req\x18\x01 \x01(\v2*.chain_capabilities.evm.EstimateGasRequestR\x03req\x12\x18\n" +
 	"\asummary\x18\x02 \x01(\tR\asummary\x12\x14\n" +
-	"\x05cause\x18\x03 \x01(\tR\x05cause\x12I\n" +
+	"\x05cause\x18\x03 \x01(\tR\x05cause\x12 \n" +
+	"\visUserError\x18\x04 \x01(\bR\visUserError\x12I\n" +
 	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\x9f\x02\n" +
 	"\aReceipt\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\x04R\x06status\x12\x17\n" +
@@ -2022,11 +2082,12 @@ const file_chain_capabilities_evm_monitoring_read_actions_proto_rawDesc = "" +
 	"\x1bGetTransactionByHashSuccess\x12E\n" +
 	"\x03req\x18\x01 \x01(\v23.chain_capabilities.evm.GetTransactionByHashRequestR\x03req\x12I\n" +
 	"\vtransaction\x18\x02 \x01(\v2'.chain_capabilities.evm.TransactionDataR\vtransaction\x12I\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xdd\x01\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xff\x01\n" +
 	"\x19GetTransactionByHashError\x12E\n" +
 	"\x03req\x18\x01 \x01(\v23.chain_capabilities.evm.GetTransactionByHashRequestR\x03req\x12\x18\n" +
 	"\asummary\x18\x02 \x01(\tR\asummary\x12\x14\n" +
-	"\x05cause\x18\x03 \x01(\tR\x05cause\x12I\n" +
+	"\x05cause\x18\x03 \x01(\tR\x05cause\x12 \n" +
+	"\visUserError\x18\x04 \x01(\bR\visUserError\x12I\n" +
 	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"2\n" +
 	"\x1cGetTransactionReceiptRequest\x12\x12\n" +
 	"\x04hash\x18\x01 \x01(\tR\x04hash\"\xb3\x01\n" +
@@ -2036,11 +2097,12 @@ const file_chain_capabilities_evm_monitoring_read_actions_proto_rawDesc = "" +
 	"\x1cGetTransactionReceiptSuccess\x12F\n" +
 	"\x03req\x18\x01 \x01(\v24.chain_capabilities.evm.GetTransactionReceiptRequestR\x03req\x129\n" +
 	"\areceipt\x18\x02 \x01(\v2\x1f.chain_capabilities.evm.ReceiptR\areceipt\x12I\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xdf\x01\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\x81\x02\n" +
 	"\x1aGetTransactionReceiptError\x12F\n" +
 	"\x03req\x18\x01 \x01(\v24.chain_capabilities.evm.GetTransactionReceiptRequestR\x03req\x12\x18\n" +
 	"\asummary\x18\x02 \x01(\tR\asummary\x12\x14\n" +
-	"\x05cause\x18\x03 \x01(\tR\x05cause\x12I\n" +
+	"\x05cause\x18\x03 \x01(\tR\x05cause\x12 \n" +
+	"\visUserError\x18\x04 \x01(\bR\visUserError\x12I\n" +
 	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\":\n" +
 	"\x15HeaderByNumberRequest\x12!\n" +
 	"\fblock_number\x18\x01 \x01(\x03R\vblockNumber\"\xa5\x01\n" +
@@ -2055,11 +2117,12 @@ const file_chain_capabilities_evm_monitoring_read_actions_proto_rawDesc = "" +
 	"\x15HeaderByNumberSuccess\x12?\n" +
 	"\x03req\x18\x01 \x01(\v2-.chain_capabilities.evm.HeaderByNumberRequestR\x03req\x129\n" +
 	"\x06header\x18\x02 \x01(\v2!.chain_capabilities.evm.BlockDataR\x06header\x12I\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xd1\x01\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xf3\x01\n" +
 	"\x13HeaderByNumberError\x12?\n" +
 	"\x03req\x18\x01 \x01(\v2-.chain_capabilities.evm.HeaderByNumberRequestR\x03req\x12\x18\n" +
 	"\asummary\x18\x02 \x01(\tR\asummary\x12\x14\n" +
-	"\x05cause\x18\x03 \x01(\tR\x05cause\x12I\n" +
+	"\x05cause\x18\x03 \x01(\tR\x05cause\x12 \n" +
+	"\visUserError\x18\x04 \x01(\bR\visUserError\x12I\n" +
 	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContextBLZJgithub.com/smartcontractkit/capabilities/chain_capabilities/evm;monitoringb\x06proto3"
 
 var (
