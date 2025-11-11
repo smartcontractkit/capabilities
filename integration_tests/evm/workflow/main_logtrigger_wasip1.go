@@ -58,7 +58,8 @@ func toByteSlices(addresses []string) [][]byte {
 }
 
 func onTrigger(config *runtimeConfig, runtime cre.Runtime, outputs *evm.Log) (string, error) {
-	runtime.Logger().With().Info(fmt.Sprintf("OnTrigger called with outputs: %+v", outputs))
+	runtime.Logger().With().Info("OnTrigger called with outputs")
+	//runtime.Logger().With().Info(fmt.Sprintf("OnTrigger called with outputs: %+v", outputs))
 
 	decodedMessageString, err := printDecodedData(config.Abi, config.Event, outputs.Data)
 	if err != nil {

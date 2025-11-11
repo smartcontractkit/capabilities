@@ -105,6 +105,7 @@ func Test_LogTrigger(t *testing.T) {
 				lggr.Infow("Log emitted message contains message", "index", index, "foundEvents", foundEvents, "numOfWorkflowNodes", numOfWorkflowNodes)
 			}
 		}
+		lggr.Infow("All workflow logs emitted, about to compare", "foundEvents", foundEvents, "numOfWorkflowNodes", numOfWorkflowNodes)
 		return foundEvents == numOfWorkflowNodes
 	}, 60*time.Second, // test takes in average 24 seconds to complete locally
 		1*time.Second,
