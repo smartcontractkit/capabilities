@@ -13,6 +13,7 @@ on:
 
 env:
   GOPRIVATE: github.com/smartcontractkit/capabilities
+  GO_VERSION: 1.25.3
 
 jobs:
   test:
@@ -26,33 +27,38 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Setup Postgres
-        uses: ./.github/actions/setup-postgres
-
-      - name: Set up project environment
-        uses: ./.github/actions/setup
+      - name: Set up Go
+        uses: actions/setup-go@v6
         with:
-          project: integration_tests
-          go-module-file: ./integration_tests/go.mod
-          task: "integrationtest"
+          go-version: ${{ env.GO_VERSION }}
+          # IMPORTANT: Cache bust any time go.sum changes
+          cache-dependency-path: "**/*.sum"
 
       - name: Support private Go modules
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./.github/scripts/support-private-gomods.sh
 
-      - name: Setup Tests DB
+      - name: Install protoc-gen-go grpc
         shell: bash
         run: |
-          GOWORK=off go get github.com/smartcontractkit/chainlink/v2/core/store/cmd/preparetest@d2c56f4161f3431268cb52e717a77b7ea7dcef09
-          GOWORK=off go run github.com/smartcontractkit/chainlink/v2/core/store/cmd/preparetest
-        env:
-          CL_DATABASE_URL: ${{ env.DB_URL }}
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.7
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
+          go install github.com/jmank88/gomods@v0.1.6
+          echo "gomodcache=$(go env GOMODCACHE)" >> $GITHUB_OUTPUT
+          echo "gobuildcache=$(go env GOCACHE)" >> $GITHUB_OUTPUT
 
-      - name: Install gomods
-        run: go install github.com/jmank88/gomods@v0.1.6
+      - name: Install protoc
+        shell: bash
+        run: |
+          PROTOC_VERSION=29.3
+          curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip
+          unzip protoc-${PROTOC_VERSION}-linux-x86_64.zip -d protoc3
+          sudo mv protoc3/bin/* /usr/local/bin/
+          sudo mv protoc3/include/* /usr/local/include/
+          rm -rf protoc3 protoc-${PROTOC_VERSION}-linux-x86_64.zip
 
       - name: Run All Go Tests
         env:
           CL_DATABASE_URL: ${{ env.DB_URL }}
-        run: gomods -go test ./...
+        run: gomods -go test ./... GOWORK=off
