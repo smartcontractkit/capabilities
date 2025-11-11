@@ -83,8 +83,8 @@ func Test_LogTrigger(t *testing.T) {
 
 	// assertion to validate we get the expected number of events in beholder logs
 	lggr.Infof("Waiting for workflow logs to be emitted...")
-	foundEvents := 0
 	require.Eventually(t, func() bool {
+		foundEvents := 0 // as the logs will bring from the inception of the WF we need to restart the counter on each iteration
 		lggr.Info("Waiting for workflow logs to be emitted...")
 		workflowLogs := getBeholderLogsForWorkflow(beholderTester, t)
 		// Wait until we have the logs for all workflows
