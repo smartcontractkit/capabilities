@@ -45,7 +45,8 @@ jobs:
 
       # Restore Bazel cache after Bazel mod tidy to fail faster on errors
       - name: Restore Bazel cache
-        uses: actions/cache@v4
+        id: bazel-cache-restore
+        uses: actions/cache/restore@v4
         with:
           path: |
             ~/.cache/bazel
@@ -65,6 +66,16 @@ jobs:
 
       - name: Test
         run: bazel test //... --config=ci
+
+      - name: Save Bazel cache
+        uses: actions/cache/save@v4
+        # Save the cache even if the tests fail. This allows re-running only the failed tests.
+        if: always()
+        with:
+          path: |
+            ~/.cache/bazel
+            ~/.cache/bazelisk
+          key: ${{ steps.bazel-cache-restore.outputs.cache-primary-key }}
 
   go_test:
     runs-on: runs-on=${{ github.run_id }}/runner=8cpu-linux-arm64/spot=false
@@ -88,8 +99,9 @@ jobs:
           echo "GOMODCACHE=$(go env GOMODCACHE)" >> $GITHUB_OUTPUT
           echo "GOCACHE=$(go env GOCACHE)" >> $GITHUB_OUTPUT
 
-      - name: Cache Go modules and build cache
-        uses: actions/cache@v4
+      - name: Restore Go cache
+        uses: actions/cache/restore@v4
+        id: go-cache-restore
         with:
           path: |
             ${{ steps.go-cache-paths.outputs.GOMODCACHE }}
@@ -125,3 +137,12 @@ jobs:
           CL_DATABASE_URL: ${{ env.DB_URL }}
         run: GOWORK=off gomods -go test -race ./...
 
+      - name: Save Go cache
+        uses: actions/cache/save@v4
+        # Save the cache even if the tests fail. This allows re-running only the failed tests.
+        if: always()
+        with:
+          path: |
+            ${{ steps.go-cache-paths.outputs.GOMODCACHE }}
+            ${{ steps.go-cache-paths.outputs.GOCACHE }}
+          key: ${{ steps.go-cache-restore.outputs.cache-primary-key }}
