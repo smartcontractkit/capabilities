@@ -93,13 +93,15 @@ func Test_LogTrigger(t *testing.T) {
 			return false
 		}
 
-		for _, logs := range workflowLogs {
+		for index, logs := range workflowLogs {
 			// Expect only one log line
 			require.Len(t, logs, 1, "Expected exactly one log line per workflow (it's printed inside the onTrigger() function of the workflow)")
 			log := logs[0]
-			lggr.Infow("Beholder log line", "message", log.GetMessage(), "nodeTimestamp", log.GetNodeTimestamp())
-			if strings.Contains(log.GetMessage(), messageDataThatWillBeEmitted) {
+			logMessage := log.GetMessage()
+			lggr.Infow("Beholder log line", "index", index, "message", logMessage, "nodeTimestamp", log.GetNodeTimestamp())
+			if strings.Contains(logMessage, messageDataThatWillBeEmitted) {
 				foundEvents++
+				lggr.Infow("Log emitted message contains message", "index", index, "foundEvents", foundEvents, "numOfWorkflowNodes", numOfWorkflowNodes)
 			}
 		}
 		return foundEvents == numOfWorkflowNodes
