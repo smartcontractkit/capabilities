@@ -84,8 +84,7 @@ jobs:
           echo "GOCACHE=$(go env GOCACHE)" >> $GITHUB_OUTPUT
 
       - name: Restore Go cache
-        uses: actions/cache/restore@v4
-        id: go-cache-restore
+        uses: actions/cache@v4
         with:
           path: |
             ${{ steps.go-cache-paths.outputs.GOMODCACHE }}
@@ -120,13 +119,3 @@ jobs:
         env:
           CL_DATABASE_URL: ${{ env.DB_URL }}
         run: GOWORK=off gomods -go test -race ./...
-
-      - name: Save Go cache
-        uses: actions/cache/save@v4
-        # Save the cache even if the tests fail. This allows re-running only the failed tests.
-        if: always()
-        with:
-          path: |
-            ${{ steps.go-cache-paths.outputs.GOMODCACHE }}
-            ${{ steps.go-cache-paths.outputs.GOCACHE }}
-          key: ${{ steps.go-cache-restore.outputs.cache-primary-key }}
