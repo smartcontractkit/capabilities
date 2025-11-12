@@ -33,6 +33,32 @@ func Test_ReceivedTooManyErrors(t *testing.T) {
 	runProtocolRoundTests(ctx, t, lggr, n, f, reqToObservations)
 }
 
+func Test_ReceivedLargeErrors(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := t.Context()
+
+	md1 := newRequestMetaData()
+	md1.KeyBundleID = "evm"
+
+	reqToObservations := map[string]*consensusPluginTest{
+		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
+			newCr(t, 10, md1), newCrWithError(t, errors.New(createLargeString(10000)), md1), newCr(t, 30, md1),
+			newCrWithError(t, errors.New(createLargeString(10000)), md1), newCr(t, 50, md1), newCr(t, 60, md1),
+			newCrWithError(t, errors.New(createLargeString(10000)), md1)},
+			expectedConsensusFailureMessage: ":TRUNCATED"},
+	}
+
+	runProtocolRoundTests(ctx, t, lggr, n, f, reqToObservations)
+}
+
+func createLargeString(size int) string {
+	b := make([]byte, size)
+	for i := range b {
+		b[i] = 'a'
+	}
+	return string(b)
+}
+
 func Test_ReceivedTooManyErrorsWithDefault(t *testing.T) {
 	lggr := logger.Test(t)
 	ctx := t.Context()

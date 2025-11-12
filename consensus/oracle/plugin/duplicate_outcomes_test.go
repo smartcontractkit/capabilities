@@ -45,7 +45,7 @@ func Test_DuplicateOutcomePrevention(t *testing.T) {
 		},
 	}
 
-	pluginsAndStores := createPluginsAndStores(n, t, lggr, f, 5)
+	pluginsAndStores := createPluginsAndStores(n, t, lggr, f, 5, 1000)
 
 	addRequestsToAllStores(pluginsAndStores, reqToObservations, t)
 
@@ -103,7 +103,7 @@ func Test_HistoricalOutcomesAreRemovedOnExpiry(t *testing.T) {
 	}
 
 	historicalOutcomeExpirySpan := uint64(3)
-	pluginsAndStores := createPluginsAndStores(n, t, lggr, f, historicalOutcomeExpirySpan)
+	pluginsAndStores := createPluginsAndStores(n, t, lggr, f, historicalOutcomeExpirySpan, 1000)
 
 	addRequestsToAllStores(pluginsAndStores, reqToObservations, t)
 

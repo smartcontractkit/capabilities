@@ -32,7 +32,7 @@ func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeC
 	}
 
 	outcome, err := batching.NewOutcomeBatch(ctx, r.lggr, outctx, r.outcomeExpirySeqNrSpan, int(r.config.MaxOutcomeLengthBytes), r.defaultKeyBundleIDForConsensusFailure,
-		r.metrics)
+		r.metrics, r.maxRequestOutcomeSize)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new outcome batch: %w", err)
 	}
