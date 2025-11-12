@@ -41,7 +41,6 @@ import (
 // It deploys a contract that emits logs, sets up a workflow with that deployed contract to the log trigger, waits for the workflow to be ready,
 // emits a log event, and then checks that the workflow processes the log event correctly by counting the number of events logged by beholder.
 func Test_LogTrigger(t *testing.T) {
-	t.Skip("PRODCRE-833 Needs to be fixed")
 	ctx := t.Context()
 	beholderTester := beholdertest.NewObserver(t)
 	lggr, obs := logger.TestLoggerObserved(t, zapcore.InfoLevel)
@@ -67,9 +66,11 @@ func Test_LogTrigger(t *testing.T) {
 	numOfWorkflowNodes := 4
 	workflowName := "TestWf"
 
+	lggr.Infof("Setting up DON and workflow...")
 	messageEmitter, donContext := setupDon(ctx, t, lggr, wasmFile, abiString, eventName, topic0, numOfWorkflowNodes, workflowName)
-
+	lggr.Infof("Waiting for log poller filters to be present...")
 	waitUntilLogPollerFiltersArePresent(t, obs, lggr, numOfWorkflowNodes)
+	lggr.Infof("Log poller filters are present.")
 
 	// emitting single event we will be waiting from the workflow's LogTrigger
 	messageDataThatWillBeEmitted := "Data for log trigger"
@@ -82,7 +83,9 @@ func Test_LogTrigger(t *testing.T) {
 
 	// assertion to validate we get the expected number of events in beholder logs
 	foundEvents := 0
+	lggr.Infof("Waiting for workflow logs to be emitted...")
 	require.Eventually(t, func() bool {
+		foundEvents = 0 // as the logs will bring from the inception of the WF we need to restart the counter on each iteration
 		lggr.Info("Waiting for workflow logs to be emitted...")
 		workflowLogs := getBeholderLogsForWorkflow(beholderTester, t)
 		// Wait until we have the logs for all workflows
@@ -91,14 +94,18 @@ func Test_LogTrigger(t *testing.T) {
 			return false
 		}
 
-		for _, logs := range workflowLogs {
+		for index, logs := range workflowLogs {
 			// Expect only one log line
 			require.Len(t, logs, 1, "Expected exactly one log line per workflow (it's printed inside the onTrigger() function of the workflow)")
 			log := logs[0]
-			if strings.Contains(log.GetMessage(), messageDataThatWillBeEmitted) {
+			logMessage := log.GetMessage()
+			lggr.Infow("Beholder log line", "index", index, "message", logMessage, "nodeTimestamp", log.GetNodeTimestamp())
+			if strings.Contains(logMessage, messageDataThatWillBeEmitted) {
 				foundEvents++
+				lggr.Infow("Log emitted message contains message", "index", index, "foundEvents", foundEvents, "numOfWorkflowNodes", numOfWorkflowNodes)
 			}
 		}
+		lggr.Infow("All workflow logs emitted, about to compare", "foundEvents", foundEvents, "numOfWorkflowNodes", numOfWorkflowNodes)
 		return foundEvents == numOfWorkflowNodes
 	}, 60*time.Second, // test takes in average 24 seconds to complete locally
 		1*time.Second,
