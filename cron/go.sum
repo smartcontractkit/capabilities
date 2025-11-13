@@ -50,8 +50,8 @@ github.com/fxamacker/cbor/v2 v2.7.0 h1:iM5WgngdRBanHcxugY4JySA0nk1wZorNOpTgCMedv
 github.com/fxamacker/cbor/v2 v2.7.0/go.mod h1:pxXPTn3joSm21Gbwsv0w9OSA2y1HFR9qXEeXQVeNoDQ=
 github.com/gabriel-vasile/mimetype v1.4.8 h1:FfZ3gj38NjllZIeJAmMhr+qKL8Wu+nOoI3GqacKw1NM=
 github.com/gabriel-vasile/mimetype v1.4.8/go.mod h1:ByKUIKGjh1ODkGM1asKUbQZOLGrPjydw3hYPU2YU9t8=
-github.com/go-co-op/gocron/v2 v2.16.4 h1:+sPh1WL/iPZGOAzmZ5sH1WsAbLH0d8T0S/hZJfFaMSw=
-github.com/go-co-op/gocron/v2 v2.16.4/go.mod h1:zAfC/GFQ668qHxOVl/D68Jh5Ce7sDqX6TJnSQyRkRBc=
+github.com/go-co-op/gocron/v2 v2.18.0 h1:DS3Uhru66q1jy/5f9V0itmi3cLXcn2b7N+duGfgT7gU=
+github.com/go-co-op/gocron/v2 v2.18.0/go.mod h1:Zii6he+Zfgy5W9B+JKk/KwejFOW0kZTFvHtwIpR4aBI=
 github.com/go-json-experiment/json v0.0.0-20250223041408-d3c622f1b874 h1:F8d1AJ6M9UQCavhwmO6ZsrYLfG8zVFWfEfMS2MXPkSY=
 github.com/go-json-experiment/json v0.0.0-20250223041408-d3c622f1b874/go.mod h1:TiCD2a1pcmjd7YnhGH0f/zKNcCD06B029pHhzV23c2M=
 github.com/go-kit/log v0.1.0/go.mod h1:zbhenjAZHb184qTLMA9ZjW7ThYL0H2mk7Q6pNt4vbaY=
@@ -285,8 +285,8 @@ github.com/smartcontractkit/capabilities/libs v0.0.0-20251105202054-e299af591b47
 github.com/smartcontractkit/capabilities/libs v0.0.0-20251105202054-e299af591b47/go.mod h1:nPEp8VKUyTEm5HesJdWu7SAwhpizojniR9PNVykpGBw=
 github.com/smartcontractkit/chain-selectors v1.0.67 h1:gxTqP/JC40KDe3DE1SIsIKSTKTZEPyEU1YufO1admnw=
 github.com/smartcontractkit/chain-selectors v1.0.67/go.mod h1:xsKM0aN3YGcQKTPRPDDtPx2l4mlTN1Djmg0VVXV40b8=
-github.com/smartcontractkit/chainlink-common v0.9.6-0.20251105200931-fdbfd5296201 h1:qM3GpFTsEK5X45YmYsQBRqBFp7VnFsly9SrYP2F0zLc=
-github.com/smartcontractkit/chainlink-common v0.9.6-0.20251105200931-fdbfd5296201/go.mod h1:AgiJcndCiWnUOVmCBX/K3PdST/fvrY1uCqSF65j960w=
+github.com/smartcontractkit/chainlink-common v0.9.6-0.20251113201355-36f33821aade h1:0Svm46lQGG4izvCpQiPRvbY6/05cOHLZkUe57SVGMr0=
+github.com/smartcontractkit/chainlink-common v0.9.6-0.20251113201355-36f33821aade/go.mod h1:AgiJcndCiWnUOVmCBX/K3PdST/fvrY1uCqSF65j960w=
 github.com/smartcontractkit/chainlink-common/pkg/chipingress v0.0.10 h1:FJAFgXS9oqASnkS03RE1HQwYQQxrO4l46O5JSzxqLgg=
 github.com/smartcontractkit/chainlink-common/pkg/chipingress v0.0.10/go.mod h1:oiDa54M0FwxevWwyAX773lwdWvFYYlYHHQV1LQ5HpWY=
 github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20251021010742-3f8d3dba17d8 h1:hPeEwcvRVtwhyNXH45qbzqmscqlbygu94cROwbjyzNQ=
