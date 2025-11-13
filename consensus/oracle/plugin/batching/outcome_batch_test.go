@@ -49,7 +49,8 @@ func TestOutcomeBatchCapacityCalculation(t *testing.T) {
 		require.True(t, added)
 		require.NoError(t, err)
 
-		added, err = outcome.AddFailedConsensusRequestOutcomeToBatch(ctx, uuid.NewString(), generateRandomStringBetweenBounds(1, 10000))
+		added, err = outcome.AddFailedConsensusRequestOutcomeToBatch(ctx, uuid.NewString(), generateRandomStringBetweenBounds(1, 10000),
+			oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED)
 
 		require.True(t, added)
 		require.NoError(t, err)
@@ -101,7 +102,8 @@ func TestOutcomeBatchCapacityExceeded(t *testing.T) {
 		}
 		require.NoError(t, err)
 
-		added, err = outcome.AddFailedConsensusRequestOutcomeToBatch(ctx, uuid.NewString(), "failed")
+		added, err = outcome.AddFailedConsensusRequestOutcomeToBatch(ctx, uuid.NewString(), "failed",
+			oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED)
 
 		if !added {
 			return

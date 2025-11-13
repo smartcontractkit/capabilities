@@ -7,7 +7,7 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/smartcontractkit/capabilities/consensus/oracle"
-
+	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
@@ -22,12 +22,16 @@ func Test_ReceivedTooManyErrors(t *testing.T) {
 	md1 := newRequestMetaData()
 	md1.KeyBundleID = "evm"
 
+	expectedFailureCode := oracletypes.ConsensusFailureCode_RECEIVED_FPLUS1_ERRORS
+
 	reqToObservations := map[string]*consensusPluginTest{
 		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
 			newCr(t, 10, md1), newCrWithError(t, errors.New("its broken"), md1), newCr(t, 30, md1),
 			newCrWithError(t, errors.New("its broken"), md1), newCr(t, 50, md1), newCr(t, 60, md1),
 			newCrWithError(t, errors.New("its broken"), md1)},
-			expectedConsensusFailureMessage: "consensus calculation failed: received 3 errors which is >= f+1 (3)"},
+			expectedConsensusFailureMessage: "consensus calculation failed: received 3 errors which is >= f+1 (3)",
+			expectedConsensusFailureCode:    &expectedFailureCode,
+		},
 	}
 
 	runProtocolRoundTests(ctx, t, lggr, n, f, reqToObservations)
@@ -40,12 +44,15 @@ func Test_ReceivedLargeErrors(t *testing.T) {
 	md1 := newRequestMetaData()
 	md1.KeyBundleID = "evm"
 
+	expectedFailureCode := oracletypes.ConsensusFailureCode_RECEIVED_FPLUS1_ERRORS
+
 	reqToObservations := map[string]*consensusPluginTest{
 		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
 			newCr(t, 10, md1), newCrWithError(t, errors.New(createLargeString(10000)), md1), newCr(t, 30, md1),
 			newCrWithError(t, errors.New(createLargeString(10000)), md1), newCr(t, 50, md1), newCr(t, 60, md1),
 			newCrWithError(t, errors.New(createLargeString(10000)), md1)},
-			expectedConsensusFailureMessage: ":TRUNCATED"},
+			expectedConsensusFailureMessage: ":TRUNCATED",
+			expectedConsensusFailureCode:    &expectedFailureCode},
 	}
 
 	runProtocolRoundTests(ctx, t, lggr, n, f, reqToObservations)

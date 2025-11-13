@@ -69,6 +69,58 @@ func (RequestType) EnumDescriptor() ([]byte, []int) {
 	return file_value_consensus_types_proto_rawDescGZIP(), []int{0}
 }
 
+type ConsensusFailureCode int32
+
+const (
+	// Consensus calculation failed - e.g. this would happen with identical consensus if there are less than F+1 identical observations
+	ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED ConsensusFailureCode = 0
+	// Failed to calculate the consensus metadata, descriptor and default (MDD). F+1 identical MDDs are required for consensus
+	ConsensusFailureCode_FAILED_TO_CALCULATE_CONSENSUS_MDD ConsensusFailureCode = 1
+	// Received F+1 errors from observers when attempting to calculate consensus
+	ConsensusFailureCode_RECEIVED_FPLUS1_ERRORS ConsensusFailureCode = 2
+)
+
+// Enum value maps for ConsensusFailureCode.
+var (
+	ConsensusFailureCode_name = map[int32]string{
+		0: "CONSENSUS_CALCULATION_FAILED",
+		1: "FAILED_TO_CALCULATE_CONSENSUS_MDD",
+		2: "RECEIVED_FPLUS1_ERRORS",
+	}
+	ConsensusFailureCode_value = map[string]int32{
+		"CONSENSUS_CALCULATION_FAILED":      0,
+		"FAILED_TO_CALCULATE_CONSENSUS_MDD": 1,
+		"RECEIVED_FPLUS1_ERRORS":            2,
+	}
+)
+
+func (x ConsensusFailureCode) Enum() *ConsensusFailureCode {
+	p := new(ConsensusFailureCode)
+	*p = x
+	return p
+}
+
+func (x ConsensusFailureCode) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ConsensusFailureCode) Descriptor() protoreflect.EnumDescriptor {
+	return file_value_consensus_types_proto_enumTypes[1].Descriptor()
+}
+
+func (ConsensusFailureCode) Type() protoreflect.EnumType {
+	return &file_value_consensus_types_proto_enumTypes[1]
+}
+
+func (x ConsensusFailureCode) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ConsensusFailureCode.Descriptor instead.
+func (ConsensusFailureCode) EnumDescriptor() ([]byte, []int) {
+	return file_value_consensus_types_proto_rawDescGZIP(), []int{1}
+}
+
 type RequestMetaData struct {
 	state                    protoimpl.MessageState `protogen:"open.v1"`
 	RequestId                string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
@@ -541,6 +593,7 @@ type ConsensusFailedOutcome struct {
 	RequestID      string                 `protobuf:"bytes,1,opt,name=requestID,proto3" json:"requestID,omitempty"`
 	FailureMessage string                 `protobuf:"bytes,2,opt,name=failure_message,json=failureMessage,proto3" json:"failure_message,omitempty"`
 	KeyBundleId    string                 `protobuf:"bytes,3,opt,name=keyBundleId,proto3" json:"keyBundleId,omitempty"`
+	Code           ConsensusFailureCode   `protobuf:"varint,4,opt,name=code,proto3,enum=value_consensus_types.ConsensusFailureCode" json:"code,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -594,6 +647,13 @@ func (x *ConsensusFailedOutcome) GetKeyBundleId() string {
 		return x.KeyBundleId
 	}
 	return ""
+}
+
+func (x *ConsensusFailedOutcome) GetCode() ConsensusFailureCode {
+	if x != nil {
+		return x.Code
+	}
+	return ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED
 }
 
 type Outcome struct {
@@ -746,11 +806,12 @@ const file_value_consensus_types_proto_rawDesc = "" +
 	"\x17ConsensusSuccessOutcome\x12B\n" +
 	"\bmetadata\x18\x01 \x01(\v2&.value_consensus_types.RequestMetaDataR\bmetadata\x12\x18\n" +
 	"\aoutcome\x18\x02 \x01(\fR\aoutcome\x128\n" +
-	"\ttimestamp\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\"\x81\x01\n" +
+	"\ttimestamp\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\"\xc2\x01\n" +
 	"\x16ConsensusFailedOutcome\x12\x1c\n" +
 	"\trequestID\x18\x01 \x01(\tR\trequestID\x12'\n" +
 	"\x0ffailure_message\x18\x02 \x01(\tR\x0efailureMessage\x12 \n" +
-	"\vkeyBundleId\x18\x03 \x01(\tR\vkeyBundleId\"\xfe\x01\n" +
+	"\vkeyBundleId\x18\x03 \x01(\tR\vkeyBundleId\x12?\n" +
+	"\x04code\x18\x04 \x01(\x0e2+.value_consensus_types.ConsensusFailureCodeR\x04code\"\xfe\x01\n" +
 	"\aOutcome\x12C\n" +
 	"\boutcomes\x18\x01 \x03(\v2'.value_consensus_types.ConsensusOutcomeR\boutcomes\x12g\n" +
 	"\x13historical_outcomes\x18\x02 \x03(\v26.value_consensus_types.Outcome.HistoricalOutcomesEntryR\x12historicalOutcomes\x1aE\n" +
@@ -762,7 +823,11 @@ const file_value_consensus_types_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\x04R\x05value*9\n" +
 	"\vRequestType\x12\x13\n" +
 	"\x0fVALUE_CONSENSUS\x10\x00\x12\x15\n" +
-	"\x11REPORT_GENERATION\x10\x01B\x18Z\x16consensus/oracle/typesb\x06proto3"
+	"\x11REPORT_GENERATION\x10\x01*{\n" +
+	"\x14ConsensusFailureCode\x12 \n" +
+	"\x1cCONSENSUS_CALCULATION_FAILED\x10\x00\x12%\n" +
+	"!FAILED_TO_CALCULATE_CONSENSUS_MDD\x10\x01\x12\x1a\n" +
+	"\x16RECEIVED_FPLUS1_ERRORS\x10\x02B\x18Z\x16consensus/oracle/typesb\x06proto3"
 
 var (
 	file_value_consensus_types_proto_rawDescOnce sync.Once
@@ -776,44 +841,46 @@ func file_value_consensus_types_proto_rawDescGZIP() []byte {
 	return file_value_consensus_types_proto_rawDescData
 }
 
-var file_value_consensus_types_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
+var file_value_consensus_types_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
 var file_value_consensus_types_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_value_consensus_types_proto_goTypes = []any{
 	(RequestType)(0),                  // 0: value_consensus_types.RequestType
-	(*RequestMetaData)(nil),           // 1: value_consensus_types.RequestMetaData
-	(*Query)(nil),                     // 2: value_consensus_types.Query
-	(*RequestObservation)(nil),        // 3: value_consensus_types.RequestObservation
-	(*Observation)(nil),               // 4: value_consensus_types.Observation
-	(*ObservationMapEntry)(nil),       // 5: value_consensus_types.ObservationMapEntry
-	(*ConsensusOutcome)(nil),          // 6: value_consensus_types.ConsensusOutcome
-	(*ConsensusSuccessOutcome)(nil),   // 7: value_consensus_types.ConsensusSuccessOutcome
-	(*ConsensusFailedOutcome)(nil),    // 8: value_consensus_types.ConsensusFailedOutcome
-	(*Outcome)(nil),                   // 9: value_consensus_types.Outcome
-	(*HistoricalOutcomeMapEntry)(nil), // 10: value_consensus_types.HistoricalOutcomeMapEntry
-	nil,                               // 11: value_consensus_types.Observation.ObservationsEntry
-	nil,                               // 12: value_consensus_types.Outcome.HistoricalOutcomesEntry
-	(*sdk.SimpleConsensusInputs)(nil), // 13: sdk.v1alpha.SimpleConsensusInputs
-	(*timestamppb.Timestamp)(nil),     // 14: google.protobuf.Timestamp
+	(ConsensusFailureCode)(0),         // 1: value_consensus_types.ConsensusFailureCode
+	(*RequestMetaData)(nil),           // 2: value_consensus_types.RequestMetaData
+	(*Query)(nil),                     // 3: value_consensus_types.Query
+	(*RequestObservation)(nil),        // 4: value_consensus_types.RequestObservation
+	(*Observation)(nil),               // 5: value_consensus_types.Observation
+	(*ObservationMapEntry)(nil),       // 6: value_consensus_types.ObservationMapEntry
+	(*ConsensusOutcome)(nil),          // 7: value_consensus_types.ConsensusOutcome
+	(*ConsensusSuccessOutcome)(nil),   // 8: value_consensus_types.ConsensusSuccessOutcome
+	(*ConsensusFailedOutcome)(nil),    // 9: value_consensus_types.ConsensusFailedOutcome
+	(*Outcome)(nil),                   // 10: value_consensus_types.Outcome
+	(*HistoricalOutcomeMapEntry)(nil), // 11: value_consensus_types.HistoricalOutcomeMapEntry
+	nil,                               // 12: value_consensus_types.Observation.ObservationsEntry
+	nil,                               // 13: value_consensus_types.Outcome.HistoricalOutcomesEntry
+	(*sdk.SimpleConsensusInputs)(nil), // 14: sdk.v1alpha.SimpleConsensusInputs
+	(*timestamppb.Timestamp)(nil),     // 15: google.protobuf.Timestamp
 }
 var file_value_consensus_types_proto_depIdxs = []int32{
 	0,  // 0: value_consensus_types.RequestMetaData.request_type:type_name -> value_consensus_types.RequestType
-	1,  // 1: value_consensus_types.RequestObservation.metadata:type_name -> value_consensus_types.RequestMetaData
-	13, // 2: value_consensus_types.RequestObservation.input:type_name -> sdk.v1alpha.SimpleConsensusInputs
-	14, // 3: value_consensus_types.RequestObservation.received_at:type_name -> google.protobuf.Timestamp
-	11, // 4: value_consensus_types.Observation.observations:type_name -> value_consensus_types.Observation.ObservationsEntry
-	3,  // 5: value_consensus_types.ObservationMapEntry.value:type_name -> value_consensus_types.RequestObservation
-	7,  // 6: value_consensus_types.ConsensusOutcome.success:type_name -> value_consensus_types.ConsensusSuccessOutcome
-	8,  // 7: value_consensus_types.ConsensusOutcome.failure:type_name -> value_consensus_types.ConsensusFailedOutcome
-	1,  // 8: value_consensus_types.ConsensusSuccessOutcome.metadata:type_name -> value_consensus_types.RequestMetaData
-	14, // 9: value_consensus_types.ConsensusSuccessOutcome.timestamp:type_name -> google.protobuf.Timestamp
-	6,  // 10: value_consensus_types.Outcome.outcomes:type_name -> value_consensus_types.ConsensusOutcome
-	12, // 11: value_consensus_types.Outcome.historical_outcomes:type_name -> value_consensus_types.Outcome.HistoricalOutcomesEntry
-	3,  // 12: value_consensus_types.Observation.ObservationsEntry.value:type_name -> value_consensus_types.RequestObservation
-	13, // [13:13] is the sub-list for method output_type
-	13, // [13:13] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	2,  // 1: value_consensus_types.RequestObservation.metadata:type_name -> value_consensus_types.RequestMetaData
+	14, // 2: value_consensus_types.RequestObservation.input:type_name -> sdk.v1alpha.SimpleConsensusInputs
+	15, // 3: value_consensus_types.RequestObservation.received_at:type_name -> google.protobuf.Timestamp
+	12, // 4: value_consensus_types.Observation.observations:type_name -> value_consensus_types.Observation.ObservationsEntry
+	4,  // 5: value_consensus_types.ObservationMapEntry.value:type_name -> value_consensus_types.RequestObservation
+	8,  // 6: value_consensus_types.ConsensusOutcome.success:type_name -> value_consensus_types.ConsensusSuccessOutcome
+	9,  // 7: value_consensus_types.ConsensusOutcome.failure:type_name -> value_consensus_types.ConsensusFailedOutcome
+	2,  // 8: value_consensus_types.ConsensusSuccessOutcome.metadata:type_name -> value_consensus_types.RequestMetaData
+	15, // 9: value_consensus_types.ConsensusSuccessOutcome.timestamp:type_name -> google.protobuf.Timestamp
+	1,  // 10: value_consensus_types.ConsensusFailedOutcome.code:type_name -> value_consensus_types.ConsensusFailureCode
+	7,  // 11: value_consensus_types.Outcome.outcomes:type_name -> value_consensus_types.ConsensusOutcome
+	13, // 12: value_consensus_types.Outcome.historical_outcomes:type_name -> value_consensus_types.Outcome.HistoricalOutcomesEntry
+	4,  // 13: value_consensus_types.Observation.ObservationsEntry.value:type_name -> value_consensus_types.RequestObservation
+	14, // [14:14] is the sub-list for method output_type
+	14, // [14:14] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_value_consensus_types_proto_init() }
@@ -830,7 +897,7 @@ func file_value_consensus_types_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_value_consensus_types_proto_rawDesc), len(file_value_consensus_types_proto_rawDesc)),
-			NumEnums:      1,
+			NumEnums:      2,
 			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   0,

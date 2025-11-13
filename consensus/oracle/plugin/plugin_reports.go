@@ -19,6 +19,7 @@ const ReportMetaDataPrependLength = 109
 
 const InfoRequestID = "requestID"
 const InfoConsensusFailureMessage = "failureMessage"
+const InfoConsensusFailureCode = "failureCode"
 const InfoKeyBundleName = "keyBundleName"
 
 func (r *reportingPlugin) Reports(ctx context.Context, seqNr uint64, outcome ocr3types.Outcome) ([]ocr3types.ReportPlus[[]byte], error) {
@@ -89,7 +90,8 @@ func (r *reportingPlugin) Reports(ctx context.Context, seqNr uint64, outcome ocr
 		case *oracletypes.ConsensusOutcome_Failure:
 			failedOutcome := v.Failure
 			r.lggr.Debugw("received failed consensus outcome", "requestID", failedOutcome.RequestID)
-			info, err := createFailedConsensusReportInfo(failedOutcome.RequestID, failedOutcome.KeyBundleId, failedOutcome.FailureMessage)
+			info, err := createFailedConsensusReportInfo(failedOutcome.RequestID, failedOutcome.KeyBundleId, failedOutcome.FailureMessage,
+				failedOutcome.Code)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create report info for successful consensus request %s: %w", failedOutcome.RequestID, err)
 			}
@@ -130,11 +132,13 @@ func createSuccessfulConsensusReportInfo(reqMetadata *oracletypes.RequestMetaDat
 	return infoBytes, nil
 }
 
-func createFailedConsensusReportInfo(requestID string, keyBundleID string, failureMessage string) ([]byte, error) {
+func createFailedConsensusReportInfo(requestID string, keyBundleID string, failureMessage string,
+	failureCode oracletypes.ConsensusFailureCode) ([]byte, error) {
 	infos, err := structpb.NewStruct(map[string]any{
 		InfoKeyBundleName:           keyBundleID,
 		InfoRequestID:               requestID,
 		InfoConsensusFailureMessage: failureMessage,
+		InfoConsensusFailureCode:    failureCode.String(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create structpb for report info: %w", err)

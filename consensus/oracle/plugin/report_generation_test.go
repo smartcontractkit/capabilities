@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/structpb"
 
+	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
 
@@ -153,6 +154,8 @@ func Test_SufficientAndInsufficentReportsInSingleRound(t *testing.T) {
 	md2 := newRequestMetaData()
 	md2.KeyBundleID = "evm"
 
+	expectedFailureCode := oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED
+
 	reqToObservations := map[string]*consensusPluginTest{
 		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
 			newRR([]byte("somerandombytes"), md1), newRR([]byte("somerandombytes"), md1), newRR([]byte("somerandombytes"), md1),
@@ -167,7 +170,8 @@ func Test_SufficientAndInsufficentReportsInSingleRound(t *testing.T) {
 			newRR([]byte("somerandombytes2"), md2), newRR([]byte("somerandombytes4"), md2), newRR([]byte("somerandombytes3"), md2),
 			newRR([]byte("somerandombytes"), md2), newRR([]byte("somerandombytes"), md2), newRR([]byte("somerandombytes3"), md2),
 			newRR([]byte("somerandombytes2"), md2)},
-			expectedConsensusFailureMessage: "no values met f+1 threshold"},
+			expectedConsensusFailureMessage: "no values met f+1 threshold",
+			expectedConsensusFailureCode:    &expectedFailureCode},
 	}
 
 	runProtocolRoundTests(ctx, t, lggr, n, f, reqToObservations)
@@ -180,12 +184,16 @@ func Test_ReceivedIdenticalMultipleQualifyingSetsOfIdenticalValues(t *testing.T)
 	md1 := newRequestMetaData()
 	md1.KeyBundleID = "evm"
 
+	expectedFailureCode := oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED
+
 	reqToObservations := map[string]*consensusPluginTest{
 		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
 			newRR([]byte("somerandombytes2"), md1), newRR([]byte("somerandombytes"), md1), newRR([]byte("somerandombytes"), md1),
 			newRR([]byte("somerandombytes2"), md1), newRR([]byte("somerandombytes"), md1), newRR([]byte("somerandombytes"), md1),
 			newRR([]byte("somerandombytes2"), md1)},
-			expectedConsensusFailureMessage: "not identical, multiple values with f+1 occurrences"},
+			expectedConsensusFailureMessage: "not identical, multiple values with f+1 occurrences",
+			expectedConsensusFailureCode:    &expectedFailureCode,
+		},
 	}
 
 	runProtocolRoundTests(ctx, t, lggr, n, f, reqToObservations)

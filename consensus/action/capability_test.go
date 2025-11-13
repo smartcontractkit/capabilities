@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
@@ -62,6 +64,46 @@ func Test_SimpleConsensus(t *testing.T) {
 	expectedProto := values.Proto(expectedResult)
 
 	require.True(t, proto.Equal(result.Response, expectedProto))
+}
+
+func Test_SimpleConsensus_Error(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := t.Context()
+
+	capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute, limits.Factory{Logger: lggr})
+	require.NoError(t, err)
+
+	oracleFactory := testutils.NewOracleFactory(t, lggr)
+
+	err = capability.Initialise(ctx, core.StandardCapabilitiesDependencies{
+		OracleFactory: oracleFactory,
+	})
+	require.NoError(t, err)
+
+	servicetest.Run(t, capability)
+
+	metadata := newRequestMetaData()
+
+	input := &sdk.SimpleConsensusInputs{
+		Observation: &sdk.SimpleConsensusInputs_Error{
+			Error: "its broken",
+		},
+		Descriptors: &sdk.ConsensusDescriptor{
+			Descriptor_: &sdk.ConsensusDescriptor_Aggregation{
+				Aggregation: sdk.AggregationType_AGGREGATION_TYPE_MEDIAN,
+			},
+		},
+		Default: nil,
+	}
+
+	_, err = capability.Simple(ctx, metadata, input)
+
+	var capError caperrors.Error
+	ok := errors.As(err, &capError)
+	require.True(t, ok, "error should be of type caperrors.Error")
+	require.Equal(t, caperrors.ConsensusFailed, capError.Code())
+	require.Equal(t, caperrors.Origin(caperrors.OriginUser), capError.Origin())
+	require.Equal(t, caperrors.VisibilityPublic, capError.Visibility())
 }
 
 func Test_Report(t *testing.T) {
@@ -228,6 +270,10 @@ func Test_SimpleInputsSizeValidation(t *testing.T) {
 	_, err = capability.Simple(ctx, metadata, input)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "PerWorkflow.Consensus.ObservationSizeLimit limited for workflow[wf-id]: cannot use 47b, limit is 2b")
+	capErr := err.(caperrors.Error)
+	require.Equal(t, caperrors.InvalidArgument, capErr.Code())
+	require.Equal(t, caperrors.OriginUser, capErr.Origin())
+	require.Equal(t, caperrors.VisibilityPublic, capErr.Visibility())
 }
 
 func Test_ToReportID(t *testing.T) {

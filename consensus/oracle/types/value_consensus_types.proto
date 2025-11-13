@@ -62,10 +62,20 @@ message ConsensusSuccessOutcome {
   google.protobuf.Timestamp timestamp = 3;
 }
 
+enum ConsensusFailureCode {
+  // Consensus calculation failed - e.g. this would happen with identical consensus if there are less than F+1 identical observations
+  CONSENSUS_CALCULATION_FAILED = 0;
+  // Failed to calculate the consensus metadata, descriptor and default (MDD). F+1 identical MDDs are required for consensus
+  FAILED_TO_CALCULATE_CONSENSUS_MDD = 1;
+  // Received F+1 errors from observers when attempting to calculate consensus
+  RECEIVED_FPLUS1_ERRORS = 2;
+}
+
 message ConsensusFailedOutcome {
   string requestID = 1;
   string failure_message = 2;
   string keyBundleId = 3;
+  ConsensusFailureCode code = 4;
 }
 
 message Outcome {

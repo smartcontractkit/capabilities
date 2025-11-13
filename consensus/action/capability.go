@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -23,9 +24,9 @@ import (
 	"github.com/smartcontractkit/capabilities/consensus/oracle/plugin"
 	"github.com/smartcontractkit/capabilities/consensus/oracle/transmitter"
 	"github.com/smartcontractkit/capabilities/consensus/oracle/types"
-
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
+	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/consensus/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -199,7 +200,7 @@ func (c *consensusCapability) setConfiguration(cfg string) error {
 	return nil
 }
 
-func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.RequestMetadata, input *sdk.SimpleConsensusInputs) (*capabilities.ResponseAndMetadata[*valuespb.Value], error) {
+func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.RequestMetadata, input *sdk.SimpleConsensusInputs) (*capabilities.ResponseAndMetadata[*valuespb.Value], caperrors.Error) {
 	ctx = metadata.ContextWithCRE(ctx)
 	lggr := c.requestLggr(metadata)
 
@@ -212,9 +213,9 @@ func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.
 		RequestType:     types.RequestType_VALUE_CONSENSUS,
 	}
 
-	requestSize, err := c.validateRequestSize(ctx, consensusRequestMetaData, input)
-	if err != nil {
-		return nil, fmt.Errorf("failed to validate input size: %w", err)
+	requestSize, reqSizeErr := c.validateRequestSize(ctx, consensusRequestMetaData, input)
+	if reqSizeErr != nil {
+		return nil, reqSizeErr
 	}
 	c.metrics.RecordRequestSize(ctx, float64(requestSize))
 
@@ -224,14 +225,14 @@ func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.
 			Response:         value,
 			ResponseMetadata: capabilities.ResponseMetadata{},
 		}
-		return &responseAndMetadata, err
+		return &responseAndMetadata, caperrors.NewPublicSystemError(fmt.Errorf("failed to log observation: %s", err), caperrors.InvalidArgument)
 	}
 
 	callbackChan := c.sendRequest(ctx, input, consensusRequestMetaData)
 
 	select {
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return nil, caperrors.NewPublicSystemError(ctx.Err(), caperrors.Canceled)
 	case response := <-callbackChan:
 		if response.Err != nil {
 			return nil, response.Err
@@ -242,7 +243,8 @@ func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.
 
 		valueProto := &valuespb.Value{}
 		if err := proto.Unmarshal(serialisedValue, valueProto); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal value for request %s: %w", consensusRequestMetaData.RequestID(), err)
+			return nil, caperrors.NewPublicSystemError(fmt.Errorf("failed to unmarshal value for request %s: %w", consensusRequestMetaData.RequestID(), err),
+				caperrors.Internal)
 		}
 
 		c.lggr.Debugw("returning consensus response", "metadata", metadata)
@@ -255,7 +257,7 @@ func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.
 	}
 }
 
-func (c *consensusCapability) Report(ctx context.Context, metadata capabilities.RequestMetadata, reportRequest *sdk.ReportRequest) (*capabilities.ResponseAndMetadata[*sdk.ReportResponse], error) {
+func (c *consensusCapability) Report(ctx context.Context, metadata capabilities.RequestMetadata, reportRequest *sdk.ReportRequest) (*capabilities.ResponseAndMetadata[*sdk.ReportResponse], caperrors.Error) {
 	ctx = metadata.ContextWithCRE(ctx)
 	lggr := c.requestLggr(metadata)
 
@@ -264,12 +266,12 @@ func (c *consensusCapability) Report(ctx context.Context, metadata capabilities.
 	stepReferenceID := metadata.ReferenceID
 	reportID, err := toReportID(stepReferenceID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert step reference ID to report ID: %w", err)
+		return nil, caperrors.NewPublicSystemError(fmt.Errorf("failed to convert step reference ID to report ID: %w", err), caperrors.Internal)
 	}
 
 	keyBundleID, err := validateReportRequest(reportRequest)
 	if err != nil {
-		return nil, fmt.Errorf("report request validation failed: %w", err)
+		return nil, caperrors.NewPublicUserError(fmt.Errorf("report request validation failed: %w", err), caperrors.InvalidArgument)
 	}
 
 	consensusRequestMetaData := oracle.ConsensusRequestMetadata{
@@ -279,9 +281,9 @@ func (c *consensusCapability) Report(ctx context.Context, metadata capabilities.
 		RequestType:     types.RequestType_REPORT_GENERATION,
 	}
 
-	requestSize, err := c.validateRequestSize(ctx, consensusRequestMetaData, reportRequest)
-	if err != nil {
-		return nil, fmt.Errorf("failed to validate input size: %w", err)
+	requestSize, reqSizeErr := c.validateRequestSize(ctx, consensusRequestMetaData, reportRequest)
+	if reqSizeErr != nil {
+		return nil, reqSizeErr
 	}
 	c.metrics.RecordRequestSize(ctx, float64(requestSize))
 
@@ -301,7 +303,7 @@ func (c *consensusCapability) Report(ctx context.Context, metadata capabilities.
 
 	select {
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return nil, caperrors.NewPublicSystemError(ctx.Err(), caperrors.Canceled)
 	case response := <-callbackChan:
 		if response.Err != nil {
 			return nil, response.Err
@@ -329,7 +331,7 @@ func (c *consensusCapability) Report(ctx context.Context, metadata capabilities.
 			Response:         reportResponse,
 			ResponseMetadata: capabilities.ResponseMetadata{},
 		}
-		return &responseAndMetadata, err
+		return &responseAndMetadata, nil
 	}
 }
 
@@ -463,20 +465,26 @@ func (c *consensusCapability) Description() string {
 
 // validateRequestSize ensures the combined size of input and metadata does not exceed the allowed limit.
 // This prevents oversized requests that could disrupt the consensus process.
-func (c *consensusCapability) validateRequestSize(ctx context.Context, consensusRequestMetaData oracle.ConsensusRequestMetadata, input proto.Message) (int, error) {
+func (c *consensusCapability) validateRequestSize(ctx context.Context, consensusRequestMetaData oracle.ConsensusRequestMetadata, input proto.Message) (int, caperrors.Error) {
 	requestMetaData := plugin.ToRequestMetaData(consensusRequestMetaData)
 
 	serialisedInput, err := proto.Marshal(input)
 	if err != nil {
-		return 0, fmt.Errorf("failed to serialise input: %w", err)
+		return 0, caperrors.NewPublicSystemError(fmt.Errorf("failed to serialise input: %w", err), caperrors.Internal)
 	}
 
 	serialisedMetadata, err := proto.Marshal(requestMetaData)
 	if err != nil {
-		return 0, fmt.Errorf("failed to serialise metadata: %w", err)
+		return 0, caperrors.NewPublicSystemError(fmt.Errorf("failed to serialise metadata: %w", err), caperrors.Internal)
 	}
 	size := config.Size(len(serialisedInput) + len(serialisedMetadata))
-	return int(size), c.maxRequestSizeBytes.Check(ctx, size)
+	err = c.maxRequestSizeBytes.Check(ctx, size)
+
+	if err != nil && errors.Is(err, limits.ErrorBoundLimited[config.Size]{}) {
+		return int(size), caperrors.NewPublicUserError(fmt.Errorf("request size %d bytes exceeds maximum allowed size: %w", size, err), caperrors.InvalidArgument)
+	}
+
+	return int(size), nil
 }
 
 func logObservation(lggr logger.Logger, input *sdk.SimpleConsensusInputs, metadata capabilities.RequestMetadata) (*valuespb.Value, error) {

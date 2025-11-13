@@ -8,7 +8,9 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 
+	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/report"
+	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/libocr/offchainreporting2/types"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
@@ -45,19 +47,29 @@ func (c *ContractTransmitter) Transmit(ctx context.Context, configDigest types.C
 		return errors.New("infoRequestID is not a string")
 	}
 
-	if failureMessage, exists := infoMap[plugin.InfoConsensusFailureMessage]; exists {
-		failureMessageStr, ok := failureMessage.(string)
-		if !ok {
-			return errors.New("message is not a string")
+	if failureCodeEntry, exists := infoMap[plugin.InfoConsensusFailureCode]; exists {
+		failureCode, failureMessageStr, err := getFailureCodeAndMessageFromReportInfo(failureCodeEntry, infoMap)
+		if err != nil {
+			return fmt.Errorf("failed to get failure code and message from report info: %w", err)
 		}
 
 		c.lggr.Debugw("received consensus failure message report", "requestID", requestIDStr,
-			"failureMessage", failureMessageStr)
+			"failureMessage", failureMessageStr, "failureCode", failureCode)
+
+		var failureErr caperrors.Error
+		switch failureCode {
+		case oracletypes.ConsensusFailureCode_RECEIVED_FPLUS1_ERRORS:
+			// This is considered to be a user error as the caller of the consensus capability has sent too many errors and
+			// so consensus cannot be reached.
+			failureErr = caperrors.NewPublicUserError(errors.New(failureMessageStr), caperrors.ConsensusFailed)
+		default:
+			failureErr = caperrors.NewPublicSystemError(errors.New(failureMessageStr), caperrors.ConsensusFailed)
+		}
 
 		response := oracle.ConsensusResponse{
 			ReqID: requestIDStr,
 			SeqNr: seqNr,
-			Err:   errors.New(failureMessageStr),
+			Err:   failureErr,
 		}
 
 		c.sendResponse(ctx, response)
@@ -79,6 +91,36 @@ func (c *ContractTransmitter) Transmit(ctx context.Context, configDigest types.C
 	}
 
 	return nil
+}
+
+func getFailureCodeAndMessageFromReportInfo(failureCodeEntry any, infoMap map[string]any) (oracletypes.ConsensusFailureCode, string, error) {
+	failureCodeEntry, failureCodeExists := infoMap[plugin.InfoConsensusFailureCode]
+	if !failureCodeExists {
+		return 0, "", errors.New("failure code not found in report info")
+	}
+
+	failureCodeStr, ok := failureCodeEntry.(string)
+	if !ok {
+		return 0, "", errors.New("failure code is not a string")
+	}
+
+	codeInt, ok := oracletypes.ConsensusFailureCode_value[failureCodeStr]
+	if !ok {
+		return 0, "", fmt.Errorf("invalid failure code: %s", failureCodeStr)
+	}
+
+	failureCode := oracletypes.ConsensusFailureCode(codeInt)
+
+	failureMessage, failureMsgExists := infoMap[plugin.InfoConsensusFailureMessage]
+	if !failureMsgExists {
+		return 0, "", errors.New("failure message not found in report info")
+	}
+
+	failureMessageStr, ok := failureMessage.(string)
+	if !ok {
+		return 0, "", errors.New("message is not a string")
+	}
+	return failureCode, failureMessageStr, nil
 }
 
 func (c *ContractTransmitter) FromAccount(_ context.Context) (types.Account, error) {

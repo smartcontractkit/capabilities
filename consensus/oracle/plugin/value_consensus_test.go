@@ -35,6 +35,7 @@ type consensusPluginTest struct {
 	requests                        []*oracle.ConsensusRequest
 	verifyReport                    func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct)
 	expectedConsensusFailureMessage string
+	expectedConsensusFailureCode    *oracletypes.ConsensusFailureCode
 }
 
 const n = 7
@@ -64,6 +65,8 @@ func Test_InsufficientIdenticalObservations(t *testing.T) {
 
 	md1 := newRequestMetaData()
 
+	expectedFailureCode := oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED
+
 	reqToObservations := map[string]*consensusPluginTest{
 		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
 			newIdenticalCr(t, 110, md1), newIdenticalCr(t, 110, md1),
@@ -71,7 +74,8 @@ func Test_InsufficientIdenticalObservations(t *testing.T) {
 			newIdenticalCr(t, 130, md1), newIdenticalCr(t, 130, md1),
 			newIdenticalCr(t, 140, md1), newIdenticalCr(t, 140, md1),
 		},
-			expectedConsensusFailureMessage: "no values met f+1 threshold"},
+			expectedConsensusFailureMessage: "no values met f+1 threshold",
+			expectedConsensusFailureCode:    &expectedFailureCode},
 	}
 
 	runProtocolRoundTests(ctx, t, lggr, n, f, reqToObservations)
@@ -87,6 +91,8 @@ func Test_InsufficientIdenticalMapObservations(t *testing.T) {
 		Field1 int
 	}
 
+	expectedFailureCode := oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED
+
 	reqToObservations := map[string]*consensusPluginTest{
 		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
 			newIdenticalValueCr(t, mustWrap(t, testStruct{Field1: 100}), md1),
@@ -97,7 +103,8 @@ func Test_InsufficientIdenticalMapObservations(t *testing.T) {
 			newIdenticalValueCr(t, mustWrap(t, testStruct{Field1: 150}), md1),
 			newIdenticalValueCr(t, mustWrap(t, testStruct{Field1: 160}), md1),
 		},
-			expectedConsensusFailureMessage: "no values met f+1 threshold"},
+			expectedConsensusFailureMessage: "no values met f+1 threshold",
+			expectedConsensusFailureCode:    &expectedFailureCode},
 	}
 
 	runProtocolRoundTests(ctx, t, lggr, n, f, reqToObservations)
@@ -384,12 +391,15 @@ func Test_ReceivedObservationsWithSomeMisMatchedDefaults_InsufficientForConsensu
 	md1 := newRequestMetaData()
 	md1.KeyBundleID = "evm"
 
+	expectedFailureCode := oracletypes.ConsensusFailureCode_FAILED_TO_CALCULATE_CONSENSUS_MDD
+
 	reqToObservations := map[string]*consensusPluginTest{
 		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
 			newCrWithObsAndDef(t, 10, 17, md1), newCrWithObsAndDef(t, 20, 12, md1), newCrWithObsAndDef(t, 30, 17, md1),
 			newCrWithObsAndDef(t, 40, 16, md1), newCrWithObsAndDef(t, 50, 15, md1), newCrWithObsAndDef(t, 60, 11, md1),
 			newCrWithObsAndDef(t, 70, 15, md1)},
-			expectedConsensusFailureMessage: "failed to calculate consensus metadata, descriptor and default for request: no values met f+1 threshold"},
+			expectedConsensusFailureMessage: "failed to calculate consensus metadata, descriptor and default for request: no values met f+1 threshold",
+			expectedConsensusFailureCode:    &expectedFailureCode},
 	}
 
 	runProtocolRoundTests(ctx, t, lggr, n, f, reqToObservations)
@@ -428,12 +438,15 @@ func Test_MisMatchedDefaults_InsufficientForConsensus(t *testing.T) {
 	md1 := newRequestMetaData()
 	md1.KeyBundleID = "evm"
 
+	expectedFailureCode := oracletypes.ConsensusFailureCode_FAILED_TO_CALCULATE_CONSENSUS_MDD
+
 	reqToObservations := map[string]*consensusPluginTest{
 		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
 			newCrWithObsAndDef(t, 10, 14, md1), newCrWithObsAndDef(t, 20, 15, md1), newCrWithObsAndDef(t, 30, 15, md1),
 			newCrWithObsAndDef(t, 40, 16, md1), newCrWithObsAndDef(t, 50, 16, md1), newCrWithObsAndDef(t, 60, 17, md1),
 			newCrWithObsAndDef(t, 70, 17, md1)},
-			expectedConsensusFailureMessage: "failed to calculate consensus metadata, descriptor and default for request: no values met f+1 threshold"},
+			expectedConsensusFailureMessage: "failed to calculate consensus metadata, descriptor and default for request: no values met f+1 threshold",
+			expectedConsensusFailureCode:    &expectedFailureCode},
 	}
 
 	runProtocolRoundTests(ctx, t, lggr, n, f, reqToObservations)
@@ -803,6 +816,7 @@ func runProtocolRoundTestsWithPlugins(ctx context.Context, t *testing.T,
 	reports := allReports[0]
 	receivedReportForRequestIDs := map[string]bool{}
 	receivedFailureMessageForRequestIDs := map[string]bool{}
+	receivedFailureCodeForRequestIDs := map[string]bool{}
 	for _, report := range reports {
 
 		var infos structpb.Struct
@@ -811,13 +825,36 @@ func runProtocolRoundTestsWithPlugins(ctx context.Context, t *testing.T,
 
 		infoMap := infos.AsMap()
 
-		if failureMessage, exists := infoMap[plugin.InfoConsensusFailureMessage]; exists {
+		if failureCodeVal, exists := infoMap[plugin.InfoConsensusFailureCode]; exists {
+
 			reqID := infos.Fields[plugin.InfoRequestID].GetStringValue()
 			expectedOutcome, ok := requestIDToOutcome[reqID]
 			require.True(t, ok, "got report for a request without a test outcome %s", reqID)
 
+			if expectedOutcome.expectedConsensusFailureCode == nil {
+				require.FailNow(t, "not expecting failure code for request %s", reqID)
+			}
+
+			failureCodeStr := failureCodeVal.(string)
+
+			codeInt, ok := oracletypes.ConsensusFailureCode_value[failureCodeStr]
+			require.True(t, ok)
+
+			failureCode := oracletypes.ConsensusFailureCode(codeInt)
+
+			if *expectedOutcome.expectedConsensusFailureCode != failureCode {
+				require.FailNow(t, "expected failure code %s but got %s for request %s", expectedOutcome.expectedConsensusFailureCode.String(), failureCode.String(), reqID)
+			}
+
+			receivedFailureCodeForRequestIDs[reqID] = true
+
+			failureMessage, exists := infoMap[plugin.InfoConsensusFailureMessage]
+			if !exists {
+				require.FailNow(t, "expected failure message for request %s", reqID)
+			}
+
 			if len(expectedOutcome.expectedConsensusFailureMessage) == 0 {
-				require.FailNow(t, "not expecting failure message for request %s", reqID)
+				require.FailNow(t, "expected outcome failure message for request %s", reqID)
 			}
 
 			receivedFailureMessageForRequestIDs[reqID] = true
@@ -854,6 +891,13 @@ func runProtocolRoundTestsWithPlugins(ctx context.Context, t *testing.T,
 	for reqID, outcome := range requestIDToOutcome {
 		if len(outcome.expectedConsensusFailureMessage) > 0 {
 			require.True(t, receivedFailureMessageForRequestIDs[reqID], "expected failure message for request ID %s was not received", reqID)
+		}
+	}
+
+	// Veriofy all expected failure codes were received
+	for reqID, outcome := range requestIDToOutcome {
+		if outcome.expectedConsensusFailureCode != nil {
+			require.True(t, receivedFailureCodeForRequestIDs[reqID], "expected failure code for request ID %s was not received", reqID)
 		}
 	}
 

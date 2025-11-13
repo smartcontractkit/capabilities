@@ -7,6 +7,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
@@ -66,7 +67,7 @@ func (r *ConsensusRequest) SendResponse(ctx context.Context, resp ConsensusRespo
 func (r *ConsensusRequest) SendTimeout(ctx context.Context) {
 	timeoutResponse := ConsensusResponse{
 		ReqID: r.RequestID,
-		Err:   fmt.Errorf("timeout exceeded: could not process consensus request before expiry, requestID %s", r.RequestID),
+		Err:   caperrors.NewPublicSystemError(fmt.Errorf("timeout exceeded: could not process consensus request before expiry, requestID %s", r.RequestID), caperrors.DeadlineExceeded),
 	}
 	r.SendResponse(ctx, timeoutResponse)
 }
@@ -103,7 +104,7 @@ type ConsensusResponse struct {
 	RawReport     []byte
 	Sigs          []types.AttributedOnchainSignature
 
-	Err error
+	Err caperrors.Error
 }
 
 func (r ConsensusResponse) RequestID() string {
