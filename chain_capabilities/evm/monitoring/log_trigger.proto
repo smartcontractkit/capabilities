@@ -2,17 +2,33 @@ syntax = "proto3";
 package chain_capabilities.evm;
 option go_package = "github.com/smartcontractkit/capabilities/chain_capabilities/evm;monitoring";
 
-import "capabilities/blockchain/evm/v1alpha/client.proto";
 import "libs/monitoring/execution_context.proto";
 
+message TopicValues {
+  repeated bytes values = 1; // list of possible values for any topic, in [32]byte fix-sized array format
+}
+
+message FilterLogTriggerRequest {
+  repeated bytes addresses = 1; // list of addresses to include in evm address [20]byte fix-sized array format, at least one address is required
+  /*
+     TopicValues is a fixed 4 length array of possible values for any topic where:
+       a) the first element is an array of the event signatures (keccak256 of the event name and indexed args types), it has to have at least one value
+       b) the second element is an array of possible values for the first indexed argument, can be empty
+       c) the third element is an array of possible values for the second indexed argument, can be empty
+       d) the fourth element is an array of possible values for the third indexed argument, can be empty
+  */
+  repeated TopicValues topics = 2;
+  int64 confidence = 3; // optional, defaults to "SAFE"
+}
+
 message LogTriggerInitiated{
-  capabilities.blockchain.evm.v1alpha.FilterLogTriggerRequest req = 1;
+  FilterLogTriggerRequest req = 1;
   monitoring.ExecutionContext execution_context = 20;
 }
 
 message LogTriggerSuccess {
   string triggerID = 1;
-  capabilities.blockchain.evm.v1alpha.FilterLogTriggerRequest req = 2;
+  FilterLogTriggerRequest req = 2;
   int32 log_count = 3;
   int64 latestOffsetBlock = 4;
   monitoring.ExecutionContext execution_context = 20;
