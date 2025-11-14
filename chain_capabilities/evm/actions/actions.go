@@ -113,17 +113,17 @@ func (e *EVM) CallContract(
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 
 	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.CallContract)); err != nil {
-		return nil, capabilities.NewRemoteReportableError(err)
+		return nil, NewUserError(err)
 	}
 
 	callMsg, err := evm.ConvertCallMsgFromProto(input.GetCall())
 	if err != nil {
-		return nil, capabilities.NewRemoteReportableError(err)
+		return nil, NewUserError(err)
 	}
 
 	blockNumber, needsBlockHeightConsensus, confidenceLevel, err := normalizeBlockNumber(input.GetBlockNumber())
 	if err != nil {
-		return nil, capabilities.NewRemoteReportableError(err)
+		return nil, NewUserError(err)
 	}
 
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildCallContractInitiated(telemetryContext, callMsg, blockNumber.Int64()))
@@ -137,7 +137,8 @@ func (e *EVM) CallContract(
 			IsExternal:      true,
 		})
 		if err != nil {
-			return nil, capabilities.NewRemoteReportableError(err)
+			//TODO Ilija/Dmytro: this could be either user or internal, correct? if so can we distinguish easily here?
+			return nil, EnsureRemoteReportable(err)
 		}
 		return resp.Data, nil
 	}
@@ -147,7 +148,7 @@ func (e *EVM) CallContract(
 		request = ctypes.NewLockableToBlockRequest(requestID(meta), func(ctx context.Context, height *ctypes.ChainHeight) ([]byte, error) {
 			callBlockNumber, err := getCallBlockNumber(blockNumber, height)
 			if err != nil {
-				return nil, capabilities.NewRemoteReportableError(fmt.Errorf("error getting call block number: %w", err))
+				return nil, NewUserError(fmt.Errorf("error getting call block number: %w", err))
 			}
 
 			return callContract(ctx, callBlockNumber)
@@ -160,9 +161,10 @@ func (e *EVM) CallContract(
 
 	data, err := readType[[]byte](ctx, e.ConsensusHandler, request)
 	if err != nil {
+		isUserError := e.isUserError(err)
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor,
-			e.messageBuilder.BuildCallContractError(telemetryContext, callMsg, blockNumber.Int64(), "Failed to read CallContract", err.Error(), isUserError(err)))
-		return nil, capabilities.NewRemoteReportableError(err)
+			e.messageBuilder.BuildCallContractError(telemetryContext, callMsg, blockNumber.Int64(), "Failed to read CallContract", err.Error(), isUserError))
+		return nil, GetError(err, isUserError)
 	}
 
 	monitoring.LogAndEmitSuccess(ctx, "Successfully read CallContract", e.lggr, e.beholderProcessor, e.messageBuilder.BuildCallContractSuccess(telemetryContext, callMsg, blockNumber.Int64()))
@@ -181,6 +183,7 @@ func (e *EVM) filterLogsToRequest(ctx context.Context, meta capabilities.Request
 			IsExternal:      true,
 		})
 		if err != nil {
+			//TODO Ilija/Dmytro: this could be either user or internal, correct? if so can we distinguish easily here?
 			return nil, err
 		}
 
@@ -194,14 +197,14 @@ func (e *EVM) filterLogsToRequest(ctx context.Context, meta capabilities.Request
 			return nil, err
 		}
 		if err = e.readPayloadSizeLimiter.Check(ctx, commoncfg.SizeOf(b)); err != nil {
-			return nil, err
+			return nil, NewUserError(err)
 		}
 		return b, nil
 	}
 
 	if ethFilterQuery.BlockHash != (evmtypes.Hash{}) {
 		if ethFilterQuery.FromBlock != nil || ethFilterQuery.ToBlock != nil {
-			return nil, errors.New("cannot specify both block hash and block range")
+			return nil, NewUserError(errors.New("cannot specify both block hash and block range"))
 		}
 
 		return ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
@@ -270,17 +273,17 @@ func (e *EVM) FilterLogs(ctx context.Context, meta capabilities.RequestMetadata,
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 
 	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.FilterLogs)); err != nil {
-		return nil, capabilities.NewRemoteReportableError(err)
+		return nil, NewUserError(err)
 	}
 
 	ethFilterQuery, err := evm.ConvertFilterFromProto(req.GetFilterQuery())
 	if err != nil {
-		return nil, capabilities.NewRemoteReportableError(err)
+		return nil, NewUserError(err)
 	}
 
 	request, err := e.filterLogsToRequest(ctx, meta, ethFilterQuery)
 	if err != nil {
-		return nil, capabilities.NewRemoteReportableError(err)
+		return nil, EnsureRemoteReportable(err)
 	}
 
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildFilterLogsInitiated(telemetryContext, ethFilterQuery))
@@ -288,9 +291,10 @@ func (e *EVM) FilterLogs(ctx context.Context, meta capabilities.RequestMetadata,
 	var reply evm.FilterLogsReply
 	err = e.readProto(ctx, request, &reply)
 	if err != nil {
+		isUserError := e.isUserError(err)
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor,
-			e.messageBuilder.BuildFilterLogsError(telemetryContext, ethFilterQuery, "Failed to FilterLogs", err.Error(), isUserError(err)))
-		return nil, capabilities.NewRemoteReportableError(err)
+			e.messageBuilder.BuildFilterLogsError(telemetryContext, ethFilterQuery, "Failed to FilterLogs", err.Error(), isUserError))
+		return nil, GetError(err, isUserError)
 	}
 
 	// G115: integer overflow conversion int -> int32 (gosec)
@@ -305,24 +309,24 @@ func (e *EVM) FilterLogs(ctx context.Context, meta capabilities.RequestMetadata,
 
 func (e *EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, req *evm.BalanceAtRequest) (*capabilities.ResponseAndMetadata[*evm.BalanceAtReply], error) {
 	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.BalanceAt)); err != nil {
-		return nil, err
+		return nil, NewUserError(err)
 	}
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	blockNumber, needsBlockHeightConsensus, confidenceLevel, err := normalizeBlockNumber(req.GetBlockNumber())
 	if err != nil {
-		return nil, capabilities.NewRemoteReportableError(err)
+		return nil, NewUserError(err)
 	}
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildBalanceAtInitiated(telemetryContext, common.Bytes2Hex(req.GetAccount()), blockNumber.Int64()))
 
 	balanceAt := func(ctx context.Context, height *ctypes.ChainHeight) ([]byte, error) {
 		callBlockNumber, err := getCallBlockNumber(blockNumber, height)
 		if err != nil {
-			return nil, fmt.Errorf("error getting call block number: %w", err)
+			return nil, NewUserError(fmt.Errorf("error getting call block number: %w", err))
 		}
 
 		address, err := evmservice.ConvertOptionalAddressFromProto(req.GetAccount())
 		if err != nil {
-			return nil, capabilities.NewRemoteReportableError(fmt.Errorf("error converting address from proto: %w", err))
+			return nil, NewUserError(fmt.Errorf("error converting address from proto: %w", err))
 		}
 
 		reply, err := e.EVMService.BalanceAt(ctx, evmtypes.BalanceAtRequest{
@@ -331,7 +335,8 @@ func (e *EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, 
 			ConfidenceLevel: confidenceLevel,
 		})
 		if err != nil {
-			return nil, capabilities.NewRemoteReportableError(err)
+			//TODO Ilija/Dmytro: this could be either user or internal, correct? if so can we distinguish easily here?
+			return nil, EnsureRemoteReportable(err)
 		}
 
 		pbBalance := valuespb.NewBigIntFromInt(reply.Balance)
@@ -349,9 +354,10 @@ func (e *EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, 
 
 	balance := new(valuespb.BigInt)
 	if err := e.readProto(ctx, request, balance); err != nil {
+		isUserError := e.isUserError(err)
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor,
-			e.messageBuilder.BuildBalanceAtError(telemetryContext, common.Bytes2Hex(req.GetAccount()), blockNumber.Int64(), "Failed to read BalanceAt", err.Error(), isUserError(err)))
-		return nil, capabilities.NewRemoteReportableError(err)
+			e.messageBuilder.BuildBalanceAtError(telemetryContext, common.Bytes2Hex(req.GetAccount()), blockNumber.Int64(), "Failed to read BalanceAt", err.Error(), isUserError))
+		return nil, GetError(err, isUserError)
 	}
 
 	monitoring.LogAndEmitSuccess(ctx, "Successfully read BalanceAt", e.lggr, e.beholderProcessor,
@@ -365,12 +371,12 @@ func (e *EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, 
 
 func (e *EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata, req *evm.EstimateGasRequest) (*capabilities.ResponseAndMetadata[*evm.EstimateGasReply], error) {
 	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.EstimateGas)); err != nil {
-		return nil, capabilities.NewRemoteReportableError(err)
+		return nil, NewUserError(err)
 	}
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	msg, err := evm.ConvertCallMsgFromProto(req.GetMsg())
 	if err != nil {
-		return nil, capabilities.NewRemoteReportableError(err)
+		return nil, NewUserError(err)
 	}
 
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildEstimateGasInitiated(telemetryContext, common.Bytes2Hex(msg.From[:]), common.Bytes2Hex(msg.To[:]), msg.Data))
@@ -378,7 +384,8 @@ func (e *EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata
 	request := ctypes.NewAggregatableRequest(requestID(meta), func(ctx context.Context) (*ctypes.AggregatableObservation, error) {
 		rawEstimate, err := e.EVMService.EstimateGas(ctx, msg)
 		if err != nil {
-			return nil, capabilities.NewRemoteReportableError(err)
+			//TODO Ilija/Dmytro: this could be either user or internal, correct? if so can we distinguish easily here?
+			return nil, EnsureRemoteReportable(err)
 		}
 
 		estimate := &valuespb.Decimal{
@@ -394,9 +401,10 @@ func (e *EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata
 
 	rawEstimate, err := readDecimal(ctx, e.ConsensusHandler, request)
 	if err != nil {
+		isUserError := e.isUserError(err)
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor,
-			e.messageBuilder.BuildEstimateGasError(telemetryContext, common.Bytes2Hex(msg.From[:]), common.Bytes2Hex(msg.To[:]), msg.Data, "Failed to execute EstimateGas", err.Error(), isUserError(err)))
-		return nil, capabilities.NewRemoteReportableError(err)
+			e.messageBuilder.BuildEstimateGasError(telemetryContext, common.Bytes2Hex(msg.From[:]), common.Bytes2Hex(msg.To[:]), msg.Data, "Failed to execute EstimateGas", err.Error(), isUserError))
+		return nil, GetError(err, isUserError)
 	}
 
 	logMsg := e.messageBuilder.BuildEstimateGasSuccess(telemetryContext, common.Bytes2Hex(msg.From[:]), common.Bytes2Hex(msg.To[:]), msg.Data, rawEstimate.BigInt().Int64())
@@ -410,12 +418,12 @@ func (e *EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata
 
 func (e *EVM) GetTransactionByHash(ctx context.Context, meta capabilities.RequestMetadata, req *evm.GetTransactionByHashRequest) (*capabilities.ResponseAndMetadata[*evm.GetTransactionByHashReply], error) {
 	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.GetTransactionByHash)); err != nil {
-		return nil, capabilities.NewRemoteReportableError(err)
+		return nil, NewUserError(err)
 	}
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	hash, err := evmservice.ConvertHashFromProto(req.GetHash())
 	if err != nil {
-		return nil, capabilities.NewRemoteReportableError(err)
+		return nil, NewUserError(err)
 	}
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildGetTransactionByHashInitiated(telemetryContext, common.Bytes2Hex(hash[:])))
 	request := ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
@@ -424,12 +432,13 @@ func (e *EVM) GetTransactionByHash(ctx context.Context, meta capabilities.Reques
 			IsExternal: true,
 		})
 		if err != nil {
-			return nil, capabilities.NewRemoteReportableError(err)
+			//TODO Ilija/Dmytro: this could be either user or internal, correct? if so can we distinguish easily here?
+			return nil, EnsureRemoteReportable(err)
 		}
 
 		protoTx, err := evm.ConvertTransactionToProto(tx)
 		if err != nil {
-			return nil, capabilities.NewRemoteReportableError(err)
+			return nil, NewUserError(err)
 		}
 
 		return proto.MarshalOptions{Deterministic: true}.Marshal(protoTx)
@@ -437,9 +446,10 @@ func (e *EVM) GetTransactionByHash(ctx context.Context, meta capabilities.Reques
 
 	var tx evm.Transaction
 	if err := e.readProto(ctx, request, &tx); err != nil {
+		isUserError := e.isUserError(err)
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor,
-			e.messageBuilder.BuildGetTransactionByHashError(telemetryContext, common.Bytes2Hex(hash[:]), "Failed to execute GetTransactionByHash", err.Error(), isUserError(err)))
-		return nil, capabilities.NewRemoteReportableError(err)
+			e.messageBuilder.BuildGetTransactionByHashError(telemetryContext, common.Bytes2Hex(hash[:]), "Failed to execute GetTransactionByHash", err.Error(), isUserError))
+		return nil, GetError(err, isUserError)
 	}
 
 	monitoring.LogAndEmitSuccess(ctx, "Successfully read GetTransactionByHash", e.lggr, e.beholderProcessor,
@@ -453,12 +463,12 @@ func (e *EVM) GetTransactionByHash(ctx context.Context, meta capabilities.Reques
 
 func (e *EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.RequestMetadata, req *evm.GetTransactionReceiptRequest) (*capabilities.ResponseAndMetadata[*evm.GetTransactionReceiptReply], error) {
 	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.GetTransactionReceipt)); err != nil {
-		return nil, capabilities.NewRemoteReportableError(err)
+		return nil, NewUserError(err)
 	}
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	hash, err := evmservice.ConvertHashFromProto(req.GetHash())
 	if err != nil {
-		return nil, capabilities.NewRemoteReportableError(err)
+		return nil, NewUserError(err)
 	}
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildGetTransactionReceiptInitiated(telemetryContext, common.Bytes2Hex(hash[:])))
 	request := ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
@@ -467,12 +477,13 @@ func (e *EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.Reque
 			IsExternal: true,
 		})
 		if err != nil {
-			return nil, capabilities.NewRemoteReportableError(err)
+			//TODO Ilija/Dmytro: this could be either user or internal, correct? if so can we distinguish easily here?
+			return nil, EnsureRemoteReportable(err)
 		}
 
 		protoReceipt, err := evm.ConvertReceiptToProto(receipt)
 		if err != nil {
-			return nil, capabilities.NewRemoteReportableError(err)
+			return nil, NewUserError(err)
 		}
 
 		return proto.MarshalOptions{Deterministic: true}.Marshal(protoReceipt)
@@ -480,9 +491,10 @@ func (e *EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.Reque
 
 	var receipt evm.Receipt
 	if err := e.readProto(ctx, request, &receipt); err != nil {
+		isUserError := e.isUserError(err)
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor,
-			e.messageBuilder.BuildGetTransactionReceiptError(telemetryContext, common.Bytes2Hex(hash[:]), "Failed to get latest and finalized head", err.Error(), isUserError(err)))
-		return nil, capabilities.NewRemoteReportableError(err)
+			e.messageBuilder.BuildGetTransactionReceiptError(telemetryContext, common.Bytes2Hex(hash[:]), "Failed to get latest and finalized head", err.Error(), isUserError))
+		return nil, GetError(err, isUserError)
 	}
 
 	monitoring.LogAndEmitSuccess(ctx, "Successfully read GetTransactionReceiptSuccess", e.lggr, e.beholderProcessor,
@@ -500,12 +512,12 @@ func (e *EVM) HeaderByNumber(
 	req *evm.HeaderByNumberRequest,
 ) (*capabilities.ResponseAndMetadata[*evm.HeaderByNumberReply], error) {
 	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.HeaderByNumber)); err != nil {
-		return nil, capabilities.NewRemoteReportableError(err)
+		return nil, NewUserError(err)
 	}
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	blockNumber, needsBlockHeightConsensus, confidenceLevel, err := normalizeBlockNumber(req.GetBlockNumber())
 	if err != nil {
-		return nil, capabilities.NewRemoteReportableError(err)
+		return nil, NewUserError(err)
 	}
 
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildHeaderByNumberInitiated(telemetryContext, blockNumber.Int64()))
@@ -516,16 +528,17 @@ func (e *EVM) HeaderByNumber(
 			ConfidenceLevel: confidenceLevel,
 		})
 		if err != nil {
-			return nil, capabilities.NewRemoteReportableError(err)
+			//TODO Ilija/Dmytro: this could be either user or internal, correct? if so can we distinguish easily here?
+			return nil, EnsureRemoteReportable(err)
 		}
 
 		if reply.Header == nil {
-			return nil, capabilities.NewRemoteReportableError(fmt.Errorf("header is nil"))
+			return nil, NewUserError(fmt.Errorf("header is nil"))
 		}
 
 		header, err := evm.ConvertHeaderToProto(reply.Header)
 		if err != nil {
-			return nil, capabilities.NewRemoteReportableError(err)
+			return nil, NewUserError(err)
 		}
 
 		return proto.Marshal(&evm.HeaderByNumberReply{Header: header})
@@ -550,9 +563,10 @@ func (e *EVM) HeaderByNumber(
 	var reply evm.HeaderByNumberReply
 	err = e.readProto(ctx, request, &reply)
 	if err != nil {
+		isUserError := e.isUserError(err)
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor,
-			e.messageBuilder.BuildHeaderByNumberError(telemetryContext, blockNumber.Int64(), "Failed to get header by number", err.Error(), isUserError(err)))
-		return nil, capabilities.NewRemoteReportableError(err)
+			e.messageBuilder.BuildHeaderByNumberError(telemetryContext, blockNumber.Int64(), "Failed to get header by number", err.Error(), isUserError))
+		return nil, GetError(err, isUserError)
 	}
 
 	monitoring.LogAndEmitSuccess(ctx, "Successfully got header by number", e.lggr, e.beholderProcessor, e.messageBuilder.BuildHeaderByNumberSuccess(telemetryContext, blockNumber.Int64(), reply.Header))
@@ -636,11 +650,6 @@ func (e *EVM) readProto(ctx context.Context, request ctypes.Request, into proto.
 	return proto.Unmarshal(data, into)
 }
 
-func isUserError(err error) bool {
-	return errors.Is(err, context.DeadlineExceeded) ||
-		errors.Is(err, multinode.ErrNodeError)
-}
-
 func readType[T any](ctx context.Context, reader ConsensusHandler, request ctypes.Request) (T, error) {
 	var zero T
 	resultCh, err := reader.Handle(ctx, request)
@@ -662,4 +671,42 @@ func readType[T any](ctx context.Context, reader ConsensusHandler, request ctype
 
 		return data, nil
 	}
+}
+
+func (e *EVM) isUserError(err error) bool {
+	return errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, multinode.ErrNodeError)
+}
+
+func GetError(err error, isUserError bool) error {
+	if isUserError {
+		return NewUserError(err)
+	}
+	return capabilities.NewRemoteReportableError(err)
+}
+
+func NewUserError(err error) error {
+	// placeholer for https://smartcontract-it.atlassian.net/browse/CAPPL-1067
+	// should be: return capabilities.NewRemoteReportableUserError(err)
+	return capabilities.NewRemoteReportableError(err)
+}
+
+func EnsureRemoteReportable(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	// placeholer for https://smartcontract-it.atlassian.net/browse/CAPPL-1067
+	// should uncoment below
+	//var targetUser *capabilities.RemoteReportableUserError
+	//if errors.As(err, &targetUser) {
+	//	return err
+	//}
+	var targetInternal *capabilities.RemoteReportableError
+	if errors.As(err, &targetInternal) {
+		return err
+	}
+
+	// Not already remote-reportable -> wrap it.
+	return capabilities.NewRemoteReportableError(err)
 }
