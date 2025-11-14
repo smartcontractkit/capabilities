@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.10
 // 	protoc        v5.29.5
-// source: log_trigger.proto
+// source: chain_capabilities/evm/monitoring/log_trigger.proto
 
 package monitoring
 
@@ -31,7 +31,7 @@ type TopicValues struct {
 
 func (x *TopicValues) Reset() {
 	*x = TopicValues{}
-	mi := &file_log_trigger_proto_msgTypes[0]
+	mi := &file_chain_capabilities_evm_monitoring_log_trigger_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -43,7 +43,7 @@ func (x *TopicValues) String() string {
 func (*TopicValues) ProtoMessage() {}
 
 func (x *TopicValues) ProtoReflect() protoreflect.Message {
-	mi := &file_log_trigger_proto_msgTypes[0]
+	mi := &file_chain_capabilities_evm_monitoring_log_trigger_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -56,7 +56,7 @@ func (x *TopicValues) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TopicValues.ProtoReflect.Descriptor instead.
 func (*TopicValues) Descriptor() ([]byte, []int) {
-	return file_log_trigger_proto_rawDescGZIP(), []int{0}
+	return file_chain_capabilities_evm_monitoring_log_trigger_proto_rawDescGZIP(), []int{0}
 }
 
 func (x *TopicValues) GetValues() [][]byte {
@@ -82,7 +82,7 @@ type FilterLogTriggerRequest struct {
 
 func (x *FilterLogTriggerRequest) Reset() {
 	*x = FilterLogTriggerRequest{}
-	mi := &file_log_trigger_proto_msgTypes[1]
+	mi := &file_chain_capabilities_evm_monitoring_log_trigger_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -94,7 +94,7 @@ func (x *FilterLogTriggerRequest) String() string {
 func (*FilterLogTriggerRequest) ProtoMessage() {}
 
 func (x *FilterLogTriggerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_log_trigger_proto_msgTypes[1]
+	mi := &file_chain_capabilities_evm_monitoring_log_trigger_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -107,7 +107,7 @@ func (x *FilterLogTriggerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FilterLogTriggerRequest.ProtoReflect.Descriptor instead.
 func (*FilterLogTriggerRequest) Descriptor() ([]byte, []int) {
-	return file_log_trigger_proto_rawDescGZIP(), []int{1}
+	return file_chain_capabilities_evm_monitoring_log_trigger_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *FilterLogTriggerRequest) GetAddresses() [][]byte {
@@ -141,7 +141,7 @@ type LogTriggerInitiated struct {
 
 func (x *LogTriggerInitiated) Reset() {
 	*x = LogTriggerInitiated{}
-	mi := &file_log_trigger_proto_msgTypes[2]
+	mi := &file_chain_capabilities_evm_monitoring_log_trigger_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -153,7 +153,7 @@ func (x *LogTriggerInitiated) String() string {
 func (*LogTriggerInitiated) ProtoMessage() {}
 
 func (x *LogTriggerInitiated) ProtoReflect() protoreflect.Message {
-	mi := &file_log_trigger_proto_msgTypes[2]
+	mi := &file_chain_capabilities_evm_monitoring_log_trigger_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -166,7 +166,7 @@ func (x *LogTriggerInitiated) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogTriggerInitiated.ProtoReflect.Descriptor instead.
 func (*LogTriggerInitiated) Descriptor() ([]byte, []int) {
-	return file_log_trigger_proto_rawDescGZIP(), []int{2}
+	return file_chain_capabilities_evm_monitoring_log_trigger_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *LogTriggerInitiated) GetReq() *FilterLogTriggerRequest {
@@ -196,7 +196,7 @@ type LogTriggerSuccess struct {
 
 func (x *LogTriggerSuccess) Reset() {
 	*x = LogTriggerSuccess{}
-	mi := &file_log_trigger_proto_msgTypes[3]
+	mi := &file_chain_capabilities_evm_monitoring_log_trigger_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -208,7 +208,7 @@ func (x *LogTriggerSuccess) String() string {
 func (*LogTriggerSuccess) ProtoMessage() {}
 
 func (x *LogTriggerSuccess) ProtoReflect() protoreflect.Message {
-	mi := &file_log_trigger_proto_msgTypes[3]
+	mi := &file_chain_capabilities_evm_monitoring_log_trigger_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -221,7 +221,7 @@ func (x *LogTriggerSuccess) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogTriggerSuccess.ProtoReflect.Descriptor instead.
 func (*LogTriggerSuccess) Descriptor() ([]byte, []int) {
-	return file_log_trigger_proto_rawDescGZIP(), []int{3}
+	return file_chain_capabilities_evm_monitoring_log_trigger_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *LogTriggerSuccess) GetTriggerID() string {
@@ -271,7 +271,7 @@ type LogTriggerError struct {
 
 func (x *LogTriggerError) Reset() {
 	*x = LogTriggerError{}
-	mi := &file_log_trigger_proto_msgTypes[4]
+	mi := &file_chain_capabilities_evm_monitoring_log_trigger_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -283,7 +283,7 @@ func (x *LogTriggerError) String() string {
 func (*LogTriggerError) ProtoMessage() {}
 
 func (x *LogTriggerError) ProtoReflect() protoreflect.Message {
-	mi := &file_log_trigger_proto_msgTypes[4]
+	mi := &file_chain_capabilities_evm_monitoring_log_trigger_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -296,7 +296,7 @@ func (x *LogTriggerError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogTriggerError.ProtoReflect.Descriptor instead.
 func (*LogTriggerError) Descriptor() ([]byte, []int) {
-	return file_log_trigger_proto_rawDescGZIP(), []int{4}
+	return file_chain_capabilities_evm_monitoring_log_trigger_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *LogTriggerError) GetTriggerID() string {
@@ -343,7 +343,7 @@ type LogTriggerEventDroppedError struct {
 
 func (x *LogTriggerEventDroppedError) Reset() {
 	*x = LogTriggerEventDroppedError{}
-	mi := &file_log_trigger_proto_msgTypes[5]
+	mi := &file_chain_capabilities_evm_monitoring_log_trigger_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -355,7 +355,7 @@ func (x *LogTriggerEventDroppedError) String() string {
 func (*LogTriggerEventDroppedError) ProtoMessage() {}
 
 func (x *LogTriggerEventDroppedError) ProtoReflect() protoreflect.Message {
-	mi := &file_log_trigger_proto_msgTypes[5]
+	mi := &file_chain_capabilities_evm_monitoring_log_trigger_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -368,7 +368,7 @@ func (x *LogTriggerEventDroppedError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogTriggerEventDroppedError.ProtoReflect.Descriptor instead.
 func (*LogTriggerEventDroppedError) Descriptor() ([]byte, []int) {
-	return file_log_trigger_proto_rawDescGZIP(), []int{5}
+	return file_chain_capabilities_evm_monitoring_log_trigger_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *LogTriggerEventDroppedError) GetTriggerID() string {
@@ -438,7 +438,7 @@ type LogTriggerCleanUpError struct {
 
 func (x *LogTriggerCleanUpError) Reset() {
 	*x = LogTriggerCleanUpError{}
-	mi := &file_log_trigger_proto_msgTypes[6]
+	mi := &file_chain_capabilities_evm_monitoring_log_trigger_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -450,7 +450,7 @@ func (x *LogTriggerCleanUpError) String() string {
 func (*LogTriggerCleanUpError) ProtoMessage() {}
 
 func (x *LogTriggerCleanUpError) ProtoReflect() protoreflect.Message {
-	mi := &file_log_trigger_proto_msgTypes[6]
+	mi := &file_chain_capabilities_evm_monitoring_log_trigger_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -463,7 +463,7 @@ func (x *LogTriggerCleanUpError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogTriggerCleanUpError.ProtoReflect.Descriptor instead.
 func (*LogTriggerCleanUpError) Descriptor() ([]byte, []int) {
-	return file_log_trigger_proto_rawDescGZIP(), []int{6}
+	return file_chain_capabilities_evm_monitoring_log_trigger_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *LogTriggerCleanUpError) GetSummary() string {
@@ -487,11 +487,11 @@ func (x *LogTriggerCleanUpError) GetExecutionContext() *monitoring.ExecutionCont
 	return nil
 }
 
-var File_log_trigger_proto protoreflect.FileDescriptor
+var File_chain_capabilities_evm_monitoring_log_trigger_proto protoreflect.FileDescriptor
 
-const file_log_trigger_proto_rawDesc = "" +
+const file_chain_capabilities_evm_monitoring_log_trigger_proto_rawDesc = "" +
 	"\n" +
-	"\x11log_trigger.proto\x12\x16chain_capabilities.evm\x1a'libs/monitoring/execution_context.proto\"%\n" +
+	"3chain_capabilities/evm/monitoring/log_trigger.proto\x12\x16chain_capabilities.evm\x1a'libs/monitoring/execution_context.proto\"%\n" +
 	"\vTopicValues\x12\x16\n" +
 	"\x06values\x18\x01 \x03(\fR\x06values\"\x94\x01\n" +
 	"\x17FilterLogTriggerRequest\x12\x1c\n" +
@@ -530,19 +530,19 @@ const file_log_trigger_proto_rawDesc = "" +
 	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContextBLZJgithub.com/smartcontractkit/capabilities/chain_capabilities/evm;monitoringb\x06proto3"
 
 var (
-	file_log_trigger_proto_rawDescOnce sync.Once
-	file_log_trigger_proto_rawDescData []byte
+	file_chain_capabilities_evm_monitoring_log_trigger_proto_rawDescOnce sync.Once
+	file_chain_capabilities_evm_monitoring_log_trigger_proto_rawDescData []byte
 )
 
-func file_log_trigger_proto_rawDescGZIP() []byte {
-	file_log_trigger_proto_rawDescOnce.Do(func() {
-		file_log_trigger_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_log_trigger_proto_rawDesc), len(file_log_trigger_proto_rawDesc)))
+func file_chain_capabilities_evm_monitoring_log_trigger_proto_rawDescGZIP() []byte {
+	file_chain_capabilities_evm_monitoring_log_trigger_proto_rawDescOnce.Do(func() {
+		file_chain_capabilities_evm_monitoring_log_trigger_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_chain_capabilities_evm_monitoring_log_trigger_proto_rawDesc), len(file_chain_capabilities_evm_monitoring_log_trigger_proto_rawDesc)))
 	})
-	return file_log_trigger_proto_rawDescData
+	return file_chain_capabilities_evm_monitoring_log_trigger_proto_rawDescData
 }
 
-var file_log_trigger_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
-var file_log_trigger_proto_goTypes = []any{
+var file_chain_capabilities_evm_monitoring_log_trigger_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_chain_capabilities_evm_monitoring_log_trigger_proto_goTypes = []any{
 	(*TopicValues)(nil),                 // 0: chain_capabilities.evm.TopicValues
 	(*FilterLogTriggerRequest)(nil),     // 1: chain_capabilities.evm.FilterLogTriggerRequest
 	(*LogTriggerInitiated)(nil),         // 2: chain_capabilities.evm.LogTriggerInitiated
@@ -552,7 +552,7 @@ var file_log_trigger_proto_goTypes = []any{
 	(*LogTriggerCleanUpError)(nil),      // 6: chain_capabilities.evm.LogTriggerCleanUpError
 	(*monitoring.ExecutionContext)(nil), // 7: monitoring.ExecutionContext
 }
-var file_log_trigger_proto_depIdxs = []int32{
+var file_chain_capabilities_evm_monitoring_log_trigger_proto_depIdxs = []int32{
 	0, // 0: chain_capabilities.evm.FilterLogTriggerRequest.topics:type_name -> chain_capabilities.evm.TopicValues
 	1, // 1: chain_capabilities.evm.LogTriggerInitiated.req:type_name -> chain_capabilities.evm.FilterLogTriggerRequest
 	7, // 2: chain_capabilities.evm.LogTriggerInitiated.execution_context:type_name -> monitoring.ExecutionContext
@@ -568,26 +568,26 @@ var file_log_trigger_proto_depIdxs = []int32{
 	0, // [0:8] is the sub-list for field type_name
 }
 
-func init() { file_log_trigger_proto_init() }
-func file_log_trigger_proto_init() {
-	if File_log_trigger_proto != nil {
+func init() { file_chain_capabilities_evm_monitoring_log_trigger_proto_init() }
+func file_chain_capabilities_evm_monitoring_log_trigger_proto_init() {
+	if File_chain_capabilities_evm_monitoring_log_trigger_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_log_trigger_proto_rawDesc), len(file_log_trigger_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_chain_capabilities_evm_monitoring_log_trigger_proto_rawDesc), len(file_chain_capabilities_evm_monitoring_log_trigger_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
-		GoTypes:           file_log_trigger_proto_goTypes,
-		DependencyIndexes: file_log_trigger_proto_depIdxs,
-		MessageInfos:      file_log_trigger_proto_msgTypes,
+		GoTypes:           file_chain_capabilities_evm_monitoring_log_trigger_proto_goTypes,
+		DependencyIndexes: file_chain_capabilities_evm_monitoring_log_trigger_proto_depIdxs,
+		MessageInfos:      file_chain_capabilities_evm_monitoring_log_trigger_proto_msgTypes,
 	}.Build()
-	File_log_trigger_proto = out.File
-	file_log_trigger_proto_goTypes = nil
-	file_log_trigger_proto_depIdxs = nil
+	File_chain_capabilities_evm_monitoring_log_trigger_proto = out.File
+	file_chain_capabilities_evm_monitoring_log_trigger_proto_goTypes = nil
+	file_chain_capabilities_evm_monitoring_log_trigger_proto_depIdxs = nil
 }
