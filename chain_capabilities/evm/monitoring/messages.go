@@ -138,13 +138,36 @@ func (m *MessageBuilder) BuildWriteReportTxFeeCalculationError(tc TelemetryConte
 }
 
 func (m *MessageBuilder) BuildLogTriggerInitiated(tc TelemetryContext, req *evmcap.FilterLogTriggerRequest) *LogTriggerInitiated {
-	return &LogTriggerInitiated{Req: req, ExecutionContext: m.BuildExecutionContext(tc)}
+	return &LogTriggerInitiated{Req: logTriggerRequestToMonitoring(req), ExecutionContext: m.BuildExecutionContext(tc)}
+}
+
+func logTriggerRequestToMonitoring(req *evmcap.FilterLogTriggerRequest) *FilterLogTriggerRequest {
+	if req == nil {
+		return nil
+	}
+
+	var topics []*TopicValues
+	for _, topic := range req.Topics {
+		if topic == nil {
+			topics = append(topics, nil)
+			continue
+		}
+
+		topics = append(topics, &TopicValues{
+			Values: topic.Values,
+		})
+	}
+	return &FilterLogTriggerRequest{
+		Addresses:  req.Addresses,
+		Topics:     topics,
+		Confidence: int64(req.Confidence),
+	}
 }
 
 func (m *MessageBuilder) BuildLogTriggerSuccess(tc TelemetryContext, triggerID string, req *evmcap.FilterLogTriggerRequest, logCount int, latestOffsetBlock int64) Message {
 	return &LogTriggerSuccess{
 		TriggerID:         triggerID,
-		Req:               req,
+		Req:               logTriggerRequestToMonitoring(req),
 		LogCount:          int32(logCount), // nolint:gosec // G115: integer overflow conversion int -> int32 (gosec)
 		LatestOffsetBlock: latestOffsetBlock,
 		ExecutionContext:  m.BuildExecutionContext(tc)}
