@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions"
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"google.golang.org/protobuf/proto"
 
@@ -30,6 +29,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows/events"
 
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 )
 

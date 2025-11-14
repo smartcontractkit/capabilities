@@ -686,7 +686,7 @@ func GetError(err error, isUserError bool) error {
 }
 
 func NewUserError(err error) error {
-	// placeholer for https://smartcontract-it.atlassian.net/browse/CAPPL-1067
+	// placeholder for https://smartcontract-it.atlassian.net/browse/CAPPL-1067
 	// should be: return capabilities.NewRemoteReportableUserError(err)
 	return capabilities.NewRemoteReportableError(err)
 }
@@ -696,8 +696,8 @@ func EnsureRemoteReportable(err error) error {
 		return nil
 	}
 
-	// placeholer for https://smartcontract-it.atlassian.net/browse/CAPPL-1067
-	// should uncoment below
+	// placeholder for https://smartcontract-it.atlassian.net/browse/CAPPL-1067
+	// should uncomment below
 	//var targetUser *capabilities.RemoteReportableUserError
 	//if errors.As(err, &targetUser) {
 	//	return err
