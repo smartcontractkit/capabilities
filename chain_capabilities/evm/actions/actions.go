@@ -137,8 +137,7 @@ func (e *EVM) CallContract(
 			IsExternal:      true,
 		})
 		if err != nil {
-			//TODO Ilija/Dmytro: this could be either user or internal, correct? if so can we distinguish easily here?
-			return nil, EnsureRemoteReportable(err)
+			return nil, err
 		}
 		return resp.Data, nil
 	}
@@ -148,7 +147,7 @@ func (e *EVM) CallContract(
 		request = ctypes.NewLockableToBlockRequest(requestID(meta), func(ctx context.Context, height *ctypes.ChainHeight) ([]byte, error) {
 			callBlockNumber, err := getCallBlockNumber(blockNumber, height)
 			if err != nil {
-				return nil, NewUserError(fmt.Errorf("error getting call block number: %w", err))
+				return nil, capabilities.NewRemoteReportableError(fmt.Errorf("error getting call block number: %w", err))
 			}
 
 			return callContract(ctx, callBlockNumber)
@@ -183,8 +182,7 @@ func (e *EVM) filterLogsToRequest(ctx context.Context, meta capabilities.Request
 			IsExternal:      true,
 		})
 		if err != nil {
-			//TODO Ilija/Dmytro: this could be either user or internal, correct? if so can we distinguish easily here?
-			return nil, err
+			return nil, GetError(err, e.isUserError(err))
 		}
 
 		logs, err := evm.ConvertLogsToProto(reply.Logs)
@@ -214,18 +212,18 @@ func (e *EVM) filterLogsToRequest(ctx context.Context, meta capabilities.Request
 
 	fromBlock, fromNeedsBlockHeightConsensus, _, err := normalizeBlockNumber(valuespb.NewBigIntFromInt(ethFilterQuery.FromBlock))
 	if err != nil {
-		return nil, fmt.Errorf("fromBlock is invalid: %w", err)
+		return nil, NewUserError(fmt.Errorf("fromBlock is invalid: %w", err))
 	}
 
 	toBlock, toNeedsBlockHeightConsensus, confidenceLevel, err := normalizeBlockNumber(valuespb.NewBigIntFromInt(ethFilterQuery.ToBlock))
 	if err != nil {
-		return nil, fmt.Errorf("toBlock is invalid: %w", err)
+		return nil, NewUserError(fmt.Errorf("toBlock is invalid: %w", err))
 	}
 
 	if !fromNeedsBlockHeightConsensus && !toNeedsBlockHeightConsensus {
 		err = e.validateBlockRange(ctx, ethFilterQuery.FromBlock, ethFilterQuery.ToBlock)
 		if err != nil {
-			return nil, err
+			return nil, NewUserError(err)
 		}
 		return ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
 			return filterLogs(ctx, ethFilterQuery, confidenceLevel)
@@ -245,7 +243,7 @@ func (e *EVM) filterLogsToRequest(ctx context.Context, meta capabilities.Request
 
 		err = e.validateBlockRange(ctx, callFromBlock, callToBlock)
 		if err != nil {
-			return nil, err
+			return nil, NewUserError(err)
 		}
 
 		ethFilterQuery.FromBlock = big.NewInt(callFromBlock.Int64())
@@ -335,8 +333,7 @@ func (e *EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, 
 			ConfidenceLevel: confidenceLevel,
 		})
 		if err != nil {
-			//TODO Ilija/Dmytro: this could be either user or internal, correct? if so can we distinguish easily here?
-			return nil, EnsureRemoteReportable(err)
+			return nil, err
 		}
 
 		pbBalance := valuespb.NewBigIntFromInt(reply.Balance)
@@ -384,8 +381,7 @@ func (e *EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata
 	request := ctypes.NewAggregatableRequest(requestID(meta), func(ctx context.Context) (*ctypes.AggregatableObservation, error) {
 		rawEstimate, err := e.EVMService.EstimateGas(ctx, msg)
 		if err != nil {
-			//TODO Ilija/Dmytro: this could be either user or internal, correct? if so can we distinguish easily here?
-			return nil, EnsureRemoteReportable(err)
+			return nil, err
 		}
 
 		estimate := &valuespb.Decimal{
@@ -432,8 +428,7 @@ func (e *EVM) GetTransactionByHash(ctx context.Context, meta capabilities.Reques
 			IsExternal: true,
 		})
 		if err != nil {
-			//TODO Ilija/Dmytro: this could be either user or internal, correct? if so can we distinguish easily here?
-			return nil, EnsureRemoteReportable(err)
+			return nil, err
 		}
 
 		protoTx, err := evm.ConvertTransactionToProto(tx)
@@ -477,8 +472,7 @@ func (e *EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.Reque
 			IsExternal: true,
 		})
 		if err != nil {
-			//TODO Ilija/Dmytro: this could be either user or internal, correct? if so can we distinguish easily here?
-			return nil, EnsureRemoteReportable(err)
+			return nil, err
 		}
 
 		protoReceipt, err := evm.ConvertReceiptToProto(receipt)
@@ -528,8 +522,7 @@ func (e *EVM) HeaderByNumber(
 			ConfidenceLevel: confidenceLevel,
 		})
 		if err != nil {
-			//TODO Ilija/Dmytro: this could be either user or internal, correct? if so can we distinguish easily here?
-			return nil, EnsureRemoteReportable(err)
+			return nil, err
 		}
 
 		if reply.Header == nil {
@@ -674,8 +667,8 @@ func readType[T any](ctx context.Context, reader ConsensusHandler, request ctype
 }
 
 func (e *EVM) isUserError(err error) bool {
-	return errors.Is(err, context.DeadlineExceeded) ||
-		errors.Is(err, multinode.ErrNodeError)
+	return !errors.Is(err, context.DeadlineExceeded) &&
+		!errors.Is(err, multinode.ErrNodeError)
 }
 
 func GetError(err error, isUserError bool) error {
