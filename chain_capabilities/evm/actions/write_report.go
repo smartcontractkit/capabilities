@@ -67,14 +67,15 @@ func (e *EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMeta
 	err := e.validateInputsAndReportMetadata(metadata, input)
 	if err != nil {
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport User Error due to invalid request", err.Error(), true))
-		return nil, capabilities.NewRemoteReportableError(err)
+		return nil, NewUserError(err)
 	}
 
 	report, billingMetadata, err := e.executeWriteReport(ctx, input, metadata, telemetryContext)
 	if err != nil {
+		isUserError := e.isUserErrorWriteReport(err)
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor,
-			e.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport while checking if the report exists or trying to publish on chain", err.Error(), isUserErrorWriteReport(err)))
-		return nil, capabilities.NewRemoteReportableError(err)
+			e.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport while checking if the report exists or trying to publish on chain", err.Error(), isUserError))
+		return nil, GetError(err, isUserError)
 	}
 
 	monitoring.LogAndEmitSuccess(ctx, "Successfully WriteReport execution", e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportSuccess(telemetryContext, input))
@@ -453,6 +454,6 @@ func (thr *TxHashRetriever) GetHash(ctx context.Context) (*evmtypes.Hash, error)
 	return thr.txHash, nil
 }
 
-func isUserErrorWriteReport(err error) bool {
+func (e *EVM) isUserErrorWriteReport(err error) bool {
 	return strings.HasPrefix(err.Error(), userError)
 }
