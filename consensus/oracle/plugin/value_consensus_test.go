@@ -20,7 +20,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	pbtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
-	"github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
@@ -924,26 +923,7 @@ func createReportingPlugin(t *testing.T, lggr logger.Logger, f int, n int,
 		MaxOutcomeLengthBytes:            defaultMaxLengthBytes,
 		MaxReportLengthBytes:             defaultMaxLengthBytes,
 		HistoricalOutcomeExpirySeqNrSpan: outcomeExpirySpan,
-	}, "evm", boundLimiter{limit: maxRequestOutcomeSize})
+	}, "evm", maxRequestOutcomeSize)
 	require.NoError(t, err)
 	return reportingPlugin, reqStore
-}
-
-type boundLimiter struct {
-	limit int
-}
-
-func (b boundLimiter) Close() error {
-	return nil
-}
-
-func (b boundLimiter) Limit(ctx context.Context) (config.Size, error) {
-	return config.Size(b.limit), nil
-}
-
-func (b boundLimiter) Check(ctx context.Context, n2 config.Size) error {
-	if int(n2) > b.limit {
-		return fmt.Errorf("request size %d exceeds limit of %d", n2, b.limit)
-	}
-	return nil
 }

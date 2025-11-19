@@ -1,8 +1,6 @@
 package batching_test
 
 import (
-	"context"
-	"fmt"
 	"testing"
 
 	"github.com/google/uuid"
@@ -10,7 +8,6 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
@@ -39,7 +36,7 @@ func TestOutcomeBatchCapacityCalculation(t *testing.T) {
 		PreviousOutcome: serialisedPrevOutcome,
 		SeqNr:           1000,
 	}, 1000,
-		100_000_000, "evm", testMetrics, boundLimiter{1000})
+		100_000_000, "evm", testMetrics, 1000)
 
 	require.NoError(t, err)
 
@@ -87,7 +84,7 @@ func TestOutcomeBatchCapacityExceeded(t *testing.T) {
 		PreviousOutcome: serialisedPrevOutcome,
 		SeqNr:           1000,
 	}, 1000,
-		100, "evm", testMetrics, boundLimiter{1000})
+		100, "evm", testMetrics, 1000)
 
 	require.NoError(t, err)
 
@@ -118,23 +115,4 @@ func TestOutcomeBatchCapacityExceeded(t *testing.T) {
 	}
 
 	t.Fatal("expected batch capacity to be exceeded")
-}
-
-type boundLimiter struct {
-	limit int
-}
-
-func (b boundLimiter) Close() error {
-	return nil
-}
-
-func (b boundLimiter) Limit(ctx context.Context) (config.Size, error) {
-	return config.Size(b.limit), nil
-}
-
-func (b boundLimiter) Check(ctx context.Context, n2 config.Size) error {
-	if int(n2) > b.limit {
-		return fmt.Errorf("request size %d exceeds limit of %d", n2, b.limit)
-	}
-	return nil
 }

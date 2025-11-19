@@ -11,11 +11,8 @@ import (
 	"github.com/smartcontractkit/capabilities/consensus/oracle"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
-	"github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
-	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
-
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
 )
 
@@ -39,14 +36,14 @@ type factory struct {
 	metrics           *metrics.Metrics
 
 	defaultKeyBundleIDForConsensusFailure string
-	maxRequestOutcomeSize                 limits.BoundLimiter[config.Size]
+	maxRequestOutcomeSize                 int
 
 	services.StateMachine
 }
 
 func NewReportingPluginFactory(lggr logger.Logger, metrics *metrics.Metrics, s *requests.Store[*oracle.ConsensusRequest],
 	setRequestTimeout SetRequestTimeout, defaultKeyBundleIDForConsensusFailure string,
-	maxRequestOutcomeSize limits.BoundLimiter[config.Size]) (*factory, error) {
+	maxRequestOutcomeSize int) (*factory, error) {
 	return &factory{
 		store:                                 s,
 		setRequestTimeout:                     setRequestTimeout,

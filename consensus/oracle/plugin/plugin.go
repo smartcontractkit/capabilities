@@ -9,10 +9,7 @@ import (
 
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
-	"github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
-
 	"github.com/smartcontractkit/libocr/offchainreporting2/types"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
 	"github.com/smartcontractkit/libocr/quorumhelper"
@@ -34,7 +31,7 @@ type reportingPlugin struct {
 
 	// defaultKeyBundleIDForConsensusFailure is the key bundle ID to be used when reporting consensus failures before consensus is reached on request metadata
 	defaultKeyBundleIDForConsensusFailure string
-	maxRequestOutcomeSize                 limits.BoundLimiter[config.Size]
+	maxRequestOutcomeSize                 int
 
 	lggr logger.Logger
 }
@@ -42,7 +39,7 @@ type reportingPlugin struct {
 // NewReportingPlugin creates a new reporting plugin for the OCR3 capability
 func NewReportingPlugin(lggr logger.Logger, metrics *metrics.Metrics, f int, n int, store *requests.Store[*oracle.ConsensusRequest],
 	configProto *ocrtypes.ReportingPluginConfig, defaultKeyBundleIDForConsensusFailure string,
-	maxRequestOutcomeSize limits.BoundLimiter[config.Size]) (*reportingPlugin, error) {
+	maxRequestOutcomeSize int) (*reportingPlugin, error) {
 	return &reportingPlugin{
 		store:                                 store,
 		f:                                     f,

@@ -40,6 +40,7 @@ import (
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2/types"
 )
 
+const defaultMaxRequestOutcomeSize = 10000
 const defaultKeyBundleIDForValueConsensus = "evm"
 
 const KeyBundleIDEvm = "evm"
@@ -51,6 +52,7 @@ type ConsensusCapabilityConfig struct {
 	RequestBatchSize             int
 	MaxRequestSizeBytes          int
 	KeyBundleIDForValueConsensus string
+	MaxRequestOutcomeSize        int
 }
 
 var _ server.ConsensusCapability = &consensusCapability{}
@@ -67,6 +69,7 @@ type consensusCapability struct {
 
 	maxRequestSizeBytes       limits.BoundLimiter[config.Size]
 	valueConsensusKeyBundleID string
+	maxRequestOutcomeSize     int
 
 	metrics *metrics.Metrics
 }
@@ -118,7 +121,7 @@ func (c *consensusCapability) Initialise(ctx context.Context, dependencies core.
 	}
 
 	reportingPlugin, err := plugin.NewReportingPluginFactory(c.lggr, c.metrics, c.reqStore, c.SetRequestTimeout,
-		defaultKeyBundleIDForValueConsensus, c.maxRequestSizeBytes)
+		defaultKeyBundleIDForValueConsensus, c.maxRequestOutcomeSize)
 	if err != nil {
 		return fmt.Errorf("error when creating reporting plugin factory: %w", err)
 	}
@@ -170,6 +173,12 @@ func (c *consensusCapability) setConfiguration(cfg string) error {
 		if err != nil {
 			return fmt.Errorf("failed to deserialize config into ConsensusCapabilityConfig: %w", err)
 		}
+	}
+
+	if capabilityConfig.MaxRequestOutcomeSize > 0 {
+		c.maxRequestOutcomeSize = capabilityConfig.MaxRequestOutcomeSize
+	} else {
+		c.maxRequestOutcomeSize = defaultMaxRequestOutcomeSize
 	}
 
 	c.lggr.Debugw("Parsed Consensus Capability config", "config", capabilityConfig)
