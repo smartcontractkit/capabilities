@@ -2,7 +2,7 @@ module github.com/smartcontractkit/capabilities/workflows
 
 go 1.25.3
 
-require github.com/smartcontractkit/chainlink-common v0.9.6-0.20251104231304-6cbcde243424
+require github.com/smartcontractkit/chainlink-common v0.9.6-0.20251124121530-666e7c593957
 
 require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
