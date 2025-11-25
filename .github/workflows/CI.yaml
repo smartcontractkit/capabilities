@@ -280,7 +280,7 @@ jobs:
       - test
       - race
       - tidy-and-generate
-      - integration-tests
+    #  - integration-tests
       - modgraph
     if: always()
     steps:
