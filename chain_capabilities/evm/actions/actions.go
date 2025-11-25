@@ -14,6 +14,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
@@ -62,12 +63,12 @@ func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, 
 	messageBuilder *monitoring.MessageBuilder, handler ConsensusHandler, chainSelector uint64, limitsFactory limits.Factory) (*EVM, error) {
 	keystoneForwarderAddress := common.HexToAddress(cfg.CREForwarderAddress)
 	if keystoneForwarderAddress == (common.Address{}) {
-		return &EVM{}, capabilities.NewRemoteReportableError(errors.New("keystone forwarder address is not set"))
+		return &EVM{}, caperrors.NewPublicSystemError(errors.New("keystone forwarder address is not set"), caperrors.Unknown)
 	}
 
 	kfc, err := contracts.NewCREForwarderClient(evmService, keystoneForwarderAddress, lggr)
 	if err != nil {
-		return &EVM{}, capabilities.NewRemoteReportableError(err)
+		return &EVM{}, caperrors.NewPublicSystemError(err, caperrors.Unknown)
 	}
 
 	e := &EVM{
@@ -147,7 +148,7 @@ func (e *EVM) CallContract(
 		request = ctypes.NewLockableToBlockRequest(requestID(meta), func(ctx context.Context, height *ctypes.ChainHeight) ([]byte, error) {
 			callBlockNumber, err := getCallBlockNumber(blockNumber, height)
 			if err != nil {
-				return nil, capabilities.NewRemoteReportableError(fmt.Errorf("error getting call block number: %w", err))
+				return nil, caperrors.NewPublicSystemError(fmt.Errorf("error getting call block number: %w", err), caperrors.Unknown)
 			}
 
 			return callContract(ctx, callBlockNumber)
@@ -675,13 +676,13 @@ func GetError(err error, isUserError bool) error {
 	if isUserError {
 		return NewUserError(err)
 	}
-	return capabilities.NewRemoteReportableError(err)
+	return caperrors.NewPublicSystemError(err, caperrors.Unknown)
 }
 
 func NewUserError(err error) error {
 	// placeholder for https://smartcontract-it.atlassian.net/browse/CAPPL-1067
 	// should be: return capabilities.NewRemoteReportableUserError(err)
-	return capabilities.NewRemoteReportableError(err)
+	return caperrors.NewPublicSystemError(err, caperrors.Unknown)
 }
 
 func EnsureRemoteReportable(err error) error {
@@ -695,11 +696,11 @@ func EnsureRemoteReportable(err error) error {
 	//if errors.As(err, &targetUser) {
 	//	return err
 	//}
-	var targetInternal *capabilities.RemoteReportableError
+	var targetInternal caperrors.Error
 	if errors.As(err, &targetInternal) {
 		return err
 	}
 
 	// Not already remote-reportable -> wrap it.
-	return capabilities.NewRemoteReportableError(err)
+	return caperrors.NewPublicSystemError(err, caperrors.Unknown)
 }
