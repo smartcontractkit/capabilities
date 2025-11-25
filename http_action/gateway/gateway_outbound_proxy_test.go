@@ -223,7 +223,7 @@ func TestGatewayOutboundProxy_SendRequest_Timeout(t *testing.T) {
 	elapsed := time.Since(start)
 	require.Error(t, err)
 	require.Nil(t, output)
-	assert.Contains(t, err.Error(), "internal error")
+	assert.Contains(t, err.Error(), "request timed out")
 	assert.GreaterOrEqual(t, elapsed.Milliseconds(), int64(100))
 }
 
@@ -252,19 +252,121 @@ func TestGatewayOutboundProxy_SendRequest_ExecutionError(t *testing.T) {
 	output, _, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
 	require.Error(t, err)
 	require.Nil(t, output)
-	assert.Equal(t, "internal error: gateway returned error", err.Error())
+	var userErr UserError
+	assert.False(t, errors.As(err, &userErr))
+	assert.Contains(t, err.Error(), "gateway returned error")
+}
+
+func TestGatewayOutboundProxy_SendRequest_UserErrors(t *testing.T) {
+	t.Run("external endpoint error returns UserError", func(t *testing.T) {
+		proxy, _, readyCh := setupSendRequestTest(t)
+
+		metadata := capabilities.RequestMetadata{
+			WorkflowID:          "wf1",
+			WorkflowExecutionID: "exec1",
+			WorkflowOwner:       "owner1",
+		}
+		input := &http.Request{
+			Url:           "http://example.com",
+			Method:        "GET",
+			Headers:       map[string]string{"X-Test": "1"},
+			Body:          []byte("test"),
+			Timeout:       durationpb.New(5000 * time.Millisecond),
+			CacheSettings: &http.CacheSettings{},
+		}
+
+		go func() {
+			id := <-readyCh
+			simulateGatewayMessageWithFlags(t, proxy, id, 500, "", "endpoint failed", true, true, false)
+		}()
+
+		_, _, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
+		require.Error(t, err)
+
+		var userErr UserError
+		assert.True(t, errors.As(err, &userErr))
+		assert.Equal(t, "endpoint failed", err.Error())
+	})
+
+	t.Run("validation error returns UserError", func(t *testing.T) {
+		proxy, _, readyCh := setupSendRequestTest(t)
+
+		metadata := capabilities.RequestMetadata{
+			WorkflowID:          "wf1",
+			WorkflowExecutionID: "exec1",
+			WorkflowOwner:       "owner1",
+		}
+		input := &http.Request{
+			Url:           "http://example.com",
+			Method:        "GET",
+			Headers:       map[string]string{"X-Test": "1"},
+			Body:          []byte("test"),
+			Timeout:       durationpb.New(5000 * time.Millisecond),
+			CacheSettings: &http.CacheSettings{},
+		}
+
+		go func() {
+			id := <-readyCh
+			// Simulate validation error
+			simulateGatewayMessageWithFlags(t, proxy, id, 400, "", "invalid request format", true, false, true)
+		}()
+
+		_, _, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
+		require.Error(t, err)
+
+		var userErr UserError
+		assert.True(t, errors.As(err, &userErr))
+		assert.Equal(t, "invalid request format", err.Error())
+	})
+
+	t.Run("response size validation error returns UserError", func(t *testing.T) {
+		proxy, _, readyCh := setupSendRequestTest(t)
+
+		metadata := capabilities.RequestMetadata{
+			WorkflowID:          "wf1",
+			WorkflowExecutionID: "exec1",
+			WorkflowOwner:       "owner1",
+		}
+		input := &http.Request{
+			Url:           "http://example.com",
+			Method:        "GET",
+			Headers:       map[string]string{"X-Test": "1"},
+			Body:          []byte("test"),
+			Timeout:       durationpb.New(5000 * time.Millisecond),
+			CacheSettings: &http.CacheSettings{},
+		}
+
+		oversizedBody := make([]byte, 10*1024*1024) // 10MB
+
+		go func() {
+			id := <-readyCh
+			simulateGatewayMessage(t, proxy, id, 200, string(oversizedBody), "", true)
+		}()
+
+		_, _, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
+		require.Error(t, err)
+
+		var userErr UserError
+		assert.True(t, errors.As(err, &userErr))
+	})
 }
 
 func simulateGatewayMessage(t *testing.T, proxy *gatewayOutboundProxy, id string, statusCode int, body string, errorMessage string, includeBody bool) {
+	simulateGatewayMessageWithFlags(t, proxy, id, statusCode, body, errorMessage, includeBody, false, false)
+}
+
+func simulateGatewayMessageWithFlags(t *testing.T, proxy *gatewayOutboundProxy, id string, statusCode int, body string, errorMessage string, includeBody bool, isExternalError bool, isValidationError bool) {
 	req := jsonrpc.Request[json.RawMessage]{
 		ID:      id,
 		Method:  gateway_common.MethodHTTPAction,
 		Version: "2.0",
 	}
 	resp := gateway_common.OutboundHTTPResponse{
-		StatusCode:   statusCode,
-		Body:         []byte(body),
-		ErrorMessage: errorMessage,
+		StatusCode:              statusCode,
+		Body:                    []byte(body),
+		ErrorMessage:            errorMessage,
+		IsExternalEndpointError: isExternalError,
+		IsValidationError:       isValidationError,
 	}
 	if includeBody {
 		payload, err := json.Marshal(resp)
