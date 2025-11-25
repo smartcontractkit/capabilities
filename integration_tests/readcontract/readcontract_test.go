@@ -34,6 +34,7 @@ type ReadContractConfig struct {
 }
 
 func Test_RemoteReadCapabilityWithoutConsensus(t *testing.T) {
+	t.Skip("no longer supported")
 	ctx := t.Context()
 	lggr := logger.TestLogger(t)
 
@@ -57,6 +58,7 @@ func Test_RemoteReadCapabilityWithoutConsensus(t *testing.T) {
 }
 
 func Test_RemoteReadCapabilityMisconfiguredContractError(t *testing.T) {
+	t.Skip("no longer supported")
 	beholderTester := tests.Beholder(t) //nolint:staticcheck
 
 	ctx := t.Context()
