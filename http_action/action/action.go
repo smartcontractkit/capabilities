@@ -108,7 +108,7 @@ func (s *service) Description() string {
 	return "HTTP Actions Service"
 }
 
-func (s *service) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *http.Request) (*capabilities.ResponseAndMetadata[*http.Response], error) {
+func (s *service) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *http.Request) (*capabilities.ResponseAndMetadata[*http.Response], caperrors.Error) {
 	s.lggr.Debugf("Received request with metadata: %v", metadata)
 	ctx = metadata.ContextWithCRE(ctx)
 	startTime := time.Now()
