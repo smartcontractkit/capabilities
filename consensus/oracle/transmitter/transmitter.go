@@ -48,8 +48,8 @@ func (c *ContractTransmitter) Transmit(ctx context.Context, configDigest types.C
 		return errors.New("infoRequestID is not a string")
 	}
 
-	if failureCodeEntry, exists := infoMap[plugin.InfoConsensusFailureCode]; exists {
-		failureCode, failureMessageStr, err := getFailureCodeAndMessageFromReportInfo(failureCodeEntry, infoMap)
+	if _, exists := infoMap[plugin.InfoConsensusFailureCode]; exists {
+		failureCode, failureMessageStr, err := getFailureCodeAndMessageFromReportInfo(infoMap)
 		if err != nil {
 			return fmt.Errorf("failed to get failure code and message from report info: %w", err)
 		}
@@ -94,7 +94,7 @@ func (c *ContractTransmitter) Transmit(ctx context.Context, configDigest types.C
 	return nil
 }
 
-func getFailureCodeAndMessageFromReportInfo(failureCodeEntry any, infoMap map[string]any) (oracletypes.ConsensusFailureCode, string, error) {
+func getFailureCodeAndMessageFromReportInfo(infoMap map[string]any) (oracletypes.ConsensusFailureCode, string, error) {
 	failureCodeEntry, failureCodeExists := infoMap[plugin.InfoConsensusFailureCode]
 	if !failureCodeExists {
 		return 0, "", errors.New("failure code not found in report info")

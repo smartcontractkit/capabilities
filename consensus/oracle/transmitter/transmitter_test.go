@@ -8,16 +8,17 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
-
-	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
+	
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+
 	"github.com/smartcontractkit/libocr/commontypes"
 	"github.com/smartcontractkit/libocr/offchainreporting2/types"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
 
 	"github.com/smartcontractkit/capabilities/consensus/oracle"
 	"github.com/smartcontractkit/capabilities/consensus/oracle/plugin"
+	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
 )
 
 func Test_Transmit(t *testing.T) {
