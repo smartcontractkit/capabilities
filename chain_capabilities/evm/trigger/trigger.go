@@ -13,6 +13,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/custmsg"
@@ -616,11 +617,11 @@ func (lts *LogTriggerService) makeEventByTopicFilter(topicIndex uint64, topics [
 func (lts *LogTriggerService) UnregisterLogTrigger(ctx context.Context, triggerID string, meta capabilities.RequestMetadata, _ *evmcappb.FilterLogTriggerRequest) error {
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	if triggerID == "" {
-		return capabilities.NewRemoteReportableError(fmt.Errorf("no triggerID provided"))
+		return caperrors.NewPublicSystemError(fmt.Errorf("no triggerID provided"), caperrors.Unknown)
 	}
 	trigger, found := lts.triggers.Read(triggerID)
 	if !found {
-		return capabilities.NewRemoteReportableError(fmt.Errorf("no active trigger found for triggerID: %s", triggerID))
+		return caperrors.NewPublicSystemError(fmt.Errorf("no active trigger found for triggerID: %s", triggerID), caperrors.Unknown)
 	}
 	lts.lggr.Debugf("UnregisterLogTrigger triggerID: %s", triggerID)
 	trigger.cancelFunc()
@@ -630,7 +631,7 @@ func (lts *LogTriggerService) UnregisterLogTrigger(ctx context.Context, triggerI
 	if err != nil {
 		summary := fmt.Sprintf("failed to unregister log-tracking: '%v' for triggerID: %s", err, triggerID)
 		monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(telemetryContext, triggerID, summary, err.Error()))
-		return capabilities.NewRemoteReportableError(fmt.Errorf("failed to unregister log-tracking: '%w' for triggerID: %s", err, triggerID))
+		return caperrors.NewPublicSystemError(fmt.Errorf("failed to unregister log-tracking: '%w' for triggerID: %s", err, triggerID), caperrors.Unknown)
 	}
 	return nil
 }
