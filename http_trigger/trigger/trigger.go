@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/http/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -151,8 +152,9 @@ func (s *service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 	err := s.connectorHandler.RegisterWorkflow(ctx, registrationInput, sendCh)
 	if err != nil {
 		s.metrics.IncrementRegisterFailureCount(ctx, s.lggr)
-		return nil, capabilities.NewRemoteReportableError(
-			fmt.Errorf("failed to register workflowID %s (Owner: %s, Name: %s, Tag: %s): %w", metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowName, metadata.WorkflowTag, err))
+		return nil, caperrors.NewPublicSystemError(
+			fmt.Errorf("failed to register workflowID %s (Owner: %s, Name: %s, Tag: %s): %w", metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowName, metadata.WorkflowTag, err),
+			caperrors.Internal)
 	}
 	s.metrics.IncrementRegisterCount(ctx, s.lggr)
 	return sendCh, nil
@@ -169,8 +171,9 @@ func (s *service) UnregisterTrigger(ctx context.Context, triggerID string, metad
 	if err != nil {
 		s.lggr.Errorf("Failed to unregister workflow %s: %v", metadata.WorkflowID, err)
 		s.metrics.IncrementDeregisterFailureCount(ctx, s.lggr)
-		return capabilities.NewRemoteReportableError(
-			fmt.Errorf("failed to unregister workflowID %s (Owner: %s, Name: %s, Tag: %s): %w", metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowName, metadata.WorkflowTag, err))
+		return caperrors.NewPublicSystemError(
+			fmt.Errorf("failed to unregister workflowID %s (Owner: %s, Name: %s, Tag: %s): %w", metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowName, metadata.WorkflowTag, err),
+			caperrors.Internal)
 	}
 	s.metrics.IncrementDeregisterCount(ctx, s.lggr)
 	return nil

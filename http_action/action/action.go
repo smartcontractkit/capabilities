@@ -12,6 +12,7 @@ import (
 	"github.com/smartcontractkit/capabilities/http_action/validate"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http/server"
 
@@ -120,18 +121,18 @@ func (s *service) SendRequest(ctx context.Context, metadata capabilities.Request
 	if err != nil {
 		s.metrics.IncrementInputValidationFailures(ctx, s.lggr)
 		s.metrics.RecordRequestLatency(ctx, time.Since(startTime).Milliseconds(), 0, s.cfg.ProxyMode, false, s.lggr)
-		return nil, capabilities.NewRemoteReportableError(
+		return nil, caperrors.NewPublicUserError(
 			fmt.Errorf("input validation failed for workflowID %s (Owner: %s, Name: %s, ExecutionID: %s): %w",
-				metadata.WorkflowName, metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowExecutionID, err))
+				metadata.WorkflowName, metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowExecutionID, err), caperrors.InvalidArgument)
 	}
 
 	response, externalEndpointLatency, err := s.client.SendRequest(ctx, metadata, validatedInput, startTime)
 	if err != nil {
 		s.lggr.Errorw("request failed", "error", err, "workflowID", metadata.WorkflowID, "workflowOwner", metadata.WorkflowOwner, "workflowExecutionID", metadata.WorkflowExecutionID)
 		s.metrics.RecordRequestLatency(ctx, time.Since(startTime).Milliseconds(), externalEndpointLatency.Milliseconds(), s.cfg.ProxyMode, false, s.lggr)
-		return nil, capabilities.NewRemoteReportableError(
+		return nil, caperrors.NewPublicSystemError(
 			fmt.Errorf("request failed for workflowID %s (Owner: %s, Name: %s, ExecutionID: %s): %w",
-				metadata.WorkflowName, metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowExecutionID, err))
+				metadata.WorkflowName, metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowExecutionID, err), caperrors.Unknown)
 	}
 
 	s.metrics.IncrementSuccessfulResponse(ctx, s.cfg.ProxyMode, response.StatusCode, s.lggr)
