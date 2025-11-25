@@ -1215,7 +1215,7 @@ func TestCleanUpStaleFilters(t *testing.T) {
 		staleFilterID := service.generateFilterID("stale-filter")
 		otherFilterID := "other-filter-defined-outside-log-trigger-service-wont-be-removed"
 		mockEVM.On("GetFiltersNames", mock.Anything).Return([]string{liveFilterID, staleFilterID, otherFilterID}, nil).Twice()
-		mockEVM.On("UnregisterLogTracking", mock.Anything, staleFilterID).Return(fmt.Errorf("some error")).Once()
+		mockEVM.On("UnregisterLogTracking", mock.Anything, staleFilterID).Return(fmt.Errorf("some error2")).Once()
 		mockEVM.On("UnregisterLogTracking", mock.Anything, staleFilterID).Return(nil).Once()
 
 		// mimicking there's a live trigger with the filter registered to log poller
