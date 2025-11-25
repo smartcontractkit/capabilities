@@ -102,7 +102,7 @@ func Test_SimpleConsensus_Error(t *testing.T) {
 	ok := errors.As(err, &capError)
 	require.True(t, ok, "error should be of type caperrors.Error")
 	require.Equal(t, caperrors.ConsensusFailed, capError.Code())
-	require.Equal(t, caperrors.Origin(caperrors.OriginUser), capError.Origin())
+	require.Equal(t, caperrors.OriginUser, capError.Origin())
 	require.Equal(t, caperrors.VisibilityPublic, capError.Visibility())
 }
 
@@ -270,7 +270,8 @@ func Test_SimpleInputsSizeValidation(t *testing.T) {
 	_, err = capability.Simple(ctx, metadata, input)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "PerWorkflow.Consensus.ObservationSizeLimit limited for workflow[wf-id]: cannot use 47b, limit is 2b")
-	capErr := err.(caperrors.Error)
+	var capErr caperrors.Error
+	errors.As(err, &capErr)
 	require.Equal(t, caperrors.InvalidArgument, capErr.Code())
 	require.Equal(t, caperrors.OriginUser, capErr.Origin())
 	require.Equal(t, caperrors.VisibilityPublic, capErr.Visibility())

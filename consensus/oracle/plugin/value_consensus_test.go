@@ -826,7 +826,6 @@ func runProtocolRoundTestsWithPlugins(ctx context.Context, t *testing.T,
 		infoMap := infos.AsMap()
 
 		if failureCodeVal, exists := infoMap[plugin.InfoConsensusFailureCode]; exists {
-
 			reqID := infos.Fields[plugin.InfoRequestID].GetStringValue()
 			expectedOutcome, ok := requestIDToOutcome[reqID]
 			require.True(t, ok, "got report for a request without a test outcome %s", reqID)

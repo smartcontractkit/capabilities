@@ -8,8 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/structpb"
-
-	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
+	
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
 
@@ -19,6 +18,7 @@ import (
 
 	"github.com/smartcontractkit/capabilities/consensus/oracle"
 	"github.com/smartcontractkit/capabilities/consensus/oracle/plugin"
+	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
 )
 
 func Test_Report_MedianTimeStamp(t *testing.T) {

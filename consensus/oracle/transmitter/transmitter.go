@@ -8,8 +8,6 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 
-	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/report"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/libocr/offchainreporting2/types"
@@ -17,6 +15,8 @@ import (
 
 	"github.com/smartcontractkit/capabilities/consensus/oracle"
 	"github.com/smartcontractkit/capabilities/consensus/oracle/plugin"
+	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/report"
 )
 
 var _ ocr3types.ContractTransmitter[[]byte] = (*ContractTransmitter)(nil)
