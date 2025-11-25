@@ -8,8 +8,9 @@ import (
 	"strings"
 	"time"
 
-	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"google.golang.org/protobuf/proto"
+
+	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"

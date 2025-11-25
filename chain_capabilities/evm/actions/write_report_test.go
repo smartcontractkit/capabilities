@@ -55,7 +55,7 @@ func TestWriteReport_InputValidation(t *testing.T) {
 			},
 		})
 		require.Error(t, err)
-		require.Equal(t, "received address is not 20 bytes long. Address in HEX: ", err.Error())
+		require.Equal(t, "[2]Unknown: received address is not 20 bytes long. Address in HEX: ", err.Error())
 	})
 	t.Run("Invalid report metadata", func(t *testing.T) {
 		_, _, service := createMocksAndCapability(t, lggr)
@@ -66,7 +66,7 @@ func TestWriteReport_InputValidation(t *testing.T) {
 			},
 		})
 		require.Error(t, err)
-		require.Equal(t, "metadata: raw too short, want ≥109, got 0", err.Error())
+		require.Equal(t, "[2]Unknown: metadata: raw too short, want ≥109, got 0", err.Error())
 	})
 
 	t.Run("Report signatures are not empty", func(t *testing.T) {
@@ -99,7 +99,7 @@ func TestWriteReport_InputValidation(t *testing.T) {
 			},
 		})
 		require.Error(t, err)
-		require.Contains(t, "unsupported report version: 20", err.Error())
+		require.Contains(t, "[2]Unknown: unsupported report version: 20", err.Error())
 	})
 	t.Run("Workflow names do not match", func(t *testing.T) {
 		_, _, service := createMocksAndCapability(t, lggr)
@@ -162,8 +162,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		ctx := t.Context()
 		testLogger := logger.Test(t)
 		_, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
-		expectedError := "some error"
-		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(contracts.TransmissionInfo{}, errors.New(expectedError))
+		errorMsg := "some error"
+		expectedError := "[2]Unknown: some error"
+		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(contracts.TransmissionInfo{}, errors.New(errorMsg))
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
 		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
@@ -181,8 +182,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		ctx := t.Context()
 		testLogger := logger.Test(t)
 		_, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
-		expectedError := "some error"
-		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(contracts.TransmissionInfo{}, errors.New(expectedError))
+		errorMsg := "some error"
+		expectedError := "[2]Unknown: some error"
+		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(contracts.TransmissionInfo{}, errors.New(errorMsg))
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
 		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{

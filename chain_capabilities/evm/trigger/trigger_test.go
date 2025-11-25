@@ -115,15 +115,15 @@ func TestLogTriggerService_Close_WaitsForPollingGoroutine(t *testing.T) {
 func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 	service := createTriggerObject(t, nil, NewLogTriggerStore())
 
-	t.Run("missing triggerID", func(t *testing.T) {
+	t.Run("[2]Unknown: no triggerID provided", func(t *testing.T) {
 		_, err := service.RegisterLogTrigger(t.Context(), "", capabilities.RequestMetadata{WorkflowID: "wf-id"}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
 		})
 		require.Error(t, err)
-		require.Equal(t, err.Error(), "no triggerID provided")
+		require.Equal(t, err.Error(), "[2]Unknown: no triggerID provided")
 	})
 
-	t.Run("already registered triggerID", func(t *testing.T) {
+	t.Run("[2]Unknown: triggerID \\\"trigger-1\\\" is already registered", func(t *testing.T) {
 		store := NewLogTriggerStore()
 		service := createTriggerObject(t, nil, store)
 		// we simulate a RegisterLogTrigger() by tampering the store
@@ -132,7 +132,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 			Addresses: addresses,
 		})
 		require.Error(t, err)
-		require.Equal(t, "triggerID \"trigger-1\" is already registered", err.Error())
+		require.Equal(t, "[2]Unknown: triggerID \"trigger-1\" is already registered", err.Error())
 	})
 
 	t.Run("missing addresses", func(t *testing.T) {
@@ -140,7 +140,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 			Addresses: [][]byte{},
 		})
 		require.Error(t, err)
-		require.Equal(t, err.Error(), "no valid addresses provided (at least one address is required)")
+		require.Equal(t, err.Error(), "[2]Unknown: no valid addresses provided (at least one address is required)")
 	})
 
 	t.Run("too many topics", func(t *testing.T) {
@@ -155,7 +155,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 			},
 		})
 		require.Error(t, err)
-		require.Equal(t, err.Error(), "there can be at most 4 topics provided, got 5 instead")
+		require.Equal(t, err.Error(), "[2]Unknown: there can be at most 4 topics provided, got 5 instead")
 	})
 
 	t.Run("missing eventSig", func(t *testing.T) {
@@ -164,14 +164,14 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 			Addresses: addresses,
 		})
 		require.Error(t, err)
-		require.Equal(t, err.Error(), "no valid event sig provided (at least one event sig is required in topics)")
+		require.Equal(t, err.Error(), "[2]Unknown: no valid event sig provided (at least one event sig is required in topics)")
 
 		_, err = service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{WorkflowID: "wf-id"}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
 			Topics:    []*evmcappb.TopicValues{},
 		})
 		require.Error(t, err)
-		require.Equal(t, err.Error(), "no valid event sig provided (at least one event sig is required in topics)")
+		require.Equal(t, err.Error(), "[2]Unknown: no valid event sig provided (at least one event sig is required in topics)")
 	})
 
 	t.Run("fail to get latest head", func(t *testing.T) {
@@ -184,7 +184,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 			Topics:    topicsWithEventSig0,
 		})
 		require.Error(t, err)
-		require.Equal(t, err.Error(), "failed to register latest and finalized log pollers block: 'mocked failure error' for triggerID: trigger-1")
+		require.Equal(t, err.Error(), "[2]Unknown: failed to register latest and finalized log pollers block: 'mocked failure error' for triggerID: trigger-1")
 	})
 
 	t.Run("fail to register log-tracking", func(t *testing.T) {
@@ -199,7 +199,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 		})
 		require.Error(t, err)
 		require.Equal(t,
-			"failed to register log-tracking: 'mocking error, making register failing on purpose' for triggerID: trigger-1-logtracking, addresses: [[173 173 190 239 202 254 186 190 18 52 86 120 154 188 222 240 17 34 51 68]], eventSig: [[221 242 82 173 27 226 200 155 105 194 176 104 252 55 141 170 149 43 167 241 99 196 161 22 40 245 90 77 245 35 179 239]], topic2: [], topic3: [], topic4: []",
+			"[2]Unknown: failed to register log-tracking: 'mocking error, making register failing on purpose' for triggerID: trigger-1-logtracking, addresses: [[173 173 190 239 202 254 186 190 18 52 86 120 154 188 222 240 17 34 51 68]], eventSig: [[221 242 82 173 27 226 200 155 105 194 176 104 252 55 141 170 149 43 167 241 99 196 161 22 40 245 90 77 245 35 179 239]], topic2: [], topic3: [], topic4: []",
 			err.Error())
 	})
 }
@@ -215,7 +215,7 @@ func TestUnregisterLogTrigger_InputValidation(t *testing.T) {
 	t.Run("missing triggerID", func(t *testing.T) {
 		err := service.UnregisterLogTrigger(t.Context(), "", emptyMetadata, emptyRequest)
 		require.Error(t, err)
-		require.Equal(t, err.Error(), "no triggerID provided")
+		require.Equal(t, err.Error(), "[2]Unknown: no triggerID provided")
 	})
 
 	t.Run("no active trigger found", func(t *testing.T) {
@@ -224,7 +224,7 @@ func TestUnregisterLogTrigger_InputValidation(t *testing.T) {
 		}
 		err := service.UnregisterLogTrigger(t.Context(), triggerID, emptyMetadata, emptyRequest)
 		require.Error(t, err)
-		require.Equal(t, err.Error(), "no active trigger found for triggerID: trigger-1")
+		require.Equal(t, err.Error(), "[2]Unknown: no active trigger found for triggerID: trigger-1")
 	})
 
 	t.Run("fail to unregister log-tracking", func(t *testing.T) {
@@ -239,7 +239,7 @@ func TestUnregisterLogTrigger_InputValidation(t *testing.T) {
 		})
 		err := service.UnregisterLogTrigger(t.Context(), breakingTriggerID, emptyMetadata, emptyRequest)
 		require.Error(t, err)
-		require.Equal(t, err.Error(), "failed to unregister log-tracking: 'mocking error, making unregister failing on purpose' for triggerID: breaking-logTriggerUnregister")
+		require.Equal(t, err.Error(), "[2]Unknown: failed to unregister log-tracking: 'mocking error, making unregister failing on purpose' for triggerID: breaking-logTriggerUnregister")
 	})
 }
 
