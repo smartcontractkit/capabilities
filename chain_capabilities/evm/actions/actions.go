@@ -679,14 +679,12 @@ func (e *EVM) isUserError(err error) bool {
 
 func GetError(err error, isUserError bool) caperrors.Error {
 	if isUserError {
-		return caperrors.NewPublicUserError(err, caperrors.Unknown)
+		return NewUserError(err)
 	}
 	return caperrors.NewPublicSystemError(err, caperrors.Unknown)
 }
 
 func NewUserError(err error) caperrors.Error {
-	// placeholder for https://smartcontract-it.atlassian.net/browse/CAPPL-1067
-	// should be: return capabilities.NewRemoteReportableUserError(err)
 	return caperrors.NewPublicUserError(err, caperrors.Unknown)
 }
 
