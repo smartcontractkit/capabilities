@@ -162,9 +162,9 @@ jobs:
       - name: Race Test ${{ matrix.projects }}
         run: ./nx run ${{ matrix.projects }}:race
 
-#  temp disable integration tests workflow until we can fix CI resource issues
-#  integration-tests:
-#   uses: ./.github/workflows/integration-tests.yml
+
+  integration-tests:
+    uses: ./.github/workflows/integration-tests.yml
 
   tidy-and-generate:
     needs: affected
@@ -280,7 +280,7 @@ jobs:
       - test
       - race
       - tidy-and-generate
-    #  - integration-tests
+      - integration-tests
       - modgraph
     if: always()
     steps:
