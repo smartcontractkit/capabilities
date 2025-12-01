@@ -35,6 +35,8 @@ flowchart LR
 	click capabilities/p2psigner href "https://github.com/smartcontractkit/capabilities"
 	capabilities/readcontract --> capabilities/libs
 	click capabilities/readcontract href "https://github.com/smartcontractkit/capabilities"
+	capabilities/ring --> capabilities/libs
+	click capabilities/ring href "https://github.com/smartcontractkit/capabilities"
 	capabilities/workflowevent --> capabilities/libs
 	click capabilities/workflowevent href "https://github.com/smartcontractkit/capabilities"
 	capabilities/workflows --> chainlink-common
@@ -188,6 +190,7 @@ flowchart LR
 		 capabilities/mock
 		 capabilities/p2psigner
 		 capabilities/readcontract
+		 capabilities/ring
 		 capabilities/workflowevent
 		 capabilities/workflows
 		 capabilities/workflows/readbalancesgen
