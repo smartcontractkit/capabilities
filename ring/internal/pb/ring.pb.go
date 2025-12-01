@@ -394,6 +394,43 @@ func (x *Outcome) GetRoutes() map[string]*RouteResponse {
 	return nil
 }
 
+// StatusRequest is an empty request for Status RPC
+type StatusRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StatusRequest) Reset() {
+	*x = StatusRequest{}
+	mi := &file_ring_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StatusRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StatusRequest) ProtoMessage() {}
+
+func (x *StatusRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_ring_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StatusRequest.ProtoReflect.Descriptor instead.
+func (*StatusRequest) Descriptor() ([]byte, []int) {
+	return file_ring_proto_rawDescGZIP(), []int{6}
+}
+
 var File_ring_proto protoreflect.FileDescriptor
 
 const file_ring_proto_rawDesc = "" +
@@ -433,7 +470,10 @@ const file_ring_proto_rawDesc = "" +
 	"\x06routes\x18\x02 \x03(\v2\x19.ring.Outcome.RoutesEntryR\x06routes\x1aN\n" +
 	"\vRoutesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12)\n" +
-	"\x05value\x18\x02 \x01(\v2\x13.ring.RouteResponseR\x05value:\x028\x01B;Z9github.com/smartcontractkit/capabilities/ring/internal/pbb\x06proto3"
+	"\x05value\x18\x02 \x01(\v2\x13.ring.RouteResponseR\x05value:\x028\x01\"\x0f\n" +
+	"\rStatusRequest25\n" +
+	"\x06Scaler\x12+\n" +
+	"\x06Status\x12\x13.ring.StatusRequest\x1a\f.ring.StatusB;Z9github.com/smartcontractkit/capabilities/ring/internal/pbb\x06proto3"
 
 var (
 	file_ring_proto_rawDescOnce sync.Once
@@ -447,7 +487,7 @@ func file_ring_proto_rawDescGZIP() []byte {
 	return file_ring_proto_rawDescData
 }
 
-var file_ring_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_ring_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_ring_proto_goTypes = []any{
 	(*Status)(nil),                // 0: ring.Status
 	(*Observation)(nil),           // 1: ring.Observation
@@ -455,25 +495,28 @@ var file_ring_proto_goTypes = []any{
 	(*Transition)(nil),            // 3: ring.Transition
 	(*RoutingState)(nil),          // 4: ring.RoutingState
 	(*Outcome)(nil),               // 5: ring.Outcome
-	nil,                           // 6: ring.Status.StatusEntry
-	nil,                           // 7: ring.Outcome.RoutesEntry
-	(*timestamppb.Timestamp)(nil), // 8: google.protobuf.Timestamp
+	(*StatusRequest)(nil),         // 6: ring.StatusRequest
+	nil,                           // 7: ring.Status.StatusEntry
+	nil,                           // 8: ring.Outcome.RoutesEntry
+	(*timestamppb.Timestamp)(nil), // 9: google.protobuf.Timestamp
 }
 var file_ring_proto_depIdxs = []int32{
-	6, // 0: ring.Status.status:type_name -> ring.Status.StatusEntry
-	0, // 1: ring.Observation.status:type_name -> ring.Status
-	8, // 2: ring.Observation.now:type_name -> google.protobuf.Timestamp
-	8, // 3: ring.RouteResponse.expires_at:type_name -> google.protobuf.Timestamp
-	8, // 4: ring.Transition.changes_safe_after:type_name -> google.protobuf.Timestamp
-	3, // 5: ring.RoutingState.transition:type_name -> ring.Transition
-	4, // 6: ring.Outcome.state:type_name -> ring.RoutingState
-	7, // 7: ring.Outcome.routes:type_name -> ring.Outcome.RoutesEntry
-	2, // 8: ring.Outcome.RoutesEntry.value:type_name -> ring.RouteResponse
-	9, // [9:9] is the sub-list for method output_type
-	9, // [9:9] is the sub-list for method input_type
-	9, // [9:9] is the sub-list for extension type_name
-	9, // [9:9] is the sub-list for extension extendee
-	0, // [0:9] is the sub-list for field type_name
+	7,  // 0: ring.Status.status:type_name -> ring.Status.StatusEntry
+	0,  // 1: ring.Observation.status:type_name -> ring.Status
+	9,  // 2: ring.Observation.now:type_name -> google.protobuf.Timestamp
+	9,  // 3: ring.RouteResponse.expires_at:type_name -> google.protobuf.Timestamp
+	9,  // 4: ring.Transition.changes_safe_after:type_name -> google.protobuf.Timestamp
+	3,  // 5: ring.RoutingState.transition:type_name -> ring.Transition
+	4,  // 6: ring.Outcome.state:type_name -> ring.RoutingState
+	8,  // 7: ring.Outcome.routes:type_name -> ring.Outcome.RoutesEntry
+	2,  // 8: ring.Outcome.RoutesEntry.value:type_name -> ring.RouteResponse
+	6,  // 9: ring.Scaler.Status:input_type -> ring.StatusRequest
+	0,  // 10: ring.Scaler.Status:output_type -> ring.Status
+	10, // [10:11] is the sub-list for method output_type
+	9,  // [9:10] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_ring_proto_init() }
@@ -491,9 +534,9 @@ func file_ring_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_ring_proto_rawDesc), len(file_ring_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   9,
 			NumExtensions: 0,
-			NumServices:   0,
+			NumServices:   1,
 		},
 		GoTypes:           file_ring_proto_goTypes,
 		DependencyIndexes: file_ring_proto_depIdxs,

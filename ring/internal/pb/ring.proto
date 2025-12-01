@@ -47,3 +47,12 @@ message Outcome {
   map<string, RouteResponse> routes = 2; // request_hash -> route
 }
 
+// Scaler service provides scaling status information
+service Scaler {
+  rpc Status(StatusRequest) returns (ring.Status);
+}
+
+// StatusRequest is an empty request for Status RPC
+message StatusRequest {
+}
+
