@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package ring;
+
+option go_package = "github.com/smartcontractkit/capabilities/ring/internal/pb";
+
+import "google/protobuf/timestamp.proto";
+
+// Status represents the health status of rings and desired ring count
+message Status {
+  uint32 want_rings = 1;
+  map<uint32, bool> status = 2; // ring_id -> is_healthy
+}
+
+// Observation is what each node observes during the observation phase
+message Observation {
+  Status status = 1;
+  google.protobuf.Timestamp now = 2;
+  repeated string hashes = 3; // request hashes to route
+}
+
+// RouteResponse contains the routing decision for a request
+message RouteResponse {
+  uint32 ring = 1;
+  google.protobuf.Timestamp expires_at = 2;
+}
+
+// Transition represents a state change in the routing table
+message Transition {
+  uint32 want_rings = 1;
+  uint32 last_stable_count = 2;
+  google.protobuf.Timestamp changes_safe_after = 3;
+}
+
+// RoutingState represents the current state of the routing system
+message RoutingState {
+  uint64 id = 1;
+  oneof state {
+    uint32 routable_rings = 2;
+    Transition transition = 3;
+  }
+}
+
+// Outcome is the consensus result
+message Outcome {
+  RoutingState state = 1;
+  map<string, RouteResponse> routes = 2; // request_hash -> route
+}
+
