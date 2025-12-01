@@ -136,6 +136,9 @@ func (r *ringPlugin) Outcome(_ context.Context, outctx ocr3types.OutcomeContext,
 
 	for hash := range ds.hashes {
 		ringId := rings.Route(table, []byte(hash))
+		if ringId < 0 || ringId > 0xffffffff {
+			return nil, fmt.Errorf("invalid ring ID %d", ringId)
+		}
 		currentRoutes[hash] = &pb.RouteResponse{
 			Ring:      uint32(ringId),
 			ExpiresAt: timestamppb.New(ds.now().Add(r.requestTimeout)),
