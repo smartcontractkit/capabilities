@@ -60,7 +60,7 @@ type EVM struct {
 }
 
 func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, beholderProcessor beholder.ProtoProcessor,
-	messageBuilder *monitoring.MessageBuilder, handler ConsensusHandler, chainSelector uint64, limitsFactory limits.Factory) (*EVM, error) {
+	messageBuilder *monitoring.MessageBuilder, handler ConsensusHandler, chainSelector uint64, limitsFactory limits.Factory) (*EVM, caperrors.Error) {
 	keystoneForwarderAddress := common.HexToAddress(cfg.CREForwarderAddress)
 	if keystoneForwarderAddress == (common.Address{}) {
 		return &EVM{}, caperrors.NewPublicSystemError(errors.New("keystone forwarder address is not set"), caperrors.Unknown)
@@ -82,7 +82,12 @@ func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, 
 		ConsensusHandler:         handler,
 		chainSelector:            chainSelector,
 	}
-	return e, e.initLimiters(limitsFactory)
+	err = e.initLimiters(limitsFactory)
+	if err != nil {
+		return e, caperrors.NewPublicSystemError(err, caperrors.Internal)
+	}
+
+	return e, nil
 }
 
 func (e *EVM) initLimiters(limitsFactory limits.Factory) (err error) {
@@ -110,7 +115,7 @@ func (e *EVM) CallContract(
 	ctx context.Context,
 	meta capabilities.RequestMetadata,
 	input *evm.CallContractRequest,
-) (*capabilities.ResponseAndMetadata[*evm.CallContractReply], error) {
+) (*capabilities.ResponseAndMetadata[*evm.CallContractReply], caperrors.Error) {
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 
 	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.CallContract)); err != nil {
@@ -267,7 +272,7 @@ func (e *EVM) validateBlockRange(ctx context.Context, fromBlock, toBlock *big.In
 	return e.logQueryBlockLimit.Check(ctx, rangeSize.Uint64())
 }
 
-func (e *EVM) FilterLogs(ctx context.Context, meta capabilities.RequestMetadata, req *evm.FilterLogsRequest) (*capabilities.ResponseAndMetadata[*evm.FilterLogsReply], error) {
+func (e *EVM) FilterLogs(ctx context.Context, meta capabilities.RequestMetadata, req *evm.FilterLogsRequest) (*capabilities.ResponseAndMetadata[*evm.FilterLogsReply], caperrors.Error) {
 	ctx = meta.ContextWithCRE(ctx)
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 
@@ -306,7 +311,7 @@ func (e *EVM) FilterLogs(ctx context.Context, meta capabilities.RequestMetadata,
 	return &responseAndMetadata, nil
 }
 
-func (e *EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, req *evm.BalanceAtRequest) (*capabilities.ResponseAndMetadata[*evm.BalanceAtReply], error) {
+func (e *EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, req *evm.BalanceAtRequest) (*capabilities.ResponseAndMetadata[*evm.BalanceAtReply], caperrors.Error) {
 	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.BalanceAt)); err != nil {
 		return nil, NewUserError(err)
 	}
@@ -367,7 +372,7 @@ func (e *EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, 
 	return &responseAndMetadata, nil
 }
 
-func (e *EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata, req *evm.EstimateGasRequest) (*capabilities.ResponseAndMetadata[*evm.EstimateGasReply], error) {
+func (e *EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata, req *evm.EstimateGasRequest) (*capabilities.ResponseAndMetadata[*evm.EstimateGasReply], caperrors.Error) {
 	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.EstimateGas)); err != nil {
 		return nil, NewUserError(err)
 	}
@@ -413,7 +418,7 @@ func (e *EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata
 	return &responseAndMetadata, nil
 }
 
-func (e *EVM) GetTransactionByHash(ctx context.Context, meta capabilities.RequestMetadata, req *evm.GetTransactionByHashRequest) (*capabilities.ResponseAndMetadata[*evm.GetTransactionByHashReply], error) {
+func (e *EVM) GetTransactionByHash(ctx context.Context, meta capabilities.RequestMetadata, req *evm.GetTransactionByHashRequest) (*capabilities.ResponseAndMetadata[*evm.GetTransactionByHashReply], caperrors.Error) {
 	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.GetTransactionByHash)); err != nil {
 		return nil, NewUserError(err)
 	}
@@ -457,7 +462,7 @@ func (e *EVM) GetTransactionByHash(ctx context.Context, meta capabilities.Reques
 	return &responseAndMetadata, nil
 }
 
-func (e *EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.RequestMetadata, req *evm.GetTransactionReceiptRequest) (*capabilities.ResponseAndMetadata[*evm.GetTransactionReceiptReply], error) {
+func (e *EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.RequestMetadata, req *evm.GetTransactionReceiptRequest) (*capabilities.ResponseAndMetadata[*evm.GetTransactionReceiptReply], caperrors.Error) {
 	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.GetTransactionReceipt)); err != nil {
 		return nil, NewUserError(err)
 	}
@@ -505,7 +510,7 @@ func (e *EVM) HeaderByNumber(
 	ctx context.Context,
 	meta capabilities.RequestMetadata,
 	req *evm.HeaderByNumberRequest,
-) (*capabilities.ResponseAndMetadata[*evm.HeaderByNumberReply], error) {
+) (*capabilities.ResponseAndMetadata[*evm.HeaderByNumberReply], caperrors.Error) {
 	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.HeaderByNumber)); err != nil {
 		return nil, NewUserError(err)
 	}
@@ -672,20 +677,18 @@ func (e *EVM) isUserError(err error) bool {
 		!errors.Is(err, multinode.ErrNodeError)
 }
 
-func GetError(err error, isUserError bool) error {
+func GetError(err error, isUserError bool) caperrors.Error {
 	if isUserError {
 		return NewUserError(err)
 	}
 	return caperrors.NewPublicSystemError(err, caperrors.Unknown)
 }
 
-func NewUserError(err error) error {
-	// placeholder for https://smartcontract-it.atlassian.net/browse/CAPPL-1067
-	// should be: return capabilities.NewRemoteReportableUserError(err)
-	return caperrors.NewPublicSystemError(err, caperrors.Unknown)
+func NewUserError(err error) caperrors.Error {
+	return caperrors.NewPublicUserError(err, caperrors.Unknown)
 }
 
-func EnsureRemoteReportable(err error) error {
+func EnsureRemoteReportable(err error) caperrors.Error {
 	if err == nil {
 		return nil
 	}
@@ -698,7 +701,7 @@ func EnsureRemoteReportable(err error) error {
 	//}
 	var targetInternal caperrors.Error
 	if errors.As(err, &targetInternal) {
-		return err
+		return targetInternal
 	}
 
 	// Not already remote-reportable -> wrap it.

@@ -3,6 +3,7 @@ package action
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -12,9 +13,11 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/smartcontractkit/capabilities/http_action/common"
+	"github.com/smartcontractkit/capabilities/http_action/gateway"
 	"github.com/smartcontractkit/capabilities/http_action/validate"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
@@ -315,5 +318,51 @@ func TestInitialise_NilConfig(t *testing.T) {
 		})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "invalid proxy mode")
+	})
+}
+
+func TestSendRequest_ErrorHandling(t *testing.T) {
+	t.Run("client returns UserError and service returns PublicUserError", func(t *testing.T) {
+		setup := setupServiceTest(t)
+
+		input := &http.Request{
+			Url:           "https://example.com",
+			Method:        "GET",
+			Timeout:       durationpb.New(1000 * time.Millisecond),
+			CacheSettings: &http.CacheSettings{},
+		}
+
+		userError := gateway.NewUserError("external endpoint failed")
+		setup.mockClient.Err = userError
+
+		_, err := setup.service.SendRequest(t.Context(), setup.metadata, input)
+		require.Error(t, err)
+
+		var capErr caperrors.Error
+		assert.True(t, errors.As(err, &capErr))
+		assert.Equal(t, caperrors.InvalidArgument, capErr.Code())
+		assert.Equal(t, caperrors.VisibilityPublic, capErr.Visibility())
+	})
+
+	t.Run("client returns system error and service returns PublicSystemError", func(t *testing.T) {
+		setup := setupServiceTest(t)
+
+		input := &http.Request{
+			Url:           "https://example.com",
+			Method:        "GET",
+			Timeout:       durationpb.New(1000 * time.Millisecond),
+			CacheSettings: &http.CacheSettings{},
+		}
+
+		systemError := errors.New("internal system error")
+		setup.mockClient.Err = systemError
+
+		_, err := setup.service.SendRequest(t.Context(), setup.metadata, input)
+		require.Error(t, err)
+
+		var capErr caperrors.Error
+		assert.True(t, errors.As(err, &capErr))
+		assert.Equal(t, caperrors.Internal, capErr.Code())
+		assert.Equal(t, caperrors.VisibilityPublic, capErr.Visibility())
 	})
 }
