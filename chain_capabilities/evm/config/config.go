@@ -8,8 +8,8 @@ type Config struct {
 	LogTriggerPollInterval          time.Duration `json:"logTriggerPollInterval"`
 	LogTriggerSendChannelBufferSize uint64        `json:"logTriggerSendChannelBufferSize"`
 	LogTriggerLimitQueryLogSize     uint64        `json:"logTriggerLimitQueryLogSize"`
-	BlockDepth                      int64         `json:"blockDepth"`
 	CREForwarderAddress             string        `json:"creForwarderAddress"`
+	ForwarderLookbackBlocks         int64         `json:"forwarderLookbackBlocks"` // defines how many blocks back to search for the ReportProcessed event (default 100).
 	// The minimum amount of gas that the receiver contract must get to process the forwarder report. This is the default value used when the user doesn't specify a gas limit when invoking WriteReport.
 	ReceiverGasMinimum            uint64        `json:"receiverGasMinimum"`
 	NodeAddress                   string        `json:"nodeAddress"`

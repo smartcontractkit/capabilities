@@ -48,6 +48,7 @@ type EVM struct {
 	keystoneForwarderAddress common.Address
 	forwarderClient          contracts.CREForwarderClient
 	ReceiverGasMinimum       uint64
+	LookbackBlocks           uint64
 
 	lggr              logger.SugaredLogger
 	beholderProcessor beholder.ProtoProcessor
@@ -66,7 +67,7 @@ func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, 
 		return &EVM{}, caperrors.NewPublicSystemError(errors.New("keystone forwarder address is not set"), caperrors.Unknown)
 	}
 
-	kfc, err := contracts.NewCREForwarderClient(evmService, keystoneForwarderAddress, lggr)
+	kfc, err := contracts.NewCREForwarderClient(evmService, keystoneForwarderAddress, cfg.ForwarderLookbackBlocks, lggr)
 	if err != nil {
 		return &EVM{}, caperrors.NewPublicSystemError(err, caperrors.Unknown)
 	}

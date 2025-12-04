@@ -40,6 +40,7 @@ type TransmissionInfo struct {
 const (
 	ForwarderContractLogicGasCost = 100_000
 	LatestBlock                   = -2 // PLEX-1524 - Use constant defined by EVM types once it's ready.
+	DefaultLookbackBlocks         = 100
 )
 
 func NewCREForwarderCodec() (CREForwarderCodec, error) {
@@ -52,16 +53,21 @@ func NewCREForwarderCodec() (CREForwarderCodec, error) {
 	}, nil
 }
 
-func NewCREForwarderClient(EVMService types.EVMService, forwarderAddress common.Address, logger logger.Logger) (CREForwarderClient, error) {
+func NewCREForwarderClient(EVMService types.EVMService, forwarderAddress common.Address, forwarderLookbackBlocks int64, logger logger.Logger) (CREForwarderClient, error) {
 	codec, err := NewCREForwarderCodec()
 	if err != nil {
 		return nil, err
 	}
+	if forwarderLookbackBlocks <= DefaultLookbackBlocks {
+		logger.Debugf("forwarderLookbackBlocks is set to %d, which is less than or equal to the default of %d. Using default value.", forwarderLookbackBlocks, DefaultLookbackBlocks)
+		forwarderLookbackBlocks = DefaultLookbackBlocks
+	}
 	return &creForwarderClient{
-		evmService:       EVMService,
-		forwarderCodec:   codec,
-		forwarderAddress: forwarderAddress,
-		logger:           logger,
+		evmService:              EVMService,
+		forwarderCodec:          codec,
+		forwarderAddress:        forwarderAddress,
+		forwarderLookbackBlocks: forwarderLookbackBlocks,
+		logger:                  logger,
 	}, nil
 }
 
@@ -73,7 +79,7 @@ func (cfclient *creForwarderClient) GetReportProcessedEvents(ctx context.Context
 	if latest.Header == nil {
 		return nil, fmt.Errorf("latest block header is nil")
 	}
-	sub := big.NewInt(int64(100))
+	sub := big.NewInt(cfclient.forwarderLookbackBlocks)
 	fromBlock := new(big.Int).Sub(latest.Header.Number, sub)
 	if fromBlock.Sign() == -1 {
 		fromBlock = big.NewInt(0)
@@ -124,10 +130,11 @@ func (cfc *creForwarderCodecImpl) GetReportProcessedTopicHash() evmtypes.Hash {
 }
 
 type creForwarderClient struct {
-	evmService       types.EVMService
-	forwarderCodec   CREForwarderCodec
-	forwarderAddress common.Address
-	logger           logger.Logger
+	evmService              types.EVMService
+	forwarderCodec          CREForwarderCodec
+	forwarderAddress        common.Address
+	forwarderLookbackBlocks int64
+	logger                  logger.Logger
 }
 
 func (cfclient *creForwarderClient) InvokeOnReport(ctx context.Context, receiverAddress common.Address, report *workflowpb.ReportResponse, gasConfig *evmcap.GasConfig) (*evmtypes.TransactionResult, error) {
