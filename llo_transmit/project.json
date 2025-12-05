@@ -1,0 +1,39 @@
+{
+  "name": "llo_transmit",
+  "$schema": "../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "llo_transmit",
+  "projectType": "application",
+  "tags": ["capability", "action"],
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "go build -o dist/llo_transmit .",
+        "cwd": "llo_transmit"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "go test -v ./...",
+        "cwd": "llo_transmit"
+      }
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "golangci-lint run",
+        "cwd": "llo_transmit"
+      }
+    }
+  }
+}
+
+
+
+
+
+
+
+
+

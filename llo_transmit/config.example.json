@@ -1,0 +1,32 @@
+{
+  "donID": 1,
+  "verboseLogging": true,
+  "fromAccount": "llo-transmitter-node-1",
+  "transmitters": [
+    {
+      "type": "cre",
+      "opts": {
+        "triggerCapabilityName": "streams-trigger",
+        "triggerCapabilityVersion": "2.0.0",
+        "triggerTickerMinResolutionMs": 1000,
+        "triggerSendChannelBufferSize": 1000
+      }
+    },
+    {
+      "type": "mock",
+      "opts": {}
+    }
+  ],
+  "servers": {
+    "wss://mercury1.example.com:4242": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+  }
+}
+
+
+
+
+
+
+
+
+

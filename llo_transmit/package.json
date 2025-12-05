@@ -1,0 +1,16 @@
+{
+  "name": "@smartcontractkit/capabilities-llo-transmit",
+  "version": "1.0.0",
+  "description": "LLO Transmit Action Capability for CRE NoDAG workflows",
+  "main": "main.go",
+  "private": true
+}
+
+
+
+
+
+
+
+
+
