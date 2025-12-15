@@ -81,7 +81,7 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 		Headers:       input.Headers,
 		Body:          input.Body,
 		// Casting is safe because input to this function is already validated
-		TimeoutMs: uint32(input.Timeout.AsDuration()), //nolint:gosec // G115
+		TimeoutMs: uint32(input.Timeout.AsDuration().Milliseconds()), //nolint:gosec // G115
 		CacheSettings: gc.CacheSettings{
 			Store:    input.CacheSettings.Store,
 			MaxAgeMs: int32(input.CacheSettings.MaxAge.AsDuration().Milliseconds()), //nolint:gosec // G115
