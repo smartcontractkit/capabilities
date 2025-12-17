@@ -4,8 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	ctypes "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+
+	ctypes "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 )
