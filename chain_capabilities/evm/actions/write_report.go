@@ -318,7 +318,7 @@ func (e *WriteReport) fetchTransactionReceiptAndCreateReply(ctx context.Context,
 		message = ptr("Receiver contract execution failure")
 	}
 
-	e.lggr.Infow("Successfully fetched tx receipt", "txHash", txHash, "txStatus", evm.TxStatus_TX_STATUS_SUCCESS, "transactionFeeWei", transactionFee.TransactionFee.String(), "receiverStatus", receiverStatus, "errorMessage", message)
+	e.lggr.Infow("Successfully fetched tx receipt", "txHash", hex.EncodeToString(txHash[:]), "txStatus", evm.TxStatus_TX_STATUS_SUCCESS, "transactionFeeWei", transactionFee.TransactionFee.String(), "receiverStatus", receiverStatus, "errorMessage", message)
 	return &evm.WriteReportReply{
 		TxHash:                          (txHash)[:],
 		TxStatus:                        evm.TxStatus_TX_STATUS_SUCCESS,
