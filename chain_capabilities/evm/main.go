@@ -114,7 +114,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
 
-	consensusMetrics, err := consMetrics.NewEvmConsensusMetrics(chainInfo)
+	consensusMetrics, err := consMetrics.NewConsensusMetrics(chainInfo)
 	if err != nil {
 		return fmt.Errorf("failed to create evm consensus metrics: %w", err)
 	}

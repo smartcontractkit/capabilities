@@ -36,7 +36,7 @@ type Poller struct {
 	lggr       logger.SugaredLogger
 	maxWorkers uint
 	pollPeriod time.Duration
-	metrics    metrics.EvmConsensusMetrics
+	metrics    metrics.ConsensusMetrics
 
 	mutex       sync.Mutex
 	inputNotify chan struct{}
@@ -45,7 +45,7 @@ type Poller struct {
 	retryQueue  *list.List[requestToRetry]
 }
 
-func NewPoller(lggr logger.Logger, metrics metrics.EvmConsensusMetrics, maxWorkers uint, pollPeriod time.Duration) *Poller {
+func NewPoller(lggr logger.Logger, metrics metrics.ConsensusMetrics, maxWorkers uint, pollPeriod time.Duration) *Poller {
 	p := &Poller{
 		maxWorkers: maxWorkers,
 		pollPeriod: pollPeriod,

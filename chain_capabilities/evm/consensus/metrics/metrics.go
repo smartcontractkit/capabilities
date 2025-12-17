@@ -4,34 +4,19 @@ import (
 	"context"
 	"fmt"
 
+	ctypes "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
-	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
-
-	ctypes "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 )
 
-type EvmConsensusMetrics interface {
-	// metrics for consensus' reporting_plugin
-	RecordOutcomeChainHeight(ctx context.Context, height *ctypes.ChainHeight)
-	RecordRoundObservationSize(ctx context.Context, size int)
-	RecordRequestObservationSize(ctx context.Context, size int)
+var _ ConsensusMetrics = (*consensusMetrics)(nil)
 
-	// metrics for consensus' poller
-	RecordQueueSize(ctx context.Context, size int)
-	RecordRetryQueueSize(ctx context.Context, size int)
-
-	// metrics for consensus' handler
-	SetRequestCount(requestCount int)
-}
-
-var _ EvmConsensusMetrics = (*evmConsensusMetrics)(nil)
-
-type evmConsensusMetrics struct {
+type consensusMetrics struct {
 	chainInfo                   types.ChainInfo
+	prefix                      string
 	outcomeChainSafeHeight      metric.Int64Gauge
 	outcomeChainLatestHeight    metric.Int64Gauge
 	outcomeChainFinalizedHeight metric.Int64Gauge
@@ -42,9 +27,10 @@ type evmConsensusMetrics struct {
 	requestCount                metric.Int64Gauge
 }
 
-func NewEvmConsensusMetrics(chainInfo types.ChainInfo) (*evmConsensusMetrics, error) {
-	m := &evmConsensusMetrics{
+func newConsensusMetrics(chainInfo types.ChainInfo, metricsNamePrefix string) (*consensusMetrics, error) {
+	m := &consensusMetrics{
 		chainInfo: chainInfo,
+		prefix:    metricsNamePrefix,
 	}
 	if err := m.init(); err != nil {
 		return nil, err
@@ -52,29 +38,12 @@ func NewEvmConsensusMetrics(chainInfo types.ChainInfo) (*evmConsensusMetrics, er
 	return m, nil
 }
 
-func MetricViews() []sdkmetric.View {
-	instrumentNames := []string{
-		"evm_capability_consensus_round_observation_size",
-		"evm_capability_consensus_request_observation_size",
-	}
-	var views []sdkmetric.View
-	for _, name := range instrumentNames {
-		views = append(views, sdkmetric.NewView(
-			sdkmetric.Instrument{Name: name},
-			sdkmetric.Stream{Aggregation: sdkmetric.AggregationExplicitBucketHistogram{
-				Boundaries: []float64{0, 10, 100, 1000, 10000, 100000, 1000000},
-			}},
-		))
-	}
-	return views
-}
-
-func (m *evmConsensusMetrics) init() error {
+func (m *consensusMetrics) init() error {
 	meter := beholder.GetMeter()
 	var err error
 
 	m.outcomeChainSafeHeight, err = meter.Int64Gauge(
-		"evm_capability_consensus_outcome_chain_safe_height",
+		m.prefix+"capability_consensus_outcome_chain_safe_height",
 		metric.WithDescription("reporting plugin for output chain safe height"),
 	)
 	if err != nil {
@@ -82,7 +51,7 @@ func (m *evmConsensusMetrics) init() error {
 	}
 
 	m.outcomeChainLatestHeight, err = meter.Int64Gauge(
-		"evm_capability_consensus_outcome_chain_latest_height",
+		m.prefix+"capability_consensus_outcome_chain_latest_height",
 		metric.WithDescription("reporting plugin for output chain latest height"),
 	)
 	if err != nil {
@@ -90,7 +59,7 @@ func (m *evmConsensusMetrics) init() error {
 	}
 
 	m.outcomeChainFinalizedHeight, err = meter.Int64Gauge(
-		"evm_capability_consensus_outcome_chain_finalized_height",
+		m.prefix+"capability_consensus_outcome_chain_finalized_height",
 		metric.WithDescription("reporting plugin for output chain finalized height"),
 	)
 	if err != nil {
@@ -98,7 +67,7 @@ func (m *evmConsensusMetrics) init() error {
 	}
 
 	m.roundObservationSize, err = meter.Int64Histogram(
-		"evm_capability_consensus_round_observation_size",
+		m.prefix+"capability_consensus_round_observation_size",
 		metric.WithDescription("Histogram report plugin round observation size in bytes"),
 	)
 	if err != nil {
@@ -106,7 +75,7 @@ func (m *evmConsensusMetrics) init() error {
 	}
 
 	m.requestObservationSize, err = meter.Int64Histogram(
-		"evm_capability_consensus_request_observation_size",
+		m.prefix+"capability_consensus_request_observation_size",
 		metric.WithDescription("Histogram report plugin request observation size in bytes"),
 	)
 	if err != nil {
@@ -114,7 +83,7 @@ func (m *evmConsensusMetrics) init() error {
 	}
 
 	m.queueSize, err = meter.Int64Gauge(
-		"evm_capability_consensus_queue_size",
+		m.prefix+"capability_consensus_queue_size",
 		metric.WithDescription("Number poller queue size"),
 	)
 	if err != nil {
@@ -122,7 +91,7 @@ func (m *evmConsensusMetrics) init() error {
 	}
 
 	m.retryQueueSize, err = meter.Int64Gauge(
-		"evm_capability_consensus_retry_queue_size",
+		m.prefix+"capability_consensus_retry_queue_size",
 		metric.WithDescription("Number of poller retry queue size"),
 	)
 	if err != nil {
@@ -130,7 +99,7 @@ func (m *evmConsensusMetrics) init() error {
 	}
 
 	m.requestCount, err = meter.Int64Gauge(
-		"evm_capability_consensus_request_count",
+		m.prefix+"capability_consensus_request_count",
 		metric.WithDescription("Handler request count"),
 	)
 	if err != nil {
@@ -140,7 +109,7 @@ func (m *evmConsensusMetrics) init() error {
 	return nil
 }
 
-func (m *evmConsensusMetrics) chainAttributes() metric.MeasurementOption {
+func (m *consensusMetrics) chainAttributes() metric.MeasurementOption {
 	return metric.WithAttributes(
 		attribute.String("chain_id", m.chainInfo.ChainID),
 		attribute.String("family_name", m.chainInfo.FamilyName),
@@ -149,7 +118,7 @@ func (m *evmConsensusMetrics) chainAttributes() metric.MeasurementOption {
 	)
 }
 
-func (m *evmConsensusMetrics) RecordOutcomeChainHeight(ctx context.Context, height *ctypes.ChainHeight) {
+func (m *consensusMetrics) RecordOutcomeChainHeight(ctx context.Context, height *ctypes.ChainHeight) {
 	if height != nil {
 		m.outcomeChainSafeHeight.Record(ctx, height.Safe, m.chainAttributes())
 		m.outcomeChainLatestHeight.Record(ctx, height.Latest, m.chainAttributes())
@@ -157,22 +126,22 @@ func (m *evmConsensusMetrics) RecordOutcomeChainHeight(ctx context.Context, heig
 	}
 }
 
-func (m *evmConsensusMetrics) RecordRoundObservationSize(ctx context.Context, size int) {
+func (m *consensusMetrics) RecordRoundObservationSize(ctx context.Context, size int) {
 	m.roundObservationSize.Record(ctx, int64(size), m.chainAttributes())
 }
 
-func (m *evmConsensusMetrics) RecordRequestObservationSize(ctx context.Context, size int) {
+func (m *consensusMetrics) RecordRequestObservationSize(ctx context.Context, size int) {
 	m.requestObservationSize.Record(ctx, int64(size), m.chainAttributes())
 }
 
-func (m *evmConsensusMetrics) RecordQueueSize(ctx context.Context, size int) {
+func (m *consensusMetrics) RecordQueueSize(ctx context.Context, size int) {
 	m.queueSize.Record(ctx, int64(size), m.chainAttributes())
 }
 
-func (m *evmConsensusMetrics) RecordRetryQueueSize(ctx context.Context, size int) {
+func (m *consensusMetrics) RecordRetryQueueSize(ctx context.Context, size int) {
 	m.retryQueueSize.Record(ctx, int64(size), m.chainAttributes())
 }
 
-func (m *evmConsensusMetrics) SetRequestCount(requestCount int) {
+func (m *consensusMetrics) SetRequestCount(requestCount int) {
 	m.requestCount.Record(context.Background(), int64(requestCount), m.chainAttributes())
 }
