@@ -47,7 +47,7 @@ type reportingPlugin struct {
 	logger         logger.SugaredLogger
 	blocksProvider BlocksProvider
 	requestsStore  RequestsHandler
-	metrics        metrics.EvmConsensusMetrics
+	metrics        metrics.ConsensusMetrics
 }
 
 func newReportingPlugin(
@@ -55,7 +55,7 @@ func newReportingPlugin(
 	logger logger.SugaredLogger,
 	blocksProvider BlocksProvider,
 	requestsStore RequestsHandler,
-	metrics metrics.EvmConsensusMetrics,
+	metrics metrics.ConsensusMetrics,
 ) *reportingPlugin {
 	return &reportingPlugin{
 		config:         config,

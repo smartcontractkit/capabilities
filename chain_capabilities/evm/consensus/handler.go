@@ -29,14 +29,14 @@ type Handler struct {
 	lock     sync.RWMutex
 	requests *requests.Store[*requestCtx]
 	poller   Poller
-	metrics  metrics.EvmConsensusMetrics
+	metrics  metrics.ConsensusMetrics
 
 	unknownRequestsResultByID       map[string]*unknownRequest
 	unknownRequestsOrderedByTimeout *list.List[*unknownRequest]
 	unknownRequestTTL               time.Duration
 }
 
-func NewHandler(lggr logger.Logger, poller Poller, metrics metrics.EvmConsensusMetrics, unknownRequestTTL time.Duration) *Handler {
+func NewHandler(lggr logger.Logger, poller Poller, metrics metrics.ConsensusMetrics, unknownRequestTTL time.Duration) *Handler {
 	r := &Handler{
 		requests:                        requests.NewStoreWithStatsCollector[*requestCtx](metrics),
 		unknownRequestsResultByID:       make(map[string]*unknownRequest),

@@ -5,11 +5,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/utils/tests"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zapcore"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/utils/tests"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
@@ -24,7 +25,7 @@ func TestPoller_ObservesRequestUntilCanceled(t *testing.T) {
 
 	// Create poller with short poll period for faster testing
 	pollPeriod := 10 * time.Millisecond
-	poller := NewPoller(lggr, test.GetEvmConsensusMetrics(t), 1, pollPeriod)
+	poller := NewPoller(lggr, test.GetConsensusMetrics(t), 1, pollPeriod)
 
 	// Start the poller
 	require.NoError(t, poller.Start(t.Context()))

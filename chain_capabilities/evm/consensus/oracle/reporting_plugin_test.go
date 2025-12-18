@@ -83,12 +83,12 @@ func mustQuery(t *testing.T, requestIDs []string) ocrtypes.Query {
 
 func TestObservation(t *testing.T) {
 	t.Run("Error if query is invalid", func(t *testing.T) {
-		plugin := newReportingPlugin(Config{}, logger.Sugared(logger.Test(t)), nil, nil, test.GetEvmConsensusMetrics(t))
+		plugin := newReportingPlugin(Config{}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t))
 		_, err := plugin.Observation(t.Context(), ocr3types.OutcomeContext{}, []byte("invalid json"))
 		require.ErrorContains(t, err, "failed to unmarshal request IDs: proto")
 	})
 	t.Run("Error if query exceeds max batch size", func(t *testing.T) {
-		plugin := newReportingPlugin(Config{MaxBatchSize: 2}, logger.Sugared(logger.Test(t)), nil, nil, test.GetEvmConsensusMetrics(t))
+		plugin := newReportingPlugin(Config{MaxBatchSize: 2}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t))
 		_, err := plugin.Observation(t.Context(), ocr3types.OutcomeContext{}, mustQuery(t, []string{"1", "2", "3"}))
 		require.EqualError(t, err, "too many request IDs: got 3, expected 2")
 	})
@@ -105,7 +105,7 @@ func TestObservation(t *testing.T) {
 			Safe:      9,
 			Finalized: 8,
 		})
-		plugin := newReportingPlugin(Config{}, logger.Sugared(logger.Test(t)), blocksProvider, nil, test.GetEvmConsensusMetrics(t))
+		plugin := newReportingPlugin(Config{}, logger.Sugared(logger.Test(t)), blocksProvider, nil, test.GetConsensusMetrics(t))
 		previousOutcome := &types.Outcome{
 			ChainHeight: &types.ChainHeight{
 				Latest:    15,
@@ -135,7 +135,7 @@ func TestObservation(t *testing.T) {
 			Finalized: 8,
 		})
 		requestsStore := mocks.NewRequestsHandler(t)
-		plugin := newReportingPlugin(Config{MaxBatchSize: 1}, logger.Sugared(logger.Test(t)), blocksProvider, requestsStore, test.GetEvmConsensusMetrics(t))
+		plugin := newReportingPlugin(Config{MaxBatchSize: 1}, logger.Sugared(logger.Test(t)), blocksProvider, requestsStore, test.GetConsensusMetrics(t))
 		requestsStore.EXPECT().GetRequest("1").Return(types.Request(nil), true)
 		_, err := plugin.Observation(t.Context(), ocr3types.OutcomeContext{}, mustQuery(t, []string{"1"}))
 		require.EqualError(t, err, "failed to observe request: unsupported observation type: <nil>")
@@ -172,7 +172,7 @@ func TestObservation(t *testing.T) {
 		id = "aggregatable_request_without_observation"
 		requestsStore.EXPECT().GetRequest(id).Return(types.NewAggregatableRequest(id, nil), true).Once()
 
-		plugin := newReportingPlugin(Config{MaxBatchSize: 50, MaxObservationLength: 1000}, logger.Sugared(logger.Test(t)), blocksProvider, requestsStore, test.GetEvmConsensusMetrics(t))
+		plugin := newReportingPlugin(Config{MaxBatchSize: 50, MaxObservationLength: 1000}, logger.Sugared(logger.Test(t)), blocksProvider, requestsStore, test.GetConsensusMetrics(t))
 		query := mustQuery(t, []string{"request_not_present_in_store", "request_without_observation", "request_with_observation", "lockable_request", "aggregatable_request", "aggregatable_request_without_observation"})
 		rawObservation, err := plugin.Observation(t.Context(), ocr3types.OutcomeContext{}, query)
 		require.NoError(t, err)
@@ -226,7 +226,7 @@ func TestObservation(t *testing.T) {
 
 		addRequestWithObservation("large_request", 400)
 
-		plugin := newReportingPlugin(Config{MaxBatchSize: 50, MaxObservationLength: maxObservationLength}, logger.Sugared(logger.Test(t)), blocksProvider, requestsStore, test.GetEvmConsensusMetrics(t))
+		plugin := newReportingPlugin(Config{MaxBatchSize: 50, MaxObservationLength: maxObservationLength}, logger.Sugared(logger.Test(t)), blocksProvider, requestsStore, test.GetConsensusMetrics(t))
 		query := mustQuery(t, []string{"request_1", "request_2", "large_request", "aggregatable_request"})
 		rawObservation, err := plugin.Observation(t.Context(), ocr3types.OutcomeContext{}, query)
 		require.NoError(t, err)
@@ -327,7 +327,7 @@ func TestValidateObservation(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			lggr := logger.Sugared(logger.Test(t))
-			plugin := newReportingPlugin(Config{}, lggr, nil, nil, test.GetEvmConsensusMetrics(t))
+			plugin := newReportingPlugin(Config{}, lggr, nil, nil, test.GetConsensusMetrics(t))
 
 			err := plugin.ValidateObservation(t.Context(), tc.outcomeContext, nil, tc.observations)
 			if tc.expectedError == "" {
@@ -370,7 +370,7 @@ func TestAgreeOnChainHeight(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1}}, logger.Sugared(logger.Test(t)), nil, nil, test.GetEvmConsensusMetrics(t))
+			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1}}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t))
 			aos := make([]attributedObservation, len(tc.observedChainHeights))
 			for i, chainHeight := range tc.observedChainHeights {
 				aos[i] = attributedObservation{Observation: &types.Observation{ChainHeight: chainHeight}}
@@ -519,7 +519,7 @@ func TestOutcome(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			lggr, observed := logger.TestObserved(t, zapcore.DebugLevel)
-			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1, N: 4}}, logger.Sugared(lggr), nil, nil, test.GetEvmConsensusMetrics(t))
+			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1, N: 4}}, logger.Sugared(lggr), nil, nil, test.GetConsensusMetrics(t))
 			var rawAOs []ocrtypes.AttributedObservation
 			for _, nodesObservations := range tc.nodesObservations {
 				rawObservation, err := proto.Marshal(&types.Observation{ChainHeight: chainHeight, Observations: nodesObservations})
@@ -592,7 +592,7 @@ func TestAgreeOnEventuallyConsistentValue(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1, N: 4}}, logger.Sugared(logger.Test(t)), nil, nil, test.GetEvmConsensusMetrics(t))
+			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1, N: 4}}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t))
 			var nodesObservations []attributedObservation
 			for i, ob := range tc.nodesObservations {
 				nodesObservations = append(nodesObservations, attributedObservation{
@@ -685,7 +685,7 @@ func TestAgreeOnObservationType(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1, N: 4}}, logger.Sugared(logger.Test(t)), nil, nil, test.GetEvmConsensusMetrics(t))
+			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1, N: 4}}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t))
 			var nodesObservations []attributedObservation
 			for i := range tc.observations {
 				ob := &tc.observations[i]
@@ -792,7 +792,7 @@ func TestAggregateValue(t *testing.T) {
 	for _, tc := range testCases {
 		const id = "id"
 		t.Run(tc.name, func(t *testing.T) {
-			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1, N: 4}}, logger.Sugared(logger.Test(t)), nil, nil, test.GetEvmConsensusMetrics(t))
+			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1, N: 4}}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t))
 			var nodesObservations []attributedObservation
 			for i := range tc.observations {
 				ob := tc.observations[i]
@@ -896,7 +896,7 @@ func TestReports(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			rp := newReportingPlugin(Config{}, logger.Sugared(logger.Test(t)), nil, nil, test.GetEvmConsensusMetrics(t))
+			rp := newReportingPlugin(Config{}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t))
 
 			reports, err := rp.Reports(t.Context(), 1, mustMarshalProto(tc.outcome))
 			if tc.expectedError != "" {

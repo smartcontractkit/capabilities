@@ -12,7 +12,7 @@ import (
 )
 
 func TestEvmConsensusMetrics_AllMetrics(t *testing.T) {
-	m, err := metrics.NewEvmConsensusMetrics(commontTypes.ChainInfo{ChainID: "fake-chain-id"})
+	m, err := metrics.NewConsensusMetrics(commontTypes.ChainInfo{ChainID: "fake-chain-id"})
 	assert.NoError(t, err)
 	ctx := t.Context()
 

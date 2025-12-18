@@ -20,14 +20,14 @@ type ReportingPluginFactory struct {
 	logger         logger.SugaredLogger
 	requestsStore  RequestsHandler
 	blocksProvider BlocksProvider
-	metrics        metrics.EvmConsensusMetrics
+	metrics        metrics.ConsensusMetrics
 }
 
 func NewReportingPluginFactory(
 	logger logger.SugaredLogger,
 	requestsStore RequestsHandler,
 	blocksProvider BlocksProvider,
-	metrics metrics.EvmConsensusMetrics,
+	metrics metrics.ConsensusMetrics,
 ) *ReportingPluginFactory {
 	return &ReportingPluginFactory{
 		logger:         logger,
