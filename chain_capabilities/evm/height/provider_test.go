@@ -6,15 +6,15 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/smartcontractkit/chainlink-common/pkg/utils/tests"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zapcore"
 
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/height/mocks"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
-
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/height/mocks"
+	"github.com/smartcontractkit/chainlink-common/pkg/utils/tests"
 )
 
 func setHeaderByNumber(evmSvc *mocks.HeaderProvider, finalized, safe, latest int64) {

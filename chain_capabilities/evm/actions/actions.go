@@ -28,10 +28,10 @@ import (
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
-	ctypes "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
+	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 	commonMon "github.com/smartcontractkit/capabilities/libs/monitoring"
 )
 

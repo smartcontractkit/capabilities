@@ -6,13 +6,11 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	commontTypes "github.com/smartcontractkit/chainlink-common/pkg/types"
-
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/metrics"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
 )
 
