@@ -3,10 +3,11 @@ package test
 import (
 	"testing"
 
-	"github.com/smartcontractkit/capabilities/libs/chainconsensus/metrics"
 	"github.com/stretchr/testify/require"
 
 	commontTypes "github.com/smartcontractkit/chainlink-common/pkg/types"
+
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus/metrics"
 )
 
 func GetConsensusMetrics(t *testing.T) metrics.ConsensusMetrics {
