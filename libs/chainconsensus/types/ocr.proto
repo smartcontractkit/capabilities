@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-option go_package = "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types";
+option go_package = "github.com/smartcontractkit/capabilities/libs/chainconsensus/types";
 package chain_capabilities.evm.types;
 
 import "google/protobuf/empty.proto";

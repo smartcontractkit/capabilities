@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus/test"
 	"github.com/smartcontractkit/libocr/commontypes"
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2/types"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
@@ -18,9 +19,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/tests"
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/oracle/mocks"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus/oracle/mocks"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 )
 
 func TestValidateChainHeight(t *testing.T) {

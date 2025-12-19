@@ -10,7 +10,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 
-	ctypes "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
+	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 )
 
 var _ ocr3types.ContractTransmitter[[]byte] = (*ContractTransmitter)(nil)

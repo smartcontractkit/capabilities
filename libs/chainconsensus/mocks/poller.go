@@ -5,7 +5,7 @@ package mocks
 import (
 	context "context"
 
-	types "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
+	types "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 	mock "github.com/stretchr/testify/mock"
 )
 

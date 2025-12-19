@@ -7,7 +7,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 
-	ctypes "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
+	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"

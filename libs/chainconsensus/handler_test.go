@@ -1,4 +1,4 @@
-package consensus
+package chainconsensus
 
 import (
 	"context"
@@ -18,9 +18,9 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/tests"
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/mocks"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus/mocks"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus/test"
 )
 
 func TestGetRequestIDs(t *testing.T) {
@@ -303,7 +303,7 @@ func TestHandle(t *testing.T) {
 	})
 	t.Run("Handle return an error if request type is not known", func(t *testing.T) {
 		_, err := handler.Handle(t.Context(), &unknownRequestType{id: "unknown-request-type"})
-		require.EqualError(t, err, "unknown request type *consensus.unknownRequestType")
+		require.EqualError(t, err, "unknown request type *chainconsensus.unknownRequestType")
 	})
 }
 

@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 )
 
 // TestObservationSizeIsAdditive verifies that adding a request observation to the observations map

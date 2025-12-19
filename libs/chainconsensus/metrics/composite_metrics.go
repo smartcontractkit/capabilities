@@ -3,7 +3,7 @@ package metrics
 import (
 	"context"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 )
 
 // compositeMetrics implements ConsensusMetrics by wrapping multiple instanced needed to migrate from legacy naming

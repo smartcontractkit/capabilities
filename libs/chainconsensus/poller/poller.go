@@ -9,8 +9,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/list"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/metrics"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus/metrics"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 )
 
 type requestToPoll struct {

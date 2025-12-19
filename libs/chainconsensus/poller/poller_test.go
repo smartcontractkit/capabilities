@@ -12,8 +12,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/tests"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus/test"
 )
 
 func TestPoller_ObservesRequestUntilCanceled(t *testing.T) {

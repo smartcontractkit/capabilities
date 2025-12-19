@@ -9,7 +9,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/metrics"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus/metrics"
 
 	evmcapocr3types "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/consensus/ocr3/types"
 )

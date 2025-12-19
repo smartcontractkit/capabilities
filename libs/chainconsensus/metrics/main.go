@@ -6,7 +6,7 @@ import (
 
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 
-	ctypes "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
+	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 )

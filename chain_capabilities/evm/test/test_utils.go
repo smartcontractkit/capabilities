@@ -66,9 +66,3 @@ func GetMetadataWithNoFunds() capabilities.RequestMetadata {
 		},
 	}
 }
-
-func GetConsensusMetrics(t *testing.T) metrics.ConsensusMetrics {
-	m, err := metrics.NewConsensusMetrics(commontTypes.ChainInfo{ChainID: "fake-chain-id"})
-	require.NoError(t, err, "failed to create metrics")
-	return m
-}

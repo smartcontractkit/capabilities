@@ -19,8 +19,8 @@ import (
 
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/metrics"
-	ctypes "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus/metrics"
+	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )

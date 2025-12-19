@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 )
 
 // modeForError returns a slice of common errors for a given request when:

@@ -7,8 +7,8 @@ import (
 
 	commontTypes "github.com/smartcontractkit/chainlink-common/pkg/types"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/metrics"
-	ctypes "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus/metrics"
+	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 )
 
 func TestEvmConsensusMetrics_AllMetrics(t *testing.T) {

@@ -1,7 +1,7 @@
 package oracle
 
 import (
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/types"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 )
 
 type BlocksProvider interface {
