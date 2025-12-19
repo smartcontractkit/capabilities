@@ -43,6 +43,7 @@ import (
 
 const defaultMaxRequestOutcomeSize = 10000
 const defaultKeyBundleIDForValueConsensus = "evm"
+const defaultMaxErrorMessageSize = 1000
 
 const KeyBundleIDEvm = "evm"
 const KeyBundleIDAptos = "aptos"
@@ -54,6 +55,12 @@ type ConsensusCapabilityConfig struct {
 	MaxRequestSizeBytes          int
 	KeyBundleIDForValueConsensus string
 	MaxRequestOutcomeSize        int
+
+	// The value of this should be set with the following considerations in mind:
+	// 1. It should be large enough to accommodate enough of typical error messages to be useful for debugging and understanding issues and preserve a good UX for workflow authors.
+	// 2. It should not be so large that it allows excessively large error messages that could impact performance or resource usage.
+	// 3. It should be less than the maximum request size to ensure that observations containing error messages are not rejected due to size constraints.
+	MaxErrorMessageSize int
 }
 
 var _ server.ConsensusCapability = &consensusCapability{}
@@ -68,9 +75,11 @@ type consensusCapability struct {
 	requestTimeout     time.Duration
 	requestTimeoutLock sync.RWMutex
 
-	maxRequestSizeBytes       limits.BoundLimiter[config.Size]
+	maxRequestSizeLimiter     limits.BoundLimiter[config.Size]
 	valueConsensusKeyBundleID string
 	maxRequestOutcomeSize     int
+
+	maxErrorMessageSize int
 
 	metrics *metrics.Metrics
 }
@@ -193,11 +202,18 @@ func (c *consensusCapability) setConfiguration(cfg string) error {
 	if capabilityConfig.MaxRequestSizeBytes > 0 {
 		limit.DefaultValue = config.Size(capabilityConfig.MaxRequestSizeBytes)
 	}
-	maxRequestSizeBytes, err := limits.MakeBoundLimiter(c.limitsFactory, limit)
+	maxRequestSizeLimiter, err := limits.MakeBoundLimiter(c.limitsFactory, limit)
 	if err != nil {
 		return err
 	}
-	c.maxRequestSizeBytes = maxRequestSizeBytes
+	c.maxRequestSizeLimiter = maxRequestSizeLimiter
+
+	if capabilityConfig.MaxErrorMessageSize > 0 {
+		c.maxErrorMessageSize = capabilityConfig.MaxErrorMessageSize
+	} else {
+		c.maxErrorMessageSize = defaultMaxErrorMessageSize
+	}
+
 	return nil
 }
 
@@ -212,6 +228,12 @@ func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.
 		KeyBundleID:     c.valueConsensusKeyBundleID,
 		ReportID:        "0000", // Report ID is not used for value consensus, so we can use a dummy value
 		RequestType:     types.RequestType_VALUE_CONSENSUS,
+	}
+
+	// Ensure error messages are truncated to the maximum allowed size
+	switch errObs := input.GetObservation().(type) {
+	case *sdk.SimpleConsensusInputs_Error:
+		errObs.Error = c.truncateErrorMessage(errObs.Error)
 	}
 
 	requestSize, reqSizeErr := c.validateRequestSize(ctx, consensusRequestMetaData, input)
@@ -479,13 +501,20 @@ func (c *consensusCapability) validateRequestSize(ctx context.Context, consensus
 		return 0, caperrors.NewPublicSystemError(fmt.Errorf("failed to serialise metadata: %w", err), caperrors.Internal)
 	}
 	size := config.Size(len(serialisedInput) + len(serialisedMetadata))
-	err = c.maxRequestSizeBytes.Check(ctx, size)
+	err = c.maxRequestSizeLimiter.Check(ctx, size)
 
 	if err != nil && errors.Is(err, limits.ErrorBoundLimited[config.Size]{}) {
 		return int(size), caperrors.NewPublicUserError(fmt.Errorf("request size %d bytes exceeds maximum allowed size: %w", size, err), caperrors.InvalidArgument)
 	}
 
 	return int(size), nil
+}
+
+func (c *consensusCapability) truncateErrorMessage(msg string) string {
+	if len(msg) <= c.maxErrorMessageSize {
+		return msg
+	}
+	return msg[:c.maxErrorMessageSize]
 }
 
 func logObservation(lggr logger.Logger, input *sdk.SimpleConsensusInputs, metadata capabilities.RequestMetadata) (*valuespb.Value, error) {
