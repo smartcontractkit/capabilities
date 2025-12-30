@@ -2,7 +2,7 @@
   "name": "integration_tests",
   "projectType": "e2e",
   "projectRoot": "integration_tests",
-  "implicitDependencies": ["cron"],
+  "implicitDependencies": ["cron", "evm"],
   "tags": [],
   "targets": {
     "lint": {
