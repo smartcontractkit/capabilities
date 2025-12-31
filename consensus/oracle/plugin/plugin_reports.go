@@ -30,6 +30,7 @@ func (r *reportingPlugin) Reports(ctx context.Context, seqNr uint64, outcome ocr
 	}
 
 	var reports []ocr3types.ReportPlus[[]byte]
+	var successIDs, failureIDs []string
 
 	// Create a report for each outcome
 	for _, reqOutcome := range requestsOutcome.Outcomes {
@@ -87,6 +88,7 @@ func (r *reportingPlugin) Reports(ctx context.Context, seqNr uint64, outcome ocr
 				},
 				TransmissionScheduleOverride: nil,
 			})
+			successIDs = append(successIDs, reqMetadata.RequestId)
 		case *oracletypes.ConsensusOutcome_Failure:
 			failedOutcome := v.Failure
 			r.lggr.Debugw("received failed consensus outcome", "requestID", failedOutcome.RequestID)
@@ -103,12 +105,13 @@ func (r *reportingPlugin) Reports(ctx context.Context, seqNr uint64, outcome ocr
 				},
 				TransmissionScheduleOverride: nil,
 			})
+			failureIDs = append(failureIDs, failedOutcome.RequestID)
 		default:
 			r.lggr.Warnw("received unknown consensus outcome type", "outcome", outcome)
 		}
 	}
 
-	r.lggr.Debug("consensus plugin reports complete, number of reports ", len(reports))
+	r.lggr.Debugw("consensus plugin reports complete", "numReports", len(reports), "successIDs", successIDs, "failureIDs", failureIDs)
 	return reports, nil
 }
 

@@ -24,6 +24,7 @@ import (
 	"github.com/smartcontractkit/capabilities/consensus/oracle/plugin"
 	"github.com/smartcontractkit/capabilities/consensus/oracle/transmitter"
 	"github.com/smartcontractkit/capabilities/consensus/oracle/types"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
@@ -220,12 +221,8 @@ func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.
 	}
 	c.metrics.RecordRequestSize(ctx, float64(requestSize))
 
-	value, err := logObservation(lggr, input, metadata)
-	if err != nil {
-		responseAndMetadata := capabilities.ResponseAndMetadata[*valuespb.Value]{
-			Response:         value,
-			ResponseMetadata: capabilities.ResponseMetadata{},
-		}
+	if err := decodeObservationType(lggr, input); err != nil {
+		responseAndMetadata := capabilities.ResponseAndMetadata[*valuespb.Value]{}
 		return &responseAndMetadata, caperrors.NewPublicSystemError(fmt.Errorf("failed to log observation: %s", err), caperrors.InvalidArgument)
 	}
 
@@ -488,26 +485,28 @@ func (c *consensusCapability) validateRequestSize(ctx context.Context, consensus
 	return int(size), nil
 }
 
-func logObservation(lggr logger.Logger, input *sdk.SimpleConsensusInputs, metadata capabilities.RequestMetadata) (*valuespb.Value, error) {
+func decodeObservationType(lggr logger.Logger, input *sdk.SimpleConsensusInputs) error {
 	switch obs := input.GetObservation().(type) {
 	case *sdk.SimpleConsensusInputs_Value:
-		val, err := values.FromProto(obs.Value)
+		_, err := values.FromProto(obs.Value)
 		if err != nil {
-			return nil, fmt.Errorf("failed to decode observation value: %w", err)
+			lggr.Debugw("failed to decode observation value", "err", err)
+			return fmt.Errorf("failed to decode observation value: %w", err)
 		}
-		lggr.Debugw("received observation value", "value", val)
+		lggr.Debugw("received observation value")
 	case *sdk.SimpleConsensusInputs_Error:
-		lggr.Debugw("observation is an error", "error", obs.Error)
+		lggr.Debugw("observation is an error")
 	default:
 		if input.Default != nil {
 			val, err := values.FromProto(input.Default)
 			if err != nil {
-				return nil, fmt.Errorf("failed to decode observation value: %w", err)
+				lggr.Debugw("failed to decode default observation value", "err", err)
+				return fmt.Errorf("failed to decode default observation value: %w", err)
 			}
-			lggr.Debugw("serialised default value", "value", val)
+			lggr.Debugw("serialised and using default value", "default_value", val)
 		} else {
-			lggr.Debugw("neither value, error or default is set in the observation input for request", "metadata", metadata)
+			lggr.Debugw("neither value, error or default is set in the observation input for request")
 		}
 	}
-	return nil, nil
+	return nil
 }

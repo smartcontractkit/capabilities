@@ -66,9 +66,16 @@ func (ob *ObservationBatch) SerialiseObservationBatch() ([]byte, error) {
 		return nil, fmt.Errorf("failed to serialise batch of observations: %w", err)
 	}
 
+	allIDs := make([]string, 0, len(ob.Observations))
+	for id := range ob.Observations {
+		allIDs = append(allIDs, id)
+	}
+
 	ob.lggr.Debugw("serialised observation batch", "numObservations", len(ob.Observations), "actualSizeBytes", len(serialisedBatch),
 		"calculatedSizeBytes", ob.currentSerialisedBatchSize,
-		"maxObservationLengthBytes", ob.maxObservationLengthBytes)
+		"maxObservationLengthBytes", ob.maxObservationLengthBytes,
+		"executionIDs", allIDs,
+	)
 
 	return serialisedBatch, nil
 }

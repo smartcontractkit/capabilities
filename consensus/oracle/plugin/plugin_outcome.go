@@ -13,6 +13,7 @@ import (
 	"github.com/smartcontractkit/capabilities/consensus/oracle"
 	"github.com/smartcontractkit/capabilities/consensus/oracle/plugin/batching"
 	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
+
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 
@@ -31,7 +32,7 @@ func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeC
 		return nil, fmt.Errorf("failed to unmarshal query: %w", err)
 	}
 
-	outcome, err := batching.NewOutcomeBatch(ctx, r.lggr, outctx, r.outcomeExpirySeqNrSpan, int(r.config.MaxOutcomeLengthBytes), r.defaultKeyBundleIDForConsensusFailure,
+	outcomeBatch, err := batching.NewOutcomeBatch(ctx, r.lggr, outctx, r.outcomeExpirySeqNrSpan, int(r.config.MaxOutcomeLengthBytes), r.defaultKeyBundleIDForConsensusFailure,
 		r.metrics, r.maxRequestOutcomeSize)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new outcome batch: %w", err)
@@ -44,18 +45,22 @@ func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeC
 
 		// 2f+1 or more observations have been received, calculate the outcome for the request
 		if len(observations) >= 2*r.f+1 {
-			hasCapacity, err := r.addRequestOutcomeToBatch(ctx, requestID, observations, outcome)
+			hasCapacity, err := r.addRequestOutcomeToBatch(ctx, requestID, observations, outcomeBatch)
 			if err != nil {
 				return nil, fmt.Errorf("failed to add request outcome to batch for request %s: %w", requestID, err)
 			}
 
 			if !hasCapacity {
+				r.lggr.Debugw("batch does not have capacity to add request outcome - skipping in this round", "requestID", requestID)
 				break
 			}
+			r.lggr.Debugw("added request outcome to batch", "requestID", requestID, "numObservations", len(observations))
+		} else {
+			r.lggr.Debugw("not enough observations to calculate outcome for request - skipping in this round", "requestID", requestID, "numObservations", len(observations))
 		}
 	}
 
-	return outcome.SerialiseOutcomeBatch()
+	return outcomeBatch.SerialiseOutcomeBatch()
 }
 
 // addRequestOutcomeToBatch adds the outcome for a single request to the outcome batch. Returns false if batch does not have capacity to add the outcome.

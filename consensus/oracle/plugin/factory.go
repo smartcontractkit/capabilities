@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"encoding/hex"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -9,10 +10,12 @@ import (
 
 	"github.com/smartcontractkit/capabilities/consensus/metrics"
 	"github.com/smartcontractkit/capabilities/consensus/oracle"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
+
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
 )
 
@@ -108,6 +111,32 @@ func (o *factory) NewReportingPlugin(_ context.Context, config ocr3types.Reporti
 			MaxReportCount:       int(configProto.MaxReportCount),
 		},
 	}
+	o.lggr.Infow("Created OCR3 consensus capability reporting plugin with config",
+		// "OffchainConfig" fields - internal to our plugin
+		"maxQueryLengthBytes", configProto.MaxQueryLengthBytes,
+		"maxObservationLengthBytes", configProto.MaxObservationLengthBytes,
+		"maxOutcomeLengthBytes", configProto.MaxOutcomeLengthBytes,
+		"maxReportLengthBytes", configProto.MaxReportLengthBytes,
+		"maxReportCount", configProto.MaxReportCount,
+		"maxBatchSize(UNUSED)", configProto.MaxBatchSize, // UNUSED - batch size is now determined by max byte length limits
+		"outcomePruningThreshold", configProto.OutcomePruningThreshold,
+		"requestTimeout", configProto.RequestTimeout.AsDuration(),
+		"historicalOutcomeExpirySeqNrSpan", configProto.HistoricalOutcomeExpirySeqNrSpan,
+		// top-level OCR config fields (ocr3types.ReportingPluginConfig)
+		"configDigest", hex.EncodeToString(config.ConfigDigest[:]),
+		"oracleID", config.OracleID,
+		"n", config.N,
+		"f", config.F,
+		"estimatedRoundInterval", config.EstimatedRoundInterval,
+		"maxDurationQuery", config.MaxDurationQuery,
+		"maxDurationObservation", config.MaxDurationObservation,
+		"maxDurationShouldAcceptAttestedReport", config.MaxDurationShouldAcceptAttestedReport,
+		"maxDurationShouldTransmitAcceptedReport", config.MaxDurationShouldTransmitAcceptedReport,
+		// extra fields from capability job spec config
+		"maxRequestOutcomeSize", o.maxRequestOutcomeSize, // NOTE: use limits instead of a dedicated job spec field?
+		"defaultKeyBundleIDForConsensusFailure", o.defaultKeyBundleIDForConsensusFailure,
+	)
+
 	return rp, rpInfo, err
 }
 
