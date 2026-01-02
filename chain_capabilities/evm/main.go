@@ -251,3 +251,8 @@ func (c *capabilityGRPCService) RegisterLogTrigger(ctx context.Context, triggerI
 func (c *capabilityGRPCService) UnregisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) error {
 	return c.triggerService.UnregisterLogTrigger(ctx, triggerID, metadata, input)
 }
+
+// TODO: Add AckEvent
+func (c *capabilityGRPCService) AckEvent(ctx context.Context, eventID string) {
+	return c.triggerService.AckEvent(ctx, eventID)
+}
