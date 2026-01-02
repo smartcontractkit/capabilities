@@ -43,6 +43,8 @@ const (
 
 type LogTriggerService struct {
 	services.Service
+	capabilities.BaseTriggerCapability
+
 	srvcEng *services.Engine
 
 	EVMService        types.EVMService
@@ -284,6 +286,13 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	return logCh, nil
 }
 
+// AckEvent
+// TODO: Whatever wraps LogTriggerService needs to call this
+func (lts *LogTriggerService) AckEvent(ctx context.Context, eventId string) error {
+	lts.BaseTriggerCapability.AckEvent(ctx, eventId)
+	return nil
+}
+
 func (lts *LogTriggerService) getTopics(input *evmcappb.FilterLogTriggerRequest) ([][]byte, [][]byte, [][]byte, [][]byte) {
 	eventSigs := input.GetTopics()[0].Values
 	var topics2, topics3, topics4 [][]byte
@@ -457,6 +466,7 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 		}
 
 		select {
+		// TODO: IS THIS REPLACED WITH baseTriggerCapability deliverEvent?
 		case logCh <- response:
 			sentCount++
 			if log.BlockNumber.Cmp(finalizedBlockNumber) > 0 {
@@ -464,7 +474,10 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 				trigger.unfinalizedSentEventIDs[eventID] = log.BlockNumber
 				needsUpdate = true
 			}
+			// TODO: Start Ack Timeout after sending response
+			// TODO: Also will want to re-transmit: logCh <- response after sometime before Ack deadline
 		default:
+			// TODO: If callback channel is full, we don't want to drop the event anymore but persist instead and try again later?
 			summary := fmt.Sprintf("Callback channel full (buffer size: %d), dropping event (triggerID: %s, eventID: %s)", lts.logTriggerSendChannelBufferSize, triggerID, response.Id)
 			lts.lggr.Errorw(summary, "triggerID", triggerID, "eventID", response.Id)
 			monitoring.LogAndEmitError(
