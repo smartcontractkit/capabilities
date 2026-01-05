@@ -9,6 +9,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	_ "github.com/ethereum/go-ethereum/common"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
@@ -885,6 +886,7 @@ func createMocksAndCapability(t *testing.T, lggr logger.Logger) (*mocks2.EVMServ
 		messageBuilder:           &monitoring.MessageBuilder{},
 	}
 	require.NoError(t, service.initLimiters(limits.Factory{Logger: lggr}))
+	t.Cleanup(func() { assert.NoError(t, service.Close()) })
 	require.NotNil(t, service.txGasLimit)
 	return mockEVMService, mockForwarderClient, service
 }

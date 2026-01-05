@@ -55,7 +55,6 @@ type EVM struct {
 	beholderProcessor beholder.ProtoProcessor
 	messageBuilder    *monitoring.MessageBuilder
 
-	//TODO close these!
 	readPayloadSizeLimiter limits.BoundLimiter[commoncfg.Size]
 	logQueryBlockLimit     limits.BoundLimiter[uint64]
 	reportSizeLimit        limits.BoundLimiter[commoncfg.Size]

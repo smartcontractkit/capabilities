@@ -66,7 +66,7 @@ var _ evmcapserver.ClientCapability = &capabilityGRPCService{}
 
 func main() {
 	loopserver.ServeNew(CapabilityName, func(s *loop.Server) loop.StandardCapabilities {
-		return evmcapserver.NewClientServer(&capabilityGRPCService{lggr: s.Logger.Named(CapabilityName), limitsFactory: s.LimitsFactory})
+		return evmcapserver.NewClientServer(&capabilityGRPCService{lggr: s.Logger, limitsFactory: s.LimitsFactory})
 	}, loop.WithOtelViews(consMetrics.MetricViews()))
 }
 
