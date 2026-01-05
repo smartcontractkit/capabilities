@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -72,7 +73,7 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, requestI
 			oracletypes.ConsensusFailureCode_FAILED_TO_CALCULATE_CONSENSUS_MDD)
 	}
 
-	var errors []string
+	var obsErrors []string
 	var obsValues []*valuespb.Value
 	var timestamps []*timestamppb.Timestamp
 
@@ -95,7 +96,7 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, requestI
 			obsValues = append(obsValues, inputObservation.Value)
 			timestamps = append(timestamps, obs.ReceivedAt)
 		case *sdk.SimpleConsensusInputs_Error:
-			errors = append(errors, inputObservation.Error)
+			obsErrors = append(obsErrors, inputObservation.Error)
 		}
 	}
 
@@ -104,10 +105,10 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, requestI
 		timestamp = calculateMedianTimestamp(timestamps)
 	}
 
-	if len(errors) >= r.f+1 {
+	if len(obsErrors) >= r.f+1 {
 		consensusFailedMsg := fmt.Sprintf(
 			"consensus calculation failed: received %d errors which is >= f+1 (%d) for requestID %s; Consensus metadata, descriptor and default: %+v; Errors received: %s",
-			len(errors), r.f+1, requestID, consensusMDD, formatErrorsForLogging(ctx, errors),
+			len(obsErrors), r.f+1, requestID, consensusMDD, formatErrorsForLogging(ctx, obsErrors),
 		)
 
 		return outcome.FailConsensusWithDefaultCheck(ctx, r.lggr, requestID, consensusFailedMsg,
@@ -120,13 +121,23 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, requestI
 		valuesJSON := formatValuesForLogging(ctx, r.lggr, obsValues)
 		consensusFailedMsg := fmt.Sprintf(
 			"consensus calculation failed: %v; Consensus metadata, descriptor and default: %+v; Values received: %s; Errors received: %s",
-			err, consensusMDD, valuesJSON, formatErrorsForLogging(ctx, errors),
+			err, consensusMDD, valuesJSON, formatErrorsForLogging(ctx, obsErrors),
 		)
 		return outcome.FailConsensusWithDefaultCheck(ctx, r.lggr, requestID, consensusFailedMsg,
 			oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED, consensusMDD, timestamp)
 	}
 
-	return outcome.AddSuccessfulConsensusRequestOutcomeToBatch(ctx, consensusMDD.Metadata, value, timestamp)
+	hasCapacity, err := outcome.AddSuccessfulConsensusRequestOutcomeToBatch(ctx, consensusMDD.Metadata, value, timestamp)
+	if err != nil {
+		if errors.Is(err, batching.ErrOutcomeTooLarge) {
+			// The outcome is too large to ever fit in any batch - this is a user error
+			failureMsg := "outcome too large: the consensus result for this request exceeds the maximum allowed size and will never fit in a batch; reduce the size of the data being returned"
+			return outcome.AddFailedConsensusRequestOutcomeToBatch(ctx, requestID, failureMsg,
+				oracletypes.ConsensusFailureCode_OUTCOME_TOO_LARGE)
+		}
+		return false, err
+	}
+	return hasCapacity, nil
 }
 
 func formatErrorsForLogging(ctx context.Context, errors []string) string {
