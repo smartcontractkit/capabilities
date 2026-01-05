@@ -1130,7 +1130,7 @@ func TestExecuteWriteReport_TransmissionStates(t *testing.T) {
 			State:           TransmissionStateSucceeded,
 		}
 		ctx := contexts.WithCRE(t.Context(), contexts.CRE{Workflow: "wf-id"})
-		mockForwarderClient.On("GetTransmissionInfo", ctx, transmissionID).Return(transmissionInfo, nil)
+		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, transmissionID).Return(transmissionInfo, nil)
 
 		txHash := evmtypes.Hash(test.RandomBytes(32))
 
@@ -1145,8 +1145,8 @@ func TestExecuteWriteReport_TransmissionStates(t *testing.T) {
 			GasUsed:           1000,
 			EffectiveGasPrice: big.NewInt(2),
 		}
-		evmServiceMock.EXPECT().GetTransactionReceipt(ctx, evmtypes.GeTransactionReceiptRequest{Hash: txHash}).Return(&receipt, nil)
-		evmServiceMock.EXPECT().CalculateTransactionFee(ctx, toReceiptGasInfo(receipt)).Return(&evmtypes.TransactionFee{
+		evmServiceMock.EXPECT().GetTransactionReceipt(mock.Anything, evmtypes.GeTransactionReceiptRequest{Hash: txHash}).Return(&receipt, nil)
+		evmServiceMock.EXPECT().CalculateTransactionFee(mock.Anything, toReceiptGasInfo(receipt)).Return(&evmtypes.TransactionFee{
 			TransactionFee: big.NewInt(2000),
 		}, nil)
 
@@ -1183,7 +1183,7 @@ func TestExecuteWriteReport_TransmissionStates(t *testing.T) {
 		ctx := contexts.WithCRE(t.Context(), contexts.CRE{Workflow: "wf-id"})
 
 		expectedError := "transmission info error"
-		mockForwarderClient.On("GetTransmissionInfo", ctx, transmissionID).Return(contracts.TransmissionInfo{}, errors.New(expectedError))
+		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, transmissionID).Return(contracts.TransmissionInfo{}, errors.New(expectedError))
 
 		reply, responseMetadata, err := service.executeWriteReport(ctx, writeReportRequest, capabilitiesMetadata, monitoring.TelemetryContext{})
 		require.Error(t, err)

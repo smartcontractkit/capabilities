@@ -19,6 +19,7 @@ import (
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -54,6 +55,7 @@ type EVM struct {
 	beholderProcessor beholder.ProtoProcessor
 	messageBuilder    *monitoring.MessageBuilder
 
+	//TODO close these!
 	readPayloadSizeLimiter limits.BoundLimiter[commoncfg.Size]
 	logQueryBlockLimit     limits.BoundLimiter[uint64]
 	reportSizeLimit        limits.BoundLimiter[commoncfg.Size]
@@ -104,8 +106,12 @@ func (e *EVM) initLimiters(limitsFactory limits.Factory) (err error) {
 	if err != nil {
 		return
 	}
-	e.txGasLimit, err = limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainWrite.EVM.TransactionGasLimit)
+	e.txGasLimit, err = limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainWrite.EVM.GasLimit)
 	return
+}
+
+func (e *EVM) Close() error {
+	return services.CloseAll(e.readPayloadSizeLimiter, e.logQueryBlockLimit, e.reportSizeLimit, e.txGasLimit)
 }
 
 func requestID(meta capabilities.RequestMetadata) string {

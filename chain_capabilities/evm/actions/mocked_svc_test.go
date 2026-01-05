@@ -3,6 +3,7 @@ package actions
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -29,6 +30,9 @@ func InitMocks(t *testing.T) *EvmWithMocks {
 	randomEVMAddress := "0xFc5df03D4E91bae4c118B7dda995476f332C9d8C"
 	evm, err := NewEVM(config.Config{CREForwarderAddress: randomEVMAddress}, evmSvc, lggr, test.NopBeholderProcessor{}, &monitoring.MessageBuilder{}, consensusHandler, 1, limits.Factory{Logger: lggr})
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		assert.NoError(t, evm.Close())
+	})
 	return &EvmWithMocks{
 		EVM:              evm,
 		EvmService:       evmSvc,
