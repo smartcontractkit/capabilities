@@ -3,6 +3,7 @@ package trigger
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"sync"
@@ -17,6 +18,7 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/triggers/cron"
 	crontypedapi "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron/server"
@@ -800,6 +802,7 @@ func testCronTriggerRegisterTrigger(t *testing.T, useTypedAPI bool) {
 		schedule          string
 		shouldErr         bool
 		expectedErrString string
+		errorOrigin       caperrors.Origin
 	}{
 		// No Error
 		{
@@ -820,25 +823,29 @@ func testCronTriggerRegisterTrigger(t *testing.T, useTypedAPI bool) {
 			name:              "invalid cron schedule - empty",
 			schedule:          "",
 			shouldErr:         true,
-			expectedErrString: "gocron: CronJob: crontab parse failure\nexpected 5 to 6 fields, found 0: []",
+			expectedErrString: "[3]InvalidArgument: failed to initialize job: gocron: CronJob: crontab parse failure\nexpected 5 to 6 fields, found 0: []",
+			errorOrigin:       caperrors.OriginUser,
 		},
 		{
 			name:              "invalid cron schedule - not a cron schedule",
 			schedule:          "d d d d d",
 			shouldErr:         true,
-			expectedErrString: "gocron: CronJob: crontab parse failure\nfailed to parse int from d: strconv.Atoi: parsing \"d\": invalid syntax",
+			expectedErrString: "[3]InvalidArgument: failed to initialize job: gocron: CronJob: crontab parse failure\nfailed to parse int from d: strconv.Atoi: parsing \"d\": invalid syntax",
+			errorOrigin:       caperrors.OriginUser,
 		},
 		{
 			name:              "invalid cron schedule - invalid timezone",
 			schedule:          "TZ=moon * * * * *",
 			shouldErr:         true,
-			expectedErrString: "gocron: CronJob: crontab parse failure\nprovided bad location moon: unknown time zone moon",
+			expectedErrString: "[3]InvalidArgument: failed to initialize job: gocron: CronJob: crontab parse failure\nprovided bad location moon: unknown time zone moon",
+			errorOrigin:       caperrors.OriginUser,
 		},
 		{
 			name:              "invalid cron schedule - exceeds maximum fastest",
 			schedule:          everySecond,
 			shouldErr:         true,
-			expectedErrString: "maximum fastest cron schedule is 30s",
+			expectedErrString: "[3]InvalidArgument: maximum fastest cron schedule is 30s",
+			errorOrigin:       caperrors.OriginUser,
 		},
 	}
 	for _, tt := range cases {
@@ -864,6 +871,12 @@ func testCronTriggerRegisterTrigger(t *testing.T, useTypedAPI bool) {
 				if tt.expectedErrString != "" {
 					require.Equal(t, tt.expectedErrString, err.Error())
 				}
+
+				var capError caperrors.Error
+				require.True(t, errors.As(err, &capError))
+
+				require.Equal(t, tt.errorOrigin, capError.Origin())
+				require.Equal(t, caperrors.VisibilityPublic, capError.Visibility())
 			} else {
 				require.NoError(t, err)
 			}
@@ -905,7 +918,7 @@ func TestCronTrigger_RegisterTriggerDuplicateError(t *testing.T) {
 	require.NoError(t, err)
 	_, err = triggerAPI.RegisterTrigger(ctx, request)
 	require.Error(t, err)
-	require.Equal(t, "triggerId test-id-1 already registered", err.Error())
+	require.Equal(t, "[13]Internal: triggerId test-id-1 already registered", err.Error())
 }
 
 func TestCronTrigger_UnregisterTriggerError(t *testing.T) {

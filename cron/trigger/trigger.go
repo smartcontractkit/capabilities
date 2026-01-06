@@ -15,6 +15,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/triggers/cron"
 	crontypedapi "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron/server"
@@ -68,7 +69,7 @@ type Service struct {
 	orgResolver             orgresolver.OrgResolver
 }
 
-func (s *Service) RegisterLegacyTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) (<-chan capabilities.TriggerAndId[*crontypedapi.LegacyPayload], error) { //nolint:staticcheck
+func (s *Service) RegisterLegacyTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) (<-chan capabilities.TriggerAndId[*crontypedapi.LegacyPayload], caperrors.Error) { //nolint:staticcheck
 	ch, err := s.RegisterTrigger(ctx, triggerID, metadata, input)
 	if err != nil {
 		return nil, err
@@ -96,7 +97,7 @@ func (s *Service) RegisterLegacyTrigger(ctx context.Context, triggerID string, m
 	return mapped, nil
 }
 
-func (s *Service) UnregisterLegacyTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) error {
+func (s *Service) UnregisterLegacyTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) caperrors.Error {
 	return s.UnregisterTrigger(ctx, triggerID, metadata, input)
 }
 
@@ -179,11 +180,11 @@ func (s *Service) Initialise(ctx context.Context, dependencies core.StandardCapa
 	return nil
 }
 
-func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) (<-chan capabilities.TriggerAndId[*crontypedapi.Payload], error) {
+func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) (<-chan capabilities.TriggerAndId[*crontypedapi.Payload], caperrors.Error) {
 	ctx = metadata.ContextWithCRE(ctx)
 	_, ok := s.triggers.Read(triggerID)
 	if ok {
-		return nil, fmt.Errorf("triggerId %s already registered", triggerID)
+		return nil, caperrors.NewPublicSystemError(fmt.Errorf("triggerId %s already registered", triggerID), caperrors.Internal)
 	}
 
 	var job gocron.Job
@@ -204,11 +205,11 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 
 	limit, err := s.fastestScheduleInterval.Limit(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to look up fastest schedule interval: %w", err)
+		return nil, caperrors.NewPublicSystemError(fmt.Errorf("failed to look up fastest schedule interval: %w", err), caperrors.Internal)
 	}
-	err = enforceFastestSchedule(s.lggr, s.clock, jobDef, limit)
-	if err != nil {
-		return nil, err
+	capErr := enforceFastestSchedule(s.lggr, s.clock, jobDef, limit)
+	if capErr != nil {
+		return nil, capErr
 	}
 
 	task := gocron.NewTask(
@@ -314,14 +315,14 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 		})
 
 	if s.scheduler == nil {
-		return nil, errors.New("cannot register a new trigger, service has been closed")
+		return nil, caperrors.NewPublicSystemError(errors.New("cannot register a new trigger, service has been closed"), caperrors.Internal)
 	}
 
 	// If service has already started, job will be scheduled immediately
 	job, err = s.scheduler.NewJob(jobDef, task, gocron.WithName(triggerID))
 	if err != nil {
 		s.lggr.Errorw("failed to create new job", "err", err)
-		return nil, err
+		return nil, caperrors.NewPublicSystemError(fmt.Errorf("RegisterTrigger failed to create new job: %s", err), caperrors.Internal)
 	}
 
 	firstRunTime, err := job.NextRun()
@@ -330,7 +331,7 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 		s.lggr.Errorw("failed to get next run time", "err", err)
 		// ensure that it is out of scheduler
 		err := s.scheduler.RemoveJob(job.ID())
-		return nil, err
+		return nil, caperrors.NewPublicSystemError(fmt.Errorf("RegisterTrigger failed to remove job: %s", err), caperrors.Internal)
 	}
 
 	s.triggers.Write(triggerID, cronTrigger{
@@ -363,7 +364,7 @@ func createTriggerResponse(scheduledExecutionTime time.Time) capabilities.Trigge
 	}
 }
 
-func (s *Service) UnregisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) error {
+func (s *Service) UnregisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) caperrors.Error {
 	trigger, ok := s.triggers.Read(triggerID)
 	if !ok {
 		s.lggr.Warnf("triggerId %s not found", triggerID)
@@ -374,11 +375,11 @@ func (s *Service) UnregisterTrigger(ctx context.Context, triggerID string, metad
 
 	// Remove job from scheduler
 	if s.scheduler == nil {
-		return errors.New("cannot unregister a new trigger, service has been closed")
+		return caperrors.NewPublicSystemError(errors.New("cannot unregister a new trigger, service has been closed"), caperrors.Internal)
 	}
 	err := s.scheduler.RemoveJob(jobID)
 	if err != nil {
-		return fmt.Errorf("UnregisterTrigger failed to remove job from scheduler: %s", err)
+		return caperrors.NewPublicSystemError(fmt.Errorf("UnregisterTrigger failed to remove job from scheduler: %s", err), caperrors.Internal)
 	}
 
 	// Close callback channel
