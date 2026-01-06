@@ -151,7 +151,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 	case TransmissionStateNotAttempted:
 		e.lggr.Infow("transmission not attempted - attempting to push to txmgr", "executionID", metadata.WorkflowExecutionID)
 	case TransmissionStateSucceeded:
-		e.lggr.Infow("returning without a transmission attempt - report already onchain ", "executionID", metadata.WorkflowExecutionID)
+		e.lggr.Infow("returning without a transmission attempt - report already onchain", "executionID", metadata.WorkflowExecutionID)
 		txHash, err := txHashRetriever.GetHash(ctx)
 		if err != nil {
 			return nil, capabilities.ResponseMetadata{}, err
@@ -189,7 +189,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 	if err != nil {
 		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s report size exceeds limit: %w", userError, err)
 	}
-	
+
 	e.lggr.Debugw("Submitting transaction", "executionID", metadata.WorkflowExecutionID)
 	transactionResult, err := e.forwarderClient.InvokeOnReport(ctx, transmissionID.Receiver, request.Report, request.GasConfig)
 	if err != nil {
@@ -197,7 +197,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		return &evm.WriteReportReply{
 			TxStatus:     evm.TxStatus_TX_STATUS_FATAL,
 			ErrorMessage: ptr(err.Error()),
-		}, capabilities.ResponseMetadata{}, nil
+		}, capabilities.ResponseMetadata{}, err
 	}
 
 	strategy := retry.Strategy[contracts.TransmissionInfo]{
@@ -234,13 +234,19 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		meteringMetadata = metering.GetResponseMetadataWriteReport(transactionFee, e.chainSelector)
 	}
 
-	// This is counterintuitive, but the tx manager is currently returning unconfirmed whenever the tx is confirmed
-	// current implementation here: https://github.com/smartcontractkit/chainlink-framework/blob/main/chains/txmgr/txmgr.go#L697
-	// so we need to check if we were able to write to the consumer contract to determine if the transaction was successful
 	switch transmissionInfo.State {
 	case TransmissionStateSucceeded:
-		e.lggr.Debugw("Transaction confirmed", "executionID", metadata.WorkflowExecutionID, "txIdempotencyKey", transactionResult.TxIdempotencyKey, "txHash", transactionResult.TxHash)
-		reply, err := e.fetchTransactionReceiptAndCreateReply(ctx, transactionResult.TxHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS, nil)
+		txHash := &transactionResult.TxHash
+		if transactionResult.TxStatus == evmtypes.TxReverted {
+			// Report for this transaction has already been submitted and we sent a duplicate tx onchain which is fine, but wastes ethereum gas
+			txHash, err = txHashRetriever.GetHash(ctx)
+			if err != nil {
+				return nil, capabilities.ResponseMetadata{}, err
+			}
+			monitoring.LogAndEmitSuccess(ctx, "WriteReport sent a duplicate transaction - report already submitted", e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportDuplicateTx(telemetryContext, request, common.Bytes2Hex(transactionResult.TxHash[:]), common.Bytes2Hex((*txHash)[:])))
+		}
+		e.lggr.Debugw("Transaction confirmed", "executionID", metadata.WorkflowExecutionID, "txIdempotencyKey", transactionResult.TxIdempotencyKey, "txHash", common.Bytes2Hex((*txHash)[:]))
+		reply, err := e.fetchTransactionReceiptAndCreateReply(ctx, *txHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS, nil)
 		return reply, meteringMetadata, err
 	case TransmissionStateFailed, TransmissionStateInvalidReceiver:
 		reply, err := e.processUnrecoverableTxState(ctx, metadata, transactionResult.TxHash, transmissionInfo, transmissionID, true)
