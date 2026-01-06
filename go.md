@@ -10,6 +10,8 @@ flowchart LR
 	capabilities/consensus --> capabilities/libs
 	capabilities/consensus --> cre-sdk-go
 	click capabilities/consensus href "https://github.com/smartcontractkit/capabilities"
+	capabilities/cron --> capabilities/libs
+	click capabilities/cron href "https://github.com/smartcontractkit/capabilities"
 	capabilities/http_action --> capabilities/libs
 	click capabilities/http_action href "https://github.com/smartcontractkit/capabilities"
 	capabilities/http_trigger --> capabilities/libs
@@ -182,6 +184,7 @@ flowchart LR
 		 capabilities/capabilitywatcher
 		 capabilities/chain_capabilities/evm
 		 capabilities/consensus
+		 capabilities/cron
 		 capabilities/http_action
 		 capabilities/http_trigger
 		 capabilities/integration_tests
