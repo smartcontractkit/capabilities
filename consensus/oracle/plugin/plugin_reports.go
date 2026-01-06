@@ -117,7 +117,7 @@ func (r *reportingPlugin) Reports(ctx context.Context, seqNr uint64, outcome ocr
 			info, err := createFailedConsensusReportInfo(failedOutcome.RequestID, failedOutcome.KeyBundleId, failedOutcome.FailureMessage,
 				failedOutcome.Code)
 			if err != nil {
-				return nil, fmt.Errorf("failed to create report info for successful consensus request %s: %w", failedOutcome.RequestID, err)
+				return nil, fmt.Errorf("failed to create report info for failed consensus outcome %s: %w", failedOutcome.RequestID, err)
 			}
 
 			reports = append(reports, ocr3types.ReportPlus[[]byte]{

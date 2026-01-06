@@ -2,7 +2,6 @@ package plugin
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -127,17 +126,7 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, requestI
 			oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED, consensusMDD, timestamp)
 	}
 
-	hasCapacity, err := outcome.AddSuccessfulConsensusRequestOutcomeToBatch(ctx, consensusMDD.Metadata, value, timestamp)
-	if err != nil {
-		if errors.Is(err, batching.ErrOutcomeTooLarge) {
-			// The outcome is too large to ever fit in any batch - this is a user error
-			failureMsg := "outcome too large: the consensus result for this request exceeds the maximum allowed size and will never fit in a batch; reduce the size of the data being returned"
-			return outcome.AddFailedConsensusRequestOutcomeToBatch(ctx, requestID, failureMsg,
-				oracletypes.ConsensusFailureCode_OUTCOME_TOO_LARGE)
-		}
-		return false, err
-	}
-	return hasCapacity, nil
+	return outcome.AddSuccessfulConsensusRequestOutcomeToBatch(ctx, consensusMDD.Metadata, value, timestamp)
 }
 
 func formatErrorsForLogging(ctx context.Context, errors []string) string {

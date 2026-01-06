@@ -2,7 +2,6 @@ package batching
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"google.golang.org/protobuf/proto"
@@ -20,10 +19,6 @@ import (
 )
 
 const FailureMessageTruncated = ":TRUNCATED"
-
-// ErrOutcomeTooLarge is returned when a single outcome is too large to ever fit in any batch.
-// This is a user error - they should reduce the size of their request.
-var ErrOutcomeTooLarge = errors.New("outcome too large")
 
 type OutcomeBatch struct {
 	oracletypes.Outcome
@@ -71,8 +66,8 @@ func (o *OutcomeBatch) CurrentSerialisedBatchSize() int {
 // AddSuccessfulConsensusRequestOutcomeToBatch adds a successful consensus request outcome to the outcome batch.
 // Returns (true, nil) if the outcome was added successfully.
 // Returns (false, nil) if batch does not have capacity to add the outcome (will be retried next round).
-// Returns (false, ErrOutcomeTooLarge) if the outcome is too large to ever fit in any batch - this is a user error.
-// Returns (false, <other error>) if there is a system error.
+// Returns (false, <error>) if there is a system error.
+// If the outcome is too large to ever fit in any batch, a failure message (user error) will be added to the batch instead.
 func (o *OutcomeBatch) AddSuccessfulConsensusRequestOutcomeToBatch(ctx context.Context, metadata *oracletypes.RequestMetaData, value *valuespb.Value, timestamp *timestamppb.Timestamp) (bool, error) {
 	requestID := metadata.RequestId
 
@@ -97,10 +92,12 @@ func (o *OutcomeBatch) AddSuccessfulConsensusRequestOutcomeToBatch(ctx context.C
 
 		fitsInEmptyBatch, _ := o.outcomeWouldFit(o.initialBatchOverheadSize, requestID, requestOutcome, o.outctx.SeqNr)
 		if !fitsInEmptyBatch {
-			o.lggr.Errorw("outcome is too large to ever fit in a batch", "requestID", requestID,
+			failureMsg := "outcome too large: the consensus result for this request exceeds the maximum allowed size"
+			o.lggr.Errorw(failureMsg, "requestID", requestID,
 				"outcomeSize", proto.Size(requestOutcome), "maxOutcomeLengthBytes", o.maxOutcomeLengthBytes,
 				"initialBatchOverheadSize", o.initialBatchOverheadSize)
-			return false, ErrOutcomeTooLarge
+			return o.AddFailedConsensusRequestOutcomeToBatch(ctx, requestID, failureMsg,
+				oracletypes.ConsensusFailureCode_OUTCOME_TOO_LARGE)
 		}
 		return false, nil
 	}
