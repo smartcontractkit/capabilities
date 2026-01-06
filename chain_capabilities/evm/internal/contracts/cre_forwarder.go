@@ -59,7 +59,7 @@ func NewCREForwarderClient(EVMService types.EVMService, forwarderAddress common.
 		return nil, err
 	}
 	if forwarderLookbackBlocks <= 0 {
-		logger.Debugf("forwarderLookbackBlocks is set to a zero/negative value %d, using default value of %d.", forwarderLookbackBlocks, DefaultLookbackBlocks)
+		lggr.Debugf("forwarderLookbackBlocks is set to a zero/negative value %d, using default value of %d.", forwarderLookbackBlocks, DefaultLookbackBlocks)
 		forwarderLookbackBlocks = DefaultLookbackBlocks
 	}
 	return &creForwarderClient{
