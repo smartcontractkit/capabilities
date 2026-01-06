@@ -261,6 +261,8 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 		if lts.isDBUnreachable(err) {
 			errorCode = caperrors.Unavailable
 		}
+		summary := fmt.Sprintf("failed to register log-tracking: '%v' for triggerID: %s", err, triggerID)
+		monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(telemetryContext, triggerID, summary, err.Error()))
 		registerError := fmt.Errorf("failed to register log-tracking: '%w' for triggerID: %s, addresses: %v, eventSig: %v, topic2: %v, topic3: %v, topic4: %v",
 			err, triggerID, filterQuery.Addresses, filterQuery.EventSigs, filterQuery.Topic2, filterQuery.Topic3, filterQuery.Topic4)
 		return nil, caperrors.NewPrivateSystemError(registerError, errorCode)
@@ -634,11 +636,11 @@ func (lts *LogTriggerService) makeEventByTopicFilter(topicIndex uint64, topics [
 func (lts *LogTriggerService) UnregisterLogTrigger(ctx context.Context, triggerID string, meta capabilities.RequestMetadata, _ *evmcappb.FilterLogTriggerRequest) caperrors.Error {
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	if triggerID == "" {
-		return caperrors.NewPublicSystemError(fmt.Errorf("no triggerID provided"), caperrors.Unknown)
+		return caperrors.NewPublicSystemError(fmt.Errorf("no triggerID provided"), caperrors.Internal)
 	}
 	trigger, found := lts.triggers.Read(triggerID)
 	if !found {
-		return caperrors.NewPublicSystemError(fmt.Errorf("no active trigger found for triggerID: %s", triggerID), caperrors.Unknown)
+		return caperrors.NewPublicSystemError(fmt.Errorf("no active trigger found for triggerID: %s", triggerID), caperrors.Internal)
 	}
 	lts.lggr.Debugf("UnregisterLogTrigger triggerID: %s", triggerID)
 	trigger.cancelFunc()
@@ -646,9 +648,14 @@ func (lts *LogTriggerService) UnregisterLogTrigger(ctx context.Context, triggerI
 
 	err := lts.EVMService.UnregisterLogTracking(ctx, lts.generateFilterID(triggerID))
 	if err != nil {
+		errorCode := caperrors.Unknown
+		if lts.isDBUnreachable(err) {
+			errorCode = caperrors.Unavailable
+		}
 		summary := fmt.Sprintf("failed to unregister log-tracking: '%v' for triggerID: %s", err, triggerID)
 		monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(telemetryContext, triggerID, summary, err.Error()))
-		return caperrors.NewPublicSystemError(fmt.Errorf("failed to unregister log-tracking: '%w' for triggerID: %s", err, triggerID), caperrors.Unknown)
+		unregisterLogTrackingError := fmt.Errorf("failed to unregister log-tracking: '%w' for triggerID: %s", err, triggerID)
+		return caperrors.NewPrivateSystemError(unregisterLogTrackingError, errorCode)
 	}
 	return nil
 }

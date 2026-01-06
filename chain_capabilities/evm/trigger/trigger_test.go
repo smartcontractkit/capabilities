@@ -121,7 +121,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 			Addresses: addresses,
 		})
 		expectedError := "[13]Internal: no triggerID provided"
-		assertError(t, err, caperrors.VisibilityPublic, expectedError)
+		assertCapError(t, err, caperrors.VisibilityPublic, expectedError)
 	})
 
 	t.Run("[2]Unknown: triggerID \\\"trigger-1\\\" is already registered", func(t *testing.T) {
@@ -133,7 +133,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 			Addresses: addresses,
 		})
 		expectedError := "[13]Internal: triggerID \"trigger-1\" is already registered"
-		assertError(t, err, caperrors.VisibilityPublic, expectedError)
+		assertCapError(t, err, caperrors.VisibilityPublic, expectedError)
 	})
 
 	t.Run("missing addresses", func(t *testing.T) {
@@ -141,7 +141,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 			Addresses: [][]byte{},
 		})
 		expectedError := "[2]Unknown: no valid addresses provided (at least one address is required)"
-		assertError(t, err, caperrors.VisibilityPublic, expectedError)
+		assertCapError(t, err, caperrors.VisibilityPublic, expectedError)
 	})
 
 	t.Run("too many topics", func(t *testing.T) {
@@ -156,7 +156,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 			},
 		})
 		expectedError := "[2]Unknown: there can be at most 4 topics provided, got 5 instead"
-		assertError(t, err, caperrors.VisibilityPublic, expectedError)
+		assertCapError(t, err, caperrors.VisibilityPublic, expectedError)
 	})
 
 	t.Run("missing eventSig", func(t *testing.T) {
@@ -164,13 +164,13 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 		_, err := service.RegisterLogTrigger(t.Context(), triggerID, capabilities.RequestMetadata{WorkflowID: "wf-id"}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
 		})
-		assertError(t, err, caperrors.VisibilityPublic, expectedError)
+		assertCapError(t, err, caperrors.VisibilityPublic, expectedError)
 
 		_, err = service.RegisterLogTrigger(t.Context(), triggerID, capabilities.RequestMetadata{WorkflowID: "wf-id"}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
 			Topics:    []*evmcappb.TopicValues{},
 		})
-		assertError(t, err, caperrors.VisibilityPublic, expectedError)
+		assertCapError(t, err, caperrors.VisibilityPublic, expectedError)
 	})
 
 	t.Run("fail to get latest head", func(t *testing.T) {
@@ -183,7 +183,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 			Topics:    topicsWithEventSig0,
 		})
 		expectedError := "[14]Unavailable: failed to register latest and finalized log pollers block: 'mocked failure error' for triggerID: trigger-1"
-		assertError(t, err, caperrors.VisibilityPrivate, expectedError)
+		assertCapError(t, err, caperrors.VisibilityPrivate, expectedError)
 	})
 
 	t.Run("fail to register log-tracking", func(t *testing.T) {
@@ -197,7 +197,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 			Topics:    topicsWithEventSig0,
 		})
 		expectedError := "[2]Unknown: failed to register log-tracking: 'mocking error, making register failing on purpose' for triggerID: trigger-1-logtracking, addresses: [[173 173 190 239 202 254 186 190 18 52 86 120 154 188 222 240 17 34 51 68]], eventSig: [[221 242 82 173 27 226 200 155 105 194 176 104 252 55 141 170 149 43 167 241 99 196 161 22 40 245 90 77 245 35 179 239]], topic2: [], topic3: [], topic4: []"
-		assertError(t, err, caperrors.VisibilityPrivate, expectedError)
+		assertCapError(t, err, caperrors.VisibilityPrivate, expectedError)
 	})
 
 	t.Run("fail to register log-tracking DB issues", func(t *testing.T) {
@@ -212,11 +212,11 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 			Topics:    topicsWithEventSig0,
 		})
 		expectedError := "[14]Unavailable: failed to register log-tracking: 'rpc error: code = Unknown desc = failed to connect to `host=<HOST> user=<USER> database=<DB-NAME>`: dial error (dial tcp <IP:PORT>: connect: connection refused)' for triggerID: trigger-1-logtracking, addresses: [[173 173 190 239 202 254 186 190 18 52 86 120 154 188 222 240 17 34 51 68]], eventSig: [[221 242 82 173 27 226 200 155 105 194 176 104 252 55 141 170 149 43 167 241 99 196 161 22 40 245 90 77 245 35 179 239]], topic2: [], topic3: [], topic4: []"
-		assertError(t, err, caperrors.VisibilityPrivate, expectedError)
+		assertCapError(t, err, caperrors.VisibilityPrivate, expectedError)
 	})
 }
 
-func assertError(t *testing.T, err caperrors.Error, visibility caperrors.Visibility, expectedError string) {
+func assertCapError(t *testing.T, err caperrors.Error, visibility caperrors.Visibility, expectedError string) {
 	require.Error(t, err, "expected error but got nil")
 	var capError caperrors.Error
 	require.True(t, errors.As(err, &capError), "expected error to be of type caperrors.Error")
@@ -234,8 +234,7 @@ func TestUnregisterLogTrigger_InputValidation(t *testing.T) {
 
 	t.Run("missing triggerID", func(t *testing.T) {
 		err := service.UnregisterLogTrigger(t.Context(), "", emptyMetadata, emptyRequest)
-		require.Error(t, err)
-		require.Equal(t, err.Error(), "[2]Unknown: no triggerID provided")
+		assertCapError(t, err, caperrors.VisibilityPublic, "[13]Internal: no triggerID provided")
 	})
 
 	t.Run("no active trigger found", func(t *testing.T) {
@@ -243,8 +242,7 @@ func TestUnregisterLogTrigger_InputValidation(t *testing.T) {
 			triggers: NewLogTriggerStore(),
 		}
 		err := service.UnregisterLogTrigger(t.Context(), triggerID, emptyMetadata, emptyRequest)
-		require.Error(t, err)
-		require.Equal(t, err.Error(), "[2]Unknown: no active trigger found for triggerID: trigger-1")
+		assertCapError(t, err, caperrors.VisibilityPublic, "[13]Internal: no active trigger found for triggerID: trigger-1")
 	})
 
 	t.Run("fail to unregister log-tracking", func(t *testing.T) {
@@ -258,8 +256,7 @@ func TestUnregisterLogTrigger_InputValidation(t *testing.T) {
 			lastBlock:  big.NewInt(0),
 		})
 		err := service.UnregisterLogTrigger(t.Context(), breakingTriggerID, emptyMetadata, emptyRequest)
-		require.Error(t, err)
-		require.Equal(t, err.Error(), "[2]Unknown: failed to unregister log-tracking: 'mocking error, making unregister failing on purpose' for triggerID: breaking-logTriggerUnregister")
+		assertCapError(t, err, caperrors.VisibilityPrivate, "[2]Unknown: failed to unregister log-tracking: 'mocking error, making unregister failing on purpose' for triggerID: breaking-logTriggerUnregister")
 	})
 }
 
