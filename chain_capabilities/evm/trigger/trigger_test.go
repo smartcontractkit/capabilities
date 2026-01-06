@@ -199,21 +199,6 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 		expectedError := "[2]Unknown: failed to register log-tracking: 'mocking error, making register failing on purpose' for triggerID: trigger-1-logtracking, addresses: [[173 173 190 239 202 254 186 190 18 52 86 120 154 188 222 240 17 34 51 68]], eventSig: [[221 242 82 173 27 226 200 155 105 194 176 104 252 55 141 170 149 43 167 241 99 196 161 22 40 245 90 77 245 35 179 239]], topic2: [], topic3: [], topic4: []"
 		assertCapError(t, err, caperrors.VisibilityPrivate, expectedError)
 	})
-
-	t.Run("fail to register log-tracking DB issues", func(t *testing.T) {
-		evmService := initMocks(t)
-		evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(&finalizedExpBlock, nil)
-		errorInProdPLEX2355 := "rpc error: code = Unknown desc = failed to connect to `host=<HOST> user=<USER> database=<DB-NAME>`: dial error (dial tcp <IP:PORT>: connect: connection refused)"
-		evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(errors.New(errorInProdPLEX2355)).Once()
-		service := createTriggerObject(t, evmService, NewLogTriggerStore())
-		ctx := t.Context()
-		_, err := service.RegisterLogTrigger(ctx, triggerID+"-logtracking", capabilities.RequestMetadata{WorkflowID: "wf-id"}, &evmcappb.FilterLogTriggerRequest{
-			Addresses: brokenAddresses,
-			Topics:    topicsWithEventSig0,
-		})
-		expectedError := "[14]Unavailable: failed to register log-tracking: 'rpc error: code = Unknown desc = failed to connect to `host=<HOST> user=<USER> database=<DB-NAME>`: dial error (dial tcp <IP:PORT>: connect: connection refused)' for triggerID: trigger-1-logtracking, addresses: [[173 173 190 239 202 254 186 190 18 52 86 120 154 188 222 240 17 34 51 68]], eventSig: [[221 242 82 173 27 226 200 155 105 194 176 104 252 55 141 170 149 43 167 241 99 196 161 22 40 245 90 77 245 35 179 239]], topic2: [], topic3: [], topic4: []"
-		assertCapError(t, err, caperrors.VisibilityPrivate, expectedError)
-	})
 }
 
 func assertCapError(t *testing.T, err caperrors.Error, visibility caperrors.Visibility, expectedError string) {
