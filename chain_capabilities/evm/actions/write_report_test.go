@@ -289,7 +289,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
 
-		txResult, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
+		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
 			Receiver: testutils.NewAddress().Bytes(),
 			Report: &workflowpb.ReportResponse{
 				RawReport:     encodedReportMetadata,
@@ -297,12 +297,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 				Sigs:          generateRandomSignatures(),
 			},
 		})
-		require.NoError(t, err)
-		equalWriteReportReply(t, &evm.WriteReportReply{
-			TxStatus:     evmcappb.TxStatus_TX_STATUS_FATAL,
-			ErrorMessage: ptr(getInvalidStateErrorMessage(invalidState)),
-		}, txResult.Response)
-		require.Empty(t, txResult.ResponseMetadata.Metering, "response metadata must not contain metering data for fatal errors")
+		require.Error(t, err)
 	})
 	t.Run("TX already transmitted successfully - Failed to fetch report emitted log", func(t *testing.T) {
 		ctx := t.Context()
@@ -577,13 +572,8 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 
 		mockForwarderClient.On("InvokeOnReport", mock.Anything, receiverAddress, signedReport, mock.Anything).Return(nil, errors.New(expectedError))
 
-		txResult, err := service.WriteReport(ctx, capabilitiesMetadata, writeReportRequest)
-		require.NoError(t, err)
-		equalWriteReportReply(t, &evm.WriteReportReply{
-			TxStatus:     evmcappb.TxStatus_TX_STATUS_FATAL,
-			ErrorMessage: &expectedError,
-		}, txResult.Response)
-		require.Empty(t, txResult.ResponseMetadata.Metering, "response metadata must not contain metering data for fatal errors")
+		_, err := service.WriteReport(ctx, capabilitiesMetadata, writeReportRequest)
+		require.Error(t, err)
 	})
 	t.Run("TX first transmission - Failed to get transmission info and then succeed", func(t *testing.T) {
 		ctx := t.Context()
@@ -732,7 +722,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
 
-		txResult, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
+		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
 			Receiver: testutils.NewAddress().Bytes(),
 			Report: &workflowpb.ReportResponse{
 				RawReport:     encodedReportMetadata,
@@ -740,12 +730,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 				Sigs:          generateRandomSignatures(),
 			},
 		})
-		require.NoError(t, err)
-		equalWriteReportReply(t, &evm.WriteReportReply{
-			TxStatus:     evmcappb.TxStatus_TX_STATUS_FATAL,
-			ErrorMessage: ptr(getInvalidStateErrorMessage(invalidState)),
-		}, txResult.Response)
-		require.Empty(t, txResult.ResponseMetadata.Metering, "response metadata must not contain metering data for fatal errors")
+		require.Error(t, err)
 	})
 	t.Run("TX already transmitted successfully - Receiver contract reverted - sets default error message when nil", func(t *testing.T) {
 		ctx := t.Context()

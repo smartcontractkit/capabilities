@@ -76,12 +76,12 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 		if err := p.metrics.OnWriteReportTxFeeCalculationError(ctx, msg); err != nil {
 			return fmt.Errorf("failed to publish WriteReportTxFeeCalculationError metrics: %w", err)
 		}
-	case *WriteReportDuplicateTx:
+	case *WriteReportInvalidTransmissionState:
 		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit WriteReportDuplicateTx log: %w", err)
+			return fmt.Errorf("failed to emit WriteReportInvalidTransmissionState log: %w", err)
 		}
-		if err := p.metrics.OnWriteReportDuplicateTx(ctx, msg); err != nil {
-			return fmt.Errorf("failed to publish WriteReportDuplicateTx metrics: %w", err)
+		if err := p.metrics.OnWriteReportInvalidTransmissionState(ctx, msg); err != nil {
+			return fmt.Errorf("failed to publish WriteReportInvalidTransmissionState metrics: %w", err)
 		}
 	// -- LogTrigger --
 	case *LogTriggerInitiated:

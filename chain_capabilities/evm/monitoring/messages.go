@@ -16,6 +16,8 @@ import (
 
 	capmonitoring "github.com/smartcontractkit/capabilities/libs/monitoring"
 
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
@@ -57,8 +59,7 @@ func NewMessageBuilder(chainInfo types.ChainInfo, capInfo capabilities.Capabilit
 
 func (m *MessageBuilder) RequestLggr(lggr logger.SugaredLogger, telemetryContext TelemetryContext) logger.SugaredLogger {
 	attrs := m.BuildExecutionContext(telemetryContext).LogAttributes()
-	lggrAttrs := attrsToErrorKV(attrs)
-	return lggr.With(lggrAttrs...)
+	return lggr.With(attrsToErrorKV(attrs)...)
 }
 
 func (m *MessageBuilder) BuildCallContractInitiated(tc TelemetryContext, msg *evm.CallMsg, bn int64) *CallContractInitiated {
@@ -137,12 +138,17 @@ func (m *MessageBuilder) BuildWriteReportTxFeeCalculationError(tc TelemetryConte
 	}
 }
 
-func (m *MessageBuilder) BuildWriteReportDuplicateTx(tc TelemetryContext, req *evmcap.WriteReportRequest, duplicateTransmissionTxHash, transmissionTxHash string) Message {
-	return &WriteReportDuplicateTx{
-		Req:                        convertWriteReportRequest(req),
-		ExecutionContext:           m.BuildExecutionContext(tc),
-		DuplicateTransmissionTxHash: duplicateTransmissionTxHash,
-		TransmissionTxHash:          transmissionTxHash,
+func (m *MessageBuilder) BuildWriteReportInvalidTransmissionState(tc TelemetryContext, req *evmcap.WriteReportRequest, transmissionInfo contracts.TransmissionInfo, summary, cause string) ErrorMessage {
+	return &WriteReportInvalidTransmissionState{
+		Req:               convertWriteReportRequest(req),
+		ExecutionContext:  m.BuildExecutionContext(tc),
+		Summary:           summary,
+		Cause:             cause,
+		TransmissionState: uint32(transmissionInfo.State),
+		InvalidReceiver:   transmissionInfo.InvalidReceiver,
+		Success:           transmissionInfo.Success,
+		TransmissionId:    common.Bytes2Hex(transmissionInfo.TransmissionId[:]),
+		Transmitter:       transmissionInfo.Transmitter.Hex(),
 	}
 }
 

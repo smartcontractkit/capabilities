@@ -286,30 +286,35 @@ func (x *WriteReportTxFeeCalculationError) GetExecutionContext() *monitoring.Exe
 	return nil
 }
 
-type WriteReportDuplicateTx struct {
-	state                       protoimpl.MessageState       `protogen:"open.v1"`
-	Req                         *WriteReportRequest          `protobuf:"bytes,1,opt,name=req,proto3" json:"req,omitempty"`
-	DuplicateTransmissionTxHash string                       `protobuf:"bytes,2,opt,name=duplicate_transmission_tx_hash,json=duplicateTransmissionTxHash,proto3" json:"duplicate_transmission_tx_hash,omitempty"`
-	TransmissionTxHash          string                       `protobuf:"bytes,3,opt,name=transmission_tx_hash,json=transmissionTxHash,proto3" json:"transmission_tx_hash,omitempty"`
-	ExecutionContext            *monitoring.ExecutionContext `protobuf:"bytes,20,opt,name=execution_context,json=executionContext,proto3" json:"execution_context,omitempty"`
-	unknownFields               protoimpl.UnknownFields
-	sizeCache                   protoimpl.SizeCache
+type WriteReportInvalidTransmissionState struct {
+	state             protoimpl.MessageState       `protogen:"open.v1"`
+	Req               *WriteReportRequest          `protobuf:"bytes,1,opt,name=req,proto3" json:"req,omitempty"`
+	Summary           string                       `protobuf:"bytes,2,opt,name=summary,proto3" json:"summary,omitempty"`
+	Cause             string                       `protobuf:"bytes,3,opt,name=cause,proto3" json:"cause,omitempty"`
+	TransmissionState uint32                       `protobuf:"varint,4,opt,name=transmission_state,json=transmissionState,proto3" json:"transmission_state,omitempty"`
+	InvalidReceiver   bool                         `protobuf:"varint,5,opt,name=invalid_receiver,json=invalidReceiver,proto3" json:"invalid_receiver,omitempty"`
+	Success           bool                         `protobuf:"varint,6,opt,name=success,proto3" json:"success,omitempty"`
+	TransmissionId    string                       `protobuf:"bytes,7,opt,name=transmission_id,json=transmissionId,proto3" json:"transmission_id,omitempty"`
+	Transmitter       string                       `protobuf:"bytes,8,opt,name=transmitter,proto3" json:"transmitter,omitempty"`
+	ExecutionContext  *monitoring.ExecutionContext `protobuf:"bytes,20,opt,name=execution_context,json=executionContext,proto3" json:"execution_context,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
-func (x *WriteReportDuplicateTx) Reset() {
-	*x = WriteReportDuplicateTx{}
+func (x *WriteReportInvalidTransmissionState) Reset() {
+	*x = WriteReportInvalidTransmissionState{}
 	mi := &file_chain_capabilities_evm_monitoring_write_report_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *WriteReportDuplicateTx) String() string {
+func (x *WriteReportInvalidTransmissionState) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*WriteReportDuplicateTx) ProtoMessage() {}
+func (*WriteReportInvalidTransmissionState) ProtoMessage() {}
 
-func (x *WriteReportDuplicateTx) ProtoReflect() protoreflect.Message {
+func (x *WriteReportInvalidTransmissionState) ProtoReflect() protoreflect.Message {
 	mi := &file_chain_capabilities_evm_monitoring_write_report_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -321,33 +326,68 @@ func (x *WriteReportDuplicateTx) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use WriteReportDuplicateTx.ProtoReflect.Descriptor instead.
-func (*WriteReportDuplicateTx) Descriptor() ([]byte, []int) {
+// Deprecated: Use WriteReportInvalidTransmissionState.ProtoReflect.Descriptor instead.
+func (*WriteReportInvalidTransmissionState) Descriptor() ([]byte, []int) {
 	return file_chain_capabilities_evm_monitoring_write_report_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *WriteReportDuplicateTx) GetReq() *WriteReportRequest {
+func (x *WriteReportInvalidTransmissionState) GetReq() *WriteReportRequest {
 	if x != nil {
 		return x.Req
 	}
 	return nil
 }
 
-func (x *WriteReportDuplicateTx) GetDuplicateTransmissionTxHash() string {
+func (x *WriteReportInvalidTransmissionState) GetSummary() string {
 	if x != nil {
-		return x.DuplicateTransmissionTxHash
+		return x.Summary
 	}
 	return ""
 }
 
-func (x *WriteReportDuplicateTx) GetTransmissionTxHash() string {
+func (x *WriteReportInvalidTransmissionState) GetCause() string {
 	if x != nil {
-		return x.TransmissionTxHash
+		return x.Cause
 	}
 	return ""
 }
 
-func (x *WriteReportDuplicateTx) GetExecutionContext() *monitoring.ExecutionContext {
+func (x *WriteReportInvalidTransmissionState) GetTransmissionState() uint32 {
+	if x != nil {
+		return x.TransmissionState
+	}
+	return 0
+}
+
+func (x *WriteReportInvalidTransmissionState) GetInvalidReceiver() bool {
+	if x != nil {
+		return x.InvalidReceiver
+	}
+	return false
+}
+
+func (x *WriteReportInvalidTransmissionState) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *WriteReportInvalidTransmissionState) GetTransmissionId() string {
+	if x != nil {
+		return x.TransmissionId
+	}
+	return ""
+}
+
+func (x *WriteReportInvalidTransmissionState) GetTransmitter() string {
+	if x != nil {
+		return x.Transmitter
+	}
+	return ""
+}
+
+func (x *WriteReportInvalidTransmissionState) GetExecutionContext() *monitoring.ExecutionContext {
 	if x != nil {
 		return x.ExecutionContext
 	}
@@ -609,11 +649,16 @@ const file_chain_capabilities_evm_monitoring_write_report_proto_rawDesc = "" +
 	"\asummary\x18\x02 \x01(\tR\asummary\x12\x14\n" +
 	"\x05cause\x18\x03 \x01(\tR\x05cause\x12,\n" +
 	"\x12tx_idempotency_key\x18\x04 \x01(\tR\x10txIdempotencyKey\x12I\n" +
-	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\x98\x02\n" +
-	"\x16WriteReportDuplicateTx\x12<\n" +
-	"\x03req\x18\x01 \x01(\v2*.chain_capabilities.evm.WriteReportRequestR\x03req\x12C\n" +
-	"\x1eduplicate_transmission_tx_hash\x18\x02 \x01(\tR\x1bduplicateTransmissionTxHash\x120\n" +
-	"\x14transmission_tx_hash\x18\x03 \x01(\tR\x12transmissionTxHash\x12I\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\x9d\x03\n" +
+	"#WriteReportInvalidTransmissionState\x12<\n" +
+	"\x03req\x18\x01 \x01(\v2*.chain_capabilities.evm.WriteReportRequestR\x03req\x12\x18\n" +
+	"\asummary\x18\x02 \x01(\tR\asummary\x12\x14\n" +
+	"\x05cause\x18\x03 \x01(\tR\x05cause\x12-\n" +
+	"\x12transmission_state\x18\x04 \x01(\rR\x11transmissionState\x12)\n" +
+	"\x10invalid_receiver\x18\x05 \x01(\bR\x0finvalidReceiver\x12\x18\n" +
+	"\asuccess\x18\x06 \x01(\bR\asuccess\x12'\n" +
+	"\x0ftransmission_id\x18\a \x01(\tR\x0etransmissionId\x12 \n" +
+	"\vtransmitter\x18\b \x01(\tR\vtransmitter\x12I\n" +
 	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xc6\x01\n" +
 	"\x12WriteReportRequest\x12\x1a\n" +
 	"\breceiver\x18\x01 \x01(\fR\breceiver\x12>\n" +
@@ -648,16 +693,16 @@ func file_chain_capabilities_evm_monitoring_write_report_proto_rawDescGZIP() []b
 
 var file_chain_capabilities_evm_monitoring_write_report_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_chain_capabilities_evm_monitoring_write_report_proto_goTypes = []any{
-	(*WriteReportInitiated)(nil),             // 0: chain_capabilities.evm.WriteReportInitiated
-	(*WriteReportSuccess)(nil),               // 1: chain_capabilities.evm.WriteReportSuccess
-	(*WriteReportError)(nil),                 // 2: chain_capabilities.evm.WriteReportError
-	(*WriteReportTxFeeCalculationError)(nil), // 3: chain_capabilities.evm.WriteReportTxFeeCalculationError
-	(*WriteReportDuplicateTx)(nil),           // 4: chain_capabilities.evm.WriteReportDuplicateTx
-	(*WriteReportRequest)(nil),               // 5: chain_capabilities.evm.WriteReportRequest
-	(*GasConfig)(nil),                        // 6: chain_capabilities.evm.GasConfig
-	(*ReportResponse)(nil),                   // 7: chain_capabilities.evm.ReportResponse
-	(*AttributedSignature)(nil),              // 8: chain_capabilities.evm.AttributedSignature
-	(*monitoring.ExecutionContext)(nil),      // 9: monitoring.ExecutionContext
+	(*WriteReportInitiated)(nil),                // 0: chain_capabilities.evm.WriteReportInitiated
+	(*WriteReportSuccess)(nil),                  // 1: chain_capabilities.evm.WriteReportSuccess
+	(*WriteReportError)(nil),                    // 2: chain_capabilities.evm.WriteReportError
+	(*WriteReportTxFeeCalculationError)(nil),    // 3: chain_capabilities.evm.WriteReportTxFeeCalculationError
+	(*WriteReportInvalidTransmissionState)(nil), // 4: chain_capabilities.evm.WriteReportInvalidTransmissionState
+	(*WriteReportRequest)(nil),                  // 5: chain_capabilities.evm.WriteReportRequest
+	(*GasConfig)(nil),                           // 6: chain_capabilities.evm.GasConfig
+	(*ReportResponse)(nil),                      // 7: chain_capabilities.evm.ReportResponse
+	(*AttributedSignature)(nil),                 // 8: chain_capabilities.evm.AttributedSignature
+	(*monitoring.ExecutionContext)(nil),         // 9: monitoring.ExecutionContext
 }
 var file_chain_capabilities_evm_monitoring_write_report_proto_depIdxs = []int32{
 	5,  // 0: chain_capabilities.evm.WriteReportInitiated.req:type_name -> chain_capabilities.evm.WriteReportRequest
@@ -668,8 +713,8 @@ var file_chain_capabilities_evm_monitoring_write_report_proto_depIdxs = []int32{
 	9,  // 5: chain_capabilities.evm.WriteReportError.execution_context:type_name -> monitoring.ExecutionContext
 	5,  // 6: chain_capabilities.evm.WriteReportTxFeeCalculationError.req:type_name -> chain_capabilities.evm.WriteReportRequest
 	9,  // 7: chain_capabilities.evm.WriteReportTxFeeCalculationError.execution_context:type_name -> monitoring.ExecutionContext
-	5,  // 8: chain_capabilities.evm.WriteReportDuplicateTx.req:type_name -> chain_capabilities.evm.WriteReportRequest
-	9,  // 9: chain_capabilities.evm.WriteReportDuplicateTx.execution_context:type_name -> monitoring.ExecutionContext
+	5,  // 8: chain_capabilities.evm.WriteReportInvalidTransmissionState.req:type_name -> chain_capabilities.evm.WriteReportRequest
+	9,  // 9: chain_capabilities.evm.WriteReportInvalidTransmissionState.execution_context:type_name -> monitoring.ExecutionContext
 	7,  // 10: chain_capabilities.evm.WriteReportRequest.report:type_name -> chain_capabilities.evm.ReportResponse
 	6,  // 11: chain_capabilities.evm.WriteReportRequest.gas_config:type_name -> chain_capabilities.evm.GasConfig
 	8,  // 12: chain_capabilities.evm.ReportResponse.sigs:type_name -> chain_capabilities.evm.AttributedSignature
