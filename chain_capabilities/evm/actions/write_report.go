@@ -194,10 +194,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 	transactionResult, err := e.forwarderClient.InvokeOnReport(ctx, transmissionID.Receiver, request.Report, request.GasConfig)
 	if err != nil {
 		e.lggr.Errorw("Transaction failed", "error", err.Error())
-		return &evm.WriteReportReply{
-			TxStatus:     evm.TxStatus_TX_STATUS_FATAL,
-			ErrorMessage: ptr(err.Error()),
-		}, capabilities.ResponseMetadata{}, err
+		return nil, capabilities.ResponseMetadata{}, err
 	}
 
 	strategy := retry.Strategy[contracts.TransmissionInfo]{
@@ -242,7 +239,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 	// so we need to check if we were able to write to the consumer contract to determine if the transaction was successful
 	switch transmissionInfo.State {
 	case TransmissionStateSucceeded:
-		e.lggr.Debugw("Transaction confirmed", "txIdempotencyKey", transactionResult.TxIdempotencyKey, "txHash", common.Bytes2Hex(transactionResult.TxHash[:]))
+		e.lggr.Debugw("Transaction confirmed", "txHash", common.Bytes2Hex(transactionResult.TxHash[:]))
 		reply, err := e.fetchTransactionReceiptAndCreateReply(ctx, transactionResult.TxHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS, nil)
 		return reply, meteringMetadata, err
 	case TransmissionStateFailed, TransmissionStateInvalidReceiver:
