@@ -78,7 +78,7 @@ func (e *EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMeta
 		return nil, GetError(err, isUserError)
 	}
 
-	monitoring.LogAndEmitSuccess(ctx, "Successfully WriteReport execution", e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportSuccess(telemetryContext, input))
+	monitoring.LogAndEmitSuccess(ctx, "Successfully executed WriteReport", e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportSuccess(telemetryContext, input))
 	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.WriteReportReply]{
 		Response:         report,
 		ResponseMetadata: billingMetadata,
