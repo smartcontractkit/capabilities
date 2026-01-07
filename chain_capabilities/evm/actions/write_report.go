@@ -73,7 +73,8 @@ func (e *EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMeta
 	report, billingMetadata, err := e.executeWriteReport(ctx, input, metadata, telemetryContext)
 	if err != nil {
 		isUserError := e.isUserErrorWriteReport(err)
-		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport while checking if the report exists or trying to publish on chain", err.Error(), isUserError))
+		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor,
+			e.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport while checking if the report exists or trying to publish on chain", err.Error(), isUserError))
 		return nil, GetError(err, isUserError)
 	}
 
