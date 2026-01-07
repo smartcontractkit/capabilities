@@ -35,6 +35,7 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 
 		hasCapacity := observationBatch.AddObservation(ctx, reqObs)
 		if !hasCapacity {
+			r.lggr.Debugw("batch does not have capacity to add observation - skipping in this round", "requestID", reqObs.Metadata.RequestId)
 			break
 		}
 	}

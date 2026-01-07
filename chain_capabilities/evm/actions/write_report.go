@@ -19,6 +19,7 @@ import (
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
+	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/retry"
@@ -125,6 +126,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		return nil, capabilities.ResponseMetadata{}, err
 	}
 
+	ctx = contexts.WithChainSelector(ctx, e.chainSelector)
 	if request.GasConfig == nil {
 		request.GasConfig = &evm.GasConfig{}
 		request.GasConfig.GasLimit, err = e.txGasLimit.Limit(ctx)

@@ -63,7 +63,6 @@ type LogTriggerService struct {
 }
 
 // NewLogTriggerService creates a new instance of logTriggerService.
-// TODO PLEX-1465: the core logic of RegisterLogTrigger/UnregisterLogTrigger/Close/etc. should be moved to the EVMService, so it can be used by other services as well.
 func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lggr logger.Logger,
 	beholderProcessor beholder.ProtoProcessor, messageBuilder *monitoring.MessageBuilder,
 	logTriggerPollInterval time.Duration,
@@ -180,15 +179,15 @@ func (lts *LogTriggerService) cleanUpStaleFilters(ctx context.Context) {
 	}
 }
 
-func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID string, meta capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*evmcappb.Log], error) {
+func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID string, meta capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*evmcappb.Log], caperrors.Error) {
 	lts.lggr.Debugf("RegisterLogTrigger called with triggerID: %s, input: %+v", triggerID, input)
 	ctx = meta.ContextWithCRE(ctx)
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	if triggerID == "" {
-		return nil, actions.EnsureRemoteReportable(fmt.Errorf("no triggerID provided"))
+		return nil, caperrors.NewPublicSystemError(fmt.Errorf("no triggerID provided"), caperrors.Internal)
 	}
 	if _, exists := lts.triggers.Read(triggerID); exists {
-		return nil, actions.EnsureRemoteReportable(fmt.Errorf("triggerID %q is already registered", triggerID))
+		return nil, caperrors.NewPublicSystemError(fmt.Errorf("triggerID %q is already registered", triggerID), caperrors.Internal)
 	}
 	lenAddrs := len(input.GetAddresses())
 	if lenAddrs == 0 {
@@ -216,7 +215,7 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 
 	fromBlock, err := lts.getFinalizedBlockNumber(ctx, triggerID)
 	if err != nil {
-		return nil, actions.EnsureRemoteReportable(err)
+		return nil, caperrors.NewPrivateSystemError(err, caperrors.Unavailable)
 	}
 
 	filterID := lts.generateFilterID(triggerID)
@@ -257,8 +256,11 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	}
 
 	if err = lts.EVMService.RegisterLogTracking(ctx, filterQuery); err != nil {
-		return nil, actions.EnsureRemoteReportable(fmt.Errorf("failed to register log-tracking: '%w' for triggerID: %s, addresses: %v, eventSig: %v, topic2: %v, topic3: %v, topic4: %v",
-			err, triggerID, filterQuery.Addresses, filterQuery.EventSigs, filterQuery.Topic2, filterQuery.Topic3, filterQuery.Topic4))
+		summary := fmt.Sprintf("failed to register log-tracking: '%v' for triggerID: %s", err, triggerID)
+		monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(telemetryContext, triggerID, summary, err.Error()))
+		registerError := fmt.Errorf("failed to register log-tracking: '%w' for triggerID: %s, addresses: %v, eventSig: %v, topic2: %v, topic3: %v, topic4: %v",
+			err, triggerID, filterQuery.Addresses, filterQuery.EventSigs, filterQuery.Topic2, filterQuery.Topic3, filterQuery.Topic4)
+		return nil, caperrors.NewPrivateSystemError(registerError, caperrors.Unknown)
 	}
 	expressions, confidence := lts.createLogRequest(ctx, addresses, sigs, t2, t3, t4, input.GetConfidence())
 
@@ -409,41 +411,41 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 			continue
 		}
 
-		workflowExecutionID, err := workflows.EncodeExecutionID(telemetryContext.RequestMetadata.WorkflowID, response.Id)
+		workflowExecutionID, err := workflows.EncodeExecutionID(telemetryContext.WorkflowID, response.Id)
 		if err != nil {
-			lts.lggr.Errorw("failed to generate execution ID", "err", err, "triggerID", triggerID, "workflowID", telemetryContext.RequestMetadata.WorkflowID, "eventID", response.Id)
+			lts.lggr.Errorw("failed to generate execution ID", "err", err, "triggerID", triggerID, "workflowID", telemetryContext.WorkflowID, "eventID", response.Id)
 			// continue with execution even if we can't generate ID
 			workflowExecutionID = ""
 		}
 
 		labeler := custmsg.NewLabeler().With(
 			events.KeyTriggerID, response.Id,
-			events.KeyWorkflowID, telemetryContext.RequestMetadata.WorkflowID,
+			events.KeyWorkflowID, telemetryContext.WorkflowID,
 			events.KeyWorkflowExecutionID, workflowExecutionID,
-			events.KeyWorkflowOwner, telemetryContext.RequestMetadata.WorkflowOwner,
-			events.KeyWorkflowName, telemetryContext.RequestMetadata.WorkflowName,
+			events.KeyWorkflowOwner, telemetryContext.WorkflowOwner,
+			events.KeyWorkflowName, telemetryContext.WorkflowName,
 		)
 
 		// add DON metadata if available
-		if telemetryContext.RequestMetadata.WorkflowDonID != 0 {
-			labeler = labeler.With(events.KeyDonID, strconv.Itoa(int(telemetryContext.RequestMetadata.WorkflowDonID)))
+		if telemetryContext.WorkflowDonID != 0 {
+			labeler = labeler.With(events.KeyDonID, strconv.Itoa(int(telemetryContext.WorkflowDonID)))
 		}
-		if telemetryContext.RequestMetadata.WorkflowDonConfigVersion != 0 {
-			labeler = labeler.With(events.KeyDonVersion, strconv.Itoa(int(telemetryContext.RequestMetadata.WorkflowDonConfigVersion)))
+		if telemetryContext.WorkflowDonConfigVersion != 0 {
+			labeler = labeler.With(events.KeyDonVersion, strconv.Itoa(int(telemetryContext.WorkflowDonConfigVersion)))
 		}
-		if telemetryContext.RequestMetadata.WorkflowRegistryChainSelector != "" {
-			labeler = labeler.With(events.KeyWorkflowRegistryChainSelector, telemetryContext.RequestMetadata.WorkflowRegistryChainSelector)
+		if telemetryContext.WorkflowRegistryChainSelector != "" {
+			labeler = labeler.With(events.KeyWorkflowRegistryChainSelector, telemetryContext.WorkflowRegistryChainSelector)
 		}
-		if telemetryContext.RequestMetadata.WorkflowRegistryAddress != "" {
-			labeler = labeler.With(events.KeyWorkflowRegistryAddress, telemetryContext.RequestMetadata.WorkflowRegistryAddress)
+		if telemetryContext.WorkflowRegistryAddress != "" {
+			labeler = labeler.With(events.KeyWorkflowRegistryAddress, telemetryContext.WorkflowRegistryAddress)
 		}
-		if telemetryContext.RequestMetadata.EngineVersion != "" {
-			labeler = labeler.With(events.KeyEngineVersion, telemetryContext.RequestMetadata.EngineVersion)
+		if telemetryContext.EngineVersion != "" {
+			labeler = labeler.With(events.KeyEngineVersion, telemetryContext.EngineVersion)
 		}
 
 		// Try to fetch organization ID if org resolver is available
-		if lts.orgResolver != nil && telemetryContext.RequestMetadata.WorkflowOwner != "" {
-			if orgID, orgErr := lts.orgResolver.Get(ctx, telemetryContext.RequestMetadata.WorkflowOwner); orgErr != nil {
+		if lts.orgResolver != nil && telemetryContext.WorkflowOwner != "" {
+			if orgID, orgErr := lts.orgResolver.Get(ctx, telemetryContext.WorkflowOwner); orgErr != nil {
 				lts.lggr.Warnw("Failed to fetch organization ID from org resolver", "workflowOwner", telemetryContext.WorkflowOwner, "error", orgErr, "triggerID", triggerID)
 			} else if orgID != "" {
 				labeler = labeler.With(events.KeyOrganizationID, orgID)
@@ -615,14 +617,14 @@ func (lts *LogTriggerService) makeEventByTopicFilter(topicIndex uint64, topics [
 	return &orExpression
 }
 
-func (lts *LogTriggerService) UnregisterLogTrigger(ctx context.Context, triggerID string, meta capabilities.RequestMetadata, _ *evmcappb.FilterLogTriggerRequest) error {
+func (lts *LogTriggerService) UnregisterLogTrigger(ctx context.Context, triggerID string, meta capabilities.RequestMetadata, _ *evmcappb.FilterLogTriggerRequest) caperrors.Error {
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	if triggerID == "" {
-		return caperrors.NewPublicSystemError(fmt.Errorf("no triggerID provided"), caperrors.Unknown)
+		return caperrors.NewPublicSystemError(fmt.Errorf("no triggerID provided"), caperrors.Internal)
 	}
 	trigger, found := lts.triggers.Read(triggerID)
 	if !found {
-		return caperrors.NewPublicSystemError(fmt.Errorf("no active trigger found for triggerID: %s", triggerID), caperrors.Unknown)
+		return caperrors.NewPublicSystemError(fmt.Errorf("no active trigger found for triggerID: %s", triggerID), caperrors.Internal)
 	}
 	lts.lggr.Debugf("UnregisterLogTrigger triggerID: %s", triggerID)
 	trigger.cancelFunc()
@@ -632,7 +634,8 @@ func (lts *LogTriggerService) UnregisterLogTrigger(ctx context.Context, triggerI
 	if err != nil {
 		summary := fmt.Sprintf("failed to unregister log-tracking: '%v' for triggerID: %s", err, triggerID)
 		monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(telemetryContext, triggerID, summary, err.Error()))
-		return caperrors.NewPublicSystemError(fmt.Errorf("failed to unregister log-tracking: '%w' for triggerID: %s", err, triggerID), caperrors.Unknown)
+		unregisterLogTrackingError := fmt.Errorf("failed to unregister log-tracking: '%w' for triggerID: %s", err, triggerID)
+		return caperrors.NewPrivateSystemError(unregisterLogTrackingError, caperrors.Unknown)
 	}
 	return nil
 }

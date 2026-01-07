@@ -148,8 +148,15 @@ func (s *service) SendRequest(ctx context.Context, metadata capabilities.Request
 		Response:         response,
 		ResponseMetadata: capabilities.ResponseMetadata{},
 	}
-	s.lggr.Debugf("Processed request for workflow %s (ID: %s, Owner: %s, ExecutionID: %s)",
-		metadata.WorkflowName, metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowExecutionID)
+	s.lggr.Debugw("Processed HTTP request",
+		"workflowName", metadata.DecodedWorkflowName,
+		"workflowID", metadata.WorkflowID,
+		"workflowOwner", metadata.WorkflowOwner,
+		"workflowExecutionID", metadata.WorkflowExecutionID,
+		"responseStatusCode", response.StatusCode,
+		"responseBodySize", len(response.Body),
+		"responseNumHeaders", len(response.Headers),
+		"externalEndpointLatency", externalEndpointLatency.Milliseconds())
 
 	return &responseAndMetadata, nil
 }
