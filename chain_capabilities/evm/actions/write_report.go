@@ -156,7 +156,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 			return nil, capabilities.ResponseMetadata{}, err
 		}
 
-		e.lggr.Infow("returning without a transmission attempt - report already onchain", "txHash")
+		e.lggr.Infow("returning without a transmission attempt - report already onchain", "txHash", common.Bytes2Hex(txHash[:]))
 		reply, err := e.fetchTransactionReceiptAndCreateReply(ctx, *txHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS, nil)
 		return reply, capabilities.ResponseMetadata{}, err
 	case TransmissionStateInvalidReceiver:
