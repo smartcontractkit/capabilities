@@ -154,7 +154,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 	case TransmissionStateSucceeded:
 		txHash, err := txHashRetriever.GetHash(ctx)
 		if err != nil {
-			e.lggr.Error("returning without a transmission attempt - report already onchain, but failed to retrieve its txHash")
+			e.lggr.Errorw("returning without a transmission attempt - report already onchain, but failed to retrieve its txHash", "error", err.Error())
 			return nil, capabilities.ResponseMetadata{}, err
 		}
 
@@ -162,11 +162,13 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		reply, err := e.fetchTransactionReceiptAndCreateReply(ctx, *txHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS, nil)
 		return reply, capabilities.ResponseMetadata{}, err
 	case TransmissionStateInvalidReceiver:
-		e.lggr.Infow("transmission already done by another node but failed due to invalid receiver, not reattempting")
 		txHash, err := txHashRetriever.GetHash(ctx)
 		if err != nil {
+			e.lggr.Errorw("transmission already done by another node but failed due to invalid receiver, not reattempting and failed to get its txHash")
 			return nil, capabilities.ResponseMetadata{}, err
 		}
+
+		e.lggr.Infow("transmission already done by another node but failed due to invalid receiver, not reattempting", "txHash", common.Bytes2Hex(txHash[:]))
 		reply, err := e.processUnrecoverableTxState(ctx, request, *txHash, transmissionInfo, transmissionID, false)
 		return reply, capabilities.ResponseMetadata{}, err
 	case TransmissionStateFailed:
@@ -177,7 +179,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		if transmissionInfo.GasLimit.Uint64() > txGasLimit {
 			txHash, err := txHashRetriever.GetHash(ctx)
 			if err != nil {
-				e.lggr.Errorw("returning without a transmission attempt - transmission already attempted and also failed to retrieve its tx hash", "err", err.Error(), "txGasLimit", txGasLimit, "transmissionGasLimit", transmissionInfo.GasLimit)
+				e.lggr.Errorw("returning without a transmission attempt - transmission already attempted, but failed to retrieve its tx hash", "error", err.Error(), "txGasLimit", txGasLimit, "transmissionGasLimit", transmissionInfo.GasLimit)
 				return nil, capabilities.ResponseMetadata{}, err
 			}
 
