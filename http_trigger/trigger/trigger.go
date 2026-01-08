@@ -119,7 +119,7 @@ func (s *service) Description() string {
 	return "HTTP Trigger Service"
 }
 
-func (s *service) RegisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *http.Config) (<-chan capabilities.TriggerAndId[*http.Payload], error) {
+func (s *service) RegisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *http.Config) (<-chan capabilities.TriggerAndId[*http.Payload], caperrors.Error) {
 	s.lggr.Infow("RegisterTrigger called",
 		"triggerID", triggerID,
 		"workflowID", metadata.WorkflowID,
@@ -160,7 +160,7 @@ func (s *service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 	return sendCh, nil
 }
 
-func (s *service) UnregisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *http.Config) error {
+func (s *service) UnregisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *http.Config) caperrors.Error {
 	s.lggr.Infow("UnregisterTrigger called",
 		"triggerID", triggerID,
 		"workflowID", metadata.WorkflowID,

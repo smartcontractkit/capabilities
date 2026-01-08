@@ -76,6 +76,28 @@ func (r *reportingPlugin) Reports(ctx context.Context, seqNr uint64, outcome ocr
 
 			reportWithMetaData := append(metadataPrepend, report...)
 
+			// Check if the report is too large to transmit
+			if len(reportWithMetaData) > r.maxReportLengthBytes {
+				r.lggr.Errorw("report is too large to transmit", "requestID", reqMetadata.RequestId,
+					"reportSize", len(reportWithMetaData), "maxReportLengthBytes", r.maxReportLengthBytes)
+				failureMsg := fmt.Sprintf(
+					"report too large: the report for this request is %d bytes which exceeds the maximum allowed size of %d bytes; reduce the size of the data being returned",
+					len(reportWithMetaData), r.maxReportLengthBytes)
+				info, err := createFailedConsensusReportInfo(reqMetadata.RequestId, reqMetadata.KeyBundleId, failureMsg,
+					oracletypes.ConsensusFailureCode_REPORT_TOO_LARGE)
+				if err != nil {
+					return nil, fmt.Errorf("failed to create report info for oversized report %s: %w", reqMetadata.RequestId, err)
+				}
+				reports = append(reports, ocr3types.ReportPlus[[]byte]{
+					ReportWithInfo: ocr3types.ReportWithInfo[[]byte]{
+						Report: []byte{},
+						Info:   info,
+					},
+					TransmissionScheduleOverride: nil,
+				})
+				continue
+			}
+
 			info, err := createSuccessfulConsensusReportInfo(reqMetadata)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create report info for successful consensus request %s: %w", reqMetadata.RequestId, err)
@@ -95,7 +117,7 @@ func (r *reportingPlugin) Reports(ctx context.Context, seqNr uint64, outcome ocr
 			info, err := createFailedConsensusReportInfo(failedOutcome.RequestID, failedOutcome.KeyBundleId, failedOutcome.FailureMessage,
 				failedOutcome.Code)
 			if err != nil {
-				return nil, fmt.Errorf("failed to create report info for successful consensus request %s: %w", failedOutcome.RequestID, err)
+				return nil, fmt.Errorf("failed to create report info for failed consensus outcome %s: %w", failedOutcome.RequestID, err)
 			}
 
 			reports = append(reports, ocr3types.ReportPlus[[]byte]{

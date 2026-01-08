@@ -72,7 +72,7 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, requestI
 			oracletypes.ConsensusFailureCode_FAILED_TO_CALCULATE_CONSENSUS_MDD)
 	}
 
-	var errors []string
+	var obsErrors []string
 	var obsValues []*valuespb.Value
 	var timestamps []*timestamppb.Timestamp
 
@@ -95,7 +95,7 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, requestI
 			obsValues = append(obsValues, inputObservation.Value)
 			timestamps = append(timestamps, obs.ReceivedAt)
 		case *sdk.SimpleConsensusInputs_Error:
-			errors = append(errors, inputObservation.Error)
+			obsErrors = append(obsErrors, inputObservation.Error)
 		}
 	}
 
@@ -104,10 +104,10 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, requestI
 		timestamp = calculateMedianTimestamp(timestamps)
 	}
 
-	if len(errors) >= r.f+1 {
+	if len(obsErrors) >= r.f+1 {
 		consensusFailedMsg := fmt.Sprintf(
 			"consensus calculation failed: received %d errors which is >= f+1 (%d) for requestID %s; Consensus metadata, descriptor and default: %+v; Errors received: %s",
-			len(errors), r.f+1, requestID, consensusMDD, formatErrorsForLogging(ctx, errors),
+			len(obsErrors), r.f+1, requestID, consensusMDD, formatErrorsForLogging(ctx, obsErrors),
 		)
 
 		return outcome.FailConsensusWithDefaultCheck(ctx, r.lggr, requestID, consensusFailedMsg,
@@ -120,7 +120,7 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, requestI
 		valuesJSON := formatValuesForLogging(ctx, r.lggr, obsValues)
 		consensusFailedMsg := fmt.Sprintf(
 			"consensus calculation failed: %v; Consensus metadata, descriptor and default: %+v; Values received: %s; Errors received: %s",
-			err, consensusMDD, valuesJSON, formatErrorsForLogging(ctx, errors),
+			err, consensusMDD, valuesJSON, formatErrorsForLogging(ctx, obsErrors),
 		)
 		return outcome.FailConsensusWithDefaultCheck(ctx, r.lggr, requestID, consensusFailedMsg,
 			oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED, consensusMDD, timestamp)

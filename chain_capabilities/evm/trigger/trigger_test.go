@@ -18,6 +18,7 @@ import (
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 
 	_ "github.com/smartcontractkit/chainlink-common/pkg/beholder"
+	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 
@@ -119,8 +120,8 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 		_, err := service.RegisterLogTrigger(t.Context(), "", capabilities.RequestMetadata{WorkflowID: "wf-id"}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
 		})
-		require.Error(t, err)
-		require.Equal(t, err.Error(), "[2]Unknown: no triggerID provided")
+		expectedError := "[13]Internal: no triggerID provided"
+		assertCapError(t, err, caperrors.VisibilityPublic, expectedError)
 	})
 
 	t.Run("[2]Unknown: triggerID \\\"trigger-1\\\" is already registered", func(t *testing.T) {
@@ -131,16 +132,16 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 		_, err := service.RegisterLogTrigger(t.Context(), triggerID, capabilities.RequestMetadata{WorkflowID: "wf-id"}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
 		})
-		require.Error(t, err)
-		require.Equal(t, "[2]Unknown: triggerID \"trigger-1\" is already registered", err.Error())
+		expectedError := "[13]Internal: triggerID \"trigger-1\" is already registered"
+		assertCapError(t, err, caperrors.VisibilityPublic, expectedError)
 	})
 
 	t.Run("missing addresses", func(t *testing.T) {
 		_, err := service.RegisterLogTrigger(t.Context(), triggerID, capabilities.RequestMetadata{WorkflowID: "wf-id"}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: [][]byte{},
 		})
-		require.Error(t, err)
-		require.Equal(t, err.Error(), "[2]Unknown: no valid addresses provided (at least one address is required)")
+		expectedError := "[2]Unknown: no valid addresses provided (at least one address is required)"
+		assertCapError(t, err, caperrors.VisibilityPublic, expectedError)
 	})
 
 	t.Run("too many topics", func(t *testing.T) {
@@ -154,24 +155,22 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 				{Values: [][]byte{}}, // 5th topic, should fail
 			},
 		})
-		require.Error(t, err)
-		require.Equal(t, err.Error(), "[2]Unknown: there can be at most 4 topics provided, got 5 instead")
+		expectedError := "[2]Unknown: there can be at most 4 topics provided, got 5 instead"
+		assertCapError(t, err, caperrors.VisibilityPublic, expectedError)
 	})
 
 	t.Run("missing eventSig", func(t *testing.T) {
-		ctx := t.Context()
-		_, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{WorkflowID: "wf-id"}, &evmcappb.FilterLogTriggerRequest{
+		expectedError := "[2]Unknown: no valid event sig provided (at least one event sig is required in topics)"
+		_, err := service.RegisterLogTrigger(t.Context(), triggerID, capabilities.RequestMetadata{WorkflowID: "wf-id"}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
 		})
-		require.Error(t, err)
-		require.Equal(t, err.Error(), "[2]Unknown: no valid event sig provided (at least one event sig is required in topics)")
+		assertCapError(t, err, caperrors.VisibilityPublic, expectedError)
 
-		_, err = service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{WorkflowID: "wf-id"}, &evmcappb.FilterLogTriggerRequest{
+		_, err = service.RegisterLogTrigger(t.Context(), triggerID, capabilities.RequestMetadata{WorkflowID: "wf-id"}, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
 			Topics:    []*evmcappb.TopicValues{},
 		})
-		require.Error(t, err)
-		require.Equal(t, err.Error(), "[2]Unknown: no valid event sig provided (at least one event sig is required in topics)")
+		assertCapError(t, err, caperrors.VisibilityPublic, expectedError)
 	})
 
 	t.Run("fail to get latest head", func(t *testing.T) {
@@ -183,8 +182,8 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 			Addresses: addresses,
 			Topics:    topicsWithEventSig0,
 		})
-		require.Error(t, err)
-		require.Equal(t, err.Error(), "[2]Unknown: failed to register latest and finalized log pollers block: 'mocked failure error' for triggerID: trigger-1")
+		expectedError := "[14]Unavailable: failed to register latest and finalized log pollers block: 'mocked failure error' for triggerID: trigger-1"
+		assertCapError(t, err, caperrors.VisibilityPrivate, expectedError)
 	})
 
 	t.Run("fail to register log-tracking", func(t *testing.T) {
@@ -197,11 +196,17 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 			Addresses: brokenAddresses,
 			Topics:    topicsWithEventSig0,
 		})
-		require.Error(t, err)
-		require.Equal(t,
-			"[2]Unknown: failed to register log-tracking: 'mocking error, making register failing on purpose' for triggerID: trigger-1-logtracking, addresses: [[173 173 190 239 202 254 186 190 18 52 86 120 154 188 222 240 17 34 51 68]], eventSig: [[221 242 82 173 27 226 200 155 105 194 176 104 252 55 141 170 149 43 167 241 99 196 161 22 40 245 90 77 245 35 179 239]], topic2: [], topic3: [], topic4: []",
-			err.Error())
+		expectedError := "[2]Unknown: failed to register log-tracking: 'mocking error, making register failing on purpose' for triggerID: trigger-1-logtracking, addresses: [[173 173 190 239 202 254 186 190 18 52 86 120 154 188 222 240 17 34 51 68]], eventSig: [[221 242 82 173 27 226 200 155 105 194 176 104 252 55 141 170 149 43 167 241 99 196 161 22 40 245 90 77 245 35 179 239]], topic2: [], topic3: [], topic4: []"
+		assertCapError(t, err, caperrors.VisibilityPrivate, expectedError)
 	})
+}
+
+func assertCapError(t *testing.T, err caperrors.Error, visibility caperrors.Visibility, expectedError string) {
+	require.Error(t, err, "expected error but got nil")
+	var capError caperrors.Error
+	require.True(t, errors.As(err, &capError), "expected error to be of type caperrors.Error")
+	require.Equal(t, expectedError, err.Error())
+	require.Equal(t, visibility, capError.Visibility())
 }
 
 func TestUnregisterLogTrigger_InputValidation(t *testing.T) {
@@ -214,8 +219,7 @@ func TestUnregisterLogTrigger_InputValidation(t *testing.T) {
 
 	t.Run("missing triggerID", func(t *testing.T) {
 		err := service.UnregisterLogTrigger(t.Context(), "", emptyMetadata, emptyRequest)
-		require.Error(t, err)
-		require.Equal(t, err.Error(), "[2]Unknown: no triggerID provided")
+		assertCapError(t, err, caperrors.VisibilityPublic, "[13]Internal: no triggerID provided")
 	})
 
 	t.Run("no active trigger found", func(t *testing.T) {
@@ -223,8 +227,7 @@ func TestUnregisterLogTrigger_InputValidation(t *testing.T) {
 			triggers: NewLogTriggerStore(),
 		}
 		err := service.UnregisterLogTrigger(t.Context(), triggerID, emptyMetadata, emptyRequest)
-		require.Error(t, err)
-		require.Equal(t, err.Error(), "[2]Unknown: no active trigger found for triggerID: trigger-1")
+		assertCapError(t, err, caperrors.VisibilityPublic, "[13]Internal: no active trigger found for triggerID: trigger-1")
 	})
 
 	t.Run("fail to unregister log-tracking", func(t *testing.T) {
@@ -238,8 +241,7 @@ func TestUnregisterLogTrigger_InputValidation(t *testing.T) {
 			lastBlock:  big.NewInt(0),
 		})
 		err := service.UnregisterLogTrigger(t.Context(), breakingTriggerID, emptyMetadata, emptyRequest)
-		require.Error(t, err)
-		require.Equal(t, err.Error(), "[2]Unknown: failed to unregister log-tracking: 'mocking error, making unregister failing on purpose' for triggerID: breaking-logTriggerUnregister")
+		assertCapError(t, err, caperrors.VisibilityPrivate, "[2]Unknown: failed to unregister log-tracking: 'mocking error, making unregister failing on purpose' for triggerID: breaking-logTriggerUnregister")
 	})
 }
 

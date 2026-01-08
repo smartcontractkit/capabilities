@@ -8,6 +8,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
+
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
@@ -29,6 +30,7 @@ type OutcomeBatch struct {
 	outctx                         ocr3types.OutcomeContext
 	maxOutcomeLengthBytes          int
 	currentSerialisedBatchSize     int
+	initialBatchOverheadSize       int
 	keybundleIDForConsensusFailure string
 }
 
@@ -40,7 +42,7 @@ func NewOutcomeBatch(ctx context.Context, lggr logger.Logger, outctx ocr3types.O
 		return nil, fmt.Errorf("failed to get previous outcomes: %w", err)
 	}
 
-	batchSize := calculateMessageSize(&oracletypes.Outcome{HistoricalOutcomes: historicalOutcomes})
+	initialOverhead := calculateMessageSize(&oracletypes.Outcome{HistoricalOutcomes: historicalOutcomes})
 
 	return &OutcomeBatch{
 		Outcome: oracletypes.Outcome{
@@ -48,7 +50,8 @@ func NewOutcomeBatch(ctx context.Context, lggr logger.Logger, outctx ocr3types.O
 		},
 		lggr:                           lggr,
 		outctx:                         outctx,
-		currentSerialisedBatchSize:     batchSize,
+		currentSerialisedBatchSize:     initialOverhead,
+		initialBatchOverheadSize:       initialOverhead,
 		keybundleIDForConsensusFailure: keybundleIDForConsensusFailure,
 		metrics:                        metrics,
 		maxOutcomeLengthBytes:          maxOutcomeLengthBytes,
@@ -60,7 +63,11 @@ func (o *OutcomeBatch) CurrentSerialisedBatchSize() int {
 	return o.currentSerialisedBatchSize
 }
 
-// AddSuccessfulConsensusRequestOutcomeToBatch adds a successful consensus request outcome to the outcome batch. Returns false if batch does not have capacity to add the outcome.
+// AddSuccessfulConsensusRequestOutcomeToBatch adds a successful consensus request outcome to the outcome batch.
+// Returns (true, nil) if the outcome was added successfully.
+// Returns (false, nil) if batch does not have capacity to add the outcome (will be retried next round).
+// Returns (false, <error>) if there is a system error.
+// If the outcome is too large to ever fit in any batch, a failure message (user error) will be added to the batch instead.
 func (o *OutcomeBatch) AddSuccessfulConsensusRequestOutcomeToBatch(ctx context.Context, metadata *oracletypes.RequestMetaData, value *valuespb.Value, timestamp *timestamppb.Timestamp) (bool, error) {
 	requestID := metadata.RequestId
 
@@ -79,9 +86,19 @@ func (o *OutcomeBatch) AddSuccessfulConsensusRequestOutcomeToBatch(ctx context.C
 		},
 	}
 
-	hasCapacity := o.checkOutcomeBatchHasCapacity(ctx, requestID, requestOutcome, o.outctx.SeqNr)
+	hasCapacity := o.checkOutcomeBatchHasCapacity(requestID, requestOutcome, o.outctx.SeqNr)
 	if !hasCapacity {
 		o.metrics.IncBatchCapacityExceeded(ctx, "outcome")
+
+		fitsInEmptyBatch, _ := o.outcomeWouldFit(o.initialBatchOverheadSize, requestID, requestOutcome, o.outctx.SeqNr)
+		if !fitsInEmptyBatch {
+			failureMsg := "outcome too large: the consensus result for this request exceeds the maximum allowed size"
+			o.lggr.Errorw(failureMsg, "requestID", requestID,
+				"outcomeSize", proto.Size(requestOutcome), "maxOutcomeLengthBytes", o.maxOutcomeLengthBytes,
+				"initialBatchOverheadSize", o.initialBatchOverheadSize)
+			return o.AddFailedConsensusRequestOutcomeToBatch(ctx, requestID, failureMsg,
+				oracletypes.ConsensusFailureCode_OUTCOME_TOO_LARGE)
+		}
 		return false, nil
 	}
 
@@ -109,7 +126,7 @@ func (o *OutcomeBatch) AddFailedConsensusRequestOutcomeToBatch(ctx context.Conte
 		requestOutcome = o.truncateFailedRequestOutcome(requestOutcome.GetFailure())
 	}
 
-	hasCapacity := o.checkOutcomeBatchHasCapacity(ctx, requestID, requestOutcome, o.outctx.SeqNr)
+	hasCapacity := o.checkOutcomeBatchHasCapacity(requestID, requestOutcome, o.outctx.SeqNr)
 	if !hasCapacity {
 		o.metrics.IncBatchCapacityExceeded(ctx, "outcome")
 		return false, nil
@@ -193,12 +210,12 @@ func (o *OutcomeBatch) SerialiseOutcomeBatch() ([]byte, error) {
 	return serialisedBatch, nil
 }
 
-func (o *OutcomeBatch) checkOutcomeBatchHasCapacity(ctx context.Context, requestID string, requestOutcome proto.Message,
-	historicalSeqNr uint64) bool {
-	ok, newSize := batchHasCapacityForMessageOnSlice(o.currentSerialisedBatchSize, requestOutcome, o.maxOutcomeLengthBytes)
-
+// outcomeWouldFit checks if an outcome (message + historical map entry) would fit given a starting batch size.
+// Returns (fits, newSize) where newSize is the resulting batch size if it fits.
+func (o *OutcomeBatch) outcomeWouldFit(startingSize int, requestID string, requestOutcome proto.Message, historicalSeqNr uint64) (bool, int) {
+	ok, newSize := batchHasCapacityForMessageOnSlice(startingSize, requestOutcome, o.maxOutcomeLengthBytes)
 	if !ok {
-		return false
+		return false, startingSize
 	}
 
 	// Adding an entry to a map is the same as adding a key-value pair to a slice for size calculation purposes
@@ -209,13 +226,20 @@ func (o *OutcomeBatch) checkOutcomeBatchHasCapacity(ctx context.Context, request
 	mapEntrySize := proto.Size(&mapEntry)
 
 	ok, newSize = batchHasCapacityForSliceBytes(newSize, mapEntrySize, o.maxOutcomeLengthBytes)
-
 	if !ok {
-		return false
+		return false, startingSize
 	}
 
-	o.currentSerialisedBatchSize = newSize
-	return true
+	return true, newSize
+}
+
+func (o *OutcomeBatch) checkOutcomeBatchHasCapacity(requestID string, requestOutcome proto.Message,
+	historicalSeqNr uint64) bool {
+	fits, newSize := o.outcomeWouldFit(o.currentSerialisedBatchSize, requestID, requestOutcome, historicalSeqNr)
+	if fits {
+		o.currentSerialisedBatchSize = newSize
+	}
+	return fits
 }
 
 func getNonExpiredHistoricalRequestOutcomes(lggr logger.Logger, outctx ocr3types.OutcomeContext, outcomeExpirySeqNrSpan uint64) (map[string]uint64, error) {
