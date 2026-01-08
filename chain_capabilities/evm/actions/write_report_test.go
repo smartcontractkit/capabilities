@@ -855,6 +855,40 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 
 		test.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003")
 	})
+	
+	t.Run("Invalid transmission state (default switch) => returns error", func(t *testing.T) {
+		ctx := t.Context()
+		testLogger := logger.Test(t)
+		_, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
+
+		reportMetadata := createTestReportMetadata()
+		encodedReportMetadata, _ := reportMetadata.Encode()
+
+		const invalidState = TransmissionStateFailed + 10
+
+		mockForwarderClient.
+			On("GetTransmissionInfo", mock.Anything, mock.Anything).
+			Return(contracts.TransmissionInfo{
+				Success:         false,
+				InvalidReceiver: false,
+				State:           invalidState,
+			}, nil).
+			Once()
+
+		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
+			Receiver: testutils.NewAddress().Bytes(),
+			Report: &workflowpb.ReportResponse{
+				RawReport:     encodedReportMetadata,
+				ReportContext: []byte{},
+				Sigs:          generateRandomSignatures(),
+			},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), getInvalidStateErrorMessage(invalidState))
+
+		// Prove we didn't attempt to submit anything.
+		mockForwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	})
 }
 
 func TestGetTransmissionID(t *testing.T) {
