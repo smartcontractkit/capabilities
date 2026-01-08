@@ -165,7 +165,7 @@ func (cfclient *creForwarderClient) InvokeOnReport(ctx context.Context, receiver
 	if gasConfig == nil || gasConfig.GasLimit == 0 {
 		return nil, fmt.Errorf("gas limit shouldn't be unset")
 	}
-	
+
 	encodedReport, err := cfclient.forwarderCodec.EncodeReport(receiverAddress, report)
 	if err != nil {
 		return nil, err

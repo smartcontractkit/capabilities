@@ -154,8 +154,8 @@ func (m *MessageBuilder) BuildWriteReportInvalidTransmissionState(tc TelemetryCo
 
 func (m *MessageBuilder) BuildWriteReportDuplicateTx(tc TelemetryContext, req *evmcap.WriteReportRequest, duplicateTransmissionTxHash, transmissionTxHash string) Message {
 	return &WriteReportDuplicateTx{
-		Req:                        convertWriteReportRequest(req),
-		ExecutionContext:           m.BuildExecutionContext(tc),
+		Req:                         convertWriteReportRequest(req),
+		ExecutionContext:            m.BuildExecutionContext(tc),
 		DuplicateTransmissionTxHash: duplicateTransmissionTxHash,
 		TransmissionTxHash:          transmissionTxHash,
 	}
