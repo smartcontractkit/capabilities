@@ -7,12 +7,13 @@ import (
 	"github.com/smartcontractkit/capabilities/consensus/oracle"
 	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
 
-	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
-	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/libocr/offchainreporting2/types"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
 	"github.com/smartcontractkit/libocr/quorumhelper"
+
+	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
 
 var _ ocr3types.ReportingPlugin[[]byte] = (*reportingPlugin)(nil)
@@ -32,6 +33,7 @@ type reportingPlugin struct {
 	// defaultKeyBundleIDForConsensusFailure is the key bundle ID to be used when reporting consensus failures before consensus is reached on request metadata
 	defaultKeyBundleIDForConsensusFailure string
 	maxRequestOutcomeSize                 int
+	maxReportLengthBytes                  int
 
 	lggr logger.Logger
 }
@@ -49,7 +51,8 @@ func NewReportingPlugin(lggr logger.Logger, metrics *metrics.Metrics, f int, n i
 		config:                                configProto,
 		metrics:                               metrics,
 		defaultKeyBundleIDForConsensusFailure: defaultKeyBundleIDForConsensusFailure,
-		maxRequestOutcomeSize:                 maxRequestOutcomeSize,
+		maxRequestOutcomeSize:                 maxRequestOutcomeSize, // NOTE: can we simply use configProto.MaxOutcomeLengthBytes here?
+		maxReportLengthBytes:                  int(configProto.MaxReportLengthBytes),
 	}, nil
 }
 

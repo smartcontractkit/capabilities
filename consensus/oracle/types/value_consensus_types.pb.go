@@ -78,6 +78,10 @@ const (
 	ConsensusFailureCode_FAILED_TO_CALCULATE_CONSENSUS_MDD ConsensusFailureCode = 1
 	// Received F+1 errors from observers when attempting to calculate consensus
 	ConsensusFailureCode_RECEIVED_FPLUS1_ERRORS ConsensusFailureCode = 2
+	// The outcome produced is too large to fit in any batch. The user should reduce the size of their request.
+	ConsensusFailureCode_OUTCOME_TOO_LARGE ConsensusFailureCode = 3
+	// The report produced is too large to transmit. The user should reduce the size of their request.
+	ConsensusFailureCode_REPORT_TOO_LARGE ConsensusFailureCode = 4
 )
 
 // Enum value maps for ConsensusFailureCode.
@@ -86,11 +90,15 @@ var (
 		0: "CONSENSUS_CALCULATION_FAILED",
 		1: "FAILED_TO_CALCULATE_CONSENSUS_MDD",
 		2: "RECEIVED_FPLUS1_ERRORS",
+		3: "OUTCOME_TOO_LARGE",
+		4: "REPORT_TOO_LARGE",
 	}
 	ConsensusFailureCode_value = map[string]int32{
 		"CONSENSUS_CALCULATION_FAILED":      0,
 		"FAILED_TO_CALCULATE_CONSENSUS_MDD": 1,
 		"RECEIVED_FPLUS1_ERRORS":            2,
+		"OUTCOME_TOO_LARGE":                 3,
+		"REPORT_TOO_LARGE":                  4,
 	}
 )
 
@@ -823,11 +831,13 @@ const file_value_consensus_types_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\x04R\x05value*9\n" +
 	"\vRequestType\x12\x13\n" +
 	"\x0fVALUE_CONSENSUS\x10\x00\x12\x15\n" +
-	"\x11REPORT_GENERATION\x10\x01*{\n" +
+	"\x11REPORT_GENERATION\x10\x01*\xa8\x01\n" +
 	"\x14ConsensusFailureCode\x12 \n" +
 	"\x1cCONSENSUS_CALCULATION_FAILED\x10\x00\x12%\n" +
 	"!FAILED_TO_CALCULATE_CONSENSUS_MDD\x10\x01\x12\x1a\n" +
-	"\x16RECEIVED_FPLUS1_ERRORS\x10\x02B\x18Z\x16consensus/oracle/typesb\x06proto3"
+	"\x16RECEIVED_FPLUS1_ERRORS\x10\x02\x12\x15\n" +
+	"\x11OUTCOME_TOO_LARGE\x10\x03\x12\x14\n" +
+	"\x10REPORT_TOO_LARGE\x10\x04B\x18Z\x16consensus/oracle/typesb\x06proto3"
 
 var (
 	file_value_consensus_types_proto_rawDescOnce sync.Once

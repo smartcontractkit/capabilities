@@ -69,6 +69,10 @@ enum ConsensusFailureCode {
   FAILED_TO_CALCULATE_CONSENSUS_MDD = 1;
   // Received F+1 errors from observers when attempting to calculate consensus
   RECEIVED_FPLUS1_ERRORS = 2;
+  // The outcome produced is too large to fit in any batch. The user should reduce the size of their request.
+  OUTCOME_TOO_LARGE = 3;
+  // The report produced is too large to transmit. The user should reduce the size of their request.
+  REPORT_TOO_LARGE = 4;
 }
 
 message ConsensusFailedOutcome {
