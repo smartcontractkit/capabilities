@@ -152,6 +152,15 @@ func (m *MessageBuilder) BuildWriteReportInvalidTransmissionState(tc TelemetryCo
 	}
 }
 
+func (m *MessageBuilder) BuildWriteReportDuplicateTx(tc TelemetryContext, req *evmcap.WriteReportRequest, duplicateTransmissionTxHash, transmissionTxHash string) Message {
+	return &WriteReportDuplicateTx{
+		Req:                        convertWriteReportRequest(req),
+		ExecutionContext:           m.BuildExecutionContext(tc),
+		DuplicateTransmissionTxHash: duplicateTransmissionTxHash,
+		TransmissionTxHash:          transmissionTxHash,
+	}
+}
+
 func (m *MessageBuilder) BuildLogTriggerInitiated(tc TelemetryContext, req *evmcap.FilterLogTriggerRequest) *LogTriggerInitiated {
 	return &LogTriggerInitiated{Req: logTriggerRequestToMonitoring(req), ExecutionContext: m.BuildExecutionContext(tc)}
 }

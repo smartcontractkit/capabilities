@@ -34,6 +34,9 @@ type Metrics struct {
 	WriteReportInvalidTransmissionState struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
+	WriteReportDuplicateTx struct {
+		basic commoncapbeholder.MetricsCapBasic
+	}
 	LogTriggerSuccess struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
@@ -120,6 +123,11 @@ func NewMetrics() (Metrics, error) {
 	m.WriteReportInvalidTransmissionState.basic, err = commoncapbeholder.NewMetricsCapBasic(wrInvalidState)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create write report invalid transmission state metric: %w", err)
+	}
+	wrDuplicateTx := commoncapbeholder.NewMetricsInfoCapBasic(ns("write_report_duplicate_tx"), commonbeholder.ToSchemaFullName(&WriteReportDuplicateTx{}))
+	m.WriteReportDuplicateTx.basic, err = commoncapbeholder.NewMetricsCapBasic(wrDuplicateTx)
+	if err != nil {
+		return Metrics{}, fmt.Errorf("failed to create write report duplicate tx metric: %w", err)
 	}
 
 	// -- LogTrigger --
@@ -256,6 +264,12 @@ func (m *Metrics) OnWriteReportTxFeeCalculationError(ctx context.Context, msg *W
 func (m *Metrics) OnWriteReportInvalidTransmissionState(ctx context.Context, msg *WriteReportInvalidTransmissionState) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
 	m.WriteReportInvalidTransmissionState.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
+	return nil
+}
+
+func (m *Metrics) OnWriteReportDuplicateTx(ctx context.Context, msg *WriteReportDuplicateTx) error {
+	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
+	m.WriteReportDuplicateTx.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
 	return nil
 }
 
@@ -447,6 +461,23 @@ func (r *WriteReportInvalidTransmissionState) LogAttributes() []attribute.KeyVal
 }
 
 func (r *WriteReportInvalidTransmissionState) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *WriteReportDuplicateTx) LogAttributes() []attribute.KeyValue {
+	attributes := []attribute.KeyValue{
+		attribute.String("receiver", getReceiver(r.Req.GetReceiver())),
+	}
+	if r.GetDuplicateTransmissionTxHash() != "" {
+		attributes = append(attributes, attribute.String("duplicate_transmission_tx_hash", r.GetDuplicateTransmissionTxHash()))
+	}
+	if r.GetTransmissionTxHash() != "" {
+		attributes = append(attributes, attribute.String("transmission_tx_hash", r.GetTransmissionTxHash()))
+	}
+	return append(attributes, r.ExecutionContext.LogAttributes()...)
+}
+
+func (r *WriteReportDuplicateTx) MetricAttributes() []attribute.KeyValue {
 	return r.ExecutionContext.MetricsAttributes()
 }
 

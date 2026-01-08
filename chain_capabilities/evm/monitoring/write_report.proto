@@ -44,6 +44,13 @@ message WriteReportInvalidTransmissionState {
   monitoring.ExecutionContext execution_context = 20;
 }
 
+message WriteReportDuplicateTx {
+  WriteReportRequest req = 1;
+  string duplicate_transmission_tx_hash = 2;
+  string transmission_tx_hash = 3;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
 message WriteReportRequest {
   bytes receiver = 1;
   ReportResponse report = 2;
