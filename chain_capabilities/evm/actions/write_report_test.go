@@ -855,7 +855,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 
 		test.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003")
 	})
-	
+
 	t.Run("Invalid transmission state (default switch) => returns error", func(t *testing.T) {
 		ctx := t.Context()
 		testLogger := logger.Test(t)
