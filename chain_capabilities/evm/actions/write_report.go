@@ -154,21 +154,21 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 	case TransmissionStateSucceeded:
 		txHash, err := txHashRetriever.GetHash(ctx)
 		if err != nil {
-			e.lggr.Errorw("returning without a transmission attempt - report already onchain, but failed to retrieve its txHash", "error", err.Error())
+			e.lggr.Errorw("Returning without a transmission attempt - report already onchain, but failed to retrieve its txHash", "error", err.Error())
 			return nil, capabilities.ResponseMetadata{}, err
 		}
 
-		e.lggr.Infow("returning without a transmission attempt - report already onchain", "txHash", common.Bytes2Hex(txHash[:]))
+		e.lggr.Infow("Returning without a transmission attempt - report already onchain", "txHash", common.Bytes2Hex(txHash[:]))
 		reply, err := e.fetchTransactionReceiptAndCreateReply(ctx, *txHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS, nil)
 		return reply, capabilities.ResponseMetadata{}, err
 	case TransmissionStateInvalidReceiver:
 		txHash, err := txHashRetriever.GetHash(ctx)
 		if err != nil {
-			e.lggr.Errorw("transmission already done by another node but failed due to invalid receiver, not reattempting and failed to get its txHash")
+			e.lggr.Errorw("Transmission already done by another node but failed due to invalid receiver, not reattempting and failed to get its txHash")
 			return nil, capabilities.ResponseMetadata{}, err
 		}
 
-		e.lggr.Infow("transmission already done by another node but failed due to invalid receiver, not reattempting", "txHash", common.Bytes2Hex(txHash[:]))
+		e.lggr.Infow("Transmission already done by another node but failed due to invalid receiver, not reattempting", "txHash", common.Bytes2Hex(txHash[:]))
 		reply, err := e.processUnrecoverableTxState(ctx, request, *txHash, transmissionInfo, transmissionID, false)
 		return reply, capabilities.ResponseMetadata{}, err
 	case TransmissionStateFailed:
@@ -179,15 +179,15 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		if transmissionInfo.GasLimit.Uint64() > txGasLimit {
 			txHash, err := txHashRetriever.GetHash(ctx)
 			if err != nil {
-				e.lggr.Errorw("returning without a transmission attempt - transmission already attempted, but failed to retrieve its tx hash", "error", err.Error(), "txGasLimit", txGasLimit, "transmissionGasLimit", transmissionInfo.GasLimit)
+				e.lggr.Errorw("Returning without a transmission attempt - transmission already attempted, but failed to retrieve its tx hash", "error", err.Error(), "txGasLimit", txGasLimit, "transmissionGasLimit", transmissionInfo.GasLimit)
 				return nil, capabilities.ResponseMetadata{}, err
 			}
 
-			e.lggr.Infow("returning without a transmission attempt - transmission already attempted and failed", "transmissionTxHash", common.Bytes2Hex(txHash[:]), "txGasLimit", txGasLimit, "transmissionGasLimit", transmissionInfo.GasLimit)
+			e.lggr.Infow("Returning without a transmission attempt - transmission already attempted and failed", "transmissionTxHash", common.Bytes2Hex(txHash[:]), "txGasLimit", txGasLimit, "transmissionGasLimit", transmissionInfo.GasLimit)
 			reply, err := e.fetchTransactionReceiptAndCreateReply(ctx, *txHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED, nil)
 			return reply, capabilities.ResponseMetadata{}, err
 		}
-		e.lggr.Infow("retrying a failed transmission - attempting to push to txmgr", "txGasLimit", txGasLimit, "transmissionGasLimit", transmissionInfo.GasLimit)
+		e.lggr.Infow("Retrying a failed transmission - attempting to push to txmgr", "txGasLimit", txGasLimit, "transmissionGasLimit", transmissionInfo.GasLimit)
 	default:
 		errorMsg := getInvalidStateErrorMessage(transmissionInfo.State)
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportInvalidTransmissionState(telemetryContext, request, transmissionInfo, "WriteReport invalid transmission state", errorMsg))
@@ -252,9 +252,9 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 			if err != nil {
 				return nil, capabilities.ResponseMetadata{}, err
 			}
-			monitoring.LogAndEmitSuccess(ctx, "WriteReport sent a duplicate transaction - report already submitted", e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportDuplicateTx(telemetryContext, request, common.Bytes2Hex(transactionResult.TxHash[:]), common.Bytes2Hex((*txHash)[:])))
+			monitoring.LogAndEmitSuccess(ctx, "writeReport sent a duplicate transaction - report already submitted", e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportDuplicateTx(telemetryContext, request, common.Bytes2Hex(transactionResult.TxHash[:]), common.Bytes2Hex((*txHash)[:])))
 		}
-		e.lggr.Debugw("Transaction confirmed", "executionID", metadata.WorkflowExecutionID, "txIdempotencyKey", transactionResult.TxIdempotencyKey, "txHash", common.Bytes2Hex((*txHash)[:]))
+		e.lggr.Debugw("transaction confirmed", "executionID", metadata.WorkflowExecutionID, "txIdempotencyKey", transactionResult.TxIdempotencyKey, "txHash", common.Bytes2Hex((*txHash)[:]))
 		reply, err := e.fetchTransactionReceiptAndCreateReply(ctx, *txHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS, nil)
 		return reply, meteringMetadata, err
 	case TransmissionStateFailed, TransmissionStateInvalidReceiver:
@@ -280,9 +280,9 @@ func (e *WriteReport) processUnrecoverableTxState(ctx context.Context, request *
 	}
 
 	if !txAttemptedLocally {
-		e.lggr.Infow("returning without a transmission attempt - transmission already attempted, receiver was marked as invalid", "message", message)
+		e.lggr.Infow("Returning without a transmission attempt - transmission already attempted, receiver was marked as invalid", "message", message)
 	} else {
-		e.lggr.Errorw("transaction written to the forwarder, but failed to be written to the consumer contract", "receiver", common.Bytes2Hex(request.Receiver), "message", message, "transmissionState", transmissionInfo.State)
+		e.lggr.Errorw("Transaction written to the forwarder, but failed to be written to the consumer contract", "receiver", common.Bytes2Hex(request.Receiver), "message", message, "transmissionState", transmissionInfo.State)
 	}
 
 	return e.fetchTransactionReceiptAndCreateReply(ctx, txHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED, message)
