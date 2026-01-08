@@ -348,6 +348,126 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		require.Contains(t, err.Error(), expectedError)
 	})
 
+	t.Run("TX already transmitted - Invalid receiver (does NOT retry, returns reverted + invalid receiver message)", func(t *testing.T) {
+		ctx := t.Context()
+		testLogger := logger.Test(t)
+		evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
+
+		evmServiceMock.EXPECT().
+			GetTransactionFee(mock.Anything, mock.Anything).
+			Return(&evmtypes.TransactionFee{TransactionFee: big.NewInt(300)}, nil).
+			Maybe()
+
+		reportMetadata := createTestReportMetadata()
+		encodedReportMetadata, _ := reportMetadata.Encode()
+
+		receiver := testutils.NewAddress().Bytes()
+
+		// Transmission already attempted by someone else, marked invalid receiver => do not retry
+		mockForwarderClient.
+			On("GetTransmissionInfo", mock.Anything, mock.Anything).
+			Return(contracts.TransmissionInfo{
+				Success:         false,
+				InvalidReceiver: true,
+				State:           TransmissionStateInvalidReceiver,
+				GasLimit:        big.NewInt(EnoughReceiverGas),
+			}, nil).
+			Once()
+
+		// Tx hash must be discovered from processed events
+		txHash := evmtypes.Hash(test.RandomBytes(32))
+		mockForwarderClient.EXPECT().
+			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return([]*evmtypes.Log{{TxHash: txHash}}, nil)
+
+		// Receipt + fee calculation for that tx hash
+		receipt := evmtypes.Receipt{
+			Status:            uint64(TransmissionStateSucceeded),
+			TxHash:            txHash,
+			GasUsed:           1000,
+			EffectiveGasPrice: big.NewInt(2),
+		}
+		evmServiceMock.EXPECT().
+			GetTransactionReceipt(mock.Anything, evmtypes.GeTransactionReceiptRequest{Hash: txHash, IsExternal: false}).
+			Return(&receipt, nil)
+
+		evmServiceMock.EXPECT().
+			CalculateTransactionFee(mock.Anything, toReceiptGasInfo(receipt)).
+			Return(&evmtypes.TransactionFee{TransactionFee: big.NewInt(2000)}, nil)
+
+		txResult, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
+			Receiver: receiver,
+			Report: &workflowpb.ReportResponse{
+				RawReport:     encodedReportMetadata,
+				ReportContext: []byte{},
+				Sigs:          generateRandomSignatures(),
+			},
+		})
+		require.NoError(t, err)
+
+		equalWriteReportReply(t, &evm.WriteReportReply{
+			TxStatus:                        evmcappb.TxStatus_TX_STATUS_SUCCESS,
+			TxHash:                          receipt.TxHash[:],
+			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(),
+			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
+			ErrorMessage:                    getInvalidReceiverMessage(receiver),
+		}, txResult.Response)
+
+		// No metering because we did not submit a new tx locally.
+		require.Len(t, txResult.ResponseMetadata.Metering, 0)
+
+		// Also prove we didn't attempt a new tx.
+		mockForwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	})
+
+	t.Run("TX already transmitted and failed with enough gas - tx hash retrieval fails => returns error (no retry)", func(t *testing.T) {
+		ctx := t.Context()
+		testLogger := logger.Test(t)
+		_, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
+
+		reportMetadata := createTestReportMetadata()
+		encodedReportMetadata, _ := reportMetadata.Encode()
+
+		// Make request gas big enough so code uses:
+		//   txGasLimit = requestGasLimit - overhead
+		desiredReceiverGas := uint64(EnoughReceiverGas * 100)
+		writeReportGasLimit := contracts.ForwarderContractLogicGasCost + desiredReceiverGas
+
+		// We want to hit:
+		//   if transmissionInfo.GasLimit.Uint64() > txGasLimit { ... GetHash ... if err return err }
+		// txGasLimit computed == desiredReceiverGas
+		mockForwarderClient.
+			On("GetTransmissionInfo", mock.Anything, mock.Anything).
+			Return(contracts.TransmissionInfo{
+				Success:         false,
+				InvalidReceiver: false,
+				State:           TransmissionStateFailed,
+				GasLimit:        new(big.Int).SetUint64(desiredReceiverGas + 1), // strictly greater => no retry path
+			}, nil).
+			Once()
+
+		// Force TxHashRetriever.GetHash() to fail
+		expectedErr := "error getting report emitted log"
+		mockForwarderClient.EXPECT().
+			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return(nil, errors.New(expectedErr))
+
+		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
+			Receiver: testutils.NewAddress().Bytes(),
+			Report: &workflowpb.ReportResponse{
+				RawReport:     encodedReportMetadata,
+				ReportContext: []byte{},
+				Sigs:          generateRandomSignatures(),
+			},
+			GasConfig: &evm.GasConfig{GasLimit: writeReportGasLimit},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), expectedErr)
+
+		// Ensure no retry / no new tx attempt happened.
+		mockForwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	})
+
 	t.Run("TX already transmitted and failed with enough gas - does NOT retry (no InvokeOnReport)", func(t *testing.T) {
 		ctx := t.Context()
 		testLogger := logger.Test(t)
