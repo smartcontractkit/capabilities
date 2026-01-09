@@ -39,7 +39,7 @@ func NewOutcomeBatch(ctx context.Context, lggr logger.Logger, outctx ocr3types.O
 	metrics.IncBatchRequestsTotal(ctx, "outcome")
 	historicalOutcomes, err := getNonExpiredHistoricalRequestOutcomes(lggr, outctx, outcomeExpirySeqNrSpan)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get previous outcomes: %w", err)
+		return nil, fmt.Errorf("build test failed to get previous outcomes: %w", err)
 	}
 
 	initialOverhead := calculateMessageSize(&oracletypes.Outcome{HistoricalOutcomes: historicalOutcomes})
