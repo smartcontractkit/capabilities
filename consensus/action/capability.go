@@ -42,13 +42,14 @@ import (
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2/types"
 )
 
-const defaultMaxRequestOutcomeSize = 10000
-const defaultKeyBundleIDForValueConsensus = "evm"
-
-const KeyBundleIDEvm = "evm"
-const KeyBundleIDAptos = "aptos"
-const SigningAlgoEcdsa = "ecdsa"
-const HashingAlgoKeccak256 = "keccak256"
+const (
+	defaultMaxRequestOutcomeSize        = 10000
+	defaultKeyBundleIDForValueConsensus = "evm"
+	KeyBundleIDEvm                      = "evm"
+	KeyBundleIDAptos                    = "aptos"
+	SigningAlgoEcdsa                    = "ecdsa"
+	HashingAlgoKeccak256                = "keccak256"
+)
 
 type ConsensusCapabilityConfig struct {
 	RequestBatchSize             int
@@ -88,7 +89,8 @@ func (s *storeStatsCollector) SetRequestCount(requestCount int) {
 // response cache expiry controls how long a response for a given request is cached before it is considered expired and evicted. This allows
 // the capability to respond to slow requests sent after consensus has been reached.
 func NewConsensusCapability(lggr logger.Logger, clock clockwork.Clock, responseCacheExpiry time.Duration,
-	limitsFactory limits.Factory) (*consensusCapability, error) {
+	limitsFactory limits.Factory,
+) (*consensusCapability, error) {
 	metrics, err := metrics.NewMetrics()
 	if err != nil {
 		return nil, fmt.Errorf("error creating metrics: %w", err)
@@ -102,7 +104,7 @@ func NewConsensusCapability(lggr logger.Logger, clock clockwork.Clock, responseC
 	return &consensusCapability{
 		lggr:          lggr,
 		reqStore:      reqStore,
-		reqHandler:    requests.NewHandler[*oracle.ConsensusRequest, oracle.ConsensusResponse](lggr, reqStore, clock, responseCacheExpiry),
+		reqHandler:    requests.NewHandler(lggr, reqStore, clock, responseCacheExpiry),
 		metrics:       metrics,
 		limitsFactory: limitsFactory,
 	}, nil
@@ -206,7 +208,12 @@ func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.
 	ctx = metadata.ContextWithCRE(ctx)
 	lggr := c.requestLggr(metadata)
 
-	lggr.Debugw("received simple consensus request", "metadata", metadata, "input", input)
+	if err := decodeObservationType(lggr, input); err != nil {
+		responseAndMetadata := capabilities.ResponseAndMetadata[*valuespb.Value]{}
+		return &responseAndMetadata, caperrors.NewPublicSystemError(fmt.Errorf("failed to decode observation: %s", err), caperrors.InvalidArgument)
+	}
+
+	lggr.Debugw("received simple consensus request", "metadata", metadata)
 
 	consensusRequestMetaData := oracle.ConsensusRequestMetadata{
 		RequestMetadata: metadata,
@@ -220,11 +227,6 @@ func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.
 		return nil, reqSizeErr
 	}
 	c.metrics.RecordRequestSize(ctx, float64(requestSize))
-
-	if err := decodeObservationType(lggr, input); err != nil {
-		responseAndMetadata := capabilities.ResponseAndMetadata[*valuespb.Value]{}
-		return &responseAndMetadata, caperrors.NewPublicSystemError(fmt.Errorf("failed to log observation: %s", err), caperrors.InvalidArgument)
-	}
 
 	callbackChan := c.sendRequest(ctx, input, consensusRequestMetaData)
 
