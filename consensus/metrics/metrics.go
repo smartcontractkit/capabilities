@@ -13,10 +13,12 @@ import (
 
 // Metrics contains metrics for consensus capability
 type Metrics struct {
-	PendingConsensusRequests metric.Int64Gauge
-	batchCapacityExceeded    metric.Int64Counter
-	batchRequestsTotal       metric.Int64Counter
-	requestSizeHistogram     metric.Float64Histogram
+	PendingConsensusRequests      metric.Int64Gauge
+	batchCapacityExceeded         metric.Int64Counter
+	batchRequestsTotal            metric.Int64Counter
+	requestSizeHistogram          metric.Float64Histogram
+	observationBatchSizeHistogram metric.Float64Histogram
+	outcomeBatchSizeHistogram     metric.Float64Histogram
 }
 
 // NewMetrics creates a new instance of Metrics
@@ -32,6 +34,18 @@ func MetricViews() []sdkmetric.View {
 	return []sdkmetric.View{
 		sdkmetric.NewView(
 			sdkmetric.Instrument{Name: "consensus_capability_request_size_bytes"},
+			sdkmetric.Stream{Aggregation: sdkmetric.AggregationExplicitBucketHistogram{
+				Boundaries: []float64{0, 10, 100, 1000, 10000, 100000, 1000000},
+			}},
+		),
+		sdkmetric.NewView(
+			sdkmetric.Instrument{Name: "consensus_capability_observation_batch_size_bytes"},
+			sdkmetric.Stream{Aggregation: sdkmetric.AggregationExplicitBucketHistogram{
+				Boundaries: []float64{0, 10, 100, 1000, 10000, 100000, 1000000},
+			}},
+		),
+		sdkmetric.NewView(
+			sdkmetric.Instrument{Name: "consensus_capability_outcome_batch_size_bytes"},
 			sdkmetric.Stream{Aggregation: sdkmetric.AggregationExplicitBucketHistogram{
 				Boundaries: []float64{0, 10, 100, 1000, 10000, 100000, 1000000},
 			}},
@@ -75,6 +89,22 @@ func (m *Metrics) init() error {
 		return fmt.Errorf("failed to create request size histogram: %w", err)
 	}
 
+	m.observationBatchSizeHistogram, err = meter.Float64Histogram(
+		"consensus_capability_observation_batch_size_bytes",
+		metric.WithDescription("Histogram of consensus observation batch sizes in bytes"),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create consensus observation batch size histogram: %w", err)
+	}
+
+	m.outcomeBatchSizeHistogram, err = meter.Float64Histogram(
+		"consensus_capability_outcome_batch_size_bytes",
+		metric.WithDescription("Histogram of consensus outcome batch sizes in bytes"),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create consensus outcome batch size histogram: %w", err)
+	}
+
 	return nil
 }
 
@@ -92,4 +122,12 @@ func (m *Metrics) IncBatchRequestsTotal(ctx context.Context, step string) {
 
 func (m *Metrics) RecordRequestSize(ctx context.Context, size float64) {
 	m.requestSizeHistogram.Record(ctx, size)
+}
+
+func (m *Metrics) RecordObservationBatchSize(ctx context.Context, size float64) {
+	m.observationBatchSizeHistogram.Record(ctx, size)
+}
+
+func (m *Metrics) RecordOutcomeBatchSize(ctx context.Context, size float64) {
+	m.outcomeBatchSizeHistogram.Record(ctx, size)
 }

@@ -197,14 +197,16 @@ func (o *OutcomeBatch) FailConsensusWithDefaultCheck(ctx context.Context, lggr l
 	return o.AddFailedConsensusRequestOutcomeToBatch(ctx, requestID, consensusFailedMsg, code)
 }
 
-func (o *OutcomeBatch) SerialiseOutcomeBatch() ([]byte, error) {
+func (o *OutcomeBatch) SerialiseOutcomeBatch(ctx context.Context) ([]byte, error) {
 	serialisedBatch, err := proto.MarshalOptions{Deterministic: true}.Marshal(&o.Outcome)
 	if err != nil {
 		return nil, fmt.Errorf("failed to serialise batch of outcomes: %w", err)
 	}
 
+	batchSize := len(serialisedBatch)
+	o.metrics.RecordOutcomeBatchSize(ctx, float64(batchSize))
 	o.lggr.Debugw("serialised outcome batch", "numOutcomes", len(o.Outcomes),
-		"actualSizeBytes", len(serialisedBatch), "calculatedSizeBytes", o.currentSerialisedBatchSize,
+		"actualSizeBytes", batchSize, "calculatedSizeBytes", o.currentSerialisedBatchSize,
 		"maxOutcomeLengthBytes", o.maxOutcomeLengthBytes)
 
 	return serialisedBatch, nil

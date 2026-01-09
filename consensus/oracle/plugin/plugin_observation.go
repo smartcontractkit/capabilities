@@ -41,5 +41,5 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 	}
 
 	r.lggr.Debugw("consensus plugin observation complete", "numObservations", observationBatch.NumObservationsInBatch(), "numOfRequestsInQuery", len(requestsQuery.RequestIDs))
-	return observationBatch.SerialiseObservationBatch()
+	return observationBatch.SerialiseObservationBatch(ctx)
 }

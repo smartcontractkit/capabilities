@@ -85,3 +85,7 @@ func (tm *testMetrics) IncBatchCapacityExceeded(_ context.Context, stepName stri
 	require.Equal(tm.t, tm.stepName, stepName)
 	tm.batchCapacityExceeded++
 }
+
+func (tm *testMetrics) RecordObservationBatchSize(_ context.Context, size float64) {}
+
+func (tm *testMetrics) RecordOutcomeBatchSize(_ context.Context, size float64) {}

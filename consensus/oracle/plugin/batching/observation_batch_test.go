@@ -32,7 +32,7 @@ func TestObservationBatchCapacityCalculation(t *testing.T) {
 
 		require.True(t, added)
 
-		serialisedBatch, err := observationBatch.SerialiseObservationBatch()
+		serialisedBatch, err := observationBatch.SerialiseObservationBatch(t.Context())
 		require.NoError(t, err)
 
 		require.Equal(t, observationBatch.CurrentSerialisedBatchSize(), len(serialisedBatch))

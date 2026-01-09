@@ -60,7 +60,7 @@ func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeC
 		}
 	}
 
-	return outcomeBatch.SerialiseOutcomeBatch()
+	return outcomeBatch.SerialiseOutcomeBatch(ctx)
 }
 
 // addRequestOutcomeToBatch adds the outcome for a single request to the outcome batch. Returns false if batch does not have capacity to add the outcome.
