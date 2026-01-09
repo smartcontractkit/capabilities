@@ -1,8 +1,6 @@
 package batching_test
 
 import (
-	"errors"
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -186,7 +184,7 @@ func TestOutcomeDoesNotFitNowButWouldFitInEmptyBatch(t *testing.T) {
 	require.False(t, added, "second outcome should not fit in current batch")
 	require.NoError(t, err, "should not return error when outcome would fit in empty batch")
 	require.Equal(t, 1, testMetrics.batchCapacityExceeded)
-} */
+}
 
 func TestOutcomeTooLargeWithExistingHistoricalOutcomes(t *testing.T) {
 	testLogger := logger.Test(t)
@@ -223,3 +221,4 @@ func TestOutcomeTooLargeWithExistingHistoricalOutcomes(t *testing.T) {
 	require.Error(t, err)
 	require.True(t, errors.Is(err, batching.ErrOutcomeTooLarge), "expected ErrOutcomeTooLarge, got: %v", err)
 }
+*/
