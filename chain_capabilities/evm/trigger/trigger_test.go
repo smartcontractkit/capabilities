@@ -7,18 +7,18 @@ import (
 	"fmt"
 	"math/big"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
-
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
-
-	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
 
 	_ "github.com/smartcontractkit/chainlink-common/pkg/beholder"
+	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 
@@ -158,6 +158,11 @@ func TestLogTriggerService_Close_WaitsForPollingGoroutine(t *testing.T) {
 		evmService.EXPECT().GetFiltersNames(mock.Anything).Return([]string{}, nil).Maybe()
 		store := NewLogTriggerStore()
 		service := createTriggerObject(t, evmService, store)
+		send := func(_ context.Context, _ capabilities.TriggerEvent, _ string) error { return nil }
+		lost := func(_ context.Context, _ capabilities.PendingEvent) {}
+		service.baseTrigger = *capabilities.NewBaseTriggerCapability(newMemEventStore(), send, lost, logger.Test(t), 200*time.Millisecond, 5*time.Second)
+		require.NoError(t, service.baseTrigger.Start(ctx))
+		defer service.baseTrigger.Stop()
 		err := service.Start(ctx)
 		require.NoError(t, err)
 		ch, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{WorkflowID: "wf-id"}, &evmcappb.FilterLogTriggerRequest{
@@ -994,6 +999,29 @@ func registerAndUnregisterLogTriggerIntegration(t *testing.T, topicsInput []*evm
 
 	service := createTriggerObject(t, evmService, NewLogTriggerStore())
 
+	send := func(ctx context.Context, te capabilities.TriggerEvent, workflowID string) error {
+		service.inboxesMu.Lock()
+		inbox := service.inboxes[workflowID]
+		service.inboxesMu.Unlock()
+		require.NotNil(t, inbox)
+
+		l := new(evmcappb.Log)
+		if err := anypb.UnmarshalTo(te.Payload, l, proto.UnmarshalOptions{}); err != nil {
+			return err
+		}
+
+		msg := capabilities.TriggerAndId[*evmcappb.Log]{Trigger: l, Id: te.ID}
+
+		select {
+		case inbox <- msg:
+			return nil
+		default:
+			return fmt.Errorf("inbox full for %s", workflowID)
+		}
+	}
+	lost := func(_ context.Context, _ capabilities.PendingEvent) {}
+	service.baseTrigger = *capabilities.NewBaseTriggerCapability(newMemEventStore(), send, lost, logger.Test(t), 200*time.Millisecond, 5*time.Second)
+
 	triggerID := "trigger-integration"
 
 	tickCh := make(chan time.Time)
@@ -1347,6 +1375,122 @@ func TestNewLogTriggerService(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "logTriggerLimitQueryLogSize (1001) must be less than logTriggerSendChannelBufferSize (1000)")
 	})
+}
+
+func TestBaseTrigger_ResendsUntilAck_ThenStops(t *testing.T) {
+	store := newMemEventStore()
+
+	sendCh := make(chan string, 100)
+	send := func(ctx context.Context, te capabilities.TriggerEvent, workflowID string) error {
+		sendCh <- te.ID
+		return nil
+	}
+
+	var lostCount atomic.Int32
+	lost := func(ctx context.Context, rec capabilities.PendingEvent) {
+		lostCount.Add(1)
+	}
+
+	// Fast retransmit, long max (so it won't go lost during this test)
+	b := capabilities.NewBaseTriggerCapability(store, send, lost, logger.Test(t),
+		50*time.Millisecond, 2*time.Second,
+	)
+	require.NoError(t, b.Start(t.Context()))
+	defer b.Stop()
+
+	te := capabilities.TriggerEvent{
+		TriggerType: "trigger-1",
+		ID:          "event-1",
+		Payload:     &anypb.Any{TypeUrl: "type.googleapis.com/foo", Value: []byte{1, 2, 3}},
+	}
+
+	require.NoError(t, b.DeliverEvent(t.Context(), te, []string{"wf-1"}))
+
+	// Expect at least 2 sends (initial + at least one resend)
+	seen := 0
+	require.Eventually(t, func() bool {
+		for {
+			select {
+			case id := <-sendCh:
+				if id == "event-1" {
+					seen++
+				}
+			default:
+				return seen >= 2
+			}
+		}
+	}, 1*time.Second, 10*time.Millisecond, "expected resend without ack")
+
+	// ACK should stop further sends
+	require.NoError(t, b.AckEvent(t.Context(), "trigger-1", "wf-1", "event-1"))
+
+	// Drain any already-enqueued sends
+	time.Sleep(20 * time.Millisecond)
+	for {
+		select {
+		case <-sendCh:
+		default:
+			goto drained
+		}
+	}
+drained:
+	time.Sleep(150 * time.Millisecond)
+	select {
+	case id := <-sendCh:
+		t.Fatalf("unexpected send after ack: %s", id)
+	default:
+	}
+	require.Equal(t, int32(0), lostCount.Load(), "should not be lost")
+}
+
+func TestBaseTrigger_TimesOutAndCallsLost(t *testing.T) {
+	store := newMemEventStore()
+
+	var sendCount atomic.Int64
+	send := func(ctx context.Context, te capabilities.TriggerEvent, workflowID string) error {
+		sendCount.Add(1)
+		return nil
+	}
+
+	lostCh := make(chan capabilities.PendingEvent, 1)
+	lost := func(ctx context.Context, rec capabilities.PendingEvent) {
+		lostCh <- rec
+	}
+
+	tRetransmit := 50 * time.Millisecond
+	tMax := 200 * time.Millisecond
+
+	b := capabilities.NewBaseTriggerCapability(store, send, lost, logger.Test(t), tRetransmit, tMax)
+	require.NoError(t, b.Start(t.Context()))
+	defer b.Stop()
+
+	te := capabilities.TriggerEvent{
+		TriggerType: "trigger-1",
+		ID:          "event-1",
+		Payload:     &anypb.Any{TypeUrl: "type.googleapis.com/foo", Value: []byte{1}},
+	}
+	require.NoError(t, b.DeliverEvent(t.Context(), te, []string{"wf-1"}))
+
+	// Wait for lost
+	var lostEvent capabilities.PendingEvent
+	require.Eventually(t, func() bool {
+		select {
+		case lostEvent = <-lostCh:
+			return true
+		default:
+			return false
+		}
+	}, 2*time.Second, 10*time.Millisecond)
+
+	require.Equal(t, "trigger-1", lostEvent.TriggerId)
+	require.Equal(t, "wf-1", lostEvent.WorkflowId)
+	require.Equal(t, "event-1", lostEvent.EventId)
+	countAtLost := sendCount.Load()
+
+	time.Sleep(2 * tRetransmit)
+	countAfterGrace := sendCount.Load()
+	require.Equal(t, countAtLost, countAfterGrace,
+		"expected no new sends after lost")
 }
 
 func createTriggerObject(t *testing.T, mockEVM *evmmock.EVMService, store LogTriggerStore) *LogTriggerService {
