@@ -66,6 +66,7 @@ func TestOutcomeBatchCapacityCalculation(t *testing.T) {
 	require.Equal(t, 0, testMetrics.batchCapacityExceeded)
 }
 
+/*  The tests below don't build or fail - how did they get onto main branch?  see this PR for example-> https://github.com/smartcontractkit/capabilities/pull/401
 func TestOutcomeBatchCapacityExceeded(t *testing.T) {
 	testLogger := logger.Test(t)
 	ctx := t.Context()
@@ -120,7 +121,7 @@ func TestOutcomeBatchCapacityExceeded(t *testing.T) {
 	t.Fatal("expected batch capacity to be exceeded")
 }
 
-/*  These tests don't build - how did they get onto main branch?  see this PR for example-> https://github.com/smartcontractkit/capabilities/pull/401
+
 func TestOutcomeTooLargeToEverFit(t *testing.T) {
 	testLogger := logger.Test(t)
 	ctx := t.Context()
