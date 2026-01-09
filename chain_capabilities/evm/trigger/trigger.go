@@ -6,9 +6,11 @@ import (
 	"math/big"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 
@@ -43,7 +45,10 @@ const (
 
 type LogTriggerService struct {
 	services.Service
-	capabilities.BaseTriggerCapability
+
+	baseTrigger capabilities.BaseTriggerCapability
+	inboxesMu   sync.Mutex
+	inboxes     map[string]chan capabilities.TriggerAndId[*evmcappb.Log] // workflowID -> chan
 
 	srvcEng *services.Engine
 
@@ -103,6 +108,7 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 		logTriggerSendChannelBufferSize: currentSendChannelBufferSize,
 		limitAndSort:                    limitAndSort,
 		orgResolver:                     orgResolver,
+		inboxes:                         make(map[string]chan capabilities.TriggerAndId[*evmcappb.Log]),
 	}
 	if lts.orgResolver == nil {
 		lts.lggr.Warn("OrgResolver is nil, EVM log trigger capability will not be able to fetch organization ID")
@@ -115,6 +121,37 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 		Name:  "EvmLogTriggerService",
 		Start: lts.start,
 	}.NewServiceEngine(lggr)
+
+	sendFn := func(ctx context.Context, te capabilities.TriggerEvent, workflowID string) error {
+		var pl evmcappb.Log
+		if err := te.Payload.UnmarshalTo(&pl); err != nil {
+			return err
+		}
+
+		lts.inboxesMu.Lock()
+		ch, ok := lts.inboxes[workflowID]
+		lts.inboxesMu.Unlock()
+		if !ok {
+			return fmt.Errorf("no inbox for workflow %s", workflowID)
+		}
+
+		select {
+		case ch <- capabilities.TriggerAndId[*evmcappb.Log]{Id: te.ID, Trigger: &pl}:
+			return nil
+		default:
+			return fmt.Errorf("inbox full for workflow %s", workflowID)
+		}
+	}
+
+	lostFn := func(ctx context.Context, rec capabilities.PendingEvent) {
+		lts.lggr.Errorw("EVM log event marked lost",
+			"triggerId", rec.TriggerId,
+			"workflowId", rec.WorkflowId,
+			"eventId", rec.EventId)
+	}
+	retryInterval := 2 * time.Second // TODO: Set these appropriately
+	lostTimeout := 30 * time.Second
+	lts.baseTrigger = *capabilities.NewBaseTriggerCapability(nil, sendFn, lostFn, lts.lggr, retryInterval, lostTimeout)
 
 	return lts, nil
 }
@@ -136,7 +173,11 @@ func (lts *LogTriggerService) initLimiters(limitsFactory limits.Factory) (err er
 	return
 }
 
-func (lts *LogTriggerService) start(_ context.Context) error {
+func (lts *LogTriggerService) start(ctx context.Context) error {
+	err := lts.baseTrigger.Start(ctx)
+	if err != nil {
+		return err
+	}
 	duration := 30 * time.Second
 	ticker := services.NewTicker(duration)
 	lts.lggr.Debugf("Starting clean up of failed log poller filters every %s seconds", duration)
@@ -267,6 +308,11 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	monitoring.EmitInitiated(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerInitiated(telemetryContext, input))
 
 	logCh := make(chan capabilities.TriggerAndId[*evmcappb.Log], lts.logTriggerSendChannelBufferSize)
+	wfID := meta.WorkflowID
+	lts.inboxesMu.Lock()
+	lts.inboxes[wfID] = logCh
+	lts.inboxesMu.Unlock()
+
 	lts.srvcEng.Go(func(ctx context.Context) {
 		ctx, cancel := context.WithCancel(ctx)
 		lts.triggers.Write(triggerID, logTriggerState{
@@ -286,11 +332,9 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	return logCh, nil
 }
 
-// AckEvent
 // TODO: Whatever wraps LogTriggerService needs to call this
-func (lts *LogTriggerService) AckEvent(ctx context.Context, eventId string) error {
-	lts.BaseTriggerCapability.AckEvent(ctx, eventId)
-	return nil
+func (lts *LogTriggerService) AckEvent(ctx context.Context, triggerId, workflowId, eventId string) error {
+	return lts.baseTrigger.AckEvent(ctx, triggerId, workflowId, eventId)
 }
 
 func (lts *LogTriggerService) getTopics(input *evmcappb.FilterLogTriggerRequest) ([][]byte, [][]byte, [][]byte, [][]byte) {
@@ -360,7 +404,7 @@ func (lts *LogTriggerService) startPolling(ctx context.Context, telemetryContext
 				continue
 			}
 
-			err = lts.sendLogsToWorkflows(ctx, telemetryContext, logs, finalizedBlockNumber, triggerID, state, logCh)
+			err = lts.sendLogsToWorkflows(ctx, telemetryContext, logs, finalizedBlockNumber, triggerID, state)
 			if err != nil {
 				summary := fmt.Sprintf("Failed to send logs for triggerID: %s, error: %v", triggerID, err)
 				monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(telemetryContext, triggerID, summary, err.Error()))
@@ -387,8 +431,7 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 	logs []*evmtypes.Log,
 	finalizedBlockNumber *big.Int,
 	triggerID string,
-	trigger logTriggerState,
-	logCh chan capabilities.TriggerAndId[*evmcappb.Log]) error {
+	trigger logTriggerState) error {
 	lts.lggr.Debugf("Sending logs to workflow, triggerID: %s, finalizedBlockNumber: %d, logs size %d", triggerID, finalizedBlockNumber, len(logs))
 	var needsUpdate bool
 	sentCount := 0
@@ -465,28 +508,8 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 			// continue with execution even if event emission fails
 		}
 
-		select {
-		// TODO: IS THIS REPLACED WITH baseTriggerCapability deliverEvent?
-		case logCh <- response:
-			sentCount++
-			if log.BlockNumber.Cmp(finalizedBlockNumber) > 0 {
-				// log's block number is unfinalized and needs to be tracked
-				trigger.unfinalizedSentEventIDs[eventID] = log.BlockNumber
-				needsUpdate = true
-			}
-			// TODO: Start Ack Timeout after sending response
-			// TODO: Also will want to re-transmit: logCh <- response after sometime before Ack deadline
-		default:
-			// TODO: If callback channel is full, we don't want to drop the event anymore but persist instead and try again later?
-			summary := fmt.Sprintf("Callback channel full (buffer size: %d), dropping event (triggerID: %s, eventID: %s)", lts.logTriggerSendChannelBufferSize, triggerID, response.Id)
-			lts.lggr.Errorw(summary, "triggerID", triggerID, "eventID", response.Id)
-			monitoring.LogAndEmitError(
-				ctx,
-				lts.lggr,
-				lts.beholderProcessor,
-				lts.messageBuilder.BuildLogTriggerEventDroppedError(telemetryContext, triggerID, log, summary, summary, false),
-			)
-		}
+		lts.deliverLogReliably(ctx, telemetryContext, triggerID, protoLog, response.Id,
+			finalizedBlockNumber, log, &trigger, &sentCount, &needsUpdate)
 	}
 
 	// Prune all entries in unfinalizedSentEventIds where the block number is less than or equal to finalizedBlockNumber
@@ -506,6 +529,54 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 	}
 	lts.lggr.Debugf("Total logs successfully sent for triggerID: %s: %d (originally got: %d)", triggerID, sentCount, len(logs))
 	return nil
+}
+
+// deliverLogReliably sends a single EVM log to the BaseTriggerCapability
+// for persistence, retransmission, and lost handling.
+func (lts *LogTriggerService) deliverLogReliably(
+	ctx context.Context,
+	telemetryContext monitoring.TelemetryContext,
+	triggerID string,
+	protoLog *evmcappb.Log,
+	eventID string,
+	finalizedBlockNumber *big.Int,
+	log *evmtypes.Log,
+	trigger *logTriggerState,
+	sentCount *int,
+	needsUpdate *bool,
+) {
+	anyPayload, err := anypb.New(protoLog)
+	if err != nil {
+		lts.lggr.Errorw("failed to pack protoLog into Any",
+			"err", err, "triggerID", triggerID, "eventID", eventID)
+		return
+	}
+
+	te := capabilities.TriggerEvent{
+		TriggerType: triggerID,
+		ID:          eventID,
+		Payload:     anyPayload,
+	}
+
+	wfID := telemetryContext.RequestMetadata.WorkflowID
+	if err := lts.baseTrigger.DeliverEvent(ctx, te, []string{wfID}); err != nil {
+		summary := fmt.Sprintf("failed to persist/deliver event (triggerID=%s, eventID=%s): %v", triggerID, eventID, err)
+		lts.lggr.Error(summary)
+		monitoring.LogAndEmitError(
+			ctx,
+			lts.lggr,
+			lts.beholderProcessor,
+			lts.messageBuilder.BuildLogTriggerEventDroppedError(telemetryContext, triggerID, log, summary, err.Error(), false),
+		)
+		return
+	}
+
+	// Once persisted, consider it "sent" from trigger’s POV (BaseTriggerCapability handles retries/ACK/lost)
+	*sentCount++
+	if log.BlockNumber.Cmp(finalizedBlockNumber) > 0 {
+		trigger.unfinalizedSentEventIDs[eventID] = log.BlockNumber
+		*needsUpdate = true
+	}
 }
 
 // checkLimitsOnLog checks the rate limit and payload size limit for a single log event, it should not error as we
