@@ -179,6 +179,11 @@ func (s *service) UnregisterTrigger(ctx context.Context, triggerID string, metad
 	return nil
 }
 
+func (s *service) AckEvent(ctx context.Context, triggerId string, eventId string) error {
+	//TODO implement me
+	panic("implement me")
+}
+
 func ensureHexPrefix(s string) string {
 	if len(s) >= 2 && s[:2] == "0x" {
 		return s
