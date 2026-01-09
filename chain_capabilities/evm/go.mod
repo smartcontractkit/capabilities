@@ -7,11 +7,11 @@ require (
 	github.com/google/go-cmp v0.7.0
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20251105202054-e299af591b47
 	github.com/smartcontractkit/chain-selectors v1.0.67
-	github.com/smartcontractkit/chainlink-common v0.9.6-0.20260106160138-bf2f64d0376d
+	github.com/smartcontractkit/chainlink-common v0.9.6-0.20260109154229-1b142d06881d
 	github.com/smartcontractkit/chainlink-evm v0.3.4-0.20251020152820-5fb041bf92b7
 	github.com/smartcontractkit/chainlink-evm/gethwrappers v0.0.0-20250827130336-5922343458be
 	github.com/smartcontractkit/chainlink-framework/multinode v0.0.0-20250729142306-508e798f6a5d
-	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20251124151448-0448aefdaab9
+	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260109153816-3c03e686173c
 	github.com/stretchr/testify v1.11.1
 	go.opentelemetry.io/otel v1.38.0
 	go.uber.org/zap v1.27.0
@@ -207,4 +207,3 @@ require (
 )
 
 replace github.com/fbsobreira/gotron-sdk => github.com/smartcontractkit/chainlink-tron/relayer/gotron-sdk v0.0.5-0.20250528121202-292529af39df
-replace github.com/smartcontractkit/chainlink-common => /Users/yashvardhan/chainlink-common
