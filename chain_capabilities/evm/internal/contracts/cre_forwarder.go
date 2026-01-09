@@ -22,6 +22,7 @@ import (
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	"github.com/smartcontractkit/chainlink-evm/gethwrappers/keystone/generated/forwarder"
 	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
+	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 )
 
 type TransmissionInfo struct {
@@ -168,11 +169,13 @@ func (cfclient *creForwarderClient) InvokeOnReport(ctx context.Context, receiver
 			GasLimit: &gasConfig.GasLimit,
 		}
 	}
+	if gasConfig != nil && gasConfig.MaxGasPrice != nil {
+		resolvedGasConfig.MaxGasPrice = valuespb.NewIntFromBigInt(gasConfig.MaxGasPrice)
+	}
 	encodedReport, err := cfclient.forwarderCodec.EncodeReport(receiverAddress, report)
 	if err != nil {
 		return nil, err
 	}
-	// TODO: PLEX-1522 - Add support to limit maximum total fee based on billing config
 	transactionResult, err := cfclient.evmService.SubmitTransaction(ctx, evmtypes.SubmitTransactionRequest{
 		To:        cfclient.forwarderAddress,
 		Data:      encodedReport,

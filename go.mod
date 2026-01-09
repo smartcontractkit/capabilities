@@ -3,8 +3,8 @@ module github.com/smartcontractkit/capabilities
 go 1.25.3
 
 require (
-	github.com/stretchr/testify v1.10.0
-	google.golang.org/protobuf v1.36.7
+	github.com/stretchr/testify v1.11.1
+	google.golang.org/protobuf v1.36.8
 )
 
 require (
