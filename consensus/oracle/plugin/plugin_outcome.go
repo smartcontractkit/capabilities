@@ -111,6 +111,7 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, requestI
 		)
 
 		return outcome.FailConsensusWithDefaultCheck(ctx, r.lggr, requestID, consensusFailedMsg,
+			"consensus calculation failed: received >= f+1 error observations",
 			oracletypes.ConsensusFailureCode_RECEIVED_FPLUS1_ERRORS, consensusMDD, timestamp)
 	}
 
@@ -123,6 +124,7 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, requestI
 			err, consensusMDD, valuesJSON, formatErrorsForLogging(ctx, obsErrors),
 		)
 		return outcome.FailConsensusWithDefaultCheck(ctx, r.lggr, requestID, consensusFailedMsg,
+			"consensus calculation failed: aggregation failed",
 			oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED, consensusMDD, timestamp)
 	}
 
@@ -216,6 +218,12 @@ func (r *reportingPlugin) calculateConsensusMetadataDescriptorAndDefault(observa
 }
 
 func groupAttributedObservationsByRequestID(lggr logger.Logger, attributedObservations []types.AttributedObservation) map[string][]*oracletypes.RequestObservation {
+	// sort attributedObservations by oracle ID
+	// libOCR doesn't guarantee the same order across nodes (See eventTGraceTimeout() in outcome_generation_leader.go)
+	slices.SortFunc(attributedObservations, func(a, b types.AttributedObservation) int {
+		return int(a.Observer) - int(b.Observer)
+	})
+
 	requestIDToObservations := make(map[string][]*oracletypes.RequestObservation)
 	for _, ao := range attributedObservations {
 		obs := &oracletypes.Observation{}
@@ -225,7 +233,7 @@ func groupAttributedObservationsByRequestID(lggr logger.Logger, attributedObserv
 			continue
 		}
 
-		// Observations will be added in the same order as received in the attributedObservations slice
+		// the order here is consistent thanks to the initial sorting of attributedObservations
 		for requestID, reqObservation := range obs.Observations {
 			requestIDToObservations[requestID] = append(requestIDToObservations[requestID], reqObservation)
 		}

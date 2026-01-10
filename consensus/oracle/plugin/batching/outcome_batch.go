@@ -178,9 +178,9 @@ func (o *OutcomeBatch) truncateFailedRequestOutcome(failedRequestOutcome *oracle
 // FailConsensusWithDefaultCheck handles a consensus failure by checking if a default value is available to use.
 // If a default value is available, it adds a successful consensus outcome with the default value to the batch.
 // If no default value is available, it adds a failed consensus outcome to the batch.
-func (o *OutcomeBatch) FailConsensusWithDefaultCheck(ctx context.Context, lggr logger.Logger, requestID string, consensusFailedMsg string,
+func (o *OutcomeBatch) FailConsensusWithDefaultCheck(ctx context.Context, lggr logger.Logger, requestID string, fullConsensusFailedMsg string, logMsg string,
 	code oracletypes.ConsensusFailureCode, consensusMDD *oracletypes.RequestObservation, timestamp *timestamppb.Timestamp) (bool, error) {
-	lggr.Debug(consensusFailedMsg)
+	lggr.Debugw("consensus failed with a user error", "reason", logMsg, "requestID", requestID)
 
 	defaultVal, err := values.FromProto(consensusMDD.Input.Default)
 	if err != nil {
@@ -194,7 +194,7 @@ func (o *OutcomeBatch) FailConsensusWithDefaultCheck(ctx context.Context, lggr l
 		return o.AddSuccessfulConsensusRequestOutcomeToBatch(ctx, consensusMDD.Metadata, consensusMDD.Input.Default, timestamp)
 	}
 
-	return o.AddFailedConsensusRequestOutcomeToBatch(ctx, requestID, consensusFailedMsg, code)
+	return o.AddFailedConsensusRequestOutcomeToBatch(ctx, requestID, fullConsensusFailedMsg, code)
 }
 
 func (o *OutcomeBatch) SerialiseOutcomeBatch(ctx context.Context) ([]byte, error) {
