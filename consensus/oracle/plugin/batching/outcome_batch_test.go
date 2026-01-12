@@ -1,7 +1,6 @@
 package batching_test
 
 import (
-	"errors"
 	"strings"
 	"testing"
 
@@ -43,7 +42,7 @@ func TestOutcomeBatchCapacityCalculation(t *testing.T) {
 
 	require.NoError(t, err)
 
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		added, err := outcome.AddSuccessfulConsensusRequestOutcomeToBatch(ctx, &oracletypes.RequestMetaData{
 			RequestId:           uuid.NewString(),
 			WorkflowExecutionId: generateRandomStringBetweenBounds(1, 10000),
@@ -58,7 +57,7 @@ func TestOutcomeBatchCapacityCalculation(t *testing.T) {
 		require.True(t, added)
 		require.NoError(t, err)
 
-		serialisedBatch, err := outcome.SerialiseOutcomeBatch()
+		serialisedBatch, err := outcome.SerialiseOutcomeBatch(t.Context())
 		require.NoError(t, err)
 
 		require.Equal(t, outcome.CurrentSerialisedBatchSize(), len(serialisedBatch))
@@ -88,11 +87,11 @@ func TestOutcomeBatchCapacityExceeded(t *testing.T) {
 		PreviousOutcome: serialisedPrevOutcome,
 		SeqNr:           1000,
 	}, 1000,
-		100, "evm", testMetrics, 1000)
+		1000, "evm", testMetrics, 1000)
 
 	require.NoError(t, err)
 
-	for i := 0; i < 1000; i++ {
+	for range 10 {
 		added, err := outcome.AddSuccessfulConsensusRequestOutcomeToBatch(ctx, &oracletypes.RequestMetaData{
 			RequestId:           uuid.NewString(),
 			WorkflowExecutionId: "exec-1",
@@ -113,7 +112,7 @@ func TestOutcomeBatchCapacityExceeded(t *testing.T) {
 		}
 		require.NoError(t, err)
 
-		serialisedBatch, err := outcome.SerialiseOutcomeBatch()
+		serialisedBatch, err := outcome.SerialiseOutcomeBatch(t.Context())
 		require.NoError(t, err)
 
 		require.Equal(t, outcome.CurrentSerialisedBatchSize(), len(serialisedBatch))
@@ -143,9 +142,8 @@ func TestOutcomeTooLargeToEverFit(t *testing.T) {
 		WorkflowExecutionId: "exec-1",
 	}, values.Proto(values.NewString(largeData)), &timestamppb.Timestamp{})
 
-	require.False(t, added)
-	require.Error(t, err)
-	require.True(t, errors.Is(err, batching.ErrOutcomeTooLarge), "expected ErrOutcomeTooLarge, got: %v", err)
+	require.True(t, added) // still added but a user erro, not the large outcome
+	require.Equal(t, oracletypes.ConsensusFailureCode_OUTCOME_TOO_LARGE, outcome.Outcomes[len(outcome.Outcomes)-1].GetFailure().GetCode())
 	require.Equal(t, 1, testMetrics.batchCapacityExceeded)
 }
 
@@ -218,7 +216,7 @@ func TestOutcomeTooLargeWithExistingHistoricalOutcomes(t *testing.T) {
 		WorkflowExecutionId: "exec-1",
 	}, values.Proto(values.NewString(largeData)), &timestamppb.Timestamp{})
 
-	require.False(t, added)
-	require.Error(t, err)
-	require.True(t, errors.Is(err, batching.ErrOutcomeTooLarge), "expected ErrOutcomeTooLarge, got: %v", err)
+	require.True(t, added) // still added but a user erro, not the large outcome
+	require.Equal(t, oracletypes.ConsensusFailureCode_OUTCOME_TOO_LARGE, outcome.Outcomes[len(outcome.Outcomes)-1].GetFailure().GetCode())
+	require.Equal(t, 1, testMetrics.batchCapacityExceeded)
 }

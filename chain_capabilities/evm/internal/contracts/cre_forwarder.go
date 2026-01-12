@@ -34,6 +34,30 @@ type TransmissionInfo struct {
 	Transmitter    common.Address `json:"transmitter,omitempty"`
 }
 
+func (ti TransmissionInfo) LogAttrs() []any {
+	attrs := make([]any, 0, 12)
+
+	attrs = append(attrs,
+		"transmissionState", ti.State,
+		"transmissionSuccess", ti.Success,
+		"invalidReceiver", ti.InvalidReceiver,
+		"transmitter", ti.Transmitter.Hex(),
+		"transmissionID", hex.EncodeToString(ti.TransmissionId[:]),
+	)
+
+	if ti.GasLimit != nil {
+		attrs = append(attrs,
+			"transmissionGasLimit", ti.GasLimit.String(),
+		)
+	} else {
+		attrs = append(attrs,
+			"transmissionGasLimit", (*big.Int)(nil),
+		)
+	}
+
+	return attrs
+}
+
 // The gas cost of the forwarder contract logic, including state updates and event emission.
 // This is a rough estimate and should be updated if the forwarder contract logic changes.
 // PLEX-1524 - Make the forwarder contract logic gas cost limit configurable
@@ -53,13 +77,13 @@ func NewCREForwarderCodec() (CREForwarderCodec, error) {
 	}, nil
 }
 
-func NewCREForwarderClient(EVMService types.EVMService, forwarderAddress common.Address, forwarderLookbackBlocks int64, logger logger.Logger) (CREForwarderClient, error) {
+func NewCREForwarderClient(EVMService types.EVMService, forwarderAddress common.Address, forwarderLookbackBlocks int64, lggr logger.Logger) (CREForwarderClient, error) {
 	codec, err := NewCREForwarderCodec()
 	if err != nil {
 		return nil, err
 	}
 	if forwarderLookbackBlocks <= 0 {
-		logger.Debugf("forwarderLookbackBlocks is set to a zero/negative value %d, using default value of %d.", forwarderLookbackBlocks, DefaultLookbackBlocks)
+		lggr.Debugf("forwarderLookbackBlocks is set to a zero/negative value %d, using default value of %d.", forwarderLookbackBlocks, DefaultLookbackBlocks)
 		forwarderLookbackBlocks = DefaultLookbackBlocks
 	}
 	return &creForwarderClient{
@@ -67,7 +91,7 @@ func NewCREForwarderClient(EVMService types.EVMService, forwarderAddress common.
 		forwarderCodec:          codec,
 		forwarderAddress:        forwarderAddress,
 		forwarderLookbackBlocks: forwarderLookbackBlocks,
-		logger:                  logger,
+		logger:                  lggr,
 	}, nil
 }
 
@@ -138,23 +162,21 @@ type creForwarderClient struct {
 }
 
 func (cfclient *creForwarderClient) InvokeOnReport(ctx context.Context, receiverAddress common.Address, report *workflowpb.ReportResponse, gasConfig *evmcap.GasConfig) (*evmtypes.TransactionResult, error) {
-	cfclient.logger.Debugw("Transaction raw report", "report", hex.EncodeToString(report.RawReport))
-
-	var resolvedGasConfig *evmtypes.GasConfig
-	if gasConfig != nil && gasConfig.GasLimit > 0 {
-		resolvedGasConfig = &evmtypes.GasConfig{
-			GasLimit: &gasConfig.GasLimit,
-		}
+	if gasConfig == nil || gasConfig.GasLimit == 0 {
+		return nil, fmt.Errorf("gas limit shouldn't be unset")
 	}
+
 	encodedReport, err := cfclient.forwarderCodec.EncodeReport(receiverAddress, report)
 	if err != nil {
 		return nil, err
 	}
 	// TODO: PLEX-1522 - Add support to limit maximum total fee based on billing config
 	transactionResult, err := cfclient.evmService.SubmitTransaction(ctx, evmtypes.SubmitTransactionRequest{
-		To:        cfclient.forwarderAddress,
-		Data:      encodedReport,
-		GasConfig: resolvedGasConfig,
+		To:   cfclient.forwarderAddress,
+		Data: encodedReport,
+		GasConfig: &evmtypes.GasConfig{
+			GasLimit: &gasConfig.GasLimit,
+		},
 	})
 	if err != nil {
 		if errors.Is(err, types.ErrSettingTransactionGasLimitNotSupported) {

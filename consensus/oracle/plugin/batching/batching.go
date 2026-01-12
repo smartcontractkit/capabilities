@@ -9,6 +9,8 @@ import (
 type metrics interface {
 	IncBatchCapacityExceeded(ctx context.Context, step string)
 	IncBatchRequestsTotal(ctx context.Context, step string)
+	RecordObservationBatchSize(ctx context.Context, size float64)
+	RecordOutcomeBatchSize(ctx context.Context, size float64)
 }
 
 // varintSize calculates the size of a varint encoding
