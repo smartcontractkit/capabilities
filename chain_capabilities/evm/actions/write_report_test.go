@@ -414,7 +414,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		_, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
 
 		errorMsg := "some error"
-		expectedError := "[2]Unknown: failed to get initial transmission info: some error"
+		expectedError := "[2]Unknown: failed to get transmission info: some error"
 
 		// Will be retried until context timeout
 		mockForwarderClient.
