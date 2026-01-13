@@ -131,6 +131,22 @@ func TestWithQuickRetry(t *testing.T) {
 		require.GreaterOrEqual(t, attempts, 3, "should make multiple retry attempts")
 		require.LessOrEqual(t, attempts, 6, "should be bounded by timeout")
 	})
+
+	t.Run("with cancelled context returns original error from fn", func(t *testing.T) {
+		// Create an already-cancelled context
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel() // Cancel immediately
+
+		expectedErr := "fn error"
+		_, err := withQuickRetry(ctx, lggr, func(ctx context.Context) (string, error) {
+			return "", errors.New(expectedErr)
+		})
+
+		require.Error(t, err)
+		// The retry strategy calls fn at least once before checking context.
+		// Since fn returns an error, lastErr is set, and we return the original error.
+		require.Equal(t, expectedErr, err.Error())
+	})
 }
 
 func TestWithPollingRetry(t *testing.T) {
@@ -225,6 +241,22 @@ func TestWithPollingRetry(t *testing.T) {
 		totalTime := time.Since(start)
 		// Should complete reasonably fast with just 4 attempts
 		require.Less(t, totalTime, 2*time.Second)
+	})
+
+	t.Run("with cancelled context returns original error from fn", func(t *testing.T) {
+		// Create an already-cancelled context
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel() // Cancel immediately
+
+		expectedErr := "fn error"
+		_, err := withPollingRetry(ctx, lggr, func(ctx context.Context) (int, error) {
+			return 0, errors.New(expectedErr)
+		})
+
+		require.Error(t, err)
+		// The retry strategy calls fn at least once before checking context.
+		// Since fn returns an error, lastErr is set, and we return the original error.
+		require.Equal(t, expectedErr, err.Error())
 	})
 }
 

@@ -44,7 +44,7 @@ const UnknownIssueExecutingReceiverContractMessage = "unknown issue execution re
 const userError = "user error:"
 
 // withQuickRetry wraps a simple RPC read with retry logic.
-// Uses short timeout and fast backoff - these calls should be sub-second.
+// Uses shorter timeout (10s) and fast backoff - these calls should be sub-second.
 // Returns the original error from fn, not the retry wrapper error.
 func withQuickRetry[T any](ctx context.Context, lggr logger.Logger, fn func(context.Context) (T, error)) (T, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -57,18 +57,22 @@ func withQuickRetry[T any](ctx context.Context, lggr logger.Logger, fn func(cont
 	result, err := strategy.Do(ctx, lggr, func(ctx context.Context) (T, error) {
 		r, e := fn(ctx)
 		if e != nil {
-			lastErr = e
+			lastErr = e // Capture the original error from fn
 		}
 		return r, e
 	})
-	if err != nil && lastErr != nil {
-		return result, lastErr
+	if err != nil {
+		if lastErr != nil {
+			return result, lastErr
+		}
+		// lastErr is nil - fn was never called, return retry error
+		return result, err
 	}
-	return result, err
+	return result, nil
 }
 
 // withPollingRetry wraps an operation that polls for state changes.
-// Uses longer timeout to accommodate slow chains like Ethereum (~12-14s blocks).
+// Uses longer timeout (60s) to accommodate slow chains, basically go up until the parent context timeout.
 // Returns the original error from fn, not the retry wrapper error.
 func withPollingRetry[T any](ctx context.Context, lggr logger.Logger, fn func(context.Context) (T, error)) (T, error) {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
@@ -85,10 +89,14 @@ func withPollingRetry[T any](ctx context.Context, lggr logger.Logger, fn func(co
 		}
 		return r, e
 	})
-	if err != nil && lastErr != nil {
-		return result, lastErr
+	if err != nil {
+		if lastErr != nil {
+			return result, lastErr
+		}
+		// lastErr is nil - fn was never called, return retry error
+		return result, err
 	}
-	return result, err
+	return result, nil
 }
 
 func decodeReportMetadata(data []byte) (ocrtypes.Metadata, error) {
@@ -192,7 +200,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		return e.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
 	})
 	if err != nil {
-		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed to get initial transmission info: %w", err)
+		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed to get transmission info: %w", err)
 	}
 
 	e.lggr.Infow("Checking transmission status", transmissionInfo.LogAttrs()...)
@@ -369,7 +377,6 @@ func (e *WriteReport) fetchTransactionReceiptAndCreateReply(ctx context.Context,
 	if err != nil {
 		return nil, fmt.Errorf("failed to get transaction receipt: %w", err)
 	}
-
 	transactionFee, err := withQuickRetry(ctx, e.lggr, func(ctx context.Context) (*evmtypes.TransactionFee, error) {
 		return e.EVMService.CalculateTransactionFee(ctx, evmtypes.ReceiptGasInfo{
 			GasUsed:           txReceipt.GasUsed,
