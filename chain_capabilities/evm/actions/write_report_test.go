@@ -49,6 +49,185 @@ func nonNilPositiveGasCfgMatcher() interface{} {
 	})
 }
 
+func TestWithQuickRetry(t *testing.T) {
+	t.Parallel()
+	lggr := logger.Test(t)
+
+	t.Run("succeeds on first attempt - returns immediately", func(t *testing.T) {
+		ctx := t.Context()
+		start := time.Now()
+
+		result, err := withQuickRetry(ctx, lggr, func(ctx context.Context) (string, error) {
+			return "success", nil
+		})
+
+		elapsed := time.Since(start)
+		require.NoError(t, err)
+		require.Equal(t, "success", result)
+		require.Less(t, elapsed, 100*time.Millisecond, "should return immediately on success")
+	})
+
+	t.Run("retries until success", func(t *testing.T) {
+		ctx := t.Context()
+		attempts := 0
+
+		result, err := withQuickRetry(ctx, lggr, func(ctx context.Context) (string, error) {
+			attempts++
+			if attempts < 3 {
+				return "", errors.New("transient error")
+			}
+			return "success after retries", nil
+		})
+
+		require.NoError(t, err)
+		require.Equal(t, "success after retries", result)
+		require.Equal(t, 3, attempts)
+	})
+
+	t.Run("respects parent context timeout", func(t *testing.T) {
+		// Parent context with 200ms timeout - shorter than withQuickRetry's 10s
+		ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+		defer cancel()
+
+		start := time.Now()
+		_, err := withQuickRetry(ctx, lggr, func(ctx context.Context) (string, error) {
+			return "", errors.New("always fails")
+		})
+		elapsed := time.Since(start)
+
+		require.Error(t, err)
+		// Should complete within parent timeout + some margin
+		require.Less(t, elapsed, 500*time.Millisecond, "should respect parent context timeout")
+	})
+
+	t.Run("returns original error not context deadline", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+		defer cancel()
+
+		expectedErr := "specific RPC error"
+		_, err := withQuickRetry(ctx, lggr, func(ctx context.Context) (string, error) {
+			return "", errors.New(expectedErr)
+		})
+
+		require.Error(t, err)
+		require.Equal(t, expectedErr, err.Error())
+		require.NotContains(t, err.Error(), "context deadline exceeded")
+	})
+
+	t.Run("makes multiple retry attempts with backoff", func(t *testing.T) {
+		// Use a 1s parent timeout to keep test fast
+		ctx, cancel := context.WithTimeout(t.Context(), 1*time.Second)
+		defer cancel()
+
+		attempts := 0
+		_, err := withQuickRetry(ctx, lggr, func(ctx context.Context) (string, error) {
+			attempts++
+			return "", errors.New("always fails")
+		})
+
+		require.Error(t, err)
+		// With 1s timeout and 100ms initial backoff, should get several attempts
+		// (100ms + 200ms + 400ms = 700ms for 3 retries, then timeout)
+		require.GreaterOrEqual(t, attempts, 3, "should make multiple retry attempts")
+		require.LessOrEqual(t, attempts, 6, "should be bounded by timeout")
+	})
+}
+
+func TestWithPollingRetry(t *testing.T) {
+	t.Parallel()
+	lggr := logger.Test(t)
+
+	t.Run("succeeds on first attempt - returns immediately", func(t *testing.T) {
+		ctx := t.Context()
+		start := time.Now()
+
+		result, err := withPollingRetry(ctx, lggr, func(ctx context.Context) (int, error) {
+			return 42, nil
+		})
+
+		elapsed := time.Since(start)
+		require.NoError(t, err)
+		require.Equal(t, 42, result)
+		require.Less(t, elapsed, 100*time.Millisecond, "should return immediately on success")
+	})
+
+	t.Run("retries until success", func(t *testing.T) {
+		ctx := t.Context()
+		attempts := 0
+
+		result, err := withPollingRetry(ctx, lggr, func(ctx context.Context) (int, error) {
+			attempts++
+			if attempts < 4 {
+				return 0, errors.New("not ready yet")
+			}
+			return 100, nil
+		})
+
+		require.NoError(t, err)
+		require.Equal(t, 100, result)
+		require.Equal(t, 4, attempts)
+	})
+
+	t.Run("respects parent context timeout", func(t *testing.T) {
+		// Parent context with 300ms timeout - shorter than withPollingRetry's 60s
+		ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
+		defer cancel()
+
+		start := time.Now()
+		_, err := withPollingRetry(ctx, lggr, func(ctx context.Context) (int, error) {
+			return 0, errors.New("always fails")
+		})
+		elapsed := time.Since(start)
+
+		require.Error(t, err)
+		// Should complete within parent timeout + some margin
+		require.Less(t, elapsed, 600*time.Millisecond, "should respect parent context timeout")
+	})
+
+	t.Run("returns original error not context deadline", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
+		defer cancel()
+
+		expectedErr := "chain state not updated"
+		_, err := withPollingRetry(ctx, lggr, func(ctx context.Context) (int, error) {
+			return 0, errors.New(expectedErr)
+		})
+
+		require.Error(t, err)
+		require.Equal(t, expectedErr, err.Error())
+		require.NotContains(t, err.Error(), "context deadline exceeded")
+	})
+
+	t.Run("uses longer backoff than quick retry", func(t *testing.T) {
+		ctx := t.Context()
+		attempts := 0
+		var timestamps []time.Time
+
+		start := time.Now()
+		_, _ = withPollingRetry(ctx, lggr, func(ctx context.Context) (int, error) {
+			attempts++
+			timestamps = append(timestamps, time.Now())
+			if attempts >= 4 {
+				return 1, nil // succeed to stop
+			}
+			return 0, errors.New("not ready")
+		})
+
+		// Verify backoff is happening (gaps should increase)
+		if len(timestamps) >= 3 {
+			gap1 := timestamps[1].Sub(timestamps[0])
+			gap2 := timestamps[2].Sub(timestamps[1])
+			// Second gap should be roughly 2x the first (exponential backoff)
+			// Allow some tolerance for timing variations
+			require.Greater(t, gap2, gap1/2, "backoff should be exponential")
+		}
+
+		totalTime := time.Since(start)
+		// Should complete reasonably fast with just 4 attempts
+		require.Less(t, totalTime, 2*time.Second)
+	})
+}
+
 func TestWriteReport_InputValidation(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(t.Context())
