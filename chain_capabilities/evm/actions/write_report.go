@@ -166,7 +166,7 @@ func (e *WriteReport) getFee(ctx context.Context, txIdempotencyKey string) (*big
 		return nil, fmt.Errorf("txIdempotencyKey is empty, cannot retrieve transaction fee")
 	}
 
-	feeInWei, errTxFee := e.EVMService.GetTransactionFee(ctx, txIdempotencyKey)
+	feeInWei, errTxFee := e.GetTransactionFee(ctx, txIdempotencyKey)
 	if errTxFee != nil {
 		return nil, fmt.Errorf("failed to get transaction fee: %w", errTxFee)
 	}
@@ -369,7 +369,7 @@ func getTransmissionID(workflowExecutionID string, request *evm.WriteReportReque
 
 func (e *WriteReport) fetchTransactionReceiptAndCreateReply(ctx context.Context, txHash evmtypes.Hash, receiverStatus evm.ReceiverContractExecutionStatus, errorMessage *string) (*evm.WriteReportReply, error) {
 	txReceipt, err := withQuickRetry(ctx, e.lggr, func(ctx context.Context) (*evmtypes.Receipt, error) {
-		return e.EVMService.GetTransactionReceipt(ctx, evmtypes.GeTransactionReceiptRequest{
+		return e.GetTransactionReceipt(ctx, evmtypes.GeTransactionReceiptRequest{
 			Hash:       txHash,
 			IsExternal: false, // since we do not run consensus on the receipt itself, it's fine to skip additional versions for external receipts.
 		})
@@ -378,7 +378,7 @@ func (e *WriteReport) fetchTransactionReceiptAndCreateReply(ctx context.Context,
 		return nil, fmt.Errorf("failed to get transaction receipt: %w", err)
 	}
 	transactionFee, err := withQuickRetry(ctx, e.lggr, func(ctx context.Context) (*evmtypes.TransactionFee, error) {
-		return e.EVMService.CalculateTransactionFee(ctx, evmtypes.ReceiptGasInfo{
+		return e.CalculateTransactionFee(ctx, evmtypes.ReceiptGasInfo{
 			GasUsed:           txReceipt.GasUsed,
 			EffectiveGasPrice: txReceipt.EffectiveGasPrice,
 		})
