@@ -6,6 +6,7 @@ import (
 	"errors"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/assert"
@@ -195,17 +196,19 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 	})
 
 	t.Run("Fail while getting transmission info", func(t *testing.T) {
-		ctx := t.Context()
+		// Short timeout so quick retry fails fast in tests
+		ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+		defer cancel()
 		testLogger := logger.Test(t)
 		_, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
 
 		errorMsg := "some error"
-		expectedError := "[2]Unknown: some error"
+		expectedError := "[2]Unknown: failed to get initial transmission info: some error"
 
+		// Will be retried until context timeout
 		mockForwarderClient.
 			On("GetTransmissionInfo", mock.Anything, mock.Anything).
-			Return(contracts.TransmissionInfo{}, errors.New(errorMsg)).
-			Once()
+			Return(contracts.TransmissionInfo{}, errors.New(errorMsg))
 
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
@@ -220,6 +223,8 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		})
 		require.Error(t, err)
 		require.Equal(t, expectedError, err.Error())
+		// Verify we get the original error, not a context timeout
+		require.NotContains(t, err.Error(), "context deadline exceeded")
 	})
 
 	t.Run("TX already transmitted successfully", func(t *testing.T) {
@@ -280,7 +285,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 	})
 
 	t.Run("TX already transmitted successfully - Failed to fetch report emitted log", func(t *testing.T) {
-		ctx := t.Context()
+		// Short timeout so polling retry fails fast in tests
+		ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+		defer cancel()
 		testLogger := logger.Test(t)
 		_, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
 
@@ -289,8 +296,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			InvalidReceiver: false,
 			State:           TransmissionStateSucceeded,
 		}
-		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(transmissionInfo, nil).Once()
+		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(transmissionInfo, nil)
 
+		// Will be retried until context timeout
 		expectedError := "Error getting report emitted log"
 		mockForwarderClient.EXPECT().
 			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
@@ -309,10 +317,14 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), expectedError)
+		// Verify we get the original error, not a context timeout
+		require.NotContains(t, err.Error(), "context deadline exceeded")
 	})
 
 	t.Run("TX already transmitted successfully - Failed to fetch transaction receipt", func(t *testing.T) {
-		ctx := t.Context()
+		// Short timeout so quick retry fails fast in tests
+		ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+		defer cancel()
 		testLogger := logger.Test(t)
 		evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
 
@@ -321,13 +333,14 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			InvalidReceiver: false,
 			State:           TransmissionStateSucceeded,
 		}
-		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(transmissionInfo, nil).Once()
+		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(transmissionInfo, nil)
 
 		txHash := evmtypes.Hash(test.RandomBytes(32))
 		mockForwarderClient.EXPECT().
 			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 			Return([]*evmtypes.Log{{TxHash: txHash}}, nil)
 
+		// Will be retried until context timeout
 		expectedError := "Error getting tx receipt"
 		evmServiceMock.EXPECT().
 			GetTransactionReceipt(mock.Anything, evmtypes.GeTransactionReceiptRequest{Hash: txHash, IsExternal: false}).
@@ -346,6 +359,60 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), expectedError)
+		// Verify we get the original error, not a context timeout
+		require.NotContains(t, err.Error(), "context deadline exceeded")
+	})
+
+	t.Run("TX already transmitted successfully - Failed to calculate transaction fee", func(t *testing.T) {
+		// Short timeout so quick retry fails fast in tests
+		ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+		defer cancel()
+		testLogger := logger.Test(t)
+		evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
+
+		transmissionInfo := contracts.TransmissionInfo{
+			Success:         true,
+			InvalidReceiver: false,
+			State:           TransmissionStateSucceeded,
+		}
+		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(transmissionInfo, nil)
+
+		txHash := evmtypes.Hash(test.RandomBytes(32))
+		mockForwarderClient.EXPECT().
+			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return([]*evmtypes.Log{{TxHash: txHash}}, nil)
+
+		receipt := evmtypes.Receipt{
+			Status:            uint64(TransmissionStateSucceeded),
+			TxHash:            txHash,
+			GasUsed:           1000,
+			EffectiveGasPrice: big.NewInt(2),
+		}
+		evmServiceMock.EXPECT().
+			GetTransactionReceipt(mock.Anything, evmtypes.GeTransactionReceiptRequest{Hash: txHash, IsExternal: false}).
+			Return(&receipt, nil)
+
+		// Will be retried until context timeout
+		expectedError := "Error calculating transaction fee"
+		evmServiceMock.EXPECT().
+			CalculateTransactionFee(mock.Anything, toReceiptGasInfo(receipt)).
+			Return(nil, errors.New(expectedError))
+
+		reportMetadata := createTestReportMetadata()
+		encodedReportMetadata, _ := reportMetadata.Encode()
+
+		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
+			Receiver: testutils.NewAddress().Bytes(),
+			Report: &workflowpb.ReportResponse{
+				RawReport:     encodedReportMetadata,
+				ReportContext: []byte{},
+				Sigs:          generateRandomSignatures(),
+			},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), expectedError)
+		// Verify we get the original error, not a context timeout
+		require.NotContains(t, err.Error(), "context deadline exceeded")
 	})
 
 	t.Run("TX already transmitted - Invalid receiver (does NOT retry, returns reverted + invalid receiver message)", func(t *testing.T) {
@@ -421,7 +488,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 	})
 
 	t.Run("TX already transmitted and failed with enough gas - tx hash retrieval fails => returns error (no retry)", func(t *testing.T) {
-		ctx := t.Context()
+		// Short timeout so polling retry fails fast in tests
+		ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+		defer cancel()
 		testLogger := logger.Test(t)
 		_, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
 
@@ -443,10 +512,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 				InvalidReceiver: false,
 				State:           TransmissionStateFailed,
 				GasLimit:        new(big.Int).SetUint64(desiredReceiverGas + 1), // strictly greater => no retry path
-			}, nil).
-			Once()
+			}, nil)
 
-		// Force TxHashRetriever.GetHash() to fail
+		// Force TxHashRetriever.GetHash() to fail - will be retried until context timeout
 		expectedErr := "error getting report emitted log"
 		mockForwarderClient.EXPECT().
 			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
@@ -463,6 +531,8 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), expectedErr)
+		// Verify we get the original error, not a context timeout
+		require.NotContains(t, err.Error(), "context deadline exceeded")
 
 		// Ensure no retry / no new tx attempt happened.
 		mockForwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
@@ -1265,14 +1335,20 @@ func TestExecuteWriteReport_TransmissionStates(t *testing.T) {
 
 		transmissionID, _ := getTransmissionID(capabilitiesMetadata.WorkflowExecutionID, writeReportRequest)
 
-		ctx := contexts.WithCRE(t.Context(), contexts.CRE{Workflow: "wf-id"})
+		// Short timeout so quick retry fails fast in tests
+		ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+		defer cancel()
+		ctx = contexts.WithCRE(ctx, contexts.CRE{Workflow: "wf-id"})
 
+		// Will be retried until context timeout
 		expectedError := "transmission info error"
 		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, transmissionID).Return(contracts.TransmissionInfo{}, errors.New(expectedError))
 
 		reply, responseMetadata, err := service.executeWriteReport(ctx, writeReportRequest, capabilitiesMetadata, monitoring.TelemetryContext{})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), expectedError)
+		// Verify we get the original error, not a context timeout
+		require.NotContains(t, err.Error(), "context deadline exceeded")
 		require.Nil(t, reply)
 		require.Empty(t, responseMetadata.Metering)
 	})

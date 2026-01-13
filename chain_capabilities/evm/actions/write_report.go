@@ -43,6 +43,54 @@ const (
 const UnknownIssueExecutingReceiverContractMessage = "unknown issue execution receiver contract"
 const userError = "user error:"
 
+// withQuickRetry wraps a simple RPC read with retry logic.
+// Uses short timeout and fast backoff - these calls should be sub-second.
+// Returns the original error from fn, not the retry wrapper error.
+func withQuickRetry[T any](ctx context.Context, lggr logger.Logger, fn func(context.Context) (T, error)) (T, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	var lastErr error
+	strategy := retry.Strategy[T]{
+		Backoff:    &backoff.Backoff{Factor: 2, Min: 100 * time.Millisecond, Max: 1 * time.Second},
+		MaxRetries: 10,
+	}
+	result, err := strategy.Do(ctx, lggr, func(ctx context.Context) (T, error) {
+		r, e := fn(ctx)
+		if e != nil {
+			lastErr = e
+		}
+		return r, e
+	})
+	if err != nil && lastErr != nil {
+		return result, lastErr
+	}
+	return result, err
+}
+
+// withPollingRetry wraps an operation that polls for state changes.
+// Uses longer timeout to accommodate slow chains like Ethereum (~12-14s blocks).
+// Returns the original error from fn, not the retry wrapper error.
+func withPollingRetry[T any](ctx context.Context, lggr logger.Logger, fn func(context.Context) (T, error)) (T, error) {
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	var lastErr error
+	strategy := retry.Strategy[T]{
+		Backoff:    &backoff.Backoff{Factor: 2, Min: 100 * time.Millisecond, Max: 3 * time.Second},
+		MaxRetries: 25,
+	}
+	result, err := strategy.Do(ctx, lggr, func(ctx context.Context) (T, error) {
+		r, e := fn(ctx)
+		if e != nil {
+			lastErr = e
+		}
+		return r, e
+	})
+	if err != nil && lastErr != nil {
+		return result, lastErr
+	}
+	return result, err
+}
+
 func decodeReportMetadata(data []byte) (ocrtypes.Metadata, error) {
 	metadata, _, err := ocrtypes.Decode(data)
 	return metadata, err
@@ -67,7 +115,7 @@ func (e *EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMeta
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: metadata}
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportInitiated(telemetryContext, input))
 	if err := e.validateInputsAndReportMetadata(metadata, input); err != nil {
-		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport User Error due to invalid request", err.Error(), true))
+		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport, user error due to invalid request", err.Error(), true))
 		return nil, NewUserError(err)
 	}
 
@@ -140,9 +188,11 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 	}
 
 	var transmissionInfo contracts.TransmissionInfo
-	transmissionInfo, err = e.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
+	transmissionInfo, err = withQuickRetry(ctx, e.lggr, func(ctx context.Context) (contracts.TransmissionInfo, error) {
+		return e.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
+	})
 	if err != nil {
-		return nil, capabilities.ResponseMetadata{}, err
+		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed to get initial transmission info: %w", err)
 	}
 
 	e.lggr.Infow("Checking transmission status", transmissionInfo.LogAttrs()...)
@@ -206,18 +256,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		return nil, capabilities.ResponseMetadata{}, err
 	}
 
-	strategy := retry.Strategy[contracts.TransmissionInfo]{
-		Backoff: &backoff.Backoff{
-			Factor: 2,
-			Max:    2 * time.Second,
-			Min:    100 * time.Millisecond,
-		},
-		MaxRetries: 5,
-	}
-	retryContext, cancelFunc := context.WithTimeout(ctx, 50*time.Second)
-	defer cancelFunc()
-
-	transmissionInfo, err = strategy.Do(retryContext, e.lggr, func(ctx context.Context) (contracts.TransmissionInfo, error) {
+	transmissionInfo, err = withPollingRetry(ctx, e.lggr, func(ctx context.Context) (contracts.TransmissionInfo, error) {
 		readTransmissionInfo, readTransmissionErr := e.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
 		if readTransmissionErr != nil {
 			return contracts.TransmissionInfo{}, readTransmissionErr
@@ -321,20 +360,24 @@ func getTransmissionID(workflowExecutionID string, request *evm.WriteReportReque
 }
 
 func (e *WriteReport) fetchTransactionReceiptAndCreateReply(ctx context.Context, txHash evmtypes.Hash, receiverStatus evm.ReceiverContractExecutionStatus, errorMessage *string) (*evm.WriteReportReply, error) {
-	// TODO: PLEX-1524 - we need retry logic here in case the underlying RPC is lagging behind the one that submitted the TX.
-	txReceipt, err := e.EVMService.GetTransactionReceipt(ctx, evmtypes.GeTransactionReceiptRequest{
-		Hash:       txHash,
-		IsExternal: false, // since we do not run consensus on the receipt itself, it's fine to skip additional versions for external receipts.
+	txReceipt, err := withQuickRetry(ctx, e.lggr, func(ctx context.Context) (*evmtypes.Receipt, error) {
+		return e.EVMService.GetTransactionReceipt(ctx, evmtypes.GeTransactionReceiptRequest{
+			Hash:       txHash,
+			IsExternal: false, // since we do not run consensus on the receipt itself, it's fine to skip additional versions for external receipts.
+		})
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get transaction receipt: %w", err)
 	}
-	transactionFee, err := e.EVMService.CalculateTransactionFee(ctx, evmtypes.ReceiptGasInfo{
-		GasUsed:           txReceipt.GasUsed,
-		EffectiveGasPrice: txReceipt.EffectiveGasPrice,
+
+	transactionFee, err := withQuickRetry(ctx, e.lggr, func(ctx context.Context) (*evmtypes.TransactionFee, error) {
+		return e.EVMService.CalculateTransactionFee(ctx, evmtypes.ReceiptGasInfo{
+			GasUsed:           txReceipt.GasUsed,
+			EffectiveGasPrice: txReceipt.EffectiveGasPrice,
+		})
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to calculate transaction fee: %w", err)
 	}
 	message := errorMessage
 	if receiverStatus == evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED && errorMessage == nil {
@@ -436,43 +479,24 @@ func (thr *TxHashRetriever) GetHash(ctx context.Context) (*evmtypes.Hash, error)
 		return thr.txHash, nil
 	}
 
-	// Retry strategy for GetReportProcessedEvents to handle RPC lag
-	strategy := retry.Strategy[[]*evmtypes.Log]{
-		Backoff: &backoff.Backoff{
-			Factor: 2,
-			Max:    2 * time.Second,
-			Min:    100 * time.Millisecond,
-		},
-		MaxRetries: 5,
-	}
-	retryContext, cancelFunc := context.WithTimeout(ctx, 12*time.Second)
-	defer cancelFunc()
-
-	var lastErr error
-	logs, err := strategy.Do(retryContext, thr.lggr, func(ctx context.Context) ([]*evmtypes.Log, error) {
+	// Poll for logs - depends on block inclusion which can take time on slow chains
+	logs, err := withPollingRetry(ctx, thr.lggr, func(ctx context.Context) ([]*evmtypes.Log, error) {
 		retrievedLogs, retrieveErr := thr.keystoneForwarderClient.GetReportProcessedEvents(ctx, thr.transmissionID.Receiver, thr.transmissionID.WorkflowExecutionID, thr.transmissionID.ReportID)
 		if retrieveErr != nil {
-			lastErr = retrieveErr
 			return nil, retrieveErr
 		}
 		if len(retrievedLogs) == 0 {
-			lastErr = errors.New("no logs found yet, retrying")
-			return nil, lastErr
+			return nil, errors.New("no logs found yet, retrying")
 		}
 		return retrievedLogs, nil
 	})
-
 	if err != nil {
 		thr.lggr.Debugw(failedToRetrieveTxHashErrorMessage, thr.transmissionID.GetIDPartsForDebugging()...)
-		// Return the original error from GetReportProcessedEvents, not the retry wrapper
-		if lastErr != nil {
-			return nil, errors.Join(lastErr, fmt.Errorf("%s: %w", failedToRetrieveTxHashErrorMessage, lastErr))
-		}
-		return nil, errors.Join(err, fmt.Errorf("%s: %w", failedToRetrieveTxHashErrorMessage, err))
+		return nil, fmt.Errorf("%s: %w", failedToRetrieveTxHashErrorMessage, err)
 	}
 	if len(logs) > 1 {
 		thr.lggr.Debugw("found more than one log associated to report transmission", thr.transmissionID.GetIDPartsForDebugging()...)
-		return nil, fmt.Errorf("We found more than one TX Hash for: %s", thr.transmissionID.GetDebugID())
+		return nil, fmt.Errorf("we found more than one TX Hash for: %s", thr.transmissionID.GetDebugID())
 	}
 	if len(logs) == 0 {
 		thr.lggr.Debugw("no log associated to report transmission found", thr.transmissionID.GetIDPartsForDebugging()...)
