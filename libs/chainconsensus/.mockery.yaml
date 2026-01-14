@@ -1,0 +1,19 @@
+dir: "{{ .InterfaceDir }}/mocks"
+mockname: "{{ .InterfaceName }}"
+outpkg: mocks
+filename: "{{ .InterfaceName | snakecase }}.go"
+fail-on-missing: true
+packages:
+  github.com/smartcontractkit/capabilities/libs/chainconsensus:
+    interfaces:
+      Poller:
+  github.com/smartcontractkit/capabilities/libs/chainconsensus/oracle:
+    interfaces:
+      BlocksProvider:
+      RequestsHandler:
+  github.com/smartcontractkit/chainlink-common/pkg/beholder:
+    config:
+      dir: ../monitoring/mocks
+    interfaces:
+      ProtoEmitter:
+        
