@@ -554,7 +554,6 @@ func (thr *TxHashRetriever) GetSuccessfulTransmissionHash(ctx context.Context) (
 		}
 	}
 
-	// No successful log found
 	formatted := formatLogDetails(details)
 	thr.lggr.Debugw("no successful transmission found",
 		append(thr.transmissionID.GetIDPartsForDebugging(), "txCount", len(logs), "transactions", formatted)...)
@@ -577,7 +576,6 @@ func (thr *TxHashRetriever) GetFailedTransmissionHash(ctx context.Context) (*evm
 			thr.transmissionID.GetDebugID(), err)
 	}
 
-	// Check if any log is successful (unexpected)
 	var successfulTxs []string
 	for _, d := range details {
 		if d.IsSuccess {
@@ -594,7 +592,6 @@ func (thr *TxHashRetriever) GetFailedTransmissionHash(ctx context.Context) (*evm
 			len(successfulTxs), thr.transmissionID.GetDebugID(), successfulTxs)
 	}
 
-	// Find the latest log by block number
 	latestIdx := 0
 	for i, d := range details {
 		if d.BlockNumber.Cmp(details[latestIdx].BlockNumber) > 0 {
