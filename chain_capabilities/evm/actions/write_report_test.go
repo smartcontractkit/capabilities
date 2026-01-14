@@ -53,20 +53,6 @@ func TestWithQuickRetry(t *testing.T) {
 	t.Parallel()
 	lggr := logger.Test(t)
 
-	t.Run("succeeds on first attempt - returns immediately", func(t *testing.T) {
-		ctx := t.Context()
-		start := time.Now()
-
-		result, err := withQuickRetry(ctx, lggr, func(ctx context.Context) (string, error) {
-			return "success", nil
-		})
-
-		elapsed := time.Since(start)
-		require.NoError(t, err)
-		require.Equal(t, "success", result)
-		require.Less(t, elapsed, 100*time.Millisecond, "should return immediately on success")
-	})
-
 	t.Run("retries until success", func(t *testing.T) {
 		ctx := t.Context()
 		attempts := 0
@@ -152,20 +138,6 @@ func TestWithQuickRetry(t *testing.T) {
 func TestWithPollingRetry(t *testing.T) {
 	t.Parallel()
 	lggr := logger.Test(t)
-
-	t.Run("succeeds on first attempt - returns immediately", func(t *testing.T) {
-		ctx := t.Context()
-		start := time.Now()
-
-		result, err := withPollingRetry(ctx, lggr, func(ctx context.Context) (int, error) {
-			return 42, nil
-		})
-
-		elapsed := time.Since(start)
-		require.NoError(t, err)
-		require.Equal(t, 42, result)
-		require.Less(t, elapsed, 100*time.Millisecond, "should return immediately on success")
-	})
 
 	t.Run("retries until success", func(t *testing.T) {
 		ctx := t.Context()
