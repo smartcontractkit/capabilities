@@ -45,47 +45,30 @@ const userError = "user error:"
 
 // withQuickRetry wraps a simple RPC read with retry logic.
 // Uses shorter timeout (10s) and fast backoff - these calls should be sub-second.
-// Returns the original error from fn, not the retry wrapper error.
 func withQuickRetry[T any](ctx context.Context, lggr logger.Logger, fn func(context.Context) (T, error)) (T, error) {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	return withRetry(ctx, lggr, fn, 10*time.Second, 1*time.Second, 10)
+}
+
+// withPollingRetry wraps an operation that polls for state changes.
+// Uses longer timeout (60s) to accommodate slow chains.
+func withPollingRetry[T any](ctx context.Context, lggr logger.Logger, fn func(context.Context) (T, error)) (T, error) {
+	return withRetry(ctx, lggr, fn, 60*time.Second, 3*time.Second, 25)
+}
+
+// withRetry executes fn with exponential backoff retry logic.
+// Returns the original error from fn, not the retry wrapper error.
+func withRetry[T any](ctx context.Context, lggr logger.Logger, fn func(context.Context) (T, error), timeout, maxBackoff time.Duration, maxRetries uint) (T, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	var lastErr error
 	strategy := retry.Strategy[T]{
-		Backoff:    &backoff.Backoff{Factor: 2, Min: 100 * time.Millisecond, Max: 1 * time.Second},
-		MaxRetries: 10,
+		Backoff:    &backoff.Backoff{Factor: 2, Min: 100 * time.Millisecond, Max: maxBackoff},
+		MaxRetries: maxRetries,
 	}
 	result, err := strategy.Do(ctx, lggr, func(ctx context.Context) (T, error) {
 		r, e := fn(ctx)
 		if e != nil {
 			lastErr = e // Capture the original error from fn
-		}
-		return r, e
-	})
-	if err != nil {
-		if lastErr != nil {
-			return result, lastErr
-		}
-		// lastErr is nil - fn was never called, return retry error
-		return result, err
-	}
-	return result, nil
-}
-
-// withPollingRetry wraps an operation that polls for state changes.
-// Uses longer timeout (60s) to accommodate slow chains, basically go up until the parent context timeout.
-// Returns the original error from fn, not the retry wrapper error.
-func withPollingRetry[T any](ctx context.Context, lggr logger.Logger, fn func(context.Context) (T, error)) (T, error) {
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
-	var lastErr error
-	strategy := retry.Strategy[T]{
-		Backoff:    &backoff.Backoff{Factor: 2, Min: 100 * time.Millisecond, Max: 3 * time.Second},
-		MaxRetries: 25,
-	}
-	result, err := strategy.Do(ctx, lggr, func(ctx context.Context) (T, error) {
-		r, e := fn(ctx)
-		if e != nil {
-			lastErr = e
 		}
 		return r, e
 	})
