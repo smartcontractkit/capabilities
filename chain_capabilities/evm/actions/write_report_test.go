@@ -43,6 +43,18 @@ const (
 	NotEnoughReceiverGas         = ConfiguredReceiverGasMinimum - 1
 )
 
+// successLogData returns 32 bytes of ABI-encoded boolean true for successful report result
+func successLogData() []byte {
+	data := make([]byte, 32)
+	data[31] = 0x01
+	return data
+}
+
+// failedLogData returns 32 bytes of ABI-encoded boolean false for failed report result
+func failedLogData() []byte {
+	return make([]byte, 32)
+}
+
 func nonNilPositiveGasCfgMatcher() interface{} {
 	return mock.MatchedBy(func(gc *evm.GasConfig) bool {
 		return gc != nil && gc.GasLimit > 0
@@ -430,7 +442,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		txHash := evmtypes.Hash(test.RandomBytes(32))
 		mockForwarderClient.EXPECT().
 			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-			Return([]*evmtypes.Log{{TxHash: txHash}}, nil)
+			Return([]*evmtypes.Log{{TxHash: txHash, Data: successLogData(), BlockNumber: big.NewInt(100)}}, nil)
 
 		receipt := evmtypes.Receipt{
 			Status:            uint64(TransmissionStateSucceeded),
@@ -521,7 +533,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		txHash := evmtypes.Hash(test.RandomBytes(32))
 		mockForwarderClient.EXPECT().
 			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-			Return([]*evmtypes.Log{{TxHash: txHash}}, nil)
+			Return([]*evmtypes.Log{{TxHash: txHash, Data: successLogData(), BlockNumber: big.NewInt(100)}}, nil)
 
 		// Will be retried until context timeout
 		expectedError := "Error getting tx receipt"
@@ -563,7 +575,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		txHash := evmtypes.Hash(test.RandomBytes(32))
 		mockForwarderClient.EXPECT().
 			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-			Return([]*evmtypes.Log{{TxHash: txHash}}, nil)
+			Return([]*evmtypes.Log{{TxHash: txHash, Data: successLogData(), BlockNumber: big.NewInt(100)}}, nil)
 
 		receipt := evmtypes.Receipt{
 			Status:            uint64(TransmissionStateSucceeded),
@@ -628,7 +640,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		txHash := evmtypes.Hash(test.RandomBytes(32))
 		mockForwarderClient.EXPECT().
 			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-			Return([]*evmtypes.Log{{TxHash: txHash}}, nil)
+			Return([]*evmtypes.Log{{TxHash: txHash, Data: failedLogData(), BlockNumber: big.NewInt(100)}}, nil)
 
 		// Receipt + fee calculation for that tx hash
 		receipt := evmtypes.Receipt{
@@ -686,7 +698,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		writeReportGasLimit := contracts.ForwarderContractLogicGasCost + desiredReceiverGas
 
 		// We want to hit:
-		//   if transmissionInfo.GasLimit.Uint64() > txGasLimit { ... GetHash ... if err return err }
+		//   if transmissionInfo.GasLimit.Uint64() > txGasLimit { ... GetFailedTransmissionHash ... if err return err }
 		// txGasLimit computed == desiredReceiverGas
 		mockForwarderClient.
 			On("GetTransmissionInfo", mock.Anything, mock.Anything).
@@ -697,7 +709,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 				GasLimit:        new(big.Int).SetUint64(desiredReceiverGas + 1), // strictly greater => no retry path
 			}, nil)
 
-		// Force TxHashRetriever.GetHash() to fail - will be retried until context timeout
+		// Force TxHashRetriever.GetFailedTransmissionHash() to fail - will be retried until context timeout
 		expectedErr := "error getting report emitted log"
 		mockForwarderClient.EXPECT().
 			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
@@ -757,7 +769,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		txHash := evmtypes.Hash(test.RandomBytes(32))
 		mockForwarderClient.EXPECT().
 			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-			Return([]*evmtypes.Log{{TxHash: txHash}}, nil)
+			Return([]*evmtypes.Log{{TxHash: txHash, Data: failedLogData(), BlockNumber: big.NewInt(100)}}, nil)
 
 		receipt := evmtypes.Receipt{
 			Status:            uint64(TransmissionStateSucceeded),
@@ -1078,7 +1090,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		// TxHashRetriever should be used in duplicate tx branch.
 		mockForwarderClient.EXPECT().
 			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-			Return([]*evmtypes.Log{{TxHash: txHashFromLogs}}, nil)
+			Return([]*evmtypes.Log{{TxHash: txHashFromLogs, Data: successLogData(), BlockNumber: big.NewInt(100)}}, nil)
 
 		// Receipt should be fetched for the *log* hash, not the txmgr hash.
 		receipt := evmtypes.Receipt{
@@ -1475,7 +1487,7 @@ func TestExecuteWriteReport_TransmissionStates(t *testing.T) {
 
 		txHash := evmtypes.Hash(test.RandomBytes(32))
 
-		logs := append([]*evmtypes.Log{}, &evmtypes.Log{TxHash: txHash})
+		logs := []*evmtypes.Log{{TxHash: txHash, Data: successLogData(), BlockNumber: big.NewInt(100)}}
 		mockForwarderClient.EXPECT().GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(logs, nil)
 
 		receipt := evmtypes.Receipt{
@@ -1646,7 +1658,7 @@ func TestWriteReport_BillingMetadata(t *testing.T) {
 
 		txHash := evmtypes.Hash(test.RandomBytes(32))
 
-		logs := append([]*evmtypes.Log{}, &evmtypes.Log{TxHash: txHash})
+		logs := []*evmtypes.Log{{TxHash: txHash, Data: successLogData(), BlockNumber: big.NewInt(100)}}
 		mockForwarderClient.EXPECT().GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(logs, nil)
 
 		receipt := evmtypes.Receipt{
@@ -1667,5 +1679,443 @@ func TestWriteReport_BillingMetadata(t *testing.T) {
 		require.Equal(t, evmcappb.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
 
 		require.Empty(t, result.ResponseMetadata.Metering)
+	})
+}
+
+func TestParseReportResult(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns true for success result (0x01)", func(t *testing.T) {
+		data := make([]byte, 32)
+		data[31] = 0x01
+
+		result, err := parseReportResult(data)
+		require.NoError(t, err)
+		require.True(t, result)
+	})
+
+	t.Run("returns false for failed result (0x00)", func(t *testing.T) {
+		data := make([]byte, 32)
+
+		result, err := parseReportResult(data)
+		require.NoError(t, err)
+		require.False(t, result)
+	})
+
+	t.Run("returns error for data shorter than 32 bytes", func(t *testing.T) {
+		data := make([]byte, 31)
+
+		_, err := parseReportResult(data)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "malformed log data")
+		require.Contains(t, err.Error(), "expected at least 32 bytes, got 31")
+	})
+
+	t.Run("returns error for empty data", func(t *testing.T) {
+		_, err := parseReportResult([]byte{})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "got 0")
+	})
+
+	t.Run("handles data longer than 32 bytes", func(t *testing.T) {
+		data := make([]byte, 64)
+		data[31] = 0x01
+
+		result, err := parseReportResult(data)
+		require.NoError(t, err)
+		require.True(t, result)
+	})
+
+	t.Run("only checks byte 31 for result", func(t *testing.T) {
+		// Any non-0x01 value at byte 31 is false
+		data := make([]byte, 32)
+		data[31] = 0x02
+
+		result, err := parseReportResult(data)
+		require.NoError(t, err)
+		require.False(t, result)
+	})
+}
+
+func TestBuildLogDetails(t *testing.T) {
+	t.Parallel()
+
+	t.Run("parses single successful log", func(t *testing.T) {
+		txHash := evmtypes.Hash(test.RandomBytes(32))
+		logs := []*evmtypes.Log{{
+			TxHash:      txHash,
+			BlockNumber: big.NewInt(100),
+			Data:        successLogData(),
+		}}
+
+		details, err := buildLogDetails(logs)
+
+		require.NoError(t, err)
+		require.Len(t, details, 1)
+		require.Equal(t, txHash, details[0].TxHash)
+		require.Equal(t, big.NewInt(100), details[0].BlockNumber)
+		require.True(t, details[0].IsSuccess)
+	})
+
+	t.Run("parses single failed log", func(t *testing.T) {
+		txHash := evmtypes.Hash(test.RandomBytes(32))
+		logs := []*evmtypes.Log{{
+			TxHash:      txHash,
+			BlockNumber: big.NewInt(200),
+			Data:        failedLogData(),
+		}}
+
+		details, err := buildLogDetails(logs)
+
+		require.NoError(t, err)
+		require.Len(t, details, 1)
+		require.Equal(t, txHash, details[0].TxHash)
+		require.False(t, details[0].IsSuccess)
+	})
+
+	t.Run("returns error for malformed log data", func(t *testing.T) {
+		txHash := evmtypes.Hash(test.RandomBytes(32))
+		logs := []*evmtypes.Log{{
+			TxHash:      txHash,
+			BlockNumber: big.NewInt(100),
+			Data:        []byte{0x01}, // Too short
+		}}
+
+		_, err := buildLogDetails(logs)
+
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "malformed log data")
+		require.Contains(t, err.Error(), hex.EncodeToString(txHash[:]))
+	})
+
+	t.Run("returns error at first malformed log", func(t *testing.T) {
+		goodTxHash := evmtypes.Hash(test.RandomBytes(32))
+		badTxHash := evmtypes.Hash(test.RandomBytes(32))
+		logs := []*evmtypes.Log{
+			{TxHash: goodTxHash, BlockNumber: big.NewInt(100), Data: successLogData()},
+			{TxHash: badTxHash, BlockNumber: big.NewInt(101), Data: []byte{}}, // Malformed
+		}
+
+		_, err := buildLogDetails(logs)
+
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to parse report result for tx")
+		require.Contains(t, err.Error(), hex.EncodeToString(badTxHash[:]))
+	})
+
+	t.Run("parses multiple logs with mixed results", func(t *testing.T) {
+		logs := []*evmtypes.Log{
+			{TxHash: evmtypes.Hash(test.RandomBytes(32)), BlockNumber: big.NewInt(100), Data: successLogData()},
+			{TxHash: evmtypes.Hash(test.RandomBytes(32)), BlockNumber: big.NewInt(101), Data: failedLogData()},
+			{TxHash: evmtypes.Hash(test.RandomBytes(32)), BlockNumber: big.NewInt(102), Data: successLogData()},
+		}
+
+		details, err := buildLogDetails(logs)
+
+		require.NoError(t, err)
+		require.Len(t, details, 3)
+		require.True(t, details[0].IsSuccess)
+		require.False(t, details[1].IsSuccess)
+		require.True(t, details[2].IsSuccess)
+	})
+
+	t.Run("handles empty logs slice", func(t *testing.T) {
+		details, err := buildLogDetails([]*evmtypes.Log{})
+		require.NoError(t, err)
+		require.Empty(t, details)
+	})
+}
+
+func TestFormatLogDetails(t *testing.T) {
+	t.Parallel()
+
+	t.Run("formats successful log", func(t *testing.T) {
+		txHash := evmtypes.Hash(test.RandomBytes(32))
+		details := []logDetails{{
+			TxHash:      txHash,
+			BlockNumber: big.NewInt(100),
+			IsSuccess:   true,
+		}}
+
+		formatted := formatLogDetails(details)
+
+		require.Len(t, formatted, 1)
+		require.Contains(t, formatted[0], "tx[0]:")
+		require.Contains(t, formatted[0], hex.EncodeToString(txHash[:]))
+		require.Contains(t, formatted[0], "block=100")
+		require.Contains(t, formatted[0], "result=success")
+	})
+
+	t.Run("formats failed log", func(t *testing.T) {
+		details := []logDetails{{
+			TxHash:      evmtypes.Hash(test.RandomBytes(32)),
+			BlockNumber: big.NewInt(200),
+			IsSuccess:   false,
+		}}
+
+		formatted := formatLogDetails(details)
+
+		require.Contains(t, formatted[0], "result=failed")
+	})
+
+	t.Run("formats multiple logs with correct indices", func(t *testing.T) {
+		details := []logDetails{
+			{TxHash: evmtypes.Hash(test.RandomBytes(32)), BlockNumber: big.NewInt(100), IsSuccess: true},
+			{TxHash: evmtypes.Hash(test.RandomBytes(32)), BlockNumber: big.NewInt(101), IsSuccess: false},
+		}
+
+		formatted := formatLogDetails(details)
+
+		require.Len(t, formatted, 2)
+		require.Contains(t, formatted[0], "tx[0]:")
+		require.Contains(t, formatted[1], "tx[1]:")
+	})
+
+	t.Run("handles empty details slice", func(t *testing.T) {
+		formatted := formatLogDetails([]logDetails{})
+		require.Empty(t, formatted)
+	})
+}
+
+// ============================================================
+// TxHashRetriever Integration Tests
+// ============================================================
+
+func TestTxHashRetriever_GetSuccessfulTransmissionHash(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns hash when single successful log exists", func(t *testing.T) {
+		ctx := t.Context()
+		testLogger := logger.Test(t)
+		mockForwarderClient := mocks.NewCREForwarderClient(t)
+
+		transmissionID := contracts.TransmissionID{
+			Receiver:            common.HexToAddress("0x1234"),
+			WorkflowExecutionID: [32]byte{1, 2, 3},
+			ReportID:            [2]byte{0x00, 0x01},
+		}
+
+		txHash := evmtypes.Hash(test.RandomBytes(32))
+		logs := []*evmtypes.Log{{
+			TxHash:      txHash,
+			BlockNumber: big.NewInt(100),
+			Data:        successLogData(),
+		}}
+
+		mockForwarderClient.EXPECT().
+			GetReportProcessedEvents(mock.Anything, transmissionID.Receiver, transmissionID.WorkflowExecutionID, transmissionID.ReportID).
+			Return(logs, nil)
+
+		retriever := NewTxHashRetriever(mockForwarderClient, testLogger, transmissionID)
+		result, err := retriever.GetSuccessfulTransmissionHash(ctx)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.Equal(t, txHash, *result)
+	})
+
+	t.Run("returns first successful hash when multiple logs exist", func(t *testing.T) {
+		ctx := t.Context()
+		testLogger := logger.Test(t)
+		mockForwarderClient := mocks.NewCREForwarderClient(t)
+
+		transmissionID := contracts.TransmissionID{
+			Receiver:            common.HexToAddress("0x1234"),
+			WorkflowExecutionID: [32]byte{1, 2, 3},
+			ReportID:            [2]byte{0x00, 0x01},
+		}
+
+		failedTxHash := evmtypes.Hash(test.RandomBytes(32))
+		successTxHash := evmtypes.Hash(test.RandomBytes(32))
+		logs := []*evmtypes.Log{
+			{TxHash: failedTxHash, BlockNumber: big.NewInt(100), Data: failedLogData()},
+			{TxHash: successTxHash, BlockNumber: big.NewInt(101), Data: successLogData()},
+		}
+
+		mockForwarderClient.EXPECT().
+			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return(logs, nil)
+
+		retriever := NewTxHashRetriever(mockForwarderClient, testLogger, transmissionID)
+		result, err := retriever.GetSuccessfulTransmissionHash(ctx)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.Equal(t, successTxHash, *result)
+	})
+
+	t.Run("returns error when all logs are failed", func(t *testing.T) {
+		ctx := t.Context()
+		testLogger := logger.Test(t)
+		mockForwarderClient := mocks.NewCREForwarderClient(t)
+
+		transmissionID := contracts.TransmissionID{
+			Receiver:            common.HexToAddress("0x1234"),
+			WorkflowExecutionID: [32]byte{1, 2, 3},
+			ReportID:            [2]byte{0x00, 0x01},
+		}
+
+		logs := []*evmtypes.Log{
+			{TxHash: evmtypes.Hash(test.RandomBytes(32)), BlockNumber: big.NewInt(100), Data: failedLogData()},
+			{TxHash: evmtypes.Hash(test.RandomBytes(32)), BlockNumber: big.NewInt(101), Data: failedLogData()},
+		}
+
+		mockForwarderClient.EXPECT().
+			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return(logs, nil)
+
+		retriever := NewTxHashRetriever(mockForwarderClient, testLogger, transmissionID)
+		_, err := retriever.GetSuccessfulTransmissionHash(ctx)
+
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "no successful transmission found")
+		require.Contains(t, err.Error(), "Found 2 transactions (all failed)")
+	})
+
+	t.Run("returns error when log data is malformed", func(t *testing.T) {
+		ctx := t.Context()
+		testLogger := logger.Test(t)
+		mockForwarderClient := mocks.NewCREForwarderClient(t)
+
+		transmissionID := contracts.TransmissionID{
+			Receiver:            common.HexToAddress("0x1234"),
+			WorkflowExecutionID: [32]byte{1, 2, 3},
+			ReportID:            [2]byte{0x00, 0x01},
+		}
+
+		logs := []*evmtypes.Log{{
+			TxHash:      evmtypes.Hash(test.RandomBytes(32)),
+			BlockNumber: big.NewInt(100),
+			Data:        []byte{0x01}, // Too short
+		}}
+
+		mockForwarderClient.EXPECT().
+			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return(logs, nil)
+
+		retriever := NewTxHashRetriever(mockForwarderClient, testLogger, transmissionID)
+		_, err := retriever.GetSuccessfulTransmissionHash(ctx)
+
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "malformed log data")
+	})
+}
+
+func TestTxHashRetriever_GetFailedTransmissionHash(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns hash when single failed log exists", func(t *testing.T) {
+		ctx := t.Context()
+		testLogger := logger.Test(t)
+		mockForwarderClient := mocks.NewCREForwarderClient(t)
+
+		transmissionID := contracts.TransmissionID{
+			Receiver:            common.HexToAddress("0x1234"),
+			WorkflowExecutionID: [32]byte{1, 2, 3},
+			ReportID:            [2]byte{0x00, 0x01},
+		}
+
+		txHash := evmtypes.Hash(test.RandomBytes(32))
+		logs := []*evmtypes.Log{{
+			TxHash:      txHash,
+			BlockNumber: big.NewInt(100),
+			Data:        failedLogData(),
+		}}
+
+		mockForwarderClient.EXPECT().
+			GetReportProcessedEvents(mock.Anything, transmissionID.Receiver, transmissionID.WorkflowExecutionID, transmissionID.ReportID).
+			Return(logs, nil)
+
+		retriever := NewTxHashRetriever(mockForwarderClient, testLogger, transmissionID)
+		result, err := retriever.GetFailedTransmissionHash(ctx)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.Equal(t, txHash, *result)
+	})
+
+	t.Run("returns latest hash by block number when multiple failed logs exist", func(t *testing.T) {
+		ctx := t.Context()
+		testLogger := logger.Test(t)
+		mockForwarderClient := mocks.NewCREForwarderClient(t)
+
+		transmissionID := contracts.TransmissionID{
+			Receiver:            common.HexToAddress("0x1234"),
+			WorkflowExecutionID: [32]byte{1, 2, 3},
+			ReportID:            [2]byte{0x00, 0x01},
+		}
+
+		earlierTxHash := evmtypes.Hash(test.RandomBytes(32))
+		latestTxHash := evmtypes.Hash(test.RandomBytes(32))
+		logs := []*evmtypes.Log{
+			{TxHash: latestTxHash, BlockNumber: big.NewInt(200), Data: failedLogData()},
+			{TxHash: earlierTxHash, BlockNumber: big.NewInt(100), Data: failedLogData()},
+		}
+
+		mockForwarderClient.EXPECT().
+			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return(logs, nil)
+
+		retriever := NewTxHashRetriever(mockForwarderClient, testLogger, transmissionID)
+		result, err := retriever.GetFailedTransmissionHash(ctx)
+
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.Equal(t, latestTxHash, *result)
+	})
+
+	t.Run("returns error when any log is successful", func(t *testing.T) {
+		ctx := t.Context()
+		testLogger := logger.Test(t)
+		mockForwarderClient := mocks.NewCREForwarderClient(t)
+
+		transmissionID := contracts.TransmissionID{
+			Receiver:            common.HexToAddress("0x1234"),
+			WorkflowExecutionID: [32]byte{1, 2, 3},
+			ReportID:            [2]byte{0x00, 0x01},
+		}
+
+		logs := []*evmtypes.Log{
+			{TxHash: evmtypes.Hash(test.RandomBytes(32)), BlockNumber: big.NewInt(100), Data: failedLogData()},
+			{TxHash: evmtypes.Hash(test.RandomBytes(32)), BlockNumber: big.NewInt(101), Data: successLogData()},
+		}
+
+		mockForwarderClient.EXPECT().
+			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return(logs, nil)
+
+		retriever := NewTxHashRetriever(mockForwarderClient, testLogger, transmissionID)
+		_, err := retriever.GetFailedTransmissionHash(ctx)
+
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "expected failed transmission but found 1 successful")
+	})
+
+	t.Run("returns error when log data is malformed", func(t *testing.T) {
+		ctx := t.Context()
+		testLogger := logger.Test(t)
+		mockForwarderClient := mocks.NewCREForwarderClient(t)
+
+		transmissionID := contracts.TransmissionID{
+			Receiver:            common.HexToAddress("0x1234"),
+			WorkflowExecutionID: [32]byte{1, 2, 3},
+			ReportID:            [2]byte{0x00, 0x01},
+		}
+
+		logs := []*evmtypes.Log{{
+			TxHash:      evmtypes.Hash(test.RandomBytes(32)),
+			BlockNumber: big.NewInt(100),
+			Data:        []byte{}, // Empty, malformed
+		}}
+
+		mockForwarderClient.EXPECT().
+			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return(logs, nil)
+
+		retriever := NewTxHashRetriever(mockForwarderClient, testLogger, transmissionID)
+		_, err := retriever.GetFailedTransmissionHash(ctx)
+
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "malformed log data")
 	})
 }

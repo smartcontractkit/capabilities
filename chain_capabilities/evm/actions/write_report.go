@@ -193,7 +193,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 	case TransmissionStateNotAttempted:
 		e.lggr.Infow("transmission not attempted - attempting to push to txmgr")
 	case TransmissionStateSucceeded:
-		txHash, err := txHashRetriever.GetHash(ctx)
+		txHash, err := txHashRetriever.GetSuccessfulTransmissionHash(ctx)
 		if err != nil {
 			e.lggr.Errorw("Returning without a transmission attempt - report already onchain, but failed to retrieve its txHash", "error", err.Error())
 			return nil, capabilities.ResponseMetadata{}, err
@@ -203,7 +203,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		reply, err := e.fetchTransactionReceiptAndCreateReply(ctx, *txHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS, nil)
 		return reply, capabilities.ResponseMetadata{}, err
 	case TransmissionStateInvalidReceiver:
-		txHash, err := txHashRetriever.GetHash(ctx)
+		txHash, err := txHashRetriever.GetFailedTransmissionHash(ctx)
 		if err != nil {
 			e.lggr.Errorw("Transmission already done by another node but failed due to invalid receiver, not reattempting and failed to get its txHash")
 			return nil, capabilities.ResponseMetadata{}, err
@@ -218,7 +218,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 			txGasLimit = request.GasConfig.GasLimit - contracts.ForwarderContractLogicGasCost
 		}
 		if transmissionInfo.GasLimit.Uint64() > txGasLimit {
-			txHash, err := txHashRetriever.GetHash(ctx)
+			txHash, err := txHashRetriever.GetFailedTransmissionHash(ctx)
 			if err != nil {
 				e.lggr.Errorw("Returning without a transmission attempt - transmission already attempted, but failed to retrieve its tx hash", "error", err.Error(), "txGasLimit", txGasLimit, "transmissionGasLimit", transmissionInfo.GasLimit)
 				return nil, capabilities.ResponseMetadata{}, err
@@ -263,7 +263,6 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 	}
 
 	e.lggr.Infow("Got final transmission status", transmissionInfo.LogAttrs()...)
-	txHashRetriever.Reset()
 
 	var meteringMetadata capabilities.ResponseMetadata
 	transactionFee, err := e.getFee(ctx, transactionResult.TxIdempotencyKey)
@@ -278,7 +277,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		txHash := &transactionResult.TxHash
 		if transactionResult.TxStatus == evmtypes.TxReverted {
 			// Report for this transaction has already been submitted and we sent a duplicate tx onchain which is fine, but wastes ethereum gas
-			txHash, err = txHashRetriever.GetHash(ctx)
+			txHash, err = txHashRetriever.GetSuccessfulTransmissionHash(ctx)
 			if err != nil {
 				return nil, capabilities.ResponseMetadata{}, err
 			}
@@ -451,25 +450,65 @@ type TxHashRetriever struct {
 	transmissionID          contracts.TransmissionID
 	keystoneForwarderClient contracts.CREForwarderClient
 	lggr                    logger.Logger
-	txHash                  *evmtypes.Hash
 }
 
 func NewTxHashRetriever(forwarderClient contracts.CREForwarderClient, lggr logger.Logger, transmissionID contracts.TransmissionID) TxHashRetriever {
 	return TxHashRetriever{lggr: lggr, keystoneForwarderClient: forwarderClient, transmissionID: transmissionID}
 }
 
-func (thr *TxHashRetriever) Reset() {
-	thr.txHash = nil
+// parseReportResult extracts the boolean result from the log data.
+// The ReportProcessed event has a non-indexed `result` bool parameter.
+// Returns an error if the log data is malformed.
+func parseReportResult(logData []byte) (bool, error) {
+	if len(logData) < 32 {
+		return false, fmt.Errorf("malformed log data: expected at least 32 bytes, got %d", len(logData))
+	}
+	return logData[31] == 0x01, nil
+}
+
+// logDetails holds parsed information about a ReportProcessed log
+type logDetails struct {
+	TxHash      evmtypes.Hash
+	BlockNumber *big.Int
+	IsSuccess   bool
+}
+
+// buildLogDetails parses logs and returns detailed information about each.
+// Returns an error immediately if any log has malformed data.
+func buildLogDetails(logs []*evmtypes.Log) ([]logDetails, error) {
+	details := make([]logDetails, len(logs))
+	for i, log := range logs {
+		result, err := parseReportResult(log.Data)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse report result for tx %s: %w", hex.EncodeToString(log.TxHash[:]), err)
+		}
+		details[i] = logDetails{
+			TxHash:      log.TxHash,
+			BlockNumber: log.BlockNumber,
+			IsSuccess:   result,
+		}
+	}
+	return details, nil
+}
+
+// formatLogDetails formats log details for error messages and logging
+func formatLogDetails(details []logDetails) []string {
+	formatted := make([]string, len(details))
+	for i, d := range details {
+		resultStr := "success"
+		if !d.IsSuccess {
+			resultStr = "failed"
+		}
+		formatted[i] = fmt.Sprintf("tx[%d]: hash=%s block=%s result=%s",
+			i, hex.EncodeToString(d.TxHash[:]), d.BlockNumber.String(), resultStr)
+	}
+	return formatted
 }
 
 const failedToRetrieveTxHashErrorMessage = "Failed to retrieve TX HASH for report"
 
-func (thr *TxHashRetriever) GetHash(ctx context.Context) (*evmtypes.Hash, error) {
-	if thr.txHash != nil {
-		return thr.txHash, nil
-	}
-
-	// Poll for logs - depends on block inclusion which can take time on slow chains
+// fetchLogs retrieves ReportProcessed logs with retry logic
+func (thr *TxHashRetriever) fetchLogs(ctx context.Context) ([]*evmtypes.Log, error) {
 	logs, err := withPollingRetry(ctx, thr.lggr, func(ctx context.Context) ([]*evmtypes.Log, error) {
 		retrievedLogs, retrieveErr := thr.keystoneForwarderClient.GetReportProcessedEvents(ctx, thr.transmissionID.Receiver, thr.transmissionID.WorkflowExecutionID, thr.transmissionID.ReportID)
 		if retrieveErr != nil {
@@ -484,16 +523,97 @@ func (thr *TxHashRetriever) GetHash(ctx context.Context) (*evmtypes.Hash, error)
 		thr.lggr.Debugw(failedToRetrieveTxHashErrorMessage, thr.transmissionID.GetIDPartsForDebugging()...)
 		return nil, fmt.Errorf("%s: %w", failedToRetrieveTxHashErrorMessage, err)
 	}
+	return logs, nil
+}
+
+// GetSuccessfulTransmissionHash finds and returns the hash of a successful transmission.
+// If multiple logs exist, it searches for one with result=true.
+// Returns an error if no successful transmission is found or if any log data is malformed.
+func (thr *TxHashRetriever) GetSuccessfulTransmissionHash(ctx context.Context) (*evmtypes.Hash, error) {
+	logs, err := thr.fetchLogs(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	details, err := buildLogDetails(logs)
+	if err != nil {
+		return nil, fmt.Errorf("malformed log data for transmission %s: %w",
+			thr.transmissionID.GetDebugID(), err)
+	}
+
+	for i, d := range details {
+		if d.IsSuccess {
+			if len(logs) > 1 {
+				thr.lggr.Infow("found multiple logs, using successful one",
+					append(thr.transmissionID.GetIDPartsForDebugging(),
+						"txCount", len(logs),
+						"selectedIndex", i,
+						"selectedTxHash", hex.EncodeToString(d.TxHash[:]))...)
+			}
+			return &logs[i].TxHash, nil
+		}
+	}
+
+	// No successful log found
+	formatted := formatLogDetails(details)
+	thr.lggr.Debugw("no successful transmission found",
+		append(thr.transmissionID.GetIDPartsForDebugging(), "txCount", len(logs), "transactions", formatted)...)
+	return nil, fmt.Errorf("no successful transmission found for: %s. Found %d transactions (all failed): %v",
+		thr.transmissionID.GetDebugID(), len(logs), formatted)
+}
+
+// GetFailedTransmissionHash finds and returns the hash of the latest failed transmission.
+// Returns the most recent log (by block number) and expects all logs to have result=false.
+// Returns an error if any log has result=true (unexpected success) or if any log data is malformed.
+func (thr *TxHashRetriever) GetFailedTransmissionHash(ctx context.Context) (*evmtypes.Hash, error) {
+	logs, err := thr.fetchLogs(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	details, err := buildLogDetails(logs)
+	if err != nil {
+		return nil, fmt.Errorf("malformed log data for transmission %s: %w",
+			thr.transmissionID.GetDebugID(), err)
+	}
+
+	// Check if any log is successful (unexpected)
+	var successfulTxs []string
+	for _, d := range details {
+		if d.IsSuccess {
+			successfulTxs = append(successfulTxs, hex.EncodeToString(d.TxHash[:]))
+		}
+	}
+	if len(successfulTxs) > 0 {
+		formatted := formatLogDetails(details)
+		thr.lggr.Warnw("expected all failed transmissions but found successful ones",
+			append(thr.transmissionID.GetIDPartsForDebugging(),
+				"successfulTxHashes", successfulTxs,
+				"transactions", formatted)...)
+		return nil, fmt.Errorf("expected failed transmission but found %d successful for: %s. Successful tx hashes: %v",
+			len(successfulTxs), thr.transmissionID.GetDebugID(), successfulTxs)
+	}
+
+	// Find the latest log by block number
+	latestIdx := 0
+	for i, d := range details {
+		if d.BlockNumber.Cmp(details[latestIdx].BlockNumber) > 0 {
+			latestIdx = i
+		}
+	}
+
 	if len(logs) > 1 {
-		thr.lggr.Debugw("found more than one log associated to report transmission", thr.transmissionID.GetIDPartsForDebugging()...)
-		return nil, fmt.Errorf("we found more than one TX Hash for: %s", thr.transmissionID.GetDebugID())
+		formatted := formatLogDetails(details)
+		thr.lggr.Infow("found multiple failed logs, using latest by block number",
+			append(thr.transmissionID.GetIDPartsForDebugging(),
+				"txCount", len(logs),
+				"selectedIndex", latestIdx,
+				"selectedTxHash", hex.EncodeToString(details[latestIdx].TxHash[:]),
+				"selectedBlock", details[latestIdx].BlockNumber.String(),
+				"transactions", formatted)...)
 	}
-	if len(logs) == 0 {
-		thr.lggr.Debugw("no log associated to report transmission found", thr.transmissionID.GetIDPartsForDebugging()...)
-		return nil, fmt.Errorf("no log found but a log was executed for transmission ID: %+v", thr.transmissionID)
-	}
-	thr.txHash = &logs[0].TxHash
-	return thr.txHash, nil
+
+	return &logs[latestIdx].TxHash, nil
 }
 
 func (e *EVM) isUserErrorWriteReport(err error) bool {
