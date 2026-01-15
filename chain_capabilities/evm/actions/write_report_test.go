@@ -1707,8 +1707,7 @@ func TestParseReportResult(t *testing.T) {
 
 		_, err := parseReportResult(data)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "malformed log data")
-		require.Contains(t, err.Error(), "expected at least 32 bytes, got 31")
+		require.Contains(t, err.Error(), "malformed log data: expected at least 32 bytes, got 31")
 	})
 
 	t.Run("returns error for empty data", func(t *testing.T) {
@@ -1826,54 +1825,55 @@ func TestBuildLogDetails(t *testing.T) {
 	})
 }
 
-func TestFormatLogDetails(t *testing.T) {
+func TestLogDetails_String(t *testing.T) {
 	t.Parallel()
 
-	t.Run("formats successful log", func(t *testing.T) {
+	t.Run("single logDetails formats correctly", func(t *testing.T) {
 		txHash := evmtypes.Hash(test.RandomBytes(32))
-		details := []logDetails{{
+		d := logDetails{
 			TxHash:      txHash,
 			BlockNumber: big.NewInt(100),
 			IsSuccess:   true,
-		}}
+		}
 
-		formatted := formatLogDetails(details)
+		str := d.String()
 
-		require.Len(t, formatted, 1)
-		require.Contains(t, formatted[0], "tx[0]:")
-		require.Contains(t, formatted[0], hex.EncodeToString(txHash[:]))
-		require.Contains(t, formatted[0], "block=100")
-		require.Contains(t, formatted[0], "result=success")
+		require.Contains(t, str, hex.EncodeToString(txHash[:]))
+		require.Contains(t, str, "block=100")
+		require.Contains(t, str, "result=success")
 	})
 
-	t.Run("formats failed log", func(t *testing.T) {
-		details := []logDetails{{
+	t.Run("failed log shows result=failed", func(t *testing.T) {
+		d := logDetails{
 			TxHash:      evmtypes.Hash(test.RandomBytes(32)),
 			BlockNumber: big.NewInt(200),
 			IsSuccess:   false,
-		}}
+		}
 
-		formatted := formatLogDetails(details)
-
-		require.Contains(t, formatted[0], "result=failed")
+		require.Contains(t, d.String(), "result=failed")
 	})
+}
 
-	t.Run("formats multiple logs with correct indices", func(t *testing.T) {
-		details := []logDetails{
+func TestLogDetailsList_String(t *testing.T) {
+	t.Parallel()
+
+	t.Run("formats multiple logs", func(t *testing.T) {
+		details := logDetailsList{
 			{TxHash: evmtypes.Hash(test.RandomBytes(32)), BlockNumber: big.NewInt(100), IsSuccess: true},
 			{TxHash: evmtypes.Hash(test.RandomBytes(32)), BlockNumber: big.NewInt(101), IsSuccess: false},
 		}
 
-		formatted := formatLogDetails(details)
+		str := details.String()
 
-		require.Len(t, formatted, 2)
-		require.Contains(t, formatted[0], "tx[0]:")
-		require.Contains(t, formatted[1], "tx[1]:")
+		require.Contains(t, str, "result=success")
+		require.Contains(t, str, "result=failed")
+		require.Contains(t, str, "block=100")
+		require.Contains(t, str, "block=101")
 	})
 
-	t.Run("handles empty details slice", func(t *testing.T) {
-		formatted := formatLogDetails([]logDetails{})
-		require.Empty(t, formatted)
+	t.Run("empty list returns []", func(t *testing.T) {
+		details := logDetailsList{}
+		require.Equal(t, "[]", details.String())
 	})
 }
 
@@ -2034,7 +2034,7 @@ func TestTxHashRetriever_GetFailedTransmissionHash(t *testing.T) {
 		require.Equal(t, txHash, *result)
 	})
 
-	t.Run("returns latest hash by block number when multiple failed logs exist", func(t *testing.T) {
+	t.Run("returns earliest hash by block number when multiple failed logs exist", func(t *testing.T) {
 		ctx := t.Context()
 		testLogger := logger.Test(t)
 		mockForwarderClient := mocks.NewCREForwarderClient(t)
@@ -2045,11 +2045,11 @@ func TestTxHashRetriever_GetFailedTransmissionHash(t *testing.T) {
 			ReportID:            [2]byte{0x00, 0x01},
 		}
 
-		earlierTxHash := evmtypes.Hash(test.RandomBytes(32))
-		latestTxHash := evmtypes.Hash(test.RandomBytes(32))
+		earliestTxHash := evmtypes.Hash(test.RandomBytes(32))
+		laterTxHash := evmtypes.Hash(test.RandomBytes(32))
 		logs := []*evmtypes.Log{
-			{TxHash: latestTxHash, BlockNumber: big.NewInt(200), Data: failedLogData()},
-			{TxHash: earlierTxHash, BlockNumber: big.NewInt(100), Data: failedLogData()},
+			{TxHash: laterTxHash, BlockNumber: big.NewInt(200), Data: failedLogData()},
+			{TxHash: earliestTxHash, BlockNumber: big.NewInt(100), Data: failedLogData()},
 		}
 
 		mockForwarderClient.EXPECT().
@@ -2061,7 +2061,7 @@ func TestTxHashRetriever_GetFailedTransmissionHash(t *testing.T) {
 
 		require.NoError(t, err)
 		require.NotNil(t, result)
-		require.Equal(t, latestTxHash, *result)
+		require.Equal(t, earliestTxHash, *result)
 	})
 
 	t.Run("returns error when any log is successful", func(t *testing.T) {
@@ -2088,7 +2088,7 @@ func TestTxHashRetriever_GetFailedTransmissionHash(t *testing.T) {
 		_, err := retriever.GetFailedTransmissionHash(ctx)
 
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "expected failed transmission but found 1 successful")
+		require.Contains(t, err.Error(), "expected failed transmission but found successful")
 	})
 
 	t.Run("returns error when log data is malformed", func(t *testing.T) {
