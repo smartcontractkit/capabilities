@@ -550,20 +550,14 @@ func (thr *TxHashRetriever) GetSuccessfulTransmissionHash(ctx context.Context) (
 		return nil, err
 	}
 
-	for i, d := range details {
+	for _, d := range details {
 		if d.IsSuccess {
-			thr.lggr.Debugw("found successful transmission",
-				append(thr.transmissionID.GetIDPartsForDebugging(),
-					"txCount", len(details),
-					"selectedIndex", i,
-					"selectedTxHash", hex.EncodeToString(d.TxHash[:]))...)
 			return &d.TxHash, nil
 		}
 	}
 
-	thr.lggr.Errorw("no successful transmission found",
-		append(thr.transmissionID.GetIDPartsForDebugging(), "txCount", len(details), "transactions", details.String())...)
-	return nil, fmt.Errorf("no successful transmission found for: %s. Found %d transactions (all failed): %s",
+	thr.lggr.Errorw("No successful transmission found", append(thr.transmissionID.GetIDPartsForDebugging(), "txCount", len(details), "transactions", details.String())...)
+	return nil, fmt.Errorf("no successful transmission found for: %s, found %d transactions (all failed): %s",
 		thr.transmissionID.GetDebugID(), len(details), details)
 }
 
@@ -578,10 +572,6 @@ func (thr *TxHashRetriever) GetFailedTransmissionHash(ctx context.Context) (*evm
 
 	for _, d := range details {
 		if d.IsSuccess {
-			thr.lggr.Errorw("expected failed transmission but found successful one",
-				append(thr.transmissionID.GetIDPartsForDebugging(),
-					"successfulTxHash", hex.EncodeToString(d.TxHash[:]),
-					"transactions", details.String())...)
 			return nil, fmt.Errorf("expected failed transmission but found successful for: %s. Successful tx hash: %s",
 				thr.transmissionID.GetDebugID(), hex.EncodeToString(d.TxHash[:]))
 		}
@@ -594,7 +584,7 @@ func (thr *TxHashRetriever) GetFailedTransmissionHash(ctx context.Context) (*evm
 		}
 	}
 
-	thr.lggr.Debugw("returning earliest failed transmission",
+	thr.lggr.Debugw("Returning earliest failed transmission",
 		append(thr.transmissionID.GetIDPartsForDebugging(),
 			"txCount", len(details),
 			"selectedTxHash", hex.EncodeToString(details[earliestIdx].TxHash[:]),
