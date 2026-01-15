@@ -557,7 +557,7 @@ func (thr *TxHashRetriever) GetSuccessfulTransmissionHash(ctx context.Context) (
 					"txCount", len(details),
 					"selectedIndex", i,
 					"selectedTxHash", hex.EncodeToString(d.TxHash[:]))...)
-			return &details[i].TxHash, nil
+			return &d.TxHash, nil
 		}
 	}
 
