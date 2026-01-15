@@ -489,8 +489,12 @@ func (d logDetails) String() string {
 	if !d.IsSuccess {
 		resultStr = "failed"
 	}
+	blockStr := "<nil>"
+	if d.BlockNumber != nil {
+		blockStr = d.BlockNumber.String()
+	}
 	return fmt.Sprintf("hash=%s block=%s result=%s",
-		hex.EncodeToString(d.TxHash[:]), d.BlockNumber.String(), resultStr)
+		hex.EncodeToString(d.TxHash[:]), blockStr, resultStr)
 }
 
 // logDetailsList is a slice of logDetails with a custom String method for logging
@@ -512,6 +516,12 @@ func (l logDetailsList) String() string {
 func buildLogDetails(logs []*evmtypes.Log) (logDetailsList, error) {
 	details := make(logDetailsList, len(logs))
 	for i, log := range logs {
+		if log == nil {
+			return nil, fmt.Errorf("nil log at index %d", i)
+		}
+		if log.BlockNumber == nil {
+			return nil, fmt.Errorf("nil BlockNumber for tx %s", hex.EncodeToString(log.TxHash[:]))
+		}
 		result, err := parseReportResult(log.Data)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse report result for tx %s: %w", hex.EncodeToString(log.TxHash[:]), err)
@@ -527,7 +537,7 @@ func buildLogDetails(logs []*evmtypes.Log) (logDetailsList, error) {
 
 const failedToRetrieveTxHashErrorMessage = "failed to retrieve tx hash for report"
 
-// fetchAndParseLogDetails retrieves ReportProcessed logs with retry logic and parses them into logDetails.
+// fetchAndParseLogs retrieves ReportProcessed logs with retry logic and parses them into logDetails.
 // Returns an error if no logs are found or if any log data is malformed.
 func (thr *TxHashRetriever) fetchAndParseLogs(ctx context.Context) (logDetailsList, error) {
 	logs, err := withPollingRetry(ctx, thr.lggr, func(ctx context.Context) ([]*evmtypes.Log, error) {
@@ -542,6 +552,10 @@ func (thr *TxHashRetriever) fetchAndParseLogs(ctx context.Context) (logDetailsLi
 	})
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", failedToRetrieveTxHashErrorMessage, err)
+	}
+
+	if len(logs) == 0 {
+		return nil, fmt.Errorf("no logs found for transmission: %s", thr.transmissionID.GetDebugID())
 	}
 
 	details, err := buildLogDetails(logs)
