@@ -82,6 +82,8 @@ const (
 	ConsensusFailureCode_OUTCOME_TOO_LARGE ConsensusFailureCode = 3
 	// The report produced is too large to transmit. The user should reduce the size of their request.
 	ConsensusFailureCode_REPORT_TOO_LARGE ConsensusFailureCode = 4
+	// The observation for this request exceeds the maximum allowed size. The user should reduce the size of their request.
+	ConsensusFailureCode_OBSERVATION_TOO_LARGE ConsensusFailureCode = 5
 )
 
 // Enum value maps for ConsensusFailureCode.
@@ -92,6 +94,7 @@ var (
 		2: "RECEIVED_FPLUS1_ERRORS",
 		3: "OUTCOME_TOO_LARGE",
 		4: "REPORT_TOO_LARGE",
+		5: "OBSERVATION_TOO_LARGE",
 	}
 	ConsensusFailureCode_value = map[string]int32{
 		"CONSENSUS_CALCULATION_FAILED":      0,
@@ -99,6 +102,7 @@ var (
 		"RECEIVED_FPLUS1_ERRORS":            2,
 		"OUTCOME_TOO_LARGE":                 3,
 		"REPORT_TOO_LARGE":                  4,
+		"OBSERVATION_TOO_LARGE":             5,
 	}
 )
 
@@ -358,10 +362,11 @@ func (x *RequestObservation) GetReceivedAt() *timestamppb.Timestamp {
 }
 
 type Observation struct {
-	state         protoimpl.MessageState         `protogen:"open.v1"`
-	Observations  map[string]*RequestObservation `protobuf:"bytes,1,rep,name=observations,proto3" json:"observations,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                         protoimpl.MessageState         `protogen:"open.v1"`
+	Observations                  map[string]*RequestObservation `protobuf:"bytes,1,rep,name=observations,proto3" json:"observations,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	PermanentlyExcludedRequestIds []string                       `protobuf:"bytes,2,rep,name=permanently_excluded_request_ids,json=permanentlyExcludedRequestIds,proto3" json:"permanently_excluded_request_ids,omitempty"` // Requests excluded due to size exceeding limit
+	unknownFields                 protoimpl.UnknownFields
+	sizeCache                     protoimpl.SizeCache
 }
 
 func (x *Observation) Reset() {
@@ -397,6 +402,13 @@ func (*Observation) Descriptor() ([]byte, []int) {
 func (x *Observation) GetObservations() map[string]*RequestObservation {
 	if x != nil {
 		return x.Observations
+	}
+	return nil
+}
+
+func (x *Observation) GetPermanentlyExcludedRequestIds() []string {
+	if x != nil {
+		return x.PermanentlyExcludedRequestIds
 	}
 	return nil
 }
@@ -798,9 +810,10 @@ const file_value_consensus_types_proto_rawDesc = "" +
 	"\bmetadata\x18\x01 \x01(\v2&.value_consensus_types.RequestMetaDataR\bmetadata\x128\n" +
 	"\x05input\x18\x02 \x01(\v2\".sdk.v1alpha.SimpleConsensusInputsR\x05input\x12;\n" +
 	"\vreceived_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"receivedAt\"\xd3\x01\n" +
+	"receivedAt\"\x9c\x02\n" +
 	"\vObservation\x12X\n" +
-	"\fobservations\x18\x01 \x03(\v24.value_consensus_types.Observation.ObservationsEntryR\fobservations\x1aj\n" +
+	"\fobservations\x18\x01 \x03(\v24.value_consensus_types.Observation.ObservationsEntryR\fobservations\x12G\n" +
+	" permanently_excluded_request_ids\x18\x02 \x03(\tR\x1dpermanentlyExcludedRequestIds\x1aj\n" +
 	"\x11ObservationsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12?\n" +
 	"\x05value\x18\x02 \x01(\v2).value_consensus_types.RequestObservationR\x05value:\x028\x01\"h\n" +
@@ -831,13 +844,14 @@ const file_value_consensus_types_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\x04R\x05value*9\n" +
 	"\vRequestType\x12\x13\n" +
 	"\x0fVALUE_CONSENSUS\x10\x00\x12\x15\n" +
-	"\x11REPORT_GENERATION\x10\x01*\xa8\x01\n" +
+	"\x11REPORT_GENERATION\x10\x01*\xc3\x01\n" +
 	"\x14ConsensusFailureCode\x12 \n" +
 	"\x1cCONSENSUS_CALCULATION_FAILED\x10\x00\x12%\n" +
 	"!FAILED_TO_CALCULATE_CONSENSUS_MDD\x10\x01\x12\x1a\n" +
 	"\x16RECEIVED_FPLUS1_ERRORS\x10\x02\x12\x15\n" +
 	"\x11OUTCOME_TOO_LARGE\x10\x03\x12\x14\n" +
-	"\x10REPORT_TOO_LARGE\x10\x04B\x18Z\x16consensus/oracle/typesb\x06proto3"
+	"\x10REPORT_TOO_LARGE\x10\x04\x12\x19\n" +
+	"\x15OBSERVATION_TOO_LARGE\x10\x05B\x18Z\x16consensus/oracle/typesb\x06proto3"
 
 var (
 	file_value_consensus_types_proto_rawDescOnce sync.Once

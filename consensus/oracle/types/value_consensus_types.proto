@@ -41,6 +41,7 @@ message RequestObservation {
 
 message Observation {
   map<string,RequestObservation> observations = 1;
+  repeated string permanently_excluded_request_ids = 2;  // Requests excluded due to size exceeding limit
 }
 
 // this message is used when calculating the current batch size and serves no other purpose
@@ -73,6 +74,8 @@ enum ConsensusFailureCode {
   OUTCOME_TOO_LARGE = 3;
   // The report produced is too large to transmit. The user should reduce the size of their request.
   REPORT_TOO_LARGE = 4;
+  // The observation for this request exceeds the maximum allowed size. The user should reduce the size of their request.
+  OBSERVATION_TOO_LARGE = 5;
 }
 
 message ConsensusFailedOutcome {
