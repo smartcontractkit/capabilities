@@ -6,13 +6,11 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	commontTypes "github.com/smartcontractkit/chainlink-common/pkg/types"
-
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/metrics"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
 )
 
@@ -65,10 +63,4 @@ func GetMetadataWithNoFunds() capabilities.RequestMetadata {
 			},
 		},
 	}
-}
-
-func GetConsensusMetrics(t *testing.T) metrics.ConsensusMetrics {
-	m, err := metrics.NewConsensusMetrics(commontTypes.ChainInfo{ChainID: "fake-chain-id"})
-	require.NoError(t, err, "failed to create metrics")
-	return m
 }

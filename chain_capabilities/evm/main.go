@@ -12,18 +12,17 @@ import (
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/height"
-	consMetrics "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/metrics"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/oracle"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/poller"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/height"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/trigger"
+	consMetrics "github.com/smartcontractkit/capabilities/libs/chainconsensus/metrics"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus/oracle"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus/poller"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
-
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/trigger"
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
@@ -56,7 +55,7 @@ type capabilityGRPCService struct {
 type capability struct {
 	*actions.EVM
 	requestPoller    *poller.Poller
-	consensusHandler *consensus.Handler
+	consensusHandler *chainconsensus.Handler
 	oracle           core.Oracle
 	triggerService   *trigger.LogTriggerService
 	heightProvider   *height.Provider
@@ -120,7 +119,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return fmt.Errorf("failed to create evm consensus metrics: %w", err)
 	}
 	c.requestPoller = poller.NewPoller(c.lggr, consensusMetrics, cfg.ObservationPollerWorkersCount, cfg.ObservationPollPeriod)
-	c.consensusHandler = consensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, cfg.UnknownRequestsTTL)
+	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, cfg.UnknownRequestsTTL)
 
 	c.EVM, err = actions.NewEVM(*cfg, evmRelayer, c.lggr, processor, messageBuilder, c.consensusHandler, c.chainSelector, c.limitsFactory)
 	if err != nil {
