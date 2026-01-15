@@ -1877,10 +1877,6 @@ func TestLogDetailsList_String(t *testing.T) {
 	})
 }
 
-// ============================================================
-// TxHashRetriever Integration Tests
-// ============================================================
-
 func TestTxHashRetriever_GetSuccessfulTransmissionHash(t *testing.T) {
 	t.Parallel()
 
@@ -2088,7 +2084,7 @@ func TestTxHashRetriever_GetFailedTransmissionHash(t *testing.T) {
 		_, err := retriever.GetFailedTransmissionHash(ctx)
 
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "expected failed transmission but found successful")
+		require.ErrorIs(t, err, ErrUnexpectedSuccessfulTransmission)
 	})
 
 	t.Run("returns error when log data is malformed", func(t *testing.T) {

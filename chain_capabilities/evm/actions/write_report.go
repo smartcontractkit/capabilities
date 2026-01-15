@@ -43,6 +43,9 @@ const (
 const UnknownIssueExecutingReceiverContractMessage = "unknown issue execution receiver contract"
 const userError = "user error:"
 
+// ErrUnexpectedSuccessfulTransmission indicates we expected a failed transmission but found a successful one
+var ErrUnexpectedSuccessfulTransmission = errors.New("unexpected successful transmission")
+
 // withQuickRetry wraps a simple RPC read with retry logic.
 // Uses shorter timeout (10s) and fast backoff - these calls should be sub-second.
 func withQuickRetry[T any](ctx context.Context, lggr logger.Logger, fn func(context.Context) (T, error)) (T, error) {
@@ -205,7 +208,11 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 	case TransmissionStateInvalidReceiver:
 		txHash, err := txHashRetriever.GetFailedTransmissionHash(ctx)
 		if err != nil {
-			e.lggr.Errorw("Transmission already done by another node but failed due to invalid receiver, not reattempting and failed to get its txHash")
+			if errors.Is(err, ErrUnexpectedSuccessfulTransmission) {
+				monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportInvalidTransmissionState(telemetryContext, request, transmissionInfo, "WriteReport unexpected successful transmission", err.Error()))
+			} else {
+				e.lggr.Errorw("Transmission already done by another node but failed due to invalid receiver, not reattempting and failed to get its txHash")
+			}
 			return nil, capabilities.ResponseMetadata{}, err
 		}
 
@@ -220,7 +227,11 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		if transmissionInfo.GasLimit.Uint64() > txGasLimit {
 			txHash, err := txHashRetriever.GetFailedTransmissionHash(ctx)
 			if err != nil {
-				e.lggr.Errorw("Returning without a transmission attempt - transmission already attempted, but failed to retrieve its tx hash", "error", err.Error(), "txGasLimit", txGasLimit, "transmissionGasLimit", transmissionInfo.GasLimit)
+				if errors.Is(err, ErrUnexpectedSuccessfulTransmission) {
+					monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportInvalidTransmissionState(telemetryContext, request, transmissionInfo, "WriteReport unexpected successful transmission", err.Error()))
+				} else {
+					e.lggr.Errorw("Returning without a transmission attempt - transmission already attempted, but failed to retrieve its tx hash", "error", err.Error(), "txGasLimit", txGasLimit, "transmissionGasLimit", transmissionInfo.GasLimit)
+				}
 				return nil, capabilities.ResponseMetadata{}, err
 			}
 
@@ -557,7 +568,7 @@ func (thr *TxHashRetriever) GetSuccessfulTransmissionHash(ctx context.Context) (
 	}
 
 	thr.lggr.Errorw("No successful transmission found", append(thr.transmissionID.GetIDPartsForDebugging(), "txCount", len(details), "transactions", details.String())...)
-	return nil, fmt.Errorf("no successful transmission found for: %s, found %d transactions (all failed): %s",
+	return nil, fmt.Errorf("no successful transmission found for: %s. Found %d transactions (all failed): %s",
 		thr.transmissionID.GetDebugID(), len(details), details)
 }
 
@@ -572,8 +583,8 @@ func (thr *TxHashRetriever) GetFailedTransmissionHash(ctx context.Context) (*evm
 
 	for _, d := range details {
 		if d.IsSuccess {
-			return nil, fmt.Errorf("expected failed transmission but found successful for: %s, successful tx hash: %s",
-				thr.transmissionID.GetDebugID(), hex.EncodeToString(d.TxHash[:]))
+			return nil, fmt.Errorf("%w for: %s, successful tx hash: %s",
+				ErrUnexpectedSuccessfulTransmission, thr.transmissionID.GetDebugID(), hex.EncodeToString(d.TxHash[:]))
 		}
 	}
 
