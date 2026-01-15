@@ -572,7 +572,7 @@ func (thr *TxHashRetriever) GetFailedTransmissionHash(ctx context.Context) (*evm
 
 	for _, d := range details {
 		if d.IsSuccess {
-			return nil, fmt.Errorf("expected failed transmission but found successful for: %s. Successful tx hash: %s",
+			return nil, fmt.Errorf("expected failed transmission but found successful for: %s, successful tx hash: %s",
 				thr.transmissionID.GetDebugID(), hex.EncodeToString(d.TxHash[:]))
 		}
 	}
