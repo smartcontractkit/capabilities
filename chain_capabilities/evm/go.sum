@@ -459,8 +459,8 @@ github.com/sirupsen/logrus v1.4.1/go.mod h1:ni0Sbl8bgC9z8RoU9G6nDWqqs/fq4eDPysMB
 github.com/sirupsen/logrus v1.4.2/go.mod h1:tLMulIdttU9McNUspp0xgXVQah82FyeX6MwdIuYE2rE=
 github.com/smartcontractkit/capabilities/libs v0.0.0-20260114123817-a22dd91e9d9d h1:ZyZyj53gzWczjIxZgGBQk9tFaAMH31sr2XqOwaMipaY=
 github.com/smartcontractkit/capabilities/libs v0.0.0-20260114123817-a22dd91e9d9d/go.mod h1:fLJt3ZuMPXoIfd1WQp2RxtLWrqQbzKwjYp8Rq2HBqEw=
-github.com/smartcontractkit/chain-selectors v1.0.67 h1:gxTqP/JC40KDe3DE1SIsIKSTKTZEPyEU1YufO1admnw=
-github.com/smartcontractkit/chain-selectors v1.0.67/go.mod h1:xsKM0aN3YGcQKTPRPDDtPx2l4mlTN1Djmg0VVXV40b8=
+github.com/smartcontractkit/chain-selectors v1.0.89 h1:L9oWZGqQXWyTPnC6ODXgu3b0DFyLmJ9eHv+uJrE9IZY=
+github.com/smartcontractkit/chain-selectors v1.0.89/go.mod h1:qy7whtgG5g+7z0jt0nRyii9bLND9m15NZTzuQPkMZ5w=
 github.com/smartcontractkit/chainlink-common v0.9.6-0.20260106160138-bf2f64d0376d h1:N7ks/jsKXERI3hlu+fn42QvUMYu1HWzHdXM3wgWl+TI=
 github.com/smartcontractkit/chainlink-common v0.9.6-0.20260106160138-bf2f64d0376d/go.mod h1:DAwaVSiQMgAsCjHa8nOnIAM9GixuIQWsgEZFGpf3JxE=
 github.com/smartcontractkit/chainlink-common/pkg/chipingress v0.0.10 h1:FJAFgXS9oqASnkS03RE1HQwYQQxrO4l46O5JSzxqLgg=
