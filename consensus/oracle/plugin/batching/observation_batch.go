@@ -83,7 +83,7 @@ func (ob *ObservationBatch) CurrentSerialisedBatchSize() int {
 
 func (ob *ObservationBatch) SerialiseObservationBatch(ctx context.Context) ([]byte, error) {
 	// Include permanently excluded request IDs in observation metadata
-	ob.Observation.PermanentlyExcludedRequestIds = ob.permanentlyExcludedRequestIDs
+	ob.PermanentlyExcludedRequestIds = ob.permanentlyExcludedRequestIDs
 
 	serialisedBatch, err := proto.MarshalOptions{Deterministic: true}.Marshal(&ob.Observation)
 	if err != nil {

@@ -8,10 +8,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/smartcontractkit/capabilities/consensus/oracle"
-	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+
+	"github.com/smartcontractkit/capabilities/consensus/oracle"
+	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
 
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
@@ -77,7 +78,7 @@ func TestOutcomePhaseHandlesPermanentlyExcludedObservations(t *testing.T) {
 
 		attributedObservations = append(attributedObservations, libocrTypes.AttributedObservation{
 			Observation: observation,
-			Observer:    commontypes.OracleID(i),
+			Observer:    commontypes.OracleID(uint8(i)), //nolint:gosec // G115: n is 7, so i is always < 256
 		})
 	}
 
@@ -155,7 +156,7 @@ func TestOutcomePhaseMixedExcludedAndValidObservations(t *testing.T) {
 
 		attributedObservations = append(attributedObservations, libocrTypes.AttributedObservation{
 			Observation: observation,
-			Observer:    commontypes.OracleID(i),
+			Observer:    commontypes.OracleID(uint8(i)), //nolint:gosec // G115: n is 7, so i is always < 256
 		})
 	}
 

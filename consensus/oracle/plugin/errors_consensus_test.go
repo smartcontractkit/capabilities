@@ -6,9 +6,10 @@ import (
 
 	"google.golang.org/protobuf/types/known/structpb"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+
 	"github.com/smartcontractkit/capabilities/consensus/oracle"
 	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
-	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 

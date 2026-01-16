@@ -14,14 +14,15 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 
-	"github.com/smartcontractkit/capabilities/consensus/metrics"
-	"github.com/smartcontractkit/capabilities/consensus/oracle"
-	"github.com/smartcontractkit/capabilities/consensus/oracle/plugin"
-	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	pbtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+
+	"github.com/smartcontractkit/capabilities/consensus/metrics"
+	"github.com/smartcontractkit/capabilities/consensus/oracle"
+	"github.com/smartcontractkit/capabilities/consensus/oracle/plugin"
+	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
 
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
@@ -828,7 +829,7 @@ func TestObservationExcludedWhenOnlySomeNodesHaveRequest(t *testing.T) {
 
 		attributedObservations = append(attributedObservations, libocrTypes.AttributedObservation{
 			Observation: observation,
-			Observer:    commontypes.OracleID(i),
+			Observer:    commontypes.OracleID(uint8(i)), //nolint:gosec // G115: n is 7, so i is always < 256
 		})
 	}
 
@@ -1166,6 +1167,22 @@ func runProtocolRoundTestsWithPlugins(ctx context.Context, t *testing.T,
 	}
 
 	// Verify all expected reports were received
+	// Count expected reports (those with verifyReport set) and verify we got the right number
+	expectedReportCount := 0
+	for _, outcome := range requestIDToOutcome {
+		if outcome.verifyReport != nil {
+			expectedReportCount++
+		}
+	}
+	actualReportCount := 0
+	for reqID := range receivedReportForRequestIDs {
+		if receivedReportForRequestIDs[reqID] {
+			actualReportCount++
+		}
+	}
+	require.Equal(t, expectedReportCount, actualReportCount, "expected %d success reports but got %d", expectedReportCount, actualReportCount)
+
+	// Verify each expected report was received
 	for reqID, outcome := range requestIDToOutcome {
 		if outcome.verifyReport != nil {
 			require.True(t, receivedReportForRequestIDs[reqID], "expected report for request ID %s was not received", reqID)
