@@ -40,6 +40,7 @@ import (
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2/types"
+	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
 )
 
 const (
@@ -192,10 +193,28 @@ func (c *consensusCapability) setConfiguration(cfg string) error {
 		c.valueConsensusKeyBundleID = capabilityConfig.KeyBundleIDForValueConsensus
 	}
 
+	// Get the limit from CRE settings or capability config
 	requestSizeLimit := cresettings.Default.PerWorkflow.Consensus.ObservationSizeLimit // make a copy
+
+	var configuredLimit config.Size
 	if capabilityConfig.MaxRequestSizeBytes > 0 {
-		requestSizeLimit.DefaultValue = config.Size(capabilityConfig.MaxRequestSizeBytes)
+		// Use capability config if explicitly set
+		configuredLimit = config.Size(capabilityConfig.MaxRequestSizeBytes)
+	} else {
+		// Otherwise use CRE settings default
+		configuredLimit = requestSizeLimit.DefaultValue
 	}
+
+	// Cap the limit at libOCR's MaxMaxObservationLength to ensure it never exceeds OCR protocol limits
+	libOCRLimit := config.Size(int(ocr3types.MaxMaxObservationLength))
+	if configuredLimit > libOCRLimit {
+		c.lggr.Warnw("Request size limit exceeds libOCR maximum, capping at libOCR limit",
+			"configuredLimit", configuredLimit,
+			"libOCRLimit", libOCRLimit)
+		configuredLimit = libOCRLimit
+	}
+
+	requestSizeLimit.DefaultValue = configuredLimit
 	maxRequestSizeBytes, err := limits.MakeBoundLimiter(c.limitsFactory, requestSizeLimit)
 	if err != nil {
 		return err
