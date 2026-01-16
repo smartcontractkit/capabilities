@@ -14,11 +14,10 @@ import (
 type ObservationBatch struct {
 	oracletypes.Observation
 
-	lggr                          logger.Logger
-	currentSerialisedBatchSize    int
-	metrics                       metrics
-	maxObservationLengthBytes     int
-	permanentlyExcludedRequestIDs []string // Track requests permanently excluded due to size
+	lggr                       logger.Logger
+	currentSerialisedBatchSize int
+	metrics                    metrics
+	maxObservationLengthBytes  int
 }
 
 func NewObservationBatch(ctx context.Context, lggr logger.Logger, maxObservationLengthBytes int, metrics metrics) *ObservationBatch {
@@ -28,12 +27,11 @@ func NewObservationBatch(ctx context.Context, lggr logger.Logger, maxObservation
 	messageSize := calculateMessageSize(obs)
 
 	return &ObservationBatch{
-		Observation:                   oracletypes.Observation{Observations: observations},
-		lggr:                          lggr,
-		currentSerialisedBatchSize:    messageSize,
-		maxObservationLengthBytes:     maxObservationLengthBytes,
-		metrics:                       metrics,
-		permanentlyExcludedRequestIDs: []string{},
+		Observation:                oracletypes.Observation{Observations: observations},
+		lggr:                       lggr,
+		currentSerialisedBatchSize: messageSize,
+		maxObservationLengthBytes:  maxObservationLengthBytes,
+		metrics:                    metrics,
 	}
 }
 
@@ -49,25 +47,7 @@ func (ob *ObservationBatch) AddObservation(ctx context.Context, reqObs *oraclety
 
 	if !ok {
 		ob.metrics.IncBatchCapacityExceeded(ctx, "observation")
-
-		// Check if observation would fit in empty batch
-		// Similar to outcome batch pattern: check against initial empty batch size
-		emptyBatch := &oracletypes.Observation{Observations: make(map[string]*oracletypes.RequestObservation)}
-		initialBatchOverheadSize := calculateMessageSize(emptyBatch)
-		fitsInEmptyBatch, _ := batchHasCapacityForSliceBytes(initialBatchOverheadSize, mapEntrySize, ob.maxObservationLengthBytes)
-
-		if !fitsInEmptyBatch {
-			// Observation is permanently too large - will never fit, even in empty batch
-			ob.permanentlyExcludedRequestIDs = append(ob.permanentlyExcludedRequestIDs, reqObs.Metadata.RequestId)
-			ob.lggr.Errorw("observation permanently too large - will be marked as failed in outcome phase",
-				"requestID", reqObs.Metadata.RequestId,
-				"observationSize", mapEntrySize,
-				"maxObservationLengthBytes", ob.maxObservationLengthBytes,
-				"initialBatchOverheadSize", initialBatchOverheadSize)
-			return false
-		}
-
-		// Would fit in empty batch - just retry next round when batch is empty
+		// Observation doesn't fit in current batch - will retry next round when batch is empty
 		return false
 	}
 
@@ -82,9 +62,6 @@ func (ob *ObservationBatch) CurrentSerialisedBatchSize() int {
 }
 
 func (ob *ObservationBatch) SerialiseObservationBatch(ctx context.Context) ([]byte, error) {
-	// Include permanently excluded request IDs in observation metadata
-	ob.PermanentlyExcludedRequestIds = ob.permanentlyExcludedRequestIDs
-
 	serialisedBatch, err := proto.MarshalOptions{Deterministic: true}.Marshal(&ob.Observation)
 	if err != nil {
 		return nil, fmt.Errorf("failed to serialise batch of observations: %w", err)

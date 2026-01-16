@@ -41,7 +41,6 @@ message RequestObservation {
 
 message Observation {
   map<string,RequestObservation> observations = 1;
-  repeated string permanently_excluded_request_ids = 2;  // Requests excluded due to size exceeding limit
 }
 
 // this message is used when calculating the current batch size and serves no other purpose

@@ -7,12 +7,13 @@ import (
 	"strings"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/smartcontractkit/capabilities/integration_tests/evm"
 	chainselectors "github.com/smartcontractkit/chain-selectors"
 	"github.com/smartcontractkit/cre-sdk-go/capabilities/blockchain/evm"
 	"github.com/smartcontractkit/cre-sdk-go/cre"
 	"github.com/smartcontractkit/cre-sdk-go/cre/wasm"
 	"gopkg.in/yaml.v3"
+
+	"github.com/smartcontractkit/capabilities/integration_tests/evm"
 )
 
 func RunSimpleEvmLogTriggerWorkflow(

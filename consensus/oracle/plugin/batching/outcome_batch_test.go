@@ -137,7 +137,7 @@ func TestOutcomeTooLargeToEverFit(t *testing.T) {
 
 	// Create a value that is definitely too large to ever fit
 	largeData := strings.Repeat("x", 1000)
-	added, err := outcome.AddSuccessfulConsensusRequestOutcomeToBatch(ctx, &oracletypes.RequestMetaData{
+	added, _ := outcome.AddSuccessfulConsensusRequestOutcomeToBatch(ctx, &oracletypes.RequestMetaData{
 		RequestId:           "req-too-large",
 		WorkflowExecutionId: "exec-1",
 	}, values.Proto(values.NewString(largeData)), &timestamppb.Timestamp{})
@@ -211,7 +211,7 @@ func TestOutcomeTooLargeWithExistingHistoricalOutcomes(t *testing.T) {
 
 	// Try to add an outcome that is too large even for an empty batch
 	largeData := strings.Repeat("y", 1000)
-	added, err := outcome.AddSuccessfulConsensusRequestOutcomeToBatch(ctx, &oracletypes.RequestMetaData{
+	added, _ := outcome.AddSuccessfulConsensusRequestOutcomeToBatch(ctx, &oracletypes.RequestMetaData{
 		RequestId:           "req-too-large",
 		WorkflowExecutionId: "exec-1",
 	}, values.Proto(values.NewString(largeData)), &timestamppb.Timestamp{})

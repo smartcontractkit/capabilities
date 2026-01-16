@@ -192,11 +192,11 @@ func (c *consensusCapability) setConfiguration(cfg string) error {
 		c.valueConsensusKeyBundleID = capabilityConfig.KeyBundleIDForValueConsensus
 	}
 
-	limit := cresettings.Default.PerWorkflow.Consensus.ObservationSizeLimit // make a copy
+	requestSizeLimit := cresettings.Default.PerWorkflow.Consensus.ObservationSizeLimit // make a copy
 	if capabilityConfig.MaxRequestSizeBytes > 0 {
-		limit.DefaultValue = config.Size(capabilityConfig.MaxRequestSizeBytes)
+		requestSizeLimit.DefaultValue = config.Size(capabilityConfig.MaxRequestSizeBytes)
 	}
-	maxRequestSizeBytes, err := limits.MakeBoundLimiter(c.limitsFactory, limit)
+	maxRequestSizeBytes, err := limits.MakeBoundLimiter(c.limitsFactory, requestSizeLimit)
 	if err != nil {
 		return err
 	}

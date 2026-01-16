@@ -29,9 +29,7 @@ type ContractTransmitter struct {
 	sendResponse SendResponse
 }
 
-func (c *ContractTransmitter) Transmit(ctx context.Context, configDigest types.ConfigDigest, seqNr uint64,
-	rwi ocr3types.ReportWithInfo[[]byte], signatures []types.AttributedOnchainSignature) error {
-
+func (c *ContractTransmitter) Transmit(ctx context.Context, configDigest types.ConfigDigest, seqNr uint64, rwi ocr3types.ReportWithInfo[[]byte], signatures []types.AttributedOnchainSignature) error {
 	unmarshalledInfo := new(structpb.Struct)
 	err := proto.Unmarshal(rwi.Info, unmarshalledInfo)
 	if err != nil {
@@ -62,6 +60,9 @@ func (c *ContractTransmitter) Transmit(ctx context.Context, configDigest types.C
 		case oracletypes.ConsensusFailureCode_RECEIVED_FPLUS1_ERRORS:
 			// This is considered to be a user error as the caller of the consensus capability has sent too many errors and
 			// so consensus cannot be reached.
+			failureErr = caperrors.NewPublicUserError(errors.New(failureMessageStr), caperrors.ConsensusFailed)
+		case oracletypes.ConsensusFailureCode_OBSERVATION_TOO_LARGE:
+			// Observation too large is a user error - the caller should reduce the size of their request
 			failureErr = caperrors.NewPublicUserError(errors.New(failureMessageStr), caperrors.ConsensusFailed)
 		default:
 			failureErr = caperrors.NewPublicSystemError(errors.New(failureMessageStr), caperrors.ConsensusFailed)

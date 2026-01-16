@@ -40,42 +40,7 @@ func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeC
 
 	requestIDToObservations := groupAttributedObservationsByRequestID(r.lggr, attributedObservations)
 
-	// Collect permanently excluded request IDs from all observations
-	permanentlyExcludedRequestIDs := r.collectPermanentlyExcludedRequestIDs(attributedObservations)
-
 	for _, requestID := range requestsQuery.RequestIDs {
-		// Check if request was permanently excluded due to size
-		if permanentlyExcludedRequestIDs[requestID] {
-			// Need to get metadata for the request to create proper failure outcome
-			var metadata *oracletypes.RequestMetaData
-			if reqs := r.store.GetByIDs([]string{requestID}); len(reqs) > 0 {
-				metadata = ToRequestMetaData(reqs[0].Metadata)
-			} else {
-				// Try to get from any observation (shouldn't happen, but fallback)
-				metadata = r.getMetadataFromObservations(requestID, attributedObservations)
-			}
-
-			if metadata == nil {
-				r.lggr.Warnw("could not find metadata for permanently excluded request", "requestID", requestID)
-				continue
-			}
-
-			failureMsg := fmt.Sprintf(
-				"observation too large: the observation for this request exceeds the maximum allowed size of %d bytes",
-				r.config.MaxObservationLengthBytes)
-
-			hasCapacity, err := outcomeBatch.AddFailedConsensusRequestOutcomeToBatch(ctx, requestID, failureMsg,
-				oracletypes.ConsensusFailureCode_OBSERVATION_TOO_LARGE)
-			if err != nil {
-				return nil, fmt.Errorf("failed to add failure outcome for excluded request %s: %w", requestID, err)
-			}
-			if !hasCapacity {
-				r.lggr.Debugw("batch does not have capacity to add failure outcome - skipping in this round", "requestID", requestID)
-				break
-			}
-			continue
-		}
-
 		observations := requestIDToObservations[requestID]
 
 		// 2f+1 or more observations have been received, calculate the outcome for the request
@@ -296,41 +261,4 @@ func calculateMedianTimestamp(timestamps []*timestamppb.Timestamp) *timestamppb.
 		finalTimestamp = timestamppb.New(time.Unix(a+(b-a)/2, 0))
 	}
 	return finalTimestamp
-}
-
-// collectPermanentlyExcludedRequestIDs collects permanently excluded request IDs from all observations.
-// A request is considered permanently excluded if it appears in the excluded list from any observation.
-func (r *reportingPlugin) collectPermanentlyExcludedRequestIDs(attributedObservations []types.AttributedObservation) map[string]bool {
-	excluded := make(map[string]bool)
-
-	for _, ao := range attributedObservations {
-		obs := &oracletypes.Observation{}
-		if err := proto.Unmarshal(ao.Observation, obs); err != nil {
-			r.lggr.Warnw("failed to unmarshal observation to check excluded requests", "error", err)
-			continue
-		}
-
-		// Note: Proto field name is snake_case: permanently_excluded_request_ids
-		for _, excludedID := range obs.PermanentlyExcludedRequestIds {
-			excluded[excludedID] = true
-		}
-	}
-
-	return excluded
-}
-
-// getMetadataFromObservations attempts to extract metadata for a request ID from observations.
-// This is a fallback when the request is not found in the local store.
-func (r *reportingPlugin) getMetadataFromObservations(requestID string, attributedObservations []types.AttributedObservation) *oracletypes.RequestMetaData {
-	for _, ao := range attributedObservations {
-		obs := &oracletypes.Observation{}
-		if err := proto.Unmarshal(ao.Observation, obs); err != nil {
-			continue
-		}
-
-		if reqObs, ok := obs.Observations[requestID]; ok {
-			return reqObs.Metadata
-		}
-	}
-	return nil
 }
