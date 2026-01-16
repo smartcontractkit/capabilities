@@ -9,20 +9,20 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	chainselectors "github.com/smartcontractkit/chain-selectors"
+	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/height"
-	consMetrics "github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/metrics"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/oracle"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/poller"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/height"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/trigger"
+	consMetrics "github.com/smartcontractkit/capabilities/libs/chainconsensus/metrics"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus/oracle"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus/poller"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
-
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/trigger"
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
@@ -55,7 +55,7 @@ type capabilityGRPCService struct {
 type capability struct {
 	*actions.EVM
 	requestPoller    *poller.Poller
-	consensusHandler *consensus.Handler
+	consensusHandler *chainconsensus.Handler
 	oracle           core.Oracle
 	triggerService   *trigger.LogTriggerService
 	heightProvider   *height.Provider
@@ -65,7 +65,7 @@ var _ evmcapserver.ClientCapability = &capabilityGRPCService{}
 
 func main() {
 	loopserver.ServeNew(CapabilityName, func(s *loop.Server) loop.StandardCapabilities {
-		return evmcapserver.NewClientServer(&capabilityGRPCService{lggr: s.Logger.Named(CapabilityName), limitsFactory: s.LimitsFactory})
+		return evmcapserver.NewClientServer(&capabilityGRPCService{lggr: s.Logger, limitsFactory: s.LimitsFactory})
 	}, loop.WithOtelViews(consMetrics.MetricViews()))
 }
 
@@ -114,12 +114,12 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
 
-	consensusMetrics, err := consMetrics.NewEvmConsensusMetrics(chainInfo)
+	consensusMetrics, err := consMetrics.NewConsensusMetrics(chainInfo)
 	if err != nil {
 		return fmt.Errorf("failed to create evm consensus metrics: %w", err)
 	}
 	c.requestPoller = poller.NewPoller(c.lggr, consensusMetrics, cfg.ObservationPollerWorkersCount, cfg.ObservationPollPeriod)
-	c.consensusHandler = consensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, cfg.UnknownRequestsTTL)
+	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, cfg.UnknownRequestsTTL)
 
 	c.EVM, err = actions.NewEVM(*cfg, evmRelayer, c.lggr, processor, messageBuilder, c.consensusHandler, c.chainSelector, c.limitsFactory)
 	if err != nil {
@@ -211,7 +211,7 @@ func (c *capabilityGRPCService) Start(_ context.Context) error {
 
 func (c *capabilityGRPCService) Close() error {
 	c.lggr.Infof("Closing %s", CapabilityName)
-	return errors.Join(c.requestPoller.Close(), c.consensusHandler.Close(), c.oracle.Close(context.Background()), c.triggerService.Close(), c.heightProvider.Close())
+	return errors.Join(c.EVM.Close(), c.requestPoller.Close(), c.consensusHandler.Close(), c.oracle.Close(context.Background()), c.triggerService.Close(), c.heightProvider.Close())
 }
 
 func (c *capabilityGRPCService) HealthReport() map[string]error {
@@ -244,11 +244,11 @@ func (c *capabilityGRPCService) UnregisterFromWorkflow(_ context.Context, _ capa
 	panic("implement me")
 }
 
-func (c *capabilityGRPCService) RegisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*evmcappb.Log], error) {
+func (c *capabilityGRPCService) RegisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*evmcappb.Log], caperrors.Error) {
 	return c.triggerService.RegisterLogTrigger(ctx, triggerID, metadata, input)
 }
 
-func (c *capabilityGRPCService) UnregisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) error {
+func (c *capabilityGRPCService) UnregisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) caperrors.Error {
 	return c.triggerService.UnregisterLogTrigger(ctx, triggerID, metadata, input)
 }
 

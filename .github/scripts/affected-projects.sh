@@ -9,7 +9,8 @@ fi
 base=$1
 
 # --base and --head are necessary for comparison
-affected_projects=$(./nx show projects --affected --json --base=$base --head=HEAD)
+# tail -1 is needed to avoid extra log lines from nx
+affected_projects=$(./nx show projects --affected --json --base=$base --head=HEAD | tail -1)
 
 echo "Affected projects:" >&2
 if echo "$affected_projects" | jq . >/dev/null 2>&1; then

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/smartcontractkit/capabilities/integration_tests/evm"
 	chainselectors "github.com/smartcontractkit/chain-selectors"
 	"github.com/smartcontractkit/cre-sdk-go/capabilities/blockchain/evm"
 	"github.com/smartcontractkit/cre-sdk-go/cre"
@@ -14,32 +15,44 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type runtimeConfig struct {
-	Addresses []string `yaml:"addresses"`
-	Topics    []struct {
-		Values []string `yaml:"values"`
-	} `yaml:"topics"`
-	Abi   string `yaml:"abi"`
-	Event string `yaml:"event"`
-}
-
 func RunSimpleEvmLogTriggerWorkflow(
-	config *runtimeConfig,
+	config *evmlogtrigger.RuntimeConfig,
 	logger *slog.Logger,
 	_ cre.SecretsProvider,
-) (cre.Workflow[*runtimeConfig], error) {
+) (cre.Workflow[*evmlogtrigger.RuntimeConfig], error) {
 	_ = logger // not used directly; we log via runtime inside handlers
 
-	cfg := &evm.FilterLogTriggerRequest{
-		Addresses: toByteSlices(config.Addresses),
-		Topics: []*evm.TopicValues{
-			{
-				Values: toByteSlices(config.Topics[0].Values),
-			},
+	topics := []*evm.TopicValues{
+		{
+			Values: toByteSlices(config.Topics[0].Values),
 		},
-		Confidence: 1, // LATEST
 	}
-	return cre.Workflow[*runtimeConfig]{
+	for i := 1; i < 4; i++ {
+		if i < len(config.Topics) {
+			topics = append(topics, &evm.TopicValues{
+				Values: toByteSlices(config.Topics[i].Values),
+			})
+		} else {
+			topics = append(topics, &evm.TopicValues{
+				Values: [][]byte{},
+			})
+		}
+	}
+
+	cfg := &evm.FilterLogTriggerRequest{
+		Addresses:  toByteSlices(config.Addresses),
+		Topics:     topics,
+		Confidence: evm.ConfidenceLevel(config.Confidence),
+	}
+
+	logger.Info(fmt.Sprintf(
+		"EVM FilterLogTriggerRequest config: addresses: %v, topics: %v, confidence: %v",
+		formatHexSlices(cfg.Addresses),
+		formatHexTopics(cfg.Topics),
+		cfg.Confidence,
+	))
+
+	return cre.Workflow[*evmlogtrigger.RuntimeConfig]{
 		cre.Handler(
 			evm.LogTrigger(chainselectors.GETH_TESTNET.Selector, cfg),
 			onTrigger,
@@ -47,17 +60,25 @@ func RunSimpleEvmLogTriggerWorkflow(
 	}, nil
 }
 
-func toByteSlices(addresses []string) [][]byte {
-	result := make([][]byte, len(addresses))
-	for i, addr := range addresses {
-		// Assumes addresses are hex strings with or without 0x prefix
-		b, _ := hex.DecodeString(strings.TrimPrefix(addr, "0x"))
-		result[i] = b
+// formatHexSlices formats a slice of byte slices as hex strings.
+func formatHexSlices(slices [][]byte) []string {
+	result := make([]string, len(slices))
+	for i, b := range slices {
+		result[i] = "0x" + hex.EncodeToString(b)
 	}
 	return result
 }
 
-func onTrigger(config *runtimeConfig, runtime cre.Runtime, outputs *evm.Log) (string, error) {
+// formatHexTopics formats a slice of *evm.TopicValues as hex strings.
+func formatHexTopics(topics []*evm.TopicValues) [][]string {
+	result := make([][]string, len(topics))
+	for i, t := range topics {
+		result[i] = formatHexSlices(t.Values)
+	}
+	return result
+}
+
+func onTrigger(config *evmlogtrigger.RuntimeConfig, runtime cre.Runtime, outputs *evm.Log) (string, error) {
 	runtime.Logger().With().Info(fmt.Sprintf("OnTrigger txHash: %s log index: %d", hex.EncodeToString(outputs.TxHash), outputs.Index))
 
 	decodedMessageString, err := printDecodedData(config.Abi, config.Event, outputs.Data)
@@ -94,11 +115,21 @@ func printDecodedData(eventABI string, eventName string, data []byte) (string, e
 }
 
 func main() {
-	wasm.NewRunner(func(b []byte) (*runtimeConfig, error) {
-		cfg := &runtimeConfig{}
+	wasm.NewRunner(func(b []byte) (*evmlogtrigger.RuntimeConfig, error) {
+		cfg := &evmlogtrigger.RuntimeConfig{}
 		if err := yaml.Unmarshal(b, cfg); err != nil {
 			return nil, fmt.Errorf("error unmarshalling config: %w", err)
 		}
 		return cfg, nil
 	}).Run(RunSimpleEvmLogTriggerWorkflow)
+}
+
+func toByteSlices(addresses []string) [][]byte {
+	result := make([][]byte, len(addresses))
+	for i, addr := range addresses {
+		// Assumes addresses are hex strings with or without 0x prefix
+		b, _ := hex.DecodeString(strings.TrimPrefix(addr, "0x"))
+		result[i] = b
+	}
+	return result
 }

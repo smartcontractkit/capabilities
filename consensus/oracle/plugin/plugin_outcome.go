@@ -13,6 +13,7 @@ import (
 	"github.com/smartcontractkit/capabilities/consensus/oracle"
 	"github.com/smartcontractkit/capabilities/consensus/oracle/plugin/batching"
 	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
+
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 
@@ -31,7 +32,7 @@ func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeC
 		return nil, fmt.Errorf("failed to unmarshal query: %w", err)
 	}
 
-	outcome, err := batching.NewOutcomeBatch(ctx, r.lggr, outctx, r.outcomeExpirySeqNrSpan, int(r.config.MaxOutcomeLengthBytes), r.defaultKeyBundleIDForConsensusFailure,
+	outcomeBatch, err := batching.NewOutcomeBatch(ctx, r.lggr, outctx, r.outcomeExpirySeqNrSpan, int(r.config.MaxOutcomeLengthBytes), r.defaultKeyBundleIDForConsensusFailure,
 		r.metrics, r.maxRequestOutcomeSize)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new outcome batch: %w", err)
@@ -44,18 +45,22 @@ func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeC
 
 		// 2f+1 or more observations have been received, calculate the outcome for the request
 		if len(observations) >= 2*r.f+1 {
-			hasCapacity, err := r.addRequestOutcomeToBatch(ctx, requestID, observations, outcome)
+			hasCapacity, err := r.addRequestOutcomeToBatch(ctx, requestID, observations, outcomeBatch)
 			if err != nil {
 				return nil, fmt.Errorf("failed to add request outcome to batch for request %s: %w", requestID, err)
 			}
 
 			if !hasCapacity {
+				r.lggr.Debugw("batch does not have capacity to add request outcome - skipping in this round", "requestID", requestID)
 				break
 			}
+			r.lggr.Debugw("added request outcome to batch", "requestID", requestID, "numObservations", len(observations))
+		} else {
+			r.lggr.Debugw("not enough observations to calculate outcome for request - skipping in this round", "requestID", requestID, "numObservations", len(observations))
 		}
 	}
 
-	return outcome.SerialiseOutcomeBatch()
+	return outcomeBatch.SerialiseOutcomeBatch(ctx)
 }
 
 // addRequestOutcomeToBatch adds the outcome for a single request to the outcome batch. Returns false if batch does not have capacity to add the outcome.
@@ -67,7 +72,7 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, requestI
 			oracletypes.ConsensusFailureCode_FAILED_TO_CALCULATE_CONSENSUS_MDD)
 	}
 
-	var errors []string
+	var obsErrors []string
 	var obsValues []*valuespb.Value
 	var timestamps []*timestamppb.Timestamp
 
@@ -90,7 +95,7 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, requestI
 			obsValues = append(obsValues, inputObservation.Value)
 			timestamps = append(timestamps, obs.ReceivedAt)
 		case *sdk.SimpleConsensusInputs_Error:
-			errors = append(errors, inputObservation.Error)
+			obsErrors = append(obsErrors, inputObservation.Error)
 		}
 	}
 
@@ -99,13 +104,14 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, requestI
 		timestamp = calculateMedianTimestamp(timestamps)
 	}
 
-	if len(errors) >= r.f+1 {
+	if len(obsErrors) >= r.f+1 {
 		consensusFailedMsg := fmt.Sprintf(
 			"consensus calculation failed: received %d errors which is >= f+1 (%d) for requestID %s; Consensus metadata, descriptor and default: %+v; Errors received: %s",
-			len(errors), r.f+1, requestID, consensusMDD, formatErrorsForLogging(ctx, errors),
+			len(obsErrors), r.f+1, requestID, consensusMDD, formatErrorsForLogging(ctx, obsErrors),
 		)
 
 		return outcome.FailConsensusWithDefaultCheck(ctx, r.lggr, requestID, consensusFailedMsg,
+			"consensus calculation failed: received >= f+1 error observations",
 			oracletypes.ConsensusFailureCode_RECEIVED_FPLUS1_ERRORS, consensusMDD, timestamp)
 	}
 
@@ -115,9 +121,10 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, requestI
 		valuesJSON := formatValuesForLogging(ctx, r.lggr, obsValues)
 		consensusFailedMsg := fmt.Sprintf(
 			"consensus calculation failed: %v; Consensus metadata, descriptor and default: %+v; Values received: %s; Errors received: %s",
-			err, consensusMDD, valuesJSON, formatErrorsForLogging(ctx, errors),
+			err, consensusMDD, valuesJSON, formatErrorsForLogging(ctx, obsErrors),
 		)
 		return outcome.FailConsensusWithDefaultCheck(ctx, r.lggr, requestID, consensusFailedMsg,
+			"consensus calculation failed: aggregation failed",
 			oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED, consensusMDD, timestamp)
 	}
 
@@ -211,6 +218,12 @@ func (r *reportingPlugin) calculateConsensusMetadataDescriptorAndDefault(observa
 }
 
 func groupAttributedObservationsByRequestID(lggr logger.Logger, attributedObservations []types.AttributedObservation) map[string][]*oracletypes.RequestObservation {
+	// sort attributedObservations by oracle ID
+	// libOCR doesn't guarantee the same order across nodes (See eventTGraceTimeout() in outcome_generation_leader.go)
+	slices.SortFunc(attributedObservations, func(a, b types.AttributedObservation) int {
+		return int(a.Observer) - int(b.Observer)
+	})
+
 	requestIDToObservations := make(map[string][]*oracletypes.RequestObservation)
 	for _, ao := range attributedObservations {
 		obs := &oracletypes.Observation{}
@@ -220,7 +233,7 @@ func groupAttributedObservationsByRequestID(lggr logger.Logger, attributedObserv
 			continue
 		}
 
-		// Observations will be added in the same order as received in the attributedObservations slice
+		// the order here is consistent thanks to the initial sorting of attributedObservations
 		for requestID, reqObservation := range obs.Observations {
 			requestIDToObservations[requestID] = append(requestIDToObservations[requestID], reqObservation)
 		}

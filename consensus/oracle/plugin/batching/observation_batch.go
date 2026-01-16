@@ -60,15 +60,24 @@ func (ob *ObservationBatch) CurrentSerialisedBatchSize() int {
 	return ob.currentSerialisedBatchSize
 }
 
-func (ob *ObservationBatch) SerialiseObservationBatch() ([]byte, error) {
+func (ob *ObservationBatch) SerialiseObservationBatch(ctx context.Context) ([]byte, error) {
 	serialisedBatch, err := proto.MarshalOptions{Deterministic: true}.Marshal(&ob.Observation)
 	if err != nil {
 		return nil, fmt.Errorf("failed to serialise batch of observations: %w", err)
 	}
 
-	ob.lggr.Debugw("serialised observation batch", "numObservations", len(ob.Observations), "actualSizeBytes", len(serialisedBatch),
+	allIDs := make([]string, 0, len(ob.Observations))
+	for id := range ob.Observations {
+		allIDs = append(allIDs, id)
+	}
+
+	batchSize := len(serialisedBatch)
+	ob.metrics.RecordObservationBatchSize(ctx, float64(batchSize))
+	ob.lggr.Debugw("serialised observation batch", "numObservations", len(ob.Observations), "actualSizeBytes", batchSize,
 		"calculatedSizeBytes", ob.currentSerialisedBatchSize,
-		"maxObservationLengthBytes", ob.maxObservationLengthBytes)
+		"maxObservationLengthBytes", ob.maxObservationLengthBytes,
+		"executionIDs", allIDs,
+	)
 
 	return serialisedBatch, nil
 }

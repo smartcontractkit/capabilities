@@ -74,7 +74,7 @@ func (i *settingsInterceptor) Initialise(ctx context.Context, deps core.Standard
 						i.lggr.Errorf("failed to update settings: %v", err)
 						continue
 					}
-					i.lggr.Info("Updated settings", "hash", update.Hash)
+					i.lggr.Infow("Updated settings", "hash", update.Hash)
 				}
 			}
 		}(context.WithoutCancel(ctx))

@@ -24,6 +24,7 @@ import (
 	"github.com/smartcontractkit/capabilities/consensus/oracle/plugin"
 	"github.com/smartcontractkit/capabilities/consensus/oracle/transmitter"
 	"github.com/smartcontractkit/capabilities/consensus/oracle/types"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
@@ -41,13 +42,14 @@ import (
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2/types"
 )
 
-const defaultMaxRequestOutcomeSize = 10000
-const defaultKeyBundleIDForValueConsensus = "evm"
-
-const KeyBundleIDEvm = "evm"
-const KeyBundleIDAptos = "aptos"
-const SigningAlgoEcdsa = "ecdsa"
-const HashingAlgoKeccak256 = "keccak256"
+const (
+	defaultMaxRequestOutcomeSize        = 10000
+	defaultKeyBundleIDForValueConsensus = "evm"
+	KeyBundleIDEvm                      = "evm"
+	KeyBundleIDAptos                    = "aptos"
+	SigningAlgoEcdsa                    = "ecdsa"
+	HashingAlgoKeccak256                = "keccak256"
+)
 
 type ConsensusCapabilityConfig struct {
 	RequestBatchSize             int
@@ -87,7 +89,8 @@ func (s *storeStatsCollector) SetRequestCount(requestCount int) {
 // response cache expiry controls how long a response for a given request is cached before it is considered expired and evicted. This allows
 // the capability to respond to slow requests sent after consensus has been reached.
 func NewConsensusCapability(lggr logger.Logger, clock clockwork.Clock, responseCacheExpiry time.Duration,
-	limitsFactory limits.Factory) (*consensusCapability, error) {
+	limitsFactory limits.Factory,
+) (*consensusCapability, error) {
 	metrics, err := metrics.NewMetrics()
 	if err != nil {
 		return nil, fmt.Errorf("error creating metrics: %w", err)
@@ -101,7 +104,7 @@ func NewConsensusCapability(lggr logger.Logger, clock clockwork.Clock, responseC
 	return &consensusCapability{
 		lggr:          lggr,
 		reqStore:      reqStore,
-		reqHandler:    requests.NewHandler[*oracle.ConsensusRequest, oracle.ConsensusResponse](lggr, reqStore, clock, responseCacheExpiry),
+		reqHandler:    requests.NewHandler(lggr, reqStore, clock, responseCacheExpiry),
 		metrics:       metrics,
 		limitsFactory: limitsFactory,
 	}, nil
@@ -205,7 +208,12 @@ func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.
 	ctx = metadata.ContextWithCRE(ctx)
 	lggr := c.requestLggr(metadata)
 
-	lggr.Debugw("received simple consensus request", "metadata", metadata, "input", input)
+	if err := decodeObservationType(lggr, input); err != nil {
+		responseAndMetadata := capabilities.ResponseAndMetadata[*valuespb.Value]{}
+		return &responseAndMetadata, caperrors.NewPublicSystemError(fmt.Errorf("failed to decode observation: %s", err), caperrors.InvalidArgument)
+	}
+
+	lggr.Debugw("received simple consensus request", "metadata", metadata)
 
 	consensusRequestMetaData := oracle.ConsensusRequestMetadata{
 		RequestMetadata: metadata,
@@ -219,15 +227,6 @@ func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.
 		return nil, reqSizeErr
 	}
 	c.metrics.RecordRequestSize(ctx, float64(requestSize))
-
-	value, err := logObservation(lggr, input, metadata)
-	if err != nil {
-		responseAndMetadata := capabilities.ResponseAndMetadata[*valuespb.Value]{
-			Response:         value,
-			ResponseMetadata: capabilities.ResponseMetadata{},
-		}
-		return &responseAndMetadata, caperrors.NewPublicSystemError(fmt.Errorf("failed to log observation: %s", err), caperrors.InvalidArgument)
-	}
 
 	callbackChan := c.sendRequest(ctx, input, consensusRequestMetaData)
 
@@ -488,26 +487,28 @@ func (c *consensusCapability) validateRequestSize(ctx context.Context, consensus
 	return int(size), nil
 }
 
-func logObservation(lggr logger.Logger, input *sdk.SimpleConsensusInputs, metadata capabilities.RequestMetadata) (*valuespb.Value, error) {
+func decodeObservationType(lggr logger.Logger, input *sdk.SimpleConsensusInputs) error {
 	switch obs := input.GetObservation().(type) {
 	case *sdk.SimpleConsensusInputs_Value:
-		val, err := values.FromProto(obs.Value)
+		_, err := values.FromProto(obs.Value)
 		if err != nil {
-			return nil, fmt.Errorf("failed to decode observation value: %w", err)
+			lggr.Debugw("failed to decode observation value", "err", err)
+			return fmt.Errorf("failed to decode observation value: %w", err)
 		}
-		lggr.Debugw("received observation value", "value", val)
+		lggr.Debugw("received observation value")
 	case *sdk.SimpleConsensusInputs_Error:
-		lggr.Debugw("observation is an error", "error", obs.Error)
+		lggr.Debugw("observation is an error")
 	default:
 		if input.Default != nil {
 			val, err := values.FromProto(input.Default)
 			if err != nil {
-				return nil, fmt.Errorf("failed to decode observation value: %w", err)
+				lggr.Debugw("failed to decode default observation value", "err", err)
+				return fmt.Errorf("failed to decode default observation value: %w", err)
 			}
-			lggr.Debugw("serialised default value", "value", val)
+			lggr.Debugw("serialised and using default value", "default_value", val)
 		} else {
-			lggr.Debugw("neither value, error or default is set in the observation input for request", "metadata", metadata)
+			lggr.Debugw("neither value, error or default is set in the observation input for request")
 		}
 	}
-	return nil, nil
+	return nil
 }

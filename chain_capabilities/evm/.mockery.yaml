@@ -7,16 +7,9 @@ packages:
   github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions:
     interfaces:
       ConsensusHandler:
-  github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus:
-    interfaces:
-      Poller:
-  github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/height:
+  github.com/smartcontractkit/capabilities/chain_capabilities/evm/height:
     interfaces:
       HeaderProvider:
-  github.com/smartcontractkit/capabilities/chain_capabilities/evm/consensus/oracle:
-    interfaces:
-      BlocksProvider:
-      RequestsHandler:
   github.com/smartcontractkit/chainlink-common/pkg/beholder:
     config:
       dir: ../monitoring/mocks

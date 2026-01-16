@@ -30,6 +30,7 @@ func (r *reportingPlugin) Reports(ctx context.Context, seqNr uint64, outcome ocr
 	}
 
 	var reports []ocr3types.ReportPlus[[]byte]
+	var successIDs, failureIDs []string
 
 	// Create a report for each outcome
 	for _, reqOutcome := range requestsOutcome.Outcomes {
@@ -75,6 +76,28 @@ func (r *reportingPlugin) Reports(ctx context.Context, seqNr uint64, outcome ocr
 
 			reportWithMetaData := append(metadataPrepend, report...)
 
+			// Check if the report is too large to transmit
+			if len(reportWithMetaData) > r.maxReportLengthBytes {
+				r.lggr.Errorw("report is too large to transmit", "requestID", reqMetadata.RequestId,
+					"reportSize", len(reportWithMetaData), "maxReportLengthBytes", r.maxReportLengthBytes)
+				failureMsg := fmt.Sprintf(
+					"report too large: the report for this request is %d bytes which exceeds the maximum allowed size of %d bytes; reduce the size of the data being returned",
+					len(reportWithMetaData), r.maxReportLengthBytes)
+				info, err := createFailedConsensusReportInfo(reqMetadata.RequestId, reqMetadata.KeyBundleId, failureMsg,
+					oracletypes.ConsensusFailureCode_REPORT_TOO_LARGE)
+				if err != nil {
+					return nil, fmt.Errorf("failed to create report info for oversized report %s: %w", reqMetadata.RequestId, err)
+				}
+				reports = append(reports, ocr3types.ReportPlus[[]byte]{
+					ReportWithInfo: ocr3types.ReportWithInfo[[]byte]{
+						Report: []byte{},
+						Info:   info,
+					},
+					TransmissionScheduleOverride: nil,
+				})
+				continue
+			}
+
 			info, err := createSuccessfulConsensusReportInfo(reqMetadata)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create report info for successful consensus request %s: %w", reqMetadata.RequestId, err)
@@ -87,13 +110,14 @@ func (r *reportingPlugin) Reports(ctx context.Context, seqNr uint64, outcome ocr
 				},
 				TransmissionScheduleOverride: nil,
 			})
+			successIDs = append(successIDs, reqMetadata.RequestId)
 		case *oracletypes.ConsensusOutcome_Failure:
 			failedOutcome := v.Failure
 			r.lggr.Debugw("received failed consensus outcome", "requestID", failedOutcome.RequestID)
 			info, err := createFailedConsensusReportInfo(failedOutcome.RequestID, failedOutcome.KeyBundleId, failedOutcome.FailureMessage,
 				failedOutcome.Code)
 			if err != nil {
-				return nil, fmt.Errorf("failed to create report info for successful consensus request %s: %w", failedOutcome.RequestID, err)
+				return nil, fmt.Errorf("failed to create report info for failed consensus outcome %s: %w", failedOutcome.RequestID, err)
 			}
 
 			reports = append(reports, ocr3types.ReportPlus[[]byte]{
@@ -103,12 +127,13 @@ func (r *reportingPlugin) Reports(ctx context.Context, seqNr uint64, outcome ocr
 				},
 				TransmissionScheduleOverride: nil,
 			})
+			failureIDs = append(failureIDs, failedOutcome.RequestID)
 		default:
 			r.lggr.Warnw("received unknown consensus outcome type", "outcome", outcome)
 		}
 	}
 
-	r.lggr.Debug("consensus plugin reports complete, number of reports ", len(reports))
+	r.lggr.Debugw("consensus plugin reports complete", "numReports", len(reports), "successIDs", successIDs, "failureIDs", failureIDs)
 	return reports, nil
 }
 
