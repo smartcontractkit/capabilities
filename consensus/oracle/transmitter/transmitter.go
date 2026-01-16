@@ -61,9 +61,6 @@ func (c *ContractTransmitter) Transmit(ctx context.Context, configDigest types.C
 			// This is considered to be a user error as the caller of the consensus capability has sent too many errors and
 			// so consensus cannot be reached.
 			failureErr = caperrors.NewPublicUserError(errors.New(failureMessageStr), caperrors.ConsensusFailed)
-		case oracletypes.ConsensusFailureCode_OBSERVATION_TOO_LARGE:
-			// Observation too large is a user error - the caller should reduce the size of their request
-			failureErr = caperrors.NewPublicUserError(errors.New(failureMessageStr), caperrors.ConsensusFailed)
 		default:
 			failureErr = caperrors.NewPublicSystemError(errors.New(failureMessageStr), caperrors.ConsensusFailed)
 		}
