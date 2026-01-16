@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -1066,4 +1067,42 @@ func createReportingPlugin(t *testing.T, lggr logger.Logger, f int, n int,
 	}, "evm", maxRequestOutcomeSize)
 	require.NoError(t, err)
 	return reportingPlugin, reqStore
+}
+
+// Test_QuorumReachedWithSomeOversizedRequests verifies that consensus can be reached
+// even when some nodes have oversized requests that are converted to error inputs.
+// This simulates the scenario where some HTTP endpoints return oversized data near the cutoff,
+// but a quorum of nodes get correctly sized data and can still reach consensus.
+func Test_QuorumReachedWithSomeOversizedRequests(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := t.Context()
+
+	md1 := newRequestMetaData()
+	md1.KeyBundleID = "evm"
+
+	// Create error input that simulates an oversized request error
+	// This is what would be sent when validateRequestSize returns a user error
+	oversizedError := "request size 1048577 bytes exceeds maximum allowed size: PerWorkflow.Consensus.ObservationSizeLimit limited for workflow[wf-id]: cannot use 1.000001mb, limit is 1mb"
+
+	reqToObservations := map[string]*consensusPluginTest{
+		md1.RequestID(): {
+			requests: []*oracle.ConsensusRequest{
+				// 5 nodes have valid observations (quorum)
+				newCr(t, 10, md1),
+				newCr(t, 20, md1),
+				newCr(t, 30, md1),
+				newCr(t, 40, md1),
+				newCr(t, 50, md1),
+				// 2 nodes have oversized requests converted to error inputs (below f+1 = 3)
+				newCrWithError(t, errors.New(oversizedError), md1),
+				newCrWithError(t, errors.New(oversizedError), md1),
+			},
+			verifyReport: func(t *testing.T, report ocr3types.ReportPlus[[]byte], infos *structpb.Struct) {
+				// With 5 valid observations and median aggregation, the median should be 30
+				verifyValueConsensusReport(t, report, infos, values.NewInt64(30), "evm")
+			},
+		},
+	}
+
+	runProtocolRoundTests(ctx, t, lggr, n, f, reqToObservations)
 }

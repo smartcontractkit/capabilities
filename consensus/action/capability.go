@@ -243,8 +243,26 @@ func (c *consensusCapability) Simple(ctx context.Context, metadata capabilities.
 
 	requestSize, reqSizeErr := c.validateRequestSize(ctx, lggr, consensusRequestMetaData, input)
 	if reqSizeErr != nil {
-		return nil, reqSizeErr
+		var capErr caperrors.Error
+		if errors.As(reqSizeErr, &capErr) && capErr.Origin() != caperrors.OriginUser {
+			// Return system errors immediately
+			lggr.Errorw("failed to validate request size", "err", reqSizeErr)
+			return nil, reqSizeErr
+		}
+
+		lggr.Debugw("request size validation failed with user error, sending as error input to consensus",
+			"err", reqSizeErr,
+			"requestSize", requestSize)
+
+		input = &sdk.SimpleConsensusInputs{
+			Observation: &sdk.SimpleConsensusInputs_Error{
+				Error: reqSizeErr.Error(),
+			},
+			Descriptors: input.Descriptors,
+			Default:     input.Default,
+		}
 	}
+
 	c.metrics.RecordRequestSize(ctx, float64(requestSize))
 
 	callbackChan := c.sendRequest(ctx, input, consensusRequestMetaData)
@@ -300,12 +318,6 @@ func (c *consensusCapability) Report(ctx context.Context, metadata capabilities.
 		RequestType:     types.RequestType_REPORT_GENERATION,
 	}
 
-	requestSize, reqSizeErr := c.validateRequestSize(ctx, lggr, consensusRequestMetaData, reportRequest)
-	if reqSizeErr != nil {
-		return nil, reqSizeErr
-	}
-	c.metrics.RecordRequestSize(ctx, float64(requestSize))
-
 	input := &sdk.SimpleConsensusInputs{
 		Observation: &sdk.SimpleConsensusInputs_Value{
 			Value: values.Proto(values.NewBytes(reportRequest.EncodedPayload)),
@@ -317,6 +329,33 @@ func (c *consensusCapability) Report(ctx context.Context, metadata capabilities.
 		},
 		Default: nil,
 	}
+
+	requestSize, reqSizeErr := c.validateRequestSize(ctx, lggr, consensusRequestMetaData, reportRequest)
+	if reqSizeErr != nil {
+		var capErr caperrors.Error
+		if errors.As(reqSizeErr, &capErr) && capErr.Origin() != caperrors.OriginUser {
+			// Return system errors immediately
+			lggr.Errorw("failed to validate request size", "err", reqSizeErr)
+			return nil, reqSizeErr
+		}
+		lggr.Debugw("request size validation failed with user error, sending as error input to consensus",
+			"err", reqSizeErr,
+			"requestSize", requestSize)
+
+		input = &sdk.SimpleConsensusInputs{
+			Observation: &sdk.SimpleConsensusInputs_Error{
+				Error: reqSizeErr.Error(),
+			},
+			Descriptors: &sdk.ConsensusDescriptor{
+				Descriptor_: &sdk.ConsensusDescriptor_Aggregation{
+					Aggregation: sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL,
+				},
+			},
+			Default: nil,
+		}
+	}
+
+	c.metrics.RecordRequestSize(ctx, float64(requestSize))
 
 	callbackChan := c.sendRequest(ctx, input, consensusRequestMetaData)
 
@@ -485,7 +524,7 @@ func (c *consensusCapability) Description() string {
 // validateRequestSize ensures the combined size of input and metadata does not exceed the allowed limit.
 // This prevents oversized requests that could disrupt the consensus process.
 func (c *consensusCapability) validateRequestSize(ctx context.Context, lggr logger.Logger, consensusRequestMetaData oracle.ConsensusRequestMetadata, input proto.Message) (int, caperrors.Error) {
-	lggr.Debugw("validateRequestSize: starting request size validation",
+	lggr.Debugw("starting request size validation",
 		"requestID", consensusRequestMetaData.RequestID(),
 		"workflowID", consensusRequestMetaData.WorkflowID)
 
@@ -493,22 +532,18 @@ func (c *consensusCapability) validateRequestSize(ctx context.Context, lggr logg
 
 	serialisedInput, err := proto.Marshal(input)
 	if err != nil {
-		lggr.Errorw("validateRequestSize: failed to serialise input", "err", err)
 		return 0, caperrors.NewPublicSystemError(fmt.Errorf("failed to serialise input: %w", err), caperrors.Internal)
 	}
 	inputSize := len(serialisedInput)
-	lggr.Debugw("validateRequestSize: input serialised", "inputSizeBytes", inputSize)
 
 	serialisedMetadata, err := proto.Marshal(requestMetaData)
 	if err != nil {
-		lggr.Errorw("validateRequestSize: failed to serialise metadata", "err", err)
 		return 0, caperrors.NewPublicSystemError(fmt.Errorf("failed to serialise metadata: %w", err), caperrors.Internal)
 	}
 	metadataSize := len(serialisedMetadata)
-	lggr.Debugw("validateRequestSize: metadata serialised", "metadataSizeBytes", metadataSize)
 
 	totalSize := config.Size(inputSize + metadataSize)
-	lggr.Debugw("validateRequestSize: calculated total size",
+	lggr.Debugw("calculated total size",
 		"inputSizeBytes", inputSize,
 		"metadataSizeBytes", metadataSize,
 		"totalSizeBytes", int(totalSize))
@@ -516,9 +551,9 @@ func (c *consensusCapability) validateRequestSize(ctx context.Context, lggr logg
 	// Get the limit to log it
 	limit, limitErr := c.maxRequestSizeBytes.Limit(ctx)
 	if limitErr != nil {
-		lggr.Warnw("validateRequestSize: failed to get limit, proceeding with check", "err", limitErr)
+		lggr.Warnw("failed to get limit, proceeding with check", "err", limitErr)
 	} else {
-		lggr.Debugw("validateRequestSize: retrieved limit", "limitBytes", int(limit))
+		lggr.Debugw("retrieved limit", "limitBytes", int(limit))
 	}
 
 	err = c.maxRequestSizeBytes.Check(ctx, totalSize)
@@ -526,24 +561,23 @@ func (c *consensusCapability) validateRequestSize(ctx context.Context, lggr logg
 		if errors.Is(err, limits.ErrorBoundLimited[config.Size]{}) {
 			var limitErr limits.ErrorBoundLimited[config.Size]
 			if errors.As(err, &limitErr) {
-				lggr.Warnw("validateRequestSize: request size exceeds limit",
+				lggr.Warnw("request size exceeds limit",
 					"totalSizeBytes", int(totalSize),
 					"limitBytes", int(limitErr.Limit),
 					"excessBytes", int(totalSize-limitErr.Limit),
 					"inputSizeBytes", inputSize,
 					"metadataSizeBytes", metadataSize)
 			} else {
-				lggr.Warnw("validateRequestSize: request size exceeds limit",
+				lggr.Warnw("request size exceeds limit",
 					"totalSizeBytes", int(totalSize),
 					"err", err)
 			}
 			return int(totalSize), caperrors.NewPublicUserError(fmt.Errorf("request size %d bytes exceeds maximum allowed size: %w", totalSize, err), caperrors.InvalidArgument)
 		}
-		lggr.Errorw("validateRequestSize: unexpected error from limit check", "err", err)
 		return int(totalSize), caperrors.NewPublicSystemError(fmt.Errorf("unexpected error checking request size limit: %w", err), caperrors.Internal)
 	}
 
-	lggr.Debugw("validateRequestSize: request size validation passed",
+	lggr.Debugw("request size validation passed",
 		"totalSizeBytes", int(totalSize),
 		"limitBytes", int(limit))
 	return int(totalSize), nil
