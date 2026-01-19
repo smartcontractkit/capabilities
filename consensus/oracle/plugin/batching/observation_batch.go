@@ -47,6 +47,7 @@ func (ob *ObservationBatch) AddObservation(ctx context.Context, reqObs *oraclety
 
 	if !ok {
 		ob.metrics.IncBatchCapacityExceeded(ctx, "observation")
+		// Observation doesn't fit in current batch - will retry next round when batch is empty
 		return false
 	}
 

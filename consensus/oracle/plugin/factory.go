@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	defaultMaxPhaseOutputBytes              = 1_000_000 // 1 MB
-	defaultMaxReportLengthBytes             = 100_000   // 100 KB
+	defaultMaxPhaseOutputBytes              = uint32(ocr3types.MaxMaxObservationLength)
+	defaultMaxReportLengthBytes             = uint32(100_000) // 100 KB
 	defaultMaxReportCount                   = 100
 	defaultRequestExpiry                    = 20 * time.Second
 	defaultHistoricalOutcomeExpirySeqNrSpan = uint64(4)
@@ -46,7 +46,8 @@ type factory struct {
 
 func NewReportingPluginFactory(lggr logger.Logger, metrics *metrics.Metrics, s *requests.Store[*oracle.ConsensusRequest],
 	setRequestTimeout SetRequestTimeout, defaultKeyBundleIDForConsensusFailure string,
-	maxRequestOutcomeSize int) (*factory, error) {
+	maxRequestOutcomeSize int,
+) (*factory, error) {
 	return &factory{
 		store:                                 s,
 		setRequestTimeout:                     setRequestTimeout,

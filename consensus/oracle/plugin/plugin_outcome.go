@@ -116,7 +116,6 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, requestI
 	}
 
 	value, err := oracle.CalculateOutcomeForObservations(r.lggr, obsValues, consensusMDD.Input.Descriptors, consensusMDD.Input.Default, r.f)
-
 	if err != nil {
 		valuesJSON := formatValuesForLogging(ctx, r.lggr, obsValues)
 		consensusFailedMsg := fmt.Sprintf(
@@ -203,7 +202,6 @@ func (r *reportingPlugin) calculateConsensusMetadataDescriptorAndDefault(observa
 	consensusMDDBytes, err := oracle.CalculateOutcomeForObservations(r.lggr, allObservationsMDDBytes,
 		&sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL}},
 		nil, r.f)
-
 	if err != nil {
 		return nil, err
 	}

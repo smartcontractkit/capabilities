@@ -29,9 +29,7 @@ type ContractTransmitter struct {
 	sendResponse SendResponse
 }
 
-func (c *ContractTransmitter) Transmit(ctx context.Context, configDigest types.ConfigDigest, seqNr uint64,
-	rwi ocr3types.ReportWithInfo[[]byte], signatures []types.AttributedOnchainSignature) error {
-
+func (c *ContractTransmitter) Transmit(ctx context.Context, configDigest types.ConfigDigest, seqNr uint64, rwi ocr3types.ReportWithInfo[[]byte], signatures []types.AttributedOnchainSignature) error {
 	unmarshalledInfo := new(structpb.Struct)
 	err := proto.Unmarshal(rwi.Info, unmarshalledInfo)
 	if err != nil {

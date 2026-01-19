@@ -227,7 +227,6 @@ func Test_HistoricalOutcomesAreRemovedOnExpiry(t *testing.T) {
 					require.Len(t, outcome.HistoricalOutcomes, 0)
 				}
 			}
-
 		}
 
 		previousOutcome = runProtocolRoundTestsWithPlugins(ctx, t, reqToObservations, pluginsAndStores, ocr3types.OutcomeContext{

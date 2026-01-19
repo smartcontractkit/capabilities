@@ -227,7 +227,7 @@ func Test_ReportRequiresValidEncoderName(t *testing.T) {
 	require.ErrorContains(t, err, "unsupported encoder name")
 }
 
-func Test_SimpleInputsSizeValidation(t *testing.T) {
+func Test_SimpleInputsSizeValidation_UserErrorSentToConsensus(t *testing.T) {
 	lggr := logger.Test(t)
 	ctx := t.Context()
 
@@ -267,14 +267,72 @@ func Test_SimpleInputsSizeValidation(t *testing.T) {
 		Descriptors: &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL}},
 	}
 
+	// User error should be sent as error input to consensus, which will result in a consensus failure
+	// if >= f+1 nodes have the same error, or consensus success if quorum has valid observations
 	_, err = capability.Simple(ctx, metadata, input)
 	require.Error(t, err)
-	require.ErrorContains(t, err, "PerWorkflow.Consensus.ObservationSizeLimit limited for workflow[wf-id]: cannot use 47b, limit is 2b")
+	// The error should be a consensus failure since all nodes will have the same oversized request
 	var capErr caperrors.Error
 	errors.As(err, &capErr)
-	require.Equal(t, caperrors.InvalidArgument, capErr.Code())
-	require.Equal(t, caperrors.OriginUser, capErr.Origin())
-	require.Equal(t, caperrors.VisibilityPublic, capErr.Visibility())
+	require.Equal(t, caperrors.ConsensusFailed, capErr.Code())
+}
+
+func Test_SimpleRequestSizeValidation(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := t.Context()
+
+	capability, err := NewConsensusCapability(lggr, clockwork.NewRealClock(), time.Minute, limits.Factory{Logger: lggr})
+	require.NoError(t, err)
+
+	oracleFactory := testutils.NewOracleFactory(t, lggr)
+
+	// Set MaxRequestSizeBytes to 2MB
+	capConfig := &ConsensusCapabilityConfig{
+		MaxRequestSizeBytes: 2000000, // 2MB
+	}
+
+	capConfigJSON, err := json.Marshal(capConfig)
+	require.NoError(t, err)
+
+	err = capability.Initialise(ctx, core.StandardCapabilitiesDependencies{
+		Config:        string(capConfigJSON),
+		OracleFactory: oracleFactory,
+	})
+	require.NoError(t, err)
+
+	servicetest.Run(t, capability)
+
+	metadata := capabilities.RequestMetadata{
+		WorkflowID:               "wf-id",
+		WorkflowOwner:            "",
+		WorkflowExecutionID:      "wex-id",
+		WorkflowName:             "",
+		WorkflowDonID:            0,
+		WorkflowDonConfigVersion: 0,
+		ReferenceID:              "1",
+		DecodedWorkflowName:      "",
+	}
+
+	// Create a request that exceeds the limit
+	largeData := make([]byte, 2100000)
+	for i := range largeData {
+		largeData[i] = 'x'
+	}
+	largeValue, err := values.Wrap(string(largeData))
+	require.NoError(t, err)
+
+	input := &sdk.SimpleConsensusInputs{
+		Observation: &sdk.SimpleConsensusInputs_Value{Value: values.Proto(largeValue)},
+		Descriptors: &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL}},
+	}
+
+	// User error should be sent as error input to consensus, which will result in a consensus failure
+	// since all nodes will have the same oversized request
+	_, err = capability.Simple(ctx, metadata, input)
+	require.Error(t, err)
+	var capErr caperrors.Error
+	errors.As(err, &capErr)
+	require.Equal(t, caperrors.ConsensusFailed, capErr.Code())
 }
 
 func Test_ToReportID(t *testing.T) {
@@ -350,7 +408,6 @@ func Test_ToReportID(t *testing.T) {
 
 func newRequestMetaData() capabilities.RequestMetadata {
 	return capabilities.RequestMetadata{
-
 		WorkflowID:    "0039525c34de895c8fa68006bd63f6ce4a45ef1bc66377e791c6a8ae803dc0e4",
 		WorkflowOwner: "1139525c34de895c8fa68006bd634387a9f1192a",
 
