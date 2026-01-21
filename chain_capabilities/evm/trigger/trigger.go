@@ -334,9 +334,11 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	return logCh, nil
 }
 
-// TODO: Whatever wraps LogTriggerService needs to call this
-func (lts *LogTriggerService) AckEvent(ctx context.Context, triggerId, workflowId, eventId string) error {
-	return lts.baseTrigger.AckEvent(ctx, triggerId, workflowId, eventId)
+func (lts *LogTriggerService) AckEvent(ctx context.Context, triggerId string, eventId string, workflowId string) caperrors.Error {
+	if err := lts.baseTrigger.AckEvent(ctx, triggerId, eventId, workflowId); err != nil {
+		return caperrors.NewPrivateSystemError(err, caperrors.Internal)
+	}
+	return nil
 }
 
 func (lts *LogTriggerService) getTopics(input *evmcappb.FilterLogTriggerRequest) ([][]byte, [][]byte, [][]byte, [][]byte) {
