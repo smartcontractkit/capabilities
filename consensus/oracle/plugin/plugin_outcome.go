@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/cloudevents/sdk-go/v2/event/datacodec/json"
@@ -117,10 +118,10 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, requestI
 
 	value, err := oracle.CalculateOutcomeForObservations(r.lggr, obsValues, consensusMDD.Input.Descriptors, consensusMDD.Input.Default, r.f)
 	if err != nil {
-		valuesJSON := formatValuesForLogging(ctx, r.lggr, obsValues)
+		valuesInfo := formatValuesInfoForLogging(obsValues)
 		consensusFailedMsg := fmt.Sprintf(
-			"consensus calculation failed: %v; Consensus metadata, descriptor and default: %+v; Values received: %s; Errors received: %s",
-			err, consensusMDD, valuesJSON, formatErrorsForLogging(ctx, obsErrors),
+			"consensus calculation failed: %v; Consensus metadata, descriptor and default: %+v; %s; Errors received: %s",
+			err, consensusMDD, valuesInfo, formatErrorsForLogging(ctx, obsErrors),
 		)
 		return outcome.FailConsensusWithDefaultCheck(ctx, r.lggr, requestID, consensusFailedMsg,
 			"consensus calculation failed: aggregation failed",
@@ -131,40 +132,75 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, requestI
 }
 
 func formatErrorsForLogging(ctx context.Context, errors []string) string {
-	b, err := json.Encode(ctx, errors)
+	// Deduplicate unique error strings while preserving order
+	seen := make(map[string]bool)
+	uniqueErrors := make([]string, 0, len(errors))
+	for _, err := range errors {
+		if !seen[err] {
+			seen[err] = true
+			uniqueErrors = append(uniqueErrors, err)
+		}
+	}
+
+	b, err := json.Encode(ctx, uniqueErrors)
 	if err != nil {
 		return "could not marshal errors"
 	}
 	return string(b)
 }
 
-func formatValuesForLogging(ctx context.Context, lggr logger.Logger, obsValues []*valuespb.Value) string {
-	var unwrappedValues []any
-	for _, protoVal := range obsValues {
-		val, err := values.FromProto(protoVal)
-		if err != nil {
-			lggr.Warnw("could not convert observation value from proto", "error", err)
+// formatValuesInfoForLogging extracts type information from values without exposing customer data.
+func formatValuesInfoForLogging(obsValues []*valuespb.Value) string {
+	if len(obsValues) == 0 {
+		return "Values count: 0"
+	}
+
+	typeCounts := make(map[string]int)
+	for _, val := range obsValues {
+		if val == nil {
+			typeCounts["nil"]++
 			continue
 		}
 
-		if val == nil {
-			unwrappedValues = append(unwrappedValues, nil)
-		} else {
-			unwrappedValue, err := val.Unwrap()
-			if err != nil {
-				lggr.Warnw("could not unwrap observation value", "error", err)
-				continue
-			}
-			unwrappedValues = append(unwrappedValues, unwrappedValue)
+		// Check type without unwrapping the actual value
+		switch val.GetValue().(type) {
+		case *valuespb.Value_StringValue:
+			typeCounts["string"]++
+		case *valuespb.Value_Int64Value:
+			typeCounts["int64"]++
+		case *valuespb.Value_Uint64Value:
+			typeCounts["uint64"]++
+		case *valuespb.Value_Float64Value:
+			typeCounts["float64"]++
+		case *valuespb.Value_BoolValue:
+			typeCounts["bool"]++
+		case *valuespb.Value_BytesValue:
+			typeCounts["bytes"]++
+		case *valuespb.Value_DecimalValue:
+			typeCounts["decimal"]++
+		case *valuespb.Value_BigintValue:
+			typeCounts["bigint"]++
+		case *valuespb.Value_TimeValue:
+			typeCounts["time"]++
+		case *valuespb.Value_MapValue:
+			typeCounts["map"]++
+		case *valuespb.Value_ListValue:
+			typeCounts["list"]++
+		default:
+			typeCounts["unknown"]++
 		}
 	}
 
-	valuesJSON, err := json.Encode(ctx, unwrappedValues)
-	if err != nil {
-		lggr.Warnw("could not marshal observation values to json", "error", err)
-		return "could not marshal observation values"
+	// Format as "Values count: 5 (3 string, 2 int64)" for better debugging without exposing data
+	var parts []string
+	for typ, count := range typeCounts {
+		parts = append(parts, fmt.Sprintf("%d %s", count, typ))
 	}
-	return string(valuesJSON)
+
+	if len(parts) > 0 {
+		return fmt.Sprintf("Values count: %d (%s)", len(obsValues), strings.Join(parts, ", "))
+	}
+	return fmt.Sprintf("Values count: %d", len(obsValues))
 }
 
 // verifyMetadataDescriptorAndDefaultMatchConsensus checks if the observation's metadata, descriptor and default match the consensus.
