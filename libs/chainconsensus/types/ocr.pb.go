@@ -349,11 +349,12 @@ func (*RequestObservation_Aggregatable) isRequestObservation_Observation() {}
 func (*RequestObservation_Error) isRequestObservation_Observation() {}
 
 type Observation struct {
-	state         protoimpl.MessageState         `protogen:"open.v1"`
-	ChainHeight   *ChainHeight                   `protobuf:"bytes,1,opt,name=chainHeight,proto3" json:"chainHeight,omitempty"`
-	Observations  map[string]*RequestObservation `protobuf:"bytes,2,rep,name=observations,proto3" json:"observations,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state             protoimpl.MessageState         `protogen:"open.v1"`
+	ChainHeight       *ChainHeight                   `protobuf:"bytes,1,opt,name=chainHeight,proto3" json:"chainHeight,omitempty"`
+	Observations      map[string]*RequestObservation `protobuf:"bytes,2,rep,name=observations,proto3" json:"observations,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	MissingRequestIDs []string                       `protobuf:"bytes,3,rep,name=missingRequestIDs,proto3" json:"missingRequestIDs,omitempty"` // list of requests IDs that are known by observer, but not requested by leader
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *Observation) Reset() {
@@ -396,6 +397,13 @@ func (x *Observation) GetChainHeight() *ChainHeight {
 func (x *Observation) GetObservations() map[string]*RequestObservation {
 	if x != nil {
 		return x.Observations
+	}
+	return nil
+}
+
+func (x *Observation) GetMissingRequestIDs() []string {
+	if x != nil {
+		return x.MissingRequestIDs
 	}
 	return nil
 }
@@ -567,11 +575,12 @@ func (*RequestOutcome_Aggregatable) isRequestOutcome_Outcome() {}
 func (*RequestOutcome_Error) isRequestOutcome_Outcome() {}
 
 type Outcome struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ChainHeight   *ChainHeight           `protobuf:"bytes,1,opt,name=chainHeight,proto3" json:"chainHeight,omitempty"`
-	Outcomes      []*RequestOutcome      `protobuf:"bytes,2,rep,name=outcomes,proto3" json:"outcomes,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	ChainHeight       *ChainHeight           `protobuf:"bytes,1,opt,name=chainHeight,proto3" json:"chainHeight,omitempty"`
+	Outcomes          []*RequestOutcome      `protobuf:"bytes,2,rep,name=outcomes,proto3" json:"outcomes,omitempty"`
+	MissingRequestIDs []string               `protobuf:"bytes,3,rep,name=missingRequestIDs,proto3" json:"missingRequestIDs,omitempty"` // list of requests IDs that are known by F+1 observers, but not requested by leader
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *Outcome) Reset() {
@@ -614,6 +623,13 @@ func (x *Outcome) GetChainHeight() *ChainHeight {
 func (x *Outcome) GetOutcomes() []*RequestOutcome {
 	if x != nil {
 		return x.Outcomes
+	}
+	return nil
+}
+
+func (x *Outcome) GetMissingRequestIDs() []string {
+	if x != nil {
+		return x.MissingRequestIDs
 	}
 	return nil
 }
@@ -761,10 +777,11 @@ const file_ocr_proto_rawDesc = "" +
 	"\x14eventuallyConsistent\x18\x02 \x01(\fH\x00R\x14eventuallyConsistent\x12[\n" +
 	"\faggregatable\x18\x03 \x01(\v25.chain_capabilities.evm.types.AggregatableObservationH\x00R\faggregatable\x12\x16\n" +
 	"\x05error\x18\x04 \x01(\fH\x00R\x05errorB\r\n" +
-	"\vobservation\"\xae\x02\n" +
+	"\vobservation\"\xdc\x02\n" +
 	"\vObservation\x12K\n" +
 	"\vchainHeight\x18\x01 \x01(\v2).chain_capabilities.evm.types.ChainHeightR\vchainHeight\x12_\n" +
-	"\fobservations\x18\x02 \x03(\v2;.chain_capabilities.evm.types.Observation.ObservationsEntryR\fobservations\x1aq\n" +
+	"\fobservations\x18\x02 \x03(\v2;.chain_capabilities.evm.types.Observation.ObservationsEntryR\fobservations\x12,\n" +
+	"\x11missingRequestIDs\x18\x03 \x03(\tR\x11missingRequestIDs\x1aq\n" +
 	"\x11ObservationsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12F\n" +
 	"\x05value\x18\x02 \x01(\v20.chain_capabilities.evm.types.RequestObservationR\x05value:\x028\x01\"&\n" +
@@ -776,10 +793,11 @@ const file_ocr_proto_rawDesc = "" +
 	"\x14eventuallyConsistent\x18\x03 \x01(\fH\x00R\x14eventuallyConsistent\x128\n" +
 	"\faggregatable\x18\x04 \x01(\v2\x12.values.v1.DecimalH\x00R\faggregatable\x12B\n" +
 	"\x05error\x18\x05 \x01(\v2*.chain_capabilities.evm.types.RequestErrorH\x00R\x05errorB\t\n" +
-	"\aoutcome\"\xa0\x01\n" +
+	"\aoutcome\"\xce\x01\n" +
 	"\aOutcome\x12K\n" +
 	"\vchainHeight\x18\x01 \x01(\v2).chain_capabilities.evm.types.ChainHeightR\vchainHeight\x12H\n" +
-	"\boutcomes\x18\x02 \x03(\v2,.chain_capabilities.evm.types.RequestOutcomeR\boutcomes\"\xc2\x02\n" +
+	"\boutcomes\x18\x02 \x03(\v2,.chain_capabilities.evm.types.RequestOutcomeR\boutcomes\x12,\n" +
+	"\x11missingRequestIDs\x18\x03 \x03(\tR\x11missingRequestIDs\"\xc2\x02\n" +
 	"\rRequestReport\x12\x1c\n" +
 	"\trequestID\x18\x01 \x01(\tR\trequestID\x12U\n" +
 	"\x0flockableToBlock\x18\x02 \x01(\v2).chain_capabilities.evm.types.ChainHeightH\x00R\x0flockableToBlock\x124\n" +

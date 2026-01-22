@@ -42,6 +42,7 @@ message RequestObservation {
 message Observation {
   ChainHeight chainHeight = 1;
   map<string, RequestObservation> observations = 2;
+  repeated string missingRequestIDs = 3; // list of requests IDs that are known by observer, but not requested by leader
 }
 
 message RequestError {
@@ -61,6 +62,7 @@ message RequestOutcome {
 message Outcome {
   ChainHeight chainHeight = 1;
   repeated RequestOutcome outcomes = 2;
+  repeated string missingRequestIDs = 3; // list of requests IDs that are known by F+1 observers, but not requested by leader
 }
 
 message RequestReport {
