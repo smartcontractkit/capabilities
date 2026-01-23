@@ -332,6 +332,10 @@ func (rp *reportingPlugin) ValidateObservation(_ context.Context, outctx ocr3typ
 }
 
 func (rp *reportingPlugin) validateMissingRequestIDs(ob *ctypes.Observation) error {
+	if len(ob.MissingRequestIDs) > rp.config.MaxBatchSize {
+		return fmt.Errorf("too many missing request IDs: got %d, expected at most %d", len(ob.MissingRequestIDs), rp.config.MaxBatchSize)
+	}
+
 	set := make(map[string]struct{}, len(ob.MissingRequestIDs))
 	for _, id := range ob.MissingRequestIDs {
 		_, ok := set[id]

@@ -398,7 +398,7 @@ func TestValidateObservation(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			lggr := logger.Sugared(logger.Test(t))
-			plugin := newReportingPlugin(Config{}, lggr, nil, nil, test.GetConsensusMetrics(t))
+			plugin := newReportingPlugin(Config{MaxBatchSize: 10}, lggr, nil, nil, test.GetConsensusMetrics(t))
 
 			err := plugin.ValidateObservation(t.Context(), tc.outcomeContext, nil, tc.observations)
 			if tc.expectedError == "" {
