@@ -11,7 +11,11 @@ func TestErrorsForLogging(t *testing.T) {
 	t.Run("empty errors list", func(t *testing.T) {
 		result := MultipleErrs([]string{})
 
-		var decoded []map[string]interface{}
+		// Validate the marshalled string
+		require.Equal(t, "{}", result)
+
+		// Validate it can be unmarshalled
+		var decoded map[string]int
 		err := json.Unmarshal([]byte(result), &decoded)
 		require.NoError(t, err)
 		require.Empty(t, decoded)
@@ -21,31 +25,37 @@ func TestErrorsForLogging(t *testing.T) {
 		errors := []string{"error 1"}
 		result := MultipleErrs(errors)
 
-		var decoded []map[string]interface{}
+		// Validate the marshalled string is valid JSON and contains expected content
+		require.True(t, json.Valid([]byte(result)), "result should be valid JSON")
+		require.Contains(t, result, `"error 1"`)
+		require.Contains(t, result, `:1`)
+
+		// Validate it can be unmarshalled correctly
+		var decoded map[string]int
 		err := json.Unmarshal([]byte(result), &decoded)
 		require.NoError(t, err)
 		require.Len(t, decoded, 1)
-		require.Equal(t, "error 1", decoded[0]["error"])
-		require.Equal(t, float64(1), decoded[0]["count"]) // JSON numbers are float64
+		require.Equal(t, 1, decoded["error 1"])
 	})
 
 	t.Run("multiple unique errors", func(t *testing.T) {
 		errors := []string{"error 1", "error 2", "error 3"}
 		result := MultipleErrs(errors)
 
-		var decoded []map[string]interface{}
+		// Validate the marshalled string is valid JSON and contains all errors
+		require.True(t, json.Valid([]byte(result)), "result should be valid JSON")
+		require.Contains(t, result, `"error 1"`)
+		require.Contains(t, result, `"error 2"`)
+		require.Contains(t, result, `"error 3"`)
+
+		// Validate it can be unmarshalled correctly
+		var decoded map[string]int
 		err := json.Unmarshal([]byte(result), &decoded)
 		require.NoError(t, err)
 		require.Len(t, decoded, 3)
-
-		// Check that all errors are present with count 1
-		errorMap := make(map[string]float64)
-		for _, item := range decoded {
-			errorMap[item["error"].(string)] = item["count"].(float64)
-		}
-		require.Equal(t, float64(1), errorMap["error 1"])
-		require.Equal(t, float64(1), errorMap["error 2"])
-		require.Equal(t, float64(1), errorMap["error 3"])
+		require.Equal(t, 1, decoded["error 1"])
+		require.Equal(t, 1, decoded["error 2"])
+		require.Equal(t, 1, decoded["error 3"])
 	})
 
 	t.Run("duplicate errors with counts", func(t *testing.T) {
@@ -58,19 +68,20 @@ func TestErrorsForLogging(t *testing.T) {
 		}
 		result := MultipleErrs(errors)
 
-		var decoded []map[string]interface{}
+		// Validate the marshalled string is valid JSON and contains both errors with correct counts
+		require.True(t, json.Valid([]byte(result)), "result should be valid JSON")
+		require.Contains(t, result, `"request size exceeds limit"`)
+		require.Contains(t, result, `"invalid input"`)
+		require.Regexp(t, `"request size exceeds limit"\s*:\s*3`, result)
+		require.Regexp(t, `"invalid input"\s*:\s*2`, result)
+
+		// Validate it can be unmarshalled correctly
+		var decoded map[string]int
 		err := json.Unmarshal([]byte(result), &decoded)
 		require.NoError(t, err)
 		require.Len(t, decoded, 2) // Two unique errors
-
-		// Build map for easier checking
-		errorMap := make(map[string]float64)
-		for _, item := range decoded {
-			errorMap[item["error"].(string)] = item["count"].(float64)
-		}
-
-		require.Equal(t, float64(3), errorMap["request size exceeds limit"])
-		require.Equal(t, float64(2), errorMap["invalid input"])
+		require.Equal(t, 3, decoded["request size exceeds limit"])
+		require.Equal(t, 2, decoded["invalid input"])
 	})
 
 	t.Run("all same error", func(t *testing.T) {
@@ -83,12 +94,17 @@ func TestErrorsForLogging(t *testing.T) {
 		}
 		result := MultipleErrs(errors)
 
-		var decoded []map[string]interface{}
+		// Validate the marshalled string is valid JSON and contains the error and count
+		require.True(t, json.Valid([]byte(result)), "result should be valid JSON")
+		require.Contains(t, result, `"same error"`)
+		require.Regexp(t, `"same error"\s*:\s*5`, result)
+
+		// Validate it can be unmarshalled correctly
+		var decoded map[string]int
 		err := json.Unmarshal([]byte(result), &decoded)
 		require.NoError(t, err)
 		require.Len(t, decoded, 1)
-		require.Equal(t, "same error", decoded[0]["error"])
-		require.Equal(t, float64(5), decoded[0]["count"])
+		require.Equal(t, 5, decoded["same error"])
 	})
 
 	t.Run("error with special characters", func(t *testing.T) {
@@ -98,11 +114,17 @@ func TestErrorsForLogging(t *testing.T) {
 		}
 		result := MultipleErrs(errors)
 
-		var decoded []map[string]interface{}
+		// Validate the marshalled string is valid JSON and contains the error (JSON escaped) and count
+		require.True(t, json.Valid([]byte(result)), "result should be valid JSON")
+		require.Contains(t, result, `error with`)
+		require.Contains(t, result, `quotes`)
+		require.Contains(t, result, `:2`)
+
+		// Validate it can be unmarshalled correctly
+		var decoded map[string]int
 		err := json.Unmarshal([]byte(result), &decoded)
 		require.NoError(t, err)
 		require.Len(t, decoded, 1)
-		require.Equal(t, "error with \"quotes\" and\nnewlines", decoded[0]["error"])
-		require.Equal(t, float64(2), decoded[0]["count"])
+		require.Equal(t, 2, decoded["error with \"quotes\" and\nnewlines"])
 	})
 }

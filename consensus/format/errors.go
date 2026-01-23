@@ -9,20 +9,7 @@ func MultipleErrs(errors []string) string {
 		errorCounts[err]++
 	}
 
-	type errorWithCount struct {
-		Error string `json:"error"`
-		Count int    `json:"count"`
-	}
-
-	var errorsWithCounts []errorWithCount
-	for err, count := range errorCounts {
-		errorsWithCounts = append(errorsWithCounts, errorWithCount{
-			Error: err,
-			Count: count,
-		})
-	}
-
-	b, err := json.Marshal(errorsWithCounts)
+	b, err := json.Marshal(errorCounts)
 	if err != nil {
 		return "could not marshal errors"
 	}
