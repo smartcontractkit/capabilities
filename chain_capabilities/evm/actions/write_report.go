@@ -42,6 +42,7 @@ const (
 
 const UnknownIssueExecutingReceiverContractMessage = "unknown issue execution receiver contract"
 const userError = "user error:"
+const gasSpendTypePrefix = "GAS."
 
 func decodeReportMetadata(data []byte) (ocrtypes.Metadata, error) {
 	metadata, _, err := ocrtypes.Decode(data)
@@ -139,6 +140,35 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		}
 	}
 
+	// Derive MaxGasPrice from spend limit if available
+	// This ensures the transaction cost stays within the billing budget
+	gasSpendLimit := getGasSpendLimitFromMetadata(metadata, e.chainSelector)
+	// TODO: not sure if dividing with max gas limit is correct
+	// concerned that it can give a very low max gas price?
+	derivedMaxGasPrice := deriveMaxGasPriceFromSpendLimit(gasSpendLimit, request.GasConfig.GasLimit)
+
+	derivedMaxGasPrice = big.NewInt(1_050_000_000) // 1.05 Gwei - testing if cap works (above PriceMin of 1 Gwei)
+	if derivedMaxGasPrice != nil {
+		// if user did not provide a MaxGasPrice, set it to the derived value
+		if request.GasConfig.MaxGasPrice == nil {
+			request.GasConfig.MaxGasPrice = pb.NewBigIntFromInt(derivedMaxGasPrice)
+			e.lggr.Debugw("Setting MaxGasPrice from spend limit",
+				"spendLimit", gasSpendLimit.String(),
+				"gasLimit", request.GasConfig.GasLimit,
+				"derivedMaxGasPrice", derivedMaxGasPrice.String())
+		} else {
+			userMaxGasPrice := pb.NewIntFromBigInt(request.GasConfig.MaxGasPrice)
+			if derivedMaxGasPrice.Cmp(userMaxGasPrice) < 0 {
+				e.lggr.Debugw("Overriding user MaxGasPrice with stricter spend limit derived value",
+					"spendLimit", gasSpendLimit.String(),
+					"gasLimit", request.GasConfig.GasLimit,
+					"userMaxGasPrice", userMaxGasPrice.String(),
+					"derivedMaxGasPrice", derivedMaxGasPrice.String())
+				request.GasConfig.MaxGasPrice = pb.NewBigIntFromInt(derivedMaxGasPrice)
+			}
+		}
+	}
+
 	var transmissionInfo contracts.TransmissionInfo
 	transmissionInfo, err = e.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
 	if err != nil {
@@ -193,6 +223,9 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 	}
 
 	e.lggr.Debugw("Submitting transaction")
+	e.lggr.Infow("FINAL MaxGasPrice being sent",
+		"maxGasPrice", request.GasConfig.MaxGasPrice,
+		"isNil", request.GasConfig.MaxGasPrice == nil)
 	transactionResult, err := e.forwarderClient.InvokeOnReport(ctx, transmissionID.Receiver, request.Report, request.GasConfig)
 	if err != nil {
 		e.lggr.Errorw("Transaction failed", "error", err.Error())
@@ -351,6 +384,32 @@ func (e *WriteReport) fetchTransactionReceiptAndCreateReply(ctx context.Context,
 
 func ptr(s string) *string {
 	return &s
+}
+
+// getGasSpendLimitFromMetadata extracts the gas spend limit for the given chain selector
+// from the request metadata. The spend limit is in wei.
+// Returns nil if no matching gas spend limit is found.
+func getGasSpendLimitFromMetadata(metadata capabilities.RequestMetadata, chainSelector uint64) *big.Int {
+	expectedSpendType := fmt.Sprintf("%s%d", gasSpendTypePrefix, chainSelector)
+	for _, sl := range metadata.SpendLimits {
+		if string(sl.SpendType) == expectedSpendType {
+			limit, ok := new(big.Int).SetString(sl.Limit, 10)
+			if ok {
+				return limit
+			}
+		}
+	}
+	return nil
+}
+
+// deriveMaxGasPriceFromSpendLimit calculates the maximum gas price that would keep
+// the total transaction cost within the spend limit.
+// Formula: MaxGasPrice = SpendLimit / GasLimit
+func deriveMaxGasPriceFromSpendLimit(spendLimit *big.Int, gasLimit uint64) *big.Int {
+	if spendLimit == nil || gasLimit == 0 {
+		return nil
+	}
+	return new(big.Int).Div(spendLimit, big.NewInt(int64(gasLimit)))
 }
 
 func (e *EVM) validateInputsAndReportMetadata(requestMetadata capabilities.RequestMetadata, request *evm.WriteReportRequest) error {

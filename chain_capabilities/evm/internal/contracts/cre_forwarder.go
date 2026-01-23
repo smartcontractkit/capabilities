@@ -170,8 +170,16 @@ func (cfclient *creForwarderClient) InvokeOnReport(ctx context.Context, receiver
 		}
 	}
 	if gasConfig != nil && gasConfig.MaxGasPrice != nil {
-		resolvedGasConfig.MaxGasPrice = valuespb.NewIntFromBigInt(gasConfig.MaxGasPrice)
+		convertedMaxGasPrice := valuespb.NewIntFromBigInt(gasConfig.MaxGasPrice)
+		cfclient.logger.Infow("DEBUG: InvokeOnReport converting MaxGasPrice",
+			"protoMaxGasPrice", gasConfig.MaxGasPrice,
+			"convertedMaxGasPrice", convertedMaxGasPrice.String())
+		resolvedGasConfig.MaxGasPrice = convertedMaxGasPrice
 	}
+	cfclient.logger.Infow("DEBUG: InvokeOnReport final GasConfig",
+		"resolvedGasConfig", resolvedGasConfig,
+		"gasLimit", gasConfig.GasLimit,
+		"maxGasPriceIsNil", resolvedGasConfig == nil || resolvedGasConfig.MaxGasPrice == nil)
 	encodedReport, err := cfclient.forwarderCodec.EncodeReport(receiverAddress, report)
 	if err != nil {
 		return nil, err
