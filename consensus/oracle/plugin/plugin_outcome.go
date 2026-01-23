@@ -4,13 +4,12 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"strings"
 	"time"
 
-	"github.com/cloudevents/sdk-go/v2/event/datacodec/json"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/smartcontractkit/capabilities/consensus/format"
 	"github.com/smartcontractkit/capabilities/consensus/oracle"
 	"github.com/smartcontractkit/capabilities/consensus/oracle/plugin/batching"
 	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
@@ -108,7 +107,7 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, requestI
 	if len(obsErrors) >= r.f+1 {
 		consensusFailedMsg := fmt.Sprintf(
 			"consensus calculation failed: received %d errors which is >= f+1 (%d) for requestID %s; Consensus metadata, descriptor and default: %+v; Errors received: %s",
-			len(obsErrors), r.f+1, requestID, consensusMDD, formatErrorsForLogging(ctx, obsErrors),
+			len(obsErrors), r.f+1, requestID, consensusMDD, format.MultipleErrs(obsErrors),
 		)
 
 		return outcome.FailConsensusWithDefaultCheck(ctx, r.lggr, requestID, consensusFailedMsg,
@@ -118,10 +117,9 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, requestI
 
 	value, err := oracle.CalculateOutcomeForObservations(r.lggr, obsValues, consensusMDD.Input.Descriptors, consensusMDD.Input.Default, r.f)
 	if err != nil {
-		valuesInfo := formatValuesInfoForLogging(obsValues)
 		consensusFailedMsg := fmt.Sprintf(
-			"consensus calculation failed: %v; Consensus metadata, descriptor and default: %+v; %s; Errors received: %s",
-			err, consensusMDD, valuesInfo, formatErrorsForLogging(ctx, obsErrors),
+			"consensus calculation failed: %v; Consensus metadata, descriptor and default: %+v; Errors received: %s",
+			err, consensusMDD, format.MultipleErrs(obsErrors),
 		)
 		return outcome.FailConsensusWithDefaultCheck(ctx, r.lggr, requestID, consensusFailedMsg,
 			"consensus calculation failed: aggregation failed",
@@ -129,78 +127,6 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, requestI
 	}
 
 	return outcome.AddSuccessfulConsensusRequestOutcomeToBatch(ctx, consensusMDD.Metadata, value, timestamp)
-}
-
-func formatErrorsForLogging(ctx context.Context, errors []string) string {
-	// Deduplicate unique error strings while preserving order
-	seen := make(map[string]bool)
-	uniqueErrors := make([]string, 0, len(errors))
-	for _, err := range errors {
-		if !seen[err] {
-			seen[err] = true
-			uniqueErrors = append(uniqueErrors, err)
-		}
-	}
-
-	b, err := json.Encode(ctx, uniqueErrors)
-	if err != nil {
-		return "could not marshal errors"
-	}
-	return string(b)
-}
-
-// formatValuesInfoForLogging extracts type information from values without exposing customer data.
-func formatValuesInfoForLogging(obsValues []*valuespb.Value) string {
-	if len(obsValues) == 0 {
-		return "Values count: 0"
-	}
-
-	typeCounts := make(map[string]int)
-	for _, val := range obsValues {
-		if val == nil {
-			typeCounts["nil"]++
-			continue
-		}
-
-		// Check type without unwrapping the actual value
-		switch val.GetValue().(type) {
-		case *valuespb.Value_StringValue:
-			typeCounts["string"]++
-		case *valuespb.Value_Int64Value:
-			typeCounts["int64"]++
-		case *valuespb.Value_Uint64Value:
-			typeCounts["uint64"]++
-		case *valuespb.Value_Float64Value:
-			typeCounts["float64"]++
-		case *valuespb.Value_BoolValue:
-			typeCounts["bool"]++
-		case *valuespb.Value_BytesValue:
-			typeCounts["bytes"]++
-		case *valuespb.Value_DecimalValue:
-			typeCounts["decimal"]++
-		case *valuespb.Value_BigintValue:
-			typeCounts["bigint"]++
-		case *valuespb.Value_TimeValue:
-			typeCounts["time"]++
-		case *valuespb.Value_MapValue:
-			typeCounts["map"]++
-		case *valuespb.Value_ListValue:
-			typeCounts["list"]++
-		default:
-			typeCounts["unknown"]++
-		}
-	}
-
-	// Format as "Values count: 5 (3 string, 2 int64)" for better debugging without exposing data
-	var parts []string
-	for typ, count := range typeCounts {
-		parts = append(parts, fmt.Sprintf("%d %s", count, typ))
-	}
-
-	if len(parts) > 0 {
-		return fmt.Sprintf("Values count: %d (%s)", len(obsValues), strings.Join(parts, ", "))
-	}
-	return fmt.Sprintf("Values count: %d", len(obsValues))
 }
 
 // verifyMetadataDescriptorAndDefaultMatchConsensus checks if the observation's metadata, descriptor and default match the consensus.
