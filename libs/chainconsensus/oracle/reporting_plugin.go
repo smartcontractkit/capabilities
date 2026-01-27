@@ -76,18 +76,26 @@ func (rp *reportingPlugin) Query(ctx context.Context, outctx ocr3types.OutcomeCo
 	return proto.Marshal(&ctypes.Query{RequestIDs: ids})
 }
 
-func (rp *reportingPlugin) populateHeightFromPreviousOutcome(
-	observation *ctypes.Observation,
-	outctx ocr3types.OutcomeContext,
-) {
+func (rp *reportingPlugin) tryUnmarshalPreviousOutcome(outctx ocr3types.OutcomeContext) *ctypes.Outcome {
 	if len(outctx.PreviousOutcome) == 0 {
-		return
+		return nil
 	}
 
 	var previousOutcome ctypes.Outcome
 	err := proto.Unmarshal(outctx.PreviousOutcome, &previousOutcome)
 	if err != nil {
-		rp.logger.Errorw("Could not unmarshal previous outcome", "err", err, "previousOutcome", hex.EncodeToString(outctx.PreviousOutcome))
+		rp.logger.Warnw("Failed to unmarshal previous outcome", "err", err, "previousOutcome", hex.EncodeToString(outctx.PreviousOutcome))
+		return nil
+	}
+
+	return &previousOutcome
+}
+
+func (rp *reportingPlugin) populateHeightFromPreviousOutcome(
+	observation *ctypes.Observation,
+	previousOutcome *ctypes.Outcome,
+) {
+	if previousOutcome == nil {
 		return
 	}
 
@@ -118,7 +126,8 @@ func (rp *reportingPlugin) Observation(
 	}
 	observation := &ctypes.Observation{ChainHeight: &chainHeight, Observations: make(map[string]*ctypes.RequestObservation, len(query.RequestIDs))}
 
-	rp.populateHeightFromPreviousOutcome(observation, outctx)
+	previousOutcome := rp.tryUnmarshalPreviousOutcome(outctx)
+	rp.populateHeightFromPreviousOutcome(observation, previousOutcome)
 
 	err := validateChainHeight(observation.ChainHeight)
 	if err != nil {
@@ -130,35 +139,29 @@ func (rp *reportingPlugin) Observation(
 		"safe", observation.ChainHeight.Safe,
 		"latest", observation.ChainHeight.Latest)
 
-	const observationFieldProtoKey = 2
-	currentSize := proto.Size(observation)
-	for i, requestID := range query.RequestIDs {
-		request, ok := rp.requestsStore.GetRequest(requestID)
-		if !ok {
-			continue
-		}
+	roundRequestIDs := make(map[string]struct{}, len(query.RequestIDs))
+	for _, requestID := range query.RequestIDs {
+		roundRequestIDs[requestID] = struct{}{}
+	}
 
-		reqObservation, err := rp.getObservationForRequest(request)
-		if err != nil {
-			return nil, fmt.Errorf("failed to observe request: %w", err)
-		}
+	// suggest requests to be processed in the next round
+	observation.MissingRequestIDs, err = rp.getMissingRequestIDs(roundRequestIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get missing request IDs: %w", err)
+	}
 
-		if reqObservation == nil {
-			rp.logger.Debugw("No observation for request", "requestID", requestID)
-			continue
-		}
+	// due to errors in ragep2p, leader might have not received all requests, thus they are missing in the query.
+	// Since F+1 nodes agreed in previous round on which requests are missing, it's safe to try to add observations
+	// for those before processing the current query.
+	err = rp.addObservationsOfPrevMissingRequests(ctx, roundRequestIDs, previousOutcome, observation)
+	if err != nil {
+		return nil, fmt.Errorf("failed to add observations for missing requests from previous outcome: %w", err)
+	}
 
-		newSize, ok := hasCapacityToAdd(currentSize, observationFieldProtoKey, requestID, reqObservation, rp.config.MaxObservationLength)
-		if !ok {
-			rp.logger.Info("Observation exceeds max size, skipping request", "id", requestID, "request_in_batch", len(query.RequestIDs), "requests_added", i+1, "currentSize", currentSize, "newSize", newSize)
-			continue
-		}
-
-		requestApproxSize := newSize - currentSize
-		rp.metrics.RecordRequestObservationSize(ctx, requestApproxSize)
-
-		currentSize = newSize
-		observation.Observations[requestID] = reqObservation
+	// add observations for requests provided by the leader in the query
+	err = rp.addObservations(ctx, query.RequestIDs, observation)
+	if err != nil {
+		return nil, fmt.Errorf("failed to add observations for requests: %w", err)
 	}
 
 	rp.logger.Debugw("Observation complete", "observation", observation)
@@ -170,6 +173,99 @@ func (rp *reportingPlugin) Observation(
 
 	rp.metrics.RecordRoundObservationSize(ctx, len(rawObservation))
 	return rawObservation, nil
+}
+
+func (rp *reportingPlugin) addObservations(ctx context.Context, requestIDs []string, observation *ctypes.Observation) error {
+	const observationFieldProtoKey = 2
+	currentSize := proto.Size(observation)
+	for _, requestID := range requestIDs {
+		_, ok := observation.Observations[requestID]
+		if ok {
+			continue
+		}
+
+		request, ok := rp.requestsStore.GetRequest(requestID)
+		if !ok {
+			continue
+		}
+
+		reqObservation, err := rp.getObservationForRequest(request)
+		if err != nil {
+			return fmt.Errorf("failed to observe request: %w", err)
+		}
+
+		if reqObservation == nil {
+			rp.logger.Debugw("No observation for request", "requestID", requestID)
+			continue
+		}
+
+		newSize, ok := hasCapacityToAdd(currentSize, observationFieldProtoKey, requestID, reqObservation, rp.config.MaxObservationLength)
+		if !ok {
+			rp.logger.Info("Observation exceeds max size, skipping request",
+				"id", requestID,
+				"request_in_batch", len(observation.Observations),
+				"currentSize", currentSize,
+				"newSize", newSize)
+			continue
+		}
+
+		requestApproxSize := newSize - currentSize
+		rp.metrics.RecordRequestObservationSize(ctx, requestApproxSize)
+
+		currentSize = newSize
+		observation.Observations[requestID] = reqObservation
+		if len(observation.Observations) >= rp.config.MaxBatchSize {
+			return nil
+		}
+	}
+
+	return nil
+}
+
+func (rp *reportingPlugin) addObservationsOfPrevMissingRequests(ctx context.Context,
+	roundRequestIDs map[string]struct{}, prevOutcome *ctypes.Outcome, observation *ctypes.Observation) error {
+	if prevOutcome == nil {
+		return nil
+	}
+
+	// double check which requests are still missing in the current round.
+	// it's possible that leader received the request after the query phase of the previous round.
+	leaderMissingRequests := make([]string, 0, len(prevOutcome.MissingRequestIDs))
+	for _, missingRequestID := range prevOutcome.MissingRequestIDs {
+		if _, ok := roundRequestIDs[missingRequestID]; ok {
+			continue
+		}
+
+		leaderMissingRequests = append(leaderMissingRequests, missingRequestID)
+	}
+
+	if len(leaderMissingRequests) == 0 {
+		return nil
+	}
+
+	rp.logger.Infow("Adding observations for missing requests. It's expected to happen occasionally. "+
+		"If you see this log line frequently there might be an issue in communication between the current leader and workflow DON",
+		"leaderMissingRequests", leaderMissingRequests)
+
+	// Prioritize the original list of missing requests from the previous outcome.
+	// This handles cases where the leader's order of requests in query is different from the majority of other nodes.
+	return rp.addObservations(ctx, prevOutcome.MissingRequestIDs, observation)
+}
+
+func (rp *reportingPlugin) getMissingRequestIDs(roundRequests map[string]struct{}) ([]string, error) {
+	localRequestIDs, err := rp.requestsStore.GetRequestIDs(rp.config.MaxBatchSize)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get local request IDs: %w", err)
+	}
+
+	var missingRequestIDs []string
+	for _, requestID := range localRequestIDs {
+		if _, ok := roundRequests[requestID]; !ok {
+			missingRequestIDs = append(missingRequestIDs, requestID)
+		}
+	}
+
+	return missingRequestIDs, nil
 }
 
 func (rp *reportingPlugin) getObservationForRequest(rawRequest ctypes.Request) (*ctypes.RequestObservation, error) {
@@ -214,17 +310,39 @@ func (rp *reportingPlugin) getObservationForRequest(rawRequest ctypes.Request) (
 func (rp *reportingPlugin) ValidateObservation(_ context.Context, outctx ocr3types.OutcomeContext, query types.Query, ao types.AttributedObservation) error {
 	ob := new(ctypes.Observation)
 	if err := proto.Unmarshal(ao.Observation, ob); err != nil {
-		return fmt.Errorf("could not unmarshal proposed observation: %w", err)
+		return fmt.Errorf("could not unmarshal proposed observation: %w. OracleID: %d", err, ao.Observer)
 	}
 
 	err := validateChainHeight(ob.ChainHeight)
 	if err != nil {
-		return fmt.Errorf("invalid chain height: %w", err)
+		return fmt.Errorf("invalid chain height: %w. OracleID: %d", err, ao.Observer)
 	}
 
 	err = rp.validateExternalObservationAgainstOutcome(ob, outctx)
 	if err != nil {
-		return fmt.Errorf("observation contradicts prev outcome: %w", err)
+		return fmt.Errorf("observation contradicts prev outcome: %w. OracleID: %d", err, ao.Observer)
+	}
+
+	err = rp.validateMissingRequestIDs(ob)
+	if err != nil {
+		return fmt.Errorf("invalid missing request ids: %w. OracleID: %d", err, ao.Observer)
+	}
+
+	return nil
+}
+
+func (rp *reportingPlugin) validateMissingRequestIDs(ob *ctypes.Observation) error {
+	if len(ob.MissingRequestIDs) > rp.config.MaxBatchSize {
+		return fmt.Errorf("too many missing request IDs: got %d, expected at most %d", len(ob.MissingRequestIDs), rp.config.MaxBatchSize)
+	}
+
+	set := make(map[string]struct{}, len(ob.MissingRequestIDs))
+	for _, id := range ob.MissingRequestIDs {
+		_, ok := set[id]
+		if ok {
+			return fmt.Errorf("duplicate missing request ID: %s", id)
+		}
+		set[id] = struct{}{}
 	}
 
 	return nil
@@ -385,6 +503,23 @@ func (rp *reportingPlugin) agreeOnAggregationMethod(requestID string, aos []attr
 	return mode[string, string](rp.config.N, rp.config.F, iterator)
 }
 
+func (rp *reportingPlugin) agreeOnMissingRequestIDs(aos []attributedObservation) ([]string, error) {
+	counter := make(map[string]int)
+	var result []string
+	for _, ob := range aos {
+		// MissingRequestIDs are guaranteed to be unique per observation by ValidateObservation
+		for _, missingRequestID := range ob.Observation.MissingRequestIDs {
+			counter[missingRequestID]++
+			if counter[missingRequestID] == rp.config.F+1 {
+				result = append(result, missingRequestID)
+			}
+		}
+	}
+
+	sort.Strings(result)
+	return result, nil
+}
+
 func (rp *reportingPlugin) agreeOnEventuallyConsistentValue(requestID string, aos []attributedObservation) ([]byte, error) {
 	iterator := func(yield func(commontypes.OracleID, observation[[32]byte, []byte]) bool) {
 		for _, ob := range aos {
@@ -502,6 +637,11 @@ func (rp *reportingPlugin) Outcome(
 		default:
 			return nil, fmt.Errorf("unsupported observation type: %s", observationType)
 		}
+	}
+
+	outcome.MissingRequestIDs, err = rp.agreeOnMissingRequestIDs(aos)
+	if err != nil {
+		return nil, fmt.Errorf("could not determine missing request IDs: %w", err)
 	}
 
 	return proto.Marshal(&outcome)
