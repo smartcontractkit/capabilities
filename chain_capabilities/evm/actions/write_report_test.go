@@ -435,7 +435,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		transmissionInfo := contracts.TransmissionInfo{
 			Success:         true,
 			InvalidReceiver: false,
-			State:           TransmissionStateSucceeded,
+			State:           contracts.TransmissionStateSucceeded,
 		}
 		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(transmissionInfo, nil).Once()
 
@@ -445,7 +445,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			Return([]*evmtypes.Log{{TxHash: txHash, Data: successLogData(), BlockNumber: big.NewInt(100)}}, nil)
 
 		receipt := evmtypes.Receipt{
-			Status:            uint64(TransmissionStateSucceeded),
+			Status:            uint64(contracts.TransmissionStateSucceeded),
 			TxHash:            txHash,
 			GasUsed:           1000,
 			EffectiveGasPrice: big.NewInt(2),
@@ -489,7 +489,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		transmissionInfo := contracts.TransmissionInfo{
 			Success:         true,
 			InvalidReceiver: false,
-			State:           TransmissionStateSucceeded,
+			State:           contracts.TransmissionStateSucceeded,
 		}
 		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(transmissionInfo, nil)
 
@@ -526,7 +526,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		transmissionInfo := contracts.TransmissionInfo{
 			Success:         true,
 			InvalidReceiver: false,
-			State:           TransmissionStateSucceeded,
+			State:           contracts.TransmissionStateSucceeded,
 		}
 		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(transmissionInfo, nil)
 
@@ -568,7 +568,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		transmissionInfo := contracts.TransmissionInfo{
 			Success:         true,
 			InvalidReceiver: false,
-			State:           TransmissionStateSucceeded,
+			State:           contracts.TransmissionStateSucceeded,
 		}
 		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(transmissionInfo, nil)
 
@@ -578,7 +578,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			Return([]*evmtypes.Log{{TxHash: txHash, Data: successLogData(), BlockNumber: big.NewInt(100)}}, nil)
 
 		receipt := evmtypes.Receipt{
-			Status:            uint64(TransmissionStateSucceeded),
+			Status:            uint64(contracts.TransmissionStateSucceeded),
 			TxHash:            txHash,
 			GasUsed:           1000,
 			EffectiveGasPrice: big.NewInt(2),
@@ -631,7 +631,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			Return(contracts.TransmissionInfo{
 				Success:         false,
 				InvalidReceiver: true,
-				State:           TransmissionStateInvalidReceiver,
+				State:           contracts.TransmissionStateInvalidReceiver,
 				GasLimit:        big.NewInt(EnoughReceiverGas),
 			}, nil).
 			Once()
@@ -644,7 +644,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 
 		// Receipt + fee calculation for that tx hash
 		receipt := evmtypes.Receipt{
-			Status:            uint64(TransmissionStateSucceeded),
+			Status:            uint64(contracts.TransmissionStateSucceeded),
 			TxHash:            txHash,
 			GasUsed:           1000,
 			EffectiveGasPrice: big.NewInt(2),
@@ -705,7 +705,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			Return(contracts.TransmissionInfo{
 				Success:         false,
 				InvalidReceiver: false,
-				State:           TransmissionStateFailed,
+				State:           contracts.TransmissionStateFailed,
 				GasLimit:        new(big.Int).SetUint64(desiredReceiverGas + 1), // strictly greater => no retry path
 			}, nil)
 
@@ -758,7 +758,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		transmissionInfo := contracts.TransmissionInfo{
 			Success:         false,
 			InvalidReceiver: false,
-			State:           TransmissionStateFailed,
+			State:           contracts.TransmissionStateFailed,
 			GasLimit:        new(big.Int).SetUint64(desiredReceiverGas + 1),
 		}
 		mockForwarderClient.
@@ -772,7 +772,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			Return([]*evmtypes.Log{{TxHash: txHash, Data: failedLogData(), BlockNumber: big.NewInt(100)}}, nil)
 
 		receipt := evmtypes.Receipt{
-			Status:            uint64(TransmissionStateSucceeded),
+			Status:            uint64(contracts.TransmissionStateSucceeded),
 			TxHash:            txHash,
 			GasUsed:           1000,
 			EffectiveGasPrice: big.NewInt(2),
@@ -804,7 +804,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TxHash:                          receipt.TxHash[:],
 			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
-			ErrorMessage:                    ptr("Receiver contract execution failure"),
+			ErrorMessage:                    ptr("receiver contract execution failure"),
 		}, txResult.Response)
 		require.Len(t, txResult.ResponseMetadata.Metering, 0)
 	})
@@ -850,7 +850,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			Return(contracts.TransmissionInfo{
 				Success:         false,
 				InvalidReceiver: false,
-				State:           TransmissionStateFailed,
+				State:           contracts.TransmissionStateFailed,
 				GasLimit:        big.NewInt(NotEnoughReceiverGas),
 			}, nil).
 			Once()
@@ -871,13 +871,13 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			Return(contracts.TransmissionInfo{
 				Success:         true,
 				InvalidReceiver: false,
-				State:           TransmissionStateSucceeded,
+				State:           contracts.TransmissionStateSucceeded,
 				GasLimit:        big.NewInt(EnoughReceiverGas),
 			}, nil).
 			Once()
 
 		receipt := evmtypes.Receipt{
-			Status:            uint64(TransmissionStateSucceeded),
+			Status:            uint64(contracts.TransmissionStateSucceeded),
 			TxHash:            txHash,
 			GasUsed:           1000,
 			EffectiveGasPrice: big.NewInt(2),
@@ -936,7 +936,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			Return(contracts.TransmissionInfo{
 				Success:         false,
 				InvalidReceiver: false,
-				State:           TransmissionStateNotAttempted,
+				State:           contracts.TransmissionStateNotAttempted,
 			}, nil).
 			Once()
 
@@ -955,13 +955,13 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			Return(contracts.TransmissionInfo{
 				Success:         true,
 				InvalidReceiver: false,
-				State:           TransmissionStateSucceeded,
+				State:           contracts.TransmissionStateSucceeded,
 				GasLimit:        big.NewInt(EnoughReceiverGas),
 			}, nil).
 			Once()
 
 		receipt := evmtypes.Receipt{
-			Status:            uint64(TransmissionStateSucceeded),
+			Status:            uint64(contracts.TransmissionStateSucceeded),
 			TxHash:            txHash,
 			GasUsed:           1000,
 			EffectiveGasPrice: big.NewInt(2),
@@ -1013,7 +1013,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			Return(contracts.TransmissionInfo{
 				Success:         false,
 				InvalidReceiver: false,
-				State:           TransmissionStateNotAttempted,
+				State:           contracts.TransmissionStateNotAttempted,
 			}, nil).
 			Once()
 
@@ -1059,7 +1059,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			Return(contracts.TransmissionInfo{
 				Success:         false,
 				InvalidReceiver: false,
-				State:           TransmissionStateNotAttempted,
+				State:           contracts.TransmissionStateNotAttempted,
 			}, nil).
 			Once()
 
@@ -1082,7 +1082,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			Return(contracts.TransmissionInfo{
 				Success:         true,
 				InvalidReceiver: false,
-				State:           TransmissionStateSucceeded,
+				State:           contracts.TransmissionStateSucceeded,
 				GasLimit:        big.NewInt(EnoughReceiverGas),
 			}, nil).
 			Once()
@@ -1094,7 +1094,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 
 		// Receipt should be fetched for the *log* hash, not the txmgr hash.
 		receipt := evmtypes.Receipt{
-			Status:            uint64(TransmissionStateSucceeded),
+			Status:            uint64(contracts.TransmissionStateSucceeded),
 			TxHash:            txHashFromLogs,
 			GasUsed:           1000,
 			EffectiveGasPrice: big.NewInt(2),
@@ -1121,6 +1121,116 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		test.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003")
 	})
 
+	t.Run("TX locally attempted but failed; prior transmission exists => returns original failed tx hash from logs (not latest tx hash)", func(t *testing.T) {
+		ctx := t.Context()
+		testLogger := logger.Test(t)
+		evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
+
+		evmServiceMock.EXPECT().
+			GetTransactionFee(mock.Anything, mock.Anything).
+			Return(&evmtypes.TransactionFee{TransactionFee: big.NewInt(300)}, nil).
+			Maybe()
+
+		receiverAddress := testutils.NewAddress()
+		reportMetadata := createTestReportMetadata()
+		encodedReportMetadata, _ := reportMetadata.Encode()
+
+		signedReport := &workflowpb.ReportResponse{
+			RawReport:     encodedReportMetadata,
+			ReportContext: []byte{},
+			Sigs:          generateRandomSignatures(),
+		}
+
+		// Make request gas large enough so we compute txGasLimit = requestGasLimit - overhead
+		desiredReceiverGas := uint64(EnoughReceiverGas * 100)
+		writeReportGasLimit := contracts.ForwarderContractLogicGasCost + desiredReceiverGas
+
+		writeReportRequest := &evm.WriteReportRequest{
+			Receiver: receiverAddress.Bytes(),
+			Report:   signedReport,
+			GasConfig: &evm.GasConfig{
+				GasLimit: writeReportGasLimit,
+			},
+		}
+
+		capabilitiesMetadata := createTestRequestMetadata(reportMetadata)
+		transmissionID, _ := getTransmissionID(capabilitiesMetadata.WorkflowExecutionID, writeReportRequest)
+
+		// 1) Initial GetTransmissionInfo: previously attempted and failed with too-low gas => we will retry (InvokeOnReport).
+		mockForwarderClient.
+			On("GetTransmissionInfo", mock.Anything, transmissionID).
+			Return(contracts.TransmissionInfo{
+				Success:         false,
+				InvalidReceiver: false,
+				State:           contracts.TransmissionStateFailed, // prior transmission exists
+				GasLimit:        big.NewInt(NotEnoughReceiverGas),  // triggers retry path
+			}, nil).
+			Once()
+
+		// 2) InvokeOnReport: local retry returns a "latest" tx hash.
+		latestTxHash := evmtypes.Hash(test.RandomBytes(32))
+		mockForwarderClient.
+			On("InvokeOnReport", mock.Anything, receiverAddress, signedReport, nonNilPositiveGasCfgMatcher()).
+			Return(&evmtypes.TransactionResult{
+				TxHash:           latestTxHash,
+				TxStatus:         evmtypes.TxSuccess,
+				TxIdempotencyKey: "retry-idempotency-key",
+			}, nil).
+			Once()
+
+		// 3) After submitting, final transmission state is Failed -> branch that contains new logic executes.
+		mockForwarderClient.
+			On("GetTransmissionInfo", mock.Anything, transmissionID).
+			Return(contracts.TransmissionInfo{
+				Success:         false,
+				InvalidReceiver: false,
+				State:           contracts.TransmissionStateFailed,
+				GasLimit:        big.NewInt(EnoughReceiverGas),
+			}, nil).
+			Once()
+
+		originalFailedTxHash := evmtypes.Hash(test.RandomBytes(32))
+		mockForwarderClient.EXPECT().
+			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return([]*evmtypes.Log{
+				{TxHash: latestTxHash, Data: failedLogData(), BlockNumber: big.NewInt(200)},
+				{TxHash: originalFailedTxHash, Data: failedLogData(), BlockNumber: big.NewInt(100)}, // earliest -> should be chosen
+			}, nil)
+
+		receipt := evmtypes.Receipt{
+			Status:            1,
+			TxHash:            originalFailedTxHash,
+			GasUsed:           1000,
+			EffectiveGasPrice: big.NewInt(2),
+		}
+		evmServiceMock.EXPECT().
+			GetTransactionReceipt(mock.Anything, evmtypes.GeTransactionReceiptRequest{Hash: originalFailedTxHash, IsExternal: false}).
+			Return(&receipt, nil)
+
+		txFee := int64(2000)
+		evmServiceMock.EXPECT().
+			CalculateTransactionFee(mock.Anything, toReceiptGasInfo(receipt)).
+			Return(&evmtypes.TransactionFee{TransactionFee: big.NewInt(txFee)}, nil)
+
+		// Execute
+		txResult, err := service.WriteReport(ctx, capabilitiesMetadata, writeReportRequest)
+		require.NoError(t, err)
+		require.NotNil(t, txResult)
+		require.NotNil(t, txResult.Response)
+
+		// Key assertions for the new logic:
+		// - returned TxHash must be the ORIGINAL failed hash (earliest), not the latest one returned by InvokeOnReport.
+		require.Equal(t, originalFailedTxHash[:], txResult.Response.TxHash)
+		require.NotEqual(t, latestTxHash[:], txResult.Response.TxHash)
+
+		// - Receiver execution status should indicate reverted (unrecoverable).
+		require.NotNil(t, txResult.Response.ReceiverContractExecutionStatus)
+		require.Equal(t, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(), txResult.Response.ReceiverContractExecutionStatus.Enum())
+
+		// - Because we attempted locally, metering should be present and record one entry.
+		test.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003")
+	})
+
 	t.Run("Invalid transmission state (default switch) => returns error", func(t *testing.T) {
 		ctx := t.Context()
 		testLogger := logger.Test(t)
@@ -1129,7 +1239,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
 
-		const invalidState = TransmissionStateFailed + 10
+		const invalidState = contracts.TransmissionStateFailed + 10
 
 		mockForwarderClient.
 			On("GetTransmissionInfo", mock.Anything, mock.Anything).
@@ -1339,7 +1449,7 @@ func TestExecuteWriteReport_MeteringMetadata(t *testing.T) {
 		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, transmissionID).Return(contracts.TransmissionInfo{
 			Success:         false,
 			InvalidReceiver: false,
-			State:           TransmissionStateNotAttempted,
+			State:           contracts.TransmissionStateNotAttempted,
 		}, nil).Once()
 
 		txHash := evmtypes.Hash(test.RandomBytes(32))
@@ -1355,7 +1465,7 @@ func TestExecuteWriteReport_MeteringMetadata(t *testing.T) {
 		transmissionInfo := contracts.TransmissionInfo{
 			Success:         true,
 			InvalidReceiver: false,
-			State:           TransmissionStateSucceeded,
+			State:           contracts.TransmissionStateSucceeded,
 			GasLimit:        big.NewInt(EnoughReceiverGas),
 		}
 		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, transmissionID).Return(transmissionInfo, nil).Once()
@@ -1365,7 +1475,7 @@ func TestExecuteWriteReport_MeteringMetadata(t *testing.T) {
 		}, nil)
 
 		receipt := evmtypes.Receipt{
-			Status:            uint64(TransmissionStateSucceeded),
+			Status:            uint64(contracts.TransmissionStateSucceeded),
 			TxHash:            txHash,
 			GasUsed:           1000,
 			EffectiveGasPrice: big.NewInt(2),
@@ -1409,7 +1519,7 @@ func TestExecuteWriteReport_MeteringMetadata(t *testing.T) {
 		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, transmissionID).Return(contracts.TransmissionInfo{
 			Success:         false,
 			InvalidReceiver: false,
-			State:           TransmissionStateNotAttempted,
+			State:           contracts.TransmissionStateNotAttempted,
 		}, nil).Once()
 
 		txHash := evmtypes.Hash(test.RandomBytes(32))
@@ -1425,7 +1535,7 @@ func TestExecuteWriteReport_MeteringMetadata(t *testing.T) {
 		transmissionInfo := contracts.TransmissionInfo{
 			Success:         true,
 			InvalidReceiver: false,
-			State:           TransmissionStateSucceeded,
+			State:           contracts.TransmissionStateSucceeded,
 			GasLimit:        big.NewInt(EnoughReceiverGas),
 		}
 		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, transmissionID).Return(transmissionInfo, nil).Once()
@@ -1433,7 +1543,7 @@ func TestExecuteWriteReport_MeteringMetadata(t *testing.T) {
 		evmServiceMock.EXPECT().GetTransactionFee(mock.Anything, "test-idempotency-key").Return(nil, errors.New("fee calculation failed"))
 
 		receipt := evmtypes.Receipt{
-			Status:            uint64(TransmissionStateSucceeded),
+			Status:            uint64(contracts.TransmissionStateSucceeded),
 			TxHash:            txHash,
 			GasUsed:           1000,
 			EffectiveGasPrice: big.NewInt(2),
@@ -1480,7 +1590,7 @@ func TestExecuteWriteReport_TransmissionStates(t *testing.T) {
 		transmissionInfo := contracts.TransmissionInfo{
 			Success:         true,
 			InvalidReceiver: false,
-			State:           TransmissionStateSucceeded,
+			State:           contracts.TransmissionStateSucceeded,
 		}
 		ctx := contexts.WithCRE(t.Context(), contexts.CRE{Workflow: "wf-id"})
 		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, transmissionID).Return(transmissionInfo, nil)
@@ -1491,7 +1601,7 @@ func TestExecuteWriteReport_TransmissionStates(t *testing.T) {
 		mockForwarderClient.EXPECT().GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(logs, nil)
 
 		receipt := evmtypes.Receipt{
-			Status:            uint64(TransmissionStateSucceeded),
+			Status:            uint64(contracts.TransmissionStateSucceeded),
 			TxHash:            txHash,
 			GasUsed:           1000,
 			EffectiveGasPrice: big.NewInt(2),
@@ -1576,7 +1686,7 @@ func TestWriteReport_BillingMetadata(t *testing.T) {
 		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, transmissionID).Return(contracts.TransmissionInfo{
 			Success:         false,
 			InvalidReceiver: false,
-			State:           TransmissionStateNotAttempted,
+			State:           contracts.TransmissionStateNotAttempted,
 		}, nil).Once()
 
 		txHash := evmtypes.Hash(test.RandomBytes(32))
@@ -1592,7 +1702,7 @@ func TestWriteReport_BillingMetadata(t *testing.T) {
 		transmissionInfo := contracts.TransmissionInfo{
 			Success:         true,
 			InvalidReceiver: false,
-			State:           TransmissionStateSucceeded,
+			State:           contracts.TransmissionStateSucceeded,
 			GasLimit:        big.NewInt(EnoughReceiverGas),
 		}
 		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, transmissionID).Return(transmissionInfo, nil).Once()
@@ -1602,7 +1712,7 @@ func TestWriteReport_BillingMetadata(t *testing.T) {
 		}, nil)
 
 		receipt := evmtypes.Receipt{
-			Status:            uint64(TransmissionStateSucceeded),
+			Status:            uint64(contracts.TransmissionStateSucceeded),
 			TxHash:            txHash,
 			GasUsed:           1000,
 			EffectiveGasPrice: big.NewInt(3),
@@ -1652,7 +1762,7 @@ func TestWriteReport_BillingMetadata(t *testing.T) {
 		transmissionInfo := contracts.TransmissionInfo{
 			Success:         true,
 			InvalidReceiver: false,
-			State:           TransmissionStateSucceeded,
+			State:           contracts.TransmissionStateSucceeded,
 		}
 		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, transmissionID).Return(transmissionInfo, nil)
 
@@ -1662,7 +1772,7 @@ func TestWriteReport_BillingMetadata(t *testing.T) {
 		mockForwarderClient.EXPECT().GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(logs, nil)
 
 		receipt := evmtypes.Receipt{
-			Status:            uint64(TransmissionStateSucceeded),
+			Status:            uint64(contracts.TransmissionStateSucceeded),
 			TxHash:            txHash,
 			GasUsed:           1000,
 			EffectiveGasPrice: big.NewInt(2),
