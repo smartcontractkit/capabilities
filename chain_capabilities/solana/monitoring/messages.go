@@ -19,7 +19,7 @@ type TelemetryContext struct {
 	capabilities.RequestMetadata
 }
 
-// MessageBuilder constructs telemetry messages for EVM calls
+// MessageBuilder constructs telemetry messages for Solana calls
 type MessageBuilder struct {
 	ChainInfo   types.ChainInfo
 	CapInfo     capabilities.CapabilityInfo
