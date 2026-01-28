@@ -1,5 +1,5 @@
 syntax = "proto3";
-package chain_capabilities.evm;
+package chain_capabilities.solana;
 option go_package = "github.com/smartcontractkit/capabilities/chain_capabilities/solana;monitoring";
 
 import "libs/monitoring/execution_context.proto";
