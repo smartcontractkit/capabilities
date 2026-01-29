@@ -1334,3 +1334,343 @@ func TestWriteReport_BillingMetadata(t *testing.T) {
 		require.Empty(t, result.ResponseMetadata.Metering)
 	})
 }
+
+func TestWriteReport_ChainSelectorInContext(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Chain selector is added to context for gas limit lookup", func(t *testing.T) {
+		testLogger := logger.Test(t)
+		evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
+
+		receiverAddress := testutils.NewAddress()
+		reportMetadata := createTestReportMetadata()
+		encodedReportMetadata, _ := reportMetadata.Encode()
+
+		signedReport := &workflowpb.ReportResponse{
+			RawReport:     encodedReportMetadata,
+			ReportContext: []byte{},
+			Sigs:          generateRandomSignatures(),
+		}
+		// Request without GasConfig - will trigger txGasLimit.Limit() call
+		writeReportRequest := &evm.WriteReportRequest{
+			Receiver: receiverAddress.Bytes(),
+			Report:   signedReport,
+		}
+		capabilitiesMetadata := createTestRequestMetadata(reportMetadata)
+
+		transmissionID, _ := getTransmissionID(capabilitiesMetadata.WorkflowExecutionID, writeReportRequest)
+
+		// Mock GetTransmissionInfo for initial check
+		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, transmissionID).Return(contracts.TransmissionInfo{
+			Success:         false,
+			InvalidReceiver: false,
+			State:           TransmissionStateNotAttempted,
+		}, nil).Once()
+
+		txHash := evmtypes.Hash(test.RandomBytes(32))
+
+		// Mock InvokeOnReport - the gasConfig should have been populated from the limiter
+		mockForwarderClient.On("InvokeOnReport", mock.Anything, receiverAddress, signedReport, mock.Anything).Return(&evmtypes.TransactionResult{
+			TxHash:           txHash,
+			TxStatus:         evmtypes.TxSuccess,
+			TxIdempotencyKey: "test-idempotency-key",
+		}, nil)
+
+		// Mock GetTransmissionInfo for retry logic
+		transmissionInfo := contracts.TransmissionInfo{
+			Success:         true,
+			InvalidReceiver: false,
+			State:           TransmissionStateSucceeded,
+			GasLimit:        big.NewInt(EnoughReceiverGas),
+		}
+		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, transmissionID).Return(transmissionInfo, nil).Once()
+
+		// Mock transaction fee calculation
+		evmServiceMock.EXPECT().GetTransactionFee(mock.Anything, "test-idempotency-key").Return(&evmtypes.TransactionFee{
+			TransactionFee: big.NewInt(2000),
+		}, nil)
+
+		// Mock receipt fetching
+		receipt := evmtypes.Receipt{
+			Status:            uint64(TransmissionStateSucceeded),
+			TxHash:            txHash,
+			GasUsed:           1000,
+			EffectiveGasPrice: big.NewInt(2),
+		}
+		evmServiceMock.EXPECT().GetTransactionReceipt(mock.Anything, evmtypes.GeTransactionReceiptRequest{Hash: txHash}).Return(&receipt, nil)
+		evmServiceMock.EXPECT().CalculateTransactionFee(mock.Anything, toReceiptGasInfo(receipt)).Return(&evmtypes.TransactionFee{
+			TransactionFee: big.NewInt(2000),
+		}, nil)
+
+		// Execute - this should work because the chain selector is now added to context
+		ctx := contexts.WithCRE(t.Context(), contexts.CRE{Workflow: "wf-id"})
+		result, err := service.WriteReport(ctx, capabilitiesMetadata, writeReportRequest)
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.NotNil(t, result.Response)
+		require.Equal(t, evmcappb.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
+
+		// Verify gas config was populated (from limiter default)
+		require.NotNil(t, writeReportRequest.GasConfig)
+		require.Greater(t, writeReportRequest.GasConfig.GasLimit, uint64(0))
+	})
+
+	t.Run("Chain selector is used for gas limit check with provided GasConfig", func(t *testing.T) {
+		testLogger := logger.Test(t)
+		evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
+
+		receiverAddress := testutils.NewAddress()
+		reportMetadata := createTestReportMetadata()
+		encodedReportMetadata, _ := reportMetadata.Encode()
+
+		signedReport := &workflowpb.ReportResponse{
+			RawReport:     encodedReportMetadata,
+			ReportContext: []byte{},
+			Sigs:          generateRandomSignatures(),
+		}
+		// Request with GasConfig - will trigger txGasLimit.Check() call
+		writeReportRequest := &evm.WriteReportRequest{
+			Receiver: receiverAddress.Bytes(),
+			Report:   signedReport,
+			GasConfig: &evm.GasConfig{
+				GasLimit: 1000000, // Under the default limit
+			},
+		}
+		capabilitiesMetadata := createTestRequestMetadata(reportMetadata)
+
+		transmissionID, _ := getTransmissionID(capabilitiesMetadata.WorkflowExecutionID, writeReportRequest)
+
+		// Mock GetTransmissionInfo for initial check
+		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, transmissionID).Return(contracts.TransmissionInfo{
+			Success:         false,
+			InvalidReceiver: false,
+			State:           TransmissionStateNotAttempted,
+		}, nil).Once()
+
+		txHash := evmtypes.Hash(test.RandomBytes(32))
+
+		// Mock InvokeOnReport
+		mockForwarderClient.On("InvokeOnReport", mock.Anything, receiverAddress, signedReport, mock.Anything).Return(&evmtypes.TransactionResult{
+			TxHash:           txHash,
+			TxStatus:         evmtypes.TxSuccess,
+			TxIdempotencyKey: "test-idempotency-key",
+		}, nil)
+
+		// Mock GetTransmissionInfo for retry logic
+		transmissionInfo := contracts.TransmissionInfo{
+			Success:         true,
+			InvalidReceiver: false,
+			State:           TransmissionStateSucceeded,
+			GasLimit:        big.NewInt(EnoughReceiverGas),
+		}
+		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, transmissionID).Return(transmissionInfo, nil).Once()
+
+		// Mock transaction fee calculation
+		evmServiceMock.EXPECT().GetTransactionFee(mock.Anything, "test-idempotency-key").Return(&evmtypes.TransactionFee{
+			TransactionFee: big.NewInt(2000),
+		}, nil)
+
+		// Mock receipt fetching
+		receipt := evmtypes.Receipt{
+			Status:            uint64(TransmissionStateSucceeded),
+			TxHash:            txHash,
+			GasUsed:           1000,
+			EffectiveGasPrice: big.NewInt(2),
+		}
+		evmServiceMock.EXPECT().GetTransactionReceipt(mock.Anything, evmtypes.GeTransactionReceiptRequest{Hash: txHash}).Return(&receipt, nil)
+		evmServiceMock.EXPECT().CalculateTransactionFee(mock.Anything, toReceiptGasInfo(receipt)).Return(&evmtypes.TransactionFee{
+			TransactionFee: big.NewInt(2000),
+		}, nil)
+
+		// Execute - should succeed because chain selector is in context and gasLimit is valid
+		ctx := contexts.WithCRE(t.Context(), contexts.CRE{Workflow: "wf-id"})
+		result, err := service.WriteReport(ctx, capabilitiesMetadata, writeReportRequest)
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.NotNil(t, result.Response)
+		require.Equal(t, evmcappb.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
+	})
+}
+
+func createMocksAndCapabilityWithChainSelector(t *testing.T, lggr logger.Logger, chainSelector uint64) (*mocks2.EVMService, *mocks.CREForwarderClient, *EVM) {
+	mockEVMService := mocks2.NewEVMService(t)
+	mockForwarderClient := mocks.NewCREForwarderClient(t)
+	mockEVMService.EXPECT().HeaderByNumber(mock.Anything, mock.Anything).Return(&evmtypes.HeaderByNumberReply{Header: &evmtypes.Header{Number: big.NewInt(100)}}, nil).Maybe()
+	service := &EVM{
+		keystoneForwarderAddress: common.BytesToAddress(test.RandomBytes(20)),
+		forwarderClient:          mockForwarderClient,
+		lggr:                     logger.Sugared(lggr),
+		EVMService:               mockEVMService,
+		ReceiverGasMinimum:       ConfiguredReceiverGasMinimum,
+		chainSelector:            chainSelector,
+		beholderProcessor:        test.NopBeholderProcessor{},
+		messageBuilder:           &monitoring.MessageBuilder{},
+	}
+	require.NoError(t, service.initLimiters(limits.Factory{Logger: lggr}))
+	require.NotNil(t, service.txGasLimit)
+	return mockEVMService, mockForwarderClient, service
+}
+
+func TestWriteReport_DifferentChainSelectors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("WriteReport uses chain selector from service for gas limit lookup", func(t *testing.T) {
+		testLogger := logger.Test(t)
+
+		// Use a known chain selector (geth-testnet has a different gas limit configured)
+		gethTestnetSelector := uint64(3379446385462418246)
+		evmServiceMock, mockForwarderClient, service := createMocksAndCapabilityWithChainSelector(t, testLogger, gethTestnetSelector)
+
+		receiverAddress := testutils.NewAddress()
+		reportMetadata := createTestReportMetadata()
+		encodedReportMetadata, _ := reportMetadata.Encode()
+
+		signedReport := &workflowpb.ReportResponse{
+			RawReport:     encodedReportMetadata,
+			ReportContext: []byte{},
+			Sigs:          generateRandomSignatures(),
+		}
+		// Request without GasConfig - will trigger txGasLimit.Limit() call
+		writeReportRequest := &evm.WriteReportRequest{
+			Receiver: receiverAddress.Bytes(),
+			Report:   signedReport,
+		}
+		capabilitiesMetadata := createTestRequestMetadata(reportMetadata)
+
+		transmissionID, _ := getTransmissionID(capabilitiesMetadata.WorkflowExecutionID, writeReportRequest)
+
+		// Mock GetTransmissionInfo for initial check
+		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, transmissionID).Return(contracts.TransmissionInfo{
+			Success:         false,
+			InvalidReceiver: false,
+			State:           TransmissionStateNotAttempted,
+		}, nil).Once()
+
+		txHash := evmtypes.Hash(test.RandomBytes(32))
+
+		// Mock InvokeOnReport
+		mockForwarderClient.On("InvokeOnReport", mock.Anything, receiverAddress, signedReport, mock.Anything).Return(&evmtypes.TransactionResult{
+			TxHash:           txHash,
+			TxStatus:         evmtypes.TxSuccess,
+			TxIdempotencyKey: "test-idempotency-key",
+		}, nil)
+
+		// Mock GetTransmissionInfo for retry logic
+		transmissionInfo := contracts.TransmissionInfo{
+			Success:         true,
+			InvalidReceiver: false,
+			State:           TransmissionStateSucceeded,
+			GasLimit:        big.NewInt(EnoughReceiverGas),
+		}
+		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, transmissionID).Return(transmissionInfo, nil).Once()
+
+		// Mock transaction fee calculation
+		evmServiceMock.EXPECT().GetTransactionFee(mock.Anything, "test-idempotency-key").Return(&evmtypes.TransactionFee{
+			TransactionFee: big.NewInt(2000),
+		}, nil)
+
+		// Mock receipt fetching
+		receipt := evmtypes.Receipt{
+			Status:            uint64(TransmissionStateSucceeded),
+			TxHash:            txHash,
+			GasUsed:           1000,
+			EffectiveGasPrice: big.NewInt(2),
+		}
+		evmServiceMock.EXPECT().GetTransactionReceipt(mock.Anything, evmtypes.GeTransactionReceiptRequest{Hash: txHash}).Return(&receipt, nil)
+		evmServiceMock.EXPECT().CalculateTransactionFee(mock.Anything, toReceiptGasInfo(receipt)).Return(&evmtypes.TransactionFee{
+			TransactionFee: big.NewInt(2000),
+		}, nil)
+
+		// Execute - should work with geth-testnet chain selector
+		ctx := contexts.WithCRE(t.Context(), contexts.CRE{Workflow: "wf-id"})
+		result, err := service.WriteReport(ctx, capabilitiesMetadata, writeReportRequest)
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.NotNil(t, result.Response)
+		require.Equal(t, evmcappb.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
+
+		// Verify gas config was populated
+		require.NotNil(t, writeReportRequest.GasConfig)
+		require.Greater(t, writeReportRequest.GasConfig.GasLimit, uint64(0))
+	})
+
+	t.Run("WriteReport works with arbitrary chain selector using default gas limit", func(t *testing.T) {
+		testLogger := logger.Test(t)
+
+		// Use an arbitrary chain selector that doesn't have a specific override
+		arbitrarySelector := uint64(12345)
+		evmServiceMock, mockForwarderClient, service := createMocksAndCapabilityWithChainSelector(t, testLogger, arbitrarySelector)
+
+		receiverAddress := testutils.NewAddress()
+		reportMetadata := createTestReportMetadata()
+		encodedReportMetadata, _ := reportMetadata.Encode()
+
+		signedReport := &workflowpb.ReportResponse{
+			RawReport:     encodedReportMetadata,
+			ReportContext: []byte{},
+			Sigs:          generateRandomSignatures(),
+		}
+		// Request without GasConfig - will trigger txGasLimit.Limit() call
+		writeReportRequest := &evm.WriteReportRequest{
+			Receiver: receiverAddress.Bytes(),
+			Report:   signedReport,
+		}
+		capabilitiesMetadata := createTestRequestMetadata(reportMetadata)
+
+		transmissionID, _ := getTransmissionID(capabilitiesMetadata.WorkflowExecutionID, writeReportRequest)
+
+		// Mock GetTransmissionInfo for initial check
+		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, transmissionID).Return(contracts.TransmissionInfo{
+			Success:         false,
+			InvalidReceiver: false,
+			State:           TransmissionStateNotAttempted,
+		}, nil).Once()
+
+		txHash := evmtypes.Hash(test.RandomBytes(32))
+
+		// Mock InvokeOnReport
+		mockForwarderClient.On("InvokeOnReport", mock.Anything, receiverAddress, signedReport, mock.Anything).Return(&evmtypes.TransactionResult{
+			TxHash:           txHash,
+			TxStatus:         evmtypes.TxSuccess,
+			TxIdempotencyKey: "test-idempotency-key",
+		}, nil)
+
+		// Mock GetTransmissionInfo for retry logic
+		transmissionInfo := contracts.TransmissionInfo{
+			Success:         true,
+			InvalidReceiver: false,
+			State:           TransmissionStateSucceeded,
+			GasLimit:        big.NewInt(EnoughReceiverGas),
+		}
+		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, transmissionID).Return(transmissionInfo, nil).Once()
+
+		// Mock transaction fee calculation
+		evmServiceMock.EXPECT().GetTransactionFee(mock.Anything, "test-idempotency-key").Return(&evmtypes.TransactionFee{
+			TransactionFee: big.NewInt(2000),
+		}, nil)
+
+		// Mock receipt fetching
+		receipt := evmtypes.Receipt{
+			Status:            uint64(TransmissionStateSucceeded),
+			TxHash:            txHash,
+			GasUsed:           1000,
+			EffectiveGasPrice: big.NewInt(2),
+		}
+		evmServiceMock.EXPECT().GetTransactionReceipt(mock.Anything, evmtypes.GeTransactionReceiptRequest{Hash: txHash}).Return(&receipt, nil)
+		evmServiceMock.EXPECT().CalculateTransactionFee(mock.Anything, toReceiptGasInfo(receipt)).Return(&evmtypes.TransactionFee{
+			TransactionFee: big.NewInt(2000),
+		}, nil)
+
+		// Execute - should work with arbitrary chain selector, using default gas limit
+		ctx := contexts.WithCRE(t.Context(), contexts.CRE{Workflow: "wf-id"})
+		result, err := service.WriteReport(ctx, capabilitiesMetadata, writeReportRequest)
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.NotNil(t, result.Response)
+		require.Equal(t, evmcappb.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
+
+		// Verify gas config was populated with default value
+		require.NotNil(t, writeReportRequest.GasConfig)
+		require.Greater(t, writeReportRequest.GasConfig.GasLimit, uint64(0))
+	})
+}
