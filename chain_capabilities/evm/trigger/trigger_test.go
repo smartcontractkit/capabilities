@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"sync"
 	"testing"
 	"time"
 
@@ -59,55 +58,6 @@ var (
 	pollInterval      = 10 * time.Millisecond
 )
 
-type memEventStore struct {
-	mu   sync.Mutex
-	recs map[string]capabilities.PendingEvent
-}
-
-func newMemEventStore() *memEventStore {
-	return &memEventStore{recs: make(map[string]capabilities.PendingEvent)}
-}
-
-func (m *memEventStore) Insert(ctx context.Context, r capabilities.PendingEvent) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.recs[capabilitiesKey(r.TriggerId, r.EventId)] = r
-	return nil
-}
-
-func (m *memEventStore) DeleteEvent(ctx context.Context, triggerId, eventId string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	delete(m.recs, capabilitiesKey(triggerId, eventId))
-	return nil
-}
-
-func (m *memEventStore) DeleteEventsForTrigger(ctx context.Context, triggerId string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for k, r := range m.recs {
-		if r.TriggerId == triggerId {
-			delete(m.recs, k)
-		}
-	}
-	return nil
-}
-
-func (m *memEventStore) List(ctx context.Context) ([]capabilities.PendingEvent, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	out := make([]capabilities.PendingEvent, 0, len(m.recs))
-	for _, r := range m.recs {
-		out = append(out, r)
-	}
-	return out, nil
-}
-
-// Local helper so tests in another package don't need access to unexported capabilities.key
-func capabilitiesKey(triggerId, eventId string) string {
-	return triggerId + "|" + eventId
-}
-
 func decode(te capabilities.TriggerEvent) (capabilities.TriggerAndId[*evmcappb.Log], error) {
 	var pl evmcappb.Log
 	if err := te.Payload.UnmarshalTo(&pl); err != nil {
@@ -119,7 +69,7 @@ func decode(te capabilities.TriggerEvent) (capabilities.TriggerAndId[*evmcappb.L
 // Build a LogTriggerService with BaseTriggerCapability wired to an inbox channel.
 func newLTSWithBase(t *testing.T) (*LogTriggerService, chan capabilities.TriggerAndId[*evmcappb.Log]) {
 	lts := newLogTriggerService(t)
-	es := newMemEventStore()
+	es := capabilities.NewMemEventStore()
 
 	lost := func(ctx context.Context, rec capabilities.PendingEvent) {
 		lts.lggr.Warnw("lost", "event", rec.EventId)
@@ -160,7 +110,8 @@ func TestLogTriggerService_Close_WaitsForPollingGoroutine(t *testing.T) {
 			return capabilities.TriggerAndId[*evmcappb.Log]{}, nil
 		}
 		lost := func(_ context.Context, _ capabilities.PendingEvent) {}
-		service.baseTrigger = *capabilities.NewBaseTriggerCapability(newMemEventStore(), decode, lost, logger.Test(t), 200*time.Millisecond, 5*time.Second)
+		service.baseTrigger = *capabilities.NewBaseTriggerCapability(
+			capabilities.NewMemEventStore(), decode, lost, logger.Test(t), 200*time.Millisecond, 5*time.Second)
 		require.NoError(t, service.baseTrigger.Start(ctx))
 		defer service.baseTrigger.Stop()
 		err := service.Start(ctx)
@@ -992,7 +943,8 @@ func registerAndUnregisterLogTriggerIntegration(t *testing.T, topicsInput []*evm
 	service := createTriggerObject(t, evmService, NewLogTriggerStore())
 
 	lost := func(_ context.Context, _ capabilities.PendingEvent) {}
-	service.baseTrigger = *capabilities.NewBaseTriggerCapability(newMemEventStore(), decode, lost, logger.Test(t), 200*time.Millisecond, 5*time.Second)
+	service.baseTrigger = *capabilities.NewBaseTriggerCapability(
+		capabilities.NewMemEventStore(), decode, lost, logger.Test(t), 200*time.Millisecond, 5*time.Second)
 
 	triggerID := "trigger-integration"
 
