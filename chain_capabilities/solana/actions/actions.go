@@ -116,7 +116,7 @@ func (s *Solana) initLimiters(limitsFactory limits.Factory) (err error) {
 		return
 	}
 
-	txComputeLimit := settings.Uint32(200_000)
+	txComputeLimit := settings.Uint32(300_000)
 	s.txComputeLimit, err = limits.MakeBoundLimiter(limitsFactory, txComputeLimit)
 	return
 }

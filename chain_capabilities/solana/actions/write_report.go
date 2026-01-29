@@ -62,6 +62,7 @@ func (s *Solana) WriteReport(
 	// 1. Validate inputs
 	err := s.validateInputsAndReportMetadata(metadata, input)
 	if err != nil {
+		monitoring.LogAndEmitError(ctx, s.lggr, s.beholderProcessor, s.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport, user error due to invalid request", err.Error(), true))
 		return nil, NewUserError(err)
 	}
 
@@ -119,10 +120,10 @@ func (wr *WriteReport) executeWriteReport(
 	} else {
 		err = wr.txComputeLimit.Check(ctx, request.ComputeConfig.ComputeLimit)
 		if err != nil {
-			return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s report size exceeds limit (computeLimit=%d): %w", userError, request.ComputeConfig.ComputeLimit, err)
+			return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s provided compute config exceeds limit (computeLimit=%d): %w", userError, request.ComputeConfig.ComputeLimit, err)
 		}
 	}
-
+	// TODO PLEX-1920 reuse evm retry logic here
 	info, err := wr.transmissionInfoProvider.GetTransmissionInfo(ctx, transmissionID)
 	if err != nil {
 		return nil, capabilities.ResponseMetadata{}, err
@@ -132,14 +133,12 @@ func (wr *WriteReport) executeWriteReport(
 	case types2.TransmissionStateNotAttempted:
 		wr.lggr.Infow(
 			"transmission not attempted - submitting",
-			"executionID", metadata.WorkflowExecutionID,
 			"receiver", receiver.String(),
 		)
 
 	case types2.TransmissionStateSucceeded:
 		wr.lggr.Infow(
 			"returning without a transmission attempt - report already onchain",
-			"executionID", metadata.WorkflowExecutionID,
 			"signature", info.Signature.String(),
 		)
 		return wr.successWriteReportReply(&info.Signature), capabilities.ResponseMetadata{}, nil
@@ -147,7 +146,6 @@ func (wr *WriteReport) executeWriteReport(
 	case types2.TransmissionStateFailed:
 		wr.lggr.Infow(
 			"returning without a transmission attempt - transmission already attempted and failed",
-			"executionID", metadata.WorkflowExecutionID,
 			"signature", info.Signature.String(),
 		)
 		return wr.failedWriteReportReply(&info.Signature, ptr(UnknownIssueExecutingReceiverContractMessage)), capabilities.ResponseMetadata{}, nil
@@ -169,8 +167,8 @@ func (wr *WriteReport) executeWriteReport(
 		request.GetComputeConfig(),
 	)
 	if err != nil {
-		wr.lggr.Errorw("Transaction failed to submit", "executionID", metadata.WorkflowExecutionID, "error", err)
-		return wr.fatalWriteReportReply(err.Error()), capabilities.ResponseMetadata{}, nil
+		wr.lggr.Errorw("Transaction failed", "error", err.Error())
+		return nil, capabilities.ResponseMetadata{}, err
 	}
 
 	strategy := retry.Strategy[*types2.TransmissionInfo]{
@@ -179,14 +177,11 @@ func (wr *WriteReport) executeWriteReport(
 			Max:    3 * time.Second,
 			Min:    200 * time.Millisecond,
 		},
-		MaxRetries: 9,
+		MaxRetries: 25,
 	}
 
-	retryCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-	defer cancel()
-
 	var last *types2.TransmissionInfo
-	last, err = strategy.Do(retryCtx, wr.lggr, func(c context.Context) (*types2.TransmissionInfo, error) {
+	last, err = strategy.Do(ctx, wr.lggr, func(c context.Context) (*types2.TransmissionInfo, error) {
 		ti, tiErr := wr.transmissionInfoProvider.GetTransmissionInfo(c, transmissionID)
 		if tiErr != nil {
 			return nil, tiErr
