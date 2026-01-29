@@ -6,7 +6,6 @@ import (
 	"math/big"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -46,9 +45,7 @@ const (
 type LogTriggerService struct {
 	services.Service
 
-	baseTrigger capabilities.BaseTriggerCapability
-	inboxesMu   sync.Mutex
-	inboxes     map[string]chan capabilities.TriggerAndId[*evmcappb.Log] // workflowID -> chan
+	baseTrigger capabilities.BaseTriggerCapability[capabilities.TriggerAndId[*evmcappb.Log]]
 
 	srvcEng *services.Engine
 
@@ -107,7 +104,6 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 		logTriggerSendChannelBufferSize: currentSendChannelBufferSize,
 		limitAndSort:                    limitAndSort,
 		orgResolver:                     orgResolver,
-		inboxes:                         make(map[string]chan capabilities.TriggerAndId[*evmcappb.Log]),
 	}
 	if lts.orgResolver == nil {
 		lts.lggr.Warn("OrgResolver is nil, EVM log trigger capability will not be able to fetch organization ID")
@@ -121,36 +117,23 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 		Start: lts.start,
 	}.NewServiceEngine(lggr)
 
-	sendFn := func(ctx context.Context, te capabilities.TriggerEvent, workflowID string) error {
+	decodeFn := func(te capabilities.TriggerEvent) (capabilities.TriggerAndId[*evmcappb.Log], error) {
 		var pl evmcappb.Log
 		if err := te.Payload.UnmarshalTo(&pl); err != nil {
-			return err
+			return capabilities.TriggerAndId[*evmcappb.Log]{}, err
 		}
-
-		lts.inboxesMu.Lock()
-		ch, ok := lts.inboxes[workflowID]
-		lts.inboxesMu.Unlock()
-		if !ok {
-			return fmt.Errorf("no inbox for workflow %s", workflowID)
-		}
-
-		select {
-		case ch <- capabilities.TriggerAndId[*evmcappb.Log]{Id: te.ID, Trigger: &pl}:
-			return nil
-		default:
-			return fmt.Errorf("inbox full for workflow %s", workflowID)
-		}
+		return capabilities.TriggerAndId[*evmcappb.Log]{Id: te.ID, Trigger: &pl}, nil
 	}
 
 	lostFn := func(ctx context.Context, rec capabilities.PendingEvent) {
 		lts.lggr.Errorw("EVM log event marked lost",
 			"triggerId", rec.TriggerId,
-			"workflowId", rec.WorkflowId,
 			"eventId", rec.EventId)
 	}
+
 	retryInterval := 2 * time.Second // TODO: Set these appropriately
 	lostTimeout := 30 * time.Second
-	lts.baseTrigger = *capabilities.NewBaseTriggerCapability(nil, sendFn, lostFn, lts.lggr, retryInterval, lostTimeout)
+	lts.baseTrigger = *capabilities.NewBaseTriggerCapability(nil, decodeFn, lostFn, lts.lggr, retryInterval, lostTimeout)
 
 	return lts, nil
 }
@@ -310,10 +293,8 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	monitoring.EmitInitiated(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerInitiated(telemetryContext, input))
 
 	logCh := make(chan capabilities.TriggerAndId[*evmcappb.Log], lts.logTriggerSendChannelBufferSize)
-	wfID := meta.WorkflowID
-	lts.inboxesMu.Lock()
-	lts.inboxes[wfID] = logCh
-	lts.inboxesMu.Unlock()
+
+	lts.baseTrigger.RegisterTrigger(triggerID, logCh)
 
 	lts.srvcEng.Go(func(ctx context.Context) {
 		ctx, cancel := context.WithCancel(ctx)
@@ -334,8 +315,8 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	return logCh, nil
 }
 
-func (lts *LogTriggerService) AckEvent(ctx context.Context, triggerId string, eventId string, workflowId string) caperrors.Error {
-	if err := lts.baseTrigger.AckEvent(ctx, triggerId, eventId, workflowId); err != nil {
+func (lts *LogTriggerService) AckEvent(ctx context.Context, triggerId string, eventId string) caperrors.Error {
+	if err := lts.baseTrigger.AckEvent(ctx, triggerId, eventId); err != nil {
 		return caperrors.NewPrivateSystemError(err, caperrors.Internal)
 	}
 	return nil
@@ -562,8 +543,7 @@ func (lts *LogTriggerService) deliverLogReliably(
 		Payload:     anyPayload,
 	}
 
-	wfID := telemetryContext.RequestMetadata.WorkflowID
-	if err := lts.baseTrigger.DeliverEvent(ctx, te, []string{wfID}); err != nil {
+	if err := lts.baseTrigger.DeliverEvent(ctx, te, triggerID); err != nil {
 		summary := fmt.Sprintf("failed to persist/deliver event (triggerID=%s, eventID=%s): %v", triggerID, eventID, err)
 		lts.lggr.Error(summary)
 		monitoring.LogAndEmitError(

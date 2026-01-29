@@ -5,10 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"google.golang.org/protobuf/types/known/anypb"
 	"math/big"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -67,21 +65,34 @@ type memEventStore struct {
 }
 
 func newMemEventStore() *memEventStore {
-	return &memEventStore{recs: map[string]capabilities.PendingEvent{}}
+	return &memEventStore{recs: make(map[string]capabilities.PendingEvent)}
 }
+
 func (m *memEventStore) Insert(ctx context.Context, r capabilities.PendingEvent) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	k := r.TriggerId + "|" + r.WorkflowId + "|" + r.EventId
-	m.recs[k] = r
+	m.recs[capabilitiesKey(r.TriggerId, r.EventId)] = r
 	return nil
 }
-func (m *memEventStore) Delete(ctx context.Context, t, w, e string) error {
+
+func (m *memEventStore) DeleteEvent(ctx context.Context, triggerId, eventId string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	delete(m.recs, t+"|"+w+"|"+e)
+	delete(m.recs, capabilitiesKey(triggerId, eventId))
 	return nil
 }
+
+func (m *memEventStore) DeleteEventsForTrigger(ctx context.Context, triggerId string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for k, r := range m.recs {
+		if r.TriggerId == triggerId {
+			delete(m.recs, k)
+		}
+	}
+	return nil
+}
+
 func (m *memEventStore) List(ctx context.Context) ([]capabilities.PendingEvent, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -92,54 +103,39 @@ func (m *memEventStore) List(ctx context.Context) ([]capabilities.PendingEvent, 
 	return out, nil
 }
 
+// Local helper so tests in another package don't need access to unexported capabilities.key
+func capabilitiesKey(triggerId, eventId string) string {
+	return triggerId + "|" + eventId
+}
+
+func decode(te capabilities.TriggerEvent) (capabilities.TriggerAndId[*evmcappb.Log], error) {
+	var pl evmcappb.Log
+	if err := te.Payload.UnmarshalTo(&pl); err != nil {
+		return capabilities.TriggerAndId[*evmcappb.Log]{}, err
+	}
+	return capabilities.TriggerAndId[*evmcappb.Log]{Id: te.ID, Trigger: &pl}, nil
+}
+
 // Build a LogTriggerService with BaseTriggerCapability wired to an inbox channel.
 func newLTSWithBase(t *testing.T) (*LogTriggerService, chan capabilities.TriggerAndId[*evmcappb.Log]) {
 	lts := newLogTriggerService(t)
-
-	inbox := make(chan capabilities.TriggerAndId[*evmcappb.Log], 4)
-	// Register inbox for WorkflowID "wf-id"
-	lts.inboxesMu.Lock()
-	if lts.inboxes == nil {
-		lts.inboxes = map[string]chan capabilities.TriggerAndId[*evmcappb.Log]{}
-	}
-	lts.inboxes["wf-id"] = inbox
-	lts.inboxesMu.Unlock()
-
 	es := newMemEventStore()
-	send := func(ctx context.Context, te capabilities.TriggerEvent, wf string) error {
-		var pl evmcappb.Log
-		if err := te.Payload.UnmarshalTo(&pl); err != nil {
-			return err
-		}
 
-		lts.inboxesMu.Lock()
-		ch := lts.inboxes[wf]
-		lts.inboxesMu.Unlock()
-		if ch == nil {
-			return fmt.Errorf("no inbox for %s", wf)
-		}
-
-		select {
-		case ch <- capabilities.TriggerAndId[*evmcappb.Log]{Id: te.ID, Trigger: &pl}:
-			return nil
-		default:
-			return fmt.Errorf("inbox full for %s", wf)
-		}
-	}
 	lost := func(ctx context.Context, rec capabilities.PendingEvent) {
 		lts.lggr.Warnw("lost", "event", rec.EventId)
 	}
 	lts.baseTrigger = *capabilities.NewBaseTriggerCapability(
-		es, send, lost, lts.lggr, 500*time.Millisecond, 30*time.Second,
+		es, decode, lost, lts.lggr, 500*time.Millisecond, 30*time.Second,
 	)
 
-	// Start the base
 	require.NoError(t, lts.baseTrigger.Start(t.Context()))
 	t.Cleanup(func() {
 		lts.baseTrigger.Stop()
-		//lts.baseTrigger.Cancel()
 	})
-	return lts, inbox
+
+	sendCh := make(chan capabilities.TriggerAndId[*evmcappb.Log], 1)
+	lts.baseTrigger.RegisterTrigger(triggerID, sendCh)
+	return lts, sendCh
 }
 
 func initMocks(t *testing.T) *evmmock.EVMService {
@@ -160,9 +156,11 @@ func TestLogTriggerService_Close_WaitsForPollingGoroutine(t *testing.T) {
 		evmService.EXPECT().GetFiltersNames(mock.Anything).Return([]string{}, nil).Maybe()
 		store := NewLogTriggerStore()
 		service := createTriggerObject(t, evmService, store)
-		send := func(_ context.Context, _ capabilities.TriggerEvent, _ string) error { return nil }
+		decode := func(_ capabilities.TriggerEvent) (capabilities.TriggerAndId[*evmcappb.Log], error) {
+			return capabilities.TriggerAndId[*evmcappb.Log]{}, nil
+		}
 		lost := func(_ context.Context, _ capabilities.PendingEvent) {}
-		service.baseTrigger = *capabilities.NewBaseTriggerCapability(newMemEventStore(), send, lost, logger.Test(t), 200*time.Millisecond, 5*time.Second)
+		service.baseTrigger = *capabilities.NewBaseTriggerCapability(newMemEventStore(), decode, lost, logger.Test(t), 200*time.Millisecond, 5*time.Second)
 		require.NoError(t, service.baseTrigger.Start(ctx))
 		defer service.baseTrigger.Stop()
 		err := service.Start(ctx)
@@ -765,7 +763,7 @@ func TestFetchLogsFromLogPoller(t *testing.T) {
 }
 
 func TestSendLogsToWorkflows(t *testing.T) {
-	service, inbox := newLTSWithBase(t)
+	service, sendCh := newLTSWithBase(t)
 
 	finalizedBlockNumber := big.NewInt(1)
 	expectedLog1 := &evmtypes.Log{
@@ -797,22 +795,22 @@ func TestSendLogsToWorkflows(t *testing.T) {
 		ctx := contexts.WithCRE(t.Context(), contexts.CRE{Workflow: "wf-id"})
 		err := service.sendLogsToWorkflows(ctx, monitoring.TelemetryContext{RequestMetadata: capabilities.RequestMetadata{WorkflowID: "wf-id"}}, expectedLogs, finalizedBlockNumber, triggerID, state)
 		require.NoError(t, err)
-		actualLog1 := <-inbox
+		actualLog1 := <-sendCh
 		require.NoError(t,
-			service.baseTrigger.AckEvent(t.Context(), triggerID, "wf-id", actualLog1.Id),
+			service.baseTrigger.AckEvent(t.Context(), triggerID, actualLog1.Id),
 		)
 		expectedResponse1 := createTriggerResponse(expectedLog1, service)
 		require.Equal(t, expectedResponse1.Id, actualLog1.Id)
 		require.True(t, proto.Equal(expectedResponse1.Trigger, actualLog1.Trigger), "proto logs differ for 1st log")
 
-		actualLog2 := <-inbox
+		actualLog2 := <-sendCh
 		require.NoError(t,
-			service.baseTrigger.AckEvent(t.Context(), triggerID, "wf-id", actualLog2.Id),
+			service.baseTrigger.AckEvent(t.Context(), triggerID, actualLog2.Id),
 		)
 		expectedResponse2 := createTriggerResponse(expectedLog2, service)
 		require.Equal(t, expectedResponse2.Id, actualLog2.Id)
 		require.True(t, proto.Equal(expectedResponse2.Trigger, actualLog2.Trigger), "proto logs differ for 2nd log")
-		require.Len(t, inbox, 0)
+		require.Len(t, sendCh, 0)
 		// Verify that the unfinalized logs are stored in the trigger state and all other fields are preserved
 		state2, _ := service.triggers.Read(triggerID)
 		require.Len(t, state2.unfinalizedSentEventIDs, 1)
@@ -827,29 +825,22 @@ func TestSendLogsToWorkflows(t *testing.T) {
 		})
 		state, _ := service.triggers.Read(triggerID)
 
-		// temporarily swap inbox to small to force “full” error on second send
-		inboxSmall := make(chan capabilities.TriggerAndId[*evmcappb.Log], 1)
-		service.inboxesMu.Lock()
-		service.inboxes["wf-id"] = inboxSmall
-		service.inboxesMu.Unlock()
-
 		ctx := contexts.WithCRE(t.Context(), contexts.CRE{Workflow: "wf-id"})
 		tc := monitoring.TelemetryContext{
 			RequestMetadata: capabilities.RequestMetadata{WorkflowID: "wf-id"},
 		}
+		// Send 2 logs to workflow, with space for only a single log in the sendCh
 		err := service.sendLogsToWorkflows(ctx, tc, expectedLogs, big.NewInt(0), triggerID, state)
 		require.NoError(t, err)
-		actualLog1 := <-inboxSmall
-		require.NoError(t,
-			service.baseTrigger.AckEvent(t.Context(), triggerID, "wf-id", actualLog1.Id),
-		)
+		actualLog1 := <-sendCh
+		require.NoError(t, service.baseTrigger.AckEvent(t.Context(), triggerID, actualLog1.Id))
 		expectedResponse1 := createTriggerResponse(expectedLog1, service)
 		require.Equal(t, expectedResponse1.Id, actualLog1.Id)
 		require.True(t, proto.Equal(expectedResponse1.Trigger, actualLog1.Trigger), "proto logs differ for 1st log")
 
 		require.Eventually(t, func() bool {
 			select {
-			case actualLog2 := <-inboxSmall:
+			case actualLog2 := <-sendCh:
 				return actualLog2.Id == createTriggerResponse(expectedLog2, service).Id
 			default:
 				return false
@@ -890,7 +881,6 @@ func TestSendLogsToWorkflows(t *testing.T) {
 		state := logTriggerState{
 			unfinalizedSentEventIDs: map[string]*big.Int{},
 		}
-		//logCh := make(chan capabilities.TriggerAndId[*evmcappb.Log], len(expectedLogs))
 		ctx := contexts.WithCRE(t.Context(), contexts.CRE{Workflow: "wf-id"})
 		err := service.sendLogsToWorkflows(ctx, monitoring.TelemetryContext{}, expectedLogs, finalizedBlockNumber, triggerID, state)
 		require.Error(t, err)
@@ -1001,28 +991,8 @@ func registerAndUnregisterLogTriggerIntegration(t *testing.T, topicsInput []*evm
 
 	service := createTriggerObject(t, evmService, NewLogTriggerStore())
 
-	send := func(ctx context.Context, te capabilities.TriggerEvent, workflowID string) error {
-		service.inboxesMu.Lock()
-		inbox := service.inboxes[workflowID]
-		service.inboxesMu.Unlock()
-		require.NotNil(t, inbox)
-
-		l := new(evmcappb.Log)
-		if err := anypb.UnmarshalTo(te.Payload, l, proto.UnmarshalOptions{}); err != nil {
-			return err
-		}
-
-		msg := capabilities.TriggerAndId[*evmcappb.Log]{Trigger: l, Id: te.ID}
-
-		select {
-		case inbox <- msg:
-			return nil
-		default:
-			return fmt.Errorf("inbox full for %s", workflowID)
-		}
-	}
 	lost := func(_ context.Context, _ capabilities.PendingEvent) {}
-	service.baseTrigger = *capabilities.NewBaseTriggerCapability(newMemEventStore(), send, lost, logger.Test(t), 200*time.Millisecond, 5*time.Second)
+	service.baseTrigger = *capabilities.NewBaseTriggerCapability(newMemEventStore(), decode, lost, logger.Test(t), 200*time.Millisecond, 5*time.Second)
 
 	triggerID := "trigger-integration"
 
@@ -1377,122 +1347,6 @@ func TestNewLogTriggerService(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "logTriggerLimitQueryLogSize (1001) must be less than logTriggerSendChannelBufferSize (1000)")
 	})
-}
-
-func TestBaseTrigger_ResendsUntilAck_ThenStops(t *testing.T) {
-	store := newMemEventStore()
-
-	sendCh := make(chan string, 100)
-	send := func(ctx context.Context, te capabilities.TriggerEvent, workflowID string) error {
-		sendCh <- te.ID
-		return nil
-	}
-
-	var lostCount atomic.Int32
-	lost := func(ctx context.Context, rec capabilities.PendingEvent) {
-		lostCount.Add(1)
-	}
-
-	// Fast retransmit, long max (so it won't go lost during this test)
-	b := capabilities.NewBaseTriggerCapability(store, send, lost, logger.Test(t),
-		50*time.Millisecond, 2*time.Second,
-	)
-	require.NoError(t, b.Start(t.Context()))
-	defer b.Stop()
-
-	te := capabilities.TriggerEvent{
-		TriggerType: "trigger-1",
-		ID:          "event-1",
-		Payload:     &anypb.Any{TypeUrl: "type.googleapis.com/foo", Value: []byte{1, 2, 3}},
-	}
-
-	require.NoError(t, b.DeliverEvent(t.Context(), te, []string{"wf-1"}))
-
-	// Expect at least 2 sends (initial + at least one resend)
-	seen := 0
-	require.Eventually(t, func() bool {
-		for {
-			select {
-			case id := <-sendCh:
-				if id == "event-1" {
-					seen++
-				}
-			default:
-				return seen >= 2
-			}
-		}
-	}, 1*time.Second, 10*time.Millisecond, "expected resend without ack")
-
-	// ACK should stop further sends
-	require.NoError(t, b.AckEvent(t.Context(), "trigger-1", "wf-1", "event-1"))
-
-	// Drain any already-enqueued sends
-	time.Sleep(20 * time.Millisecond)
-	for {
-		select {
-		case <-sendCh:
-		default:
-			goto drained
-		}
-	}
-drained:
-	time.Sleep(150 * time.Millisecond)
-	select {
-	case id := <-sendCh:
-		t.Fatalf("unexpected send after ack: %s", id)
-	default:
-	}
-	require.Equal(t, int32(0), lostCount.Load(), "should not be lost")
-}
-
-func TestBaseTrigger_TimesOutAndCallsLost(t *testing.T) {
-	store := newMemEventStore()
-
-	var sendCount atomic.Int64
-	send := func(ctx context.Context, te capabilities.TriggerEvent, workflowID string) error {
-		sendCount.Add(1)
-		return nil
-	}
-
-	lostCh := make(chan capabilities.PendingEvent, 1)
-	lost := func(ctx context.Context, rec capabilities.PendingEvent) {
-		lostCh <- rec
-	}
-
-	tRetransmit := 50 * time.Millisecond
-	tMax := 200 * time.Millisecond
-
-	b := capabilities.NewBaseTriggerCapability(store, send, lost, logger.Test(t), tRetransmit, tMax)
-	require.NoError(t, b.Start(t.Context()))
-	defer b.Stop()
-
-	te := capabilities.TriggerEvent{
-		TriggerType: "trigger-1",
-		ID:          "event-1",
-		Payload:     &anypb.Any{TypeUrl: "type.googleapis.com/foo", Value: []byte{1}},
-	}
-	require.NoError(t, b.DeliverEvent(t.Context(), te, []string{"wf-1"}))
-
-	// Wait for lost
-	var lostEvent capabilities.PendingEvent
-	require.Eventually(t, func() bool {
-		select {
-		case lostEvent = <-lostCh:
-			return true
-		default:
-			return false
-		}
-	}, 2*time.Second, 10*time.Millisecond)
-
-	require.Equal(t, "trigger-1", lostEvent.TriggerId)
-	require.Equal(t, "wf-1", lostEvent.WorkflowId)
-	require.Equal(t, "event-1", lostEvent.EventId)
-	countAtLost := sendCount.Load()
-
-	time.Sleep(2 * tRetransmit)
-	countAfterGrace := sendCount.Load()
-	require.Equal(t, countAtLost, countAfterGrace,
-		"expected no new sends after lost")
 }
 
 func createTriggerObject(t *testing.T, mockEVM *evmmock.EVMService, store LogTriggerStore) *LogTriggerService {
