@@ -139,7 +139,7 @@ func (s *capabilityGRPCService) setSelector(cfg *config.Config) error {
 	// When we run against a local validator (e.g. local CRE) we can't resolve chain selector
 	// since ChainID is always different
 	if cfg.IsLocal {
-		s.chainSelector = chain_selectors.SOLANA_DEVNET.Selector
+		s.chainSelector = chain_selectors.TEST_22222222222222222222222222222222222222222222.Selector
 		return nil
 	}
 
