@@ -402,7 +402,7 @@ func assertLogTriggerWorks(t *testing.T, eventName string, workflowName string, 
 
 	// Verify ACKs occur on Base Trigger for each event via logs
 	require.Eventually(t, func() bool {
-		expectedMatches := len(matchingMessages) // Verify ACKs for this many expected events
+		expectedMatches := len(matchingMessages)
 		require.NotZero(t, expectedMatches)
 		matchCount := 0
 		for _, tx := range matchingTxs {
