@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -86,8 +87,8 @@ func Test_SimpleLogTrigger(t *testing.T) {
 	// adding test cases for each confidence level
 	confidenceLevelMap := map[int32]string{
 		0: "SAFE",
-		//1: "LATEST", // TODO: Uncomment
-		//2: "FINALIZED",
+		1: "LATEST",
+		2: "FINALIZED",
 	}
 	for confidence, confidenceLabel := range confidenceLevelMap {
 		message := fmt.Sprintf("Data for log trigger, confidence %s", confidenceLabel)
@@ -387,13 +388,20 @@ func assertLogTriggerWorks(t *testing.T, eventName string, workflowName string, 
 			}
 		}
 
-		// TODO: Verify ACK occurs on workflow engine and capability via Base Trigger?
-		// TODO: Change zap level to debug and update relevant logging to debugs
-		require.Eventually(t, func() bool {
-			// Workflow engine ACKs
-			ackCount := obs.FilterMessageSnippet("Calling ACKEvent on trigger capability").All()
-			return len(ackCount) >= numOfWorkflowNodes
-		}, 30*time.Second, 1*time.Second, "expected ACK logs for each workflow node")
+		// Verify ACKs occur on Base Trigger for each event via logs
+		for _, tx := range matchingTxs {
+			eventID := strings.TrimPrefix(tx.Hash().String(), "0x")
+			require.Eventually(t, func() bool {
+				pattern := fmt.Sprintf(`Event ACK.*eventID\s+%s`, regexp.QuoteMeta(eventID))
+				re := regexp.MustCompile(pattern)
+				for _, log := range obs.All() {
+					if re.MatchString(log.Message) {
+						return true
+					}
+				}
+				return false
+			}, 30*time.Second, 1*time.Second, "expected ACK logs for each tx event")
+		}
 
 		// remove any messages that have already met the expected count from the pending map
 		for msg, found := range foundEventsByMessage {
