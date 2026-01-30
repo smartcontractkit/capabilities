@@ -177,19 +177,20 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		}
 	}
 
-	if err = e.reportSizeLimit.Check(ctx, commoncfg.SizeOf(request.Report.RawReport)); err != nil {
-		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s report size exceeds limit: %w", userError, err)
-	}
-
 	queuePosition := e.getQueuePosition(transmissionID)
 	e.lggr = e.lggr.With("queuePosition", queuePosition)
 	txHashRetriever := NewTxHashRetriever(e.forwarderClient, e.lggr, transmissionID)
 
-	transmissionInfo, err := e.pollUntilSlotOrStateChange(ctx, transmissionID, queuePosition, txHashRetriever)
+	transmissionInfo, err := e.pollTransmissionInfo(ctx, transmissionID, queuePosition, txHashRetriever)
 	if err != nil {
 		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed to poll for transmission slot: %w", err)
 	}
 
+	if err = e.reportSizeLimit.Check(ctx, commoncfg.SizeOf(request.Report.RawReport)); err != nil {
+		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s report size exceeds limit: %w", userError, err)
+	}
+
+	e.lggr.Infow("Checking transmission status", transmissionInfo.LogAttrs()...)
 	switch transmissionInfo.State {
 	case contracts.TransmissionStateNotAttempted:
 		e.lggr.Infow("transmission not attempted - attempting to push to txmgr")
@@ -242,6 +243,11 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		errorMsg := getInvalidStateErrorMessage(transmissionInfo.State)
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportInvalidTransmissionState(telemetryContext, request, transmissionInfo, "WriteReport invalid transmission state", errorMsg))
 		return nil, capabilities.ResponseMetadata{}, errors.New(errorMsg)
+	}
+
+	err = e.reportSizeLimit.Check(ctx, commoncfg.SizeOf(request.Report.RawReport))
+	if err != nil {
+		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s report size exceeds limit: %w", userError, err)
 	}
 
 	e.lggr.Debugw("Submitting transaction")
@@ -322,7 +328,7 @@ func (e *WriteReport) getQueuePosition(transmissionID contracts.TransmissionID) 
 	return position
 }
 
-func (e *WriteReport) pollUntilSlotOrStateChange(
+func (e *WriteReport) pollTransmissionInfo(
 	ctx context.Context,
 	transmissionID contracts.TransmissionID,
 	queuePosition int,
