@@ -324,6 +324,7 @@ func (e *WriteReport) getQueuePosition(transmissionID contracts.TransmissionID) 
 	return position
 }
 
+// pollTransmissionInfo returns final state of the transmission at this point of the transmission schedule, taking into account previous nodes in the queue.
 func (e *WriteReport) pollTransmissionInfo(
 	ctx context.Context,
 	transmissionID contracts.TransmissionID,
