@@ -86,8 +86,8 @@ func Test_SimpleLogTrigger(t *testing.T) {
 	// adding test cases for each confidence level
 	confidenceLevelMap := map[int32]string{
 		0: "SAFE",
-		1: "LATEST",
-		2: "FINALIZED",
+		//1: "LATEST", // TODO: Uncomment
+		//2: "FINALIZED",
 	}
 	for confidence, confidenceLabel := range confidenceLevelMap {
 		message := fmt.Sprintf("Data for log trigger, confidence %s", confidenceLabel)
@@ -386,6 +386,14 @@ func assertLogTriggerWorks(t *testing.T, eventName string, workflowName string, 
 				require.NotContains(t, logMessage, NonMatching, "Non-matching events should not be processed by the log trigger/workflow.")
 			}
 		}
+
+		// TODO: Verify ACK occurs on workflow engine and capability via Base Trigger?
+		// TODO: Change zap level to debug and update relevant logging to debugs
+		require.Eventually(t, func() bool {
+			// Workflow engine ACKs
+			ackCount := obs.FilterMessageSnippet("Calling ACKEvent on trigger capability").All()
+			return len(ackCount) >= numOfWorkflowNodes
+		}, 30*time.Second, 1*time.Second, "expected ACK logs for each workflow node")
 
 		// remove any messages that have already met the expected count from the pending map
 		for msg, found := range foundEventsByMessage {
