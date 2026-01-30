@@ -388,21 +388,6 @@ func assertLogTriggerWorks(t *testing.T, eventName string, workflowName string, 
 			}
 		}
 
-		// Verify ACKs occur on Base Trigger for each event via logs
-		for _, tx := range matchingTxs {
-			eventID := strings.TrimPrefix(tx.Hash().String(), "0x")
-			require.Eventually(t, func() bool {
-				pattern := fmt.Sprintf(`Event ACK.*eventID\s+%s`, regexp.QuoteMeta(eventID))
-				re := regexp.MustCompile(pattern)
-				for _, log := range obs.All() {
-					if re.MatchString(log.Message) {
-						return true
-					}
-				}
-				return false
-			}, 30*time.Second, 1*time.Second, "expected ACK logs for each tx event")
-		}
-
 		// remove any messages that have already met the expected count from the pending map
 		for msg, found := range foundEventsByMessage {
 			if found == numOfWorkflowNodes {
@@ -414,6 +399,26 @@ func assertLogTriggerWorks(t *testing.T, eventName string, workflowName string, 
 		return len(foundEventsByMessage) == 0
 	}, 90*time.Second, 2*time.Second,
 		"Expected to find %d matching events, but found: %+v", numOfWorkflowNodes, foundEventsByMessage)
+
+	// Verify ACKs occur on Base Trigger for each event via logs
+	require.Eventually(t, func() bool {
+		expectedMatches := len(matchingMessages) // Verify ACKs for this many expected events
+		require.NotZero(t, expectedMatches)
+		matchCount := 0
+		for _, tx := range matchingTxs {
+			// Find Event ACK log for matching tx event
+			eventID := strings.TrimPrefix(tx.Hash().String(), "0x")
+			pattern := fmt.Sprintf(`Event ACK.*eventID\s+%s`, regexp.QuoteMeta(eventID))
+			re := regexp.MustCompile(pattern)
+			for _, log := range obs.All() {
+				if re.MatchString(log.Message) {
+					matchCount++
+					break
+				}
+			}
+		}
+		return matchCount == expectedMatches
+	}, 90*time.Second, 1*time.Second, "expected ACK logs for each matching tx event")
 }
 
 func waitUntilLogPollerFiltersArePresent(t *testing.T, obs *observer.ObservedLogs, numOfWorkflowNodes int) {
