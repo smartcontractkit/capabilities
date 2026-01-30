@@ -509,7 +509,7 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 }
 
 // deliverLogReliably sends a single EVM log to the BaseTriggerCapability
-// for persistence, retransmission, and lost handling.
+// for persistence, retransmission, and ACKing.
 func (lts *LogTriggerService) deliverLogReliably(
 	ctx context.Context,
 	telemetryContext monitoring.TelemetryContext,

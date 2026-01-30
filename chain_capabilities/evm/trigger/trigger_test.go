@@ -738,7 +738,7 @@ func TestSendLogsToWorkflows(t *testing.T) {
 		})
 		state, _ := service.triggers.Read(triggerID)
 		ctx := contexts.WithCRE(t.Context(), contexts.CRE{Workflow: "wf-id"})
-		err := service.sendLogsToWorkflows(ctx, monitoring.TelemetryContext{RequestMetadata: capabilities.RequestMetadata{WorkflowID: "wf-id"}}, expectedLogs, finalizedBlockNumber, triggerID, state)
+		err := service.sendLogsToWorkflows(ctx, monitoring.TelemetryContext{}, expectedLogs, finalizedBlockNumber, triggerID, state)
 		require.NoError(t, err)
 		actualLog1 := <-sendCh
 		require.NoError(t,
@@ -771,11 +771,8 @@ func TestSendLogsToWorkflows(t *testing.T) {
 		state, _ := service.triggers.Read(triggerID)
 
 		ctx := contexts.WithCRE(t.Context(), contexts.CRE{Workflow: "wf-id"})
-		tc := monitoring.TelemetryContext{
-			RequestMetadata: capabilities.RequestMetadata{WorkflowID: "wf-id"},
-		}
 		// Send 2 logs to workflow, with space for only a single log in the sendCh
-		err := service.sendLogsToWorkflows(ctx, tc, expectedLogs, big.NewInt(0), triggerID, state)
+		err := service.sendLogsToWorkflows(ctx, monitoring.TelemetryContext{}, expectedLogs, big.NewInt(0), triggerID, state)
 		require.NoError(t, err)
 		actualLog1 := <-sendCh
 		require.NoError(t, service.baseTrigger.AckEvent(t.Context(), triggerID, actualLog1.Id))
