@@ -17,4 +17,6 @@ type Config struct {
 	ObservationPollPeriod         time.Duration `json:"observationPollPeriod"`
 	ChainHeightPollPeriod         time.Duration `json:"chainHeightPollPeriod"`
 	UnknownRequestsTTL            time.Duration `json:"unknownRequestsTTL"`
+	// DeltaStage for staggered transmission scheduling
+	DeltaStage time.Duration `json:"deltaStage"`
 }

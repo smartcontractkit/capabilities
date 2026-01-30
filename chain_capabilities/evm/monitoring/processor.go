@@ -178,6 +178,14 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 				return fmt.Errorf("failed to publish HeaderByNumberError metrics: %w", err)
 			}
 		}
+	// -- TransmissionScheduler --
+	case *TransmissionSchedulerNodeNotFoundInDon:
+		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
+			return fmt.Errorf("failed to emit TransmissionSchedulerNodeNotFoundInDon log: %w", err)
+		}
+		if err := p.metrics.OnTransmissionSchedulerNodeNotFoundInDon(ctx, msg); err != nil {
+			return fmt.Errorf("failed to publish TransmissionSchedulerNodeNotFoundInDon metrics: %w", err)
+		}
 	default:
 		// Unknown message types are silently ignored (noop)
 		return nil

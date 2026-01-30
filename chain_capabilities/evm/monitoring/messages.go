@@ -341,6 +341,16 @@ func (m *MessageBuilder) BuildHeaderByNumberError(tc TelemetryContext, blockNumb
 	}
 }
 
+func (m *MessageBuilder) BuildTransmissionSchedulerNodeNotFoundInDon(tc TelemetryContext, peerID, transmissionID string) ErrorMessage {
+	return &TransmissionSchedulerNodeNotFoundInDon{
+		PeerId:           peerID,
+		TransmissionId:   transmissionID,
+		Summary:          "Transmission scheduler: node not found in DON members",
+		Cause:            fmt.Sprintf("Peer ID %s not found in DON members list, transmitting immediately as fallback", peerID),
+		ExecutionContext: m.BuildExecutionContext(tc),
+	}
+}
+
 // BuildExecutionContext builds the shared ExecutionContext
 func (m *MessageBuilder) BuildExecutionContext(tc TelemetryContext) *capmonitoring.ExecutionContext {
 	ex := &capmonitoring.ExecutionContext{

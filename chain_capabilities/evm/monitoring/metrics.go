@@ -85,6 +85,9 @@ type Metrics struct {
 	HeaderByNumberError struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
+	TransmissionSchedulerNodeNotFoundInDon struct {
+		basic commoncapbeholder.MetricsCapBasic
+	}
 }
 
 // NewMetrics constructs all counters & histograms bound to a given chainID
@@ -222,6 +225,13 @@ func NewMetrics() (Metrics, error) {
 	m.HeaderByNumberError.basic, err = commoncapbeholder.NewMetricsCapBasic(headerByNumberErr)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create header by number error metric: %w", err)
+	}
+
+	// -- TransmissionScheduler --
+	tsNodeNotFound := commoncapbeholder.NewMetricsInfoCapBasic(ns("transmission_scheduler_node_not_found_in_don"), commonbeholder.ToSchemaFullName(&TransmissionSchedulerNodeNotFoundInDon{}))
+	m.TransmissionSchedulerNodeNotFoundInDon.basic, err = commoncapbeholder.NewMetricsCapBasic(tsNodeNotFound)
+	if err != nil {
+		return Metrics{}, fmt.Errorf("failed to create transmission scheduler node not found in don metric: %w", err)
 	}
 
 	return m, nil
@@ -380,6 +390,14 @@ func (m *Metrics) OnHeaderByNumberSuccess(ctx context.Context, msg *HeaderByNumb
 func (m *Metrics) OnHeaderByNumberError(ctx context.Context, msg *HeaderByNumberError) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
 	m.HeaderByNumberError.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
+	return nil
+}
+
+// -- TransmissionScheduler --
+
+func (m *Metrics) OnTransmissionSchedulerNodeNotFoundInDon(ctx context.Context, msg *TransmissionSchedulerNodeNotFoundInDon) error {
+	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
+	m.TransmissionSchedulerNodeNotFoundInDon.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
 	return nil
 }
 
@@ -665,6 +683,19 @@ func (r *HeaderByNumberError) LogAttributes() []attribute.KeyValue {
 }
 
 func (r *HeaderByNumberError) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *TransmissionSchedulerNodeNotFoundInDon) LogAttributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
+		attribute.String("peer_id", r.GetPeerId()),
+		attribute.String("transmission_id", r.GetTransmissionId()),
+		attribute.String("summary", r.GetSummary()),
+		attribute.String("cause", r.GetCause()),
+	}, r.ExecutionContext.LogAttributes()...)
+}
+
+func (r *TransmissionSchedulerNodeNotFoundInDon) MetricAttributes() []attribute.KeyValue {
 	return r.ExecutionContext.MetricsAttributes()
 }
 

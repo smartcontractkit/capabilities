@@ -9,8 +9,10 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	chainselectors "github.com/smartcontractkit/chain-selectors"
-	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
+	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
+
+	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/height"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
@@ -114,7 +116,16 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	c.requestPoller = poller.NewPoller(c.lggr, consensusMetrics, cfg.ObservationPollerWorkersCount, cfg.ObservationPollPeriod)
 	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, cfg.UnknownRequestsTTL)
 
-	c.EVM, err = actions.NewEVM(*cfg, evmRelayer, c.lggr, processor, messageBuilder, c.consensusHandler, c.chainSelector, c.limitsFactory)
+	if cfg.DeltaStage <= 0 {
+		return fmt.Errorf("invalid delta stage %d", cfg.DeltaStage)
+	}
+
+	scheduler, err := c.initialiseTransmissionScheduler(ctx, dependencies.CapabilityRegistry, cfg.DeltaStage)
+	if err != nil {
+		return fmt.Errorf("failed to initialize transmission scheduler: %w", err)
+	}
+
+	c.EVM, err = actions.NewEVM(*cfg, evmRelayer, c.lggr, processor, messageBuilder, c.consensusHandler, c.chainSelector, c.limitsFactory, scheduler)
 	if err != nil {
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
@@ -156,6 +167,59 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	return nil
 }
 
+func (c *capabilityGRPCService) initialiseTransmissionScheduler(
+	ctx context.Context,
+	capRegistry core.CapabilitiesRegistry,
+	deltaStage time.Duration,
+) (actions.TransmissionScheduler, error) {
+	localNode, err := capRegistry.LocalNode(ctx)
+	if err != nil {
+		return actions.TransmissionScheduler{}, fmt.Errorf("failed to get local node: %w", err)
+	}
+
+	var donPeerIDs []p2ptypes.PeerID
+	myPeerID := localNode.PeerID
+	for _, peerID := range c.DON.Members {
+		donPeerIDs = append(donPeerIDs, peerID)
+	}
+
+	if myPeerID == nil {
+		return actions.TransmissionScheduler{}, fmt.Errorf("local node peer ID is nil")
+	}
+	if len(donPeerIDs) == 0 {
+		return actions.TransmissionScheduler{}, fmt.Errorf("DON members list is empty")
+	}
+	if len(c.DON.Members) == 0 {
+		return actions.TransmissionScheduler{}, fmt.Errorf("no DON members found in capability info")
+	}
+
+	found := false
+	for _, peerID := range donPeerIDs {
+		if peerID == *myPeerID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return actions.TransmissionScheduler{}, fmt.Errorf("local peer ID %s not found in DON members", myPeerID.String())
+	}
+
+	c.lggr.Infow("Transmission scheduler initialized",
+		"deltaStage", deltaStage,
+		"donSize", len(donPeerIDs),
+		"F", c.DON.F,
+		"myPeerID", myPeerID.String(),
+	)
+
+	return actions.NewTransmissionScheduler(
+		*myPeerID,
+		donPeerIDs,
+		deltaStage,
+		c.DON.F,
+		c.lggr,
+	), nil
+}
+
 func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Config, error) {
 	var cfg config.Config
 	if err := json.Unmarshal([]byte(configStr), &cfg); err != nil {
@@ -194,6 +258,7 @@ func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Confi
 		c.lggr.Infof("UnknownRequestsTTL is zero, setting to %s.", cfg.UnknownRequestsTTL)
 	}
 
+	// DeltaStage is optional - if not set, transmission scheduling will be disabled
 	return &cfg, nil
 }
 
