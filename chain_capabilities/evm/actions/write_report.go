@@ -180,14 +180,9 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 	queuePosition := e.getQueuePosition(transmissionID)
 	e.lggr = e.lggr.With("queuePosition", queuePosition)
 	txHashRetriever := NewTxHashRetriever(e.forwarderClient, e.lggr, transmissionID)
-
 	transmissionInfo, err := e.pollTransmissionInfo(ctx, transmissionID, queuePosition, txHashRetriever)
 	if err != nil {
 		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed to poll for transmission slot: %w", err)
-	}
-
-	if err = e.reportSizeLimit.Check(ctx, commoncfg.SizeOf(request.Report.RawReport)); err != nil {
-		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s report size exceeds limit: %w", userError, err)
 	}
 
 	e.lggr.Infow("Checking transmission status", transmissionInfo.LogAttrs()...)
@@ -262,11 +257,12 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		if readTransmissionErr != nil {
 			return contracts.TransmissionInfo{}, readTransmissionErr
 		}
-		if readTransmissionInfo.State == contracts.TransmissionStateNotAttempted {
-			return contracts.TransmissionInfo{}, errors.New("transaction successfully executed but not yet seeing the transmission info updated, retrying getting transmission info")
+		if readTransmissionInfo.State != contracts.TransmissionStateNotAttempted {
+			return readTransmissionInfo, nil
 		}
-		return readTransmissionInfo, nil
+		return contracts.TransmissionInfo{}, errors.New("transaction successfully executed but not yet seeing the transmission info updated, retrying getting transmission info")
 	})
+
 	if err != nil {
 		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed getting transmission info after node submitted the report on chain, %w", err)
 	}
@@ -284,8 +280,8 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 	switch newTransmissionInfo.State {
 	case contracts.TransmissionStateSucceeded:
 		txHash := &transactionResult.TxHash
-		// Report for this transaction has already been submitted, and we sent a duplicate tx onchain which is fine, but wastes ethereum gas
 		if transactionResult.TxStatus == evmtypes.TxReverted {
+			// Report for this transaction has already been submitted and we sent a duplicate tx onchain which is fine, but wastes ethereum gas
 			txHash, err = txHashRetriever.GetSuccessfulTransmissionHash(ctx)
 			if err != nil {
 				return nil, capabilities.ResponseMetadata{}, err
