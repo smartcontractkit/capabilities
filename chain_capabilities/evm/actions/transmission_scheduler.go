@@ -59,7 +59,7 @@ func (ts *TransmissionScheduler) GetQueuePosition(transmissionID string) int {
 
 // transmissionScheduleSeed generates a deterministic 16-byte key from transmissionID
 func transmissionScheduleSeed(transmissionID string) [16]byte {
-	hash := sha3.NewLegacyKeccak256()
+	hash := sha3.New256()
 	hash.Write([]byte(transmissionID))
 	var key [16]byte
 	copy(key[:], hash.Sum(nil))
