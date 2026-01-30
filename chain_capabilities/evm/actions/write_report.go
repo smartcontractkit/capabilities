@@ -182,7 +182,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 	txHashRetriever := NewTxHashRetriever(e.forwarderClient, e.lggr, transmissionID)
 	transmissionInfo, err := e.pollTransmissionInfo(ctx, transmissionID, queuePosition, txHashRetriever)
 	if err != nil {
-		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed to poll for transmission slot: %w", err)
+		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed to get transmission info: %w", err)
 	}
 
 	e.lggr.Infow("Checking transmission status", transmissionInfo.LogAttrs()...)
