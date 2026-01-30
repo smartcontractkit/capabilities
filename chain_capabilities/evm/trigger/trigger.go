@@ -124,17 +124,9 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 		}
 		return capabilities.TriggerAndId[*evmcappb.Log]{Id: te.ID, Trigger: &pl}, nil
 	}
-
-	lostFn := func(ctx context.Context, rec capabilities.PendingEvent) {
-		lts.lggr.Errorw("EVM log event marked lost",
-			"triggerId", rec.TriggerId,
-			"eventId", rec.EventId)
-	}
-
-	retryInterval := 2 * time.Second // TODO: Set these appropriately
-	lostTimeout := 30 * time.Second
+	retryInterval := 2 * time.Second              // TODO: Set this appropriately
 	eventStore := capabilities.NewMemEventStore() // TODO: Use DB Storage instead of in-mem
-	lts.baseTrigger = *capabilities.NewBaseTriggerCapability(eventStore, decodeFn, lostFn, lts.lggr, retryInterval, lostTimeout)
+	lts.baseTrigger = *capabilities.NewBaseTriggerCapability(eventStore, decodeFn, lts.lggr, retryInterval)
 	return lts, nil
 }
 

@@ -71,12 +71,7 @@ func newLTSWithBase(t *testing.T) (*LogTriggerService, chan capabilities.Trigger
 	lts := newLogTriggerService(t)
 	es := capabilities.NewMemEventStore()
 
-	lost := func(ctx context.Context, rec capabilities.PendingEvent) {
-		lts.lggr.Warnw("lost", "event", rec.EventId)
-	}
-	lts.baseTrigger = *capabilities.NewBaseTriggerCapability(
-		es, decode, lost, lts.lggr, 500*time.Millisecond, 30*time.Second,
-	)
+	lts.baseTrigger = *capabilities.NewBaseTriggerCapability(es, decode, lts.lggr, 500*time.Millisecond)
 
 	require.NoError(t, lts.baseTrigger.Start(t.Context()))
 	t.Cleanup(func() {
@@ -109,9 +104,8 @@ func TestLogTriggerService_Close_WaitsForPollingGoroutine(t *testing.T) {
 		decode := func(_ capabilities.TriggerEvent) (capabilities.TriggerAndId[*evmcappb.Log], error) {
 			return capabilities.TriggerAndId[*evmcappb.Log]{}, nil
 		}
-		lost := func(_ context.Context, _ capabilities.PendingEvent) {}
 		service.baseTrigger = *capabilities.NewBaseTriggerCapability(
-			capabilities.NewMemEventStore(), decode, lost, logger.Test(t), 200*time.Millisecond, 5*time.Second)
+			capabilities.NewMemEventStore(), decode, logger.Test(t), 200*time.Millisecond)
 		require.NoError(t, service.baseTrigger.Start(ctx))
 		defer service.baseTrigger.Stop()
 		err := service.Start(ctx)
@@ -942,9 +936,8 @@ func registerAndUnregisterLogTriggerIntegration(t *testing.T, topicsInput []*evm
 
 	service := createTriggerObject(t, evmService, NewLogTriggerStore())
 
-	lost := func(_ context.Context, _ capabilities.PendingEvent) {}
 	service.baseTrigger = *capabilities.NewBaseTriggerCapability(
-		capabilities.NewMemEventStore(), decode, lost, logger.Test(t), 200*time.Millisecond, 5*time.Second)
+		capabilities.NewMemEventStore(), decode, logger.Test(t), 200*time.Millisecond)
 
 	triggerID := "trigger-integration"
 
