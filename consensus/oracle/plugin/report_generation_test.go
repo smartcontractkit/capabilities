@@ -2,6 +2,7 @@ package plugin_test
 
 import (
 	"bytes"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -356,4 +357,63 @@ func Test_ReportWithinLimit_Succeeds(t *testing.T) {
 	infoMap := infos.AsMap()
 	require.Equal(t, "req-small", infoMap[plugin.InfoRequestID])
 	require.Nil(t, infoMap[plugin.InfoConsensusFailureCode], "Should not have failure code for successful report")
+}
+
+func Test_ReportCountLimit(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := t.Context()
+
+	// Create a reporting plugin with a reasonable max report length
+	reqStore := requests.NewStore[*oracle.ConsensusRequest]()
+	metricsInstance, err := metrics.NewMetrics()
+	require.NoError(t, err)
+
+	maxReportCount := uint32(100)
+	reportingPlugin, err := plugin.NewReportingPlugin(lggr, metricsInstance, f, n, reqStore, &ocrtypes.ReportingPluginConfig{
+		MaxQueryLengthBytes:              1000000,
+		MaxObservationLengthBytes:        1000000,
+		MaxOutcomeLengthBytes:            1000000,
+		MaxReportLengthBytes:             10000, // Larger limit
+		MaxReportCount:                   maxReportCount,
+		HistoricalOutcomeExpirySeqNrSpan: 5,
+	}, "evm", 1000)
+	require.NoError(t, err)
+
+	// Create an outcome with a small report that fits
+	smallData := "small"
+	serialisedValue, err := proto.MarshalOptions{Deterministic: true}.Marshal(values.Proto(values.NewBytes([]byte(smallData))))
+	require.NoError(t, err)
+
+	outcome := &oracletypes.Outcome{}
+
+	for i := 0; i < int(maxReportCount)+5; i++ {
+		outcome.Outcomes = append(outcome.Outcomes, &oracletypes.ConsensusOutcome{
+			Outcome: &oracletypes.ConsensusOutcome_Success{
+				Success: &oracletypes.ConsensusSuccessOutcome{
+					Metadata: &oracletypes.RequestMetaData{
+						RequestId:                "req-small-" + strconv.Itoa(i),
+						WorkflowExecutionId:      "0102030405060708091011121314151617181920212223242526272829303132",
+						WorkflowId:               "0039525c34de895c8fa68006bd63f6ce4a45ef1bc66377e791c6a8ae803dc0e4",
+						WorkflowOwner:            "1139525c34de895c8fa68006bd634387a9f1192a",
+						WorkflowName:             "a1b2c3d4e5f6a1b2c3d4",
+						WorkflowDonId:            1,
+						WorkflowDonConfigVersion: 1,
+						ReportId:                 "abcd",
+						KeyBundleId:              "evm",
+						RequestType:              oracletypes.RequestType_REPORT_GENERATION,
+					},
+					Outcome:   serialisedValue,
+					Timestamp: timestamppb.Now(),
+				},
+			},
+		})
+	}
+
+	serialisedOutcome, err := proto.MarshalOptions{Deterministic: true}.Marshal(outcome)
+	require.NoError(t, err)
+
+	// Call Reports and verify the number of reports is limited to the max count
+	reports, err := reportingPlugin.Reports(ctx, 1, serialisedOutcome)
+	require.NoError(t, err)
+	require.Len(t, reports, int(maxReportCount))
 }
