@@ -57,13 +57,23 @@ runs:
         echo "gomodcache=$(go env GOMODCACHE)" >> $GITHUB_OUTPUT
         echo "gobuildcache=$(go env GOCACHE)" >> $GITHUB_OUTPUT
 
+    # Cache Go modules separately (shared across all projects/tasks)
     - uses: actions/cache@v4
-      name: Cache Go modules and outputs
+      name: Cache Go modules
       with:
-        path: |
-          ${{ steps.init.outputs.gomodcache }}
-          ${{ steps.init.outputs.gobuildcache }}
-        key: ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-${{inputs.task}}-gomod-${{hashFiles(inputs.go-module-file)}}
+        path: ${{ steps.init.outputs.gomodcache }}
+        key: ${{runner.os}}-${{inputs.cache-version}}-gomod-${{hashFiles('**/go.sum')}}
         restore-keys: |
-          ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-${{inputs.task}}
+          ${{runner.os}}-${{inputs.cache-version}}-gomod-
+        save-always: true
+
+    # Cache Go build outputs (task-specific for faster incremental builds)
+    - uses: actions/cache@v4
+      name: Cache Go build outputs
+      with:
+        path: ${{ steps.init.outputs.gobuildcache }}
+        key: ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-${{inputs.task}}-gobuild-${{hashFiles(inputs.go-module-file)}}
+        restore-keys: |
+          ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-${{inputs.task}}-gobuild-
+          ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-gobuild-
         save-always: true
