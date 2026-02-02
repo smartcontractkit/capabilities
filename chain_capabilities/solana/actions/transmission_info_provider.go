@@ -9,7 +9,6 @@ import (
 
 	bin "github.com/gagliardetto/binary"
 	"github.com/gagliardetto/solana-go"
-	types2 "github.com/smartcontractkit/capabilities/chain_capabilities/solana/actions/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	soltypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/solana"
@@ -39,7 +38,7 @@ type LogsTransmissionStatusProvider struct {
 	lggr logger.Logger
 }
 
-func newLogTransmissionInfoProvider(ctx context.Context, programID solana.PublicKey, s types.SolanaService) (TransmissionInfoProvider, error) {
+func newLogTransmissionInfoProvider(ctx context.Context, lggr logger.Logger, programID solana.PublicKey, s types.SolanaService) (TransmissionInfoProvider, error) {
 	lr := &logReader{
 		SolanaService:      s,
 		forwarderProgramID: programID,
@@ -51,11 +50,12 @@ func newLogTransmissionInfoProvider(ctx context.Context, programID solana.Public
 	}
 
 	return &LogsTransmissionStatusProvider{
-		lr: lr,
+		lr:   lr,
+		lggr: lggr,
 	}, nil
 }
 
-func (p *LogsTransmissionStatusProvider) GetTransmissionInfo(ctx context.Context, transmissionID [32]byte) (*types2.TransmissionInfo, error) {
+func (p *LogsTransmissionStatusProvider) GetTransmissionInfo(ctx context.Context, transmissionID [32]byte) (*TransmissionInfo, error) {
 	processedLogs, err := p.lr.queryProcessed(ctx, transmissionID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to request processed events: %w", err)
@@ -74,12 +74,12 @@ func (p *LogsTransmissionStatusProvider) GetTransmissionInfo(ctx context.Context
 		return p.failedTransmissionInfoReply(inProgressLogs)
 	}
 
-	return &types2.TransmissionInfo{
-		State: types2.TransmissionStateNotAttempted,
+	return &TransmissionInfo{
+		State: TransmissionStateNotAttempted,
 	}, nil
 }
 
-func (p *LogsTransmissionStatusProvider) successTransmissionInfoReply(successLogs []*soltypes.Log) (*types2.TransmissionInfo, error) {
+func (p *LogsTransmissionStatusProvider) successTransmissionInfoReply(successLogs []*soltypes.Log) (*TransmissionInfo, error) {
 	var event ReportProcessed
 	if len(successLogs) != 1 {
 		return nil, fmt.Errorf("unexpected successful logs length: %d", len(successLogs))
@@ -91,13 +91,13 @@ func (p *LogsTransmissionStatusProvider) successTransmissionInfoReply(successLog
 		return nil, fmt.Errorf("failed to unmarshal report processed event: %w", err)
 	}
 
-	return &types2.TransmissionInfo{
-		State:     types2.TransmissionStateSucceeded,
+	return &TransmissionInfo{
+		State:     TransmissionStateSucceeded,
 		Signature: solana.Signature(log.TxHash),
 	}, nil
 }
 
-func (p *LogsTransmissionStatusProvider) failedTransmissionInfoReply(inProgressLogs []*soltypes.Log) (*types2.TransmissionInfo, error) {
+func (p *LogsTransmissionStatusProvider) failedTransmissionInfoReply(inProgressLogs []*soltypes.Log) (*TransmissionInfo, error) {
 	var event ReportInProgress
 
 	// use signature of the oldest transaction in reply
@@ -115,8 +115,8 @@ func (p *LogsTransmissionStatusProvider) failedTransmissionInfoReply(inProgressL
 		return nil, fmt.Errorf("failed to unmarshal report in progress event: %w", err)
 	}
 
-	return &types2.TransmissionInfo{
-		State:     types2.TransmissionStateFailed,
+	return &TransmissionInfo{
+		State:     TransmissionStateFailed,
 		Signature: solana.Signature(log.TxHash),
 	}, nil
 }

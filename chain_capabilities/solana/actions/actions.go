@@ -32,7 +32,7 @@ type Solana struct {
 
 func NewSolana(ctx context.Context, cfg *config.Config, s types.SolanaService, messageBuilder *monitoring.MessageBuilder, beholderProcessor beholder.ProtoProcessor, lggr logger.Logger, limitsFactory limits.Factory) (*Solana, error) {
 	client := newForwarderClient(s, lggr, cfg.CREForwarderAddress, cfg.CREForwarderState, cfg.Transmitter)
-	provider, err := newLogTransmissionInfoProvider(ctx, cfg.CREForwarderAddress, s)
+	provider, err := newLogTransmissionInfoProvider(ctx, lggr, cfg.CREForwarderAddress, s)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create log transmission info provider: %w", err)
 	}

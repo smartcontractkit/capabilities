@@ -12,7 +12,6 @@ import (
 
 	"github.com/gagliardetto/solana-go"
 	"github.com/jpillora/backoff"
-	types2 "github.com/smartcontractkit/capabilities/chain_capabilities/solana/actions/types"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -28,8 +27,20 @@ import (
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 )
 
+type TransmissionState uint8
+
+const (
+	TransmissionStateNotAttempted TransmissionState = iota
+	TransmissionStateSucceeded
+	TransmissionStateFailed
+)
+
+type TransmissionInfo struct {
+	State     TransmissionState
+	Signature solana.Signature
+}
 type TransmissionInfoProvider interface {
-	GetTransmissionInfo(ctx context.Context, transmissionID [32]byte) (*types2.TransmissionInfo, error)
+	GetTransmissionInfo(ctx context.Context, transmissionID [32]byte) (*TransmissionInfo, error)
 }
 
 type CREForwarderClient interface {
@@ -73,7 +84,7 @@ func (s *Solana) WriteReport(
 			s.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport while checking if the report exists or trying to publish on chain", err.Error(), isUserError))
 		return nil, GetError(err, isUserError)
 	}
-
+	//TODO PLEX-1920 add retreiving metering info
 	monitoring.LogAndEmitSuccess(ctx, "Successfully WriteReport execution", s.lggr, s.beholderProcessor, s.messageBuilder.BuildWriteReportSuccess(telemetryContext, input))
 	responseAndMetadata := capabilities.ResponseAndMetadata[*solcap.WriteReportReply]{
 		Response:         report,
@@ -123,35 +134,39 @@ func (wr *WriteReport) executeWriteReport(
 			return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s provided compute config exceeds limit (computeLimit=%d): %w", userError, request.ComputeConfig.ComputeLimit, err)
 		}
 	}
-	// TODO PLEX-1920 reuse evm retry logic here
-	info, err := wr.transmissionInfoProvider.GetTransmissionInfo(ctx, transmissionID)
+
+	var transmissionInfo *TransmissionInfo
+	transmissionInfo, err = withQuickRetry(ctx, wr.lggr, func(ctx context.Context) (*TransmissionInfo, error) {
+		return wr.transmissionInfoProvider.GetTransmissionInfo(ctx, transmissionID)
+	})
+
 	if err != nil {
-		return nil, capabilities.ResponseMetadata{}, err
+		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed to get transmission info: %w", err)
 	}
 
-	switch info.State {
-	case types2.TransmissionStateNotAttempted:
+	switch transmissionInfo.State {
+	case TransmissionStateNotAttempted:
 		wr.lggr.Infow(
 			"transmission not attempted - submitting",
 			"receiver", receiver.String(),
 		)
 
-	case types2.TransmissionStateSucceeded:
+	case TransmissionStateSucceeded:
 		wr.lggr.Infow(
 			"returning without a transmission attempt - report already onchain",
-			"signature", info.Signature.String(),
+			"signature", transmissionInfo.Signature.String(),
 		)
-		return wr.successWriteReportReply(&info.Signature), capabilities.ResponseMetadata{}, nil
+		return wr.successWriteReportReply(&transmissionInfo.Signature), capabilities.ResponseMetadata{}, nil
 
-	case types2.TransmissionStateFailed:
+	case TransmissionStateFailed:
 		wr.lggr.Infow(
 			"returning without a transmission attempt - transmission already attempted and failed",
-			"signature", info.Signature.String(),
+			"signature", transmissionInfo.Signature.String(),
 		)
-		return wr.failedWriteReportReply(&info.Signature, ptr(UnknownIssueExecutingReceiverContractMessage)), capabilities.ResponseMetadata{}, nil
+		return wr.failedWriteReportReply(&transmissionInfo.Signature, ptr(UnknownIssueExecutingReceiverContractMessage)), capabilities.ResponseMetadata{}, nil
 
 	default:
-		return wr.fatalWriteReportReply(fmt.Sprintf("unexpected transmission state: %d", info.State)), capabilities.ResponseMetadata{}, nil
+		return wr.fatalWriteReportReply(fmt.Sprintf("unexpected transmission state: %d", transmissionInfo.State)), capabilities.ResponseMetadata{}, nil
 	}
 
 	if err := wr.reportSizeLimit.Check(ctx, commoncfg.SizeOf(request.Report.RawReport)); err != nil {
@@ -171,7 +186,7 @@ func (wr *WriteReport) executeWriteReport(
 		return nil, capabilities.ResponseMetadata{}, err
 	}
 
-	strategy := retry.Strategy[*types2.TransmissionInfo]{
+	strategy := retry.Strategy[*TransmissionInfo]{
 		Backoff: &backoff.Backoff{
 			Factor: 2,
 			Max:    3 * time.Second,
@@ -180,14 +195,14 @@ func (wr *WriteReport) executeWriteReport(
 		MaxRetries: 25,
 	}
 
-	var last *types2.TransmissionInfo
-	last, err = strategy.Do(ctx, wr.lggr, func(c context.Context) (*types2.TransmissionInfo, error) {
+	var last *TransmissionInfo
+	last, err = strategy.Do(ctx, wr.lggr, func(c context.Context) (*TransmissionInfo, error) {
 		ti, tiErr := wr.transmissionInfoProvider.GetTransmissionInfo(c, transmissionID)
 		if tiErr != nil {
 			return nil, tiErr
 		}
 		// If still NotAttempted, likely not indexed yet.
-		if ti.State == types2.TransmissionStateNotAttempted {
+		if ti.State == TransmissionStateNotAttempted {
 			return nil, errors.New("tx submitted but transmission info not yet visible, retrying")
 		}
 		return ti, nil
@@ -201,11 +216,11 @@ func (wr *WriteReport) executeWriteReport(
 	}
 
 	switch last.State {
-	case types2.TransmissionStateSucceeded:
+	case TransmissionStateSucceeded:
 		wr.lggr.Infow("WriteReport succeeded", "executionID", metadata.WorkflowExecutionID, "signature", last.Signature.String())
 		return wr.successWriteReportReply(&last.Signature), capabilities.ResponseMetadata{}, nil
 
-	case types2.TransmissionStateFailed:
+	case TransmissionStateFailed:
 		wr.lggr.Errorw("WriteReport failed (receiver execution reverted)", "executionID", metadata.WorkflowExecutionID, "signature", last.Signature.String())
 		return wr.failedWriteReportReply(&last.Signature, ptr(UnknownIssueExecutingReceiverContractMessage)), capabilities.ResponseMetadata{}, nil
 
@@ -330,3 +345,43 @@ func (wr *WriteReport) fatalWriteReportReply(message string) *solcap.WriteReport
 }
 
 func ptr(s string) *string { return &s }
+
+// TODO PLEX-1920 carry out shared helpers
+// withQuickRetry wraps a simple RPC read with retry logic.
+// Uses shorter timeout (10s) and fast backoff - these calls should be sub-second.
+func withQuickRetry[T any](ctx context.Context, lggr logger.Logger, fn func(context.Context) (T, error)) (T, error) {
+	return withRetry(ctx, lggr, fn, 10*time.Second, 1*time.Second, 10)
+}
+
+// withPollingRetry wraps an operation that polls for state changes.
+// Uses longer timeout (60s) to accommodate slow chains.
+func withPollingRetry[T any](ctx context.Context, lggr logger.Logger, fn func(context.Context) (T, error)) (T, error) {
+	return withRetry(ctx, lggr, fn, 60*time.Second, 3*time.Second, 25)
+}
+
+// withRetry executes fn with exponential backoff retry logic.
+// Returns the original error from fn, not the retry wrapper error.
+func withRetry[T any](ctx context.Context, lggr logger.Logger, fn func(context.Context) (T, error), timeout, maxBackoff time.Duration, maxRetries uint) (T, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	var lastErr error
+	strategy := retry.Strategy[T]{
+		Backoff:    &backoff.Backoff{Factor: 2, Min: 100 * time.Millisecond, Max: maxBackoff},
+		MaxRetries: maxRetries,
+	}
+	result, err := strategy.Do(ctx, lggr, func(ctx context.Context) (T, error) {
+		r, e := fn(ctx)
+		if e != nil {
+			lastErr = e // Capture the original error from fn
+		}
+		return r, e
+	})
+	if err != nil {
+		if lastErr != nil {
+			return result, lastErr
+		}
+		// lastErr is nil - fn was never called, return retry error
+		return result, err
+	}
+	return result, nil
+}

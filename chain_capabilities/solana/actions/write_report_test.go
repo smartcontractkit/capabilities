@@ -8,8 +8,6 @@ import (
 	"testing"
 
 	"github.com/gagliardetto/solana-go"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/actions/mocks"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/actions/types"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
@@ -17,7 +15,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	soltypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/solana"
-	mocks2 "github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	"github.com/test-go/testify/mock"
 	"github.com/test-go/testify/require"
@@ -25,9 +23,9 @@ import (
 )
 
 type testHelper struct {
-	solanaService            *mocks2.SolanaService
-	transmissionInfoProvider *mocks.TransmissionInfoProvider
-	creForwarderClient       *mocks.CREForwarderClient
+	solanaService            *mocks.SolanaService
+	transmissionInfoProvider *TransmissionInfoProvider_mock
+	creForwarderClient       *CREForwarderClient_mock
 	solana                   *Solana
 }
 
@@ -44,7 +42,7 @@ func TestWriteReport_InputValidation(t *testing.T) {
 			Report: &workflowpb.ReportResponse{},
 		})
 		require.Error(t, err)
-		require.Equal(t, "received public key is not 32 bytes long. key in hex: ", err.Error())
+		require.Contains(t, err.Error(), "received public key is not 32 bytes long. key in hex: ")
 	})
 	t.Run("Invalid report metadata", func(t *testing.T) {
 		_, err := helper.solana.WriteReport(ctx, capabilities.RequestMetadata{WorkflowID: "wf-id"}, &solcap.WriteReportRequest{
@@ -54,7 +52,7 @@ func TestWriteReport_InputValidation(t *testing.T) {
 			},
 		})
 		require.Error(t, err)
-		require.Equal(t, "metadata: raw too short, want ≥109, got 0", err.Error())
+		require.Contains(t, err.Error(), "metadata: raw too short, want ≥109, got 0")
 	})
 	t.Run("Report signatures are not empty", func(t *testing.T) {
 		_, err := helper.solana.WriteReport(ctx, capabilities.RequestMetadata{WorkflowID: "wf-id"}, &solcap.WriteReportRequest{
@@ -80,7 +78,7 @@ func TestWriteReport_InputValidation(t *testing.T) {
 			},
 		})
 		require.Error(t, err)
-		require.Contains(t, "unsupported report version: 20", err.Error())
+		require.Contains(t, err.Error(), "unsupported report version: 20")
 	})
 	t.Run("Workflow names do not match", func(t *testing.T) {
 		reportMetadata := createTestReportMetadata()
@@ -144,7 +142,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		expectedError := "some error"
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
-		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(&types.TransmissionInfo{}, errors.New(expectedError))
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(&TransmissionInfo{}, errors.New(expectedError))
 		_, err := helper.solana.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &solcap.WriteReportRequest{
 			Receiver: key.PublicKey().Bytes(),
 			Report: &workflowpb.ReportResponse{
@@ -154,15 +152,15 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			},
 		})
 		require.Error(t, err)
-		require.Equal(t, expectedError, err.Error())
+		require.Contains(t, err.Error(), expectedError)
 	})
 	t.Run("TX already transmitted successfully", func(t *testing.T) {
 		ctx := t.Context()
 		testLogger := logger.Test(t)
 		helper := createMocksAndCapability(t, testLogger)
 
-		transmissionInfo := &types.TransmissionInfo{
-			State: types.TransmissionStateSucceeded,
+		transmissionInfo := &TransmissionInfo{
+			State: TransmissionStateSucceeded,
 		}
 		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(transmissionInfo, nil)
 
@@ -190,16 +188,16 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			Report:   signedReport,
 		}
 		capabilitiesMetadata := createTestRequestMetadata(reportMetadata)
-		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(&types.TransmissionInfo{
-			State: types.TransmissionStateNotAttempted,
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(&TransmissionInfo{
+			State: TransmissionStateNotAttempted,
 		}, nil).Once()
 
 		helper.creForwarderClient.On("InvokeOnReport", mock.Anything, receiverAddress, mock.Anything, signedReport, mock.Anything).Return(&soltypes.SubmitTransactionReply{
 			Signature: soltypes.Signature(sig),
 		}, nil)
 
-		transmissionInfo := &types.TransmissionInfo{
-			State: types.TransmissionStateSucceeded,
+		transmissionInfo := &TransmissionInfo{
+			State: TransmissionStateSucceeded,
 		}
 		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(transmissionInfo, nil).Once()
 
@@ -222,9 +220,9 @@ func createTestWriteReportReq(metadata ocrtypes.Metadata) *solcap.WriteReportReq
 	}
 }
 func createMocksAndCapability(t *testing.T, lggr logger.Logger) *testHelper {
-	mockSolanaService := mocks2.NewSolanaService(t)
-	mockTrInfo := mocks.NewTransmissionInfoProvider(t)
-	mockClient := mocks.NewCREForwarderClient(t)
+	mockSolanaService := mocks.NewSolanaService(t)
+	mockTrInfo := NewTransmissionInfoProvider_mock(t)
+	mockClient := NewCREForwarderClient_mock(t)
 	service := &Solana{
 		SolanaService:            mockSolanaService,
 		forwarderClient:          mockClient,

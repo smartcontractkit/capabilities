@@ -1,7 +1,8 @@
-dir: "{{ .InterfaceDir }}/mocks"
-mockname: "{{ .InterfaceName }}"
-outpkg: mocks
-filename: "{{ .InterfaceName | snakecase }}.go"
+dir: "{{ .InterfaceDir }}"
+mockname: "{{ .InterfaceName }}_mock"
+outpkg: actions
+inpackage: true
+filename: "test_{{ .InterfaceName | snakecase }}_mock.go"
 fail-on-missing: true
 packages:
   github.com/smartcontractkit/capabilities/chain_capabilities/solana/actions:

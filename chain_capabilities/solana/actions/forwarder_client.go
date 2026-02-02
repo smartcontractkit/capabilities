@@ -45,7 +45,10 @@ func (fc *forwarderClient) InvokeOnReport(ctx context.Context, receiver solana.P
 		return nil, fmt.Errorf("failed to decode report metadata: %w", err)
 	}
 
-	configPDA, err := fc.getOracleConfigPDA(ctx, reportMetadata.DONID, reportMetadata.DONConfigVersion)
+	var configPDA solana.PublicKey
+	configPDA, err = withQuickRetry(ctx, fc.lggr, func(ctx context.Context) (solana.PublicKey, error) {
+		return fc.getOracleConfigPDA(ctx, reportMetadata.DONID, reportMetadata.DONConfigVersion)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get oracle config PDA: %w", err)
 	}

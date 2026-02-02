@@ -8,7 +8,7 @@ require (
 	github.com/jpillora/backoff v1.0.0
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20251105202054-e299af591b47
 	github.com/smartcontractkit/chain-selectors v1.0.90
-	github.com/smartcontractkit/chainlink-common v0.9.6-0.20260129155548-5c11c191d8cc
+	github.com/smartcontractkit/chainlink-common v0.9.6-0.20260130142830-2b52746975d3
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20251124151448-0448aefdaab9
 	github.com/smartcontractkit/chainlink-solana v1.1.2-0.20260127134316-777be7a85528
 	github.com/smartcontractkit/chainlink-solana/contracts v0.0.0-20260127134316-777be7a85528
