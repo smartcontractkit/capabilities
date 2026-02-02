@@ -25,6 +25,9 @@ type Metrics struct {
 	WriteReportSuccess struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
+	WriteReportSuccessfulEarlyReturn struct {
+		basic commoncapbeholder.MetricsCapBasic
+	}
 	WriteReportError struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
@@ -111,6 +114,11 @@ func NewMetrics() (Metrics, error) {
 	m.WriteReportSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(wrSuccess)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create write report success metric: %w", err)
+	}
+	wrSuccessfulEarlyReturn := commoncapbeholder.NewMetricsInfoCapBasic(ns("write_report_successful_early_return"), commonbeholder.ToSchemaFullName(&WriteReportSuccessfulEarlyReturn{}))
+	m.WriteReportSuccessfulEarlyReturn.basic, err = commoncapbeholder.NewMetricsCapBasic(wrSuccessfulEarlyReturn)
+	if err != nil {
+		return Metrics{}, fmt.Errorf("failed to create write report successful early return metric: %w", err)
 	}
 	wrErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("write_report_error"), commonbeholder.ToSchemaFullName(&WriteReportError{}))
 	m.WriteReportError.basic, err = commoncapbeholder.NewMetricsCapBasic(wrErr)
@@ -256,6 +264,12 @@ func (m *Metrics) OnCallContractError(ctx context.Context, msg *CallContractErro
 func (m *Metrics) OnWriteReportSuccess(ctx context.Context, msg *WriteReportSuccess) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
 	m.WriteReportSuccess.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
+	return nil
+}
+
+func (m *Metrics) OnWriteReportSuccessfulEarlyReturn(ctx context.Context, msg *WriteReportSuccessfulEarlyReturn) error {
+	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
+	m.WriteReportSuccessfulEarlyReturn.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
 	return nil
 }
 
@@ -432,6 +446,14 @@ func (r *WriteReportSuccess) LogAttributes() []attribute.KeyValue {
 }
 
 func (r *WriteReportSuccess) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *WriteReportSuccessfulEarlyReturn) LogAttributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{}, r.ExecutionContext.LogAttributes()...)
+}
+
+func (r *WriteReportSuccessfulEarlyReturn) MetricAttributes() []attribute.KeyValue {
 	return r.ExecutionContext.MetricsAttributes()
 }
 

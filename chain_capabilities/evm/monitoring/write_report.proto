@@ -82,3 +82,6 @@ message AttributedSignature {
   uint32 signer_id = 2;
 }
 
+message WriteReportSuccessfulEarlyReturn {
+  monitoring.ExecutionContext execution_context = 20;
+}

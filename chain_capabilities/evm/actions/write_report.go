@@ -180,7 +180,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 	queuePosition := e.getQueuePosition(transmissionID)
 	e.lggr = e.lggr.With("queuePosition", queuePosition)
 	txHashRetriever := NewTxHashRetriever(e.forwarderClient, e.lggr, transmissionID)
-	transmissionInfo, err := e.pollTransmissionInfo(ctx, transmissionID, queuePosition, txHashRetriever)
+	transmissionInfo, err := e.pollTransmissionInfo(ctx, request, telemetryContext, transmissionID, queuePosition, txHashRetriever)
 	if err != nil {
 		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed to get transmission info: %w", err)
 	}
@@ -327,45 +327,87 @@ func (e *WriteReport) getQueuePosition(transmissionID contracts.TransmissionID) 
 // pollTransmissionInfo returns final state of the transmission at this point of the transmission schedule, taking into account previous nodes in the queue.
 func (e *WriteReport) pollTransmissionInfo(
 	ctx context.Context,
+	request *evm.WriteReportRequest,
+	telemetryContext monitoring.TelemetryContext,
 	transmissionID contracts.TransmissionID,
 	queuePosition int,
 	txHashRetriever TxHashRetriever,
-) (contracts.TransmissionInfo, error) {
+) (lastValidInfo contracts.TransmissionInfo, err error) {
 	if queuePosition <= 0 {
-		return withQuickRetry(ctx, e.lggr, func(ctx context.Context) (contracts.TransmissionInfo, error) {
+		transmissionInfo, err := withQuickRetry(ctx, e.lggr, func(ctx context.Context) (contracts.TransmissionInfo, error) {
 			return e.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
 		})
+		if err != nil {
+			return contracts.TransmissionInfo{}, err
+		}
+		if transmissionInfo.State != contracts.TransmissionStateNotAttempted {
+			monitoring.LogAndEmitError(
+				ctx,
+				e.lggr,
+				e.beholderProcessor,
+				e.messageBuilder.BuildWriteReportInvalidTransmissionState(
+					telemetryContext,
+					request,
+					lastValidInfo,
+					"Unexpected transmission state for the first attempt",
+					getInvalidStateErrorMessage(lastValidInfo.State),
+				),
+			)
+			return contracts.TransmissionInfo{}, fmt.Errorf("unexpected transmission state %s for the first attempt", lastValidInfo.State)
+		}
 	}
 
 	delay := time.Duration(queuePosition) * e.transmissionScheduler.deltaStage
 	e.lggr.Infow("Polling until slot or state change", "delay", delay, "deltaStage", e.transmissionScheduler.deltaStage)
 
-	var lastValid contracts.TransmissionInfo
+	// setup timer so that we can poll until delta stage and alert if this early returned to have some metric for delta stage tweaks
 	attempt := 0
 	stageTimer := time.NewTimer(delay)
-	defer stageTimer.Stop()
+	stageTimerFired := false
+	defer func() {
+		stageTimer.Stop()
+		if !stageTimerFired {
+			monitoring.LogAndEmitSuccess(
+				ctx,
+				"Transmission found before delta stage has passed",
+				e.lggr,
+				e.beholderProcessor,
+				e.messageBuilder.BuildWriteReportSuccessfulEarlyReturn(telemetryContext),
+			)
+		}
+	}()
 
 	for {
 		if info, err := e.forwarderClient.GetTransmissionInfo(ctx, transmissionID); err != nil {
 			e.lggr.Debugw("GetTransmissionInfo failed during polling", "error", err, "attempt", attempt)
 		} else {
-			lastValid, attempt = info, 0
-			switch info.State {
+			lastValidInfo = info
+			switch lastValidInfo.State {
 			case contracts.TransmissionStateSucceeded, contracts.TransmissionStateInvalidReceiver:
-				return lastValid, nil
+				return lastValidInfo, nil
 			case contracts.TransmissionStateFailed:
 				_, cnt, err := txHashRetriever.GetFailedTransmissionHashWithCount(ctx)
 				if err != nil {
 					e.lggr.Debugw("Failed to get tx hash and attempt count during polling", "error", err)
 				} else {
-					// TODO maybe also alert if there are more txs than the queue amount?
 					if cnt >= int(e.transmissionScheduler.F+1) {
-						return lastValid, nil
+						return lastValidInfo, nil
 					}
 				}
 			case contracts.TransmissionStateNotAttempted:
 			default:
-				e.lggr.Errorw("Unexpected transmission state; continuing to poll", append(info.LogAttrs(), "state", info.State)...)
+				monitoring.LogAndEmitError(
+					ctx,
+					e.lggr,
+					e.beholderProcessor,
+					e.messageBuilder.BuildWriteReportInvalidTransmissionState(
+						telemetryContext,
+						request,
+						lastValidInfo,
+						"Unexpected transmission state; continuing to poll",
+						getInvalidStateErrorMessage(lastValidInfo.State),
+					),
+				)
 			}
 		}
 
@@ -377,11 +419,11 @@ func (e *WriteReport) pollTransmissionInfo(
 
 		select {
 		case <-ctx.Done():
-			return lastValid, nil
+			return contracts.TransmissionInfo{}, fmt.Errorf("timed out waiting for transmission info")
 		case <-stageTimer.C:
-			// TODO maybe a metric on early returns to tweak delta stage?
-			e.lggr.Infow("Delta Stage has passed, returning transmission info", lastValid.LogAttrs())
-			return lastValid, nil
+			stageTimerFired = true
+			e.lggr.Infow("Delta Stage has passed, returning transmission info", lastValidInfo.LogAttrs())
+			return lastValidInfo, nil
 		case <-time.After(wait):
 		}
 	}

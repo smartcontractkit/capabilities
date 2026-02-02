@@ -161,6 +161,12 @@ func (m *MessageBuilder) BuildWriteReportDuplicateTx(tc TelemetryContext, req *e
 	}
 }
 
+func (m *MessageBuilder) BuildWriteReportSuccessfulEarlyReturn(tc TelemetryContext) Message {
+	return &WriteReportSuccessfulEarlyReturn{
+		ExecutionContext: m.BuildExecutionContext(tc),
+	}
+}
+
 func (m *MessageBuilder) BuildLogTriggerInitiated(tc TelemetryContext, req *evmcap.FilterLogTriggerRequest) *LogTriggerInitiated {
 	return &LogTriggerInitiated{Req: logTriggerRequestToMonitoring(req), ExecutionContext: m.BuildExecutionContext(tc)}
 }

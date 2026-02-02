@@ -55,6 +55,10 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 		if err := p.metrics.OnWriteReportSuccess(ctx, msg); err != nil {
 			return fmt.Errorf("failed to publish WriteReportSuccess metrics: %w", err)
 		}
+	case *WriteReportSuccessfulEarlyReturn:
+		if err := p.metrics.OnWriteReportSuccessfulEarlyReturn(ctx, msg); err != nil {
+			return fmt.Errorf("failed to publish WriteReportSuccessfulEarlyReturn metrics: %w", err)
+		}
 	case *WriteReportError:
 		p.logMessage(msg)
 		if !msg.GetIsUserError() {
