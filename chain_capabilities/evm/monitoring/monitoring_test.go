@@ -3,10 +3,8 @@ package monitoring_test
 import (
 	"context"
 	"errors"
-	"fmt"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
@@ -15,6 +13,7 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/monitoring/mocks"
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 
 	capmonitoring "github.com/smartcontractkit/capabilities/libs/monitoring"
 
@@ -40,56 +39,15 @@ func TestProcessor_Process_InitiatedMessages(t *testing.T) {
 
 	for _, tc := range initiated {
 		t.Run(tc.name, func(t *testing.T) {
-			pe := &mocks.ProtoEmitter{}
-			pe.On("EmitWithLog", ctx, tc.msg).Return(nil).Once()
+			lggr := logger.Test(t)
 
 			metrics, merr := monitoring.NewMetrics()
 			require.NoError(t, merr)
 
-			p, err := monitoring.NewProcessor(pe, metrics)
+			p, err := monitoring.NewProcessor(lggr, metrics)
 			require.NoError(t, err)
 
 			require.NoError(t, p.Process(ctx, tc.msg))
-			pe.AssertExpectations(t)
-		})
-	}
-}
-
-func TestProcessor_Process_InitiatedMessages_Error(t *testing.T) {
-	ctx := t.Context()
-	errIn := assert.AnError
-
-	cases := []struct {
-		name string
-		msg  proto.Message
-	}{
-		{"CallContractInitiated", &monitoring.CallContractInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
-		{"WriteReportInitiated", &monitoring.WriteReportInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
-		{"LogTriggerInitiated", &monitoring.LogTriggerInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
-		{"FilterLogsInitiated", &monitoring.FilterLogsInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
-		{"BalanceAtInitiated", &monitoring.BalanceAtInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
-		{"EstimateGasInitiated", &monitoring.EstimateGasInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
-		{"GetTransactionByHashInitiated", &monitoring.GetTransactionByHashInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
-		{"GetTransactionReceiptInitiated", &monitoring.GetTransactionReceiptInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
-		{"HeaderByNumberInitiated", &monitoring.HeaderByNumberInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			pe := &mocks.ProtoEmitter{}
-			pe.On("EmitWithLog", ctx, tc.msg).Return(errIn).Once()
-
-			metrics, merr := monitoring.NewMetrics()
-			require.NoError(t, merr)
-
-			p, err := monitoring.NewProcessor(pe, metrics)
-			require.NoError(t, err)
-
-			procErr := p.Process(ctx, tc.msg)
-			require.Error(t, procErr)
-			assert.Contains(t, procErr.Error(), fmt.Sprintf("failed to emit %s log", tc.name))
-
-			pe.AssertExpectations(t)
 		})
 	}
 }
@@ -101,11 +59,11 @@ func (d *dummyProto) ProtoReflect() protoreflect.Message {
 }
 
 func TestProcessor_Process_UnknownMessage_Noop(t *testing.T) {
-	pe := &mocks.ProtoEmitter{}
+	lggr := logger.Test(t)
 	metrics, merr := monitoring.NewMetrics()
 	require.NoError(t, merr)
 
-	p, err := monitoring.NewProcessor(pe, metrics)
+	p, err := monitoring.NewProcessor(lggr, metrics)
 	require.NoError(t, err)
 
 	err = p.Process(t.Context(), &dummyProto{})
@@ -131,17 +89,15 @@ func TestProcessor_Process_SuccessMessages(t *testing.T) {
 
 	for _, tc := range successMsgs {
 		t.Run(tc.name, func(t *testing.T) {
-			pe := &mocks.ProtoEmitter{}
-			pe.On("EmitWithLog", ctx, tc.msg).Return(nil).Once()
+			lggr := logger.Test(t)
 
 			metrics, merr := monitoring.NewMetrics()
 			require.NoError(t, merr)
 
-			p, err := monitoring.NewProcessor(pe, metrics)
+			p, err := monitoring.NewProcessor(lggr, metrics)
 			require.NoError(t, err)
 
 			require.NoError(t, p.Process(ctx, tc.msg))
-			pe.AssertExpectations(t)
 		})
 	}
 }
@@ -168,17 +124,15 @@ func TestProcessor_Process_ErrorMessages(t *testing.T) {
 
 	for _, tc := range errorMsgs {
 		t.Run(tc.name, func(t *testing.T) {
-			pe := &mocks.ProtoEmitter{}
-			pe.On("EmitWithLog", ctx, tc.msg).Return(nil).Once()
+			lggr := logger.Test(t)
 
 			metrics, merr := monitoring.NewMetrics()
 			require.NoError(t, merr)
 
-			p, err := monitoring.NewProcessor(pe, metrics)
+			p, err := monitoring.NewProcessor(lggr, metrics)
 			require.NoError(t, err)
 
 			require.NoError(t, p.Process(ctx, tc.msg))
-			pe.AssertExpectations(t)
 		})
 	}
 }
