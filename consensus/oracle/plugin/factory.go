@@ -21,7 +21,7 @@ import (
 
 const (
 	defaultMaxPhaseOutputBytes              = uint32(ocr3types.MaxMaxObservationLength)
-	defaultMaxReportLengthBytes             = uint32(100_000) // 100 KB
+	defaultMaxReportLengthBytes             = uint32(1_000_000) // 1 MB
 	defaultMaxReportCount                   = 100
 	defaultRequestExpiry                    = 20 * time.Second
 	defaultHistoricalOutcomeExpirySeqNrSpan = uint64(4)
