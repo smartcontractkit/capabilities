@@ -1,0 +1,56 @@
+syntax = "proto3";
+package chain_capabilities.solana;
+option go_package = "github.com/smartcontractkit/capabilities/chain_capabilities/solana;monitoring";
+
+import "libs/monitoring/execution_context.proto";
+
+message WriteReportInitiated {
+  WriteReportRequest req = 1;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message WriteReportSuccess {
+  WriteReportRequest req = 1;
+  int32 log_count = 2;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message WriteReportError {
+  WriteReportRequest req = 1;
+  string summary = 2;
+  string cause = 3;
+  bool isUserError = 4;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message WriteReportRequest {
+  repeated AccountMeta remaining_accounts = 1; // accounts that are required by the receiver to accept the report
+  bytes receiver = 2; // 32 bytes receiver
+  optional ComputeConfig compute_config = 3;
+  ReportResponse report = 4;
+}
+
+// All metas are non-signers.
+message AccountMeta {
+  bytes public_key = 1; // 32 bytes account public key
+  bool is_writable = 2; // write flag
+}
+
+message ReportResponse {
+  bytes config_digest = 1;
+  uint64 seq_nr = 2;
+  bytes report_context = 3; // combination of seq_nr and config_digest
+  bytes raw_report = 4;
+  repeated AttributedSignature sigs = 5;
+}
+
+message ComputeConfig {
+  uint32 compute_limit = 1; // max CUs (approx per-tx limit)
+  uint64 compute_max_price = 2; // max lamports per CU
+}
+
+message AttributedSignature {
+  bytes signature = 1;
+  uint32 signer_id = 2;
+}
+
