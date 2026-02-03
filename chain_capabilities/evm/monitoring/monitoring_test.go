@@ -13,6 +13,7 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/monitoring/mocks"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 
 	capmonitoring "github.com/smartcontractkit/capabilities/libs/monitoring"
@@ -26,7 +27,7 @@ func TestProcessor_Process_InitiatedMessages(t *testing.T) {
 		name string
 		msg  proto.Message
 	}{
-		{"CallContractInitiated", &monitoring.CallContractInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
+		{"CallContractInitiated", &monitoring.CallContractInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}, Req: &monitoring.CallContractRequest{}}},
 		{"WriteReportInitiated", &monitoring.WriteReportInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"LogTriggerInitiated", &monitoring.LogTriggerInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"FilterLogsInitiated", &monitoring.FilterLogsInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},

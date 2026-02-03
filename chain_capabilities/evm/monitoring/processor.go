@@ -191,7 +191,18 @@ func (p *processor) logMessage(msg proto.Message) {
 		EmitUnpopulated: true,
 	}.Format(msg)
 
-	p.lggr.Infow("[EVM Monitoring]", "message", mStr)
+	// Convert to map for structured logging
+	var asMap map[string]any
+	err := json.Unmarshal([]byte(mStr), &asMap)
+	if err != nil {
+		p.lggr.Errorw("Failed to unmarshal telemetry message for logging",
+			"err", err,
+			"message_type", msg.ProtoReflect().Descriptor().Name(),
+			"json_message", mStr)
+		return
+	}
+
+	p.lggr.Infow("[EVM Monitoring]", "message", asMap, "entity_name", msg.ProtoReflect().Descriptor().Name())
 }
 
 func LogAndEmitSuccess(
