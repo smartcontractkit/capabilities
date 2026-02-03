@@ -2,6 +2,7 @@ package monitoring
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -93,8 +94,8 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 			return fmt.Errorf("failed to publish LogTriggerCleanUpError metrics: %w", err)
 		}
 	case *LogTriggerEventDroppedError:
+		p.logMessage(msg)
 		if !msg.GetIsLimitError() {
-			p.logMessage(msg)
 			if err := p.metrics.OnTriggerEventDroppedError(ctx, msg); err != nil {
 				return fmt.Errorf("failed to publish TriggerEventDroppedError metrics: %w", err)
 			}
@@ -106,8 +107,8 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 			return fmt.Errorf("failed to publish FilterLogsSuccess metrics: %w", err)
 		}
 	case *FilterLogsError:
+		p.logMessage(msg)
 		if !msg.GetIsUserError() {
-			p.logMessage(msg)
 			if err := p.metrics.OnFilterLogsError(ctx, msg); err != nil {
 				return fmt.Errorf("failed to publish FilterLogsError metrics: %w", err)
 			}
@@ -119,8 +120,8 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 			return fmt.Errorf("failed to publish BalanceAtSuccess metrics: %w", err)
 		}
 	case *BalanceAtError:
+		p.logMessage(msg)
 		if !msg.GetIsUserError() {
-			p.logMessage(msg)
 			if err := p.metrics.OnBalanceAtError(ctx, msg); err != nil {
 				return fmt.Errorf("failed to publish BalanceAtError metrics: %w", err)
 			}
@@ -132,8 +133,8 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 			return fmt.Errorf("failed to publish EstimateGasSuccess metrics: %w", err)
 		}
 	case *EstimateGasError:
+		p.logMessage(msg)
 		if !msg.GetIsUserError() {
-			p.logMessage(msg)
 			if err := p.metrics.OnEstimateGasError(ctx, msg); err != nil {
 				return fmt.Errorf("failed to publish EstimateGasError metrics: %w", err)
 			}
@@ -145,8 +146,8 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 			return fmt.Errorf("failed to publish GetTransactionByHashSuccess metrics: %w", err)
 		}
 	case *GetTransactionByHashError:
+		p.logMessage(msg)
 		if !msg.GetIsUserError() {
-			p.logMessage(msg)
 			if err := p.metrics.OnGetTransactionByHashError(ctx, msg); err != nil {
 				return fmt.Errorf("failed to publish GetTransactionByHashError metrics: %w", err)
 			}
@@ -158,8 +159,8 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 			return fmt.Errorf("failed to publish GetTransactionReceiptSuccess metrics: %w", err)
 		}
 	case *GetTransactionReceiptError:
+		p.logMessage(msg)
 		if !msg.GetIsUserError() {
-			p.logMessage(msg)
 			if err := p.metrics.OnGetTransactionReceiptError(ctx, msg); err != nil {
 				return fmt.Errorf("failed to publish GetTransactionReceiptError metrics: %w", err)
 			}
