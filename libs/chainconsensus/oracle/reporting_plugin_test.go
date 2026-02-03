@@ -8,6 +8,7 @@ import (
 	"github.com/smartcontractkit/libocr/commontypes"
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2/types"
 	"github.com/smartcontractkit/libocr/offchainreporting2plus/ocr3types"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zapcore"
 	"google.golang.org/protobuf/proto"
@@ -106,7 +107,9 @@ func TestObservation(t *testing.T) {
 			Safe:      9,
 			Finalized: 8,
 		})
-		plugin := newReportingPlugin(Config{}, logger.Sugared(logger.Test(t)), blocksProvider, nil, test.GetConsensusMetrics(t))
+		requestsStore := mocks.NewRequestsHandler(t)
+		requestsStore.EXPECT().GetRequestIDs(mock.Anything).Return(nil, nil).Once()
+		plugin := newReportingPlugin(Config{}, logger.Sugared(logger.Test(t)), blocksProvider, requestsStore, test.GetConsensusMetrics(t))
 		previousOutcome := &types.Outcome{
 			ChainHeight: &types.ChainHeight{
 				Latest:    15,
@@ -136,10 +139,11 @@ func TestObservation(t *testing.T) {
 			Finalized: 8,
 		})
 		requestsStore := mocks.NewRequestsHandler(t)
+		requestsStore.EXPECT().GetRequestIDs(mock.Anything).Return(nil, nil).Once()
 		plugin := newReportingPlugin(Config{MaxBatchSize: 1}, logger.Sugared(logger.Test(t)), blocksProvider, requestsStore, test.GetConsensusMetrics(t))
 		requestsStore.EXPECT().GetRequest("1").Return(types.Request(nil), true)
 		_, err := plugin.Observation(t.Context(), ocr3types.OutcomeContext{}, mustQuery(t, []string{"1"}))
-		require.EqualError(t, err, "failed to observe request: unsupported observation type: <nil>")
+		require.ErrorContains(t, err, "failed to observe request: unsupported observation type: <nil>")
 	})
 	t.Run("Happy path", func(t *testing.T) {
 		expectedChainHeight := &types.ChainHeight{
@@ -149,6 +153,7 @@ func TestObservation(t *testing.T) {
 		}
 		blocksProvider := newBlockProvider(t, expectedChainHeight)
 		requestsStore := mocks.NewRequestsHandler(t)
+		requestsStore.EXPECT().GetRequestIDs(mock.Anything).Return(nil, nil).Once()
 		requestsStore.EXPECT().GetRequest("request_not_present_in_store").Return(nil, false).Once()
 
 		id := "request_without_observation"
@@ -206,6 +211,7 @@ func TestObservation(t *testing.T) {
 		}
 		blocksProvider := newBlockProvider(t, expectedChainHeight)
 		requestsStore := mocks.NewRequestsHandler(t)
+		requestsStore.EXPECT().GetRequestIDs(mock.Anything).Return(nil, nil).Once()
 		addRequestWithObservation := func(id string, size int) {
 			withObservation := types.NewEventuallyConsistentRequest(id, nil)
 			withObservation.SetObservation(make([]byte, size))
@@ -249,6 +255,60 @@ func TestObservation(t *testing.T) {
 					}},
 				},
 			},
+		}
+		require.Empty(t, cmp.Diff(expectedObservation, &observation, protocmp.Transform()))
+	})
+	t.Run("Missing requests from a previous round are processed before query requests", func(t *testing.T) {
+		expectedChainHeight := &types.ChainHeight{
+			Latest:    10,
+			Safe:      9,
+			Finalized: 8,
+		}
+		blocksProvider := newBlockProvider(t, expectedChainHeight)
+		requestsStore := mocks.NewRequestsHandler(t)
+		requestsStore.EXPECT().GetRequest("missing_request_but_not_present_in_store").Return(nil, false).Once()
+
+		id := "missing_request_without_observation"
+		requestsStore.EXPECT().GetRequest(id).Return(types.NewEventuallyConsistentRequest(id, nil), true).Once()
+
+		mockRequestWithObservation := func(id string) {
+			withObservation := types.NewEventuallyConsistentRequest(id, nil)
+			withObservation.SetObservation([]byte("observation"))
+			requestsStore.EXPECT().GetRequest(id).Return(withObservation, true).Once()
+		}
+
+		mockRequestWithObservation("missing_request_with_observation")
+		mockRequestWithObservation("regular_request_with_observation")
+
+		requestsStore.EXPECT().GetRequestIDs(mock.Anything).Return(
+			[]string{
+				"missing_request_without_observation",
+				"missing_request_with_observation",
+				"regular_request_with_observation",
+				"regular_request_won't_fit",
+			}, nil).Once()
+
+		plugin := newReportingPlugin(Config{MaxBatchSize: 2, MaxObservationLength: 1000}, logger.Sugared(logger.Test(t)), blocksProvider, requestsStore, test.GetConsensusMetrics(t))
+		query := mustQuery(t, []string{"regular_request_with_observation", "regular_request_won't_fit"})
+		previousOutcome := mustMarshalProto(&types.Outcome{
+			ChainHeight:       expectedChainHeight,
+			MissingRequestIDs: []string{"missing_request_but_not_present_in_store", "missing_request_without_observation", "missing_request_with_observation"},
+		})
+		rawObservation, err := plugin.Observation(t.Context(), ocr3types.OutcomeContext{PreviousOutcome: previousOutcome}, query)
+		require.NoError(t, err)
+		var observation types.Observation
+		require.NoError(t, proto.Unmarshal(rawObservation, &observation))
+		expectedObservation := &types.Observation{
+			ChainHeight: expectedChainHeight,
+			Observations: map[string]*types.RequestObservation{
+				"regular_request_with_observation": {
+					Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("observation")},
+				},
+				"missing_request_with_observation": {
+					Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("observation")},
+				},
+			},
+			MissingRequestIDs: []string{"missing_request_without_observation", "missing_request_with_observation"},
 		}
 		require.Empty(t, cmp.Diff(expectedObservation, &observation, protocmp.Transform()))
 	})
@@ -323,12 +383,22 @@ func TestValidateObservation(t *testing.T) {
 			},
 			expectedError: "invalid chain height compared to previous outcome: expected finalized 8 to be gt or equal to previous finalized 9",
 		},
+		{
+			name: "Duplicate missing requestID",
+			observations: ocrtypes.AttributedObservation{
+				Observation: mustMarshalProto(&types.Observation{
+					ChainHeight:       &types.ChainHeight{},
+					MissingRequestIDs: []string{"1", "2", "3", "2"},
+				}),
+			},
+			expectedError: "invalid missing request ids: duplicate missing request ID: 2. OracleID: 0",
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			lggr := logger.Sugared(logger.Test(t))
-			plugin := newReportingPlugin(Config{}, lggr, nil, nil, test.GetConsensusMetrics(t))
+			plugin := newReportingPlugin(Config{MaxBatchSize: 10}, lggr, nil, nil, test.GetConsensusMetrics(t))
 
 			err := plugin.ValidateObservation(t.Context(), tc.outcomeContext, nil, tc.observations)
 			if tc.expectedError == "" {
@@ -401,31 +471,40 @@ func TestOutcome(t *testing.T) {
 	testCases := []struct {
 		name              string
 		requestIDs        []string
-		nodesObservations []map[string]*types.RequestObservation
+		nodesObservations []types.Observation
 		expectedError     string
 		expectedOutcome   *types.Outcome
 		expectedLogs      []string
 	}{
 		{
 			name:              "fails to agree on chain height",
-			nodesObservations: []map[string]*types.RequestObservation{{}}, // only one node provided observations
+			nodesObservations: []types.Observation{{}}, // only one node provided observations
 			expectedError:     "could not determine chain height: not enough observations to calculate chain height. Got 1, expected at least 2",
 		},
 		{
 			name:       "not enough observations of a request to agree on observation type",
 			requestIDs: []string{"request_1", "request_2"},
-			nodesObservations: []map[string]*types.RequestObservation{
+			nodesObservations: []types.Observation{
 				{
 					// node1
-					"request_1": &types.RequestObservation{Observation: &types.RequestObservation_EventuallyConsistent{}},
+					Observations: map[string]*types.RequestObservation{
+						// node1
+						"request_1": {Observation: &types.RequestObservation_EventuallyConsistent{}},
+					},
 				},
 				{
-					// node2
-					"request_1": &types.RequestObservation{Observation: &types.RequestObservation_EventuallyConsistent{}},
+					// node1
+					Observations: map[string]*types.RequestObservation{
+						// node1
+						"request_1": {Observation: &types.RequestObservation_EventuallyConsistent{}},
+					},
 				},
 				{
-					// node3
-					"request_2": &types.RequestObservation{Observation: &types.RequestObservation_EventuallyConsistent{}},
+					// node1
+					Observations: map[string]*types.RequestObservation{
+						// node1
+						"request_2": {Observation: &types.RequestObservation_EventuallyConsistent{}},
+					},
 				},
 			},
 			expectedOutcome: &types.Outcome{ChainHeight: chainHeight},
@@ -434,18 +513,24 @@ func TestOutcome(t *testing.T) {
 		{
 			name:       "fails to determine request value",
 			requestIDs: []string{"request_1"},
-			nodesObservations: []map[string]*types.RequestObservation{
+			nodesObservations: []types.Observation{
 				{
 					// node1
-					"request_1": &types.RequestObservation{Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
+					Observations: map[string]*types.RequestObservation{
+						"request_1": {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
+					},
 				},
 				{
 					// node2
-					"request_1": &types.RequestObservation{Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value2")}},
+					Observations: map[string]*types.RequestObservation{
+						"request_1": {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value2")}},
+					},
 				},
 				{
 					// node3
-					"request_1": &types.RequestObservation{Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value3")}},
+					Observations: map[string]*types.RequestObservation{
+						"request_1": {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value3")}},
+					},
 				},
 			},
 			expectedOutcome: &types.Outcome{ChainHeight: chainHeight},
@@ -454,48 +539,81 @@ func TestOutcome(t *testing.T) {
 		{
 			name:       "returns error on unsupported observation type",
 			requestIDs: []string{"request_1"},
-			nodesObservations: []map[string]*types.RequestObservation{
+			nodesObservations: []types.Observation{
 				{
 					// node1
-					"request_1": &types.RequestObservation{},
+					Observations: map[string]*types.RequestObservation{
+						"request_1": {},
+					},
 				},
 				{
 					// node2
-					"request_1": &types.RequestObservation{},
+					Observations: map[string]*types.RequestObservation{
+						"request_1": {},
+					},
 				},
 				{
 					// node3
-					"request_1": &types.RequestObservation{},
+					Observations: map[string]*types.RequestObservation{
+						"request_1": {},
+					},
 				},
 			},
 			expectedError: "unsupported observation type: UNKNOWN",
 		},
 		{
-			name:       "happy path",
-			requestIDs: []string{"request_with_common_value", "request_without_common_value", "lockable_request", "request_known_to_insufficient_number_of_nodes", "aggregatable_request"},
-			nodesObservations: []map[string]*types.RequestObservation{
+			name: "Missing requests happy path",
+			nodesObservations: []types.Observation{
 				{
 					// node1
-					"request_with_common_value":                     &types.RequestObservation{Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
-					"request_without_common_value":                  &types.RequestObservation{Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
-					"lockable_request":                              &types.RequestObservation{Observation: &types.RequestObservation_LockableToBlock{LockableToBlock: &emptypb.Empty{}}},
-					"request_known_to_insufficient_number_of_nodes": &types.RequestObservation{Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
-					"aggregatable_request":                          newAggregatableObservation(123, 2),
+					MissingRequestIDs: []string{"request_1", "request_2"},
 				},
 				{
 					// node2
-					"request_with_common_value":                     &types.RequestObservation{Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
-					"request_without_common_value":                  &types.RequestObservation{Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value2")}},
-					"lockable_request":                              &types.RequestObservation{Observation: &types.RequestObservation_LockableToBlock{LockableToBlock: &emptypb.Empty{}}},
-					"request_known_to_insufficient_number_of_nodes": &types.RequestObservation{Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
-					"aggregatable_request":                          newAggregatableObservation(124, 2),
+					MissingRequestIDs: []string{"request_1", "request_3"},
 				},
 				{
 					// node3
-					"request_with_common_value":    &types.RequestObservation{Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
-					"request_without_common_value": &types.RequestObservation{Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value3")}},
-					"lockable_request":             &types.RequestObservation{Observation: &types.RequestObservation_LockableToBlock{LockableToBlock: &emptypb.Empty{}}},
-					"aggregatable_request":         newAggregatableObservation(124, 3),
+					MissingRequestIDs: []string{"request_2"},
+				},
+			},
+			expectedOutcome: &types.Outcome{
+				ChainHeight:       chainHeight,
+				MissingRequestIDs: []string{"request_1", "request_2"},
+			},
+		},
+		{
+			name:       "happy path",
+			requestIDs: []string{"request_with_common_value", "request_without_common_value", "lockable_request", "request_known_to_insufficient_number_of_nodes", "aggregatable_request"},
+			nodesObservations: []types.Observation{
+				{
+					// node1
+					Observations: map[string]*types.RequestObservation{
+						"request_with_common_value":                     {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
+						"request_without_common_value":                  {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
+						"lockable_request":                              {Observation: &types.RequestObservation_LockableToBlock{LockableToBlock: &emptypb.Empty{}}},
+						"request_known_to_insufficient_number_of_nodes": {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
+						"aggregatable_request":                          newAggregatableObservation(123, 2),
+					},
+				},
+				{
+					// node2
+					Observations: map[string]*types.RequestObservation{
+						"request_with_common_value":                     {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
+						"request_without_common_value":                  {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value2")}},
+						"lockable_request":                              {Observation: &types.RequestObservation_LockableToBlock{LockableToBlock: &emptypb.Empty{}}},
+						"request_known_to_insufficient_number_of_nodes": {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
+						"aggregatable_request":                          newAggregatableObservation(124, 2),
+					},
+				},
+				{
+					// node3
+					Observations: map[string]*types.RequestObservation{
+						"request_with_common_value":    {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
+						"request_without_common_value": {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value3")}},
+						"lockable_request":             {Observation: &types.RequestObservation_LockableToBlock{LockableToBlock: &emptypb.Empty{}}},
+						"aggregatable_request":         newAggregatableObservation(124, 3),
+					},
 				},
 			},
 			expectedOutcome: &types.Outcome{
@@ -523,7 +641,8 @@ func TestOutcome(t *testing.T) {
 			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1, N: 4}}, logger.Sugared(lggr), nil, nil, test.GetConsensusMetrics(t))
 			var rawAOs []ocrtypes.AttributedObservation
 			for _, nodesObservations := range tc.nodesObservations {
-				rawObservation, err := proto.Marshal(&types.Observation{ChainHeight: chainHeight, Observations: nodesObservations})
+				nodesObservations.ChainHeight = chainHeight
+				rawObservation, err := proto.Marshal(&nodesObservations)
 				require.NoError(t, err)
 				rawAOs = append(rawAOs, ocrtypes.AttributedObservation{Observation: rawObservation})
 			}

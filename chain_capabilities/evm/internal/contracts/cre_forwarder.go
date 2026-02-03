@@ -23,11 +23,35 @@ import (
 	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 )
 
+type TransmissionState uint8
+
+const (
+	TransmissionStateNotAttempted TransmissionState = iota
+	TransmissionStateSucceeded
+	TransmissionStateInvalidReceiver
+	TransmissionStateFailed
+)
+
+func (s TransmissionState) String() string {
+	switch s {
+	case TransmissionStateNotAttempted:
+		return "not_attempted"
+	case TransmissionStateSucceeded:
+		return "succeeded"
+	case TransmissionStateInvalidReceiver:
+		return "invalid_receiver"
+	case TransmissionStateFailed:
+		return "failed"
+	default:
+		return "unknown"
+	}
+}
+
 type TransmissionInfo struct {
-	GasLimit        *big.Int `json:"gasLimit,omitempty"`
-	InvalidReceiver bool     `json:"invalidReceiver,omitempty"`
-	State           uint8    `json:"state,omitempty"`
-	Success         bool     `json:"success,omitempty"`
+	GasLimit        *big.Int          `json:"gasLimit,omitempty"`
+	InvalidReceiver bool              `json:"invalidReceiver,omitempty"`
+	State           TransmissionState `json:"state,omitempty"`
+	Success         bool              `json:"success,omitempty"`
 	//nolint:revive
 	TransmissionId [32]byte       `json:"transmissionId,omitempty"`
 	Transmitter    common.Address `json:"transmitter,omitempty"`

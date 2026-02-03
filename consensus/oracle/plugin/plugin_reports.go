@@ -131,6 +131,11 @@ func (r *reportingPlugin) Reports(ctx context.Context, seqNr uint64, outcome ocr
 		default:
 			r.lggr.Warnw("received unknown consensus outcome type", "outcome", outcome)
 		}
+
+		if len(reports) == r.maxNumberOfReports {
+			r.lggr.Warnw("maximum number of reports reached, stopping further report generation for this round", "maxNumberOfReports", r.maxNumberOfReports)
+			break
+		}
 	}
 
 	r.lggr.Debugw("consensus plugin reports complete", "numReports", len(reports), "successIDs", successIDs, "failureIDs", failureIDs)

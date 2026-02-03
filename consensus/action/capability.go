@@ -48,6 +48,7 @@ const (
 	defaultKeyBundleIDForValueConsensus = "evm"
 	KeyBundleIDEvm                      = "evm"
 	KeyBundleIDAptos                    = "aptos"
+	KeyBundleIDSolana                   = "solana"
 	SigningAlgoEcdsa                    = "ecdsa"
 	HashingAlgoKeccak256                = "keccak256"
 )
@@ -409,8 +410,9 @@ func (c *consensusCapability) sendRequest(ctx context.Context, input *sdk.Simple
 
 func validateReportRequest(reportRequest *sdk.ReportRequest) (string, error) {
 	supportedKeyBundleIDs := map[string]struct{}{
-		KeyBundleIDEvm:   {},
-		KeyBundleIDAptos: {},
+		KeyBundleIDEvm:    {},
+		KeyBundleIDAptos:  {},
+		KeyBundleIDSolana: {},
 	}
 
 	keyBundleID := strings.ToLower(reportRequest.EncoderName)
