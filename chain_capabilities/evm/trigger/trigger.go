@@ -315,8 +315,8 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	return logCh, nil
 }
 
-func (lts *LogTriggerService) AckEvent(ctx context.Context, triggerId string, eventId string) caperrors.Error {
-	if err := lts.baseTrigger.AckEvent(ctx, triggerId, eventId); err != nil {
+func (lts *LogTriggerService) AckEvent(ctx context.Context, triggerID string, eventId string) caperrors.Error {
+	if err := lts.baseTrigger.AckEvent(ctx, triggerID, eventId); err != nil {
 		return caperrors.NewPrivateSystemError(err, caperrors.Internal)
 	}
 	return nil
