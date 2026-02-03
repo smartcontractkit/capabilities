@@ -7,6 +7,9 @@ flowchart LR
 	capabilities/chain_capabilities/evm --> capabilities/libs
 	capabilities/chain_capabilities/evm --> chainlink-evm
 	click capabilities/chain_capabilities/evm href "https://github.com/smartcontractkit/capabilities"
+	capabilities/chain_capabilities/solana --> capabilities/libs
+	capabilities/chain_capabilities/solana --> chainlink-solana/contracts
+	click capabilities/chain_capabilities/solana href "https://github.com/smartcontractkit/capabilities"
 	capabilities/consensus --> capabilities/libs
 	capabilities/consensus --> cre-sdk-go
 	click capabilities/consensus href "https://github.com/smartcontractkit/capabilities"
@@ -82,6 +85,8 @@ flowchart LR
 	click chainlink-common/pkg/values href "https://github.com/smartcontractkit/chainlink-common"
 	chainlink-data-streams --> chainlink-common
 	click chainlink-data-streams href "https://github.com/smartcontractkit/chainlink-data-streams"
+	chainlink-deployments-framework
+	click chainlink-deployments-framework href "https://github.com/smartcontractkit/chainlink-deployments-framework"
 	chainlink-evm --> chainlink-common/keystore
 	chainlink-evm --> chainlink-evm/gethwrappers
 	chainlink-evm --> chainlink-framework/capabilities
@@ -124,14 +129,22 @@ flowchart LR
 	chainlink-protos/workflows/go
 	click chainlink-protos/workflows/go href "https://github.com/smartcontractkit/chainlink-protos"
 	chainlink-solana --> chainlink-ccip/chains/solana
+	chainlink-solana --> chainlink-common/keystore
 	chainlink-solana --> chainlink-common/pkg/monitoring
 	chainlink-solana --> chainlink-framework/capabilities
 	chainlink-solana --> chainlink-framework/multinode
 	click chainlink-solana href "https://github.com/smartcontractkit/chainlink-solana"
+	chainlink-solana/contracts --> chainlink-deployments-framework
+	chainlink-solana/contracts --> chainlink-solana
+	chainlink-solana/contracts --> chainlink-testing-framework/framework
+	chainlink-solana/contracts --> chainlink-tron/relayer
+	click chainlink-solana/contracts href "https://github.com/smartcontractkit/chainlink-solana"
 	chainlink-sui --> chainlink-aptos
 	chainlink-sui --> chainlink-ccip
 	chainlink-sui --> chainlink-common/pkg/values
 	click chainlink-sui href "https://github.com/smartcontractkit/chainlink-sui"
+	chainlink-testing-framework/framework
+	click chainlink-testing-framework/framework href "https://github.com/smartcontractkit/chainlink-testing-framework"
 	chainlink-ton --> chainlink-ccip
 	chainlink-ton --> chainlink-framework/metrics
 	click chainlink-ton href "https://github.com/smartcontractkit/chainlink-ton"
@@ -183,6 +196,7 @@ flowchart LR
 	subgraph capabilities-repo[capabilities]
 		 capabilities/capabilitywatcher
 		 capabilities/chain_capabilities/evm
+		 capabilities/chain_capabilities/solana
 		 capabilities/consensus
 		 capabilities/cron
 		 capabilities/http_action
@@ -246,6 +260,12 @@ flowchart LR
 	end
 	click chainlink-protos-repo href "https://github.com/smartcontractkit/chainlink-protos"
 
+	subgraph chainlink-solana-repo[chainlink-solana]
+		 chainlink-solana
+		 chainlink-solana/contracts
+	end
+	click chainlink-solana-repo href "https://github.com/smartcontractkit/chainlink-solana"
+
 	subgraph cre-sdk-go-repo[cre-sdk-go]
 		 cre-sdk-go
 		 cre-sdk-go/capabilities/blockchain/evm
@@ -261,5 +281,5 @@ flowchart LR
 	click tdh2-repo href "https://github.com/smartcontractkit/tdh2"
 
 	classDef outline stroke-dasharray:6,fill:none;
-	class capabilities-repo,chainlink-ccip-repo,chainlink-common-repo,chainlink-evm-repo,chainlink-framework-repo,chainlink-protos-repo,cre-sdk-go-repo,tdh2-repo outline
+	class capabilities-repo,chainlink-ccip-repo,chainlink-common-repo,chainlink-evm-repo,chainlink-framework-repo,chainlink-protos-repo,chainlink-solana-repo,cre-sdk-go-repo,tdh2-repo outline
 ```

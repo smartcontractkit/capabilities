@@ -34,6 +34,7 @@ type reportingPlugin struct {
 	defaultKeyBundleIDForConsensusFailure string
 	maxRequestOutcomeSize                 int
 	maxReportLengthBytes                  int
+	maxNumberOfReports                    int
 
 	lggr logger.Logger
 }
@@ -53,6 +54,7 @@ func NewReportingPlugin(lggr logger.Logger, metrics *metrics.Metrics, f int, n i
 		defaultKeyBundleIDForConsensusFailure: defaultKeyBundleIDForConsensusFailure,
 		maxRequestOutcomeSize:                 maxRequestOutcomeSize, // NOTE: can we simply use configProto.MaxOutcomeLengthBytes here?
 		maxReportLengthBytes:                  int(configProto.MaxReportLengthBytes),
+		maxNumberOfReports:                    int(configProto.MaxReportCount),
 	}, nil
 }
 
