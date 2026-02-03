@@ -340,21 +340,9 @@ func (e *WriteReport) pollTransmissionInfo(
 		if err != nil {
 			return contracts.TransmissionInfo{}, err
 		}
-		if transmissionInfo.State != contracts.TransmissionStateNotAttempted {
-			monitoring.LogAndEmitError(
-				ctx,
-				e.lggr,
-				e.beholderProcessor,
-				e.messageBuilder.BuildWriteReportInvalidTransmissionState(
-					telemetryContext,
-					request,
-					lastValidInfo,
-					"Unexpected transmission state for the first attempt",
-					getInvalidStateErrorMessage(lastValidInfo.State),
-				),
-			)
-			return contracts.TransmissionInfo{}, fmt.Errorf("unexpected transmission state %s for the first attempt", lastValidInfo.State)
-		}
+		// If we're first in queue (or unscheduled), proceed with the current state.
+		// This supports pre-existing transmissions without blocking.
+		return transmissionInfo, nil
 	}
 
 	delay := time.Duration(queuePosition) * e.transmissionScheduler.deltaStage
