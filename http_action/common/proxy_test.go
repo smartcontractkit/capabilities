@@ -307,10 +307,10 @@ func TestSendRequest_MultiHeaders(t *testing.T) {
 		require.Contains(t, setCookieHeader.Values, "pref=dark; Path=/")
 
 		// Verify Headers field has first value only (backward compatibility)
-		require.Equal(t, "sessionid=abc123; Path=/; HttpOnly", response.Headers["Set-Cookie"])
+		require.Equal(t, "sessionid=abc123; Path=/; HttpOnly", response.Headers["Set-Cookie"]) //nolint:staticcheck
 
 		// Verify backward compatibility: all keys in MultiHeaders should be in Headers
-		verifyBackwardCompatibility(t, response.Headers, response.MultiHeaders)
+		verifyBackwardCompatibility(t, response.Headers, response.MultiHeaders) //nolint:staticcheck
 	})
 
 	t.Run("response with multiple Via headers", func(t *testing.T) {

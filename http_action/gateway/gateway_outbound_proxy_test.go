@@ -425,6 +425,7 @@ func (m *mockGatewayConnector) AwaitConnection(ctx context.Context, gateway stri
 func (m *mockGatewayConnector) AddHandler(ctx context.Context, methods []string, handler core.GatewayConnectorHandler) error {
 	return m.AddHandlerErr
 }
+
 func TestGatewayOutboundProxy_nextBackoff(t *testing.T) {
 	proxy := &gatewayOutboundProxy{
 		gatewayConnectionConfig: common.GatewayConnectionConfig{
@@ -530,10 +531,10 @@ func TestGatewayOutboundProxy_SendRequest_MultiHeaders(t *testing.T) {
 		require.Contains(t, setCookieHeader.Values, "pref=dark; Path=/")
 
 		// Verify Headers field has first value only (backward compatibility)
-		require.Equal(t, "sessionid=abc123; Path=/; HttpOnly", output.Headers["Set-Cookie"])
+		require.Equal(t, "sessionid=abc123; Path=/; HttpOnly", output.Headers["Set-Cookie"]) //nolint:staticcheck
 
 		// Verify backward compatibility: all keys in MultiHeaders should be in Headers
-		verifyBackwardCompatibility(t, output.Headers, output.MultiHeaders)
+		verifyBackwardCompatibility(t, output.Headers, output.MultiHeaders) //nolint:staticcheck
 	})
 
 	t.Run("response with multiple Via headers from gateway", func(t *testing.T) {

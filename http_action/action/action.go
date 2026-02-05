@@ -25,8 +25,10 @@ import (
 
 const ServiceName = "HTTPActionCapability"
 
-var _ services.Service = &service{}
-var _ server.ClientCapability = &service{}
+var (
+	_ services.Service        = &service{}
+	_ server.ClientCapability = &service{}
+)
 
 type service struct {
 	lggr          logger.SugaredLogger
@@ -155,7 +157,7 @@ func (s *service) SendRequest(ctx context.Context, metadata capabilities.Request
 		"workflowExecutionID", metadata.WorkflowExecutionID,
 		"responseStatusCode", response.StatusCode,
 		"responseBodySize", len(response.Body),
-		"responseNumHeaders", len(response.Headers),
+		"responseNumHeaders", len(response.MultiHeaders),
 		"externalEndpointLatency", externalEndpointLatency.Milliseconds())
 
 	return &responseAndMetadata, nil
