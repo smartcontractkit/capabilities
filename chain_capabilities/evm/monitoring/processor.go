@@ -184,9 +184,7 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 		}
 	// -- TransmissionScheduler --
 	case *TransmissionSchedulerNodeNotFoundInDon:
-		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit TransmissionSchedulerNodeNotFoundInDon log: %w", err)
-		}
+		p.logMessage(msg)
 		if err := p.metrics.OnTransmissionSchedulerNodeNotFoundInDon(ctx, msg); err != nil {
 			return fmt.Errorf("failed to publish TransmissionSchedulerNodeNotFoundInDon metrics: %w", err)
 		}
