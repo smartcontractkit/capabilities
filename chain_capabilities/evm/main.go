@@ -71,9 +71,12 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	if err != nil {
 		return fmt.Errorf("failed getting capability info: %w", err)
 	}
-
-	c.CapabilityInfo = capInfo
+	if capInfo.DON == nil {
+		return fmt.Errorf("capability info missing DON, isLocal: %v %v", capInfo.IsLocal, capInfo)
+	}
 	
+	c.CapabilityInfo = capInfo
+
 	cfg, err := c.unmarshalConfig(dependencies.Config)
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal config: %w", err)
