@@ -197,9 +197,6 @@ func (c *capabilityGRPCService) initialiseTransmissionScheduler(
 	if len(donPeerIDs) == 0 {
 		return actions.TransmissionScheduler{}, fmt.Errorf("DON members list is empty")
 	}
-	if len(c.DON.Members) == 0 {
-		return actions.TransmissionScheduler{}, fmt.Errorf("no DON members found in capability info")
-	}
 
 	found := false
 	for _, peerID := range donPeerIDs {
