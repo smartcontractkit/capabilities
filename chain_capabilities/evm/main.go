@@ -67,6 +67,13 @@ func main() {
 func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
 	c.lggr.Infof("Initialising %s", CapabilityName)
 
+	capInfo, err := c.Info(ctx)
+	if err != nil {
+		return fmt.Errorf("failed getting capability info: %w", err)
+	}
+
+	c.CapabilityInfo = capInfo
+	
 	cfg, err := c.unmarshalConfig(dependencies.Config)
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal config: %w", err)
