@@ -177,6 +177,14 @@ func (c *capabilityGRPCService) initialiseTransmissionScheduler(
 		return actions.TransmissionScheduler{}, fmt.Errorf("failed to get local node: %w", err)
 	}
 
+	if c.DON == nil {
+		return actions.TransmissionScheduler{}, errors.New("capabilityInfo DON is nil")
+	}
+
+	if len(c.DON.Members) == 0 {
+		return actions.TransmissionScheduler{}, errors.New("capabilityInfo DON is empty")
+	}
+
 	var donPeerIDs []p2ptypes.PeerID
 	myPeerID := localNode.PeerID
 	for _, peerID := range c.DON.Members {
