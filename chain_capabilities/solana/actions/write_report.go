@@ -10,8 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-bigmodexpfix/src/math/big"
 	"github.com/gagliardetto/solana-go"
 	"github.com/jpillora/backoff"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -84,6 +86,7 @@ func (s *Solana) WriteReport(
 			s.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport while checking if the report exists or trying to publish on chain", err.Error(), isUserError))
 		return nil, GetError(err, isUserError)
 	}
+
 	//TODO PLEX-1920 add retreiving metering info
 	monitoring.LogAndEmitSuccess(ctx, "Successfully WriteReport execution", s.lggr, s.beholderProcessor, s.messageBuilder.BuildWriteReportSuccess(telemetryContext, input))
 	responseAndMetadata := capabilities.ResponseAndMetadata[*solcap.WriteReportReply]{
@@ -107,12 +110,13 @@ func (s *Solana) executeWriteReport(ctx context.Context, request *solcap.WriteRe
 		lggr:                     s.messageBuilder.RequestLggr(s.lggr, telemetryContext),
 	}
 
-	return wr.executeWriteReport(ctx, request, metadata)
+	return wr.executeWriteReport(ctx, request, telemetryContext, metadata)
 }
 
 func (wr *WriteReport) executeWriteReport(
 	ctx context.Context,
 	request *solcap.WriteReportRequest,
+	telemetryContext monitoring.TelemetryContext,
 	metadata capabilities.RequestMetadata,
 ) (*solcap.WriteReportReply, capabilities.ResponseMetadata, error) {
 	receiver := solana.PublicKey(request.Receiver)
@@ -213,6 +217,14 @@ func (wr *WriteReport) executeWriteReport(
 	}
 	if last == nil {
 		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("nil transmission info after retries")
+	}
+
+	var meteringMetadata capabilities.ResponseMetadata
+	transactionFee, err := wr.getFee(ctx, last.Signature)
+	if err != nil {
+		monitoring.LogAndEmitError(ctx, wr.lggr, wr.beholderProcessor, wr.messageBuilder.BuildWriteReportTxFeeCalculationError(telemetryContext, request, last.Signature, err.Error()))
+	} else {
+		meteringMetadata = metering.GetResponseMetadataWriteReport(transactionFee, wr.chainSelector)
 	}
 
 	switch last.State {
@@ -317,6 +329,18 @@ func extractTransmissionID(receiver solana.PublicKey, report *sdk.ReportResponse
 	data = append(data, reportID...)
 
 	return sha256.Sum256(data), nil
+}
+
+func (wr *WriteReport) getFee(ctx context.Context, sig solana.Signature) (*big.Float, error) {
+	tx, err := wr.SolanaService.GetTransaction(ctx, soltypes.GetTransactionRequest{Signature: soltypes.Signature(sig)})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get transaction: %w", err)
+	}
+
+	feeInSol := new(big.Float).Quo(new(big.Float).SetUint64(tx.Meta.Fee), big.NewFloat(1e9))
+
+	wr.lggr.Debugw("WriteReport fee", "feeInSol", feeInSol.String(), "feeInLamports", tx.Meta.Fee)
+	return feeInSol, nil
 }
 
 func (wr *WriteReport) successWriteReportReply(sig *solana.Signature) *solcap.WriteReportReply {

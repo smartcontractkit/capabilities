@@ -1,8 +1,10 @@
 package monitoring
 
 import (
+	"fmt"
 	"time"
 
+	solgo "github.com/gagliardetto/solana-go"
 	capmonitoring "github.com/smartcontractkit/capabilities/libs/monitoring"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	solcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
@@ -35,6 +37,20 @@ func (m *MessageBuilder) RequestLggr(lggr logger.SugaredLogger, telemetryContext
 	attrs := m.BuildExecutionContext(telemetryContext).LogAttributes()
 	lggrAttrs := attrsToErrorKV(attrs)
 	return lggr.With(lggrAttrs...)
+}
+
+func (m *MessageBuilder) BuildWriteReportTxFeeCalculationError(tc TelemetryContext, req *solcap.WriteReportRequest, signature solgo.Signature, cause string) ErrorMessage {
+	summary := "Failed to calculate transaction fee"
+	if !signature.IsZero() {
+		summary = fmt.Sprintf("Failed to calculate transaction fee for tx: %s", signature)
+	}
+	return &WriteReportTxFeeCalculationError{
+		Req:              convertWriteReportRequest(req),
+		ExecutionContext: m.BuildExecutionContext(tc),
+		Summary:          summary,
+		Cause:            cause,
+		TxIdempotencyKey: txIdempotencyKey,
+	}
 }
 
 type Message interface {
