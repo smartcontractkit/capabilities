@@ -413,7 +413,7 @@ func (rp *reportingPlugin) ObservationQuorum(_ context.Context, outctx ocr3types
 }
 
 func (rp *reportingPlugin) agreeOnObservationType(requestID string, aos []attributedObservation) (ctypes.ObservationType, error) {
-	iterator := func(yield func(commontypes.OracleID, observation[ctypes.ObservationType, ctypes.ObservationType]) bool) {
+	iterator := func(yield func(commontypes.OracleID, *observation[ctypes.ObservationType, ctypes.ObservationType]) bool) {
 		for _, ob := range aos {
 			requestOb, ok := ob.Observation.Observations[requestID]
 			if !ok || requestOb == nil {
@@ -430,7 +430,7 @@ func (rp *reportingPlugin) agreeOnObservationType(requestID string, aos []attrib
 			case *ctypes.RequestObservation_Error:
 				observationType = ctypes.ObservationType_ERROR
 			}
-			yield(ob.Observer, observation[ctypes.ObservationType, ctypes.ObservationType]{
+			yield(ob.Observer, &observation[ctypes.ObservationType, ctypes.ObservationType]{
 				Key:   observationType,
 				Value: observationType,
 			})
@@ -483,7 +483,7 @@ func (rp *reportingPlugin) aggregateValue(requestID string, aos []attributedObse
 }
 
 func (rp *reportingPlugin) agreeOnAggregationMethod(requestID string, aos []attributedObservation) (string, error) {
-	iterator := func(yield func(commontypes.OracleID, observation[string, string]) bool) {
+	iterator := func(yield func(commontypes.OracleID, *observation[string, string]) bool) {
 		for _, ob := range aos {
 			requestOb, ok := ob.Observation.Observations[requestID]
 			if !ok || requestOb == nil {
@@ -493,7 +493,7 @@ func (rp *reportingPlugin) agreeOnAggregationMethod(requestID string, aos []attr
 			if aggrOb == nil {
 				continue
 			}
-			yield(ob.Observer, observation[string, string]{
+			yield(ob.Observer, &observation[string, string]{
 				Key:   aggrOb.Method,
 				Value: aggrOb.Method,
 			})
@@ -521,7 +521,7 @@ func (rp *reportingPlugin) agreeOnMissingRequestIDs(aos []attributedObservation)
 }
 
 func (rp *reportingPlugin) agreeOnEventuallyConsistentValue(requestID string, aos []attributedObservation) ([]byte, error) {
-	iterator := func(yield func(commontypes.OracleID, observation[[32]byte, []byte]) bool) {
+	iterator := func(yield func(commontypes.OracleID, *observation[[32]byte, []byte]) bool) {
 		for _, ob := range aos {
 			requestOb, ok := ob.Observation.Observations[requestID]
 			if !ok || requestOb == nil {
@@ -529,11 +529,12 @@ func (rp *reportingPlugin) agreeOnEventuallyConsistentValue(requestID string, ao
 			}
 
 			if _, ok := requestOb.Observation.(*ctypes.RequestObservation_EventuallyConsistent); !ok {
+				yield(ob.Observer, nil)
 				continue
 			}
 
 			key := sha256.Sum256(requestOb.GetEventuallyConsistent())
-			yield(ob.Observer, observation[[32]byte, []byte]{
+			yield(ob.Observer, &observation[[32]byte, []byte]{
 				Key:   key,
 				Value: requestOb.GetEventuallyConsistent(),
 			})

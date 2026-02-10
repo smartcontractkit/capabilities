@@ -583,6 +583,39 @@ func TestOutcome(t *testing.T) {
 			},
 		},
 		{
+			name:       "F+1 nodes agree on request value and F observed error",
+			requestIDs: []string{"request"},
+			nodesObservations: []types.Observation{
+				{
+					// node1
+					Observations: map[string]*types.RequestObservation{
+						"request": {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
+					},
+				},
+				{
+					// node2
+					Observations: map[string]*types.RequestObservation{
+						"request": {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
+					},
+				},
+				{
+					// node3
+					Observations: map[string]*types.RequestObservation{
+						"request": {Observation: &types.RequestObservation_Error{Error: []byte("request fdailed")}},
+					},
+				},
+			},
+			expectedOutcome: &types.Outcome{
+				ChainHeight: chainHeight,
+				Outcomes: []*types.RequestOutcome{
+					{
+						RequestID: "request",
+						Outcome:   &types.RequestOutcome_EventuallyConsistent{EventuallyConsistent: []byte("value1")},
+					},
+				},
+			},
+		},
+		{
 			name:       "happy path",
 			requestIDs: []string{"request_with_common_value", "request_without_common_value", "lockable_request", "request_known_to_insufficient_number_of_nodes", "aggregatable_request"},
 			nodesObservations: []types.Observation{
