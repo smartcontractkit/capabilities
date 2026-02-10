@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -49,6 +50,7 @@ type capabilityGRPCService struct {
 
 type capability struct {
 	*actions.EVM
+	id               string
 	requestPoller    *poller.Poller
 	consensusHandler *chainconsensus.Handler
 	oracle           core.Oracle
@@ -66,16 +68,6 @@ func main() {
 
 func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
 	c.lggr.Infof("Initialising %s", CapabilityName)
-
-	capInfo, err := c.Info(ctx)
-	if err != nil {
-		return fmt.Errorf("failed getting capability info: %w", err)
-	}
-	if capInfo.DON == nil {
-		return fmt.Errorf("capability info missing DON, isLocal: %v %v", capInfo.IsLocal, capInfo)
-	}
-	
-	c.CapabilityInfo = capInfo
 
 	cfg, err := c.unmarshalConfig(dependencies.Config)
 	if err != nil {
@@ -106,6 +98,9 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	}
 
 	c.chainSelector = cs
+	c.id = "evm" + ":ChainSelector:" + strconv.FormatUint(cs, 10) + "@1.0.0"
+
+	c.initMyDON(ctx, dependencies)
 
 	chainInfo, err := relayer.GetChainInfo(ctx)
 	if err != nil {
@@ -174,6 +169,39 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	}
 
 	c.lggr.Infof("Successfully initialised %s", CapabilityName)
+	return nil
+}
+
+func (c *capabilityGRPCService) initMyDON(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
+	localNode, err := dependencies.CapabilityRegistry.LocalNode(ctx)
+
+	var dons []capabilities.DON
+
+	donsWithNodes, err := dependencies.CapabilityRegistry.DONsForCapability(ctx, c.id)
+	if err != nil {
+		return fmt.Errorf("failed getting dons for capability: %w", err)
+	}
+
+	for _, d := range donsWithNodes {
+		for _, n := range d.Nodes {
+			if n.PeerID.String() == localNode.PeerID.String() {
+				dons = append(dons, d.DON)
+			}
+		}
+	}
+
+	if len(dons) == 0 {
+		return errors.New("failed to find don for my peer ID: " + localNode.PeerID.String())
+	}
+
+	if len(dons) > 1 {
+		for _, d := range dons {
+			c.lggr.Errorf("received more than one don for capability id: %s don id: %d don name: %s", c.id, d.ID, d.Name)
+		}
+	}
+
+	c.DON = &dons[0]
+
 	return nil
 }
 
