@@ -71,9 +71,19 @@ func NewHTTPClientProxy(cfg ServiceConfig, lggr logger.Logger, validator Respons
 
 func headers(req *httpcap.Request) map[string][]string {
 	headers := make(map[string][]string)
-	for k, v := range req.Headers {
+
+	if len(req.MultiHeaders) > 0 {
+		for k, v := range req.MultiHeaders {
+			headers[k] = v.GetValues()
+		}
+		return headers
+	}
+
+	// TODO: Remove fallback to using Headers.
+	for k, v := range req.Headers { //nolint:staticcheck
 		headers[k] = []string{v}
 	}
+
 	return headers
 }
 

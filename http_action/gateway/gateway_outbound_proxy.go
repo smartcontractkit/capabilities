@@ -43,6 +43,24 @@ type gatewayOutboundProxy struct {
 	validator               common.ResponseValidator
 }
 
+// gatewayHeadersFromInput returns Headers and MultiHeaders for the gateway request.
+// When input has MultiHeaders, both are set (Headers = first value per key). Otherwise only Headers is set.
+func gatewayHeadersFromInput(input *http.Request) (headers map[string]string, multiHeaders map[string][]string) {
+	if len(input.MultiHeaders) > 0 {
+		multiHeaders = make(map[string][]string, len(input.MultiHeaders))
+		headers = make(map[string]string, len(input.MultiHeaders))
+		for k, v := range input.MultiHeaders {
+			vals := v.GetValues()
+			multiHeaders[k] = vals
+			if len(vals) > 0 {
+				headers[k] = vals[0]
+			}
+		}
+		return headers, multiHeaders
+	}
+	return input.Headers, nil //nolint:staticcheck // Headers deprecated but still used when MultiHeaders not set
+}
+
 func applyDefaults(cfg common.GatewayConnectionConfig) common.GatewayConnectionConfig {
 	if cfg.InitialIntervalMs == 0 {
 		cfg.InitialIntervalMs = defaultGatewayConnectionInitialIntervalMs
@@ -75,12 +93,16 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 	ctx, cancel := context.WithTimeout(ctx, input.Timeout.AsDuration())
 	defer cancel()
 
+	// Prefer MultiHeaders; fall back to Headers. When MultiHeaders is present, also set Headers (first value per key) for backward compatibility.
+	gatewayHeaders, gatewayMultiHeaders := gatewayHeadersFromInput(input)
+
 	gatewayReq := gc.OutboundHTTPRequest{
 		WorkflowID:    metadata.WorkflowID,
 		WorkflowOwner: metadata.WorkflowOwner,
 		URL:           input.Url,
 		Method:        input.Method,
-		Headers:       input.Headers,
+		Headers:       gatewayHeaders,
+		MultiHeaders:  gatewayMultiHeaders,
 		Body:          input.Body,
 		// Casting is safe because input to this function is already validated
 		TimeoutMs: uint32(input.Timeout.AsDuration().Milliseconds()), //nolint:gosec // G115
