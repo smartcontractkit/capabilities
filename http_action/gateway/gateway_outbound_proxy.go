@@ -28,8 +28,10 @@ const (
 	defaultGatewayConnectionMultiplier        = 2.0
 )
 
-var _ core.GatewayConnectorHandler = &gatewayOutboundProxy{}
-var _ common.OutboundRequestClient = &gatewayOutboundProxy{}
+var (
+	_ core.GatewayConnectorHandler = &gatewayOutboundProxy{}
+	_ common.OutboundRequestClient = &gatewayOutboundProxy{}
+)
 
 type gatewayOutboundProxy struct {
 	services.StateMachine
