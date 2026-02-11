@@ -250,6 +250,161 @@ func TestSendRequest(t *testing.T) {
 	})
 }
 
+func TestSendRequest_MultiHeaders(t *testing.T) {
+	metadata := capabilities.RequestMetadata{
+		WorkflowID:          "wf1",
+		WorkflowExecutionID: "exec1",
+		WorkflowOwner:       "owner1",
+	}
+
+	// verifyBackwardCompatibility checks that all keys in MultiHeaders are also present in Headers
+	// with non-empty values, ensuring backward compatibility with the deprecated Headers field.
+	verifyBackwardCompatibility := func(t *testing.T, headers map[string]string, multiHeaders map[string]*httpactions.HeaderValues) {
+		for key := range multiHeaders {
+			require.NotEmpty(t, headers[key], "Headers should contain %s for backward compatibility", key)
+		}
+	}
+
+	t.Run("response with multiple Set-Cookie headers", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Set multiple Set-Cookie headers (cannot be comma-separated per RFC 6265)
+			w.Header().Add("Set-Cookie", "sessionid=abc123; Path=/; HttpOnly")
+			w.Header().Add("Set-Cookie", "csrf_token=xyz789; Path=/; Secure")
+			w.Header().Add("Set-Cookie", "pref=dark; Path=/")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("success"))
+		}))
+		defer server.Close()
+
+		cfg := ServiceConfig{
+			HTTPClientConfig: validClientCfg(t, server.URL),
+		}
+		lggr := logger.Test(t)
+		validator := newTestValidator(t)
+		metrics := newTestMetrics(t)
+		proxy, err := NewHTTPClientProxy(cfg, lggr, validator, metrics)
+		require.NoError(t, err)
+
+		input := &httpactions.Request{
+			Method:  http.MethodGet,
+			Url:     server.URL,
+			Timeout: durationpb.New(1000 * time.Millisecond),
+			Body:    []byte{},
+		}
+
+		response, _, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
+		require.NoError(t, err)
+		require.Equal(t, uint32(200), response.StatusCode)
+
+		// Verify MultiHeaders contains all Set-Cookie values
+		require.NotNil(t, response.MultiHeaders, "MultiHeaders should not be nil")
+		setCookieHeader, ok := response.MultiHeaders["Set-Cookie"]
+		require.True(t, ok, "Set-Cookie header should be in MultiHeaders")
+		require.NotNil(t, setCookieHeader)
+		require.Len(t, setCookieHeader.Values, 3, "Should have 3 Set-Cookie headers")
+		require.Contains(t, setCookieHeader.Values, "sessionid=abc123; Path=/; HttpOnly")
+		require.Contains(t, setCookieHeader.Values, "csrf_token=xyz789; Path=/; Secure")
+		require.Contains(t, setCookieHeader.Values, "pref=dark; Path=/")
+
+		// Verify Headers field has first value only (backward compatibility)
+		require.Equal(t, "sessionid=abc123; Path=/; HttpOnly", response.Headers["Set-Cookie"])
+
+		// Verify backward compatibility: all keys in MultiHeaders should be in Headers
+		verifyBackwardCompatibility(t, response.Headers, response.MultiHeaders)
+	})
+
+	t.Run("response with multiple Via headers", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Set multiple Via headers
+			w.Header().Add("Via", "1.0 proxy1")
+			w.Header().Add("Via", "1.1 proxy2")
+			w.Header().Add("Via", "1.1 proxy3")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("success"))
+		}))
+		defer server.Close()
+
+		cfg := ServiceConfig{
+			HTTPClientConfig: validClientCfg(t, server.URL),
+		}
+		lggr := logger.Test(t)
+		validator := newTestValidator(t)
+		metrics := newTestMetrics(t)
+		proxy, err := NewHTTPClientProxy(cfg, lggr, validator, metrics)
+		require.NoError(t, err)
+
+		input := &httpactions.Request{
+			Method:  http.MethodGet,
+			Url:     server.URL,
+			Timeout: durationpb.New(1000 * time.Millisecond),
+			Body:    []byte{},
+		}
+
+		response, _, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
+		require.NoError(t, err)
+		require.Equal(t, uint32(200), response.StatusCode)
+
+		// Verify MultiHeaders contains all Via values
+		require.NotNil(t, response.MultiHeaders)
+		viaHeader, ok := response.MultiHeaders["Via"]
+		require.True(t, ok, "Via header should be in MultiHeaders")
+		require.NotNil(t, viaHeader)
+		require.Len(t, viaHeader.Values, 3, "Should have 3 Via headers")
+		require.Contains(t, viaHeader.Values, "1.0 proxy1")
+		require.Contains(t, viaHeader.Values, "1.1 proxy2")
+		require.Contains(t, viaHeader.Values, "1.1 proxy3")
+
+		// Verify Headers field has first value only (backward compatibility)
+		require.Equal(t, "1.0 proxy1", response.Headers["Via"])
+
+		// Verify backward compatibility: all keys in MultiHeaders should be in Headers
+		verifyBackwardCompatibility(t, response.Headers, response.MultiHeaders)
+	})
+
+	t.Run("response with single header value", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("success"))
+		}))
+		defer server.Close()
+
+		cfg := ServiceConfig{
+			HTTPClientConfig: validClientCfg(t, server.URL),
+		}
+		lggr := logger.Test(t)
+		validator := newTestValidator(t)
+		metrics := newTestMetrics(t)
+		proxy, err := NewHTTPClientProxy(cfg, lggr, validator, metrics)
+		require.NoError(t, err)
+
+		input := &httpactions.Request{
+			Method:  http.MethodGet,
+			Url:     server.URL,
+			Timeout: durationpb.New(1000 * time.Millisecond),
+			Body:    []byte{},
+		}
+
+		response, _, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
+		require.NoError(t, err)
+		require.Equal(t, uint32(200), response.StatusCode)
+
+		// Verify MultiHeaders contains single value
+		require.NotNil(t, response.MultiHeaders)
+		contentTypeHeader, ok := response.MultiHeaders["Content-Type"]
+		require.True(t, ok, "Content-Type header should be in MultiHeaders")
+		require.NotNil(t, contentTypeHeader)
+		require.Len(t, contentTypeHeader.Values, 1, "Should have 1 Content-Type header")
+		require.Equal(t, "application/json", contentTypeHeader.Values[0])
+
+		// Verify Headers field matches
+		require.Equal(t, "application/json", response.Headers["Content-Type"])
+
+		// Verify backward compatibility: all keys in MultiHeaders should be in Headers
+		verifyBackwardCompatibility(t, response.Headers, response.MultiHeaders)
+	})
+}
+
 func validClientCfg(t *testing.T, urlStr string) HTTPClientConfig {
 	parsedURL, err := url.Parse(urlStr)
 	if err != nil {

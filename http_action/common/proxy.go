@@ -20,8 +20,10 @@ import (
 
 var _ OutboundRequestClient = &httpClientProxy{}
 
-const ClientName = "HTTPClientProxy"
-const internalError = "internal error"
+const (
+	ClientName    = "HTTPClientProxy"
+	internalError = "internal error"
+)
 
 type OutboundRequestClient interface {
 	SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *httpcap.Request, startTime time.Time) (*httpcap.Response, time.Duration, error)
@@ -114,18 +116,29 @@ func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities
 		return nil, 0, err
 	}
 
+	// Store all header values in MultiHeaders and first value in Headers for backward compatibility
+	multiHeaders := make(map[string]*httpcap.HeaderValues)
 	headers := make(map[string]string)
+
 	for k, v := range resp.Header {
 		if len(v) == 0 {
 			continue
 		}
+
+		// Store all values in MultiHeaders
+		multiHeaders[k] = &httpcap.HeaderValues{
+			Values: v,
+		}
+
+		// Store first value in Headers (backward compatibility)
 		headers[k] = v[0]
 	}
 
 	outputs := &httpcap.Response{
-		StatusCode: uint32(resp.StatusCode), //nolint:gosec // G115
-		Headers:    headers,
-		Body:       body,
+		StatusCode:   uint32(resp.StatusCode), //nolint:gosec // G115
+		Headers:      headers,
+		MultiHeaders: multiHeaders,
+		Body:         body,
 	}
 
 	return outputs, externalLatency, nil

@@ -356,6 +356,10 @@ func simulateGatewayMessage(t *testing.T, proxy *gatewayOutboundProxy, id string
 }
 
 func simulateGatewayMessageWithFlags(t *testing.T, proxy *gatewayOutboundProxy, id string, statusCode int, body string, errorMessage string, includeBody bool, isExternalError bool, isValidationError bool) {
+	simulateGatewayMessageWithMultiHeaders(t, proxy, id, statusCode, body, errorMessage, includeBody, isExternalError, isValidationError, nil, nil)
+}
+
+func simulateGatewayMessageWithMultiHeaders(t *testing.T, proxy *gatewayOutboundProxy, id string, statusCode int, body string, errorMessage string, includeBody bool, isExternalError bool, isValidationError bool, headers map[string]string, multiHeaders map[string][]string) {
 	req := jsonrpc.Request[json.RawMessage]{
 		ID:      id,
 		Method:  gateway_common.MethodHTTPAction,
@@ -367,6 +371,8 @@ func simulateGatewayMessageWithFlags(t *testing.T, proxy *gatewayOutboundProxy, 
 		ErrorMessage:            errorMessage,
 		IsExternalEndpointError: isExternalError,
 		IsValidationError:       isValidationError,
+		Headers:                 headers,
+		MultiHeaders:            multiHeaders,
 	}
 	if includeBody {
 		payload, err := json.Marshal(resp)
@@ -461,5 +467,203 @@ func TestGatewayOutboundProxy_awaitConnection_RetryLimits(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "context deadline exceeded")
 		require.Empty(t, gateway)
+	})
+}
+
+func TestGatewayOutboundProxy_SendRequest_MultiHeaders(t *testing.T) {
+	metadata := capabilities.RequestMetadata{
+		WorkflowID:          "wf1",
+		WorkflowExecutionID: "exec1",
+		WorkflowOwner:       "owner1",
+	}
+
+	// verifyBackwardCompatibility checks that all keys in MultiHeaders are also present in Headers
+	// with non-empty values, ensuring backward compatibility with the deprecated Headers field.
+	verifyBackwardCompatibility := func(t *testing.T, headers map[string]string, multiHeaders map[string]*http.HeaderValues) {
+		for key := range multiHeaders {
+			require.NotEmpty(t, headers[key], "Headers should contain %s for backward compatibility", key)
+		}
+	}
+
+	t.Run("response with multiple Set-Cookie headers from gateway", func(t *testing.T) {
+		proxy, _, readyCh := setupSendRequestTest(t)
+
+		input := &http.Request{
+			Url:           "http://example.com",
+			Method:        "GET",
+			Headers:       map[string]string{},
+			Body:          []byte{},
+			Timeout:       durationpb.New(5000 * time.Millisecond),
+			CacheSettings: &http.CacheSettings{},
+		}
+
+		// Prepare gateway response with multiple Set-Cookie headers
+		gatewayMultiHeaders := map[string][]string{
+			"Set-Cookie": {
+				"sessionid=abc123; Path=/; HttpOnly",
+				"csrf_token=xyz789; Path=/; Secure",
+				"pref=dark; Path=/",
+			},
+		}
+		gatewayHeaders := map[string]string{
+			"Set-Cookie": "sessionid=abc123; Path=/; HttpOnly, csrf_token=xyz789; Path=/; Secure, pref=dark; Path=/",
+		}
+
+		go func() {
+			id := <-readyCh
+			simulateGatewayMessageWithMultiHeaders(t, proxy, id, 200, "ok", "", true, false, false, gatewayHeaders, gatewayMultiHeaders)
+		}()
+
+		output, _, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
+		require.NoError(t, err)
+		require.NotNil(t, output)
+		require.Equal(t, uint32(200), output.StatusCode)
+
+		// Verify MultiHeaders contains all Set-Cookie values
+		require.NotNil(t, output.MultiHeaders, "MultiHeaders should not be nil")
+		setCookieHeader, ok := output.MultiHeaders["Set-Cookie"]
+		require.True(t, ok, "Set-Cookie header should be in MultiHeaders")
+		require.NotNil(t, setCookieHeader)
+		require.Len(t, setCookieHeader.Values, 3, "Should have 3 Set-Cookie headers")
+		require.Contains(t, setCookieHeader.Values, "sessionid=abc123; Path=/; HttpOnly")
+		require.Contains(t, setCookieHeader.Values, "csrf_token=xyz789; Path=/; Secure")
+		require.Contains(t, setCookieHeader.Values, "pref=dark; Path=/")
+
+		// Verify Headers field has first value only (backward compatibility)
+		require.Equal(t, "sessionid=abc123; Path=/; HttpOnly", output.Headers["Set-Cookie"])
+
+		// Verify backward compatibility: all keys in MultiHeaders should be in Headers
+		verifyBackwardCompatibility(t, output.Headers, output.MultiHeaders)
+	})
+
+	t.Run("response with multiple Via headers from gateway", func(t *testing.T) {
+		proxy, _, readyCh := setupSendRequestTest(t)
+
+		input := &http.Request{
+			Url:           "http://example.com",
+			Method:        "GET",
+			Headers:       map[string]string{},
+			Body:          []byte{},
+			Timeout:       durationpb.New(5000 * time.Millisecond),
+			CacheSettings: &http.CacheSettings{},
+		}
+
+		// Prepare gateway response with multiple Via headers
+		gatewayMultiHeaders := map[string][]string{
+			"Via": {
+				"1.0 proxy1",
+				"1.1 proxy2",
+				"1.1 proxy3",
+			},
+		}
+		gatewayHeaders := map[string]string{
+			"Via": "1.0 proxy1, 1.1 proxy2, 1.1 proxy3",
+		}
+
+		go func() {
+			id := <-readyCh
+			simulateGatewayMessageWithMultiHeaders(t, proxy, id, 200, "ok", "", true, false, false, gatewayHeaders, gatewayMultiHeaders)
+		}()
+
+		output, _, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
+		require.NoError(t, err)
+		require.NotNil(t, output)
+		require.Equal(t, uint32(200), output.StatusCode)
+
+		// Verify MultiHeaders contains all Via values
+		require.NotNil(t, output.MultiHeaders)
+		viaHeader, ok := output.MultiHeaders["Via"]
+		require.True(t, ok, "Via header should be in MultiHeaders")
+		require.NotNil(t, viaHeader)
+		require.Len(t, viaHeader.Values, 3, "Should have 3 Via headers")
+		require.Contains(t, viaHeader.Values, "1.0 proxy1")
+		require.Contains(t, viaHeader.Values, "1.1 proxy2")
+		require.Contains(t, viaHeader.Values, "1.1 proxy3")
+
+		// Verify Headers field has first value only (backward compatibility)
+		require.Equal(t, "1.0 proxy1", output.Headers["Via"])
+
+		// Verify backward compatibility: all keys in MultiHeaders should be in Headers
+		verifyBackwardCompatibility(t, output.Headers, output.MultiHeaders)
+	})
+
+	t.Run("response with fallback to Headers when MultiHeaders not present", func(t *testing.T) {
+		proxy, _, readyCh := setupSendRequestTest(t)
+
+		input := &http.Request{
+			Url:           "http://example.com",
+			Method:        "GET",
+			Headers:       map[string]string{},
+			Body:          []byte{},
+			Timeout:       durationpb.New(5000 * time.Millisecond),
+			CacheSettings: &http.CacheSettings{},
+		}
+
+		// Gateway response with only Headers (no MultiHeaders) - backward compatibility
+		gatewayHeaders := map[string]string{
+			"Content-Type": "application/json",
+		}
+
+		go func() {
+			id := <-readyCh
+			simulateGatewayMessageWithMultiHeaders(t, proxy, id, 200, "ok", "", true, false, false, gatewayHeaders, nil)
+		}()
+
+		output, _, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
+		require.NoError(t, err)
+		require.NotNil(t, output)
+		require.Equal(t, uint32(200), output.StatusCode)
+
+		// Verify Headers field is populated from fallback
+		require.Equal(t, "application/json", output.Headers["Content-Type"])
+
+		// MultiHeaders should be empty when not provided by gateway
+		require.NotNil(t, output.MultiHeaders, "MultiHeaders should not be nil")
+		require.Empty(t, output.MultiHeaders, "MultiHeaders should be empty when gateway doesn't provide it")
+	})
+
+	t.Run("response with single header value from gateway", func(t *testing.T) {
+		proxy, _, readyCh := setupSendRequestTest(t)
+
+		input := &http.Request{
+			Url:           "http://example.com",
+			Method:        "GET",
+			Headers:       map[string]string{},
+			Body:          []byte{},
+			Timeout:       durationpb.New(5000 * time.Millisecond),
+			CacheSettings: &http.CacheSettings{},
+		}
+
+		// Prepare gateway response with single header value
+		gatewayMultiHeaders := map[string][]string{
+			"Content-Type": {"application/json"},
+		}
+		gatewayHeaders := map[string]string{
+			"Content-Type": "application/json",
+		}
+
+		go func() {
+			id := <-readyCh
+			simulateGatewayMessageWithMultiHeaders(t, proxy, id, 200, "ok", "", true, false, false, gatewayHeaders, gatewayMultiHeaders)
+		}()
+
+		output, _, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
+		require.NoError(t, err)
+		require.NotNil(t, output)
+		require.Equal(t, uint32(200), output.StatusCode)
+
+		// Verify MultiHeaders contains single value
+		require.NotNil(t, output.MultiHeaders)
+		contentTypeHeader, ok := output.MultiHeaders["Content-Type"]
+		require.True(t, ok, "Content-Type header should be in MultiHeaders")
+		require.NotNil(t, contentTypeHeader)
+		require.Len(t, contentTypeHeader.Values, 1, "Should have 1 Content-Type header")
+		require.Equal(t, "application/json", contentTypeHeader.Values[0])
+
+		// Verify Headers field matches
+		require.Equal(t, "application/json", output.Headers["Content-Type"])
+
+		// Verify backward compatibility: all keys in MultiHeaders should be in Headers
+		verifyBackwardCompatibility(t, output.Headers, output.MultiHeaders)
 	})
 }

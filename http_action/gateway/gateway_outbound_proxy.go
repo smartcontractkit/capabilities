@@ -139,10 +139,34 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 			p.metrics.IncrementExecutionError(ctx, common.ProxyModeGateway, lggr)
 			return nil, resp.ExternalEndpointLatency, fmt.Errorf("gateway returned error: %s", resp.ErrorMessage)
 		}
+		// Convert MultiHeaders from map[string][]string to map[string]*HeaderValues
+		multiHeaders := make(map[string]*http.HeaderValues)
+		if resp.MultiHeaders != nil {
+			for k, v := range resp.MultiHeaders {
+				multiHeaders[k] = &http.HeaderValues{
+					Values: v,
+				}
+			}
+		}
+
+		// Populate deprecated Headers field with first value only for backward compatibility
+		headers := make(map[string]string)
+		if resp.MultiHeaders != nil {
+			for k, v := range resp.MultiHeaders {
+				if len(v) > 0 {
+					headers[k] = v[0]
+				}
+			}
+		} else if resp.Headers != nil {
+			// Fallback to Headers if MultiHeaders is not available
+			headers = resp.Headers
+		}
+
 		response := &http.Response{
-			StatusCode: uint32(resp.StatusCode), //nolint:gosec // G115
-			Headers:    resp.Headers,
-			Body:       resp.Body,
+			StatusCode:   uint32(resp.StatusCode), //nolint:gosec // G115
+			Headers:      headers,
+			MultiHeaders: multiHeaders,
+			Body:         resp.Body,
 		}
 
 		if err := p.validator.ValidateResponseSize(ctx, response.Body); err != nil {
