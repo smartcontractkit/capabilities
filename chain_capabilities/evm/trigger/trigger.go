@@ -125,8 +125,8 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 		}
 		return capabilities.TriggerAndId[*evmcappb.Log]{Id: te.ID, Trigger: &pl}, nil
 	}
-	retryInterval := 2 * time.Second              // TODO: Set this appropriately
-	eventStore := capabilities.NewMemEventStore() // TODO: Use DB Storage instead of in-mem
+	retryInterval := 2 * time.Second              // TODO: parameterizable by chain: https://smartcontract-it.atlassian.net/browse/CRE-1774
+	eventStore := capabilities.NewMemEventStore() // TODO: use DB instead of in-mem: https://smartcontract-it.atlassian.net/browse/CRE-1738
 	lts.baseTrigger = *capabilities.NewBaseTriggerCapability(eventStore, decodeFn, lts.lggr, "EvmLogTriggerService", retryInterval)
 	return lts, nil
 }
