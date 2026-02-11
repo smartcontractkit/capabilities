@@ -46,7 +46,7 @@ const (
 type LogTriggerService struct {
 	services.Service
 
-	baseTrigger capabilities.BaseTriggerCapability[capabilities.TriggerAndId[*evmcappb.Log]]
+	baseTrigger capabilities.BaseTriggerCapability[*evmcappb.Log]
 
 	srvcEng *services.Engine
 
@@ -118,16 +118,10 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 		Start: lts.start,
 	}.NewServiceEngine(lggr)
 
-	decodeFn := func(te capabilities.TriggerEvent) (capabilities.TriggerAndId[*evmcappb.Log], error) {
-		var pl evmcappb.Log
-		if err := te.Payload.UnmarshalTo(&pl); err != nil {
-			return capabilities.TriggerAndId[*evmcappb.Log]{}, err
-		}
-		return capabilities.TriggerAndId[*evmcappb.Log]{Id: te.ID, Trigger: &pl}, nil
-	}
 	retryInterval := 2 * time.Second              // TODO: parameterizable by chain: https://smartcontract-it.atlassian.net/browse/CRE-1774
 	eventStore := capabilities.NewMemEventStore() // TODO: use DB instead of in-mem: https://smartcontract-it.atlassian.net/browse/CRE-1738
-	lts.baseTrigger = *capabilities.NewBaseTriggerCapability(eventStore, decodeFn, lts.lggr, "EvmLogTriggerService", retryInterval)
+	lts.baseTrigger = *capabilities.NewBaseTriggerCapability(eventStore, func() *evmcappb.Log { return &evmcappb.Log{} },
+		lts.lggr, "EvmLogTriggerService", retryInterval)
 	return lts, nil
 }
 
@@ -315,9 +309,11 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	return logCh, nil
 }
 
-func (lts *LogTriggerService) AckEvent(ctx context.Context, triggerID string, eventId string) caperrors.Error {
-	if err := lts.baseTrigger.AckEvent(ctx, triggerID, eventId); err != nil {
-		return caperrors.NewPrivateSystemError(err, caperrors.Internal)
+func (lts *LogTriggerService) AckEvent(ctx context.Context, triggerID string, eventID string) caperrors.Error {
+	if err := lts.baseTrigger.AckEvent(ctx, triggerID, eventID); err != nil {
+		wrappedErr := fmt.Errorf("failed to AckEvent on baseTrigger (triggerID=%s eventID=%s): %w", triggerID, eventID, err)
+		lts.lggr.Errorf(wrappedErr.Error())
+		return caperrors.NewPrivateSystemError(wrappedErr, caperrors.Internal)
 	}
 	return nil
 }

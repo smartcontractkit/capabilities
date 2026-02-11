@@ -401,22 +401,29 @@ func assertLogTriggerWorks(t *testing.T, eventName string, workflowName string, 
 		"Expected to find %d matching events, but found: %+v", numOfWorkflowNodes, foundEventsByMessage)
 
 	// Verify ACKs occur on Base Trigger for each event via logs
+	matchLogs := make([]*regexp.Regexp, len(matchingTxs))
+	for i, tx := range matchingTxs {
+		eventID := strings.TrimPrefix(tx.Hash().String(), "0x")
+		pattern := fmt.Sprintf(`Event ACK.*eventID\s+%s`, regexp.QuoteMeta(eventID))
+		matchLogs[i] = regexp.MustCompile(pattern)
+		t.Logf("Looking to match ACK log: %s", pattern)
+	}
+
 	require.Eventually(t, func() bool {
 		expectedMatches := len(matchingMessages)
 		require.NotZero(t, expectedMatches)
 		matchCount := 0
-		for _, tx := range matchingTxs {
+		for _, matchLog := range matchLogs {
 			// Find Event ACK log for matching tx event
-			eventID := strings.TrimPrefix(tx.Hash().String(), "0x")
-			pattern := fmt.Sprintf(`Event ACK.*eventID\s+%s`, regexp.QuoteMeta(eventID))
-			re := regexp.MustCompile(pattern)
 			for _, log := range obs.All() {
-				if re.MatchString(log.Message) {
+				if matchLog.MatchString(log.Message) {
 					matchCount++
+					t.Logf("found matching ACK log: %s", matchLog.String())
 					break
 				}
 			}
 		}
+		t.Logf("ACK log matchCount=%d, expectedMatches=%d", matchCount, expectedMatches)
 		return matchCount == expectedMatches
 	}, 90*time.Second, 1*time.Second, "expected ACK logs for each matching tx event")
 }

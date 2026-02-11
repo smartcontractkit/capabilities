@@ -71,7 +71,8 @@ func newLTSWithBase(t *testing.T) (*LogTriggerService, chan capabilities.Trigger
 	lts := newLogTriggerService(t)
 	es := capabilities.NewMemEventStore()
 
-	lts.baseTrigger = *capabilities.NewBaseTriggerCapability(es, decode, lts.lggr, 500*time.Millisecond)
+	lts.baseTrigger = *capabilities.NewBaseTriggerCapability(es, func() *evmcappb.Log { return &evmcappb.Log{} },
+		lts.lggr, "testCap", 500*time.Millisecond)
 
 	require.NoError(t, lts.baseTrigger.Start(t.Context()))
 	t.Cleanup(func() {
@@ -101,13 +102,12 @@ func TestLogTriggerService_Close_WaitsForPollingGoroutine(t *testing.T) {
 		evmService.EXPECT().GetFiltersNames(mock.Anything).Return([]string{}, nil).Maybe()
 		store := NewLogTriggerStore()
 		service := createTriggerObject(t, evmService, store)
-		decode := func(_ capabilities.TriggerEvent) (capabilities.TriggerAndId[*evmcappb.Log], error) {
-			return capabilities.TriggerAndId[*evmcappb.Log]{}, nil
-		}
-		service.baseTrigger = *capabilities.NewBaseTriggerCapability(
-			capabilities.NewMemEventStore(), decode, logger.Test(t), 200*time.Millisecond)
+
+		service.baseTrigger = *capabilities.NewBaseTriggerCapability(capabilities.NewMemEventStore(),
+			func() *evmcappb.Log { return &evmcappb.Log{} }, logger.Test(t), "testCap", 200*time.Millisecond)
 		require.NoError(t, service.baseTrigger.Start(ctx))
 		defer service.baseTrigger.Stop()
+
 		err := service.Start(ctx)
 		require.NoError(t, err)
 		ch, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{WorkflowID: "wf-id"}, &evmcappb.FilterLogTriggerRequest{
@@ -948,8 +948,8 @@ func registerAndUnregisterLogTriggerIntegration(t *testing.T, topicsInput []*evm
 
 	service := createTriggerObject(t, evmService, NewLogTriggerStore())
 
-	service.baseTrigger = *capabilities.NewBaseTriggerCapability(
-		capabilities.NewMemEventStore(), decode, logger.Test(t), 200*time.Millisecond)
+	service.baseTrigger = *capabilities.NewBaseTriggerCapability(capabilities.NewMemEventStore(),
+		func() *evmcappb.Log { return &evmcappb.Log{} }, logger.Test(t), "testCap", 200*time.Millisecond)
 
 	triggerID := "trigger-integration"
 
