@@ -252,6 +252,6 @@ func (c *capabilityGRPCService) UnregisterLogTrigger(ctx context.Context, trigge
 	return c.triggerService.UnregisterLogTrigger(ctx, triggerID, metadata, input)
 }
 
-func (c *capabilityGRPCService) AckEvent(ctx context.Context, triggerID string, eventID string) caperrors.Error {
+func (c *capabilityGRPCService) AckEvent(ctx context.Context, triggerID string, eventID string, method string) caperrors.Error {
 	return c.triggerService.AckEvent(ctx, triggerID, eventID)
 }

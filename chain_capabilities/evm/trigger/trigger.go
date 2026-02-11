@@ -127,7 +127,7 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 	}
 	retryInterval := 2 * time.Second              // TODO: Set this appropriately
 	eventStore := capabilities.NewMemEventStore() // TODO: Use DB Storage instead of in-mem
-	lts.baseTrigger = *capabilities.NewBaseTriggerCapability(eventStore, decodeFn, lts.lggr, retryInterval)
+	lts.baseTrigger = *capabilities.NewBaseTriggerCapability(eventStore, decodeFn, lts.lggr, "EvmLogTriggerService", retryInterval)
 	return lts, nil
 }
 
