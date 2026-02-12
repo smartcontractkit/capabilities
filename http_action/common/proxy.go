@@ -5,7 +5,8 @@ import (
 	"context"
 	"errors"
 	"io"
-	"net/http" // aliased below to avoid conflict
+	"net/http"
+	"slices"
 	"time"
 
 	"github.com/doyensec/safeurl"
@@ -45,7 +46,12 @@ type RequestValidator interface {
 // InputValidationError wraps an error from request validation so the action can map it to a user-facing error.
 type InputValidationError struct{ Err error }
 
-func (e InputValidationError) Error() string { return e.Err.Error() }
+func (e InputValidationError) Error() string {
+	if e.Err != nil {
+		return e.Err.Error()
+	}
+	return "input validation failed"
+}
 
 func (e InputValidationError) Unwrap() error { return e.Err }
 
@@ -58,8 +64,10 @@ type httpClientProxy struct {
 	metrics   *Metrics
 }
 
-func disableRedirects(req *http.Request, via []*http.Request) error {
-	return errors.New("redirects are not allowed")
+var errRedirectsDisabled = errors.New("redirects are not allowed")
+
+func disableRedirects(*http.Request, []*http.Request) error {
+	return errRedirectsDisabled
 }
 
 func NewHTTPClientProxy(cfg ServiceConfig, lggr logger.Logger, validator RequestValidator, metrics *Metrics) (*httpClientProxy, error) {
@@ -83,22 +91,33 @@ func NewHTTPClientProxy(cfg ServiceConfig, lggr logger.Logger, validator Request
 	}, nil
 }
 
-func headers(req *httpcap.Request) map[string][]string {
-	headers := make(map[string][]string)
-
+func toRequestHeaders(req *httpcap.Request) http.Header {
+	h := make(http.Header)
 	if len(req.MultiHeaders) > 0 {
 		for k, v := range req.MultiHeaders {
-			headers[k] = v.GetValues()
+			h[k] = slices.Clone(v.GetValues())
 		}
-		return headers
+		return h
 	}
-
 	// TODO: Remove fallback to using Headers.
 	for k, v := range req.Headers { //nolint:staticcheck
-		headers[k] = []string{v}
+		h[k] = []string{v}
 	}
+	return h
+}
 
-	return headers
+// toResponseHeaders converts net/http response headers into capability Response format
+func toResponseHeaders(header http.Header) (map[string]*httpcap.HeaderValues, map[string]string) {
+	multiHeaders := make(map[string]*httpcap.HeaderValues, len(header))
+	headers := make(map[string]string, len(header))
+	for k, v := range header {
+		if len(v) == 0 {
+			continue
+		}
+		multiHeaders[k] = &httpcap.HeaderValues{Values: slices.Clone(v)}
+		headers[k] = v[0]
+	}
+	return multiHeaders, headers
 }
 
 func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *httpcap.Request, startTime time.Time) (*httpcap.Response, time.Duration, error) {
@@ -122,7 +141,7 @@ func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities
 		return nil, 0, errors.New(internalError)
 	}
 
-	req.Header = http.Header(headers(input))
+	req.Header = toRequestHeaders(input)
 
 	lggr.Debugw("Sending HTTP request")
 	externalStartTime := time.Now()
@@ -146,23 +165,7 @@ func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities
 		return nil, 0, err
 	}
 
-	// Store all header values in MultiHeaders and first value in Headers for backward compatibility
-	multiHeaders := make(map[string]*httpcap.HeaderValues)
-	headers := make(map[string]string)
-
-	for k, v := range resp.Header {
-		if len(v) == 0 {
-			continue
-		}
-
-		// Store all values in MultiHeaders
-		multiHeaders[k] = &httpcap.HeaderValues{
-			Values: v,
-		}
-
-		// Store first value in Headers (backward compatibility)
-		headers[k] = v[0]
-	}
+	multiHeaders, headers := toResponseHeaders(resp.Header)
 
 	outputs := &httpcap.Response{
 		StatusCode:   uint32(resp.StatusCode), //nolint:gosec // G115

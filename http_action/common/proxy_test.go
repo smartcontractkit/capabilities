@@ -372,3 +372,53 @@ func validClientCfg(t *testing.T, urlStr string) HTTPClientConfig {
 		AllowedIPs:   []string{"127.0.0.1"},
 	}
 }
+
+func TestToResponseHeaders(t *testing.T) {
+	t.Run("empty header", func(t *testing.T) {
+		h := make(http.Header)
+		multi, single := toResponseHeaders(h)
+		require.Empty(t, multi)
+		require.Empty(t, single)
+	})
+
+	t.Run("single value per key", func(t *testing.T) {
+		h := http.Header{
+			"Content-Type": []string{"application/json"},
+			"X-Request-Id": []string{"abc-123"},
+		}
+		multi, single := toResponseHeaders(h)
+		require.Len(t, multi, 2)
+		require.Len(t, single, 2)
+		require.Equal(t, []string{"application/json"}, multi["Content-Type"].Values)
+		require.Equal(t, []string{"abc-123"}, multi["X-Request-Id"].Values)
+		require.Equal(t, "application/json", single["Content-Type"])
+		require.Equal(t, "abc-123", single["X-Request-Id"])
+	})
+
+	t.Run("multiple values per key", func(t *testing.T) {
+		h := http.Header{
+			"Set-Cookie": []string{"a=1", "b=2", "c=3"},
+			"Accept":      []string{"application/json"},
+		}
+		multi, single := toResponseHeaders(h)
+		require.Len(t, multi, 2)
+		require.Len(t, single, 2)
+		require.Equal(t, []string{"a=1", "b=2", "c=3"}, multi["Set-Cookie"].Values)
+		require.Equal(t, []string{"application/json"}, multi["Accept"].Values)
+		require.Equal(t, "a=1", single["Set-Cookie"])
+		require.Equal(t, "application/json", single["Accept"])
+	})
+
+	t.Run("skips empty value slices", func(t *testing.T) {
+		h := http.Header{
+			"X-Good": []string{"value"},
+			"X-Bad":  []string{},
+		}
+		multi, single := toResponseHeaders(h)
+		require.Len(t, multi, 1)
+		require.Len(t, single, 1)
+		require.Contains(t, multi, "X-Good")
+		require.NotContains(t, multi, "X-Bad")
+		require.Equal(t, "value", single["X-Good"])
+	})
+}
