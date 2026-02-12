@@ -24,7 +24,7 @@ import (
 	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 )
 
-func newTestValidator(t *testing.T) common.ResponseValidator {
+func newTestValidator(t *testing.T) common.RequestValidator {
 	lggr := logger.Test(t)
 	limitsFactory := limits.Factory{
 		Logger: lggr,
@@ -151,8 +151,8 @@ func TestGatewayOutboundProxy_SendRequest_Success(t *testing.T) {
 	input := &http.Request{
 		Url:           "http://example.com",
 		Method:        "GET",
-		Headers:       map[string]string{"X-Test": "1"},
-		Body:          []byte("test"),
+		Headers:       map[string]string{"X-Test": "1"}, //nolint:staticcheck // Headers deprecated
+			Body:          []byte("test"),
 		Timeout:       durationpb.New(5000 * time.Millisecond),
 		CacheSettings: &http.CacheSettings{},
 	}
@@ -181,7 +181,7 @@ func TestGatewayOutboundProxy_SendRequest_MissingBodyToGateway(t *testing.T) {
 	input := &http.Request{
 		Url:     "http://example.com",
 		Method:  "GET",
-		Headers: map[string]string{"X-Test": "1"},
+		Headers: map[string]string{"X-Test": "1"}, //nolint:staticcheck // Headers deprecated
 		Body:    []byte("test"),
 		Timeout: durationpb.New(5000 * time.Millisecond),
 		CacheSettings: &http.CacheSettings{
@@ -211,8 +211,8 @@ func TestGatewayOutboundProxy_SendRequest_Timeout(t *testing.T) {
 	input := &http.Request{
 		Url:           "http://example.com",
 		Method:        "GET",
-		Headers:       map[string]string{"X-Test": "1"},
-		Body:          []byte("test"),
+		Headers:       map[string]string{"X-Test": "1"}, //nolint:staticcheck // Headers deprecated
+			Body:          []byte("test"),
 		Timeout:       durationpb.New(100 * time.Millisecond), // short timeout
 		CacheSettings: &http.CacheSettings{},
 	}
@@ -238,8 +238,8 @@ func TestGatewayOutboundProxy_SendRequest_ExecutionError(t *testing.T) {
 	input := &http.Request{
 		Url:           "http://example.com",
 		Method:        "GET",
-		Headers:       map[string]string{"X-Test": "1"},
-		Body:          []byte("test"),
+		Headers:       map[string]string{"X-Test": "1"}, //nolint:staticcheck // Headers deprecated
+			Body:          []byte("test"),
 		Timeout:       durationpb.New(5000 * time.Millisecond),
 		CacheSettings: &http.CacheSettings{},
 	}
@@ -269,7 +269,7 @@ func TestGatewayOutboundProxy_SendRequest_UserErrors(t *testing.T) {
 		input := &http.Request{
 			Url:           "http://example.com",
 			Method:        "GET",
-			Headers:       map[string]string{"X-Test": "1"},
+			Headers:       map[string]string{"X-Test": "1"}, //nolint:staticcheck // Headers deprecated
 			Body:          []byte("test"),
 			Timeout:       durationpb.New(5000 * time.Millisecond),
 			CacheSettings: &http.CacheSettings{},
@@ -299,7 +299,7 @@ func TestGatewayOutboundProxy_SendRequest_UserErrors(t *testing.T) {
 		input := &http.Request{
 			Url:           "http://example.com",
 			Method:        "GET",
-			Headers:       map[string]string{"X-Test": "1"},
+			Headers:       map[string]string{"X-Test": "1"}, //nolint:staticcheck // Headers deprecated
 			Body:          []byte("test"),
 			Timeout:       durationpb.New(5000 * time.Millisecond),
 			CacheSettings: &http.CacheSettings{},
@@ -330,7 +330,7 @@ func TestGatewayOutboundProxy_SendRequest_UserErrors(t *testing.T) {
 		input := &http.Request{
 			Url:           "http://example.com",
 			Method:        "GET",
-			Headers:       map[string]string{"X-Test": "1"},
+			Headers:       map[string]string{"X-Test": "1"}, //nolint:staticcheck // Headers deprecated
 			Body:          []byte("test"),
 			Timeout:       durationpb.New(5000 * time.Millisecond),
 			CacheSettings: &http.CacheSettings{},
@@ -371,7 +371,7 @@ func simulateGatewayMessageWithMultiHeaders(t *testing.T, proxy *gatewayOutbound
 		ErrorMessage:            errorMessage,
 		IsExternalEndpointError: isExternalError,
 		IsValidationError:       isValidationError,
-		Headers:                 headers,
+		Headers:                 headers,    //nolint:staticcheck // Headers deprecated, gateway may send
 		MultiHeaders:            multiHeaders,
 	}
 	if includeBody {
@@ -519,7 +519,25 @@ func TestGatewayOutboundProxy_SendRequest_HeadersAndMultiHeaders(t *testing.T) {
 
 	// --- Outgoing request (cap → gateway) ---
 
-	t.Run("outgoing: MultiHeaders sent also populates Headers with first value per key", func(t *testing.T) {
+	t.Run("outgoing: error when input has both Headers and MultiHeaders", func(t *testing.T) {
+		proxy, _, _ := setupSendRequestTest(t)
+		input := &http.Request{
+			Url:           "http://example.com",
+			Method:        "GET",
+			Headers:       map[string]string{"X-Test": "value"}, //nolint:staticcheck // Headers deprecated
+			MultiHeaders:  map[string]*http.HeaderValues{"Accept": {Values: []string{"application/json"}}},
+			Body:          []byte{},
+			Timeout:       durationpb.New(5000 * time.Millisecond),
+			CacheSettings: &http.CacheSettings{},
+		}
+		_, _, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
+		require.Error(t, err)
+		var userErr UserError
+		require.True(t, errors.As(err, &userErr))
+		require.Contains(t, err.Error(), "either Headers or MultiHeaders, not both")
+	})
+
+	t.Run("outgoing: MultiHeaders only when input has MultiHeaders", func(t *testing.T) {
 		input := &http.Request{
 			Url:    "http://example.com",
 			Method: "GET",
@@ -535,27 +553,24 @@ func TestGatewayOutboundProxy_SendRequest_HeadersAndMultiHeaders(t *testing.T) {
 		require.Len(t, req.MultiHeaders, 2)
 		require.Equal(t, []string{"application/json"}, req.MultiHeaders["Accept"])
 		require.Equal(t, []string{"a=1", "b=2"}, req.MultiHeaders["Set-Cookie"])
-		require.Equal(t, "application/json", req.Headers["Accept"])
-		require.Equal(t, "a=1", req.Headers["Set-Cookie"])
+		require.Empty(t, req.Headers, "OutboundHTTPRequest must set only MultiHeaders when input has MultiHeaders") //nolint:staticcheck // Headers deprecated, testing exclusive MultiHeaders
 	})
 
-	t.Run("outgoing: Headers only when no MultiHeaders", func(t *testing.T) {
+	t.Run("outgoing: Headers only when input has no MultiHeaders", func(t *testing.T) {
 		input := &http.Request{
 			Url:           "http://example.com",
 			Method:        "GET",
-			Headers:       map[string]string{"X-Test": "value"},
+			Headers:       map[string]string{"X-Test": "value"}, //nolint:staticcheck // Headers deprecated
 			Body:          []byte{},
 			Timeout:       durationpb.New(5000 * time.Millisecond),
 			CacheSettings: &http.CacheSettings{},
 		}
 		req := captureOutgoingRequest(t, input)
-		require.Equal(t, map[string]string{"X-Test": "value"}, req.Headers)
-		if req.MultiHeaders != nil {
-			require.Empty(t, req.MultiHeaders)
-		}
+		require.Equal(t, map[string]string{"X-Test": "value"}, req.Headers) //nolint:staticcheck // Headers deprecated, testing exclusive Headers
+		require.Empty(t, req.MultiHeaders, "OutboundHTTPRequest must set only Headers when input has no MultiHeaders")
 	})
 
-	t.Run("outgoing: no headers when both empty", func(t *testing.T) {
+	t.Run("outgoing: neither set when input has no headers", func(t *testing.T) {
 		input := &http.Request{
 			Url:           "http://example.com",
 			Method:        "GET",
@@ -564,10 +579,8 @@ func TestGatewayOutboundProxy_SendRequest_HeadersAndMultiHeaders(t *testing.T) {
 			CacheSettings: &http.CacheSettings{},
 		}
 		req := captureOutgoingRequest(t, input)
-		require.Empty(t, req.Headers)
-		if req.MultiHeaders != nil {
-			require.Empty(t, req.MultiHeaders)
-		}
+		require.Empty(t, req.Headers) //nolint:staticcheck // Headers deprecated
+		require.Empty(t, req.MultiHeaders)
 	})
 
 	// --- Incoming response (gateway → cap) ---
@@ -602,10 +615,10 @@ func TestGatewayOutboundProxy_SendRequest_HeadersAndMultiHeaders(t *testing.T) {
 		require.Contains(t, output.MultiHeaders["Set-Cookie"].Values, "sessionid=abc123; Path=/; HttpOnly")
 		require.Contains(t, output.MultiHeaders["Set-Cookie"].Values, "csrf_token=xyz789; Path=/; Secure")
 		require.Contains(t, output.MultiHeaders["Set-Cookie"].Values, "pref=dark; Path=/")
-		require.Equal(t, "sessionid=abc123; Path=/; HttpOnly", output.Headers["Set-Cookie"]) //nolint:staticcheck
+		require.Equal(t, "sessionid=abc123; Path=/; HttpOnly", output.Headers["Set-Cookie"]) //nolint:staticcheck // Headers deprecated, testing first value from MultiHeaders
 	})
 
-	t.Run("incoming: Headers fallback when gateway sends no MultiHeaders", func(t *testing.T) {
+	t.Run("incoming: response always has both Headers and MultiHeaders; gateway sent only Headers", func(t *testing.T) {
 		proxy, _, readyCh := setupSendRequestTest(t)
 		input := &http.Request{
 			Url:           "http://example.com",
@@ -624,7 +637,61 @@ func TestGatewayOutboundProxy_SendRequest_HeadersAndMultiHeaders(t *testing.T) {
 		output, _, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
 		require.NoError(t, err)
 		require.NotNil(t, output)
-		require.Equal(t, "application/json", output.Headers["Content-Type"])
-		require.Empty(t, output.MultiHeaders)
+		require.Equal(t, "application/json", output.Headers["Content-Type"]) //nolint:staticcheck // Headers deprecated, testing derived from gateway Headers
+		require.Len(t, output.MultiHeaders, 1, "OutboundHTTPResponse must always set both; MultiHeaders derived from Headers")
+		require.Equal(t, []string{"application/json"}, output.MultiHeaders["Content-Type"].Values)
+	})
+}
+
+func TestResponseHeadersFromGateway(t *testing.T) {
+	t.Run("nil Headers and nil MultiHeaders returns empty maps", func(t *testing.T) {
+		resp := &gateway_common.OutboundHTTPResponse{}
+		headers, multiHeaders := responseHeadersFromGateway(resp)
+		require.NotNil(t, headers)
+		require.Empty(t, headers)
+		require.NotNil(t, multiHeaders)
+		require.Empty(t, multiHeaders)
+	})
+
+	t.Run("Headers only: both returned, MultiHeaders has single value per key", func(t *testing.T) {
+		resp := &gateway_common.OutboundHTTPResponse{
+			Headers: map[string]string{"Content-Type": "application/json", "X-Test": "value"}, //nolint:staticcheck // Headers deprecated, testing
+		}
+		headers, multiHeaders := responseHeadersFromGateway(resp)
+		require.Equal(t, map[string]string{"Content-Type": "application/json", "X-Test": "value"}, headers)
+		require.Len(t, multiHeaders, 2)
+		require.Equal(t, []string{"application/json"}, multiHeaders["Content-Type"].Values)
+		require.Equal(t, []string{"value"}, multiHeaders["X-Test"].Values)
+	})
+
+	t.Run("MultiHeaders only: Headers has first value per key", func(t *testing.T) {
+		resp := &gateway_common.OutboundHTTPResponse{
+			MultiHeaders: map[string][]string{
+				"Set-Cookie": {"a=1", "b=2", "c=3"},
+				"Accept":     {"application/json"},
+			},
+		}
+		headers, multiHeaders := responseHeadersFromGateway(resp)
+		require.Equal(t, "a=1", headers["Set-Cookie"])         //nolint:staticcheck // Headers deprecated, testing first value
+		require.Equal(t, "application/json", headers["Accept"]) //nolint:staticcheck // Headers deprecated
+		require.Len(t, multiHeaders, 2)
+		require.Equal(t, []string{"a=1", "b=2", "c=3"}, multiHeaders["Set-Cookie"].Values)
+		require.Equal(t, []string{"application/json"}, multiHeaders["Accept"].Values)
+	})
+
+	t.Run("both set: MultiHeaders used as source, Headers ignored", func(t *testing.T) {
+		resp := &gateway_common.OutboundHTTPResponse{
+			Headers: map[string]string{"Content-Type": "text/plain", "X-Only": "only"}, //nolint:staticcheck // Headers deprecated, testing
+			MultiHeaders: map[string][]string{
+				"Content-Type": {"application/json"},
+				"Set-Cookie":   {"s1", "s2"},
+			},
+		}
+		headers, multiHeaders := responseHeadersFromGateway(resp)
+		require.Equal(t, "application/json", headers["Content-Type"]) //nolint:staticcheck // from MultiHeaders
+		require.Equal(t, "s1", headers["Set-Cookie"])                 //nolint:staticcheck // first value from MultiHeaders
+		require.Len(t, multiHeaders, 2)
+		require.Equal(t, []string{"application/json"}, multiHeaders["Content-Type"].Values)
+		require.Equal(t, []string{"s1", "s2"}, multiHeaders["Set-Cookie"].Values)
 	})
 }

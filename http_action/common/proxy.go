@@ -35,12 +35,26 @@ type ResponseValidator interface {
 	ValidateResponseSize(ctx context.Context, response []byte) error
 }
 
+// RequestValidator validates HTTP requests and responses. Implemented by validate.Validator.
+// Clients should call ValidatedRequest at the send boundary so validation runs in one place.
+type RequestValidator interface {
+	ResponseValidator
+	ValidatedRequest(ctx context.Context, input *httpcap.Request) (*httpcap.Request, error)
+}
+
+// InputValidationError wraps an error from request validation so the action can map it to a user-facing error.
+type InputValidationError struct{ Err error }
+
+func (e InputValidationError) Error() string { return e.Err.Error() }
+
+func (e InputValidationError) Unwrap() error { return e.Err }
+
 // httpClientProxy implements OutboundRequestClient using a regular HTTP client
 type httpClientProxy struct {
 	client    *safeurl.WrappedClient
 	cfg       ServiceConfig
 	lggr      logger.Logger
-	validator ResponseValidator
+	validator RequestValidator
 	metrics   *Metrics
 }
 
@@ -48,7 +62,7 @@ func disableRedirects(req *http.Request, via []*http.Request) error {
 	return errors.New("redirects are not allowed")
 }
 
-func NewHTTPClientProxy(cfg ServiceConfig, lggr logger.Logger, validator ResponseValidator, metrics *Metrics) (*httpClientProxy, error) {
+func NewHTTPClientProxy(cfg ServiceConfig, lggr logger.Logger, validator RequestValidator, metrics *Metrics) (*httpClientProxy, error) {
 	safeConfig := safeurl.
 		GetConfigBuilder().
 		SetAllowedIPs(cfg.HTTPClientConfig.AllowedIPs...).
@@ -91,6 +105,12 @@ func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities
 	ctx = metadata.ContextWithCRE(ctx)
 	requestID := uuid.New().String()
 	lggr := logger.With(h.lggr, "requestID", requestID, "workflowID", metadata.WorkflowID, "workflowExecutionID", metadata.WorkflowExecutionID, "workflowOwner", metadata.WorkflowOwner)
+
+	input, err := h.validator.ValidatedRequest(ctx, input)
+	if err != nil {
+		h.metrics.IncrementInputValidationFailures(ctx, lggr)
+		return nil, 0, InputValidationError{Err: err}
+	}
 
 	timeoutCtx, cancel := context.WithTimeout(ctx, input.Timeout.AsDuration())
 	defer cancel()

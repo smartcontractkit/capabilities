@@ -22,7 +22,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 )
 
-func newTestValidator(t *testing.T) ResponseValidator {
+func newTestValidator(t *testing.T) RequestValidator {
 	lggr := logger.Test(t)
 	limitsFactory := limits.Factory{
 		Logger: lggr,
