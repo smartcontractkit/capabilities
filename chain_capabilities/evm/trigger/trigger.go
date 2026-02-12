@@ -73,7 +73,8 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 	logTriggerPollInterval time.Duration,
 	logTriggerSendChannelBufferSize uint64,
 	logTriggerLimitQueryLogSize uint64, limitsFactory limits.Factory,
-	orgResolver orgresolver.OrgResolver) (*LogTriggerService, error) {
+	orgResolver orgresolver.OrgResolver,
+	triggerEventStore capabilities.EventStore) (*LogTriggerService, error) {
 	if logTriggerPollInterval < 0 {
 		return nil, fmt.Errorf("logTriggerPollInterval must be positive, got: %s", logTriggerPollInterval)
 	}
@@ -118,9 +119,12 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 		Start: lts.start,
 	}.NewServiceEngine(lggr)
 
-	retryInterval := 2 * time.Second              // TODO: parameterizable by chain: https://smartcontract-it.atlassian.net/browse/CRE-1774
-	eventStore := capabilities.NewMemEventStore() // TODO: use DB instead of in-mem: https://smartcontract-it.atlassian.net/browse/CRE-1738
-	lts.baseTrigger = *capabilities.NewBaseTriggerCapability(eventStore, func() *evmcappb.Log { return &evmcappb.Log{} },
+	retryInterval := 2 * time.Second // TODO: parameterizable by chain: https://smartcontract-it.atlassian.net/browse/CRE-1774
+	if triggerEventStore == nil {
+		lggr.Warnf("no trigger event store provided; defaulting to in-memory event store")
+		triggerEventStore = capabilities.NewMemEventStore()
+	}
+	lts.baseTrigger = *capabilities.NewBaseTriggerCapability(triggerEventStore, func() *evmcappb.Log { return &evmcappb.Log{} },
 		lts.lggr, "EvmLogTriggerService", retryInterval)
 	return lts, nil
 }
