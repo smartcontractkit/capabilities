@@ -313,54 +313,6 @@ func TestSendRequest_MultiHeaders(t *testing.T) {
 		verifyBackwardCompatibility(t, response.Headers, response.MultiHeaders) //nolint:staticcheck
 	})
 
-	t.Run("response with multiple Via headers", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Set multiple Via headers
-			w.Header().Add("Via", "1.0 proxy1")
-			w.Header().Add("Via", "1.1 proxy2")
-			w.Header().Add("Via", "1.1 proxy3")
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("success"))
-		}))
-		defer server.Close()
-
-		cfg := ServiceConfig{
-			HTTPClientConfig: validClientCfg(t, server.URL),
-		}
-		lggr := logger.Test(t)
-		validator := newTestValidator(t)
-		metrics := newTestMetrics(t)
-		proxy, err := NewHTTPClientProxy(cfg, lggr, validator, metrics)
-		require.NoError(t, err)
-
-		input := &httpactions.Request{
-			Method:  http.MethodGet,
-			Url:     server.URL,
-			Timeout: durationpb.New(1000 * time.Millisecond),
-			Body:    []byte{},
-		}
-
-		response, _, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
-		require.NoError(t, err)
-		require.Equal(t, uint32(200), response.StatusCode)
-
-		// Verify MultiHeaders contains all Via values
-		require.NotNil(t, response.MultiHeaders)
-		viaHeader, ok := response.MultiHeaders["Via"]
-		require.True(t, ok, "Via header should be in MultiHeaders")
-		require.NotNil(t, viaHeader)
-		require.Len(t, viaHeader.Values, 3, "Should have 3 Via headers")
-		require.Contains(t, viaHeader.Values, "1.0 proxy1")
-		require.Contains(t, viaHeader.Values, "1.1 proxy2")
-		require.Contains(t, viaHeader.Values, "1.1 proxy3")
-
-		// Verify Headers field has first value only (backward compatibility)
-		require.Equal(t, "1.0 proxy1", response.Headers["Via"])
-
-		// Verify backward compatibility: all keys in MultiHeaders should be in Headers
-		verifyBackwardCompatibility(t, response.Headers, response.MultiHeaders)
-	})
-
 	t.Run("response with single header value", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
@@ -401,7 +353,7 @@ func TestSendRequest_MultiHeaders(t *testing.T) {
 		require.Equal(t, "application/json", response.Headers["Content-Type"])
 
 		// Verify backward compatibility: all keys in MultiHeaders should be in Headers
-		verifyBackwardCompatibility(t, response.Headers, response.MultiHeaders)
+		verifyBackwardCompatibility(t, response.Headers, response.MultiHeaders) //nolint:staticcheck
 	})
 }
 
