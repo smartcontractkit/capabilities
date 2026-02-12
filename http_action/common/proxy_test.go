@@ -349,8 +349,8 @@ func TestSendRequest_MultiHeaders(t *testing.T) {
 		require.Len(t, contentTypeHeader.Values, 1, "Should have 1 Content-Type header")
 		require.Equal(t, "application/json", contentTypeHeader.Values[0])
 
-		// Verify Headers field matches
-		require.Equal(t, "application/json", response.Headers["Content-Type"])
+		// Verify Headers field matches (backward compatibility)
+		require.Equal(t, "application/json", response.Headers["Content-Type"]) //nolint:staticcheck // SA1019 testing deprecated Headers field
 
 		// Verify backward compatibility: all keys in MultiHeaders should be in Headers
 		verifyBackwardCompatibility(t, response.Headers, response.MultiHeaders) //nolint:staticcheck
@@ -398,7 +398,7 @@ func TestToResponseHeaders(t *testing.T) {
 	t.Run("multiple values per key", func(t *testing.T) {
 		h := http.Header{
 			"Set-Cookie": []string{"a=1", "b=2", "c=3"},
-			"Accept":      []string{"application/json"},
+			"Accept":     []string{"application/json"},
 		}
 		multi, single := toResponseHeaders(h)
 		require.Len(t, multi, 2)

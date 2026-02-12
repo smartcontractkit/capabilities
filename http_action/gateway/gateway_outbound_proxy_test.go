@@ -152,7 +152,7 @@ func TestGatewayOutboundProxy_SendRequest_Success(t *testing.T) {
 		Url:           "http://example.com",
 		Method:        "GET",
 		Headers:       map[string]string{"X-Test": "1"}, //nolint:staticcheck // Headers deprecated
-			Body:          []byte("test"),
+		Body:          []byte("test"),
 		Timeout:       durationpb.New(5000 * time.Millisecond),
 		CacheSettings: &http.CacheSettings{},
 	}
@@ -212,7 +212,7 @@ func TestGatewayOutboundProxy_SendRequest_Timeout(t *testing.T) {
 		Url:           "http://example.com",
 		Method:        "GET",
 		Headers:       map[string]string{"X-Test": "1"}, //nolint:staticcheck // Headers deprecated
-			Body:          []byte("test"),
+		Body:          []byte("test"),
 		Timeout:       durationpb.New(100 * time.Millisecond), // short timeout
 		CacheSettings: &http.CacheSettings{},
 	}
@@ -239,7 +239,7 @@ func TestGatewayOutboundProxy_SendRequest_ExecutionError(t *testing.T) {
 		Url:           "http://example.com",
 		Method:        "GET",
 		Headers:       map[string]string{"X-Test": "1"}, //nolint:staticcheck // Headers deprecated
-			Body:          []byte("test"),
+		Body:          []byte("test"),
 		Timeout:       durationpb.New(5000 * time.Millisecond),
 		CacheSettings: &http.CacheSettings{},
 	}
@@ -371,7 +371,7 @@ func simulateGatewayMessageWithMultiHeaders(t *testing.T, proxy *gatewayOutbound
 		ErrorMessage:            errorMessage,
 		IsExternalEndpointError: isExternalError,
 		IsValidationError:       isValidationError,
-		Headers:                 headers,    //nolint:staticcheck // Headers deprecated, gateway may send
+		Headers:                 headers, //nolint:staticcheck // Headers deprecated, gateway may send
 		MultiHeaders:            multiHeaders,
 	}
 	if includeBody {
@@ -672,7 +672,7 @@ func TestResponseHeadersFromGateway(t *testing.T) {
 			},
 		}
 		headers, multiHeaders := responseHeadersFromGateway(resp)
-		require.Equal(t, "a=1", headers["Set-Cookie"])         //nolint:staticcheck // Headers deprecated, testing first value
+		require.Equal(t, "a=1", headers["Set-Cookie"])          //nolint:staticcheck // Headers deprecated, testing first value
 		require.Equal(t, "application/json", headers["Accept"]) //nolint:staticcheck // Headers deprecated
 		require.Len(t, multiHeaders, 2)
 		require.Equal(t, []string{"a=1", "b=2", "c=3"}, multiHeaders["Set-Cookie"].Values)

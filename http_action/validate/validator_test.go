@@ -215,7 +215,7 @@ func TestValidatedRequest(t *testing.T) {
 	})
 }
 
-func TestValidateRequestHeaders(t *testing.T) {
+func TestRequestHeaders(t *testing.T) {
 	t.Parallel()
 
 	t.Run("both set returns ErrRequestHeadersBothSet", func(t *testing.T) {
@@ -223,24 +223,24 @@ func TestValidateRequestHeaders(t *testing.T) {
 			Headers:      map[string]string{"X-Test": "1"},
 			MultiHeaders: map[string]*http.HeaderValues{"Accept": {Values: []string{"application/json"}}},
 		}
-		err := ValidateRequestHeaders(input)
+		err := RequestHeaders(input)
 		require.Error(t, err)
 		require.ErrorIs(t, err, ErrRequestHeadersBothSet)
 	})
 
 	t.Run("only Headers set is valid", func(t *testing.T) {
 		input := &http.Request{Headers: map[string]string{"X-Test": "1"}}
-		require.NoError(t, ValidateRequestHeaders(input))
+		require.NoError(t, RequestHeaders(input))
 	})
 
 	t.Run("only MultiHeaders set is valid", func(t *testing.T) {
 		input := &http.Request{MultiHeaders: map[string]*http.HeaderValues{"Accept": {Values: []string{"application/json"}}}}
-		require.NoError(t, ValidateRequestHeaders(input))
+		require.NoError(t, RequestHeaders(input))
 	})
 
 	t.Run("neither set is valid", func(t *testing.T) {
 		input := &http.Request{}
-		require.NoError(t, ValidateRequestHeaders(input))
+		require.NoError(t, RequestHeaders(input))
 	})
 }
 

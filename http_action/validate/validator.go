@@ -112,7 +112,7 @@ func (v *Validator) ValidatedRequest(ctx context.Context, input *http.Request) (
 	req := &http.Request{
 		Url:           url,
 		Method:        input.Method,
-		Headers:       input.Headers,       //nolint:staticcheck // Headers deprecated, copy validated input
+		Headers:       input.Headers, //nolint:staticcheck // Headers deprecated, copy validated input
 		MultiHeaders:  input.MultiHeaders,
 		Body:          input.Body,
 		Timeout:       input.Timeout,
@@ -122,15 +122,15 @@ func (v *Validator) ValidatedRequest(ctx context.Context, input *http.Request) (
 	return req, nil
 }
 
-// ValidateRequestHeaders returns an error if the request has both Headers and MultiHeaders set.
+// RequestHeaders returns an error if the request has both Headers and MultiHeaders set.
 // Callers that need to surface this as a user-facing error should wrap the result (e.g. with UserError).
-func ValidateRequestHeaders(input *http.Request) error {
+func RequestHeaders(input *http.Request) error {
 	return validateHeadersMutuallyExclusive(input)
 }
 
 // validateHeadersMutuallyExclusive returns an error if both Headers and MultiHeaders are non-empty.
 func validateHeadersMutuallyExclusive(input *http.Request) error {
-	hasHeaders := len(input.Headers) > 0      //nolint:staticcheck // Headers deprecated
+	hasHeaders := len(input.Headers) > 0 //nolint:staticcheck // Headers deprecated
 	hasMulti := len(input.MultiHeaders) > 0
 	if hasHeaders && hasMulti {
 		return ErrRequestHeadersBothSet
