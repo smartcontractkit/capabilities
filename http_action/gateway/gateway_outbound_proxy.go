@@ -7,6 +7,7 @@ import (
 	"maps"
 	"math"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -63,13 +64,13 @@ func gatewayHeadersFromInput(input *http.Request) (headers map[string]string, mu
 // the other is derived from it. Both fields are always set on the cap response (one populated, one derived).
 func responseHeadersFromGateway(resp *gc.OutboundHTTPResponse) (headers map[string]string, multiHeaders map[string]*http.HeaderValues) {
 	if len(resp.MultiHeaders) > 0 {
-		// Source is MultiHeaders: populate multiHeaders, derive headers (first value per key).
+		// Source is MultiHeaders: populate multiHeaders, derive headers (comma-joined for backward compatibility).
 		multiHeaders = make(map[string]*http.HeaderValues, len(resp.MultiHeaders))
 		headers = make(map[string]string, len(resp.MultiHeaders))
 		for k, v := range resp.MultiHeaders {
 			multiHeaders[k] = &http.HeaderValues{Values: slices.Clone(v)}
 			if len(v) > 0 {
-				headers[k] = v[0]
+				headers[k] = strings.Join(v, ",")
 			}
 		}
 		return headers, multiHeaders

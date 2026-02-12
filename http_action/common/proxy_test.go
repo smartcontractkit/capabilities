@@ -306,8 +306,8 @@ func TestSendRequest_MultiHeaders(t *testing.T) {
 		require.Contains(t, setCookieHeader.Values, "csrf_token=xyz789; Path=/; Secure")
 		require.Contains(t, setCookieHeader.Values, "pref=dark; Path=/")
 
-		// Verify Headers field has first value only (backward compatibility)
-		require.Equal(t, "sessionid=abc123; Path=/; HttpOnly", response.Headers["Set-Cookie"]) //nolint:staticcheck
+		// Verify Headers field has comma-joined values (backward compatibility)
+		require.Equal(t, "sessionid=abc123; Path=/; HttpOnly,csrf_token=xyz789; Path=/; Secure,pref=dark; Path=/", response.Headers["Set-Cookie"]) //nolint:staticcheck
 
 		// Verify backward compatibility: all keys in MultiHeaders should be in Headers
 		verifyBackwardCompatibility(t, response.Headers, response.MultiHeaders) //nolint:staticcheck
@@ -405,7 +405,7 @@ func TestToResponseHeaders(t *testing.T) {
 		require.Len(t, single, 2)
 		require.Equal(t, []string{"a=1", "b=2", "c=3"}, multi["Set-Cookie"].Values)
 		require.Equal(t, []string{"application/json"}, multi["Accept"].Values)
-		require.Equal(t, "a=1", single["Set-Cookie"])
+		require.Equal(t, "a=1,b=2,c=3", single["Set-Cookie"])
 		require.Equal(t, "application/json", single["Accept"])
 	})
 

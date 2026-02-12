@@ -585,7 +585,7 @@ func TestGatewayOutboundProxy_SendRequest_HeadersAndMultiHeaders(t *testing.T) {
 
 	// --- Incoming response (gateway → cap) ---
 
-	t.Run("incoming: MultiHeaders preserved and Headers has first value", func(t *testing.T) {
+	t.Run("incoming: MultiHeaders preserved and Headers comma-joined", func(t *testing.T) {
 		proxy, _, readyCh := setupSendRequestTest(t)
 		input := &http.Request{
 			Url:           "http://example.com",
@@ -615,7 +615,7 @@ func TestGatewayOutboundProxy_SendRequest_HeadersAndMultiHeaders(t *testing.T) {
 		require.Contains(t, output.MultiHeaders["Set-Cookie"].Values, "sessionid=abc123; Path=/; HttpOnly")
 		require.Contains(t, output.MultiHeaders["Set-Cookie"].Values, "csrf_token=xyz789; Path=/; Secure")
 		require.Contains(t, output.MultiHeaders["Set-Cookie"].Values, "pref=dark; Path=/")
-		require.Equal(t, "sessionid=abc123; Path=/; HttpOnly", output.Headers["Set-Cookie"]) //nolint:staticcheck // Headers deprecated, testing first value from MultiHeaders
+		require.Equal(t, "sessionid=abc123; Path=/; HttpOnly,csrf_token=xyz789; Path=/; Secure,pref=dark; Path=/", output.Headers["Set-Cookie"]) //nolint:staticcheck // Headers deprecated, comma-joined from MultiHeaders
 	})
 
 	t.Run("incoming: response always has both Headers and MultiHeaders; gateway sent only Headers", func(t *testing.T) {
@@ -664,7 +664,7 @@ func TestResponseHeadersFromGateway(t *testing.T) {
 		require.Equal(t, []string{"value"}, multiHeaders["X-Test"].Values)
 	})
 
-	t.Run("MultiHeaders only: Headers has first value per key", func(t *testing.T) {
+	t.Run("MultiHeaders only: Headers comma-joined per key", func(t *testing.T) {
 		resp := &gateway_common.OutboundHTTPResponse{
 			MultiHeaders: map[string][]string{
 				"Set-Cookie": {"a=1", "b=2", "c=3"},
@@ -672,7 +672,7 @@ func TestResponseHeadersFromGateway(t *testing.T) {
 			},
 		}
 		headers, multiHeaders := responseHeadersFromGateway(resp)
-		require.Equal(t, "a=1", headers["Set-Cookie"])          //nolint:staticcheck // Headers deprecated, testing first value
+		require.Equal(t, "a=1,b=2,c=3", headers["Set-Cookie"])  //nolint:staticcheck // Headers deprecated, comma-joined
 		require.Equal(t, "application/json", headers["Accept"]) //nolint:staticcheck // Headers deprecated
 		require.Len(t, multiHeaders, 2)
 		require.Equal(t, []string{"a=1", "b=2", "c=3"}, multiHeaders["Set-Cookie"].Values)
@@ -689,7 +689,7 @@ func TestResponseHeadersFromGateway(t *testing.T) {
 		}
 		headers, multiHeaders := responseHeadersFromGateway(resp)
 		require.Equal(t, "application/json", headers["Content-Type"]) //nolint:staticcheck // from MultiHeaders
-		require.Equal(t, "s1", headers["Set-Cookie"])                 //nolint:staticcheck // first value from MultiHeaders
+		require.Equal(t, "s1,s2", headers["Set-Cookie"])              //nolint:staticcheck // comma-joined from MultiHeaders
 		require.Len(t, multiHeaders, 2)
 		require.Equal(t, []string{"application/json"}, multiHeaders["Content-Type"].Values)
 		require.Equal(t, []string{"s1", "s2"}, multiHeaders["Set-Cookie"].Values)

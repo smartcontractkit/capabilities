@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/doyensec/safeurl"
@@ -115,7 +116,7 @@ func toResponseHeaders(header http.Header) (map[string]*httpcap.HeaderValues, ma
 			continue
 		}
 		multiHeaders[k] = &httpcap.HeaderValues{Values: slices.Clone(v)}
-		headers[k] = v[0]
+		headers[k] = strings.Join(v, ",") // Join via "," for backwards compatibility.
 	}
 	return multiHeaders, headers
 }
