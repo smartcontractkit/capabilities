@@ -122,23 +122,23 @@ func (p *LogsTransmissionStatusProvider) failedTransmissionInfoReply(inProgressL
 }
 
 func (lr *logReader) registerCREForwarderFilters(ctx context.Context) error {
-	var codecIDL codec.IDL
-	if err := json.Unmarshal([]byte(contracts.FetchForwarderIDL()), &codecIDL); err != nil {
-		return fmt.Errorf("unexpected error: invalid Forwarder IDL, error: %w", err)
-	}
+	// var codecIDL codec.IDL
+	// if err := json.Unmarshal(), &codecIDL); err != nil {
+	// 	return fmt.Errorf("unexpected error: invalid Forwarder IDL, error: %w", err)
+	// }
 
-	eventIDLProcessed, err := getEventIDL(EventReportProcessed, codecIDL)
-	if err != nil {
-		return err
-	}
+	// eventIDLProcessed, err := getEventIDL(EventReportProcessed, codecIDL)
+	// if err != nil {
+	// 	return err
+	// }
 
 	sigProcessed := soltypes.EventSignature(lptypes.NewEventSignatureFromName(EventReportProcessed))
-	err = lr.SolanaService.RegisterLogTracking(ctx, soltypes.LPFilterQuery{
+	err := lr.SolanaService.RegisterLogTracking(ctx, soltypes.LPFilterQuery{
 		Name:            EventReportProcessed + "_" + lr.forwarderProgramID.String(),
 		Address:         soltypes.PublicKey(lr.forwarderProgramID),
 		EventName:       EventReportProcessed,
 		EventSig:        sigProcessed,
-		ContractIdlJSON: eventIDLProcessed,
+		ContractIdlJSON: []byte(contracts.FetchForwarderIDL()),
 		SubkeyPaths:     [][]string{{"TransmissionId"}},
 	})
 
@@ -146,17 +146,17 @@ func (lr *logReader) registerCREForwarderFilters(ctx context.Context) error {
 		return fmt.Errorf("failed to register  EventReportProcessed filter for forwarder: %w", err)
 	}
 
-	eventIDLInProgress, err := getEventIDL(EventReportInProgress, codecIDL)
-	if err != nil {
-		return err
-	}
+	// eventIDLInProgress, err := getEventIDL(EventReportInProgress, codecIDL)
+	// if err != nil {
+	// 	return err
+	// }
 	sigInProgress := soltypes.EventSignature(lptypes.NewEventSignatureFromName(EventReportInProgress))
 	err = lr.SolanaService.RegisterLogTracking(ctx, soltypes.LPFilterQuery{
 		Name:            EventReportInProgress + "_" + lr.forwarderProgramID.String(),
 		Address:         soltypes.PublicKey(lr.forwarderProgramID),
 		EventName:       EventReportInProgress,
 		EventSig:        sigInProgress,
-		ContractIdlJSON: eventIDLInProgress,
+		ContractIdlJSON: []byte(contracts.FetchForwarderIDL()),
 		SubkeyPaths:     [][]string{{"TransmissionId"}},
 		IncludeReverted: true,
 	})
