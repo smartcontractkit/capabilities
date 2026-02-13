@@ -191,7 +191,7 @@ func Test_ReceivedIdenticalMultipleQualifyingSetsOfIdenticalValues(t *testing.T)
 	md1 := newRequestMetaData()
 	md1.KeyBundleID = "evm"
 
-	expectedFailureCode := oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED
+	expectedFailureCode := oracletypes.ConsensusFailureCode_MORE_THAN_ONE_VALID_OUTCOME_FOR_IDENTICAL_CONSENSUS
 
 	reqToObservations := map[string]*consensusPluginTest{
 		md1.RequestID(): {requests: []*oracle.ConsensusRequest{

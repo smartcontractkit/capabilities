@@ -61,6 +61,12 @@ func (c *ContractTransmitter) Transmit(ctx context.Context, configDigest types.C
 			// This is considered to be a user error as the caller of the consensus capability has sent too many errors and
 			// so consensus cannot be reached.
 			failureErr = caperrors.NewPublicUserError(errors.New(failureMessageStr), caperrors.ConsensusFailed)
+		case oracletypes.ConsensusFailureCode_MORE_THAN_ONE_VALID_OUTCOME_FOR_IDENTICAL_CONSENSUS:
+			// This is considered to be a user error as the caller of the consensus capability is attempting to achieve
+			// identical consensus on a value which has multiple valid (>=f+1) observations sets.  For example this
+			// could occur if the caller is attempting to achieve identical consensus on a value which is relatively volatile
+			// resulting in f+1 nodes seeing value A, and f+1 nodes seeing value B.
+			failureErr = caperrors.NewPublicUserError(errors.New(failureMessageStr), caperrors.ConsensusFailed)
 		default:
 			failureErr = caperrors.NewPublicSystemError(errors.New(failureMessageStr), caperrors.ConsensusFailed)
 		}

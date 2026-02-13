@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -122,6 +123,13 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, requestI
 			"consensus calculation failed: %v; Consensus metadata, descriptor and default: %+v; Values received: %s; Errors received: %s",
 			err, consensusMDD, valuesJSON, formatErrorsForLogging(ctx, obsErrors),
 		)
+
+		if errors.Is(err, oracle.ErrMoreThanOneValidOutcomeForIdenticalConsensus) {
+			return outcome.FailConsensusWithDefaultCheck(ctx, r.lggr, requestID, consensusFailedMsg,
+				"consensus calculation failed: more than one valid outcome for identical consensus",
+				oracletypes.ConsensusFailureCode_MORE_THAN_ONE_VALID_OUTCOME_FOR_IDENTICAL_CONSENSUS, consensusMDD, timestamp)
+		}
+
 		return outcome.FailConsensusWithDefaultCheck(ctx, r.lggr, requestID, consensusFailedMsg,
 			"consensus calculation failed: aggregation failed",
 			oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED, consensusMDD, timestamp)

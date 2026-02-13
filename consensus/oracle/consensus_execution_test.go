@@ -96,7 +96,7 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 					Aggregation: sdk.AggregationType_AGGREGATION_TYPE_MEDIAN,
 				},
 			},
-			expectedError: ErrMultipleValuesMetThreshold,
+			expectedError: ErrMoreThanOneValidOutcomeForIdenticalConsensus,
 		},
 		{
 			name: "median: mixed types, one eligible type (int64) - handled by filtering",
