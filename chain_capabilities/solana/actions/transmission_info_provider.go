@@ -2,7 +2,6 @@ package actions
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	_ "embed"
@@ -16,8 +15,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 	solprimitives "github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives/solana"
 	"github.com/smartcontractkit/chainlink-solana/contracts"
-	"github.com/smartcontractkit/chainlink-solana/pkg/solana/codec"
-	"github.com/smartcontractkit/chainlink-solana/pkg/solana/commoncodec"
 	lptypes "github.com/smartcontractkit/chainlink-solana/pkg/solana/logpoller/types"
 )
 
@@ -154,34 +151,6 @@ func (lr *logReader) registerCREForwarderFilters(ctx context.Context) error {
 	lr.sigInProgress = sigInProgress
 
 	return nil
-}
-
-func getEventIDL(eventName string, codecIDL codec.IDL) ([]byte, error) {
-	eventIdl, err := extractEventIDL(eventName, codecIDL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to extract event IDL %s: %w", eventName, err)
-	}
-
-	lpEventIdl := lptypes.EventIdl{Event: eventIdl, Types: codecIDL.Types}
-
-	ret, err := json.Marshal(lpEventIdl)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal event IDL %s: %w", eventName, err)
-	}
-
-	return ret, nil
-}
-
-func extractEventIDL(eventName string, codecIDL codec.IDL) (codec.IdlEvent, error) {
-	idlDef, err := codec.FindDefinitionFromIDL(commoncodec.ChainConfigTypeEventDef, eventName, codecIDL)
-	if err != nil {
-		return codec.IdlEvent{}, err
-	}
-	eventIdl, isOk := idlDef.(codec.IdlEvent)
-	if !isOk {
-		return codec.IdlEvent{}, fmt.Errorf("unexpected type from IDL definition for event read: %q", eventName)
-	}
-	return eventIdl, nil
 }
 
 func (lr *logReader) queryProcessed(ctx context.Context, transmissionID [32]byte) ([]*soltypes.Log, error) {
