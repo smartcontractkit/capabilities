@@ -4,6 +4,8 @@ flowchart LR
 
 	capabilities/capabilitywatcher --> capabilities/libs
 	click capabilities/capabilitywatcher href "https://github.com/smartcontractkit/capabilities"
+	capabilities/chain_capabilities/aptos --> capabilities/libs
+	click capabilities/chain_capabilities/aptos href "https://github.com/smartcontractkit/capabilities"
 	capabilities/chain_capabilities/evm --> capabilities/libs
 	capabilities/chain_capabilities/evm --> chainlink-evm
 	click capabilities/chain_capabilities/evm href "https://github.com/smartcontractkit/capabilities"
@@ -197,6 +199,7 @@ flowchart LR
 
 	subgraph capabilities-repo[capabilities]
 		 capabilities/capabilitywatcher
+		 capabilities/chain_capabilities/aptos
 		 capabilities/chain_capabilities/evm
 		 capabilities/chain_capabilities/solana
 		 capabilities/consensus
