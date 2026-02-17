@@ -12,9 +12,9 @@ import (
 )
 
 type Aptos struct {
-	aptosService     types.AptosService
-	forwarderAddress [32]byte
-	lggr             logger.SugaredLogger
+	aptosService    types.AptosService
+	forwarderClient CREForwarderClient
+	lggr            logger.SugaredLogger
 }
 
 func NewAptos(cfg *config.Config, aptosService types.AptosService, lggr logger.Logger) (*Aptos, error) {
@@ -22,10 +22,12 @@ func NewAptos(cfg *config.Config, aptosService types.AptosService, lggr logger.L
 		return nil, fmt.Errorf("aptos service is required")
 	}
 
+	fc := newForwarderClient(aptosService, lggr, cfg.CREForwarderAddress)
+
 	return &Aptos{
-		aptosService:     aptosService,
-		forwarderAddress: cfg.CREForwarderAddress,
-		lggr:             logger.Sugared(lggr),
+		aptosService:    aptosService,
+		forwarderClient: fc,
+		lggr:            logger.Sugared(lggr),
 	}, nil
 }
 

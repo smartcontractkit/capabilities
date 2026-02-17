@@ -3,15 +3,18 @@ module github.com/smartcontractkit/capabilities/chain_capabilities/aptos
 go 1.25.5
 
 require (
+	github.com/aptos-labs/aptos-go-sdk v1.11.0
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260210010829-97eb42ca2924
 	github.com/smartcontractkit/chain-selectors v1.0.90
+	github.com/smartcontractkit/chainlink-aptos v0.0.0-20260217202121-e180775e1fb5
 	github.com/smartcontractkit/chainlink-common v0.10.1-0.20260217104651-9e1a972c06cc
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260217103918-db5a4ede0b6f
-	google.golang.org/protobuf v1.36.11
 )
 
 require (
+	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/Masterminds/semver/v3 v3.4.0 // indirect
+	github.com/ProjectZKM/Ziren/crates/go-runtime/zkvm_runtime v0.0.0-20251001021608-1fe7b43fc4d6 // indirect
 	github.com/XSAM/otelsql v0.37.0 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -20,7 +23,10 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudevents/sdk-go/binding/format/protobuf/v2 v2.16.1 // indirect
 	github.com/cloudevents/sdk-go/v2 v2.16.1 // indirect
+	github.com/coder/websocket v1.8.14 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
+	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
+	github.com/ethereum/go-ethereum v1.16.8 // indirect
 	github.com/fatih/color v1.18.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.7.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.8 // indirect
@@ -40,6 +46,9 @@ require (
 	github.com/hashicorp/go-hclog v1.6.3 // indirect
 	github.com/hashicorp/go-plugin v1.7.0 // indirect
 	github.com/hashicorp/yamux v0.1.2 // indirect
+	github.com/hasura/go-graphql-client v0.14.5 // indirect
+	github.com/hdevalence/ed25519consensus v0.2.0 // indirect
+	github.com/holiman/uint256 v1.3.2 // indirect
 	github.com/invopop/jsonschema v0.13.0 // indirect
 	github.com/jackc/chunkreader/v2 v2.0.1 // indirect
 	github.com/jackc/pgconn v1.14.3 // indirect
@@ -80,6 +89,7 @@ require (
 	github.com/smartcontractkit/grpc-proxy v0.0.0-20240830132753-a7e17fec5ab7 // indirect
 	github.com/smartcontractkit/libocr v0.0.0-20250912173940-f3ab0246e23d // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
+	github.com/valyala/fastjson v1.6.4 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
@@ -113,5 +123,6 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20251029180050-ab9386a59fda // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20251029180050-ab9386a59fda // indirect
 	google.golang.org/grpc v1.78.0 // indirect
+	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
