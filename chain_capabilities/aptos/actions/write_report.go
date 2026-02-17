@@ -10,33 +10,6 @@ import (
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
-	aptostypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/aptos"
-	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
-)
-
-// WriteReportRequest is the input to the WriteReport capability action.
-// TODO: Replace with a proto-generated type once the Aptos capability proto is defined.
-type WriteReportRequest struct {
-	Receiver [32]byte            // 32-byte Aptos receiver module address
-	Report   *sdk.ReportResponse // Signed report from consensus
-}
-
-// WriteReportReply is the response from a WriteReport call.
-// TODO: Replace with a proto-generated type once the Aptos capability proto is defined.
-type WriteReportReply struct {
-	TxHash       string
-	TxStatus     TxStatus
-	ErrorMessage *string
-}
-
-// TxStatus represents the status of a transaction.
-type TxStatus int32
-
-const (
-	TxStatusUnspecified TxStatus = 0
-	TxStatusSuccess     TxStatus = 1
-	TxStatusAborted     TxStatus = 2
-	TxStatusFatal       TxStatus = 3
 )
 
 // WriteReport validates and submits a signed report to the Aptos chain via the CRE forwarder.
@@ -70,28 +43,17 @@ func (s *Aptos) executeWriteReport(
 	request *aptoscap.WriteReportRequest,
 	metadata capabilities.RequestMetadata,
 ) (*aptoscap.WriteReportReply, error) {
-	receiver := request.Receiver
-	report := request.Report
-
-	// Build the payload for the forwarder's report entry function.
-	// Format: [num_sigs (1 byte)] + [signatures...] + [raw_report] + [report_context]
-	payload := buildForwarderPayload(report)
+	var receiver [32]byte
+	copy(receiver[:], request.Receiver)
 
 	s.lggr.Debugw("Submitting WriteReport transaction",
 		"executionID", metadata.WorkflowExecutionID,
 		"receiver", hex.EncodeToString(receiver[:]),
 	)
 
-	txReply, err := s.aptosService.SubmitTransaction(ctx, aptostypes.SubmitTransactionRequest{
-		ReceiverModuleID: aptostypes.ModuleID{
-			Address: aptostypes.AccountAddress(s.forwarderAddress),
-			Name:    "forwarder",
-		},
-		EncodedPayload: payload,
-		GasConfig:      nil, // Use default gas config
-	})
+	txReply, err := s.forwarderClient.InvokeOnReport(ctx, receiver, request.Report, request.GasConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to submit transaction: %w", err)
+		return nil, fmt.Errorf("failed to invoke forwarder report: %w", err)
 	}
 
 	if txReply == nil || txReply.PendingTransaction == nil {
@@ -150,29 +112,6 @@ func (s *Aptos) validateWriteReportInputs(requestMetadata capabilities.RequestMe
 func decodeReportMetadata(data []byte) (ocrtypes.Metadata, error) {
 	metadata, _, err := ocrtypes.Decode(data)
 	return metadata, err
-}
-
-// buildForwarderPayload builds the payload bytes sent to the Aptos forwarder.
-// Format: [num_sigs (1 byte)] + [signatures...] + [raw_report] + [report_context]
-// This mirrors the Solana forwarder payload format.
-func buildForwarderPayload(report *sdk.ReportResponse) []byte {
-	var payload []byte
-
-	// 1. Number of signatures
-	payload = append(payload, byte(len(report.Sigs)))
-
-	// 2. Signatures
-	for _, sig := range report.Sigs {
-		payload = append(payload, sig.Signature...)
-	}
-
-	// 3. Raw report
-	payload = append(payload, report.RawReport...)
-
-	// 4. Report context
-	payload = append(payload, report.ReportContext...)
-
-	return payload
 }
 
 func (s *Aptos) isUserError(err error) bool {
