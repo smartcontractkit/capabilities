@@ -1264,6 +1264,74 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		// Prove we didn't attempt to submit anything.
 		mockForwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	})
+
+	t.Run("TX first transmission - Transaction reverted on chain skips transmission info polling", func(t *testing.T) {
+		ctx := t.Context()
+		testLogger := logger.Test(t)
+		evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
+
+		receiverAddress := testutils.NewAddress()
+		reportMetadata := createTestReportMetadata()
+		encodedReportMetadata, _ := reportMetadata.Encode()
+
+		signedReport := &workflowpb.ReportResponse{
+			RawReport:     encodedReportMetadata,
+			ReportContext: []byte{},
+			Sigs:          generateRandomSignatures(),
+		}
+		writeReportRequest := &evm.WriteReportRequest{
+			Receiver: receiverAddress.Bytes(),
+			Report:   signedReport,
+		}
+		capabilitiesMetadata := createTestRequestMetadata(reportMetadata)
+
+		mockForwarderClient.
+			On("GetTransmissionInfo", mock.Anything, mock.Anything).
+			Return(contracts.TransmissionInfo{
+				Success:         false,
+				InvalidReceiver: false,
+				State:           contracts.TransmissionStateNotAttempted,
+			}, nil).
+			Once()
+
+		txHash := evmtypes.Hash(test.RandomBytes(32))
+		mockForwarderClient.
+			On("InvokeOnReport", mock.Anything, receiverAddress, signedReport, nonNilPositiveGasCfgMatcher()).
+			Return(&evmtypes.TransactionResult{
+				TxHash:           txHash,
+				TxStatus:         evmtypes.TxReverted,
+				TxIdempotencyKey: "reverted-idempotency-key",
+			}, nil).
+			Once()
+
+		receipt := evmtypes.Receipt{
+			Status:            0,
+			TxHash:            txHash,
+			GasUsed:           500,
+			EffectiveGasPrice: big.NewInt(1),
+		}
+		evmServiceMock.EXPECT().
+			GetTransactionReceipt(mock.Anything, evmtypes.GeTransactionReceiptRequest{Hash: txHash, IsExternal: false}).
+			Return(&receipt, nil)
+
+		evmServiceMock.EXPECT().
+			CalculateTransactionFee(mock.Anything, toReceiptGasInfo(receipt)).
+			Return(&evmtypes.TransactionFee{TransactionFee: big.NewInt(500)}, nil)
+
+		txResult, err := service.WriteReport(ctx, capabilitiesMetadata, writeReportRequest)
+		require.NoError(t, err)
+
+		equalWriteReportReply(t, &evm.WriteReportReply{
+			TxStatus:                        evmcappb.TxStatus_TX_STATUS_REVERTED,
+			TxHash:                          txHash[:],
+			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(),
+			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(500)),
+			ErrorMessage:                    ptr("transaction reverted on chain"),
+		}, txResult.Response)
+
+		// GetTransmissionInfo should only have been called once (the initial check), not polled after InvokeOnReport.
+		mockForwarderClient.AssertNumberOfCalls(t, "GetTransmissionInfo", 1)
+	})
 }
 
 func TestGetTransmissionID(t *testing.T) {

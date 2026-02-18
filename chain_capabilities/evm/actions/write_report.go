@@ -251,6 +251,16 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		return nil, capabilities.ResponseMetadata{}, err
 	}
 
+	if transactionResult.TxStatus == evmtypes.TxReverted {
+		e.lggr.Warnw("Transaction reverted on chain, skipping transmission info polling",
+			"txHash", common.Bytes2Hex(transactionResult.TxHash[:]),
+			"txIdempotencyKey", transactionResult.TxIdempotencyKey)
+		reply, revertErr := e.fetchTransactionReceiptAndCreateReply(ctx, transactionResult.TxHash,
+			evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED,
+			ptr("transaction reverted on chain"))
+		return reply, capabilities.ResponseMetadata{}, revertErr
+	}
+
 	newTransmissionInfo, err := withPollingRetry(ctx, e.lggr, func(ctx context.Context) (contracts.TransmissionInfo, error) {
 		readTransmissionInfo, readTransmissionErr := e.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
 		if readTransmissionErr != nil {
