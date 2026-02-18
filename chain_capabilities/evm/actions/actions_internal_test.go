@@ -11,8 +11,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/codes"
-	grpcstatus "google.golang.org/grpc/status"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
@@ -211,11 +209,6 @@ func TestIsUserError(t *testing.T) {
 			name:     "multinode.ErrNodeError is system error",
 			err:      multinode.ErrNodeError,
 			expected: false,
-		},
-		{
-			name:     "gRPC InvalidArgument is user error",
-			err:      grpcstatus.Error(codes.InvalidArgument, "execution reverted: bad input"),
-			expected: true,
 		},
 		{
 			name:     "generic error is user error",

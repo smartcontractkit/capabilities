@@ -691,12 +691,6 @@ func (e *EVM) isUserError(err error) bool {
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, multinode.ErrNodeError) {
 		return false
 	}
-	if isRevertError(err) {
-		return true
-	}
-	if s, ok := status.FromError(err); ok && s.Code() == codes.InvalidArgument {
-		return true
-	}
 	return true
 }
 
