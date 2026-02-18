@@ -73,6 +73,12 @@ enum ConsensusFailureCode {
   OUTCOME_TOO_LARGE = 3;
   // The report produced is too large to transmit. The user should reduce the size of their request.
   REPORT_TOO_LARGE = 4;
+  // More than one valid identical consensus outcome was calculated from the observation set.  This occurs when the caller of the capability
+  // is attempting to achieve identical consensus on a volatile data source, such that there are multiple clusters of f+1
+  // identical observations that are not identical to each other.
+  // The user should investigate the source of volatility in their data and consider if identical consensus is the right
+  // approach for their use case.
+  MORE_THAN_ONE_VALID_OUTCOME_FOR_IDENTICAL_CONSENSUS = 5;
 }
 
 message ConsensusFailedOutcome {

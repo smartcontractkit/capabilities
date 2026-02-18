@@ -67,10 +67,18 @@ func NewValidator(lggr logger.Logger, limitsFactory limits.Factory) (*Validator,
 	}, nil
 }
 
+// ErrRequestHeadersBothSet is returned when the request has both Headers and MultiHeaders set.
+// Request must set either Headers or MultiHeaders, not both.
+var ErrRequestHeadersBothSet = fmt.Errorf("request must set either Headers or MultiHeaders, not both")
+
 // ValidatedRequest validates the HTTP request fields and applies default values where necessary.
 func (v *Validator) ValidatedRequest(ctx context.Context, input *http.Request) (*http.Request, error) {
 	if input == nil {
 		return nil, fmt.Errorf("input cannot be nil")
+	}
+
+	if err := validateHeadersMutuallyExclusive(input); err != nil {
+		return nil, err
 	}
 
 	url := strings.TrimSpace(input.Url)
@@ -104,13 +112,30 @@ func (v *Validator) ValidatedRequest(ctx context.Context, input *http.Request) (
 	req := &http.Request{
 		Url:           url,
 		Method:        input.Method,
-		Headers:       input.Headers,
+		Headers:       input.Headers, //nolint:staticcheck // Headers deprecated, copy validated input
+		MultiHeaders:  input.MultiHeaders,
 		Body:          input.Body,
 		Timeout:       input.Timeout,
 		CacheSettings: cacheSettings,
 	}
 
 	return req, nil
+}
+
+// RequestHeaders returns an error if the request has both Headers and MultiHeaders set.
+// Callers that need to surface this as a user-facing error should wrap the result (e.g. with UserError).
+func RequestHeaders(input *http.Request) error {
+	return validateHeadersMutuallyExclusive(input)
+}
+
+// validateHeadersMutuallyExclusive returns an error if both Headers and MultiHeaders are non-empty.
+func validateHeadersMutuallyExclusive(input *http.Request) error {
+	hasHeaders := len(input.Headers) > 0 //nolint:staticcheck // Headers deprecated
+	hasMulti := len(input.MultiHeaders) > 0
+	if hasHeaders && hasMulti {
+		return ErrRequestHeadersBothSet
+	}
+	return nil
 }
 
 // validateInputWithLimiters validates input using bound limiters instead of config limits

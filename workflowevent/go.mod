@@ -4,8 +4,8 @@ go 1.25.3
 
 require (
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260210010829-97eb42ca2924
-	github.com/smartcontractkit/chainlink-common v0.9.6-0.20260209213544-a82fa419e483
-	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260209203401-a488315d180f
+	github.com/smartcontractkit/chainlink-common v0.10.1-0.20260217013856-dd1e16fa7183
+	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260210221717-2546aed27ebe
 	github.com/stretchr/testify v1.11.1
 	google.golang.org/protobuf v1.36.11
 )

@@ -44,6 +44,7 @@ const (
 	n                     = 7
 	f                     = 2
 	defaultMaxLengthBytes = 1000000 // 1 MB
+	defaultMaxReportCount = 10000
 )
 
 // nillable observation and nillable default value, -1 indicates the value should be set as nil
@@ -1063,6 +1064,7 @@ func createReportingPlugin(t *testing.T, lggr logger.Logger, f int, n int,
 		MaxObservationLengthBytes:        defaultMaxLengthBytes,
 		MaxOutcomeLengthBytes:            defaultMaxLengthBytes,
 		MaxReportLengthBytes:             defaultMaxLengthBytes,
+		MaxReportCount:                   defaultMaxReportCount,
 		HistoricalOutcomeExpirySeqNrSpan: outcomeExpirySpan,
 	}, "evm", maxRequestOutcomeSize)
 	require.NoError(t, err)
