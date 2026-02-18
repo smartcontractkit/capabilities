@@ -11,8 +11,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/shopspring/decimal"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
@@ -153,10 +151,7 @@ func (e *EVM) CallContract(
 		})
 		if err != nil {
 			if isRevertError(err) {
-				// Wrap with gRPC InvalidArgument so the user-error classification
-				// survives the ObservationError gRPC serialization round-trip
-				// through the consensus handler.
-				return nil, status.Error(codes.InvalidArgument, err.Error())
+				return nil, NewUserError(err)
 			}
 			return nil, err
 		}
