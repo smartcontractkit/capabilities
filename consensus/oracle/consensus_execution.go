@@ -77,8 +77,15 @@ func handleFieldsMapAggregation(
 		return nil, ErrInsufficientObservations
 	}
 
+	sortedKeys := make([]string, 0, len(desc))
+	for k := range desc {
+		sortedKeys = append(sortedKeys, k)
+	}
+	slices.Sort(sortedKeys)
+
 	result := make(map[string]*valuespb.Value, 0)
-	for key, d := range desc {
+	for _, key := range sortedKeys {
+		d := desc[key]
 		var (
 			aggregated *valuespb.Value
 			err        error
