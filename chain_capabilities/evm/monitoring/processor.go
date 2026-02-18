@@ -244,7 +244,13 @@ func LogAndEmitError(
 		}
 	}
 
-	lggr.Errorw(eM.GetSummary()+" err: "+eM.GetCause(), attrsToErrorKV(localLogAttributes)...)
+	logMsg := eM.GetSummary() + " err: " + eM.GetCause()
+	kvs := attrsToErrorKV(localLogAttributes)
+	if userErrMsg, ok := eM.(interface{ GetIsUserError() bool }); ok && userErrMsg.GetIsUserError() {
+		lggr.Warnw(logMsg, kvs...)
+	} else {
+		lggr.Errorw(logMsg, kvs...)
+	}
 	if err := beholderProcessor.Process(ctx, eM); err != nil {
 		lggr.Errorw(fmt.Sprintf("Failed to process %s message", getMessageName(eM)), "err", err)
 	}

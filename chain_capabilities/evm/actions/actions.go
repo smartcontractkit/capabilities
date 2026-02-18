@@ -5,11 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/shopspring/decimal"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
@@ -149,6 +152,12 @@ func (e *EVM) CallContract(
 			IsExternal:      true,
 		})
 		if err != nil {
+			if isRevertError(err) {
+				// Wrap with gRPC InvalidArgument so the user-error classification
+				// survives the ObservationError gRPC serialization round-trip
+				// through the consensus handler.
+				return nil, status.Error(codes.InvalidArgument, err.Error())
+			}
 			return nil, err
 		}
 		return resp.Data, nil
@@ -679,8 +688,20 @@ func readType[T any](ctx context.Context, reader ConsensusHandler, request ctype
 }
 
 func (e *EVM) isUserError(err error) bool {
-	return !errors.Is(err, context.DeadlineExceeded) &&
-		!errors.Is(err, multinode.ErrNodeError)
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, multinode.ErrNodeError) {
+		return false
+	}
+	if isRevertError(err) {
+		return true
+	}
+	if s, ok := status.FromError(err); ok && s.Code() == codes.InvalidArgument {
+		return true
+	}
+	return true
+}
+
+func isRevertError(err error) bool {
+	return strings.Contains(err.Error(), "execution reverted")
 }
 
 func GetError(err error, isUserError bool) caperrors.Error {
