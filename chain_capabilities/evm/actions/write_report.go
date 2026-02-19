@@ -410,7 +410,7 @@ func (e *WriteReport) pollTransmissionInfo(
 			return contracts.TransmissionInfo{}, fmt.Errorf("timed out waiting for transmission info")
 		case <-stageTimer.C:
 			stageTimerFired = true
-			e.lggr.Infow("Delta Stage has passed returning transmission info", lastValidInfo.LogAttrs())
+			e.lggr.Infow("Delta Stage has passed returning transmission info", lastValidInfo.LogAttrs()...)
 			return lastValidInfo, nil
 		case <-time.After(wait):
 		}
