@@ -3,7 +3,7 @@ module github.com/smartcontractkit/capabilities/workflows/readbalancesgen
 go 1.25.3
 
 require (
-	github.com/ethereum/go-ethereum v1.15.3
+	github.com/ethereum/go-ethereum v1.16.9
 	github.com/smartcontractkit/chainlink-common v0.9.6-0.20251124121530-666e7c593957
 )
 
