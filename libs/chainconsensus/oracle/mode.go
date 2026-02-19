@@ -22,11 +22,16 @@ type observation[keyT comparable, valueT any] struct {
 // mode - returns most frequent value, if total number of observations is at least (N+F)/2+1 and
 // number of values with identical keys is at least F+1. Returns error, otherwise.
 // If multiple values have identical number of observations, prefers value reported by oracle with the lowest oracleID.
-func mode[keyT comparable, valueT any](N, F int, observations iter.Seq2[commontypes.OracleID, observation[keyT, valueT]]) (valueT, error) {
+func mode[keyT comparable, valueT any](N, F int, observations iter.Seq2[commontypes.OracleID, *observation[keyT, valueT]]) (valueT, error) {
 	counters := make(map[keyT]*counter[valueT])
 	var totalNum int
 	for nodeID, nodeObservation := range observations {
 		totalNum++
+		// node provided an observation for a request, but it's of a different type.
+		// we should count it towards totalNum, but not towards any specific value.
+		if nodeObservation == nil {
+			continue
+		}
 		elem, ok := counters[nodeObservation.Key]
 		if !ok {
 			counters[nodeObservation.Key] = &counter[valueT]{

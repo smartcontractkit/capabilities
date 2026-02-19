@@ -260,8 +260,6 @@ func testReadContractActionExecute(t *testing.T) {
 
 		_, err = action.Execute(ctx, request)
 		require.Error(t, err)
-		var reportableError *capabilities.RemoteReportableError
-		require.ErrorAs(t, err, &reportableError)
 	},
 	)
 }

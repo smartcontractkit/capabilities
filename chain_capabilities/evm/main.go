@@ -25,7 +25,6 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/trigger"
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	evmcapserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm/server"
@@ -36,13 +35,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
 
-const (
-	CapabilityName = "evm"
-
-	repoCLLCapabilities = "https://raw.githubusercontent.com/smartcontractkit/capabilities"
-	versionRefsMain     = "refs/heads/main"
-	schemaBasePath      = repoCLLCapabilities + "/" + versionRefsMain + "/chain_capabilities/evm/monitoring"
-)
+const CapabilityName = "evm"
 
 type capabilityGRPCService struct {
 	capabilities.CapabilityInfo
@@ -79,12 +72,12 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 
 	c.lggr.Infof("Initialising %s, ChainId: %d, Network: %s", CapabilityName, cfg.ChainID, cfg.Network)
 
-	client := beholder.GetClient().ForName("evm_capability")
 	metrics, err := monitoring.NewMetrics()
 	if err != nil {
 		return fmt.Errorf("failed to create metrics: %w", err)
 	}
-	processor, err := monitoring.NewProcessor(beholder.NewProtoEmitter(c.lggr, &client, schemaBasePath), metrics)
+
+	processor, err := monitoring.NewProcessor(c.lggr, metrics)
 	if err != nil {
 		return fmt.Errorf("failed to create monitoring proto processor: %w", err)
 	}

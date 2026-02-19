@@ -2,10 +2,12 @@ package monitoring
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	"go.opentelemetry.io/otel/attribute"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
@@ -14,247 +16,193 @@ import (
 
 type processor struct {
 	metrics Metrics
-	emitter beholder.ProtoEmitter
+	lggr    logger.Logger
 }
 
-func NewProcessor(emitter beholder.ProtoEmitter, metrics Metrics) (beholder.ProtoProcessor, error) {
+func NewProcessor(lggr logger.Logger, metrics Metrics) (beholder.ProtoProcessor, error) {
 	return &processor{
-		emitter: emitter,
+		lggr:    lggr,
 		metrics: metrics,
 	}, nil
 }
 
 // Process dispatches telemetry messages to metrics and logs for all EVM operations
 func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any) error {
+
+	// Process metrics for known message types
 	switch msg := m.(type) {
+	// -- Initiated messages --
+	case *CallContractInitiated, *WriteReportInitiated, *LogTriggerInitiated,
+		*FilterLogsInitiated, *BalanceAtInitiated, *EstimateGasInitiated,
+		*GetTransactionByHashInitiated, *GetTransactionReceiptInitiated, *HeaderByNumberInitiated:
+		p.logMessage(m)
 	// -- CallContract --
-	case *CallContractInitiated:
-		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit CallContractInitiated log: %w", err)
-		}
 	case *CallContractSuccess:
-		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit CallContractSuccess log: %w", err)
-		}
+		p.logMessage(msg)
 		if err := p.metrics.OnCallContractSuccess(ctx, msg); err != nil {
 			return fmt.Errorf("failed to publish CallContractSuccess metrics: %w", err)
 		}
 	case *CallContractError:
-		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit CallContractError log: %w", err)
-		}
+		p.logMessage(msg)
 		if !msg.GetIsUserError() {
 			if err := p.metrics.OnCallContractError(ctx, msg); err != nil {
 				return fmt.Errorf("failed to publish CallContractError metrics: %w", err)
 			}
 		}
 	// -- WriteReport --
-	case *WriteReportInitiated:
-		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit WriteReportInitiated log: %w", err)
-		}
 	case *WriteReportSuccess:
-		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit WriteReportSuccess log: %w", err)
-		}
+		p.logMessage(msg)
 		if err := p.metrics.OnWriteReportSuccess(ctx, msg); err != nil {
 			return fmt.Errorf("failed to publish WriteReportSuccess metrics: %w", err)
 		}
 	case *WriteReportError:
-		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit WriteReportError log: %w", err)
-		}
+		p.logMessage(msg)
 		if !msg.GetIsUserError() {
 			if err := p.metrics.OnWriteReportError(ctx, msg); err != nil {
 				return fmt.Errorf("failed to publish WriteReportError metrics: %w", err)
 			}
 		}
 	case *WriteReportTxFeeCalculationError:
-		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit WriteReportTxFeeCalculationError log: %w", err)
-		}
+		p.logMessage(msg)
 		if err := p.metrics.OnWriteReportTxFeeCalculationError(ctx, msg); err != nil {
 			return fmt.Errorf("failed to publish WriteReportTxFeeCalculationError metrics: %w", err)
 		}
 	case *WriteReportInvalidTransmissionState:
-		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit WriteReportInvalidTransmissionState log: %w", err)
-		}
+		p.logMessage(msg)
 		if err := p.metrics.OnWriteReportInvalidTransmissionState(ctx, msg); err != nil {
 			return fmt.Errorf("failed to publish WriteReportInvalidTransmissionState metrics: %w", err)
 		}
 	case *WriteReportDuplicateTx:
-		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit WriteReportDuplicateTx log: %w", err)
-		}
+		p.logMessage(msg)
 		if err := p.metrics.OnWriteReportDuplicateTx(ctx, msg); err != nil {
 			return fmt.Errorf("failed to publish WriteReportDuplicateTx metrics: %w", err)
 		}
 	// -- LogTrigger --
-	case *LogTriggerInitiated:
-		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit LogTriggerInitiated log: %w", err)
-		}
 	case *LogTriggerSuccess:
-		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit LogTriggerSuccess log: %w", err)
-		}
+		p.logMessage(msg)
 		if err := p.metrics.OnLogTriggerSuccess(ctx, msg); err != nil {
 			return fmt.Errorf("failed to publish LogTriggerSuccess metrics: %w", err)
 		}
 	case *LogTriggerError:
-		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit LogTriggerError log: %w", err)
-		}
+		p.logMessage(msg)
 		if err := p.metrics.OnLogTriggerError(ctx, msg); err != nil {
 			return fmt.Errorf("failed to publish LogTriggerError metrics: %w", err)
 		}
 	case *LogTriggerCleanUpError:
-		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit LogTriggerCleanUpError log: %w", err)
-		}
+		p.logMessage(msg)
 		if err := p.metrics.OnLogTriggerCleanUpError(ctx, msg); err != nil {
 			return fmt.Errorf("failed to publish LogTriggerCleanUpError metrics: %w", err)
 		}
 	case *LogTriggerEventDroppedError:
-		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit TriggerEventDroppedError log: %w", err)
-		}
+		p.logMessage(msg)
 		if !msg.GetIsLimitError() {
 			if err := p.metrics.OnTriggerEventDroppedError(ctx, msg); err != nil {
 				return fmt.Errorf("failed to publish TriggerEventDroppedError metrics: %w", err)
 			}
 		}
 	// -- FilterLogs --
-	case *FilterLogsInitiated:
-		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit FilterLogsInitiated log: %w", err)
-		}
 	case *FilterLogsSuccess:
+		p.logMessage(msg)
 		if err := p.metrics.OnFilterLogsSuccess(ctx, msg); err != nil {
 			return fmt.Errorf("failed to publish FilterLogsSuccess metrics: %w", err)
 		}
-		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit FilterLogsSuccess log: %w", err)
-		}
 	case *FilterLogsError:
-		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit FilterLogsError log: %w", err)
-		}
+		p.logMessage(msg)
 		if !msg.GetIsUserError() {
 			if err := p.metrics.OnFilterLogsError(ctx, msg); err != nil {
 				return fmt.Errorf("failed to publish FilterLogsError metrics: %w", err)
 			}
 		}
 	// --- BalanceAt ---
-	case *BalanceAtInitiated:
-		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit BalanceAtInitiated log: %w", err)
-		}
 	case *BalanceAtSuccess:
-		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit BalanceAtSuccess log: %w", err)
-		}
+		p.logMessage(msg)
 		if err := p.metrics.OnBalanceAtSuccess(ctx, msg); err != nil {
 			return fmt.Errorf("failed to publish BalanceAtSuccess metrics: %w", err)
 		}
 	case *BalanceAtError:
-		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit BalanceAtError log: %w", err)
-		}
+		p.logMessage(msg)
 		if !msg.GetIsUserError() {
 			if err := p.metrics.OnBalanceAtError(ctx, msg); err != nil {
 				return fmt.Errorf("failed to publish BalanceAtError metrics: %w", err)
 			}
 		}
 	// -- EstimateGas --
-	case *EstimateGasInitiated:
-		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit EstimateGasInitiated log: %w", err)
-		}
 	case *EstimateGasSuccess:
-		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit EstimateGasSuccess log: %w", err)
-		}
+		p.logMessage(msg)
 		if err := p.metrics.OnEstimateGasSuccess(ctx, msg); err != nil {
 			return fmt.Errorf("failed to publish EstimateGasSuccess metrics: %w", err)
 		}
 	case *EstimateGasError:
-		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit EstimateGasError log: %w", err)
-		}
+		p.logMessage(msg)
 		if !msg.GetIsUserError() {
 			if err := p.metrics.OnEstimateGasError(ctx, msg); err != nil {
 				return fmt.Errorf("failed to publish EstimateGasError metrics: %w", err)
 			}
 		}
 	// -- GetTransactionByHash --
-	case *GetTransactionByHashInitiated:
-		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit GetTransactionByHashInitiated log: %w", err)
-		}
 	case *GetTransactionByHashSuccess:
-		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit GetTransactionByHashSuccess log: %w", err)
-		}
+		p.logMessage(msg)
 		if err := p.metrics.OnGetTransactionByHashSuccess(ctx, msg); err != nil {
 			return fmt.Errorf("failed to publish GetTransactionByHashSuccess metrics: %w", err)
 		}
 	case *GetTransactionByHashError:
-		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit GetTransactionByHashError log: %w", err)
-		}
+		p.logMessage(msg)
 		if !msg.GetIsUserError() {
 			if err := p.metrics.OnGetTransactionByHashError(ctx, msg); err != nil {
 				return fmt.Errorf("failed to publish GetTransactionByHashError metrics: %w", err)
 			}
 		}
 	// -- GetTransactionReceipt --
-	case *GetTransactionReceiptInitiated:
-		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit GetTransactionReceiptInitiated log: %w", err)
-		}
 	case *GetTransactionReceiptSuccess:
-		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit GetTransactionReceiptSuccess log: %w", err)
-		}
+		p.logMessage(msg)
 		if err := p.metrics.OnGetTransactionReceiptSuccess(ctx, msg); err != nil {
 			return fmt.Errorf("failed to publish GetTransactionReceiptSuccess metrics: %w", err)
 		}
 	case *GetTransactionReceiptError:
-		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit GetTransactionReceiptError log: %w", err)
-		}
+		p.logMessage(msg)
 		if !msg.GetIsUserError() {
 			if err := p.metrics.OnGetTransactionReceiptError(ctx, msg); err != nil {
 				return fmt.Errorf("failed to publish GetTransactionReceiptError metrics: %w", err)
 			}
 		}
-	// -- LatestAndFinalizedHead --
-	case *HeaderByNumberInitiated:
-		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit HeaderByNumberInitiated log: %w", err)
-		}
+	// -- HeaderByNumber --
 	case *HeaderByNumberSuccess:
-		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit HeaderByNumberSuccess log: %w", err)
-		}
+		p.logMessage(msg)
 		if err := p.metrics.OnHeaderByNumberSuccess(ctx, msg); err != nil {
 			return fmt.Errorf("failed to publish HeaderByNumberSuccess metrics: %w", err)
 		}
 	case *HeaderByNumberError:
-		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
-			return fmt.Errorf("failed to emit HeaderByNumberError log: %w", err)
-		}
 		if !msg.GetIsUserError() {
+			p.logMessage(msg)
 			if err := p.metrics.OnHeaderByNumberError(ctx, msg); err != nil {
 				return fmt.Errorf("failed to publish HeaderByNumberError metrics: %w", err)
 			}
 		}
 	default:
+		// Unknown message types are silently ignored (noop)
 		return nil
 	}
 	return nil
+}
+
+func (p *processor) logMessage(msg proto.Message) {
+	mStr := protojson.MarshalOptions{
+		UseProtoNames:   true,
+		EmitUnpopulated: true,
+	}.Format(msg)
+
+	// Convert to map for structured logging
+	var asMap map[string]any
+	err := json.Unmarshal([]byte(mStr), &asMap)
+	if err != nil {
+		p.lggr.Errorw("Failed to unmarshal telemetry message for logging",
+			"err", err,
+			"message_type", msg.ProtoReflect().Descriptor().Name(),
+			"json_message", mStr)
+		return
+	}
+
+	p.lggr.Infow("[EVM Monitoring]", "message", asMap, "entity_name", msg.ProtoReflect().Descriptor().Name())
 }
 
 func LogAndEmitSuccess(

@@ -182,9 +182,9 @@ func runLoadTest(t *testing.T, numberOfNodes int, f uint8, numberOfWorkflows int
 	filePath := generateFilePath(resultsDir)
 	err := os.WriteFile(filePath, []byte(report), 0600)
 	require.NoError(t, err)
-	fmt.Printf("Report written to %s\n", filePath)
+	t.Logf("Report written to %s\n", filePath)
 
-	fmt.Println(report)
+	t.Log(report)
 }
 
 func setupLoadtestDON(ctx context.Context, t *testing.T, lggr logger.Logger, numberOfNodes int, f uint8,

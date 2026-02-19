@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"math"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -28,8 +31,10 @@ const (
 	defaultGatewayConnectionMultiplier        = 2.0
 )
 
-var _ core.GatewayConnectorHandler = &gatewayOutboundProxy{}
-var _ common.OutboundRequestClient = &gatewayOutboundProxy{}
+var (
+	_ core.GatewayConnectorHandler = &gatewayOutboundProxy{}
+	_ common.OutboundRequestClient = &gatewayOutboundProxy{}
+)
 
 type gatewayOutboundProxy struct {
 	services.StateMachine
@@ -38,7 +43,48 @@ type gatewayOutboundProxy struct {
 	responses               *responses
 	gatewayConnectionConfig common.GatewayConnectionConfig
 	metrics                 *common.Metrics
-	validator               common.ResponseValidator
+	validator               common.RequestValidator
+}
+
+// gatewayHeadersFromInput returns either Headers or MultiHeaders for the gateway request, never both.
+// Caller must ensure input was validated (ValidatedRequest enforces at most one of Headers or MultiHeaders set).
+func gatewayHeadersFromInput(input *http.Request) (headers map[string]string, multiHeaders map[string][]string) {
+	if len(input.MultiHeaders) > 0 {
+		multiHeaders = make(map[string][]string, len(input.MultiHeaders))
+		for k, v := range input.MultiHeaders {
+			multiHeaders[k] = slices.Clone(v.GetValues())
+		}
+		return nil, multiHeaders
+	}
+	return input.Headers, nil //nolint:staticcheck // Headers deprecated but still used when MultiHeaders not set
+}
+
+// responseHeadersFromGateway converts a gateway OutboundHTTPResponse into Headers and MultiHeaders
+// for the cap http.Response. The gateway response must have exactly one of Headers or MultiHeaders set;
+// the other is derived from it. Both fields are always set on the cap response (one populated, one derived).
+func responseHeadersFromGateway(resp *gc.OutboundHTTPResponse) (headers map[string]string, multiHeaders map[string]*http.HeaderValues) {
+	if len(resp.MultiHeaders) > 0 {
+		// Source is MultiHeaders: populate multiHeaders, derive headers (comma-joined for backward compatibility).
+		multiHeaders = make(map[string]*http.HeaderValues, len(resp.MultiHeaders))
+		headers = make(map[string]string, len(resp.MultiHeaders))
+		for k, v := range resp.MultiHeaders {
+			multiHeaders[k] = &http.HeaderValues{Values: slices.Clone(v)}
+			if len(v) > 0 {
+				headers[k] = strings.Join(v, ",")
+			}
+		}
+		return headers, multiHeaders
+	}
+	// Source is Headers: populate headers, derive multiHeaders (single value per key).
+	headers = maps.Clone(resp.Headers) //nolint:staticcheck // Headers deprecated but gateway may send it
+	if headers == nil {
+		headers = make(map[string]string)
+	}
+	multiHeaders = make(map[string]*http.HeaderValues, len(headers))
+	for k, v := range headers {
+		multiHeaders[k] = &http.HeaderValues{Values: []string{v}}
+	}
+	return headers, multiHeaders
 }
 
 func applyDefaults(cfg common.GatewayConnectionConfig) common.GatewayConnectionConfig {
@@ -54,7 +100,7 @@ func applyDefaults(cfg common.GatewayConnectionConfig) common.GatewayConnectionC
 	return cfg
 }
 
-func NewGatewayOutboundProxy(gatewayConnector core.GatewayConnector, config common.ServiceConfig, lggr logger.Logger, metrics *common.Metrics, validator common.ResponseValidator) (*gatewayOutboundProxy, error) {
+func NewGatewayOutboundProxy(gatewayConnector core.GatewayConnector, config common.ServiceConfig, lggr logger.Logger, metrics *common.Metrics, validator common.RequestValidator) (*gatewayOutboundProxy, error) {
 	return &gatewayOutboundProxy{
 		gatewayConnector:        gatewayConnector,
 		responses:               newResponses(),
@@ -70,15 +116,26 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 	ctx = metadata.ContextWithCRE(ctx)
 	requestID := common.GetRequestID(gc.MethodHTTPAction, metadata.WorkflowID, metadata.WorkflowExecutionID)
 	lggr := logger.With(p.lggr, "requestID", requestID, "workflowID", metadata.WorkflowID, "workflowExecutionID", metadata.WorkflowExecutionID, "workflowOwner", metadata.WorkflowOwner)
+	validatedInput, err := p.validator.ValidatedRequest(ctx, input)
+	if err != nil {
+		p.metrics.IncrementInputValidationFailures(ctx, lggr)
+		return nil, 0, NewUserError(err.Error())
+	}
+	input = validatedInput
+
 	ctx, cancel := context.WithTimeout(ctx, input.Timeout.AsDuration())
 	defer cancel()
+
+	// Set only one of Headers or MultiHeaders on the outgoing request (MultiHeaders if input has it, else Headers).
+	gatewayHeaders, gatewayMultiHeaders := gatewayHeadersFromInput(input)
 
 	gatewayReq := gc.OutboundHTTPRequest{
 		WorkflowID:    metadata.WorkflowID,
 		WorkflowOwner: metadata.WorkflowOwner,
 		URL:           input.Url,
 		Method:        input.Method,
-		Headers:       input.Headers,
+		Headers:       gatewayHeaders,      // set when input has no MultiHeaders
+		MultiHeaders:  gatewayMultiHeaders, // set when input has MultiHeaders
 		Body:          input.Body,
 		// Casting is safe because input to this function is already validated
 		TimeoutMs: uint32(input.Timeout.AsDuration().Milliseconds()), //nolint:gosec // G115
@@ -139,10 +196,13 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 			p.metrics.IncrementExecutionError(ctx, common.ProxyModeGateway, lggr)
 			return nil, resp.ExternalEndpointLatency, fmt.Errorf("gateway returned error: %s", resp.ErrorMessage)
 		}
+		headers, multiHeaders := responseHeadersFromGateway(&resp)
+
 		response := &http.Response{
-			StatusCode: uint32(resp.StatusCode), //nolint:gosec // G115
-			Headers:    resp.Headers,
-			Body:       resp.Body,
+			StatusCode:   uint32(resp.StatusCode), //nolint:gosec // G115
+			Headers:      headers,
+			MultiHeaders: multiHeaders,
+			Body:         resp.Body,
 		}
 
 		if err := p.validator.ValidateResponseSize(ctx, response.Body); err != nil {

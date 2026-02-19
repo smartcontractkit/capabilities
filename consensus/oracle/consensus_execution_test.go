@@ -96,7 +96,7 @@ func Test_CalculateOutcomeForObservations(t *testing.T) {
 					Aggregation: sdk.AggregationType_AGGREGATION_TYPE_MEDIAN,
 				},
 			},
-			expectedError: ErrMultipleValuesMetThreshold,
+			expectedError: ErrMoreThanOneValidOutcomeForIdenticalConsensus,
 		},
 		{
 			name: "median: mixed types, one eligible type (int64) - handled by filtering",
@@ -434,4 +434,50 @@ func mustWrap(v any) *valuespb.Value {
 		panic(err)
 	}
 	return values.Proto(wrapped)
+}
+
+// Test_FieldsMapAggregation_ErrorDeterminism verifies that handleFieldsMapAggregation
+// always returns the same error when multiple fields fail aggregation with no defaults.
+// The desc map keys are iterated in sorted order so the first-failing key is stable.
+func Test_FieldsMapAggregation_ErrorDeterminism(t *testing.T) {
+	lggr := logger.Test(t)
+	f := 2
+
+	observations := make([]*valuespb.Value, 2*f+1)
+	for i := range observations {
+		observations[i] = valuespb.NewMapValue(map[string]*valuespb.Value{
+			"Alpha":   values.Proto(values.NewString("unique-" + string(rune('A'+i)))),
+			"Beta":    values.Proto(values.NewString("unique-" + string(rune('Z'-i)))),
+			"Gamma":   values.Proto(values.NewString("unique-" + string(rune('a'+i)))),
+			"Delta":   values.Proto(values.NewString("unique-" + string(rune('z'-i)))),
+			"Epsilon": values.Proto(values.NewString("unique-" + string(rune('0'+i)))),
+		})
+	}
+
+	desc := map[string]*sdk.ConsensusDescriptor{
+		"Alpha":   {Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL}},
+		"Beta":    {Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL}},
+		"Gamma":   {Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL}},
+		"Delta":   {Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL}},
+		"Epsilon": {Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL}},
+	}
+
+	seenErrors := map[string]bool{}
+	for i := 0; i < 200; i++ {
+		_, err := handleFieldsMapAggregation(lggr, observations, desc, nil, f)
+		require.Error(t, err)
+		seenErrors[err.Error()] = true
+	}
+
+	require.Equal(t, 1, len(seenErrors),
+		"handleFieldsMapAggregation must return a deterministic error regardless of map iteration order")
+	require.Contains(t, firstKey(seenErrors), "aggregation for field failed 'Alpha'",
+		"sorted iteration should always fail on the alphabetically first key")
+}
+
+func firstKey(m map[string]bool) string {
+	for k := range m {
+		return k
+	}
+	return ""
 }

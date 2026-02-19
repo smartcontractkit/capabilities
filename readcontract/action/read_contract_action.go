@@ -193,7 +193,7 @@ func (r *ReadContractAction) getContractReader(ctx context.Context, contractRead
 
 	reader, err := r.relayer.NewContractReader(ctx, []byte(contractReaderConfig))
 	if err != nil {
-		return nil, fmt.Errorf("error fetching contract reader: %w", capabilities.NewRemoteReportableError(err))
+		return nil, fmt.Errorf("error fetching contract reader: %w", err)
 	}
 
 	capabiltyContractReader := &nonConsensusContractReader{

@@ -32,10 +32,11 @@ type OutcomeBatch struct {
 	currentSerialisedBatchSize     int
 	initialBatchOverheadSize       int
 	keybundleIDForConsensusFailure string
+	maxNumberOfReports             int
 }
 
 func NewOutcomeBatch(ctx context.Context, lggr logger.Logger, outctx ocr3types.OutcomeContext, outcomeExpirySeqNrSpan uint64, maxOutcomeLengthBytes int,
-	keybundleIDForConsensusFailure string, metrics metrics, maxRequestOutcomeSize int) (*OutcomeBatch, error) {
+	keybundleIDForConsensusFailure string, metrics metrics, maxRequestOutcomeSize int, maxNumberOfReports int) (*OutcomeBatch, error) {
 	metrics.IncBatchRequestsTotal(ctx, "outcome")
 	historicalOutcomes, err := getNonExpiredHistoricalRequestOutcomes(lggr, outctx, outcomeExpirySeqNrSpan)
 	if err != nil {
@@ -56,6 +57,7 @@ func NewOutcomeBatch(ctx context.Context, lggr logger.Logger, outctx ocr3types.O
 		metrics:                        metrics,
 		maxOutcomeLengthBytes:          maxOutcomeLengthBytes,
 		maxRequestOutcomeSize:          maxRequestOutcomeSize,
+		maxNumberOfReports:             maxNumberOfReports,
 	}, nil
 }
 
@@ -237,6 +239,13 @@ func (o *OutcomeBatch) outcomeWouldFit(startingSize int, requestID string, reque
 
 func (o *OutcomeBatch) checkOutcomeBatchHasCapacity(requestID string, requestOutcome proto.Message,
 	historicalSeqNr uint64) bool {
+
+	// The number of outcomes should never exceed the max number of reports as this would cause outcomes to be lost and need recalculating on subsequent rounds
+	if len(o.Outcomes) == o.maxNumberOfReports {
+		o.lggr.Debugw("outcome batch has reached maximum number of reports", "maxNumberOfReports", o.maxNumberOfReports)
+		return false
+	}
+
 	fits, newSize := o.outcomeWouldFit(o.currentSerialisedBatchSize, requestID, requestOutcome, historicalSeqNr)
 	if fits {
 		o.currentSerialisedBatchSize = newSize
