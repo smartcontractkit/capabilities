@@ -19,4 +19,5 @@ type Config struct {
 	UnknownRequestsTTL            time.Duration `json:"unknownRequestsTTL"`
 	// DeltaStage for staggered transmission scheduling
 	DeltaStage time.Duration `json:"deltaStage"`
+	IsLocaL    bool          `json:"isLocal"` // use in integration-test to skip transmission scheduler initialization for log_trigger
 }

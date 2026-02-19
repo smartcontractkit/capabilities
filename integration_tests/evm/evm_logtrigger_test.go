@@ -458,6 +458,8 @@ type EVMCapabilityConfig struct {
 	CREForwarderAddress    string        `json:"creForwarderAddress"`
 	ReceiverGasMinimum     uint64        `json:"receiverGasMinimum"`
 	NodeAddress            string        `json:"nodeAddress"`
+	DeltaStage             time.Duration `json:"deltaStage"`
+	IsLocal                bool          `json:"isLocal"`
 }
 
 func CreateEvmCapabilityConfig(t *testing.T, chainID uint64, network string, duration time.Duration) string {
@@ -468,6 +470,8 @@ func CreateEvmCapabilityConfig(t *testing.T, chainID uint64, network string, dur
 		CREForwarderAddress:    "1234567890abcdef1234567890abcdef12345678", //fake address for testing
 		ReceiverGasMinimum:     1,
 		NodeAddress:            "fakeAddressForTesting", //fake address for testing
+		DeltaStage:             time.Second,
+		IsLocal:                true, //bypass transmission scheduler initialization, since we don't use write report in our test anyway
 	}
 
 	configJSON, err := json.Marshal(readContractConfig)

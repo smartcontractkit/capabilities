@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"time"
 
@@ -100,8 +101,6 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	c.chainSelector = cs
 	c.id = "evm" + ":ChainSelector:" + strconv.FormatUint(cs, 10) + "@1.0.0"
 
-	c.initMyDON(ctx, dependencies)
-
 	chainInfo, err := relayer.GetChainInfo(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to fetch chain info for chainID %d from relayer: %w", cfg.ChainID, err)
@@ -125,7 +124,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return fmt.Errorf("invalid delta stage %d", cfg.DeltaStage)
 	}
 
-	scheduler, err := c.initialiseTransmissionScheduler(ctx, dependencies.CapabilityRegistry, cfg.DeltaStage)
+	scheduler, err := c.initialiseTransmissionScheduler(ctx, dependencies.CapabilityRegistry, cfg.DeltaStage, cfg.IsLocaL)
 	if err != nil {
 		return fmt.Errorf("failed to initialize transmission scheduler: %w", err)
 	}
@@ -172,12 +171,12 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	return nil
 }
 
-func (c *capabilityGRPCService) initMyDON(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
-	localNode, err := dependencies.CapabilityRegistry.LocalNode(ctx)
+func (c *capabilityGRPCService) initMyDON(ctx context.Context, registry core.CapabilitiesRegistry) error {
+	localNode, err := registry.LocalNode(ctx)
 
 	var dons []capabilities.DON
 
-	donsWithNodes, err := dependencies.CapabilityRegistry.DONsForCapability(ctx, c.id)
+	donsWithNodes, err := registry.DONsForCapability(ctx, c.id)
 	if err != nil {
 		return fmt.Errorf("failed getting dons for capability: %w", err)
 	}
@@ -209,7 +208,17 @@ func (c *capabilityGRPCService) initialiseTransmissionScheduler(
 	ctx context.Context,
 	capRegistry core.CapabilitiesRegistry,
 	deltaStage time.Duration,
+	isLocal bool,
 ) (actions.TransmissionScheduler, error) {
+	if isLocal {
+		return actions.TransmissionScheduler{}, nil
+	}
+
+	err := c.initMyDON(ctx, capRegistry)
+	if err != nil {
+		return actions.TransmissionScheduler{}, fmt.Errorf("failed to initialize capability with my don info: %w", err)
+	}
+
 	localNode, err := capRegistry.LocalNode(ctx)
 	if err != nil {
 		return actions.TransmissionScheduler{}, fmt.Errorf("failed to get local node: %w", err)
@@ -236,13 +245,7 @@ func (c *capabilityGRPCService) initialiseTransmissionScheduler(
 		return actions.TransmissionScheduler{}, fmt.Errorf("DON members list is empty")
 	}
 
-	found := false
-	for _, peerID := range donPeerIDs {
-		if peerID == *myPeerID {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(donPeerIDs, *myPeerID)
 	if !found {
 		return actions.TransmissionScheduler{}, fmt.Errorf("local peer ID %s not found in DON members", myPeerID.String())
 	}
