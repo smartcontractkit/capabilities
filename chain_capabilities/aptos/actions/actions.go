@@ -5,30 +5,51 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
+	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/config"
 )
 
 type Aptos struct {
-	aptosService    types.AptosService
-	forwarderClient CREForwarderClient
-	lggr            logger.SugaredLogger
+	aptosService      types.AptosService
+	forwarderClient   CREForwarderClient
+	lggr              logger.SugaredLogger
+	maxGasAmountLimit limits.BoundLimiter[uint64]
+	reportSizeLimit   limits.BoundLimiter[commoncfg.Size]
 }
 
-func NewAptos(cfg *config.Config, aptosService types.AptosService, lggr logger.Logger) (*Aptos, error) {
+func NewAptos(cfg *config.Config, aptosService types.AptosService, lggr logger.Logger, limitsFactory limits.Factory) (*Aptos, error) {
 	if aptosService == nil {
 		return nil, fmt.Errorf("aptos service is required")
 	}
 
 	fc := newForwarderClient(aptosService, lggr, cfg.CREForwarderAddress)
 
-	return &Aptos{
+	a := &Aptos{
 		aptosService:    aptosService,
 		forwarderClient: fc,
 		lggr:            logger.Sugared(lggr),
-	}, nil
+	}
+
+	return a, a.initLimiters(limitsFactory)
+}
+
+func (a *Aptos) initLimiters(limitsFactory limits.Factory) (err error) {
+	// PLEX-1920 this is initial values taken from solana. Can be tuned later
+	reportSizeLimit := settings.Size(commoncfg.Byte * 265)
+	a.reportSizeLimit, err = limits.MakeBoundLimiter(limitsFactory, reportSizeLimit)
+	if err != nil {
+		return
+	}
+
+	// this is arbitrary
+	maxGasAmountLimit := settings.Uint64(1_000_000)
+	a.maxGasAmountLimit, err = limits.MakeBoundLimiter(limitsFactory, maxGasAmountLimit)
+	return
 }
 
 func GetError(err error, isUserError bool) caperrors.Error {

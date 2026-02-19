@@ -7,7 +7,7 @@ require (
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260210010829-97eb42ca2924
 	github.com/smartcontractkit/chain-selectors v1.0.90
 	github.com/smartcontractkit/chainlink-aptos v0.0.0-20260217202121-e180775e1fb5
-	github.com/smartcontractkit/chainlink-common v0.10.1-0.20260217104651-9e1a972c06cc
+	github.com/smartcontractkit/chainlink-common v0.10.1-0.20260218165451-e87d34b6ea14
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260217103918-db5a4ede0b6f
 )
 

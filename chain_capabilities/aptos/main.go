@@ -15,6 +15,7 @@ import (
 	aptoscapserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
@@ -121,7 +122,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return err
 	}
 
-	c.Aptos, err = actions.NewAptos(cfg, aptosService, c.lggr)
+	c.Aptos, err = actions.NewAptos(cfg, aptosService, c.lggr, limits.Factory{Logger: c.lggr})
 	if err != nil {
 		return fmt.Errorf("failed to create Aptos actions: %w", err)
 	}
