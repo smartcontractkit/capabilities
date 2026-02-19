@@ -1126,8 +1126,8 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 
 	t.Run("TX locally attempted but failed; queue position behavior", func(t *testing.T) {
 		for _, queuePosition := range []int{0, 1, 2, 3} {
-			queuePosition := queuePosition
-			t.Run("queue position "+strconv.Itoa(queuePosition), func(t *testing.T) {
+			queuePositionCapture := queuePosition
+			t.Run("queue position "+strconv.Itoa(queuePositionCapture), func(t *testing.T) {
 				ctx := t.Context()
 				testLogger := logger.Test(t)
 				evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
@@ -1295,8 +1295,8 @@ func TestPollTransmissionInfo_QueuePositionScenarios(t *testing.T) {
 
 	t.Run("position 0 succeeded, others return succeeded", func(t *testing.T) {
 		for _, queuePosition := range []int{0, 1, 2, 3} {
-			queuePosition := queuePosition
-			t.Run("queue position "+strconv.Itoa(queuePosition), func(t *testing.T) {
+			queuePositionCapture := queuePosition
+			t.Run("queue position "+strconv.Itoa(queuePositionCapture), func(t *testing.T) {
 				wr, testLogger, mockForwarderClient, request, transmissionID :=
 					setupPollTransmissionInfoForQueuePosition(t, queuePosition)
 
@@ -1320,8 +1320,8 @@ func TestPollTransmissionInfo_QueuePositionScenarios(t *testing.T) {
 
 	t.Run("position 0 failed, next one succeeded, rest handle success", func(t *testing.T) {
 		for _, queuePosition := range []int{0, 1, 2, 3} {
-			queuePosition := queuePosition
-			t.Run("queue position "+strconv.Itoa(queuePosition), func(t *testing.T) {
+			queuePositionCapture := queuePosition
+			t.Run("queue position "+strconv.Itoa(queuePositionCapture), func(t *testing.T) {
 				wr, testLogger, mockForwarderClient, request, transmissionID :=
 					setupPollTransmissionInfoForQueuePosition(t, queuePosition)
 

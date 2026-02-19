@@ -8,8 +8,9 @@ import (
 
 	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions"
 )
 
 func peerID(seed byte) p2ptypes.PeerID {

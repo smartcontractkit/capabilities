@@ -173,6 +173,9 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 
 func (c *capabilityGRPCService) initMyDON(ctx context.Context, registry core.CapabilitiesRegistry) error {
 	localNode, err := registry.LocalNode(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to receiver local node: %w", err)
+	}
 
 	var dons []capabilities.DON
 
@@ -234,9 +237,7 @@ func (c *capabilityGRPCService) initialiseTransmissionScheduler(
 
 	var donPeerIDs []p2ptypes.PeerID
 	myPeerID := localNode.PeerID
-	for _, peerID := range c.DON.Members {
-		donPeerIDs = append(donPeerIDs, peerID)
-	}
+	donPeerIDs = append(donPeerIDs, c.DON.Members...)
 
 	if myPeerID == nil {
 		return actions.TransmissionScheduler{}, fmt.Errorf("local node peer ID is nil")
