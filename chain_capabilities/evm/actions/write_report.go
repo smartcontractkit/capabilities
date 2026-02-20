@@ -392,7 +392,7 @@ func (e *WriteReport) fetchTransactionReceiptAndCreateReply(ctx context.Context,
 	}
 
 	txStatus := evm.TxStatus_TX_STATUS_SUCCESS
-	if txReceipt.Status == 0 {
+	if txReceipt.Status == 0 || receiverStatus == evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED {
 		txStatus = evm.TxStatus_TX_STATUS_REVERTED
 	}
 
