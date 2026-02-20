@@ -173,10 +173,7 @@ func (e *EVM) CallContract(
 
 	data, err := readType[[]byte](ctx, e.ConsensusHandler, request)
 	if err != nil {
-		if isRevertError(err) {
-			return nil, NewUserError(err)
-		}
-		isUserError := e.isUserError(err)
+		isUserError := isRevertError(err) || e.isUserError(err)
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor,
 			e.messageBuilder.BuildCallContractError(telemetryContext, callMsg, blockNumber.Int64(), "Failed to read CallContract", err.Error(), isUserError))
 		return nil, GetError(err, isUserError)
