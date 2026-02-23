@@ -14,6 +14,15 @@ import (
 
 func ns(name string) string { return fmt.Sprintf("evm_capability_%s", name) }
 
+// evmCapDurationBuckets extends the default OTel histogram boundaries (which
+// cap at 10 000 ms) so latency spikes beyond 10s are captured with full
+// resolution up to 60s.  Values are in milliseconds matching the metric unit.
+var evmCapDurationBuckets = []float64{
+	0, 5, 10, 25, 50, 75, 100, 250, 500, 750,
+	1000, 2500, 5000, 7500, 10000,
+	15000, 20000, 30000, 45000, 60000,
+}
+
 // Metrics holds all per-method instruments
 type Metrics struct {
 	CallContractSuccess struct {
@@ -91,135 +100,136 @@ type Metrics struct {
 func NewMetrics() (Metrics, error) {
 	m := Metrics{}
 	var err error
+	buckets := commoncapbeholder.WithHistogramBuckets(evmCapDurationBuckets...)
 
 	// -- CallContract --
 	ccSuccess := commoncapbeholder.NewMetricsInfoCapBasic(ns("call_contract_success"), commonbeholder.ToSchemaFullName(&CallContractSuccess{}))
-	m.CallContractSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(ccSuccess)
+	m.CallContractSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(ccSuccess, buckets)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create call contract success metric: %w", err)
 	}
 	ccErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("call_contract_error"), commonbeholder.ToSchemaFullName(&CallContractError{}))
-	m.CallContractError.basic, err = commoncapbeholder.NewMetricsCapBasic(ccErr)
+	m.CallContractError.basic, err = commoncapbeholder.NewMetricsCapBasic(ccErr, buckets)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create call contract error metric: %w", err)
 	}
 	// -- WriteReport --
 	wrSuccess := commoncapbeholder.NewMetricsInfoCapBasic(ns("write_report_success"), commonbeholder.ToSchemaFullName(&WriteReportSuccess{}))
-	m.WriteReportSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(wrSuccess)
+	m.WriteReportSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(wrSuccess, buckets)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create write report success metric: %w", err)
 	}
 	wrErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("write_report_error"), commonbeholder.ToSchemaFullName(&WriteReportError{}))
-	m.WriteReportError.basic, err = commoncapbeholder.NewMetricsCapBasic(wrErr)
+	m.WriteReportError.basic, err = commoncapbeholder.NewMetricsCapBasic(wrErr, buckets)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create write report error metric: %w", err)
 	}
 	wrTxFeeErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("write_report_tx_fee_calculation_error"), commonbeholder.ToSchemaFullName(&WriteReportTxFeeCalculationError{}))
-	m.WriteReportTxFeeCalculationError.basic, err = commoncapbeholder.NewMetricsCapBasic(wrTxFeeErr)
+	m.WriteReportTxFeeCalculationError.basic, err = commoncapbeholder.NewMetricsCapBasic(wrTxFeeErr, buckets)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create write report tx fee calculation error metric: %w", err)
 	}
 	wrInvalidState := commoncapbeholder.NewMetricsInfoCapBasic(ns("write_report_invalid_transmission_state"), commonbeholder.ToSchemaFullName(&WriteReportInvalidTransmissionState{}))
-	m.WriteReportInvalidTransmissionState.basic, err = commoncapbeholder.NewMetricsCapBasic(wrInvalidState)
+	m.WriteReportInvalidTransmissionState.basic, err = commoncapbeholder.NewMetricsCapBasic(wrInvalidState, buckets)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create write report invalid transmission state metric: %w", err)
 	}
 	wrDuplicateTx := commoncapbeholder.NewMetricsInfoCapBasic(ns("write_report_duplicate_tx"), commonbeholder.ToSchemaFullName(&WriteReportDuplicateTx{}))
-	m.WriteReportDuplicateTx.basic, err = commoncapbeholder.NewMetricsCapBasic(wrDuplicateTx)
+	m.WriteReportDuplicateTx.basic, err = commoncapbeholder.NewMetricsCapBasic(wrDuplicateTx, buckets)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create write report duplicate tx metric: %w", err)
 	}
 
 	// -- LogTrigger --
 	ltSuccess := commoncapbeholder.NewMetricsInfoCapBasic(ns("log_trigger_success"), commonbeholder.ToSchemaFullName(&LogTriggerSuccess{}))
-	m.LogTriggerSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(ltSuccess)
+	m.LogTriggerSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(ltSuccess, buckets)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create log trigger success metric: %w", err)
 	}
 	ltErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("log_trigger_error"), commonbeholder.ToSchemaFullName(&LogTriggerError{}))
-	m.LogTriggerError.basic, err = commoncapbeholder.NewMetricsCapBasic(ltErr)
+	m.LogTriggerError.basic, err = commoncapbeholder.NewMetricsCapBasic(ltErr, buckets)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create log trigger error metric: %w", err)
 	}
 	ltcuErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("log_trigger_clean_up_error"), commonbeholder.ToSchemaFullName(&LogTriggerCleanUpError{}))
-	m.LogTriggerCleanUpError.basic, err = commoncapbeholder.NewMetricsCapBasic(ltcuErr)
+	m.LogTriggerCleanUpError.basic, err = commoncapbeholder.NewMetricsCapBasic(ltcuErr, buckets)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create log trigger clean up error metric: %w", err)
 	}
 	ltedErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("log_trigger_event_dropped_error"), commonbeholder.ToSchemaFullName(&LogTriggerEventDroppedError{}))
-	m.LogTriggerEventDroppedError.basic, err = commoncapbeholder.NewMetricsCapBasic(ltedErr)
+	m.LogTriggerEventDroppedError.basic, err = commoncapbeholder.NewMetricsCapBasic(ltedErr, buckets)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create log trigger event dropped error metric: %w", err)
 	}
 
 	// -- FilterLogs --
 	flSuccess := commoncapbeholder.NewMetricsInfoCapBasic(ns("filter_logs_success"), commonbeholder.ToSchemaFullName(&FilterLogsSuccess{}))
-	m.FilterLogsSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(flSuccess)
+	m.FilterLogsSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(flSuccess, buckets)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create filter logs success metric: %w", err)
 	}
 	flErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("filter_logs_error"), commonbeholder.ToSchemaFullName(&FilterLogsError{}))
-	m.FilterLogsError.basic, err = commoncapbeholder.NewMetricsCapBasic(flErr)
+	m.FilterLogsError.basic, err = commoncapbeholder.NewMetricsCapBasic(flErr, buckets)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create filter logs error metric: %w", err)
 	}
 
 	// -- BalanceAt --
 	baSuccess := commoncapbeholder.NewMetricsInfoCapBasic(ns("balance_at_success"), commonbeholder.ToSchemaFullName(&BalanceAtSuccess{}))
-	m.BalanceAtSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(baSuccess)
+	m.BalanceAtSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(baSuccess, buckets)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create balance at success metric: %w", err)
 	}
 	baErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("balance_at_error"), commonbeholder.ToSchemaFullName(&BalanceAtError{}))
-	m.BalanceAtError.basic, err = commoncapbeholder.NewMetricsCapBasic(baErr)
+	m.BalanceAtError.basic, err = commoncapbeholder.NewMetricsCapBasic(baErr, buckets)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create balance at error metric: %w", err)
 	}
 
 	// -- EstimateGas --
 	egSuccess := commoncapbeholder.NewMetricsInfoCapBasic(ns("estimate_gas_success"), commonbeholder.ToSchemaFullName(&EstimateGasSuccess{}))
-	m.EstimateGasSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(egSuccess)
+	m.EstimateGasSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(egSuccess, buckets)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create estimate gas success metric: %w", err)
 	}
 	egErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("estimate_gas_error"), commonbeholder.ToSchemaFullName(&EstimateGasError{}))
-	m.EstimateGasError.basic, err = commoncapbeholder.NewMetricsCapBasic(egErr)
+	m.EstimateGasError.basic, err = commoncapbeholder.NewMetricsCapBasic(egErr, buckets)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create estimate gas error metric: %w", err)
 	}
 
 	// -- GetTransactionByHash --
 	txSuccess := commoncapbeholder.NewMetricsInfoCapBasic(ns("get_transaction_by_hash_success"), commonbeholder.ToSchemaFullName(&GetTransactionByHashSuccess{}))
-	m.GetTxByHashSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(txSuccess)
+	m.GetTxByHashSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(txSuccess, buckets)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create get tx by hash success metric: %w", err)
 	}
 	txErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("get_transaction_by_hash_error"), commonbeholder.ToSchemaFullName(&GetTransactionByHashError{}))
-	m.GetTxByHashError.basic, err = commoncapbeholder.NewMetricsCapBasic(txErr)
+	m.GetTxByHashError.basic, err = commoncapbeholder.NewMetricsCapBasic(txErr, buckets)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create get tx by hash error metric: %w", err)
 	}
 
 	// -- GetTransactionReceipt --
 	rcSuccess := commoncapbeholder.NewMetricsInfoCapBasic(ns("get_transaction_receipt_success"), commonbeholder.ToSchemaFullName(&GetTransactionReceiptSuccess{}))
-	m.GetReceiptSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(rcSuccess)
+	m.GetReceiptSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(rcSuccess, buckets)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create get receipt success metric: %w", err)
 	}
 	rcErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("get_transaction_receipt_error"), commonbeholder.ToSchemaFullName(&GetTransactionReceiptError{}))
-	m.GetReceiptError.basic, err = commoncapbeholder.NewMetricsCapBasic(rcErr)
+	m.GetReceiptError.basic, err = commoncapbeholder.NewMetricsCapBasic(rcErr, buckets)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create get receipt error metric: %w", err)
 	}
 
 	// -- HeaderByNumber --
 	headerByNumberSuccess := commoncapbeholder.NewMetricsInfoCapBasic(ns("header_by_number_success"), commonbeholder.ToSchemaFullName(&HeaderByNumberSuccess{}))
-	m.HeaderByNumberSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(headerByNumberSuccess)
+	m.HeaderByNumberSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(headerByNumberSuccess, buckets)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create header by number success metric: %w", err)
 	}
 	headerByNumberErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("header_by_number_error"), commonbeholder.ToSchemaFullName(&HeaderByNumberError{}))
-	m.HeaderByNumberError.basic, err = commoncapbeholder.NewMetricsCapBasic(headerByNumberErr)
+	m.HeaderByNumberError.basic, err = commoncapbeholder.NewMetricsCapBasic(headerByNumberErr, buckets)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create header by number error metric: %w", err)
 	}

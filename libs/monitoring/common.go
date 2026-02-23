@@ -51,12 +51,32 @@ type MetricsCapBasic struct {
 	capDuration       metric.Int64Histogram // ts.emit - ts.start
 }
 
-// NewMetricsCapBasic creates a new MetricsCapBasic using the provided MetricsInfoCapBasic
-func NewMetricsCapBasic(info MetricsInfoCapBasic) (MetricsCapBasic, error) {
+// CapBasicOption configures optional behaviour for NewMetricsCapBasic.
+type CapBasicOption func(*capBasicConfig)
+
+type capBasicConfig struct {
+	histogramBuckets []float64
+}
+
+// WithHistogramBuckets overrides the default OTel SDK histogram bucket
+// boundaries for the capDuration histogram.
+func WithHistogramBuckets(boundaries ...float64) CapBasicOption {
+	return func(c *capBasicConfig) {
+		c.histogramBuckets = boundaries
+	}
+}
+
+// NewMetricsCapBasic creates a new MetricsCapBasic using the provided MetricsInfoCapBasic.
+// Pass WithHistogramBuckets to override the default histogram bucket boundaries.
+func NewMetricsCapBasic(info MetricsInfoCapBasic, opts ...CapBasicOption) (MetricsCapBasic, error) {
+	var cfg capBasicConfig
+	for _, o := range opts {
+		o(&cfg)
+	}
+
 	meter := beholder.GetMeter()
 	set := MetricsCapBasic{}
 
-	// Create new metrics
 	var err error
 
 	set.count, err = info.count.NewInt64Counter(meter)
@@ -74,7 +94,16 @@ func NewMetricsCapBasic(info MetricsInfoCapBasic) (MetricsCapBasic, error) {
 		return set, fmt.Errorf("failed to create new gauge: %w", err)
 	}
 
-	set.capDuration, err = info.capDuration.NewInt64Histogram(meter)
+	if len(cfg.histogramBuckets) > 0 {
+		set.capDuration, err = meter.Int64Histogram(
+			info.capDuration.Name,
+			metric.WithUnit(info.capDuration.Unit),
+			metric.WithDescription(info.capDuration.Description),
+			metric.WithExplicitBucketBoundaries(cfg.histogramBuckets...),
+		)
+	} else {
+		set.capDuration, err = info.capDuration.NewInt64Histogram(meter)
+	}
 	if err != nil {
 		return set, fmt.Errorf("failed to create new histogram: %w", err)
 	}
