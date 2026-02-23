@@ -22,6 +22,8 @@ type TransmissionScheduler struct {
 	lggr       logger.Logger
 }
 
+const defaultDeltaStage = 15 * time.Second
+
 func NewTransmissionScheduler(
 	myPeerID p2ptypes.PeerID,
 	donMembers []p2ptypes.PeerID,
@@ -29,6 +31,9 @@ func NewTransmissionScheduler(
 	F uint8,
 	lggr logger.Logger,
 ) TransmissionScheduler {
+	if deltaStage <= 0 {
+		lggr.Debugf("deltaStage is set to a zero/negative value %v using default value of %v.", deltaStage, defaultDeltaStage)
+	}
 	return TransmissionScheduler{
 		myPeerID:   myPeerID,
 		donMembers: slices.Clone(donMembers),
