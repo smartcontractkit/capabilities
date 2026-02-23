@@ -49,7 +49,6 @@ func (m *MessageBuilder) BuildWriteReportTxFeeCalculationError(tc TelemetryConte
 		ExecutionContext: m.BuildExecutionContext(tc),
 		Summary:          summary,
 		Cause:            cause,
-		TxIdempotencyKey: txIdempotencyKey,
 	}
 }
 

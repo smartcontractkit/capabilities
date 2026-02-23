@@ -79,6 +79,19 @@ func (r *WriteReportError) MetricAttributes() []attribute.KeyValue {
 	return r.ExecutionContext.MetricsAttributes()
 }
 
+func (r *WriteReportTxFeeCalculationError) LogAttributes() []attribute.KeyValue {
+	attributes := []attribute.KeyValue{
+		attribute.String("receiver", getReceiver(r.Req.GetReceiver())),
+		attribute.String("summary", r.GetSummary()),
+	}
+
+	return append(attributes, r.ExecutionContext.LogAttributes()...)
+}
+
+func (r *WriteReportTxFeeCalculationError) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
 func getReceiver(receiver []byte) string {
 	if receiver != nil {
 		if len(receiver) != solana.PublicKeyLength {

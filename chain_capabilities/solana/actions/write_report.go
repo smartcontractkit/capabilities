@@ -7,13 +7,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math/big"
 	"strings"
 	"time"
 
-	"github.com/ethereum/go-bigmodexpfix/src/math/big"
 	"github.com/gagliardetto/solana-go"
 	"github.com/jpillora/backoff"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/metering"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -224,20 +224,21 @@ func (wr *WriteReport) executeWriteReport(
 	if err != nil {
 		monitoring.LogAndEmitError(ctx, wr.lggr, wr.beholderProcessor, wr.messageBuilder.BuildWriteReportTxFeeCalculationError(telemetryContext, request, last.Signature, err.Error()))
 	} else {
-		meteringMetadata = metering.GetResponseMetadataWriteReport(transactionFee, wr.chainSelector)
+		meteringMetadata = metering.GetResponseMetadataWriteReport(transactionFee,
+			wr.chainSelector)
 	}
 
 	switch last.State {
 	case TransmissionStateSucceeded:
 		wr.lggr.Infow("WriteReport succeeded", "executionID", metadata.WorkflowExecutionID, "signature", last.Signature.String())
-		return wr.successWriteReportReply(&last.Signature), capabilities.ResponseMetadata{}, nil
+		return wr.successWriteReportReply(&last.Signature), meteringMetadata, nil
 
 	case TransmissionStateFailed:
 		wr.lggr.Errorw("WriteReport failed (receiver execution reverted)", "executionID", metadata.WorkflowExecutionID, "signature", last.Signature.String())
-		return wr.failedWriteReportReply(&last.Signature, ptr(UnknownIssueExecutingReceiverContractMessage)), capabilities.ResponseMetadata{}, nil
+		return wr.failedWriteReportReply(&last.Signature, ptr(UnknownIssueExecutingReceiverContractMessage)), meteringMetadata, nil
 
 	default:
-		return wr.fatalWriteReportReply(fmt.Sprintf("transmission state not expected after submit: %d", last.State)), capabilities.ResponseMetadata{}, nil
+		return wr.fatalWriteReportReply(fmt.Sprintf("transmission state not expected after submit: %d", last.State)), meteringMetadata, nil
 	}
 }
 
