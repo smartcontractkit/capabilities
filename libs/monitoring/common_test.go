@@ -32,10 +32,10 @@ func TestNewMetricsCapBasic_DefaultBuckets(t *testing.T) {
 	m, err := NewMetricsCapBasic(info)
 	require.NoError(t, err)
 
-	m.RecordEmit(context.Background(), 0, 5000)
+	m.RecordEmit(t.Context(), 0, 5000)
 
 	var rm metricdata.ResourceMetrics
-	require.NoError(t, reader.Collect(context.Background(), &rm))
+	require.NoError(t, reader.Collect(t.Context(), &rm))
 
 	hist := findHistogram(t, rm, "test_metric_cap_duration")
 	require.NotNil(t, hist)
@@ -55,10 +55,10 @@ func TestNewMetricsCapBasic_WithHistogramBuckets(t *testing.T) {
 	m, err := NewMetricsCapBasic(info, WithHistogramBuckets(customBuckets...))
 	require.NoError(t, err)
 
-	m.RecordEmit(context.Background(), 0, 15000)
+	m.RecordEmit(t.Context(), 0, 15000)
 
 	var rm metricdata.ResourceMetrics
-	require.NoError(t, reader.Collect(context.Background(), &rm))
+	require.NoError(t, reader.Collect(t.Context(), &rm))
 
 	hist := findHistogram(t, rm, "test_custom_cap_duration")
 	require.NotNil(t, hist)
