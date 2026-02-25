@@ -110,7 +110,8 @@ type TransmissionID struct {
 }
 
 type TransmissionInfo struct {
-	Success bool
+	Success     bool
+	Transmitter string
 }
 
 func (fc *forwarderClient) GetTransmissionInfo(ctx context.Context, transmissionID TransmissionID) (TransmissionInfo, error) {
@@ -151,5 +152,49 @@ func (fc *forwarderClient) GetTransmissionInfo(ctx context.Context, transmission
 		return TransmissionInfo{}, fmt.Errorf("unexpected transmission state result length: %d", len(result))
 	}
 
-	return TransmissionInfo{Success: result[0]}, nil
+	if !result[0] {
+		return TransmissionInfo{Success: false}, nil
+	}
+
+	// Transmission exists, fetch transmitter too.
+	// get_transmitter returns Option<address>, represented in JSON as {"vec": ["0x..."]} when present.
+	moduleInfo, functionName, _, args, err = fc.forwarderEncoder.GetTransmitter(
+		transmissionID.Receiver,
+		transmissionID.WorkflowExecutionID[:],
+		reportID,
+	)
+	if err != nil {
+		return TransmissionInfo{}, fmt.Errorf("failed to encode GetTransmitter: %w", err)
+	}
+
+	viewReply, err = fc.AptosService.View(ctx, aptostypes.ViewRequest{
+		Payload: &aptostypes.ViewPayload{
+			Module: aptostypes.ModuleID{
+				Address: aptostypes.AccountAddress(moduleInfo.Address),
+				Name:    moduleInfo.ModuleName,
+			},
+			Function: functionName,
+			Args:     args,
+		},
+	})
+	if err != nil {
+		return TransmissionInfo{}, fmt.Errorf("failed to call GetTransmitter view: %w", err)
+	}
+
+	var txResult []struct {
+		Vec []string `json:"vec"`
+	}
+	if err := json.Unmarshal(viewReply.Data, &txResult); err != nil {
+		return TransmissionInfo{}, fmt.Errorf("failed to unmarshal transmitter result: %w", err)
+	}
+	if len(txResult) != 1 {
+		return TransmissionInfo{}, fmt.Errorf("unexpected transmitter result length: %d", len(txResult))
+	}
+
+	transmitter := ""
+	if len(txResult[0].Vec) > 0 {
+		transmitter = txResult[0].Vec[0]
+	}
+
+	return TransmissionInfo{Success: true, Transmitter: transmitter}, nil
 }
