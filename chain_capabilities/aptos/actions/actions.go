@@ -39,8 +39,10 @@ func NewAptos(cfg *config.Config, aptosService types.AptosService, lggr logger.L
 }
 
 func (a *Aptos) initLimiters(limitsFactory limits.Factory) (err error) {
-	// PLEX-1920 this is initial values taken from solana. Can be tuned later
-	reportSizeLimit := settings.Size(commoncfg.Byte * 265)
+	// NOTE: 265B is too tight for Aptos write reports carrying data-feeds payloads
+	// (current flow is ~269B). Keep this comfortably above current usage while we
+	// make this configurable.
+	reportSizeLimit := settings.Size(commoncfg.Byte * 512)
 	a.reportSizeLimit, err = limits.MakeBoundLimiter(limitsFactory, reportSizeLimit)
 	if err != nil {
 		return
