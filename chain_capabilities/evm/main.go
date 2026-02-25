@@ -120,13 +120,14 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	c.requestPoller = poller.NewPoller(c.lggr, consensusMetrics, cfg.ObservationPollerWorkersCount, cfg.ObservationPollPeriod)
 	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, cfg.UnknownRequestsTTL)
 
-	if cfg.DeltaStage <= 0 {
-		return fmt.Errorf("invalid delta stage %d", cfg.DeltaStage)
-	}
-
-	scheduler, err := c.initialiseTransmissionScheduler(ctx, dependencies.CapabilityRegistry, cfg.DeltaStage, cfg.IsLocaL)
-	if err != nil {
-		return fmt.Errorf("failed to initialize transmission scheduler: %w", err)
+	var scheduler actions.TransmissionScheduler
+	if cfg.DeltaStage > 0 {
+		scheduler, err = c.initialiseTransmissionScheduler(ctx, dependencies.CapabilityRegistry, cfg.DeltaStage, cfg.IsLocaL)
+		if err != nil {
+			return fmt.Errorf("failed to initialize transmission scheduler: %w", err)
+		}
+	} else {
+		c.lggr.Infow("DeltaStage not configured, transmission scheduling disabled")
 	}
 
 	c.EVM, err = actions.NewEVM(*cfg, evmRelayer, c.lggr, processor, messageBuilder, c.consensusHandler, c.chainSelector, c.limitsFactory, scheduler)
