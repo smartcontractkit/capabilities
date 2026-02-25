@@ -140,16 +140,16 @@ func (s *Aptos) executeWriteReport(
 		return nil, fmt.Errorf("failed to get transmission info: %w", err)
 	}
 
-	switch transmissionInfo.Success {
-	case true:
+	if transmissionInfo.Success {
+		s.lggr.Infow("Transmission already confirmed onchain before submit", "transmitter", transmissionInfo.Transmitter)
+		// We don't have a canonical hash from AptosService today when another node already transmitted.
 		txHash := []byte{}
 		return &aptoscap.WriteReportReply{
 			TxStatus: aptoscap.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:   txHash,
 		}, nil
-	case false: // this should tell me more, not attempted / failed / invalid receiver (this will be stored on chain)
-		return nil, fmt.Errorf("transmission not attempted")
 	}
+	// transmission not present yet; continue to submit.
 
 	err = s.reportSizeLimit.Check(ctx, commoncfg.SizeOf(request.Report.RawReport))
 	if err != nil {
@@ -183,7 +183,16 @@ func (s *Aptos) executeWriteReport(
 
 	switch newTransmissionInfo.Success {
 	case true:
-		txHash := []byte(txReply.PendingTransaction.Hash)
+		submittedHash := txReply.PendingTransaction.Hash
+		ourSender := normalizeAptosHexAddress(hex.EncodeToString(txReply.PendingTransaction.Sender[:]))
+		onchainTransmitter := normalizeAptosHexAddress(newTransmissionInfo.Transmitter)
+		if ourSender != "" && onchainTransmitter != "" && ourSender != onchainTransmitter {
+			s.lggr.Infow("Report was confirmed onchain by another transmitter", "ourSender", ourSender, "onchainTransmitter", onchainTransmitter)
+			// We intentionally do not return our local tx hash when another node won the race.
+			submittedHash = ""
+		}
+
+		txHash := []byte(submittedHash)
 		return &aptoscap.WriteReportReply{
 			TxStatus: aptoscap.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:   txHash,
@@ -192,6 +201,19 @@ func (s *Aptos) executeWriteReport(
 		return nil, fmt.Errorf("transmission failed")
 	}
 	return nil, fmt.Errorf("transmission state not expected after submit: %t", newTransmissionInfo.Success)
+}
+
+func normalizeAptosHexAddress(input string) string {
+	s := strings.ToLower(strings.TrimSpace(input))
+	if s == "" {
+		return ""
+	}
+	s = strings.TrimPrefix(s, "0x")
+	s = strings.TrimLeft(s, "0")
+	if s == "" {
+		return "0x0"
+	}
+	return "0x" + s
 }
 
 func getTransmissionID(workflowExecutionID string, request *aptoscap.WriteReportRequest) (TransmissionID, error) {
