@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	aptos_sdk "github.com/aptos-labs/aptos-go-sdk"
-	aptos_api "github.com/aptos-labs/aptos-go-sdk/api"
 	"github.com/aptos-labs/aptos-go-sdk/bcs"
 	aptos_forwarder "github.com/smartcontractkit/chainlink-aptos/bindings/platform/forwarder"
 	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
@@ -135,7 +134,7 @@ type TransmissionInfo struct {
 // accountTransactionsReader is an optional extension implemented by some Aptos clients.
 // It lets us find canonical tx hash from the winning transmitter account history.
 type accountTransactionsReader interface {
-	AccountTransactions(address aptos_sdk.AccountAddress, start *uint64, limit *uint64) ([]*aptos_api.CommittedTransaction, error)
+	AccountTransactions(ctx context.Context, req aptostypes.AccountTransactionsRequest) (*aptostypes.AccountTransactionsReply, error)
 }
 
 func (fc *forwarderClient) GetTransmissionInfo(ctx context.Context, transmissionID TransmissionID) (TransmissionInfo, error) {
@@ -237,56 +236,94 @@ func (fc *forwarderClient) GetTransmissionTxHash(ctx context.Context, transmissi
 	if err := transmitterAddr.ParseStringRelaxed(transmitter); err != nil {
 		return "", fmt.Errorf("invalid transmitter address %q: %w", transmitter, err)
 	}
+	var transmitterAddress aptostypes.AccountAddress
+	copy(transmitterAddress[:], transmitterAddr[:])
 
 	limit := uint64(50)
-	txs, err := txReader.AccountTransactions(transmitterAddr, nil, &limit)
+	txs, err := txReader.AccountTransactions(ctx, aptostypes.AccountTransactionsRequest{
+		Address: transmitterAddress,
+		Limit:   &limit,
+	})
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch account transactions: %w", err)
 	}
 
 	// AccountTransactions are sorted newest first. Pick the latest matching tx.
-	for _, tx := range txs {
-		userTx, err := tx.UserTransaction()
+	for _, tx := range txs.Transactions {
+		if tx == nil || tx.Success == nil || !*tx.Success {
+			continue
+		}
+
+		decoded, err := decodeAccountUserTransaction(tx.Data)
 		if err != nil {
 			continue
 		}
 
-		if !userTx.Success {
+		if !isForwarderReportCall(decoded.EntryFunction, fc.forwarderAddress) {
 			continue
 		}
 
-		if !isForwarderReportCall(userTx, fc.forwarderAddress) {
+		if !containsMatchingReportProcessed(decoded.Events, transmissionID) {
 			continue
 		}
 
-		if !containsMatchingReportProcessed(userTx.Events, transmissionID) {
-			continue
-		}
-
-		return string(userTx.Hash), nil
+		return tx.Hash, nil
 	}
 
 	return "", fmt.Errorf("no matching successful report tx found for transmitter %s", transmitter)
 }
 
-func isForwarderReportCall(userTx *aptos_api.UserTransaction, forwarderAddr [32]byte) bool {
-	if userTx == nil {
+type accountTxEvent struct {
+	Type string         `json:"type"`
+	Data map[string]any `json:"data"`
+}
+
+type accountUserTransaction struct {
+	EntryFunction string           `json:"entry_function"`
+	Events        []accountTxEvent `json:"events"`
+}
+
+type rawPayload struct {
+	Type     string `json:"type"`
+	Function string `json:"function"`
+}
+
+type rawUserTransaction struct {
+	Type    string           `json:"type"`
+	Hash    string           `json:"hash"`
+	Payload rawPayload       `json:"payload"`
+	Events  []accountTxEvent `json:"events"`
+}
+
+func decodeAccountUserTransaction(raw []byte) (*accountUserTransaction, error) {
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("empty transaction payload")
+	}
+
+	var decoded rawUserTransaction
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return nil, err
+	}
+
+	if decoded.Type != "user_transaction" {
+		return nil, fmt.Errorf("transaction type %q is not user_transaction", decoded.Type)
+	}
+
+	return &accountUserTransaction{
+		EntryFunction: decoded.Payload.Function,
+		Events:        decoded.Events,
+	}, nil
+}
+
+func isForwarderReportCall(entryFunction string, forwarderAddr [32]byte) bool {
+	if entryFunction == "" {
+		return false
+	}
+	if !strings.HasSuffix(entryFunction, "::forwarder::report") {
 		return false
 	}
 
-	payload := userTx.Payload
-	if payload.Type != aptos_api.TransactionPayloadVariantEntryFunction {
-		return false
-	}
-	entryFn, ok := payload.Inner.(*aptos_api.TransactionPayloadEntryFunction)
-	if !ok {
-		return false
-	}
-	if !strings.HasSuffix(entryFn.Function, "::forwarder::report") {
-		return false
-	}
-
-	parts := strings.SplitN(entryFn.Function, "::", 2)
+	parts := strings.SplitN(entryFunction, "::", 2)
 	if len(parts) < 2 {
 		return false
 	}
@@ -296,11 +333,8 @@ func isForwarderReportCall(userTx *aptos_api.UserTransaction, forwarderAddr [32]
 	return fnAddress == forwarderAddress
 }
 
-func containsMatchingReportProcessed(events []*aptos_api.Event, transmissionID TransmissionID) bool {
+func containsMatchingReportProcessed(events []accountTxEvent, transmissionID TransmissionID) bool {
 	for _, event := range events {
-		if event == nil {
-			continue
-		}
 		if !strings.HasSuffix(strings.ToLower(event.Type), "::forwarder::reportprocessed") {
 			continue
 		}
