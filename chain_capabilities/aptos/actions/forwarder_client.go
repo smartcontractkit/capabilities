@@ -3,10 +3,14 @@ package actions
 import (
 	"context"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 
 	aptos_sdk "github.com/aptos-labs/aptos-go-sdk"
+	aptos_api "github.com/aptos-labs/aptos-go-sdk/api"
 	"github.com/aptos-labs/aptos-go-sdk/bcs"
 	aptos_forwarder "github.com/smartcontractkit/chainlink-aptos/bindings/platform/forwarder"
 	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
@@ -22,6 +26,8 @@ type CREForwarderClient interface {
 	InvokeOnReport(ctx context.Context, receiver []byte, report *sdk.ReportResponse, gasConfig *aptoscap.GasConfig) (*aptostypes.SubmitTransactionReply, error)
 	// GetTransmissionInfo queries the forwarder contract for the transmission state of a given transmission ID.
 	GetTransmissionInfo(ctx context.Context, transmissionID TransmissionID) (TransmissionInfo, error)
+	// GetTransmissionTxHash resolves the canonical tx hash for a successful transmission.
+	GetTransmissionTxHash(ctx context.Context, transmissionID TransmissionID, transmitter string) (string, error)
 }
 
 type forwarderClient struct {
@@ -126,6 +132,12 @@ type TransmissionInfo struct {
 	Transmitter string
 }
 
+// accountTransactionsReader is an optional extension implemented by some Aptos clients.
+// It lets us find canonical tx hash from the winning transmitter account history.
+type accountTransactionsReader interface {
+	AccountTransactions(address aptos_sdk.AccountAddress, start *uint64, limit *uint64) ([]*aptos_api.CommittedTransaction, error)
+}
+
 func (fc *forwarderClient) GetTransmissionInfo(ctx context.Context, transmissionID TransmissionID) (TransmissionInfo, error) {
 	// Convert [2]byte report ID to uint16 (big-endian, as stored in report metadata)
 	reportID := binary.BigEndian.Uint16(transmissionID.ReportID[:])
@@ -209,4 +221,164 @@ func (fc *forwarderClient) GetTransmissionInfo(ctx context.Context, transmission
 	}
 
 	return TransmissionInfo{Success: true, Transmitter: transmitter}, nil
+}
+
+func (fc *forwarderClient) GetTransmissionTxHash(ctx context.Context, transmissionID TransmissionID, transmitter string) (string, error) {
+	if transmitter == "" {
+		return "", fmt.Errorf("transmitter is empty")
+	}
+
+	txReader, ok := fc.AptosService.(accountTransactionsReader)
+	if !ok {
+		return "", fmt.Errorf("aptos client does not expose AccountTransactions")
+	}
+
+	var transmitterAddr aptos_sdk.AccountAddress
+	if err := transmitterAddr.ParseStringRelaxed(transmitter); err != nil {
+		return "", fmt.Errorf("invalid transmitter address %q: %w", transmitter, err)
+	}
+
+	limit := uint64(50)
+	txs, err := txReader.AccountTransactions(transmitterAddr, nil, &limit)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch account transactions: %w", err)
+	}
+
+	// AccountTransactions are sorted newest first. Pick the latest matching tx.
+	for _, tx := range txs {
+		userTx, err := tx.UserTransaction()
+		if err != nil {
+			continue
+		}
+
+		if !userTx.Success {
+			continue
+		}
+
+		if !isForwarderReportCall(userTx, fc.forwarderAddress) {
+			continue
+		}
+
+		if !containsMatchingReportProcessed(userTx.Events, transmissionID) {
+			continue
+		}
+
+		return string(userTx.Hash), nil
+	}
+
+	return "", fmt.Errorf("no matching successful report tx found for transmitter %s", transmitter)
+}
+
+func isForwarderReportCall(userTx *aptos_api.UserTransaction, forwarderAddr [32]byte) bool {
+	if userTx == nil {
+		return false
+	}
+
+	payload := userTx.Payload
+	if payload.Type != aptos_api.TransactionPayloadVariantEntryFunction {
+		return false
+	}
+	entryFn, ok := payload.Inner.(*aptos_api.TransactionPayloadEntryFunction)
+	if !ok {
+		return false
+	}
+	if !strings.HasSuffix(entryFn.Function, "::forwarder::report") {
+		return false
+	}
+
+	parts := strings.SplitN(entryFn.Function, "::", 2)
+	if len(parts) < 2 {
+		return false
+	}
+	fnAddress := normalizeAptosHexAddress(parts[0])
+	forwarderAccount := aptos_sdk.AccountAddress(forwarderAddr)
+	forwarderAddress := normalizeAptosHexAddress(forwarderAccount.StringLong())
+	return fnAddress == forwarderAddress
+}
+
+func containsMatchingReportProcessed(events []*aptos_api.Event, transmissionID TransmissionID) bool {
+	for _, event := range events {
+		if event == nil {
+			continue
+		}
+		if !strings.HasSuffix(strings.ToLower(event.Type), "::forwarder::reportprocessed") {
+			continue
+		}
+		if isMatchingReportProcessedData(event.Data, transmissionID) {
+			return true
+		}
+	}
+	return false
+}
+
+func isMatchingReportProcessedData(data map[string]any, transmissionID TransmissionID) bool {
+	if len(data) == 0 {
+		return false
+	}
+
+	receiverStr, ok := data["receiver"].(string)
+	if !ok {
+		return false
+	}
+	var receiverAddr aptos_sdk.AccountAddress
+	if err := receiverAddr.ParseStringRelaxed(receiverStr); err != nil {
+		return false
+	}
+	if receiverAddr != transmissionID.Receiver {
+		return false
+	}
+
+	reportID, ok := parseUint16(data["report_id"])
+	if !ok || reportID != binary.BigEndian.Uint16(transmissionID.ReportID[:]) {
+		return false
+	}
+
+	execIDRaw, ok := data["workflow_execution_id"]
+	if !ok {
+		return false
+	}
+	execID, ok := parseHexBytes(execIDRaw)
+	if !ok {
+		return false
+	}
+	return len(execID) == len(transmissionID.WorkflowExecutionID) &&
+		string(execID) == string(transmissionID.WorkflowExecutionID[:])
+}
+
+func parseUint16(v any) (uint16, bool) {
+	switch t := v.(type) {
+	case string:
+		u, err := strconv.ParseUint(t, 10, 16)
+		if err != nil {
+			return 0, false
+		}
+		return uint16(u), true
+	case float64:
+		if t < 0 || t > 65535 {
+			return 0, false
+		}
+		return uint16(t), true
+	default:
+		return 0, false
+	}
+}
+
+func parseHexBytes(v any) ([]byte, bool) {
+	s, ok := v.(string)
+	if !ok {
+		return nil, false
+	}
+	s = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(s)), "0x")
+	if len(s)%2 != 0 {
+		s = "0" + s
+	}
+	b, err := hexToBytes(s)
+	if err != nil {
+		return nil, false
+	}
+	return b, true
+}
+
+func hexToBytes(s string) ([]byte, error) {
+	return hex.DecodeString(s)
 }

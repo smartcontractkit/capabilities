@@ -7,57 +7,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jpillora/backoff"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
-	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/utils/retry"
 )
 
 const userError = "user error:"
-
-// TODO PLEX-1920 carry out shared helpers
-// withQuickRetry wraps a simple RPC read with retry logic.
-// Uses shorter timeout (10s) and fast backoff - these calls should be sub-second.
-func withQuickRetry[T any](ctx context.Context, lggr logger.Logger, fn func(context.Context) (T, error)) (T, error) {
-	return withRetry(ctx, lggr, fn, 10*time.Second, 1*time.Second, 10)
-}
-
-// withPollingRetry wraps an operation that polls for state changes.
-// Uses longer timeout (60s) to accommodate slow chains.
-func withPollingRetry[T any](ctx context.Context, lggr logger.Logger, fn func(context.Context) (T, error)) (T, error) {
-	return withRetry(ctx, lggr, fn, 60*time.Second, 3*time.Second, 25)
-}
-
-// withRetry executes fn with exponential backoff retry logic.
-// Returns the original error from fn, not the retry wrapper error.
-func withRetry[T any](ctx context.Context, lggr logger.Logger, fn func(context.Context) (T, error), timeout, maxBackoff time.Duration, maxRetries uint) (T, error) {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	var lastErr error
-	strategy := retry.Strategy[T]{
-		Backoff:    &backoff.Backoff{Factor: 2, Min: 100 * time.Millisecond, Max: maxBackoff},
-		MaxRetries: maxRetries,
-	}
-	result, err := strategy.Do(ctx, lggr, func(ctx context.Context) (T, error) {
-		r, e := fn(ctx)
-		if e != nil {
-			lastErr = e // Capture the original error from fn
-		}
-		return r, e
-	})
-	if err != nil {
-		if lastErr != nil {
-			return result, lastErr
-		}
-		// lastErr is nil - fn was never called, return retry error
-		return result, err
-	}
-	return result, nil
-}
 
 // WriteReport validates and submits a signed report to the Aptos chain via the CRE forwarder.
 // It handles only the simple successful case for now.
@@ -135,17 +92,24 @@ func (s *Aptos) executeWriteReport(
 		return &aptoscap.WriteReportReply{}, err
 	}
 
-	transmissionInfo, err := withQuickRetry(ctx, s.lggr, func(ctx context.Context) (TransmissionInfo, error) {
-		return s.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
-	})
+	transmissionInfo, err := s.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get transmission info: %w", err)
 	}
 
 	if transmissionInfo.Success {
 		s.lggr.Infow("Transmission already confirmed onchain before submit", "transmitter", transmissionInfo.Transmitter)
-		// We don't have a canonical hash from AptosService today when another node already transmitted.
-		txHash := []byte{}
+		if transmissionInfo.Transmitter == "" {
+			return nil, fmt.Errorf("successful transmission has no transmitter")
+		}
+		canonicalHash, hashErr := s.forwarderClient.GetTransmissionTxHash(ctx, transmissionID, transmissionInfo.Transmitter)
+		if hashErr != nil {
+			return nil, fmt.Errorf("failed to resolve canonical tx hash for pre-existing transmission: %w", hashErr)
+		}
+		if canonicalHash == "" {
+			return nil, fmt.Errorf("canonical tx hash for pre-existing transmission is empty")
+		}
+		txHash := []byte(canonicalHash)
 		return &aptoscap.WriteReportReply{
 			TxStatus: aptoscap.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:   txHash,
@@ -169,40 +133,67 @@ func (s *Aptos) executeWriteReport(
 		return nil, fmt.Errorf("nil transaction reply")
 	}
 
-	newTransmissionInfo, err := withPollingRetry(ctx, s.lggr, func(ctx context.Context) (TransmissionInfo, error) {
-		readTransmissionInfo, readTransmissionErr := s.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
-		if readTransmissionErr != nil {
-			return TransmissionInfo{}, readTransmissionErr
-		}
-		return readTransmissionInfo, nil
-	})
+	newTransmissionInfo, err := s.waitForTransmissionSuccess(ctx, transmissionID)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed getting transmission info after node submitted the report on chain, %w", err)
+		return nil, fmt.Errorf("failed waiting for successful transmission after submit: %w", err)
 	}
 
 	s.lggr.Infow("Got final transmission status", "success", newTransmissionInfo.Success)
 
-	switch newTransmissionInfo.Success {
-	case true:
-		submittedHash := txReply.PendingTransaction.Hash
-		ourSender := normalizeAptosHexAddress(hex.EncodeToString(txReply.PendingTransaction.Sender[:]))
-		onchainTransmitter := normalizeAptosHexAddress(newTransmissionInfo.Transmitter)
-		if ourSender != "" && onchainTransmitter != "" && ourSender != onchainTransmitter {
-			s.lggr.Infow("Report was confirmed onchain by another transmitter", "ourSender", ourSender, "onchainTransmitter", onchainTransmitter)
-			// We intentionally do not return our local tx hash when another node won the race.
-			submittedHash = ""
+	submittedHash := txReply.PendingTransaction.Hash
+	ourSender := normalizeAptosHexAddress(hex.EncodeToString(txReply.PendingTransaction.Sender[:]))
+	onchainTransmitter := normalizeAptosHexAddress(newTransmissionInfo.Transmitter)
+	if onchainTransmitter == "" {
+		return nil, fmt.Errorf("successful transmission has no transmitter")
+	}
+	hash, hashErr := s.forwarderClient.GetTransmissionTxHash(ctx, transmissionID, onchainTransmitter)
+	if hashErr != nil {
+		return nil, fmt.Errorf("failed to resolve canonical tx hash from winning transmitter: %w", hashErr)
+	}
+	if hash == "" {
+		return nil, fmt.Errorf("canonical tx hash from winning transmitter is empty")
+	}
+	submittedHash = hash
+	if ourSender != "" && onchainTransmitter != "" && ourSender != onchainTransmitter {
+		s.lggr.Infow("Report was confirmed onchain by another transmitter", "ourSender", ourSender, "onchainTransmitter", onchainTransmitter, "canonicalTxHash", submittedHash)
+	}
+
+	txHash := []byte(submittedHash)
+	return &aptoscap.WriteReportReply{
+		TxStatus: aptoscap.TxStatus_TX_STATUS_SUCCESS,
+		TxHash:   txHash,
+	}, nil
+}
+
+func (s *Aptos) waitForTransmissionSuccess(ctx context.Context, transmissionID TransmissionID) (TransmissionInfo, error) {
+	const pollTimeout = 60 * time.Second
+	const pollInterval = 2 * time.Second
+
+	pollCtx, cancel := context.WithTimeout(ctx, pollTimeout)
+	defer cancel()
+
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+
+	var lastErr error
+	for {
+		info, err := s.forwarderClient.GetTransmissionInfo(pollCtx, transmissionID)
+		if err != nil {
+			lastErr = err
+		} else if info.Success {
+			return info, nil
 		}
 
-		txHash := []byte(submittedHash)
-		return &aptoscap.WriteReportReply{
-			TxStatus: aptoscap.TxStatus_TX_STATUS_SUCCESS,
-			TxHash:   txHash,
-		}, nil
-	case false:
-		return nil, fmt.Errorf("transmission failed")
+		select {
+		case <-pollCtx.Done():
+			if lastErr != nil {
+				return TransmissionInfo{}, fmt.Errorf("timed out waiting for successful transmission (last error: %w)", lastErr)
+			}
+			return TransmissionInfo{}, fmt.Errorf("timed out waiting for successful transmission")
+		case <-ticker.C:
+		}
 	}
-	return nil, fmt.Errorf("transmission state not expected after submit: %t", newTransmissionInfo.Success)
 }
 
 func normalizeAptosHexAddress(input string) string {
