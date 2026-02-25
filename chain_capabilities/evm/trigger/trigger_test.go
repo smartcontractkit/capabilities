@@ -58,14 +58,6 @@ var (
 	pollInterval      = 10 * time.Millisecond
 )
 
-func decode(te capabilities.TriggerEvent) (capabilities.TriggerAndId[*evmcappb.Log], error) {
-	var pl evmcappb.Log
-	if err := te.Payload.UnmarshalTo(&pl); err != nil {
-		return capabilities.TriggerAndId[*evmcappb.Log]{}, err
-	}
-	return capabilities.TriggerAndId[*evmcappb.Log]{Id: te.ID, Trigger: &pl}, nil
-}
-
 // Build a LogTriggerService with BaseTriggerCapability wired to an inbox channel.
 func newLTSWithBase(t *testing.T) (*LogTriggerService, chan capabilities.TriggerAndId[*evmcappb.Log]) {
 	lts := newLogTriggerService(t)

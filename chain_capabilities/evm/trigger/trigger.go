@@ -316,7 +316,7 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 func (lts *LogTriggerService) AckEvent(ctx context.Context, triggerID string, eventID string) caperrors.Error {
 	if err := lts.baseTrigger.AckEvent(ctx, triggerID, eventID); err != nil {
 		wrappedErr := fmt.Errorf("failed to AckEvent on baseTrigger (triggerID=%s eventID=%s): %w", triggerID, eventID, err)
-		lts.lggr.Errorf(wrappedErr.Error())
+		lts.lggr.Error(wrappedErr)
 		return caperrors.NewPrivateSystemError(wrappedErr, caperrors.Internal)
 	}
 	return nil

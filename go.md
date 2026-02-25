@@ -66,7 +66,9 @@ flowchart LR
 	chainlink-ccv --> chainlink-protos/chainlink-ccv/committee-verifier
 	chainlink-ccv --> chainlink-protos/chainlink-ccv/heartbeat
 	chainlink-ccv --> chainlink-protos/chainlink-ccv/message-discovery
+	chainlink-ccv --> chainlink-protos/orchestrator
 	chainlink-ccv --> chainlink-solana
+	chainlink-ccv --> chainlink-testing-framework/framework
 	click chainlink-ccv href "https://github.com/smartcontractkit/chainlink-ccv"
 	chainlink-common --> chainlink-common/pkg/chipingress
 	chainlink-common --> chainlink-protos/billing/go
@@ -78,14 +80,14 @@ flowchart LR
 	chainlink-common --> grpc-proxy
 	chainlink-common --> libocr
 	click chainlink-common href "https://github.com/smartcontractkit/chainlink-common"
-	chainlink-common/keystore
+	chainlink-common/keystore --> chainlink-common
+	chainlink-common/keystore --> smdkg
+	chainlink-common/keystore --> wsrpc
 	click chainlink-common/keystore href "https://github.com/smartcontractkit/chainlink-common"
 	chainlink-common/pkg/chipingress
 	click chainlink-common/pkg/chipingress href "https://github.com/smartcontractkit/chainlink-common"
 	chainlink-common/pkg/monitoring
 	click chainlink-common/pkg/monitoring href "https://github.com/smartcontractkit/chainlink-common"
-	chainlink-common/pkg/values
-	click chainlink-common/pkg/values href "https://github.com/smartcontractkit/chainlink-common"
 	chainlink-data-streams --> chainlink-common
 	click chainlink-data-streams href "https://github.com/smartcontractkit/chainlink-data-streams"
 	chainlink-deployments-framework
@@ -144,17 +146,15 @@ flowchart LR
 	chainlink-solana --> chainlink-ccip/chains/solana
 	chainlink-solana --> chainlink-common/keystore
 	chainlink-solana --> chainlink-common/pkg/monitoring
-	chainlink-solana --> chainlink-deployments-framework
-	chainlink-solana --> chainlink-framework/capabilities
 	chainlink-solana --> chainlink-framework/multinode
-	chainlink-solana --> chainlink-testing-framework/framework
-	chainlink-solana --> chainlink-tron/relayer
 	click chainlink-solana href "https://github.com/smartcontractkit/chainlink-solana"
+	chainlink-solana/contracts --> chainlink-deployments-framework
 	chainlink-solana/contracts --> chainlink-solana
+	chainlink-solana/contracts --> chainlink-testing-framework/framework
+	chainlink-solana/contracts --> chainlink-tron/relayer
 	click chainlink-solana/contracts href "https://github.com/smartcontractkit/chainlink-solana"
 	chainlink-sui --> chainlink-aptos
 	chainlink-sui --> chainlink-ccip
-	chainlink-sui --> chainlink-common/pkg/values
 	click chainlink-sui href "https://github.com/smartcontractkit/chainlink-sui"
 	chainlink-testing-framework/framework
 	click chainlink-testing-framework/framework href "https://github.com/smartcontractkit/chainlink-testing-framework"
@@ -169,14 +169,12 @@ flowchart LR
 	chainlink/v2 --> chainlink-data-streams
 	chainlink/v2 --> chainlink-evm/contracts/cre/gobindings
 	chainlink/v2 --> chainlink-feeds
-	chainlink/v2 --> chainlink-protos/orchestrator
 	chainlink/v2 --> chainlink-protos/ring/go
 	chainlink/v2 --> chainlink-sui
 	chainlink/v2 --> chainlink-ton
 	chainlink/v2 --> cre-sdk-go/capabilities/networking/http
 	chainlink/v2 --> cre-sdk-go/capabilities/scheduler/cron
 	chainlink/v2 --> quarantine
-	chainlink/v2 --> smdkg
 	chainlink/v2 --> tdh2/go/ocr2/decryptionplugin
 	click chainlink/v2 href "https://github.com/smartcontractkit/chainlink"
 	cre-sdk-go --> chainlink-protos/cre/go
@@ -242,7 +240,6 @@ flowchart LR
 		 chainlink-common/keystore
 		 chainlink-common/pkg/chipingress
 		 chainlink-common/pkg/monitoring
-		 chainlink-common/pkg/values
 	end
 	click chainlink-common-repo href "https://github.com/smartcontractkit/chainlink-common"
 
