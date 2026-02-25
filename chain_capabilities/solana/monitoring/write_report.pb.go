@@ -210,6 +210,82 @@ func (x *WriteReportError) GetExecutionContext() *monitoring.ExecutionContext {
 	return nil
 }
 
+type WriteReportTxFeeCalculationError struct {
+	state            protoimpl.MessageState       `protogen:"open.v1"`
+	Req              *WriteReportRequest          `protobuf:"bytes,1,opt,name=req,proto3" json:"req,omitempty"`
+	Summary          string                       `protobuf:"bytes,2,opt,name=summary,proto3" json:"summary,omitempty"`
+	Cause            string                       `protobuf:"bytes,3,opt,name=cause,proto3" json:"cause,omitempty"`
+	Signature        string                       `protobuf:"bytes,4,opt,name=signature,proto3" json:"signature,omitempty"`
+	ExecutionContext *monitoring.ExecutionContext `protobuf:"bytes,20,opt,name=execution_context,json=executionContext,proto3" json:"execution_context,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *WriteReportTxFeeCalculationError) Reset() {
+	*x = WriteReportTxFeeCalculationError{}
+	mi := &file_chain_capabilities_solana_monitoring_write_report_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WriteReportTxFeeCalculationError) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WriteReportTxFeeCalculationError) ProtoMessage() {}
+
+func (x *WriteReportTxFeeCalculationError) ProtoReflect() protoreflect.Message {
+	mi := &file_chain_capabilities_solana_monitoring_write_report_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WriteReportTxFeeCalculationError.ProtoReflect.Descriptor instead.
+func (*WriteReportTxFeeCalculationError) Descriptor() ([]byte, []int) {
+	return file_chain_capabilities_solana_monitoring_write_report_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *WriteReportTxFeeCalculationError) GetReq() *WriteReportRequest {
+	if x != nil {
+		return x.Req
+	}
+	return nil
+}
+
+func (x *WriteReportTxFeeCalculationError) GetSummary() string {
+	if x != nil {
+		return x.Summary
+	}
+	return ""
+}
+
+func (x *WriteReportTxFeeCalculationError) GetCause() string {
+	if x != nil {
+		return x.Cause
+	}
+	return ""
+}
+
+func (x *WriteReportTxFeeCalculationError) GetSignature() string {
+	if x != nil {
+		return x.Signature
+	}
+	return ""
+}
+
+func (x *WriteReportTxFeeCalculationError) GetExecutionContext() *monitoring.ExecutionContext {
+	if x != nil {
+		return x.ExecutionContext
+	}
+	return nil
+}
+
 type WriteReportRequest struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
 	RemainingAccounts []*AccountMeta         `protobuf:"bytes,1,rep,name=remaining_accounts,json=remainingAccounts,proto3" json:"remaining_accounts,omitempty"` // accounts that are required by the receiver to accept the report
@@ -222,7 +298,7 @@ type WriteReportRequest struct {
 
 func (x *WriteReportRequest) Reset() {
 	*x = WriteReportRequest{}
-	mi := &file_chain_capabilities_solana_monitoring_write_report_proto_msgTypes[3]
+	mi := &file_chain_capabilities_solana_monitoring_write_report_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -234,7 +310,7 @@ func (x *WriteReportRequest) String() string {
 func (*WriteReportRequest) ProtoMessage() {}
 
 func (x *WriteReportRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_solana_monitoring_write_report_proto_msgTypes[3]
+	mi := &file_chain_capabilities_solana_monitoring_write_report_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -247,7 +323,7 @@ func (x *WriteReportRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WriteReportRequest.ProtoReflect.Descriptor instead.
 func (*WriteReportRequest) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_solana_monitoring_write_report_proto_rawDescGZIP(), []int{3}
+	return file_chain_capabilities_solana_monitoring_write_report_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *WriteReportRequest) GetRemainingAccounts() []*AccountMeta {
@@ -289,7 +365,7 @@ type AccountMeta struct {
 
 func (x *AccountMeta) Reset() {
 	*x = AccountMeta{}
-	mi := &file_chain_capabilities_solana_monitoring_write_report_proto_msgTypes[4]
+	mi := &file_chain_capabilities_solana_monitoring_write_report_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -301,7 +377,7 @@ func (x *AccountMeta) String() string {
 func (*AccountMeta) ProtoMessage() {}
 
 func (x *AccountMeta) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_solana_monitoring_write_report_proto_msgTypes[4]
+	mi := &file_chain_capabilities_solana_monitoring_write_report_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -314,7 +390,7 @@ func (x *AccountMeta) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AccountMeta.ProtoReflect.Descriptor instead.
 func (*AccountMeta) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_solana_monitoring_write_report_proto_rawDescGZIP(), []int{4}
+	return file_chain_capabilities_solana_monitoring_write_report_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *AccountMeta) GetPublicKey() []byte {
@@ -344,7 +420,7 @@ type ReportResponse struct {
 
 func (x *ReportResponse) Reset() {
 	*x = ReportResponse{}
-	mi := &file_chain_capabilities_solana_monitoring_write_report_proto_msgTypes[5]
+	mi := &file_chain_capabilities_solana_monitoring_write_report_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -356,7 +432,7 @@ func (x *ReportResponse) String() string {
 func (*ReportResponse) ProtoMessage() {}
 
 func (x *ReportResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_solana_monitoring_write_report_proto_msgTypes[5]
+	mi := &file_chain_capabilities_solana_monitoring_write_report_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -369,7 +445,7 @@ func (x *ReportResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportResponse.ProtoReflect.Descriptor instead.
 func (*ReportResponse) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_solana_monitoring_write_report_proto_rawDescGZIP(), []int{5}
+	return file_chain_capabilities_solana_monitoring_write_report_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ReportResponse) GetConfigDigest() []byte {
@@ -417,7 +493,7 @@ type ComputeConfig struct {
 
 func (x *ComputeConfig) Reset() {
 	*x = ComputeConfig{}
-	mi := &file_chain_capabilities_solana_monitoring_write_report_proto_msgTypes[6]
+	mi := &file_chain_capabilities_solana_monitoring_write_report_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -429,7 +505,7 @@ func (x *ComputeConfig) String() string {
 func (*ComputeConfig) ProtoMessage() {}
 
 func (x *ComputeConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_solana_monitoring_write_report_proto_msgTypes[6]
+	mi := &file_chain_capabilities_solana_monitoring_write_report_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -442,7 +518,7 @@ func (x *ComputeConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ComputeConfig.ProtoReflect.Descriptor instead.
 func (*ComputeConfig) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_solana_monitoring_write_report_proto_rawDescGZIP(), []int{6}
+	return file_chain_capabilities_solana_monitoring_write_report_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ComputeConfig) GetComputeLimit() uint32 {
@@ -469,7 +545,7 @@ type AttributedSignature struct {
 
 func (x *AttributedSignature) Reset() {
 	*x = AttributedSignature{}
-	mi := &file_chain_capabilities_solana_monitoring_write_report_proto_msgTypes[7]
+	mi := &file_chain_capabilities_solana_monitoring_write_report_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -481,7 +557,7 @@ func (x *AttributedSignature) String() string {
 func (*AttributedSignature) ProtoMessage() {}
 
 func (x *AttributedSignature) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_solana_monitoring_write_report_proto_msgTypes[7]
+	mi := &file_chain_capabilities_solana_monitoring_write_report_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -494,7 +570,7 @@ func (x *AttributedSignature) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttributedSignature.ProtoReflect.Descriptor instead.
 func (*AttributedSignature) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_solana_monitoring_write_report_proto_rawDescGZIP(), []int{7}
+	return file_chain_capabilities_solana_monitoring_write_report_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *AttributedSignature) GetSignature() []byte {
@@ -528,6 +604,12 @@ const file_chain_capabilities_solana_monitoring_write_report_proto_rawDesc = "" 
 	"\asummary\x18\x02 \x01(\tR\asummary\x12\x14\n" +
 	"\x05cause\x18\x03 \x01(\tR\x05cause\x12 \n" +
 	"\visUserError\x18\x04 \x01(\bR\visUserError\x12I\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xfc\x01\n" +
+	" WriteReportTxFeeCalculationError\x12?\n" +
+	"\x03req\x18\x01 \x01(\v2-.chain_capabilities.solana.WriteReportRequestR\x03req\x12\x18\n" +
+	"\asummary\x18\x02 \x01(\tR\asummary\x12\x14\n" +
+	"\x05cause\x18\x03 \x01(\tR\x05cause\x12\x1c\n" +
+	"\tsignature\x18\x04 \x01(\tR\tsignature\x12I\n" +
 	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xb3\x02\n" +
 	"\x12WriteReportRequest\x12U\n" +
 	"\x12remaining_accounts\x18\x01 \x03(\v2&.chain_capabilities.solana.AccountMetaR\x11remainingAccounts\x12\x1a\n" +
@@ -566,34 +648,37 @@ func file_chain_capabilities_solana_monitoring_write_report_proto_rawDescGZIP() 
 	return file_chain_capabilities_solana_monitoring_write_report_proto_rawDescData
 }
 
-var file_chain_capabilities_solana_monitoring_write_report_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_chain_capabilities_solana_monitoring_write_report_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_chain_capabilities_solana_monitoring_write_report_proto_goTypes = []any{
-	(*WriteReportInitiated)(nil),        // 0: chain_capabilities.solana.WriteReportInitiated
-	(*WriteReportSuccess)(nil),          // 1: chain_capabilities.solana.WriteReportSuccess
-	(*WriteReportError)(nil),            // 2: chain_capabilities.solana.WriteReportError
-	(*WriteReportRequest)(nil),          // 3: chain_capabilities.solana.WriteReportRequest
-	(*AccountMeta)(nil),                 // 4: chain_capabilities.solana.AccountMeta
-	(*ReportResponse)(nil),              // 5: chain_capabilities.solana.ReportResponse
-	(*ComputeConfig)(nil),               // 6: chain_capabilities.solana.ComputeConfig
-	(*AttributedSignature)(nil),         // 7: chain_capabilities.solana.AttributedSignature
-	(*monitoring.ExecutionContext)(nil), // 8: monitoring.ExecutionContext
+	(*WriteReportInitiated)(nil),             // 0: chain_capabilities.solana.WriteReportInitiated
+	(*WriteReportSuccess)(nil),               // 1: chain_capabilities.solana.WriteReportSuccess
+	(*WriteReportError)(nil),                 // 2: chain_capabilities.solana.WriteReportError
+	(*WriteReportTxFeeCalculationError)(nil), // 3: chain_capabilities.solana.WriteReportTxFeeCalculationError
+	(*WriteReportRequest)(nil),               // 4: chain_capabilities.solana.WriteReportRequest
+	(*AccountMeta)(nil),                      // 5: chain_capabilities.solana.AccountMeta
+	(*ReportResponse)(nil),                   // 6: chain_capabilities.solana.ReportResponse
+	(*ComputeConfig)(nil),                    // 7: chain_capabilities.solana.ComputeConfig
+	(*AttributedSignature)(nil),              // 8: chain_capabilities.solana.AttributedSignature
+	(*monitoring.ExecutionContext)(nil),      // 9: monitoring.ExecutionContext
 }
 var file_chain_capabilities_solana_monitoring_write_report_proto_depIdxs = []int32{
-	3,  // 0: chain_capabilities.solana.WriteReportInitiated.req:type_name -> chain_capabilities.solana.WriteReportRequest
-	8,  // 1: chain_capabilities.solana.WriteReportInitiated.execution_context:type_name -> monitoring.ExecutionContext
-	3,  // 2: chain_capabilities.solana.WriteReportSuccess.req:type_name -> chain_capabilities.solana.WriteReportRequest
-	8,  // 3: chain_capabilities.solana.WriteReportSuccess.execution_context:type_name -> monitoring.ExecutionContext
-	3,  // 4: chain_capabilities.solana.WriteReportError.req:type_name -> chain_capabilities.solana.WriteReportRequest
-	8,  // 5: chain_capabilities.solana.WriteReportError.execution_context:type_name -> monitoring.ExecutionContext
-	4,  // 6: chain_capabilities.solana.WriteReportRequest.remaining_accounts:type_name -> chain_capabilities.solana.AccountMeta
-	6,  // 7: chain_capabilities.solana.WriteReportRequest.compute_config:type_name -> chain_capabilities.solana.ComputeConfig
-	5,  // 8: chain_capabilities.solana.WriteReportRequest.report:type_name -> chain_capabilities.solana.ReportResponse
-	7,  // 9: chain_capabilities.solana.ReportResponse.sigs:type_name -> chain_capabilities.solana.AttributedSignature
-	10, // [10:10] is the sub-list for method output_type
-	10, // [10:10] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	4,  // 0: chain_capabilities.solana.WriteReportInitiated.req:type_name -> chain_capabilities.solana.WriteReportRequest
+	9,  // 1: chain_capabilities.solana.WriteReportInitiated.execution_context:type_name -> monitoring.ExecutionContext
+	4,  // 2: chain_capabilities.solana.WriteReportSuccess.req:type_name -> chain_capabilities.solana.WriteReportRequest
+	9,  // 3: chain_capabilities.solana.WriteReportSuccess.execution_context:type_name -> monitoring.ExecutionContext
+	4,  // 4: chain_capabilities.solana.WriteReportError.req:type_name -> chain_capabilities.solana.WriteReportRequest
+	9,  // 5: chain_capabilities.solana.WriteReportError.execution_context:type_name -> monitoring.ExecutionContext
+	4,  // 6: chain_capabilities.solana.WriteReportTxFeeCalculationError.req:type_name -> chain_capabilities.solana.WriteReportRequest
+	9,  // 7: chain_capabilities.solana.WriteReportTxFeeCalculationError.execution_context:type_name -> monitoring.ExecutionContext
+	5,  // 8: chain_capabilities.solana.WriteReportRequest.remaining_accounts:type_name -> chain_capabilities.solana.AccountMeta
+	7,  // 9: chain_capabilities.solana.WriteReportRequest.compute_config:type_name -> chain_capabilities.solana.ComputeConfig
+	6,  // 10: chain_capabilities.solana.WriteReportRequest.report:type_name -> chain_capabilities.solana.ReportResponse
+	8,  // 11: chain_capabilities.solana.ReportResponse.sigs:type_name -> chain_capabilities.solana.AttributedSignature
+	12, // [12:12] is the sub-list for method output_type
+	12, // [12:12] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_chain_capabilities_solana_monitoring_write_report_proto_init() }
@@ -601,14 +686,14 @@ func file_chain_capabilities_solana_monitoring_write_report_proto_init() {
 	if File_chain_capabilities_solana_monitoring_write_report_proto != nil {
 		return
 	}
-	file_chain_capabilities_solana_monitoring_write_report_proto_msgTypes[3].OneofWrappers = []any{}
+	file_chain_capabilities_solana_monitoring_write_report_proto_msgTypes[4].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_chain_capabilities_solana_monitoring_write_report_proto_rawDesc), len(file_chain_capabilities_solana_monitoring_write_report_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
