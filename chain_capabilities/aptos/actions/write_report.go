@@ -113,17 +113,19 @@ func (s *Aptos) executeWriteReport(
 	// we fetch logs based ReportProcessed{receiver, workflowexecutionId, reportId}
 	// the logs returned by the service which are returned by the rpc has the txHash baked in.
 
-	// Set gas limits: use defaults if not provided, otherwise check against configured limit
+	// Set gas limits: use defaults if not provided (or provided as zero), otherwise check against configured limit.
 	if request.GasConfig == nil {
 		request.GasConfig = &aptoscap.GasConfig{}
+	}
+
+	if request.GasConfig.MaxGasAmount == 0 {
 		limit, limErr := s.maxGasAmountLimit.Limit(ctx)
 		if limErr != nil {
 			return nil, limErr
 		}
 		request.GasConfig.MaxGasAmount = limit
 	} else {
-		err := s.maxGasAmountLimit.Check(ctx, request.GasConfig.MaxGasAmount)
-		if err != nil {
+		if err := s.maxGasAmountLimit.Check(ctx, request.GasConfig.MaxGasAmount); err != nil {
 			return nil, fmt.Errorf("%s provided gas config exceeds limit (maxGasAmount=%d): %w", userError, request.GasConfig.MaxGasAmount, err)
 		}
 	}

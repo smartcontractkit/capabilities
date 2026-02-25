@@ -57,8 +57,20 @@ func (fc *forwarderClient) InvokeOnReport(ctx context.Context, receiver []byte, 
 		signatures = append(signatures, sig.Signature)
 	}
 
+	rawReport := report.RawReport
+	if len(report.ReportContext) > 0 {
+		if len(report.ReportContext) != 96 {
+			return nil, fmt.Errorf("invalid report context length: got %d want 96", len(report.ReportContext))
+		}
+		// Aptos forwarder validates signatures over blake2b(report_context || report)
+		// and parses report bytes starting at offset 96.
+		rawReport = make([]byte, 0, len(report.ReportContext)+len(report.RawReport))
+		rawReport = append(rawReport, report.ReportContext...)
+		rawReport = append(rawReport, report.RawReport...)
+	}
+
 	receiverAddress := aptos_sdk.AccountAddress(receiver)
-	moduleInformation, _, argTypes, args, err := fc.forwarderEncoder.Report(receiverAddress, report.RawReport, signatures)
+	moduleInformation, _, argTypes, args, err := fc.forwarderEncoder.Report(receiverAddress, rawReport, signatures)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode forwarder report: %w", err)
 	}
