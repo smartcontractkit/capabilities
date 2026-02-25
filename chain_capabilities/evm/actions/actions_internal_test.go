@@ -2,6 +2,7 @@ package actions
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"math/big"
 	"testing"
@@ -15,6 +16,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
+	"github.com/smartcontractkit/chainlink-framework/multinode"
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions/mocks"
@@ -133,6 +135,99 @@ func TestReadType(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, expectedResult, result)
 	})
+}
+
+func TestIsRevertError(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{
+			name:     "execution reverted with reason",
+			err:      fmt.Errorf("execution reverted: division by zero"),
+			expected: true,
+		},
+		{
+			name:     "wrapped RPC revert",
+			err:      fmt.Errorf("RPC call failed: execution reverted"),
+			expected: true,
+		},
+		{
+			name:     "execution reverted bare",
+			err:      fmt.Errorf("execution reverted"),
+			expected: true,
+		},
+		{
+			name:     "non-revert error",
+			err:      fmt.Errorf("insufficient funds"),
+			expected: false,
+		},
+		{
+			name:     "context deadline exceeded",
+			err:      context.DeadlineExceeded,
+			expected: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tc.expected, isRevertError(tc.err))
+		})
+	}
+}
+
+func TestIsUserError(t *testing.T) {
+	t.Parallel()
+
+	evm := &EVM{}
+
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{
+			name:     "revert error is user error",
+			err:      fmt.Errorf("RPC call failed: execution reverted: division by zero"),
+			expected: true,
+		},
+		{
+			name:     "bare execution reverted is user error",
+			err:      fmt.Errorf("execution reverted"),
+			expected: true,
+		},
+		{
+			name:     "context.DeadlineExceeded is system error",
+			err:      context.DeadlineExceeded,
+			expected: false,
+		},
+		{
+			name:     "multinode.ErrNodeError is system error",
+			err:      multinode.ErrNodeError,
+			expected: false,
+		},
+		{
+			name:     "generic error is user error",
+			err:      fmt.Errorf("some other error"),
+			expected: true,
+		},
+		{
+			name:     "wrapped DeadlineExceeded is system error",
+			err:      fmt.Errorf("operation failed: %w", context.DeadlineExceeded),
+			expected: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tc.expected, evm.isUserError(tc.err))
+		})
+	}
 }
 
 func TestFilterLogs(t *testing.T) {

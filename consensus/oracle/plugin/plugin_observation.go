@@ -35,11 +35,11 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 
 		hasCapacity := observationBatch.AddObservation(ctx, reqObs)
 		if !hasCapacity {
-			r.lggr.Debugw("batch does not have capacity to add observation - skipping in this round", "requestID", reqObs.Metadata.RequestId)
+			r.lggr.Debugw("batch does not have capacity to add observation - skipping in this round", "seqNr", outctx.SeqNr, "requestID", reqObs.Metadata.RequestId)
 			break
 		}
 	}
 
-	r.lggr.Debugw("consensus plugin observation complete", "numObservations", observationBatch.NumObservationsInBatch(), "numOfRequestsInQuery", len(requestsQuery.RequestIDs))
+	r.lggr.Debugw("consensus plugin observation complete", "seqNr", outctx.SeqNr, "numObservations", observationBatch.NumObservationsInBatch(), "numOfRequestsInQuery", len(requestsQuery.RequestIDs))
 	return observationBatch.SerialiseObservationBatch(ctx)
 }

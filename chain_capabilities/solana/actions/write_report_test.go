@@ -5,9 +5,11 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/gagliardetto/solana-go"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/metering"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
@@ -166,8 +168,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 
 		reportMetadata := createTestReportMetadata()
 
-		_, err := helper.solana.WriteReport(ctx, createTestRequestMetadata(reportMetadata), createTestWriteReportReq(reportMetadata))
+		result, err := helper.solana.WriteReport(ctx, createTestRequestMetadata(reportMetadata), createTestWriteReportReq(reportMetadata))
 		require.NoError(t, err)
+		require.Empty(t, result.ResponseMetadata.Metering)
 	})
 	t.Run("TX first transmission - Successful TX execution", func(t *testing.T) {
 		ctx := t.Context()
@@ -201,8 +204,14 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		}
 		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(transmissionInfo, nil).Once()
 
-		_, err := helper.solana.WriteReport(ctx, capabilitiesMetadata, writeReportRequest)
+		txFeeInLamports := uint64(5000)
+		helper.solanaService.On("GetTransaction", mock.Anything, mock.Anything).Return(&soltypes.GetTransactionReply{
+			Meta: &soltypes.TransactionMeta{Fee: txFeeInLamports},
+		}, nil)
+
+		result, err := helper.solana.WriteReport(ctx, capabilitiesMetadata, writeReportRequest)
 		require.NoError(t, err)
+		validateMeteringWriteReport(t, result.ResponseMetadata, 1, "0.000005")
 	})
 
 }
@@ -279,4 +288,234 @@ func RandomBytes(n int) []byte {
 		panic(err)
 	}
 	return b
+}
+
+func validateMeteringWriteReport(t *testing.T, metadata capabilities.ResponseMetadata, chainSelector int, expectedValue string) {
+	t.Helper()
+	require.Len(t, metadata.Metering, 1)
+	meteringNodeDetail := metadata.Metering[0]
+	require.Equal(t, fmt.Sprintf(metering.WriteReportSpendUnitFormat, chainSelector), meteringNodeDetail.SpendUnit)
+	require.Equal(t, expectedValue, meteringNodeDetail.SpendValue)
+	require.Empty(t, meteringNodeDetail.Peer2PeerID, "Peer2PeerID should be empty as it will be assigned by the engine")
+}
+
+func TestWriteReport_MeteringMetadata(t *testing.T) {
+	t.Parallel()
+
+	key, _ := solana.NewRandomPrivateKey()
+	sig := solana.Signature{1, 2, 3}
+
+	t.Run("Successful first transmission includes metering metadata", func(t *testing.T) {
+		ctx := t.Context()
+		testLogger := logger.Test(t)
+		helper := createMocksAndCapability(t, testLogger)
+
+		receiverAddress := key.PublicKey()
+		reportMetadata := createTestReportMetadata()
+		encodedReportMetadata, _ := reportMetadata.Encode()
+
+		signedReport := &workflowpb.ReportResponse{
+			RawReport:     encodedReportMetadata,
+			ReportContext: []byte{},
+			Sigs:          generateRandomSignatures(),
+		}
+		writeReportRequest := &solcap.WriteReportRequest{
+			Receiver: receiverAddress.Bytes(),
+			Report:   signedReport,
+		}
+		capabilitiesMetadata := createTestRequestMetadata(reportMetadata)
+
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(&TransmissionInfo{
+			State: TransmissionStateNotAttempted,
+		}, nil).Once()
+
+		helper.creForwarderClient.On("InvokeOnReport", mock.Anything, receiverAddress, mock.Anything, signedReport, mock.Anything).Return(&soltypes.SubmitTransactionReply{
+			Signature: soltypes.Signature(sig),
+		}, nil)
+
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(&TransmissionInfo{
+			State: TransmissionStateSucceeded,
+		}, nil).Once()
+
+		txFeeInLamports := uint64(10000)
+		helper.solanaService.On("GetTransaction", mock.Anything, mock.Anything).Return(&soltypes.GetTransactionReply{
+			Meta: &soltypes.TransactionMeta{Fee: txFeeInLamports},
+		}, nil)
+
+		result, err := helper.solana.WriteReport(ctx, capabilitiesMetadata, writeReportRequest)
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		validateMeteringWriteReport(t, result.ResponseMetadata, 1, "0.00001")
+	})
+
+	t.Run("Failed transmission still includes metering metadata", func(t *testing.T) {
+		ctx := t.Context()
+		testLogger := logger.Test(t)
+		helper := createMocksAndCapability(t, testLogger)
+
+		receiverAddress := key.PublicKey()
+		reportMetadata := createTestReportMetadata()
+		encodedReportMetadata, _ := reportMetadata.Encode()
+
+		signedReport := &workflowpb.ReportResponse{
+			RawReport:     encodedReportMetadata,
+			ReportContext: []byte{},
+			Sigs:          generateRandomSignatures(),
+		}
+		writeReportRequest := &solcap.WriteReportRequest{
+			Receiver: receiverAddress.Bytes(),
+			Report:   signedReport,
+		}
+		capabilitiesMetadata := createTestRequestMetadata(reportMetadata)
+
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(&TransmissionInfo{
+			State: TransmissionStateNotAttempted,
+		}, nil).Once()
+
+		helper.creForwarderClient.On("InvokeOnReport", mock.Anything, receiverAddress, mock.Anything, signedReport, mock.Anything).Return(&soltypes.SubmitTransactionReply{
+			Signature: soltypes.Signature(sig),
+		}, nil)
+
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(&TransmissionInfo{
+			State:     TransmissionStateFailed,
+			Signature: sig,
+		}, nil).Once()
+
+		txFeeInLamports := uint64(5000)
+		helper.solanaService.On("GetTransaction", mock.Anything, mock.Anything).Return(&soltypes.GetTransactionReply{
+			Meta: &soltypes.TransactionMeta{Fee: txFeeInLamports},
+		}, nil)
+
+		result, err := helper.solana.WriteReport(ctx, capabilitiesMetadata, writeReportRequest)
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.Equal(t, solcap.TxStatus_TX_STATUS_ABORTED, result.Response.TxStatus)
+
+		validateMeteringWriteReport(t, result.ResponseMetadata, 1, "0.000005")
+	})
+
+	t.Run("Fee calculation failure does not fail WriteReport", func(t *testing.T) {
+		ctx := t.Context()
+		testLogger := logger.Test(t)
+		helper := createMocksAndCapability(t, testLogger)
+
+		receiverAddress := key.PublicKey()
+		reportMetadata := createTestReportMetadata()
+		encodedReportMetadata, _ := reportMetadata.Encode()
+
+		signedReport := &workflowpb.ReportResponse{
+			RawReport:     encodedReportMetadata,
+			ReportContext: []byte{},
+			Sigs:          generateRandomSignatures(),
+		}
+		writeReportRequest := &solcap.WriteReportRequest{
+			Receiver: receiverAddress.Bytes(),
+			Report:   signedReport,
+		}
+		capabilitiesMetadata := createTestRequestMetadata(reportMetadata)
+
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(&TransmissionInfo{
+			State: TransmissionStateNotAttempted,
+		}, nil).Once()
+
+		helper.creForwarderClient.On("InvokeOnReport", mock.Anything, receiverAddress, mock.Anything, signedReport, mock.Anything).Return(&soltypes.SubmitTransactionReply{
+			Signature: soltypes.Signature(sig),
+		}, nil)
+
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(&TransmissionInfo{
+			State: TransmissionStateSucceeded,
+		}, nil).Once()
+
+		helper.solanaService.On("GetTransaction", mock.Anything, mock.Anything).Return(
+			(*soltypes.GetTransactionReply)(nil), errors.New("rpc error: transaction not found"))
+
+		result, err := helper.solana.WriteReport(ctx, capabilitiesMetadata, writeReportRequest)
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.Equal(t, solcap.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
+
+		require.Empty(t, result.ResponseMetadata.Metering)
+	})
+
+	t.Run("Pre-existing successful transmission has no metering", func(t *testing.T) {
+		ctx := t.Context()
+		testLogger := logger.Test(t)
+		helper := createMocksAndCapability(t, testLogger)
+
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(&TransmissionInfo{
+			State: TransmissionStateSucceeded,
+		}, nil)
+
+		reportMetadata := createTestReportMetadata()
+
+		result, err := helper.solana.WriteReport(ctx, createTestRequestMetadata(reportMetadata), createTestWriteReportReq(reportMetadata))
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		require.Empty(t, result.ResponseMetadata.Metering)
+		helper.creForwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	})
+}
+
+func TestGetFee(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Converts lamports to SOL correctly", func(t *testing.T) {
+		testLogger := logger.Test(t)
+		mockSolanaService := mocks.NewSolanaService(t)
+
+		wr := &WriteReport{
+			SolanaService: mockSolanaService,
+			lggr:          testLogger,
+		}
+
+		sig := solana.Signature{1, 2, 3}
+		txFeeInLamports := uint64(5000)
+		mockSolanaService.On("GetTransaction", mock.Anything, mock.Anything).Return(&soltypes.GetTransactionReply{
+			Meta: &soltypes.TransactionMeta{Fee: txFeeInLamports},
+		}, nil)
+
+		fee, err := wr.getFee(t.Context(), sig)
+		require.NoError(t, err)
+		require.Equal(t, "0.000005", fee.Text('f', -1))
+	})
+
+	t.Run("Handles large fee values", func(t *testing.T) {
+		testLogger := logger.Test(t)
+		mockSolanaService := mocks.NewSolanaService(t)
+
+		wr := &WriteReport{
+			SolanaService: mockSolanaService,
+			lggr:          testLogger,
+		}
+
+		sig := solana.Signature{4, 5, 6}
+		txFeeInLamports := uint64(1_000_000_000) // 1 SOL
+		mockSolanaService.On("GetTransaction", mock.Anything, mock.Anything).Return(&soltypes.GetTransactionReply{
+			Meta: &soltypes.TransactionMeta{Fee: txFeeInLamports},
+		}, nil)
+
+		fee, err := wr.getFee(t.Context(), sig)
+		require.NoError(t, err)
+		require.Equal(t, "1", fee.Text('f', -1))
+	})
+
+	t.Run("Returns error when GetTransaction fails", func(t *testing.T) {
+		testLogger := logger.Test(t)
+		mockSolanaService := mocks.NewSolanaService(t)
+
+		wr := &WriteReport{
+			SolanaService: mockSolanaService,
+			lggr:          testLogger,
+		}
+
+		sig := solana.Signature{7, 8, 9}
+		mockSolanaService.On("GetTransaction", mock.Anything, mock.Anything).Return(
+			(*soltypes.GetTransactionReply)(nil), errors.New("rpc error"))
+
+		_, err := wr.getFee(t.Context(), sig)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to get transaction")
+	})
 }
