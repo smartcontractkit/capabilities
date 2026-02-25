@@ -142,10 +142,10 @@ func (s *Aptos) executeWriteReport(
 
 	switch transmissionInfo.Success {
 	case true:
-		txHash := ""
+		txHash := []byte{}
 		return &aptoscap.WriteReportReply{
 			TxStatus: aptoscap.TxStatus_TX_STATUS_SUCCESS,
-			TxHash:   &txHash,
+			TxHash:   txHash,
 		}, nil
 	case false: // this should tell me more, not attempted / failed / invalid receiver (this will be stored on chain)
 		return nil, fmt.Errorf("transmission not attempted")
@@ -183,7 +183,7 @@ func (s *Aptos) executeWriteReport(
 
 	switch newTransmissionInfo.Success {
 	case true:
-		txHash := &txReply.PendingTransaction.Hash
+		txHash := []byte(txReply.PendingTransaction.Hash)
 		return &aptoscap.WriteReportReply{
 			TxStatus: aptoscap.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:   txHash,
