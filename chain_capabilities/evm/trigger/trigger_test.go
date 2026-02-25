@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
 
 	"google.golang.org/protobuf/proto"
 

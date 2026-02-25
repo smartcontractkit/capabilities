@@ -1,0 +1,50 @@
+syntax = "proto3";
+package chain_capabilities.solana;
+option go_package = "github.com/smartcontractkit/capabilities/chain_capabilities/solana;monitoring";
+
+import "libs/monitoring/execution_context.proto";
+
+message FilterLogTriggerRequest {
+  bytes address = 1;          // 32-byte program public key
+  string event_name = 2;      // Name of the event to filter
+  bytes event_sig = 3;        // 8-byte event signature (discriminator)
+  int64 starting_block = 4;   // Starting block/slot number
+}
+
+message LogTriggerInitiated {
+  FilterLogTriggerRequest req = 1;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message LogTriggerSuccess {
+  string trigger_id = 1;
+  FilterLogTriggerRequest req = 2;
+  int32 log_count = 3;
+  int64 latest_offset_block = 4;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message LogTriggerError {
+  string trigger_id = 1;
+  string summary = 2;
+  string cause = 3;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message LogTriggerEventDroppedError {
+  string trigger_id = 1;
+  string tx_hash = 2;
+  string block_hash = 3;
+  int64 log_index = 4;
+  string summary = 5;
+  string cause = 6;
+  bool is_limit_error = 7;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message LogTriggerCleanUpError {
+  string summary = 1;
+  string cause = 2;
+  monitoring.ExecutionContext execution_context = 20;
+}
+

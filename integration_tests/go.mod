@@ -10,6 +10,8 @@ replace github.com/smartcontractkit/capabilities/http_trigger => ../http_trigger
 
 replace github.com/smartcontractkit/capabilities/chain_capabilities/evm => ../chain_capabilities/evm
 
+replace github.com/smartcontractkit/capabilities/chain_capabilities/common => ../chain_capabilities/common
+
 replace github.com/fbsobreira/gotron-sdk => github.com/smartcontractkit/chainlink-tron/relayer/gotron-sdk v0.0.5-0.20251014124537-af6b1684fe15
 
 require (

@@ -10,10 +10,10 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	evmmock "github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions/mocks"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
 )
 
 type EvmWithMocks struct {

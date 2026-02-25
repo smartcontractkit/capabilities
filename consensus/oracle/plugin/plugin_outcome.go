@@ -27,37 +27,39 @@ import (
 )
 
 func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeContext, query types.Query, attributedObservations []types.AttributedObservation) (ocr3types.Outcome, error) {
+	lggr := logger.With(r.lggr, "seqNr", outctx.SeqNr)
+
 	requestsQuery := &oracletypes.Query{}
 	err := proto.Unmarshal(query, requestsQuery)
 	if err != nil {
 		return nil, fmt.Errorf("failed to unmarshal query: %w", err)
 	}
 
-	outcomeBatch, err := batching.NewOutcomeBatch(ctx, r.lggr, outctx, r.outcomeExpirySeqNrSpan, int(r.config.MaxOutcomeLengthBytes), r.defaultKeyBundleIDForConsensusFailure,
+	outcomeBatch, err := batching.NewOutcomeBatch(ctx, lggr, outctx, r.outcomeExpirySeqNrSpan, int(r.config.MaxOutcomeLengthBytes), r.defaultKeyBundleIDForConsensusFailure,
 		r.metrics, r.maxRequestOutcomeSize, r.maxNumberOfReports)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create new outcome batch: %w", err)
 	}
 
-	requestIDToObservations := groupAttributedObservationsByRequestID(r.lggr, attributedObservations)
+	requestIDToObservations := groupAttributedObservationsByRequestID(lggr, attributedObservations)
 
 	for _, requestID := range requestsQuery.RequestIDs {
 		observations := requestIDToObservations[requestID]
 
 		// 2f+1 or more observations have been received, calculate the outcome for the request
 		if len(observations) >= 2*r.f+1 {
-			hasCapacity, err := r.addRequestOutcomeToBatch(ctx, requestID, observations, outcomeBatch)
+			hasCapacity, err := r.addRequestOutcomeToBatch(ctx, lggr, requestID, observations, outcomeBatch)
 			if err != nil {
 				return nil, fmt.Errorf("failed to add request outcome to batch for request %s: %w", requestID, err)
 			}
 
 			if !hasCapacity {
-				r.lggr.Debugw("batch does not have capacity to add request outcome - skipping in this round", "requestID", requestID)
+				lggr.Debugw("batch does not have capacity to add request outcome - skipping in this round", "requestID", requestID)
 				break
 			}
-			r.lggr.Debugw("added request outcome to batch", "requestID", requestID, "numObservations", len(observations))
+			lggr.Debugw("added request outcome to batch", "requestID", requestID, "numObservations", len(observations))
 		} else {
-			r.lggr.Debugw("not enough observations to calculate outcome for request - skipping in this round", "requestID", requestID, "numObservations", len(observations))
+			lggr.Debugw("not enough observations to calculate outcome for request - skipping in this round", "requestID", requestID, "numObservations", len(observations))
 		}
 	}
 
@@ -65,8 +67,8 @@ func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeC
 }
 
 // addRequestOutcomeToBatch adds the outcome for a single request to the outcome batch. Returns false if batch does not have capacity to add the outcome.
-func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, requestID string, observations []*oracletypes.RequestObservation, outcome *batching.OutcomeBatch) (bool, error) {
-	consensusMDD, err := r.calculateConsensusMetadataDescriptorAndDefault(observations)
+func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, lggr logger.Logger, requestID string, observations []*oracletypes.RequestObservation, outcome *batching.OutcomeBatch) (bool, error) {
+	consensusMDD, err := r.calculateConsensusMetadataDescriptorAndDefault(lggr, observations)
 	if err != nil {
 		return outcome.AddFailedConsensusRequestOutcomeToBatch(ctx, requestID,
 			fmt.Sprintf("failed to calculate consensus metadata, descriptor and default for request: %v", err),
@@ -80,13 +82,13 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, requestI
 	for _, obs := range observations {
 		// Does the observation have a timestamp?
 		if obs.ReceivedAt == nil {
-			r.lggr.Warnw("observation missing receivedAt timestamp", "requestID", requestID, "observerMetadata", obs.Metadata)
+			lggr.Warnw("observation missing receivedAt timestamp", "requestID", requestID, "observerMetadata", obs.Metadata)
 			continue
 		}
 
 		// Does the observation's metadata, descriptor and default match the consensus?
 		if !verifyMetadataDescriptorAndDefaultMatchConsensus(obs, consensusMDD) {
-			r.lggr.Warnw("observation metadata, descriptor or default does not match consensus", "requestID", requestID, "observation", obs, "consensusMDD", consensusMDD)
+			lggr.Warnw("observation metadata, descriptor or default does not match consensus", "requestID", requestID, "observation", obs, "consensusMDD", consensusMDD)
 			continue
 		}
 
@@ -111,26 +113,26 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, requestI
 			len(obsErrors), r.f+1, requestID, consensusMDD, formatErrorsForLogging(ctx, obsErrors),
 		)
 
-		return outcome.FailConsensusWithDefaultCheck(ctx, r.lggr, requestID, consensusFailedMsg,
+		return outcome.FailConsensusWithDefaultCheck(ctx, lggr, requestID, consensusFailedMsg,
 			"consensus calculation failed: received >= f+1 error observations",
 			oracletypes.ConsensusFailureCode_RECEIVED_FPLUS1_ERRORS, consensusMDD, timestamp)
 	}
 
-	value, err := oracle.CalculateOutcomeForObservations(r.lggr, obsValues, consensusMDD.Input.Descriptors, consensusMDD.Input.Default, r.f)
+	value, err := oracle.CalculateOutcomeForObservations(lggr, obsValues, consensusMDD.Input.Descriptors, consensusMDD.Input.Default, r.f)
 	if err != nil {
-		valuesJSON := formatValuesForLogging(ctx, r.lggr, obsValues)
+		valuesJSON := formatValuesForLogging(ctx, lggr, obsValues)
 		consensusFailedMsg := fmt.Sprintf(
 			"consensus calculation failed: %v; Consensus metadata, descriptor and default: %+v; Values received: %s; Errors received: %s",
 			err, consensusMDD, valuesJSON, formatErrorsForLogging(ctx, obsErrors),
 		)
 
 		if errors.Is(err, oracle.ErrMoreThanOneValidOutcomeForIdenticalConsensus) {
-			return outcome.FailConsensusWithDefaultCheck(ctx, r.lggr, requestID, consensusFailedMsg,
+			return outcome.FailConsensusWithDefaultCheck(ctx, lggr, requestID, consensusFailedMsg,
 				"consensus calculation failed: more than one valid outcome for identical consensus",
 				oracletypes.ConsensusFailureCode_MORE_THAN_ONE_VALID_OUTCOME_FOR_IDENTICAL_CONSENSUS, consensusMDD, timestamp)
 		}
 
-		return outcome.FailConsensusWithDefaultCheck(ctx, r.lggr, requestID, consensusFailedMsg,
+		return outcome.FailConsensusWithDefaultCheck(ctx, lggr, requestID, consensusFailedMsg,
 			"consensus calculation failed: aggregation failed",
 			oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED, consensusMDD, timestamp)
 	}
@@ -188,7 +190,7 @@ func verifyMetadataDescriptorAndDefaultMatchConsensus(obs *oracletypes.RequestOb
 	return proto.Equal(obsMDD, consensusMDD)
 }
 
-func (r *reportingPlugin) calculateConsensusMetadataDescriptorAndDefault(observations []*oracletypes.RequestObservation) (*oracletypes.RequestObservation, error) {
+func (r *reportingPlugin) calculateConsensusMetadataDescriptorAndDefault(lggr logger.Logger, observations []*oracletypes.RequestObservation) (*oracletypes.RequestObservation, error) {
 	var allObservationsMDDBytes []*valuespb.Value
 	for _, obs := range observations {
 		mddBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(&oracletypes.RequestObservation{
@@ -199,7 +201,7 @@ func (r *reportingPlugin) calculateConsensusMetadataDescriptorAndDefault(observa
 			},
 		})
 		if err != nil {
-			r.lggr.Errorw("could not marshal RequestObservation", "error", err)
+			lggr.Errorw("could not marshal RequestObservation", "error", err)
 			continue
 		}
 
@@ -207,7 +209,7 @@ func (r *reportingPlugin) calculateConsensusMetadataDescriptorAndDefault(observa
 		allObservationsMDDBytes = append(allObservationsMDDBytes, values.Proto(values.NewBytes(mddBytes)))
 	}
 
-	consensusMDDBytes, err := oracle.CalculateOutcomeForObservations(r.lggr, allObservationsMDDBytes,
+	consensusMDDBytes, err := oracle.CalculateOutcomeForObservations(lggr, allObservationsMDDBytes,
 		&sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL}},
 		nil, r.f)
 	if err != nil {
@@ -224,8 +226,6 @@ func (r *reportingPlugin) calculateConsensusMetadataDescriptorAndDefault(observa
 }
 
 func groupAttributedObservationsByRequestID(lggr logger.Logger, attributedObservations []types.AttributedObservation) map[string][]*oracletypes.RequestObservation {
-	// sort attributedObservations by oracle ID
-	// libOCR doesn't guarantee the same order across nodes (See eventTGraceTimeout() in outcome_generation_leader.go)
 	slices.SortFunc(attributedObservations, func(a, b types.AttributedObservation) int {
 		return int(a.Observer) - int(b.Observer)
 	})
