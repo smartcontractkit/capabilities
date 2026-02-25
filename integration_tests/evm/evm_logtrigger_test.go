@@ -443,7 +443,7 @@ func getBeholderLogsForWorkflow(beholderTester beholdertest.Observer, t *testing
 			userLog := events2.UserLogs{}
 			err := proto.Unmarshal(userMsg.Body, &userLog)
 			require.NoError(t, err)
-			fmt.Printf("Beholder Observer logs: Payload.msg: %v\n", &userLog.LogLines)
+			t.Logf("Beholder Observer logs: Payload.msg: %v\n", &userLog.LogLines)
 			workflowLogs = append(workflowLogs, userLog.LogLines)
 		}
 	}
@@ -513,7 +513,7 @@ func setupDon(ctx context.Context, t *testing.T, lggr logger.Logger, workflowURL
 
 	data, err := yaml.Marshal(config)
 	require.NoError(t, err)
-	fmt.Printf("Runtime yaml config:\n%s\n", string(data))
+	t.Logf("Runtime yaml config:\n%s\n", string(data))
 	urlToConfigBytes[configURL] = data
 
 	evmBinary, err := utils.DeployCapability(t, "chain_capabilities/evm")

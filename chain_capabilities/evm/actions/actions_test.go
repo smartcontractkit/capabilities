@@ -3,6 +3,8 @@ package actions_test
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"math/big"
 	"testing"
 
@@ -12,6 +14,8 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/ethereum/go-ethereum/common"
+
+	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
@@ -66,6 +70,25 @@ func TestCapability_CallContract(t *testing.T) {
 		cancel()
 		_, err := svc.CallContract(ctx, test.GetMetadataWithFunds(), req)
 		require.ErrorContains(t, err, "context canceled")
+	})
+
+	t.Run("revert error is classified as user error", func(t *testing.T) {
+		svc := actions.InitMocks(t)
+		msg := evmtypes.CallMsg{Data: []byte{0xbe, 0xef}}
+		msgProto, _ := evmcappb.ConvertCallMsgToProto(&msg)
+
+		block := big.NewInt(123)
+		ch := make(chan types.Reply, 1)
+		ch <- types.Reply{Err: fmt.Errorf("RPC call failed: execution reverted: division by zero")}
+		svc.ConsensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
+
+		req := &evmcappb.CallContractRequest{Call: msgProto, BlockNumber: valuespb.NewBigIntFromInt(block)}
+		_, err := svc.CallContract(t.Context(), test.GetMetadataWithFunds(), req)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "execution reverted")
+		var capErr caperrors.Error
+		require.True(t, errors.As(err, &capErr), "error should be a caperrors.Error")
+		require.Equal(t, caperrors.OriginUser, capErr.Origin(), "revert error should be classified as user error")
 	})
 }
 

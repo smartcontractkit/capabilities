@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"io"
-	"net/http" // aliased below to avoid conflict
+	"net/http"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/doyensec/safeurl"
@@ -20,8 +22,10 @@ import (
 
 var _ OutboundRequestClient = &httpClientProxy{}
 
-const ClientName = "HTTPClientProxy"
-const internalError = "internal error"
+const (
+	ClientName    = "HTTPClientProxy"
+	internalError = "internal error"
+)
 
 type OutboundRequestClient interface {
 	SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *httpcap.Request, startTime time.Time) (*httpcap.Response, time.Duration, error)
@@ -33,20 +37,41 @@ type ResponseValidator interface {
 	ValidateResponseSize(ctx context.Context, response []byte) error
 }
 
+// RequestValidator validates HTTP requests and responses. Implemented by validate.Validator.
+// Clients should call ValidatedRequest at the send boundary so validation runs in one place.
+type RequestValidator interface {
+	ResponseValidator
+	ValidatedRequest(ctx context.Context, input *httpcap.Request) (*httpcap.Request, error)
+}
+
+// InputValidationError wraps an error from request validation so the action can map it to a user-facing error.
+type InputValidationError struct{ Err error }
+
+func (e InputValidationError) Error() string {
+	if e.Err != nil {
+		return e.Err.Error()
+	}
+	return "input validation failed"
+}
+
+func (e InputValidationError) Unwrap() error { return e.Err }
+
 // httpClientProxy implements OutboundRequestClient using a regular HTTP client
 type httpClientProxy struct {
 	client    *safeurl.WrappedClient
 	cfg       ServiceConfig
 	lggr      logger.Logger
-	validator ResponseValidator
+	validator RequestValidator
 	metrics   *Metrics
 }
 
-func disableRedirects(req *http.Request, via []*http.Request) error {
-	return errors.New("redirects are not allowed")
+var errRedirectsDisabled = errors.New("redirects are not allowed")
+
+func disableRedirects(*http.Request, []*http.Request) error {
+	return errRedirectsDisabled
 }
 
-func NewHTTPClientProxy(cfg ServiceConfig, lggr logger.Logger, validator ResponseValidator, metrics *Metrics) (*httpClientProxy, error) {
+func NewHTTPClientProxy(cfg ServiceConfig, lggr logger.Logger, validator RequestValidator, metrics *Metrics) (*httpClientProxy, error) {
 	safeConfig := safeurl.
 		GetConfigBuilder().
 		SetAllowedIPs(cfg.HTTPClientConfig.AllowedIPs...).
@@ -67,18 +92,45 @@ func NewHTTPClientProxy(cfg ServiceConfig, lggr logger.Logger, validator Respons
 	}, nil
 }
 
-func headers(req *httpcap.Request) map[string][]string {
-	headers := make(map[string][]string)
-	for k, v := range req.Headers {
-		headers[k] = []string{v}
+func toRequestHeaders(req *httpcap.Request) http.Header {
+	h := make(http.Header)
+	if len(req.MultiHeaders) > 0 {
+		for k, v := range req.MultiHeaders {
+			h[k] = slices.Clone(v.GetValues())
+		}
+		return h
 	}
-	return headers
+	// TODO: Remove fallback to using Headers.
+	for k, v := range req.Headers { //nolint:staticcheck
+		h[k] = []string{v}
+	}
+	return h
+}
+
+// toResponseHeaders converts net/http response headers into capability Response format
+func toResponseHeaders(header http.Header) (map[string]*httpcap.HeaderValues, map[string]string) {
+	multiHeaders := make(map[string]*httpcap.HeaderValues, len(header))
+	headers := make(map[string]string, len(header))
+	for k, v := range header {
+		if len(v) == 0 {
+			continue
+		}
+		multiHeaders[k] = &httpcap.HeaderValues{Values: slices.Clone(v)}
+		headers[k] = strings.Join(v, ",") // Join via "," for backwards compatibility.
+	}
+	return multiHeaders, headers
 }
 
 func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *httpcap.Request, startTime time.Time) (*httpcap.Response, time.Duration, error) {
 	ctx = metadata.ContextWithCRE(ctx)
 	requestID := uuid.New().String()
 	lggr := logger.With(h.lggr, "requestID", requestID, "workflowID", metadata.WorkflowID, "workflowExecutionID", metadata.WorkflowExecutionID, "workflowOwner", metadata.WorkflowOwner)
+
+	input, err := h.validator.ValidatedRequest(ctx, input)
+	if err != nil {
+		h.metrics.IncrementInputValidationFailures(ctx, lggr)
+		return nil, 0, InputValidationError{Err: err}
+	}
 
 	timeoutCtx, cancel := context.WithTimeout(ctx, input.Timeout.AsDuration())
 	defer cancel()
@@ -90,7 +142,7 @@ func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities
 		return nil, 0, errors.New(internalError)
 	}
 
-	req.Header = http.Header(headers(input))
+	req.Header = toRequestHeaders(input)
 
 	lggr.Debugw("Sending HTTP request")
 	externalStartTime := time.Now()
@@ -114,18 +166,13 @@ func (h *httpClientProxy) SendRequest(ctx context.Context, metadata capabilities
 		return nil, 0, err
 	}
 
-	headers := make(map[string]string)
-	for k, v := range resp.Header {
-		if len(v) == 0 {
-			continue
-		}
-		headers[k] = v[0]
-	}
+	multiHeaders, headers := toResponseHeaders(resp.Header)
 
 	outputs := &httpcap.Response{
-		StatusCode: uint32(resp.StatusCode), //nolint:gosec // G115
-		Headers:    headers,
-		Body:       body,
+		StatusCode:   uint32(resp.StatusCode), //nolint:gosec // G115
+		Headers:      headers,
+		MultiHeaders: multiHeaders,
+		Body:         body,
 	}
 
 	return outputs, externalLatency, nil

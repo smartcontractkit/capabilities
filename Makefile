@@ -13,5 +13,5 @@ gomodtidy: gomods ## Run go mod tidy on all modules.
 	gomods tidy
 
 .PHONY: tidy
-tidy: gomodtidy ## Tidy all modules and add to git.
+tidy: gomodtidy gomods ## Tidy all modules and add to git.
 	git add '**go.*'

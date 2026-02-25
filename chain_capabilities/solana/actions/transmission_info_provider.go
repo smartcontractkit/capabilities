@@ -131,7 +131,6 @@ func (lr *logReader) registerCREForwarderFilters(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-
 	sigProcessed := soltypes.EventSignature(lptypes.NewEventSignatureFromName(EventReportProcessed))
 	err = lr.SolanaService.RegisterLogTracking(ctx, soltypes.LPFilterQuery{
 		Name:            EventReportProcessed + "_" + lr.forwarderProgramID.String(),
@@ -139,24 +138,21 @@ func (lr *logReader) registerCREForwarderFilters(ctx context.Context) error {
 		EventName:       EventReportProcessed,
 		EventSig:        sigProcessed,
 		ContractIdlJSON: eventIDLProcessed,
-		SubkeyPaths:     [][]string{{"TransmissionId"}},
+		// EventIdlJSON: eventIDLProcessed,
+		SubkeyPaths: [][]string{{"TransmissionId"}},
 	})
 
 	if err != nil {
 		return fmt.Errorf("failed to register  EventReportProcessed filter for forwarder: %w", err)
 	}
 
-	eventIDLInProgress, err := getEventIDL(EventReportInProgress, codecIDL)
-	if err != nil {
-		return err
-	}
 	sigInProgress := soltypes.EventSignature(lptypes.NewEventSignatureFromName(EventReportInProgress))
 	err = lr.SolanaService.RegisterLogTracking(ctx, soltypes.LPFilterQuery{
 		Name:            EventReportInProgress + "_" + lr.forwarderProgramID.String(),
 		Address:         soltypes.PublicKey(lr.forwarderProgramID),
 		EventName:       EventReportInProgress,
 		EventSig:        sigInProgress,
-		ContractIdlJSON: eventIDLInProgress,
+		ContractIdlJSON: []byte(contracts.FetchForwarderIDL()),
 		SubkeyPaths:     [][]string{{"TransmissionId"}},
 		IncludeReverted: true,
 	})
