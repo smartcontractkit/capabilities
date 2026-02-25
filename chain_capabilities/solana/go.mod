@@ -3,7 +3,6 @@ module github.com/smartcontractkit/capabilities/chain_capabilities/solana
 go 1.25.5
 
 require (
-	github.com/ethereum/go-bigmodexpfix v0.0.0-20250911101455-f9e208c548ab
 	github.com/gagliardetto/binary v0.8.0
 	github.com/gagliardetto/solana-go v1.14.0
 	github.com/jpillora/backoff v1.0.0
