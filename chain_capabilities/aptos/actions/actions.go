@@ -48,9 +48,8 @@ func (a *Aptos) initLimiters(limitsFactory limits.Factory) (err error) {
 		return
 	}
 
-	// Keep this high enough for forwarder write-report transactions on local Aptos devnet.
-	// Workflow-level gas config still controls requested gas per execution.
-	maxGasAmountLimit := settings.Uint64(10_000_000)
+	// Keep aligned with local Aptos devnet transaction max-gas bounds.
+	maxGasAmountLimit := settings.Uint64(1_000_000)
 	a.maxGasAmountLimit, err = limits.MakeBoundLimiter(limitsFactory, maxGasAmountLimit)
 	return
 }
