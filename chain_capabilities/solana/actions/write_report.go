@@ -87,7 +87,6 @@ func (s *Solana) WriteReport(
 		return nil, GetError(err, isUserError)
 	}
 
-	//TODO PLEX-1920 add retreiving metering info
 	monitoring.LogAndEmitSuccess(ctx, "Successfully WriteReport execution", s.lggr, s.beholderProcessor, s.messageBuilder.BuildWriteReportSuccess(telemetryContext, input))
 	responseAndMetadata := capabilities.ResponseAndMetadata[*solcap.WriteReportReply]{
 		Response:         report,
@@ -108,6 +107,8 @@ func (s *Solana) executeWriteReport(ctx context.Context, request *solcap.WriteRe
 		txComputeLimit:           s.txComputeLimit,
 		reportSizeLimit:          s.reportSizeLimit,
 		lggr:                     s.messageBuilder.RequestLggr(s.lggr, telemetryContext),
+		beholderProcessor:        s.beholderProcessor,
+		messageBuilder:           s.messageBuilder,
 	}
 
 	return wr.executeWriteReport(ctx, request, telemetryContext, metadata)
