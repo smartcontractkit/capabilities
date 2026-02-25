@@ -17,7 +17,6 @@ import (
 	solprimitives "github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives/solana"
 	"github.com/smartcontractkit/chainlink-solana/contracts"
 	"github.com/smartcontractkit/chainlink-solana/pkg/solana/codec"
-	"github.com/smartcontractkit/chainlink-solana/pkg/solana/commoncodec"
 	lptypes "github.com/smartcontractkit/chainlink-solana/pkg/solana/logpoller/types"
 )
 
@@ -183,7 +182,7 @@ func getEventIDL(eventName string, codecIDL codec.IDL) ([]byte, error) {
 }
 
 func extractEventIDL(eventName string, codecIDL codec.IDL) (codec.IdlEvent, error) {
-	idlDef, err := codec.FindDefinitionFromIDL(commoncodec.ChainConfigTypeEventDef, eventName, codecIDL)
+	idlDef, err := codec.FindDefinitionFromIDL(codec.ChainConfigTypeEventDef, eventName, codecIDL)
 	if err != nil {
 		return codec.IdlEvent{}, err
 	}

@@ -21,8 +21,8 @@ import (
 	mocks2 "github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	"github.com/smartcontractkit/chainlink-evm/gethwrappers/keystone/generated/forwarder"
 
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
 )
 
 const LatestBlock = -2

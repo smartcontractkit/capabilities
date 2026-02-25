@@ -3,13 +3,8 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/actions"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/config"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
-	"github.com/smartcontractkit/capabilities/libs/loopserver"
 	chain_selectors "github.com/smartcontractkit/chain-selectors"
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -19,6 +14,13 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
+	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/actions"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/config"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/trigger"
+	"github.com/smartcontractkit/capabilities/libs/loopserver"
+
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
 	solcapserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana/server"
@@ -36,8 +38,9 @@ type capabilityGRPCService struct {
 	capabilities.CapabilityInfo
 	chainSelector uint64
 	capability
-	lggr          logger.Logger
-	limitsFactory limits.Factory
+	lggr           logger.Logger
+	limitsFactory  limits.Factory
+	triggerService *trigger.SolanaLogTriggerService
 }
 
 type capability struct {
@@ -56,14 +59,23 @@ func (c *capabilityGRPCService) ChainSelector() uint64 {
 	return c.chainSelector
 }
 
-func (c *capabilityGRPCService) Start(ctx context.Context) error {
+func (c *capabilityGRPCService) Start(_ context.Context) error {
 	c.lggr.Infof("Start %s", CapabilityName)
 	return nil
 }
 
 func (c *capabilityGRPCService) Close() error {
 	c.lggr.Infof("Closing %s", CapabilityName)
+	if c.triggerService != nil {
+		if err := c.triggerService.Close(); err != nil {
+			return fmt.Errorf("failed to close log trigger service: %w", err)
+		}
+	}
 	return nil
+}
+
+func (c *capabilityGRPCService) AckEvent(ctx context.Context, triggerId string, eventId string, method string) errors.Error {
+	return errors.NewError(fmt.Errorf("not implemented"), errors.VisibilityPublic, errors.OriginSystem, errors.Unknown)
 }
 
 func (c *capabilityGRPCService) HealthReport() map[string]error {
@@ -131,6 +143,22 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return err
 	}
 
+	c.triggerService, err = trigger.NewLogTriggerService(trigger.LogTriggerServiceOpts{
+		SolanaService:     solService,
+		Logger:            c.lggr,
+		BeholderProcessor: processor,
+		MessageBuilder:    messageBuilder,
+		Triggers:          trigger.NewSolanaLogTriggerStore(),
+		LimitsFactory:     c.limitsFactory,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create log trigger service: %w", err)
+	}
+
+	if err := c.triggerService.Start(ctx); err != nil {
+		return fmt.Errorf("failed to start log trigger service: %w", err)
+	}
+
 	c.lggr.Infof("Successfully initialised %s", CapabilityName)
 	return nil
 }
@@ -164,9 +192,9 @@ func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Confi
 
 func (s *capabilityGRPCService) RegisterLogTrigger(
 	ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *solana.FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*solana.Log], caperrors.Error) {
-	return nil, actions.GetError(errors.New("unimplemented"), false)
+	return s.triggerService.RegisterLogTrigger(ctx, triggerID, metadata, input)
 }
 
 func (s *capabilityGRPCService) UnregisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *solana.FilterLogTriggerRequest) caperrors.Error {
-	return actions.GetError(errors.New("unimplemented"), false)
+	return s.triggerService.UnregisterLogTrigger(ctx, triggerID, metadata, input)
 }

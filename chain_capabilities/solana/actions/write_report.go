@@ -13,8 +13,6 @@ import (
 
 	"github.com/gagliardetto/solana-go"
 	"github.com/jpillora/backoff"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/metering"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
@@ -27,6 +25,9 @@ import (
 	soltypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/solana"
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/retry"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/metering"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
 )
 
 type TransmissionState uint8
