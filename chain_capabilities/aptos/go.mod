@@ -4,11 +4,12 @@ go 1.25.5
 
 require (
 	github.com/aptos-labs/aptos-go-sdk v1.11.0
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20260210010829-97eb42ca2924
+	github.com/jpillora/backoff v1.0.0
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20260223172632-a716db2e04a0
 	github.com/smartcontractkit/chain-selectors v1.0.90
-	github.com/smartcontractkit/chainlink-aptos v0.0.0-20260217202121-e180775e1fb5
-	github.com/smartcontractkit/chainlink-common v0.10.1-0.20260218165451-e87d34b6ea14
-	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260217103918-db5a4ede0b6f
+	github.com/smartcontractkit/chainlink-aptos v0.0.0-20260217195306-9fec97c5dfbd
+	github.com/smartcontractkit/chainlink-common v0.10.1-0.20260224164133-bf6bdc0ac7a6
+	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260217043601-5cc966896c4f
 )
 
 require (
@@ -59,7 +60,6 @@ require (
 	github.com/jackc/pgtype v1.14.4 // indirect
 	github.com/jackc/pgx/v4 v4.18.3 // indirect
 	github.com/jmoiron/sqlx v1.4.0 // indirect
-	github.com/jpillora/backoff v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/lib/pq v1.10.9 // indirect
