@@ -46,7 +46,7 @@ const (
 type LogTriggerService struct {
 	services.Service
 
-	baseTrigger capabilities.BaseTriggerCapability[*evmcappb.Log]
+	baseTrigger *capabilities.BaseTriggerCapability[*evmcappb.Log]
 
 	srvcEng *services.Engine
 
@@ -124,7 +124,7 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 		lggr.Warnf("no trigger event store provided; defaulting to in-memory event store")
 		triggerEventStore = capabilities.NewMemEventStore()
 	}
-	lts.baseTrigger = *capabilities.NewBaseTriggerCapability(triggerEventStore, func() *evmcappb.Log { return &evmcappb.Log{} },
+	lts.baseTrigger = capabilities.NewBaseTriggerCapability(triggerEventStore, func() *evmcappb.Log { return &evmcappb.Log{} },
 		lts.lggr, "EvmLogTriggerService", retryInterval)
 	return lts, nil
 }

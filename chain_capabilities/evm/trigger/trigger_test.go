@@ -63,7 +63,7 @@ func newLTSWithBase(t *testing.T) (*LogTriggerService, chan capabilities.Trigger
 	lts := newLogTriggerService(t)
 	es := capabilities.NewMemEventStore()
 
-	lts.baseTrigger = *capabilities.NewBaseTriggerCapability(es, func() *evmcappb.Log { return &evmcappb.Log{} },
+	lts.baseTrigger = capabilities.NewBaseTriggerCapability(es, func() *evmcappb.Log { return &evmcappb.Log{} },
 		lts.lggr, "testCap", 500*time.Millisecond)
 
 	require.NoError(t, lts.baseTrigger.Start(t.Context()))
@@ -95,7 +95,7 @@ func TestLogTriggerService_Close_WaitsForPollingGoroutine(t *testing.T) {
 		store := NewLogTriggerStore()
 		service := createTriggerObject(t, evmService, store)
 
-		service.baseTrigger = *capabilities.NewBaseTriggerCapability(capabilities.NewMemEventStore(),
+		service.baseTrigger = capabilities.NewBaseTriggerCapability(capabilities.NewMemEventStore(),
 			func() *evmcappb.Log { return &evmcappb.Log{} }, logger.Test(t), "testCap", 200*time.Millisecond)
 		require.NoError(t, service.baseTrigger.Start(ctx))
 		defer service.baseTrigger.Stop()
@@ -940,7 +940,7 @@ func registerAndUnregisterLogTriggerIntegration(t *testing.T, topicsInput []*evm
 
 	service := createTriggerObject(t, evmService, NewLogTriggerStore())
 
-	service.baseTrigger = *capabilities.NewBaseTriggerCapability(capabilities.NewMemEventStore(),
+	service.baseTrigger = capabilities.NewBaseTriggerCapability(capabilities.NewMemEventStore(),
 		func() *evmcappb.Log { return &evmcappb.Log{} }, logger.Test(t), "testCap", 200*time.Millisecond)
 
 	triggerID := "trigger-integration"
