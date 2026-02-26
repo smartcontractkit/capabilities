@@ -36,6 +36,13 @@ type forwarderClient struct {
 	forwarderEncoder aptos_forwarder.ForwarderEncoder
 }
 
+const (
+	maxAccountTransactionsPageSize uint64 = 45
+	// TODO: make canonical tx-hash lookback configurable once CRE config
+	// plumbing is finalized and stable across local/remote test runs.
+	defaultTxHashLookback uint64 = 225
+)
+
 func newForwarderClient(aptosService types.AptosService, lggr logger.Logger, forwarderAddress [32]byte) CREForwarderClient {
 	emptyClient := aptos_sdk.Client{}
 	forwarder := aptos_forwarder.NewForwarder(forwarderAddress, &emptyClient)
@@ -239,35 +246,160 @@ func (fc *forwarderClient) GetTransmissionTxHash(ctx context.Context, transmissi
 	var transmitterAddress aptostypes.AccountAddress
 	copy(transmitterAddress[:], transmitterAddr[:])
 
-	limit := uint64(50)
-	txs, err := txReader.AccountTransactions(ctx, aptostypes.AccountTransactionsRequest{
+	// Avoid Aptos SDK underflow bug in AccountTransactions(nil, limit>1) by first fetching
+	// the latest tx to determine a safe explicit start sequence.
+	latestLimit := uint64(1)
+	latestTxs, err := txReader.AccountTransactions(ctx, aptostypes.AccountTransactionsRequest{
 		Address: transmitterAddress,
-		Limit:   &limit,
+		Limit:   &latestLimit,
 	})
 	if err != nil {
-		return "", fmt.Errorf("failed to fetch account transactions: %w", err)
+		return "", fmt.Errorf("failed to fetch latest account transaction: %w", err)
+	}
+	if len(latestTxs.Transactions) == 0 || latestTxs.Transactions[0] == nil {
+		return "", fmt.Errorf("no account transactions found for transmitter %s", transmitter)
 	}
 
-	// AccountTransactions are sorted newest first. Pick the latest matching tx.
-	for _, tx := range txs.Transactions {
-		if tx == nil || tx.Success == nil || !*tx.Success {
-			continue
+	latestDecoded, err := decodeAccountUserTransaction(latestTxs.Transactions[0].Data)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode latest account transaction: %w", err)
+	}
+	initialUpperExclusive := latestDecoded.SequenceNumber + 1
+
+	bestSeq := uint64(0)
+	bestHash := ""
+	remaining := defaultTxHashLookback
+	if initialUpperExclusive < remaining {
+		remaining = initialUpperExclusive
+	}
+
+	// Aptos account transactions API has a per-request limit cap (currently 45),
+	// so page backwards until the hardcoded lookback window is covered.
+	upperExclusive := initialUpperExclusive
+	for remaining > 0 {
+		limit := remaining
+		if limit > maxAccountTransactionsPageSize {
+			limit = maxAccountTransactionsPageSize
+		}
+		if upperExclusive < limit {
+			limit = upperExclusive
+		}
+		if limit == 0 {
+			break
 		}
 
-		decoded, err := decodeAccountUserTransaction(tx.Data)
+		start := upperExclusive - limit
+		txs, err := txReader.AccountTransactions(ctx, aptostypes.AccountTransactionsRequest{
+			Address: transmitterAddress,
+			Start:   &start,
+			Limit:   &limit,
+		})
 		if err != nil {
-			continue
+			return "", fmt.Errorf("failed to fetch account transactions: %w", err)
 		}
 
-		if !isForwarderReportCall(decoded.EntryFunction, fc.forwarderAddress) {
-			continue
+		// Pick the matching tx with highest sequence number (latest successful matching tx).
+		for _, tx := range txs.Transactions {
+			if tx == nil || tx.Success == nil || !*tx.Success {
+				continue
+			}
+
+			decoded, err := decodeAccountUserTransaction(tx.Data)
+			if err != nil {
+				continue
+			}
+
+			if !isForwarderReportCall(decoded.EntryFunction, fc.forwarderAddress) {
+				continue
+			}
+
+			if !containsMatchingReportProcessed(decoded.Events, transmissionID) {
+				continue
+			}
+
+			if bestHash == "" || decoded.SequenceNumber > bestSeq {
+				bestSeq = decoded.SequenceNumber
+				bestHash = tx.Hash
+			}
 		}
 
-		if !containsMatchingReportProcessed(decoded.Events, transmissionID) {
-			continue
+		if start == 0 {
+			break
 		}
+		upperExclusive = start
+		remaining -= limit
+	}
 
-		return tx.Hash, nil
+	// New transactions can be appended while paging through 45-sized batches.
+	// If we haven't found a match yet, do one top-up pass over only the newly-added
+	// sequence range so we don't miss transactions committed during the scan.
+	if bestHash == "" {
+		latestTxs, err = txReader.AccountTransactions(ctx, aptostypes.AccountTransactionsRequest{
+			Address: transmitterAddress,
+			Limit:   &latestLimit,
+		})
+		if err == nil && len(latestTxs.Transactions) > 0 && latestTxs.Transactions[0] != nil {
+			latestDecoded2, decodeErr := decodeAccountUserTransaction(latestTxs.Transactions[0].Data)
+			if decodeErr == nil {
+				latestUpperExclusive := latestDecoded2.SequenceNumber + 1
+				if latestUpperExclusive > initialUpperExclusive {
+					upperExclusive = latestUpperExclusive
+					remaining = latestUpperExclusive - initialUpperExclusive
+					for remaining > 0 {
+						limit := remaining
+						if limit > maxAccountTransactionsPageSize {
+							limit = maxAccountTransactionsPageSize
+						}
+						if upperExclusive-limit < initialUpperExclusive {
+							limit = upperExclusive - initialUpperExclusive
+						}
+						if limit == 0 {
+							break
+						}
+
+						start := upperExclusive - limit
+						txs, err := txReader.AccountTransactions(ctx, aptostypes.AccountTransactionsRequest{
+							Address: transmitterAddress,
+							Start:   &start,
+							Limit:   &limit,
+						})
+						if err != nil {
+							break
+						}
+
+						for _, tx := range txs.Transactions {
+							if tx == nil || tx.Success == nil || !*tx.Success {
+								continue
+							}
+							decoded, err := decodeAccountUserTransaction(tx.Data)
+							if err != nil {
+								continue
+							}
+							if !isForwarderReportCall(decoded.EntryFunction, fc.forwarderAddress) {
+								continue
+							}
+							if !containsMatchingReportProcessed(decoded.Events, transmissionID) {
+								continue
+							}
+							if bestHash == "" || decoded.SequenceNumber > bestSeq {
+								bestSeq = decoded.SequenceNumber
+								bestHash = tx.Hash
+							}
+						}
+
+						upperExclusive = start
+						remaining -= limit
+						if upperExclusive == initialUpperExclusive {
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if bestHash != "" {
+		return bestHash, nil
 	}
 
 	return "", fmt.Errorf("no matching successful report tx found for transmitter %s", transmitter)
@@ -279,8 +411,9 @@ type accountTxEvent struct {
 }
 
 type accountUserTransaction struct {
-	EntryFunction string           `json:"entry_function"`
-	Events        []accountTxEvent `json:"events"`
+	EntryFunction  string           `json:"entry_function"`
+	SequenceNumber uint64           `json:"sequence_number"`
+	Events         []accountTxEvent `json:"events"`
 }
 
 type rawPayload struct {
@@ -289,10 +422,11 @@ type rawPayload struct {
 }
 
 type rawUserTransaction struct {
-	Type    string           `json:"type"`
-	Hash    string           `json:"hash"`
-	Payload rawPayload       `json:"payload"`
-	Events  []accountTxEvent `json:"events"`
+	Type           string           `json:"type"`
+	Hash           string           `json:"hash"`
+	SequenceNumber string           `json:"sequence_number"`
+	Payload        rawPayload       `json:"payload"`
+	Events         []accountTxEvent `json:"events"`
 }
 
 func decodeAccountUserTransaction(raw []byte) (*accountUserTransaction, error) {
@@ -309,9 +443,15 @@ func decodeAccountUserTransaction(raw []byte) (*accountUserTransaction, error) {
 		return nil, fmt.Errorf("transaction type %q is not user_transaction", decoded.Type)
 	}
 
+	sequenceNumber, err := strconv.ParseUint(decoded.SequenceNumber, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse sequence_number %q: %w", decoded.SequenceNumber, err)
+	}
+
 	return &accountUserTransaction{
-		EntryFunction: decoded.Payload.Function,
-		Events:        decoded.Events,
+		EntryFunction:  decoded.Payload.Function,
+		SequenceNumber: sequenceNumber,
+		Events:         decoded.Events,
 	}, nil
 }
 
