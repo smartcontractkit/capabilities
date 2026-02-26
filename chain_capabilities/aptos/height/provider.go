@@ -3,17 +3,15 @@ package height
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"sync"
 	"time"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
-	"github.com/smartcontractkit/chainlink-common/pkg/types"
 )
 
-type HeadProvider interface {
-	LatestHead(ctx context.Context) (types.Head, error)
+type LedgerVersionProvider interface {
+	LedgerVersion(ctx context.Context) (uint64, error)
 }
 
 // Provider polls Aptos latest ledger version and exposes it as chain heights for consensus.
@@ -22,9 +20,9 @@ type Provider struct {
 	services.Service
 	engine *services.Engine
 
-	lggr         logger.SugaredLogger
-	pollPeriod   time.Duration
-	HeadProvider HeadProvider
+	lggr                  logger.SugaredLogger
+	pollPeriod            time.Duration
+	ledgerVersionProvider LedgerVersionProvider
 
 	mutex         sync.RWMutex
 	latestVersion int64
@@ -32,10 +30,10 @@ type Provider struct {
 	finalizedVer  int64
 }
 
-func NewProvider(lggr logger.Logger, pollPeriod time.Duration, headProvider HeadProvider) *Provider {
+func NewProvider(lggr logger.Logger, pollPeriod time.Duration, ledgerVersionProvider LedgerVersionProvider) *Provider {
 	p := &Provider{
-		pollPeriod:   pollPeriod,
-		HeadProvider: headProvider,
+		pollPeriod:            pollPeriod,
+		ledgerVersionProvider: ledgerVersionProvider,
 	}
 
 	p.Service, p.engine = services.Config{
@@ -75,23 +73,17 @@ func (p *Provider) poll(ctx context.Context) {
 }
 
 func (p *Provider) pollHead(ctx context.Context) {
-	head, err := p.HeadProvider.LatestHead(ctx)
+	ledgerVersion, err := p.ledgerVersionProvider.LedgerVersion(ctx)
 	if err != nil {
-		p.lggr.Errorw("failed to get latest head", "error", err)
+		p.lggr.Errorw("failed to get latest ledger version", "error", err)
+		return
+	}
+	if ledgerVersion > uint64(^uint64(0)>>1) {
+		p.lggr.Errorw("latest ledger version overflows int64", "ledgerVersion", ledgerVersion)
 		return
 	}
 
-	parsed, err := strconv.ParseUint(head.Height, 10, 64)
-	if err != nil {
-		p.lggr.Errorw("failed to parse latest head height", "height", head.Height, "error", err)
-		return
-	}
-	if parsed > uint64(^uint64(0)>>1) {
-		p.lggr.Errorw("latest head height overflows int64", "height", parsed)
-		return
-	}
-
-	latest := int64(parsed)
+	latest := int64(ledgerVersion)
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 	p.latestVersion = max(p.latestVersion, latest)
