@@ -10,6 +10,9 @@ import (
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
 	aptostypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/aptos"
+
+	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
+	commonMon "github.com/smartcontractkit/capabilities/libs/monitoring"
 )
 
 // View executes a view (read-only) call on the Aptos chain via the capability.
@@ -34,18 +37,38 @@ func (s *Aptos) View(
 		return nil, NewUserError(err)
 	}
 
-	relayerReq := &aptostypes.ViewRequest{Payload: payload}
-	relayerReply, err := s.aptosService.View(ctx, *relayerReq)
+	request := ctypes.NewLockableToBlockRequest(
+		commonMon.RequestID(metadata.WorkflowExecutionID, metadata.ReferenceID),
+		func(ctx context.Context, chainHeight *ctypes.ChainHeight) ([]byte, error) {
+			if chainHeight == nil {
+				return nil, fmt.Errorf("chain height is nil")
+			}
+			if chainHeight.Latest < 0 {
+				return nil, fmt.Errorf("unexpected negative chain height: %d", chainHeight.Latest)
+			}
+			ledgerVersion := uint64(chainHeight.Latest)
+			relayerReq := aptostypes.ViewRequest{
+				Payload:       payload,
+				LedgerVersion: &ledgerVersion,
+			}
+
+			relayerReply, err := s.aptosService.View(ctx, relayerReq)
+			if err != nil {
+				return nil, err
+			}
+			if relayerReply == nil {
+				return nil, fmt.Errorf("nil ViewReply from aptos service")
+			}
+			return relayerReply.Data, nil
+		},
+	)
+	data, err := readType[[]byte](ctx, s.ConsensusHandler, request)
 	if err != nil {
 		return nil, GetError(err, false)
 	}
 
-	if relayerReply == nil {
-		return nil, caperrors.NewPublicSystemError(fmt.Errorf("nil ViewReply from aptos service"), caperrors.Unknown)
-	}
-
 	return &capabilities.ResponseAndMetadata[*aptoscap.ViewReply]{
-		Response:         &aptoscap.ViewReply{Data: relayerReply.Data},
+		Response:         &aptoscap.ViewReply{Data: data},
 		ResponseMetadata: capabilities.ResponseMetadata{},
 	}, nil
 }
@@ -117,10 +140,10 @@ func parseFunctionAndTypeArgs(function string) (string, []string, error) {
 
 func splitTopLevel(input string, sep rune) ([]string, error) {
 	var (
-		args   []string
-		start  int
-		depth  int
-		runes  = []rune(input)
+		args  []string
+		start int
+		depth int
+		runes = []rune(input)
 	)
 	for i, r := range runes {
 		switch r {

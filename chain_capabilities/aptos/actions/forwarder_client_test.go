@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"testing"
 
 	aptos_sdk "github.com/aptos-labs/aptos-go-sdk"
@@ -416,10 +417,80 @@ func TestGetTransmissionFailedTxHash_SelectsEarliestMatchingFailedAcrossTransmit
 	require.NotNil(t, mockService.accountTransactionsCalls[3].Start)
 }
 
+func TestValidateFailedTxHash_AcceptsMatchingFailedReceipt(t *testing.T) {
+	transmissionID := newTestTransmissionID()
+	forwarderAddress := newTestAddress(0x46)
+	entryFunction := forwarderEntryFunction(forwarderAddress)
+	matchingRawReport := mustEncodedReportWithMetadata(t, transmissionID)
+
+	failedTx := mustFailedUserTransactionWithPayload(
+		t,
+		"0x"+strings.Repeat("a", 64),
+		11,
+		1111,
+		2222,
+		entryFunction,
+		transmissionID.Receiver.StringLong(),
+		matchingRawReport,
+	)
+
+	mockService := &fakeAptosService{
+		transactionByHashReplies: []*aptostypes.TransactionByHashReply{
+			{Transaction: failedTx},
+		},
+	}
+
+	client := &forwarderClient{
+		AptosService:     mockService,
+		forwarderAddress: forwarderAddress,
+	}
+
+	hash, err := client.ValidateFailedTxHash(context.Background(), transmissionID, "0x"+strings.Repeat("a", 64))
+	require.NoError(t, err)
+	require.Equal(t, "0x"+strings.Repeat("a", 64), hash)
+	require.Len(t, mockService.transactionByHashCalls, 1)
+	require.Equal(t, "0x"+strings.Repeat("a", 64), mockService.transactionByHashCalls[0].Hash)
+}
+
+func TestValidateFailedTxHash_RejectsSuccessfulReceipt(t *testing.T) {
+	transmissionID := newTestTransmissionID()
+	forwarderAddress := newTestAddress(0x47)
+	entryFunction := forwarderEntryFunction(forwarderAddress)
+
+	successTx := mustUserTransaction(
+		t,
+		"0x"+strings.Repeat("b", 64),
+		1,
+		entryFunction,
+		true,
+		[]map[string]any{},
+	)
+	version := uint64(1)
+	successTx.Version = &version
+
+	mockService := &fakeAptosService{
+		transactionByHashReplies: []*aptostypes.TransactionByHashReply{
+			{Transaction: successTx},
+		},
+	}
+
+	client := &forwarderClient{
+		AptosService:     mockService,
+		forwarderAddress: forwarderAddress,
+	}
+
+	_, err := client.ValidateFailedTxHash(context.Background(), transmissionID, "0x"+strings.Repeat("b", 64))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "expected failure")
+}
+
 type fakeAptosService struct {
 	accountTransactionsReplies []*aptostypes.AccountTransactionsReply
 	accountTransactionsCalls   []aptostypes.AccountTransactionsRequest
 	accountTransactionsIndex   int
+	transactionByHashReplies   []*aptostypes.TransactionByHashReply
+	transactionByHashCalls     []aptostypes.TransactionByHashRequest
+	transactionByHashIndex     int
 }
 
 func (f *fakeAptosService) AccountAPTBalance(context.Context, aptostypes.AccountAPTBalanceRequest) (*aptostypes.AccountAPTBalanceReply, error) {
@@ -434,8 +505,18 @@ func (f *fakeAptosService) EventsByHandle(context.Context, aptostypes.EventsByHa
 	return &aptostypes.EventsByHandleReply{}, nil
 }
 
-func (f *fakeAptosService) TransactionByHash(context.Context, aptostypes.TransactionByHashRequest) (*aptostypes.TransactionByHashReply, error) {
-	return &aptostypes.TransactionByHashReply{}, nil
+func (f *fakeAptosService) TransactionByHash(_ context.Context, req aptostypes.TransactionByHashRequest) (*aptostypes.TransactionByHashReply, error) {
+	f.transactionByHashCalls = append(f.transactionByHashCalls, req)
+	index := f.transactionByHashIndex
+	f.transactionByHashIndex++
+	if index >= len(f.transactionByHashReplies) {
+		return &aptostypes.TransactionByHashReply{}, nil
+	}
+	reply := f.transactionByHashReplies[index]
+	if reply == nil {
+		return &aptostypes.TransactionByHashReply{}, nil
+	}
+	return reply, nil
 }
 
 func (f *fakeAptosService) SubmitTransaction(context.Context, aptostypes.SubmitTransactionRequest) (*aptostypes.SubmitTransactionReply, error) {
