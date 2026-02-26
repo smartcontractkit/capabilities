@@ -9,24 +9,23 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/types"
 )
 
-type testHeadProvider struct {
-	mu    sync.Mutex
-	heads []types.Head
-	next  int
+type testLedgerVersionProvider struct {
+	mu       sync.Mutex
+	versions []uint64
+	next     int
 }
 
-func (p *testHeadProvider) LatestHead(context.Context) (types.Head, error) {
+func (p *testLedgerVersionProvider) LedgerVersion(context.Context) (uint64, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.next >= len(p.heads) {
-		return p.heads[len(p.heads)-1], nil
+	if p.next >= len(p.versions) {
+		return p.versions[len(p.versions)-1], nil
 	}
-	h := p.heads[p.next]
+	v := p.versions[p.next]
 	p.next++
-	return h, nil
+	return v, nil
 }
 
 func TestProviderPollsAndPublishesLatestVersion(t *testing.T) {
@@ -35,7 +34,7 @@ func TestProviderPollsAndPublishesLatestVersion(t *testing.T) {
 	p := NewProvider(
 		logger.Test(t),
 		10*time.Millisecond,
-		&testHeadProvider{heads: []types.Head{{Height: "100"}, {Height: "101"}}},
+		&testLedgerVersionProvider{versions: []uint64{100, 101}},
 	)
 
 	require.NoError(t, p.Start(context.Background()))

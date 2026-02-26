@@ -168,7 +168,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	}
 	c.requestPoller = poller.NewPoller(c.lggr, consensusMetrics, defaultObservationPollerWorkers, defaultObservationPollPeriod)
 	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, defaultUnknownRequestsTTL)
-	c.heightProvider = height.NewProvider(c.lggr, defaultChainHeightPollPeriod, relayer)
+	c.heightProvider = height.NewProvider(c.lggr, defaultChainHeightPollPeriod, aptosService)
 
 	c.oracle, err = dependencies.OracleFactory.NewOracle(ctx, core.OracleArgs{
 		LocalConfig: ocrtypes.LocalConfig{
