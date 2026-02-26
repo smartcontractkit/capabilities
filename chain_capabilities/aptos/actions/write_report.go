@@ -3,18 +3,35 @@ package actions
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/jpillora/backoff"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/utils/retry"
 )
 
 const userError = "user error:"
+
+const (
+	aptosPollingRetryMaxBackoff = 3 * time.Second
+)
+
+type aptosWriteRetryConfig struct {
+	timeout    time.Duration
+	maxBackoff time.Duration
+	maxRetries uint
+	f          int
+	n          int
+}
 
 // WriteReport validates and submits a signed report to the Aptos chain via the CRE forwarder.
 // It handles only the simple successful case for now.
@@ -91,6 +108,9 @@ func (s *Aptos) executeWriteReport(
 	if err != nil {
 		return &aptoscap.WriteReportReply{}, err
 	}
+	retryConfig := deriveAptosWriteRetryConfig(len(request.Report.Sigs))
+	retryConfig = applyContextTimeoutToAptosWriteRetryConfig(ctx, retryConfig)
+	s.lggr.Debugw("Aptos write retry policy", "f", retryConfig.f, "n", retryConfig.n, "timeout", retryConfig.timeout.String(), "maxBackoff", retryConfig.maxBackoff.String())
 
 	transmissionInfo, err := s.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
 	if err != nil {
@@ -133,15 +153,12 @@ func (s *Aptos) executeWriteReport(
 		return nil, fmt.Errorf("nil transaction reply")
 	}
 
+	localSubmittedHash := strings.TrimSpace(txReply.PendingTransaction.Hash)
 	ourSender := normalizeAptosHexAddress(hex.EncodeToString(txReply.PendingTransaction.Sender[:]))
-	newTransmissionInfo, err := s.waitForTransmissionSuccess(ctx, transmissionID)
+	newTransmissionInfo, err := s.waitForTransmissionSuccess(ctx, transmissionID, retryConfig)
 	if err != nil {
-		var candidateTransmitters []string
-		if ourSender != "" {
-			candidateTransmitters = append(candidateTransmitters, ourSender)
-		}
-		candidateTransmitters = orderedUniqueTransmitters(candidateTransmitters)
-		if failedHash, failedHashErr := s.forwarderClient.GetTransmissionFailedTxHash(ctx, transmissionID, candidateTransmitters); failedHashErr == nil && failedHash != "" {
+		failedHash, failedHashErr := s.waitForFailedTransmissionHashByHash(ctx, transmissionID, localSubmittedHash, retryConfig)
+		if failedHashErr == nil {
 			errorMsg := fmt.Sprintf("write transmission did not succeed before timeout: %v", err)
 			return &aptoscap.WriteReportReply{
 				TxStatus:     aptoscap.TxStatus_TX_STATUS_FAILED,
@@ -149,7 +166,7 @@ func (s *Aptos) executeWriteReport(
 				ErrorMessage: &errorMsg,
 			}, nil
 		}
-		return nil, fmt.Errorf("failed waiting for successful transmission after submit: %w", err)
+		return nil, fmt.Errorf("failed waiting for successful transmission after submit: %w (failed hash resolution by receipt: %v)", err, failedHashErr)
 	}
 
 	s.lggr.Infow("Got final transmission status", "success", newTransmissionInfo.Success)
@@ -178,35 +195,129 @@ func (s *Aptos) executeWriteReport(
 	}, nil
 }
 
-func (s *Aptos) waitForTransmissionSuccess(ctx context.Context, transmissionID TransmissionID) (TransmissionInfo, error) {
-	// TODO: replace with OCR-derived (deltaStage * F) wait once surfaced in capability inputs.
-	const pollTimeout = 60 * time.Second
-	const pollInterval = 2 * time.Second
-
-	pollCtx, cancel := context.WithTimeout(ctx, pollTimeout)
-	defer cancel()
-
-	ticker := time.NewTicker(pollInterval)
-	defer ticker.Stop()
-
-	var lastErr error
-	for {
-		info, err := s.forwarderClient.GetTransmissionInfo(pollCtx, transmissionID)
+func (s *Aptos) waitForTransmissionSuccess(ctx context.Context, transmissionID TransmissionID, retryConfig aptosWriteRetryConfig) (TransmissionInfo, error) {
+	return withAptosPollingRetry(ctx, s.lggr, retryConfig, func(ctx context.Context) (TransmissionInfo, error) {
+		info, err := s.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
 		if err != nil {
-			lastErr = err
-		} else if info.Success {
+			return TransmissionInfo{}, err
+		}
+		if info.Success {
 			return info, nil
 		}
+		return TransmissionInfo{}, errors.New("transmission not yet successful, retrying")
+	})
+}
 
-		select {
-		case <-pollCtx.Done():
-			if lastErr != nil {
-				return TransmissionInfo{}, fmt.Errorf("timed out waiting for successful transmission (last error: %w)", lastErr)
-			}
-			return TransmissionInfo{}, fmt.Errorf("timed out waiting for successful transmission")
-		case <-ticker.C:
-		}
+func (s *Aptos) waitForFailedTransmissionHash(ctx context.Context, transmissionID TransmissionID, candidateTransmitters []string, retryConfig aptosWriteRetryConfig) (string, error) {
+	if len(candidateTransmitters) == 0 {
+		return "", fmt.Errorf("no candidate transmitters available for failed hash resolution")
 	}
+
+	return withAptosPollingRetry(ctx, s.lggr, retryConfig, func(ctx context.Context) (string, error) {
+		hash, err := s.forwarderClient.GetTransmissionFailedTxHash(ctx, transmissionID, candidateTransmitters)
+		if err != nil {
+			return "", err
+		}
+		if hash == "" {
+			return "", errors.New("empty failed tx hash")
+		}
+		return hash, nil
+	})
+}
+
+func (s *Aptos) waitForFailedTransmissionHashByHash(ctx context.Context, transmissionID TransmissionID, txHash string, retryConfig aptosWriteRetryConfig) (string, error) {
+	if strings.TrimSpace(txHash) == "" {
+		return "", fmt.Errorf("empty submitted tx hash")
+	}
+
+	return withAptosPollingRetry(ctx, s.lggr, retryConfig, func(ctx context.Context) (string, error) {
+		hash, err := s.forwarderClient.ValidateFailedTxHash(ctx, transmissionID, txHash)
+		if err != nil {
+			return "", err
+		}
+		if hash == "" {
+			return "", errors.New("empty failed tx hash")
+		}
+		return hash, nil
+	})
+}
+
+func withAptosPollingRetry[T any](ctx context.Context, lggr logger.Logger, retryConfig aptosWriteRetryConfig, fn func(context.Context) (T, error)) (T, error) {
+	return withAptosRetry(ctx, lggr, fn, retryConfig.timeout, retryConfig.maxBackoff, retryConfig.maxRetries)
+}
+
+func withAptosRetry[T any](
+	ctx context.Context,
+	lggr logger.Logger,
+	fn func(context.Context) (T, error),
+	timeout time.Duration,
+	maxBackoff time.Duration,
+	maxRetries uint,
+) (T, error) {
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	} else if _, hasDeadline := ctx.Deadline(); !hasDeadline && maxRetries == 0 {
+		var zero T
+		return zero, fmt.Errorf("retry timeout is not configured: context has no deadline and maxRetries is 0")
+	}
+
+	var lastErr error
+	strategy := retry.Strategy[T]{
+		Backoff:    &backoff.Backoff{Factor: 2, Min: 100 * time.Millisecond, Max: maxBackoff},
+		MaxRetries: maxRetries,
+	}
+
+	result, err := strategy.Do(ctx, lggr, func(ctx context.Context) (T, error) {
+		r, fnErr := fn(ctx)
+		if fnErr != nil {
+			lastErr = fnErr
+		}
+		return r, fnErr
+	})
+	if err != nil {
+		if lastErr != nil {
+			return result, lastErr
+		}
+		return result, err
+	}
+	return result, nil
+}
+
+func deriveAptosWriteRetryConfig(sigCount int) aptosWriteRetryConfig {
+	// OCR report carries exactly f+1 signatures.
+	fPlusOne := sigCount
+	if fPlusOne < 1 {
+		fPlusOne = 1
+	}
+	f := fPlusOne - 1
+	if f < 1 {
+		f = 1
+	}
+	// In OCR, N is typically 3f+1.
+	n := 3*f + 1
+	return aptosWriteRetryConfig{
+		// timeout is derived from request context deadline, which is configured offchain.
+		timeout:    0,
+		maxBackoff: aptosPollingRetryMaxBackoff,
+		// 0 => retry until context timeout.
+		maxRetries: 0,
+		f:          f,
+		n:          n,
+	}
+}
+
+func applyContextTimeoutToAptosWriteRetryConfig(ctx context.Context, cfg aptosWriteRetryConfig) aptosWriteRetryConfig {
+	if deadline, ok := ctx.Deadline(); ok {
+		remaining := time.Until(deadline)
+		if remaining > 0 {
+			cfg.timeout = remaining
+			return cfg
+		}
+		cfg.timeout = 1 * time.Millisecond
+	}
+	return cfg
 }
 
 func normalizeAptosHexAddress(input string) string {
@@ -220,6 +331,21 @@ func normalizeAptosHexAddress(input string) string {
 		return "0x0"
 	}
 	return "0x" + s
+}
+
+func normalizeAptosTxHashString(input string) (string, bool) {
+	s := strings.ToLower(strings.TrimSpace(input))
+	if s == "" {
+		return "", false
+	}
+	s = strings.TrimPrefix(s, "0x")
+	if len(s) != 64 {
+		return "", false
+	}
+	if _, err := hex.DecodeString(s); err != nil {
+		return "", false
+	}
+	return "0x" + s, true
 }
 
 func getTransmissionID(workflowExecutionID string, request *aptoscap.WriteReportRequest) (TransmissionID, error) {

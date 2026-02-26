@@ -3,12 +3,18 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/actions"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/config"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/height"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
+	consMetrics "github.com/smartcontractkit/capabilities/libs/chainconsensus/metrics"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus/oracle"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus/poller"
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
 	chain_selectors "github.com/smartcontractkit/chain-selectors"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -18,11 +24,17 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
+	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 )
 
 const (
 	CapabilityName    = "aptos"
 	CapabilityVersion = "1.0.0"
+
+	defaultObservationPollerWorkers = 10
+	defaultObservationPollPeriod    = 2 * time.Second
+	defaultUnknownRequestsTTL       = 10 * time.Second
+	defaultChainHeightPollPeriod    = time.Second
 )
 
 func capabilityID(chainSelector uint64) string {
@@ -41,6 +53,10 @@ type capabilityGRPCService struct {
 
 type capability struct {
 	*actions.Aptos
+	requestPoller    *poller.Poller
+	consensusHandler *chainconsensus.Handler
+	oracle           core.Oracle
+	heightProvider   *height.Provider
 }
 
 var _ aptoscapserver.ClientCapability = &capabilityGRPCService{}
@@ -68,18 +84,37 @@ func (c *capabilityGRPCService) Start(ctx context.Context) error {
 func (c *capabilityGRPCService) Close() error {
 	c.lggr.Infof("Closing %s", CapabilityName)
 
+	var closeErr error
+
 	if c.capRegistry != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
 		if err := c.capRegistry.Remove(ctx, capabilityID(c.chainSelector)); err != nil {
-			return err
+			closeErr = errors.Join(closeErr, err)
 		}
 	}
 
 	if c.stopCh != nil {
 		close(c.stopCh)
 	}
-	return nil
+
+	if c.Aptos != nil {
+		closeErr = errors.Join(closeErr, c.Aptos.Close())
+	}
+	if c.requestPoller != nil {
+		closeErr = errors.Join(closeErr, c.requestPoller.Close())
+	}
+	if c.consensusHandler != nil {
+		closeErr = errors.Join(closeErr, c.consensusHandler.Close())
+	}
+	if c.oracle != nil {
+		closeErr = errors.Join(closeErr, c.oracle.Close(context.Background()))
+	}
+	if c.heightProvider != nil {
+		closeErr = errors.Join(closeErr, c.heightProvider.Close())
+	}
+
+	return closeErr
 }
 
 func (c *capabilityGRPCService) HealthReport() map[string]error {
@@ -122,9 +157,46 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return err
 	}
 
-	c.Aptos, err = actions.NewAptos(cfg, aptosService, c.lggr, limits.Factory{Logger: c.lggr})
+	chainInfo, err := relayer.GetChainInfo(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to fetch chain info for chainID %s from relayer: %w", cfg.ChainID, err)
+	}
+
+	consensusMetrics, err := consMetrics.NewConsensusMetrics(chainInfo)
+	if err != nil {
+		return fmt.Errorf("failed to create aptos consensus metrics: %w", err)
+	}
+	c.requestPoller = poller.NewPoller(c.lggr, consensusMetrics, defaultObservationPollerWorkers, defaultObservationPollPeriod)
+	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, defaultUnknownRequestsTTL)
+	c.heightProvider = height.NewProvider(c.lggr, defaultChainHeightPollPeriod, relayer)
+
+	c.oracle, err = dependencies.OracleFactory.NewOracle(ctx, core.OracleArgs{
+		LocalConfig: ocrtypes.LocalConfig{
+			BlockchainTimeout:                  20 * time.Second,
+			ContractConfigTrackerPollInterval:  10 * time.Second,
+			ContractConfigConfirmations:        1,
+			ContractTransmitterTransmitTimeout: 10 * time.Second,
+			DatabaseTimeout:                    10 * time.Second,
+			ContractConfigLoadTimeout:          10 * time.Second,
+			DefaultMaxDurationInitialization:   10 * time.Second,
+		},
+		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(logger.Sugared(c.lggr), c.consensusHandler, c.heightProvider, consensusMetrics),
+		ContractTransmitter:           oracle.NewContractTransmitter(c.lggr, c.consensusHandler),
+	})
+	if err != nil {
+		return fmt.Errorf("error when creating oracle: %w", err)
+	}
+
+	c.Aptos, err = actions.NewAptos(cfg, aptosService, c.consensusHandler, c.lggr, limits.Factory{Logger: c.lggr})
 	if err != nil {
 		return fmt.Errorf("failed to create Aptos actions: %w", err)
+	}
+
+	startServices := []interface{ Start(context.Context) error }{c.consensusHandler, c.requestPoller, c.oracle, c.heightProvider}
+	for _, service := range startServices {
+		if err := service.Start(ctx); err != nil {
+			return err
+		}
 	}
 
 	c.lggr.Infof("Successfully initialised %s", CapabilityName)

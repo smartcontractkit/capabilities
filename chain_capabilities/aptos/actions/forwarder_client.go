@@ -30,6 +30,8 @@ type CREForwarderClient interface {
 	GetTransmissionInfo(ctx context.Context, transmissionID TransmissionID) (TransmissionInfo, error)
 	// GetTransmissionTxHash resolves the canonical tx hash for a successful transmission.
 	GetTransmissionTxHash(ctx context.Context, transmissionID TransmissionID, transmitter string) (string, error)
+	// ValidateFailedTxHash validates a candidate failed tx hash onchain and ensures it matches this transmission.
+	ValidateFailedTxHash(ctx context.Context, transmissionID TransmissionID, txHash string) (string, error)
 	// GetTransmissionFailedTxHash resolves a deterministic failed tx hash for an invalid transmission attempt.
 	GetTransmissionFailedTxHash(ctx context.Context, transmissionID TransmissionID, transmitters []string) (string, error)
 }
@@ -426,6 +428,60 @@ func (fc *forwarderClient) GetTransmissionTxHash(ctx context.Context, transmissi
 	}
 
 	return "", fmt.Errorf("no matching successful report tx found for transmitter %s", transmitter)
+}
+
+func (fc *forwarderClient) ValidateFailedTxHash(ctx context.Context, transmissionID TransmissionID, txHash string) (string, error) {
+	normalizedRequestedHash, ok := normalizeAptosTxHashString(txHash)
+	if !ok {
+		return "", fmt.Errorf("invalid tx hash %q", txHash)
+	}
+
+	reply, err := fc.AptosService.TransactionByHash(ctx, aptostypes.TransactionByHashRequest{Hash: normalizedRequestedHash})
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch transaction by hash: %w", err)
+	}
+	if reply == nil || reply.Transaction == nil {
+		return "", fmt.Errorf("transaction not found for hash %s", normalizedRequestedHash)
+	}
+
+	tx := reply.Transaction
+	normalizedReturnedHash := normalizedRequestedHash
+	if tx.Hash != "" {
+		normalizedTxHash, txHashOK := normalizeAptosTxHashString(tx.Hash)
+		if !txHashOK {
+			return "", fmt.Errorf("transaction returned invalid hash format %q", tx.Hash)
+		}
+		normalizedReturnedHash = normalizedTxHash
+	}
+	if normalizedReturnedHash != normalizedRequestedHash {
+		return "", fmt.Errorf("transaction hash mismatch: requested %s, returned %s", normalizedRequestedHash, normalizedReturnedHash)
+	}
+
+	if tx.Type == aptostypes.TransactionVariantPending {
+		return "", fmt.Errorf("transaction %s is still pending", normalizedReturnedHash)
+	}
+	if tx.Type != aptostypes.TransactionVariantUser {
+		return "", fmt.Errorf("transaction %s is not user_transaction: %s", normalizedReturnedHash, tx.Type)
+	}
+	if tx.Success == nil {
+		return "", fmt.Errorf("transaction %s has unknown success status", normalizedReturnedHash)
+	}
+	if *tx.Success {
+		return "", fmt.Errorf("transaction %s succeeded, expected failure", normalizedReturnedHash)
+	}
+
+	decoded, err := decodeAccountUserTransaction(tx.Data)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode failed transaction %s: %w", normalizedReturnedHash, err)
+	}
+	if !isForwarderReportCall(decoded.EntryFunction, fc.forwarderAddress) {
+		return "", fmt.Errorf("transaction %s is not a forwarder::report call", normalizedReturnedHash)
+	}
+	if !isMatchingFailedReportPayload(decoded.PayloadArguments, transmissionID) {
+		return "", fmt.Errorf("transaction %s payload does not match requested transmission", normalizedReturnedHash)
+	}
+
+	return normalizedReturnedHash, nil
 }
 
 func (fc *forwarderClient) GetTransmissionFailedTxHash(ctx context.Context, transmissionID TransmissionID, transmitters []string) (string, error) {
