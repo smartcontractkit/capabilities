@@ -5,11 +5,14 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math/big"
 	"strings"
 	"time"
 
 	"github.com/jpillora/backoff"
 
+	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
+	commonMon "github.com/smartcontractkit/capabilities/libs/monitoring"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
@@ -17,6 +20,8 @@ import (
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/retry"
+	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
+	"github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 )
 
 const userError = "user error:"
@@ -31,6 +36,11 @@ type aptosWriteRetryConfig struct {
 	maxRetries uint
 	f          int
 	n          int
+}
+
+type aptosWriteOutcome struct {
+	transmissionInfo TransmissionInfo
+	failedHash       string
 }
 
 // WriteReport validates and submits a signed report to the Aptos chain via the CRE forwarder.
@@ -108,6 +118,10 @@ func (s *Aptos) executeWriteReport(
 	if err != nil {
 		return &aptoscap.WriteReportReply{}, err
 	}
+	expectedForwarderRawReport, err := expectedForwarderRawReportBytes(request.Report)
+	if err != nil {
+		return nil, fmt.Errorf("invalid report payload for failed-hash validation: %w", err)
+	}
 	retryConfig := deriveAptosWriteRetryConfig(len(request.Report.Sigs))
 	retryConfig = applyContextTimeoutToAptosWriteRetryConfig(ctx, retryConfig)
 	s.lggr.Debugw("Aptos write retry policy", "f", retryConfig.f, "n", retryConfig.n, "timeout", retryConfig.timeout.String(), "maxBackoff", retryConfig.maxBackoff.String())
@@ -119,21 +133,11 @@ func (s *Aptos) executeWriteReport(
 
 	if transmissionInfo.Success {
 		s.lggr.Infow("Transmission already confirmed onchain before submit", "transmitter", transmissionInfo.Transmitter)
-		if transmissionInfo.Transmitter == "" {
-			return nil, fmt.Errorf("successful transmission has no transmitter")
+		canonicalHash, err := s.resolveCanonicalSuccessTxHash(ctx, transmissionID, transmissionInfo.Transmitter, expectedForwarderRawReport, "pre-existing transmission")
+		if err != nil {
+			return nil, err
 		}
-		canonicalHash, hashErr := s.forwarderClient.GetTransmissionTxHash(ctx, transmissionID, transmissionInfo.Transmitter)
-		if hashErr != nil {
-			return nil, fmt.Errorf("failed to resolve canonical tx hash for pre-existing transmission: %w", hashErr)
-		}
-		if canonicalHash == "" {
-			return nil, fmt.Errorf("canonical tx hash for pre-existing transmission is empty")
-		}
-		txHash := []byte(canonicalHash)
-		return &aptoscap.WriteReportReply{
-			TxStatus: aptoscap.TxStatus_TX_STATUS_SUCCESS,
-			TxHash:   txHash,
-		}, nil
+		return newWriteSuccessReply(canonicalHash), nil
 	}
 	// transmission not present yet; continue to submit.
 
@@ -155,83 +159,261 @@ func (s *Aptos) executeWriteReport(
 
 	localSubmittedHash := strings.TrimSpace(txReply.PendingTransaction.Hash)
 	ourSender := normalizeAptosHexAddress(hex.EncodeToString(txReply.PendingTransaction.Sender[:]))
-	newTransmissionInfo, err := s.waitForTransmissionSuccess(ctx, transmissionID, retryConfig)
+	outcome, err := s.waitForTransmissionOutcome(ctx, transmissionID, localSubmittedHash, expectedForwarderRawReport, retryConfig)
 	if err != nil {
-		failedHash, failedHashErr := s.waitForFailedTransmissionHashByHash(ctx, transmissionID, localSubmittedHash, retryConfig)
+		localFailedHash, failedHashErr := s.waitForFailedTransmissionHashByHash(ctx, transmissionID, localSubmittedHash, expectedForwarderRawReport, retryConfig)
 		if failedHashErr == nil {
+			canonicalFailedHash, canonicalErr := s.resolveDeterministicFailedHash(ctx, metadata, transmissionID, localFailedHash, expectedForwarderRawReport)
+			if canonicalErr != nil {
+				return nil, fmt.Errorf("failed to resolve deterministic failed hash after timeout: %w", canonicalErr)
+			}
 			errorMsg := fmt.Sprintf("write transmission did not succeed before timeout: %v", err)
-			return &aptoscap.WriteReportReply{
-				TxStatus:     aptoscap.TxStatus_TX_STATUS_FAILED,
-				TxHash:       []byte(failedHash),
-				ErrorMessage: &errorMsg,
-			}, nil
+			return newWriteFailedReply(canonicalFailedHash, errorMsg), nil
 		}
 		return nil, fmt.Errorf("failed waiting for successful transmission after submit: %w (failed hash resolution by receipt: %v)", err, failedHashErr)
 	}
 
+	if outcome.failedHash != "" {
+		canonicalFailedHash, canonicalErr := s.resolveDeterministicFailedHash(ctx, metadata, transmissionID, outcome.failedHash, expectedForwarderRawReport)
+		if canonicalErr != nil {
+			return nil, fmt.Errorf("failed to resolve deterministic failed hash after onchain failure: %w", canonicalErr)
+		}
+		errorMsg := "write transmission failed onchain"
+		return newWriteFailedReply(canonicalFailedHash, errorMsg), nil
+	}
+
+	newTransmissionInfo := outcome.transmissionInfo
 	s.lggr.Infow("Got final transmission status", "success", newTransmissionInfo.Success)
 
 	submittedHash := txReply.PendingTransaction.Hash
 	onchainTransmitter := normalizeAptosHexAddress(newTransmissionInfo.Transmitter)
-	if onchainTransmitter == "" {
-		return nil, fmt.Errorf("successful transmission has no transmitter")
+	canonicalHash, err := s.resolveCanonicalSuccessTxHash(ctx, transmissionID, onchainTransmitter, expectedForwarderRawReport, "winning transmitter")
+	if err != nil {
+		return nil, err
 	}
-	hash, hashErr := s.forwarderClient.GetTransmissionTxHash(ctx, transmissionID, onchainTransmitter)
-	if hashErr != nil {
-		return nil, fmt.Errorf("failed to resolve canonical tx hash from winning transmitter: %w", hashErr)
-	}
-	if hash == "" {
-		return nil, fmt.Errorf("canonical tx hash from winning transmitter is empty")
-	}
-	submittedHash = hash
+	submittedHash = canonicalHash
 	if ourSender != "" && onchainTransmitter != "" && ourSender != onchainTransmitter {
 		s.lggr.Infow("Report was confirmed onchain by another transmitter", "ourSender", ourSender, "onchainTransmitter", onchainTransmitter, "canonicalTxHash", submittedHash)
 	}
 
-	txHash := []byte(submittedHash)
+	return newWriteSuccessReply(submittedHash), nil
+}
+
+func newWriteSuccessReply(txHash string) *aptoscap.WriteReportReply {
 	return &aptoscap.WriteReportReply{
 		TxStatus: aptoscap.TxStatus_TX_STATUS_SUCCESS,
-		TxHash:   txHash,
+		TxHash:   []byte(txHash),
+	}
+}
+
+func newWriteFailedReply(txHash string, errorMsg string) *aptoscap.WriteReportReply {
+	return &aptoscap.WriteReportReply{
+		TxStatus:     aptoscap.TxStatus_TX_STATUS_FAILED,
+		TxHash:       []byte(txHash),
+		ErrorMessage: &errorMsg,
+	}
+}
+
+func (s *Aptos) resolveCanonicalSuccessTxHash(
+	ctx context.Context,
+	transmissionID TransmissionID,
+	transmitter string,
+	expectedForwarderRawReport []byte,
+	contextLabel string,
+) (string, error) {
+	if strings.TrimSpace(transmitter) == "" {
+		return "", fmt.Errorf("successful transmission has no transmitter")
+	}
+	canonicalHash, err := s.forwarderClient.GetTransmissionTxHash(ctx, transmissionID, transmitter, expectedForwarderRawReport)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve canonical tx hash for %s: %w", contextLabel, err)
+	}
+	if canonicalHash == "" {
+		return "", fmt.Errorf("canonical tx hash for %s is empty", contextLabel)
+	}
+	return canonicalHash, nil
+}
+
+func (s *Aptos) resolveDeterministicFailedHash(
+	ctx context.Context,
+	metadata capabilities.RequestMetadata,
+	transmissionID TransmissionID,
+	localFailedHash string,
+	expectedForwarderRawReport []byte,
+) (string, error) {
+	selectedHash, err := s.consensusSelectFailedHash(ctx, metadata, localFailedHash)
+	if err != nil {
+		return "", fmt.Errorf("failed hash consensus: %w", err)
+	}
+
+	// Every node re-validates the consensus-selected hash against onchain payload.
+	validatedHash, err := s.forwarderClient.ValidateFailedTxHash(ctx, transmissionID, selectedHash, expectedForwarderRawReport)
+	if err != nil {
+		return "", fmt.Errorf("consensus-selected failed hash did not validate onchain: %w", err)
+	}
+	if strings.TrimSpace(validatedHash) == "" {
+		return "", fmt.Errorf("consensus-selected failed hash is empty after validation")
+	}
+	return validatedHash, nil
+}
+
+func (s *Aptos) consensusSelectFailedHash(
+	ctx context.Context,
+	metadata capabilities.RequestMetadata,
+	localFailedHash string,
+) (string, error) {
+	requestID := commonMon.RequestID(metadata.WorkflowExecutionID, metadata.ReferenceID) + ":aptos-failed-hash"
+
+	request := ctypes.NewAggregatableRequest(requestID, func(ctx context.Context) (*ctypes.AggregatableObservation, error) {
+		candidateHash := strings.TrimSpace(localFailedHash)
+		if candidateHash == "" {
+			return &ctypes.AggregatableObservation{
+				Method: ctypes.AggregationMethodFPlusOneHighest,
+				// Exponent != 0 marks "no local candidate hash".
+				Value: &pb.Decimal{
+					Coefficient: pb.NewBigIntFromInt(big.NewInt(0)),
+					Exponent:    1,
+				},
+			}, nil
+		}
+
+		value, err := aptosHashToDecimal(candidateHash)
+		if err != nil {
+			return nil, err
+		}
+
+		return &ctypes.AggregatableObservation{
+			Method: ctypes.AggregationMethodFPlusOneHighest,
+			Value:  value,
+		}, nil
+	})
+
+	decimalValue, err := readType[*pb.Decimal](ctx, s.ConsensusHandler, request)
+	if err != nil {
+		return "", err
+	}
+
+	hash, err := decimalToAptosHash(decimalValue)
+	if err != nil {
+		return "", err
+	}
+
+	return hash, nil
+}
+
+func aptosHashToDecimal(hash string) (*pb.Decimal, error) {
+	normalizedHash, ok := normalizeAptosTxHashString(hash)
+	if !ok {
+		return nil, fmt.Errorf("invalid tx hash %q", hash)
+	}
+
+	normalizedHash = strings.TrimPrefix(normalizedHash, "0x")
+
+	value := new(big.Int)
+	if _, ok := value.SetString(normalizedHash, 16); !ok {
+		return nil, fmt.Errorf("failed to parse tx hash %q as uint256", hash)
+	}
+
+	return &pb.Decimal{
+		Coefficient: pb.NewBigIntFromInt(value),
+		Exponent:    0,
 	}, nil
 }
 
-func (s *Aptos) waitForTransmissionSuccess(ctx context.Context, transmissionID TransmissionID, retryConfig aptosWriteRetryConfig) (TransmissionInfo, error) {
-	return withAptosPollingRetry(ctx, s.lggr, retryConfig, func(ctx context.Context) (TransmissionInfo, error) {
-		info, err := s.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
-		if err != nil {
-			return TransmissionInfo{}, err
-		}
-		if info.Success {
-			return info, nil
-		}
-		return TransmissionInfo{}, errors.New("transmission not yet successful, retrying")
-	})
-}
-
-func (s *Aptos) waitForFailedTransmissionHash(ctx context.Context, transmissionID TransmissionID, candidateTransmitters []string, retryConfig aptosWriteRetryConfig) (string, error) {
-	if len(candidateTransmitters) == 0 {
-		return "", fmt.Errorf("no candidate transmitters available for failed hash resolution")
+func decimalToAptosHash(value *pb.Decimal) (string, error) {
+	if value == nil || value.Coefficient == nil {
+		return "", fmt.Errorf("nil decimal coefficient")
+	}
+	if value.Exponent != 0 {
+		return "", fmt.Errorf("unexpected decimal exponent %d for tx hash", value.Exponent)
 	}
 
-	return withAptosPollingRetry(ctx, s.lggr, retryConfig, func(ctx context.Context) (string, error) {
-		hash, err := s.forwarderClient.GetTransmissionFailedTxHash(ctx, transmissionID, candidateTransmitters)
-		if err != nil {
-			return "", err
+	intValue := pb.NewIntFromBigInt(value.Coefficient)
+	if intValue.Sign() < 0 {
+		return "", fmt.Errorf("negative tx hash value")
+	}
+
+	hexHash := fmt.Sprintf("%x", intValue)
+	if len(hexHash) > 64 {
+		return "", fmt.Errorf("tx hash exceeds 256 bits")
+	}
+	if len(hexHash) < 64 {
+		hexHash = strings.Repeat("0", 64-len(hexHash)) + hexHash
+	}
+
+	return "0x" + strings.ToLower(hexHash), nil
+}
+
+func expectedForwarderRawReportBytes(report *sdk.ReportResponse) ([]byte, error) {
+	if report == nil {
+		return nil, fmt.Errorf("nil report")
+	}
+	if len(report.RawReport) == 0 {
+		return nil, fmt.Errorf("empty raw report")
+	}
+
+	rawReport := append([]byte(nil), report.RawReport...)
+	if len(report.ReportContext) == 0 {
+		return rawReport, nil
+	}
+	if len(report.ReportContext) != 96 {
+		return nil, fmt.Errorf("invalid report context length: got %d want 96", len(report.ReportContext))
+	}
+
+	combined := make([]byte, 0, len(report.ReportContext)+len(report.RawReport))
+	combined = append(combined, report.ReportContext...)
+	combined = append(combined, report.RawReport...)
+	return combined, nil
+}
+
+func (s *Aptos) waitForTransmissionOutcome(
+	ctx context.Context,
+	transmissionID TransmissionID,
+	submittedHash string,
+	expectedForwarderRawReport []byte,
+	retryConfig aptosWriteRetryConfig,
+) (aptosWriteOutcome, error) {
+	normalizedSubmittedHash := strings.TrimSpace(submittedHash)
+
+	return withAptosPollingRetry(ctx, s.lggr, retryConfig, func(ctx context.Context) (aptosWriteOutcome, error) {
+		info, infoErr := s.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
+		if infoErr == nil && info.Success {
+			return aptosWriteOutcome{transmissionInfo: info}, nil
 		}
-		if hash == "" {
-			return "", errors.New("empty failed tx hash")
+
+		if normalizedSubmittedHash != "" {
+			failedHash, failedErr := s.forwarderClient.ValidateFailedTxHash(ctx, transmissionID, normalizedSubmittedHash, expectedForwarderRawReport)
+			if failedErr == nil && strings.TrimSpace(failedHash) != "" {
+				return aptosWriteOutcome{failedHash: failedHash}, nil
+			}
+			if infoErr != nil && failedErr != nil {
+				return aptosWriteOutcome{}, fmt.Errorf("transmission not finalized yet: transmission_info_err=%v failed_hash_err=%v", infoErr, failedErr)
+			}
+			if failedErr != nil {
+				return aptosWriteOutcome{}, fmt.Errorf("transmission not finalized yet: failed_hash_err=%v", failedErr)
+			}
 		}
-		return hash, nil
+
+		if infoErr != nil {
+			return aptosWriteOutcome{}, fmt.Errorf("transmission info unavailable: %w", infoErr)
+		}
+		return aptosWriteOutcome{}, errors.New("transmission not yet successful and no failed hash observed")
 	})
 }
 
-func (s *Aptos) waitForFailedTransmissionHashByHash(ctx context.Context, transmissionID TransmissionID, txHash string, retryConfig aptosWriteRetryConfig) (string, error) {
+func (s *Aptos) waitForFailedTransmissionHashByHash(
+	ctx context.Context,
+	transmissionID TransmissionID,
+	txHash string,
+	expectedForwarderRawReport []byte,
+	retryConfig aptosWriteRetryConfig,
+) (string, error) {
 	if strings.TrimSpace(txHash) == "" {
 		return "", fmt.Errorf("empty submitted tx hash")
 	}
 
 	return withAptosPollingRetry(ctx, s.lggr, retryConfig, func(ctx context.Context) (string, error) {
-		hash, err := s.forwarderClient.ValidateFailedTxHash(ctx, transmissionID, txHash)
+		hash, err := s.forwarderClient.ValidateFailedTxHash(ctx, transmissionID, txHash, expectedForwarderRawReport)
 		if err != nil {
 			return "", err
 		}

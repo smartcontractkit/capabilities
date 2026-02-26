@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
@@ -57,6 +59,7 @@ func TestExecuteWriteReport_ReturnsDeterministicFailedHashOnInvalidCall(t *testi
 
 	a := &Aptos{
 		forwarderClient:   mockForwarder,
+		ConsensusHandler:  &passthroughAggregatableConsensusHandler{},
 		lggr:              logger.Sugared(logger.Test(t)),
 		maxGasAmountLimit: maxGasLimiter,
 		reportSizeLimit:   reportSizeLimiter,
@@ -70,8 +73,10 @@ func TestExecuteWriteReport_ReturnsDeterministicFailedHashOnInvalidCall(t *testi
 	require.NotNil(t, reply)
 	require.Equal(t, aptoscap.TxStatus_TX_STATUS_FAILED, reply.TxStatus)
 	require.Equal(t, []byte("0x"+strings.Repeat("f", 64)), reply.TxHash)
-	require.Contains(t, reply.GetErrorMessage(), "write transmission did not succeed before timeout")
-	require.Equal(t, []string{"0x" + strings.Repeat("1", 64)}, mockForwarder.validatedFailedHashes)
+	require.Contains(t, reply.GetErrorMessage(), "write transmission failed onchain")
+	require.NotEmpty(t, mockForwarder.validatedFailedHashes)
+	require.Contains(t, mockForwarder.validatedFailedHashes, "0x"+strings.Repeat("1", 64))
+	require.Contains(t, mockForwarder.validatedFailedHashes, "0x"+strings.Repeat("f", 64))
 }
 
 func TestExecuteWriteReport_ReturnsErrorWhenFailedTxReceiptCannotBeValidated(t *testing.T) {
@@ -111,6 +116,7 @@ func TestExecuteWriteReport_ReturnsErrorWhenFailedTxReceiptCannotBeValidated(t *
 
 	a := &Aptos{
 		forwarderClient:   mockForwarder,
+		ConsensusHandler:  &passthroughAggregatableConsensusHandler{},
 		lggr:              logger.Sugared(logger.Test(t)),
 		maxGasAmountLimit: maxGasLimiter,
 		reportSizeLimit:   reportSizeLimiter,
@@ -123,7 +129,10 @@ func TestExecuteWriteReport_ReturnsErrorWhenFailedTxReceiptCannotBeValidated(t *
 	require.Error(t, err)
 	require.Nil(t, reply)
 	require.Contains(t, err.Error(), "failed hash resolution by receipt")
-	require.Equal(t, []string{localHash}, mockForwarder.validatedFailedHashes)
+	require.NotEmpty(t, mockForwarder.validatedFailedHashes)
+	for _, observedHash := range mockForwarder.validatedFailedHashes {
+		require.Equal(t, localHash, observedHash)
+	}
 }
 
 type mockForwarderClient struct {
@@ -151,11 +160,11 @@ func (m *mockForwarderClient) GetTransmissionInfo(_ context.Context, _ Transmiss
 	return TransmissionInfo{Success: false}, nil
 }
 
-func (m *mockForwarderClient) GetTransmissionTxHash(_ context.Context, _ TransmissionID, _ string) (string, error) {
+func (m *mockForwarderClient) GetTransmissionTxHash(_ context.Context, _ TransmissionID, _ string, _ []byte) (string, error) {
 	return "", nil
 }
 
-func (m *mockForwarderClient) ValidateFailedTxHash(_ context.Context, _ TransmissionID, txHash string) (string, error) {
+func (m *mockForwarderClient) ValidateFailedTxHash(_ context.Context, _ TransmissionID, txHash string, _ []byte) (string, error) {
 	m.validatedFailedHashes = append(m.validatedFailedHashes, txHash)
 	if m.failedHashErr != nil {
 		return "", m.failedHashErr
@@ -166,4 +175,34 @@ func (m *mockForwarderClient) ValidateFailedTxHash(_ context.Context, _ Transmis
 func (m *mockForwarderClient) GetTransmissionFailedTxHash(_ context.Context, _ TransmissionID, transmitters []string) (string, error) {
 	_ = transmitters
 	return "", errors.New("unexpected call to GetTransmissionFailedTxHash in this test")
+}
+
+type passthroughAggregatableConsensusHandler struct{}
+
+func (h *passthroughAggregatableConsensusHandler) Handle(ctx context.Context, request ctypes.Request) (<-chan ctypes.Reply, error) {
+	ch := make(chan ctypes.Reply, 1)
+
+	aggregatableReq, ok := request.(*ctypes.AggregatableRequest)
+	if !ok {
+		ch <- ctypes.Reply{Err: fmt.Errorf("unexpected request type %T", request)}
+		return ch, nil
+	}
+
+	if err := aggregatableReq.CaptureObservation(ctx); err != nil {
+		ch <- ctypes.Reply{Err: err}
+		return ch, nil
+	}
+
+	observation, observationErr, ok := aggregatableReq.GetObservation()
+	if !ok {
+		ch <- ctypes.Reply{Err: fmt.Errorf("missing observation")}
+		return ch, nil
+	}
+	if observationErr != nil {
+		ch <- ctypes.Reply{Err: observationErr.Err()}
+		return ch, nil
+	}
+
+	ch <- ctypes.Reply{Value: observation.Value}
+	return ch, nil
 }

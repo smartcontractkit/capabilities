@@ -29,9 +29,9 @@ type CREForwarderClient interface {
 	// GetTransmissionInfo queries the forwarder contract for the transmission state of a given transmission ID.
 	GetTransmissionInfo(ctx context.Context, transmissionID TransmissionID) (TransmissionInfo, error)
 	// GetTransmissionTxHash resolves the canonical tx hash for a successful transmission.
-	GetTransmissionTxHash(ctx context.Context, transmissionID TransmissionID, transmitter string) (string, error)
+	GetTransmissionTxHash(ctx context.Context, transmissionID TransmissionID, transmitter string, expectedForwarderRawReport []byte) (string, error)
 	// ValidateFailedTxHash validates a candidate failed tx hash onchain and ensures it matches this transmission.
-	ValidateFailedTxHash(ctx context.Context, transmissionID TransmissionID, txHash string) (string, error)
+	ValidateFailedTxHash(ctx context.Context, transmissionID TransmissionID, txHash string, expectedForwarderRawReport []byte) (string, error)
 	// GetTransmissionFailedTxHash resolves a deterministic failed tx hash for an invalid transmission attempt.
 	GetTransmissionFailedTxHash(ctx context.Context, transmissionID TransmissionID, transmitters []string) (string, error)
 }
@@ -236,7 +236,12 @@ func (fc *forwarderClient) GetTransmissionInfo(ctx context.Context, transmission
 	return TransmissionInfo{Success: true, Transmitter: transmitter}, nil
 }
 
-func (fc *forwarderClient) GetTransmissionTxHash(ctx context.Context, transmissionID TransmissionID, transmitter string) (string, error) {
+func (fc *forwarderClient) GetTransmissionTxHash(
+	ctx context.Context,
+	transmissionID TransmissionID,
+	transmitter string,
+	expectedForwarderRawReport []byte,
+) (string, error) {
 	if transmitter == "" {
 		return "", fmt.Errorf("transmitter is empty")
 	}
@@ -277,9 +282,51 @@ func (fc *forwarderClient) GetTransmissionTxHash(ctx context.Context, transmissi
 	bestHash := ""
 	bestFallbackSeq := uint64(0)
 	bestFallbackHash := ""
+	shouldMatchPayload := len(expectedForwarderRawReport) > 0
 	remaining := defaultTxHashLookback
 	if initialUpperExclusive < remaining {
 		remaining = initialUpperExclusive
+	}
+
+	considerSuccessfulTx := func(tx *aptostypes.Transaction) {
+		if tx == nil || tx.Success == nil || !*tx.Success {
+			return
+		}
+
+		decoded, err := decodeAccountUserTransaction(tx.Data)
+		if err != nil {
+			return
+		}
+
+		if shouldMatchPayload {
+			if !matchesForwarderReportCallAndPayload(decoded, fc.forwarderAddress, transmissionID, expectedForwarderRawReport) {
+				return
+			}
+		} else if !isForwarderReportCall(decoded.EntryFunction, fc.forwarderAddress) {
+			return
+		}
+
+		if containsReportProcessedEvent(decoded.Events) {
+			if bestFallbackHash == "" || decoded.SequenceNumber > bestFallbackSeq {
+				bestFallbackSeq = decoded.SequenceNumber
+				bestFallbackHash = tx.Hash
+			}
+		}
+
+		if !containsMatchingReportProcessed(decoded.Events, transmissionID) {
+			return
+		}
+
+		if bestHash == "" || decoded.SequenceNumber > bestSeq {
+			bestSeq = decoded.SequenceNumber
+			bestHash = tx.Hash
+		}
+	}
+
+	processSuccessfulTxPage := func(txs []*aptostypes.Transaction) {
+		for _, tx := range txs {
+			considerSuccessfulTx(tx)
+		}
 	}
 
 	// Aptos account transactions API has a per-request limit cap (currently 45),
@@ -308,36 +355,7 @@ func (fc *forwarderClient) GetTransmissionTxHash(ctx context.Context, transmissi
 		}
 
 		// Pick the matching tx with highest sequence number (latest successful matching tx).
-		for _, tx := range txs.Transactions {
-			if tx == nil || tx.Success == nil || !*tx.Success {
-				continue
-			}
-
-			decoded, err := decodeAccountUserTransaction(tx.Data)
-			if err != nil {
-				continue
-			}
-
-			if !isForwarderReportCall(decoded.EntryFunction, fc.forwarderAddress) {
-				continue
-			}
-
-			if containsReportProcessedEvent(decoded.Events) {
-				if bestFallbackHash == "" || decoded.SequenceNumber > bestFallbackSeq {
-					bestFallbackSeq = decoded.SequenceNumber
-					bestFallbackHash = tx.Hash
-				}
-			}
-
-			if !containsMatchingReportProcessed(decoded.Events, transmissionID) {
-				continue
-			}
-
-			if bestHash == "" || decoded.SequenceNumber > bestSeq {
-				bestSeq = decoded.SequenceNumber
-				bestHash = tx.Hash
-			}
-		}
+		processSuccessfulTxPage(txs.Transactions)
 
 		if start == 0 {
 			break
@@ -383,31 +401,7 @@ func (fc *forwarderClient) GetTransmissionTxHash(ctx context.Context, transmissi
 							break
 						}
 
-						for _, tx := range txs.Transactions {
-							if tx == nil || tx.Success == nil || !*tx.Success {
-								continue
-							}
-							decoded, err := decodeAccountUserTransaction(tx.Data)
-							if err != nil {
-								continue
-							}
-							if !isForwarderReportCall(decoded.EntryFunction, fc.forwarderAddress) {
-								continue
-							}
-							if containsReportProcessedEvent(decoded.Events) {
-								if bestFallbackHash == "" || decoded.SequenceNumber > bestFallbackSeq {
-									bestFallbackSeq = decoded.SequenceNumber
-									bestFallbackHash = tx.Hash
-								}
-							}
-							if !containsMatchingReportProcessed(decoded.Events, transmissionID) {
-								continue
-							}
-							if bestHash == "" || decoded.SequenceNumber > bestSeq {
-								bestSeq = decoded.SequenceNumber
-								bestHash = tx.Hash
-							}
-						}
+						processSuccessfulTxPage(txs.Transactions)
 
 						upperExclusive = start
 						remaining -= limit
@@ -430,7 +424,7 @@ func (fc *forwarderClient) GetTransmissionTxHash(ctx context.Context, transmissi
 	return "", fmt.Errorf("no matching successful report tx found for transmitter %s", transmitter)
 }
 
-func (fc *forwarderClient) ValidateFailedTxHash(ctx context.Context, transmissionID TransmissionID, txHash string) (string, error) {
+func (fc *forwarderClient) ValidateFailedTxHash(ctx context.Context, transmissionID TransmissionID, txHash string, expectedForwarderRawReport []byte) (string, error) {
 	normalizedRequestedHash, ok := normalizeAptosTxHashString(txHash)
 	if !ok {
 		return "", fmt.Errorf("invalid tx hash %q", txHash)
@@ -477,7 +471,7 @@ func (fc *forwarderClient) ValidateFailedTxHash(ctx context.Context, transmissio
 	if !isForwarderReportCall(decoded.EntryFunction, fc.forwarderAddress) {
 		return "", fmt.Errorf("transaction %s is not a forwarder::report call", normalizedReturnedHash)
 	}
-	if !isMatchingFailedReportPayload(decoded.PayloadArguments, transmissionID) {
+	if !isMatchingForwarderReportPayload(decoded.PayloadArguments, transmissionID, expectedForwarderRawReport) {
 		return "", fmt.Errorf("transaction %s payload does not match requested transmission", normalizedReturnedHash)
 	}
 
@@ -629,10 +623,7 @@ func (fc *forwarderClient) findEarliestMatchingFailedTxForTransmitter(
 			if err != nil {
 				continue
 			}
-			if !isForwarderReportCall(decoded.EntryFunction, fc.forwarderAddress) {
-				continue
-			}
-			if !isMatchingFailedReportPayload(decoded.PayloadArguments, transmissionID) {
+			if !matchesForwarderReportCallAndPayload(decoded, fc.forwarderAddress, transmissionID, nil) {
 				continue
 			}
 			if tx.Hash == "" {
@@ -949,6 +940,21 @@ func isForwarderReportCall(entryFunction string, forwarderAddr [32]byte) bool {
 	return fnAddress == forwarderAddress
 }
 
+func matchesForwarderReportCallAndPayload(
+	decoded *accountUserTransaction,
+	forwarderAddr [32]byte,
+	transmissionID TransmissionID,
+	expectedForwarderRawReport []byte,
+) bool {
+	if decoded == nil {
+		return false
+	}
+	if !isForwarderReportCall(decoded.EntryFunction, forwarderAddr) {
+		return false
+	}
+	return isMatchingForwarderReportPayload(decoded.PayloadArguments, transmissionID, expectedForwarderRawReport)
+}
+
 func containsMatchingReportProcessed(events []accountTxEvent, transmissionID TransmissionID) bool {
 	for _, event := range events {
 		if !strings.HasSuffix(strings.ToLower(event.Type), "::forwarder::reportprocessed") {
@@ -1008,7 +1014,7 @@ func isMatchingReportProcessedData(data map[string]any, transmissionID Transmiss
 		string(execID) == string(transmissionID.WorkflowExecutionID[:])
 }
 
-func isMatchingFailedReportPayload(payloadArgs []any, transmissionID TransmissionID) bool {
+func isMatchingForwarderReportPayload(payloadArgs []any, transmissionID TransmissionID, expectedForwarderRawReport []byte) bool {
 	// forwarder::report(receiver, raw_report, signatures)
 	if len(payloadArgs) < 2 {
 		return false
@@ -1021,6 +1027,9 @@ func isMatchingFailedReportPayload(payloadArgs []any, transmissionID Transmissio
 
 	rawReport, ok := parseBytes(payloadArgs[1])
 	if !ok || len(rawReport) == 0 {
+		return false
+	}
+	if len(expectedForwarderRawReport) > 0 && !bytes.Equal(rawReport, expectedForwarderRawReport) {
 		return false
 	}
 
