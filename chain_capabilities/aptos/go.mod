@@ -8,7 +8,7 @@ require (
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260223172632-a716db2e04a0
 	github.com/smartcontractkit/chain-selectors v1.0.90
 	github.com/smartcontractkit/chainlink-aptos v0.0.0-20260217202121-e180775e1fb5
-	github.com/smartcontractkit/chainlink-common v0.10.1-0.20260225231552-fd6482e9b481
+	github.com/smartcontractkit/chainlink-common v0.10.1-0.20260226191628-ecce52da56c9
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260217043601-5cc966896c4f
 	github.com/smartcontractkit/libocr v0.0.0-20250912173940-f3ab0246e23d
 	github.com/stretchr/testify v1.11.1
