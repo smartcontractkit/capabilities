@@ -1,6 +1,7 @@
 package actions
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/hex"
@@ -416,43 +417,150 @@ type accountUserTransaction struct {
 	Events         []accountTxEvent `json:"events"`
 }
 
-type rawPayload struct {
-	Type     string `json:"type"`
-	Function string `json:"function"`
-}
-
-type rawUserTransaction struct {
-	Type           string           `json:"type"`
-	Hash           string           `json:"hash"`
-	SequenceNumber string           `json:"sequence_number"`
-	Payload        rawPayload       `json:"payload"`
-	Events         []accountTxEvent `json:"events"`
-}
-
 func decodeAccountUserTransaction(raw []byte) (*accountUserTransaction, error) {
 	if len(raw) == 0 {
 		return nil, fmt.Errorf("empty transaction payload")
 	}
 
-	var decoded rawUserTransaction
-	if err := json.Unmarshal(raw, &decoded); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+
+	var body map[string]any
+	if err := decoder.Decode(&body); err != nil {
 		return nil, err
 	}
 
-	if decoded.Type != "user_transaction" {
-		return nil, fmt.Errorf("transaction type %q is not user_transaction", decoded.Type)
+	txBody := body
+	if inner, ok := getMapField(body, "inner", "Inner"); ok {
+		txBody = inner
 	}
 
-	sequenceNumber, err := strconv.ParseUint(decoded.SequenceNumber, 10, 64)
+	txType, _ := getStringField(body, "type", "Type")
+	if txType == "" {
+		txType, _ = getStringField(txBody, "type", "Type")
+	}
+	if txType != "user_transaction" {
+		return nil, fmt.Errorf("transaction type %q is not user_transaction", txType)
+	}
+
+	sequenceRaw, ok := getField(txBody, "sequence_number", "SequenceNumber")
+	if !ok {
+		return nil, fmt.Errorf("missing sequence_number field")
+	}
+	sequenceNumber, err := parseUint64Value(sequenceRaw)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse sequence_number %q: %w", decoded.SequenceNumber, err)
+		return nil, fmt.Errorf("failed to parse sequence_number: %w", err)
+	}
+
+	entryFunction := ""
+	if payload, ok := getMapField(txBody, "payload", "Payload"); ok {
+		if fn, ok := getStringField(payload, "function", "Function"); ok {
+			entryFunction = fn
+		} else if innerPayload, ok := getMapField(payload, "inner", "Inner"); ok {
+			if fn, ok := getStringField(innerPayload, "function", "Function"); ok {
+				entryFunction = fn
+			}
+		}
+	}
+
+	events := make([]accountTxEvent, 0)
+	if rawEvents, ok := getSliceField(txBody, "events", "Events"); ok {
+		for _, rawEvent := range rawEvents {
+			eventMap, ok := rawEvent.(map[string]any)
+			if !ok {
+				continue
+			}
+			eventType, _ := getStringField(eventMap, "type", "Type")
+			eventData, _ := getMapField(eventMap, "data", "Data")
+			events = append(events, accountTxEvent{
+				Type: eventType,
+				Data: eventData,
+			})
+		}
 	}
 
 	return &accountUserTransaction{
-		EntryFunction:  decoded.Payload.Function,
+		EntryFunction:  entryFunction,
 		SequenceNumber: sequenceNumber,
-		Events:         decoded.Events,
+		Events:         events,
 	}, nil
+}
+
+func getField(m map[string]any, keys ...string) (any, bool) {
+	for _, k := range keys {
+		v, ok := m[k]
+		if ok {
+			return v, true
+		}
+	}
+	return nil, false
+}
+
+func getStringField(m map[string]any, keys ...string) (string, bool) {
+	v, ok := getField(m, keys...)
+	if !ok {
+		return "", false
+	}
+	s, ok := v.(string)
+	if !ok {
+		return "", false
+	}
+	return s, true
+}
+
+func getMapField(m map[string]any, keys ...string) (map[string]any, bool) {
+	v, ok := getField(m, keys...)
+	if !ok {
+		return nil, false
+	}
+	mv, ok := v.(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	return mv, true
+}
+
+func getSliceField(m map[string]any, keys ...string) ([]any, bool) {
+	v, ok := getField(m, keys...)
+	if !ok {
+		return nil, false
+	}
+	s, ok := v.([]any)
+	if !ok {
+		return nil, false
+	}
+	return s, true
+}
+
+func parseUint64Value(v any) (uint64, error) {
+	switch x := v.(type) {
+	case string:
+		if x == "" {
+			return 0, fmt.Errorf("empty string")
+		}
+		return strconv.ParseUint(x, 10, 64)
+	case json.Number:
+		return strconv.ParseUint(x.String(), 10, 64)
+	case float64:
+		if x < 0 {
+			return 0, fmt.Errorf("negative value")
+		}
+		return uint64(x), nil
+	case int:
+		if x < 0 {
+			return 0, fmt.Errorf("negative value")
+		}
+		return uint64(x), nil
+	case int64:
+		if x < 0 {
+			return 0, fmt.Errorf("negative value")
+		}
+		return uint64(x), nil
+	case uint64:
+		return x, nil
+	default:
+		return 0, fmt.Errorf("unsupported type %T", v)
+	}
 }
 
 func isForwarderReportCall(entryFunction string, forwarderAddr [32]byte) bool {
