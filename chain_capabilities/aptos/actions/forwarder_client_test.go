@@ -497,6 +497,10 @@ func (f *fakeAptosService) AccountAPTBalance(context.Context, aptostypes.Account
 	return &aptostypes.AccountAPTBalanceReply{}, nil
 }
 
+func (f *fakeAptosService) LedgerVersion(context.Context) (uint64, error) {
+	return 0, nil
+}
+
 func (f *fakeAptosService) View(context.Context, aptostypes.ViewRequest) (*aptostypes.ViewReply, error) {
 	return &aptostypes.ViewReply{}, nil
 }
