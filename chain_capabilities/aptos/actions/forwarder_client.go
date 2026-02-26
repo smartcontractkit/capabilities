@@ -269,6 +269,8 @@ func (fc *forwarderClient) GetTransmissionTxHash(ctx context.Context, transmissi
 
 	bestSeq := uint64(0)
 	bestHash := ""
+	bestFallbackSeq := uint64(0)
+	bestFallbackHash := ""
 	remaining := defaultTxHashLookback
 	if initialUpperExclusive < remaining {
 		remaining = initialUpperExclusive
@@ -312,6 +314,13 @@ func (fc *forwarderClient) GetTransmissionTxHash(ctx context.Context, transmissi
 
 			if !isForwarderReportCall(decoded.EntryFunction, fc.forwarderAddress) {
 				continue
+			}
+
+			if containsReportProcessedEvent(decoded.Events) {
+				if bestFallbackHash == "" || decoded.SequenceNumber > bestFallbackSeq {
+					bestFallbackSeq = decoded.SequenceNumber
+					bestFallbackHash = tx.Hash
+				}
 			}
 
 			if !containsMatchingReportProcessed(decoded.Events, transmissionID) {
@@ -379,6 +388,12 @@ func (fc *forwarderClient) GetTransmissionTxHash(ctx context.Context, transmissi
 							if !isForwarderReportCall(decoded.EntryFunction, fc.forwarderAddress) {
 								continue
 							}
+							if containsReportProcessedEvent(decoded.Events) {
+								if bestFallbackHash == "" || decoded.SequenceNumber > bestFallbackSeq {
+									bestFallbackSeq = decoded.SequenceNumber
+									bestFallbackHash = tx.Hash
+								}
+							}
 							if !containsMatchingReportProcessed(decoded.Events, transmissionID) {
 								continue
 							}
@@ -401,6 +416,9 @@ func (fc *forwarderClient) GetTransmissionTxHash(ctx context.Context, transmissi
 
 	if bestHash != "" {
 		return bestHash, nil
+	}
+	if bestFallbackHash != "" {
+		return bestFallbackHash, nil
 	}
 
 	return "", fmt.Errorf("no matching successful report tx found for transmitter %s", transmitter)
@@ -593,12 +611,21 @@ func containsMatchingReportProcessed(events []accountTxEvent, transmissionID Tra
 	return false
 }
 
+func containsReportProcessedEvent(events []accountTxEvent) bool {
+	for _, event := range events {
+		if strings.HasSuffix(strings.ToLower(event.Type), "::forwarder::reportprocessed") {
+			return true
+		}
+	}
+	return false
+}
+
 func isMatchingReportProcessedData(data map[string]any, transmissionID TransmissionID) bool {
 	if len(data) == 0 {
 		return false
 	}
 
-	receiverStr, ok := data["receiver"].(string)
+	receiverStr, ok := getStringField(data, "receiver", "Receiver")
 	if !ok {
 		return false
 	}
@@ -610,12 +637,16 @@ func isMatchingReportProcessedData(data map[string]any, transmissionID Transmiss
 		return false
 	}
 
-	reportID, ok := parseUint16(data["report_id"])
+	reportIDRaw, ok := getField(data, "report_id", "reportId", "ReportId")
+	if !ok {
+		return false
+	}
+	reportID, ok := parseUint16(reportIDRaw)
 	if !ok || reportID != binary.BigEndian.Uint16(transmissionID.ReportID[:]) {
 		return false
 	}
 
-	execIDRaw, ok := data["workflow_execution_id"]
+	execIDRaw, ok := getField(data, "workflow_execution_id", "workflowExecutionId", "WorkflowExecutionId")
 	if !ok {
 		return false
 	}
@@ -630,7 +661,20 @@ func isMatchingReportProcessedData(data map[string]any, transmissionID Transmiss
 func parseUint16(v any) (uint16, bool) {
 	switch t := v.(type) {
 	case string:
+		if strings.HasPrefix(strings.ToLower(t), "0x") {
+			u, err := strconv.ParseUint(strings.TrimPrefix(strings.ToLower(t), "0x"), 16, 16)
+			if err != nil {
+				return 0, false
+			}
+			return uint16(u), true
+		}
 		u, err := strconv.ParseUint(t, 10, 16)
+		if err != nil {
+			return 0, false
+		}
+		return uint16(u), true
+	case json.Number:
+		u, err := strconv.ParseUint(t.String(), 10, 16)
 		if err != nil {
 			return 0, false
 		}
@@ -640,25 +684,53 @@ func parseUint16(v any) (uint16, bool) {
 			return 0, false
 		}
 		return uint16(t), true
+	case int:
+		if t < 0 || t > 65535 {
+			return 0, false
+		}
+		return uint16(t), true
+	case int64:
+		if t < 0 || t > 65535 {
+			return 0, false
+		}
+		return uint16(t), true
+	case uint64:
+		if t > 65535 {
+			return 0, false
+		}
+		return uint16(t), true
 	default:
 		return 0, false
 	}
 }
 
 func parseHexBytes(v any) ([]byte, bool) {
-	s, ok := v.(string)
-	if !ok {
+	switch t := v.(type) {
+	case string:
+		s := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(t)), "0x")
+		if len(s)%2 != 0 {
+			s = "0" + s
+		}
+		b, err := hexToBytes(s)
+		if err != nil {
+			return nil, false
+		}
+		return b, true
+	case []byte:
+		return t, true
+	case []any:
+		out := make([]byte, 0, len(t))
+		for _, item := range t {
+			u, err := parseUint64Value(item)
+			if err != nil || u > 255 {
+				return nil, false
+			}
+			out = append(out, byte(u))
+		}
+		return out, true
+	default:
 		return nil, false
 	}
-	s = strings.TrimPrefix(strings.ToLower(strings.TrimSpace(s)), "0x")
-	if len(s)%2 != 0 {
-		s = "0" + s
-	}
-	b, err := hexToBytes(s)
-	if err != nil {
-		return nil, false
-	}
-	return b, true
 }
 
 func hexToBytes(s string) ([]byte, error) {
