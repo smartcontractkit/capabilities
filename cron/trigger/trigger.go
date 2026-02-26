@@ -104,7 +104,7 @@ func (s *Service) UnregisterLegacyTrigger(ctx context.Context, triggerID string,
 var _ services.Service = &Service{}
 
 // NewTriggerService creates a new trigger service.  Optionally, a clock can be passed in for testing, if nil
-// the system clock will be used. The orgResolver is optional and can be nil, but should be set in live environments.
+// the system clock will be used.
 func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock, limitsFactory limits.Factory) (*Service, error) {
 	lggr := logger.Named(parentLggr, "Service")
 

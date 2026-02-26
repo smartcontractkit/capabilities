@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package shared;
+
+option go_package = "github.com/smartcontractkit/capabilities/echo/shared";
+
+message Request {
+  string key = 1;
+  string value = 2;
+}
+
+message Response {
+  string stored_key = 1;  // The full key: <workflowID>:<key>:<value>
+  string key = 2;
+  string value = 3;
+}
+
+message Config {
+  string storage_dir = 1;  // Directory to store files
+}
+

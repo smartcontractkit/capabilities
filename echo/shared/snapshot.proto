@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package shared;
+
+option go_package = "github.com/smartcontractkit/capabilities/echo/shared";
+
+message Snapshot {
+    string timestamp = 1; // ISO8601
+    string entity = 2; // FQ ResourceManager name cre-mainline.wf-zone-a.wf-zone-a-one.echocap.filestore
+    string resource = 3;
+    string resource_type = 4;
+    repeated Utilization utilization = 5;
+}
+
+enum UtilizationType {
+    UTILIZATION_TYPE_UNSPECIFIED = 0;
+    UTILIZATION_TYPE_STORAGE = 1;
+    UTILIZATION_TYPE_COMPUTE = 2;
+    UTILIZATION_TYPE_NETWORK = 3;
+}
+
+message Utilization {
+    UtilizationType utilization_type = 1;
+    string owner = 2; // for CRE, this is a workflow owner
+    string workflow_id = 3; // optional
+    string resource_id = 4; // identifier for the specific resource (e.g., file key)
+    int64 bytes = 5; // storage bytes used by this resource
+}
