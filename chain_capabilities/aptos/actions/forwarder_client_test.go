@@ -144,7 +144,7 @@ func TestGetTransmissionTxHash_SelectsNewestExactMatch(t *testing.T) {
 		forwarderAddress: forwarderAddress,
 	}
 
-	hash, err := client.GetTransmissionTxHash(context.Background(), transmissionID, transmitter)
+	hash, err := client.GetTransmissionTxHash(context.Background(), transmissionID, transmitter, nil)
 	require.NoError(t, err)
 	require.Equal(t, "0xnew-match", hash)
 
@@ -224,7 +224,7 @@ func TestGetTransmissionTxHash_FallsBackToNewestReportProcessedWhenNoExactMatch(
 		forwarderAddress: forwarderAddress,
 	}
 
-	hash, err := client.GetTransmissionTxHash(context.Background(), transmissionID, transmitter)
+	hash, err := client.GetTransmissionTxHash(context.Background(), transmissionID, transmitter, nil)
 	require.NoError(t, err)
 	require.Equal(t, "0xfallback-new", hash)
 }
@@ -315,7 +315,7 @@ func TestGetTransmissionTxHash_TopUpPassFindsNewTransaction(t *testing.T) {
 		forwarderAddress: forwarderAddress,
 	}
 
-	hash, err := client.GetTransmissionTxHash(context.Background(), transmissionID, transmitter)
+	hash, err := client.GetTransmissionTxHash(context.Background(), transmissionID, transmitter, nil)
 	require.NoError(t, err)
 	require.Equal(t, "0xtopup-match", hash)
 
@@ -324,6 +324,78 @@ func TestGetTransmissionTxHash_TopUpPassFindsNewTransaction(t *testing.T) {
 	require.NotNil(t, mockService.accountTransactionsCalls[4].Limit)
 	require.Equal(t, uint64(51), *mockService.accountTransactionsCalls[4].Start)
 	require.Equal(t, uint64(2), *mockService.accountTransactionsCalls[4].Limit)
+}
+
+func TestGetTransmissionTxHash_RejectsMismatchedExpectedPayload(t *testing.T) {
+	transmissionID := newTestTransmissionID()
+	otherTransmission := transmissionID
+	otherTransmission.ReportID = [2]byte{0xaa, 0xbb}
+
+	forwarderAddress := newTestAddress(0x49)
+	transmitter := accountAddressStringLong(newTestAddress(0x94))
+	entryFunction := forwarderEntryFunction(forwarderAddress)
+
+	expectedRawReport := mustEncodedReportWithMetadata(t, transmissionID)
+	mismatchedRawReport := mustEncodedReportWithMetadata(t, otherTransmission)
+
+	mockService := &fakeAptosService{
+		accountTransactionsReplies: []*aptostypes.AccountTransactionsReply{
+			{
+				Transactions: []*aptostypes.Transaction{
+					mustSuccessfulUserTransactionWithPayload(
+						t,
+						"0xlatest",
+						8,
+						entryFunction,
+						transmissionID.Receiver.StringLong(),
+						mismatchedRawReport,
+						[]map[string]any{
+							reportProcessedEvent(matchingReportProcessedData(transmissionID)),
+						},
+					),
+				},
+			},
+			{
+				Transactions: []*aptostypes.Transaction{
+					mustSuccessfulUserTransactionWithPayload(
+						t,
+						"0xmismatch",
+						8,
+						entryFunction,
+						transmissionID.Receiver.StringLong(),
+						mismatchedRawReport,
+						[]map[string]any{
+							reportProcessedEvent(matchingReportProcessedData(transmissionID)),
+						},
+					),
+				},
+			},
+			{
+				Transactions: []*aptostypes.Transaction{
+					mustSuccessfulUserTransactionWithPayload(
+						t,
+						"0xlatest",
+						8,
+						entryFunction,
+						transmissionID.Receiver.StringLong(),
+						mismatchedRawReport,
+						[]map[string]any{
+							reportProcessedEvent(matchingReportProcessedData(transmissionID)),
+						},
+					),
+				},
+			},
+		},
+	}
+
+	client := &forwarderClient{
+		AptosService:     mockService,
+		forwarderAddress: forwarderAddress,
+	}
+
+	_, err := client.GetTransmissionTxHash(context.Background(), transmissionID, transmitter, expectedRawReport)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no matching successful report tx found")
 }
 
 func TestGetTransmissionFailedTxHash_SelectsEarliestMatchingFailedAcrossTransmitters(t *testing.T) {
@@ -445,7 +517,7 @@ func TestValidateFailedTxHash_AcceptsMatchingFailedReceipt(t *testing.T) {
 		forwarderAddress: forwarderAddress,
 	}
 
-	hash, err := client.ValidateFailedTxHash(context.Background(), transmissionID, "0x"+strings.Repeat("a", 64))
+	hash, err := client.ValidateFailedTxHash(context.Background(), transmissionID, "0x"+strings.Repeat("a", 64), nil)
 	require.NoError(t, err)
 	require.Equal(t, "0x"+strings.Repeat("a", 64), hash)
 	require.Len(t, mockService.transactionByHashCalls, 1)
@@ -479,9 +551,46 @@ func TestValidateFailedTxHash_RejectsSuccessfulReceipt(t *testing.T) {
 		forwarderAddress: forwarderAddress,
 	}
 
-	_, err := client.ValidateFailedTxHash(context.Background(), transmissionID, "0x"+strings.Repeat("b", 64))
+	_, err := client.ValidateFailedTxHash(context.Background(), transmissionID, "0x"+strings.Repeat("b", 64), nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "expected failure")
+}
+
+func TestValidateFailedTxHash_RejectsMismatchedExpectedReportPayload(t *testing.T) {
+	transmissionID := newTestTransmissionID()
+	forwarderAddress := newTestAddress(0x48)
+	entryFunction := forwarderEntryFunction(forwarderAddress)
+	matchingRawReport := mustEncodedReportWithMetadata(t, transmissionID)
+
+	failedTx := mustFailedUserTransactionWithPayload(
+		t,
+		"0x"+strings.Repeat("c", 64),
+		12,
+		3333,
+		4444,
+		entryFunction,
+		transmissionID.Receiver.StringLong(),
+		matchingRawReport,
+	)
+
+	mockService := &fakeAptosService{
+		transactionByHashReplies: []*aptostypes.TransactionByHashReply{
+			{Transaction: failedTx},
+		},
+	}
+
+	client := &forwarderClient{
+		AptosService:     mockService,
+		forwarderAddress: forwarderAddress,
+	}
+
+	// Same transmission metadata, but different report payload bytes.
+	mismatchedExpected := append([]byte(nil), matchingRawReport...)
+	mismatchedExpected[len(mismatchedExpected)-1] ^= 0x01
+
+	_, err := client.ValidateFailedTxHash(context.Background(), transmissionID, "0x"+strings.Repeat("c", 64), mismatchedExpected)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "payload does not match requested transmission")
 }
 
 type fakeAptosService struct {
@@ -657,6 +766,41 @@ func mustFailedUserTransactionWithPayload(
 		Type:    aptostypes.TransactionVariantUser,
 		Hash:    hash,
 		Version: &txVersion,
+		Success: &txSuccess,
+		Data:    raw,
+	}
+}
+
+func mustSuccessfulUserTransactionWithPayload(
+	t *testing.T,
+	hash string,
+	sequenceNumber uint64,
+	entryFunction string,
+	receiver string,
+	rawReport []byte,
+	events []map[string]any,
+) *aptostypes.Transaction {
+	t.Helper()
+
+	if events == nil {
+		events = []map[string]any{}
+	}
+
+	raw, err := json.Marshal(map[string]any{
+		"type":            "user_transaction",
+		"sequence_number": strconv.FormatUint(sequenceNumber, 10),
+		"payload": map[string]any{
+			"function":  entryFunction,
+			"arguments": []any{receiver, "0x" + hex.EncodeToString(rawReport), []any{}},
+		},
+		"events": events,
+	})
+	require.NoError(t, err)
+
+	txSuccess := true
+	return &aptostypes.Transaction{
+		Type:    aptostypes.TransactionVariantUser,
+		Hash:    hash,
 		Success: &txSuccess,
 		Data:    raw,
 	}
