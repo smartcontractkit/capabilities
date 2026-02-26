@@ -133,16 +133,28 @@ func (s *Aptos) executeWriteReport(
 		return nil, fmt.Errorf("nil transaction reply")
 	}
 
+	ourSender := normalizeAptosHexAddress(hex.EncodeToString(txReply.PendingTransaction.Sender[:]))
 	newTransmissionInfo, err := s.waitForTransmissionSuccess(ctx, transmissionID)
-
 	if err != nil {
+		var candidateTransmitters []string
+		if ourSender != "" {
+			candidateTransmitters = append(candidateTransmitters, ourSender)
+		}
+		candidateTransmitters = orderedUniqueTransmitters(candidateTransmitters)
+		if failedHash, failedHashErr := s.forwarderClient.GetTransmissionFailedTxHash(ctx, transmissionID, candidateTransmitters); failedHashErr == nil && failedHash != "" {
+			errorMsg := fmt.Sprintf("write transmission did not succeed before timeout: %v", err)
+			return &aptoscap.WriteReportReply{
+				TxStatus:     aptoscap.TxStatus_TX_STATUS_FAILED,
+				TxHash:       []byte(failedHash),
+				ErrorMessage: &errorMsg,
+			}, nil
+		}
 		return nil, fmt.Errorf("failed waiting for successful transmission after submit: %w", err)
 	}
 
 	s.lggr.Infow("Got final transmission status", "success", newTransmissionInfo.Success)
 
 	submittedHash := txReply.PendingTransaction.Hash
-	ourSender := normalizeAptosHexAddress(hex.EncodeToString(txReply.PendingTransaction.Sender[:]))
 	onchainTransmitter := normalizeAptosHexAddress(newTransmissionInfo.Transmitter)
 	if onchainTransmitter == "" {
 		return nil, fmt.Errorf("successful transmission has no transmitter")
@@ -167,6 +179,7 @@ func (s *Aptos) executeWriteReport(
 }
 
 func (s *Aptos) waitForTransmissionSuccess(ctx context.Context, transmissionID TransmissionID) (TransmissionInfo, error) {
+	// TODO: replace with OCR-derived (deltaStage * F) wait once surfaced in capability inputs.
 	const pollTimeout = 60 * time.Second
 	const pollInterval = 2 * time.Second
 
