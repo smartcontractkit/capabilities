@@ -3,6 +3,8 @@ package actions
 import (
 	"context"
 	"encoding/hex"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -49,7 +51,8 @@ func TestExecuteWriteReport_ReturnsDeterministicFailedHashOnInvalidCall(t *testi
 
 	mockForwarder := &mockForwarderClient{
 		pendingSender: transmissionID.Receiver,
-		failedHash:    "0xfailed-canonical",
+		pendingHash:   "0x" + strings.Repeat("1", 64),
+		failedHash:    "0x" + strings.Repeat("f", 64),
 	}
 
 	a := &Aptos{
@@ -66,21 +69,79 @@ func TestExecuteWriteReport_ReturnsDeterministicFailedHashOnInvalidCall(t *testi
 	require.NoError(t, err)
 	require.NotNil(t, reply)
 	require.Equal(t, aptoscap.TxStatus_TX_STATUS_FAILED, reply.TxStatus)
-	require.Equal(t, []byte("0xfailed-canonical"), reply.TxHash)
+	require.Equal(t, []byte("0x"+strings.Repeat("f", 64)), reply.TxHash)
 	require.Contains(t, reply.GetErrorMessage(), "write transmission did not succeed before timeout")
-	require.Equal(t, []string{normalizeAptosHexAddress(transmissionID.Receiver.StringLong())}, mockForwarder.failedHashTransmitters)
+	require.Equal(t, []string{"0x" + strings.Repeat("1", 64)}, mockForwarder.validatedFailedHashes)
+}
+
+func TestExecuteWriteReport_ReturnsErrorWhenFailedTxReceiptCannotBeValidated(t *testing.T) {
+	transmissionID := newTestTransmissionID()
+	rawReport := mustEncodedReportWithMetadata(t, transmissionID)
+
+	metadata := capabilities.RequestMetadata{
+		WorkflowExecutionID: hex.EncodeToString(transmissionID.WorkflowExecutionID[:]),
+		WorkflowOwner:       "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		WorkflowID:          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+	}
+
+	receiver := make([]byte, len(transmissionID.Receiver))
+	copy(receiver, transmissionID.Receiver[:])
+
+	sig := &sdk.AttributedSignature{Signature: []byte{1}, SignerId: 0}
+	request := &aptoscap.WriteReportRequest{
+		Receiver: receiver,
+		Report: &sdk.ReportResponse{
+			RawReport: rawReport,
+			Sigs:      []*sdk.AttributedSignature{sig},
+		},
+		GasConfig: &aptoscap.GasConfig{MaxGasAmount: 1000},
+	}
+
+	maxGasLimiter, err := limits.MakeBoundLimiter(limits.Factory{}, settings.Uint64(1_000_000))
+	require.NoError(t, err)
+	reportSizeLimiter, err := limits.MakeBoundLimiter(limits.Factory{}, settings.Size(commoncfg.Byte*512))
+	require.NoError(t, err)
+
+	localHash := "0x" + strings.Repeat("a", 64)
+	mockForwarder := &mockForwarderClient{
+		pendingSender: transmissionID.Receiver,
+		pendingHash:   localHash,
+		failedHashErr: errors.New("failed tx receipt unavailable"),
+	}
+
+	a := &Aptos{
+		forwarderClient:   mockForwarder,
+		lggr:              logger.Sugared(logger.Test(t)),
+		maxGasAmountLimit: maxGasLimiter,
+		reportSizeLimit:   reportSizeLimiter,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
+	defer cancel()
+
+	reply, err := a.executeWriteReport(ctx, request, metadata)
+	require.Error(t, err)
+	require.Nil(t, reply)
+	require.Contains(t, err.Error(), "failed hash resolution by receipt")
+	require.Equal(t, []string{localHash}, mockForwarder.validatedFailedHashes)
 }
 
 type mockForwarderClient struct {
-	pendingSender          [32]byte
-	failedHash             string
-	failedHashTransmitters []string
+	pendingSender         [32]byte
+	pendingHash           string
+	failedHash            string
+	failedHashErr         error
+	validatedFailedHashes []string
 }
 
 func (m *mockForwarderClient) InvokeOnReport(_ context.Context, _ []byte, _ *sdk.ReportResponse, _ *aptoscap.GasConfig) (*aptostypes.SubmitTransactionReply, error) {
+	hash := m.pendingHash
+	if hash == "" {
+		hash = "0xsubmitted"
+	}
 	return &aptostypes.SubmitTransactionReply{
 		PendingTransaction: &aptostypes.PendingTransaction{
-			Hash:   "0xsubmitted",
+			Hash:   hash,
 			Sender: m.pendingSender,
 		},
 	}, nil
@@ -94,7 +155,15 @@ func (m *mockForwarderClient) GetTransmissionTxHash(_ context.Context, _ Transmi
 	return "", nil
 }
 
-func (m *mockForwarderClient) GetTransmissionFailedTxHash(_ context.Context, _ TransmissionID, transmitters []string) (string, error) {
-	m.failedHashTransmitters = append([]string{}, transmitters...)
+func (m *mockForwarderClient) ValidateFailedTxHash(_ context.Context, _ TransmissionID, txHash string) (string, error) {
+	m.validatedFailedHashes = append(m.validatedFailedHashes, txHash)
+	if m.failedHashErr != nil {
+		return "", m.failedHashErr
+	}
 	return m.failedHash, nil
+}
+
+func (m *mockForwarderClient) GetTransmissionFailedTxHash(_ context.Context, _ TransmissionID, transmitters []string) (string, error) {
+	_ = transmitters
+	return "", errors.New("unexpected call to GetTransmissionFailedTxHash in this test")
 }
