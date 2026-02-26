@@ -3,6 +3,7 @@ package actions
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -13,6 +14,7 @@ import (
 	aptos_sdk "github.com/aptos-labs/aptos-go-sdk"
 	"github.com/aptos-labs/aptos-go-sdk/bcs"
 	aptos_forwarder "github.com/smartcontractkit/chainlink-aptos/bindings/platform/forwarder"
+	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -28,6 +30,8 @@ type CREForwarderClient interface {
 	GetTransmissionInfo(ctx context.Context, transmissionID TransmissionID) (TransmissionInfo, error)
 	// GetTransmissionTxHash resolves the canonical tx hash for a successful transmission.
 	GetTransmissionTxHash(ctx context.Context, transmissionID TransmissionID, transmitter string) (string, error)
+	// GetTransmissionFailedTxHash resolves a deterministic failed tx hash for an invalid transmission attempt.
+	GetTransmissionFailedTxHash(ctx context.Context, transmissionID TransmissionID, transmitters []string) (string, error)
 }
 
 type forwarderClient struct {
@@ -424,15 +428,257 @@ func (fc *forwarderClient) GetTransmissionTxHash(ctx context.Context, transmissi
 	return "", fmt.Errorf("no matching successful report tx found for transmitter %s", transmitter)
 }
 
+func (fc *forwarderClient) GetTransmissionFailedTxHash(ctx context.Context, transmissionID TransmissionID, transmitters []string) (string, error) {
+	txReader, ok := fc.AptosService.(accountTransactionsReader)
+	if !ok {
+		return "", fmt.Errorf("aptos client does not expose AccountTransactions")
+	}
+
+	orderedTransmitters := orderedUniqueTransmitters(transmitters)
+	if len(orderedTransmitters) == 0 {
+		return "", fmt.Errorf("no candidate transmitters provided")
+	}
+
+	var best *failedTxCandidate
+	for i, transmitter := range orderedTransmitters {
+		candidate, err := fc.findEarliestMatchingFailedTxForTransmitter(ctx, txReader, transmissionID, transmitter, i)
+		if err != nil {
+			fc.lggr.Debugw("Failed to resolve failed tx hash for transmitter", "transmitter", transmitter, "error", err)
+			continue
+		}
+		if candidate == nil {
+			continue
+		}
+		if best == nil || isEarlierFailedTx(*candidate, *best) {
+			best = candidate
+		}
+	}
+
+	if best == nil {
+		return "", fmt.Errorf("no matching failed report tx found for candidate transmitters")
+	}
+
+	return best.Hash, nil
+}
+
+func orderedUniqueTransmitters(transmitters []string) []string {
+	if len(transmitters) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(transmitters))
+	out := make([]string, 0, len(transmitters))
+	for _, transmitter := range transmitters {
+		normalized := normalizeAptosHexAddress(transmitter)
+		if normalized == "" {
+			continue
+		}
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		out = append(out, normalized)
+	}
+	return out
+}
+
+type failedTxCandidate struct {
+	Hash             string
+	TransmitterIndex int
+	SequenceNumber   uint64
+	Version          uint64
+	TimestampMicros  uint64
+	HasTimestamp     bool
+}
+
+func isEarlierFailedTx(candidate failedTxCandidate, current failedTxCandidate) bool {
+	// Prefer earliest wall-clock failed tx timestamp when available.
+	if candidate.HasTimestamp && current.HasTimestamp && candidate.TimestampMicros != current.TimestampMicros {
+		return candidate.TimestampMicros < current.TimestampMicros
+	}
+	if candidate.HasTimestamp != current.HasTimestamp {
+		return candidate.HasTimestamp
+	}
+
+	// If timestamps are equal/unavailable, fall back to submitter order.
+	if candidate.TransmitterIndex != current.TransmitterIndex {
+		return candidate.TransmitterIndex < current.TransmitterIndex
+	}
+
+	// Earlier sequence is an earlier attempt from the same transmitter.
+	if candidate.SequenceNumber != current.SequenceNumber {
+		return candidate.SequenceNumber < current.SequenceNumber
+	}
+
+	return candidate.Version < current.Version
+}
+
+func (fc *forwarderClient) findEarliestMatchingFailedTxForTransmitter(
+	ctx context.Context,
+	txReader accountTransactionsReader,
+	transmissionID TransmissionID,
+	transmitter string,
+	transmitterIndex int,
+) (*failedTxCandidate, error) {
+	var transmitterAddr aptos_sdk.AccountAddress
+	if err := transmitterAddr.ParseStringRelaxed(transmitter); err != nil {
+		return nil, fmt.Errorf("invalid transmitter address %q: %w", transmitter, err)
+	}
+	var transmitterAddress aptostypes.AccountAddress
+	copy(transmitterAddress[:], transmitterAddr[:])
+
+	latestLimit := uint64(1)
+	latestTxs, err := txReader.AccountTransactions(ctx, aptostypes.AccountTransactionsRequest{
+		Address: transmitterAddress,
+		Limit:   &latestLimit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch latest account transaction: %w", err)
+	}
+	if len(latestTxs.Transactions) == 0 || latestTxs.Transactions[0] == nil {
+		return nil, nil
+	}
+
+	latestDecoded, err := decodeAccountUserTransaction(latestTxs.Transactions[0].Data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode latest account transaction: %w", err)
+	}
+	initialUpperExclusive := latestDecoded.SequenceNumber + 1
+	if initialUpperExclusive == 0 {
+		return nil, nil
+	}
+
+	best := (*failedTxCandidate)(nil)
+	remaining := defaultTxHashLookback
+	if initialUpperExclusive < remaining {
+		remaining = initialUpperExclusive
+	}
+	upperExclusive := initialUpperExclusive
+
+	scanWindow := func(start uint64, limit uint64) error {
+		txs, err := txReader.AccountTransactions(ctx, aptostypes.AccountTransactionsRequest{
+			Address: transmitterAddress,
+			Start:   &start,
+			Limit:   &limit,
+		})
+		if err != nil {
+			return err
+		}
+
+		for _, tx := range txs.Transactions {
+			if tx == nil || tx.Success == nil || *tx.Success {
+				continue
+			}
+
+			decoded, err := decodeAccountUserTransaction(tx.Data)
+			if err != nil {
+				continue
+			}
+			if !isForwarderReportCall(decoded.EntryFunction, fc.forwarderAddress) {
+				continue
+			}
+			if !isMatchingFailedReportPayload(decoded.PayloadArguments, transmissionID) {
+				continue
+			}
+			if tx.Hash == "" {
+				continue
+			}
+
+			candidate := failedTxCandidate{
+				Hash:             tx.Hash,
+				TransmitterIndex: transmitterIndex,
+				SequenceNumber:   decoded.SequenceNumber,
+				Version:          decoded.Version,
+				TimestampMicros:  decoded.TimestampMicros,
+				HasTimestamp:     decoded.HasTimestamp,
+			}
+			if best == nil || isEarlierFailedTx(candidate, *best) {
+				best = &candidate
+			}
+		}
+		return nil
+	}
+
+	for remaining > 0 {
+		limit := remaining
+		if limit > maxAccountTransactionsPageSize {
+			limit = maxAccountTransactionsPageSize
+		}
+		if upperExclusive < limit {
+			limit = upperExclusive
+		}
+		if limit == 0 {
+			break
+		}
+
+		start := upperExclusive - limit
+		if err := scanWindow(start, limit); err != nil {
+			return nil, fmt.Errorf("failed to fetch account transactions: %w", err)
+		}
+		if start == 0 {
+			break
+		}
+		upperExclusive = start
+		remaining -= limit
+	}
+
+	// New transactions can be appended while paging through 45-sized batches.
+	// If we haven't matched yet, run one top-up pass over the newly-added range.
+	if best == nil {
+		latestTxs, err = txReader.AccountTransactions(ctx, aptostypes.AccountTransactionsRequest{
+			Address: transmitterAddress,
+			Limit:   &latestLimit,
+		})
+		if err == nil && len(latestTxs.Transactions) > 0 && latestTxs.Transactions[0] != nil {
+			latestDecoded2, decodeErr := decodeAccountUserTransaction(latestTxs.Transactions[0].Data)
+			if decodeErr == nil {
+				latestUpperExclusive := latestDecoded2.SequenceNumber + 1
+				if latestUpperExclusive > initialUpperExclusive {
+					upperExclusive = latestUpperExclusive
+					remaining = latestUpperExclusive - initialUpperExclusive
+					for remaining > 0 {
+						limit := remaining
+						if limit > maxAccountTransactionsPageSize {
+							limit = maxAccountTransactionsPageSize
+						}
+						if upperExclusive-limit < initialUpperExclusive {
+							limit = upperExclusive - initialUpperExclusive
+						}
+						if limit == 0 {
+							break
+						}
+
+						start := upperExclusive - limit
+						if err := scanWindow(start, limit); err != nil {
+							break
+						}
+
+						upperExclusive = start
+						remaining -= limit
+						if upperExclusive == initialUpperExclusive {
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return best, nil
+}
+
 type accountTxEvent struct {
 	Type string         `json:"type"`
 	Data map[string]any `json:"data"`
 }
 
 type accountUserTransaction struct {
-	EntryFunction  string           `json:"entry_function"`
-	SequenceNumber uint64           `json:"sequence_number"`
-	Events         []accountTxEvent `json:"events"`
+	EntryFunction    string           `json:"entry_function"`
+	SequenceNumber   uint64           `json:"sequence_number"`
+	Version          uint64           `json:"version"`
+	TimestampMicros  uint64           `json:"timestamp_micros"`
+	HasTimestamp     bool             `json:"has_timestamp"`
+	PayloadArguments []any            `json:"payload_arguments"`
+	Events           []accountTxEvent `json:"events"`
 }
 
 func decodeAccountUserTransaction(raw []byte) (*accountUserTransaction, error) {
@@ -461,25 +707,40 @@ func decodeAccountUserTransaction(raw []byte) (*accountUserTransaction, error) {
 		return nil, fmt.Errorf("transaction type %q is not user_transaction", txType)
 	}
 
-	sequenceRaw, ok := getField(txBody, "sequence_number", "SequenceNumber")
-	if !ok {
-		return nil, fmt.Errorf("missing sequence_number field")
-	}
-	sequenceNumber, err := parseUint64Value(sequenceRaw)
+	sequenceNumber, err := parseFirstUint64Field(txBody, body, "sequence_number", "SequenceNumber")
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse sequence_number: %w", err)
 	}
 
 	entryFunction := ""
+	payloadArguments := make([]any, 0)
 	if payload, ok := getMapField(txBody, "payload", "Payload"); ok {
 		if fn, ok := getStringField(payload, "function", "Function"); ok {
 			entryFunction = fn
+			if args, ok := getSliceField(payload, "arguments", "Arguments"); ok {
+				payloadArguments = args
+			}
 		} else if innerPayload, ok := getMapField(payload, "inner", "Inner"); ok {
 			if fn, ok := getStringField(innerPayload, "function", "Function"); ok {
 				entryFunction = fn
 			}
+			if args, ok := getSliceField(innerPayload, "arguments", "Arguments"); ok {
+				payloadArguments = args
+			}
 		}
 	}
+
+	version, _ := parseFirstOptionalUint64Field(txBody, body, "version", "Version")
+	timestampMicros, hasTimestamp := parseFirstOptionalUint64Field(
+		txBody,
+		body,
+		"timestamp",
+		"Timestamp",
+		"timestamp_usecs",
+		"timestamp_micros",
+		"TimestampUsecs",
+		"TimestampMicros",
+	)
 
 	events := make([]accountTxEvent, 0)
 	if rawEvents, ok := getSliceField(txBody, "events", "Events"); ok {
@@ -498,10 +759,43 @@ func decodeAccountUserTransaction(raw []byte) (*accountUserTransaction, error) {
 	}
 
 	return &accountUserTransaction{
-		EntryFunction:  entryFunction,
-		SequenceNumber: sequenceNumber,
-		Events:         events,
+		EntryFunction:    entryFunction,
+		SequenceNumber:   sequenceNumber,
+		Version:          version,
+		TimestampMicros:  timestampMicros,
+		HasTimestamp:     hasTimestamp,
+		PayloadArguments: payloadArguments,
+		Events:           events,
 	}, nil
+}
+
+func parseFirstUint64Field(primary map[string]any, secondary map[string]any, keys ...string) (uint64, error) {
+	if raw, ok := getField(primary, keys...); ok {
+		value, err := parseUint64Value(raw)
+		if err == nil {
+			return value, nil
+		}
+	}
+	if raw, ok := getField(secondary, keys...); ok {
+		return parseUint64Value(raw)
+	}
+	return 0, fmt.Errorf("missing field %q", keys[0])
+}
+
+func parseFirstOptionalUint64Field(primary map[string]any, secondary map[string]any, keys ...string) (uint64, bool) {
+	if raw, ok := getField(primary, keys...); ok {
+		value, err := parseUint64Value(raw)
+		if err == nil {
+			return value, true
+		}
+	}
+	if raw, ok := getField(secondary, keys...); ok {
+		value, err := parseUint64Value(raw)
+		if err == nil {
+			return value, true
+		}
+	}
+	return 0, false
 }
 
 func getField(m map[string]any, keys ...string) (any, bool) {
@@ -658,6 +952,72 @@ func isMatchingReportProcessedData(data map[string]any, transmissionID Transmiss
 		string(execID) == string(transmissionID.WorkflowExecutionID[:])
 }
 
+func isMatchingFailedReportPayload(payloadArgs []any, transmissionID TransmissionID) bool {
+	// forwarder::report(receiver, raw_report, signatures)
+	if len(payloadArgs) < 2 {
+		return false
+	}
+
+	receiver, ok := parseAccountAddress(payloadArgs[0])
+	if !ok || receiver != transmissionID.Receiver {
+		return false
+	}
+
+	rawReport, ok := parseBytes(payloadArgs[1])
+	if !ok || len(rawReport) == 0 {
+		return false
+	}
+
+	metadata, ok := decodeReportMetadataFromForwarderRawReport(rawReport)
+	if !ok {
+		return false
+	}
+
+	if !strings.EqualFold(metadata.ExecutionID, hex.EncodeToString(transmissionID.WorkflowExecutionID[:])) {
+		return false
+	}
+
+	reportID, ok := parseHexBytes(metadata.ReportID)
+	if !ok || len(reportID) != 2 {
+		return false
+	}
+
+	return reportID[0] == transmissionID.ReportID[0] && reportID[1] == transmissionID.ReportID[1]
+}
+
+func decodeReportMetadataFromForwarderRawReport(rawReport []byte) (ocrtypes.Metadata, bool) {
+	metadata, err := decodeReportMetadata(rawReport)
+	if err == nil {
+		return metadata, true
+	}
+
+	// forwarder call can carry report_context || raw_report.
+	if len(rawReport) > 96 {
+		metadata, err = decodeReportMetadata(rawReport[96:])
+		if err == nil {
+			return metadata, true
+		}
+	}
+
+	return ocrtypes.Metadata{}, false
+}
+
+func parseAccountAddress(v any) (aptos_sdk.AccountAddress, bool) {
+	switch t := v.(type) {
+	case string:
+		var address aptos_sdk.AccountAddress
+		if err := address.ParseStringRelaxed(t); err != nil {
+			return aptos_sdk.AccountAddress{}, false
+		}
+		return address, true
+	case map[string]any:
+		if inner, ok := getField(t, "inner", "Inner", "value", "Value"); ok {
+			return parseAccountAddress(inner)
+		}
+	}
+	return aptos_sdk.AccountAddress{}, false
+}
+
 func parseUint16(v any) (uint16, bool) {
 	switch t := v.(type) {
 	case string:
@@ -705,17 +1065,30 @@ func parseUint16(v any) (uint16, bool) {
 }
 
 func parseHexBytes(v any) ([]byte, bool) {
+	b, ok := parseBytes(v)
+	if !ok {
+		return nil, false
+	}
+	return b, true
+}
+
+func parseBytes(v any) ([]byte, bool) {
 	switch t := v.(type) {
 	case string:
-		s := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(t)), "0x")
-		if len(s)%2 != 0 {
-			s = "0" + s
+		s := strings.TrimSpace(t)
+		trimmedHex := strings.TrimPrefix(strings.ToLower(s), "0x")
+		if len(trimmedHex)%2 != 0 {
+			trimmedHex = "0" + trimmedHex
 		}
-		b, err := hexToBytes(s)
-		if err != nil {
-			return nil, false
+		if trimmedHex != "" {
+			if b, err := hexToBytes(trimmedHex); err == nil {
+				return b, true
+			}
 		}
-		return b, true
+		if b, err := base64.StdEncoding.DecodeString(s); err == nil {
+			return b, true
+		}
+		return nil, false
 	case []byte:
 		return t, true
 	case []any:
@@ -728,6 +1101,11 @@ func parseHexBytes(v any) ([]byte, bool) {
 			out = append(out, byte(u))
 		}
 		return out, true
+	case map[string]any:
+		if inner, ok := getField(t, "inner", "Inner", "value", "Value"); ok {
+			return parseBytes(inner)
+		}
+		return nil, false
 	default:
 		return nil, false
 	}
