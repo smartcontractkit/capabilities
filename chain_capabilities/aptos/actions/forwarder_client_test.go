@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	aptos_sdk "github.com/aptos-labs/aptos-go-sdk"
+	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	aptostypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/aptos"
 	"github.com/stretchr/testify/require"
 )
@@ -324,6 +325,97 @@ func TestGetTransmissionTxHash_TopUpPassFindsNewTransaction(t *testing.T) {
 	require.Equal(t, uint64(2), *mockService.accountTransactionsCalls[4].Limit)
 }
 
+func TestGetTransmissionFailedTxHash_SelectsEarliestMatchingFailedAcrossTransmitters(t *testing.T) {
+	transmissionID := newTestTransmissionID()
+	forwarderAddress := newTestAddress(0x45)
+	entryFunction := forwarderEntryFunction(forwarderAddress)
+	transmitter1 := accountAddressStringLong(newTestAddress(0x96))
+	transmitter2 := accountAddressStringLong(newTestAddress(0x95))
+
+	otherTransmission := transmissionID
+	otherTransmission.ReportID = [2]byte{0xaa, 0xbb}
+
+	matchingRawReport := mustEncodedReportWithMetadata(t, transmissionID)
+	mismatchingRawReport := mustEncodedReportWithMetadata(t, otherTransmission)
+
+	mockService := &fakeAptosService{
+		accountTransactionsReplies: []*aptostypes.AccountTransactionsReply{
+			{
+				Transactions: []*aptostypes.Transaction{
+					mustFailedUserTransactionWithPayload(
+						t,
+						"0xlatest-t1",
+						10,
+						1010,
+						250,
+						entryFunction,
+						transmissionID.Receiver.StringLong(),
+						mismatchingRawReport,
+					),
+				},
+			},
+			{
+				Transactions: []*aptostypes.Transaction{
+					mustFailedUserTransactionWithPayload(
+						t,
+						"0xlate-invalid",
+						9,
+						1009,
+						200,
+						entryFunction,
+						transmissionID.Receiver.StringLong(),
+						matchingRawReport,
+					),
+				},
+			},
+			{
+				Transactions: []*aptostypes.Transaction{
+					mustFailedUserTransactionWithPayload(
+						t,
+						"0xlatest-t2",
+						8,
+						1008,
+						180,
+						entryFunction,
+						transmissionID.Receiver.StringLong(),
+						mismatchingRawReport,
+					),
+				},
+			},
+			{
+				Transactions: []*aptostypes.Transaction{
+					mustFailedUserTransactionWithPayload(
+						t,
+						"0xearliest-invalid",
+						7,
+						1007,
+						100,
+						entryFunction,
+						transmissionID.Receiver.StringLong(),
+						matchingRawReport,
+					),
+				},
+			},
+		},
+	}
+
+	client := &forwarderClient{
+		AptosService:     mockService,
+		forwarderAddress: forwarderAddress,
+	}
+
+	hash, err := client.GetTransmissionFailedTxHash(context.Background(), transmissionID, []string{transmitter1, transmitter2})
+	require.NoError(t, err)
+	require.Equal(t, "0xearliest-invalid", hash)
+
+	require.Len(t, mockService.accountTransactionsCalls, 4)
+	require.Nil(t, mockService.accountTransactionsCalls[0].Start)
+	require.NotNil(t, mockService.accountTransactionsCalls[0].Limit)
+	require.NotNil(t, mockService.accountTransactionsCalls[1].Start)
+	require.NotNil(t, mockService.accountTransactionsCalls[2].Limit)
+	require.NotNil(t, mockService.accountTransactionsCalls[3].Start)
+}
+
 type fakeAptosService struct {
 	accountTransactionsReplies []*aptostypes.AccountTransactionsReply
 	accountTransactionsCalls   []aptostypes.AccountTransactionsRequest
@@ -447,4 +539,60 @@ func mustUserTransaction(
 		Success: &txSuccess,
 		Data:    raw,
 	}
+}
+
+func mustFailedUserTransactionWithPayload(
+	t *testing.T,
+	hash string,
+	sequenceNumber uint64,
+	version uint64,
+	timestampMicros uint64,
+	entryFunction string,
+	receiver string,
+	rawReport []byte,
+) *aptostypes.Transaction {
+	t.Helper()
+
+	raw, err := json.Marshal(map[string]any{
+		"type":            "user_transaction",
+		"sequence_number": strconv.FormatUint(sequenceNumber, 10),
+		"version":         strconv.FormatUint(version, 10),
+		"timestamp":       strconv.FormatUint(timestampMicros, 10),
+		"payload": map[string]any{
+			"function":  entryFunction,
+			"arguments": []any{receiver, "0x" + hex.EncodeToString(rawReport), []any{}},
+		},
+		"events": []any{},
+	})
+	require.NoError(t, err)
+
+	txSuccess := false
+	txVersion := version
+	return &aptostypes.Transaction{
+		Type:    aptostypes.TransactionVariantUser,
+		Hash:    hash,
+		Version: &txVersion,
+		Success: &txSuccess,
+		Data:    raw,
+	}
+}
+
+func mustEncodedReportWithMetadata(t *testing.T, transmissionID TransmissionID) []byte {
+	t.Helper()
+
+	metadata := ocrtypes.Metadata{
+		Version:          1,
+		ExecutionID:      hex.EncodeToString(transmissionID.WorkflowExecutionID[:]),
+		Timestamp:        1,
+		DONID:            1,
+		DONConfigVersion: 1,
+		WorkflowID:       "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		WorkflowName:     "0102030405060708090a",
+		WorkflowOwner:    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		ReportID:         hex.EncodeToString(transmissionID.ReportID[:]),
+	}
+
+	encoded, err := metadata.Encode()
+	require.NoError(t, err)
+	return append(encoded, 0xff)
 }
