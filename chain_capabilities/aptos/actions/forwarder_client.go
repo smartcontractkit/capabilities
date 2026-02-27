@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -278,11 +279,8 @@ func (fc *forwarderClient) GetTransmissionTxHash(
 	}
 	initialUpperExclusive := latestDecoded.SequenceNumber + 1
 
-	bestSeq := uint64(0)
-	bestHash := ""
-	bestFallbackSeq := uint64(0)
-	bestFallbackHash := ""
-	shouldMatchPayload := len(expectedForwarderRawReport) > 0
+	exactCandidates := make([]successfulTxCandidate, 0)
+	fallbackCandidates := make([]successfulTxCandidate, 0)
 	remaining := defaultTxHashLookback
 	if initialUpperExclusive < remaining {
 		remaining = initialUpperExclusive
@@ -298,29 +296,19 @@ func (fc *forwarderClient) GetTransmissionTxHash(
 			return
 		}
 
-		if shouldMatchPayload {
-			if !matchesForwarderReportCallAndPayload(decoded, fc.forwarderAddress, transmissionID, expectedForwarderRawReport) {
-				return
-			}
-		} else if !isForwarderReportCall(decoded.EntryFunction, fc.forwarderAddress) {
+		if !isForwarderReportCall(decoded.EntryFunction, fc.forwarderAddress) {
 			return
 		}
 
 		if containsReportProcessedEvent(decoded.Events) {
-			if bestFallbackHash == "" || decoded.SequenceNumber > bestFallbackSeq {
-				bestFallbackSeq = decoded.SequenceNumber
-				bestFallbackHash = tx.Hash
-			}
+			addSuccessfulTxCandidate(&fallbackCandidates, tx.Hash, decoded.SequenceNumber)
 		}
 
 		if !containsMatchingReportProcessed(decoded.Events, transmissionID) {
 			return
 		}
 
-		if bestHash == "" || decoded.SequenceNumber > bestSeq {
-			bestSeq = decoded.SequenceNumber
-			bestHash = tx.Hash
-		}
+		addSuccessfulTxCandidate(&exactCandidates, tx.Hash, decoded.SequenceNumber)
 	}
 
 	processSuccessfulTxPage := func(txs []*aptostypes.Transaction) {
@@ -367,7 +355,7 @@ func (fc *forwarderClient) GetTransmissionTxHash(
 	// New transactions can be appended while paging through 45-sized batches.
 	// If we haven't found a match yet, do one top-up pass over only the newly-added
 	// sequence range so we don't miss transactions committed during the scan.
-	if bestHash == "" {
+	if len(exactCandidates) == 0 {
 		latestTxs, err = txReader.AccountTransactions(ctx, aptostypes.AccountTransactionsRequest{
 			Address: transmitterAddress,
 			Limit:   &latestLimit,
@@ -414,17 +402,56 @@ func (fc *forwarderClient) GetTransmissionTxHash(
 		}
 	}
 
-	if bestHash != "" {
-		return bestHash, nil
+	sortSuccessfulTxCandidates(exactCandidates)
+	sortSuccessfulTxCandidates(fallbackCandidates)
+
+	selectCandidate := func(kind string, candidates []successfulTxCandidate) (string, bool) {
+		for _, candidate := range candidates {
+			if len(expectedForwarderRawReport) == 0 {
+				return candidate.Hash, true
+			}
+			validatedHash, validateErr := fc.validateSuccessfulTxHash(ctx, transmissionID, candidate.Hash, expectedForwarderRawReport)
+			if validateErr == nil {
+				return validatedHash, true
+			}
+			if fc.lggr != nil {
+				fc.lggr.Debugw(
+					"Rejected successful tx hash candidate",
+					"kind", kind,
+					"hash", candidate.Hash,
+					"sequenceNumber", candidate.SequenceNumber,
+					"error", validateErr,
+				)
+			}
+		}
+		return "", false
 	}
-	if bestFallbackHash != "" {
-		return bestFallbackHash, nil
+
+	if hash, ok := selectCandidate("exact", exactCandidates); ok {
+		return hash, nil
+	}
+	if hash, ok := selectCandidate("fallback", fallbackCandidates); ok {
+		return hash, nil
 	}
 
 	return "", fmt.Errorf("no matching successful report tx found for transmitter %s", transmitter)
 }
 
 func (fc *forwarderClient) ValidateFailedTxHash(ctx context.Context, transmissionID TransmissionID, txHash string, expectedForwarderRawReport []byte) (string, error) {
+	return fc.validateTxHashByStatus(ctx, transmissionID, txHash, expectedForwarderRawReport, false)
+}
+
+func (fc *forwarderClient) validateSuccessfulTxHash(ctx context.Context, transmissionID TransmissionID, txHash string, expectedForwarderRawReport []byte) (string, error) {
+	return fc.validateTxHashByStatus(ctx, transmissionID, txHash, expectedForwarderRawReport, true)
+}
+
+func (fc *forwarderClient) validateTxHashByStatus(
+	ctx context.Context,
+	transmissionID TransmissionID,
+	txHash string,
+	expectedForwarderRawReport []byte,
+	expectSuccess bool,
+) (string, error) {
 	normalizedRequestedHash, ok := normalizeAptosTxHashString(txHash)
 	if !ok {
 		return "", fmt.Errorf("invalid tx hash %q", txHash)
@@ -460,13 +487,16 @@ func (fc *forwarderClient) ValidateFailedTxHash(ctx context.Context, transmissio
 	if tx.Success == nil {
 		return "", fmt.Errorf("transaction %s has unknown success status", normalizedReturnedHash)
 	}
-	if *tx.Success {
+	if !expectSuccess && *tx.Success {
 		return "", fmt.Errorf("transaction %s succeeded, expected failure", normalizedReturnedHash)
+	}
+	if expectSuccess && !*tx.Success {
+		return "", fmt.Errorf("transaction %s failed, expected success", normalizedReturnedHash)
 	}
 
 	decoded, err := decodeAccountUserTransaction(tx.Data)
 	if err != nil {
-		return "", fmt.Errorf("failed to decode failed transaction %s: %w", normalizedReturnedHash, err)
+		return "", fmt.Errorf("failed to decode transaction %s: %w", normalizedReturnedHash, err)
 	}
 	if !isForwarderReportCall(decoded.EntryFunction, fc.forwarderAddress) {
 		return "", fmt.Errorf("transaction %s is not a forwarder::report call", normalizedReturnedHash)
@@ -509,6 +539,39 @@ func (fc *forwarderClient) GetTransmissionFailedTxHash(ctx context.Context, tran
 	}
 
 	return best.Hash, nil
+}
+
+type successfulTxCandidate struct {
+	Hash           string
+	SequenceNumber uint64
+}
+
+func addSuccessfulTxCandidate(candidates *[]successfulTxCandidate, hash string, sequenceNumber uint64) {
+	normalizedHash := strings.TrimSpace(hash)
+	if normalizedHash == "" {
+		return
+	}
+
+	for i := range *candidates {
+		if (*candidates)[i].Hash != normalizedHash {
+			continue
+		}
+		if sequenceNumber > (*candidates)[i].SequenceNumber {
+			(*candidates)[i].SequenceNumber = sequenceNumber
+		}
+		return
+	}
+
+	*candidates = append(*candidates, successfulTxCandidate{
+		Hash:           normalizedHash,
+		SequenceNumber: sequenceNumber,
+	})
+}
+
+func sortSuccessfulTxCandidates(candidates []successfulTxCandidate) {
+	sort.SliceStable(candidates, func(i, j int) bool {
+		return candidates[i].SequenceNumber > candidates[j].SequenceNumber
+	})
 }
 
 func orderedUniqueTransmitters(transmitters []string) []string {
