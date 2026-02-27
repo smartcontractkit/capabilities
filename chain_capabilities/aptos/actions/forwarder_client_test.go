@@ -398,6 +398,84 @@ func TestGetTransmissionTxHash_RejectsMismatchedExpectedPayload(t *testing.T) {
 	require.Contains(t, err.Error(), "no matching successful report tx found")
 }
 
+func TestGetTransmissionTxHash_AcceptsMatchingPayloadWithoutReportProcessedEvent(t *testing.T) {
+	transmissionID := newTestTransmissionID()
+	forwarderAddress := newTestAddress(0x4a)
+	transmitter := accountAddressStringLong(newTestAddress(0x93))
+	entryFunction := forwarderEntryFunction(forwarderAddress)
+
+	expectedRawReport := mustEncodedReportWithMetadata(t, transmissionID)
+	matchHash := "0x" + strings.Repeat("d", 64)
+	latestHash := "0x" + strings.Repeat("e", 64)
+
+	mockService := &fakeAptosService{
+		accountTransactionsReplies: []*aptostypes.AccountTransactionsReply{
+			{
+				Transactions: []*aptostypes.Transaction{
+					mustSuccessfulUserTransactionWithPayload(
+						t,
+						latestHash,
+						9,
+						entryFunction,
+						transmissionID.Receiver.StringLong(),
+						expectedRawReport,
+						// No ReportProcessed event in account tx payload.
+						[]map[string]any{},
+					),
+				},
+			},
+			{
+				Transactions: []*aptostypes.Transaction{
+					mustSuccessfulUserTransactionWithPayload(
+						t,
+						matchHash,
+						9,
+						entryFunction,
+						transmissionID.Receiver.StringLong(),
+						expectedRawReport,
+						[]map[string]any{},
+					),
+				},
+			},
+			{
+				Transactions: []*aptostypes.Transaction{
+					mustSuccessfulUserTransactionWithPayload(
+						t,
+						latestHash,
+						9,
+						entryFunction,
+						transmissionID.Receiver.StringLong(),
+						expectedRawReport,
+						[]map[string]any{},
+					),
+				},
+			},
+		},
+		transactionByHashReplies: []*aptostypes.TransactionByHashReply{
+			{
+				Transaction: mustSuccessfulUserTransactionWithPayload(
+					t,
+					matchHash,
+					9,
+					entryFunction,
+					transmissionID.Receiver.StringLong(),
+					expectedRawReport,
+					[]map[string]any{},
+				),
+			},
+		},
+	}
+
+	client := &forwarderClient{
+		AptosService:     mockService,
+		forwarderAddress: forwarderAddress,
+	}
+
+	hash, err := client.GetTransmissionTxHash(context.Background(), transmissionID, transmitter, expectedRawReport)
+	require.NoError(t, err)
+	require.Equal(t, matchHash, hash)
+}
+
 func TestGetTransmissionFailedTxHash_SelectsEarliestMatchingFailedAcrossTransmitters(t *testing.T) {
 	transmissionID := newTestTransmissionID()
 	forwarderAddress := newTestAddress(0x45)

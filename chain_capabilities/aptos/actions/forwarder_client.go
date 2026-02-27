@@ -300,9 +300,9 @@ func (fc *forwarderClient) GetTransmissionTxHash(
 			return
 		}
 
-		if containsReportProcessedEvent(decoded.Events) {
-			addSuccessfulTxCandidate(&fallbackCandidates, tx.Hash, decoded.SequenceNumber)
-		}
+		// Fallback candidate set is every successful forwarder::report call from
+		// this transmitter; final selection is validated via TransactionByHash.
+		addSuccessfulTxCandidate(&fallbackCandidates, tx.Hash, decoded.SequenceNumber)
 
 		if !containsMatchingReportProcessed(decoded.Events, transmissionID) {
 			return
