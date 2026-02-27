@@ -15,7 +15,6 @@ import (
 	aptos_sdk "github.com/aptos-labs/aptos-go-sdk"
 	"github.com/aptos-labs/aptos-go-sdk/bcs"
 	aptos_forwarder "github.com/smartcontractkit/chainlink-aptos/bindings/platform/forwarder"
-	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -50,6 +49,48 @@ const (
 	// plumbing is finalized and stable across local/remote test runs.
 	defaultTxHashLookback uint64 = 225
 )
+
+type successfulTxScanStats struct {
+	pagesScanned              uint64
+	transactionsScanned       uint64
+	nilTransactions           uint64
+	nonSuccessfulTransactions uint64
+	decodeFailures            uint64
+	nonForwarderReportCalls   uint64
+	missingReportProcessed    uint64
+	emptyHashCandidates       uint64
+	decodeFailureSamples      []string
+}
+
+func (s *successfulTxScanStats) recordDecodeFailure(hash string, err error) {
+	s.decodeFailures++
+	if len(s.decodeFailureSamples) >= 3 {
+		return
+	}
+	h := strings.TrimSpace(hash)
+	if h == "" {
+		h = "<empty-hash>"
+	}
+	s.decodeFailureSamples = append(s.decodeFailureSamples, fmt.Sprintf("%s: %v", h, err))
+}
+
+func (s successfulTxScanStats) summary() string {
+	summary := fmt.Sprintf(
+		"pages=%d txs=%d nil_txs=%d non_success=%d decode_failures=%d non_forwarder=%d missing_report_processed=%d empty_hash_candidates=%d",
+		s.pagesScanned,
+		s.transactionsScanned,
+		s.nilTransactions,
+		s.nonSuccessfulTransactions,
+		s.decodeFailures,
+		s.nonForwarderReportCalls,
+		s.missingReportProcessed,
+		s.emptyHashCandidates,
+	)
+	if len(s.decodeFailureSamples) == 0 {
+		return summary
+	}
+	return fmt.Sprintf("%s decode_samples=[%s]", summary, strings.Join(s.decodeFailureSamples, "; "))
+}
 
 func newForwarderClient(aptosService types.AptosService, lggr logger.Logger, forwarderAddress [32]byte) CREForwarderClient {
 	emptyClient := aptos_sdk.Client{}
@@ -281,22 +322,31 @@ func (fc *forwarderClient) GetTransmissionTxHash(
 
 	exactCandidates := make([]successfulTxCandidate, 0)
 	fallbackCandidates := make([]successfulTxCandidate, 0)
-	remaining := defaultTxHashLookback
-	if initialUpperExclusive < remaining {
-		remaining = initialUpperExclusive
-	}
+	scanStats := successfulTxScanStats{}
 
 	considerSuccessfulTx := func(tx *aptostypes.Transaction) {
-		if tx == nil || tx.Success == nil || !*tx.Success {
+		scanStats.transactionsScanned++
+		if tx == nil {
+			scanStats.nilTransactions++
+			return
+		}
+		if tx.Success == nil || !*tx.Success {
+			scanStats.nonSuccessfulTransactions++
 			return
 		}
 
 		decoded, err := decodeAccountUserTransaction(tx.Data)
 		if err != nil {
+			scanStats.recordDecodeFailure(tx.Hash, err)
 			return
 		}
 
 		if !isForwarderReportCall(decoded.EntryFunction, fc.forwarderAddress) {
+			scanStats.nonForwarderReportCalls++
+			return
+		}
+		if strings.TrimSpace(tx.Hash) == "" {
+			scanStats.emptyHashCandidates++
 			return
 		}
 
@@ -305,6 +355,7 @@ func (fc *forwarderClient) GetTransmissionTxHash(
 		addSuccessfulTxCandidate(&fallbackCandidates, tx.Hash, decoded.SequenceNumber)
 
 		if !containsMatchingReportProcessed(decoded.Events, transmissionID) {
+			scanStats.missingReportProcessed++
 			return
 		}
 
@@ -312,44 +363,52 @@ func (fc *forwarderClient) GetTransmissionTxHash(
 	}
 
 	processSuccessfulTxPage := func(txs []*aptostypes.Transaction) {
+		scanStats.pagesScanned++
 		for _, tx := range txs {
 			considerSuccessfulTx(tx)
 		}
 	}
 
+	scanRange := func(upperExclusive uint64, lowerBoundInclusive uint64) (uint64, error) {
+		for upperExclusive > lowerBoundInclusive {
+			limit := upperExclusive - lowerBoundInclusive
+			if limit > maxAccountTransactionsPageSize {
+				limit = maxAccountTransactionsPageSize
+			}
+			if limit == 0 {
+				break
+			}
+
+			start := upperExclusive - limit
+			txs, err := txReader.AccountTransactions(ctx, aptostypes.AccountTransactionsRequest{
+				Address: transmitterAddress,
+				Start:   &start,
+				Limit:   &limit,
+			})
+			if err != nil {
+				return upperExclusive, err
+			}
+
+			processSuccessfulTxPage(txs.Transactions)
+
+			upperExclusive = start
+			if len(exactCandidates) > 0 {
+				break
+			}
+		}
+
+		return upperExclusive, nil
+	}
+
 	// Aptos account transactions API has a per-request limit cap (currently 45),
 	// so page backwards until the hardcoded lookback window is covered.
-	upperExclusive := initialUpperExclusive
-	for remaining > 0 {
-		limit := remaining
-		if limit > maxAccountTransactionsPageSize {
-			limit = maxAccountTransactionsPageSize
-		}
-		if upperExclusive < limit {
-			limit = upperExclusive
-		}
-		if limit == 0 {
-			break
-		}
-
-		start := upperExclusive - limit
-		txs, err := txReader.AccountTransactions(ctx, aptostypes.AccountTransactionsRequest{
-			Address: transmitterAddress,
-			Start:   &start,
-			Limit:   &limit,
-		})
-		if err != nil {
-			return "", fmt.Errorf("failed to fetch account transactions: %w", err)
-		}
-
-		// Pick the matching tx with highest sequence number (latest successful matching tx).
-		processSuccessfulTxPage(txs.Transactions)
-
-		if start == 0 {
-			break
-		}
-		upperExclusive = start
-		remaining -= limit
+	fastLowerBound := uint64(0)
+	if initialUpperExclusive > defaultTxHashLookback {
+		fastLowerBound = initialUpperExclusive - defaultTxHashLookback
+	}
+	oldestScannedExclusive, err := scanRange(initialUpperExclusive, fastLowerBound)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch account transactions: %w", err)
 	}
 
 	// New transactions can be appended while paging through 45-sized batches.
@@ -365,55 +424,44 @@ func (fc *forwarderClient) GetTransmissionTxHash(
 			if decodeErr == nil {
 				latestUpperExclusive := latestDecoded2.SequenceNumber + 1
 				if latestUpperExclusive > initialUpperExclusive {
-					upperExclusive = latestUpperExclusive
-					remaining = latestUpperExclusive - initialUpperExclusive
-					for remaining > 0 {
-						limit := remaining
-						if limit > maxAccountTransactionsPageSize {
-							limit = maxAccountTransactionsPageSize
-						}
-						if upperExclusive-limit < initialUpperExclusive {
-							limit = upperExclusive - initialUpperExclusive
-						}
-						if limit == 0 {
-							break
-						}
-
-						start := upperExclusive - limit
-						txs, err := txReader.AccountTransactions(ctx, aptostypes.AccountTransactionsRequest{
-							Address: transmitterAddress,
-							Start:   &start,
-							Limit:   &limit,
-						})
-						if err != nil {
-							break
-						}
-
-						processSuccessfulTxPage(txs.Transactions)
-
-						upperExclusive = start
-						remaining -= limit
-						if upperExclusive == initialUpperExclusive {
-							break
-						}
+					if _, topUpErr := scanRange(latestUpperExclusive, initialUpperExclusive); topUpErr != nil && fc.lggr != nil {
+						fc.lggr.Debugw("Top-up transaction scan failed", "transmitter", transmitter, "error", topUpErr)
 					}
 				}
+			} else {
+				scanStats.recordDecodeFailure(latestTxs.Transactions[0].Hash, decodeErr)
 			}
+		}
+	}
+
+	// If the fast lookback path yielded nothing, scan older history before giving up.
+	if len(exactCandidates) == 0 && len(fallbackCandidates) == 0 && oldestScannedExclusive > 0 {
+		if fc.lggr != nil {
+			fc.lggr.Debugw(
+				"Extending successful tx hash scan beyond default lookback",
+				"transmitter", transmitter,
+				"startSequenceExclusive", oldestScannedExclusive,
+			)
+		}
+		if _, err := scanRange(oldestScannedExclusive, 0); err != nil {
+			return "", fmt.Errorf("failed while extending account transactions scan: %w", err)
 		}
 	}
 
 	sortSuccessfulTxCandidates(exactCandidates)
 	sortSuccessfulTxCandidates(fallbackCandidates)
 
-	selectCandidate := func(kind string, candidates []successfulTxCandidate) (string, bool) {
+	selectCandidate := func(kind string, candidates []successfulTxCandidate) (string, bool, []string) {
+		reasons := make([]string, 0, len(candidates))
 		for _, candidate := range candidates {
 			if len(expectedForwarderRawReport) == 0 {
-				return candidate.Hash, true
+				return candidate.Hash, true, reasons
 			}
 			validatedHash, validateErr := fc.validateSuccessfulTxHash(ctx, transmissionID, candidate.Hash, expectedForwarderRawReport)
 			if validateErr == nil {
-				return validatedHash, true
+				return validatedHash, true, reasons
 			}
+			reasons = append(reasons, fmt.Sprintf("%s@seq=%d: %v", candidate.Hash, candidate.SequenceNumber, validateErr))
 			if fc.lggr != nil {
 				fc.lggr.Debugw(
 					"Rejected successful tx hash candidate",
@@ -424,17 +472,44 @@ func (fc *forwarderClient) GetTransmissionTxHash(
 				)
 			}
 		}
-		return "", false
+		return "", false, reasons
 	}
 
-	if hash, ok := selectCandidate("exact", exactCandidates); ok {
-		return hash, nil
+	exactHash, exactOK, exactReasons := selectCandidate("exact", exactCandidates)
+	if exactOK {
+		return exactHash, nil
 	}
-	if hash, ok := selectCandidate("fallback", fallbackCandidates); ok {
-		return hash, nil
+	fallbackHash, fallbackOK, fallbackReasons := selectCandidate("fallback", fallbackCandidates)
+	if fallbackOK {
+		return fallbackHash, nil
 	}
 
-	return "", fmt.Errorf("no matching successful report tx found for transmitter %s", transmitter)
+	scanSummary := scanStats.summary()
+	reasons := make([]string, 0, len(exactReasons)+len(fallbackReasons))
+	reasons = append(reasons, exactReasons...)
+	reasons = append(reasons, fallbackReasons...)
+	if len(reasons) > 6 {
+		reasons = reasons[:6]
+	}
+	if len(reasons) > 0 {
+		return "", fmt.Errorf(
+			"no matching successful report tx found for transmitter %s (candidate validation failures: %s; scan: %s)",
+			transmitter,
+			strings.Join(reasons, "; "),
+			scanSummary,
+		)
+	}
+
+	if len(exactCandidates) > 0 || len(fallbackCandidates) > 0 {
+		return "", fmt.Errorf(
+			"no matching successful report tx found for transmitter %s (exact_candidates=%d fallback_candidates=%d; scan: %s)",
+			transmitter,
+			len(exactCandidates),
+			len(fallbackCandidates),
+			scanSummary,
+		)
+	}
+	return "", fmt.Errorf("no matching successful report tx found for transmitter %s (scan: %s)", transmitter, scanSummary)
 }
 
 func (fc *forwarderClient) ValidateFailedTxHash(ctx context.Context, transmissionID TransmissionID, txHash string, expectedForwarderRawReport []byte) (string, error) {
@@ -501,8 +576,26 @@ func (fc *forwarderClient) validateTxHashByStatus(
 	if !isForwarderReportCall(decoded.EntryFunction, fc.forwarderAddress) {
 		return "", fmt.Errorf("transaction %s is not a forwarder::report call", normalizedReturnedHash)
 	}
-	if !isMatchingForwarderReportPayload(decoded.PayloadArguments, transmissionID, expectedForwarderRawReport) {
+	// For successful transmissions, different nodes can submit different raw_report bytes
+	// (e.g. timestamp/signature set differences) for the same transmission ID. In that case,
+	// accept a metadata-level payload match plus the matching ReportProcessed event.
+	payloadMatchesExact := isMatchingForwarderReportPayload(decoded.PayloadArguments, transmissionID, expectedForwarderRawReport)
+	payloadMatchesTransmission := payloadMatchesExact
+	if expectSuccess {
+		payloadMatchesTransmission = isMatchingForwarderReportPayload(decoded.PayloadArguments, transmissionID, nil)
+	}
+	if !payloadMatchesTransmission {
 		return "", fmt.Errorf("transaction %s payload does not match requested transmission", normalizedReturnedHash)
+	}
+
+	if expectSuccess && !containsMatchingReportProcessed(decoded.Events, transmissionID) {
+		return "", fmt.Errorf("transaction %s is missing matching ReportProcessed event", normalizedReturnedHash)
+	}
+	if expectSuccess && len(expectedForwarderRawReport) > 0 && !payloadMatchesExact && fc.lggr != nil {
+		fc.lggr.Debugw(
+			"Accepted successful tx hash candidate via metadata+event match despite raw report byte mismatch",
+			"hash", normalizedReturnedHash,
+		)
 	}
 
 	return normalizedReturnedHash, nil
@@ -1092,42 +1185,38 @@ func isMatchingForwarderReportPayload(payloadArgs []any, transmissionID Transmis
 	if !ok || len(rawReport) == 0 {
 		return false
 	}
-	if len(expectedForwarderRawReport) > 0 && !bytes.Equal(rawReport, expectedForwarderRawReport) {
-		return false
+	if len(expectedForwarderRawReport) > 0 {
+		// Exact raw report byte equality is the strongest check; metadata is already
+		// part of the report bytes and was validated upstream when report was built.
+		return bytes.Equal(rawReport, expectedForwarderRawReport)
 	}
 
-	metadata, ok := decodeReportMetadataFromForwarderRawReport(rawReport)
-	if !ok {
-		return false
+	if isMatchingReportMetadata(rawReport, transmissionID) {
+		return true
 	}
 
+	// Forwarder payload may be prefixed with report_context (96 bytes).
+	if len(rawReport) > 96 && isMatchingReportMetadata(rawReport[96:], transmissionID) {
+		return true
+	}
+
+	return false
+}
+
+func isMatchingReportMetadata(rawReport []byte, transmissionID TransmissionID) bool {
+	metadata, err := decodeReportMetadata(rawReport)
+	if err != nil {
+		return false
+	}
 	if !strings.EqualFold(metadata.ExecutionID, hex.EncodeToString(transmissionID.WorkflowExecutionID[:])) {
 		return false
 	}
-
 	reportID, ok := parseHexBytes(metadata.ReportID)
 	if !ok || len(reportID) != 2 {
 		return false
 	}
 
 	return reportID[0] == transmissionID.ReportID[0] && reportID[1] == transmissionID.ReportID[1]
-}
-
-func decodeReportMetadataFromForwarderRawReport(rawReport []byte) (ocrtypes.Metadata, bool) {
-	metadata, err := decodeReportMetadata(rawReport)
-	if err == nil {
-		return metadata, true
-	}
-
-	// forwarder call can carry report_context || raw_report.
-	if len(rawReport) > 96 {
-		metadata, err = decodeReportMetadata(rawReport[96:])
-		if err == nil {
-			return metadata, true
-		}
-	}
-
-	return ocrtypes.Metadata{}, false
 }
 
 func parseAccountAddress(v any) (aptos_sdk.AccountAddress, bool) {

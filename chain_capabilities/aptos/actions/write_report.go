@@ -133,7 +133,7 @@ func (s *Aptos) executeWriteReport(
 
 	if transmissionInfo.Success {
 		s.lggr.Infow("Transmission already confirmed onchain before submit", "transmitter", transmissionInfo.Transmitter)
-		canonicalHash, err := s.resolveCanonicalSuccessTxHash(ctx, transmissionID, transmissionInfo.Transmitter, expectedForwarderRawReport, "pre-existing transmission")
+		canonicalHash, err := s.waitForCanonicalSuccessTxHash(ctx, transmissionID, transmissionInfo.Transmitter, expectedForwarderRawReport, retryConfig, "pre-existing transmission")
 		if err != nil {
 			return nil, err
 		}
@@ -187,7 +187,7 @@ func (s *Aptos) executeWriteReport(
 
 	submittedHash := txReply.PendingTransaction.Hash
 	onchainTransmitter := normalizeAptosHexAddress(newTransmissionInfo.Transmitter)
-	canonicalHash, err := s.resolveCanonicalSuccessTxHash(ctx, transmissionID, onchainTransmitter, expectedForwarderRawReport, "winning transmitter")
+	canonicalHash, err := s.waitForCanonicalSuccessTxHash(ctx, transmissionID, onchainTransmitter, expectedForwarderRawReport, retryConfig, "winning transmitter")
 	if err != nil {
 		return nil, err
 	}
@@ -232,6 +232,19 @@ func (s *Aptos) resolveCanonicalSuccessTxHash(
 		return "", fmt.Errorf("canonical tx hash for %s is empty", contextLabel)
 	}
 	return canonicalHash, nil
+}
+
+func (s *Aptos) waitForCanonicalSuccessTxHash(
+	ctx context.Context,
+	transmissionID TransmissionID,
+	transmitter string,
+	expectedForwarderRawReport []byte,
+	retryConfig aptosWriteRetryConfig,
+	contextLabel string,
+) (string, error) {
+	return withAptosPollingRetry(ctx, s.lggr, retryConfig, func(ctx context.Context) (string, error) {
+		return s.resolveCanonicalSuccessTxHash(ctx, transmissionID, transmitter, expectedForwarderRawReport, contextLabel)
+	})
 }
 
 func (s *Aptos) resolveDeterministicFailedHash(

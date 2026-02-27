@@ -326,6 +326,149 @@ func TestGetTransmissionTxHash_TopUpPassFindsNewTransaction(t *testing.T) {
 	require.Equal(t, uint64(2), *mockService.accountTransactionsCalls[4].Limit)
 }
 
+func TestGetTransmissionTxHash_ExtendsScanBeyondFastLookbackWhenNoCandidatesFound(t *testing.T) {
+	transmissionID := newTestTransmissionID()
+	forwarderAddress := newTestAddress(0x4d)
+	transmitter := accountAddressStringLong(newTestAddress(0x90))
+	entryFunction := forwarderEntryFunction(forwarderAddress)
+	nonForwarderEntryFunction := "0x1::other_module::other_function"
+
+	mockService := &fakeAptosService{
+		accountTransactionsReplies: []*aptostypes.AccountTransactionsReply{
+			{
+				Transactions: []*aptostypes.Transaction{
+					mustUserTransaction(
+						t,
+						"0xlatest",
+						500,
+						entryFunction,
+						true,
+						[]map[string]any{
+							reportProcessedEvent(mismatchingReportProcessedData(transmissionID)),
+						},
+					),
+				},
+			},
+			{
+				Transactions: []*aptostypes.Transaction{
+					mustUserTransaction(
+						t,
+						"0xfast-window-1",
+						500,
+						nonForwarderEntryFunction,
+						true,
+						[]map[string]any{
+							reportProcessedEvent(mismatchingReportProcessedData(transmissionID)),
+						},
+					),
+				},
+			},
+			{
+				Transactions: []*aptostypes.Transaction{
+					mustUserTransaction(
+						t,
+						"0xfast-window-2",
+						490,
+						nonForwarderEntryFunction,
+						true,
+						[]map[string]any{
+							reportProcessedEvent(mismatchingReportProcessedData(transmissionID)),
+						},
+					),
+				},
+			},
+			{
+				Transactions: []*aptostypes.Transaction{
+					mustUserTransaction(
+						t,
+						"0xfast-window-3",
+						480,
+						nonForwarderEntryFunction,
+						true,
+						[]map[string]any{
+							reportProcessedEvent(mismatchingReportProcessedData(transmissionID)),
+						},
+					),
+				},
+			},
+			{
+				Transactions: []*aptostypes.Transaction{
+					mustUserTransaction(
+						t,
+						"0xfast-window-4",
+						470,
+						nonForwarderEntryFunction,
+						true,
+						[]map[string]any{
+							reportProcessedEvent(mismatchingReportProcessedData(transmissionID)),
+						},
+					),
+				},
+			},
+			{
+				Transactions: []*aptostypes.Transaction{
+					mustUserTransaction(
+						t,
+						"0xfast-window-5",
+						460,
+						nonForwarderEntryFunction,
+						true,
+						[]map[string]any{
+							reportProcessedEvent(mismatchingReportProcessedData(transmissionID)),
+						},
+					),
+				},
+			},
+			{
+				Transactions: []*aptostypes.Transaction{
+					mustUserTransaction(
+						t,
+						"0xlatest-after",
+						500,
+						entryFunction,
+						true,
+						[]map[string]any{
+							reportProcessedEvent(mismatchingReportProcessedData(transmissionID)),
+						},
+					),
+				},
+			},
+			{
+				Transactions: []*aptostypes.Transaction{
+					mustUserTransaction(
+						t,
+						"0xextended-match",
+						250,
+						entryFunction,
+						true,
+						[]map[string]any{
+							reportProcessedEvent(matchingReportProcessedData(transmissionID)),
+						},
+					),
+				},
+			},
+		},
+	}
+
+	client := &forwarderClient{
+		AptosService:     mockService,
+		forwarderAddress: forwarderAddress,
+	}
+
+	hash, err := client.GetTransmissionTxHash(context.Background(), transmissionID, transmitter, nil)
+	require.NoError(t, err)
+	require.Equal(t, "0xextended-match", hash)
+
+	sawExtendedScan := false
+	for _, call := range mockService.accountTransactionsCalls {
+		if call.Start != nil && *call.Start < 276 {
+			sawExtendedScan = true
+			break
+		}
+	}
+	require.True(t, sawExtendedScan, "expected historical scan to go below fast-lookback lower bound")
+}
+
 func TestGetTransmissionTxHash_RejectsMismatchedExpectedPayload(t *testing.T) {
 	transmissionID := newTestTransmissionID()
 	otherTransmission := transmissionID
@@ -398,7 +541,120 @@ func TestGetTransmissionTxHash_RejectsMismatchedExpectedPayload(t *testing.T) {
 	require.Contains(t, err.Error(), "no matching successful report tx found")
 }
 
-func TestGetTransmissionTxHash_AcceptsMatchingPayloadWithoutReportProcessedEvent(t *testing.T) {
+func TestGetTransmissionTxHash_SkipsInvalidNewestCandidateAndReturnsOlderValidOne(t *testing.T) {
+	transmissionID := newTestTransmissionID()
+	otherTransmission := transmissionID
+	otherTransmission.ReportID = [2]byte{0xaa, 0xbb}
+
+	forwarderAddress := newTestAddress(0x4c)
+	transmitter := accountAddressStringLong(newTestAddress(0x91))
+	entryFunction := forwarderEntryFunction(forwarderAddress)
+
+	expectedRawReport := mustEncodedReportWithMetadata(t, transmissionID)
+	mismatchedRawReport := mustEncodedReportWithMetadata(t, otherTransmission)
+	newestWrongHash := "0x" + strings.Repeat("a", 64)
+	olderCorrectHash := "0x" + strings.Repeat("b", 64)
+
+	mockService := &fakeAptosService{
+		accountTransactionsReplies: []*aptostypes.AccountTransactionsReply{
+			{
+				Transactions: []*aptostypes.Transaction{
+					mustSuccessfulUserTransactionWithPayload(
+						t,
+						newestWrongHash,
+						10,
+						entryFunction,
+						transmissionID.Receiver.StringLong(),
+						mismatchedRawReport,
+						[]map[string]any{
+							reportProcessedEvent(matchingReportProcessedData(transmissionID)),
+						},
+					),
+				},
+			},
+			{
+				Transactions: []*aptostypes.Transaction{
+					mustSuccessfulUserTransactionWithPayload(
+						t,
+						newestWrongHash,
+						10,
+						entryFunction,
+						transmissionID.Receiver.StringLong(),
+						mismatchedRawReport,
+						[]map[string]any{
+							reportProcessedEvent(matchingReportProcessedData(transmissionID)),
+						},
+					),
+					mustSuccessfulUserTransactionWithPayload(
+						t,
+						olderCorrectHash,
+						9,
+						entryFunction,
+						transmissionID.Receiver.StringLong(),
+						expectedRawReport,
+						[]map[string]any{
+							reportProcessedEvent(matchingReportProcessedData(transmissionID)),
+						},
+					),
+				},
+			},
+			{
+				Transactions: []*aptostypes.Transaction{
+					mustSuccessfulUserTransactionWithPayload(
+						t,
+						newestWrongHash,
+						10,
+						entryFunction,
+						transmissionID.Receiver.StringLong(),
+						mismatchedRawReport,
+						[]map[string]any{
+							reportProcessedEvent(matchingReportProcessedData(transmissionID)),
+						},
+					),
+				},
+			},
+		},
+		transactionByHashByHash: map[string]*aptostypes.TransactionByHashReply{
+			newestWrongHash: {
+				Transaction: mustSuccessfulUserTransactionWithPayload(
+					t,
+					newestWrongHash,
+					10,
+					entryFunction,
+					transmissionID.Receiver.StringLong(),
+					mismatchedRawReport,
+					[]map[string]any{
+						reportProcessedEvent(matchingReportProcessedData(transmissionID)),
+					},
+				),
+			},
+			olderCorrectHash: {
+				Transaction: mustSuccessfulUserTransactionWithPayload(
+					t,
+					olderCorrectHash,
+					9,
+					entryFunction,
+					transmissionID.Receiver.StringLong(),
+					expectedRawReport,
+					[]map[string]any{
+						reportProcessedEvent(matchingReportProcessedData(transmissionID)),
+					},
+				),
+			},
+		},
+	}
+
+	client := &forwarderClient{
+		AptosService:     mockService,
+		forwarderAddress: forwarderAddress,
+	}
+
+	hash, err := client.GetTransmissionTxHash(context.Background(), transmissionID, transmitter, expectedRawReport)
+	require.NoError(t, err)
+	require.Equal(t, olderCorrectHash, hash)
+}
+
+func TestGetTransmissionTxHash_AcceptsMatchingPayloadAndReportProcessedEvent(t *testing.T) {
 	transmissionID := newTestTransmissionID()
 	forwarderAddress := newTestAddress(0x4a)
 	transmitter := accountAddressStringLong(newTestAddress(0x93))
@@ -419,8 +675,9 @@ func TestGetTransmissionTxHash_AcceptsMatchingPayloadWithoutReportProcessedEvent
 						entryFunction,
 						transmissionID.Receiver.StringLong(),
 						expectedRawReport,
-						// No ReportProcessed event in account tx payload.
-						[]map[string]any{},
+						[]map[string]any{
+							reportProcessedEvent(matchingReportProcessedData(transmissionID)),
+						},
 					),
 				},
 			},
@@ -433,7 +690,9 @@ func TestGetTransmissionTxHash_AcceptsMatchingPayloadWithoutReportProcessedEvent
 						entryFunction,
 						transmissionID.Receiver.StringLong(),
 						expectedRawReport,
-						[]map[string]any{},
+						[]map[string]any{
+							reportProcessedEvent(matchingReportProcessedData(transmissionID)),
+						},
 					),
 				},
 			},
@@ -446,7 +705,9 @@ func TestGetTransmissionTxHash_AcceptsMatchingPayloadWithoutReportProcessedEvent
 						entryFunction,
 						transmissionID.Receiver.StringLong(),
 						expectedRawReport,
-						[]map[string]any{},
+						[]map[string]any{
+							reportProcessedEvent(matchingReportProcessedData(transmissionID)),
+						},
 					),
 				},
 			},
@@ -460,7 +721,96 @@ func TestGetTransmissionTxHash_AcceptsMatchingPayloadWithoutReportProcessedEvent
 					entryFunction,
 					transmissionID.Receiver.StringLong(),
 					expectedRawReport,
-					[]map[string]any{},
+					[]map[string]any{
+						reportProcessedEvent(matchingReportProcessedData(transmissionID)),
+					},
+				),
+			},
+		},
+	}
+
+	client := &forwarderClient{
+		AptosService:     mockService,
+		forwarderAddress: forwarderAddress,
+	}
+
+	hash, err := client.GetTransmissionTxHash(context.Background(), transmissionID, transmitter, expectedRawReport)
+	require.NoError(t, err)
+	require.Equal(t, matchHash, hash)
+}
+
+func TestGetTransmissionTxHash_AcceptsMatchingReportProcessedEventWhenPayloadDiffers(t *testing.T) {
+	transmissionID := newTestTransmissionID()
+
+	forwarderAddress := newTestAddress(0x4b)
+	transmitter := accountAddressStringLong(newTestAddress(0x92))
+	entryFunction := forwarderEntryFunction(forwarderAddress)
+
+	expectedRawReport := mustEncodedReportWithMetadata(t, transmissionID)
+	mismatchedRawReport := append([]byte(nil), expectedRawReport...)
+	mismatchedRawReport[len(mismatchedRawReport)-1] ^= 0x01
+	matchHash := "0x" + strings.Repeat("f", 64)
+
+	mockService := &fakeAptosService{
+		accountTransactionsReplies: []*aptostypes.AccountTransactionsReply{
+			{
+				Transactions: []*aptostypes.Transaction{
+					mustSuccessfulUserTransactionWithPayload(
+						t,
+						matchHash,
+						9,
+						entryFunction,
+						transmissionID.Receiver.StringLong(),
+						mismatchedRawReport,
+						[]map[string]any{
+							reportProcessedEvent(matchingReportProcessedData(transmissionID)),
+						},
+					),
+				},
+			},
+			{
+				Transactions: []*aptostypes.Transaction{
+					mustSuccessfulUserTransactionWithPayload(
+						t,
+						matchHash,
+						9,
+						entryFunction,
+						transmissionID.Receiver.StringLong(),
+						mismatchedRawReport,
+						[]map[string]any{
+							reportProcessedEvent(matchingReportProcessedData(transmissionID)),
+						},
+					),
+				},
+			},
+			{
+				Transactions: []*aptostypes.Transaction{
+					mustSuccessfulUserTransactionWithPayload(
+						t,
+						matchHash,
+						9,
+						entryFunction,
+						transmissionID.Receiver.StringLong(),
+						mismatchedRawReport,
+						[]map[string]any{
+							reportProcessedEvent(matchingReportProcessedData(transmissionID)),
+						},
+					),
+				},
+			},
+		},
+		transactionByHashReplies: []*aptostypes.TransactionByHashReply{
+			{
+				Transaction: mustSuccessfulUserTransactionWithPayload(
+					t,
+					matchHash,
+					9,
+					entryFunction,
+					transmissionID.Receiver.StringLong(),
+					mismatchedRawReport,
+					[]map[string]any{
+						reportProcessedEvent(matchingReportProcessedData(transmissionID)),
+					},
 				),
 			},
 		},
@@ -671,10 +1021,55 @@ func TestValidateFailedTxHash_RejectsMismatchedExpectedReportPayload(t *testing.
 	require.Contains(t, err.Error(), "payload does not match requested transmission")
 }
 
+func TestIsMatchingForwarderReportPayload_ExactExpectedBytesTakePrecedence(t *testing.T) {
+	transmissionID := newTestTransmissionID()
+	otherTransmission := transmissionID
+	otherTransmission.ReportID = [2]byte{0xaa, 0xbb}
+
+	matchingRawReport := mustEncodedReportWithMetadata(t, transmissionID)
+	otherRawReport := mustEncodedReportWithMetadata(t, otherTransmission)
+
+	// Build a payload that starts with a different valid report encoding.
+	// We still expect a match because exact bytes are provided by caller.
+	rawReport := append(append([]byte(nil), otherRawReport...), matchingRawReport...)
+	payloadArgs := []any{
+		transmissionID.Receiver.StringLong(),
+		"0x" + hex.EncodeToString(rawReport),
+		[]any{},
+	}
+
+	require.True(t, isMatchingForwarderReportPayload(payloadArgs, transmissionID, rawReport))
+}
+
+func TestIsMatchingForwarderReportPayload_MatchesContextPrefixedReportMetadata(t *testing.T) {
+	transmissionID := newTestTransmissionID()
+	otherTransmission := transmissionID
+	otherTransmission.ReportID = [2]byte{0xaa, 0xbb}
+
+	matchingRawReport := mustEncodedReportWithMetadata(t, transmissionID)
+	otherRawReport := mustEncodedReportWithMetadata(t, otherTransmission)
+
+	// Simulate report_context || raw_report. Prefix intentionally starts with bytes
+	// from a different valid report encoding to ensure we try the context-stripped
+	// metadata decode path.
+	reportContext := make([]byte, 96)
+	copy(reportContext, otherRawReport)
+	rawWithContext := append(reportContext, matchingRawReport...)
+
+	payloadArgs := []any{
+		transmissionID.Receiver.StringLong(),
+		"0x" + hex.EncodeToString(rawWithContext),
+		[]any{},
+	}
+
+	require.True(t, isMatchingForwarderReportPayload(payloadArgs, transmissionID, nil))
+}
+
 type fakeAptosService struct {
 	accountTransactionsReplies []*aptostypes.AccountTransactionsReply
 	accountTransactionsCalls   []aptostypes.AccountTransactionsRequest
 	accountTransactionsIndex   int
+	transactionByHashByHash    map[string]*aptostypes.TransactionByHashReply
 	transactionByHashReplies   []*aptostypes.TransactionByHashReply
 	transactionByHashCalls     []aptostypes.TransactionByHashRequest
 	transactionByHashIndex     int
@@ -698,6 +1093,17 @@ func (f *fakeAptosService) EventsByHandle(context.Context, aptostypes.EventsByHa
 
 func (f *fakeAptosService) TransactionByHash(_ context.Context, req aptostypes.TransactionByHashRequest) (*aptostypes.TransactionByHashReply, error) {
 	f.transactionByHashCalls = append(f.transactionByHashCalls, req)
+
+	if len(f.transactionByHashByHash) > 0 {
+		if reply, ok := f.transactionByHashByHash[req.Hash]; ok {
+			if reply == nil {
+				return &aptostypes.TransactionByHashReply{}, nil
+			}
+			return reply, nil
+		}
+		return &aptostypes.TransactionByHashReply{}, nil
+	}
+
 	index := f.transactionByHashIndex
 	f.transactionByHashIndex++
 	if index >= len(f.transactionByHashReplies) {
