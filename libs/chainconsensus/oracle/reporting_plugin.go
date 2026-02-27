@@ -66,6 +66,8 @@ func newReportingPlugin(
 	}
 }
 
+// Query retrieves up to MaxBatchSize request IDs from the request store and returns them
+// as a marshaled protobuf query. Called by the OCR leader at the start of each round.
 func (rp *reportingPlugin) Query(ctx context.Context, outctx ocr3types.OutcomeContext) (types.Query, error) {
 	ids, err := rp.requestsStore.GetRequestIDs(rp.config.MaxBatchSize)
 	if err != nil {
@@ -105,6 +107,12 @@ func (rp *reportingPlugin) populateHeightFromPreviousOutcome(
 	observation.ChainHeight.Latest = max(observation.ChainHeight.Latest, prevChainHeight.Latest, observation.ChainHeight.Safe)
 }
 
+// Observation collects this node's observations for
+// * chain height (finalized, safe, latest)
+// * suggests missing requests that should be included in the next round (requests known by this node, but not included in the query)
+// * request observations for requests that were identified as missing in the previous round (were known by at least F+1 nodes, but not queried by the leader)
+// * request observations for requests provided by the leader in the query
+// If size of the observation exceeds MaxObservationLength, some request observations will be dropped, prioritizing requests that were missing in the previous round.
 func (rp *reportingPlugin) Observation(
 	ctx context.Context,
 	outctx ocr3types.OutcomeContext,
@@ -307,6 +315,8 @@ func (rp *reportingPlugin) getObservationForRequest(rawRequest ctypes.Request) (
 	}
 }
 
+// ValidateObservation validates an observation from another node by checking chain height
+// consistency and missing request IDs against expected constraints.
 func (rp *reportingPlugin) ValidateObservation(_ context.Context, outctx ocr3types.OutcomeContext, query types.Query, ao types.AttributedObservation) error {
 	ob := new(ctypes.Observation)
 	if err := proto.Unmarshal(ao.Observation, ob); err != nil {
@@ -408,6 +418,8 @@ func validateChainHeightAgainstOutcome(ob *ctypes.ChainHeight, prevOutcome *ctyp
 	return nil
 }
 
+// ObservationQuorum checks if enough observations have been received to proceed with the round.
+// Returns true when N-F observations are available.
 func (rp *reportingPlugin) ObservationQuorum(_ context.Context, outctx ocr3types.OutcomeContext, query types.Query, aos []types.AttributedObservation) (quorumReached bool, err error) {
 	return quorumhelper.ObservationCountReachesObservationQuorum(quorumhelper.QuorumNMinusF, rp.config.N, rp.config.F, aos), nil
 }
@@ -560,6 +572,12 @@ type attributedObservation struct {
 	Observation *ctypes.Observation
 }
 
+// Outcome aggregates observations from all nodes to produce a consensus outcome.
+// * Chain height is determined by taking the F+1 lowest reported heights, ensuring that the outcome reflects a chain height that at least F+1 nodes have observed.
+// * Missing request IDs are determined by finding request IDs that at least F+1 nodes reported as missing.
+// * For each request in the query, the outcome tries to determine observation type and value depending on the request type.
+// If number of observations for a request is less than Byz Quorum, that request is skipped.
+// It's expected that such requests will be included in the next round by the leader.
 func (rp *reportingPlugin) Outcome(
 	_ context.Context,
 	outctx ocr3types.OutcomeContext,
@@ -647,6 +665,8 @@ func (rp *reportingPlugin) Outcome(
 	return proto.Marshal(&outcome)
 }
 
+// Reports converts the consensus outcome into individual reports for each request
+// to be transmitted to the contract or downstream consumers.
 func (rp *reportingPlugin) Reports(ctx context.Context, seqNr uint64, rawOutcome ocr3types.Outcome) ([]ocr3types.ReportPlus[[]byte], error) {
 	var outcome ctypes.Outcome
 	if err := proto.Unmarshal(rawOutcome, &outcome); err != nil {
@@ -706,6 +726,8 @@ func createReportInfo() ([]byte, error) {
 	return infoBytes, nil
 }
 
+// ShouldAcceptAttestedReport determines whether this node should accept an attested report.
+// Currently accepts all reports.
 func (rp *reportingPlugin) ShouldAcceptAttestedReport(
 	ctx context.Context,
 	seqNr uint64,
@@ -714,6 +736,8 @@ func (rp *reportingPlugin) ShouldAcceptAttestedReport(
 	return true, nil
 }
 
+// ShouldTransmitAcceptedReport determines whether this node should transmit an accepted report.
+// Currently transmits all accepted reports.
 func (rp *reportingPlugin) ShouldTransmitAcceptedReport(
 	ctx context.Context,
 	seqNr uint64,
@@ -722,6 +746,7 @@ func (rp *reportingPlugin) ShouldTransmitAcceptedReport(
 	return true, nil
 }
 
+// Close cleans up resources used by the reporting plugin.
 func (rp *reportingPlugin) Close() error {
 	return nil
 }
