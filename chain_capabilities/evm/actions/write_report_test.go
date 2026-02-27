@@ -21,10 +21,11 @@ import (
 
 	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
 
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts/mocks"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
+	evmtest "github.com/smartcontractkit/capabilities/chain_capabilities/evm/test"
 
 	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 
@@ -905,7 +906,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		}, txResult.Response)
 
 		// Retried tx => should be metered.
-		test.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003")
+		evmtest.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003")
 	})
 
 	t.Run("TX first transmission - Successful TX execution (ensures non-nil + positive gas config passed to forwarder)", func(t *testing.T) {
@@ -988,7 +989,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(retryTxFee)),
 		}, txResult.Response)
 
-		test.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003")
+		evmtest.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003")
 	})
 
 	t.Run("TX first transmission - Error submitting TX (ensures gas config passed is non-nil + positive)", func(t *testing.T) {
@@ -1112,7 +1113,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
 		}, txResult.Response)
 
-		test.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003")
+		evmtest.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003")
 	})
 
 	t.Run("TX first transmission - Duplicate tx: txmgr reports reverted but transmission succeeded => use onchain tx hash", func(t *testing.T) {
@@ -1205,7 +1206,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(txFee)),
 		}, txResult.Response)
 
-		test.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003")
+		evmtest.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003")
 	})
 
 	t.Run("TX locally attempted but failed; queue position behavior", func(t *testing.T) {
@@ -1327,7 +1328,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 				require.Equal(t, receiptTxHash[:], txResult.Response.TxHash)
 				require.NotNil(t, txResult.Response.ReceiverContractExecutionStatus)
 				require.Equal(t, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(), txResult.Response.ReceiverContractExecutionStatus.Enum())
-				test.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003")
+				evmtest.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003")
 
 				if queuePosition == 0 {
 					mockForwarderClient.AssertNotCalled(t, "GetReportProcessedEvents", mock.Anything, mock.Anything, mock.Anything, mock.Anything)

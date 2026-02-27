@@ -23,6 +23,14 @@ message WriteReportError {
   monitoring.ExecutionContext execution_context = 20;
 }
 
+message WriteReportTxFeeCalculationError {
+  WriteReportRequest req = 1;
+  string summary = 2;
+  string cause = 3;
+  string signature = 4;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
 message WriteReportRequest {
   repeated AccountMeta remaining_accounts = 1; // accounts that are required by the receiver to accept the report
   bytes receiver = 2; // 32 bytes receiver

@@ -1,31 +1,15 @@
 package test
 
 import (
-	"context"
-	"crypto/rand"
 	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
 )
-
-func RandomBytes(n int) []byte {
-	b := make([]byte, n)
-	_, err := rand.Read(b)
-	if err != nil {
-		panic(err)
-	}
-	return b
-}
-
-type NopBeholderProcessor struct{}
-
-func (NopBeholderProcessor) Process(_ context.Context, _ proto.Message, _ ...any) error { return nil }
 
 func ValidateMetering(t *testing.T, metadata capabilities.ResponseMetadata, expectedValue string) {
 	require.Len(t, metadata.Metering, 1)
