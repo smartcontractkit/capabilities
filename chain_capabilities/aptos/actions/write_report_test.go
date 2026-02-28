@@ -11,7 +11,6 @@ import (
 
 	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	capabilitiespb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/pb"
 	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -20,7 +19,7 @@ import (
 	aptostypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/aptos"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
-	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
+	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 	"github.com/stretchr/testify/require"
 )
 
@@ -166,14 +165,9 @@ func TestResolveDeterministicFailedHash_UsesRegistryOrderedTransmitters(t *testi
 
 	mockRegistry := &mockCapabilitiesRegistry{
 		cfg: capabilities.CapabilityConfiguration{
-			Ocr3Configs: map[string]ocrtypes.ContractConfig{
-				capabilitiespb.OCR3ConfigDefaultKey: {
-					Transmitters: []ocrtypes.Account{
-						ocrtypes.Account(transmitterA),
-						ocrtypes.Account(transmitterB),
-					},
-				},
-			},
+			SpecConfig: mustMap(t, map[string]any{
+				aptosSpecConfigTransmittersListKey: []string{transmitterA, transmitterB},
+			}),
 		},
 	}
 
@@ -321,6 +315,13 @@ type mockCapabilitiesRegistry struct {
 	core.UnimplementedCapabilitiesRegistry
 	cfg capabilities.CapabilityConfiguration
 	err error
+}
+
+func mustMap(t *testing.T, raw map[string]any) *values.Map {
+	t.Helper()
+	m, err := values.NewMap(raw)
+	require.NoError(t, err)
+	return m
 }
 
 func (m *mockCapabilitiesRegistry) ConfigForCapability(_ context.Context, _ string, _ uint32) (capabilities.CapabilityConfiguration, error) {

@@ -19,20 +19,20 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocr3types "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
-	capabilitiespb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/pb"
 	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/retry"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
+	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
-	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 )
 
 const userError = "user error:"
 
 const (
-	aptosPollingRetryMaxBackoff = 3 * time.Second
+	aptosPollingRetryMaxBackoff        = 3 * time.Second
+	aptosSpecConfigTransmittersListKey = "aptosTransmitters"
 )
 
 type aptosWriteRetryConfig struct {
@@ -365,50 +365,35 @@ func (s *Aptos) registryOrderedTransmittersForTransmission(
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch capability config: %w", err)
 	}
-	if len(cfg.Ocr3Configs) == 0 {
-		return nil, fmt.Errorf("capability config has no OCR3 config")
-	}
-
-	ocr3Config, err := selectRegistryOCR3Config(cfg.Ocr3Configs)
+	transmitters, err := transmittersFromCapabilitySpecConfig(cfg.SpecConfig)
 	if err != nil {
 		return nil, err
-	}
-
-	transmitters := make([]string, 0, len(ocr3Config.Transmitters))
-	for _, transmitter := range ocr3Config.Transmitters {
-		normalized := normalizeAptosHexAddress(string(transmitter))
-		if normalized == "" {
-			continue
-		}
-		transmitters = append(transmitters, normalized)
-	}
-	if len(transmitters) == 0 {
-		return nil, fmt.Errorf("OCR3 transmitters list is empty")
 	}
 
 	return canonicalTransmitterOrderForTransmission(transmitters, transmissionID), nil
 }
 
-func selectRegistryOCR3Config(ocr3Configs map[string]ocrtypes.ContractConfig) (ocrtypes.ContractConfig, error) {
-	if cfg, ok := ocr3Configs[capabilitiespb.OCR3ConfigDefaultKey]; ok {
-		return cfg, nil
+func transmittersFromCapabilitySpecConfig(specConfig *values.Map) ([]string, error) {
+	if specConfig == nil {
+		return nil, fmt.Errorf("capability spec config is missing")
 	}
 
-	if len(ocr3Configs) == 1 {
-		for _, cfg := range ocr3Configs {
-			return cfg, nil
-		}
+	rawValue, ok := specConfig.Underlying[aptosSpecConfigTransmittersListKey]
+	if !ok {
+		return nil, fmt.Errorf("capability spec config missing %q", aptosSpecConfigTransmittersListKey)
 	}
 
-	keys := make([]string, 0, len(ocr3Configs))
-	for key := range ocr3Configs {
-		keys = append(keys, key)
+	var transmitters []string
+	if err := rawValue.UnwrapTo(&transmitters); err != nil {
+		return nil, fmt.Errorf("invalid %q in capability spec config: %w", aptosSpecConfigTransmittersListKey, err)
 	}
-	sort.Strings(keys)
-	if len(keys) == 0 {
-		return ocrtypes.ContractConfig{}, fmt.Errorf("missing OCR3 config keys")
+
+	transmitters = orderedUniqueTransmitters(transmitters)
+	if len(transmitters) == 0 {
+		return nil, fmt.Errorf("capability spec config %q is empty", aptosSpecConfigTransmittersListKey)
 	}
-	return ocr3Configs[keys[0]], nil
+
+	return transmitters, nil
 }
 
 func canonicalTransmitterOrderForTransmission(transmitters []string, transmissionID TransmissionID) []string {
