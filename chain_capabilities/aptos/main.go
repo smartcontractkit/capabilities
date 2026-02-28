@@ -187,7 +187,15 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return fmt.Errorf("error when creating oracle: %w", err)
 	}
 
-	c.Aptos, err = actions.NewAptos(cfg, aptosService, c.consensusHandler, c.lggr, limits.Factory{Logger: c.lggr})
+	c.Aptos, err = actions.NewAptos(
+		cfg,
+		aptosService,
+		c.consensusHandler,
+		dependencies.CapabilityRegistry,
+		capabilityID(c.chainSelector),
+		c.lggr,
+		limits.Factory{Logger: c.lggr},
+	)
 	if err != nil {
 		return fmt.Errorf("failed to create Aptos actions: %w", err)
 	}

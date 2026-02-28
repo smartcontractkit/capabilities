@@ -1,11 +1,14 @@
 package actions
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
+	"sort"
 	"strings"
 	"time"
 
@@ -14,14 +17,16 @@ import (
 	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 	commonMon "github.com/smartcontractkit/capabilities/libs/monitoring"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
+	ocr3types "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
+	capabilitiespb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/pb"
 	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/retry"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
+	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 )
 
 const userError = "user error:"
@@ -254,7 +259,12 @@ func (s *Aptos) resolveDeterministicFailedHash(
 	localFailedHash string,
 	expectedForwarderRawReport []byte,
 ) (string, error) {
-	selectedHash, err := s.consensusSelectFailedHash(ctx, metadata, localFailedHash)
+	localCandidate, err := s.resolveLocalFailedHashCandidate(ctx, metadata, transmissionID, localFailedHash, expectedForwarderRawReport)
+	if err != nil {
+		return "", fmt.Errorf("local failed hash resolution: %w", err)
+	}
+
+	selectedHash, err := s.consensusSelectFailedHash(ctx, metadata, localCandidate)
 	if err != nil {
 		return "", fmt.Errorf("failed hash consensus: %w", err)
 	}
@@ -268,6 +278,182 @@ func (s *Aptos) resolveDeterministicFailedHash(
 		return "", fmt.Errorf("consensus-selected failed hash is empty after validation")
 	}
 	return validatedHash, nil
+}
+
+func (s *Aptos) resolveLocalFailedHashCandidate(
+	ctx context.Context,
+	metadata capabilities.RequestMetadata,
+	transmissionID TransmissionID,
+	localFailedHash string,
+	expectedForwarderRawReport []byte,
+) (string, error) {
+	orderedTransmitters, txErr := s.registryOrderedTransmittersForTransmission(ctx, metadata, transmissionID)
+	if txErr == nil && len(orderedTransmitters) > 0 {
+		candidateHash, err := s.resolveFirstValidatedFailedHashFromTransmitters(ctx, transmissionID, orderedTransmitters, expectedForwarderRawReport)
+		if err == nil {
+			return candidateHash, nil
+		}
+		s.lggr.Debugw("Registry-backed failed hash resolution unavailable; falling back to local failed hash", "error", err)
+	} else if txErr != nil {
+		s.lggr.Debugw("Failed to load registry transmitters for failed hash resolution; falling back to local failed hash", "error", txErr)
+	}
+
+	localCandidate := strings.TrimSpace(localFailedHash)
+	if localCandidate == "" {
+		return "", fmt.Errorf("local failed hash is empty")
+	}
+
+	validatedHash, err := s.forwarderClient.ValidateFailedTxHash(ctx, transmissionID, localCandidate, expectedForwarderRawReport)
+	if err != nil {
+		return "", fmt.Errorf("local failed hash did not validate onchain: %w", err)
+	}
+	if strings.TrimSpace(validatedHash) == "" {
+		return "", fmt.Errorf("local failed hash is empty after validation")
+	}
+	return validatedHash, nil
+}
+
+func (s *Aptos) resolveFirstValidatedFailedHashFromTransmitters(
+	ctx context.Context,
+	transmissionID TransmissionID,
+	transmitters []string,
+	expectedForwarderRawReport []byte,
+) (string, error) {
+	for _, transmitter := range transmitters {
+		candidateHash, err := s.forwarderClient.GetTransmissionFailedTxHash(ctx, transmissionID, []string{transmitter})
+		if err != nil {
+			s.lggr.Debugw("Failed hash lookup for transmitter failed", "transmitter", transmitter, "error", err)
+			continue
+		}
+		candidateHash = strings.TrimSpace(candidateHash)
+		if candidateHash == "" {
+			continue
+		}
+
+		validatedHash, err := s.forwarderClient.ValidateFailedTxHash(ctx, transmissionID, candidateHash, expectedForwarderRawReport)
+		if err != nil {
+			s.lggr.Debugw("Failed hash candidate did not validate", "transmitter", transmitter, "candidateHash", candidateHash, "error", err)
+			continue
+		}
+		validatedHash = strings.TrimSpace(validatedHash)
+		if validatedHash == "" {
+			continue
+		}
+
+		return validatedHash, nil
+	}
+
+	return "", fmt.Errorf("no validated failed tx hash found from registry transmitters")
+}
+
+func (s *Aptos) registryOrderedTransmittersForTransmission(
+	ctx context.Context,
+	metadata capabilities.RequestMetadata,
+	transmissionID TransmissionID,
+) ([]string, error) {
+	if s.capabilityRegistry == nil {
+		return nil, fmt.Errorf("capability registry unavailable")
+	}
+	if s.capabilityID == "" {
+		return nil, fmt.Errorf("capability id unavailable")
+	}
+	if metadata.WorkflowDonID == 0 {
+		return nil, fmt.Errorf("workflow DON id unavailable")
+	}
+
+	cfg, err := s.capabilityRegistry.ConfigForCapability(ctx, s.capabilityID, metadata.WorkflowDonID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch capability config: %w", err)
+	}
+	if len(cfg.Ocr3Configs) == 0 {
+		return nil, fmt.Errorf("capability config has no OCR3 config")
+	}
+
+	ocr3Config, err := selectRegistryOCR3Config(cfg.Ocr3Configs)
+	if err != nil {
+		return nil, err
+	}
+
+	transmitters := make([]string, 0, len(ocr3Config.Transmitters))
+	for _, transmitter := range ocr3Config.Transmitters {
+		normalized := normalizeAptosHexAddress(string(transmitter))
+		if normalized == "" {
+			continue
+		}
+		transmitters = append(transmitters, normalized)
+	}
+	if len(transmitters) == 0 {
+		return nil, fmt.Errorf("OCR3 transmitters list is empty")
+	}
+
+	return canonicalTransmitterOrderForTransmission(transmitters, transmissionID), nil
+}
+
+func selectRegistryOCR3Config(ocr3Configs map[string]ocrtypes.ContractConfig) (ocrtypes.ContractConfig, error) {
+	if cfg, ok := ocr3Configs[capabilitiespb.OCR3ConfigDefaultKey]; ok {
+		return cfg, nil
+	}
+
+	if len(ocr3Configs) == 1 {
+		for _, cfg := range ocr3Configs {
+			return cfg, nil
+		}
+	}
+
+	keys := make([]string, 0, len(ocr3Configs))
+	for key := range ocr3Configs {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	if len(keys) == 0 {
+		return ocrtypes.ContractConfig{}, fmt.Errorf("missing OCR3 config keys")
+	}
+	return ocr3Configs[keys[0]], nil
+}
+
+func canonicalTransmitterOrderForTransmission(transmitters []string, transmissionID TransmissionID) []string {
+	unique := orderedUniqueTransmitters(transmitters)
+	if len(unique) == 0 {
+		return nil
+	}
+
+	seed := failedHashOrderSeed(transmissionID)
+	type rankedTransmitter struct {
+		transmitter string
+		rank        [32]byte
+	}
+
+	ranked := make([]rankedTransmitter, 0, len(unique))
+	for _, transmitter := range unique {
+		seedInput := make([]byte, 0, len(seed)+len(transmitter))
+		seedInput = append(seedInput, seed...)
+		seedInput = append(seedInput, transmitter...)
+		ranked = append(ranked, rankedTransmitter{
+			transmitter: transmitter,
+			rank:        sha256.Sum256(seedInput),
+		})
+	}
+
+	sort.SliceStable(ranked, func(i, j int) bool {
+		if cmp := bytes.Compare(ranked[i].rank[:], ranked[j].rank[:]); cmp != 0 {
+			return cmp < 0
+		}
+		return ranked[i].transmitter < ranked[j].transmitter
+	})
+
+	ordered := make([]string, 0, len(ranked))
+	for _, candidate := range ranked {
+		ordered = append(ordered, candidate.transmitter)
+	}
+	return ordered
+}
+
+func failedHashOrderSeed(transmissionID TransmissionID) []byte {
+	seed := make([]byte, 0, len(transmissionID.WorkflowExecutionID)+len(transmissionID.ReportID)+len(transmissionID.Receiver))
+	seed = append(seed, transmissionID.WorkflowExecutionID[:]...)
+	seed = append(seed, transmissionID.ReportID[:]...)
+	seed = append(seed, transmissionID.Receiver[:]...)
+	return seed
 }
 
 func (s *Aptos) consensusSelectFailedHash(
@@ -616,8 +802,8 @@ func (s *Aptos) validateWriteReportInputs(requestMetadata capabilities.RequestMe
 	return nil
 }
 
-func decodeReportMetadata(data []byte) (ocrtypes.Metadata, error) {
-	metadata, _, err := ocrtypes.Decode(data)
+func decodeReportMetadata(data []byte) (ocr3types.Metadata, error) {
+	metadata, _, err := ocr3types.Decode(data)
 	return metadata, err
 }
 

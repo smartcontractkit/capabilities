@@ -11,13 +11,16 @@ import (
 
 	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	capabilitiespb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/pb"
 	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	aptostypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/aptos"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
+	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 	"github.com/stretchr/testify/require"
 )
 
@@ -135,12 +138,100 @@ func TestExecuteWriteReport_ReturnsErrorWhenFailedTxReceiptCannotBeValidated(t *
 	}
 }
 
+func TestResolveDeterministicFailedHash_UsesRegistryOrderedTransmitters(t *testing.T) {
+	transmissionID := newTestTransmissionID()
+	metadata := capabilities.RequestMetadata{
+		WorkflowExecutionID: hex.EncodeToString(transmissionID.WorkflowExecutionID[:]),
+		ReferenceID:         "step1",
+		WorkflowDonID:       9,
+	}
+
+	transmitterA := "0x" + strings.Repeat("1", 64)
+	transmitterB := "0x" + strings.Repeat("2", 64)
+	hashA := "0x" + strings.Repeat("a", 64)
+	hashB := "0x" + strings.Repeat("b", 64)
+
+	mockForwarder := &mockForwarderClient{
+		failedHashByTransmitter: map[string]string{
+			normalizeAptosHexAddress(transmitterA): hashA,
+			normalizeAptosHexAddress(transmitterB): hashB,
+		},
+		validationErrByInput: map[string]error{
+			hashA: errors.New("invalid hash"),
+		},
+		validatedHashByInput: map[string]string{
+			hashB: hashB,
+		},
+	}
+
+	mockRegistry := &mockCapabilitiesRegistry{
+		cfg: capabilities.CapabilityConfiguration{
+			Ocr3Configs: map[string]ocrtypes.ContractConfig{
+				capabilitiespb.OCR3ConfigDefaultKey: {
+					Transmitters: []ocrtypes.Account{
+						ocrtypes.Account(transmitterA),
+						ocrtypes.Account(transmitterB),
+					},
+				},
+			},
+		},
+	}
+
+	a := &Aptos{
+		forwarderClient:    mockForwarder,
+		ConsensusHandler:   &passthroughAggregatableConsensusHandler{},
+		capabilityRegistry: mockRegistry,
+		capabilityID:       "aptos:ChainSelector:4@1.0.0",
+		lggr:               logger.Sugared(logger.Test(t)),
+	}
+
+	got, err := a.resolveDeterministicFailedHash(context.Background(), metadata, transmissionID, "", []byte("expected_raw_report"))
+	require.NoError(t, err)
+	require.Equal(t, hashB, got)
+
+	expectedOrder := canonicalTransmitterOrderForTransmission([]string{transmitterA, transmitterB}, transmissionID)
+	require.NotEmpty(t, mockForwarder.failedHashLookupTransmitters)
+	require.Equal(t, expectedOrder[0], mockForwarder.failedHashLookupTransmitters[0])
+	require.Contains(t, mockForwarder.validatedFailedHashes, hashB)
+}
+
+func TestResolveDeterministicFailedHash_FallsBackToLocalHashWhenRegistryUnavailable(t *testing.T) {
+	transmissionID := newTestTransmissionID()
+	metadata := capabilities.RequestMetadata{
+		WorkflowExecutionID: hex.EncodeToString(transmissionID.WorkflowExecutionID[:]),
+		ReferenceID:         "step1",
+	}
+	localHash := "0x" + strings.Repeat("c", 64)
+
+	mockForwarder := &mockForwarderClient{
+		validatedHashByInput: map[string]string{
+			localHash: localHash,
+		},
+	}
+
+	a := &Aptos{
+		forwarderClient:  mockForwarder,
+		ConsensusHandler: &passthroughAggregatableConsensusHandler{},
+		lggr:             logger.Sugared(logger.Test(t)),
+	}
+
+	got, err := a.resolveDeterministicFailedHash(context.Background(), metadata, transmissionID, localHash, []byte("expected_raw_report"))
+	require.NoError(t, err)
+	require.Equal(t, localHash, got)
+	require.Empty(t, mockForwarder.failedHashLookupTransmitters)
+}
+
 type mockForwarderClient struct {
-	pendingSender         [32]byte
-	pendingHash           string
-	failedHash            string
-	failedHashErr         error
-	validatedFailedHashes []string
+	pendingSender                [32]byte
+	pendingHash                  string
+	failedHash                   string
+	failedHashErr                error
+	failedHashByTransmitter      map[string]string
+	failedHashErrByTransmitter   map[string]error
+	validatedHashByInput         map[string]string
+	validationErrByInput         map[string]error
+	failedHashLookupTransmitters []string
+	validatedFailedHashes        []string
 }
 
 func (m *mockForwarderClient) InvokeOnReport(_ context.Context, _ []byte, _ *sdk.ReportResponse, _ *aptoscap.GasConfig) (*aptostypes.SubmitTransactionReply, error) {
@@ -166,6 +257,12 @@ func (m *mockForwarderClient) GetTransmissionTxHash(_ context.Context, _ Transmi
 
 func (m *mockForwarderClient) ValidateFailedTxHash(_ context.Context, _ TransmissionID, txHash string, _ []byte) (string, error) {
 	m.validatedFailedHashes = append(m.validatedFailedHashes, txHash)
+	if err, ok := m.validationErrByInput[txHash]; ok {
+		return "", err
+	}
+	if hash, ok := m.validatedHashByInput[txHash]; ok {
+		return hash, nil
+	}
 	if m.failedHashErr != nil {
 		return "", m.failedHashErr
 	}
@@ -173,8 +270,21 @@ func (m *mockForwarderClient) ValidateFailedTxHash(_ context.Context, _ Transmis
 }
 
 func (m *mockForwarderClient) GetTransmissionFailedTxHash(_ context.Context, _ TransmissionID, transmitters []string) (string, error) {
-	_ = transmitters
-	return "", errors.New("unexpected call to GetTransmissionFailedTxHash in this test")
+	if len(m.failedHashByTransmitter) == 0 && len(m.failedHashErrByTransmitter) == 0 {
+		return "", errors.New("unexpected call to GetTransmissionFailedTxHash in this test")
+	}
+	if len(transmitters) != 1 {
+		return "", fmt.Errorf("expected exactly one transmitter, got %d", len(transmitters))
+	}
+	transmitter := normalizeAptosHexAddress(transmitters[0])
+	m.failedHashLookupTransmitters = append(m.failedHashLookupTransmitters, transmitter)
+	if err, ok := m.failedHashErrByTransmitter[transmitter]; ok {
+		return "", err
+	}
+	if hash, ok := m.failedHashByTransmitter[transmitter]; ok {
+		return hash, nil
+	}
+	return "", fmt.Errorf("no failed hash for transmitter %s", transmitter)
 }
 
 type passthroughAggregatableConsensusHandler struct{}
@@ -205,4 +315,17 @@ func (h *passthroughAggregatableConsensusHandler) Handle(ctx context.Context, re
 
 	ch <- ctypes.Reply{Value: observation.Value}
 	return ch, nil
+}
+
+type mockCapabilitiesRegistry struct {
+	core.UnimplementedCapabilitiesRegistry
+	cfg capabilities.CapabilityConfiguration
+	err error
+}
+
+func (m *mockCapabilitiesRegistry) ConfigForCapability(_ context.Context, _ string, _ uint32) (capabilities.CapabilityConfiguration, error) {
+	if m.err != nil {
+		return capabilities.CapabilityConfiguration{}, m.err
+	}
+	return m.cfg, nil
 }

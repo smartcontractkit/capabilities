@@ -12,6 +12,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/settings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/config"
 	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
@@ -22,15 +23,25 @@ type ConsensusHandler interface {
 }
 
 type Aptos struct {
-	aptosService      types.AptosService
-	ConsensusHandler  ConsensusHandler
-	forwarderClient   CREForwarderClient
-	lggr              logger.SugaredLogger
-	maxGasAmountLimit limits.BoundLimiter[uint64]
-	reportSizeLimit   limits.BoundLimiter[commoncfg.Size]
+	aptosService       types.AptosService
+	ConsensusHandler   ConsensusHandler
+	forwarderClient    CREForwarderClient
+	capabilityRegistry core.CapabilitiesRegistry
+	capabilityID       string
+	lggr               logger.SugaredLogger
+	maxGasAmountLimit  limits.BoundLimiter[uint64]
+	reportSizeLimit    limits.BoundLimiter[commoncfg.Size]
 }
 
-func NewAptos(cfg *config.Config, aptosService types.AptosService, consensusHandler ConsensusHandler, lggr logger.Logger, limitsFactory limits.Factory) (*Aptos, error) {
+func NewAptos(
+	cfg *config.Config,
+	aptosService types.AptosService,
+	consensusHandler ConsensusHandler,
+	capabilityRegistry core.CapabilitiesRegistry,
+	capabilityID string,
+	lggr logger.Logger,
+	limitsFactory limits.Factory,
+) (*Aptos, error) {
 	if aptosService == nil {
 		return nil, fmt.Errorf("aptos service is required")
 	}
@@ -41,10 +52,12 @@ func NewAptos(cfg *config.Config, aptosService types.AptosService, consensusHand
 	fc := newForwarderClient(aptosService, lggr, cfg.CREForwarderAddress)
 
 	a := &Aptos{
-		aptosService:     aptosService,
-		ConsensusHandler: consensusHandler,
-		forwarderClient:  fc,
-		lggr:             logger.Sugared(lggr),
+		aptosService:       aptosService,
+		ConsensusHandler:   consensusHandler,
+		forwarderClient:    fc,
+		capabilityRegistry: capabilityRegistry,
+		capabilityID:       capabilityID,
+		lggr:               logger.Sugared(lggr),
 	}
 
 	return a, a.initLimiters(limitsFactory)
