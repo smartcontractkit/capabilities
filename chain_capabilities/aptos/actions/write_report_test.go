@@ -17,8 +17,11 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/settings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	aptostypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/aptos"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
+	typesmocks "github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
-	"github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
+	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,10 +29,17 @@ func TestExecuteWriteReport_ReturnsDeterministicFailedHashOnInvalidCall(t *testi
 	transmissionID := newTestTransmissionID()
 	rawReport := mustEncodedReportWithMetadata(t, transmissionID)
 
+	transmitters := []string{"0xaaa", "0xbbb"}
+	orderedTransmitters := canonicalTransmitterOrderForTransmission(transmitters, transmissionID)
+	invalidHash := "0x" + strings.Repeat("d", 64)
+	validHash := "0x" + strings.Repeat("f", 64)
+
 	metadata := capabilities.RequestMetadata{
 		WorkflowExecutionID: hex.EncodeToString(transmissionID.WorkflowExecutionID[:]),
 		WorkflowOwner:       "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 		WorkflowID:          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		ReferenceID:         "step1",
+		WorkflowDonID:       17,
 	}
 
 	receiver := make([]byte, len(transmissionID.Receiver))
@@ -52,18 +62,39 @@ func TestExecuteWriteReport_ReturnsDeterministicFailedHashOnInvalidCall(t *testi
 	reportSizeLimiter, err := limits.MakeBoundLimiter(limits.Factory{}, settings.Size(commoncfg.Byte*512))
 	require.NoError(t, err)
 
+	localHash := "0x" + strings.Repeat("1", 64)
 	mockForwarder := &mockForwarderClient{
 		pendingSender: transmissionID.Receiver,
-		pendingHash:   "0x" + strings.Repeat("1", 64),
-		failedHash:    "0x" + strings.Repeat("f", 64),
+		pendingHash:   localHash,
+		failedHashByTransmitter: map[string]string{
+			orderedTransmitters[0]: invalidHash,
+			orderedTransmitters[1]: validHash,
+		},
+		validationErrByInput: map[string]error{
+			invalidHash: errors.New("invalid hash"),
+		},
+		validatedHashByInput: map[string]string{
+			localHash: localHash,
+			validHash: validHash,
+		},
+	}
+
+	aptosService := typesmocks.NewAptosService(t)
+	aptosService.On("LedgerVersion", mock.Anything).Return(uint64(250), nil).Once()
+
+	registry := &mockCapabilitiesRegistry{
+		config: capabilityConfigWithTransmitters(t, transmitters),
 	}
 
 	a := &Aptos{
-		forwarderClient:   mockForwarder,
-		ConsensusHandler:  &passthroughAggregatableConsensusHandler{},
-		lggr:              logger.Sugared(logger.Test(t)),
-		maxGasAmountLimit: maxGasLimiter,
-		reportSizeLimit:   reportSizeLimiter,
+		aptosService:       aptosService,
+		forwarderClient:    mockForwarder,
+		ConsensusHandler:   &passthroughAggregatableConsensusHandler{},
+		capabilityRegistry: registry,
+		capabilityID:       "aptos-capability-id",
+		lggr:               logger.Sugared(logger.Test(t)),
+		maxGasAmountLimit:  maxGasLimiter,
+		reportSizeLimit:    reportSizeLimiter,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
@@ -73,11 +104,18 @@ func TestExecuteWriteReport_ReturnsDeterministicFailedHashOnInvalidCall(t *testi
 	require.NoError(t, err)
 	require.NotNil(t, reply)
 	require.Equal(t, aptoscap.TxStatus_TX_STATUS_FAILED, reply.TxStatus)
-	require.Equal(t, []byte("0x"+strings.Repeat("f", 64)), reply.TxHash)
+	require.Equal(t, []byte(validHash), reply.TxHash)
 	require.Contains(t, reply.GetErrorMessage(), "write transmission failed onchain")
 	require.NotEmpty(t, mockForwarder.validatedFailedHashes)
-	require.Contains(t, mockForwarder.validatedFailedHashes, "0x"+strings.Repeat("1", 64))
-	require.Contains(t, mockForwarder.validatedFailedHashes, "0x"+strings.Repeat("f", 64))
+	require.Contains(t, mockForwarder.validatedFailedHashes, localHash)
+	require.Contains(t, mockForwarder.validatedFailedHashes, invalidHash)
+	require.Contains(t, mockForwarder.validatedFailedHashes, validHash)
+	require.Equal(t, "aptos-capability-id", registry.capabilityID)
+	require.Equal(t, uint32(17), registry.donID)
+	require.NotEmpty(t, mockForwarder.failedHashLookupTransmitters)
+	for _, cutoff := range mockForwarder.failedHashLookupMaxLedgerVersions {
+		require.Equal(t, uint64(248), cutoff)
+	}
 }
 
 func TestExecuteWriteReport_ReturnsErrorWhenFailedTxReceiptCannotBeValidated(t *testing.T) {
@@ -136,94 +174,103 @@ func TestExecuteWriteReport_ReturnsErrorWhenFailedTxReceiptCannotBeValidated(t *
 	}
 }
 
-func TestResolveDeterministicFailedHash_AdvancesObserverRoundsUntilValidCandidate(t *testing.T) {
+func TestResolveDeterministicFailedHash_UsesRegistryTransmittersAndCutoff(t *testing.T) {
 	transmissionID := newTestTransmissionID()
+	transmitters := []string{"0xaaa", "0xbbb", "0xccc"}
+	orderedTransmitters := canonicalTransmitterOrderForTransmission(transmitters, transmissionID)
+
 	metadata := capabilities.RequestMetadata{
 		WorkflowExecutionID: hex.EncodeToString(transmissionID.WorkflowExecutionID[:]),
 		ReferenceID:         "step1",
+		WorkflowDonID:       42,
 	}
 
-	hashA := "0x" + strings.Repeat("a", 64)
-	hashB := "0x" + strings.Repeat("b", 64)
+	invalidHash := "0x" + strings.Repeat("a", 64)
+	validHash := "0x" + strings.Repeat("b", 64)
 
 	mockForwarder := &mockForwarderClient{
+		failedHashByTransmitter: map[string]string{
+			orderedTransmitters[0]: invalidHash,
+			orderedTransmitters[1]: validHash,
+		},
 		validationErrByInput: map[string]error{
-			hashA: errors.New("invalid hash"),
+			invalidHash: errors.New("invalid hash"),
 		},
 		validatedHashByInput: map[string]string{
-			hashB: hashB,
+			validHash: validHash,
 		},
+	}
+
+	aptosService := typesmocks.NewAptosService(t)
+	aptosService.On("LedgerVersion", mock.Anything).Return(uint64(500), nil).Once()
+
+	registry := &mockCapabilitiesRegistry{
+		config: capabilityConfigWithTransmitters(t, transmitters),
 	}
 
 	a := &Aptos{
-		forwarderClient: mockForwarder,
-		ConsensusHandler: &scriptedAggregatableConsensusHandler{selectedByRequestID: map[string]*pb.Decimal{
-			commonRequestID(metadata, 0): mustAptosHashDecimal(t, hashA),
-			commonRequestID(metadata, 1): mustAptosHashDecimal(t, hashB),
-		}},
-		lggr: logger.Sugared(logger.Test(t)),
+		aptosService:       aptosService,
+		forwarderClient:    mockForwarder,
+		ConsensusHandler:   &passthroughAggregatableConsensusHandler{},
+		capabilityRegistry: registry,
+		capabilityID:       "aptos-capability-id",
+		lggr:               logger.Sugared(logger.Test(t)),
 	}
 
-	got, err := a.resolveDeterministicFailedHash(context.Background(), metadata, transmissionID, "", []byte("expected_raw_report"), 3)
+	got, err := a.resolveDeterministicFailedHash(context.Background(), metadata, transmissionID, "", []byte("expected_raw_report"))
 	require.NoError(t, err)
-	require.Equal(t, hashB, got)
-	require.Contains(t, mockForwarder.validatedFailedHashes, hashB)
+	require.Equal(t, validHash, got)
+	require.Equal(t, "aptos-capability-id", registry.capabilityID)
+	require.Equal(t, uint32(42), registry.donID)
+	require.GreaterOrEqual(t, len(mockForwarder.failedHashLookupTransmitters), 2)
+	require.Equal(t, orderedTransmitters[0], mockForwarder.failedHashLookupTransmitters[0])
+	require.Equal(t, orderedTransmitters[1], mockForwarder.failedHashLookupTransmitters[1])
+	require.NotEmpty(t, mockForwarder.failedHashLookupMaxLedgerVersions)
+	for _, cutoff := range mockForwarder.failedHashLookupMaxLedgerVersions {
+		require.Equal(t, uint64(498), cutoff)
+	}
 }
 
-func TestResolveDeterministicFailedHash_UsesLocalCandidateWhenConsensusReturnsSameValue(t *testing.T) {
+func TestResolveDeterministicFailedHash_ReturnsErrorWhenNoValidatedRegistryCandidate(t *testing.T) {
 	transmissionID := newTestTransmissionID()
+	transmitters := []string{"0xaaa", "0xbbb"}
+	orderedTransmitters := canonicalTransmitterOrderForTransmission(transmitters, transmissionID)
+
 	metadata := capabilities.RequestMetadata{
 		WorkflowExecutionID: hex.EncodeToString(transmissionID.WorkflowExecutionID[:]),
 		ReferenceID:         "step1",
-	}
-	localHash := "0x" + strings.Repeat("c", 64)
-
-	mockForwarder := &mockForwarderClient{
-		validatedHashByInput: map[string]string{
-			localHash: localHash,
-		},
+		WorkflowDonID:       42,
 	}
 
-	a := &Aptos{
-		forwarderClient:  mockForwarder,
-		ConsensusHandler: &passthroughAggregatableConsensusHandler{},
-		lggr:             logger.Sugared(logger.Test(t)),
-	}
-
-	got, err := a.resolveDeterministicFailedHash(context.Background(), metadata, transmissionID, localHash, []byte("expected_raw_report"), 2)
-	require.NoError(t, err)
-	require.Equal(t, localHash, got)
-	require.Empty(t, mockForwarder.failedHashLookupTransmitters)
-}
-
-func TestResolveDeterministicFailedHash_ReturnsErrorWhenRoundBudgetExhausted(t *testing.T) {
-	transmissionID := newTestTransmissionID()
-	metadata := capabilities.RequestMetadata{
-		WorkflowExecutionID: hex.EncodeToString(transmissionID.WorkflowExecutionID[:]),
-		ReferenceID:         "step1",
-	}
 	hashA := "0x" + strings.Repeat("a", 64)
 	hashB := "0x" + strings.Repeat("b", 64)
 
 	mockForwarder := &mockForwarderClient{
+		failedHashByTransmitter: map[string]string{
+			orderedTransmitters[0]: hashA,
+			orderedTransmitters[1]: hashB,
+		},
 		validationErrByInput: map[string]error{
 			hashA: errors.New("invalid hash A"),
 			hashB: errors.New("invalid hash B"),
 		},
 	}
 
+	aptosService := typesmocks.NewAptosService(t)
+	aptosService.On("LedgerVersion", mock.Anything).Return(uint64(100), nil).Once()
+
 	a := &Aptos{
-		forwarderClient: mockForwarder,
-		ConsensusHandler: &scriptedAggregatableConsensusHandler{selectedByRequestID: map[string]*pb.Decimal{
-			commonRequestID(metadata, 0): mustAptosHashDecimal(t, hashA),
-			commonRequestID(metadata, 1): mustAptosHashDecimal(t, hashB),
-		}},
-		lggr: logger.Sugared(logger.Test(t)),
+		aptosService:       aptosService,
+		forwarderClient:    mockForwarder,
+		ConsensusHandler:   &passthroughAggregatableConsensusHandler{},
+		capabilityRegistry: &mockCapabilitiesRegistry{config: capabilityConfigWithTransmitters(t, transmitters)},
+		capabilityID:       "aptos-capability-id",
+		lggr:               logger.Sugared(logger.Test(t)),
 	}
 
-	_, err := a.resolveDeterministicFailedHash(context.Background(), metadata, transmissionID, "", []byte("expected_raw_report"), 2)
+	_, err := a.resolveDeterministicFailedHash(context.Background(), metadata, transmissionID, "", []byte("expected_raw_report"))
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "failed to resolve deterministic failed hash after 2 consensus rounds")
+	require.Contains(t, err.Error(), "no validated failed tx hash found from registry transmitters")
 }
 
 type mockForwarderClient struct {
@@ -326,38 +373,33 @@ func (h *passthroughAggregatableConsensusHandler) Handle(ctx context.Context, re
 	return ch, nil
 }
 
-type scriptedAggregatableConsensusHandler struct {
-	selectedByRequestID map[string]*pb.Decimal
+type mockCapabilitiesRegistry struct {
+	core.UnimplementedCapabilitiesRegistry
+	config       capabilities.CapabilityConfiguration
+	err          error
+	capabilityID string
+	donID        uint32
 }
 
-func (h *scriptedAggregatableConsensusHandler) Handle(_ context.Context, request ctypes.Request) (<-chan ctypes.Reply, error) {
-	ch := make(chan ctypes.Reply, 1)
-	aggregatableReq, ok := request.(*ctypes.AggregatableRequest)
-	if !ok {
-		ch <- ctypes.Reply{Err: fmt.Errorf("unexpected request type %T", request)}
-		return ch, nil
+func (m *mockCapabilitiesRegistry) ConfigForCapability(_ context.Context, capabilityID string, donID uint32) (capabilities.CapabilityConfiguration, error) {
+	m.capabilityID = capabilityID
+	m.donID = donID
+	if m.err != nil {
+		return capabilities.CapabilityConfiguration{}, m.err
 	}
-
-	if h.selectedByRequestID == nil {
-		ch <- ctypes.Reply{Err: fmt.Errorf("no scripted consensus responses")}
-		return ch, nil
-	}
-	value, ok := h.selectedByRequestID[aggregatableReq.ID()]
-	if !ok {
-		ch <- ctypes.Reply{Err: fmt.Errorf("missing scripted consensus response for request %s", aggregatableReq.ID())}
-		return ch, nil
-	}
-	ch <- ctypes.Reply{Value: value}
-	return ch, nil
+	return m.config, nil
 }
 
-func commonRequestID(metadata capabilities.RequestMetadata, round int) string {
-	return fmt.Sprintf("%s:%s:aptos-failed-hash:round:%d", metadata.WorkflowExecutionID, metadata.ReferenceID, round)
-}
-
-func mustAptosHashDecimal(t *testing.T, hash string) *pb.Decimal {
+func capabilityConfigWithTransmitters(t *testing.T, transmitters []string) capabilities.CapabilityConfiguration {
 	t.Helper()
-	value, err := aptosHashToDecimal(hash)
+
+	transmittersValue, err := values.Wrap(transmitters)
 	require.NoError(t, err)
-	return value
+
+	specConfig := values.EmptyMap()
+	specConfig.Underlying[aptosSpecConfigTransmittersListKey] = transmittersValue
+
+	return capabilities.CapabilityConfiguration{
+		SpecConfig: specConfig,
+	}
 }
