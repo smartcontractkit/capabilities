@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"sort"
 	"strings"
@@ -33,6 +34,7 @@ const userError = "user error:"
 const (
 	aptosPollingRetryMaxBackoff        = 3 * time.Second
 	aptosSpecConfigTransmittersListKey = "aptosTransmitters"
+	aptosFailedHashCutoffLag           = uint64(2)
 )
 
 type aptosWriteRetryConfig struct {
@@ -289,11 +291,20 @@ func (s *Aptos) resolveLocalFailedHashCandidate(
 ) (string, error) {
 	orderedTransmitters, txErr := s.registryOrderedTransmittersForTransmission(ctx, metadata, transmissionID)
 	if txErr == nil && len(orderedTransmitters) > 0 {
-		candidateHash, err := s.resolveFirstValidatedFailedHashFromTransmitters(ctx, transmissionID, orderedTransmitters, expectedForwarderRawReport)
-		if err == nil {
-			return candidateHash, nil
+		cutoffLedgerVersion, cutoffErr := s.consensusSelectFailedHashLedgerCutoff(ctx, metadata)
+		if cutoffErr != nil {
+			s.lggr.Debugw("Failed to compute failed-hash ledger cutoff; falling back to local failed hash", "error", cutoffErr)
+		} else {
+			candidateHash, err := s.resolveFirstValidatedFailedHashFromTransmitters(ctx, transmissionID, orderedTransmitters, expectedForwarderRawReport, cutoffLedgerVersion)
+			if err == nil {
+				return candidateHash, nil
+			}
+			s.lggr.Debugw(
+				"Registry-backed failed hash resolution unavailable; falling back to local failed hash",
+				"cutoffLedgerVersion", *cutoffLedgerVersion,
+				"error", err,
+			)
 		}
-		s.lggr.Debugw("Registry-backed failed hash resolution unavailable; falling back to local failed hash", "error", err)
 	} else if txErr != nil {
 		s.lggr.Debugw("Failed to load registry transmitters for failed hash resolution; falling back to local failed hash", "error", txErr)
 	}
@@ -318,9 +329,10 @@ func (s *Aptos) resolveFirstValidatedFailedHashFromTransmitters(
 	transmissionID TransmissionID,
 	transmitters []string,
 	expectedForwarderRawReport []byte,
+	cutoffLedgerVersion *uint64,
 ) (string, error) {
 	for _, transmitter := range transmitters {
-		candidateHash, err := s.forwarderClient.GetTransmissionFailedTxHash(ctx, transmissionID, []string{transmitter})
+		candidateHash, err := s.forwarderClient.GetTransmissionFailedTxHash(ctx, transmissionID, []string{transmitter}, cutoffLedgerVersion)
 		if err != nil {
 			s.lggr.Debugw("Failed hash lookup for transmitter failed", "transmitter", transmitter, "error", err)
 			continue
@@ -526,6 +538,72 @@ func decimalToAptosHash(value *pb.Decimal) (string, error) {
 	}
 
 	return "0x" + strings.ToLower(hexHash), nil
+}
+
+func (s *Aptos) consensusSelectFailedHashLedgerCutoff(
+	ctx context.Context,
+	metadata capabilities.RequestMetadata,
+) (*uint64, error) {
+	if s.aptosService == nil {
+		return nil, fmt.Errorf("aptos service unavailable")
+	}
+
+	requestID := commonMon.RequestID(metadata.WorkflowExecutionID, metadata.ReferenceID) + ":aptos-failed-hash-cutoff"
+	request := ctypes.NewAggregatableRequest(requestID, func(ctx context.Context) (*ctypes.AggregatableObservation, error) {
+		latestLedgerVersion, err := s.aptosService.LedgerVersion(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read latest ledger version: %w", err)
+		}
+		return &ctypes.AggregatableObservation{
+			Method: ctypes.AggregationMethodFPlusOneHighest,
+			Value:  uint64ToInvertedDecimal(latestLedgerVersion),
+		}, nil
+	})
+
+	decimalValue, err := readType[*pb.Decimal](ctx, s.ConsensusHandler, request)
+	if err != nil {
+		return nil, err
+	}
+
+	agreedLedgerVersion, err := invertedDecimalToUint64(decimalValue)
+	if err != nil {
+		return nil, err
+	}
+
+	cutoffLedgerVersion := uint64(0)
+	if agreedLedgerVersion > aptosFailedHashCutoffLag {
+		cutoffLedgerVersion = agreedLedgerVersion - aptosFailedHashCutoffLag
+	}
+
+	return &cutoffLedgerVersion, nil
+}
+
+func uint64ToInvertedDecimal(value uint64) *pb.Decimal {
+	inverted := new(big.Int).SetUint64(math.MaxUint64 - value)
+	return &pb.Decimal{
+		Coefficient: pb.NewBigIntFromInt(inverted),
+		Exponent:    0,
+	}
+}
+
+func invertedDecimalToUint64(value *pb.Decimal) (uint64, error) {
+	if value == nil || value.Coefficient == nil {
+		return 0, fmt.Errorf("nil decimal coefficient")
+	}
+	if value.Exponent != 0 {
+		return 0, fmt.Errorf("unexpected decimal exponent %d for ledger version", value.Exponent)
+	}
+
+	intValue := pb.NewIntFromBigInt(value.Coefficient)
+	if intValue.Sign() < 0 {
+		return 0, fmt.Errorf("negative ledger version value")
+	}
+	if intValue.BitLen() > 64 {
+		return 0, fmt.Errorf("ledger version exceeds uint64")
+	}
+
+	inverted := intValue.Uint64()
+	return math.MaxUint64 - inverted, nil
 }
 
 func expectedForwarderRawReportBytes(report *sdk.ReportResponse) ([]byte, error) {

@@ -905,7 +905,7 @@ func TestGetTransmissionFailedTxHash_SelectsEarliestMatchingFailedAcrossTransmit
 		forwarderAddress: forwarderAddress,
 	}
 
-	hash, err := client.GetTransmissionFailedTxHash(context.Background(), transmissionID, []string{transmitter1, transmitter2})
+	hash, err := client.GetTransmissionFailedTxHash(context.Background(), transmissionID, []string{transmitter1, transmitter2}, nil)
 	require.NoError(t, err)
 	require.Equal(t, "0xearliest-invalid", hash)
 
@@ -915,6 +915,68 @@ func TestGetTransmissionFailedTxHash_SelectsEarliestMatchingFailedAcrossTransmit
 	require.NotNil(t, mockService.accountTransactionsCalls[1].Start)
 	require.NotNil(t, mockService.accountTransactionsCalls[2].Limit)
 	require.NotNil(t, mockService.accountTransactionsCalls[3].Start)
+}
+
+func TestGetTransmissionFailedTxHash_RespectsLedgerCutoff(t *testing.T) {
+	transmissionID := newTestTransmissionID()
+	forwarderAddress := newTestAddress(0x45)
+	entryFunction := forwarderEntryFunction(forwarderAddress)
+	transmitter := "0x" + strings.Repeat("3", 64)
+
+	matchingRawReport := mustEncodedReportWithMetadata(t, transmissionID)
+
+	mockService := &fakeAptosService{
+		accountTransactionsReplies: []*aptostypes.AccountTransactionsReply{
+			{
+				Transactions: []*aptostypes.Transaction{
+					mustFailedUserTransactionWithPayload(
+						t,
+						"0xlatest-candidate",
+						2,
+						200,
+						100,
+						entryFunction,
+						transmissionID.Receiver.StringLong(),
+						matchingRawReport,
+					),
+				},
+			},
+			{
+				Transactions: []*aptostypes.Transaction{
+					mustFailedUserTransactionWithPayload(
+						t,
+						"0xlatest-candidate",
+						2,
+						200,
+						100,
+						entryFunction,
+						transmissionID.Receiver.StringLong(),
+						matchingRawReport,
+					),
+					mustFailedUserTransactionWithPayload(
+						t,
+						"0xcutoff-candidate",
+						1,
+						150,
+						200,
+						entryFunction,
+						transmissionID.Receiver.StringLong(),
+						matchingRawReport,
+					),
+				},
+			},
+		},
+	}
+
+	client := &forwarderClient{
+		AptosService:     mockService,
+		forwarderAddress: forwarderAddress,
+	}
+
+	cutoff := uint64(160)
+	hash, err := client.GetTransmissionFailedTxHash(context.Background(), transmissionID, []string{transmitter}, &cutoff)
+	require.NoError(t, err)
+	require.Equal(t, "0xcutoff-candidate", hash)
 }
 
 func TestValidateFailedTxHash_AcceptsMatchingFailedReceipt(t *testing.T) {

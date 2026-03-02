@@ -33,7 +33,7 @@ type CREForwarderClient interface {
 	// ValidateFailedTxHash validates a candidate failed tx hash onchain and ensures it matches this transmission.
 	ValidateFailedTxHash(ctx context.Context, transmissionID TransmissionID, txHash string, expectedForwarderRawReport []byte) (string, error)
 	// GetTransmissionFailedTxHash resolves a deterministic failed tx hash for an invalid transmission attempt.
-	GetTransmissionFailedTxHash(ctx context.Context, transmissionID TransmissionID, transmitters []string) (string, error)
+	GetTransmissionFailedTxHash(ctx context.Context, transmissionID TransmissionID, transmitters []string, maxLedgerVersion *uint64) (string, error)
 }
 
 type forwarderClient struct {
@@ -601,7 +601,7 @@ func (fc *forwarderClient) validateTxHashByStatus(
 	return normalizedReturnedHash, nil
 }
 
-func (fc *forwarderClient) GetTransmissionFailedTxHash(ctx context.Context, transmissionID TransmissionID, transmitters []string) (string, error) {
+func (fc *forwarderClient) GetTransmissionFailedTxHash(ctx context.Context, transmissionID TransmissionID, transmitters []string, maxLedgerVersion *uint64) (string, error) {
 	txReader, ok := fc.AptosService.(accountTransactionsReader)
 	if !ok {
 		return "", fmt.Errorf("aptos client does not expose AccountTransactions")
@@ -614,7 +614,7 @@ func (fc *forwarderClient) GetTransmissionFailedTxHash(ctx context.Context, tran
 
 	var best *failedTxCandidate
 	for i, transmitter := range orderedTransmitters {
-		candidate, err := fc.findEarliestMatchingFailedTxForTransmitter(ctx, txReader, transmissionID, transmitter, i)
+		candidate, err := fc.findEarliestMatchingFailedTxForTransmitter(ctx, txReader, transmissionID, transmitter, i, maxLedgerVersion)
 		if err != nil {
 			fc.lggr.Debugw("Failed to resolve failed tx hash for transmitter", "transmitter", transmitter, "error", err)
 			continue
@@ -724,6 +724,7 @@ func (fc *forwarderClient) findEarliestMatchingFailedTxForTransmitter(
 	transmissionID TransmissionID,
 	transmitter string,
 	transmitterIndex int,
+	maxLedgerVersion *uint64,
 ) (*failedTxCandidate, error) {
 	var transmitterAddr aptos_sdk.AccountAddress
 	if err := transmitterAddr.ParseStringRelaxed(transmitter); err != nil {
@@ -779,6 +780,9 @@ func (fc *forwarderClient) findEarliestMatchingFailedTxForTransmitter(
 			if err != nil {
 				continue
 			}
+			if maxLedgerVersion != nil && decoded.Version > *maxLedgerVersion {
+				continue
+			}
 			if !matchesForwarderReportCallAndPayload(decoded, fc.forwarderAddress, transmissionID, nil) {
 				continue
 			}
@@ -826,7 +830,7 @@ func (fc *forwarderClient) findEarliestMatchingFailedTxForTransmitter(
 
 	// New transactions can be appended while paging through 45-sized batches.
 	// If we haven't matched yet, run one top-up pass over the newly-added range.
-	if best == nil {
+	if best == nil && maxLedgerVersion == nil {
 		latestTxs, err = txReader.AccountTransactions(ctx, aptostypes.AccountTransactionsRequest{
 			Address: transmitterAddress,
 			Limit:   &latestLimit,

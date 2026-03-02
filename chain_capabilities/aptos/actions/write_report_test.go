@@ -174,6 +174,7 @@ func TestResolveDeterministicFailedHash_UsesRegistryOrderedTransmitters(t *testi
 	a := &Aptos{
 		forwarderClient:    mockForwarder,
 		ConsensusHandler:   &passthroughAggregatableConsensusHandler{},
+		aptosService:       &fakeAptosService{},
 		capabilityRegistry: mockRegistry,
 		capabilityID:       "aptos:ChainSelector:4@1.0.0",
 		lggr:               logger.Sugared(logger.Test(t)),
@@ -186,6 +187,7 @@ func TestResolveDeterministicFailedHash_UsesRegistryOrderedTransmitters(t *testi
 	expectedOrder := canonicalTransmitterOrderForTransmission([]string{transmitterA, transmitterB}, transmissionID)
 	require.NotEmpty(t, mockForwarder.failedHashLookupTransmitters)
 	require.Equal(t, expectedOrder[0], mockForwarder.failedHashLookupTransmitters[0])
+	require.NotEmpty(t, mockForwarder.failedHashLookupMaxLedgerVersions)
 	require.Contains(t, mockForwarder.validatedFailedHashes, hashB)
 }
 
@@ -216,16 +218,17 @@ func TestResolveDeterministicFailedHash_FallsBackToLocalHashWhenRegistryUnavaila
 }
 
 type mockForwarderClient struct {
-	pendingSender                [32]byte
-	pendingHash                  string
-	failedHash                   string
-	failedHashErr                error
-	failedHashByTransmitter      map[string]string
-	failedHashErrByTransmitter   map[string]error
-	validatedHashByInput         map[string]string
-	validationErrByInput         map[string]error
-	failedHashLookupTransmitters []string
-	validatedFailedHashes        []string
+	pendingSender                     [32]byte
+	pendingHash                       string
+	failedHash                        string
+	failedHashErr                     error
+	failedHashByTransmitter           map[string]string
+	failedHashErrByTransmitter        map[string]error
+	validatedHashByInput              map[string]string
+	validationErrByInput              map[string]error
+	failedHashLookupTransmitters      []string
+	failedHashLookupMaxLedgerVersions []uint64
+	validatedFailedHashes             []string
 }
 
 func (m *mockForwarderClient) InvokeOnReport(_ context.Context, _ []byte, _ *sdk.ReportResponse, _ *aptoscap.GasConfig) (*aptostypes.SubmitTransactionReply, error) {
@@ -263,12 +266,15 @@ func (m *mockForwarderClient) ValidateFailedTxHash(_ context.Context, _ Transmis
 	return m.failedHash, nil
 }
 
-func (m *mockForwarderClient) GetTransmissionFailedTxHash(_ context.Context, _ TransmissionID, transmitters []string) (string, error) {
+func (m *mockForwarderClient) GetTransmissionFailedTxHash(_ context.Context, _ TransmissionID, transmitters []string, maxLedgerVersion *uint64) (string, error) {
 	if len(m.failedHashByTransmitter) == 0 && len(m.failedHashErrByTransmitter) == 0 {
 		return "", errors.New("unexpected call to GetTransmissionFailedTxHash in this test")
 	}
 	if len(transmitters) != 1 {
 		return "", fmt.Errorf("expected exactly one transmitter, got %d", len(transmitters))
+	}
+	if maxLedgerVersion != nil {
+		m.failedHashLookupMaxLedgerVersions = append(m.failedHashLookupMaxLedgerVersions, *maxLedgerVersion)
 	}
 	transmitter := normalizeAptosHexAddress(transmitters[0])
 	m.failedHashLookupTransmitters = append(m.failedHashLookupTransmitters, transmitter)
