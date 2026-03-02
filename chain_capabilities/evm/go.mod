@@ -5,6 +5,7 @@ go 1.25.3
 require (
 	github.com/ethereum/go-ethereum v1.17.0
 	github.com/google/go-cmp v0.7.0
+	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260210010829-97eb42ca2924
 	github.com/smartcontractkit/chain-selectors v1.0.89
 	github.com/smartcontractkit/chainlink-common v0.10.1-0.20260225184310-053d0fd4e19a
@@ -196,7 +197,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.39.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.9.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/crypto v0.47.0 // indirect
+	golang.org/x/crypto v0.47.0
 	golang.org/x/exp v0.0.0-20260112195511-716be5621a96 // indirect
 	golang.org/x/net v0.49.0 // indirect
 	golang.org/x/sys v0.40.0 // indirect
@@ -206,5 +207,7 @@ require (
 	google.golang.org/grpc v1.78.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/smartcontractkit/capabilities/chain_capabilities/common => ../common
 
 replace github.com/fbsobreira/gotron-sdk => github.com/smartcontractkit/chainlink-tron/relayer/gotron-sdk v0.0.5-0.20250528121202-292529af39df

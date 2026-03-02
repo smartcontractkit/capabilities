@@ -25,6 +25,9 @@ type Metrics struct {
 	WriteReportSuccess struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
+	WriteReportSuccessfulEarlyReturn struct {
+		basic commoncapbeholder.MetricsCapBasic
+	}
 	WriteReportError struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
@@ -85,6 +88,9 @@ type Metrics struct {
 	HeaderByNumberError struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
+	TransmissionSchedulerNodeNotFoundInDon struct {
+		basic commoncapbeholder.MetricsCapBasic
+	}
 }
 
 // NewMetrics constructs all counters & histograms bound to a given chainID
@@ -108,6 +114,11 @@ func NewMetrics() (Metrics, error) {
 	m.WriteReportSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(wrSuccess)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create write report success metric: %w", err)
+	}
+	wrSuccessfulEarlyReturn := commoncapbeholder.NewMetricsInfoCapBasic(ns("write_report_successful_early_return"), commonbeholder.ToSchemaFullName(&WriteReportSuccessfulEarlyReturn{}))
+	m.WriteReportSuccessfulEarlyReturn.basic, err = commoncapbeholder.NewMetricsCapBasic(wrSuccessfulEarlyReturn)
+	if err != nil {
+		return Metrics{}, fmt.Errorf("failed to create write report successful early return metric: %w", err)
 	}
 	wrErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("write_report_error"), commonbeholder.ToSchemaFullName(&WriteReportError{}))
 	m.WriteReportError.basic, err = commoncapbeholder.NewMetricsCapBasic(wrErr)
@@ -224,6 +235,13 @@ func NewMetrics() (Metrics, error) {
 		return Metrics{}, fmt.Errorf("failed to create header by number error metric: %w", err)
 	}
 
+	// -- TransmissionScheduler --
+	tsNodeNotFound := commoncapbeholder.NewMetricsInfoCapBasic(ns("transmission_scheduler_node_not_found_in_don"), commonbeholder.ToSchemaFullName(&TransmissionSchedulerNodeNotFoundInDon{}))
+	m.TransmissionSchedulerNodeNotFoundInDon.basic, err = commoncapbeholder.NewMetricsCapBasic(tsNodeNotFound)
+	if err != nil {
+		return Metrics{}, fmt.Errorf("failed to create transmission scheduler node not found in don metric: %w", err)
+	}
+
 	return m, nil
 }
 
@@ -246,6 +264,12 @@ func (m *Metrics) OnCallContractError(ctx context.Context, msg *CallContractErro
 func (m *Metrics) OnWriteReportSuccess(ctx context.Context, msg *WriteReportSuccess) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
 	m.WriteReportSuccess.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
+	return nil
+}
+
+func (m *Metrics) OnWriteReportSuccessfulEarlyReturn(ctx context.Context, msg *WriteReportSuccessfulEarlyReturn) error {
+	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
+	m.WriteReportSuccessfulEarlyReturn.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
 	return nil
 }
 
@@ -383,6 +407,14 @@ func (m *Metrics) OnHeaderByNumberError(ctx context.Context, msg *HeaderByNumber
 	return nil
 }
 
+// -- TransmissionScheduler --
+
+func (m *Metrics) OnTransmissionSchedulerNodeNotFoundInDon(ctx context.Context, msg *TransmissionSchedulerNodeNotFoundInDon) error {
+	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
+	m.TransmissionSchedulerNodeNotFoundInDon.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
+	return nil
+}
+
 func (r *CallContractSuccess) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.Int64("block_number", r.Req.GetBlockNumber()),
@@ -414,6 +446,14 @@ func (r *WriteReportSuccess) LogAttributes() []attribute.KeyValue {
 }
 
 func (r *WriteReportSuccess) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *WriteReportSuccessfulEarlyReturn) LogAttributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{}, r.ExecutionContext.LogAttributes()...)
+}
+
+func (r *WriteReportSuccessfulEarlyReturn) MetricAttributes() []attribute.KeyValue {
 	return r.ExecutionContext.MetricsAttributes()
 }
 
@@ -665,6 +705,19 @@ func (r *HeaderByNumberError) LogAttributes() []attribute.KeyValue {
 }
 
 func (r *HeaderByNumberError) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *TransmissionSchedulerNodeNotFoundInDon) LogAttributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
+		attribute.String("peer_id", r.GetPeerId()),
+		attribute.String("transmission_id", r.GetTransmissionId()),
+		attribute.String("summary", r.GetSummary()),
+		attribute.String("cause", r.GetCause()),
+	}, r.ExecutionContext.LogAttributes()...)
+}
+
+func (r *TransmissionSchedulerNodeNotFoundInDon) MetricAttributes() []attribute.KeyValue {
 	return r.ExecutionContext.MetricsAttributes()
 }
 

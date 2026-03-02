@@ -161,6 +161,12 @@ func (m *MessageBuilder) BuildWriteReportDuplicateTx(tc TelemetryContext, req *e
 	}
 }
 
+func (m *MessageBuilder) BuildWriteReportSuccessfulEarlyReturn(tc TelemetryContext) Message {
+	return &WriteReportSuccessfulEarlyReturn{
+		ExecutionContext: m.BuildExecutionContext(tc),
+	}
+}
+
 func (m *MessageBuilder) BuildLogTriggerInitiated(tc TelemetryContext, req *evmcap.FilterLogTriggerRequest) *LogTriggerInitiated {
 	return &LogTriggerInitiated{Req: logTriggerRequestToMonitoring(req), ExecutionContext: m.BuildExecutionContext(tc)}
 }
@@ -337,6 +343,16 @@ func (m *MessageBuilder) BuildHeaderByNumberError(tc TelemetryContext, blockNumb
 		Summary:          summary,
 		Cause:            cause,
 		IsUserError:      isUserError,
+		ExecutionContext: m.BuildExecutionContext(tc),
+	}
+}
+
+func (m *MessageBuilder) BuildTransmissionSchedulerNodeNotFoundInDon(tc TelemetryContext, peerID, transmissionID string) ErrorMessage {
+	return &TransmissionSchedulerNodeNotFoundInDon{
+		PeerId:           peerID,
+		TransmissionId:   transmissionID,
+		Summary:          "Transmission scheduler: node not found in DON members",
+		Cause:            fmt.Sprintf("Peer ID %s not found in DON members list, transmitting immediately as fallback", peerID),
 		ExecutionContext: m.BuildExecutionContext(tc),
 	}
 }

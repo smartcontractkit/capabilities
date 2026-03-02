@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/config"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
@@ -16,6 +14,9 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/settings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/config"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
 )
 
 type Solana struct {

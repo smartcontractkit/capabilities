@@ -9,8 +9,6 @@ import (
 	"testing"
 
 	"github.com/gagliardetto/solana-go"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/metering"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	solcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
@@ -22,6 +20,9 @@ import (
 	"github.com/test-go/testify/mock"
 	"github.com/test-go/testify/require"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/metering"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
 )
 
 type testHelper struct {
