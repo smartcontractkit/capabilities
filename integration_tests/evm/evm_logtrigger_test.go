@@ -27,7 +27,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/framework"
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/handlers/capabilities"
@@ -564,7 +563,13 @@ func setupDon(ctx context.Context, t *testing.T, lggr logger.Logger, workflowURL
 	workflowDon.AddOCR3NonStandardCapability()
 	workflowDon.Initialise()
 
-	servicetest.Run(t, workflowDon)
+	require.NoError(t, workflowDon.Start(t.Context()))
+	t.Cleanup(func() {
+		if err := workflowDon.Close(); err != nil &&
+			!strings.Contains(err.Error(), "stopped") {
+			require.NoError(t, err)
+		}
+	})
 
 	donContext.WaitForCapabilitiesToBeExposed(t, workflowDon)
 
