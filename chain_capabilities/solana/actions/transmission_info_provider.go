@@ -169,7 +169,7 @@ func (lr *logReader) registerCREForwarderFilters(ctx context.Context) error {
 }
 
 func getEventIDL(eventName string, codecIDL codec.IDL) ([]byte, error) {
-	eventIdl, err := extractEventIDL(eventName, codecIDL)
+	eventIdl, err := codec.ExtractEventIDL(eventName, codecIDL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract event IDL %s: %w", eventName, err)
 	}
@@ -182,18 +182,6 @@ func getEventIDL(eventName string, codecIDL codec.IDL) ([]byte, error) {
 	}
 
 	return ret, nil
-}
-
-func extractEventIDL(eventName string, codecIDL codec.IDL) (codec.IdlEvent, error) {
-	idlDef, err := codec.FindDefinitionFromIDL(codec.ChainConfigTypeEventDef, eventName, codecIDL)
-	if err != nil {
-		return codec.IdlEvent{}, err
-	}
-	eventIdl, isOk := idlDef.(codec.IdlEvent)
-	if !isOk {
-		return codec.IdlEvent{}, fmt.Errorf("unexpected type from IDL definition for event read: %q", eventName)
-	}
-	return eventIdl, nil
 }
 
 func (lr *logReader) queryProcessed(ctx context.Context, transmissionID [32]byte) ([]*soltypes.Log, error) {
