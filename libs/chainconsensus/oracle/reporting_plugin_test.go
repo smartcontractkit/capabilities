@@ -863,6 +863,7 @@ func TestAgreeOnObservationType(t *testing.T) {
 func TestAggregateValue(t *testing.T) {
 	testCases := []struct {
 		name          string
+		requestID     string
 		observations  []*types.AggregatableObservation
 		expectedError string
 		expectedValue *valuespb.Decimal
@@ -940,11 +941,60 @@ func TestAggregateValue(t *testing.T) {
 			},
 			expectedValue: newDecimal(2, 2),
 		},
+		{
+			name:      "observer round-robin picks by observer order round 0",
+			requestID: "id:round:0",
+			observations: []*types.AggregatableObservation{
+				{
+					Method: types.AggregationMethodObserverRoundRobin,
+					Value:  newDecimal(10, 0),
+				},
+				{
+					Method: types.AggregationMethodObserverRoundRobin,
+					Value:  newDecimal(20, 0),
+				},
+				{
+					Method: types.AggregationMethodObserverRoundRobin,
+					Value:  newDecimal(30, 0),
+				},
+				{
+					Method: types.AggregationMethodObserverRoundRobin,
+					Value:  newDecimal(40, 0),
+				},
+			},
+			expectedValue: newDecimal(10, 0),
+		},
+		{
+			name:      "observer round-robin picks by observer order round 2",
+			requestID: "id:round:2",
+			observations: []*types.AggregatableObservation{
+				{
+					Method: types.AggregationMethodObserverRoundRobin,
+					Value:  newDecimal(10, 0),
+				},
+				{
+					Method: types.AggregationMethodObserverRoundRobin,
+					Value:  newDecimal(20, 0),
+				},
+				{
+					Method: types.AggregationMethodObserverRoundRobin,
+					Value:  newDecimal(30, 0),
+				},
+				{
+					Method: types.AggregationMethodObserverRoundRobin,
+					Value:  newDecimal(40, 0),
+				},
+			},
+			expectedValue: newDecimal(30, 0),
+		},
 	}
 
 	for _, tc := range testCases {
-		const id = "id"
 		t.Run(tc.name, func(t *testing.T) {
+			id := tc.requestID
+			if id == "" {
+				id = "id"
+			}
 			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1, N: 4}}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t))
 			var nodesObservations []attributedObservation
 			for i := range tc.observations {

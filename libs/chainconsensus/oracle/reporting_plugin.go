@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sort"
+	"strconv"
+	"strings"
 
 	"google.golang.org/protobuf/types/known/structpb"
 
@@ -446,6 +448,10 @@ func (rp *reportingPlugin) aggregateValue(requestID string, aos []attributedObse
 		return nil, fmt.Errorf("could not determine aggregation method: %w", err)
 	}
 
+	if aggrMethod == ctypes.AggregationMethodObserverRoundRobin {
+		return rp.aggregateValueObserverRoundRobin(requestID, aos)
+	}
+
 	values := make([]decimal.Decimal, 0, len(aos))
 	for _, ob := range aos {
 		requestOb, ok := ob.Observation.Observations[requestID]
@@ -480,6 +486,65 @@ func (rp *reportingPlugin) aggregateValue(requestID string, aos []attributedObse
 	default:
 		return nil, fmt.Errorf("unsupported aggregation method: %s", aggrMethod)
 	}
+}
+
+func (rp *reportingPlugin) aggregateValueObserverRoundRobin(requestID string, aos []attributedObservation) (*pb.Decimal, error) {
+	valuesByObserver := make(map[commontypes.OracleID]*pb.Decimal, len(aos))
+	observers := make([]commontypes.OracleID, 0, len(aos))
+
+	for _, ob := range aos {
+		requestOb, ok := ob.Observation.Observations[requestID]
+		if !ok || requestOb == nil {
+			continue
+		}
+		aggrOb := requestOb.GetAggregatable()
+		if aggrOb == nil || aggrOb.Value == nil || aggrOb.Value.Coefficient == nil {
+			continue
+		}
+
+		if _, exists := valuesByObserver[ob.Observer]; !exists {
+			observers = append(observers, ob.Observer)
+		}
+		valuesByObserver[ob.Observer] = aggrOb.Value
+	}
+
+	byzQuorum := byzQuorumSize(rp.config.N, rp.config.F)
+	if len(valuesByObserver) < byzQuorum {
+		return nil, fmt.Errorf("not enough observations to aggregate value. Got %d, expected at least %d", len(valuesByObserver), byzQuorum)
+	}
+
+	sort.Slice(observers, func(i, j int) bool {
+		return observers[i] < observers[j]
+	})
+
+	round := observerRoundFromRequestID(requestID)
+	selectedObserver := observers[round%len(observers)]
+	selectedValue := valuesByObserver[selectedObserver]
+	if selectedValue == nil || selectedValue.Coefficient == nil {
+		return nil, fmt.Errorf("selected observer %d has no aggregatable value", selectedObserver)
+	}
+
+	return selectedValue, nil
+}
+
+func observerRoundFromRequestID(requestID string) int {
+	const marker = ":round:"
+	idx := strings.LastIndex(requestID, marker)
+	if idx < 0 {
+		return 0
+	}
+
+	roundValue := strings.TrimSpace(requestID[idx+len(marker):])
+	if roundValue == "" {
+		return 0
+	}
+
+	round, err := strconv.Atoi(roundValue)
+	if err != nil || round < 0 {
+		return 0
+	}
+
+	return round
 }
 
 func (rp *reportingPlugin) agreeOnAggregationMethod(requestID string, aos []attributedObservation) (string, error) {

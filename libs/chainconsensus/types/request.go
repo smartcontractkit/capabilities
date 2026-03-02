@@ -44,6 +44,9 @@ func (r *EventuallyConsistentRequest) Copy() Request {
 
 const (
 	AggregationMethodFPlusOneHighest = "f+1-highest"
+	// AggregationMethodObserverRoundRobin selects observation values by deterministic OCR observer order.
+	// Round index is encoded in request ID by the caller.
+	AggregationMethodObserverRoundRobin = "observer-round-robin"
 )
 
 var _ ObservableRequest = (*AggregatableRequest)(nil)
