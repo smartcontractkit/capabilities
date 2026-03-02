@@ -117,6 +117,7 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 	lts.Service, lts.srvcEng = services.Config{
 		Name:  "EvmLogTriggerService",
 		Start: lts.start,
+		Close: lts.close,
 	}.NewServiceEngine(lggr)
 
 	retryInterval := 2 * time.Second // TODO: parameterizable by chain: https://smartcontract-it.atlassian.net/browse/CRE-1774
@@ -155,6 +156,11 @@ func (lts *LogTriggerService) start(ctx context.Context) error {
 	ticker := services.NewTicker(duration)
 	lts.lggr.Debugf("Starting clean up of failed log poller filters every %s seconds", duration)
 	lts.srvcEng.GoTick(ticker, lts.cleanUpStaleFilters)
+	return nil
+}
+
+func (lts *LogTriggerService) close() error {
+	lts.baseTrigger.Stop()
 	return nil
 }
 
