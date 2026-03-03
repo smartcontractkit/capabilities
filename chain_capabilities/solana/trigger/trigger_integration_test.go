@@ -5,13 +5,13 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -19,6 +19,9 @@ import (
 	"github.com/gagliardetto/solana-go/rpc"
 	"github.com/stretchr/testify/require"
 
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/contracts"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	solanacappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -28,17 +31,10 @@ import (
 	"github.com/smartcontractkit/chainlink-solana/integration-tests/utils"
 	relayer "github.com/smartcontractkit/chainlink-solana/pkg/solana"
 	"github.com/smartcontractkit/chainlink-solana/pkg/solana/client"
-	"github.com/smartcontractkit/chainlink-solana/pkg/solana/codec"
-	solcommoncodec "github.com/smartcontractkit/chainlink-solana/pkg/solana/codec"
 	"github.com/smartcontractkit/chainlink-solana/pkg/solana/config"
 	"github.com/smartcontractkit/chainlink-solana/pkg/solana/logpoller"
-	lptypes "github.com/smartcontractkit/chainlink-solana/pkg/solana/logpoller/types"
 	solanamocks "github.com/smartcontractkit/chainlink-solana/pkg/solana/mocks"
 	solanatesting "github.com/smartcontractkit/chainlink-solana/pkg/solana/testing"
-
-	"github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/contracts"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
 )
 
 func TestSolanaLogTrigger(t *testing.T) {
@@ -84,10 +80,7 @@ func TestSolanaLogTrigger(t *testing.T) {
 
 	require.NoError(t, triggerSvc.Start(t.Context()))
 
-	idl, err := loadEventIDLFromFile("TestEvent")
-	require.NoError(t, err)
-
-	eventIdlJSON, err := json.Marshal(idl)
+	idl, err := loadContractIDLJson()
 	require.NoError(t, err)
 
 	address, err := solana.PublicKeyFromBase58(programID)
@@ -99,7 +92,7 @@ func TestSolanaLogTrigger(t *testing.T) {
 		Name:         "test_trigger",
 		Address:      address[:],
 		EventName:    "TestEvent",
-		EventIdlJson: eventIdlJSON,
+		EventIdlJson: []byte(idl),
 	}
 
 	meta := capabilities.RequestMetadata{
@@ -193,10 +186,7 @@ func TestSolanaLogTriggerWithSubkeyPaths(t *testing.T) {
 
 	require.NoError(t, triggerSvc.Start(t.Context()))
 
-	idl, err := loadEventIDLFromFile("TestEvent")
-	require.NoError(t, err)
-
-	eventIdlJSON, err := json.Marshal(idl)
+	idl, err := loadContractIDLJson()
 	require.NoError(t, err)
 
 	address, err := solana.PublicKeyFromBase58(programID)
@@ -220,7 +210,7 @@ func TestSolanaLogTriggerWithSubkeyPaths(t *testing.T) {
 		Name:         "test_trigger_subkey",
 		Address:      address[:],
 		EventName:    "TestEvent",
-		EventIdlJson: eventIdlJSON,
+		EventIdlJson: []byte(idl),
 		Subkeys: []*solanacappb.SubkeyConfig{
 			{Path: []string{"StrVal"}},
 			{
@@ -327,10 +317,7 @@ func TestSolanaLogTrigger_UnhappyPaths(t *testing.T) {
 		_ = lp.Close()
 	}()
 
-	idl, err := loadEventIDLFromFile("TestEvent")
-	require.NoError(t, err)
-
-	eventIdlJSON, err := json.Marshal(idl)
+	idl, err := loadContractIDLJson()
 	require.NoError(t, err)
 
 	address, err := solana.PublicKeyFromBase58(programID)
@@ -346,7 +333,7 @@ func TestSolanaLogTrigger_UnhappyPaths(t *testing.T) {
 			Name:         "test_trigger",
 			Address:      address[:],
 			EventName:    "TestEvent",
-			EventIdlJson: eventIdlJSON,
+			EventIdlJson: []byte(idl),
 		}
 
 		_, capErr := triggerSvc.RegisterLogTrigger(t.Context(), "", meta, filterRequest)
@@ -359,7 +346,7 @@ func TestSolanaLogTrigger_UnhappyPaths(t *testing.T) {
 			Name:         "test_trigger_dup",
 			Address:      address[:],
 			EventName:    "TestEvent",
-			EventIdlJson: eventIdlJSON,
+			EventIdlJson: []byte(idl),
 		}
 
 		// First registration should succeed
@@ -398,7 +385,7 @@ func TestSolanaLogTrigger_UnhappyPaths(t *testing.T) {
 			Name:         "test_trigger_invalid_addr",
 			Address:      []byte("too_short"), // Invalid address length
 			EventName:    "TestEvent",
-			EventIdlJson: eventIdlJSON,
+			EventIdlJson: []byte(idl),
 		}
 
 		// Registration may succeed but with zero-valued address
@@ -433,7 +420,7 @@ func TestSolanaLogTrigger_UnhappyPaths(t *testing.T) {
 			Name:         "test_trigger_invalid_sig",
 			Address:      address[:],
 			EventName:    "TestEvent",
-			EventIdlJson: eventIdlJSON,
+			EventIdlJson: []byte(idl),
 		}
 
 		logCh, capErr := triggerSvc.RegisterLogTrigger(t.Context(), "invalid_sig_test", meta, filterRequest)
@@ -450,7 +437,7 @@ func TestSolanaLogTrigger_UnhappyPaths(t *testing.T) {
 			Name:         "test_trigger_double_unreg",
 			Address:      address[:],
 			EventName:    "TestEvent",
-			EventIdlJson: eventIdlJSON,
+			EventIdlJson: []byte(idl),
 		}
 
 		// Register
@@ -520,12 +507,15 @@ func TestSolanaLogTrigger_NoEventsReceived(t *testing.T) {
 	address, err := solana.PublicKeyFromBase58(programID)
 	require.NoError(t, err)
 
+	idl, err := loadContractIDLJson()
+	require.NoError(t, err)
+
 	// Register for a non-existent event name
 	filterRequest := &solanacappb.FilterLogTriggerRequest{
 		Name:         "test_trigger_no_events",
 		Address:      address[:],
-		EventName:    "NonExistentEvent",
-		EventIdlJson: []byte("{}"),
+		EventName:    "TestEvent",
+		EventIdlJson: []byte(idl),
 	}
 
 	meta := capabilities.RequestMetadata{
@@ -594,10 +584,7 @@ func TestSolanaLogTrigger_FilterExcludesAllEvents(t *testing.T) {
 		_ = lp.Close()
 	}()
 
-	idl, err := loadEventIDLFromFile("TestEvent")
-	require.NoError(t, err)
-
-	eventIdlJSON, err := json.Marshal(idl)
+	idl, err := loadContractIDLJson()
 	require.NoError(t, err)
 
 	address, err := solana.PublicKeyFromBase58(programID)
@@ -620,7 +607,7 @@ func TestSolanaLogTrigger_FilterExcludesAllEvents(t *testing.T) {
 		Name:         "test_trigger_filter_all",
 		Address:      address[:],
 		EventName:    "TestEvent",
-		EventIdlJson: eventIdlJSON,
+		EventIdlJson: []byte(idl),
 		Subkeys: []*solanacappb.SubkeyConfig{
 			{
 				Path: []string{"U64Value"},
@@ -680,11 +667,18 @@ func setupValidatorAndTestContract(t *testing.T) (string, string) {
 func downloadLogReadTestProgram(t *testing.T) string {
 	t.Helper()
 
-	sha := os.Getenv("SOLANA_ARTIFACTS_SHA")
-	if sha == "" {
-		sha = "4a141daddd9c"
+	// Temporary: prefer local test binary if present (until solana-artifacts release is ready).
+	_, thisFile, _, _ := runtime.Caller(0)
+	localPath := filepath.Join(filepath.Dir(thisFile), "test", "log_read_test.so")
+	if _, err := os.Stat(localPath); err == nil {
+		t.Logf("Using local log_read_test.so at %s", localPath)
+		return localPath
 	}
 
+	sha := os.Getenv("SOLANA_ARTIFACTS_SHA")
+	if sha == "" {
+		sha = "81b124e1cab6"
+	}
 	cacheDir := filepath.Join(os.TempDir(), "chainlink-solana-artifacts-"+sha)
 	programPath := filepath.Join(cacheDir, "log_read_test.so")
 
@@ -800,13 +794,13 @@ func downloadProgramArtifacts(ctx context.Context, url string, targetDir string)
 
 func emitLogReadTestEvent(t *testing.T, client *client.Client, programID string, signer solana.PrivateKey, value uint64) (solana.Signature, error) {
 	programPubkey := solana.MustPublicKeyFromBase58(programID)
-	logreadtest.SetProgramID(programPubkey)
+	logreadtest.ProgramID = programPubkey
 
-	instruction := logreadtest.NewCreateLogInstruction(
+	instruction, err := logreadtest.NewCreateLogInstruction(
 		value,
 		signer.PublicKey(),
 		solana.SystemProgramID,
-	).Build()
+	)
 
 	// Get recent blockhash from the client
 	blockhash, err := client.LatestBlockhash(context.Background())
@@ -847,35 +841,13 @@ func emitLogReadTestEvent(t *testing.T, client *client.Client, programID string,
 	return sig, nil
 }
 
-// loadEventIDLFromFile loads the event IDL from the Anchor IDL JSON file
-func loadEventIDLFromFile(eventName string) (lptypes.EventIdl, error) {
+// loadContractIDLFromFile loads the contract IDL from the Anchor IDL JSON file
+func loadContractIDLJson() (string, error) {
 	idl, err := contracts.LoadLogReadTestIDL()
 	if err != nil {
-		return lptypes.EventIdl{}, fmt.Errorf("unexpected error: invalid LogReadTest IDL, error: %w", err)
+		return "", fmt.Errorf("unexpected error: invalid LogReadTest IDL, error: %w", err)
 	}
-	var codecIDL codec.IDL
-	if err := json.Unmarshal([]byte(idl), &codecIDL); err != nil {
-		return lptypes.EventIdl{}, fmt.Errorf("unexpected error: unable to unmarshal LogReadTest IDL, error: %w", err)
-	}
-	eventIdl, err := extractEventIDL(eventName, codecIDL)
-	if err != nil {
-		return lptypes.EventIdl{}, fmt.Errorf("unexpected error: unable to extract event from LogReadTest IDL, error: %w", err)
-	}
-	return lptypes.EventIdl{
-		Event: eventIdl,
-	}, nil
-}
-
-func extractEventIDL(eventName string, codecIDL codec.IDL) (codec.IdlEvent, error) {
-	idlDef, err := codec.FindDefinitionFromIDL(solcommoncodec.ChainConfigTypeEventDef, eventName, codecIDL)
-	if err != nil {
-		return codec.IdlEvent{}, err
-	}
-	eventIdl, isOk := idlDef.(codec.IdlEvent)
-	if !isOk {
-		return codec.IdlEvent{}, fmt.Errorf("unexpected type from IDL definition for event read: %q", eventName)
-	}
-	return eventIdl, nil
+	return idl, nil
 }
 
 func newMockChain(t *testing.T, lp *logpoller.Service, reader *client.Client) relayer.Chain {
