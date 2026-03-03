@@ -1,15 +1,12 @@
 package actions
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"math"
 	"math/big"
-	"sort"
 	"strings"
 	"time"
 
@@ -23,6 +20,7 @@ import (
 	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	aptostypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/aptos"
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/retry"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
@@ -36,6 +34,15 @@ const (
 	aptosSpecConfigTransmittersListKey = "aptosTransmitters"
 	aptosFailedHashCutoffLag           = uint64(2)
 	aptosFailedHashAggregationMethod   = "observer-round-robin"
+	aptosForwarderFailureMessage       = "forwarder contract execution failure"
+	aptosReceiverFailureMessage        = "receiver contract execution failure"
+)
+
+type aptosFailureOrigin string
+
+const (
+	aptosFailureOriginForwarder aptosFailureOrigin = "forwarder"
+	aptosFailureOriginReceiver  aptosFailureOrigin = "receiver"
 )
 
 type aptosWriteRetryConfig struct {
@@ -175,7 +182,7 @@ func (s *Aptos) executeWriteReport(
 			if canonicalErr != nil {
 				return nil, fmt.Errorf("failed to resolve deterministic failed hash after timeout: %w", canonicalErr)
 			}
-			errorMsg := fmt.Sprintf("write transmission did not succeed before timeout: %v", err)
+			errorMsg := fmt.Sprintf("write transmission did not succeed before timeout: %s", s.failedTransmissionMessage(ctx, canonicalFailedHash))
 			return newWriteFailedReply(canonicalFailedHash, errorMsg), nil
 		}
 		return nil, fmt.Errorf("failed waiting for successful transmission after submit: %w (failed hash resolution by receipt: %v)", err, failedHashErr)
@@ -186,7 +193,7 @@ func (s *Aptos) executeWriteReport(
 		if canonicalErr != nil {
 			return nil, fmt.Errorf("failed to resolve deterministic failed hash after onchain failure: %w", canonicalErr)
 		}
-		errorMsg := "write transmission failed onchain"
+		errorMsg := fmt.Sprintf("write transmission failed onchain: %s", s.failedTransmissionMessage(ctx, canonicalFailedHash))
 		return newWriteFailedReply(canonicalFailedHash, errorMsg), nil
 	}
 
@@ -242,6 +249,67 @@ func (s *Aptos) resolveCanonicalSuccessTxHash(
 	return canonicalHash, nil
 }
 
+func (s *Aptos) failedTransmissionMessage(ctx context.Context, txHash string) string {
+	if s.failedTransmissionOrigin(ctx, txHash) == aptosFailureOriginForwarder {
+		return aptosForwarderFailureMessage
+	}
+	return aptosReceiverFailureMessage
+}
+
+func (s *Aptos) failedTransmissionOrigin(ctx context.Context, txHash string) aptosFailureOrigin {
+	if s.aptosService == nil {
+		return aptosFailureOriginReceiver
+	}
+
+	normalizedHash, ok := normalizeAptosTxHashString(txHash)
+	if !ok {
+		return aptosFailureOriginReceiver
+	}
+
+	reply, err := s.aptosService.TransactionByHash(ctx, aptostypes.TransactionByHashRequest{Hash: normalizedHash})
+	if err != nil || reply == nil || reply.Transaction == nil {
+		s.lggr.Debugw("Failed to fetch failed transaction for origin classification", "hash", normalizedHash, "error", err)
+		return aptosFailureOriginReceiver
+	}
+
+	decoded, err := decodeAccountUserTransaction(reply.Transaction.Data)
+	if err != nil || decoded == nil {
+		s.lggr.Debugw("Failed to decode failed transaction for origin classification", "hash", normalizedHash, "error", err)
+		return aptosFailureOriginReceiver
+	}
+
+	if isForwarderAbortLocation(decoded.AbortLocation, decoded.VmStatus) {
+		return aptosFailureOriginForwarder
+	}
+	if decoded.HasAbortCode && isKnownForwarderAbortCode(decoded.AbortCode) {
+		return aptosFailureOriginForwarder
+	}
+
+	return aptosFailureOriginReceiver
+}
+
+func isForwarderAbortLocation(location string, vmStatus string) bool {
+	candidates := []string{location, parseAbortLocationFromVMStatus(vmStatus)}
+	for _, candidate := range candidates {
+		if strings.Contains(strings.ToLower(strings.TrimSpace(candidate)), "::forwarder") {
+			return true
+		}
+	}
+	return false
+}
+
+func isKnownForwarderAbortCode(code uint64) bool {
+	if code >= 1 && code <= 16 {
+		return true
+	}
+
+	// Aptos framework wraps some module codes with an error category in the upper 16 bits.
+	// Forwarder aborts are observed under invalid_argument (1) and permission_denied (5).
+	category := code >> 16
+	reason := code & 0xFFFF
+	return reason >= 1 && reason <= 16 && (category == 1 || category == 5)
+}
+
 func (s *Aptos) waitForCanonicalSuccessTxHash(
 	ctx context.Context,
 	transmissionID TransmissionID,
@@ -256,6 +324,61 @@ func (s *Aptos) waitForCanonicalSuccessTxHash(
 }
 
 func (s *Aptos) resolveDeterministicFailedHash(
+	ctx context.Context,
+	metadata capabilities.RequestMetadata,
+	transmissionID TransmissionID,
+	localFailedHash string,
+	expectedForwarderRawReport []byte,
+	roundBudget int,
+) (string, error) {
+	// Preferred path (EVM-like): scan failed tx candidates from the configured
+	// transmitter set, then validate payload/transmission match onchain.
+	// If this path is unavailable in a given environment, fall back to observer rounds.
+	orderedTransmitters, transmitterErr := s.registryOrderedTransmittersForTransmission(ctx, metadata, transmissionID)
+	if transmitterErr == nil && len(orderedTransmitters) > 0 {
+		cutoffLedgerVersion, cutoffErr := s.consensusSelectFailedHashLedgerCutoff(ctx, metadata)
+		if cutoffErr != nil {
+			s.lggr.Debugw("Failed to reach shared Aptos ledger cutoff; continuing without cutoff", "error", cutoffErr)
+			cutoffLedgerVersion = nil
+		}
+
+		canonicalFromTransmitters, transmitterLookupErr := s.resolveFirstValidatedFailedHashFromTransmitters(
+			ctx,
+			transmissionID,
+			orderedTransmitters,
+			expectedForwarderRawReport,
+			cutoffLedgerVersion,
+		)
+		if transmitterLookupErr == nil && strings.TrimSpace(canonicalFromTransmitters) != "" {
+			return canonicalFromTransmitters, nil
+		}
+
+		// Retry once without cutoff if the cutoff-bounded scan found no validated candidate.
+		if cutoffLedgerVersion != nil {
+			canonicalFromTransmitters, uncappedErr := s.resolveFirstValidatedFailedHashFromTransmitters(
+				ctx,
+				transmissionID,
+				orderedTransmitters,
+				expectedForwarderRawReport,
+				nil,
+			)
+			if uncappedErr == nil && strings.TrimSpace(canonicalFromTransmitters) != "" {
+				return canonicalFromTransmitters, nil
+			}
+			if uncappedErr != nil {
+				s.lggr.Debugw("Uncapped registry transmitter scan failed", "error", uncappedErr)
+			}
+		}
+
+		s.lggr.Debugw("Registry transmitter scan did not yield a validated failed hash; falling back to observer rounds", "error", transmitterLookupErr)
+	} else if transmitterErr != nil {
+		s.lggr.Debugw("Aptos transmitter set unavailable from capability registry; falling back to observer rounds", "error", transmitterErr)
+	}
+
+	return s.resolveDeterministicFailedHashByObserverRound(ctx, metadata, transmissionID, localFailedHash, expectedForwarderRawReport, roundBudget)
+}
+
+func (s *Aptos) resolveDeterministicFailedHashByObserverRound(
 	ctx context.Context,
 	metadata capabilities.RequestMetadata,
 	transmissionID TransmissionID,
@@ -382,7 +505,9 @@ func (s *Aptos) registryOrderedTransmittersForTransmission(
 		return nil, err
 	}
 
-	return canonicalTransmitterOrderForTransmission(transmitters, transmissionID), nil
+	// Keep configured order so failed-hash scanning follows the same canonical
+	// transmitter ordering that nodes are configured with.
+	return transmitters, nil
 }
 
 func transmittersFromCapabilitySpecConfig(specConfig *values.Map) ([]string, error) {
@@ -406,51 +531,6 @@ func transmittersFromCapabilitySpecConfig(specConfig *values.Map) ([]string, err
 	}
 
 	return transmitters, nil
-}
-
-func canonicalTransmitterOrderForTransmission(transmitters []string, transmissionID TransmissionID) []string {
-	unique := orderedUniqueTransmitters(transmitters)
-	if len(unique) == 0 {
-		return nil
-	}
-
-	seed := failedHashOrderSeed(transmissionID)
-	type rankedTransmitter struct {
-		transmitter string
-		rank        [32]byte
-	}
-
-	ranked := make([]rankedTransmitter, 0, len(unique))
-	for _, transmitter := range unique {
-		seedInput := make([]byte, 0, len(seed)+len(transmitter))
-		seedInput = append(seedInput, seed...)
-		seedInput = append(seedInput, transmitter...)
-		ranked = append(ranked, rankedTransmitter{
-			transmitter: transmitter,
-			rank:        sha256.Sum256(seedInput),
-		})
-	}
-
-	sort.SliceStable(ranked, func(i, j int) bool {
-		if cmp := bytes.Compare(ranked[i].rank[:], ranked[j].rank[:]); cmp != 0 {
-			return cmp < 0
-		}
-		return ranked[i].transmitter < ranked[j].transmitter
-	})
-
-	ordered := make([]string, 0, len(ranked))
-	for _, candidate := range ranked {
-		ordered = append(ordered, candidate.transmitter)
-	}
-	return ordered
-}
-
-func failedHashOrderSeed(transmissionID TransmissionID) []byte {
-	seed := make([]byte, 0, len(transmissionID.WorkflowExecutionID)+len(transmissionID.ReportID)+len(transmissionID.Receiver))
-	seed = append(seed, transmissionID.WorkflowExecutionID[:]...)
-	seed = append(seed, transmissionID.ReportID[:]...)
-	seed = append(seed, transmissionID.Receiver[:]...)
-	return seed
 }
 
 func (s *Aptos) consensusSelectFailedHashByObserverRound(

@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -884,9 +885,20 @@ type accountUserTransaction struct {
 	Version          uint64           `json:"version"`
 	TimestampMicros  uint64           `json:"timestamp_micros"`
 	HasTimestamp     bool             `json:"has_timestamp"`
+	VmStatus         string           `json:"vm_status"`
+	AbortCode        uint64           `json:"abort_code"`
+	HasAbortCode     bool             `json:"has_abort_code"`
+	AbortLocation    string           `json:"abort_location"`
 	PayloadArguments []any            `json:"payload_arguments"`
 	Events           []accountTxEvent `json:"events"`
 }
+
+var vmStatusAbortCodePatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)\babort(?:\s+code)?\s*[:=]?\s*(\d+)\b`),
+	regexp.MustCompile(`:\s*(\d+)\s*$`),
+}
+
+var vmStatusAbortLocationPattern = regexp.MustCompile(`(?i)move abort in\s+([^:]+::[^:]+(?:::[^:]+)?)`)
 
 func decodeAccountUserTransaction(raw []byte) (*accountUserTransaction, error) {
 	if len(raw) == 0 {
@@ -948,6 +960,46 @@ func decodeAccountUserTransaction(raw []byte) (*accountUserTransaction, error) {
 		"TimestampUsecs",
 		"TimestampMicros",
 	)
+	vmStatus, _ := getStringField(txBody, "vm_status", "vmStatus", "VmStatus")
+	if vmStatus == "" {
+		vmStatus, _ = getStringField(body, "vm_status", "vmStatus", "VmStatus")
+	}
+
+	abortCode, hasAbortCode := parseFirstOptionalUint64Field(
+		txBody,
+		body,
+		"abort_code",
+		"abortCode",
+		"AbortCode",
+		"error_code",
+		"errorCode",
+		"ErrorCode",
+	)
+	if !hasAbortCode {
+		abortCode, hasAbortCode = parseAbortCodeFromVMStatus(vmStatus)
+	}
+
+	abortLocation, _ := getStringField(
+		txBody,
+		"abort_location",
+		"abortLocation",
+		"AbortLocation",
+		"location",
+		"Location",
+	)
+	if abortLocation == "" {
+		abortLocation, _ = getStringField(
+			body,
+			"abort_location",
+			"abortLocation",
+			"AbortLocation",
+			"location",
+			"Location",
+		)
+	}
+	if abortLocation == "" {
+		abortLocation = parseAbortLocationFromVMStatus(vmStatus)
+	}
 
 	events := make([]accountTxEvent, 0)
 	if rawEvents, ok := getSliceField(txBody, "events", "Events"); ok {
@@ -971,9 +1023,47 @@ func decodeAccountUserTransaction(raw []byte) (*accountUserTransaction, error) {
 		Version:          version,
 		TimestampMicros:  timestampMicros,
 		HasTimestamp:     hasTimestamp,
+		VmStatus:         vmStatus,
+		AbortCode:        abortCode,
+		HasAbortCode:     hasAbortCode,
+		AbortLocation:    abortLocation,
 		PayloadArguments: payloadArguments,
 		Events:           events,
 	}, nil
+}
+
+func parseAbortCodeFromVMStatus(vmStatus string) (uint64, bool) {
+	status := strings.TrimSpace(vmStatus)
+	if status == "" {
+		return 0, false
+	}
+
+	for _, re := range vmStatusAbortCodePatterns {
+		matches := re.FindStringSubmatch(status)
+		if len(matches) != 2 {
+			continue
+		}
+		code, err := strconv.ParseUint(matches[1], 10, 64)
+		if err != nil {
+			continue
+		}
+		return code, true
+	}
+
+	return 0, false
+}
+
+func parseAbortLocationFromVMStatus(vmStatus string) string {
+	status := strings.TrimSpace(vmStatus)
+	if status == "" {
+		return ""
+	}
+
+	if matches := vmStatusAbortLocationPattern.FindStringSubmatch(status); len(matches) == 2 {
+		return strings.TrimSpace(matches[1])
+	}
+
+	return ""
 }
 
 func parseFirstUint64Field(primary map[string]any, secondary map[string]any, keys ...string) (uint64, error) {

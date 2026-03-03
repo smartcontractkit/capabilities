@@ -361,3 +361,16 @@ func mustAptosHashDecimal(t *testing.T, hash string) *pb.Decimal {
 	require.NoError(t, err)
 	return value
 }
+
+func TestIsKnownForwarderAbortCode(t *testing.T) {
+	require.True(t, isKnownForwarderAbortCode(6))      // direct module code
+	require.True(t, isKnownForwarderAbortCode(65549))  // invalid_argument + 13
+	require.True(t, isKnownForwarderAbortCode(327694)) // permission_denied + 14
+	require.False(t, isKnownForwarderAbortCode(65570))
+}
+
+func TestIsForwarderAbortLocation(t *testing.T) {
+	require.True(t, isForwarderAbortLocation("0xabc::platform::forwarder", ""))
+	require.True(t, isForwarderAbortLocation("", "Move abort in 0xabc::platform_secondary::forwarder: 65549"))
+	require.False(t, isForwarderAbortLocation("0xabc::customer_module", "Move abort in 0xabc::customer_module: 1"))
+}
