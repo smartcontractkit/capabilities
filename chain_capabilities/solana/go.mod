@@ -12,8 +12,8 @@ require (
 	github.com/smartcontractkit/chain-selectors v1.0.97
 	github.com/smartcontractkit/chainlink-common v0.10.1-0.20260225165959-ca7f453e0dcc
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260217043601-5cc966896c4f
-	github.com/smartcontractkit/chainlink-solana v1.1.2-0.20260222230940-81b124e1cab6
-	github.com/smartcontractkit/chainlink-solana/contracts v0.0.0-20260222230940-81b124e1cab6
+	github.com/smartcontractkit/chainlink-solana v1.1.2-0.20260303162759-94489995156f
+	github.com/smartcontractkit/chainlink-solana/contracts v0.0.0-20260303162759-94489995156f
 	github.com/smartcontractkit/chainlink-solana/integration-tests v0.0.0-20260203163148-4efe2a102b4b
 	github.com/stretchr/testify v1.11.1
 	github.com/test-go/testify v1.1.4

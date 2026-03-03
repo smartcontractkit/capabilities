@@ -679,10 +679,10 @@ github.com/smartcontractkit/chainlink-protos/linking-service/go v0.0.0-202510021
 github.com/smartcontractkit/chainlink-protos/linking-service/go v0.0.0-20251002192024-d2ad9222409b/go.mod h1:qSTSwX3cBP3FKQwQacdjArqv0g6QnukjV4XuzO6UyoY=
 github.com/smartcontractkit/chainlink-protos/node-platform v0.0.0-20260205130626-db2a2aab956b h1:36knUpKHHAZ86K4FGWXtx8i/EQftGdk2bqCoEu/Cha8=
 github.com/smartcontractkit/chainlink-protos/node-platform v0.0.0-20260205130626-db2a2aab956b/go.mod h1:dkR2uYg9XYJuT1JASkPzWE51jjFkVb86P7a/yXe5/GM=
-github.com/smartcontractkit/chainlink-solana v1.1.2-0.20260222230940-81b124e1cab6 h1:Y1JRZvi5nwNI7x0EHvDBGyNkHXLaK3enTy+31hqwGgk=
-github.com/smartcontractkit/chainlink-solana v1.1.2-0.20260222230940-81b124e1cab6/go.mod h1:/cw67XEnsP9wjQQH4BhL347Qy9HDg51+ETrMpdRTPIo=
-github.com/smartcontractkit/chainlink-solana/contracts v0.0.0-20260222230940-81b124e1cab6 h1:cGq+/5vhuZNzMx7f/b+cZ96IGo0s+uCwLGquJMSc96U=
-github.com/smartcontractkit/chainlink-solana/contracts v0.0.0-20260222230940-81b124e1cab6/go.mod h1:0btRA7q6IdS7aSlmGhLqtiQ7oTQL+4GdN2qCVUb1EpQ=
+github.com/smartcontractkit/chainlink-solana v1.1.2-0.20260303162759-94489995156f h1:hr/k1Cz+XHj5So4s7ZuuOrszKcVYhuRudiTRVBQFSRE=
+github.com/smartcontractkit/chainlink-solana v1.1.2-0.20260303162759-94489995156f/go.mod h1:UsRdX5DVRd2HTkx6amXG1RYJSsL+1/SDB/iPRQjfD+Q=
+github.com/smartcontractkit/chainlink-solana/contracts v0.0.0-20260303162759-94489995156f h1:c0Xb7XT3I4s9/76pDUCogO6kx+eNWAgTCttBU1V+91s=
+github.com/smartcontractkit/chainlink-solana/contracts v0.0.0-20260303162759-94489995156f/go.mod h1:X4950gAvIYrhCNeD04EaV9d1qBf9aN1hSuxO6r2kPjo=
 github.com/smartcontractkit/chainlink-solana/integration-tests v0.0.0-20260203163148-4efe2a102b4b h1:toX/FVenq99HnIBpy+/pbks229bsjbGo3JIn7ebOehM=
 github.com/smartcontractkit/chainlink-solana/integration-tests v0.0.0-20260203163148-4efe2a102b4b/go.mod h1:YATtcmLWaVWtbdyNgwlfrq5xetsof+weWUQbjhDxlyY=
 github.com/smartcontractkit/freeport v0.1.3-0.20250716200817-cb5dfd0e369e h1:Hv9Mww35LrufCdM9wtS9yVi/rEWGI1UnjHbcKKU0nVY=
