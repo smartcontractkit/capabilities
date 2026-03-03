@@ -5,12 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
+	"strconv"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	chainselectors "github.com/smartcontractkit/chain-selectors"
-	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
+	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
+
+	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/height"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
@@ -25,7 +29,6 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/trigger"
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	evmcapserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm/server"
@@ -36,13 +39,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
 
-const (
-	CapabilityName = "evm"
-
-	repoCLLCapabilities = "https://raw.githubusercontent.com/smartcontractkit/capabilities"
-	versionRefsMain     = "refs/heads/main"
-	schemaBasePath      = repoCLLCapabilities + "/" + versionRefsMain + "/chain_capabilities/evm/monitoring"
-)
+const CapabilityName = "evm"
 
 type capabilityGRPCService struct {
 	capabilities.CapabilityInfo
@@ -54,6 +51,7 @@ type capabilityGRPCService struct {
 
 type capability struct {
 	*actions.EVM
+	id               string
 	requestPoller    *poller.Poller
 	consensusHandler *chainconsensus.Handler
 	oracle           core.Oracle
@@ -79,12 +77,12 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 
 	c.lggr.Infof("Initialising %s, ChainId: %d, Network: %s", CapabilityName, cfg.ChainID, cfg.Network)
 
-	client := beholder.GetClient().ForName("evm_capability")
 	metrics, err := monitoring.NewMetrics()
 	if err != nil {
 		return fmt.Errorf("failed to create metrics: %w", err)
 	}
-	processor, err := monitoring.NewProcessor(beholder.NewProtoEmitter(c.lggr, &client, schemaBasePath), metrics)
+
+	processor, err := monitoring.NewProcessor(c.lggr, metrics)
 	if err != nil {
 		return fmt.Errorf("failed to create monitoring proto processor: %w", err)
 	}
@@ -101,6 +99,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	}
 
 	c.chainSelector = cs
+	c.id = "evm" + ":ChainSelector:" + strconv.FormatUint(cs, 10) + "@1.0.0"
 
 	chainInfo, err := relayer.GetChainInfo(ctx)
 	if err != nil {
@@ -121,14 +120,25 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	c.requestPoller = poller.NewPoller(c.lggr, consensusMetrics, cfg.ObservationPollerWorkersCount, cfg.ObservationPollPeriod)
 	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, cfg.UnknownRequestsTTL)
 
-	c.EVM, err = actions.NewEVM(*cfg, evmRelayer, c.lggr, processor, messageBuilder, c.consensusHandler, c.chainSelector, c.limitsFactory)
+	var scheduler actions.TransmissionScheduler
+	if cfg.DeltaStage > 0 {
+		scheduler, err = c.initialiseTransmissionScheduler(ctx, dependencies.CapabilityRegistry, cfg.DeltaStage, cfg.IsLocaL)
+		if err != nil {
+			return fmt.Errorf("failed to initialize transmission scheduler: %w", err)
+		}
+	} else {
+		c.lggr.Infow("DeltaStage not configured, transmission scheduling disabled")
+	}
+
+	c.EVM, err = actions.NewEVM(*cfg, evmRelayer, c.lggr, processor, messageBuilder, c.consensusHandler, c.chainSelector, c.limitsFactory, scheduler)
 	if err != nil {
 		return fmt.Errorf("failed to init evm relayer for chainID %d from relayer: %w", cfg.ChainID, err)
 	}
 
 	// TODO: add org resolver
 	c.triggerService, err = trigger.NewLogTriggerService(evmRelayer, trigger.NewLogTriggerStore(), c.lggr, processor, messageBuilder,
-		cfg.LogTriggerPollInterval, cfg.LogTriggerSendChannelBufferSize, cfg.LogTriggerLimitQueryLogSize, c.limitsFactory, dependencies.OrgResolver)
+		cfg.LogTriggerPollInterval, cfg.LogTriggerSendChannelBufferSize, cfg.LogTriggerLimitQueryLogSize, c.limitsFactory,
+		dependencies.OrgResolver, dependencies.TriggerEventStore)
 	if err != nil {
 		return fmt.Errorf("error when creating trigger: %w", err)
 	}
@@ -161,6 +171,102 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 
 	c.lggr.Infof("Successfully initialised %s", CapabilityName)
 	return nil
+}
+
+func (c *capabilityGRPCService) initMyDON(ctx context.Context, registry core.CapabilitiesRegistry) error {
+	localNode, err := registry.LocalNode(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to receiver local node: %w", err)
+	}
+
+	var dons []capabilities.DON
+
+	donsWithNodes, err := registry.DONsForCapability(ctx, c.id)
+	if err != nil {
+		return fmt.Errorf("failed getting dons for capability: %w", err)
+	}
+
+	for _, d := range donsWithNodes {
+		for _, n := range d.Nodes {
+			if n.PeerID.String() == localNode.PeerID.String() {
+				dons = append(dons, d.DON)
+			}
+		}
+	}
+
+	if len(dons) == 0 {
+		return errors.New("failed to find don for my peer ID: " + localNode.PeerID.String())
+	}
+
+	if len(dons) > 1 {
+		for _, d := range dons {
+			c.lggr.Errorf("received more than one don for capability id: %s don id: %d don name: %s", c.id, d.ID, d.Name)
+		}
+	}
+
+	c.DON = &dons[0]
+
+	return nil
+}
+
+func (c *capabilityGRPCService) initialiseTransmissionScheduler(
+	ctx context.Context,
+	capRegistry core.CapabilitiesRegistry,
+	deltaStage time.Duration,
+	isLocal bool,
+) (actions.TransmissionScheduler, error) {
+	if isLocal {
+		return actions.TransmissionScheduler{}, nil
+	}
+
+	err := c.initMyDON(ctx, capRegistry)
+	if err != nil {
+		return actions.TransmissionScheduler{}, fmt.Errorf("failed to initialize capability with my don info: %w", err)
+	}
+
+	localNode, err := capRegistry.LocalNode(ctx)
+	if err != nil {
+		return actions.TransmissionScheduler{}, fmt.Errorf("failed to get local node: %w", err)
+	}
+
+	if c.DON == nil {
+		return actions.TransmissionScheduler{}, errors.New("capabilityInfo DON is nil")
+	}
+
+	if len(c.DON.Members) == 0 {
+		return actions.TransmissionScheduler{}, errors.New("capabilityInfo DON is empty")
+	}
+
+	var donPeerIDs []p2ptypes.PeerID
+	myPeerID := localNode.PeerID
+	donPeerIDs = append(donPeerIDs, c.DON.Members...)
+
+	if myPeerID == nil {
+		return actions.TransmissionScheduler{}, fmt.Errorf("local node peer ID is nil")
+	}
+	if len(donPeerIDs) == 0 {
+		return actions.TransmissionScheduler{}, fmt.Errorf("DON members list is empty")
+	}
+
+	found := slices.Contains(donPeerIDs, *myPeerID)
+	if !found {
+		return actions.TransmissionScheduler{}, fmt.Errorf("local peer ID %s not found in DON members", myPeerID.String())
+	}
+
+	c.lggr.Infow("Transmission scheduler initialized",
+		"deltaStage", deltaStage,
+		"donSize", len(donPeerIDs),
+		"F", c.DON.F,
+		"myPeerID", myPeerID.String(),
+	)
+
+	return actions.NewTransmissionScheduler(
+		*myPeerID,
+		donPeerIDs,
+		deltaStage,
+		c.DON.F,
+		c.lggr,
+	), nil
 }
 
 func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Config, error) {
@@ -201,6 +307,7 @@ func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Confi
 		c.lggr.Infof("UnknownRequestsTTL is zero, setting to %s.", cfg.UnknownRequestsTTL)
 	}
 
+	// DeltaStage is optional - if not set, transmission scheduling will be disabled
 	return &cfg, nil
 }
 
@@ -250,4 +357,8 @@ func (c *capabilityGRPCService) RegisterLogTrigger(ctx context.Context, triggerI
 
 func (c *capabilityGRPCService) UnregisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) caperrors.Error {
 	return c.triggerService.UnregisterLogTrigger(ctx, triggerID, metadata, input)
+}
+
+func (c *capabilityGRPCService) AckEvent(ctx context.Context, triggerID string, eventID string, method string) caperrors.Error {
+	return c.triggerService.AckEvent(ctx, triggerID, eventID)
 }

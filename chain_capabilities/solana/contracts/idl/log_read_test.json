@@ -1,0 +1,65 @@
+{
+  "version": "0.1.0",
+  "name": "log_read_test",
+  "instructions": [
+    {
+      "name": "createLog",
+      "accounts": [
+        {
+          "name": "authority",
+          "isMut": false,
+          "isSigner": true
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "value",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "createTruncatedLog",
+      "accounts": [
+        {
+          "name": "authority",
+          "isMut": false,
+          "isSigner": true
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "value",
+          "type": "u64"
+        }
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "TestEvent",
+      "fields": [
+        {
+          "name": "strVal",
+          "type": "string",
+          "index": false
+        },
+        {
+          "name": "u64Value",
+          "type": "u64",
+          "index": false
+        }
+      ]
+    }
+  ]
+}

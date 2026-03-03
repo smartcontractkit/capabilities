@@ -100,7 +100,7 @@ loop:
 			expectedResult := &big.Int{}
 			expectedResult.SetString("150000000000000000000", 10)
 			assert.Equal(t, feed.Price, expectedResult)
-			fmt.Printf("FEED: %v\n", feed)
+			t.Logf("FEED: %v\n", feed)
 			break loop
 		}
 	}

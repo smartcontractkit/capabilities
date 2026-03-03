@@ -1,7 +1,7 @@
 {
   "defaultBase": "main",
   "installation": {
-    "version": "19.8.2"
+    "version": "22.5.1"
   },
   "parallel": 4,
   "namedInputs": {

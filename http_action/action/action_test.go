@@ -184,7 +184,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 		assert.Equal(t, input, setup.mockClient.CapturedInput)
 	})
 
-	t.Run("invalid URL fails validation and doesn't call client", func(t *testing.T) {
+	t.Run("invalid URL returns validation error from client", func(t *testing.T) {
 		setup := setupServiceTest(t)
 
 		input := &http.Request{
@@ -192,13 +192,15 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 			Method:  "GET",
 			Timeout: durationpb.New(1000 * time.Millisecond),
 		}
-		setup.mockClient.CapturedInput = nil
+		// Mock simulates client validating and returning error (real gateway/direct proxy does this)
+		setup.mockClient.Err = common.InputValidationError{Err: errors.New("URL must not be empty")}
 
 		response, err := setup.service.SendRequest(t.Context(), setup.metadata, input)
 		require.Error(t, err)
 		assert.Nil(t, response)
 		assert.Contains(t, err.Error(), "URL must not be empty")
-		assert.Nil(t, setup.mockClient.CapturedInput)
+		// Client is called; validation error is returned from client
+		assert.NotNil(t, setup.mockClient.CapturedInput)
 	})
 
 	t.Run("request with large body gets processed", func(t *testing.T) {
@@ -226,7 +228,7 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 		assert.Equal(t, input, setup.mockClient.CapturedInput)
 	})
 
-	t.Run("invalid HTTP method fails validation", func(t *testing.T) {
+	t.Run("invalid HTTP method returns validation error from client", func(t *testing.T) {
 		setup := setupServiceTest(t)
 
 		input := &http.Request{
@@ -234,13 +236,13 @@ func TestSendRequest_ValidatesInput(t *testing.T) {
 			Method:  "CONNECT",
 			Timeout: durationpb.New(1000 * time.Millisecond),
 		}
-		setup.mockClient.CapturedInput = nil
+		setup.mockClient.Err = common.InputValidationError{Err: errors.New("invalid HTTP method: CONNECT")}
 
 		response, err := setup.service.SendRequest(t.Context(), setup.metadata, input)
 		require.Error(t, err)
 		assert.Nil(t, response)
 		assert.Contains(t, err.Error(), "invalid HTTP method")
-		assert.Nil(t, setup.mockClient.CapturedInput)
+		assert.NotNil(t, setup.mockClient.CapturedInput)
 	})
 
 	t.Run("request with normal timeout gets processed", func(t *testing.T) {

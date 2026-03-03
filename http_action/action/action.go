@@ -25,8 +25,10 @@ import (
 
 const ServiceName = "HTTPActionCapability"
 
-var _ services.Service = &service{}
-var _ server.ClientCapability = &service{}
+var (
+	_ services.Service        = &service{}
+	_ server.ClientCapability = &service{}
+)
 
 type service struct {
 	lggr          logger.SugaredLogger
@@ -117,19 +119,17 @@ func (s *service) SendRequest(ctx context.Context, metadata capabilities.Request
 	// these are required for request/response checks
 	ctx = metadata.ContextWithCRE(ctx)
 
-	validatedInput, err := s.validator.ValidatedRequest(ctx, input)
-	if err != nil {
-		s.metrics.IncrementInputValidationFailures(ctx, s.lggr)
-		s.metrics.RecordRequestLatency(ctx, time.Since(startTime).Milliseconds(), 0, s.cfg.ProxyMode, false, s.lggr)
-		return nil, caperrors.NewPublicUserError(
-			fmt.Errorf("input validation failed for workflowID %s (Owner: %s, Name: %s, ExecutionID: %s): %w",
-				metadata.WorkflowName, metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowExecutionID, err), caperrors.InvalidArgument)
-	}
-
-	response, externalEndpointLatency, err := s.client.SendRequest(ctx, metadata, validatedInput, startTime)
+	// Validation runs in the client (gateway or direct) via ValidatedRequest
+	response, externalEndpointLatency, err := s.client.SendRequest(ctx, metadata, input, startTime)
 	if err != nil {
 		s.lggr.Errorw("request failed", "error", err, "workflowID", metadata.WorkflowID, "workflowOwner", metadata.WorkflowOwner, "workflowExecutionID", metadata.WorkflowExecutionID)
 		s.metrics.RecordRequestLatency(ctx, time.Since(startTime).Milliseconds(), externalEndpointLatency.Milliseconds(), s.cfg.ProxyMode, false, s.lggr)
+		var validationErr common.InputValidationError
+		if errors.As(err, &validationErr) {
+			return nil, caperrors.NewPublicUserError(
+				fmt.Errorf("input validation failed for workflowID %s (Owner: %s, Name: %s, ExecutionID: %s): %w",
+					metadata.WorkflowName, metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowExecutionID, err), caperrors.InvalidArgument)
+		}
 		var userErr gateway.UserError
 		if errors.As(err, &userErr) {
 			return nil, caperrors.NewPublicUserError(
@@ -155,14 +155,14 @@ func (s *service) SendRequest(ctx context.Context, metadata capabilities.Request
 		"workflowExecutionID", metadata.WorkflowExecutionID,
 		"responseStatusCode", response.StatusCode,
 		"responseBodySize", len(response.Body),
-		"responseNumHeaders", len(response.Headers),
+		"responseNumHeaders", len(response.MultiHeaders),
 		"externalEndpointLatency", externalEndpointLatency.Milliseconds())
 
 	return &responseAndMetadata, nil
 }
 
 // NewOutboundRequestClient creates an OutboundProxy based on the ServiceConfig.ProxyMode
-func NewOutboundRequestClient(gatewayConnector core.GatewayConnector, serviceConfig common.ServiceConfig, lggr logger.Logger, metrics *common.Metrics, validator common.ResponseValidator) (common.OutboundRequestClient, error) {
+func NewOutboundRequestClient(gatewayConnector core.GatewayConnector, serviceConfig common.ServiceConfig, lggr logger.Logger, metrics *common.Metrics, validator common.RequestValidator) (common.OutboundRequestClient, error) {
 	switch serviceConfig.ProxyMode {
 	case common.ProxyModeDirect:
 		return common.NewHTTPClientProxy(serviceConfig, lggr, validator, metrics)

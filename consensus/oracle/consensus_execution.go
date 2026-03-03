@@ -18,9 +18,9 @@ import (
 )
 
 var (
-	ErrNoValuesMetThreshold       = errors.New("no values met f+1 threshold")
-	ErrMultipleValuesMetThreshold = errors.New("not identical, multiple values with f+1 occurrences")
-	ErrInsufficientObservations   = errors.New("insufficient observations to reach consensus")
+	ErrNoValuesMetThreshold                         = errors.New("no values met f+1 threshold")
+	ErrMoreThanOneValidOutcomeForIdenticalConsensus = errors.New("not identical, multiple values with f+1 occurrences")
+	ErrInsufficientObservations                     = errors.New("insufficient observations to reach consensus")
 )
 
 // Constants for type names used in aggregation logic.
@@ -77,8 +77,15 @@ func handleFieldsMapAggregation(
 		return nil, ErrInsufficientObservations
 	}
 
+	sortedKeys := make([]string, 0, len(desc))
+	for k := range desc {
+		sortedKeys = append(sortedKeys, k)
+	}
+	slices.Sort(sortedKeys)
+
 	result := make(map[string]*valuespb.Value, 0)
-	for key, d := range desc {
+	for _, key := range sortedKeys {
+		d := desc[key]
 		var (
 			aggregated *valuespb.Value
 			err        error
@@ -309,7 +316,7 @@ func handleIdenticalAggregation(_ logger.Logger, values []*valuespb.Value, f int
 
 		if observation.count == f+1 {
 			if uniqueCandidate != nil {
-				return nil, ErrMultipleValuesMetThreshold
+				return nil, ErrMoreThanOneValidOutcomeForIdenticalConsensus
 			}
 			uniqueCandidate = observation.value
 		}
@@ -455,7 +462,7 @@ func filterObservations(observationProtos []*valuespb.Value, minObservations int
 		if len(obsOfType) >= minObservations {
 			if dominantType != nil {
 				// More than one type meets the threshold
-				return nil, nil, ErrMultipleValuesMetThreshold
+				return nil, nil, ErrMoreThanOneValidOutcomeForIdenticalConsensus
 			}
 			dominantType = tpe
 		}

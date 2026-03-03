@@ -37,7 +37,7 @@ func (r *reportingPlugin) Reports(ctx context.Context, seqNr uint64, outcome ocr
 		switch v := reqOutcome.GetOutcome().(type) {
 		case *oracletypes.ConsensusOutcome_Success:
 			successOutcome := v.Success
-			r.lggr.Debugw("received successful consensus outcome", "requestID", successOutcome.Metadata.RequestId)
+			r.lggr.Debugw("received successful consensus outcome", "seqNr", seqNr, "requestID", successOutcome.Metadata.RequestId)
 			reqMetadata := successOutcome.Metadata
 			var report []byte
 			switch reqMetadata.RequestType {
@@ -78,7 +78,7 @@ func (r *reportingPlugin) Reports(ctx context.Context, seqNr uint64, outcome ocr
 
 			// Check if the report is too large to transmit
 			if len(reportWithMetaData) > r.maxReportLengthBytes {
-				r.lggr.Errorw("report is too large to transmit", "requestID", reqMetadata.RequestId,
+				r.lggr.Errorw("report is too large to transmit", "seqNr", seqNr, "requestID", reqMetadata.RequestId,
 					"reportSize", len(reportWithMetaData), "maxReportLengthBytes", r.maxReportLengthBytes)
 				failureMsg := fmt.Sprintf(
 					"report too large: the report for this request is %d bytes which exceeds the maximum allowed size of %d bytes; reduce the size of the data being returned",
@@ -113,7 +113,7 @@ func (r *reportingPlugin) Reports(ctx context.Context, seqNr uint64, outcome ocr
 			successIDs = append(successIDs, reqMetadata.RequestId)
 		case *oracletypes.ConsensusOutcome_Failure:
 			failedOutcome := v.Failure
-			r.lggr.Debugw("received failed consensus outcome", "requestID", failedOutcome.RequestID)
+			r.lggr.Debugw("received failed consensus outcome", "seqNr", seqNr, "requestID", failedOutcome.RequestID)
 			info, err := createFailedConsensusReportInfo(failedOutcome.RequestID, failedOutcome.KeyBundleId, failedOutcome.FailureMessage,
 				failedOutcome.Code)
 			if err != nil {
@@ -129,16 +129,16 @@ func (r *reportingPlugin) Reports(ctx context.Context, seqNr uint64, outcome ocr
 			})
 			failureIDs = append(failureIDs, failedOutcome.RequestID)
 		default:
-			r.lggr.Warnw("received unknown consensus outcome type", "outcome", outcome)
+			r.lggr.Warnw("received unknown consensus outcome type", "seqNr", seqNr, "outcome", outcome)
 		}
 
 		if len(reports) == r.maxNumberOfReports {
-			r.lggr.Warnw("maximum number of reports reached, stopping further report generation for this round", "maxNumberOfReports", r.maxNumberOfReports)
+			r.lggr.Warnw("maximum number of reports reached, stopping further report generation for this round", "seqNr", seqNr, "maxNumberOfReports", r.maxNumberOfReports)
 			break
 		}
 	}
 
-	r.lggr.Debugw("consensus plugin reports complete", "numReports", len(reports), "successIDs", successIDs, "failureIDs", failureIDs)
+	r.lggr.Debugw("consensus plugin reports complete", "seqNr", seqNr, "numReports", len(reports), "successIDs", successIDs, "failureIDs", failureIDs)
 	return reports, nil
 }
 

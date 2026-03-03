@@ -72,6 +72,22 @@ func TestValidatedRequest(t *testing.T) {
 		require.ErrorContains(t, err, "URL must not be empty")
 	})
 
+	t.Run("both Headers and MultiHeaders set", func(t *testing.T) {
+		t.Parallel()
+		validator := testValidator(t)
+		input := &http.Request{
+			Url:          "https://example.com",
+			Method:       "GET",
+			Headers:      map[string]string{"X-Test": "1"},
+			MultiHeaders: map[string]*http.HeaderValues{"Accept": {Values: []string{"application/json"}}},
+			Timeout:      durationpb.New(5000 * time.Millisecond),
+		}
+		_, err := validator.ValidatedRequest(ctx, input)
+		require.Error(t, err)
+		require.ErrorIs(t, err, ErrRequestHeadersBothSet)
+		require.Contains(t, err.Error(), "either Headers or MultiHeaders, not both")
+	})
+
 	t.Run("timeout exceeds limit", func(t *testing.T) {
 		t.Parallel()
 		validator := testValidator(t)
@@ -196,6 +212,35 @@ func TestValidatedRequest(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "cache age validation failed")
 		require.Contains(t, err.Error(), "CacheAgeLimit limited")
+	})
+}
+
+func TestRequestHeaders(t *testing.T) {
+	t.Parallel()
+
+	t.Run("both set returns ErrRequestHeadersBothSet", func(t *testing.T) {
+		input := &http.Request{
+			Headers:      map[string]string{"X-Test": "1"},
+			MultiHeaders: map[string]*http.HeaderValues{"Accept": {Values: []string{"application/json"}}},
+		}
+		err := RequestHeaders(input)
+		require.Error(t, err)
+		require.ErrorIs(t, err, ErrRequestHeadersBothSet)
+	})
+
+	t.Run("only Headers set is valid", func(t *testing.T) {
+		input := &http.Request{Headers: map[string]string{"X-Test": "1"}}
+		require.NoError(t, RequestHeaders(input))
+	})
+
+	t.Run("only MultiHeaders set is valid", func(t *testing.T) {
+		input := &http.Request{MultiHeaders: map[string]*http.HeaderValues{"Accept": {Values: []string{"application/json"}}}}
+		require.NoError(t, RequestHeaders(input))
+	})
+
+	t.Run("neither set is valid", func(t *testing.T) {
+		input := &http.Request{}
+		require.NoError(t, RequestHeaders(input))
 	})
 }
 

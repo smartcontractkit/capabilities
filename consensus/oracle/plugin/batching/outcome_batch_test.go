@@ -38,7 +38,7 @@ func TestOutcomeBatchCapacityCalculation(t *testing.T) {
 		PreviousOutcome: serialisedPrevOutcome,
 		SeqNr:           1000,
 	}, 1000,
-		100_000_000, "evm", testMetrics, 1000)
+		100_000_000, "evm", testMetrics, 1000, 10000)
 
 	require.NoError(t, err)
 
@@ -87,7 +87,7 @@ func TestOutcomeBatchCapacityExceeded(t *testing.T) {
 		PreviousOutcome: serialisedPrevOutcome,
 		SeqNr:           1000,
 	}, 1000,
-		1000, "evm", testMetrics, 1000)
+		1000, "evm", testMetrics, 1000, 10000)
 
 	require.NoError(t, err)
 
@@ -121,6 +121,60 @@ func TestOutcomeBatchCapacityExceeded(t *testing.T) {
 	t.Fatal("expected batch capacity to be exceeded")
 }
 
+func TestOutcomeBatchMaxNumberOfReportsExceeded(t *testing.T) {
+	testLogger := logger.Test(t)
+	ctx := t.Context()
+
+	prevOutcome := &oracletypes.Outcome{
+		HistoricalOutcomes: map[string]uint64{
+			"req-1": 10,
+			"req-2": 20,
+			"req-3": 30,
+		},
+	}
+
+	serialisedPrevOutcome, err := proto.MarshalOptions{Deterministic: true}.Marshal(prevOutcome)
+	require.NoError(t, err)
+
+	testMetrics := newTestMetrics(t, "outcome")
+	outcome, err := batching.NewOutcomeBatch(ctx, testLogger, ocr3types.OutcomeContext{
+		PreviousOutcome: serialisedPrevOutcome,
+		SeqNr:           1000,
+	}, 1000,
+		100000, "evm", testMetrics, 100000, 3)
+
+	require.NoError(t, err)
+
+	for range 10 {
+		added, err := outcome.AddSuccessfulConsensusRequestOutcomeToBatch(ctx, &oracletypes.RequestMetaData{
+			RequestId:           uuid.NewString(),
+			WorkflowExecutionId: "exec-1",
+		}, values.Proto(values.NewString("test-outcome-data-1")), &timestamppb.Timestamp{})
+
+		if !added {
+			require.Equal(t, 1, testMetrics.batchRequestsTotal)
+			require.Equal(t, 1, testMetrics.batchCapacityExceeded)
+			return
+		}
+		require.NoError(t, err)
+
+		added, err = outcome.AddFailedConsensusRequestOutcomeToBatch(ctx, uuid.NewString(), "failed",
+			oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED)
+
+		if !added {
+			return
+		}
+		require.NoError(t, err)
+
+		serialisedBatch, err := outcome.SerialiseOutcomeBatch(t.Context())
+		require.NoError(t, err)
+
+		require.Equal(t, outcome.CurrentSerialisedBatchSize(), len(serialisedBatch))
+	}
+
+	t.Fatal("expected max number of reports to be exceeded")
+}
+
 func TestOutcomeTooLargeToEverFit(t *testing.T) {
 	testLogger := logger.Test(t)
 	ctx := t.Context()
@@ -131,7 +185,7 @@ func TestOutcomeTooLargeToEverFit(t *testing.T) {
 		PreviousOutcome: nil,
 		SeqNr:           1,
 	}, 1000,
-		500, "evm", testMetrics, 1000)
+		500, "evm", testMetrics, 1000, 10000)
 
 	require.NoError(t, err)
 
@@ -159,7 +213,7 @@ func TestOutcomeDoesNotFitNowButWouldFitInEmptyBatch(t *testing.T) {
 		PreviousOutcome: nil,
 		SeqNr:           1,
 	}, 1000,
-		50, "evm", testMetrics, 1000)
+		50, "evm", testMetrics, 1000, 10000)
 
 	require.NoError(t, err)
 
@@ -205,7 +259,7 @@ func TestOutcomeTooLargeWithExistingHistoricalOutcomes(t *testing.T) {
 		PreviousOutcome: serialisedPrevOutcome,
 		SeqNr:           100,
 	}, 1000,
-		500, "evm", testMetrics, 1000)
+		500, "evm", testMetrics, 1000, 10000)
 
 	require.NoError(t, err)
 
