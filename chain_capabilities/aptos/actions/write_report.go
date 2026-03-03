@@ -35,6 +35,7 @@ const (
 	aptosPollingRetryMaxBackoff        = 3 * time.Second
 	aptosSpecConfigTransmittersListKey = "aptosTransmitters"
 	aptosFailedHashCutoffLag           = uint64(2)
+	aptosFailedHashAggregationMethod   = "observer-round-robin"
 )
 
 type aptosWriteRetryConfig struct {
@@ -170,7 +171,7 @@ func (s *Aptos) executeWriteReport(
 	if err != nil {
 		localFailedHash, failedHashErr := s.waitForFailedTransmissionHashByHash(ctx, transmissionID, localSubmittedHash, expectedForwarderRawReport, retryConfig)
 		if failedHashErr == nil {
-			canonicalFailedHash, canonicalErr := s.resolveDeterministicFailedHash(ctx, metadata, transmissionID, localFailedHash, expectedForwarderRawReport)
+			canonicalFailedHash, canonicalErr := s.resolveDeterministicFailedHash(ctx, metadata, transmissionID, localFailedHash, expectedForwarderRawReport, retryConfig.n)
 			if canonicalErr != nil {
 				return nil, fmt.Errorf("failed to resolve deterministic failed hash after timeout: %w", canonicalErr)
 			}
@@ -181,7 +182,7 @@ func (s *Aptos) executeWriteReport(
 	}
 
 	if outcome.failedHash != "" {
-		canonicalFailedHash, canonicalErr := s.resolveDeterministicFailedHash(ctx, metadata, transmissionID, outcome.failedHash, expectedForwarderRawReport)
+		canonicalFailedHash, canonicalErr := s.resolveDeterministicFailedHash(ctx, metadata, transmissionID, outcome.failedHash, expectedForwarderRawReport, retryConfig.n)
 		if canonicalErr != nil {
 			return nil, fmt.Errorf("failed to resolve deterministic failed hash after onchain failure: %w", canonicalErr)
 		}
@@ -260,36 +261,46 @@ func (s *Aptos) resolveDeterministicFailedHash(
 	transmissionID TransmissionID,
 	localFailedHash string,
 	expectedForwarderRawReport []byte,
+	roundBudget int,
 ) (string, error) {
-	transmitters, err := s.registryOrderedTransmittersForTransmission(ctx, metadata, transmissionID)
+	localCandidate, err := s.resolveLocalFailedHashCandidate(ctx, transmissionID, localFailedHash, expectedForwarderRawReport)
 	if err != nil {
-		return "", fmt.Errorf("failed to resolve transmitter set from capability registry: %w", err)
+		s.lggr.Debugw("Local failed hash candidate unavailable; entering consensus rounds with sentinel", "error", err)
+		localCandidate = ""
 	}
 
-	cutoffLedgerVersion, err := s.consensusSelectFailedHashLedgerCutoff(ctx, metadata)
-	if err != nil {
-		return "", fmt.Errorf("failed to agree on failed-hash ledger cutoff: %w", err)
+	if roundBudget <= 0 {
+		roundBudget = 1
 	}
 
-	canonicalFailedHash, err := s.resolveFirstValidatedFailedHashFromTransmitters(
-		ctx,
-		transmissionID,
-		transmitters,
-		expectedForwarderRawReport,
-		cutoffLedgerVersion,
-	)
-	if err != nil {
-		if strings.TrimSpace(localFailedHash) != "" {
-			s.lggr.Debugw(
-				"Failed to resolve canonical failed hash from registry transmitters",
-				"localFailedHash", localFailedHash,
-				"error", err,
-			)
+	for round := 0; round < roundBudget; round++ {
+		selectedHash, consensusErr := s.consensusSelectFailedHashByObserverRound(ctx, metadata, localCandidate, round)
+		if consensusErr != nil {
+			return "", fmt.Errorf("failed hash consensus round %d: %w", round, consensusErr)
 		}
-		return "", fmt.Errorf("failed to resolve deterministic failed hash from capability-registry transmitters: %w", err)
+		if strings.TrimSpace(selectedHash) == "" {
+			continue
+		}
+
+		// Every node re-validates the consensus-selected hash against onchain payload.
+		validatedHash, validateErr := s.forwarderClient.ValidateFailedTxHash(ctx, transmissionID, selectedHash, expectedForwarderRawReport)
+		if validateErr != nil {
+			s.lggr.Debugw(
+				"Consensus-selected failed hash did not validate; advancing to next observer round",
+				"round", round,
+				"selectedHash", selectedHash,
+				"error", validateErr,
+			)
+			continue
+		}
+		if strings.TrimSpace(validatedHash) == "" {
+			continue
+		}
+
+		return validatedHash, nil
 	}
 
-	return canonicalFailedHash, nil
+	return "", fmt.Errorf("failed to resolve deterministic failed hash after %d consensus rounds", roundBudget)
 }
 
 func (s *Aptos) resolveLocalFailedHashCandidate(
@@ -440,6 +451,113 @@ func failedHashOrderSeed(transmissionID TransmissionID) []byte {
 	seed = append(seed, transmissionID.ReportID[:]...)
 	seed = append(seed, transmissionID.Receiver[:]...)
 	return seed
+}
+
+func (s *Aptos) consensusSelectFailedHashByObserverRound(
+	ctx context.Context,
+	metadata capabilities.RequestMetadata,
+	localFailedHash string,
+	round int,
+) (string, error) {
+	requestID := fmt.Sprintf("%s:aptos-failed-hash:round:%d", commonMon.RequestID(metadata.WorkflowExecutionID, metadata.ReferenceID), round)
+
+	request := ctypes.NewAggregatableRequest(requestID, func(ctx context.Context) (*ctypes.AggregatableObservation, error) {
+		candidateHash := strings.TrimSpace(localFailedHash)
+		if candidateHash == "" {
+			return &ctypes.AggregatableObservation{
+				Method: aptosFailedHashAggregationMethod,
+				// Exponent != 0 marks "no local candidate hash".
+				Value: &pb.Decimal{
+					Coefficient: pb.NewBigIntFromInt(big.NewInt(0)),
+					Exponent:    1,
+				},
+			}, nil
+		}
+
+		value, err := aptosHashToDecimal(candidateHash)
+		if err != nil {
+			return nil, err
+		}
+
+		return &ctypes.AggregatableObservation{
+			Method: aptosFailedHashAggregationMethod,
+			Value:  value,
+		}, nil
+	})
+
+	decimalValue, err := readType[*pb.Decimal](ctx, s.ConsensusHandler, request)
+	if err != nil {
+		return "", err
+	}
+
+	hash, noCandidate, err := decimalToAptosHashOrSentinel(decimalValue)
+	if err != nil {
+		return "", err
+	}
+	if noCandidate {
+		return "", nil
+	}
+
+	return hash, nil
+}
+
+func aptosHashToDecimal(hash string) (*pb.Decimal, error) {
+	normalizedHash, ok := normalizeAptosTxHashString(hash)
+	if !ok {
+		return nil, fmt.Errorf("invalid tx hash %q", hash)
+	}
+
+	normalizedHash = strings.TrimPrefix(normalizedHash, "0x")
+
+	value := new(big.Int)
+	if _, ok := value.SetString(normalizedHash, 16); !ok {
+		return nil, fmt.Errorf("failed to parse tx hash %q as uint256", hash)
+	}
+
+	return &pb.Decimal{
+		Coefficient: pb.NewBigIntFromInt(value),
+		Exponent:    0,
+	}, nil
+}
+
+func decimalToAptosHash(value *pb.Decimal) (string, error) {
+	if value == nil || value.Coefficient == nil {
+		return "", fmt.Errorf("nil decimal coefficient")
+	}
+	if value.Exponent != 0 {
+		return "", fmt.Errorf("unexpected decimal exponent %d for tx hash", value.Exponent)
+	}
+
+	intValue := pb.NewIntFromBigInt(value.Coefficient)
+	if intValue.Sign() < 0 {
+		return "", fmt.Errorf("negative tx hash value")
+	}
+
+	hexHash := fmt.Sprintf("%x", intValue)
+	if len(hexHash) > 64 {
+		return "", fmt.Errorf("tx hash exceeds 256 bits")
+	}
+	if len(hexHash) < 64 {
+		hexHash = strings.Repeat("0", 64-len(hexHash)) + hexHash
+	}
+
+	return "0x" + strings.ToLower(hexHash), nil
+}
+
+func decimalToAptosHashOrSentinel(value *pb.Decimal) (string, bool, error) {
+	if value == nil || value.Coefficient == nil {
+		return "", false, fmt.Errorf("nil decimal coefficient")
+	}
+	// Exponent 1 with zero coefficient is used as sentinel for "no local failed hash candidate".
+	if value.Exponent == 1 && pb.NewIntFromBigInt(value.Coefficient).Sign() == 0 {
+		return "", true, nil
+	}
+
+	hash, err := decimalToAptosHash(value)
+	if err != nil {
+		return "", false, err
+	}
+	return hash, false, nil
 }
 
 func (s *Aptos) consensusSelectFailedHashLedgerCutoff(
