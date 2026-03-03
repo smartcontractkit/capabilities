@@ -47,7 +47,7 @@ func validateFilterConfig(config *solanacappb.FilterLogTriggerRequest) error {
 	if config.Name == "" {
 		return fmt.Errorf("filter name cannot be empty")
 	}
-	if len(config.EventIdlJson) == 0 {
+	if len(config.ContractIdlJson) == 0 {
 		return fmt.Errorf("event idl json cannot be empty")
 	}
 	return nil
@@ -69,7 +69,7 @@ func (lts *SolanaLogTriggerService) ToLogPollerFilter(triggerID string, config *
 		Address:         address,
 		EventName:       config.EventName,
 		EventSig:        getEventSig(config.EventName),
-		ContractIdlJSON: config.EventIdlJson,
+		ContractIdlJSON: config.ContractIdlJson,
 		SubkeyPaths:     getSubkeyPaths(config.Subkeys),
 		Retention:       lts.retention,
 		MaxLogsKept:     lts.maxLogsKept,

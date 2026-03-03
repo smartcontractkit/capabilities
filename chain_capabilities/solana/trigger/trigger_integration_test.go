@@ -89,10 +89,10 @@ func TestSolanaLogTrigger(t *testing.T) {
 	fmt.Println("Contract Address: ", address)
 
 	filterRequest := &solanacappb.FilterLogTriggerRequest{
-		Name:         "test_trigger",
-		Address:      address[:],
-		EventName:    "TestEvent",
-		EventIdlJson: []byte(idl),
+		Name:            "test_trigger",
+		Address:         address[:],
+		EventName:       "TestEvent",
+		ContractIdlJson: []byte(idl),
 	}
 
 	meta := capabilities.RequestMetadata{
@@ -207,10 +207,10 @@ func TestSolanaLogTriggerWithSubkeyPaths(t *testing.T) {
 	binary.BigEndian.PutUint64(valueBytes, valueThreshold)
 
 	filterRequest := &solanacappb.FilterLogTriggerRequest{
-		Name:         "test_trigger_subkey",
-		Address:      address[:],
-		EventName:    "TestEvent",
-		EventIdlJson: []byte(idl),
+		Name:            "test_trigger_subkey",
+		Address:         address[:],
+		EventName:       "TestEvent",
+		ContractIdlJson: []byte(idl),
 		Subkeys: []*solanacappb.SubkeyConfig{
 			{Path: []string{"StrVal"}},
 			{
@@ -330,10 +330,10 @@ func TestSolanaLogTrigger_UnhappyPaths(t *testing.T) {
 
 	t.Run("empty trigger ID", func(t *testing.T) {
 		filterRequest := &solanacappb.FilterLogTriggerRequest{
-			Name:         "test_trigger",
-			Address:      address[:],
-			EventName:    "TestEvent",
-			EventIdlJson: []byte(idl),
+			Name:            "test_trigger",
+			Address:         address[:],
+			EventName:       "TestEvent",
+			ContractIdlJson: []byte(idl),
 		}
 
 		_, capErr := triggerSvc.RegisterLogTrigger(t.Context(), "", meta, filterRequest)
@@ -343,10 +343,10 @@ func TestSolanaLogTrigger_UnhappyPaths(t *testing.T) {
 
 	t.Run("duplicate trigger registration", func(t *testing.T) {
 		filterRequest := &solanacappb.FilterLogTriggerRequest{
-			Name:         "test_trigger_dup",
-			Address:      address[:],
-			EventName:    "TestEvent",
-			EventIdlJson: []byte(idl),
+			Name:            "test_trigger_dup",
+			Address:         address[:],
+			EventName:       "TestEvent",
+			ContractIdlJson: []byte(idl),
 		}
 
 		// First registration should succeed
@@ -382,10 +382,10 @@ func TestSolanaLogTrigger_UnhappyPaths(t *testing.T) {
 
 	t.Run("register with invalid address length", func(t *testing.T) {
 		filterRequest := &solanacappb.FilterLogTriggerRequest{
-			Name:         "test_trigger_invalid_addr",
-			Address:      []byte("too_short"), // Invalid address length
-			EventName:    "TestEvent",
-			EventIdlJson: []byte(idl),
+			Name:            "test_trigger_invalid_addr",
+			Address:         []byte("too_short"), // Invalid address length
+			EventName:       "TestEvent",
+			ContractIdlJson: []byte(idl),
 		}
 
 		// Registration may succeed but with zero-valued address
@@ -400,10 +400,10 @@ func TestSolanaLogTrigger_UnhappyPaths(t *testing.T) {
 
 	t.Run("register with empty event IDL", func(t *testing.T) {
 		filterRequest := &solanacappb.FilterLogTriggerRequest{
-			Name:         "test_trigger_empty_idl",
-			Address:      address[:],
-			EventName:    "TestEvent",
-			EventIdlJson: []byte{}, // Empty IDL
+			Name:            "test_trigger_empty_idl",
+			Address:         address[:],
+			EventName:       "TestEvent",
+			ContractIdlJson: []byte{}, // Empty IDL
 		}
 
 		logCh, capErr := triggerSvc.RegisterLogTrigger(t.Context(), "empty_idl_test", meta, filterRequest)
@@ -417,10 +417,10 @@ func TestSolanaLogTrigger_UnhappyPaths(t *testing.T) {
 
 	t.Run("register with invalid event signature length", func(t *testing.T) {
 		filterRequest := &solanacappb.FilterLogTriggerRequest{
-			Name:         "test_trigger_invalid_sig",
-			Address:      address[:],
-			EventName:    "TestEvent",
-			EventIdlJson: []byte(idl),
+			Name:            "test_trigger_invalid_sig",
+			Address:         address[:],
+			EventName:       "TestEvent",
+			ContractIdlJson: []byte(idl),
 		}
 
 		logCh, capErr := triggerSvc.RegisterLogTrigger(t.Context(), "invalid_sig_test", meta, filterRequest)
@@ -434,10 +434,10 @@ func TestSolanaLogTrigger_UnhappyPaths(t *testing.T) {
 
 	t.Run("double unregister same trigger", func(t *testing.T) {
 		filterRequest := &solanacappb.FilterLogTriggerRequest{
-			Name:         "test_trigger_double_unreg",
-			Address:      address[:],
-			EventName:    "TestEvent",
-			EventIdlJson: []byte(idl),
+			Name:            "test_trigger_double_unreg",
+			Address:         address[:],
+			EventName:       "TestEvent",
+			ContractIdlJson: []byte(idl),
 		}
 
 		// Register
@@ -512,10 +512,10 @@ func TestSolanaLogTrigger_NoEventsReceived(t *testing.T) {
 
 	// Register for a non-existent event name
 	filterRequest := &solanacappb.FilterLogTriggerRequest{
-		Name:         "test_trigger_no_events",
-		Address:      address[:],
-		EventName:    "TestEvent",
-		EventIdlJson: []byte(idl),
+		Name:            "test_trigger_no_events",
+		Address:         address[:],
+		EventName:       "TestEvent",
+		ContractIdlJson: []byte(idl),
 	}
 
 	meta := capabilities.RequestMetadata{
@@ -604,10 +604,10 @@ func TestSolanaLogTrigger_FilterExcludesAllEvents(t *testing.T) {
 	binary.BigEndian.PutUint64(impossibleValueBytes, 999999999)
 
 	filterRequest := &solanacappb.FilterLogTriggerRequest{
-		Name:         "test_trigger_filter_all",
-		Address:      address[:],
-		EventName:    "TestEvent",
-		EventIdlJson: []byte(idl),
+		Name:            "test_trigger_filter_all",
+		Address:         address[:],
+		EventName:       "TestEvent",
+		ContractIdlJson: []byte(idl),
 		Subkeys: []*solanacappb.SubkeyConfig{
 			{
 				Path: []string{"U64Value"},
