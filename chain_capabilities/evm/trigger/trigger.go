@@ -120,13 +120,15 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 		Close: lts.close,
 	}.NewServiceEngine(lggr)
 
-	retryInterval := 2 * time.Second // TODO: parameterizable by chain: https://smartcontract-it.atlassian.net/browse/CRE-1774
+	retryInterval := 2 * time.Second
 	if triggerEventStore == nil {
 		lggr.Warnf("no trigger event store provided; defaulting to in-memory event store")
 		triggerEventStore = capabilities.NewMemEventStore()
 	}
+	undeliveredWarning := 5 * retryInterval
+	undeliveredCritical := 20 * retryInterval
 	lts.baseTrigger = capabilities.NewBaseTriggerCapability(triggerEventStore, func() *evmcappb.Log { return &evmcappb.Log{} },
-		lts.lggr, "EvmLogTriggerService", retryInterval)
+		lts.lggr, "EvmLogTriggerService", retryInterval, undeliveredWarning, undeliveredCritical)
 	return lts, nil
 }
 
