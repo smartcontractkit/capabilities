@@ -17,7 +17,9 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/settings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	aptostypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/aptos"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
+	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 	"github.com/stretchr/testify/require"
 )
@@ -226,11 +228,81 @@ func TestResolveDeterministicFailedHash_ReturnsErrorWhenRoundBudgetExhausted(t *
 	require.Contains(t, err.Error(), "failed to resolve deterministic failed hash after 2 consensus rounds")
 }
 
+func TestAptosWriteExecutionConfigFromCapabilityConfig_PrefersWriteReportMethodConfig(t *testing.T) {
+	cfg := capabilities.CapabilityConfiguration{
+		RemoteExecutableConfig: &capabilities.RemoteExecutableConfig{
+			TransmissionSchedule: capabilities.Schedule_AllAtOnce,
+			DeltaStage:           5 * time.Second,
+		},
+		CapabilityMethodConfig: map[string]capabilities.CapabilityMethodConfig{
+			aptosWriteReportMethodConfigKey: {
+				RemoteExecutableConfig: &capabilities.RemoteExecutableConfig{
+					TransmissionSchedule: capabilities.Schedule_OneAtATime,
+					DeltaStage:           1500 * time.Millisecond,
+				},
+			},
+		},
+	}
+
+	out := aptosWriteExecutionConfigFromCapabilityConfig(cfg)
+	require.Equal(t, capabilities.Schedule_OneAtATime, out.transmissionSchedule)
+	require.Equal(t, 1500*time.Millisecond, out.deltaStage)
+}
+
+func TestResolveDeterministicFailedHash_ReturnsLateSuccessDuringBarrier(t *testing.T) {
+	transmissionID := newTestTransmissionID()
+	metadata := capabilities.RequestMetadata{
+		WorkflowExecutionID: hex.EncodeToString(transmissionID.WorkflowExecutionID[:]),
+		ReferenceID:         "step1",
+		WorkflowDonID:       1,
+	}
+
+	specCfg := values.EmptyMap()
+	transmittersVal, err := values.Wrap([]string{
+		"0x" + strings.Repeat("1", 64),
+		"0x" + strings.Repeat("2", 64),
+	})
+	require.NoError(t, err)
+	specCfg.Underlying[aptosSpecConfigTransmittersListKey] = transmittersVal
+
+	cfg := capabilities.CapabilityConfiguration{
+		SpecConfig: specCfg,
+		CapabilityMethodConfig: map[string]capabilities.CapabilityMethodConfig{
+			aptosWriteReportMethodConfigKey: {
+				RemoteExecutableConfig: &capabilities.RemoteExecutableConfig{
+					TransmissionSchedule: capabilities.Schedule_OneAtATime,
+					DeltaStage:           10 * time.Millisecond,
+				},
+			},
+		},
+	}
+
+	a := &Aptos{
+		forwarderClient: &mockForwarderClient{
+			transmissionInfoOverride: &TransmissionInfo{
+				Success:     true,
+				Transmitter: "0x" + strings.Repeat("3", 64),
+			},
+		},
+		ConsensusHandler: &passthroughAggregatableConsensusHandler{},
+		capabilityRegistry: &mockCapabilitiesRegistry{
+			cfg: cfg,
+		},
+		capabilityID: "aptos:ChainSelector:123@1.0.0",
+		lggr:         logger.Sugared(logger.Test(t)),
+	}
+
+	_, err = a.resolveDeterministicFailedHash(context.Background(), metadata, transmissionID, "", []byte("expected"), 2)
+	require.ErrorIs(t, err, errLateSuccessObserved)
+}
+
 type mockForwarderClient struct {
 	pendingSender                     [32]byte
 	pendingHash                       string
 	failedHash                        string
 	failedHashErr                     error
+	transmissionInfoErr               error
+	transmissionInfoOverride          *TransmissionInfo
 	failedHashByTransmitter           map[string]string
 	failedHashErrByTransmitter        map[string]error
 	validatedHashByInput              map[string]string
@@ -254,6 +326,12 @@ func (m *mockForwarderClient) InvokeOnReport(_ context.Context, _ []byte, _ *sdk
 }
 
 func (m *mockForwarderClient) GetTransmissionInfo(_ context.Context, _ TransmissionID) (TransmissionInfo, error) {
+	if m.transmissionInfoErr != nil {
+		return TransmissionInfo{}, m.transmissionInfoErr
+	}
+	if m.transmissionInfoOverride != nil {
+		return *m.transmissionInfoOverride, nil
+	}
 	return TransmissionInfo{Success: false}, nil
 }
 
@@ -328,6 +406,19 @@ func (h *passthroughAggregatableConsensusHandler) Handle(ctx context.Context, re
 
 type scriptedAggregatableConsensusHandler struct {
 	selectedByRequestID map[string]*pb.Decimal
+}
+
+type mockCapabilitiesRegistry struct {
+	core.UnimplementedCapabilitiesRegistry
+	cfg capabilities.CapabilityConfiguration
+	err error
+}
+
+func (m *mockCapabilitiesRegistry) ConfigForCapability(_ context.Context, _ string, _ uint32) (capabilities.CapabilityConfiguration, error) {
+	if m.err != nil {
+		return capabilities.CapabilityConfiguration{}, m.err
+	}
+	return m.cfg, nil
 }
 
 func (h *scriptedAggregatableConsensusHandler) Handle(_ context.Context, request ctypes.Request) (<-chan ctypes.Reply, error) {

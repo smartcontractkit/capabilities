@@ -34,9 +34,12 @@ const (
 	aptosSpecConfigTransmittersListKey = "aptosTransmitters"
 	aptosFailedHashCutoffLag           = uint64(2)
 	aptosFailedHashAggregationMethod   = "observer-round-robin"
+	aptosWriteReportMethodConfigKey    = "WriteReport"
 	aptosForwarderFailureMessage       = "forwarder contract execution failure"
 	aptosReceiverFailureMessage        = "receiver contract execution failure"
 )
+
+var errLateSuccessObserved = errors.New("successful transmission observed while resolving failed hash")
 
 type aptosFailureOrigin string
 
@@ -51,6 +54,11 @@ type aptosWriteRetryConfig struct {
 	maxRetries uint
 	f          int
 	n          int
+}
+
+type aptosWriteExecutionConfig struct {
+	transmissionSchedule capabilities.TransmissionSchedule
+	deltaStage           time.Duration
 }
 
 type aptosWriteOutcome struct {
@@ -180,6 +188,9 @@ func (s *Aptos) executeWriteReport(
 		if failedHashErr == nil {
 			canonicalFailedHash, canonicalErr := s.resolveDeterministicFailedHash(ctx, metadata, transmissionID, localFailedHash, expectedForwarderRawReport, retryConfig.n)
 			if canonicalErr != nil {
+				if errors.Is(canonicalErr, errLateSuccessObserved) {
+					return s.lateSuccessReply(ctx, transmissionID, expectedForwarderRawReport, retryConfig)
+				}
 				return nil, fmt.Errorf("failed to resolve deterministic failed hash after timeout: %w", canonicalErr)
 			}
 			errorMsg := fmt.Sprintf("write transmission did not succeed before timeout: %s", s.failedTransmissionMessage(ctx, canonicalFailedHash))
@@ -191,6 +202,9 @@ func (s *Aptos) executeWriteReport(
 	if outcome.failedHash != "" {
 		canonicalFailedHash, canonicalErr := s.resolveDeterministicFailedHash(ctx, metadata, transmissionID, outcome.failedHash, expectedForwarderRawReport, retryConfig.n)
 		if canonicalErr != nil {
+			if errors.Is(canonicalErr, errLateSuccessObserved) {
+				return s.lateSuccessReply(ctx, transmissionID, expectedForwarderRawReport, retryConfig)
+			}
 			return nil, fmt.Errorf("failed to resolve deterministic failed hash after onchain failure: %w", canonicalErr)
 		}
 		errorMsg := fmt.Sprintf("write transmission failed onchain: %s", s.failedTransmissionMessage(ctx, canonicalFailedHash))
@@ -227,6 +241,28 @@ func newWriteFailedReply(txHash string, errorMsg string) *aptoscap.WriteReportRe
 		TxHash:       []byte(txHash),
 		ErrorMessage: &errorMsg,
 	}
+}
+
+func (s *Aptos) lateSuccessReply(
+	ctx context.Context,
+	transmissionID TransmissionID,
+	expectedForwarderRawReport []byte,
+	retryConfig aptosWriteRetryConfig,
+) (*aptoscap.WriteReportReply, error) {
+	info, err := s.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
+	if err != nil {
+		return nil, fmt.Errorf("late success was observed but failed to refresh transmission info: %w", err)
+	}
+	if !info.Success {
+		return nil, fmt.Errorf("late success was observed but transmission is not successful anymore")
+	}
+
+	onchainTransmitter := normalizeAptosHexAddress(info.Transmitter)
+	canonicalHash, err := s.waitForCanonicalSuccessTxHash(ctx, transmissionID, onchainTransmitter, expectedForwarderRawReport, retryConfig, "late successful transmission")
+	if err != nil {
+		return nil, err
+	}
+	return newWriteSuccessReply(canonicalHash), nil
 }
 
 func (s *Aptos) resolveCanonicalSuccessTxHash(
@@ -331,51 +367,86 @@ func (s *Aptos) resolveDeterministicFailedHash(
 	expectedForwarderRawReport []byte,
 	roundBudget int,
 ) (string, error) {
-	// Preferred path (EVM-like): scan failed tx candidates from the configured
-	// transmitter set, then validate payload/transmission match onchain.
-	// If this path is unavailable in a given environment, fall back to observer rounds.
-	orderedTransmitters, transmitterErr := s.registryOrderedTransmittersForTransmission(ctx, metadata, transmissionID)
-	if transmitterErr == nil && len(orderedTransmitters) > 0 {
-		cutoffLedgerVersion, cutoffErr := s.consensusSelectFailedHashLedgerCutoff(ctx, metadata)
-		if cutoffErr != nil {
-			s.lggr.Debugw("Failed to reach shared Aptos ledger cutoff; continuing without cutoff", "error", cutoffErr)
-			cutoffLedgerVersion = nil
-		}
+	_ = roundBudget
 
-		canonicalFromTransmitters, transmitterLookupErr := s.resolveFirstValidatedFailedHashFromTransmitters(
-			ctx,
-			transmissionID,
-			orderedTransmitters,
-			expectedForwarderRawReport,
-			cutoffLedgerVersion,
-		)
-		if transmitterLookupErr == nil && strings.TrimSpace(canonicalFromTransmitters) != "" {
-			return canonicalFromTransmitters, nil
-		}
+	// Preferred path (EVM-like): canonical transmitter ordering from capability registry,
+	// then deterministic failed-hash scan and validation against onchain payload.
+	cfg, cfgErr := s.capabilityConfigForTransmission(ctx, metadata)
+	if cfgErr == nil {
+		orderedTransmitters, transmitterErr := transmittersFromCapabilitySpecConfig(cfg.SpecConfig)
+		if transmitterErr == nil && len(orderedTransmitters) > 0 {
+			execCfg := aptosWriteExecutionConfigFromCapabilityConfig(cfg)
+			if barrierErr := s.waitForFailureResolutionBarrier(ctx, transmissionID, execCfg, len(orderedTransmitters)); barrierErr != nil {
+				return "", barrierErr
+			}
 
-		// Retry once without cutoff if the cutoff-bounded scan found no validated candidate.
-		if cutoffLedgerVersion != nil {
-			canonicalFromTransmitters, uncappedErr := s.resolveFirstValidatedFailedHashFromTransmitters(
+			canonicalFromTransmitters, transmitterLookupErr := s.resolveFirstValidatedFailedHashFromTransmitters(
 				ctx,
 				transmissionID,
 				orderedTransmitters,
 				expectedForwarderRawReport,
 				nil,
 			)
-			if uncappedErr == nil && strings.TrimSpace(canonicalFromTransmitters) != "" {
+			if transmitterLookupErr == nil && strings.TrimSpace(canonicalFromTransmitters) != "" {
 				return canonicalFromTransmitters, nil
 			}
-			if uncappedErr != nil {
-				s.lggr.Debugw("Uncapped registry transmitter scan failed", "error", uncappedErr)
-			}
-		}
 
-		s.lggr.Debugw("Registry transmitter scan did not yield a validated failed hash; falling back to observer rounds", "error", transmitterLookupErr)
-	} else if transmitterErr != nil {
+			return "", fmt.Errorf("registry transmitter scan did not yield a validated failed hash: %w", transmitterLookupErr)
+		}
 		s.lggr.Debugw("Aptos transmitter set unavailable from capability registry; falling back to observer rounds", "error", transmitterErr)
+	} else {
+		s.lggr.Debugw("Failed to fetch capability config for Aptos transmitter set; falling back to observer rounds", "error", cfgErr)
 	}
 
+	// Compatibility fallback while capability-registry wiring converges.
 	return s.resolveDeterministicFailedHashByObserverRound(ctx, metadata, transmissionID, localFailedHash, expectedForwarderRawReport, roundBudget)
+}
+
+func (s *Aptos) waitForFailureResolutionBarrier(
+	ctx context.Context,
+	transmissionID TransmissionID,
+	execCfg aptosWriteExecutionConfig,
+	transmitterCount int,
+) error {
+	if execCfg.transmissionSchedule != capabilities.Schedule_OneAtATime {
+		return nil
+	}
+	if execCfg.deltaStage <= 0 || transmitterCount <= 1 {
+		return nil
+	}
+
+	barrier := execCfg.deltaStage * time.Duration(transmitterCount-1)
+	if barrier <= 0 {
+		return nil
+	}
+
+	if info, err := s.forwarderClient.GetTransmissionInfo(ctx, transmissionID); err == nil && info.Success {
+		return errLateSuccessObserved
+	}
+
+	pollInterval := execCfg.deltaStage / 4
+	if pollInterval <= 0 || pollInterval > time.Second {
+		pollInterval = 500 * time.Millisecond
+	}
+
+	timer := time.NewTimer(barrier)
+	defer timer.Stop()
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timer.C:
+			return nil
+		case <-ticker.C:
+			info, err := s.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
+			if err == nil && info.Success {
+				return errLateSuccessObserved
+			}
+		}
+	}
 }
 
 func (s *Aptos) resolveDeterministicFailedHashByObserverRound(
@@ -481,33 +552,44 @@ func (s *Aptos) resolveFirstValidatedFailedHashFromTransmitters(
 	return "", fmt.Errorf("no validated failed tx hash found from registry transmitters")
 }
 
-func (s *Aptos) registryOrderedTransmittersForTransmission(
+func (s *Aptos) capabilityConfigForTransmission(
 	ctx context.Context,
 	metadata capabilities.RequestMetadata,
-	transmissionID TransmissionID,
-) ([]string, error) {
+) (capabilities.CapabilityConfiguration, error) {
 	if s.capabilityRegistry == nil {
-		return nil, fmt.Errorf("capability registry unavailable")
+		return capabilities.CapabilityConfiguration{}, fmt.Errorf("capability registry unavailable")
 	}
 	if s.capabilityID == "" {
-		return nil, fmt.Errorf("capability id unavailable")
+		return capabilities.CapabilityConfiguration{}, fmt.Errorf("capability id unavailable")
 	}
 	if metadata.WorkflowDonID == 0 {
-		return nil, fmt.Errorf("workflow DON id unavailable")
+		return capabilities.CapabilityConfiguration{}, fmt.Errorf("workflow DON id unavailable")
 	}
 
 	cfg, err := s.capabilityRegistry.ConfigForCapability(ctx, s.capabilityID, metadata.WorkflowDonID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch capability config: %w", err)
+		return capabilities.CapabilityConfiguration{}, fmt.Errorf("failed to fetch capability config: %w", err)
 	}
-	transmitters, err := transmittersFromCapabilitySpecConfig(cfg.SpecConfig)
-	if err != nil {
-		return nil, err
+	return cfg, nil
+}
+
+func aptosWriteExecutionConfigFromCapabilityConfig(cfg capabilities.CapabilityConfiguration) aptosWriteExecutionConfig {
+	out := aptosWriteExecutionConfig{
+		transmissionSchedule: capabilities.Schedule_AllAtOnce,
+		deltaStage:           0,
 	}
 
-	// Keep configured order so failed-hash scanning follows the same canonical
-	// transmitter ordering that nodes are configured with.
-	return transmitters, nil
+	if cfg.RemoteExecutableConfig != nil {
+		out.transmissionSchedule = cfg.RemoteExecutableConfig.TransmissionSchedule
+		out.deltaStage = cfg.RemoteExecutableConfig.DeltaStage
+	}
+
+	if methodCfg, ok := cfg.CapabilityMethodConfig[aptosWriteReportMethodConfigKey]; ok && methodCfg.RemoteExecutableConfig != nil {
+		out.transmissionSchedule = methodCfg.RemoteExecutableConfig.TransmissionSchedule
+		out.deltaStage = methodCfg.RemoteExecutableConfig.DeltaStage
+	}
+
+	return out
 }
 
 func transmittersFromCapabilitySpecConfig(specConfig *values.Map) ([]string, error) {
