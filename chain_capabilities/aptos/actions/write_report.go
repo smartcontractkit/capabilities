@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"os"
 	"strings"
 	"time"
 
@@ -35,6 +36,7 @@ const (
 	aptosFailedHashCutoffLag           = uint64(2)
 	aptosFailedHashAggregationMethod   = "observer-round-robin"
 	aptosWriteReportMethodConfigKey    = "WriteReport"
+	aptosDisableObserverFallbackEnvVar = "CL_APTOS_DISABLE_OBSERVER_ROUND_FALLBACK"
 	aptosForwarderFailureMessage       = "forwarder contract execution failure"
 	aptosReceiverFailureMessage        = "receiver contract execution failure"
 )
@@ -368,6 +370,7 @@ func (s *Aptos) resolveDeterministicFailedHash(
 	roundBudget int,
 ) (string, error) {
 	_ = roundBudget
+	var fallbackCause error
 
 	// Preferred path (EVM-like): canonical transmitter ordering from capability registry,
 	// then deterministic failed-hash scan and validation against onchain payload.
@@ -394,12 +397,34 @@ func (s *Aptos) resolveDeterministicFailedHash(
 			return "", fmt.Errorf("registry transmitter scan did not yield a validated failed hash: %w", transmitterLookupErr)
 		}
 		s.lggr.Debugw("Aptos transmitter set unavailable from capability registry; falling back to observer rounds", "error", transmitterErr)
+		fallbackCause = fmt.Errorf("failed to resolve transmitter set from capability registry: %w", transmitterErr)
 	} else {
 		s.lggr.Debugw("Failed to fetch capability config for Aptos transmitter set; falling back to observer rounds", "error", cfgErr)
+		fallbackCause = fmt.Errorf("failed to fetch capability config: %w", cfgErr)
+	}
+
+	if isObserverRoundFallbackDisabled() {
+		if fallbackCause == nil {
+			fallbackCause = fmt.Errorf("registry-based failed-hash resolution unavailable")
+		}
+		return "", fmt.Errorf("observer-round fallback disabled via %s: %w", aptosDisableObserverFallbackEnvVar, fallbackCause)
 	}
 
 	// Compatibility fallback while capability-registry wiring converges.
 	return s.resolveDeterministicFailedHashByObserverRound(ctx, metadata, transmissionID, localFailedHash, expectedForwarderRawReport, roundBudget)
+}
+
+func isObserverRoundFallbackDisabled() bool {
+	return parseBoolEnv(os.Getenv(aptosDisableObserverFallbackEnvVar))
+}
+
+func parseBoolEnv(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Aptos) waitForFailureResolutionBarrier(

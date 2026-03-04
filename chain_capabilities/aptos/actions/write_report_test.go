@@ -228,6 +228,27 @@ func TestResolveDeterministicFailedHash_ReturnsErrorWhenRoundBudgetExhausted(t *
 	require.Contains(t, err.Error(), "failed to resolve deterministic failed hash after 2 consensus rounds")
 }
 
+func TestResolveDeterministicFailedHash_FailsWhenObserverRoundFallbackDisabled(t *testing.T) {
+	t.Setenv(aptosDisableObserverFallbackEnvVar, "true")
+
+	transmissionID := newTestTransmissionID()
+	metadata := capabilities.RequestMetadata{
+		WorkflowExecutionID: hex.EncodeToString(transmissionID.WorkflowExecutionID[:]),
+		ReferenceID:         "step1",
+	}
+
+	a := &Aptos{
+		forwarderClient:  &mockForwarderClient{},
+		ConsensusHandler: &passthroughAggregatableConsensusHandler{},
+		lggr:             logger.Sugared(logger.Test(t)),
+	}
+
+	_, err := a.resolveDeterministicFailedHash(context.Background(), metadata, transmissionID, "", []byte("expected_raw_report"), 2)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "observer-round fallback disabled")
+	require.Contains(t, err.Error(), "capability registry unavailable")
+}
+
 func TestAptosWriteExecutionConfigFromCapabilityConfig_PrefersWriteReportMethodConfig(t *testing.T) {
 	cfg := capabilities.CapabilityConfiguration{
 		RemoteExecutableConfig: &capabilities.RemoteExecutableConfig{
