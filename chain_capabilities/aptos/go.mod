@@ -5,7 +5,7 @@ go 1.25.5
 require (
 	github.com/aptos-labs/aptos-go-sdk v1.11.0
 	github.com/jpillora/backoff v1.0.0
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20260302130547-8b8fbe5ae383
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20260303214219-de7e5623c21d
 	github.com/smartcontractkit/chain-selectors v1.0.90
 	github.com/smartcontractkit/chainlink-aptos v0.0.0-20260217202121-e180775e1fb5
 	github.com/smartcontractkit/chainlink-common v0.10.1-0.20260226191628-ecce52da56c9
