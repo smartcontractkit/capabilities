@@ -33,7 +33,7 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 		relayerSet := relayermock.NewRelayerSet(t)
 		relayerSet.On("Get", mock.Anything, mock.Anything).Return(relayer, nil)
 		svc := &capabilityGRPCService{lggr: logger.Test(t)}
-		cfg := config.Config{ChainID: 1337, Network: "testnet", LogTriggerPollInterval: 60 * time.Second, CREForwarderAddress: testutils.NewAddress().String(), ReceiverGasMinimum: 1000}
+		cfg := config.Config{ChainID: 1337, Network: "testnet", LogTriggerPollInterval: 60 * time.Second, CREForwarderAddress: testutils.NewAddress().String(), ReceiverGasMinimum: 1000, IsLocaL: true, DeltaStage: time.Second}
 		cfgJSON, _ := json.Marshal(cfg)
 
 		err := svc.Initialise(t.Context(), core.StandardCapabilitiesDependencies{OracleFactory: nullOracleFactory{}, RelayerSet: relayerSet, Config: string(cfgJSON)})
@@ -50,7 +50,7 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 		relayerSet := relayermock.NewRelayerSet(t)
 		relayerSet.On("Get", mock.Anything, mock.Anything).Return(relayer, nil)
 		svc := &capabilityGRPCService{lggr: logger.Test(t)}
-		cfg := config.Config{ChainID: 1337, Network: "testnet", LogTriggerPollInterval: 60 * time.Second, LogTriggerSendChannelBufferSize: 100, LogTriggerLimitQueryLogSize: 10, CREForwarderAddress: common.Bytes2Hex(testutils.NewAddress().Bytes()), ReceiverGasMinimum: 1000}
+		cfg := config.Config{ChainID: 1337, Network: "testnet", LogTriggerPollInterval: 60 * time.Second, LogTriggerSendChannelBufferSize: 100, LogTriggerLimitQueryLogSize: 10, CREForwarderAddress: common.Bytes2Hex(testutils.NewAddress().Bytes()), ReceiverGasMinimum: 1000, DeltaStage: time.Second, IsLocaL: true}
 		cfgJSON, _ := json.Marshal(cfg)
 
 		err := svc.Initialise(t.Context(), core.StandardCapabilitiesDependencies{OracleFactory: nullOracleFactory{}, RelayerSet: relayerSet, Config: string(cfgJSON)})
@@ -74,19 +74,19 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 		relayerSet.On("Get", mock.Anything, mock.Anything).Return(relayer, nil)
 		svc := &capabilityGRPCService{lggr: logger.Test(t)}
 
-		cfg := config.Config{ChainID: 1337, Network: "testnet", LogTriggerPollInterval: -1, CREForwarderAddress: common.Bytes2Hex(testutils.NewAddress().Bytes()), ReceiverGasMinimum: 1000}
+		cfg := config.Config{ChainID: 1337, Network: "testnet", LogTriggerPollInterval: -1, CREForwarderAddress: common.Bytes2Hex(testutils.NewAddress().Bytes()), ReceiverGasMinimum: 1000, DeltaStage: time.Second, IsLocaL: true}
 		cfgJSON, _ := json.Marshal(cfg)
 		err := svc.Initialise(t.Context(), core.StandardCapabilitiesDependencies{OracleFactory: nullOracleFactory{}, RelayerSet: relayerSet, Config: string(cfgJSON)})
 
 		assert.ErrorContains(t, err, "failed to unmarshal config: logTriggerPollInterval must be positive, got: -1ns")
 
-		cfg = config.Config{ChainID: 1337, Network: "testnet", LogTriggerPollInterval: 60 * time.Second, CREForwarderAddress: common.Bytes2Hex(testutils.NewAddress().Bytes()), ReceiverGasMinimum: 1000, LogTriggerLimitQueryLogSize: uint64(1001)}
+		cfg = config.Config{ChainID: 1337, Network: "testnet", LogTriggerPollInterval: 60 * time.Second, CREForwarderAddress: common.Bytes2Hex(testutils.NewAddress().Bytes()), ReceiverGasMinimum: 1000, LogTriggerLimitQueryLogSize: uint64(1001), DeltaStage: time.Second, IsLocaL: true}
 		cfgJSON, _ = json.Marshal(cfg)
 		err = svc.Initialise(t.Context(), core.StandardCapabilitiesDependencies{OracleFactory: nullOracleFactory{}, RelayerSet: relayerSet, Config: string(cfgJSON)})
 		assert.ErrorContains(t, err, "error when creating trigger: logTriggerLimitQueryLogSize (1001) must be less than logTriggerSendChannelBufferSize (1000)")
 
 		cfg = config.Config{ChainID: 1337, Network: "testnet", LogTriggerPollInterval: 60 * time.Second, CREForwarderAddress: common.Bytes2Hex(testutils.NewAddress().Bytes()), ReceiverGasMinimum: 1000,
-			LogTriggerSendChannelBufferSize: 5, LogTriggerLimitQueryLogSize: uint64(10)}
+			LogTriggerSendChannelBufferSize: 5, LogTriggerLimitQueryLogSize: uint64(10), DeltaStage: time.Second, IsLocaL: true}
 		cfgJSON, _ = json.Marshal(cfg)
 		err = svc.Initialise(t.Context(), core.StandardCapabilitiesDependencies{OracleFactory: nullOracleFactory{}, RelayerSet: relayerSet, Config: string(cfgJSON)})
 		assert.ErrorContains(t, err, "error when creating trigger: logTriggerLimitQueryLogSize (10) must be less than logTriggerSendChannelBufferSize (5)")
@@ -95,12 +95,29 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 		relayerSet := relayermock.NewRelayerSet(t)
 		relayerSet.On("Get", mock.Anything, mock.Anything).Return(nil, assert.AnError)
 
-		cfgJSON, _ := json.Marshal(config.Config{ChainID: 1, Network: "net", LogTriggerPollInterval: 60 * time.Second, CREForwarderAddress: testutils.NewAddress().String(), ReceiverGasMinimum: 1000})
+		cfgJSON, _ := json.Marshal(config.Config{ChainID: 1, Network: "net", LogTriggerPollInterval: 60 * time.Second, CREForwarderAddress: testutils.NewAddress().String(), ReceiverGasMinimum: 1000, DeltaStage: time.Second, IsLocaL: true})
 		svc := &capabilityGRPCService{lggr: logger.Test(t)}
 
 		err := svc.Initialise(t.Context(), core.StandardCapabilitiesDependencies{RelayerSet: relayerSet, Config: string(cfgJSON)})
 
 		assert.ErrorIs(t, err, assert.AnError)
+	})
+	t.Run("happy-path-without-delta-stage", func(t *testing.T) {
+		evmSvc := evmmock.NewEVMService(t)
+		evmSvc.On("GetFiltersNames", mock.Anything).Maybe().Return([]string{}, nil)
+		relayer := relayermock.NewRelayer(t)
+		relayer.On("EVM").Return(evmSvc, nil)
+		relayer.On("GetChainInfo", mock.Anything).Return(types.ChainInfo{}, nil)
+
+		relayerSet := relayermock.NewRelayerSet(t)
+		relayerSet.On("Get", mock.Anything, mock.Anything).Return(relayer, nil)
+		svc := &capabilityGRPCService{lggr: logger.Test(t)}
+		cfg := config.Config{ChainID: 1337, Network: "testnet", LogTriggerPollInterval: 60 * time.Second, CREForwarderAddress: testutils.NewAddress().String(), ReceiverGasMinimum: 1000, IsLocaL: true}
+		cfgJSON, _ := json.Marshal(cfg)
+
+		err := svc.Initialise(t.Context(), core.StandardCapabilitiesDependencies{OracleFactory: nullOracleFactory{}, RelayerSet: relayerSet, Config: string(cfgJSON)})
+		require.NoError(t, err)
+		require.NoError(t, svc.Close())
 	})
 	t.Run("Misconfiguration", func(t *testing.T) {
 		t.Run("No Keystone forwarder address provided", func(t *testing.T) {

@@ -55,6 +55,10 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 		if err := p.metrics.OnWriteReportSuccess(ctx, msg); err != nil {
 			return fmt.Errorf("failed to publish WriteReportSuccess metrics: %w", err)
 		}
+	case *WriteReportSuccessfulEarlyReturn:
+		if err := p.metrics.OnWriteReportSuccessfulEarlyReturn(ctx, msg); err != nil {
+			return fmt.Errorf("failed to publish WriteReportSuccessfulEarlyReturn metrics: %w", err)
+		}
 	case *WriteReportError:
 		p.logMessage(msg)
 		if !msg.GetIsUserError() {
@@ -178,6 +182,12 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 				return fmt.Errorf("failed to publish HeaderByNumberError metrics: %w", err)
 			}
 		}
+	// -- TransmissionScheduler --
+	case *TransmissionSchedulerNodeNotFoundInDon:
+		p.logMessage(msg)
+		if err := p.metrics.OnTransmissionSchedulerNodeNotFoundInDon(ctx, msg); err != nil {
+			return fmt.Errorf("failed to publish TransmissionSchedulerNodeNotFoundInDon metrics: %w", err)
+		}
 	default:
 		// Unknown message types are silently ignored (noop)
 		return nil
@@ -244,7 +254,13 @@ func LogAndEmitError(
 		}
 	}
 
-	lggr.Errorw(eM.GetSummary()+" err: "+eM.GetCause(), attrsToErrorKV(localLogAttributes)...)
+	logMsg := eM.GetSummary() + " err: " + eM.GetCause()
+	kvs := attrsToErrorKV(localLogAttributes)
+	if userErrMsg, ok := eM.(interface{ GetIsUserError() bool }); ok && userErrMsg.GetIsUserError() {
+		lggr.Warnw(logMsg, kvs...)
+	} else {
+		lggr.Errorw(logMsg, kvs...)
+	}
 	if err := beholderProcessor.Process(ctx, eM); err != nil {
 		lggr.Errorw(fmt.Sprintf("Failed to process %s message", getMessageName(eM)), "err", err)
 	}

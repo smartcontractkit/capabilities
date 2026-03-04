@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -59,10 +60,12 @@ type EVM struct {
 	logQueryBlockLimit     limits.BoundLimiter[uint64]
 	reportSizeLimit        limits.BoundLimiter[commoncfg.Size]
 	txGasLimit             limits.BoundLimiter[uint64]
+
+	transmissionScheduler TransmissionScheduler
 }
 
 func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, beholderProcessor beholder.ProtoProcessor,
-	messageBuilder *monitoring.MessageBuilder, handler ConsensusHandler, chainSelector uint64, limitsFactory limits.Factory) (*EVM, caperrors.Error) {
+	messageBuilder *monitoring.MessageBuilder, handler ConsensusHandler, chainSelector uint64, limitsFactory limits.Factory, transmissionScheduler TransmissionScheduler) (*EVM, caperrors.Error) {
 	keystoneForwarderAddress := common.HexToAddress(cfg.CREForwarderAddress)
 	if keystoneForwarderAddress == (common.Address{}) {
 		return &EVM{}, caperrors.NewPublicSystemError(errors.New("keystone forwarder address is not set"), caperrors.Unknown)
@@ -83,6 +86,7 @@ func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, 
 		messageBuilder:           messageBuilder,
 		ConsensusHandler:         handler,
 		chainSelector:            chainSelector,
+		transmissionScheduler:    transmissionScheduler,
 	}
 	err = e.initLimiters(limitsFactory)
 	if err != nil {
@@ -172,7 +176,7 @@ func (e *EVM) CallContract(
 
 	data, err := readType[[]byte](ctx, e.ConsensusHandler, request)
 	if err != nil {
-		isUserError := e.isUserError(err)
+		isUserError := isRevertError(err) || e.isUserError(err)
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor,
 			e.messageBuilder.BuildCallContractError(telemetryContext, callMsg, blockNumber.Int64(), "Failed to read CallContract", err.Error(), isUserError))
 		return nil, GetError(err, isUserError)
@@ -681,6 +685,10 @@ func readType[T any](ctx context.Context, reader ConsensusHandler, request ctype
 func (e *EVM) isUserError(err error) bool {
 	return !errors.Is(err, context.DeadlineExceeded) &&
 		!errors.Is(err, multinode.ErrNodeError)
+}
+
+func isRevertError(err error) bool {
+	return strings.Contains(err.Error(), "execution reverted")
 }
 
 func GetError(err error, isUserError bool) caperrors.Error {

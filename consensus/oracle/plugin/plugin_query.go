@@ -35,7 +35,7 @@ func (r *reportingPlugin) Query(ctx context.Context, outctx ocr3types.OutcomeCon
 		}
 	}
 
-	r.lggr.Debugw("consensus plugin query complete", "number of request ids", queryBatch.NumberOfRequestIDs())
+	r.lggr.Debugw("consensus plugin query complete", "seqNr", outctx.SeqNr, "number of request ids", queryBatch.NumberOfRequestIDs())
 	return queryBatch.SerialiseQueryBatch()
 }
 
@@ -50,7 +50,7 @@ func (r *reportingPlugin) getPendingRequests(outctx ocr3types.OutcomeContext, al
 	prevOutcome := &oracletypes.Outcome{}
 	err := proto.Unmarshal(outctx.PreviousOutcome, prevOutcome)
 	if err != nil {
-		r.lggr.Errorw("could not unmarshal previous outcome", "error", err)
+		r.lggr.Errorw("could not unmarshal previous outcome", "seqNr", outctx.SeqNr, "error", err)
 		return nil, err
 	}
 
