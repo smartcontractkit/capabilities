@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"math"
 	"math/big"
 	"os"
 	"strings"
@@ -33,7 +32,6 @@ const userError = "user error:"
 const (
 	aptosPollingRetryMaxBackoff        = 3 * time.Second
 	aptosSpecConfigTransmittersListKey = "aptosTransmitters"
-	aptosFailedHashCutoffLag           = uint64(2)
 	aptosFailedHashAggregationMethod   = "observer-round-robin"
 	aptosWriteReportMethodConfigKey    = "WriteReport"
 	aptosDisableObserverFallbackEnvVar = "CL_APTOS_DISABLE_OBSERVER_ROUND_FALLBACK"
@@ -69,7 +67,6 @@ type aptosWriteOutcome struct {
 }
 
 // WriteReport validates and submits a signed report to the Aptos chain via the CRE forwarder.
-// It handles only the simple successful case for now.
 func (s *Aptos) WriteReport(
 	ctx context.Context,
 	metadata capabilities.RequestMetadata,
@@ -99,29 +96,6 @@ func (s *Aptos) executeWriteReport(
 	request *aptoscap.WriteReportRequest,
 	metadata capabilities.RequestMetadata,
 ) (*aptoscap.WriteReportReply, error) {
-
-	// evm
-	// get transmission id
-	// set gas limits, err if request gas limit is > configured limit
-	// get transmission info using aptosService view method
-	// find out how much transmission info aptos exposes and how much do i need
-	// switch case on transmission info
-	// if not attempted, continue
-	// if succeeded, retrieve tx hash and return
-	// if invalid reciever, retrieve tx hash and return
-	// if failed, see if there is scope of gas bumping, bump and retry
-	// submit now
-	// check report size limit
-	// invoke forwarder client, which calls evm service submit tx
-	// try and poll for new transmission info for a bit, if cannot find return
-	// if found, getFee and report metering
-	// if found and success, check if it reverted on chain because some other node might have sent something as well ?
-	// if found and failed, return failure of first attempt by any node.
-	// to get TxHash, we find logs of the forwarder address
-	// we use HeaderByNumber api from the evmservice and FilterLogs api from the evmservice
-	// we fetch logs based ReportProcessed{receiver, workflowexecutionId, reportId}
-	// the logs returned by the service which are returned by the rpc has the txHash baked in.
-
 	// Set gas limits: use defaults if not provided (or provided as zero), otherwise check against configured limit.
 	if request.GasConfig == nil {
 		request.GasConfig = &aptoscap.GasConfig{}
@@ -369,7 +343,6 @@ func (s *Aptos) resolveDeterministicFailedHash(
 	expectedForwarderRawReport []byte,
 	roundBudget int,
 ) (string, error) {
-	_ = roundBudget
 	var fallbackCause error
 
 	// Preferred path (EVM-like): canonical transmitter ordering from capability registry,
@@ -745,72 +718,6 @@ func decimalToAptosHashOrSentinel(value *pb.Decimal) (string, bool, error) {
 		return "", false, err
 	}
 	return hash, false, nil
-}
-
-func (s *Aptos) consensusSelectFailedHashLedgerCutoff(
-	ctx context.Context,
-	metadata capabilities.RequestMetadata,
-) (*uint64, error) {
-	if s.aptosService == nil {
-		return nil, fmt.Errorf("aptos service unavailable")
-	}
-
-	requestID := commonMon.RequestID(metadata.WorkflowExecutionID, metadata.ReferenceID) + ":aptos-failed-hash-cutoff"
-	request := ctypes.NewAggregatableRequest(requestID, func(ctx context.Context) (*ctypes.AggregatableObservation, error) {
-		latestLedgerVersion, err := s.aptosService.LedgerVersion(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read latest ledger version: %w", err)
-		}
-		return &ctypes.AggregatableObservation{
-			Method: ctypes.AggregationMethodFPlusOneHighest,
-			Value:  uint64ToInvertedDecimal(latestLedgerVersion),
-		}, nil
-	})
-
-	decimalValue, err := readType[*pb.Decimal](ctx, s.ConsensusHandler, request)
-	if err != nil {
-		return nil, err
-	}
-
-	agreedLedgerVersion, err := invertedDecimalToUint64(decimalValue)
-	if err != nil {
-		return nil, err
-	}
-
-	cutoffLedgerVersion := uint64(0)
-	if agreedLedgerVersion > aptosFailedHashCutoffLag {
-		cutoffLedgerVersion = agreedLedgerVersion - aptosFailedHashCutoffLag
-	}
-
-	return &cutoffLedgerVersion, nil
-}
-
-func uint64ToInvertedDecimal(value uint64) *pb.Decimal {
-	inverted := new(big.Int).SetUint64(math.MaxUint64 - value)
-	return &pb.Decimal{
-		Coefficient: pb.NewBigIntFromInt(inverted),
-		Exponent:    0,
-	}
-}
-
-func invertedDecimalToUint64(value *pb.Decimal) (uint64, error) {
-	if value == nil || value.Coefficient == nil {
-		return 0, fmt.Errorf("nil decimal coefficient")
-	}
-	if value.Exponent != 0 {
-		return 0, fmt.Errorf("unexpected decimal exponent %d for ledger version", value.Exponent)
-	}
-
-	intValue := pb.NewIntFromBigInt(value.Coefficient)
-	if intValue.Sign() < 0 {
-		return 0, fmt.Errorf("negative ledger version value")
-	}
-	if intValue.BitLen() > 64 {
-		return 0, fmt.Errorf("ledger version exceeds uint64")
-	}
-
-	inverted := intValue.Uint64()
-	return math.MaxUint64 - inverted, nil
 }
 
 func expectedForwarderRawReportBytes(report *sdk.ReportResponse) ([]byte, error) {
