@@ -46,7 +46,7 @@ func NewTxHashRetriever(forwarderClient CREForwarderClient, lggr logger.Logger, 
 // expectedSuccessValue filters by transaction success/failure status.
 // Returns the matching tx hash if found, plus the earliest timestamp and first sequence number
 // from the batch (used by the pagination/retry logic).
-func (thr *TxHashRetriever) scanTransactions(txns []*aptostypes.Transaction, expectedSuccessValue bool) (txHash string, earliestTimestampMicro uint64, firstSequenceNumber uint64, err error) {
+func (thr *TxHashRetriever) scanTransactions(txns []*aptostypes.Transaction, expectedSuccessValue bool) (txHash string, earliestTimestampMicro uint64, firstSequenceNumber uint64) {
 	metadataSet := false
 	for _, tx := range txns {
 		userTx := aptos_api.UserTransaction{}
@@ -75,13 +75,13 @@ func (thr *TxHashRetriever) scanTransactions(txns []*aptostypes.Transaction, exp
 		} else if entryFunction.Function != thr.entryFunctionName {
 			continue
 		} else if thr.matchesTransmissionByReport(entryFunction) {
-			return string(userTx.Hash), earliestTimestampMicro, firstSequenceNumber, nil
+			return string(userTx.Hash), earliestTimestampMicro, firstSequenceNumber
 		}
 	}
-	return "", earliestTimestampMicro, firstSequenceNumber, nil
+	return "", earliestTimestampMicro, firstSequenceNumber
 }
 
-type txScanner func(txns []*aptostypes.Transaction) (txHash string, earliestTimestampMicro uint64, firstSequenceNumber uint64, err error)
+type txScanner func(txns []*aptostypes.Transaction) (txHash string, earliestTimestampMicro uint64, firstSequenceNumber uint64)
 
 // paginateBackwards fetches older transaction pages until the window covers startingPointMicro.
 // Returns the matching tx hash if the scanner finds one, or ("", nil) if the window is covered
@@ -109,14 +109,10 @@ func (thr *TxHashRetriever) paginateBackwards(
 			break
 		}
 
-		var txHash string
-		var scanErr error
 		// we want to scan here instead of keep fetching txns to meet the startingPointMicro
 		// because we want to avoid fetching unnecessary txns and reduce i/o
-		txHash, earliestTs, firstSeqNum, scanErr = scan(txns)
-		if scanErr != nil {
-			return "", scanErr
-		}
+		var txHash string
+		txHash, earliestTs, firstSeqNum = scan(txns)
 		if txHash != "" {
 			return txHash, nil
 		}
@@ -157,20 +153,17 @@ func (thr *TxHashRetriever) GetSuccessfulTransmissionHash(ctx context.Context, t
 		return result, nil
 	})
 	if err != nil {
-		thr.lggr.Warnw("Phase 1 failed after retries, skipping to poll phase", "transmitter", transmitter.String(), "err", err)
+		thr.lggr.Warnw("Phase 1 failed, returning error", "transmitter", transmitter.String(), "err", err)
 		return "", fmt.Errorf("failed to get transmitter transactions during phase 1: %w", err)
 	}
-	txHash, earliestTxTimestamp, firstSeqNum, scanErr := thr.scanTransactions(txns, true)
-	if scanErr != nil {
-		return "", scanErr
-	}
+	txHash, earliestTxTimestamp, firstSeqNum := thr.scanTransactions(txns, true)
 	if txHash != "" {
 		return txHash, nil
 	}
 
 	// Phase 2: paginate backwards until we cover the starting point
 	if earliestTxTimestamp > uint64(thr.startingPointMicro) {
-		successScanner := func(txns []*aptostypes.Transaction) (string, uint64, uint64, error) {
+		successScanner := func(txns []*aptostypes.Transaction) (string, uint64, uint64) {
 			return thr.scanTransactions(txns, true)
 		}
 		// TODO: emit metrics here to see if we need to adjust initial batch size
@@ -191,10 +184,7 @@ func (thr *TxHashRetriever) GetSuccessfulTransmissionHash(ctx context.Context, t
 		if len(latestTxns) == 0 {
 			return "", fmt.Errorf("no transactions found for transmitter %s", transmitter.String())
 		}
-		hash, _, _, scanErr := thr.scanTransactions(latestTxns, true)
-		if scanErr != nil {
-			return "", scanErr
-		}
+		hash, _, _ := thr.scanTransactions(latestTxns, true)
 		if hash == "" {
 			return "", fmt.Errorf("matching transmission not found yet for %s", thr.transmissionID.GetDebugID())
 		}
@@ -203,34 +193,44 @@ func (thr *TxHashRetriever) GetSuccessfulTransmissionHash(ctx context.Context, t
 }
 
 // GetFailedTransmissionHash searches a transmitter's transactions for a failed forwarder::report
-// call matching this transmission ID. Only paginates backwards (no polling phase), since the
+// call matching this transmission ID. Two-phase approach (no polling phase), since the
 // transmitting node may have crashed and we don't want to wait indefinitely.
+//
+//	Phase 1 (query latest): withQuickRetry fetch of the latest pageSize/2 transactions,
+//	  scan for a failed tx. Empty results retried as likely RPC error.
+//	Phase 2 (go back): paginate backwards through older transactions until our window
+//	  covers startingPointMicro (requestArrivalTime - 1 min).
 func (thr *TxHashRetriever) GetFailedTransmissionHash(ctx context.Context, transmitter aptos_sdk.AccountAddress) (string, error) {
 	pageSize := txSearchPageSize
+	halfPage := pageSize / 2
 
-	txns, err := thr.forwarderClient.GetTransmitterTransactions(ctx, transmitter, nil, &pageSize)
+	// Phase 1: quick probe of the latest transactions (half page, with retry).
+	txns, err := withQuickRetry(ctx, thr.lggr, func(ctx context.Context) ([]*aptostypes.Transaction, error) {
+		result, fetchErr := thr.forwarderClient.GetTransmitterTransactions(ctx, transmitter, nil, &halfPage)
+		if fetchErr != nil {
+			return nil, fetchErr
+		}
+		if len(result) == 0 {
+			return nil, fmt.Errorf("no transactions found for transmitter %s, possible RPC issue", transmitter.String())
+		}
+		return result, nil
+	})
 	if err != nil {
-		return "", fmt.Errorf("failed to get transmitter transactions: %w", err)
+		thr.lggr.Warnw("Phase 1 failed, returning error", "transmitter", transmitter.String(), "err", err)
+		return "", fmt.Errorf("failed to get transmitter transactions during phase 1: %w", err)
 	}
-	if len(txns) == 0 {
-		return "", fmt.Errorf("no transactions found for transmitter %s", transmitter.String())
-	}
-
-	txHash, earliestTxTimestamp, firstSeqNum, scanErr := thr.scanTransactions(txns, false)
-	if scanErr != nil {
-		return "", scanErr
-	}
+	txHash, earliestTxTimestamp, firstSeqNum := thr.scanTransactions(txns, false)
 	if txHash != "" {
 		return txHash, nil
 	}
 
-	// Paginate backwards only until we cover the starting point
+	// Phase 2: paginate backwards only until we cover the starting point
 	if earliestTxTimestamp > uint64(thr.startingPointMicro) {
-		failureScanner := func(txns []*aptostypes.Transaction) (string, uint64, uint64, error) {
+		failureScanner := func(txns []*aptostypes.Transaction) (string, uint64, uint64) {
 			return thr.scanTransactions(txns, false)
 		}
 		if hash, pgErr := thr.paginateBackwards(ctx, transmitter, failureScanner, earliestTxTimestamp, firstSeqNum); pgErr != nil {
-			thr.lggr.Warnw("Failed to paginate backwards for failed transmission search", "err", pgErr)
+			thr.lggr.Warnw("Phase 2 pagination failed for failed transmission search", "err", pgErr)
 		} else if hash != "" {
 			return hash, nil
 		}

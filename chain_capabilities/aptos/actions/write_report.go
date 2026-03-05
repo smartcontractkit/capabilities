@@ -157,8 +157,7 @@ func (wr *writeReport) execute(
 		return nil, fmt.Errorf("failed to get transmission info: %w", err)
 	}
 
-	switch transmissionInfo.Success {
-	case true:
+	if transmissionInfo.Success {
 		txHash, txHashErr := txHashRetriever.GetSuccessfulTransmissionHash(ctx, transmissionInfo.Transmitter)
 		if txHashErr != nil {
 			wr.lggr.Errorw("Report already onchain but failed to retrieve its txHash", "error", txHashErr)
@@ -169,12 +168,10 @@ func (wr *writeReport) execute(
 			TxStatus: aptoscap.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:   &txHash,
 		}, nil
-	case false:
-		// TODO: we can exit here if we find F+1 failed transactions, but thats expensive time and i/o wise.
-		// emit metrics here to understand if its worth investing time here.
-		// maybe do a lucky poll of node0's failed tx and see if we get lucky
-		return nil, fmt.Errorf("transmission not attempted or failed by another node")
 	}
+	// TODO: we can exit here if we find F+1 failed transactions, but thats expensive time and i/o wise.
+	// emit metrics here to understand if its worth investing time here.
+	// maybe do a lucky poll of node0's failed tx and see if we get lucky
 
 	err = wr.reportSizeLimit.Check(ctx, commoncfg.SizeOf(request.Report.RawReport))
 	if err != nil {
@@ -208,17 +205,20 @@ func (wr *writeReport) execute(
 		txHash := txReply.TxHash
 		if txReply.TxStatus == aptostypes.TxFatal || txReply.TxStatus == aptostypes.TxReverted {
 			// Report for this transaction has already been submitted and we sent a duplicate tx onchain, that is why this tx reverted but transmission info still shows success.
-			txHash, txHashErr := txHashRetriever.GetSuccessfulTransmissionHash(ctx, newTransmissionInfo.Transmitter)
+			successHash, txHashErr := txHashRetriever.GetSuccessfulTransmissionHash(ctx, newTransmissionInfo.Transmitter)
 			if txHashErr != nil {
 				return nil, fmt.Errorf("failed to get successful transmission hash: %w", txHashErr)
 			}
-			txHash = txHash
+			txHash = successHash
 		}
 		return &aptoscap.WriteReportReply{
 			TxStatus: aptoscap.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:   &txHash,
 		}, nil
 	case false:
+		if txReply.TxStatus == aptostypes.TxSuccess {
+			return nil, fmt.Errorf("unexpected state: local transaction succeeded but transmission info shows no success for %s", transmissionID.GetDebugID())
+		}
 		ownTxHash := txReply.TxHash
 
 		// Position 0 node has no prior nodes to check; return its own failed tx hash.
@@ -338,15 +338,6 @@ func decodeReportMetadata(data []byte) (ocrtypes.Metadata, error) {
 
 func (s *Aptos) isUserError(err error) bool {
 	return strings.HasPrefix(err.Error(), "user error:")
-}
-
-// getQueuePosition returns this node's position in the transmission queue, or -1 if not in DON or scheduler not configured
-func (wr *writeReport) getQueuePosition(transmissionID TransmissionID) int {
-	position := wr.transmissionScheduler.GetQueuePosition(transmissionID.GetDebugID())
-	if position < 0 {
-		wr.lggr.Warnw("Node not found in DON, proceeding without scheduling")
-	}
-	return position
 }
 
 // pollTransmissionInfo returns the final state of the transmission at this point of the transmission schedule,

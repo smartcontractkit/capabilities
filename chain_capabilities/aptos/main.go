@@ -139,11 +139,14 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		}
 	}
 
-	p2pConfig, err := c.fetchP2PConfig(ctx, dependencies.CapabilityRegistry)
-	if err != nil {
-		return fmt.Errorf("failed to fetch p2p config from capability registry: %w", err)
+	var p2pConfig map[string]string
+	if !cfg.IsLocal {
+		p2pConfig, err = c.fetchP2PConfig(ctx, dependencies.CapabilityRegistry)
+		if err != nil {
+			return fmt.Errorf("failed to fetch p2p config from capability registry: %w", err)
+		}
+		c.lggr.Infow("Fetched p2p config", "entries", len(p2pConfig))
 	}
-	c.lggr.Infow("Fetched p2p config", "entries", len(p2pConfig))
 
 	var scheduler actions.TransmissionScheduler
 	if cfg.DeltaStage > 0 {
