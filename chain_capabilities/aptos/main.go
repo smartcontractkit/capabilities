@@ -107,36 +107,57 @@ func (c *capabilityGRPCService) Ready() error {
 }
 
 func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
-	c.lggr.Infof("Initialising %s", CapabilityName)
+	c.lggr.Infow("TestingAptosWriteCap: Initialising capability",
+		"capability", CapabilityName,
+		"rawConfig", dependencies.Config,
+		"hasCapabilityRegistry", dependencies.CapabilityRegistry != nil,
+		"hasRelayerSet", dependencies.RelayerSet != nil,
+	)
 
 	cfg, err := c.unmarshalConfig(dependencies.Config)
 	if err != nil {
 		return fmt.Errorf("failed to unmarshal config: %w", err)
 	}
+	c.lggr.Infow("TestingAptosWriteCap: Unmarshalled config",
+		"network", cfg.Network,
+		"chainID", cfg.ChainID,
+		"isLocal", cfg.IsLocal,
+		"deltaStage", cfg.DeltaStage,
+		"creForwarderAddress", fmt.Sprintf("%x", cfg.CREForwarderAddress),
+	)
 
 	relayID := types.NewRelayID(cfg.Network, cfg.ChainID)
+	c.lggr.Infow("TestingAptosWriteCap: Created relay ID", "relayID", relayID)
 
 	relayer, err := dependencies.RelayerSet.Get(ctx, relayID)
 	if err != nil {
 		return fmt.Errorf("failed to fetch relayer for chainID %s from relayerSet: %w", cfg.ChainID, err)
 	}
+	c.lggr.Infow("TestingAptosWriteCap: Fetched relayer from relayer set", "relayID", relayID)
 
 	aptosService, err := relayer.Aptos()
 	if err != nil {
 		return fmt.Errorf("failed to get aptos service: %w", err)
 	}
+	c.lggr.Infow("TestingAptosWriteCap: Got Aptos service from relayer")
 
 	if err := c.setSelector(cfg); err != nil {
 		return err
 	}
 	c.capRegistry = dependencies.CapabilityRegistry
-
 	c.id = capabilityID(c.chainSelector)
+	c.lggr.Infow("TestingAptosWriteCap: Set chain selector and capability ID",
+		"chainSelector", c.chainSelector,
+		"capabilityID", c.id,
+	)
 
 	if !cfg.IsLocal {
 		if err := c.initMyDON(ctx, dependencies.CapabilityRegistry); err != nil {
 			return fmt.Errorf("failed to init DON: %w", err)
 		}
+		c.lggr.Infow("TestingAptosWriteCap: Initialised DON", "donID", c.DON.ID, "donName", c.DON.Name, "members", len(c.DON.Members), "F", c.DON.F)
+	} else {
+		c.lggr.Infow("TestingAptosWriteCap: Skipping DON init (isLocal=true)")
 	}
 
 	var p2pConfig map[string]string
@@ -145,7 +166,9 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		if err != nil {
 			return fmt.Errorf("failed to fetch p2p config from capability registry: %w", err)
 		}
-		c.lggr.Infow("Fetched p2p config", "entries", len(p2pConfig))
+		c.lggr.Infow("TestingAptosWriteCap: Fetched p2p config from capability registry", "entries", len(p2pConfig), "p2pConfig", p2pConfig)
+	} else {
+		c.lggr.Infow("TestingAptosWriteCap: Skipping p2p config fetch (isLocal=true)")
 	}
 
 	var scheduler actions.TransmissionScheduler
@@ -154,16 +177,18 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		if err != nil {
 			return fmt.Errorf("failed to initialize transmission scheduler: %w", err)
 		}
+		c.lggr.Infow("TestingAptosWriteCap: Initialised transmission scheduler", "deltaStage", cfg.DeltaStage)
 	} else {
-		c.lggr.Infow("DeltaStage not configured, transmission scheduling disabled")
+		c.lggr.Infow("TestingAptosWriteCap: DeltaStage not configured, transmission scheduling disabled")
 	}
 
 	c.Aptos, err = actions.NewAptos(cfg, p2pConfig, aptosService, c.lggr, limits.Factory{Logger: c.lggr}, scheduler)
 	if err != nil {
 		return fmt.Errorf("failed to create Aptos actions: %w", err)
 	}
+	c.lggr.Infow("TestingAptosWriteCap: Created Aptos actions")
 
-	c.lggr.Infof("Successfully initialised %s", CapabilityName)
+	c.lggr.Infof("TestingAptosWriteCap: Successfully initialised %s", CapabilityName)
 	return nil
 }
 
@@ -181,7 +206,7 @@ func (c *capabilityGRPCService) Infos(ctx context.Context) ([]capabilities.Capab
 
 func (c *capabilityGRPCService) setSelector(cfg *config.Config) error {
 	if cfg.IsLocal {
-		c.chainSelector = chain_selectors.TEST_22222222222222222222222222222222222222222222.Selector
+		c.chainSelector = chain_selectors.APTOS_LOCALNET.Selector
 		return nil
 	}
 

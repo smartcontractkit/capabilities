@@ -119,6 +119,7 @@ func (s *Aptos) executeWriteReport(
 // TODO: handle billing fees PLEX-2578
 // TODO: handle gas bumping if required PLEX-2580
 // TODO: handle metrics PLEX-2546
+// TODO: query failed transaction using transaction by hash from aptos service and get vmstatus
 func (wr *writeReport) execute(
 	ctx context.Context,
 	request *aptoscap.WriteReportRequest,
