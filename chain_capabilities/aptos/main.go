@@ -179,16 +179,17 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	}
 
 	var scheduler actions.TransmissionScheduler
-	if cfg.DeltaStage > 0 {
-		scheduler, err = c.initialiseTransmissionScheduler(ctx, dependencies.CapabilityRegistry, cfg.DeltaStage, cfg.IsLocal, p2pConfig)
-		if err != nil {
-			c.lggr.Errorw("TestingAptosWriteCap: failed to initialize transmission scheduler", "error", err)
-			return fmt.Errorf("failed to initialize transmission scheduler: %w", err)
-		}
-		c.lggr.Infow("TestingAptosWriteCap: Initialised transmission scheduler", "deltaStage", cfg.DeltaStage)
-	} else {
-		c.lggr.Infow("TestingAptosWriteCap: DeltaStage not configured, transmission scheduling disabled")
+	// if cfg.DeltaStage > 0 {
+	scheduler, err = c.initialiseTransmissionScheduler(ctx, dependencies.CapabilityRegistry, cfg.DeltaStage, cfg.IsLocal, p2pConfig)
+	if err != nil {
+		c.lggr.Errorw("TestingAptosWriteCap: failed to initialize transmission scheduler", "error", err)
+		return fmt.Errorf("failed to initialize transmission scheduler: %w", err)
 	}
+	c.lggr.Infow("TestingAptosWriteCap: Initialised transmission scheduler", "deltaStage", cfg.DeltaStage)
+	// }
+	// else {
+	// 	c.lggr.Infow("TestingAptosWriteCap: DeltaStage not configured, transmission scheduling disabled")
+	// }
 
 	c.Aptos, err = actions.NewAptos(cfg, p2pConfig, aptosService, c.lggr, limits.Factory{Logger: c.lggr}, scheduler)
 	if err != nil {

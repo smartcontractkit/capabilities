@@ -18,6 +18,10 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/config"
 )
 
+const (
+	reportSizeLimit = commoncfg.Byte * 500
+)
+
 type Aptos struct {
 	types.AptosService
 	forwarderClient       CREForwarderClient
@@ -50,15 +54,15 @@ func NewAptos(cfg *config.Config, p2pConfig map[string]string, aptosService type
 
 func (a *Aptos) initLimiters(limitsFactory limits.Factory) (err error) {
 	// PLEX-1920 this is initial values taken from solana. Can be tuned later
-	reportSizeLimit := settings.Size(commoncfg.Byte * 265)
-	a.reportSizeLimit, err = limits.MakeBoundLimiter(limitsFactory, reportSizeLimit)
+	reportSizeLimit := settings.Size(reportSizeLimit)
+	a.reportSizeLimit, err = limits.MakeUpperBoundLimiter(limitsFactory, reportSizeLimit)
 	if err != nil {
 		return
 	}
 
 	// this is arbitrary
 	maxGasAmountLimit := settings.Uint64(1_000_000)
-	a.maxGasAmountLimit, err = limits.MakeBoundLimiter(limitsFactory, maxGasAmountLimit)
+	a.maxGasAmountLimit, err = limits.MakeUpperBoundLimiter(limitsFactory, maxGasAmountLimit)
 	return
 }
 

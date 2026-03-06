@@ -32,13 +32,19 @@ type TxHashRetriever struct {
 }
 
 func NewTxHashRetriever(forwarderClient CREForwarderClient, lggr logger.Logger, transmissionID TransmissionID, forwarderAddress string, requestStartTime time.Time) TxHashRetriever {
-	return TxHashRetriever{
+	retriever := TxHashRetriever{
 		forwarderClient:    forwarderClient,
 		lggr:               lggr,
 		transmissionID:     transmissionID,
 		entryFunctionName:  fmt.Sprintf("%s::forwarder::report", forwarderAddress),
 		startingPointMicro: requestStartTime.Add(-txSearchStartingBuffer).UnixMicro(),
 	}
+	lggr.Infow("TestingAptosWriteCap: TxHashRetriever created",
+		"transmissionID", transmissionID.GetDebugID(),
+		"entryFunctionName", retriever.entryFunctionName,
+		"startingPointMicro", retriever.startingPointMicro,
+	)
+	return retriever
 }
 
 // scanTransactions scans a batch of transactions for a matching forwarder::report call
@@ -47,11 +53,15 @@ func NewTxHashRetriever(forwarderClient CREForwarderClient, lggr logger.Logger, 
 // Returns the matching tx hash if found, plus the earliest timestamp and first sequence number
 // from the batch (used by the pagination/retry logic).
 func (thr *TxHashRetriever) scanTransactions(txns []*aptostypes.Transaction, expectedSuccessValue bool) (txHash string, earliestTimestampMicro uint64, firstSequenceNumber uint64) {
+	thr.lggr.Debugw("TestingAptosWriteCap: scanTransactions called",
+		"txCount", len(txns),
+		"expectedSuccess", expectedSuccessValue,
+	)
 	metadataSet := false
 	for _, tx := range txns {
 		userTx := aptos_api.UserTransaction{}
 		if unmarshalErr := json.Unmarshal(tx.Data, &userTx); unmarshalErr != nil {
-			thr.lggr.Warnw("Failed to unmarshal user transaction, skipping", "err", unmarshalErr)
+			thr.lggr.Warnw("TestingAptosWriteCap: failed to unmarshal user transaction, skipping", "err", unmarshalErr)
 			continue
 		}
 		// Set pagination metadata from the first successfully unmarshalled tx
@@ -75,9 +85,18 @@ func (thr *TxHashRetriever) scanTransactions(txns []*aptostypes.Transaction, exp
 		} else if entryFunction.Function != thr.entryFunctionName {
 			continue
 		} else if thr.matchesTransmissionByReport(entryFunction) {
+			thr.lggr.Infow("TestingAptosWriteCap: found matching transmission in scan",
+				"txHash", string(userTx.Hash),
+				"success", userTx.Success,
+				"seqNum", userTx.SequenceNumber,
+			)
 			return string(userTx.Hash), earliestTimestampMicro, firstSequenceNumber
 		}
 	}
+	thr.lggr.Debugw("TestingAptosWriteCap: scanTransactions no match found",
+		"earliestTimestampMicro", earliestTimestampMicro,
+		"firstSequenceNumber", firstSequenceNumber,
+	)
 	return "", earliestTimestampMicro, firstSequenceNumber
 }
 
@@ -93,19 +112,28 @@ func (thr *TxHashRetriever) paginateBackwards(
 	earliestTs uint64,
 	firstSeqNum uint64,
 ) (string, error) {
+	thr.lggr.Infow("TestingAptosWriteCap: paginateBackwards started",
+		"transmitter", transmitter.String(),
+		"earliestTs", earliestTs,
+		"firstSeqNum", firstSeqNum,
+		"startingPointMicro", thr.startingPointMicro,
+	)
 	pageSize := txSearchPageSize
+	page := 0
 	for earliestTs > uint64(thr.startingPointMicro) && firstSeqNum > 0 {
 		var nextStart uint64
 		if firstSeqNum > pageSize {
 			nextStart = firstSeqNum - pageSize
 		}
-		thr.lggr.Debugw("Paginating backwards", "nextStart", nextStart, "earliestTimestamp", earliestTs, "startingPoint", thr.startingPointMicro)
+		thr.lggr.Debugw("TestingAptosWriteCap: paginating backwards", "page", page, "nextStart", nextStart, "earliestTimestamp", earliestTs, "startingPoint", thr.startingPointMicro)
 
 		txns, err := thr.forwarderClient.GetTransmitterTransactions(ctx, transmitter, &nextStart, &pageSize)
 		if err != nil {
+			thr.lggr.Errorw("TestingAptosWriteCap: pagination fetch failed", "page", page, "nextStart", nextStart, "error", err)
 			return "", fmt.Errorf("failed to get transmitter transactions during pagination (start=%d): %w", nextStart, err)
 		}
 		if len(txns) == 0 {
+			thr.lggr.Debugw("TestingAptosWriteCap: pagination got empty page, stopping", "page", page)
 			break
 		}
 
@@ -114,13 +142,17 @@ func (thr *TxHashRetriever) paginateBackwards(
 		var txHash string
 		txHash, earliestTs, firstSeqNum = scan(txns)
 		if txHash != "" {
+			thr.lggr.Infow("TestingAptosWriteCap: found match during pagination", "page", page, "txHash", txHash)
 			return txHash, nil
 		}
 
+		page++
 		if nextStart == 0 {
+			thr.lggr.Debugw("TestingAptosWriteCap: reached sequence 0, stopping pagination")
 			break
 		}
 	}
+	thr.lggr.Debugw("TestingAptosWriteCap: paginateBackwards completed with no match", "pages", page)
 	return "", nil
 }
 
@@ -136,12 +168,14 @@ func (thr *TxHashRetriever) paginateBackwards(
 //	Phase 3 (poll latest): history is covered, keep re-querying latest transactions
 //	  with withPollingRetry until the tx appears or timeout.
 func (thr *TxHashRetriever) GetSuccessfulTransmissionHash(ctx context.Context, transmitter aptos_sdk.AccountAddress) (string, error) {
+	thr.lggr.Infow("TestingAptosWriteCap: GetSuccessfulTransmissionHash called", "transmitter", transmitter.String())
 	pageSize := txSearchPageSize
 	halfPage := pageSize / 2
 
 	// Phase 1: quick probe of the latest transactions (half page, with retry).
 	// Empty results are treated as a retryable error -- a transmitter account
 	// should always have transactions; an empty response likely indicates an RPC issue.
+	thr.lggr.Infow("TestingAptosWriteCap: GetSuccessfulTransmissionHash phase 1 - quick probe")
 	txns, err := withQuickRetry(ctx, thr.lggr, func(ctx context.Context) ([]*aptostypes.Transaction, error) {
 		result, fetchErr := thr.forwarderClient.GetTransmitterTransactions(ctx, transmitter, nil, &halfPage)
 		if fetchErr != nil {
@@ -153,29 +187,35 @@ func (thr *TxHashRetriever) GetSuccessfulTransmissionHash(ctx context.Context, t
 		return result, nil
 	})
 	if err != nil {
-		thr.lggr.Warnw("Phase 1 failed, returning error", "transmitter", transmitter.String(), "err", err)
+		thr.lggr.Warnw("TestingAptosWriteCap: GetSuccessfulTransmissionHash phase 1 failed", "transmitter", transmitter.String(), "err", err)
 		return "", fmt.Errorf("failed to get transmitter transactions during phase 1: %w", err)
 	}
+	thr.lggr.Infow("TestingAptosWriteCap: GetSuccessfulTransmissionHash phase 1 fetched", "txCount", len(txns))
 	txHash, earliestTxTimestamp, firstSeqNum := thr.scanTransactions(txns, true)
 	if txHash != "" {
+		thr.lggr.Infow("TestingAptosWriteCap: GetSuccessfulTransmissionHash found in phase 1", "txHash", txHash)
 		return txHash, nil
 	}
 
 	// Phase 2: paginate backwards until we cover the starting point
+	thr.lggr.Infow("TestingAptosWriteCap: GetSuccessfulTransmissionHash phase 2 - paginate backwards",
+		"earliestTxTimestamp", earliestTxTimestamp, "startingPointMicro", thr.startingPointMicro, "firstSeqNum", firstSeqNum)
 	if earliestTxTimestamp > uint64(thr.startingPointMicro) {
 		successScanner := func(txns []*aptostypes.Transaction) (string, uint64, uint64) {
 			return thr.scanTransactions(txns, true)
 		}
 		// TODO: emit metrics here to see if we need to adjust initial batch size
 		if hash, pgErr := thr.paginateBackwards(ctx, transmitter, successScanner, earliestTxTimestamp, firstSeqNum); pgErr != nil {
-			thr.lggr.Warnw("Phase 2 pagination failed, falling through to poll phase", "err", pgErr)
+			thr.lggr.Warnw("TestingAptosWriteCap: GetSuccessfulTransmissionHash phase 2 pagination failed, falling through to poll phase", "err", pgErr)
 		} else if hash != "" {
+			thr.lggr.Infow("TestingAptosWriteCap: GetSuccessfulTransmissionHash found in phase 2", "txHash", hash)
 			return hash, nil
 		}
 	}
 
 	// Phase 3: history covered, poll latest with backoff until found or timeout.
 	// Uses withPollingRetry for structured retry logging, MaxRetries cap, and 60s timeout.
+	thr.lggr.Infow("TestingAptosWriteCap: GetSuccessfulTransmissionHash phase 3 - poll latest")
 	return withPollingRetry(ctx, thr.lggr, func(ctx context.Context) (string, error) {
 		latestTxns, fetchErr := thr.forwarderClient.GetTransmitterTransactions(ctx, transmitter, nil, &pageSize)
 		if fetchErr != nil {
@@ -188,6 +228,7 @@ func (thr *TxHashRetriever) GetSuccessfulTransmissionHash(ctx context.Context, t
 		if hash == "" {
 			return "", fmt.Errorf("matching transmission not found yet for %s", thr.transmissionID.GetDebugID())
 		}
+		thr.lggr.Infow("TestingAptosWriteCap: GetSuccessfulTransmissionHash found in phase 3", "txHash", hash)
 		return hash, nil
 	})
 }
@@ -201,10 +242,12 @@ func (thr *TxHashRetriever) GetSuccessfulTransmissionHash(ctx context.Context, t
 //	Phase 2 (go back): paginate backwards through older transactions until our window
 //	  covers startingPointMicro (requestArrivalTime - 1 min).
 func (thr *TxHashRetriever) GetFailedTransmissionHash(ctx context.Context, transmitter aptos_sdk.AccountAddress) (string, error) {
+	thr.lggr.Infow("TestingAptosWriteCap: GetFailedTransmissionHash called", "transmitter", transmitter.String())
 	pageSize := txSearchPageSize
 	halfPage := pageSize / 2
 
 	// Phase 1: quick probe of the latest transactions (half page, with retry).
+	thr.lggr.Infow("TestingAptosWriteCap: GetFailedTransmissionHash phase 1 - quick probe")
 	txns, err := withQuickRetry(ctx, thr.lggr, func(ctx context.Context) ([]*aptostypes.Transaction, error) {
 		result, fetchErr := thr.forwarderClient.GetTransmitterTransactions(ctx, transmitter, nil, &halfPage)
 		if fetchErr != nil {
@@ -216,26 +259,32 @@ func (thr *TxHashRetriever) GetFailedTransmissionHash(ctx context.Context, trans
 		return result, nil
 	})
 	if err != nil {
-		thr.lggr.Warnw("Phase 1 failed, returning error", "transmitter", transmitter.String(), "err", err)
+		thr.lggr.Warnw("TestingAptosWriteCap: GetFailedTransmissionHash phase 1 failed", "transmitter", transmitter.String(), "err", err)
 		return "", fmt.Errorf("failed to get transmitter transactions during phase 1: %w", err)
 	}
+	thr.lggr.Infow("TestingAptosWriteCap: GetFailedTransmissionHash phase 1 fetched", "txCount", len(txns))
 	txHash, earliestTxTimestamp, firstSeqNum := thr.scanTransactions(txns, false)
 	if txHash != "" {
+		thr.lggr.Infow("TestingAptosWriteCap: GetFailedTransmissionHash found in phase 1", "txHash", txHash)
 		return txHash, nil
 	}
 
 	// Phase 2: paginate backwards only until we cover the starting point
+	thr.lggr.Infow("TestingAptosWriteCap: GetFailedTransmissionHash phase 2 - paginate backwards",
+		"earliestTxTimestamp", earliestTxTimestamp, "startingPointMicro", thr.startingPointMicro, "firstSeqNum", firstSeqNum)
 	if earliestTxTimestamp > uint64(thr.startingPointMicro) {
 		failureScanner := func(txns []*aptostypes.Transaction) (string, uint64, uint64) {
 			return thr.scanTransactions(txns, false)
 		}
 		if hash, pgErr := thr.paginateBackwards(ctx, transmitter, failureScanner, earliestTxTimestamp, firstSeqNum); pgErr != nil {
-			thr.lggr.Warnw("Phase 2 pagination failed for failed transmission search", "err", pgErr)
+			thr.lggr.Warnw("TestingAptosWriteCap: GetFailedTransmissionHash phase 2 pagination failed", "err", pgErr)
 		} else if hash != "" {
+			thr.lggr.Infow("TestingAptosWriteCap: GetFailedTransmissionHash found in phase 2", "txHash", hash)
 			return hash, nil
 		}
 	}
 
+	thr.lggr.Infow("TestingAptosWriteCap: GetFailedTransmissionHash no match found")
 	return "", fmt.Errorf("no matching failed transaction found for transmission %s", thr.transmissionID.GetDebugID())
 }
 
@@ -246,6 +295,7 @@ func (thr *TxHashRetriever) GetFailedTransmissionHash(ctx context.Context, trans
 // raw_report = report_context (96 bytes) || report, where report is decoded by ocrtypes.Decode.
 func (thr *TxHashRetriever) matchesTransmissionByReport(entryFunction *aptos_api.TransactionPayloadEntryFunction) bool {
 	if len(entryFunction.Arguments) < 2 {
+		thr.lggr.Debugw("TestingAptosWriteCap: matchesTransmissionByReport - not enough arguments", "argCount", len(entryFunction.Arguments))
 		return false
 	}
 
@@ -255,17 +305,20 @@ func (thr *TxHashRetriever) matchesTransmissionByReport(entryFunction *aptos_api
 	}
 	rawReport, err := hex.DecodeString(strings.TrimPrefix(rawReportHex, "0x"))
 	if err != nil {
+		thr.lggr.Debugw("TestingAptosWriteCap: matchesTransmissionByReport - hex decode failed", "error", err)
 		return false
 	}
 
 	const reportContextLen = 96
 	if len(rawReport) < reportContextLen {
+		thr.lggr.Debugw("TestingAptosWriteCap: matchesTransmissionByReport - report too short", "len", len(rawReport))
 		return false
 	}
 	report := rawReport[reportContextLen:]
 
 	metadata, err := decodeReportMetadata(report)
 	if err != nil {
+		thr.lggr.Debugw("TestingAptosWriteCap: matchesTransmissionByReport - decodeReportMetadata failed", "error", err)
 		return false
 	}
 
@@ -276,5 +329,7 @@ func (thr *TxHashRetriever) matchesTransmissionByReport(entryFunction *aptos_api
 		return false
 	}
 
+	thr.lggr.Debugw("TestingAptosWriteCap: matchesTransmissionByReport - MATCH",
+		"executionID", metadata.ExecutionID, "reportID", metadata.ReportID)
 	return true
 }
