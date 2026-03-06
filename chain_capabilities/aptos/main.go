@@ -80,6 +80,7 @@ func (c *capabilityGRPCService) Close() error {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
 		if err := c.capRegistry.Remove(ctx, capabilityID(c.chainSelector)); err != nil {
+			c.lggr.Errorw("TestingAptosWriteCap: failed to remove from capability registry", "error", err)
 			return err
 		}
 	}
@@ -116,6 +117,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 
 	cfg, err := c.unmarshalConfig(dependencies.Config)
 	if err != nil {
+		c.lggr.Errorw("TestingAptosWriteCap: failed to unmarshal config", "error", err)
 		return fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 	c.lggr.Infow("TestingAptosWriteCap: Unmarshalled config",
@@ -131,17 +133,20 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 
 	relayer, err := dependencies.RelayerSet.Get(ctx, relayID)
 	if err != nil {
+		c.lggr.Errorw("TestingAptosWriteCap: failed to fetch relayer", "chainID", cfg.ChainID, "relayID", relayID, "error", err)
 		return fmt.Errorf("failed to fetch relayer for chainID %s from relayerSet: %w", cfg.ChainID, err)
 	}
 	c.lggr.Infow("TestingAptosWriteCap: Fetched relayer from relayer set", "relayID", relayID)
 
 	aptosService, err := relayer.Aptos()
 	if err != nil {
+		c.lggr.Errorw("TestingAptosWriteCap: failed to get aptos service from relayer", "error", err)
 		return fmt.Errorf("failed to get aptos service: %w", err)
 	}
 	c.lggr.Infow("TestingAptosWriteCap: Got Aptos service from relayer")
 
 	if err := c.setSelector(cfg); err != nil {
+		c.lggr.Errorw("TestingAptosWriteCap: failed to set chain selector", "error", err)
 		return err
 	}
 	c.capRegistry = dependencies.CapabilityRegistry
@@ -153,6 +158,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 
 	if !cfg.IsLocal {
 		if err := c.initMyDON(ctx, dependencies.CapabilityRegistry); err != nil {
+			c.lggr.Errorw("TestingAptosWriteCap: failed to init DON", "error", err)
 			return fmt.Errorf("failed to init DON: %w", err)
 		}
 		c.lggr.Infow("TestingAptosWriteCap: Initialised DON", "donID", c.DON.ID, "donName", c.DON.Name, "members", len(c.DON.Members), "F", c.DON.F)
@@ -162,8 +168,9 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 
 	var p2pConfig map[string]string
 	if !cfg.IsLocal {
-		p2pConfig, err = c.fetchP2PConfig(ctx, dependencies.CapabilityRegistry)
+		p2pConfig, err = c.fetchP2PConfig(ctx, dependencies.CapabilityRegistry, c.lggr)
 		if err != nil {
+			c.lggr.Errorw("TestingAptosWriteCap: failed to fetch p2p config", "error", err)
 			return fmt.Errorf("failed to fetch p2p config from capability registry: %w", err)
 		}
 		c.lggr.Infow("TestingAptosWriteCap: Fetched p2p config from capability registry", "entries", len(p2pConfig), "p2pConfig", p2pConfig)
@@ -175,6 +182,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	if cfg.DeltaStage > 0 {
 		scheduler, err = c.initialiseTransmissionScheduler(ctx, dependencies.CapabilityRegistry, cfg.DeltaStage, cfg.IsLocal, p2pConfig)
 		if err != nil {
+			c.lggr.Errorw("TestingAptosWriteCap: failed to initialize transmission scheduler", "error", err)
 			return fmt.Errorf("failed to initialize transmission scheduler: %w", err)
 		}
 		c.lggr.Infow("TestingAptosWriteCap: Initialised transmission scheduler", "deltaStage", cfg.DeltaStage)
@@ -184,6 +192,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 
 	c.Aptos, err = actions.NewAptos(cfg, p2pConfig, aptosService, c.lggr, limits.Factory{Logger: c.lggr}, scheduler)
 	if err != nil {
+		c.lggr.Errorw("TestingAptosWriteCap: failed to create Aptos actions", "error", err)
 		return fmt.Errorf("failed to create Aptos actions: %w", err)
 	}
 	c.lggr.Infow("TestingAptosWriteCap: Created Aptos actions")
@@ -212,10 +221,12 @@ func (c *capabilityGRPCService) setSelector(cfg *config.Config) error {
 
 	chainID, err := strconv.ParseUint(cfg.ChainID, 10, 64)
 	if err != nil {
+		c.lggr.Errorw("TestingAptosWriteCap: failed to parse chainID", "chainID", cfg.ChainID, "error", err)
 		return fmt.Errorf("failed to parse chainID: %w", err)
 	}
 	cs, ok := chain_selectors.AptosChainIdToChainSelector()[chainID]
 	if !ok {
+		c.lggr.Errorw("TestingAptosWriteCap: chain selector not found", "chainID", cfg.ChainID)
 		return fmt.Errorf("chain selector not found for chainID: %s", cfg.ChainID)
 	}
 	c.chainSelector = cs
@@ -225,6 +236,7 @@ func (c *capabilityGRPCService) setSelector(cfg *config.Config) error {
 func (c *capabilityGRPCService) initMyDON(ctx context.Context, registry core.CapabilitiesRegistry) error {
 	localNode, err := registry.LocalNode(ctx)
 	if err != nil {
+		c.lggr.Errorw("TestingAptosWriteCap: failed to get local node", "error", err)
 		return fmt.Errorf("failed to receiver local node: %w", err)
 	}
 
@@ -232,6 +244,7 @@ func (c *capabilityGRPCService) initMyDON(ctx context.Context, registry core.Cap
 
 	donsWithNodes, err := registry.DONsForCapability(ctx, c.id)
 	if err != nil {
+		c.lggr.Errorw("TestingAptosWriteCap: failed getting DONs for capability", "capabilityID", c.id, "error", err)
 		return fmt.Errorf("failed getting dons for capability: %w", err)
 	}
 
@@ -244,6 +257,7 @@ func (c *capabilityGRPCService) initMyDON(ctx context.Context, registry core.Cap
 	}
 
 	if len(dons) == 0 {
+		c.lggr.Errorw("TestingAptosWriteCap: no DON found for local peer", "peerID", localNode.PeerID.String(), "capabilityID", c.id)
 		return errors.New("failed to find don for my peer ID: " + localNode.PeerID.String())
 	}
 
@@ -271,14 +285,17 @@ func (c *capabilityGRPCService) initialiseTransmissionScheduler(
 
 	localNode, err := capRegistry.LocalNode(ctx)
 	if err != nil {
+		c.lggr.Errorw("TestingAptosWriteCap: failed to get local node for transmission scheduler", "error", err)
 		return actions.TransmissionScheduler{}, fmt.Errorf("failed to get local node: %w", err)
 	}
 
 	if c.DON == nil {
+		c.lggr.Errorw("TestingAptosWriteCap: DON is nil when initialising transmission scheduler")
 		return actions.TransmissionScheduler{}, errors.New("capabilityInfo DON is nil")
 	}
 
 	if len(c.DON.Members) == 0 {
+		c.lggr.Errorw("TestingAptosWriteCap: DON has no members when initialising transmission scheduler")
 		return actions.TransmissionScheduler{}, errors.New("capabilityInfo DON is empty")
 	}
 
@@ -287,14 +304,17 @@ func (c *capabilityGRPCService) initialiseTransmissionScheduler(
 	donPeerIDs = append(donPeerIDs, c.DON.Members...)
 
 	if myPeerID == nil {
+		c.lggr.Errorw("TestingAptosWriteCap: local node peer ID is nil")
 		return actions.TransmissionScheduler{}, fmt.Errorf("local node peer ID is nil")
 	}
 	if len(donPeerIDs) == 0 {
+		c.lggr.Errorw("TestingAptosWriteCap: DON members list is empty")
 		return actions.TransmissionScheduler{}, fmt.Errorf("DON members list is empty")
 	}
 
 	found := slices.Contains(donPeerIDs, *myPeerID)
 	if !found {
+		c.lggr.Errorw("TestingAptosWriteCap: local peer not in DON members", "myPeerID", myPeerID.String(), "donMembers", len(donPeerIDs))
 		return actions.TransmissionScheduler{}, fmt.Errorf("local peer ID %s not found in DON members", myPeerID.String())
 	}
 
@@ -315,20 +335,37 @@ func (c *capabilityGRPCService) initialiseTransmissionScheduler(
 	), nil
 }
 
-func (c *capabilityGRPCService) fetchP2PConfig(ctx context.Context, capRegistry core.CapabilitiesRegistry) (map[string]string, error) {
+func (c *capabilityGRPCService) fetchP2PConfig(ctx context.Context, capRegistry core.CapabilitiesRegistry, lggr logger.Logger) (map[string]string, error) {
+	lggr.Infow("TestingAptosWriteCap: fetchP2PConfig called", "capabilityID", c.id, "donID", c.DON.ID)
+
 	capCfg, err := capRegistry.ConfigForCapability(ctx, c.id, c.DON.ID)
 	if err != nil {
+		lggr.Errorw("TestingAptosWriteCap: ConfigForCapability failed", "capabilityID", c.id, "donID", c.DON.ID, "error", err)
 		return nil, fmt.Errorf("failed to get capability config: %w", err)
 	}
+	lggr.Infow("TestingAptosWriteCap: ConfigForCapability returned",
+		"hasDefaultConfig", capCfg.DefaultConfig != nil,
+		"hasRemoteTriggerConfig", capCfg.RemoteTriggerConfig != nil,
+		"hasRemoteExecutableConfig", capCfg.RemoteExecutableConfig != nil,
+		"methodConfigCount", len(capCfg.CapabilityMethodConfig),
+		"hasSpecConfig", capCfg.SpecConfig != nil,
+		"localOnly", capCfg.LocalOnly,
+	)
 
 	if capCfg.DefaultConfig == nil {
+		lggr.Errorw("TestingAptosWriteCap: DefaultConfig is nil", "capabilityID", c.id, "donID", c.DON.ID)
 		return nil, fmt.Errorf("capability config is nil for capability %s don %d", c.id, c.DON.ID)
 	}
 
+	lggr.Infow("TestingAptosWriteCap: DefaultConfig raw", "defaultConfig", fmt.Sprintf("%v", capCfg.DefaultConfig))
+
 	var p2pConfig map[string]string
 	if err := capCfg.DefaultConfig.UnwrapTo(&p2pConfig); err != nil {
+		lggr.Errorw("TestingAptosWriteCap: failed to UnwrapTo p2p config", "defaultConfig", fmt.Sprintf("%v", capCfg.DefaultConfig), "error", err)
 		return nil, fmt.Errorf("failed to unwrap capability config: %w", err)
 	}
+	lggr.Infow("TestingAptosWriteCap: Unwrapped p2p config", "entries", len(p2pConfig), "p2pConfig", p2pConfig)
+
 	return p2pConfig, nil
 }
 
