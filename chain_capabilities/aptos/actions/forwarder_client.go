@@ -151,10 +151,16 @@ type moveOptionAddress struct {
 
 // Views GetTransmitter onchain
 func (fc *forwarderClient) GetTransmissionInfo(ctx context.Context, transmissionID TransmissionID) (TransmissionInfo, error) {
-	fc.lggr.Debugw("TestingAptosWriteCap: GetTransmissionInfo called", "transmissionID", transmissionID.GetDebugID())
-
 	// Convert [2]byte report ID to uint16 (big-endian, as stored in report metadata)
 	reportID := binary.BigEndian.Uint16(transmissionID.ReportID[:])
+
+	fc.lggr.Debugw("TestingAptosWriteCap: GetTransmissionInfo called",
+		"transmissionID", transmissionID.GetDebugID(),
+		"receiverHex", fmt.Sprintf("%x", transmissionID.Receiver[:]),
+		"workflowExecutionIDHex", fmt.Sprintf("%x", transmissionID.WorkflowExecutionID[:]),
+		"reportIDBytes", fmt.Sprintf("%x", transmissionID.ReportID[:]),
+		"reportIDUint16", reportID,
+	)
 
 	// Use the encoder to get the BCS-encoded view call arguments
 	moduleInfo, functionName, _, args, err := fc.forwarderEncoder.GetTransmitter(
@@ -166,6 +172,17 @@ func (fc *forwarderClient) GetTransmissionInfo(ctx context.Context, transmission
 		fc.lggr.Errorw("TestingAptosWriteCap: failed to encode GetTransmissionState", "error", err)
 		return TransmissionInfo{}, fmt.Errorf("failed to encode GetTransmissionState: %w", err)
 	}
+
+	argHexes := make([]string, len(args))
+	for i, arg := range args {
+		argHexes[i] = fmt.Sprintf("%x", arg)
+	}
+	fc.lggr.Debugw("TestingAptosWriteCap: encoded view call args",
+		"moduleAddress", fmt.Sprintf("%x", moduleInfo.Address[:]),
+		"moduleName", moduleInfo.ModuleName,
+		"functionName", functionName,
+		"argsHex", argHexes,
+	)
 
 	// Call the view function via AptosService
 	viewReply, err := fc.AptosService.View(ctx, aptostypes.ViewRequest{
