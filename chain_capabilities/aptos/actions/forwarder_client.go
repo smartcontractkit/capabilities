@@ -70,8 +70,6 @@ func (fc *forwarderClient) InvokeOnReport(ctx context.Context, receiver []byte, 
 	}
 
 	fullRawReport := append(report.ReportContext, report.RawReport...)
-	// THIS WILL FAIL
-	fullRawReport = report.RawReport
 
 	versionByte := byte(0)
 	if len(fullRawReport) > 96 {
