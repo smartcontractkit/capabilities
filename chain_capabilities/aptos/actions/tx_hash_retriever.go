@@ -94,13 +94,27 @@ func (thr *TxHashRetriever) scanTransactions(txns []*aptostypes.Transaction, exp
 			firstSequenceNumber = userTx.SequenceNumber
 		}
 		if userTx.Success != expectedSuccessValue {
+			thr.lggr.Debugw("TestingAptosWriteCap: scanTransactions skipping tx - success mismatch",
+				"txHash", userTx.Hash, "txSuccess", userTx.Success, "expectedSuccess", expectedSuccessValue,
+				"seqNum", userTx.SequenceNumber,
+			)
 			continue
 		}
 		var payload entryFunctionPayload
 		if unmarshalErr := json.Unmarshal(userTx.Payload, &payload); unmarshalErr != nil {
+			thr.lggr.Debugw("TestingAptosWriteCap: scanTransactions skipping tx - payload unmarshal failed",
+				"txHash", userTx.Hash, "error", unmarshalErr,
+			)
 			continue
 		}
+		thr.lggr.Debugw("TestingAptosWriteCap: scanTransactions evaluating tx",
+			"txHash", userTx.Hash, "function", payload.Inner.Function,
+			"expectedFunction", thr.entryFunctionName, "argCount", len(payload.Inner.Arguments),
+		)
 		if payload.Inner.Function != thr.entryFunctionName {
+			thr.lggr.Debugw("TestingAptosWriteCap: scanTransactions skipping tx - function mismatch",
+				"txHash", userTx.Hash, "got", payload.Inner.Function, "want", thr.entryFunctionName,
+			)
 			continue
 		} else if thr.matchesTransmissionByReport(payload.Inner.Arguments) {
 			thr.lggr.Infow("TestingAptosWriteCap: found matching transmission in scan",
@@ -318,6 +332,8 @@ func (thr *TxHashRetriever) matchesTransmissionByReport(arguments []interface{})
 
 	rawReportHex, ok := arguments[1].(string)
 	if !ok {
+		thr.lggr.Debugw("TestingAptosWriteCap: matchesTransmissionByReport - arg[1] not a string",
+			"argType", fmt.Sprintf("%T", arguments[1]))
 		return false
 	}
 	rawReport, err := hex.DecodeString(strings.TrimPrefix(rawReportHex, "0x"))
@@ -339,10 +355,16 @@ func (thr *TxHashRetriever) matchesTransmissionByReport(arguments []interface{})
 		return false
 	}
 
-	if metadata.ExecutionID != hex.EncodeToString(thr.transmissionID.WorkflowExecutionID[:]) {
+	wantExecID := hex.EncodeToString(thr.transmissionID.WorkflowExecutionID[:])
+	wantReportID := hex.EncodeToString(thr.transmissionID.ReportID[:])
+	if metadata.ExecutionID != wantExecID {
+		thr.lggr.Debugw("TestingAptosWriteCap: matchesTransmissionByReport - executionID mismatch",
+			"got", metadata.ExecutionID, "want", wantExecID)
 		return false
 	}
-	if metadata.ReportID != hex.EncodeToString(thr.transmissionID.ReportID[:]) {
+	if metadata.ReportID != wantReportID {
+		thr.lggr.Debugw("TestingAptosWriteCap: matchesTransmissionByReport - reportID mismatch",
+			"gotReportID", metadata.ReportID, "wantReportID", wantReportID)
 		return false
 	}
 
