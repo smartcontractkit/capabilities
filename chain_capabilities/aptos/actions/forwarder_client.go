@@ -173,15 +173,11 @@ func (fc *forwarderClient) GetTransmissionInfo(ctx context.Context, transmission
 		return TransmissionInfo{}, fmt.Errorf("failed to encode GetTransmissionState: %w", err)
 	}
 
-	argHexes := make([]string, len(args))
-	for i, arg := range args {
-		argHexes[i] = fmt.Sprintf("%x", arg)
-	}
 	fc.lggr.Debugw("TestingAptosWriteCap: encoded view call args",
-		"moduleAddress", fmt.Sprintf("%x", moduleInfo.Address[:]),
+		"moduleAddress", moduleInfo.Address.String(),
 		"moduleName", moduleInfo.ModuleName,
 		"functionName", functionName,
-		"argsHex", argHexes,
+		"args", args,
 	)
 
 	// Debug: call get_owner to verify views work at all
