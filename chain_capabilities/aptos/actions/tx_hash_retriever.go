@@ -17,7 +17,7 @@ import (
 
 // TODO: where does all this config get passed in from ?
 const (
-	txSearchPageSize       = uint64(100)
+	txSearchPageSize       = uint64(45) // limit is different for different rpcs
 	txSearchStartingBuffer = 1 * time.Minute
 )
 
