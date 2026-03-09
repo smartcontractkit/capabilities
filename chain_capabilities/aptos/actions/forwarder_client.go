@@ -184,6 +184,54 @@ func (fc *forwarderClient) GetTransmissionInfo(ctx context.Context, transmission
 		"argsHex", argHexes,
 	)
 
+	// Debug: call get_owner to verify views work at all
+	ownerModInfo, ownerFn, _, ownerArgs, ownerEncErr := fc.forwarderEncoder.GetOwner()
+	if ownerEncErr != nil {
+		fc.lggr.Warnw("TestingAptosWriteCap: failed to encode GetOwner", "error", ownerEncErr)
+	} else {
+		ownerReply, ownerViewErr := fc.AptosService.View(ctx, aptostypes.ViewRequest{
+			Payload: &aptostypes.ViewPayload{
+				Module: aptostypes.ModuleID{
+					Address: aptostypes.AccountAddress(ownerModInfo.Address),
+					Name:    ownerModInfo.ModuleName,
+				},
+				Function: ownerFn,
+				Args:     ownerArgs,
+			},
+		})
+		if ownerViewErr != nil {
+			fc.lggr.Warnw("TestingAptosWriteCap: get_owner view failed", "error", ownerViewErr)
+		} else {
+			fc.lggr.Infow("TestingAptosWriteCap: get_owner result", "rawData", string(ownerReply.Data))
+		}
+	}
+
+	// Debug: call get_transmission_state (returns bool) with same args
+	stateModInfo, stateFn, _, stateArgs, stateEncErr := fc.forwarderEncoder.GetTransmissionState(
+		transmissionID.Receiver,
+		transmissionID.WorkflowExecutionID[:],
+		reportID,
+	)
+	if stateEncErr != nil {
+		fc.lggr.Warnw("TestingAptosWriteCap: failed to encode GetTransmissionState", "error", stateEncErr)
+	} else {
+		stateReply, stateViewErr := fc.AptosService.View(ctx, aptostypes.ViewRequest{
+			Payload: &aptostypes.ViewPayload{
+				Module: aptostypes.ModuleID{
+					Address: aptostypes.AccountAddress(stateModInfo.Address),
+					Name:    stateModInfo.ModuleName,
+				},
+				Function: stateFn,
+				Args:     stateArgs,
+			},
+		})
+		if stateViewErr != nil {
+			fc.lggr.Warnw("TestingAptosWriteCap: get_transmission_state view failed", "error", stateViewErr)
+		} else {
+			fc.lggr.Infow("TestingAptosWriteCap: get_transmission_state result", "rawData", string(stateReply.Data))
+		}
+	}
+
 	// Call the view function via AptosService
 	viewReply, err := fc.AptosService.View(ctx, aptostypes.ViewRequest{
 		Payload: &aptostypes.ViewPayload{
