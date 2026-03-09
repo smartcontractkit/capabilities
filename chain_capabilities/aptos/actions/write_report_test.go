@@ -132,7 +132,8 @@ func randomBytes(n int) []byte {
 }
 
 // buildFakeTransaction constructs an aptostypes.Transaction whose Data field is JSON
-// that scanTransactions can unmarshal into an aptos_api.UserTransaction.
+// matching the Go-default marshal output of UserTransaction (uppercase keys, numeric types),
+// which is what scanTransactions unmarshals via the local userTxData struct.
 func buildFakeTransaction(t *testing.T, txHash string, success bool, seqNum uint64, timestampMicro uint64, reportMetadata ocrtypes.Metadata) *aptostypes.Transaction {
 	t.Helper()
 	encodedReport, err := reportMetadata.Encode()
@@ -142,17 +143,9 @@ func buildFakeTransaction(t *testing.T, txHash string, success bool, seqNum uint
 	functionName := fmt.Sprintf("%s::forwarder::report", testForwarderAddr.String())
 
 	txJSON := fmt.Sprintf(`{
-		"hash": %q, "success": %t, "version": "1",
-		"accumulator_root_hash": "0x0000000000000000000000000000000000000000000000000000000000000001",
-		"state_change_hash": "0x0000000000000000000000000000000000000000000000000000000000000001",
-		"event_root_hash": "0x0000000000000000000000000000000000000000000000000000000000000001",
-		"gas_used": "100", "vm_status": "Executed successfully", "changes": [], "events": [],
-		"sender": "0x0000000000000000000000000000000000000000000000000000000000000001",
-		"sequence_number": "%d", "max_gas_amount": "100000", "gas_unit_price": "100",
-		"expiration_timestamp_secs": "99999999999",
-		"payload": {"type": "entry_function_payload", "function": %q, "type_arguments": [], "arguments": ["0x01", %q, "0x01"]},
-		"timestamp": "%d"
-	}`, txHash, success, seqNum, functionName, rawReportHex, timestampMicro)
+		"Hash": %q, "Success": %t, "SequenceNumber": %d, "Timestamp": %d,
+		"Payload": {"Inner": {"Function": %q, "Arguments": ["0x01", %q, "0x01"]}}
+	}`, txHash, success, seqNum, timestampMicro, functionName, rawReportHex)
 
 	return &aptostypes.Transaction{Data: []byte(txJSON)}
 }
@@ -227,7 +220,7 @@ func TestWriteReport_Validation(t *testing.T) {
 
 		req := &aptoscap.WriteReportRequest{
 			Receiver: testReceiver[:],
-			Report:   &workflowpb.ReportResponse{RawReport: append(encoded, make([]byte, 200)...), Sigs: generateRandomSignatures()},
+			Report:   &workflowpb.ReportResponse{RawReport: append(encoded, make([]byte, 1000)...), Sigs: generateRandomSignatures()},
 		}
 		h.mockNoTransmission()
 

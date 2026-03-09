@@ -9,7 +9,6 @@ import (
 	"time"
 
 	aptos_sdk "github.com/aptos-labs/aptos-go-sdk"
-	aptos_api "github.com/aptos-labs/aptos-go-sdk/api"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	aptostypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/aptos"
@@ -19,6 +18,25 @@ import (
 const (
 	txSearchStartingBuffer = 1 * time.Minute
 )
+
+// userTxData is a local struct matching the Go-default JSON output of
+// aptos_api.UserTransaction (uppercase keys, numeric types). The SDK type has a
+// custom UnmarshalJSON expecting Aptos REST-API format (lowercase keys,
+// string-encoded numbers), which is incompatible with json.Marshal output.
+type userTxData struct {
+	Hash           string          `json:"Hash"`
+	Success        bool            `json:"Success"`
+	SequenceNumber uint64          `json:"SequenceNumber"`
+	Timestamp      uint64          `json:"Timestamp"`
+	Payload        json.RawMessage `json:"Payload"`
+}
+
+type entryFunctionPayload struct {
+	Inner struct {
+		Function  string        `json:"Function"`
+		Arguments []interface{} `json:"Arguments"`
+	} `json:"Inner"`
+}
 
 // TxHashRetriever retrieves the transaction hash for a report transmission
 // by scanning the transmitter's account transactions.
@@ -58,7 +76,7 @@ func (thr *TxHashRetriever) scanTransactions(txns []*aptostypes.Transaction, exp
 	)
 	metadataSet := false
 	for _, tx := range txns {
-		userTx := aptos_api.UserTransaction{}
+		var userTx userTxData
 		if unmarshalErr := json.Unmarshal(tx.Data, &userTx); unmarshalErr != nil {
 			thr.lggr.Warnw("TestingAptosWriteCap: failed to unmarshal user transaction, skipping", "err", unmarshalErr)
 			continue
@@ -78,18 +96,19 @@ func (thr *TxHashRetriever) scanTransactions(txns []*aptostypes.Transaction, exp
 		if userTx.Success != expectedSuccessValue {
 			continue
 		}
-		entryFunction, ok := userTx.Payload.Inner.(*aptos_api.TransactionPayloadEntryFunction)
-		if !ok {
+		var payload entryFunctionPayload
+		if unmarshalErr := json.Unmarshal(userTx.Payload, &payload); unmarshalErr != nil {
 			continue
-		} else if entryFunction.Function != thr.entryFunctionName {
+		}
+		if payload.Inner.Function != thr.entryFunctionName {
 			continue
-		} else if thr.matchesTransmissionByReport(entryFunction) {
+		} else if thr.matchesTransmissionByReport(payload.Inner.Arguments) {
 			thr.lggr.Infow("TestingAptosWriteCap: found matching transmission in scan",
-				"txHash", string(userTx.Hash),
+				"txHash", userTx.Hash,
 				"success", userTx.Success,
 				"seqNum", userTx.SequenceNumber,
 			)
-			return string(userTx.Hash), earliestTimestampMicro, firstSequenceNumber
+			return userTx.Hash, earliestTimestampMicro, firstSequenceNumber
 		}
 	}
 	thr.lggr.Debugw("TestingAptosWriteCap: scanTransactions no match found",
@@ -291,13 +310,13 @@ func (thr *TxHashRetriever) GetFailedTransmissionHash(ctx context.Context, trans
 //
 // The entry function arguments for forwarder::report are: [receiver, raw_report, signatures].
 // raw_report = report_context (96 bytes) || report, where report is decoded by ocrtypes.Decode.
-func (thr *TxHashRetriever) matchesTransmissionByReport(entryFunction *aptos_api.TransactionPayloadEntryFunction) bool {
-	if len(entryFunction.Arguments) < 2 {
-		thr.lggr.Debugw("TestingAptosWriteCap: matchesTransmissionByReport - not enough arguments", "argCount", len(entryFunction.Arguments))
+func (thr *TxHashRetriever) matchesTransmissionByReport(arguments []interface{}) bool {
+	if len(arguments) < 2 {
+		thr.lggr.Debugw("TestingAptosWriteCap: matchesTransmissionByReport - not enough arguments", "argCount", len(arguments))
 		return false
 	}
 
-	rawReportHex, ok := entryFunction.Arguments[1].(string)
+	rawReportHex, ok := arguments[1].(string)
 	if !ok {
 		return false
 	}
