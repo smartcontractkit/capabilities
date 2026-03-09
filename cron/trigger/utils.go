@@ -1,6 +1,7 @@
 package trigger
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -11,11 +12,12 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
 
-func enforceFastestSchedule(lggr logger.Logger, jobDef gocron.JobDefinition, maximumFastest time.Duration) caperrors.Error {
+func enforceFastestSchedule(lggr logger.Logger, clock clockwork.Clock, jobDef gocron.JobDefinition, maximumFastest time.Duration) caperrors.Error {
 	var options []gocron.SchedulerOption
-	// Use a fixed location and point in time for consistency across nodes.
+	// Set scheduler location to UTC for consistency across nodes.
 	options = append(options, gocron.WithLocation(time.UTC))
-	options = append(options, gocron.WithClock(clockwork.NewFakeClockAt(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))))
+	// Use passed in clock
+	options = append(options, gocron.WithClock(clock))
 
 	tempScheduler, err := gocron.NewScheduler(options...)
 	if err != nil {
@@ -33,17 +35,17 @@ func enforceFastestSchedule(lggr logger.Logger, jobDef gocron.JobDefinition, max
 		}
 	}()
 
-	// We need to check several runs to make sure there are enough to catch any short gaps (see unit test).
-	// 12 is technically not enough in a general case but should work in practice when maximumFastest is between 5 and 60 seconds.
-	nextRuns, err := tempJob.NextRuns(12)
-	if err != nil || len(nextRuns) < 12 {
+	nextRuns, err := tempJob.NextRuns(2)
+	if err != nil {
 		return caperrors.NewPublicSystemError(fmt.Errorf("failed to initialize next runs: %w", err), caperrors.Internal)
 	}
 
-	for i := 1; i < len(nextRuns); i++ {
-		if nextRuns[i].Before(nextRuns[i-1].Add(maximumFastest)) {
-			return caperrors.NewPublicUserError(fmt.Errorf("maximum fastest cron schedule is %s", maximumFastest.String()), caperrors.InvalidArgument)
-		}
+	if len(nextRuns) != 2 {
+		return caperrors.NewPublicSystemError(errors.New("could not determine next two scheduled runs"), caperrors.Internal)
+	}
+
+	if nextRuns[1].Before(nextRuns[0].Add(maximumFastest)) {
+		return caperrors.NewPublicUserError(fmt.Errorf("maximum fastest cron schedule is %s", maximumFastest.String()), caperrors.InvalidArgument)
 	}
 
 	return nil

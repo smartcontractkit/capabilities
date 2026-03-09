@@ -51,14 +51,6 @@ message WriteReportDuplicateTx {
   monitoring.ExecutionContext execution_context = 20;
 }
 
-message TransmissionSchedulerNodeNotFoundInDon {
-  string peer_id = 1;
-  string transmission_id = 2;
-  string summary = 3;
-  string cause = 4;
-  monitoring.ExecutionContext execution_context = 20;
-}
-
 message WriteReportRequest {
   bytes receiver = 1;
   ReportResponse report = 2;
@@ -82,6 +74,3 @@ message AttributedSignature {
   uint32 signer_id = 2;
 }
 
-message WriteReportSuccessfulEarlyReturn {
-  monitoring.ExecutionContext execution_context = 20;
-}

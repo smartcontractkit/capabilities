@@ -6,10 +6,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
-	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/services"
-	"github.com/smartcontractkit/chainlink-common/pkg/settings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 
@@ -22,15 +19,12 @@ type ConsensusHandler interface {
 }
 
 type Aptos struct {
-	aptosService      types.AptosService
-	ConsensusHandler  ConsensusHandler
-	forwarderClient   CREForwarderClient
-	lggr              logger.SugaredLogger
-	maxGasAmountLimit limits.BoundLimiter[uint64]
-	reportSizeLimit   limits.BoundLimiter[commoncfg.Size]
+	aptosService     types.AptosService
+	ConsensusHandler ConsensusHandler
+	lggr             logger.SugaredLogger
 }
 
-func NewAptos(cfg *config.Config, aptosService types.AptosService, consensusHandler ConsensusHandler, lggr logger.Logger, limitsFactory limits.Factory) (*Aptos, error) {
+func NewAptos(_ *config.Config, aptosService types.AptosService, consensusHandler ConsensusHandler, lggr logger.Logger, _ limits.Factory) (*Aptos, error) {
 	if aptosService == nil {
 		return nil, fmt.Errorf("aptos service is required")
 	}
@@ -38,32 +32,13 @@ func NewAptos(cfg *config.Config, aptosService types.AptosService, consensusHand
 		return nil, fmt.Errorf("consensus handler is required")
 	}
 
-	fc := newForwarderClient(aptosService, lggr, cfg.CREForwarderAddress)
-
 	a := &Aptos{
 		aptosService:     aptosService,
 		ConsensusHandler: consensusHandler,
-		forwarderClient:  fc,
 		lggr:             logger.Sugared(lggr),
 	}
 
-	return a, a.initLimiters(limitsFactory)
-}
-
-func (a *Aptos) initLimiters(limitsFactory limits.Factory) (err error) {
-	// NOTE: 265B is too tight for Aptos write reports carrying data-feeds payloads
-	// (current flow is ~269B). Keep this comfortably above current usage while we
-	// make this configurable.
-	reportSizeLimit := settings.Size(commoncfg.Byte * 512)
-	a.reportSizeLimit, err = limits.MakeBoundLimiter(limitsFactory, reportSizeLimit)
-	if err != nil {
-		return
-	}
-
-	// Keep aligned with local Aptos devnet transaction max-gas bounds.
-	maxGasAmountLimit := settings.Uint64(1_000_000)
-	a.maxGasAmountLimit, err = limits.MakeBoundLimiter(limitsFactory, maxGasAmountLimit)
-	return
+	return a, nil
 }
 
 func GetError(err error, isUserError bool) caperrors.Error {
@@ -83,7 +58,7 @@ func (a *Aptos) Info() (capabilities.CapabilityInfo, error) {
 }
 
 func (a *Aptos) Close() error {
-	return services.CloseAll(a.maxGasAmountLimit, a.reportSizeLimit)
+	return nil
 }
 
 func readType[T any](ctx context.Context, reader ConsensusHandler, request ctypes.Request) (T, error) {

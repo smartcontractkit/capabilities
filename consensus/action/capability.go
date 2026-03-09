@@ -50,9 +50,7 @@ const (
 	KeyBundleIDAptos                    = "aptos"
 	KeyBundleIDSolana                   = "solana"
 	SigningAlgoEcdsa                    = "ecdsa"
-	SigningAlgoEd25519                  = "ed25519"
 	HashingAlgoKeccak256                = "keccak256"
-	HashingAlgoBlake2b256               = "blake2b_256"
 )
 
 type ConsensusCapabilityConfig struct {
@@ -424,8 +422,7 @@ func validateReportRequest(reportRequest *sdk.ReportRequest) (string, error) {
 
 	signingAlgo := strings.ToLower(reportRequest.SigningAlgo)
 	supportedSigningAlgorithms := map[string]struct{}{
-		SigningAlgoEcdsa:   {},
-		SigningAlgoEd25519: {},
+		SigningAlgoEcdsa: {},
 	}
 
 	if _, ok := supportedSigningAlgorithms[signingAlgo]; !ok {
@@ -435,8 +432,7 @@ func validateReportRequest(reportRequest *sdk.ReportRequest) (string, error) {
 	hashingAlgo := strings.ToLower(reportRequest.HashingAlgo)
 
 	supportedHashingAlgorithms := map[string]struct{}{
-		HashingAlgoKeccak256:  {},
-		HashingAlgoBlake2b256: {},
+		HashingAlgoKeccak256: {},
 	}
 
 	if _, ok := supportedHashingAlgorithms[hashingAlgo]; !ok {

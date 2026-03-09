@@ -8,11 +8,11 @@ require (
 	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260210010829-97eb42ca2924
 	github.com/smartcontractkit/chain-selectors v1.0.89
-	github.com/smartcontractkit/chainlink-common v0.10.1-0.20260303163359-7df8d8746490
+	github.com/smartcontractkit/chainlink-common v0.10.1-0.20260217013856-dd1e16fa7183
 	github.com/smartcontractkit/chainlink-evm v0.3.4-0.20260122131409-0fee84ccfa1d
 	github.com/smartcontractkit/chainlink-evm/gethwrappers v0.0.0-20251022073203-7d8ae8cf67c1
 	github.com/smartcontractkit/chainlink-framework/multinode v0.0.0-20251021173435-e86785845942
-	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260226130359-963f935e0396
+	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260210221717-2546aed27ebe
 	github.com/stretchr/testify v1.11.1
 	go.opentelemetry.io/otel v1.39.0
 	go.uber.org/zap v1.27.1
@@ -197,7 +197,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.39.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.9.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/crypto v0.47.0
+	golang.org/x/crypto v0.47.0 // indirect
 	golang.org/x/exp v0.0.0-20260112195511-716be5621a96 // indirect
 	golang.org/x/net v0.49.0 // indirect
 	golang.org/x/sys v0.40.0 // indirect

@@ -93,7 +93,6 @@ func (c *capabilityGRPCService) Description() string {
 func (c *capabilityGRPCService) Ready() error {
 	return nil
 }
-
 func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
 	c.lggr.Infof("Initialising %s", CapabilityName)
 

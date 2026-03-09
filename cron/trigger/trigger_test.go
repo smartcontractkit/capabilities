@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-co-op/gocron/v2"
 	"github.com/jonboulle/clockwork"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -1055,21 +1054,33 @@ func TestCronTrigger_CloseStartErrors(t *testing.T) {
 	require.Error(t, err)
 }
 
-type panicOnNowClock struct {
-	clockwork.Clock
+type PanicingClock struct {
+	*clockwork.FakeClock
+	mu             sync.Mutex
+	callCount      int
+	panicAfterCall int // Panic after this many calls to a specific method
 }
 
-func (c *panicOnNowClock) Now() time.Time {
-	panic("clock panic in Now()")
+func (p *PanicingClock) Now() time.Time {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.callCount++
+	if p.callCount == p.panicAfterCall {
+		panic("clock panic in Now()")
+	}
+	return p.FakeClock.Now()
 }
 
 func TestGocronNewTaskPanic(t *testing.T) {
-	fakeClock := clockwork.NewFakeClock()
+	panicClock := &PanicingClock{
+		FakeClock:      clockwork.NewFakeClock(),
+		panicAfterCall: 15, // Adjust based on actual call pattern, we want to panic on cron/trigger/trigger.go:201 call to Now()
+	}
 
 	config, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
 	require.NoError(t, err)
 	logger, observedLogs := logger.TestObserved(t, zap.ErrorLevel)
-	ts, err := NewTriggerService(logger, fakeClock, limits.Factory{})
+	ts, err := NewTriggerService(logger, panicClock, limits.Factory{})
 	require.NoError(t, err)
 	err = ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
 		Config: string(config),
@@ -1089,12 +1100,7 @@ func TestGocronNewTaskPanic(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, len(ts.scheduler.Jobs()), 1)
 
-	// Swap ts.clock after setup so gocron's scheduler/executor keep using the
-	// original fakeClock, while the task callback (trigger.go s.clock.Now())
-	// hits the panicking clock.
-	ts.clock = &panicOnNowClock{Clock: fakeClock}
-
-	fakeClock.Advance(time.Second * 1)
+	panicClock.Advance(time.Second * 1)
 
 	ticker := time.NewTicker(time.Second * 1)
 	timeout := time.NewTimer(time.Second * 10)
@@ -1104,7 +1110,7 @@ func TestGocronNewTaskPanic(t *testing.T) {
 			logs := observedLogs.All()
 			for _, log := range logs {
 				if log.Message == "panic in gocron.NewTask function" && len(log.Context) > 0 && log.Context[0].Key == "err" && log.Context[0].String == "clock panic in Now()" {
-					return
+					return // Success, end the test
 				}
 			}
 		case <-timeout.C:
@@ -1145,16 +1151,3 @@ func (m *MockOrgResolver) Name() string {
 
 // Ensure MockOrgResolver implements the interface
 var _ orgresolver.OrgResolver = (*MockOrgResolver)(nil)
-
-func TestEnforceFastestSchedule_NonUniformSecondsField(t *testing.T) {
-	t.Parallel()
-	// a schedule that has a bunch of 5s gaps followed by a bunch of 1s gaps
-	// requires checking multiple runs to catch the short gaps
-	schedule := "0,5,10,15,20,25,30,35,40,45,50,55-59 * * * * *"
-	maximumFastest := 5 * time.Second
-
-	jobDef := gocron.CronJob(schedule, true)
-	capErr := enforceFastestSchedule(logger.Nop(), jobDef, maximumFastest)
-	require.NotNil(t, capErr, "should reject schedule with 1s gaps")
-	require.Contains(t, capErr.Error(), "maximum fastest cron schedule is 5s")
-}
