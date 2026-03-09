@@ -70,10 +70,23 @@ func (fc *forwarderClient) InvokeOnReport(ctx context.Context, receiver []byte, 
 	}
 
 	fullRawReport := append(report.ReportContext, report.RawReport...)
-	fc.lggr.Debugw("TestingAptosWriteCap: prepended ReportContext to RawReport",
+
+	versionByte := byte(0)
+	if len(fullRawReport) > 96 {
+		versionByte = fullRawReport[96]
+	}
+	rawReportFirstByte := byte(0)
+	if len(report.RawReport) > 0 {
+		rawReportFirstByte = report.RawReport[0]
+	}
+	fc.lggr.Infow("TestingAptosWriteCap: prepended ReportContext to RawReport",
 		"reportContextLen", len(report.ReportContext),
 		"rawReportLen", len(report.RawReport),
 		"fullRawReportLen", len(fullRawReport),
+		"reportContextHex", fmt.Sprintf("%x", report.ReportContext),
+		"rawReportFirst10Hex", fmt.Sprintf("%x", report.RawReport[:min(10, len(report.RawReport))]),
+		"versionByteAtOffset96", versionByte,
+		"rawReportFirstByte", rawReportFirstByte,
 	)
 
 	receiverAddress := aptos_sdk.AccountAddress(receiver)
