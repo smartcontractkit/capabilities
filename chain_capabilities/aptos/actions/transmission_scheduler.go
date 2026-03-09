@@ -79,11 +79,16 @@ func (ts *TransmissionScheduler) GetQueuePosition(transmissionID string) int {
 // for the given transmissionID. PeerIDs are resolved to transmitter addresses via p2pConfig.
 // Peers not found in p2pConfig are skipped.
 func (ts *TransmissionScheduler) GetOrderedTransmitters(transmissionID string) []string {
+	permuted := ts.permutedOrder(transmissionID)
+	ts.lggr.Debugf("TestingAptosWriteCap: GetOrderedTransmitters donMembersCount=%d permutedCount=%d p2pConfigKeys=%d transmissionID=%s",
+		len(ts.donMembers), len(permuted), len(ts.p2pConfig), transmissionID)
 	var transmitters []string
-	for _, peerID := range ts.permutedOrder(transmissionID) {
+	for i, peerID := range permuted {
 		peerHex := fmt.Sprintf("%x", peerID[:])
 		if addr, ok := ts.p2pConfig[peerHex]; ok {
 			transmitters = append(transmitters, addr)
+		} else {
+			ts.lggr.Debugf("TestingAptosWriteCap: GetOrderedTransmitters peerID[%d]=%s not found in p2pConfig", i, peerHex)
 		}
 	}
 	return transmitters

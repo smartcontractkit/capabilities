@@ -58,6 +58,7 @@ func (fc *forwarderClient) InvokeOnReport(ctx context.Context, receiver []byte, 
 
 	fc.lggr.Infow("TestingAptosWriteCap: InvokeOnReport called",
 		"receiverLen", len(receiver),
+		"reportContextLen", len(report.ReportContext),
 		"rawReportLen", len(report.RawReport),
 		"numSigs", len(report.Sigs),
 		"hasGasConfig", gasConfig != nil,
@@ -68,8 +69,16 @@ func (fc *forwarderClient) InvokeOnReport(ctx context.Context, receiver []byte, 
 		signatures = append(signatures, sig.Signature)
 	}
 
+	fullRawReport := append(report.ReportContext, report.RawReport...)
+	fc.lggr.Debugw("TestingAptosWriteCap: prepended ReportContext to RawReport",
+		"reportContextLen", len(report.ReportContext),
+		"rawReportLen", len(report.RawReport),
+		"fullRawReportLen", len(fullRawReport),
+	)
+
 	receiverAddress := aptos_sdk.AccountAddress(receiver)
-	moduleInformation, _, argTypes, args, err := fc.forwarderEncoder.Report(receiverAddress, report.RawReport, signatures)
+	// use report.RawReport here to test finding failed transactions
+	moduleInformation, _, argTypes, args, err := fc.forwarderEncoder.Report(receiverAddress, fullRawReport, signatures)
 	if err != nil {
 		fc.lggr.Errorw("TestingAptosWriteCap: failed to encode forwarder report", "error", err)
 		return nil, fmt.Errorf("failed to encode forwarder report: %w", err)
@@ -171,61 +180,6 @@ func (fc *forwarderClient) GetTransmissionInfo(ctx context.Context, transmission
 	if err != nil {
 		fc.lggr.Errorw("TestingAptosWriteCap: failed to encode GetTransmissionState", "error", err)
 		return TransmissionInfo{}, fmt.Errorf("failed to encode GetTransmissionState: %w", err)
-	}
-
-	fc.lggr.Debugw("TestingAptosWriteCap: encoded view call args",
-		"moduleAddress", moduleInfo.Address.String(),
-		"moduleName", moduleInfo.ModuleName,
-		"functionName", functionName,
-		"args", args,
-	)
-
-	// Debug: call get_owner to verify views work at all
-	ownerModInfo, ownerFn, _, ownerArgs, ownerEncErr := fc.forwarderEncoder.GetOwner()
-	if ownerEncErr != nil {
-		fc.lggr.Warnw("TestingAptosWriteCap: failed to encode GetOwner", "error", ownerEncErr)
-	} else {
-		ownerReply, ownerViewErr := fc.AptosService.View(ctx, aptostypes.ViewRequest{
-			Payload: &aptostypes.ViewPayload{
-				Module: aptostypes.ModuleID{
-					Address: aptostypes.AccountAddress(ownerModInfo.Address),
-					Name:    ownerModInfo.ModuleName,
-				},
-				Function: ownerFn,
-				Args:     ownerArgs,
-			},
-		})
-		if ownerViewErr != nil {
-			fc.lggr.Warnw("TestingAptosWriteCap: get_owner view failed", "error", ownerViewErr)
-		} else {
-			fc.lggr.Infow("TestingAptosWriteCap: get_owner result", "rawData", string(ownerReply.Data))
-		}
-	}
-
-	// Debug: call get_transmission_state (returns bool) with same args
-	stateModInfo, stateFn, _, stateArgs, stateEncErr := fc.forwarderEncoder.GetTransmissionState(
-		transmissionID.Receiver,
-		transmissionID.WorkflowExecutionID[:],
-		reportID,
-	)
-	if stateEncErr != nil {
-		fc.lggr.Warnw("TestingAptosWriteCap: failed to encode GetTransmissionState", "error", stateEncErr)
-	} else {
-		stateReply, stateViewErr := fc.AptosService.View(ctx, aptostypes.ViewRequest{
-			Payload: &aptostypes.ViewPayload{
-				Module: aptostypes.ModuleID{
-					Address: aptostypes.AccountAddress(stateModInfo.Address),
-					Name:    stateModInfo.ModuleName,
-				},
-				Function: stateFn,
-				Args:     stateArgs,
-			},
-		})
-		if stateViewErr != nil {
-			fc.lggr.Warnw("TestingAptosWriteCap: get_transmission_state view failed", "error", stateViewErr)
-		} else {
-			fc.lggr.Infow("TestingAptosWriteCap: get_transmission_state result", "rawData", string(stateReply.Data))
-		}
 	}
 
 	// Call the view function via AptosService

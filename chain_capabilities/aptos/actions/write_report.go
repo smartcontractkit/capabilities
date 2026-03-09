@@ -283,8 +283,14 @@ func (wr *writeReport) execute(
 		// Search preceding transmitters (position 0 through position-1) for a matching failed tx.
 		orderedTransmitters := wr.transmissionScheduler.GetOrderedTransmitters(transmissionID.GetDebugID())
 		wr.lggr.Infow("TestingAptosWriteCap: searching preceding transmitters for failed tx",
-			"orderedTransmittersCount", len(orderedTransmitters), "searchUpTo", queuePosition)
+			"queuePosition", queuePosition,
+			"orderedTransmitters", orderedTransmitters,
+			"orderedTransmittersCount", len(orderedTransmitters),
+			"transmissionDebugID", transmissionID.GetDebugID(),
+			"p2pConfig", wr.p2pConfig,
+		)
 		for i := 0; i < queuePosition && i < len(orderedTransmitters); i++ {
+			wr.lggr.Infow("TestingAptosWriteCap: checking prior transmitter", "index", i, "address", orderedTransmitters[i])
 			var addr aptos_sdk.AccountAddress
 			if parseErr := addr.ParseStringRelaxed(orderedTransmitters[i]); parseErr != nil {
 				wr.lggr.Warnw("TestingAptosWriteCap: failed to parse transmitter address, skipping", "address", orderedTransmitters[i], "err", parseErr)
