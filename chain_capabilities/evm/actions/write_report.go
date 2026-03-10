@@ -287,8 +287,14 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 				return nil, capabilities.ResponseMetadata{}, err
 			}
 			monitoring.LogAndEmitSuccess(ctx, "WriteReport sent a duplicate transaction - report already submitted", e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportDuplicateTx(telemetryContext, request, common.Bytes2Hex(transactionResult.TxHash[:]), common.Bytes2Hex((*txHash)[:])))
+		} else if transactionResult.TxStatus == evmtypes.TxFatal {
+			e.lggr.Debugw("Transaction failed to get processed, but report was already submitted")
+			txHash, err = txHashRetriever.GetSuccessfulTransmissionHash(ctx)
+			if err != nil {
+				return nil, capabilities.ResponseMetadata{}, err
+			}
 		}
-		e.lggr.Debugw("Transaction confirmed", "executionID", metadata.WorkflowExecutionID, "txIdempotencyKey", transactionResult.TxIdempotencyKey, "txHash", common.Bytes2Hex((*txHash)[:]))
+		e.lggr.Debugw("Transaction confirmed", "txIdempotencyKey", transactionResult.TxIdempotencyKey, "txHash", common.Bytes2Hex((*txHash)[:]))
 		reply, err := e.fetchTransactionReceiptAndCreateReply(ctx, *txHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS, nil)
 		return reply, meteringMetadata, err
 	case contracts.TransmissionStateFailed, contracts.TransmissionStateInvalidReceiver:
@@ -310,7 +316,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		return reply, meteringMetadata, err
 	default:
 		errorMsg := getInvalidStateErrorMessage(newTransmissionInfo.State)
-		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportInvalidTransmissionState(telemetryContext, request, newTransmissionInfo, "WriteReport invalid transmission state", errorMsg))
+		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportInvalidTransmissionState(telemetryContext, request, newTransmissionInfo, fmt.Sprintf("WriteReport invalid transmission state with tx status: %d", transactionResult.TxStatus), errorMsg))
 		return nil, meteringMetadata, errors.New(errorMsg)
 	}
 }
