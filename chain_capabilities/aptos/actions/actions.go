@@ -11,6 +11,7 @@ import (
 	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -18,8 +19,10 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/config"
 )
 
+// TODO: config PLEX-2598
 const (
 	reportSizeLimit = commoncfg.Byte * 500
+	logPrefix       = "AptosCapabilityLog: "
 )
 
 type Aptos struct {
@@ -64,6 +67,10 @@ func (a *Aptos) initLimiters(limitsFactory limits.Factory) (err error) {
 	maxGasAmountLimit := settings.Uint64(1_000_000)
 	a.maxGasAmountLimit, err = limits.MakeUpperBoundLimiter(limitsFactory, maxGasAmountLimit)
 	return
+}
+
+func (a *Aptos) Close() error {
+	return services.CloseAll(a.reportSizeLimit, a.maxGasAmountLimit)
 }
 
 func GetError(err error, isUserError bool) caperrors.Error {

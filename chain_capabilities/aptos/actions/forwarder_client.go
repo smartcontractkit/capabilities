@@ -48,15 +48,7 @@ func newForwarderClient(aptosService types.AptosService, lggr logger.Logger, for
 }
 
 func (fc *forwarderClient) InvokeOnReport(ctx context.Context, receiver []byte, report *sdk.ReportResponse, gasConfig *aptoscap.GasConfig) (*aptostypes.SubmitTransactionReply, error) {
-	// use receiver address
-	// use report.RawReport
-	// the report.RawReport is what we came to consensus on
-	// the report.RawReport has the client payload wrapped inside it and a bunch of other stuff
-	// the forwarder contract is responsible for unwrapping the client payload and forwarding it to the receiver
-	// use report.sigs
-	// encode that as a report call on the forwarder contract
-
-	fc.lggr.Infow("TestingAptosWriteCap: InvokeOnReport called",
+	fc.lggr.Debugw(logPrefix+"InvokeOnReport called",
 		"receiverLen", len(receiver),
 		"reportContextLen", len(report.ReportContext),
 		"rawReportLen", len(report.RawReport),
@@ -71,32 +63,12 @@ func (fc *forwarderClient) InvokeOnReport(ctx context.Context, receiver []byte, 
 
 	fullRawReport := append(report.ReportContext, report.RawReport...)
 
-	versionByte := byte(0)
-	if len(fullRawReport) > 96 {
-		versionByte = fullRawReport[96]
-	}
-	rawReportFirstByte := byte(0)
-	if len(report.RawReport) > 0 {
-		rawReportFirstByte = report.RawReport[0]
-	}
-	fc.lggr.Infow("TestingAptosWriteCap: prepended ReportContext to RawReport",
-		"reportContextLen", len(report.ReportContext),
-		"rawReportLen", len(report.RawReport),
-		"fullRawReportLen", len(fullRawReport),
-		"reportContextHex", fmt.Sprintf("%x", report.ReportContext),
-		"rawReportFirst10Hex", fmt.Sprintf("%x", report.RawReport[:min(10, len(report.RawReport))]),
-		"versionByteAtOffset96", versionByte,
-		"rawReportFirstByte", rawReportFirstByte,
-	)
-
-	receiverAddress := aptos_sdk.AccountAddress(receiver)
-	// use report.RawReport here to test finding failed transactions
-	moduleInformation, _, argTypes, args, err := fc.forwarderEncoder.Report(receiverAddress, fullRawReport, signatures)
+	moduleInformation, _, argTypes, args, err := fc.forwarderEncoder.Report(aptos_sdk.AccountAddress(receiver), fullRawReport, signatures)
 	if err != nil {
-		fc.lggr.Errorw("TestingAptosWriteCap: failed to encode forwarder report", "error", err)
+		fc.lggr.Errorw(logPrefix+"failed to encode forwarder report", "error", err)
 		return nil, fmt.Errorf("failed to encode forwarder report: %w", err)
 	}
-	fc.lggr.Infow("TestingAptosWriteCap: forwarder report encoded",
+	fc.lggr.Debugw(logPrefix+"forwarder report encoded",
 		"moduleAddress", moduleInformation.Address.String(),
 		"moduleName", moduleInformation.ModuleName,
 		"numArgTypes", len(argTypes),
@@ -116,10 +88,10 @@ func (fc *forwarderClient) InvokeOnReport(ctx context.Context, receiver []byte, 
 	}
 	encodedPayload, err := bcs.Serialize(&payload)
 	if err != nil {
-		fc.lggr.Errorw("TestingAptosWriteCap: failed to marshal forwarder report payload", "error", err)
+		fc.lggr.Errorw(logPrefix+"failed to marshal forwarder report payload", "error", err)
 		return nil, fmt.Errorf("failed to marshal forwarder report payload: %w", err)
 	}
-	fc.lggr.Infow("TestingAptosWriteCap: payload BCS-serialized", "encodedPayloadLen", len(encodedPayload))
+	fc.lggr.Debugw(logPrefix+"payload BCS-serialized", "encodedPayloadLen", len(encodedPayload))
 
 	var resolvedGasConfig *aptostypes.GasConfig
 	if gasConfig != nil {
@@ -127,10 +99,10 @@ func (fc *forwarderClient) InvokeOnReport(ctx context.Context, receiver []byte, 
 			MaxGasAmount: gasConfig.MaxGasAmount,
 			GasUnitPrice: gasConfig.GasUnitPrice,
 		}
-		fc.lggr.Infow("TestingAptosWriteCap: gas config resolved", "maxGasAmount", gasConfig.MaxGasAmount, "gasUnitPrice", gasConfig.GasUnitPrice)
+		fc.lggr.Debugw(logPrefix+"gas config resolved", "maxGasAmount", gasConfig.MaxGasAmount, "gasUnitPrice", gasConfig.GasUnitPrice)
 	}
 
-	fc.lggr.Infow("TestingAptosWriteCap: submitting transaction to AptosService",
+	fc.lggr.Debugw(logPrefix+"submitting transaction to AptosService",
 		"forwarderAddress", fmt.Sprintf("%x", fc.forwarderAddress),
 		"moduleName", moduleInformation.ModuleName,
 	)
@@ -144,11 +116,11 @@ func (fc *forwarderClient) InvokeOnReport(ctx context.Context, receiver []byte, 
 		GasConfig:      resolvedGasConfig,
 	})
 	if err != nil {
-		fc.lggr.Errorw("TestingAptosWriteCap: SubmitTransaction failed", "error", err)
+		fc.lggr.Errorw(logPrefix+"SubmitTransaction failed", "error", err)
 		return nil, fmt.Errorf("failed to submit forwarder report transaction: %w", err)
 	}
 
-	fc.lggr.Infow("TestingAptosWriteCap: SubmitTransaction succeeded", "txHash", reply.TxHash, "txStatus", reply.TxStatus)
+	fc.lggr.Debugw(logPrefix+"SubmitTransaction succeeded", "txHash", reply.TxHash, "txStatus", reply.TxStatus)
 	return reply, nil
 }
 
@@ -176,7 +148,7 @@ func (fc *forwarderClient) GetTransmissionInfo(ctx context.Context, transmission
 	// Convert [2]byte report ID to uint16 (big-endian, as stored in report metadata)
 	reportID := binary.BigEndian.Uint16(transmissionID.ReportID[:])
 
-	fc.lggr.Debugw("TestingAptosWriteCap: GetTransmissionInfo called",
+	fc.lggr.Debugw(logPrefix+"GetTransmissionInfo called",
 		"transmissionID", transmissionID.GetDebugID(),
 		"receiverHex", fmt.Sprintf("%x", transmissionID.Receiver[:]),
 		"workflowExecutionIDHex", fmt.Sprintf("%x", transmissionID.WorkflowExecutionID[:]),
@@ -191,7 +163,7 @@ func (fc *forwarderClient) GetTransmissionInfo(ctx context.Context, transmission
 		reportID,
 	)
 	if err != nil {
-		fc.lggr.Errorw("TestingAptosWriteCap: failed to encode GetTransmissionState", "error", err)
+		fc.lggr.Errorw(logPrefix+"failed to encode GetTransmissionState", "error", err)
 		return TransmissionInfo{}, fmt.Errorf("failed to encode GetTransmissionState: %w", err)
 	}
 
@@ -207,38 +179,38 @@ func (fc *forwarderClient) GetTransmissionInfo(ctx context.Context, transmission
 		},
 	})
 	if err != nil {
-		fc.lggr.Errorw("TestingAptosWriteCap: GetTransmissionState view call failed", "error", err)
+		fc.lggr.Errorw(logPrefix+"GetTransmissionState view call failed", "error", err)
 		return TransmissionInfo{}, fmt.Errorf("failed to call GetTransmissionState view: %w", err)
 	}
 
-	fc.lggr.Debugw("TestingAptosWriteCap: GetTransmissionState view returned", "rawData", string(viewReply.Data))
+	fc.lggr.Debugw(logPrefix+"GetTransmissionState view returned", "rawData", string(viewReply.Data))
 
 	// Move Option<T> is struct { vec: vector<T> }, so the Aptos REST API serializes it as:
 	//   some(addr) → [{"vec": ["0xaddr"]}]
 	//   none       → [{"vec": []}]
 	var result []moveOptionAddress
 	if err := json.Unmarshal(viewReply.Data, &result); err != nil {
-		fc.lggr.Errorw("TestingAptosWriteCap: failed to unmarshal transmission state", "rawData", string(viewReply.Data), "error", err)
+		fc.lggr.Errorw(logPrefix+"failed to unmarshal transmission state", "rawData", string(viewReply.Data), "error", err)
 		return TransmissionInfo{}, fmt.Errorf("failed to unmarshal transmission state: %w", err)
 	}
 
 	if len(result) == 0 || len(result[0].Vec) == 0 {
-		fc.lggr.Debugw("TestingAptosWriteCap: no transmitter found (not yet transmitted)")
+		fc.lggr.Debugw(logPrefix + "no transmitter found (not yet transmitted)")
 		return TransmissionInfo{Success: false}, nil
 	}
 
 	var addr aptos_sdk.AccountAddress
 	if err := addr.ParseStringRelaxed(result[0].Vec[0]); err != nil {
-		fc.lggr.Errorw("TestingAptosWriteCap: failed to parse transmitter address", "raw", result[0].Vec[0], "error", err)
+		fc.lggr.Errorw(logPrefix+"failed to parse transmitter address", "raw", result[0].Vec[0], "error", err)
 		return TransmissionInfo{}, fmt.Errorf("failed to parse transmitter address: %w", err)
 	}
 
-	fc.lggr.Debugw("TestingAptosWriteCap: transmission found", "transmitter", addr.String(), "success", true)
+	fc.lggr.Debugw(logPrefix+"transmission found", "transmitter", addr.String(), "success", true)
 	return TransmissionInfo{Transmitter: addr, Success: true}, nil
 }
 
 func (fc *forwarderClient) GetTransmitterTransactions(ctx context.Context, transmitter aptos_sdk.AccountAddress, start *uint64, limit *uint64) ([]*aptostypes.Transaction, error) {
-	fc.lggr.Debugw("TestingAptosWriteCap: GetTransmitterTransactions called",
+	fc.lggr.Debugw(logPrefix+"GetTransmitterTransactions called",
 		"transmitter", transmitter.String(),
 		"hasStart", start != nil,
 		"hasLimit", limit != nil,
@@ -249,9 +221,9 @@ func (fc *forwarderClient) GetTransmitterTransactions(ctx context.Context, trans
 		Limit:   limit,
 	})
 	if err != nil {
-		fc.lggr.Errorw("TestingAptosWriteCap: GetTransmitterTransactions failed", "transmitter", transmitter.String(), "error", err)
+		fc.lggr.Errorw(logPrefix+"GetTransmitterTransactions failed", "transmitter", transmitter.String(), "error", err)
 		return nil, fmt.Errorf("failed to get account transactions for transmitter %s: %w", transmitter.String(), err)
 	}
-	fc.lggr.Debugw("TestingAptosWriteCap: GetTransmitterTransactions returned", "transmitter", transmitter.String(), "txCount", len(reply.Transactions))
+	fc.lggr.Debugw(logPrefix+"GetTransmitterTransactions returned", "transmitter", transmitter.String(), "txCount", len(reply.Transactions))
 	return reply.Transactions, nil
 }

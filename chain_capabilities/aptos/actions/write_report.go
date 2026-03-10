@@ -71,7 +71,7 @@ func (s *Aptos) WriteReport(
 ) (*capabilities.ResponseAndMetadata[*aptoscap.WriteReportReply], caperrors.Error) {
 	ctx = metadata.ContextWithCRE(ctx)
 
-	s.lggr.Infow("TestingAptosWriteCap: WriteReport called",
+	s.lggr.Debugw(logPrefix + "WriteReport called",
 		"workflowExecutionID", metadata.WorkflowExecutionID,
 		"workflowID", metadata.WorkflowID,
 		"workflowOwner", metadata.WorkflowOwner,
@@ -80,19 +80,19 @@ func (s *Aptos) WriteReport(
 
 	// 1. Validate inputs
 	if err := s.validateWriteReportInputs(metadata, input); err != nil {
-		s.lggr.Errorw("TestingAptosWriteCap: validateWriteReportInputs failed", "error", err)
+		s.lggr.Errorw(logPrefix + "validateWriteReportInputs failed", "error", err)
 		return nil, NewUserError(err)
 	}
-	s.lggr.Infow("TestingAptosWriteCap: inputs validated successfully")
+	s.lggr.Debugw(logPrefix + "inputs validated successfully")
 
 	// 2. Build and submit the transaction via AptosService
 	reply, err := s.executeWriteReport(ctx, input, metadata)
 	if err != nil {
-		s.lggr.Errorw("TestingAptosWriteCap: executeWriteReport failed", "error", err)
+		s.lggr.Errorw(logPrefix + "executeWriteReport failed", "error", err)
 		return nil, GetError(err, s.isUserError(err))
 	}
 
-	s.lggr.Infow("TestingAptosWriteCap: WriteReport completed successfully",
+	s.lggr.Debugw(logPrefix + "WriteReport completed successfully",
 		"txStatus", reply.TxStatus,
 		"hasTxHash", reply.TxHash != nil,
 	)
@@ -139,7 +139,7 @@ func (wr *writeReport) execute(
 	request *aptoscap.WriteReportRequest,
 	metadata capabilities.RequestMetadata,
 ) (*aptoscap.WriteReportReply, error) {
-	wr.lggr.Infow("TestingAptosWriteCap: execute started",
+	wr.lggr.Debugw(logPrefix + "execute started",
 		"workflowExecutionID", metadata.WorkflowExecutionID,
 		"hasGasConfig", request.GasConfig != nil,
 		"reportLen", len(request.Report.RawReport),
@@ -155,47 +155,47 @@ func (wr *writeReport) execute(
 		request.GasConfig = &aptoscap.GasConfig{}
 		limit, limErr := wr.maxGasAmountLimit.Limit(ctx)
 		if limErr != nil {
-			wr.lggr.Errorw("TestingAptosWriteCap: failed to get gas limit", "error", limErr)
+			wr.lggr.Errorw(logPrefix + "failed to get gas limit", "error", limErr)
 			return nil, limErr
 		}
 		request.GasConfig.MaxGasAmount = limit
-		wr.lggr.Infow("TestingAptosWriteCap: using default gas limit", "maxGasAmount", limit)
+		wr.lggr.Debugw(logPrefix + "using default gas limit", "maxGasAmount", limit)
 	} else {
 		err := wr.maxGasAmountLimit.Check(ctx, request.GasConfig.MaxGasAmount)
 		if err != nil {
-			wr.lggr.Errorw("TestingAptosWriteCap: gas config exceeds limit", "maxGasAmount", request.GasConfig.MaxGasAmount, "error", err)
+			wr.lggr.Errorw(logPrefix + "gas config exceeds limit", "maxGasAmount", request.GasConfig.MaxGasAmount, "error", err)
 			return nil, fmt.Errorf("%s provided gas config exceeds limit (maxGasAmount=%d): %w", userError, request.GasConfig.MaxGasAmount, err)
 		}
-		wr.lggr.Infow("TestingAptosWriteCap: using provided gas config", "maxGasAmount", request.GasConfig.MaxGasAmount)
+		wr.lggr.Debugw(logPrefix + "using provided gas config", "maxGasAmount", request.GasConfig.MaxGasAmount)
 	}
 
 	transmissionID, err := getTransmissionID(metadata.WorkflowExecutionID, request)
 	if err != nil {
-		wr.lggr.Errorw("TestingAptosWriteCap: getTransmissionID failed", "error", err)
+		wr.lggr.Errorw(logPrefix + "getTransmissionID failed", "error", err)
 		return &aptoscap.WriteReportReply{}, err
 	}
-	wr.lggr.Infow("TestingAptosWriteCap: transmissionID created", "transmissionID", transmissionID.GetDebugID())
+	wr.lggr.Debugw(logPrefix + "transmissionID created", "transmissionID", transmissionID.GetDebugID())
 
 	txHashRetriever := NewTxHashRetriever(wr.forwarderClient, wr.lggr, transmissionID, wr.forwarderAddress.String(), requestStartTime)
 
 	queuePosition := wr.transmissionScheduler.GetQueuePosition(transmissionID.GetDebugID())
-	wr.lggr.Infow("TestingAptosWriteCap: got queue position", "queuePosition", queuePosition)
+	wr.lggr.Debugw(logPrefix + "got queue position", "queuePosition", queuePosition)
 	// polling here is done based on queue position and deltaStage
 	transmissionInfo, err := wr.pollTransmissionInfo(ctx, transmissionID, queuePosition)
 	if err != nil {
-		wr.lggr.Errorw("TestingAptosWriteCap: pollTransmissionInfo failed", "error", err)
+		wr.lggr.Errorw(logPrefix + "pollTransmissionInfo failed", "error", err)
 		return nil, fmt.Errorf("failed to get transmission info: %w", err)
 	}
-	wr.lggr.Infow("TestingAptosWriteCap: initial pollTransmissionInfo result", "success", transmissionInfo.Success, "transmitter", transmissionInfo.Transmitter.String())
+	wr.lggr.Debugw(logPrefix + "initial pollTransmissionInfo result", "success", transmissionInfo.Success, "transmitter", transmissionInfo.Transmitter.String())
 
 	if transmissionInfo.Success {
-		wr.lggr.Infow("TestingAptosWriteCap: report already onchain, retrieving txHash")
+		wr.lggr.Debugw(logPrefix + "report already onchain, retrieving txHash")
 		txHash, txHashErr := txHashRetriever.GetSuccessfulTransmissionHash(ctx, transmissionInfo.Transmitter)
 		if txHashErr != nil {
-			wr.lggr.Errorw("TestingAptosWriteCap: report already onchain but failed to retrieve its txHash", "error", txHashErr)
+			wr.lggr.Errorw(logPrefix + "report already onchain but failed to retrieve its txHash", "error", txHashErr)
 			return nil, txHashErr
 		}
-		wr.lggr.Infow("TestingAptosWriteCap: returning early - report already onchain", "txHash", txHash)
+		wr.lggr.Debugw(logPrefix + "returning early - report already onchain", "txHash", txHash)
 		return &aptoscap.WriteReportReply{
 			TxStatus: aptoscap.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:   &txHash,
@@ -207,11 +207,11 @@ func (wr *writeReport) execute(
 
 	err = wr.reportSizeLimit.Check(ctx, commoncfg.SizeOf(request.Report.RawReport))
 	if err != nil {
-		wr.lggr.Errorw("TestingAptosWriteCap: report size exceeds limit", "reportSize", len(request.Report.RawReport), "error", err)
+		wr.lggr.Errorw(logPrefix + "report size exceeds limit", "reportSize", len(request.Report.RawReport), "error", err)
 		return nil, fmt.Errorf("%s report size exceeds limit: %w", userError, err)
 	}
 
-	wr.lggr.Infow("TestingAptosWriteCap: submitting WriteReport transaction",
+	wr.lggr.Debugw(logPrefix + "submitting WriteReport transaction",
 		"executionID", metadata.WorkflowExecutionID,
 		"receiver", hex.EncodeToString(request.Receiver[:]),
 		"maxGasAmount", request.GasConfig.MaxGasAmount,
@@ -219,10 +219,10 @@ func (wr *writeReport) execute(
 
 	txReply, err := wr.forwarderClient.InvokeOnReport(ctx, request.Receiver, request.Report, request.GasConfig)
 	if err != nil {
-		wr.lggr.Errorw("TestingAptosWriteCap: InvokeOnReport failed", "error", err)
+		wr.lggr.Errorw(logPrefix + "InvokeOnReport failed", "error", err)
 		return nil, fmt.Errorf("failed to invoke forwarder report: %w", err)
 	}
-	wr.lggr.Infow("TestingAptosWriteCap: InvokeOnReport returned", "txHash", txReply.TxHash, "txStatus", txReply.TxStatus)
+	wr.lggr.Debugw(logPrefix + "InvokeOnReport returned", "txHash", txReply.TxHash, "txStatus", txReply.TxStatus)
 
 	// polling here is done immediately after submission
 	newTransmissionInfo, err := withPollingRetry(ctx, wr.lggr, func(ctx context.Context) (TransmissionInfo, error) {
@@ -234,44 +234,44 @@ func (wr *writeReport) execute(
 	})
 
 	if err != nil {
-		wr.lggr.Errorw("TestingAptosWriteCap: post-submission polling failed", "error", err)
+		wr.lggr.Errorw(logPrefix + "post-submission polling failed", "error", err)
 		return nil, fmt.Errorf("failed getting transmission info after node submitted the report on chain, %w", err)
 	}
 
-	wr.lggr.Infow("TestingAptosWriteCap: post-submission transmission status", "success", newTransmissionInfo.Success, "transmitter", newTransmissionInfo.Transmitter.String())
+	wr.lggr.Debugw(logPrefix + "post-submission transmission status", "success", newTransmissionInfo.Success, "transmitter", newTransmissionInfo.Transmitter.String())
 
 	switch newTransmissionInfo.Success {
 	case true:
 		txHash := txReply.TxHash
 		if txReply.TxStatus == aptostypes.TxFatal || txReply.TxStatus == aptostypes.TxReverted {
 			// Report for this transaction has already been submitted and we sent a duplicate tx onchain, that is why this tx reverted but transmission info still shows success.
-			wr.lggr.Infow("TestingAptosWriteCap: our tx reverted but report is onchain (duplicate), retrieving success hash",
+			wr.lggr.Debugw(logPrefix + "our tx reverted but report is onchain (duplicate), retrieving success hash",
 				"ownTxStatus", txReply.TxStatus, "ownTxHash", txReply.TxHash)
 			successHash, txHashErr := txHashRetriever.GetSuccessfulTransmissionHash(ctx, newTransmissionInfo.Transmitter)
 			if txHashErr != nil {
-				wr.lggr.Errorw("TestingAptosWriteCap: failed to get successful transmission hash after duplicate", "error", txHashErr)
+				wr.lggr.Errorw(logPrefix + "failed to get successful transmission hash after duplicate", "error", txHashErr)
 				return nil, fmt.Errorf("failed to get successful transmission hash: %w", txHashErr)
 			}
 			txHash = successHash
 		}
-		wr.lggr.Infow("TestingAptosWriteCap: returning SUCCESS", "txHash", txHash)
+		wr.lggr.Debugw(logPrefix + "returning SUCCESS", "txHash", txHash)
 		return &aptoscap.WriteReportReply{
 			TxStatus: aptoscap.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:   &txHash,
 		}, nil
 	case false:
 		if txReply.TxStatus == aptostypes.TxSuccess {
-			wr.lggr.Errorw("TestingAptosWriteCap: unexpected state - local tx succeeded but transmission info shows no success",
+			wr.lggr.Errorw(logPrefix + "unexpected state - local tx succeeded but transmission info shows no success",
 				"transmissionID", transmissionID.GetDebugID())
 			return nil, fmt.Errorf("unexpected state: local transaction succeeded but transmission info shows no success for %s", transmissionID.GetDebugID())
 		}
 		ownTxHash := txReply.TxHash
-		wr.lggr.Infow("TestingAptosWriteCap: transmission failed, searching for tx hashes",
+		wr.lggr.Debugw(logPrefix + "transmission failed, searching for tx hashes",
 			"ownTxHash", ownTxHash, "ownTxStatus", txReply.TxStatus, "queuePosition", queuePosition)
 
 		// Position 0 node has no prior nodes to check; return its own failed tx hash.
 		if queuePosition <= 0 {
-			wr.lggr.Infow("TestingAptosWriteCap: position 0, returning own failed hash", "txHash", ownTxHash)
+			wr.lggr.Debugw(logPrefix + "position 0, returning own failed hash", "txHash", ownTxHash)
 			return &aptoscap.WriteReportReply{
 				TxStatus: aptoscap.TxStatus_TX_STATUS_FATAL,
 				TxHash:   &ownTxHash,
@@ -280,7 +280,7 @@ func (wr *writeReport) execute(
 
 		// Search preceding transmitters (position 0 through position-1) for a matching failed tx.
 		orderedTransmitters := wr.transmissionScheduler.GetOrderedTransmitters(transmissionID.GetDebugID())
-		wr.lggr.Infow("TestingAptosWriteCap: searching preceding transmitters for failed tx",
+		wr.lggr.Debugw(logPrefix + "searching preceding transmitters for failed tx",
 			"queuePosition", queuePosition,
 			"orderedTransmitters", orderedTransmitters,
 			"orderedTransmittersCount", len(orderedTransmitters),
@@ -288,18 +288,18 @@ func (wr *writeReport) execute(
 			"p2pConfig", wr.p2pConfig,
 		)
 		for i := 0; i < queuePosition && i < len(orderedTransmitters); i++ {
-			wr.lggr.Infow("TestingAptosWriteCap: checking prior transmitter", "index", i, "address", orderedTransmitters[i])
+			wr.lggr.Debugw(logPrefix + "checking prior transmitter", "index", i, "address", orderedTransmitters[i])
 			var addr aptos_sdk.AccountAddress
 			if parseErr := addr.ParseStringRelaxed(orderedTransmitters[i]); parseErr != nil {
-				wr.lggr.Warnw("TestingAptosWriteCap: failed to parse transmitter address, skipping", "address", orderedTransmitters[i], "err", parseErr)
+				wr.lggr.Warnw(logPrefix + "failed to parse transmitter address, skipping", "address", orderedTransmitters[i], "err", parseErr)
 				continue
 			}
 			failedHash, searchErr := txHashRetriever.GetFailedTransmissionHash(ctx, addr)
 			if searchErr != nil {
-				wr.lggr.Debugw("TestingAptosWriteCap: no matching failed tx for prior transmitter", "transmitter", orderedTransmitters[i], "position", i, "err", searchErr)
+				wr.lggr.Debugw(logPrefix + "no matching failed tx for prior transmitter", "transmitter", orderedTransmitters[i], "position", i, "err", searchErr)
 				continue
 			}
-			wr.lggr.Infow("TestingAptosWriteCap: found failed transmission from prior node", "transmitter", orderedTransmitters[i], "position", i, "txHash", failedHash)
+			wr.lggr.Debugw(logPrefix + "found failed transmission from prior node", "transmitter", orderedTransmitters[i], "position", i, "txHash", failedHash)
 			return &aptoscap.WriteReportReply{
 				TxStatus: aptoscap.TxStatus_TX_STATUS_FATAL,
 				TxHash:   &failedHash,
@@ -307,13 +307,13 @@ func (wr *writeReport) execute(
 		}
 
 		// No matching failed tx from prior nodes; return our own hash.
-		wr.lggr.Infow("TestingAptosWriteCap: no prior failed tx found, returning own hash", "txHash", ownTxHash)
+		wr.lggr.Debugw(logPrefix + "no prior failed tx found, returning own hash", "txHash", ownTxHash)
 		return &aptoscap.WriteReportReply{
 			TxStatus: aptoscap.TxStatus_TX_STATUS_FATAL,
 			TxHash:   &ownTxHash,
 		}, nil
 	}
-	wr.lggr.Errorw("TestingAptosWriteCap: unexpected transmission state after submit")
+	wr.lggr.Errorw(logPrefix + "unexpected transmission state after submit")
 	return nil, fmt.Errorf("transmission state not expected after submit")
 }
 
@@ -353,29 +353,29 @@ func getTransmissionID(workflowExecutionID string, request *aptoscap.WriteReport
 }
 
 func (s *Aptos) validateWriteReportInputs(requestMetadata capabilities.RequestMetadata, request *aptoscap.WriteReportRequest) error {
-	s.lggr.Infow("TestingAptosWriteCap: validateWriteReportInputs called",
+	s.lggr.Debugw(logPrefix + "validateWriteReportInputs called",
 		"hasRequest", request != nil,
 		"workflowExecutionID", requestMetadata.WorkflowExecutionID,
 	)
 	if request == nil {
-		s.lggr.Errorw("TestingAptosWriteCap: nil WriteReportRequest")
+		s.lggr.Errorw(logPrefix + "nil WriteReportRequest")
 		return fmt.Errorf("nil WriteReportRequest")
 	}
 	if request.Report == nil {
-		s.lggr.Errorw("TestingAptosWriteCap: nil Report in WriteReportRequest")
+		s.lggr.Errorw(logPrefix + "nil Report in WriteReportRequest")
 		return fmt.Errorf("nil Report in WriteReportRequest")
 	}
 	if len(request.Report.Sigs) == 0 {
-		s.lggr.Errorw("TestingAptosWriteCap: no signatures provided")
+		s.lggr.Errorw(logPrefix + "no signatures provided")
 		return fmt.Errorf("no signatures provided")
 	}
 
 	reportMetadata, err := decodeReportMetadata(request.Report.RawReport)
 	if err != nil {
-		s.lggr.Errorw("TestingAptosWriteCap: decodeReportMetadata failed", "error", err)
+		s.lggr.Errorw(logPrefix + "decodeReportMetadata failed", "error", err)
 		return err
 	}
-	s.lggr.Infow("TestingAptosWriteCap: report metadata decoded",
+	s.lggr.Debugw(logPrefix + "report metadata decoded",
 		"version", reportMetadata.Version,
 		"executionID", reportMetadata.ExecutionID,
 		"workflowOwner", reportMetadata.WorkflowOwner,
@@ -384,32 +384,32 @@ func (s *Aptos) validateWriteReportInputs(requestMetadata capabilities.RequestMe
 	)
 
 	if reportMetadata.Version != 1 {
-		s.lggr.Errorw("TestingAptosWriteCap: unsupported report version", "version", reportMetadata.Version)
+		s.lggr.Errorw(logPrefix + "unsupported report version", "version", reportMetadata.Version)
 		return fmt.Errorf("unsupported report version: %d", reportMetadata.Version)
 	}
 
 	if reportMetadata.ExecutionID != requestMetadata.WorkflowExecutionID {
-		s.lggr.Errorw("TestingAptosWriteCap: workflowExecutionID mismatch",
+		s.lggr.Errorw(logPrefix + "workflowExecutionID mismatch",
 			"reportExecutionID", reportMetadata.ExecutionID, "requestExecutionID", requestMetadata.WorkflowExecutionID)
 		return fmt.Errorf("workflowExecutionID mismatch: report=%s, request=%s",
 			reportMetadata.ExecutionID, requestMetadata.WorkflowExecutionID)
 	}
 
 	if !strings.EqualFold(reportMetadata.WorkflowOwner, requestMetadata.WorkflowOwner) {
-		s.lggr.Errorw("TestingAptosWriteCap: workflowOwner mismatch",
+		s.lggr.Errorw(logPrefix + "workflowOwner mismatch",
 			"reportOwner", reportMetadata.WorkflowOwner, "requestOwner", requestMetadata.WorkflowOwner)
 		return fmt.Errorf("workflowOwner mismatch: report=%s, request=%s",
 			reportMetadata.WorkflowOwner, requestMetadata.WorkflowOwner)
 	}
 
 	if reportMetadata.WorkflowID != requestMetadata.WorkflowID {
-		s.lggr.Errorw("TestingAptosWriteCap: workflowID mismatch",
+		s.lggr.Errorw(logPrefix + "workflowID mismatch",
 			"reportWorkflowID", reportMetadata.WorkflowID, "requestWorkflowID", requestMetadata.WorkflowID)
 		return fmt.Errorf("workflowID mismatch: report=%s, request=%s",
 			reportMetadata.WorkflowID, requestMetadata.WorkflowID)
 	}
 
-	s.lggr.Infow("TestingAptosWriteCap: all validations passed")
+	s.lggr.Debugw(logPrefix + "all validations passed")
 	return nil
 }
 
@@ -429,27 +429,27 @@ func (wr *writeReport) pollTransmissionInfo(
 	transmissionID TransmissionID,
 	queuePosition int,
 ) (lastValidInfo TransmissionInfo, err error) {
-	wr.lggr.Infow("TestingAptosWriteCap: pollTransmissionInfo called",
+	wr.lggr.Debugw(logPrefix + "pollTransmissionInfo called",
 		"transmissionID", transmissionID.GetDebugID(),
 		"queuePosition", queuePosition,
 		"deltaStage", wr.transmissionScheduler.deltaStage,
 	)
 
 	if queuePosition <= 0 {
-		wr.lggr.Infow("TestingAptosWriteCap: position 0, doing quick retry poll")
+		wr.lggr.Debugw(logPrefix + "position 0, doing quick retry poll")
 		transmissionInfo, err := withQuickRetry(ctx, wr.lggr, func(ctx context.Context) (TransmissionInfo, error) {
 			return wr.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
 		})
 		if err != nil {
-			wr.lggr.Errorw("TestingAptosWriteCap: quick retry poll failed", "error", err)
+			wr.lggr.Errorw(logPrefix + "quick retry poll failed", "error", err)
 			return TransmissionInfo{}, err
 		}
-		wr.lggr.Infow("TestingAptosWriteCap: quick retry poll result", "success", transmissionInfo.Success)
+		wr.lggr.Debugw(logPrefix + "quick retry poll result", "success", transmissionInfo.Success)
 		return transmissionInfo, nil
 	}
 
 	delay := time.Duration(queuePosition) * wr.transmissionScheduler.deltaStage
-	wr.lggr.Infow("TestingAptosWriteCap: polling until slot or state change", "delay", delay, "deltaStage", wr.transmissionScheduler.deltaStage)
+	wr.lggr.Debugw(logPrefix + "polling until slot or state change", "delay", delay, "deltaStage", wr.transmissionScheduler.deltaStage)
 
 	attempt := 0
 	stageTimer := time.NewTimer(delay)
@@ -457,17 +457,17 @@ func (wr *writeReport) pollTransmissionInfo(
 	defer func() {
 		stageTimer.Stop()
 		if !stageTimerFired {
-			wr.lggr.Infow("TestingAptosWriteCap: transmission found before delta stage has passed")
+			wr.lggr.Debugw(logPrefix + "transmission found before delta stage has passed")
 		}
 	}()
 
 	for {
 		if info, infoErr := wr.forwarderClient.GetTransmissionInfo(ctx, transmissionID); infoErr != nil {
-			wr.lggr.Debugw("TestingAptosWriteCap: GetTransmissionInfo failed during polling", "error", infoErr, "attempt", attempt)
+			wr.lggr.Debugw(logPrefix + "GetTransmissionInfo failed during polling", "error", infoErr, "attempt", attempt)
 		} else {
 			lastValidInfo = info
 			if lastValidInfo.Success {
-				wr.lggr.Infow("TestingAptosWriteCap: found successful transmission during polling", "attempt", attempt, "transmitter", lastValidInfo.Transmitter.String())
+				wr.lggr.Debugw(logPrefix + "found successful transmission during polling", "attempt", attempt, "transmitter", lastValidInfo.Transmitter.String())
 				return lastValidInfo, nil
 			}
 		}
@@ -480,11 +480,11 @@ func (wr *writeReport) pollTransmissionInfo(
 
 		select {
 		case <-ctx.Done():
-			wr.lggr.Errorw("TestingAptosWriteCap: timed out waiting for transmission info", "attempts", attempt)
+			wr.lggr.Errorw(logPrefix + "timed out waiting for transmission info", "attempts", attempt)
 			return TransmissionInfo{}, fmt.Errorf("timed out waiting for transmission info")
 		case <-stageTimer.C:
 			stageTimerFired = true
-			wr.lggr.Infow("TestingAptosWriteCap: delta stage has passed, returning transmission info", "success", lastValidInfo.Success, "attempts", attempt)
+			wr.lggr.Debugw(logPrefix + "delta stage has passed, returning transmission info", "success", lastValidInfo.Success, "attempts", attempt)
 			return lastValidInfo, nil
 		case <-time.After(wait):
 		}
