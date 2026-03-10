@@ -60,10 +60,12 @@ type EVM struct {
 	logQueryBlockLimit     limits.BoundLimiter[uint64]
 	reportSizeLimit        limits.BoundLimiter[commoncfg.Size]
 	txGasLimit             limits.BoundLimiter[uint64]
+
+	transmissionScheduler TransmissionScheduler
 }
 
 func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, beholderProcessor beholder.ProtoProcessor,
-	messageBuilder *monitoring.MessageBuilder, handler ConsensusHandler, chainSelector uint64, limitsFactory limits.Factory) (*EVM, caperrors.Error) {
+	messageBuilder *monitoring.MessageBuilder, handler ConsensusHandler, chainSelector uint64, limitsFactory limits.Factory, transmissionScheduler TransmissionScheduler) (*EVM, caperrors.Error) {
 	keystoneForwarderAddress := common.HexToAddress(cfg.CREForwarderAddress)
 	if keystoneForwarderAddress == (common.Address{}) {
 		return &EVM{}, caperrors.NewPublicSystemError(errors.New("keystone forwarder address is not set"), caperrors.Unknown)
@@ -84,6 +86,7 @@ func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, 
 		messageBuilder:           messageBuilder,
 		ConsensusHandler:         handler,
 		chainSelector:            chainSelector,
+		transmissionScheduler:    transmissionScheduler,
 	}
 	err = e.initLimiters(limitsFactory)
 	if err != nil {

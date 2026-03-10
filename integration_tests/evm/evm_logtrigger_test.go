@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -26,7 +27,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	"github.com/smartcontractkit/chainlink-common/pkg/services/servicetest"
 	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/framework"
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/handlers/capabilities"
@@ -398,6 +398,33 @@ func assertLogTriggerWorks(t *testing.T, eventName string, workflowName string, 
 		return len(foundEventsByMessage) == 0
 	}, 90*time.Second, 2*time.Second,
 		"Expected to find %d matching events, but found: %+v", numOfWorkflowNodes, foundEventsByMessage)
+
+	// Verify ACKs occur on Base Trigger for each event via logs
+	matchLogs := make([]*regexp.Regexp, len(matchingTxs))
+	for i, tx := range matchingTxs {
+		eventID := strings.TrimPrefix(tx.Hash().String(), "0x")
+		pattern := fmt.Sprintf(`Event ACK.*eventID\s+%s`, regexp.QuoteMeta(eventID))
+		matchLogs[i] = regexp.MustCompile(pattern)
+		t.Logf("Looking to match ACK log: %s", pattern)
+	}
+
+	require.Eventually(t, func() bool {
+		expectedMatches := len(matchingMessages)
+		require.NotZero(t, expectedMatches)
+		matchCount := 0
+		for _, matchLog := range matchLogs {
+			// Find Event ACK log for matching tx event
+			for _, log := range obs.All() {
+				if matchLog.MatchString(log.Message) {
+					matchCount++
+					t.Logf("found matching ACK log: %s", matchLog.String())
+					break
+				}
+			}
+		}
+		t.Logf("ACK log matchCount=%d, expectedMatches=%d", matchCount, expectedMatches)
+		return matchCount == expectedMatches
+	}, 90*time.Second, 1*time.Second, "expected ACK logs for each matching tx event")
 }
 
 func waitUntilLogPollerFiltersArePresent(t *testing.T, obs *observer.ObservedLogs, numOfWorkflowNodes int) {
@@ -458,6 +485,8 @@ type EVMCapabilityConfig struct {
 	CREForwarderAddress    string        `json:"creForwarderAddress"`
 	ReceiverGasMinimum     uint64        `json:"receiverGasMinimum"`
 	NodeAddress            string        `json:"nodeAddress"`
+	DeltaStage             time.Duration `json:"deltaStage"`
+	IsLocal                bool          `json:"isLocal"`
 }
 
 func CreateEvmCapabilityConfig(t *testing.T, chainID uint64, network string, duration time.Duration) string {
@@ -468,6 +497,8 @@ func CreateEvmCapabilityConfig(t *testing.T, chainID uint64, network string, dur
 		CREForwarderAddress:    "1234567890abcdef1234567890abcdef12345678", //fake address for testing
 		ReceiverGasMinimum:     1,
 		NodeAddress:            "fakeAddressForTesting", //fake address for testing
+		DeltaStage:             time.Second,
+		IsLocal:                true, //bypass transmission scheduler initialization, since we don't use write report in our test anyway
 	}
 
 	configJSON, err := json.Marshal(readContractConfig)
@@ -532,7 +563,13 @@ func setupDon(ctx context.Context, t *testing.T, lggr logger.Logger, workflowURL
 	workflowDon.AddOCR3NonStandardCapability()
 	workflowDon.Initialise()
 
-	servicetest.Run(t, workflowDon)
+	require.NoError(t, workflowDon.Start(t.Context()))
+	t.Cleanup(func() {
+		if err := workflowDon.Close(); err != nil &&
+			!strings.Contains(err.Error(), "stopped") {
+			require.NoError(t, err)
+		}
+	})
 
 	donContext.WaitForCapabilitiesToBeExposed(t, workflowDon)
 

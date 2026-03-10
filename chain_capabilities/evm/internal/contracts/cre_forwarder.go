@@ -280,7 +280,6 @@ func (cfc *creForwarderCodecImpl) EncodeQueryTransmissionInputs(query QueryTrans
 }
 
 func (cfc *creForwarderCodecImpl) DecodeQueryTransmissionInfo(encodedData []byte) (TransmissionInfo, error) {
-	// PLEX-1524 this is ugly. For some reason ABI.UnpackIntoInterface doesn't work.
 	var transmissionInfo TransmissionInfo
 	values, err := cfc.abi.Methods["getTransmissionInfo"].Outputs.UnpackValues(encodedData)
 	if err != nil {
