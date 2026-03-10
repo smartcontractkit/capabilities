@@ -14,7 +14,7 @@ import (
 	aptostypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/aptos"
 )
 
-// TODO: where does all this config get passed in from ?
+// TODO: Use config
 const (
 	txSearchStartingBuffer = 1 * time.Minute
 )

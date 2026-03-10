@@ -8,20 +8,22 @@ import (
 )
 
 type Config struct {
-	CREForwarderAddress [32]byte      // 32-byte Aptos account address of forwarder module
-	DeltaStage          time.Duration // DeltaStage for staggered transmission scheduling
-	Network             string        `json:"network"`
-	ChainID             string        `json:"chainId"`
-	IsLocal             bool          `json:"isLocal,omitempty"` // Run against local node (for local CRE runs only)
+	CREForwarderAddress  [32]byte          // 32-byte Aptos account address of forwarder module
+	DeltaStage           time.Duration     // DeltaStage for staggered transmission scheduling
+	Network              string            `json:"network"`
+	ChainID              string            `json:"chainId"`
+	IsLocal              bool              `json:"isLocal,omitempty"`
+	P2PToTransmitterMap  map[string]string // peerID-hex → Aptos transmitter address, populated from specConfig
 }
 
 func (c *Config) UnmarshalJSON(bs []byte) error {
 	type config struct {
-		CREForwarderAddress string        `json:"creForwarderAddress"` // hex-encoded 32-byte address
-		DeltaStage          time.Duration `json:"deltaStage"`
-		Network             string        `json:"network"`
-		ChainID             string        `json:"chainId"`
-		IsLocal             bool          `json:"isLocal,omitempty"`
+		CREForwarderAddress string            `json:"creForwarderAddress"` // hex-encoded 32-byte address
+		DeltaStage          time.Duration     `json:"deltaStage"`
+		Network             string            `json:"network"`
+		ChainID             string            `json:"chainId"`
+		IsLocal             bool              `json:"isLocal,omitempty"`
+		P2PToTransmitterMap map[string]string `json:"p2pToTransmitterMap,omitempty"`
 	}
 	var cfg config
 
@@ -33,6 +35,7 @@ func (c *Config) UnmarshalJSON(bs []byte) error {
 	c.DeltaStage = cfg.DeltaStage
 	c.IsLocal = cfg.IsLocal
 	c.Network = cfg.Network
+	c.P2PToTransmitterMap = cfg.P2PToTransmitterMap
 
 	addr, err := parseHexAddress(cfg.CREForwarderAddress)
 	if err != nil {

@@ -166,17 +166,10 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		c.lggr.Infow("TestingAptosWriteCap: Skipping DON init (isLocal=true)")
 	}
 
-	var p2pConfig map[string]string
-	if !cfg.IsLocal {
-		p2pConfig, err = c.fetchP2PConfig(ctx, dependencies.CapabilityRegistry, c.lggr)
-		if err != nil {
-			c.lggr.Errorw("TestingAptosWriteCap: failed to fetch p2p config", "error", err)
-			return fmt.Errorf("failed to fetch p2p config from capability registry: %w", err)
-		}
-		c.lggr.Infow("TestingAptosWriteCap: Fetched p2p config from capability registry", "entries", len(p2pConfig), "p2pConfig", p2pConfig)
-	} else {
-		c.lggr.Infow("TestingAptosWriteCap: Skipping p2p config fetch (isLocal=true)")
-	}
+	p2pConfig := cfg.P2PToTransmitterMap
+	c.lggr.Infow("TestingAptosWriteCap: p2pToTransmitterMap from specConfig",
+		"entries", len(p2pConfig), "p2pConfig", p2pConfig,
+	)
 
 	cfg.DeltaStage = 15 * time.Second
 	var scheduler actions.TransmissionScheduler
@@ -334,40 +327,6 @@ func (c *capabilityGRPCService) initialiseTransmissionScheduler(
 		c.DON.F,
 		c.lggr,
 	), nil
-}
-
-func (c *capabilityGRPCService) fetchP2PConfig(ctx context.Context, capRegistry core.CapabilitiesRegistry, lggr logger.Logger) (map[string]string, error) {
-	lggr.Infow("TestingAptosWriteCap: fetchP2PConfig called", "capabilityID", c.id, "donID", c.DON.ID)
-
-	capCfg, err := capRegistry.ConfigForCapability(ctx, c.id, c.DON.ID)
-	if err != nil {
-		lggr.Errorw("TestingAptosWriteCap: ConfigForCapability failed", "capabilityID", c.id, "donID", c.DON.ID, "error", err)
-		return nil, fmt.Errorf("failed to get capability config: %w", err)
-	}
-	lggr.Infow("TestingAptosWriteCap: ConfigForCapability returned",
-		"hasDefaultConfig", capCfg.DefaultConfig != nil,
-		"hasRemoteTriggerConfig", capCfg.RemoteTriggerConfig != nil,
-		"hasRemoteExecutableConfig", capCfg.RemoteExecutableConfig != nil,
-		"methodConfigCount", len(capCfg.CapabilityMethodConfig),
-		"hasSpecConfig", capCfg.SpecConfig != nil,
-		"localOnly", capCfg.LocalOnly,
-	)
-
-	if capCfg.DefaultConfig == nil {
-		lggr.Errorw("TestingAptosWriteCap: DefaultConfig is nil", "capabilityID", c.id, "donID", c.DON.ID)
-		return nil, fmt.Errorf("capability config is nil for capability %s don %d", c.id, c.DON.ID)
-	}
-
-	lggr.Infow("TestingAptosWriteCap: DefaultConfig raw", "defaultConfig", fmt.Sprintf("%v", capCfg.DefaultConfig))
-
-	var p2pConfig map[string]string
-	if err := capCfg.DefaultConfig.UnwrapTo(&p2pConfig); err != nil {
-		lggr.Errorw("TestingAptosWriteCap: failed to UnwrapTo p2p config", "defaultConfig", fmt.Sprintf("%v", capCfg.DefaultConfig), "error", err)
-		return nil, fmt.Errorf("failed to unwrap capability config: %w", err)
-	}
-	lggr.Infow("TestingAptosWriteCap: Unwrapped p2p config", "entries", len(p2pConfig), "p2pConfig", p2pConfig)
-
-	return p2pConfig, nil
 }
 
 func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Config, error) {

@@ -64,7 +64,6 @@ func withRetry[T any](ctx context.Context, lggr logger.Logger, fn func(context.C
 }
 
 // WriteReport validates and submits a signed report to the Aptos chain via the CRE forwarder.
-// It handles only the simple successful case for now.
 func (s *Aptos) WriteReport(
 	ctx context.Context,
 	metadata capabilities.RequestMetadata,
@@ -131,11 +130,10 @@ func (s *Aptos) executeWriteReport(
 	return wr.execute(ctx, request, metadata)
 }
 
-// TODO: handle billing fees PLEX-2578
-// TODO: handle gas limit bumping if required PLEX-2580
-// TODO: handle node0 being out of funds
-// TODO: handle metrics PLEX-2546
-// TODO: query failed transaction using transaction by hash from aptos service and get vmstatus
+// TODO: handle billing fees / populate transaction fees in WriteReportReply (PLEX-2578)
+// TODO: handle gas limit bumping if required (PLEX-2580)
+// TODO: handle metrics (PLEX-2546)
+// TODO: populate error message and ReceiverContractExecutionStatus in WriteReportReply by using vmstatus received from failed tx (PLEX-2597)
 func (wr *writeReport) execute(
 	ctx context.Context,
 	request *aptoscap.WriteReportRequest,
@@ -205,7 +203,7 @@ func (wr *writeReport) execute(
 	}
 	// TODO: we can exit here if we find F+1 failed transactions, but thats expensive time and i/o wise.
 	// emit metrics here to understand if its worth investing time here.
-	// maybe do a lucky poll of node0's failed tx and see if we get lucky
+	// maybe do a poll of node0's failed tx and see if we get lucky
 
 	err = wr.reportSizeLimit.Check(ctx, commoncfg.SizeOf(request.Report.RawReport))
 	if err != nil {
