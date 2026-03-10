@@ -56,14 +56,14 @@ func NewAptos(cfg *config.Config, p2pConfig map[string]string, aptosService type
 }
 
 func (a *Aptos) initLimiters(limitsFactory limits.Factory) (err error) {
-	// PLEX-1920 this is initial values taken from solana. Can be tuned later
+	// PLEX-2599 can be tuned later
 	reportSizeLimit := settings.Size(reportSizeLimit)
 	a.reportSizeLimit, err = limits.MakeUpperBoundLimiter(limitsFactory, reportSizeLimit)
 	if err != nil {
 		return
 	}
 
-	// this is arbitrary
+	// PLEX-2599 can be tuned later
 	maxGasAmountLimit := settings.Uint64(1_000_000)
 	a.maxGasAmountLimit, err = limits.MakeUpperBoundLimiter(limitsFactory, maxGasAmountLimit)
 	return
