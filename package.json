@@ -1,5 +1,5 @@
 {
-  "name": "capabilities",
+  "name": "@chainlink/capabilities",
   "private": true,
   "scripts": {
     "ci:changeset:publish": "pnpm changeset publish",
