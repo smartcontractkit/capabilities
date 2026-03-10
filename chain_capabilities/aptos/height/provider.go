@@ -3,6 +3,7 @@ package height
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -78,7 +79,7 @@ func (p *Provider) pollHead(ctx context.Context) {
 		p.lggr.Errorw("failed to get latest ledger version", "error", err)
 		return
 	}
-	if ledgerVersion > uint64(^uint64(0)>>1) {
+	if ledgerVersion > uint64(math.MaxInt64) {
 		p.lggr.Errorw("latest ledger version overflows int64", "ledgerVersion", ledgerVersion)
 		return
 	}

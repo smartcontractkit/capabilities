@@ -8,14 +8,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/actions"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/config"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/height"
-	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
-	consMetrics "github.com/smartcontractkit/capabilities/libs/chainconsensus/metrics"
-	"github.com/smartcontractkit/capabilities/libs/chainconsensus/oracle"
-	"github.com/smartcontractkit/capabilities/libs/chainconsensus/poller"
-	"github.com/smartcontractkit/capabilities/libs/loopserver"
 	chain_selectors "github.com/smartcontractkit/chain-selectors"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
@@ -27,6 +19,15 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/actions"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/config"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/height"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
+	consMetrics "github.com/smartcontractkit/capabilities/libs/chainconsensus/metrics"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus/oracle"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus/poller"
+	"github.com/smartcontractkit/capabilities/libs/loopserver"
 )
 
 const (
@@ -272,14 +273,4 @@ func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Confi
 		return nil, fmt.Errorf("failed to parse Aptos capability config: %s err: %w", configStr, err)
 	}
 	return &cfg, nil
-}
-
-// aptosExecutableCapability adapts the Aptos actions into a capabilities.ExecutableCapability
-// that can be registered with the capability registry.
-type aptosExecutableCapability struct {
-	aptos         *actions.Aptos
-	chainSelector uint64
-	description   string
-	stopCh        chan struct{}
-	lggr          logger.Logger
 }
