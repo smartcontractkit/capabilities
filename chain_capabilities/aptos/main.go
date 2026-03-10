@@ -167,9 +167,24 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	}
 
 	p2pConfig := cfg.P2PToTransmitterMap
-	c.lggr.Infow("TestingAptosWriteCap: p2pToTransmitterMap from specConfig",
-		"entries", len(p2pConfig), "p2pConfig", p2pConfig,
-	)
+	if len(p2pConfig) > 0 {
+		c.lggr.Infow("TestingAptosWriteCap: p2pToTransmitterMap found in JSON config",
+			"entries", len(p2pConfig), "p2pConfig", p2pConfig,
+		)
+	} else if !cfg.IsLocal {
+		c.lggr.Infow("TestingAptosWriteCap: p2pToTransmitterMap not in JSON config, falling back to capReg gRPC")
+		var fetchErr error
+		p2pConfig, fetchErr = c.fetchP2PConfig(ctx, dependencies.CapabilityRegistry)
+		if fetchErr != nil {
+			c.lggr.Errorw("TestingAptosWriteCap: failed to fetch p2p config from capReg", "error", fetchErr)
+			return fmt.Errorf("failed to fetch p2p config: %w", fetchErr)
+		}
+		c.lggr.Infow("TestingAptosWriteCap: p2pToTransmitterMap fetched from capReg specConfig",
+			"entries", len(p2pConfig), "p2pConfig", p2pConfig,
+		)
+	} else {
+		c.lggr.Infow("TestingAptosWriteCap: isLocal=true, skipping p2pToTransmitterMap fetch")
+	}
 
 	cfg.DeltaStage = 15 * time.Second
 	var scheduler actions.TransmissionScheduler
@@ -327,6 +342,77 @@ func (c *capabilityGRPCService) initialiseTransmissionScheduler(
 		c.DON.F,
 		c.lggr,
 	), nil
+}
+
+func (c *capabilityGRPCService) fetchP2PConfig(ctx context.Context, registry core.CapabilitiesRegistry) (map[string]string, error) {
+	c.lggr.Infow("TestingAptosWriteCap: fetchP2PConfig: calling ConfigForCapability",
+		"capabilityID", c.id, "donID", c.DON.ID,
+	)
+
+	capCfg, err := registry.ConfigForCapability(ctx, c.id, c.DON.ID)
+	if err != nil {
+		c.lggr.Errorw("TestingAptosWriteCap: fetchP2PConfig: ConfigForCapability failed", "error", err)
+		return nil, fmt.Errorf("failed to get capability config: %w", err)
+	}
+
+	c.lggr.Infow("TestingAptosWriteCap: fetchP2PConfig: got CapabilityConfiguration",
+		"hasDefaultConfig", capCfg.DefaultConfig != nil,
+		"hasSpecConfig", capCfg.SpecConfig != nil,
+	)
+
+	if capCfg.SpecConfig == nil {
+		c.lggr.Errorw("TestingAptosWriteCap: fetchP2PConfig: SpecConfig is nil")
+		return nil, fmt.Errorf("SpecConfig is nil for capability %s", c.id)
+	}
+
+	unwrapped, err := capCfg.SpecConfig.Unwrap()
+	if err != nil {
+		c.lggr.Errorw("TestingAptosWriteCap: fetchP2PConfig: failed to unwrap SpecConfig", "error", err)
+		return nil, fmt.Errorf("failed to unwrap SpecConfig: %w", err)
+	}
+
+	specMap, ok := unwrapped.(map[string]any)
+	if !ok {
+		c.lggr.Errorw("TestingAptosWriteCap: fetchP2PConfig: SpecConfig unwrapped to unexpected type", "type", fmt.Sprintf("%T", unwrapped))
+		return nil, fmt.Errorf("SpecConfig unwrapped to %T, expected map[string]any", unwrapped)
+	}
+
+	c.lggr.Infow("TestingAptosWriteCap: fetchP2PConfig: SpecConfig keys", "keys", fmt.Sprintf("%v", keys(specMap)))
+
+	p2pRaw, exists := specMap["p2pToTransmitterMap"]
+	if !exists {
+		c.lggr.Errorw("TestingAptosWriteCap: fetchP2PConfig: p2pToTransmitterMap key not found in SpecConfig")
+		return nil, fmt.Errorf("p2pToTransmitterMap not found in SpecConfig")
+	}
+
+	p2pAny, ok := p2pRaw.(map[string]any)
+	if !ok {
+		c.lggr.Errorw("TestingAptosWriteCap: fetchP2PConfig: p2pToTransmitterMap has unexpected type", "type", fmt.Sprintf("%T", p2pRaw))
+		return nil, fmt.Errorf("p2pToTransmitterMap has type %T, expected map[string]any", p2pRaw)
+	}
+
+	result := make(map[string]string, len(p2pAny))
+	for k, v := range p2pAny {
+		s, ok := v.(string)
+		if !ok {
+			c.lggr.Errorw("TestingAptosWriteCap: fetchP2PConfig: non-string value in p2pToTransmitterMap", "key", k, "type", fmt.Sprintf("%T", v))
+			return nil, fmt.Errorf("p2pToTransmitterMap[%s] has type %T, expected string", k, v)
+		}
+		result[k] = s
+	}
+
+	c.lggr.Infow("TestingAptosWriteCap: fetchP2PConfig: extracted p2pToTransmitterMap",
+		"entries", len(result), "map", result,
+	)
+	return result, nil
+}
+
+func keys(m map[string]any) []string {
+	ks := make([]string, 0, len(m))
+	for k := range m {
+		ks = append(ks, k)
+	}
+	return ks
 }
 
 func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Config, error) {
