@@ -72,7 +72,13 @@ func TestView_LocksToConsensusLedgerVersion(t *testing.T) {
 		ReferenceID:         "step-id",
 	}
 	input := &aptoscap.ViewRequest{
-		Function: "0x1::coin::name",
+		Payload: &aptoscap.ViewPayload{
+			Module: &aptoscap.ModuleID{
+				Address: []byte{1},
+				Name:    "coin",
+			},
+			Function: "name",
+		},
 	}
 
 	resp, err := a.View(context.Background(), meta, input)
@@ -94,10 +100,60 @@ func TestView_FailsOnNegativeConsensusHeight(t *testing.T) {
 		ReferenceID:         "step-id",
 	}
 	input := &aptoscap.ViewRequest{
-		Function: "0x1::coin::name",
+		Payload: &aptoscap.ViewPayload{
+			Module: &aptoscap.ModuleID{
+				Address: []byte{1},
+				Name:    "coin",
+			},
+			Function: "name",
+		},
 	}
 
 	_, err := a.View(context.Background(), meta, input)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "unexpected negative chain height")
+}
+
+func TestCapabilityViewToRelayerPayload_TypeTagConversion(t *testing.T) {
+	t.Parallel()
+
+	payload, err := capabilityViewToRelayerPayload(&aptoscap.ViewPayload{
+		Module: &aptoscap.ModuleID{
+			Address: []byte{0x01},
+			Name:    "coin",
+		},
+		Function: "name",
+		ArgTypes: []*aptoscap.TypeTag{
+			{
+				Kind: aptoscap.TypeTagKind_TYPE_TAG_KIND_VECTOR,
+				Value: &aptoscap.TypeTag_Vector{
+					Vector: &aptoscap.VectorTag{
+						ElementType: &aptoscap.TypeTag{
+							Kind: aptoscap.TypeTagKind_TYPE_TAG_KIND_U8,
+						},
+					},
+				},
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, payload)
+	require.Equal(t, "name", payload.Function)
+	require.Len(t, payload.ArgTypes, 1)
+	_, isVector := payload.ArgTypes[0].Value.(aptostypes.VectorTag)
+	require.True(t, isVector)
+}
+
+func TestCapabilityViewToRelayerPayload_RejectsInvalidInput(t *testing.T) {
+	t.Parallel()
+
+	_, err := capabilityViewToRelayerPayload(&aptoscap.ViewPayload{
+		Module: &aptoscap.ModuleID{
+			Address: make([]byte, aptostypes.AccountAddressLength+1),
+			Name:    "coin",
+		},
+		Function: "name",
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "module address too long")
 }

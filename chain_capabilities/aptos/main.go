@@ -18,6 +18,8 @@ import (
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
 	chain_selectors "github.com/smartcontractkit/chain-selectors"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
+	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
 	aptoscapserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
@@ -213,6 +215,37 @@ func (c *capabilityGRPCService) Infos(ctx context.Context) ([]capabilities.Capab
 		return nil, err
 	}
 	return []capabilities.CapabilityInfo{info}, nil
+}
+
+func (c *capabilityGRPCService) AccountAPTBalance(
+	ctx context.Context,
+	metadata capabilities.RequestMetadata,
+	input *aptoscap.AccountAPTBalanceRequest,
+) (*capabilities.ResponseAndMetadata[*aptoscap.AccountAPTBalanceReply], caperrors.Error) {
+	return nil, c.unimplementedMethod("AccountAPTBalance")
+}
+
+func (c *capabilityGRPCService) TransactionByHash(
+	ctx context.Context,
+	metadata capabilities.RequestMetadata,
+	input *aptoscap.TransactionByHashRequest,
+) (*capabilities.ResponseAndMetadata[*aptoscap.TransactionByHashReply], caperrors.Error) {
+	return nil, c.unimplementedMethod("TransactionByHash")
+}
+
+func (c *capabilityGRPCService) AccountTransactions(
+	ctx context.Context,
+	metadata capabilities.RequestMetadata,
+	input *aptoscap.AccountTransactionsRequest,
+) (*capabilities.ResponseAndMetadata[*aptoscap.AccountTransactionsReply], caperrors.Error) {
+	return nil, c.unimplementedMethod("AccountTransactions")
+}
+
+func (c *capabilityGRPCService) unimplementedMethod(method string) caperrors.Error {
+	if c.Aptos == nil {
+		return caperrors.NewPublicSystemError(fmt.Errorf("aptos capability not initialized"), caperrors.Unknown)
+	}
+	return caperrors.NewPublicSystemError(fmt.Errorf("%s is not implemented", method), caperrors.Unknown)
 }
 
 func (c *capabilityGRPCService) setSelector(cfg *config.Config) error {
