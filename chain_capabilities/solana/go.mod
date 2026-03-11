@@ -192,5 +192,4 @@ replace (
 	github.com/gogo/protobuf => github.com/gogo/protobuf v1.3.2
 	github.com/smartcontractkit/capabilities => ../..
 	github.com/smartcontractkit/capabilities/chain_capabilities/common => ../common
-	github.com/smartcontractkit/capabilities/libs => ../../libs
 )

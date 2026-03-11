@@ -210,6 +210,4 @@ require (
 
 replace github.com/smartcontractkit/capabilities/chain_capabilities/common => ../common
 
-replace github.com/smartcontractkit/capabilities/libs => ../../libs
-
 replace github.com/fbsobreira/gotron-sdk => github.com/smartcontractkit/chainlink-tron/relayer/gotron-sdk v0.0.5-0.20250528121202-292529af39df
