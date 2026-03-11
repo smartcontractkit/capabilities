@@ -256,11 +256,13 @@ func groupAttributedObservationsByRequestID(lggr logger.Logger, attributedObserv
 //
 // System errors: platform-level failures such as proto serialisation problems or unknown descriptor
 // types that indicate a plugin/SDK version mismatch rather than a workflow mistake.
+//
+// TODO: promote the following to user errors if validated:
+//   - oracle.ErrUnknownAggregationType  (workflow configured an aggregation type the plugin doesn't recognise)
+//   - oracle.ErrNoValuesMetThreshold    (not enough nodes agreed on the same value for identical consensus)
+//   - oracle.ErrInsufficientObservations (too few observations to satisfy the f+1 requirement)
 func classifyCalculationError(err error) oracletypes.ConsensusFailureCode {
-	if errors.Is(err, oracle.ErrUnsupportedTypeForAggregation) ||
-		errors.Is(err, oracle.ErrUnknownAggregationType) ||
-		errors.Is(err, oracle.ErrNoValuesMetThreshold) ||
-		errors.Is(err, oracle.ErrInsufficientObservations) {
+	if errors.Is(err, oracle.ErrUnsupportedTypeForAggregation) {
 		return oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED_USER
 	}
 	return oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED_SYSTEM

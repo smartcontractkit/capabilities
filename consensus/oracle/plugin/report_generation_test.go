@@ -161,7 +161,7 @@ func Test_SufficientAndInsufficentReportsInSingleRound(t *testing.T) {
 	md2 := newRequestMetaData()
 	md2.KeyBundleID = "evm"
 
-	expectedFailureCode := oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED_USER
+	expectedFailureCode := oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED_SYSTEM
 
 	reqToObservations := map[string]*consensusPluginTest{
 		md1.RequestID(): {requests: []*oracle.ConsensusRequest{

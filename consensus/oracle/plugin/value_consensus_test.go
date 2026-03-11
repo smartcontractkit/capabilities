@@ -70,7 +70,7 @@ func Test_InsufficientIdenticalObservations(t *testing.T) {
 
 	md1 := newRequestMetaData()
 
-	expectedFailureCode := oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED_USER
+	expectedFailureCode := oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED_SYSTEM
 
 	reqToObservations := map[string]*consensusPluginTest{
 		md1.RequestID(): {
@@ -98,7 +98,7 @@ func Test_InsufficientIdenticalMapObservations(t *testing.T) {
 		Field1 int
 	}
 
-	expectedFailureCode := oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED_USER
+	expectedFailureCode := oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED_SYSTEM
 
 	reqToObservations := map[string]*consensusPluginTest{
 		md1.RequestID(): {
