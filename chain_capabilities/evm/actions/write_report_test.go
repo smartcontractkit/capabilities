@@ -17,10 +17,12 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
+	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 
 	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
 
+	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts/mocks"
@@ -808,7 +810,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TxHash:                          receipt.TxHash[:],
 			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
-			ErrorMessage:                    ptr("receiver contract execution failure"),
+			ErrorMessage:                    capcommon.Ptr("receiver contract execution failure"),
 		}, txResult.Response)
 		require.Len(t, txResult.ResponseMetadata.Metering, 0)
 	})
@@ -1704,7 +1706,7 @@ func createMocksAndCapability(t *testing.T, lggr logger.Logger) (*mocks2.EVMServ
 		ReceiverGasMinimum:       ConfiguredReceiverGasMinimum,
 		chainSelector:            1,
 		beholderProcessor:        test.NopBeholderProcessor{},
-		messageBuilder:           &monitoring.MessageBuilder{},
+		messageBuilder:           monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 		transmissionScheduler:    transmissionScheduler,
 	}
 	require.NoError(t, service.initLimiters(limits.Factory{Logger: lggr}))
@@ -1816,7 +1818,7 @@ func setupPollTransmissionInfoForQueuePosition(
 		forwarderClient:       mockForwarderClient,
 		lggr:                  logger.Sugared(testLogger),
 		beholderProcessor:     test.NopBeholderProcessor{},
-		messageBuilder:        &monitoring.MessageBuilder{},
+		messageBuilder:        monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 		transmissionScheduler: scheduler,
 	}
 
@@ -1845,7 +1847,7 @@ func TestDecodeReportMetadata(t *testing.T) {
 		encodedData, err := originalMetadata.Encode()
 		require.NoError(t, err)
 
-		decodedMetadata, err := decodeReportMetadata(encodedData)
+		decodedMetadata, err := capcommon.DecodeReportMetadata(encodedData)
 		require.NoError(t, err)
 		require.Equal(t, originalMetadata.Version, decodedMetadata.Version)
 		require.Equal(t, originalMetadata.ExecutionID, decodedMetadata.ExecutionID)
@@ -1856,14 +1858,14 @@ func TestDecodeReportMetadata(t *testing.T) {
 
 	t.Run("Fail to decode invalid data", func(t *testing.T) {
 		invalidData := []byte("invalid data")
-		_, err := decodeReportMetadata(invalidData)
+		_, err := capcommon.DecodeReportMetadata(invalidData)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "metadata: raw too short")
 	})
 
 	t.Run("Fail to decode empty data", func(t *testing.T) {
 		emptyData := []byte{}
-		_, err := decodeReportMetadata(emptyData)
+		_, err := capcommon.DecodeReportMetadata(emptyData)
 		require.Error(t, err)
 	})
 }

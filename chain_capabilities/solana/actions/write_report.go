@@ -15,7 +15,6 @@ import (
 	"github.com/jpillora/backoff"
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	solcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
@@ -26,6 +25,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/retry"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 
+	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/metering"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
 )
@@ -137,7 +137,7 @@ func (wr *WriteReport) executeWriteReport(
 	} else {
 		err = wr.txComputeLimit.Check(ctx, request.ComputeConfig.ComputeLimit)
 		if err != nil {
-			return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s provided compute config exceeds limit (computeLimit=%d): %w", userError, request.ComputeConfig.ComputeLimit, err)
+			return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s provided compute config exceeds limit (computeLimit=%d): %w", capcommon.UserError, request.ComputeConfig.ComputeLimit, err)
 		}
 	}
 
@@ -169,14 +169,14 @@ func (wr *WriteReport) executeWriteReport(
 			"returning without a transmission attempt - transmission already attempted and failed",
 			"signature", transmissionInfo.Signature.String(),
 		)
-		return wr.failedWriteReportReply(&transmissionInfo.Signature, ptr(UnknownIssueExecutingReceiverContractMessage)), capabilities.ResponseMetadata{}, nil
+		return wr.failedWriteReportReply(&transmissionInfo.Signature, capcommon.Ptr(UnknownIssueExecutingReceiverContractMessage)), capabilities.ResponseMetadata{}, nil
 
 	default:
 		return wr.fatalWriteReportReply(fmt.Sprintf("unexpected transmission state: %d", transmissionInfo.State)), capabilities.ResponseMetadata{}, nil
 	}
 
 	if err := wr.reportSizeLimit.Check(ctx, commoncfg.SizeOf(request.Report.RawReport)); err != nil {
-		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s report size exceeds limit: %w", userError, err)
+		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s report size exceeds limit: %w", capcommon.UserError, err)
 	}
 
 	wr.lggr.Debugw("Submitting transaction for report", "executionID", metadata.WorkflowExecutionID)
@@ -237,7 +237,7 @@ func (wr *WriteReport) executeWriteReport(
 
 	case TransmissionStateFailed:
 		wr.lggr.Errorw("WriteReport failed (receiver execution reverted)", "executionID", metadata.WorkflowExecutionID, "signature", last.Signature.String())
-		return wr.failedWriteReportReply(&last.Signature, ptr(UnknownIssueExecutingReceiverContractMessage)), meteringMetadata, nil
+		return wr.failedWriteReportReply(&last.Signature, capcommon.Ptr(UnknownIssueExecutingReceiverContractMessage)), meteringMetadata, nil
 
 	default:
 		return wr.fatalWriteReportReply(fmt.Sprintf("transmission state not expected after submit: %d", last.State)), meteringMetadata, nil
@@ -245,7 +245,7 @@ func (wr *WriteReport) executeWriteReport(
 }
 
 func (s *Solana) isUserErrorWriteReport(err error) bool {
-	return strings.HasPrefix(err.Error(), userError)
+	return strings.HasPrefix(err.Error(), capcommon.UserError)
 }
 
 func (s *Solana) validateInputsAndReportMetadata(requestMetadata capabilities.RequestMetadata, request *solcap.WriteReportRequest) error {
@@ -265,7 +265,7 @@ func (s *Solana) validateInputsAndReportMetadata(requestMetadata capabilities.Re
 		return fmt.Errorf("no signatures provided")
 	}
 
-	reportMetadata, err := decodeReportMetadata(request.Report.RawReport)
+	reportMetadata, err := capcommon.DecodeReportMetadata(request.Report.RawReport)
 	if err != nil {
 		return err
 	}
@@ -298,12 +298,7 @@ func (s *Solana) validateInputsAndReportMetadata(requestMetadata capabilities.Re
 	return nil
 }
 
-func decodeReportMetadata(data []byte) (ocrtypes.Metadata, error) {
-	metadata, _, err := ocrtypes.Decode(data)
-	return metadata, err
-}
 
-const userError = "user error:"
 
 var (
 	reportIDOffset    = 107
@@ -366,49 +361,15 @@ func (wr *WriteReport) failedWriteReportReply(sig *solana.Signature, msg *string
 func (wr *WriteReport) fatalWriteReportReply(message string) *solcap.WriteReportReply {
 	r := &solcap.WriteReportReply{}
 	r.TxStatus = solcap.TxStatus_TX_STATUS_FATAL
-	r.ErrorMessage = ptr(message)
+	r.ErrorMessage = capcommon.Ptr(message)
 
 	return r
 }
 
-func ptr(s string) *string { return &s }
-
-// TODO PLEX-1920 carry out shared helpers
-// withQuickRetry wraps a simple RPC read with retry logic.
-// Uses shorter timeout (10s) and fast backoff - these calls should be sub-second.
 func withQuickRetry[T any](ctx context.Context, lggr logger.Logger, fn func(context.Context) (T, error)) (T, error) {
-	return withRetry(ctx, lggr, fn, 10*time.Second, 1*time.Second, 10)
+	return capcommon.WithQuickRetry(ctx, lggr, fn)
 }
 
-// withPollingRetry wraps an operation that polls for state changes.
-// Uses longer timeout (60s) to accommodate slow chains.
 func withPollingRetry[T any](ctx context.Context, lggr logger.Logger, fn func(context.Context) (T, error)) (T, error) {
-	return withRetry(ctx, lggr, fn, 60*time.Second, 3*time.Second, 25)
-}
-
-// withRetry executes fn with exponential backoff retry logic.
-// Returns the original error from fn, not the retry wrapper error.
-func withRetry[T any](ctx context.Context, lggr logger.Logger, fn func(context.Context) (T, error), timeout, maxBackoff time.Duration, maxRetries uint) (T, error) {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	var lastErr error
-	strategy := retry.Strategy[T]{
-		Backoff:    &backoff.Backoff{Factor: 2, Min: 100 * time.Millisecond, Max: maxBackoff},
-		MaxRetries: maxRetries,
-	}
-	result, err := strategy.Do(ctx, lggr, func(ctx context.Context) (T, error) {
-		r, e := fn(ctx)
-		if e != nil {
-			lastErr = e // Capture the original error from fn
-		}
-		return r, e
-	})
-	if err != nil {
-		if lastErr != nil {
-			return result, lastErr
-		}
-		// lastErr is nil - fn was never called, return retry error
-		return result, err
-	}
-	return result, nil
+	return capcommon.WithPollingRetry(ctx, lggr, fn)
 }

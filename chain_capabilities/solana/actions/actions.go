@@ -15,6 +15,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 
+	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/config"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
 )
@@ -122,13 +123,5 @@ func (s *Solana) initLimiters(limitsFactory limits.Factory) (err error) {
 	return
 }
 
-func GetError(err error, isUserError bool) caperrors.Error {
-	if isUserError {
-		return NewUserError(err)
-	}
-	return caperrors.NewPublicSystemError(err, caperrors.Unknown)
-}
-
-func NewUserError(err error) caperrors.Error {
-	return caperrors.NewPublicUserError(err, caperrors.Unknown)
-}
+var GetError = capcommon.GetError
+var NewUserError = capcommon.NewUserError

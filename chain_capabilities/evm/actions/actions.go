@@ -29,6 +29,7 @@ import (
 	"github.com/smartcontractkit/chainlink-framework/multinode"
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
+	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
@@ -691,16 +692,8 @@ func isRevertError(err error) bool {
 	return strings.Contains(err.Error(), "execution reverted")
 }
 
-func GetError(err error, isUserError bool) caperrors.Error {
-	if isUserError {
-		return NewUserError(err)
-	}
-	return caperrors.NewPublicSystemError(err, caperrors.Unknown)
-}
-
-func NewUserError(err error) caperrors.Error {
-	return caperrors.NewPublicUserError(err, caperrors.Unknown)
-}
+var GetError = capcommon.GetError
+var NewUserError = capcommon.NewUserError
 
 func EnsureRemoteReportable(err error) caperrors.Error {
 	if err == nil {
