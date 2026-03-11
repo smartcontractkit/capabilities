@@ -226,6 +226,8 @@ func (c *capabilityGRPCService) AccountAPTBalance(
 	metadata capabilities.RequestMetadata,
 	input *aptoscap.AccountAPTBalanceRequest,
 ) (*capabilities.ResponseAndMetadata[*aptoscap.AccountAPTBalanceReply], caperrors.Error) {
+	// TODO(aptos): implement account balance action; intentionally left out of the
+	// local-CRE-minimal scope while Aptos View is upstreamed first.
 	return nil, c.unimplementedMethod("AccountAPTBalance")
 }
 
@@ -234,6 +236,8 @@ func (c *capabilityGRPCService) TransactionByHash(
 	metadata capabilities.RequestMetadata,
 	input *aptoscap.TransactionByHashRequest,
 ) (*capabilities.ResponseAndMetadata[*aptoscap.TransactionByHashReply], caperrors.Error) {
+	// TODO(aptos): wire capability-level TransactionByHash to the relayer implementation
+	// with the same consensus/locking semantics used by Aptos View in this capability.
 	return nil, c.unimplementedMethod("TransactionByHash")
 }
 
@@ -242,6 +246,8 @@ func (c *capabilityGRPCService) AccountTransactions(
 	metadata capabilities.RequestMetadata,
 	input *aptoscap.AccountTransactionsRequest,
 ) (*capabilities.ResponseAndMetadata[*aptoscap.AccountTransactionsReply], caperrors.Error) {
+	// TODO(aptos): wire capability-level AccountTransactions to the existing relayer
+	// implementation with explicit consensus/locking semantics for deterministic reads.
 	return nil, c.unimplementedMethod("AccountTransactions")
 }
 

@@ -22,10 +22,16 @@ type Aptos struct {
 	aptosService     types.AptosService
 	ConsensusHandler ConsensusHandler
 	lggr             logger.SugaredLogger
+	// TODO(aptos): apply limitsFactory to enforce request rate/throughput limits
+	// for Aptos actions once non-view methods are implemented in this capability.
 	limitsFactory    limits.Factory
 }
 
-func NewAptos(_ *config.Config, aptosService types.AptosService, consensusHandler ConsensusHandler, lggr logger.Logger, limitsFactory limits.Factory) (*Aptos, error) {
+func NewAptos(cfg *config.Config, aptosService types.AptosService, consensusHandler ConsensusHandler, lggr logger.Logger, limitsFactory limits.Factory) (*Aptos, error) {
+	// TODO(aptos): use cfg to initialize Aptos action-level knobs (including limits)
+	// when write/tx/account methods move from stubs to full implementations.
+	_ = cfg
+
 	if aptosService == nil {
 		return nil, fmt.Errorf("aptos service is required")
 	}
