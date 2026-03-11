@@ -72,7 +72,8 @@ func (RequestType) EnumDescriptor() ([]byte, []int) {
 type ConsensusFailureCode int32
 
 const (
-	// Consensus calculation failed - e.g. this would happen with identical consensus if there are less than F+1 identical observations
+	// Consensus calculation failed — legacy zero value kept for backward compatibility with old nodes.
+	// New code should emit CONSENSUS_CALCULATION_FAILED_USER or CONSENSUS_CALCULATION_FAILED_SYSTEM instead.
 	ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED ConsensusFailureCode = 0
 	// Failed to calculate the consensus metadata, descriptor and default (MDD). F+1 identical MDDs are required for consensus
 	ConsensusFailureCode_FAILED_TO_CALCULATE_CONSENSUS_MDD ConsensusFailureCode = 1
@@ -88,6 +89,13 @@ const (
 	// The user should investigate the source of volatility in their data and consider if identical consensus is the right
 	// approach for their use case.
 	ConsensusFailureCode_MORE_THAN_ONE_VALID_OUTCOME_FOR_IDENTICAL_CONSENSUS ConsensusFailureCode = 5
+	// Consensus calculation failed due to a user error — e.g. values of a type incompatible with the configured
+	// aggregation (string passed to AGGREGATION_TYPE_MEDIAN), unknown aggregation type, or nodes failing to
+	// reach a quorum because the submitted values disagree.
+	ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED_USER ConsensusFailureCode = 6
+	// Consensus calculation failed due to a platform/system error — e.g. proto serialization failure or
+	// an unknown consensus descriptor type indicating a plugin/SDK version mismatch.
+	ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED_SYSTEM ConsensusFailureCode = 7
 )
 
 // Enum value maps for ConsensusFailureCode.
@@ -99,6 +107,8 @@ var (
 		3: "OUTCOME_TOO_LARGE",
 		4: "REPORT_TOO_LARGE",
 		5: "MORE_THAN_ONE_VALID_OUTCOME_FOR_IDENTICAL_CONSENSUS",
+		6: "CONSENSUS_CALCULATION_FAILED_USER",
+		7: "CONSENSUS_CALCULATION_FAILED_SYSTEM",
 	}
 	ConsensusFailureCode_value = map[string]int32{
 		"CONSENSUS_CALCULATION_FAILED":                        0,
@@ -107,6 +117,8 @@ var (
 		"OUTCOME_TOO_LARGE":                                   3,
 		"REPORT_TOO_LARGE":                                    4,
 		"MORE_THAN_ONE_VALID_OUTCOME_FOR_IDENTICAL_CONSENSUS": 5,
+		"CONSENSUS_CALCULATION_FAILED_USER":                   6,
+		"CONSENSUS_CALCULATION_FAILED_SYSTEM":                 7,
 	}
 )
 
@@ -839,14 +851,16 @@ const file_value_consensus_types_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\x04R\x05value*9\n" +
 	"\vRequestType\x12\x13\n" +
 	"\x0fVALUE_CONSENSUS\x10\x00\x12\x15\n" +
-	"\x11REPORT_GENERATION\x10\x01*\xe1\x01\n" +
+	"\x11REPORT_GENERATION\x10\x01*\xb1\x02\n" +
 	"\x14ConsensusFailureCode\x12 \n" +
 	"\x1cCONSENSUS_CALCULATION_FAILED\x10\x00\x12%\n" +
 	"!FAILED_TO_CALCULATE_CONSENSUS_MDD\x10\x01\x12\x1a\n" +
 	"\x16RECEIVED_FPLUS1_ERRORS\x10\x02\x12\x15\n" +
 	"\x11OUTCOME_TOO_LARGE\x10\x03\x12\x14\n" +
 	"\x10REPORT_TOO_LARGE\x10\x04\x127\n" +
-	"3MORE_THAN_ONE_VALID_OUTCOME_FOR_IDENTICAL_CONSENSUS\x10\x05B\x18Z\x16consensus/oracle/typesb\x06proto3"
+	"3MORE_THAN_ONE_VALID_OUTCOME_FOR_IDENTICAL_CONSENSUS\x10\x05\x12%\n" +
+	"!CONSENSUS_CALCULATION_FAILED_USER\x10\x06\x12'\n" +
+	"#CONSENSUS_CALCULATION_FAILED_SYSTEM\x10\aB\x18Z\x16consensus/oracle/typesb\x06proto3"
 
 var (
 	file_value_consensus_types_proto_rawDescOnce sync.Once

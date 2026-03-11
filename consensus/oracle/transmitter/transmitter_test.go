@@ -68,111 +68,155 @@ func Test_Transmit(t *testing.T) {
 	require.True(t, sendResponseCalled, "sendResponse should be called")
 }
 
-func Test_Transmit_FailureMessage(t *testing.T) {
-	lggr := logger.Test(t)
-	sendResponseCalled := false
-
-	configDigest := [32]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
-		0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x20}
-	seqNr := uint64(2)
-	report := []byte("test-report-failure")
-	signatures := []types.AttributedOnchainSignature{
-		{Signature: []byte("signature-2"), Signer: commontypes.OracleID(2)},
-	}
-
-	failureMsg := "consensus failed"
-	sendResponse := func(ctx context.Context, response oracle.ConsensusResponse) {
-		sendResponseCalled = true
-		require.Equal(t, "test-request-id-failure", response.ReqID)
-		require.Equal(t, seqNr, response.SeqNr)
-		require.Error(t, response.Err)
-		require.Contains(t, response.Err.Error(), failureMsg)
-		var capError caperrors.Error
-		ok := errors.As(response.Err, &capError)
-		require.True(t, ok)
-		require.Equal(t, capError.Visibility(), caperrors.VisibilityPublic)
-		require.Equal(t, capError.Origin(), caperrors.OriginSystem)
-		require.Equal(t, capError.Code(), caperrors.ConsensusFailed)
-		require.Empty(t, response.ConfigDigest)
-		require.Empty(t, response.ReportContext)
-		require.Empty(t, response.RawReport)
-		require.Empty(t, response.Sigs)
-	}
-
-	transmitter := NewContractTransmitter(lggr, sendResponse)
-
-	info := &structpb.Struct{
-		Fields: map[string]*structpb.Value{
-			plugin.InfoRequestID:               structpb.NewStringValue("test-request-id-failure"),
-			plugin.InfoConsensusFailureMessage: structpb.NewStringValue(failureMsg),
-			plugin.InfoConsensusFailureCode:    structpb.NewStringValue(oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED.String()),
+func Test_Transmit_ReturnsSystemError_Cases(t *testing.T) {
+	testCases := []struct {
+		name        string
+		failureCode oracletypes.ConsensusFailureCode
+		description string
+	}{
+		{
+			name:        "OUTCOME_TOO_LARGE",
+			failureCode: oracletypes.ConsensusFailureCode_OUTCOME_TOO_LARGE,
+			description: "platform-side failure — outcome does not fit in batch",
+		},
+		{
+			name:        "CONSENSUS_CALCULATION_FAILED_SYSTEM",
+			failureCode: oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED_SYSTEM,
+			description: "platform-side calculation failure — e.g. proto serialisation error or unknown descriptor type",
+		},
+		{
+			name:        "CONSENSUS_CALCULATION_FAILED (legacy zero value)",
+			failureCode: oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED,
+			description: "legacy zero value from old nodes — treated as system error for backward compatibility",
 		},
 	}
-	infoBytes, err := proto.Marshal(info)
-	require.NoError(t, err)
 
-	rwi := ocr3types.ReportWithInfo[[]byte]{
-		Report: report,
-		Info:   infoBytes,
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			lggr := logger.Test(t)
+			sendResponseCalled := false
+
+			configDigest := [32]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
+				0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x20}
+			seqNr := uint64(2)
+			report := []byte("test-report-failure")
+			signatures := []types.AttributedOnchainSignature{
+				{Signature: []byte("signature-2"), Signer: commontypes.OracleID(2)},
+			}
+			failureMsg := "consensus failed"
+
+			sendResponse := func(ctx context.Context, response oracle.ConsensusResponse) {
+				sendResponseCalled = true
+				require.Equal(t, "test-request-id-failure", response.ReqID)
+				require.Equal(t, seqNr, response.SeqNr)
+				require.Error(t, response.Err)
+				require.Contains(t, response.Err.Error(), failureMsg)
+				var capError caperrors.Error
+				require.True(t, errors.As(response.Err, &capError))
+				require.Equal(t, caperrors.VisibilityPublic, capError.Visibility())
+				require.Equal(t, caperrors.OriginSystem, capError.Origin(), tc.description)
+				require.Equal(t, caperrors.ConsensusFailed, capError.Code())
+				require.Empty(t, response.ConfigDigest)
+				require.Empty(t, response.ReportContext)
+				require.Empty(t, response.RawReport)
+				require.Empty(t, response.Sigs)
+			}
+
+			transmitter := NewContractTransmitter(lggr, sendResponse)
+
+			info := &structpb.Struct{
+				Fields: map[string]*structpb.Value{
+					plugin.InfoRequestID:               structpb.NewStringValue("test-request-id-failure"),
+					plugin.InfoConsensusFailureMessage: structpb.NewStringValue(failureMsg),
+					plugin.InfoConsensusFailureCode:    structpb.NewStringValue(tc.failureCode.String()),
+				},
+			}
+			infoBytes, err := proto.Marshal(info)
+			require.NoError(t, err)
+
+			rwi := ocr3types.ReportWithInfo[[]byte]{
+				Report: report,
+				Info:   infoBytes,
+			}
+
+			err = transmitter.Transmit(context.Background(), configDigest, seqNr, rwi, signatures)
+			require.NoError(t, err)
+			require.True(t, sendResponseCalled)
+		})
 	}
-
-	err = transmitter.Transmit(context.Background(), configDigest, seqNr, rwi, signatures)
-	require.NoError(t, err)
-	require.True(t, sendResponseCalled)
 }
 
 func Test_Transmit_ReturnsUserError_Cases(t *testing.T) {
-	lggr := logger.Test(t)
-	sendResponseCalled := false
-
-	configDigest := [32]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
-		0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x20}
-	seqNr := uint64(2)
-	report := []byte("test-report-failure")
-	signatures := []types.AttributedOnchainSignature{
-		{Signature: []byte("signature-2"), Signer: commontypes.OracleID(2)},
-	}
-
-	failureMsg := "consensus failed"
-	sendResponse := func(ctx context.Context, response oracle.ConsensusResponse) {
-		sendResponseCalled = true
-		require.Equal(t, "test-request-id-failure", response.ReqID)
-		require.Equal(t, seqNr, response.SeqNr)
-		require.Error(t, response.Err)
-		var capError caperrors.Error
-		ok := errors.As(response.Err, &capError)
-		require.True(t, ok)
-		require.Contains(t, response.Err.Error(), failureMsg)
-		require.Equal(t, capError.Visibility(), caperrors.VisibilityPublic)
-		require.Equal(t, capError.Origin(), caperrors.OriginUser)
-		require.Equal(t, capError.Code(), caperrors.ConsensusFailed)
-
-		require.Empty(t, response.ConfigDigest)
-		require.Empty(t, response.ReportContext)
-		require.Empty(t, response.RawReport)
-		require.Empty(t, response.Sigs)
-	}
-
-	transmitter := NewContractTransmitter(lggr, sendResponse)
-
-	info := &structpb.Struct{
-		Fields: map[string]*structpb.Value{
-			plugin.InfoRequestID:               structpb.NewStringValue("test-request-id-failure"),
-			plugin.InfoConsensusFailureMessage: structpb.NewStringValue(failureMsg),
-			plugin.InfoConsensusFailureCode:    structpb.NewStringValue(oracletypes.ConsensusFailureCode_RECEIVED_FPLUS1_ERRORS.String()),
+	testCases := []struct {
+		name        string
+		failureCode oracletypes.ConsensusFailureCode
+		description string
+	}{
+		{
+			name:        "RECEIVED_FPLUS1_ERRORS",
+			failureCode: oracletypes.ConsensusFailureCode_RECEIVED_FPLUS1_ERRORS,
+			description: "too many nodes sent error observations — upstream workflow step is broken",
+		},
+		{
+			name:        "CONSENSUS_CALCULATION_FAILED_USER",
+			failureCode: oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED_USER,
+			description: "aggregation failed because values are incompatible with the configured type (e.g. string passed to AGGREGATION_TYPE_MEDIAN)",
 		},
 	}
-	infoBytes, err := proto.Marshal(info)
-	require.NoError(t, err)
 
-	rwi := ocr3types.ReportWithInfo[[]byte]{
-		Report: report,
-		Info:   infoBytes,
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			lggr := logger.Test(t)
+			sendResponseCalled := false
+
+			configDigest := [32]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
+				0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x20}
+			seqNr := uint64(2)
+			report := []byte("test-report-failure")
+			signatures := []types.AttributedOnchainSignature{
+				{Signature: []byte("signature-2"), Signer: commontypes.OracleID(2)},
+			}
+			failureMsg := "consensus failed"
+
+			sendResponse := func(ctx context.Context, response oracle.ConsensusResponse) {
+				sendResponseCalled = true
+				require.Equal(t, "test-request-id-failure", response.ReqID)
+				require.Equal(t, seqNr, response.SeqNr)
+				require.Error(t, response.Err)
+				require.Contains(t, response.Err.Error(), failureMsg)
+				var capError caperrors.Error
+				require.True(t, errors.As(response.Err, &capError))
+				require.Equal(t, caperrors.VisibilityPublic, capError.Visibility())
+				require.Equal(t, caperrors.OriginUser, capError.Origin(), tc.description)
+				require.Equal(t, caperrors.ConsensusFailed, capError.Code())
+				require.Empty(t, response.ConfigDigest)
+				require.Empty(t, response.ReportContext)
+				require.Empty(t, response.RawReport)
+				require.Empty(t, response.Sigs)
+			}
+
+			transmitter := NewContractTransmitter(lggr, sendResponse)
+
+			info := &structpb.Struct{
+				Fields: map[string]*structpb.Value{
+					plugin.InfoRequestID:               structpb.NewStringValue("test-request-id-failure"),
+					plugin.InfoConsensusFailureMessage: structpb.NewStringValue(failureMsg),
+					plugin.InfoConsensusFailureCode:    structpb.NewStringValue(tc.failureCode.String()),
+				},
+			}
+			infoBytes, err := proto.Marshal(info)
+			require.NoError(t, err)
+
+			rwi := ocr3types.ReportWithInfo[[]byte]{
+				Report: report,
+				Info:   infoBytes,
+			}
+
+			err = transmitter.Transmit(context.Background(), configDigest, seqNr, rwi, signatures)
+			require.NoError(t, err)
+			require.True(t, sendResponseCalled)
+		})
 	}
-
-	err = transmitter.Transmit(context.Background(), configDigest, seqNr, rwi, signatures)
-	require.NoError(t, err)
-	require.True(t, sendResponseCalled)
 }
 
 func Test_Transmit_ReturnsUserError_When_More_Than_One_Valid_Outcome(t *testing.T) {

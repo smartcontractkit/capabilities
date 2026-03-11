@@ -134,7 +134,7 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, lggr log
 
 		return outcome.FailConsensusWithDefaultCheck(ctx, lggr, requestID, consensusFailedMsg,
 			"consensus calculation failed: aggregation failed",
-			oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED, consensusMDD, timestamp)
+			classifyCalculationError(err), consensusMDD, timestamp)
 	}
 
 	return outcome.AddSuccessfulConsensusRequestOutcomeToBatch(ctx, consensusMDD.Metadata, value, timestamp)
@@ -246,6 +246,24 @@ func groupAttributedObservationsByRequestID(lggr logger.Logger, attributedObserv
 	}
 
 	return requestIDToObservations
+}
+
+// classifyCalculationError maps an error from CalculateOutcomeForObservations to the appropriate
+// ConsensusFailureCode so the transmitter can correctly tag it as a user or system error.
+//
+// User errors: the workflow sent values that are semantically incompatible with the configured
+// aggregation — the platform is working correctly, the user's workflow is broken.
+//
+// System errors: platform-level failures such as proto serialisation problems or unknown descriptor
+// types that indicate a plugin/SDK version mismatch rather than a workflow mistake.
+func classifyCalculationError(err error) oracletypes.ConsensusFailureCode {
+	if errors.Is(err, oracle.ErrUnsupportedTypeForAggregation) ||
+		errors.Is(err, oracle.ErrUnknownAggregationType) ||
+		errors.Is(err, oracle.ErrNoValuesMetThreshold) ||
+		errors.Is(err, oracle.ErrInsufficientObservations) {
+		return oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED_USER
+	}
+	return oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED_SYSTEM
 }
 
 func calculateMedianTimestamp(timestamps []*timestamppb.Timestamp) *timestamppb.Timestamp {

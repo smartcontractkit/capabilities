@@ -21,6 +21,15 @@ var (
 	ErrNoValuesMetThreshold                         = errors.New("no values met f+1 threshold")
 	ErrMoreThanOneValidOutcomeForIdenticalConsensus = errors.New("not identical, multiple values with f+1 occurrences")
 	ErrInsufficientObservations                     = errors.New("insufficient observations to reach consensus")
+
+	// ErrUnsupportedTypeForAggregation is returned when the observations contain a value type that is
+	// incompatible with the configured aggregation (e.g. a string value passed to AGGREGATION_TYPE_MEDIAN).
+	// This is always a user error — the workflow is sending the wrong type.
+	ErrUnsupportedTypeForAggregation = errors.New("unsupported type for aggregation")
+
+	// ErrUnknownAggregationType is returned when the aggregation type in the consensus descriptor is not
+	// recognised. This is always a user error — the workflow configured an invalid aggregation type.
+	ErrUnknownAggregationType = errors.New("unknown aggregation type")
 )
 
 // Constants for type names used in aggregation logic.
@@ -57,7 +66,7 @@ func CalculateOutcomeForObservations(
 		case sdk.AggregationType_AGGREGATION_TYPE_COMMON_SUFFIX:
 			return handleCommonSuffixAggregation(lggr, observations, f)
 		default:
-			return nil, fmt.Errorf("unknown aggregation type: %s", aggregation)
+			return nil, fmt.Errorf("%w: %s", ErrUnknownAggregationType, aggregation)
 		}
 	case *sdk.ConsensusDescriptor_FieldsMap:
 		return handleFieldsMapAggregation(lggr, observations, desc.FieldsMap.GetFields(), defaultValue, f)
@@ -277,7 +286,7 @@ func handleMedianAggregation(
 		}
 
 	default:
-		return nil, fmt.Errorf("unsupported type for median aggregation: %s", medianType)
+		return nil, fmt.Errorf("%w: %s", ErrUnsupportedTypeForAggregation, medianType)
 	}
 
 	return medianResult, nil

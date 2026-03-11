@@ -2,6 +2,7 @@ package oracle
 
 import (
 	"errors"
+	"fmt"
 	"math/big"
 	"testing"
 	"time"
@@ -387,7 +388,7 @@ func Test_handleMedianAggregation(t *testing.T) {
 				values.Proto(values.NewString("cad")),
 			},
 			expectedOutcome: nil,
-			expectedError:   errors.New("unsupported type for median aggregation: " + typeString.Name()),
+			expectedError:   fmt.Errorf("%w: %s", ErrUnsupportedTypeForAggregation, typeString.Name()),
 			f:               2,
 		},
 		{

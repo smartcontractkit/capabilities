@@ -63,7 +63,8 @@ message ConsensusSuccessOutcome {
 }
 
 enum ConsensusFailureCode {
-  // Consensus calculation failed - e.g. this would happen with identical consensus if there are less than F+1 identical observations
+  // Consensus calculation failed — legacy zero value kept for backward compatibility with old nodes.
+  // New code should emit CONSENSUS_CALCULATION_FAILED_USER or CONSENSUS_CALCULATION_FAILED_SYSTEM instead.
   CONSENSUS_CALCULATION_FAILED = 0;
   // Failed to calculate the consensus metadata, descriptor and default (MDD). F+1 identical MDDs are required for consensus
   FAILED_TO_CALCULATE_CONSENSUS_MDD = 1;
@@ -79,6 +80,13 @@ enum ConsensusFailureCode {
   // The user should investigate the source of volatility in their data and consider if identical consensus is the right
   // approach for their use case.
   MORE_THAN_ONE_VALID_OUTCOME_FOR_IDENTICAL_CONSENSUS = 5;
+  // Consensus calculation failed due to a user error — e.g. values of a type incompatible with the configured
+  // aggregation (string passed to AGGREGATION_TYPE_MEDIAN), unknown aggregation type, or nodes failing to
+  // reach a quorum because the submitted values disagree.
+  CONSENSUS_CALCULATION_FAILED_USER = 6;
+  // Consensus calculation failed due to a platform/system error — e.g. proto serialization failure or
+  // an unknown consensus descriptor type indicating a plugin/SDK version mismatch.
+  CONSENSUS_CALCULATION_FAILED_SYSTEM = 7;
 }
 
 message ConsensusFailedOutcome {

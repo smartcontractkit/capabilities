@@ -57,9 +57,13 @@ func (c *ContractTransmitter) Transmit(ctx context.Context, configDigest types.C
 
 		var failureErr caperrors.Error
 		switch failureCode {
-		case oracletypes.ConsensusFailureCode_RECEIVED_FPLUS1_ERRORS:
-			// This is considered to be a user error as the caller of the consensus capability has sent too many errors and
-			// so consensus cannot be reached.
+		case oracletypes.ConsensusFailureCode_RECEIVED_FPLUS1_ERRORS,
+			oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED_USER:
+			// User errors: the workflow submitted observations that prevented consensus from being reached.
+			// RECEIVED_FPLUS1_ERRORS: too many nodes sent error observations (upstream step is broken).
+			// CONSENSUS_CALCULATION_FAILED_USER: aggregation failed because the submitted values are
+			// semantically incompatible with the configured aggregation type (e.g. string values passed
+			// to AGGREGATION_TYPE_MEDIAN, or an unknown aggregation type configured in the workflow).
 			failureErr = caperrors.NewPublicUserError(errors.New(failureMessageStr), caperrors.ConsensusFailed)
 		case oracletypes.ConsensusFailureCode_MORE_THAN_ONE_VALID_OUTCOME_FOR_IDENTICAL_CONSENSUS:
 			// This is considered to be a user error as the caller of the consensus capability is attempting to achieve
@@ -68,6 +72,8 @@ func (c *ContractTransmitter) Transmit(ctx context.Context, configDigest types.C
 			// resulting in f+1 nodes seeing value A, and f+1 nodes seeing value B.
 			failureErr = caperrors.NewPublicUserError(errors.New(failureMessageStr), caperrors.ConsensusFailed)
 		default:
+			// System errors and the legacy CONSENSUS_CALCULATION_FAILED zero-value (emitted by old nodes
+			// that predate the user/system split) are treated as system errors for conservative alerting.
 			failureErr = caperrors.NewPublicSystemError(errors.New(failureMessageStr), caperrors.ConsensusFailed)
 		}
 
