@@ -167,7 +167,9 @@ func (thr *TxHashRetriever) paginateBackwards(
 		}
 		thr.lggr.Debugw("paginating backwards", "page", page, "nextStart", nextStart, "earliestTimestamp", earliestTxTimestamp, "startingPoint", thr.startingPointMicro)
 
-		txns, err := thr.forwarderClient.GetTransmitterTransactions(ctx, transmitter, &nextStart, &pageSize)
+		txns, err := withQuickRetry(ctx, thr.lggr, func(ctx context.Context) ([]*aptostypes.Transaction, error) {
+			return thr.forwarderClient.GetTransmitterTransactions(ctx, transmitter, &nextStart, &pageSize)
+		})
 		if err != nil {
 			thr.lggr.Errorw("pagination fetch failed", "page", page, "nextStart", nextStart, "error", err)
 			return "", fmt.Errorf("failed to get transmitter transactions during pagination (start=%d): %w", nextStart, err)
@@ -243,7 +245,7 @@ func (thr *TxHashRetriever) GetSuccessfulTransmissionHash(ctx context.Context, t
 		successScanner := func(txns []*aptostypes.Transaction) (string, uint64, uint64) {
 			return thr.scanTransactions(txns, true)
 		}
-		// TODO: emit metrics here to see if we need to adjust initial batch size
+
 		if hash, pgErr := thr.paginateBackwards(ctx, transmitter, successScanner, earliestTxTimestamp, firstSeqNum, pageSize); pgErr != nil {
 			thr.lggr.Warnw("GetSuccessfulTransmissionHash phase 2 pagination failed, falling through to poll phase", "err", pgErr)
 		} else if hash != "" {
