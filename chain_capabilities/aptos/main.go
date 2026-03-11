@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strconv"
 	"time"
@@ -353,7 +354,7 @@ func (c *capabilityGRPCService) fetchP2PConfig(ctx context.Context, registry cor
 		return nil, fmt.Errorf("SpecConfig unwrapped to %T, expected map[string]any", unwrapped)
 	}
 
-	c.lggr.Debugw("fetchP2PConfig: SpecConfig keys", "keys", fmt.Sprintf("%v", keys(specMap)))
+	c.lggr.Debugw("fetchP2PConfig: SpecConfig keys", "keys", fmt.Sprintf("%v", slices.Collect(maps.Keys(specMap))))
 
 	p2pRaw, exists := specMap["p2pToTransmitterMap"]
 	if !exists {
@@ -383,13 +384,6 @@ func (c *capabilityGRPCService) fetchP2PConfig(ctx context.Context, registry cor
 	return result, nil
 }
 
-func keys(m map[string]any) []string {
-	ks := make([]string, 0, len(m))
-	for k := range m {
-		ks = append(ks, k)
-	}
-	return ks
-}
 
 func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Config, error) {
 	var cfg config.Config
