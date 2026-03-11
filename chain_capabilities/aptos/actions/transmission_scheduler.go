@@ -77,10 +77,10 @@ func (ts *TransmissionScheduler) GetQueuePosition(transmissionID string) int {
 
 // GetOrderedTransmitters returns transmitter addresses in queue order (position 0 first)
 // for the given transmissionID. PeerIDs are resolved to transmitter addresses via p2pConfig.
-// Peers not found in p2pConfig are skipped.
+// Peers not found in p2pConfig get an empty string to preserve positional ordering.
 func (ts *TransmissionScheduler) GetOrderedTransmitters(transmissionID string) []string {
 	permuted := ts.permutedOrder(transmissionID)
-	ts.lggr.Debugf(logPrefix + "GetOrderedTransmitters donMembersCount=%d permutedCount=%d p2pConfigKeys=%d transmissionID=%s",
+	ts.lggr.Debugf("GetOrderedTransmitters donMembersCount=%d permutedCount=%d p2pConfigKeys=%d transmissionID=%s",
 		len(ts.donMembers), len(permuted), len(ts.p2pConfig), transmissionID)
 	var transmitters []string
 	for i, peerID := range permuted {
@@ -88,7 +88,8 @@ func (ts *TransmissionScheduler) GetOrderedTransmitters(transmissionID string) [
 		if addr, ok := ts.p2pConfig[peerHex]; ok {
 			transmitters = append(transmitters, addr)
 		} else {
-			ts.lggr.Debugf(logPrefix + "GetOrderedTransmitters peerID[%d]=%s not found in p2pConfig", i, peerHex)
+			ts.lggr.Errorf("GetOrderedTransmitters peerID[%d]=%s not found in p2pConfig, p2pConfig may be incomplete", i, peerHex)
+			transmitters = append(transmitters, "")
 		}
 	}
 	return transmitters
