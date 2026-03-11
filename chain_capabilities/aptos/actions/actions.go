@@ -22,7 +22,6 @@ import (
 // TODO: config PLEX-2598
 const (
 	reportSizeLimit = commoncfg.Byte * 500
-	logPrefix       = "AptosCapabilityLog: "
 )
 
 type Aptos struct {
