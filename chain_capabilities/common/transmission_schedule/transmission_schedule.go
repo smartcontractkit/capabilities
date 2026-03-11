@@ -1,4 +1,4 @@
-package actions
+package transmission_schedule
 
 import (
 	"bytes"
@@ -17,12 +17,12 @@ import (
 type TransmissionScheduler struct {
 	myPeerID   p2ptypes.PeerID
 	donMembers []p2ptypes.PeerID // Immutable copy - safe for concurrent reads
-	deltaStage time.Duration
+	DeltaStage time.Duration
 	F          uint8 // Fault tolerance - maximum number of faulty nodes
 	lggr       logger.Logger
 }
 
-const defaultDeltaStage = 15 * time.Second
+const DefaultDeltaStage = 15 * time.Second
 
 func NewTransmissionScheduler(
 	myPeerID p2ptypes.PeerID,
@@ -32,12 +32,12 @@ func NewTransmissionScheduler(
 	lggr logger.Logger,
 ) TransmissionScheduler {
 	if deltaStage <= 0 {
-		lggr.Debugf("deltaStage is set to a zero/negative value %v using default value of %v.", deltaStage, defaultDeltaStage)
+		lggr.Debugf("deltaStage is set to a zero/negative value %v using default value of %v.", deltaStage, DefaultDeltaStage)
 	}
 	return TransmissionScheduler{
 		myPeerID:   myPeerID,
 		donMembers: slices.Clone(donMembers),
-		deltaStage: deltaStage,
+		DeltaStage: deltaStage,
 		F:          F,
 		lggr:       lggr,
 	}
@@ -62,7 +62,6 @@ func (ts *TransmissionScheduler) GetQueuePosition(transmissionID string) int {
 	return -1
 }
 
-// transmissionScheduleSeed generates a deterministic 16-byte key from transmissionID
 func transmissionScheduleSeed(transmissionID string) [16]byte {
 	hash := sha3.New256()
 	hash.Write([]byte(transmissionID))

@@ -30,6 +30,7 @@ import (
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
+	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
@@ -62,11 +63,11 @@ type EVM struct {
 	reportSizeLimit        limits.BoundLimiter[commoncfg.Size]
 	txGasLimit             limits.BoundLimiter[uint64]
 
-	transmissionScheduler TransmissionScheduler
+	transmissionScheduler ts.TransmissionScheduler
 }
 
 func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, beholderProcessor beholder.ProtoProcessor,
-	messageBuilder *monitoring.MessageBuilder, handler ConsensusHandler, chainSelector uint64, limitsFactory limits.Factory, transmissionScheduler TransmissionScheduler) (*EVM, caperrors.Error) {
+	messageBuilder *monitoring.MessageBuilder, handler ConsensusHandler, chainSelector uint64, limitsFactory limits.Factory, transmissionScheduler ts.TransmissionScheduler) (*EVM, caperrors.Error) {
 	keystoneForwarderAddress := common.HexToAddress(cfg.CREForwarderAddress)
 	if keystoneForwarderAddress == (common.Address{}) {
 		return &EVM{}, caperrors.NewPublicSystemError(errors.New("keystone forwarder address is not set"), caperrors.Unknown)

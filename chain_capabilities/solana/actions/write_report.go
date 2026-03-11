@@ -26,6 +26,7 @@ import (
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
+	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/metering"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
 )
@@ -61,8 +62,9 @@ type WriteReport struct {
 	beholderProcessor beholder.ProtoProcessor
 	messageBuilder    *monitoring.MessageBuilder
 
-	txComputeLimit  limits.BoundLimiter[uint32]
-	reportSizeLimit limits.BoundLimiter[commoncfg.Size]
+	txComputeLimit        limits.BoundLimiter[uint32]
+	reportSizeLimit       limits.BoundLimiter[commoncfg.Size]
+	transmissionScheduler ts.TransmissionScheduler
 }
 
 func (s *Solana) WriteReport(
@@ -110,6 +112,7 @@ func (s *Solana) executeWriteReport(ctx context.Context, request *solcap.WriteRe
 		lggr:                     s.messageBuilder.RequestLggr(s.lggr, telemetryContext),
 		beholderProcessor:        s.beholderProcessor,
 		messageBuilder:           s.messageBuilder,
+		transmissionScheduler:    s.transmissionScheduler,
 	}
 
 	return wr.executeWriteReport(ctx, request, telemetryContext, metadata)
@@ -141,10 +144,18 @@ func (wr *WriteReport) executeWriteReport(
 		}
 	}
 
+	transmissionIDStr := hex.EncodeToString(transmissionID[:])
+	queuePosition := wr.transmissionScheduler.GetQueuePosition(transmissionIDStr)
+	wr.lggr = logger.With(wr.lggr, "queuePosition", queuePosition)
+
 	var transmissionInfo *TransmissionInfo
-	transmissionInfo, err = withQuickRetry(ctx, wr.lggr, func(ctx context.Context) (*TransmissionInfo, error) {
-		return wr.transmissionInfoProvider.GetTransmissionInfo(ctx, transmissionID)
-	})
+	if queuePosition <= 0 {
+		transmissionInfo, err = withQuickRetry(ctx, wr.lggr, func(ctx context.Context) (*TransmissionInfo, error) {
+			return wr.transmissionInfoProvider.GetTransmissionInfo(ctx, transmissionID)
+		})
+	} else {
+		transmissionInfo, err = wr.pollTransmissionInfo(ctx, transmissionID, queuePosition)
+	}
 
 	if err != nil {
 		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed to get transmission info: %w", err)
@@ -327,6 +338,56 @@ func extractTransmissionID(receiver solana.PublicKey, report *sdk.ReportResponse
 	data = append(data, reportID...)
 
 	return sha256.Sum256(data), nil
+}
+
+// pollTransmissionInfo waits for the node's transmission slot then returns the current state.
+// If another node transmits successfully or fails (F+1 times) before our slot, returns early.
+func (wr *WriteReport) pollTransmissionInfo(
+	ctx context.Context,
+	transmissionID [32]byte,
+	queuePosition int,
+) (lastValid *TransmissionInfo, err error) {
+	delay := time.Duration(queuePosition) * wr.transmissionScheduler.DeltaStage
+	wr.lggr.Infow("Polling until slot or state change", "delay", delay, "deltaStage", wr.transmissionScheduler.DeltaStage)
+
+	attempt := 0
+	stageTimer := time.NewTimer(delay)
+	defer stageTimer.Stop()
+
+	for {
+		if info, pollErr := wr.transmissionInfoProvider.GetTransmissionInfo(ctx, transmissionID); pollErr != nil {
+			wr.lggr.Debugw("GetTransmissionInfo failed during polling", "error", pollErr, "attempt", attempt)
+		} else {
+			lastValid = info
+			switch lastValid.State {
+			case TransmissionStateSucceeded, TransmissionStateFailed:
+				return lastValid, nil
+			case TransmissionStateNotAttempted:
+			default:
+				wr.lggr.Warnw("Unexpected transmission state during polling, continuing", "state", lastValid.State)
+			}
+		}
+
+		wait := (100 * time.Millisecond) << min(attempt, 5)
+		if wait > 2*time.Second {
+			wait = 2 * time.Second
+		}
+		attempt++
+
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("timed out waiting for transmission info")
+		case <-stageTimer.C:
+			wr.lggr.Infow("Delta stage has passed, returning transmission info")
+			if lastValid != nil {
+				return lastValid, nil
+			}
+			return withQuickRetry(ctx, wr.lggr, func(ctx context.Context) (*TransmissionInfo, error) {
+				return wr.transmissionInfoProvider.GetTransmissionInfo(ctx, transmissionID)
+			})
+		case <-time.After(wait):
+		}
+	}
 }
 
 func (wr *WriteReport) getFee(ctx context.Context, sig solana.Signature) (*big.Float, error) {

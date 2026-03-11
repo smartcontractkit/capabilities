@@ -23,6 +23,7 @@ import (
 	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
+	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts/mocks"
@@ -1040,7 +1041,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
 
 		// Override with zero-value scheduler to simulate DeltaStage not configured
-		service.transmissionScheduler = TransmissionScheduler{}
+		service.transmissionScheduler = ts.TransmissionScheduler{}
 
 		evmServiceMock.EXPECT().
 			GetTransactionFee(mock.Anything, mock.Anything).
@@ -1383,7 +1384,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 				otherPeerID2[0] = 0x03
 				var otherPeerID3 p2ptypes.PeerID
 				otherPeerID3[0] = 0x04
-				scheduler := NewTransmissionScheduler(
+				scheduler := ts.NewTransmissionScheduler(
 					testPeerID,
 					[]p2ptypes.PeerID{testPeerID, otherPeerID1, otherPeerID2, otherPeerID3},
 					10*time.Millisecond,
@@ -1690,7 +1691,7 @@ func createMocksAndCapability(t *testing.T, lggr logger.Logger) (*mocks2.EVMServ
 	var testPeerID p2ptypes.PeerID
 	testPeerID[0] = 0x01
 	testDONMembers := []p2ptypes.PeerID{testPeerID}
-	transmissionScheduler := NewTransmissionScheduler(
+	transmissionScheduler := ts.NewTransmissionScheduler(
 		testPeerID,
 		testDONMembers,
 		10*time.Millisecond, // Small deltaStage for tests
@@ -1758,7 +1759,7 @@ func createTestRequestMetadata(metadata ocrtypes.Metadata) capabilities.RequestM
 	}
 }
 
-func createReportAndMetadataForQueuePosition(t *testing.T, scheduler *TransmissionScheduler, receiver []byte, desiredPosition int) (*workflowpb.ReportResponse, capabilities.RequestMetadata, contracts.TransmissionID) {
+func createReportAndMetadataForQueuePosition(t *testing.T, scheduler *ts.TransmissionScheduler, receiver []byte, desiredPosition int) (*workflowpb.ReportResponse, capabilities.RequestMetadata, contracts.TransmissionID) {
 	t.Helper()
 
 	for i := 0; i < 1000; i++ {
@@ -1806,7 +1807,7 @@ func setupPollTransmissionInfoForQueuePosition(
 	var otherPeerID3 p2ptypes.PeerID
 	otherPeerID3[0] = 0x04
 
-	scheduler := NewTransmissionScheduler(
+	scheduler := ts.NewTransmissionScheduler(
 		testPeerID,
 		[]p2ptypes.PeerID{testPeerID, otherPeerID1, otherPeerID2, otherPeerID3},
 		10*time.Millisecond,

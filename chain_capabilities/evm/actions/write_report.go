@@ -26,6 +26,7 @@ import (
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
+	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
@@ -56,7 +57,7 @@ type WriteReport struct {
 
 	txGasLimit            limits.BoundLimiter[uint64]
 	reportSizeLimit       limits.BoundLimiter[commoncfg.Size]
-	transmissionScheduler TransmissionScheduler
+	transmissionScheduler ts.TransmissionScheduler
 }
 
 func (e *EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMetadata, input *evm.WriteReportRequest) (*capabilities.ResponseAndMetadata[*evm.WriteReportReply], caperrors.Error) {
@@ -312,8 +313,8 @@ func (e *WriteReport) pollTransmissionInfo(
 		return transmissionInfo, nil
 	}
 
-	delay := time.Duration(queuePosition) * e.transmissionScheduler.deltaStage
-	e.lggr.Infow("Polling until slot or state change", "delay", delay, "deltaStage", e.transmissionScheduler.deltaStage)
+	delay := time.Duration(queuePosition) * e.transmissionScheduler.DeltaStage
+	e.lggr.Infow("Polling until slot or state change", "delay", delay, "deltaStage", e.transmissionScheduler.DeltaStage)
 
 	// setup timer so that we can poll until delta stage and alert if this early returned to have some metric for delta stage tweaks
 	attempt := 0

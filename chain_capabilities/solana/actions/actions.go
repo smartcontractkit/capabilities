@@ -16,6 +16,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
+	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/config"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
 )
@@ -30,9 +31,10 @@ type Solana struct {
 	reportSizeLimit          limits.BoundLimiter[commoncfg.Size]
 	beholderProcessor        beholder.ProtoProcessor
 	messageBuilder           *monitoring.MessageBuilder
+	transmissionScheduler    ts.TransmissionScheduler
 }
 
-func NewSolana(ctx context.Context, cfg *config.Config, s types.SolanaService, messageBuilder *monitoring.MessageBuilder, beholderProcessor beholder.ProtoProcessor, lggr logger.Logger, limitsFactory limits.Factory) (*Solana, error) {
+func NewSolana(ctx context.Context, cfg *config.Config, s types.SolanaService, messageBuilder *monitoring.MessageBuilder, beholderProcessor beholder.ProtoProcessor, lggr logger.Logger, limitsFactory limits.Factory, transmissionScheduler ts.TransmissionScheduler) (*Solana, error) {
 	client := newForwarderClient(s, lggr, cfg.CREForwarderAddress, cfg.CREForwarderState, cfg.Transmitter)
 	provider, err := newLogTransmissionInfoProvider(ctx, lggr, cfg.CREForwarderAddress, s)
 	if err != nil {
@@ -45,6 +47,7 @@ func NewSolana(ctx context.Context, cfg *config.Config, s types.SolanaService, m
 		transmissionInfoProvider: provider,
 		messageBuilder:           messageBuilder,
 		beholderProcessor:        beholderProcessor,
+		transmissionScheduler:    transmissionScheduler,
 	}
 
 	return sol, sol.initLimiters(limitsFactory)
