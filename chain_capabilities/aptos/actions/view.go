@@ -3,6 +3,7 @@ package actions
 import (
 	"context"
 	"fmt"
+	"math"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
@@ -30,7 +31,7 @@ func (s *Aptos) View(
 		return nil, NewUserError(fmt.Errorf("ViewRequest.Payload is required"))
 	}
 
-	payload, err := capabilityViewToRelayerPayload(input.Payload)
+	payload, err := aptostypes.ViewPayloadFromCapability(input.Payload)
 	if err != nil {
 		return nil, NewUserError(err)
 	}
@@ -38,13 +39,24 @@ func (s *Aptos) View(
 	request := ctypes.NewLockableToBlockRequest(
 		commonMon.RequestID(metadata.WorkflowExecutionID, metadata.ReferenceID),
 		func(ctx context.Context, chainHeight *ctypes.ChainHeight) ([]byte, error) {
-			if chainHeight == nil {
-				return nil, fmt.Errorf("chain height is nil")
+			// Aptos view requests use an explicit ledger version. If the caller does not specify one,
+			// the capability uses the consensus-locked latest height for deterministic reads.
+			ledgerVersion, err := resolveLedgerVersion(chainHeight, input.LedgerVersion)
+			if err != nil {
+				return nil, err
 			}
-			if chainHeight.Latest < 0 {
-				return nil, fmt.Errorf("unexpected negative chain height: %d", chainHeight.Latest)
+
+			if s.lggr != nil {
+				s.lggr.Debugw(
+					"Aptos view: resolved ledger version",
+					"consensus_latest", chainHeight.Latest,
+					"consensus_safe", chainHeight.Safe,
+					"consensus_finalized", chainHeight.Finalized,
+					"requested_ledger_version", input.LedgerVersion,
+					"selected_ledger_version", ledgerVersion,
+				)
 			}
-			ledgerVersion := uint64(chainHeight.Latest)
+
 			relayerReq := aptostypes.ViewRequest{
 				Payload:       payload,
 				LedgerVersion: &ledgerVersion,
@@ -71,114 +83,28 @@ func (s *Aptos) View(
 	}, nil
 }
 
-// capabilityViewToRelayerPayload converts the capability ViewPayload to the relayer ViewPayload.
-func capabilityViewToRelayerPayload(payload *aptoscap.ViewPayload) (*aptostypes.ViewPayload, error) {
-	if payload == nil {
-		return nil, fmt.Errorf("ViewRequest.Payload is required")
+func resolveLedgerVersion(chainHeight *ctypes.ChainHeight, requestedLedgerVersion *uint64) (uint64, error) {
+	if chainHeight == nil {
+		return 0, fmt.Errorf("chain height is nil")
 	}
-	if payload.Module == nil {
-		return nil, fmt.Errorf("ViewRequest.Payload.Module is required")
-	}
-	if payload.Function == "" {
-		return nil, fmt.Errorf("ViewRequest.Payload.Function is required")
-	}
-	if len(payload.Module.Address) > aptostypes.AccountAddressLength {
-		return nil, fmt.Errorf("module address too long: %d", len(payload.Module.Address))
+	if chainHeight.Latest < 0 {
+		return 0, fmt.Errorf("unexpected negative chain height: %d", chainHeight.Latest)
 	}
 
-	var moduleAddress aptostypes.AccountAddress
-	copy(moduleAddress[aptostypes.AccountAddressLength-len(payload.Module.Address):], payload.Module.Address)
-
-	argTypes := make([]aptostypes.TypeTag, 0, len(payload.ArgTypes))
-	for i, tag := range payload.ArgTypes {
-		converted, err := capabilityTypeTagToRelayer(tag)
-		if err != nil {
-			return nil, fmt.Errorf("invalid arg type at index %d: %w", i, err)
+	selected := chainHeight.Latest
+	if requestedLedgerVersion != nil {
+		if *requestedLedgerVersion > math.MaxInt64 {
+			return 0, fmt.Errorf("requested ledger version overflows int64: %d", *requestedLedgerVersion)
 		}
-		argTypes = append(argTypes, converted)
+		requested := int64(*requestedLedgerVersion)
+		if chainHeight.Latest < requested {
+			return 0, fmt.Errorf("requested ledger version %d is ahead of consensus latest %d", requested, chainHeight.Latest)
+		}
+		selected = requested
 	}
 
-	return &aptostypes.ViewPayload{
-		Module: aptostypes.ModuleID{
-			Address: moduleAddress,
-			Name:    payload.Module.Name,
-		},
-		Function: payload.Function,
-		ArgTypes: argTypes,
-		Args:     payload.Args,
-	}, nil
-}
-
-func capabilityTypeTagToRelayer(tag *aptoscap.TypeTag) (aptostypes.TypeTag, error) {
-	if tag == nil {
-		return aptostypes.TypeTag{}, fmt.Errorf("type tag is nil")
+	if selected < 0 {
+		return 0, fmt.Errorf("resolved negative ledger version: %d", selected)
 	}
-
-	switch tag.Kind {
-	case aptoscap.TypeTagKind_TYPE_TAG_KIND_BOOL:
-		return aptostypes.TypeTag{Value: aptostypes.BoolTag{}}, nil
-	case aptoscap.TypeTagKind_TYPE_TAG_KIND_U8:
-		return aptostypes.TypeTag{Value: aptostypes.U8Tag{}}, nil
-	case aptoscap.TypeTagKind_TYPE_TAG_KIND_U16:
-		return aptostypes.TypeTag{Value: aptostypes.U16Tag{}}, nil
-	case aptoscap.TypeTagKind_TYPE_TAG_KIND_U32:
-		return aptostypes.TypeTag{Value: aptostypes.U32Tag{}}, nil
-	case aptoscap.TypeTagKind_TYPE_TAG_KIND_U64:
-		return aptostypes.TypeTag{Value: aptostypes.U64Tag{}}, nil
-	case aptoscap.TypeTagKind_TYPE_TAG_KIND_U128:
-		return aptostypes.TypeTag{Value: aptostypes.U128Tag{}}, nil
-	case aptoscap.TypeTagKind_TYPE_TAG_KIND_U256:
-		return aptostypes.TypeTag{Value: aptostypes.U256Tag{}}, nil
-	case aptoscap.TypeTagKind_TYPE_TAG_KIND_ADDRESS:
-		return aptostypes.TypeTag{Value: aptostypes.AddressTag{}}, nil
-	case aptoscap.TypeTagKind_TYPE_TAG_KIND_SIGNER:
-		return aptostypes.TypeTag{Value: aptostypes.SignerTag{}}, nil
-	case aptoscap.TypeTagKind_TYPE_TAG_KIND_VECTOR:
-		vector := tag.GetVector()
-		if vector == nil {
-			return aptostypes.TypeTag{}, fmt.Errorf("vector tag missing vector value")
-		}
-		elementType, err := capabilityTypeTagToRelayer(vector.ElementType)
-		if err != nil {
-			return aptostypes.TypeTag{}, err
-		}
-		return aptostypes.TypeTag{Value: aptostypes.VectorTag{ElementType: elementType}}, nil
-	case aptoscap.TypeTagKind_TYPE_TAG_KIND_STRUCT:
-		structTag := tag.GetStruct()
-		if structTag == nil {
-			return aptostypes.TypeTag{}, fmt.Errorf("struct tag missing struct value")
-		}
-		if len(structTag.Address) > aptostypes.AccountAddressLength {
-			return aptostypes.TypeTag{}, fmt.Errorf("struct address too long: %d", len(structTag.Address))
-		}
-		var structAddress aptostypes.AccountAddress
-		copy(structAddress[aptostypes.AccountAddressLength-len(structTag.Address):], structTag.Address)
-		typeParams := make([]aptostypes.TypeTag, 0, len(structTag.TypeParams))
-		for i, tp := range structTag.TypeParams {
-			converted, err := capabilityTypeTagToRelayer(tp)
-			if err != nil {
-				return aptostypes.TypeTag{}, fmt.Errorf("invalid struct type param at index %d: %w", i, err)
-			}
-			typeParams = append(typeParams, converted)
-		}
-		return aptostypes.TypeTag{
-			Value: aptostypes.StructTag{
-				Address:    structAddress,
-				Module:     structTag.Module,
-				Name:       structTag.Name,
-				TypeParams: typeParams,
-			},
-		}, nil
-	case aptoscap.TypeTagKind_TYPE_TAG_KIND_GENERIC:
-		generic := tag.GetGeneric()
-		if generic == nil {
-			return aptostypes.TypeTag{}, fmt.Errorf("generic tag missing generic value")
-		}
-		if generic.Index > 0xFFFF {
-			return aptostypes.TypeTag{}, fmt.Errorf("generic type index out of range: %d", generic.Index)
-		}
-		return aptostypes.TypeTag{Value: aptostypes.GenericTag{Index: uint16(generic.Index)}}, nil
-	default:
-		return aptostypes.TypeTag{}, fmt.Errorf("unsupported type tag kind: %v", tag.Kind)
-	}
+	return uint64(selected), nil
 }

@@ -25,10 +25,10 @@ type Provider struct {
 	pollPeriod            time.Duration
 	ledgerVersionProvider LedgerVersionProvider
 
-	mutex         sync.RWMutex
-	latestVersion int64
-	safeVersion   int64
-	finalizedVer  int64
+	mutex           sync.RWMutex
+	latestHeight    int64
+	safeHeight      int64
+	finalizedHeight int64
 }
 
 func NewProvider(lggr logger.Logger, pollPeriod time.Duration, ledgerVersionProvider LedgerVersionProvider) *Provider {
@@ -85,29 +85,49 @@ func (p *Provider) pollHead(ctx context.Context) {
 	}
 
 	latest := int64(ledgerVersion)
+
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
-	p.latestVersion = max(p.latestVersion, latest)
-	p.safeVersion = max(p.safeVersion, p.latestVersion)
-	p.finalizedVer = max(p.finalizedVer, p.safeVersion)
+
+	prevLatest := p.latestHeight
+	prevSafe := p.safeHeight
+	prevFinalized := p.finalizedHeight
+
+	// Aptos has single-shot finality; latest/safe/finalized should track together.
+	next := max(p.latestHeight, latest)
+	p.latestHeight = next
+	p.safeHeight = next
+	p.finalizedHeight = next
+
+	if p.latestHeight != prevLatest || p.safeHeight != prevSafe || p.finalizedHeight != prevFinalized {
+		p.lggr.Debugw(
+			"updated Aptos consensus heights",
+			"prev_latest", prevLatest,
+			"prev_safe", prevSafe,
+			"prev_finalized", prevFinalized,
+			"new_latest", p.latestHeight,
+			"new_safe", p.safeHeight,
+			"new_finalized", p.finalizedHeight,
+		)
+	}
 }
 
 func (p *Provider) GetLatest() int64 {
 	p.mutex.RLock()
 	defer p.mutex.RUnlock()
-	return p.latestVersion
+	return p.latestHeight
 }
 
 func (p *Provider) GetSafe() int64 {
 	p.mutex.RLock()
 	defer p.mutex.RUnlock()
-	return p.safeVersion
+	return p.safeHeight
 }
 
 func (p *Provider) GetFinalized() int64 {
 	p.mutex.RLock()
 	defer p.mutex.RUnlock()
-	return p.finalizedVer
+	return p.finalizedHeight
 }
 
 func (p *Provider) String() string {

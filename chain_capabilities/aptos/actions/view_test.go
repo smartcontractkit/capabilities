@@ -114,10 +114,65 @@ func TestView_FailsOnNegativeConsensusHeight(t *testing.T) {
 	require.Contains(t, err.Error(), "unexpected negative chain height")
 }
 
-func TestCapabilityViewToRelayerPayload_TypeTagConversion(t *testing.T) {
+func TestView_UsesRequestedLedgerVersionWhenProvided(t *testing.T) {
 	t.Parallel()
 
-	payload, err := capabilityViewToRelayerPayload(&aptoscap.ViewPayload{
+	svc := typesmocks.NewAptosService(t)
+	svc.On("View", mock.Anything, mock.AnythingOfType("aptos.ViewRequest")).
+		Run(func(args mock.Arguments) {
+			req := args.Get(1).(aptostypes.ViewRequest)
+			require.NotNil(t, req.LedgerVersion)
+			require.Equal(t, uint64(300), *req.LedgerVersion)
+		}).
+		Return(&aptostypes.ViewReply{Data: []byte(`["ok"]`)}, nil).
+		Once()
+
+	a := &Aptos{
+		aptosService:     svc,
+		ConsensusHandler: &testConsensusHandler{height: &ctypes.ChainHeight{Latest: 321, Safe: 321, Finalized: 321}},
+	}
+
+	requested := uint64(300)
+	_, err := a.View(context.Background(), capabilities.RequestMetadata{
+		WorkflowExecutionID: "weid",
+		ReferenceID:         "step-id",
+	}, &aptoscap.ViewRequest{
+		Payload: &aptoscap.ViewPayload{
+			Module:   &aptoscap.ModuleID{Address: []byte{1}, Name: "coin"},
+			Function: "name",
+		},
+		LedgerVersion: &requested,
+	})
+	require.NoError(t, err)
+}
+
+func TestView_FailsWhenRequestedLedgerVersionIsAheadOfConsensus(t *testing.T) {
+	t.Parallel()
+
+	a := &Aptos{
+		aptosService:     typesmocks.NewAptosService(t),
+		ConsensusHandler: &testConsensusHandler{height: &ctypes.ChainHeight{Latest: 321, Safe: 321, Finalized: 321}},
+	}
+
+	requested := uint64(322)
+	_, err := a.View(context.Background(), capabilities.RequestMetadata{
+		WorkflowExecutionID: "weid",
+		ReferenceID:         "step-id",
+	}, &aptoscap.ViewRequest{
+		Payload: &aptoscap.ViewPayload{
+			Module:   &aptoscap.ModuleID{Address: []byte{1}, Name: "coin"},
+			Function: "name",
+		},
+		LedgerVersion: &requested,
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "ahead of consensus latest")
+}
+
+func TestCapabilityViewPayloadConversion_TypeTagConversion(t *testing.T) {
+	t.Parallel()
+
+	payload, err := aptostypes.ViewPayloadFromCapability(&aptoscap.ViewPayload{
 		Module: &aptoscap.ModuleID{
 			Address: []byte{0x01},
 			Name:    "coin",
@@ -144,10 +199,10 @@ func TestCapabilityViewToRelayerPayload_TypeTagConversion(t *testing.T) {
 	require.True(t, isVector)
 }
 
-func TestCapabilityViewToRelayerPayload_RejectsInvalidInput(t *testing.T) {
+func TestCapabilityViewPayloadConversion_RejectsInvalidInput(t *testing.T) {
 	t.Parallel()
 
-	_, err := capabilityViewToRelayerPayload(&aptoscap.ViewPayload{
+	_, err := aptostypes.ViewPayloadFromCapability(&aptoscap.ViewPayload{
 		Module: &aptoscap.ModuleID{
 			Address: make([]byte, aptostypes.AccountAddressLength+1),
 			Name:    "coin",

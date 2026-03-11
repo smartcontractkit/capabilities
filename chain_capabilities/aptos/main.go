@@ -49,9 +49,10 @@ func capabilityID(chainSelector uint64) string {
 type capabilityGRPCService struct {
 	chainSelector uint64
 	capability
-	lggr        logger.Logger
-	capRegistry core.CapabilitiesRegistry
-	stopCh      chan struct{}
+	lggr          logger.Logger
+	capRegistry   core.CapabilitiesRegistry
+	limitsFactory limits.Factory
+	stopCh        chan struct{}
 }
 
 type capability struct {
@@ -67,8 +68,9 @@ var _ aptoscapserver.ClientCapability = &capabilityGRPCService{}
 func main() {
 	loopserver.ServeNew(CapabilityName, func(s *loop.Server) loop.StandardCapabilities {
 		return aptoscapserver.NewClientServer(&capabilityGRPCService{
-			lggr:   s.Logger.Named(CapabilityName),
-			stopCh: make(chan struct{}),
+			lggr:          s.Logger.Named(CapabilityName),
+			limitsFactory: s.LimitsFactory,
+			stopCh:        make(chan struct{}),
 		})
 	})
 }
@@ -138,6 +140,7 @@ func (c *capabilityGRPCService) Ready() error {
 
 func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
 	c.lggr.Infof("Initialising %s", CapabilityName)
+	c.capRegistry = dependencies.CapabilityRegistry
 
 	cfg, err := c.unmarshalConfig(dependencies.Config)
 	if err != nil {
@@ -190,7 +193,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return fmt.Errorf("error when creating oracle: %w", err)
 	}
 
-	c.Aptos, err = actions.NewAptos(cfg, aptosService, c.consensusHandler, c.lggr, limits.Factory{Logger: c.lggr})
+	c.Aptos, err = actions.NewAptos(cfg, aptosService, c.consensusHandler, c.lggr, c.limitsFactory)
 	if err != nil {
 		return fmt.Errorf("failed to create Aptos actions: %w", err)
 	}
@@ -251,7 +254,8 @@ func (c *capabilityGRPCService) unimplementedMethod(method string) caperrors.Err
 
 func (c *capabilityGRPCService) setSelector(cfg *config.Config) error {
 	if cfg.IsLocal {
-		c.chainSelector = chain_selectors.TEST_22222222222222222222222222222222222222222222.Selector
+		// Aptos local CRE uses chain-id 4 and the standard aptos-localnet selector.
+		c.chainSelector = chain_selectors.APTOS_LOCALNET.Selector
 		return nil
 	}
 
@@ -271,6 +275,9 @@ func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Confi
 	var cfg config.Config
 	if err := json.Unmarshal([]byte(configStr), &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse Aptos capability config: %s err: %w", configStr, err)
+	}
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid Aptos capability config: %w", err)
 	}
 	return &cfg, nil
 }

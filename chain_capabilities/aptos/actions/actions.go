@@ -22,9 +22,10 @@ type Aptos struct {
 	aptosService     types.AptosService
 	ConsensusHandler ConsensusHandler
 	lggr             logger.SugaredLogger
+	limitsFactory    limits.Factory
 }
 
-func NewAptos(_ *config.Config, aptosService types.AptosService, consensusHandler ConsensusHandler, lggr logger.Logger, _ limits.Factory) (*Aptos, error) {
+func NewAptos(_ *config.Config, aptosService types.AptosService, consensusHandler ConsensusHandler, lggr logger.Logger, limitsFactory limits.Factory) (*Aptos, error) {
 	if aptosService == nil {
 		return nil, fmt.Errorf("aptos service is required")
 	}
@@ -36,6 +37,7 @@ func NewAptos(_ *config.Config, aptosService types.AptosService, consensusHandle
 		aptosService:     aptosService,
 		ConsensusHandler: consensusHandler,
 		lggr:             logger.Sugared(lggr),
+		limitsFactory:    limitsFactory,
 	}
 
 	return a, nil

@@ -1,16 +1,19 @@
 package config
 
 import (
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
+
+	aptossdk "github.com/aptos-labs/aptos-go-sdk"
 )
 
 type Config struct {
-	CREForwarderAddress [32]byte // 32-byte Aptos account address of forwarder module
-	Network             string   `json:"network"`
-	ChainID             string   `json:"chainId"`
-	IsLocal             bool     `json:"isLocal,omitempty"` // Run against local node (for local CRE runs only)
+	CREForwarderAddress aptossdk.AccountAddress // Aptos account address of forwarder module
+	Network             string                  `json:"network"`
+	ChainID             string                  `json:"chainId"`
+	IsLocal             bool                    `json:"isLocal,omitempty"` // Run against local node (for local CRE runs only)
 }
 
 func (c *Config) UnmarshalJSON(bs []byte) error {
@@ -30,36 +33,37 @@ func (c *Config) UnmarshalJSON(bs []byte) error {
 	c.IsLocal = cfg.IsLocal
 	c.Network = cfg.Network
 
-	addr, err := parseHexAddress(cfg.CREForwarderAddress)
+	addr, err := parseAddress(cfg.CREForwarderAddress)
 	if err != nil {
 		return fmt.Errorf("invalid forwarder address: %w", err)
 	}
 	c.CREForwarderAddress = addr
 
+	return c.Validate()
+}
+
+func (c *Config) Validate() error {
+	if strings.TrimSpace(c.Network) == "" {
+		return fmt.Errorf("network is required")
+	}
+	if strings.TrimSpace(c.ChainID) == "" {
+		return fmt.Errorf("chainId is required")
+	}
+	if !c.IsLocal {
+		if _, err := strconv.ParseUint(c.ChainID, 10, 64); err != nil {
+			return fmt.Errorf("chainId must be an unsigned integer for Aptos: %w", err)
+		}
+	}
 	return nil
 }
 
-func parseHexAddress(s string) ([32]byte, error) {
-	// Strip optional 0x prefix
-	if len(s) >= 2 && s[:2] == "0x" {
-		s = s[2:]
+func parseAddress(s string) (aptossdk.AccountAddress, error) {
+	if strings.TrimSpace(s) == "" {
+		return aptossdk.AccountAddress{}, fmt.Errorf("address is required")
 	}
-
-	// Pad left with zeros if needed (Aptos addresses can be short)
-	for len(s) < 64 {
-		s = "0" + s
+	var addr aptossdk.AccountAddress
+	if err := addr.ParseStringRelaxed(s); err != nil {
+		return aptossdk.AccountAddress{}, fmt.Errorf("failed to parse Aptos address: %w", err)
 	}
-
-	b, err := hex.DecodeString(s)
-	if err != nil {
-		return [32]byte{}, fmt.Errorf("failed to decode hex address: %w", err)
-	}
-
-	if len(b) != 32 {
-		return [32]byte{}, fmt.Errorf("expected 32 bytes, got %d", len(b))
-	}
-
-	var addr [32]byte
-	copy(addr[:], b)
 	return addr, nil
 }
