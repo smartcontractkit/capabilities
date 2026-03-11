@@ -164,8 +164,8 @@ func (fc *forwarderClient) GetTransmissionInfo(ctx context.Context, transmission
 		reportID,
 	)
 	if err != nil {
-		fc.lggr.Errorw("failed to encode GetTransmissionState", "error", err)
-		return TransmissionInfo{}, fmt.Errorf("failed to encode GetTransmissionState: %w", err)
+		fc.lggr.Errorw("failed to encode GetTransmitter", "error", err)
+		return TransmissionInfo{}, fmt.Errorf("failed to encode GetTransmitter: %w", err)
 	}
 
 	// Call the view function via AptosService
