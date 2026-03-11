@@ -137,7 +137,8 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 
 	// TODO: add org resolver
 	c.triggerService, err = trigger.NewLogTriggerService(evmRelayer, trigger.NewLogTriggerStore(), c.lggr, processor, messageBuilder,
-		cfg.LogTriggerPollInterval, cfg.LogTriggerSendChannelBufferSize, cfg.LogTriggerLimitQueryLogSize, c.limitsFactory, dependencies.OrgResolver)
+		cfg.LogTriggerPollInterval, cfg.LogTriggerSendChannelBufferSize, cfg.LogTriggerLimitQueryLogSize, c.limitsFactory,
+		dependencies.OrgResolver, dependencies.TriggerEventStore)
 	if err != nil {
 		return fmt.Errorf("error when creating trigger: %w", err)
 	}
@@ -356,4 +357,8 @@ func (c *capabilityGRPCService) RegisterLogTrigger(ctx context.Context, triggerI
 
 func (c *capabilityGRPCService) UnregisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) caperrors.Error {
 	return c.triggerService.UnregisterLogTrigger(ctx, triggerID, metadata, input)
+}
+
+func (c *capabilityGRPCService) AckEvent(ctx context.Context, triggerID string, eventID string, method string) caperrors.Error {
+	return c.triggerService.AckEvent(ctx, triggerID, eventID)
 }

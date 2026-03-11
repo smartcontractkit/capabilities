@@ -33,6 +33,7 @@ import (
 	"github.com/smartcontractkit/chainlink-solana/pkg/solana/client"
 	"github.com/smartcontractkit/chainlink-solana/pkg/solana/config"
 	"github.com/smartcontractkit/chainlink-solana/pkg/solana/logpoller"
+	lptypes "github.com/smartcontractkit/chainlink-solana/pkg/solana/logpoller/types"
 	solanamocks "github.com/smartcontractkit/chainlink-solana/pkg/solana/mocks"
 	solanatesting "github.com/smartcontractkit/chainlink-solana/pkg/solana/testing"
 )
@@ -538,6 +539,109 @@ func TestSolanaLogTrigger_NoEventsReceived(t *testing.T) {
 	require.NoError(t, capErr)
 }
 
+func TestSolanaLogTrigger_CPIEvent(t *testing.T) {
+	dbURL := sqltest.TestURL(t)
+	db := sqltest.NewDB(t, dbURL)
+	lggr := logger.Test(t)
+
+	cfg := config.NewDefault()
+	rpcURL, programID := setupValidatorWithLocalContract(t)
+	sc, err := client.NewClient(rpcURL, cfg, 5*time.Second, lggr)
+	require.NoError(t, err)
+
+	mc := client.NewMultiClient(func(context.Context) (client.ReaderWriter, error) {
+		return sc, nil
+	})
+
+	chainID, err := mc.ChainID(t.Context())
+	require.NoError(t, err)
+	orm := logpoller.NewORM(chainID.String(), db, lggr)
+	lp, err := logpoller.New(logger.Sugared(lggr), orm, mc, config.NewDefault(), chainID.String())
+	require.NoError(t, err)
+
+	require.NoError(t, lp.Start(t.Context()))
+
+	triggerStore := NewSolanaLogTriggerStore()
+
+	chain := newMockChain(t, lp, sc)
+	rel := relayer.NewRelayer(lggr, chain, nil)
+
+	triggerSvc, err := NewLogTriggerService(LogTriggerServiceOpts{
+		SolanaService:                   rel,
+		Logger:                          lggr,
+		Triggers:                        triggerStore,
+		LogTriggerPollInterval:          1 * time.Second,
+		LogTriggerSendChannelBufferSize: 100,
+		Retention:                       24 * time.Hour,
+		MaxLogsKept:                     1000,
+		LimitsFactory:                   limits.Factory{Logger: lggr},
+		BeholderProcessor:               test.NopBeholderProcessor{},
+		MessageBuilder:                  &monitoring.MessageBuilder{},
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, triggerSvc.Start(t.Context()))
+
+	contractIDL, err := contracts.LoadLogReadTestIDL()
+	require.NoError(t, err)
+
+	address, err := solana.PublicKeyFromBase58(programID)
+	require.NoError(t, err)
+
+	filterRequest := &solanacappb.FilterLogTriggerRequest{
+		Name:            "test_trigger_cpi",
+		Address:         address[:],
+		EventName:       "TestEvent",
+		ContractIdlJson: []byte(contractIDL),
+		CpiFilterConfig: &solanacappb.CPIFilterConfig{
+			DestAddress: address[:],
+			MethodName:  []byte(lptypes.AnchorCPIMethodName),
+		},
+	}
+
+	meta := capabilities.RequestMetadata{
+		WorkflowID:    "integration-test-workflow-cpi",
+		WorkflowOwner: "integration-test-owner",
+	}
+	logCh, capErr := triggerSvc.RegisterLogTrigger(t.Context(), "cpi_test", meta, filterRequest)
+	require.NoError(t, capErr)
+	require.NotNil(t, logCh)
+
+	err = triggerSvc.Ready()
+	require.NoError(t, err)
+
+	time.Sleep(100 * time.Millisecond)
+
+	signerKeypair, err := solana.NewRandomPrivateKey()
+	require.NoError(t, err)
+	signer := signerKeypair
+
+	rpcClient := rpc.New(rpcURL)
+	utils.FundAccounts(t, []solana.PrivateKey{signer}, rpcClient)
+
+	time.Sleep(1 * time.Second)
+
+	t.Logf("Emitting CPI event from program: %s", programID)
+	_, err = emitLogReadTestCPIEvent(t, sc, programID, signer, 99)
+	require.NoError(t, err, "emit CPI test event should succeed with funded account")
+
+	select {
+	case response := <-logCh:
+		require.NotNil(t, response.Trigger)
+		require.Equal(t, programID, solana.PublicKey(response.Trigger.Address).String())
+		require.Contains(t, string(response.Trigger.Data), "Hello, CPI!")
+		t.Logf("Successfully received CPI event: %+v", response.Trigger)
+	case <-time.After(30 * time.Second):
+		t.Fatal("Timeout waiting for CPI event")
+	}
+
+	capErr = triggerSvc.UnregisterLogTrigger(t.Context(), "cpi_test", meta, filterRequest)
+	require.NoError(t, capErr)
+
+	require.NoError(t, triggerSvc.Close())
+	_ = lp.Close()
+}
+
 func TestSolanaLogTrigger_FilterExcludesAllEvents(t *testing.T) {
 	dbURL := sqltest.TestURL(t)
 	db := sqltest.NewDB(t, dbURL)
@@ -649,9 +753,29 @@ func TestSolanaLogTrigger_FilterExcludesAllEvents(t *testing.T) {
 
 const logReadTestProgramID = "J1zQwrBNBngz26jRPNWsUSZMHJwBwpkoDitXRV95LdK4"
 
+// defaultLogReadTestSoPath is the path to the locally built log_read_test.so when
+// chainlink-solana is a sibling of capabilities (e.g. repos/{capabilities,chainlink-solana}).
+const defaultLogReadTestSoPath = "/Users/silaslenihan/Desktop/repos/chainlink-solana/contracts/target/deploy/log_read_test.so"
+
 func setupValidatorAndTestContract(t *testing.T) (string, string) {
 	t.Helper()
 	programPath := downloadLogReadTestProgram(t)
+	return setupValidatorWithProgram(t, programPath)
+}
+
+func setupValidatorWithLocalContract(t *testing.T) (string, string) {
+	t.Helper()
+	programPath := os.Getenv("LOG_READ_TEST_SO_PATH")
+	if programPath == "" {
+		programPath = defaultLogReadTestSoPath
+	}
+	programPath = filepath.Clean(programPath)
+	require.FileExists(t, programPath, "log_read_test.so not found at %s (build with: cd chainlink-solana && make build_contracts)", programPath)
+	return setupValidatorWithProgram(t, programPath)
+}
+
+func setupValidatorWithProgram(t *testing.T, programPath string) (string, string) {
+	t.Helper()
 	flags := []string{
 		"--warp-slot", "42",
 		"--upgradeable-program", logReadTestProgramID, programPath, "11111111111111111111111111111112",
@@ -793,16 +917,44 @@ func downloadProgramArtifacts(ctx context.Context, url string, targetDir string)
 }
 
 func emitLogReadTestEvent(t *testing.T, client *client.Client, programID string, signer solana.PrivateKey, value uint64) (solana.Signature, error) {
-	programPubkey := solana.MustPublicKeyFromBase58(programID)
-	logreadtest.ProgramID = programPubkey
-
 	instruction, err := logreadtest.NewCreateLogInstruction(
 		value,
 		signer.PublicKey(),
 		solana.SystemProgramID,
 	)
+	if err != nil {
+		return solana.Signature{}, fmt.Errorf("failed to build instruction: %w", err)
+	}
 
-	// Get recent blockhash from the client
+	return sendInstruction(t, client, programID, signer, instruction, value)
+}
+
+func emitLogReadTestCPIEvent(t *testing.T, client *client.Client, programID string, signer solana.PrivateKey, value uint64) (solana.Signature, error) {
+	programPubkey := solana.MustPublicKeyFromBase58(programID)
+
+	eventAuthority, _, err := solana.FindProgramAddress(
+		[][]byte{[]byte("__event_authority")},
+		programPubkey,
+	)
+	if err != nil {
+		return solana.Signature{}, fmt.Errorf("failed to derive event authority PDA: %w", err)
+	}
+
+	instruction, err := logreadtest.NewCreateLogCpiInstruction(
+		value,
+		signer.PublicKey(),
+		solana.SystemProgramID,
+		eventAuthority,
+		programPubkey,
+	)
+	if err != nil {
+		return solana.Signature{}, fmt.Errorf("failed to build CPI instruction: %w", err)
+	}
+
+	return sendInstruction(t, client, programID, signer, instruction, value)
+}
+
+func sendInstruction(t *testing.T, client *client.Client, programID string, signer solana.PrivateKey, instruction solana.Instruction, value uint64) (solana.Signature, error) {
 	blockhash, err := client.LatestBlockhash(context.Background())
 	if err != nil {
 		return solana.Signature{}, fmt.Errorf("failed to get recent blockhash: %w", err)
@@ -827,7 +979,6 @@ func emitLogReadTestEvent(t *testing.T, client *client.Client, programID string,
 		return solana.Signature{}, fmt.Errorf("failed to sign transaction: %w", err)
 	}
 
-	// Actually send the transaction
 	sig, err := client.SendTx(context.Background(), tx)
 	if err != nil {
 		return solana.Signature{}, fmt.Errorf("failed to send transaction: %w", err)
@@ -835,7 +986,6 @@ func emitLogReadTestEvent(t *testing.T, client *client.Client, programID string,
 
 	t.Logf("Sent transaction to emit log-read-test event (value=%d) from program %s, signature: %s", value, programID, sig.String())
 
-	// Wait a bit for the transaction to be processed
 	time.Sleep(2 * time.Second)
 
 	return sig, nil
