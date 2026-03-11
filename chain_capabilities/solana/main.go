@@ -150,7 +150,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 
 	var scheduler ts.TransmissionScheduler
 	if cfg.DeltaStage > 0 {
-		scheduler, err = c.initialiseTransmissionScheduler(ctx, dependencies.CapabilityRegistry, cfg.DeltaStage, cfg.IsLocal)
+		scheduler, err = c.initialiseTransmissionScheduler(ctx, dependencies.CapabilityRegistry, cfg.DeltaStage)
 		if err != nil {
 			return fmt.Errorf("failed to initialize transmission scheduler: %w", err)
 		}
@@ -250,12 +250,7 @@ func (c *capabilityGRPCService) initialiseTransmissionScheduler(
 	ctx context.Context,
 	capRegistry core.CapabilitiesRegistry,
 	deltaStage time.Duration,
-	isLocal bool,
 ) (ts.TransmissionScheduler, error) {
-	if isLocal {
-		return ts.TransmissionScheduler{}, nil
-	}
-
 	err := c.initMyDON(ctx, capRegistry)
 	if err != nil {
 		return ts.TransmissionScheduler{}, fmt.Errorf("failed to initialize capability with my don info: %w", err)
