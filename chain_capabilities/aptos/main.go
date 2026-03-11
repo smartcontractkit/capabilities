@@ -28,8 +28,6 @@ const (
 	CapabilityName    = "aptos"
 	CapabilityVersion = "1.0.0"
 
-	logPrefix = "AptosCapabilityLog: "
-
 	// TODO: PLEX-2598 make configurable
 	defaultDeltaStage = 15 * time.Second
 )
@@ -100,7 +98,7 @@ func (c *capabilityGRPCService) Ready() error {
 }
 
 func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
-	c.lggr.Debugw(logPrefix+"Initialising capability",
+	c.lggr.Debugw("Initialising capability",
 		"capability", CapabilityName,
 		"rawConfig", dependencies.Config,
 		"hasCapabilityRegistry", dependencies.CapabilityRegistry != nil,
@@ -109,10 +107,10 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 
 	cfg, err := c.unmarshalConfig(dependencies.Config)
 	if err != nil {
-		c.lggr.Errorw(logPrefix+"failed to unmarshal config", "error", err)
+		c.lggr.Errorw("failed to unmarshal config", "error", err)
 		return fmt.Errorf("failed to unmarshal config: %w", err)
 	}
-	c.lggr.Debugw(logPrefix+"Unmarshalled config",
+	c.lggr.Debugw("Unmarshalled config",
 		"network", cfg.Network,
 		"chainID", cfg.ChainID,
 		"deltaStage", cfg.DeltaStage,
@@ -120,52 +118,52 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	)
 
 	relayID := types.NewRelayID(cfg.Network, cfg.ChainID)
-	c.lggr.Debugw(logPrefix+"Created relay ID", "relayID", relayID)
+	c.lggr.Debugw("Created relay ID", "relayID", relayID)
 
 	relayer, err := dependencies.RelayerSet.Get(ctx, relayID)
 	if err != nil {
-		c.lggr.Errorw(logPrefix+"failed to fetch relayer", "chainID", cfg.ChainID, "relayID", relayID, "error", err)
+		c.lggr.Errorw("failed to fetch relayer", "chainID", cfg.ChainID, "relayID", relayID, "error", err)
 		return fmt.Errorf("failed to fetch relayer for chainID %s from relayerSet: %w", cfg.ChainID, err)
 	}
-	c.lggr.Debugw(logPrefix+"Fetched relayer from relayer set", "relayID", relayID)
+	c.lggr.Debugw("Fetched relayer from relayer set", "relayID", relayID)
 
 	aptosService, err := relayer.Aptos()
 	if err != nil {
-		c.lggr.Errorw(logPrefix+"failed to get aptos service from relayer", "error", err)
+		c.lggr.Errorw("failed to get aptos service from relayer", "error", err)
 		return fmt.Errorf("failed to get aptos service: %w", err)
 	}
-	c.lggr.Debugw(logPrefix + "Got Aptos service from relayer")
+	c.lggr.Debugw("Got Aptos service from relayer")
 
 	if err := c.setSelector(cfg); err != nil {
-		c.lggr.Errorw(logPrefix+"failed to set chain selector", "error", err)
+		c.lggr.Errorw("failed to set chain selector", "error", err)
 		return err
 	}
 	c.id = capabilityID(c.chainSelector)
-	c.lggr.Debugw(logPrefix+"Set chain selector and capability ID",
+	c.lggr.Debugw("Set chain selector and capability ID",
 		"chainSelector", c.chainSelector,
 		"capabilityID", c.id,
 	)
 
 	if err := c.initMyDON(ctx, dependencies.CapabilityRegistry); err != nil {
-		c.lggr.Errorw(logPrefix+"failed to init DON", "error", err)
+		c.lggr.Errorw("failed to init DON", "error", err)
 		return fmt.Errorf("failed to init DON: %w", err)
 	}
-	c.lggr.Debugw(logPrefix+"Initialised DON", "donID", c.DON.ID, "donName", c.DON.Name, "members", len(c.DON.Members), "F", c.DON.F)
+	c.lggr.Debugw("Initialised DON", "donID", c.DON.ID, "donName", c.DON.Name, "members", len(c.DON.Members), "F", c.DON.F)
 
 	p2pConfig := cfg.P2PToTransmitterMap
 	if len(p2pConfig) > 0 {
-		c.lggr.Debugw(logPrefix+"p2pToTransmitterMap found in JSON config",
+		c.lggr.Debugw("p2pToTransmitterMap found in JSON config",
 			"entries", len(p2pConfig), "p2pConfig", p2pConfig,
 		)
 	} else {
-		c.lggr.Debugw(logPrefix + "p2pToTransmitterMap not in JSON config, falling back to capReg gRPC")
+		c.lggr.Debugw("p2pToTransmitterMap not in JSON config, falling back to capReg gRPC")
 		var fetchErr error
 		p2pConfig, fetchErr = c.fetchP2PConfig(ctx, dependencies.CapabilityRegistry)
 		if fetchErr != nil {
-			c.lggr.Errorw(logPrefix+"failed to fetch p2p config from capReg", "error", fetchErr)
+			c.lggr.Errorw("failed to fetch p2p config from capReg", "error", fetchErr)
 			return fmt.Errorf("failed to fetch p2p config: %w", fetchErr)
 		}
-		c.lggr.Debugw(logPrefix+"p2pToTransmitterMap fetched from capReg specConfig",
+		c.lggr.Debugw("p2pToTransmitterMap fetched from capReg specConfig",
 			"entries", len(p2pConfig), "p2pConfig", p2pConfig,
 		)
 	}
@@ -175,19 +173,19 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	}
 	scheduler, err := c.initialiseTransmissionScheduler(ctx, dependencies.CapabilityRegistry, cfg.DeltaStage, p2pConfig)
 	if err != nil {
-		c.lggr.Errorw(logPrefix+"failed to initialize transmission scheduler", "error", err)
+		c.lggr.Errorw("failed to initialize transmission scheduler", "error", err)
 		return fmt.Errorf("failed to initialize transmission scheduler: %w", err)
 	}
-	c.lggr.Debugw(logPrefix+"Initialised transmission scheduler", "deltaStage", cfg.DeltaStage)
+	c.lggr.Debugw("Initialised transmission scheduler", "deltaStage", cfg.DeltaStage)
 
 	c.Aptos, err = actions.NewAptos(cfg, p2pConfig, aptosService, c.lggr, limits.Factory{Logger: c.lggr}, scheduler)
 	if err != nil {
-		c.lggr.Errorw(logPrefix+"failed to create Aptos actions", "error", err)
+		c.lggr.Errorw("failed to create Aptos actions", "error", err)
 		return fmt.Errorf("failed to create Aptos actions: %w", err)
 	}
-	c.lggr.Debugw(logPrefix + "Created Aptos actions")
+	c.lggr.Debugw("Created Aptos actions")
 
-	c.lggr.Infof(logPrefix+"Successfully initialised %s", CapabilityName)
+	c.lggr.Infof("Successfully initialised %s", CapabilityName)
 	return nil
 }
 
@@ -206,12 +204,12 @@ func (c *capabilityGRPCService) Infos(ctx context.Context) ([]capabilities.Capab
 func (c *capabilityGRPCService) setSelector(cfg *config.Config) error {
 	chainID, err := strconv.ParseUint(cfg.ChainID, 10, 64)
 	if err != nil {
-		c.lggr.Errorw(logPrefix+"failed to parse chainID", "chainID", cfg.ChainID, "error", err)
+		c.lggr.Errorw("failed to parse chainID", "chainID", cfg.ChainID, "error", err)
 		return fmt.Errorf("failed to parse chainID: %w", err)
 	}
 	cs, ok := chain_selectors.AptosChainIdToChainSelector()[chainID]
 	if !ok {
-		c.lggr.Errorw(logPrefix+"chain selector not found", "chainID", cfg.ChainID)
+		c.lggr.Errorw("chain selector not found", "chainID", cfg.ChainID)
 		return fmt.Errorf("chain selector not found for chainID: %s", cfg.ChainID)
 	}
 	c.chainSelector = cs
@@ -222,7 +220,7 @@ func (c *capabilityGRPCService) setSelector(cfg *config.Config) error {
 func (c *capabilityGRPCService) initMyDON(ctx context.Context, registry core.CapabilitiesRegistry) error {
 	localNode, err := registry.LocalNode(ctx)
 	if err != nil {
-		c.lggr.Errorw(logPrefix+"failed to get local node", "error", err)
+		c.lggr.Errorw("failed to get local node", "error", err)
 		return fmt.Errorf("failed to receiver local node: %w", err)
 	}
 
@@ -230,7 +228,7 @@ func (c *capabilityGRPCService) initMyDON(ctx context.Context, registry core.Cap
 
 	donsWithNodes, err := registry.DONsForCapability(ctx, c.id)
 	if err != nil {
-		c.lggr.Errorw(logPrefix+"failed getting DONs for capability", "capabilityID", c.id, "error", err)
+		c.lggr.Errorw("failed getting DONs for capability", "capabilityID", c.id, "error", err)
 		return fmt.Errorf("failed getting dons for capability: %w", err)
 	}
 
@@ -243,7 +241,7 @@ func (c *capabilityGRPCService) initMyDON(ctx context.Context, registry core.Cap
 	}
 
 	if len(dons) == 0 {
-		c.lggr.Errorw(logPrefix+"no DON found for local peer", "peerID", localNode.PeerID.String(), "capabilityID", c.id)
+		c.lggr.Errorw("no DON found for local peer", "peerID", localNode.PeerID.String(), "capabilityID", c.id)
 		return errors.New("failed to find don for my peer ID: " + localNode.PeerID.String())
 	}
 
@@ -267,17 +265,17 @@ func (c *capabilityGRPCService) initialiseTransmissionScheduler(
 ) (actions.TransmissionScheduler, error) {
 	localNode, err := capRegistry.LocalNode(ctx)
 	if err != nil {
-		c.lggr.Errorw(logPrefix+"failed to get local node for transmission scheduler", "error", err)
+		c.lggr.Errorw("failed to get local node for transmission scheduler", "error", err)
 		return actions.TransmissionScheduler{}, fmt.Errorf("failed to get local node: %w", err)
 	}
 
 	if c.DON == nil {
-		c.lggr.Errorw(logPrefix + "DON is nil when initialising transmission scheduler")
+		c.lggr.Errorw("DON is nil when initialising transmission scheduler")
 		return actions.TransmissionScheduler{}, errors.New("capabilityInfo DON is nil")
 	}
 
 	if len(c.DON.Members) == 0 {
-		c.lggr.Errorw(logPrefix + "DON has no members when initialising transmission scheduler")
+		c.lggr.Errorw("DON has no members when initialising transmission scheduler")
 		return actions.TransmissionScheduler{}, errors.New("capabilityInfo DON is empty")
 	}
 
@@ -286,21 +284,21 @@ func (c *capabilityGRPCService) initialiseTransmissionScheduler(
 	donPeerIDs = append(donPeerIDs, c.DON.Members...)
 
 	if myPeerID == nil {
-		c.lggr.Errorw(logPrefix + "local node peer ID is nil")
+		c.lggr.Errorw("local node peer ID is nil")
 		return actions.TransmissionScheduler{}, fmt.Errorf("local node peer ID is nil")
 	}
 	if len(donPeerIDs) == 0 {
-		c.lggr.Errorw(logPrefix + "DON members list is empty")
+		c.lggr.Errorw("DON members list is empty")
 		return actions.TransmissionScheduler{}, fmt.Errorf("DON members list is empty")
 	}
 
 	found := slices.Contains(donPeerIDs, *myPeerID)
 	if !found {
-		c.lggr.Errorw(logPrefix+"local peer not in DON members", "myPeerID", myPeerID.String(), "donMembers", len(donPeerIDs))
+		c.lggr.Errorw("local peer not in DON members", "myPeerID", myPeerID.String(), "donMembers", len(donPeerIDs))
 		return actions.TransmissionScheduler{}, fmt.Errorf("local peer ID %s not found in DON members", myPeerID.String())
 	}
 
-	c.lggr.Debugw(logPrefix+"Transmission scheduler initialized",
+	c.lggr.Debugw("Transmission scheduler initialized",
 		"deltaStage", deltaStage,
 		"donSize", len(donPeerIDs),
 		"F", c.DON.F,
@@ -323,49 +321,49 @@ func (c *capabilityGRPCService) initialiseTransmissionScheduler(
 // This is the fallback path used when the JSON config (produced by buildConfigJSON)
 // does not already contain the map.
 func (c *capabilityGRPCService) fetchP2PConfig(ctx context.Context, registry core.CapabilitiesRegistry) (map[string]string, error) {
-	c.lggr.Debugw(logPrefix+"fetchP2PConfig: calling ConfigForCapability",
+	c.lggr.Debugw("fetchP2PConfig: calling ConfigForCapability",
 		"capabilityID", c.id, "donID", c.DON.ID,
 	)
 
 	capCfg, err := registry.ConfigForCapability(ctx, c.id, c.DON.ID)
 	if err != nil {
-		c.lggr.Errorw(logPrefix+"fetchP2PConfig: ConfigForCapability failed", "error", err)
+		c.lggr.Errorw("fetchP2PConfig: ConfigForCapability failed", "error", err)
 		return nil, fmt.Errorf("failed to get capability config: %w", err)
 	}
 
-	c.lggr.Debugw(logPrefix+"fetchP2PConfig: got CapabilityConfiguration",
+	c.lggr.Debugw("fetchP2PConfig: got CapabilityConfiguration",
 		"hasDefaultConfig", capCfg.DefaultConfig != nil,
 		"hasSpecConfig", capCfg.SpecConfig != nil,
 	)
 
 	if capCfg.SpecConfig == nil {
-		c.lggr.Errorw(logPrefix + "fetchP2PConfig: SpecConfig is nil")
+		c.lggr.Errorw("fetchP2PConfig: SpecConfig is nil")
 		return nil, fmt.Errorf("SpecConfig is nil for capability %s", c.id)
 	}
 
 	unwrapped, err := capCfg.SpecConfig.Unwrap()
 	if err != nil {
-		c.lggr.Errorw(logPrefix+"fetchP2PConfig: failed to unwrap SpecConfig", "error", err)
+		c.lggr.Errorw("fetchP2PConfig: failed to unwrap SpecConfig", "error", err)
 		return nil, fmt.Errorf("failed to unwrap SpecConfig: %w", err)
 	}
 
 	specMap, ok := unwrapped.(map[string]any)
 	if !ok {
-		c.lggr.Errorw(logPrefix+"fetchP2PConfig: SpecConfig unwrapped to unexpected type", "type", fmt.Sprintf("%T", unwrapped))
+		c.lggr.Errorw("fetchP2PConfig: SpecConfig unwrapped to unexpected type", "type", fmt.Sprintf("%T", unwrapped))
 		return nil, fmt.Errorf("SpecConfig unwrapped to %T, expected map[string]any", unwrapped)
 	}
 
-	c.lggr.Debugw(logPrefix+"fetchP2PConfig: SpecConfig keys", "keys", fmt.Sprintf("%v", keys(specMap)))
+	c.lggr.Debugw("fetchP2PConfig: SpecConfig keys", "keys", fmt.Sprintf("%v", keys(specMap)))
 
 	p2pRaw, exists := specMap["p2pToTransmitterMap"]
 	if !exists {
-		c.lggr.Errorw(logPrefix + "fetchP2PConfig: p2pToTransmitterMap key not found in SpecConfig")
+		c.lggr.Errorw("fetchP2PConfig: p2pToTransmitterMap key not found in SpecConfig")
 		return nil, fmt.Errorf("p2pToTransmitterMap not found in SpecConfig")
 	}
 
 	p2pAny, ok := p2pRaw.(map[string]any)
 	if !ok {
-		c.lggr.Errorw(logPrefix+"fetchP2PConfig: p2pToTransmitterMap has unexpected type", "type", fmt.Sprintf("%T", p2pRaw))
+		c.lggr.Errorw("fetchP2PConfig: p2pToTransmitterMap has unexpected type", "type", fmt.Sprintf("%T", p2pRaw))
 		return nil, fmt.Errorf("p2pToTransmitterMap has type %T, expected map[string]any", p2pRaw)
 	}
 
@@ -373,13 +371,13 @@ func (c *capabilityGRPCService) fetchP2PConfig(ctx context.Context, registry cor
 	for k, v := range p2pAny {
 		s, ok := v.(string)
 		if !ok {
-			c.lggr.Errorw(logPrefix+"fetchP2PConfig: non-string value in p2pToTransmitterMap", "key", k, "type", fmt.Sprintf("%T", v))
+			c.lggr.Errorw("fetchP2PConfig: non-string value in p2pToTransmitterMap", "key", k, "type", fmt.Sprintf("%T", v))
 			return nil, fmt.Errorf("p2pToTransmitterMap[%s] has type %T, expected string", k, v)
 		}
 		result[k] = s
 	}
 
-	c.lggr.Debugw(logPrefix+"fetchP2PConfig: extracted p2pToTransmitterMap",
+	c.lggr.Debugw("fetchP2PConfig: extracted p2pToTransmitterMap",
 		"entries", len(result), "map", result,
 	)
 	return result, nil
