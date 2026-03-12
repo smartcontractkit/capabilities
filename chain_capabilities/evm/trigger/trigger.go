@@ -122,7 +122,8 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 
 	retryInterval := 2 * time.Second
 	if triggerEventStore == nil {
-		return nil, fmt.Errorf("no trigger event store provided")
+		lggr.Warn("no TriggerEventStore provided, falling back to in-memory store (trigger events will not persist across restarts)")
+		triggerEventStore = capabilities.NewMemEventStore()
 	}
 	undeliveredWarning := 5 * retryInterval
 	undeliveredCritical := 20 * retryInterval
