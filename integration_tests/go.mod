@@ -26,7 +26,7 @@ require (
 	github.com/smartcontractkit/capabilities/http_trigger v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/capabilities/loadtestwritetarget v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/chain-selectors v1.0.97
-	github.com/smartcontractkit/chainlink-common v0.10.1-0.20260303163359-7df8d8746490
+	github.com/smartcontractkit/chainlink-common v0.10.1-0.20260311140941-e991aad9d2f9
 	github.com/smartcontractkit/chainlink-evm v0.3.4-0.20260303141232-9cc3feb83863
 	github.com/smartcontractkit/chainlink-evm/gethwrappers v0.0.0-20251222115927-36a18321243c
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260226130359-963f935e0396
