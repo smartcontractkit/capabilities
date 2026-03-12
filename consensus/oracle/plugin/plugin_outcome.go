@@ -126,24 +126,29 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, lggr log
 			err, consensusMDD, valuesJSON, formatErrorsForLogging(ctx, obsErrors),
 		)
 
-		if errors.Is(err, oracle.ErrMoreThanOneValidOutcomeForIdenticalConsensus) {
-			return outcome.FailConsensusWithDefaultCheck(ctx, lggr, requestID, consensusFailedMsg,
-				"consensus calculation failed: more than one valid outcome for identical consensus",
-				oracletypes.ConsensusFailureCode_MORE_THAN_ONE_VALID_OUTCOME_FOR_IDENTICAL_CONSENSUS, consensusMDD, timestamp)
-		}
-
-		if errors.Is(err, oracle.ErrInvalidTypeForMedianAggregation) {
-			return outcome.FailConsensusWithDefaultCheck(ctx, lggr, requestID, consensusFailedMsg,
-				"consensus calculation failed: invalid type for median aggregation",
-				oracletypes.ConsensusFailureCode_INVALID_TYPE_FOR_MEDIAN_AGGREGATION, consensusMDD, timestamp)
-		}
+		errorCode, logMsg := getErrorCodeAndLogMsg(err)
 
 		return outcome.FailConsensusWithDefaultCheck(ctx, lggr, requestID, consensusFailedMsg,
-			"consensus calculation failed: aggregation failed",
-			oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED, consensusMDD, timestamp)
+			logMsg, errorCode, consensusMDD, timestamp)
 	}
 
 	return outcome.AddSuccessfulConsensusRequestOutcomeToBatch(ctx, consensusMDD.Metadata, value, timestamp)
+}
+
+func getErrorCodeAndLogMsg(err error) (oracletypes.ConsensusFailureCode, string) {
+	errorCode := oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED
+	logMsg := "consensus calculation failed: aggregation failed"
+
+	if errors.Is(err, oracle.ErrMoreThanOneValidOutcomeForIdenticalConsensus) {
+		errorCode = oracletypes.ConsensusFailureCode_MORE_THAN_ONE_VALID_OUTCOME_FOR_IDENTICAL_CONSENSUS
+		logMsg = "consensus calculation failed: more than one valid outcome for identical consensus"
+	}
+
+	if errors.Is(err, oracle.ErrInvalidTypeForMedianAggregation) {
+		errorCode = oracletypes.ConsensusFailureCode_INVALID_TYPE_FOR_MEDIAN_AGGREGATION
+		logMsg = "consensus calculation failed: invalid type for median aggregation"
+	}
+	return errorCode, logMsg
 }
 
 func formatErrorsForLogging(ctx context.Context, errors []string) string {
