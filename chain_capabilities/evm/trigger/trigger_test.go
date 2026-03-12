@@ -1297,11 +1297,11 @@ func TestNewLogTriggerService(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "logTriggerLimitQueryLogSize (1001) must be less than logTriggerSendChannelBufferSize (1000)")
 	})
-	t.Run("nil trigger event store falls back to in-memory", func(t *testing.T) {
+	t.Run("nil trigger event store", func(t *testing.T) {
 		lggr := logger.Test(t)
-		trigger, err := NewLogTriggerService(evmService, store, lggr, beholderProcessor, messageBuilder, time.Second, 0, 0, limits.Factory{Logger: lggr}, nil, nil)
-		require.NoError(t, err)
-		require.NotNil(t, trigger.baseTrigger)
+		_, err := NewLogTriggerService(evmService, store, lggr, beholderProcessor, messageBuilder, time.Second, 0, 0, limits.Factory{Logger: lggr}, nil, nil)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "no trigger event store provided")
 	})
 }
 
