@@ -685,7 +685,7 @@ func TestStartPolling(t *testing.T) {
 			Retention:                       time.Hour * 24,
 			MaxLogsKept:                     10000,
 			BeholderProcessor:               test.NopBeholderProcessor{},
-			MessageBuilder:                  &monitoring.MessageBuilder{},
+			MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 		}
 
 		service, err := NewLogTriggerService(opts)
@@ -738,7 +738,7 @@ func TestStartPolling(t *testing.T) {
 			Retention:                       time.Hour * 24,
 			MaxLogsKept:                     10000,
 			BeholderProcessor:               test.NopBeholderProcessor{},
-			MessageBuilder:                  &monitoring.MessageBuilder{},
+			MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 		}
 
 		service, err := NewLogTriggerService(opts)
@@ -801,7 +801,7 @@ func TestStartPolling(t *testing.T) {
 			Retention:                       time.Hour * 24,
 			MaxLogsKept:                     10000,
 			BeholderProcessor:               test.NopBeholderProcessor{},
-			MessageBuilder:                  &monitoring.MessageBuilder{},
+			MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 		}
 
 		service, err := NewLogTriggerService(opts)
@@ -1022,7 +1022,7 @@ func BenchmarkSolanaLogTriggerService_ToLogPollerFilter(b *testing.B) {
 	opts := LogTriggerServiceOpts{
 		Logger:            logger.Test(&testing.T{}),
 		BeholderProcessor: test.NopBeholderProcessor{},
-		MessageBuilder:    &monitoring.MessageBuilder{},
+		MessageBuilder:    monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 		Retention:         time.Hour * 24,
 		MaxLogsKept:       10000,
 	}
@@ -1057,7 +1057,7 @@ func TestSolanaLogTriggerService_NewLogTriggerService(t *testing.T) {
 		service, err := NewLogTriggerService(LogTriggerServiceOpts{
 			Logger:            lggr,
 			BeholderProcessor: test.NopBeholderProcessor{},
-			MessageBuilder:    &monitoring.MessageBuilder{},
+			MessageBuilder:    monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 		})
 		require.NoError(t, err)
 		require.NotNil(t, service)
@@ -1082,7 +1082,7 @@ func TestSolanaLogTriggerService_NewLogTriggerService(t *testing.T) {
 			Retention:                       48 * time.Hour,
 			MaxLogsKept:                     20000,
 			BeholderProcessor:               test.NopBeholderProcessor{},
-			MessageBuilder:                  &monitoring.MessageBuilder{},
+			MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 		}
 
 		service, err := NewLogTriggerService(opts)
@@ -1167,7 +1167,7 @@ func TestSolanaLogTriggerService_EdgeCases(t *testing.T) {
 		service, err := NewLogTriggerService(LogTriggerServiceOpts{
 			Logger:            lggr,
 			BeholderProcessor: test.NopBeholderProcessor{},
-			MessageBuilder:    &monitoring.MessageBuilder{},
+			MessageBuilder:    monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 		})
 		require.NoError(t, err)
 		require.NotNil(t, service)

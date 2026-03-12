@@ -21,6 +21,7 @@ import (
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
+	"github.com/smartcontractkit/chainlink-common/pkg/types"
 
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -1243,7 +1244,7 @@ func TestNewLogTriggerService(t *testing.T) {
 	evmService := initMocks(t)
 	store := NewLogTriggerStore()
 	beholderProcessor := test.NopBeholderProcessor{}
-	messageBuilder := &monitoring.MessageBuilder{}
+	messageBuilder := monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, "")
 
 	t.Run("ok initialize interval", func(t *testing.T) {
 		lggr := logger.Test(t)
@@ -1299,7 +1300,7 @@ func TestNewLogTriggerService(t *testing.T) {
 }
 
 func createTriggerObject(t *testing.T, mockEVM *evmmock.EVMService, store LogTriggerStore) *LogTriggerService {
-	trigger, _ := NewLogTriggerService(mockEVM, store, logger.Test(t), test.NopBeholderProcessor{}, &monitoring.MessageBuilder{},
+	trigger, _ := NewLogTriggerService(mockEVM, store, logger.Test(t), test.NopBeholderProcessor{}, monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 		pollInterval, 0, 0, limits.Factory{Logger: logger.Test(t)}, nil, nil)
 	return trigger
 }
@@ -1356,7 +1357,7 @@ func newLogTriggerService(t *testing.T) *LogTriggerService {
 		lggr:              logger.Test(t),
 		triggers:          NewLogTriggerStore(),
 		beholderProcessor: test.NopBeholderProcessor{},
-		messageBuilder:    &monitoring.MessageBuilder{},
+		messageBuilder:    monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 	}
 	require.NoError(t, lts.initLimiters(limits.Factory{Logger: logger.Test(t)}))
 	return lts

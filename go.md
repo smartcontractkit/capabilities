@@ -10,11 +10,9 @@ flowchart LR
 	capabilities/chain_capabilities/common
 	click capabilities/chain_capabilities/common href "https://github.com/smartcontractkit/capabilities"
 	capabilities/chain_capabilities/evm --> capabilities/chain_capabilities/common
-	capabilities/chain_capabilities/evm --> capabilities/libs
 	capabilities/chain_capabilities/evm --> chainlink-evm
 	click capabilities/chain_capabilities/evm href "https://github.com/smartcontractkit/capabilities"
 	capabilities/chain_capabilities/solana --> capabilities/chain_capabilities/common
-	capabilities/chain_capabilities/solana --> capabilities/libs
 	capabilities/chain_capabilities/solana --> chainlink-solana/integration-tests
 	click capabilities/chain_capabilities/solana href "https://github.com/smartcontractkit/capabilities"
 	capabilities/consensus --> capabilities/libs
