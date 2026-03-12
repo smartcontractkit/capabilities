@@ -21,6 +21,7 @@ var (
 	ErrNoValuesMetThreshold                         = errors.New("no values met f+1 threshold")
 	ErrMoreThanOneValidOutcomeForIdenticalConsensus = errors.New("not identical, multiple values with f+1 occurrences")
 	ErrInsufficientObservations                     = errors.New("insufficient observations to reach consensus")
+	ErrInvalidTypeForMedianAggregation              = errors.New("invalid type for median aggregation")
 )
 
 // Constants for type names used in aggregation logic.
@@ -277,7 +278,7 @@ func handleMedianAggregation(
 		}
 
 	default:
-		return nil, fmt.Errorf("unsupported type for median aggregation: %s", medianType)
+		return nil, ErrInvalidTypeForMedianAggregation
 	}
 
 	return medianResult, nil

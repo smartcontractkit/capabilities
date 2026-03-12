@@ -387,7 +387,7 @@ func Test_handleMedianAggregation(t *testing.T) {
 				values.Proto(values.NewString("cad")),
 			},
 			expectedOutcome: nil,
-			expectedError:   errors.New("unsupported type for median aggregation: " + typeString.Name()),
+			expectedError:   ErrInvalidTypeForMedianAggregation,
 			f:               2,
 		},
 		{

@@ -64,6 +64,30 @@ func newSliceCr(t *testing.T, observation []byte, def []byte, metaData oracle.Co
 	return oracle.NewConsensusRequest(serializeDeserialize(t, simpleConsensusInputs), time.Now(), time.Now().Add(1*time.Hour).UTC(), nil, metaData)
 }
 
+func Test_MedianAggregationInvalidType(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := t.Context()
+
+	md1 := newRequestMetaData()
+
+	expectedFailureCode := oracletypes.ConsensusFailureCode_INVALID_TYPE_FOR_MEDIAN_AGGREGATION
+
+	reqToObservations := map[string]*consensusPluginTest{
+		md1.RequestID(): {
+			requests: []*oracle.ConsensusRequest{
+				newStringValueCr(t, "110", md1), newStringValueCr(t, "110", md1),
+				newStringValueCr(t, "120", md1), newStringValueCr(t, "120", md1),
+				newStringValueCr(t, "130", md1), newStringValueCr(t, "130", md1),
+				newStringValueCr(t, "140", md1), newStringValueCr(t, "140", md1),
+			},
+			expectedConsensusFailureMessage: "invalid type for median aggregation",
+			expectedConsensusFailureCode:    &expectedFailureCode,
+		},
+	}
+
+	runProtocolRoundTests(ctx, t, lggr, n, f, reqToObservations)
+}
+
 func Test_InsufficientIdenticalObservations(t *testing.T) {
 	lggr := logger.Test(t)
 	ctx := t.Context()
@@ -704,6 +728,15 @@ func newIdenticalCrWithDefault(t *testing.T, observation int64, defaultObs int64
 func newCr(t *testing.T, observation int64, metaData oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
 	simpleConsensusInputs := &sdk.SimpleConsensusInputs{
 		Observation: &sdk.SimpleConsensusInputs_Value{Value: values.Proto(values.NewInt64(observation))},
+		Descriptors: &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_MEDIAN}},
+	}
+
+	return oracle.NewConsensusRequest(serializeDeserialize(t, simpleConsensusInputs), time.Now(), time.Now().Add(1*time.Hour).UTC(), nil, metaData)
+}
+
+func newStringValueCr(t *testing.T, observation string, metaData oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
+	simpleConsensusInputs := &sdk.SimpleConsensusInputs{
+		Observation: &sdk.SimpleConsensusInputs_Value{Value: values.Proto(values.NewString(observation))},
 		Descriptors: &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_MEDIAN}},
 	}
 

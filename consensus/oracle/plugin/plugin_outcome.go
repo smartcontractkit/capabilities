@@ -132,6 +132,12 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, lggr log
 				oracletypes.ConsensusFailureCode_MORE_THAN_ONE_VALID_OUTCOME_FOR_IDENTICAL_CONSENSUS, consensusMDD, timestamp)
 		}
 
+		if errors.Is(err, oracle.ErrInvalidTypeForMedianAggregation) {
+			return outcome.FailConsensusWithDefaultCheck(ctx, lggr, requestID, consensusFailedMsg,
+				"consensus calculation failed: invalid type for median aggregation",
+				oracletypes.ConsensusFailureCode_INVALID_TYPE_FOR_MEDIAN_AGGREGATION, consensusMDD, timestamp)
+		}
+
 		return outcome.FailConsensusWithDefaultCheck(ctx, lggr, requestID, consensusFailedMsg,
 			"consensus calculation failed: aggregation failed",
 			oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED, consensusMDD, timestamp)

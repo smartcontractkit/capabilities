@@ -67,6 +67,8 @@ func (c *ContractTransmitter) Transmit(ctx context.Context, configDigest types.C
 			// could occur if the caller is attempting to achieve identical consensus on a value which is relatively volatile
 			// resulting in f+1 nodes seeing value A, and f+1 nodes seeing value B.
 			failureErr = caperrors.NewPublicUserError(errors.New(failureMessageStr), caperrors.ConsensusFailed)
+		case oracletypes.ConsensusFailureCode_INVALID_TYPE_FOR_MEDIAN_AGGREGATION:
+			failureErr = caperrors.NewPublicUserError(errors.New(failureMessageStr), caperrors.ConsensusFailed)
 		default:
 			failureErr = caperrors.NewPublicSystemError(errors.New(failureMessageStr), caperrors.ConsensusFailed)
 		}
