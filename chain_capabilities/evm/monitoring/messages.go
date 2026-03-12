@@ -3,18 +3,12 @@ package monitoring
 import (
 	"fmt"
 	"math/big"
-	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"go.opentelemetry.io/otel/attribute"
-	"google.golang.org/protobuf/proto"
 
 	evmcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
-	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	sdkpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
-
-	capmonitoring "github.com/smartcontractkit/capabilities/libs/monitoring"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 
@@ -22,44 +16,25 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
+
+	commonmon "github.com/smartcontractkit/capabilities/chain_capabilities/common/monitoring"
 )
 
-// TelemetryContext wraps context for telemetry
-type TelemetryContext struct {
-	TsStart int64
-	capabilities.RequestMetadata
-}
+type TelemetryContext = commonmon.TelemetryContext
+type Message = commonmon.Message
+type ErrorMessage = commonmon.ErrorMessage
 
-// MessageBuilder constructs telemetry messages for EVM calls
+// MessageBuilder constructs telemetry messages for EVM calls.
+// Embeds common MessageBuilder for shared BuildExecutionContext and RequestLggr.
 type MessageBuilder struct {
-	ChainInfo   types.ChainInfo
-	CapInfo     capabilities.CapabilityInfo
-	nodeAddress string
+	*commonmon.MessageBuilder
 }
 
-type Message interface {
-	proto.Message
-	// LogAttributes - Defines list of key value pairs to be included in a log line for the Message
-	LogAttributes() []attribute.KeyValue
-	// MetricAttributes - defines a subset of Attributes key value pairs to be added as labels to metrics that correspond to the Message
-	// *MUST NOT* include high cardinality values as it will *KILL* metrics collector.
-	MetricAttributes() []attribute.KeyValue
-}
-
-type ErrorMessage interface {
-	Message
-	GetSummary() string
-	GetCause() string
-}
-
-// NewMessageBuilder creates a new builder
+// NewMessageBuilder creates a new EVM-specific MessageBuilder.
 func NewMessageBuilder(chainInfo types.ChainInfo, capInfo capabilities.CapabilityInfo, nodeAddress string) *MessageBuilder {
-	return &MessageBuilder{ChainInfo: chainInfo, CapInfo: capInfo, nodeAddress: nodeAddress}
-}
-
-func (m *MessageBuilder) RequestLggr(lggr logger.SugaredLogger, telemetryContext TelemetryContext) logger.SugaredLogger {
-	attrs := m.BuildExecutionContext(telemetryContext).LogAttributes()
-	return lggr.With(attrsToErrorKV(attrs)...)
+	return &MessageBuilder{
+		MessageBuilder: commonmon.NewMessageBuilder(chainInfo, capInfo, nodeAddress),
+	}
 }
 
 func (m *MessageBuilder) BuildCallContractInitiated(tc TelemetryContext, msg *evm.CallMsg, bn int64) *CallContractInitiated {
@@ -355,38 +330,6 @@ func (m *MessageBuilder) BuildTransmissionSchedulerNodeNotFoundInDon(tc Telemetr
 		Cause:            fmt.Sprintf("Peer ID %s not found in DON members list, transmitting immediately as fallback", peerID),
 		ExecutionContext: m.BuildExecutionContext(tc),
 	}
-}
-
-// BuildExecutionContext builds the shared ExecutionContext
-func (m *MessageBuilder) BuildExecutionContext(tc TelemetryContext) *capmonitoring.ExecutionContext {
-	ex := &capmonitoring.ExecutionContext{
-		MetaSourceId: m.nodeAddress,
-
-		// Chain
-		MetaChainFamilyName: m.ChainInfo.FamilyName,
-		MetaChainId:         m.ChainInfo.ChainID,
-		MetaNetworkName:     m.ChainInfo.NetworkName,
-		MetaNetworkNameFull: m.ChainInfo.NetworkNameFull,
-
-		// Workflow
-		MetaWorkflowId:               tc.WorkflowID,
-		MetaWorkflowOwner:            tc.WorkflowOwner,
-		MetaWorkflowExecutionId:      tc.WorkflowExecutionID,
-		MetaWorkflowName:             tc.WorkflowName,
-		MetaWorkflowDonId:            tc.WorkflowDonID,
-		MetaWorkflowDonConfigVersion: tc.WorkflowDonConfigVersion,
-		MetaReferenceId:              tc.ReferenceID,
-		// Capability
-		MetaCapabilityType: string(m.CapInfo.CapabilityType),
-		MetaCapabilityId:   m.CapInfo.ID,
-		// G115: integer overflow conversion uint64 -> int64 (gosec)
-		// nolint:gosec
-		MetaCapabilityTimestampStart: uint64(tc.TsStart),
-		// G115: integer overflow conversion uint64 -> int64 (gosec)
-		// nolint:gosec
-		MetaCapabilityTimestampEmit: uint64(time.Now().UnixMilli()),
-	}
-	return ex
 }
 
 func toFilterLogsRequest(fq evmtypes.FilterQuery) *FilterLogsRequest {

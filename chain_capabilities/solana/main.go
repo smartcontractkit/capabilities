@@ -3,9 +3,15 @@ package main
 import (
 	"context"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
+	"slices"
+	"strconv"
+	"time"
 
 	chain_selectors "github.com/smartcontractkit/chain-selectors"
+	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -14,6 +20,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
+	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/actions"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/config"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
@@ -45,6 +52,7 @@ type capabilityGRPCService struct {
 
 type capability struct {
 	*actions.Solana
+	id string
 }
 
 var _ solcapserver.ClientCapability = &capabilityGRPCService{}
@@ -117,6 +125,8 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return err
 	}
 
+	c.id = "solana" + ":ChainSelector:" + strconv.FormatUint(c.chainSelector, 10) + "@1.0.0"
+
 	var chainInfo types.ChainInfo
 	// protection for e2e tests when we run against local validator
 	if !cfg.IsLocal {
@@ -138,7 +148,17 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return fmt.Errorf("failed to create monitoring proto processor: %w", err)
 	}
 
-	c.Solana, err = actions.NewSolana(ctx, cfg, solService, messageBuilder, processor, c.lggr, limits.Factory{Logger: c.lggr})
+	var scheduler ts.TransmissionScheduler
+	if cfg.DeltaStage > 0 {
+		scheduler, err = c.initialiseTransmissionScheduler(ctx, dependencies.CapabilityRegistry, cfg.DeltaStage)
+		if err != nil {
+			return fmt.Errorf("failed to initialize transmission scheduler: %w", err)
+		}
+	} else {
+		c.lggr.Infow("DeltaStage not configured, transmission scheduling disabled")
+	}
+
+	c.Solana, err = actions.NewSolana(ctx, cfg, solService, messageBuilder, processor, c.lggr, limits.Factory{Logger: c.lggr}, scheduler)
 	if err != nil {
 		return err
 	}
@@ -188,6 +208,97 @@ func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Confi
 	}
 
 	return &cfg, nil
+}
+
+func (c *capabilityGRPCService) initMyDON(ctx context.Context, registry core.CapabilitiesRegistry) error {
+	localNode, err := registry.LocalNode(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get local node: %w", err)
+	}
+
+	var dons []capabilities.DON
+
+	donsWithNodes, err := registry.DONsForCapability(ctx, c.id)
+	if err != nil {
+		return fmt.Errorf("failed getting dons for capability: %w", err)
+	}
+
+	for _, d := range donsWithNodes {
+		for _, n := range d.Nodes {
+			if n.PeerID.String() == localNode.PeerID.String() {
+				dons = append(dons, d.DON)
+			}
+		}
+	}
+
+	if len(dons) == 0 {
+		return stderrors.New("failed to find don for my peer ID: " + localNode.PeerID.String())
+	}
+
+	if len(dons) > 1 {
+		for _, d := range dons {
+			c.lggr.Errorf("received more than one don for capability id: %s don id: %d don name: %s", c.id, d.ID, d.Name)
+		}
+	}
+
+	c.DON = &dons[0]
+
+	return nil
+}
+
+func (c *capabilityGRPCService) initialiseTransmissionScheduler(
+	ctx context.Context,
+	capRegistry core.CapabilitiesRegistry,
+	deltaStage time.Duration,
+) (ts.TransmissionScheduler, error) {
+	err := c.initMyDON(ctx, capRegistry)
+	if err != nil {
+		return ts.TransmissionScheduler{}, fmt.Errorf("failed to initialize capability with my don info: %w", err)
+	}
+
+	localNode, err := capRegistry.LocalNode(ctx)
+	if err != nil {
+		return ts.TransmissionScheduler{}, fmt.Errorf("failed to get local node: %w", err)
+	}
+
+	if c.DON == nil {
+		return ts.TransmissionScheduler{}, stderrors.New("capabilityInfo DON is nil")
+	}
+
+	if len(c.DON.Members) == 0 {
+		return ts.TransmissionScheduler{}, stderrors.New("capabilityInfo DON is empty")
+	}
+
+	var donPeerIDs []p2ptypes.PeerID
+	myPeerID := localNode.PeerID
+	donPeerIDs = append(donPeerIDs, c.DON.Members...)
+
+	if myPeerID == nil {
+		return ts.TransmissionScheduler{}, fmt.Errorf("local node peer ID is nil")
+	}
+	if len(donPeerIDs) == 0 {
+		return ts.TransmissionScheduler{}, fmt.Errorf("DON members list is empty")
+	}
+
+	found := slices.Contains(donPeerIDs, *myPeerID)
+	if !found {
+		return ts.TransmissionScheduler{}, fmt.Errorf("local peer ID %s not found in DON members", myPeerID.String())
+	}
+
+	c.lggr.Infow("Transmission scheduler initialized",
+		"deltaStage", deltaStage,
+		"donSize", len(donPeerIDs),
+		"F", c.DON.F,
+		"myPeerID", myPeerID.String(),
+	)
+
+	return ts.NewTransmissionScheduler(
+		*myPeerID,
+		donPeerIDs,
+		deltaStage,
+		c.DON.F,
+		c.lggr,
+	), nil
 }
 
 func (s *capabilityGRPCService) RegisterLogTrigger(

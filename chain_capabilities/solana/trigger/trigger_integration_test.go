@@ -23,6 +23,7 @@ import (
 	solanacappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
+	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/sqlutil/sqltest"
 	logreadtest "github.com/smartcontractkit/chainlink-solana/contracts/generated/log_read_test"
 	"github.com/smartcontractkit/chainlink-solana/integration-tests/utils"
@@ -78,7 +79,7 @@ func TestSolanaLogTrigger(t *testing.T) {
 		MaxLogsKept:                     1000,
 		LimitsFactory:                   limits.Factory{Logger: lggr},
 		BeholderProcessor:               test.NopBeholderProcessor{},
-		MessageBuilder:                  &monitoring.MessageBuilder{},
+		MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 	})
 	require.NoError(t, err)
 
@@ -187,7 +188,7 @@ func TestSolanaLogTriggerWithSubkeyPaths(t *testing.T) {
 		MaxLogsKept:                     1000,
 		LimitsFactory:                   limits.Factory{Logger: lggr},
 		BeholderProcessor:               test.NopBeholderProcessor{},
-		MessageBuilder:                  &monitoring.MessageBuilder{},
+		MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 	})
 	require.NoError(t, err)
 
@@ -317,7 +318,7 @@ func TestSolanaLogTrigger_UnhappyPaths(t *testing.T) {
 		MaxLogsKept:                     1000,
 		LimitsFactory:                   limits.Factory{Logger: lggr},
 		BeholderProcessor:               test.NopBeholderProcessor{},
-		MessageBuilder:                  &monitoring.MessageBuilder{},
+		MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 	})
 	require.NoError(t, err)
 
@@ -507,7 +508,7 @@ func TestSolanaLogTrigger_NoEventsReceived(t *testing.T) {
 		Retention:                       24 * time.Hour,
 		MaxLogsKept:                     1000,
 		BeholderProcessor:               test.NopBeholderProcessor{},
-		MessageBuilder:                  &monitoring.MessageBuilder{},
+		MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 	})
 	require.NoError(t, err)
 
@@ -584,7 +585,7 @@ func TestSolanaLogTrigger_FilterExcludesAllEvents(t *testing.T) {
 		Retention:                       24 * time.Hour,
 		MaxLogsKept:                     1000,
 		BeholderProcessor:               test.NopBeholderProcessor{},
-		MessageBuilder:                  &monitoring.MessageBuilder{},
+		MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 	})
 	require.NoError(t, err)
 

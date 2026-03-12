@@ -17,11 +17,14 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
+	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 
 	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
 
+	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
+	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts/mocks"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
@@ -808,7 +811,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TxHash:                          receipt.TxHash[:],
 			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
-			ErrorMessage:                    ptr("receiver contract execution failure"),
+			ErrorMessage:                    capcommon.Ptr("receiver contract execution failure"),
 		}, txResult.Response)
 		require.Len(t, txResult.ResponseMetadata.Metering, 0)
 	})
@@ -1038,7 +1041,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
 
 		// Override with zero-value scheduler to simulate DeltaStage not configured
-		service.transmissionScheduler = TransmissionScheduler{}
+		service.transmissionScheduler = ts.TransmissionScheduler{}
 
 		evmServiceMock.EXPECT().
 			GetTransactionFee(mock.Anything, mock.Anything).
@@ -1381,7 +1384,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 				otherPeerID2[0] = 0x03
 				var otherPeerID3 p2ptypes.PeerID
 				otherPeerID3[0] = 0x04
-				scheduler := NewTransmissionScheduler(
+				scheduler := ts.NewTransmissionScheduler(
 					testPeerID,
 					[]p2ptypes.PeerID{testPeerID, otherPeerID1, otherPeerID2, otherPeerID3},
 					10*time.Millisecond,
@@ -1688,7 +1691,7 @@ func createMocksAndCapability(t *testing.T, lggr logger.Logger) (*mocks2.EVMServ
 	var testPeerID p2ptypes.PeerID
 	testPeerID[0] = 0x01
 	testDONMembers := []p2ptypes.PeerID{testPeerID}
-	transmissionScheduler := NewTransmissionScheduler(
+	transmissionScheduler := ts.NewTransmissionScheduler(
 		testPeerID,
 		testDONMembers,
 		10*time.Millisecond, // Small deltaStage for tests
@@ -1704,7 +1707,7 @@ func createMocksAndCapability(t *testing.T, lggr logger.Logger) (*mocks2.EVMServ
 		ReceiverGasMinimum:       ConfiguredReceiverGasMinimum,
 		chainSelector:            1,
 		beholderProcessor:        test.NopBeholderProcessor{},
-		messageBuilder:           &monitoring.MessageBuilder{},
+		messageBuilder:           monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 		transmissionScheduler:    transmissionScheduler,
 	}
 	require.NoError(t, service.initLimiters(limits.Factory{Logger: lggr}))
@@ -1756,7 +1759,7 @@ func createTestRequestMetadata(metadata ocrtypes.Metadata) capabilities.RequestM
 	}
 }
 
-func createReportAndMetadataForQueuePosition(t *testing.T, scheduler *TransmissionScheduler, receiver []byte, desiredPosition int) (*workflowpb.ReportResponse, capabilities.RequestMetadata, contracts.TransmissionID) {
+func createReportAndMetadataForQueuePosition(t *testing.T, scheduler *ts.TransmissionScheduler, receiver []byte, desiredPosition int) (*workflowpb.ReportResponse, capabilities.RequestMetadata, contracts.TransmissionID) {
 	t.Helper()
 
 	for i := 0; i < 1000; i++ {
@@ -1804,7 +1807,7 @@ func setupPollTransmissionInfoForQueuePosition(
 	var otherPeerID3 p2ptypes.PeerID
 	otherPeerID3[0] = 0x04
 
-	scheduler := NewTransmissionScheduler(
+	scheduler := ts.NewTransmissionScheduler(
 		testPeerID,
 		[]p2ptypes.PeerID{testPeerID, otherPeerID1, otherPeerID2, otherPeerID3},
 		10*time.Millisecond,
@@ -1816,7 +1819,7 @@ func setupPollTransmissionInfoForQueuePosition(
 		forwarderClient:       mockForwarderClient,
 		lggr:                  logger.Sugared(testLogger),
 		beholderProcessor:     test.NopBeholderProcessor{},
-		messageBuilder:        &monitoring.MessageBuilder{},
+		messageBuilder:        monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 		transmissionScheduler: scheduler,
 	}
 
@@ -1845,7 +1848,7 @@ func TestDecodeReportMetadata(t *testing.T) {
 		encodedData, err := originalMetadata.Encode()
 		require.NoError(t, err)
 
-		decodedMetadata, err := decodeReportMetadata(encodedData)
+		decodedMetadata, err := capcommon.DecodeReportMetadata(encodedData)
 		require.NoError(t, err)
 		require.Equal(t, originalMetadata.Version, decodedMetadata.Version)
 		require.Equal(t, originalMetadata.ExecutionID, decodedMetadata.ExecutionID)
@@ -1856,14 +1859,14 @@ func TestDecodeReportMetadata(t *testing.T) {
 
 	t.Run("Fail to decode invalid data", func(t *testing.T) {
 		invalidData := []byte("invalid data")
-		_, err := decodeReportMetadata(invalidData)
+		_, err := capcommon.DecodeReportMetadata(invalidData)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "metadata: raw too short")
 	})
 
 	t.Run("Fail to decode empty data", func(t *testing.T) {
 		emptyData := []byte{}
-		_, err := decodeReportMetadata(emptyData)
+		_, err := capcommon.DecodeReportMetadata(emptyData)
 		require.Error(t, err)
 	})
 }

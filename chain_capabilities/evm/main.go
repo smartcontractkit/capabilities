@@ -23,6 +23,7 @@ import (
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus/oracle"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus/poller"
 
+	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
@@ -120,7 +121,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	c.requestPoller = poller.NewPoller(c.lggr, consensusMetrics, cfg.ObservationPollerWorkersCount, cfg.ObservationPollPeriod)
 	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, cfg.UnknownRequestsTTL)
 
-	var scheduler actions.TransmissionScheduler
+	var scheduler ts.TransmissionScheduler
 	if cfg.DeltaStage > 0 {
 		scheduler, err = c.initialiseTransmissionScheduler(ctx, dependencies.CapabilityRegistry, cfg.DeltaStage, cfg.IsLocaL)
 		if err != nil {
@@ -214,27 +215,27 @@ func (c *capabilityGRPCService) initialiseTransmissionScheduler(
 	capRegistry core.CapabilitiesRegistry,
 	deltaStage time.Duration,
 	isLocal bool,
-) (actions.TransmissionScheduler, error) {
+) (ts.TransmissionScheduler, error) {
 	if isLocal {
-		return actions.TransmissionScheduler{}, nil
+		return ts.TransmissionScheduler{}, nil
 	}
 
 	err := c.initMyDON(ctx, capRegistry)
 	if err != nil {
-		return actions.TransmissionScheduler{}, fmt.Errorf("failed to initialize capability with my don info: %w", err)
+		return ts.TransmissionScheduler{}, fmt.Errorf("failed to initialize capability with my don info: %w", err)
 	}
 
 	localNode, err := capRegistry.LocalNode(ctx)
 	if err != nil {
-		return actions.TransmissionScheduler{}, fmt.Errorf("failed to get local node: %w", err)
+		return ts.TransmissionScheduler{}, fmt.Errorf("failed to get local node: %w", err)
 	}
 
 	if c.DON == nil {
-		return actions.TransmissionScheduler{}, errors.New("capabilityInfo DON is nil")
+		return ts.TransmissionScheduler{}, errors.New("capabilityInfo DON is nil")
 	}
 
 	if len(c.DON.Members) == 0 {
-		return actions.TransmissionScheduler{}, errors.New("capabilityInfo DON is empty")
+		return ts.TransmissionScheduler{}, errors.New("capabilityInfo DON is empty")
 	}
 
 	var donPeerIDs []p2ptypes.PeerID
@@ -242,15 +243,15 @@ func (c *capabilityGRPCService) initialiseTransmissionScheduler(
 	donPeerIDs = append(donPeerIDs, c.DON.Members...)
 
 	if myPeerID == nil {
-		return actions.TransmissionScheduler{}, fmt.Errorf("local node peer ID is nil")
+		return ts.TransmissionScheduler{}, fmt.Errorf("local node peer ID is nil")
 	}
 	if len(donPeerIDs) == 0 {
-		return actions.TransmissionScheduler{}, fmt.Errorf("DON members list is empty")
+		return ts.TransmissionScheduler{}, fmt.Errorf("DON members list is empty")
 	}
 
 	found := slices.Contains(donPeerIDs, *myPeerID)
 	if !found {
-		return actions.TransmissionScheduler{}, fmt.Errorf("local peer ID %s not found in DON members", myPeerID.String())
+		return ts.TransmissionScheduler{}, fmt.Errorf("local peer ID %s not found in DON members", myPeerID.String())
 	}
 
 	c.lggr.Infow("Transmission scheduler initialized",
@@ -260,7 +261,7 @@ func (c *capabilityGRPCService) initialiseTransmissionScheduler(
 		"myPeerID", myPeerID.String(),
 	)
 
-	return actions.NewTransmissionScheduler(
+	return ts.NewTransmissionScheduler(
 		*myPeerID,
 		donPeerIDs,
 		deltaStage,

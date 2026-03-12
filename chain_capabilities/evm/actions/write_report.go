@@ -11,76 +11,38 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/jpillora/backoff"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
-	"github.com/smartcontractkit/chainlink-common/pkg/utils/retry"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
+	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
+	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
 )
 
 const UnknownIssueExecutingReceiverContractMessage = "receiver contract execution failure"
-const userError = "user error:"
 
 // ErrUnexpectedSuccessfulTransmission indicates we expected a failed transmission but found a successful one
 var ErrUnexpectedSuccessfulTransmission = errors.New("unexpected successful transmission")
 
-// withQuickRetry wraps a simple RPC read with retry logic.
-// Uses shorter timeout (10s) and fast backoff - these calls should be sub-second.
 func withQuickRetry[T any](ctx context.Context, lggr logger.Logger, fn func(context.Context) (T, error)) (T, error) {
-	return withRetry(ctx, lggr, fn, 10*time.Second, 1*time.Second, 10)
+	return capcommon.WithQuickRetry(ctx, lggr, fn)
 }
 
-// withPollingRetry wraps an operation that polls for state changes.
-// Uses longer timeout (60s) to accommodate slow chains.
 func withPollingRetry[T any](ctx context.Context, lggr logger.Logger, fn func(context.Context) (T, error)) (T, error) {
-	return withRetry(ctx, lggr, fn, 60*time.Second, 3*time.Second, 25)
-}
-
-// withRetry executes fn with exponential backoff retry logic.
-// Returns the original error from fn, not the retry wrapper error.
-func withRetry[T any](ctx context.Context, lggr logger.Logger, fn func(context.Context) (T, error), timeout, maxBackoff time.Duration, maxRetries uint) (T, error) {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	var lastErr error
-	strategy := retry.Strategy[T]{
-		Backoff:    &backoff.Backoff{Factor: 2, Min: 100 * time.Millisecond, Max: maxBackoff},
-		MaxRetries: maxRetries,
-	}
-	result, err := strategy.Do(ctx, lggr, func(ctx context.Context) (T, error) {
-		r, e := fn(ctx)
-		if e != nil {
-			lastErr = e // Capture the original error from fn
-		}
-		return r, e
-	})
-	if err != nil {
-		if lastErr != nil {
-			return result, lastErr
-		}
-		// lastErr is nil - fn was never called, return retry error
-		return result, err
-	}
-	return result, nil
-}
-
-func decodeReportMetadata(data []byte) (ocrtypes.Metadata, error) {
-	metadata, _, err := ocrtypes.Decode(data)
-	return metadata, err
+	return capcommon.WithPollingRetry(ctx, lggr, fn)
 }
 
 type WriteReport struct {
@@ -95,7 +57,7 @@ type WriteReport struct {
 
 	txGasLimit            limits.BoundLimiter[uint64]
 	reportSizeLimit       limits.BoundLimiter[commoncfg.Size]
-	transmissionScheduler TransmissionScheduler
+	transmissionScheduler ts.TransmissionScheduler
 }
 
 func (e *EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMetadata, input *evm.WriteReportRequest) (*capabilities.ResponseAndMetadata[*evm.WriteReportReply], caperrors.Error) {
@@ -173,7 +135,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 	} else {
 		err = e.txGasLimit.Check(ctx, request.GasConfig.GasLimit)
 		if err != nil {
-			return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s gas limit exceeds configured limit (gasLimit=%d): %w", userError, request.GasConfig.GasLimit, err)
+			return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s gas limit exceeds configured limit (gasLimit=%d): %w", capcommon.UserError, request.GasConfig.GasLimit, err)
 		}
 	}
 
@@ -242,7 +204,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 
 	err = e.reportSizeLimit.Check(ctx, commoncfg.SizeOf(request.Report.RawReport))
 	if err != nil {
-		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s report size exceeds limit: %w", userError, err)
+		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s report size exceeds limit: %w", capcommon.UserError, err)
 	}
 
 	e.lggr.Debugw("Submitting transaction")
@@ -351,8 +313,8 @@ func (e *WriteReport) pollTransmissionInfo(
 		return transmissionInfo, nil
 	}
 
-	delay := time.Duration(queuePosition) * e.transmissionScheduler.deltaStage
-	e.lggr.Infow("Polling until slot or state change", "delay", delay, "deltaStage", e.transmissionScheduler.deltaStage)
+	delay := time.Duration(queuePosition) * e.transmissionScheduler.DeltaStage
+	e.lggr.Infow("Polling until slot or state change", "delay", delay, "deltaStage", e.transmissionScheduler.DeltaStage)
 
 	// setup timer so that we can poll until delta stage and alert if this early returned to have some metric for delta stage tweaks
 	attempt := 0
@@ -432,7 +394,7 @@ func (e *WriteReport) processUnrecoverableTxState(ctx context.Context, request *
 	if transmissionState == contracts.TransmissionStateInvalidReceiver {
 		message = getInvalidReceiverMessage(transmissionID.Receiver[:])
 	} else {
-		message = ptr(UnknownIssueExecutingReceiverContractMessage)
+		message = capcommon.Ptr(UnknownIssueExecutingReceiverContractMessage)
 	}
 
 	if !txAttemptedLocally {
@@ -445,7 +407,7 @@ func (e *WriteReport) processUnrecoverableTxState(ctx context.Context, request *
 }
 
 func getInvalidReceiverMessage(receiver []byte) *string {
-	return ptr(fmt.Sprintf("Invalid receiver: %s", common.Bytes2Hex(receiver)))
+	return capcommon.Ptr(fmt.Sprintf("Invalid receiver: %s", common.Bytes2Hex(receiver)))
 }
 
 func getTransmissionID(workflowExecutionID string, request *evm.WriteReportRequest) (contracts.TransmissionID, error) {
@@ -458,14 +420,14 @@ func getTransmissionID(workflowExecutionID string, request *evm.WriteReportReque
 		return contracts.TransmissionID{}, fmt.Errorf("workflowExecutionID must be 32 bytes, got %d", len(rawExecutionID))
 	}
 
-	reportMetadata, err := decodeReportMetadata(request.Report.RawReport)
+	reportMetadata, err := capcommon.DecodeReportMetadata(request.Report.RawReport)
 	if err != nil {
-		return contracts.TransmissionID{}, fmt.Errorf("%s failed to decode report metadata: %v", userError, err)
+		return contracts.TransmissionID{}, fmt.Errorf("%s failed to decode report metadata: %v", capcommon.UserError, err)
 	}
 
 	reportID := common.Hex2Bytes(reportMetadata.ReportID)
 	if len(reportID) != 2 {
-		return contracts.TransmissionID{}, fmt.Errorf("%s report ID is of wrong length: %d bytes, expected 2 bytes", userError, len(reportID))
+		return contracts.TransmissionID{}, fmt.Errorf("%s report ID is of wrong length: %d bytes, expected 2 bytes", capcommon.UserError, len(reportID))
 	}
 
 	transmissionID := contracts.TransmissionID{
@@ -497,7 +459,7 @@ func (e *WriteReport) fetchTransactionReceiptAndCreateReply(ctx context.Context,
 	}
 	message := errorMessage
 	if receiverStatus == evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED && errorMessage == nil {
-		message = ptr("receiver contract execution failure")
+		message = capcommon.Ptr("receiver contract execution failure")
 	}
 
 	txStatus := evm.TxStatus_TX_STATUS_SUCCESS
@@ -521,10 +483,6 @@ func (e *WriteReport) fetchTransactionReceiptAndCreateReply(ctx context.Context,
 	}, nil
 }
 
-func ptr(s string) *string {
-	return &s
-}
-
 func (e *EVM) validateInputsAndReportMetadata(requestMetadata capabilities.RequestMetadata, request *evm.WriteReportRequest) error {
 	if request == nil {
 		return errors.New("nil WriteReportRequest")
@@ -539,7 +497,7 @@ func (e *EVM) validateInputsAndReportMetadata(requestMetadata capabilities.Reque
 		return fmt.Errorf("no signatures provided")
 	}
 
-	reportMetadata, err := decodeReportMetadata(request.Report.RawReport)
+	reportMetadata, err := capcommon.DecodeReportMetadata(request.Report.RawReport)
 	if err != nil {
 		return err
 	}
@@ -746,5 +704,5 @@ func (thr *TxHashRetriever) GetFailedTransmissionHashWithCount(ctx context.Conte
 }
 
 func (e *EVM) isUserErrorWriteReport(err error) bool {
-	return strings.HasPrefix(err.Error(), userError)
+	return strings.HasPrefix(err.Error(), capcommon.UserError)
 }
