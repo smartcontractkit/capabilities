@@ -66,8 +66,8 @@ func (a *Aptos) initLimiters(limitsFactory limits.Factory) (err error) {
 		return
 	}
 
-	// PLEX-2599 can be tuned later
-	maxGasAmountLimit := settings.Uint64(1_000_000)
+	// PLEX-2599 can be tuned later (100_000 in aptos-sdk, 200_000 in chainlink-aptos)
+	maxGasAmountLimit := settings.Uint64(200_000)
 	a.maxGasAmountLimit, err = limits.MakeUpperBoundLimiter(limitsFactory, maxGasAmountLimit)
 	return
 }
