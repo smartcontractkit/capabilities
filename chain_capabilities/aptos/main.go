@@ -143,7 +143,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		"capabilityID", c.id,
 	)
 
-	myDON, err := transmission_schedule.InitMyDON(ctx, dependencies.CapabilityRegistry, c.id, c.lggr)
+	myDON, err := transmission_schedule.InitMyDON(ctx, dependencies.CapabilityRegistry, c.id, c.lggr, false)
 	if err != nil {
 		c.lggr.Errorw("failed to init DON", "error", err)
 		return fmt.Errorf("failed to init DON: %w", err)
@@ -172,7 +172,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	if cfg.DeltaStage == 0 {
 		cfg.DeltaStage = defaultDeltaStage
 	}
-	scheduler, err := transmission_schedule.InitialiseTransmissionScheduler(ctx, dependencies.CapabilityRegistry, cfg.DeltaStage, c.lggr, c.DON)
+	scheduler, err := transmission_schedule.InitialiseTransmissionScheduler(ctx, dependencies.CapabilityRegistry, cfg.DeltaStage, c.lggr, c.DON, false)
 	if err != nil {
 		c.lggr.Errorw("failed to initialize transmission scheduler", "error", err)
 		return fmt.Errorf("failed to initialize transmission scheduler: %w", err)
