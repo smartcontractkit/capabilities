@@ -93,6 +93,9 @@ func transmissionScheduleSeed(transmissionID string) [16]byte {
 }
 
 func InitMyDON(ctx context.Context, registry core.CapabilitiesRegistry, capabilityID string, lggr logger.Logger) (capabilities.DON, error) {
+	if registry == nil {
+		return capabilities.DON{}, fmt.Errorf("capabilities registry is nil")
+	}
 	localNode, err := registry.LocalNode(ctx)
 	if err != nil {
 		lggr.Errorw("failed to get local node", "error", err)
