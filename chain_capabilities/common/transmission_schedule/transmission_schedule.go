@@ -92,7 +92,10 @@ func transmissionScheduleSeed(transmissionID string) [16]byte {
 	return key
 }
 
-func InitMyDON(ctx context.Context, registry core.CapabilitiesRegistry, capabilityID string, lggr logger.Logger) (capabilities.DON, error) {
+func InitMyDON(ctx context.Context, registry core.CapabilitiesRegistry, capabilityID string, lggr logger.Logger, isLocal bool) (capabilities.DON, error) {
+	if isLocal {
+		return capabilities.DON{}, nil
+	}
 	if registry == nil {
 		return capabilities.DON{}, fmt.Errorf("capabilities registry is nil")
 	}
@@ -138,7 +141,11 @@ func InitialiseTransmissionScheduler(
 	deltaStage time.Duration,
 	lggr logger.Logger,
 	don *capabilities.DON,
+	isLocal bool,
 ) (TransmissionScheduler, error) {
+	if isLocal {
+		return TransmissionScheduler{}, nil
+	}
 	localNode, err := capRegistry.LocalNode(ctx)
 	if err != nil {
 		lggr.Errorw("failed to get local node for transmission scheduler", "error", err)
