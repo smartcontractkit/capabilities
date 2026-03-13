@@ -4,7 +4,7 @@ go 1.25.5
 
 require (
 	github.com/aptos-labs/aptos-go-sdk v1.12.0
-	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260312150530-3da6900e327d
+	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260313115334-25da4cbabcd9
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260223172632-a716db2e04a0
 	github.com/smartcontractkit/chain-selectors v1.0.89
 	github.com/smartcontractkit/chainlink-aptos v0.0.0-20260304104421-dd6ab4ea9452
@@ -132,5 +132,3 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/smartcontractkit/capabilities/chain_capabilities/common => ../common
