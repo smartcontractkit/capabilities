@@ -3,17 +3,15 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"maps"
 	"slices"
 	"strconv"
 	"time"
 
-	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
-
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/actions"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/config"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
 	chain_selectors "github.com/smartcontractkit/chain-selectors"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -145,10 +143,12 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		"capabilityID", c.id,
 	)
 
-	if err := c.initMyDON(ctx, dependencies.CapabilityRegistry); err != nil {
+	myDON, err := transmission_schedule.InitMyDON(ctx, dependencies.CapabilityRegistry, c.id, c.lggr)
+	if err != nil {
 		c.lggr.Errorw("failed to init DON", "error", err)
 		return fmt.Errorf("failed to init DON: %w", err)
 	}
+	c.DON = &myDON
 	c.lggr.Debugw("Initialised DON", "donID", c.DON.ID, "donName", c.DON.Name, "members", len(c.DON.Members), "F", c.DON.F)
 
 	p2pConfig := cfg.P2PToTransmitterMap
@@ -172,7 +172,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	if cfg.DeltaStage == 0 {
 		cfg.DeltaStage = defaultDeltaStage
 	}
-	scheduler, err := c.initialiseTransmissionScheduler(ctx, dependencies.CapabilityRegistry, cfg.DeltaStage, p2pConfig)
+	scheduler, err := transmission_schedule.InitialiseTransmissionScheduler(ctx, dependencies.CapabilityRegistry, cfg.DeltaStage, c.lggr, c.DON)
 	if err != nil {
 		c.lggr.Errorw("failed to initialize transmission scheduler", "error", err)
 		return fmt.Errorf("failed to initialize transmission scheduler: %w", err)
@@ -215,105 +215,6 @@ func (c *capabilityGRPCService) setSelector(cfg *config.Config) error {
 	}
 	c.chainSelector = cs
 	return nil
-}
-
-// TODO: copied from evm, can be reused
-func (c *capabilityGRPCService) initMyDON(ctx context.Context, registry core.CapabilitiesRegistry) error {
-	localNode, err := registry.LocalNode(ctx)
-	if err != nil {
-		c.lggr.Errorw("failed to get local node", "error", err)
-		return fmt.Errorf("failed to receiver local node: %w", err)
-	}
-
-	var dons []capabilities.DON
-
-	donsWithNodes, err := registry.DONsForCapability(ctx, c.id)
-	if err != nil {
-		c.lggr.Errorw("failed getting DONs for capability", "capabilityID", c.id, "error", err)
-		return fmt.Errorf("failed getting dons for capability: %w", err)
-	}
-
-	for _, d := range donsWithNodes {
-		for _, n := range d.Nodes {
-			if n.PeerID.String() == localNode.PeerID.String() {
-				dons = append(dons, d.DON)
-			}
-		}
-	}
-
-	if len(dons) == 0 {
-		c.lggr.Errorw("no DON found for local peer", "peerID", localNode.PeerID.String(), "capabilityID", c.id)
-		return errors.New("failed to find don for my peer ID: " + localNode.PeerID.String())
-	}
-
-	if len(dons) > 1 {
-		for _, d := range dons {
-			c.lggr.Errorf("received more than one don for capability id: %s don id: %d don name: %s", c.id, d.ID, d.Name)
-		}
-	}
-
-	c.DON = &dons[0]
-
-	return nil
-}
-
-// TODO: copied from evm, can be reused
-func (c *capabilityGRPCService) initialiseTransmissionScheduler(
-	ctx context.Context,
-	capRegistry core.CapabilitiesRegistry,
-	deltaStage time.Duration,
-	p2pConfig map[string]string,
-) (actions.TransmissionScheduler, error) {
-	localNode, err := capRegistry.LocalNode(ctx)
-	if err != nil {
-		c.lggr.Errorw("failed to get local node for transmission scheduler", "error", err)
-		return actions.TransmissionScheduler{}, fmt.Errorf("failed to get local node: %w", err)
-	}
-
-	if c.DON == nil {
-		c.lggr.Errorw("DON is nil when initialising transmission scheduler")
-		return actions.TransmissionScheduler{}, errors.New("capabilityInfo DON is nil")
-	}
-
-	if len(c.DON.Members) == 0 {
-		c.lggr.Errorw("DON has no members when initialising transmission scheduler")
-		return actions.TransmissionScheduler{}, errors.New("capabilityInfo DON is empty")
-	}
-
-	var donPeerIDs []p2ptypes.PeerID
-	myPeerID := localNode.PeerID
-	donPeerIDs = append(donPeerIDs, c.DON.Members...)
-
-	if myPeerID == nil {
-		c.lggr.Errorw("local node peer ID is nil")
-		return actions.TransmissionScheduler{}, fmt.Errorf("local node peer ID is nil")
-	}
-	if len(donPeerIDs) == 0 {
-		c.lggr.Errorw("DON members list is empty")
-		return actions.TransmissionScheduler{}, fmt.Errorf("DON members list is empty")
-	}
-
-	found := slices.Contains(donPeerIDs, *myPeerID)
-	if !found {
-		c.lggr.Errorw("local peer not in DON members", "myPeerID", myPeerID.String(), "donMembers", len(donPeerIDs))
-		return actions.TransmissionScheduler{}, fmt.Errorf("local peer ID %s not found in DON members", myPeerID.String())
-	}
-
-	c.lggr.Debugw("Transmission scheduler initialized",
-		"deltaStage", deltaStage,
-		"donSize", len(donPeerIDs),
-		"F", c.DON.F,
-		"myPeerID", myPeerID.String(),
-	)
-
-	return actions.NewTransmissionScheduler(
-		*myPeerID,
-		donPeerIDs,
-		p2pConfig,
-		deltaStage,
-		c.DON.F,
-		c.lggr,
-	), nil
 }
 
 // fetchP2PConfig fetches the p2pID-to-transmitter-address map from the on-chain
@@ -384,7 +285,6 @@ func (c *capabilityGRPCService) fetchP2PConfig(ctx context.Context, registry cor
 	return result, nil
 }
 
-
 func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Config, error) {
 	var cfg config.Config
 	if err := json.Unmarshal([]byte(configStr), &cfg); err != nil {
@@ -392,4 +292,3 @@ func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Confi
 	}
 	return &cfg, nil
 }
-

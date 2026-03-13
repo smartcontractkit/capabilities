@@ -10,6 +10,7 @@ import (
 
 	aptos_sdk "github.com/aptos-labs/aptos-go-sdk"
 
+	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	aptostypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/aptos"
 )
@@ -51,7 +52,7 @@ type TxHashRetriever struct {
 func NewTxHashRetriever(forwarderClient CREForwarderClient, lggr logger.Logger, transmissionID TransmissionID, forwarderAddress string, requestStartTime time.Time) TxHashRetriever {
 	retriever := TxHashRetriever{
 		forwarderClient:    forwarderClient,
-		lggr:               lggr,
+		lggr:               logger.Named(lggr, "TxHashRetriever"),
 		transmissionID:     transmissionID,
 		entryFunctionName:  fmt.Sprintf("%s::forwarder::report", forwarderAddress),
 		startingPointMicro: requestStartTime.Add(-txSearchStartingBuffer).UnixMicro(),
@@ -373,7 +374,7 @@ func (thr *TxHashRetriever) matchesTransmissionByReport(arguments []interface{})
 	}
 	report := rawReport[reportContextLen:]
 
-	metadata, err := decodeReportMetadata(report)
+	metadata, err := capcommon.DecodeReportMetadata(report)
 	if err != nil {
 		thr.lggr.Debugw("matchesTransmissionByReport - decodeReportMetadata failed", "error", err)
 		return false

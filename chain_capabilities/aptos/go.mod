@@ -4,14 +4,17 @@ go 1.25.5
 
 require (
 	github.com/aptos-labs/aptos-go-sdk v1.12.0
-	github.com/jpillora/backoff v1.0.0
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20260210010829-97eb42ca2924
+	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260312150530-3da6900e327d
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20260223172632-a716db2e04a0
 	github.com/smartcontractkit/chain-selectors v1.0.89
 	github.com/smartcontractkit/chainlink-aptos v0.0.0-20260304104421-dd6ab4ea9452
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260226130359-963f935e0396
 )
 
-require github.com/stretchr/objx v0.5.2 // indirect
+require (
+	github.com/jpillora/backoff v1.0.0 // indirect
+	github.com/stretchr/objx v0.5.2 // indirect
+)
 
 require (
 	filippo.io/edwards25519 v1.1.1 // indirect
@@ -83,7 +86,7 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1 // indirect
 	github.com/scylladb/go-reflectx v1.0.1 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
-	github.com/smartcontractkit/chainlink-common v0.10.1-0.20260303163359-7df8d8746490
+	github.com/smartcontractkit/chainlink-common v0.10.1-0.20260311225716-d2349cf02bc3
 	github.com/smartcontractkit/chainlink-common/pkg/chipingress v0.0.10 // indirect
 	github.com/smartcontractkit/chainlink-protos/linking-service/go v0.0.0-20251002192024-d2ad9222409b // indirect
 	github.com/smartcontractkit/chainlink-protos/node-platform v0.0.0-20260205130626-db2a2aab956b // indirect
@@ -129,3 +132,5 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/smartcontractkit/capabilities/chain_capabilities/common => ../common

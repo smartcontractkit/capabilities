@@ -42,7 +42,7 @@ func newForwarderClient(aptosService types.AptosService, lggr logger.Logger, for
 	forwarderEncoder := forwarder.Encoder()
 	return &forwarderClient{
 		AptosService:     aptosService,
-		lggr:             lggr,
+		lggr:             logger.Named(lggr, "ForwarderClient"),
 		forwarderAddress: forwarderAddress,
 		forwarderEncoder: forwarderEncoder,
 	}

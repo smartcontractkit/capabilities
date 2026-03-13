@@ -1,7 +1,6 @@
 package actions
 
 import (
-	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -12,6 +11,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	commontest "github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
@@ -48,10 +49,8 @@ func newTestHelper(t *testing.T) *testHelper {
 		forwarderAddress: testForwarderAddr,
 		lggr:             logger.Sugared(lggr),
 		p2pConfig:        map[string]string{},
-		transmissionScheduler: NewTransmissionScheduler(
-			myPeerID, []p2ptypes.PeerID{myPeerID}, map[string]string{},
-			1*time.Second, 0, lggr,
-		),
+		transmissionScheduler: transmission_schedule.NewTransmissionScheduler(
+			myPeerID, []p2ptypes.PeerID{myPeerID}, 1*time.Second, 0, lggr),
 	}
 	require.NoError(t, a.initLimiters(limits.Factory{Logger: lggr}))
 	return &testHelper{forwarderClient: mockClient, aptos: a}
@@ -77,11 +76,11 @@ func newMultiNodeTestHelper(t *testing.T, transmissionIDStr string) (*testHelper
 	}
 
 	p2pCfg := buildCfg()
-	scheduler := NewTransmissionScheduler(myPeerID, []p2ptypes.PeerID{otherPeerID, myPeerID}, p2pCfg, 15*time.Second, 0, lggr)
+	scheduler := transmission_schedule.NewTransmissionScheduler(myPeerID, []p2ptypes.PeerID{otherPeerID, myPeerID}, 15*time.Second, 0, lggr)
 	if scheduler.GetQueuePosition(transmissionIDStr) == 0 {
 		myPeerID, otherPeerID = otherPeerID, myPeerID
 		p2pCfg = buildCfg()
-		scheduler = NewTransmissionScheduler(myPeerID, []p2ptypes.PeerID{otherPeerID, myPeerID}, p2pCfg, 15*time.Second, 0, lggr)
+		scheduler = transmission_schedule.NewTransmissionScheduler(myPeerID, []p2ptypes.PeerID{otherPeerID, myPeerID}, 15*time.Second, 0, lggr)
 	}
 	require.Greater(t, scheduler.GetQueuePosition(transmissionIDStr), 0)
 
@@ -100,10 +99,10 @@ func newMultiNodeTestHelper(t *testing.T, transmissionIDStr string) (*testHelper
 func newReportFixture(t *testing.T) (ocrtypes.Metadata, capabilities.RequestMetadata, *aptoscap.WriteReportRequest) {
 	t.Helper()
 	rm := ocrtypes.Metadata{
-		Version: 1, ExecutionID: hex.EncodeToString(randomBytes(32)),
+		Version: 1, ExecutionID: hex.EncodeToString(commontest.RandomBytes(32)),
 		Timestamp: 1000, DONID: 10, DONConfigVersion: 2,
-		WorkflowID: hex.EncodeToString(randomBytes(32)), WorkflowName: hex.EncodeToString(randomBytes(10)),
-		WorkflowOwner: hex.EncodeToString(randomBytes(20)), ReportID: hex.EncodeToString(randomBytes(2)),
+		WorkflowID: hex.EncodeToString(commontest.RandomBytes(32)), WorkflowName: hex.EncodeToString(commontest.RandomBytes(10)),
+		WorkflowOwner: hex.EncodeToString(commontest.RandomBytes(20)), ReportID: hex.EncodeToString(commontest.RandomBytes(2)),
 	}
 	encoded, err := rm.Encode()
 	require.NoError(t, err)
@@ -121,14 +120,6 @@ func newReportFixture(t *testing.T) (ocrtypes.Metadata, capabilities.RequestMeta
 func generateRandomSignatures() []*workflowpb.AttributedSignature {
 	sig := [32]byte{1, 2, 3}
 	return []*workflowpb.AttributedSignature{{Signature: sig[:]}, {Signature: sig[:]}}
-}
-
-func randomBytes(n int) []byte {
-	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		panic(err)
-	}
-	return b
 }
 
 // buildFakeTransaction constructs an aptostypes.Transaction whose Data field is JSON
@@ -195,7 +186,7 @@ func TestWriteReport_Validation(t *testing.T) {
 	t.Run("WorkflowID mismatch", func(t *testing.T) {
 		h := newTestHelper(t)
 		_, reqMeta, req := newReportFixture(t)
-		reqMeta.WorkflowID = hex.EncodeToString(randomBytes(32))
+		reqMeta.WorkflowID = hex.EncodeToString(commontest.RandomBytes(32))
 
 		_, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
 		require.NotNil(t, capErr)
