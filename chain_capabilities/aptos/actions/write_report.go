@@ -316,40 +316,21 @@ func (wr *writeReport) buildMeteringMetadata(ctx context.Context, txHash string)
 	return metering.GetResponseMetadataWriteReport(fee, wr.chainSelector)
 }
 
-// TODO: copied from evm, can be reused
 func getTransmissionID(workflowExecutionID string, request *aptoscap.WriteReportRequest) (TransmissionID, error) {
-	rawExecutionID, err := hex.DecodeString(workflowExecutionID)
+	rawExecutionID, reportID, err := capcommon.ParseTransmissionComponents(workflowExecutionID, request.Report.RawReport)
 	if err != nil {
 		return TransmissionID{}, err
-	}
-
-	if len(rawExecutionID) != 32 {
-		return TransmissionID{}, fmt.Errorf("workflowExecutionID must be 32 bytes, got %d", len(rawExecutionID))
-	}
-
-	reportMetadata, err := capcommon.DecodeReportMetadata(request.Report.RawReport)
-	if err != nil {
-		return TransmissionID{}, fmt.Errorf("%s failed to decode report metadata: %v", capcommon.UserError, err)
-	}
-
-	reportID, err := hex.DecodeString(reportMetadata.ReportID)
-	if err != nil {
-		return TransmissionID{}, fmt.Errorf("%s failed to decode report ID: %v", capcommon.UserError, err)
-	}
-	if len(reportID) != 2 {
-		return TransmissionID{}, fmt.Errorf("%s report ID is of wrong length: %d bytes, expected 2 bytes", capcommon.UserError, len(reportID))
 	}
 
 	if len(request.Receiver) != 32 {
 		return TransmissionID{}, fmt.Errorf("%s receiver address must be 32 bytes, got %d", capcommon.UserError, len(request.Receiver))
 	}
 
-	transmissionID := TransmissionID{
+	return TransmissionID{
 		Receiver:            [32]byte(request.Receiver),
-		WorkflowExecutionID: [32]byte(rawExecutionID),
-		ReportID:            [2]byte(reportID),
-	}
-	return transmissionID, nil
+		WorkflowExecutionID: rawExecutionID,
+		ReportID:            reportID,
+	}, nil
 }
 
 func (s *Aptos) validateWriteReportInputs(requestMetadata capabilities.RequestMetadata, request *aptoscap.WriteReportRequest) error {

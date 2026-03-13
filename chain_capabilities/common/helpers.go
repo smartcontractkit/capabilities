@@ -2,6 +2,8 @@ package common
 
 import (
 	"context"
+	"encoding/hex"
+	"fmt"
 	"time"
 
 	"github.com/jpillora/backoff"
@@ -23,6 +25,33 @@ func Ptr[T any](v T) *T {
 func DecodeReportMetadata(data []byte) (ocrtypes.Metadata, error) {
 	metadata, _, err := ocrtypes.Decode(data)
 	return metadata, err
+}
+
+// ParseTransmissionComponents extracts and validates the executionID and reportID
+// common to all chain transmission ID construction.
+func ParseTransmissionComponents(workflowExecutionID string, rawReport []byte) ([32]byte, [2]byte, error) {
+	rawExecutionID, err := hex.DecodeString(workflowExecutionID)
+	if err != nil {
+		return [32]byte{}, [2]byte{}, err
+	}
+	if len(rawExecutionID) != 32 {
+		return [32]byte{}, [2]byte{}, fmt.Errorf("workflowExecutionID must be 32 bytes, got %d", len(rawExecutionID))
+	}
+
+	reportMetadata, err := DecodeReportMetadata(rawReport)
+	if err != nil {
+		return [32]byte{}, [2]byte{}, fmt.Errorf("%s failed to decode report metadata: %v", UserError, err)
+	}
+
+	reportID, err := hex.DecodeString(reportMetadata.ReportID)
+	if err != nil {
+		return [32]byte{}, [2]byte{}, fmt.Errorf("%s failed to decode report ID: %v", UserError, err)
+	}
+	if len(reportID) != 2 {
+		return [32]byte{}, [2]byte{}, fmt.Errorf("%s report ID is of wrong length: %d bytes, expected 2 bytes", UserError, len(reportID))
+	}
+
+	return [32]byte(rawExecutionID), [2]byte(reportID), nil
 }
 
 // GetError returns the appropriate capability error based on whether it is a user error.

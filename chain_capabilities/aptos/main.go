@@ -28,7 +28,7 @@ const (
 	CapabilityVersion = "1.0.0"
 
 	// TODO: PLEX-2598 make configurable
-	defaultDeltaStage = 15 * time.Second
+	defaultDeltaStage = 10 * time.Second
 )
 
 func capabilityID(chainSelector uint64) string {

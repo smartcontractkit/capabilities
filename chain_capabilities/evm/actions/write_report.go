@@ -411,31 +411,16 @@ func getInvalidReceiverMessage(receiver []byte) *string {
 }
 
 func getTransmissionID(workflowExecutionID string, request *evm.WriteReportRequest) (contracts.TransmissionID, error) {
-	rawExecutionID, err := hex.DecodeString(workflowExecutionID)
+	rawExecutionID, reportID, err := capcommon.ParseTransmissionComponents(workflowExecutionID, request.Report.RawReport)
 	if err != nil {
 		return contracts.TransmissionID{}, err
 	}
 
-	if len(rawExecutionID) != 32 {
-		return contracts.TransmissionID{}, fmt.Errorf("workflowExecutionID must be 32 bytes, got %d", len(rawExecutionID))
-	}
-
-	reportMetadata, err := capcommon.DecodeReportMetadata(request.Report.RawReport)
-	if err != nil {
-		return contracts.TransmissionID{}, fmt.Errorf("%s failed to decode report metadata: %v", capcommon.UserError, err)
-	}
-
-	reportID := common.Hex2Bytes(reportMetadata.ReportID)
-	if len(reportID) != 2 {
-		return contracts.TransmissionID{}, fmt.Errorf("%s report ID is of wrong length: %d bytes, expected 2 bytes", capcommon.UserError, len(reportID))
-	}
-
-	transmissionID := contracts.TransmissionID{
+	return contracts.TransmissionID{
 		Receiver:            common.BytesToAddress(request.Receiver),
-		WorkflowExecutionID: [32]byte(rawExecutionID),
-		ReportID:            [2]byte(reportID),
-	}
-	return transmissionID, nil
+		WorkflowExecutionID: rawExecutionID,
+		ReportID:            reportID,
+	}, nil
 }
 
 func (e *WriteReport) fetchTransactionReceiptAndCreateReply(ctx context.Context, txHash evmtypes.Hash, receiverStatus evm.ReceiverContractExecutionStatus, errorMessage *string) (*evm.WriteReportReply, error) {
