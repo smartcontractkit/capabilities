@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/metering"
 	commontest "github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -26,11 +27,22 @@ import (
 
 // --- helpers ---
 
+const testChainSelector = uint64(1)
+
 var (
 	testForwarderAddr = aptos_sdk.AccountAddress{0xAA}
 	testReceiver      = aptos_sdk.AccountAddress{0xBB}
 	testTransmitter   = aptos_sdk.AccountAddress{0xCC}
 )
+
+func validateMeteringWriteReport(t *testing.T, metadata capabilities.ResponseMetadata, chainSelector uint64) {
+	t.Helper()
+	require.Len(t, metadata.Metering, 1)
+	meteringNodeDetail := metadata.Metering[0]
+	require.Equal(t, fmt.Sprintf(metering.WriteReportSpendUnitFormat, chainSelector), meteringNodeDetail.SpendUnit)
+	require.Equal(t, "0", meteringNodeDetail.SpendValue)
+	require.Empty(t, meteringNodeDetail.Peer2PeerID)
+}
 
 type testHelper struct {
 	forwarderClient *CREForwarderClient_mock
@@ -49,6 +61,7 @@ func newTestHelper(t *testing.T) *testHelper {
 		forwarderAddress: testForwarderAddr,
 		lggr:             logger.Sugared(lggr),
 		p2pConfig:        map[string]string{},
+		chainSelector:    testChainSelector,
 		transmissionScheduler: transmission_schedule.NewTransmissionScheduler(
 			myPeerID, []p2ptypes.PeerID{myPeerID}, 1*time.Second, 0, lggr),
 	}
@@ -90,6 +103,7 @@ func newMultiNodeTestHelper(t *testing.T, transmissionIDStr string) (*testHelper
 		forwarderAddress:      testForwarderAddr,
 		lggr:                  logger.Sugared(lggr),
 		p2pConfig:             p2pCfg,
+		chainSelector:         testChainSelector,
 		transmissionScheduler: scheduler,
 	}
 	require.NoError(t, a.initLimiters(limits.Factory{Logger: lggr}))
@@ -236,6 +250,7 @@ func TestWriteReport_Execute(t *testing.T) {
 		require.Nil(t, capErr)
 		require.Equal(t, aptoscap.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
 		require.Equal(t, "0xabc", *result.Response.TxHash)
+		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector)
 	})
 
 	t.Run("Already transmitted - returns without submitting", func(t *testing.T) {
@@ -252,6 +267,7 @@ func TestWriteReport_Execute(t *testing.T) {
 		require.Nil(t, capErr)
 		require.Equal(t, aptoscap.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
 		require.Equal(t, "0xalready", *result.Response.TxHash)
+		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector)
 		h.forwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	})
 
@@ -282,6 +298,7 @@ func TestWriteReport_Execute(t *testing.T) {
 		require.Nil(t, capErr)
 		require.Equal(t, aptoscap.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
 		require.Equal(t, "0xreal", *result.Response.TxHash)
+		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector)
 	})
 
 	t.Run("Submit fails at node0 - returns own hash", func(t *testing.T) {
@@ -296,6 +313,7 @@ func TestWriteReport_Execute(t *testing.T) {
 		require.Nil(t, capErr)
 		require.Equal(t, aptoscap.TxStatus_TX_STATUS_FATAL, result.Response.TxStatus)
 		require.Equal(t, "0xmine", *result.Response.TxHash)
+		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector)
 	})
 
 	t.Run("Unexpected TxSuccess but no transmission onchain", func(t *testing.T) {
@@ -326,5 +344,6 @@ func TestWriteReport_Execute(t *testing.T) {
 		require.Nil(t, capErr)
 		require.Equal(t, aptoscap.TxStatus_TX_STATUS_FATAL, result.Response.TxStatus)
 		require.Equal(t, "0xnode0failed", *result.Response.TxHash)
+		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector)
 	})
 }

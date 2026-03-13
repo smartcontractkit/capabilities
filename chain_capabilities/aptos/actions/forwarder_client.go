@@ -64,7 +64,7 @@ func (fc *forwarderClient) InvokeOnReport(ctx context.Context, receiver []byte, 
 
 	fullRawReport := slices.Concat(report.ReportContext, report.RawReport)
 
-	receiverAddress, err := aptos_sdk.ConvertToAddress(receiver)
+	receiverAddress, err := aptos_sdk.ConvertToAddress(string(receiver[:]))
 	if err != nil {
 		fc.lggr.Errorw("failed to convert receiver to address", "error", err)
 		return nil, fmt.Errorf("failed to convert receiver to address: %w", err)

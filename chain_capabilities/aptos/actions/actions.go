@@ -32,18 +32,19 @@ type Aptos struct {
 	forwarderAddress      aptos_sdk.AccountAddress
 	lggr                  logger.SugaredLogger
 	p2pConfig             map[string]string
+	chainSelector         uint64
 	maxGasAmountLimit     limits.BoundLimiter[uint64]
 	reportSizeLimit       limits.BoundLimiter[commoncfg.Size]
 	transmissionScheduler transmission_schedule.TransmissionScheduler
 }
 
-func NewAptos(cfg *config.Config, p2pConfig map[string]string, aptosService types.AptosService, lggr logger.Logger, limitsFactory limits.Factory, transmissionScheduler transmission_schedule.TransmissionScheduler) (*Aptos, error) {
+func NewAptos(cfg *config.Config, p2pConfig map[string]string, aptosService types.AptosService, lggr logger.Logger, limitsFactory limits.Factory, transmissionScheduler transmission_schedule.TransmissionScheduler, chainSelector uint64) (*Aptos, error) {
 	if aptosService == nil {
 		return nil, fmt.Errorf("aptos service is required")
 	}
 
 	fc := newForwarderClient(aptosService, lggr, cfg.CREForwarderAddress)
-	forwarderAddress, err := aptos_sdk.ConvertToAddress(cfg.CREForwarderAddress)
+	forwarderAddress, err := aptos_sdk.ConvertToAddress(string(cfg.CREForwarderAddress[:]))
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert forwarder address to address: %w", err)
 	}
@@ -54,6 +55,7 @@ func NewAptos(cfg *config.Config, p2pConfig map[string]string, aptosService type
 		forwarderAddress:      *forwarderAddress,
 		lggr:                  logger.Sugared(lggr),
 		p2pConfig:             p2pConfig,
+		chainSelector:         chainSelector,
 		transmissionScheduler: transmissionScheduler,
 	}
 

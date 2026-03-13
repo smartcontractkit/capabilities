@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"math/big"
 	"slices"
 	"strings"
 	"time"
@@ -19,6 +20,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	aptostypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/aptos"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/metering"
 )
 
 func withQuickRetry[T any](ctx context.Context, lggr logger.Logger, fn func(context.Context) (T, error)) (T, error) {
@@ -52,7 +55,7 @@ func (s *Aptos) WriteReport(
 	s.lggr.Debugw("inputs validated successfully")
 
 	// 2. Build and submit the transaction via AptosService
-	reply, err := s.executeWriteReport(ctx, input, metadata)
+	reply, meteringMetadata, err := s.executeWriteReport(ctx, input, metadata)
 	if err != nil {
 		s.lggr.Errorw("executeWriteReport failed", "error", err)
 		return nil, capcommon.GetError(err, s.isUserError(err))
@@ -65,7 +68,7 @@ func (s *Aptos) WriteReport(
 
 	return &capabilities.ResponseAndMetadata[*aptoscap.WriteReportReply]{
 		Response:         reply,
-		ResponseMetadata: capabilities.ResponseMetadata{},
+		ResponseMetadata: meteringMetadata,
 	}, nil
 }
 
@@ -74,6 +77,7 @@ type writeReport struct {
 	forwarderAddress      aptos_sdk.AccountAddress
 	lggr                  logger.SugaredLogger
 	p2pConfig             map[string]string
+	chainSelector         uint64
 	maxGasAmountLimit     limits.BoundLimiter[uint64]
 	reportSizeLimit       limits.BoundLimiter[commoncfg.Size]
 	transmissionScheduler transmission_schedule.TransmissionScheduler
@@ -83,12 +87,13 @@ func (s *Aptos) executeWriteReport(
 	ctx context.Context,
 	request *aptoscap.WriteReportRequest,
 	metadata capabilities.RequestMetadata,
-) (*aptoscap.WriteReportReply, error) {
+) (*aptoscap.WriteReportReply, capabilities.ResponseMetadata, error) {
 	wr := &writeReport{
 		forwarderClient:       s.forwarderClient,
 		forwarderAddress:      s.forwarderAddress,
 		lggr:                  s.lggr,
 		p2pConfig:             s.p2pConfig,
+		chainSelector:         s.chainSelector,
 		maxGasAmountLimit:     s.maxGasAmountLimit,
 		reportSizeLimit:       s.reportSizeLimit,
 		transmissionScheduler: s.transmissionScheduler,
@@ -96,7 +101,6 @@ func (s *Aptos) executeWriteReport(
 	return wr.execute(ctx, request, metadata)
 }
 
-// TODO: handle billing fees / populate transaction fees in WriteReportReply (PLEX-2578)
 // TODO: handle gas limit bumping if required (PLEX-2580)
 // TODO: handle metrics (PLEX-2546)
 // TODO: populate error message and ReceiverContractExecutionStatus in WriteReportReply by using vmstatus received from failed tx (PLEX-2597)
@@ -104,7 +108,7 @@ func (wr *writeReport) execute(
 	ctx context.Context,
 	request *aptoscap.WriteReportRequest,
 	metadata capabilities.RequestMetadata,
-) (*aptoscap.WriteReportReply, error) {
+) (*aptoscap.WriteReportReply, capabilities.ResponseMetadata, error) {
 	wr.lggr.Debugw("execute started",
 		"workflowExecutionID", metadata.WorkflowExecutionID,
 		"hasGasConfig", request.GasConfig != nil,
@@ -122,7 +126,7 @@ func (wr *writeReport) execute(
 		limit, limErr := wr.maxGasAmountLimit.Limit(ctx)
 		if limErr != nil {
 			wr.lggr.Errorw("failed to get gas limit", "error", limErr)
-			return nil, limErr
+			return nil, capabilities.ResponseMetadata{}, limErr
 		}
 		request.GasConfig.MaxGasAmount = limit
 		wr.lggr.Debugw("using default gas limit", "maxGasAmount", limit)
@@ -130,7 +134,7 @@ func (wr *writeReport) execute(
 		err := wr.maxGasAmountLimit.Check(ctx, request.GasConfig.MaxGasAmount)
 		if err != nil {
 			wr.lggr.Errorw("gas config exceeds limit", "maxGasAmount", request.GasConfig.MaxGasAmount, "error", err)
-			return nil, fmt.Errorf("%s provided gas config exceeds limit (maxGasAmount=%d): %w", capcommon.UserError, request.GasConfig.MaxGasAmount, err)
+			return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s provided gas config exceeds limit (maxGasAmount=%d): %w", capcommon.UserError, request.GasConfig.MaxGasAmount, err)
 		}
 		wr.lggr.Debugw("using provided gas config", "maxGasAmount", request.GasConfig.MaxGasAmount)
 	}
@@ -138,7 +142,7 @@ func (wr *writeReport) execute(
 	transmissionID, err := getTransmissionID(metadata.WorkflowExecutionID, request)
 	if err != nil {
 		wr.lggr.Errorw("getTransmissionID failed", "error", err)
-		return &aptoscap.WriteReportReply{}, err
+		return &aptoscap.WriteReportReply{}, capabilities.ResponseMetadata{}, err
 	}
 	wr.lggr.Debugw("transmissionID created", "transmissionID", transmissionID.GetDebugID())
 
@@ -151,7 +155,7 @@ func (wr *writeReport) execute(
 	transmissionInfo, err := wr.pollTransmissionInfo(ctx, transmissionID, queuePosition)
 	if err != nil {
 		wr.lggr.Errorw("pollTransmissionInfo failed", "error", err)
-		return nil, fmt.Errorf("failed to get transmission info: %w", err)
+		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed to get transmission info: %w", err)
 	}
 	wr.lggr.Debugw("initial pollTransmissionInfo result", "success", transmissionInfo.Success, "transmitter", transmissionInfo.Transmitter.String())
 
@@ -166,13 +170,13 @@ func (wr *writeReport) execute(
 		txHash, txHashErr := txHashRetriever.GetSuccessfulTransmissionHash(ctx, transmissionInfo.Transmitter)
 		if txHashErr != nil {
 			wr.lggr.Errorw("report already onchain but failed to retrieve its txHash", "error", txHashErr)
-			return nil, txHashErr
+			return nil, capabilities.ResponseMetadata{}, txHashErr
 		}
 		wr.lggr.Debugw("returning early - report already onchain", "txHash", txHash)
 		return &aptoscap.WriteReportReply{
 			TxStatus: aptoscap.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:   &txHash,
-		}, nil
+		}, wr.buildMeteringMetadata(ctx, txHash), nil
 	}
 	// TODO: we can exit here if we find F+1 failed transactions, but thats expensive time and i/o wise.
 	// emit metrics here to understand if its worth investing time here over writing to a cheap chain and failing.
@@ -181,7 +185,7 @@ func (wr *writeReport) execute(
 	err = wr.reportSizeLimit.Check(ctx, commoncfg.SizeOf(request.Report.RawReport))
 	if err != nil {
 		wr.lggr.Errorw("report size exceeds limit", "reportSize", len(request.Report.RawReport), "error", err)
-		return nil, fmt.Errorf("%s report size exceeds limit: %w", capcommon.UserError, err)
+		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s report size exceeds limit: %w", capcommon.UserError, err)
 	}
 
 	wr.lggr.Debugw("submitting WriteReport transaction",
@@ -193,7 +197,7 @@ func (wr *writeReport) execute(
 	txReply, err := wr.forwarderClient.InvokeOnReport(ctx, request.Receiver, request.Report, request.GasConfig)
 	if err != nil {
 		wr.lggr.Errorw("InvokeOnReport failed", "error", err)
-		return nil, fmt.Errorf("failed to invoke forwarder report: %w", err)
+		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed to invoke forwarder report: %w", err)
 	}
 	wr.lggr.Debugw("InvokeOnReport returned", "txHash", txReply.TxHash, "txStatus", txReply.TxStatus)
 
@@ -208,7 +212,7 @@ func (wr *writeReport) execute(
 
 	if err != nil {
 		wr.lggr.Errorw("post-submission polling failed", "error", err)
-		return nil, fmt.Errorf("failed getting transmission info after node submitted the report on chain, %w", err)
+		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed getting transmission info after node submitted the report on chain, %w", err)
 	}
 
 	wr.lggr.Debugw("post-submission transmission status", "success", newTransmissionInfo.Success, "transmitter", newTransmissionInfo.Transmitter.String())
@@ -229,7 +233,7 @@ func (wr *writeReport) execute(
 			successHash, txHashErr := txHashRetriever.GetSuccessfulTransmissionHash(ctx, newTransmissionInfo.Transmitter)
 			if txHashErr != nil {
 				wr.lggr.Errorw("failed to get successful transmission hash after duplicate", "error", txHashErr)
-				return nil, fmt.Errorf("failed to get successful transmission hash: %w", txHashErr)
+				return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed to get successful transmission hash: %w", txHashErr)
 			}
 			txHash = successHash
 		}
@@ -237,12 +241,12 @@ func (wr *writeReport) execute(
 		return &aptoscap.WriteReportReply{
 			TxStatus: aptoscap.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:   &txHash,
-		}, nil
+		}, wr.buildMeteringMetadata(ctx, txHash), nil
 	case false:
 		if txReply.TxStatus == aptostypes.TxSuccess {
 			wr.lggr.Errorw("unexpected state - local tx succeeded but transmission info shows no success",
 				"transmissionID", transmissionID.GetDebugID())
-			return nil, fmt.Errorf("unexpected state: local transaction succeeded but transmission info shows no success for %s", transmissionID.GetDebugID())
+			return nil, capabilities.ResponseMetadata{}, fmt.Errorf("unexpected state: local transaction succeeded but transmission info shows no success for %s", transmissionID.GetDebugID())
 		}
 		ownTxHash := txReply.TxHash
 		wr.lggr.Debugw("transmission failed, searching for tx hashes",
@@ -254,7 +258,7 @@ func (wr *writeReport) execute(
 			return &aptoscap.WriteReportReply{
 				TxStatus: aptoscap.TxStatus_TX_STATUS_FATAL,
 				TxHash:   &ownTxHash,
-			}, nil
+			}, wr.buildMeteringMetadata(ctx, ownTxHash), nil
 		}
 
 		// Search preceding transmitters (position 0 through position-1) for a matching failed tx.
@@ -270,12 +274,13 @@ func (wr *writeReport) execute(
 				continue
 			}
 			wr.lggr.Debugw("checking prior transmitter", "index", i, "address", orderedTransmitters[i])
-			var addr aptos_sdk.AccountAddress
-			if parseErr := addr.ParseStringRelaxed(orderedTransmitters[i]); parseErr != nil {
-				wr.lggr.Warnw("failed to parse transmitter address, skipping", "address", orderedTransmitters[i], "err", parseErr)
+			// var addr aptos_sdk.AccountAddress
+			addr, err := aptos_sdk.ConvertToAddress(orderedTransmitters[i])
+			if err != nil {
+				wr.lggr.Errorw("failed to convert transmitter address to address", "address", orderedTransmitters[i], "error", err)
 				continue
 			}
-			failedHash, searchErr := txHashRetriever.GetFailedTransmissionHash(ctx, addr)
+			failedHash, searchErr := txHashRetriever.GetFailedTransmissionHash(ctx, *addr)
 			if searchErr != nil {
 				wr.lggr.Debugw("no matching failed tx for prior transmitter", "transmitter", orderedTransmitters[i], "position", i, "err", searchErr)
 				continue
@@ -284,7 +289,7 @@ func (wr *writeReport) execute(
 			return &aptoscap.WriteReportReply{
 				TxStatus: aptoscap.TxStatus_TX_STATUS_FATAL,
 				TxHash:   &failedHash,
-			}, nil
+			}, wr.buildMeteringMetadata(ctx, failedHash), nil
 		}
 
 		// No matching failed tx from prior nodes; return our own hash.
@@ -292,9 +297,23 @@ func (wr *writeReport) execute(
 		return &aptoscap.WriteReportReply{
 			TxStatus: aptoscap.TxStatus_TX_STATUS_FATAL,
 			TxHash:   &ownTxHash,
-		}, nil
+		}, wr.buildMeteringMetadata(ctx, ownTxHash), nil
 	}
-	return nil, nil // should never happen
+	return nil, capabilities.ResponseMetadata{}, nil // should never happen
+}
+
+// TODO: implement real fee retrieval using txHash (PLEX-2578)
+func (wr *writeReport) getFee(_ context.Context, _ string) (*big.Float, error) {
+	return big.NewFloat(0), nil
+}
+
+func (wr *writeReport) buildMeteringMetadata(ctx context.Context, txHash string) capabilities.ResponseMetadata {
+	fee, err := wr.getFee(ctx, txHash)
+	if err != nil {
+		wr.lggr.Errorw("failed to get transaction fee for metering", "txHash", txHash, "error", err)
+		return capabilities.ResponseMetadata{}
+	}
+	return metering.GetResponseMetadataWriteReport(fee, wr.chainSelector)
 }
 
 // TODO: copied from evm, can be reused
