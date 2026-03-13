@@ -44,15 +44,12 @@ func NewAptos(cfg *config.Config, p2pConfig map[string]string, aptosService type
 	}
 
 	fc := newForwarderClient(aptosService, lggr, cfg.CREForwarderAddress)
-	forwarderAddress, err := aptos_sdk.ConvertToAddress(string(cfg.CREForwarderAddress[:]))
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert forwarder address to address: %w", err)
-	}
+	forwarderAddress := aptos_sdk.AccountAddress(cfg.CREForwarderAddress)
 
 	a := &Aptos{
 		AptosService:          aptosService,
 		forwarderClient:       fc,
-		forwarderAddress:      *forwarderAddress,
+		forwarderAddress:      forwarderAddress,
 		lggr:                  logger.Sugared(lggr),
 		p2pConfig:             p2pConfig,
 		chainSelector:         chainSelector,
