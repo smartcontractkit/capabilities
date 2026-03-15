@@ -562,6 +562,12 @@ func (lts *LogTriggerService) deliverLogReliably(
 		return
 	}
 
+	// Self-ACK immediately to disable retransmits
+	// TODO (CRE-2310): re-enable retransmits
+	if err := lts.baseTrigger.AckEvent(ctx, triggerID, eventID); err != nil {
+		lts.lggr.Warnf("failed to self-ACK event after delivery (triggerID=%s eventID=%s): %v", triggerID, eventID, err)
+	}
+
 	// Once persisted, consider it "sent" from trigger’s POV (BaseTriggerCapability handles retries/ACK/lost)
 	*sentCount++
 	if log.BlockNumber.Cmp(finalizedBlockNumber) > 0 {
