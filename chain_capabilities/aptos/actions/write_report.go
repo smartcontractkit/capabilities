@@ -3,6 +3,7 @@ package actions
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"slices"
@@ -19,6 +20,7 @@ import (
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
+	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	aptostypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/aptos"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/metering"
@@ -75,6 +77,7 @@ func (s *Aptos) WriteReport(
 type writeReport struct {
 	forwarderClient       CREForwarderClient
 	forwarderAddress      aptos_sdk.AccountAddress
+	aptosService          types.AptosService
 	lggr                  logger.SugaredLogger
 	p2pConfig             map[string]string
 	chainSelector         uint64
@@ -91,6 +94,7 @@ func (s *Aptos) executeWriteReport(
 	wr := &writeReport{
 		forwarderClient:       s.forwarderClient,
 		forwarderAddress:      s.forwarderAddress,
+		aptosService:          s.AptosService,
 		lggr:                  s.lggr,
 		p2pConfig:             s.p2pConfig,
 		chainSelector:         s.chainSelector,
@@ -176,7 +180,7 @@ func (wr *writeReport) execute(
 		return &aptoscap.WriteReportReply{
 			TxStatus: aptoscap.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:   &txResult.TxHash,
-		}, wr.buildMeteringMetadata(txResult), nil
+		}, wr.buildMeteringMetadata(ctx, txResult), nil
 	}
 	// TODO: we can exit here if we find F+1 failed transactions, but thats expensive time and i/o wise.
 	// emit metrics here to understand if its worth investing time here over writing to a cheap chain and failing.
@@ -241,7 +245,7 @@ func (wr *writeReport) execute(
 		return &aptoscap.WriteReportReply{
 			TxStatus: aptoscap.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:   &txResult.TxHash,
-		}, wr.buildMeteringMetadata(txResult), nil
+		}, wr.buildMeteringMetadata(ctx, txResult), nil
 	case false:
 		if txReply.TxStatus == aptostypes.TxSuccess {
 			wr.lggr.Errorw("unexpected state - local tx succeeded but transmission info shows no success",
@@ -258,7 +262,7 @@ func (wr *writeReport) execute(
 			return &aptoscap.WriteReportReply{
 				TxStatus: aptoscap.TxStatus_TX_STATUS_FATAL,
 				TxHash:   &ownTxHash,
-			}, wr.buildMeteringMetadata(TransmissionHashResult{TxHash: ownTxHash}), nil
+			}, wr.buildMeteringMetadata(ctx, TransmissionHashResult{TxHash: ownTxHash}), nil
 		}
 
 		// Search preceding transmitters (position 0 through position-1) for a matching failed tx.
@@ -274,7 +278,6 @@ func (wr *writeReport) execute(
 				continue
 			}
 			wr.lggr.Debugw("checking prior transmitter", "index", i, "address", orderedTransmitters[i])
-			// var addr aptos_sdk.AccountAddress
 			addr, err := aptos_sdk.ConvertToAddress(orderedTransmitters[i])
 			if err != nil {
 				wr.lggr.Errorw("failed to convert transmitter address to address", "address", orderedTransmitters[i], "error", err)
@@ -289,7 +292,7 @@ func (wr *writeReport) execute(
 			return &aptoscap.WriteReportReply{
 				TxStatus: aptoscap.TxStatus_TX_STATUS_FATAL,
 				TxHash:   &failedResult.TxHash,
-			}, wr.buildMeteringMetadata(failedResult), nil
+			}, wr.buildMeteringMetadata(ctx, failedResult), nil
 		}
 
 		// No matching failed tx from prior nodes; return our own hash.
@@ -297,14 +300,43 @@ func (wr *writeReport) execute(
 		return &aptoscap.WriteReportReply{
 			TxStatus: aptoscap.TxStatus_TX_STATUS_FATAL,
 			TxHash:   &ownTxHash,
-		}, wr.buildMeteringMetadata(TransmissionHashResult{TxHash: ownTxHash}), nil
+		}, wr.buildMeteringMetadata(ctx, TransmissionHashResult{TxHash: ownTxHash}), nil
 	}
 	return nil, capabilities.ResponseMetadata{}, nil // should never happen
 }
 
-func (wr *writeReport) buildMeteringMetadata(txResult TransmissionHashResult) capabilities.ResponseMetadata {
-	fee := new(big.Float).SetUint64(txResult.GasUsed)
-	fee.Mul(fee, new(big.Float).SetUint64(txResult.GasUnitPrice))
+// getFee returns the transaction fee in APT. If result already contains gas info
+// (from TxHashRetriever scanning), it is used directly. Otherwise it falls back to
+// an RPC call via AptosService.TransactionByHash.
+func (wr *writeReport) getFee(ctx context.Context, result TransmissionHashResult) (*big.Float, error) {
+	gasUsed, gasUnitPrice := result.GasUsed, result.GasUnitPrice
+
+	if gasUsed == 0 && gasUnitPrice == 0 {
+		reply, err := wr.aptosService.TransactionByHash(ctx, aptostypes.TransactionByHashRequest{Hash: result.TxHash})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get transaction by hash: %w", err)
+		}
+		var txData userTxData
+		if err := json.Unmarshal(reply.Transaction.Data, &txData); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal transaction data: %w", err)
+		}
+		gasUsed, gasUnitPrice = txData.GasUsed, txData.GasUnitPrice
+	}
+
+	feeInOctas := new(big.Float).SetUint64(gasUsed)
+	feeInOctas.Mul(feeInOctas, new(big.Float).SetUint64(gasUnitPrice))
+	feeInAPT := new(big.Float).Quo(feeInOctas, big.NewFloat(1e8))
+
+	wr.lggr.Debugw("WriteReport fee", "feeInAPT", feeInAPT.String(), "gasUsed", gasUsed, "gasUnitPrice", gasUnitPrice)
+	return feeInAPT, nil
+}
+
+func (wr *writeReport) buildMeteringMetadata(ctx context.Context, result TransmissionHashResult) capabilities.ResponseMetadata {
+	fee, err := wr.getFee(ctx, result)
+	if err != nil {
+		wr.lggr.Errorw("failed to get transaction fee for metering, using zero", "txHash", result.TxHash, "error", err)
+		fee = big.NewFloat(0)
+	}
 	return metering.GetResponseMetadataWriteReport(fee, wr.chainSelector)
 }
 

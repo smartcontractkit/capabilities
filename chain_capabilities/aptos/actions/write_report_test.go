@@ -21,6 +21,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	aptostypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/aptos"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
 )
@@ -30,10 +31,6 @@ import (
 const testChainSelector = uint64(1)
 const testGasUsed = uint64(500)
 const testGasUnitPrice = uint64(100)
-
-// testExpectedFee is the expected spend value for transactions built with testGasUsed and testGasUnitPrice.
-// fee = GasUsed * GasUnitPrice = 500 * 100 = 50000 (in octas).
-const testExpectedFee = "50000"
 
 var (
 	testForwarderAddr = aptos_sdk.AccountAddress{0xAA}
@@ -279,7 +276,7 @@ func TestWriteReport_Execute(t *testing.T) {
 		require.Nil(t, capErr)
 		require.Equal(t, aptoscap.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
 		require.Equal(t, "0xalready", *result.Response.TxHash)
-		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector, testExpectedFee)
+		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector, "0.0005")
 		h.forwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	})
 
@@ -310,7 +307,7 @@ func TestWriteReport_Execute(t *testing.T) {
 		require.Nil(t, capErr)
 		require.Equal(t, aptoscap.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
 		require.Equal(t, "0xreal", *result.Response.TxHash)
-		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector, testExpectedFee)
+		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector, "0.0005")
 	})
 
 	t.Run("Submit fails at node0 - returns own hash", func(t *testing.T) {
@@ -356,6 +353,69 @@ func TestWriteReport_Execute(t *testing.T) {
 		require.Nil(t, capErr)
 		require.Equal(t, aptoscap.TxStatus_TX_STATUS_FATAL, result.Response.TxStatus)
 		require.Equal(t, "0xnode0failed", *result.Response.TxHash)
-		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector, testExpectedFee)
+		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector, "0.0005")
+	})
+}
+
+func TestGetFee(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Uses gas info from result when available", func(t *testing.T) {
+		wr := &writeReport{
+			lggr: logger.Sugared(logger.Test(t)),
+		}
+
+		fee, err := wr.getFee(t.Context(), TransmissionHashResult{
+			TxHash: "0xabc", GasUsed: testGasUsed, GasUnitPrice: testGasUnitPrice,
+		})
+		require.NoError(t, err)
+		// 500 * 100 = 50000 octas = 0.0005 APT
+		require.Equal(t, "0.0005", fee.Text('f', -1))
+	})
+
+	t.Run("Falls back to RPC when gas info is zero", func(t *testing.T) {
+		mockService := mocks.NewAptosService(t)
+		wr := &writeReport{
+			aptosService: mockService,
+			lggr:         logger.Sugared(logger.Test(t)),
+		}
+
+		txData := fmt.Sprintf(`{"Hash":"0xabc","Success":true,"GasUsed":%d,"GasUnitPrice":%d}`, testGasUsed, testGasUnitPrice)
+		mockService.On("TransactionByHash", mock.Anything, mock.Anything).Return(
+			&aptostypes.TransactionByHashReply{
+				Transaction: &aptostypes.Transaction{Data: []byte(txData)},
+			}, nil)
+
+		fee, err := wr.getFee(t.Context(), TransmissionHashResult{TxHash: "0xabc"})
+		require.NoError(t, err)
+		require.Equal(t, "0.0005", fee.Text('f', -1))
+	})
+
+	t.Run("Handles large fee (1 APT)", func(t *testing.T) {
+		wr := &writeReport{
+			lggr: logger.Sugared(logger.Test(t)),
+		}
+
+		fee, err := wr.getFee(t.Context(), TransmissionHashResult{
+			TxHash: "0xdef", GasUsed: 1000, GasUnitPrice: 100000,
+		})
+		require.NoError(t, err)
+		// 1000 * 100000 = 100_000_000 octas = 1 APT
+		require.Equal(t, "1", fee.Text('f', -1))
+	})
+
+	t.Run("Returns error when RPC fails", func(t *testing.T) {
+		mockService := mocks.NewAptosService(t)
+		wr := &writeReport{
+			aptosService: mockService,
+			lggr:         logger.Sugared(logger.Test(t)),
+		}
+
+		mockService.On("TransactionByHash", mock.Anything, mock.Anything).Return(
+			(*aptostypes.TransactionByHashReply)(nil), errors.New("rpc error"))
+
+		_, err := wr.getFee(t.Context(), TransmissionHashResult{TxHash: "0xabc"})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to get transaction by hash")
 	})
 }
