@@ -13,7 +13,7 @@ func GetResponseMetadataWriteReport(fee *big.Float, chainSelector uint64) capabi
 	return capabilities.ResponseMetadata{
 		Metering: []capabilities.MeteringNodeDetail{
 			{
-				SpendValue: fee.Text('f', -1),
+				SpendValue: fee.Text('f', -1), // stored in APT
 				SpendUnit:  fmt.Sprintf(WriteReportSpendUnitFormat, chainSelector),
 			},
 		},
