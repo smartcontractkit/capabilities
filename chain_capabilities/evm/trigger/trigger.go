@@ -123,7 +123,7 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 	if triggerEventStore == nil {
 		return nil, fmt.Errorf("no trigger event store provided")
 	}
-	// TODO(CRE-1520): re-enable retransmits once WF nodes support ACKs and
+	// TODO(CRE-2314): re-enable retransmits once WF nodes support ACKs and
 	// don2don rate-limits are evaluated. Set retryInterval > 0 to restore.
 	retryInterval := time.Duration(0)
 	undeliveredWarning := 5 * retryInterval
