@@ -126,8 +126,8 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 	// TODO(CRE-1520): re-enable retransmits once WF nodes support ACKs and
 	// don2don rate-limits are evaluated. Set retryInterval > 0 to restore.
 	retryInterval := time.Duration(0)
-	undeliveredWarning := time.Duration(0)
-	undeliveredCritical := time.Duration(0)
+	undeliveredWarning := 5 * retryInterval
+	undeliveredCritical := 20 * retryInterval
 	lts.baseTrigger = capabilities.NewBaseTriggerCapability(triggerEventStore, func() *evmcappb.Log { return &evmcappb.Log{} },
 		lts.lggr, "EvmLogTriggerService", retryInterval, undeliveredWarning, undeliveredCritical)
 	return lts, nil
