@@ -364,6 +364,10 @@ func createTriggerResponse(scheduledExecutionTime time.Time) capabilities.Trigge
 	}
 }
 
+func (s *Service) AckEvent(ctx context.Context, triggerID string, eventID string, method string) caperrors.Error {
+	return nil
+}
+
 func (s *Service) UnregisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) caperrors.Error {
 	trigger, ok := s.triggers.Read(triggerID)
 	if !ok {
