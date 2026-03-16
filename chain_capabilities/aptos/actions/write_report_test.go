@@ -28,6 +28,12 @@ import (
 // --- helpers ---
 
 const testChainSelector = uint64(1)
+const testGasUsed = uint64(500)
+const testGasUnitPrice = uint64(100)
+
+// testExpectedFee is the expected spend value for transactions built with testGasUsed and testGasUnitPrice.
+// fee = GasUsed * GasUnitPrice = 500 * 100 = 50000 (in octas).
+const testExpectedFee = "50000"
 
 var (
 	testForwarderAddr = aptos_sdk.AccountAddress{0xAA}
@@ -35,12 +41,12 @@ var (
 	testTransmitter   = aptos_sdk.AccountAddress{0xCC}
 )
 
-func validateMeteringWriteReport(t *testing.T, metadata capabilities.ResponseMetadata, chainSelector uint64) {
+func validateMeteringWriteReport(t *testing.T, metadata capabilities.ResponseMetadata, chainSelector uint64, expectedSpendValue string) {
 	t.Helper()
 	require.Len(t, metadata.Metering, 1)
 	meteringNodeDetail := metadata.Metering[0]
 	require.Equal(t, fmt.Sprintf(metering.WriteReportSpendUnitFormat, chainSelector), meteringNodeDetail.SpendUnit)
-	require.Equal(t, "0", meteringNodeDetail.SpendValue)
+	require.Equal(t, expectedSpendValue, meteringNodeDetail.SpendValue)
 	require.Empty(t, meteringNodeDetail.Peer2PeerID)
 }
 
@@ -141,6 +147,11 @@ func generateRandomSignatures() []*workflowpb.AttributedSignature {
 // which is what scanTransactions unmarshals via the local userTxData struct.
 func buildFakeTransaction(t *testing.T, txHash string, success bool, seqNum uint64, timestampMicro uint64, reportMetadata ocrtypes.Metadata) *aptostypes.Transaction {
 	t.Helper()
+	return buildFakeTransactionWithGas(t, txHash, success, seqNum, timestampMicro, reportMetadata, testGasUsed, testGasUnitPrice)
+}
+
+func buildFakeTransactionWithGas(t *testing.T, txHash string, success bool, seqNum uint64, timestampMicro uint64, reportMetadata ocrtypes.Metadata, gasUsed uint64, gasUnitPrice uint64) *aptostypes.Transaction {
+	t.Helper()
 	encodedReport, err := reportMetadata.Encode()
 	require.NoError(t, err)
 
@@ -149,8 +160,9 @@ func buildFakeTransaction(t *testing.T, txHash string, success bool, seqNum uint
 
 	txJSON := fmt.Sprintf(`{
 		"Hash": %q, "Success": %t, "SequenceNumber": %d, "Timestamp": %d,
+		"GasUsed": %d, "GasUnitPrice": %d,
 		"Payload": {"Inner": {"Function": %q, "Arguments": ["0x01", %q, "0x01"]}}
-	}`, txHash, success, seqNum, timestampMicro, functionName, rawReportHex)
+	}`, txHash, success, seqNum, timestampMicro, gasUsed, gasUnitPrice, functionName, rawReportHex)
 
 	return &aptostypes.Transaction{Data: []byte(txJSON)}
 }
@@ -250,7 +262,7 @@ func TestWriteReport_Execute(t *testing.T) {
 		require.Nil(t, capErr)
 		require.Equal(t, aptoscap.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
 		require.Equal(t, "0xabc", *result.Response.TxHash)
-		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector)
+		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector, "0")
 	})
 
 	t.Run("Already transmitted - returns without submitting", func(t *testing.T) {
@@ -267,7 +279,7 @@ func TestWriteReport_Execute(t *testing.T) {
 		require.Nil(t, capErr)
 		require.Equal(t, aptoscap.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
 		require.Equal(t, "0xalready", *result.Response.TxHash)
-		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector)
+		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector, testExpectedFee)
 		h.forwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	})
 
@@ -298,7 +310,7 @@ func TestWriteReport_Execute(t *testing.T) {
 		require.Nil(t, capErr)
 		require.Equal(t, aptoscap.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
 		require.Equal(t, "0xreal", *result.Response.TxHash)
-		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector)
+		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector, testExpectedFee)
 	})
 
 	t.Run("Submit fails at node0 - returns own hash", func(t *testing.T) {
@@ -313,7 +325,7 @@ func TestWriteReport_Execute(t *testing.T) {
 		require.Nil(t, capErr)
 		require.Equal(t, aptoscap.TxStatus_TX_STATUS_FATAL, result.Response.TxStatus)
 		require.Equal(t, "0xmine", *result.Response.TxHash)
-		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector)
+		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector, "0")
 	})
 
 	t.Run("Unexpected TxSuccess but no transmission onchain", func(t *testing.T) {
@@ -344,6 +356,6 @@ func TestWriteReport_Execute(t *testing.T) {
 		require.Nil(t, capErr)
 		require.Equal(t, aptoscap.TxStatus_TX_STATUS_FATAL, result.Response.TxStatus)
 		require.Equal(t, "0xnode0failed", *result.Response.TxHash)
-		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector)
+		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector, testExpectedFee)
 	})
 }

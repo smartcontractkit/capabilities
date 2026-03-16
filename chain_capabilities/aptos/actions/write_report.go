@@ -167,16 +167,16 @@ func (wr *writeReport) execute(
 				"transmitter", transmitterAddr, "orderedTransmitters", orderedTransmitters)
 		}
 		wr.lggr.Debugw("report already onchain, retrieving txHash")
-		txHash, txHashErr := txHashRetriever.GetSuccessfulTransmissionHash(ctx, transmissionInfo.Transmitter)
+		txResult, txHashErr := txHashRetriever.GetSuccessfulTransmissionHash(ctx, transmissionInfo.Transmitter)
 		if txHashErr != nil {
 			wr.lggr.Errorw("report already onchain but failed to retrieve its txHash", "error", txHashErr)
 			return nil, capabilities.ResponseMetadata{}, txHashErr
 		}
-		wr.lggr.Debugw("returning early - report already onchain", "txHash", txHash)
+		wr.lggr.Debugw("returning early - report already onchain", "txHash", txResult.TxHash)
 		return &aptoscap.WriteReportReply{
 			TxStatus: aptoscap.TxStatus_TX_STATUS_SUCCESS,
-			TxHash:   &txHash,
-		}, wr.buildMeteringMetadata(ctx, txHash), nil
+			TxHash:   &txResult.TxHash,
+		}, wr.buildMeteringMetadata(txResult), nil
 	}
 	// TODO: we can exit here if we find F+1 failed transactions, but thats expensive time and i/o wise.
 	// emit metrics here to understand if its worth investing time here over writing to a cheap chain and failing.
@@ -225,23 +225,23 @@ func (wr *writeReport) execute(
 			wr.lggr.Errorw("successful transmitter not found in orderedTransmitters, p2pConfig may be incomplete or an external entity submitted the report",
 				"transmitter", transmitterAddr, "orderedTransmitters", orderedTransmitters)
 		}
-		txHash := txReply.TxHash
+		txResult := TransmissionHashResult{TxHash: txReply.TxHash}
 		if txReply.TxStatus == aptostypes.TxFatal || txReply.TxStatus == aptostypes.TxReverted {
 			// Report for this transaction has already been submitted and we sent a duplicate tx onchain, that is why this tx reverted but transmission info still shows success.
 			wr.lggr.Debugw("our tx reverted but report is onchain (duplicate), retrieving success hash",
 				"ownTxStatus", txReply.TxStatus, "ownTxHash", txReply.TxHash)
-			successHash, txHashErr := txHashRetriever.GetSuccessfulTransmissionHash(ctx, newTransmissionInfo.Transmitter)
+			successResult, txHashErr := txHashRetriever.GetSuccessfulTransmissionHash(ctx, newTransmissionInfo.Transmitter)
 			if txHashErr != nil {
 				wr.lggr.Errorw("failed to get successful transmission hash after duplicate", "error", txHashErr)
 				return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed to get successful transmission hash: %w", txHashErr)
 			}
-			txHash = successHash
+			txResult = successResult
 		}
-		wr.lggr.Debugw("returning SUCCESS", "txHash", txHash)
+		wr.lggr.Debugw("returning SUCCESS", "txHash", txResult.TxHash)
 		return &aptoscap.WriteReportReply{
 			TxStatus: aptoscap.TxStatus_TX_STATUS_SUCCESS,
-			TxHash:   &txHash,
-		}, wr.buildMeteringMetadata(ctx, txHash), nil
+			TxHash:   &txResult.TxHash,
+		}, wr.buildMeteringMetadata(txResult), nil
 	case false:
 		if txReply.TxStatus == aptostypes.TxSuccess {
 			wr.lggr.Errorw("unexpected state - local tx succeeded but transmission info shows no success",
@@ -258,7 +258,7 @@ func (wr *writeReport) execute(
 			return &aptoscap.WriteReportReply{
 				TxStatus: aptoscap.TxStatus_TX_STATUS_FATAL,
 				TxHash:   &ownTxHash,
-			}, wr.buildMeteringMetadata(ctx, ownTxHash), nil
+			}, wr.buildMeteringMetadata(TransmissionHashResult{TxHash: ownTxHash}), nil
 		}
 
 		// Search preceding transmitters (position 0 through position-1) for a matching failed tx.
@@ -280,16 +280,16 @@ func (wr *writeReport) execute(
 				wr.lggr.Errorw("failed to convert transmitter address to address", "address", orderedTransmitters[i], "error", err)
 				continue
 			}
-			failedHash, searchErr := txHashRetriever.GetFailedTransmissionHash(ctx, *addr)
+			failedResult, searchErr := txHashRetriever.GetFailedTransmissionHash(ctx, *addr)
 			if searchErr != nil {
 				wr.lggr.Debugw("no matching failed tx for prior transmitter", "transmitter", orderedTransmitters[i], "position", i, "err", searchErr)
 				continue
 			}
-			wr.lggr.Debugw("found failed transmission from prior node", "transmitter", orderedTransmitters[i], "position", i, "txHash", failedHash)
+			wr.lggr.Debugw("found failed transmission from prior node", "transmitter", orderedTransmitters[i], "position", i, "txHash", failedResult.TxHash)
 			return &aptoscap.WriteReportReply{
 				TxStatus: aptoscap.TxStatus_TX_STATUS_FATAL,
-				TxHash:   &failedHash,
-			}, wr.buildMeteringMetadata(ctx, failedHash), nil
+				TxHash:   &failedResult.TxHash,
+			}, wr.buildMeteringMetadata(failedResult), nil
 		}
 
 		// No matching failed tx from prior nodes; return our own hash.
@@ -297,22 +297,14 @@ func (wr *writeReport) execute(
 		return &aptoscap.WriteReportReply{
 			TxStatus: aptoscap.TxStatus_TX_STATUS_FATAL,
 			TxHash:   &ownTxHash,
-		}, wr.buildMeteringMetadata(ctx, ownTxHash), nil
+		}, wr.buildMeteringMetadata(TransmissionHashResult{TxHash: ownTxHash}), nil
 	}
 	return nil, capabilities.ResponseMetadata{}, nil // should never happen
 }
 
-// TODO: implement real fee retrieval using txHash (PLEX-2578)
-func (wr *writeReport) getFee(_ context.Context, _ string) (*big.Float, error) {
-	return big.NewFloat(0), nil
-}
-
-func (wr *writeReport) buildMeteringMetadata(ctx context.Context, txHash string) capabilities.ResponseMetadata {
-	fee, err := wr.getFee(ctx, txHash)
-	if err != nil {
-		wr.lggr.Errorw("failed to get transaction fee for metering", "txHash", txHash, "error", err)
-		return capabilities.ResponseMetadata{}
-	}
+func (wr *writeReport) buildMeteringMetadata(txResult TransmissionHashResult) capabilities.ResponseMetadata {
+	fee := new(big.Float).SetUint64(txResult.GasUsed)
+	fee.Mul(fee, new(big.Float).SetUint64(txResult.GasUnitPrice))
 	return metering.GetResponseMetadataWriteReport(fee, wr.chainSelector)
 }
 
