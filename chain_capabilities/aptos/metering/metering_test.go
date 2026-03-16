@@ -17,7 +17,7 @@ func TestGetResponseMetadataWriteReport(t *testing.T) {
 		expectedValue     string
 	}{
 		{
-			name:              "Standard Aptos fee (500 octas)",
+			name:              "Standard Aptos fee (500 octas = 0.000005 APT)",
 			fee:               new(big.Float).Quo(new(big.Float).SetUint64(500), big.NewFloat(1e8)),
 			chainSelector:     1,
 			expectedSpendUnit: "GAS.1",
@@ -38,11 +38,11 @@ func TestGetResponseMetadataWriteReport(t *testing.T) {
 			expectedValue:     "0",
 		},
 		{
-			name:              "Sub-octa precision fee",
-			fee:               new(big.Float).Quo(new(big.Float).SetUint64(1), big.NewFloat(1e8)),
+			name:              "Typical fee (gasUsed=500 * gasUnitPrice=100 = 50000 octas = 0.0005 APT)",
+			fee:               new(big.Float).Quo(new(big.Float).SetUint64(50_000), big.NewFloat(1e8)),
 			chainSelector:     1,
 			expectedSpendUnit: "GAS.1",
-			expectedValue:     "0.00000001",
+			expectedValue:     "0.0005",
 		},
 	}
 

@@ -18,7 +18,7 @@ func GetResponseMetadataWriteReport(fee *big.Float, chainSelector uint64) capabi
 		Metering: []capabilities.MeteringNodeDetail{
 			{
 				//Peer2PeerID will be assigned by the engine, leaving it empty here.
-				SpendValue: fee.Text('f', -1), // have to be stored in lamports
+				SpendValue: fee.Text('f', -1), // have to be stored in SOL
 				SpendUnit:  fmt.Sprintf(WriteReportSpendUnitFormat, chainSelector),
 			},
 		},
