@@ -309,7 +309,7 @@ require (
 	github.com/shirou/gopsutil/v3 v3.24.3 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/sigurn/crc16 v0.0.0-20211026045750-20ab5afb07e3 // indirect
-	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260313143247-b8c1ead69919 // indirect
+	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260316160235-aaebba0c48fe // indirect
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260223172632-a716db2e04a0 // indirect
 	github.com/smartcontractkit/chainlink-aptos v0.0.0-20260311150311-2d0c9b95fbc9 // indirect
 	github.com/smartcontractkit/chainlink-automation v0.8.1 // indirect
