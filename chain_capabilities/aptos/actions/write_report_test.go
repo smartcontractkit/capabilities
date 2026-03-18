@@ -19,18 +19,20 @@ import (
 	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
-	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	aptostypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/aptos"
-	"github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
+	typesmocks "github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
 )
 
 // --- helpers ---
 
-const testChainSelector = uint64(1)
-const testGasUsed = uint64(500)
-const testGasUnitPrice = uint64(100)
+const (
+	testChainSelector = uint64(1)
+	testGasUsed       = uint64(500)
+	testGasUnitPrice  = uint64(100)
+	testFeeOctas      = testGasUsed * testGasUnitPrice
+)
 
 var (
 	testForwarderAddr = aptos_sdk.AccountAddress{0xAA}
@@ -38,17 +40,9 @@ var (
 	testTransmitter   = aptos_sdk.AccountAddress{0xCC}
 )
 
-func validateMeteringWriteReport(t *testing.T, metadata capabilities.ResponseMetadata, chainSelector uint64, expectedSpendValue string) {
-	t.Helper()
-	require.Len(t, metadata.Metering, 1)
-	meteringNodeDetail := metadata.Metering[0]
-	require.Equal(t, fmt.Sprintf(metering.WriteReportSpendUnitFormat, chainSelector), meteringNodeDetail.SpendUnit)
-	require.Equal(t, expectedSpendValue, meteringNodeDetail.SpendValue)
-	require.Empty(t, meteringNodeDetail.Peer2PeerID)
-}
-
 type testHelper struct {
 	forwarderClient *CREForwarderClient_mock
+	aptosService    *typesmocks.AptosService
 	aptos           *Aptos
 }
 
@@ -56,10 +50,11 @@ func newTestHelper(t *testing.T) *testHelper {
 	t.Helper()
 	lggr := logger.Test(t)
 	mockClient := NewCREForwarderClient_mock(t)
+	mockService := typesmocks.NewAptosService(t)
 	myPeerID := p2ptypes.PeerID{1}
 
 	a := &Aptos{
-		AptosService:     &types.UnimplementedAptosService{},
+		AptosService:     mockService,
 		forwarderClient:  mockClient,
 		forwarderAddress: testForwarderAddr,
 		lggr:             logger.Sugared(lggr),
@@ -69,48 +64,65 @@ func newTestHelper(t *testing.T) *testHelper {
 			myPeerID, []p2ptypes.PeerID{myPeerID}, 1*time.Second, 0, lggr),
 	}
 	require.NoError(t, a.initLimiters(limits.Factory{Logger: lggr}))
-	return &testHelper{forwarderClient: mockClient, aptos: a}
+	return &testHelper{forwarderClient: mockClient, aptosService: mockService, aptos: a}
+}
+
+func newTwoNodeTestHelperAtQueuePosition(t *testing.T, transmissionIDStr string, desiredPos int) (*testHelper, aptos_sdk.AccountAddress, aptos_sdk.AccountAddress) {
+	t.Helper()
+	lggr := logger.Test(t)
+	mockClient := NewCREForwarderClient_mock(t)
+	mockService := typesmocks.NewAptosService(t)
+
+	peerA, peerB := p2ptypes.PeerID{1}, p2ptypes.PeerID{2}
+	addrForPeer := map[p2ptypes.PeerID]aptos_sdk.AccountAddress{
+		peerA: {0xCC},
+		peerB: {0xDD},
+	}
+
+	buildP2PConfig := func() map[string]string {
+		peerAAddr := addrForPeer[peerA]
+		peerBAddr := addrForPeer[peerB]
+		return map[string]string{
+			fmt.Sprintf("%x", peerA[:]): peerAAddr.StringLong(),
+			fmt.Sprintf("%x", peerB[:]): peerBAddr.StringLong(),
+		}
+	}
+
+	candidates := []p2ptypes.PeerID{peerA, peerB}
+	for _, myPeerID := range candidates {
+		scheduler := transmission_schedule.NewTransmissionScheduler(myPeerID, []p2ptypes.PeerID{peerA, peerB}, 15*time.Second, 0, lggr)
+		if scheduler.GetQueuePosition(transmissionIDStr) != desiredPos {
+			continue
+		}
+		otherPeerID := peerA
+		if myPeerID == peerA {
+			otherPeerID = peerB
+		}
+
+		a := &Aptos{
+			AptosService:          mockService,
+			forwarderClient:       mockClient,
+			forwarderAddress:      testForwarderAddr,
+			lggr:                  logger.Sugared(lggr),
+			p2pConfig:             buildP2PConfig(),
+			chainSelector:         testChainSelector,
+			transmissionScheduler: scheduler,
+		}
+		require.NoError(t, a.initLimiters(limits.Factory{Logger: lggr}))
+		return &testHelper{forwarderClient: mockClient, aptosService: mockService, aptos: a}, addrForPeer[myPeerID], addrForPeer[otherPeerID]
+	}
+
+	require.FailNowf(t, "queue position not found", "no two-node scheduler arrangement produced queue position %d", desiredPos)
+	return nil, aptos_sdk.AccountAddress{}, aptos_sdk.AccountAddress{}
 }
 
 // newMultiNodeTestHelper builds a 2-node DON where our node is at queue position > 0
 // for the given transmissionID string. Returns the helper and the prior node's transmitter address.
 func newMultiNodeTestHelper(t *testing.T, transmissionIDStr string) (*testHelper, aptos_sdk.AccountAddress) {
 	t.Helper()
-	lggr := logger.Test(t)
-	mockClient := NewCREForwarderClient_mock(t)
-
-	peerA, peerB := p2ptypes.PeerID{1}, p2ptypes.PeerID{2}
-	myPeerID, otherPeerID := peerB, peerA
-	node0Addr := aptos_sdk.AccountAddress{0xCC}
-	myAddr := aptos_sdk.AccountAddress{0xDD}
-
-	buildCfg := func() map[string]string {
-		return map[string]string{
-			fmt.Sprintf("%x", otherPeerID[:]): node0Addr.StringLong(),
-			fmt.Sprintf("%x", myPeerID[:]):    myAddr.StringLong(),
-		}
-	}
-
-	p2pCfg := buildCfg()
-	scheduler := transmission_schedule.NewTransmissionScheduler(myPeerID, []p2ptypes.PeerID{otherPeerID, myPeerID}, 15*time.Second, 0, lggr)
-	if scheduler.GetQueuePosition(transmissionIDStr) == 0 {
-		myPeerID, otherPeerID = otherPeerID, myPeerID
-		p2pCfg = buildCfg()
-		scheduler = transmission_schedule.NewTransmissionScheduler(myPeerID, []p2ptypes.PeerID{otherPeerID, myPeerID}, 15*time.Second, 0, lggr)
-	}
-	require.Greater(t, scheduler.GetQueuePosition(transmissionIDStr), 0)
-
-	a := &Aptos{
-		AptosService:          &types.UnimplementedAptosService{},
-		forwarderClient:       mockClient,
-		forwarderAddress:      testForwarderAddr,
-		lggr:                  logger.Sugared(lggr),
-		p2pConfig:             p2pCfg,
-		chainSelector:         testChainSelector,
-		transmissionScheduler: scheduler,
-	}
-	require.NoError(t, a.initLimiters(limits.Factory{Logger: lggr}))
-	return &testHelper{forwarderClient: mockClient, aptos: a}, node0Addr
+	h, _, otherAddr := newTwoNodeTestHelperAtQueuePosition(t, transmissionIDStr, 1)
+	require.Greater(t, h.aptos.transmissionScheduler.GetQueuePosition(transmissionIDStr), 0)
+	return h, otherAddr
 }
 
 func newReportFixture(t *testing.T) (ocrtypes.Metadata, capabilities.RequestMetadata, *aptoscap.WriteReportRequest) {
@@ -143,11 +155,14 @@ func generateRandomSignatures() []*workflowpb.AttributedSignature {
 // matching the Go-default marshal output of UserTransaction (uppercase keys, numeric types),
 // which is what scanTransactions unmarshals via the local userTxData struct.
 func buildFakeTransaction(t *testing.T, txHash string, success bool, seqNum uint64, timestampMicro uint64, reportMetadata ocrtypes.Metadata) *aptostypes.Transaction {
-	t.Helper()
-	return buildFakeTransactionWithGas(t, txHash, success, seqNum, timestampMicro, reportMetadata, testGasUsed, testGasUnitPrice)
+	return buildFakeTransactionWithDetails(t, txHash, success, seqNum, timestampMicro, reportMetadata, 0, 0, "")
 }
 
 func buildFakeTransactionWithGas(t *testing.T, txHash string, success bool, seqNum uint64, timestampMicro uint64, reportMetadata ocrtypes.Metadata, gasUsed uint64, gasUnitPrice uint64) *aptostypes.Transaction {
+	return buildFakeTransactionWithDetails(t, txHash, success, seqNum, timestampMicro, reportMetadata, gasUsed, gasUnitPrice, "")
+}
+
+func buildFakeTransactionWithDetails(t *testing.T, txHash string, success bool, seqNum uint64, timestampMicro uint64, reportMetadata ocrtypes.Metadata, gasUsed uint64, gasUnitPrice uint64, vmStatus string) *aptostypes.Transaction {
 	t.Helper()
 	encodedReport, err := reportMetadata.Encode()
 	require.NoError(t, err)
@@ -156,12 +171,25 @@ func buildFakeTransactionWithGas(t *testing.T, txHash string, success bool, seqN
 	functionName := fmt.Sprintf("%s::forwarder::report", testForwarderAddr.String())
 
 	txJSON := fmt.Sprintf(`{
-		"Hash": %q, "Success": %t, "SequenceNumber": %d, "Timestamp": %d,
-		"GasUsed": %d, "GasUnitPrice": %d,
+		"Hash": %q, "Success": %t, "SequenceNumber": %d, "Timestamp": %d, "GasUsed": %d, "GasUnitPrice": %d, "VMStatus": %q,
 		"Payload": {"Inner": {"Function": %q, "Arguments": ["0x01", %q, "0x01"]}}
-	}`, txHash, success, seqNum, timestampMicro, gasUsed, gasUnitPrice, functionName, rawReportHex)
+	}`, txHash, success, seqNum, timestampMicro, gasUsed, gasUnitPrice, vmStatus, functionName, rawReportHex)
 
 	return &aptostypes.Transaction{Data: []byte(txJSON)}
+}
+
+func validateMeteringWriteReport(t *testing.T, metadata capabilities.ResponseMetadata, chainSelector uint64, spendValue string) {
+	t.Helper()
+	require.Len(t, metadata.Metering, 1)
+	require.Equal(t, fmt.Sprintf(metering.WriteReportSpendUnitFormat, chainSelector), metadata.Metering[0].SpendUnit)
+	require.Equal(t, spendValue, metadata.Metering[0].SpendValue)
+}
+
+func validateWriteReportFee(t *testing.T, result *capabilities.ResponseAndMetadata[*aptoscap.WriteReportReply], feeOctas uint64, spendValue string) {
+	t.Helper()
+	require.NotNil(t, result.Response.TransactionFee)
+	require.Equal(t, feeOctas, *result.Response.TransactionFee)
+	validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector, spendValue)
 }
 
 func newTestTxHashRetriever(t *testing.T, mockClient *CREForwarderClient_mock, targetReportMetadata ocrtypes.Metadata, requestStartTime time.Time) TxHashRetriever {
@@ -199,6 +227,19 @@ func (h *testHelper) mockPostSubmitPoll(info TransmissionInfo) {
 func (h *testHelper) mockInvokeOnReport(reply *aptostypes.SubmitTransactionReply, err error) {
 	h.forwarderClient.On("InvokeOnReport", mock.Anything, testReceiver[:], mock.Anything, mock.Anything).
 		Return(reply, err)
+}
+
+func (h *testHelper) mockTransactionByHash(txHash string, gasUsed uint64, gasUnitPrice uint64) {
+	h.mockTransactionByHashWithVMStatus(txHash, gasUsed, gasUnitPrice, "")
+}
+
+func (h *testHelper) mockTransactionByHashWithVMStatus(txHash string, gasUsed uint64, gasUnitPrice uint64, vmStatus string) {
+	txData := fmt.Sprintf(`{"Hash":%q,"Success":true,"GasUsed":%d,"GasUnitPrice":%d,"VMStatus":%q}`, txHash, gasUsed, gasUnitPrice, vmStatus)
+	h.aptosService.On("TransactionByHash", mock.Anything, aptostypes.TransactionByHashRequest{Hash: txHash}).Return(
+		&aptostypes.TransactionByHashReply{
+			Transaction: &aptostypes.Transaction{Data: []byte(txData)},
+		}, nil,
+	).Once()
 }
 
 // --- Tests ---
@@ -253,13 +294,14 @@ func TestWriteReport_Execute(t *testing.T) {
 
 		h.mockNoTransmission()
 		h.mockInvokeOnReport(&aptostypes.SubmitTransactionReply{TxStatus: aptostypes.TxSuccess, TxHash: "0xabc"}, nil)
+		h.mockTransactionByHash("0xabc", testGasUsed, testGasUnitPrice)
 		h.mockPostSubmitPoll(TransmissionInfo{Success: true, Transmitter: testTransmitter})
 
 		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, capErr)
 		require.Equal(t, aptoscap.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
 		require.Equal(t, "0xabc", *result.Response.TxHash)
-		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector, "0")
+		validateWriteReportFee(t, result, testFeeOctas, "0.0005")
 	})
 
 	t.Run("Already transmitted - returns without submitting", func(t *testing.T) {
@@ -270,13 +312,13 @@ func TestWriteReport_Execute(t *testing.T) {
 		h.forwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).
 			Return(TransmissionInfo{Success: true, Transmitter: transmitter}, nil)
 		h.forwarderClient.On("GetTransmitterTransactions", mock.Anything, transmitter, mock.Anything, mock.Anything).
-			Return([]*aptostypes.Transaction{buildFakeTransaction(t, "0xalready", true, 100, uint64(time.Now().UnixMicro()), rm)}, nil)
+			Return([]*aptostypes.Transaction{buildFakeTransactionWithGas(t, "0xalready", true, 100, uint64(time.Now().UnixMicro()), rm, testGasUsed, testGasUnitPrice)}, nil)
 
 		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, capErr)
 		require.Equal(t, aptoscap.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
 		require.Equal(t, "0xalready", *result.Response.TxHash)
-		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector, "0.0005")
+		validateWriteReportFee(t, result, testFeeOctas, "0.0005")
 		h.forwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	})
 
@@ -301,13 +343,13 @@ func TestWriteReport_Execute(t *testing.T) {
 		h.mockInvokeOnReport(&aptostypes.SubmitTransactionReply{TxStatus: aptostypes.TxReverted, TxHash: "0xreverted"}, nil)
 		h.mockPostSubmitPoll(TransmissionInfo{Success: true, Transmitter: transmitter})
 		h.forwarderClient.On("GetTransmitterTransactions", mock.Anything, transmitter, mock.Anything, mock.Anything).
-			Return([]*aptostypes.Transaction{buildFakeTransaction(t, "0xreal", true, 100, uint64(time.Now().UnixMicro()), rm)}, nil)
+			Return([]*aptostypes.Transaction{buildFakeTransactionWithGas(t, "0xreal", true, 100, uint64(time.Now().UnixMicro()), rm, testGasUsed, testGasUnitPrice)}, nil)
 
 		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, capErr)
 		require.Equal(t, aptoscap.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
 		require.Equal(t, "0xreal", *result.Response.TxHash)
-		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector, "0.0005")
+		validateWriteReportFee(t, result, testFeeOctas, "0.0005")
 	})
 
 	t.Run("Submit fails at node0 - returns own hash", func(t *testing.T) {
@@ -316,13 +358,35 @@ func TestWriteReport_Execute(t *testing.T) {
 
 		h.mockNoTransmission()
 		h.mockInvokeOnReport(&aptostypes.SubmitTransactionReply{TxStatus: aptostypes.TxFatal, TxHash: "0xmine"}, nil)
+		h.mockTransactionByHash("0xmine", testGasUsed, testGasUnitPrice)
 		h.mockPostSubmitPoll(TransmissionInfo{Success: false})
 
 		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, capErr)
 		require.Equal(t, aptoscap.TxStatus_TX_STATUS_FATAL, result.Response.TxStatus)
 		require.Equal(t, "0xmine", *result.Response.TxHash)
-		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector, "0")
+		validateWriteReportFee(t, result, testFeeOctas, "0.0005")
+	})
+
+	t.Run("Submit fails at node0 - populates receiver status and error from vm status", func(t *testing.T) {
+		h := newTestHelper(t)
+		_, reqMeta, req := newReportFixture(t)
+		vmStatus := "Move abort in user::receiver::execute: E_TEST_ABORT"
+
+		h.mockNoTransmission()
+		h.mockInvokeOnReport(&aptostypes.SubmitTransactionReply{TxStatus: aptostypes.TxFatal, TxHash: "0xmine"}, nil)
+		h.mockTransactionByHashWithVMStatus("0xmine", testGasUsed, testGasUnitPrice, vmStatus)
+		h.mockPostSubmitPoll(TransmissionInfo{Success: false})
+
+		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
+		require.Nil(t, capErr)
+		require.Equal(t, aptoscap.TxStatus_TX_STATUS_FATAL, result.Response.TxStatus)
+		require.Equal(t, "0xmine", *result.Response.TxHash)
+		require.NotNil(t, result.Response.ReceiverContractExecutionStatus)
+		require.Equal(t, aptoscap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED, *result.Response.ReceiverContractExecutionStatus)
+		require.NotNil(t, result.Response.ErrorMessage)
+		require.Contains(t, *result.Response.ErrorMessage, "receiver execution failed")
+		validateWriteReportFee(t, result, testFeeOctas, "0.0005")
 	})
 
 	t.Run("Unexpected TxSuccess but no transmission onchain", func(t *testing.T) {
@@ -338,43 +402,131 @@ func TestWriteReport_Execute(t *testing.T) {
 		require.Contains(t, capErr.Error(), "unexpected state")
 	})
 
-	t.Run("Submit fails - retrieves failed hash from prior node", func(t *testing.T) {
+	t.Run("Submit fails - retrieves retryable failed hash from prior node", func(t *testing.T) {
 		rm, reqMeta, req := newReportFixture(t)
 		transmissionIDStr := computeTransmissionIDStr(t, rm)
 		h, node0Addr := newMultiNodeTestHelper(t, transmissionIDStr)
+		h.aptos.transmissionScheduler.F = 1
+		h.aptos.transmissionScheduler.DeltaStage = time.Millisecond
 
 		h.mockNoTransmission()
 		h.mockInvokeOnReport(&aptostypes.SubmitTransactionReply{TxStatus: aptostypes.TxFatal, TxHash: "0xmine"}, nil)
 		h.mockPostSubmitPoll(TransmissionInfo{Success: false})
 		h.forwarderClient.On("GetTransmitterTransactions", mock.Anything, node0Addr, mock.Anything, mock.Anything).
-			Return([]*aptostypes.Transaction{buildFakeTransaction(t, "0xnode0failed", false, 100, uint64(time.Now().UnixMicro()), rm)}, nil)
+			Return([]*aptostypes.Transaction{buildFakeTransactionWithDetails(t, "0xnode0failed", false, 100, uint64(time.Now().UnixMicro()), rm, testGasUsed, testGasUnitPrice, "Out of gas")}, nil)
+
+		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
+		require.Nil(t, capErr)
+		require.Equal(t, aptoscap.TxStatus_TX_STATUS_ABORTED, result.Response.TxStatus)
+		require.Equal(t, "0xnode0failed", *result.Response.TxHash)
+		require.NotNil(t, result.Response.ErrorMessage)
+		require.Equal(t, "Out of gas", *result.Response.ErrorMessage)
+		validateWriteReportFee(t, result, testFeeOctas, "0.0005")
+	})
+
+	t.Run("Prior terminal failure returns before submit and populates reply fields", func(t *testing.T) {
+		rm, reqMeta, req := newReportFixture(t)
+		transmissionIDStr := computeTransmissionIDStr(t, rm)
+		h, node0Addr := newMultiNodeTestHelper(t, transmissionIDStr)
+		h.aptos.transmissionScheduler.DeltaStage = time.Millisecond
+		vmStatus := "Move abort in user::receiver::execute: E_TEST_ABORT"
+
+		h.forwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).
+			Return(TransmissionInfo{Success: false}, nil)
+		h.forwarderClient.On("GetTransmitterTransactions", mock.Anything, node0Addr, mock.Anything, mock.Anything).
+			Return([]*aptostypes.Transaction{buildFakeTransactionWithDetails(t, "0xnode0failed", false, 100, uint64(time.Now().UnixMicro()), rm, testGasUsed, testGasUnitPrice, vmStatus)}, nil)
 
 		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, capErr)
 		require.Equal(t, aptoscap.TxStatus_TX_STATUS_FATAL, result.Response.TxStatus)
 		require.Equal(t, "0xnode0failed", *result.Response.TxHash)
-		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector, "0.0005")
+		require.NotNil(t, result.Response.ReceiverContractExecutionStatus)
+		require.Equal(t, aptoscap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED, *result.Response.ReceiverContractExecutionStatus)
+		require.NotNil(t, result.Response.ErrorMessage)
+		require.Contains(t, *result.Response.ErrorMessage, "receiver execution failed")
+		validateWriteReportFee(t, result, testFeeOctas, "0.0005")
+		h.forwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	})
+
+	t.Run("F+1 prior retryable failures return aborted before submit", func(t *testing.T) {
+		rm, reqMeta, req := newReportFixture(t)
+		transmissionIDStr := computeTransmissionIDStr(t, rm)
+		h, node0Addr := newMultiNodeTestHelper(t, transmissionIDStr)
+		h.aptos.transmissionScheduler.DeltaStage = time.Millisecond
+
+		h.forwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).
+			Return(TransmissionInfo{Success: false}, nil)
+		h.forwarderClient.On("GetTransmitterTransactions", mock.Anything, node0Addr, mock.Anything, mock.Anything).
+			Return([]*aptostypes.Transaction{buildFakeTransactionWithDetails(t, "0xnode0failed", false, 100, uint64(time.Now().UnixMicro()), rm, testGasUsed, testGasUnitPrice, "Out of gas")}, nil)
+
+		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
+		require.Nil(t, capErr)
+		require.Equal(t, aptoscap.TxStatus_TX_STATUS_ABORTED, result.Response.TxStatus)
+		require.Equal(t, "0xnode0failed", *result.Response.TxHash)
+		require.NotNil(t, result.Response.ErrorMessage)
+		require.Equal(t, "Out of gas", *result.Response.ErrorMessage)
+		validateWriteReportFee(t, result, testFeeOctas, "0.0005")
+		h.forwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	})
+
+	t.Run("All-at-once inspects every transmitter before submit", func(t *testing.T) {
+		rm, reqMeta, req := newReportFixture(t)
+		transmissionIDStr := computeTransmissionIDStr(t, rm)
+		h, _, _ := newTwoNodeTestHelperAtQueuePosition(t, transmissionIDStr, 0)
+		h.aptos.transmissionScheduler.Schedule = transmission_schedule.ScheduleAllAtOnce
+		h.aptos.transmissionScheduler.DeltaStage = time.Second
+		vmStatus := "Move abort in user::receiver::execute: E_TEST_ABORT"
+
+		h.forwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).
+			Return(TransmissionInfo{Success: false}, nil)
+		h.forwarderClient.On("GetTransmitterTransactions", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return([]*aptostypes.Transaction{buildFakeTransactionWithDetails(t, "0xotherfailed", false, 100, uint64(time.Now().UnixMicro()), rm, testGasUsed, testGasUnitPrice, vmStatus)}, nil).Twice()
+
+		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
+		require.Nil(t, capErr)
+		require.Equal(t, aptoscap.TxStatus_TX_STATUS_FATAL, result.Response.TxStatus)
+		require.Equal(t, "0xotherfailed", *result.Response.TxHash)
+		h.forwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	})
+
+	t.Run("All-at-once searches every transmitter after failed submit", func(t *testing.T) {
+		rm, reqMeta, req := newReportFixture(t)
+		transmissionIDStr := computeTransmissionIDStr(t, rm)
+		h, myAddr, otherAddr := newTwoNodeTestHelperAtQueuePosition(t, transmissionIDStr, 0)
+		h.aptos.transmissionScheduler.Schedule = transmission_schedule.ScheduleAllAtOnce
+		h.aptos.transmissionScheduler.DeltaStage = time.Second
+		h.aptos.transmissionScheduler.F = 1
+		otherRM := rm
+		otherRM.ReportID = hex.EncodeToString(commontest.RandomBytes(2))
+
+		h.mockNoTransmission()
+		h.mockInvokeOnReport(&aptostypes.SubmitTransactionReply{TxStatus: aptostypes.TxFatal, TxHash: "0xmine"}, nil)
+		h.mockPostSubmitPoll(TransmissionInfo{Success: false})
+		h.forwarderClient.On("GetTransmitterTransactions", mock.Anything, myAddr, mock.Anything, mock.Anything).
+			Return([]*aptostypes.Transaction{buildFakeTransactionWithDetails(t, "0xself-unrelated", false, 100, uint64(time.Now().Add(-2*time.Minute).UnixMicro()), otherRM, testGasUsed, testGasUnitPrice, "Out of gas")}, nil).Twice()
+		h.forwarderClient.On("GetTransmitterTransactions", mock.Anything, otherAddr, mock.Anything, mock.Anything).
+			Return([]*aptostypes.Transaction{buildFakeTransactionWithDetails(t, "0xotherfailed", false, 101, uint64(time.Now().UnixMicro()), rm, testGasUsed, testGasUnitPrice, "Out of gas")}, nil).Twice()
+
+		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
+		require.Nil(t, capErr)
+		require.Equal(t, aptoscap.TxStatus_TX_STATUS_ABORTED, result.Response.TxStatus)
+		require.Equal(t, "0xotherfailed", *result.Response.TxHash)
 	})
 }
 
-func TestGetFee(t *testing.T) {
+func TestGetTransactionFeeOctas(t *testing.T) {
 	t.Parallel()
 
-	t.Run("Uses gas info from result when available", func(t *testing.T) {
-		wr := &writeReport{
-			lggr: logger.Sugared(logger.Test(t)),
-		}
-
-		fee, err := wr.getFee(t.Context(), TransmissionHashResult{
-			TxHash: "0xabc", GasUsed: testGasUsed, GasUnitPrice: testGasUnitPrice,
-		})
+	t.Run("Uses gas info from tx info when available", func(t *testing.T) {
+		wr := &writeReport{lggr: logger.Sugared(logger.Test(t))}
+		fee, err := wr.getTransactionFeeOctas(t.Context(), txInfo{TxHash: "0xabc", GasUsed: testGasUsed, GasUnitPrice: testGasUnitPrice})
 		require.NoError(t, err)
-		// 500 * 100 = 50000 octas = 0.0005 APT
-		require.Equal(t, "0.0005", fee.Text('f', -1))
+		require.NotNil(t, fee)
+		require.Equal(t, testFeeOctas, *fee)
 	})
 
-	t.Run("Falls back to RPC when gas info is zero", func(t *testing.T) {
-		mockService := mocks.NewAptosService(t)
+	t.Run("Falls back to RPC when tx info has no fee data", func(t *testing.T) {
+		mockService := typesmocks.NewAptosService(t)
 		wr := &writeReport{
 			aptosService: mockService,
 			lggr:         logger.Sugared(logger.Test(t)),
@@ -386,26 +538,14 @@ func TestGetFee(t *testing.T) {
 				Transaction: &aptostypes.Transaction{Data: []byte(txData)},
 			}, nil)
 
-		fee, err := wr.getFee(t.Context(), TransmissionHashResult{TxHash: "0xabc"})
+		fee, err := wr.getTransactionFeeOctas(t.Context(), txInfo{TxHash: "0xabc"})
 		require.NoError(t, err)
-		require.Equal(t, "0.0005", fee.Text('f', -1))
-	})
-
-	t.Run("Handles large fee (1 APT)", func(t *testing.T) {
-		wr := &writeReport{
-			lggr: logger.Sugared(logger.Test(t)),
-		}
-
-		fee, err := wr.getFee(t.Context(), TransmissionHashResult{
-			TxHash: "0xdef", GasUsed: 1000, GasUnitPrice: 100000,
-		})
-		require.NoError(t, err)
-		// 1000 * 100000 = 100_000_000 octas = 1 APT
-		require.Equal(t, "1", fee.Text('f', -1))
+		require.NotNil(t, fee)
+		require.Equal(t, testFeeOctas, *fee)
 	})
 
 	t.Run("Returns error when RPC fails", func(t *testing.T) {
-		mockService := mocks.NewAptosService(t)
+		mockService := typesmocks.NewAptosService(t)
 		wr := &writeReport{
 			aptosService: mockService,
 			lggr:         logger.Sugared(logger.Test(t)),
@@ -414,7 +554,7 @@ func TestGetFee(t *testing.T) {
 		mockService.On("TransactionByHash", mock.Anything, mock.Anything).Return(
 			(*aptostypes.TransactionByHashReply)(nil), errors.New("rpc error"))
 
-		_, err := wr.getFee(t.Context(), TransmissionHashResult{TxHash: "0xabc"})
+		_, err := wr.getTransactionFeeOctas(t.Context(), txInfo{TxHash: "0xabc"})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get transaction by hash")
 	})

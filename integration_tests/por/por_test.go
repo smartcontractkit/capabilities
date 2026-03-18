@@ -34,7 +34,7 @@ import (
 	"github.com/smartcontractkit/chainlink/v2/core/services/registrysyncer"
 
 	"github.com/smartcontractkit/capabilities/integration_tests/por/contract"
-	"github.com/smartcontractkit/capabilities/integration_tests/utils"
+	itestutils "github.com/smartcontractkit/capabilities/integration_tests/utils"
 )
 
 const commandOverrideForCustomComputeAction = "__builtin_custom-compute-action"
@@ -70,7 +70,7 @@ func Test_PORReadbalances(t *testing.T) {
 
 	lggr := logger.Test(t)
 	defer func() {
-		utils.CleanupCapabilitiesDir(lggr)
+		itestutils.CleanupCapabilitiesDir(lggr)
 	}()
 
 	readBalancesWithConfigPath, err := filepath.Abs("../../workflows/readbalances-with-config/cmd")
@@ -78,7 +78,7 @@ func Test_PORReadbalances(t *testing.T) {
 
 	wasmFile := filepath.Join(readBalancesWithConfigPath, "readbalances.wasm")
 	mainFile := filepath.Join(readBalancesWithConfigPath, "main.go")
-	utils.CreateWasmBinary(t, mainFile, wasmFile)
+	itestutils.CreateWasmBinary(t, mainFile, wasmFile)
 
 	consumerContract := setupDons(ctx, t, lggr, wasmFile)
 
@@ -118,7 +118,7 @@ func setupDons(ctx context.Context, t *testing.T, lggr logger.Logger, workflowUR
 		CronSchedule: "* * * * * *",
 	}
 
-	compressedBinary, base64EncodedCompressedBinary := utils.GetCompressedWorkflowWasm(t, workflowURL)
+	compressedBinary, base64EncodedCompressedBinary := itestutils.GetCompressedWorkflowWasm(t, workflowURL)
 
 	syncerFetcherFunc := func(ctx context.Context, messageID string, req capabilities.Request) ([]byte, error) {
 		url := req.URL
@@ -134,7 +134,7 @@ func setupDons(ctx context.Context, t *testing.T, lggr logger.Logger, workflowUR
 		return nil, fmt.Errorf("unknown  url: %s", url)
 	}
 
-	donContext := framework.CreateDonContextWithWorkflowRegistry(ctx, t, syncerFetcherFunc, utils.NoopComputeFetcherFactory{})
+	donContext := framework.CreateDonContextWithWorkflowRegistry(ctx, t, syncerFetcherFunc, itestutils.NoopComputeFetcherFactory{})
 
 	workflowConfig.Addresses = fundAddresses(ctx, t, donContext.EthBlockchain, 100, 50)
 
@@ -143,11 +143,11 @@ func setupDons(ctx context.Context, t *testing.T, lggr logger.Logger, workflowUR
 	donContext.EthBlockchain.Commit()
 	workflowConfig.BalanceReaderContractAddress = balanceReaderAddr.String()
 
-	cronBinary, err := utils.DeployCapability(t, "cron")
+	cronBinary, err := itestutils.DeployCapability(t, "cron")
 
 	require.NoError(t, err)
 
-	readContractBinary, err := utils.DeployCapability(t, "readcontract")
+	readContractBinary, err := itestutils.DeployCapability(t, "readcontract")
 	require.NoError(t, err)
 
 	workflowDonConfiguration, err := framework.NewDonConfiguration(framework.NewDonConfigurationParams{Name: "PorWorkflow", NumNodes: 4, F: 1, AcceptsWorkflows: true})
@@ -166,7 +166,7 @@ func setupDons(ctx context.Context, t *testing.T, lggr logger.Logger, workflowUR
 		donContext, true, 1*time.Second)
 
 	// Setup workflow DON
-	workflowDon.AddStandardCapability("cron-capabilities", cronBinary, utils.GetCronConfig(t, 1))
+	workflowDon.AddStandardCapability("cron-capabilities", cronBinary, itestutils.GetCronConfig(t, 1))
 	computeConfig, err := toml.Marshal(defaultConfig)
 	require.NoError(t, err)
 	workflowDon.AddStandardCapability("compute-capability", commandOverrideForCustomComputeAction, "'''"+string(computeConfig)+"'''")

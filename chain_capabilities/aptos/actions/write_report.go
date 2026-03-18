@@ -57,7 +57,7 @@ func (s *Aptos) WriteReport(
 	s.lggr.Debugw("inputs validated successfully")
 
 	// 2. Build and submit the transaction via AptosService
-	reply, meteringMetadata, err := s.executeWriteReport(ctx, input, metadata)
+	reply, responseMetadata, err := s.executeWriteReport(ctx, input, metadata)
 	if err != nil {
 		s.lggr.Errorw("executeWriteReport failed", "error", err)
 		return nil, capcommon.GetError(err, s.isUserError(err))
@@ -70,7 +70,7 @@ func (s *Aptos) WriteReport(
 
 	return &capabilities.ResponseAndMetadata[*aptoscap.WriteReportReply]{
 		Response:         reply,
-		ResponseMetadata: meteringMetadata,
+		ResponseMetadata: responseMetadata,
 	}, nil
 }
 
@@ -107,7 +107,6 @@ func (s *Aptos) executeWriteReport(
 
 // TODO: handle gas limit bumping if required (PLEX-2580)
 // TODO: handle metrics (PLEX-2546)
-// TODO: populate error message and ReceiverContractExecutionStatus in WriteReportReply by using vmstatus received from failed tx (PLEX-2597)
 func (wr *writeReport) execute(
 	ctx context.Context,
 	request *aptoscap.WriteReportRequest,
@@ -154,8 +153,13 @@ func (wr *writeReport) execute(
 
 	queuePosition := wr.transmissionScheduler.GetQueuePosition(transmissionID.GetDebugID())
 	orderedTransmitters := wr.getOrderedTransmitters(transmissionID.GetDebugID(), wr.p2pConfig)
-	wr.lggr.Debugw("got queue position", "queuePosition", queuePosition, "orderedTransmitters", orderedTransmitters)
-	// polling here is done based on queue position and deltaStage
+	wr.lggr.Debugw("got queue position",
+		"queuePosition", queuePosition,
+		"orderedTransmitters", orderedTransmitters,
+		"schedule", wr.transmissionScheduler.Schedule,
+	)
+	// polling here is done based on queue position and deltaStage for one-at-a-time,
+	// and as a quick state probe for all-at-once.
 	transmissionInfo, err := wr.pollTransmissionInfo(ctx, transmissionID, queuePosition)
 	if err != nil {
 		wr.lggr.Errorw("pollTransmissionInfo failed", "error", err)
@@ -171,20 +175,36 @@ func (wr *writeReport) execute(
 				"transmitter", transmitterAddr, "orderedTransmitters", orderedTransmitters)
 		}
 		wr.lggr.Debugw("report already onchain, retrieving txHash")
-		txResult, txHashErr := txHashRetriever.GetSuccessfulTransmissionHash(ctx, transmissionInfo.Transmitter)
+		txInfo, txHashErr := txHashRetriever.GetSuccessfulTransmissionInfo(ctx, transmissionInfo.Transmitter)
 		if txHashErr != nil {
 			wr.lggr.Errorw("report already onchain but failed to retrieve its txHash", "error", txHashErr)
 			return nil, capabilities.ResponseMetadata{}, txHashErr
 		}
-		wr.lggr.Debugw("returning early - report already onchain", "txHash", txResult.TxHash)
-		return &aptoscap.WriteReportReply{
-			TxStatus: aptoscap.TxStatus_TX_STATUS_SUCCESS,
-			TxHash:   &txResult.TxHash,
-		}, wr.buildMeteringMetadata(ctx, txResult), nil
+		wr.lggr.Debugw("returning early - report already onchain", "txHash", txInfo.TxHash)
+		return wr.buildWriteReportResponse(ctx, aptoscap.TxStatus_TX_STATUS_SUCCESS, txInfo)
 	}
-	// TODO: we can exit here if we find F+1 failed transactions, but thats expensive time and i/o wise.
-	// emit metrics here to understand if its worth investing time here over writing to a cheap chain and failing.
-	// maybe do a poll of node0's failed tx and see if we get lucky, if we do find a matching failed tx, we can use vmstatus to exit early on user errors.
+
+	priorFailedSummary, inspectErr := wr.inspectPriorFailedTransmissions(ctx, txHashRetriever, orderedTransmitters, queuePosition)
+	if inspectErr != nil {
+		wr.lggr.Warnw("failed to inspect prior failed transmissions before submit", "error", inspectErr)
+	} else if priorFailedSummary != nil {
+		if priorFailedSummary.firstTerminal.TxHash != "" {
+			wr.lggr.Debugw("returning early - prior terminal failure found",
+				"txHash", priorFailedSummary.firstTerminal.TxHash,
+				"reason", priorFailedSummary.firstTerminalClass.Reason,
+				"terminalCount", priorFailedSummary.terminalCount,
+			)
+			return wr.buildWriteReportResponse(ctx, responseStatusForFailure(aptoscap.TxStatus_TX_STATUS_FATAL, priorFailedSummary.firstTerminalClass), priorFailedSummary.firstTerminal)
+		}
+		if priorFailedSummary.failedCount >= int(wr.transmissionScheduler.F)+1 && priorFailedSummary.firstFailed.TxHash != "" {
+			wr.lggr.Debugw("returning early - observed F+1 failed transmissions before submit",
+				"txHash", priorFailedSummary.firstFailed.TxHash,
+				"failedCount", priorFailedSummary.failedCount,
+				"f", wr.transmissionScheduler.F,
+			)
+			return wr.buildWriteReportResponse(ctx, responseStatusForFailure(aptoscap.TxStatus_TX_STATUS_FATAL, priorFailedSummary.firstFailedClass), priorFailedSummary.firstFailed)
+		}
+	}
 
 	err = wr.reportSizeLimit.Check(ctx, commoncfg.SizeOf(request.Report.RawReport))
 	if err != nil {
@@ -229,115 +249,285 @@ func (wr *writeReport) execute(
 			wr.lggr.Errorw("successful transmitter not found in orderedTransmitters, p2pConfig may be incomplete or an external entity submitted the report",
 				"transmitter", transmitterAddr, "orderedTransmitters", orderedTransmitters)
 		}
-		txResult := TransmissionHashResult{TxHash: txReply.TxHash}
+		txInfo := txInfoFromSubmitReply(txReply)
 		if txReply.TxStatus == aptostypes.TxFatal || txReply.TxStatus == aptostypes.TxReverted {
 			// Report for this transaction has already been submitted and we sent a duplicate tx onchain, that is why this tx reverted but transmission info still shows success.
 			wr.lggr.Debugw("our tx reverted but report is onchain (duplicate), retrieving success hash",
 				"ownTxStatus", txReply.TxStatus, "ownTxHash", txReply.TxHash)
-			successResult, txHashErr := txHashRetriever.GetSuccessfulTransmissionHash(ctx, newTransmissionInfo.Transmitter)
+			successTxInfo, txHashErr := txHashRetriever.GetSuccessfulTransmissionInfo(ctx, newTransmissionInfo.Transmitter)
 			if txHashErr != nil {
 				wr.lggr.Errorw("failed to get successful transmission hash after duplicate", "error", txHashErr)
 				return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed to get successful transmission hash: %w", txHashErr)
 			}
-			txResult = successResult
+			txInfo = successTxInfo
 		}
-		wr.lggr.Debugw("returning SUCCESS", "txHash", txResult.TxHash)
-		return &aptoscap.WriteReportReply{
-			TxStatus: aptoscap.TxStatus_TX_STATUS_SUCCESS,
-			TxHash:   &txResult.TxHash,
-		}, wr.buildMeteringMetadata(ctx, txResult), nil
+		wr.lggr.Debugw("returning SUCCESS", "txHash", txInfo.TxHash)
+		return wr.buildWriteReportResponse(ctx, aptoscap.TxStatus_TX_STATUS_SUCCESS, txInfo)
 	case false:
 		if txReply.TxStatus == aptostypes.TxSuccess {
 			wr.lggr.Errorw("unexpected state - local tx succeeded but transmission info shows no success",
 				"transmissionID", transmissionID.GetDebugID())
 			return nil, capabilities.ResponseMetadata{}, fmt.Errorf("unexpected state: local transaction succeeded but transmission info shows no success for %s", transmissionID.GetDebugID())
 		}
-		ownTxHash := txReply.TxHash
+		ownTxInfo := txInfoFromSubmitReply(txReply)
 		wr.lggr.Debugw("transmission failed, searching for tx hashes",
-			"ownTxHash", ownTxHash, "ownTxStatus", txReply.TxStatus, "queuePosition", queuePosition)
+			"ownTxHash", ownTxInfo.TxHash,
+			"ownTxStatus", txReply.TxStatus,
+			"queuePosition", queuePosition,
+			"schedule", wr.transmissionScheduler.Schedule,
+		)
 
-		// Position 0 node has no prior nodes to check; return its own failed tx hash.
-		if queuePosition <= 0 {
-			wr.lggr.Debugw("position 0, returning own failed hash", "txHash", ownTxHash)
-			return &aptoscap.WriteReportReply{
-				TxStatus: aptoscap.TxStatus_TX_STATUS_FATAL,
-				TxHash:   &ownTxHash,
-			}, wr.buildMeteringMetadata(ctx, TransmissionHashResult{TxHash: ownTxHash}), nil
+		searchLimit := min(queuePosition, len(orderedTransmitters))
+		searchMode := "preceding"
+		if wr.transmissionScheduler.IsAllAtOnce() {
+			searchLimit = len(orderedTransmitters)
+			searchMode = "all"
+		} else if queuePosition <= 0 {
+			wr.lggr.Debugw("position 0 in one-at-a-time mode, returning own failed hash", "txHash", ownTxInfo.TxHash)
+			return wr.buildWriteReportResponse(ctx, aptoscap.TxStatus_TX_STATUS_FATAL, ownTxInfo)
 		}
 
-		// Search preceding transmitters (position 0 through position-1) for a matching failed tx.
-		wr.lggr.Debugw("searching preceding transmitters for failed tx",
+		wr.lggr.Debugw("searching transmitters for failed tx",
+			"mode", searchMode,
 			"queuePosition", queuePosition,
 			"orderedTransmittersCount", len(orderedTransmitters),
 			"transmissionDebugID", transmissionID.GetDebugID(),
 		)
-		for i := 0; i < queuePosition && i < len(orderedTransmitters); i++ {
+		for i := 0; i < searchLimit; i++ {
 			if orderedTransmitters[i] == "" {
 				// TODO: PLEX-2598 emit metric - p2pConfig incomplete, missing transmitter at this position
 				wr.lggr.Warnw("skipping empty transmitter address, p2pConfig is incomplete", "index", i)
 				continue
 			}
-			wr.lggr.Debugw("checking prior transmitter", "index", i, "address", orderedTransmitters[i])
+			wr.lggr.Debugw("checking transmitter for failed tx", "index", i, "address", orderedTransmitters[i])
 			addr, err := aptos_sdk.ConvertToAddress(orderedTransmitters[i])
 			if err != nil {
 				wr.lggr.Errorw("failed to convert transmitter address to address", "address", orderedTransmitters[i], "error", err)
 				continue
 			}
-			failedResult, searchErr := txHashRetriever.GetFailedTransmissionHash(ctx, *addr)
+			failedTxInfo, searchErr := txHashRetriever.GetFailedTransmissionInfo(ctx, *addr)
 			if searchErr != nil {
-				wr.lggr.Debugw("no matching failed tx for prior transmitter", "transmitter", orderedTransmitters[i], "position", i, "err", searchErr)
+				wr.lggr.Debugw("no matching failed tx for transmitter", "transmitter", orderedTransmitters[i], "position", i, "err", searchErr)
 				continue
 			}
-			wr.lggr.Debugw("found failed transmission from prior node", "transmitter", orderedTransmitters[i], "position", i, "txHash", failedResult.TxHash)
-			return &aptoscap.WriteReportReply{
-				TxStatus: aptoscap.TxStatus_TX_STATUS_FATAL,
-				TxHash:   &failedResult.TxHash,
-			}, wr.buildMeteringMetadata(ctx, failedResult), nil
+			wr.lggr.Debugw("found failed transmission from transmitter", "transmitter", orderedTransmitters[i], "position", i, "txHash", failedTxInfo.TxHash)
+			return wr.buildWriteReportResponse(ctx, aptoscap.TxStatus_TX_STATUS_FATAL, failedTxInfo)
 		}
 
-		// No matching failed tx from prior nodes; return our own hash.
-		wr.lggr.Debugw("no prior failed tx found, returning own hash", "txHash", ownTxHash)
-		return &aptoscap.WriteReportReply{
-			TxStatus: aptoscap.TxStatus_TX_STATUS_FATAL,
-			TxHash:   &ownTxHash,
-		}, wr.buildMeteringMetadata(ctx, TransmissionHashResult{TxHash: ownTxHash}), nil
+		// No matching failed tx from the configured search set; return our own hash.
+		wr.lggr.Debugw("no failed tx found in search set, returning own hash", "txHash", ownTxInfo.TxHash)
+		return wr.buildWriteReportResponse(ctx, aptoscap.TxStatus_TX_STATUS_FATAL, ownTxInfo)
 	}
 	return nil, capabilities.ResponseMetadata{}, nil // should never happen
 }
 
-// getFee returns the transaction fee in APT. If result already contains gas info
-// (from TxHashRetriever scanning), it is used directly. Otherwise it falls back to
-// an RPC call via AptosService.TransactionByHash.
-func (wr *writeReport) getFee(ctx context.Context, result TransmissionHashResult) (*big.Float, error) {
-	gasUsed, gasUnitPrice := result.GasUsed, result.GasUnitPrice
-
-	if gasUsed == 0 && gasUnitPrice == 0 {
-		reply, err := wr.aptosService.TransactionByHash(ctx, aptostypes.TransactionByHashRequest{Hash: result.TxHash})
-		if err != nil {
-			return nil, fmt.Errorf("failed to get transaction by hash: %w", err)
-		}
-		var txData userTxData
-		if err := json.Unmarshal(reply.Transaction.Data, &txData); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal transaction data: %w", err)
-		}
-		gasUsed, gasUnitPrice = txData.GasUsed, txData.GasUnitPrice
-	}
-
-	feeInOctas := new(big.Float).SetUint64(gasUsed)
-	feeInOctas.Mul(feeInOctas, new(big.Float).SetUint64(gasUnitPrice))
-	feeInAPT := new(big.Float).Quo(feeInOctas, big.NewFloat(1e8))
-
-	wr.lggr.Debugw("WriteReport fee", "feeInAPT", feeInAPT.String(), "gasUsed", gasUsed, "gasUnitPrice", gasUnitPrice)
-	return feeInAPT, nil
+func txInfoFromSubmitReply(txReply *aptostypes.SubmitTransactionReply) txInfo {
+	return txInfo{TxHash: txReply.TxHash}
 }
 
-func (wr *writeReport) buildMeteringMetadata(ctx context.Context, result TransmissionHashResult) capabilities.ResponseMetadata {
-	fee, err := wr.getFee(ctx, result)
-	if err != nil {
-		wr.lggr.Errorw("failed to get transaction fee for metering, using zero", "txHash", result.TxHash, "error", err)
-		fee = big.NewFloat(0)
+type priorFailedSummary struct {
+	firstFailed        txInfo
+	firstFailedClass   aptostypes.WriteFailureClassification
+	firstTerminal      txInfo
+	firstTerminalClass aptostypes.WriteFailureClassification
+	failedCount        int
+	terminalCount      int
+}
+
+func (wr *writeReport) buildWriteReportResponse(
+	ctx context.Context,
+	status aptoscap.TxStatus,
+	info txInfo,
+) (*aptoscap.WriteReportReply, capabilities.ResponseMetadata, error) {
+	if status != aptoscap.TxStatus_TX_STATUS_SUCCESS {
+		resolvedInfo, resolveErr := wr.resolveTxInfo(ctx, info)
+		if resolveErr != nil {
+			wr.lggr.Warnw("failed to enrich tx info for write report response", "txHash", info.TxHash, "error", resolveErr)
+		} else {
+			info = resolvedInfo
+		}
 	}
-	return metering.GetResponseMetadataWriteReport(fee, wr.chainSelector)
+
+	classification := aptostypes.ClassifyWriteVmStatus(info.VMStatus)
+	reply := &aptoscap.WriteReportReply{TxStatus: responseStatusForFailure(status, classification)}
+	if info.TxHash != "" {
+		txHash := info.TxHash
+		reply.TxHash = &txHash
+	}
+	applyFailureClassification(reply, classification)
+
+	feeOctas, err := wr.getTransactionFeeOctas(ctx, info)
+	if err != nil {
+		wr.lggr.Warnw("failed to resolve transaction fee", "txHash", info.TxHash, "error", err)
+		return reply, capabilities.ResponseMetadata{}, nil
+	}
+	if feeOctas == nil {
+		return reply, capabilities.ResponseMetadata{}, nil
+	}
+
+	reply.TransactionFee = feeOctas
+	return reply, metering.GetResponseMetadataWriteReport(octasToAPT(*feeOctas), wr.chainSelector), nil
+}
+
+func (wr *writeReport) resolveTxInfo(ctx context.Context, info txInfo) (txInfo, error) {
+	if info.TxHash == "" {
+		return info, nil
+	}
+	if info.GasUsed != 0 && info.GasUnitPrice != 0 && info.VMStatus != "" {
+		return info, nil
+	}
+
+	reply, err := wr.aptosService.TransactionByHash(ctx, aptostypes.TransactionByHashRequest{Hash: info.TxHash})
+	if err != nil {
+		return info, fmt.Errorf("failed to get transaction by hash: %w", err)
+	}
+	if reply == nil || reply.Transaction == nil {
+		return info, fmt.Errorf("nil transaction by hash reply for %s", info.TxHash)
+	}
+
+	var txData userTxData
+	if err := json.Unmarshal(reply.Transaction.Data, &txData); err != nil {
+		return info, fmt.Errorf("failed to unmarshal transaction data: %w", err)
+	}
+
+	if info.GasUsed == 0 {
+		info.GasUsed = txData.GasUsed
+	}
+	if info.GasUnitPrice == 0 {
+		info.GasUnitPrice = txData.GasUnitPrice
+	}
+	if info.VMStatus == "" {
+		info.VMStatus = txData.VMStatus
+	}
+
+	return info, nil
+}
+
+func (wr *writeReport) getTransactionFeeOctas(ctx context.Context, info txInfo) (*uint64, error) {
+	if info.GasUsed != 0 || info.GasUnitPrice != 0 {
+		return calculateTransactionFeeOctas(info.GasUsed, info.GasUnitPrice)
+	}
+	if info.TxHash == "" {
+		return nil, nil
+	}
+
+	reply, err := wr.aptosService.TransactionByHash(ctx, aptostypes.TransactionByHashRequest{Hash: info.TxHash})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get transaction by hash: %w", err)
+	}
+	if reply == nil || reply.Transaction == nil {
+		return nil, fmt.Errorf("nil transaction by hash reply for %s", info.TxHash)
+	}
+
+	var txData userTxData
+	if err := json.Unmarshal(reply.Transaction.Data, &txData); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal transaction data: %w", err)
+	}
+	return calculateTransactionFeeOctas(txData.GasUsed, txData.GasUnitPrice)
+}
+
+func calculateTransactionFeeOctas(gasUsed, gasUnitPrice uint64) (*uint64, error) {
+	fee := new(big.Int).SetUint64(gasUsed)
+	fee.Mul(fee, new(big.Int).SetUint64(gasUnitPrice))
+	if !fee.IsUint64() {
+		return nil, fmt.Errorf("transaction fee exceeds uint64 range")
+	}
+	feeOctas := fee.Uint64()
+	return &feeOctas, nil
+}
+
+func responseStatusForFailure(defaultStatus aptoscap.TxStatus, classification aptostypes.WriteFailureClassification) aptoscap.TxStatus {
+	if defaultStatus == aptoscap.TxStatus_TX_STATUS_SUCCESS {
+		return defaultStatus
+	}
+	if classification.Reason == "no vm status available" && classification.Message == "" {
+		return defaultStatus
+	}
+
+	switch classification.Decision {
+	case aptostypes.WriteFailureDecisionRetryable, aptostypes.WriteFailureDecisionAlreadyProcessed:
+		return aptoscap.TxStatus_TX_STATUS_ABORTED
+	default:
+		return defaultStatus
+	}
+}
+
+func applyFailureClassification(reply *aptoscap.WriteReportReply, classification aptostypes.WriteFailureClassification) {
+	if reply.TxStatus == aptoscap.TxStatus_TX_STATUS_SUCCESS {
+		return
+	}
+
+	if classification.ReceiverExecutionStatus == aptostypes.ReceiverExecutionStatusReverted {
+		status := aptoscap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED
+		reply.ReceiverContractExecutionStatus = &status
+	}
+
+	if msg := classification.MessagePtr(); msg != nil {
+		reply.ErrorMessage = msg
+	}
+}
+
+func octasToAPT(feeOctas uint64) *big.Float {
+	return new(big.Float).Quo(new(big.Float).SetUint64(feeOctas), big.NewFloat(1e8))
+}
+
+func (wr *writeReport) inspectPriorFailedTransmissions(
+	ctx context.Context,
+	txHashRetriever TxHashRetriever,
+	orderedTransmitters []string,
+	queuePosition int,
+) (*priorFailedSummary, error) {
+	searchLimit := min(queuePosition, len(orderedTransmitters))
+	if wr.transmissionScheduler.IsAllAtOnce() {
+		searchLimit = len(orderedTransmitters)
+	}
+	if searchLimit <= 0 {
+		return nil, nil
+	}
+
+	summary := &priorFailedSummary{}
+	for i := 0; i < searchLimit; i++ {
+		if orderedTransmitters[i] == "" {
+			continue
+		}
+
+		addr, err := aptos_sdk.ConvertToAddress(orderedTransmitters[i])
+		if err != nil {
+			wr.lggr.Warnw("skipping invalid transmitter address while inspecting prior failures", "address", orderedTransmitters[i], "error", err)
+			continue
+		}
+
+		failedTxInfo, err := txHashRetriever.GetFailedTransmissionInfo(ctx, *addr)
+		if err != nil {
+			continue
+		}
+		resolvedInfo, resolveErr := wr.resolveTxInfo(ctx, failedTxInfo)
+		if resolveErr != nil {
+			wr.lggr.Warnw("failed to enrich prior failed transmission info", "txHash", failedTxInfo.TxHash, "error", resolveErr)
+		} else {
+			failedTxInfo = resolvedInfo
+		}
+
+		classification := aptostypes.ClassifyWriteVmStatus(failedTxInfo.VMStatus)
+		summary.failedCount++
+		if summary.firstFailed.TxHash == "" {
+			summary.firstFailed = failedTxInfo
+			summary.firstFailedClass = classification
+		}
+		if classification.Decision != aptostypes.WriteFailureDecisionRetryable {
+			summary.terminalCount++
+			if summary.firstTerminal.TxHash == "" {
+				summary.firstTerminal = failedTxInfo
+				summary.firstTerminalClass = classification
+			}
+		}
+	}
+
+	if summary.failedCount == 0 {
+		return nil, nil
+	}
+
+	return summary, nil
 }
 
 func getTransmissionID(workflowExecutionID string, request *aptoscap.WriteReportRequest) (TransmissionID, error) {
@@ -409,11 +599,12 @@ func (wr *writeReport) pollTransmissionInfo(
 	wr.lggr.Debugw("pollTransmissionInfo called",
 		"transmissionID", transmissionID.GetDebugID(),
 		"queuePosition", queuePosition,
+		"schedule", wr.transmissionScheduler.Schedule,
 		"deltaStage", wr.transmissionScheduler.DeltaStage,
 	)
 
-	if queuePosition <= 0 {
-		wr.lggr.Debugw("position 0, doing quick retry poll")
+	if wr.transmissionScheduler.IsAllAtOnce() || queuePosition <= 0 {
+		wr.lggr.Debugw("doing quick retry poll", "allAtOnce", wr.transmissionScheduler.IsAllAtOnce())
 		transmissionInfo, err := withQuickRetry(ctx, wr.lggr, func(ctx context.Context) (TransmissionInfo, error) {
 			return wr.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
 		})

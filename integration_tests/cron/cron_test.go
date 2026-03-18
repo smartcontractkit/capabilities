@@ -11,7 +11,7 @@ import (
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/framework"
 	"github.com/smartcontractkit/chainlink/v2/core/logger"
 
-	"github.com/smartcontractkit/capabilities/integration_tests/utils"
+	itestutils "github.com/smartcontractkit/capabilities/integration_tests/utils"
 )
 
 const (
@@ -29,10 +29,10 @@ func Test_CronTrigger(t *testing.T) {
 	ctx := t.Context()
 	lggr := logger.TestLogger(t)
 	defer func() {
-		utils.CleanupCapabilitiesDir(lggr)
+		itestutils.CleanupCapabilitiesDir(lggr)
 	}()
 
-	cronBinary, err := utils.DeployCapability(t, "cron")
+	cronBinary, err := itestutils.DeployCapability(t, "cron")
 	require.NoError(t, err)
 
 	workflowDonConfiguration, err := framework.NewDonConfiguration(framework.NewDonConfigurationParams{Name: "Workflow", NumNodes: 7, F: 2, AcceptsWorkflows: true})

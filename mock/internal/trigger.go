@@ -69,3 +69,8 @@ func (m *Trigger) UnregisterTrigger(ctx context.Context, request capabilities.Tr
 
 	return nil
 }
+
+func (m *Trigger) AckEvent(_ context.Context, triggerID string, eventID string, method string) error {
+	m.lggr.Debugw("Trigger event acknowledged", "triggerID", triggerID, "eventID", eventID, "method", method)
+	return nil
+}

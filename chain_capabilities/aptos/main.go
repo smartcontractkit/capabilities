@@ -7,8 +7,10 @@ import (
 	"maps"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
+	aptos_sdk "github.com/aptos-labs/aptos-go-sdk"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/actions"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/config"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
@@ -21,6 +23,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
+	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
 )
 
 const (
@@ -112,6 +115,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	c.lggr.Debugw("Unmarshalled config",
 		"network", cfg.Network,
 		"chainID", cfg.ChainID,
+		"transmissionSchedule", cfg.TransmissionSchedule,
 		"deltaStage", cfg.DeltaStage,
 		"creForwarderAddress", fmt.Sprintf("%x", cfg.CREForwarderAddress),
 	)
@@ -168,16 +172,24 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 			"entries", len(p2pConfig), "p2pConfig", p2pConfig,
 		)
 	}
+	if err := validateP2PToTransmitterMap(c.DON.Members, p2pConfig); err != nil {
+		c.lggr.Errorw("invalid p2pToTransmitterMap", "error", err)
+		return fmt.Errorf("invalid p2pToTransmitterMap: %w", err)
+	}
+	c.lggr.Debugw("validated p2pToTransmitterMap", "entries", len(p2pConfig), "donMembers", len(c.DON.Members))
 
+	if cfg.TransmissionSchedule == "" {
+		cfg.TransmissionSchedule = transmission_schedule.ScheduleOneAtATime
+	}
 	if cfg.DeltaStage == 0 {
 		cfg.DeltaStage = defaultDeltaStage
 	}
-	scheduler, err := transmission_schedule.InitialiseTransmissionScheduler(ctx, dependencies.CapabilityRegistry, cfg.DeltaStage, c.lggr, c.DON, false)
+	scheduler, err := transmission_schedule.InitialiseTransmissionSchedulerWithSchedule(ctx, dependencies.CapabilityRegistry, cfg.TransmissionSchedule, cfg.DeltaStage, c.lggr, c.DON, false)
 	if err != nil {
 		c.lggr.Errorw("failed to initialize transmission scheduler", "error", err)
 		return fmt.Errorf("failed to initialize transmission scheduler: %w", err)
 	}
-	c.lggr.Debugw("Initialised transmission scheduler", "deltaStage", cfg.DeltaStage)
+	c.lggr.Debugw("Initialised transmission scheduler", "schedule", cfg.TransmissionSchedule, "deltaStage", cfg.DeltaStage)
 
 	c.Aptos, err = actions.NewAptos(cfg, p2pConfig, aptosService, c.lggr, limits.Factory{Logger: c.lggr}, scheduler, c.chainSelector)
 	if err != nil {
@@ -285,6 +297,37 @@ func (c *capabilityGRPCService) fetchP2PConfig(ctx context.Context, registry cor
 	return result, nil
 }
 
+func validateP2PToTransmitterMap(donMembers []p2ptypes.PeerID, p2pConfig map[string]string) error {
+	if len(p2pConfig) == 0 {
+		return fmt.Errorf("map is required and must be non-empty")
+	}
+	if len(donMembers) == 0 {
+		return fmt.Errorf("don members are required")
+	}
+
+	seenTransmitters := make(map[string]string, len(p2pConfig))
+	for _, member := range donMembers {
+		memberKey := fmt.Sprintf("%x", member[:])
+
+		transmitter, ok := p2pConfig[memberKey]
+		if !ok || transmitter == "" {
+			return fmt.Errorf("missing mapping for DON member peerID %s", memberKey)
+		}
+
+		var addr aptos_sdk.AccountAddress
+		if err := addr.ParseStringRelaxed(transmitter); err != nil {
+			return fmt.Errorf("invalid Aptos transmitter %q for peerID %s: %w", transmitter, memberKey, err)
+		}
+
+		normalized := strings.ToLower(addr.StringLong())
+		if existingPeer, exists := seenTransmitters[normalized]; exists {
+			return fmt.Errorf("duplicate transmitter address %s for peerIDs %s and %s", normalized, existingPeer, memberKey)
+		}
+		seenTransmitters[normalized] = memberKey
+	}
+
+	return nil
+}
 func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Config, error) {
 	var cfg config.Config
 	if err := json.Unmarshal([]byte(configStr), &cfg); err != nil {

@@ -77,6 +77,17 @@ func (a *Aptos) Close() error {
 	return services.CloseAll(a.reportSizeLimit, a.maxGasAmountLimit)
 }
 
+func GetError(err error, isUserError bool) caperrors.Error {
+	if isUserError {
+		return NewUserError(err)
+	}
+	return caperrors.NewPublicSystemError(err, caperrors.Unknown)
+}
+
+func NewUserError(err error) caperrors.Error {
+	return caperrors.NewPublicUserError(err, caperrors.Unknown)
+}
+
 func (a *Aptos) AccountAPTBalance(
 	ctx context.Context,
 	metadata capabilities.RequestMetadata,
@@ -90,7 +101,7 @@ func (a *Aptos) View(
 	metadata capabilities.RequestMetadata,
 	input *aptoscap.ViewRequest,
 ) (*capabilities.ResponseAndMetadata[*aptoscap.ViewReply], caperrors.Error) {
-	return nil, capcommon.GetError(errors.New("unimplemented"), false)
+	return a.view(ctx, metadata, input)
 }
 
 func (a *Aptos) TransactionByHash(

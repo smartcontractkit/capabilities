@@ -19,7 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/capabilities/integration_tests/por/contract"
-	"github.com/smartcontractkit/capabilities/integration_tests/utils"
+	itestutils "github.com/smartcontractkit/capabilities/integration_tests/utils"
 
 	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/pb"
@@ -138,7 +138,7 @@ func runLoadTest(t *testing.T, numberOfNodes int, f uint8, numberOfWorkflows int
 
 	lggr := logger.Test(t)
 	defer func() {
-		utils.CleanupCapabilitiesDir(lggr)
+		itestutils.CleanupCapabilitiesDir(lggr)
 	}()
 
 	targetSink, registerWorkflowOnDon := setupLoadtestDON(ctx, t, lggr, numberOfNodes, f, protocolRoundTime)
@@ -234,10 +234,10 @@ func setupLoadtestDON(ctx context.Context, t *testing.T, lggr logger.Logger, num
 	donContext.EthBlockchain.Commit()
 	config.BalanceReaderContractAddress = balanceReaderAddr.String()
 
-	cronBinary, err := utils.DeployCapability(t, "cron")
+	cronBinary, err := itestutils.DeployCapability(t, "cron")
 	require.NoError(t, err)
 
-	readContractBinary, err := utils.DeployCapability(t, "readcontract")
+	readContractBinary, err := itestutils.DeployCapability(t, "readcontract")
 	require.NoError(t, err)
 
 	workflowDonConfiguration, err := framework.NewDonConfiguration(framework.NewDonConfigurationParams{Name: "Workflow", NumNodes: numberOfNodes, F: f, AcceptsWorkflows: true})
@@ -253,7 +253,7 @@ func setupLoadtestDON(ctx context.Context, t *testing.T, lggr logger.Logger, num
 
 	workflowDon.AddExternalTriggerCapability(triggerSink)
 
-	workflowDon.AddStandardCapability("cron-capabilities", cronBinary, utils.GetCronConfig(t, 1))
+	workflowDon.AddStandardCapability("cron-capabilities", cronBinary, itestutils.GetCronConfig(t, 1))
 	computeConfig, err := toml.Marshal(defaultConfig)
 	require.NoError(t, err)
 	workflowDon.AddStandardCapability("compute-capability", commandOverrideForCustomComputeAction, "'''"+string(computeConfig)+"'''")

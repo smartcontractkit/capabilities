@@ -7,13 +7,13 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 )
 
-var WriteReportSpendUnitFormat = "GAS.%d" // %d will be replaced with the chain selector
+var WriteReportSpendUnitFormat = "GAS.%d" // %d is replaced with the chain selector
 
-func GetResponseMetadataWriteReport(fee *big.Float, chainSelector uint64) capabilities.ResponseMetadata {
+func GetResponseMetadataWriteReport(feeAPT *big.Float, chainSelector uint64) capabilities.ResponseMetadata {
 	return capabilities.ResponseMetadata{
 		Metering: []capabilities.MeteringNodeDetail{
 			{
-				SpendValue: fee.Text('f', -1), // stored in APT
+				SpendValue: feeAPT.Text('f', -1),
 				SpendUnit:  fmt.Sprintf(WriteReportSpendUnitFormat, chainSelector),
 			},
 		},

@@ -48,6 +48,17 @@ func newForwarderClient(aptosService types.AptosService, lggr logger.Logger, for
 	}
 }
 
+// receiverBytesToAddress normalizes the 32-byte receiver field from WriteReportRequest
+// into an Aptos account address without relying on ConvertToAddress's dynamic type handling.
+func receiverBytesToAddress(receiver []byte) (aptos_sdk.AccountAddress, error) {
+	var addr aptos_sdk.AccountAddress
+	if len(receiver) != len(addr) {
+		return addr, fmt.Errorf("invalid receiver length: got %d want %d", len(receiver), len(addr))
+	}
+	copy(addr[:], receiver)
+	return addr, nil
+}
+
 func (fc *forwarderClient) InvokeOnReport(ctx context.Context, receiver []byte, report *sdk.ReportResponse, gasConfig *aptoscap.GasConfig) (*aptostypes.SubmitTransactionReply, error) {
 	fc.lggr.Debugw("InvokeOnReport called",
 		"receiverLen", len(receiver),
@@ -64,7 +75,11 @@ func (fc *forwarderClient) InvokeOnReport(ctx context.Context, receiver []byte, 
 
 	fullRawReport := slices.Concat(report.ReportContext, report.RawReport)
 
-	receiverAddress := aptos_sdk.AccountAddress(receiver)
+	receiverAddress, err := receiverBytesToAddress(receiver)
+	if err != nil {
+		fc.lggr.Errorw("failed to convert receiver to address", "error", err)
+		return nil, fmt.Errorf("failed to convert receiver to address: %w", err)
+	}
 	moduleInformation, _, argTypes, args, err := fc.forwarderEncoder.Report(receiverAddress, fullRawReport, signatures)
 	if err != nil {
 		fc.lggr.Errorw("failed to encode forwarder report", "error", err)

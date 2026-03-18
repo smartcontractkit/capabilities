@@ -12,7 +12,7 @@ import (
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/framework"
 	"github.com/smartcontractkit/chainlink/v2/core/logger"
 
-	"github.com/smartcontractkit/capabilities/integration_tests/utils"
+	itestutils "github.com/smartcontractkit/capabilities/integration_tests/utils"
 )
 
 func Test_Signer(t *testing.T) {
@@ -20,10 +20,10 @@ func Test_Signer(t *testing.T) {
 	ctx := t.Context()
 	lggr := logger.TestLogger(t)
 	defer func() {
-		utils.CleanupCapabilitiesDir(lggr)
+		itestutils.CleanupCapabilitiesDir(lggr)
 	}()
 
-	signerBinary, err := utils.DeployCapability(t, "p2psigner")
+	signerBinary, err := itestutils.DeployCapability(t, "p2psigner")
 	require.NoError(t, err)
 
 	workflowDonConfiguration, err := framework.NewDonConfiguration(framework.NewDonConfigurationParams{Name: "Workflow", NumNodes: 4, F: 1, AcceptsWorkflows: true})

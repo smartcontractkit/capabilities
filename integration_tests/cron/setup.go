@@ -12,7 +12,7 @@ import (
 	"github.com/smartcontractkit/chainlink/v2/core/capabilities/integration_tests/framework"
 	"github.com/smartcontractkit/chainlink/v2/core/logger"
 
-	"github.com/smartcontractkit/capabilities/integration_tests/utils"
+	itestutils "github.com/smartcontractkit/capabilities/integration_tests/utils"
 )
 
 func setupCronTestDon(ctx context.Context, t *testing.T, lggr logger.Logger,
@@ -23,7 +23,7 @@ func setupCronTestDon(ctx context.Context, t *testing.T, lggr logger.Logger,
 
 	workflowDon = createCronTestWorkflowDon(ctx, t, lggr, workflowDonInfo, donContext, targetSink)
 
-	workflowDon.AddStandardCapability("cron-capabilities", cronPath, utils.GetCronConfig(t, fastestIntervalSeconds))
+	workflowDon.AddStandardCapability("cron-capabilities", cronPath, itestutils.GetCronConfig(t, fastestIntervalSeconds))
 
 	workflowDon.Initialise()
 

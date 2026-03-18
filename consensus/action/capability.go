@@ -45,12 +45,15 @@ import (
 
 const (
 	defaultMaxRequestOutcomeSize        = 10000
+	defaultRequestTimeout               = 20 * time.Second
 	defaultKeyBundleIDForValueConsensus = "evm"
 	KeyBundleIDEvm                      = "evm"
 	KeyBundleIDAptos                    = "aptos"
 	KeyBundleIDSolana                   = "solana"
 	SigningAlgoEcdsa                    = "ecdsa"
+	SigningAlgoEd25519                  = "ed25519"
 	HashingAlgoKeccak256                = "keccak256"
+	HashingAlgoBlake2b256               = "blake2b_256"
 )
 
 type ConsensusCapabilityConfig struct {
@@ -104,11 +107,12 @@ func NewConsensusCapability(lggr logger.Logger, clock clockwork.Clock, responseC
 		})
 
 	return &consensusCapability{
-		lggr:          lggr,
-		reqStore:      reqStore,
-		reqHandler:    requests.NewHandler(lggr, reqStore, clock, responseCacheExpiry),
-		metrics:       metrics,
-		limitsFactory: limitsFactory,
+		lggr:           lggr,
+		reqStore:       reqStore,
+		reqHandler:     requests.NewHandler(lggr, reqStore, clock, responseCacheExpiry),
+		metrics:        metrics,
+		limitsFactory:  limitsFactory,
+		requestTimeout: defaultRequestTimeout,
 	}, nil
 }
 
@@ -422,7 +426,8 @@ func validateReportRequest(reportRequest *sdk.ReportRequest) (string, error) {
 
 	signingAlgo := strings.ToLower(reportRequest.SigningAlgo)
 	supportedSigningAlgorithms := map[string]struct{}{
-		SigningAlgoEcdsa: {},
+		SigningAlgoEcdsa:   {},
+		SigningAlgoEd25519: {},
 	}
 
 	if _, ok := supportedSigningAlgorithms[signingAlgo]; !ok {
@@ -432,7 +437,8 @@ func validateReportRequest(reportRequest *sdk.ReportRequest) (string, error) {
 	hashingAlgo := strings.ToLower(reportRequest.HashingAlgo)
 
 	supportedHashingAlgorithms := map[string]struct{}{
-		HashingAlgoKeccak256: {},
+		HashingAlgoKeccak256:  {},
+		HashingAlgoBlake2b256: {},
 	}
 
 	if _, ok := supportedHashingAlgorithms[hashingAlgo]; !ok {

@@ -122,7 +122,7 @@ const serviceConfigTemplate = `
 `
 
 func startTestHTTPServer(t *testing.T, handler http.Handler) (net.Listener, func()) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 
 	srv := &http.Server{
@@ -137,6 +137,20 @@ func startTestHTTPServer(t *testing.T, handler http.Handler) (net.Listener, func
 	}()
 	cleanup := func() { _ = srv.Close() }
 	return listener, cleanup
+}
+
+func responseHeader(resp *httpclient.Response, key string) string {
+	if resp == nil {
+		return ""
+	}
+
+	if multiHeaders := resp.GetMultiHeaders(); multiHeaders != nil {
+		if values, ok := multiHeaders[key]; ok && len(values.GetValues()) > 0 {
+			return values.GetValues()[0]
+		}
+	}
+
+	return ""
 }
 
 func newTestNetworkClient(t *testing.T, addr *net.TCPAddr, lggr logger.Logger) network.HTTPClient {
@@ -301,7 +315,7 @@ func TestHTTPActionCapability(t *testing.T) {
 		require.NotNil(t, output)
 		require.Equal(t, uint32(http.StatusOK), output.Response.StatusCode)
 		require.Equal(t, "pong", string(output.Response.Body))
-		require.Equal(t, "my-value", output.Response.Headers["X-Custom-Header"])
+		require.Equal(t, "my-value", responseHeader(output.Response, "X-Custom-Header"))
 	})
 
 	t.Run("POST /post with body and headers", func(t *testing.T) {
@@ -333,7 +347,7 @@ func TestHTTPActionCapability(t *testing.T) {
 		require.NotNil(t, initialOutput)
 		require.Equal(t, uint32(http.StatusOK), initialOutput.Response.StatusCode)
 		require.NotEmpty(t, initialOutput.Response.Body)
-		require.NotEmpty(t, initialOutput.Response.Headers["X-Custom-Header"])
+		require.NotEmpty(t, responseHeader(initialOutput.Response, "X-Custom-Header"))
 
 		cachedOutput, err := httpCapability.SendRequest(ctx, requestMetadata, &httpclient.Request{
 			Url:    fmt.Sprintf("http://%s/random", listener.Addr().String()),
@@ -346,7 +360,7 @@ func TestHTTPActionCapability(t *testing.T) {
 		require.NotNil(t, cachedOutput)
 		require.Equal(t, uint32(http.StatusOK), cachedOutput.Response.StatusCode)
 		require.NotEmpty(t, cachedOutput.Response.Body)
-		require.NotEmpty(t, cachedOutput.Response.Headers["X-Custom-Header"])
+		require.NotEmpty(t, responseHeader(cachedOutput.Response, "X-Custom-Header"))
 
 		freshOutput, err := httpCapability.SendRequest(ctx, requestMetadata, &httpclient.Request{
 			Url:    fmt.Sprintf("http://%s/random", listener.Addr().String()),
@@ -356,12 +370,12 @@ func TestHTTPActionCapability(t *testing.T) {
 		require.NotNil(t, freshOutput)
 		require.Equal(t, uint32(http.StatusOK), freshOutput.Response.StatusCode)
 		require.NotEmpty(t, freshOutput.Response.Body)
-		require.NotEmpty(t, freshOutput.Response.Headers["X-Custom-Header"])
+		require.NotEmpty(t, responseHeader(freshOutput.Response, "X-Custom-Header"))
 
 		require.Equal(t, initialOutput.Response.Body, cachedOutput.Response.Body)
-		require.Equal(t, initialOutput.Response.Headers["X-Custom-Header"], cachedOutput.Response.Headers["X-Custom-Header"])
+		require.Equal(t, responseHeader(initialOutput.Response, "X-Custom-Header"), responseHeader(cachedOutput.Response, "X-Custom-Header"))
 		require.NotEqual(t, initialOutput.Response.Body, freshOutput.Response.Body)
-		require.NotEqual(t, initialOutput.Response.Headers["X-Custom-Header"], freshOutput.Response.Headers["X-Custom-Header"])
+		require.NotEqual(t, responseHeader(initialOutput.Response, "X-Custom-Header"), responseHeader(freshOutput.Response, "X-Custom-Header"))
 	})
 
 	t.Run("GET /not-found returns 404", func(t *testing.T) {
@@ -434,7 +448,7 @@ func TestHTTPActionCapability(t *testing.T) {
 		require.NotNil(t, initialOutput)
 		require.Equal(t, uint32(http.StatusOK), initialOutput.Response.StatusCode)
 		initialBody := string(initialOutput.Response.Body)
-		initialHeader := initialOutput.Response.Headers["X-Custom-Header"]
+		initialHeader := responseHeader(initialOutput.Response, "X-Custom-Header")
 		require.NotEmpty(t, initialBody)
 		require.NotEmpty(t, initialHeader)
 
@@ -459,7 +473,7 @@ func TestHTTPActionCapability(t *testing.T) {
 		// Verify cached response matches the first response (same random UUID)
 		require.Equal(t, initialBody, string(cachedOutput.Response.Body),
 			"Cache should work across different workflows for the same owner")
-		require.Equal(t, initialHeader, cachedOutput.Response.Headers["X-Custom-Header"],
+		require.Equal(t, initialHeader, responseHeader(cachedOutput.Response, "X-Custom-Header"),
 			"Cached headers should match across different workflows for the same owner")
 	})
 
@@ -476,7 +490,7 @@ func TestHTTPActionCapability(t *testing.T) {
 		require.NotNil(t, firstOutput)
 		require.Equal(t, uint32(http.StatusOK), firstOutput.Response.StatusCode)
 		firstBody := string(firstOutput.Response.Body)
-		firstHeader := firstOutput.Response.Headers["X-Custom-Header"]
+		firstHeader := responseHeader(firstOutput.Response, "X-Custom-Header")
 		require.NotEmpty(t, firstBody)
 		require.NotEmpty(t, firstHeader)
 
@@ -495,7 +509,7 @@ func TestHTTPActionCapability(t *testing.T) {
 		// Verify different response (fresh request, not cached)
 		require.NotEqual(t, firstBody, string(secondOutput.Response.Body),
 			"Cache should NOT work across different workflow owners - should get fresh response")
-		require.NotEqual(t, firstHeader, secondOutput.Response.Headers["X-Custom-Header"],
+		require.NotEqual(t, firstHeader, responseHeader(secondOutput.Response, "X-Custom-Header"),
 			"Headers should be different for different workflow owners - not from cache")
 	})
 }

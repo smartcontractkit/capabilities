@@ -25,7 +25,7 @@ import (
 	"github.com/smartcontractkit/chainlink/v2/core/services/registrysyncer"
 
 	"github.com/smartcontractkit/capabilities/integration_tests/readcontract/contract"
-	"github.com/smartcontractkit/capabilities/integration_tests/utils"
+	itestutils "github.com/smartcontractkit/capabilities/integration_tests/utils"
 )
 
 type ReadContractConfig struct {
@@ -39,7 +39,7 @@ func Test_RemoteReadCapabilityWithoutConsensus(t *testing.T) {
 	lggr := logger.TestLogger(t)
 
 	defer func() {
-		utils.CleanupCapabilitiesDir(lggr)
+		itestutils.CleanupCapabilitiesDir(lggr)
 	}()
 
 	targetSink := readValueFromContractFunction(ctx, t, lggr, "GetValue", 4)
@@ -65,7 +65,7 @@ func Test_RemoteReadCapabilityMisconfiguredContractError(t *testing.T) {
 	lggr := logger.TestLogger(t)
 
 	defer func() {
-		utils.CleanupCapabilitiesDir(lggr)
+		itestutils.CleanupCapabilitiesDir(lggr)
 	}()
 
 	numOfWorkflowNodes := 4
@@ -91,7 +91,7 @@ func readValueFromContractFunction(ctx context.Context, t *testing.T, lggr logge
 	address, _, _, err := contract.DeployContract(donContext.EthBlockchain.TransactionOpts(), donContext.EthBlockchain.Client())
 	require.NoError(t, err)
 
-	readContractBinary, err := utils.DeployCapability(t, "readcontract")
+	readContractBinary, err := itestutils.DeployCapability(t, "readcontract")
 	require.NoError(t, err)
 
 	workflowDonConfiguration, err := framework.NewDonConfiguration(framework.NewDonConfigurationParams{Name: "Workflow", NumNodes: numOfWorkflowNodes, F: 1, AcceptsWorkflows: true})

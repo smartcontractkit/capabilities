@@ -22,7 +22,7 @@ import (
 	"github.com/smartcontractkit/chainlink/v2/core/logger"
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/handlers/capabilities"
 
-	"github.com/smartcontractkit/capabilities/integration_tests/utils"
+	itestutils "github.com/smartcontractkit/capabilities/integration_tests/utils"
 )
 
 func Test_Consensus(t *testing.T) {
@@ -32,7 +32,7 @@ func Test_Consensus(t *testing.T) {
 
 	lggr := logger.TestLogger(t)
 	defer func() {
-		utils.CleanupCapabilitiesDir(lggr)
+		itestutils.CleanupCapabilitiesDir(lggr)
 	}()
 
 	readBalancesWithConfigPath, err := filepath.Abs("./workflow")
@@ -40,7 +40,7 @@ func Test_Consensus(t *testing.T) {
 
 	wasmFile := filepath.Join(readBalancesWithConfigPath, "consensus.wasm")
 	mainFile := filepath.Join(readBalancesWithConfigPath, "main_wasip1.go")
-	utils.CreateWasmBinary(t, mainFile, wasmFile)
+	itestutils.CreateWasmBinary(t, mainFile, wasmFile)
 
 	targetSink := framework.NewTargetSink("mock-target", "1.0.0")
 
@@ -100,7 +100,7 @@ func allEqual(values []string) bool {
 func setupDon(ctx context.Context, t *testing.T, lggr logger.Logger, workflowURL string, targetSink framework.TargetFactory,
 	numOfWorkflowNodes int, workflowName string) {
 	configURL := "workflow-config.json"
-	compressedBinary, base64EncodedCompressedBinary := utils.GetCompressedWorkflowWasm(t, workflowURL)
+	compressedBinary, base64EncodedCompressedBinary := itestutils.GetCompressedWorkflowWasm(t, workflowURL)
 
 	syncerFetcherFunc := func(ctx context.Context, messageID string, req capabilities.Request) ([]byte, error) {
 		url := req.URL
@@ -114,11 +114,11 @@ func setupDon(ctx context.Context, t *testing.T, lggr logger.Logger, workflowURL
 		return nil, fmt.Errorf("unknown  url: %s", url)
 	}
 
-	donContext := framework.CreateDonContextWithWorkflowRegistry(ctx, t, syncerFetcherFunc, utils.NoopComputeFetcherFactory{})
+	donContext := framework.CreateDonContextWithWorkflowRegistry(ctx, t, syncerFetcherFunc, itestutils.NoopComputeFetcherFactory{})
 
-	cronBinary, err := utils.DeployCapability(t, "cron")
+	cronBinary, err := itestutils.DeployCapability(t, "cron")
 	require.NoError(t, err)
-	consensusBinary, err := utils.DeployCapability(t, "consensus")
+	consensusBinary, err := itestutils.DeployCapability(t, "consensus")
 
 	require.NoError(t, err)
 
@@ -130,7 +130,7 @@ func setupDon(ctx context.Context, t *testing.T, lggr logger.Logger, workflowURL
 		[]commoncap.DON{},
 		donContext, true, 1*time.Second)
 
-	workflowDon.AddStandardCapability("cron-capabilities", cronBinary, utils.GetCronConfig(t, 1))
+	workflowDon.AddStandardCapability("cron-capabilities", cronBinary, itestutils.GetCronConfig(t, 1))
 	workflowDon.AddStandardCapability("consensus-capabilities", consensusBinary, GetConsensusConfig(t, 10000))
 
 	workflowDon.AddOCR3NonStandardCapability()
