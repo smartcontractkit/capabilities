@@ -11,10 +11,6 @@ import (
 	"time"
 
 	aptos_sdk "github.com/aptos-labs/aptos-go-sdk"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/actions"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/config"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
-	"github.com/smartcontractkit/capabilities/libs/loopserver"
 	chain_selectors "github.com/smartcontractkit/chain-selectors"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	aptoscapserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos/server"
@@ -24,6 +20,11 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/actions"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/config"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
+	"github.com/smartcontractkit/capabilities/libs/loopserver"
 )
 
 const (

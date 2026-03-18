@@ -3,13 +3,13 @@ package actions
 import (
 	"context"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"slices"
 
 	aptos_sdk "github.com/aptos-labs/aptos-go-sdk"
 	"github.com/aptos-labs/aptos-go-sdk/bcs"
-	"github.com/ethereum/go-ethereum/common"
 	aptos_forwarder "github.com/smartcontractkit/chainlink-aptos/bindings/platform/forwarder"
 	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -123,7 +123,7 @@ func (fc *forwarderClient) InvokeOnReport(ctx context.Context, receiver []byte, 
 		"forwarderAddress", fmt.Sprintf("%x", fc.forwarderAddress),
 		"moduleName", moduleInformation.ModuleName,
 	)
-	reply, err := fc.AptosService.SubmitTransaction(ctx, aptostypes.SubmitTransactionRequest{
+	reply, err := fc.SubmitTransaction(ctx, aptostypes.SubmitTransactionRequest{
 		// TODO: do i really need ReceiverModuleID if my EncodedPayload is of type EntryFunction which has all the details ?
 		ReceiverModuleID: aptostypes.ModuleID{
 			Address: aptostypes.AccountAddress(fc.forwarderAddress),
@@ -148,7 +148,12 @@ type TransmissionID struct {
 }
 
 func (t TransmissionID) GetDebugID() string {
-	return fmt.Sprintf("receiver: %s, reportID: %s, workflowExecutionID %s", t.Receiver.String(), common.Bytes2Hex(t.ReportID[:]), common.Bytes2Hex(t.WorkflowExecutionID[:]))
+	return fmt.Sprintf(
+		"receiver: %s, reportID: %s, workflowExecutionID %s",
+		t.Receiver.String(),
+		hex.EncodeToString(t.ReportID[:]),
+		hex.EncodeToString(t.WorkflowExecutionID[:]),
+	)
 }
 
 type TransmissionInfo struct {
@@ -185,7 +190,7 @@ func (fc *forwarderClient) GetTransmissionInfo(ctx context.Context, transmission
 	}
 
 	// Call the view function via AptosService
-	viewReply, err := fc.AptosService.View(ctx, aptostypes.ViewRequest{
+	viewReply, err := fc.View(ctx, aptostypes.ViewRequest{
 		Payload: &aptostypes.ViewPayload{
 			Module: aptostypes.ModuleID{
 				Address: aptostypes.AccountAddress(moduleInfo.Address),
@@ -232,7 +237,7 @@ func (fc *forwarderClient) GetTransmitterTransactions(ctx context.Context, trans
 		"hasStart", start != nil,
 		"hasLimit", limit != nil,
 	)
-	reply, err := fc.AptosService.AccountTransactions(ctx, aptostypes.AccountTransactionsRequest{
+	reply, err := fc.AccountTransactions(ctx, aptostypes.AccountTransactionsRequest{
 		Address: aptostypes.AccountAddress(transmitter),
 		Start:   start,
 		Limit:   limit,

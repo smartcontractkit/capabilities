@@ -11,9 +11,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/metering"
-	commontest "github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
@@ -23,6 +20,10 @@ import (
 	typesmocks "github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/metering"
+	commontest "github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 )
 
 // --- helpers ---
@@ -312,7 +313,7 @@ func TestWriteReport_Execute(t *testing.T) {
 		h.forwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).
 			Return(TransmissionInfo{Success: true, Transmitter: transmitter}, nil)
 		h.forwarderClient.On("GetTransmitterTransactions", mock.Anything, transmitter, mock.Anything, mock.Anything).
-			Return([]*aptostypes.Transaction{buildFakeTransactionWithGas(t, "0xalready", true, 100, uint64(time.Now().UnixMicro()), rm, testGasUsed, testGasUnitPrice)}, nil)
+			Return([]*aptostypes.Transaction{buildFakeTransactionWithGas(t, "0xalready", true, 100, unixMicroUint64(t, time.Now()), rm, testGasUsed, testGasUnitPrice)}, nil)
 
 		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, capErr)
@@ -343,7 +344,7 @@ func TestWriteReport_Execute(t *testing.T) {
 		h.mockInvokeOnReport(&aptostypes.SubmitTransactionReply{TxStatus: aptostypes.TxReverted, TxHash: "0xreverted"}, nil)
 		h.mockPostSubmitPoll(TransmissionInfo{Success: true, Transmitter: transmitter})
 		h.forwarderClient.On("GetTransmitterTransactions", mock.Anything, transmitter, mock.Anything, mock.Anything).
-			Return([]*aptostypes.Transaction{buildFakeTransactionWithGas(t, "0xreal", true, 100, uint64(time.Now().UnixMicro()), rm, testGasUsed, testGasUnitPrice)}, nil)
+			Return([]*aptostypes.Transaction{buildFakeTransactionWithGas(t, "0xreal", true, 100, unixMicroUint64(t, time.Now()), rm, testGasUsed, testGasUnitPrice)}, nil)
 
 		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, capErr)
@@ -413,7 +414,7 @@ func TestWriteReport_Execute(t *testing.T) {
 		h.mockInvokeOnReport(&aptostypes.SubmitTransactionReply{TxStatus: aptostypes.TxFatal, TxHash: "0xmine"}, nil)
 		h.mockPostSubmitPoll(TransmissionInfo{Success: false})
 		h.forwarderClient.On("GetTransmitterTransactions", mock.Anything, node0Addr, mock.Anything, mock.Anything).
-			Return([]*aptostypes.Transaction{buildFakeTransactionWithDetails(t, "0xnode0failed", false, 100, uint64(time.Now().UnixMicro()), rm, testGasUsed, testGasUnitPrice, "Out of gas")}, nil)
+			Return([]*aptostypes.Transaction{buildFakeTransactionWithDetails(t, "0xnode0failed", false, 100, unixMicroUint64(t, time.Now()), rm, testGasUsed, testGasUnitPrice, "Out of gas")}, nil)
 
 		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, capErr)
@@ -434,7 +435,7 @@ func TestWriteReport_Execute(t *testing.T) {
 		h.forwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).
 			Return(TransmissionInfo{Success: false}, nil)
 		h.forwarderClient.On("GetTransmitterTransactions", mock.Anything, node0Addr, mock.Anything, mock.Anything).
-			Return([]*aptostypes.Transaction{buildFakeTransactionWithDetails(t, "0xnode0failed", false, 100, uint64(time.Now().UnixMicro()), rm, testGasUsed, testGasUnitPrice, vmStatus)}, nil)
+			Return([]*aptostypes.Transaction{buildFakeTransactionWithDetails(t, "0xnode0failed", false, 100, unixMicroUint64(t, time.Now()), rm, testGasUsed, testGasUnitPrice, vmStatus)}, nil)
 
 		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, capErr)
@@ -457,7 +458,7 @@ func TestWriteReport_Execute(t *testing.T) {
 		h.forwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).
 			Return(TransmissionInfo{Success: false}, nil)
 		h.forwarderClient.On("GetTransmitterTransactions", mock.Anything, node0Addr, mock.Anything, mock.Anything).
-			Return([]*aptostypes.Transaction{buildFakeTransactionWithDetails(t, "0xnode0failed", false, 100, uint64(time.Now().UnixMicro()), rm, testGasUsed, testGasUnitPrice, "Out of gas")}, nil)
+			Return([]*aptostypes.Transaction{buildFakeTransactionWithDetails(t, "0xnode0failed", false, 100, unixMicroUint64(t, time.Now()), rm, testGasUsed, testGasUnitPrice, "Out of gas")}, nil)
 
 		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, capErr)
@@ -480,7 +481,7 @@ func TestWriteReport_Execute(t *testing.T) {
 		h.forwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).
 			Return(TransmissionInfo{Success: false}, nil)
 		h.forwarderClient.On("GetTransmitterTransactions", mock.Anything, mock.Anything, mock.Anything, mock.Anything).
-			Return([]*aptostypes.Transaction{buildFakeTransactionWithDetails(t, "0xotherfailed", false, 100, uint64(time.Now().UnixMicro()), rm, testGasUsed, testGasUnitPrice, vmStatus)}, nil).Twice()
+			Return([]*aptostypes.Transaction{buildFakeTransactionWithDetails(t, "0xotherfailed", false, 100, unixMicroUint64(t, time.Now()), rm, testGasUsed, testGasUnitPrice, vmStatus)}, nil).Twice()
 
 		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, capErr)
@@ -503,9 +504,9 @@ func TestWriteReport_Execute(t *testing.T) {
 		h.mockInvokeOnReport(&aptostypes.SubmitTransactionReply{TxStatus: aptostypes.TxFatal, TxHash: "0xmine"}, nil)
 		h.mockPostSubmitPoll(TransmissionInfo{Success: false})
 		h.forwarderClient.On("GetTransmitterTransactions", mock.Anything, myAddr, mock.Anything, mock.Anything).
-			Return([]*aptostypes.Transaction{buildFakeTransactionWithDetails(t, "0xself-unrelated", false, 100, uint64(time.Now().Add(-2*time.Minute).UnixMicro()), otherRM, testGasUsed, testGasUnitPrice, "Out of gas")}, nil).Twice()
+			Return([]*aptostypes.Transaction{buildFakeTransactionWithDetails(t, "0xself-unrelated", false, 100, unixMicroUint64(t, time.Now().Add(-2*time.Minute)), otherRM, testGasUsed, testGasUnitPrice, "Out of gas")}, nil).Twice()
 		h.forwarderClient.On("GetTransmitterTransactions", mock.Anything, otherAddr, mock.Anything, mock.Anything).
-			Return([]*aptostypes.Transaction{buildFakeTransactionWithDetails(t, "0xotherfailed", false, 101, uint64(time.Now().UnixMicro()), rm, testGasUsed, testGasUnitPrice, "Out of gas")}, nil).Twice()
+			Return([]*aptostypes.Transaction{buildFakeTransactionWithDetails(t, "0xotherfailed", false, 101, unixMicroUint64(t, time.Now()), rm, testGasUsed, testGasUnitPrice, "Out of gas")}, nil).Twice()
 
 		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, capErr)

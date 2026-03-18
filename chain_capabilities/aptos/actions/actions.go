@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	aptos_sdk "github.com/aptos-labs/aptos-go-sdk"
-	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
@@ -16,6 +15,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/settings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
+
+	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/config"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"

@@ -10,9 +10,10 @@ import (
 
 	aptos_sdk "github.com/aptos-labs/aptos-go-sdk"
 
-	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	aptostypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/aptos"
+
+	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 )
 
 // TODO: Use config PLEX-2598
@@ -67,6 +68,13 @@ func NewTxHashRetriever(forwarderClient CREForwarderClient, lggr logger.Logger, 
 		"startingPointMicro", retriever.startingPointMicro,
 	)
 	return retriever
+}
+
+func (thr *TxHashRetriever) startingPointMicroUint64() uint64 {
+	if thr.startingPointMicro <= 0 {
+		return 0
+	}
+	return uint64(thr.startingPointMicro)
 }
 
 // txInfo captures the matched transmission transaction and any fee-relevant data
@@ -183,7 +191,8 @@ func (thr *TxHashRetriever) paginateBackwards(
 		"pageSize", pageSize,
 	)
 	page := 0
-	for prevScanResult.EarliestTsMicro > uint64(thr.startingPointMicro) && prevScanResult.MinSeqNum > 0 {
+	startingPointMicro := thr.startingPointMicroUint64()
+	for prevScanResult.EarliestTsMicro > startingPointMicro && prevScanResult.MinSeqNum > 0 {
 		var nextStart uint64
 		if prevScanResult.MinSeqNum > pageSize {
 			nextStart = prevScanResult.MinSeqNum - pageSize
@@ -268,7 +277,7 @@ func (thr *TxHashRetriever) GetSuccessfulTransmissionInfo(ctx context.Context, t
 	thr.lggr.Debugw("GetSuccessfulTransmissionInfo phase 2 - paginate backwards",
 		"earliestTxTimestamp", phase1Result.EarliestTsMicro, "startingPointMicro", thr.startingPointMicro,
 		"firstSeqNum", phase1Result.MinSeqNum, "pageSize", pageSize)
-	if phase1Result.EarliestTsMicro > uint64(thr.startingPointMicro) {
+	if phase1Result.EarliestTsMicro > thr.startingPointMicroUint64() {
 		successScanner := func(txns []*aptostypes.Transaction) scanResult {
 			return thr.scanTransactions(txns, true)
 		}
@@ -357,7 +366,7 @@ func (thr *TxHashRetriever) GetFailedTransmissionInfo(ctx context.Context, trans
 	thr.lggr.Debugw("GetFailedTransmissionInfo phase 2 - paginate backwards",
 		"earliestTxTimestamp", phase1Result.EarliestTsMicro, "startingPointMicro", thr.startingPointMicro,
 		"firstSeqNum", phase1Result.MinSeqNum, "pageSize", pageSize)
-	if phase1Result.EarliestTsMicro > uint64(thr.startingPointMicro) {
+	if phase1Result.EarliestTsMicro > thr.startingPointMicroUint64() {
 		failureScanner := func(txns []*aptostypes.Transaction) scanResult {
 			return thr.scanTransactions(txns, false)
 		}
