@@ -224,7 +224,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	c.lggr.Debugw("validated p2pToTransmitterMap", "entries", len(p2pConfig), "donMembers", len(c.DON.Members))
 
 	if cfg.TransmissionSchedule == "" {
-		cfg.TransmissionSchedule = transmission_schedule.ScheduleOneAtATime
+		cfg.TransmissionSchedule = transmission_schedule.ScheduleAllAtOnce
 	}
 	if cfg.DeltaStage == 0 {
 		cfg.DeltaStage = defaultDeltaStage
