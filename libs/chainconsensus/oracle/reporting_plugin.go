@@ -164,7 +164,8 @@ func (rp *reportingPlugin) Observation(
 		return nil, fmt.Errorf("failed to add observations for requests: %w", err)
 	}
 
-	rp.logger.Debugw("Observation complete", "observation", observation)
+	rp.logger.Debugw("Observation complete", "requestIDs", query.RequestIDs)
+	rp.logger.Tracew("Observation", "observation", observation)
 
 	rawObservation, err := proto.Marshal(observation)
 	if err != nil {

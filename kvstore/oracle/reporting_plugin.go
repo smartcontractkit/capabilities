@@ -79,10 +79,8 @@ func (rp *reportingPlugin) Observation(
 		return nil, fmt.Errorf("could not retrieve requests: %w", err)
 	}
 
-	rp.logger.Debugw("Observation complete",
-		"requestsLen", len(requests),
-		"requests", requests,
-	)
+	rp.logger.Debugw("Observation complete", "requestsLen", len(requests), "requestIDs", requestIDs)
+	rp.logger.Tracew("Observation requests", "requests", requests)
 	return json.Marshal(requests)
 }
 
