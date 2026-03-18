@@ -88,9 +88,6 @@ func (a *Aptos) Close() error {
 	return services.CloseAll(a.reportSizeLimit, a.maxGasAmountLimit)
 }
 
-var GetError = capcommon.GetError
-var NewUserError = capcommon.NewUserError
-
 func (a *Aptos) AccountAPTBalance(
 	ctx context.Context,
 	metadata capabilities.RequestMetadata,

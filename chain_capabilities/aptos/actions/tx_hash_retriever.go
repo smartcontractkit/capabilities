@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -70,11 +71,11 @@ func NewTxHashRetriever(forwarderClient CREForwarderClient, lggr logger.Logger, 
 	return retriever
 }
 
-func (thr *TxHashRetriever) startingPointMicroUint64() uint64 {
+func (thr *TxHashRetriever) startingPointMicroUint64() (uint64, error) {
 	if thr.startingPointMicro <= 0 {
-		return 0
+		return 0, nil
 	}
-	return uint64(thr.startingPointMicro)
+	return strconv.ParseUint(strconv.FormatInt(thr.startingPointMicro, 10), 10, 64)
 }
 
 // txInfo captures the matched transmission transaction and any fee-relevant data
@@ -191,7 +192,10 @@ func (thr *TxHashRetriever) paginateBackwards(
 		"pageSize", pageSize,
 	)
 	page := 0
-	startingPointMicro := thr.startingPointMicroUint64()
+	startingPointMicro, err := thr.startingPointMicroUint64()
+	if err != nil {
+		return scanResult{}, fmt.Errorf("invalid starting point micro: %w", err)
+	}
 	for prevScanResult.EarliestTsMicro > startingPointMicro && prevScanResult.MinSeqNum > 0 {
 		var nextStart uint64
 		if prevScanResult.MinSeqNum > pageSize {
@@ -277,7 +281,11 @@ func (thr *TxHashRetriever) GetSuccessfulTransmissionInfo(ctx context.Context, t
 	thr.lggr.Debugw("GetSuccessfulTransmissionInfo phase 2 - paginate backwards",
 		"earliestTxTimestamp", phase1Result.EarliestTsMicro, "startingPointMicro", thr.startingPointMicro,
 		"firstSeqNum", phase1Result.MinSeqNum, "pageSize", pageSize)
-	if phase1Result.EarliestTsMicro > thr.startingPointMicroUint64() {
+	startingPointMicro, err := thr.startingPointMicroUint64()
+	if err != nil {
+		return txInfo{}, fmt.Errorf("invalid starting point micro: %w", err)
+	}
+	if phase1Result.EarliestTsMicro > startingPointMicro {
 		successScanner := func(txns []*aptostypes.Transaction) scanResult {
 			return thr.scanTransactions(txns, true)
 		}
@@ -313,16 +321,6 @@ func (thr *TxHashRetriever) GetSuccessfulTransmissionInfo(ctx context.Context, t
 		}
 		return txInfo{}, fmt.Errorf("matching transmission not found yet for %s", thr.transmissionID.GetDebugID())
 	})
-}
-
-// GetSuccessfulTransmissionHash is a legacy convenience wrapper. Prefer
-// GetSuccessfulTransmissionInfo when the caller needs normalized transaction data.
-func (thr *TxHashRetriever) GetSuccessfulTransmissionHash(ctx context.Context, transmitter aptos_sdk.AccountAddress) (string, error) {
-	info, err := thr.GetSuccessfulTransmissionInfo(ctx, transmitter)
-	if err != nil {
-		return "", err
-	}
-	return info.TxHash, nil
 }
 
 // GetFailedTransmissionInfo searches a transmitter's transactions for a failed
@@ -366,7 +364,11 @@ func (thr *TxHashRetriever) GetFailedTransmissionInfo(ctx context.Context, trans
 	thr.lggr.Debugw("GetFailedTransmissionInfo phase 2 - paginate backwards",
 		"earliestTxTimestamp", phase1Result.EarliestTsMicro, "startingPointMicro", thr.startingPointMicro,
 		"firstSeqNum", phase1Result.MinSeqNum, "pageSize", pageSize)
-	if phase1Result.EarliestTsMicro > thr.startingPointMicroUint64() {
+	startingPointMicro, err := thr.startingPointMicroUint64()
+	if err != nil {
+		return txInfo{}, fmt.Errorf("invalid starting point micro: %w", err)
+	}
+	if phase1Result.EarliestTsMicro > startingPointMicro {
 		failureScanner := func(txns []*aptostypes.Transaction) scanResult {
 			return thr.scanTransactions(txns, false)
 		}
@@ -380,16 +382,6 @@ func (thr *TxHashRetriever) GetFailedTransmissionInfo(ctx context.Context, trans
 
 	thr.lggr.Debugw("GetFailedTransmissionInfo no match found")
 	return txInfo{}, fmt.Errorf("no matching failed transaction found for transmission %s", thr.transmissionID.GetDebugID())
-}
-
-// GetFailedTransmissionHash is a legacy convenience wrapper. Prefer
-// GetFailedTransmissionInfo when the caller needs normalized transaction data.
-func (thr *TxHashRetriever) GetFailedTransmissionHash(ctx context.Context, transmitter aptos_sdk.AccountAddress) (string, error) {
-	info, err := thr.GetFailedTransmissionInfo(ctx, transmitter)
-	if err != nil {
-		return "", err
-	}
-	return info.TxHash, nil
 }
 
 // matchesTransmissionByReport checks if a transaction's raw_report argument

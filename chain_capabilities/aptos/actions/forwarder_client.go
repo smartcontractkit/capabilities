@@ -48,15 +48,12 @@ func newForwarderClient(aptosService types.AptosService, lggr logger.Logger, for
 	}
 }
 
-// receiverBytesToAddress normalizes the 32-byte receiver field from WriteReportRequest
-// into an Aptos account address without relying on ConvertToAddress's dynamic type handling.
 func receiverBytesToAddress(receiver []byte) (aptos_sdk.AccountAddress, error) {
 	var addr aptos_sdk.AccountAddress
 	if len(receiver) != len(addr) {
 		return addr, fmt.Errorf("invalid receiver length: got %d want %d", len(receiver), len(addr))
 	}
-	copy(addr[:], receiver)
-	return addr, nil
+	return aptos_sdk.AccountAddress(receiver), nil
 }
 
 func (fc *forwarderClient) InvokeOnReport(ctx context.Context, receiver []byte, report *sdk.ReportResponse, gasConfig *aptoscap.GasConfig) (*aptostypes.SubmitTransactionReply, error) {

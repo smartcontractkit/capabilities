@@ -10,6 +10,7 @@ import (
 	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
 	aptostypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/aptos"
 
+	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 	commonMon "github.com/smartcontractkit/capabilities/libs/monitoring"
 )
@@ -22,15 +23,15 @@ func (a *Aptos) view(
 	ctx = metadata.ContextWithCRE(ctx)
 
 	if input == nil {
-		return nil, NewUserError(fmt.Errorf("nil ViewRequest"))
+		return nil, capcommon.GetError(fmt.Errorf("nil ViewRequest"), false)
 	}
 	if input.Payload == nil {
-		return nil, NewUserError(fmt.Errorf("ViewRequest.Payload is required"))
+		return nil, capcommon.GetError(fmt.Errorf("ViewRequest.Payload is required"), false)
 	}
 
 	payload, err := aptostypes.ViewPayloadFromCapability(input.Payload)
 	if err != nil {
-		return nil, NewUserError(err)
+		return nil, capcommon.NewUserError(err)
 	}
 
 	request := ctypes.NewLockableToBlockRequest(
@@ -57,7 +58,7 @@ func (a *Aptos) view(
 	)
 	data, err := readType[[]byte](ctx, a.ConsensusHandler, request)
 	if err != nil {
-		return nil, GetError(err, false)
+		return nil, capcommon.GetError(err, false)
 	}
 
 	return &capabilities.ResponseAndMetadata[*aptoscap.ViewReply]{

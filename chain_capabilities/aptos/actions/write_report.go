@@ -437,19 +437,19 @@ func calculateTransactionFeeOctas(gasUsed, gasUnitPrice uint64) (*uint64, error)
 	return &feeOctas, nil
 }
 
-func responseStatusForFailure(defaultStatus aptoscap.TxStatus, classification aptostypes.WriteFailureClassification) aptoscap.TxStatus {
-	if defaultStatus == aptoscap.TxStatus_TX_STATUS_SUCCESS {
-		return defaultStatus
+func responseStatusForFailure(status aptoscap.TxStatus, classification aptostypes.WriteFailureClassification) aptoscap.TxStatus {
+	if status == aptoscap.TxStatus_TX_STATUS_SUCCESS {
+		return status
 	}
 	if classification.Reason == "no vm status available" && classification.Message == "" {
-		return defaultStatus
+		return status
 	}
 
 	switch classification.Decision {
 	case aptostypes.WriteFailureDecisionRetryable, aptostypes.WriteFailureDecisionAlreadyProcessed:
 		return aptoscap.TxStatus_TX_STATUS_ABORTED
 	default:
-		return defaultStatus
+		return status
 	}
 }
 
