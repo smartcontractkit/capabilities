@@ -20,12 +20,17 @@ import (
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/config"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
+	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 )
 
 // TODO: config PLEX-2598
 const (
 	reportSizeLimit = commoncfg.Byte * 500
 )
+
+type ConsensusHandler interface {
+	Handle(ctx context.Context, request ctypes.Request) (<-chan ctypes.Reply, error)
+}
 
 type Aptos struct {
 	types.AptosService
@@ -37,11 +42,15 @@ type Aptos struct {
 	maxGasAmountLimit     limits.BoundLimiter[uint64]
 	reportSizeLimit       limits.BoundLimiter[commoncfg.Size]
 	transmissionScheduler transmission_schedule.TransmissionScheduler
+	ConsensusHandler      ConsensusHandler
 }
 
-func NewAptos(cfg *config.Config, p2pConfig map[string]string, aptosService types.AptosService, lggr logger.Logger, limitsFactory limits.Factory, transmissionScheduler transmission_schedule.TransmissionScheduler, chainSelector uint64) (*Aptos, error) {
+func NewAptos(cfg *config.Config, p2pConfig map[string]string, aptosService types.AptosService, consensusHandler ConsensusHandler, lggr logger.Logger, limitsFactory limits.Factory, transmissionScheduler transmission_schedule.TransmissionScheduler, chainSelector uint64) (*Aptos, error) {
 	if aptosService == nil {
 		return nil, fmt.Errorf("aptos service is required")
+	}
+	if consensusHandler == nil {
+		return nil, fmt.Errorf("consensus handler is required")
 	}
 
 	fc := newForwarderClient(aptosService, lggr, cfg.CREForwarderAddress)
@@ -55,6 +64,7 @@ func NewAptos(cfg *config.Config, p2pConfig map[string]string, aptosService type
 		p2pConfig:             p2pConfig,
 		chainSelector:         chainSelector,
 		transmissionScheduler: transmissionScheduler,
+		ConsensusHandler:      consensusHandler,
 	}
 
 	return a, a.initLimiters(limitsFactory)
@@ -78,16 +88,8 @@ func (a *Aptos) Close() error {
 	return services.CloseAll(a.reportSizeLimit, a.maxGasAmountLimit)
 }
 
-func GetError(err error, isUserError bool) caperrors.Error {
-	if isUserError {
-		return NewUserError(err)
-	}
-	return caperrors.NewPublicSystemError(err, caperrors.Unknown)
-}
-
-func NewUserError(err error) caperrors.Error {
-	return caperrors.NewPublicUserError(err, caperrors.Unknown)
-}
+var GetError = capcommon.GetError
+var NewUserError = capcommon.NewUserError
 
 func (a *Aptos) AccountAPTBalance(
 	ctx context.Context,
@@ -124,4 +126,27 @@ func (a *Aptos) AccountTransactions(
 // Info returns the capability info for registration.
 func (a *Aptos) Info() (capabilities.CapabilityInfo, error) {
 	return capabilities.CapabilityInfo{}, nil
+}
+
+func readType[T any](ctx context.Context, reader ConsensusHandler, request ctypes.Request) (T, error) {
+	var zero T
+	resultCh, err := reader.Handle(ctx, request)
+	if err != nil {
+		return zero, err
+	}
+
+	select {
+	case <-ctx.Done():
+		return zero, ctx.Err()
+	case reply := <-resultCh:
+		if reply.Err != nil {
+			return zero, reply.Err
+		}
+
+		data, ok := reply.Value.(T)
+		if !ok {
+			return zero, fmt.Errorf("unexpected result type: expected %T, got %T", zero, reply.Value)
+		}
+		return data, nil
+	}
 }

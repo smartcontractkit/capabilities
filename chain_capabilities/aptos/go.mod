@@ -12,6 +12,7 @@ require (
 )
 
 require (
+	github.com/jonboulle/clockwork v0.5.0 // indirect
 	github.com/jpillora/backoff v1.0.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 )
