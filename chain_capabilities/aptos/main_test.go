@@ -2,16 +2,22 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strconv"
 	"testing"
 	"time"
 
 	chain_selectors "github.com/smartcontractkit/chain-selectors"
 	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	commontypes "github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
+	coremocks "github.com/smartcontractkit/chainlink-common/pkg/types/core/mocks"
+	typesmocks "github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/config"
@@ -46,6 +52,7 @@ func TestCapabilityGRPCService_MetadataAndLifecycle(t *testing.T) {
 	require.NoError(t, c.Start(t.Context()))
 	require.NoError(t, c.Close())
 	require.NoError(t, c.Ready())
+	require.Equal(t, uint64(44444), c.ChainSelector())
 	require.Equal(t, "Contains Aptos chain functionalities", c.Description())
 	require.Equal(t, c.lggr.Name(), c.Name())
 	require.Equal(t, map[string]error{c.Name(): nil}, c.HealthReport())
@@ -235,4 +242,128 @@ func TestValidateP2PToTransmitterMap_DuplicateTransmitters(t *testing.T) {
 	err := validateP2PToTransmitterMap([]p2ptypes.PeerID{p1, p2}, cfg)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "duplicate transmitter address")
+}
+
+func TestCapabilityGRPCService_InitialiseErrors(t *testing.T) {
+	t.Parallel()
+
+	var chainID uint64
+	for id := range chain_selectors.AptosChainIdToChainSelector() {
+		chainID = id
+		break
+	}
+	require.NotZero(t, chainID)
+
+	validConfig := fmt.Sprintf(`{"network":"aptos","chainId":"%d","creForwarderAddress":"0x1","deltaStage":1000000000}`, chainID)
+	relayID := commontypes.NewRelayID("aptos", strconv.FormatUint(chainID, 10))
+	selector := chain_selectors.AptosChainIdToChainSelector()[chainID]
+
+	t.Run("invalid config", func(t *testing.T) {
+		c := &capabilityGRPCService{lggr: logger.Test(t)}
+		err := c.Initialise(t.Context(), core.StandardCapabilitiesDependencies{Config: `{`})
+		require.Error(t, err)
+		require.ErrorContains(t, err, "failed to unmarshal config")
+	})
+
+	t.Run("relayer lookup fails", func(t *testing.T) {
+		c := &capabilityGRPCService{lggr: logger.Test(t)}
+		relayerSet := coremocks.NewRelayerSet(t)
+		relayerSet.On("Get", mock.Anything, relayID).Return(nil, errors.New("missing relayer")).Once()
+
+		err := c.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
+			Config:     validConfig,
+			RelayerSet: relayerSet,
+		})
+		require.Error(t, err)
+		require.ErrorContains(t, err, "failed to fetch relayer")
+	})
+
+	t.Run("aptos service fetch fails", func(t *testing.T) {
+		c := &capabilityGRPCService{lggr: logger.Test(t)}
+		relayerSet := coremocks.NewRelayerSet(t)
+		relayer := coremocks.NewRelayer(t)
+		relayerSet.On("Get", mock.Anything, relayID).Return(relayer, nil).Once()
+		relayer.On("Aptos").Return(nil, errors.New("no aptos service")).Once()
+
+		err := c.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
+			Config:     validConfig,
+			RelayerSet: relayerSet,
+		})
+		require.Error(t, err)
+		require.ErrorContains(t, err, "failed to get aptos service")
+	})
+
+	t.Run("chain info fetch fails", func(t *testing.T) {
+		c := &capabilityGRPCService{lggr: logger.Test(t)}
+		relayerSet := coremocks.NewRelayerSet(t)
+		relayer := coremocks.NewRelayer(t)
+		aptosService := typesmocks.NewAptosService(t)
+
+		relayerSet.On("Get", mock.Anything, relayID).Return(relayer, nil).Once()
+		relayer.On("Aptos").Return(aptosService, nil).Once()
+		relayer.On("GetChainInfo", mock.Anything).Return(commontypes.ChainInfo{}, errors.New("chain info unavailable")).Once()
+
+		err := c.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
+			Config:     validConfig,
+			RelayerSet: relayerSet,
+		})
+		require.Error(t, err)
+		require.ErrorContains(t, err, "failed to fetch chain info")
+	})
+
+	t.Run("p2p config from json fails validation", func(t *testing.T) {
+		c := &capabilityGRPCService{lggr: logger.Test(t)}
+		relayerSet := coremocks.NewRelayerSet(t)
+		relayer := coremocks.NewRelayer(t)
+		aptosService := typesmocks.NewAptosService(t)
+		registry := coremocks.NewCapabilitiesRegistry(t)
+		localPeer := testPeerID(0xAA)
+		localNode := commoncap.Node{PeerID: &localPeer}
+
+		relayerSet.On("Get", mock.Anything, relayID).Return(relayer, nil).Once()
+		relayer.On("Aptos").Return(aptosService, nil).Once()
+		relayer.On("GetChainInfo", mock.Anything).Return(commontypes.ChainInfo{}, nil).Once()
+		registry.On("LocalNode", mock.Anything).Return(localNode, nil).Once()
+		registry.On("DONsForCapability", mock.Anything, capabilityID(selector)).Return([]commoncap.DONWithNodes{{
+			DON:   commoncap.DON{ID: 7, Members: []p2ptypes.PeerID{localPeer}, F: 1},
+			Nodes: []commoncap.Node{{PeerID: &localPeer}},
+		}}, nil).Once()
+
+		cfgWithInvalidMap := fmt.Sprintf(`{"network":"aptos","chainId":"%d","creForwarderAddress":"0x1","deltaStage":1000000000,"p2pToTransmitterMap":{"%x":"not-an-address"}}`, chainID, localPeer[:])
+		err := c.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
+			Config:             cfgWithInvalidMap,
+			RelayerSet:         relayerSet,
+			CapabilityRegistry: registry,
+		})
+		require.Error(t, err)
+		require.ErrorContains(t, err, "invalid p2pToTransmitterMap")
+	})
+
+	t.Run("capreg fallback fetch fails", func(t *testing.T) {
+		c := &capabilityGRPCService{lggr: logger.Test(t)}
+		relayerSet := coremocks.NewRelayerSet(t)
+		relayer := coremocks.NewRelayer(t)
+		aptosService := typesmocks.NewAptosService(t)
+		registry := coremocks.NewCapabilitiesRegistry(t)
+		localPeer := testPeerID(0xBB)
+		localNode := commoncap.Node{PeerID: &localPeer}
+
+		relayerSet.On("Get", mock.Anything, relayID).Return(relayer, nil).Once()
+		relayer.On("Aptos").Return(aptosService, nil).Once()
+		relayer.On("GetChainInfo", mock.Anything).Return(commontypes.ChainInfo{}, nil).Once()
+		registry.On("LocalNode", mock.Anything).Return(localNode, nil).Once()
+		registry.On("DONsForCapability", mock.Anything, capabilityID(selector)).Return([]commoncap.DONWithNodes{{
+			DON:   commoncap.DON{ID: 8, Members: []p2ptypes.PeerID{localPeer}, F: 1},
+			Nodes: []commoncap.Node{{PeerID: &localPeer}},
+		}}, nil).Once()
+		registry.On("ConfigForCapability", mock.Anything, capabilityID(selector), uint32(8)).Return(commoncap.CapabilityConfiguration{}, nil).Once()
+
+		err := c.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
+			Config:             validConfig,
+			RelayerSet:         relayerSet,
+			CapabilityRegistry: registry,
+		})
+		require.Error(t, err)
+		require.ErrorContains(t, err, "failed to fetch p2p config")
+	})
 }

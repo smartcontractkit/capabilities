@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -469,5 +470,125 @@ func TestGetTransactionFeeOctas(t *testing.T) {
 		_, err := wr.getTransactionFeeOctas(t.Context(), txInfo{TxHash: "0xabc"})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get transaction by hash")
+	})
+}
+
+func TestWriteReport_HelperValidation(t *testing.T) {
+	t.Parallel()
+
+	t.Run("getTransmissionID validates receiver length", func(t *testing.T) {
+		_, reqMeta, req := newReportFixture(t)
+		req.Receiver = []byte{1, 2, 3}
+
+		_, err := getTransmissionID(reqMeta.WorkflowExecutionID, req)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "receiver address must be 32 bytes")
+	})
+
+	t.Run("calculateTransactionFeeOctas rejects overflow", func(t *testing.T) {
+		_, err := calculateTransactionFeeOctas(math.MaxUint64, 2)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "transaction fee exceeds uint64 range")
+	})
+
+	t.Run("validateWriteReportInputs catches additional mismatches", func(t *testing.T) {
+		h := newTestHelper(t)
+		rm, reqMeta, req := newReportFixture(t)
+
+		err := h.aptos.validateWriteReportInputs(reqMeta, &aptoscap.WriteReportRequest{
+			Receiver: req.Receiver,
+			Report:   &workflowpb.ReportResponse{RawReport: req.Report.RawReport},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "no signatures provided")
+
+		err = h.aptos.validateWriteReportInputs(reqMeta, &aptoscap.WriteReportRequest{
+			Receiver: req.Receiver,
+			Report:   &workflowpb.ReportResponse{RawReport: []byte("bad"), Sigs: generateRandomSignatures()},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to decode report metadata")
+
+		rm.Version = 2
+		encoded, encErr := rm.Encode()
+		require.NoError(t, encErr)
+		err = h.aptos.validateWriteReportInputs(reqMeta, &aptoscap.WriteReportRequest{
+			Receiver: req.Receiver,
+			Report:   &workflowpb.ReportResponse{RawReport: encoded, Sigs: generateRandomSignatures()},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "unsupported report version")
+
+		err = h.aptos.validateWriteReportInputs(capabilities.RequestMetadata{
+			WorkflowExecutionID: reqMeta.WorkflowExecutionID,
+			WorkflowOwner:       hex.EncodeToString(commontest.RandomBytes(20)),
+			WorkflowID:          reqMeta.WorkflowID,
+		}, req)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "workflowOwner mismatch")
+	})
+}
+
+func TestResolveTxInfo_AdditionalBranches(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns existing info when already complete", func(t *testing.T) {
+		wr := &writeReport{lggr: logger.Sugared(logger.Test(t))}
+		info := txInfo{TxHash: "0xabc", GasUsed: 1, GasUnitPrice: 2, VMStatus: "done"}
+
+		resolved, err := wr.resolveTxInfo(t.Context(), info)
+		require.NoError(t, err)
+		require.Equal(t, info, resolved)
+	})
+
+	t.Run("fills missing info from rpc", func(t *testing.T) {
+		mockService := typesmocks.NewAptosService(t)
+		wr := &writeReport{
+			aptosService: mockService,
+			lggr:         logger.Sugared(logger.Test(t)),
+		}
+
+		txData := fmt.Sprintf(`{"Hash":"0xabc","Success":false,"GasUsed":%d,"GasUnitPrice":%d,"VMStatus":"Move abort"}`, testGasUsed, testGasUnitPrice)
+		mockService.On("TransactionByHash", mock.Anything, aptostypes.TransactionByHashRequest{Hash: "0xabc"}).Return(
+			&aptostypes.TransactionByHashReply{Transaction: &aptostypes.Transaction{Data: []byte(txData)}}, nil,
+		).Once()
+
+		resolved, err := wr.resolveTxInfo(t.Context(), txInfo{TxHash: "0xabc"})
+		require.NoError(t, err)
+		require.Equal(t, testGasUsed, resolved.GasUsed)
+		require.Equal(t, testGasUnitPrice, resolved.GasUnitPrice)
+		require.Equal(t, "Move abort", resolved.VMStatus)
+	})
+
+	t.Run("returns error on nil rpc reply", func(t *testing.T) {
+		mockService := typesmocks.NewAptosService(t)
+		wr := &writeReport{
+			aptosService: mockService,
+			lggr:         logger.Sugared(logger.Test(t)),
+		}
+
+		mockService.On("TransactionByHash", mock.Anything, aptostypes.TransactionByHashRequest{Hash: "0xabc"}).Return(
+			(*aptostypes.TransactionByHashReply)(nil), nil,
+		).Once()
+
+		_, err := wr.resolveTxInfo(t.Context(), txInfo{TxHash: "0xabc"})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "nil transaction by hash reply")
+	})
+
+	t.Run("returns error on invalid transaction payload", func(t *testing.T) {
+		mockService := typesmocks.NewAptosService(t)
+		wr := &writeReport{
+			aptosService: mockService,
+			lggr:         logger.Sugared(logger.Test(t)),
+		}
+
+		mockService.On("TransactionByHash", mock.Anything, aptostypes.TransactionByHashRequest{Hash: "0xabc"}).Return(
+			&aptostypes.TransactionByHashReply{Transaction: &aptostypes.Transaction{Data: []byte("{")}}, nil,
+		).Once()
+
+		_, err := wr.resolveTxInfo(t.Context(), txInfo{TxHash: "0xabc"})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to unmarshal transaction data")
 	})
 }

@@ -3,6 +3,7 @@ package actions
 import (
 	"context"
 	"fmt"
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/mock"
@@ -232,4 +233,89 @@ func TestCapabilityViewPayloadConversion_RejectsInvalidInput(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "module address too long")
+}
+
+func TestResolveLedgerVersion_AdditionalErrors(t *testing.T) {
+	t.Parallel()
+
+	_, err := resolveLedgerVersion(nil, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "chain height is nil")
+
+	overflow := uint64(math.MaxInt64) + 1
+	_, err = resolveLedgerVersion(&ctypes.ChainHeight{Latest: math.MaxInt64}, &overflow)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "requested ledger version overflows int64")
+}
+
+func TestTypeTagFromCapability_StructAndGeneric(t *testing.T) {
+	t.Parallel()
+
+	converted, err := typeTagFromCapability(&aptoscap.TypeTag{
+		Kind: aptoscap.TypeTagKind_TYPE_TAG_KIND_STRUCT,
+		Value: &aptoscap.TypeTag_Struct{
+			Struct: &aptoscap.StructTag{
+				Address: []byte{0x1},
+				Module:  "coin",
+				Name:    "CoinStore",
+				TypeParams: []*aptoscap.TypeTag{
+					{
+						Kind: aptoscap.TypeTagKind_TYPE_TAG_KIND_GENERIC,
+						Value: &aptoscap.TypeTag_Generic{
+							Generic: &aptoscap.GenericTag{Index: 7},
+						},
+					},
+				},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	structValue, ok := converted.Value.(aptostypes.StructTag)
+	require.True(t, ok)
+	require.Equal(t, "coin", structValue.Module)
+	require.Equal(t, "CoinStore", structValue.Name)
+	require.Len(t, structValue.TypeParams, 1)
+	genericValue, ok := structValue.TypeParams[0].Value.(aptostypes.GenericTag)
+	require.True(t, ok)
+	require.Equal(t, uint16(7), genericValue.Index)
+}
+
+func TestTypeTagFromCapability_Errors(t *testing.T) {
+	t.Parallel()
+
+	_, err := typeTagFromCapability(nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "type tag is nil")
+
+	_, err = typeTagFromCapability(&aptoscap.TypeTag{
+		Kind:  aptoscap.TypeTagKind_TYPE_TAG_KIND_VECTOR,
+		Value: &aptoscap.TypeTag_Vector{},
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "vector tag missing vector value")
+
+	_, err = typeTagFromCapability(&aptoscap.TypeTag{
+		Kind: aptoscap.TypeTagKind_TYPE_TAG_KIND_STRUCT,
+		Value: &aptoscap.TypeTag_Struct{
+			Struct: &aptoscap.StructTag{
+				Address: make([]byte, aptostypes.AccountAddressLength+1),
+			},
+		},
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "struct address too long")
+
+	_, err = typeTagFromCapability(&aptoscap.TypeTag{
+		Kind: aptoscap.TypeTagKind_TYPE_TAG_KIND_GENERIC,
+		Value: &aptoscap.TypeTag_Generic{
+			Generic: &aptoscap.GenericTag{Index: math.MaxUint16 + 1},
+		},
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "generic type index out of range")
+
+	_, err = typeTagFromCapability(&aptoscap.TypeTag{Kind: aptoscap.TypeTagKind(99)})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unsupported type tag kind")
 }
