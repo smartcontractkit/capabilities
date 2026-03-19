@@ -146,7 +146,7 @@ func (wr *writeReport) execute(
 	transmissionID, err := getTransmissionID(metadata.WorkflowExecutionID, request)
 	if err != nil {
 		wr.lggr.Errorw("getTransmissionID failed", "error", err)
-		return &aptoscap.WriteReportReply{}, capabilities.ResponseMetadata{}, err
+		return nil, capabilities.ResponseMetadata{}, err
 	}
 	wr.lggr.Debugw("transmissionID created", "transmissionID", transmissionID.GetDebugID())
 
@@ -177,10 +177,16 @@ func (wr *writeReport) execute(
 			return nil, capabilities.ResponseMetadata{}, txHashErr
 		}
 		wr.lggr.Debugw("returning early - report already onchain", "txHash", txResult.TxHash)
-		return &aptoscap.WriteReportReply{
+		reply := &aptoscap.WriteReportReply{
 			TxStatus: aptoscap.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:   &txResult.TxHash,
-		}, wr.buildMeteringMetadata(ctx, txResult), nil
+		}
+		if feeInOctas, feeErr := wr.getFeeInOctas(ctx, txResult); feeErr != nil {
+			wr.lggr.Errorw("failed to get transaction fee for reply", "txHash", txResult.TxHash, "error", feeErr)
+		} else {
+			reply.TransactionFee = &feeInOctas
+		}
+		return reply, capabilities.ResponseMetadata{}, nil
 	}
 	// TODO: we can exit here if we find F+1 failed transactions, but thats expensive time and i/o wise.
 	// emit metrics here to understand if its worth investing time here over writing to a cheap chain and failing.
@@ -221,6 +227,19 @@ func (wr *writeReport) execute(
 
 	wr.lggr.Debugw("post-submission transmission status", "success", newTransmissionInfo.Success, "transmitter", newTransmissionInfo.Transmitter.String())
 
+	var txFeeOctas *uint64
+	var meteringMetadata capabilities.ResponseMetadata
+	feeInOctas, feeErr := wr.getFeeInOctas(ctx, TransmissionHashResult{TxHash: txReply.TxHash})
+	if feeErr != nil {
+		wr.lggr.Errorw("failed to get transaction fee, using zero for metering", "txHash", txReply.TxHash, "error", feeErr)
+		meteringMetadata = metering.GetResponseMetadataWriteReport(big.NewFloat(0), wr.chainSelector)
+	} else {
+		txFeeOctas = &feeInOctas
+		feeInAPT := new(big.Float).Quo(new(big.Float).SetUint64(feeInOctas), big.NewFloat(1e8))
+		wr.lggr.Debugw("WriteReport fee", "feeInAPT", feeInAPT.String(), "feeInOctas", feeInOctas)
+		meteringMetadata = metering.GetResponseMetadataWriteReport(feeInAPT, wr.chainSelector)
+	}
+
 	switch newTransmissionInfo.Success {
 	case true:
 		transmitterAddr := newTransmissionInfo.Transmitter.String()
@@ -229,7 +248,7 @@ func (wr *writeReport) execute(
 			wr.lggr.Errorw("successful transmitter not found in orderedTransmitters, p2pConfig may be incomplete or an external entity submitted the report",
 				"transmitter", transmitterAddr, "orderedTransmitters", orderedTransmitters)
 		}
-		txResult := TransmissionHashResult{TxHash: txReply.TxHash}
+
 		if txReply.TxStatus == aptostypes.TxFatal || txReply.TxStatus == aptostypes.TxReverted {
 			// Report for this transaction has already been submitted and we sent a duplicate tx onchain, that is why this tx reverted but transmission info still shows success.
 			wr.lggr.Debugw("our tx reverted but report is onchain (duplicate), retrieving success hash",
@@ -239,30 +258,34 @@ func (wr *writeReport) execute(
 				wr.lggr.Errorw("failed to get successful transmission hash after duplicate", "error", txHashErr)
 				return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed to get successful transmission hash: %w", txHashErr)
 			}
-			txResult = successResult
+			feeOctas := successResult.GasUsed * successResult.GasUnitPrice
+			txFeeOctas = &feeOctas
+			return &aptoscap.WriteReportReply{
+				TxStatus:       aptoscap.TxStatus_TX_STATUS_SUCCESS,
+				TxHash:         &successResult.TxHash,
+				TransactionFee: txFeeOctas,
+			}, capabilities.ResponseMetadata{}, nil
 		}
-		wr.lggr.Debugw("returning SUCCESS", "txHash", txResult.TxHash)
+
 		return &aptoscap.WriteReportReply{
-			TxStatus: aptoscap.TxStatus_TX_STATUS_SUCCESS,
-			TxHash:   &txResult.TxHash,
-		}, wr.buildMeteringMetadata(ctx, txResult), nil
+			TxStatus:       aptoscap.TxStatus_TX_STATUS_SUCCESS,
+			TxHash:         &txReply.TxHash,
+			TransactionFee: txFeeOctas,
+		}, meteringMetadata, nil
 	case false:
 		if txReply.TxStatus == aptostypes.TxSuccess {
 			wr.lggr.Errorw("unexpected state - local tx succeeded but transmission info shows no success",
 				"transmissionID", transmissionID.GetDebugID())
 			return nil, capabilities.ResponseMetadata{}, fmt.Errorf("unexpected state: local transaction succeeded but transmission info shows no success for %s", transmissionID.GetDebugID())
 		}
-		ownTxHash := txReply.TxHash
-		wr.lggr.Debugw("transmission failed, searching for tx hashes",
-			"ownTxHash", ownTxHash, "ownTxStatus", txReply.TxStatus, "queuePosition", queuePosition)
-
 		// Position 0 node has no prior nodes to check; return its own failed tx hash.
 		if queuePosition <= 0 {
-			wr.lggr.Debugw("position 0, returning own failed hash", "txHash", ownTxHash)
+			wr.lggr.Debugw("position 0, returning own failed hash", "txHash", txReply.TxHash)
 			return &aptoscap.WriteReportReply{
-				TxStatus: aptoscap.TxStatus_TX_STATUS_FATAL,
-				TxHash:   &ownTxHash,
-			}, wr.buildMeteringMetadata(ctx, TransmissionHashResult{TxHash: ownTxHash}), nil
+				TxStatus:       aptoscap.TxStatus_TX_STATUS_FATAL,
+				TxHash:         &txReply.TxHash,
+				TransactionFee: txFeeOctas,
+			}, meteringMetadata, nil
 		}
 
 		// Search preceding transmitters (position 0 through position-1) for a matching failed tx.
@@ -289,55 +312,59 @@ func (wr *writeReport) execute(
 				continue
 			}
 			wr.lggr.Debugw("found failed transmission from prior node", "transmitter", orderedTransmitters[i], "position", i, "txHash", failedResult.TxHash)
+			feeOctas := failedResult.GasUsed * failedResult.GasUnitPrice
+			txFeeOctas = &feeOctas
 			return &aptoscap.WriteReportReply{
-				TxStatus: aptoscap.TxStatus_TX_STATUS_FATAL,
-				TxHash:   &failedResult.TxHash,
-			}, wr.buildMeteringMetadata(ctx, failedResult), nil
+				TxStatus:       aptoscap.TxStatus_TX_STATUS_FATAL,
+				TxHash:         &failedResult.TxHash,
+				TransactionFee: txFeeOctas,
+			}, capabilities.ResponseMetadata{}, nil
 		}
 
 		// No matching failed tx from prior nodes; return our own hash.
-		wr.lggr.Debugw("no prior failed tx found, returning own hash", "txHash", ownTxHash)
+		wr.lggr.Debugw("no prior failed tx found, returning own hash", "txHash", txReply.TxHash)
 		return &aptoscap.WriteReportReply{
-			TxStatus: aptoscap.TxStatus_TX_STATUS_FATAL,
-			TxHash:   &ownTxHash,
-		}, wr.buildMeteringMetadata(ctx, TransmissionHashResult{TxHash: ownTxHash}), nil
+			TxStatus:       aptoscap.TxStatus_TX_STATUS_FATAL,
+			TxHash:         &txReply.TxHash,
+			TransactionFee: txFeeOctas,
+		}, meteringMetadata, nil
 	}
 	return nil, capabilities.ResponseMetadata{}, nil // should never happen
 }
 
-// getFee returns the transaction fee in APT. If result already contains gas info
-// (from TxHashRetriever scanning), it is used directly. Otherwise it falls back to
-// an RPC call via AptosService.TransactionByHash.
-func (wr *writeReport) getFee(ctx context.Context, result TransmissionHashResult) (*big.Float, error) {
+// getFeeInOctas returns the transaction fee in octas (gasUsed * gasUnitPrice).
+// If result already contains gas info (from TxHashRetriever scanning), it is used
+// directly. Otherwise it falls back to an RPC call via AptosService.TransactionByHash.
+func (wr *writeReport) getFeeInOctas(ctx context.Context, result TransmissionHashResult) (uint64, error) {
 	gasUsed, gasUnitPrice := result.GasUsed, result.GasUnitPrice
 
-	if gasUsed == 0 && gasUnitPrice == 0 {
-		reply, err := wr.aptosService.TransactionByHash(ctx, aptostypes.TransactionByHashRequest{Hash: result.TxHash})
+	if gasUsed == 0 || gasUnitPrice == 0 {
+		reply, err := withQuickRetry(ctx, wr.lggr, func(ctx context.Context) (*aptostypes.TransactionByHashReply, error) {
+			return wr.aptosService.TransactionByHash(ctx, aptostypes.TransactionByHashRequest{Hash: result.TxHash})
+		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to get transaction by hash: %w", err)
+			return 0, fmt.Errorf("failed to get transaction by hash: %w", err)
 		}
 		var txData userTxData
 		if err := json.Unmarshal(reply.Transaction.Data, &txData); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal transaction data: %w", err)
+			return 0, fmt.Errorf("failed to unmarshal transaction data: %w", err)
 		}
 		gasUsed, gasUnitPrice = txData.GasUsed, txData.GasUnitPrice
 	}
 
-	feeInOctas := new(big.Float).SetUint64(gasUsed)
-	feeInOctas.Mul(feeInOctas, new(big.Float).SetUint64(gasUnitPrice))
-	feeInAPT := new(big.Float).Quo(feeInOctas, big.NewFloat(1e8))
-
-	wr.lggr.Debugw("WriteReport fee", "feeInAPT", feeInAPT.String(), "gasUsed", gasUsed, "gasUnitPrice", gasUnitPrice)
-	return feeInAPT, nil
+	return gasUsed * gasUnitPrice, nil
 }
 
-func (wr *writeReport) buildMeteringMetadata(ctx context.Context, result TransmissionHashResult) capabilities.ResponseMetadata {
-	fee, err := wr.getFee(ctx, result)
+// getFee returns the transaction fee in APT.
+func (wr *writeReport) getFee(ctx context.Context, result TransmissionHashResult) (*big.Float, error) {
+	feeInOctas, err := wr.getFeeInOctas(ctx, result)
 	if err != nil {
-		wr.lggr.Errorw("failed to get transaction fee for metering, using zero", "txHash", result.TxHash, "error", err)
-		fee = big.NewFloat(0)
+		return nil, err
 	}
-	return metering.GetResponseMetadataWriteReport(fee, wr.chainSelector)
+
+	feeInAPT := new(big.Float).Quo(new(big.Float).SetUint64(feeInOctas), big.NewFloat(1e8))
+	wr.lggr.Debugw("WriteReport fee", "feeInAPT", feeInAPT.String(), "feeInOctas", feeInOctas)
+	return feeInAPT, nil
 }
 
 func getTransmissionID(workflowExecutionID string, request *aptoscap.WriteReportRequest) (TransmissionID, error) {
