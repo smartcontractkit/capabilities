@@ -228,7 +228,7 @@ func (wr *writeReport) execute(
 			wr.lggr.Errorw("successful transmitter not found in orderedTransmitters, p2pConfig may be incomplete or an external entity submitted the report",
 				"transmitter", transmitterAddr, "orderedTransmitters", orderedTransmitters)
 		}
-		txInfo := txInfoFromSubmitReply(txReply)
+		txInfo := txInfo{TxHash: txReply.TxHash}
 		if txReply.TxStatus == aptostypes.TxFatal || txReply.TxStatus == aptostypes.TxReverted {
 			// Report for this transaction has already been submitted and we sent a duplicate tx onchain, that is why this tx reverted but transmission info still shows success.
 			wr.lggr.Debugw("our tx reverted but report is onchain (duplicate), retrieving success hash",
@@ -248,7 +248,7 @@ func (wr *writeReport) execute(
 				"transmissionID", transmissionID.GetDebugID())
 			return nil, capabilities.ResponseMetadata{}, fmt.Errorf("unexpected state: local transaction succeeded but transmission info shows no success for %s", transmissionID.GetDebugID())
 		}
-		ownTxInfo := txInfoFromSubmitReply(txReply)
+		ownTxInfo := txInfo{TxHash: txReply.TxHash}
 		wr.lggr.Debugw("transmission failed, searching for tx hashes",
 			"ownTxHash", ownTxInfo.TxHash,
 			"ownTxStatus", txReply.TxStatus,
@@ -291,10 +291,6 @@ func (wr *writeReport) execute(
 		return wr.buildWriteReportResponse(ctx, aptoscap.TxStatus_TX_STATUS_FATAL, ownTxInfo)
 	}
 	return nil, capabilities.ResponseMetadata{}, nil // should never happen
-}
-
-func txInfoFromSubmitReply(txReply *aptostypes.SubmitTransactionReply) txInfo {
-	return txInfo{TxHash: txReply.TxHash}
 }
 
 func (wr *writeReport) buildWriteReportResponse(

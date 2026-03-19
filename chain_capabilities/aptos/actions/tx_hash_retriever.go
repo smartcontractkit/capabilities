@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -69,13 +68,6 @@ func NewTxHashRetriever(forwarderClient CREForwarderClient, lggr logger.Logger, 
 		"startingPointMicro", retriever.startingPointMicro,
 	)
 	return retriever
-}
-
-func (thr *TxHashRetriever) startingPointMicroUint64() (uint64, error) {
-	if thr.startingPointMicro <= 0 {
-		return 0, nil
-	}
-	return strconv.ParseUint(strconv.FormatInt(thr.startingPointMicro, 10), 10, 64)
 }
 
 // txInfo captures the matched transmission transaction and any fee-relevant data
@@ -192,9 +184,9 @@ func (thr *TxHashRetriever) paginateBackwards(
 		"pageSize", pageSize,
 	)
 	page := 0
-	startingPointMicro, err := thr.startingPointMicroUint64()
-	if err != nil {
-		return scanResult{}, fmt.Errorf("invalid starting point micro: %w", err)
+	startingPointMicro := uint64(0)
+	if thr.startingPointMicro > 0 {
+		startingPointMicro = uint64(thr.startingPointMicro) //nolint:gosec // guarded to positive int64 above
 	}
 	for prevScanResult.EarliestTsMicro > startingPointMicro && prevScanResult.MinSeqNum > 0 {
 		var nextStart uint64
@@ -281,9 +273,9 @@ func (thr *TxHashRetriever) GetSuccessfulTransmissionInfo(ctx context.Context, t
 	thr.lggr.Debugw("GetSuccessfulTransmissionInfo phase 2 - paginate backwards",
 		"earliestTxTimestamp", phase1Result.EarliestTsMicro, "startingPointMicro", thr.startingPointMicro,
 		"firstSeqNum", phase1Result.MinSeqNum, "pageSize", pageSize)
-	startingPointMicro, err := thr.startingPointMicroUint64()
-	if err != nil {
-		return txInfo{}, fmt.Errorf("invalid starting point micro: %w", err)
+	startingPointMicro := uint64(0)
+	if thr.startingPointMicro > 0 {
+		startingPointMicro = uint64(thr.startingPointMicro) //nolint:gosec // guarded to positive int64 above
 	}
 	if phase1Result.EarliestTsMicro > startingPointMicro {
 		successScanner := func(txns []*aptostypes.Transaction) scanResult {
@@ -364,9 +356,9 @@ func (thr *TxHashRetriever) GetFailedTransmissionInfo(ctx context.Context, trans
 	thr.lggr.Debugw("GetFailedTransmissionInfo phase 2 - paginate backwards",
 		"earliestTxTimestamp", phase1Result.EarliestTsMicro, "startingPointMicro", thr.startingPointMicro,
 		"firstSeqNum", phase1Result.MinSeqNum, "pageSize", pageSize)
-	startingPointMicro, err := thr.startingPointMicroUint64()
-	if err != nil {
-		return txInfo{}, fmt.Errorf("invalid starting point micro: %w", err)
+	startingPointMicro := uint64(0)
+	if thr.startingPointMicro > 0 {
+		startingPointMicro = uint64(thr.startingPointMicro) //nolint:gosec // guarded to positive int64 above
 	}
 	if phase1Result.EarliestTsMicro > startingPointMicro {
 		failureScanner := func(txns []*aptostypes.Transaction) scanResult {

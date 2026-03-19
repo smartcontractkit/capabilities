@@ -193,7 +193,7 @@ func TestView_ValidationErrors(t *testing.T) {
 func TestCapabilityViewPayloadConversion_TypeTagConversion(t *testing.T) {
 	t.Parallel()
 
-	payload, err := aptostypes.ViewPayloadFromCapability(&aptoscap.ViewPayload{
+	payload, err := viewPayloadFromCapability(&aptoscap.ViewPayload{
 		Module: &aptoscap.ModuleID{
 			Address: []byte{0x01},
 			Name:    "coin",
@@ -223,7 +223,7 @@ func TestCapabilityViewPayloadConversion_TypeTagConversion(t *testing.T) {
 func TestCapabilityViewPayloadConversion_RejectsInvalidInput(t *testing.T) {
 	t.Parallel()
 
-	_, err := aptostypes.ViewPayloadFromCapability(&aptoscap.ViewPayload{
+	_, err := viewPayloadFromCapability(&aptoscap.ViewPayload{
 		Module: &aptoscap.ModuleID{
 			Address: make([]byte, aptostypes.AccountAddressLength+1),
 			Name:    "coin",
