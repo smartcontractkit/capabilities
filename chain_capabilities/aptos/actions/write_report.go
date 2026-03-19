@@ -233,6 +233,7 @@ func (wr *writeReport) execute(
 	if feeErr != nil {
 		wr.lggr.Errorw("failed to get transaction fee, using zero for metering", "txHash", txReply.TxHash, "error", feeErr)
 		meteringMetadata = metering.GetResponseMetadataWriteReport(big.NewFloat(0), wr.chainSelector)
+		// TODO: PLEX-2546 emit metric - failed to get transaction fee
 	} else {
 		txFeeOctas = &feeInOctas
 		feeInAPT := new(big.Float).Quo(new(big.Float).SetUint64(feeInOctas), big.NewFloat(1e8))
