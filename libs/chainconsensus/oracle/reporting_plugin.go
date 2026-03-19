@@ -104,7 +104,14 @@ func (rp *reportingPlugin) populateHeightFromPreviousOutcome(
 	observation.ChainHeight.Safe = max(observation.ChainHeight.Safe, prevChainHeight.Safe, observation.ChainHeight.Finalized)
 	observation.ChainHeight.Latest = max(observation.ChainHeight.Latest, prevChainHeight.Latest, observation.ChainHeight.Safe)
 }
+func getRequestIDsFromObservation(ob *ctypes.Observation) []string {
+	requestIDs := make([]string, 0, len(ob.Observations))
+	for requestID := range ob.Observations {
+		requestIDs = append(requestIDs, requestID)
+	}
 
+	return requestIDs
+}
 func (rp *reportingPlugin) Observation(
 	ctx context.Context,
 	outctx ocr3types.OutcomeContext,
@@ -164,7 +171,8 @@ func (rp *reportingPlugin) Observation(
 		return nil, fmt.Errorf("failed to add observations for requests: %w", err)
 	}
 
-	rp.logger.Debugw("Observation complete", "observation", observation)
+	rp.logger.Debugw("Observation complete", "requestIDs", getRequestIDsFromObservation(observation))
+	rp.logger.Tracew("Observation", "observation", observation)
 
 	rawObservation, err := proto.Marshal(observation)
 	if err != nil {
