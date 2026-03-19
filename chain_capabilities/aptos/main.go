@@ -145,7 +145,6 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	c.lggr.Debugw("Unmarshalled config",
 		"network", cfg.Network,
 		"chainID", cfg.ChainID,
-		"transmissionSchedule", cfg.TransmissionSchedule,
 		"deltaStage", cfg.DeltaStage,
 		"creForwarderAddress", fmt.Sprintf("%x", cfg.CREForwarderAddress),
 	)
@@ -223,18 +222,15 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	}
 	c.lggr.Debugw("validated p2pToTransmitterMap", "entries", len(p2pConfig), "donMembers", len(c.DON.Members))
 
-	if cfg.TransmissionSchedule == "" {
-		cfg.TransmissionSchedule = transmission_schedule.ScheduleAllAtOnce
-	}
 	if cfg.DeltaStage == 0 {
 		cfg.DeltaStage = defaultDeltaStage
 	}
-	scheduler, err := transmission_schedule.InitialiseTransmissionSchedulerWithSchedule(ctx, dependencies.CapabilityRegistry, cfg.TransmissionSchedule, cfg.DeltaStage, c.lggr, c.DON, false)
+	scheduler, err := transmission_schedule.InitialiseTransmissionScheduler(ctx, dependencies.CapabilityRegistry, cfg.DeltaStage, c.lggr, c.DON, false)
 	if err != nil {
 		c.lggr.Errorw("failed to initialize transmission scheduler", "error", err)
 		return fmt.Errorf("failed to initialize transmission scheduler: %w", err)
 	}
-	c.lggr.Debugw("Initialised transmission scheduler", "schedule", cfg.TransmissionSchedule, "deltaStage", cfg.DeltaStage)
+	c.lggr.Debugw("Initialised transmission scheduler", "deltaStage", cfg.DeltaStage)
 
 	c.oracle, err = dependencies.OracleFactory.NewOracle(ctx, core.OracleArgs{
 		LocalConfig: ocrtypes.LocalConfig{

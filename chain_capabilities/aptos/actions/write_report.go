@@ -185,28 +185,6 @@ func (wr *writeReport) execute(
 		return wr.buildWriteReportResponse(ctx, aptoscap.TxStatus_TX_STATUS_SUCCESS, txInfo)
 	}
 
-	priorFailedSummary, inspectErr := wr.inspectPriorFailedTransmissions(ctx, txHashRetriever, orderedTransmitters, queuePosition)
-	if inspectErr != nil {
-		wr.lggr.Warnw("failed to inspect prior failed transmissions before submit", "error", inspectErr)
-	} else if priorFailedSummary != nil {
-		if priorFailedSummary.firstTerminal.TxHash != "" {
-			wr.lggr.Debugw("returning early - prior terminal failure found",
-				"txHash", priorFailedSummary.firstTerminal.TxHash,
-				"reason", priorFailedSummary.firstTerminalClass.Reason,
-				"terminalCount", priorFailedSummary.terminalCount,
-			)
-			return wr.buildWriteReportResponse(ctx, responseStatusForFailure(aptoscap.TxStatus_TX_STATUS_FATAL, priorFailedSummary.firstTerminalClass), priorFailedSummary.firstTerminal)
-		}
-		if priorFailedSummary.failedCount >= int(wr.transmissionScheduler.F)+1 && priorFailedSummary.firstFailed.TxHash != "" {
-			wr.lggr.Debugw("returning early - observed F+1 failed transmissions before submit",
-				"txHash", priorFailedSummary.firstFailed.TxHash,
-				"failedCount", priorFailedSummary.failedCount,
-				"f", wr.transmissionScheduler.F,
-			)
-			return wr.buildWriteReportResponse(ctx, responseStatusForFailure(aptoscap.TxStatus_TX_STATUS_FATAL, priorFailedSummary.firstFailedClass), priorFailedSummary.firstFailed)
-		}
-	}
-
 	err = wr.reportSizeLimit.Check(ctx, commoncfg.SizeOf(request.Report.RawReport))
 	if err != nil {
 		wr.lggr.Errorw("report size exceeds limit", "reportSize", len(request.Report.RawReport), "error", err)
@@ -275,26 +253,19 @@ func (wr *writeReport) execute(
 			"ownTxHash", ownTxInfo.TxHash,
 			"ownTxStatus", txReply.TxStatus,
 			"queuePosition", queuePosition,
-			"schedule", wr.transmissionScheduler.Schedule,
 		)
 
-		searchLimit := min(queuePosition, len(orderedTransmitters))
-		searchMode := "preceding"
-		if wr.transmissionScheduler.IsAllAtOnce() {
-			searchLimit = len(orderedTransmitters)
-			searchMode = "all"
-		} else if queuePosition <= 0 {
+		if queuePosition <= 0 {
 			wr.lggr.Debugw("position 0 in one-at-a-time mode, returning own failed hash", "txHash", ownTxInfo.TxHash)
 			return wr.buildWriteReportResponse(ctx, aptoscap.TxStatus_TX_STATUS_FATAL, ownTxInfo)
 		}
 
-		wr.lggr.Debugw("searching transmitters for failed tx",
-			"mode", searchMode,
+		wr.lggr.Debugw("searching prior transmitters for failed tx",
 			"queuePosition", queuePosition,
 			"orderedTransmittersCount", len(orderedTransmitters),
 			"transmissionDebugID", transmissionID.GetDebugID(),
 		)
-		for i := 0; i < searchLimit; i++ {
+		for i := 0; i < min(queuePosition, len(orderedTransmitters)); i++ {
 			if orderedTransmitters[i] == "" {
 				// TODO: PLEX-2598 emit metric - p2pConfig incomplete, missing transmitter at this position
 				wr.lggr.Warnw("skipping empty transmitter address, p2pConfig is incomplete", "index", i)
@@ -308,15 +279,15 @@ func (wr *writeReport) execute(
 			}
 			failedTxInfo, searchErr := txHashRetriever.GetFailedTransmissionInfo(ctx, *addr)
 			if searchErr != nil {
-				wr.lggr.Debugw("no matching failed tx for transmitter", "transmitter", orderedTransmitters[i], "position", i, "err", searchErr)
+				wr.lggr.Debugw("no matching failed tx for prior transmitter", "transmitter", orderedTransmitters[i], "position", i, "err", searchErr)
 				continue
 			}
-			wr.lggr.Debugw("found failed transmission from transmitter", "transmitter", orderedTransmitters[i], "position", i, "txHash", failedTxInfo.TxHash)
+			wr.lggr.Debugw("found failed transmission from prior node", "transmitter", orderedTransmitters[i], "position", i, "txHash", failedTxInfo.TxHash)
 			return wr.buildWriteReportResponse(ctx, aptoscap.TxStatus_TX_STATUS_FATAL, failedTxInfo)
 		}
 
-		// No matching failed tx from the configured search set; return our own hash.
-		wr.lggr.Debugw("no failed tx found in search set, returning own hash", "txHash", ownTxInfo.TxHash)
+		// No matching failed tx from prior nodes; return our own hash.
+		wr.lggr.Debugw("no prior failed tx found, returning own hash", "txHash", ownTxInfo.TxHash)
 		return wr.buildWriteReportResponse(ctx, aptoscap.TxStatus_TX_STATUS_FATAL, ownTxInfo)
 	}
 	return nil, capabilities.ResponseMetadata{}, nil // should never happen
@@ -324,15 +295,6 @@ func (wr *writeReport) execute(
 
 func txInfoFromSubmitReply(txReply *aptostypes.SubmitTransactionReply) txInfo {
 	return txInfo{TxHash: txReply.TxHash}
-}
-
-type priorFailedSummary struct {
-	firstFailed        txInfo
-	firstFailedClass   aptostypes.WriteFailureClassification
-	firstTerminal      txInfo
-	firstTerminalClass aptostypes.WriteFailureClassification
-	failedCount        int
-	terminalCount      int
 }
 
 func (wr *writeReport) buildWriteReportResponse(
@@ -350,7 +312,7 @@ func (wr *writeReport) buildWriteReportResponse(
 	}
 
 	classification := aptostypes.ClassifyWriteVmStatus(info.VMStatus)
-	reply := &aptoscap.WriteReportReply{TxStatus: responseStatusForFailure(status, classification)}
+	reply := &aptoscap.WriteReportReply{TxStatus: status}
 	if info.TxHash != "" {
 		txHash := info.TxHash
 		reply.TxHash = &txHash
@@ -437,22 +399,6 @@ func calculateTransactionFeeOctas(gasUsed, gasUnitPrice uint64) (*uint64, error)
 	return &feeOctas, nil
 }
 
-func responseStatusForFailure(status aptoscap.TxStatus, classification aptostypes.WriteFailureClassification) aptoscap.TxStatus {
-	if status == aptoscap.TxStatus_TX_STATUS_SUCCESS {
-		return status
-	}
-	if classification.Reason == "no vm status available" && classification.Message == "" {
-		return status
-	}
-
-	switch classification.Decision {
-	case aptostypes.WriteFailureDecisionRetryable, aptostypes.WriteFailureDecisionAlreadyProcessed:
-		return aptoscap.TxStatus_TX_STATUS_ABORTED
-	default:
-		return status
-	}
-}
-
 func applyFailureClassification(reply *aptoscap.WriteReportReply, classification aptostypes.WriteFailureClassification) {
 	if reply.TxStatus == aptoscap.TxStatus_TX_STATUS_SUCCESS {
 		return
@@ -470,65 +416,6 @@ func applyFailureClassification(reply *aptoscap.WriteReportReply, classification
 
 func octasToAPT(feeOctas uint64) *big.Float {
 	return new(big.Float).Quo(new(big.Float).SetUint64(feeOctas), big.NewFloat(1e8))
-}
-
-func (wr *writeReport) inspectPriorFailedTransmissions(
-	ctx context.Context,
-	txHashRetriever TxHashRetriever,
-	orderedTransmitters []string,
-	queuePosition int,
-) (*priorFailedSummary, error) {
-	searchLimit := min(queuePosition, len(orderedTransmitters))
-	if wr.transmissionScheduler.IsAllAtOnce() {
-		searchLimit = len(orderedTransmitters)
-	}
-	if searchLimit <= 0 {
-		return nil, nil
-	}
-
-	summary := &priorFailedSummary{}
-	for i := 0; i < searchLimit; i++ {
-		if orderedTransmitters[i] == "" {
-			continue
-		}
-
-		addr, err := aptos_sdk.ConvertToAddress(orderedTransmitters[i])
-		if err != nil {
-			wr.lggr.Warnw("skipping invalid transmitter address while inspecting prior failures", "address", orderedTransmitters[i], "error", err)
-			continue
-		}
-
-		failedTxInfo, err := txHashRetriever.GetFailedTransmissionInfo(ctx, *addr)
-		if err != nil {
-			continue
-		}
-		resolvedInfo, resolveErr := wr.resolveTxInfo(ctx, failedTxInfo)
-		if resolveErr != nil {
-			wr.lggr.Warnw("failed to enrich prior failed transmission info", "txHash", failedTxInfo.TxHash, "error", resolveErr)
-		} else {
-			failedTxInfo = resolvedInfo
-		}
-
-		classification := aptostypes.ClassifyWriteVmStatus(failedTxInfo.VMStatus)
-		summary.failedCount++
-		if summary.firstFailed.TxHash == "" {
-			summary.firstFailed = failedTxInfo
-			summary.firstFailedClass = classification
-		}
-		if classification.Decision != aptostypes.WriteFailureDecisionRetryable {
-			summary.terminalCount++
-			if summary.firstTerminal.TxHash == "" {
-				summary.firstTerminal = failedTxInfo
-				summary.firstTerminalClass = classification
-			}
-		}
-	}
-
-	if summary.failedCount == 0 {
-		return nil, nil
-	}
-
-	return summary, nil
 }
 
 func getTransmissionID(workflowExecutionID string, request *aptoscap.WriteReportRequest) (TransmissionID, error) {
@@ -600,12 +487,11 @@ func (wr *writeReport) pollTransmissionInfo(
 	wr.lggr.Debugw("pollTransmissionInfo called",
 		"transmissionID", transmissionID.GetDebugID(),
 		"queuePosition", queuePosition,
-		"schedule", wr.transmissionScheduler.Schedule,
 		"deltaStage", wr.transmissionScheduler.DeltaStage,
 	)
 
-	if wr.transmissionScheduler.IsAllAtOnce() || queuePosition <= 0 {
-		wr.lggr.Debugw("doing quick retry poll", "allAtOnce", wr.transmissionScheduler.IsAllAtOnce())
+	if queuePosition <= 0 {
+		wr.lggr.Debugw("doing quick retry poll")
 		transmissionInfo, err := withQuickRetry(ctx, wr.lggr, func(ctx context.Context) (TransmissionInfo, error) {
 			return wr.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
 		})
