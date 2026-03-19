@@ -157,7 +157,6 @@ func (wr *writeReport) execute(
 	wr.lggr.Debugw("got queue position",
 		"queuePosition", queuePosition,
 		"orderedTransmitters", orderedTransmitters,
-		"schedule", wr.transmissionScheduler.Schedule,
 	)
 	// polling here is done based on queue position and deltaStage for one-at-a-time,
 	// and as a quick state probe for all-at-once.

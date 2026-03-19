@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/smartcontractkit/libocr/permutation"
@@ -23,56 +22,16 @@ import (
 type TransmissionScheduler struct {
 	myPeerID   p2ptypes.PeerID
 	donMembers []p2ptypes.PeerID // Immutable copy - safe for concurrent reads
-	Schedule   Schedule
 	DeltaStage time.Duration
 	F          uint8 // Fault tolerance - maximum number of faulty nodes
 	lggr       logger.Logger
 }
 
-type Schedule string
-
-const (
-	ScheduleAllAtOnce  Schedule = "allAtOnce"
-	ScheduleOneAtATime Schedule = "oneAtATime"
-
-	DefaultDeltaStage = 15 * time.Second
-)
-
-func ParseSchedule(raw string) (Schedule, error) {
-	schedule := strings.TrimSpace(raw)
-	if schedule == "" {
-		return "", nil
-	}
-
-	switch Schedule(schedule) {
-	case ScheduleAllAtOnce, ScheduleOneAtATime:
-		return Schedule(schedule), nil
-	default:
-		return "", fmt.Errorf("unknown transmission schedule %q", raw)
-	}
-}
-
-func normalizeSchedule(schedule Schedule) Schedule {
-	if schedule == "" {
-		return ScheduleOneAtATime
-	}
-	return schedule
-}
+const DefaultDeltaStage = 15 * time.Second
 
 func NewTransmissionScheduler(
 	myPeerID p2ptypes.PeerID,
 	donMembers []p2ptypes.PeerID,
-	deltaStage time.Duration,
-	F uint8,
-	lggr logger.Logger,
-) TransmissionScheduler {
-	return NewTransmissionSchedulerWithSchedule(myPeerID, donMembers, ScheduleOneAtATime, deltaStage, F, lggr)
-}
-
-func NewTransmissionSchedulerWithSchedule(
-	myPeerID p2ptypes.PeerID,
-	donMembers []p2ptypes.PeerID,
-	schedule Schedule,
 	deltaStage time.Duration,
 	F uint8,
 	lggr logger.Logger,
@@ -83,15 +42,10 @@ func NewTransmissionSchedulerWithSchedule(
 	return TransmissionScheduler{
 		myPeerID:   myPeerID,
 		donMembers: slices.Clone(donMembers),
-		Schedule:   normalizeSchedule(schedule),
 		DeltaStage: deltaStage,
 		F:          F,
 		lggr:       lggr,
 	}
-}
-
-func (ts *TransmissionScheduler) IsAllAtOnce() bool {
-	return normalizeSchedule(ts.Schedule) == ScheduleAllAtOnce
 }
 
 // GetQueuePosition returns this node's position (0 to N-1) in the transmission queue.
@@ -189,18 +143,6 @@ func InitialiseTransmissionScheduler(
 	don *capabilities.DON,
 	isLocal bool,
 ) (TransmissionScheduler, error) {
-	return InitialiseTransmissionSchedulerWithSchedule(ctx, capRegistry, ScheduleOneAtATime, deltaStage, lggr, don, isLocal)
-}
-
-func InitialiseTransmissionSchedulerWithSchedule(
-	ctx context.Context,
-	capRegistry core.CapabilitiesRegistry,
-	schedule Schedule,
-	deltaStage time.Duration,
-	lggr logger.Logger,
-	don *capabilities.DON,
-	isLocal bool,
-) (TransmissionScheduler, error) {
 	if isLocal {
 		return TransmissionScheduler{}, nil
 	}
@@ -240,17 +182,15 @@ func InitialiseTransmissionSchedulerWithSchedule(
 	}
 
 	lggr.Debugw("Transmission scheduler initialized",
-		"schedule", normalizeSchedule(schedule),
 		"deltaStage", deltaStage,
 		"donSize", len(donPeerIDs),
 		"F", don.F,
 		"myPeerID", myPeerID.String(),
 	)
 
-	return NewTransmissionSchedulerWithSchedule(
+	return NewTransmissionScheduler(
 		*myPeerID,
 		donPeerIDs,
-		schedule,
 		deltaStage,
 		don.F,
 		lggr,

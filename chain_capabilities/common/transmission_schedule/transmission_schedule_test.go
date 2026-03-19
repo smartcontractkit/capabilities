@@ -72,29 +72,3 @@ func TestTransmissionScheduler_GetQueuePosition_Deterministic(t *testing.T) {
 	require.GreaterOrEqual(t, pos1, 0)
 	require.Less(t, pos1, 3)
 }
-
-func TestTransmissionScheduler_ScheduleMode(t *testing.T) {
-	t.Parallel()
-
-	lggr := logger.Test(t)
-	myPeerID := peerID(0x01)
-
-	defaultScheduler := transmission_schedule.NewTransmissionScheduler(
-		myPeerID,
-		[]p2ptypes.PeerID{myPeerID},
-		10*time.Millisecond,
-		1,
-		lggr,
-	)
-	require.False(t, defaultScheduler.IsAllAtOnce())
-
-	allAtOnceScheduler := transmission_schedule.NewTransmissionSchedulerWithSchedule(
-		myPeerID,
-		[]p2ptypes.PeerID{myPeerID},
-		transmission_schedule.ScheduleAllAtOnce,
-		10*time.Millisecond,
-		1,
-		lggr,
-	)
-	require.True(t, allAtOnceScheduler.IsAllAtOnce())
-}

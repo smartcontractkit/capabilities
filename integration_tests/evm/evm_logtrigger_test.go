@@ -31,7 +31,7 @@ import (
 	"github.com/smartcontractkit/chainlink/v2/core/services/gateway/handlers/capabilities"
 
 	"github.com/smartcontractkit/capabilities/integration_tests/evm/contract"
-	itestutils "github.com/smartcontractkit/capabilities/integration_tests/utils"
+	utils "github.com/smartcontractkit/capabilities/integration_tests/utils"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/trigger"
 
@@ -308,7 +308,7 @@ func assertLogTriggerWorks(t *testing.T, eventName string, workflowName string, 
 	beholderTester := beholdertest.NewObserver(t)
 	lggr, obs := logger.TestLoggerObserved(t, zapcore.InfoLevel) // change this to debug to print all logs from the trigger/log poller if needed to debug
 	defer func() {
-		itestutils.CleanupCapabilitiesDir(lggr)
+		utils.CleanupCapabilitiesDir(lggr)
 	}()
 
 	workflowPath, err := filepath.Abs("./workflow")
@@ -316,8 +316,8 @@ func assertLogTriggerWorks(t *testing.T, eventName string, workflowName string, 
 	wfFileName := "main_logtrigger_wasip1.go"
 	mainFile := filepath.Join(workflowPath, wfFileName)
 	wasmFilename := wfFileName[:len(wfFileName)-3] + ".wasm"
-	wasmFile := filepath.Join(itestutils.CapabilitiesDir, wasmFilename)
-	itestutils.CreateWasmBinary(t, mainFile, wasmFile)
+	wasmFile := filepath.Join(utils.CapabilitiesDir, wasmFilename)
+	utils.CreateWasmBinary(t, mainFile, wasmFile)
 
 	abiBytes, err := os.ReadFile("./contract/MessageEmitter.abi")
 	require.NoError(t, err)
@@ -514,7 +514,7 @@ func CreateEvmCapabilityConfig(t *testing.T, chainID uint64, network string, dur
 func setupDon(ctx context.Context, t *testing.T, lggr logger.Logger, workflowURL string, numOfWorkflowNodes int,
 	workflowName string, config RuntimeConfig, deployContractsFn DeployContractsFunc) ([]*contract.Contract, framework.DonContext) {
 	configURL := workflowName + "_config.yaml"
-	compressedBinary, base64EncodedCompressedBinary := itestutils.GetCompressedWorkflowWasm(t, workflowURL)
+	compressedBinary, base64EncodedCompressedBinary := utils.GetCompressedWorkflowWasm(t, workflowURL)
 
 	urlToConfigBytes := map[string][]byte{}
 
@@ -529,7 +529,7 @@ func setupDon(ctx context.Context, t *testing.T, lggr logger.Logger, workflowURL
 		return nil, fmt.Errorf("unknown  url: %s", url)
 	}
 
-	donContext := framework.CreateDonContextWithWorkflowRegistry(ctx, t, syncerFetcherFunc, itestutils.NoopComputeFetcherFactory{})
+	donContext := framework.CreateDonContextWithWorkflowRegistry(ctx, t, syncerFetcherFunc, utils.NoopComputeFetcherFactory{})
 
 	addresses := deployContractsFn(t, donContext)
 	config.Addresses = make([]string, 0, len(addresses))
@@ -548,7 +548,7 @@ func setupDon(ctx context.Context, t *testing.T, lggr logger.Logger, workflowURL
 	t.Logf("Runtime yaml config:\n%s\n", string(data))
 	urlToConfigBytes[configURL] = data
 
-	evmBinary, err := itestutils.DeployCapability(t, "chain_capabilities/evm")
+	evmBinary, err := utils.DeployCapability(t, "chain_capabilities/evm")
 	require.NoError(t, err)
 
 	workflowDonConfiguration, err := framework.NewDonConfiguration(framework.NewDonConfigurationParams{Name: workflowName + "DonName", NumNodes: numOfWorkflowNodes, F: 1, AcceptsWorkflows: true})
