@@ -107,7 +107,7 @@ func (s *Aptos) executeWriteReport(
 
 // TODO: handle gas limit bumping if required (PLEX-2580)
 // TODO: handle metrics (PLEX-2546)
-// TODO: populate error message and ReceiverContractExecutionStatus in WriteReportReply by using vmstatus received from failed tx (PLEX-2597)
+// TODO: handle ReceiverContractExecutionStatus in WriteReportReply (PLEX-2597)
 func (wr *writeReport) execute(
 	ctx context.Context,
 	request *aptoscap.WriteReportRequest,
@@ -281,11 +281,14 @@ func (wr *writeReport) execute(
 		}
 		// Position 0 node has no prior nodes to check; return its own failed tx hash.
 		if queuePosition <= 0 {
-			wr.lggr.Debugw("position 0, returning own failed hash", "txHash", txReply.TxHash)
+			vmStatus := wr.getVmStatusFromChain(ctx, txReply.TxHash)
+			wr.lggr.Debugw("position 0, returning own failed hash", "txHash", txReply.TxHash, "vmStatus", vmStatus)
 			return &aptoscap.WriteReportReply{
 				TxStatus:       aptoscap.TxStatus_TX_STATUS_FATAL,
 				TxHash:         &txReply.TxHash,
 				TransactionFee: txFeeOctas,
+				ErrorMessage:   ptrIfNonEmpty(vmStatus),
+				// TODO: PLEX-2597 populate ReceiverContractExecutionStatus based on vmStatus
 			}, meteringMetadata, nil
 		}
 
@@ -312,22 +315,27 @@ func (wr *writeReport) execute(
 				wr.lggr.Debugw("no matching failed tx for prior transmitter", "transmitter", orderedTransmitters[i], "position", i, "err", searchErr)
 				continue
 			}
-			wr.lggr.Debugw("found failed transmission from prior node", "transmitter", orderedTransmitters[i], "position", i, "txHash", failedResult.TxHash)
+			wr.lggr.Debugw("found failed transmission from prior node", "transmitter", orderedTransmitters[i], "position", i, "txHash", failedResult.TxHash, "vmStatus", failedResult.VmStatus)
 			feeOctas := failedResult.GasUsed * failedResult.GasUnitPrice
 			txFeeOctas = &feeOctas
 			return &aptoscap.WriteReportReply{
 				TxStatus:       aptoscap.TxStatus_TX_STATUS_FATAL,
 				TxHash:         &failedResult.TxHash,
 				TransactionFee: txFeeOctas,
+				ErrorMessage:   ptrIfNonEmpty(failedResult.VmStatus),
+				// TODO: PLEX-2597 populate ReceiverContractExecutionStatus based on vmStatus
 			}, capabilities.ResponseMetadata{}, nil
 		}
 
 		// No matching failed tx from prior nodes; return our own hash.
-		wr.lggr.Debugw("no prior failed tx found, returning own hash", "txHash", txReply.TxHash)
+		vmStatus := wr.getVmStatusFromChain(ctx, txReply.TxHash)
+		wr.lggr.Debugw("no prior failed tx found, returning own hash", "txHash", txReply.TxHash, "vmStatus", vmStatus)
 		return &aptoscap.WriteReportReply{
-			TxStatus:       aptoscap.TxStatus_TX_STATUS_FATAL,
+			TxStatus:       aptoscap.TxStatus_TX_STATUS_FATAL, // TODO: do we need TX_STATUS_ABORTED at all ?
 			TxHash:         &txReply.TxHash,
 			TransactionFee: txFeeOctas,
+			ErrorMessage:   ptrIfNonEmpty(vmStatus),
+			// TODO: PLEX-2597 populate ReceiverContractExecutionStatus based on vmStatus
 		}, meteringMetadata, nil
 	}
 	return nil, capabilities.ResponseMetadata{}, nil // should never happen
@@ -354,6 +362,31 @@ func (wr *writeReport) getFeeInOctas(ctx context.Context, result TransmissionHas
 	}
 
 	return gasUsed * gasUnitPrice, nil
+}
+
+// getVmStatusFromChain fetches a transaction by hash and returns its VmStatus string.
+// Used for the node's own failed tx where InvokeOnReport does not return vmStatus.
+func (wr *writeReport) getVmStatusFromChain(ctx context.Context, txHash string) string {
+	reply, err := withQuickRetry(ctx, wr.lggr, func(ctx context.Context) (*aptostypes.TransactionByHashReply, error) {
+		return wr.aptosService.TransactionByHash(ctx, aptostypes.TransactionByHashRequest{Hash: txHash})
+	})
+	if err != nil {
+		wr.lggr.Errorw("failed to get transaction for vmStatus", "txHash", txHash, "error", err)
+		return ""
+	}
+	var txData userTxData
+	if err := json.Unmarshal(reply.Transaction.Data, &txData); err != nil {
+		wr.lggr.Errorw("failed to unmarshal transaction for vmStatus", "txHash", txHash, "error", err)
+		return ""
+	}
+	return txData.VmStatus
+}
+
+func ptrIfNonEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 // getFee returns the transaction fee in APT.

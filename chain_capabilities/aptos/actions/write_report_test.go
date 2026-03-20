@@ -146,10 +146,23 @@ func generateRandomSignatures() []*workflowpb.AttributedSignature {
 // which is what scanTransactions unmarshals via the local userTxData struct.
 func buildFakeTransaction(t *testing.T, txHash string, success bool, seqNum uint64, timestampMicro uint64, reportMetadata ocrtypes.Metadata) *aptostypes.Transaction {
 	t.Helper()
-	return buildFakeTransactionWithGas(t, txHash, success, seqNum, timestampMicro, reportMetadata, testGasUsed, testGasUnitPrice)
+	var vmStatus string
+	if !success {
+		vmStatus = "Move abort"
+	}
+	return buildFakeTransactionFull(t, txHash, success, seqNum, timestampMicro, reportMetadata, testGasUsed, testGasUnitPrice, vmStatus)
 }
 
 func buildFakeTransactionWithGas(t *testing.T, txHash string, success bool, seqNum uint64, timestampMicro uint64, reportMetadata ocrtypes.Metadata, gasUsed uint64, gasUnitPrice uint64) *aptostypes.Transaction {
+	t.Helper()
+	var vmStatus string
+	if !success {
+		vmStatus = "Move abort"
+	}
+	return buildFakeTransactionFull(t, txHash, success, seqNum, timestampMicro, reportMetadata, gasUsed, gasUnitPrice, vmStatus)
+}
+
+func buildFakeTransactionFull(t *testing.T, txHash string, success bool, seqNum uint64, timestampMicro uint64, reportMetadata ocrtypes.Metadata, gasUsed uint64, gasUnitPrice uint64, vmStatus string) *aptostypes.Transaction {
 	t.Helper()
 	encodedReport, err := reportMetadata.Encode()
 	require.NoError(t, err)
@@ -159,9 +172,9 @@ func buildFakeTransactionWithGas(t *testing.T, txHash string, success bool, seqN
 
 	txJSON := fmt.Sprintf(`{
 		"Hash": %q, "Success": %t, "SequenceNumber": %d, "Timestamp": %d,
-		"GasUsed": %d, "GasUnitPrice": %d,
+		"GasUsed": %d, "GasUnitPrice": %d, "VmStatus": %q,
 		"Payload": {"Inner": {"Function": %q, "Arguments": ["0x01", %q, "0x01"]}}
-	}`, txHash, success, seqNum, timestampMicro, gasUsed, gasUnitPrice, functionName, rawReportHex)
+	}`, txHash, success, seqNum, timestampMicro, gasUsed, gasUnitPrice, vmStatus, functionName, rawReportHex)
 
 	return &aptostypes.Transaction{Data: []byte(txJSON)}
 }
@@ -199,7 +212,16 @@ func (h *testHelper) mockPostSubmitPoll(info TransmissionInfo) {
 
 // mockTransactionByHash sets TransactionByHash to return gas data for the given tx hash.
 func (h *testHelper) mockTransactionByHash(txHash string, gasUsed, gasUnitPrice uint64) {
-	txData := fmt.Sprintf(`{"Hash":%q,"Success":true,"GasUsed":%d,"GasUnitPrice":%d}`, txHash, gasUsed, gasUnitPrice)
+	h.mockTransactionByHashWithVmStatus(txHash, true, gasUsed, gasUnitPrice, "Executed successfully")
+}
+
+// mockTransactionByHashFailed sets TransactionByHash to return a failed tx with the given VmStatus.
+func (h *testHelper) mockTransactionByHashFailed(txHash string, gasUsed, gasUnitPrice uint64, vmStatus string) {
+	h.mockTransactionByHashWithVmStatus(txHash, false, gasUsed, gasUnitPrice, vmStatus)
+}
+
+func (h *testHelper) mockTransactionByHashWithVmStatus(txHash string, success bool, gasUsed, gasUnitPrice uint64, vmStatus string) {
+	txData := fmt.Sprintf(`{"Hash":%q,"Success":%t,"GasUsed":%d,"GasUnitPrice":%d,"VmStatus":%q}`, txHash, success, gasUsed, gasUnitPrice, vmStatus)
 	h.aptosService.On("TransactionByHash", mock.Anything, aptostypes.TransactionByHashRequest{Hash: txHash}).Return(
 		&aptostypes.TransactionByHashReply{
 			Transaction: &aptostypes.Transaction{Data: []byte(txData)},
@@ -329,14 +351,14 @@ func TestWriteReport_Execute(t *testing.T) {
 		require.Empty(t, result.ResponseMetadata.Metering)
 	})
 
-	t.Run("Submit fails at node0 - returns own hash", func(t *testing.T) {
+	t.Run("Submit fails at node0 - returns own hash with ErrorMessage", func(t *testing.T) {
 		h := newTestHelper(t)
 		_, reqMeta, req := newReportFixture(t)
 
 		h.mockNoTransmission()
 		h.mockInvokeOnReport(&aptostypes.SubmitTransactionReply{TxStatus: aptostypes.TxFatal, TxHash: "0xmine"}, nil)
 		h.mockPostSubmitPoll(TransmissionInfo{Success: false})
-		h.mockTransactionByHash("0xmine", testGasUsed, testGasUnitPrice)
+		h.mockTransactionByHashFailed("0xmine", testGasUsed, testGasUnitPrice, "Move abort in 0x1::coin: EINSUFFICIENT_BALANCE(0x10006)")
 
 		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, capErr)
@@ -344,6 +366,8 @@ func TestWriteReport_Execute(t *testing.T) {
 		require.Equal(t, "0xmine", *result.Response.TxHash)
 		require.NotNil(t, result.Response.TransactionFee)
 		require.Equal(t, testGasUsed*testGasUnitPrice, *result.Response.TransactionFee)
+		require.NotNil(t, result.Response.ErrorMessage)
+		require.Equal(t, "Move abort in 0x1::coin: EINSUFFICIENT_BALANCE(0x10006)", *result.Response.ErrorMessage)
 		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector, "0.0005")
 	})
 
@@ -361,7 +385,7 @@ func TestWriteReport_Execute(t *testing.T) {
 		require.Contains(t, capErr.Error(), "unexpected state")
 	})
 
-	t.Run("Submit fails - retrieves failed hash from prior node", func(t *testing.T) {
+	t.Run("Submit fails - retrieves failed hash from prior node with ErrorMessage", func(t *testing.T) {
 		rm, reqMeta, req := newReportFixture(t)
 		transmissionIDStr := computeTransmissionIDStr(t, rm)
 		h, node0Addr := newMultiNodeTestHelper(t, transmissionIDStr)
@@ -379,6 +403,8 @@ func TestWriteReport_Execute(t *testing.T) {
 		require.Equal(t, "0xnode0failed", *result.Response.TxHash)
 		require.NotNil(t, result.Response.TransactionFee)
 		require.Equal(t, testGasUsed*testGasUnitPrice, *result.Response.TransactionFee)
+		require.NotNil(t, result.Response.ErrorMessage)
+		require.Equal(t, "Move abort", *result.Response.ErrorMessage)
 		require.Empty(t, result.ResponseMetadata.Metering)
 	})
 }

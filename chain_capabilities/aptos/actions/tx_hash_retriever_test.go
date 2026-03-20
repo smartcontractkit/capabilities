@@ -154,7 +154,7 @@ func TestGetFailedTransmissionHash(t *testing.T) {
 
 	transmitter := aptos_sdk.AccountAddress{0xEE}
 
-	t.Run("Phase 1 finds matching failed tx", func(t *testing.T) {
+	t.Run("Phase 1 finds matching failed tx with vmStatus", func(t *testing.T) {
 		mockClient := NewCREForwarderClient_mock(t)
 		targetRM, _, _ := newReportFixture(t)
 		requestStartTime := time.Now()
@@ -169,6 +169,7 @@ func TestGetFailedTransmissionHash(t *testing.T) {
 		result, err := thr.GetFailedTransmissionHash(t.Context(), transmitter)
 		require.NoError(t, err)
 		require.Equal(t, "0xfailed_phase1", result.TxHash)
+		require.Equal(t, "Move abort", result.VmStatus)
 	})
 
 	t.Run("Phase 1 fails - no txns found", func(t *testing.T) {
@@ -208,6 +209,7 @@ func TestGetFailedTransmissionHash(t *testing.T) {
 		result, err := thr.GetFailedTransmissionHash(t.Context(), transmitter)
 		require.NoError(t, err)
 		require.Equal(t, "0xfailed_phase2", result.TxHash)
+		require.Equal(t, "Move abort", result.VmStatus)
 	})
 
 	t.Run("Phase 1 misses, skips Phase 2, returns not found", func(t *testing.T) {
