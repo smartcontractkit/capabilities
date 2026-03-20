@@ -5,7 +5,7 @@ go 1.25.3
 require (
 	github.com/jpillora/backoff v1.0.0
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260223172632-a716db2e04a0
-	github.com/smartcontractkit/chainlink-common v0.10.1-0.20260311225716-d2349cf02bc3
+	github.com/smartcontractkit/chainlink-common v0.11.0
 	github.com/smartcontractkit/libocr v0.0.0-20250912173940-f3ab0246e23d
 	github.com/stretchr/testify v1.11.1
 	go.opentelemetry.io/otel v1.39.0
