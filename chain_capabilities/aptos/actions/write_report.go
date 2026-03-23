@@ -176,16 +176,12 @@ func (wr *writeReport) execute(
 			wr.lggr.Errorw("report already onchain but failed to retrieve its txHash", "error", txHashErr)
 			return nil, capabilities.ResponseMetadata{}, txHashErr
 		}
-		wr.lggr.Debugw("returning early - report already onchain", "txHash", txResult.TxHash)
 		reply := &aptoscap.WriteReportReply{
 			TxStatus: aptoscap.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:   &txResult.TxHash,
 		}
-		if feeInOctas, feeErr := wr.getFeeInOctas(ctx, txResult); feeErr != nil {
-			wr.lggr.Errorw("failed to get transaction fee for reply", "txHash", txResult.TxHash, "error", feeErr)
-		} else {
-			reply.TransactionFee = &feeInOctas
-		}
+		feeOctas := txResult.GasUsed * txResult.GasUnitPrice
+		reply.TransactionFee = &feeOctas
 		return reply, capabilities.ResponseMetadata{}, nil
 	}
 	// TODO: we can exit here if we find F+1 failed transactions, but thats expensive time and i/o wise.
@@ -198,10 +194,9 @@ func (wr *writeReport) execute(
 		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s report size exceeds limit: %w", capcommon.UserError, err)
 	}
 
-	wr.lggr.Debugw("submitting WriteReport transaction",
+	wr.lggr.Debugw("Submitting WriteReport transaction",
 		"executionID", metadata.WorkflowExecutionID,
 		"receiver", hex.EncodeToString(request.Receiver[:]),
-		"maxGasAmount", request.GasConfig.MaxGasAmount,
 	)
 
 	txReply, err := wr.forwarderClient.InvokeOnReport(ctx, request.Receiver, request.Report, request.GasConfig)
@@ -228,8 +223,9 @@ func (wr *writeReport) execute(
 	wr.lggr.Debugw("post-submission transmission status", "success", newTransmissionInfo.Success, "transmitter", newTransmissionInfo.Transmitter.String())
 
 	var txFeeOctas *uint64
+	var ownVmStatus string
 	var meteringMetadata capabilities.ResponseMetadata
-	feeInOctas, feeErr := wr.getFeeInOctas(ctx, TransmissionHashResult{TxHash: txReply.TxHash})
+	feeInOctas, ownVmStatus, feeErr := wr.getTxnInfoFromChain(ctx, txReply.TxHash)
 	if feeErr != nil {
 		wr.lggr.Errorw("failed to get transaction fee, using zero for metering", "txHash", txReply.TxHash, "error", feeErr)
 		meteringMetadata = metering.GetResponseMetadataWriteReport(big.NewFloat(0), wr.chainSelector)
@@ -281,13 +277,12 @@ func (wr *writeReport) execute(
 		}
 		// Position 0 node has no prior nodes to check; return its own failed tx hash.
 		if queuePosition <= 0 {
-			vmStatus := wr.getVmStatusFromChain(ctx, txReply.TxHash)
-			wr.lggr.Debugw("position 0, returning own failed hash", "txHash", txReply.TxHash, "vmStatus", vmStatus)
+			wr.lggr.Debugw("position 0, returning own failed hash", "txHash", txReply.TxHash, "vmStatus", ownVmStatus)
 			return &aptoscap.WriteReportReply{
 				TxStatus:       aptoscap.TxStatus_TX_STATUS_FATAL,
 				TxHash:         &txReply.TxHash,
 				TransactionFee: txFeeOctas,
-				ErrorMessage:   ptrIfNonEmpty(vmStatus),
+				ErrorMessage:   ptrIfNonEmpty(ownVmStatus),
 				// TODO: PLEX-2597 populate ReceiverContractExecutionStatus based on vmStatus
 			}, meteringMetadata, nil
 		}
@@ -328,58 +323,34 @@ func (wr *writeReport) execute(
 		}
 
 		// No matching failed tx from prior nodes; return our own hash.
-		vmStatus := wr.getVmStatusFromChain(ctx, txReply.TxHash)
-		wr.lggr.Debugw("no prior failed tx found, returning own hash", "txHash", txReply.TxHash, "vmStatus", vmStatus)
+		wr.lggr.Debugw("no prior failed tx found, returning own hash", "txHash", txReply.TxHash, "vmStatus", ownVmStatus)
 		return &aptoscap.WriteReportReply{
 			TxStatus:       aptoscap.TxStatus_TX_STATUS_FATAL, // TODO: do we need TX_STATUS_ABORTED at all ?
 			TxHash:         &txReply.TxHash,
 			TransactionFee: txFeeOctas,
-			ErrorMessage:   ptrIfNonEmpty(vmStatus),
+			ErrorMessage:   ptrIfNonEmpty(ownVmStatus),
 			// TODO: PLEX-2597 populate ReceiverContractExecutionStatus based on vmStatus
 		}, meteringMetadata, nil
 	}
 	return nil, capabilities.ResponseMetadata{}, nil // should never happen
 }
 
-// getFeeInOctas returns the transaction fee in octas (gasUsed * gasUnitPrice).
-// If result already contains gas info (from TxHashRetriever scanning), it is used
-// directly. Otherwise it falls back to an RPC call via AptosService.TransactionByHash.
-func (wr *writeReport) getFeeInOctas(ctx context.Context, result TransmissionHashResult) (uint64, error) {
-	gasUsed, gasUnitPrice := result.GasUsed, result.GasUnitPrice
-
-	if gasUsed == 0 || gasUnitPrice == 0 {
-		reply, err := withQuickRetry(ctx, wr.lggr, func(ctx context.Context) (*aptostypes.TransactionByHashReply, error) {
-			return wr.aptosService.TransactionByHash(ctx, aptostypes.TransactionByHashRequest{Hash: result.TxHash})
-		})
-		if err != nil {
-			return 0, fmt.Errorf("failed to get transaction by hash: %w", err)
-		}
-		var txData userTxData
-		if err := json.Unmarshal(reply.Transaction.Data, &txData); err != nil {
-			return 0, fmt.Errorf("failed to unmarshal transaction data: %w", err)
-		}
-		gasUsed, gasUnitPrice = txData.GasUsed, txData.GasUnitPrice
-	}
-
-	return gasUsed * gasUnitPrice, nil
-}
-
-// getVmStatusFromChain fetches a transaction by hash and returns its VmStatus string.
-// Used for the node's own failed tx where InvokeOnReport does not return vmStatus.
-func (wr *writeReport) getVmStatusFromChain(ctx context.Context, txHash string) string {
+// getTxnInfoFromChain returns the transaction fee in octas (gasUsed * gasUnitPrice) and
+// the VM status string by calling AptosService.TransactionByHash and unmarshaling the
+// transaction payload (gas fields and VmStatus).
+func (wr *writeReport) getTxnInfoFromChain(ctx context.Context, txHash string) (uint64, string, error) {
 	reply, err := withQuickRetry(ctx, wr.lggr, func(ctx context.Context) (*aptostypes.TransactionByHashReply, error) {
 		return wr.aptosService.TransactionByHash(ctx, aptostypes.TransactionByHashRequest{Hash: txHash})
 	})
 	if err != nil {
-		wr.lggr.Errorw("failed to get transaction for vmStatus", "txHash", txHash, "error", err)
-		return ""
+		return 0, "", fmt.Errorf("failed to get transaction by hash: %w", err)
 	}
 	var txData userTxData
 	if err := json.Unmarshal(reply.Transaction.Data, &txData); err != nil {
-		wr.lggr.Errorw("failed to unmarshal transaction for vmStatus", "txHash", txHash, "error", err)
-		return ""
+		return 0, "", fmt.Errorf("failed to unmarshal transaction data: %w", err)
 	}
-	return txData.VmStatus
+
+	return txData.GasUsed * txData.GasUnitPrice, txData.VmStatus, nil
 }
 
 func ptrIfNonEmpty(s string) *string {
@@ -387,18 +358,6 @@ func ptrIfNonEmpty(s string) *string {
 		return nil
 	}
 	return &s
-}
-
-// getFee returns the transaction fee in APT.
-func (wr *writeReport) getFee(ctx context.Context, result TransmissionHashResult) (*big.Float, error) {
-	feeInOctas, err := wr.getFeeInOctas(ctx, result)
-	if err != nil {
-		return nil, err
-	}
-
-	feeInAPT := new(big.Float).Quo(new(big.Float).SetUint64(feeInOctas), big.NewFloat(1e8))
-	wr.lggr.Debugw("WriteReport fee", "feeInAPT", feeInAPT.String(), "feeInOctas", feeInOctas)
-	return feeInAPT, nil
 }
 
 func getTransmissionID(workflowExecutionID string, request *aptoscap.WriteReportRequest) (TransmissionID, error) {
