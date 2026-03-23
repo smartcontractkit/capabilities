@@ -3,15 +3,23 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
 	"strconv"
 	"time"
 
+	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
+
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/actions"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/config"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/height"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
+	consmetrics "github.com/smartcontractkit/capabilities/libs/chainconsensus/metrics"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus/oracle"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus/poller"
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
 	chain_selectors "github.com/smartcontractkit/chain-selectors"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -28,7 +36,11 @@ const (
 	CapabilityVersion = "1.0.0"
 
 	// TODO: PLEX-2598 make configurable
-	defaultDeltaStage = 10 * time.Second
+	defaultDeltaStage            = 10 * time.Second
+	defaultObservationWorkers    = 10
+	defaultObservationPollPeriod = 2 * time.Second
+	defaultUnknownRequestsTTL    = 10 * time.Second
+	defaultChainHeightPollPeriod = time.Second
 )
 
 func capabilityID(chainSelector uint64) string {
@@ -47,7 +59,11 @@ type capabilityGRPCService struct {
 
 type capability struct {
 	*actions.Aptos
-	id string
+	id               string
+	requestPoller    *poller.Poller
+	consensusHandler *chainconsensus.Handler
+	oracle           core.Oracle
+	heightProvider   *height.Provider
 }
 
 var _ aptoscapserver.ClientCapability = &capabilityGRPCService{}
@@ -61,8 +77,6 @@ func main() {
 	})
 }
 
-// --- loop.StandardCapabilities / services.Service ---
-
 func (c *capabilityGRPCService) ChainSelector() uint64 {
 	return c.chainSelector
 }
@@ -74,10 +88,24 @@ func (c *capabilityGRPCService) Start(ctx context.Context) error {
 
 func (c *capabilityGRPCService) Close() error {
 	c.lggr.Infof("Closing %s", CapabilityName)
+
+	var closeErr error
 	if c.Aptos != nil {
-		return c.Aptos.Close()
+		closeErr = errors.Join(closeErr, c.Aptos.Close())
 	}
-	return nil
+	if c.requestPoller != nil {
+		closeErr = errors.Join(closeErr, c.requestPoller.Close())
+	}
+	if c.consensusHandler != nil {
+		closeErr = errors.Join(closeErr, c.consensusHandler.Close())
+	}
+	if c.oracle != nil {
+		closeErr = errors.Join(closeErr, c.oracle.Close(context.Background()))
+	}
+	if c.heightProvider != nil {
+		closeErr = errors.Join(closeErr, c.heightProvider.Close())
+	}
+	return closeErr
 }
 
 func (c *capabilityGRPCService) HealthReport() map[string]error {
@@ -109,39 +137,55 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		c.lggr.Errorw("failed to unmarshal config", "error", err)
 		return fmt.Errorf("failed to unmarshal config: %w", err)
 	}
-	c.lggr.Debugw("Unmarshalled config",
-		"network", cfg.Network,
-		"chainID", cfg.ChainID,
-		"deltaStage", cfg.DeltaStage,
-		"creForwarderAddress", fmt.Sprintf("%x", cfg.CREForwarderAddress),
-	)
 
 	relayID := types.NewRelayID(cfg.Network, cfg.ChainID)
-	c.lggr.Debugw("Created relay ID", "relayID", relayID)
-
 	relayer, err := dependencies.RelayerSet.Get(ctx, relayID)
 	if err != nil {
 		c.lggr.Errorw("failed to fetch relayer", "chainID", cfg.ChainID, "relayID", relayID, "error", err)
 		return fmt.Errorf("failed to fetch relayer for chainID %s from relayerSet: %w", cfg.ChainID, err)
 	}
-	c.lggr.Debugw("Fetched relayer from relayer set", "relayID", relayID)
 
 	aptosService, err := relayer.Aptos()
 	if err != nil {
 		c.lggr.Errorw("failed to get aptos service from relayer", "error", err)
 		return fmt.Errorf("failed to get aptos service: %w", err)
 	}
-	c.lggr.Debugw("Got Aptos service from relayer")
 
 	if err := c.setSelector(cfg); err != nil {
 		c.lggr.Errorw("failed to set chain selector", "error", err)
 		return err
 	}
 	c.id = capabilityID(c.chainSelector)
-	c.lggr.Debugw("Set chain selector and capability ID",
-		"chainSelector", c.chainSelector,
-		"capabilityID", c.id,
-	)
+
+	chainInfo, err := relayer.GetChainInfo(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to fetch chain info for chainID %s from relayer: %w", cfg.ChainID, err)
+	}
+
+	consensusMetrics, err := consmetrics.NewConsensusMetrics(chainInfo)
+	if err != nil {
+		return fmt.Errorf("failed to create aptos consensus metrics: %w", err)
+	}
+	c.requestPoller = poller.NewPoller(c.lggr, consensusMetrics, defaultObservationWorkers, defaultObservationPollPeriod)
+	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, defaultUnknownRequestsTTL)
+	c.heightProvider = height.NewProvider(c.lggr, defaultChainHeightPollPeriod, aptosService)
+
+	c.oracle, err = dependencies.OracleFactory.NewOracle(ctx, core.OracleArgs{
+		LocalConfig: ocrtypes.LocalConfig{
+			BlockchainTimeout:                  20 * time.Second,
+			ContractConfigTrackerPollInterval:  10 * time.Second,
+			ContractConfigConfirmations:        1,
+			ContractTransmitterTransmitTimeout: 10 * time.Second,
+			DatabaseTimeout:                    10 * time.Second,
+			ContractConfigLoadTimeout:          10 * time.Second,
+			DefaultMaxDurationInitialization:   10 * time.Second,
+		},
+		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(logger.Sugared(c.lggr), c.consensusHandler, c.heightProvider, consensusMetrics),
+		ContractTransmitter:           oracle.NewContractTransmitter(c.lggr, c.consensusHandler),
+	})
+	if err != nil {
+		return fmt.Errorf("error when creating oracle: %w", err)
+	}
 
 	myDON, err := transmission_schedule.InitMyDON(ctx, dependencies.CapabilityRegistry, c.id, c.lggr, false)
 	if err != nil {
@@ -149,24 +193,15 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return fmt.Errorf("failed to init DON: %w", err)
 	}
 	c.DON = &myDON
-	c.lggr.Debugw("Initialised DON", "donID", c.DON.ID, "donName", c.DON.Name, "members", len(c.DON.Members), "F", c.DON.F)
 
 	p2pConfig := cfg.P2PToTransmitterMap
-	if len(p2pConfig) > 0 {
-		c.lggr.Debugw("p2pToTransmitterMap found in JSON config",
-			"entries", len(p2pConfig), "p2pConfig", p2pConfig,
-		)
-	} else {
-		c.lggr.Debugw("p2pToTransmitterMap not in JSON config, falling back to capReg gRPC")
+	if len(p2pConfig) == 0 {
 		var fetchErr error
 		p2pConfig, fetchErr = c.fetchP2PConfig(ctx, dependencies.CapabilityRegistry)
 		if fetchErr != nil {
 			c.lggr.Errorw("failed to fetch p2p config from capReg", "error", fetchErr)
 			return fmt.Errorf("failed to fetch p2p config: %w", fetchErr)
 		}
-		c.lggr.Debugw("p2pToTransmitterMap fetched from capReg specConfig",
-			"entries", len(p2pConfig), "p2pConfig", p2pConfig,
-		)
 	}
 
 	if cfg.DeltaStage == 0 {
@@ -177,14 +212,19 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		c.lggr.Errorw("failed to initialize transmission scheduler", "error", err)
 		return fmt.Errorf("failed to initialize transmission scheduler: %w", err)
 	}
-	c.lggr.Debugw("Initialised transmission scheduler", "deltaStage", cfg.DeltaStage)
 
-	c.Aptos, err = actions.NewAptos(cfg, p2pConfig, aptosService, c.lggr, limits.Factory{Logger: c.lggr}, scheduler, c.chainSelector)
+	c.Aptos, err = actions.NewAptos(cfg, p2pConfig, aptosService, c.consensusHandler, c.lggr, limits.Factory{Logger: c.lggr}, scheduler, c.chainSelector)
 	if err != nil {
 		c.lggr.Errorw("failed to create Aptos actions", "error", err)
 		return fmt.Errorf("failed to create Aptos actions: %w", err)
 	}
-	c.lggr.Debugw("Created Aptos actions")
+
+	startServices := []interface{ Start(context.Context) error }{c.consensusHandler, c.requestPoller, c.oracle, c.heightProvider}
+	for _, service := range startServices {
+		if err := service.Start(ctx); err != nil {
+			return err
+		}
+	}
 
 	c.lggr.Infof("Successfully initialised %s", CapabilityName)
 	return nil
@@ -217,11 +257,6 @@ func (c *capabilityGRPCService) setSelector(cfg *config.Config) error {
 	return nil
 }
 
-// fetchP2PConfig fetches the p2pID-to-transmitter-address map from the on-chain
-// capability registry via gRPC. It calls ConfigForCapability to obtain the
-// CapabilityConfiguration, then extracts the "p2pToTransmitterMap" key from SpecConfig.
-// This is the fallback path used when the JSON config (produced by buildConfigJSON)
-// does not already contain the map.
 func (c *capabilityGRPCService) fetchP2PConfig(ctx context.Context, registry core.CapabilitiesRegistry) (map[string]string, error) {
 	c.lggr.Debugw("fetchP2PConfig: calling ConfigForCapability",
 		"capabilityID", c.id, "donID", c.DON.ID,
@@ -232,11 +267,6 @@ func (c *capabilityGRPCService) fetchP2PConfig(ctx context.Context, registry cor
 		c.lggr.Errorw("fetchP2PConfig: ConfigForCapability failed", "error", err)
 		return nil, fmt.Errorf("failed to get capability config: %w", err)
 	}
-
-	c.lggr.Debugw("fetchP2PConfig: got CapabilityConfiguration",
-		"hasDefaultConfig", capCfg.DefaultConfig != nil,
-		"hasSpecConfig", capCfg.SpecConfig != nil,
-	)
 
 	if capCfg.SpecConfig == nil {
 		c.lggr.Errorw("fetchP2PConfig: SpecConfig is nil")
@@ -279,9 +309,6 @@ func (c *capabilityGRPCService) fetchP2PConfig(ctx context.Context, registry cor
 		result[k] = s
 	}
 
-	c.lggr.Debugw("fetchP2PConfig: extracted p2pToTransmitterMap",
-		"entries", len(result), "map", result,
-	)
 	return result, nil
 }
 
