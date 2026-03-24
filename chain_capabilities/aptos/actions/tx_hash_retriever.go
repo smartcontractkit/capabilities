@@ -31,6 +31,7 @@ type userTxData struct {
 	Timestamp      uint64          `json:"Timestamp"`
 	GasUsed        uint64          `json:"GasUsed"`
 	GasUnitPrice   uint64          `json:"GasUnitPrice"`
+	VmStatus       string          `json:"VmStatus"`
 	Payload        json.RawMessage `json:"Payload"`
 }
 
@@ -74,6 +75,7 @@ type TransmissionHashResult struct {
 	TxHash       string
 	GasUsed      uint64
 	GasUnitPrice uint64
+	VmStatus     string
 }
 
 // scanResult holds the output of scanTransactions: a matching tx hash (if found)
@@ -82,6 +84,7 @@ type scanResult struct {
 	TxHash          string
 	GasUsed         uint64
 	GasUnitPrice    uint64
+	VmStatus        string
 	EarliestTsMicro uint64
 	MinSeqNum       uint64
 	MaxSeqNum       uint64
@@ -92,6 +95,7 @@ func (r scanResult) toTransmissionHashResult() TransmissionHashResult {
 		TxHash:       r.TxHash,
 		GasUsed:      r.GasUsed,
 		GasUnitPrice: r.GasUnitPrice,
+		VmStatus:     r.VmStatus,
 	}
 }
 
@@ -153,10 +157,12 @@ func (thr *TxHashRetriever) scanTransactions(txns []*aptostypes.Transaction, exp
 				"seqNum", userTx.SequenceNumber,
 				"gasUsed", userTx.GasUsed,
 				"gasUnitPrice", userTx.GasUnitPrice,
+				"vmStatus", userTx.VmStatus,
 			)
 			res.TxHash = userTx.Hash
 			res.GasUsed = userTx.GasUsed
 			res.GasUnitPrice = userTx.GasUnitPrice
+			res.VmStatus = userTx.VmStatus
 			return res
 		}
 	}
