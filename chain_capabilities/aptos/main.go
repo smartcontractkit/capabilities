@@ -77,6 +77,8 @@ func main() {
 	})
 }
 
+// --- loop.StandardCapabilities / services.Service ---
+
 func (c *capabilityGRPCService) ChainSelector() uint64 {
 	return c.chainSelector
 }
@@ -146,6 +148,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 
 	relayID := types.NewRelayID(cfg.Network, cfg.ChainID)
 	c.lggr.Debugw("Created relay ID", "relayID", relayID)
+
 	relayer, err := dependencies.RelayerSet.Get(ctx, relayID)
 	if err != nil {
 		c.lggr.Errorw("failed to fetch relayer", "chainID", cfg.ChainID, "relayID", relayID, "error", err)
@@ -281,6 +284,11 @@ func (c *capabilityGRPCService) setSelector(cfg *config.Config) error {
 	return nil
 }
 
+// fetchP2PConfig fetches the p2pID-to-transmitter-address map from the on-chain
+// capability registry via gRPC. It calls ConfigForCapability to obtain the
+// CapabilityConfiguration, then extracts the "p2pToTransmitterMap" key from SpecConfig.
+// This is the fallback path used when the JSON config (produced by buildConfigJSON)
+// does not already contain the map.
 func (c *capabilityGRPCService) fetchP2PConfig(ctx context.Context, registry core.CapabilitiesRegistry) (map[string]string, error) {
 	c.lggr.Debugw("fetchP2PConfig: calling ConfigForCapability",
 		"capabilityID", c.id, "donID", c.DON.ID,
@@ -291,6 +299,7 @@ func (c *capabilityGRPCService) fetchP2PConfig(ctx context.Context, registry cor
 		c.lggr.Errorw("fetchP2PConfig: ConfigForCapability failed", "error", err)
 		return nil, fmt.Errorf("failed to get capability config: %w", err)
 	}
+
 	c.lggr.Debugw("fetchP2PConfig: got CapabilityConfiguration",
 		"hasDefaultConfig", capCfg.DefaultConfig != nil,
 		"hasSpecConfig", capCfg.SpecConfig != nil,
@@ -336,6 +345,7 @@ func (c *capabilityGRPCService) fetchP2PConfig(ctx context.Context, registry cor
 		}
 		result[k] = s
 	}
+
 	c.lggr.Debugw("fetchP2PConfig: extracted p2pToTransmitterMap",
 		"entries", len(result), "map", result,
 	)
