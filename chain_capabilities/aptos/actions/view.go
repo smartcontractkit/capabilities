@@ -100,6 +100,8 @@ func resolveLedgerVersion(chainHeight *ctypes.ChainHeight, requestedLedgerVersio
 	return uint64(selected), nil
 }
 
+// TODO: move Aptos capability payload/type-tag conversion into a shared helper
+// once the extra cross-repo follow-up is ready to merge.
 func viewPayloadFromCapability(payload *aptoscap.ViewPayload) (*aptostypes.ViewPayload, error) {
 	if payload == nil {
 		return nil, fmt.Errorf("viewRequest.Payload is required")
