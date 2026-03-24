@@ -79,7 +79,7 @@ func (p *Provider) pollHead(ctx context.Context) {
 		return
 	}
 	if ledgerVersion > uint64(math.MaxInt64) {
-		p.lggr.Warnw("latest ledger version overflows int64", "ledgerVersion", ledgerVersion)
+		p.lggr.Errorw("latest ledger version overflows int64", "ledgerVersion", ledgerVersion)
 		return
 	}
 
