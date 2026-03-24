@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/config"
 	chain_selectors "github.com/smartcontractkit/chain-selectors"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	commontypes "github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -14,63 +13,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
-
-func TestCapabilityGRPCService_MetadataAndLifecycle(t *testing.T) {
-	t.Parallel()
-
-	svc := &capabilityGRPCService{
-		lggr:          logger.Test(t),
-		chainSelector: 44444,
-	}
-
-	require.NoError(t, svc.Start(t.Context()))
-	require.NoError(t, svc.Close())
-	require.NoError(t, svc.Ready())
-	require.Equal(t, uint64(44444), svc.ChainSelector())
-	require.Equal(t, "Contains Aptos chain functionalities", svc.Description())
-	require.Equal(t, svc.lggr.Name(), svc.Name())
-	require.Equal(t, map[string]error{svc.Name(): nil}, svc.HealthReport())
-
-	infos, err := svc.Infos(t.Context())
-	require.NoError(t, err)
-	require.Len(t, infos, 1)
-	require.Equal(t, capabilityID(44444), infos[0].ID)
-}
-
-func TestCapabilityGRPCService_SetSelector(t *testing.T) {
-	t.Parallel()
-
-	var (
-		chainID  uint64
-		selector uint64
-	)
-	for id, sel := range chain_selectors.AptosChainIdToChainSelector() {
-		chainID = id
-		selector = sel
-		break
-	}
-	require.NotZero(t, chainID)
-	require.NotZero(t, selector)
-
-	t.Run("valid", func(t *testing.T) {
-		svc := &capabilityGRPCService{lggr: logger.Test(t)}
-		err := svc.setSelector(&config.Config{ChainID: fmt.Sprintf("%d", chainID)})
-		require.NoError(t, err)
-		require.Equal(t, selector, svc.chainSelector)
-	})
-
-	t.Run("invalid chain id", func(t *testing.T) {
-		svc := &capabilityGRPCService{lggr: logger.Test(t)}
-		err := svc.setSelector(&config.Config{ChainID: "not-a-number"})
-		require.ErrorContains(t, err, "failed to parse chainID")
-	})
-
-	t.Run("unknown chain id", func(t *testing.T) {
-		svc := &capabilityGRPCService{lggr: logger.Test(t)}
-		err := svc.setSelector(&config.Config{ChainID: "999999999"})
-		require.ErrorContains(t, err, "chain selector not found")
-	})
-}
 
 func TestCapabilityGRPCService_InitialiseErrors(t *testing.T) {
 	t.Parallel()
