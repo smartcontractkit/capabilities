@@ -51,22 +51,21 @@ func (s *Aptos) View(
 			return nil, fmt.Errorf("viewReply from aptos service is nil")
 		}
 
-		if s.lggr != nil {
-			// TODO: replace debug success logs with Aptos read metrics/beholder events when those are wired.
-			s.lggr.Debugw("view observation succeeded",
-				"module", payload.Module.Name,
-				"function", payload.Function,
-				"ledgerVersion", ledgerVersion,
-				"responseLen", len(relayerReply.Data),
-			)
-		}
-
 		return relayerReply.Data, nil
 	})
 
 	data, err := capcommon.ReadType[[]byte](ctx, s.ConsensusHandler, request)
 	if err != nil {
 		return nil, GetError(err, false)
+	}
+	if s.lggr != nil {
+		// TODO: replace debug success logs with Aptos read metrics/beholder events when those are wired.
+		s.lggr.Debugw("view request succeeded",
+			"module", payload.Module.Name,
+			"function", payload.Function,
+			"requestedLedgerVersion", input.LedgerVersion,
+			"responseLen", len(data),
+		)
 	}
 
 	return &capabilities.ResponseAndMetadata[*aptoscap.ViewReply]{

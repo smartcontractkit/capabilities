@@ -25,14 +25,17 @@ func Ptr[T any](v T) *T {
 	return &v
 }
 
+// ConsensusHandler executes a consensus-backed request and returns a consistent result across the DON.
 type ConsensusHandler interface {
 	Handle(ctx context.Context, request ctypes.Request) (<-chan ctypes.Reply, error)
 }
 
+// RequestID builds a stable request identifier from workflow metadata.
 func RequestID(meta capabilities.RequestMetadata) string {
 	return commonmon.RequestID(meta.WorkflowExecutionID, meta.ReferenceID)
 }
 
+// ReadType waits for a consensus reply and returns it as the requested type.
 func ReadType[T any](ctx context.Context, reader ConsensusHandler, request ctypes.Request) (T, error) {
 	var zero T
 	resultCh, err := reader.Handle(ctx, request)
