@@ -20,7 +20,6 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/config"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
-	commonmon "github.com/smartcontractkit/capabilities/libs/monitoring"
 )
 
 // TODO: config PLEX-2598
@@ -29,6 +28,8 @@ const (
 )
 
 type ConsensusHandler interface {
+	// Handle returns a channel to the result of request.GetObservation().
+	// This result is consistent across all nodes in the DON, even if individual RPC states differ.
 	Handle(ctx context.Context, request ctypes.Request) (<-chan ctypes.Reply, error)
 }
 
@@ -115,33 +116,6 @@ func (a *Aptos) AccountTransactions(
 // Info returns the capability info for registration.
 func (a *Aptos) Info() (capabilities.CapabilityInfo, error) {
 	return capabilities.CapabilityInfo{}, nil
-}
-
-func requestID(meta capabilities.RequestMetadata) string {
-	return commonmon.RequestID(meta.WorkflowExecutionID, meta.ReferenceID)
-}
-
-func readType[T any](ctx context.Context, reader ConsensusHandler, request ctypes.Request) (T, error) {
-	var zero T
-	resultCh, err := reader.Handle(ctx, request)
-	if err != nil {
-		return zero, err
-	}
-
-	select {
-	case <-ctx.Done():
-		return zero, ctx.Err()
-	case reply := <-resultCh:
-		if reply.Err != nil {
-			return zero, reply.Err
-		}
-		data, ok := reply.Value.(T)
-		if !ok {
-			return zero, fmt.Errorf("unexpected result type: expected %T, got %T", zero, reply.Value)
-		}
-
-		return data, nil
-	}
 }
 
 var GetError = capcommon.GetError

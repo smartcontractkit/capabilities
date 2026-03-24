@@ -2,6 +2,8 @@ package height
 
 import (
 	"context"
+	"errors"
+	"math"
 	"sync"
 	"testing"
 	"time"
@@ -12,22 +14,28 @@ import (
 )
 
 type testLedgerVersionProvider struct {
-	mu       sync.Mutex
-	versions []uint64
-	next     int
+	mu      sync.Mutex
+	results []ledgerVersionResult
+	next    int
+}
+
+type ledgerVersionResult struct {
+	version uint64
+	err     error
 }
 
 func (p *testLedgerVersionProvider) LedgerVersion(context.Context) (uint64, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if p.next >= len(p.versions) {
-		return p.versions[len(p.versions)-1], nil
+	if p.next >= len(p.results) {
+		last := p.results[len(p.results)-1]
+		return last.version, last.err
 	}
 
-	v := p.versions[p.next]
+	result := p.results[p.next]
 	p.next++
-	return v, nil
+	return result.version, result.err
 }
 
 func TestProviderPollsAndPublishesLatestVersion(t *testing.T) {
@@ -36,7 +44,7 @@ func TestProviderPollsAndPublishesLatestVersion(t *testing.T) {
 	p := NewProvider(
 		logger.Test(t),
 		10*time.Millisecond,
-		&testLedgerVersionProvider{versions: []uint64{100, 101}},
+		&testLedgerVersionProvider{results: []ledgerVersionResult{{version: 100}, {version: 101}}},
 	)
 
 	require.NoError(t, p.Start(context.Background()))
@@ -47,4 +55,54 @@ func TestProviderPollsAndPublishesLatestVersion(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return p.GetLatest() >= 100 && p.GetSafe() >= 100 && p.GetFinalized() >= 100
 	}, time.Second, 10*time.Millisecond)
+}
+
+func TestProviderPollHeadDoesNotRegressHeight(t *testing.T) {
+	t.Parallel()
+
+	p := NewProvider(
+		logger.Test(t),
+		time.Second,
+		&testLedgerVersionProvider{results: []ledgerVersionResult{{version: 100}, {version: 99}}},
+	)
+
+	p.pollHead(context.Background())
+	p.pollHead(context.Background())
+
+	require.Equal(t, int64(100), p.GetLatest())
+	require.Equal(t, int64(100), p.GetSafe())
+	require.Equal(t, int64(100), p.GetFinalized())
+}
+
+func TestProviderPollHeadRetainsLastHeightOnError(t *testing.T) {
+	t.Parallel()
+
+	p := NewProvider(
+		logger.Test(t),
+		time.Second,
+		&testLedgerVersionProvider{results: []ledgerVersionResult{{version: 100}, {err: errors.New("boom")}}},
+	)
+
+	p.pollHead(context.Background())
+	p.pollHead(context.Background())
+
+	require.Equal(t, int64(100), p.GetLatest())
+	require.Equal(t, int64(100), p.GetSafe())
+	require.Equal(t, int64(100), p.GetFinalized())
+}
+
+func TestProviderPollHeadIgnoresOverflow(t *testing.T) {
+	t.Parallel()
+
+	p := NewProvider(
+		logger.Test(t),
+		time.Second,
+		&testLedgerVersionProvider{results: []ledgerVersionResult{{version: uint64(math.MaxInt64) + 1}}},
+	)
+
+	p.pollHead(context.Background())
+
+	require.Equal(t, int64(0), p.GetLatest())
+	require.Equal(t, int64(0), p.GetSafe())
+	require.Equal(t, int64(0), p.GetFinalized())
 }

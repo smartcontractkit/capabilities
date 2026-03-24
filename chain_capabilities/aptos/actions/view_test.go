@@ -3,6 +3,7 @@ package actions
 import (
 	"context"
 	"fmt"
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/mock"
@@ -157,34 +158,51 @@ func TestView_FailsWhenRequestedLedgerVersionIsAheadOfConsensus(t *testing.T) {
 	require.Contains(t, err.Error(), "ahead of consensus latest")
 }
 
-func TestCapabilityViewPayloadConversion_TypeTagConversion(t *testing.T) {
+func TestView_FailsWhenRequestedLedgerVersionOverflowsChainHeightType(t *testing.T) {
 	t.Parallel()
 
-	payload, err := viewPayloadFromCapability(&aptoscap.ViewPayload{
-		Module:   &aptoscap.ModuleID{Address: []byte{0x01}, Name: "coin"},
-		Function: "name",
-		ArgTypes: []*aptoscap.TypeTag{{
-			Kind: aptoscap.TypeTagKind_TYPE_TAG_KIND_VECTOR,
-			Value: &aptoscap.TypeTag_Vector{Vector: &aptoscap.VectorTag{ElementType: &aptoscap.TypeTag{
-				Kind: aptoscap.TypeTagKind_TYPE_TAG_KIND_U8,
-			}}},
-		}},
-	})
-	require.NoError(t, err)
-	require.NotNil(t, payload)
-	require.Equal(t, "name", payload.Function)
-	require.Len(t, payload.ArgTypes, 1)
-	_, isVector := payload.ArgTypes[0].Value.(aptostypes.VectorTag)
-	require.True(t, isVector)
-}
+	a := &Aptos{
+		AptosService:     typesmocks.NewAptosService(t),
+		ConsensusHandler: &testConsensusHandler{height: &ctypes.ChainHeight{Latest: 321, Safe: 321, Finalized: 321}},
+	}
 
-func TestCapabilityViewPayloadConversion_RejectsInvalidInput(t *testing.T) {
-	t.Parallel()
-
-	_, err := viewPayloadFromCapability(&aptoscap.ViewPayload{
-		Module:   &aptoscap.ModuleID{Address: make([]byte, aptostypes.AccountAddressLength+1), Name: "coin"},
-		Function: "name",
+	requested := uint64(math.MaxInt64) + 1
+	_, err := a.View(context.Background(), capabilities.RequestMetadata{
+		WorkflowExecutionID: "weid",
+		ReferenceID:         "step-id",
+	}, &aptoscap.ViewRequest{
+		Payload: &aptoscap.ViewPayload{
+			Module:   &aptoscap.ModuleID{Address: []byte{1}, Name: "coin"},
+			Function: "name",
+		},
+		LedgerVersion: &requested,
 	})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "module address too long")
+	require.Contains(t, err.Error(), "overflows int64")
+}
+
+func TestView_FailsOnNilViewReply(t *testing.T) {
+	t.Parallel()
+
+	svc := typesmocks.NewAptosService(t)
+	svc.On("View", mock.Anything, mock.AnythingOfType("aptos.ViewRequest")).
+		Return((*aptostypes.ViewReply)(nil), nil).
+		Once()
+
+	a := &Aptos{
+		AptosService:     svc,
+		ConsensusHandler: &testConsensusHandler{height: &ctypes.ChainHeight{Latest: 321, Safe: 321, Finalized: 321}},
+	}
+
+	_, err := a.View(context.Background(), capabilities.RequestMetadata{
+		WorkflowExecutionID: "weid",
+		ReferenceID:         "step-id",
+	}, &aptoscap.ViewRequest{
+		Payload: &aptoscap.ViewPayload{
+			Module:   &aptoscap.ModuleID{Address: []byte{1}, Name: "coin"},
+			Function: "name",
+		},
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "viewReply from aptos service is nil")
 }

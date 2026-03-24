@@ -79,7 +79,7 @@ func (p *Provider) pollHead(ctx context.Context) {
 		return
 	}
 	if ledgerVersion > uint64(math.MaxInt64) {
-		p.lggr.Errorw("latest ledger version overflows int64", "ledgerVersion", ledgerVersion)
+		p.lggr.Warnw("latest ledger version overflows int64", "ledgerVersion", ledgerVersion)
 		return
 	}
 
@@ -89,11 +89,23 @@ func (p *Provider) pollHead(ctx context.Context) {
 	defer p.mutex.Unlock()
 
 	if next < p.latestHeight {
+		p.lggr.Warnw("ledger version moved backwards, keeping latest height",
+			"ledgerVersion", next,
+			"latestHeight", p.latestHeight,
+		)
 		next = p.latestHeight
 	}
+
+	// The chainconsensus height provider interface requires latest, safe, and finalized heights.
+	// Aptos has single-shot finality, so all three are the same ledger version.
 	p.latestHeight = next
 	p.safeHeight = next
 	p.finalizedHeight = next
+	p.lggr.Debugw("latest ledger version",
+		"latestHeight", p.latestHeight,
+		"safeHeight", p.safeHeight,
+		"finalizedHeight", p.finalizedHeight,
+	)
 }
 
 func (p *Provider) GetLatest() int64 {

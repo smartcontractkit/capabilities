@@ -92,8 +92,8 @@ func (c *capabilityGRPCService) Close() error {
 	c.lggr.Infof("Closing %s", CapabilityName)
 
 	var closeErr error
-	if c.Aptos != nil {
-		closeErr = errors.Join(closeErr, c.Aptos.Close())
+	if c.oracle != nil {
+		closeErr = errors.Join(closeErr, c.oracle.Close(context.Background()))
 	}
 	if c.requestPoller != nil {
 		closeErr = errors.Join(closeErr, c.requestPoller.Close())
@@ -101,11 +101,11 @@ func (c *capabilityGRPCService) Close() error {
 	if c.consensusHandler != nil {
 		closeErr = errors.Join(closeErr, c.consensusHandler.Close())
 	}
-	if c.oracle != nil {
-		closeErr = errors.Join(closeErr, c.oracle.Close(context.Background()))
-	}
 	if c.heightProvider != nil {
 		closeErr = errors.Join(closeErr, c.heightProvider.Close())
+	}
+	if c.Aptos != nil {
+		closeErr = errors.Join(closeErr, c.Aptos.Close())
 	}
 	return closeErr
 }
@@ -246,7 +246,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	}
 	c.lggr.Debugw("Created Aptos actions")
 
-	startServices := []interface{ Start(context.Context) error }{c.consensusHandler, c.requestPoller, c.oracle, c.heightProvider}
+	startServices := []interface{ Start(context.Context) error }{c.heightProvider, c.consensusHandler, c.requestPoller, c.oracle}
 	for _, service := range startServices {
 		if err := service.Start(ctx); err != nil {
 			return err
