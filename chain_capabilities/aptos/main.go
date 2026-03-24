@@ -137,25 +137,38 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		c.lggr.Errorw("failed to unmarshal config", "error", err)
 		return fmt.Errorf("failed to unmarshal config: %w", err)
 	}
+	c.lggr.Debugw("Unmarshalled config",
+		"network", cfg.Network,
+		"chainID", cfg.ChainID,
+		"deltaStage", cfg.DeltaStage,
+		"creForwarderAddress", fmt.Sprintf("%x", cfg.CREForwarderAddress),
+	)
 
 	relayID := types.NewRelayID(cfg.Network, cfg.ChainID)
+	c.lggr.Debugw("Created relay ID", "relayID", relayID)
 	relayer, err := dependencies.RelayerSet.Get(ctx, relayID)
 	if err != nil {
 		c.lggr.Errorw("failed to fetch relayer", "chainID", cfg.ChainID, "relayID", relayID, "error", err)
 		return fmt.Errorf("failed to fetch relayer for chainID %s from relayerSet: %w", cfg.ChainID, err)
 	}
+	c.lggr.Debugw("Fetched relayer from relayer set", "relayID", relayID)
 
 	aptosService, err := relayer.Aptos()
 	if err != nil {
 		c.lggr.Errorw("failed to get aptos service from relayer", "error", err)
 		return fmt.Errorf("failed to get aptos service: %w", err)
 	}
+	c.lggr.Debugw("Got Aptos service from relayer")
 
 	if err := c.setSelector(cfg); err != nil {
 		c.lggr.Errorw("failed to set chain selector", "error", err)
 		return err
 	}
 	c.id = capabilityID(c.chainSelector)
+	c.lggr.Debugw("Set chain selector and capability ID",
+		"chainSelector", c.chainSelector,
+		"capabilityID", c.id,
+	)
 
 	chainInfo, err := relayer.GetChainInfo(ctx)
 	if err != nil {
@@ -193,15 +206,24 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return fmt.Errorf("failed to init DON: %w", err)
 	}
 	c.DON = &myDON
+	c.lggr.Debugw("Initialised DON", "donID", c.DON.ID, "donName", c.DON.Name, "members", len(c.DON.Members), "F", c.DON.F)
 
 	p2pConfig := cfg.P2PToTransmitterMap
-	if len(p2pConfig) == 0 {
+	if len(p2pConfig) > 0 {
+		c.lggr.Debugw("p2pToTransmitterMap found in JSON config",
+			"entries", len(p2pConfig), "p2pConfig", p2pConfig,
+		)
+	} else {
+		c.lggr.Debugw("p2pToTransmitterMap not in JSON config, falling back to capReg gRPC")
 		var fetchErr error
 		p2pConfig, fetchErr = c.fetchP2PConfig(ctx, dependencies.CapabilityRegistry)
 		if fetchErr != nil {
 			c.lggr.Errorw("failed to fetch p2p config from capReg", "error", fetchErr)
 			return fmt.Errorf("failed to fetch p2p config: %w", fetchErr)
 		}
+		c.lggr.Debugw("p2pToTransmitterMap fetched from capReg specConfig",
+			"entries", len(p2pConfig), "p2pConfig", p2pConfig,
+		)
 	}
 
 	if cfg.DeltaStage == 0 {
@@ -212,12 +234,14 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		c.lggr.Errorw("failed to initialize transmission scheduler", "error", err)
 		return fmt.Errorf("failed to initialize transmission scheduler: %w", err)
 	}
+	c.lggr.Debugw("Initialised transmission scheduler", "deltaStage", cfg.DeltaStage)
 
 	c.Aptos, err = actions.NewAptos(cfg, p2pConfig, aptosService, c.consensusHandler, c.lggr, limits.Factory{Logger: c.lggr}, scheduler, c.chainSelector)
 	if err != nil {
 		c.lggr.Errorw("failed to create Aptos actions", "error", err)
 		return fmt.Errorf("failed to create Aptos actions: %w", err)
 	}
+	c.lggr.Debugw("Created Aptos actions")
 
 	startServices := []interface{ Start(context.Context) error }{c.consensusHandler, c.requestPoller, c.oracle, c.heightProvider}
 	for _, service := range startServices {
@@ -267,6 +291,10 @@ func (c *capabilityGRPCService) fetchP2PConfig(ctx context.Context, registry cor
 		c.lggr.Errorw("fetchP2PConfig: ConfigForCapability failed", "error", err)
 		return nil, fmt.Errorf("failed to get capability config: %w", err)
 	}
+	c.lggr.Debugw("fetchP2PConfig: got CapabilityConfiguration",
+		"hasDefaultConfig", capCfg.DefaultConfig != nil,
+		"hasSpecConfig", capCfg.SpecConfig != nil,
+	)
 
 	if capCfg.SpecConfig == nil {
 		c.lggr.Errorw("fetchP2PConfig: SpecConfig is nil")
@@ -308,6 +336,9 @@ func (c *capabilityGRPCService) fetchP2PConfig(ctx context.Context, registry cor
 		}
 		result[k] = s
 	}
+	c.lggr.Debugw("fetchP2PConfig: extracted p2pToTransmitterMap",
+		"entries", len(result), "map", result,
+	)
 
 	return result, nil
 }
