@@ -152,7 +152,7 @@ func TestCapability_FilterLogs(t *testing.T) {
 		resp, err := svc.FilterLogs(t.Context(), capabilities.RequestMetadata{WorkflowID: "wf-id"}, req)
 		require.NoError(t, err)
 		require.Empty(t, cmp.Diff(expectedReply, resp.Response, protocmp.Transform()))
-		require.Empty(t, resp.ResponseMetadata.Metering, "FilterLogs() should have one metering entry (it won't be exposed in the capabilities interface)")
+		test.ValidateMetering(t, resp.ResponseMetadata, string(metering.FilterLogs))
 	})
 
 	t.Run("Returns error if both block hash and block range is used", func(t *testing.T) {
