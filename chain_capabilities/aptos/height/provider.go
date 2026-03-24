@@ -25,10 +25,8 @@ type Provider struct {
 	pollPeriod            time.Duration
 	ledgerVersionProvider LedgerVersionProvider
 
-	mutex           sync.RWMutex
-	latestHeight    int64
-	safeHeight      int64
-	finalizedHeight int64
+	mutex        sync.RWMutex
+	latestHeight int64
 }
 
 func NewProvider(lggr logger.Logger, pollPeriod time.Duration, ledgerVersionProvider LedgerVersionProvider) *Provider {
@@ -100,14 +98,12 @@ func (p *Provider) pollHead(ctx context.Context) {
 	}
 
 	// The chainconsensus height provider interface requires latest, safe, and finalized heights.
-	// Aptos has single-shot finality, so all three are the same ledger version.
+	// Aptos has single-shot finality, so a single stored ledger version backs all three getters.
 	p.latestHeight = next
-	p.safeHeight = next
-	p.finalizedHeight = next
 	p.lggr.Debugw("latest ledger version",
 		"latestHeight", p.latestHeight,
-		"safeHeight", p.safeHeight,
-		"finalizedHeight", p.finalizedHeight,
+		"safeHeight", p.latestHeight,
+		"finalizedHeight", p.latestHeight,
 	)
 }
 
@@ -120,13 +116,13 @@ func (p *Provider) GetLatest() int64 {
 func (p *Provider) GetSafe() int64 {
 	p.mutex.RLock()
 	defer p.mutex.RUnlock()
-	return p.safeHeight
+	return p.latestHeight
 }
 
 func (p *Provider) GetFinalized() int64 {
 	p.mutex.RLock()
 	defer p.mutex.RUnlock()
-	return p.finalizedHeight
+	return p.latestHeight
 }
 
 func (p *Provider) String() string {
