@@ -25,7 +25,7 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/actions"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/config"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/height"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
+	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
 	consmetrics "github.com/smartcontractkit/capabilities/libs/chainconsensus/metrics"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus/oracle"
@@ -213,7 +213,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return fmt.Errorf("error when creating oracle: %w", err)
 	}
 
-	myDON, err := transmission_schedule.InitMyDON(ctx, dependencies.CapabilityRegistry, c.id, c.lggr, false)
+	myDON, err := ts.InitMyDON(ctx, dependencies.CapabilityRegistry, c.id, c.lggr, false)
 	if err != nil {
 		c.lggr.Errorw("failed to init DON", "error", err)
 		return fmt.Errorf("failed to init DON: %w", err)
@@ -242,7 +242,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	if cfg.DeltaStage == 0 {
 		cfg.DeltaStage = defaultDeltaStage
 	}
-	scheduler, err := transmission_schedule.InitialiseTransmissionScheduler(ctx, dependencies.CapabilityRegistry, cfg.DeltaStage, c.lggr, c.DON, false)
+	scheduler, err := ts.InitialiseTransmissionScheduler(ctx, dependencies.CapabilityRegistry, cfg.DeltaStage, c.lggr, c.DON, false)
 	if err != nil {
 		c.lggr.Errorw("failed to initialize transmission scheduler", "error", err)
 		return fmt.Errorf("failed to initialize transmission scheduler: %w", err)

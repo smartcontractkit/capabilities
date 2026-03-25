@@ -19,7 +19,7 @@ import (
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/config"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
+	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 )
 
@@ -44,10 +44,10 @@ type Aptos struct {
 	chainSelector         uint64
 	maxGasAmountLimit     limits.BoundLimiter[uint64]
 	reportSizeLimit       limits.BoundLimiter[commoncfg.Size]
-	transmissionScheduler transmission_schedule.TransmissionScheduler
+	transmissionScheduler ts.TransmissionScheduler
 }
 
-func NewAptos(cfg *config.Config, p2pConfig map[string]string, aptosService types.AptosService, consensusHandler ConsensusHandler, lggr logger.Logger, limitsFactory limits.Factory, transmissionScheduler transmission_schedule.TransmissionScheduler, chainSelector uint64) (*Aptos, error) {
+func NewAptos(cfg *config.Config, p2pConfig map[string]string, aptosService types.AptosService, consensusHandler ConsensusHandler, lggr logger.Logger, limitsFactory limits.Factory, transmissionScheduler ts.TransmissionScheduler, chainSelector uint64) (*Aptos, error) {
 	if aptosService == nil {
 		return nil, fmt.Errorf("aptos service is required")
 	}

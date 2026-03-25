@@ -13,7 +13,7 @@ import (
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/metering"
 	commontest "github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
-	"github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
+	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
@@ -66,7 +66,7 @@ func newTestHelper(t *testing.T) *testHelper {
 		lggr:             logger.Sugared(lggr),
 		p2pConfig:        map[string]string{},
 		chainSelector:    testChainSelector,
-		transmissionScheduler: transmission_schedule.NewTransmissionScheduler(
+		transmissionScheduler: ts.NewTransmissionScheduler(
 			myPeerID, []p2ptypes.PeerID{myPeerID}, 1*time.Second, 0, lggr),
 	}
 	require.NoError(t, a.initLimiters(limits.Factory{Logger: lggr}))
@@ -93,11 +93,11 @@ func newMultiNodeTestHelper(t *testing.T, transmissionIDStr string) (*testHelper
 	}
 
 	p2pCfg := buildCfg()
-	scheduler := transmission_schedule.NewTransmissionScheduler(myPeerID, []p2ptypes.PeerID{otherPeerID, myPeerID}, 15*time.Second, 0, lggr)
+	scheduler := ts.NewTransmissionScheduler(myPeerID, []p2ptypes.PeerID{otherPeerID, myPeerID}, 15*time.Second, 0, lggr)
 	if scheduler.GetQueuePosition(transmissionIDStr) == 0 {
 		myPeerID, otherPeerID = otherPeerID, myPeerID
 		p2pCfg = buildCfg()
-		scheduler = transmission_schedule.NewTransmissionScheduler(myPeerID, []p2ptypes.PeerID{otherPeerID, myPeerID}, 15*time.Second, 0, lggr)
+		scheduler = ts.NewTransmissionScheduler(myPeerID, []p2ptypes.PeerID{otherPeerID, myPeerID}, 15*time.Second, 0, lggr)
 	}
 	require.Greater(t, scheduler.GetQueuePosition(transmissionIDStr), 0)
 

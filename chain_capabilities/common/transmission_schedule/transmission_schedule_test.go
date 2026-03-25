@@ -1,4 +1,4 @@
-package transmission_schedule_test
+package transmissionschedule_test
 
 import (
 	"testing"
@@ -10,7 +10,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
+	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 )
 
 func peerID(seed byte) p2ptypes.PeerID {
@@ -24,7 +24,7 @@ func TestTransmissionScheduler_GetQueuePosition_SingleNode(t *testing.T) {
 
 	lggr := logger.Test(t)
 	myPeerID := peerID(0x01)
-	scheduler := transmission_schedule.NewTransmissionScheduler(
+	scheduler := ts.NewTransmissionScheduler(
 		myPeerID,
 		[]p2ptypes.PeerID{myPeerID},
 		10*time.Millisecond,
@@ -41,7 +41,7 @@ func TestTransmissionScheduler_GetQueuePosition_NodeNotInDON(t *testing.T) {
 
 	lggr := logger.Test(t)
 	myPeerID := peerID(0x01)
-	scheduler := transmission_schedule.NewTransmissionScheduler(
+	scheduler := ts.NewTransmissionScheduler(
 		myPeerID,
 		[]p2ptypes.PeerID{peerID(0x02)},
 		10*time.Millisecond,
@@ -58,7 +58,7 @@ func TestTransmissionScheduler_GetQueuePosition_Deterministic(t *testing.T) {
 
 	lggr := logger.Test(t)
 	myPeerID := peerID(0x02)
-	scheduler := transmission_schedule.NewTransmissionScheduler(
+	scheduler := ts.NewTransmissionScheduler(
 		myPeerID,
 		[]p2ptypes.PeerID{peerID(0x01), myPeerID, peerID(0x03)},
 		10*time.Millisecond,
