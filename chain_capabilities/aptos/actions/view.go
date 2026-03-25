@@ -77,8 +77,8 @@ func resolveLedgerVersion(chainHeight *ctypes.ChainHeight, requestedLedgerVersio
 	if chainHeight == nil {
 		return 0, fmt.Errorf("chain height is nil")
 	}
-	if chainHeight.Latest < 0 {
-		return 0, fmt.Errorf("unexpected negative chain height: %d", chainHeight.Latest)
+	if chainHeight.Latest <= 0 {
+		return 0, fmt.Errorf("unexpected non-positive chain height: %d", chainHeight.Latest)
 	}
 
 	selected := chainHeight.Latest

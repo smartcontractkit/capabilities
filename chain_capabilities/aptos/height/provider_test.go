@@ -107,17 +107,21 @@ func TestProviderPollHeadIgnoresOverflow(t *testing.T) {
 	require.Equal(t, int64(0), p.GetFinalized())
 }
 
-func TestProviderStartFailsWhenInitialPollFails(t *testing.T) {
+func TestProviderStartDoesNotFailWhenInitialPollFails(t *testing.T) {
 	t.Parallel()
 
 	p := NewProvider(
 		logger.Test(t),
-		time.Second,
-		&testLedgerVersionProvider{results: []ledgerVersionResult{{err: errors.New("boom")}}},
+		10*time.Millisecond,
+		&testLedgerVersionProvider{results: []ledgerVersionResult{{err: errors.New("boom")}, {version: 100}}},
 	)
 
-	require.Error(t, p.Start(context.Background()))
-	require.Equal(t, int64(0), p.GetLatest())
-	require.Equal(t, int64(0), p.GetSafe())
-	require.Equal(t, int64(0), p.GetFinalized())
+	require.NoError(t, p.Start(context.Background()))
+	t.Cleanup(func() {
+		require.NoError(t, p.Close())
+	})
+
+	require.Eventually(t, func() bool {
+		return p.GetLatest() == 100 && p.GetSafe() == 100 && p.GetFinalized() == 100
+	}, time.Second, 10*time.Millisecond)
 }

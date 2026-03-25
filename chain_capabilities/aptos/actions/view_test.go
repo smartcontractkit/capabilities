@@ -82,12 +82,12 @@ func TestView_LocksToConsensusLedgerVersion(t *testing.T) {
 	require.Equal(t, []byte(`["Aptos Coin"]`), resp.Response.Data)
 }
 
-func TestView_FailsOnNegativeConsensusHeight(t *testing.T) {
+func TestView_FailsOnNonPositiveConsensusHeight(t *testing.T) {
 	t.Parallel()
 
 	a := &Aptos{
 		AptosService:     typesmocks.NewAptosService(t),
-		ConsensusHandler: &testConsensusHandler{height: &ctypes.ChainHeight{Latest: -1}},
+		ConsensusHandler: &testConsensusHandler{height: &ctypes.ChainHeight{Latest: 0}},
 	}
 
 	_, err := a.View(context.Background(), capabilities.RequestMetadata{
@@ -100,7 +100,7 @@ func TestView_FailsOnNegativeConsensusHeight(t *testing.T) {
 		},
 	})
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "unexpected negative chain height")
+	require.Contains(t, err.Error(), "unexpected non-positive chain height")
 }
 
 func TestView_UsesRequestedLedgerVersionWhenProvided(t *testing.T) {

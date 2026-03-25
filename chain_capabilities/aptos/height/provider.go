@@ -46,9 +46,6 @@ func NewProvider(lggr logger.Logger, pollPeriod time.Duration, ledgerVersionProv
 }
 
 func (p *Provider) start(ctx context.Context) error {
-	if err := p.pollHead(ctx); err != nil {
-		return err
-	}
 	p.engine.Go(p.poll)
 	return nil
 }
@@ -58,6 +55,8 @@ func (p *Provider) close() error {
 }
 
 func (p *Provider) poll(ctx context.Context) {
+	_ = p.pollHead(ctx)
+
 	ticker := time.NewTicker(p.pollPeriod)
 	defer ticker.Stop()
 
