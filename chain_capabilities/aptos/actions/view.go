@@ -22,15 +22,15 @@ func (s *Aptos) View(
 	ctx = metadata.ContextWithCRE(ctx)
 
 	if input == nil {
-		return nil, NewUserError(fmt.Errorf("viewRequest is nil"))
+		return nil, capcommon.NewUserError(fmt.Errorf("viewRequest is nil"))
 	}
 	if input.Payload == nil {
-		return nil, NewUserError(fmt.Errorf("viewRequest.Payload is required"))
+		return nil, capcommon.NewUserError(fmt.Errorf("viewRequest.Payload is required"))
 	}
 
 	payload, err := viewPayloadFromCapability(input.Payload)
 	if err != nil {
-		return nil, NewUserError(err)
+		return nil, capcommon.NewUserError(err)
 	}
 
 	request := ctypes.NewLockableToBlockRequest(capcommon.RequestID(metadata), func(ctx context.Context, chainHeight *ctypes.ChainHeight) ([]byte, error) {
@@ -55,7 +55,7 @@ func (s *Aptos) View(
 
 	data, err := capcommon.ReadType[[]byte](ctx, s.ConsensusHandler, request)
 	if err != nil {
-		return nil, GetError(err, false)
+		return nil, capcommon.GetError(err, false)
 	}
 	if s.lggr != nil {
 		// TODO: replace debug success logs with Aptos read metrics/beholder events when those are wired.

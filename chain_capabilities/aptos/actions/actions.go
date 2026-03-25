@@ -118,6 +118,3 @@ func (a *Aptos) AccountTransactions(
 func (a *Aptos) Info() (capabilities.CapabilityInfo, error) {
 	return capabilities.CapabilityInfo{}, nil
 }
-
-var GetError = capcommon.GetError
-var NewUserError = capcommon.NewUserError
