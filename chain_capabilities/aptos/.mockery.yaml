@@ -4,6 +4,7 @@ outpkg: actions
 inpackage: true
 filename: "test_{{ .InterfaceName | snakecase }}_mock.go"
 fail-on-missing: true
+resolve-type-alias: false
 packages:
   github.com/smartcontractkit/capabilities/chain_capabilities/aptos/actions:
     interfaces:
