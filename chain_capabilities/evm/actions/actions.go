@@ -107,7 +107,7 @@ func (e *EVM) initLimiters(limitsFactory limits.Factory) (err error) {
 	if err != nil {
 		return
 	}
-	e.reportSizeLimit, err = limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainWrite.ReportSizeLimit)
+	e.reportSizeLimit, err = limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainWrite.EVM.ReportSizeLimit)
 	if err != nil {
 		return
 	}

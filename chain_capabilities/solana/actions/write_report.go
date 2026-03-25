@@ -309,8 +309,6 @@ func (s *Solana) validateInputsAndReportMetadata(requestMetadata capabilities.Re
 	return nil
 }
 
-
-
 var (
 	reportIDOffset    = 107
 	reportIDSize      = 2
