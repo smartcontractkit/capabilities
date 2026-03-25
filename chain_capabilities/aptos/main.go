@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"slices"
 	"strconv"
@@ -17,6 +17,7 @@ import (
 	aptoscapserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
+	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
@@ -36,7 +37,7 @@ const (
 	CapabilityName    = "aptos"
 	CapabilityVersion = "1.0.0"
 
-	// TODO: PLEX-2598 make configurable
+	// Default values for optional Aptos consensus/read settings when not provided in config.
 	defaultDeltaStage            = 10 * time.Second
 	defaultObservationWorkers    = 10
 	defaultObservationPollPeriod = 2 * time.Second
@@ -67,6 +68,12 @@ type capability struct {
 	heightProvider   *height.Provider
 }
 
+type closeFunc func() error
+
+func (f closeFunc) Close() error {
+	return f()
+}
+
 var _ aptoscapserver.ClientCapability = &capabilityGRPCService{}
 
 func main() {
@@ -92,23 +99,25 @@ func (c *capabilityGRPCService) Start(ctx context.Context) error {
 func (c *capabilityGRPCService) Close() error {
 	c.lggr.Infof("Closing %s", CapabilityName)
 
-	var closeErr error
+	closers := make([]io.Closer, 0, 5)
 	if c.oracle != nil {
-		closeErr = errors.Join(closeErr, c.oracle.Close(context.Background()))
+		closers = append(closers, closeFunc(func() error {
+			return c.oracle.Close(context.Background())
+		}))
 	}
 	if c.requestPoller != nil {
-		closeErr = errors.Join(closeErr, c.requestPoller.Close())
+		closers = append(closers, c.requestPoller)
 	}
 	if c.consensusHandler != nil {
-		closeErr = errors.Join(closeErr, c.consensusHandler.Close())
+		closers = append(closers, c.consensusHandler)
 	}
 	if c.heightProvider != nil {
-		closeErr = errors.Join(closeErr, c.heightProvider.Close())
+		closers = append(closers, c.heightProvider)
 	}
 	if c.Aptos != nil {
-		closeErr = errors.Join(closeErr, c.Aptos.Close())
+		closers = append(closers, c.Aptos)
 	}
-	return closeErr
+	return services.CloseAll(closers...)
 }
 
 func (c *capabilityGRPCService) HealthReport() map[string]error {
@@ -183,9 +192,9 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	if err != nil {
 		return fmt.Errorf("failed to create aptos consensus metrics: %w", err)
 	}
-	c.requestPoller = poller.NewPoller(c.lggr, consensusMetrics, defaultObservationWorkers, defaultObservationPollPeriod)
-	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, defaultUnknownRequestsTTL)
-	c.heightProvider = height.NewProvider(c.lggr, defaultChainHeightPollPeriod, aptosService)
+	c.requestPoller = poller.NewPoller(c.lggr, consensusMetrics, cfg.ObservationPollerWorkersCount, cfg.ObservationPollPeriod)
+	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, cfg.UnknownRequestsTTL)
+	c.heightProvider = height.NewProvider(c.lggr, cfg.ChainHeightPollPeriod, aptosService)
 
 	c.oracle, err = dependencies.OracleFactory.NewOracle(ctx, core.OracleArgs{
 		LocalConfig: ocrtypes.LocalConfig{
@@ -358,6 +367,22 @@ func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Confi
 	var cfg config.Config
 	if err := json.Unmarshal([]byte(configStr), &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse Aptos capability config: %s err: %w", configStr, err)
+	}
+	if cfg.ObservationPollerWorkersCount == 0 {
+		cfg.ObservationPollerWorkersCount = defaultObservationWorkers
+		c.lggr.Infof("ObservationPollerWorkersCount is zero, setting to %d.", cfg.ObservationPollerWorkersCount)
+	}
+	if cfg.ObservationPollPeriod == 0 {
+		cfg.ObservationPollPeriod = defaultObservationPollPeriod
+		c.lggr.Infof("ObservationPollPeriod is zero, setting to %s.", cfg.ObservationPollPeriod)
+	}
+	if cfg.ChainHeightPollPeriod == 0 {
+		cfg.ChainHeightPollPeriod = defaultChainHeightPollPeriod
+		c.lggr.Infof("ChainHeightPollPeriod is zero, setting to %s.", cfg.ChainHeightPollPeriod)
+	}
+	if cfg.UnknownRequestsTTL == 0 {
+		cfg.UnknownRequestsTTL = defaultUnknownRequestsTTL
+		c.lggr.Infof("UnknownRequestsTTL is zero, setting to %s.", cfg.UnknownRequestsTTL)
 	}
 	return &cfg, nil
 }

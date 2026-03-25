@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
+	"time"
 
 	chain_selectors "github.com/smartcontractkit/chain-selectors"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -74,4 +76,31 @@ func TestCapabilityGRPCService_InitialiseErrors(t *testing.T) {
 		})
 		require.ErrorContains(t, err, "failed to fetch chain info")
 	})
+}
+
+func TestCapabilityGRPCService_UnmarshalConfig_DefaultsConsensusSettings(t *testing.T) {
+	t.Parallel()
+
+	var chainID uint64
+	for id := range chain_selectors.AptosChainIdToChainSelector() {
+		chainID = id
+		break
+	}
+	require.NotZero(t, chainID)
+
+	raw, err := json.Marshal(map[string]any{
+		"network":             "aptos",
+		"chainId":             fmt.Sprintf("%d", chainID),
+		"creForwarderAddress": "0x1",
+	})
+	require.NoError(t, err)
+
+	svc := &capabilityGRPCService{lggr: logger.Test(t)}
+	cfg, err := svc.unmarshalConfig(string(raw))
+	require.NoError(t, err)
+	require.EqualValues(t, defaultObservationWorkers, cfg.ObservationPollerWorkersCount)
+	require.Equal(t, defaultObservationPollPeriod, cfg.ObservationPollPeriod)
+	require.Equal(t, defaultChainHeightPollPeriod, cfg.ChainHeightPollPeriod)
+	require.Equal(t, defaultUnknownRequestsTTL, cfg.UnknownRequestsTTL)
+	require.Equal(t, time.Duration(0), cfg.DeltaStage)
 }

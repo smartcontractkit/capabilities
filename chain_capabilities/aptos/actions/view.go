@@ -19,6 +19,7 @@ func (s *Aptos) View(
 	metadata capabilities.RequestMetadata,
 	input *aptoscap.ViewRequest,
 ) (*capabilities.ResponseAndMetadata[*aptoscap.ViewReply], caperrors.Error) {
+	// TODO: add Aptos read init metrics and beholder logs once read observability is wired.
 	ctx = metadata.ContextWithCRE(ctx)
 
 	if input == nil {
@@ -59,7 +60,7 @@ func (s *Aptos) View(
 	}
 	if s.lggr != nil {
 		// TODO: replace debug success logs with Aptos read metrics/beholder events when those are wired.
-		s.lggr.Debugw("view request succeeded",
+		s.lggr.Debugw("View request succeeded",
 			"module", payload.Module.Name,
 			"function", payload.Function,
 			"requestedLedgerVersion", input.LedgerVersion,
@@ -100,8 +101,8 @@ func resolveLedgerVersion(chainHeight *ctypes.ChainHeight, requestedLedgerVersio
 	return uint64(selected), nil
 }
 
-// TODO: move Aptos capability payload/type-tag conversion into a shared helper
-// once the extra cross-repo follow-up is ready to merge.
+// TODO: move Aptos capability payload/type-tag conversion into chainlink-common
+// proto helpers once that follow-up is ready to merge.
 func viewPayloadFromCapability(payload *aptoscap.ViewPayload) (*aptostypes.ViewPayload, error) {
 	if payload == nil {
 		return nil, fmt.Errorf("viewRequest.Payload is required")
