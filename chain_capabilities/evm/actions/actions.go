@@ -99,19 +99,19 @@ func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, 
 }
 
 func (e *EVM) initLimiters(limitsFactory limits.Factory) (err error) {
-	e.readPayloadSizeLimiter, err = limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainRead.PayloadSizeLimit)
+	e.readPayloadSizeLimiter, err = limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainRead.PayloadSizeLimit)
 	if err != nil {
 		return
 	}
-	e.logQueryBlockLimit, err = limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainRead.LogQueryBlockLimit)
+	e.logQueryBlockLimit, err = limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainRead.LogQueryBlockLimit)
 	if err != nil {
 		return
 	}
-	e.reportSizeLimit, err = limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainWrite.EVM.ReportSizeLimit)
+	e.reportSizeLimit, err = limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainWrite.EVM.ReportSizeLimit)
 	if err != nil {
 		return
 	}
-	e.txGasLimit, err = limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainWrite.EVM.GasLimit)
+	e.txGasLimit, err = limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainWrite.EVM.GasLimit)
 	return
 }
 
