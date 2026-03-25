@@ -31,8 +31,6 @@ flowchart LR
 	capabilities/integration_tests --> chainlink/v2
 	capabilities/integration_tests --> cre-sdk-go/capabilities/blockchain/evm
 	click capabilities/integration_tests href "https://github.com/smartcontractkit/capabilities"
-	capabilities/kvstore --> capabilities/libs
-	click capabilities/kvstore href "https://github.com/smartcontractkit/capabilities"
 	capabilities/libs --> chainlink-common
 	click capabilities/libs href "https://github.com/smartcontractkit/capabilities"
 	capabilities/loadtestwritetarget --> capabilities/libs
@@ -245,7 +243,6 @@ flowchart LR
 		 capabilities/http_action
 		 capabilities/http_trigger
 		 capabilities/integration_tests
-		 capabilities/kvstore
 		 capabilities/libs
 		 capabilities/loadtestwritetarget
 		 capabilities/mock
