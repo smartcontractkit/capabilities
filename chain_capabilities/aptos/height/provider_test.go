@@ -66,8 +66,8 @@ func TestProviderPollHeadDoesNotRegressHeight(t *testing.T) {
 		&testLedgerVersionProvider{results: []ledgerVersionResult{{version: 100}, {version: 99}}},
 	)
 
-	p.pollHead(context.Background())
-	p.pollHead(context.Background())
+	require.NoError(t, p.pollHead(context.Background()))
+	require.NoError(t, p.pollHead(context.Background()))
 
 	require.Equal(t, int64(100), p.GetLatest())
 	require.Equal(t, int64(100), p.GetSafe())
@@ -83,8 +83,8 @@ func TestProviderPollHeadRetainsLastHeightOnError(t *testing.T) {
 		&testLedgerVersionProvider{results: []ledgerVersionResult{{version: 100}, {err: errors.New("boom")}}},
 	)
 
-	p.pollHead(context.Background())
-	p.pollHead(context.Background())
+	require.NoError(t, p.pollHead(context.Background()))
+	require.Error(t, p.pollHead(context.Background()))
 
 	require.Equal(t, int64(100), p.GetLatest())
 	require.Equal(t, int64(100), p.GetSafe())
@@ -100,8 +100,23 @@ func TestProviderPollHeadIgnoresOverflow(t *testing.T) {
 		&testLedgerVersionProvider{results: []ledgerVersionResult{{version: uint64(math.MaxInt64) + 1}}},
 	)
 
-	p.pollHead(context.Background())
+	require.Error(t, p.pollHead(context.Background()))
 
+	require.Equal(t, int64(0), p.GetLatest())
+	require.Equal(t, int64(0), p.GetSafe())
+	require.Equal(t, int64(0), p.GetFinalized())
+}
+
+func TestProviderStartFailsWhenInitialPollFails(t *testing.T) {
+	t.Parallel()
+
+	p := NewProvider(
+		logger.Test(t),
+		time.Second,
+		&testLedgerVersionProvider{results: []ledgerVersionResult{{err: errors.New("boom")}}},
+	)
+
+	require.Error(t, p.Start(context.Background()))
 	require.Equal(t, int64(0), p.GetLatest())
 	require.Equal(t, int64(0), p.GetSafe())
 	require.Equal(t, int64(0), p.GetFinalized())

@@ -45,7 +45,10 @@ func NewProvider(lggr logger.Logger, pollPeriod time.Duration, ledgerVersionProv
 	return p
 }
 
-func (p *Provider) start(_ context.Context) error {
+func (p *Provider) start(ctx context.Context) error {
+	if err := p.pollHead(ctx); err != nil {
+		return err
+	}
 	p.engine.Go(p.poll)
 	return nil
 }
@@ -58,30 +61,29 @@ func (p *Provider) poll(ctx context.Context) {
 	ticker := time.NewTicker(p.pollPeriod)
 	defer ticker.Stop()
 
-	p.pollHead(ctx)
-
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			p.pollHead(ctx)
+			_ = p.pollHead(ctx)
 		}
 	}
 }
 
-func (p *Provider) pollHead(ctx context.Context) {
+func (p *Provider) pollHead(ctx context.Context) error {
 	p.lggr.Debug("polling ledger version")
 
 	ledgerVersion, err := p.ledgerVersionProvider.LedgerVersion(ctx)
 	if err != nil {
 		p.lggr.Errorw("failed to get latest ledger version", "error", err)
-		return
+		return err
 	}
 	p.lggr.Debugw("fetched ledger version", "ledgerVersion", ledgerVersion)
 	if ledgerVersion > uint64(math.MaxInt64) {
+		err = fmt.Errorf("latest ledger version overflows int64: %d", ledgerVersion)
 		p.lggr.Errorw("latest ledger version overflows int64", "ledgerVersion", ledgerVersion)
-		return
+		return err
 	}
 
 	next := int64(ledgerVersion)
@@ -105,6 +107,7 @@ func (p *Provider) pollHead(ctx context.Context) {
 		"safeHeight", p.latestHeight,
 		"finalizedHeight", p.latestHeight,
 	)
+	return nil
 }
 
 func (p *Provider) GetLatest() int64 {
