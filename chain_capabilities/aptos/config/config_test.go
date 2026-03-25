@@ -10,7 +10,7 @@ import (
 )
 
 func TestUnmarshalJSON(t *testing.T) {
-	input := `{"chainId":"4","network":"aptos","creForwarderAddress":"0x26c93635e9af3ce8ba977ba6c3e4bc84b1cbfbeffe850a603ef0a7251aecbd55","deltaStage":"1s","observationPollerWorkersCount":17,"observationPollPeriod":"2s","chainHeightPollPeriod":"3s","unknownRequestsTTL":"4s"}`
+	input := `{"chainId":"4","network":"aptos","creForwarderAddress":"0x26c93635e9af3ce8ba977ba6c3e4bc84b1cbfbeffe850a603ef0a7251aecbd55","deltaStage":1000000000,"observationPollerWorkersCount":17,"observationPollPeriod":2000000000,"chainHeightPollPeriod":3000000000,"unknownRequestsTTL":4000000000}`
 
 	var cfg Config
 	require.NoError(t, json.Unmarshal([]byte(input), &cfg))

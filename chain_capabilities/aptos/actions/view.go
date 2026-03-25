@@ -117,6 +117,8 @@ func viewPayloadFromCapability(payload *aptoscap.ViewPayload) (*aptostypes.ViewP
 		return nil, fmt.Errorf("module address too long: %d", len(payload.Module.Address))
 	}
 
+	// TODO: move Aptos module address conversion into chainlink-common proto helpers
+	// alongside the rest of the payload/type-tag conversion follow-up.
 	var moduleAddress aptostypes.AccountAddress
 	copy(moduleAddress[aptostypes.AccountAddressLength-len(payload.Module.Address):], payload.Module.Address)
 
@@ -140,6 +142,8 @@ func viewPayloadFromCapability(payload *aptoscap.ViewPayload) (*aptostypes.ViewP
 	}, nil
 }
 
+// TODO: move Aptos type-tag conversion into chainlink-common proto helpers
+// alongside the rest of the payload conversion follow-up.
 func typeTagFromCapability(tag *aptoscap.TypeTag) (aptostypes.TypeTag, error) {
 	if tag == nil {
 		return aptostypes.TypeTag{}, fmt.Errorf("type tag is nil")
