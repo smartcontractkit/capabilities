@@ -276,11 +276,11 @@ func (wr *writeReport) execute(
 				wr.lggr.Errorw("failed to get successful transmission hash after duplicate", "error", txHashErr)
 				return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed to get successful transmission hash: %w", txHashErr)
 			}
-			
+
 			monitoring.LogAndEmitSuccess(ctx, "WriteReport sent a duplicate transaction, report already on-chain",
 				wr.lggr, wr.beholderProcessor,
 				wr.messageBuilder.BuildWriteReportDuplicateTx(telemetryContext, request, txReply.TxHash, successResult.TxHash))
-			
+
 			feeOctas := successResult.GasUsed * successResult.GasUnitPrice
 			txFeeOctas = &feeOctas
 			return &aptoscap.WriteReportReply{
@@ -480,7 +480,7 @@ func (wr *writeReport) pollTransmissionInfo(
 	stageTimerFired := false
 	defer func() {
 		stageTimer.Stop()
-		if !stageTimerFired {
+		if !stageTimerFired && err == nil {
 			monitoring.LogAndEmitSuccess(ctx, "Transmission found before delta stage has passed",
 				wr.lggr, wr.beholderProcessor,
 				wr.messageBuilder.BuildWriteReportSuccessfulEarlyReturn(telemetryContext))

@@ -88,17 +88,20 @@ func convertWriteReportRequest(req *aptoscap.WriteReportRequest) *WriteReportReq
 	if req == nil {
 		return nil
 	}
-	return &WriteReportRequest{
-		Receiver: req.Receiver,
-		Report: &ReportResponse{
+	msg := &WriteReportRequest{
+		Receiver:  req.Receiver,
+		GasConfig: convertGasConfig(req.GasConfig),
+	}
+	if req.Report != nil {
+		msg.Report = &ReportResponse{
 			ConfigDigest:  req.Report.ConfigDigest,
 			SeqNr:         req.Report.SeqNr,
 			ReportContext: req.Report.ReportContext,
 			RawReport:     req.Report.RawReport,
 			Sigs:          convertAttributedSignature(req.Report.Sigs),
-		},
-		GasConfig: convertGasConfig(req.GasConfig),
+		}
 	}
+	return msg
 }
 
 func convertGasConfig(gc *aptoscap.GasConfig) *GasConfig {

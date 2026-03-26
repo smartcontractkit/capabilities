@@ -26,11 +26,6 @@ import (
 	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 )
 
-// TODO: config PLEX-2598
-const (
-	reportSizeLimit = commoncfg.Byte * 500
-)
-
 type ConsensusHandler interface {
 	// Handle returns a channel to the result of request.GetObservation().
 	// This result is consistent across all nodes in the DON, even if individual RPC states differ.

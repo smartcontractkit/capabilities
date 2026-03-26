@@ -20,7 +20,7 @@ import (
 func newTestProcessor(t *testing.T) (*mocks.ProtoEmitter, monitoring.Metrics, beholder.ProtoProcessor) {
 	t.Helper()
 	emitter := mocks.NewProtoEmitter(t)
-	emitter.EXPECT().EmitWithLog(mock.Anything, mock.Anything).Return(nil).Maybe()
+	emitter.EXPECT().EmitWithLog(mock.Anything, mock.Anything).Return(nil).Once()
 	metrics, err := monitoring.NewMetrics()
 	require.NoError(t, err)
 	p, err := monitoring.NewProcessor(emitter, metrics)
@@ -79,9 +79,9 @@ func TestProcessor_Process_WriteReportError_UserError_SkipsMetrics(t *testing.T)
 	_, _, p := newTestProcessor(t)
 	msg := &monitoring.WriteReportError{
 		ExecutionContext: &capmonitoring.ExecutionContext{},
-		IsUserError:     true,
-		Summary:         "user did something wrong",
-		Cause:           "invalid input",
+		IsUserError:      true,
+		Summary:          "user did something wrong",
+		Cause:            "invalid input",
 	}
 	require.NoError(t, p.Process(t.Context(), msg))
 }
@@ -91,9 +91,14 @@ type dummyProto struct{}
 func (d *dummyProto) ProtoReflect() protoreflect.Message { return nil }
 
 func TestProcessor_Process_UnknownMessage_Noop(t *testing.T) {
-	_, _, p := newTestProcessor(t)
-	err := p.Process(t.Context(), &dummyProto{})
+	emitter := mocks.NewProtoEmitter(t)
+	// No EmitWithLog expectation — the processor must NOT emit for unknown message types.
+	metrics, err := monitoring.NewMetrics()
 	require.NoError(t, err)
+	p, err := monitoring.NewProcessor(emitter, metrics)
+	require.NoError(t, err)
+
+	require.NoError(t, p.Process(t.Context(), &dummyProto{}))
 }
 
 func TestProcessor_Process_EmitError_Propagates(t *testing.T) {

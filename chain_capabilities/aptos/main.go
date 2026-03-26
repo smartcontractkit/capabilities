@@ -88,7 +88,7 @@ func main() {
 			lggr:          s.Logger.Named(CapabilityName),
 			limitsFactory: s.LimitsFactory,
 		})
-	})
+	}, loop.WithOtelViews(consmetrics.MetricViews()))
 }
 
 // --- loop.StandardCapabilities / services.Service ---
