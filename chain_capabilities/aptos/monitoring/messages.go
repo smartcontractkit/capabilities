@@ -157,10 +157,14 @@ func (r *WriteReportError) MetricAttributes() []attribute.KeyValue {
 }
 
 func (r *WriteReportTxFeeCalculationError) LogAttributes() []attribute.KeyValue {
-	return append([]attribute.KeyValue{
+	attrs := []attribute.KeyValue{
 		attribute.String("receiver", getReceiver(r.Req.GetReceiver())),
 		attribute.String("summary", r.GetSummary()),
-	}, r.ExecutionContext.LogAttributes()...)
+	}
+	if r.GetTxHash() != "" {
+		attrs = append(attrs, attribute.String("tx_hash", r.GetTxHash()))
+	}
+	return append(attrs, r.ExecutionContext.LogAttributes()...)
 }
 
 func (r *WriteReportTxFeeCalculationError) MetricAttributes() []attribute.KeyValue {
