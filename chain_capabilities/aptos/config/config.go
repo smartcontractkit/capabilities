@@ -9,20 +9,28 @@ import (
 )
 
 type Config struct {
-	CREForwarderAddress  [32]byte          // 32-byte Aptos account address of forwarder module
-	DeltaStage           time.Duration     // DeltaStage for staggered transmission scheduling
-	Network              string            `json:"network"`
-	ChainID              string            `json:"chainId"`
-	P2PToTransmitterMap  map[string]string // peerID-hex → Aptos transmitter address, populated from specConfig
+	CREForwarderAddress           [32]byte          // 32-byte Aptos account address of forwarder module
+	DeltaStage                    time.Duration     // DeltaStage for staggered transmission scheduling
+	ObservationPollerWorkersCount uint              `json:"observationPollerWorkersCount"`
+	ObservationPollPeriod         time.Duration     `json:"observationPollPeriod"`
+	ChainHeightPollPeriod         time.Duration     `json:"chainHeightPollPeriod"`
+	UnknownRequestsTTL            time.Duration     `json:"unknownRequestsTTL"`
+	Network                       string            `json:"network"`
+	ChainID                       string            `json:"chainId"`
+	P2PToTransmitterMap           map[string]string // peerID-hex → Aptos transmitter address, populated from specConfig
 }
 
 func (c *Config) UnmarshalJSON(bs []byte) error {
 	type config struct {
-		CREForwarderAddress string            `json:"creForwarderAddress"` // hex-encoded address (with or without 0x prefix)
-		DeltaStage          time.Duration     `json:"deltaStage"`
-		Network             string            `json:"network"`
-		ChainID             string            `json:"chainId"`
-		P2PToTransmitterMap map[string]string `json:"p2pToTransmitterMap,omitempty"`
+		CREForwarderAddress           string            `json:"creForwarderAddress"` // hex-encoded address (with or without 0x prefix)
+		DeltaStage                    time.Duration     `json:"deltaStage"`
+		ObservationPollerWorkersCount uint              `json:"observationPollerWorkersCount"`
+		ObservationPollPeriod         time.Duration     `json:"observationPollPeriod"`
+		ChainHeightPollPeriod         time.Duration     `json:"chainHeightPollPeriod"`
+		UnknownRequestsTTL            time.Duration     `json:"unknownRequestsTTL"`
+		Network                       string            `json:"network"`
+		ChainID                       string            `json:"chainId"`
+		P2PToTransmitterMap           map[string]string `json:"p2pToTransmitterMap,omitempty"`
 	}
 	var cfg config
 
@@ -32,6 +40,10 @@ func (c *Config) UnmarshalJSON(bs []byte) error {
 
 	c.ChainID = cfg.ChainID
 	c.DeltaStage = cfg.DeltaStage
+	c.ObservationPollerWorkersCount = cfg.ObservationPollerWorkersCount
+	c.ObservationPollPeriod = cfg.ObservationPollPeriod
+	c.ChainHeightPollPeriod = cfg.ChainHeightPollPeriod
+	c.UnknownRequestsTTL = cfg.UnknownRequestsTTL
 	c.Network = cfg.Network
 	c.P2PToTransmitterMap = cfg.P2PToTransmitterMap
 

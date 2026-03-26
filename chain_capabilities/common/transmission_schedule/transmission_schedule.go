@@ -1,4 +1,4 @@
-package transmission_schedule
+package transmissionschedule
 
 import (
 	"bytes"
