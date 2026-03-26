@@ -24,8 +24,6 @@ importers:
 
   cron: {}
 
-  kvstore: {}
-
   mock: {}
 
   readcontract: {}
