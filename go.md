@@ -37,8 +37,6 @@ flowchart LR
 	click capabilities/loadtestwritetarget href "https://github.com/smartcontractkit/capabilities"
 	capabilities/mock --> capabilities/libs
 	click capabilities/mock href "https://github.com/smartcontractkit/capabilities"
-	capabilities/p2psigner --> capabilities/libs
-	click capabilities/p2psigner href "https://github.com/smartcontractkit/capabilities"
 	capabilities/readcontract --> capabilities/libs
 	click capabilities/readcontract href "https://github.com/smartcontractkit/capabilities"
 	capabilities/workflowevent --> capabilities/libs
@@ -246,7 +244,6 @@ flowchart LR
 		 capabilities/libs
 		 capabilities/loadtestwritetarget
 		 capabilities/mock
-		 capabilities/p2psigner
 		 capabilities/readcontract
 		 capabilities/workflowevent
 		 capabilities/workflows
