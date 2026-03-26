@@ -79,6 +79,13 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Validate internal Go module pins
+        env:
+          GO_SUM_FILE: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
+        run: |
+          mod_dir=$(dirname "$GO_SUM_FILE")
+          ./.github/scripts/validate-internal-go-module-pins.sh "$mod_dir/go.mod"
+
       - name: Set up project environment
         uses: ./.github/actions/setup
         with:
