@@ -78,6 +78,12 @@ func (m *MessageBuilder) BuildWriteReportDuplicateTx(tc TelemetryContext, req *a
 	}
 }
 
+func (m *MessageBuilder) BuildWriteReportSuccessfulEarlyReturn(tc TelemetryContext) *WriteReportSuccessfulEarlyReturn {
+	return &WriteReportSuccessfulEarlyReturn{
+		ExecutionContext: m.BuildExecutionContext(tc),
+	}
+}
+
 func convertWriteReportRequest(req *aptoscap.WriteReportRequest) *WriteReportRequest {
 	if req == nil {
 		return nil
@@ -158,6 +164,14 @@ func (r *WriteReportTxFeeCalculationError) LogAttributes() []attribute.KeyValue 
 }
 
 func (r *WriteReportTxFeeCalculationError) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *WriteReportSuccessfulEarlyReturn) LogAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.LogAttributes()
+}
+
+func (r *WriteReportSuccessfulEarlyReturn) MetricAttributes() []attribute.KeyValue {
 	return r.ExecutionContext.MetricsAttributes()
 }
 

@@ -25,6 +25,9 @@ type Metrics struct {
 	WriteReportTxFeeCalculationError struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
+	WriteReportSuccessfulEarlyReturn struct {
+		basic commoncapbeholder.MetricsCapBasic
+	}
 }
 
 // NewMetrics constructs all counters & histograms
@@ -56,6 +59,12 @@ func NewMetrics() (Metrics, error) {
 		return Metrics{}, fmt.Errorf("failed to create write report tx fee calculation error metric: %w", err)
 	}
 
+	wrEarlyReturn := commoncapbeholder.NewMetricsInfoCapBasic(ns("write_report_successful_early_return"), commonbeholder.ToSchemaFullName(&WriteReportSuccessfulEarlyReturn{}))
+	m.WriteReportSuccessfulEarlyReturn.basic, err = commoncapbeholder.NewMetricsCapBasic(wrEarlyReturn)
+	if err != nil {
+		return Metrics{}, fmt.Errorf("failed to create write report successful early return metric: %w", err)
+	}
+
 	return m, nil
 }
 
@@ -80,5 +89,11 @@ func (m *Metrics) OnWriteReportDuplicateTx(ctx context.Context, msg *WriteReport
 func (m *Metrics) OnWriteReportTxFeeCalculationError(ctx context.Context, msg *WriteReportTxFeeCalculationError) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
 	m.WriteReportTxFeeCalculationError.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
+	return nil
+}
+
+func (m *Metrics) OnWriteReportSuccessfulEarlyReturn(ctx context.Context, msg *WriteReportSuccessfulEarlyReturn) error {
+	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
+	m.WriteReportSuccessfulEarlyReturn.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
 	return nil
 }

@@ -37,6 +37,10 @@ message WriteReportDuplicateTx {
   monitoring.ExecutionContext execution_context = 20;
 }
 
+message WriteReportSuccessfulEarlyReturn {
+  monitoring.ExecutionContext execution_context = 20;
+}
+
 message WriteReportRequest {
   bytes receiver = 1;
   optional GasConfig gas_config = 2;

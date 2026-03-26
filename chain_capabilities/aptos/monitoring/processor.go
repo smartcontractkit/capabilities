@@ -60,6 +60,13 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 		if err := p.metrics.OnWriteReportDuplicateTx(ctx, msg); err != nil {
 			return fmt.Errorf("failed to publish WriteReportDuplicateTx metrics: %w", err)
 		}
+	case *WriteReportSuccessfulEarlyReturn:
+		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
+			return fmt.Errorf("failed to emit WriteReportSuccessfulEarlyReturn log: %w", err)
+		}
+		if err := p.metrics.OnWriteReportSuccessfulEarlyReturn(ctx, msg); err != nil {
+			return fmt.Errorf("failed to publish WriteReportSuccessfulEarlyReturn metrics: %w", err)
+		}
 	default:
 		return nil
 	}

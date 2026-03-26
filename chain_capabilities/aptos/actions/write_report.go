@@ -178,7 +178,7 @@ func (wr *writeReport) execute(
 	orderedTransmitters := wr.getOrderedTransmitters(transmissionID.GetDebugID(), wr.p2pConfig)
 	wr.lggr.Debugw("got queue position", "queuePosition", queuePosition, "orderedTransmitters", orderedTransmitters)
 	// polling here is done based on queue position and deltaStage
-	transmissionInfo, err := wr.pollTransmissionInfo(ctx, transmissionID, queuePosition)
+	transmissionInfo, err := wr.pollTransmissionInfo(ctx, transmissionID, queuePosition, telemetryContext)
 	if err != nil {
 		wr.lggr.Errorw("pollTransmissionInfo failed", "error", err)
 		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed to get transmission info: %w", err)
@@ -451,6 +451,7 @@ func (wr *writeReport) pollTransmissionInfo(
 	ctx context.Context,
 	transmissionID TransmissionID,
 	queuePosition int,
+	telemetryContext monitoring.TelemetryContext,
 ) (lastValidInfo TransmissionInfo, err error) {
 	wr.lggr.Debugw("pollTransmissionInfo called",
 		"transmissionID", transmissionID.GetDebugID(),
@@ -480,7 +481,9 @@ func (wr *writeReport) pollTransmissionInfo(
 	defer func() {
 		stageTimer.Stop()
 		if !stageTimerFired {
-			wr.lggr.Debugw("transmission found before delta stage has passed")
+			monitoring.LogAndEmitSuccess(ctx, "Transmission found before delta stage has passed",
+				wr.lggr, wr.beholderProcessor,
+				wr.messageBuilder.BuildWriteReportSuccessfulEarlyReturn(telemetryContext))
 		}
 	}()
 

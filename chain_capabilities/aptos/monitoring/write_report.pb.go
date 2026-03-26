@@ -346,6 +346,50 @@ func (x *WriteReportDuplicateTx) GetExecutionContext() *monitoring.ExecutionCont
 	return nil
 }
 
+type WriteReportSuccessfulEarlyReturn struct {
+	state            protoimpl.MessageState       `protogen:"open.v1"`
+	ExecutionContext *monitoring.ExecutionContext `protobuf:"bytes,20,opt,name=execution_context,json=executionContext,proto3" json:"execution_context,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *WriteReportSuccessfulEarlyReturn) Reset() {
+	*x = WriteReportSuccessfulEarlyReturn{}
+	mi := &file_chain_capabilities_aptos_monitoring_write_report_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WriteReportSuccessfulEarlyReturn) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WriteReportSuccessfulEarlyReturn) ProtoMessage() {}
+
+func (x *WriteReportSuccessfulEarlyReturn) ProtoReflect() protoreflect.Message {
+	mi := &file_chain_capabilities_aptos_monitoring_write_report_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WriteReportSuccessfulEarlyReturn.ProtoReflect.Descriptor instead.
+func (*WriteReportSuccessfulEarlyReturn) Descriptor() ([]byte, []int) {
+	return file_chain_capabilities_aptos_monitoring_write_report_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *WriteReportSuccessfulEarlyReturn) GetExecutionContext() *monitoring.ExecutionContext {
+	if x != nil {
+		return x.ExecutionContext
+	}
+	return nil
+}
+
 type WriteReportRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Receiver      []byte                 `protobuf:"bytes,1,opt,name=receiver,proto3" json:"receiver,omitempty"`
@@ -357,7 +401,7 @@ type WriteReportRequest struct {
 
 func (x *WriteReportRequest) Reset() {
 	*x = WriteReportRequest{}
-	mi := &file_chain_capabilities_aptos_monitoring_write_report_proto_msgTypes[5]
+	mi := &file_chain_capabilities_aptos_monitoring_write_report_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -369,7 +413,7 @@ func (x *WriteReportRequest) String() string {
 func (*WriteReportRequest) ProtoMessage() {}
 
 func (x *WriteReportRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_aptos_monitoring_write_report_proto_msgTypes[5]
+	mi := &file_chain_capabilities_aptos_monitoring_write_report_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -382,7 +426,7 @@ func (x *WriteReportRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WriteReportRequest.ProtoReflect.Descriptor instead.
 func (*WriteReportRequest) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_aptos_monitoring_write_report_proto_rawDescGZIP(), []int{5}
+	return file_chain_capabilities_aptos_monitoring_write_report_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *WriteReportRequest) GetReceiver() []byte {
@@ -416,7 +460,7 @@ type GasConfig struct {
 
 func (x *GasConfig) Reset() {
 	*x = GasConfig{}
-	mi := &file_chain_capabilities_aptos_monitoring_write_report_proto_msgTypes[6]
+	mi := &file_chain_capabilities_aptos_monitoring_write_report_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -428,7 +472,7 @@ func (x *GasConfig) String() string {
 func (*GasConfig) ProtoMessage() {}
 
 func (x *GasConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_aptos_monitoring_write_report_proto_msgTypes[6]
+	mi := &file_chain_capabilities_aptos_monitoring_write_report_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -441,7 +485,7 @@ func (x *GasConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GasConfig.ProtoReflect.Descriptor instead.
 func (*GasConfig) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_aptos_monitoring_write_report_proto_rawDescGZIP(), []int{6}
+	return file_chain_capabilities_aptos_monitoring_write_report_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *GasConfig) GetMaxGasAmount() uint64 {
@@ -471,7 +515,7 @@ type ReportResponse struct {
 
 func (x *ReportResponse) Reset() {
 	*x = ReportResponse{}
-	mi := &file_chain_capabilities_aptos_monitoring_write_report_proto_msgTypes[7]
+	mi := &file_chain_capabilities_aptos_monitoring_write_report_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -483,7 +527,7 @@ func (x *ReportResponse) String() string {
 func (*ReportResponse) ProtoMessage() {}
 
 func (x *ReportResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_aptos_monitoring_write_report_proto_msgTypes[7]
+	mi := &file_chain_capabilities_aptos_monitoring_write_report_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -496,7 +540,7 @@ func (x *ReportResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportResponse.ProtoReflect.Descriptor instead.
 func (*ReportResponse) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_aptos_monitoring_write_report_proto_rawDescGZIP(), []int{7}
+	return file_chain_capabilities_aptos_monitoring_write_report_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ReportResponse) GetConfigDigest() []byte {
@@ -544,7 +588,7 @@ type AttributedSignature struct {
 
 func (x *AttributedSignature) Reset() {
 	*x = AttributedSignature{}
-	mi := &file_chain_capabilities_aptos_monitoring_write_report_proto_msgTypes[8]
+	mi := &file_chain_capabilities_aptos_monitoring_write_report_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -556,7 +600,7 @@ func (x *AttributedSignature) String() string {
 func (*AttributedSignature) ProtoMessage() {}
 
 func (x *AttributedSignature) ProtoReflect() protoreflect.Message {
-	mi := &file_chain_capabilities_aptos_monitoring_write_report_proto_msgTypes[8]
+	mi := &file_chain_capabilities_aptos_monitoring_write_report_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -569,7 +613,7 @@ func (x *AttributedSignature) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AttributedSignature.ProtoReflect.Descriptor instead.
 func (*AttributedSignature) Descriptor() ([]byte, []int) {
-	return file_chain_capabilities_aptos_monitoring_write_report_proto_rawDescGZIP(), []int{8}
+	return file_chain_capabilities_aptos_monitoring_write_report_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *AttributedSignature) GetSignature() []byte {
@@ -613,6 +657,8 @@ const file_chain_capabilities_aptos_monitoring_write_report_proto_rawDesc = "" +
 	"\x03req\x18\x01 \x01(\v2,.chain_capabilities.aptos.WriteReportRequestR\x03req\x12*\n" +
 	"\x11duplicate_tx_hash\x18\x02 \x01(\tR\x0fduplicateTxHash\x12,\n" +
 	"\x12successful_tx_hash\x18\x03 \x01(\tR\x10successfulTxHash\x12I\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"m\n" +
+	" WriteReportSuccessfulEarlyReturn\x12I\n" +
 	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xca\x01\n" +
 	"\x12WriteReportRequest\x12\x1a\n" +
 	"\breceiver\x18\x01 \x01(\fR\breceiver\x12G\n" +
@@ -646,38 +692,40 @@ func file_chain_capabilities_aptos_monitoring_write_report_proto_rawDescGZIP() [
 	return file_chain_capabilities_aptos_monitoring_write_report_proto_rawDescData
 }
 
-var file_chain_capabilities_aptos_monitoring_write_report_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_chain_capabilities_aptos_monitoring_write_report_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_chain_capabilities_aptos_monitoring_write_report_proto_goTypes = []any{
 	(*WriteReportInitiated)(nil),             // 0: chain_capabilities.aptos.WriteReportInitiated
 	(*WriteReportSuccess)(nil),               // 1: chain_capabilities.aptos.WriteReportSuccess
 	(*WriteReportError)(nil),                 // 2: chain_capabilities.aptos.WriteReportError
 	(*WriteReportTxFeeCalculationError)(nil), // 3: chain_capabilities.aptos.WriteReportTxFeeCalculationError
 	(*WriteReportDuplicateTx)(nil),           // 4: chain_capabilities.aptos.WriteReportDuplicateTx
-	(*WriteReportRequest)(nil),               // 5: chain_capabilities.aptos.WriteReportRequest
-	(*GasConfig)(nil),                        // 6: chain_capabilities.aptos.GasConfig
-	(*ReportResponse)(nil),                   // 7: chain_capabilities.aptos.ReportResponse
-	(*AttributedSignature)(nil),              // 8: chain_capabilities.aptos.AttributedSignature
-	(*monitoring.ExecutionContext)(nil),      // 9: monitoring.ExecutionContext
+	(*WriteReportSuccessfulEarlyReturn)(nil), // 5: chain_capabilities.aptos.WriteReportSuccessfulEarlyReturn
+	(*WriteReportRequest)(nil),               // 6: chain_capabilities.aptos.WriteReportRequest
+	(*GasConfig)(nil),                        // 7: chain_capabilities.aptos.GasConfig
+	(*ReportResponse)(nil),                   // 8: chain_capabilities.aptos.ReportResponse
+	(*AttributedSignature)(nil),              // 9: chain_capabilities.aptos.AttributedSignature
+	(*monitoring.ExecutionContext)(nil),      // 10: monitoring.ExecutionContext
 }
 var file_chain_capabilities_aptos_monitoring_write_report_proto_depIdxs = []int32{
-	5,  // 0: chain_capabilities.aptos.WriteReportInitiated.req:type_name -> chain_capabilities.aptos.WriteReportRequest
-	9,  // 1: chain_capabilities.aptos.WriteReportInitiated.execution_context:type_name -> monitoring.ExecutionContext
-	5,  // 2: chain_capabilities.aptos.WriteReportSuccess.req:type_name -> chain_capabilities.aptos.WriteReportRequest
-	9,  // 3: chain_capabilities.aptos.WriteReportSuccess.execution_context:type_name -> monitoring.ExecutionContext
-	5,  // 4: chain_capabilities.aptos.WriteReportError.req:type_name -> chain_capabilities.aptos.WriteReportRequest
-	9,  // 5: chain_capabilities.aptos.WriteReportError.execution_context:type_name -> monitoring.ExecutionContext
-	5,  // 6: chain_capabilities.aptos.WriteReportTxFeeCalculationError.req:type_name -> chain_capabilities.aptos.WriteReportRequest
-	9,  // 7: chain_capabilities.aptos.WriteReportTxFeeCalculationError.execution_context:type_name -> monitoring.ExecutionContext
-	5,  // 8: chain_capabilities.aptos.WriteReportDuplicateTx.req:type_name -> chain_capabilities.aptos.WriteReportRequest
-	9,  // 9: chain_capabilities.aptos.WriteReportDuplicateTx.execution_context:type_name -> monitoring.ExecutionContext
-	6,  // 10: chain_capabilities.aptos.WriteReportRequest.gas_config:type_name -> chain_capabilities.aptos.GasConfig
-	7,  // 11: chain_capabilities.aptos.WriteReportRequest.report:type_name -> chain_capabilities.aptos.ReportResponse
-	8,  // 12: chain_capabilities.aptos.ReportResponse.sigs:type_name -> chain_capabilities.aptos.AttributedSignature
-	13, // [13:13] is the sub-list for method output_type
-	13, // [13:13] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	6,  // 0: chain_capabilities.aptos.WriteReportInitiated.req:type_name -> chain_capabilities.aptos.WriteReportRequest
+	10, // 1: chain_capabilities.aptos.WriteReportInitiated.execution_context:type_name -> monitoring.ExecutionContext
+	6,  // 2: chain_capabilities.aptos.WriteReportSuccess.req:type_name -> chain_capabilities.aptos.WriteReportRequest
+	10, // 3: chain_capabilities.aptos.WriteReportSuccess.execution_context:type_name -> monitoring.ExecutionContext
+	6,  // 4: chain_capabilities.aptos.WriteReportError.req:type_name -> chain_capabilities.aptos.WriteReportRequest
+	10, // 5: chain_capabilities.aptos.WriteReportError.execution_context:type_name -> monitoring.ExecutionContext
+	6,  // 6: chain_capabilities.aptos.WriteReportTxFeeCalculationError.req:type_name -> chain_capabilities.aptos.WriteReportRequest
+	10, // 7: chain_capabilities.aptos.WriteReportTxFeeCalculationError.execution_context:type_name -> monitoring.ExecutionContext
+	6,  // 8: chain_capabilities.aptos.WriteReportDuplicateTx.req:type_name -> chain_capabilities.aptos.WriteReportRequest
+	10, // 9: chain_capabilities.aptos.WriteReportDuplicateTx.execution_context:type_name -> monitoring.ExecutionContext
+	10, // 10: chain_capabilities.aptos.WriteReportSuccessfulEarlyReturn.execution_context:type_name -> monitoring.ExecutionContext
+	7,  // 11: chain_capabilities.aptos.WriteReportRequest.gas_config:type_name -> chain_capabilities.aptos.GasConfig
+	8,  // 12: chain_capabilities.aptos.WriteReportRequest.report:type_name -> chain_capabilities.aptos.ReportResponse
+	9,  // 13: chain_capabilities.aptos.ReportResponse.sigs:type_name -> chain_capabilities.aptos.AttributedSignature
+	14, // [14:14] is the sub-list for method output_type
+	14, // [14:14] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_chain_capabilities_aptos_monitoring_write_report_proto_init() }
@@ -685,14 +733,14 @@ func file_chain_capabilities_aptos_monitoring_write_report_proto_init() {
 	if File_chain_capabilities_aptos_monitoring_write_report_proto != nil {
 		return
 	}
-	file_chain_capabilities_aptos_monitoring_write_report_proto_msgTypes[5].OneofWrappers = []any{}
+	file_chain_capabilities_aptos_monitoring_write_report_proto_msgTypes[6].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_chain_capabilities_aptos_monitoring_write_report_proto_rawDesc), len(file_chain_capabilities_aptos_monitoring_write_report_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   9,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   0,
 		},
