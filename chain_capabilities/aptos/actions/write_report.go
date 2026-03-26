@@ -176,9 +176,11 @@ func (wr *writeReport) execute(
 			wr.lggr.Errorw("report already onchain but failed to retrieve its txHash", "error", txHashErr)
 			return nil, capabilities.ResponseMetadata{}, txHashErr
 		}
+		receiverContractExecutionStatus := aptoscap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS
 		reply := &aptoscap.WriteReportReply{
-			TxStatus: aptoscap.TxStatus_TX_STATUS_SUCCESS,
-			TxHash:   &txResult.TxHash,
+			TxStatus:                        aptoscap.TxStatus_TX_STATUS_SUCCESS,
+			TxHash:                          &txResult.TxHash,
+			ReceiverContractExecutionStatus: &receiverContractExecutionStatus,
 		}
 		feeOctas := txResult.GasUsed * txResult.GasUnitPrice
 		reply.TransactionFee = &feeOctas
@@ -257,10 +259,12 @@ func (wr *writeReport) execute(
 			}
 			feeOctas := successResult.GasUsed * successResult.GasUnitPrice
 			txFeeOctas = &feeOctas
+			receiverContractExecutionStatus := aptoscap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS
 			return &aptoscap.WriteReportReply{
-				TxStatus:       aptoscap.TxStatus_TX_STATUS_SUCCESS,
-				TxHash:         &successResult.TxHash,
-				TransactionFee: txFeeOctas,
+				TxStatus:                        aptoscap.TxStatus_TX_STATUS_SUCCESS,
+				TxHash:                          &successResult.TxHash,
+				TransactionFee:                  txFeeOctas,
+				ReceiverContractExecutionStatus: &receiverContractExecutionStatus,
 			}, capabilities.ResponseMetadata{}, nil
 		}
 
@@ -275,16 +279,19 @@ func (wr *writeReport) execute(
 				"transmissionID", transmissionID.GetDebugID())
 			return nil, capabilities.ResponseMetadata{}, fmt.Errorf("unexpected state: local transaction succeeded but transmission info shows no success for %s", transmissionID.GetDebugID())
 		}
+
+		receiverContractExecutionStatus := aptoscap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED
+		ownReply := &aptoscap.WriteReportReply{
+			TxStatus:       aptoscap.TxStatus_TX_STATUS_FATAL,
+			TxHash:         &txReply.TxHash,
+			TransactionFee: txFeeOctas,
+			ErrorMessage:   ptrIfNonEmpty(ownVmStatus),
+			// TODO: PLEX-2597 populate ReceiverContractExecutionStatus based on vmStatus
+		}
 		// Position 0 node has no prior nodes to check; return its own failed tx hash.
 		if queuePosition <= 0 {
 			wr.lggr.Debugw("position 0, returning own failed hash", "txHash", txReply.TxHash, "vmStatus", ownVmStatus)
-			return &aptoscap.WriteReportReply{
-				TxStatus:       aptoscap.TxStatus_TX_STATUS_FATAL,
-				TxHash:         &txReply.TxHash,
-				TransactionFee: txFeeOctas,
-				ErrorMessage:   ptrIfNonEmpty(ownVmStatus),
-				// TODO: PLEX-2597 populate ReceiverContractExecutionStatus based on vmStatus
-			}, meteringMetadata, nil
+			return ownReply, meteringMetadata, nil
 		}
 
 		// Search preceding transmitters (position 0 through position-1) for a matching failed tx.
@@ -324,13 +331,7 @@ func (wr *writeReport) execute(
 
 		// No matching failed tx from prior nodes; return our own hash.
 		wr.lggr.Debugw("no prior failed tx found, returning own hash", "txHash", txReply.TxHash, "vmStatus", ownVmStatus)
-		return &aptoscap.WriteReportReply{
-			TxStatus:       aptoscap.TxStatus_TX_STATUS_FATAL, // TODO: do we need TX_STATUS_ABORTED at all ?
-			TxHash:         &txReply.TxHash,
-			TransactionFee: txFeeOctas,
-			ErrorMessage:   ptrIfNonEmpty(ownVmStatus),
-			// TODO: PLEX-2597 populate ReceiverContractExecutionStatus based on vmStatus
-		}, meteringMetadata, nil
+		return ownReply, meteringMetadata, nil
 	}
 	return nil, capabilities.ResponseMetadata{}, nil // should never happen
 }
