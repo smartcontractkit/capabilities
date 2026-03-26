@@ -107,7 +107,6 @@ func (s *Aptos) executeWriteReport(
 
 // TODO: handle gas limit bumping if required (PLEX-2580)
 // TODO: handle metrics (PLEX-2546)
-// TODO: handle ReceiverContractExecutionStatus in WriteReportReply (PLEX-2597)
 func (wr *writeReport) execute(
 	ctx context.Context,
 	request *aptoscap.WriteReportRequest,
@@ -280,13 +279,12 @@ func (wr *writeReport) execute(
 			return nil, capabilities.ResponseMetadata{}, fmt.Errorf("unexpected state: local transaction succeeded but transmission info shows no success for %s", transmissionID.GetDebugID())
 		}
 
-		receiverContractExecutionStatus := aptoscap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED
 		ownReply := &aptoscap.WriteReportReply{
-			TxStatus:       aptoscap.TxStatus_TX_STATUS_FATAL,
-			TxHash:         &txReply.TxHash,
-			TransactionFee: txFeeOctas,
-			ErrorMessage:   ptrIfNonEmpty(ownVmStatus),
-			// TODO: PLEX-2597 populate ReceiverContractExecutionStatus based on vmStatus
+			TxStatus:                        aptoscap.TxStatus_TX_STATUS_FATAL,
+			TxHash:                          &txReply.TxHash,
+			TransactionFee:                  txFeeOctas,
+			ErrorMessage:                    ptrIfNonEmpty(ownVmStatus),
+			ReceiverContractExecutionStatus: receiverContractExecutionStatusFromFailedVmStatus(ownVmStatus, wr.forwarderAddress),
 		}
 		// Position 0 node has no prior nodes to check; return its own failed tx hash.
 		if queuePosition <= 0 {
@@ -321,11 +319,11 @@ func (wr *writeReport) execute(
 			feeOctas := failedResult.GasUsed * failedResult.GasUnitPrice
 			txFeeOctas = &feeOctas
 			return &aptoscap.WriteReportReply{
-				TxStatus:       aptoscap.TxStatus_TX_STATUS_FATAL,
-				TxHash:         &failedResult.TxHash,
-				TransactionFee: txFeeOctas,
-				ErrorMessage:   ptrIfNonEmpty(failedResult.VmStatus),
-				// TODO: PLEX-2597 populate ReceiverContractExecutionStatus based on vmStatus
+				TxStatus:                        aptoscap.TxStatus_TX_STATUS_FATAL,
+				TxHash:                          &failedResult.TxHash,
+				TransactionFee:                  txFeeOctas,
+				ErrorMessage:                    ptrIfNonEmpty(failedResult.VmStatus),
+				ReceiverContractExecutionStatus: receiverContractExecutionStatusFromFailedVmStatus(failedResult.VmStatus, wr.forwarderAddress),
 			}, capabilities.ResponseMetadata{}, nil
 		}
 
@@ -359,6 +357,33 @@ func ptrIfNonEmpty(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+const moveAbortInPrefix = "move abort in "
+
+// receiverContractExecutionStatusFromFailedVmStatus sets REVERTED when vmStatus is an Aptos
+// "Move abort in 0x<addr>::<module>: ..." and the aborting module account is not the CRE forwarder.
+// Forwarder-side aborts leave the field unset (nil).
+func receiverContractExecutionStatusFromFailedVmStatus(vmStatus string, forwarder aptos_sdk.AccountAddress) *aptoscap.ReceiverContractExecutionStatus {
+	lower := strings.ToLower(vmStatus)
+	idx := strings.Index(lower, moveAbortInPrefix)
+	if idx < 0 {
+		return nil
+	}
+	rest := strings.TrimSpace(vmStatus[idx+len(moveAbortInPrefix):])
+	parts := strings.Split(rest, "::")
+	if len(parts) < 2 {
+		return nil
+	}
+	abortModule, err := aptos_sdk.ConvertToAddress(strings.TrimSpace(parts[0]))
+	if err != nil {
+		return nil
+	}
+	if *abortModule == forwarder {
+		return nil
+	}
+	rev := aptoscap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED
+	return &rev
 }
 
 func getTransmissionID(workflowExecutionID string, request *aptoscap.WriteReportRequest) (TransmissionID, error) {

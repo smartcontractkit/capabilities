@@ -368,6 +368,8 @@ func TestWriteReport_Execute(t *testing.T) {
 		require.Equal(t, testGasUsed*testGasUnitPrice, *result.Response.TransactionFee)
 		require.NotNil(t, result.Response.ErrorMessage)
 		require.Equal(t, "Move abort in 0x1::coin: EINSUFFICIENT_BALANCE(0x10006)", *result.Response.ErrorMessage)
+		require.NotNil(t, result.Response.ReceiverContractExecutionStatus)
+		require.Equal(t, aptoscap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED, *result.Response.ReceiverContractExecutionStatus)
 		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector, "0.0005")
 	})
 
@@ -405,6 +407,34 @@ func TestWriteReport_Execute(t *testing.T) {
 		require.Equal(t, testGasUsed*testGasUnitPrice, *result.Response.TransactionFee)
 		require.NotNil(t, result.Response.ErrorMessage)
 		require.Equal(t, "Move abort", *result.Response.ErrorMessage)
+		require.Nil(t, result.Response.ReceiverContractExecutionStatus)
 		require.Empty(t, result.ResponseMetadata.Metering)
+	})
+}
+
+func TestReceiverContractExecutionStatusFromFailedVmStatus(t *testing.T) {
+	t.Parallel()
+
+	fwd := aptos_sdk.AccountAddress{0xAA}
+	receiverAddr := "0x2e8f43a1266b6b513741a7101ac18ad59de61f068bd13d8a26ff742f7528f052"
+	vmReceiver := fmt.Sprintf("Move abort in %s::receiver: E_RECEIVER_FAILURE(0x64):", receiverAddr)
+
+	t.Run("receiver module abort yields REVERTED", func(t *testing.T) {
+		st := receiverContractExecutionStatusFromFailedVmStatus(vmReceiver, fwd)
+		require.NotNil(t, st)
+		require.Equal(t, aptoscap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED, *st)
+	})
+
+	t.Run("forwarder module abort leaves unset", func(t *testing.T) {
+		vmFwd := fmt.Sprintf("Move abort in %s::forwarder: E_SOMETHING(0x1):", fwd.StringLong())
+		require.Nil(t, receiverContractExecutionStatusFromFailedVmStatus(vmFwd, fwd))
+	})
+
+	t.Run("non-move-abort leaves unset", func(t *testing.T) {
+		require.Nil(t, receiverContractExecutionStatusFromFailedVmStatus("out of gas", fwd))
+	})
+
+	t.Run("malformed move abort leaves unset", func(t *testing.T) {
+		require.Nil(t, receiverContractExecutionStatusFromFailedVmStatus("move abort in notanaddress::m:", fwd))
 	})
 }
