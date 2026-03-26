@@ -137,7 +137,8 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	}
 
 	// TODO: add org resolver
-	c.triggerService, err = trigger.NewLogTriggerService(evmRelayer, trigger.NewLogTriggerStore(), c.lggr, c.id, processor, messageBuilder,
+	capabilityID := fmt.Sprintf("%s (%d)", c.id, cfg.ChainID)
+	c.triggerService, err = trigger.NewLogTriggerService(evmRelayer, trigger.NewLogTriggerStore(), c.lggr, capabilityID, processor, messageBuilder,
 		cfg.LogTriggerPollInterval, cfg.LogTriggerSendChannelBufferSize, cfg.LogTriggerLimitQueryLogSize, c.limitsFactory,
 		dependencies.OrgResolver, dependencies.TriggerEventStore)
 	if err != nil {

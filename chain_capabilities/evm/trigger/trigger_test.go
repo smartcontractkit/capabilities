@@ -36,8 +36,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives/evm"
 )
 
-// testLogTriggerCapabilityID matches the shape of chain_capabilities/evm main.go (evm:ChainSelector:<selector>@1.0.0).
-const testLogTriggerCapabilityID = "evm:ChainSelector:1@1.0.0"
+// testLogTriggerCapabilityID matches the shape of chain_capabilities/evm main.go (evm:ChainSelector:<selector>@1.0.0 (<chainID>).
+const testLogTriggerCapabilityID = "evm:ChainSelector:5009297550715157269@1.0.0 (1)"
 
 var (
 	expectedAddress = []byte{0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x11, 0x22, 0x33, 0x44}
