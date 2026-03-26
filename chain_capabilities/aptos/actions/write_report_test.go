@@ -252,7 +252,7 @@ func TestWriteReport_Validation(t *testing.T) {
 	t.Run("Gas config exceeds limit", func(t *testing.T) {
 		h := newTestHelper(t)
 		_, reqMeta, req := newReportFixture(t)
-		req.GasConfig = &aptoscap.GasConfig{MaxGasAmount: 2_000_000}
+		req.GasConfig = &aptoscap.GasConfig{MaxGasAmount: 3_000_000}
 
 		_, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
 		require.NotNil(t, capErr)
@@ -267,7 +267,7 @@ func TestWriteReport_Validation(t *testing.T) {
 
 		req := &aptoscap.WriteReportRequest{
 			Receiver: testReceiver[:],
-			Report:   &workflowpb.ReportResponse{RawReport: append(encoded, make([]byte, 1000)...), Sigs: generateRandomSignatures()},
+			Report:   &workflowpb.ReportResponse{RawReport: append(encoded, make([]byte, 6000)...), Sigs: generateRandomSignatures()},
 		}
 		h.mockNoTransmission()
 

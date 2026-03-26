@@ -11,7 +11,7 @@ import (
 	solcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
-	"github.com/smartcontractkit/chainlink-common/pkg/settings"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 
@@ -115,14 +115,15 @@ func (s *Solana) GetTransaction(
 
 func (s *Solana) initLimiters(limitsFactory limits.Factory) (err error) {
 	// PLEX-1920 this is initial values taken from chainlink-solana/docs/forwarder. Can be tuned later
-	reportSizeLimit := settings.Size(commoncfg.Byte * 265)
-	s.reportSizeLimit, err = limits.MakeBoundLimiter(limitsFactory, reportSizeLimit)
+	s.reportSizeLimit, err = limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainWrite.Solana.ReportSizeLimit)
 	if err != nil {
 		return
 	}
 
-	txComputeLimit := settings.Uint32(300_000)
-	s.txComputeLimit, err = limits.MakeBoundLimiter(limitsFactory, txComputeLimit)
+	s.txComputeLimit, err = limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainWrite.Solana.GasLimit)
+	if err != nil {
+		return
+	}
 	return
 }
 
