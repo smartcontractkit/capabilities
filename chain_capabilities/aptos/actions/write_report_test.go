@@ -420,21 +420,21 @@ func TestReceiverContractExecutionStatusFromFailedVmStatus(t *testing.T) {
 	vmReceiver := fmt.Sprintf("Move abort in %s::receiver: E_RECEIVER_FAILURE(0x64):", receiverAddr)
 
 	t.Run("receiver module abort yields REVERTED", func(t *testing.T) {
-		st := receiverContractExecutionStatusFromFailedVmStatus(vmReceiver, fwd)
+		st := receiverContractExecutionStatusFromFailedVMStatus(vmReceiver, fwd)
 		require.NotNil(t, st)
 		require.Equal(t, aptoscap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED, *st)
 	})
 
 	t.Run("forwarder module abort leaves unset", func(t *testing.T) {
 		vmFwd := fmt.Sprintf("Move abort in %s::forwarder: E_SOMETHING(0x1):", fwd.StringLong())
-		require.Nil(t, receiverContractExecutionStatusFromFailedVmStatus(vmFwd, fwd))
+		require.Nil(t, receiverContractExecutionStatusFromFailedVMStatus(vmFwd, fwd))
 	})
 
 	t.Run("non-move-abort leaves unset", func(t *testing.T) {
-		require.Nil(t, receiverContractExecutionStatusFromFailedVmStatus("out of gas", fwd))
+		require.Nil(t, receiverContractExecutionStatusFromFailedVMStatus("out of gas", fwd))
 	})
 
 	t.Run("malformed move abort leaves unset", func(t *testing.T) {
-		require.Nil(t, receiverContractExecutionStatusFromFailedVmStatus("move abort in notanaddress::m:", fwd))
+		require.Nil(t, receiverContractExecutionStatusFromFailedVMStatus("move abort in notanaddress::m:", fwd))
 	})
 }
