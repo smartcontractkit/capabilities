@@ -18,6 +18,7 @@ import (
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	solcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
+	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -124,6 +125,7 @@ func (wr *WriteReport) executeWriteReport(
 	telemetryContext monitoring.TelemetryContext,
 	metadata capabilities.RequestMetadata,
 ) (*solcap.WriteReportReply, capabilities.ResponseMetadata, error) {
+	ctx = contexts.WithChainSelector(ctx, wr.chainSelector)
 	receiver := solana.PublicKey(request.Receiver)
 	transmissionID, err := extractTransmissionID(receiver, request.GetReport())
 	if err != nil {

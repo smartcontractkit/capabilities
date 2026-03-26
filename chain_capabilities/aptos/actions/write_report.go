@@ -18,6 +18,7 @@ import (
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
+	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -120,6 +121,7 @@ func (wr *writeReport) execute(
 		"numSigs", len(request.Report.Sigs),
 		"receiver", hex.EncodeToString(request.Receiver[:]),
 	)
+	ctx = contexts.WithChainSelector(ctx, wr.chainSelector)
 	// this helps the node query only relevant transactions when trying to find the txHash, anything before (requestStartTime - 1min) is not relevant
 	// the 1min here can be adjusted based on timeout configs and metrics
 	requestStartTime := time.Now()
