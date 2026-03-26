@@ -249,6 +249,7 @@ func (wr *writeReport) execute(
 				"transmitter", transmitterAddr, "orderedTransmitters", orderedTransmitters)
 		}
 
+		receiverContractExecutionStatus := aptoscap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS
 		if txReply.TxStatus == aptostypes.TxFatal || txReply.TxStatus == aptostypes.TxReverted {
 			// Report for this transaction has already been submitted and we sent a duplicate tx onchain, that is why this tx reverted but transmission info still shows success.
 			wr.lggr.Debugw("our tx reverted but report is onchain (duplicate), retrieving success hash",
@@ -260,7 +261,7 @@ func (wr *writeReport) execute(
 			}
 			feeOctas := successResult.GasUsed * successResult.GasUnitPrice
 			txFeeOctas = &feeOctas
-			receiverContractExecutionStatus := aptoscap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS
+
 			return &aptoscap.WriteReportReply{
 				TxStatus:                        aptoscap.TxStatus_TX_STATUS_SUCCESS,
 				TxHash:                          &successResult.TxHash,
@@ -270,9 +271,10 @@ func (wr *writeReport) execute(
 		}
 
 		return &aptoscap.WriteReportReply{
-			TxStatus:       aptoscap.TxStatus_TX_STATUS_SUCCESS,
-			TxHash:         &txReply.TxHash,
-			TransactionFee: txFeeOctas,
+			TxStatus:                        aptoscap.TxStatus_TX_STATUS_SUCCESS,
+			TxHash:                          &txReply.TxHash,
+			TransactionFee:                  txFeeOctas,
+			ReceiverContractExecutionStatus: &receiverContractExecutionStatus,
 		}, meteringMetadata, nil
 	case false:
 		if txReply.TxStatus == aptostypes.TxSuccess {
@@ -286,7 +288,7 @@ func (wr *writeReport) execute(
 			TxHash:                          &txReply.TxHash,
 			TransactionFee:                  txFeeOctas,
 			ErrorMessage:                    ptrIfNonEmpty(ownVmStatus),
-			ReceiverContractExecutionStatus: receiverContractExecutionStatusFromFailedVmStatus(ownVmStatus, wr.forwarderAddress),
+			ReceiverContractExecutionStatus: receiverContractExecutionStatusFromFailedVMStatus(ownVmStatus, wr.forwarderAddress),
 		}
 		// Position 0 node has no prior nodes to check; return its own failed tx hash.
 		if queuePosition <= 0 {
@@ -325,7 +327,7 @@ func (wr *writeReport) execute(
 				TxHash:                          &failedResult.TxHash,
 				TransactionFee:                  txFeeOctas,
 				ErrorMessage:                    ptrIfNonEmpty(failedResult.VmStatus),
-				ReceiverContractExecutionStatus: receiverContractExecutionStatusFromFailedVmStatus(failedResult.VmStatus, wr.forwarderAddress),
+				ReceiverContractExecutionStatus: receiverContractExecutionStatusFromFailedVMStatus(failedResult.VmStatus, wr.forwarderAddress),
 			}, capabilities.ResponseMetadata{}, nil
 		}
 
@@ -366,7 +368,7 @@ const moveAbortInPrefix = "move abort in "
 // receiverContractExecutionStatusFromFailedVmStatus sets REVERTED when vmStatus is an Aptos
 // "Move abort in 0x<addr>::<module>: ..." and the aborting module account is not the CRE forwarder.
 // Forwarder-side aborts leave the field unset (nil).
-func receiverContractExecutionStatusFromFailedVmStatus(vmStatus string, forwarder aptos_sdk.AccountAddress) *aptoscap.ReceiverContractExecutionStatus {
+func receiverContractExecutionStatusFromFailedVMStatus(vmStatus string, forwarder aptos_sdk.AccountAddress) *aptoscap.ReceiverContractExecutionStatus {
 	lower := strings.ToLower(vmStatus)
 	idx := strings.Index(lower, moveAbortInPrefix)
 	if idx < 0 {
