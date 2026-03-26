@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/metering"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/monitoring"
 	commontest "github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -19,6 +20,7 @@ import (
 	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
+	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	aptostypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/aptos"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
@@ -68,6 +70,8 @@ func newTestHelper(t *testing.T) *testHelper {
 		chainSelector:    testChainSelector,
 		transmissionScheduler: ts.NewTransmissionScheduler(
 			myPeerID, []p2ptypes.PeerID{myPeerID}, 1*time.Second, 0, lggr),
+		beholderProcessor: commontest.NopBeholderProcessor{},
+		messageBuilder:    monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 	}
 	require.NoError(t, a.initLimiters(limits.Factory{Logger: lggr}))
 	return &testHelper{forwarderClient: mockClient, aptosService: mockService, aptos: a}
@@ -110,6 +114,8 @@ func newMultiNodeTestHelper(t *testing.T, transmissionIDStr string) (*testHelper
 		p2pConfig:             p2pCfg,
 		chainSelector:         testChainSelector,
 		transmissionScheduler: scheduler,
+		beholderProcessor:     commontest.NopBeholderProcessor{},
+		messageBuilder:        monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 	}
 	require.NoError(t, a.initLimiters(limits.Factory{Logger: lggr}))
 	return &testHelper{forwarderClient: mockClient, aptosService: mockService, aptos: a}, node0Addr

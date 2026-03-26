@@ -1,0 +1,62 @@
+syntax = "proto3";
+package chain_capabilities.aptos;
+option go_package = "github.com/smartcontractkit/capabilities/chain_capabilities/aptos;monitoring";
+
+import "libs/monitoring/execution_context.proto";
+
+message WriteReportInitiated {
+  WriteReportRequest req = 1;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message WriteReportSuccess {
+  WriteReportRequest req = 1;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message WriteReportError {
+  WriteReportRequest req = 1;
+  string summary = 2;
+  string cause = 3;
+  bool isUserError = 4;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message WriteReportTxFeeCalculationError {
+  WriteReportRequest req = 1;
+  string summary = 2;
+  string cause = 3;
+  string tx_hash = 4;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message WriteReportDuplicateTx {
+  WriteReportRequest req = 1;
+  string duplicate_tx_hash = 2;
+  string successful_tx_hash = 3;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message WriteReportRequest {
+  bytes receiver = 1;
+  optional GasConfig gas_config = 2;
+  ReportResponse report = 3;
+}
+
+message GasConfig {
+  uint64 max_gas_amount = 1;
+  uint64 gas_unit_price = 2;
+}
+
+message ReportResponse {
+  bytes config_digest = 1;
+  uint64 seq_nr = 2;
+  bytes report_context = 3;
+  bytes raw_report = 4;
+  repeated AttributedSignature sigs = 5;
+}
+
+message AttributedSignature {
+  bytes signature = 1;
+  uint32 signer_id = 2;
+}
