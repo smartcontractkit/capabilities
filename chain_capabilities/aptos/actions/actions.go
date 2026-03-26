@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	aptos_sdk "github.com/aptos-labs/aptos-go-sdk"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -24,11 +25,6 @@ import (
 	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 )
 
-// TODO: config PLEX-2598
-const (
-	reportSizeLimit = commoncfg.Byte * 500
-)
-
 type ConsensusHandler interface {
 	// Handle returns a channel to the result of request.GetObservation().
 	// This result is consistent across all nodes in the DON, even if individual RPC states differ.
@@ -45,7 +41,8 @@ type Aptos struct {
 	chainSelector         uint64
 	maxGasAmountLimit     limits.BoundLimiter[uint64]
 	reportSizeLimit       limits.BoundLimiter[commoncfg.Size]
-	transmissionScheduler ts.TransmissionScheduler
+	transmissionScheduler  ts.TransmissionScheduler
+	txSearchStartingBuffer time.Duration
 }
 
 func NewAptos(cfg *config.Config, p2pConfig map[string]string, aptosService types.AptosService, consensusHandler ConsensusHandler, lggr logger.Logger, limitsFactory limits.Factory, transmissionScheduler ts.TransmissionScheduler, chainSelector uint64) (*Aptos, error) {
@@ -67,20 +64,19 @@ func NewAptos(cfg *config.Config, p2pConfig map[string]string, aptosService type
 		lggr:                  logger.Sugared(lggr),
 		p2pConfig:             p2pConfig,
 		chainSelector:         chainSelector,
-		transmissionScheduler: transmissionScheduler,
+		transmissionScheduler:  transmissionScheduler,
+		txSearchStartingBuffer: cfg.TxSearchStartingBuffer,
 	}
 
 	return a, a.initLimiters(limitsFactory)
 }
 
 func (a *Aptos) initLimiters(limitsFactory limits.Factory) (err error) {
-	// PLEX-2599 can be tuned later
 	a.reportSizeLimit, err = limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainWrite.Aptos.ReportSizeLimit)
 	if err != nil {
 		return
 	}
 
-	// PLEX-2599 can be tuned later (100_000 in aptos-sdk, 200_000 in chainlink-aptos)
 	a.maxGasAmountLimit, err = limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainWrite.Aptos.GasLimit)
 	if err != nil {
 		return
