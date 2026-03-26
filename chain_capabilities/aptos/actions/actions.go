@@ -11,8 +11,9 @@ import (
 	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
-	"github.com/smartcontractkit/chainlink-common/pkg/settings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 
@@ -74,15 +75,16 @@ func NewAptos(cfg *config.Config, p2pConfig map[string]string, aptosService type
 
 func (a *Aptos) initLimiters(limitsFactory limits.Factory) (err error) {
 	// PLEX-2599 can be tuned later
-	reportSizeLimit := settings.Size(reportSizeLimit)
-	a.reportSizeLimit, err = limits.MakeUpperBoundLimiter(limitsFactory, reportSizeLimit)
+	a.reportSizeLimit, err = limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainWrite.Aptos.ReportSizeLimit)
 	if err != nil {
 		return
 	}
 
 	// PLEX-2599 can be tuned later (100_000 in aptos-sdk, 200_000 in chainlink-aptos)
-	maxGasAmountLimit := settings.Uint64(200_000)
-	a.maxGasAmountLimit, err = limits.MakeUpperBoundLimiter(limitsFactory, maxGasAmountLimit)
+	a.maxGasAmountLimit, err = limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainWrite.Aptos.GasLimit)
+	if err != nil {
+		return
+	}
 	return
 }
 

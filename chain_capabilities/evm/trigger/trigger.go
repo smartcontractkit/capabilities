@@ -68,13 +68,16 @@ type LogTriggerService struct {
 }
 
 // NewLogTriggerService creates a new instance of logTriggerService.
-func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lggr logger.Logger,
+func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lggr logger.Logger, capabilityID string,
 	beholderProcessor beholder.ProtoProcessor, messageBuilder *monitoring.MessageBuilder,
 	logTriggerPollInterval time.Duration,
 	logTriggerSendChannelBufferSize uint64,
 	logTriggerLimitQueryLogSize uint64, limitsFactory limits.Factory,
 	orgResolver orgresolver.OrgResolver,
 	triggerEventStore capabilities.EventStore) (*LogTriggerService, error) {
+	if capabilityID == "" {
+		return nil, fmt.Errorf("capabilityID must be non-empty")
+	}
 	if logTriggerPollInterval < 0 {
 		return nil, fmt.Errorf("logTriggerPollInterval must be positive, got: %s", logTriggerPollInterval)
 	}
@@ -129,7 +132,7 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 	undeliveredWarning := 5 * retryInterval
 	undeliveredCritical := 20 * retryInterval
 	lts.baseTrigger = capabilities.NewBaseTriggerCapability(triggerEventStore, func() *evmcappb.Log { return &evmcappb.Log{} },
-		lts.lggr, "EvmLogTriggerService", retryInterval, undeliveredWarning, undeliveredCritical)
+		lts.lggr, capabilityID, retryInterval, undeliveredWarning, undeliveredCritical)
 	return lts, nil
 }
 
