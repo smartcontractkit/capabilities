@@ -1,15 +1,21 @@
-package common
+package capcommon
 
 import (
 	"context"
+	"encoding/hex"
+	"fmt"
 	"time"
 
 	"github.com/jpillora/backoff"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/retry"
+
+	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
+	commonmon "github.com/smartcontractkit/capabilities/libs/monitoring"
 )
 
 const UserError = "user error:"
@@ -19,10 +25,71 @@ func Ptr[T any](v T) *T {
 	return &v
 }
 
+// ConsensusHandler executes a consensus-backed request and returns a consistent result across the DON.
+type ConsensusHandler interface {
+	Handle(ctx context.Context, request ctypes.Request) (<-chan ctypes.Reply, error)
+}
+
+// RequestID builds a stable request identifier from workflow metadata.
+func RequestID(meta capabilities.RequestMetadata) string {
+	return commonmon.RequestID(meta.WorkflowExecutionID, meta.ReferenceID)
+}
+
+// ReadType waits for a consensus reply and returns it as the requested type.
+func ReadType[T any](ctx context.Context, reader ConsensusHandler, request ctypes.Request) (T, error) {
+	var zero T
+	resultCh, err := reader.Handle(ctx, request)
+	if err != nil {
+		return zero, err
+	}
+
+	select {
+	case <-ctx.Done():
+		return zero, ctx.Err()
+	case reply := <-resultCh:
+		if reply.Err != nil {
+			return zero, reply.Err
+		}
+		data, ok := reply.Value.(T)
+		if !ok {
+			return zero, fmt.Errorf("unexpected result type: expected %T, got %T", zero, reply.Value)
+		}
+
+		return data, nil
+	}
+}
+
 // DecodeReportMetadata decodes OCR3 report metadata from raw bytes.
 func DecodeReportMetadata(data []byte) (ocrtypes.Metadata, error) {
 	metadata, _, err := ocrtypes.Decode(data)
 	return metadata, err
+}
+
+// ParseTransmissionComponents extracts and validates the executionID and reportID
+// common to all chain transmission ID construction.
+func ParseTransmissionComponents(workflowExecutionID string, rawReport []byte) ([32]byte, [2]byte, error) {
+	rawExecutionID, err := hex.DecodeString(workflowExecutionID)
+	if err != nil {
+		return [32]byte{}, [2]byte{}, err
+	}
+	if len(rawExecutionID) != 32 {
+		return [32]byte{}, [2]byte{}, fmt.Errorf("workflowExecutionID must be 32 bytes, got %d", len(rawExecutionID))
+	}
+
+	reportMetadata, err := DecodeReportMetadata(rawReport)
+	if err != nil {
+		return [32]byte{}, [2]byte{}, fmt.Errorf("%s failed to decode report metadata: %v", UserError, err)
+	}
+
+	reportID, err := hex.DecodeString(reportMetadata.ReportID)
+	if err != nil {
+		return [32]byte{}, [2]byte{}, fmt.Errorf("%s failed to decode report ID: %v", UserError, err)
+	}
+	if len(reportID) != 2 {
+		return [32]byte{}, [2]byte{}, fmt.Errorf("%s report ID is of wrong length: %d bytes, expected 2 bytes", UserError, len(reportID))
+	}
+
+	return [32]byte(rawExecutionID), [2]byte(reportID), nil
 }
 
 // GetError returns the appropriate capability error based on whether it is a user error.

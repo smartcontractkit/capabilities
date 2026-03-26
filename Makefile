@@ -32,6 +32,10 @@ generate: protoc mockery gomods ## Execute all go:generate commands (including p
 	## Updating PATH makes sure that go:generate uses the version of protoc installed by the protoc make command.
 	export PATH="$(HOME)/.local/bin:$(PATH)"; gomods -w go generate -x ./...
 
+.PHONY: update-common-capabilities
+update-common-capabilities: ## Update chain_capabilities/common in aptos/evm/solana. Usage: make update-common-capabilities REF=<branch-or-commit>
+	./script/update-common-capabilities.sh $(REF)
+
 .PHONY: help
 help: ## Display this help screen.
 	@grep -h -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'

@@ -42,7 +42,7 @@ func newForwarderClient(aptosService types.AptosService, lggr logger.Logger, for
 	forwarderEncoder := forwarder.Encoder()
 	return &forwarderClient{
 		AptosService:     aptosService,
-		lggr:             lggr,
+		lggr:             logger.Named(lggr, "ForwarderClient"),
 		forwarderAddress: forwarderAddress,
 		forwarderEncoder: forwarderEncoder,
 	}
@@ -64,12 +64,8 @@ func (fc *forwarderClient) InvokeOnReport(ctx context.Context, receiver []byte, 
 
 	fullRawReport := slices.Concat(report.ReportContext, report.RawReport)
 
-	receiverAddress, err := aptos_sdk.ConvertToAddress(receiver)
-	if err != nil {
-		fc.lggr.Errorw("failed to convert receiver to address", "error", err)
-		return nil, fmt.Errorf("failed to convert receiver to address: %w", err)
-	}
-	moduleInformation, _, argTypes, args, err := fc.forwarderEncoder.Report(*receiverAddress, fullRawReport, signatures)
+	receiverAddress := aptos_sdk.AccountAddress(receiver)
+	moduleInformation, _, argTypes, args, err := fc.forwarderEncoder.Report(receiverAddress, fullRawReport, signatures)
 	if err != nil {
 		fc.lggr.Errorw("failed to encode forwarder report", "error", err)
 		return nil, fmt.Errorf("failed to encode forwarder report: %w", err)

@@ -10,6 +10,7 @@ import (
 
 	aptos_sdk "github.com/aptos-labs/aptos-go-sdk"
 
+	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	aptostypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/aptos"
 )
@@ -28,6 +29,9 @@ type userTxData struct {
 	Success        bool            `json:"Success"`
 	SequenceNumber uint64          `json:"SequenceNumber"`
 	Timestamp      uint64          `json:"Timestamp"`
+	GasUsed        uint64          `json:"GasUsed"`
+	GasUnitPrice   uint64          `json:"GasUnitPrice"`
+	VmStatus       string          `json:"VmStatus"`
 	Payload        json.RawMessage `json:"Payload"`
 }
 
@@ -51,7 +55,7 @@ type TxHashRetriever struct {
 func NewTxHashRetriever(forwarderClient CREForwarderClient, lggr logger.Logger, transmissionID TransmissionID, forwarderAddress string, requestStartTime time.Time) TxHashRetriever {
 	retriever := TxHashRetriever{
 		forwarderClient:    forwarderClient,
-		lggr:               lggr,
+		lggr:               logger.Named(lggr, "TxHashRetriever"),
 		transmissionID:     transmissionID,
 		entryFunctionName:  fmt.Sprintf("%s::forwarder::report", forwarderAddress),
 		startingPointMicro: requestStartTime.Add(-txSearchStartingBuffer).UnixMicro(),
@@ -64,13 +68,35 @@ func NewTxHashRetriever(forwarderClient CREForwarderClient, lggr logger.Logger, 
 	return retriever
 }
 
+// TransmissionHashResult is returned by GetSuccessfulTransmissionHash and
+// GetFailedTransmissionHash. GasUsed and GasUnitPrice come from the matched
+// UserTransaction and can be used to compute the fee in octas (GasUsed * GasUnitPrice).
+type TransmissionHashResult struct {
+	TxHash       string
+	GasUsed      uint64
+	GasUnitPrice uint64
+	VmStatus     string
+}
+
 // scanResult holds the output of scanTransactions: a matching tx hash (if found)
 // and sequence/timestamp metadata from the scanned batch for pagination.
 type scanResult struct {
 	TxHash          string
+	GasUsed         uint64
+	GasUnitPrice    uint64
+	VmStatus        string
 	EarliestTsMicro uint64
 	MinSeqNum       uint64
 	MaxSeqNum       uint64
+}
+
+func (r scanResult) toTransmissionHashResult() TransmissionHashResult {
+	return TransmissionHashResult{
+		TxHash:       r.TxHash,
+		GasUsed:      r.GasUsed,
+		GasUnitPrice: r.GasUnitPrice,
+		VmStatus:     r.VmStatus,
+	}
 }
 
 // scanTransactions scans a batch of transactions for a matching forwarder::report call
@@ -129,8 +155,14 @@ func (thr *TxHashRetriever) scanTransactions(txns []*aptostypes.Transaction, exp
 				"txHash", userTx.Hash,
 				"success", userTx.Success,
 				"seqNum", userTx.SequenceNumber,
+				"gasUsed", userTx.GasUsed,
+				"gasUnitPrice", userTx.GasUnitPrice,
+				"vmStatus", userTx.VmStatus,
 			)
 			res.TxHash = userTx.Hash
+			res.GasUsed = userTx.GasUsed
+			res.GasUnitPrice = userTx.GasUnitPrice
+			res.VmStatus = userTx.VmStatus
 			return res
 		}
 	}
@@ -217,7 +249,7 @@ func (thr *TxHashRetriever) paginateBackwards(
 //	  observed in Phase 1 (phase3Start = MaxSeqNum+1). Each poll advances the cursor so
 //	  that new transactions submitted between phases cannot be missed even if the page
 //	  would otherwise slide past them.
-func (thr *TxHashRetriever) GetSuccessfulTransmissionHash(ctx context.Context, transmitter aptos_sdk.AccountAddress) (string, error) {
+func (thr *TxHashRetriever) GetSuccessfulTransmissionHash(ctx context.Context, transmitter aptos_sdk.AccountAddress) (TransmissionHashResult, error) {
 	thr.lggr.Debugw("GetSuccessfulTransmissionHash called", "transmitter", transmitter.String())
 
 	// Phase 1: fetch latest transactions with no limit (nil) so the RPC returns its default page.
@@ -235,14 +267,14 @@ func (thr *TxHashRetriever) GetSuccessfulTransmissionHash(ctx context.Context, t
 	})
 	if err != nil {
 		thr.lggr.Warnw("GetSuccessfulTransmissionHash phase 1 failed", "transmitter", transmitter.String(), "err", err)
-		return "", fmt.Errorf("failed to get transmitter transactions during phase 1: %w", err)
+		return TransmissionHashResult{}, fmt.Errorf("failed to get transmitter transactions during phase 1: %w", err)
 	}
 	pageSize := uint64(len(txns))
 	thr.lggr.Debugw("GetSuccessfulTransmissionHash phase 1 fetched", "txCount", len(txns), "derivedPageSize", pageSize)
 	phase1Result := thr.scanTransactions(txns, true)
 	if phase1Result.TxHash != "" {
 		thr.lggr.Debugw("GetSuccessfulTransmissionHash found in phase 1", "txHash", phase1Result.TxHash)
-		return phase1Result.TxHash, nil
+		return phase1Result.toTransmissionHashResult(), nil
 	}
 
 	// Phase 2: paginate backwards until we cover the starting point
@@ -258,7 +290,7 @@ func (thr *TxHashRetriever) GetSuccessfulTransmissionHash(ctx context.Context, t
 			thr.lggr.Warnw("GetSuccessfulTransmissionHash phase 2 pagination failed, falling through to poll phase", "err", pgErr)
 		} else if phase2Result.TxHash != "" {
 			thr.lggr.Debugw("GetSuccessfulTransmissionHash found in phase 2", "txHash", phase2Result.TxHash)
-			return phase2Result.TxHash, nil
+			return phase2Result.toTransmissionHashResult(), nil
 		}
 	}
 
@@ -267,23 +299,23 @@ func (thr *TxHashRetriever) GetSuccessfulTransmissionHash(ctx context.Context, t
 	// the target tx outside a fixed-size "latest" window.
 	phase3Start := phase1Result.MaxSeqNum + 1
 	thr.lggr.Debugw("GetSuccessfulTransmissionHash phase 3 - poll forward", "phase3Start", phase3Start)
-	return withPollingRetry(ctx, thr.lggr, func(ctx context.Context) (string, error) {
+	return withPollingRetry(ctx, thr.lggr, func(ctx context.Context) (TransmissionHashResult, error) {
 		latestTxns, fetchErr := thr.forwarderClient.GetTransmitterTransactions(ctx, transmitter, &phase3Start, nil)
 		if fetchErr != nil {
-			return "", fmt.Errorf("failed to get transmitter transactions during poll: %w", fetchErr)
+			return TransmissionHashResult{}, fmt.Errorf("failed to get transmitter transactions during poll: %w", fetchErr)
 		}
 		if len(latestTxns) == 0 {
-			return "", fmt.Errorf("no new transactions found for transmitter %s from seq %d", transmitter.String(), phase3Start)
+			return TransmissionHashResult{}, fmt.Errorf("no new transactions found for transmitter %s from seq %d", transmitter.String(), phase3Start)
 		}
 		result := thr.scanTransactions(latestTxns, true)
 		if result.TxHash != "" {
 			thr.lggr.Debugw("GetSuccessfulTransmissionHash found in phase 3", "txHash", result.TxHash)
-			return result.TxHash, nil
+			return result.toTransmissionHashResult(), nil
 		}
 		if result.MaxSeqNum >= phase3Start {
 			phase3Start = result.MaxSeqNum + 1
 		}
-		return "", fmt.Errorf("matching transmission not found yet for %s", thr.transmissionID.GetDebugID())
+		return TransmissionHashResult{}, fmt.Errorf("matching transmission not found yet for %s", thr.transmissionID.GetDebugID())
 	})
 }
 
@@ -295,7 +327,7 @@ func (thr *TxHashRetriever) GetSuccessfulTransmissionHash(ctx context.Context, t
 //	  scan for a failed tx. Empty results retried as likely RPC error.
 //	Phase 2 (go back): paginate backwards through older transactions until our window
 //	  covers startingPointMicro (requestArrivalTime - 1 min). The 1 min here will be passed through config PLEX-2598
-func (thr *TxHashRetriever) GetFailedTransmissionHash(ctx context.Context, transmitter aptos_sdk.AccountAddress) (string, error) {
+func (thr *TxHashRetriever) GetFailedTransmissionHash(ctx context.Context, transmitter aptos_sdk.AccountAddress) (TransmissionHashResult, error) {
 	thr.lggr.Debugw("GetFailedTransmissionHash called", "transmitter", transmitter.String())
 
 	// Phase 1: fetch latest transactions with no limit (nil) so the RPC returns its default page.
@@ -313,14 +345,14 @@ func (thr *TxHashRetriever) GetFailedTransmissionHash(ctx context.Context, trans
 	})
 	if err != nil {
 		thr.lggr.Warnw("GetFailedTransmissionHash phase 1 failed", "transmitter", transmitter.String(), "err", err)
-		return "", fmt.Errorf("failed to get transmitter transactions during phase 1: %w", err)
+		return TransmissionHashResult{}, fmt.Errorf("failed to get transmitter transactions during phase 1: %w", err)
 	}
 	pageSize := uint64(len(txns))
 	thr.lggr.Debugw("GetFailedTransmissionHash phase 1 fetched", "txCount", len(txns), "derivedPageSize", pageSize)
 	phase1Result := thr.scanTransactions(txns, false)
 	if phase1Result.TxHash != "" {
 		thr.lggr.Debugw("GetFailedTransmissionHash found in phase 1", "txHash", phase1Result.TxHash)
-		return phase1Result.TxHash, nil
+		return phase1Result.toTransmissionHashResult(), nil
 	}
 
 	// Phase 2: paginate backwards only until we cover the starting point
@@ -335,12 +367,12 @@ func (thr *TxHashRetriever) GetFailedTransmissionHash(ctx context.Context, trans
 			thr.lggr.Warnw("GetFailedTransmissionHash phase 2 pagination failed", "err", pgErr)
 		} else if phase2Result.TxHash != "" {
 			thr.lggr.Debugw("GetFailedTransmissionHash found in phase 2", "txHash", phase2Result.TxHash)
-			return phase2Result.TxHash, nil
+			return phase2Result.toTransmissionHashResult(), nil
 		}
 	}
 
 	thr.lggr.Debugw("GetFailedTransmissionHash no match found")
-	return "", fmt.Errorf("no matching failed transaction found for transmission %s", thr.transmissionID.GetDebugID())
+	return TransmissionHashResult{}, fmt.Errorf("no matching failed transaction found for transmission %s", thr.transmissionID.GetDebugID())
 }
 
 // matchesTransmissionByReport checks if a transaction's raw_report argument
@@ -373,7 +405,7 @@ func (thr *TxHashRetriever) matchesTransmissionByReport(arguments []interface{})
 	}
 	report := rawReport[reportContextLen:]
 
-	metadata, err := decodeReportMetadata(report)
+	metadata, err := capcommon.DecodeReportMetadata(report)
 	if err != nil {
 		thr.lggr.Debugw("matchesTransmissionByReport - decodeReportMetadata failed", "error", err)
 		return false
