@@ -128,7 +128,7 @@ func TestCompleteRequest(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			require.NoError(t, handler.CompleteRequest(tc.Request.ID(), tc.Report))
+			require.NoError(t, handler.CompleteProtoRequest(tc.Request.ID(), tc.Report))
 			if !requestAddedBeforeCompletion {
 				ch, err = handler.Handle(t.Context(), tc.Request)
 				require.NoError(t, err)
@@ -209,7 +209,7 @@ func TestCompleteRequest(t *testing.T) {
 	})
 	t.Run("Eventually consistent request: expire unknown", func(t *testing.T) {
 		handler := newHandler(t, logger.Test(t), nil)
-		require.NoError(t, handler.CompleteRequest("request_to_expire", &types.RequestReport{
+		require.NoError(t, handler.CompleteProtoRequest("request_to_expire", &types.RequestReport{
 			Report: &types.RequestReport_EventuallyConsistent{EventuallyConsistent: []byte("report")},
 		}))
 
@@ -221,12 +221,12 @@ func TestCompleteRequest(t *testing.T) {
 	})
 	t.Run("Returns error for unknown request type", func(t *testing.T) {
 		handler := newHandler(t, logger.Test(t), nil)
-		err := handler.CompleteRequest("id", &types.RequestReport{Report: nil})
+		err := handler.CompleteProtoRequest("id", &types.RequestReport{Report: nil})
 		require.ErrorContains(t, err, "unknown request type <nil>")
 	})
 	t.Run("Lockable Request: returns error if height is nil", func(t *testing.T) {
 		handler := newHandler(t, logger.Test(t), nil)
-		err := handler.CompleteRequest("req-1", &types.RequestReport{
+		err := handler.CompleteProtoRequest("req-1", &types.RequestReport{
 			Report: &types.RequestReport_LockableToBlock{},
 		})
 		require.ErrorContains(t, err, "chain height is nil for report with requestID req-1")
@@ -234,7 +234,7 @@ func TestCompleteRequest(t *testing.T) {
 	t.Run("Lockable Request: emits log if request does not exist", func(t *testing.T) {
 		lggr, observed := logger.TestObserved(t, zapcore.InfoLevel)
 		handler := newHandler(t, lggr, nil)
-		err := handler.CompleteRequest("req-1", &types.RequestReport{
+		err := handler.CompleteProtoRequest("req-1", &types.RequestReport{
 			Report: &types.RequestReport_LockableToBlock{LockableToBlock: &types.ChainHeight{}},
 		})
 		require.NoError(t, err)
@@ -250,7 +250,7 @@ func TestCompleteRequest(t *testing.T) {
 		_, err := handler.Handle(t.Context(), request)
 		require.NoError(t, err)
 
-		err = handler.CompleteRequest("req-1", &types.RequestReport{
+		err = handler.CompleteProtoRequest("req-1", &types.RequestReport{
 			Report: &types.RequestReport_LockableToBlock{LockableToBlock: &types.ChainHeight{}},
 		})
 		require.NoError(t, err)
@@ -266,7 +266,7 @@ func TestCompleteRequest(t *testing.T) {
 		_, err := handler.Handle(t.Context(), request)
 		require.NoError(t, err)
 
-		err = handler.CompleteRequest("req-1", &types.RequestReport{
+		err = handler.CompleteProtoRequest("req-1", &types.RequestReport{
 			Report: &types.RequestReport_LockableToBlock{LockableToBlock: &types.ChainHeight{Latest: 100}},
 		})
 		require.NoError(t, err)

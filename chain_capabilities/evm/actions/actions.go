@@ -58,10 +58,11 @@ type EVM struct {
 	beholderProcessor beholder.ProtoProcessor
 	messageBuilder    *monitoring.MessageBuilder
 
-	readPayloadSizeLimiter limits.BoundLimiter[commoncfg.Size]
-	logQueryBlockLimit     limits.BoundLimiter[uint64]
-	reportSizeLimit        limits.BoundLimiter[commoncfg.Size]
-	txGasLimit             limits.BoundLimiter[uint64]
+	readPayloadSizeLimiter                     limits.BoundLimiter[commoncfg.Size]
+	logQueryBlockLimit                         limits.BoundLimiter[uint64]
+	reportSizeLimit                            limits.BoundLimiter[commoncfg.Size]
+	txGasLimit                                 limits.BoundLimiter[uint64]
+	featureChainCapabilityHashBasedOCRActiveAt limits.RangeLimiter[commoncfg.Timestamp]
 
 	transmissionScheduler ts.TransmissionScheduler
 }
@@ -99,24 +100,28 @@ func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, 
 }
 
 func (e *EVM) initLimiters(limitsFactory limits.Factory) (err error) {
-	e.readPayloadSizeLimiter, err = limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainRead.PayloadSizeLimit)
+	e.readPayloadSizeLimiter, err = limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainRead.PayloadSizeLimit)
 	if err != nil {
 		return
 	}
-	e.logQueryBlockLimit, err = limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainRead.LogQueryBlockLimit)
+	e.logQueryBlockLimit, err = limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainRead.LogQueryBlockLimit)
 	if err != nil {
 		return
 	}
-	e.reportSizeLimit, err = limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainWrite.ReportSizeLimit)
+	e.reportSizeLimit, err = limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainWrite.ReportSizeLimit)
 	if err != nil {
 		return
 	}
-	e.txGasLimit, err = limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainWrite.EVM.GasLimit)
+	e.txGasLimit, err = limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainWrite.EVM.GasLimit)
+	if err != nil {
+		return
+	}
+	e.featureChainCapabilityHashBasedOCRActiveAt, err = limits.MakeRangeLimiter(limitsFactory, cresettings.Default.PerWorkflow.FeatureMultiTriggerExecutionIDsActivePeriod)
 	return
 }
 
 func (e *EVM) Close() error {
-	return services.CloseAll(e.readPayloadSizeLimiter, e.logQueryBlockLimit, e.reportSizeLimit, e.txGasLimit)
+	return services.CloseAll(e.readPayloadSizeLimiter, e.logQueryBlockLimit, e.reportSizeLimit, e.txGasLimit, e.featureChainCapabilityHashBasedOCRActiveAt)
 }
 
 func requestID(meta capabilities.RequestMetadata) string {
@@ -164,7 +169,12 @@ func (e *EVM) CallContract(
 		return resp.Data, nil
 	}
 
-	responseAndMetadata, err := e.callContractV1(ctx, meta, needsBlockHeightConsensus, callContract)
+	var responseAndMetadata *capabilities.ResponseAndMetadata[*evm.CallContractReply]
+	if e.featureChainCapabilityHashBasedOCRActiveAt.Check(ctx, commoncfg.Timestamp(meta.ExecutionTimestamp)) != nil {
+		responseAndMetadata, err = e.callContractV1(ctx, meta, needsBlockHeightConsensus, callContract)
+	} else {
+		responseAndMetadata, err = e.callContractV2(ctx, meta, needsBlockHeightConsensus, callContract)
+	}
 
 	if err != nil {
 		isUserError := isRevertError(err) || e.isUserError(err)
@@ -175,6 +185,73 @@ func (e *EVM) CallContract(
 
 	monitoring.LogAndEmitSuccess(ctx, "Successfully read CallContract", e.lggr, e.beholderProcessor, e.messageBuilder.BuildCallContractSuccess(telemetryContext, callMsg, blockNumber.Int64()))
 	return responseAndMetadata, nil
+}
+
+type HashableRequest[T proto.Message] interface {
+	ctypes.Request
+	GetObservationByReportData(reportData [ctypes.HashLength]byte) (T, bool)
+	GetSpendUnit() string
+	GetSpendValue() string
+}
+
+func (e *EVM) callContractV2(ctx context.Context, meta capabilities.RequestMetadata, needsBlockHeightConsensus bool,
+	callContract func(ctx context.Context, height *ctypes.ChainHeight) ([]byte, error)) (*capabilities.ResponseAndMetadata[*evm.CallContractReply], error) {
+	observe := func(ctx context.Context, height *ctypes.ChainHeight) (*evm.CallContractReply, error) {
+		data, err := callContract(ctx, height)
+		if err != nil {
+			return nil, err
+		}
+
+		return &evm.CallContractReply{Data: data}, nil
+	}
+
+	var request HashableRequest[*evm.CallContractReply]
+	if needsBlockHeightConsensus {
+		request = ctypes.NewLockableToBlockHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, string(metering.CallContract), metering.ActionSpendUnit, observe)
+	} else {
+		request = ctypes.NewHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, string(metering.CallContract), metering.ActionSpendUnit, func(ctx context.Context) (*evm.CallContractReply, error) {
+			return observe(ctx, nil)
+		})
+	}
+
+	return readHashableRequestReport(ctx, e.ConsensusHandler, request)
+}
+
+func readHashableRequestReport[T proto.Message](ctx context.Context, handler ConsensusHandler, request HashableRequest[T]) (*capabilities.ResponseAndMetadata[T], error) {
+	report, err := readType[*ctypes.HashableRequestReport](ctx, handler, request)
+	if err != nil {
+		return nil, err
+	}
+
+	observation, ok := request.GetObservationByReportData(report.ReportData)
+	if !ok {
+		return nil, capabilities.ErrResponsePayloadNotAvailable
+	}
+
+	sigs := make([]capabilities.AttributedSignature, len(report.AttributedOnchainSignature))
+	for i, sig := range report.AttributedOnchainSignature {
+		sigs[i] = capabilities.AttributedSignature{
+			Signature: sig.Signature,
+			Signer:    uint32(sig.Signer),
+		}
+	}
+	return &capabilities.ResponseAndMetadata[T]{
+		Response: observation,
+		ResponseMetadata: capabilities.ResponseMetadata{
+			Metering: []capabilities.MeteringNodeDetail{
+				{
+					//Peer2PeerID will be assigned by the engine, leaving it empty here.
+					SpendValue: request.GetSpendValue(),
+					SpendUnit:  request.GetSpendUnit(),
+				},
+			},
+			OCRAttestation: &capabilities.ResponseOCRAttestation{
+				ConfigDigest:   report.ConfigDigest,
+				SequenceNumber: report.SeqNr,
+				Sigs:           sigs,
+			},
+		},
+	}, nil
 }
 
 func (e *EVM) callContractV1(ctx context.Context, meta capabilities.RequestMetadata, needsBlockHeightConsensus bool,

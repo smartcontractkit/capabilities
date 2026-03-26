@@ -10,11 +10,19 @@ import (
 	spb "google.golang.org/genproto/googleapis/rpc/status"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/emptypb"
+
+	commonMon "github.com/smartcontractkit/capabilities/libs/monitoring"
+
+	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 )
+
+type RequestType int
 
 type Request interface {
 	ID() string
 	Copy() Request
+	GetOCRObservation() (*RequestObservation, error)
 }
 
 type ObservableRequest interface {
@@ -42,6 +50,21 @@ func (r *EventuallyConsistentRequest) Copy() Request {
 	return r
 }
 
+func (r *EventuallyConsistentRequest) GetOCRObservation() (*RequestObservation, error) {
+	requestOb, observationErr, ok := r.GetObservation()
+	if !ok {
+		return nil, nil
+	}
+	if observationErr != nil {
+		return &RequestObservation{
+			Observation: &RequestObservation_Error{Error: observationErr},
+		}, nil
+	}
+	return &RequestObservation{
+		Observation: &RequestObservation_EventuallyConsistent{EventuallyConsistent: requestOb},
+	}, nil
+}
+
 const (
 	AggregationMethodFPlusOneHighest = "f+1-highest"
 )
@@ -64,6 +87,21 @@ func NewAggregatableRequest(id string, observe func(context.Context) (*Aggregata
 func (a *AggregatableRequest) Copy() Request {
 	// intentionally reuse the same instance, since it's thread safe and we need to get most recent captured observation
 	return a
+}
+
+func (a *AggregatableRequest) GetOCRObservation() (*RequestObservation, error) {
+	requestOb, observationErr, ok := a.GetObservation()
+	if !ok {
+		return nil, nil
+	}
+	if observationErr != nil {
+		return &RequestObservation{
+			Observation: &RequestObservation_Error{Error: observationErr},
+		}, nil
+	}
+	return &RequestObservation{
+		Observation: &RequestObservation_Aggregatable{Aggregatable: requestOb},
+	}, nil
 }
 
 type observableRequest[T any] struct {
@@ -117,7 +155,6 @@ func (r *observableRequest[T]) SetObservation(observation T) {
 	r.observationExists = true
 }
 
-// TODO PLEX-1626: test observation error
 type LockableToBlockRequest struct {
 	id      string
 	observe func(context.Context, *ChainHeight) ([]byte, error)
@@ -141,7 +178,13 @@ func (r *LockableToBlockRequest) ID() string {
 	return r.id
 }
 
-func (r *LockableToBlockRequest) ToEventuallyConsistent(chainHeight *ChainHeight) *EventuallyConsistentRequest {
+func (r *LockableToBlockRequest) GetOCRObservation() (*RequestObservation, error) {
+	return &RequestObservation{
+		Observation: &RequestObservation_LockableToBlock{LockableToBlock: &emptypb.Empty{}},
+	}, nil
+}
+
+func (r *LockableToBlockRequest) LockToABlock(chainHeight *ChainHeight) Request {
 	return NewEventuallyConsistentRequest(r.id, func(ctx context.Context) ([]byte, error) {
 		return r.observe(ctx, chainHeight)
 	})
@@ -171,4 +214,165 @@ func (o ObservationError) Err() error {
 	}
 
 	return status.FromProto(transmittableErr).Err()
+}
+
+// HashableRequest is an observable request, whose payload can be hashed to be used in hash-based consensus.
+// It is the responsibility of the caller to ensure that the payload is deterministic and does not contain any non-deterministic data (e.g. timestamps, random values, etc.)
+// that can cause different nodes to have different hashes for the same request.
+type HashableRequest[T proto.Message] struct {
+	workflowExecutionID string
+	reference           string
+	spendUnit           string
+	spendValue          string
+	*observableRequest[T]
+	observations map[[HashLength]byte]T
+	lock         sync.RWMutex
+}
+
+func NewHashableRequest[T proto.Message](workflowExecutionID, reference, spendUnit, spendValue string, observe func(context.Context) (T, error)) *HashableRequest[T] {
+	return &HashableRequest[T]{
+		workflowExecutionID: workflowExecutionID,
+		reference:           reference,
+		spendUnit:           spendUnit,
+		spendValue:          spendValue,
+		observations:        make(map[[HashLength]byte]T),
+		observableRequest: &observableRequest[T]{
+			id:      commonMon.RequestID(workflowExecutionID, reference),
+			observe: observe,
+		},
+	}
+}
+
+func (r *HashableRequest[T]) Copy() Request {
+	// intentionally reuse the same instance, since it's thread safe, and we need to get most recent captured observation
+	return r
+}
+
+var ErrNoObservation = errors.New("no observation captured yet")
+
+func (r *HashableRequest[T]) getObservationHash() ([HashLength]byte, ObservationError, error) {
+	observation, obErr, ok := r.GetObservation()
+	if !ok {
+		return [HashLength]byte{}, obErr, ErrNoObservation
+	}
+
+	if obErr != nil {
+		return [HashLength]byte{}, obErr, nil
+	}
+
+	rawPayload, err := proto.MarshalOptions{Deterministic: true}.Marshal(observation)
+	if err != nil {
+		return [HashLength]byte{}, nil, fmt.Errorf("failed to marshal observation: %w", err)
+	}
+
+	reportData := commoncap.ResponseToReportData(r.workflowExecutionID, r.reference, rawPayload, r.spendUnit, r.spendValue)
+	r.lock.Lock()
+	defer r.lock.Unlock()
+	r.observations[reportData] = observation
+	return reportData, nil, nil
+}
+
+func (r *HashableRequest[T]) GetOCRObservation() (*RequestObservation, error) {
+	hash, obErr, err := r.getObservationHash()
+	if err != nil {
+		return nil, err
+	}
+	if obErr != nil {
+		return &RequestObservation{
+			Observation: &RequestObservation_Error{Error: obErr},
+		}, nil
+	}
+	return &RequestObservation{
+		Observation: &RequestObservation_Hashable{Hashable: hash[:]},
+	}, nil
+}
+
+func (r *HashableRequest[T]) GetObservationByReportData(reportData [HashLength]byte) (T, bool) {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+	result, ok := r.observations[reportData]
+	return result, ok
+}
+
+func (r *HashableRequest[T]) GetSpendUnit() string {
+	return r.spendUnit
+}
+
+func (r *HashableRequest[T]) GetSpendValue() string {
+	return r.spendValue
+}
+
+type LockableToBlockHashableRequest[T proto.Message] struct {
+	id                  string
+	workflowExecutionID string
+	reference           string
+	spendUnit           string
+	spendValue          string
+	observe             func(context.Context, *ChainHeight) (T, error)
+	lock                sync.RWMutex
+	hashableRequest     *HashableRequest[T]
+}
+
+func NewLockableToBlockHashableRequest[T proto.Message](workflowExecutionID, reference, spendUnit, spendValue string, observe func(context.Context, *ChainHeight) (T, error)) *LockableToBlockHashableRequest[T] {
+	return &LockableToBlockHashableRequest[T]{
+		id:                  commonMon.RequestID(workflowExecutionID, reference),
+		workflowExecutionID: workflowExecutionID,
+		reference:           reference,
+		spendUnit:           spendUnit,
+		spendValue:          spendValue,
+		observe:             observe,
+	}
+}
+
+func (r *LockableToBlockHashableRequest[T]) Copy() Request {
+	return &LockableToBlockHashableRequest[T]{
+		id:                  r.id,
+		workflowExecutionID: r.workflowExecutionID,
+		reference:           r.reference,
+		spendUnit:           r.spendUnit,
+		spendValue:          r.spendValue,
+		observe:             r.observe,
+	}
+}
+
+func (r *LockableToBlockHashableRequest[T]) ID() string {
+	return r.id
+}
+
+func (r *LockableToBlockHashableRequest[T]) LockToABlock(chainHeight *ChainHeight) Request {
+	r.lock.Lock()
+	defer r.lock.Unlock()
+	if r.hashableRequest == nil {
+		r.hashableRequest = NewHashableRequest(r.workflowExecutionID, r.reference, r.spendUnit, r.spendValue, func(ctx context.Context) (T, error) {
+			return r.observe(ctx, chainHeight)
+		})
+	}
+	return r.hashableRequest
+}
+
+const HashLength = 32
+
+func (r *LockableToBlockHashableRequest[T]) GetObservationByReportData(reportData [HashLength]byte) (T, bool) {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+	if r.hashableRequest == nil {
+		var zero T
+		return zero, false
+	}
+
+	return r.hashableRequest.GetObservationByReportData(reportData)
+}
+
+func (r *LockableToBlockHashableRequest[T]) GetOCRObservation() (*RequestObservation, error) {
+	return &RequestObservation{
+		Observation: &RequestObservation_LockableToBlock{LockableToBlock: &emptypb.Empty{}},
+	}, nil
+}
+
+func (r *LockableToBlockHashableRequest[T]) GetSpendUnit() string {
+	return r.spendUnit
+}
+
+func (r *LockableToBlockHashableRequest[T]) GetSpendValue() string {
+	return r.spendValue
 }

@@ -22,11 +22,11 @@ func (_m *RequestsHandler) EXPECT() *RequestsHandler_Expecter {
 }
 
 // CompleteRequest provides a mock function with given fields: id, report
-func (_m *RequestsHandler) CompleteRequest(id string, report *types.RequestReport) error {
+func (_m *RequestsHandler) CompleteProtoRequest(id string, report *types.RequestReport) error {
 	ret := _m.Called(id, report)
 
 	if len(ret) == 0 {
-		panic("no return value specified for CompleteRequest")
+		panic("no return value specified for CompleteProtoRequest")
 	}
 
 	var r0 error
@@ -39,7 +39,7 @@ func (_m *RequestsHandler) CompleteRequest(id string, report *types.RequestRepor
 	return r0
 }
 
-// RequestsHandler_CompleteRequest_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CompleteRequest'
+// RequestsHandler_CompleteRequest_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CompleteProtoRequest'
 type RequestsHandler_CompleteRequest_Call struct {
 	*mock.Call
 }
@@ -48,7 +48,7 @@ type RequestsHandler_CompleteRequest_Call struct {
 //   - id string
 //   - report *types.RequestReport
 func (_e *RequestsHandler_Expecter) CompleteRequest(id interface{}, report interface{}) *RequestsHandler_CompleteRequest_Call {
-	return &RequestsHandler_CompleteRequest_Call{Call: _e.mock.On("CompleteRequest", id, report)}
+	return &RequestsHandler_CompleteRequest_Call{Call: _e.mock.On("CompleteProtoRequest", id, report)}
 }
 
 func (_c *RequestsHandler_CompleteRequest_Call) Run(run func(id string, report *types.RequestReport)) *RequestsHandler_CompleteRequest_Call {
