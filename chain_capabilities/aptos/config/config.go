@@ -3,6 +3,8 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	aptos_sdk "github.com/aptos-labs/aptos-go-sdk"
@@ -24,7 +26,7 @@ type Config struct {
 func (c *Config) UnmarshalJSON(bs []byte) error {
 	type config struct {
 		CREForwarderAddress           string            `json:"creForwarderAddress"` // hex-encoded address (with or without 0x prefix)
-		IsLocal                       bool              `json:"isLocal"`
+		IsLocal                       any               `json:"isLocal"`
 		DeltaStage                    time.Duration     `json:"deltaStage"`
 		ObservationPollerWorkersCount uint              `json:"observationPollerWorkersCount"`
 		ObservationPollPeriod         time.Duration     `json:"observationPollPeriod"`
@@ -41,7 +43,20 @@ func (c *Config) UnmarshalJSON(bs []byte) error {
 	}
 
 	c.ChainID = cfg.ChainID
-	c.IsLocal = cfg.IsLocal
+	switch v := cfg.IsLocal.(type) {
+	case nil:
+		c.IsLocal = false
+	case bool:
+		c.IsLocal = v
+	case string:
+		parsed, err := strconv.ParseBool(strings.TrimSpace(v))
+		if err != nil {
+			return fmt.Errorf("invalid isLocal value %q: %w", v, err)
+		}
+		c.IsLocal = parsed
+	default:
+		return fmt.Errorf("invalid isLocal type %T", v)
+	}
 	c.DeltaStage = cfg.DeltaStage
 	c.ObservationPollerWorkersCount = cfg.ObservationPollerWorkersCount
 	c.ObservationPollPeriod = cfg.ObservationPollPeriod

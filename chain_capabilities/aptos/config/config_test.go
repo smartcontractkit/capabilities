@@ -32,3 +32,14 @@ func TestUnmarshalJSON(t *testing.T) {
 	}
 	assert.Equal(t, expectedAddr, cfg.CREForwarderAddress)
 }
+
+func TestUnmarshalJSON_StringIsLocal(t *testing.T) {
+	input := `{"chainId":"4","network":"aptos","creForwarderAddress":"0x26c93635e9af3ce8ba977ba6c3e4bc84b1cbfbeffe850a603ef0a7251aecbd55","isLocal":"true"}`
+
+	var cfg Config
+	require.NoError(t, json.Unmarshal([]byte(input), &cfg))
+
+	assert.Equal(t, "4", cfg.ChainID)
+	assert.Equal(t, "aptos", cfg.Network)
+	assert.True(t, cfg.IsLocal)
+}
