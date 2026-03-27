@@ -223,7 +223,7 @@ func (wr *writeReport) execute(
 	wr.lggr.Debugw("Post-submission transmission status", "success", newTransmissionInfo.Success, "transmitter", newTransmissionInfo.Transmitter.String())
 
 	var ownMeteringMetadata capabilities.ResponseMetadata
-	ownFeeInOctas, ownVmStatus, feeErr := wr.getTxnInfoFromChain(ctx, txReply.TxHash)
+	ownFeeInOctas, ownVMStatus, feeErr := wr.getTxnInfoFromChain(ctx, txReply.TxHash)
 	if feeErr != nil {
 		wr.lggr.Errorw("Failed to get transaction fee, using zero for metering", "txHash", txReply.TxHash, "error", feeErr)
 		ownMeteringMetadata = metering.GetResponseMetadataWriteReport(big.NewFloat(0), wr.chainSelector)
@@ -286,12 +286,12 @@ func (wr *writeReport) execute(
 			TxStatus:                        aptoscap.TxStatus_TX_STATUS_FATAL,
 			TxHash:                          &txReply.TxHash,
 			TransactionFee:                  &ownFeeInOctas,
-			ErrorMessage:                    ptrIfNonEmpty(ownVmStatus),
-			ReceiverContractExecutionStatus: receiverContractExecutionStatusFromFailedVMStatus(ownVmStatus, wr.forwarderAddress),
+			ErrorMessage:                    ptrIfNonEmpty(ownVMStatus),
+			ReceiverContractExecutionStatus: receiverContractExecutionStatusFromFailedVMStatus(ownVMStatus, wr.forwarderAddress),
 		}
 		// Position 0 node has no prior nodes to check; return its own failed tx hash.
 		if queuePosition <= 0 {
-			wr.lggr.Debugw("Position 0, returning own failed hash", "txHash", txReply.TxHash, "vmStatus", ownVmStatus)
+			wr.lggr.Debugw("Position 0, returning own failed hash", "txHash", txReply.TxHash, "vmStatus", ownVMStatus)
 			return ownReply, ownMeteringMetadata, nil
 		}
 
@@ -333,7 +333,7 @@ func (wr *writeReport) execute(
 		}
 
 		// No matching failed tx from prior nodes; return our own hash.
-		wr.lggr.Debugw("No prior failed tx found, returning own hash", "txHash", txReply.TxHash, "vmStatus", ownVmStatus)
+		wr.lggr.Debugw("No prior failed tx found, returning own hash", "txHash", txReply.TxHash, "vmStatus", ownVMStatus)
 		return ownReply, ownMeteringMetadata, nil
 	}
 	return nil, capabilities.ResponseMetadata{}, nil // should never happen
