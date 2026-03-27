@@ -251,7 +251,11 @@ func (wr *writeReport) execute(
 
 		receiverContractExecutionStatus := aptoscap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS
 
-		if txReply.TxStatus == aptostypes.TxReverted {
+		switch txReply.TxStatus {
+		case aptostypes.TxReverted, aptostypes.TxFatal:
+			if txReply.TxStatus == aptostypes.TxFatal {
+				wr.lggr.Errorw("Transaction failed to get processed, but report was already submitted, this is unexpected and should be investigated", "txHash", txReply.TxHash)
+			}
 			// Report for this transaction has already been submitted and we sent a duplicate tx onchain, that is why this tx reverted but transmission info still shows success.
 			wr.lggr.Debugw("Our tx reverted but report is onchain (duplicate), retrieving success hash",
 				"ownTxStatus", txReply.TxStatus, "ownTxHash", txReply.TxHash)
@@ -269,15 +273,15 @@ func (wr *writeReport) execute(
 				TransactionFee:                  txFeeOctas,
 				ReceiverContractExecutionStatus: &receiverContractExecutionStatus,
 			}, capabilities.ResponseMetadata{}, nil
-		} else if txReply.TxStatus == aptostypes.TxSuccess {
+		case aptostypes.TxSuccess:
 			return &aptoscap.WriteReportReply{
 				TxStatus:                        aptoscap.TxStatus_TX_STATUS_SUCCESS,
 				TxHash:                          &txReply.TxHash,
 				TransactionFee:                  txFeeOctas,
 				ReceiverContractExecutionStatus: &receiverContractExecutionStatus,
 			}, meteringMetadata, nil
-		} else {
-			return nil, capabilities.ResponseMetadata{}, fmt.Errorf("unexpected tx status: %s", txReply.TxStatus)
+		default:
+			return nil, capabilities.ResponseMetadata{}, fmt.Errorf("unexpected tx status: %v", txReply.TxStatus)
 		}
 	case false:
 		if txReply.TxStatus == aptostypes.TxSuccess {

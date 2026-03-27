@@ -144,7 +144,7 @@ func generateRandomSignatures() []*workflowpb.AttributedSignature {
 // buildFakeTransaction constructs an aptostypes.Transaction whose Data field is JSON
 // matching the Go-default marshal output of UserTransaction (uppercase keys, numeric types),
 // which is what scanTransactions unmarshals via the local userTxData struct.
-func buildFakeTransaction(t *testing.T, txHash string, success bool, seqNum uint64, timestampMicro uint64, reportMetadata ocrtypes.Metadata) *aptostypes.Transaction {
+func buildFakeTransaction(t *testing.T, txHash string, success bool, seqNum uint64, timestampMicro int64, reportMetadata ocrtypes.Metadata) *aptostypes.Transaction {
 	t.Helper()
 	var vmStatus string
 	if !success {
@@ -153,7 +153,7 @@ func buildFakeTransaction(t *testing.T, txHash string, success bool, seqNum uint
 	return buildFakeTransactionFull(t, txHash, success, seqNum, timestampMicro, reportMetadata, testGasUsed, testGasUnitPrice, vmStatus)
 }
 
-func buildFakeTransactionWithGas(t *testing.T, txHash string, success bool, seqNum uint64, timestampMicro uint64, reportMetadata ocrtypes.Metadata, gasUsed uint64, gasUnitPrice uint64) *aptostypes.Transaction {
+func buildFakeTransactionWithGas(t *testing.T, txHash string, success bool, seqNum uint64, timestampMicro int64, reportMetadata ocrtypes.Metadata, gasUsed uint64, gasUnitPrice uint64) *aptostypes.Transaction {
 	t.Helper()
 	var vmStatus string
 	if !success {
@@ -162,7 +162,7 @@ func buildFakeTransactionWithGas(t *testing.T, txHash string, success bool, seqN
 	return buildFakeTransactionFull(t, txHash, success, seqNum, timestampMicro, reportMetadata, gasUsed, gasUnitPrice, vmStatus)
 }
 
-func buildFakeTransactionFull(t *testing.T, txHash string, success bool, seqNum uint64, timestampMicro uint64, reportMetadata ocrtypes.Metadata, gasUsed uint64, gasUnitPrice uint64, vmStatus string) *aptostypes.Transaction {
+func buildFakeTransactionFull(t *testing.T, txHash string, success bool, seqNum uint64, timestampMicro int64, reportMetadata ocrtypes.Metadata, gasUsed uint64, gasUnitPrice uint64, vmStatus string) *aptostypes.Transaction {
 	t.Helper()
 	encodedReport, err := reportMetadata.Encode()
 	require.NoError(t, err)
@@ -306,7 +306,7 @@ func TestWriteReport_Execute(t *testing.T) {
 		h.forwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).
 			Return(TransmissionInfo{Success: true, Transmitter: transmitter}, nil)
 		h.forwarderClient.On("GetTransmitterTransactions", mock.Anything, transmitter, mock.Anything, mock.Anything).
-			Return([]*aptostypes.Transaction{buildFakeTransaction(t, "0xalready", true, 100, uint64(time.Now().UnixMicro()), rm)}, nil)
+			Return([]*aptostypes.Transaction{buildFakeTransaction(t, "0xalready", true, 100, time.Now().UnixMicro(), rm)}, nil)
 
 		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, capErr)
@@ -340,7 +340,7 @@ func TestWriteReport_Execute(t *testing.T) {
 		h.mockPostSubmitPoll(TransmissionInfo{Success: true, Transmitter: transmitter})
 		h.mockTransactionByHash("0xreverted", testGasUsed, testGasUnitPrice)
 		h.forwarderClient.On("GetTransmitterTransactions", mock.Anything, transmitter, mock.Anything, mock.Anything).
-			Return([]*aptostypes.Transaction{buildFakeTransaction(t, "0xreal", true, 100, uint64(time.Now().UnixMicro()), rm)}, nil)
+			Return([]*aptostypes.Transaction{buildFakeTransaction(t, "0xreal", true, 100, time.Now().UnixMicro(), rm)}, nil)
 
 		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, capErr)
@@ -397,7 +397,7 @@ func TestWriteReport_Execute(t *testing.T) {
 		h.mockPostSubmitPoll(TransmissionInfo{Success: false})
 		h.mockTransactionByHash("0xmine", testGasUsed, testGasUnitPrice)
 		h.forwarderClient.On("GetTransmitterTransactions", mock.Anything, node0Addr, mock.Anything, mock.Anything).
-			Return([]*aptostypes.Transaction{buildFakeTransaction(t, "0xnode0failed", false, 100, uint64(time.Now().UnixMicro()), rm)}, nil)
+			Return([]*aptostypes.Transaction{buildFakeTransaction(t, "0xnode0failed", false, 100, time.Now().UnixMicro(), rm)}, nil)
 
 		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, capErr)
@@ -417,7 +417,7 @@ func TestWriteReport_Execute(t *testing.T) {
 		h, node0Addr := newMultiNodeTestHelper(t, transmissionIDStr)
 
 		vmReceiverRevert := "Move abort in 0x1::receiver: E_RECEIVER_FAILURE(0x64):"
-		priorFailedTx := buildFakeTransactionFull(t, "0xnode0receiverfail", false, 100, uint64(time.Now().UnixMicro()), rm, testGasUsed, testGasUnitPrice, vmReceiverRevert)
+		priorFailedTx := buildFakeTransactionFull(t, "0xnode0receiverfail", false, 100, time.Now().UnixMicro(), rm, testGasUsed, testGasUnitPrice, vmReceiverRevert)
 
 		h.mockNoTransmission()
 		h.mockInvokeOnReport(&aptostypes.SubmitTransactionReply{TxStatus: aptostypes.TxFatal, TxHash: "0xmine"}, nil)

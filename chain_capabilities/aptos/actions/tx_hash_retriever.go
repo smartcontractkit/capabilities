@@ -28,7 +28,7 @@ type userTxData struct {
 	Hash           string          `json:"Hash"`
 	Success        bool            `json:"Success"`
 	SequenceNumber uint64          `json:"SequenceNumber"`
-	Timestamp      uint64          `json:"Timestamp"`
+	Timestamp      int64           `json:"Timestamp"` // micros since Unix epoch; int64 matches time.UnixMicro() and JSON numbers
 	GasUsed        uint64          `json:"GasUsed"`
 	GasUnitPrice   uint64          `json:"GasUnitPrice"`
 	VmStatus       string          `json:"VmStatus"`
@@ -82,7 +82,7 @@ type TransmissionTxInfo struct {
 // and sequence/timestamp metadata from the scanned batch for pagination.
 type scanResult struct {
 	TransmissionTxInfo
-	EarliestTsMicro uint64
+	EarliestTsMicro int64
 	MinSeqNum       uint64
 	MaxSeqNum       uint64
 }
@@ -186,7 +186,7 @@ func (thr *TxHashRetriever) paginateBackwards(
 		"pageSize", pageSize,
 	)
 	page := 0
-	for prevScanResult.EarliestTsMicro > uint64(thr.startingPointMicro) && prevScanResult.MinSeqNum > 0 {
+	for prevScanResult.EarliestTsMicro > thr.startingPointMicro && prevScanResult.MinSeqNum > 0 {
 		var nextStart uint64
 		if prevScanResult.MinSeqNum > pageSize {
 			nextStart = prevScanResult.MinSeqNum - pageSize
@@ -271,7 +271,7 @@ func (thr *TxHashRetriever) GetSuccessfulTransmissionInfo(ctx context.Context, t
 	thr.lggr.Debugw("GetSuccessfulTransmissionInfo phase 2 - paginate backwards",
 		"earliestTxTimestamp", phase1Result.EarliestTsMicro, "startingPointMicro", thr.startingPointMicro,
 		"firstSeqNum", phase1Result.MinSeqNum, "pageSize", pageSize)
-	if phase1Result.EarliestTsMicro > uint64(thr.startingPointMicro) {
+	if phase1Result.EarliestTsMicro > thr.startingPointMicro {
 		successScanner := func(txns []*aptostypes.Transaction) scanResult {
 			return thr.scanTransactions(txns, true)
 		}
@@ -349,7 +349,7 @@ func (thr *TxHashRetriever) GetFailedTransmissionInfo(ctx context.Context, trans
 	thr.lggr.Debugw("GetFailedTransmissionInfo phase 2 - paginate backwards",
 		"earliestTxTimestamp", phase1Result.EarliestTsMicro, "startingPointMicro", thr.startingPointMicro,
 		"firstSeqNum", phase1Result.MinSeqNum, "pageSize", pageSize)
-	if phase1Result.EarliestTsMicro > uint64(thr.startingPointMicro) {
+	if phase1Result.EarliestTsMicro > thr.startingPointMicro {
 		failureScanner := func(txns []*aptostypes.Transaction) scanResult {
 			return thr.scanTransactions(txns, false)
 		}

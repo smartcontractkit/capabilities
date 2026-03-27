@@ -39,7 +39,7 @@ func TestGetSuccessfulTransmissionInfo(t *testing.T) {
 		requestStartTime := time.Now()
 		thr := newTestTxHashRetriever(t, mockClient, targetReportMetadata, requestStartTime)
 
-		recentTs := uint64(requestStartTime.UnixMicro())
+		recentTs := requestStartTime.UnixMicro()
 		matchingTx := buildFakeTransactionWithGas(t, "0xfound", true, 100, recentTs, targetReportMetadata, 500, 100)
 
 		mockClient.On("GetTransmitterTransactions", mock.Anything, transmitter, mock.Anything, mock.Anything).
@@ -59,7 +59,7 @@ func TestGetSuccessfulTransmissionInfo(t *testing.T) {
 		requestStartTime := time.Now()
 		thr := newTestTxHashRetriever(t, mockClient, targetReportMetadata, requestStartTime)
 
-		recentTs := uint64(requestStartTime.UnixMicro())
+		recentTs := requestStartTime.UnixMicro()
 		unrelatedTx := buildFakeTransaction(t, "0xunrelated", true, 200, recentTs, randomReportMetadata)
 		matchingTx := buildFakeTransaction(t, "0xfound_in_phase2", true, 50, recentTs-500000, targetReportMetadata)
 
@@ -82,8 +82,8 @@ func TestGetSuccessfulTransmissionInfo(t *testing.T) {
 		requestStartTime := time.Now()
 		thr := newTestTxHashRetriever(t, mockClient, targetReportMetadata, requestStartTime)
 
-		recentTs := uint64(requestStartTime.UnixMicro())
-		oldTs := uint64(requestStartTime.Add(-2 * time.Minute).UnixMicro())
+		recentTs := requestStartTime.UnixMicro()
+		oldTs := requestStartTime.Add(-2 * time.Minute).UnixMicro()
 		unrelatedRecentTx := buildFakeTransaction(t, "0xunrelated1", true, 200, recentTs, randomReportMetadata)
 		unrelatedOldTx := buildFakeTransaction(t, "0xunrelated2", true, 50, oldTs, randomReportMetadata)
 		matchingTx := buildFakeTransaction(t, "0xfound_in_phase3", true, 300, recentTs, targetReportMetadata)
@@ -110,8 +110,8 @@ func TestGetSuccessfulTransmissionInfo(t *testing.T) {
 		requestStartTime := time.Now()
 		thr := newTestTxHashRetriever(t, mockClient, targetReportMetadata, requestStartTime)
 
-		oldTs := uint64(requestStartTime.Add(-2 * time.Minute).UnixMicro())
-		recentTs := uint64(requestStartTime.UnixMicro())
+		oldTs := requestStartTime.Add(-2 * time.Minute).UnixMicro()
+		recentTs := requestStartTime.UnixMicro()
 		unrelatedOldTx := buildFakeTransaction(t, "0xunrelated", true, 50, oldTs, randomReportMetadata)
 		matchingTx := buildFakeTransaction(t, "0xfound_in_phase3", true, 300, recentTs, targetReportMetadata)
 
@@ -134,7 +134,7 @@ func TestGetSuccessfulTransmissionInfo(t *testing.T) {
 		requestStartTime := time.Now()
 		thr := newTestTxHashRetriever(t, mockClient, targetReportMetadata, requestStartTime)
 
-		oldTs := uint64(requestStartTime.Add(-2 * time.Minute).UnixMicro())
+		oldTs := requestStartTime.Add(-2 * time.Minute).UnixMicro()
 		unrelatedOldTx := buildFakeTransaction(t, "0xunrelated", true, 50, oldTs, randomReportMetadata)
 
 		// All GetTransmitterTransactions calls return unrelated tx
@@ -160,7 +160,7 @@ func TestGetFailedTransmissionInfo(t *testing.T) {
 		requestStartTime := time.Now()
 		thr := newTestTxHashRetriever(t, mockClient, targetRM, requestStartTime)
 
-		recentTs := uint64(requestStartTime.UnixMicro())
+		recentTs := requestStartTime.UnixMicro()
 		matchingTx := buildFakeTransaction(t, "0xfailed_phase1", false, 100, recentTs, targetRM)
 
 		mockClient.On("GetTransmitterTransactions", mock.Anything, transmitter, mock.Anything, mock.Anything).
@@ -195,7 +195,7 @@ func TestGetFailedTransmissionInfo(t *testing.T) {
 		requestStartTime := time.Now()
 		thr := newTestTxHashRetriever(t, mockClient, targetRM, requestStartTime)
 
-		recentTs := uint64(requestStartTime.UnixMicro())
+		recentTs := requestStartTime.UnixMicro()
 		unrelatedTx := buildFakeTransaction(t, "0xunrelated", false, 200, recentTs, otherRM)
 		matchingTx := buildFakeTransaction(t, "0xfailed_phase2", false, 50, recentTs-500000, targetRM)
 
@@ -219,7 +219,7 @@ func TestGetFailedTransmissionInfo(t *testing.T) {
 		requestStartTime := time.Now()
 		thr := newTestTxHashRetriever(t, mockClient, targetRM, requestStartTime)
 
-		oldTs := uint64(requestStartTime.Add(-2 * time.Minute).UnixMicro())
+		oldTs := requestStartTime.Add(-2 * time.Minute).UnixMicro()
 		unrelatedOldTx := buildFakeTransaction(t, "0xunrelated", false, 50, oldTs, otherRM)
 
 		// Phase 1: unrelated tx with old timestamp (skip phase 2, no phase 3)
@@ -238,8 +238,8 @@ func TestGetFailedTransmissionInfo(t *testing.T) {
 		requestStartTime := time.Now()
 		thr := newTestTxHashRetriever(t, mockClient, targetRM, requestStartTime)
 
-		recentTs := uint64(requestStartTime.UnixMicro())
-		oldTs := uint64(requestStartTime.Add(-2 * time.Minute).UnixMicro())
+		recentTs := requestStartTime.UnixMicro()
+		oldTs := requestStartTime.Add(-2 * time.Minute).UnixMicro()
 		unrelatedRecentTx := buildFakeTransaction(t, "0xunrelated1", false, 200, recentTs, otherRM)
 		unrelatedOldTx := buildFakeTransaction(t, "0xunrelated2", false, 50, oldTs, otherRM)
 
