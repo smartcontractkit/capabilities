@@ -2,8 +2,6 @@
 ```mermaid
 flowchart LR
 
-	capabilities/capabilitywatcher --> capabilities/libs
-	click capabilities/capabilitywatcher href "https://github.com/smartcontractkit/capabilities"
 	capabilities/chain_capabilities/aptos --> capabilities/chain_capabilities/common
 	capabilities/chain_capabilities/aptos --> chainlink-aptos
 	click capabilities/chain_capabilities/aptos href "https://github.com/smartcontractkit/capabilities"
@@ -35,8 +33,6 @@ flowchart LR
 	click capabilities/libs href "https://github.com/smartcontractkit/capabilities"
 	capabilities/loadtestwritetarget --> capabilities/libs
 	click capabilities/loadtestwritetarget href "https://github.com/smartcontractkit/capabilities"
-	capabilities/mock --> capabilities/libs
-	click capabilities/mock href "https://github.com/smartcontractkit/capabilities"
 	capabilities/readcontract --> capabilities/libs
 	click capabilities/readcontract href "https://github.com/smartcontractkit/capabilities"
 	capabilities/workflowevent --> capabilities/libs
@@ -231,7 +227,6 @@ flowchart LR
 	click wsrpc href "https://github.com/smartcontractkit/wsrpc"
 
 	subgraph capabilities-repo[capabilities]
-		 capabilities/capabilitywatcher
 		 capabilities/chain_capabilities/aptos
 		 capabilities/chain_capabilities/common
 		 capabilities/chain_capabilities/evm
@@ -243,7 +238,6 @@ flowchart LR
 		 capabilities/integration_tests
 		 capabilities/libs
 		 capabilities/loadtestwritetarget
-		 capabilities/mock
 		 capabilities/readcontract
 		 capabilities/workflowevent
 		 capabilities/workflows
