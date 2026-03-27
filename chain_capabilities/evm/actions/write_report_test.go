@@ -883,6 +883,10 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			}, nil).
 			Once()
 
+		mockForwarderClient.EXPECT().
+			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return([]*evmtypes.Log{{TxHash: txHash, Data: successLogData(), BlockNumber: big.NewInt(100)}}, nil)
+
 		receipt := evmtypes.Receipt{
 			Status:            uint64(contracts.TransmissionStateSucceeded),
 			TxHash:            txHash,
@@ -966,6 +970,10 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 				GasLimit:        big.NewInt(EnoughReceiverGas),
 			}, nil).
 			Once()
+
+		mockForwarderClient.EXPECT().
+			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return([]*evmtypes.Log{{TxHash: txHash, Data: successLogData(), BlockNumber: big.NewInt(100)}}, nil)
 
 		receipt := evmtypes.Receipt{
 			Status:            uint64(contracts.TransmissionStateSucceeded),
@@ -1091,6 +1099,10 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 				GasLimit:        big.NewInt(EnoughReceiverGas),
 			}, nil).
 			Once()
+
+		mockForwarderClient.EXPECT().
+			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return([]*evmtypes.Log{{TxHash: txHash, Data: successLogData(), BlockNumber: big.NewInt(100)}}, nil)
 
 		receipt := evmtypes.Receipt{
 			Status:            uint64(contracts.TransmissionStateSucceeded),
@@ -1919,6 +1931,10 @@ func TestExecuteWriteReport_MeteringMetadata(t *testing.T) {
 		}
 		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, transmissionID).Return(transmissionInfo, nil).Once()
 
+		mockForwarderClient.EXPECT().
+			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return([]*evmtypes.Log{{TxHash: txHash, Data: successLogData(), BlockNumber: big.NewInt(100)}}, nil)
+
 		evmServiceMock.EXPECT().GetTransactionFee(mock.Anything, "test-idempotency-key").Return(&evmtypes.TransactionFee{
 			TransactionFee: big.NewInt(2000),
 		}, nil)
@@ -1988,6 +2004,10 @@ func TestExecuteWriteReport_MeteringMetadata(t *testing.T) {
 			GasLimit:        big.NewInt(EnoughReceiverGas),
 		}
 		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, transmissionID).Return(transmissionInfo, nil).Once()
+
+		mockForwarderClient.EXPECT().
+			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return([]*evmtypes.Log{{TxHash: txHash, Data: successLogData(), BlockNumber: big.NewInt(100)}}, nil)
 
 		evmServiceMock.EXPECT().GetTransactionFee(mock.Anything, "test-idempotency-key").Return(nil, errors.New("fee calculation failed"))
 
@@ -2155,6 +2175,10 @@ func TestWriteReport_BillingMetadata(t *testing.T) {
 			GasLimit:        big.NewInt(EnoughReceiverGas),
 		}
 		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, transmissionID).Return(transmissionInfo, nil).Once()
+
+		mockForwarderClient.EXPECT().
+			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return([]*evmtypes.Log{{TxHash: txHash, Data: successLogData(), BlockNumber: big.NewInt(100)}}, nil)
 
 		evmServiceMock.EXPECT().GetTransactionFee(mock.Anything, "test-idempotency-key").Return(&evmtypes.TransactionFee{
 			TransactionFee: big.NewInt(3000),
