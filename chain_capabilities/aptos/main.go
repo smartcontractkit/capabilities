@@ -152,6 +152,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	c.lggr.Debugw("Unmarshalled config",
 		"network", cfg.Network,
 		"chainID", cfg.ChainID,
+		"isLocal", cfg.IsLocal,
 		"deltaStage", cfg.DeltaStage,
 		"creForwarderAddress", fmt.Sprintf("%x", cfg.CREForwarderAddress),
 	)
@@ -213,7 +214,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return fmt.Errorf("error when creating oracle: %w", err)
 	}
 
-	myDON, err := ts.InitMyDON(ctx, dependencies.CapabilityRegistry, c.id, c.lggr, false)
+	myDON, err := ts.InitMyDON(ctx, dependencies.CapabilityRegistry, c.id, c.lggr, cfg.IsLocal)
 	if err != nil {
 		c.lggr.Errorw("failed to init DON", "error", err)
 		return fmt.Errorf("failed to init DON: %w", err)
@@ -242,7 +243,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	if cfg.DeltaStage == 0 {
 		cfg.DeltaStage = defaultDeltaStage
 	}
-	scheduler, err := ts.InitialiseTransmissionScheduler(ctx, dependencies.CapabilityRegistry, cfg.DeltaStage, c.lggr, c.DON, false)
+	scheduler, err := ts.InitialiseTransmissionScheduler(ctx, dependencies.CapabilityRegistry, cfg.DeltaStage, c.lggr, c.DON, cfg.IsLocal)
 	if err != nil {
 		c.lggr.Errorw("failed to initialize transmission scheduler", "error", err)
 		return fmt.Errorf("failed to initialize transmission scheduler: %w", err)

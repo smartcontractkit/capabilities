@@ -10,6 +10,7 @@ import (
 
 type Config struct {
 	CREForwarderAddress           [32]byte          // 32-byte Aptos account address of forwarder module
+	IsLocal                       bool              `json:"isLocal"`
 	DeltaStage                    time.Duration     // DeltaStage for staggered transmission scheduling
 	ObservationPollerWorkersCount uint              `json:"observationPollerWorkersCount"`
 	ObservationPollPeriod         time.Duration     `json:"observationPollPeriod"`
@@ -23,6 +24,7 @@ type Config struct {
 func (c *Config) UnmarshalJSON(bs []byte) error {
 	type config struct {
 		CREForwarderAddress           string            `json:"creForwarderAddress"` // hex-encoded address (with or without 0x prefix)
+		IsLocal                       bool              `json:"isLocal"`
 		DeltaStage                    time.Duration     `json:"deltaStage"`
 		ObservationPollerWorkersCount uint              `json:"observationPollerWorkersCount"`
 		ObservationPollPeriod         time.Duration     `json:"observationPollPeriod"`
@@ -39,6 +41,7 @@ func (c *Config) UnmarshalJSON(bs []byte) error {
 	}
 
 	c.ChainID = cfg.ChainID
+	c.IsLocal = cfg.IsLocal
 	c.DeltaStage = cfg.DeltaStage
 	c.ObservationPollerWorkersCount = cfg.ObservationPollerWorkersCount
 	c.ObservationPollPeriod = cfg.ObservationPollPeriod

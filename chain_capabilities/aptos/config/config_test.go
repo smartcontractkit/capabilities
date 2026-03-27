@@ -10,13 +10,14 @@ import (
 )
 
 func TestUnmarshalJSON(t *testing.T) {
-	input := `{"chainId":"4","network":"aptos","creForwarderAddress":"0x26c93635e9af3ce8ba977ba6c3e4bc84b1cbfbeffe850a603ef0a7251aecbd55","deltaStage":1000000000,"observationPollerWorkersCount":17,"observationPollPeriod":2000000000,"chainHeightPollPeriod":3000000000,"unknownRequestsTTL":4000000000}`
+	input := `{"chainId":"4","network":"aptos","creForwarderAddress":"0x26c93635e9af3ce8ba977ba6c3e4bc84b1cbfbeffe850a603ef0a7251aecbd55","isLocal":true,"deltaStage":1000000000,"observationPollerWorkersCount":17,"observationPollPeriod":2000000000,"chainHeightPollPeriod":3000000000,"unknownRequestsTTL":4000000000}`
 
 	var cfg Config
 	require.NoError(t, json.Unmarshal([]byte(input), &cfg))
 
 	assert.Equal(t, "4", cfg.ChainID)
 	assert.Equal(t, "aptos", cfg.Network)
+	assert.True(t, cfg.IsLocal)
 	assert.EqualValues(t, 17, cfg.ObservationPollerWorkersCount)
 	assert.Equal(t, time.Second, cfg.DeltaStage)
 	assert.Equal(t, 2*time.Second, cfg.ObservationPollPeriod)
