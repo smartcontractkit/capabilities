@@ -410,6 +410,30 @@ func TestWriteReport_Execute(t *testing.T) {
 		require.Nil(t, result.Response.ReceiverContractExecutionStatus)
 		require.Empty(t, result.ResponseMetadata.Metering)
 	})
+
+	t.Run("Submit fails - prior node receiver revert includes metering", func(t *testing.T) {
+		rm, reqMeta, req := newReportFixture(t)
+		transmissionIDStr := computeTransmissionIDStr(t, rm)
+		h, node0Addr := newMultiNodeTestHelper(t, transmissionIDStr)
+
+		vmReceiverRevert := "Move abort in 0x1::receiver: E_RECEIVER_FAILURE(0x64):"
+		priorFailedTx := buildFakeTransactionFull(t, "0xnode0receiverfail", false, 100, uint64(time.Now().UnixMicro()), rm, testGasUsed, testGasUnitPrice, vmReceiverRevert)
+
+		h.mockNoTransmission()
+		h.mockInvokeOnReport(&aptostypes.SubmitTransactionReply{TxStatus: aptostypes.TxFatal, TxHash: "0xmine"}, nil)
+		h.mockPostSubmitPoll(TransmissionInfo{Success: false})
+		h.mockTransactionByHash("0xmine", testGasUsed, testGasUnitPrice)
+		h.forwarderClient.On("GetTransmitterTransactions", mock.Anything, node0Addr, mock.Anything, mock.Anything).
+			Return([]*aptostypes.Transaction{priorFailedTx}, nil)
+
+		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
+		require.Nil(t, capErr)
+		require.Equal(t, aptoscap.TxStatus_TX_STATUS_FATAL, result.Response.TxStatus)
+		require.Equal(t, "0xnode0receiverfail", *result.Response.TxHash)
+		require.NotNil(t, result.Response.ReceiverContractExecutionStatus)
+		require.Equal(t, aptoscap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED, *result.Response.ReceiverContractExecutionStatus)
+		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector, "0.0005")
+	})
 }
 
 func TestReceiverContractExecutionStatusFromFailedVmStatus(t *testing.T) {

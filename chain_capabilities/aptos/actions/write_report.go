@@ -52,15 +52,15 @@ func (s *Aptos) WriteReport(
 
 	// 1. Validate inputs
 	if err := s.validateWriteReportInputs(metadata, input); err != nil {
-		s.lggr.Errorw("validateWriteReportInputs failed", "error", err)
+		s.lggr.Errorw("ValidateWriteReportInputs failed", "error", err)
 		return nil, capcommon.NewUserError(err)
 	}
-	s.lggr.Debugw("inputs validated successfully")
+	s.lggr.Debugw("Inputs validated successfully")
 
 	// 2. Build and submit the transaction via AptosService
 	reply, meteringMetadata, err := s.executeWriteReport(ctx, input, metadata)
 	if err != nil {
-		s.lggr.Errorw("executeWriteReport failed", "error", err)
+		s.lggr.Errorw("ExecuteWriteReport failed", "error", err)
 		return nil, capcommon.GetError(err, s.isUserError(err))
 	}
 
@@ -113,7 +113,7 @@ func (wr *writeReport) execute(
 	request *aptoscap.WriteReportRequest,
 	metadata capabilities.RequestMetadata,
 ) (*aptoscap.WriteReportReply, capabilities.ResponseMetadata, error) {
-	wr.lggr.Debugw("execute started",
+	wr.lggr.Debugw("Execute started",
 		"workflowExecutionID", metadata.WorkflowExecutionID,
 		"hasGasConfig", request.GasConfig != nil,
 		"reportLen", len(request.Report.RawReport),
@@ -130,51 +130,51 @@ func (wr *writeReport) execute(
 		request.GasConfig = &aptoscap.GasConfig{}
 		limit, limErr := wr.maxGasAmountLimit.Limit(ctx)
 		if limErr != nil {
-			wr.lggr.Errorw("failed to get gas limit", "error", limErr)
+			wr.lggr.Errorw("Failed to get gas limit", "error", limErr)
 			return nil, capabilities.ResponseMetadata{}, limErr
 		}
 		request.GasConfig.MaxGasAmount = limit
-		wr.lggr.Debugw("using default gas limit", "maxGasAmount", limit)
+		wr.lggr.Debugw("Using default gas limit", "maxGasAmount", limit)
 	} else {
 		err := wr.maxGasAmountLimit.Check(ctx, request.GasConfig.MaxGasAmount)
 		if err != nil {
-			wr.lggr.Errorw("gas config exceeds limit", "maxGasAmount", request.GasConfig.MaxGasAmount, "error", err)
+			wr.lggr.Errorw("Gas config exceeds limit", "maxGasAmount", request.GasConfig.MaxGasAmount, "error", err)
 			return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s provided gas config exceeds limit (maxGasAmount=%d): %w", capcommon.UserError, request.GasConfig.MaxGasAmount, err)
 		}
-		wr.lggr.Debugw("using provided gas config", "maxGasAmount", request.GasConfig.MaxGasAmount)
+		wr.lggr.Debugw("Using provided gas config", "maxGasAmount", request.GasConfig.MaxGasAmount)
 	}
 
 	transmissionID, err := getTransmissionID(metadata.WorkflowExecutionID, request)
 	if err != nil {
-		wr.lggr.Errorw("getTransmissionID failed", "error", err)
+		wr.lggr.Errorw("GetTransmissionID failed", "error", err)
 		return nil, capabilities.ResponseMetadata{}, err
 	}
-	wr.lggr.Debugw("transmissionID created", "transmissionID", transmissionID.GetDebugID())
+	wr.lggr.Debugw("TransmissionID created", "transmissionID", transmissionID.GetDebugID())
 
 	txHashRetriever := NewTxHashRetriever(wr.forwarderClient, wr.lggr, transmissionID, wr.forwarderAddress.String(), requestStartTime)
 
 	queuePosition := wr.transmissionScheduler.GetQueuePosition(transmissionID.GetDebugID())
 	orderedTransmitters := wr.getOrderedTransmitters(transmissionID.GetDebugID(), wr.p2pConfig)
-	wr.lggr.Debugw("got queue position", "queuePosition", queuePosition, "orderedTransmitters", orderedTransmitters)
+	wr.lggr.Debugw("Got queue position", "queuePosition", queuePosition, "orderedTransmitters", orderedTransmitters)
 	// polling here is done based on queue position and deltaStage
 	transmissionInfo, err := wr.pollTransmissionInfo(ctx, transmissionID, queuePosition)
 	if err != nil {
-		wr.lggr.Errorw("pollTransmissionInfo failed", "error", err)
+		wr.lggr.Errorw("PollTransmissionInfo failed", "error", err)
 		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed to get transmission info: %w", err)
 	}
-	wr.lggr.Debugw("initial pollTransmissionInfo result", "success", transmissionInfo.Success, "transmitter", transmissionInfo.Transmitter.String())
+	wr.lggr.Debugw("Initial pollTransmissionInfo result", "success", transmissionInfo.Success, "transmitter", transmissionInfo.Transmitter.String())
 
 	if transmissionInfo.Success {
 		transmitterAddr := transmissionInfo.Transmitter.StringLong()
 		if !slices.Contains(orderedTransmitters, transmitterAddr) {
 			// TODO: PLEX-2547 emit metric - transmitter not in orderedTransmitters
-			wr.lggr.Errorw("successful transmitter not found in orderedTransmitters, p2pConfig may be incomplete or an external entity submitted the report",
+			wr.lggr.Errorw("Successful transmitter not found in orderedTransmitters, p2pConfig may be incomplete or an external entity submitted the report",
 				"transmitter", transmitterAddr, "orderedTransmitters", orderedTransmitters)
 		}
-		wr.lggr.Debugw("report already onchain, retrieving txHash")
-		txResult, txHashErr := txHashRetriever.GetSuccessfulTransmissionHash(ctx, transmissionInfo.Transmitter)
+		wr.lggr.Debugw("Report already onchain, retrieving txHash")
+		txResult, txHashErr := txHashRetriever.GetSuccessfulTransmissionInfo(ctx, transmissionInfo.Transmitter)
 		if txHashErr != nil {
-			wr.lggr.Errorw("report already onchain but failed to retrieve its txHash", "error", txHashErr)
+			wr.lggr.Errorw("Report already onchain but failed to retrieve its txHash", "error", txHashErr)
 			return nil, capabilities.ResponseMetadata{}, txHashErr
 		}
 		receiverContractExecutionStatus := aptoscap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS
@@ -193,7 +193,7 @@ func (wr *writeReport) execute(
 
 	err = wr.reportSizeLimit.Check(ctx, commoncfg.SizeOf(request.Report.RawReport))
 	if err != nil {
-		wr.lggr.Errorw("report size exceeds limit", "reportSize", len(request.Report.RawReport), "error", err)
+		wr.lggr.Errorw("Report size exceeds limit", "reportSize", len(request.Report.RawReport), "error", err)
 		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s report size exceeds limit: %w", capcommon.UserError, err)
 	}
 
@@ -219,18 +219,18 @@ func (wr *writeReport) execute(
 	})
 
 	if err != nil {
-		wr.lggr.Errorw("post-submission polling failed", "error", err)
+		wr.lggr.Errorw("Post-submission polling failed", "error", err)
 		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed getting transmission info after node submitted the report on chain, %w", err)
 	}
 
-	wr.lggr.Debugw("post-submission transmission status", "success", newTransmissionInfo.Success, "transmitter", newTransmissionInfo.Transmitter.String())
+	wr.lggr.Debugw("Post-submission transmission status", "success", newTransmissionInfo.Success, "transmitter", newTransmissionInfo.Transmitter.String())
 
 	var txFeeOctas *uint64
 	var ownVmStatus string
 	var meteringMetadata capabilities.ResponseMetadata
 	feeInOctas, ownVmStatus, feeErr := wr.getTxnInfoFromChain(ctx, txReply.TxHash)
 	if feeErr != nil {
-		wr.lggr.Errorw("failed to get transaction fee, using zero for metering", "txHash", txReply.TxHash, "error", feeErr)
+		wr.lggr.Errorw("Failed to get transaction fee, using zero for metering", "txHash", txReply.TxHash, "error", feeErr)
 		meteringMetadata = metering.GetResponseMetadataWriteReport(big.NewFloat(0), wr.chainSelector)
 		// TODO: PLEX-2546 emit metric - failed to get transaction fee
 	} else {
@@ -245,18 +245,19 @@ func (wr *writeReport) execute(
 		transmitterAddr := newTransmissionInfo.Transmitter.String()
 		if !slices.Contains(orderedTransmitters, transmitterAddr) {
 			// TODO: PLEX-2547 emit metric - transmitter not in orderedTransmitters
-			wr.lggr.Errorw("successful transmitter not found in orderedTransmitters, p2pConfig may be incomplete or an external entity submitted the report",
+			wr.lggr.Errorw("Successful transmitter not found in orderedTransmitters, p2pConfig may be incomplete or an external entity submitted the report",
 				"transmitter", transmitterAddr, "orderedTransmitters", orderedTransmitters)
 		}
 
 		receiverContractExecutionStatus := aptoscap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS
-		if txReply.TxStatus == aptostypes.TxFatal || txReply.TxStatus == aptostypes.TxReverted {
+
+		if txReply.TxStatus == aptostypes.TxReverted {
 			// Report for this transaction has already been submitted and we sent a duplicate tx onchain, that is why this tx reverted but transmission info still shows success.
-			wr.lggr.Debugw("our tx reverted but report is onchain (duplicate), retrieving success hash",
+			wr.lggr.Debugw("Our tx reverted but report is onchain (duplicate), retrieving success hash",
 				"ownTxStatus", txReply.TxStatus, "ownTxHash", txReply.TxHash)
-			successResult, txHashErr := txHashRetriever.GetSuccessfulTransmissionHash(ctx, newTransmissionInfo.Transmitter)
+			successResult, txHashErr := txHashRetriever.GetSuccessfulTransmissionInfo(ctx, newTransmissionInfo.Transmitter)
 			if txHashErr != nil {
-				wr.lggr.Errorw("failed to get successful transmission hash after duplicate", "error", txHashErr)
+				wr.lggr.Errorw("Failed to get successful transmission hash after duplicate", "error", txHashErr)
 				return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed to get successful transmission hash: %w", txHashErr)
 			}
 			feeOctas := successResult.GasUsed * successResult.GasUnitPrice
@@ -268,17 +269,19 @@ func (wr *writeReport) execute(
 				TransactionFee:                  txFeeOctas,
 				ReceiverContractExecutionStatus: &receiverContractExecutionStatus,
 			}, capabilities.ResponseMetadata{}, nil
+		} else if txReply.TxStatus == aptostypes.TxSuccess {
+			return &aptoscap.WriteReportReply{
+				TxStatus:                        aptoscap.TxStatus_TX_STATUS_SUCCESS,
+				TxHash:                          &txReply.TxHash,
+				TransactionFee:                  txFeeOctas,
+				ReceiverContractExecutionStatus: &receiverContractExecutionStatus,
+			}, meteringMetadata, nil
+		} else {
+			return nil, capabilities.ResponseMetadata{}, fmt.Errorf("unexpected tx status: %s", txReply.TxStatus)
 		}
-
-		return &aptoscap.WriteReportReply{
-			TxStatus:                        aptoscap.TxStatus_TX_STATUS_SUCCESS,
-			TxHash:                          &txReply.TxHash,
-			TransactionFee:                  txFeeOctas,
-			ReceiverContractExecutionStatus: &receiverContractExecutionStatus,
-		}, meteringMetadata, nil
 	case false:
 		if txReply.TxStatus == aptostypes.TxSuccess {
-			wr.lggr.Errorw("unexpected state - local tx succeeded but transmission info shows no success",
+			wr.lggr.Errorw("Unexpected state - local tx succeeded but transmission info shows no success",
 				"transmissionID", transmissionID.GetDebugID())
 			return nil, capabilities.ResponseMetadata{}, fmt.Errorf("unexpected state: local transaction succeeded but transmission info shows no success for %s", transmissionID.GetDebugID())
 		}
@@ -292,12 +295,12 @@ func (wr *writeReport) execute(
 		}
 		// Position 0 node has no prior nodes to check; return its own failed tx hash.
 		if queuePosition <= 0 {
-			wr.lggr.Debugw("position 0, returning own failed hash", "txHash", txReply.TxHash, "vmStatus", ownVmStatus)
+			wr.lggr.Debugw("Position 0, returning own failed hash", "txHash", txReply.TxHash, "vmStatus", ownVmStatus)
 			return ownReply, meteringMetadata, nil
 		}
 
 		// Search preceding transmitters (position 0 through position-1) for a matching failed tx.
-		wr.lggr.Debugw("searching preceding transmitters for failed tx",
+		wr.lggr.Debugw("Searching preceding transmitters for failed tx",
 			"queuePosition", queuePosition,
 			"orderedTransmittersCount", len(orderedTransmitters),
 			"transmissionDebugID", transmissionID.GetDebugID(),
@@ -305,34 +308,40 @@ func (wr *writeReport) execute(
 		for i := 0; i < queuePosition && i < len(orderedTransmitters); i++ {
 			if orderedTransmitters[i] == "" {
 				// TODO: PLEX-2598 emit metric - p2pConfig incomplete, missing transmitter at this position
-				wr.lggr.Warnw("skipping empty transmitter address, p2pConfig is incomplete", "index", i)
+				wr.lggr.Warnw("Skipping empty transmitter address, p2pConfig is incomplete", "index", i)
 				continue
 			}
-			wr.lggr.Debugw("checking prior transmitter", "index", i, "address", orderedTransmitters[i])
+			wr.lggr.Debugw("Checking prior transmitter", "index", i, "address", orderedTransmitters[i])
 			addr, err := aptos_sdk.ConvertToAddress(orderedTransmitters[i])
 			if err != nil {
-				wr.lggr.Errorw("failed to convert transmitter address to address", "address", orderedTransmitters[i], "error", err)
+				wr.lggr.Errorw("Failed to convert transmitter address to address", "address", orderedTransmitters[i], "error", err)
 				continue
 			}
-			failedResult, searchErr := txHashRetriever.GetFailedTransmissionHash(ctx, *addr)
+			failedResult, searchErr := txHashRetriever.GetFailedTransmissionInfo(ctx, *addr)
 			if searchErr != nil {
-				wr.lggr.Debugw("no matching failed tx for prior transmitter", "transmitter", orderedTransmitters[i], "position", i, "err", searchErr)
+				wr.lggr.Debugw("No matching failed tx for prior transmitter", "transmitter", orderedTransmitters[i], "position", i, "err", searchErr)
 				continue
 			}
-			wr.lggr.Debugw("found failed transmission from prior node", "transmitter", orderedTransmitters[i], "position", i, "txHash", failedResult.TxHash, "vmStatus", failedResult.VmStatus)
+			wr.lggr.Debugw("Found failed transmission from prior node", "transmitter", orderedTransmitters[i], "position", i, "txHash", failedResult.TxHash, "vmStatus", failedResult.VmStatus)
 			feeOctas := failedResult.GasUsed * failedResult.GasUnitPrice
 			txFeeOctas = &feeOctas
+			recvStatus := receiverContractExecutionStatusFromFailedVMStatus(failedResult.VmStatus, wr.forwarderAddress)
+			var replyMeta capabilities.ResponseMetadata
+			if recvStatus != nil && *recvStatus == aptoscap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED {
+				feeInAPT := new(big.Float).Quo(new(big.Float).SetUint64(feeOctas), big.NewFloat(1e8))
+				replyMeta = metering.GetResponseMetadataWriteReport(feeInAPT, wr.chainSelector)
+			}
 			return &aptoscap.WriteReportReply{
 				TxStatus:                        aptoscap.TxStatus_TX_STATUS_FATAL,
 				TxHash:                          &failedResult.TxHash,
 				TransactionFee:                  txFeeOctas,
 				ErrorMessage:                    ptrIfNonEmpty(failedResult.VmStatus),
-				ReceiverContractExecutionStatus: receiverContractExecutionStatusFromFailedVMStatus(failedResult.VmStatus, wr.forwarderAddress),
-			}, capabilities.ResponseMetadata{}, nil
+				ReceiverContractExecutionStatus: recvStatus,
+			}, replyMeta, nil
 		}
 
 		// No matching failed tx from prior nodes; return our own hash.
-		wr.lggr.Debugw("no prior failed tx found, returning own hash", "txHash", txReply.TxHash, "vmStatus", ownVmStatus)
+		wr.lggr.Debugw("No prior failed tx found, returning own hash", "txHash", txReply.TxHash, "vmStatus", ownVmStatus)
 		return ownReply, meteringMetadata, nil
 	}
 	return nil, capabilities.ResponseMetadata{}, nil // should never happen
@@ -456,27 +465,27 @@ func (wr *writeReport) pollTransmissionInfo(
 	transmissionID TransmissionID,
 	queuePosition int,
 ) (lastValidInfo TransmissionInfo, err error) {
-	wr.lggr.Debugw("pollTransmissionInfo called",
+	wr.lggr.Debugw("PollTransmissionInfo called",
 		"transmissionID", transmissionID.GetDebugID(),
 		"queuePosition", queuePosition,
 		"deltaStage", wr.transmissionScheduler.DeltaStage,
 	)
 
 	if queuePosition <= 0 {
-		wr.lggr.Debugw("position 0, doing quick retry poll")
+		wr.lggr.Debugw("Position 0, doing quick retry poll")
 		transmissionInfo, err := withQuickRetry(ctx, wr.lggr, func(ctx context.Context) (TransmissionInfo, error) {
 			return wr.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
 		})
 		if err != nil {
-			wr.lggr.Errorw("quick retry poll failed", "error", err)
+			wr.lggr.Errorw("Quick retry poll failed", "error", err)
 			return TransmissionInfo{}, err
 		}
-		wr.lggr.Debugw("quick retry poll result", "success", transmissionInfo.Success)
+		wr.lggr.Debugw("Quick retry poll result", "success", transmissionInfo.Success)
 		return transmissionInfo, nil
 	}
 
 	delay := time.Duration(queuePosition) * wr.transmissionScheduler.DeltaStage
-	wr.lggr.Debugw("polling until slot or state change", "delay", delay, "deltaStage", wr.transmissionScheduler.DeltaStage)
+	wr.lggr.Debugw("Polling until slot or state change", "delay", delay, "deltaStage", wr.transmissionScheduler.DeltaStage)
 
 	attempt := 0
 	stageTimer := time.NewTimer(delay)
@@ -484,7 +493,7 @@ func (wr *writeReport) pollTransmissionInfo(
 	defer func() {
 		stageTimer.Stop()
 		if !stageTimerFired {
-			wr.lggr.Debugw("transmission found before delta stage has passed")
+			wr.lggr.Debugw("Transmission found before delta stage has passed")
 		}
 	}()
 
@@ -494,7 +503,7 @@ func (wr *writeReport) pollTransmissionInfo(
 		} else {
 			lastValidInfo = info
 			if lastValidInfo.Success {
-				wr.lggr.Debugw("found successful transmission during polling", "attempt", attempt, "transmitter", lastValidInfo.Transmitter.String())
+				wr.lggr.Debugw("Found successful transmission during polling", "attempt", attempt, "transmitter", lastValidInfo.Transmitter.String())
 				return lastValidInfo, nil
 			}
 		}
@@ -507,11 +516,11 @@ func (wr *writeReport) pollTransmissionInfo(
 
 		select {
 		case <-ctx.Done():
-			wr.lggr.Errorw("timed out waiting for transmission info", "attempts", attempt)
+			wr.lggr.Errorw("Timed out waiting for transmission info", "attempts", attempt)
 			return TransmissionInfo{}, fmt.Errorf("timed out waiting for transmission info")
 		case <-stageTimer.C:
 			stageTimerFired = true
-			wr.lggr.Debugw("delta stage has passed, returning transmission info", "success", lastValidInfo.Success, "attempts", attempt)
+			wr.lggr.Debugw("Delta stage has passed, returning transmission info", "success", lastValidInfo.Success, "attempts", attempt)
 			return lastValidInfo, nil
 		case <-time.After(wait):
 		}
@@ -530,7 +539,7 @@ func (wr *writeReport) getOrderedTransmitters(transmissionID string, p2pConfig m
 		if addr, ok := p2pConfig[peerHex]; ok {
 			transmitters = append(transmitters, addr)
 		} else {
-			wr.lggr.Errorf("getOrderedTransmitters peerID[%d]=%s not found in p2pConfig, p2pConfig may be incomplete", i, peerHex)
+			wr.lggr.Errorf("GetOrderedTransmitters peerID[%d]=%s not found in p2pConfig, p2pConfig may be incomplete", i, peerHex)
 			transmitters = append(transmitters, "")
 		}
 	}
