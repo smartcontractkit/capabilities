@@ -35,6 +35,11 @@ func withPollingRetry[T any](ctx context.Context, lggr logger.Logger, fn func(co
 	return capcommon.WithPollingRetry(ctx, lggr, fn)
 }
 
+// aptosOctasToAPT converts a fee in octas (10^-8 APT) to a *big.Float in APT.
+func aptosOctasToAPT(octas uint64) *big.Float {
+	return new(big.Float).Quo(new(big.Float).SetUint64(octas), big.NewFloat(1e8))
+}
+
 // WriteReport validates and submits a signed report to the Aptos chain via the CRE forwarder.
 func (s *Aptos) WriteReport(
 	ctx context.Context,
@@ -165,26 +170,21 @@ func (wr *writeReport) execute(
 	wr.lggr.Debugw("Initial pollTransmissionInfo result", "success", transmissionInfo.Success, "transmitter", transmissionInfo.Transmitter.String())
 
 	if transmissionInfo.Success {
-		transmitterAddr := transmissionInfo.Transmitter.StringLong()
-		if !slices.Contains(orderedTransmitters, transmitterAddr) {
-			// TODO: PLEX-2547 emit metric - transmitter not in orderedTransmitters
-			wr.lggr.Errorw("Successful transmitter not found in orderedTransmitters, p2pConfig may be incomplete or an external entity submitted the report",
-				"transmitter", transmitterAddr, "orderedTransmitters", orderedTransmitters)
-		}
+		wr.logIfSuccessfulTransmitterNotInOrderedList(transmissionInfo, orderedTransmitters)
 		wr.lggr.Debugw("Report already onchain, retrieving txHash")
 		txResult, txHashErr := txInfoRetriever.GetSuccessfulTransmissionInfo(ctx, transmissionInfo.Transmitter)
 		if txHashErr != nil {
 			wr.lggr.Errorw("Report already onchain but failed to retrieve its txHash", "error", txHashErr)
 			return nil, capabilities.ResponseMetadata{}, txHashErr
 		}
+		feeOctas := txResult.GasUsed * txResult.GasUnitPrice
 		receiverContractExecutionStatus := aptoscap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS
 		reply := &aptoscap.WriteReportReply{
 			TxStatus:                        aptoscap.TxStatus_TX_STATUS_SUCCESS,
 			TxHash:                          &txResult.TxHash,
 			ReceiverContractExecutionStatus: &receiverContractExecutionStatus,
+			TransactionFee:                  &feeOctas,
 		}
-		feeOctas := txResult.GasUsed * txResult.GasUnitPrice
-		reply.TransactionFee = &feeOctas
 		return reply, capabilities.ResponseMetadata{}, nil
 	}
 	// TODO: we can exit here if we find F+1 failed transactions, but thats expensive time and i/o wise.
@@ -197,10 +197,7 @@ func (wr *writeReport) execute(
 		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s report size exceeds limit: %w", capcommon.UserError, err)
 	}
 
-	wr.lggr.Debugw("Submitting WriteReport transaction",
-		"executionID", metadata.WorkflowExecutionID,
-		"receiver", hex.EncodeToString(request.Receiver[:]),
-	)
+	wr.lggr.Debugw("Submitting WriteReport transaction", "executionID", metadata.WorkflowExecutionID, "receiver", hex.EncodeToString(request.Receiver[:]))
 
 	txReply, err := wr.forwarderClient.InvokeOnReport(ctx, request.Receiver, request.Report, request.GasConfig)
 	if err != nil {
@@ -225,61 +222,56 @@ func (wr *writeReport) execute(
 
 	wr.lggr.Debugw("Post-submission transmission status", "success", newTransmissionInfo.Success, "transmitter", newTransmissionInfo.Transmitter.String())
 
-	var txFeeOctas *uint64
-	var ownVmStatus string
-	var meteringMetadata capabilities.ResponseMetadata
-	feeInOctas, ownVmStatus, feeErr := wr.getTxnInfoFromChain(ctx, txReply.TxHash)
+	var ownMeteringMetadata capabilities.ResponseMetadata
+	ownFeeInOctas, ownVmStatus, feeErr := wr.getTxnInfoFromChain(ctx, txReply.TxHash)
 	if feeErr != nil {
 		wr.lggr.Errorw("Failed to get transaction fee, using zero for metering", "txHash", txReply.TxHash, "error", feeErr)
-		meteringMetadata = metering.GetResponseMetadataWriteReport(big.NewFloat(0), wr.chainSelector)
+		ownMeteringMetadata = metering.GetResponseMetadataWriteReport(big.NewFloat(0), wr.chainSelector)
 		// TODO: PLEX-2546 emit metric - failed to get transaction fee
 	} else {
-		txFeeOctas = &feeInOctas
-		feeInAPT := new(big.Float).Quo(new(big.Float).SetUint64(feeInOctas), big.NewFloat(1e8))
-		wr.lggr.Debugw("WriteReport fee", "feeInAPT", feeInAPT.String(), "feeInOctas", feeInOctas)
-		meteringMetadata = metering.GetResponseMetadataWriteReport(feeInAPT, wr.chainSelector)
+		feeInAPT := aptosOctasToAPT(ownFeeInOctas)
+		ownMeteringMetadata = metering.GetResponseMetadataWriteReport(feeInAPT, wr.chainSelector)
+		wr.lggr.Debugw("WriteReport fee", "feeInAPT", feeInAPT.String(), "feeInOctas", ownFeeInOctas)
 	}
 
 	switch newTransmissionInfo.Success {
 	case true:
-		transmitterAddr := newTransmissionInfo.Transmitter.String()
-		if !slices.Contains(orderedTransmitters, transmitterAddr) {
-			// TODO: PLEX-2547 emit metric - transmitter not in orderedTransmitters
-			wr.lggr.Errorw("Successful transmitter not found in orderedTransmitters, p2pConfig may be incomplete or an external entity submitted the report",
-				"transmitter", transmitterAddr, "orderedTransmitters", orderedTransmitters)
-		}
-
+		wr.logIfSuccessfulTransmitterNotInOrderedList(newTransmissionInfo, orderedTransmitters)
 		receiverContractExecutionStatus := aptoscap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS
 
 		switch txReply.TxStatus {
 		case aptostypes.TxReverted, aptostypes.TxFatal:
-			if txReply.TxStatus == aptostypes.TxFatal {
-				wr.lggr.Errorw("Transaction failed to get processed, but report was already submitted, this is unexpected and should be investigated", "txHash", txReply.TxHash)
-			}
 			// Report for this transaction has already been submitted and we sent a duplicate tx onchain, that is why this tx reverted but transmission info still shows success.
-			wr.lggr.Debugw("Our tx reverted but report is onchain (duplicate), retrieving success hash",
-				"ownTxStatus", txReply.TxStatus, "ownTxHash", txReply.TxHash)
 			successResult, txHashErr := txInfoRetriever.GetSuccessfulTransmissionInfo(ctx, newTransmissionInfo.Transmitter)
 			if txHashErr != nil {
-				wr.lggr.Errorw("Failed to get successful transmission hash after duplicate", "error", txHashErr)
+				wr.lggr.Errorw("Failed to get successful transmission hash", "error", txHashErr)
 				return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed to get successful transmission hash: %w", txHashErr)
 			}
-			feeOctas := successResult.GasUsed * successResult.GasUnitPrice
-			txFeeOctas = &feeOctas
+			feeInOctas := successResult.GasUsed * successResult.GasUnitPrice
+			feeInAPT := aptosOctasToAPT(feeInOctas)
+			meteringMetadata := metering.GetResponseMetadataWriteReport(feeInAPT, wr.chainSelector)
+			wr.lggr.Debugw("WriteReport fee", "feeInAPT", feeInAPT.String(), "feeInOctas", feeInOctas)
+
+			if txReply.TxStatus == aptostypes.TxFatal {
+				wr.lggr.Errorw("Transaction failed to get processed, but report was already submitted, this is unexpected and should be investigated", "txHash", txReply.TxHash)
+				meteringMetadata = metering.GetResponseMetadataWriteReport(big.NewFloat(0), wr.chainSelector)
+			} else {
+				wr.lggr.Debugw("Our transaction reverted but report is onchain (duplicate), retrieving success hash", "ownTxStatus", txReply.TxStatus, "ownTxHash", txReply.TxHash)
+			}
 
 			return &aptoscap.WriteReportReply{
 				TxStatus:                        aptoscap.TxStatus_TX_STATUS_SUCCESS,
 				TxHash:                          &successResult.TxHash,
-				TransactionFee:                  txFeeOctas,
+				TransactionFee:                  &feeInOctas,
 				ReceiverContractExecutionStatus: &receiverContractExecutionStatus,
-			}, capabilities.ResponseMetadata{}, nil
+			}, meteringMetadata, nil
 		case aptostypes.TxSuccess:
 			return &aptoscap.WriteReportReply{
 				TxStatus:                        aptoscap.TxStatus_TX_STATUS_SUCCESS,
 				TxHash:                          &txReply.TxHash,
-				TransactionFee:                  txFeeOctas,
+				TransactionFee:                  &ownFeeInOctas,
 				ReceiverContractExecutionStatus: &receiverContractExecutionStatus,
-			}, meteringMetadata, nil
+			}, ownMeteringMetadata, nil
 		default:
 			return nil, capabilities.ResponseMetadata{}, fmt.Errorf("unexpected tx status: %v", txReply.TxStatus)
 		}
@@ -293,22 +285,17 @@ func (wr *writeReport) execute(
 		ownReply := &aptoscap.WriteReportReply{
 			TxStatus:                        aptoscap.TxStatus_TX_STATUS_FATAL,
 			TxHash:                          &txReply.TxHash,
-			TransactionFee:                  txFeeOctas,
+			TransactionFee:                  &ownFeeInOctas,
 			ErrorMessage:                    ptrIfNonEmpty(ownVmStatus),
 			ReceiverContractExecutionStatus: receiverContractExecutionStatusFromFailedVMStatus(ownVmStatus, wr.forwarderAddress),
 		}
 		// Position 0 node has no prior nodes to check; return its own failed tx hash.
 		if queuePosition <= 0 {
 			wr.lggr.Debugw("Position 0, returning own failed hash", "txHash", txReply.TxHash, "vmStatus", ownVmStatus)
-			return ownReply, meteringMetadata, nil
+			return ownReply, ownMeteringMetadata, nil
 		}
 
 		// Search preceding transmitters (position 0 through position-1) for a matching failed tx.
-		wr.lggr.Debugw("Searching preceding transmitters for failed tx",
-			"queuePosition", queuePosition,
-			"orderedTransmittersCount", len(orderedTransmitters),
-			"transmissionDebugID", transmissionID.GetDebugID(),
-		)
 		for i := 0; i < queuePosition && i < len(orderedTransmitters); i++ {
 			if orderedTransmitters[i] == "" {
 				// TODO: PLEX-2598 emit metric - p2pConfig incomplete, missing transmitter at this position
@@ -328,17 +315,18 @@ func (wr *writeReport) execute(
 			}
 			wr.lggr.Debugw("Found failed transmission from prior node", "transmitter", orderedTransmitters[i], "position", i, "txHash", failedResult.TxHash, "vmStatus", failedResult.VmStatus)
 			feeOctas := failedResult.GasUsed * failedResult.GasUnitPrice
-			txFeeOctas = &feeOctas
 			recvStatus := receiverContractExecutionStatusFromFailedVMStatus(failedResult.VmStatus, wr.forwarderAddress)
+
+			// charge the user for the failed txs if it was reverted on user contract
 			var replyMeta capabilities.ResponseMetadata
 			if recvStatus != nil && *recvStatus == aptoscap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED {
-				feeInAPT := new(big.Float).Quo(new(big.Float).SetUint64(feeOctas), big.NewFloat(1e8))
+				feeInAPT := aptosOctasToAPT(feeOctas)
 				replyMeta = metering.GetResponseMetadataWriteReport(feeInAPT, wr.chainSelector)
 			}
 			return &aptoscap.WriteReportReply{
 				TxStatus:                        aptoscap.TxStatus_TX_STATUS_FATAL,
 				TxHash:                          &failedResult.TxHash,
-				TransactionFee:                  txFeeOctas,
+				TransactionFee:                  &feeOctas,
 				ErrorMessage:                    ptrIfNonEmpty(failedResult.VmStatus),
 				ReceiverContractExecutionStatus: recvStatus,
 			}, replyMeta, nil
@@ -346,7 +334,7 @@ func (wr *writeReport) execute(
 
 		// No matching failed tx from prior nodes; return our own hash.
 		wr.lggr.Debugw("No prior failed tx found, returning own hash", "txHash", txReply.TxHash, "vmStatus", ownVmStatus)
-		return ownReply, meteringMetadata, nil
+		return ownReply, ownMeteringMetadata, nil
 	}
 	return nil, capabilities.ResponseMetadata{}, nil // should never happen
 }
@@ -528,6 +516,20 @@ func (wr *writeReport) pollTransmissionInfo(
 			return lastValidInfo, nil
 		case <-time.After(wait):
 		}
+	}
+}
+
+// logIfSuccessfulTransmitterNotInOrderedList logs when transmission info reports success
+// but the transmitter is not in the ordered peer list from p2pConfig.
+func (wr *writeReport) logIfSuccessfulTransmitterNotInOrderedList(info TransmissionInfo, orderedTransmitters []string) {
+	if !info.Success {
+		return
+	}
+	transmitterAddr := info.Transmitter.StringLong()
+	if !slices.Contains(orderedTransmitters, transmitterAddr) {
+		// TODO: PLEX-2547 emit metric - transmitter not in orderedTransmitters
+		wr.lggr.Errorw("Successful transmitter not found in orderedTransmitters, p2pConfig may be incomplete or an external entity submitted the report",
+			"transmitter", transmitterAddr, "orderedTransmitters", orderedTransmitters)
 	}
 }
 

@@ -348,7 +348,6 @@ func TestWriteReport_Execute(t *testing.T) {
 		require.Equal(t, "0xreal", *result.Response.TxHash)
 		require.NotNil(t, result.Response.TransactionFee)
 		require.Equal(t, testGasUsed*testGasUnitPrice, *result.Response.TransactionFee)
-		require.Empty(t, result.ResponseMetadata.Metering)
 	})
 
 	t.Run("Submit fails at node0 - returns own hash with ErrorMessage", func(t *testing.T) {
