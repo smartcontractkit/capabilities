@@ -20,6 +20,7 @@ import (
 	_ "github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 
@@ -1311,6 +1312,43 @@ func TestNewLogTriggerService(t *testing.T) {
 		_, err := NewLogTriggerService(evmService, store, lggr, testLogTriggerCapabilityID, beholderProcessor, messageBuilder, time.Second, 0, 0, limits.Factory{Logger: lggr}, nil, nil)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "no trigger event store provided")
+	})
+}
+
+func TestResolveBaseTriggerRetryInterval(t *testing.T) {
+	lggr := logger.Test(t)
+	ctx := context.Background()
+
+	t.Run("nil getter uses defaults", func(t *testing.T) {
+		d, err := resolveBaseTriggerRetryInterval(ctx, limits.Factory{Logger: lggr}, lggr)
+		require.NoError(t, err)
+		require.Equal(t, 30*time.Second, d)
+	})
+
+	t.Run("global JSON enables interval", func(t *testing.T) {
+		getter, err := settings.NewJSONGetter([]byte(`{
+			"global": {
+				"BaseTriggerRetransmitEnabled": "true",
+				"BaseTriggerRetryInterval": "7s"
+			}
+		}`))
+		require.NoError(t, err)
+		d, err := resolveBaseTriggerRetryInterval(ctx, limits.Factory{Settings: getter, Logger: lggr}, lggr)
+		require.NoError(t, err)
+		require.Equal(t, 7*time.Second, d)
+	})
+
+	t.Run("enabled with zero interval errors", func(t *testing.T) {
+		getter, err := settings.NewJSONGetter([]byte(`{
+			"global": {
+				"BaseTriggerRetransmitEnabled": "true",
+				"BaseTriggerRetryInterval": "0s"
+			}
+		}`))
+		require.NoError(t, err)
+		_, err = resolveBaseTriggerRetryInterval(ctx, limits.Factory{Settings: getter, Logger: lggr}, lggr)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "BaseTriggerRetryInterval must be positive")
 	})
 }
 

@@ -43,6 +43,27 @@ const (
 	defaultLimitQueryLogSize     = 1000
 )
 
+func resolveBaseTriggerRetryInterval(ctx context.Context, limitsFactory limits.Factory, lggr logger.Logger) (retryInterval time.Duration, err error) {
+	enabled, gerr := cresettings.Default.BaseTriggerRetransmitEnabled.GetOrDefault(ctx, limitsFactory.Settings)
+	if gerr != nil {
+		lggr.Debugw("CRE settings read failed for base trigger retransmit flag; using default", "err", gerr)
+	}
+	if !enabled {
+		return 0, nil
+	}
+	retryInterval, gerr = cresettings.Default.BaseTriggerRetryInterval.GetOrDefault(ctx, limitsFactory.Settings)
+	if gerr != nil {
+		lggr.Debugw("CRE settings read failed for base trigger retry interval; using default", "err", gerr)
+	}
+	if retryInterval <= 0 {
+		return 0, fmt.Errorf(
+			"BaseTriggerRetransmitEnabled is true but BaseTriggerRetryInterval must be positive (got %s)",
+			retryInterval,
+		)
+	}
+	return retryInterval, nil
+}
+
 type LogTriggerService struct {
 	services.Service
 
@@ -126,9 +147,10 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 	if triggerEventStore == nil {
 		return nil, fmt.Errorf("no trigger event store provided")
 	}
-	// TODO(CRE-2314): re-enable retransmits once WF nodes support ACKs and
-	// don2don rate-limits are evaluated. Set retryInterval > 0 to restore.
-	retryInterval := time.Duration(0)
+	retryInterval, err := resolveBaseTriggerRetryInterval(context.Background(), limitsFactory, lggr)
+	if err != nil {
+		return nil, err
+	}
 	undeliveredWarning := 5 * retryInterval
 	undeliveredCritical := 20 * retryInterval
 	lts.baseTrigger = capabilities.NewBaseTriggerCapability(triggerEventStore, func() *evmcappb.Log { return &evmcappb.Log{} },
