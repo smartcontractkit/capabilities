@@ -241,20 +241,15 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 
 	switch newTransmissionInfo.State {
 	case contracts.TransmissionStateSucceeded:
-		txHash := &transactionResult.TxHash
+		txHash, err := txHashRetriever.GetSuccessfulTransmissionHash(ctx)
+		if err != nil {
+			return nil, capabilities.ResponseMetadata{}, err
+		}
 		if transactionResult.TxStatus == evmtypes.TxReverted {
 			// Report for this transaction has already been submitted and we sent a duplicate tx onchain which is fine, but wastes ethereum gas
-			txHash, err = txHashRetriever.GetSuccessfulTransmissionHash(ctx)
-			if err != nil {
-				return nil, capabilities.ResponseMetadata{}, err
-			}
 			monitoring.LogAndEmitSuccess(ctx, "WriteReport sent a duplicate transaction - report already submitted", e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportDuplicateTx(telemetryContext, request, common.Bytes2Hex(transactionResult.TxHash[:]), common.Bytes2Hex((*txHash)[:])))
 		} else if transactionResult.TxStatus == evmtypes.TxFatal {
 			e.lggr.Debugw("Transaction failed to get processed, but report was already submitted")
-			txHash, err = txHashRetriever.GetSuccessfulTransmissionHash(ctx)
-			if err != nil {
-				return nil, capabilities.ResponseMetadata{}, err
-			}
 		}
 		e.lggr.Debugw("Transaction confirmed", "txIdempotencyKey", transactionResult.TxIdempotencyKey, "txHash", common.Bytes2Hex((*txHash)[:]))
 		reply, err := e.fetchTransactionReceiptAndCreateReply(ctx, *txHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS, nil)
