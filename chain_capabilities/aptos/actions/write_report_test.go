@@ -93,11 +93,11 @@ func newMultiNodeTestHelper(t *testing.T, transmissionIDStr string) (*testHelper
 	}
 
 	p2pCfg := buildCfg()
-	scheduler := ts.NewTransmissionScheduler(myPeerID, []p2ptypes.PeerID{otherPeerID, myPeerID}, 15*time.Second, 0, lggr)
+	scheduler := ts.NewTransmissionScheduler(myPeerID, []p2ptypes.PeerID{otherPeerID, myPeerID}, 1*time.Second, 0, lggr)
 	if scheduler.GetQueuePosition(transmissionIDStr) == 0 {
 		myPeerID, otherPeerID = otherPeerID, myPeerID
 		p2pCfg = buildCfg()
-		scheduler = ts.NewTransmissionScheduler(myPeerID, []p2ptypes.PeerID{otherPeerID, myPeerID}, 15*time.Second, 0, lggr)
+		scheduler = ts.NewTransmissionScheduler(myPeerID, []p2ptypes.PeerID{otherPeerID, myPeerID}, 1*time.Second, 0, lggr)
 	}
 	require.Greater(t, scheduler.GetQueuePosition(transmissionIDStr), 0)
 
@@ -179,14 +179,14 @@ func buildFakeTransactionFull(t *testing.T, txHash string, success bool, seqNum 
 	return &aptostypes.Transaction{Data: []byte(txJSON)}
 }
 
-func newTestTxHashRetriever(t *testing.T, mockClient *CREForwarderClient_mock, targetReportMetadata ocrtypes.Metadata, requestStartTime time.Time) TxHashRetriever {
+func newTestTxInfoRetriever(t *testing.T, mockClient *CREForwarderClient_mock, targetReportMetadata ocrtypes.Metadata, requestStartTime time.Time) TxInfoRetriever {
 	t.Helper()
 	rawExecID, _ := hex.DecodeString(targetReportMetadata.ExecutionID)
 	reportIDBytes, _ := hex.DecodeString(targetReportMetadata.ReportID)
 	tid := TransmissionID{
 		Receiver: testReceiver, WorkflowExecutionID: [32]byte(rawExecID), ReportID: [2]byte(reportIDBytes),
 	}
-	return NewTxHashRetriever(mockClient, logger.Test(t), tid, testForwarderAddr.String(), requestStartTime)
+	return NewTxInfoRetriever(mockClient, logger.Test(t), tid, testForwarderAddr.String(), requestStartTime)
 }
 
 func computeTransmissionIDStr(t *testing.T, rm ocrtypes.Metadata) string {

@@ -42,9 +42,9 @@ type entryFunctionPayload struct {
 	} `json:"Inner"`
 }
 
-// TxHashRetriever retrieves the transaction hash for a report transmission
-// by scanning the transmitter's account transactions.
-type TxHashRetriever struct {
+// TxInfoRetriever finds matching forwarder report transactions on a transmitter account
+// (success or failure) and returns tx hash plus gas / VM status for metering and replies.
+type TxInfoRetriever struct {
 	forwarderClient    CREForwarderClient
 	lggr               logger.Logger
 	transmissionID     TransmissionID
@@ -52,15 +52,15 @@ type TxHashRetriever struct {
 	startingPointMicro int64
 }
 
-func NewTxHashRetriever(forwarderClient CREForwarderClient, lggr logger.Logger, transmissionID TransmissionID, forwarderAddress string, requestStartTime time.Time) TxHashRetriever {
-	retriever := TxHashRetriever{
+func NewTxInfoRetriever(forwarderClient CREForwarderClient, lggr logger.Logger, transmissionID TransmissionID, forwarderAddress string, requestStartTime time.Time) TxInfoRetriever {
+	retriever := TxInfoRetriever{
 		forwarderClient:    forwarderClient,
-		lggr:               logger.Named(lggr, "TxHashRetriever"),
+		lggr:               logger.Named(lggr, "TxInfoRetriever"),
 		transmissionID:     transmissionID,
 		entryFunctionName:  fmt.Sprintf("%s::forwarder::report", forwarderAddress),
 		startingPointMicro: requestStartTime.Add(-txSearchStartingBuffer).UnixMicro(),
 	}
-	lggr.Debugw("TxHashRetriever created",
+	lggr.Debugw("TxInfoRetriever created",
 		"transmissionID", transmissionID.GetDebugID(),
 		"entryFunctionName", retriever.entryFunctionName,
 		"startingPointMicro", retriever.startingPointMicro,
@@ -90,7 +90,7 @@ type scanResult struct {
 // scanTransactions scans a batch of transactions for a matching forwarder::report call
 // with the expected transmission ID in the raw_report argument.
 // expectedSuccessValue filters by transaction success/failure status.
-func (thr *TxHashRetriever) scanTransactions(txns []*aptostypes.Transaction, expectedSuccessValue bool) scanResult {
+func (thr *TxInfoRetriever) scanTransactions(txns []*aptostypes.Transaction, expectedSuccessValue bool) scanResult {
 	thr.lggr.Debugw("ScanTransactions called",
 		"txCount", len(txns),
 		"expectedSuccess", expectedSuccessValue,
@@ -171,7 +171,7 @@ type txScanner func(txns []*aptostypes.Transaction) scanResult
 // paginateBackwards fetches older transaction pages until the window covers startingPointMicro.
 // Returns a scanResult with TxHash set if the scanner finds a match, or an empty TxHash if
 // the window is covered with no match. The initial scanResult seeds the pagination cursor.
-func (thr *TxHashRetriever) paginateBackwards(
+func (thr *TxInfoRetriever) paginateBackwards(
 	ctx context.Context,
 	transmitter aptos_sdk.AccountAddress,
 	scan txScanner,
@@ -239,7 +239,7 @@ func (thr *TxHashRetriever) paginateBackwards(
 //	  observed in Phase 1 (phase3Start = MaxSeqNum+1). Each poll advances the cursor so
 //	  that new transactions submitted between phases cannot be missed even if the page
 //	  would otherwise slide past them.
-func (thr *TxHashRetriever) GetSuccessfulTransmissionInfo(ctx context.Context, transmitter aptos_sdk.AccountAddress) (TransmissionTxInfo, error) {
+func (thr *TxInfoRetriever) GetSuccessfulTransmissionInfo(ctx context.Context, transmitter aptos_sdk.AccountAddress) (TransmissionTxInfo, error) {
 	thr.lggr.Debugw("GetSuccessfulTransmissionInfo called", "transmitter", transmitter.String())
 
 	// Phase 1: fetch latest transactions with no limit (nil) so the RPC returns its default page.
@@ -317,7 +317,7 @@ func (thr *TxHashRetriever) GetSuccessfulTransmissionInfo(ctx context.Context, t
 //	  scan for a failed tx. Empty results retried as likely RPC error.
 //	Phase 2 (go back): paginate backwards through older transactions until our window
 //	  covers startingPointMicro (requestArrivalTime - 1 min). The 1 min here will be passed through config PLEX-2598
-func (thr *TxHashRetriever) GetFailedTransmissionInfo(ctx context.Context, transmitter aptos_sdk.AccountAddress) (TransmissionTxInfo, error) {
+func (thr *TxInfoRetriever) GetFailedTransmissionInfo(ctx context.Context, transmitter aptos_sdk.AccountAddress) (TransmissionTxInfo, error) {
 	thr.lggr.Debugw("GetFailedTransmissionInfo called", "transmitter", transmitter.String())
 
 	// Phase 1: fetch latest transactions with no limit (nil) so the RPC returns its default page.
@@ -370,7 +370,7 @@ func (thr *TxHashRetriever) GetFailedTransmissionInfo(ctx context.Context, trans
 //
 // The entry function arguments for forwarder::report are: [receiver, raw_report, signatures].
 // raw_report = report_context (96 bytes) || report, where report is decoded by ocrtypes.Decode.
-func (thr *TxHashRetriever) matchesTransmissionByReport(arguments []interface{}) bool {
+func (thr *TxInfoRetriever) matchesTransmissionByReport(arguments []interface{}) bool {
 	if len(arguments) < 2 {
 		thr.lggr.Debugw("MatchesTransmissionByReport - not enough arguments", "argCount", len(arguments))
 		return false

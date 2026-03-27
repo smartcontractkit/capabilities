@@ -151,7 +151,7 @@ func (wr *writeReport) execute(
 	}
 	wr.lggr.Debugw("TransmissionID created", "transmissionID", transmissionID.GetDebugID())
 
-	txHashRetriever := NewTxHashRetriever(wr.forwarderClient, wr.lggr, transmissionID, wr.forwarderAddress.String(), requestStartTime)
+	txInfoRetriever := NewTxInfoRetriever(wr.forwarderClient, wr.lggr, transmissionID, wr.forwarderAddress.String(), requestStartTime)
 
 	queuePosition := wr.transmissionScheduler.GetQueuePosition(transmissionID.GetDebugID())
 	orderedTransmitters := wr.getOrderedTransmitters(transmissionID.GetDebugID(), wr.p2pConfig)
@@ -172,7 +172,7 @@ func (wr *writeReport) execute(
 				"transmitter", transmitterAddr, "orderedTransmitters", orderedTransmitters)
 		}
 		wr.lggr.Debugw("Report already onchain, retrieving txHash")
-		txResult, txHashErr := txHashRetriever.GetSuccessfulTransmissionInfo(ctx, transmissionInfo.Transmitter)
+		txResult, txHashErr := txInfoRetriever.GetSuccessfulTransmissionInfo(ctx, transmissionInfo.Transmitter)
 		if txHashErr != nil {
 			wr.lggr.Errorw("Report already onchain but failed to retrieve its txHash", "error", txHashErr)
 			return nil, capabilities.ResponseMetadata{}, txHashErr
@@ -259,7 +259,7 @@ func (wr *writeReport) execute(
 			// Report for this transaction has already been submitted and we sent a duplicate tx onchain, that is why this tx reverted but transmission info still shows success.
 			wr.lggr.Debugw("Our tx reverted but report is onchain (duplicate), retrieving success hash",
 				"ownTxStatus", txReply.TxStatus, "ownTxHash", txReply.TxHash)
-			successResult, txHashErr := txHashRetriever.GetSuccessfulTransmissionInfo(ctx, newTransmissionInfo.Transmitter)
+			successResult, txHashErr := txInfoRetriever.GetSuccessfulTransmissionInfo(ctx, newTransmissionInfo.Transmitter)
 			if txHashErr != nil {
 				wr.lggr.Errorw("Failed to get successful transmission hash after duplicate", "error", txHashErr)
 				return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed to get successful transmission hash: %w", txHashErr)
@@ -321,7 +321,7 @@ func (wr *writeReport) execute(
 				wr.lggr.Errorw("Failed to convert transmitter address to address", "address", orderedTransmitters[i], "error", err)
 				continue
 			}
-			failedResult, searchErr := txHashRetriever.GetFailedTransmissionInfo(ctx, *addr)
+			failedResult, searchErr := txInfoRetriever.GetFailedTransmissionInfo(ctx, *addr)
 			if searchErr != nil {
 				wr.lggr.Debugw("No matching failed tx for prior transmitter", "transmitter", orderedTransmitters[i], "position", i, "err", searchErr)
 				continue
