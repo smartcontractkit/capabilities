@@ -10,7 +10,7 @@ import (
 )
 
 func TestUnmarshalJSON(t *testing.T) {
-	input := `{"chainId":"4","network":"aptos","creForwarderAddress":"0x26c93635e9af3ce8ba977ba6c3e4bc84b1cbfbeffe850a603ef0a7251aecbd55","deltaStage":1000000000,"observationPollerWorkersCount":17,"observationPollPeriod":2000000000,"chainHeightPollPeriod":3000000000,"unknownRequestsTTL":4000000000}`
+	input := `{"chainId":"4","network":"aptos","creForwarderAddress":"0x26c93635e9af3ce8ba977ba6c3e4bc84b1cbfbeffe850a603ef0a7251aecbd55","deltaStage":1000000000,"observationPollerWorkersCount":17,"observationPollPeriod":2000000000,"chainHeightPollPeriod":3000000000,"unknownRequestsTTL":4000000000,"isLocal":true,"p2pToTransmitterMap":{"peer-a":"0x1"}}`
 
 	var cfg Config
 	require.NoError(t, json.Unmarshal([]byte(input), &cfg))
@@ -22,6 +22,8 @@ func TestUnmarshalJSON(t *testing.T) {
 	assert.Equal(t, 2*time.Second, cfg.ObservationPollPeriod)
 	assert.Equal(t, 3*time.Second, cfg.ChainHeightPollPeriod)
 	assert.Equal(t, 4*time.Second, cfg.UnknownRequestsTTL)
+	assert.True(t, cfg.IsLocal)
+	assert.Equal(t, map[string]string{"peer-a": "0x1"}, cfg.P2PToTransmitterMap)
 
 	expectedAddr := [32]byte{
 		0x26, 0xc9, 0x36, 0x35, 0xe9, 0xaf, 0x3c, 0xe8,

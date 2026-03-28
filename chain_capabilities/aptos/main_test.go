@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"testing"
@@ -15,6 +16,17 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
+
+type nullOracleFactory struct{}
+
+func (nullOracleFactory) NewOracle(_ context.Context, _ core.OracleArgs) (core.Oracle, error) {
+	return nullOracle{}, nil
+}
+
+type nullOracle struct{}
+
+func (nullOracle) Start(_ context.Context) error { return nil }
+func (nullOracle) Close(_ context.Context) error { return nil }
 
 func TestCapabilityGRPCService_InitialiseErrors(t *testing.T) {
 	t.Parallel()
@@ -103,4 +115,47 @@ func TestCapabilityGRPCService_UnmarshalConfig_DefaultsConsensusSettings(t *test
 	require.Equal(t, defaultChainHeightPollPeriod, cfg.ChainHeightPollPeriod)
 	require.Equal(t, defaultUnknownRequestsTTL, cfg.UnknownRequestsTTL)
 	require.Equal(t, time.Duration(0), cfg.DeltaStage)
+}
+
+func TestCapabilityGRPCService_Initialise_LocalModeUsesInlineP2PConfig(t *testing.T) {
+	t.Parallel()
+
+	var chainID uint64
+	for id := range chain_selectors.AptosChainIdToChainSelector() {
+		chainID = id
+		break
+	}
+	require.NotZero(t, chainID)
+
+	raw, err := json.Marshal(map[string]any{
+		"network":               "aptos",
+		"chainId":               fmt.Sprintf("%d", chainID),
+		"creForwarderAddress":   "0x1",
+		"isLocal":               true,
+		"deltaStage":            int64(time.Second),
+		"p2pToTransmitterMap":   map[string]string{"peer-a": "0x1"},
+		"observationPollPeriod": int64(time.Second),
+		"chainHeightPollPeriod": int64(time.Second),
+		"unknownRequestsTTL":    int64(2 * time.Second),
+	})
+	require.NoError(t, err)
+
+	relayID := commontypes.NewRelayID("aptos", fmt.Sprintf("%d", chainID))
+	relayerSet := relayermock.NewRelayerSet(t)
+	relayer := relayermock.NewRelayer(t)
+	aptosService := typesmocks.NewAptosService(t)
+
+	relayerSet.On("Get", mock.Anything, relayID).Return(relayer, nil).Once()
+	relayer.On("Aptos").Return(aptosService, nil).Once()
+	relayer.On("GetChainInfo", mock.Anything).Return(commontypes.ChainInfo{}, nil).Once()
+	aptosService.On("LedgerVersion", mock.Anything).Return(uint64(1), nil)
+
+	svc := &capabilityGRPCService{lggr: logger.Test(t)}
+	err = svc.Initialise(t.Context(), core.StandardCapabilitiesDependencies{
+		Config:        string(raw),
+		RelayerSet:    relayerSet,
+		OracleFactory: nullOracleFactory{},
+	})
+	require.NoError(t, err)
+	require.NoError(t, svc.Close())
 }

@@ -15,6 +15,7 @@ type Config struct {
 	ObservationPollPeriod         time.Duration     `json:"observationPollPeriod"`
 	ChainHeightPollPeriod         time.Duration     `json:"chainHeightPollPeriod"`
 	UnknownRequestsTTL            time.Duration     `json:"unknownRequestsTTL"`
+	IsLocal                       bool              `json:"isLocal,omitempty"`
 	Network                       string            `json:"network"`
 	ChainID                       string            `json:"chainId"`
 	P2PToTransmitterMap           map[string]string // peerID-hex → Aptos transmitter address, populated from specConfig
@@ -28,6 +29,7 @@ func (c *Config) UnmarshalJSON(bs []byte) error {
 		ObservationPollPeriod         time.Duration     `json:"observationPollPeriod"`
 		ChainHeightPollPeriod         time.Duration     `json:"chainHeightPollPeriod"`
 		UnknownRequestsTTL            time.Duration     `json:"unknownRequestsTTL"`
+		IsLocal                       bool              `json:"isLocal,omitempty"`
 		Network                       string            `json:"network"`
 		ChainID                       string            `json:"chainId"`
 		P2PToTransmitterMap           map[string]string `json:"p2pToTransmitterMap,omitempty"`
@@ -44,6 +46,7 @@ func (c *Config) UnmarshalJSON(bs []byte) error {
 	c.ObservationPollPeriod = cfg.ObservationPollPeriod
 	c.ChainHeightPollPeriod = cfg.ChainHeightPollPeriod
 	c.UnknownRequestsTTL = cfg.UnknownRequestsTTL
+	c.IsLocal = cfg.IsLocal
 	c.Network = cfg.Network
 	c.P2PToTransmitterMap = cfg.P2PToTransmitterMap
 
