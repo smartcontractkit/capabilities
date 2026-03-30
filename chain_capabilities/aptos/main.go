@@ -186,8 +186,6 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return fmt.Errorf("failed to fetch chain info for chainID %s from relayer: %w", cfg.ChainID, err)
 	}
 
-	messageBuilder := monitoring.NewMessageBuilder(chainInfo, c.CapabilityInfo, cfg.NodeAddress)
-
 	client := beholder.GetClient().ForName("aptos_capability")
 	metrics, err := monitoring.NewMetrics()
 	if err != nil {
@@ -258,6 +256,17 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 			"entries", len(p2pConfig), "p2pConfig", p2pConfig,
 		)
 	}
+
+	localNode, err := dependencies.CapabilityRegistry.LocalNode(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get local node: %w", err)
+	}
+	peerHex := fmt.Sprintf("%x", localNode.PeerID[:])
+	nodeAddress := p2pConfig[peerHex]
+	if nodeAddress == "" {
+		c.lggr.Warnw("local node transmitter address not found in p2pConfig, MetaSourceId will be empty", "peerID", peerHex)
+	}
+	messageBuilder := monitoring.NewMessageBuilder(chainInfo, c.CapabilityInfo, nodeAddress)
 
 	if cfg.DeltaStage == 0 {
 		cfg.DeltaStage = defaultDeltaStage

@@ -17,7 +17,6 @@ type Config struct {
 	UnknownRequestsTTL            time.Duration     `json:"unknownRequestsTTL"`
 	Network                       string            `json:"network"`
 	ChainID                       string            `json:"chainId"`
-	NodeAddress                   string            // Node's own Aptos transmitter address, used as MetaSourceId in Beholder events
 	P2PToTransmitterMap           map[string]string // peerID-hex → Aptos transmitter address, populated from specConfig
 }
 
@@ -31,7 +30,6 @@ func (c *Config) UnmarshalJSON(bs []byte) error {
 		UnknownRequestsTTL            time.Duration     `json:"unknownRequestsTTL"`
 		Network                       string            `json:"network"`
 		ChainID                       string            `json:"chainId"`
-		NodeAddress                   string            `json:"nodeAddress"`
 		P2PToTransmitterMap           map[string]string `json:"p2pToTransmitterMap,omitempty"`
 	}
 	var cfg config
@@ -47,7 +45,6 @@ func (c *Config) UnmarshalJSON(bs []byte) error {
 	c.ChainHeightPollPeriod = cfg.ChainHeightPollPeriod
 	c.UnknownRequestsTTL = cfg.UnknownRequestsTTL
 	c.Network = cfg.Network
-	c.NodeAddress = cfg.NodeAddress
 	c.P2PToTransmitterMap = cfg.P2PToTransmitterMap
 
 	addr, err := aptos_sdk.ConvertToAddress(cfg.CREForwarderAddress)
