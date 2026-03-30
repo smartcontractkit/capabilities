@@ -301,10 +301,6 @@ func TestHandle(t *testing.T) {
 		_, err = handler.Handle(t.Context(), r)
 		require.Error(t, err)
 	})
-	t.Run("Handle return an error if request type is not known", func(t *testing.T) {
-		_, err := handler.Handle(t.Context(), &unknownRequestType{id: "unknown-request-type"})
-		require.EqualError(t, err, "unknown request type *chainconsensus.unknownRequestType")
-	})
 }
 
 func mustMarshalProto(t *testing.T, msg proto.Message) []byte {
@@ -312,16 +308,4 @@ func mustMarshalProto(t *testing.T, msg proto.Message) []byte {
 	data, err := proto.Marshal(msg)
 	require.NoError(t, err)
 	return data
-}
-
-type unknownRequestType struct {
-	id string
-}
-
-func (r *unknownRequestType) ID() string {
-	return r.id
-}
-
-func (r *unknownRequestType) Copy() types.Request {
-	return &unknownRequestType{id: r.id}
 }

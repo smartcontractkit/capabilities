@@ -8,8 +8,8 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-plugin v1.7.0
 	github.com/shopspring/decimal v1.4.0
-	github.com/smartcontractkit/chainlink-common v0.9.6-0.20260209213544-a82fa419e483
-	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260209203401-a488315d180f
+	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260330161530-8e77c694d610
+	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260326111235-8c09d1a4491f
 	github.com/smartcontractkit/libocr v0.0.0-20250912173940-f3ab0246e23d
 	github.com/stretchr/testify v1.11.1
 	go.opentelemetry.io/otel v1.39.0

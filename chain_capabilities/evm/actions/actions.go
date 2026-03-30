@@ -15,6 +15,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
@@ -130,7 +131,7 @@ func requestID(meta capabilities.RequestMetadata) string {
 
 // useHashBasedConsensus is true when hash-based OCR (V2) should be used for reads that support it.
 func (e *EVM) useHashBasedConsensus(ctx context.Context, meta capabilities.RequestMetadata) bool {
-	return e.featureChainCapabilityHashBasedOCRActiveAt.Check(ctx, commoncfg.Timestamp(meta.ExecutionTimestamp)) == nil
+	return e.featureChainCapabilityHashBasedOCRActiveAt.Check(ctx, commoncfg.NewTimestamp(meta.ExecutionTimestamp)) == nil
 }
 
 func (e *EVM) CallContract(
@@ -195,8 +196,7 @@ func (e *EVM) CallContract(
 type HashableRequest[T proto.Message] interface {
 	ctypes.Request
 	GetObservationByReportData(reportData [ctypes.HashLength]byte) (T, bool)
-	GetSpendUnit() string
-	GetSpendValue() string
+	GetMetadata() commoncap.ResponseMetadata
 }
 
 func (e *EVM) callContractV2(ctx context.Context, meta capabilities.RequestMetadata, needsBlockHeightConsensus bool,
@@ -210,11 +210,12 @@ func (e *EVM) callContractV2(ctx context.Context, meta capabilities.RequestMetad
 		return &evm.CallContractReply{Data: data}, nil
 	}
 
+	metadata := metering.GetResponseMetadata(metering.CallContract)
 	var request HashableRequest[*evm.CallContractReply]
 	if needsBlockHeightConsensus {
-		request = ctypes.NewLockableToBlockHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, metering.ActionSpendUnit, string(metering.CallContract), observe)
+		request = ctypes.NewLockableToBlockHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, metadata, observe)
 	} else {
-		request = ctypes.NewHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, metering.ActionSpendUnit, string(metering.CallContract), func(ctx context.Context) (*evm.CallContractReply, error) {
+		request = ctypes.NewHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, metadata, func(ctx context.Context) (*evm.CallContractReply, error) {
 			return observe(ctx, nil)
 		})
 	}
@@ -241,20 +242,12 @@ func readHashableRequestReport[T proto.Message](ctx context.Context, handler Con
 		}
 	}
 	return &capabilities.ResponseAndMetadata[T]{
-		Response: observation,
-		ResponseMetadata: capabilities.ResponseMetadata{
-			Metering: []capabilities.MeteringNodeDetail{
-				{
-					//Peer2PeerID will be assigned by the engine, leaving it empty here.
-					SpendValue: request.GetSpendValue(),
-					SpendUnit:  request.GetSpendUnit(),
-				},
-			},
-			OCRAttestation: &capabilities.ResponseOCRAttestation{
-				ConfigDigest:   report.ConfigDigest,
-				SequenceNumber: report.SeqNr,
-				Sigs:           sigs,
-			},
+		Response:         observation,
+		ResponseMetadata: request.GetMetadata(),
+		OCRAttestation: &capabilities.OCRAttestation{
+			ConfigDigest:   report.ConfigDigest,
+			SequenceNumber: report.SeqNr,
+			Sigs:           sigs,
 		},
 	}, nil
 }
@@ -431,7 +424,7 @@ func (e *EVM) filterLogsV1(ctx context.Context, requestID string, query *filterL
 func (e *EVM) filterLogsV2(ctx context.Context, meta capabilities.RequestMetadata, query *filterLogsQuery) (*capabilities.ResponseAndMetadata[*evm.FilterLogsReply], error) {
 	var request HashableRequest[*evm.FilterLogsReply]
 	if query.NeedsBlockHeightConsensus {
-		request = ctypes.NewLockableToBlockHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, metering.ActionSpendUnit, string(metering.FilterLogs), func(ctx context.Context, height *ctypes.ChainHeight) (*evm.FilterLogsReply, error) {
+		request = ctypes.NewLockableToBlockHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, metering.GetResponseMetadata(metering.FilterLogs), func(ctx context.Context, height *ctypes.ChainHeight) (*evm.FilterLogsReply, error) {
 			lockedQuery, confidenceLevel, err := e.getLockedFilterLogsQuery(ctx, query, height)
 			if err != nil {
 				return nil, err
@@ -441,7 +434,7 @@ func (e *EVM) filterLogsV2(ctx context.Context, meta capabilities.RequestMetadat
 			return result, err
 		})
 	} else {
-		request = ctypes.NewHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, metering.ActionSpendUnit, string(metering.FilterLogs), func(ctx context.Context) (*evm.FilterLogsReply, error) {
+		request = ctypes.NewHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, metering.GetResponseMetadata(metering.FilterLogs), func(ctx context.Context) (*evm.FilterLogsReply, error) {
 			result, _, err := e.filterLogsObserve(ctx, query.EthFilterLogs, query.ConfidenceLevel)
 			return result, err
 		})
@@ -515,9 +508,9 @@ func (e *EVM) balanceAtV2(ctx context.Context, meta capabilities.RequestMetadata
 
 	var request HashableRequest[*evm.BalanceAtReply]
 	if needsBlockHeightConsensus {
-		request = ctypes.NewLockableToBlockHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, metering.ActionSpendUnit, string(metering.BalanceAt), balanceAt)
+		request = ctypes.NewLockableToBlockHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, metering.GetResponseMetadata(metering.BalanceAt), balanceAt)
 	} else {
-		request = ctypes.NewHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, metering.ActionSpendUnit, string(metering.BalanceAt), func(ctx context.Context) (*evm.BalanceAtReply, error) {
+		request = ctypes.NewHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, metering.GetResponseMetadata(metering.BalanceAt), func(ctx context.Context) (*evm.BalanceAtReply, error) {
 			return balanceAt(ctx, nil)
 		})
 	}
@@ -661,7 +654,7 @@ func (e *EVM) getTransactionByHashV1(ctx context.Context, requestID string, hash
 }
 
 func (e *EVM) getTransactionByHashV2(ctx context.Context, meta capabilities.RequestMetadata, hash common.Hash) (*capabilities.ResponseAndMetadata[*evm.GetTransactionByHashReply], error) {
-	request := ctypes.NewHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, metering.ActionSpendUnit, string(metering.GetTransactionByHash), func(ctx context.Context) (*evm.GetTransactionByHashReply, error) {
+	request := ctypes.NewHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, metering.GetResponseMetadata(metering.GetTransactionByHash), func(ctx context.Context) (*evm.GetTransactionByHashReply, error) {
 		return e.getTransactionByHashObserve(ctx, hash)
 	})
 	return readHashableRequestReport[*evm.GetTransactionByHashReply](ctx, e.ConsensusHandler, request)
@@ -733,7 +726,7 @@ func (e *EVM) getTransactionReceiptV1(ctx context.Context, requestID string, has
 }
 
 func (e *EVM) getTransactionReceiptV2(ctx context.Context, meta capabilities.RequestMetadata, hash common.Hash) (*capabilities.ResponseAndMetadata[*evm.GetTransactionReceiptReply], error) {
-	request := ctypes.NewHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, metering.ActionSpendUnit, string(metering.GetTransactionReceipt), func(ctx context.Context) (*evm.GetTransactionReceiptReply, error) {
+	request := ctypes.NewHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, metering.GetResponseMetadata(metering.GetTransactionReceipt), func(ctx context.Context) (*evm.GetTransactionReceiptReply, error) {
 		return e.getTransactionReceiptObserve(ctx, hash)
 	})
 	return readHashableRequestReport[*evm.GetTransactionReceiptReply](ctx, e.ConsensusHandler, request)
@@ -800,9 +793,9 @@ func (e *EVM) headerByNumberV2(ctx context.Context, meta capabilities.RequestMet
 
 	var request HashableRequest[*evm.HeaderByNumberReply]
 	if needsBlockHeightConsensus {
-		request = ctypes.NewLockableToBlockHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, metering.ActionSpendUnit, string(metering.HeaderByNumber), headerByNumber)
+		request = ctypes.NewLockableToBlockHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, metering.GetResponseMetadata(metering.GetTransactionReceipt), headerByNumber)
 	} else {
-		request = ctypes.NewHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, metering.ActionSpendUnit, string(metering.HeaderByNumber), func(ctx context.Context) (*evm.HeaderByNumberReply, error) {
+		request = ctypes.NewHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, metering.GetResponseMetadata(metering.GetTransactionReceipt), func(ctx context.Context) (*evm.HeaderByNumberReply, error) {
 			return headerByNumber(ctx, nil)
 		})
 	}

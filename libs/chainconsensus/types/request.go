@@ -222,19 +222,17 @@ func (o ObservationError) Err() error {
 type HashableRequest[T proto.Message] struct {
 	workflowExecutionID string
 	reference           string
-	spendUnit           string
-	spendValue          string
+	metadata            commoncap.ResponseMetadata
 	*observableRequest[T]
 	observations map[[HashLength]byte]T
 	lock         sync.RWMutex
 }
 
-func NewHashableRequest[T proto.Message](workflowExecutionID, reference, spendUnit, spendValue string, observe func(context.Context) (T, error)) *HashableRequest[T] {
+func NewHashableRequest[T proto.Message](workflowExecutionID, reference string, metadata commoncap.ResponseMetadata, observe func(context.Context) (T, error)) *HashableRequest[T] {
 	return &HashableRequest[T]{
 		workflowExecutionID: workflowExecutionID,
 		reference:           reference,
-		spendUnit:           spendUnit,
-		spendValue:          spendValue,
+		metadata:            metadata,
 		observations:        make(map[[HashLength]byte]T),
 		observableRequest: &observableRequest[T]{
 			id:      commonMon.RequestID(workflowExecutionID, reference),
@@ -265,7 +263,10 @@ func (r *HashableRequest[T]) getObservationHash() ([HashLength]byte, Observation
 		return [HashLength]byte{}, nil, fmt.Errorf("failed to marshal observation: %w", err)
 	}
 
-	reportData := commoncap.ResponseToReportData(r.workflowExecutionID, r.reference, rawPayload, r.spendUnit, r.spendValue)
+	reportData, err := commoncap.ResponseToReportData(r.workflowExecutionID, r.reference, rawPayload, r.metadata)
+	if err != nil {
+		return [HashLength]byte{}, nil, fmt.Errorf("failed to convert response to report data: %w", err)
+	}
 	r.lock.Lock()
 	defer r.lock.Unlock()
 	r.observations[reportData] = observation
@@ -294,32 +295,26 @@ func (r *HashableRequest[T]) GetObservationByReportData(reportData [HashLength]b
 	return result, ok
 }
 
-func (r *HashableRequest[T]) GetSpendUnit() string {
-	return r.spendUnit
-}
-
-func (r *HashableRequest[T]) GetSpendValue() string {
-	return r.spendValue
+func (r *HashableRequest[T]) GetMetadata() commoncap.ResponseMetadata {
+	return r.metadata
 }
 
 type LockableToBlockHashableRequest[T proto.Message] struct {
 	id                  string
 	workflowExecutionID string
 	reference           string
-	spendUnit           string
-	spendValue          string
+	metadata            commoncap.ResponseMetadata
 	observe             func(context.Context, *ChainHeight) (T, error)
 	lock                sync.RWMutex
 	hashableRequest     *HashableRequest[T]
 }
 
-func NewLockableToBlockHashableRequest[T proto.Message](workflowExecutionID, reference, spendUnit, spendValue string, observe func(context.Context, *ChainHeight) (T, error)) *LockableToBlockHashableRequest[T] {
+func NewLockableToBlockHashableRequest[T proto.Message](workflowExecutionID, reference string, metadata commoncap.ResponseMetadata, observe func(context.Context, *ChainHeight) (T, error)) *LockableToBlockHashableRequest[T] {
 	return &LockableToBlockHashableRequest[T]{
 		id:                  commonMon.RequestID(workflowExecutionID, reference),
 		workflowExecutionID: workflowExecutionID,
 		reference:           reference,
-		spendUnit:           spendUnit,
-		spendValue:          spendValue,
+		metadata:            metadata,
 		observe:             observe,
 	}
 }
@@ -329,8 +324,7 @@ func (r *LockableToBlockHashableRequest[T]) Copy() Request {
 		id:                  r.id,
 		workflowExecutionID: r.workflowExecutionID,
 		reference:           r.reference,
-		spendUnit:           r.spendUnit,
-		spendValue:          r.spendValue,
+		metadata:            r.metadata,
 		observe:             r.observe,
 	}
 }
@@ -343,7 +337,7 @@ func (r *LockableToBlockHashableRequest[T]) LockToABlock(chainHeight *ChainHeigh
 	r.lock.Lock()
 	defer r.lock.Unlock()
 	if r.hashableRequest == nil {
-		r.hashableRequest = NewHashableRequest(r.workflowExecutionID, r.reference, r.spendUnit, r.spendValue, func(ctx context.Context) (T, error) {
+		r.hashableRequest = NewHashableRequest(r.workflowExecutionID, r.reference, r.metadata, func(ctx context.Context) (T, error) {
 			return r.observe(ctx, chainHeight)
 		})
 	}
@@ -369,10 +363,6 @@ func (r *LockableToBlockHashableRequest[T]) GetOCRObservation() (*RequestObserva
 	}, nil
 }
 
-func (r *LockableToBlockHashableRequest[T]) GetSpendUnit() string {
-	return r.spendUnit
-}
-
-func (r *LockableToBlockHashableRequest[T]) GetSpendValue() string {
-	return r.spendValue
+func (r *LockableToBlockHashableRequest[T]) GetMetadata() commoncap.ResponseMetadata {
+	return r.metadata
 }

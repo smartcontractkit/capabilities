@@ -136,9 +136,9 @@ func TestCapability_CallContract(t *testing.T) {
 				require.Empty(t, cmp.Diff(tc.ExpectedResponse, resp.Response, protocmp.Transform()))
 				test.ValidateMetering(t, resp.ResponseMetadata, string(metering.CallContract))
 				if isV2 {
-					require.NotNil(t, resp.ResponseMetadata.OCRAttestation)
+					require.NotNil(t, resp.OCRAttestation)
 				} else {
-					require.Nil(t, resp.ResponseMetadata.OCRAttestation)
+					require.Nil(t, resp.OCRAttestation)
 				}
 			})
 		}
@@ -367,9 +367,9 @@ func TestCapability_BalanceAt(t *testing.T) {
 				require.Empty(t, cmp.Diff(tc.ExpectedResponse, resp.Response, protocmp.Transform()))
 				test.ValidateMetering(t, resp.ResponseMetadata, string(metering.BalanceAt))
 				if isV2 {
-					require.NotNil(t, resp.ResponseMetadata.OCRAttestation)
+					require.NotNil(t, resp.OCRAttestation)
 				} else {
-					require.Nil(t, resp.ResponseMetadata.OCRAttestation)
+					require.Nil(t, resp.OCRAttestation)
 				}
 			})
 		}
@@ -604,9 +604,9 @@ func TestCapability_FilterLogs(t *testing.T) {
 				require.Empty(t, cmp.Diff(tc.ExpectedResponse, resp.Response, protocmp.Transform()))
 				test.ValidateMetering(t, resp.ResponseMetadata, string(metering.FilterLogs))
 				if isV2 {
-					require.NotNil(t, resp.ResponseMetadata.OCRAttestation)
+					require.NotNil(t, resp.OCRAttestation)
 				} else {
-					require.Nil(t, resp.ResponseMetadata.OCRAttestation)
+					require.Nil(t, resp.OCRAttestation)
 				}
 			})
 		}
@@ -744,9 +744,9 @@ func TestCapability_GetTransactionByHash(t *testing.T) {
 				require.Empty(t, cmp.Diff(tc.ExpectedResponse, resp.Response, protocmp.Transform()))
 				test.ValidateMetering(t, resp.ResponseMetadata, string(metering.GetTransactionByHash))
 				if isV2 {
-					require.NotNil(t, resp.ResponseMetadata.OCRAttestation)
+					require.NotNil(t, resp.OCRAttestation)
 				} else {
-					require.Nil(t, resp.ResponseMetadata.OCRAttestation)
+					require.Nil(t, resp.OCRAttestation)
 				}
 			})
 		}
@@ -860,9 +860,9 @@ func TestCapability_GetTransactionReceipt(t *testing.T) {
 				require.Empty(t, cmp.Diff(tc.ExpectedResponse, resp.Response, protocmp.Transform()))
 				test.ValidateMetering(t, resp.ResponseMetadata, string(metering.GetTransactionReceipt))
 				if isV2 {
-					require.NotNil(t, resp.ResponseMetadata.OCRAttestation)
+					require.NotNil(t, resp.OCRAttestation)
 				} else {
-					require.Nil(t, resp.ResponseMetadata.OCRAttestation)
+					require.Nil(t, resp.OCRAttestation)
 				}
 			})
 		}
@@ -1049,9 +1049,9 @@ func TestCapability_HeaderByNumber(t *testing.T) {
 				require.Empty(t, cmp.Diff(tc.ExpectedResponse, resp.Response, protocmp.Transform()))
 				test.ValidateMetering(t, resp.ResponseMetadata, string(metering.HeaderByNumber))
 				if isV2 {
-					require.NotNil(t, resp.ResponseMetadata.OCRAttestation)
+					require.NotNil(t, resp.OCRAttestation)
 				} else {
-					require.Nil(t, resp.ResponseMetadata.OCRAttestation)
+					require.Nil(t, resp.OCRAttestation)
 				}
 			})
 		}
@@ -1096,6 +1096,6 @@ func normalizeFilterLogsServiceRequest(req evmtypes.FilterLogsRequest) evmtypes.
 
 // Aligns with cresettings default FeatureMultiTriggerExecutionIDsActivePeriod ([2100-01-01, 2101-01-01]) so hash-based OCR path is active.
 func metaWithHashBasedConsensus(base capabilities.RequestMetadata) capabilities.RequestMetadata {
-	base.ExecutionTimestamp = time.Date(2100, 6, 1, 0, 0, 0, 0, time.UTC).Unix()
+	base.ExecutionTimestamp = time.Date(2100, 6, 1, 0, 0, 0, 0, time.UTC)
 	return base
 }

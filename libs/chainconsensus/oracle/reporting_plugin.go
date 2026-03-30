@@ -303,9 +303,12 @@ func (rp *reportingPlugin) ValidateObservation(_ context.Context, outctx ocr3typ
 			continue
 		}
 
-		hash := requestOb.GetHashable()
-		if len(hash) != 0 && len(hash) != ctypes.HashLength {
-			return fmt.Errorf("invalid hash length for request ID %s: got %d, expected %d or 0. OracleID: %d", requestID, len(hash), ctypes.HashLength, ao.Observer)
+		switch tRequestOb := requestOb.Observation.(type) {
+		case *ctypes.RequestObservation_Hashable:
+			if len(tRequestOb.Hashable) != ctypes.HashLength {
+				return fmt.Errorf("invalid hash length for request ID %s: got %d, expected %d. OracleID: %d", requestID, len(tRequestOb.Hashable), ctypes.HashLength, ao.Observer)
+
+			}
 		}
 	}
 
@@ -695,8 +698,8 @@ func (rp *reportingPlugin) Reports(ctx context.Context, seqNr uint64, rawOutcome
 
 	rp.metrics.RecordOutcomeChainHeight(ctx, outcome.ChainHeight)
 
-	reports := make([]ocr3types.ReportPlus[[]byte], len(outcome.Outcomes))
-	for i, requestOutcome := range outcome.Outcomes {
+	reports := make([]ocr3types.ReportPlus[[]byte], 0, len(outcome.Outcomes))
+	for _, requestOutcome := range outcome.Outcomes {
 		rep, info, err := getReportAndInfo(&outcome, requestOutcome)
 		if err != nil {
 			rp.logger.Errorw("Failed to get report and info for request outcome, skipping report generation for this request", "requestID", requestOutcome.RequestID, "err", err)
@@ -707,12 +710,12 @@ func (rp *reportingPlugin) Reports(ctx context.Context, seqNr uint64, rawOutcome
 		if err != nil {
 			return nil, fmt.Errorf("failed to create report info for request, error: %w", err)
 		}
-		reports[i] = ocr3types.ReportPlus[[]byte]{
+		reports = append(reports, ocr3types.ReportPlus[[]byte]{
 			ReportWithInfo: ocr3types.ReportWithInfo[[]byte]{
 				Report: rep,
 				Info:   infoAsB,
 			},
-		}
+		})
 	}
 	return reports, nil
 }
