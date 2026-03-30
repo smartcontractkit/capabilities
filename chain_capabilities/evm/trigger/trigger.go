@@ -464,12 +464,16 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 			workflowExecutionID = ""
 		}
 
+		displayWorkflowName := telemetryContext.DecodedWorkflowName
+		if displayWorkflowName == "" {
+			displayWorkflowName = telemetryContext.WorkflowName
+		}
 		labeler := custmsg.NewLabeler().With(
 			events.KeyTriggerID, response.Id,
 			events.KeyWorkflowID, telemetryContext.WorkflowID,
 			events.KeyWorkflowExecutionID, workflowExecutionID,
 			events.KeyWorkflowOwner, telemetryContext.WorkflowOwner,
-			events.KeyWorkflowName, telemetryContext.WorkflowName,
+			events.KeyWorkflowName, displayWorkflowName,
 		)
 
 		// add DON metadata if available
