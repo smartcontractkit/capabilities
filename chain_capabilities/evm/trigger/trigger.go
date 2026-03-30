@@ -43,27 +43,6 @@ const (
 	defaultLimitQueryLogSize     = 1000
 )
 
-func resolveBaseTriggerRetryInterval(ctx context.Context, limitsFactory limits.Factory, lggr logger.Logger) (retryInterval time.Duration, err error) {
-	enabled, gerr := cresettings.Default.BaseTriggerRetransmitEnabled.GetOrDefault(ctx, limitsFactory.Settings)
-	if gerr != nil {
-		lggr.Debugw("CRE settings read failed for base trigger retransmit flag; using default", "err", gerr)
-	}
-	if !enabled {
-		return 0, nil
-	}
-	retryInterval, gerr = cresettings.Default.BaseTriggerRetryInterval.GetOrDefault(ctx, limitsFactory.Settings)
-	if gerr != nil {
-		lggr.Debugw("CRE settings read failed for base trigger retry interval; using default", "err", gerr)
-	}
-	if retryInterval <= 0 {
-		return 0, fmt.Errorf(
-			"BaseTriggerRetransmitEnabled is true but BaseTriggerRetryInterval must be positive (got %s)",
-			retryInterval,
-		)
-	}
-	return retryInterval, nil
-}
-
 type LogTriggerService struct {
 	services.Service
 
@@ -147,14 +126,12 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 	if triggerEventStore == nil {
 		return nil, fmt.Errorf("no trigger event store provided")
 	}
-	retryInterval, err := resolveBaseTriggerRetryInterval(context.Background(), limitsFactory, lggr)
+	baseTrigger, err := capabilities.NewBaseTriggerCapabilityWithCRESettings(context.Background(), triggerEventStore,
+		func() *evmcappb.Log { return &evmcappb.Log{} }, lts.lggr, capabilityID, limitsFactory.Settings)
 	if err != nil {
 		return nil, err
 	}
-	undeliveredWarning := 5 * retryInterval
-	undeliveredCritical := 20 * retryInterval
-	lts.baseTrigger = capabilities.NewBaseTriggerCapability(triggerEventStore, func() *evmcappb.Log { return &evmcappb.Log{} },
-		lts.lggr, capabilityID, retryInterval, undeliveredWarning, undeliveredCritical)
+	lts.baseTrigger = baseTrigger
 	return lts, nil
 }
 
