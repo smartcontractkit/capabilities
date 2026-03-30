@@ -1336,38 +1336,17 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 					}, nil).
 					Once()
 
-				// // 2) InvokeOnReport: local retry returns a "latest" tx hash.
-				latestTxHash := evmtypes.Hash(test.RandomBytes(32))
-				// mockForwarderClient.
-				// 	On("InvokeOnReport", mock.Anything, receiverAddress, signedReport, nonNilPositiveGasCfgMatcher()).
-				// 	Return(&evmtypes.TransactionResult{
-				// 		TxHash:           latestTxHash,
-				// 		TxStatus:         evmtypes.TxSuccess,
-				// 		TxIdempotencyKey: "retry-idempotency-key",
-				// 	}, nil).
-				// 	Once()
-
-				// 3) After submitting, final transmission state is Failed.
-				// mockForwarderClient.
-				// 	On("GetTransmissionInfo", mock.Anything, transmissionID).
-				// 	Return(contracts.TransmissionInfo{
-				// 		Success:         false,
-				// 		InvalidReceiver: false,
-				// 		State:           contracts.TransmissionStateFailed,
-				// 		GasLimit:        big.NewInt(EnoughReceiverGas),
-				// 	}, nil).
-				// 	Once()
-
 				var receiptTxHash evmtypes.Hash
 				if queuePosition == 0 {
-					receiptTxHash = latestTxHash
+					receiptTxHash = evmtypes.Hash(test.RandomBytes(32))
 					mockForwarderClient.EXPECT().
 						GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 						Return([]*evmtypes.Log{
-							{TxHash: latestTxHash, Data: failedLogData(), BlockNumber: big.NewInt(100)},
+							{TxHash: receiptTxHash, Data: failedLogData(), BlockNumber: big.NewInt(100)},
 						}, nil)
 				} else {
 					originalFailedTxHash := evmtypes.Hash(test.RandomBytes(32))
+					latestTxHash := evmtypes.Hash(test.RandomBytes(32))
 					receiptTxHash = originalFailedTxHash
 					mockForwarderClient.EXPECT().
 						GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
