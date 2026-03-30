@@ -161,7 +161,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		e.lggr.Infow("Returning without a transmission attempt - report already onchain", "txHash", common.Bytes2Hex(txHash[:]))
 		reply, err := e.fetchTransactionReceiptAndCreateReply(ctx, *txHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS, nil)
 		return reply, capabilities.ResponseMetadata{}, err
-	case contracts.TransmissionStateInvalidReceiver:
+	case contracts.TransmissionStateInvalidReceiver, contracts.TransmissionStateFailed:
 		txHash, err := txHashRetriever.GetFailedTransmissionHash(ctx)
 		if err != nil {
 			if errors.Is(err, ErrUnexpectedSuccessfulTransmission) {
@@ -175,27 +175,6 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		e.lggr.Infow("Transmission already done by another node but failed due to invalid receiver, not reattempting", "txHash", common.Bytes2Hex(txHash[:]))
 		reply, err := e.processUnrecoverableTxState(ctx, request, *txHash, transmissionInfo.State, transmissionID, false)
 		return reply, capabilities.ResponseMetadata{}, err
-	case contracts.TransmissionStateFailed:
-		txGasLimit := e.ReceiverGasMinimum + contracts.ForwarderContractLogicGasCost
-		if request.GasConfig != nil && request.GasConfig.GasLimit > txGasLimit {
-			txGasLimit = request.GasConfig.GasLimit - contracts.ForwarderContractLogicGasCost
-		}
-		if transmissionInfo.GasLimit.Uint64() > txGasLimit {
-			txHash, err := txHashRetriever.GetFailedTransmissionHash(ctx)
-			if err != nil {
-				if errors.Is(err, ErrUnexpectedSuccessfulTransmission) {
-					monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportInvalidTransmissionState(telemetryContext, request, transmissionInfo, "WriteReport unexpected successful transmission", err.Error()))
-				} else {
-					e.lggr.Errorw("Returning without a transmission attempt - transmission already attempted, but failed to retrieve its tx hash", "error", err.Error(), "txGasLimit", txGasLimit, "transmissionGasLimit", transmissionInfo.GasLimit)
-				}
-				return nil, capabilities.ResponseMetadata{}, err
-			}
-
-			e.lggr.Infow("Returning without a transmission attempt - transmission already attempted and failed and is beyond gas limit", "transmissionTxHash", common.Bytes2Hex(txHash[:]), "txGasLimit", txGasLimit, "transmissionGasLimit", transmissionInfo.GasLimit)
-			reply, err := e.processUnrecoverableTxState(ctx, request, *txHash, transmissionInfo.State, transmissionID, false)
-			return reply, capabilities.ResponseMetadata{}, err
-		}
-		e.lggr.Infow("Retrying a failed transmission - attempting to push to txmgr", "txGasLimit", txGasLimit, "transmissionGasLimit", transmissionInfo.GasLimit)
 	default:
 		errorMsg := getInvalidStateErrorMessage(transmissionInfo.State)
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportInvalidTransmissionState(telemetryContext, request, transmissionInfo, "WriteReport invalid transmission state", errorMsg))
