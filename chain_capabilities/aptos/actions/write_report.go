@@ -45,20 +45,11 @@ func (s *Aptos) WriteReport(
 ) (*capabilities.ResponseAndMetadata[*aptoscap.WriteReportReply], caperrors.Error) {
 	ctx = metadata.ContextWithCRE(ctx)
 
-	// Emission point 1: Initiated
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: metadata}
 	monitoring.EmitInitiated(ctx, s.lggr, s.beholderProcessor, s.messageBuilder.BuildWriteReportInitiated(telemetryContext, input))
 
-	s.lggr.Debugw("WriteReport called",
-		"workflowExecutionID", metadata.WorkflowExecutionID,
-		"workflowID", metadata.WorkflowID,
-		"workflowOwner", metadata.WorkflowOwner,
-		"hasInput", input != nil,
-	)
-
 	// 1. Validate inputs
 	if err := s.validateWriteReportInputs(metadata, input); err != nil {
-		// Emission point 2: Validation failure (user error)
 		monitoring.LogAndEmitError(ctx, s.lggr, s.beholderProcessor,
 			s.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport, user error due to invalid request", err.Error(), true))
 		return nil, capcommon.NewUserError(err)
@@ -68,21 +59,14 @@ func (s *Aptos) WriteReport(
 	// 2. Build and submit the transaction via AptosService
 	reply, meteringMetadata, err := s.executeWriteReport(ctx, input, metadata, telemetryContext)
 	if err != nil {
-		// Emission point 3: Execution failure
 		isUserError := s.isUserError(err)
 		monitoring.LogAndEmitError(ctx, s.lggr, s.beholderProcessor,
 			s.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport while checking if the report exists or trying to publish on chain", err.Error(), isUserError))
 		return nil, capcommon.GetError(err, isUserError)
 	}
 
-	// Emission point 4: Success
 	monitoring.LogAndEmitSuccess(ctx, "Successfully WriteReport execution", s.lggr, s.beholderProcessor,
 		s.messageBuilder.BuildWriteReportSuccess(telemetryContext, input))
-
-	s.lggr.Debugw("WriteReport completed successfully",
-		"txStatus", reply.TxStatus,
-		"hasTxHash", reply.TxHash != nil,
-	)
 
 	return &capabilities.ResponseAndMetadata[*aptoscap.WriteReportReply]{
 		Response:         reply,
@@ -170,7 +154,7 @@ func (wr *writeReport) execute(
 		wr.lggr.Errorw("getTransmissionID failed", "error", err)
 		return nil, capabilities.ResponseMetadata{}, err
 	}
-	wr.lggr.Debugw("transmissionID created", "transmissionID", transmissionID.GetDebugID())
+	wr.lggr = wr.lggr.With("transmissionID", transmissionID.GetDebugID())
 
 	txHashRetriever := NewTxHashRetriever(wr.forwarderClient, wr.lggr, transmissionID, wr.forwarderAddress.String(), requestStartTime)
 
@@ -190,6 +174,8 @@ func (wr *writeReport) execute(
 		if !slices.Contains(orderedTransmitters, transmitterAddr) {
 			wr.lggr.Errorw("successful transmitter not found in orderedTransmitters, p2pConfig may be incomplete or an external entity submitted the report",
 				"transmitter", transmitterAddr, "orderedTransmitters", orderedTransmitters)
+			monitoring.EmitInitiated(ctx, wr.lggr, wr.beholderProcessor,
+				wr.messageBuilder.BuildWriteReportTransmitterMismatch(telemetryContext, transmitterAddr, orderedTransmitters))
 		}
 		wr.lggr.Debugw("report already onchain, retrieving txHash")
 		txResult, txHashErr := txHashRetriever.GetSuccessfulTransmissionHash(ctx, transmissionInfo.Transmitter)
@@ -248,7 +234,6 @@ func (wr *writeReport) execute(
 	var meteringMetadata capabilities.ResponseMetadata
 	feeInOctas, ownVmStatus, feeErr := wr.getTxnInfoFromChain(ctx, txReply.TxHash)
 	if feeErr != nil {
-		// Emission point 5: TxFee calculation failure
 		monitoring.LogAndEmitError(ctx, wr.lggr, wr.beholderProcessor,
 			wr.messageBuilder.BuildWriteReportTxFeeCalculationError(telemetryContext, request, txReply.TxHash, feeErr.Error()))
 		meteringMetadata = metering.GetResponseMetadataWriteReport(big.NewFloat(0), wr.chainSelector)
@@ -265,6 +250,8 @@ func (wr *writeReport) execute(
 		if !slices.Contains(orderedTransmitters, transmitterAddr) {
 			wr.lggr.Errorw("successful transmitter not found in orderedTransmitters, p2pConfig may be incomplete or an external entity submitted the report",
 				"transmitter", transmitterAddr, "orderedTransmitters", orderedTransmitters)
+			monitoring.EmitInitiated(ctx, wr.lggr, wr.beholderProcessor,
+				wr.messageBuilder.BuildWriteReportTransmitterMismatch(telemetryContext, transmitterAddr, orderedTransmitters))
 		}
 
 		if txReply.TxStatus == aptostypes.TxFatal || txReply.TxStatus == aptostypes.TxReverted {

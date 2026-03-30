@@ -84,6 +84,14 @@ func (m *MessageBuilder) BuildWriteReportSuccessfulEarlyReturn(tc TelemetryConte
 	}
 }
 
+func (m *MessageBuilder) BuildWriteReportTransmitterMismatch(tc TelemetryContext, transmitter string, orderedTransmitters []string) *WriteReportTransmitterMismatch {
+	return &WriteReportTransmitterMismatch{
+		Transmitter:         transmitter,
+		OrderedTransmitters: orderedTransmitters,
+		ExecutionContext:    m.BuildExecutionContext(tc),
+	}
+}
+
 func convertWriteReportRequest(req *aptoscap.WriteReportRequest) *WriteReportRequest {
 	if req == nil {
 		return nil
@@ -196,6 +204,17 @@ func (r *WriteReportDuplicateTx) LogAttributes() []attribute.KeyValue {
 }
 
 func (r *WriteReportDuplicateTx) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *WriteReportTransmitterMismatch) LogAttributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
+		attribute.String("transmitter", r.GetTransmitter()),
+		attribute.StringSlice("orderedTransmitters", r.GetOrderedTransmitters()),
+	}, r.ExecutionContext.LogAttributes()...)
+}
+
+func (r *WriteReportTransmitterMismatch) MetricAttributes() []attribute.KeyValue {
 	return r.ExecutionContext.MetricsAttributes()
 }
 

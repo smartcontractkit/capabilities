@@ -28,6 +28,9 @@ type Metrics struct {
 	WriteReportSuccessfulEarlyReturn struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
+	WriteReportTransmitterMismatch struct {
+		basic commoncapbeholder.MetricsCapBasic
+	}
 }
 
 // NewMetrics constructs all counters & histograms
@@ -65,6 +68,12 @@ func NewMetrics() (Metrics, error) {
 		return Metrics{}, fmt.Errorf("failed to create write report successful early return metric: %w", err)
 	}
 
+	wrTransmitterMismatch := commoncapbeholder.NewMetricsInfoCapBasic(ns("write_report_transmitter_mismatch"), commonbeholder.ToSchemaFullName(&WriteReportTransmitterMismatch{}))
+	m.WriteReportTransmitterMismatch.basic, err = commoncapbeholder.NewMetricsCapBasic(wrTransmitterMismatch)
+	if err != nil {
+		return Metrics{}, fmt.Errorf("failed to create write report transmitter mismatch metric: %w", err)
+	}
+
 	return m, nil
 }
 
@@ -95,5 +104,11 @@ func (m *Metrics) OnWriteReportTxFeeCalculationError(ctx context.Context, msg *W
 func (m *Metrics) OnWriteReportSuccessfulEarlyReturn(ctx context.Context, msg *WriteReportSuccessfulEarlyReturn) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
 	m.WriteReportSuccessfulEarlyReturn.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
+	return nil
+}
+
+func (m *Metrics) OnWriteReportTransmitterMismatch(ctx context.Context, msg *WriteReportTransmitterMismatch) error {
+	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
+	m.WriteReportTransmitterMismatch.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
 	return nil
 }

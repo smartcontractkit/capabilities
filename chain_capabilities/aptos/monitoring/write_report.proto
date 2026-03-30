@@ -41,6 +41,12 @@ message WriteReportSuccessfulEarlyReturn {
   monitoring.ExecutionContext execution_context = 20;
 }
 
+message WriteReportTransmitterMismatch {
+  string transmitter = 1;
+  repeated string ordered_transmitters = 2;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
 message WriteReportRequest {
   bytes receiver = 1;
   optional GasConfig gas_config = 2;

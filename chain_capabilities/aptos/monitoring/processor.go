@@ -67,6 +67,13 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 		if err := p.metrics.OnWriteReportSuccessfulEarlyReturn(ctx, msg); err != nil {
 			return fmt.Errorf("failed to publish WriteReportSuccessfulEarlyReturn metrics: %w", err)
 		}
+	case *WriteReportTransmitterMismatch:
+		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
+			return fmt.Errorf("failed to emit WriteReportTransmitterMismatch log: %w", err)
+		}
+		if err := p.metrics.OnWriteReportTransmitterMismatch(ctx, msg); err != nil {
+			return fmt.Errorf("failed to publish WriteReportTransmitterMismatch metrics: %w", err)
+		}
 	default:
 		return nil
 	}

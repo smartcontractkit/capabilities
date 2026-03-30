@@ -65,6 +65,7 @@ func TestProcessor_Process_ErrorMessages(t *testing.T) {
 	}{
 		{"WriteReportError", &monitoring.WriteReportError{ExecutionContext: ec}},
 		{"WriteReportTxFeeCalculationError", &monitoring.WriteReportTxFeeCalculationError{ExecutionContext: ec}},
+		{"WriteReportTransmitterMismatch", &monitoring.WriteReportTransmitterMismatch{ExecutionContext: ec}},
 	}
 
 	for _, tc := range errorMsgs {
@@ -112,6 +113,7 @@ func TestProcessor_Process_EmitError_Propagates(t *testing.T) {
 		{"WriteReportTxFeeCalculationError", &monitoring.WriteReportTxFeeCalculationError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"WriteReportDuplicateTx", &monitoring.WriteReportDuplicateTx{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"WriteReportSuccessfulEarlyReturn", &monitoring.WriteReportSuccessfulEarlyReturn{ExecutionContext: &capmonitoring.ExecutionContext{}}},
+		{"WriteReportTransmitterMismatch", &monitoring.WriteReportTransmitterMismatch{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 	}
 
 	for _, tc := range msgs {
