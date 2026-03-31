@@ -133,6 +133,27 @@ func TestWriteReport_InputValidation(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "workflowExecutionID in the report does not match WorkflowExecutionID in the request metadata.")
 	})
+	t.Run("Invalid remaining account public key length", func(t *testing.T) {
+		reportMetadata := createTestReportMetadata()
+		req := createTestWriteReportReq(reportMetadata)
+		req.RemainingAccounts = []*solcap.AccountMeta{
+			{PublicKey: []byte{1, 2, 3}, IsWritable: false},
+		}
+		_, err := helper.solana.WriteReport(ctx, createTestRequestMetadata(reportMetadata), req)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "remaining account 0")
+		require.Contains(t, err.Error(), "32 bytes")
+		helper.creForwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	})
+	t.Run("Nil remaining account meta", func(t *testing.T) {
+		reportMetadata := createTestReportMetadata()
+		req := createTestWriteReportReq(reportMetadata)
+		req.RemainingAccounts = []*solcap.AccountMeta{nil}
+		_, err := helper.solana.WriteReport(ctx, createTestRequestMetadata(reportMetadata), req)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "remaining account 0: nil account meta")
+		helper.creForwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	})
 }
 func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 	t.Parallel()

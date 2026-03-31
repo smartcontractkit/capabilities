@@ -274,6 +274,9 @@ func (s *Solana) validateInputsAndReportMetadata(requestMetadata capabilities.Re
 	if key := solana.PublicKey(request.Receiver); key.IsZero() {
 		return fmt.Errorf("receiver public key is empty")
 	}
+	if err := validateRemainingAccountMetas(request.GetRemainingAccounts()); err != nil {
+		return err
+	}
 	if len(request.Report.Sigs) == 0 {
 		return fmt.Errorf("no signatures provided")
 	}

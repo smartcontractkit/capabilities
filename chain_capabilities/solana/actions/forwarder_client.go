@@ -3,6 +3,7 @@ package actions
 import (
 	"context"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 
 	"github.com/gagliardetto/solana-go"
@@ -78,7 +79,11 @@ func (fc *forwarderClient) InvokeOnReport(ctx context.Context, receiver solana.P
 	)
 
 	// meta[0] - forwarderState, meta[1] - executionState are already included
-	inst.AccountMetaSlice = append(inst.AccountMetaSlice, convertMetaPB(meta)[2:]...)
+	converted, convErr := convertMetaPB(meta)
+	if convErr != nil {
+		return nil, fmt.Errorf("invalid remaining account metas: %w", convErr)
+	}
+	inst.AccountMetaSlice = append(inst.AccountMetaSlice, converted[2:]...)
 	ix, instErr := inst.ValidateAndBuild()
 	if instErr != nil {
 		return nil, fmt.Errorf("failed to validate and build report instruction: %w", instErr)
@@ -186,15 +191,33 @@ func getConfigID(donID uint32, configVersion uint32) uint64 {
 	return (uint64(donID) << 32) | uint64(configVersion)
 }
 
-func convertMetaPB(m []*solcap.AccountMeta) []*solana.AccountMeta {
-	ret := make([]*solana.AccountMeta, 0)
+// validateRemainingAccountMetas ensures each account meta has a 32-byte public key so that
+// solana.PublicKey conversion cannot panic on short input.
+func validateRemainingAccountMetas(accounts []*solcap.AccountMeta) error {
+	for i, acc := range accounts {
+		if acc == nil {
+			return fmt.Errorf("remaining account %d: nil account meta", i)
+		}
+		pk := acc.GetPublicKey()
+		if len(pk) != solana.PublicKeyLength {
+			return fmt.Errorf("remaining account %d: public key must be exactly %d bytes, got %d (hex: %s)", i, solana.PublicKeyLength, len(pk), hex.EncodeToString(pk))
+		}
+	}
+	return nil
+}
+
+func convertMetaPB(m []*solcap.AccountMeta) ([]*solana.AccountMeta, error) {
+	if err := validateRemainingAccountMetas(m); err != nil {
+		return nil, err
+	}
+	ret := make([]*solana.AccountMeta, 0, len(m))
 	for _, acc := range m {
 		ret = append(ret, &solana.AccountMeta{
 			PublicKey:  solana.PublicKey(acc.PublicKey),
 			IsWritable: acc.IsWritable,
 		})
 	}
-	return ret
+	return ret, nil
 }
 
 func (fc *forwarderClient) deriveExecutionState(transmissionID [32]byte) (solana.PublicKey, error) {
