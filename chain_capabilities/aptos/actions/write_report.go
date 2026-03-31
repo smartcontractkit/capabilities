@@ -14,6 +14,7 @@ import (
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
+	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
@@ -25,6 +26,7 @@ import (
 	aptostypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/aptos"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/metering"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/monitoring"
 )
 
 func withQuickRetry[T any](ctx context.Context, lggr logger.Logger, fn func(context.Context) (T, error)) (T, error) {
@@ -48,31 +50,28 @@ func (s *Aptos) WriteReport(
 ) (*capabilities.ResponseAndMetadata[*aptoscap.WriteReportReply], caperrors.Error) {
 	ctx = metadata.ContextWithCRE(ctx)
 
-	s.lggr.Debugw("WriteReport called",
-		"workflowExecutionID", metadata.WorkflowExecutionID,
-		"workflowID", metadata.WorkflowID,
-		"workflowOwner", metadata.WorkflowOwner,
-		"hasInput", input != nil,
-	)
+	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: metadata}
+	monitoring.EmitInitiated(ctx, s.lggr, s.beholderProcessor, s.messageBuilder.BuildWriteReportInitiated(telemetryContext, input))
 
 	// 1. Validate inputs
 	if err := s.validateWriteReportInputs(metadata, input); err != nil {
-		s.lggr.Errorw("ValidateWriteReportInputs failed", "error", err)
+		monitoring.LogAndEmitError(ctx, s.lggr, s.beholderProcessor,
+			s.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport, user error due to invalid request", err.Error(), true))
 		return nil, capcommon.NewUserError(err)
 	}
 	s.lggr.Debugw("Inputs validated successfully")
 
 	// 2. Build and submit the transaction via AptosService
-	reply, meteringMetadata, err := s.executeWriteReport(ctx, input, metadata)
+	reply, meteringMetadata, err := s.executeWriteReport(ctx, input, metadata, telemetryContext)
 	if err != nil {
-		s.lggr.Errorw("ExecuteWriteReport failed", "error", err)
-		return nil, capcommon.GetError(err, s.isUserError(err))
+		isUserError := s.isUserError(err)
+		monitoring.LogAndEmitError(ctx, s.lggr, s.beholderProcessor,
+			s.messageBuilder.BuildWriteReportError(telemetryContext, input, "Failed to WriteReport while checking if the report exists or trying to publish on chain", err.Error(), isUserError))
+		return nil, capcommon.GetError(err, isUserError)
 	}
 
-	s.lggr.Debugw("WriteReport completed successfully",
-		"txStatus", reply.TxStatus,
-		"hasTxHash", reply.TxHash != nil,
-	)
+	monitoring.LogAndEmitSuccess(ctx, "Successful WriteReport execution", s.lggr, s.beholderProcessor,
+		s.messageBuilder.BuildWriteReportSuccess(telemetryContext, input))
 
 	return &capabilities.ResponseAndMetadata[*aptoscap.WriteReportReply]{
 		Response:         reply,
@@ -81,42 +80,49 @@ func (s *Aptos) WriteReport(
 }
 
 type writeReport struct {
-	forwarderClient       CREForwarderClient
-	forwarderAddress      aptos_sdk.AccountAddress
-	aptosService          types.AptosService
-	lggr                  logger.SugaredLogger
-	p2pConfig             map[string]string
-	chainSelector         uint64
-	maxGasAmountLimit     limits.BoundLimiter[uint64]
-	reportSizeLimit       limits.BoundLimiter[commoncfg.Size]
-	transmissionScheduler ts.TransmissionScheduler
+	forwarderClient        CREForwarderClient
+	forwarderAddress       aptos_sdk.AccountAddress
+	aptosService           types.AptosService
+	lggr                   logger.SugaredLogger
+	p2pConfig              map[string]string
+	chainSelector          uint64
+	maxGasAmountLimit      limits.BoundLimiter[uint64]
+	reportSizeLimit        limits.BoundLimiter[commoncfg.Size]
+	transmissionScheduler  ts.TransmissionScheduler
+	txSearchStartingBuffer time.Duration
+	beholderProcessor      beholder.ProtoProcessor
+	messageBuilder         *monitoring.MessageBuilder
 }
 
 func (s *Aptos) executeWriteReport(
 	ctx context.Context,
 	request *aptoscap.WriteReportRequest,
 	metadata capabilities.RequestMetadata,
+	telemetryContext monitoring.TelemetryContext,
 ) (*aptoscap.WriteReportReply, capabilities.ResponseMetadata, error) {
 	wr := &writeReport{
-		forwarderClient:       s.forwarderClient,
-		forwarderAddress:      s.forwarderAddress,
-		aptosService:          s.AptosService,
-		lggr:                  s.lggr,
-		p2pConfig:             s.p2pConfig,
-		chainSelector:         s.chainSelector,
-		maxGasAmountLimit:     s.maxGasAmountLimit,
-		reportSizeLimit:       s.reportSizeLimit,
-		transmissionScheduler: s.transmissionScheduler,
+		forwarderClient:        s.forwarderClient,
+		forwarderAddress:       s.forwarderAddress,
+		aptosService:           s.AptosService,
+		lggr:                   s.messageBuilder.RequestLggr(s.lggr, telemetryContext),
+		p2pConfig:              s.p2pConfig,
+		chainSelector:          s.chainSelector,
+		maxGasAmountLimit:      s.maxGasAmountLimit,
+		reportSizeLimit:        s.reportSizeLimit,
+		transmissionScheduler:  s.transmissionScheduler,
+		txSearchStartingBuffer: s.txSearchStartingBuffer,
+		beholderProcessor:      s.beholderProcessor,
+		messageBuilder:         s.messageBuilder,
 	}
-	return wr.execute(ctx, request, metadata)
+	return wr.execute(ctx, request, metadata, telemetryContext)
 }
 
 // TODO: handle gas limit bumping if required (PLEX-2580)
-// TODO: handle metrics (PLEX-2546)
 func (wr *writeReport) execute(
 	ctx context.Context,
 	request *aptoscap.WriteReportRequest,
 	metadata capabilities.RequestMetadata,
+	telemetryContext monitoring.TelemetryContext,
 ) (*aptoscap.WriteReportReply, capabilities.ResponseMetadata, error) {
 	wr.lggr.Debugw("Execute started",
 		"workflowExecutionID", metadata.WorkflowExecutionID,
@@ -126,8 +132,8 @@ func (wr *writeReport) execute(
 		"receiver", hex.EncodeToString(request.Receiver[:]),
 	)
 	ctx = contexts.WithChainSelector(ctx, wr.chainSelector)
-	// this helps the node query only relevant transactions when trying to find the txHash, anything before (requestStartTime - 1min) is not relevant
-	// the 1min here can be adjusted based on timeout configs and metrics
+	// this helps the node query only relevant transactions when trying to find the txHash,
+	// anything before (requestStartTime - txSearchStartingBuffer) is not relevant
 	requestStartTime := time.Now()
 
 	// Set gas limits: use defaults if not provided, otherwise check against configured limit
@@ -154,15 +160,15 @@ func (wr *writeReport) execute(
 		wr.lggr.Errorw("GetTransmissionID failed", "error", err)
 		return nil, capabilities.ResponseMetadata{}, err
 	}
-	wr.lggr.Debugw("TransmissionID created", "transmissionID", transmissionID.GetDebugID())
+	wr.lggr = wr.lggr.With("transmissionID", transmissionID.GetDebugID())
 
-	txInfoRetriever := NewTxInfoRetriever(wr.forwarderClient, wr.lggr, transmissionID, wr.forwarderAddress.String(), requestStartTime)
+	txInfoRetriever := NewTxInfoRetriever(wr.forwarderClient, wr.lggr, transmissionID, wr.forwarderAddress.String(), requestStartTime, wr.txSearchStartingBuffer)
 
 	queuePosition := wr.transmissionScheduler.GetQueuePosition(transmissionID.GetDebugID())
 	orderedTransmitters := wr.getOrderedTransmitters(transmissionID.GetDebugID(), wr.p2pConfig)
 	wr.lggr.Debugw("Got queue position", "queuePosition", queuePosition, "orderedTransmitters", orderedTransmitters)
 	// polling here is done based on queue position and deltaStage
-	transmissionInfo, err := wr.pollTransmissionInfo(ctx, transmissionID, queuePosition)
+	transmissionInfo, err := wr.pollTransmissionInfo(ctx, transmissionID, queuePosition, telemetryContext)
 	if err != nil {
 		wr.lggr.Errorw("PollTransmissionInfo failed", "error", err)
 		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed to get transmission info: %w", err)
@@ -170,7 +176,7 @@ func (wr *writeReport) execute(
 	wr.lggr.Debugw("Initial pollTransmissionInfo result", "success", transmissionInfo.Success, "transmitter", transmissionInfo.Transmitter.String())
 
 	if transmissionInfo.Success {
-		wr.logIfSuccessfulTransmitterNotInOrderedList(transmissionInfo, orderedTransmitters)
+		wr.logIfSuccessfulTransmitterNotInOrderedList(ctx, telemetryContext, transmissionInfo, orderedTransmitters)
 		wr.lggr.Debugw("Report already onchain, retrieving txHash")
 		txResult, txHashErr := txInfoRetriever.GetSuccessfulTransmissionInfo(ctx, transmissionInfo.Transmitter)
 		if txHashErr != nil {
@@ -227,7 +233,8 @@ func (wr *writeReport) execute(
 	if feeErr != nil {
 		wr.lggr.Errorw("Failed to get transaction fee, using zero for metering", "txHash", txReply.TxHash, "error", feeErr)
 		ownMeteringMetadata = metering.GetResponseMetadataWriteReport(big.NewFloat(0), wr.chainSelector)
-		// TODO: PLEX-2546 emit metric - failed to get transaction fee
+		monitoring.LogAndEmitError(ctx, wr.lggr, wr.beholderProcessor,
+			wr.messageBuilder.BuildWriteReportTxFeeCalculationError(telemetryContext, request, txReply.TxHash, feeErr.Error()))
 	} else {
 		feeInAPT := aptosOctasToAPT(ownFeeInOctas)
 		ownMeteringMetadata = metering.GetResponseMetadataWriteReport(feeInAPT, wr.chainSelector)
@@ -236,7 +243,7 @@ func (wr *writeReport) execute(
 
 	switch newTransmissionInfo.Success {
 	case true:
-		wr.logIfSuccessfulTransmitterNotInOrderedList(newTransmissionInfo, orderedTransmitters)
+		wr.logIfSuccessfulTransmitterNotInOrderedList(ctx, telemetryContext, newTransmissionInfo, orderedTransmitters)
 		receiverContractExecutionStatus := aptoscap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS
 
 		switch txReply.TxStatus {
@@ -252,11 +259,13 @@ func (wr *writeReport) execute(
 			meteringMetadata := metering.GetResponseMetadataWriteReport(feeInAPT, wr.chainSelector)
 			wr.lggr.Debugw("WriteReport fee", "feeInAPT", feeInAPT.String(), "feeInOctas", feeInOctas)
 
+			monitoring.LogAndEmitSuccess(ctx, "WriteReport sent a duplicate transaction, report already on-chain",
+				wr.lggr, wr.beholderProcessor,
+				wr.messageBuilder.BuildWriteReportDuplicateTx(telemetryContext, request, txReply.TxHash, successResult.TxHash))
+
 			if txReply.TxStatus == aptostypes.TxFatal {
 				wr.lggr.Errorw("Transaction failed to get processed, but report was already submitted, this is unexpected and should be investigated", "txHash", txReply.TxHash)
 				meteringMetadata = metering.GetResponseMetadataWriteReport(big.NewFloat(0), wr.chainSelector)
-			} else {
-				wr.lggr.Debugw("Our transaction reverted but report is onchain (duplicate), retrieving success hash", "ownTxStatus", txReply.TxStatus, "ownTxHash", txReply.TxHash)
 			}
 
 			return &aptoscap.WriteReportReply{
@@ -456,6 +465,7 @@ func (wr *writeReport) pollTransmissionInfo(
 	ctx context.Context,
 	transmissionID TransmissionID,
 	queuePosition int,
+	telemetryContext monitoring.TelemetryContext,
 ) (lastValidInfo TransmissionInfo, err error) {
 	wr.lggr.Debugw("PollTransmissionInfo called",
 		"transmissionID", transmissionID.GetDebugID(),
@@ -484,8 +494,10 @@ func (wr *writeReport) pollTransmissionInfo(
 	stageTimerFired := false
 	defer func() {
 		stageTimer.Stop()
-		if !stageTimerFired {
-			wr.lggr.Debugw("Transmission found before delta stage has passed")
+		if !stageTimerFired && err == nil {
+			monitoring.LogAndEmitSuccess(ctx, "Transmission found before delta stage has passed",
+				wr.lggr, wr.beholderProcessor,
+				wr.messageBuilder.BuildWriteReportSuccessfulEarlyReturn(telemetryContext))
 		}
 	}()
 
@@ -521,15 +533,16 @@ func (wr *writeReport) pollTransmissionInfo(
 
 // logIfSuccessfulTransmitterNotInOrderedList logs when transmission info reports success
 // but the transmitter is not in the ordered peer list from p2pConfig.
-func (wr *writeReport) logIfSuccessfulTransmitterNotInOrderedList(info TransmissionInfo, orderedTransmitters []string) {
+func (wr *writeReport) logIfSuccessfulTransmitterNotInOrderedList(ctx context.Context, telemetryContext monitoring.TelemetryContext, info TransmissionInfo, orderedTransmitters []string) {
 	if !info.Success {
 		return
 	}
 	transmitterAddr := info.Transmitter.StringLong()
 	if !slices.Contains(orderedTransmitters, transmitterAddr) {
-		// TODO: PLEX-2547 emit metric - transmitter not in orderedTransmitters
-		wr.lggr.Errorw("Successful transmitter not found in orderedTransmitters, p2pConfig may be incomplete or an external entity submitted the report",
+		wr.lggr.Errorw("successful transmitter not found in orderedTransmitters, p2pConfig may be incomplete or an external entity submitted the report",
 			"transmitter", transmitterAddr, "orderedTransmitters", orderedTransmitters)
+		monitoring.EmitInitiated(ctx, wr.lggr, wr.beholderProcessor,
+			wr.messageBuilder.BuildWriteReportTransmitterMismatch(telemetryContext, transmitterAddr, orderedTransmitters))
 	}
 }
 

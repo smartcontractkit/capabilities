@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/metering"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/monitoring"
 	commontest "github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -19,6 +20,7 @@ import (
 	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
+	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	aptostypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/aptos"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
@@ -68,6 +70,9 @@ func newTestHelper(t *testing.T) *testHelper {
 		chainSelector:    testChainSelector,
 		transmissionScheduler: ts.NewTransmissionScheduler(
 			myPeerID, []p2ptypes.PeerID{myPeerID}, 1*time.Second, 0, lggr),
+		txSearchStartingBuffer: 1 * time.Minute,
+		beholderProcessor:      commontest.NopBeholderProcessor{},
+		messageBuilder:         monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 	}
 	require.NoError(t, a.initLimiters(limits.Factory{Logger: lggr}))
 	return &testHelper{forwarderClient: mockClient, aptosService: mockService, aptos: a}
@@ -103,13 +108,16 @@ func newMultiNodeTestHelper(t *testing.T, transmissionIDStr string) (*testHelper
 
 	mockService := mocks.NewAptosService(t)
 	a := &Aptos{
-		AptosService:          mockService,
-		forwarderClient:       mockClient,
-		forwarderAddress:      testForwarderAddr,
-		lggr:                  logger.Sugared(lggr),
-		p2pConfig:             p2pCfg,
-		chainSelector:         testChainSelector,
-		transmissionScheduler: scheduler,
+		AptosService:           mockService,
+		forwarderClient:        mockClient,
+		forwarderAddress:       testForwarderAddr,
+		lggr:                   logger.Sugared(lggr),
+		p2pConfig:              p2pCfg,
+		chainSelector:          testChainSelector,
+		transmissionScheduler:  scheduler,
+		txSearchStartingBuffer: 1 * time.Minute,
+		beholderProcessor:      commontest.NopBeholderProcessor{},
+		messageBuilder:         monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 	}
 	require.NoError(t, a.initLimiters(limits.Factory{Logger: lggr}))
 	return &testHelper{forwarderClient: mockClient, aptosService: mockService, aptos: a}, node0Addr
@@ -186,7 +194,7 @@ func newTestTxInfoRetriever(t *testing.T, mockClient *CREForwarderClient_mock, t
 	tid := TransmissionID{
 		Receiver: testReceiver, WorkflowExecutionID: [32]byte(rawExecID), ReportID: [2]byte(reportIDBytes),
 	}
-	return NewTxInfoRetriever(mockClient, logger.Test(t), tid, testForwarderAddr.String(), requestStartTime)
+	return NewTxInfoRetriever(mockClient, logger.Test(t), tid, testForwarderAddr.String(), requestStartTime, 1*time.Minute)
 }
 
 func computeTransmissionIDStr(t *testing.T, rm ocrtypes.Metadata) string {

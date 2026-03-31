@@ -180,7 +180,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		if request.GasConfig != nil && request.GasConfig.GasLimit > txGasLimit {
 			txGasLimit = request.GasConfig.GasLimit - contracts.ForwarderContractLogicGasCost
 		}
-		if transmissionInfo.GasLimit.Uint64() > txGasLimit {
+		if transmissionInfo.GasLimit != nil && transmissionInfo.GasLimit.Uint64() > txGasLimit {
 			txHash, err := txHashRetriever.GetFailedTransmissionHash(ctx)
 			if err != nil {
 				if errors.Is(err, ErrUnexpectedSuccessfulTransmission) {

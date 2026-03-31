@@ -15,11 +15,6 @@ import (
 	aptostypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/aptos"
 )
 
-// TODO: Use config PLEX-2598
-const (
-	txSearchStartingBuffer = 1 * time.Minute
-)
-
 // userTxData is a local struct matching the Go-default JSON output of
 // aptos_api.UserTransaction (uppercase keys, numeric types). The SDK type has a
 // custom UnmarshalJSON expecting Aptos REST-API format (lowercase keys,
@@ -52,7 +47,7 @@ type TxInfoRetriever struct {
 	startingPointMicro int64
 }
 
-func NewTxInfoRetriever(forwarderClient CREForwarderClient, lggr logger.Logger, transmissionID TransmissionID, forwarderAddress string, requestStartTime time.Time) TxInfoRetriever {
+func NewTxInfoRetriever(forwarderClient CREForwarderClient, lggr logger.Logger, transmissionID TransmissionID, forwarderAddress string, requestStartTime time.Time, txSearchStartingBuffer time.Duration) TxInfoRetriever {
 	retriever := TxInfoRetriever{
 		forwarderClient:    forwarderClient,
 		lggr:               logger.Named(lggr, "TxInfoRetriever"),
@@ -234,7 +229,7 @@ func (thr *TxInfoRetriever) paginateBackwards(
 //	  default page; pageSize is derived from the response length. Empty results retried
 //	  as likely RPC error.
 //	Phase 2 (go back): paginate backwards through older transactions until our window
-//	  covers startingPointMicro (requestArrivalTime - 1 min), ensuring we haven't missed the tx.
+//	  covers startingPointMicro (requestArrivalTime - txSearchStartingBuffer), ensuring we haven't missed the tx.
 //	Phase 3 (poll forward): history is covered; query forward from the max sequence number
 //	  observed in Phase 1 (phase3Start = MaxSeqNum+1). Each poll advances the cursor so
 //	  that new transactions submitted between phases cannot be missed even if the page
@@ -316,7 +311,7 @@ func (thr *TxInfoRetriever) GetSuccessfulTransmissionInfo(ctx context.Context, t
 //	Phase 1 (query latest): withQuickRetry fetch of the latest transactions,
 //	  scan for a failed tx. Empty results retried as likely RPC error.
 //	Phase 2 (go back): paginate backwards through older transactions until our window
-//	  covers startingPointMicro (requestArrivalTime - 1 min). The 1 min here will be passed through config PLEX-2598
+//	  covers startingPointMicro (requestArrivalTime - txSearchStartingBuffer).
 func (thr *TxInfoRetriever) GetFailedTransmissionInfo(ctx context.Context, transmitter aptos_sdk.AccountAddress) (TransmissionTxInfo, error) {
 	thr.lggr.Debugw("GetFailedTransmissionInfo called", "transmitter", transmitter.String())
 

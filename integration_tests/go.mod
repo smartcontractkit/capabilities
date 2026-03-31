@@ -26,10 +26,10 @@ require (
 	github.com/smartcontractkit/capabilities/http_trigger v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/capabilities/loadtestwritetarget v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/chain-selectors v1.0.97
-	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260326134853-b725f95b1826
+	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260330165524-d23fb5046e12
 	github.com/smartcontractkit/chainlink-evm v0.3.4-0.20260323184133-3b9694a96380
 	github.com/smartcontractkit/chainlink-evm/gethwrappers v0.0.0-20251222115927-36a18321243c
-	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260320153346-314ec8dbe5a4
+	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260326111235-8c09d1a4491f
 	github.com/smartcontractkit/chainlink-protos/workflows/go v0.0.0-20260217043601-5cc966896c4f
 	github.com/smartcontractkit/chainlink/v2 v2.29.1-cre-beta.0.0.20260323200053-e034db36cc3a
 	github.com/smartcontractkit/cre-sdk-go v1.5.0
