@@ -65,7 +65,7 @@ func (s *Aptos) WriteReport(
 		return nil, capcommon.GetError(err, isUserError)
 	}
 
-	monitoring.LogAndEmitSuccess(ctx, "Successfully WriteReport execution", s.lggr, s.beholderProcessor,
+	monitoring.LogAndEmitSuccess(ctx, "Successful WriteReport execution", s.lggr, s.beholderProcessor,
 		s.messageBuilder.BuildWriteReportSuccess(telemetryContext, input))
 
 	return &capabilities.ResponseAndMetadata[*aptoscap.WriteReportReply]{
