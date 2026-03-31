@@ -248,7 +248,7 @@ func (r *HashableRequest[T]) Copy() Request {
 
 var ErrNoObservation = errors.New("no observation captured yet")
 
-func (r *HashableRequest[T]) getObservationHash() ([HashLength]byte, ObservationError, error) {
+func (r *HashableRequest[T]) captureObservationHash() ([HashLength]byte, ObservationError, error) {
 	observation, obErr, ok := r.GetObservation()
 	if !ok {
 		return [HashLength]byte{}, obErr, ErrNoObservation
@@ -274,7 +274,7 @@ func (r *HashableRequest[T]) getObservationHash() ([HashLength]byte, Observation
 }
 
 func (r *HashableRequest[T]) GetOCRObservation() (*RequestObservation, error) {
-	hash, obErr, err := r.getObservationHash()
+	hash, obErr, err := r.captureObservationHash()
 	if err != nil {
 		return nil, err
 	}
