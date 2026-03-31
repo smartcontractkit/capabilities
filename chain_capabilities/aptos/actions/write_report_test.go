@@ -70,8 +70,9 @@ func newTestHelper(t *testing.T) *testHelper {
 		chainSelector:    testChainSelector,
 		transmissionScheduler: ts.NewTransmissionScheduler(
 			myPeerID, []p2ptypes.PeerID{myPeerID}, 1*time.Second, 0, lggr),
-		beholderProcessor: commontest.NopBeholderProcessor{},
-		messageBuilder:    monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		txSearchStartingBuffer: 1 * time.Minute,
+		beholderProcessor:      commontest.NopBeholderProcessor{},
+		messageBuilder:         monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 	}
 	require.NoError(t, a.initLimiters(limits.Factory{Logger: lggr}))
 	return &testHelper{forwarderClient: mockClient, aptosService: mockService, aptos: a}
@@ -113,9 +114,10 @@ func newMultiNodeTestHelper(t *testing.T, transmissionIDStr string) (*testHelper
 		lggr:                  logger.Sugared(lggr),
 		p2pConfig:             p2pCfg,
 		chainSelector:         testChainSelector,
-		transmissionScheduler: scheduler,
-		beholderProcessor:     commontest.NopBeholderProcessor{},
-		messageBuilder:        monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		transmissionScheduler:  scheduler,
+		txSearchStartingBuffer: 1 * time.Minute,
+		beholderProcessor:      commontest.NopBeholderProcessor{},
+		messageBuilder:         monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 	}
 	require.NoError(t, a.initLimiters(limits.Factory{Logger: lggr}))
 	return &testHelper{forwarderClient: mockClient, aptosService: mockService, aptos: a}, node0Addr
@@ -192,7 +194,7 @@ func newTestTxHashRetriever(t *testing.T, mockClient *CREForwarderClient_mock, t
 	tid := TransmissionID{
 		Receiver: testReceiver, WorkflowExecutionID: [32]byte(rawExecID), ReportID: [2]byte(reportIDBytes),
 	}
-	return NewTxHashRetriever(mockClient, logger.Test(t), tid, testForwarderAddr.String(), requestStartTime)
+	return NewTxHashRetriever(mockClient, logger.Test(t), tid, testForwarderAddr.String(), requestStartTime, 1*time.Minute)
 }
 
 func computeTransmissionIDStr(t *testing.T, rm ocrtypes.Metadata) string {

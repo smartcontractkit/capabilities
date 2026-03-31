@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	aptos_sdk "github.com/aptos-labs/aptos-go-sdk"
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
@@ -42,9 +43,10 @@ type Aptos struct {
 	chainSelector         uint64
 	maxGasAmountLimit     limits.BoundLimiter[uint64]
 	reportSizeLimit       limits.BoundLimiter[commoncfg.Size]
-	transmissionScheduler ts.TransmissionScheduler
-	beholderProcessor     beholder.ProtoProcessor
-	messageBuilder        *monitoring.MessageBuilder
+	transmissionScheduler  ts.TransmissionScheduler
+	txSearchStartingBuffer time.Duration
+	beholderProcessor      beholder.ProtoProcessor
+	messageBuilder         *monitoring.MessageBuilder
 }
 
 func NewAptos(cfg *config.Config, p2pConfig map[string]string, aptosService types.AptosService, consensusHandler ConsensusHandler, messageBuilder *monitoring.MessageBuilder, beholderProcessor beholder.ProtoProcessor, lggr logger.Logger, limitsFactory limits.Factory, transmissionScheduler ts.TransmissionScheduler, chainSelector uint64) (*Aptos, error) {
@@ -66,22 +68,21 @@ func NewAptos(cfg *config.Config, p2pConfig map[string]string, aptosService type
 		lggr:                  logger.Sugared(lggr),
 		p2pConfig:             p2pConfig,
 		chainSelector:         chainSelector,
-		transmissionScheduler: transmissionScheduler,
-		beholderProcessor:     beholderProcessor,
-		messageBuilder:        messageBuilder,
+		transmissionScheduler:  transmissionScheduler,
+		txSearchStartingBuffer: cfg.TxSearchStartingBuffer,
+		beholderProcessor:      beholderProcessor,
+		messageBuilder:         messageBuilder,
 	}
 
 	return a, a.initLimiters(limitsFactory)
 }
 
 func (a *Aptos) initLimiters(limitsFactory limits.Factory) (err error) {
-	// PLEX-2599 can be tuned later
 	a.reportSizeLimit, err = limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainWrite.Aptos.ReportSizeLimit)
 	if err != nil {
 		return
 	}
 
-	// PLEX-2599 can be tuned later (100_000 in aptos-sdk, 200_000 in chainlink-aptos)
 	a.maxGasAmountLimit, err = limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainWrite.Aptos.GasLimit)
 	if err != nil {
 		return

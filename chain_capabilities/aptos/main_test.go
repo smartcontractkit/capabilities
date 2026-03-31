@@ -103,4 +103,5 @@ func TestCapabilityGRPCService_UnmarshalConfig_DefaultsConsensusSettings(t *test
 	require.Equal(t, defaultChainHeightPollPeriod, cfg.ChainHeightPollPeriod)
 	require.Equal(t, defaultUnknownRequestsTTL, cfg.UnknownRequestsTTL)
 	require.Equal(t, time.Duration(0), cfg.DeltaStage)
+	require.Equal(t, defaultTxSearchStartingBuffer, cfg.TxSearchStartingBuffer)
 }

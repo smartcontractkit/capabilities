@@ -284,13 +284,17 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		return // Error already sent in the method
 	}
 
+	displayWorkflowName := workflowMetadata.DecodedWorkflowName
+	if displayWorkflowName == "" {
+		displayWorkflowName = workflowMetadata.WorkflowName
+	}
 	// Emit TriggerExecutionStarted event
 	labeler := custmsg.NewLabeler().With(
 		events.KeyTriggerID, req.ID,
 		events.KeyWorkflowID, workflowMetadata.WorkflowID,
 		events.KeyWorkflowExecutionID, workflowExecutionID,
 		events.KeyWorkflowOwner, workflowMetadata.WorkflowOwner,
-		events.KeyWorkflowName, workflowMetadata.WorkflowName,
+		events.KeyWorkflowName, displayWorkflowName,
 		events.KeyWorkflowRegistryChainSelector, workflowMetadata.WorkflowRegistryChainSelector,
 		events.KeyWorkflowRegistryAddress, workflowMetadata.WorkflowRegistryAddress,
 		events.KeyEngineVersion, workflowMetadata.EngineVersion,
@@ -324,9 +328,11 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 }
 
 type WorkflowMetadata struct {
-	WorkflowID                    string
-	WorkflowOwner                 string
-	WorkflowName                  string
+	WorkflowID    string
+	WorkflowOwner string
+	WorkflowName  string
+	// DecodedWorkflowName is the human-readable
+	DecodedWorkflowName           string
 	WorkflowTag                   string
 	WorkflowRegistryChainSelector string
 	WorkflowRegistryAddress       string
@@ -341,10 +347,11 @@ func (h *connectorHandler) resolveWorkflowMetadata(workflow gateway_common.Workf
 	hashedWorkflowName := ensureHexPrefix(hex.EncodeToString([]byte(workflows.HashTruncateName(workflow.WorkflowName))))
 
 	metadata := WorkflowMetadata{
-		WorkflowID:    normalizedWorkflowID,
-		WorkflowOwner: normalizedWorkflowOwner,
-		WorkflowName:  workflow.WorkflowName,
-		WorkflowTag:   workflow.WorkflowTag,
+		WorkflowID:          normalizedWorkflowID,
+		WorkflowOwner:       normalizedWorkflowOwner,
+		WorkflowName:        workflow.WorkflowName,
+		DecodedWorkflowName: workflow.WorkflowName,
+		WorkflowTag:         workflow.WorkflowTag,
 	}
 
 	if workflow.WorkflowID != "" {
@@ -375,6 +382,7 @@ func (h *connectorHandler) populateMetadataFromWorkflow(workflowID string, metad
 		// Populate workflow selector fields from stored workflow
 		metadata.WorkflowOwner = w.workflowSelector.WorkflowOwner
 		metadata.WorkflowName = w.workflowSelector.WorkflowName
+		metadata.DecodedWorkflowName = w.metadata.DecodedWorkflowName
 		metadata.WorkflowTag = w.workflowSelector.WorkflowTag
 		// Populate registry-related metadata
 		metadata.WorkflowRegistryChainSelector = w.metadata.WorkflowRegistryChainSelector

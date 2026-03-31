@@ -126,13 +126,12 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 	if triggerEventStore == nil {
 		return nil, fmt.Errorf("no trigger event store provided")
 	}
-	// TODO(CRE-2314): re-enable retransmits once WF nodes support ACKs and
-	// don2don rate-limits are evaluated. Set retryInterval > 0 to restore.
-	retryInterval := time.Duration(0)
-	undeliveredWarning := 5 * retryInterval
-	undeliveredCritical := 20 * retryInterval
-	lts.baseTrigger = capabilities.NewBaseTriggerCapability(triggerEventStore, func() *evmcappb.Log { return &evmcappb.Log{} },
-		lts.lggr, capabilityID, retryInterval, undeliveredWarning, undeliveredCritical)
+	baseTrigger, err := capabilities.NewBaseTriggerCapabilityWithCRESettings(context.Background(), triggerEventStore,
+		func() *evmcappb.Log { return &evmcappb.Log{} }, lts.lggr, capabilityID, limitsFactory.Settings)
+	if err != nil {
+		return nil, err
+	}
+	lts.baseTrigger = baseTrigger
 	return lts, nil
 }
 
@@ -465,12 +464,16 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 			workflowExecutionID = ""
 		}
 
+		displayWorkflowName := telemetryContext.DecodedWorkflowName
+		if displayWorkflowName == "" {
+			displayWorkflowName = telemetryContext.WorkflowName
+		}
 		labeler := custmsg.NewLabeler().With(
 			events.KeyTriggerID, response.Id,
 			events.KeyWorkflowID, telemetryContext.WorkflowID,
 			events.KeyWorkflowExecutionID, workflowExecutionID,
 			events.KeyWorkflowOwner, telemetryContext.WorkflowOwner,
-			events.KeyWorkflowName, telemetryContext.WorkflowName,
+			events.KeyWorkflowName, displayWorkflowName,
 		)
 
 		// add DON metadata if available

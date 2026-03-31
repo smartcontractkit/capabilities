@@ -233,6 +233,11 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 
 			response := createTriggerResponse(scheduledExecutionTimeUTC)
 
+			displayWorkflowName := metadata.DecodedWorkflowName
+			if displayWorkflowName == "" {
+				displayWorkflowName = metadata.WorkflowName
+			}
+
 			s.lggr.Debugw("task callback sending trigger response", "executionID", metadata.WorkflowExecutionID, "triggerID", triggerID, "scheduledExecTimeUTC", scheduledExecutionTimeUTC.Format(time.RFC3339Nano), "actualExecTimeUTC", currentTimeUTC.Format(time.RFC3339Nano))
 
 			// Generate deterministic workflow execution ID and emit TriggerExecutionStarted event
@@ -265,7 +270,7 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 					events.KeyWorkflowID, trigger.workflowID,
 					events.KeyWorkflowExecutionID, workflowExecutionID,
 					events.KeyWorkflowOwner, metadata.WorkflowOwner,
-					events.KeyWorkflowName, metadata.WorkflowName,
+					events.KeyWorkflowName, displayWorkflowName,
 					events.KeyDonID, strconv.Itoa(int(metadata.WorkflowDonID)),
 					events.KeyDonVersion, strconv.Itoa(int(metadata.WorkflowDonConfigVersion)),
 					events.KeyOrganizationID, orgID,
@@ -305,7 +310,7 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 
 				lblErr := s.labeler.With(
 					"workflowOwner", metadata.WorkflowOwner,
-					"workflowName", metadata.WorkflowName,
+					"workflowName", displayWorkflowName,
 					"workflowID", metadata.WorkflowID,
 				).Emit(ctx, "callback channel full, dropping event")
 				if lblErr != nil {

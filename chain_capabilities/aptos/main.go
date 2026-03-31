@@ -49,6 +49,9 @@ const (
 	repoCLLCapabilities = "https://raw.githubusercontent.com/smartcontractkit/capabilities"
 	versionRefsMain     = "refs/heads/main"
 	schemaBasePath      = repoCLLCapabilities + "/" + versionRefsMain + "/chain_capabilities/aptos/monitoring"
+
+	// Default value for optional Aptos action setting when not provided in config.
+	defaultTxSearchStartingBuffer = 1 * time.Minute
 )
 
 func capabilityID(chainSelector uint64) string {
@@ -412,6 +415,10 @@ func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Confi
 	if cfg.UnknownRequestsTTL == 0 {
 		cfg.UnknownRequestsTTL = defaultUnknownRequestsTTL
 		c.lggr.Infof("UnknownRequestsTTL is zero, setting to %s.", cfg.UnknownRequestsTTL)
+	}
+	if cfg.TxSearchStartingBuffer == 0 {
+		cfg.TxSearchStartingBuffer = defaultTxSearchStartingBuffer
+		c.lggr.Infof("TxSearchStartingBuffer is zero, setting to %s.", cfg.TxSearchStartingBuffer)
 	}
 	return &cfg, nil
 }
