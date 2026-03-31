@@ -32,6 +32,9 @@ type ObservableRequest interface {
 
 var _ ObservableRequest = (*EventuallyConsistentRequest)(nil)
 
+// EventuallyConsistentRequest is a request type whose observation is inconsistent across multiple RPCs for a short
+// period of time due to reorgs or delays in state propagation. The probability that any two honest nodes will observe
+// the same value increases with time. Example: The receipt becomes available and has the same result.
 type EventuallyConsistentRequest struct {
 	*observableRequest[[]byte]
 }
@@ -71,6 +74,11 @@ const (
 
 var _ ObservableRequest = (*AggregatableRequest)(nil)
 
+// AggregatableRequest is a request type whose observation can be aggregated across multiple nodes using an
+// aggregation method (e.g. f+1 highest, median, etc.) to achieve consensus on the observed value and the aggregated result
+// is acceptable for a user. Example: Estimate Gas.
+// This method must not be used for requests like "get balance", as it can produce results that were never observed
+// on chain, due to malicious nodes. Example: [10, 20, 30, 30], with f+1 highest, the result will be 20, which was never observed on chain.
 type AggregatableRequest struct {
 	*observableRequest[*AggregatableObservation]
 }
@@ -155,6 +163,12 @@ func (r *observableRequest[T]) SetObservation(observation T) {
 	r.observationExists = true
 }
 
+// LockableToBlockRequest - is a request type, where the observation can be captured at a specific block height.
+// The observation may be volatile, but it will be the same across all honest nodes if captured at the same block height.
+// Example: Get Block.
+// Consensus occurs in two steps:
+// 1. Nodes agree on a block height to lock to (e.g. 100).
+// 2. Nodes lock request to the block height and treat it as eventually consistent.
 type LockableToBlockRequest struct {
 	id      string
 	observe func(context.Context, *ChainHeight) ([]byte, error)
@@ -219,6 +233,9 @@ func (o ObservationError) Err() error {
 // HashableRequest is an observable request, whose payload can be hashed to be used in hash-based consensus.
 // It is the responsibility of the caller to ensure that the payload is deterministic and does not contain any non-deterministic data (e.g. timestamps, random values, etc.)
 // that can cause different nodes to have different hashes for the same request.
+// HashableRequest is newer version of EventuallyConsistentRequest.
+// It should be used when the observation can be large and we want to avoid transmitting it multiple times for the same request,
+// by transmitting only the hash of the observation.
 type HashableRequest[T proto.Message] struct {
 	workflowExecutionID string
 	reference           string
@@ -246,12 +263,12 @@ func (r *HashableRequest[T]) Copy() Request {
 	return r
 }
 
-var ErrNoObservation = errors.New("no observation captured yet")
+var errNoObservation = errors.New("no observation captured yet")
 
 func (r *HashableRequest[T]) captureObservationHash() ([HashLength]byte, ObservationError, error) {
 	observation, obErr, ok := r.GetObservation()
 	if !ok {
-		return [HashLength]byte{}, obErr, ErrNoObservation
+		return [HashLength]byte{}, nil, errNoObservation
 	}
 
 	if obErr != nil {
@@ -276,6 +293,9 @@ func (r *HashableRequest[T]) captureObservationHash() ([HashLength]byte, Observa
 func (r *HashableRequest[T]) GetOCRObservation() (*RequestObservation, error) {
 	hash, obErr, err := r.captureObservationHash()
 	if err != nil {
+		if errors.Is(err, errNoObservation) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	if obErr != nil {
@@ -299,6 +319,8 @@ func (r *HashableRequest[T]) GetMetadata() commoncap.ResponseMetadata {
 	return r.metadata
 }
 
+// LockableToBlockHashableRequest - is a request type, which combines properties of LockableToBlockRequest and HashableRequest.
+// It allows to capture observation at a specific block height and hash the observation for hash-based consensus.
 type LockableToBlockHashableRequest[T proto.Message] struct {
 	id                  string
 	workflowExecutionID string

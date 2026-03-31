@@ -3,7 +3,6 @@ package types
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -156,8 +155,9 @@ func TestHashableRequest_GetOCRObservation(t *testing.T) {
 		r := NewHashableRequest("wf", "ref", testResponseMetadata(), func(context.Context) (*emptypb.Empty, error) {
 			return nil, nil
 		})
-		_, err := r.GetOCRObservation()
-		require.ErrorIs(t, err, ErrNoObservation)
+		ob, err := r.GetOCRObservation()
+		require.Nil(t, err)
+		require.Nil(t, ob)
 	})
 
 	t.Run("observation error is surfaced as RequestObservation_Error", func(t *testing.T) {
@@ -226,7 +226,7 @@ func TestHashableRequest_GetOCRObservation(t *testing.T) {
 		require.NoError(t, r.CaptureObservation(t.Context()))
 		_, err := r.GetOCRObservation()
 		require.Error(t, err)
-		require.False(t, errors.Is(err, ErrNoObservation))
+		require.ErrorContains(t, err, "failed to convert response to report data: failed to extract metering from metadata: unexpected number of metering records received from peer")
 	})
 }
 
