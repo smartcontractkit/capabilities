@@ -12,7 +12,7 @@ import (
 	aptostypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/aptos"
 )
 
-func TestGetSuccessfulTransmissionHash(t *testing.T) {
+func TestGetSuccessfulTransmissionInfo(t *testing.T) {
 	t.Parallel()
 
 	transmitter := aptos_sdk.AccountAddress{0xEE}
@@ -21,14 +21,14 @@ func TestGetSuccessfulTransmissionHash(t *testing.T) {
 		mockClient := NewCREForwarderClient_mock(t)
 		targetReportMetadata, _, _ := newReportFixture(t)
 		requestStartTime := time.Now()
-		thr := newTestTxHashRetriever(t, mockClient, targetReportMetadata, requestStartTime)
+		thr := newTestTxInfoRetriever(t, mockClient, targetReportMetadata, requestStartTime)
 
 		mockClient.On("GetTransmitterTransactions", mock.Anything, transmitter, mock.Anything, mock.Anything).
 			Return([]*aptostypes.Transaction{}, nil)
 
 		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 		defer cancel()
-		_, err := thr.GetSuccessfulTransmissionHash(ctx, transmitter)
+		_, err := thr.GetSuccessfulTransmissionInfo(ctx, transmitter)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get transmitter transactions during phase 1")
 	})
@@ -37,15 +37,15 @@ func TestGetSuccessfulTransmissionHash(t *testing.T) {
 		mockClient := NewCREForwarderClient_mock(t)
 		targetReportMetadata, _, _ := newReportFixture(t)
 		requestStartTime := time.Now()
-		thr := newTestTxHashRetriever(t, mockClient, targetReportMetadata, requestStartTime)
+		thr := newTestTxInfoRetriever(t, mockClient, targetReportMetadata, requestStartTime)
 
-		recentTs := uint64(requestStartTime.UnixMicro())
+		recentTs := requestStartTime.UnixMicro()
 		matchingTx := buildFakeTransactionWithGas(t, "0xfound", true, 100, recentTs, targetReportMetadata, 500, 100)
 
 		mockClient.On("GetTransmitterTransactions", mock.Anything, transmitter, mock.Anything, mock.Anything).
 			Return([]*aptostypes.Transaction{matchingTx}, nil).Once()
 
-		result, err := thr.GetSuccessfulTransmissionHash(t.Context(), transmitter)
+		result, err := thr.GetSuccessfulTransmissionInfo(t.Context(), transmitter)
 		require.NoError(t, err)
 		require.Equal(t, "0xfound", result.TxHash)
 		require.Equal(t, uint64(500), result.GasUsed)
@@ -57,9 +57,9 @@ func TestGetSuccessfulTransmissionHash(t *testing.T) {
 		targetReportMetadata, _, _ := newReportFixture(t)
 		randomReportMetadata, _, _ := newReportFixture(t)
 		requestStartTime := time.Now()
-		thr := newTestTxHashRetriever(t, mockClient, targetReportMetadata, requestStartTime)
+		thr := newTestTxInfoRetriever(t, mockClient, targetReportMetadata, requestStartTime)
 
-		recentTs := uint64(requestStartTime.UnixMicro())
+		recentTs := requestStartTime.UnixMicro()
 		unrelatedTx := buildFakeTransaction(t, "0xunrelated", true, 200, recentTs, randomReportMetadata)
 		matchingTx := buildFakeTransaction(t, "0xfound_in_phase2", true, 50, recentTs-500000, targetReportMetadata)
 
@@ -70,7 +70,7 @@ func TestGetSuccessfulTransmissionHash(t *testing.T) {
 		mockClient.On("GetTransmitterTransactions", mock.Anything, transmitter, mock.Anything, mock.Anything).
 			Return([]*aptostypes.Transaction{matchingTx}, nil).Once()
 
-		result, err := thr.GetSuccessfulTransmissionHash(t.Context(), transmitter)
+		result, err := thr.GetSuccessfulTransmissionInfo(t.Context(), transmitter)
 		require.NoError(t, err)
 		require.Equal(t, "0xfound_in_phase2", result.TxHash)
 	})
@@ -80,10 +80,10 @@ func TestGetSuccessfulTransmissionHash(t *testing.T) {
 		targetReportMetadata, _, _ := newReportFixture(t)
 		randomReportMetadata, _, _ := newReportFixture(t)
 		requestStartTime := time.Now()
-		thr := newTestTxHashRetriever(t, mockClient, targetReportMetadata, requestStartTime)
+		thr := newTestTxInfoRetriever(t, mockClient, targetReportMetadata, requestStartTime)
 
-		recentTs := uint64(requestStartTime.UnixMicro())
-		oldTs := uint64(requestStartTime.Add(-2 * time.Minute).UnixMicro())
+		recentTs := requestStartTime.UnixMicro()
+		oldTs := requestStartTime.Add(-2 * time.Minute).UnixMicro()
 		unrelatedRecentTx := buildFakeTransaction(t, "0xunrelated1", true, 200, recentTs, randomReportMetadata)
 		unrelatedOldTx := buildFakeTransaction(t, "0xunrelated2", true, 50, oldTs, randomReportMetadata)
 		matchingTx := buildFakeTransaction(t, "0xfound_in_phase3", true, 300, recentTs, targetReportMetadata)
@@ -98,7 +98,7 @@ func TestGetSuccessfulTransmissionHash(t *testing.T) {
 		mockClient.On("GetTransmitterTransactions", mock.Anything, transmitter, mock.Anything, mock.Anything).
 			Return([]*aptostypes.Transaction{matchingTx}, nil).Once()
 
-		result, err := thr.GetSuccessfulTransmissionHash(t.Context(), transmitter)
+		result, err := thr.GetSuccessfulTransmissionInfo(t.Context(), transmitter)
 		require.NoError(t, err)
 		require.Equal(t, "0xfound_in_phase3", result.TxHash)
 	})
@@ -108,10 +108,10 @@ func TestGetSuccessfulTransmissionHash(t *testing.T) {
 		targetReportMetadata, _, _ := newReportFixture(t)
 		randomReportMetadata, _, _ := newReportFixture(t)
 		requestStartTime := time.Now()
-		thr := newTestTxHashRetriever(t, mockClient, targetReportMetadata, requestStartTime)
+		thr := newTestTxInfoRetriever(t, mockClient, targetReportMetadata, requestStartTime)
 
-		oldTs := uint64(requestStartTime.Add(-2 * time.Minute).UnixMicro())
-		recentTs := uint64(requestStartTime.UnixMicro())
+		oldTs := requestStartTime.Add(-2 * time.Minute).UnixMicro()
+		recentTs := requestStartTime.UnixMicro()
 		unrelatedOldTx := buildFakeTransaction(t, "0xunrelated", true, 50, oldTs, randomReportMetadata)
 		matchingTx := buildFakeTransaction(t, "0xfound_in_phase3", true, 300, recentTs, targetReportMetadata)
 
@@ -122,7 +122,7 @@ func TestGetSuccessfulTransmissionHash(t *testing.T) {
 		mockClient.On("GetTransmitterTransactions", mock.Anything, transmitter, mock.Anything, mock.Anything).
 			Return([]*aptostypes.Transaction{matchingTx}, nil).Once()
 
-		result, err := thr.GetSuccessfulTransmissionHash(t.Context(), transmitter)
+		result, err := thr.GetSuccessfulTransmissionInfo(t.Context(), transmitter)
 		require.NoError(t, err)
 		require.Equal(t, "0xfound_in_phase3", result.TxHash)
 	})
@@ -132,9 +132,9 @@ func TestGetSuccessfulTransmissionHash(t *testing.T) {
 		targetReportMetadata, _, _ := newReportFixture(t)
 		randomReportMetadata, _, _ := newReportFixture(t)
 		requestStartTime := time.Now()
-		thr := newTestTxHashRetriever(t, mockClient, targetReportMetadata, requestStartTime)
+		thr := newTestTxInfoRetriever(t, mockClient, targetReportMetadata, requestStartTime)
 
-		oldTs := uint64(requestStartTime.Add(-2 * time.Minute).UnixMicro())
+		oldTs := requestStartTime.Add(-2 * time.Minute).UnixMicro()
 		unrelatedOldTx := buildFakeTransaction(t, "0xunrelated", true, 50, oldTs, randomReportMetadata)
 
 		// All GetTransmitterTransactions calls return unrelated tx
@@ -143,13 +143,13 @@ func TestGetSuccessfulTransmissionHash(t *testing.T) {
 
 		ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 		defer cancel()
-		_, err := thr.GetSuccessfulTransmissionHash(ctx, transmitter)
+		_, err := thr.GetSuccessfulTransmissionInfo(ctx, transmitter)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "matching transmission not found yet")
 	})
 }
 
-func TestGetFailedTransmissionHash(t *testing.T) {
+func TestGetFailedTransmissionInfo(t *testing.T) {
 	t.Parallel()
 
 	transmitter := aptos_sdk.AccountAddress{0xEE}
@@ -158,15 +158,15 @@ func TestGetFailedTransmissionHash(t *testing.T) {
 		mockClient := NewCREForwarderClient_mock(t)
 		targetRM, _, _ := newReportFixture(t)
 		requestStartTime := time.Now()
-		thr := newTestTxHashRetriever(t, mockClient, targetRM, requestStartTime)
+		thr := newTestTxInfoRetriever(t, mockClient, targetRM, requestStartTime)
 
-		recentTs := uint64(requestStartTime.UnixMicro())
+		recentTs := requestStartTime.UnixMicro()
 		matchingTx := buildFakeTransaction(t, "0xfailed_phase1", false, 100, recentTs, targetRM)
 
 		mockClient.On("GetTransmitterTransactions", mock.Anything, transmitter, mock.Anything, mock.Anything).
 			Return([]*aptostypes.Transaction{matchingTx}, nil).Once()
 
-		result, err := thr.GetFailedTransmissionHash(t.Context(), transmitter)
+		result, err := thr.GetFailedTransmissionInfo(t.Context(), transmitter)
 		require.NoError(t, err)
 		require.Equal(t, "0xfailed_phase1", result.TxHash)
 		require.Equal(t, "Move abort", result.VmStatus)
@@ -176,14 +176,14 @@ func TestGetFailedTransmissionHash(t *testing.T) {
 		mockClient := NewCREForwarderClient_mock(t)
 		targetRM, _, _ := newReportFixture(t)
 		requestStartTime := time.Now()
-		thr := newTestTxHashRetriever(t, mockClient, targetRM, requestStartTime)
+		thr := newTestTxInfoRetriever(t, mockClient, targetRM, requestStartTime)
 
 		mockClient.On("GetTransmitterTransactions", mock.Anything, transmitter, mock.Anything, mock.Anything).
 			Return([]*aptostypes.Transaction{}, nil)
 
 		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 		defer cancel()
-		_, err := thr.GetFailedTransmissionHash(ctx, transmitter)
+		_, err := thr.GetFailedTransmissionInfo(ctx, transmitter)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get transmitter transactions during phase 1")
 	})
@@ -193,9 +193,9 @@ func TestGetFailedTransmissionHash(t *testing.T) {
 		targetRM, _, _ := newReportFixture(t)
 		otherRM, _, _ := newReportFixture(t)
 		requestStartTime := time.Now()
-		thr := newTestTxHashRetriever(t, mockClient, targetRM, requestStartTime)
+		thr := newTestTxInfoRetriever(t, mockClient, targetRM, requestStartTime)
 
-		recentTs := uint64(requestStartTime.UnixMicro())
+		recentTs := requestStartTime.UnixMicro()
 		unrelatedTx := buildFakeTransaction(t, "0xunrelated", false, 200, recentTs, otherRM)
 		matchingTx := buildFakeTransaction(t, "0xfailed_phase2", false, 50, recentTs-500000, targetRM)
 
@@ -206,7 +206,7 @@ func TestGetFailedTransmissionHash(t *testing.T) {
 		mockClient.On("GetTransmitterTransactions", mock.Anything, transmitter, mock.Anything, mock.Anything).
 			Return([]*aptostypes.Transaction{matchingTx}, nil).Once()
 
-		result, err := thr.GetFailedTransmissionHash(t.Context(), transmitter)
+		result, err := thr.GetFailedTransmissionInfo(t.Context(), transmitter)
 		require.NoError(t, err)
 		require.Equal(t, "0xfailed_phase2", result.TxHash)
 		require.Equal(t, "Move abort", result.VmStatus)
@@ -217,16 +217,16 @@ func TestGetFailedTransmissionHash(t *testing.T) {
 		targetRM, _, _ := newReportFixture(t)
 		otherRM, _, _ := newReportFixture(t)
 		requestStartTime := time.Now()
-		thr := newTestTxHashRetriever(t, mockClient, targetRM, requestStartTime)
+		thr := newTestTxInfoRetriever(t, mockClient, targetRM, requestStartTime)
 
-		oldTs := uint64(requestStartTime.Add(-2 * time.Minute).UnixMicro())
+		oldTs := requestStartTime.Add(-2 * time.Minute).UnixMicro()
 		unrelatedOldTx := buildFakeTransaction(t, "0xunrelated", false, 50, oldTs, otherRM)
 
 		// Phase 1: unrelated tx with old timestamp (skip phase 2, no phase 3)
 		mockClient.On("GetTransmitterTransactions", mock.Anything, transmitter, mock.Anything, mock.Anything).
 			Return([]*aptostypes.Transaction{unrelatedOldTx}, nil).Once()
 
-		_, err := thr.GetFailedTransmissionHash(t.Context(), transmitter)
+		_, err := thr.GetFailedTransmissionInfo(t.Context(), transmitter)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "no matching failed transaction found")
 	})
@@ -236,10 +236,10 @@ func TestGetFailedTransmissionHash(t *testing.T) {
 		targetRM, _, _ := newReportFixture(t)
 		otherRM, _, _ := newReportFixture(t)
 		requestStartTime := time.Now()
-		thr := newTestTxHashRetriever(t, mockClient, targetRM, requestStartTime)
+		thr := newTestTxInfoRetriever(t, mockClient, targetRM, requestStartTime)
 
-		recentTs := uint64(requestStartTime.UnixMicro())
-		oldTs := uint64(requestStartTime.Add(-2 * time.Minute).UnixMicro())
+		recentTs := requestStartTime.UnixMicro()
+		oldTs := requestStartTime.Add(-2 * time.Minute).UnixMicro()
 		unrelatedRecentTx := buildFakeTransaction(t, "0xunrelated1", false, 200, recentTs, otherRM)
 		unrelatedOldTx := buildFakeTransaction(t, "0xunrelated2", false, 50, oldTs, otherRM)
 
@@ -250,7 +250,7 @@ func TestGetFailedTransmissionHash(t *testing.T) {
 		mockClient.On("GetTransmitterTransactions", mock.Anything, transmitter, mock.Anything, mock.Anything).
 			Return([]*aptostypes.Transaction{unrelatedOldTx}, nil).Once()
 
-		_, err := thr.GetFailedTransmissionHash(t.Context(), transmitter)
+		_, err := thr.GetFailedTransmissionInfo(t.Context(), transmitter)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "no matching failed transaction found")
 	})
