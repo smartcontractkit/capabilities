@@ -29,6 +29,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	evmmock "github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query"
@@ -61,6 +62,14 @@ var (
 	finalizedExpBlock = evmtypes.LPBlock{FinalizedBlockNumber: 25}
 	pollInterval      = 10 * time.Millisecond
 )
+
+// testRegisterRequestMeta is used for RegisterLogTrigger tests. Per-workflow limiters resolve
+// settings via workflow → owner → global keys; WorkflowOwner must be set or GetScoped fails
+// with "empty owner key" before register-time validation errors are reached.
+var testRegisterRequestMeta = capabilities.RequestMetadata{
+	WorkflowID:    "wf-id",
+	WorkflowOwner: "0x0123456789012345678901234567890123456789",
+}
 
 // Build a LogTriggerService with BaseTriggerCapability wired to an inbox channel.
 func newLTSWithBase(t *testing.T) (*LogTriggerService, chan capabilities.TriggerAndId[*evmcappb.Log]) {
@@ -101,12 +110,12 @@ func TestLogTriggerService_Close_WaitsForPollingGoroutine(t *testing.T) {
 
 		service.baseTrigger = capabilities.NewBaseTriggerCapability(capabilities.NewMemEventStore(),
 			func() *evmcappb.Log { return &evmcappb.Log{} }, logger.Test(t), "testCap", 200*time.Millisecond, 0, 0, nil)
-		require.NoError(t, service.baseTrigger.Start(ctx))
 		defer service.baseTrigger.Stop()
 
+		// service.Start starts baseTrigger once; avoid a second Start (would spawn duplicate retransmit loops).
 		err := service.Start(ctx)
 		require.NoError(t, err)
-		ch, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{WorkflowID: "wf-id"}, &evmcappb.FilterLogTriggerRequest{
+		ch, err := service.RegisterLogTrigger(ctx, triggerID, testRegisterRequestMeta, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
 			Topics:    topicsWithEventSig0,
 		})
@@ -145,7 +154,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 	service := createTriggerObject(t, nil, NewLogTriggerStore())
 
 	t.Run("[2]Unknown: no triggerID provided", func(t *testing.T) {
-		_, err := service.RegisterLogTrigger(t.Context(), "", capabilities.RequestMetadata{WorkflowID: "wf-id"}, &evmcappb.FilterLogTriggerRequest{
+		_, err := service.RegisterLogTrigger(t.Context(), "", testRegisterRequestMeta, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
 		})
 		expectedError := "[13]Internal: no triggerID provided"
@@ -157,7 +166,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 		service := createTriggerObject(t, nil, store)
 		// we simulate a RegisterLogTrigger() by tampering the store
 		store.Write(triggerID, logTriggerState{})
-		_, err := service.RegisterLogTrigger(t.Context(), triggerID, capabilities.RequestMetadata{WorkflowID: "wf-id"}, &evmcappb.FilterLogTriggerRequest{
+		_, err := service.RegisterLogTrigger(t.Context(), triggerID, testRegisterRequestMeta, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
 		})
 		expectedError := "[13]Internal: triggerID \"trigger-1\" is already registered"
@@ -165,7 +174,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 	})
 
 	t.Run("missing addresses", func(t *testing.T) {
-		_, err := service.RegisterLogTrigger(t.Context(), triggerID, capabilities.RequestMetadata{WorkflowID: "wf-id"}, &evmcappb.FilterLogTriggerRequest{
+		_, err := service.RegisterLogTrigger(t.Context(), triggerID, testRegisterRequestMeta, &evmcappb.FilterLogTriggerRequest{
 			Addresses: [][]byte{},
 		})
 		expectedError := "[2]Unknown: no valid addresses provided (at least one address is required)"
@@ -173,7 +182,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 	})
 
 	t.Run("too many topics", func(t *testing.T) {
-		_, err := service.RegisterLogTrigger(t.Context(), triggerID, capabilities.RequestMetadata{WorkflowID: "wf-id"}, &evmcappb.FilterLogTriggerRequest{
+		_, err := service.RegisterLogTrigger(t.Context(), triggerID, testRegisterRequestMeta, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
 			Topics: []*evmcappb.TopicValues{
 				{Values: [][]byte{}},
@@ -189,12 +198,12 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 
 	t.Run("missing eventSig", func(t *testing.T) {
 		expectedError := "[2]Unknown: no valid event sig provided (at least one event sig is required in topics)"
-		_, err := service.RegisterLogTrigger(t.Context(), triggerID, capabilities.RequestMetadata{WorkflowID: "wf-id"}, &evmcappb.FilterLogTriggerRequest{
+		_, err := service.RegisterLogTrigger(t.Context(), triggerID, testRegisterRequestMeta, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
 		})
 		assertCapError(t, err, caperrors.VisibilityPublic, expectedError)
 
-		_, err = service.RegisterLogTrigger(t.Context(), triggerID, capabilities.RequestMetadata{WorkflowID: "wf-id"}, &evmcappb.FilterLogTriggerRequest{
+		_, err = service.RegisterLogTrigger(t.Context(), triggerID, testRegisterRequestMeta, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
 			Topics:    []*evmcappb.TopicValues{},
 		})
@@ -206,7 +215,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 		evmService.EXPECT().GetLatestLPBlock(mock.Anything).Return(nil, errors.New("mocked failure error"))
 		service := createTriggerObject(t, evmService, NewLogTriggerStore())
 		ctx := t.Context()
-		_, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{WorkflowID: "wf-id"}, &evmcappb.FilterLogTriggerRequest{
+		_, err := service.RegisterLogTrigger(ctx, triggerID, testRegisterRequestMeta, &evmcappb.FilterLogTriggerRequest{
 			Addresses: addresses,
 			Topics:    topicsWithEventSig0,
 		})
@@ -220,7 +229,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 		evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(errors.New("mocking error, making register failing on purpose")).Once()
 		service := createTriggerObject(t, evmService, NewLogTriggerStore())
 		ctx := t.Context()
-		_, err := service.RegisterLogTrigger(ctx, triggerID+"-logtracking", capabilities.RequestMetadata{WorkflowID: "wf-id"}, &evmcappb.FilterLogTriggerRequest{
+		_, err := service.RegisterLogTrigger(ctx, triggerID+"-logtracking", testRegisterRequestMeta, &evmcappb.FilterLogTriggerRequest{
 			Addresses: brokenAddresses,
 			Topics:    topicsWithEventSig0,
 		})
@@ -235,7 +244,7 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 		evmService.On("RegisterLogTracking", mock.Anything, mock.Anything).Return(caperrors.NewPublicUserError(fmt.Errorf("mocking error, address is not an EOA"), canceled)).Once()
 		service := createTriggerObject(t, evmService, NewLogTriggerStore())
 		ctx := t.Context()
-		_, err := service.RegisterLogTrigger(ctx, triggerID+"-logtracking", capabilities.RequestMetadata{WorkflowID: "wf-id"}, &evmcappb.FilterLogTriggerRequest{
+		_, err := service.RegisterLogTrigger(ctx, triggerID+"-logtracking", testRegisterRequestMeta, &evmcappb.FilterLogTriggerRequest{
 			Addresses: brokenAddresses,
 			Topics:    topicsWithEventSig0,
 		})
@@ -953,7 +962,7 @@ func registerAndUnregisterLogTriggerIntegration(t *testing.T, topicsInput []*evm
 	defaultTickerFactory = &mockTickerFactory{C1: tickCh}
 	require.Empty(t, service.triggers.ReadAll())
 	ctx := t.Context()
-	ch, err := service.RegisterLogTrigger(ctx, triggerID, capabilities.RequestMetadata{WorkflowID: "wf-id"}, &evmcappb.FilterLogTriggerRequest{
+	ch, err := service.RegisterLogTrigger(ctx, triggerID, testRegisterRequestMeta, &evmcappb.FilterLogTriggerRequest{
 		Addresses: addresses,
 		Topics:    topicsInput,
 	})
@@ -1122,7 +1131,7 @@ func TestRegisterLogTrigger_ConversionFailures_Compact(t *testing.T) {
 			_, err := svc.RegisterLogTrigger(
 				ctx,
 				"conv-fail-"+tc.name,
-				capabilities.RequestMetadata{WorkflowID: "wf-id"},
+				testRegisterRequestMeta,
 				tc.req,
 			)
 			require.Error(t, err)
@@ -1257,7 +1266,7 @@ func TestNewLogTriggerService(t *testing.T) {
 	})
 	t.Run("ok initialize interval", func(t *testing.T) {
 		lggr := logger.Test(t)
-		trigger, err := NewLogTriggerService(evmService, store, lggr, testLogTriggerCapabilityID, beholderProcessor, messageBuilder, 10*time.Second, 0, 0, limits.Factory{Logger: lggr}, nil, capabilities.NewMemEventStore())
+		trigger, err := NewLogTriggerService(evmService, store, lggr, testLogTriggerCapabilityID, beholderProcessor, messageBuilder, 10*time.Second, 0, 0, testLogTriggerLimitsFactory(t, lggr), nil, capabilities.NewMemEventStore())
 		require.NoError(t, err)
 		require.Equal(t, 10*time.Second, trigger.logTriggerPollInterval)
 		require.Equal(t, uint64(1000), trigger.logTriggerSendChannelBufferSize)
@@ -1265,7 +1274,7 @@ func TestNewLogTriggerService(t *testing.T) {
 	})
 	t.Run("ok initialize all params", func(t *testing.T) {
 		lggr := logger.Test(t)
-		trigger, err := NewLogTriggerService(evmService, store, lggr, testLogTriggerCapabilityID, beholderProcessor, messageBuilder, 10*time.Second, 100, 50, limits.Factory{Logger: lggr}, nil, capabilities.NewMemEventStore())
+		trigger, err := NewLogTriggerService(evmService, store, lggr, testLogTriggerCapabilityID, beholderProcessor, messageBuilder, 10*time.Second, 100, 50, testLogTriggerLimitsFactory(t, lggr), nil, capabilities.NewMemEventStore())
 		require.NoError(t, err)
 		require.Equal(t, 10*time.Second, trigger.logTriggerPollInterval)
 		require.Equal(t, uint64(100), trigger.logTriggerSendChannelBufferSize)
@@ -1273,7 +1282,7 @@ func TestNewLogTriggerService(t *testing.T) {
 	})
 	t.Run("ok initialize buffer only", func(t *testing.T) {
 		lggr := logger.Test(t)
-		trigger, err := NewLogTriggerService(evmService, store, lggr, testLogTriggerCapabilityID, beholderProcessor, messageBuilder, 10*time.Second, 10000, 0, limits.Factory{Logger: lggr}, nil, capabilities.NewMemEventStore())
+		trigger, err := NewLogTriggerService(evmService, store, lggr, testLogTriggerCapabilityID, beholderProcessor, messageBuilder, 10*time.Second, 10000, 0, testLogTriggerLimitsFactory(t, lggr), nil, capabilities.NewMemEventStore())
 		require.NoError(t, err)
 		require.Equal(t, 10*time.Second, trigger.logTriggerPollInterval)
 		require.Equal(t, uint64(10000), trigger.logTriggerSendChannelBufferSize)
@@ -1281,7 +1290,7 @@ func TestNewLogTriggerService(t *testing.T) {
 	})
 	t.Run("ok initialize query limit only", func(t *testing.T) {
 		lggr := logger.Test(t)
-		trigger, err := NewLogTriggerService(evmService, store, lggr, testLogTriggerCapabilityID, beholderProcessor, messageBuilder, 10*time.Second, 0, 100, limits.Factory{Logger: lggr}, nil, capabilities.NewMemEventStore())
+		trigger, err := NewLogTriggerService(evmService, store, lggr, testLogTriggerCapabilityID, beholderProcessor, messageBuilder, 10*time.Second, 0, 100, testLogTriggerLimitsFactory(t, lggr), nil, capabilities.NewMemEventStore())
 		require.NoError(t, err)
 		require.Equal(t, 10*time.Second, trigger.logTriggerPollInterval)
 		require.Equal(t, uint64(defaultSendChannelBufferSize), trigger.logTriggerSendChannelBufferSize) //default value for buffer size as 0 was provided
@@ -1314,10 +1323,23 @@ func TestNewLogTriggerService(t *testing.T) {
 	})
 }
 
+func testLogTriggerLimitsFactory(t *testing.T, lggr logger.Logger) limits.Factory {
+	t.Helper()
+	getter, err := settings.NewJSONGetter([]byte(`{
+		"global": {
+			"BaseTriggerRetransmitEnabled": "true",
+			"BaseTriggerRetryInterval": "200ms"
+		}
+	}`))
+	require.NoError(t, err)
+	return limits.Factory{Logger: lggr, Settings: getter}
+}
+
 func createTriggerObject(t *testing.T, mockEVM *evmmock.EVMService, store LogTriggerStore) *LogTriggerService {
 	t.Helper()
-	trigger, err := NewLogTriggerService(mockEVM, store, logger.Test(t), testLogTriggerCapabilityID, test.NopBeholderProcessor{}, monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
-		pollInterval, 0, 0, limits.Factory{Logger: logger.Test(t)}, nil, capabilities.NewMemEventStore())
+	lg := logger.Test(t)
+	trigger, err := NewLogTriggerService(mockEVM, store, lg, testLogTriggerCapabilityID, test.NopBeholderProcessor{}, monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		pollInterval, 0, 0, testLogTriggerLimitsFactory(t, lg), nil, capabilities.NewMemEventStore())
 	require.NoError(t, err)
 	return trigger
 }
@@ -1370,12 +1392,14 @@ func (m *mockTicker) Stop() {
 }
 
 func newLogTriggerService(t *testing.T) *LogTriggerService {
+	t.Helper()
+	lg := logger.Test(t)
 	lts := &LogTriggerService{
-		lggr:              logger.Test(t),
+		lggr:              lg,
 		triggers:          NewLogTriggerStore(),
 		beholderProcessor: test.NopBeholderProcessor{},
 		messageBuilder:    monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 	}
-	require.NoError(t, lts.initLimiters(limits.Factory{Logger: logger.Test(t)}))
+	require.NoError(t, lts.initLimiters(testLogTriggerLimitsFactory(t, lg)))
 	return lts
 }
