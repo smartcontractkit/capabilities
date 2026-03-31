@@ -31,6 +31,9 @@ type Metrics struct {
 	WriteReportTransmitterMismatch struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
+	WriteReportP2PConfigIncomplete struct {
+		basic commoncapbeholder.MetricsCapBasic
+	}
 }
 
 // NewMetrics constructs all counters & histograms
@@ -74,6 +77,12 @@ func NewMetrics() (Metrics, error) {
 		return Metrics{}, fmt.Errorf("failed to create write report transmitter mismatch metric: %w", err)
 	}
 
+	wrP2pIncomplete := commoncapbeholder.NewMetricsInfoCapBasic(ns("write_report_p2p_config_incomplete"), commonbeholder.ToSchemaFullName(&WriteReportP2PConfigIncomplete{}))
+	m.WriteReportP2PConfigIncomplete.basic, err = commoncapbeholder.NewMetricsCapBasic(wrP2pIncomplete)
+	if err != nil {
+		return Metrics{}, fmt.Errorf("failed to create write report p2p config incomplete metric: %w", err)
+	}
+
 	return m, nil
 }
 
@@ -110,5 +119,11 @@ func (m *Metrics) OnWriteReportSuccessfulEarlyReturn(ctx context.Context, msg *W
 func (m *Metrics) OnWriteReportTransmitterMismatch(ctx context.Context, msg *WriteReportTransmitterMismatch) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
 	m.WriteReportTransmitterMismatch.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
+	return nil
+}
+
+func (m *Metrics) OnWriteReportP2PConfigIncomplete(ctx context.Context, msg *WriteReportP2PConfigIncomplete) error {
+	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
+	m.WriteReportP2PConfigIncomplete.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
 	return nil
 }

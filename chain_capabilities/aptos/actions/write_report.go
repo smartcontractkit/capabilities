@@ -307,8 +307,9 @@ func (wr *writeReport) execute(
 		// Search preceding transmitters (position 0 through position-1) for a matching failed tx.
 		for i := 0; i < queuePosition && i < len(orderedTransmitters); i++ {
 			if orderedTransmitters[i] == "" {
-				// TODO: PLEX-2598 emit metric - p2pConfig incomplete, missing transmitter at this position
 				wr.lggr.Warnw("Skipping empty transmitter address, p2pConfig is incomplete", "index", i)
+				monitoring.EmitInitiated(ctx, wr.lggr, wr.beholderProcessor,
+					wr.messageBuilder.BuildWriteReportP2pConfigIncomplete(telemetryContext, int32(i))) //nolint:gosec // i is a small queue index
 				continue
 			}
 			wr.lggr.Debugw("Checking prior transmitter", "index", i, "address", orderedTransmitters[i])
