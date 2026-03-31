@@ -84,7 +84,8 @@ type writeReport struct {
 	chainSelector         uint64
 	maxGasAmountLimit     limits.BoundLimiter[uint64]
 	reportSizeLimit       limits.BoundLimiter[commoncfg.Size]
-	transmissionScheduler ts.TransmissionScheduler
+	transmissionScheduler  ts.TransmissionScheduler
+	txSearchStartingBuffer time.Duration
 }
 
 func (s *Aptos) executeWriteReport(
@@ -101,7 +102,8 @@ func (s *Aptos) executeWriteReport(
 		chainSelector:         s.chainSelector,
 		maxGasAmountLimit:     s.maxGasAmountLimit,
 		reportSizeLimit:       s.reportSizeLimit,
-		transmissionScheduler: s.transmissionScheduler,
+		transmissionScheduler:  s.transmissionScheduler,
+		txSearchStartingBuffer: s.txSearchStartingBuffer,
 	}
 	return wr.execute(ctx, request, metadata)
 }
@@ -122,8 +124,8 @@ func (wr *writeReport) execute(
 		"receiver", hex.EncodeToString(request.Receiver[:]),
 	)
 	ctx = contexts.WithChainSelector(ctx, wr.chainSelector)
-	// this helps the node query only relevant transactions when trying to find the txHash, anything before (requestStartTime - 1min) is not relevant
-	// the 1min here can be adjusted based on timeout configs and metrics
+	// this helps the node query only relevant transactions when trying to find the txHash,
+	// anything before (requestStartTime - txSearchStartingBuffer) is not relevant
 	requestStartTime := time.Now()
 
 	// Set gas limits: use defaults if not provided, otherwise check against configured limit
@@ -152,7 +154,7 @@ func (wr *writeReport) execute(
 	}
 	wr.lggr.Debugw("transmissionID created", "transmissionID", transmissionID.GetDebugID())
 
-	txHashRetriever := NewTxHashRetriever(wr.forwarderClient, wr.lggr, transmissionID, wr.forwarderAddress.String(), requestStartTime)
+	txHashRetriever := NewTxHashRetriever(wr.forwarderClient, wr.lggr, transmissionID, wr.forwarderAddress.String(), requestStartTime, wr.txSearchStartingBuffer)
 
 	queuePosition := wr.transmissionScheduler.GetQueuePosition(transmissionID.GetDebugID())
 	orderedTransmitters := wr.getOrderedTransmitters(transmissionID.GetDebugID(), wr.p2pConfig)
@@ -297,7 +299,7 @@ func (wr *writeReport) execute(
 		)
 		for i := 0; i < queuePosition && i < len(orderedTransmitters); i++ {
 			if orderedTransmitters[i] == "" {
-				// TODO: PLEX-2598 emit metric - p2pConfig incomplete, missing transmitter at this position
+				// TODO: emit metric - p2pConfig incomplete, missing transmitter at this position
 				wr.lggr.Warnw("skipping empty transmitter address, p2pConfig is incomplete", "index", i)
 				continue
 			}
