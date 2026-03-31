@@ -220,9 +220,9 @@ func (wr *WriteReport) executeWriteReport(
 		if tiErr != nil {
 			return nil, tiErr
 		}
-		// If still NotAttempted, likely not indexed yet.
+		// If still NotAttempted, execution state account may not be committed yet.
 		if ti.State == TransmissionStateNotAttempted {
-			return nil, errors.New("tx submitted but transmission info not yet visible, retrying")
+			return nil, errors.New("tx submitted but execution state not yet visible on-chain, retrying")
 		}
 		return ti, nil
 	})
