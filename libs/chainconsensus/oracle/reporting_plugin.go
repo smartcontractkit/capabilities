@@ -307,7 +307,6 @@ func (rp *reportingPlugin) ValidateObservation(_ context.Context, outctx ocr3typ
 		case *ctypes.RequestObservation_Hashable:
 			if len(tRequestOb.Hashable) != ctypes.HashLength {
 				return fmt.Errorf("invalid hash length for request ID %s: got %d, expected %d. OracleID: %d", requestID, len(tRequestOb.Hashable), ctypes.HashLength, ao.Observer)
-
 			}
 		}
 	}

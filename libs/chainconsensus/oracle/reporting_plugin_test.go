@@ -719,9 +719,10 @@ func TestOutcome(t *testing.T) {
 			lggr, observed := logger.TestObserved(t, zapcore.DebugLevel)
 			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1, N: 4}}, logger.Sugared(lggr), nil, nil, test.GetConsensusMetrics(t))
 			var rawAOs []ocrtypes.AttributedObservation
-			for _, nodesObservations := range tc.nodesObservations {
+			for i := range tc.nodesObservations {
+				nodesObservations := &tc.nodesObservations[i]
 				nodesObservations.ChainHeight = chainHeight
-				rawObservation, err := proto.Marshal(&nodesObservations)
+				rawObservation, err := proto.Marshal(nodesObservations)
 				require.NoError(t, err)
 				rawAOs = append(rawAOs, ocrtypes.AttributedObservation{Observation: rawObservation})
 			}

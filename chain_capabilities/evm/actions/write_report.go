@@ -683,7 +683,7 @@ func (thr *TxHashRetriever) GetFailedTransmissionHashWithCount(ctx context.Conte
 	thr.lggr.Debugw("Returning earliest failed transmission",
 		append(thr.transmissionID.GetIDPartsForDebugging(),
 			"txCount", len(details),
-			"selectedTxHash", hex.EncodeToString(details[earliestIdx].TxHash[:])))
+			"selectedTxHash", hex.EncodeToString(details[earliestIdx].TxHash[:]))...)
 
 	return &details[earliestIdx].TxHash, len(details), nil
 }

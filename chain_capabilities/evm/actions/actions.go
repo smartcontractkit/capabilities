@@ -15,7 +15,6 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	evmservice "github.com/smartcontractkit/chainlink-common/pkg/chains/evm"
@@ -196,7 +195,7 @@ func (e *EVM) CallContract(
 type HashableRequest[T proto.Message] interface {
 	ctypes.Request
 	GetObservationByReportData(reportData [ctypes.HashLength]byte) (T, bool)
-	GetMetadata() commoncap.ResponseMetadata
+	GetMetadata() capabilities.ResponseMetadata
 }
 
 func (e *EVM) callContractV2(ctx context.Context, meta capabilities.RequestMetadata, needsBlockHeightConsensus bool,
@@ -505,7 +504,6 @@ func (e *EVM) balanceAtV1(ctx context.Context, requestID string, needsBlockHeigh
 
 func (e *EVM) balanceAtV2(ctx context.Context, meta capabilities.RequestMetadata, needsBlockHeightConsensus bool,
 	balanceAt func(ctx context.Context, height *ctypes.ChainHeight) (*evm.BalanceAtReply, error)) (*capabilities.ResponseAndMetadata[*evm.BalanceAtReply], error) {
-
 	var request HashableRequest[*evm.BalanceAtReply]
 	if needsBlockHeightConsensus {
 		request = ctypes.NewLockableToBlockHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, metering.GetResponseMetadata(metering.BalanceAt), balanceAt)
@@ -790,7 +788,6 @@ func (e *EVM) headerByNumberV1(ctx context.Context, requestID string, needsBlock
 
 func (e *EVM) headerByNumberV2(ctx context.Context, meta capabilities.RequestMetadata, needsBlockHeightConsensus bool,
 	headerByNumber func(ctx context.Context, height *ctypes.ChainHeight) (*evm.HeaderByNumberReply, error)) (*capabilities.ResponseAndMetadata[*evm.HeaderByNumberReply], error) {
-
 	var request HashableRequest[*evm.HeaderByNumberReply]
 	if needsBlockHeightConsensus {
 		request = ctypes.NewLockableToBlockHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, metering.GetResponseMetadata(metering.GetTransactionReceipt), headerByNumber)
