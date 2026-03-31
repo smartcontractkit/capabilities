@@ -92,6 +92,13 @@ func (m *MessageBuilder) BuildWriteReportTransmitterMismatch(tc TelemetryContext
 	}
 }
 
+func (m *MessageBuilder) BuildWriteReportP2pConfigIncomplete(tc TelemetryContext, position int) *WriteReportP2PConfigIncomplete {
+	return &WriteReportP2PConfigIncomplete{
+		Position:         int32(position),
+		ExecutionContext: m.BuildExecutionContext(tc),
+	}
+}
+
 func convertWriteReportRequest(req *aptoscap.WriteReportRequest) *WriteReportRequest {
 	if req == nil {
 		return nil
@@ -215,6 +222,16 @@ func (r *WriteReportTransmitterMismatch) LogAttributes() []attribute.KeyValue {
 }
 
 func (r *WriteReportTransmitterMismatch) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *WriteReportP2PConfigIncomplete) LogAttributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
+		attribute.Int("position", int(r.GetPosition())),
+	}, r.ExecutionContext.LogAttributes()...)
+}
+
+func (r *WriteReportP2PConfigIncomplete) MetricAttributes() []attribute.KeyValue {
 	return r.ExecutionContext.MetricsAttributes()
 }
 

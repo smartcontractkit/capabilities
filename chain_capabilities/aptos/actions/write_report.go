@@ -310,8 +310,9 @@ func (wr *writeReport) execute(
 		)
 		for i := 0; i < queuePosition && i < len(orderedTransmitters); i++ {
 			if orderedTransmitters[i] == "" {
-				// TODO: emit metric - p2pConfig incomplete, missing transmitter at this position
 				wr.lggr.Warnw("skipping empty transmitter address, p2pConfig is incomplete", "index", i)
+				monitoring.EmitInitiated(ctx, wr.lggr, wr.beholderProcessor,
+					wr.messageBuilder.BuildWriteReportP2pConfigIncomplete(telemetryContext, i))
 				continue
 			}
 			wr.lggr.Debugw("checking prior transmitter", "index", i, "address", orderedTransmitters[i])

@@ -47,6 +47,11 @@ message WriteReportTransmitterMismatch {
   monitoring.ExecutionContext execution_context = 20;
 }
 
+message WriteReportP2pConfigIncomplete {
+  int32 position = 1;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
 message WriteReportRequest {
   bytes receiver = 1;
   optional GasConfig gas_config = 2;
