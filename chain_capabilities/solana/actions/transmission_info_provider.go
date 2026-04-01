@@ -28,9 +28,10 @@ type logReader struct {
 	sigInProgress      soltypes.EventSignature
 }
 
-// OnChainTransmissionInfoProvider uses the ExecutionState account for transmission success/failure
-// (avoids relying on ReportProcessed logs, which can be truncated). Tx signatures for replies and
-// fee calculation still come from ReportInProgress events via the log poller.
+// OnChainTransmissionInfoProvider uses the ExecutionState account for success/failure when
+// ReportInProgress is present (avoids relying on truncated ReportProcessed logs). If there is no
+// ReportInProgress log, it returns NotAttempted without an RPC read. Tx signatures come from
+// ReportInProgress via the log poller.
 type OnChainTransmissionInfoProvider struct {
 	types.SolanaService
 	forwarderProgramID solana.PublicKey
@@ -55,6 +56,20 @@ func newOnChainTransmissionInfoProvider(ctx context.Context, programID, forwarde
 }
 
 func (p *OnChainTransmissionInfoProvider) GetTransmissionInfo(ctx context.Context, transmissionID [32]byte) (*TransmissionInfo, error) {
+	inProgressLogs, err := p.lr.queryInProgress(ctx, transmissionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to request ReportInProgress events: %w", err)
+	}
+	if len(inProgressLogs) == 0 {
+		// No attempt observed in logs; skip execution-state PDA fetch.
+		return &TransmissionInfo{State: TransmissionStateNotAttempted}, nil
+	}
+
+	sigFromLog, err := signatureFromInProgressLogs(inProgressLogs)
+	if err != nil {
+		return nil, err
+	}
+
 	execStateAddr, err := deriveExecutionStatePDA(p.forwarderState, transmissionID, p.forwarderProgramID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to derive execution state PDA: %w", err)
@@ -64,6 +79,9 @@ func (p *OnChainTransmissionInfoProvider) GetTransmissionInfo(ctx context.Contex
 		Account: soltypes.PublicKey(execStateAddr),
 		Opts: &soltypes.GetAccountInfoOpts{
 			Commitment: soltypes.CommitmentProcessed,
+			// Required so chainlink-solana convertDataBytesOrJSON fills AsDecodedBinary (raw bytes).
+			// jsonParsed / empty encoding can yield empty GetBinary() on the RPC side.
+			Encoding: soltypes.EncodingBase64,
 		},
 	})
 	if err != nil {
@@ -74,25 +92,10 @@ func (p *OnChainTransmissionInfoProvider) GetTransmissionInfo(ctx context.Contex
 		}
 	}
 
-	inProgressLogs, err := p.lr.queryInProgress(ctx, transmissionID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to request ReportInProgress events: %w", err)
-	}
-
-	if reply.Value == nil {
-		if len(inProgressLogs) > 0 {
-			sig, sigErr := signatureFromInProgressLogs(inProgressLogs)
-			if sigErr != nil {
-				return nil, sigErr
-			}
-			return &TransmissionInfo{State: TransmissionStateFailed, Signature: sig}, nil
-		}
-		return &TransmissionInfo{State: TransmissionStateNotAttempted}, nil
-	}
-
-	raw, ok := accountDataBytes(reply.Value)
-	if !ok || len(raw) == 0 {
-		return nil, fmt.Errorf("execution state account has no binary data")
+	raw, haveBinary := accountDataBytesForTransmission(reply)
+	if !haveBinary {
+		// ReportInProgress exists but no execution state (reverted after CPI, missing account, bad encoding).
+		return &TransmissionInfo{State: TransmissionStateFailed, Signature: sigFromLog}, nil
 	}
 
 	_, parsedTransmissionID, execSuccess, err := parseExecutionStateAccount(raw)
@@ -111,18 +114,9 @@ func (p *OnChainTransmissionInfoProvider) GetTransmissionInfo(ctx context.Contex
 		state = TransmissionStateFailed
 	}
 
-	if len(inProgressLogs) == 0 {
-		return nil, fmt.Errorf("execution state on-chain but no ReportInProgress log for transmission")
-	}
-
-	sig, err := signatureFromInProgressLogs(inProgressLogs)
-	if err != nil {
-		return nil, err
-	}
-
 	return &TransmissionInfo{
 		State:     state,
-		Signature: sig,
+		Signature: sigFromLog,
 	}, nil
 }
 
@@ -233,4 +227,13 @@ func accountDataBytes(acc *soltypes.Account) ([]byte, bool) {
 		return acc.Data.AsDecodedBinary, true
 	}
 	return nil, false
+}
+
+// accountDataBytesForTransmission returns raw account data when the execution state account exists
+// and binary payload is available for parsing.
+func accountDataBytesForTransmission(reply *soltypes.GetAccountInfoReply) ([]byte, bool) {
+	if reply == nil || reply.Value == nil {
+		return nil, false
+	}
+	return accountDataBytes(reply.Value)
 }
