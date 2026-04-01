@@ -236,6 +236,11 @@ func (h *testHelper) mockTransactionByHashWithVmStatus(txHash string, success bo
 		}, nil)
 }
 
+func (h *testHelper) mockTransactionByHashError(txHash string, err error) {
+	h.aptosService.On("TransactionByHash", mock.Anything, aptostypes.TransactionByHashRequest{Hash: txHash}).
+		Return((*aptostypes.TransactionByHashReply)(nil), err)
+}
+
 // mockInvokeOnReport sets InvokeOnReport to return the given reply.
 func (h *testHelper) mockInvokeOnReport(reply *aptostypes.SubmitTransactionReply, err error) {
 	h.forwarderClient.On("InvokeOnReport", mock.Anything, testReceiver[:], mock.Anything, mock.Anything).
@@ -303,7 +308,28 @@ func TestWriteReport_Execute(t *testing.T) {
 		require.Equal(t, "0xabc", *result.Response.TxHash)
 		require.NotNil(t, result.Response.TransactionFee)
 		require.Equal(t, testGasUsed*testGasUnitPrice, *result.Response.TransactionFee)
+		require.NotNil(t, result.Response.ReceiverContractExecutionStatus)
+		require.Equal(t, aptoscap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS, *result.Response.ReceiverContractExecutionStatus)
 		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector, "0.0005")
+	})
+
+	t.Run("Happy path - fee lookup failure leaves fee unset", func(t *testing.T) {
+		h := newTestHelper(t)
+		_, reqMeta, req := newReportFixture(t)
+
+		h.mockNoTransmission()
+		h.mockInvokeOnReport(&aptostypes.SubmitTransactionReply{TxStatus: aptostypes.TxSuccess, TxHash: "0xabc"}, nil)
+		h.mockPostSubmitPoll(TransmissionInfo{Success: true, Transmitter: testTransmitter})
+		h.mockTransactionByHashError("0xabc", errors.New("transaction lookup failed"))
+
+		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
+		require.Nil(t, capErr)
+		require.Equal(t, aptoscap.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
+		require.Equal(t, "0xabc", *result.Response.TxHash)
+		require.Nil(t, result.Response.TransactionFee)
+		require.NotNil(t, result.Response.ReceiverContractExecutionStatus)
+		require.Equal(t, aptoscap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS, *result.Response.ReceiverContractExecutionStatus)
+		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector, "0")
 	})
 
 	t.Run("Already transmitted - returns without submitting", func(t *testing.T) {
@@ -322,6 +348,8 @@ func TestWriteReport_Execute(t *testing.T) {
 		require.Equal(t, "0xalready", *result.Response.TxHash)
 		require.NotNil(t, result.Response.TransactionFee)
 		require.Equal(t, testGasUsed*testGasUnitPrice, *result.Response.TransactionFee)
+		require.NotNil(t, result.Response.ReceiverContractExecutionStatus)
+		require.Equal(t, aptoscap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS, *result.Response.ReceiverContractExecutionStatus)
 		require.Empty(t, result.ResponseMetadata.Metering)
 		h.forwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	})
@@ -356,6 +384,8 @@ func TestWriteReport_Execute(t *testing.T) {
 		require.Equal(t, "0xreal", *result.Response.TxHash)
 		require.NotNil(t, result.Response.TransactionFee)
 		require.Equal(t, testGasUsed*testGasUnitPrice, *result.Response.TransactionFee)
+		require.NotNil(t, result.Response.ReceiverContractExecutionStatus)
+		require.Equal(t, aptoscap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS, *result.Response.ReceiverContractExecutionStatus)
 	})
 
 	t.Run("Submit fails at node0 - returns own hash with ErrorMessage", func(t *testing.T) {
@@ -377,6 +407,28 @@ func TestWriteReport_Execute(t *testing.T) {
 		require.Equal(t, "Move abort in 0x1::coin: EINSUFFICIENT_BALANCE(0x10006)", *result.Response.ErrorMessage)
 		require.NotNil(t, result.Response.ReceiverContractExecutionStatus)
 		require.Equal(t, aptoscap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED, *result.Response.ReceiverContractExecutionStatus)
+		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector, "0.0005")
+	})
+
+	t.Run("Submit fails at node0 - forwarder abort leaves receiver status unset", func(t *testing.T) {
+		h := newTestHelper(t)
+		_, reqMeta, req := newReportFixture(t)
+		vmStatus := fmt.Sprintf("Move abort in %s::forwarder: E_DUPLICATE_REPORT(0x1):", testForwarderAddr.StringLong())
+
+		h.mockNoTransmission()
+		h.mockInvokeOnReport(&aptostypes.SubmitTransactionReply{TxStatus: aptostypes.TxFatal, TxHash: "0xmine"}, nil)
+		h.mockPostSubmitPoll(TransmissionInfo{Success: false})
+		h.mockTransactionByHashFailed("0xmine", testGasUsed, testGasUnitPrice, vmStatus)
+
+		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
+		require.Nil(t, capErr)
+		require.Equal(t, aptoscap.TxStatus_TX_STATUS_FATAL, result.Response.TxStatus)
+		require.Equal(t, "0xmine", *result.Response.TxHash)
+		require.NotNil(t, result.Response.TransactionFee)
+		require.Equal(t, testGasUsed*testGasUnitPrice, *result.Response.TransactionFee)
+		require.NotNil(t, result.Response.ErrorMessage)
+		require.Equal(t, vmStatus, *result.Response.ErrorMessage)
+		require.Nil(t, result.Response.ReceiverContractExecutionStatus)
 		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector, "0.0005")
 	})
 
@@ -437,6 +489,10 @@ func TestWriteReport_Execute(t *testing.T) {
 		require.Nil(t, capErr)
 		require.Equal(t, aptoscap.TxStatus_TX_STATUS_FATAL, result.Response.TxStatus)
 		require.Equal(t, "0xnode0receiverfail", *result.Response.TxHash)
+		require.NotNil(t, result.Response.TransactionFee)
+		require.Equal(t, testGasUsed*testGasUnitPrice, *result.Response.TransactionFee)
+		require.NotNil(t, result.Response.ErrorMessage)
+		require.Equal(t, vmReceiverRevert, *result.Response.ErrorMessage)
 		require.NotNil(t, result.Response.ReceiverContractExecutionStatus)
 		require.Equal(t, aptoscap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED, *result.Response.ReceiverContractExecutionStatus)
 		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector, "0.0005")

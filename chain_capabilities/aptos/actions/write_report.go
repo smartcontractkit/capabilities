@@ -229,16 +229,18 @@ func (wr *writeReport) execute(
 	wr.lggr.Debugw("Post-submission transmission status", "success", newTransmissionInfo.Success, "transmitter", newTransmissionInfo.Transmitter.String())
 
 	var ownMeteringMetadata capabilities.ResponseMetadata
-	ownFeeInOctas, ownVMStatus, feeErr := wr.getTxnInfoFromChain(ctx, txReply.TxHash)
+	var ownFeeInOctas *uint64
+	ownFeeInOctasValue, ownVMStatus, feeErr := wr.getTxnInfoFromChain(ctx, txReply.TxHash)
 	if feeErr != nil {
 		wr.lggr.Errorw("Failed to get transaction fee, using zero for metering", "txHash", txReply.TxHash, "error", feeErr)
 		ownMeteringMetadata = metering.GetResponseMetadataWriteReport(big.NewFloat(0), wr.chainSelector)
 		monitoring.LogAndEmitError(ctx, wr.lggr, wr.beholderProcessor,
 			wr.messageBuilder.BuildWriteReportTxFeeCalculationError(telemetryContext, request, txReply.TxHash, feeErr.Error()))
 	} else {
-		feeInAPT := aptosOctasToAPT(ownFeeInOctas)
+		ownFeeInOctas = &ownFeeInOctasValue
+		feeInAPT := aptosOctasToAPT(ownFeeInOctasValue)
 		ownMeteringMetadata = metering.GetResponseMetadataWriteReport(feeInAPT, wr.chainSelector)
-		wr.lggr.Debugw("WriteReport fee", "feeInAPT", feeInAPT.String(), "feeInOctas", ownFeeInOctas)
+		wr.lggr.Debugw("WriteReport fee", "feeInAPT", feeInAPT.String(), "feeInOctas", ownFeeInOctasValue)
 	}
 
 	switch newTransmissionInfo.Success {
@@ -278,7 +280,7 @@ func (wr *writeReport) execute(
 			return &aptoscap.WriteReportReply{
 				TxStatus:                        aptoscap.TxStatus_TX_STATUS_SUCCESS,
 				TxHash:                          &txReply.TxHash,
-				TransactionFee:                  &ownFeeInOctas,
+				TransactionFee:                  ownFeeInOctas,
 				ReceiverContractExecutionStatus: &receiverContractExecutionStatus,
 			}, ownMeteringMetadata, nil
 		default:
@@ -294,7 +296,7 @@ func (wr *writeReport) execute(
 		ownReply := &aptoscap.WriteReportReply{
 			TxStatus:                        aptoscap.TxStatus_TX_STATUS_FATAL,
 			TxHash:                          &txReply.TxHash,
-			TransactionFee:                  &ownFeeInOctas,
+			TransactionFee:                  ownFeeInOctas,
 			ErrorMessage:                    ptrIfNonEmpty(ownVMStatus),
 			ReceiverContractExecutionStatus: receiverContractExecutionStatusFromFailedVMStatus(ownVMStatus, wr.forwarderAddress),
 		}
