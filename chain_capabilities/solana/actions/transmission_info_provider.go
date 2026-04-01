@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/gagliardetto/solana-go"
 	"github.com/gagliardetto/solana-go/rpc"
@@ -86,7 +85,7 @@ func (p *OnChainTransmissionInfoProvider) GetTransmissionInfo(ctx context.Contex
 		},
 	})
 	if err != nil {
-		if isExecutionStateAccountMissing(err) {
+		if errors.Is(err, rpc.ErrNotFound) {
 			reply = &soltypes.GetAccountInfoReply{}
 		} else {
 			return nil, fmt.Errorf("failed to get execution state account: %w", err)
@@ -235,18 +234,4 @@ func accountDataBytesForTransmission(reply *soltypes.GetAccountInfoReply) ([]byt
 		return nil, false
 	}
 	return raw, true
-}
-
-func isExecutionStateAccountMissing(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, rpc.ErrNotFound) {
-		return true
-	}
-	s := strings.ToLower(err.Error())
-	if !strings.Contains(s, "not found") {
-		return false
-	}
-	return strings.Contains(s, "account info") || strings.Contains(s, "getaccountinfo")
 }
