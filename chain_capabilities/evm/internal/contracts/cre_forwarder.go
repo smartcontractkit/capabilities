@@ -240,6 +240,7 @@ func (cfclient *creForwarderClient) InvokeOnReport(ctx context.Context, receiver
 		},
 	})
 
+	cfclient.logger.Info(fmt.Sprintf("CllContract result is %s", err))
 	if err != nil {
 		// TODO ignore this error if we know that it ended up recorder onchain as a transmisison failure
 		errName, err := cfclient.forwarderCodec.DecodeForwarderError(err)
