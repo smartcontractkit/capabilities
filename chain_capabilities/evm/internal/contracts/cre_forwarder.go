@@ -237,6 +237,7 @@ func (cfclient *creForwarderClient) InvokeOnReport(ctx context.Context, receiver
 		Msg: &evmtypes.CallMsg{
 			To:   cfclient.forwarderAddress,
 			Data: encodedReport,
+			Gas:  gasConfig.GasLimit,
 		},
 	})
 
