@@ -14,31 +14,30 @@ import (
 // sha256("account:ExecutionState")). Must match the deployed forwarder program.
 var executionStateAccountDiscriminator = [8]byte{31, 209, 35, 133, 132, 142, 151, 100}
 
+// executionStateAccount is the Borsh payload after the Anchor 8-byte discriminator (matches on-chain
+// keystone_forwarder::state::ExecutionState).
+type executionStateAccount struct {
+	Transmitter    solana.PublicKey
+	TransmissionID [32]byte
+	Success        bool
+}
+
 // parseExecutionStateAccount decodes an ExecutionState account: 8-byte Anchor discriminator
-// followed by Borsh: Pubkey transmitter, [32]byte transmission_id, bool success.
+// followed by Borsh into executionStateAccount.
 func parseExecutionStateAccount(data []byte) (transmitter solana.PublicKey, transmissionID [32]byte, success bool, err error) {
-	const (
-		discLen = 8
-		minLen  = discLen + 32 + 32 + 1 // + transmitter + transmission_id + success
-	)
-	if len(data) < minLen {
+	const discLen = 8
+	if len(data) < discLen+32+32+1 {
 		return solana.PublicKey{}, [32]byte{}, false, fmt.Errorf("execution state account data too short: %d", len(data))
 	}
 	if !bytes.Equal(data[:discLen], executionStateAccountDiscriminator[:]) {
 		return solana.PublicKey{}, [32]byte{}, false, fmt.Errorf("unexpected ExecutionState account discriminator")
 	}
 
-	dec := bin.NewBorshDecoder(data[discLen:])
-	if err = dec.Decode(&transmitter); err != nil {
-		return solana.PublicKey{}, [32]byte{}, false, fmt.Errorf("decode transmitter: %w", err)
+	var acc executionStateAccount
+	if err := bin.UnmarshalBorsh(&acc, data[discLen:]); err != nil {
+		return solana.PublicKey{}, [32]byte{}, false, fmt.Errorf("unmarshal execution state: %w", err)
 	}
-	if err = dec.Decode(&transmissionID); err != nil {
-		return solana.PublicKey{}, [32]byte{}, false, fmt.Errorf("decode transmission_id: %w", err)
-	}
-	if err = dec.Decode(&success); err != nil {
-		return solana.PublicKey{}, [32]byte{}, false, fmt.Errorf("decode success: %w", err)
-	}
-	return transmitter, transmissionID, success, nil
+	return acc.Transmitter, acc.TransmissionID, acc.Success, nil
 }
 
 // accountDataBytesFromJSON extracts raw account bytes from getAccountInfo jsonParsed / JSON payloads.
