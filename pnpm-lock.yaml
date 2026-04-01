@@ -18,15 +18,9 @@ importers:
         specifier: 22.5.1
         version: 22.5.1
 
-  capabilitywatcher: {}
-
   consensus: {}
 
   cron: {}
-
-  kvstore: {}
-
-  mock: {}
 
   readcontract: {}
 

@@ -327,7 +327,7 @@ func TestFilterLogs(t *testing.T) {
 			}
 			svc.ConsensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, request types.Request) (<-chan types.Reply, error) {
 				if lockable, ok := request.(*types.LockableToBlockRequest); ok {
-					request = lockable.LockToABlock(&chainHeight)
+					request = lockable.ToEventuallyConsistent(&chainHeight)
 				}
 
 				eventuallyConsistent := request.(*types.EventuallyConsistentRequest)

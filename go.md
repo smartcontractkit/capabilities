@@ -2,8 +2,6 @@
 ```mermaid
 flowchart LR
 
-	capabilities/capabilitywatcher --> capabilities/libs
-	click capabilities/capabilitywatcher href "https://github.com/smartcontractkit/capabilities"
 	capabilities/chain_capabilities/aptos --> capabilities/chain_capabilities/common
 	capabilities/chain_capabilities/aptos --> chainlink-aptos
 	click capabilities/chain_capabilities/aptos href "https://github.com/smartcontractkit/capabilities"
@@ -31,16 +29,10 @@ flowchart LR
 	capabilities/integration_tests --> chainlink/v2
 	capabilities/integration_tests --> cre-sdk-go/capabilities/blockchain/evm
 	click capabilities/integration_tests href "https://github.com/smartcontractkit/capabilities"
-	capabilities/kvstore --> capabilities/libs
-	click capabilities/kvstore href "https://github.com/smartcontractkit/capabilities"
 	capabilities/libs --> chainlink-common
 	click capabilities/libs href "https://github.com/smartcontractkit/capabilities"
 	capabilities/loadtestwritetarget --> capabilities/libs
 	click capabilities/loadtestwritetarget href "https://github.com/smartcontractkit/capabilities"
-	capabilities/mock --> capabilities/libs
-	click capabilities/mock href "https://github.com/smartcontractkit/capabilities"
-	capabilities/p2psigner --> capabilities/libs
-	click capabilities/p2psigner href "https://github.com/smartcontractkit/capabilities"
 	capabilities/readcontract --> capabilities/libs
 	click capabilities/readcontract href "https://github.com/smartcontractkit/capabilities"
 	capabilities/workflowevent --> capabilities/libs
@@ -235,7 +227,6 @@ flowchart LR
 	click wsrpc href "https://github.com/smartcontractkit/wsrpc"
 
 	subgraph capabilities-repo[capabilities]
-		 capabilities/capabilitywatcher
 		 capabilities/chain_capabilities/aptos
 		 capabilities/chain_capabilities/common
 		 capabilities/chain_capabilities/evm
@@ -245,11 +236,8 @@ flowchart LR
 		 capabilities/http_action
 		 capabilities/http_trigger
 		 capabilities/integration_tests
-		 capabilities/kvstore
 		 capabilities/libs
 		 capabilities/loadtestwritetarget
-		 capabilities/mock
-		 capabilities/p2psigner
 		 capabilities/readcontract
 		 capabilities/workflowevent
 		 capabilities/workflows
