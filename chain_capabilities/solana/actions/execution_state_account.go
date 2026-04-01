@@ -2,6 +2,8 @@ package actions
 
 import (
 	"bytes"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 
 	bin "github.com/gagliardetto/binary"
@@ -37,4 +39,23 @@ func parseExecutionStateAccount(data []byte) (transmitter solana.PublicKey, tran
 		return solana.PublicKey{}, [32]byte{}, false, fmt.Errorf("decode success: %w", err)
 	}
 	return transmitter, transmissionID, success, nil
+}
+
+// accountDataBytesFromJSON extracts raw account bytes from getAccountInfo jsonParsed / JSON payloads.
+// Unknown programs use Solana's ["<base64>","base64"] shape; see JSON RPC spec for getAccountInfo.
+func accountDataBytesFromJSON(asJSON []byte) ([]byte, error) {
+	if len(asJSON) == 0 {
+		return nil, fmt.Errorf("empty account data json")
+	}
+	var arr []string
+	if err := json.Unmarshal(asJSON, &arr); err == nil && len(arr) >= 2 && arr[1] == "base64" {
+		return base64.StdEncoding.DecodeString(arr[0])
+	}
+	var wrapped struct {
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(asJSON, &wrapped); err == nil && len(wrapped.Data) > 0 {
+		return accountDataBytesFromJSON(wrapped.Data)
+	}
+	return nil, fmt.Errorf("could not extract base64 account data from json")
 }

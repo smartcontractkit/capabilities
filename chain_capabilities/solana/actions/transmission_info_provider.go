@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/gagliardetto/solana-go"
 	"github.com/gagliardetto/solana-go/rpc"
@@ -78,14 +79,14 @@ func (p *OnChainTransmissionInfoProvider) GetTransmissionInfo(ctx context.Contex
 	reply, err := p.SolanaService.GetAccountInfoWithOpts(ctx, soltypes.GetAccountInfoRequest{
 		Account: soltypes.PublicKey(execStateAddr),
 		Opts: &soltypes.GetAccountInfoOpts{
-			Commitment: soltypes.CommitmentProcessed,
-			// Required so chainlink-solana convertDataBytesOrJSON fills AsDecodedBinary (raw bytes).
-			// jsonParsed / empty encoding can yield empty GetBinary() on the RPC side.
-			Encoding: soltypes.EncodingBase64,
+			Commitment: soltypes.CommitmentConfirmed,
+			// jsonParsed: RPC returns account data as JSON; unparsed programs fall back to
+			// ["<base64>","base64"]. accountDataBytesForTransmission decodes AsDecodedBinary or AsJSON.
+			Encoding: soltypes.EncodingJSONParsed,
 		},
 	})
 	if err != nil {
-		if errors.Is(err, rpc.ErrNotFound) {
+		if isExecutionStateAccountMissing(err) {
 			reply = &soltypes.GetAccountInfoReply{}
 		} else {
 			return nil, fmt.Errorf("failed to get execution state account: %w", err)
@@ -94,7 +95,7 @@ func (p *OnChainTransmissionInfoProvider) GetTransmissionInfo(ctx context.Contex
 
 	raw, haveBinary := accountDataBytesForTransmission(reply)
 	if !haveBinary {
-		// ReportInProgress exists but no execution state (reverted after CPI, missing account, bad encoding).
+		// ReportInProgress but no decodable account payload (reverted tx, or missing data on wire).
 		return &TransmissionInfo{State: TransmissionStateFailed, Signature: sigFromLog}, nil
 	}
 
@@ -219,21 +220,33 @@ func deriveExecutionStatePDA(forwarderState solana.PublicKey, transmissionID [32
 	return ret, err
 }
 
-func accountDataBytes(acc *soltypes.Account) ([]byte, bool) {
-	if acc == nil || acc.Data == nil {
+// accountDataBytesForTransmission returns raw program data for Anchor parsing. Prefers
+// AsDecodedBinary; if empty (e.g. jsonParsed-only path), decodes Solana's ["base64","base64"] from AsJSON.
+func accountDataBytesForTransmission(reply *soltypes.GetAccountInfoReply) ([]byte, bool) {
+	if reply == nil || reply.Value == nil || reply.Value.Data == nil {
 		return nil, false
 	}
-	if len(acc.Data.AsDecodedBinary) > 0 {
-		return acc.Data.AsDecodedBinary, true
+	d := reply.Value.Data
+	if len(d.AsDecodedBinary) > 0 {
+		return d.AsDecodedBinary, true
 	}
-	return nil, false
+	raw, err := accountDataBytesFromJSON(d.AsJSON)
+	if err != nil || len(raw) == 0 {
+		return nil, false
+	}
+	return raw, true
 }
 
-// accountDataBytesForTransmission returns raw account data when the execution state account exists
-// and binary payload is available for parsing.
-func accountDataBytesForTransmission(reply *soltypes.GetAccountInfoReply) ([]byte, bool) {
-	if reply == nil || reply.Value == nil {
-		return nil, false
+func isExecutionStateAccountMissing(err error) bool {
+	if err == nil {
+		return false
 	}
-	return accountDataBytes(reply.Value)
+	if errors.Is(err, rpc.ErrNotFound) {
+		return true
+	}
+	s := strings.ToLower(err.Error())
+	if !strings.Contains(s, "not found") {
+		return false
+	}
+	return strings.Contains(s, "account info") || strings.Contains(s, "getaccountinfo")
 }
