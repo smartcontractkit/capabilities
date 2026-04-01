@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
+	evmprotos "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 	"github.com/smartcontractkit/chainlink-framework/multinode"
@@ -233,25 +233,25 @@ func TestIsUserError(t *testing.T) {
 func TestFilterLogs(t *testing.T) {
 	chainHeight := types.ChainHeight{Latest: 256, Safe: 128, Finalized: 64}
 	testCases := []struct {
-		Name                             string
-		EthFilterQuery                   evmtypes.FilterQuery
-		ExpectedFilterLogsToRequestError string
-		ExpectedFilterLogsRequest        *evmtypes.FilterLogsRequest
-		ExpectedCaptureObservationError  string
+		Name                      string
+		EthFilterQuery            *evmprotos.FilterQuery
+		ExpectedError             string
+		ExpectedFilterLogsRequest *evmtypes.FilterLogsRequest
+		ExpectedResponse          *evmtypes.FilterLogsReply
 	}{
 		{
 			Name: "Block hash and block range both set",
-			EthFilterQuery: evmtypes.FilterQuery{
-				BlockHash: evmtypes.Hash{1, 2, 3},
-				FromBlock: big.NewInt(10),
-				ToBlock:   big.NewInt(20),
+			EthFilterQuery: &evmprotos.FilterQuery{
+				BlockHash: append([]byte{1, 2, 3}, make([]byte, 29)...),
+				FromBlock: valuespb.NewBigIntFromInt(big.NewInt(10)),
+				ToBlock:   valuespb.NewBigIntFromInt(big.NewInt(20)),
 			},
-			ExpectedFilterLogsToRequestError: "cannot specify both block hash and block range",
+			ExpectedError: "cannot specify both block hash and block range",
 		},
 		{
 			Name: "Block hash set",
-			EthFilterQuery: evmtypes.FilterQuery{
-				BlockHash: evmtypes.Hash{1, 2, 3},
+			EthFilterQuery: &evmprotos.FilterQuery{
+				BlockHash: append([]byte{1, 2, 3}, make([]byte, 29)...),
 			},
 			ExpectedFilterLogsRequest: &evmtypes.FilterLogsRequest{
 				FilterQuery: evmtypes.FilterQuery{
@@ -263,39 +263,39 @@ func TestFilterLogs(t *testing.T) {
 		},
 		{
 			Name: "FromBlock tag is not supported",
-			EthFilterQuery: evmtypes.FilterQuery{
-				FromBlock: big.NewInt(int64(rpc.EarliestBlockNumber)),
+			EthFilterQuery: &evmprotos.FilterQuery{
+				FromBlock: valuespb.NewBigIntFromInt(big.NewInt(int64(rpc.EarliestBlockNumber))),
 			},
-			ExpectedFilterLogsToRequestError: "fromBlock is invalid: block number -5 is not supported",
+			ExpectedError: "fromBlock is invalid: block number -5 is not supported",
 		},
 		{
 			Name: "ToBlock tag is not supported",
-			EthFilterQuery: evmtypes.FilterQuery{
-				ToBlock: big.NewInt(int64(rpc.EarliestBlockNumber)),
+			EthFilterQuery: &evmprotos.FilterQuery{
+				ToBlock: valuespb.NewBigIntFromInt(big.NewInt(int64(rpc.EarliestBlockNumber))),
 			},
-			ExpectedFilterLogsToRequestError: "toBlock is invalid: block number -5 is not supported",
+			ExpectedError: "toBlock is invalid: block number -5 is not supported",
 		},
 		{
 			Name: "FromBlock > ToBlock",
-			EthFilterQuery: evmtypes.FilterQuery{
-				FromBlock: big.NewInt(20),
-				ToBlock:   big.NewInt(10),
+			EthFilterQuery: &evmprotos.FilterQuery{
+				FromBlock: valuespb.NewBigIntFromInt(big.NewInt(20)),
+				ToBlock:   valuespb.NewBigIntFromInt(big.NewInt(10)),
 			},
-			ExpectedFilterLogsToRequestError: "toBlock 10 is less than fromBlock 20",
+			ExpectedError: "toBlock 10 is less than fromBlock 20",
 		},
 		{
 			Name: "Eventually consistent block range too large",
-			EthFilterQuery: evmtypes.FilterQuery{
-				FromBlock: big.NewInt(1),
-				ToBlock:   big.NewInt(102),
+			EthFilterQuery: &evmprotos.FilterQuery{
+				FromBlock: valuespb.NewBigIntFromInt(big.NewInt(1)),
+				ToBlock:   valuespb.NewBigIntFromInt(big.NewInt(102)),
 			},
-			ExpectedFilterLogsToRequestError: "PerWorkflow.ChainRead.LogQueryBlockLimit limited for workflow[wf-id]: cannot use 101, limit is 100",
+			ExpectedError: "PerWorkflow.ChainRead.LogQueryBlockLimit limited for workflow[wf-id]: cannot use 101, limit is 100",
 		},
 		{
 			Name: "Eventually consistent happy path",
-			EthFilterQuery: evmtypes.FilterQuery{
-				FromBlock: big.NewInt(1),
-				ToBlock:   big.NewInt(101),
+			EthFilterQuery: &evmprotos.FilterQuery{
+				FromBlock: valuespb.NewBigIntFromInt(big.NewInt(1)),
+				ToBlock:   valuespb.NewBigIntFromInt(big.NewInt(101)),
 			},
 			ExpectedFilterLogsRequest: &evmtypes.FilterLogsRequest{
 				FilterQuery: evmtypes.FilterQuery{
@@ -308,38 +308,49 @@ func TestFilterLogs(t *testing.T) {
 		},
 		{
 			Name: "Lockable to a block: invalid range",
-			EthFilterQuery: evmtypes.FilterQuery{
-				FromBlock: big.NewInt(rpc.FinalizedBlockNumber.Int64()),
-				ToBlock:   big.NewInt(rpc.LatestBlockNumber.Int64()),
+			EthFilterQuery: &evmprotos.FilterQuery{
+				FromBlock: valuespb.NewBigIntFromInt(big.NewInt(rpc.FinalizedBlockNumber.Int64())),
+				ToBlock:   valuespb.NewBigIntFromInt(big.NewInt(rpc.LatestBlockNumber.Int64())),
 			},
-			ExpectedCaptureObservationError: "PerWorkflow.ChainRead.LogQueryBlockLimit limited for workflow[wf-id]: cannot use 192, limit is 100",
+			ExpectedError: "PerWorkflow.ChainRead.LogQueryBlockLimit limited for workflow[wf-id]: cannot use 192, limit is 100",
 		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.Name, func(t *testing.T) {
 			svc := InitMocks(t)
 			if tc.ExpectedFilterLogsRequest != nil {
+				if len(tc.ExpectedFilterLogsRequest.FilterQuery.Topics) == 0 {
+					tc.ExpectedFilterLogsRequest.FilterQuery.Topics = make([][]evmtypes.Hash, 0) // to avoid nil vs empty slice issues in mock expectations
+					tc.ExpectedFilterLogsRequest.FilterQuery.Addresses = make([]evmtypes.Address, 0)
+				}
 				svc.EvmService.EXPECT().FilterLogs(mock.Anything, *tc.ExpectedFilterLogsRequest).Return(&evmtypes.FilterLogsReply{}, nil).Once()
 			}
-			ctx := contexts.WithCRE(t.Context(), contexts.CRE{Workflow: "wf-id"})
-			request, err := svc.EVM.filterLogsToRequest(ctx, capabilities.RequestMetadata{}, tc.EthFilterQuery)
-			if tc.ExpectedFilterLogsToRequestError != "" {
-				require.ErrorContains(t, err, tc.ExpectedFilterLogsToRequestError)
+			svc.ConsensusHandler.EXPECT().Handle(mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, request types.Request) (<-chan types.Reply, error) {
+				if lockable, ok := request.(*types.LockableToBlockRequest); ok {
+					request = lockable.ToEventuallyConsistent(&chainHeight)
+				}
+
+				eventuallyConsistent := request.(*types.EventuallyConsistentRequest)
+				result := make(chan types.Reply, 1)
+				err := eventuallyConsistent.CaptureObservation(ctx)
+				if err != nil {
+					result <- types.Reply{Err: err}
+					close(result)
+					return result, nil
+				}
+				ob, _, ok := eventuallyConsistent.GetObservation()
+				require.True(t, ok)
+				result <- types.Reply{Value: ob}
+				close(result)
+				return result, nil
+			}).Maybe()
+			metadata := capabilities.RequestMetadata{WorkflowID: "wf-id"}
+			ctx := metadata.ContextWithCRE(t.Context())
+			_, err := svc.FilterLogs(ctx, metadata, &evmprotos.FilterLogsRequest{FilterQuery: tc.EthFilterQuery})
+			if tc.ExpectedError != "" {
+				require.ErrorContains(t, err, tc.ExpectedError)
 				return
 			}
-
-			require.NoError(t, err)
-			if lockable, ok := request.(*types.LockableToBlockRequest); ok {
-				request = lockable.ToEventuallyConsistent(&chainHeight)
-			}
-
-			eventuallyConsistent := request.(*types.EventuallyConsistentRequest)
-			err = eventuallyConsistent.CaptureObservation(ctx)
-			if tc.ExpectedCaptureObservationError != "" {
-				require.ErrorContains(t, err, tc.ExpectedCaptureObservationError)
-				return
-			}
-			require.NoError(t, err)
 		})
 	}
 }
