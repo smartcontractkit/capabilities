@@ -30,6 +30,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	evmmock "github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query"
@@ -1320,10 +1321,26 @@ func TestNewLogTriggerService(t *testing.T) {
 
 func createTriggerObject(t *testing.T, mockEVM *evmmock.EVMService, store LogTriggerStore) *LogTriggerService {
 	t.Helper()
-	trigger, err := NewLogTriggerService(mockEVM, store, logger.Test(t), testLogTriggerCapabilityID, test.NopBeholderProcessor{}, monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
-		pollInterval, 0, 0, testLimitsFactory(t), nil, capabilities.NewMemEventStore())
-	require.NoError(t, err)
-	return trigger
+	lggr := logger.Test(t)
+	lts := &LogTriggerService{
+		EVMService:                      mockEVM,
+		lggr:                            lggr,
+		triggers:                        store,
+		beholderProcessor:               test.NopBeholderProcessor{},
+		messageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		logTriggerPollInterval:          pollInterval,
+		logTriggerSendChannelBufferSize: defaultSendChannelBufferSize,
+		limitAndSort:                    query.NewLimitAndSort(query.Limit{Count: defaultLimitQueryLogSize}, query.NewSortByBlock(query.Asc)),
+	}
+	require.NoError(t, lts.initLimiters(limits.Factory{Logger: lggr}))
+	lts.Service, lts.srvcEng = services.Config{
+		Name:  "EvmLogTriggerService",
+		Start: lts.start,
+		Close: lts.close,
+	}.NewServiceEngine(lggr)
+	lts.baseTrigger = capabilities.NewBaseTriggerCapability(capabilities.NewMemEventStore(),
+		func() *evmcappb.Log { return &evmcappb.Log{} }, lggr, testLogTriggerCapabilityID, pollInterval, 0, 0, nil)
+	return lts
 }
 
 func stringToHashBytes(s string) [evmtypes.HashLength]byte {
