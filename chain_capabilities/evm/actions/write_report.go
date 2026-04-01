@@ -222,6 +222,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		if readTransmissionInfo.State != contracts.TransmissionStateNotAttempted {
 			return readTransmissionInfo, nil
 		}
+		// TODO check receipt here to see why it reverted and return the error without the tx hash
 		return contracts.TransmissionInfo{}, errors.New("transaction successfully executed but not yet seeing the transmission info updated, retrying getting transmission info")
 	})
 
@@ -506,6 +507,11 @@ func (e *EVM) validateInputsAndReportMetadata(requestMetadata capabilities.Reque
 	if reportMetadata.WorkflowID != requestMetadata.WorkflowID {
 		return fmt.Errorf("workflowID in the report does not match WorkflowID in the request metadata. Report WorkflowID: %s, request WorkflowID: %s", reportMetadata.WorkflowID, requestMetadata.WorkflowID)
 	}
+
+	// TODO uncomment
+	//if request.GasConfig != nil && request.GasConfig.GasLimit < e.ReceiverGasMinimum+contracts.ForwarderContractLogicGasCost {
+	//	return fmt.Errorf("gas limit is lower than minimum gas limit: %d", e.ReceiverGasMinimum+contracts.ForwarderContractLogicGasCost)
+	//}
 
 	return nil
 }

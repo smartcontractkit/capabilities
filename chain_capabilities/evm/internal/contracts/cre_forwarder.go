@@ -1,6 +1,7 @@
 package contracts
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -45,6 +46,41 @@ func (s TransmissionState) String() string {
 	default:
 		return "unknown"
 	}
+}
+
+type ForwarderErrorType string
+
+const (
+	ForwarderErrorUnknown                      ForwarderErrorType = "unknown"
+	ForwarderErrorAlreadyAttempted             ForwarderErrorType = "already_attempted"
+	ForwarderErrorDuplicateSigner              ForwarderErrorType = "duplicate_signer"
+	ForwarderErrorExcessSigners                ForwarderErrorType = "excess_signers"
+	ForwarderErrorFaultToleranceMustBePositive ForwarderErrorType = "fault_tolerance_must_be_positive"
+	ForwarderErrorInsufficientGasForRouting    ForwarderErrorType = "insufficient_gas_for_routing"
+	ForwarderErrorInsufficientSigners          ForwarderErrorType = "insufficient_signers"
+	ForwarderErrorInvalidConfig                ForwarderErrorType = "invalid_config"
+	ForwarderErrorInvalidReport                ForwarderErrorType = "invalid_report"
+	ForwarderErrorInvalidSignature             ForwarderErrorType = "invalid_signature"
+	ForwarderErrorInvalidSignatureCount        ForwarderErrorType = "invalid_signature_count"
+	ForwarderErrorInvalidSigner                ForwarderErrorType = "invalid_signer"
+	ForwarderErrorUnauthorizedForwarder        ForwarderErrorType = "unauthorized_forwarder"
+	ForwarderErrorStandardErrorString          ForwarderErrorType = "error_string"
+	ForwarderErrorStandardPanic                ForwarderErrorType = "panic"
+)
+
+var forwarderErrorNameToType = map[string]ForwarderErrorType{
+	"AlreadyAttempted":             ForwarderErrorAlreadyAttempted,
+	"DuplicateSigner":              ForwarderErrorDuplicateSigner,
+	"ExcessSigners":                ForwarderErrorExcessSigners,
+	"FaultToleranceMustBePositive": ForwarderErrorFaultToleranceMustBePositive,
+	"InsufficientGasForRouting":    ForwarderErrorInsufficientGasForRouting,
+	"InsufficientSigners":          ForwarderErrorInsufficientSigners,
+	"InvalidConfig":                ForwarderErrorInvalidConfig,
+	"InvalidReport":                ForwarderErrorInvalidReport,
+	"InvalidSignature":             ForwarderErrorInvalidSignature,
+	"InvalidSignatureCount":        ForwarderErrorInvalidSignatureCount,
+	"InvalidSigner":                ForwarderErrorInvalidSigner,
+	"UnauthorizedForwarder":        ForwarderErrorUnauthorizedForwarder,
 }
 
 type TransmissionInfo struct {
@@ -172,6 +208,7 @@ type CREForwarderCodec interface {
 	DecodeQueryTransmissionInfo(encodedData []byte) (TransmissionInfo, error)
 	EncodeReport(receiver common.Address, report *workflowpb.ReportResponse) ([]byte, error)
 	GetReportProcessedTopicHash() evmtypes.Hash
+	DecodeForwarderError(err error) (ForwarderErrorType, error)
 }
 
 func (cfc *creForwarderCodecImpl) GetReportProcessedTopicHash() evmtypes.Hash {
@@ -195,6 +232,24 @@ func (cfclient *creForwarderClient) InvokeOnReport(ctx context.Context, receiver
 	if err != nil {
 		return nil, err
 	}
+
+	_, err = cfclient.evmService.CallContract(ctx, evmtypes.CallContractRequest{
+		Msg: &evmtypes.CallMsg{
+			To:   cfclient.forwarderAddress,
+			Data: encodedReport,
+		},
+	})
+
+	if err != nil {
+		// TODO ignore this error if we know that it ended up recorder onchain as a transmisison failure
+		errName, err := cfclient.forwarderCodec.DecodeForwarderError(err)
+		if err != nil {
+			// TODO enrich err
+			return nil, err
+		}
+		return nil, fmt.Errorf("tx reverted before report submission because of: %s", errName)
+	}
+
 	// TODO: PLEX-1522 - Add support to limit maximum total fee based on billing config
 	transactionResult, err := cfclient.evmService.SubmitTransaction(ctx, evmtypes.SubmitTransactionRequest{
 		To:   cfclient.forwarderAddress,
@@ -211,6 +266,7 @@ func (cfclient *creForwarderClient) InvokeOnReport(ctx context.Context, receiver
 		}
 		return nil, fmt.Errorf("failed to submit transaction: %w", err)
 	}
+
 	return transactionResult, nil
 }
 
@@ -234,6 +290,10 @@ func (cfclient *creForwarderClient) GetTransmissionInfo(ctx context.Context, tra
 		return TransmissionInfo{}, err
 	}
 	return cfclient.forwarderCodec.DecodeQueryTransmissionInfo(response.Data)
+}
+
+func (cfclient *creForwarderClient) GetCodec() CREForwarderCodec {
+	return cfclient.forwarderCodec
 }
 
 type creForwarderCodecImpl struct {
@@ -288,12 +348,12 @@ func (cfc *creForwarderCodecImpl) DecodeQueryTransmissionInfo(encodedData []byte
 		return TransmissionInfo{}, errors.Join(errors.New("failed to abi unpack getTransmissionInfo return data"), err)
 	}
 	value := values[0]
-	bytes, err := json.Marshal(value)
+	byt, err := json.Marshal(value)
 	if err != nil {
 		return TransmissionInfo{}, errors.Join(errors.New("failed to marshal getTransmissionInfo return data"), err)
 	}
 
-	if err = json.Unmarshal(bytes, &transmissionInfo); err != nil {
+	if err = json.Unmarshal(byt, &transmissionInfo); err != nil {
 		return TransmissionInfo{}, errors.Join(errors.New("failed to unmarshal getTransmissionInfo return data"), err)
 	}
 
@@ -317,4 +377,76 @@ func (t TransmissionID) GetIDPartsForDebugging() []any {
 
 func (t TransmissionID) GetDebugID() string {
 	return fmt.Sprintf("receiver: %s, reportID: %s, workflowExecutionID %s", t.ReceiverHex(), common.Bytes2Hex(t.ReportID[:]), common.Bytes2Hex(t.WorkflowExecutionID[:]))
+}
+
+func (cfc *creForwarderCodecImpl) DecodeForwarderError(err error) (ForwarderErrorType, error) {
+	if err == nil {
+		return "", nil
+	}
+
+	var dataErr rpc.DataError
+	if !errors.As(err, &dataErr) {
+		return ForwarderErrorUnknown, fmt.Errorf("call contract failed without rpc revert data: %w", err)
+	}
+
+	revertHex, ok := extractHexRevertData(dataErr.ErrorData())
+	if !ok {
+		return ForwarderErrorUnknown, fmt.Errorf("call contract failed but no hex revert data found: %w", err)
+	}
+
+	revertData := common.FromHex(revertHex)
+	if len(revertData) < 4 {
+		return ForwarderErrorUnknown, fmt.Errorf("revert data shorter than 4-byte selector: %s", revertHex)
+	}
+
+	selector := revertData[:4]
+
+	if bytes.Equal(selector, []byte{0x08, 0xc3, 0x79, 0xa0}) {
+		return ForwarderErrorStandardErrorString, nil
+	}
+
+	if bytes.Equal(selector, []byte{0x4e, 0x48, 0x7b, 0x71}) {
+		return ForwarderErrorStandardPanic, nil
+	}
+
+	for name, abiErr := range cfc.abi.Errors {
+		id := abiErr.ID.Bytes()
+		if len(id) >= 4 && bytes.Equal(selector, id[:4]) {
+			if typ, ok := forwarderErrorNameToType[name]; ok {
+				return typ, nil
+			}
+			return ForwarderErrorUnknown, nil
+		}
+	}
+
+	return ForwarderErrorUnknown, nil
+}
+
+func extractHexRevertData(v interface{}) (string, bool) {
+	switch t := v.(type) {
+	case string:
+		if _, err := common.ParseHexOrString(t); err == nil {
+			return t, true
+		}
+	case map[string]interface{}:
+		for _, k := range []string{"data", "result", "output"} {
+			if vv, ok := t[k]; ok {
+				if s, ok := extractHexRevertData(vv); ok {
+					return s, true
+				}
+			}
+		}
+		for _, vv := range t {
+			if s, ok := extractHexRevertData(vv); ok {
+				return s, true
+			}
+		}
+	case []interface{}:
+		for _, vv := range t {
+			if s, ok := extractHexRevertData(vv); ok {
+				return s, true
+			}
+		}
+	}
+	return "", false
 }
