@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/gagliardetto/solana-go"
+	"github.com/gagliardetto/solana-go/rpc"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	soltypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/solana"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query"
@@ -65,7 +67,11 @@ func (p *OnChainTransmissionInfoProvider) GetTransmissionInfo(ctx context.Contex
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get execution state account: %w", err)
+		if errors.Is(err, rpc.ErrNotFound) {
+			reply = &soltypes.GetAccountInfoReply{}
+		} else {
+			return nil, fmt.Errorf("failed to get execution state account: %w", err)
+		}
 	}
 
 	inProgressLogs, err := p.lr.queryInProgress(ctx, transmissionID)
