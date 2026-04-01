@@ -3,10 +3,13 @@ package actions
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
+	bin "github.com/gagliardetto/binary"
 	"github.com/gagliardetto/solana-go"
 	"github.com/gagliardetto/solana-go/rpc"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -85,7 +88,7 @@ func (p *OnChainTransmissionInfoProvider) GetTransmissionInfo(ctx context.Contex
 		},
 	})
 	if err != nil {
-		if errors.Is(err, rpc.ErrNotFound) {
+		if isExecutionStateAccountMissing(err) {
 			reply = &soltypes.GetAccountInfoReply{}
 		} else {
 			return nil, fmt.Errorf("failed to get execution state account: %w", err)
@@ -217,6 +220,65 @@ func deriveExecutionStatePDA(forwarderState solana.PublicKey, transmissionID [32
 	}
 	ret, _, err := solana.FindProgramAddress(seeds, programID)
 	return ret, err
+}
+
+// Anchor account discriminator for keystone_forwarder::state::ExecutionState (first 8 bytes of
+// sha256("account:ExecutionState")). Must match the deployed forwarder program.
+var executionStateAccountDiscriminator = [8]byte{31, 209, 35, 133, 132, 142, 151, 100}
+
+// executionStateAccount is the Borsh payload after the Anchor 8-byte discriminator (matches on-chain
+// keystone_forwarder::state::ExecutionState).
+type executionStateAccount struct {
+	Transmitter    solana.PublicKey
+	TransmissionID [32]byte
+	Success        bool
+}
+
+func parseExecutionStateAccount(data []byte) (transmitter solana.PublicKey, transmissionID [32]byte, success bool, err error) {
+	const discLen = 8
+	if len(data) < discLen+32+32+1 {
+		return solana.PublicKey{}, [32]byte{}, false, fmt.Errorf("execution state account data too short: %d", len(data))
+	}
+	if !bytes.Equal(data[:discLen], executionStateAccountDiscriminator[:]) {
+		return solana.PublicKey{}, [32]byte{}, false, fmt.Errorf("unexpected ExecutionState account discriminator")
+	}
+
+	var acc executionStateAccount
+	if err := bin.UnmarshalBorsh(&acc, data[discLen:]); err != nil {
+		return solana.PublicKey{}, [32]byte{}, false, fmt.Errorf("unmarshal execution state: %w", err)
+	}
+	return acc.Transmitter, acc.TransmissionID, acc.Success, nil
+}
+
+func accountDataBytesFromJSON(asJSON []byte) ([]byte, error) {
+	if len(asJSON) == 0 {
+		return nil, fmt.Errorf("empty account data json")
+	}
+	var arr []string
+	if err := json.Unmarshal(asJSON, &arr); err == nil && len(arr) >= 2 && arr[1] == "base64" {
+		return base64.StdEncoding.DecodeString(arr[0])
+	}
+	var wrapped struct {
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(asJSON, &wrapped); err == nil && len(wrapped.Data) > 0 {
+		return accountDataBytesFromJSON(wrapped.Data)
+	}
+	return nil, fmt.Errorf("could not extract base64 account data from json")
+}
+
+func isExecutionStateAccountMissing(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, rpc.ErrNotFound) {
+		return true
+	}
+	s := strings.ToLower(err.Error())
+	if !strings.Contains(s, "not found") {
+		return false
+	}
+	return strings.Contains(s, "account info") || strings.Contains(s, "getaccountinfo")
 }
 
 // accountDataBytesForTransmission returns raw program data for Anchor parsing. Prefers
