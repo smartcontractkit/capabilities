@@ -133,6 +133,28 @@ func TestWriteReport_InputValidation(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "workflowExecutionID in the report does not match WorkflowExecutionID in the request metadata.")
 	})
+	t.Run("Short workflow name should pass validation when report and request match", func(t *testing.T) {
+		reportMetadata := createTestReportMetadata()
+		// 4 hex chars (2 bytes) — shorter than the full 20, triggers padWorkflowName
+		reportMetadata.WorkflowName = "aabb"
+		encodedReportMetadata, encErr := reportMetadata.Encode()
+		require.NoError(t, encErr)
+		// Request and report carry the same WorkflowName, so validation must not
+		// reject the name. This fails today because padWorkflowName pads with '0'
+		// (0x30) while validateInputsAndReportMetadata pads with 0x00 null bytes.
+		err := helper.solana.validateInputsAndReportMetadata(
+			createTestRequestMetadata(reportMetadata),
+			&solcap.WriteReportRequest{
+				Receiver: key.PublicKey().Bytes(),
+				Report: &workflowpb.ReportResponse{
+					RawReport:     encodedReportMetadata,
+					ReportContext: []byte{},
+					Sigs:          generateRandomSignatures(),
+				},
+			},
+		)
+		require.NoError(t, err)
+	})
 }
 func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 	t.Parallel()

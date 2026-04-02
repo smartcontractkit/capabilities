@@ -1,7 +1,6 @@
 package actions
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -296,12 +295,13 @@ func (s *Solana) validateInputsAndReportMetadata(requestMetadata capabilities.Re
 		return fmt.Errorf("workflowOwner in the report does not match WorkflowOwner in the request metadata. Report WorkflowOwner: %s, request WorkflowOwner: %s", reportMetadata.WorkflowOwner, requestMetadata.WorkflowOwner)
 	}
 
-	//	workflowNames are padded to 10bytes
-	decodedName := []byte(requestMetadata.WorkflowName)
-	var workflowName [20]byte
-	copy(workflowName[:], decodedName)
-	if !bytes.Equal([]byte(reportMetadata.WorkflowName[:]), workflowName[:]) {
-		return fmt.Errorf("workflowName in the report does not match WorkflowName in the request metadata. Report WorkflowName: %s, request WorkflowName: %s", reportMetadata.WorkflowName, hex.EncodeToString(workflowName[:]))
+	//	workflowNames are padded to 10 bytes (20 hex chars)
+	reqName := requestMetadata.WorkflowName
+	if len(reqName) < 20 {
+		reqName += strings.Repeat("0", 20-len(reqName))
+	}
+	if reportMetadata.WorkflowName != reqName {
+		return fmt.Errorf("workflowName in the report does not match WorkflowName in the request metadata. Report WorkflowName: %s, request WorkflowName: %s", reportMetadata.WorkflowName, reqName)
 	}
 
 	if reportMetadata.WorkflowID != requestMetadata.WorkflowID {
