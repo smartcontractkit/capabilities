@@ -5,14 +5,15 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	aptos_sdk "github.com/aptos-labs/aptos-go-sdk"
 
-	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	aptostypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/aptos"
+	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 )
 
 // userTxData is a local struct matching the Go-default JSON output of
@@ -26,6 +27,7 @@ type userTxData struct {
 	Timestamp      int64           `json:"Timestamp"` // micros since Unix epoch; int64 matches time.UnixMicro() and JSON numbers
 	GasUsed        uint64          `json:"GasUsed"`
 	GasUnitPrice   uint64          `json:"GasUnitPrice"`
+	MaxGasAmount   uint64          `json:"MaxGasAmount"`
 	VmStatus       string          `json:"VmStatus"`
 	Payload        json.RawMessage `json:"Payload"`
 }
@@ -45,15 +47,17 @@ type TxInfoRetriever struct {
 	transmissionID     TransmissionID
 	entryFunctionName  string
 	startingPointMicro int64
+	report             *sdk.ReportResponse
 }
 
-func NewTxInfoRetriever(forwarderClient CREForwarderClient, lggr logger.Logger, transmissionID TransmissionID, forwarderAddress string, requestStartTime time.Time, txSearchStartingBuffer time.Duration) TxInfoRetriever {
+func NewTxInfoRetriever(forwarderClient CREForwarderClient, lggr logger.Logger, transmissionID TransmissionID, forwarderAddress string, requestStartTime time.Time, txSearchStartingBuffer time.Duration, report *sdk.ReportResponse) TxInfoRetriever {
 	retriever := TxInfoRetriever{
 		forwarderClient:    forwarderClient,
 		lggr:               logger.Named(lggr, "TxInfoRetriever"),
 		transmissionID:     transmissionID,
 		entryFunctionName:  fmt.Sprintf("%s::forwarder::report", forwarderAddress),
 		startingPointMicro: requestStartTime.Add(-txSearchStartingBuffer).UnixMicro(),
+		report:             report,
 	}
 	lggr.Debugw("TxInfoRetriever created",
 		"transmissionID", transmissionID.GetDebugID(),
@@ -70,6 +74,7 @@ type TransmissionTxInfo struct {
 	TxHash       string
 	GasUsed      uint64
 	GasUnitPrice uint64
+	MaxGasAmount uint64
 	VmStatus     string
 }
 
@@ -140,12 +145,14 @@ func (thr *TxInfoRetriever) scanTransactions(txns []*aptostypes.Transaction, exp
 				"seqNum", userTx.SequenceNumber,
 				"gasUsed", userTx.GasUsed,
 				"gasUnitPrice", userTx.GasUnitPrice,
+				"maxGasAmount", userTx.MaxGasAmount,
 				"vmStatus", userTx.VmStatus,
 			)
 			res.TransmissionTxInfo = TransmissionTxInfo{
 				TxHash:       userTx.Hash,
 				GasUsed:      userTx.GasUsed,
 				GasUnitPrice: userTx.GasUnitPrice,
+				MaxGasAmount: userTx.MaxGasAmount,
 				VmStatus:     userTx.VmStatus,
 			}
 			return res
@@ -360,56 +367,35 @@ func (thr *TxInfoRetriever) GetFailedTransmissionInfo(ctx context.Context, trans
 	return TransmissionTxInfo{}, fmt.Errorf("no matching failed transaction found for transmission %s", thr.transmissionID.GetDebugID())
 }
 
-// matchesTransmissionByReport checks if a transaction's raw_report argument
-// contains the same transmission ID (workflow_execution_id + report_id) as ours.
-//
-// The entry function arguments for forwarder::report are: [receiver, raw_report, signatures].
-// raw_report = report_context (96 bytes) || report, where report is decoded by ocrtypes.Decode.
+// matchesTransmissionByReport checks if a transaction's raw_report and signatures
+// match exactly what this node would submit. The receiver is already validated by
+// the forwarder contract's transmission state lookup (keyed on receiver + execID + reportID).
 func (thr *TxInfoRetriever) matchesTransmissionByReport(arguments []interface{}) bool {
-	if len(arguments) < 2 {
-		thr.lggr.Debugw("MatchesTransmissionByReport - not enough arguments", "argCount", len(arguments))
+	if len(arguments) < 3 {
+		thr.lggr.Debugw("Payload mismatch: expected at least 3 arguments", "got", len(arguments))
 		return false
 	}
 
-	rawReportHex, ok := arguments[1].(string)
-	if !ok {
-		thr.lggr.Debugw("MatchesTransmissionByReport - arg[1] not a string",
-			"argType", fmt.Sprintf("%T", arguments[1]))
-		return false
-	}
-	rawReport, err := hex.DecodeString(strings.TrimPrefix(rawReportHex, "0x"))
-	if err != nil {
-		thr.lggr.Debugw("MatchesTransmissionByReport - hex decode failed", "error", err)
+	reportHex, _ := arguments[1].(string)
+	expectedReportHex := hex.EncodeToString(slices.Concat(thr.report.ReportContext, thr.report.RawReport))
+	if strings.TrimPrefix(reportHex, "0x") != expectedReportHex {
+		thr.lggr.Debugw("Payload mismatch: raw_report differs")
 		return false
 	}
 
-	const reportContextLen = 96
-	if len(rawReport) < reportContextLen {
-		thr.lggr.Debugw("MatchesTransmissionByReport - report too short", "len", len(rawReport))
+	sigArray, _ := arguments[2].([]interface{})
+	if len(sigArray) != len(thr.report.Sigs) {
+		thr.lggr.Debugw("Payload mismatch: signature count differs",
+			"got", len(sigArray), "want", len(thr.report.Sigs))
 		return false
 	}
-	report := rawReport[reportContextLen:]
-
-	metadata, err := capcommon.DecodeReportMetadata(report)
-	if err != nil {
-		thr.lggr.Debugw("MatchesTransmissionByReport - decodeReportMetadata failed", "error", err)
-		return false
-	}
-
-	wantExecID := hex.EncodeToString(thr.transmissionID.WorkflowExecutionID[:])
-	wantReportID := hex.EncodeToString(thr.transmissionID.ReportID[:])
-	if metadata.ExecutionID != wantExecID {
-		thr.lggr.Debugw("MatchesTransmissionByReport - executionID mismatch",
-			"got", metadata.ExecutionID, "want", wantExecID)
-		return false
-	}
-	if metadata.ReportID != wantReportID {
-		thr.lggr.Debugw("MatchesTransmissionByReport - reportID mismatch",
-			"gotReportID", metadata.ReportID, "wantReportID", wantReportID)
-		return false
+	for i, elem := range sigArray {
+		s, _ := elem.(string)
+		if strings.TrimPrefix(s, "0x") != hex.EncodeToString(thr.report.Sigs[i].Signature) {
+			thr.lggr.Debugw("Payload mismatch: signature differs", "index", i)
+			return false
+		}
 	}
 
-	thr.lggr.Debugw("MatchesTransmissionByReport - match",
-		"executionID", metadata.ExecutionID, "reportID", metadata.ReportID)
 	return true
 }
