@@ -372,7 +372,7 @@ func (e *WriteReport) pollTransmissionInfo(
 		case <-ctx.Done():
 			return contracts.TransmissionInfo{}, fmt.Errorf("timed out waiting for transmission info")
 		case <-stageTimer.C:
-			//deltaStagePassed = true
+			deltaStagePassed = true
 			e.lggr.Infow("Delta Stage has passed returning transmission info", lastValidInfo.LogAttrs()...)
 			return lastValidInfo, nil
 		case <-time.After(wait):
@@ -508,7 +508,7 @@ func (e *EVM) validateInputsAndReportMetadata(requestMetadata capabilities.Reque
 	}
 
 	if request.GasConfig != nil && request.GasConfig.GasLimit != 0 && request.GasConfig.GasLimit < e.ReceiverGasMinimum+contracts.ForwarderContractLogicGasCost {
-		return fmt.Errorf("gas limit is %d, which lower than minimum gas limit of: %d, for unbounded gas leave the gas limit as nil or 0", request.GasConfig.GasLimit, e.ReceiverGasMinimum+contracts.ForwarderContractLogicGasCost)
+		return fmt.Errorf("gas limit is %d, which is lower than minimum gas limit of: %d, for unbounded gas leave the gas limit as nil or 0", request.GasConfig.GasLimit, e.ReceiverGasMinimum+contracts.ForwarderContractLogicGasCost)
 	}
 
 	return nil
