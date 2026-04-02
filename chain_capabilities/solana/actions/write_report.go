@@ -13,6 +13,7 @@ import (
 
 	"github.com/gagliardetto/solana-go"
 	"github.com/jpillora/backoff"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
@@ -352,7 +353,13 @@ func (wr *WriteReport) pollTransmissionInfo(
 
 	attempt := 0
 	stageTimer := time.NewTimer(delay)
-	defer stageTimer.Stop()
+	deltaStagePassed := false
+	defer func() {
+		stageTimer.Stop()
+		if !deltaStagePassed && err == nil {
+			wr.lggr.Infow("Transmission found before delta stage has passed")
+		}
+	}()
 
 	for {
 		if info, pollErr := wr.transmissionInfoProvider.GetTransmissionInfo(ctx, transmissionID); pollErr != nil {
@@ -378,6 +385,7 @@ func (wr *WriteReport) pollTransmissionInfo(
 		case <-ctx.Done():
 			return nil, fmt.Errorf("timed out waiting for transmission info")
 		case <-stageTimer.C:
+			deltaStagePassed = true
 			wr.lggr.Infow("Delta stage has passed, returning transmission info")
 			if lastValid != nil {
 				return lastValid, nil

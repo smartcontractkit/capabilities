@@ -492,10 +492,10 @@ func (wr *writeReport) pollTransmissionInfo(
 
 	attempt := 0
 	stageTimer := time.NewTimer(delay)
-	stageTimerFired := false
+	deltaStagePassed := false
 	defer func() {
 		stageTimer.Stop()
-		if !stageTimerFired && err == nil {
+		if !deltaStagePassed && err == nil {
 			monitoring.LogAndEmitSuccess(ctx, "Transmission found before delta stage has passed",
 				wr.lggr, wr.beholderProcessor,
 				wr.messageBuilder.BuildWriteReportSuccessfulEarlyReturn(telemetryContext))
@@ -524,7 +524,7 @@ func (wr *writeReport) pollTransmissionInfo(
 			wr.lggr.Errorw("Timed out waiting for transmission info", "attempts", attempt)
 			return TransmissionInfo{}, fmt.Errorf("timed out waiting for transmission info")
 		case <-stageTimer.C:
-			stageTimerFired = true
+			deltaStagePassed = true
 			wr.lggr.Debugw("Delta stage has passed, returning transmission info", "success", lastValidInfo.Success, "attempts", attempt)
 			return lastValidInfo, nil
 		case <-time.After(wait):
