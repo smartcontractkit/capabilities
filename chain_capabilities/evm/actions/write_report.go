@@ -507,8 +507,8 @@ func (e *EVM) validateInputsAndReportMetadata(requestMetadata capabilities.Reque
 		return fmt.Errorf("workflowID in the report does not match WorkflowID in the request metadata. Report WorkflowID: %s, request WorkflowID: %s", reportMetadata.WorkflowID, requestMetadata.WorkflowID)
 	}
 
-	if request.GasConfig != nil && request.GasConfig.GasLimit < e.ReceiverGasMinimum+contracts.ForwarderContractLogicGasCost {
-		return fmt.Errorf("gas limit is lower than minimum gas limit: %d", e.ReceiverGasMinimum+contracts.ForwarderContractLogicGasCost)
+	if request.GasConfig != nil && request.GasConfig.GasLimit != 0 && request.GasConfig.GasLimit < e.ReceiverGasMinimum+contracts.ForwarderContractLogicGasCost {
+		return fmt.Errorf("gas limit is %d, which lower than minimum gas limit of: %d, for unbounded gas leave the gas limit as nil or 0", request.GasConfig.GasLimit, e.ReceiverGasMinimum+contracts.ForwarderContractLogicGasCost)
 	}
 
 	return nil

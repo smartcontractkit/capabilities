@@ -367,6 +367,43 @@ func TestWriteReport_InputValidation(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "workflowExecutionID in the report does not match WorkflowExecutionID in the request metadata.")
 	})
+
+	t.Run("GasConfig.GasLimit below minimum is rejected", func(t *testing.T) {
+		_, _, service := createMocksAndCapability(t, lggr)
+		reportMetadata := createTestReportMetadata()
+		encodedReportMetadata, _ := reportMetadata.Encode()
+
+		belowMinimum := ConfiguredReceiverGasMinimum + contracts.ForwarderContractLogicGasCost - 1
+
+		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
+			Receiver: testutils.NewAddress().Bytes(),
+			Report: &workflowpb.ReportResponse{
+				RawReport:     encodedReportMetadata,
+				ReportContext: []byte{},
+				Sigs:          generateRandomSignatures(),
+			},
+			GasConfig: &evm.GasConfig{GasLimit: uint64(belowMinimum)},
+		})
+		require.Error(t, err)
+	})
+
+	t.Run("nil and 0 GasConfig skips gas limit check", func(t *testing.T) {
+		_, _, service := createMocksAndCapability(t, lggr)
+		reportMetadata := createTestReportMetadata()
+		encodedReportMetadata, _ := reportMetadata.Encode()
+
+		require.NoError(t, service.validateInputsAndReportMetadata(createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
+			Receiver:  testutils.NewAddress().Bytes(),
+			Report:    &workflowpb.ReportResponse{RawReport: encodedReportMetadata, Sigs: generateRandomSignatures()},
+			GasConfig: nil,
+		}))
+
+		require.NoError(t, service.validateInputsAndReportMetadata(createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
+			Receiver:  testutils.NewAddress().Bytes(),
+			Report:    &workflowpb.ReportResponse{RawReport: encodedReportMetadata, Sigs: generateRandomSignatures()},
+			GasConfig: &evmcappb.GasConfig{GasLimit: 0},
+		}))
+	})
 }
 
 func TestWriteReport_ExecuteWriteReport(t *testing.T) {
@@ -1313,7 +1350,8 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 	})
 
 	t.Run("TX first transmission - Fatal tx and GetSuccessfulTransmissionHash fails => returns error", func(t *testing.T) {
-		ctx := t.Context()
+		ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+		defer cancel()
 		testLogger := logger.Test(t)
 		evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
 
