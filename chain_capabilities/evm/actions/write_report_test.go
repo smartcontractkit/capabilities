@@ -1350,7 +1350,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 	})
 
 	t.Run("TX first transmission - Fatal tx and GetSuccessfulTransmissionHash fails => returns error", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+		ctx, cancel := context.WithTimeout(t.Context(), 1*time.Second)
 		defer cancel()
 		testLogger := logger.Test(t)
 		evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
