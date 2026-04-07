@@ -29,6 +29,11 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/monitoring"
 )
 
+// ForwarderGasOverhead is the gas consumed by the forwarder contract before dispatching
+// to the receiver. Transactions with MaxGasAmount below this will fail before reaching
+// the receiver and waste the full gas fee. Set to 0 until empirically measured (TODO: PLEX-2751).
+const ForwarderGasOverhead uint64 = 0
+
 func withQuickRetry[T any](ctx context.Context, lggr logger.Logger, fn func(context.Context) (T, error)) (T, error) {
 	return capcommon.WithQuickRetry(ctx, lggr, fn)
 }
@@ -153,6 +158,13 @@ func (wr *writeReport) execute(
 			return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s provided gas config exceeds limit (maxGasAmount=%d): %w", capcommon.UserError, request.GasConfig.MaxGasAmount, err)
 		}
 		wr.lggr.Debugw("Using provided gas config", "maxGasAmount", request.GasConfig.MaxGasAmount)
+	}
+
+	if ForwarderGasOverhead > 0 && request.GasConfig.MaxGasAmount < ForwarderGasOverhead {
+		wr.lggr.Errorw("MaxGasAmount below forwarder overhead, transaction would fail before reaching receiver",
+			"maxGasAmount", request.GasConfig.MaxGasAmount, "forwarderGasOverhead", ForwarderGasOverhead)
+		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s MaxGasAmount (%d) is below the forwarder gas overhead (%d), transaction would fail before reaching the receiver contract",
+			capcommon.UserError, request.GasConfig.MaxGasAmount, ForwarderGasOverhead)
 	}
 
 	transmissionID, err := getTransmissionID(metadata.WorkflowExecutionID, request)

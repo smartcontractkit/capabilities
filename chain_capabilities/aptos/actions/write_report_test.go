@@ -292,6 +292,17 @@ func TestWriteReport_Validation(t *testing.T) {
 		require.Contains(t, capErr.Error(), "provided gas config exceeds limit")
 	})
 
+	// TODO(PLEX-2751): uncomment when ForwarderGasOverhead is set to a non-zero value
+	// t.Run("Gas config below forwarder overhead", func(t *testing.T) {
+	// 	h := newTestHelper(t)
+	// 	_, reqMeta, req := newReportFixture(t)
+	// 	req.GasConfig = &aptoscap.GasConfig{MaxGasAmount: 50_000}
+	//
+	// 	_, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
+	// 	require.NotNil(t, capErr)
+	// 	require.Contains(t, capErr.Error(), "below the forwarder gas overhead")
+	// })
+
 	t.Run("Report size exceeds limit", func(t *testing.T) {
 		h := newTestHelper(t)
 		rm, reqMeta, _ := newReportFixture(t)
