@@ -27,6 +27,8 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/retry"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 
+	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
+
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/metering"
@@ -307,6 +309,48 @@ func (s *Solana) validateInputsAndReportMetadata(requestMetadata capabilities.Re
 
 	if reportMetadata.WorkflowID != requestMetadata.WorkflowID {
 		return fmt.Errorf("workflowID in the report does not match WorkflowID in the request metadata. Report WorkflowID: %s, request WorkflowID: %s", reportMetadata.WorkflowID, requestMetadata.WorkflowID)
+	}
+
+	err = validateRemainingAccountHash(request.RemainingAccounts, request.Report.RawReport)
+	if err != nil {
+		return fmt.Errorf("failed to validate remaining account hash: %w", err)
+	}
+
+	return nil
+}
+
+// validateRemainingAccountHash verifies that the SHA-256 account hash embedded in the
+// raw report's ForwarderReport section matches the remaining accounts supplied in the request.
+//
+// This mirrors the on-chain verification in the keystone-forwarder program (lib.rs):
+//   - The forwarder deserializes ForwarderReport from rawReport[METADATA_LENGTH..] (Borsh)
+//   - It computes SHA-256 over the concatenated 32-byte keys of all CPI accounts
+//     (forwarder_state || forwarder_authority || remaining_accounts…)
+//   - It rejects the transaction if the computed hash ≠ forwarder_report.account_hash
+//
+// The remaining accounts passed here include forwarder_state and forwarder_authority
+// as the first two entries, matching the on-chain account_infos ordering.
+func validateRemainingAccountHash(remainings []*solcap.AccountMeta, rawReport []byte) error {
+	if len(remainings) == 0 {
+		return nil
+	}
+
+	const accountHashSize = 32
+	minLen := ocrtypes.MetadataLen + accountHashSize
+	if len(rawReport) < minLen {
+		return fmt.Errorf("raw report too short to contain account hash: got %d bytes, need at least %d", len(rawReport), minLen)
+	}
+
+	reportHash := rawReport[ocrtypes.MetadataLen : ocrtypes.MetadataLen+accountHashSize]
+
+	var buf []byte
+	for _, acc := range remainings {
+		buf = append(buf, acc.GetPublicKey()...)
+	}
+	computed := sha256.Sum256(buf)
+
+	if !bytes.Equal(computed[:], reportHash) {
+		return fmt.Errorf("remaining account hash mismatch: computed %x, report contains %x", computed[:], reportHash)
 	}
 
 	return nil

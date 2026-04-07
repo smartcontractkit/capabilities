@@ -3,6 +3,7 @@ package actions
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -457,6 +458,105 @@ func TestWriteReport_MeteringMetadata(t *testing.T) {
 
 		require.Empty(t, result.ResponseMetadata.Metering)
 		helper.creForwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	})
+}
+
+func TestValidateRemainingAccountHash(t *testing.T) {
+	t.Parallel()
+
+	// buildRawReport mirrors the on-chain report layout:
+	//   [109 bytes OCR3 metadata][32 bytes account_hash][4 bytes LE payload_len][payload...]
+	// This is how the keystone-forwarder deserializes ForwarderReport from rawReport[METADATA_LENGTH..].
+	buildRawReport := func(t *testing.T, metadata ocrtypes.Metadata, accountHash [32]byte, payload []byte) []byte {
+		t.Helper()
+		header, err := metadata.Encode()
+		require.NoError(t, err)
+		require.Len(t, header, ocrtypes.MetadataLen)
+
+		// Borsh-encode ForwarderReport: fixed [u8;32] hash + Vec<u8> payload (4-byte LE length prefix)
+		payloadLen := make([]byte, 4)
+		payloadLen[0] = byte(len(payload))
+		payloadLen[1] = byte(len(payload) >> 8)
+		payloadLen[2] = byte(len(payload) >> 16)
+		payloadLen[3] = byte(len(payload) >> 24)
+
+		raw := make([]byte, 0, len(header)+32+4+len(payload))
+		raw = append(raw, header...)
+		raw = append(raw, accountHash[:]...)
+		raw = append(raw, payloadLen...)
+		raw = append(raw, payload...)
+		return raw
+	}
+
+	// computeAccountHash mirrors calculateHash from the workflow WASM binary and the
+	// on-chain forwarder: SHA-256 over concatenated 32-byte public keys.
+	computeAccountHash := func(accounts []*solcap.AccountMeta) [32]byte {
+		var buf []byte
+		for _, acc := range accounts {
+			buf = append(buf, acc.GetPublicKey()...)
+		}
+		return sha256.Sum256(buf)
+	}
+
+	makeAccounts := func(n int) []*solcap.AccountMeta {
+		accs := make([]*solcap.AccountMeta, n)
+		for i := range accs {
+			accs[i] = &solcap.AccountMeta{PublicKey: RandomBytes(32)}
+		}
+		return accs
+	}
+
+	t.Run("Valid hash with multiple remaining accounts", func(t *testing.T) {
+		accounts := makeAccounts(8)
+		hash := computeAccountHash(accounts)
+		rawReport := buildRawReport(t, createTestReportMetadata(), hash, []byte("some payload"))
+
+		err := validateRemainingAccountHash(accounts, rawReport)
+		require.NoError(t, err)
+	})
+
+	t.Run("Valid hash with single remaining account", func(t *testing.T) {
+		accounts := makeAccounts(1)
+		hash := computeAccountHash(accounts)
+		rawReport := buildRawReport(t, createTestReportMetadata(), hash, nil)
+
+		err := validateRemainingAccountHash(accounts, rawReport)
+		require.NoError(t, err)
+	})
+
+	t.Run("No remaining accounts skips validation", func(t *testing.T) {
+		err := validateRemainingAccountHash(nil, []byte("short"))
+		require.NoError(t, err)
+	})
+
+	t.Run("Mismatch when accounts differ from report hash", func(t *testing.T) {
+		accounts := makeAccounts(4)
+		hash := computeAccountHash(accounts)
+		rawReport := buildRawReport(t, createTestReportMetadata(), hash, []byte("payload"))
+
+		differentAccounts := makeAccounts(4)
+		err := validateRemainingAccountHash(differentAccounts, rawReport)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "remaining account hash mismatch")
+	})
+
+	t.Run("Mismatch when account order changes", func(t *testing.T) {
+		accounts := makeAccounts(3)
+		hash := computeAccountHash(accounts)
+		rawReport := buildRawReport(t, createTestReportMetadata(), hash, []byte("payload"))
+
+		reordered := []*solcap.AccountMeta{accounts[2], accounts[0], accounts[1]}
+		err := validateRemainingAccountHash(reordered, rawReport)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "remaining account hash mismatch")
+	})
+
+	t.Run("Report too short", func(t *testing.T) {
+		accounts := makeAccounts(1)
+		shortReport := make([]byte, ocrtypes.MetadataLen+10) // not enough for 32-byte hash
+		err := validateRemainingAccountHash(accounts, shortReport)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "raw report too short to contain account hash")
 	})
 }
 
