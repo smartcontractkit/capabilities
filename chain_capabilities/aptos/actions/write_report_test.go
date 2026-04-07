@@ -228,21 +228,10 @@ func computeTransmissionIDStr(t *testing.T, rm ocrtypes.Metadata) string {
 	}.GetDebugID()
 }
 
-// mockNoTransmission sets GetTransmissionInfo to return {Success: false} once.
-func (h *testHelper) mockNoTransmission() {
-	h.forwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).
-		Return(TransmissionInfo{Success: false}, nil).Once()
-}
-
-// mockTransmitted sets GetTransmissionInfo to always return the given success value.
-func (h *testHelper) mockTransmitted(success bool) {
-	h.forwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).
-		Return(TransmissionInfo{Success: success}, nil)
-}
-
-// mockPostSubmitPoll sets the second GetTransmissionInfo call (post-submission polling).
-func (h *testHelper) mockPostSubmitPoll(info TransmissionInfo) {
-	h.forwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).
+// mockTransmission sets GetTransmissionInfo to return the given info.
+// Chain .Once() for single-use registrations.
+func (h *testHelper) mockTransmission(info TransmissionInfo) *mock.Call {
+	return h.forwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).
 		Return(info, nil)
 }
 
@@ -313,7 +302,7 @@ func TestWriteReport_Validation(t *testing.T) {
 			Receiver: testReceiver[:],
 			Report:   &workflowpb.ReportResponse{RawReport: append(encoded, make([]byte, 6000)...), Sigs: fixedTestSignatures()},
 		}
-		h.mockNoTransmission()
+		h.mockTransmission(TransmissionInfo{Success: false}).Once()
 
 		_, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
 		require.NotNil(t, capErr)
@@ -328,9 +317,9 @@ func TestWriteReport_Execute(t *testing.T) {
 		h := newTestHelper(t)
 		_, reqMeta, req := newReportFixture(t)
 
-		h.mockNoTransmission()
+		h.mockTransmission(TransmissionInfo{Success: false}).Once()
 		h.mockInvokeOnReport(&aptostypes.SubmitTransactionReply{TxStatus: aptostypes.TxSuccess, TxHash: "0xabc"}, nil)
-		h.mockPostSubmitPoll(TransmissionInfo{Success: true, Transmitter: testTransmitter})
+		h.mockTransmission(TransmissionInfo{Success: true, Transmitter: testTransmitter})
 		h.mockTransactionByHash("0xabc", testGasUsed, testGasUnitPrice)
 
 		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
@@ -365,7 +354,7 @@ func TestWriteReport_Execute(t *testing.T) {
 		h := newTestHelper(t)
 		_, reqMeta, req := newReportFixture(t)
 
-		h.mockNoTransmission()
+		h.mockTransmission(TransmissionInfo{Success: false}).Once()
 		h.mockInvokeOnReport(nil, errors.New("rpc connection refused"))
 
 		_, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
@@ -378,9 +367,9 @@ func TestWriteReport_Execute(t *testing.T) {
 		rm, reqMeta, req := newReportFixture(t)
 		transmitter := aptos_sdk.AccountAddress{0xEE}
 
-		h.mockNoTransmission()
+		h.mockTransmission(TransmissionInfo{Success: false}).Once()
 		h.mockInvokeOnReport(&aptostypes.SubmitTransactionReply{TxStatus: aptostypes.TxReverted, TxHash: "0xreverted"}, nil)
-		h.mockPostSubmitPoll(TransmissionInfo{Success: true, Transmitter: transmitter})
+		h.mockTransmission(TransmissionInfo{Success: true, Transmitter: transmitter})
 		h.mockTransactionByHash("0xreverted", testGasUsed, testGasUnitPrice)
 		h.mockSearchTx(t, transmitter, buildFakeTransaction(t, "0xreal", true, 100, time.Now().UnixMicro(), rm)) // find the real successful tx from the winning transmitter
 
@@ -396,9 +385,9 @@ func TestWriteReport_Execute(t *testing.T) {
 		h := newTestHelper(t)
 		_, reqMeta, req := newReportFixture(t)
 
-		h.mockNoTransmission()
+		h.mockTransmission(TransmissionInfo{Success: false}).Once()
 		h.mockInvokeOnReport(&aptostypes.SubmitTransactionReply{TxStatus: aptostypes.TxFatal, TxHash: "0xmine"}, nil)
-		h.mockPostSubmitPoll(TransmissionInfo{Success: false})
+		h.mockTransmission(TransmissionInfo{Success: false})
 		h.mockTransactionByHashFailed("0xmine", testGasUsed, testGasUnitPrice, "Move abort in 0x1::coin: EINSUFFICIENT_BALANCE(0x10006)")
 
 		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
@@ -418,9 +407,9 @@ func TestWriteReport_Execute(t *testing.T) {
 		h := newTestHelper(t)
 		_, reqMeta, req := newReportFixture(t)
 
-		h.mockNoTransmission()
+		h.mockTransmission(TransmissionInfo{Success: false}).Once()
 		h.mockInvokeOnReport(&aptostypes.SubmitTransactionReply{TxStatus: aptostypes.TxSuccess, TxHash: "0xmine"}, nil)
-		h.mockPostSubmitPoll(TransmissionInfo{Success: false})
+		h.mockTransmission(TransmissionInfo{Success: false})
 		h.mockTransactionByHash("0xmine", testGasUsed, testGasUnitPrice)
 
 		_, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
@@ -434,13 +423,13 @@ func TestWriteReport_Execute(t *testing.T) {
 		h, node0Addr := newMultiNodeTestHelper(t, transmissionIDStr)
 
 		otherRM, _, _ := newReportFixture(t)
-		h.mockSearchTx(t, node0Addr, buildFakeTransaction(t, "0xpre", false, 99, time.Now().Add(-2*time.Minute).UnixMicro(), otherRM)).Once() // pre-submission: no match, proceeds to submit
-		h.mockSearchTx(t, node0Addr, buildFakeTransaction(t, "0xnode0failed", false, 100, time.Now().UnixMicro(), rm))                        // post-submission search: finds node 0's failed tx
 
-		h.mockNoTransmission()
+		h.mockTransmission(TransmissionInfo{Success: false}).Once()
+		h.mockSearchTx(t, node0Addr, buildFakeTransaction(t, "0xpre", false, 99, time.Now().Add(-2*time.Minute).UnixMicro(), otherRM)).Once() // pre-submission: no match, proceeds to submit
 		h.mockInvokeOnReport(&aptostypes.SubmitTransactionReply{TxStatus: aptostypes.TxFatal, TxHash: "0xmine"}, nil)
-		h.mockPostSubmitPoll(TransmissionInfo{Success: false})
+		h.mockTransmission(TransmissionInfo{Success: false})
 		h.mockTransactionByHash("0xmine", testGasUsed, testGasUnitPrice)
+		h.mockSearchTx(t, node0Addr, buildFakeTransaction(t, "0xnode0failed", false, 100, time.Now().UnixMicro(), rm)) // post-submission search: finds node 0's failed tx
 
 		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, capErr)
@@ -461,13 +450,13 @@ func TestWriteReport_Execute(t *testing.T) {
 
 		vmReceiverRevert := "Move abort in 0x1::receiver: E_RECEIVER_FAILURE(0x64):"
 		otherRM, _, _ := newReportFixture(t)
-		h.mockSearchTx(t, node0Addr, buildFakeTransaction(t, "0xpre", false, 99, time.Now().Add(-2*time.Minute).UnixMicro(), otherRM)).Once()                               // pre-submission: no match, proceeds to submit
-		h.mockSearchTx(t, node0Addr, buildFakeTransactionFull(t, "0xnode0failed", false, 100, time.Now().UnixMicro(), rm, testGasUsed, testGasUnitPrice, vmReceiverRevert)) // post-submission search: finds node 0's receiver revert
 
-		h.mockNoTransmission()
+		h.mockTransmission(TransmissionInfo{Success: false}).Once()
+		h.mockSearchTx(t, node0Addr, buildFakeTransaction(t, "0xpre", false, 99, time.Now().Add(-2*time.Minute).UnixMicro(), otherRM)).Once() // pre-submission: no match, proceeds to submit
 		h.mockInvokeOnReport(&aptostypes.SubmitTransactionReply{TxStatus: aptostypes.TxFatal, TxHash: "0xmine"}, nil)
-		h.mockPostSubmitPoll(TransmissionInfo{Success: false})
+		h.mockTransmission(TransmissionInfo{Success: false})
 		h.mockTransactionByHash("0xmine", testGasUsed, testGasUnitPrice)
+		h.mockSearchTx(t, node0Addr, buildFakeTransactionFull(t, "0xnode0failed", false, 100, time.Now().UnixMicro(), rm, testGasUsed, testGasUnitPrice, vmReceiverRevert)) // post-submission search: finds node 0's receiver revert
 
 		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
 		require.Nil(t, capErr)
@@ -492,7 +481,7 @@ func TestWriteReport_PreSubmissionCheck(t *testing.T) {
 		node0MaxGas := uint64(100_000)
 		node0FailedTx := buildFakeTransactionWithSigs(t, "0xnode0oog", false, 100, time.Now().UnixMicro(), rm, testGasUsed, testGasUnitPrice, node0MaxGas, "Out of gas", req.Report.Sigs)
 
-		h.mockTransmitted(false)
+		h.mockTransmission(TransmissionInfo{Success: false})
 		h.mockSearchTx(t, node0Addr, node0FailedTx)
 
 		// Our submission also fails → lands in post-submission failure path
@@ -519,7 +508,7 @@ func TestWriteReport_PreSubmissionCheck(t *testing.T) {
 		node0MaxGas := uint64(100_000)
 		node0FailedTx := buildFakeTransactionWithSigs(t, "0xnode0oog", false, 100, time.Now().UnixMicro(), rm, testGasUsed, testGasUnitPrice, node0MaxGas, "Out of gas", req.Report.Sigs)
 
-		h.mockTransmitted(false)
+		h.mockTransmission(TransmissionInfo{Success: false})
 		h.mockSearchTx(t, node0Addr, node0FailedTx) // pre-submission: OOG, our gas same → fatal
 
 		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
@@ -541,7 +530,7 @@ func TestWriteReport_PreSubmissionCheck(t *testing.T) {
 		vmReceiverRevert := "Move abort in 0x1::receiver: E_RECEIVER_FAILURE(0x64):"
 		node0FailedTx := buildFakeTransactionWithSigs(t, "0xnode0revert", false, 100, time.Now().UnixMicro(), rm, testGasUsed, testGasUnitPrice, testGasUsed, vmReceiverRevert, req.Report.Sigs)
 
-		h.mockTransmitted(false)
+		h.mockTransmission(TransmissionInfo{Success: false})
 		h.mockSearchTx(t, node0Addr, node0FailedTx) // pre-submission: receiver revert → fatal
 
 		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
@@ -565,7 +554,7 @@ func TestWriteReport_PreSubmissionCheck(t *testing.T) {
 		oldTs := time.Now().Add(-2 * time.Minute).UnixMicro()
 		unrelatedTx := buildFakeTransaction(t, "0xunrelated", false, 100, oldTs, otherRM)
 
-		h.mockTransmitted(false)
+		h.mockTransmission(TransmissionInfo{Success: false})
 		h.mockSearchTx(t, node0Addr, unrelatedTx) // pre-submission and post-submission: no match (unrelated tx)
 		h.mockInvokeOnReport(&aptostypes.SubmitTransactionReply{TxStatus: aptostypes.TxFatal, TxHash: "0xmine"}, nil)
 		h.mockTransactionByHashFailed("0xmine", testGasUsed, testGasUnitPrice, "Move abort")
@@ -580,9 +569,9 @@ func TestWriteReport_PreSubmissionCheck(t *testing.T) {
 		h := newTestHelper(t)
 		_, reqMeta, req := newReportFixture(t)
 
-		h.mockNoTransmission()
+		h.mockTransmission(TransmissionInfo{Success: false}).Once()
 		h.mockInvokeOnReport(&aptostypes.SubmitTransactionReply{TxStatus: aptostypes.TxSuccess, TxHash: "0xabc"}, nil)
-		h.mockPostSubmitPoll(TransmissionInfo{Success: true, Transmitter: testTransmitter})
+		h.mockTransmission(TransmissionInfo{Success: true, Transmitter: testTransmitter})
 		h.mockTransactionByHash("0xabc", testGasUsed, testGasUnitPrice)
 
 		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
@@ -621,7 +610,7 @@ func TestWriteReport_PreSubmissionCheck(t *testing.T) {
 		h := &testHelper{forwarderClient: mockClient, aptosService: mockService, aptos: a}
 
 		// Permanent false — initial poll waits for stageTimer, then proceeds to submit
-		h.mockTransmitted(false)
+		h.mockTransmission(TransmissionInfo{Success: false})
 		h.mockInvokeOnReport(&aptostypes.SubmitTransactionReply{TxStatus: aptostypes.TxFatal, TxHash: "0xmine"}, nil)
 		h.mockTransactionByHashFailed("0xmine", testGasUsed, testGasUnitPrice, "Out of gas")
 

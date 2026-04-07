@@ -367,12 +367,18 @@ func (thr *TxInfoRetriever) GetFailedTransmissionInfo(ctx context.Context, trans
 	return TransmissionTxInfo{}, fmt.Errorf("no matching failed transaction found for transmission %s", thr.transmissionID.GetDebugID())
 }
 
-// matchesTransmissionByReport checks if a transaction's raw_report and signatures
-// match exactly what this node would submit. The receiver is already validated by
-// the forwarder contract's transmission state lookup (keyed on receiver + execID + reportID).
+// matchesTransmissionByReport checks if a transaction's receiver, raw_report, and signatures
+// match exactly what this node would submit.
 func (thr *TxInfoRetriever) matchesTransmissionByReport(arguments []interface{}) bool {
 	if len(arguments) < 3 {
 		thr.lggr.Debugw("Payload mismatch: expected at least 3 arguments", "got", len(arguments))
+		return false
+	}
+
+	receiverHex, _ := arguments[0].(string)
+	expectedReceiverHex := hex.EncodeToString(thr.transmissionID.Receiver[:])
+	if strings.TrimPrefix(receiverHex, "0x") != expectedReceiverHex {
+		thr.lggr.Debugw("Payload mismatch: receiver differs")
 		return false
 	}
 
