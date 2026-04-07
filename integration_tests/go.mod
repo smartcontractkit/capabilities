@@ -26,11 +26,11 @@ require (
 	github.com/smartcontractkit/capabilities/http_trigger v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/capabilities/loadtestwritetarget v0.0.0-00010101000000-000000000000
 	github.com/smartcontractkit/chain-selectors v1.0.97
-	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260401191627-2dd27f1186e8
+	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260407153244-32debdfb7f83
 	github.com/smartcontractkit/chainlink-evm v0.3.4-0.20260323184133-3b9694a96380
 	github.com/smartcontractkit/chainlink-evm/gethwrappers v0.0.0-20251222115927-36a18321243c
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260326111235-8c09d1a4491f
-	github.com/smartcontractkit/chainlink-protos/workflows/go v0.0.0-20260217043601-5cc966896c4f
+	github.com/smartcontractkit/chainlink-protos/workflows/go v0.0.0-20260323124644-faea187e6997
 	github.com/smartcontractkit/chainlink/v2 v2.29.1-cre-beta.0.0.20260323200053-e034db36cc3a
 	github.com/smartcontractkit/cre-sdk-go v1.5.0
 	github.com/smartcontractkit/cre-sdk-go/capabilities/blockchain/evm v0.6.0
@@ -142,7 +142,7 @@ require (
 	github.com/fbsobreira/gotron-sdk v0.0.0-20250403083053-2943ce8c759b // indirect
 	github.com/ferranbt/fastssz v0.1.4 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
-	github.com/fxamacker/cbor/v2 v2.7.0 // indirect
+	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.10 // indirect
 	github.com/gagliardetto/anchor-go v1.0.0 // indirect
 	github.com/gagliardetto/binary v0.8.0 // indirect
@@ -193,7 +193,7 @@ require (
 	github.com/gorilla/sessions v1.2.2 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/grafana/otel-profiling-go v0.5.1 // indirect
-	github.com/grafana/pyroscope-go v1.2.7 // indirect
+	github.com/grafana/pyroscope-go v1.2.8 // indirect
 	github.com/grafana/pyroscope-go/godeltaprof v0.1.9 // indirect
 	github.com/graph-gophers/dataloader v5.0.0+incompatible // indirect
 	github.com/graph-gophers/graphql-go v1.5.0 // indirect
