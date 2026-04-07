@@ -77,7 +77,7 @@ func (fc *forwarderClient) InvokeOnReport(ctx context.Context, receiver solana.P
 		solana.SystemProgramID,
 	)
 
-	// meta[0] - forwarderState, meta[1] - executionState are already included
+	// meta[0] - forwarderState, meta[1] - forwarderAuthority are already included
 	inst.AccountMetaSlice = append(inst.AccountMetaSlice, convertMetaPB(meta)[2:]...)
 	ix, instErr := inst.ValidateAndBuild()
 	if instErr != nil {
