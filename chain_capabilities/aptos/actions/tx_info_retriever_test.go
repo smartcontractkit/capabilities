@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	aptostypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/aptos"
+	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 )
 
 func TestGetSuccessfulTransmissionInfo(t *testing.T) {
@@ -249,6 +250,56 @@ func TestGetFailedTransmissionInfo(t *testing.T) {
 		// Phase 2: unrelated tx with old timestamp (covers window, no match, no phase 3)
 		mockClient.On("GetTransmitterTransactions", mock.Anything, transmitter, mock.Anything, mock.Anything).
 			Return([]*aptostypes.Transaction{unrelatedOldTx}, nil).Once()
+
+		_, err := thr.GetFailedTransmissionInfo(t.Context(), transmitter)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "no matching failed transaction found")
+	})
+}
+
+func TestPayloadMatching(t *testing.T) {
+	t.Parallel()
+
+	transmitter := aptos_sdk.AccountAddress{0xEE}
+
+	t.Run("different report body does not match", func(t *testing.T) {
+		mockClient := NewCREForwarderClient_mock(t)
+		targetRM, _, _ := newReportFixture(t)
+		requestStartTime := time.Now()
+		thr := newTestTxInfoRetriever(t, mockClient, targetRM, requestStartTime)
+
+		// Create a tx with the same metadata IDs but a different report body
+		alteredRM := targetRM
+		alteredRM.Timestamp = targetRM.Timestamp + 999 // changes the encoded bytes
+
+		// Use old timestamp so phase 2 pagination is skipped → returns not found immediately
+		oldTs := requestStartTime.Add(-2 * time.Minute).UnixMicro()
+		mismatchTx := buildFakeTransaction(t, "0xmismatch", false, 100, oldTs, alteredRM)
+
+		mockClient.On("GetTransmitterTransactions", mock.Anything, transmitter, mock.Anything, mock.Anything).
+			Return([]*aptostypes.Transaction{mismatchTx}, nil)
+
+		_, err := thr.GetFailedTransmissionInfo(t.Context(), transmitter)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "no matching failed transaction found")
+	})
+
+	t.Run("different signatures does not match", func(t *testing.T) {
+		mockClient := NewCREForwarderClient_mock(t)
+		targetRM, _, _ := newReportFixture(t)
+		requestStartTime := time.Now()
+		thr := newTestTxInfoRetriever(t, mockClient, targetRM, requestStartTime)
+
+		// Build a tx with matching report but different signatures
+		differentSigs := []*workflowpb.AttributedSignature{
+			{Signature: []byte{9, 9, 9}},
+			{Signature: []byte{8, 8, 8}},
+		}
+		oldTs := requestStartTime.Add(-2 * time.Minute).UnixMicro()
+		mismatchTx := buildFakeTransactionWithSigs(t, "0xbadsigs", false, 100, oldTs, targetRM, testGasUsed, testGasUnitPrice, testGasUsed, "Move abort", differentSigs)
+
+		mockClient.On("GetTransmitterTransactions", mock.Anything, transmitter, mock.Anything, mock.Anything).
+			Return([]*aptostypes.Transaction{mismatchTx}, nil)
 
 		_, err := thr.GetFailedTransmissionInfo(t.Context(), transmitter)
 		require.Error(t, err)
