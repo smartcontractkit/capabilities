@@ -64,6 +64,7 @@ type LogTriggerService struct {
 	filterTopicsPerSlotLimiter limits.BoundLimiter[int]
 	eventRateLimit             limits.RateLimiter
 	eventPayloadSizeLimiter    limits.BoundLimiter[commoncfg.Size]
+	multiTriggerFlag           limits.RangeLimiter[commoncfg.Timestamp]
 	orgResolver                orgresolver.OrgResolver // Optional org resolver for fetching organization IDs
 }
 
@@ -136,11 +137,11 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 }
 
 func (lts *LogTriggerService) initLimiters(limitsFactory limits.Factory) (err error) {
-	lts.filterAddressLimiter, err = limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.LogTrigger.FilterAddressLimit)
+	lts.filterAddressLimiter, err = limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.LogTrigger.FilterAddressLimit)
 	if err != nil {
 		return
 	}
-	lts.filterTopicsPerSlotLimiter, err = limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.LogTrigger.FilterTopicsPerSlotLimit)
+	lts.filterTopicsPerSlotLimiter, err = limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.LogTrigger.FilterTopicsPerSlotLimit)
 	if err != nil {
 		return
 	}
@@ -148,7 +149,15 @@ func (lts *LogTriggerService) initLimiters(limitsFactory limits.Factory) (err er
 	if err != nil {
 		return
 	}
-	lts.eventPayloadSizeLimiter, err = limits.MakeBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.LogTrigger.EventSizeLimit)
+	lts.eventPayloadSizeLimiter, err = limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.LogTrigger.EventSizeLimit)
+	if err != nil {
+		return
+	}
+
+	lts.multiTriggerFlag, err = limits.MakeRangeLimiter(limitsFactory, cresettings.Default.PerWorkflow.FeatureMultiTriggerExecutionIDsActivePeriod)
+	if err != nil {
+		return
+	}
 	return
 }
 
@@ -457,11 +466,23 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 			continue
 		}
 
-		workflowExecutionID, err := workflows.EncodeExecutionID(telemetryContext.WorkflowID, response.Id)
-		if err != nil {
-			lts.lggr.Errorw("failed to generate execution ID", "err", err, "triggerID", triggerID, "workflowID", telemetryContext.WorkflowID, "eventID", response.Id)
+		var workflowExecutionID string
+		var execIDErr error
+		// NOTE: Relying on local time is not ideal but we don't have access to DONTime at this stage.
+		if lts.multiTriggerFlag.Check(ctx, commoncfg.NewTimestamp(time.Now())) != nil {
+			triggerIndex, err := workflows.GetTriggerIndexFromReferenceID(telemetryContext.ReferenceID)
+			if err != nil {
+				lts.lggr.Errorw("failed to get trigger index from reference ID", "err", err, "triggerID", triggerID, "workflowID", telemetryContext.WorkflowID, "eventID", response.Id)
+				// continue with execution even if we can't get trigger index
+				triggerIndex = 0
+			}
+			workflowExecutionID, execIDErr = workflows.GenerateExecutionIDWithTriggerIndex(telemetryContext.WorkflowID, response.Id, triggerIndex)
+		} else { // legacy behavior
+			workflowExecutionID, execIDErr = workflows.EncodeExecutionID(telemetryContext.WorkflowID, response.Id)
+		}
+		if execIDErr != nil {
+			lts.lggr.Errorw("failed to generate execution ID", "err", execIDErr, "triggerID", triggerID, "workflowID", telemetryContext.WorkflowID, "eventID", response.Id)
 			// continue with execution even if we can't generate ID
-			workflowExecutionID = ""
 		}
 
 		displayWorkflowName := telemetryContext.DecodedWorkflowName
