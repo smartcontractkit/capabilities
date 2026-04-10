@@ -183,6 +183,9 @@ func convertWriteReportRequest(req *solanacappb.WriteReportRequest) *WriteReport
 func convertRemainingAccounts(accs []*solanacappb.AccountMeta) []*AccountMeta {
 	ret := []*AccountMeta{}
 	for _, acc := range accs {
+		if acc == nil {
+			continue
+		}
 		ret = append(ret, &AccountMeta{
 			PublicKey:  acc.PublicKey,
 			IsWritable: acc.IsWritable,
@@ -193,6 +196,9 @@ func convertRemainingAccounts(accs []*solanacappb.AccountMeta) []*AccountMeta {
 func convertAttributedSignature(attributedSignatures []*sdkpb.AttributedSignature) []*AttributedSignature {
 	convertedSignatures := []*AttributedSignature{}
 	for _, as := range attributedSignatures {
+		if as == nil {
+			continue
+		}
 		convertedSignatures = append(convertedSignatures, &AttributedSignature{
 			Signature: as.Signature,
 			SignerId:  as.SignerId,
