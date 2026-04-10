@@ -23,7 +23,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 )
 
-const ServiceName = "HTTPActionCapability"
+const ServiceName = "HTTPActionCapability" //
 
 var (
 	_ services.Service        = &service{}
