@@ -18,14 +18,6 @@ importers:
         specifier: 22.5.1
         version: 22.5.1
 
-  consensus: {}
-
-  cron: {}
-
-  readcontract: {}
-
-  workflowevent: {}
-
 packages:
 
   '@babel/runtime@7.27.6':
