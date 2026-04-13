@@ -30,9 +30,11 @@ import (
 )
 
 // ForwarderGasOverhead is the gas consumed by the forwarder contract before dispatching
-// to the receiver. Transactions with MaxGasAmount below this will fail before reaching
-// the receiver and waste the full gas fee. Set to 0 until empirically measured (TODO: PLEX-2751).
-const ForwarderGasOverhead uint64 = 0
+// to the receiver. Transactions with MaxGasAmount below this will fail before
+// reaching the receiver.
+// Measured at ~2,093 gas units on Aptos testnet (31 oracles, f=10, 5 KB payload).
+// Set to 2x with margin for gas schedule changes.
+const ForwarderGasOverhead uint64 = 4000
 
 func withQuickRetry[T any](ctx context.Context, lggr logger.Logger, fn func(context.Context) (T, error)) (T, error) {
 	return capcommon.WithQuickRetry(ctx, lggr, fn)
