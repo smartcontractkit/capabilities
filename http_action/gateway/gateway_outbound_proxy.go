@@ -215,13 +215,15 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 		p.metrics.IncrementExecutionTimeout(ctx, common.ProxyModeGateway, lggr)
 		elapsedMs := time.Since(startTime).Milliseconds()
 		timeoutMs := input.Timeout.AsDuration().Milliseconds()
-		cause := ctx.Err()
+		cause := context.Cause(ctx)
 		lggr.Debugw(ErrMsgGatewayResponseWait,
 			"elapsedMs", elapsedMs,
 			"timeoutMs", timeoutMs,
 			"cause", cause,
 		)
-		return nil, 0, TimeoutUserError(elapsedMs, timeoutMs, cause)
+		return nil, 0, NewUserError(
+			fmt.Sprintf("%s (elapsedMs: %d, timeoutMs: %d): %s", ErrMsgGatewayResponseWait, elapsedMs, timeoutMs, cause),
+		)
 	}
 }
 

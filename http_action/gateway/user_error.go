@@ -1,7 +1,5 @@
 package gateway
 
-import "fmt"
-
 // ErrMsgGatewayResponseWait is the stable prefix for timeouts and context cancellation while waiting on the gateway.
 const ErrMsgGatewayResponseWait = "request canceled before gateway response"
 
@@ -17,9 +15,4 @@ func (e UserError) Error() string {
 
 func NewUserError(message string) UserError {
 	return UserError{message: message}
-}
-
-// TimeoutUserError is returned when the outbound context ends before a gateway HTTP response arrives.
-func TimeoutUserError(elapsedMs, timeoutMs int64, cause error) UserError {
-	return NewUserError(fmt.Sprintf("%s (elapsedMs: %d, timeoutMs: %d): %v", ErrMsgGatewayResponseWait, elapsedMs, timeoutMs, cause))
 }
