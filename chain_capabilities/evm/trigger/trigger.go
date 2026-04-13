@@ -558,6 +558,7 @@ func (lts *LogTriggerService) deliverLogReliably(
 		Payload:     anyPayload,
 	}
 
+	lts.lggr.Debugw("Sending log event to pipe", "triggerID", triggerID, "eventID", eventID, "blockNumber", log.BlockNumber, "txHash", log.TxHash)
 	if err := lts.baseTrigger.DeliverEvent(ctx, te, triggerID); err != nil {
 		summary := fmt.Sprintf("failed to persist/deliver event (triggerID=%s, eventID=%s): %v", triggerID, eventID, err)
 		lts.lggr.Error(summary)
