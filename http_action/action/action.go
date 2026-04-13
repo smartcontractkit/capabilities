@@ -128,17 +128,17 @@ func (s *service) SendRequest(ctx context.Context, metadata capabilities.Request
 		if errors.As(err, &validationErr) {
 			return nil, caperrors.NewPublicUserError(
 				fmt.Errorf("input validation failed for workflowID %s (Owner: %s, Name: %s, ExecutionID: %s): %w",
-					metadata.WorkflowName, metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowExecutionID, err), caperrors.InvalidArgument)
+					metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowName, metadata.WorkflowExecutionID, err), caperrors.InvalidArgument)
 		}
 		var userErr gateway.UserError
 		if errors.As(err, &userErr) {
 			return nil, caperrors.NewPublicUserError(
 				fmt.Errorf("request failed for workflowID %s (Owner: %s, Name: %s, ExecutionID: %s): %w",
-					metadata.WorkflowName, metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowExecutionID, err), caperrors.InvalidArgument)
+					metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowName, metadata.WorkflowExecutionID, err), caperrors.InvalidArgument)
 		}
 		return nil, caperrors.NewPublicSystemError(
 			fmt.Errorf("request failed for workflowID %s (Owner: %s, Name: %s, ExecutionID: %s): %w",
-				metadata.WorkflowName, metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowExecutionID, err), caperrors.Internal)
+				metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowName, metadata.WorkflowExecutionID, err), caperrors.Internal)
 	}
 
 	s.metrics.IncrementSuccessfulResponse(ctx, s.cfg.ProxyMode, response.StatusCode, s.lggr)
