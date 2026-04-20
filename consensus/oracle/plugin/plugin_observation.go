@@ -22,6 +22,9 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 		return nil, err
 	}
 
+	// Deduplicate request IDs to prevent byzantine leadership attacks
+	requestsQuery.RequestIDs = deduplicateRequestIDs(requestsQuery.RequestIDs)
+
 	localRequests := r.store.GetByIDs(requestsQuery.RequestIDs)
 
 	observationBatch := batching.NewObservationBatch(ctx, r.lggr, int(r.config.MaxObservationLengthBytes), r.metrics)
@@ -42,4 +45,21 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 
 	r.lggr.Debugw("consensus plugin observation complete", "seqNr", outctx.SeqNr, "numObservations", observationBatch.NumObservationsInBatch(), "numOfRequestsInQuery", len(requestsQuery.RequestIDs))
 	return observationBatch.SerialiseObservationBatch(ctx)
+}
+
+// deduplicateRequestIDs returns ids in first-seen order with duplicates removed.
+func deduplicateRequestIDs(ids []string) []string {
+	if len(ids) <= 1 {
+		return ids
+	}
+	seen := make(map[string]struct{}, len(ids))
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
 }

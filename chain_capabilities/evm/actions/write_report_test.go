@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"math/big"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1669,6 +1672,226 @@ func TestPollTransmissionInfo_QueuePositionScenarios(t *testing.T) {
 	})
 }
 
+func TestPollTransmissionInfo_RaceConditions(t *testing.T) {
+	t.Parallel()
+
+	t.Run("factor 1: timer returns stale state without final read", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+		defer cancel()
+
+		wr, testLogger, mockForwarderClient, request, transmissionID := setupPollTransmissionInfoForQueuePosition(t, 1)
+		wr.transmissionScheduler.DeltaStage = 150 * time.Millisecond
+
+		var chainStateUpdated atomic.Bool
+		go func() {
+			time.Sleep(120 * time.Millisecond)
+			chainStateUpdated.Store(true)
+		}()
+
+		mockForwarderClient.EXPECT().
+			GetTransmissionInfo(mock.Anything, transmissionID).
+			RunAndReturn(func(context.Context, contracts.TransmissionID) (contracts.TransmissionInfo, error) {
+				if chainStateUpdated.Load() {
+					return contracts.TransmissionInfo{
+						Success: true,
+						State:   contracts.TransmissionStateSucceeded,
+					}, nil
+				}
+				return contracts.TransmissionInfo{
+					Success: false,
+					State:   contracts.TransmissionStateNotAttempted,
+				}, nil
+			}).
+			Maybe()
+
+		txHashRetriever := NewTxHashRetriever(mockForwarderClient, testLogger, transmissionID)
+		info, err := wr.pollTransmissionInfo(ctx, request, monitoring.TelemetryContext{}, transmissionID, 1, txHashRetriever)
+		assert.NoError(t, err, "current behavior: timer path returns stale state without a final read")
+		assert.True(t, chainStateUpdated.Load(), "state should have changed before stage timer returned")
+		assert.Equal(t, contracts.TransmissionStateNotAttempted, info.State, "current behavior: stale state was returned")
+
+		// TODO: @ilija42 Expected behavior after fix: perform a final transmission-state read at the timer boundary.
+		// require.Equal(
+		// 	t,
+		// 	contracts.TransmissionStateSucceeded,
+		// 	info.State,
+		// 	"TODO: fix pollTransmissionInfo so stageTimer path returns the latest on-chain state",
+		// )
+	})
+
+	t.Run("factor 2: rpc errors return zero-value not_attempted", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+		defer cancel()
+
+		wr, testLogger, mockForwarderClient, request, transmissionID := setupPollTransmissionInfoForQueuePosition(t, 2)
+		wr.transmissionScheduler.DeltaStage = 50 * time.Millisecond
+
+		var rpcCalls atomic.Int64
+		mockForwarderClient.EXPECT().
+			GetTransmissionInfo(mock.Anything, transmissionID).
+			RunAndReturn(func(context.Context, contracts.TransmissionID) (contracts.TransmissionInfo, error) {
+				rpcCalls.Add(1)
+				return contracts.TransmissionInfo{}, errors.New("rpc unavailable")
+			}).
+			Maybe()
+
+		txHashRetriever := NewTxHashRetriever(mockForwarderClient, testLogger, transmissionID)
+		info, err := wr.pollTransmissionInfo(ctx, request, monitoring.TelemetryContext{}, transmissionID, 2, txHashRetriever)
+		assert.NoError(t, err, "current behavior: all poll failures still return nil error")
+		assert.Greater(t, rpcCalls.Load(), int64(0))
+		assert.Equal(t, contracts.TransmissionStateNotAttempted, info.State, "current behavior: zero-value state leaks as not_attempted")
+
+		// TODO: @ilija42 Expected behavior after fix: if every poll fails, surface an error and do not proceed with a fabricated state.
+		// require.Error(
+		// 	t,
+		// 	err,
+		// 	"TODO: return an error when all GetTransmissionInfo polls fail, instead of defaulting to not_attempted",
+		// )
+	})
+}
+
+func TestExecuteWriteReport_RaceConditionDuplicateInvocations(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	testLogger := logger.Test(t)
+	mockEVMService := mocks2.NewEVMService(t)
+	sharedForwarder := mocks.NewCREForwarderClient(t)
+
+	mockEVMService.EXPECT().
+		GetTransactionReceipt(mock.Anything, mock.Anything).
+		RunAndReturn(func(_ context.Context, req evmtypes.GeTransactionReceiptRequest) (*evmtypes.Receipt, error) {
+			return &evmtypes.Receipt{
+				Status:            1,
+				TxHash:            req.Hash,
+				GasUsed:           1000,
+				EffectiveGasPrice: big.NewInt(2),
+			}, nil
+		}).
+		Maybe()
+	mockEVMService.EXPECT().
+		CalculateTransactionFee(mock.Anything, mock.Anything).
+		Return(&evmtypes.TransactionFee{TransactionFee: big.NewInt(2000)}, nil).
+		Maybe()
+	mockEVMService.EXPECT().
+		GetTransactionFee(mock.Anything, mock.Anything).
+		Return(&evmtypes.TransactionFee{TransactionFee: big.NewInt(300)}, nil).
+		Maybe()
+
+	var nodeA p2ptypes.PeerID
+	nodeA[0] = 0x01
+	var nodeB p2ptypes.PeerID
+	nodeB[0] = 0x02
+	members := []p2ptypes.PeerID{nodeA, nodeB}
+
+	schedulerA := ts.NewTransmissionScheduler(nodeA, members, 80*time.Millisecond, 1, testLogger)
+	schedulerB := ts.NewTransmissionScheduler(nodeB, members, 80*time.Millisecond, 1, testLogger)
+
+	serviceA := createMocksAndCapabilityWithScheduler(t, testLogger, mockEVMService, sharedForwarder, schedulerA)
+	serviceB := createMocksAndCapabilityWithScheduler(t, testLogger, mockEVMService, sharedForwarder, schedulerB)
+
+	reportMetadata := createTestReportMetadata()
+	encodedReportMetadata, err := reportMetadata.Encode()
+	require.NoError(t, err)
+
+	receiver := testutils.NewAddress().Bytes()
+	reqA := &evm.WriteReportRequest{
+		Receiver: receiver,
+		Report: &workflowpb.ReportResponse{
+			RawReport:     encodedReportMetadata,
+			ReportContext: []byte{},
+			Sigs:          generateRandomSignatures(),
+		},
+	}
+	reqB := &evm.WriteReportRequest{
+		Receiver: receiver,
+		Report: &workflowpb.ReportResponse{
+			RawReport:     encodedReportMetadata,
+			ReportContext: []byte{},
+			Sigs:          generateRandomSignatures(),
+		},
+	}
+
+	metadata := createTestRequestMetadata(reportMetadata)
+	transmissionID, err := getTransmissionID(metadata.WorkflowExecutionID, reqA)
+	require.NoError(t, err)
+
+	require.ElementsMatch(t, []int{0, 1}, []int{
+		schedulerA.GetQueuePosition(transmissionID.GetDebugID()),
+		schedulerB.GetQueuePosition(transmissionID.GetDebugID()),
+	})
+
+	var invokeCount atomic.Int64
+	sharedForwarder.EXPECT().
+		GetTransmissionInfo(mock.Anything, transmissionID).
+		RunAndReturn(func(context.Context, contracts.TransmissionID) (contracts.TransmissionInfo, error) {
+			if invokeCount.Load() >= 2 {
+				return contracts.TransmissionInfo{
+					Success:  true,
+					State:    contracts.TransmissionStateSucceeded,
+					GasLimit: big.NewInt(EnoughReceiverGas),
+				}, nil
+			}
+			return contracts.TransmissionInfo{
+				Success: false,
+				State:   contracts.TransmissionStateNotAttempted,
+			}, nil
+		}).
+		Maybe()
+	sharedForwarder.EXPECT().
+		InvokeOnReport(mock.Anything, common.BytesToAddress(receiver), mock.Anything, nonNilPositiveGasCfgMatcher()).
+		RunAndReturn(func(context.Context, common.Address, *workflowpb.ReportResponse, *evm.GasConfig) (*evmtypes.TransactionResult, error) {
+			callN := invokeCount.Add(1)
+			txHash := evmtypes.Hash(test.RandomBytes(32))
+			return &evmtypes.TransactionResult{
+				TxHash:           txHash,
+				TxStatus:         evmtypes.TxSuccess,
+				TxIdempotencyKey: fmt.Sprintf("test-idempotency-key-%d", callN),
+			}, nil
+		}).
+		Twice()
+	sharedForwarder.EXPECT().
+		GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return([]*evmtypes.Log{{
+			TxHash:      evmtypes.Hash(test.RandomBytes(32)),
+			Data:        successLogData(),
+			BlockNumber: big.NewInt(100),
+		}}, nil).
+		Maybe()
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, 2)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		_, err := serviceA.WriteReport(ctx, metadata, reqA)
+		errCh <- err
+	}()
+	go func() {
+		defer wg.Done()
+		_, err := serviceB.WriteReport(ctx, metadata, reqB)
+		errCh <- err
+	}()
+	wg.Wait()
+	close(errCh)
+
+	for writeErr := range errCh {
+		require.NoError(t, writeErr)
+	}
+
+	sharedForwarder.AssertNumberOfCalls(t, "InvokeOnReport", 2)
+
+	// TODO: @ilija42 Expected behavior after fix: only one node should submit for the same transmissionID.
+	// require.EqualValues(
+	// 	t,
+	// 	1,
+	// 	invokeCount.Load(),
+	// 	"TODO: prevent duplicate InvokeOnReport calls for the same transmissionID across queued nodes",
+	// )
+}
+
 func TestGetTransmissionID(t *testing.T) {
 	t.Parallel()
 	workflowExecutionID := hex.EncodeToString(test.RandomBytes(32))
@@ -1764,6 +1987,31 @@ func createMocksAndCapability(t *testing.T, lggr logger.Logger) (*mocks2.EVMServ
 	t.Cleanup(func() { assert.NoError(t, service.Close()) })
 	require.NotNil(t, service.txGasLimit)
 	return mockEVMService, mockForwarderClient, service
+}
+
+func createMocksAndCapabilityWithScheduler(
+	t *testing.T,
+	lggr logger.Logger,
+	evmService types.EVMService,
+	forwarderClient contracts.CREForwarderClient,
+	scheduler ts.TransmissionScheduler,
+) *EVM {
+	t.Helper()
+
+	service := &EVM{
+		keystoneForwarderAddress: common.BytesToAddress(test.RandomBytes(20)),
+		forwarderClient:          forwarderClient,
+		lggr:                     logger.Sugared(lggr),
+		EVMService:               evmService,
+		ReceiverGasMinimum:       ConfiguredReceiverGasMinimum,
+		chainSelector:            1,
+		beholderProcessor:        test.NopBeholderProcessor{},
+		messageBuilder:           monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		transmissionScheduler:    scheduler,
+	}
+	require.NoError(t, service.initLimiters(limits.Factory{Logger: lggr}))
+	t.Cleanup(func() { assert.NoError(t, service.Close()) })
+	return service
 }
 
 func equalWriteReportReply(t *testing.T, expected *evm.WriteReportReply, actual *evm.WriteReportReply) {
