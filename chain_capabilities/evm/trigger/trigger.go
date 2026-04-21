@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
 
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 
@@ -44,6 +45,9 @@ const (
 
 type LogTriggerService struct {
 	services.Service
+
+	baseTrigger *capabilities.BaseTriggerCapability[*evmcappb.Log]
+
 	srvcEng *services.Engine
 
 	EVMService        types.EVMService
@@ -64,12 +68,16 @@ type LogTriggerService struct {
 }
 
 // NewLogTriggerService creates a new instance of logTriggerService.
-func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lggr logger.Logger,
+func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lggr logger.Logger, capabilityID string,
 	beholderProcessor beholder.ProtoProcessor, messageBuilder *monitoring.MessageBuilder,
 	logTriggerPollInterval time.Duration,
 	logTriggerSendChannelBufferSize uint64,
 	logTriggerLimitQueryLogSize uint64, limitsFactory limits.Factory,
-	orgResolver orgresolver.OrgResolver) (*LogTriggerService, error) {
+	orgResolver orgresolver.OrgResolver,
+	triggerEventStore capabilities.EventStore) (*LogTriggerService, error) {
+	if capabilityID == "" {
+		return nil, fmt.Errorf("capabilityID must be non-empty")
+	}
 	if logTriggerPollInterval < 0 {
 		return nil, fmt.Errorf("logTriggerPollInterval must be positive, got: %s", logTriggerPollInterval)
 	}
@@ -112,8 +120,18 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 	lts.Service, lts.srvcEng = services.Config{
 		Name:  "EvmLogTriggerService",
 		Start: lts.start,
+		Close: lts.close,
 	}.NewServiceEngine(lggr)
 
+	if triggerEventStore == nil {
+		return nil, fmt.Errorf("no trigger event store provided")
+	}
+	baseTrigger, err := capabilities.NewBaseTriggerCapabilityWithCRESettings(context.Background(), triggerEventStore,
+		func() *evmcappb.Log { return &evmcappb.Log{} }, lts.lggr, capabilityID, limitsFactory.Settings)
+	if err != nil {
+		return nil, err
+	}
+	lts.baseTrigger = baseTrigger
 	return lts, nil
 }
 
@@ -134,11 +152,20 @@ func (lts *LogTriggerService) initLimiters(limitsFactory limits.Factory) (err er
 	return
 }
 
-func (lts *LogTriggerService) start(_ context.Context) error {
+func (lts *LogTriggerService) start(ctx context.Context) error {
+	err := lts.baseTrigger.Start(ctx)
+	if err != nil {
+		return err
+	}
 	duration := 30 * time.Second
 	ticker := services.NewTicker(duration)
-	lts.lggr.Debugf("Starting clean up of failed log poller filters every %s seconds", duration)
+	lts.lggr.Infof("Starting clean up of failed log poller filters every %s seconds", duration)
 	lts.srvcEng.GoTick(ticker, lts.cleanUpStaleFilters)
+	return nil
+}
+
+func (lts *LogTriggerService) close() error {
+	lts.baseTrigger.Stop()
 	return nil
 }
 
@@ -181,7 +208,7 @@ func (lts *LogTriggerService) cleanUpStaleFilters(ctx context.Context) {
 }
 
 func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID string, meta capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*evmcappb.Log], caperrors.Error) {
-	lts.lggr.Debugf("RegisterLogTrigger called with triggerID: %s, input: %+v", triggerID, input)
+	lts.lggr.Infof("RegisterLogTrigger called with triggerID: %s, input: %+v", triggerID, input)
 	ctx = meta.ContextWithCRE(ctx)
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	if triggerID == "" {
@@ -275,6 +302,9 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	monitoring.EmitInitiated(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerInitiated(telemetryContext, input))
 
 	logCh := make(chan capabilities.TriggerAndId[*evmcappb.Log], lts.logTriggerSendChannelBufferSize)
+
+	lts.baseTrigger.RegisterTrigger(triggerID, logCh)
+
 	lts.srvcEng.Go(func(ctx context.Context) {
 		ctx, cancel := context.WithCancel(ctx)
 		lts.triggers.Write(triggerID, logTriggerState{
@@ -292,6 +322,15 @@ func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID 
 	})
 
 	return logCh, nil
+}
+
+func (lts *LogTriggerService) AckEvent(ctx context.Context, triggerID string, eventID string) caperrors.Error {
+	if err := lts.baseTrigger.AckEvent(ctx, triggerID, eventID); err != nil {
+		wrappedErr := fmt.Errorf("failed to AckEvent on baseTrigger (triggerID=%s eventID=%s): %w", triggerID, eventID, err)
+		lts.lggr.Error(wrappedErr)
+		return caperrors.NewPrivateSystemError(wrappedErr, caperrors.Internal)
+	}
+	return nil
 }
 
 func (lts *LogTriggerService) getTopics(input *evmcappb.FilterLogTriggerRequest) ([][]byte, [][]byte, [][]byte, [][]byte) {
@@ -328,7 +367,7 @@ func (lts *LogTriggerService) generateFilterID(triggerID string) string {
 }
 
 func (lts *LogTriggerService) startPolling(ctx context.Context, telemetryContext monitoring.TelemetryContext, triggerID string, input *evmcappb.FilterLogTriggerRequest, logCh chan capabilities.TriggerAndId[*evmcappb.Log]) {
-	lts.lggr.Debugf("Starting polling for triggerID: %s, interval: %d", triggerID, lts.logTriggerPollInterval)
+	lts.lggr.Infof("Starting polling for triggerID: %s, interval: %d", triggerID, lts.logTriggerPollInterval)
 	ticker := defaultTickerFactory.NewTicker(lts.logTriggerPollInterval)
 	defer ticker.Stop()
 	defer close(logCh)
@@ -336,12 +375,12 @@ func (lts *LogTriggerService) startPolling(ctx context.Context, telemetryContext
 	for {
 		select {
 		case <-ctx.Done():
-			lts.lggr.Debugf("Context cancelled for triggerID: %s, stopping polling", triggerID)
+			lts.lggr.Infof("Context cancelled for triggerID: %s, stopping polling", triggerID)
 			return
 		case <-ticker.Channel():
 			state, exists := lts.triggers.Read(triggerID)
 			if !exists {
-				lts.lggr.Debugf("Unregistered while polling triggerID: %s", triggerID)
+				lts.lggr.Infof("Unregistered while polling triggerID: %s", triggerID)
 				return
 			}
 			lts.lggr.Debugf("Awake, polling for triggerID: %s, currentOffset: %d", triggerID, state.lastBlock)
@@ -361,7 +400,7 @@ func (lts *LogTriggerService) startPolling(ctx context.Context, telemetryContext
 				continue
 			}
 
-			err = lts.sendLogsToWorkflows(ctx, telemetryContext, logs, finalizedBlockNumber, triggerID, state, logCh)
+			err = lts.sendLogsToWorkflows(ctx, telemetryContext, logs, finalizedBlockNumber, triggerID, state)
 			if err != nil {
 				summary := fmt.Sprintf("Failed to send logs for triggerID: %s, error: %v", triggerID, err)
 				monitoring.LogAndEmitError(ctx, lts.lggr, lts.beholderProcessor, lts.messageBuilder.BuildLogTriggerError(telemetryContext, triggerID, summary, err.Error()))
@@ -388,8 +427,7 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 	logs []*evmtypes.Log,
 	finalizedBlockNumber *big.Int,
 	triggerID string,
-	trigger logTriggerState,
-	logCh chan capabilities.TriggerAndId[*evmcappb.Log]) error {
+	trigger logTriggerState) error {
 	lts.lggr.Debugf("Sending logs to workflow, triggerID: %s, finalizedBlockNumber: %d, logs size %d", triggerID, finalizedBlockNumber, len(logs))
 	var needsUpdate bool
 	sentCount := 0
@@ -426,12 +464,16 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 			workflowExecutionID = ""
 		}
 
+		displayWorkflowName := telemetryContext.DecodedWorkflowName
+		if displayWorkflowName == "" {
+			displayWorkflowName = telemetryContext.WorkflowName
+		}
 		labeler := custmsg.NewLabeler().With(
 			events.KeyTriggerID, response.Id,
 			events.KeyWorkflowID, telemetryContext.WorkflowID,
 			events.KeyWorkflowExecutionID, workflowExecutionID,
 			events.KeyWorkflowOwner, telemetryContext.WorkflowOwner,
-			events.KeyWorkflowName, telemetryContext.WorkflowName,
+			events.KeyWorkflowName, displayWorkflowName,
 		)
 
 		// add DON metadata if available
@@ -466,24 +508,8 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 			// continue with execution even if event emission fails
 		}
 
-		select {
-		case logCh <- response:
-			sentCount++
-			if log.BlockNumber.Cmp(finalizedBlockNumber) > 0 {
-				// log's block number is unfinalized and needs to be tracked
-				trigger.unfinalizedSentEventIDs[eventID] = log.BlockNumber
-				needsUpdate = true
-			}
-		default:
-			summary := fmt.Sprintf("Callback channel full (buffer size: %d), dropping event (triggerID: %s, eventID: %s)", lts.logTriggerSendChannelBufferSize, triggerID, response.Id)
-			lts.lggr.Errorw(summary, "triggerID", triggerID, "eventID", response.Id)
-			monitoring.LogAndEmitError(
-				ctx,
-				lts.lggr,
-				lts.beholderProcessor,
-				lts.messageBuilder.BuildLogTriggerEventDroppedError(telemetryContext, triggerID, log, summary, summary, false),
-			)
-		}
+		lts.deliverLogReliably(ctx, telemetryContext, triggerID, protoLog, response.Id,
+			finalizedBlockNumber, log, &trigger, &sentCount, &needsUpdate)
 	}
 
 	// Prune all entries in unfinalizedSentEventIds where the block number is less than or equal to finalizedBlockNumber
@@ -503,6 +529,54 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 	}
 	lts.lggr.Debugf("Total logs successfully sent for triggerID: %s: %d (originally got: %d)", triggerID, sentCount, len(logs))
 	return nil
+}
+
+// deliverLogReliably sends a single EVM log to the BaseTriggerCapability
+// for persistence, retransmission, and ACKing.
+func (lts *LogTriggerService) deliverLogReliably(
+	ctx context.Context,
+	telemetryContext monitoring.TelemetryContext,
+	triggerID string,
+	protoLog *evmcappb.Log,
+	eventID string,
+	finalizedBlockNumber *big.Int,
+	log *evmtypes.Log,
+	trigger *logTriggerState,
+	sentCount *int,
+	needsUpdate *bool,
+) {
+	anyPayload, err := anypb.New(protoLog)
+	if err != nil {
+		lts.lggr.Errorw("failed to pack protoLog into Any",
+			"err", err, "triggerID", triggerID, "eventID", eventID)
+		return
+	}
+
+	te := capabilities.TriggerEvent{
+		TriggerType: triggerID,
+		ID:          eventID,
+		Payload:     anyPayload,
+	}
+
+	lts.lggr.Infow("Sending log event to pipe", "triggerID", triggerID, "eventID", eventID, "blockNumber", log.BlockNumber, "txHash", log.TxHash)
+	if err := lts.baseTrigger.DeliverEvent(ctx, te, triggerID); err != nil {
+		summary := fmt.Sprintf("failed to persist/deliver event (triggerID=%s, eventID=%s): %v", triggerID, eventID, err)
+		lts.lggr.Error(summary)
+		monitoring.LogAndEmitError(
+			ctx,
+			lts.lggr,
+			lts.beholderProcessor,
+			lts.messageBuilder.BuildLogTriggerEventDroppedError(telemetryContext, triggerID, log, summary, err.Error(), false),
+		)
+		return
+	}
+
+	// Once persisted, consider it "sent" from trigger’s POV (BaseTriggerCapability handles retries/ACK/lost)
+	*sentCount++
+	if log.BlockNumber.Cmp(finalizedBlockNumber) > 0 {
+		trigger.unfinalizedSentEventIDs[eventID] = log.BlockNumber
+		*needsUpdate = true
+	}
 }
 
 // checkLimitsOnLog checks the rate limit and payload size limit for a single log event, it should not error as we
@@ -634,9 +708,10 @@ func (lts *LogTriggerService) UnregisterLogTrigger(ctx context.Context, triggerI
 	if !found {
 		return caperrors.NewPublicSystemError(fmt.Errorf("no active trigger found for triggerID: %s", triggerID), caperrors.Internal)
 	}
-	lts.lggr.Debugf("UnregisterLogTrigger triggerID: %s", triggerID)
+	lts.lggr.Infof("UnregisterLogTrigger triggerID: %s", triggerID)
 	trigger.cancelFunc()
 	lts.triggers.Delete(triggerID)
+	lts.baseTrigger.UnregisterTrigger(triggerID)
 
 	err := lts.EVMService.UnregisterLogTracking(ctx, lts.generateFilterID(triggerID))
 	if err != nil {

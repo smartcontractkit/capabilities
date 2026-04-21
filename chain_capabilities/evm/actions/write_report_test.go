@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"math/big"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -17,11 +20,14 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
+	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 
 	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
 
+	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
+	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts/mocks"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
@@ -363,6 +369,43 @@ func TestWriteReport_InputValidation(t *testing.T) {
 		})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "workflowExecutionID in the report does not match WorkflowExecutionID in the request metadata.")
+	})
+
+	t.Run("GasConfig.GasLimit below minimum is rejected", func(t *testing.T) {
+		_, _, service := createMocksAndCapability(t, lggr)
+		reportMetadata := createTestReportMetadata()
+		encodedReportMetadata, _ := reportMetadata.Encode()
+
+		belowMinimum := ConfiguredReceiverGasMinimum + contracts.ForwarderContractLogicGasCost - 1
+
+		_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
+			Receiver: testutils.NewAddress().Bytes(),
+			Report: &workflowpb.ReportResponse{
+				RawReport:     encodedReportMetadata,
+				ReportContext: []byte{},
+				Sigs:          generateRandomSignatures(),
+			},
+			GasConfig: &evm.GasConfig{GasLimit: uint64(belowMinimum)}, // nolint:gosec // G115: integer overflow conversion
+		})
+		require.Error(t, err)
+	})
+
+	t.Run("nil and 0 GasConfig skips gas limit check", func(t *testing.T) {
+		_, _, service := createMocksAndCapability(t, lggr)
+		reportMetadata := createTestReportMetadata()
+		encodedReportMetadata, _ := reportMetadata.Encode()
+
+		require.NoError(t, service.validateInputsAndReportMetadata(createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
+			Receiver:  testutils.NewAddress().Bytes(),
+			Report:    &workflowpb.ReportResponse{RawReport: encodedReportMetadata, Sigs: generateRandomSignatures()},
+			GasConfig: nil,
+		}))
+
+		require.NoError(t, service.validateInputsAndReportMetadata(createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
+			Receiver:  testutils.NewAddress().Bytes(),
+			Report:    &workflowpb.ReportResponse{RawReport: encodedReportMetadata, Sigs: generateRandomSignatures()},
+			GasConfig: &evmcappb.GasConfig{GasLimit: 0},
+		}))
 	})
 }
 
@@ -808,7 +851,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TxHash:                          receipt.TxHash[:],
 			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
-			ErrorMessage:                    ptr("receiver contract execution failure"),
+			ErrorMessage:                    capcommon.Ptr("receiver contract execution failure"),
 		}, txResult.Response)
 		require.Len(t, txResult.ResponseMetadata.Metering, 0)
 	})
@@ -879,6 +922,10 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 				GasLimit:        big.NewInt(EnoughReceiverGas),
 			}, nil).
 			Once()
+
+		mockForwarderClient.EXPECT().
+			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return([]*evmtypes.Log{{TxHash: txHash, Data: successLogData(), BlockNumber: big.NewInt(100)}}, nil)
 
 		receipt := evmtypes.Receipt{
 			Status:            uint64(contracts.TransmissionStateSucceeded),
@@ -964,6 +1011,10 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			}, nil).
 			Once()
 
+		mockForwarderClient.EXPECT().
+			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return([]*evmtypes.Log{{TxHash: txHash, Data: successLogData(), BlockNumber: big.NewInt(100)}}, nil)
+
 		receipt := evmtypes.Receipt{
 			Status:            uint64(contracts.TransmissionStateSucceeded),
 			TxHash:            txHash,
@@ -1038,7 +1089,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
 
 		// Override with zero-value scheduler to simulate DeltaStage not configured
-		service.transmissionScheduler = TransmissionScheduler{}
+		service.transmissionScheduler = ts.TransmissionScheduler{}
 
 		evmServiceMock.EXPECT().
 			GetTransactionFee(mock.Anything, mock.Anything).
@@ -1088,6 +1139,10 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 				GasLimit:        big.NewInt(EnoughReceiverGas),
 			}, nil).
 			Once()
+
+		mockForwarderClient.EXPECT().
+			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return([]*evmtypes.Log{{TxHash: txHash, Data: successLogData(), BlockNumber: big.NewInt(100)}}, nil)
 
 		receipt := evmtypes.Receipt{
 			Status:            uint64(contracts.TransmissionStateSucceeded),
@@ -1209,6 +1264,159 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		evmtest.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003")
 	})
 
+	t.Run("TX first transmission - Fatal tx but transmission succeeded => use onchain tx hash", func(t *testing.T) {
+		ctx := t.Context()
+		testLogger := logger.Test(t)
+		evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
+
+		evmServiceMock.EXPECT().
+			GetTransactionFee(mock.Anything, mock.Anything).
+			Return(&evmtypes.TransactionFee{TransactionFee: big.NewInt(300)}, nil).
+			Maybe()
+
+		receiverAddress := testutils.NewAddress()
+		reportMetadata := createTestReportMetadata()
+		encodedReportMetadata, _ := reportMetadata.Encode()
+
+		signedReport := &workflowpb.ReportResponse{
+			RawReport:     encodedReportMetadata,
+			ReportContext: []byte{},
+			Sigs:          generateRandomSignatures(),
+		}
+		writeReportRequest := &evm.WriteReportRequest{
+			Receiver: receiverAddress.Bytes(),
+			Report:   signedReport,
+		}
+		capabilitiesMetadata := createTestRequestMetadata(reportMetadata)
+
+		mockForwarderClient.
+			On("GetTransmissionInfo", mock.Anything, mock.Anything).
+			Return(contracts.TransmissionInfo{
+				Success:         false,
+				InvalidReceiver: false,
+				State:           contracts.TransmissionStateNotAttempted,
+			}, nil).
+			Once()
+
+		txHashFromTxmgr := evmtypes.Hash(test.RandomBytes(32))
+		txHashFromLogs := evmtypes.Hash(test.RandomBytes(32))
+
+		mockForwarderClient.
+			On("InvokeOnReport", mock.Anything, receiverAddress, signedReport, nonNilPositiveGasCfgMatcher()).
+			Return(&evmtypes.TransactionResult{
+				TxHash:           txHashFromTxmgr,
+				TxStatus:         evmtypes.TxFatal,
+				TxIdempotencyKey: "fatal-idempotency-key",
+			}, nil).
+			Once()
+
+		mockForwarderClient.
+			On("GetTransmissionInfo", mock.Anything, mock.Anything).
+			Return(contracts.TransmissionInfo{
+				Success:         true,
+				InvalidReceiver: false,
+				State:           contracts.TransmissionStateSucceeded,
+				GasLimit:        big.NewInt(EnoughReceiverGas),
+			}, nil).
+			Once()
+
+		mockForwarderClient.EXPECT().
+			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return([]*evmtypes.Log{{TxHash: txHashFromLogs, Data: successLogData(), BlockNumber: big.NewInt(100)}}, nil)
+
+		receipt := evmtypes.Receipt{
+			Status:            uint64(contracts.TransmissionStateSucceeded),
+			TxHash:            txHashFromLogs,
+			GasUsed:           1000,
+			EffectiveGasPrice: big.NewInt(2),
+		}
+		evmServiceMock.EXPECT().
+			GetTransactionReceipt(mock.Anything, evmtypes.GeTransactionReceiptRequest{Hash: txHashFromLogs, IsExternal: false}).
+			Return(&receipt, nil)
+
+		txFee := int64(2000)
+		evmServiceMock.EXPECT().
+			CalculateTransactionFee(mock.Anything, toReceiptGasInfo(receipt)).
+			Return(&evmtypes.TransactionFee{TransactionFee: big.NewInt(txFee)}, nil)
+
+		txResult, err := service.WriteReport(ctx, capabilitiesMetadata, writeReportRequest)
+		require.NoError(t, err)
+
+		equalWriteReportReply(t, &evm.WriteReportReply{
+			TxStatus:                        evmcappb.TxStatus_TX_STATUS_SUCCESS,
+			TxHash:                          receipt.TxHash[:],
+			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS.Enum(),
+			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(txFee)),
+		}, txResult.Response)
+
+		evmtest.ValidateMeteringWriteReport(t, txResult.ResponseMetadata, 1, "0.0000000000000003")
+	})
+
+	t.Run("TX first transmission - Fatal tx and GetSuccessfulTransmissionHash fails => returns error", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), 1*time.Second)
+		defer cancel()
+		testLogger := logger.Test(t)
+		evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
+
+		evmServiceMock.EXPECT().
+			GetTransactionFee(mock.Anything, mock.Anything).
+			Return(&evmtypes.TransactionFee{TransactionFee: big.NewInt(300)}, nil).
+			Maybe()
+
+		receiverAddress := testutils.NewAddress()
+		reportMetadata := createTestReportMetadata()
+		encodedReportMetadata, _ := reportMetadata.Encode()
+
+		signedReport := &workflowpb.ReportResponse{
+			RawReport:     encodedReportMetadata,
+			ReportContext: []byte{},
+			Sigs:          generateRandomSignatures(),
+		}
+		writeReportRequest := &evm.WriteReportRequest{
+			Receiver: receiverAddress.Bytes(),
+			Report:   signedReport,
+		}
+		capabilitiesMetadata := createTestRequestMetadata(reportMetadata)
+
+		mockForwarderClient.
+			On("GetTransmissionInfo", mock.Anything, mock.Anything).
+			Return(contracts.TransmissionInfo{
+				Success:         false,
+				InvalidReceiver: false,
+				State:           contracts.TransmissionStateNotAttempted,
+			}, nil).
+			Once()
+
+		txHashFromTxmgr := evmtypes.Hash(test.RandomBytes(32))
+
+		mockForwarderClient.
+			On("InvokeOnReport", mock.Anything, receiverAddress, signedReport, nonNilPositiveGasCfgMatcher()).
+			Return(&evmtypes.TransactionResult{
+				TxHash:           txHashFromTxmgr,
+				TxStatus:         evmtypes.TxFatal,
+				TxIdempotencyKey: "fatal-idempotency-key",
+			}, nil).
+			Once()
+
+		mockForwarderClient.
+			On("GetTransmissionInfo", mock.Anything, mock.Anything).
+			Return(contracts.TransmissionInfo{
+				Success:         true,
+				InvalidReceiver: false,
+				State:           contracts.TransmissionStateSucceeded,
+				GasLimit:        big.NewInt(EnoughReceiverGas),
+			}, nil).
+			Once()
+
+		mockForwarderClient.EXPECT().
+			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return(nil, errors.New("failed to get report processed events"))
+
+		_, err := service.WriteReport(ctx, capabilitiesMetadata, writeReportRequest)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "failed to get report processed events")
+	})
+
 	t.Run("TX locally attempted but failed; queue position behavior", func(t *testing.T) {
 		for _, queuePosition := range []int{0, 1, 2, 3} {
 			t.Run("queue position "+strconv.Itoa(queuePosition), func(t *testing.T) {
@@ -1229,7 +1437,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 				otherPeerID2[0] = 0x03
 				var otherPeerID3 p2ptypes.PeerID
 				otherPeerID3[0] = 0x04
-				scheduler := NewTransmissionScheduler(
+				scheduler := ts.NewTransmissionScheduler(
 					testPeerID,
 					[]p2ptypes.PeerID{testPeerID, otherPeerID1, otherPeerID2, otherPeerID3},
 					10*time.Millisecond,
@@ -1464,6 +1672,226 @@ func TestPollTransmissionInfo_QueuePositionScenarios(t *testing.T) {
 	})
 }
 
+func TestPollTransmissionInfo_RaceConditions(t *testing.T) {
+	t.Parallel()
+
+	t.Run("factor 1: timer returns stale state without final read", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+		defer cancel()
+
+		wr, testLogger, mockForwarderClient, request, transmissionID := setupPollTransmissionInfoForQueuePosition(t, 1)
+		wr.transmissionScheduler.DeltaStage = 150 * time.Millisecond
+
+		var chainStateUpdated atomic.Bool
+		go func() {
+			time.Sleep(120 * time.Millisecond)
+			chainStateUpdated.Store(true)
+		}()
+
+		mockForwarderClient.EXPECT().
+			GetTransmissionInfo(mock.Anything, transmissionID).
+			RunAndReturn(func(context.Context, contracts.TransmissionID) (contracts.TransmissionInfo, error) {
+				if chainStateUpdated.Load() {
+					return contracts.TransmissionInfo{
+						Success: true,
+						State:   contracts.TransmissionStateSucceeded,
+					}, nil
+				}
+				return contracts.TransmissionInfo{
+					Success: false,
+					State:   contracts.TransmissionStateNotAttempted,
+				}, nil
+			}).
+			Maybe()
+
+		txHashRetriever := NewTxHashRetriever(mockForwarderClient, testLogger, transmissionID)
+		info, err := wr.pollTransmissionInfo(ctx, request, monitoring.TelemetryContext{}, transmissionID, 1, txHashRetriever)
+		assert.NoError(t, err, "current behavior: timer path returns stale state without a final read")
+		assert.True(t, chainStateUpdated.Load(), "state should have changed before stage timer returned")
+		assert.Equal(t, contracts.TransmissionStateNotAttempted, info.State, "current behavior: stale state was returned")
+
+		// TODO: @ilija42 Expected behavior after fix: perform a final transmission-state read at the timer boundary.
+		// require.Equal(
+		// 	t,
+		// 	contracts.TransmissionStateSucceeded,
+		// 	info.State,
+		// 	"TODO: fix pollTransmissionInfo so stageTimer path returns the latest on-chain state",
+		// )
+	})
+
+	t.Run("factor 2: rpc errors return zero-value not_attempted", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+		defer cancel()
+
+		wr, testLogger, mockForwarderClient, request, transmissionID := setupPollTransmissionInfoForQueuePosition(t, 2)
+		wr.transmissionScheduler.DeltaStage = 50 * time.Millisecond
+
+		var rpcCalls atomic.Int64
+		mockForwarderClient.EXPECT().
+			GetTransmissionInfo(mock.Anything, transmissionID).
+			RunAndReturn(func(context.Context, contracts.TransmissionID) (contracts.TransmissionInfo, error) {
+				rpcCalls.Add(1)
+				return contracts.TransmissionInfo{}, errors.New("rpc unavailable")
+			}).
+			Maybe()
+
+		txHashRetriever := NewTxHashRetriever(mockForwarderClient, testLogger, transmissionID)
+		info, err := wr.pollTransmissionInfo(ctx, request, monitoring.TelemetryContext{}, transmissionID, 2, txHashRetriever)
+		assert.NoError(t, err, "current behavior: all poll failures still return nil error")
+		assert.Greater(t, rpcCalls.Load(), int64(0))
+		assert.Equal(t, contracts.TransmissionStateNotAttempted, info.State, "current behavior: zero-value state leaks as not_attempted")
+
+		// TODO: @ilija42 Expected behavior after fix: if every poll fails, surface an error and do not proceed with a fabricated state.
+		// require.Error(
+		// 	t,
+		// 	err,
+		// 	"TODO: return an error when all GetTransmissionInfo polls fail, instead of defaulting to not_attempted",
+		// )
+	})
+}
+
+func TestExecuteWriteReport_RaceConditionDuplicateInvocations(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	testLogger := logger.Test(t)
+	mockEVMService := mocks2.NewEVMService(t)
+	sharedForwarder := mocks.NewCREForwarderClient(t)
+
+	mockEVMService.EXPECT().
+		GetTransactionReceipt(mock.Anything, mock.Anything).
+		RunAndReturn(func(_ context.Context, req evmtypes.GeTransactionReceiptRequest) (*evmtypes.Receipt, error) {
+			return &evmtypes.Receipt{
+				Status:            1,
+				TxHash:            req.Hash,
+				GasUsed:           1000,
+				EffectiveGasPrice: big.NewInt(2),
+			}, nil
+		}).
+		Maybe()
+	mockEVMService.EXPECT().
+		CalculateTransactionFee(mock.Anything, mock.Anything).
+		Return(&evmtypes.TransactionFee{TransactionFee: big.NewInt(2000)}, nil).
+		Maybe()
+	mockEVMService.EXPECT().
+		GetTransactionFee(mock.Anything, mock.Anything).
+		Return(&evmtypes.TransactionFee{TransactionFee: big.NewInt(300)}, nil).
+		Maybe()
+
+	var nodeA p2ptypes.PeerID
+	nodeA[0] = 0x01
+	var nodeB p2ptypes.PeerID
+	nodeB[0] = 0x02
+	members := []p2ptypes.PeerID{nodeA, nodeB}
+
+	schedulerA := ts.NewTransmissionScheduler(nodeA, members, 80*time.Millisecond, 1, testLogger)
+	schedulerB := ts.NewTransmissionScheduler(nodeB, members, 80*time.Millisecond, 1, testLogger)
+
+	serviceA := createMocksAndCapabilityWithScheduler(t, testLogger, mockEVMService, sharedForwarder, schedulerA)
+	serviceB := createMocksAndCapabilityWithScheduler(t, testLogger, mockEVMService, sharedForwarder, schedulerB)
+
+	reportMetadata := createTestReportMetadata()
+	encodedReportMetadata, err := reportMetadata.Encode()
+	require.NoError(t, err)
+
+	receiver := testutils.NewAddress().Bytes()
+	reqA := &evm.WriteReportRequest{
+		Receiver: receiver,
+		Report: &workflowpb.ReportResponse{
+			RawReport:     encodedReportMetadata,
+			ReportContext: []byte{},
+			Sigs:          generateRandomSignatures(),
+		},
+	}
+	reqB := &evm.WriteReportRequest{
+		Receiver: receiver,
+		Report: &workflowpb.ReportResponse{
+			RawReport:     encodedReportMetadata,
+			ReportContext: []byte{},
+			Sigs:          generateRandomSignatures(),
+		},
+	}
+
+	metadata := createTestRequestMetadata(reportMetadata)
+	transmissionID, err := getTransmissionID(metadata.WorkflowExecutionID, reqA)
+	require.NoError(t, err)
+
+	require.ElementsMatch(t, []int{0, 1}, []int{
+		schedulerA.GetQueuePosition(transmissionID.GetDebugID()),
+		schedulerB.GetQueuePosition(transmissionID.GetDebugID()),
+	})
+
+	var invokeCount atomic.Int64
+	sharedForwarder.EXPECT().
+		GetTransmissionInfo(mock.Anything, transmissionID).
+		RunAndReturn(func(context.Context, contracts.TransmissionID) (contracts.TransmissionInfo, error) {
+			if invokeCount.Load() >= 2 {
+				return contracts.TransmissionInfo{
+					Success:  true,
+					State:    contracts.TransmissionStateSucceeded,
+					GasLimit: big.NewInt(EnoughReceiverGas),
+				}, nil
+			}
+			return contracts.TransmissionInfo{
+				Success: false,
+				State:   contracts.TransmissionStateNotAttempted,
+			}, nil
+		}).
+		Maybe()
+	sharedForwarder.EXPECT().
+		InvokeOnReport(mock.Anything, common.BytesToAddress(receiver), mock.Anything, nonNilPositiveGasCfgMatcher()).
+		RunAndReturn(func(context.Context, common.Address, *workflowpb.ReportResponse, *evm.GasConfig) (*evmtypes.TransactionResult, error) {
+			callN := invokeCount.Add(1)
+			txHash := evmtypes.Hash(test.RandomBytes(32))
+			return &evmtypes.TransactionResult{
+				TxHash:           txHash,
+				TxStatus:         evmtypes.TxSuccess,
+				TxIdempotencyKey: fmt.Sprintf("test-idempotency-key-%d", callN),
+			}, nil
+		}).
+		Twice()
+	sharedForwarder.EXPECT().
+		GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return([]*evmtypes.Log{{
+			TxHash:      evmtypes.Hash(test.RandomBytes(32)),
+			Data:        successLogData(),
+			BlockNumber: big.NewInt(100),
+		}}, nil).
+		Maybe()
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, 2)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		_, err := serviceA.WriteReport(ctx, metadata, reqA)
+		errCh <- err
+	}()
+	go func() {
+		defer wg.Done()
+		_, err := serviceB.WriteReport(ctx, metadata, reqB)
+		errCh <- err
+	}()
+	wg.Wait()
+	close(errCh)
+
+	for writeErr := range errCh {
+		require.NoError(t, writeErr)
+	}
+
+	sharedForwarder.AssertNumberOfCalls(t, "InvokeOnReport", 2)
+
+	// TODO: @ilija42 Expected behavior after fix: only one node should submit for the same transmissionID.
+	// require.EqualValues(
+	// 	t,
+	// 	1,
+	// 	invokeCount.Load(),
+	// 	"TODO: prevent duplicate InvokeOnReport calls for the same transmissionID across queued nodes",
+	// )
+}
+
 func TestGetTransmissionID(t *testing.T) {
 	t.Parallel()
 	workflowExecutionID := hex.EncodeToString(test.RandomBytes(32))
@@ -1536,7 +1964,7 @@ func createMocksAndCapability(t *testing.T, lggr logger.Logger) (*mocks2.EVMServ
 	var testPeerID p2ptypes.PeerID
 	testPeerID[0] = 0x01
 	testDONMembers := []p2ptypes.PeerID{testPeerID}
-	transmissionScheduler := NewTransmissionScheduler(
+	transmissionScheduler := ts.NewTransmissionScheduler(
 		testPeerID,
 		testDONMembers,
 		10*time.Millisecond, // Small deltaStage for tests
@@ -1552,13 +1980,38 @@ func createMocksAndCapability(t *testing.T, lggr logger.Logger) (*mocks2.EVMServ
 		ReceiverGasMinimum:       ConfiguredReceiverGasMinimum,
 		chainSelector:            1,
 		beholderProcessor:        test.NopBeholderProcessor{},
-		messageBuilder:           &monitoring.MessageBuilder{},
+		messageBuilder:           monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 		transmissionScheduler:    transmissionScheduler,
 	}
 	require.NoError(t, service.initLimiters(limits.Factory{Logger: lggr}))
 	t.Cleanup(func() { assert.NoError(t, service.Close()) })
 	require.NotNil(t, service.txGasLimit)
 	return mockEVMService, mockForwarderClient, service
+}
+
+func createMocksAndCapabilityWithScheduler(
+	t *testing.T,
+	lggr logger.Logger,
+	evmService types.EVMService,
+	forwarderClient contracts.CREForwarderClient,
+	scheduler ts.TransmissionScheduler,
+) *EVM {
+	t.Helper()
+
+	service := &EVM{
+		keystoneForwarderAddress: common.BytesToAddress(test.RandomBytes(20)),
+		forwarderClient:          forwarderClient,
+		lggr:                     logger.Sugared(lggr),
+		EVMService:               evmService,
+		ReceiverGasMinimum:       ConfiguredReceiverGasMinimum,
+		chainSelector:            1,
+		beholderProcessor:        test.NopBeholderProcessor{},
+		messageBuilder:           monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		transmissionScheduler:    scheduler,
+	}
+	require.NoError(t, service.initLimiters(limits.Factory{Logger: lggr}))
+	t.Cleanup(func() { assert.NoError(t, service.Close()) })
+	return service
 }
 
 func equalWriteReportReply(t *testing.T, expected *evm.WriteReportReply, actual *evm.WriteReportReply) {
@@ -1604,7 +2057,7 @@ func createTestRequestMetadata(metadata ocrtypes.Metadata) capabilities.RequestM
 	}
 }
 
-func createReportAndMetadataForQueuePosition(t *testing.T, scheduler *TransmissionScheduler, receiver []byte, desiredPosition int) (*workflowpb.ReportResponse, capabilities.RequestMetadata, contracts.TransmissionID) {
+func createReportAndMetadataForQueuePosition(t *testing.T, scheduler *ts.TransmissionScheduler, receiver []byte, desiredPosition int) (*workflowpb.ReportResponse, capabilities.RequestMetadata, contracts.TransmissionID) {
 	t.Helper()
 
 	for i := 0; i < 1000; i++ {
@@ -1652,7 +2105,7 @@ func setupPollTransmissionInfoForQueuePosition(
 	var otherPeerID3 p2ptypes.PeerID
 	otherPeerID3[0] = 0x04
 
-	scheduler := NewTransmissionScheduler(
+	scheduler := ts.NewTransmissionScheduler(
 		testPeerID,
 		[]p2ptypes.PeerID{testPeerID, otherPeerID1, otherPeerID2, otherPeerID3},
 		10*time.Millisecond,
@@ -1664,7 +2117,7 @@ func setupPollTransmissionInfoForQueuePosition(
 		forwarderClient:       mockForwarderClient,
 		lggr:                  logger.Sugared(testLogger),
 		beholderProcessor:     test.NopBeholderProcessor{},
-		messageBuilder:        &monitoring.MessageBuilder{},
+		messageBuilder:        monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 		transmissionScheduler: scheduler,
 	}
 
@@ -1693,7 +2146,7 @@ func TestDecodeReportMetadata(t *testing.T) {
 		encodedData, err := originalMetadata.Encode()
 		require.NoError(t, err)
 
-		decodedMetadata, err := decodeReportMetadata(encodedData)
+		decodedMetadata, err := capcommon.DecodeReportMetadata(encodedData)
 		require.NoError(t, err)
 		require.Equal(t, originalMetadata.Version, decodedMetadata.Version)
 		require.Equal(t, originalMetadata.ExecutionID, decodedMetadata.ExecutionID)
@@ -1704,14 +2157,14 @@ func TestDecodeReportMetadata(t *testing.T) {
 
 	t.Run("Fail to decode invalid data", func(t *testing.T) {
 		invalidData := []byte("invalid data")
-		_, err := decodeReportMetadata(invalidData)
+		_, err := capcommon.DecodeReportMetadata(invalidData)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "metadata: raw too short")
 	})
 
 	t.Run("Fail to decode empty data", func(t *testing.T) {
 		emptyData := []byte{}
-		_, err := decodeReportMetadata(emptyData)
+		_, err := capcommon.DecodeReportMetadata(emptyData)
 		require.Error(t, err)
 	})
 }
@@ -1763,6 +2216,10 @@ func TestExecuteWriteReport_MeteringMetadata(t *testing.T) {
 			GasLimit:        big.NewInt(EnoughReceiverGas),
 		}
 		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, transmissionID).Return(transmissionInfo, nil).Once()
+
+		mockForwarderClient.EXPECT().
+			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return([]*evmtypes.Log{{TxHash: txHash, Data: successLogData(), BlockNumber: big.NewInt(100)}}, nil)
 
 		evmServiceMock.EXPECT().GetTransactionFee(mock.Anything, "test-idempotency-key").Return(&evmtypes.TransactionFee{
 			TransactionFee: big.NewInt(2000),
@@ -1833,6 +2290,10 @@ func TestExecuteWriteReport_MeteringMetadata(t *testing.T) {
 			GasLimit:        big.NewInt(EnoughReceiverGas),
 		}
 		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, transmissionID).Return(transmissionInfo, nil).Once()
+
+		mockForwarderClient.EXPECT().
+			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return([]*evmtypes.Log{{TxHash: txHash, Data: successLogData(), BlockNumber: big.NewInt(100)}}, nil)
 
 		evmServiceMock.EXPECT().GetTransactionFee(mock.Anything, "test-idempotency-key").Return(nil, errors.New("fee calculation failed"))
 
@@ -2000,6 +2461,10 @@ func TestWriteReport_BillingMetadata(t *testing.T) {
 			GasLimit:        big.NewInt(EnoughReceiverGas),
 		}
 		mockForwarderClient.On("GetTransmissionInfo", mock.Anything, transmissionID).Return(transmissionInfo, nil).Once()
+
+		mockForwarderClient.EXPECT().
+			GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return([]*evmtypes.Log{{TxHash: txHash, Data: successLogData(), BlockNumber: big.NewInt(100)}}, nil)
 
 		evmServiceMock.EXPECT().GetTransactionFee(mock.Anything, "test-idempotency-key").Return(&evmtypes.TransactionFee{
 			TransactionFee: big.NewInt(3000),

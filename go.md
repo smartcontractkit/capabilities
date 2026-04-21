@@ -2,16 +2,15 @@
 ```mermaid
 flowchart LR
 
-	capabilities/capabilitywatcher --> capabilities/libs
-	click capabilities/capabilitywatcher href "https://github.com/smartcontractkit/capabilities"
-	capabilities/chain_capabilities/common
+	capabilities/chain_capabilities/aptos --> capabilities/chain_capabilities/common
+	capabilities/chain_capabilities/aptos --> chainlink-aptos
+	click capabilities/chain_capabilities/aptos href "https://github.com/smartcontractkit/capabilities"
+	capabilities/chain_capabilities/common --> capabilities/libs
 	click capabilities/chain_capabilities/common href "https://github.com/smartcontractkit/capabilities"
 	capabilities/chain_capabilities/evm --> capabilities/chain_capabilities/common
-	capabilities/chain_capabilities/evm --> capabilities/libs
 	capabilities/chain_capabilities/evm --> chainlink-evm
 	click capabilities/chain_capabilities/evm href "https://github.com/smartcontractkit/capabilities"
 	capabilities/chain_capabilities/solana --> capabilities/chain_capabilities/common
-	capabilities/chain_capabilities/solana --> capabilities/libs
 	capabilities/chain_capabilities/solana --> chainlink-solana/integration-tests
 	click capabilities/chain_capabilities/solana href "https://github.com/smartcontractkit/capabilities"
 	capabilities/consensus --> capabilities/libs
@@ -30,16 +29,10 @@ flowchart LR
 	capabilities/integration_tests --> chainlink/v2
 	capabilities/integration_tests --> cre-sdk-go/capabilities/blockchain/evm
 	click capabilities/integration_tests href "https://github.com/smartcontractkit/capabilities"
-	capabilities/kvstore --> capabilities/libs
-	click capabilities/kvstore href "https://github.com/smartcontractkit/capabilities"
 	capabilities/libs --> chainlink-common
 	click capabilities/libs href "https://github.com/smartcontractkit/capabilities"
 	capabilities/loadtestwritetarget --> capabilities/libs
 	click capabilities/loadtestwritetarget href "https://github.com/smartcontractkit/capabilities"
-	capabilities/mock --> capabilities/libs
-	click capabilities/mock href "https://github.com/smartcontractkit/capabilities"
-	capabilities/p2psigner --> capabilities/libs
-	click capabilities/p2psigner href "https://github.com/smartcontractkit/capabilities"
 	capabilities/readcontract --> capabilities/libs
 	click capabilities/readcontract href "https://github.com/smartcontractkit/capabilities"
 	capabilities/workflowevent --> capabilities/libs
@@ -92,13 +85,11 @@ flowchart LR
 	click chainlink-common/pkg/chipingress href "https://github.com/smartcontractkit/chainlink-common"
 	chainlink-common/pkg/monitoring
 	click chainlink-common/pkg/monitoring href "https://github.com/smartcontractkit/chainlink-common"
-	chainlink-common/pkg/values
-	click chainlink-common/pkg/values href "https://github.com/smartcontractkit/chainlink-common"
-	chainlink-data-streams --> chainlink-common
+	chainlink-data-streams --> chainlink-common/keystore
 	click chainlink-data-streams href "https://github.com/smartcontractkit/chainlink-data-streams"
 	chainlink-deployments-framework
 	click chainlink-deployments-framework href "https://github.com/smartcontractkit/chainlink-deployments-framework"
-	chainlink-evm --> chainlink-common/keystore
+	chainlink-evm --> chainlink-data-streams
 	chainlink-evm --> chainlink-evm/gethwrappers
 	chainlink-evm --> chainlink-framework/capabilities
 	chainlink-evm --> chainlink-framework/chains
@@ -173,7 +164,6 @@ flowchart LR
 	click chainlink-solana/integration-tests href "https://github.com/smartcontractkit/chainlink-solana"
 	chainlink-sui --> chainlink-aptos
 	chainlink-sui --> chainlink-ccip
-	chainlink-sui --> chainlink-common/pkg/values
 	click chainlink-sui href "https://github.com/smartcontractkit/chainlink-sui"
 	chainlink-testing-framework/framework
 	click chainlink-testing-framework/framework href "https://github.com/smartcontractkit/chainlink-testing-framework"
@@ -195,7 +185,6 @@ flowchart LR
 	click chainlink/integration-tests href "https://github.com/smartcontractkit/chainlink"
 	chainlink/v2 --> chainlink-automation
 	chainlink/v2 --> chainlink-ccv
-	chainlink/v2 --> chainlink-data-streams
 	chainlink/v2 --> chainlink-evm/contracts/cre/gobindings
 	chainlink/v2 --> chainlink-feeds
 	chainlink/v2 --> chainlink-protos/ring/go
@@ -238,7 +227,7 @@ flowchart LR
 	click wsrpc href "https://github.com/smartcontractkit/wsrpc"
 
 	subgraph capabilities-repo[capabilities]
-		 capabilities/capabilitywatcher
+		 capabilities/chain_capabilities/aptos
 		 capabilities/chain_capabilities/common
 		 capabilities/chain_capabilities/evm
 		 capabilities/chain_capabilities/solana
@@ -247,11 +236,8 @@ flowchart LR
 		 capabilities/http_action
 		 capabilities/http_trigger
 		 capabilities/integration_tests
-		 capabilities/kvstore
 		 capabilities/libs
 		 capabilities/loadtestwritetarget
-		 capabilities/mock
-		 capabilities/p2psigner
 		 capabilities/readcontract
 		 capabilities/workflowevent
 		 capabilities/workflows
@@ -279,7 +265,6 @@ flowchart LR
 		 chainlink-common/keystore
 		 chainlink-common/pkg/chipingress
 		 chainlink-common/pkg/monitoring
-		 chainlink-common/pkg/values
 	end
 	click chainlink-common-repo href "https://github.com/smartcontractkit/chainlink-common"
 

@@ -4,7 +4,7 @@ This repo uses [`nx`](https://nx.dev/) for monorepo management and change-detect
 
 ## Code structure
 
-- With the exception of `libs`, each package in the root folder creates a binary that instantiates a **capability set** when added to the node through a `type="standardcapabilities"` job spec (**capability spec**). A capability set contains one or more capabilities that are centered around some functionality or shared resource, e.g., KV store, EVM chain, CRON, etc. So a KV store binary would instantiate `kvstore-read` action capability and `kvstore-write` target capability that shares an underlying KV store resource.
+- With the exception of `libs`, each package in the root folder creates a binary that instantiates a **capability set** when added to the node through a `type="standardcapabilities"` job spec (**capability spec**). A capability set contains one or more capabilities that are centered around some functionality or shared resource, e.g., EVM chain, CRON, etc.
 - `libs` folder contains packages that are shared across capabilities. You should only create a package there if two or more capability sets need to share a dependency.
 
 ## Generating SDKs
@@ -21,20 +21,6 @@ The process for generating the SDK is:
 * Define the inputs and outputs of the calls that can be made to the capability set in JSON schema. This JSON schema should be located in the same directory as the relevant capability set. To ensure that any WASM binaries that depend on these SDKs remain small, we recommend placing this in a subdirectory which just contains the generated types. So, assuming a capability set in the `cron` directory, we recommend putting the JSON schema in `cron/croncap` for example.
 * Using the JSON schema, generate some native Go types. This is automated by means of a "gen file", and is described more below.
 
-### gen file
-
-We use a "gen file" to automate generating the Go structs from JSON schema. This will use `go generate` to automate the generation of the Go SDK from the JSON schema.
-
-It's recommended to put it in the JSON schema's directory so it's all together, but it will also work from the root of the capability.
-
-The latter may be useful if you have multiple versions of the capability, as one file can be used for all generations.
-
-See `cron/croncap/gen.go` for an example.
-
-If a capability is tightly coupled to another (e.g., targets with consensus), it is okay to refer to their JSON schema for a specific type.
-
-**Note**: If you refer to URLs for additional schemas, you will need to add them to the run command in `gen.go`.  
-See `kvstore/kvcap/gen.go` for an example.
 
 ### File naming
 

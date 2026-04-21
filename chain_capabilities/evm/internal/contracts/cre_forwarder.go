@@ -85,7 +85,9 @@ func (ti TransmissionInfo) LogAttrs() []any {
 // This is a rough estimate and should be updated if the forwarder contract logic changes.
 // PLEX-1524 - Make the forwarder contract logic gas cost limit configurable
 const (
-	ForwarderContractLogicGasCost = 100_000
+	// ForwarderContractLogicGasCost is at minimum 100k, but often goes up by several x*10%.
+	// Overshoot it by double to make sure that we don't resend txs that had enough gas leftover based on transmission gas info.
+	ForwarderContractLogicGasCost = 200_000
 	LatestBlock                   = -2 // PLEX-1524 - Use constant defined by EVM types once it's ready.
 	DefaultLookbackBlocks         = 100
 )
@@ -280,7 +282,6 @@ func (cfc *creForwarderCodecImpl) EncodeQueryTransmissionInputs(query QueryTrans
 }
 
 func (cfc *creForwarderCodecImpl) DecodeQueryTransmissionInfo(encodedData []byte) (TransmissionInfo, error) {
-	// PLEX-1524 this is ugly. For some reason ABI.UnpackIntoInterface doesn't work.
 	var transmissionInfo TransmissionInfo
 	values, err := cfc.abi.Methods["getTransmissionInfo"].Outputs.UnpackValues(encodedData)
 	if err != nil {

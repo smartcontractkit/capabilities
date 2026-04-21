@@ -11,7 +11,10 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 	relayermock "github.com/smartcontractkit/chainlink-common/pkg/types/core/mocks"
@@ -20,6 +23,13 @@ import (
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/config"
 )
+
+func testLimitsFactory(t *testing.T) limits.Factory {
+	t.Helper()
+	g, err := settings.NewJSONGetter([]byte(`{}`))
+	require.NoError(t, err)
+	return limits.Factory{Settings: g}
+}
 
 func TestCapabilityGRPCService_Initialise(t *testing.T) {
 	t.Parallel()
@@ -32,11 +42,11 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 
 		relayerSet := relayermock.NewRelayerSet(t)
 		relayerSet.On("Get", mock.Anything, mock.Anything).Return(relayer, nil)
-		svc := &capabilityGRPCService{lggr: logger.Test(t)}
+		svc := &capabilityGRPCService{lggr: logger.Test(t), limitsFactory: testLimitsFactory(t)}
 		cfg := config.Config{ChainID: 1337, Network: "testnet", LogTriggerPollInterval: 60 * time.Second, CREForwarderAddress: testutils.NewAddress().String(), ReceiverGasMinimum: 1000, IsLocaL: true, DeltaStage: time.Second}
 		cfgJSON, _ := json.Marshal(cfg)
 
-		err := svc.Initialise(t.Context(), core.StandardCapabilitiesDependencies{OracleFactory: nullOracleFactory{}, RelayerSet: relayerSet, Config: string(cfgJSON)})
+		err := svc.Initialise(t.Context(), core.StandardCapabilitiesDependencies{OracleFactory: nullOracleFactory{}, RelayerSet: relayerSet, Config: string(cfgJSON), TriggerEventStore: capabilities.NewMemEventStore()})
 		require.NoError(t, err)
 		require.NoError(t, svc.Close())
 	})
@@ -49,11 +59,11 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 
 		relayerSet := relayermock.NewRelayerSet(t)
 		relayerSet.On("Get", mock.Anything, mock.Anything).Return(relayer, nil)
-		svc := &capabilityGRPCService{lggr: logger.Test(t)}
+		svc := &capabilityGRPCService{lggr: logger.Test(t), limitsFactory: testLimitsFactory(t)}
 		cfg := config.Config{ChainID: 1337, Network: "testnet", LogTriggerPollInterval: 60 * time.Second, LogTriggerSendChannelBufferSize: 100, LogTriggerLimitQueryLogSize: 10, CREForwarderAddress: common.Bytes2Hex(testutils.NewAddress().Bytes()), ReceiverGasMinimum: 1000, DeltaStage: time.Second, IsLocaL: true}
 		cfgJSON, _ := json.Marshal(cfg)
 
-		err := svc.Initialise(t.Context(), core.StandardCapabilitiesDependencies{OracleFactory: nullOracleFactory{}, RelayerSet: relayerSet, Config: string(cfgJSON)})
+		err := svc.Initialise(t.Context(), core.StandardCapabilitiesDependencies{OracleFactory: nullOracleFactory{}, RelayerSet: relayerSet, Config: string(cfgJSON), TriggerEventStore: capabilities.NewMemEventStore()})
 		require.NoError(t, err)
 		require.NoError(t, svc.Close())
 	})
@@ -111,11 +121,11 @@ func TestCapabilityGRPCService_Initialise(t *testing.T) {
 
 		relayerSet := relayermock.NewRelayerSet(t)
 		relayerSet.On("Get", mock.Anything, mock.Anything).Return(relayer, nil)
-		svc := &capabilityGRPCService{lggr: logger.Test(t)}
+		svc := &capabilityGRPCService{lggr: logger.Test(t), limitsFactory: testLimitsFactory(t)}
 		cfg := config.Config{ChainID: 1337, Network: "testnet", LogTriggerPollInterval: 60 * time.Second, CREForwarderAddress: testutils.NewAddress().String(), ReceiverGasMinimum: 1000, IsLocaL: true}
 		cfgJSON, _ := json.Marshal(cfg)
 
-		err := svc.Initialise(t.Context(), core.StandardCapabilitiesDependencies{OracleFactory: nullOracleFactory{}, RelayerSet: relayerSet, Config: string(cfgJSON)})
+		err := svc.Initialise(t.Context(), core.StandardCapabilitiesDependencies{OracleFactory: nullOracleFactory{}, RelayerSet: relayerSet, Config: string(cfgJSON), TriggerEventStore: capabilities.NewMemEventStore()})
 		require.NoError(t, err)
 		require.NoError(t, svc.Close())
 	})

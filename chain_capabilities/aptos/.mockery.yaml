@@ -1,0 +1,20 @@
+dir: "{{ .InterfaceDir }}"
+mockname: "{{ .InterfaceName }}_mock"
+outpkg: actions
+inpackage: true
+filename: "test_{{ .InterfaceName | snakecase }}_mock.go"
+fail-on-missing: true
+resolve-type-alias: false
+packages:
+  github.com/smartcontractkit/capabilities/chain_capabilities/aptos/actions:
+    interfaces:
+      CREForwarderClient:
+  github.com/smartcontractkit/chainlink-common/pkg/beholder:
+    config:
+      dir: ../internal/monitoring/mocks
+      mockname: "{{ .InterfaceName }}"
+      outpkg: mocks
+      inpackage: false
+      filename: "{{ .InterfaceName | snakecase }}.go"
+    interfaces:
+      ProtoEmitter:

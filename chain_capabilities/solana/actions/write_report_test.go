@@ -14,6 +14,7 @@ import (
 	solcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
+	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	soltypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/solana"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
@@ -238,7 +239,7 @@ func createMocksAndCapability(t *testing.T, lggr logger.Logger) *testHelper {
 		forwarderClient:          mockClient,
 		transmissionInfoProvider: mockTrInfo,
 		beholderProcessor:        NopBeholderProcessor{},
-		messageBuilder:           &monitoring.MessageBuilder{},
+		messageBuilder:           monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 		chainSelector:            1,
 		lggr:                     logger.Sugared(lggr),
 	}

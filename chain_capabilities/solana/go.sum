@@ -573,8 +573,8 @@ github.com/onsi/ginkgo v1.6.0/go.mod h1:lLunBs/Ym6LB5Z9jYTR76FiuTmxDTDusOGeTQH+W
 github.com/onsi/ginkgo v1.12.1/go.mod h1:zj2OWP4+oCPe1qIXoGWkgMRwljMUYCdkwsT2108oapk=
 github.com/onsi/gomega v1.7.1/go.mod h1:XdKZgCCFLUoM/7CFJVPcG8C1xQ1AJ0vpAezJrB7JYyY=
 github.com/onsi/gomega v1.10.1/go.mod h1:iN09h71vgCQne3DLsj+A5owkum+a2tYe+TOCB1ybHNo=
-github.com/onsi/gomega v1.10.3 h1:gph6h/qe9GSUw1NhH1gp+qb+h8rXD8Cy60Z32Qw3ELA=
-github.com/onsi/gomega v1.10.3/go.mod h1:V9xEwhxec5O8UDM77eCW8vLymOMltsqPVYWrpDsH8xc=
+github.com/onsi/gomega v1.36.2 h1:koNYke6TVk6ZmnyHrCXba/T/MoLBXFjeC1PtvYgw0A8=
+github.com/onsi/gomega v1.36.2/go.mod h1:DdwyADRjrc825LhMEkD76cHR5+pUnjhUN8GlHlRPHzY=
 github.com/opentracing/opentracing-go v1.2.0 h1:uEJPy/1a5RIPAJ0Ov+OIO8OxWu77jEv+1B0VhjKrZUs=
 github.com/opentracing/opentracing-go v1.2.0/go.mod h1:GxEUsuufX4nBwe+T+Wl9TAgYrxe9dPLANfrWvHYVTgc=
 github.com/pascaldekloe/goe v0.0.0-20180627143212-57f6aae5913c/go.mod h1:lzWF7FIEvWOWxwDKqyGYQf6ZUaNfKdP144TG7ZOy1lc=
@@ -661,6 +661,8 @@ github.com/shurcooL/sanitized_anchor_name v1.0.0/go.mod h1:1NzhyTcUVG4SuEtjjoZeV
 github.com/sirupsen/logrus v1.2.0/go.mod h1:LxeOpSwHxABJmUn/MG1IvRgCAasNZTLOkJPxbbu5VWo=
 github.com/sirupsen/logrus v1.4.1/go.mod h1:ni0Sbl8bgC9z8RoU9G6nDWqqs/fq4eDPysMBDgk/93Q=
 github.com/sirupsen/logrus v1.4.2/go.mod h1:tLMulIdttU9McNUspp0xgXVQah82FyeX6MwdIuYE2rE=
+github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260317175318-b042efa4107b h1:ZVvSFgoeeq44fOYvG9HxlWG4fKNrxTN8FvNxqsLnuFU=
+github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260317175318-b042efa4107b/go.mod h1:2a/FnHqe64PHOVC8L+kcxOuPZcgzZt33eplgHmFr5AI=
 github.com/smartcontractkit/capabilities/libs v0.0.0-20260223172632-a716db2e04a0 h1:FXr4PieKZ5KLm8+kScb2SortgOkYrnu+Pd0jjRh3Hns=
 github.com/smartcontractkit/capabilities/libs v0.0.0-20260223172632-a716db2e04a0/go.mod h1:v0O0Au8RE00Z89QxBE6I2q9bR9r3+RO1gLD3oaO2WB0=
 github.com/smartcontractkit/chain-selectors v1.0.98 h1:fuI7CQ1o5cX64eO4/LvwtfhdpGFH5vnsM/bFHRwEiww=
@@ -689,8 +691,8 @@ github.com/smartcontractkit/chainlink-protos/node-platform v0.0.0-20260319180422
 github.com/smartcontractkit/chainlink-protos/node-platform v0.0.0-20260319180422-b5808c964785/go.mod h1:dkR2uYg9XYJuT1JASkPzWE51jjFkVb86P7a/yXe5/GM=
 github.com/smartcontractkit/chainlink-solana v1.1.2-0.20260420191419-ea62f88cbdb4 h1:WaQzRyMCmi7gddZraPtHSqCjZ5dnVYFYXqEtq2DsQjw=
 github.com/smartcontractkit/chainlink-solana v1.1.2-0.20260420191419-ea62f88cbdb4/go.mod h1:sUsEwLtVPBlz0wPcysaolS+HVj9cOAt4jYhwE6J8dXg=
-github.com/smartcontractkit/chainlink-solana/contracts v0.0.0-20260303162759-94489995156f h1:c0Xb7XT3I4s9/76pDUCogO6kx+eNWAgTCttBU1V+91s=
-github.com/smartcontractkit/chainlink-solana/contracts v0.0.0-20260303162759-94489995156f/go.mod h1:X4950gAvIYrhCNeD04EaV9d1qBf9aN1hSuxO6r2kPjo=
+github.com/smartcontractkit/chainlink-solana/contracts v0.0.0-20260420191419-ea62f88cbdb4 h1:YuwsQOYwpM+TXlhvI/nmDLpwHMWpNG+Z56e9kwEqsFI=
+github.com/smartcontractkit/chainlink-solana/contracts v0.0.0-20260420191419-ea62f88cbdb4/go.mod h1:C5pZsbYX3qkhZTYWr1aYJi9QMfonFAun+Jl1npQ7UJA=
 github.com/smartcontractkit/chainlink-solana/integration-tests v0.0.0-20260203163148-4efe2a102b4b h1:toX/FVenq99HnIBpy+/pbks229bsjbGo3JIn7ebOehM=
 github.com/smartcontractkit/chainlink-solana/integration-tests v0.0.0-20260203163148-4efe2a102b4b/go.mod h1:YATtcmLWaVWtbdyNgwlfrq5xetsof+weWUQbjhDxlyY=
 github.com/smartcontractkit/freeport v0.1.3-0.20250828155247-add56fa28aad h1:lgHxTHuzJIF3Vj6LSMOnjhqKgRqYW+0MV2SExtCYL1Q=

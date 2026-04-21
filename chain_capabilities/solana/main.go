@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	chain_selectors "github.com/smartcontractkit/chain-selectors"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -14,6 +16,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
+	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/actions"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/config"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
@@ -45,6 +48,7 @@ type capabilityGRPCService struct {
 
 type capability struct {
 	*actions.Solana
+	id string
 }
 
 var _ solcapserver.ClientCapability = &capabilityGRPCService{}
@@ -117,6 +121,8 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return err
 	}
 
+	c.id = "solana" + ":ChainSelector:" + strconv.FormatUint(c.chainSelector, 10) + "@1.0.0"
+
 	var chainInfo types.ChainInfo
 	// protection for e2e tests when we run against local validator
 	if !cfg.IsLocal {
@@ -138,7 +144,24 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return fmt.Errorf("failed to create monitoring proto processor: %w", err)
 	}
 
-	c.Solana, err = actions.NewSolana(ctx, cfg, solService, messageBuilder, processor, c.lggr, limits.Factory{Logger: c.lggr})
+	var scheduler ts.TransmissionScheduler
+	if cfg.DeltaStage > 0 {
+		myDON, err := ts.InitMyDON(ctx, dependencies.CapabilityRegistry, c.id, c.lggr, cfg.IsLocal)
+		if err != nil {
+			return fmt.Errorf("failed to init DON: %w", err)
+		}
+		c.DON = &myDON
+		c.lggr.Debugw("Initialised DON", "donID", c.DON.ID, "donName", c.DON.Name, "members", len(c.DON.Members), "F", c.DON.F)
+		scheduler, err = ts.InitialiseTransmissionScheduler(ctx, dependencies.CapabilityRegistry, cfg.DeltaStage, c.lggr, c.DON, cfg.IsLocal)
+		if err != nil {
+			return fmt.Errorf("failed to initialize transmission scheduler: %w", err)
+		}
+		c.lggr.Debugw("Initialised transmission scheduler", "deltaStage", cfg.DeltaStage)
+	} else {
+		c.lggr.Infow("DeltaStage not configured, transmission scheduling disabled")
+	}
+
+	c.Solana, err = actions.NewSolana(ctx, cfg, solService, messageBuilder, processor, c.lggr, limits.Factory{Logger: c.lggr}, scheduler)
 	if err != nil {
 		return err
 	}

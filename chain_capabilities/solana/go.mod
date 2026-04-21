@@ -7,13 +7,13 @@ require (
 	github.com/gagliardetto/solana-go v1.14.0
 	github.com/jpillora/backoff v1.0.0
 	github.com/mr-tron/base58 v1.2.0
-	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-00010101000000-000000000000
+	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260317175318-b042efa4107b
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260223172632-a716db2e04a0
 	github.com/smartcontractkit/chain-selectors v1.0.98
 	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260409201124-c2979938a387
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260408132951-ec901b7b5b59
 	github.com/smartcontractkit/chainlink-solana v1.1.2-0.20260420191419-ea62f88cbdb4
-	github.com/smartcontractkit/chainlink-solana/contracts v0.0.0-20260303162759-94489995156f
+	github.com/smartcontractkit/chainlink-solana/contracts v0.0.0-20260420191419-ea62f88cbdb4
 	github.com/smartcontractkit/chainlink-solana/integration-tests v0.0.0-20260203163148-4efe2a102b4b
 	github.com/stretchr/testify v1.11.1
 	github.com/test-go/testify v1.1.4
@@ -197,5 +197,4 @@ require (
 replace (
 	github.com/gogo/protobuf => github.com/gogo/protobuf v1.3.2
 	github.com/smartcontractkit/capabilities => ../..
-	github.com/smartcontractkit/capabilities/chain_capabilities/common => ../common
 )

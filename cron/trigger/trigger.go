@@ -207,7 +207,7 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 	if err != nil {
 		return nil, caperrors.NewPublicSystemError(fmt.Errorf("failed to look up fastest schedule interval: %w", err), caperrors.Internal)
 	}
-	capErr := enforceFastestSchedule(s.lggr, s.clock, jobDef, limit)
+	capErr := enforceFastestSchedule(s.lggr, jobDef, limit)
 	if capErr != nil {
 		return nil, capErr
 	}
@@ -232,6 +232,11 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 			currentTimeUTC := s.clock.Now().UTC()
 
 			response := createTriggerResponse(scheduledExecutionTimeUTC)
+
+			displayWorkflowName := metadata.DecodedWorkflowName
+			if displayWorkflowName == "" {
+				displayWorkflowName = metadata.WorkflowName
+			}
 
 			s.lggr.Debugw("task callback sending trigger response", "executionID", metadata.WorkflowExecutionID, "triggerID", triggerID, "scheduledExecTimeUTC", scheduledExecutionTimeUTC.Format(time.RFC3339Nano), "actualExecTimeUTC", currentTimeUTC.Format(time.RFC3339Nano))
 
@@ -265,7 +270,7 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 					events.KeyWorkflowID, trigger.workflowID,
 					events.KeyWorkflowExecutionID, workflowExecutionID,
 					events.KeyWorkflowOwner, metadata.WorkflowOwner,
-					events.KeyWorkflowName, metadata.WorkflowName,
+					events.KeyWorkflowName, displayWorkflowName,
 					events.KeyDonID, strconv.Itoa(int(metadata.WorkflowDonID)),
 					events.KeyDonVersion, strconv.Itoa(int(metadata.WorkflowDonConfigVersion)),
 					events.KeyOrganizationID, orgID,
@@ -305,7 +310,7 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 
 				lblErr := s.labeler.With(
 					"workflowOwner", metadata.WorkflowOwner,
-					"workflowName", metadata.WorkflowName,
+					"workflowName", displayWorkflowName,
 					"workflowID", metadata.WorkflowID,
 				).Emit(ctx, "callback channel full, dropping event")
 				if lblErr != nil {
@@ -362,6 +367,10 @@ func createTriggerResponse(scheduledExecutionTime time.Time) capabilities.Trigge
 		},
 		Id: triggerEventID,
 	}
+}
+
+func (s *Service) AckEvent(ctx context.Context, triggerID string, eventID string, method string) caperrors.Error {
+	return nil
 }
 
 func (s *Service) UnregisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) caperrors.Error {

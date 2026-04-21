@@ -34,6 +34,8 @@ type WorkflowRegistrationMetadata struct {
 	WorkflowRegistryAddress       string
 	EngineVersion                 string
 	WorkflowDONID                 uint32
+	// DecodedWorkflowName is the human-readable workflow name
+	DecodedWorkflowName string
 }
 
 type ConnectorHandler interface {
@@ -146,6 +148,7 @@ func (s *service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 			WorkflowRegistryAddress:       metadata.WorkflowRegistryAddress,
 			EngineVersion:                 metadata.EngineVersion,
 			WorkflowDONID:                 metadata.WorkflowDonID,
+			DecodedWorkflowName:           metadata.DecodedWorkflowName,
 		},
 	}
 
@@ -176,6 +179,10 @@ func (s *service) UnregisterTrigger(ctx context.Context, triggerID string, metad
 			caperrors.Internal)
 	}
 	s.metrics.IncrementDeregisterCount(ctx, s.lggr)
+	return nil
+}
+
+func (s *service) AckEvent(ctx context.Context, triggerID string, eventID string, method string) caperrors.Error {
 	return nil
 }
 
