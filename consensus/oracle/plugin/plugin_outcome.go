@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/cloudevents/sdk-go/v2/event/datacodec/json"
@@ -80,10 +81,10 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, lggr log
 	var obsValues []*valuespb.Value
 	var timestamps []*timestamppb.Timestamp
 
-	reducedMDDFlag := true
+	removeLibUseInErrorFormatting := true
 	for _, obs := range observations {
-		if !obs.ReducedMddFlag { // enable only when all nodes are updated
-			reducedMDDFlag = false
+		if !obs.RemoveLibUseInFailureMessageFormatting { // enable only when all nodes are updated
+			removeLibUseInErrorFormatting = false
 		}
 
 		// Does the observation have a timestamp?
@@ -115,15 +116,15 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, lggr log
 
 	if len(obsErrors) >= r.f+1 {
 		var consensusFailedMsg string
-		if reducedMDDFlag {
+		if removeLibUseInErrorFormatting {
 			consensusFailedMsg = fmt.Sprintf(
 				"consensus calculation failed: received %d errors which is >= f+1 (%d) for requestID %s; Consensus metadata: %s; Descriptor type: %s; Errors received: %s",
-				len(obsErrors), r.f+1, requestID, consensusMDDMetadataString(consensusMDD), consensusMDDDescriptorTypeString(consensusMDD), formatErrorsForLogging(ctx, obsErrors),
+				len(obsErrors), r.f+1, requestID, consensusMDDMetadataString(consensusMDD), consensusMDDDescriptorTypeString(consensusMDD), formatErrorsForLogging(ctx, removeLibUseInErrorFormatting, obsErrors),
 			)
 		} else {
 			consensusFailedMsg = fmt.Sprintf(
 				"consensus calculation failed: received %d errors which is >= f+1 (%d) for requestID %s; Consensus metadata, descriptor and default: %+v; Errors received: %s",
-				len(obsErrors), r.f+1, requestID, consensusMDD, formatErrorsForLogging(ctx, obsErrors),
+				len(obsErrors), r.f+1, requestID, consensusMDD, formatErrorsForLogging(ctx, removeLibUseInErrorFormatting, obsErrors),
 			)
 		}
 
@@ -136,15 +137,15 @@ func (r *reportingPlugin) addRequestOutcomeToBatch(ctx context.Context, lggr log
 	if err != nil {
 		valuesJSON := formatValuesForLogging(ctx, lggr, obsValues)
 		var consensusFailedMsg string
-		if reducedMDDFlag {
+		if removeLibUseInErrorFormatting {
 			consensusFailedMsg = fmt.Sprintf(
 				"consensus calculation failed: %v; Consensus metadata: %s; Descriptor type: %s; Values received: %s; Errors received: %s",
-				err, consensusMDDMetadataString(consensusMDD), consensusMDDDescriptorTypeString(consensusMDD), valuesJSON, formatErrorsForLogging(ctx, obsErrors),
+				err, consensusMDDMetadataString(consensusMDD), consensusMDDDescriptorTypeString(consensusMDD), valuesJSON, formatErrorsForLogging(ctx, removeLibUseInErrorFormatting, obsErrors),
 			)
 		} else {
 			consensusFailedMsg = fmt.Sprintf(
 				"consensus calculation failed: %v; Consensus metadata, descriptor and default: %+v; Values received: %s; Errors received: %s",
-				err, consensusMDD, valuesJSON, formatErrorsForLogging(ctx, obsErrors),
+				err, consensusMDD, valuesJSON, formatErrorsForLogging(ctx, removeLibUseInErrorFormatting, obsErrors),
 			)
 		}
 
@@ -193,12 +194,26 @@ func consensusMDDDescriptorTypeString(mdd *oracletypes.RequestObservation) strin
 	}
 }
 
-func formatErrorsForLogging(ctx context.Context, errors []string) string {
-	b, err := json.Encode(ctx, errors)
-	if err != nil {
-		return "could not marshal errors"
+func formatErrorsForLogging(ctx context.Context, removeLibUseInErrorFormatting bool, errors []string) string {
+	if removeLibUseInErrorFormatting {
+		var b strings.Builder
+		b.WriteByte('[')
+		for i, s := range errors {
+			if i > 0 {
+				b.WriteByte(',')
+			}
+			b.WriteString(s)
+		}
+		b.WriteByte(']')
+		return b.String()
+	} else {
+		b, err := json.Encode(ctx, errors)
+		if err != nil {
+			return "could not marshal errors"
+		}
+		return string(b)
 	}
-	return string(b)
+
 }
 
 func formatValuesForLogging(ctx context.Context, lggr logger.Logger, obsValues []*valuespb.Value) string {

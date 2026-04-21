@@ -88,10 +88,10 @@ func makeOutcomeTestObs(
 	}
 
 	ro := &oracletypes.RequestObservation{
-		Metadata:       plugin.ToRequestMetaData(md),
-		Input:          simpleInputs,
-		ReceivedAt:     timestamppb.New(time.Now()),
-		ReducedMddFlag: true,
+		Metadata:                               plugin.ToRequestMetaData(md),
+		Input:                                  simpleInputs,
+		ReceivedAt:                             timestamppb.New(time.Now()),
+		RemoveLibUseInFailureMessageFormatting: true,
 	}
 
 	obsProto := &oracletypes.Observation{
@@ -119,7 +119,7 @@ func extractSingleFailureMessage(t *testing.T, outcomeBytes ocr3types.Outcome) s
 }
 
 // Test_Outcome_FPlusOneErrors checks that when every observation carries
-// ReducedMddFlag=true and f+1 errors are received, Outcome() embeds the per-field
+// RemoveLibUseInFailureMessageFormatting=true and f+1 errors are received, Outcome() embeds the per-field
 // metadata string ("Consensus metadata: requestId=...") and the descriptor type
 // string ("Descriptor type: AGGREGATION_TYPE_MEDIAN") instead of the verbose proto dump.
 func Test_Outcome_PlusOneErrors(t *testing.T) {
