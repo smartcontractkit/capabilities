@@ -196,16 +196,7 @@ func consensusMDDDescriptorTypeString(mdd *oracletypes.RequestObservation) strin
 
 func formatErrorsForLogging(ctx context.Context, removeLibUseInErrorFormatting bool, errors []string) string {
 	if removeLibUseInErrorFormatting {
-		var b strings.Builder
-		b.WriteByte('[')
-		for i, s := range errors {
-			if i > 0 {
-				b.WriteByte(',')
-			}
-			b.WriteString(s)
-		}
-		b.WriteByte(']')
-		return b.String()
+		return "[" + strings.Join(errors, ",") + "]"
 	} else {
 		b, err := json.Encode(ctx, errors)
 		if err != nil {
