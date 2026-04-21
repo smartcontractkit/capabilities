@@ -2,7 +2,6 @@ package actions
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	_ "embed"
@@ -16,7 +15,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 	solprimitives "github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives/solana"
 	"github.com/smartcontractkit/chainlink-solana/contracts"
-	"github.com/smartcontractkit/chainlink-solana/pkg/solana/codec"
 	lptypes "github.com/smartcontractkit/chainlink-solana/pkg/solana/logpoller/types"
 )
 
@@ -121,22 +119,13 @@ func (p *LogsTransmissionStatusProvider) failedTransmissionInfoReply(inProgressL
 }
 
 func (lr *logReader) registerCREForwarderFilters(ctx context.Context) error {
-	var codecIDL codec.IDL
-	if err := json.Unmarshal([]byte(contracts.FetchForwarderIDL()), &codecIDL); err != nil {
-		return fmt.Errorf("unexpected error: invalid Forwarder IDL, error: %w", err)
-	}
-
-	eventIDLProcessed, err := getEventIDL(EventReportProcessed, codecIDL)
-	if err != nil {
-		return err
-	}
 	sigProcessed := soltypes.EventSignature(lptypes.NewEventSignatureFromName(EventReportProcessed))
-	err = lr.SolanaService.RegisterLogTracking(ctx, soltypes.LPFilterQuery{
+	err := lr.SolanaService.RegisterLogTracking(ctx, soltypes.LPFilterQuery{
 		Name:            EventReportProcessed + "_" + lr.forwarderProgramID.String(),
 		Address:         soltypes.PublicKey(lr.forwarderProgramID),
 		EventName:       EventReportProcessed,
 		EventSig:        sigProcessed,
-		ContractIdlJSON: eventIDLProcessed,
+		ContractIdlJSON: []byte(contracts.FetchForwarderIDL()),
 		SubkeyPaths:     [][]string{{"TransmissionId"}},
 	})
 
@@ -144,17 +133,13 @@ func (lr *logReader) registerCREForwarderFilters(ctx context.Context) error {
 		return fmt.Errorf("failed to register  EventReportProcessed filter for forwarder: %w", err)
 	}
 
-	eventIDLInProgress, err := getEventIDL(EventReportInProgress, codecIDL)
-	if err != nil {
-		return err
-	}
 	sigInProgress := soltypes.EventSignature(lptypes.NewEventSignatureFromName(EventReportInProgress))
 	err = lr.SolanaService.RegisterLogTracking(ctx, soltypes.LPFilterQuery{
 		Name:            EventReportInProgress + "_" + lr.forwarderProgramID.String(),
 		Address:         soltypes.PublicKey(lr.forwarderProgramID),
 		EventName:       EventReportInProgress,
 		EventSig:        sigInProgress,
-		ContractIdlJSON: []byte(eventIDLInProgress),
+		ContractIdlJSON: []byte(contracts.FetchForwarderIDL()),
 		SubkeyPaths:     [][]string{{"TransmissionId"}},
 		IncludeReverted: true,
 	})
@@ -166,34 +151,6 @@ func (lr *logReader) registerCREForwarderFilters(ctx context.Context) error {
 	lr.sigInProgress = sigInProgress
 
 	return nil
-}
-
-func getEventIDL(eventName string, codecIDL codec.IDL) ([]byte, error) {
-	eventIdl, err := extractEventIDL(eventName, codecIDL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to extract event IDL %s: %w", eventName, err)
-	}
-
-	lpEventIdl := lptypes.EventIdl{Event: eventIdl, Types: codecIDL.Types}
-
-	ret, err := json.Marshal(lpEventIdl)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal event IDL %s: %w", eventName, err)
-	}
-
-	return ret, nil
-}
-
-func extractEventIDL(eventName string, codecIDL codec.IDL) (codec.IdlEvent, error) {
-	idlDef, err := codec.FindDefinitionFromIDL(codec.ChainConfigTypeEventDef, eventName, codecIDL)
-	if err != nil {
-		return codec.IdlEvent{}, err
-	}
-	eventIdl, isOk := idlDef.(codec.IdlEvent)
-	if !isOk {
-		return codec.IdlEvent{}, fmt.Errorf("unexpected type from IDL definition for event read: %q", eventName)
-	}
-	return eventIdl, nil
 }
 
 func (lr *logReader) queryProcessed(ctx context.Context, transmissionID [32]byte) ([]*soltypes.Log, error) {
