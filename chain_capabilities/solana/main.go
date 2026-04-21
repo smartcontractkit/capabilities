@@ -152,7 +152,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		}
 		c.DON = &myDON
 		c.lggr.Debugw("Initialised DON", "donID", c.DON.ID, "donName", c.DON.Name, "members", len(c.DON.Members), "F", c.DON.F)
-		scheduler, err = ts.InitialiseTransmissionScheduler(ctx, dependencies.CapabilityRegistry, cfg.DeltaStage, c.lggr, c.DON, cfg.IsLocal)
+		scheduler, err = ts.InitialiseTransmissionScheduler(ctx, dependencies.CapabilityRegistry, cfg.DeltaStage, c.lggr, c.DON, false)
 		if err != nil {
 			return fmt.Errorf("failed to initialize transmission scheduler: %w", err)
 		}
