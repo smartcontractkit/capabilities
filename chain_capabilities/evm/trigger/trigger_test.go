@@ -20,6 +20,7 @@ import (
 	_ "github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 
@@ -29,6 +30,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	evmcappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	evmtypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/evm"
 	evmmock "github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query"
@@ -61,6 +63,13 @@ var (
 	finalizedExpBlock = evmtypes.LPBlock{FinalizedBlockNumber: 25}
 	pollInterval      = 10 * time.Millisecond
 )
+
+func testLimitsFactory(t *testing.T) limits.Factory {
+	t.Helper()
+	g, err := settings.NewJSONGetter([]byte(`{}`))
+	require.NoError(t, err)
+	return limits.Factory{Settings: g, Logger: logger.Test(t)}
+}
 
 // Build a LogTriggerService with BaseTriggerCapability wired to an inbox channel.
 func newLTSWithBase(t *testing.T) (*LogTriggerService, chan capabilities.TriggerAndId[*evmcappb.Log]) {
@@ -1251,31 +1260,33 @@ func TestNewLogTriggerService(t *testing.T) {
 
 	t.Run("empty capability id", func(t *testing.T) {
 		lggr := logger.Test(t)
-		trigger, err := NewLogTriggerService(evmService, store, lggr, "", beholderProcessor, messageBuilder, 10*time.Second, 0, 0, limits.Factory{Logger: lggr}, nil, nil)
+		_, err := NewLogTriggerService(evmService, store, lggr, "", beholderProcessor, messageBuilder, time.Second, 0, 0, limits.Factory{Logger: lggr}, nil, capabilities.NewMemEventStore())
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "capabilityID must be non-empty")
+	})
+	t.Run("ok initialize interval", func(t *testing.T) {
+		trigger, err := NewLogTriggerService(evmService, store, logger.Test(t), testLogTriggerCapabilityID, beholderProcessor, messageBuilder, 10*time.Second, 0, 0, testLimitsFactory(t), nil, capabilities.NewMemEventStore())
 		require.NoError(t, err)
 		require.Equal(t, 10*time.Second, trigger.logTriggerPollInterval)
 		require.Equal(t, uint64(1000), trigger.logTriggerSendChannelBufferSize)
 		require.Equal(t, uint64(1000), trigger.limitAndSort.Limit.Count)
 	})
 	t.Run("ok initialize all params", func(t *testing.T) {
-		lggr := logger.Test(t)
-		trigger, err := NewLogTriggerService(evmService, store, lggr, testLogTriggerCapabilityID, beholderProcessor, messageBuilder, 10*time.Second, 100, 50, limits.Factory{Logger: lggr}, nil, nil)
+		trigger, err := NewLogTriggerService(evmService, store, logger.Test(t), testLogTriggerCapabilityID, beholderProcessor, messageBuilder, 10*time.Second, 100, 50, testLimitsFactory(t), nil, capabilities.NewMemEventStore())
 		require.NoError(t, err)
 		require.Equal(t, 10*time.Second, trigger.logTriggerPollInterval)
 		require.Equal(t, uint64(100), trigger.logTriggerSendChannelBufferSize)
 		require.Equal(t, uint64(50), trigger.limitAndSort.Limit.Count)
 	})
 	t.Run("ok initialize buffer only", func(t *testing.T) {
-		lggr := logger.Test(t)
-		trigger, err := NewLogTriggerService(evmService, store, lggr, testLogTriggerCapabilityID, beholderProcessor, messageBuilder, 10*time.Second, 10000, 0, limits.Factory{Logger: lggr}, nil, nil)
+		trigger, err := NewLogTriggerService(evmService, store, logger.Test(t), testLogTriggerCapabilityID, beholderProcessor, messageBuilder, 10*time.Second, 10000, 0, testLimitsFactory(t), nil, capabilities.NewMemEventStore())
 		require.NoError(t, err)
 		require.Equal(t, 10*time.Second, trigger.logTriggerPollInterval)
 		require.Equal(t, uint64(10000), trigger.logTriggerSendChannelBufferSize)
 		require.Equal(t, uint64(defaultLimitQueryLogSize), trigger.limitAndSort.Limit.Count) //default value for limit as 0 was provided
 	})
 	t.Run("ok initialize query limit only", func(t *testing.T) {
-		lggr := logger.Test(t)
-		trigger, err := NewLogTriggerService(evmService, store, lggr, testLogTriggerCapabilityID, beholderProcessor, messageBuilder, 10*time.Second, 0, 100, limits.Factory{Logger: lggr}, nil, nil)
+		trigger, err := NewLogTriggerService(evmService, store, logger.Test(t), testLogTriggerCapabilityID, beholderProcessor, messageBuilder, 10*time.Second, 0, 100, testLimitsFactory(t), nil, capabilities.NewMemEventStore())
 		require.NoError(t, err)
 		require.Equal(t, 10*time.Second, trigger.logTriggerPollInterval)
 		require.Equal(t, uint64(defaultSendChannelBufferSize), trigger.logTriggerSendChannelBufferSize) //default value for buffer size as 0 was provided
@@ -1300,21 +1311,36 @@ func TestNewLogTriggerService(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "logTriggerLimitQueryLogSize (1001) must be less than logTriggerSendChannelBufferSize (1000)")
 	})
-	t.Run("nil trigger event store defaults to in-memory", func(t *testing.T) {
+	t.Run("nil trigger event store", func(t *testing.T) {
 		lggr := logger.Test(t)
-		trigger, err := NewLogTriggerService(evmService, store, lggr, testLogTriggerCapabilityID, beholderProcessor, messageBuilder, time.Second, 0, 0, limits.Factory{Logger: lggr}, nil, nil)
-		require.NoError(t, err)
-		require.NotNil(t, trigger.baseTrigger)
+		_, err := NewLogTriggerService(evmService, store, lggr, testLogTriggerCapabilityID, beholderProcessor, messageBuilder, time.Second, 0, 0, limits.Factory{Logger: lggr}, nil, nil)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "no trigger event store provided")
 	})
 }
 
 func createTriggerObject(t *testing.T, mockEVM *evmmock.EVMService, store LogTriggerStore) *LogTriggerService {
 	t.Helper()
-	mb := monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, "")
-	trigger, err := NewLogTriggerService(mockEVM, store, logger.Test(t), testLogTriggerCapabilityID, test.NopBeholderProcessor{}, mb,
-		pollInterval, 0, 0, limits.Factory{Logger: logger.Test(t)}, nil, nil)
-	require.NoError(t, err)
-	return trigger
+	lggr := logger.Test(t)
+	lts := &LogTriggerService{
+		EVMService:                      mockEVM,
+		lggr:                            lggr,
+		triggers:                        store,
+		beholderProcessor:               test.NopBeholderProcessor{},
+		messageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		logTriggerPollInterval:          pollInterval,
+		logTriggerSendChannelBufferSize: defaultSendChannelBufferSize,
+		limitAndSort:                    query.NewLimitAndSort(query.Limit{Count: defaultLimitQueryLogSize}, query.NewSortByBlock(query.Asc)),
+	}
+	require.NoError(t, lts.initLimiters(limits.Factory{Logger: lggr}))
+	lts.Service, lts.srvcEng = services.Config{
+		Name:  "EvmLogTriggerService",
+		Start: lts.start,
+		Close: lts.close,
+	}.NewServiceEngine(lggr)
+	lts.baseTrigger = capabilities.NewBaseTriggerCapability(capabilities.NewMemEventStore(),
+		func() *evmcappb.Log { return &evmcappb.Log{} }, lggr, testLogTriggerCapabilityID, pollInterval, 0, 0, nil)
+	return lts
 }
 
 func stringToHashBytes(s string) [evmtypes.HashLength]byte {
