@@ -6,6 +6,8 @@ import (
 	"fmt"
 
 	"github.com/gagliardetto/solana-go"
+	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
+
 	solcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -46,7 +48,7 @@ func (fc *forwarderClient) InvokeOnReport(ctx context.Context, receiver solana.P
 	}
 
 	var configPDA solana.PublicKey
-	configPDA, err = withQuickRetry(ctx, fc.lggr, func(ctx context.Context) (solana.PublicKey, error) {
+	configPDA, err = capcommon.WithQuickRetry(ctx, fc.lggr, func(ctx context.Context) (solana.PublicKey, error) {
 		return fc.getOracleConfigPDA(ctx, reportMetadata.DONID, reportMetadata.DONConfigVersion)
 	})
 	if err != nil {
