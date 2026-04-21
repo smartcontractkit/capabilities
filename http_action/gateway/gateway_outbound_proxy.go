@@ -213,7 +213,17 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 		return response, resp.ExternalEndpointLatency, nil
 	case <-ctx.Done():
 		p.metrics.IncrementExecutionTimeout(ctx, common.ProxyModeGateway, lggr)
-		return nil, 0, fmt.Errorf("request timed out: %w", ctx.Err())
+		elapsedMs := time.Since(startTime).Milliseconds()
+		timeoutMs := input.Timeout.AsDuration().Milliseconds()
+		cause := context.Cause(ctx)
+		lggr.Debugw(ErrMsgGatewayResponseWait,
+			"elapsedMs", elapsedMs,
+			"timeoutMs", timeoutMs,
+			"cause", cause,
+		)
+		return nil, 0, NewUserError(
+			fmt.Sprintf("%s (elapsedMs: %d, timeoutMs: %d): %s", ErrMsgGatewayResponseWait, elapsedMs, timeoutMs, cause),
+		)
 	}
 }
 

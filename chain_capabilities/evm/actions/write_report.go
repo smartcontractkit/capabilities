@@ -314,10 +314,10 @@ func (e *WriteReport) pollTransmissionInfo(
 	// setup timer so that we can poll until delta stage and alert if this early returned to have some metric for delta stage tweaks
 	attempt := 0
 	stageTimer := time.NewTimer(delay)
-	stageTimerFired := false
+	deltaStagePassed := false
 	defer func() {
 		stageTimer.Stop()
-		if !stageTimerFired {
+		if !deltaStagePassed && err == nil {
 			monitoring.LogAndEmitSuccess(
 				ctx,
 				"Transmission found before delta stage has passed",
@@ -372,7 +372,7 @@ func (e *WriteReport) pollTransmissionInfo(
 		case <-ctx.Done():
 			return contracts.TransmissionInfo{}, fmt.Errorf("timed out waiting for transmission info")
 		case <-stageTimer.C:
-			stageTimerFired = true
+			deltaStagePassed = true
 			e.lggr.Infow("Delta Stage has passed returning transmission info", lastValidInfo.LogAttrs()...)
 			return lastValidInfo, nil
 		case <-time.After(wait):
@@ -505,6 +505,10 @@ func (e *EVM) validateInputsAndReportMetadata(requestMetadata capabilities.Reque
 
 	if reportMetadata.WorkflowID != requestMetadata.WorkflowID {
 		return fmt.Errorf("workflowID in the report does not match WorkflowID in the request metadata. Report WorkflowID: %s, request WorkflowID: %s", reportMetadata.WorkflowID, requestMetadata.WorkflowID)
+	}
+
+	if request.GasConfig != nil && request.GasConfig.GasLimit != 0 && request.GasConfig.GasLimit < e.ReceiverGasMinimum+contracts.ForwarderContractLogicGasCost {
+		return fmt.Errorf("gas limit is %d, which is lower than minimum gas limit of: %d, for unbounded gas leave the gas limit as nil or 0", request.GasConfig.GasLimit, e.ReceiverGasMinimum+contracts.ForwarderContractLogicGasCost)
 	}
 
 	return nil

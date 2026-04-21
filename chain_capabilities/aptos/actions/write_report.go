@@ -29,6 +29,13 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/monitoring"
 )
 
+// ForwarderGasOverhead is the gas consumed by the forwarder contract before dispatching
+// to the receiver. Transactions with MaxGasAmount below this will fail before
+// reaching the receiver.
+// Measured at ~2,093 gas units on Aptos testnet (31 oracles, f=10, 5 KB payload).
+// Set to 2x with margin for gas schedule changes.
+const ForwarderGasOverhead uint64 = 4000
+
 func withQuickRetry[T any](ctx context.Context, lggr logger.Logger, fn func(context.Context) (T, error)) (T, error) {
 	return capcommon.WithQuickRetry(ctx, lggr, fn)
 }
@@ -155,6 +162,13 @@ func (wr *writeReport) execute(
 		wr.lggr.Debugw("Using provided gas config", "maxGasAmount", request.GasConfig.MaxGasAmount)
 	}
 
+	if ForwarderGasOverhead > 0 && request.GasConfig.MaxGasAmount < ForwarderGasOverhead {
+		wr.lggr.Errorw("MaxGasAmount below forwarder overhead, transaction would fail before reaching receiver",
+			"maxGasAmount", request.GasConfig.MaxGasAmount, "forwarderGasOverhead", ForwarderGasOverhead)
+		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("%s MaxGasAmount (%d) is below the forwarder gas overhead (%d), transaction would fail before reaching the receiver contract",
+			capcommon.UserError, request.GasConfig.MaxGasAmount, ForwarderGasOverhead)
+	}
+
 	transmissionID, err := getTransmissionID(metadata.WorkflowExecutionID, request)
 	if err != nil {
 		wr.lggr.Errorw("GetTransmissionID failed", "error", err)
@@ -162,7 +176,7 @@ func (wr *writeReport) execute(
 	}
 	wr.lggr = wr.lggr.With("transmissionID", transmissionID.GetDebugID())
 
-	txInfoRetriever := NewTxInfoRetriever(wr.forwarderClient, wr.lggr, transmissionID, wr.forwarderAddress.String(), requestStartTime, wr.txSearchStartingBuffer)
+	txInfoRetriever := NewTxInfoRetriever(wr.forwarderClient, wr.lggr, transmissionID, wr.forwarderAddress.String(), requestStartTime, wr.txSearchStartingBuffer, request.Report)
 
 	queuePosition := wr.transmissionScheduler.GetQueuePosition(transmissionID.GetDebugID())
 	orderedTransmitters := wr.getOrderedTransmitters(transmissionID.GetDebugID(), wr.p2pConfig)
@@ -193,9 +207,31 @@ func (wr *writeReport) execute(
 		}
 		return reply, capabilities.ResponseMetadata{}, nil
 	}
-	// TODO: we can exit here if we find F+1 failed transactions, but thats expensive time and i/o wise.
-	// emit metrics here to understand if its worth investing time here over writing to a cheap chain and failing.
-	// maybe do a poll of node0's failed tx and see if we get lucky, if we do find a matching failed tx, we can use vmstatus to exit early on user errors.
+	// Pre-submission check: if we are not node 0, look for node 0's failed tx
+	// to avoid submitting when we know we'll hit the same error. Checking only
+	// node 0 is sufficient because all failures except OOG are deterministic
+	// (identical payload → identical outcome). OOG is handled by comparing gas
+	// headroom. Progressive failure detection during polling (e.g. node 0
+	// crash) and simulation-based pre-flight are tracked in PLEX-2692.
+	if queuePosition > 0 && len(orderedTransmitters) > 0 && orderedTransmitters[0] != "" {
+		node0Addr, addrErr := aptos_sdk.ConvertToAddress(orderedTransmitters[0])
+		if addrErr != nil {
+			wr.lggr.Warnw("Failed to parse node 0 address for pre-submission check, proceeding to submit", "address", orderedTransmitters[0], "error", addrErr)
+		} else {
+			failedResult, searchErr := txInfoRetriever.GetFailedTransmissionInfo(ctx, *node0Addr)
+			if searchErr == nil {
+				wr.lggr.Debugw("Pre-submission check: found node 0 failed tx", "txHash", failedResult.TxHash, "vmStatus", failedResult.VmStatus, "maxGasAmount", failedResult.MaxGasAmount)
+				reply, replyMeta := wr.buildPreSubmissionFatalReply(failedResult, request.GasConfig.MaxGasAmount)
+				if reply != nil {
+					return reply, replyMeta, nil
+				}
+				wr.lggr.Debugw("Pre-submission check: our gas headroom is higher, proceeding to submit",
+					"ourMaxGas", request.GasConfig.MaxGasAmount, "node0MaxGas", failedResult.MaxGasAmount)
+			} else {
+				wr.lggr.Debugw("Pre-submission check: no matching failed tx from node 0, proceeding to submit", "err", searchErr)
+			}
+		}
+	}
 
 	err = wr.reportSizeLimit.Check(ctx, commoncfg.SizeOf(request.Report.RawReport))
 	if err != nil {
@@ -349,6 +385,32 @@ func (wr *writeReport) execute(
 	return nil, capabilities.ResponseMetadata{}, nil // should never happen
 }
 
+// buildPreSubmissionFatalReply evaluates node 0's failed tx and returns a fatal reply
+// if we should NOT submit, or (nil, empty) if we should proceed to submit.
+func (wr *writeReport) buildPreSubmissionFatalReply(failedResult TransmissionTxInfo, ourMaxGasAmount uint64) (*aptoscap.WriteReportReply, capabilities.ResponseMetadata) {
+	if isOutOfGas(failedResult.VmStatus) && ourMaxGasAmount > failedResult.MaxGasAmount {
+		// We have more gas headroom than node 0 — proceed to submit.
+		return nil, capabilities.ResponseMetadata{}
+	}
+
+	// Either not OOG (user error, unrecoverable) or our gas isn't higher — return fatal.
+	// No metering: we never submitted, so we incurred no gas cost.
+	feeOctas := failedResult.GasUsed * failedResult.GasUnitPrice
+	return &aptoscap.WriteReportReply{
+		TxStatus:                        aptoscap.TxStatus_TX_STATUS_FATAL,
+		TxHash:                          &failedResult.TxHash,
+		TransactionFee:                  &feeOctas,
+		ErrorMessage:                    ptrIfNonEmpty(failedResult.VmStatus),
+		ReceiverContractExecutionStatus: receiverContractExecutionStatusFromFailedVMStatus(failedResult.VmStatus, wr.forwarderAddress),
+	}, capabilities.ResponseMetadata{}
+}
+
+// isOutOfGas returns true if the VM status string indicates the transaction
+// exhausted its total gas budget. The Aptos VM returns exactly "Out of gas".
+func isOutOfGas(vmStatus string) bool {
+	return vmStatus == "Out of gas"
+}
+
 // getTxnInfoFromChain returns the transaction fee in octas (gasUsed * gasUnitPrice) and
 // the VM status string by calling AptosService.TransactionByHash and unmarshaling the
 // transaction payload (gas fields and VmStatus).
@@ -492,10 +554,10 @@ func (wr *writeReport) pollTransmissionInfo(
 
 	attempt := 0
 	stageTimer := time.NewTimer(delay)
-	stageTimerFired := false
+	deltaStagePassed := false
 	defer func() {
 		stageTimer.Stop()
-		if !stageTimerFired && err == nil {
+		if !deltaStagePassed && err == nil {
 			monitoring.LogAndEmitSuccess(ctx, "Transmission found before delta stage has passed",
 				wr.lggr, wr.beholderProcessor,
 				wr.messageBuilder.BuildWriteReportSuccessfulEarlyReturn(telemetryContext))
@@ -524,7 +586,7 @@ func (wr *writeReport) pollTransmissionInfo(
 			wr.lggr.Errorw("Timed out waiting for transmission info", "attempts", attempt)
 			return TransmissionInfo{}, fmt.Errorf("timed out waiting for transmission info")
 		case <-stageTimer.C:
-			stageTimerFired = true
+			deltaStagePassed = true
 			wr.lggr.Debugw("Delta stage has passed, returning transmission info", "success", lastValidInfo.Success, "attempts", attempt)
 			return lastValidInfo, nil
 		case <-time.After(wait):
