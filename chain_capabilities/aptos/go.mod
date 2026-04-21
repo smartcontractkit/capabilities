@@ -5,7 +5,7 @@ go 1.25.5
 require (
 	github.com/aptos-labs/aptos-go-sdk v1.12.1-0.20260318141106-21b6ef4ed363
 	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260326144415-41024ab8bbe1
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20260223172632-a716db2e04a0
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20260421155552-1e2d2167194b
 	github.com/smartcontractkit/chain-selectors v1.0.89
 	github.com/smartcontractkit/chainlink-aptos v0.0.0-20260324144720-484863604698
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260326111235-8c09d1a4491f
