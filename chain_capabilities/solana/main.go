@@ -161,7 +161,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		c.lggr.Infow("DeltaStage not configured, transmission scheduling disabled")
 	}
 
-	c.Solana, err = actions.NewSolana(ctx, cfg, solService, messageBuilder, processor, c.lggr, limits.Factory{Logger: c.lggr}, scheduler)
+	c.Solana, err = actions.NewSolana(ctx, cfg, solService, messageBuilder, processor, c.lggr, limits.Factory{Logger: c.lggr}, scheduler, c.chainSelector)
 	if err != nil {
 		return err
 	}
