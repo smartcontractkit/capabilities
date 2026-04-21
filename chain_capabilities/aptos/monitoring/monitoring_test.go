@@ -29,9 +29,23 @@ func newTestProcessor(t *testing.T) (*mocks.ProtoEmitter, monitoring.Metrics, be
 }
 
 func TestProcessor_Process_InitiatedMessage(t *testing.T) {
-	_, _, p := newTestProcessor(t)
-	msg := &monitoring.WriteReportInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}
-	require.NoError(t, p.Process(t.Context(), msg))
+	ctx := t.Context()
+	ec := &capmonitoring.ExecutionContext{}
+
+	initiatedMsgs := []struct {
+		name string
+		msg  proto.Message
+	}{
+		{"ViewInitiated", &monitoring.ViewInitiated{ExecutionContext: ec}},
+		{"WriteReportInitiated", &monitoring.WriteReportInitiated{ExecutionContext: ec}},
+	}
+
+	for _, tc := range initiatedMsgs {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, p := newTestProcessor(t)
+			require.NoError(t, p.Process(ctx, tc.msg))
+		})
+	}
 }
 
 func TestProcessor_Process_SuccessMessages(t *testing.T) {
@@ -42,6 +56,7 @@ func TestProcessor_Process_SuccessMessages(t *testing.T) {
 		name string
 		msg  proto.Message
 	}{
+		{"ViewSuccess", &monitoring.ViewSuccess{ExecutionContext: ec}},
 		{"WriteReportSuccess", &monitoring.WriteReportSuccess{ExecutionContext: ec}},
 		{"WriteReportDuplicateTx", &monitoring.WriteReportDuplicateTx{ExecutionContext: ec}},
 		{"WriteReportSuccessfulEarlyReturn", &monitoring.WriteReportSuccessfulEarlyReturn{ExecutionContext: ec}},
@@ -63,6 +78,7 @@ func TestProcessor_Process_ErrorMessages(t *testing.T) {
 		name string
 		msg  proto.Message
 	}{
+		{"ViewError", &monitoring.ViewError{ExecutionContext: ec}},
 		{"WriteReportError", &monitoring.WriteReportError{ExecutionContext: ec}},
 		{"WriteReportTxFeeCalculationError", &monitoring.WriteReportTxFeeCalculationError{ExecutionContext: ec}},
 		{"WriteReportTransmitterMismatch", &monitoring.WriteReportTransmitterMismatch{ExecutionContext: ec}},
@@ -80,6 +96,17 @@ func TestProcessor_Process_ErrorMessages(t *testing.T) {
 func TestProcessor_Process_WriteReportError_UserError_SkipsMetrics(t *testing.T) {
 	_, _, p := newTestProcessor(t)
 	msg := &monitoring.WriteReportError{
+		ExecutionContext: &capmonitoring.ExecutionContext{},
+		IsUserError:      true,
+		Summary:          "user did something wrong",
+		Cause:            "invalid input",
+	}
+	require.NoError(t, p.Process(t.Context(), msg))
+}
+
+func TestProcessor_Process_ViewError_UserError_SkipsMetrics(t *testing.T) {
+	_, _, p := newTestProcessor(t)
+	msg := &monitoring.ViewError{
 		ExecutionContext: &capmonitoring.ExecutionContext{},
 		IsUserError:      true,
 		Summary:          "user did something wrong",
@@ -108,6 +135,9 @@ func TestProcessor_Process_EmitError_Propagates(t *testing.T) {
 		name string
 		msg  proto.Message
 	}{
+		{"ViewInitiated", &monitoring.ViewInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
+		{"ViewSuccess", &monitoring.ViewSuccess{ExecutionContext: &capmonitoring.ExecutionContext{}}},
+		{"ViewError", &monitoring.ViewError{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"WriteReportInitiated", &monitoring.WriteReportInitiated{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"WriteReportSuccess", &monitoring.WriteReportSuccess{ExecutionContext: &capmonitoring.ExecutionContext{}}},
 		{"WriteReportError", &monitoring.WriteReportError{ExecutionContext: &capmonitoring.ExecutionContext{}}},

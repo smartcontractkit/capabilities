@@ -38,6 +38,31 @@ func (m *MessageBuilder) BuildWriteReportInitiated(tc TelemetryContext, req *apt
 	}
 }
 
+func (m *MessageBuilder) BuildViewInitiated(tc TelemetryContext, req *aptoscap.ViewRequest) *ViewInitiated {
+	return &ViewInitiated{
+		Req:              convertViewRequest(req),
+		ExecutionContext: m.BuildExecutionContext(tc),
+	}
+}
+
+func (m *MessageBuilder) BuildViewSuccess(tc TelemetryContext, req *aptoscap.ViewRequest, responseLen int) *ViewSuccess {
+	return &ViewSuccess{
+		Req:              convertViewRequest(req),
+		ResponseLen:      int32(responseLen), // nolint:gosec // G115: response sizes in this path fit in int32.
+		ExecutionContext: m.BuildExecutionContext(tc),
+	}
+}
+
+func (m *MessageBuilder) BuildViewError(tc TelemetryContext, req *aptoscap.ViewRequest, summary, cause string, isUserError bool) ErrorMessage {
+	return &ViewError{
+		Req:              convertViewRequest(req),
+		ExecutionContext: m.BuildExecutionContext(tc),
+		Summary:          summary,
+		Cause:            cause,
+		IsUserError:      isUserError,
+	}
+}
+
 func (m *MessageBuilder) BuildWriteReportSuccess(tc TelemetryContext, req *aptoscap.WriteReportRequest) *WriteReportSuccess {
 	return &WriteReportSuccess{
 		Req:              convertWriteReportRequest(req),
@@ -119,6 +144,22 @@ func convertWriteReportRequest(req *aptoscap.WriteReportRequest) *WriteReportReq
 	return msg
 }
 
+func convertViewRequest(req *aptoscap.ViewRequest) *ViewRequest {
+	if req == nil || req.Payload == nil || req.Payload.Module == nil {
+		return nil
+	}
+
+	msg := &ViewRequest{
+		ModuleAddress: req.Payload.Module.Address,
+		ModuleName:    req.Payload.Module.Name,
+		Function:      req.Payload.Function,
+	}
+	if req.LedgerVersion != nil {
+		msg.RequestedLedgerVersion = req.LedgerVersion
+	}
+	return msg
+}
+
 func convertGasConfig(gc *aptoscap.GasConfig) *GasConfig {
 	if gc == nil {
 		return nil
@@ -149,6 +190,33 @@ func (r *WriteReportInitiated) LogAttributes() []attribute.KeyValue {
 }
 
 func (r *WriteReportInitiated) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *ViewInitiated) LogAttributes() []attribute.KeyValue {
+	return append(viewRequestLogAttributes(r.Req), r.ExecutionContext.LogAttributes()...)
+}
+
+func (r *ViewInitiated) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *ViewSuccess) LogAttributes() []attribute.KeyValue {
+	return append(append(viewRequestLogAttributes(r.Req), attribute.Int("response_len", int(r.GetResponseLen()))), r.ExecutionContext.LogAttributes()...)
+}
+
+func (r *ViewSuccess) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *ViewError) LogAttributes() []attribute.KeyValue {
+	return append(append(viewRequestLogAttributes(r.Req),
+		attribute.String("summary", r.GetSummary()),
+		attribute.Bool("isUserError", r.GetIsUserError()),
+	), r.ExecutionContext.LogAttributes()...)
+}
+
+func (r *ViewError) MetricAttributes() []attribute.KeyValue {
 	return r.ExecutionContext.MetricsAttributes()
 }
 
@@ -240,4 +308,24 @@ func getReceiver(receiver []byte) string {
 		return hex.EncodeToString(receiver)
 	}
 	return "nil receiver"
+}
+
+func viewRequestLogAttributes(req *ViewRequest) []attribute.KeyValue {
+	if req == nil {
+		return []attribute.KeyValue{
+			attribute.String("module_address", "nil module"),
+			attribute.String("module_name", ""),
+			attribute.String("function", ""),
+		}
+	}
+
+	attrs := []attribute.KeyValue{
+		attribute.String("module_address", getReceiver(req.GetModuleAddress())),
+		attribute.String("module_name", req.GetModuleName()),
+		attribute.String("function", req.GetFunction()),
+	}
+	if req.RequestedLedgerVersion != nil {
+		attrs = append(attrs, attribute.Int64("requested_ledger_version", int64(req.GetRequestedLedgerVersion())))
+	}
+	return attrs
 }

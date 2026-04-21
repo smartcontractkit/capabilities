@@ -26,6 +26,26 @@ func NewProcessor(emitter beholder.ProtoEmitter, metrics Metrics) (beholder.Prot
 
 func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any) error {
 	switch msg := m.(type) {
+	case *ViewInitiated:
+		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
+			return fmt.Errorf("failed to emit ViewInitiated log: %w", err)
+		}
+	case *ViewSuccess:
+		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
+			return fmt.Errorf("failed to emit ViewSuccess log: %w", err)
+		}
+		if err := p.metrics.OnViewSuccess(ctx, msg); err != nil {
+			return fmt.Errorf("failed to publish ViewSuccess metrics: %w", err)
+		}
+	case *ViewError:
+		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
+			return fmt.Errorf("failed to emit ViewError log: %w", err)
+		}
+		if !msg.GetIsUserError() {
+			if err := p.metrics.OnViewError(ctx, msg); err != nil {
+				return fmt.Errorf("failed to publish ViewError metrics: %w", err)
+			}
+		}
 	case *WriteReportInitiated:
 		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
 			return fmt.Errorf("failed to emit WriteReportInitiated log: %w", err)
