@@ -577,7 +577,7 @@ func TestSolanaLogTrigger_CPIEvent(t *testing.T) {
 		MaxLogsKept:                     1000,
 		LimitsFactory:                   limits.Factory{Logger: lggr},
 		BeholderProcessor:               test.NopBeholderProcessor{},
-		MessageBuilder:                  &monitoring.MessageBuilder{},
+		MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 	})
 	require.NoError(t, err)
 
