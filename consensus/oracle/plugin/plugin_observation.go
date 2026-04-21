@@ -31,10 +31,10 @@ func (r *reportingPlugin) Observation(ctx context.Context, outctx ocr3types.Outc
 
 	for _, req := range localRequests {
 		reqObs := &oracletypes.RequestObservation{
-			Metadata:       ToRequestMetaData(req.Metadata),
-			ReceivedAt:     timestamppb.New(req.ReceivedAt),
-			Input:          req.Input,
-			ReducedMddFlag: true,
+			Metadata:   ToRequestMetaData(req.Metadata),
+			ReceivedAt: timestamppb.New(req.ReceivedAt),
+			Input:      req.Input,
+			RemoveLibUseInFailureMessageFormattingFlag: true,
 		}
 
 		hasCapacity := observationBatch.AddObservation(ctx, reqObs)
