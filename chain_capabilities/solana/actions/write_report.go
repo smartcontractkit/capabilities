@@ -29,6 +29,7 @@ import (
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/metering"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
 )
 
@@ -235,15 +236,13 @@ func (wr *WriteReport) executeWriteReport(
 	}
 
 	var meteringMetadata capabilities.ResponseMetadata
-	/*
-		transactionFee, err := wr.getFee(ctx, last.Signature)
-		if err != nil {
-			monitoring.LogAndEmitError(ctx, wr.lggr, wr.beholderProcessor, wr.messageBuilder.BuildWriteReportTxFeeCalculationError(telemetryContext, request, last.Signature, err.Error()))
-		} else {
-			meteringMetadata = metering.GetResponseMetadataWriteReport(transactionFee,
-				wr.chainSelector)
-		}
-	*/
+	transactionFee, err := wr.getFee(ctx, last.Signature)
+	if err != nil {
+		monitoring.LogAndEmitError(ctx, wr.lggr, wr.beholderProcessor, wr.messageBuilder.BuildWriteReportTxFeeCalculationError(telemetryContext, request, last.Signature, err.Error()))
+	} else {
+		meteringMetadata = metering.GetResponseMetadataWriteReport(transactionFee,
+			wr.chainSelector)
+	}
 
 	switch last.State {
 	case TransmissionStateSucceeded:
