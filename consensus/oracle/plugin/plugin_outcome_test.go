@@ -62,7 +62,7 @@ func makeOutcomeTestObs(
 	descriptorAgg sdk.AggregationType,
 	observerID uint8,
 	isError bool,
-	removeLibUseInFailureMessageFormatting bool,
+	removeLibUseInFailureMessageFormattingFlag bool,
 ) libocrtypes.AttributedObservation {
 	t.Helper()
 
@@ -88,10 +88,10 @@ func makeOutcomeTestObs(
 	}
 
 	ro := &oracletypes.RequestObservation{
-		Metadata:                               plugin.ToRequestMetaData(md),
-		Input:                                  simpleInputs,
-		ReceivedAt:                             timestamppb.New(time.Now()),
-		RemoveLibUseInFailureMessageFormatting: removeLibUseInFailureMessageFormatting,
+		Metadata:   plugin.ToRequestMetaData(md),
+		Input:      simpleInputs,
+		ReceivedAt: timestamppb.New(time.Now()),
+		RemoveLibUseInFailureMessageFormattingFlag: removeLibUseInFailureMessageFormattingFlag,
 	}
 
 	obsProto := &oracletypes.Observation{
