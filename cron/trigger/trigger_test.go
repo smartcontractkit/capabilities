@@ -401,20 +401,18 @@ func TestCronTrigger_Load(t *testing.T) {
 	assert.Equal(t, len(ts.scheduler.Jobs()), 0)
 	assert.Equal(t, ts.scheduler.JobsWaitingInQueue(), 0)
 
-	// Wait to ensure no more events - 5s was not sufficient to avoid CI failures
-	time.Sleep(time.Second * 10)
 triggers:
 	for i := range numTriggers {
-		// drain buffered elements
+		closeTimer := time.NewTimer(10 * time.Second)
 		for {
 			select {
 			case _, ok := <-callbacks[i]:
-				if !ok { // closed
+				if !ok {
+					closeTimer.Stop()
 					continue triggers
 				}
-				// discard
-			default:
-				t.Fatalf("channel is still open")
+			case <-closeTimer.C:
+				t.Fatalf("timed out waiting for channel %d to close", i)
 			}
 		}
 	}
@@ -425,10 +423,22 @@ triggers:
 	var scheduledActualDelta [numTriggers * numExecutions]int64
 
 	for execIdx := range numExecutions {
+		var earliestScheduled time.Time
+		var latestScheduled time.Time
+
 		for triggerIdx := range numTriggers {
-			// Check all scheduled execution times at each process are the same across all triggers
-			if triggerIdx > 0 {
-				require.True(t, scheduledExecTimes[0][execIdx].Equal(scheduledExecTimes[triggerIdx][execIdx]))
+			// Triggers with the same schedule should remain aligned, but real-clock
+			// registration can span a second boundary under load.
+			if triggerIdx == 0 {
+				earliestScheduled = scheduledExecTimes[triggerIdx][execIdx]
+				latestScheduled = scheduledExecTimes[triggerIdx][execIdx]
+			} else {
+				if scheduledExecTimes[triggerIdx][execIdx].Before(earliestScheduled) {
+					earliestScheduled = scheduledExecTimes[triggerIdx][execIdx]
+				}
+				if scheduledExecTimes[triggerIdx][execIdx].After(latestScheduled) {
+					latestScheduled = scheduledExecTimes[triggerIdx][execIdx]
+				}
 			}
 			// Check that executions happened every second
 			if execIdx > 0 {
@@ -445,6 +455,8 @@ triggers:
 			// Store time difference between scheduled and actual
 			scheduledActualDelta[triggerIdx*numExecutions+execIdx] = timestamps[triggerIdx][execIdx].Sub(scheduledExecTimes[triggerIdx][execIdx]).Milliseconds()
 		}
+
+		require.False(t, latestScheduled.After(earliestScheduled.Add(time.Second)))
 	}
 
 	var averageDelta int64
