@@ -17,8 +17,6 @@ import (
 	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 )
 
-type RequestType int
-
 type Request interface {
 	ID() string
 	Copy() Request
@@ -286,6 +284,10 @@ func (r *HashableRequest[T]) captureObservationHash() ([HashLength]byte, Observa
 	}
 	r.lock.Lock()
 	defer r.lock.Unlock()
+	// store observation by report data hash to be able to retrieve it later when report is generated.
+	// As there is a race between OCR plugin and capturing observations, we have to store all of them, as we don't know which one will be used in the report.
+	// There is no eviction of old observations as we expect only a few of them to be captured during the lifetime of the request,
+	// and they will be removed when the report is generated or timeout occurs.
 	r.observations[reportData] = observation
 	return reportData, nil, nil
 }
@@ -341,15 +343,8 @@ func NewLockableToBlockHashableRequest[T proto.Message](workflowExecutionID, ref
 	}
 }
 
-func (r *LockableToBlockHashableRequest[T]) Copy() Request {
-	return &LockableToBlockHashableRequest[T]{
-		id:                  r.id,
-		workflowExecutionID: r.workflowExecutionID,
-		reference:           r.reference,
-		metadata:            r.metadata,
-		observe:             r.observe,
-	}
-}
+// Copy returns the same instance of the request, as it's thread safe and we want to reuse hashable request.
+func (r *LockableToBlockHashableRequest[T]) Copy() Request { return r }
 
 func (r *LockableToBlockHashableRequest[T]) ID() string {
 	return r.id

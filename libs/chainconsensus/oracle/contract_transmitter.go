@@ -40,7 +40,10 @@ func (ct *ContractTransmitter) Transmit(
 		return fmt.Errorf("failed to unmarshal report info: %w", err)
 	}
 
-	reportType := getReportType(info)
+	reportType, err := getReportType(info)
+	if err != nil {
+		return fmt.Errorf("failed to get report type from report info: %w", err)
+	}
 	switch reportType {
 	case reportTypeProtoReport:
 		var report ctypes.RequestReport
@@ -66,18 +69,18 @@ func (ct *ContractTransmitter) Transmit(
 	}
 }
 
-func getReportType(infoMap map[string]any) string {
+func getReportType(infoMap map[string]any) (string, error) {
 	reportType, ok := infoMap[reportInfoKeyReportType]
 	if !ok {
-		return reportTypeProtoReport
+		return reportTypeProtoReport, nil
 	}
 
 	reportTypeStr, ok := reportType.(string)
 	if !ok {
-		return reportTypeProtoReport
+		return "", fmt.Errorf("report type is not a string")
 	}
 
-	return reportTypeStr
+	return reportTypeStr, nil
 }
 
 func getRequestID(infoMap map[string]any) (string, error) {
