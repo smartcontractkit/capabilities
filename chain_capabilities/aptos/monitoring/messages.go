@@ -3,6 +3,7 @@ package monitoring
 import (
 	"encoding/hex"
 	"fmt"
+	"strconv"
 
 	sdkpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	"go.opentelemetry.io/otel/attribute"
@@ -325,7 +326,7 @@ func viewRequestLogAttributes(req *ViewRequest) []attribute.KeyValue {
 		attribute.String("function", req.GetFunction()),
 	}
 	if req.RequestedLedgerVersion != nil {
-		attrs = append(attrs, attribute.Int64("requested_ledger_version", int64(req.GetRequestedLedgerVersion())))
+		attrs = append(attrs, attribute.String("requested_ledger_version", strconv.FormatUint(req.GetRequestedLedgerVersion(), 10)))
 	}
 	return attrs
 }

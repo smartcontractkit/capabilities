@@ -9,14 +9,15 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/monitoring"
-	commontest "github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	cltypes "github.com/smartcontractkit/chainlink-common/pkg/types"
 	aptostypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/aptos"
 	typesmocks "github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/monitoring"
+	commontest "github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
 
 	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 )
