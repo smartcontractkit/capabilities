@@ -22,6 +22,8 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// ViewRequest intentionally captures only the small, non-sensitive subset of
+// the capability request that is useful for monitoring.
 type ViewRequest struct {
 	state                  protoimpl.MessageState `protogen:"open.v1"`
 	ModuleAddress          []byte                 `protobuf:"bytes,1,opt,name=module_address,json=moduleAddress,proto3" json:"module_address,omitempty"`
@@ -145,7 +147,7 @@ func (x *ViewInitiated) GetExecutionContext() *monitoring.ExecutionContext {
 type ViewSuccess struct {
 	state            protoimpl.MessageState       `protogen:"open.v1"`
 	Req              *ViewRequest                 `protobuf:"bytes,1,opt,name=req,proto3" json:"req,omitempty"`
-	ResponseLen      int32                        `protobuf:"varint,2,opt,name=response_len,json=responseLen,proto3" json:"response_len,omitempty"`
+	ResponseLen      uint64                       `protobuf:"varint,2,opt,name=response_len,json=responseLen,proto3" json:"response_len,omitempty"`
 	ExecutionContext *monitoring.ExecutionContext `protobuf:"bytes,20,opt,name=execution_context,json=executionContext,proto3" json:"execution_context,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
@@ -188,7 +190,7 @@ func (x *ViewSuccess) GetReq() *ViewRequest {
 	return nil
 }
 
-func (x *ViewSuccess) GetResponseLen() int32 {
+func (x *ViewSuccess) GetResponseLen() uint64 {
 	if x != nil {
 		return x.ResponseLen
 	}
@@ -295,7 +297,7 @@ const file_chain_capabilities_aptos_monitoring_view_proto_rawDesc = "" +
 	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xb4\x01\n" +
 	"\vViewSuccess\x127\n" +
 	"\x03req\x18\x01 \x01(\v2%.chain_capabilities.aptos.ViewRequestR\x03req\x12!\n" +
-	"\fresponse_len\x18\x02 \x01(\x05R\vresponseLen\x12I\n" +
+	"\fresponse_len\x18\x02 \x01(\x04R\vresponseLen\x12I\n" +
 	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xe3\x01\n" +
 	"\tViewError\x127\n" +
 	"\x03req\x18\x01 \x01(\v2%.chain_capabilities.aptos.ViewRequestR\x03req\x12\x18\n" +

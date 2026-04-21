@@ -49,7 +49,7 @@ func (m *MessageBuilder) BuildViewInitiated(tc TelemetryContext, req *aptoscap.V
 func (m *MessageBuilder) BuildViewSuccess(tc TelemetryContext, req *aptoscap.ViewRequest, responseLen int) *ViewSuccess {
 	return &ViewSuccess{
 		Req:              convertViewRequest(req),
-		ResponseLen:      int32(responseLen), // nolint:gosec // G115: response sizes in this path fit in int32.
+		ResponseLen:      uint64(responseLen),
 		ExecutionContext: m.BuildExecutionContext(tc),
 	}
 }
@@ -186,7 +186,7 @@ func convertAttributedSignature(attributedSignatures []*sdkpb.AttributedSignatur
 
 func (r *WriteReportInitiated) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
-		attribute.String("receiver", getReceiver(r.Req.GetReceiver())),
+		attribute.String("receiver", bytesToHexOrPlaceholder(r.Req.GetReceiver(), "nil receiver")),
 	}, r.ExecutionContext.LogAttributes()...)
 }
 
@@ -203,7 +203,7 @@ func (r *ViewInitiated) MetricAttributes() []attribute.KeyValue {
 }
 
 func (r *ViewSuccess) LogAttributes() []attribute.KeyValue {
-	return append(append(viewRequestLogAttributes(r.Req), attribute.Int("response_len", int(r.GetResponseLen()))), r.ExecutionContext.LogAttributes()...)
+	return append(append(viewRequestLogAttributes(r.Req), attribute.String("response_len", strconv.FormatUint(r.GetResponseLen(), 10))), r.ExecutionContext.LogAttributes()...)
 }
 
 func (r *ViewSuccess) MetricAttributes() []attribute.KeyValue {
@@ -223,7 +223,7 @@ func (r *ViewError) MetricAttributes() []attribute.KeyValue {
 
 func (r *WriteReportSuccess) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
-		attribute.String("receiver", getReceiver(r.Req.GetReceiver())),
+		attribute.String("receiver", bytesToHexOrPlaceholder(r.Req.GetReceiver(), "nil receiver")),
 	}, r.ExecutionContext.LogAttributes()...)
 }
 
@@ -233,7 +233,7 @@ func (r *WriteReportSuccess) MetricAttributes() []attribute.KeyValue {
 
 func (r *WriteReportError) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
-		attribute.String("receiver", getReceiver(r.Req.GetReceiver())),
+		attribute.String("receiver", bytesToHexOrPlaceholder(r.Req.GetReceiver(), "nil receiver")),
 		attribute.String("summary", r.GetSummary()),
 		attribute.Bool("isUserError", r.GetIsUserError()),
 	}, r.ExecutionContext.LogAttributes()...)
@@ -245,7 +245,7 @@ func (r *WriteReportError) MetricAttributes() []attribute.KeyValue {
 
 func (r *WriteReportTxFeeCalculationError) LogAttributes() []attribute.KeyValue {
 	attrs := []attribute.KeyValue{
-		attribute.String("receiver", getReceiver(r.Req.GetReceiver())),
+		attribute.String("receiver", bytesToHexOrPlaceholder(r.Req.GetReceiver(), "nil receiver")),
 		attribute.String("summary", r.GetSummary()),
 	}
 	if r.GetTxHash() != "" {
@@ -268,7 +268,7 @@ func (r *WriteReportSuccessfulEarlyReturn) MetricAttributes() []attribute.KeyVal
 
 func (r *WriteReportDuplicateTx) LogAttributes() []attribute.KeyValue {
 	attrs := []attribute.KeyValue{
-		attribute.String("receiver", getReceiver(r.Req.GetReceiver())),
+		attribute.String("receiver", bytesToHexOrPlaceholder(r.Req.GetReceiver(), "nil receiver")),
 	}
 	if r.GetDuplicateTxHash() != "" {
 		attrs = append(attrs, attribute.String("duplicate_tx_hash", r.GetDuplicateTxHash()))
@@ -304,11 +304,11 @@ func (r *WriteReportP2PConfigIncomplete) MetricAttributes() []attribute.KeyValue
 	return r.ExecutionContext.MetricsAttributes()
 }
 
-func getReceiver(receiver []byte) string {
-	if receiver != nil {
-		return hex.EncodeToString(receiver)
+func bytesToHexOrPlaceholder(value []byte, placeholder string) string {
+	if value != nil {
+		return hex.EncodeToString(value)
 	}
-	return "nil receiver"
+	return placeholder
 }
 
 func viewRequestLogAttributes(req *ViewRequest) []attribute.KeyValue {
@@ -321,7 +321,7 @@ func viewRequestLogAttributes(req *ViewRequest) []attribute.KeyValue {
 	}
 
 	attrs := []attribute.KeyValue{
-		attribute.String("module_address", getReceiver(req.GetModuleAddress())),
+		attribute.String("module_address", bytesToHexOrPlaceholder(req.GetModuleAddress(), "nil module")),
 		attribute.String("module_name", req.GetModuleName()),
 		attribute.String("function", req.GetFunction()),
 	}

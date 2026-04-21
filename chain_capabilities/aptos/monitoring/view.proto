@@ -4,6 +4,8 @@ option go_package = "github.com/smartcontractkit/capabilities/chain_capabilities
 
 import "libs/monitoring/execution_context.proto";
 
+// ViewRequest intentionally captures only the small, non-sensitive subset of
+// the capability request that is useful for monitoring.
 message ViewRequest {
   bytes module_address = 1;
   string module_name = 2;
@@ -18,7 +20,7 @@ message ViewInitiated {
 
 message ViewSuccess {
   ViewRequest req = 1;
-  int32 response_len = 2;
+  uint64 response_len = 2;
   monitoring.ExecutionContext execution_context = 20;
 }
 
