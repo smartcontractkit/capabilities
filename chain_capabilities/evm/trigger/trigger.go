@@ -75,9 +75,6 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 	logTriggerLimitQueryLogSize uint64, limitsFactory limits.Factory,
 	orgResolver orgresolver.OrgResolver,
 	triggerEventStore capabilities.EventStore) (*LogTriggerService, error) {
-	if capabilityID == "" {
-		return nil, fmt.Errorf("capabilityID must be non-empty")
-	}
 	if logTriggerPollInterval < 0 {
 		return nil, fmt.Errorf("logTriggerPollInterval must be positive, got: %s", logTriggerPollInterval)
 	}
@@ -123,15 +120,13 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 		Close: lts.close,
 	}.NewServiceEngine(lggr)
 
+	retryInterval := 2 * time.Second // TODO: parameterizable by chain: https://smartcontract-it.atlassian.net/browse/CRE-1774
 	if triggerEventStore == nil {
-		return nil, fmt.Errorf("no trigger event store provided")
+		lggr.Warnf("no trigger event store provided; defaulting to in-memory event store")
+		triggerEventStore = capabilities.NewMemEventStore()
 	}
-	baseTrigger, err := capabilities.NewBaseTriggerCapabilityWithCRESettings(context.Background(), triggerEventStore,
-		func() *evmcappb.Log { return &evmcappb.Log{} }, lts.lggr, capabilityID, limitsFactory.Settings)
-	if err != nil {
-		return nil, err
-	}
-	lts.baseTrigger = baseTrigger
+	lts.baseTrigger = capabilities.NewBaseTriggerCapability(triggerEventStore, func() *evmcappb.Log { return &evmcappb.Log{} },
+		lts.lggr, "EvmLogTriggerService", retryInterval)
 	return lts, nil
 }
 
@@ -558,7 +553,6 @@ func (lts *LogTriggerService) deliverLogReliably(
 		Payload:     anyPayload,
 	}
 
-	lts.lggr.Infow("Sending log event to pipe", "triggerID", triggerID, "eventID", eventID, "blockNumber", log.BlockNumber, "txHash", log.TxHash)
 	if err := lts.baseTrigger.DeliverEvent(ctx, te, triggerID); err != nil {
 		summary := fmt.Sprintf("failed to persist/deliver event (triggerID=%s, eventID=%s): %v", triggerID, eventID, err)
 		lts.lggr.Error(summary)
