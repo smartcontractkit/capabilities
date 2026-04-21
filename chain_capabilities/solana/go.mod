@@ -13,8 +13,8 @@ require (
 	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260420210428-afd603dd8f5c
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260420204255-a3f3bdd56877
 	github.com/smartcontractkit/chainlink-solana v1.1.2-0.20260420191419-ea62f88cbdb4
-	github.com/smartcontractkit/chainlink-solana/contracts v0.0.0-20260310193642-14d318eb91e1
-	github.com/smartcontractkit/chainlink-solana/integration-tests v0.0.0-20260203163148-4efe2a102b4b
+	github.com/smartcontractkit/chainlink-solana/contracts v0.0.0-20260421131224-c46cbfe7bc6c
+	github.com/smartcontractkit/chainlink-solana/integration-tests v0.0.0-20260421131224-c46cbfe7bc6c
 	github.com/stretchr/testify v1.11.1
 	github.com/test-go/testify v1.1.4
 	go.opentelemetry.io/otel v1.43.0
@@ -194,11 +194,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace (
-	github.com/gogo/protobuf => github.com/gogo/protobuf v1.3.2
-	github.com/smartcontractkit/capabilities => ../..
-	github.com/smartcontractkit/chainlink-common => ../../../chainlink-common
-	github.com/smartcontractkit/chainlink-solana => ../../../chainlink-solana
-	github.com/smartcontractkit/chainlink-solana/contracts => ../../../chainlink-solana/contracts
-	github.com/smartcontractkit/chainlink-solana/integration-tests => ../../../chainlink-solana/integration-tests
-)
+replace github.com/gogo/protobuf => github.com/gogo/protobuf v1.3.2
