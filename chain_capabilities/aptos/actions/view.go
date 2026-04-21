@@ -16,7 +16,7 @@ import (
 	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 )
 
-const invalidViewRequestSummary = "Failed to View, user error due to invalid request"
+const viewInvalidRequestSummary = "Failed to View, user error due to invalid request"
 
 func (s *Aptos) View(
 	ctx context.Context,
@@ -30,14 +30,14 @@ func (s *Aptos) View(
 	if input == nil {
 		err := fmt.Errorf("viewRequest is nil")
 		monitoring.LogAndEmitError(ctx, s.lggr, s.beholderProcessor,
-			s.messageBuilder.BuildViewError(telemetryContext, input, invalidViewRequestSummary, err.Error(), true))
+			s.messageBuilder.BuildViewError(telemetryContext, input, viewInvalidRequestSummary, err.Error(), true))
 		return nil, capcommon.NewUserError(err)
 	}
 
 	payload, err := aptoscap.ConvertViewPayloadFromProto(input.Payload)
 	if err != nil {
 		monitoring.LogAndEmitError(ctx, s.lggr, s.beholderProcessor,
-			s.messageBuilder.BuildViewError(telemetryContext, input, invalidViewRequestSummary, err.Error(), true))
+			s.messageBuilder.BuildViewError(telemetryContext, input, viewInvalidRequestSummary, err.Error(), true))
 		return nil, capcommon.NewUserError(err)
 	}
 
