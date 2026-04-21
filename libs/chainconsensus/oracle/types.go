@@ -22,6 +22,6 @@ const (
 	reportInfoKeyRequestID  = "requestID"
 )
 const (
-	reportTypeProtoReport = ""
+	reportTypeProtoReport = "proto"
 	reportTypeHashable    = "hashable"
 )
