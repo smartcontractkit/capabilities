@@ -1675,7 +1675,7 @@ func TestPollTransmissionInfo_QueuePositionScenarios(t *testing.T) {
 func TestPollTransmissionInfo_RaceConditions(t *testing.T) {
 	t.Parallel()
 
-	t.Run("factor 1: timer returns stale state without final read", func(t *testing.T) {
+	t.Run("timer returns stale state without final read", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 		defer cancel()
 
@@ -1711,7 +1711,7 @@ func TestPollTransmissionInfo_RaceConditions(t *testing.T) {
 		require.Equal(t, contracts.TransmissionStateSucceeded, info.State)
 	})
 
-	t.Run("factor 2: all rpc errors including boundary read return error", func(t *testing.T) {
+	t.Run("all rpc errors including boundary read return error", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 		defer cancel()
 

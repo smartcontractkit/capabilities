@@ -18,6 +18,8 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/monitoring"
 	commontest "github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
+	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
@@ -27,7 +29,6 @@ import (
 	aptostypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/aptos"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
-	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
 )
 
 // --- helpers ---
@@ -662,7 +663,7 @@ func setupAptosPollTransmissionInfo(t *testing.T) (*writeReport, *CREForwarderCl
 func TestPollTransmissionInfo_RaceConditions_Aptos(t *testing.T) {
 	t.Parallel()
 
-	t.Run("factor 1: timer returns fresh state via final boundary read", func(t *testing.T) {
+	t.Run("timer returns fresh state via final boundary read", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 		defer cancel()
 
@@ -691,7 +692,7 @@ func TestPollTransmissionInfo_RaceConditions_Aptos(t *testing.T) {
 		require.True(t, info.Success)
 	})
 
-	t.Run("factor 2: all rpc errors including boundary read return error", func(t *testing.T) {
+	t.Run("all rpc errors including boundary read return error", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 		defer cancel()
 
