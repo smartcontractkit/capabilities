@@ -125,8 +125,12 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 		lggr.Warnf("no trigger event store provided; defaulting to in-memory event store")
 		triggerEventStore = capabilities.NewMemEventStore()
 	}
+	baseCapID := capabilityID
+	if baseCapID == "" {
+		baseCapID = "EvmLogTriggerService"
+	}
 	lts.baseTrigger = capabilities.NewBaseTriggerCapability(triggerEventStore, func() *evmcappb.Log { return &evmcappb.Log{} },
-		lts.lggr, "EvmLogTriggerService", retryInterval)
+		lts.lggr, baseCapID, retryInterval, 0, 0, nil)
 	return lts, nil
 }
 
