@@ -225,6 +225,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up project environment
+        id: setup
         uses: ./.github/actions/setup
         with:
           project: ${{ matrix.projects }}
