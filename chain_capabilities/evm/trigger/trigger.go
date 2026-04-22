@@ -159,7 +159,7 @@ func (lts *LogTriggerService) start(ctx context.Context) error {
 	}
 	duration := 30 * time.Second
 	ticker := services.NewTicker(duration)
-	lts.lggr.Debugf("Starting clean up of failed log poller filters every %s seconds", duration)
+	lts.lggr.Infof("Starting clean up of failed log poller filters every %s seconds", duration)
 	lts.srvcEng.GoTick(ticker, lts.cleanUpStaleFilters)
 	return nil
 }
@@ -208,7 +208,7 @@ func (lts *LogTriggerService) cleanUpStaleFilters(ctx context.Context) {
 }
 
 func (lts *LogTriggerService) RegisterLogTrigger(ctx context.Context, triggerID string, meta capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*evmcappb.Log], caperrors.Error) {
-	lts.lggr.Debugf("RegisterLogTrigger called with triggerID: %s, input: %+v", triggerID, input)
+	lts.lggr.Infof("RegisterLogTrigger called with triggerID: %s, input: %+v", triggerID, input)
 	ctx = meta.ContextWithCRE(ctx)
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 	if triggerID == "" {
@@ -367,7 +367,7 @@ func (lts *LogTriggerService) generateFilterID(triggerID string) string {
 }
 
 func (lts *LogTriggerService) startPolling(ctx context.Context, telemetryContext monitoring.TelemetryContext, triggerID string, input *evmcappb.FilterLogTriggerRequest, logCh chan capabilities.TriggerAndId[*evmcappb.Log]) {
-	lts.lggr.Debugf("Starting polling for triggerID: %s, interval: %d", triggerID, lts.logTriggerPollInterval)
+	lts.lggr.Infof("Starting polling for triggerID: %s, interval: %d", triggerID, lts.logTriggerPollInterval)
 	ticker := defaultTickerFactory.NewTicker(lts.logTriggerPollInterval)
 	defer ticker.Stop()
 	defer close(logCh)
@@ -375,12 +375,12 @@ func (lts *LogTriggerService) startPolling(ctx context.Context, telemetryContext
 	for {
 		select {
 		case <-ctx.Done():
-			lts.lggr.Debugf("Context cancelled for triggerID: %s, stopping polling", triggerID)
+			lts.lggr.Infof("Context cancelled for triggerID: %s, stopping polling", triggerID)
 			return
 		case <-ticker.Channel():
 			state, exists := lts.triggers.Read(triggerID)
 			if !exists {
-				lts.lggr.Debugf("Unregistered while polling triggerID: %s", triggerID)
+				lts.lggr.Infof("Unregistered while polling triggerID: %s", triggerID)
 				return
 			}
 			lts.lggr.Debugf("Awake, polling for triggerID: %s, currentOffset: %d", triggerID, state.lastBlock)
@@ -558,6 +558,7 @@ func (lts *LogTriggerService) deliverLogReliably(
 		Payload:     anyPayload,
 	}
 
+	lts.lggr.Infow("Sending log event to pipe", "triggerID", triggerID, "eventID", eventID, "blockNumber", log.BlockNumber, "txHash", log.TxHash)
 	if err := lts.baseTrigger.DeliverEvent(ctx, te, triggerID); err != nil {
 		summary := fmt.Sprintf("failed to persist/deliver event (triggerID=%s, eventID=%s): %v", triggerID, eventID, err)
 		lts.lggr.Error(summary)
@@ -707,7 +708,7 @@ func (lts *LogTriggerService) UnregisterLogTrigger(ctx context.Context, triggerI
 	if !found {
 		return caperrors.NewPublicSystemError(fmt.Errorf("no active trigger found for triggerID: %s", triggerID), caperrors.Internal)
 	}
-	lts.lggr.Debugf("UnregisterLogTrigger triggerID: %s", triggerID)
+	lts.lggr.Infof("UnregisterLogTrigger triggerID: %s", triggerID)
 	trigger.cancelFunc()
 	lts.triggers.Delete(triggerID)
 	lts.baseTrigger.UnregisterTrigger(triggerID)

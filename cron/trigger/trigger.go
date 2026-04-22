@@ -19,6 +19,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/triggers/cron"
 	crontypedapi "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron/server"
+	"github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/custmsg"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services"
@@ -60,6 +61,7 @@ type Service struct {
 	capabilities.CapabilityInfo
 	limitsFactory           limits.Factory
 	fastestScheduleInterval limits.TimeLimiter
+	multiTriggerFlag        limits.RangeLimiter[config.Timestamp] // TODO(CRE-2774): remove when fully rolled out
 	clock                   clockwork.Clock
 	lggr                    logger.Logger
 	scheduler               gocron.Scheduler
@@ -167,6 +169,12 @@ func (s *Service) Initialise(ctx context.Context, dependencies core.StandardCapa
 		return fmt.Errorf("failed to create limiter: %w", err)
 	}
 	s.fastestScheduleInterval = limiter
+
+	s.multiTriggerFlag, err = limits.MakeRangeLimiter(s.limitsFactory, cresettings.Default.PerWorkflow.FeatureMultiTriggerExecutionIDsActivePeriod)
+	if err != nil {
+		return fmt.Errorf("failed to create rangelimiter: %w", err)
+	}
+
 	s.orgResolver = dependencies.OrgResolver
 	if s.orgResolver == nil {
 		s.lggr.Warn("OrgResolver is nil, cron capability will not be able to fetch organization ID")
@@ -212,6 +220,13 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 		return nil, capErr
 	}
 
+	triggerIndex, err := workflows.GetTriggerIndexFromReferenceID(metadata.ReferenceID)
+	if err != nil {
+		s.lggr.Errorw("failed to get trigger index from reference ID", "err", err, "triggerID", triggerID, "workflowID", metadata.WorkflowID, "refID", metadata.ReferenceID)
+		// continue with execution even if we can't get trigger index
+		triggerIndex = 0
+	}
+
 	task := gocron.NewTask(
 		// Task callback, executed at next run time
 		func() {
@@ -240,8 +255,15 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 
 			s.lggr.Debugw("task callback sending trigger response", "executionID", metadata.WorkflowExecutionID, "triggerID", triggerID, "scheduledExecTimeUTC", scheduledExecutionTimeUTC.Format(time.RFC3339Nano), "actualExecTimeUTC", currentTimeUTC.Format(time.RFC3339Nano))
 
-			// Generate deterministic workflow execution ID and emit TriggerExecutionStarted event
-			workflowExecutionID, execIDErr := workflows.EncodeExecutionID(trigger.workflowID, response.Id)
+			var workflowExecutionID string
+			var execIDErr error
+			// NOTE: Relying on local time is not ideal but we don't have access to DONTime at this stage.
+			if s.multiTriggerFlag.Check(ctx, config.NewTimestamp(time.Now())) != nil {
+				workflowExecutionID, execIDErr = workflows.GenerateExecutionIDWithTriggerIndex(trigger.workflowID, response.Id, triggerIndex)
+			} else { // legacy behavior
+				workflowExecutionID, execIDErr = workflows.EncodeExecutionID(trigger.workflowID, response.Id) //nolint:staticcheck
+			}
+
 			if execIDErr != nil {
 				s.lggr.Errorw("failed to generate execution ID", "err", execIDErr, "triggerID", triggerID, "workflowID", trigger.workflowID, "triggerEventID", response.Id)
 				// Continue with execution even if we can't generate ID or emit event
