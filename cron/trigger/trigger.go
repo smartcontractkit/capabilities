@@ -190,6 +190,11 @@ func (s *Service) Initialise(ctx context.Context, dependencies core.StandardCapa
 
 func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) (<-chan capabilities.TriggerAndId[*crontypedapi.Payload], caperrors.Error) {
 	ctx = metadata.ContextWithCRE(ctx)
+	var muCh sync.RWMutex // extra synchronization to prevent the cron task from racing to send on the closed chan and re-register itself
+	// hold the lock until we call triggers.Write
+	muCh.Lock()
+	defer muCh.Unlock()
+
 	_, ok := s.triggers.Read(triggerID)
 	if ok {
 		return nil, caperrors.NewPublicSystemError(fmt.Errorf("triggerId %s already registered", triggerID), caperrors.Internal)
@@ -197,16 +202,13 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 
 	var job gocron.Job
 	callbackCh := make(chan capabilities.TriggerAndId[*crontypedapi.Payload], defaultSendChannelBufferSize)
-	var muCh sync.RWMutex // extra synchronization to prevent the cron task from racing to send on the closed chan and re-register itself
+
 	closeCh := func() {
 		muCh.Lock()
 		defer muCh.Unlock()
 		close(callbackCh)
 		callbackCh = nil
 	}
-	// hold the lock until we call triggers.Write
-	muCh.Lock()
-	defer muCh.Unlock()
 
 	allowSeconds := true
 	jobDef := gocron.CronJob(input.Schedule, allowSeconds)
