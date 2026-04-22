@@ -245,7 +245,7 @@ jobs:
       - name: Determine lint mode
         id: module-go
         run: |
-          module_go_version=$(sed -n 's/^go //p' "${{ fromJson(needs.affected.outputs.nx)[matrix.projects].root }}/go.mod" | head -n1)
+          module_go_version=$(sed -n 's/^go //p' "${{ steps.setup.outputs.resolved-go-version-file }}" | head -n1)
           module_go_minor=$(echo "${module_go_version}" | awk -F. '{print $1 "." $2}')
           uses_repo_default=true
           if [[ "${module_go_minor}" != "${GO_VERSION}" ]]; then
