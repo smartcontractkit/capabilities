@@ -82,10 +82,13 @@ jobs:
       - name: Set up project environment
         uses: ./.github/actions/setup
         with:
-          go-version-file: ${{ matrix.projects == 'aptos' && 'chain_capabilities/aptos/go.mod' || '' }}
           project: ${{ matrix.projects }}
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "build"
+
+      - name: Select Aptos Go toolchain
+        if: matrix.projects == 'aptos'
+        run: echo "GOTOOLCHAIN=go1.26.2+auto" >> "$GITHUB_ENV"
 
       - name: Support private Go modules
         env:
@@ -112,10 +115,13 @@ jobs:
       - name: Set up project environment
         uses: ./.github/actions/setup
         with:
-          go-version-file: ${{ matrix.projects == 'aptos' && 'chain_capabilities/aptos/go.mod' || '' }}
           project: ${{ matrix.projects }}
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "test"
+
+      - name: Select Aptos Go toolchain
+        if: matrix.projects == 'aptos'
+        run: echo "GOTOOLCHAIN=go1.26.2+auto" >> "$GITHUB_ENV"
 
       - name: Support private Go modules
         env:
@@ -152,10 +158,13 @@ jobs:
       - name: Set up project environment
         uses: ./.github/actions/setup
         with:
-          go-version-file: ${{ matrix.projects == 'aptos' && 'chain_capabilities/aptos/go.mod' || '' }}
           project: ${{ matrix.projects }}
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "race"
+
+      - name: Select Aptos Go toolchain
+        if: matrix.projects == 'aptos'
+        run: echo "GOTOOLCHAIN=go1.26.2+auto" >> "$GITHUB_ENV"
 
       - name: Support private Go modules
         env:
@@ -186,10 +195,13 @@ jobs:
       - name: Set up project environment
         uses: ./.github/actions/setup
         with:
-          go-version-file: ${{ matrix.projects == 'aptos' && 'chain_capabilities/aptos/go.mod' || '' }}
           project: ${{ matrix.projects }}
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "tidy-and-generate"
+
+      - name: Select Aptos Go toolchain
+        if: matrix.projects == 'aptos'
+        run: echo "GOTOOLCHAIN=go1.26.2+auto" >> "$GITHUB_ENV"
 
       - name: Support private Go modules
         env:
@@ -232,10 +244,13 @@ jobs:
         id: setup
         uses: ./.github/actions/setup
         with:
-          go-version-file: ${{ matrix.projects == 'aptos' && 'chain_capabilities/aptos/go.mod' || '' }}
           project: ${{ matrix.projects }}
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "lint"
+
+      - name: Select Aptos Go toolchain
+        if: matrix.projects == 'aptos'
+        run: echo "GOTOOLCHAIN=go1.26.2+auto" >> "$GITHUB_ENV"
 
       - name: Support private Go modules
         env:
