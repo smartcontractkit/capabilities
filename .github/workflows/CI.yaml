@@ -82,6 +82,7 @@ jobs:
       - name: Set up project environment
         uses: ./.github/actions/setup
         with:
+          go-version-file: ${{ matrix.projects == 'aptos' && 'chain_capabilities/aptos/go.mod' || '' }}
           project: ${{ matrix.projects }}
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "build"
@@ -111,6 +112,7 @@ jobs:
       - name: Set up project environment
         uses: ./.github/actions/setup
         with:
+          go-version-file: ${{ matrix.projects == 'aptos' && 'chain_capabilities/aptos/go.mod' || '' }}
           project: ${{ matrix.projects }}
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "test"
@@ -150,6 +152,7 @@ jobs:
       - name: Set up project environment
         uses: ./.github/actions/setup
         with:
+          go-version-file: ${{ matrix.projects == 'aptos' && 'chain_capabilities/aptos/go.mod' || '' }}
           project: ${{ matrix.projects }}
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "race"
@@ -183,6 +186,7 @@ jobs:
       - name: Set up project environment
         uses: ./.github/actions/setup
         with:
+          go-version-file: ${{ matrix.projects == 'aptos' && 'chain_capabilities/aptos/go.mod' || '' }}
           project: ${{ matrix.projects }}
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "tidy-and-generate"
@@ -228,6 +232,7 @@ jobs:
         id: setup
         uses: ./.github/actions/setup
         with:
+          go-version-file: ${{ matrix.projects == 'aptos' && 'chain_capabilities/aptos/go.mod' || '' }}
           project: ${{ matrix.projects }}
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "lint"
@@ -244,12 +249,25 @@ jobs:
           echo "version=${version}" | tee -a "$GITHUB_OUTPUT"
 
       - name: golangci-lint (${{ matrix.projects }})
+        if: matrix.projects != 'aptos'
         uses: smartcontractkit/.github/actions/ci-lint-go@ci-lint-go/3.1.0
         with:
           checkout-repo: false
           golangci-lint-config: ${{ github.workspace }}/.golangci.yml
           golangci-lint-version: v${{ steps.get-version.outputs.version }}
           go-directory: ${{fromJson(needs.affected.outputs.nx)[matrix.projects].root}}
+
+      - name: golangci-lint (aptos)
+        if: matrix.projects == 'aptos'
+        uses: golangci/golangci-lint-action@4afd733a84b1f43292c63897423277bb7f4313a9
+        with:
+          version: v${{ steps.get-version.outputs.version }}
+          install-mode: goinstall
+          args: --output.checkstyle.path=golangci-lint-report.xml --output.text.path=stdout --config=${{ github.workspace }}/.golangci.yml
+          working-directory: chain_capabilities/aptos
+          only-new-issues: true
+          verify: true
+          problem-matchers: false
 
   modgraph:
     runs-on: ubuntu-latest
