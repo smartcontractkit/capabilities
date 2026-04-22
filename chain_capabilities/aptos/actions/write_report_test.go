@@ -1,14 +1,17 @@
 package actions
 
 import (
+	"context"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	aptos_sdk "github.com/aptos-labs/aptos-go-sdk"
+	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
@@ -16,6 +19,7 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/monitoring"
 	commontest "github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
@@ -25,7 +29,6 @@ import (
 	aptostypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/aptos"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
-	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
 )
 
 // --- helpers ---
@@ -629,6 +632,85 @@ func TestWriteReport_PreSubmissionCheck(t *testing.T) {
 		require.Equal(t, aptoscap.TxStatus_TX_STATUS_FATAL, result.Response.TxStatus)
 		// Pre-submission check skipped because orderedTransmitters[0] is empty
 		h.forwarderClient.AssertNotCalled(t, "GetTransmitterTransactions", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	})
+}
+
+func setupAptosPollTransmissionInfo(t *testing.T) (*writeReport, *CREForwarderClient_mock) {
+	t.Helper()
+	lggr := logger.Test(t)
+	mockClient := NewCREForwarderClient_mock(t)
+
+	var peer0, peer1, peer2, peer3 p2ptypes.PeerID
+	peer0[0], peer1[0], peer2[0], peer3[0] = 0x01, 0x02, 0x03, 0x04
+	scheduler := ts.NewTransmissionScheduler(
+		peer0,
+		[]p2ptypes.PeerID{peer0, peer1, peer2, peer3},
+		10*time.Millisecond,
+		2,
+		lggr,
+	)
+
+	wr := &writeReport{
+		forwarderClient:       mockClient,
+		lggr:                  logger.Sugared(lggr),
+		transmissionScheduler: scheduler,
+		beholderProcessor:     commontest.NopBeholderProcessor{},
+		messageBuilder:        monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+	}
+	return wr, mockClient
+}
+
+func TestPollTransmissionInfo_RaceConditions_Aptos(t *testing.T) {
+	t.Parallel()
+
+	t.Run("timer returns fresh state via final boundary read", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+		defer cancel()
+
+		wr, mockClient := setupAptosPollTransmissionInfo(t)
+		wr.transmissionScheduler.DeltaStage = 150 * time.Millisecond
+
+		var chainStateUpdated atomic.Bool
+		go func() {
+			time.Sleep(120 * time.Millisecond)
+			chainStateUpdated.Store(true)
+		}()
+
+		mockClient.EXPECT().
+			GetTransmissionInfo(mock.Anything, mock.Anything).
+			RunAndReturn(func(context.Context, TransmissionID) (TransmissionInfo, error) {
+				if chainStateUpdated.Load() {
+					return TransmissionInfo{Success: true, Transmitter: testTransmitter}, nil
+				}
+				return TransmissionInfo{Success: false}, nil
+			}).
+			Maybe()
+
+		info, err := wr.pollTransmissionInfo(ctx, TransmissionID{}, 1, monitoring.TelemetryContext{})
+		require.NoError(t, err)
+		require.True(t, chainStateUpdated.Load(), "chain state should have updated before stage timer returned")
+		require.True(t, info.Success)
+	})
+
+	t.Run("all rpc errors including boundary read return error", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+		defer cancel()
+
+		wr, mockClient := setupAptosPollTransmissionInfo(t)
+		wr.transmissionScheduler.DeltaStage = 50 * time.Millisecond
+
+		var rpcCalls atomic.Int64
+		mockClient.EXPECT().
+			GetTransmissionInfo(mock.Anything, mock.Anything).
+			RunAndReturn(func(context.Context, TransmissionID) (TransmissionInfo, error) {
+				rpcCalls.Add(1)
+				return TransmissionInfo{}, errors.New("rpc unavailable")
+			}).
+			Maybe()
+
+		_, err := wr.pollTransmissionInfo(ctx, TransmissionID{}, 2, monitoring.TelemetryContext{})
+		require.Greater(t, rpcCalls.Load(), int64(0))
+		require.Error(t, err)
 	})
 }
 

@@ -6,9 +6,15 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gagliardetto/solana-go"
+	"github.com/test-go/testify/mock"
+	"github.com/test-go/testify/require"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	solcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
@@ -18,12 +24,11 @@ import (
 	soltypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/solana"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
-	"github.com/test-go/testify/mock"
-	"github.com/test-go/testify/require"
-	"google.golang.org/protobuf/proto"
 
+	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/metering"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
+	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
 )
 
 type testHelper struct {
@@ -457,6 +462,87 @@ func TestWriteReport_MeteringMetadata(t *testing.T) {
 
 		require.Empty(t, result.ResponseMetadata.Metering)
 		helper.creForwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	})
+}
+
+func setupSolanaPollTransmissionInfo(t *testing.T) (*WriteReport, *TransmissionInfoProvider_mock) {
+	t.Helper()
+	testLogger := logger.Test(t)
+	mockTrInfo := NewTransmissionInfoProvider_mock(t)
+
+	var peer0, peer1, peer2, peer3 p2ptypes.PeerID
+	peer0[0], peer1[0], peer2[0], peer3[0] = 0x01, 0x02, 0x03, 0x04
+	scheduler := ts.NewTransmissionScheduler(
+		peer0,
+		[]p2ptypes.PeerID{peer0, peer1, peer2, peer3},
+		10*time.Millisecond,
+		2,
+		testLogger,
+	)
+
+	wr := &WriteReport{
+		transmissionInfoProvider: mockTrInfo,
+		lggr:                     testLogger,
+		beholderProcessor:        NopBeholderProcessor{},
+		messageBuilder:           monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		transmissionScheduler:    scheduler,
+	}
+	return wr, mockTrInfo
+}
+
+func TestPollTransmissionInfo_RaceConditions_Solana(t *testing.T) {
+	t.Parallel()
+
+	t.Run("timer returns fresh state via final boundary read", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+		defer cancel()
+
+		wr, mockTrInfo := setupSolanaPollTransmissionInfo(t)
+		wr.transmissionScheduler.DeltaStage = 150 * time.Millisecond
+
+		var chainStateUpdated atomic.Bool
+		go func() {
+			time.Sleep(120 * time.Millisecond)
+			chainStateUpdated.Store(true)
+		}()
+
+		mockTrInfo.EXPECT().
+			GetTransmissionInfo(mock.Anything, mock.Anything).
+			RunAndReturn(func(context.Context, [32]byte) (TransmissionInfo, error) {
+				if chainStateUpdated.Load() {
+					return TransmissionInfo{State: TransmissionStateSucceeded}, nil
+				}
+				return TransmissionInfo{State: TransmissionStateNotAttempted}, nil
+			}).
+			Maybe()
+
+		var transmissionID [32]byte
+		info, err := wr.pollTransmissionInfo(ctx, transmissionID, 1)
+		require.NoError(t, err)
+		require.True(t, chainStateUpdated.Load(), "chain state should have updated before stage timer returned")
+		require.Equal(t, TransmissionStateSucceeded, info.State)
+	})
+
+	t.Run("all rpc errors including boundary read return error", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+		defer cancel()
+
+		wr, mockTrInfo := setupSolanaPollTransmissionInfo(t)
+		wr.transmissionScheduler.DeltaStage = 50 * time.Millisecond
+
+		var rpcCalls atomic.Int64
+		mockTrInfo.EXPECT().
+			GetTransmissionInfo(mock.Anything, mock.Anything).
+			RunAndReturn(func(context.Context, [32]byte) (TransmissionInfo, error) {
+				rpcCalls.Add(1)
+				return TransmissionInfo{}, errors.New("rpc unavailable")
+			}).
+			Maybe()
+
+		var transmissionID [32]byte
+		_, err := wr.pollTransmissionInfo(ctx, transmissionID, 2)
+		require.Greater(t, rpcCalls.Load(), int64(0))
+		require.Error(t, err)
 	})
 }
 

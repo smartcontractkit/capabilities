@@ -6,6 +6,8 @@ import (
 	"fmt"
 
 	"github.com/gagliardetto/solana-go"
+	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
+
 	solcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -25,7 +27,7 @@ type forwarderClient struct {
 }
 
 func newForwarderClient(solService types.SolanaService, lggr logger.Logger, forwarderProgramID, forwarderState, transmitter solana.PublicKey) CREForwarderClient {
-	ks_forwarder.SetProgramID(forwarderProgramID)
+	ks_forwarder.ProgramID = forwarderProgramID
 	return &forwarderClient{
 		lggr:               lggr,
 		SolanaService:      solService,
@@ -46,7 +48,7 @@ func (fc *forwarderClient) InvokeOnReport(ctx context.Context, receiver solana.P
 	}
 
 	var configPDA solana.PublicKey
-	configPDA, err = withQuickRetry(ctx, fc.lggr, func(ctx context.Context) (solana.PublicKey, error) {
+	configPDA, err = capcommon.WithQuickRetry(ctx, fc.lggr, func(ctx context.Context) (solana.PublicKey, error) {
 		return fc.getOracleConfigPDA(ctx, reportMetadata.DONID, reportMetadata.DONConfigVersion)
 	})
 	if err != nil {
@@ -66,7 +68,7 @@ func (fc *forwarderClient) InvokeOnReport(ctx context.Context, receiver solana.P
 		return nil, fmt.Errorf("failed to derive forwarder authority: %w", err)
 	}
 
-	inst := ks_forwarder.NewReportInstruction(
+	ix, err := ks_forwarder.NewReportInstruction(
 		toPayload(report),
 		fc.forwarderState,
 		configPDA,
@@ -76,13 +78,17 @@ func (fc *forwarderClient) InvokeOnReport(ctx context.Context, receiver solana.P
 		receiver,
 		solana.SystemProgramID,
 	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build report instruction: %w", err)
+	}
 
 	// meta[0] - forwarderState, meta[1] - executionState are already included
-	inst.AccountMetaSlice = append(inst.AccountMetaSlice, convertMetaPB(meta)[2:]...)
-	ix, instErr := inst.ValidateAndBuild()
-	if instErr != nil {
-		return nil, fmt.Errorf("failed to validate and build report instruction: %w", instErr)
+	accounts := append(solana.AccountMetaSlice(ix.Accounts()), convertMetaPB(meta)[2:]...)
+	data, err := ix.Data()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get report instruction data: %w", err)
 	}
+	ix = solana.NewInstruction(ix.ProgramID(), accounts, data)
 
 	// we can encode with empty block hash here, it will be updated with recent blockhash later
 	tx, err := solana.NewTransaction([]solana.Instruction{ix}, solana.Hash{}, solana.TransactionPayer(fc.transmitter))
