@@ -11,6 +11,10 @@ import (
 	"time"
 
 	"github.com/gagliardetto/solana-go"
+	"github.com/test-go/testify/mock"
+	"github.com/test-go/testify/require"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	solcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
@@ -20,9 +24,6 @@ import (
 	soltypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/solana"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
-	"github.com/test-go/testify/mock"
-	"github.com/test-go/testify/require"
-	"google.golang.org/protobuf/proto"
 
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/metering"
