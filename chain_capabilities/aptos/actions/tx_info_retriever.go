@@ -10,6 +10,7 @@ import (
 	"time"
 
 	aptos_sdk "github.com/aptos-labs/aptos-go-sdk"
+
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"

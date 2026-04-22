@@ -11,13 +11,14 @@ import (
 	"time"
 
 	aptos_sdk "github.com/aptos-labs/aptos-go-sdk"
+	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/metering"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/monitoring"
 	commontest "github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
-	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
-	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
