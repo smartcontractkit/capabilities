@@ -659,8 +659,8 @@ github.com/shurcooL/sanitized_anchor_name v1.0.0/go.mod h1:1NzhyTcUVG4SuEtjjoZeV
 github.com/sirupsen/logrus v1.2.0/go.mod h1:LxeOpSwHxABJmUn/MG1IvRgCAasNZTLOkJPxbbu5VWo=
 github.com/sirupsen/logrus v1.4.1/go.mod h1:ni0Sbl8bgC9z8RoU9G6nDWqqs/fq4eDPysMBDgk/93Q=
 github.com/sirupsen/logrus v1.4.2/go.mod h1:tLMulIdttU9McNUspp0xgXVQah82FyeX6MwdIuYE2rE=
-github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260421175835-cbea37b5a252 h1:d6OALU7KlkyhoHmWrg8EutTSmSNsbXCM5yOWlBBZMEk=
-github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260421175835-cbea37b5a252/go.mod h1:pe/06/0EBS/v6bmdx05Zwcd51+GozhEcKnCzQ7DBHWA=
+github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260421231227-92694a3f3096 h1:ug/M2FSsJOlb7rJo6IfxZYbnQEYK+RIzdei9VEv6NGw=
+github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260421231227-92694a3f3096/go.mod h1:pe/06/0EBS/v6bmdx05Zwcd51+GozhEcKnCzQ7DBHWA=
 github.com/smartcontractkit/capabilities/libs v0.0.0-20260223172632-a716db2e04a0 h1:FXr4PieKZ5KLm8+kScb2SortgOkYrnu+Pd0jjRh3Hns=
 github.com/smartcontractkit/capabilities/libs v0.0.0-20260223172632-a716db2e04a0/go.mod h1:v0O0Au8RE00Z89QxBE6I2q9bR9r3+RO1gLD3oaO2WB0=
 github.com/smartcontractkit/chain-selectors v1.0.98 h1:fuI7CQ1o5cX64eO4/LvwtfhdpGFH5vnsM/bFHRwEiww=
