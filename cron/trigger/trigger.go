@@ -264,7 +264,7 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 				workflowExecutionID, execIDErr = workflows.EncodeExecutionID(trigger.workflowID, response.Id) //nolint:staticcheck
 			}
 
-			s.lggr.Debugw("task callback sending trigger response", "executionID", workflowExecutionID, "triggerID", triggerID, "scheduledExecTimeUTC", scheduledExecutionTimeUTC.Format(time.RFC3339Nano), "actualExecTimeUTC", currentTimeUTC.Format(time.RFC3339Nano))
+			s.lggr.Debugw("task callback attempting to send trigger response", "executionID", workflowExecutionID, "triggerID", triggerID, "scheduledExecTimeUTC", scheduledExecutionTimeUTC.Format(time.RFC3339Nano), "actualExecTimeUTC", currentTimeUTC.Format(time.RFC3339Nano))
 
 			if execIDErr != nil {
 				s.lggr.Errorw("failed to generate execution ID", "err", execIDErr, "triggerID", triggerID, "workflowID", trigger.workflowID, "triggerEventID", response.Id)
