@@ -19,47 +19,18 @@ inputs:
     description: Task that will run. Used for caching purposes.
     required: true
 
-outputs:
-  resolved-go-version-file:
-    description: Resolved go.mod path used for toolchain selection, if any.
-    value: ${{ steps.resolve-go-version-file.outputs.path }}
-
 runs:
   using: "composite"
   steps:
-    - name: Resolve Go version file
-      id: resolve-go-version-file
-      if: inputs.go-version-file != ''
-      shell: bash
-      run: |
-        path="${{ inputs.go-version-file }}"
-        dir=$(dirname "$path")
-        while [[ "$dir" != "." && "$dir" != "/" ]]; do
-          candidate="$dir/go.mod"
-          if [[ -f "$candidate" ]]; then
-            echo "path=$candidate" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          dir=$(dirname "$dir")
-        done
-
-        if [[ -f "go.mod" ]]; then
-          echo "path=go.mod" >> "$GITHUB_OUTPUT"
-          exit 0
-        fi
-
-        echo "Could not resolve go.mod from $path" >&2
-        exit 1
-
     - name: Set up Go from version file
-      if: steps.resolve-go-version-file.outputs.path != ''
+      if: inputs.go-version-file != ''
       uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # 5.0.2
       with:
-        go-version-file: ${{ steps.resolve-go-version-file.outputs.path }}
+        go-version-file: ${{ inputs.go-version-file }}
         # We are doing custom caching, so we don't need the default caching
         cache: false
     - name: Set up Go from default version
-      if: steps.resolve-go-version-file.outputs.path == ''
+      if: inputs.go-version-file == ''
       uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # 5.0.2
       with:
         go-version: ${{ env.GO_VERSION }}

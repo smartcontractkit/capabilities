@@ -82,7 +82,7 @@ jobs:
       - name: Set up project environment
         uses: ./.github/actions/setup
         with:
-          go-version-file: ${{ format('{0}/go.mod', fromJson(needs.affected.outputs.nx)[matrix.projects].root) }}
+          go-version-file: ${{ replace(fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum, 'go.sum', 'go.mod') }}
           project: ${{ matrix.projects }}
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "build"
@@ -112,7 +112,7 @@ jobs:
       - name: Set up project environment
         uses: ./.github/actions/setup
         with:
-          go-version-file: ${{ format('{0}/go.mod', fromJson(needs.affected.outputs.nx)[matrix.projects].root) }}
+          go-version-file: ${{ replace(fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum, 'go.sum', 'go.mod') }}
           project: ${{ matrix.projects }}
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "test"
@@ -152,7 +152,7 @@ jobs:
       - name: Set up project environment
         uses: ./.github/actions/setup
         with:
-          go-version-file: ${{ format('{0}/go.mod', fromJson(needs.affected.outputs.nx)[matrix.projects].root) }}
+          go-version-file: ${{ replace(fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum, 'go.sum', 'go.mod') }}
           project: ${{ matrix.projects }}
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "race"
@@ -186,7 +186,7 @@ jobs:
       - name: Set up project environment
         uses: ./.github/actions/setup
         with:
-          go-version-file: ${{ format('{0}/go.mod', fromJson(needs.affected.outputs.nx)[matrix.projects].root) }}
+          go-version-file: ${{ replace(fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum, 'go.sum', 'go.mod') }}
           project: ${{ matrix.projects }}
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "tidy-and-generate"
@@ -232,7 +232,7 @@ jobs:
         id: setup
         uses: ./.github/actions/setup
         with:
-          go-version-file: ${{ format('{0}/go.mod', fromJson(needs.affected.outputs.nx)[matrix.projects].root) }}
+          go-version-file: ${{ replace(fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum, 'go.sum', 'go.mod') }}
           project: ${{ matrix.projects }}
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "lint"
@@ -245,7 +245,7 @@ jobs:
       - name: Determine lint mode
         id: module-go
         run: |
-          module_go_version=$(sed -n 's/^go //p' "${{ steps.setup.outputs.resolved-go-version-file }}" | head -n1)
+          module_go_version=$(sed -n 's/^go //p' "${{ replace(fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum, 'go.sum', 'go.mod') }}" | head -n1)
           module_go_minor=$(echo "${module_go_version}" | awk -F. '{print $1 "." $2}')
           uses_repo_default=true
           if [[ "${module_go_minor}" != "${GO_VERSION}" ]]; then
