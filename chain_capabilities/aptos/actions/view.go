@@ -30,8 +30,8 @@ func (s *Aptos) View(
 	if input == nil {
 		err := fmt.Errorf("viewRequest is nil")
 		monitoring.LogAndEmitError(ctx, s.lggr, s.beholderProcessor,
-			s.messageBuilder.BuildViewError(telemetryContext, input, viewInvalidRequestSummary, err.Error(), true))
-		return nil, capcommon.NewUserError(err)
+			s.messageBuilder.BuildViewError(telemetryContext, input, "Failed to execute View request", err.Error(), false))
+		return nil, capcommon.GetError(err, false)
 	}
 
 	payload, err := aptoscap.ConvertViewPayloadFromProto(input.Payload)
@@ -68,7 +68,7 @@ func (s *Aptos) View(
 		return nil, capcommon.GetError(err, false)
 	}
 	monitoring.LogAndEmitSuccess(ctx, "Successful View execution", s.lggr, s.beholderProcessor,
-		s.messageBuilder.BuildViewSuccess(telemetryContext, input, len(data)))
+		s.messageBuilder.BuildViewSuccess(telemetryContext, input, uint64(len(data))))
 
 	return &capabilities.ResponseAndMetadata[*aptoscap.ViewReply]{
 		Response:         &aptoscap.ViewReply{Data: data},

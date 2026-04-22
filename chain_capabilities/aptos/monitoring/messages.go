@@ -46,16 +46,10 @@ func (m *MessageBuilder) BuildViewInitiated(tc TelemetryContext, req *aptoscap.V
 	}
 }
 
-func (m *MessageBuilder) BuildViewSuccess(tc TelemetryContext, req *aptoscap.ViewRequest, responseLen int) *ViewSuccess {
-	// len(...) is the current caller here, but keep the conversion explicit so a
-	// future negative sentinel value can't silently wrap.
-	var responseLenUint64 uint64
-	if responseLen > 0 {
-		responseLenUint64 = uint64(responseLen)
-	}
+func (m *MessageBuilder) BuildViewSuccess(tc TelemetryContext, req *aptoscap.ViewRequest, responseLen uint64) *ViewSuccess {
 	return &ViewSuccess{
 		Req:              convertViewRequest(req),
-		ResponseLen:      responseLenUint64,
+		ResponseLen:      responseLen,
 		ExecutionContext: m.BuildExecutionContext(tc),
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	cltypes "github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -92,6 +93,20 @@ func TestView_LocksToConsensusLedgerVersion(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	require.Equal(t, []byte(`["Aptos Coin"]`), resp.Response.Data)
+}
+
+func TestView_FailsOnNilRequestAsSystemError(t *testing.T) {
+	t.Parallel()
+
+	a := newTestAptos(typesmocks.NewAptosService(t), &ctypes.ChainHeight{Latest: 321, Safe: 321, Finalized: 321})
+
+	_, err := a.View(context.Background(), capabilities.RequestMetadata{
+		WorkflowExecutionID: "weid",
+		ReferenceID:         "step-id",
+	}, nil)
+	require.Error(t, err)
+	require.Equal(t, caperrors.OriginSystem, err.Origin())
+	require.Contains(t, err.Error(), "viewRequest is nil")
 }
 
 func TestView_FailsOnNonPositiveConsensusHeight(t *testing.T) {

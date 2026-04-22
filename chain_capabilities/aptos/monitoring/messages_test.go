@@ -93,7 +93,7 @@ func TestMessageBuilder_ViewMessages(t *testing.T) {
 	assert.Equal(t, "0102", successAttrs["module_address"])
 	assert.EqualValues(t, 7, attrsToMap(success.MetricAttributes())["workflow_don_id"])
 
-	zeroLenSuccess := builder.BuildViewSuccess(tc, req, -1)
+	zeroLenSuccess := builder.BuildViewSuccess(tc, req, 0)
 	assert.Zero(t, zeroLenSuccess.GetResponseLen())
 
 	viewErr := builder.BuildViewError(tc, req, "summary", "cause", true)
