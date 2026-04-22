@@ -71,6 +71,10 @@ func (s *workflowStore) upsertWorkflow(w *workflow) error {
 			w.workflowSelector.WorkflowName,
 			w.workflowSelector.WorkflowTag,
 			workflowID)
+		// Close the previous workflow before removing to prevent stale sends and resource leaks
+		if oldW, ok := s.workflows[workflowID]; ok {
+			oldW.close()
+		}
 		delete(s.workflows, workflowID)
 	}
 	s.workflows[w.workflowSelector.WorkflowID] = w
