@@ -10,7 +10,7 @@ on:
 env:
   # Ensure that a cached go version is used:
   # https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2404-Readme.md#go
-  GO_VERSION: 1.25
+  GO_VERSION: 1.26.2
   GOPRIVATE: github.com/smartcontractkit/capabilities
 
 jobs:
@@ -82,7 +82,6 @@ jobs:
       - name: Set up project environment
         uses: ./.github/actions/setup
         with:
-          go-version-file: ${{ replace(fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum, 'go.sum', 'go.mod') }}
           project: ${{ matrix.projects }}
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "build"
@@ -112,7 +111,6 @@ jobs:
       - name: Set up project environment
         uses: ./.github/actions/setup
         with:
-          go-version-file: ${{ replace(fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum, 'go.sum', 'go.mod') }}
           project: ${{ matrix.projects }}
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "test"
@@ -152,7 +150,6 @@ jobs:
       - name: Set up project environment
         uses: ./.github/actions/setup
         with:
-          go-version-file: ${{ replace(fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum, 'go.sum', 'go.mod') }}
           project: ${{ matrix.projects }}
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "race"
@@ -186,7 +183,6 @@ jobs:
       - name: Set up project environment
         uses: ./.github/actions/setup
         with:
-          go-version-file: ${{ replace(fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum, 'go.sum', 'go.mod') }}
           project: ${{ matrix.projects }}
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "tidy-and-generate"
@@ -229,10 +225,8 @@ jobs:
           persist-credentials: false
 
       - name: Set up project environment
-        id: setup
         uses: ./.github/actions/setup
         with:
-          go-version-file: ${{ replace(fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum, 'go.sum', 'go.mod') }}
           project: ${{ matrix.projects }}
           go-module-file: ${{ fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum }}
           task: "lint"
@@ -242,18 +236,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./.github/scripts/support-private-gomods.sh
 
-      - name: Determine lint mode
-        id: module-go
-        run: |
-          module_go_version=$(sed -n 's/^go //p' "${{ replace(fromJson(needs.affected.outputs.nx)[matrix.projects].go_sum, 'go.sum', 'go.mod') }}" | head -n1)
-          module_go_minor=$(echo "${module_go_version}" | awk -F. '{print $1 "." $2}')
-          uses_repo_default=true
-          if [[ "${module_go_minor}" != "${GO_VERSION}" ]]; then
-            uses_repo_default=false
-          fi
-          echo "module_go_version=${module_go_version}" >> "$GITHUB_OUTPUT"
-          echo "uses_repo_default=${uses_repo_default}" >> "$GITHUB_OUTPUT"
-
       - name: Get golangci-lint version from asdf
         id: get-version
         run: |
@@ -261,25 +243,12 @@ jobs:
           echo "version=${version}" | tee -a "$GITHUB_OUTPUT"
 
       - name: golangci-lint (${{ matrix.projects }})
-        if: steps.module-go.outputs.uses_repo_default == 'true'
         uses: smartcontractkit/.github/actions/ci-lint-go@ci-lint-go/3.1.0
         with:
           checkout-repo: false
           golangci-lint-config: ${{ github.workspace }}/.golangci.yml
           golangci-lint-version: v${{ steps.get-version.outputs.version }}
           go-directory: ${{fromJson(needs.affected.outputs.nx)[matrix.projects].root}}
-
-      - name: golangci-lint (project toolchain)
-        if: steps.module-go.outputs.uses_repo_default != 'true'
-        uses: golangci/golangci-lint-action@4afd733a84b1f43292c63897423277bb7f4313a9
-        with:
-          version: v${{ steps.get-version.outputs.version }}
-          install-mode: goinstall
-          args: --output.checkstyle.path=golangci-lint-report.xml --output.text.path=stdout --config=${{ github.workspace }}/.golangci.yml
-          working-directory: ${{fromJson(needs.affected.outputs.nx)[matrix.projects].root}}
-          only-new-issues: true
-          verify: true
-          problem-matchers: false
 
   modgraph:
     runs-on: ubuntu-latest

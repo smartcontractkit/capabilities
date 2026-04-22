@@ -5,10 +5,6 @@ inputs:
   cache-version:
     description: Set this to cache bust
     default: "1"
-  go-version-file:
-    description: Optional go.mod path used to select a project-specific Go toolchain.
-    required: false
-    default: ""
   go-module-file:
     description: Set where the go module file is located at
     required: true
@@ -22,15 +18,7 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Set up Go from version file
-      if: inputs.go-version-file != ''
-      uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # 5.0.2
-      with:
-        go-version-file: ${{ inputs.go-version-file }}
-        # We are doing custom caching, so we don't need the default caching
-        cache: false
-    - name: Set up Go from default version
-      if: inputs.go-version-file == ''
+    - name: Set up Go
       uses: actions/setup-go@0a12ed9d6a96ab950c8f026ed9f722fe0da7ef32 # 5.0.2
       with:
         go-version: ${{ env.GO_VERSION }}
