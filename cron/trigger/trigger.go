@@ -255,8 +255,6 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 				displayWorkflowName = metadata.WorkflowName
 			}
 
-			s.lggr.Debugw("task callback sending trigger response", "executionID", metadata.WorkflowExecutionID, "triggerID", triggerID, "scheduledExecTimeUTC", scheduledExecutionTimeUTC.Format(time.RFC3339Nano), "actualExecTimeUTC", currentTimeUTC.Format(time.RFC3339Nano))
-
 			var workflowExecutionID string
 			var execIDErr error
 			// NOTE: Relying on local time is not ideal but we don't have access to DONTime at this stage.
@@ -265,6 +263,8 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 			} else { // legacy behavior
 				workflowExecutionID, execIDErr = workflows.EncodeExecutionID(trigger.workflowID, response.Id) //nolint:staticcheck
 			}
+
+			s.lggr.Debugw("task callback sending trigger response", "executionID", workflowExecutionID, "triggerID", triggerID, "scheduledExecTimeUTC", scheduledExecutionTimeUTC.Format(time.RFC3339Nano), "actualExecTimeUTC", currentTimeUTC.Format(time.RFC3339Nano))
 
 			if execIDErr != nil {
 				s.lggr.Errorw("failed to generate execution ID", "err", execIDErr, "triggerID", triggerID, "workflowID", trigger.workflowID, "triggerEventID", response.Id)
