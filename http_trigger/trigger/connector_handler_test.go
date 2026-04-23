@@ -166,9 +166,6 @@ func newMetrics(t *testing.T) *Metrics {
 }
 
 // setupWithTriggerChannelBuffer registers one workflow with a trigger channel of the given capacity.
-// If prefillBlockFirstTrigger is true, triggerChBuffer must be 1 and one placeholder message is
-// queued on the channel before registration so the next trigger attempt fails with errFullChannel
-// until that placeholder is received (deterministic; avoids races with an unbuffered channel).
 func setupWithTriggerChannelBuffer(t *testing.T, lggr logger.Logger, triggerChBuffer int) (*connectorHandler, *mockGatewayConnector, chan capabilities.TriggerAndId[*http.Payload], *requestCache) {
 	mockConnector := &mockGatewayConnector{}
 	cfg := ServiceConfig{
