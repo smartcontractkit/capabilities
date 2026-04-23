@@ -37,14 +37,6 @@ const UnknownIssueExecutingReceiverContractMessage = "receiver contract executio
 // ErrUnexpectedSuccessfulTransmission indicates we expected a failed transmission but found a successful one
 var ErrUnexpectedSuccessfulTransmission = errors.New("unexpected successful transmission")
 
-func withQuickRetry[T any](ctx context.Context, lggr logger.Logger, fn func(context.Context) (T, error)) (T, error) {
-	return capcommon.WithQuickRetry(ctx, lggr, fn)
-}
-
-func withPollingRetry[T any](ctx context.Context, lggr logger.Logger, fn func(context.Context) (T, error)) (T, error) {
-	return capcommon.WithPollingRetry(ctx, lggr, fn)
-}
-
 type WriteReport struct {
 	types.EVMService
 	forwarderClient    contracts.CREForwarderClient
@@ -214,7 +206,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		return nil, capabilities.ResponseMetadata{}, err
 	}
 
-	newTransmissionInfo, err := withPollingRetry(ctx, e.lggr, func(ctx context.Context) (contracts.TransmissionInfo, error) {
+	newTransmissionInfo, err := capcommon.WithPollingRetry(ctx, e.lggr, func(ctx context.Context) (contracts.TransmissionInfo, error) {
 		readTransmissionInfo, readTransmissionErr := e.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
 		if readTransmissionErr != nil {
 			return contracts.TransmissionInfo{}, readTransmissionErr
@@ -297,7 +289,7 @@ func (e *WriteReport) pollTransmissionInfo(
 	txHashRetriever TxHashRetriever,
 ) (lastValidInfo contracts.TransmissionInfo, err error) {
 	if queuePosition <= 0 {
-		transmissionInfo, err := withQuickRetry(ctx, e.lggr, func(ctx context.Context) (contracts.TransmissionInfo, error) {
+		transmissionInfo, err := capcommon.WithQuickRetry(ctx, e.lggr, func(ctx context.Context) (contracts.TransmissionInfo, error) {
 			return e.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
 		})
 		if err != nil {
@@ -315,9 +307,10 @@ func (e *WriteReport) pollTransmissionInfo(
 	attempt := 0
 	stageTimer := time.NewTimer(delay)
 	deltaStagePassed := false
+	hadSuccessfulPoll := false
 	defer func() {
 		stageTimer.Stop()
-		if !deltaStagePassed && err == nil {
+		if !deltaStagePassed && hadSuccessfulPoll {
 			monitoring.LogAndEmitSuccess(
 				ctx,
 				"Transmission found before delta stage has passed",
@@ -332,6 +325,7 @@ func (e *WriteReport) pollTransmissionInfo(
 		if info, err := e.forwarderClient.GetTransmissionInfo(ctx, transmissionID); err != nil {
 			e.lggr.Debugw("GetTransmissionInfo failed during polling", "error", err, "attempt", attempt)
 		} else {
+			hadSuccessfulPoll = true
 			lastValidInfo = info
 			switch lastValidInfo.State {
 			case contracts.TransmissionStateSucceeded, contracts.TransmissionStateInvalidReceiver:
@@ -370,9 +364,24 @@ func (e *WriteReport) pollTransmissionInfo(
 
 		select {
 		case <-ctx.Done():
+			hadSuccessfulPoll = false
 			return contracts.TransmissionInfo{}, fmt.Errorf("timed out waiting for transmission info")
 		case <-stageTimer.C:
 			deltaStagePassed = true
+			// if it's not attempted, check one last time to avoid a 2s gap where the previous node might've gotten a tx through
+			if lastValidInfo.State == contracts.TransmissionStateNotAttempted {
+				if finalInfo, finalErr := e.forwarderClient.GetTransmissionInfo(ctx, transmissionID); finalErr == nil {
+					hadSuccessfulPoll = true
+					lastValidInfo = finalInfo
+				} else {
+					e.lggr.Debugw("Final GetTransmissionInfo at delta stage boundary failed", "error", finalErr)
+				}
+			}
+
+			if !hadSuccessfulPoll {
+				e.lggr.Errorw("All GetTransmissionInfo polls failed during delta stage window, cannot determine transmission state")
+				return contracts.TransmissionInfo{}, fmt.Errorf("all GetTransmissionInfo polls failed during delta stage window")
+			}
 			e.lggr.Infow("Delta Stage has passed returning transmission info", lastValidInfo.LogAttrs()...)
 			return lastValidInfo, nil
 		case <-time.After(wait):
@@ -419,7 +428,7 @@ func getTransmissionID(workflowExecutionID string, request *evm.WriteReportReque
 }
 
 func (e *WriteReport) fetchTransactionReceiptAndCreateReply(ctx context.Context, txHash evmtypes.Hash, receiverStatus evm.ReceiverContractExecutionStatus, errorMessage *string) (*evm.WriteReportReply, error) {
-	txReceipt, err := withQuickRetry(ctx, e.lggr, func(ctx context.Context) (*evmtypes.Receipt, error) {
+	txReceipt, err := capcommon.WithQuickRetry(ctx, e.lggr, func(ctx context.Context) (*evmtypes.Receipt, error) {
 		return e.GetTransactionReceipt(ctx, evmtypes.GeTransactionReceiptRequest{
 			Hash:       txHash,
 			IsExternal: false, // since we do not run consensus on the receipt itself, it's fine to skip additional versions for external receipts.
@@ -428,7 +437,7 @@ func (e *WriteReport) fetchTransactionReceiptAndCreateReply(ctx context.Context,
 	if err != nil {
 		return nil, fmt.Errorf("failed to get transaction receipt: %w", err)
 	}
-	transactionFee, err := withQuickRetry(ctx, e.lggr, func(ctx context.Context) (*evmtypes.TransactionFee, error) {
+	transactionFee, err := capcommon.WithQuickRetry(ctx, e.lggr, func(ctx context.Context) (*evmtypes.TransactionFee, error) {
 		return e.CalculateTransactionFee(ctx, evmtypes.ReceiptGasInfo{
 			GasUsed:           txReceipt.GasUsed,
 			EffectiveGasPrice: txReceipt.EffectiveGasPrice,
@@ -598,7 +607,7 @@ const failedToRetrieveTxHashErrorMessage = "failed to retrieve tx hash for repor
 // fetchAndParseLogs retrieves ReportProcessed logs with retry logic and parses them into logDetails.
 // Returns an error if no logs are found or if any log data is malformed.
 func (thr *TxHashRetriever) fetchAndParseLogs(ctx context.Context) (logDetailsList, error) {
-	logs, err := withPollingRetry(ctx, thr.lggr, func(ctx context.Context) ([]*evmtypes.Log, error) {
+	logs, err := capcommon.WithPollingRetry(ctx, thr.lggr, func(ctx context.Context) ([]*evmtypes.Log, error) {
 		retrievedLogs, retrieveErr := thr.keystoneForwarderClient.GetReportProcessedEvents(ctx, thr.transmissionID.Receiver, thr.transmissionID.WorkflowExecutionID, thr.transmissionID.ReportID)
 		if retrieveErr != nil {
 			return nil, retrieveErr

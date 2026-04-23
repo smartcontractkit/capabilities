@@ -35,14 +35,14 @@ type ConsensusHandler interface {
 
 type Aptos struct {
 	types.AptosService
-	ConsensusHandler      ConsensusHandler
-	forwarderClient       CREForwarderClient
-	forwarderAddress      aptos_sdk.AccountAddress
-	lggr                  logger.SugaredLogger
-	p2pConfig             map[string]string
-	chainSelector         uint64
-	maxGasAmountLimit     limits.BoundLimiter[uint64]
-	reportSizeLimit       limits.BoundLimiter[commoncfg.Size]
+	ConsensusHandler       ConsensusHandler
+	forwarderClient        CREForwarderClient
+	forwarderAddress       aptos_sdk.AccountAddress
+	lggr                   logger.SugaredLogger
+	p2pConfig              map[string]string
+	chainSelector          uint64
+	maxGasAmountLimit      limits.BoundLimiter[uint64]
+	reportSizeLimit        limits.BoundLimiter[commoncfg.Size]
 	transmissionScheduler  ts.TransmissionScheduler
 	txSearchStartingBuffer time.Duration
 	beholderProcessor      beholder.ProtoProcessor
@@ -61,13 +61,13 @@ func NewAptos(cfg *config.Config, p2pConfig map[string]string, aptosService type
 	forwarderAddress := aptos_sdk.AccountAddress(cfg.CREForwarderAddress)
 
 	a := &Aptos{
-		AptosService:          aptosService,
-		ConsensusHandler:      consensusHandler,
-		forwarderClient:       fc,
-		forwarderAddress:      forwarderAddress,
-		lggr:                  logger.Sugared(lggr),
-		p2pConfig:             p2pConfig,
-		chainSelector:         chainSelector,
+		AptosService:           aptosService,
+		ConsensusHandler:       consensusHandler,
+		forwarderClient:        fc,
+		forwarderAddress:       forwarderAddress,
+		lggr:                   logger.Sugared(lggr),
+		p2pConfig:              p2pConfig,
+		chainSelector:          chainSelector,
 		transmissionScheduler:  transmissionScheduler,
 		txSearchStartingBuffer: cfg.TxSearchStartingBuffer,
 		beholderProcessor:      beholderProcessor,

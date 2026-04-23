@@ -22,24 +22,22 @@ func (_m *TransmissionInfoProvider_mock) EXPECT() *TransmissionInfoProvider_mock
 }
 
 // GetTransmissionInfo provides a mock function with given fields: ctx, transmissionID
-func (_m *TransmissionInfoProvider_mock) GetTransmissionInfo(ctx context.Context, transmissionID [32]byte) (*TransmissionInfo, error) {
+func (_m *TransmissionInfoProvider_mock) GetTransmissionInfo(ctx context.Context, transmissionID [32]byte) (TransmissionInfo, error) {
 	ret := _m.Called(ctx, transmissionID)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetTransmissionInfo")
 	}
 
-	var r0 *TransmissionInfo
+	var r0 TransmissionInfo
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, [32]byte) (*TransmissionInfo, error)); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, [32]byte) (TransmissionInfo, error)); ok {
 		return rf(ctx, transmissionID)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, [32]byte) *TransmissionInfo); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, [32]byte) TransmissionInfo); ok {
 		r0 = rf(ctx, transmissionID)
 	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*TransmissionInfo)
-		}
+		r0 = ret.Get(0).(TransmissionInfo)
 	}
 
 	if rf, ok := ret.Get(1).(func(context.Context, [32]byte) error); ok {
@@ -70,12 +68,12 @@ func (_c *TransmissionInfoProvider_mock_GetTransmissionInfo_Call) Run(run func(c
 	return _c
 }
 
-func (_c *TransmissionInfoProvider_mock_GetTransmissionInfo_Call) Return(_a0 *TransmissionInfo, _a1 error) *TransmissionInfoProvider_mock_GetTransmissionInfo_Call {
+func (_c *TransmissionInfoProvider_mock_GetTransmissionInfo_Call) Return(_a0 TransmissionInfo, _a1 error) *TransmissionInfoProvider_mock_GetTransmissionInfo_Call {
 	_c.Call.Return(_a0, _a1)
 	return _c
 }
 
-func (_c *TransmissionInfoProvider_mock_GetTransmissionInfo_Call) RunAndReturn(run func(context.Context, [32]byte) (*TransmissionInfo, error)) *TransmissionInfoProvider_mock_GetTransmissionInfo_Call {
+func (_c *TransmissionInfoProvider_mock_GetTransmissionInfo_Call) RunAndReturn(run func(context.Context, [32]byte) (TransmissionInfo, error)) *TransmissionInfoProvider_mock_GetTransmissionInfo_Call {
 	_c.Call.Return(run)
 	return _c
 }

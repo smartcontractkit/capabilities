@@ -79,7 +79,7 @@ func TestWithQuickRetry(t *testing.T) {
 		ctx := t.Context()
 		attempts := 0
 
-		result, err := withQuickRetry(ctx, lggr, func(ctx context.Context) (string, error) {
+		result, err := capcommon.WithQuickRetry(ctx, lggr, func(ctx context.Context) (string, error) {
 			attempts++
 			if attempts < 3 {
 				return "", errors.New("transient error")
@@ -93,12 +93,12 @@ func TestWithQuickRetry(t *testing.T) {
 	})
 
 	t.Run("respects parent context timeout", func(t *testing.T) {
-		// Parent context with 200ms timeout - shorter than withQuickRetry's 10s
+		// Parent context with 200ms timeout - shorter than capcommon.WithQuickRetry('s 10s
 		ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
 		defer cancel()
 
 		start := time.Now()
-		_, err := withQuickRetry(ctx, lggr, func(ctx context.Context) (string, error) {
+		_, err := capcommon.WithQuickRetry(ctx, lggr, func(ctx context.Context) (string, error) {
 			return "", errors.New("always fails")
 		})
 		elapsed := time.Since(start)
@@ -113,7 +113,7 @@ func TestWithQuickRetry(t *testing.T) {
 		defer cancel()
 
 		expectedErr := "specific RPC error"
-		_, err := withQuickRetry(ctx, lggr, func(ctx context.Context) (string, error) {
+		_, err := capcommon.WithQuickRetry(ctx, lggr, func(ctx context.Context) (string, error) {
 			return "", errors.New(expectedErr)
 		})
 
@@ -128,7 +128,7 @@ func TestWithQuickRetry(t *testing.T) {
 		defer cancel()
 
 		attempts := 0
-		_, err := withQuickRetry(ctx, lggr, func(ctx context.Context) (string, error) {
+		_, err := capcommon.WithQuickRetry(ctx, lggr, func(ctx context.Context) (string, error) {
 			attempts++
 			return "", errors.New("always fails")
 		})
@@ -146,7 +146,7 @@ func TestWithQuickRetry(t *testing.T) {
 		cancel() // Cancel immediately
 
 		expectedErr := "fn error"
-		_, err := withQuickRetry(ctx, lggr, func(ctx context.Context) (string, error) {
+		_, err := capcommon.WithQuickRetry(ctx, lggr, func(ctx context.Context) (string, error) {
 			return "", errors.New(expectedErr)
 		})
 
@@ -165,7 +165,7 @@ func TestWithPollingRetry(t *testing.T) {
 		ctx := t.Context()
 		attempts := 0
 
-		result, err := withPollingRetry(ctx, lggr, func(ctx context.Context) (int, error) {
+		result, err := capcommon.WithPollingRetry(ctx, lggr, func(ctx context.Context) (int, error) {
 			attempts++
 			if attempts < 4 {
 				return 0, errors.New("not ready yet")
@@ -184,7 +184,7 @@ func TestWithPollingRetry(t *testing.T) {
 		defer cancel()
 
 		start := time.Now()
-		_, err := withPollingRetry(ctx, lggr, func(ctx context.Context) (int, error) {
+		_, err := capcommon.WithPollingRetry(ctx, lggr, func(ctx context.Context) (int, error) {
 			return 0, errors.New("always fails")
 		})
 		elapsed := time.Since(start)
@@ -199,7 +199,7 @@ func TestWithPollingRetry(t *testing.T) {
 		defer cancel()
 
 		expectedErr := "chain state not updated"
-		_, err := withPollingRetry(ctx, lggr, func(ctx context.Context) (int, error) {
+		_, err := capcommon.WithPollingRetry(ctx, lggr, func(ctx context.Context) (int, error) {
 			return 0, errors.New(expectedErr)
 		})
 
@@ -214,7 +214,7 @@ func TestWithPollingRetry(t *testing.T) {
 		var timestamps []time.Time
 
 		start := time.Now()
-		_, _ = withPollingRetry(ctx, lggr, func(ctx context.Context) (int, error) {
+		_, _ = capcommon.WithPollingRetry(ctx, lggr, func(ctx context.Context) (int, error) {
 			attempts++
 			timestamps = append(timestamps, time.Now())
 			if attempts >= 4 {
@@ -243,7 +243,7 @@ func TestWithPollingRetry(t *testing.T) {
 		cancel() // Cancel immediately
 
 		expectedErr := "fn error"
-		_, err := withPollingRetry(ctx, lggr, func(ctx context.Context) (int, error) {
+		_, err := capcommon.WithPollingRetry(ctx, lggr, func(ctx context.Context) (int, error) {
 			return 0, errors.New(expectedErr)
 		})
 
@@ -1675,7 +1675,7 @@ func TestPollTransmissionInfo_QueuePositionScenarios(t *testing.T) {
 func TestPollTransmissionInfo_RaceConditions(t *testing.T) {
 	t.Parallel()
 
-	t.Run("factor 1: timer returns stale state without final read", func(t *testing.T) {
+	t.Run("timer returns stale state without final read", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 		defer cancel()
 
@@ -1706,20 +1706,12 @@ func TestPollTransmissionInfo_RaceConditions(t *testing.T) {
 
 		txHashRetriever := NewTxHashRetriever(mockForwarderClient, testLogger, transmissionID)
 		info, err := wr.pollTransmissionInfo(ctx, request, monitoring.TelemetryContext{}, transmissionID, 1, txHashRetriever)
-		assert.NoError(t, err, "current behavior: timer path returns stale state without a final read")
-		assert.True(t, chainStateUpdated.Load(), "state should have changed before stage timer returned")
-		assert.Equal(t, contracts.TransmissionStateNotAttempted, info.State, "current behavior: stale state was returned")
-
-		// TODO: @ilija42 Expected behavior after fix: perform a final transmission-state read at the timer boundary.
-		// require.Equal(
-		// 	t,
-		// 	contracts.TransmissionStateSucceeded,
-		// 	info.State,
-		// 	"TODO: fix pollTransmissionInfo so stageTimer path returns the latest on-chain state",
-		// )
+		require.NoError(t, err)
+		require.True(t, chainStateUpdated.Load(), "state should have changed before stage timer returned")
+		require.Equal(t, contracts.TransmissionStateSucceeded, info.State)
 	})
 
-	t.Run("factor 2: rpc errors return zero-value not_attempted", func(t *testing.T) {
+	t.Run("all rpc errors including boundary read return error", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 		defer cancel()
 
@@ -1736,17 +1728,9 @@ func TestPollTransmissionInfo_RaceConditions(t *testing.T) {
 			Maybe()
 
 		txHashRetriever := NewTxHashRetriever(mockForwarderClient, testLogger, transmissionID)
-		info, err := wr.pollTransmissionInfo(ctx, request, monitoring.TelemetryContext{}, transmissionID, 2, txHashRetriever)
-		assert.NoError(t, err, "current behavior: all poll failures still return nil error")
-		assert.Greater(t, rpcCalls.Load(), int64(0))
-		assert.Equal(t, contracts.TransmissionStateNotAttempted, info.State, "current behavior: zero-value state leaks as not_attempted")
-
-		// TODO: @ilija42 Expected behavior after fix: if every poll fails, surface an error and do not proceed with a fabricated state.
-		// require.Error(
-		// 	t,
-		// 	err,
-		// 	"TODO: return an error when all GetTransmissionInfo polls fail, instead of defaulting to not_attempted",
-		// )
+		_, err := wr.pollTransmissionInfo(ctx, request, monitoring.TelemetryContext{}, transmissionID, 2, txHashRetriever)
+		require.Greater(t, rpcCalls.Load(), int64(0))
+		require.Error(t, err)
 	})
 }
 
@@ -1827,7 +1811,7 @@ func TestExecuteWriteReport_RaceConditionDuplicateInvocations(t *testing.T) {
 	sharedForwarder.EXPECT().
 		GetTransmissionInfo(mock.Anything, transmissionID).
 		RunAndReturn(func(context.Context, contracts.TransmissionID) (contracts.TransmissionInfo, error) {
-			if invokeCount.Load() >= 2 {
+			if invokeCount.Load() >= 1 {
 				return contracts.TransmissionInfo{
 					Success:  true,
 					State:    contracts.TransmissionStateSucceeded,
@@ -1851,7 +1835,7 @@ func TestExecuteWriteReport_RaceConditionDuplicateInvocations(t *testing.T) {
 				TxIdempotencyKey: fmt.Sprintf("test-idempotency-key-%d", callN),
 			}, nil
 		}).
-		Twice()
+		Once()
 	sharedForwarder.EXPECT().
 		GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return([]*evmtypes.Log{{
@@ -1881,15 +1865,7 @@ func TestExecuteWriteReport_RaceConditionDuplicateInvocations(t *testing.T) {
 		require.NoError(t, writeErr)
 	}
 
-	sharedForwarder.AssertNumberOfCalls(t, "InvokeOnReport", 2)
-
-	// TODO: @ilija42 Expected behavior after fix: only one node should submit for the same transmissionID.
-	// require.EqualValues(
-	// 	t,
-	// 	1,
-	// 	invokeCount.Load(),
-	// 	"TODO: prevent duplicate InvokeOnReport calls for the same transmissionID across queued nodes",
-	// )
+	require.EqualValues(t, 1, invokeCount.Load(), "only one node should submit for the same transmissionID")
 }
 
 func TestGetTransmissionID(t *testing.T) {

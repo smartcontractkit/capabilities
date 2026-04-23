@@ -38,7 +38,7 @@ message RequestObservation {
   sdk.v1alpha.SimpleConsensusInputs input = 2;
   google.protobuf.Timestamp received_at = 3;
 
-  bool reduced_mdd_flag = 4; // reduce info included in the Outcome; flag to be removed after rollout
+  bool remove_lib_use_in_failure_message_formatting_flag = 4; // remove use of libraries in failure message formatting; flag to be removed after rollout
 }
 
 message Observation {

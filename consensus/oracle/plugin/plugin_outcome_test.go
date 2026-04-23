@@ -55,7 +55,6 @@ const expectedMetadataString = "requestId=01020304050607080910111213141516171819
 
 // makeOutcomeTestObs builds a single AttributedObservation for direct Outcome() tests.
 // If isError is true the observation carries an error string; otherwise it carries an int64 value.
-// ReducedMddFlag is always set to true; use an inline RequestObservation to test the false path.
 func makeOutcomeTestObs(
 	t *testing.T,
 	reqID string,
@@ -63,6 +62,7 @@ func makeOutcomeTestObs(
 	descriptorAgg sdk.AggregationType,
 	observerID uint8,
 	isError bool,
+	removeLibUseInFailureMessageFormattingFlag bool,
 ) libocrtypes.AttributedObservation {
 	t.Helper()
 
@@ -88,10 +88,10 @@ func makeOutcomeTestObs(
 	}
 
 	ro := &oracletypes.RequestObservation{
-		Metadata:       plugin.ToRequestMetaData(md),
-		Input:          simpleInputs,
-		ReceivedAt:     timestamppb.New(time.Now()),
-		ReducedMddFlag: true,
+		Metadata:   plugin.ToRequestMetaData(md),
+		Input:      simpleInputs,
+		ReceivedAt: timestamppb.New(time.Now()),
+		RemoveLibUseInFailureMessageFormattingFlag: removeLibUseInFailureMessageFormattingFlag,
 	}
 
 	obsProto := &oracletypes.Observation{
@@ -118,8 +118,8 @@ func extractSingleFailureMessage(t *testing.T, outcomeBytes ocr3types.Outcome) s
 	return failure.FailureMessage
 }
 
-// Test_Outcome_FPlusOneErrors checks that when every observation carries
-// ReducedMddFlag=true and f+1 errors are received, Outcome() embeds the per-field
+// Test_Outcome_PlusOneErrors checks that when every observation carries
+// RemoveLibUseInFailureMessageFormatting=true and f+1 errors are received, Outcome() embeds the per-field
 // metadata string ("Consensus metadata: requestId=...") and the descriptor type
 // string ("Descriptor type: AGGREGATION_TYPE_MEDIAN") instead of the verbose proto dump.
 func Test_Outcome_PlusOneErrors(t *testing.T) {
@@ -134,13 +134,13 @@ func Test_Outcome_PlusOneErrors(t *testing.T) {
 	md := testMetaData()
 	reqID := md.RequestID()
 
-	// 2f+1 = 5 observations: 3 errors (= f+1) and 2 values, all with ReducedMddFlag=true.
+	// 2f+1 = 5 observations: 3 errors (= f+1) and 2 values, all with RemoveLibUseInFailureMessageFormatting=true.
 	attributed := []libocrtypes.AttributedObservation{
-		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 0, true),
-		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 1, true),
-		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 2, true),
-		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 3, false),
-		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 4, false),
+		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 0, true, true),
+		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 1, true, true),
+		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 2, true, true),
+		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 3, false, true),
+		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 4, false, true),
 	}
 
 	qBytes, err := proto.Marshal(&oracletypes.Query{RequestIDs: []string{reqID}})
@@ -159,7 +159,7 @@ func Test_Outcome_PlusOneErrors(t *testing.T) {
 }
 
 // Test_Outcome_AggregationFailure checks that when aggregation itself fails
-// (not enough identical values) and all observations have ReducedMddFlag=true, the failure
+// (not enough identical values) and all observations have RemoveLibUseInFailureMessageFormatting=true, the failure
 // message uses the reduced metadata format including the descriptor type string.
 func Test_Outcome_AggregationFailure(t *testing.T) {
 	t.Parallel()
@@ -176,11 +176,11 @@ func Test_Outcome_AggregationFailure(t *testing.T) {
 	// Five distinct values with IDENTICAL aggregation: no value reaches the f+1=3 threshold,
 	// so CalculateOutcomeForObservations returns an aggregation error.
 	attributed := []libocrtypes.AttributedObservation{
-		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 0, false),
-		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 1, false),
-		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 2, false),
-		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 3, false),
-		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 4, false),
+		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 0, false, true),
+		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 1, false, true),
+		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 2, false, true),
+		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 3, false, true),
+		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 4, false, true),
 	}
 
 	qBytes, err := proto.Marshal(&oracletypes.Query{RequestIDs: []string{reqID}})
@@ -195,4 +195,67 @@ func Test_Outcome_AggregationFailure(t *testing.T) {
 	assert.Contains(t, msg, "Consensus metadata: "+expectedMetadataString)
 	assert.Contains(t, msg, "Descriptor type: AGGREGATION_TYPE_IDENTICAL")
 	assert.NotContains(t, msg, "Consensus metadata, descriptor and default:")
+}
+
+// Test_Outcome_RemoveLibUseInFailureMessageFormatting asserts the exact FailureMessage strings
+// produced when every observation has RemoveLibUseInFailureMessageFormatting=true (structured
+// metadata lines, descriptor type name, and bracket-formatted error lists without JSON/lib paths).
+func Test_Outcome_RemoveLibUseInFailureMessageFormatting(t *testing.T) {
+	t.Parallel()
+
+	lggr := logger.Test(t)
+	ctx := context.Background()
+
+	const testF, testN = 2, 7
+	reportingPlugin, _ := createReportingPlugin(t, lggr, testF, testN, 5, defaultMaxLengthBytes)
+
+	md := testMetaData()
+	reqID := md.RequestID()
+
+	t.Run("f_plus_one_errors", func(t *testing.T) {
+		attributed := []libocrtypes.AttributedObservation{
+			makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 0, true, true),
+			makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 1, true, true),
+			makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 2, true, true),
+			makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 3, false, true),
+			makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 4, false, true),
+		}
+
+		qBytes, err := proto.Marshal(&oracletypes.Query{RequestIDs: []string{reqID}})
+		require.NoError(t, err)
+
+		outcomeBytes, err := reportingPlugin.Outcome(ctx, ocr3types.OutcomeContext{SeqNr: 1}, qBytes, attributed)
+		require.NoError(t, err)
+
+		msg := extractSingleFailureMessage(t, outcomeBytes)
+		want := fmt.Sprintf(
+			"consensus calculation failed: received 3 errors which is >= f+1 (3) for requestID %s; Consensus metadata: %s; Descriptor type: AGGREGATION_TYPE_MEDIAN; Errors received: [error from observer 0,error from observer 1,error from observer 2]",
+			reqID,
+			expectedMetadataString,
+		)
+		assert.Equal(t, want, msg)
+	})
+
+	t.Run("aggregation_failure", func(t *testing.T) {
+		attributed := []libocrtypes.AttributedObservation{
+			makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 0, false, true),
+			makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 1, false, true),
+			makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 2, false, true),
+			makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 3, false, true),
+			makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 4, false, true),
+		}
+
+		qBytes, err := proto.Marshal(&oracletypes.Query{RequestIDs: []string{reqID}})
+		require.NoError(t, err)
+
+		outcomeBytes, err := reportingPlugin.Outcome(ctx, ocr3types.OutcomeContext{SeqNr: 1}, qBytes, attributed)
+		require.NoError(t, err)
+
+		msg := extractSingleFailureMessage(t, outcomeBytes)
+		want := fmt.Sprintf(
+			"consensus calculation failed: no values met f+1 threshold; Consensus metadata: %s; Descriptor type: AGGREGATION_TYPE_IDENTICAL; Values received: [0,10,20,30,40]; Errors received: []",
+			expectedMetadataString,
+		)
+		assert.Equal(t, want, msg)
+	})
 }
