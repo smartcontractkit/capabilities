@@ -254,14 +254,13 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 			if displayWorkflowName == "" {
 				displayWorkflowName = metadata.WorkflowName
 			}
-
-			s.lggr.Debugw("task callback sending trigger response", "executionID", metadata.WorkflowExecutionID, "triggerID", triggerID, "scheduledExecTimeUTC", scheduledExecutionTimeUTC.Format(time.RFC3339Nano), "actualExecTimeUTC", currentTimeUTC.Format(time.RFC3339Nano))
-
 			var workflowExecutionID string
 			var execIDErr error
+			isLegacyExecutionID := true
 			// NOTE: Relying on local time is not ideal but we don't have access to DONTime at this stage.
-			if s.multiTriggerFlag.Check(ctx, config.NewTimestamp(time.Now())) != nil {
+			if s.multiTriggerFlag.Check(ctx, config.NewTimestamp(currentTimeUTC)) == nil {
 				workflowExecutionID, execIDErr = workflows.GenerateExecutionIDWithTriggerIndex(trigger.workflowID, response.Id, triggerIndex)
+				isLegacyExecutionID = false
 			} else { // legacy behavior
 				workflowExecutionID, execIDErr = workflows.EncodeExecutionID(trigger.workflowID, response.Id) //nolint:staticcheck
 			}
@@ -308,11 +307,13 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 				}
 			}
 
+			s.lggr.Debugw("task callback sending trigger response", "executionID", workflowExecutionID, "isLegacyExecutionID", isLegacyExecutionID, "triggerID", triggerID, "scheduledExecTimeUTC", scheduledExecutionTimeUTC.Format(time.RFC3339Nano), "actualExecTimeUTC", currentTimeUTC.Format(time.RFC3339Nano))
+
 			nextExecutionTime, nextRunErr := job.NextRun()
 			if nextRunErr != nil {
 				// .NextRun() will error if the job no longer exists
 				// or if there is no next run to schedule, which shouldn't happen with cron jobs
-				s.lggr.Errorw("task callback failed to schedule next run", "executionID", metadata.WorkflowExecutionID, "triggerID", triggerID)
+				s.lggr.Errorw("task callback failed to schedule next run", "executionID", workflowExecutionID, "triggerID", triggerID)
 			}
 
 			muCh.RLock()
@@ -330,7 +331,7 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 			select {
 			case callbackCh <- response:
 			default:
-				s.lggr.Errorw("callback channel full, dropping event", "executionID", metadata.WorkflowExecutionID, "triggerID", triggerID, "eventID", response.Id)
+				s.lggr.Errorw("callback channel full, dropping event", "executionID", workflowExecutionID, "triggerID", triggerID, "eventID", response.Id)
 
 				lblErr := s.labeler.With(
 					"workflowOwner", metadata.WorkflowOwner,
@@ -338,7 +339,7 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 					"workflowID", metadata.WorkflowID,
 				).Emit(ctx, "callback channel full, dropping event")
 				if lblErr != nil {
-					s.lggr.Errorw("cannot emit custom event", "executionID", metadata.WorkflowExecutionID, "triggerID", triggerID, "eventID", response.Id, "err", lblErr)
+					s.lggr.Errorw("cannot emit custom event", "executionID", workflowExecutionID, "triggerID", triggerID, "eventID", response.Id, "err", lblErr)
 				}
 			}
 		})
