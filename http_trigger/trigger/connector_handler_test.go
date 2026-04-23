@@ -2,6 +2,7 @@ package trigger
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"strings"
 	"sync"
@@ -164,8 +165,11 @@ func newMetrics(t *testing.T) *Metrics {
 	return m
 }
 
-// Helper for setting up proxy and mockConnector for SendRequest tests
-func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayConnector, <-chan capabilities.TriggerAndId[*http.Payload], *requestCache) {
+// setupWithTriggerChannelBuffer registers one workflow with a trigger channel of the given capacity.
+// If prefillBlockFirstTrigger is true, triggerChBuffer must be 1 and one placeholder message is
+// queued on the channel before registration so the next trigger attempt fails with errFullChannel
+// until that placeholder is received (deterministic; avoids races with an unbuffered channel).
+func setupWithTriggerChannelBuffer(t *testing.T, lggr logger.Logger, triggerChBuffer int) (*connectorHandler, *mockGatewayConnector, chan capabilities.TriggerAndId[*http.Payload], *requestCache) {
 	mockConnector := &mockGatewayConnector{}
 	cfg := ServiceConfig{
 		MetadataBatchSize:            10,
@@ -203,7 +207,7 @@ func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayCon
 			},
 		},
 	}
-	sendCh := make(chan capabilities.TriggerAndId[*http.Payload], 1)
+	sendCh := make(chan capabilities.TriggerAndId[*http.Payload], triggerChBuffer)
 	err = handler.RegisterWorkflow(context.Background(), WorkflowRegistrationInput{
 		WorkflowSelector: gateway_common.WorkflowSelector{
 			WorkflowID:    testWorkflowID,
@@ -222,6 +226,11 @@ func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayCon
 	require.NoError(t, err)
 
 	return handler, mockConnector, sendCh, requestCache
+}
+
+// Helper for setting up proxy and mockConnector for SendRequest tests
+func setup(t *testing.T, lggr logger.Logger) (*connectorHandler, *mockGatewayConnector, <-chan capabilities.TriggerAndId[*http.Payload], *requestCache) {
+	return setupWithTriggerChannelBuffer(t, lggr, 1)
 }
 
 func requireWorkflowTriggered(t *testing.T, triggerCh <-chan capabilities.TriggerAndId[*http.Payload], req *jsonrpc.Request[json.RawMessage], connector *mockGatewayConnector, handler *connectorHandler, key gateway_common.AuthorizedKey, requestCache *requestCache) {
@@ -897,6 +906,89 @@ func TestConnectorHandler_RequestCacheDuplicateDetection(t *testing.T) {
 	require.NoError(t, err)
 	// No trigger should be sent again
 	require.Empty(t, triggerCh)
+}
+
+// TestHandleGatewayMessage_TriggerFailureDoesNotCacheThenSameRequestSucceeds checks that when
+// workflow.trigger fails (here: errFullChannel because the buffer-1 channel is already full), we
+// do not persist a cache entry, so a later identical JSON-RPC request is processed again and can
+// succeed after capacity is freed by draining the placeholder message.
+func TestHandleGatewayMessage_TriggerFailureDoesNotCacheThenSameRequestSucceeds(t *testing.T) {
+	lggr := logger.Test(t)
+	handler, connector, triggerCh, requestCache := setupWithTriggerChannelBuffer(t, lggr, 1)
+
+	triggerCh <- capabilities.TriggerAndId[*http.Payload]{
+		Id: "prefill-placeholder",
+		Trigger: &http.Payload{
+			Input: []byte(`{}`),
+			Key: &http.AuthorizedKey{
+				Type:      http.KeyType_KEY_TYPE_ECDSA_EVM,
+				PublicKey: publicKey,
+			},
+		},
+	}
+
+	req, key := gatewayRequest(t, gateway_common.MethodWorkflowExecute)
+
+	err := handler.HandleGatewayMessage(t.Context(), "gw1", req)
+	require.NoError(t, err)
+	require.True(t, connector.SendToGatewayCalled)
+	respFail := connector.SendToGatewayArgs.Msg
+	require.NotNil(t, respFail.Error)
+	require.Equal(t, jsonrpc.ErrServerOverloaded, respFail.Error.Code)
+	require.Nil(t, respFail.Result)
+
+	cachedAfterFail, err := requestCache.get(t.Context(), req.ID)
+	require.ErrorIs(t, err, sql.ErrNoRows)
+	require.Nil(t, cachedAfterFail)
+
+	prefill := <-triggerCh
+	require.Equal(t, "prefill-placeholder", prefill.Id)
+
+	err = handler.HandleGatewayMessage(t.Context(), "gw1", req)
+	require.NoError(t, err)
+	respOK := connector.SendToGatewayArgs.Msg
+	require.Nil(t, respOK.Error)
+	require.NotNil(t, respOK.Result)
+	var triggerResp gateway_common.HTTPTriggerResponse
+	err = json.Unmarshal(*respOK.Result, &triggerResp)
+	require.NoError(t, err)
+	require.Equal(t, testWorkflowID, triggerResp.WorkflowID)
+
+	select {
+	case triggerReq := <-triggerCh:
+		var input map[string]any
+		err := json.Unmarshal(triggerReq.Trigger.Input, &input)
+		require.NoError(t, err)
+		require.Len(t, input, 1)
+		require.Equal(t, "value", input["key"])
+		require.NotNil(t, triggerReq.Trigger.Key)
+		require.Equal(t, http.KeyType_KEY_TYPE_ECDSA_EVM, triggerReq.Trigger.Key.Type)
+		require.Equal(t, key.PublicKey, triggerReq.Trigger.Key.PublicKey)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for trigger delivery")
+	}
+
+	executionID, err := workflows.EncodeExecutionID(strings.TrimPrefix(testWorkflowID, "0x"), req.ID)
+	require.NoError(t, err)
+	executionID = ensureHexPrefix(executionID)
+	require.Equal(t, executionID, triggerResp.WorkflowExecutionID)
+
+	entry, err := requestCache.get(t.Context(), req.ID)
+	require.NoError(t, err)
+	require.NotNil(t, entry)
+	require.Equal(t, executionID, entry.ExecutionID)
+	require.Equal(t, req.ID, entry.RequestID)
+
+	err = handler.HandleGatewayMessage(t.Context(), "gw1", req)
+	require.NoError(t, err)
+	respDup := connector.SendToGatewayArgs.Msg
+	require.Nil(t, respDup.Error)
+	require.Equal(t, respOK.Result, respDup.Result)
+	select {
+	case <-triggerCh:
+		t.Fatal("duplicate request should be served from cache, not re-trigger")
+	default:
+	}
 }
 
 // mockKVStoreWithCleanupTracking tracks when PruneExpiredEntries is called

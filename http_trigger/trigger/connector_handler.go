@@ -279,16 +279,17 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		return
 	}
 
-	resp, err := h.prepareAndCacheResponse(ctx, gatewayID, req, workflowMetadata.WorkflowID, workflowExecutionID, l)
+	resp, err := h.createAcceptResponse(ctx, gatewayID, req, workflowMetadata.WorkflowID, workflowExecutionID, l)
 	if err != nil {
-		return // Error already sent in the method
+		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInternal, "Internal server error")
+		return
 	}
 
 	displayWorkflowName := workflowMetadata.DecodedWorkflowName
 	if displayWorkflowName == "" {
 		displayWorkflowName = workflowMetadata.WorkflowName
 	}
-	// Emit TriggerExecutionStarted event
+
 	labeler := custmsg.NewLabeler().With(
 		events.KeyTriggerID, req.ID,
 		events.KeyWorkflowID, workflowMetadata.WorkflowID,
@@ -311,11 +312,6 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		}
 	}
 
-	if emitErr := events.EmitTriggerExecutionStarted(ctx, labeler); emitErr != nil {
-		l.Errorw("failed to emit trigger execution started event", "error", emitErr)
-		// Continue with execution even if event emission fails
-	}
-
 	l.Debugw("Triggering workflow")
 	input := []byte(triggerReq.Input)
 	err = h.triggerWorkflow(ctx, workflowMetadata.WorkflowID, req.ID, gatewayID, input, triggerReq.Key)
@@ -324,7 +320,17 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		return
 	}
 
+	// Emit TriggerExecutionStarted event
+	if emitErr := events.EmitTriggerExecutionStarted(ctx, labeler); emitErr != nil {
+		l.Errorw("failed to emit trigger execution started event", "error", emitErr)
+	}
+
 	h.sendResponse(ctx, gatewayID, resp)
+
+	err = h.cacheRequestResponse(ctx, req, workflowMetadata.WorkflowID, workflowExecutionID, resp, l)
+	if err != nil {
+		l.Errorw("Failed to cache request response", "error", err)
+	}
 }
 
 type WorkflowMetadata struct {
@@ -439,7 +445,7 @@ func (h *connectorHandler) handleRequestCaching(ctx context.Context, gatewayID s
 	return false // not handled, continue processing
 }
 
-func (h *connectorHandler) prepareAndCacheResponse(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage], workflowID, workflowExecutionID string, l logger.Logger) (*jsonrpc.Response[json.RawMessage], error) {
+func (h *connectorHandler) createAcceptResponse(ctx context.Context, gatewayID string, req *jsonrpc.Request[json.RawMessage], workflowID, workflowExecutionID string, l logger.Logger) (*jsonrpc.Response[json.RawMessage], error) {
 	payload := &gateway_common.HTTPTriggerResponse{
 		WorkflowID:          workflowID,
 		WorkflowExecutionID: workflowExecutionID,
@@ -461,11 +467,14 @@ func (h *connectorHandler) prepareAndCacheResponse(ctx context.Context, gatewayI
 		Result:  &payloadMsg,
 	}
 
+	return resp, nil
+}
+
+func (h *connectorHandler) cacheRequestResponse(ctx context.Context, req *jsonrpc.Request[json.RawMessage], workflowID, workflowExecutionID string, resp *jsonrpc.Response[json.RawMessage], l logger.Logger) error {
 	reqHash, err := req.Digest()
 	if err != nil {
 		l.Errorw("Failed to compute request digest for caching", "error", err)
-		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInternal, "Internal server error")
-		return nil, err
+		return err
 	}
 
 	err = h.requestCache.add(ctx, requestCacheEntry{
@@ -477,11 +486,10 @@ func (h *connectorHandler) prepareAndCacheResponse(ctx context.Context, gatewayI
 	})
 	if err != nil {
 		l.Errorw("Failed to add request to cache", "error", err)
-		h.sendErrorResponse(ctx, gatewayID, req.ID, jsonrpc.ErrInternal, "Internal server error")
-		return nil, err
+		return err
 	}
 
-	return resp, nil
+	return nil
 }
 
 func (h *connectorHandler) triggerWorkflow(ctx context.Context, workflowID string, reqID string, gatewayID string, input []byte, key gateway_common.AuthorizedKey) error {
