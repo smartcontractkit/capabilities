@@ -240,7 +240,7 @@ type HashableRequest[T proto.Message] struct {
 	metadata            commoncap.ResponseMetadata
 	*observableRequest[T]
 	observations map[[HashLength]byte]T
-	lock         sync.RWMutex
+	obsLock      sync.RWMutex
 }
 
 func NewHashableRequest[T proto.Message](workflowExecutionID, reference string, metadata commoncap.ResponseMetadata, observe func(context.Context) (T, error)) *HashableRequest[T] {
@@ -282,8 +282,8 @@ func (r *HashableRequest[T]) captureObservationHash() ([HashLength]byte, Observa
 	if err != nil {
 		return [HashLength]byte{}, nil, fmt.Errorf("failed to convert response to report data: %w", err)
 	}
-	r.lock.Lock()
-	defer r.lock.Unlock()
+	r.obsLock.Lock()
+	defer r.obsLock.Unlock()
 	// store observation by report data hash to be able to retrieve it later when report is generated.
 	// As there is a race between OCR plugin and capturing observations, we have to store all of them, as we don't know which one will be used in the report.
 	// There is no eviction of old observations as we expect only a few of them to be captured during the lifetime of the request,
@@ -311,8 +311,8 @@ func (r *HashableRequest[T]) GetOCRObservation() (*RequestObservation, error) {
 }
 
 func (r *HashableRequest[T]) GetObservationByReportData(reportData [HashLength]byte) (T, bool) {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
+	r.obsLock.RLock()
+	defer r.obsLock.RUnlock()
 	result, ok := r.observations[reportData]
 	return result, ok
 }
@@ -329,7 +329,7 @@ type LockableToBlockHashableRequest[T proto.Message] struct {
 	reference           string
 	metadata            commoncap.ResponseMetadata
 	observe             func(context.Context, *ChainHeight) (T, error)
-	lock                sync.RWMutex
+	hashableReqLock     sync.RWMutex
 	hashableRequest     *HashableRequest[T]
 }
 
@@ -351,8 +351,8 @@ func (r *LockableToBlockHashableRequest[T]) ID() string {
 }
 
 func (r *LockableToBlockHashableRequest[T]) LockToABlock(chainHeight *ChainHeight) Request {
-	r.lock.Lock()
-	defer r.lock.Unlock()
+	r.hashableReqLock.Lock()
+	defer r.hashableReqLock.Unlock()
 	if r.hashableRequest == nil {
 		r.hashableRequest = NewHashableRequest(r.workflowExecutionID, r.reference, r.metadata, func(ctx context.Context) (T, error) {
 			return r.observe(ctx, chainHeight)
@@ -364,8 +364,8 @@ func (r *LockableToBlockHashableRequest[T]) LockToABlock(chainHeight *ChainHeigh
 const HashLength = 32
 
 func (r *LockableToBlockHashableRequest[T]) GetObservationByReportData(reportData [HashLength]byte) (T, bool) {
-	r.lock.RLock()
-	defer r.lock.RUnlock()
+	r.hashableReqLock.RLock()
+	defer r.hashableReqLock.RUnlock()
 	if r.hashableRequest == nil {
 		var zero T
 		return zero, false

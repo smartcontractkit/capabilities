@@ -793,7 +793,7 @@ func TestAgreeOnEventuallyConsistentValue(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1, N: 4}}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t))
-			var nodesObservations []attributedObservation
+			nodesObservations := make([]attributedObservation, 0, len(tc.nodesObservations))
 			for i, ob := range tc.nodesObservations {
 				nodesObservations = append(nodesObservations, attributedObservation{
 					// G115: integer overflow conversion int -> uint8
@@ -884,7 +884,7 @@ func TestAgreeOnHashableValue(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1, N: 4}}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t))
-			var nodesObservations []attributedObservation
+			nodesObservations := make([]attributedObservation, 0, len(tc.nodesObservations))
 			for i, h := range tc.nodesObservations {
 				var ro *types.RequestObservation
 				switch {
@@ -996,7 +996,7 @@ func TestAgreeOnObservationType(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1, N: 4}}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t))
-			var nodesObservations []attributedObservation
+			nodesObservations := make([]attributedObservation, 0, len(tc.observations))
 			for i := range tc.observations {
 				ob := &tc.observations[i]
 				nodesObservations = append(nodesObservations, attributedObservation{
@@ -1103,7 +1103,7 @@ func TestAggregateValue(t *testing.T) {
 		const id = "id"
 		t.Run(tc.name, func(t *testing.T) {
 			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1, N: 4}}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t))
-			var nodesObservations []attributedObservation
+			nodesObservations := make([]attributedObservation, 0, len(tc.observations))
 			for i := range tc.observations {
 				ob := tc.observations[i]
 				nodesObservations = append(nodesObservations, attributedObservation{
