@@ -13,7 +13,6 @@ import (
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
 	chain_selectors "github.com/smartcontractkit/chain-selectors"
-	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	aptoscapserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -45,10 +44,6 @@ const (
 	defaultObservationPollPeriod = 2 * time.Second
 	defaultUnknownRequestsTTL    = 10 * time.Second
 	defaultChainHeightPollPeriod = time.Second
-
-	repoCLLCapabilities = "https://raw.githubusercontent.com/smartcontractkit/capabilities"
-	versionRefsMain     = "refs/heads/main"
-	schemaBasePath      = repoCLLCapabilities + "/" + versionRefsMain + "/chain_capabilities/aptos/monitoring"
 
 	// Default value for optional Aptos action setting when not provided in config.
 	defaultTxSearchStartingBuffer = 1 * time.Minute
@@ -189,12 +184,11 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return fmt.Errorf("failed to fetch chain info for chainID %s from relayer: %w", cfg.ChainID, err)
 	}
 
-	client := beholder.GetClient().ForName("aptos_capability")
 	metrics, err := monitoring.NewMetrics()
 	if err != nil {
 		return fmt.Errorf("failed to create metrics: %w", err)
 	}
-	beholderProcessor, err := monitoring.NewProcessor(beholder.NewProtoEmitter(c.lggr, &client, schemaBasePath), metrics)
+	processor, err := monitoring.NewProcessor(c.lggr, metrics)
 	if err != nil {
 		return fmt.Errorf("failed to create monitoring proto processor: %w", err)
 	}
@@ -281,7 +275,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	}
 	c.lggr.Debugw("Initialised transmission scheduler", "deltaStage", cfg.DeltaStage)
 
-	c.Aptos, err = actions.NewAptos(cfg, p2pConfig, aptosService, c.consensusHandler, messageBuilder, beholderProcessor, c.lggr, limits.Factory{Logger: c.lggr}, scheduler, c.chainSelector)
+	c.Aptos, err = actions.NewAptos(cfg, p2pConfig, aptosService, c.consensusHandler, messageBuilder, processor, c.lggr, limits.Factory{Logger: c.lggr}, scheduler, c.chainSelector)
 	if err != nil {
 		c.lggr.Errorw("failed to create Aptos actions", "error", err)
 		return fmt.Errorf("failed to create Aptos actions: %w", err)
