@@ -391,19 +391,5 @@ func (thr *TxInfoRetriever) matchesTransmissionByReport(arguments []interface{})
 		return false
 	}
 
-	sigArray, _ := arguments[2].([]interface{})
-	if len(sigArray) != len(thr.report.Sigs) {
-		thr.lggr.Debugw("Payload mismatch: signature count differs",
-			"got", len(sigArray), "want", len(thr.report.Sigs))
-		return false
-	}
-	for i, elem := range sigArray {
-		s, _ := elem.(string)
-		if strings.TrimPrefix(s, "0x") != hex.EncodeToString(thr.report.Sigs[i].Signature) {
-			thr.lggr.Debugw("Payload mismatch: signature differs", "index", i)
-			return false
-		}
-	}
-
 	return true
 }
