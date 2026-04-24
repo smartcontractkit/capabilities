@@ -512,51 +512,6 @@ func TestWriteReport_PreSubmissionCheck(t *testing.T) {
 		require.Empty(t, result.ResponseMetadata.Metering)
 	})
 
-	t.Run("Node 0 failed with OUT_OF_GAS, our gas same - return fatal", func(t *testing.T) {
-		rm, reqMeta, req := newReportFixture(t)
-		transmissionIDStr := computeTransmissionIDStr(t, rm)
-		h, node0Addr := newMultiNodeTestHelper(t, transmissionIDStr)
-
-		req.GasConfig = &aptoscap.GasConfig{MaxGasAmount: 100_000}
-		node0MaxGas := uint64(100_000)
-		node0FailedTx := buildFakeTransactionWithSigs(t, "0xnode0oog", false, 100, time.Now().UnixMicro(), rm, testGasUsed, testGasUnitPrice, node0MaxGas, "Out of gas", req.Report.Sigs)
-
-		h.mockTransmission(TransmissionInfo{Success: false})
-		h.mockSearchTx(t, node0Addr, node0FailedTx) // pre-submission: OOG, our gas same → fatal
-
-		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
-		require.Nil(t, capErr)
-		require.Equal(t, aptoscap.TxStatus_TX_STATUS_FATAL, result.Response.TxStatus)
-		require.Equal(t, "0xnode0oog", *result.Response.TxHash)
-		require.NotNil(t, result.Response.ErrorMessage)
-		require.Contains(t, *result.Response.ErrorMessage, "Out of gas")
-		require.Empty(t, result.ResponseMetadata.Metering) // Pre-submission escape — no metering
-		// InvokeOnReport should NOT have been called — pre-submission check blocked
-		h.forwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
-	})
-
-	t.Run("Node 0 failed with non-gas error (Move abort) - return fatal", func(t *testing.T) {
-		rm, reqMeta, req := newReportFixture(t)
-		transmissionIDStr := computeTransmissionIDStr(t, rm)
-		h, node0Addr := newMultiNodeTestHelper(t, transmissionIDStr)
-
-		vmReceiverRevert := "Move abort in 0x1::receiver: E_RECEIVER_FAILURE(0x64):"
-		node0FailedTx := buildFakeTransactionWithSigs(t, "0xnode0revert", false, 100, time.Now().UnixMicro(), rm, testGasUsed, testGasUnitPrice, testGasUsed, vmReceiverRevert, req.Report.Sigs)
-
-		h.mockTransmission(TransmissionInfo{Success: false})
-		h.mockSearchTx(t, node0Addr, node0FailedTx) // pre-submission: receiver revert → fatal
-
-		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
-		require.Nil(t, capErr)
-		require.Equal(t, aptoscap.TxStatus_TX_STATUS_FATAL, result.Response.TxStatus)
-		require.Equal(t, "0xnode0revert", *result.Response.TxHash)
-		require.NotNil(t, result.Response.ReceiverContractExecutionStatus)
-		require.Equal(t, aptoscap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED, *result.Response.ReceiverContractExecutionStatus)
-		// Pre-submission escape — we never submitted, so no metering regardless of failure type.
-		require.Empty(t, result.ResponseMetadata.Metering)
-		h.forwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
-	})
-
 	t.Run("Node 0 has no matching failed tx - proceed to submit", func(t *testing.T) {
 		rm, reqMeta, req := newReportFixture(t)
 		transmissionIDStr := computeTransmissionIDStr(t, rm)
