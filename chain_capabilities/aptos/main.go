@@ -8,6 +8,7 @@ import (
 	"maps"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
@@ -252,6 +253,14 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		c.lggr.Debugw("p2pToTransmitterMap fetched from capReg specConfig",
 			"entries", len(p2pConfig), "p2pConfig", p2pConfig,
 		)
+	}
+
+	// Ensure transmitter addresses have the 0x prefix so they match
+	// what is read from on-chain
+	for k, v := range p2pConfig {
+		if !strings.HasPrefix(v, "0x") {
+			p2pConfig[k] = "0x" + v
+		}
 	}
 
 	localNode, err := dependencies.CapabilityRegistry.LocalNode(ctx)
