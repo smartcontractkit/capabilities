@@ -200,31 +200,6 @@ func (wr *writeReport) execute(
 		}
 		return reply, capabilities.ResponseMetadata{}, nil
 	}
-	// Pre-submission check: if we are not node 0, look for node 0's failed tx
-	// to avoid submitting when we know we'll hit the same error. Checking only
-	// node 0 is sufficient because all failures except OOG are deterministic
-	// (identical payload → identical outcome). OOG is handled by comparing gas
-	// headroom. Progressive failure detection during polling (e.g. node 0
-	// crash) and simulation-based pre-flight are tracked in PLEX-2692.
-	if queuePosition > 0 && len(orderedTransmitters) > 0 && orderedTransmitters[0] != "" {
-		node0Addr, addrErr := aptos_sdk.ConvertToAddress(orderedTransmitters[0])
-		if addrErr != nil {
-			wr.lggr.Warnw("Failed to parse node 0 address for pre-submission check, proceeding to submit", "address", orderedTransmitters[0], "error", addrErr)
-		} else {
-			failedResult, searchErr := txInfoRetriever.GetFailedTransmissionInfo(ctx, *node0Addr)
-			if searchErr == nil {
-				wr.lggr.Debugw("Pre-submission check: found node 0 failed tx", "txHash", failedResult.TxHash, "vmStatus", failedResult.VmStatus, "maxGasAmount", failedResult.MaxGasAmount)
-				reply, replyMeta := wr.buildPreSubmissionFatalReply(failedResult, request.GasConfig.MaxGasAmount)
-				if reply != nil {
-					return reply, replyMeta, nil
-				}
-				wr.lggr.Debugw("Pre-submission check: our gas headroom is higher, proceeding to submit",
-					"ourMaxGas", request.GasConfig.MaxGasAmount, "node0MaxGas", failedResult.MaxGasAmount)
-			} else {
-				wr.lggr.Debugw("Pre-submission check: no matching failed tx from node 0, proceeding to submit", "err", searchErr)
-			}
-		}
-	}
 
 	err = wr.reportSizeLimit.Check(ctx, commoncfg.SizeOf(request.Report.RawReport))
 	if err != nil {
