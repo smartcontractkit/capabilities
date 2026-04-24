@@ -435,10 +435,7 @@ func TestWriteReport_Execute(t *testing.T) {
 		transmissionIDStr := computeTransmissionIDStr(t, rm)
 		h, node0Addr := newMultiNodeTestHelper(t, transmissionIDStr)
 
-		otherRM, _, _ := newReportFixture(t)
-
 		h.mockTransmission(TransmissionInfo{Success: false}).Once()
-		h.mockSearchTx(t, node0Addr, buildFakeTransaction(t, "0xpre", false, 99, time.Now().Add(-2*time.Minute).UnixMicro(), otherRM)).Once() // pre-submission: no match, proceeds to submit
 		h.mockInvokeOnReport(&aptostypes.SubmitTransactionReply{TxStatus: aptostypes.TxFatal, TxHash: "0xmine"}, nil)
 		h.mockTransmission(TransmissionInfo{Success: false})
 		h.mockTransactionByHash("0xmine", testGasUsed, testGasUnitPrice)
@@ -462,10 +459,8 @@ func TestWriteReport_Execute(t *testing.T) {
 		h, node0Addr := newMultiNodeTestHelper(t, transmissionIDStr)
 
 		vmReceiverRevert := "Move abort in 0x1::receiver: E_RECEIVER_FAILURE(0x64):"
-		otherRM, _, _ := newReportFixture(t)
 
 		h.mockTransmission(TransmissionInfo{Success: false}).Once()
-		h.mockSearchTx(t, node0Addr, buildFakeTransaction(t, "0xpre", false, 99, time.Now().Add(-2*time.Minute).UnixMicro(), otherRM)).Once() // pre-submission: no match, proceeds to submit
 		h.mockInvokeOnReport(&aptostypes.SubmitTransactionReply{TxStatus: aptostypes.TxFatal, TxHash: "0xmine"}, nil)
 		h.mockTransmission(TransmissionInfo{Success: false})
 		h.mockTransactionByHash("0xmine", testGasUsed, testGasUnitPrice)
