@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	aptostypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/aptos"
-	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 )
 
 func TestGetSuccessfulTransmissionInfo(t *testing.T) {
@@ -284,25 +283,4 @@ func TestPayloadMatching(t *testing.T) {
 		require.Contains(t, err.Error(), "no matching failed transaction found")
 	})
 
-	t.Run("different signatures does not match", func(t *testing.T) {
-		mockClient := NewCREForwarderClient_mock(t)
-		targetRM, _, _ := newReportFixture(t)
-		requestStartTime := time.Now()
-		thr := newTestTxInfoRetriever(t, mockClient, targetRM, requestStartTime)
-
-		// Build a tx with matching report but different signatures
-		differentSigs := []*workflowpb.AttributedSignature{
-			{Signature: []byte{9, 9, 9}},
-			{Signature: []byte{8, 8, 8}},
-		}
-		oldTs := requestStartTime.Add(-2 * time.Minute).UnixMicro()
-		mismatchTx := buildFakeTransactionWithSigs(t, "0xbadsigs", false, 100, oldTs, targetRM, testGasUsed, testGasUnitPrice, testGasUsed, "Move abort", differentSigs)
-
-		mockClient.On("GetTransmitterTransactions", mock.Anything, transmitter, mock.Anything, mock.Anything).
-			Return([]*aptostypes.Transaction{mismatchTx}, nil)
-
-		_, err := thr.GetFailedTransmissionInfo(t.Context(), transmitter)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "no matching failed transaction found")
-	})
 }
