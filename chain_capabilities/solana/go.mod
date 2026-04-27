@@ -16,7 +16,6 @@ require (
 	github.com/smartcontractkit/chainlink-solana/integration-tests v0.0.0-20260421131224-c46cbfe7bc6c
 	github.com/smartcontractkit/libocr v0.0.0-20260403184524-b6409238958d
 	github.com/stretchr/testify v1.11.1
-	github.com/test-go/testify v1.1.4
 	go.opentelemetry.io/otel v1.43.0
 	google.golang.org/protobuf v1.36.11
 )
