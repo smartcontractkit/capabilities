@@ -441,6 +441,7 @@ func (e *WriteReport) fetchTransactionReceiptAndCreateReply(ctx context.Context,
 		return e.CalculateTransactionFee(ctx, evmtypes.ReceiptGasInfo{
 			GasUsed:           txReceipt.GasUsed,
 			EffectiveGasPrice: txReceipt.EffectiveGasPrice,
+			L1Fee:             txReceipt.L1Fee,
 		})
 	})
 	if err != nil {
