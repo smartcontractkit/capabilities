@@ -47,7 +47,7 @@ func validateFilterConfig(config *solanacappb.FilterLogTriggerRequest) error {
 	if config.Name == "" {
 		return fmt.Errorf("filter name cannot be empty")
 	}
-	if len(config.EventIdlJson) == 0 {
+	if len(config.ContractIdlJson) == 0 {
 		return fmt.Errorf("event idl json cannot be empty")
 	}
 	return nil
@@ -64,16 +64,25 @@ func (lts *SolanaLogTriggerService) ToLogPollerFilter(triggerID string, config *
 	}
 	copy(address[:], config.Address)
 
+	var cpiFilterConfig *solana.CPIFilterConfig
+	if config.CpiFilterConfig != nil {
+		cpiFilterConfig = &solana.CPIFilterConfig{
+			DestAddress: address,
+			MethodName:  string(config.CpiFilterConfig.MethodName),
+		}
+	}
+
 	return &solana.LPFilterQuery{
 		Name:            lts.generateFilterID(triggerID),
 		Address:         address,
 		EventName:       config.EventName,
 		EventSig:        getEventSig(config.EventName),
-		ContractIdlJSON: config.EventIdlJson,
+		ContractIdlJSON: config.ContractIdlJson,
 		SubkeyPaths:     getSubkeyPaths(config.Subkeys),
 		Retention:       lts.retention,
 		MaxLogsKept:     lts.maxLogsKept,
 		IncludeReverted: true,
+		CPIFilterConfig: cpiFilterConfig,
 	}, nil
 }
 
@@ -302,6 +311,19 @@ func (lts *SolanaLogTriggerService) RegisterLogTrigger(ctx context.Context, trig
 	}
 
 	lts.lggr.Debugf("RegisterLogTracking id: %s", lpFilter.Name)
+
+	// Diagnostic: log what we're sending (before gRPC / ToProto)
+	hasCPI := lpFilter.CPIFilterConfig != nil
+	lts.lggr.Infow("[DEBUG] RegisterLogTracking sending",
+		"filterName", lpFilter.Name,
+		"hasCPIFilterConfig", hasCPI,
+	)
+	if hasCPI {
+		lts.lggr.Infow("[DEBUG] RegisterLogTracking sending CPI config",
+			"filterName", lpFilter.Name,
+			"methodName", lpFilter.CPIFilterConfig.MethodName,
+		)
+	}
 
 	err = lts.SolanaService.RegisterLogTracking(ctx, *lpFilter)
 	if err != nil {
