@@ -133,7 +133,10 @@ func (fc *forwarderClient) deriveForwarderAuthority(receiverProgram solana.Publi
 }
 
 func (fc *forwarderClient) getOracleConfigPDA(ctx context.Context, workflowDonID, configVersion uint32) (solana.PublicKey, error) {
-	oracleConfigPDA := getConfigPDA(fc.forwarderState, workflowDonID, configVersion, fc.forwarderProgramID)
+	oracleConfigPDA, err := getConfigPDA(fc.forwarderState, workflowDonID, configVersion, fc.forwarderProgramID)
+	if err != nil {
+		return solana.PublicKey{}, fmt.Errorf("failed to calculate oracle config PDA: %w", err)
+	}
 
 	oracleConfigAccount, err := fc.SolanaService.GetAccountInfoWithOpts(ctx, soltypes.GetAccountInfoRequest{
 		Account: soltypes.PublicKey(oracleConfigPDA),
@@ -173,7 +176,7 @@ func toPayload(report *sdk.ReportResponse) []byte {
 
 }
 
-func getConfigPDA(statePubkey solana.PublicKey, donID uint32, configVersion uint32, programID solana.PublicKey) solana.PublicKey {
+func getConfigPDA(statePubkey solana.PublicKey, donID uint32, configVersion uint32, programID solana.PublicKey) (solana.PublicKey, error) {
 	configID := getConfigID(donID, configVersion)
 	reqIDBytes := make([]byte, 8)
 	binary.BigEndian.PutUint64(reqIDBytes, configID)
@@ -184,8 +187,8 @@ func getConfigPDA(statePubkey solana.PublicKey, donID uint32, configVersion uint
 		reqIDBytes,
 	}
 
-	addr, _, _ := solana.FindProgramAddress(seeds, programID)
-	return addr
+	addr, _, err := solana.FindProgramAddress(seeds, programID)
+	return addr, err
 }
 
 func getConfigID(donID uint32, configVersion uint32) uint64 {
