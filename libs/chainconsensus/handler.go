@@ -117,12 +117,12 @@ func (s *Handler) GetRequest(id string) (types.Request, bool) {
 	return rq.Request, true
 }
 
-func (s *Handler) CompleteRequest(id string, report *types.RequestReport) error {
+func (s *Handler) CompleteProtoRequest(id string, report *types.RequestReport) error {
 	switch report.Report.(type) {
 	case *types.RequestReport_Aggregatable:
 		return s.completeRequest(id, types.Reply{Value: report.GetAggregatable()})
 	case *types.RequestReport_LockableToBlock:
-		return s.completeLockableRequest(id, report.GetLockableToBlock())
+		return s.lockRequestToABlock(id, report.GetLockableToBlock())
 	case *types.RequestReport_EventuallyConsistent:
 		return s.completeRequest(id, types.Reply{Value: report.GetEventuallyConsistent()})
 	case *types.RequestReport_Error:
@@ -130,6 +130,10 @@ func (s *Handler) CompleteRequest(id string, report *types.RequestReport) error 
 	default:
 		return fmt.Errorf("unknown request type %T", report.Report)
 	}
+}
+
+func (s *Handler) CompleteHashableRequest(id string, report *types.HashableRequestReport) error {
+	return s.completeRequest(id, types.Reply{Value: report})
 }
 
 func (s *Handler) completeError(id string, protoErrors *types.RequestError) error {
@@ -141,7 +145,11 @@ func (s *Handler) completeError(id string, protoErrors *types.RequestError) erro
 	return s.completeRequest(id, types.Reply{Err: errors.Join(requestErrors...)})
 }
 
-func (s *Handler) completeLockableRequest(id string, height *types.ChainHeight) error {
+type LockableToBlockRequest interface {
+	LockToABlock(chainHeight *types.ChainHeight) types.Request
+}
+
+func (s *Handler) lockRequestToABlock(id string, height *types.ChainHeight) error {
 	if height == nil {
 		return fmt.Errorf("chain height is nil for report with requestID %s", id)
 	}
@@ -154,14 +162,14 @@ func (s *Handler) completeLockableRequest(id string, height *types.ChainHeight) 
 		return nil
 	}
 
-	request, ok := rawRequest.Request.(*types.LockableToBlockRequest)
+	request, ok := rawRequest.Request.(LockableToBlockRequest)
 	if !ok {
 		// might be because we've already converted it to eventually consistent
 		s.lggr.Infof("lockable to a block request %s is of a different type %T", id, rawRequest.Request)
 		return nil
 	}
 
-	newRequest := request.ToEventuallyConsistent(height)
+	newRequest := request.LockToABlock(height)
 	oldRequestCtx, ok := s.requests.Evict(newRequest.ID())
 	if !ok {
 		s.lggr.Warnf("lockable to a block request %s not found while removing", id)
@@ -231,15 +239,10 @@ func (s *Handler) addRequestCtx(requestCtx *requestCtx) error {
 	if err != nil {
 		return fmt.Errorf("failed to add request %s: %w", requestCtx.ID(), err)
 	}
-	switch tRequest := requestCtx.Request.(type) {
-	case *types.EventuallyConsistentRequest:
-		s.poller.Enqueue(requestCtx.Ctx, tRequest)
-	case *types.LockableToBlockRequest:
-	case *types.AggregatableRequest:
-		s.poller.Enqueue(requestCtx.Ctx, tRequest)
-	default:
-		return fmt.Errorf("unknown request type %T", tRequest)
+	if observable, ok := requestCtx.Request.(types.ObservableRequest); ok {
+		s.poller.Enqueue(requestCtx.Ctx, observable)
 	}
+
 	return nil
 }
 

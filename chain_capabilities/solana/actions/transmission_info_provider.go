@@ -2,13 +2,11 @@ package actions
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-
-	_ "embed"
 
 	bin "github.com/gagliardetto/binary"
 	"github.com/gagliardetto/solana-go"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	soltypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/solana"
@@ -16,7 +14,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 	solprimitives "github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives/solana"
 	"github.com/smartcontractkit/chainlink-solana/contracts"
-	"github.com/smartcontractkit/chainlink-solana/pkg/solana/codec"
 	lptypes "github.com/smartcontractkit/chainlink-solana/pkg/solana/logpoller/types"
 )
 
@@ -54,10 +51,10 @@ func newLogTransmissionInfoProvider(ctx context.Context, lggr logger.Logger, pro
 	}, nil
 }
 
-func (p *LogsTransmissionStatusProvider) GetTransmissionInfo(ctx context.Context, transmissionID [32]byte) (*TransmissionInfo, error) {
+func (p *LogsTransmissionStatusProvider) GetTransmissionInfo(ctx context.Context, transmissionID [32]byte) (TransmissionInfo, error) {
 	processedLogs, err := p.lr.queryProcessed(ctx, transmissionID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to request processed events: %w", err)
+		return TransmissionInfo{}, fmt.Errorf("failed to request processed events: %w", err)
 	}
 
 	if len(processedLogs) > 0 {
@@ -66,37 +63,37 @@ func (p *LogsTransmissionStatusProvider) GetTransmissionInfo(ctx context.Context
 
 	inProgressLogs, err := p.lr.queryInProgress(ctx, transmissionID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to request in progress events: %w", err)
+		return TransmissionInfo{}, fmt.Errorf("failed to request in progress events: %w", err)
 	}
 
 	if len(inProgressLogs) > 0 {
 		return p.failedTransmissionInfoReply(inProgressLogs)
 	}
 
-	return &TransmissionInfo{
+	return TransmissionInfo{
 		State: TransmissionStateNotAttempted,
 	}, nil
 }
 
-func (p *LogsTransmissionStatusProvider) successTransmissionInfoReply(successLogs []*soltypes.Log) (*TransmissionInfo, error) {
+func (p *LogsTransmissionStatusProvider) successTransmissionInfoReply(successLogs []*soltypes.Log) (TransmissionInfo, error) {
 	var event ReportProcessed
 	if len(successLogs) != 1 {
-		return nil, fmt.Errorf("unexpected successful logs length: %d", len(successLogs))
+		return TransmissionInfo{}, fmt.Errorf("unexpected successful logs length: %d", len(successLogs))
 	}
 
 	log := successLogs[0]
 	err := bin.UnmarshalBorsh(&event, log.Data)
 	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal report processed event: %w", err)
+		return TransmissionInfo{}, fmt.Errorf("failed to unmarshal report processed event: %w", err)
 	}
 
-	return &TransmissionInfo{
+	return TransmissionInfo{
 		State:     TransmissionStateSucceeded,
 		Signature: solana.Signature(log.TxHash),
 	}, nil
 }
 
-func (p *LogsTransmissionStatusProvider) failedTransmissionInfoReply(inProgressLogs []*soltypes.Log) (*TransmissionInfo, error) {
+func (p *LogsTransmissionStatusProvider) failedTransmissionInfoReply(inProgressLogs []*soltypes.Log) (TransmissionInfo, error) {
 	var event ReportInProgress
 
 	// use signature of the oldest transaction in reply
@@ -111,32 +108,23 @@ func (p *LogsTransmissionStatusProvider) failedTransmissionInfoReply(inProgressL
 
 	err := bin.UnmarshalBorsh(&event, log.Data)
 	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal report in progress event: %w", err)
+		return TransmissionInfo{}, fmt.Errorf("failed to unmarshal report in progress event: %w", err)
 	}
 
-	return &TransmissionInfo{
+	return TransmissionInfo{
 		State:     TransmissionStateFailed,
 		Signature: solana.Signature(log.TxHash),
 	}, nil
 }
 
 func (lr *logReader) registerCREForwarderFilters(ctx context.Context) error {
-	var codecIDL codec.IDL
-	if err := json.Unmarshal([]byte(contracts.FetchForwarderIDL()), &codecIDL); err != nil {
-		return fmt.Errorf("unexpected error: invalid Forwarder IDL, error: %w", err)
-	}
-
-	eventIDLProcessed, err := getEventIDL(EventReportProcessed, codecIDL)
-	if err != nil {
-		return err
-	}
 	sigProcessed := soltypes.EventSignature(lptypes.NewEventSignatureFromName(EventReportProcessed))
-	err = lr.SolanaService.RegisterLogTracking(ctx, soltypes.LPFilterQuery{
+	err := lr.SolanaService.RegisterLogTracking(ctx, soltypes.LPFilterQuery{
 		Name:            EventReportProcessed + "_" + lr.forwarderProgramID.String(),
 		Address:         soltypes.PublicKey(lr.forwarderProgramID),
 		EventName:       EventReportProcessed,
 		EventSig:        sigProcessed,
-		ContractIdlJSON: eventIDLProcessed,
+		ContractIdlJSON: []byte(contracts.FetchForwarderIDL()),
 		SubkeyPaths:     [][]string{{"TransmissionId"}},
 	})
 
@@ -144,17 +132,13 @@ func (lr *logReader) registerCREForwarderFilters(ctx context.Context) error {
 		return fmt.Errorf("failed to register  EventReportProcessed filter for forwarder: %w", err)
 	}
 
-	eventIDLInProgress, err := getEventIDL(EventReportInProgress, codecIDL)
-	if err != nil {
-		return err
-	}
 	sigInProgress := soltypes.EventSignature(lptypes.NewEventSignatureFromName(EventReportInProgress))
 	err = lr.SolanaService.RegisterLogTracking(ctx, soltypes.LPFilterQuery{
 		Name:            EventReportInProgress + "_" + lr.forwarderProgramID.String(),
 		Address:         soltypes.PublicKey(lr.forwarderProgramID),
 		EventName:       EventReportInProgress,
 		EventSig:        sigInProgress,
-		ContractIdlJSON: []byte(eventIDLInProgress),
+		ContractIdlJSON: []byte(contracts.FetchForwarderIDL()),
 		SubkeyPaths:     [][]string{{"TransmissionId"}},
 		IncludeReverted: true,
 	})
@@ -166,34 +150,6 @@ func (lr *logReader) registerCREForwarderFilters(ctx context.Context) error {
 	lr.sigInProgress = sigInProgress
 
 	return nil
-}
-
-func getEventIDL(eventName string, codecIDL codec.IDL) ([]byte, error) {
-	eventIdl, err := extractEventIDL(eventName, codecIDL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to extract event IDL %s: %w", eventName, err)
-	}
-
-	lpEventIdl := lptypes.EventIdl{Event: eventIdl, Types: codecIDL.Types}
-
-	ret, err := json.Marshal(lpEventIdl)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal event IDL %s: %w", eventName, err)
-	}
-
-	return ret, nil
-}
-
-func extractEventIDL(eventName string, codecIDL codec.IDL) (codec.IdlEvent, error) {
-	idlDef, err := codec.FindDefinitionFromIDL(codec.ChainConfigTypeEventDef, eventName, codecIDL)
-	if err != nil {
-		return codec.IdlEvent{}, err
-	}
-	eventIdl, isOk := idlDef.(codec.IdlEvent)
-	if !isOk {
-		return codec.IdlEvent{}, fmt.Errorf("unexpected type from IDL definition for event read: %q", eventName)
-	}
-	return eventIdl, nil
 }
 
 func (lr *logReader) queryProcessed(ctx context.Context, transmissionID [32]byte) ([]*soltypes.Log, error) {

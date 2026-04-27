@@ -197,9 +197,10 @@ func (rp *reportingPlugin) addObservations(ctx context.Context, requestIDs []str
 			continue
 		}
 
-		reqObservation, err := rp.getObservationForRequest(request)
+		reqObservation, err := request.GetOCRObservation()
 		if err != nil {
-			return fmt.Errorf("failed to observe request: %w", err)
+			rp.logger.Errorw("Failed to get observation for a request - skipping", "requestID", requestID, "err", err)
+			continue
 		}
 
 		if reqObservation == nil {
@@ -276,45 +277,6 @@ func (rp *reportingPlugin) getMissingRequestIDs(roundRequests map[string]struct{
 	return missingRequestIDs, nil
 }
 
-func (rp *reportingPlugin) getObservationForRequest(rawRequest ctypes.Request) (*ctypes.RequestObservation, error) {
-	switch rq := rawRequest.(type) {
-	case *ctypes.AggregatableRequest:
-		requestOb, observationErr, ok := rq.GetObservation()
-		if !ok {
-			return nil, nil
-		}
-		if observationErr != nil {
-			return &ctypes.RequestObservation{
-				Observation: &ctypes.RequestObservation_Error{Error: observationErr},
-			}, nil
-		}
-		return &ctypes.RequestObservation{
-			Observation: &ctypes.RequestObservation_Aggregatable{Aggregatable: requestOb},
-		}, nil
-
-	case *ctypes.EventuallyConsistentRequest:
-		requestOb, observationErr, ok := rq.GetObservation()
-		if !ok {
-			return nil, nil
-		}
-		if observationErr != nil {
-			return &ctypes.RequestObservation{
-				Observation: &ctypes.RequestObservation_Error{Error: observationErr},
-			}, nil
-		}
-		return &ctypes.RequestObservation{
-			Observation: &ctypes.RequestObservation_EventuallyConsistent{EventuallyConsistent: requestOb},
-		}, nil
-
-	case *ctypes.LockableToBlockRequest:
-		return &ctypes.RequestObservation{
-			Observation: &ctypes.RequestObservation_LockableToBlock{LockableToBlock: &emptypb.Empty{}},
-		}, nil
-	default:
-		return nil, fmt.Errorf("unsupported observation type: %T", rq)
-	}
-}
-
 func (rp *reportingPlugin) ValidateObservation(_ context.Context, outctx ocr3types.OutcomeContext, query types.Query, ao types.AttributedObservation) error {
 	ob := new(ctypes.Observation)
 	if err := proto.Unmarshal(ao.Observation, ob); err != nil {
@@ -334,6 +296,19 @@ func (rp *reportingPlugin) ValidateObservation(_ context.Context, outctx ocr3typ
 	err = rp.validateMissingRequestIDs(ob)
 	if err != nil {
 		return fmt.Errorf("invalid missing request ids: %w. OracleID: %d", err, ao.Observer)
+	}
+
+	for requestID, requestOb := range ob.Observations {
+		if requestOb == nil {
+			continue
+		}
+
+		switch tRequestOb := requestOb.Observation.(type) {
+		case *ctypes.RequestObservation_Hashable:
+			if len(tRequestOb.Hashable) != ctypes.HashLength {
+				return fmt.Errorf("invalid hash length for request ID %s: got %d, expected %d. OracleID: %d", requestID, len(tRequestOb.Hashable), ctypes.HashLength, ao.Observer)
+			}
+		}
 	}
 
 	return nil
@@ -437,11 +412,15 @@ func (rp *reportingPlugin) agreeOnObservationType(requestID string, aos []attrib
 				observationType = ctypes.ObservationType_AGGREGATABLE
 			case *ctypes.RequestObservation_Error:
 				observationType = ctypes.ObservationType_ERROR
+			case *ctypes.RequestObservation_Hashable:
+				observationType = ctypes.ObservationType_HASHABLE
 			}
-			yield(ob.Observer, &observation[ctypes.ObservationType, ctypes.ObservationType]{
+			if !yield(ob.Observer, &observation[ctypes.ObservationType, ctypes.ObservationType]{
 				Key:   observationType,
 				Value: observationType,
-			})
+			}) {
+				return
+			}
 		}
 	}
 
@@ -501,10 +480,12 @@ func (rp *reportingPlugin) agreeOnAggregationMethod(requestID string, aos []attr
 			if aggrOb == nil {
 				continue
 			}
-			yield(ob.Observer, &observation[string, string]{
+			if !yield(ob.Observer, &observation[string, string]{
 				Key:   aggrOb.Method,
 				Value: aggrOb.Method,
-			})
+			}) {
+				return
+			}
 		}
 	}
 
@@ -537,15 +518,56 @@ func (rp *reportingPlugin) agreeOnEventuallyConsistentValue(requestID string, ao
 			}
 
 			if _, ok := requestOb.Observation.(*ctypes.RequestObservation_EventuallyConsistent); !ok {
-				yield(ob.Observer, nil)
+				if !yield(ob.Observer, nil) {
+					return
+				}
 				continue
 			}
 
 			key := sha256.Sum256(requestOb.GetEventuallyConsistent())
-			yield(ob.Observer, &observation[[32]byte, []byte]{
+			if !yield(ob.Observer, &observation[[32]byte, []byte]{
 				Key:   key,
 				Value: requestOb.GetEventuallyConsistent(),
-			})
+			}) {
+				return
+			}
+		}
+	}
+
+	return mode[[32]byte, []byte](rp.config.N, rp.config.F, iterator)
+}
+
+func (rp *reportingPlugin) agreeOnHashableValue(requestID string, aos []attributedObservation) ([]byte, error) {
+	iterator := func(yield func(commontypes.OracleID, *observation[[32]byte, []byte]) bool) {
+		for _, ob := range aos {
+			requestOb, ok := ob.Observation.Observations[requestID]
+			if !ok || requestOb == nil {
+				continue
+			}
+
+			if _, ok := requestOb.Observation.(*ctypes.RequestObservation_Hashable); !ok {
+				if !yield(ob.Observer, nil) {
+					return
+				}
+				continue
+			}
+
+			var key [ctypes.HashLength]byte
+			if len(requestOb.GetHashable()) != ctypes.HashLength {
+				// should not happen due to validation, but just in case, we don't want to panic here.
+				if !yield(ob.Observer, nil) {
+					return
+				}
+				continue
+			}
+
+			copy(key[:], requestOb.GetHashable())
+			if !yield(ob.Observer, &observation[[32]byte, []byte]{
+				Key:   key,
+				Value: requestOb.GetHashable(),
+			}) {
+				return
+			}
 		}
 	}
 
@@ -643,6 +665,17 @@ func (rp *reportingPlugin) Outcome(
 				RequestID: requestID,
 				Outcome:   &ctypes.RequestOutcome_Error{Error: &ctypes.RequestError{Errors: requestErrors}},
 			})
+		case ctypes.ObservationType_HASHABLE:
+			value, err := rp.agreeOnHashableValue(requestID, aos)
+			if err != nil {
+				rp.logger.Infow("Could not determine request hashable value", "requestID", requestID, "err", err)
+				continue
+			}
+
+			outcome.Outcomes = append(outcome.Outcomes, &ctypes.RequestOutcome{
+				RequestID: requestID,
+				Outcome:   &ctypes.RequestOutcome_Hashable{Hashable: value},
+			})
 		default:
 			return nil, fmt.Errorf("unsupported observation type: %s", observationType)
 		}
@@ -664,50 +697,66 @@ func (rp *reportingPlugin) Reports(ctx context.Context, seqNr uint64, rawOutcome
 
 	rp.metrics.RecordOutcomeChainHeight(ctx, outcome.ChainHeight)
 
-	reports := make([]ocr3types.ReportPlus[[]byte], len(outcome.Outcomes))
-	for i, requestOutcome := range outcome.Outcomes {
-		report := ctypes.RequestReport{
-			RequestID: requestOutcome.RequestID,
-		}
-
-		switch requestOutcome.Outcome.(type) {
-		case *ctypes.RequestOutcome_Aggregatable:
-			report.Report = &ctypes.RequestReport_Aggregatable{Aggregatable: requestOutcome.GetAggregatable()}
-		case *ctypes.RequestOutcome_EventuallyConsistent:
-			report.Report = &ctypes.RequestReport_EventuallyConsistent{EventuallyConsistent: requestOutcome.GetEventuallyConsistent()}
-		case *ctypes.RequestOutcome_LockableToBlock:
-			report.Report = &ctypes.RequestReport_LockableToBlock{LockableToBlock: outcome.ChainHeight}
-		case *ctypes.RequestOutcome_Error:
-			report.Report = &ctypes.RequestReport_Error{Error: requestOutcome.GetError()}
-		default:
-			return nil, fmt.Errorf("unsupported observation type: %T", requestOutcome.Outcome)
-		}
-
-		asProto, err := proto.Marshal(&report)
+	reports := make([]ocr3types.ReportPlus[[]byte], 0, len(outcome.Outcomes))
+	for _, requestOutcome := range outcome.Outcomes {
+		rep, info, err := getReportAndInfo(&outcome, requestOutcome)
 		if err != nil {
-			return nil, fmt.Errorf("could not marshal request report: %w", err)
+			rp.logger.Errorw("Failed to get report and info for request outcome, skipping report generation for this request", "requestID", requestOutcome.RequestID, "err", err)
+			continue
 		}
-		info, err := createReportInfo()
+
+		infoAsB, err := marshalInfo(info)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create report info for request, error: %w", err)
 		}
-		reports[i] = ocr3types.ReportPlus[[]byte]{
+		reports = append(reports, ocr3types.ReportPlus[[]byte]{
 			ReportWithInfo: ocr3types.ReportWithInfo[[]byte]{
-				Report: asProto,
-				Info:   info,
+				Report: rep,
+				Info:   infoAsB,
 			},
-		}
+		})
 	}
 	return reports, nil
 }
 
-func createReportInfo() ([]byte, error) {
-	infos, err := structpb.NewStruct(map[string]any{
+func getReportAndInfo(outcome *ctypes.Outcome, requestOutcome *ctypes.RequestOutcome) ([]byte, map[string]any, error) {
+	reportInfo := map[string]any{
 		"keyBundleName": "evm",
-	})
+	}
+
+	rep := ctypes.RequestReport{
+		RequestID: requestOutcome.RequestID,
+	}
+	switch requestOutcome.Outcome.(type) {
+	case *ctypes.RequestOutcome_Aggregatable:
+		rep.Report = &ctypes.RequestReport_Aggregatable{Aggregatable: requestOutcome.GetAggregatable()}
+	case *ctypes.RequestOutcome_EventuallyConsistent:
+		rep.Report = &ctypes.RequestReport_EventuallyConsistent{EventuallyConsistent: requestOutcome.GetEventuallyConsistent()}
+	case *ctypes.RequestOutcome_LockableToBlock:
+		rep.Report = &ctypes.RequestReport_LockableToBlock{LockableToBlock: outcome.ChainHeight}
+	case *ctypes.RequestOutcome_Error:
+		rep.Report = &ctypes.RequestReport_Error{Error: requestOutcome.GetError()}
+	case *ctypes.RequestOutcome_Hashable:
+		reportInfo[reportInfoKeyReportType] = reportTypeHashable
+		reportInfo[reportInfoKeyRequestID] = requestOutcome.RequestID
+		return requestOutcome.GetHashable(), reportInfo, nil
+	default:
+		return nil, nil, fmt.Errorf("unsupported observation type: %T", requestOutcome.Outcome)
+	}
+
+	asProto, err := proto.Marshal(&rep)
+	if err != nil {
+		return nil, nil, fmt.Errorf("could not marshal request report: %w", err)
+	}
+	return asProto, reportInfo, nil
+}
+
+func marshalInfo(infoAsMap map[string]any) ([]byte, error) {
+	infos, err := structpb.NewStruct(infoAsMap)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create structpb for report info: %w", err)
 	}
+
 	infoBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(infos)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal report info: %w", err)
