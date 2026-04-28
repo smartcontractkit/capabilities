@@ -249,7 +249,7 @@ func (thr *TxInfoRetriever) GetSuccessfulTransmissionInfo(ctx context.Context, t
 	phase1PageSize := uint64(10)
 	// Phase 1: fetch latest transactions with no limit (nil) so the RPC returns its default page.
 	// Derive pageSize from the response for subsequent phases.
-	thr.lggr.Debugw("GetSuccessfulTransmissionInfo phase 1 - quick probe (nil limit)")
+	thr.lggr.Debugw("GetSuccessfulTransmissionInfo phase 1 - quick probe (phase1PageSize)", "phase1PageSize", phase1PageSize)
 	txns, err := capcommon.WithQuickRetry(ctx, thr.lggr, func(ctx context.Context) ([]*aptostypes.Transaction, error) {
 		result, fetchErr := thr.forwarderClient.GetTransmitterTransactions(ctx, transmitter, nil, &phase1PageSize)
 		if fetchErr != nil {
