@@ -38,8 +38,10 @@ var _ ocr3types.ReportingPlugin[[]byte] = (*reportingPlugin)(nil)
 
 type Config struct {
 	ocr3types.ReportingPluginConfig
-	MaxBatchSize         int // max number of requests that this node will try to process in a single round
-	MaxObservationLength int // max length of observation in bytes
+	MaxBatchSize          int // max number of requests that this node will try to process in a single round
+	MaxObservationLength  int // max length of observation in bytes
+	MaxReportLengthBytes  int // max length of report in bytes
+	MaxReportCount        int // max number of reports in a single round
 }
 
 type reportingPlugin struct {
@@ -704,6 +706,20 @@ func (rp *reportingPlugin) Reports(ctx context.Context, seqNr uint64, rawOutcome
 			rp.logger.Errorw("Failed to get report and info for request outcome, skipping report generation for this request", "requestID", requestOutcome.RequestID, "err", err)
 			continue
 		}
+		if len(rep) > rp.config.MaxReportLengthBytes {
+			rp.logger.Errorw("report is too large to transmit", "seqNr", seqNr, "requestID", requestOutcome.RequestID, "reportSize", len(rep), "maxReportLengthBytes", rp.config.MaxReportLengthBytes)
+			infoAsB, err := marshalInfo(info)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create report info for request, error: %w", err)
+			}
+			reports = append(reports, ocr3types.ReportPlus[[]byte]{
+				ReportWithInfo: ocr3types.ReportWithInfo[[]byte]{
+					Report: []byte{},
+					Info:   infoAsB,
+				},
+			})
+			continue
+		}
 
 		infoAsB, err := marshalInfo(info)
 		if err != nil {
@@ -715,6 +731,11 @@ func (rp *reportingPlugin) Reports(ctx context.Context, seqNr uint64, rawOutcome
 				Info:   infoAsB,
 			},
 		})
+
+		if len(reports) == rp.config.MaxReportCount {
+			rp.logger.Warnw("maximum number of reports reached, stopping further report generation for this round", "seqNr", seqNr, "maxNumberOfReports", rp.config.MaxReportCount)
+			break
+		}
 	}
 	return reports, nil
 }
