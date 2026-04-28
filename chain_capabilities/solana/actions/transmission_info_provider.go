@@ -119,7 +119,7 @@ func (p *LogsTransmissionStatusProvider) failedTransmissionInfoReply(inProgressL
 
 func (lr *logReader) registerCREForwarderFilters(ctx context.Context) error {
 	sigProcessed := soltypes.EventSignature(lptypes.NewEventSignatureFromName(EventReportProcessed))
-	err := lr.SolanaService.RegisterLogTracking(ctx, soltypes.LPFilterQuery{
+	err := lr.RegisterLogTracking(ctx, soltypes.LPFilterQuery{
 		Name:            EventReportProcessed + "_" + lr.forwarderProgramID.String(),
 		Address:         soltypes.PublicKey(lr.forwarderProgramID),
 		EventName:       EventReportProcessed,
@@ -133,7 +133,7 @@ func (lr *logReader) registerCREForwarderFilters(ctx context.Context) error {
 	}
 
 	sigInProgress := soltypes.EventSignature(lptypes.NewEventSignatureFromName(EventReportInProgress))
-	err = lr.SolanaService.RegisterLogTracking(ctx, soltypes.LPFilterQuery{
+	err = lr.RegisterLogTracking(ctx, soltypes.LPFilterQuery{
 		Name:            EventReportInProgress + "_" + lr.forwarderProgramID.String(),
 		Address:         soltypes.PublicKey(lr.forwarderProgramID),
 		EventName:       EventReportInProgress,
@@ -161,7 +161,7 @@ func (lr *logReader) queryProcessed(ctx context.Context, transmissionID [32]byte
 	queryProcessed = append(queryProcessed, solprimitives.NewEventBySubkeyFilter(0, []solprimitives.IndexedValueComparator{
 		{Value: transmissionID[:], Operator: primitives.Eq},
 	}))
-	logsProcessed, err := lr.SolanaService.QueryTrackedLogs(ctx, queryProcessed, limit)
+	logsProcessed, err := lr.QueryTrackedLogs(ctx, queryProcessed, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query tracked logs: %w", err)
 	}
@@ -178,7 +178,7 @@ func (lr *logReader) queryInProgress(ctx context.Context, transmissionID [32]byt
 	queryInProgress = append(queryInProgress, solprimitives.NewEventBySubkeyFilter(0, []solprimitives.IndexedValueComparator{
 		{Value: transmissionID[:], Operator: primitives.Eq},
 	}))
-	logsProcessed, err := lr.SolanaService.QueryTrackedLogs(ctx, queryInProgress, limit)
+	logsProcessed, err := lr.QueryTrackedLogs(ctx, queryInProgress, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query tracked logs: %w", err)
 	}

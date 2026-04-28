@@ -246,11 +246,12 @@ func (thr *TxInfoRetriever) paginateBackwards(
 func (thr *TxInfoRetriever) GetSuccessfulTransmissionInfo(ctx context.Context, transmitter aptos_sdk.AccountAddress) (TransmissionTxInfo, error) {
 	thr.lggr.Debugw("GetSuccessfulTransmissionInfo called", "transmitter", transmitter.String())
 
+	phase1PageSize := uint64(10)
 	// Phase 1: fetch latest transactions with no limit (nil) so the RPC returns its default page.
 	// Derive pageSize from the response for subsequent phases.
-	thr.lggr.Debugw("GetSuccessfulTransmissionInfo phase 1 - quick probe (nil limit)")
+	thr.lggr.Debugw("GetSuccessfulTransmissionInfo phase 1 - quick probe (phase1PageSize)", "phase1PageSize", phase1PageSize)
 	txns, err := capcommon.WithQuickRetry(ctx, thr.lggr, func(ctx context.Context) ([]*aptostypes.Transaction, error) {
-		result, fetchErr := thr.forwarderClient.GetTransmitterTransactions(ctx, transmitter, nil, nil)
+		result, fetchErr := thr.forwarderClient.GetTransmitterTransactions(ctx, transmitter, nil, &phase1PageSize)
 		if fetchErr != nil {
 			return nil, fetchErr
 		}
@@ -265,9 +266,11 @@ func (thr *TxInfoRetriever) GetSuccessfulTransmissionInfo(ctx context.Context, t
 	}
 	pageSize := uint64(len(txns))
 	thr.lggr.Debugw("GetSuccessfulTransmissionInfo phase 1 fetched", "txCount", len(txns), "derivedPageSize", pageSize)
+	// TODO: emit metric to potentially capture duration of phase1 fetch (how much time does this take fetch take)
 	phase1Result := thr.scanTransactions(txns, true)
 	if phase1Result.TxHash != "" {
 		thr.lggr.Debugw("GetSuccessfulTransmissionInfo found in phase 1", "txHash", phase1Result.TxHash)
+		// TODO: emit phase 1 found metric for success
 		return phase1Result.TransmissionTxInfo, nil
 	}
 
@@ -279,10 +282,11 @@ func (thr *TxInfoRetriever) GetSuccessfulTransmissionInfo(ctx context.Context, t
 		successScanner := func(txns []*aptostypes.Transaction) scanResult {
 			return thr.scanTransactions(txns, true)
 		}
-
+		// TODO: emit phase 2 starting metric for success
 		if phase2Result, pgErr := thr.paginateBackwards(ctx, transmitter, successScanner, phase1Result, pageSize); pgErr != nil {
 			thr.lggr.Warnw("GetSuccessfulTransmissionInfo phase 2 pagination failed, falling through to poll phase", "err", pgErr)
 		} else if phase2Result.TxHash != "" {
+			// TODO: emit phase 2 found metric for success
 			thr.lggr.Debugw("GetSuccessfulTransmissionInfo found in phase 2", "txHash", phase2Result.TxHash)
 			return phase2Result.TransmissionTxInfo, nil
 		}
@@ -293,6 +297,7 @@ func (thr *TxInfoRetriever) GetSuccessfulTransmissionInfo(ctx context.Context, t
 	// the target tx outside a fixed-size "latest" window.
 	phase3Start := phase1Result.MaxSeqNum + 1
 	thr.lggr.Debugw("GetSuccessfulTransmissionInfo phase 3 - poll forward", "phase3Start", phase3Start)
+	// TODO: emit phase 3 starting metric for success
 	return capcommon.WithPollingRetry(ctx, thr.lggr, func(ctx context.Context) (TransmissionTxInfo, error) {
 		latestTxns, fetchErr := thr.forwarderClient.GetTransmitterTransactions(ctx, transmitter, &phase3Start, nil)
 		if fetchErr != nil {
@@ -304,6 +309,7 @@ func (thr *TxInfoRetriever) GetSuccessfulTransmissionInfo(ctx context.Context, t
 		result := thr.scanTransactions(latestTxns, true)
 		if result.TxHash != "" {
 			thr.lggr.Debugw("GetSuccessfulTransmissionInfo found in phase 3", "txHash", result.TxHash)
+			// TODO: emit phase 3 found metric for success
 			return result.TransmissionTxInfo, nil
 		}
 		if result.MaxSeqNum >= phase3Start {
@@ -346,6 +352,7 @@ func (thr *TxInfoRetriever) GetFailedTransmissionInfo(ctx context.Context, trans
 	phase1Result := thr.scanTransactions(txns, false)
 	if phase1Result.TxHash != "" {
 		thr.lggr.Debugw("GetFailedTransmissionInfo found in phase 1", "txHash", phase1Result.TxHash)
+		// TODO: phase 1 found metric for failed
 		return phase1Result.TransmissionTxInfo, nil
 	}
 
@@ -357,10 +364,12 @@ func (thr *TxInfoRetriever) GetFailedTransmissionInfo(ctx context.Context, trans
 		failureScanner := func(txns []*aptostypes.Transaction) scanResult {
 			return thr.scanTransactions(txns, false)
 		}
+		// TODO: phase 2 starting metric for failed
 		if phase2Result, pgErr := thr.paginateBackwards(ctx, transmitter, failureScanner, phase1Result, pageSize); pgErr != nil {
 			thr.lggr.Warnw("GetFailedTransmissionInfo phase 2 pagination failed", "err", pgErr)
 		} else if phase2Result.TxHash != "" {
 			thr.lggr.Debugw("GetFailedTransmissionInfo found in phase 2", "txHash", phase2Result.TxHash)
+			// TODO: phase 2 found metric for failed
 			return phase2Result.TransmissionTxInfo, nil
 		}
 	}
