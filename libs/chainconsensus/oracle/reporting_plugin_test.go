@@ -1142,7 +1142,7 @@ func TestReports(t *testing.T) {
 		outcome              *types.Outcome
 		maxReportCount       int
 		maxReportLengthBytes int
-		expectedLog     string
+		expectedLog          string
 		expectedReports      []ocr3types.ReportPlus[[]byte]
 	}{
 		{
@@ -1225,8 +1225,8 @@ func TestReports(t *testing.T) {
 			expectedLog: "Failed to get report and info for request outcome, skipping report generation for this request",
 		},
 		{
-			name:          "max report count limits number of reports",
-			maxReportCount: 2,
+			name:                 "max report count limits number of reports",
+			maxReportCount:       2,
 			maxReportLengthBytes: 1024 * 1024,
 			outcome: &types.Outcome{
 				Outcomes: []*types.RequestOutcome{
@@ -1298,7 +1298,7 @@ func TestReports(t *testing.T) {
 				{
 					ReportWithInfo: ocr3types.ReportWithInfo[[]byte]{
 						Report: []byte{},
-						Info: info,
+						Info:   info,
 					},
 				},
 			},

@@ -38,10 +38,10 @@ var _ ocr3types.ReportingPlugin[[]byte] = (*reportingPlugin)(nil)
 
 type Config struct {
 	ocr3types.ReportingPluginConfig
-	MaxBatchSize          int // max number of requests that this node will try to process in a single round
-	MaxObservationLength  int // max length of observation in bytes
-	MaxReportLengthBytes  int // max length of report in bytes
-	MaxReportCount        int // max number of reports in a single round
+	MaxBatchSize         int // max number of requests that this node will try to process in a single round
+	MaxObservationLength int // max length of observation in bytes
+	MaxReportLengthBytes int // max length of report in bytes
+	MaxReportCount       int // max number of reports in a single round
 }
 
 type reportingPlugin struct {
