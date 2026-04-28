@@ -18,8 +18,6 @@ import (
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 )
 
-const Phase1PageSize = 10
-
 // userTxData is a local struct matching the Go-default JSON output of
 // aptos_api.UserTransaction (uppercase keys, numeric types). The SDK type has a
 // custom UnmarshalJSON expecting Aptos REST-API format (lowercase keys,
@@ -248,7 +246,7 @@ func (thr *TxInfoRetriever) paginateBackwards(
 func (thr *TxInfoRetriever) GetSuccessfulTransmissionInfo(ctx context.Context, transmitter aptos_sdk.AccountAddress) (TransmissionTxInfo, error) {
 	thr.lggr.Debugw("GetSuccessfulTransmissionInfo called", "transmitter", transmitter.String())
 
-	phase1PageSize := uint64(Phase1PageSize)
+	phase1PageSize := uint64(10)
 	// Phase 1: fetch latest transactions with no limit (nil) so the RPC returns its default page.
 	// Derive pageSize from the response for subsequent phases.
 	thr.lggr.Debugw("GetSuccessfulTransmissionInfo phase 1 - quick probe (nil limit)")
