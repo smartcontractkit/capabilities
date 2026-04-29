@@ -280,6 +280,56 @@ func TestMetrics_ReadActionsEmitLegacyAndGenericMetrics(t *testing.T) {
 	}
 }
 
+func TestMetricViews_ReadLatencyBuckets(t *testing.T) {
+	views := monitoring.MetricViews()
+	expectedBuckets := []float64{
+		0, 5, 10, 25, 50, 75, 100,
+		250, 500, 750, 1000,
+		2500, 5000, 7500, 10000,
+		15000, 30000,
+	}
+	expectedMetricNames := []string{
+		"evm_capability_read_success_cap_duration",
+		"evm_capability_read_error_cap_duration",
+		"evm_capability_call_contract_success_cap_duration",
+		"evm_capability_call_contract_error_cap_duration",
+		"evm_capability_filter_logs_success_cap_duration",
+		"evm_capability_filter_logs_error_cap_duration",
+		"evm_capability_balance_at_success_cap_duration",
+		"evm_capability_balance_at_error_cap_duration",
+		"evm_capability_estimate_gas_success_cap_duration",
+		"evm_capability_estimate_gas_error_cap_duration",
+		"evm_capability_get_transaction_by_hash_success_cap_duration",
+		"evm_capability_get_transaction_by_hash_error_cap_duration",
+		"evm_capability_get_transaction_receipt_success_cap_duration",
+		"evm_capability_get_transaction_receipt_error_cap_duration",
+		"evm_capability_header_by_number_success_cap_duration",
+		"evm_capability_header_by_number_error_cap_duration",
+	}
+
+	require.Len(t, views, len(expectedMetricNames))
+	for _, name := range expectedMetricNames {
+		stream, ok := metricViewStream(views, name)
+		require.True(t, ok, "missing metric view for %s", name)
+
+		aggregation, ok := stream.Aggregation.(sdkmetric.AggregationExplicitBucketHistogram)
+		require.True(t, ok, "expected explicit bucket histogram for %s", name)
+		require.Equal(t, expectedBuckets, aggregation.Boundaries)
+	}
+
+	_, ok := metricViewStream(views, "evm_capability_write_report_success_cap_duration")
+	require.False(t, ok, "write report latency should keep the default buckets")
+}
+
+func metricViewStream(views []sdkmetric.View, name string) (sdkmetric.Stream, bool) {
+	for _, view := range views {
+		if stream, ok := view(sdkmetric.Instrument{Name: name}); ok {
+			return stream, true
+		}
+	}
+	return sdkmetric.Stream{}, false
+}
+
 func useManualMetricReader(t *testing.T) *sdkmetric.ManualReader {
 	t.Helper()
 
