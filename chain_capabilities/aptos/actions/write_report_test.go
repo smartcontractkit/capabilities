@@ -231,7 +231,7 @@ func computeTransmissionIDStr(t *testing.T, rm ocrtypes.Metadata) string {
 // mockTransmission sets GetTransmissionInfo to return the given info.
 // Chain .Once() for single-use registrations.
 func (h *testHelper) mockTransmission(info TransmissionInfo) *mock.Call {
-	return h.forwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).
+	return h.forwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything, mock.Anything).
 		Return(info, nil)
 }
 
@@ -247,9 +247,10 @@ func (h *testHelper) mockTransactionByHashFailed(txHash string, gasUsed, gasUnit
 
 func (h *testHelper) mockTransactionByHashWithVmStatus(txHash string, success bool, gasUsed, gasUnitPrice uint64, vmStatus string) {
 	txData := fmt.Sprintf(`{"Hash":%q,"Success":%t,"GasUsed":%d,"GasUnitPrice":%d,"VmStatus":%q}`, txHash, success, gasUsed, gasUnitPrice, vmStatus)
+	committedVersion := uint64(1)
 	h.aptosService.On("TransactionByHash", mock.Anything, aptostypes.TransactionByHashRequest{Hash: txHash}).Return(
 		&aptostypes.TransactionByHashReply{
-			Transaction: &aptostypes.Transaction{Data: []byte(txData)},
+			Transaction: &aptostypes.Transaction{Data: []byte(txData), Version: &committedVersion},
 		}, nil)
 }
 
@@ -346,7 +347,7 @@ func TestWriteReport_Execute(t *testing.T) {
 		rm, reqMeta, req := newReportFixture(t)
 		transmitter := aptos_sdk.AccountAddress{0xCC}
 
-		h.forwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).
+		h.forwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything, mock.Anything).
 			Return(TransmissionInfo{Success: true, Transmitter: transmitter}, nil)
 		h.mockSearchTx(t, transmitter, buildFakeTransaction(t, "0xalready", true, 100, time.Now().UnixMicro(), rm)) // find the already-submitted successful tx
 

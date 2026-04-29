@@ -27,9 +27,9 @@ func (_m *CREForwarderClient_mock) EXPECT() *CREForwarderClient_mock_Expecter {
 	return &CREForwarderClient_mock_Expecter{mock: &_m.Mock}
 }
 
-// GetTransmissionInfo provides a mock function with given fields: ctx, transmissionID
-func (_m *CREForwarderClient_mock) GetTransmissionInfo(ctx context.Context, transmissionID TransmissionID) (TransmissionInfo, error) {
-	ret := _m.Called(ctx, transmissionID)
+// GetTransmissionInfo provides a mock function with given fields: ctx, transmissionID, ledgerVersion
+func (_m *CREForwarderClient_mock) GetTransmissionInfo(ctx context.Context, transmissionID TransmissionID, ledgerVersion *uint64) (TransmissionInfo, error) {
+	ret := _m.Called(ctx, transmissionID, ledgerVersion)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetTransmissionInfo")
@@ -37,17 +37,17 @@ func (_m *CREForwarderClient_mock) GetTransmissionInfo(ctx context.Context, tran
 
 	var r0 TransmissionInfo
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, TransmissionID) (TransmissionInfo, error)); ok {
-		return rf(ctx, transmissionID)
+	if rf, ok := ret.Get(0).(func(context.Context, TransmissionID, *uint64) (TransmissionInfo, error)); ok {
+		return rf(ctx, transmissionID, ledgerVersion)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, TransmissionID) TransmissionInfo); ok {
-		r0 = rf(ctx, transmissionID)
+	if rf, ok := ret.Get(0).(func(context.Context, TransmissionID, *uint64) TransmissionInfo); ok {
+		r0 = rf(ctx, transmissionID, ledgerVersion)
 	} else {
 		r0 = ret.Get(0).(TransmissionInfo)
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, TransmissionID) error); ok {
-		r1 = rf(ctx, transmissionID)
+	if rf, ok := ret.Get(1).(func(context.Context, TransmissionID, *uint64) error); ok {
+		r1 = rf(ctx, transmissionID, ledgerVersion)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -63,13 +63,14 @@ type CREForwarderClient_mock_GetTransmissionInfo_Call struct {
 // GetTransmissionInfo is a helper method to define mock.On call
 //   - ctx context.Context
 //   - transmissionID TransmissionID
-func (_e *CREForwarderClient_mock_Expecter) GetTransmissionInfo(ctx interface{}, transmissionID interface{}) *CREForwarderClient_mock_GetTransmissionInfo_Call {
-	return &CREForwarderClient_mock_GetTransmissionInfo_Call{Call: _e.mock.On("GetTransmissionInfo", ctx, transmissionID)}
+//   - ledgerVersion *uint64
+func (_e *CREForwarderClient_mock_Expecter) GetTransmissionInfo(ctx interface{}, transmissionID interface{}, ledgerVersion interface{}) *CREForwarderClient_mock_GetTransmissionInfo_Call {
+	return &CREForwarderClient_mock_GetTransmissionInfo_Call{Call: _e.mock.On("GetTransmissionInfo", ctx, transmissionID, ledgerVersion)}
 }
 
-func (_c *CREForwarderClient_mock_GetTransmissionInfo_Call) Run(run func(ctx context.Context, transmissionID TransmissionID)) *CREForwarderClient_mock_GetTransmissionInfo_Call {
+func (_c *CREForwarderClient_mock_GetTransmissionInfo_Call) Run(run func(ctx context.Context, transmissionID TransmissionID, ledgerVersion *uint64)) *CREForwarderClient_mock_GetTransmissionInfo_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(TransmissionID))
+		run(args[0].(context.Context), args[1].(TransmissionID), args[2].(*uint64))
 	})
 	return _c
 }
@@ -79,7 +80,7 @@ func (_c *CREForwarderClient_mock_GetTransmissionInfo_Call) Return(_a0 Transmiss
 	return _c
 }
 
-func (_c *CREForwarderClient_mock_GetTransmissionInfo_Call) RunAndReturn(run func(context.Context, TransmissionID) (TransmissionInfo, error)) *CREForwarderClient_mock_GetTransmissionInfo_Call {
+func (_c *CREForwarderClient_mock_GetTransmissionInfo_Call) RunAndReturn(run func(context.Context, TransmissionID, *uint64) (TransmissionInfo, error)) *CREForwarderClient_mock_GetTransmissionInfo_Call {
 	_c.Call.Return(run)
 	return _c
 }

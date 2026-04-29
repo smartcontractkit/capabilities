@@ -23,7 +23,8 @@ type CREForwarderClient interface {
 	// InvokeOnReport builds and submits a forwarder report transaction to the Aptos chain.
 	InvokeOnReport(ctx context.Context, receiver []byte, report *sdk.ReportResponse, gasConfig *aptoscap.GasConfig) (*aptostypes.SubmitTransactionReply, error)
 	// GetTransmissionInfo queries the forwarder contract for the transmission state of a given transmission ID.
-	GetTransmissionInfo(ctx context.Context, transmissionID TransmissionID) (TransmissionInfo, error)
+	// Pass a non-nil ledgerVersion to pin the read; nil reads "latest".
+	GetTransmissionInfo(ctx context.Context, transmissionID TransmissionID, ledgerVersion *uint64) (TransmissionInfo, error)
 	// GetTransmitterTransactions returns transactions for the given transmitter address.
 	// Pass nil for start/limit to get the latest page with default size.
 	GetTransmitterTransactions(ctx context.Context, transmitter aptos_sdk.AccountAddress, start *uint64, limit *uint64) ([]*aptostypes.Transaction, error)
@@ -146,7 +147,7 @@ type moveOptionAddress struct {
 }
 
 // Views GetTransmitter onchain
-func (fc *forwarderClient) GetTransmissionInfo(ctx context.Context, transmissionID TransmissionID) (TransmissionInfo, error) {
+func (fc *forwarderClient) GetTransmissionInfo(ctx context.Context, transmissionID TransmissionID, ledgerVersion *uint64) (TransmissionInfo, error) {
 	// Convert [2]byte report ID to uint16 (big-endian, as stored in report metadata)
 	reportID := binary.BigEndian.Uint16(transmissionID.ReportID[:])
 
@@ -169,7 +170,6 @@ func (fc *forwarderClient) GetTransmissionInfo(ctx context.Context, transmission
 		return TransmissionInfo{}, fmt.Errorf("failed to encode GetTransmitter: %w", err)
 	}
 
-	// Call the view function via AptosService
 	viewReply, err := fc.AptosService.View(ctx, aptostypes.ViewRequest{
 		Payload: &aptostypes.ViewPayload{
 			Module: aptostypes.ModuleID{
@@ -179,6 +179,7 @@ func (fc *forwarderClient) GetTransmissionInfo(ctx context.Context, transmission
 			Function: functionName,
 			Args:     args,
 		},
+		LedgerVersion: ledgerVersion,
 	})
 	if err != nil {
 		fc.lggr.Errorw("GetTransmissionState view call failed", "error", err)
