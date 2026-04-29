@@ -11,8 +11,10 @@ import (
 
 	aptos_sdk "github.com/aptos-labs/aptos-go-sdk"
 
+	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/monitoring"
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 
+	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	aptostypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/aptos"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
@@ -50,9 +52,31 @@ type TxInfoRetriever struct {
 	entryFunctionName  string
 	startingPointMicro int64
 	report             *sdk.ReportResponse
+	beholderProcessor  beholder.ProtoProcessor
+	messageBuilder     *monitoring.MessageBuilder
+	telemetryContext   monitoring.TelemetryContext
 }
 
-func NewTxInfoRetriever(forwarderClient CREForwarderClient, lggr logger.Logger, transmissionID TransmissionID, forwarderAddress string, requestStartTime time.Time, txSearchStartingBuffer time.Duration, report *sdk.ReportResponse) TxInfoRetriever {
+type TxInfoRetrieverOption func(*TxInfoRetriever)
+
+func WithTxInfoRetrieverMonitoring(beholderProcessor beholder.ProtoProcessor, messageBuilder *monitoring.MessageBuilder, telemetryContext monitoring.TelemetryContext) TxInfoRetrieverOption {
+	return func(thr *TxInfoRetriever) {
+		thr.beholderProcessor = beholderProcessor
+		thr.messageBuilder = messageBuilder
+		thr.telemetryContext = telemetryContext
+	}
+}
+
+const (
+	txInfoRetrievalResultFound      = "found"
+	txInfoRetrievalResultNotFound   = "not_found"
+	txInfoRetrievalResultFetchError = "fetch_error"
+
+	txInfoRetrievalLookupTypeSuccessfulTransmission = "successful_transmission"
+	txInfoRetrievalLookupTypeFailedTransmission     = "failed_transmission"
+)
+
+func NewTxInfoRetriever(forwarderClient CREForwarderClient, lggr logger.Logger, transmissionID TransmissionID, forwarderAddress string, requestStartTime time.Time, txSearchStartingBuffer time.Duration, report *sdk.ReportResponse, opts ...TxInfoRetrieverOption) TxInfoRetriever {
 	retriever := TxInfoRetriever{
 		forwarderClient:    forwarderClient,
 		lggr:               logger.Named(lggr, "TxInfoRetriever"),
@@ -60,6 +84,11 @@ func NewTxInfoRetriever(forwarderClient CREForwarderClient, lggr logger.Logger, 
 		entryFunctionName:  fmt.Sprintf("%s::forwarder::report", forwarderAddress),
 		startingPointMicro: requestStartTime.Add(-txSearchStartingBuffer).UnixMicro(),
 		report:             report,
+	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&retriever)
+		}
 	}
 	lggr.Debugw("TxInfoRetriever created",
 		"transmissionID", transmissionID.GetDebugID(),
@@ -229,6 +258,25 @@ func (thr *TxInfoRetriever) paginateBackwards(
 	return scanResult{}, nil
 }
 
+func (thr *TxInfoRetriever) emitTxInfoRetrievalPhase(ctx context.Context, lookupType string, phase uint32, result string, phaseStart time.Time, txHash string, transmitter aptos_sdk.AccountAddress) {
+	if thr.beholderProcessor == nil || thr.messageBuilder == nil {
+		return
+	}
+	duration := time.Since(phaseStart)
+	if duration < 0 {
+		duration = 0
+	}
+	monitoring.EmitInitiated(ctx, thr.lggr, thr.beholderProcessor, thr.messageBuilder.BuildWriteReportTxInfoRetrievalPhase(
+		thr.telemetryContext,
+		phase,
+		result,
+		uint64(duration.Milliseconds()),
+		txHash,
+		transmitter.String(),
+		lookupType,
+	))
+}
+
 // GetSuccessfulTransmissionInfo retrieves the tx hash of a successful report transmission
 // by scanning the transmitter's account transactions.
 //
@@ -250,6 +298,7 @@ func (thr *TxInfoRetriever) GetSuccessfulTransmissionInfo(ctx context.Context, t
 	// Phase 1: fetch latest transactions with no limit (nil) so the RPC returns its default page.
 	// Derive pageSize from the response for subsequent phases.
 	thr.lggr.Debugw("GetSuccessfulTransmissionInfo phase 1 - quick probe (phase1PageSize)", "phase1PageSize", phase1PageSize)
+	phase1Start := time.Now()
 	txns, err := capcommon.WithQuickRetry(ctx, thr.lggr, func(ctx context.Context) ([]*aptostypes.Transaction, error) {
 		result, fetchErr := thr.forwarderClient.GetTransmitterTransactions(ctx, transmitter, nil, &phase1PageSize)
 		if fetchErr != nil {
@@ -262,17 +311,18 @@ func (thr *TxInfoRetriever) GetSuccessfulTransmissionInfo(ctx context.Context, t
 	})
 	if err != nil {
 		thr.lggr.Warnw("GetSuccessfulTransmissionInfo phase 1 failed", "transmitter", transmitter.String(), "err", err)
+		thr.emitTxInfoRetrievalPhase(ctx, txInfoRetrievalLookupTypeSuccessfulTransmission, 1, txInfoRetrievalResultFetchError, phase1Start, "", transmitter)
 		return TransmissionTxInfo{}, fmt.Errorf("failed to get transmitter transactions during phase 1: %w", err)
 	}
 	pageSize := uint64(len(txns))
 	thr.lggr.Debugw("GetSuccessfulTransmissionInfo phase 1 fetched", "txCount", len(txns), "derivedPageSize", pageSize)
-	// TODO: emit metric to potentially capture duration of phase1 fetch (how much time does this take fetch take)
 	phase1Result := thr.scanTransactions(txns, true)
 	if phase1Result.TxHash != "" {
 		thr.lggr.Debugw("GetSuccessfulTransmissionInfo found in phase 1", "txHash", phase1Result.TxHash)
-		// TODO: emit phase 1 found metric for success
+		thr.emitTxInfoRetrievalPhase(ctx, txInfoRetrievalLookupTypeSuccessfulTransmission, 1, txInfoRetrievalResultFound, phase1Start, phase1Result.TxHash, transmitter)
 		return phase1Result.TransmissionTxInfo, nil
 	}
+	thr.emitTxInfoRetrievalPhase(ctx, txInfoRetrievalLookupTypeSuccessfulTransmission, 1, txInfoRetrievalResultNotFound, phase1Start, "", transmitter)
 
 	// Phase 2: paginate backwards until we cover the starting point
 	thr.lggr.Debugw("GetSuccessfulTransmissionInfo phase 2 - paginate backwards",
@@ -282,13 +332,16 @@ func (thr *TxInfoRetriever) GetSuccessfulTransmissionInfo(ctx context.Context, t
 		successScanner := func(txns []*aptostypes.Transaction) scanResult {
 			return thr.scanTransactions(txns, true)
 		}
-		// TODO: emit phase 2 starting metric for success
+		phase2Start := time.Now()
 		if phase2Result, pgErr := thr.paginateBackwards(ctx, transmitter, successScanner, phase1Result, pageSize); pgErr != nil {
+			thr.emitTxInfoRetrievalPhase(ctx, txInfoRetrievalLookupTypeSuccessfulTransmission, 2, txInfoRetrievalResultFetchError, phase2Start, "", transmitter)
 			thr.lggr.Warnw("GetSuccessfulTransmissionInfo phase 2 pagination failed, falling through to poll phase", "err", pgErr)
 		} else if phase2Result.TxHash != "" {
-			// TODO: emit phase 2 found metric for success
 			thr.lggr.Debugw("GetSuccessfulTransmissionInfo found in phase 2", "txHash", phase2Result.TxHash)
+			thr.emitTxInfoRetrievalPhase(ctx, txInfoRetrievalLookupTypeSuccessfulTransmission, 2, txInfoRetrievalResultFound, phase2Start, phase2Result.TxHash, transmitter)
 			return phase2Result.TransmissionTxInfo, nil
+		} else {
+			thr.emitTxInfoRetrievalPhase(ctx, txInfoRetrievalLookupTypeSuccessfulTransmission, 2, txInfoRetrievalResultNotFound, phase2Start, "", transmitter)
 		}
 	}
 
@@ -297,26 +350,35 @@ func (thr *TxInfoRetriever) GetSuccessfulTransmissionInfo(ctx context.Context, t
 	// the target tx outside a fixed-size "latest" window.
 	phase3Start := phase1Result.MaxSeqNum + 1
 	thr.lggr.Debugw("GetSuccessfulTransmissionInfo phase 3 - poll forward", "phase3Start", phase3Start)
-	// TODO: emit phase 3 starting metric for success
-	return capcommon.WithPollingRetry(ctx, thr.lggr, func(ctx context.Context) (TransmissionTxInfo, error) {
+	phase3StartedAt := time.Now()
+	phase3TerminalResult := txInfoRetrievalResultNotFound
+	phase3Result, phase3Err := capcommon.WithPollingRetry(ctx, thr.lggr, func(ctx context.Context) (TransmissionTxInfo, error) {
 		latestTxns, fetchErr := thr.forwarderClient.GetTransmitterTransactions(ctx, transmitter, &phase3Start, nil)
 		if fetchErr != nil {
+			phase3TerminalResult = txInfoRetrievalResultFetchError
 			return TransmissionTxInfo{}, fmt.Errorf("failed to get transmitter transactions during poll: %w", fetchErr)
 		}
 		if len(latestTxns) == 0 {
+			phase3TerminalResult = txInfoRetrievalResultNotFound
 			return TransmissionTxInfo{}, fmt.Errorf("no new transactions found for transmitter %s from seq %d", transmitter.String(), phase3Start)
 		}
 		result := thr.scanTransactions(latestTxns, true)
 		if result.TxHash != "" {
 			thr.lggr.Debugw("GetSuccessfulTransmissionInfo found in phase 3", "txHash", result.TxHash)
-			// TODO: emit phase 3 found metric for success
 			return result.TransmissionTxInfo, nil
 		}
 		if result.MaxSeqNum >= phase3Start {
 			phase3Start = result.MaxSeqNum + 1
 		}
+		phase3TerminalResult = txInfoRetrievalResultNotFound
 		return TransmissionTxInfo{}, fmt.Errorf("matching transmission not found yet for %s", thr.transmissionID.GetDebugID())
 	})
+	if phase3Err != nil {
+		thr.emitTxInfoRetrievalPhase(ctx, txInfoRetrievalLookupTypeSuccessfulTransmission, 3, phase3TerminalResult, phase3StartedAt, "", transmitter)
+		return TransmissionTxInfo{}, phase3Err
+	}
+	thr.emitTxInfoRetrievalPhase(ctx, txInfoRetrievalLookupTypeSuccessfulTransmission, 3, txInfoRetrievalResultFound, phase3StartedAt, phase3Result.TxHash, transmitter)
+	return phase3Result, nil
 }
 
 // GetFailedTransmissionInfo searches a transmitter's transactions for a failed forwarder::report
@@ -333,6 +395,7 @@ func (thr *TxInfoRetriever) GetFailedTransmissionInfo(ctx context.Context, trans
 	// Phase 1: fetch latest transactions with no limit (nil) so the RPC returns its default page.
 	// Derive pageSize from the response for phase 2.
 	thr.lggr.Debugw("GetFailedTransmissionInfo phase 1 - quick probe (nil limit)")
+	phase1Start := time.Now()
 	txns, err := capcommon.WithQuickRetry(ctx, thr.lggr, func(ctx context.Context) ([]*aptostypes.Transaction, error) {
 		result, fetchErr := thr.forwarderClient.GetTransmitterTransactions(ctx, transmitter, nil, nil)
 		if fetchErr != nil {
@@ -345,6 +408,7 @@ func (thr *TxInfoRetriever) GetFailedTransmissionInfo(ctx context.Context, trans
 	})
 	if err != nil {
 		thr.lggr.Warnw("GetFailedTransmissionInfo phase 1 failed", "transmitter", transmitter.String(), "err", err)
+		thr.emitTxInfoRetrievalPhase(ctx, txInfoRetrievalLookupTypeFailedTransmission, 1, txInfoRetrievalResultFetchError, phase1Start, "", transmitter)
 		return TransmissionTxInfo{}, fmt.Errorf("failed to get transmitter transactions during phase 1: %w", err)
 	}
 	pageSize := uint64(len(txns))
@@ -352,9 +416,10 @@ func (thr *TxInfoRetriever) GetFailedTransmissionInfo(ctx context.Context, trans
 	phase1Result := thr.scanTransactions(txns, false)
 	if phase1Result.TxHash != "" {
 		thr.lggr.Debugw("GetFailedTransmissionInfo found in phase 1", "txHash", phase1Result.TxHash)
-		// TODO: phase 1 found metric for failed
+		thr.emitTxInfoRetrievalPhase(ctx, txInfoRetrievalLookupTypeFailedTransmission, 1, txInfoRetrievalResultFound, phase1Start, phase1Result.TxHash, transmitter)
 		return phase1Result.TransmissionTxInfo, nil
 	}
+	thr.emitTxInfoRetrievalPhase(ctx, txInfoRetrievalLookupTypeFailedTransmission, 1, txInfoRetrievalResultNotFound, phase1Start, "", transmitter)
 
 	// Phase 2: paginate backwards only until we cover the starting point
 	thr.lggr.Debugw("GetFailedTransmissionInfo phase 2 - paginate backwards",
@@ -364,13 +429,16 @@ func (thr *TxInfoRetriever) GetFailedTransmissionInfo(ctx context.Context, trans
 		failureScanner := func(txns []*aptostypes.Transaction) scanResult {
 			return thr.scanTransactions(txns, false)
 		}
-		// TODO: phase 2 starting metric for failed
+		phase2Start := time.Now()
 		if phase2Result, pgErr := thr.paginateBackwards(ctx, transmitter, failureScanner, phase1Result, pageSize); pgErr != nil {
+			thr.emitTxInfoRetrievalPhase(ctx, txInfoRetrievalLookupTypeFailedTransmission, 2, txInfoRetrievalResultFetchError, phase2Start, "", transmitter)
 			thr.lggr.Warnw("GetFailedTransmissionInfo phase 2 pagination failed", "err", pgErr)
 		} else if phase2Result.TxHash != "" {
 			thr.lggr.Debugw("GetFailedTransmissionInfo found in phase 2", "txHash", phase2Result.TxHash)
-			// TODO: phase 2 found metric for failed
+			thr.emitTxInfoRetrievalPhase(ctx, txInfoRetrievalLookupTypeFailedTransmission, 2, txInfoRetrievalResultFound, phase2Start, phase2Result.TxHash, transmitter)
 			return phase2Result.TransmissionTxInfo, nil
+		} else {
+			thr.emitTxInfoRetrievalPhase(ctx, txInfoRetrievalLookupTypeFailedTransmission, 2, txInfoRetrievalResultNotFound, phase2Start, "", transmitter)
 		}
 	}
 

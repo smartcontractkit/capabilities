@@ -125,6 +125,26 @@ func (m *MessageBuilder) BuildWriteReportP2pConfigIncomplete(tc TelemetryContext
 	}
 }
 
+func (m *MessageBuilder) BuildWriteReportTxInfoRetrievalPhase(tc TelemetryContext, phase uint32, result string, phaseDurationMs uint64, txHash, transmitter, lookupType string) *WriteReportTxInfoRetrievalPhase {
+	return &WriteReportTxInfoRetrievalPhase{
+		Phase:            phase,
+		Result:           result,
+		PhaseDurationMs:  phaseDurationMs,
+		TxHash:           txHash,
+		Transmitter:      transmitter,
+		LookupType:       lookupType,
+		ExecutionContext: m.BuildExecutionContext(tc),
+	}
+}
+
+func (m *MessageBuilder) BuildWriteReportInvokeOnReportDuration(tc TelemetryContext, durationMs uint64, txStatus int32) *WriteReportInvokeOnReportDuration {
+	return &WriteReportInvokeOnReportDuration{
+		DurationMs:       durationMs,
+		TxStatus:         txStatus,
+		ExecutionContext: m.BuildExecutionContext(tc),
+	}
+}
+
 func convertWriteReportRequest(req *aptoscap.WriteReportRequest) *WriteReportRequest {
 	if req == nil {
 		return nil
@@ -302,6 +322,43 @@ func (r *WriteReportP2PConfigIncomplete) LogAttributes() []attribute.KeyValue {
 
 func (r *WriteReportP2PConfigIncomplete) MetricAttributes() []attribute.KeyValue {
 	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *WriteReportTxInfoRetrievalPhase) LogAttributes() []attribute.KeyValue {
+	attrs := []attribute.KeyValue{
+		attribute.String("phase", strconv.FormatUint(uint64(r.GetPhase()), 10)),
+		attribute.String("result", r.GetResult()),
+		attribute.String("lookup_type", r.GetLookupType()),
+		attribute.String("phase_duration_ms", strconv.FormatUint(r.GetPhaseDurationMs(), 10)),
+	}
+	if r.GetTxHash() != "" {
+		attrs = append(attrs, attribute.String("tx_hash", r.GetTxHash()))
+	}
+	if r.GetTransmitter() != "" {
+		attrs = append(attrs, attribute.String("transmitter", r.GetTransmitter()))
+	}
+	return append(attrs, r.ExecutionContext.LogAttributes()...)
+}
+
+func (r *WriteReportTxInfoRetrievalPhase) MetricAttributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
+		attribute.String("phase", strconv.FormatUint(uint64(r.GetPhase()), 10)),
+		attribute.String("result", r.GetResult()),
+		attribute.String("lookup_type", r.GetLookupType()),
+	}, r.ExecutionContext.MetricsAttributes()...)
+}
+
+func (r *WriteReportInvokeOnReportDuration) LogAttributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
+		attribute.String("duration_ms", strconv.FormatUint(r.GetDurationMs(), 10)),
+		attribute.String("tx_status", strconv.FormatInt(int64(r.GetTxStatus()), 10)),
+	}, r.ExecutionContext.LogAttributes()...)
+}
+
+func (r *WriteReportInvokeOnReportDuration) MetricAttributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
+		attribute.String("tx_status", strconv.FormatInt(int64(r.GetTxStatus()), 10)),
+	}, r.ExecutionContext.MetricsAttributes()...)
 }
 
 func bytesToHexOrPlaceholder(value []byte, placeholder string) string {
