@@ -342,6 +342,31 @@ func TestWriteReport_Execute(t *testing.T) {
 		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector, "0.0005")
 	})
 
+	t.Run("Post-submit View is pinned to committed ledger version", func(t *testing.T) {
+		h := newTestHelper(t)
+		_, reqMeta, req := newReportFixture(t)
+		expectedVersion := uint64(42)
+
+		// Pre-submit GetTransmissionInfo runs unpinned (nil ledgerVersion).
+		h.forwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything, (*uint64)(nil)).
+			Return(TransmissionInfo{Success: false}, nil).Once()
+		h.mockInvokeOnReport(&aptostypes.SubmitTransactionReply{TxStatus: aptostypes.TxSuccess, TxHash: "0xabc"}, nil)
+		// TransactionByHash returns Version=42, which must flow through to the post-submit pin.
+		txData := fmt.Sprintf(`{"Hash":%q,"Success":true,"GasUsed":%d,"GasUnitPrice":%d,"VmStatus":"Executed successfully"}`, "0xabc", testGasUsed, testGasUnitPrice)
+		h.aptosService.On("TransactionByHash", mock.Anything, aptostypes.TransactionByHashRequest{Hash: "0xabc"}).Return(
+			&aptostypes.TransactionByHashReply{
+				Transaction: &aptostypes.Transaction{Data: []byte(txData), Version: &expectedVersion},
+			}, nil)
+		// Post-submit GetTransmissionInfo MUST be called with &expectedVersion.
+		h.forwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything, &expectedVersion).
+			Return(TransmissionInfo{Success: true, Transmitter: testTransmitter}, nil).Once()
+
+		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
+		require.Nil(t, capErr)
+		require.Equal(t, aptoscap.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
+		h.forwarderClient.AssertExpectations(t)
+	})
+
 	t.Run("Already transmitted - returns without submitting", func(t *testing.T) {
 		h := newTestHelper(t)
 		rm, reqMeta, req := newReportFixture(t)
