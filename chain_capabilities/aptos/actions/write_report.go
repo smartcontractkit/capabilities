@@ -429,6 +429,9 @@ func (wr *writeReport) getTxnInfoFromChain(ctx context.Context, txHash string) (
 	if reply.Transaction.Version == nil {
 		return 0, 0, "", fmt.Errorf("transaction %s has no committed ledger version", txHash)
 	}
+	if reply.Transaction.Data == nil {
+		return 0, 0, "", fmt.Errorf("transaction %s has nil data", txHash)
+	}
 	var txData userTxData
 	if err := json.Unmarshal(reply.Transaction.Data, &txData); err != nil {
 		return 0, 0, "", fmt.Errorf("failed to unmarshal transaction data: %w", err)
