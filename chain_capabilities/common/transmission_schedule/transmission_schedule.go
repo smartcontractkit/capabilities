@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/smartcontractkit/libocr/permutation"
@@ -127,9 +128,14 @@ func InitMyDON(ctx context.Context, registry core.CapabilitiesRegistry, capabili
 	}
 
 	if len(dons) > 1 {
-		for _, d := range dons {
-			lggr.Errorf("received more than one don for capability id: %s don id: %d don name: %s", capabilityID, d.ID, d.Name)
+		ids := make([]string, len(dons))
+		for i, d := range dons {
+			ids[i] = fmt.Sprintf("%d (%s)", d.ID, d.Name)
 		}
+		return capabilities.DON{}, fmt.Errorf(
+			"local peer %s belongs to multiple DONs for capability %s: %s; registry must contain exactly one match",
+			localNode.PeerID.String(), capabilityID, strings.Join(ids, ", "),
+		)
 	}
 
 	return dons[0], nil
