@@ -116,12 +116,12 @@ func NewMetrics() (Metrics, error) {
 	m := Metrics{}
 	var err error
 
-	readActionSuccess := commoncapbeholder.NewMetricsInfoCapBasic(ns("success"), readActionSuccessMetricEventRef)
+	readActionSuccess := commoncapbeholder.NewMetricsInfoCapBasic(ns("read_success"), readActionSuccessMetricEventRef)
 	m.ReadActionSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(readActionSuccess)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create read action success metric: %w", err)
 	}
-	readActionErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("error"), readActionErrorMetricEventRef)
+	readActionErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("read_error"), readActionErrorMetricEventRef)
 	m.ReadActionError.basic, err = commoncapbeholder.NewMetricsCapBasic(readActionErr)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create read action error metric: %w", err)

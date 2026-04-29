@@ -255,10 +255,10 @@ func TestMetrics_ReadActionsEmitLegacyAndGenericMetrics(t *testing.T) {
 			absent:   []attribute.Key{"action"},
 		}), "missing unchanged legacy error count metric for %s", tc.action)
 
-		require.True(t, metricExists(resourceMetrics, "evm_capability_success_count", metricExpectation{
+		require.True(t, metricExists(resourceMetrics, "evm_capability_read_success_count", metricExpectation{
 			required: map[string]string{"chain_id": "1", "action": tc.action},
 		}), "missing generic success count metric for %s", tc.action)
-		require.True(t, metricExists(resourceMetrics, "evm_capability_error_count", metricExpectation{
+		require.True(t, metricExists(resourceMetrics, "evm_capability_read_error_count", metricExpectation{
 			required: map[string]string{"chain_id": "1", "action": tc.action},
 		}), "missing generic error count metric for %s", tc.action)
 
@@ -271,10 +271,10 @@ func TestMetrics_ReadActionsEmitLegacyAndGenericMetrics(t *testing.T) {
 			absent:   []attribute.Key{"action"},
 		}), "missing unchanged legacy error duration metric for %s", tc.action)
 
-		require.True(t, metricExists(resourceMetrics, "evm_capability_success_cap_duration", metricExpectation{
+		require.True(t, metricExists(resourceMetrics, "evm_capability_read_success_cap_duration", metricExpectation{
 			required: map[string]string{"chain_id": "1", "action": tc.action},
 		}), "missing generic success duration metric for %s", tc.action)
-		require.True(t, metricExists(resourceMetrics, "evm_capability_error_cap_duration", metricExpectation{
+		require.True(t, metricExists(resourceMetrics, "evm_capability_read_error_cap_duration", metricExpectation{
 			required: map[string]string{"chain_id": "1", "action": tc.action},
 		}), "missing generic error duration metric for %s", tc.action)
 	}
