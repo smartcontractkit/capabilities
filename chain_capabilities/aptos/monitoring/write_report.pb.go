@@ -506,7 +506,7 @@ type WriteReportTxInfoRetrievalPhase struct {
 	state            protoimpl.MessageState       `protogen:"open.v1"`
 	Phase            uint32                       `protobuf:"varint,1,opt,name=phase,proto3" json:"phase,omitempty"`
 	Result           string                       `protobuf:"bytes,2,opt,name=result,proto3" json:"result,omitempty"`
-	PhaseDurationMs  uint64                       `protobuf:"varint,3,opt,name=phase_duration_ms,json=phaseDurationMs,proto3" json:"phase_duration_ms,omitempty"`
+	PhaseDurationMs  int64                        `protobuf:"varint,3,opt,name=phase_duration_ms,json=phaseDurationMs,proto3" json:"phase_duration_ms,omitempty"`
 	TxHash           string                       `protobuf:"bytes,4,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
 	Transmitter      string                       `protobuf:"bytes,5,opt,name=transmitter,proto3" json:"transmitter,omitempty"`
 	LookupType       string                       `protobuf:"bytes,6,opt,name=lookup_type,json=lookupType,proto3" json:"lookup_type,omitempty"`
@@ -559,7 +559,7 @@ func (x *WriteReportTxInfoRetrievalPhase) GetResult() string {
 	return ""
 }
 
-func (x *WriteReportTxInfoRetrievalPhase) GetPhaseDurationMs() uint64 {
+func (x *WriteReportTxInfoRetrievalPhase) GetPhaseDurationMs() int64 {
 	if x != nil {
 		return x.PhaseDurationMs
 	}
@@ -596,7 +596,7 @@ func (x *WriteReportTxInfoRetrievalPhase) GetExecutionContext() *monitoring.Exec
 
 type WriteReportInvokeOnReportDuration struct {
 	state            protoimpl.MessageState       `protogen:"open.v1"`
-	DurationMs       uint64                       `protobuf:"varint,1,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"`
+	DurationMs       int64                        `protobuf:"varint,1,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"`
 	TxStatus         int32                        `protobuf:"varint,2,opt,name=tx_status,json=txStatus,proto3" json:"tx_status,omitempty"`
 	ExecutionContext *monitoring.ExecutionContext `protobuf:"bytes,20,opt,name=execution_context,json=executionContext,proto3" json:"execution_context,omitempty"`
 	unknownFields    protoimpl.UnknownFields
@@ -633,7 +633,7 @@ func (*WriteReportInvokeOnReportDuration) Descriptor() ([]byte, []int) {
 	return file_chain_capabilities_aptos_monitoring_write_report_proto_rawDescGZIP(), []int{9}
 }
 
-func (x *WriteReportInvokeOnReportDuration) GetDurationMs() uint64 {
+func (x *WriteReportInvokeOnReportDuration) GetDurationMs() int64 {
 	if x != nil {
 		return x.DurationMs
 	}
@@ -934,14 +934,14 @@ const file_chain_capabilities_aptos_monitoring_write_report_proto_rawDesc = "" +
 	"\x1fWriteReportTxInfoRetrievalPhase\x12\x14\n" +
 	"\x05phase\x18\x01 \x01(\rR\x05phase\x12\x16\n" +
 	"\x06result\x18\x02 \x01(\tR\x06result\x12*\n" +
-	"\x11phase_duration_ms\x18\x03 \x01(\x04R\x0fphaseDurationMs\x12\x17\n" +
+	"\x11phase_duration_ms\x18\x03 \x01(\x03R\x0fphaseDurationMs\x12\x17\n" +
 	"\atx_hash\x18\x04 \x01(\tR\x06txHash\x12 \n" +
 	"\vtransmitter\x18\x05 \x01(\tR\vtransmitter\x12\x1f\n" +
 	"\vlookup_type\x18\x06 \x01(\tR\n" +
 	"lookupType\x12I\n" +
 	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xac\x01\n" +
 	"!WriteReportInvokeOnReportDuration\x12\x1f\n" +
-	"\vduration_ms\x18\x01 \x01(\x04R\n" +
+	"\vduration_ms\x18\x01 \x01(\x03R\n" +
 	"durationMs\x12\x1b\n" +
 	"\ttx_status\x18\x02 \x01(\x05R\btxStatus\x12I\n" +
 	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xca\x01\n" +

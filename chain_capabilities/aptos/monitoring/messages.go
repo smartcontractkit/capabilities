@@ -125,7 +125,7 @@ func (m *MessageBuilder) BuildWriteReportP2pConfigIncomplete(tc TelemetryContext
 	}
 }
 
-func (m *MessageBuilder) BuildWriteReportTxInfoRetrievalPhase(tc TelemetryContext, phase uint32, result string, phaseDurationMs uint64, txHash, transmitter, lookupType string) *WriteReportTxInfoRetrievalPhase {
+func (m *MessageBuilder) BuildWriteReportTxInfoRetrievalPhase(tc TelemetryContext, phase uint32, result string, phaseDurationMs int64, txHash, transmitter, lookupType string) *WriteReportTxInfoRetrievalPhase {
 	return &WriteReportTxInfoRetrievalPhase{
 		Phase:            phase,
 		Result:           result,
@@ -137,7 +137,7 @@ func (m *MessageBuilder) BuildWriteReportTxInfoRetrievalPhase(tc TelemetryContex
 	}
 }
 
-func (m *MessageBuilder) BuildWriteReportInvokeOnReportDuration(tc TelemetryContext, durationMs uint64, txStatus int32) *WriteReportInvokeOnReportDuration {
+func (m *MessageBuilder) BuildWriteReportInvokeOnReportDuration(tc TelemetryContext, durationMs int64, txStatus int32) *WriteReportInvokeOnReportDuration {
 	return &WriteReportInvokeOnReportDuration{
 		DurationMs:       durationMs,
 		TxStatus:         txStatus,
@@ -329,7 +329,7 @@ func (r *WriteReportTxInfoRetrievalPhase) LogAttributes() []attribute.KeyValue {
 		attribute.String("phase", strconv.FormatUint(uint64(r.GetPhase()), 10)),
 		attribute.String("result", r.GetResult()),
 		attribute.String("lookup_type", r.GetLookupType()),
-		attribute.String("phase_duration_ms", strconv.FormatUint(r.GetPhaseDurationMs(), 10)),
+		attribute.String("phase_duration_ms", strconv.FormatInt(r.GetPhaseDurationMs(), 10)),
 	}
 	if r.GetTxHash() != "" {
 		attrs = append(attrs, attribute.String("tx_hash", r.GetTxHash()))
@@ -350,7 +350,7 @@ func (r *WriteReportTxInfoRetrievalPhase) MetricAttributes() []attribute.KeyValu
 
 func (r *WriteReportInvokeOnReportDuration) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
-		attribute.String("duration_ms", strconv.FormatUint(r.GetDurationMs(), 10)),
+		attribute.String("duration_ms", strconv.FormatInt(r.GetDurationMs(), 10)),
 		attribute.String("tx_status", strconv.FormatInt(int64(r.GetTxStatus()), 10)),
 	}, r.ExecutionContext.LogAttributes()...)
 }

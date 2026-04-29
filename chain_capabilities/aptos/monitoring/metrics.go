@@ -199,12 +199,12 @@ func (m *Metrics) OnWriteReportP2PConfigIncomplete(ctx context.Context, msg *Wri
 func (m *Metrics) OnWriteReportTxInfoRetrievalPhase(ctx context.Context, msg *WriteReportTxInfoRetrievalPhase) error {
 	attrs := metric.WithAttributes(msg.MetricAttributes()...)
 	m.WriteReportTxInfoRetrievalPhase.count.Add(ctx, 1, attrs)
-	m.WriteReportTxInfoRetrievalPhase.phaseDuration.Record(ctx, int64(msg.GetPhaseDurationMs()), attrs)
+	m.WriteReportTxInfoRetrievalPhase.phaseDuration.Record(ctx, msg.GetPhaseDurationMs(), attrs)
 	return nil
 }
 
 func (m *Metrics) OnWriteReportInvokeOnReportDuration(ctx context.Context, msg *WriteReportInvokeOnReportDuration) error {
 	attrs := metric.WithAttributes(msg.MetricAttributes()...)
-	m.WriteReportInvokeOnReportDuration.duration.Record(ctx, int64(msg.GetDurationMs()), attrs)
+	m.WriteReportInvokeOnReportDuration.duration.Record(ctx, msg.GetDurationMs(), attrs)
 	return nil
 }

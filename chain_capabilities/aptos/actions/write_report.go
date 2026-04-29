@@ -219,7 +219,7 @@ func (wr *writeReport) execute(
 	invokeOnReportDuration := time.Since(invokeOnReportStart)
 	monitoring.EmitInitiated(ctx, wr.lggr, wr.beholderProcessor, wr.messageBuilder.BuildWriteReportInvokeOnReportDuration(
 		telemetryContext,
-		uint64(invokeOnReportDuration.Milliseconds()),
+		durationMillis(invokeOnReportDuration),
 		int32(txReply.TxStatus), //nolint:gosec // txReply.TxStatus is a small enum value: 0, 1, 2.
 	))
 

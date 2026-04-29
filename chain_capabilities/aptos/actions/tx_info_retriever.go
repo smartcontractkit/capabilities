@@ -263,18 +263,22 @@ func (thr *TxInfoRetriever) emitTxInfoRetrievalPhase(ctx context.Context, lookup
 		return
 	}
 	duration := time.Since(phaseStart)
-	if duration < 0 {
-		duration = 0
-	}
 	monitoring.EmitInitiated(ctx, thr.lggr, thr.beholderProcessor, thr.messageBuilder.BuildWriteReportTxInfoRetrievalPhase(
 		thr.telemetryContext,
 		phase,
 		result,
-		uint64(duration.Milliseconds()),
+		durationMillis(duration),
 		txHash,
 		transmitter.String(),
 		lookupType,
 	))
+}
+
+func durationMillis(duration time.Duration) int64 {
+	if duration <= 0 {
+		return 0
+	}
+	return duration.Milliseconds()
 }
 
 // GetSuccessfulTransmissionInfo retrieves the tx hash of a successful report transmission
