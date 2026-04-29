@@ -708,16 +708,6 @@ func (rp *reportingPlugin) Reports(ctx context.Context, seqNr uint64, rawOutcome
 		}
 		if len(rep) > rp.config.MaxReportLengthBytes {
 			rp.logger.Errorw("report is too large to transmit", "seqNr", seqNr, "requestID", requestOutcome.RequestID, "reportSize", len(rep), "maxReportLengthBytes", rp.config.MaxReportLengthBytes)
-			infoAsB, err := marshalInfo(info)
-			if err != nil {
-				return nil, fmt.Errorf("failed to create report info for request, error: %w", err)
-			}
-			reports = append(reports, ocr3types.ReportPlus[[]byte]{
-				ReportWithInfo: ocr3types.ReportWithInfo[[]byte]{
-					Report: []byte{},
-					Info:   infoAsB,
-				},
-			})
 			continue
 		}
 

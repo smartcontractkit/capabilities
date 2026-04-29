@@ -1295,12 +1295,6 @@ func TestReports(t *testing.T) {
 						Info: info,
 					},
 				},
-				{
-					ReportWithInfo: ocr3types.ReportWithInfo[[]byte]{
-						Report: []byte{},
-						Info:   info,
-					},
-				},
 			},
 		},
 	}
