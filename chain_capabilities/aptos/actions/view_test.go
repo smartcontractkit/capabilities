@@ -32,7 +32,11 @@ func (h *testConsensusHandler) Handle(ctx context.Context, request ctypes.Reques
 
 	switch req := request.(type) {
 	case *ctypes.LockableToBlockRequest:
-		ev := req.ToEventuallyConsistent(h.height)
+		rawLockedRequest := req.LockToABlock(h.height)
+		ev, ok := rawLockedRequest.(*ctypes.EventuallyConsistentRequest)
+		if !ok {
+			return nil, fmt.Errorf("expected locked request to be an EventuallyConsistentRequest, got %T", rawLockedRequest)
+		}
 		if err := ev.CaptureObservation(ctx); err != nil {
 			ch <- ctypes.Reply{Err: err}
 			return ch, nil
