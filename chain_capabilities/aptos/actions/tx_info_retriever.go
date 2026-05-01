@@ -18,6 +18,9 @@ import (
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 )
 
+// defaultPageSize is the default page size for fetching transactions.
+// This is chosen based on rpc response time benchmarks.
+// And because the chances of an account submitting more than 10 transactions between rounds are very low.
 const defaultPageSize = uint64(10)
 
 // userTxData is a local struct matching the Go-default JSON output of
