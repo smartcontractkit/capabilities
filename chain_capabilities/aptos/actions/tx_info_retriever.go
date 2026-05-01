@@ -220,14 +220,12 @@ func (thr *TxInfoRetriever) paginateBackwards(
 	)
 	page := 0
 	for prevScanResult.EarliestTsMicro > thr.startingPointMicro && prevScanResult.MinSeqNum > 0 {
-		var nextStart uint64
-		if prevScanResult.MinSeqNum > pageSize {
-			nextStart = prevScanResult.MinSeqNum - pageSize
-		}
-		thr.lggr.Debugw("Paginating backwards", "page", page, "nextStart", nextStart, "earliestTimestamp", prevScanResult.EarliestTsMicro, "startingPoint", thr.startingPointMicro)
+		nextLimit := min(pageSize, prevScanResult.MinSeqNum)
+		nextStart := prevScanResult.MinSeqNum - nextLimit
+		thr.lggr.Debugw("Paginating backwards", "page", page, "nextStart", nextStart, "limit", nextLimit, "earliestTimestamp", prevScanResult.EarliestTsMicro, "startingPoint", thr.startingPointMicro)
 
 		txns, err := capcommon.WithQuickRetry(ctx, thr.lggr, func(ctx context.Context) ([]*aptostypes.Transaction, error) {
-			return thr.forwarderClient.GetTransmitterTransactions(ctx, transmitter, &nextStart, &pageSize)
+			return thr.forwarderClient.GetTransmitterTransactions(ctx, transmitter, &nextStart, &nextLimit)
 		})
 		if err != nil {
 			thr.lggr.Errorw("Pagination fetch failed", "page", page, "nextStart", nextStart, "error", err)
@@ -294,13 +292,13 @@ func (thr *TxInfoRetriever) emitTxInfoRetrievalPhase(ctx context.Context, lookup
 func (thr *TxInfoRetriever) GetSuccessfulTransmissionInfo(ctx context.Context, transmitter aptos_sdk.AccountAddress) (TransmissionTxInfo, error) {
 	thr.lggr.Debugw("GetSuccessfulTransmissionInfo called", "transmitter", transmitter.String())
 
-	phase1PageSize := uint64(10)
+	pageSize := uint64(10)
 	// Phase 1: fetch latest transactions with no limit (nil) so the RPC returns its default page.
 	// Derive pageSize from the response for subsequent phases.
-	thr.lggr.Debugw("GetSuccessfulTransmissionInfo phase 1 - quick probe (phase1PageSize)", "phase1PageSize", phase1PageSize)
+	thr.lggr.Debugw("GetSuccessfulTransmissionInfo phase 1 - quick probe (pageSize)", "pageSize", pageSize)
 	phase1Start := time.Now()
 	txns, err := capcommon.WithQuickRetry(ctx, thr.lggr, func(ctx context.Context) ([]*aptostypes.Transaction, error) {
-		result, fetchErr := thr.forwarderClient.GetTransmitterTransactions(ctx, transmitter, nil, &phase1PageSize)
+		result, fetchErr := thr.forwarderClient.GetTransmitterTransactions(ctx, transmitter, nil, &pageSize)
 		if fetchErr != nil {
 			return nil, fetchErr
 		}
@@ -314,8 +312,7 @@ func (thr *TxInfoRetriever) GetSuccessfulTransmissionInfo(ctx context.Context, t
 		thr.emitTxInfoRetrievalPhase(ctx, txInfoRetrievalLookupTypeSuccessfulTransmission, 1, txInfoRetrievalResultFetchError, phase1Start, "", transmitter)
 		return TransmissionTxInfo{}, fmt.Errorf("failed to get transmitter transactions during phase 1: %w", err)
 	}
-	pageSize := uint64(len(txns))
-	thr.lggr.Debugw("GetSuccessfulTransmissionInfo phase 1 fetched", "txCount", len(txns), "derivedPageSize", pageSize)
+	thr.lggr.Debugw("GetSuccessfulTransmissionInfo phase 1 fetched", "txCount", len(txns))
 	phase1Result := thr.scanTransactions(txns, true)
 	if phase1Result.TxHash != "" {
 		thr.lggr.Debugw("GetSuccessfulTransmissionInfo found in phase 1", "txHash", phase1Result.TxHash)
