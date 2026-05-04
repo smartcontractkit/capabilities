@@ -3,6 +3,7 @@ package actions
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -58,17 +59,57 @@ func TestWriteReport_InputValidation(t *testing.T) {
 		_, err := helper.solana.WriteReport(ctx, capabilities.RequestMetadata{WorkflowID: "wf-id"}, &solcap.WriteReportRequest{
 			Receiver: key.PublicKey().Bytes(),
 			Report: &workflowpb.ReportResponse{
-				Sigs: generateRandomSignatures(),
+				ReportContext: RandomBytes(reportContextLen),
+				Sigs:          generateRandomSignatures(),
 			},
 		})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "metadata: raw too short, want ≥109, got 0")
 	})
+	t.Run("Too many signatures", func(t *testing.T) {
+		sigs := make([]*workflowpb.AttributedSignature, maxOracles+1)
+		for i := range sigs {
+			sigs[i] = &workflowpb.AttributedSignature{Signature: RandomBytes(signatureLen)}
+		}
+		_, err := helper.solana.WriteReport(ctx, capabilities.RequestMetadata{WorkflowID: "wf-id"}, &solcap.WriteReportRequest{
+			Receiver: key.PublicKey().Bytes(),
+			Report: &workflowpb.ReportResponse{
+				ReportContext: RandomBytes(reportContextLen),
+				Sigs:          sigs,
+			},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), fmt.Sprintf("too many signatures: got %d, max %d", maxOracles+1, maxOracles))
+	})
+	t.Run("Invalid signature length", func(t *testing.T) {
+		_, err := helper.solana.WriteReport(ctx, capabilities.RequestMetadata{WorkflowID: "wf-id"}, &solcap.WriteReportRequest{
+			Receiver: key.PublicKey().Bytes(),
+			Report: &workflowpb.ReportResponse{
+				ReportContext: RandomBytes(reportContextLen),
+				Sigs: []*workflowpb.AttributedSignature{
+					{Signature: RandomBytes(32)},
+				},
+			},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), fmt.Sprintf("signature 0 has invalid length: got 32, want %d", signatureLen))
+	})
+	t.Run("Invalid report context length", func(t *testing.T) {
+		_, err := helper.solana.WriteReport(ctx, capabilities.RequestMetadata{WorkflowID: "wf-id"}, &solcap.WriteReportRequest{
+			Receiver: key.PublicKey().Bytes(),
+			Report: &workflowpb.ReportResponse{
+				ReportContext: []byte{1, 2, 3},
+				Sigs:          generateRandomSignatures(),
+			},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), fmt.Sprintf("report context has invalid length: got 3, want %d", reportContextLen))
+	})
 	t.Run("Report signatures are not empty", func(t *testing.T) {
 		_, err := helper.solana.WriteReport(ctx, capabilities.RequestMetadata{WorkflowID: "wf-id"}, &solcap.WriteReportRequest{
 			Receiver: key.PublicKey().Bytes(),
 			Report: &workflowpb.ReportResponse{
-				ReportContext: []byte{},
+				ReportContext: RandomBytes(reportContextLen),
 				Sigs:          []*workflowpb.AttributedSignature{},
 			},
 		})
@@ -83,7 +124,7 @@ func TestWriteReport_InputValidation(t *testing.T) {
 			Receiver: key.PublicKey().Bytes(),
 			Report: &workflowpb.ReportResponse{
 				RawReport:     encodedReportMetadata,
-				ReportContext: []byte{},
+				ReportContext: RandomBytes(reportContextLen),
 				Sigs:          generateRandomSignatures(),
 			},
 		})
@@ -99,7 +140,7 @@ func TestWriteReport_InputValidation(t *testing.T) {
 			Receiver: key.PublicKey().Bytes(),
 			Report: &workflowpb.ReportResponse{
 				RawReport:     encodedReportMetadata,
-				ReportContext: []byte{},
+				ReportContext: RandomBytes(reportContextLen),
 				Sigs:          generateRandomSignatures(),
 			},
 		})
@@ -115,7 +156,7 @@ func TestWriteReport_InputValidation(t *testing.T) {
 			Receiver: key.PublicKey().Bytes(),
 			Report: &workflowpb.ReportResponse{
 				RawReport:     encodedReportMetadata,
-				ReportContext: []byte{},
+				ReportContext: RandomBytes(reportContextLen),
 				Sigs:          generateRandomSignatures(),
 			},
 		})
@@ -132,12 +173,34 @@ func TestWriteReport_InputValidation(t *testing.T) {
 			Receiver: key.PublicKey().Bytes(),
 			Report: &workflowpb.ReportResponse{
 				RawReport:     encodedReportMetadata,
-				ReportContext: []byte{},
+				ReportContext: RandomBytes(reportContextLen),
 				Sigs:          generateRandomSignatures(),
 			},
 		})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "workflowExecutionID in the report does not match WorkflowExecutionID in the request metadata.")
+	})
+	t.Run("Short workflow name should pass validation when report and request match", func(t *testing.T) {
+		reportMetadata := createTestReportMetadata()
+		// 4 hex chars (2 bytes) — shorter than the full 20, triggers padWorkflowName
+		reportMetadata.WorkflowName = "aabb"
+		encodedReportMetadata, encErr := reportMetadata.Encode()
+		require.NoError(t, encErr)
+		// Request and report carry the same WorkflowName, so validation must not
+		// reject the name. This fails today because padWorkflowName pads with '0'
+		// (0x30) while validateInputsAndReportMetadata pads with 0x00 null bytes.
+		err := helper.solana.validateInputsAndReportMetadata(
+			createTestRequestMetadata(reportMetadata),
+			&solcap.WriteReportRequest{
+				Receiver: key.PublicKey().Bytes(),
+				Report: &workflowpb.ReportResponse{
+					RawReport:     encodedReportMetadata,
+					ReportContext: []byte{},
+					Sigs:          generateRandomSignatures(),
+				},
+			},
+		)
+		require.NoError(t, err)
 	})
 	t.Run("Invalid remaining account public key length", func(t *testing.T) {
 		reportMetadata := createTestReportMetadata()
@@ -178,7 +241,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			Receiver: key.PublicKey().Bytes(),
 			Report: &workflowpb.ReportResponse{
 				RawReport:     encodedReportMetadata,
-				ReportContext: []byte{},
+				ReportContext: RandomBytes(reportContextLen),
 				Sigs:          generateRandomSignatures(),
 			},
 		})
@@ -212,7 +275,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 
 		signedReport := &workflowpb.ReportResponse{
 			RawReport:     encodedReportMetadata,
-			ReportContext: []byte{},
+			ReportContext: RandomBytes(reportContextLen),
 			Sigs:          generateRandomSignatures(),
 		}
 		writeReportRequest := &solcap.WriteReportRequest{
@@ -251,7 +314,7 @@ func createTestWriteReportReq(metadata ocrtypes.Metadata) *solcap.WriteReportReq
 		Receiver: key.PublicKey().Bytes(),
 		Report: &workflowpb.ReportResponse{
 			RawReport:     encodedReportMetadata,
-			ReportContext: []byte{},
+			ReportContext: RandomBytes(reportContextLen),
 			Sigs:          generateRandomSignatures(),
 		},
 	}
@@ -278,10 +341,9 @@ type NopBeholderProcessor struct{}
 
 func (NopBeholderProcessor) Process(_ context.Context, _ proto.Message, _ ...any) error { return nil }
 func generateRandomSignatures() []*workflowpb.AttributedSignature {
-	sig := [32]byte{1, 2, 3}
 	return []*workflowpb.AttributedSignature{
-		{Signature: sig[:]},
-		{Signature: sig[:]},
+		{Signature: RandomBytes(signatureLen)},
+		{Signature: RandomBytes(signatureLen)},
 	}
 }
 func createTestReportMetadata() ocrtypes.Metadata {
@@ -344,7 +406,7 @@ func TestWriteReport_MeteringMetadata(t *testing.T) {
 
 		signedReport := &workflowpb.ReportResponse{
 			RawReport:     encodedReportMetadata,
-			ReportContext: []byte{},
+			ReportContext: RandomBytes(reportContextLen),
 			Sigs:          generateRandomSignatures(),
 		}
 		writeReportRequest := &solcap.WriteReportRequest{
@@ -388,7 +450,7 @@ func TestWriteReport_MeteringMetadata(t *testing.T) {
 
 		signedReport := &workflowpb.ReportResponse{
 			RawReport:     encodedReportMetadata,
-			ReportContext: []byte{},
+			ReportContext: RandomBytes(reportContextLen),
 			Sigs:          generateRandomSignatures(),
 		}
 		writeReportRequest := &solcap.WriteReportRequest{
@@ -434,7 +496,7 @@ func TestWriteReport_MeteringMetadata(t *testing.T) {
 
 		signedReport := &workflowpb.ReportResponse{
 			RawReport:     encodedReportMetadata,
-			ReportContext: []byte{},
+			ReportContext: RandomBytes(reportContextLen),
 			Sigs:          generateRandomSignatures(),
 		}
 		writeReportRequest := &solcap.WriteReportRequest{
@@ -567,6 +629,105 @@ func TestPollTransmissionInfo_RaceConditions_Solana(t *testing.T) {
 	})
 }
 
+func TestValidateRemainingAccountHash(t *testing.T) {
+	t.Parallel()
+
+	// buildRawReport mirrors the on-chain report layout:
+	//   [109 bytes OCR3 metadata][32 bytes account_hash][4 bytes LE payload_len][payload...]
+	// This is how the keystone-forwarder deserializes ForwarderReport from rawReport[METADATA_LENGTH..].
+	buildRawReport := func(t *testing.T, metadata ocrtypes.Metadata, accountHash [32]byte, payload []byte) []byte {
+		t.Helper()
+		header, err := metadata.Encode()
+		require.NoError(t, err)
+		require.Len(t, header, ocrtypes.MetadataLen)
+
+		// Borsh-encode ForwarderReport: fixed [u8;32] hash + Vec<u8> payload (4-byte LE length prefix)
+		payloadLen := make([]byte, 4)
+		payloadLen[0] = byte(len(payload))
+		payloadLen[1] = byte(len(payload) >> 8)
+		payloadLen[2] = byte(len(payload) >> 16)
+		payloadLen[3] = byte(len(payload) >> 24)
+
+		raw := make([]byte, 0, len(header)+32+4+len(payload))
+		raw = append(raw, header...)
+		raw = append(raw, accountHash[:]...)
+		raw = append(raw, payloadLen...)
+		raw = append(raw, payload...)
+		return raw
+	}
+
+	// computeAccountHash mirrors calculateHash from the workflow WASM binary and the
+	// on-chain forwarder: SHA-256 over concatenated 32-byte public keys.
+	computeAccountHash := func(accounts []*solcap.AccountMeta) [32]byte {
+		var buf []byte
+		for _, acc := range accounts {
+			buf = append(buf, acc.GetPublicKey()...)
+		}
+		return sha256.Sum256(buf)
+	}
+
+	makeAccounts := func(n int) []*solcap.AccountMeta {
+		accs := make([]*solcap.AccountMeta, n)
+		for i := range accs {
+			accs[i] = &solcap.AccountMeta{PublicKey: RandomBytes(32)}
+		}
+		return accs
+	}
+
+	t.Run("Valid hash with multiple remaining accounts", func(t *testing.T) {
+		accounts := makeAccounts(8)
+		hash := computeAccountHash(accounts)
+		rawReport := buildRawReport(t, createTestReportMetadata(), hash, []byte("some payload"))
+
+		err := validateRemainingAccountsHash(accounts, rawReport)
+		require.NoError(t, err)
+	})
+
+	t.Run("Valid hash with single remaining account", func(t *testing.T) {
+		accounts := makeAccounts(1)
+		hash := computeAccountHash(accounts)
+		rawReport := buildRawReport(t, createTestReportMetadata(), hash, nil)
+
+		err := validateRemainingAccountsHash(accounts, rawReport)
+		require.NoError(t, err)
+	})
+
+	t.Run("No remaining accounts skips validation", func(t *testing.T) {
+		err := validateRemainingAccountsHash(nil, []byte("short"))
+		require.NoError(t, err)
+	})
+
+	t.Run("Mismatch when accounts differ from report hash", func(t *testing.T) {
+		accounts := makeAccounts(4)
+		hash := computeAccountHash(accounts)
+		rawReport := buildRawReport(t, createTestReportMetadata(), hash, []byte("payload"))
+
+		differentAccounts := makeAccounts(4)
+		err := validateRemainingAccountsHash(differentAccounts, rawReport)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "remaining account hash mismatch")
+	})
+
+	t.Run("Mismatch when account order changes", func(t *testing.T) {
+		accounts := makeAccounts(3)
+		hash := computeAccountHash(accounts)
+		rawReport := buildRawReport(t, createTestReportMetadata(), hash, []byte("payload"))
+
+		reordered := []*solcap.AccountMeta{accounts[2], accounts[0], accounts[1]}
+		err := validateRemainingAccountsHash(reordered, rawReport)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "remaining account hash mismatch")
+	})
+
+	t.Run("Report too short", func(t *testing.T) {
+		accounts := makeAccounts(1)
+		shortReport := make([]byte, ocrtypes.MetadataLen+10) // not enough for 32-byte hash
+		err := validateRemainingAccountsHash(accounts, shortReport)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "raw report too short to contain account hash")
+	})
+}
+
 func TestGetFee(t *testing.T) {
 	t.Parallel()
 
@@ -626,5 +787,53 @@ func TestGetFee(t *testing.T) {
 		_, err := wr.getFee(t.Context(), sig)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get transaction")
+	})
+}
+
+func TestToPayload(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Valid payload", func(t *testing.T) {
+		report := &workflowpb.ReportResponse{
+			RawReport:     RandomBytes(120),
+			ReportContext: RandomBytes(reportContextLen),
+			Sigs:          generateRandomSignatures(),
+		}
+		payload, err := toPayload(report)
+		require.NoError(t, err)
+		expectedLen := 1 + len(report.Sigs)*signatureLen + len(report.RawReport) + reportContextLen
+		require.Len(t, payload, expectedLen)
+		require.Equal(t, byte(len(report.Sigs)), payload[0])
+	})
+
+	t.Run("Too many signatures", func(t *testing.T) {
+		sigs := make([]*workflowpb.AttributedSignature, maxOracles+1)
+		for i := range sigs {
+			sigs[i] = &workflowpb.AttributedSignature{Signature: RandomBytes(signatureLen)}
+		}
+		_, err := toPayload(&workflowpb.ReportResponse{
+			ReportContext: RandomBytes(reportContextLen),
+			Sigs:          sigs,
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "signature count")
+	})
+
+	t.Run("Invalid signature length", func(t *testing.T) {
+		_, err := toPayload(&workflowpb.ReportResponse{
+			ReportContext: RandomBytes(reportContextLen),
+			Sigs:          []*workflowpb.AttributedSignature{{Signature: RandomBytes(32)}},
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "signature 0 length 32")
+	})
+
+	t.Run("Invalid report context length", func(t *testing.T) {
+		_, err := toPayload(&workflowpb.ReportResponse{
+			ReportContext: RandomBytes(10),
+			Sigs:          generateRandomSignatures(),
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "report context length 10")
 	})
 }

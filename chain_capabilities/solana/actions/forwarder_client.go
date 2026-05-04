@@ -20,6 +20,13 @@ import (
 	ks_forwarder "github.com/smartcontractkit/chainlink-solana/contracts/generated/keystone_forwarder"
 )
 
+// Payload boundary constants aligned with the on-chain keystone-forwarder program.
+const (
+	maxOracles       = 16
+	reportContextLen = 96
+	signatureLen     = 65
+)
+
 type forwarderClient struct {
 	types.SolanaService
 	lggr               logger.Logger
@@ -70,8 +77,13 @@ func (fc *forwarderClient) InvokeOnReport(ctx context.Context, receiver solana.P
 		return nil, fmt.Errorf("failed to derive forwarder authority: %w", err)
 	}
 
+	payload, err := toPayload(report)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build report payload: %w", err)
+	}
+
 	ix, err := ks_forwarder.NewReportInstruction(
-		toPayload(report),
+		payload,
 		fc.forwarderState,
 		configPDA,
 		fc.transmitter,
@@ -84,7 +96,7 @@ func (fc *forwarderClient) InvokeOnReport(ctx context.Context, receiver solana.P
 		return nil, fmt.Errorf("failed to build report instruction: %w", err)
 	}
 
-	// meta[0] - forwarderState, meta[1] - executionState are already included in the instruction
+	// meta[0] - forwarderState, meta[1] - forwarderAuthority are already included in the instruction
 	converted, convErr := convertMetaPB(meta)
 	if convErr != nil {
 		return nil, fmt.Errorf("invalid remaining account metas: %w", convErr)
@@ -162,8 +174,20 @@ func (fc *forwarderClient) getOracleConfigPDA(ctx context.Context, workflowDonID
 	return oracleConfigPDA, nil
 }
 
-func toPayload(report *sdk.ReportResponse) []byte {
-	var ret []byte
+func toPayload(report *sdk.ReportResponse) ([]byte, error) {
+	if len(report.Sigs) > maxOracles {
+		return nil, fmt.Errorf("signature count %d exceeds max %d", len(report.Sigs), maxOracles)
+	}
+	for i, sig := range report.Sigs {
+		if len(sig.Signature) != signatureLen {
+			return nil, fmt.Errorf("signature %d length %d, want %d", i, len(sig.Signature), signatureLen)
+		}
+	}
+	if len(report.ReportContext) != reportContextLen {
+		return nil, fmt.Errorf("report context length %d, want %d", len(report.ReportContext), reportContextLen)
+	}
+
+	ret := make([]byte, 0, 1+len(report.Sigs)*signatureLen+len(report.RawReport)+reportContextLen)
 
 	// 1. data_size ret[0]
 	ret = append(ret, byte(len(report.Sigs)))
@@ -179,7 +203,7 @@ func toPayload(report *sdk.ReportResponse) []byte {
 	// 4. add context
 	ret = append(ret, report.ReportContext...)
 
-	return ret
+	return ret, nil
 }
 
 func getConfigPDA(statePubkey solana.PublicKey, donID uint32, configVersion uint32, programID solana.PublicKey) (solana.PublicKey, error) {
