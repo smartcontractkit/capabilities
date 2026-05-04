@@ -108,11 +108,11 @@ func setupTest(t *testing.T) (*SolanaLogTriggerService, *mocks.SolanaService) {
 
 func createTestRequest() *solanacappb.FilterLogTriggerRequest {
 	return &solanacappb.FilterLogTriggerRequest{
-		Name:         "test-filter",
-		Address:      testPublicKey[:],
-		EventName:    testEventName,
-		EventIdlJson: testEventIdlJSON,
-		Subkeys:      testSubkeys,
+		Name:            "test-filter",
+		Address:         testPublicKey[:],
+		EventName:       testEventName,
+		ContractIdlJson: testEventIdlJSON,
+		Subkeys:         testSubkeys,
 	}
 }
 
@@ -297,7 +297,7 @@ func TestToLogPollerFilter(t *testing.T) {
 		assert.Equal(t, request.Address, filter.Address[:])
 		assert.Equal(t, request.EventName, filter.EventName)
 		assert.Equal(t, expectedSig[:], filter.EventSig[:])
-		assert.Equal(t, request.EventIdlJson, filter.ContractIdlJSON)
+		assert.Equal(t, request.ContractIdlJson, filter.ContractIdlJSON)
 		expectedPaths := make([][]string, len(request.Subkeys))
 		for i, subkey := range request.Subkeys {
 			expectedPaths[i] = subkey.Path
@@ -1253,10 +1253,10 @@ func TestValidateFilterConfig(t *testing.T) {
 
 	t.Run("valid config", func(t *testing.T) {
 		config := &solanacappb.FilterLogTriggerRequest{
-			Address:      make([]byte, 32),
-			EventName:    "TestEvent",
-			Name:         "test-filter",
-			EventIdlJson: []byte("{}"),
+			Address:         make([]byte, 32),
+			EventName:       "TestEvent",
+			Name:            "test-filter",
+			ContractIdlJson: []byte("{}"),
 		}
 		err := validateFilterConfig(config)
 		require.NoError(t, err)

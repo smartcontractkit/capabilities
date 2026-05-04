@@ -58,10 +58,11 @@ type EVM struct {
 	beholderProcessor beholder.ProtoProcessor
 	messageBuilder    *monitoring.MessageBuilder
 
-	readPayloadSizeLimiter limits.BoundLimiter[commoncfg.Size]
-	logQueryBlockLimit     limits.BoundLimiter[uint64]
-	reportSizeLimit        limits.BoundLimiter[commoncfg.Size]
-	txGasLimit             limits.BoundLimiter[uint64]
+	readPayloadSizeLimiter                     limits.BoundLimiter[commoncfg.Size]
+	logQueryBlockLimit                         limits.BoundLimiter[uint64]
+	reportSizeLimit                            limits.BoundLimiter[commoncfg.Size]
+	txGasLimit                                 limits.BoundLimiter[uint64]
+	featureChainCapabilityHashBasedOCRActiveAt limits.RangeLimiter[commoncfg.Timestamp]
 
 	transmissionScheduler ts.TransmissionScheduler
 }
@@ -107,20 +108,29 @@ func (e *EVM) initLimiters(limitsFactory limits.Factory) (err error) {
 	if err != nil {
 		return
 	}
-	e.reportSizeLimit, err = limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainWrite.EVM.ReportSizeLimit)
+	e.reportSizeLimit, err = limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainWrite.ReportSizeLimit)
 	if err != nil {
 		return
 	}
 	e.txGasLimit, err = limits.MakeUpperBoundLimiter(limitsFactory, cresettings.Default.PerWorkflow.ChainWrite.EVM.GasLimit)
+	if err != nil {
+		return
+	}
+	e.featureChainCapabilityHashBasedOCRActiveAt, err = limits.MakeRangeLimiter(limitsFactory, cresettings.Default.PerWorkflow.FeatureChainCapabilityHashBasedOCRActivePeriod)
 	return
 }
 
 func (e *EVM) Close() error {
-	return services.CloseAll(e.readPayloadSizeLimiter, e.logQueryBlockLimit, e.reportSizeLimit, e.txGasLimit)
+	return services.CloseAll(e.readPayloadSizeLimiter, e.logQueryBlockLimit, e.reportSizeLimit, e.txGasLimit, e.featureChainCapabilityHashBasedOCRActiveAt)
 }
 
 func requestID(meta capabilities.RequestMetadata) string {
 	return commonMon.RequestID(meta.WorkflowExecutionID, meta.ReferenceID)
+}
+
+// useHashBasedConsensus is true when hash-based OCR (V2) should be used for reads that support it.
+func (e *EVM) useHashBasedConsensus(ctx context.Context, meta capabilities.RequestMetadata) bool {
+	return e.featureChainCapabilityHashBasedOCRActiveAt.Check(ctx, commoncfg.NewTimestamp(meta.ExecutionTimestamp)) == nil
 }
 
 func (e *EVM) CallContract(
@@ -146,11 +156,15 @@ func (e *EVM) CallContract(
 
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildCallContractInitiated(telemetryContext, callMsg, blockNumber.Int64()))
 
-	callContract := func(ctx context.Context, blockNumber *big.Int) ([]byte, error) {
-		// TODO: PLEX-1558 agree on RPC error content
+	callContract := func(ctx context.Context, height *ctypes.ChainHeight) ([]byte, error) {
+		callBlockNumber, err := getCallBlockNumber(blockNumber, height)
+		if err != nil {
+			return nil, caperrors.NewPublicSystemError(fmt.Errorf("error getting call block number: %w", err), caperrors.Unknown)
+		}
+
 		resp, err := e.EVMService.CallContract(ctx, evmtypes.CallContractRequest{
 			Msg:             callMsg,
-			BlockNumber:     blockNumber,
+			BlockNumber:     callBlockNumber,
 			ConfidenceLevel: confidenceLevel,
 			IsExternal:      true,
 		})
@@ -160,23 +174,13 @@ func (e *EVM) CallContract(
 		return resp.Data, nil
 	}
 
-	var request ctypes.Request
-	if needsBlockHeightConsensus {
-		request = ctypes.NewLockableToBlockRequest(requestID(meta), func(ctx context.Context, height *ctypes.ChainHeight) ([]byte, error) {
-			callBlockNumber, err := getCallBlockNumber(blockNumber, height)
-			if err != nil {
-				return nil, caperrors.NewPublicSystemError(fmt.Errorf("error getting call block number: %w", err), caperrors.Unknown)
-			}
-
-			return callContract(ctx, callBlockNumber)
-		})
+	var responseAndMetadata *capabilities.ResponseAndMetadata[*evm.CallContractReply]
+	if e.useHashBasedConsensus(ctx, meta) {
+		responseAndMetadata, err = e.callContractV2(ctx, meta, needsBlockHeightConsensus, callContract)
 	} else {
-		request = ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
-			return callContract(ctx, big.NewInt(blockNumber.Int64()))
-		})
+		responseAndMetadata, err = e.callContractV1(ctx, meta, needsBlockHeightConsensus, callContract)
 	}
 
-	data, err := readType[[]byte](ctx, e.ConsensusHandler, request)
 	if err != nil {
 		isUserError := isRevertError(err) || e.isUserError(err)
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor,
@@ -185,37 +189,101 @@ func (e *EVM) CallContract(
 	}
 
 	monitoring.LogAndEmitSuccess(ctx, "Successfully read CallContract", e.lggr, e.beholderProcessor, e.messageBuilder.BuildCallContractSuccess(telemetryContext, callMsg, blockNumber.Int64()))
-	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.CallContractReply]{
-		Response:         &evm.CallContractReply{Data: data},
-		ResponseMetadata: metering.GetResponseMetadata(metering.CallContract),
-	}
-	return &responseAndMetadata, nil
+	return responseAndMetadata, nil
 }
 
-func (e *EVM) filterLogsToRequest(ctx context.Context, meta capabilities.RequestMetadata, ethFilterQuery evmtypes.FilterQuery) (ctypes.Request, error) {
-	filterLogs := func(ctx context.Context, query evmtypes.FilterQuery, confidenceLevel primitives.ConfidenceLevel) ([]byte, error) {
-		reply, err := e.EVMService.FilterLogs(ctx, evmtypes.FilterLogsRequest{
-			FilterQuery:     query,
-			ConfidenceLevel: confidenceLevel,
-			IsExternal:      true,
-		})
-		if err != nil {
-			return nil, GetError(err, e.isUserError(err))
-		}
+type HashableRequest[T proto.Message] interface {
+	ctypes.Request
+	GetObservationByReportData(reportData [ctypes.HashLength]byte) (T, bool)
+	GetMetadata() capabilities.ResponseMetadata
+}
 
-		logs, err := evm.ConvertLogsToProto(reply.Logs)
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert logs to proto: %w", err)
-		}
-
-		b, err := proto.Marshal(&evm.FilterLogsReply{Logs: logs})
+func (e *EVM) callContractV2(ctx context.Context, meta capabilities.RequestMetadata, needsBlockHeightConsensus bool,
+	callContract func(ctx context.Context, height *ctypes.ChainHeight) ([]byte, error)) (*capabilities.ResponseAndMetadata[*evm.CallContractReply], error) {
+	observe := func(ctx context.Context, height *ctypes.ChainHeight) (*evm.CallContractReply, error) {
+		data, err := callContract(ctx, height)
 		if err != nil {
 			return nil, err
 		}
-		if err = e.readPayloadSizeLimiter.Check(ctx, commoncfg.SizeOf(b)); err != nil {
-			return nil, NewUserError(err)
+
+		return &evm.CallContractReply{Data: data}, nil
+	}
+
+	metadata := metering.GetResponseMetadata(metering.CallContract)
+	var request HashableRequest[*evm.CallContractReply]
+	if needsBlockHeightConsensus {
+		request = ctypes.NewLockableToBlockHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, metadata, observe)
+	} else {
+		request = ctypes.NewHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, metadata, func(ctx context.Context) (*evm.CallContractReply, error) {
+			return observe(ctx, nil)
+		})
+	}
+
+	return readHashableRequestReport(ctx, e.ConsensusHandler, request)
+}
+
+func readHashableRequestReport[T proto.Message](ctx context.Context, handler ConsensusHandler, request HashableRequest[T]) (*capabilities.ResponseAndMetadata[T], error) {
+	report, err := readType[*ctypes.HashableRequestReport](ctx, handler, request)
+	if err != nil {
+		return nil, err
+	}
+
+	observation, ok := request.GetObservationByReportData(report.ReportData)
+	if !ok {
+		return nil, capabilities.ErrResponsePayloadNotAvailable
+	}
+
+	sigs := make([]capabilities.AttributedSignature, len(report.AttributedOnchainSignature))
+	for i, sig := range report.AttributedOnchainSignature {
+		sigs[i] = capabilities.AttributedSignature{
+			Signature: sig.Signature,
+			Signer:    uint32(sig.Signer),
 		}
-		return b, nil
+	}
+	return &capabilities.ResponseAndMetadata[T]{
+		Response:         observation,
+		ResponseMetadata: request.GetMetadata(),
+		OCRAttestation: &capabilities.OCRAttestation{
+			ConfigDigest:   report.ConfigDigest,
+			SequenceNumber: report.SeqNr,
+			Sigs:           sigs,
+		},
+	}, nil
+}
+
+func (e *EVM) callContractV1(ctx context.Context, meta capabilities.RequestMetadata, needsBlockHeightConsensus bool,
+	callContract func(ctx context.Context, height *ctypes.ChainHeight) ([]byte, error)) (*capabilities.ResponseAndMetadata[*evm.CallContractReply], error) {
+	var request ctypes.Request
+	if needsBlockHeightConsensus {
+		request = ctypes.NewLockableToBlockRequest(requestID(meta), callContract)
+	} else {
+		request = ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
+			return callContract(ctx, nil)
+		})
+	}
+
+	data, err := readType[[]byte](ctx, e.ConsensusHandler, request)
+	if err != nil {
+		return nil, err
+	}
+	return &capabilities.ResponseAndMetadata[*evm.CallContractReply]{
+		Response:         &evm.CallContractReply{Data: data},
+		ResponseMetadata: metering.GetResponseMetadata(metering.CallContract),
+	}, nil
+}
+
+type filterLogsQuery struct {
+	EthFilterLogs             evmtypes.FilterQuery
+	NormalizedFromBlock       rpc.BlockNumber
+	NormalizedToBlock         rpc.BlockNumber
+	NeedsBlockHeightConsensus bool
+	ConfidenceLevel           primitives.ConfidenceLevel
+}
+
+func (e *EVM) convertLogsFilterFromProto(ctx context.Context, req *evm.FilterLogsRequest) (*filterLogsQuery, error) {
+	ethFilterQuery, err := evm.ConvertFilterFromProto(req.GetFilterQuery())
+	if err != nil {
+		return nil, NewUserError(err)
 	}
 
 	if ethFilterQuery.BlockHash != (evmtypes.Hash{}) {
@@ -223,9 +291,11 @@ func (e *EVM) filterLogsToRequest(ctx context.Context, meta capabilities.Request
 			return nil, NewUserError(errors.New("cannot specify both block hash and block range"))
 		}
 
-		return ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
-			return filterLogs(ctx, ethFilterQuery, primitives.Unconfirmed)
-		}), nil
+		return &filterLogsQuery{
+			EthFilterLogs:             ethFilterQuery,
+			NeedsBlockHeightConsensus: false,
+			ConfidenceLevel:           primitives.Unconfirmed,
+		}, nil
 	}
 
 	fromBlock, fromNeedsBlockHeightConsensus, _, err := normalizeBlockNumber(valuespb.NewBigIntFromInt(ethFilterQuery.FromBlock))
@@ -243,32 +313,21 @@ func (e *EVM) filterLogsToRequest(ctx context.Context, meta capabilities.Request
 		if err != nil {
 			return nil, NewUserError(err)
 		}
-		return ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
-			return filterLogs(ctx, ethFilterQuery, confidenceLevel)
-		}), nil
+
+		return &filterLogsQuery{
+			EthFilterLogs:             ethFilterQuery,
+			NeedsBlockHeightConsensus: false,
+			ConfidenceLevel:           primitives.Unconfirmed,
+		}, nil
 	}
 
-	return ctypes.NewLockableToBlockRequest(requestID(meta), func(ctx context.Context, height *ctypes.ChainHeight) ([]byte, error) {
-		callFromBlock, err := getCallBlockNumber(fromBlock, height)
-		if err != nil {
-			return nil, fmt.Errorf("error getting callFromBlock: %w", err)
-		}
-
-		callToBlock, err := getCallBlockNumber(toBlock, height)
-		if err != nil {
-			return nil, fmt.Errorf("error getting callToBlock: %w", err)
-		}
-
-		err = e.validateBlockRange(ctx, callFromBlock, callToBlock)
-		if err != nil {
-			return nil, NewUserError(err)
-		}
-
-		ethFilterQuery.FromBlock = big.NewInt(callFromBlock.Int64())
-		ethFilterQuery.ToBlock = big.NewInt(callToBlock.Int64())
-
-		return filterLogs(ctx, ethFilterQuery, confidenceLevel)
-	}), nil
+	return &filterLogsQuery{
+		EthFilterLogs:             ethFilterQuery,
+		NormalizedFromBlock:       fromBlock,
+		NormalizedToBlock:         toBlock,
+		NeedsBlockHeightConsensus: true,
+		ConfidenceLevel:           confidenceLevel,
+	}, nil
 }
 
 func (e *EVM) validateBlockRange(ctx context.Context, fromBlock, toBlock *big.Int) error {
@@ -284,43 +343,177 @@ func (e *EVM) validateBlockRange(ctx context.Context, fromBlock, toBlock *big.In
 	return e.logQueryBlockLimit.Check(ctx, rangeSize.Uint64())
 }
 
+func (e *EVM) getLockedFilterLogsQuery(ctx context.Context, query *filterLogsQuery, height *ctypes.ChainHeight) (evmtypes.FilterQuery, primitives.ConfidenceLevel, error) {
+	callFromBlock, err := getCallBlockNumber(query.NormalizedFromBlock, height)
+	if err != nil {
+		return evmtypes.FilterQuery{}, primitives.Unconfirmed, fmt.Errorf("error getting callFromBlock: %w", err)
+	}
+
+	callToBlock, err := getCallBlockNumber(query.NormalizedToBlock, height)
+	if err != nil {
+		return evmtypes.FilterQuery{}, primitives.Unconfirmed, fmt.Errorf("error getting callToBlock: %w", err)
+	}
+
+	err = e.validateBlockRange(ctx, callFromBlock, callToBlock)
+	if err != nil {
+		return evmtypes.FilterQuery{}, primitives.Unconfirmed, NewUserError(err)
+	}
+
+	result := query.EthFilterLogs // copy
+	result.FromBlock = big.NewInt(callFromBlock.Int64())
+	result.ToBlock = big.NewInt(callToBlock.Int64())
+	return result, query.ConfidenceLevel, nil
+}
+
+func (e *EVM) filterLogsObserve(ctx context.Context, query evmtypes.FilterQuery, confidenceLevel primitives.ConfidenceLevel) (*evm.FilterLogsReply, []byte, error) {
+	serviceReply, err := e.EVMService.FilterLogs(ctx, evmtypes.FilterLogsRequest{
+		FilterQuery:     query,
+		ConfidenceLevel: confidenceLevel,
+		IsExternal:      true,
+	})
+	if err != nil {
+		return nil, nil, GetError(err, e.isUserError(err))
+	}
+
+	logs, err := evm.ConvertLogsToProto(serviceReply.Logs)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to convert logs to proto: %w", err)
+	}
+
+	capReply := &evm.FilterLogsReply{Logs: logs}
+	b, err := proto.MarshalOptions{Deterministic: true}.Marshal(capReply)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err = e.readPayloadSizeLimiter.Check(ctx, commoncfg.SizeOf(b)); err != nil {
+		return nil, nil, NewUserError(err)
+	}
+	return capReply, b, nil
+}
+
+func (e *EVM) filterLogsV1(ctx context.Context, requestID string, query *filterLogsQuery) (*capabilities.ResponseAndMetadata[*evm.FilterLogsReply], error) {
+	var request ctypes.Request
+	if query.NeedsBlockHeightConsensus {
+		request = ctypes.NewLockableToBlockRequest(requestID, func(ctx context.Context, height *ctypes.ChainHeight) ([]byte, error) {
+			lockedQuery, confidenceLevel, err := e.getLockedFilterLogsQuery(ctx, query, height)
+			if err != nil {
+				return nil, err
+			}
+
+			_, asBytes, err := e.filterLogsObserve(ctx, lockedQuery, confidenceLevel)
+			return asBytes, err
+		})
+	} else {
+		request = ctypes.NewEventuallyConsistentRequest(requestID, func(ctx context.Context) ([]byte, error) {
+			_, asBytes, err := e.filterLogsObserve(ctx, query.EthFilterLogs, query.ConfidenceLevel)
+			return asBytes, err
+		})
+	}
+
+	var reply evm.FilterLogsReply
+	if err := e.readProto(ctx, request, &reply); err != nil {
+		return nil, err
+	}
+	return &capabilities.ResponseAndMetadata[*evm.FilterLogsReply]{
+		Response:         &reply,
+		ResponseMetadata: metering.GetResponseMetadata(metering.FilterLogs),
+	}, nil
+}
+
+func (e *EVM) filterLogsV2(ctx context.Context, meta capabilities.RequestMetadata, query *filterLogsQuery) (*capabilities.ResponseAndMetadata[*evm.FilterLogsReply], error) {
+	var request HashableRequest[*evm.FilterLogsReply]
+	if query.NeedsBlockHeightConsensus {
+		request = ctypes.NewLockableToBlockHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, metering.GetResponseMetadata(metering.FilterLogs), func(ctx context.Context, height *ctypes.ChainHeight) (*evm.FilterLogsReply, error) {
+			lockedQuery, confidenceLevel, err := e.getLockedFilterLogsQuery(ctx, query, height)
+			if err != nil {
+				return nil, err
+			}
+
+			result, _, err := e.filterLogsObserve(ctx, lockedQuery, confidenceLevel)
+			return result, err
+		})
+	} else {
+		request = ctypes.NewHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, metering.GetResponseMetadata(metering.FilterLogs), func(ctx context.Context) (*evm.FilterLogsReply, error) {
+			result, _, err := e.filterLogsObserve(ctx, query.EthFilterLogs, query.ConfidenceLevel)
+			return result, err
+		})
+	}
+
+	return readHashableRequestReport(ctx, e.ConsensusHandler, request)
+}
+
 func (e *EVM) FilterLogs(ctx context.Context, meta capabilities.RequestMetadata, req *evm.FilterLogsRequest) (*capabilities.ResponseAndMetadata[*evm.FilterLogsReply], caperrors.Error) {
-	ctx = meta.ContextWithCRE(ctx)
 	telemetryContext := monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: meta}
 
 	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.FilterLogs)); err != nil {
 		return nil, NewUserError(err)
 	}
 
-	ethFilterQuery, err := evm.ConvertFilterFromProto(req.GetFilterQuery())
-	if err != nil {
-		return nil, NewUserError(err)
-	}
-
-	request, err := e.filterLogsToRequest(ctx, meta, ethFilterQuery)
+	query, err := e.convertLogsFilterFromProto(ctx, req)
 	if err != nil {
 		return nil, EnsureRemoteReportable(err)
 	}
 
-	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildFilterLogsInitiated(telemetryContext, ethFilterQuery))
+	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildFilterLogsInitiated(telemetryContext, query.EthFilterLogs))
 
-	var reply evm.FilterLogsReply
-	err = e.readProto(ctx, request, &reply)
+	var responseAndMetadata *capabilities.ResponseAndMetadata[*evm.FilterLogsReply]
+	if e.useHashBasedConsensus(ctx, meta) {
+		responseAndMetadata, err = e.filterLogsV2(ctx, meta, query)
+	} else {
+		responseAndMetadata, err = e.filterLogsV1(ctx, requestID(meta), query)
+	}
 	if err != nil {
 		isUserError := e.isUserError(err)
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor,
-			e.messageBuilder.BuildFilterLogsError(telemetryContext, ethFilterQuery, "Failed to FilterLogs", err.Error(), isUserError))
+			e.messageBuilder.BuildFilterLogsError(telemetryContext, query.EthFilterLogs, "Failed to FilterLogs", err.Error(), isUserError))
 		return nil, GetError(err, isUserError)
 	}
 
 	// G115: integer overflow conversion int -> int32 (gosec)
 	// nolint:gosec
-	monitoring.LogAndEmitSuccess(ctx, "Successfully executed FilterLogs", e.lggr, e.beholderProcessor, e.messageBuilder.BuildFilterLogsSuccess(telemetryContext, ethFilterQuery, int32(len(reply.Logs))))
-	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.FilterLogsReply]{
-		Response:         &reply,
-		ResponseMetadata: capabilities.ResponseMetadata{},
+	monitoring.LogAndEmitSuccess(ctx, "Successfully executed FilterLogs", e.lggr, e.beholderProcessor, e.messageBuilder.BuildFilterLogsSuccess(telemetryContext, query.EthFilterLogs, int32(len(responseAndMetadata.Response.Logs))))
+	return responseAndMetadata, nil
+}
+
+func (e *EVM) balanceAtV1(ctx context.Context, requestID string, needsBlockHeightConsensus bool, balanceAt func(ctx context.Context, height *ctypes.ChainHeight) (*evm.BalanceAtReply, error)) (*capabilities.ResponseAndMetadata[*evm.BalanceAtReply], error) {
+	byteObserve := func(ctx context.Context, height *ctypes.ChainHeight) ([]byte, error) {
+		r, err := balanceAt(ctx, height)
+		if err != nil {
+			return nil, err
+		}
+		return proto.Marshal(r.Balance)
 	}
-	return &responseAndMetadata, nil
+	var request ctypes.Request
+	if needsBlockHeightConsensus {
+		request = ctypes.NewLockableToBlockRequest(requestID, byteObserve)
+	} else {
+		request = ctypes.NewEventuallyConsistentRequest(requestID, func(ctx context.Context) ([]byte, error) {
+			return byteObserve(ctx, nil)
+		})
+	}
+
+	balance := new(valuespb.BigInt)
+	if err := e.readProto(ctx, request, balance); err != nil {
+		return nil, err
+	}
+	return &capabilities.ResponseAndMetadata[*evm.BalanceAtReply]{
+		Response:         &evm.BalanceAtReply{Balance: balance},
+		ResponseMetadata: metering.GetResponseMetadata(metering.BalanceAt),
+	}, nil
+}
+
+func (e *EVM) balanceAtV2(ctx context.Context, meta capabilities.RequestMetadata, needsBlockHeightConsensus bool,
+	balanceAt func(ctx context.Context, height *ctypes.ChainHeight) (*evm.BalanceAtReply, error)) (*capabilities.ResponseAndMetadata[*evm.BalanceAtReply], error) {
+	var request HashableRequest[*evm.BalanceAtReply]
+	if needsBlockHeightConsensus {
+		request = ctypes.NewLockableToBlockHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, metering.GetResponseMetadata(metering.BalanceAt), balanceAt)
+	} else {
+		request = ctypes.NewHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, metering.GetResponseMetadata(metering.BalanceAt), func(ctx context.Context) (*evm.BalanceAtReply, error) {
+			return balanceAt(ctx, nil)
+		})
+	}
+
+	return readHashableRequestReport(ctx, e.ConsensusHandler, request)
 }
 
 func (e *EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, req *evm.BalanceAtRequest) (*capabilities.ResponseAndMetadata[*evm.BalanceAtReply], caperrors.Error) {
@@ -334,7 +527,7 @@ func (e *EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, 
 	}
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildBalanceAtInitiated(telemetryContext, common.Bytes2Hex(req.GetAccount()), blockNumber.Int64()))
 
-	balanceAt := func(ctx context.Context, height *ctypes.ChainHeight) ([]byte, error) {
+	balanceAt := func(ctx context.Context, height *ctypes.ChainHeight) (*evm.BalanceAtReply, error) {
 		callBlockNumber, err := getCallBlockNumber(blockNumber, height)
 		if err != nil {
 			return nil, NewUserError(fmt.Errorf("error getting call block number: %w", err))
@@ -355,20 +548,16 @@ func (e *EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, 
 		}
 
 		pbBalance := valuespb.NewBigIntFromInt(reply.Balance)
-		return proto.Marshal(pbBalance)
+		return &evm.BalanceAtReply{Balance: pbBalance}, nil
 	}
 
-	var request ctypes.Request
-	if needsBlockHeightConsensus {
-		request = ctypes.NewLockableToBlockRequest(requestID(meta), balanceAt)
+	var responseAndMetadata *capabilities.ResponseAndMetadata[*evm.BalanceAtReply]
+	if e.useHashBasedConsensus(ctx, meta) {
+		responseAndMetadata, err = e.balanceAtV2(ctx, meta, needsBlockHeightConsensus, balanceAt)
 	} else {
-		request = ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
-			return balanceAt(ctx, nil)
-		})
+		responseAndMetadata, err = e.balanceAtV1(ctx, requestID(meta), needsBlockHeightConsensus, balanceAt)
 	}
-
-	balance := new(valuespb.BigInt)
-	if err := e.readProto(ctx, request, balance); err != nil {
+	if err != nil {
 		isUserError := e.isUserError(err)
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor,
 			e.messageBuilder.BuildBalanceAtError(telemetryContext, common.Bytes2Hex(req.GetAccount()), blockNumber.Int64(), "Failed to read BalanceAt", err.Error(), isUserError))
@@ -376,12 +565,8 @@ func (e *EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, 
 	}
 
 	monitoring.LogAndEmitSuccess(ctx, "Successfully read BalanceAt", e.lggr, e.beholderProcessor,
-		e.messageBuilder.BuildBalanceAtSuccess(telemetryContext, common.Bytes2Hex(req.GetAccount()), blockNumber.Int64(), valuespb.NewIntFromBigInt(balance)))
-	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.BalanceAtReply]{
-		Response:         &evm.BalanceAtReply{Balance: balance},
-		ResponseMetadata: metering.GetResponseMetadata(metering.BalanceAt),
-	}
-	return &responseAndMetadata, nil
+		e.messageBuilder.BuildBalanceAtSuccess(telemetryContext, common.Bytes2Hex(req.GetAccount()), blockNumber.Int64(), valuespb.NewIntFromBigInt(responseAndMetadata.Response.Balance)))
+	return responseAndMetadata, nil
 }
 
 func (e *EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata, req *evm.EstimateGasRequest) (*capabilities.ResponseAndMetadata[*evm.EstimateGasReply], caperrors.Error) {
@@ -430,6 +615,49 @@ func (e *EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata
 	return &responseAndMetadata, nil
 }
 
+func (e *EVM) getTransactionByHashObserve(ctx context.Context, hash common.Hash) (*evm.GetTransactionByHashReply, error) {
+	tx, err := e.EVMService.GetTransactionByHash(ctx, evmtypes.GetTransactionByHashRequest{
+		Hash:       hash,
+		IsExternal: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	protoTx, err := evm.ConvertTransactionToProto(tx)
+	if err != nil {
+		return nil, NewUserError(err)
+	}
+
+	return &evm.GetTransactionByHashReply{Transaction: protoTx}, nil
+}
+
+func (e *EVM) getTransactionByHashV1(ctx context.Context, requestID string, hash common.Hash) (*capabilities.ResponseAndMetadata[*evm.GetTransactionByHashReply], error) {
+	request := ctypes.NewEventuallyConsistentRequest(requestID, func(ctx context.Context) ([]byte, error) {
+		r, err := e.getTransactionByHashObserve(ctx, hash)
+		if err != nil {
+			return nil, err
+		}
+		return proto.MarshalOptions{Deterministic: true}.Marshal(r.Transaction)
+	})
+
+	var tx evm.Transaction
+	if err := e.readProto(ctx, request, &tx); err != nil {
+		return nil, err
+	}
+	return &capabilities.ResponseAndMetadata[*evm.GetTransactionByHashReply]{
+		Response:         &evm.GetTransactionByHashReply{Transaction: &tx},
+		ResponseMetadata: metering.GetResponseMetadata(metering.GetTransactionByHash),
+	}, nil
+}
+
+func (e *EVM) getTransactionByHashV2(ctx context.Context, meta capabilities.RequestMetadata, hash common.Hash) (*capabilities.ResponseAndMetadata[*evm.GetTransactionByHashReply], error) {
+	request := ctypes.NewHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, metering.GetResponseMetadata(metering.GetTransactionByHash), func(ctx context.Context) (*evm.GetTransactionByHashReply, error) {
+		return e.getTransactionByHashObserve(ctx, hash)
+	})
+	return readHashableRequestReport[*evm.GetTransactionByHashReply](ctx, e.ConsensusHandler, request)
+}
+
 func (e *EVM) GetTransactionByHash(ctx context.Context, meta capabilities.RequestMetadata, req *evm.GetTransactionByHashRequest) (*capabilities.ResponseAndMetadata[*evm.GetTransactionByHashReply], caperrors.Error) {
 	if err := metering.CheckHasFunds(e.lggr, meta, metering.ActionSpendUnit, string(metering.GetTransactionByHash)); err != nil {
 		return nil, NewUserError(err)
@@ -440,25 +668,14 @@ func (e *EVM) GetTransactionByHash(ctx context.Context, meta capabilities.Reques
 		return nil, NewUserError(err)
 	}
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildGetTransactionByHashInitiated(telemetryContext, common.Bytes2Hex(hash[:])))
-	request := ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
-		tx, err := e.EVMService.GetTransactionByHash(ctx, evmtypes.GetTransactionByHashRequest{
-			Hash:       hash,
-			IsExternal: true,
-		})
-		if err != nil {
-			return nil, err
-		}
 
-		protoTx, err := evm.ConvertTransactionToProto(tx)
-		if err != nil {
-			return nil, NewUserError(err)
-		}
-
-		return proto.MarshalOptions{Deterministic: true}.Marshal(protoTx)
-	})
-
-	var tx evm.Transaction
-	if err := e.readProto(ctx, request, &tx); err != nil {
+	var responseAndMetadata *capabilities.ResponseAndMetadata[*evm.GetTransactionByHashReply]
+	if e.useHashBasedConsensus(ctx, meta) {
+		responseAndMetadata, err = e.getTransactionByHashV2(ctx, meta, hash)
+	} else {
+		responseAndMetadata, err = e.getTransactionByHashV1(ctx, requestID(meta), hash)
+	}
+	if err != nil {
 		isUserError := e.isUserError(err)
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor,
 			e.messageBuilder.BuildGetTransactionByHashError(telemetryContext, common.Bytes2Hex(hash[:]), "Failed to execute GetTransactionByHash", err.Error(), isUserError))
@@ -466,12 +683,51 @@ func (e *EVM) GetTransactionByHash(ctx context.Context, meta capabilities.Reques
 	}
 
 	monitoring.LogAndEmitSuccess(ctx, "Successfully read GetTransactionByHash", e.lggr, e.beholderProcessor,
-		e.messageBuilder.BuildGetTransactionByHashSuccess(telemetryContext, common.Bytes2Hex(hash[:]), &tx))
-	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.GetTransactionByHashReply]{
-		Response:         &evm.GetTransactionByHashReply{Transaction: &tx},
-		ResponseMetadata: metering.GetResponseMetadata(metering.GetTransactionByHash),
+		e.messageBuilder.BuildGetTransactionByHashSuccess(telemetryContext, common.Bytes2Hex(hash[:]), responseAndMetadata.Response.Transaction))
+	return responseAndMetadata, nil
+}
+
+func (e *EVM) getTransactionReceiptObserve(ctx context.Context, hash common.Hash) (*evm.GetTransactionReceiptReply, error) {
+	receipt, err := e.EVMService.GetTransactionReceipt(ctx, evmtypes.GeTransactionReceiptRequest{
+		Hash:       hash,
+		IsExternal: true,
+	})
+	if err != nil {
+		return nil, err
 	}
-	return &responseAndMetadata, nil
+
+	protoReceipt, err := evm.ConvertReceiptToProto(receipt)
+	if err != nil {
+		return nil, NewUserError(err)
+	}
+
+	return &evm.GetTransactionReceiptReply{Receipt: protoReceipt}, nil
+}
+
+func (e *EVM) getTransactionReceiptV1(ctx context.Context, requestID string, hash common.Hash) (*capabilities.ResponseAndMetadata[*evm.GetTransactionReceiptReply], error) {
+	request := ctypes.NewEventuallyConsistentRequest(requestID, func(ctx context.Context) ([]byte, error) {
+		r, err := e.getTransactionReceiptObserve(ctx, hash)
+		if err != nil {
+			return nil, err
+		}
+		return proto.MarshalOptions{Deterministic: true}.Marshal(r.Receipt)
+	})
+
+	var receipt evm.Receipt
+	if err := e.readProto(ctx, request, &receipt); err != nil {
+		return nil, err
+	}
+	return &capabilities.ResponseAndMetadata[*evm.GetTransactionReceiptReply]{
+		Response:         &evm.GetTransactionReceiptReply{Receipt: &receipt},
+		ResponseMetadata: metering.GetResponseMetadata(metering.GetTransactionReceipt),
+	}, nil
+}
+
+func (e *EVM) getTransactionReceiptV2(ctx context.Context, meta capabilities.RequestMetadata, hash common.Hash) (*capabilities.ResponseAndMetadata[*evm.GetTransactionReceiptReply], error) {
+	request := ctypes.NewHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, metering.GetResponseMetadata(metering.GetTransactionReceipt), func(ctx context.Context) (*evm.GetTransactionReceiptReply, error) {
+		return e.getTransactionReceiptObserve(ctx, hash)
+	})
+	return readHashableRequestReport[*evm.GetTransactionReceiptReply](ctx, e.ConsensusHandler, request)
 }
 
 func (e *EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.RequestMetadata, req *evm.GetTransactionReceiptRequest) (*capabilities.ResponseAndMetadata[*evm.GetTransactionReceiptReply], caperrors.Error) {
@@ -484,25 +740,14 @@ func (e *EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.Reque
 		return nil, NewUserError(err)
 	}
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildGetTransactionReceiptInitiated(telemetryContext, common.Bytes2Hex(hash[:])))
-	request := ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
-		receipt, err := e.EVMService.GetTransactionReceipt(ctx, evmtypes.GeTransactionReceiptRequest{
-			Hash:       hash,
-			IsExternal: true,
-		})
-		if err != nil {
-			return nil, err
-		}
 
-		protoReceipt, err := evm.ConvertReceiptToProto(receipt)
-		if err != nil {
-			return nil, NewUserError(err)
-		}
-
-		return proto.MarshalOptions{Deterministic: true}.Marshal(protoReceipt)
-	})
-
-	var receipt evm.Receipt
-	if err := e.readProto(ctx, request, &receipt); err != nil {
+	var responseAndMetadata *capabilities.ResponseAndMetadata[*evm.GetTransactionReceiptReply]
+	if e.useHashBasedConsensus(ctx, meta) {
+		responseAndMetadata, err = e.getTransactionReceiptV2(ctx, meta, hash)
+	} else {
+		responseAndMetadata, err = e.getTransactionReceiptV1(ctx, requestID(meta), hash)
+	}
+	if err != nil {
 		isUserError := e.isUserError(err)
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor,
 			e.messageBuilder.BuildGetTransactionReceiptError(telemetryContext, common.Bytes2Hex(hash[:]), "Failed to get latest and finalized head", err.Error(), isUserError))
@@ -510,12 +755,49 @@ func (e *EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.Reque
 	}
 
 	monitoring.LogAndEmitSuccess(ctx, "Successfully read GetTransactionReceiptSuccess", e.lggr, e.beholderProcessor,
-		e.messageBuilder.BuildGetTransactionReceiptSuccess(telemetryContext, common.Bytes2Hex(hash[:]), &receipt))
-	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.GetTransactionReceiptReply]{
-		Response:         &evm.GetTransactionReceiptReply{Receipt: &receipt},
-		ResponseMetadata: metering.GetResponseMetadata(metering.GetTransactionReceipt),
+		e.messageBuilder.BuildGetTransactionReceiptSuccess(telemetryContext, common.Bytes2Hex(hash[:]), responseAndMetadata.Response.Receipt))
+	return responseAndMetadata, nil
+}
+
+func (e *EVM) headerByNumberV1(ctx context.Context, requestID string, needsBlockHeightConsensus bool, headerByNumber func(ctx context.Context, height *ctypes.ChainHeight) (*evm.HeaderByNumberReply, error)) (*capabilities.ResponseAndMetadata[*evm.HeaderByNumberReply], error) {
+	byteObserve := func(ctx context.Context, height *ctypes.ChainHeight) ([]byte, error) {
+		r, err := headerByNumber(ctx, height)
+		if err != nil {
+			return nil, err
+		}
+		return proto.MarshalOptions{Deterministic: true}.Marshal(r)
 	}
-	return &responseAndMetadata, nil
+	var request ctypes.Request
+	if needsBlockHeightConsensus {
+		request = ctypes.NewLockableToBlockRequest(requestID, byteObserve)
+	} else {
+		request = ctypes.NewEventuallyConsistentRequest(requestID, func(ctx context.Context) ([]byte, error) {
+			return byteObserve(ctx, nil)
+		})
+	}
+
+	var reply evm.HeaderByNumberReply
+	if err := e.readProto(ctx, request, &reply); err != nil {
+		return nil, err
+	}
+	return &capabilities.ResponseAndMetadata[*evm.HeaderByNumberReply]{
+		Response:         &reply,
+		ResponseMetadata: metering.GetResponseMetadata(metering.HeaderByNumber),
+	}, nil
+}
+
+func (e *EVM) headerByNumberV2(ctx context.Context, meta capabilities.RequestMetadata, needsBlockHeightConsensus bool,
+	headerByNumber func(ctx context.Context, height *ctypes.ChainHeight) (*evm.HeaderByNumberReply, error)) (*capabilities.ResponseAndMetadata[*evm.HeaderByNumberReply], error) {
+	var request HashableRequest[*evm.HeaderByNumberReply]
+	if needsBlockHeightConsensus {
+		request = ctypes.NewLockableToBlockHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, metering.GetResponseMetadata(metering.GetTransactionReceipt), headerByNumber)
+	} else {
+		request = ctypes.NewHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, metering.GetResponseMetadata(metering.GetTransactionReceipt), func(ctx context.Context) (*evm.HeaderByNumberReply, error) {
+			return headerByNumber(ctx, nil)
+		})
+	}
+
+	return readHashableRequestReport(ctx, e.ConsensusHandler, request)
 }
 
 func (e *EVM) HeaderByNumber(
@@ -534,9 +816,14 @@ func (e *EVM) HeaderByNumber(
 
 	monitoring.EmitInitiated(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildHeaderByNumberInitiated(telemetryContext, blockNumber.Int64()))
 
-	headerByNumber := func(ctx context.Context, blockNumber *big.Int) ([]byte, error) {
+	headerByNumber := func(ctx context.Context, height *ctypes.ChainHeight) (*evm.HeaderByNumberReply, error) {
+		callBlockNumber, err := getCallBlockNumber(blockNumber, height)
+		if err != nil {
+			return nil, fmt.Errorf("error getting call block number: %w", err)
+		}
+
 		reply, err := e.EVMService.HeaderByNumber(ctx, evmtypes.HeaderByNumberRequest{
-			Number:          blockNumber,
+			Number:          callBlockNumber,
 			ConfidenceLevel: confidenceLevel,
 		})
 		if err != nil {
@@ -552,27 +839,15 @@ func (e *EVM) HeaderByNumber(
 			return nil, NewUserError(err)
 		}
 
-		return proto.Marshal(&evm.HeaderByNumberReply{Header: header})
+		return &evm.HeaderByNumberReply{Header: header}, nil
 	}
 
-	var request ctypes.Request
-	if needsBlockHeightConsensus {
-		request = ctypes.NewLockableToBlockRequest(requestID(meta), func(ctx context.Context, height *ctypes.ChainHeight) ([]byte, error) {
-			callBlockNumber, err := getCallBlockNumber(blockNumber, height)
-			if err != nil {
-				return nil, fmt.Errorf("error getting call block number: %w", err)
-			}
-
-			return headerByNumber(ctx, callBlockNumber)
-		})
+	var responseAndMetadata *capabilities.ResponseAndMetadata[*evm.HeaderByNumberReply]
+	if e.useHashBasedConsensus(ctx, meta) {
+		responseAndMetadata, err = e.headerByNumberV2(ctx, meta, needsBlockHeightConsensus, headerByNumber)
 	} else {
-		request = ctypes.NewEventuallyConsistentRequest(requestID(meta), func(ctx context.Context) ([]byte, error) {
-			return headerByNumber(ctx, big.NewInt(blockNumber.Int64()))
-		})
+		responseAndMetadata, err = e.headerByNumberV1(ctx, requestID(meta), needsBlockHeightConsensus, headerByNumber)
 	}
-
-	var reply evm.HeaderByNumberReply
-	err = e.readProto(ctx, request, &reply)
 	if err != nil {
 		isUserError := e.isUserError(err)
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor,
@@ -580,12 +855,8 @@ func (e *EVM) HeaderByNumber(
 		return nil, GetError(err, isUserError)
 	}
 
-	monitoring.LogAndEmitSuccess(ctx, "Successfully got header by number", e.lggr, e.beholderProcessor, e.messageBuilder.BuildHeaderByNumberSuccess(telemetryContext, blockNumber.Int64(), reply.Header))
-	responseAndMetadata := capabilities.ResponseAndMetadata[*evm.HeaderByNumberReply]{
-		Response:         &reply,
-		ResponseMetadata: metering.GetResponseMetadata(metering.HeaderByNumber),
-	}
-	return &responseAndMetadata, nil
+	monitoring.LogAndEmitSuccess(ctx, "Successfully got header by number", e.lggr, e.beholderProcessor, e.messageBuilder.BuildHeaderByNumberSuccess(telemetryContext, blockNumber.Int64(), responseAndMetadata.Response.Header))
+	return responseAndMetadata, nil
 }
 
 // normalizeBlockNumber - returns:

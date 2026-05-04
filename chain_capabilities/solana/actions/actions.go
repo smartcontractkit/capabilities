@@ -34,7 +34,7 @@ type Solana struct {
 	transmissionScheduler    ts.TransmissionScheduler
 }
 
-func NewSolana(ctx context.Context, cfg *config.Config, s types.SolanaService, messageBuilder *monitoring.MessageBuilder, beholderProcessor beholder.ProtoProcessor, lggr logger.Logger, limitsFactory limits.Factory, transmissionScheduler ts.TransmissionScheduler) (*Solana, error) {
+func NewSolana(ctx context.Context, cfg *config.Config, s types.SolanaService, messageBuilder *monitoring.MessageBuilder, beholderProcessor beholder.ProtoProcessor, lggr logger.Logger, limitsFactory limits.Factory, transmissionScheduler ts.TransmissionScheduler, chainSelector uint64) (*Solana, error) {
 	client := newForwarderClient(s, lggr, cfg.CREForwarderAddress, cfg.CREForwarderState, cfg.Transmitter)
 	provider, err := newLogTransmissionInfoProvider(ctx, lggr, cfg.CREForwarderAddress, s)
 	if err != nil {
@@ -48,6 +48,7 @@ func NewSolana(ctx context.Context, cfg *config.Config, s types.SolanaService, m
 		messageBuilder:           messageBuilder,
 		beholderProcessor:        beholderProcessor,
 		transmissionScheduler:    transmissionScheduler,
+		chainSelector:            chainSelector,
 	}
 
 	return sol, sol.initLimiters(limitsFactory)
