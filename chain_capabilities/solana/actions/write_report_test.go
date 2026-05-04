@@ -679,7 +679,7 @@ func TestValidateRemainingAccountHash(t *testing.T) {
 		hash := computeAccountHash(accounts)
 		rawReport := buildRawReport(t, createTestReportMetadata(), hash, []byte("some payload"))
 
-		err := validateRemainingAccountHash(accounts, rawReport)
+		err := validateRemainingAccountsHash(accounts, rawReport)
 		require.NoError(t, err)
 	})
 
@@ -688,12 +688,12 @@ func TestValidateRemainingAccountHash(t *testing.T) {
 		hash := computeAccountHash(accounts)
 		rawReport := buildRawReport(t, createTestReportMetadata(), hash, nil)
 
-		err := validateRemainingAccountHash(accounts, rawReport)
+		err := validateRemainingAccountsHash(accounts, rawReport)
 		require.NoError(t, err)
 	})
 
 	t.Run("No remaining accounts skips validation", func(t *testing.T) {
-		err := validateRemainingAccountHash(nil, []byte("short"))
+		err := validateRemainingAccountsHash(nil, []byte("short"))
 		require.NoError(t, err)
 	})
 
@@ -703,7 +703,7 @@ func TestValidateRemainingAccountHash(t *testing.T) {
 		rawReport := buildRawReport(t, createTestReportMetadata(), hash, []byte("payload"))
 
 		differentAccounts := makeAccounts(4)
-		err := validateRemainingAccountHash(differentAccounts, rawReport)
+		err := validateRemainingAccountsHash(differentAccounts, rawReport)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "remaining account hash mismatch")
 	})
@@ -714,7 +714,7 @@ func TestValidateRemainingAccountHash(t *testing.T) {
 		rawReport := buildRawReport(t, createTestReportMetadata(), hash, []byte("payload"))
 
 		reordered := []*solcap.AccountMeta{accounts[2], accounts[0], accounts[1]}
-		err := validateRemainingAccountHash(reordered, rawReport)
+		err := validateRemainingAccountsHash(reordered, rawReport)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "remaining account hash mismatch")
 	})
@@ -722,7 +722,7 @@ func TestValidateRemainingAccountHash(t *testing.T) {
 	t.Run("Report too short", func(t *testing.T) {
 		accounts := makeAccounts(1)
 		shortReport := make([]byte, ocrtypes.MetadataLen+10) // not enough for 32-byte hash
-		err := validateRemainingAccountHash(accounts, shortReport)
+		err := validateRemainingAccountsHash(accounts, shortReport)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "raw report too short to contain account hash")
 	})

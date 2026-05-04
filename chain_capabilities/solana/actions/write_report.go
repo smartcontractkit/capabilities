@@ -312,7 +312,7 @@ func (s *Solana) validateInputsAndReportMetadata(requestMetadata capabilities.Re
 		return fmt.Errorf("workflowID in the report does not match WorkflowID in the request metadata. Report WorkflowID: %s, request WorkflowID: %s", reportMetadata.WorkflowID, requestMetadata.WorkflowID)
 	}
 
-	err = validateRemainingAccountHash(request.RemainingAccounts, request.Report.RawReport)
+	err = validateRemainingAccountsHash(request.RemainingAccounts, request.Report.RawReport)
 	if err != nil {
 		return fmt.Errorf("failed to validate remaining account hash: %w", err)
 	}
@@ -320,7 +320,7 @@ func (s *Solana) validateInputsAndReportMetadata(requestMetadata capabilities.Re
 	return nil
 }
 
-// validateRemainingAccountHash verifies that the SHA-256 account hash embedded in the
+// validateRemainingAccountsHash verifies that the SHA-256 account hash embedded in the
 // raw report's ForwarderReport section matches the remaining accounts supplied in the request.
 //
 // This mirrors the on-chain verification in the keystone-forwarder program (lib.rs):
@@ -331,7 +331,7 @@ func (s *Solana) validateInputsAndReportMetadata(requestMetadata capabilities.Re
 //
 // The remaining accounts passed here include forwarder_state and forwarder_authority
 // as the first two entries, matching the on-chain account_infos ordering.
-func validateRemainingAccountHash(remainings []*solcap.AccountMeta, rawReport []byte) error {
+func validateRemainingAccountsHash(remainings []*solcap.AccountMeta, rawReport []byte) error {
 	if len(remainings) == 0 {
 		return nil
 	}
