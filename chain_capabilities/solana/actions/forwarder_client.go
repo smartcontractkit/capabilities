@@ -84,7 +84,7 @@ func (fc *forwarderClient) InvokeOnReport(ctx context.Context, receiver solana.P
 		return nil, fmt.Errorf("failed to build report instruction: %w", err)
 	}
 
-	// meta[0] - forwarderState, meta[1] - executionState are already included in the instruction
+	// meta[0] - forwarderState, meta[1] - forwarderAuthority are already included in the instruction
 	converted, convErr := convertMetaPB(meta)
 	if convErr != nil {
 		return nil, fmt.Errorf("invalid remaining account metas: %w", convErr)
