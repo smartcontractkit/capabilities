@@ -269,6 +269,17 @@ func (s *Solana) validateInputsAndReportMetadata(requestMetadata capabilities.Re
 	if len(request.Report.Sigs) == 0 {
 		return fmt.Errorf("no signatures provided")
 	}
+	if len(request.Report.Sigs) > maxOracles {
+		return fmt.Errorf("too many signatures: got %d, max %d", len(request.Report.Sigs), maxOracles)
+	}
+	for i, sig := range request.Report.Sigs {
+		if len(sig.Signature) != signatureLen {
+			return fmt.Errorf("signature %d has invalid length: got %d, want %d", i, len(sig.Signature), signatureLen)
+		}
+	}
+	if len(request.Report.ReportContext) != reportContextLen {
+		return fmt.Errorf("report context has invalid length: got %d, want %d", len(request.Report.ReportContext), reportContextLen)
+	}
 
 	reportMetadata, err := capcommon.DecodeReportMetadata(request.Report.RawReport)
 	if err != nil {
