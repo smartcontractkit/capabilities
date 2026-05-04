@@ -24,6 +24,8 @@ import (
 	gateway_common "github.com/smartcontractkit/chainlink-common/pkg/types/gateway"
 )
 
+var testTimeout = durationpb.New(5000 * time.Millisecond)
+
 func newTestValidator(t *testing.T) common.RequestValidator {
 	lggr := logger.Test(t)
 	limitsFactory := limits.Factory{
@@ -153,7 +155,7 @@ func TestGatewayOutboundProxy_SendRequest_Success(t *testing.T) {
 		Method:        "GET",
 		Headers:       map[string]string{"X-Test": "1"}, //nolint:staticcheck // Headers deprecated
 		Body:          []byte("test"),
-		Timeout:       durationpb.New(5000 * time.Millisecond),
+		Timeout:       testTimeout,
 		CacheSettings: &http.CacheSettings{},
 	}
 
@@ -183,7 +185,7 @@ func TestGatewayOutboundProxy_SendRequest_MissingBodyToGateway(t *testing.T) {
 		Method:  "GET",
 		Headers: map[string]string{"X-Test": "1"}, //nolint:staticcheck // Headers deprecated
 		Body:    []byte("test"),
-		Timeout: durationpb.New(5000 * time.Millisecond),
+		Timeout: testTimeout,
 		CacheSettings: &http.CacheSettings{
 			Store:  true,
 			MaxAge: durationpb.New(10 * time.Second), // 10 seconds
@@ -200,33 +202,6 @@ func TestGatewayOutboundProxy_SendRequest_MissingBodyToGateway(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestGatewayOutboundProxy_SendRequest_Timeout(t *testing.T) {
-	proxy, _, _ := setupSendRequestTest(t)
-
-	metadata := capabilities.RequestMetadata{
-		WorkflowID:          "wf1",
-		WorkflowExecutionID: "exec1",
-		WorkflowOwner:       "owner1",
-	}
-	input := &http.Request{
-		Url:           "http://example.com",
-		Method:        "GET",
-		Headers:       map[string]string{"X-Test": "1"}, //nolint:staticcheck // Headers deprecated
-		Body:          []byte("test"),
-		Timeout:       durationpb.New(100 * time.Millisecond), // short timeout
-		CacheSettings: &http.CacheSettings{},
-	}
-
-	// Do not send a response, should timeout
-	start := time.Now()
-	output, _, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
-	elapsed := time.Since(start)
-	require.Error(t, err)
-	require.Nil(t, output)
-	assert.Contains(t, err.Error(), "request timed out")
-	assert.GreaterOrEqual(t, elapsed.Milliseconds(), int64(100))
-}
-
 func TestGatewayOutboundProxy_SendRequest_ExecutionError(t *testing.T) {
 	proxy, _, readyCh := setupSendRequestTest(t)
 
@@ -240,7 +215,7 @@ func TestGatewayOutboundProxy_SendRequest_ExecutionError(t *testing.T) {
 		Method:        "GET",
 		Headers:       map[string]string{"X-Test": "1"}, //nolint:staticcheck // Headers deprecated
 		Body:          []byte("test"),
-		Timeout:       durationpb.New(5000 * time.Millisecond),
+		Timeout:       testTimeout,
 		CacheSettings: &http.CacheSettings{},
 	}
 
@@ -271,7 +246,7 @@ func TestGatewayOutboundProxy_SendRequest_UserErrors(t *testing.T) {
 			Method:        "GET",
 			Headers:       map[string]string{"X-Test": "1"}, //nolint:staticcheck // Headers deprecated
 			Body:          []byte("test"),
-			Timeout:       durationpb.New(5000 * time.Millisecond),
+			Timeout:       testTimeout,
 			CacheSettings: &http.CacheSettings{},
 		}
 
@@ -301,7 +276,7 @@ func TestGatewayOutboundProxy_SendRequest_UserErrors(t *testing.T) {
 			Method:        "GET",
 			Headers:       map[string]string{"X-Test": "1"}, //nolint:staticcheck // Headers deprecated
 			Body:          []byte("test"),
-			Timeout:       durationpb.New(5000 * time.Millisecond),
+			Timeout:       testTimeout,
 			CacheSettings: &http.CacheSettings{},
 		}
 
@@ -332,7 +307,7 @@ func TestGatewayOutboundProxy_SendRequest_UserErrors(t *testing.T) {
 			Method:        "GET",
 			Headers:       map[string]string{"X-Test": "1"}, //nolint:staticcheck // Headers deprecated
 			Body:          []byte("test"),
-			Timeout:       durationpb.New(5000 * time.Millisecond),
+			Timeout:       testTimeout,
 			CacheSettings: &http.CacheSettings{},
 		}
 
@@ -345,6 +320,54 @@ func TestGatewayOutboundProxy_SendRequest_UserErrors(t *testing.T) {
 
 		_, _, err := proxy.SendRequest(t.Context(), metadata, input, time.Now())
 		require.Error(t, err)
+
+		var userErr UserError
+		assert.True(t, errors.As(err, &userErr))
+	})
+
+	// Ensure that canceling the SendRequest context before a gateway response
+	// is a UserError.
+	t.Run("gateway response timeout returns UserError", func(t *testing.T) {
+		proxy, _, readyCh := setupSendRequestTest(t)
+
+		metadata := capabilities.RequestMetadata{
+			WorkflowID:          "wf1",
+			WorkflowExecutionID: "exec1",
+			WorkflowOwner:       "owner1",
+		}
+		input := &http.Request{
+			Url:    "http://example.com",
+			Method: "GET",
+			MultiHeaders: map[string]*http.HeaderValues{
+				"X-Test": {
+					Values: []string{"1"},
+				},
+			},
+			Body:          []byte("test"),
+			Timeout:       testTimeout,
+			CacheSettings: &http.CacheSettings{},
+		}
+
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+
+		errCh := make(chan error, 1)
+		var output *http.Response
+		go func() {
+			var err error
+			output, _, err = proxy.SendRequest(ctx, metadata, input, time.Now())
+			errCh <- err
+		}()
+
+		// cancel after SendToGateway ran
+		<-readyCh
+		cancel()
+
+		err := <-errCh
+		require.Error(t, err)
+		require.Nil(t, output)
+		assert.Contains(t, err.Error(), ErrMsgGatewayResponseWait)
+		assert.Contains(t, err.Error(), "context canceled")
 
 		var userErr UserError
 		assert.True(t, errors.As(err, &userErr))

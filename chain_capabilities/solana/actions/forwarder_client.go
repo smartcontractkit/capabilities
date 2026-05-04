@@ -3,9 +3,13 @@ package actions
 import (
 	"context"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 
 	"github.com/gagliardetto/solana-go"
+
+	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
+
 	solcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -25,7 +29,7 @@ type forwarderClient struct {
 }
 
 func newForwarderClient(solService types.SolanaService, lggr logger.Logger, forwarderProgramID, forwarderState, transmitter solana.PublicKey) CREForwarderClient {
-	ks_forwarder.SetProgramID(forwarderProgramID)
+	ks_forwarder.ProgramID = forwarderProgramID
 	return &forwarderClient{
 		lggr:               lggr,
 		SolanaService:      solService,
@@ -46,7 +50,7 @@ func (fc *forwarderClient) InvokeOnReport(ctx context.Context, receiver solana.P
 	}
 
 	var configPDA solana.PublicKey
-	configPDA, err = withQuickRetry(ctx, fc.lggr, func(ctx context.Context) (solana.PublicKey, error) {
+	configPDA, err = capcommon.WithQuickRetry(ctx, fc.lggr, func(ctx context.Context) (solana.PublicKey, error) {
 		return fc.getOracleConfigPDA(ctx, reportMetadata.DONID, reportMetadata.DONConfigVersion)
 	})
 	if err != nil {
@@ -66,7 +70,7 @@ func (fc *forwarderClient) InvokeOnReport(ctx context.Context, receiver solana.P
 		return nil, fmt.Errorf("failed to derive forwarder authority: %w", err)
 	}
 
-	inst := ks_forwarder.NewReportInstruction(
+	ix, err := ks_forwarder.NewReportInstruction(
 		toPayload(report),
 		fc.forwarderState,
 		configPDA,
@@ -76,12 +80,21 @@ func (fc *forwarderClient) InvokeOnReport(ctx context.Context, receiver solana.P
 		receiver,
 		solana.SystemProgramID,
 	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build report instruction: %w", err)
+	}
 
-	// meta[0] - forwarderState, meta[1] - executionState are already included
-	inst.AccountMetaSlice = append(inst.AccountMetaSlice, convertMetaPB(meta)[2:]...)
-	ix, instErr := inst.ValidateAndBuild()
-	if instErr != nil {
-		return nil, fmt.Errorf("failed to validate and build report instruction: %w", instErr)
+	// meta[0] - forwarderState, meta[1] - executionState are already included in the instruction
+	converted, convErr := convertMetaPB(meta)
+	if convErr != nil {
+		return nil, fmt.Errorf("invalid remaining account metas: %w", convErr)
+	}
+	genericIX, ok := ix.(*solana.GenericInstruction)
+	if !ok {
+		return nil, fmt.Errorf("expected *solana.GenericInstruction from NewReportInstruction, got %T", ix)
+	}
+	for _, acc := range converted[2:] {
+		genericIX.AccountValues = append(genericIX.AccountValues, acc)
 	}
 
 	// we can encode with empty block hash here, it will be updated with recent blockhash later
@@ -103,13 +116,13 @@ func (fc *forwarderClient) InvokeOnReport(ctx context.Context, receiver solana.P
 		}
 	}
 
-	reply, sendErr := fc.SolanaService.SubmitTransaction(ctx, soltypes.SubmitTransactionRequest{
+	reply, sendErr := fc.SubmitTransaction(ctx, soltypes.SubmitTransactionRequest{
 		EncodedTransaction: encodedTX,
 		Receiver:           soltypes.PublicKey(receiver),
 		Cfg:                resolvedComputeConfig,
 	})
 	if sendErr != nil {
-		return nil, fmt.Errorf("failed to submit transaciton: %w", sendErr)
+		return nil, fmt.Errorf("failed to submit transactions: %w", sendErr)
 	}
 
 	return reply, nil
@@ -127,9 +140,12 @@ func (fc *forwarderClient) deriveForwarderAuthority(receiverProgram solana.Publi
 }
 
 func (fc *forwarderClient) getOracleConfigPDA(ctx context.Context, workflowDonID, configVersion uint32) (solana.PublicKey, error) {
-	oracleConfigPDA := getConfigPDA(fc.forwarderState, workflowDonID, configVersion, fc.forwarderProgramID)
+	oracleConfigPDA, err := getConfigPDA(fc.forwarderState, workflowDonID, configVersion, fc.forwarderProgramID)
+	if err != nil {
+		return solana.PublicKey{}, fmt.Errorf("failed to calculate oracle config PDA: %w", err)
+	}
 
-	oracleConfigAccount, err := fc.SolanaService.GetAccountInfoWithOpts(ctx, soltypes.GetAccountInfoRequest{
+	oracleConfigAccount, err := fc.GetAccountInfoWithOpts(ctx, soltypes.GetAccountInfoRequest{
 		Account: soltypes.PublicKey(oracleConfigPDA),
 		Opts: &soltypes.GetAccountInfoOpts{
 			Commitment: soltypes.CommitmentProcessed,
@@ -164,10 +180,9 @@ func toPayload(report *sdk.ReportResponse) []byte {
 	ret = append(ret, report.ReportContext...)
 
 	return ret
-
 }
 
-func getConfigPDA(statePubkey solana.PublicKey, donID uint32, configVersion uint32, programID solana.PublicKey) solana.PublicKey {
+func getConfigPDA(statePubkey solana.PublicKey, donID uint32, configVersion uint32, programID solana.PublicKey) (solana.PublicKey, error) {
 	configID := getConfigID(donID, configVersion)
 	reqIDBytes := make([]byte, 8)
 	binary.BigEndian.PutUint64(reqIDBytes, configID)
@@ -178,23 +193,41 @@ func getConfigPDA(statePubkey solana.PublicKey, donID uint32, configVersion uint
 		reqIDBytes,
 	}
 
-	addr, _, _ := solana.FindProgramAddress(seeds, programID)
-	return addr
+	addr, _, err := solana.FindProgramAddress(seeds, programID)
+	return addr, err
 }
 
 func getConfigID(donID uint32, configVersion uint32) uint64 {
 	return (uint64(donID) << 32) | uint64(configVersion)
 }
 
-func convertMetaPB(m []*solcap.AccountMeta) []*solana.AccountMeta {
-	ret := make([]*solana.AccountMeta, 0)
+// validateRemainingAccountMetas ensures each account meta has a 32-byte public key so that
+// solana.PublicKey conversion cannot panic on short input.
+func validateRemainingAccountMetas(accounts []*solcap.AccountMeta) error {
+	for i, acc := range accounts {
+		if acc == nil {
+			return fmt.Errorf("remaining account %d: nil account meta", i)
+		}
+		pk := acc.GetPublicKey()
+		if len(pk) != solana.PublicKeyLength {
+			return fmt.Errorf("remaining account %d: public key must be exactly %d bytes, got %d (hex: %s)", i, solana.PublicKeyLength, len(pk), hex.EncodeToString(pk))
+		}
+	}
+	return nil
+}
+
+func convertMetaPB(m []*solcap.AccountMeta) ([]*solana.AccountMeta, error) {
+	if err := validateRemainingAccountMetas(m); err != nil {
+		return nil, err
+	}
+	ret := make([]*solana.AccountMeta, 0, len(m))
 	for _, acc := range m {
 		ret = append(ret, &solana.AccountMeta{
 			PublicKey:  solana.PublicKey(acc.PublicKey),
 			IsWritable: acc.IsWritable,
 		})
 	}
-	return ret
+	return ret, nil
 }
 
 func (fc *forwarderClient) deriveExecutionState(transmissionID [32]byte) (solana.PublicKey, error) {
