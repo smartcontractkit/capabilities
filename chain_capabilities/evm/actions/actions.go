@@ -63,7 +63,7 @@ type EVM struct {
 	reportSizeLimit                            limits.BoundLimiter[commoncfg.Size]
 	txGasLimit                                 limits.BoundLimiter[uint64]
 	featureChainCapabilityHashBasedOCRActiveAt limits.RangeLimiter[commoncfg.Timestamp]
-	writeReportL1FeeActive limits.RangeLimiter[commoncfg.Timestamp]
+	writeReportL1FeeActive                     limits.RangeLimiter[commoncfg.Timestamp]
 
 	transmissionScheduler ts.TransmissionScheduler
 }
