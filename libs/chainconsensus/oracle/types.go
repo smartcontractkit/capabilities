@@ -13,5 +13,15 @@ type BlocksProvider interface {
 type RequestsHandler interface {
 	GetRequestIDs(batchSize int) ([]string, error)
 	GetRequest(id string) (types.Request, bool)
-	CompleteRequest(id string, report *types.RequestReport) error
+	CompleteProtoRequest(id string, report *types.RequestReport) error
+	CompleteHashableRequest(id string, report *types.HashableRequestReport) error
 }
+
+const (
+	reportInfoKeyReportType = "reportType"
+	reportInfoKeyRequestID  = "requestID"
+)
+const (
+	reportTypeProtoReport = "proto"
+	reportTypeHashable    = "hashable"
+)

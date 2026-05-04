@@ -255,3 +255,32 @@ func TestGetFailedTransmissionInfo(t *testing.T) {
 		require.Contains(t, err.Error(), "no matching failed transaction found")
 	})
 }
+
+func TestPayloadMatching(t *testing.T) {
+	t.Parallel()
+
+	transmitter := aptos_sdk.AccountAddress{0xEE}
+
+	t.Run("different report body does not match", func(t *testing.T) {
+		mockClient := NewCREForwarderClient_mock(t)
+		targetRM, _, _ := newReportFixture(t)
+		requestStartTime := time.Now()
+		thr := newTestTxInfoRetriever(t, mockClient, targetRM, requestStartTime)
+
+		// Create a tx with the same metadata IDs but a different report body
+		alteredRM := targetRM
+		alteredRM.Timestamp = targetRM.Timestamp + 999 // changes the encoded bytes
+
+		// Use old timestamp so phase 2 pagination is skipped → returns not found immediately
+		oldTs := requestStartTime.Add(-2 * time.Minute).UnixMicro()
+		mismatchTx := buildFakeTransaction(t, "0xmismatch", false, 100, oldTs, alteredRM)
+
+		mockClient.On("GetTransmitterTransactions", mock.Anything, transmitter, mock.Anything, mock.Anything).
+			Return([]*aptostypes.Transaction{mismatchTx}, nil)
+
+		_, err := thr.GetFailedTransmissionInfo(t.Context(), transmitter)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "no matching failed transaction found")
+	})
+
+}

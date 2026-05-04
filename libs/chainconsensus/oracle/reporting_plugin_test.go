@@ -1,6 +1,9 @@
 package oracle
 
 import (
+	"bytes"
+	"context"
+	"errors"
 	"math/big"
 	"testing"
 
@@ -17,12 +20,14 @@ import (
 
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus/test"
 
+	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/tests"
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus/oracle/mocks"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
+	tmocks "github.com/smartcontractkit/capabilities/libs/chainconsensus/types/mocks"
 )
 
 func TestValidateChainHeight(t *testing.T) {
@@ -132,7 +137,7 @@ func TestObservation(t *testing.T) {
 		}
 		require.Empty(t, cmp.Diff(expectedObservation, &observation, protocmp.Transform()))
 	})
-	t.Run("Returns an error if request is of unknown type", func(t *testing.T) {
+	t.Run("Logs an error if GetOCRObservation fails", func(t *testing.T) {
 		blocksProvider := newBlockProvider(t, &types.ChainHeight{
 			Latest:    10,
 			Safe:      9,
@@ -140,10 +145,17 @@ func TestObservation(t *testing.T) {
 		})
 		requestsStore := mocks.NewRequestsHandler(t)
 		requestsStore.EXPECT().GetRequestIDs(mock.Anything).Return(nil, nil).Once()
-		plugin := newReportingPlugin(Config{MaxBatchSize: 1}, logger.Sugared(logger.Test(t)), blocksProvider, requestsStore, test.GetConsensusMetrics(t))
-		requestsStore.EXPECT().GetRequest("1").Return(types.Request(nil), true)
-		_, err := plugin.Observation(t.Context(), ocr3types.OutcomeContext{}, mustQuery(t, []string{"1"}))
-		require.ErrorContains(t, err, "failed to observe request: unsupported observation type: <nil>")
+		lggr, observedLogs := logger.TestObservedSugared(t, zapcore.ErrorLevel)
+		plugin := newReportingPlugin(Config{MaxBatchSize: 1}, lggr, blocksProvider, requestsStore, test.GetConsensusMetrics(t))
+		req := tmocks.NewRequest(t)
+		req.EXPECT().GetOCRObservation().Return(nil, errors.New("ocr observation error")).Once()
+		requestsStore.EXPECT().GetRequest("1").Return(req, true)
+		rawObs, err := plugin.Observation(t.Context(), ocr3types.OutcomeContext{}, mustQuery(t, []string{"1"}))
+		require.Nil(t, err)
+		tests.RequireLogMessage(t, observedLogs, "Failed to get observation for a request - skipping")
+		var obs types.Observation
+		require.NoError(t, proto.Unmarshal(rawObs, &obs))
+		require.Empty(t, obs.Observations)
 	})
 	t.Run("Happy path", func(t *testing.T) {
 		expectedChainHeight := &types.ChainHeight{
@@ -178,8 +190,28 @@ func TestObservation(t *testing.T) {
 		id = "aggregatable_request_without_observation"
 		requestsStore.EXPECT().GetRequest(id).Return(types.NewAggregatableRequest(id, nil), true).Once()
 
+		testMetadata := commoncap.ResponseMetadata{
+			Metering: []commoncap.MeteringNodeDetail{
+				{SpendUnit: "test-unit", SpendValue: "1"},
+			},
+		}
+		id = "wf_h:ref_h"
+		hashableWithObs := types.NewHashableRequest("wf_h", "ref_h", testMetadata, func(context.Context) (*emptypb.Empty, error) {
+			return nil, nil
+		})
+		hashableWithObs.SetObservation(&emptypb.Empty{})
+		expectedHashableObs, err := hashableWithObs.GetOCRObservation()
+		require.NoError(t, err)
+		requestsStore.EXPECT().GetRequest(id).Return(hashableWithObs, true).Once()
+
+		lockableHashableID := "wf_lth:ref_lth"
+		lockableHashable := types.NewLockableToBlockHashableRequest("wf_lth", "ref_lth", testMetadata, func(context.Context, *types.ChainHeight) (*emptypb.Empty, error) {
+			return nil, nil
+		})
+		requestsStore.EXPECT().GetRequest(lockableHashableID).Return(lockableHashable, true).Once()
+
 		plugin := newReportingPlugin(Config{MaxBatchSize: 50, MaxObservationLength: 1000}, logger.Sugared(logger.Test(t)), blocksProvider, requestsStore, test.GetConsensusMetrics(t))
-		query := mustQuery(t, []string{"request_not_present_in_store", "request_without_observation", "request_with_observation", "lockable_request", "aggregatable_request", "aggregatable_request_without_observation"})
+		query := mustQuery(t, []string{"request_not_present_in_store", "request_without_observation", "request_with_observation", "lockable_request", "aggregatable_request", "aggregatable_request_without_observation", id, lockableHashableID})
 		rawObservation, err := plugin.Observation(t.Context(), ocr3types.OutcomeContext{}, query)
 		require.NoError(t, err)
 		var observation types.Observation
@@ -198,6 +230,10 @@ func TestObservation(t *testing.T) {
 						Method: types.AggregationMethodFPlusOneHighest,
 						Value:  newDecimal(123, 2),
 					}},
+				},
+				id: expectedHashableObs,
+				lockableHashableID: {
+					Observation: &types.RequestObservation_LockableToBlock{LockableToBlock: &emptypb.Empty{}},
 				},
 			},
 		}
@@ -617,38 +653,44 @@ func TestOutcome(t *testing.T) {
 		},
 		{
 			name:       "happy path",
-			requestIDs: []string{"request_with_common_value", "request_without_common_value", "lockable_request", "request_known_to_insufficient_number_of_nodes", "aggregatable_request"},
-			nodesObservations: []types.Observation{
-				{
-					// node1
-					Observations: map[string]*types.RequestObservation{
-						"request_with_common_value":                     {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
-						"request_without_common_value":                  {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
-						"lockable_request":                              {Observation: &types.RequestObservation_LockableToBlock{LockableToBlock: &emptypb.Empty{}}},
-						"request_known_to_insufficient_number_of_nodes": {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
-						"aggregatable_request":                          newAggregatableObservation(123, 2),
+			requestIDs: []string{"request_with_common_value", "request_without_common_value", "lockable_request", "hashable_request", "request_known_to_insufficient_number_of_nodes", "aggregatable_request"},
+			nodesObservations: func() []types.Observation {
+				commonHash := bytes.Repeat([]byte{0x42}, types.HashLength)
+				return []types.Observation{
+					{
+						// node1
+						Observations: map[string]*types.RequestObservation{
+							"request_with_common_value":                     {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
+							"request_without_common_value":                  {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
+							"lockable_request":                              {Observation: &types.RequestObservation_LockableToBlock{LockableToBlock: &emptypb.Empty{}}},
+							"hashable_request":                              {Observation: &types.RequestObservation_Hashable{Hashable: commonHash}},
+							"request_known_to_insufficient_number_of_nodes": {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
+							"aggregatable_request":                          newAggregatableObservation(123, 2),
+						},
 					},
-				},
-				{
-					// node2
-					Observations: map[string]*types.RequestObservation{
-						"request_with_common_value":                     {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
-						"request_without_common_value":                  {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value2")}},
-						"lockable_request":                              {Observation: &types.RequestObservation_LockableToBlock{LockableToBlock: &emptypb.Empty{}}},
-						"request_known_to_insufficient_number_of_nodes": {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
-						"aggregatable_request":                          newAggregatableObservation(124, 2),
+					{
+						// node2
+						Observations: map[string]*types.RequestObservation{
+							"request_with_common_value":                     {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
+							"request_without_common_value":                  {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value2")}},
+							"lockable_request":                              {Observation: &types.RequestObservation_LockableToBlock{LockableToBlock: &emptypb.Empty{}}},
+							"hashable_request":                              {Observation: &types.RequestObservation_Hashable{Hashable: commonHash}},
+							"request_known_to_insufficient_number_of_nodes": {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
+							"aggregatable_request":                          newAggregatableObservation(124, 2),
+						},
 					},
-				},
-				{
-					// node3
-					Observations: map[string]*types.RequestObservation{
-						"request_with_common_value":    {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
-						"request_without_common_value": {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value3")}},
-						"lockable_request":             {Observation: &types.RequestObservation_LockableToBlock{LockableToBlock: &emptypb.Empty{}}},
-						"aggregatable_request":         newAggregatableObservation(124, 3),
+					{
+						// node3
+						Observations: map[string]*types.RequestObservation{
+							"request_with_common_value":    {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value1")}},
+							"request_without_common_value": {Observation: &types.RequestObservation_EventuallyConsistent{EventuallyConsistent: []byte("value3")}},
+							"lockable_request":             {Observation: &types.RequestObservation_LockableToBlock{LockableToBlock: &emptypb.Empty{}}},
+							"hashable_request":             {Observation: &types.RequestObservation_Hashable{Hashable: commonHash}},
+							"aggregatable_request":         newAggregatableObservation(124, 3),
+						},
 					},
-				},
-			},
+				}
+			}(),
 			expectedOutcome: &types.Outcome{
 				ChainHeight: chainHeight,
 				Outcomes: []*types.RequestOutcome{
@@ -659,6 +701,10 @@ func TestOutcome(t *testing.T) {
 					{
 						RequestID: "lockable_request",
 						Outcome:   &types.RequestOutcome_LockableToBlock{LockableToBlock: &emptypb.Empty{}},
+					},
+					{
+						RequestID: "hashable_request",
+						Outcome:   &types.RequestOutcome_Hashable{Hashable: bytes.Repeat([]byte{0x42}, types.HashLength)},
 					},
 					{
 						RequestID: "aggregatable_request",
@@ -673,9 +719,10 @@ func TestOutcome(t *testing.T) {
 			lggr, observed := logger.TestObserved(t, zapcore.DebugLevel)
 			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1, N: 4}}, logger.Sugared(lggr), nil, nil, test.GetConsensusMetrics(t))
 			var rawAOs []ocrtypes.AttributedObservation
-			for _, nodesObservations := range tc.nodesObservations {
+			for i := range tc.nodesObservations {
+				nodesObservations := &tc.nodesObservations[i]
 				nodesObservations.ChainHeight = chainHeight
-				rawObservation, err := proto.Marshal(&nodesObservations)
+				rawObservation, err := proto.Marshal(nodesObservations)
 				require.NoError(t, err)
 				rawAOs = append(rawAOs, ocrtypes.AttributedObservation{Observation: rawObservation})
 			}
@@ -746,7 +793,7 @@ func TestAgreeOnEventuallyConsistentValue(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1, N: 4}}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t))
-			var nodesObservations []attributedObservation
+			nodesObservations := make([]attributedObservation, 0, len(tc.nodesObservations))
 			for i, ob := range tc.nodesObservations {
 				nodesObservations = append(nodesObservations, attributedObservation{
 					// G115: integer overflow conversion int -> uint8
@@ -760,6 +807,106 @@ func TestAgreeOnEventuallyConsistentValue(t *testing.T) {
 				})
 			}
 			value, err := plugin.agreeOnEventuallyConsistentValue(id, nodesObservations)
+			if tc.expectedError == "" {
+				require.NoError(t, err)
+				require.Equal(t, tc.expectedValue, value)
+			} else {
+				require.EqualError(t, err, tc.expectedError)
+			}
+		})
+	}
+}
+
+func TestAgreeOnHashableValue(t *testing.T) {
+	const id = "request_1"
+	hash32 := func(b byte) []byte {
+		return bytes.Repeat([]byte{b}, types.HashLength)
+	}
+	testCases := []struct {
+		name              string
+		nodesObservations [][]byte // each entry is types.HashLength bytes (interpretation depends on flags below)
+		useWrongType      []bool   // if true, use EventuallyConsistent instead of Hashable
+		wrongLength       []bool   // if true, use Hashable with 31-byte payload (invalid length)
+		expectedError     string
+		expectedValue     []byte
+	}{
+		{
+			name: "insufficient total number of observations",
+			nodesObservations: [][]byte{
+				hash32(1),
+				hash32(1),
+			},
+			expectedError: "insufficient number of observations: expected 3, got 2",
+		},
+		{
+			name: "insufficient number of identical observations",
+			nodesObservations: [][]byte{
+				hash32(1),
+				hash32(2),
+				hash32(3),
+				hash32(4),
+			},
+			expectedError: "insufficient number of identical observations: expected 2, got 1",
+		},
+		{
+			name: "prefer hash observed by oracle with lowest id when counts tie",
+			nodesObservations: [][]byte{
+				hash32(1),
+				hash32(2),
+				hash32(2),
+				hash32(1),
+			},
+			expectedValue: hash32(1),
+		},
+		{
+			name: "happy path",
+			nodesObservations: [][]byte{
+				hash32(0xAA),
+				hash32(0xBB),
+				hash32(0xBB),
+				hash32(0xDD),
+			},
+			expectedValue: hash32(0xBB),
+		},
+		{
+			name: "wrong observation type and wrong length are ignored",
+			nodesObservations: [][]byte{
+				hash32(1),
+				hash32(1),
+				hash32(2),
+				hash32(1),
+			},
+			useWrongType:  []bool{true, false, false, false},
+			wrongLength:   []bool{false, false, true, false},
+			expectedValue: hash32(1),
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1, N: 4}}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t))
+			nodesObservations := make([]attributedObservation, 0, len(tc.nodesObservations))
+			for i, h := range tc.nodesObservations {
+				var ro *types.RequestObservation
+				switch {
+				case len(tc.useWrongType) > i && tc.useWrongType[i]:
+					ro = &types.RequestObservation{Observation: &types.RequestObservation_LockableToBlock{LockableToBlock: &emptypb.Empty{}}}
+				case len(tc.wrongLength) > i && tc.wrongLength[i]:
+					ro = &types.RequestObservation{Observation: &types.RequestObservation_Hashable{Hashable: h[:types.HashLength-1]}}
+				default:
+					ro = &types.RequestObservation{Observation: &types.RequestObservation_Hashable{Hashable: h}}
+				}
+				nodesObservations = append(nodesObservations, attributedObservation{
+					// G115: integer overflow conversion int -> uint8
+					//nolint:gosec
+					Observer: commontypes.OracleID(i),
+					Observation: &types.Observation{
+						Observations: map[string]*types.RequestObservation{
+							id: ro,
+						},
+					},
+				})
+			}
+			value, err := plugin.agreeOnHashableValue(id, nodesObservations)
 			if tc.expectedError == "" {
 				require.NoError(t, err)
 				require.Equal(t, tc.expectedValue, value)
@@ -835,11 +982,21 @@ func TestAgreeOnObservationType(t *testing.T) {
 			},
 			expectedValue: types.ObservationType_EVENTUALLY_CONSISTENT,
 		},
+		{
+			name: "Happy path hashable",
+			observations: []types.RequestObservation{
+				{Observation: &types.RequestObservation_Error{}},
+				{Observation: &types.RequestObservation_Hashable{}},
+				{Observation: &types.RequestObservation_Hashable{}},
+				{Observation: &types.RequestObservation_LockableToBlock{}},
+			},
+			expectedValue: types.ObservationType_HASHABLE,
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1, N: 4}}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t))
-			var nodesObservations []attributedObservation
+			nodesObservations := make([]attributedObservation, 0, len(tc.observations))
 			for i := range tc.observations {
 				ob := &tc.observations[i]
 				nodesObservations = append(nodesObservations, attributedObservation{
@@ -946,7 +1103,7 @@ func TestAggregateValue(t *testing.T) {
 		const id = "id"
 		t.Run(tc.name, func(t *testing.T) {
 			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1, N: 4}}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t))
-			var nodesObservations []attributedObservation
+			nodesObservations := make([]attributedObservation, 0, len(tc.observations))
 			for i := range tc.observations {
 				ob := tc.observations[i]
 				nodesObservations = append(nodesObservations, attributedObservation{
@@ -970,15 +1127,21 @@ func TestAggregateValue(t *testing.T) {
 }
 
 func TestReports(t *testing.T) {
-	info, err := createReportInfo()
-	if err != nil {
-		t.Fatalf("failed to create relay info: %v", err)
-	}
+	info, err := marshalInfo(map[string]any{
+		"keyBundleName": "evm",
+	})
+	require.NoError(t, err)
+	hashableRequestInfo, err := marshalInfo(map[string]any{
+		"keyBundleName":         "evm",
+		reportInfoKeyReportType: reportTypeHashable,
+		reportInfoKeyRequestID:  "request_4",
+	})
+	require.NoError(t, err)
 	testCases := []struct {
-		name            string
-		outcome         *types.Outcome
-		expectedError   string
-		expectedReports []ocr3types.ReportPlus[[]byte]
+		name             string
+		outcome          *types.Outcome
+		expectedErrorLog string
+		expectedReports  []ocr3types.ReportPlus[[]byte]
 	}{
 		{
 			name: "successful reports generation",
@@ -995,6 +1158,10 @@ func TestReports(t *testing.T) {
 					{
 						RequestID: "request_3",
 						Outcome:   &types.RequestOutcome_Aggregatable{Aggregatable: newDecimal(124, 2)},
+					},
+					{
+						RequestID: "request_4",
+						Outcome:   &types.RequestOutcome_Hashable{Hashable: bytes.Repeat([]byte{0x42}, types.HashLength)},
 					},
 				},
 				ChainHeight: &types.ChainHeight{
@@ -1031,6 +1198,12 @@ func TestReports(t *testing.T) {
 						Info: info,
 					},
 				},
+				{
+					ReportWithInfo: ocr3types.ReportWithInfo[[]byte]{
+						Report: bytes.Repeat([]byte{0x42}, types.HashLength),
+						Info:   hashableRequestInfo,
+					},
+				},
 			},
 		},
 		{
@@ -1043,17 +1216,20 @@ func TestReports(t *testing.T) {
 					},
 				},
 			},
-			expectedError: "unsupported observation type: <nil>",
+			expectedErrorLog: "Failed to get report and info for request outcome, skipping report generation for this request",
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			rp := newReportingPlugin(Config{}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t))
+			lggr, observer := logger.TestObservedSugared(t, zapcore.ErrorLevel)
+			rp := newReportingPlugin(Config{}, lggr, nil, nil, test.GetConsensusMetrics(t))
 
 			reports, err := rp.Reports(t.Context(), 1, mustMarshalProto(tc.outcome))
-			if tc.expectedError != "" {
-				require.EqualError(t, err, tc.expectedError)
+			if tc.expectedErrorLog != "" {
+				tests.RequireLogMessage(t, observer, tc.expectedErrorLog)
+				require.Empty(t, reports)
+				require.Nil(t, err)
 			} else {
 				require.NoError(t, err)
 				require.Len(t, reports, len(tc.expectedReports))

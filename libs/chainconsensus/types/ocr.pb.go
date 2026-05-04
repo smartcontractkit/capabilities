@@ -31,6 +31,7 @@ const (
 	ObservationType_LOCKABLE_TO_BLOCK     ObservationType = 2
 	ObservationType_AGGREGATABLE          ObservationType = 3
 	ObservationType_ERROR                 ObservationType = 4
+	ObservationType_HASHABLE              ObservationType = 5
 )
 
 // Enum value maps for ObservationType.
@@ -41,6 +42,7 @@ var (
 		2: "LOCKABLE_TO_BLOCK",
 		3: "AGGREGATABLE",
 		4: "ERROR",
+		5: "HASHABLE",
 	}
 	ObservationType_value = map[string]int32{
 		"UNKNOWN":               0,
@@ -48,6 +50,7 @@ var (
 		"LOCKABLE_TO_BLOCK":     2,
 		"AGGREGATABLE":          3,
 		"ERROR":                 4,
+		"HASHABLE":              5,
 	}
 )
 
@@ -242,6 +245,7 @@ type RequestObservation struct {
 	//	*RequestObservation_EventuallyConsistent
 	//	*RequestObservation_Aggregatable
 	//	*RequestObservation_Error
+	//	*RequestObservation_Hashable
 	Observation   isRequestObservation_Observation `protobuf_oneof:"observation"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -320,6 +324,15 @@ func (x *RequestObservation) GetError() []byte {
 	return nil
 }
 
+func (x *RequestObservation) GetHashable() []byte {
+	if x != nil {
+		if x, ok := x.Observation.(*RequestObservation_Hashable); ok {
+			return x.Hashable
+		}
+	}
+	return nil
+}
+
 type isRequestObservation_Observation interface {
 	isRequestObservation_Observation()
 }
@@ -340,6 +353,10 @@ type RequestObservation_Error struct {
 	Error []byte `protobuf:"bytes,4,opt,name=error,proto3,oneof"`
 }
 
+type RequestObservation_Hashable struct {
+	Hashable []byte `protobuf:"bytes,5,opt,name=hashable,proto3,oneof"`
+}
+
 func (*RequestObservation_LockableToBlock) isRequestObservation_Observation() {}
 
 func (*RequestObservation_EventuallyConsistent) isRequestObservation_Observation() {}
@@ -347,6 +364,8 @@ func (*RequestObservation_EventuallyConsistent) isRequestObservation_Observation
 func (*RequestObservation_Aggregatable) isRequestObservation_Observation() {}
 
 func (*RequestObservation_Error) isRequestObservation_Observation() {}
+
+func (*RequestObservation_Hashable) isRequestObservation_Observation() {}
 
 type Observation struct {
 	state             protoimpl.MessageState         `protogen:"open.v1"`
@@ -461,6 +480,7 @@ type RequestOutcome struct {
 	//	*RequestOutcome_EventuallyConsistent
 	//	*RequestOutcome_Aggregatable
 	//	*RequestOutcome_Error
+	//	*RequestOutcome_Hashable
 	Outcome       isRequestOutcome_Outcome `protobuf_oneof:"outcome"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -546,6 +566,15 @@ func (x *RequestOutcome) GetError() *RequestError {
 	return nil
 }
 
+func (x *RequestOutcome) GetHashable() []byte {
+	if x != nil {
+		if x, ok := x.Outcome.(*RequestOutcome_Hashable); ok {
+			return x.Hashable
+		}
+	}
+	return nil
+}
+
 type isRequestOutcome_Outcome interface {
 	isRequestOutcome_Outcome()
 }
@@ -566,6 +595,10 @@ type RequestOutcome_Error struct {
 	Error *RequestError `protobuf:"bytes,5,opt,name=error,proto3,oneof"`
 }
 
+type RequestOutcome_Hashable struct {
+	Hashable []byte `protobuf:"bytes,6,opt,name=hashable,proto3,oneof"`
+}
+
 func (*RequestOutcome_LockableToBlock) isRequestOutcome_Outcome() {}
 
 func (*RequestOutcome_EventuallyConsistent) isRequestOutcome_Outcome() {}
@@ -573,6 +606,8 @@ func (*RequestOutcome_EventuallyConsistent) isRequestOutcome_Outcome() {}
 func (*RequestOutcome_Aggregatable) isRequestOutcome_Outcome() {}
 
 func (*RequestOutcome_Error) isRequestOutcome_Outcome() {}
+
+func (*RequestOutcome_Hashable) isRequestOutcome_Outcome() {}
 
 type Outcome struct {
 	state             protoimpl.MessageState `protogen:"open.v1"`
@@ -771,12 +806,13 @@ const file_ocr_proto_rawDesc = "" +
 	"requestIDs\"[\n" +
 	"\x17AggregatableObservation\x12\x16\n" +
 	"\x06method\x18\x01 \x01(\tR\x06method\x12(\n" +
-	"\x05value\x18\x02 \x01(\v2\x12.values.v1.DecimalR\x05value\"\x92\x02\n" +
+	"\x05value\x18\x02 \x01(\v2\x12.values.v1.DecimalR\x05value\"\xb0\x02\n" +
 	"\x12RequestObservation\x12B\n" +
 	"\x0flockableToBlock\x18\x01 \x01(\v2\x16.google.protobuf.EmptyH\x00R\x0flockableToBlock\x124\n" +
 	"\x14eventuallyConsistent\x18\x02 \x01(\fH\x00R\x14eventuallyConsistent\x12[\n" +
 	"\faggregatable\x18\x03 \x01(\v25.chain_capabilities.evm.types.AggregatableObservationH\x00R\faggregatable\x12\x16\n" +
-	"\x05error\x18\x04 \x01(\fH\x00R\x05errorB\r\n" +
+	"\x05error\x18\x04 \x01(\fH\x00R\x05error\x12\x1c\n" +
+	"\bhashable\x18\x05 \x01(\fH\x00R\bhashableB\r\n" +
 	"\vobservation\"\xdc\x02\n" +
 	"\vObservation\x12K\n" +
 	"\vchainHeight\x18\x01 \x01(\v2).chain_capabilities.evm.types.ChainHeightR\vchainHeight\x12_\n" +
@@ -786,13 +822,14 @@ const file_ocr_proto_rawDesc = "" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12F\n" +
 	"\x05value\x18\x02 \x01(\v20.chain_capabilities.evm.types.RequestObservationR\x05value:\x028\x01\"&\n" +
 	"\fRequestError\x12\x16\n" +
-	"\x06errors\x18\x01 \x03(\fR\x06errors\"\xb1\x02\n" +
+	"\x06errors\x18\x01 \x03(\fR\x06errors\"\xcf\x02\n" +
 	"\x0eRequestOutcome\x12\x1c\n" +
 	"\trequestID\x18\x01 \x01(\tR\trequestID\x12B\n" +
 	"\x0flockableToBlock\x18\x02 \x01(\v2\x16.google.protobuf.EmptyH\x00R\x0flockableToBlock\x124\n" +
 	"\x14eventuallyConsistent\x18\x03 \x01(\fH\x00R\x14eventuallyConsistent\x128\n" +
 	"\faggregatable\x18\x04 \x01(\v2\x12.values.v1.DecimalH\x00R\faggregatable\x12B\n" +
-	"\x05error\x18\x05 \x01(\v2*.chain_capabilities.evm.types.RequestErrorH\x00R\x05errorB\t\n" +
+	"\x05error\x18\x05 \x01(\v2*.chain_capabilities.evm.types.RequestErrorH\x00R\x05error\x12\x1c\n" +
+	"\bhashable\x18\x06 \x01(\fH\x00R\bhashableB\t\n" +
 	"\aoutcome\"\xce\x01\n" +
 	"\aOutcome\x12K\n" +
 	"\vchainHeight\x18\x01 \x01(\v2).chain_capabilities.evm.types.ChainHeightR\vchainHeight\x12H\n" +
@@ -804,13 +841,14 @@ const file_ocr_proto_rawDesc = "" +
 	"\x14eventuallyConsistent\x18\x03 \x01(\fH\x00R\x14eventuallyConsistent\x128\n" +
 	"\faggregatable\x18\x04 \x01(\v2\x12.values.v1.DecimalH\x00R\faggregatable\x12B\n" +
 	"\x05error\x18\x05 \x01(\v2*.chain_capabilities.evm.types.RequestErrorH\x00R\x05errorB\b\n" +
-	"\x06report*m\n" +
+	"\x06report*{\n" +
 	"\x0fObservationType\x12\v\n" +
 	"\aUNKNOWN\x10\x00\x12\x19\n" +
 	"\x15EVENTUALLY_CONSISTENT\x10\x01\x12\x15\n" +
 	"\x11LOCKABLE_TO_BLOCK\x10\x02\x12\x10\n" +
 	"\fAGGREGATABLE\x10\x03\x12\t\n" +
-	"\x05ERROR\x10\x04BDZBgithub.com/smartcontractkit/capabilities/libs/chainconsensus/typesb\x06proto3"
+	"\x05ERROR\x10\x04\x12\f\n" +
+	"\bHASHABLE\x10\x05BDZBgithub.com/smartcontractkit/capabilities/libs/chainconsensus/typesb\x06proto3"
 
 var (
 	file_ocr_proto_rawDescOnce sync.Once
@@ -873,12 +911,14 @@ func file_ocr_proto_init() {
 		(*RequestObservation_EventuallyConsistent)(nil),
 		(*RequestObservation_Aggregatable)(nil),
 		(*RequestObservation_Error)(nil),
+		(*RequestObservation_Hashable)(nil),
 	}
 	file_ocr_proto_msgTypes[6].OneofWrappers = []any{
 		(*RequestOutcome_LockableToBlock)(nil),
 		(*RequestOutcome_EventuallyConsistent)(nil),
 		(*RequestOutcome_Aggregatable)(nil),
 		(*RequestOutcome_Error)(nil),
+		(*RequestOutcome_Hashable)(nil),
 	}
 	file_ocr_proto_msgTypes[8].OneofWrappers = []any{
 		(*RequestReport_LockableToBlock)(nil),
