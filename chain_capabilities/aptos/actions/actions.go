@@ -7,6 +7,7 @@ import (
 	"time"
 
 	aptos_sdk "github.com/aptos-labs/aptos-go-sdk"
+	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
@@ -21,6 +22,7 @@ import (
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/config"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/monitoring"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 )
@@ -33,19 +35,21 @@ type ConsensusHandler interface {
 
 type Aptos struct {
 	types.AptosService
-	ConsensusHandler      ConsensusHandler
-	forwarderClient       CREForwarderClient
-	forwarderAddress      aptos_sdk.AccountAddress
-	lggr                  logger.SugaredLogger
-	p2pConfig             map[string]string
-	chainSelector         uint64
-	maxGasAmountLimit     limits.BoundLimiter[uint64]
-	reportSizeLimit       limits.BoundLimiter[commoncfg.Size]
+	ConsensusHandler       ConsensusHandler
+	forwarderClient        CREForwarderClient
+	forwarderAddress       aptos_sdk.AccountAddress
+	lggr                   logger.SugaredLogger
+	p2pConfig              map[string]string
+	chainSelector          uint64
+	maxGasAmountLimit      limits.BoundLimiter[uint64]
+	reportSizeLimit        limits.BoundLimiter[commoncfg.Size]
 	transmissionScheduler  ts.TransmissionScheduler
 	txSearchStartingBuffer time.Duration
+	beholderProcessor      beholder.ProtoProcessor
+	messageBuilder         *monitoring.MessageBuilder
 }
 
-func NewAptos(cfg *config.Config, p2pConfig map[string]string, aptosService types.AptosService, consensusHandler ConsensusHandler, lggr logger.Logger, limitsFactory limits.Factory, transmissionScheduler ts.TransmissionScheduler, chainSelector uint64) (*Aptos, error) {
+func NewAptos(cfg *config.Config, p2pConfig map[string]string, aptosService types.AptosService, consensusHandler ConsensusHandler, messageBuilder *monitoring.MessageBuilder, beholderProcessor beholder.ProtoProcessor, lggr logger.Logger, limitsFactory limits.Factory, transmissionScheduler ts.TransmissionScheduler, chainSelector uint64) (*Aptos, error) {
 	if aptosService == nil {
 		return nil, fmt.Errorf("aptos service is required")
 	}
@@ -57,15 +61,17 @@ func NewAptos(cfg *config.Config, p2pConfig map[string]string, aptosService type
 	forwarderAddress := aptos_sdk.AccountAddress(cfg.CREForwarderAddress)
 
 	a := &Aptos{
-		AptosService:          aptosService,
-		ConsensusHandler:      consensusHandler,
-		forwarderClient:       fc,
-		forwarderAddress:      forwarderAddress,
-		lggr:                  logger.Sugared(lggr),
-		p2pConfig:             p2pConfig,
-		chainSelector:         chainSelector,
+		AptosService:           aptosService,
+		ConsensusHandler:       consensusHandler,
+		forwarderClient:        fc,
+		forwarderAddress:       forwarderAddress,
+		lggr:                   logger.Sugared(lggr),
+		p2pConfig:              p2pConfig,
+		chainSelector:          chainSelector,
 		transmissionScheduler:  transmissionScheduler,
 		txSearchStartingBuffer: cfg.TxSearchStartingBuffer,
+		beholderProcessor:      beholderProcessor,
+		messageBuilder:         messageBuilder,
 	}
 
 	return a, a.initLimiters(limitsFactory)

@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/gagliardetto/solana-go"
-	"github.com/jpillora/backoff"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
@@ -23,7 +23,6 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	soltypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/solana"
-	"github.com/smartcontractkit/chainlink-common/pkg/utils/retry"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
@@ -45,7 +44,7 @@ type TransmissionInfo struct {
 	Signature solana.Signature
 }
 type TransmissionInfoProvider interface {
-	GetTransmissionInfo(ctx context.Context, transmissionID [32]byte) (*TransmissionInfo, error)
+	GetTransmissionInfo(ctx context.Context, transmissionID [32]byte) (TransmissionInfo, error)
 }
 
 type CREForwarderClient interface {
@@ -150,9 +149,9 @@ func (wr *WriteReport) executeWriteReport(
 	queuePosition := wr.transmissionScheduler.GetQueuePosition(transmissionIDStr)
 	wr.lggr = logger.With(wr.lggr, "queuePosition", queuePosition)
 
-	var transmissionInfo *TransmissionInfo
+	var transmissionInfo TransmissionInfo
 	if queuePosition <= 0 {
-		transmissionInfo, err = withQuickRetry(ctx, wr.lggr, func(ctx context.Context) (*TransmissionInfo, error) {
+		transmissionInfo, err = capcommon.WithQuickRetry(ctx, wr.lggr, func(ctx context.Context) (TransmissionInfo, error) {
 			return wr.transmissionInfoProvider.GetTransmissionInfo(ctx, transmissionID)
 		})
 	} else {
@@ -205,33 +204,21 @@ func (wr *WriteReport) executeWriteReport(
 		return nil, capabilities.ResponseMetadata{}, err
 	}
 
-	strategy := retry.Strategy[*TransmissionInfo]{
-		Backoff: &backoff.Backoff{
-			Factor: 2,
-			Max:    3 * time.Second,
-			Min:    200 * time.Millisecond,
-		},
-		MaxRetries: 25,
-	}
-
-	var last *TransmissionInfo
-	last, err = strategy.Do(ctx, wr.lggr, func(c context.Context) (*TransmissionInfo, error) {
+	var last TransmissionInfo
+	last, err = capcommon.WithPollingRetry(ctx, wr.lggr, func(c context.Context) (TransmissionInfo, error) {
 		ti, tiErr := wr.transmissionInfoProvider.GetTransmissionInfo(c, transmissionID)
 		if tiErr != nil {
-			return nil, tiErr
+			return TransmissionInfo{}, tiErr
 		}
 		// If still NotAttempted, execution state account may not be committed yet.
 		if ti.State == TransmissionStateNotAttempted {
-			return nil, errors.New("tx submitted but execution state not yet visible on-chain, retrying")
+			return TransmissionInfo{}, errors.New("tx submitted but transmission info not yet visible, retrying")
 		}
 		return ti, nil
 	})
 
 	if err != nil {
 		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed getting transmission info after submitting report, %w", err)
-	}
-	if last == nil {
-		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("nil transmission info after retries")
 	}
 
 	var meteringMetadata capabilities.ResponseMetadata
@@ -273,6 +260,9 @@ func (s *Solana) validateInputsAndReportMetadata(requestMetadata capabilities.Re
 	}
 	if key := solana.PublicKey(request.Receiver); key.IsZero() {
 		return fmt.Errorf("receiver public key is empty")
+	}
+	if err := validateRemainingAccountMetas(request.GetRemainingAccounts()); err != nil {
+		return err
 	}
 	if len(request.Report.Sigs) == 0 {
 		return fmt.Errorf("no signatures provided")
@@ -346,18 +336,26 @@ func (wr *WriteReport) pollTransmissionInfo(
 	ctx context.Context,
 	transmissionID [32]byte,
 	queuePosition int,
-) (lastValid *TransmissionInfo, err error) {
+) (lastValid TransmissionInfo, err error) {
 	delay := time.Duration(queuePosition) * wr.transmissionScheduler.DeltaStage
 	wr.lggr.Infow("Polling until slot or state change", "delay", delay, "deltaStage", wr.transmissionScheduler.DeltaStage)
 
 	attempt := 0
 	stageTimer := time.NewTimer(delay)
-	defer stageTimer.Stop()
+	deltaStagePassed := false
+	hadSuccessfulPoll := false
+	defer func() {
+		stageTimer.Stop()
+		if !deltaStagePassed && hadSuccessfulPoll {
+			wr.lggr.Infow("Transmission found before delta stage has passed")
+		}
+	}()
 
 	for {
 		if info, pollErr := wr.transmissionInfoProvider.GetTransmissionInfo(ctx, transmissionID); pollErr != nil {
 			wr.lggr.Debugw("GetTransmissionInfo failed during polling", "error", pollErr, "attempt", attempt)
 		} else {
+			hadSuccessfulPoll = true
 			lastValid = info
 			switch lastValid.State {
 			case TransmissionStateSucceeded, TransmissionStateFailed:
@@ -376,22 +374,31 @@ func (wr *WriteReport) pollTransmissionInfo(
 
 		select {
 		case <-ctx.Done():
-			return nil, fmt.Errorf("timed out waiting for transmission info")
+			hadSuccessfulPoll = false
+			return TransmissionInfo{}, fmt.Errorf("timed out waiting for transmission info")
 		case <-stageTimer.C:
-			wr.lggr.Infow("Delta stage has passed, returning transmission info")
-			if lastValid != nil {
-				return lastValid, nil
+			deltaStagePassed = true
+			if lastValid.State == TransmissionStateNotAttempted {
+				if finalInfo, finalErr := wr.transmissionInfoProvider.GetTransmissionInfo(ctx, transmissionID); finalErr == nil {
+					hadSuccessfulPoll = true
+					lastValid = finalInfo
+				} else {
+					wr.lggr.Debugw("Final GetTransmissionInfo at stage boundary failed", "error", finalErr)
+				}
 			}
-			return withQuickRetry(ctx, wr.lggr, func(ctx context.Context) (*TransmissionInfo, error) {
-				return wr.transmissionInfoProvider.GetTransmissionInfo(ctx, transmissionID)
-			})
+			if !hadSuccessfulPoll {
+				wr.lggr.Errorw("All GetTransmissionInfo polls failed during delta stage window, cannot determine transmission state")
+				return TransmissionInfo{}, fmt.Errorf("all GetTransmissionInfo polls failed during delta stage window")
+			}
+			wr.lggr.Infow("Delta stage has passed, returning transmission info")
+			return lastValid, nil
 		case <-time.After(wait):
 		}
 	}
 }
 
 func (wr *WriteReport) getFee(ctx context.Context, sig solana.Signature) (*big.Float, error) {
-	tx, err := wr.SolanaService.GetTransaction(ctx, soltypes.GetTransactionRequest{Signature: soltypes.Signature(sig)})
+	tx, err := wr.GetTransaction(ctx, soltypes.GetTransactionRequest{Signature: soltypes.Signature(sig)})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get transaction: %w", err)
 	}
@@ -425,12 +432,4 @@ func (wr *WriteReport) fatalWriteReportReply(message string) *solcap.WriteReport
 	r.ErrorMessage = capcommon.Ptr(message)
 
 	return r
-}
-
-func withQuickRetry[T any](ctx context.Context, lggr logger.Logger, fn func(context.Context) (T, error)) (T, error) {
-	return capcommon.WithQuickRetry(ctx, lggr, fn)
-}
-
-func withPollingRetry[T any](ctx context.Context, lggr logger.Logger, fn func(context.Context) (T, error)) (T, error) {
-	return capcommon.WithPollingRetry(ctx, lggr, fn)
 }

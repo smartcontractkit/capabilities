@@ -8,6 +8,7 @@ import (
 	"maps"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
@@ -25,6 +26,7 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/actions"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/config"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/height"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/monitoring"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
 	consmetrics "github.com/smartcontractkit/capabilities/libs/chainconsensus/metrics"
@@ -85,7 +87,7 @@ func main() {
 			lggr:          s.Logger.Named(CapabilityName),
 			limitsFactory: s.LimitsFactory,
 		})
-	})
+	}, loop.WithOtelViews(consmetrics.MetricViews()))
 }
 
 // --- loop.StandardCapabilities / services.Service ---
@@ -176,6 +178,22 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	}
 	c.lggr.Debugw("Got Aptos service from relayer")
 
+	var chainInfo types.ChainInfo
+	chainInfo, err = relayer.GetChainInfo(ctx)
+	if err != nil {
+		c.lggr.Errorw("failed to get chain info", "error", err)
+		return fmt.Errorf("failed to fetch chain info for chainID %s from relayer: %w", cfg.ChainID, err)
+	}
+
+	metrics, err := monitoring.NewMetrics()
+	if err != nil {
+		return fmt.Errorf("failed to create metrics: %w", err)
+	}
+	processor, err := monitoring.NewProcessor(c.lggr, metrics)
+	if err != nil {
+		return fmt.Errorf("failed to create monitoring proto processor: %w", err)
+	}
+
 	if err := c.setSelector(cfg); err != nil {
 		c.lggr.Errorw("failed to set chain selector", "error", err)
 		return err
@@ -185,11 +203,6 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		"chainSelector", c.chainSelector,
 		"capabilityID", c.id,
 	)
-
-	chainInfo, err := relayer.GetChainInfo(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to fetch chain info for chainID %s from relayer: %w", cfg.ChainID, err)
-	}
 
 	consensusMetrics, err := consmetrics.NewConsensusMetrics(chainInfo)
 	if err != nil {
@@ -242,6 +255,25 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		)
 	}
 
+	// Ensure transmitter addresses have the 0x prefix so they match
+	// what is read from on-chain
+	for k, v := range p2pConfig {
+		if !strings.HasPrefix(v, "0x") {
+			p2pConfig[k] = "0x" + v
+		}
+	}
+
+	localNode, err := dependencies.CapabilityRegistry.LocalNode(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get local node: %w", err)
+	}
+	peerHex := fmt.Sprintf("%x", localNode.PeerID[:])
+	nodeAddress := p2pConfig[peerHex]
+	if nodeAddress == "" {
+		c.lggr.Warnw("local node transmitter address not found in p2pConfig, MetaSourceId will be empty", "peerID", peerHex)
+	}
+	messageBuilder := monitoring.NewMessageBuilder(chainInfo, c.CapabilityInfo, nodeAddress)
+
 	if cfg.DeltaStage == 0 {
 		cfg.DeltaStage = defaultDeltaStage
 	}
@@ -252,7 +284,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	}
 	c.lggr.Debugw("Initialised transmission scheduler", "deltaStage", cfg.DeltaStage)
 
-	c.Aptos, err = actions.NewAptos(cfg, p2pConfig, aptosService, c.consensusHandler, c.lggr, limits.Factory{Logger: c.lggr}, scheduler, c.chainSelector)
+	c.Aptos, err = actions.NewAptos(cfg, p2pConfig, aptosService, c.consensusHandler, messageBuilder, processor, c.lggr, limits.Factory{Logger: c.lggr}, scheduler, c.chainSelector)
 	if err != nil {
 		c.lggr.Errorw("failed to create Aptos actions", "error", err)
 		return fmt.Errorf("failed to create Aptos actions: %w", err)

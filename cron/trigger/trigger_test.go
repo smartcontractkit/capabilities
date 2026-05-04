@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"sync"
 	"testing"
@@ -23,10 +24,13 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/triggers/cron"
 	crontypedapi "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/triggers/cron/server"
+	"github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/services/orgresolver"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
+	"github.com/smartcontractkit/chainlink-common/pkg/workflows"
 	"github.com/smartcontractkit/chainlink-protos/cre/go/values"
 )
 
@@ -401,20 +405,18 @@ func TestCronTrigger_Load(t *testing.T) {
 	assert.Equal(t, len(ts.scheduler.Jobs()), 0)
 	assert.Equal(t, ts.scheduler.JobsWaitingInQueue(), 0)
 
-	// Wait to ensure no more events - 5s was not sufficient to avoid CI failures
-	time.Sleep(time.Second * 10)
 triggers:
 	for i := range numTriggers {
-		// drain buffered elements
+		closeTimer := time.NewTimer(10 * time.Second)
 		for {
 			select {
 			case _, ok := <-callbacks[i]:
-				if !ok { // closed
+				if !ok {
+					closeTimer.Stop()
 					continue triggers
 				}
-				// discard
-			default:
-				t.Fatalf("channel is still open")
+			case <-closeTimer.C:
+				t.Fatalf("timed out waiting for channel %d to close", i)
 			}
 		}
 	}
@@ -425,10 +427,22 @@ triggers:
 	var scheduledActualDelta [numTriggers * numExecutions]int64
 
 	for execIdx := range numExecutions {
+		var earliestScheduled time.Time
+		var latestScheduled time.Time
+
 		for triggerIdx := range numTriggers {
-			// Check all scheduled execution times at each process are the same across all triggers
-			if triggerIdx > 0 {
-				require.True(t, scheduledExecTimes[0][execIdx].Equal(scheduledExecTimes[triggerIdx][execIdx]))
+			// Triggers with the same schedule should remain aligned, but real-clock
+			// registration can span a second boundary under load.
+			if triggerIdx == 0 {
+				earliestScheduled = scheduledExecTimes[triggerIdx][execIdx]
+				latestScheduled = scheduledExecTimes[triggerIdx][execIdx]
+			} else {
+				if scheduledExecTimes[triggerIdx][execIdx].Before(earliestScheduled) {
+					earliestScheduled = scheduledExecTimes[triggerIdx][execIdx]
+				}
+				if scheduledExecTimes[triggerIdx][execIdx].After(latestScheduled) {
+					latestScheduled = scheduledExecTimes[triggerIdx][execIdx]
+				}
 			}
 			// Check that executions happened every second
 			if execIdx > 0 {
@@ -445,6 +459,8 @@ triggers:
 			// Store time difference between scheduled and actual
 			scheduledActualDelta[triggerIdx*numExecutions+execIdx] = timestamps[triggerIdx][execIdx].Sub(scheduledExecTimes[triggerIdx][execIdx]).Milliseconds()
 		}
+
+		require.False(t, latestScheduled.After(earliestScheduled.Add(time.Second)))
 	}
 
 	var averageDelta int64
@@ -1145,6 +1161,102 @@ func (m *MockOrgResolver) Name() string {
 
 // Ensure MockOrgResolver implements the interface
 var _ orgresolver.OrgResolver = (*MockOrgResolver)(nil)
+
+// TestCronTrigger_MultiTriggerFlag_ExecutionIDPaths verifies the branch at the
+// multiTriggerFlag.Check call: when the flag's active-period range contains the
+// current time, GenerateExecutionIDWithTriggerIndex (which includes the trigger
+// index) is used and isLegacyExecutionID is false; when the range excludes the
+// current time the legacy EncodeExecutionID is used and isLegacyExecutionID is true.
+func TestCronTrigger_MultiTriggerFlag_ExecutionIDPaths(t *testing.T) {
+	const testWorkflowID = "workflow-id-multi-trigger-test"
+	const testReferenceID = "trigger_2" // parsed to triggerIndex = 2
+	const testTriggerIndex = 2
+	const testTriggerID = testWorkflowID + "|test-trigger"
+
+	run := func(t *testing.T, flagActive bool) {
+		t.Helper()
+		t.Parallel()
+
+		startTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+		fakeClock := clockwork.NewFakeClockAt(startTime)
+		lggr, observedLogs := logger.TestObserved(t, zap.DebugLevel)
+
+		triggerConfig, err := json.Marshal(Config{FastestScheduleIntervalSeconds: 1})
+		require.NoError(t, err)
+
+		ts, err := NewTriggerService(lggr, fakeClock, limits.Factory{})
+		require.NoError(t, err)
+		err = ts.Initialise(t.Context(), core.StandardCapabilitiesDependencies{Config: string(triggerConfig)})
+		require.NoError(t, err)
+
+		if flagActive {
+			// [0, MaxInt64] always contains the fake clock's time (2024-01-01...).
+			ts.multiTriggerFlag = limits.NewRangeLimiter(settings.Range[config.Timestamp]{
+				Lower: 0,
+				Upper: config.Timestamp(math.MaxInt64),
+			})
+		} else {
+			// [MaxInt64-1, MaxInt64] never contains the fake clock's time.
+			ts.multiTriggerFlag = limits.NewRangeLimiter(settings.Range[config.Timestamp]{
+				Lower: config.Timestamp(math.MaxInt64) - 1,
+				Upper: config.Timestamp(math.MaxInt64),
+			})
+		}
+
+		metadata := capabilities.RequestMetadata{
+			WorkflowID:  testWorkflowID,
+			ReferenceID: testReferenceID,
+		}
+		ch, capErr := ts.RegisterTrigger(t.Context(), testTriggerID, metadata, &crontypedapi.Config{Schedule: everySecond})
+		require.Nil(t, capErr)
+
+		fakeClock.Advance(time.Second + time.Millisecond)
+		msg := <-ch
+
+		// Compute the expected execution ID from the received event ID.
+		eventID := msg.Id
+		var expectedExecID string
+		if flagActive {
+			expectedExecID, err = workflows.GenerateExecutionIDWithTriggerIndex(testWorkflowID, eventID, testTriggerIndex)
+		} else {
+			expectedExecID, err = workflows.EncodeExecutionID(testWorkflowID, eventID) //nolint:staticcheck
+		}
+		require.NoError(t, err)
+
+		// The debug log at "task callback sending trigger response" is written
+		// before the channel send, so it is already present once we receive msg.
+		var execIDFromLog string
+		var isLegacyFromLog bool
+		var found bool
+		for _, entry := range observedLogs.All() {
+			if entry.Message == "task callback sending trigger response" {
+				for _, field := range entry.Context {
+					switch field.Key {
+					case "executionID":
+						execIDFromLog = field.String
+					case "isLegacyExecutionID":
+						isLegacyFromLog = field.Integer == 1
+					}
+				}
+				found = true
+				break
+			}
+		}
+		require.True(t, found, "expected log entry 'task callback sending trigger response'")
+		require.Equal(t, expectedExecID, execIDFromLog, "execution ID should match expected hash function")
+		require.Equal(t, !flagActive, isLegacyFromLog, "isLegacyExecutionID should reflect which path was taken")
+
+		require.Nil(t, ts.UnregisterTrigger(t.Context(), testTriggerID, metadata, &crontypedapi.Config{Schedule: everySecond}))
+		require.NoError(t, ts.Close())
+	}
+
+	t.Run("flag active uses GenerateExecutionIDWithTriggerIndex", func(t *testing.T) {
+		run(t, true)
+	})
+	t.Run("flag inactive uses legacy EncodeExecutionID", func(t *testing.T) {
+		run(t, false)
+	})
+}
 
 func TestEnforceFastestSchedule_NonUniformSecondsField(t *testing.T) {
 	t.Parallel()
