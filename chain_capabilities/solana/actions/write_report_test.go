@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/gagliardetto/solana-go"
-	"github.com/test-go/testify/mock"
-	"github.com/test-go/testify/require"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -25,10 +25,11 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 
+	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
+
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/metering"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
-	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
 )
 
 type testHelper struct {
@@ -220,7 +221,6 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		require.NoError(t, err)
 		validateMeteringWriteReport(t, result.ResponseMetadata, 1, "0.000005")
 	})
-
 }
 func createTestWriteReportReq(metadata ocrtypes.Metadata) *solcap.WriteReportRequest {
 	encodedReportMetadata, _ := metadata.Encode()

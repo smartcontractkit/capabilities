@@ -395,7 +395,7 @@ func (wr *WriteReport) pollTransmissionInfo(
 }
 
 func (wr *WriteReport) getFee(ctx context.Context, sig solana.Signature) (*big.Float, error) {
-	tx, err := wr.SolanaService.GetTransaction(ctx, soltypes.GetTransactionRequest{Signature: soltypes.Signature(sig)})
+	tx, err := wr.GetTransaction(ctx, soltypes.GetTransactionRequest{Signature: soltypes.Signature(sig)})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get transaction: %w", err)
 	}

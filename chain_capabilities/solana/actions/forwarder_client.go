@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/gagliardetto/solana-go"
+
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 
 	solcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
@@ -109,13 +110,13 @@ func (fc *forwarderClient) InvokeOnReport(ctx context.Context, receiver solana.P
 		}
 	}
 
-	reply, sendErr := fc.SolanaService.SubmitTransaction(ctx, soltypes.SubmitTransactionRequest{
+	reply, sendErr := fc.SubmitTransaction(ctx, soltypes.SubmitTransactionRequest{
 		EncodedTransaction: encodedTX,
 		Receiver:           soltypes.PublicKey(receiver),
 		Cfg:                resolvedComputeConfig,
 	})
 	if sendErr != nil {
-		return nil, fmt.Errorf("failed to submit transaciton: %w", sendErr)
+		return nil, fmt.Errorf("failed to submit transactions: %w", sendErr)
 	}
 
 	return reply, nil
@@ -133,9 +134,12 @@ func (fc *forwarderClient) deriveForwarderAuthority(receiverProgram solana.Publi
 }
 
 func (fc *forwarderClient) getOracleConfigPDA(ctx context.Context, workflowDonID, configVersion uint32) (solana.PublicKey, error) {
-	oracleConfigPDA := getConfigPDA(fc.forwarderState, workflowDonID, configVersion, fc.forwarderProgramID)
+	oracleConfigPDA, err := getConfigPDA(fc.forwarderState, workflowDonID, configVersion, fc.forwarderProgramID)
+	if err != nil {
+		return solana.PublicKey{}, fmt.Errorf("failed to calculate oracle config PDA: %w", err)
+	}
 
-	oracleConfigAccount, err := fc.SolanaService.GetAccountInfoWithOpts(ctx, soltypes.GetAccountInfoRequest{
+	oracleConfigAccount, err := fc.GetAccountInfoWithOpts(ctx, soltypes.GetAccountInfoRequest{
 		Account: soltypes.PublicKey(oracleConfigPDA),
 		Opts: &soltypes.GetAccountInfoOpts{
 			Commitment: soltypes.CommitmentProcessed,
@@ -170,10 +174,9 @@ func toPayload(report *sdk.ReportResponse) []byte {
 	ret = append(ret, report.ReportContext...)
 
 	return ret
-
 }
 
-func getConfigPDA(statePubkey solana.PublicKey, donID uint32, configVersion uint32, programID solana.PublicKey) solana.PublicKey {
+func getConfigPDA(statePubkey solana.PublicKey, donID uint32, configVersion uint32, programID solana.PublicKey) (solana.PublicKey, error) {
 	configID := getConfigID(donID, configVersion)
 	reqIDBytes := make([]byte, 8)
 	binary.BigEndian.PutUint64(reqIDBytes, configID)
@@ -184,8 +187,8 @@ func getConfigPDA(statePubkey solana.PublicKey, donID uint32, configVersion uint
 		reqIDBytes,
 	}
 
-	addr, _, _ := solana.FindProgramAddress(seeds, programID)
-	return addr
+	addr, _, err := solana.FindProgramAddress(seeds, programID)
+	return addr, err
 }
 
 func getConfigID(donID uint32, configVersion uint32) uint64 {
