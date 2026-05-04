@@ -487,6 +487,9 @@ func (e *WriteReport) includeL1FeeInReceiptFee(ctx context.Context) bool {
 	if e.writeReportL1FeeActive == nil {
 		return false
 	}
+	if e.executionTimestamp.IsZero() {
+		e.lggr.Errorw("ExecutionTimestamp is zero")
+	}
 	return e.writeReportL1FeeActive.Check(ctx, commoncfg.NewTimestamp(e.executionTimestamp)) == nil
 }
 
