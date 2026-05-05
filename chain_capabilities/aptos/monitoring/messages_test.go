@@ -178,11 +178,11 @@ func TestMessageBuilder_WriteReportMessages(t *testing.T) {
 	p2pIncomplete := builder.BuildWriteReportP2pConfigIncomplete(tc, 3)
 	assert.EqualValues(t, 3, attrsToMap(p2pIncomplete.LogAttributes())["position"])
 
-	txInfoPhase := builder.BuildWriteReportTxInfoRetrievalPhase(tc, 2, "found", 123, "0xtx", "0xtransmitter", "failed_transmission")
+	txInfoPhase := builder.BuildWriteReportTxInfoRetrievalPhase(tc, "BackwardPoll", "Found", 123, "0xtx", "0xtransmitter", "FailedTransmission")
 	txInfoMetricAttrs := attrsToMap(txInfoPhase.MetricAttributes())
-	assert.Equal(t, "2", txInfoMetricAttrs["phase"])
-	assert.Equal(t, "found", txInfoMetricAttrs["result"])
-	assert.Equal(t, "failed_transmission", txInfoMetricAttrs["lookup_type"])
+	assert.Equal(t, "BackwardPoll", txInfoMetricAttrs["phase"])
+	assert.Equal(t, "Found", txInfoMetricAttrs["result"])
+	assert.Equal(t, "FailedTransmission", txInfoMetricAttrs["lookup_type"])
 	assert.EqualValues(t, 7, txInfoMetricAttrs["workflow_don_id"])
 
 	invokeDuration := builder.BuildWriteReportInvokeOnReportDuration(tc, 456, 2)

@@ -504,7 +504,7 @@ func (x *WriteReportP2PConfigIncomplete) GetExecutionContext() *monitoring.Execu
 
 type WriteReportTxInfoRetrievalPhase struct {
 	state            protoimpl.MessageState       `protogen:"open.v1"`
-	Phase            uint32                       `protobuf:"varint,1,opt,name=phase,proto3" json:"phase,omitempty"`
+	Phase            string                       `protobuf:"bytes,1,opt,name=phase,proto3" json:"phase,omitempty"`
 	Result           string                       `protobuf:"bytes,2,opt,name=result,proto3" json:"result,omitempty"`
 	PhaseDurationMs  int64                        `protobuf:"varint,3,opt,name=phase_duration_ms,json=phaseDurationMs,proto3" json:"phase_duration_ms,omitempty"`
 	TxHash           string                       `protobuf:"bytes,4,opt,name=tx_hash,json=txHash,proto3" json:"tx_hash,omitempty"`
@@ -545,11 +545,11 @@ func (*WriteReportTxInfoRetrievalPhase) Descriptor() ([]byte, []int) {
 	return file_chain_capabilities_aptos_monitoring_write_report_proto_rawDescGZIP(), []int{8}
 }
 
-func (x *WriteReportTxInfoRetrievalPhase) GetPhase() uint32 {
+func (x *WriteReportTxInfoRetrievalPhase) GetPhase() string {
 	if x != nil {
 		return x.Phase
 	}
-	return 0
+	return ""
 }
 
 func (x *WriteReportTxInfoRetrievalPhase) GetResult() string {
@@ -932,7 +932,7 @@ const file_chain_capabilities_aptos_monitoring_write_report_proto_rawDesc = "" +
 	"\bposition\x18\x01 \x01(\x05R\bposition\x12I\n" +
 	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xa2\x02\n" +
 	"\x1fWriteReportTxInfoRetrievalPhase\x12\x14\n" +
-	"\x05phase\x18\x01 \x01(\rR\x05phase\x12\x16\n" +
+	"\x05phase\x18\x01 \x01(\tR\x05phase\x12\x16\n" +
 	"\x06result\x18\x02 \x01(\tR\x06result\x12*\n" +
 	"\x11phase_duration_ms\x18\x03 \x01(\x03R\x0fphaseDurationMs\x12\x17\n" +
 	"\atx_hash\x18\x04 \x01(\tR\x06txHash\x12 \n" +

@@ -53,7 +53,7 @@ message WriteReportP2pConfigIncomplete {
 }
 
 message WriteReportTxInfoRetrievalPhase {
-  uint32 phase = 1;
+  string phase = 1;
   string result = 2;
   int64 phase_duration_ms = 3;
   string tx_hash = 4;

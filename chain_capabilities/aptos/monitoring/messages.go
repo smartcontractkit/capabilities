@@ -125,7 +125,7 @@ func (m *MessageBuilder) BuildWriteReportP2pConfigIncomplete(tc TelemetryContext
 	}
 }
 
-func (m *MessageBuilder) BuildWriteReportTxInfoRetrievalPhase(tc TelemetryContext, phase uint32, result string, phaseDurationMs int64, txHash, transmitter, lookupType string) *WriteReportTxInfoRetrievalPhase {
+func (m *MessageBuilder) BuildWriteReportTxInfoRetrievalPhase(tc TelemetryContext, phase string, result string, phaseDurationMs int64, txHash, transmitter, lookupType string) *WriteReportTxInfoRetrievalPhase {
 	return &WriteReportTxInfoRetrievalPhase{
 		Phase:            phase,
 		Result:           result,
@@ -326,7 +326,7 @@ func (r *WriteReportP2PConfigIncomplete) MetricAttributes() []attribute.KeyValue
 
 func (r *WriteReportTxInfoRetrievalPhase) MetricAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
-		attribute.String("phase", strconv.FormatUint(uint64(r.GetPhase()), 10)),
+		attribute.String("phase", r.GetPhase()),
 		attribute.String("result", r.GetResult()),
 		attribute.String("lookup_type", r.GetLookupType()),
 	}, r.ExecutionContext.MetricsAttributes()...)
