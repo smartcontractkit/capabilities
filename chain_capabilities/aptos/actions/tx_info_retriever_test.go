@@ -8,33 +8,11 @@ import (
 	aptos_sdk "github.com/aptos-labs/aptos-go-sdk"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/proto"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
-	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	aptostypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/aptos"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/monitoring"
 )
-
-type recordingTxInfoProcessor struct {
-	messages []*monitoring.WriteReportTxInfoRetrievalPhase
-}
-
-func (r *recordingTxInfoProcessor) Process(_ context.Context, msg proto.Message, _ ...any) error {
-	if phaseMsg, ok := msg.(*monitoring.WriteReportTxInfoRetrievalPhase); ok {
-		r.messages = append(r.messages, phaseMsg)
-	}
-	return nil
-}
-
-func txInfoRetrieverMonitoringOption(processor *recordingTxInfoProcessor) TxInfoRetrieverOption {
-	return WithTxInfoRetrieverMonitoring(
-		processor,
-		monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
-		monitoring.TelemetryContext{},
-	)
-}
 
 func requireTxInfoPhaseEvent(t *testing.T, msg *monitoring.WriteReportTxInfoRetrievalPhase, lookupType string, phase uint32, result string, txHash string, transmitter aptos_sdk.AccountAddress) {
 	t.Helper()
@@ -65,7 +43,7 @@ func TestGetSuccessfulTransmissionInfo(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get transmitter transactions during phase 1")
 		require.Len(t, processor.messages, 1)
-		requireTxInfoPhaseEvent(t, processor.messages[0], txInfoRetrievalLookupTypeSuccessfulTransmission, 1, txInfoRetrievalResultFetchError, "", transmitter)
+		requireTxInfoPhaseEvent(t, processor.messages[0], successLookupType, 1, fetchErrorResult, "", transmitter)
 	})
 
 	t.Run("Phase 1 finds - returns gas info", func(t *testing.T) {
@@ -86,7 +64,7 @@ func TestGetSuccessfulTransmissionInfo(t *testing.T) {
 		require.Equal(t, uint64(500), result.GasUsed)
 		require.Equal(t, uint64(100), result.GasUnitPrice)
 		require.Len(t, processor.messages, 1)
-		requireTxInfoPhaseEvent(t, processor.messages[0], txInfoRetrievalLookupTypeSuccessfulTransmission, 1, txInfoRetrievalResultFound, "0xfound", transmitter)
+		requireTxInfoPhaseEvent(t, processor.messages[0], successLookupType, 1, foundResult, "0xfound", transmitter)
 	})
 
 	t.Run("Phase 1 misses, Phase 2 finds", func(t *testing.T) {
@@ -111,8 +89,8 @@ func TestGetSuccessfulTransmissionInfo(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "0xfound_in_phase2", result.TxHash)
 		require.Len(t, processor.messages, 2)
-		requireTxInfoPhaseEvent(t, processor.messages[0], txInfoRetrievalLookupTypeSuccessfulTransmission, 1, txInfoRetrievalResultNotFound, "", transmitter)
-		requireTxInfoPhaseEvent(t, processor.messages[1], txInfoRetrievalLookupTypeSuccessfulTransmission, 2, txInfoRetrievalResultFound, "0xfound_in_phase2", transmitter)
+		requireTxInfoPhaseEvent(t, processor.messages[0], successLookupType, 1, notFoundResult, "", transmitter)
+		requireTxInfoPhaseEvent(t, processor.messages[1], successLookupType, 2, foundResult, "0xfound_in_phase2", transmitter)
 	})
 
 	t.Run("Phase 1 misses, Phase 2 misses but covers time, Phase 3 finds", func(t *testing.T) {
@@ -142,9 +120,9 @@ func TestGetSuccessfulTransmissionInfo(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "0xfound_in_phase3", result.TxHash)
 		require.Len(t, processor.messages, 3)
-		requireTxInfoPhaseEvent(t, processor.messages[0], txInfoRetrievalLookupTypeSuccessfulTransmission, 1, txInfoRetrievalResultNotFound, "", transmitter)
-		requireTxInfoPhaseEvent(t, processor.messages[1], txInfoRetrievalLookupTypeSuccessfulTransmission, 2, txInfoRetrievalResultNotFound, "", transmitter)
-		requireTxInfoPhaseEvent(t, processor.messages[2], txInfoRetrievalLookupTypeSuccessfulTransmission, 3, txInfoRetrievalResultFound, "0xfound_in_phase3", transmitter)
+		requireTxInfoPhaseEvent(t, processor.messages[0], successLookupType, 1, notFoundResult, "", transmitter)
+		requireTxInfoPhaseEvent(t, processor.messages[1], successLookupType, 2, notFoundResult, "", transmitter)
+		requireTxInfoPhaseEvent(t, processor.messages[2], successLookupType, 3, foundResult, "0xfound_in_phase3", transmitter)
 	})
 
 	t.Run("Phase 1 misses, skips Phase 2, Phase 3 finds", func(t *testing.T) {
@@ -170,8 +148,8 @@ func TestGetSuccessfulTransmissionInfo(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "0xfound_in_phase3", result.TxHash)
 		require.Len(t, processor.messages, 2)
-		requireTxInfoPhaseEvent(t, processor.messages[0], txInfoRetrievalLookupTypeSuccessfulTransmission, 1, txInfoRetrievalResultNotFound, "", transmitter)
-		requireTxInfoPhaseEvent(t, processor.messages[1], txInfoRetrievalLookupTypeSuccessfulTransmission, 3, txInfoRetrievalResultFound, "0xfound_in_phase3", transmitter)
+		requireTxInfoPhaseEvent(t, processor.messages[0], successLookupType, 1, notFoundResult, "", transmitter)
+		requireTxInfoPhaseEvent(t, processor.messages[1], successLookupType, 3, foundResult, "0xfound_in_phase3", transmitter)
 	})
 
 	t.Run("Phase 1 misses, skips Phase 2, Phase 3 fails", func(t *testing.T) {
@@ -194,8 +172,8 @@ func TestGetSuccessfulTransmissionInfo(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "matching transmission not found yet")
 		require.Len(t, processor.messages, 2)
-		requireTxInfoPhaseEvent(t, processor.messages[0], txInfoRetrievalLookupTypeSuccessfulTransmission, 1, txInfoRetrievalResultNotFound, "", transmitter)
-		requireTxInfoPhaseEvent(t, processor.messages[1], txInfoRetrievalLookupTypeSuccessfulTransmission, 3, txInfoRetrievalResultNotFound, "", transmitter)
+		requireTxInfoPhaseEvent(t, processor.messages[0], successLookupType, 1, notFoundResult, "", transmitter)
+		requireTxInfoPhaseEvent(t, processor.messages[1], successLookupType, 3, notFoundResult, "", transmitter)
 	})
 }
 
@@ -221,7 +199,7 @@ func TestGetFailedTransmissionInfo(t *testing.T) {
 		require.Equal(t, "0xfailed_phase1", result.TxHash)
 		require.Equal(t, "Move abort", result.VmStatus)
 		require.Len(t, processor.messages, 1)
-		requireTxInfoPhaseEvent(t, processor.messages[0], txInfoRetrievalLookupTypeFailedTransmission, 1, txInfoRetrievalResultFound, "0xfailed_phase1", transmitter)
+		requireTxInfoPhaseEvent(t, processor.messages[0], failedLookupType, 1, foundResult, "0xfailed_phase1", transmitter)
 	})
 
 	t.Run("Phase 1 fails - no txns found", func(t *testing.T) {
@@ -239,7 +217,7 @@ func TestGetFailedTransmissionInfo(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get transmitter transactions during phase 1")
 		require.Len(t, processor.messages, 1)
-		requireTxInfoPhaseEvent(t, processor.messages[0], txInfoRetrievalLookupTypeFailedTransmission, 1, txInfoRetrievalResultFetchError, "", transmitter)
+		requireTxInfoPhaseEvent(t, processor.messages[0], failedLookupType, 1, fetchErrorResult, "", transmitter)
 	})
 
 	t.Run("Phase 1 misses, Phase 2 finds", func(t *testing.T) {
@@ -265,8 +243,8 @@ func TestGetFailedTransmissionInfo(t *testing.T) {
 		require.Equal(t, "0xfailed_phase2", result.TxHash)
 		require.Equal(t, "Move abort", result.VmStatus)
 		require.Len(t, processor.messages, 2)
-		requireTxInfoPhaseEvent(t, processor.messages[0], txInfoRetrievalLookupTypeFailedTransmission, 1, txInfoRetrievalResultNotFound, "", transmitter)
-		requireTxInfoPhaseEvent(t, processor.messages[1], txInfoRetrievalLookupTypeFailedTransmission, 2, txInfoRetrievalResultFound, "0xfailed_phase2", transmitter)
+		requireTxInfoPhaseEvent(t, processor.messages[0], failedLookupType, 1, notFoundResult, "", transmitter)
+		requireTxInfoPhaseEvent(t, processor.messages[1], failedLookupType, 2, foundResult, "0xfailed_phase2", transmitter)
 	})
 
 	t.Run("Phase 1 misses, skips Phase 2, returns not found", func(t *testing.T) {
@@ -287,7 +265,7 @@ func TestGetFailedTransmissionInfo(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "no matching failed transaction found")
 		require.Len(t, processor.messages, 1)
-		requireTxInfoPhaseEvent(t, processor.messages[0], txInfoRetrievalLookupTypeFailedTransmission, 1, txInfoRetrievalResultNotFound, "", transmitter)
+		requireTxInfoPhaseEvent(t, processor.messages[0], failedLookupType, 1, notFoundResult, "", transmitter)
 	})
 
 	t.Run("Phase 1 misses, Phase 2 misses but covers time, returns not found", func(t *testing.T) {
@@ -313,8 +291,8 @@ func TestGetFailedTransmissionInfo(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "no matching failed transaction found")
 		require.Len(t, processor.messages, 2)
-		requireTxInfoPhaseEvent(t, processor.messages[0], txInfoRetrievalLookupTypeFailedTransmission, 1, txInfoRetrievalResultNotFound, "", transmitter)
-		requireTxInfoPhaseEvent(t, processor.messages[1], txInfoRetrievalLookupTypeFailedTransmission, 2, txInfoRetrievalResultNotFound, "", transmitter)
+		requireTxInfoPhaseEvent(t, processor.messages[0], failedLookupType, 1, notFoundResult, "", transmitter)
+		requireTxInfoPhaseEvent(t, processor.messages[1], failedLookupType, 2, notFoundResult, "", transmitter)
 	})
 }
 

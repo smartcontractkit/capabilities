@@ -206,6 +206,26 @@ func buildFakeTransactionWithSigs(t *testing.T, txHash string, success bool, seq
 	return &aptostypes.Transaction{Data: []byte(txJSON)}
 }
 
+// monitoring
+type recordingTxInfoProcessor struct {
+	messages []*monitoring.WriteReportTxInfoRetrievalPhase
+}
+
+func (r *recordingTxInfoProcessor) Process(_ context.Context, msg proto.Message, _ ...any) error {
+	if phaseMsg, ok := msg.(*monitoring.WriteReportTxInfoRetrievalPhase); ok {
+		r.messages = append(r.messages, phaseMsg)
+	}
+	return nil
+}
+
+func txInfoRetrieverMonitoringOption(processor *recordingTxInfoProcessor) TxInfoRetrieverOption {
+	return WithTxInfoRetrieverMonitoring(
+		processor,
+		monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		monitoring.TelemetryContext{},
+	)
+}
+
 func newTestTxInfoRetriever(t *testing.T, mockClient *CREForwarderClient_mock, targetReportMetadata ocrtypes.Metadata, requestStartTime time.Time) (TxInfoRetriever, *recordingTxInfoProcessor) {
 	t.Helper()
 	rawExecID, _ := hex.DecodeString(targetReportMetadata.ExecutionID)
