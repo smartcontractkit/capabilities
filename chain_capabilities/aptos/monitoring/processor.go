@@ -81,12 +81,10 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 			return fmt.Errorf("failed to publish WriteReportP2PConfigIncomplete metrics: %w", err)
 		}
 	case *WriteReportTxInfoRetrievalPhase:
-		p.logMessage(msg)
 		if err := p.metrics.OnWriteReportTxInfoRetrievalPhase(ctx, msg); err != nil {
 			return fmt.Errorf("failed to publish WriteReportTxInfoRetrievalPhase metrics: %w", err)
 		}
 	case *WriteReportInvokeOnReportDuration:
-		p.logMessage(msg)
 		if err := p.metrics.OnWriteReportInvokeOnReportDuration(ctx, msg); err != nil {
 			return fmt.Errorf("failed to publish WriteReportInvokeOnReportDuration metrics: %w", err)
 		}
