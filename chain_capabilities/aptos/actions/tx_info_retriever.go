@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 	"time"
@@ -260,18 +261,8 @@ func (thr *TxInfoRetriever) emitTxInfoRetrievalPhase(ctx context.Context, lookup
 		thr.telemetryContext,
 		phase,
 		result,
-		durationMillis(duration),
-		txHash,
-		transmitter.String(),
-		lookupType,
-	))
-}
-
-func durationMillis(duration time.Duration) int64 {
-	if duration <= 0 {
-		return 0
-	}
-	return duration.Milliseconds()
+		int64(math.Max(float64(duration.Milliseconds()), 0)),
+		txHash, transmitter.String(), lookupType))
 }
 
 // GetSuccessfulTransmissionInfo retrieves the tx hash of a successful report transmission

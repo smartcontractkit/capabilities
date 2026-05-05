@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"math/big"
 	"slices"
 	"strings"
@@ -219,7 +220,7 @@ func (wr *writeReport) execute(
 	invokeOnReportDuration := time.Since(invokeOnReportStart)
 	monitoring.EmitInitiated(ctx, wr.lggr, wr.beholderProcessor, wr.messageBuilder.BuildWriteReportInvokeOnReportDuration(
 		telemetryContext,
-		durationMillis(invokeOnReportDuration),
+		int64(math.Max(float64(invokeOnReportDuration.Milliseconds()), 0)),
 		int32(txReply.TxStatus), //nolint:gosec // txReply.TxStatus is a small enum value: 0, 1, 2.
 	))
 
