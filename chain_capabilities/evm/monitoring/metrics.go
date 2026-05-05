@@ -6,6 +6,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"go.opentelemetry.io/otel/attribute"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 
 	commoncapbeholder "github.com/smartcontractkit/capabilities/libs/monitoring"
 
@@ -25,6 +26,45 @@ const (
 	readActionSuccessMetricEventRef = "chain_capabilities.evm.ReadActionSuccess"
 	readActionErrorMetricEventRef   = "chain_capabilities.evm.ReadActionError"
 )
+
+var readLatencyBucketBoundariesMs = []float64{
+	0, 5, 10, 25, 50, 75, 100,
+	250, 500, 750, 1000,
+	2500, 5000, 7500, 10000,
+	15000, 30000,
+}
+
+func MetricViews() []sdkmetric.View {
+	metricNames := []string{
+		ns("read_success") + "_cap_duration",
+		ns("read_error") + "_cap_duration",
+		ns(actionCallContract+"_success") + "_cap_duration",
+		ns(actionCallContract+"_error") + "_cap_duration",
+		ns(actionFilterLogs+"_success") + "_cap_duration",
+		ns(actionFilterLogs+"_error") + "_cap_duration",
+		ns(actionBalanceAt+"_success") + "_cap_duration",
+		ns(actionBalanceAt+"_error") + "_cap_duration",
+		ns(actionEstimateGas+"_success") + "_cap_duration",
+		ns(actionEstimateGas+"_error") + "_cap_duration",
+		ns(actionGetTransactionByHash+"_success") + "_cap_duration",
+		ns(actionGetTransactionByHash+"_error") + "_cap_duration",
+		ns(actionGetTransactionReceipt+"_success") + "_cap_duration",
+		ns(actionGetTransactionReceipt+"_error") + "_cap_duration",
+		ns(actionHeaderByNumber+"_success") + "_cap_duration",
+		ns(actionHeaderByNumber+"_error") + "_cap_duration",
+	}
+
+	views := make([]sdkmetric.View, 0, len(metricNames))
+	for _, name := range metricNames {
+		views = append(views, sdkmetric.NewView(
+			sdkmetric.Instrument{Name: name},
+			sdkmetric.Stream{Aggregation: sdkmetric.AggregationExplicitBucketHistogram{
+				Boundaries: readLatencyBucketBoundariesMs,
+			}},
+		))
+	}
+	return views
+}
 
 // Metrics holds all per-method instruments
 type Metrics struct {

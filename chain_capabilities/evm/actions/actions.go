@@ -63,6 +63,7 @@ type EVM struct {
 	reportSizeLimit                            limits.BoundLimiter[commoncfg.Size]
 	txGasLimit                                 limits.BoundLimiter[uint64]
 	featureChainCapabilityHashBasedOCRActiveAt limits.RangeLimiter[commoncfg.Timestamp]
+	writeReportL1FeeActive                     limits.RangeLimiter[commoncfg.Timestamp]
 
 	transmissionScheduler ts.TransmissionScheduler
 }
@@ -117,11 +118,15 @@ func (e *EVM) initLimiters(limitsFactory limits.Factory) (err error) {
 		return
 	}
 	e.featureChainCapabilityHashBasedOCRActiveAt, err = limits.MakeRangeLimiter(limitsFactory, cresettings.Default.PerWorkflow.FeatureChainCapabilityHashBasedOCRActivePeriod)
+	if err != nil {
+		return
+	}
+	e.writeReportL1FeeActive, err = limits.MakeRangeLimiter(limitsFactory, cresettings.Default.PerWorkflow.FeatureEVMWriteReportL1FeeActivePeriod)
 	return
 }
 
 func (e *EVM) Close() error {
-	return services.CloseAll(e.readPayloadSizeLimiter, e.logQueryBlockLimit, e.reportSizeLimit, e.txGasLimit, e.featureChainCapabilityHashBasedOCRActiveAt)
+	return services.CloseAll(e.readPayloadSizeLimiter, e.logQueryBlockLimit, e.reportSizeLimit, e.txGasLimit, e.featureChainCapabilityHashBasedOCRActiveAt, e.writeReportL1FeeActive)
 }
 
 func requestID(meta capabilities.RequestMetadata) string {

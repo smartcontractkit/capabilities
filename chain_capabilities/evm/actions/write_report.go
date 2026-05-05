@@ -47,9 +47,11 @@ type WriteReport struct {
 	beholderProcessor beholder.ProtoProcessor
 	messageBuilder    *monitoring.MessageBuilder
 
-	txGasLimit            limits.BoundLimiter[uint64]
-	reportSizeLimit       limits.BoundLimiter[commoncfg.Size]
-	transmissionScheduler ts.TransmissionScheduler
+	txGasLimit             limits.BoundLimiter[uint64]
+	reportSizeLimit        limits.BoundLimiter[commoncfg.Size]
+	writeReportL1FeeActive limits.RangeLimiter[commoncfg.Timestamp]
+	transmissionScheduler  ts.TransmissionScheduler
+	executionTimestamp     time.Time
 }
 
 func (e *EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMetadata, input *evm.WriteReportRequest) (*capabilities.ResponseAndMetadata[*evm.WriteReportReply], caperrors.Error) {
@@ -88,9 +90,11 @@ func (e *EVM) executeWriteReport(ctx context.Context, request *evm.WriteReportRe
 		beholderProcessor: e.beholderProcessor,
 		messageBuilder:    e.messageBuilder,
 
-		txGasLimit:            e.txGasLimit,
-		reportSizeLimit:       e.reportSizeLimit,
-		transmissionScheduler: e.transmissionScheduler,
+		txGasLimit:             e.txGasLimit,
+		reportSizeLimit:        e.reportSizeLimit,
+		writeReportL1FeeActive: e.writeReportL1FeeActive,
+		transmissionScheduler:  e.transmissionScheduler,
+		executionTimestamp:     metadata.ExecutionTimestamp,
 	}
 
 	return wr.executeWriteReport(ctx, request, metadata, telemetryContext)
@@ -437,11 +441,18 @@ func (e *WriteReport) fetchTransactionReceiptAndCreateReply(ctx context.Context,
 	if err != nil {
 		return nil, fmt.Errorf("failed to get transaction receipt: %w", err)
 	}
+	receiptGasInfo := evmtypes.ReceiptGasInfo{
+		GasUsed:           txReceipt.GasUsed,
+		EffectiveGasPrice: txReceipt.EffectiveGasPrice,
+	}
+	if e.includeL1FeeInReceiptFee(ctx) {
+		receiptGasInfo.L1Fee = txReceipt.L1Fee
+	} else {
+		e.lggr.Debugw("WriteReport L1 fee feature flag is inactive; omitting L1 fee from transaction fee calculation")
+	}
+
 	transactionFee, err := capcommon.WithQuickRetry(ctx, e.lggr, func(ctx context.Context) (*evmtypes.TransactionFee, error) {
-		return e.CalculateTransactionFee(ctx, evmtypes.ReceiptGasInfo{
-			GasUsed:           txReceipt.GasUsed,
-			EffectiveGasPrice: txReceipt.EffectiveGasPrice,
-		})
+		return e.CalculateTransactionFee(ctx, receiptGasInfo)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to calculate transaction fee: %w", err)
@@ -470,6 +481,16 @@ func (e *WriteReport) fetchTransactionReceiptAndCreateReply(ctx context.Context,
 		ReceiverContractExecutionStatus: &receiverStatus,
 		ErrorMessage:                    message,
 	}, nil
+}
+
+func (e *WriteReport) includeL1FeeInReceiptFee(ctx context.Context) bool {
+	if e.writeReportL1FeeActive == nil {
+		return false
+	}
+	if e.executionTimestamp.IsZero() {
+		e.lggr.Errorw("ExecutionTimestamp is zero")
+	}
+	return e.writeReportL1FeeActive.Check(ctx, commoncfg.NewTimestamp(e.executionTimestamp)) == nil
 }
 
 func (e *EVM) validateInputsAndReportMetadata(requestMetadata capabilities.RequestMetadata, request *evm.WriteReportRequest) error {
