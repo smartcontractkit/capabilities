@@ -157,26 +157,35 @@ func (m *MessageBuilder) BuildWriteReportInitiated(tc TelemetryContext, req *sol
 }
 
 func convertWriteReportRequest(req *solanacappb.WriteReportRequest) *WriteReportRequest {
-	return &WriteReportRequest{
+	if req == nil {
+		return nil
+	}
+	msg := &WriteReportRequest{
 		Receiver:          req.Receiver,
 		RemainingAccounts: convertRemainingAccounts(req.RemainingAccounts),
-		Report: &ReportResponse{
-			ConfigDigest:  req.Report.ConfigDigest,
-			SeqNr:         req.Report.SeqNr,
-			ReportContext: req.Report.ReportContext,
-			RawReport:     req.Report.RawReport,
-			Sigs:          convertAttributedSignature(req.Report.Sigs),
-		},
 		ComputeConfig: &ComputeConfig{
 			ComputeLimit:    req.GetComputeConfig().GetComputeLimit(),
 			ComputeMaxPrice: req.GetComputeConfig().GetComputeMaxPrice(),
 		},
 	}
+	if req.Report != nil {
+		msg.Report = &ReportResponse{
+			ConfigDigest:  req.Report.ConfigDigest,
+			SeqNr:         req.Report.SeqNr,
+			ReportContext: req.Report.ReportContext,
+			RawReport:     req.Report.RawReport,
+			Sigs:          convertAttributedSignature(req.Report.Sigs),
+		}
+	}
+	return msg
 }
 
 func convertRemainingAccounts(accs []*solanacappb.AccountMeta) []*AccountMeta {
 	ret := []*AccountMeta{}
 	for _, acc := range accs {
+		if acc == nil {
+			continue
+		}
 		ret = append(ret, &AccountMeta{
 			PublicKey:  acc.PublicKey,
 			IsWritable: acc.IsWritable,
@@ -187,6 +196,9 @@ func convertRemainingAccounts(accs []*solanacappb.AccountMeta) []*AccountMeta {
 func convertAttributedSignature(attributedSignatures []*sdkpb.AttributedSignature) []*AttributedSignature {
 	convertedSignatures := []*AttributedSignature{}
 	for _, as := range attributedSignatures {
+		if as == nil {
+			continue
+		}
 		convertedSignatures = append(convertedSignatures, &AttributedSignature{
 			Signature: as.Signature,
 			SignerId:  as.SignerId,

@@ -1,14 +1,17 @@
 package actions
 
 import (
+	"context"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	aptos_sdk "github.com/aptos-labs/aptos-go-sdk"
+	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
@@ -16,6 +19,7 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/monitoring"
 	commontest "github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
@@ -25,7 +29,6 @@ import (
 	aptostypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/aptos"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
-	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
 )
 
 // --- helpers ---
@@ -458,10 +461,7 @@ func TestWriteReport_Execute(t *testing.T) {
 		transmissionIDStr := computeTransmissionIDStr(t, rm)
 		h, node0Addr := newMultiNodeTestHelper(t, transmissionIDStr)
 
-		otherRM, _, _ := newReportFixture(t)
-
 		h.mockTransmission(TransmissionInfo{Success: false}).Once()
-		h.mockSearchTx(t, node0Addr, buildFakeTransaction(t, "0xpre", false, 99, time.Now().Add(-2*time.Minute).UnixMicro(), otherRM)).Once() // pre-submission: no match, proceeds to submit
 		h.mockInvokeOnReport(&aptostypes.SubmitTransactionReply{TxStatus: aptostypes.TxFatal, TxHash: "0xmine"}, nil)
 		h.mockTransmission(TransmissionInfo{Success: false})
 		h.mockTransactionByHash("0xmine", testGasUsed, testGasUnitPrice)
@@ -485,10 +485,8 @@ func TestWriteReport_Execute(t *testing.T) {
 		h, node0Addr := newMultiNodeTestHelper(t, transmissionIDStr)
 
 		vmReceiverRevert := "Move abort in 0x1::receiver: E_RECEIVER_FAILURE(0x64):"
-		otherRM, _, _ := newReportFixture(t)
 
 		h.mockTransmission(TransmissionInfo{Success: false}).Once()
-		h.mockSearchTx(t, node0Addr, buildFakeTransaction(t, "0xpre", false, 99, time.Now().Add(-2*time.Minute).UnixMicro(), otherRM)).Once() // pre-submission: no match, proceeds to submit
 		h.mockInvokeOnReport(&aptostypes.SubmitTransactionReply{TxStatus: aptostypes.TxFatal, TxHash: "0xmine"}, nil)
 		h.mockTransmission(TransmissionInfo{Success: false})
 		h.mockTransactionByHash("0xmine", testGasUsed, testGasUnitPrice)
@@ -533,51 +531,6 @@ func TestWriteReport_PreSubmissionCheck(t *testing.T) {
 		require.Equal(t, "Out of gas", *result.Response.ErrorMessage)
 		require.Nil(t, result.Response.ReceiverContractExecutionStatus)
 		require.Empty(t, result.ResponseMetadata.Metering)
-	})
-
-	t.Run("Node 0 failed with OUT_OF_GAS, our gas same - return fatal", func(t *testing.T) {
-		rm, reqMeta, req := newReportFixture(t)
-		transmissionIDStr := computeTransmissionIDStr(t, rm)
-		h, node0Addr := newMultiNodeTestHelper(t, transmissionIDStr)
-
-		req.GasConfig = &aptoscap.GasConfig{MaxGasAmount: 100_000}
-		node0MaxGas := uint64(100_000)
-		node0FailedTx := buildFakeTransactionWithSigs(t, "0xnode0oog", false, 100, time.Now().UnixMicro(), rm, testGasUsed, testGasUnitPrice, node0MaxGas, "Out of gas", req.Report.Sigs)
-
-		h.mockTransmission(TransmissionInfo{Success: false})
-		h.mockSearchTx(t, node0Addr, node0FailedTx) // pre-submission: OOG, our gas same → fatal
-
-		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
-		require.Nil(t, capErr)
-		require.Equal(t, aptoscap.TxStatus_TX_STATUS_FATAL, result.Response.TxStatus)
-		require.Equal(t, "0xnode0oog", *result.Response.TxHash)
-		require.NotNil(t, result.Response.ErrorMessage)
-		require.Contains(t, *result.Response.ErrorMessage, "Out of gas")
-		require.Empty(t, result.ResponseMetadata.Metering) // Pre-submission escape — no metering
-		// InvokeOnReport should NOT have been called — pre-submission check blocked
-		h.forwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
-	})
-
-	t.Run("Node 0 failed with non-gas error (Move abort) - return fatal", func(t *testing.T) {
-		rm, reqMeta, req := newReportFixture(t)
-		transmissionIDStr := computeTransmissionIDStr(t, rm)
-		h, node0Addr := newMultiNodeTestHelper(t, transmissionIDStr)
-
-		vmReceiverRevert := "Move abort in 0x1::receiver: E_RECEIVER_FAILURE(0x64):"
-		node0FailedTx := buildFakeTransactionWithSigs(t, "0xnode0revert", false, 100, time.Now().UnixMicro(), rm, testGasUsed, testGasUnitPrice, testGasUsed, vmReceiverRevert, req.Report.Sigs)
-
-		h.mockTransmission(TransmissionInfo{Success: false})
-		h.mockSearchTx(t, node0Addr, node0FailedTx) // pre-submission: receiver revert → fatal
-
-		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
-		require.Nil(t, capErr)
-		require.Equal(t, aptoscap.TxStatus_TX_STATUS_FATAL, result.Response.TxStatus)
-		require.Equal(t, "0xnode0revert", *result.Response.TxHash)
-		require.NotNil(t, result.Response.ReceiverContractExecutionStatus)
-		require.Equal(t, aptoscap.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED, *result.Response.ReceiverContractExecutionStatus)
-		// Pre-submission escape — we never submitted, so no metering regardless of failure type.
-		require.Empty(t, result.ResponseMetadata.Metering)
-		h.forwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	})
 
 	t.Run("Node 0 has no matching failed tx - proceed to submit", func(t *testing.T) {
@@ -655,6 +608,85 @@ func TestWriteReport_PreSubmissionCheck(t *testing.T) {
 		require.Equal(t, aptoscap.TxStatus_TX_STATUS_FATAL, result.Response.TxStatus)
 		// Pre-submission check skipped because orderedTransmitters[0] is empty
 		h.forwarderClient.AssertNotCalled(t, "GetTransmitterTransactions", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	})
+}
+
+func setupAptosPollTransmissionInfo(t *testing.T) (*writeReport, *CREForwarderClient_mock) {
+	t.Helper()
+	lggr := logger.Test(t)
+	mockClient := NewCREForwarderClient_mock(t)
+
+	var peer0, peer1, peer2, peer3 p2ptypes.PeerID
+	peer0[0], peer1[0], peer2[0], peer3[0] = 0x01, 0x02, 0x03, 0x04
+	scheduler := ts.NewTransmissionScheduler(
+		peer0,
+		[]p2ptypes.PeerID{peer0, peer1, peer2, peer3},
+		10*time.Millisecond,
+		2,
+		lggr,
+	)
+
+	wr := &writeReport{
+		forwarderClient:       mockClient,
+		lggr:                  logger.Sugared(lggr),
+		transmissionScheduler: scheduler,
+		beholderProcessor:     commontest.NopBeholderProcessor{},
+		messageBuilder:        monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+	}
+	return wr, mockClient
+}
+
+func TestPollTransmissionInfo_RaceConditions_Aptos(t *testing.T) {
+	t.Parallel()
+
+	t.Run("timer returns fresh state via final boundary read", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+		defer cancel()
+
+		wr, mockClient := setupAptosPollTransmissionInfo(t)
+		wr.transmissionScheduler.DeltaStage = 150 * time.Millisecond
+
+		var chainStateUpdated atomic.Bool
+		go func() {
+			time.Sleep(120 * time.Millisecond)
+			chainStateUpdated.Store(true)
+		}()
+
+		mockClient.EXPECT().
+			GetTransmissionInfo(mock.Anything, mock.Anything, mock.Anything).
+			RunAndReturn(func(context.Context, TransmissionID, *uint64) (TransmissionInfo, error) {
+				if chainStateUpdated.Load() {
+					return TransmissionInfo{Success: true, Transmitter: testTransmitter}, nil
+				}
+				return TransmissionInfo{Success: false}, nil
+			}).
+			Maybe()
+
+		info, err := wr.pollTransmissionInfo(ctx, TransmissionID{}, 1, monitoring.TelemetryContext{})
+		require.NoError(t, err)
+		require.True(t, chainStateUpdated.Load(), "chain state should have updated before stage timer returned")
+		require.True(t, info.Success)
+	})
+
+	t.Run("all rpc errors including boundary read return error", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+		defer cancel()
+
+		wr, mockClient := setupAptosPollTransmissionInfo(t)
+		wr.transmissionScheduler.DeltaStage = 50 * time.Millisecond
+
+		var rpcCalls atomic.Int64
+		mockClient.EXPECT().
+			GetTransmissionInfo(mock.Anything, mock.Anything, mock.Anything).
+			RunAndReturn(func(context.Context, TransmissionID, *uint64) (TransmissionInfo, error) {
+				rpcCalls.Add(1)
+				return TransmissionInfo{}, errors.New("rpc unavailable")
+			}).
+			Maybe()
+
+		_, err := wr.pollTransmissionInfo(ctx, TransmissionID{}, 2, monitoring.TelemetryContext{})
+		require.Greater(t, rpcCalls.Load(), int64(0))
+		require.Error(t, err)
 	})
 }
 
