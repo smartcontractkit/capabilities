@@ -108,7 +108,7 @@ var _ services.Service = &Service{}
 // NewTriggerService creates a new trigger service.  Optionally, a clock can be passed in for testing, if nil
 // the system clock will be used. The orgResolver is optional and can be nil, but should be set in live environments.
 func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock, limitsFactory limits.Factory) (*Service, error) {
-	lggr := logger.Named(parentLggr, "Service")
+	lggr := logger.Named(parentLggr, "CRONTrigger")
 
 	metrics, err := NewMetrics()
 	if err != nil {
@@ -150,7 +150,7 @@ func NewTriggerService(parentLggr logger.Logger, clock clockwork.Clock, limitsFa
 }
 
 func (s *Service) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
-	s.lggr.Debugf("Initialising %s", ServiceName)
+	s.lggr.Debugw("Initialising cron trigger capability", "serviceName", ServiceName)
 
 	var cronConfig Config
 	if len(dependencies.Config) > 0 {
@@ -401,7 +401,7 @@ func (s *Service) AckEvent(ctx context.Context, triggerID string, eventID string
 func (s *Service) UnregisterTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) caperrors.Error {
 	trigger, ok := s.triggers.Read(triggerID)
 	if !ok {
-		s.lggr.Warnf("triggerId %s not found", triggerID)
+		s.lggr.Warnw("trigger not found", "triggerID", triggerID)
 		return nil
 	}
 

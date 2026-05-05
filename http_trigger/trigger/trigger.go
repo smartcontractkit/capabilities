@@ -62,7 +62,7 @@ func NewService(lggr logger.Logger, limitsFactory limits.Factory) *service {
 }
 
 func (s *service) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
-	s.lggr.Debugf("Initialising %s. config: %s", ServiceName, dependencies.Config)
+	s.lggr.Debugw("Initialising http trigger capability", "config", dependencies.Config)
 
 	var serviceConfig ServiceConfig
 	if dependencies.Config != "" {

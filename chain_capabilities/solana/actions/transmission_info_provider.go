@@ -4,18 +4,26 @@ import (
 	"context"
 	"fmt"
 
-	bin "github.com/gagliardetto/binary"
 	"github.com/gagliardetto/solana-go"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	soltypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/solana"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 	solprimitives "github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives/solana"
 	"github.com/smartcontractkit/chainlink-solana/contracts"
+	ks_forwarder "github.com/smartcontractkit/chainlink-solana/contracts/generated/keystone_forwarder"
 	lptypes "github.com/smartcontractkit/chainlink-solana/pkg/solana/logpoller/types"
 )
+
+const (
+	EventReportProcessed  = "ReportProcessed"
+	EventReportInProgress = "ReportInProgress"
+)
+
+// transmissionLogSubkeyPath indexes events by `transmission_id` (same 32-byte value used with
+// forwarder state to derive the on-chain execution_state / transmission PDA in the forwarder).
+var transmissionLogSubkeyPath = []string{"TransmissionId"}
 
 type logReader struct {
 	types.SolanaService
@@ -24,30 +32,26 @@ type logReader struct {
 	sigInProgress      soltypes.EventSignature
 }
 
-const (
-	EventReportProcessed  = "ReportProcessed"
-	EventReportInProgress = "ReportInProgress"
-)
-
+// LogsTransmissionStatusProvider resolves transmission status from ReportProcessed (success) and
+// ReportInProgress (failure, including reverted) logs via the log poller.
 type LogsTransmissionStatusProvider struct {
-	lr   *logReader
-	lggr logger.Logger
+	types.SolanaService
+	forwarderProgramID solana.PublicKey
+	lr                 *logReader
 }
 
-func newLogTransmissionInfoProvider(ctx context.Context, lggr logger.Logger, programID solana.PublicKey, s types.SolanaService) (TransmissionInfoProvider, error) {
+func newLogsTransmissionStatusProvider(ctx context.Context, programID solana.PublicKey, s types.SolanaService) (TransmissionInfoProvider, error) {
 	lr := &logReader{
 		SolanaService:      s,
 		forwarderProgramID: programID,
 	}
-
-	err := lr.registerCREForwarderFilters(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to register CRE forwarder filters: %w", err)
+	if err := lr.registerCREForwarderFilters(ctx); err != nil {
+		return nil, fmt.Errorf("failed to register forwarder log filters: %w", err)
 	}
-
 	return &LogsTransmissionStatusProvider{
-		lr:   lr,
-		lggr: lggr,
+		SolanaService:      s,
+		forwarderProgramID: programID,
+		lr:                 lr,
 	}, nil
 }
 
@@ -76,13 +80,12 @@ func (p *LogsTransmissionStatusProvider) GetTransmissionInfo(ctx context.Context
 }
 
 func (p *LogsTransmissionStatusProvider) successTransmissionInfoReply(successLogs []*soltypes.Log) (TransmissionInfo, error) {
-	var event ReportProcessed
 	if len(successLogs) != 1 {
 		return TransmissionInfo{}, fmt.Errorf("unexpected successful logs length: %d", len(successLogs))
 	}
 
 	log := successLogs[0]
-	err := bin.UnmarshalBorsh(&event, log.Data)
+	_, err := ks_forwarder.ParseEvent_ReportProcessed(log.Data)
 	if err != nil {
 		return TransmissionInfo{}, fmt.Errorf("failed to unmarshal report processed event: %w", err)
 	}
@@ -94,8 +97,6 @@ func (p *LogsTransmissionStatusProvider) successTransmissionInfoReply(successLog
 }
 
 func (p *LogsTransmissionStatusProvider) failedTransmissionInfoReply(inProgressLogs []*soltypes.Log) (TransmissionInfo, error) {
-	var event ReportInProgress
-
 	// use signature of the oldest transaction in reply
 	log := inProgressLogs[0]
 	minBlock := inProgressLogs[0].BlockNumber
@@ -106,7 +107,7 @@ func (p *LogsTransmissionStatusProvider) failedTransmissionInfoReply(inProgressL
 		}
 	}
 
-	err := bin.UnmarshalBorsh(&event, log.Data)
+	_, err := ks_forwarder.ParseEvent_ReportInProgress(log.Data)
 	if err != nil {
 		return TransmissionInfo{}, fmt.Errorf("failed to unmarshal report in progress event: %w", err)
 	}
@@ -118,18 +119,19 @@ func (p *LogsTransmissionStatusProvider) failedTransmissionInfoReply(inProgressL
 }
 
 func (lr *logReader) registerCREForwarderFilters(ctx context.Context) error {
+	idlJSON := []byte(contracts.FetchForwarderIDL())
+
 	sigProcessed := soltypes.EventSignature(lptypes.NewEventSignatureFromName(EventReportProcessed))
 	err := lr.RegisterLogTracking(ctx, soltypes.LPFilterQuery{
 		Name:            EventReportProcessed + "_" + lr.forwarderProgramID.String(),
 		Address:         soltypes.PublicKey(lr.forwarderProgramID),
 		EventName:       EventReportProcessed,
 		EventSig:        sigProcessed,
-		ContractIdlJSON: []byte(contracts.FetchForwarderIDL()),
-		SubkeyPaths:     [][]string{{"TransmissionId"}},
+		ContractIdlJSON: idlJSON,
+		SubkeyPaths:     [][]string{transmissionLogSubkeyPath},
 	})
-
 	if err != nil {
-		return fmt.Errorf("failed to register  EventReportProcessed filter for forwarder: %w", err)
+		return fmt.Errorf("failed to register ReportProcessed filter for forwarder: %w", err)
 	}
 
 	sigInProgress := soltypes.EventSignature(lptypes.NewEventSignatureFromName(EventReportInProgress))
@@ -138,66 +140,51 @@ func (lr *logReader) registerCREForwarderFilters(ctx context.Context) error {
 		Address:         soltypes.PublicKey(lr.forwarderProgramID),
 		EventName:       EventReportInProgress,
 		EventSig:        sigInProgress,
-		ContractIdlJSON: []byte(contracts.FetchForwarderIDL()),
-		SubkeyPaths:     [][]string{{"TransmissionId"}},
+		ContractIdlJSON: idlJSON,
+		SubkeyPaths:     [][]string{transmissionLogSubkeyPath},
 		IncludeReverted: true,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to register  EventReportIntProgress filter for forwarder: %w", err)
+		return fmt.Errorf("failed to register ReportInProgress filter for forwarder: %w", err)
 	}
 
 	lr.sigProcessed = sigProcessed
 	lr.sigInProgress = sigInProgress
-
 	return nil
 }
 
 func (lr *logReader) queryProcessed(ctx context.Context, transmissionID [32]byte) ([]*soltypes.Log, error) {
 	limit := query.NewLimitAndSort(query.CountLimit(1), query.NewSortBySequence(query.Desc))
-	queryProcessed := []query.Expression{}
-	queryProcessed = append(queryProcessed, solprimitives.NewEventSigFilter(lr.sigProcessed))
-	queryProcessed = append(queryProcessed, solprimitives.NewAddressFilter(soltypes.PublicKey(lr.forwarderProgramID)))
+	exprs := []query.Expression{
+		solprimitives.NewEventSigFilter(lr.sigProcessed),
+		solprimitives.NewAddressFilter(soltypes.PublicKey(lr.forwarderProgramID)),
+		solprimitives.NewEventBySubkeyFilter(0, []solprimitives.IndexedValueComparator{
+			{Value: transmissionID[:], Operator: primitives.Eq},
+		}),
+	}
 
-	queryProcessed = append(queryProcessed, solprimitives.NewEventBySubkeyFilter(0, []solprimitives.IndexedValueComparator{
-		{Value: transmissionID[:], Operator: primitives.Eq},
-	}))
-	logsProcessed, err := lr.QueryTrackedLogs(ctx, queryProcessed, limit)
+	logs, err := lr.QueryTrackedLogs(ctx, exprs, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query tracked logs: %w", err)
 	}
 
-	return logsProcessed, nil
+	return logs, nil
 }
 
 func (lr *logReader) queryInProgress(ctx context.Context, transmissionID [32]byte) ([]*soltypes.Log, error) {
 	limit := query.NewLimitAndSort(query.CountLimit(1), query.NewSortBySequence(query.Desc))
-	queryInProgress := []query.Expression{}
-	queryInProgress = append(queryInProgress, solprimitives.NewEventSigFilter(lr.sigInProgress))
-	queryInProgress = append(queryInProgress, solprimitives.NewAddressFilter(soltypes.PublicKey(lr.forwarderProgramID)))
+	exprs := []query.Expression{
+		solprimitives.NewEventSigFilter(lr.sigInProgress),
+		solprimitives.NewAddressFilter(soltypes.PublicKey(lr.forwarderProgramID)),
+		solprimitives.NewEventBySubkeyFilter(0, []solprimitives.IndexedValueComparator{
+			{Value: transmissionID[:], Operator: primitives.Eq},
+		}),
+	}
 
-	queryInProgress = append(queryInProgress, solprimitives.NewEventBySubkeyFilter(0, []solprimitives.IndexedValueComparator{
-		{Value: transmissionID[:], Operator: primitives.Eq},
-	}))
-	logsProcessed, err := lr.QueryTrackedLogs(ctx, queryInProgress, limit)
+	logs, err := lr.QueryTrackedLogs(ctx, exprs, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query tracked logs: %w", err)
 	}
 
-	return logsProcessed, nil
-}
-
-type ReportProcessed struct {
-	Discriminator [8]byte `bin:"-"`
-
-	State          solana.PublicKey
-	Receiver       solana.PublicKey
-	TransmissionId [32]byte
-	Result         bool
-}
-
-type ReportInProgress struct {
-	Discriminator [8]byte `bin:"-"`
-
-	State          solana.PublicKey
-	TransmissionId [32]byte
+	return logs, nil
 }
