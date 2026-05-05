@@ -398,25 +398,54 @@ func assertLogTriggerWorks(t *testing.T, eventName string, workflowName string, 
 	}, 90*time.Second, 2*time.Second,
 		"Expected to find %d matching events, but found: %+v", numOfWorkflowNodes, foundEventsByMessage)
 
-	// Verify ACKs occur on Base Trigger for each matching tx. BaseTrigger logs with
-	// Infow("Event ACK", "triggerID", ..., "eventID", ...)
+	// Verify ACKs for each matching delivery. BaseTrigger logs Infow("Event ACK", "eventID", ...).
+	//
+	// We locate ACKs by tx hash embedded in eventID; for each matching message there must be a
+	// tx in matchingTxs whose log carried that message.
 	require.Eventually(t, func() bool {
-		require.NotEmpty(t, matchingTxs)
+		require.NotEmpty(t, matchingMessages)
 		matchCount := 0
-		for _, tx := range matchingTxs {
-			txHex := strings.TrimPrefix(strings.ToLower(tx.Hash().Hex()), "0x")
+		for _, msg := range matchingMessages {
+			txForMsg := findTxForMatchingMessage(matchingTxs, msg)
+			require.NotNil(t, txForMsg, "no emitted tx found for matching message %q (emitEventsFn must return txs for matching emits)", msg)
+			txHex := strings.TrimPrefix(strings.ToLower(txForMsg.Hash().Hex()), "0x")
 			for _, log := range obs.FilterMessageSnippet("Event ACK").All() {
 				if eventAckLogContainsTxHash(log, txHex) {
 					matchCount++
-					t.Logf("found matching ACK log for tx %s eventID=%v", tx.Hash().Hex(), log.ContextMap()["eventID"])
+					t.Logf("found matching ACK log for message %q tx %s eventID=%v", msg, txForMsg.Hash().Hex(), log.ContextMap()["eventID"])
 					break
 				}
 			}
 		}
-		expected := len(matchingTxs)
-		t.Logf("ACK log matchCount=%d, expected=%d (one per matching tx)", matchCount, expected)
+		expected := len(matchingMessages)
+		t.Logf("ACK log matchCount=%d, expected=%d (one per matching workflow message)", matchCount, expected)
 		return matchCount == expected
-	}, 90*time.Second, 1*time.Second, "expected ACK logs for each matching tx event")
+	}, 90*time.Second, 1*time.Second, "expected ACK logs for each matching workflow message")
+}
+
+// findTxForMatchingMessage returns the first tx whose corresponding receipt log should carry the
+// given message payload (used to pair matchingMessages with txs for ACK lookup).
+func findTxForMatchingMessage(txs []*types.Transaction, matchingMsg string) *types.Transaction {
+	for _, tx := range txs {
+		if tx == nil {
+			continue
+		}
+		if bytesContainsEmitPayload(tx, matchingMsg) {
+			return tx
+		}
+	}
+	return nil
+}
+
+func bytesContainsEmitPayload(tx *types.Transaction, substr string) bool {
+	if tx == nil {
+		return false
+	}
+	d := tx.Data()
+	if len(d) == 0 || len(substr) == 0 {
+		return false
+	}
+	return strings.Contains(string(d), substr)
 }
 
 // eventAckLogContainsTxHash reports whether a zap observed "Event ACK" log's structured
