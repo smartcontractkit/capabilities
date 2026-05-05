@@ -300,13 +300,9 @@ func (thr *TxInfoRetriever) GetSuccessfulTransmissionInfo(ctx context.Context, t
 
 	// Phase 1: fetch latest transactions with no limit (nil) so the RPC returns its default page.
 	// Derive pageSize from the response for subsequent phases.
-<<<<<<< aptos-cap-latency-metrics
-	thr.lggr.Debugw("GetSuccessfulTransmissionInfo phase 1 - quick probe (phase1PageSize)", "phase1PageSize", phase1PageSize)
 	phase1Start := time.Now()
-=======
 	pageSize := defaultPageSize
 	thr.lggr.Debugw("GetSuccessfulTransmissionInfo phase 1 - quick probe (pageSize)", "pageSize", pageSize)
->>>>>>> main
 	txns, err := capcommon.WithQuickRetry(ctx, thr.lggr, func(ctx context.Context) ([]*aptostypes.Transaction, error) {
 		result, fetchErr := thr.forwarderClient.GetTransmitterTransactions(ctx, transmitter, nil, &pageSize)
 		if fetchErr != nil {
@@ -322,13 +318,8 @@ func (thr *TxInfoRetriever) GetSuccessfulTransmissionInfo(ctx context.Context, t
 		thr.emitTxInfoRetrievalPhase(ctx, LookupTypeSuccess, LastPagePoll, TxRetrievalResultFetchError, phase1Start, "", transmitter)
 		return TransmissionTxInfo{}, fmt.Errorf("failed to get transmitter transactions during phase 1: %w", err)
 	}
-<<<<<<< aptos-cap-latency-metrics
-	pageSize := uint64(len(txns))
-	thr.lggr.Debugw("GetSuccessfulTransmissionInfo phase 1 fetched", "txCount", len(txns), "derivedPageSize", pageSize)
-=======
 	thr.lggr.Debugw("GetSuccessfulTransmissionInfo phase 1 fetched", "txCount", len(txns))
 	// TODO: emit metric to potentially capture duration of phase1 fetch (how much time does this take fetch take)
->>>>>>> main
 	phase1Result := thr.scanTransactions(txns, true)
 	if phase1Result.TxHash != "" {
 		thr.lggr.Debugw("GetSuccessfulTransmissionInfo found in phase 1", "txHash", phase1Result.TxHash)
@@ -407,13 +398,9 @@ func (thr *TxInfoRetriever) GetFailedTransmissionInfo(ctx context.Context, trans
 
 	// Phase 1: fetch latest transactions with no limit (nil) so the RPC returns its default page.
 	// Derive pageSize from the response for phase 2.
-<<<<<<< aptos-cap-latency-metrics
-	thr.lggr.Debugw("GetFailedTransmissionInfo phase 1 - quick probe (nil limit)")
 	phase1Start := time.Now()
-=======
 	pageSize := defaultPageSize
 	thr.lggr.Debugw("GetFailedTransmissionInfo phase 1 - quick probe (pageSize)", "pageSize", pageSize)
->>>>>>> main
 	txns, err := capcommon.WithQuickRetry(ctx, thr.lggr, func(ctx context.Context) ([]*aptostypes.Transaction, error) {
 		result, fetchErr := thr.forwarderClient.GetTransmitterTransactions(ctx, transmitter, nil, &pageSize)
 		if fetchErr != nil {
