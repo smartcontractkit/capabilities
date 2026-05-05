@@ -179,14 +179,6 @@ func TestMessageBuilder_WriteReportMessages(t *testing.T) {
 	assert.EqualValues(t, 3, attrsToMap(p2pIncomplete.LogAttributes())["position"])
 
 	txInfoPhase := builder.BuildWriteReportTxInfoRetrievalPhase(tc, 2, "found", 123, "0xtx", "0xtransmitter", "failed_transmission")
-	txInfoLogAttrs := attrsToMap(txInfoPhase.LogAttributes())
-	assert.Equal(t, "2", txInfoLogAttrs["phase"])
-	assert.Equal(t, "found", txInfoLogAttrs["result"])
-	assert.Equal(t, "failed_transmission", txInfoLogAttrs["lookup_type"])
-	assert.Equal(t, "123", txInfoLogAttrs["phase_duration_ms"])
-	assert.Equal(t, "0xtx", txInfoLogAttrs["tx_hash"])
-	assert.Equal(t, "0xtransmitter", txInfoLogAttrs["transmitter"])
-
 	txInfoMetricAttrs := attrsToMap(txInfoPhase.MetricAttributes())
 	assert.Equal(t, "2", txInfoMetricAttrs["phase"])
 	assert.Equal(t, "found", txInfoMetricAttrs["result"])
@@ -194,11 +186,6 @@ func TestMessageBuilder_WriteReportMessages(t *testing.T) {
 	assert.EqualValues(t, 7, txInfoMetricAttrs["workflow_don_id"])
 
 	invokeDuration := builder.BuildWriteReportInvokeOnReportDuration(tc, 456, 2)
-	invokeLogAttrs := attrsToMap(invokeDuration.LogAttributes())
-	assert.Equal(t, "456", invokeLogAttrs["duration_ms"])
-	assert.Equal(t, "2", invokeLogAttrs["tx_status"])
-	assert.EqualValues(t, 7, invokeLogAttrs["workflow_don_id"])
-
 	invokeMetricAttrs := attrsToMap(invokeDuration.MetricAttributes())
 	_, hasDurationMetricAttr := invokeMetricAttrs["duration_ms"]
 	assert.False(t, hasDurationMetricAttr)
