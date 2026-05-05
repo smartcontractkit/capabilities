@@ -1,19 +1,31 @@
 {
-  "version": "0.1.0",
-  "name": "log_read_test",
+  "address": "J1zQwrBNBngz26jRPNWsUSZMHJwBwpkoDitXRV95LdK4",
+  "metadata": {
+    "name": "log_read_test",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Created with Anchor"
+  },
   "instructions": [
     {
-      "name": "createLog",
+      "name": "create_log",
+      "discriminator": [
+        215,
+        95,
+        248,
+        114,
+        153,
+        204,
+        208,
+        48
+      ],
       "accounts": [
         {
           "name": "authority",
-          "isMut": false,
-          "isSigner": true
+          "signer": true
         },
         {
-          "name": "systemProgram",
-          "isMut": false,
-          "isSigner": false
+          "name": "system_program"
         }
       ],
       "args": [
@@ -24,7 +36,35 @@
       ]
     },
     {
-      "name": "createTruncatedLog",
+      "name": "create_truncated_log",
+      "discriminator": [
+        133,
+        74,
+        116,
+        132,
+        80,
+        11,
+        241,
+        64
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "value",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "createLogCpi",
       "accounts": [
         {
           "name": "authority",
@@ -33,6 +73,16 @@
         },
         {
           "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "eventAuthority",
+          "isMut": false,
+          "isSigner": false
+        },
+        {
+          "name": "program",
           "isMut": false,
           "isSigner": false
         }
@@ -48,18 +98,34 @@
   "events": [
     {
       "name": "TestEvent",
-      "fields": [
-        {
-          "name": "strVal",
-          "type": "string",
-          "index": false
-        },
-        {
-          "name": "u64Value",
-          "type": "u64",
-          "index": false
-        }
+      "discriminator": [
+        28,
+        52,
+        39,
+        105,
+        8,
+        210,
+        91,
+        9
       ]
+    }
+  ],
+  "types": [
+    {
+      "name": "TestEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "str_val",
+            "type": "string"
+          },
+          {
+            "name": "u64_value",
+            "type": "u64"
+          }
+        ]
+      }
     }
   ]
 }

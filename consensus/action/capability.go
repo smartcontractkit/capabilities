@@ -123,7 +123,7 @@ func (c *consensusCapability) SetRequestTimeout(timeout time.Duration) {
 }
 
 func (c *consensusCapability) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
-	c.lggr.Debugf("Initialising Consensus Capability")
+	c.lggr.Debug("Initialising Consensus Capability")
 
 	if err := c.setConfiguration(dependencies.Config); err != nil {
 		return fmt.Errorf("error setting consensus capability configuration: %w", err)
