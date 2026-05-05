@@ -181,7 +181,7 @@ func (h *connectorHandler) UnregisterWorkflow(ctx context.Context, workflowID st
 	if err != nil {
 		return fmt.Errorf("failed to unregister workflow %s: %w", workflowID, err)
 	}
-	h.lggr.Debugf("Unregistered workflow %s", workflowID)
+	h.lggr.Debugw("Unregistered workflow", "workflowID", workflowID)
 	return nil
 }
 

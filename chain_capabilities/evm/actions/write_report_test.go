@@ -18,7 +18,9 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
+	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
@@ -1927,6 +1929,74 @@ func toReceiptGasInfo(receipt evmtypes.Receipt) evmtypes.ReceiptGasInfo {
 	return evmtypes.ReceiptGasInfo{
 		GasUsed:           receipt.GasUsed,
 		EffectiveGasPrice: receipt.EffectiveGasPrice,
+	}
+}
+
+func TestFetchTransactionReceiptAndCreateReplyL1FeeFeatureFlag(t *testing.T) {
+	t.Parallel()
+
+	activeFrom := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	activeUntil := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+	testCases := []struct {
+		name               string
+		executionTimestamp time.Time
+		expectedGasInfo    evmtypes.ReceiptGasInfo
+	}{
+		{
+			name:               "inactive flag omits L1 fee",
+			executionTimestamp: activeFrom.Add(-time.Second),
+			expectedGasInfo: evmtypes.ReceiptGasInfo{
+				GasUsed:           1000,
+				EffectiveGasPrice: big.NewInt(2),
+			},
+		},
+		{
+			name:               "active flag includes L1 fee",
+			executionTimestamp: activeFrom,
+			expectedGasInfo: evmtypes.ReceiptGasInfo{
+				GasUsed:           1000,
+				EffectiveGasPrice: big.NewInt(2),
+				L1Fee:             big.NewInt(500),
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			lggr := logger.Test(t)
+			mockEVMService := mocks2.NewEVMService(t)
+			txHash := evmtypes.Hash(test.RandomBytes(32))
+			receipt := evmtypes.Receipt{
+				Status:            1,
+				TxHash:            txHash,
+				GasUsed:           tc.expectedGasInfo.GasUsed,
+				EffectiveGasPrice: tc.expectedGasInfo.EffectiveGasPrice,
+				L1Fee:             big.NewInt(500),
+			}
+
+			mockEVMService.EXPECT().
+				GetTransactionReceipt(mock.Anything, evmtypes.GeTransactionReceiptRequest{Hash: txHash, IsExternal: false}).
+				Return(&receipt, nil)
+			mockEVMService.EXPECT().
+				CalculateTransactionFee(mock.Anything, tc.expectedGasInfo).
+				Return(&evmtypes.TransactionFee{TransactionFee: big.NewInt(2500)}, nil)
+
+			wr := &WriteReport{
+				EVMService: mockEVMService,
+				lggr:       logger.Sugared(lggr),
+				writeReportL1FeeActive: limits.NewRangeLimiter(settings.Range[commoncfg.Timestamp]{
+					Lower: commoncfg.NewTimestamp(activeFrom),
+					Upper: commoncfg.NewTimestamp(activeUntil),
+				}),
+				executionTimestamp: tc.executionTimestamp,
+			}
+
+			reply, err := wr.fetchTransactionReceiptAndCreateReply(t.Context(), txHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS, nil)
+			require.NoError(t, err)
+			require.Equal(t, pb.NewBigIntFromInt(big.NewInt(2500)), reply.TransactionFee)
+		})
 	}
 }
 
