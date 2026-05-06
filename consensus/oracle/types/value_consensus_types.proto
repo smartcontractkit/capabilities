@@ -37,6 +37,8 @@ message RequestObservation {
   RequestMetaData metadata = 1;
   sdk.v1alpha.SimpleConsensusInputs input = 2;
   google.protobuf.Timestamp received_at = 3;
+
+  bool remove_lib_use_in_failure_message_formatting_flag = 4; // remove use of libraries in failure message formatting; flag to be removed after rollout
 }
 
 message Observation {

@@ -112,3 +112,26 @@ func TestInitialiseTransmissionScheduler_UniquePeerIDs(t *testing.T) {
 	_, err := ts.InitialiseTransmissionScheduler(context.Background(), reg, 10*time.Millisecond, lggr, don, false)
 	require.NoError(t, err)
 }
+
+func TestNewTransmissionScheduler_FallsBackToDefaultDeltaStage(t *testing.T) {
+	t.Parallel()
+
+	lggr := logger.Test(t)
+	myPeerID := peerID(0x01)
+
+	t.Run("zero deltaStage uses default", func(t *testing.T) {
+		s := ts.NewTransmissionScheduler(myPeerID, []p2ptypes.PeerID{myPeerID}, 0, 1, lggr)
+		require.Equal(t, ts.DefaultDeltaStage, s.DeltaStage)
+	})
+
+	t.Run("negative deltaStage uses default", func(t *testing.T) {
+		s := ts.NewTransmissionScheduler(myPeerID, []p2ptypes.PeerID{myPeerID}, -1*time.Second, 1, lggr)
+		require.Equal(t, ts.DefaultDeltaStage, s.DeltaStage)
+	})
+
+	t.Run("positive deltaStage preserved", func(t *testing.T) {
+		want := 7 * time.Second
+		s := ts.NewTransmissionScheduler(myPeerID, []p2ptypes.PeerID{myPeerID}, want, 1, lggr)
+		require.Equal(t, want, s.DeltaStage)
+	})
+}

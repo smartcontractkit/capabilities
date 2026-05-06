@@ -19,6 +19,7 @@ enum ObservationType {
   LOCKABLE_TO_BLOCK = 2;
   AGGREGATABLE = 3;
   ERROR = 4;
+  HASHABLE = 5;
 }
 
 message Query {
@@ -36,6 +37,7 @@ message RequestObservation {
     bytes eventuallyConsistent = 2;
     AggregatableObservation aggregatable = 3;
     bytes error = 4;
+    bytes hashable = 5;
   }
 }
 
@@ -56,6 +58,7 @@ message RequestOutcome {
     bytes eventuallyConsistent = 3;
     values.v1.Decimal aggregatable = 4;
     RequestError error = 5;
+    bytes hashable = 6;
   }
 }
 

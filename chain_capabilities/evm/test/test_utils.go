@@ -29,6 +29,7 @@ func ValidateMeteringWriteReport(t *testing.T, metadata capabilities.ResponseMet
 
 func GetMetadataWithFunds() capabilities.RequestMetadata {
 	return capabilities.RequestMetadata{
+		WorkflowID: "test-workflow",
 		SpendLimits: []capabilities.SpendLimit{
 			{
 				SpendType: metering.ActionSpendUnit,

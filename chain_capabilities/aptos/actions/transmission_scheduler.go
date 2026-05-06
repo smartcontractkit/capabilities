@@ -36,6 +36,7 @@ func NewTransmissionScheduler(
 ) TransmissionScheduler {
 	if deltaStage <= 0 {
 		lggr.Debugf("deltaStage is set to a zero/negative value %v using default value of %v.", deltaStage, defaultDeltaStage)
+		deltaStage = defaultDeltaStage
 	}
 	return TransmissionScheduler{
 		myPeerID:   myPeerID,

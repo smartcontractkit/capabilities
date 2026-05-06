@@ -1,0 +1,33 @@
+syntax = "proto3";
+package chain_capabilities.aptos;
+option go_package = "github.com/smartcontractkit/capabilities/chain_capabilities/aptos;monitoring";
+
+import "libs/monitoring/execution_context.proto";
+
+// ViewRequest intentionally captures only the small, non-sensitive subset of
+// the capability request that is useful for monitoring.
+message ViewRequest {
+  bytes module_address = 1;
+  string module_name = 2;
+  string function = 3;
+  optional uint64 requested_ledger_version = 4;
+}
+
+message ViewInitiated {
+  ViewRequest req = 1;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message ViewSuccess {
+  ViewRequest req = 1;
+  uint64 response_len = 2;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message ViewError {
+  ViewRequest req = 1;
+  string summary = 2;
+  string cause = 3;
+  bool is_user_error = 4;
+  monitoring.ExecutionContext execution_context = 20;
+}

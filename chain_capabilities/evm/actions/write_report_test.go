@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"math/big"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -15,7 +18,9 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
+	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
@@ -76,7 +81,7 @@ func TestWithQuickRetry(t *testing.T) {
 		ctx := t.Context()
 		attempts := 0
 
-		result, err := withQuickRetry(ctx, lggr, func(ctx context.Context) (string, error) {
+		result, err := capcommon.WithQuickRetry(ctx, lggr, func(ctx context.Context) (string, error) {
 			attempts++
 			if attempts < 3 {
 				return "", errors.New("transient error")
@@ -90,12 +95,12 @@ func TestWithQuickRetry(t *testing.T) {
 	})
 
 	t.Run("respects parent context timeout", func(t *testing.T) {
-		// Parent context with 200ms timeout - shorter than withQuickRetry's 10s
+		// Parent context with 200ms timeout - shorter than capcommon.WithQuickRetry('s 10s
 		ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
 		defer cancel()
 
 		start := time.Now()
-		_, err := withQuickRetry(ctx, lggr, func(ctx context.Context) (string, error) {
+		_, err := capcommon.WithQuickRetry(ctx, lggr, func(ctx context.Context) (string, error) {
 			return "", errors.New("always fails")
 		})
 		elapsed := time.Since(start)
@@ -110,7 +115,7 @@ func TestWithQuickRetry(t *testing.T) {
 		defer cancel()
 
 		expectedErr := "specific RPC error"
-		_, err := withQuickRetry(ctx, lggr, func(ctx context.Context) (string, error) {
+		_, err := capcommon.WithQuickRetry(ctx, lggr, func(ctx context.Context) (string, error) {
 			return "", errors.New(expectedErr)
 		})
 
@@ -125,7 +130,7 @@ func TestWithQuickRetry(t *testing.T) {
 		defer cancel()
 
 		attempts := 0
-		_, err := withQuickRetry(ctx, lggr, func(ctx context.Context) (string, error) {
+		_, err := capcommon.WithQuickRetry(ctx, lggr, func(ctx context.Context) (string, error) {
 			attempts++
 			return "", errors.New("always fails")
 		})
@@ -143,7 +148,7 @@ func TestWithQuickRetry(t *testing.T) {
 		cancel() // Cancel immediately
 
 		expectedErr := "fn error"
-		_, err := withQuickRetry(ctx, lggr, func(ctx context.Context) (string, error) {
+		_, err := capcommon.WithQuickRetry(ctx, lggr, func(ctx context.Context) (string, error) {
 			return "", errors.New(expectedErr)
 		})
 
@@ -162,7 +167,7 @@ func TestWithPollingRetry(t *testing.T) {
 		ctx := t.Context()
 		attempts := 0
 
-		result, err := withPollingRetry(ctx, lggr, func(ctx context.Context) (int, error) {
+		result, err := capcommon.WithPollingRetry(ctx, lggr, func(ctx context.Context) (int, error) {
 			attempts++
 			if attempts < 4 {
 				return 0, errors.New("not ready yet")
@@ -181,7 +186,7 @@ func TestWithPollingRetry(t *testing.T) {
 		defer cancel()
 
 		start := time.Now()
-		_, err := withPollingRetry(ctx, lggr, func(ctx context.Context) (int, error) {
+		_, err := capcommon.WithPollingRetry(ctx, lggr, func(ctx context.Context) (int, error) {
 			return 0, errors.New("always fails")
 		})
 		elapsed := time.Since(start)
@@ -196,7 +201,7 @@ func TestWithPollingRetry(t *testing.T) {
 		defer cancel()
 
 		expectedErr := "chain state not updated"
-		_, err := withPollingRetry(ctx, lggr, func(ctx context.Context) (int, error) {
+		_, err := capcommon.WithPollingRetry(ctx, lggr, func(ctx context.Context) (int, error) {
 			return 0, errors.New(expectedErr)
 		})
 
@@ -211,7 +216,7 @@ func TestWithPollingRetry(t *testing.T) {
 		var timestamps []time.Time
 
 		start := time.Now()
-		_, _ = withPollingRetry(ctx, lggr, func(ctx context.Context) (int, error) {
+		_, _ = capcommon.WithPollingRetry(ctx, lggr, func(ctx context.Context) (int, error) {
 			attempts++
 			timestamps = append(timestamps, time.Now())
 			if attempts >= 4 {
@@ -240,7 +245,7 @@ func TestWithPollingRetry(t *testing.T) {
 		cancel() // Cancel immediately
 
 		expectedErr := "fn error"
-		_, err := withPollingRetry(ctx, lggr, func(ctx context.Context) (int, error) {
+		_, err := capcommon.WithPollingRetry(ctx, lggr, func(ctx context.Context) (int, error) {
 			return 0, errors.New(expectedErr)
 		})
 
@@ -1669,6 +1674,202 @@ func TestPollTransmissionInfo_QueuePositionScenarios(t *testing.T) {
 	})
 }
 
+func TestPollTransmissionInfo_RaceConditions(t *testing.T) {
+	t.Parallel()
+
+	t.Run("timer returns stale state without final read", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+		defer cancel()
+
+		wr, testLogger, mockForwarderClient, request, transmissionID := setupPollTransmissionInfoForQueuePosition(t, 1)
+		wr.transmissionScheduler.DeltaStage = 150 * time.Millisecond
+
+		var chainStateUpdated atomic.Bool
+		go func() {
+			time.Sleep(120 * time.Millisecond)
+			chainStateUpdated.Store(true)
+		}()
+
+		mockForwarderClient.EXPECT().
+			GetTransmissionInfo(mock.Anything, transmissionID).
+			RunAndReturn(func(context.Context, contracts.TransmissionID) (contracts.TransmissionInfo, error) {
+				if chainStateUpdated.Load() {
+					return contracts.TransmissionInfo{
+						Success: true,
+						State:   contracts.TransmissionStateSucceeded,
+					}, nil
+				}
+				return contracts.TransmissionInfo{
+					Success: false,
+					State:   contracts.TransmissionStateNotAttempted,
+				}, nil
+			}).
+			Maybe()
+
+		txHashRetriever := NewTxHashRetriever(mockForwarderClient, testLogger, transmissionID)
+		info, err := wr.pollTransmissionInfo(ctx, request, monitoring.TelemetryContext{}, transmissionID, 1, txHashRetriever)
+		require.NoError(t, err)
+		require.True(t, chainStateUpdated.Load(), "state should have changed before stage timer returned")
+		require.Equal(t, contracts.TransmissionStateSucceeded, info.State)
+	})
+
+	t.Run("all rpc errors including boundary read return error", func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+		defer cancel()
+
+		wr, testLogger, mockForwarderClient, request, transmissionID := setupPollTransmissionInfoForQueuePosition(t, 2)
+		wr.transmissionScheduler.DeltaStage = 50 * time.Millisecond
+
+		var rpcCalls atomic.Int64
+		mockForwarderClient.EXPECT().
+			GetTransmissionInfo(mock.Anything, transmissionID).
+			RunAndReturn(func(context.Context, contracts.TransmissionID) (contracts.TransmissionInfo, error) {
+				rpcCalls.Add(1)
+				return contracts.TransmissionInfo{}, errors.New("rpc unavailable")
+			}).
+			Maybe()
+
+		txHashRetriever := NewTxHashRetriever(mockForwarderClient, testLogger, transmissionID)
+		_, err := wr.pollTransmissionInfo(ctx, request, monitoring.TelemetryContext{}, transmissionID, 2, txHashRetriever)
+		require.Greater(t, rpcCalls.Load(), int64(0))
+		require.Error(t, err)
+	})
+}
+
+func TestExecuteWriteReport_RaceConditionDuplicateInvocations(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	testLogger := logger.Test(t)
+	mockEVMService := mocks2.NewEVMService(t)
+	sharedForwarder := mocks.NewCREForwarderClient(t)
+
+	mockEVMService.EXPECT().
+		GetTransactionReceipt(mock.Anything, mock.Anything).
+		RunAndReturn(func(_ context.Context, req evmtypes.GeTransactionReceiptRequest) (*evmtypes.Receipt, error) {
+			return &evmtypes.Receipt{
+				Status:            1,
+				TxHash:            req.Hash,
+				GasUsed:           1000,
+				EffectiveGasPrice: big.NewInt(2),
+			}, nil
+		}).
+		Maybe()
+	mockEVMService.EXPECT().
+		CalculateTransactionFee(mock.Anything, mock.Anything).
+		Return(&evmtypes.TransactionFee{TransactionFee: big.NewInt(2000)}, nil).
+		Maybe()
+	mockEVMService.EXPECT().
+		GetTransactionFee(mock.Anything, mock.Anything).
+		Return(&evmtypes.TransactionFee{TransactionFee: big.NewInt(300)}, nil).
+		Maybe()
+
+	var nodeA p2ptypes.PeerID
+	nodeA[0] = 0x01
+	var nodeB p2ptypes.PeerID
+	nodeB[0] = 0x02
+	members := []p2ptypes.PeerID{nodeA, nodeB}
+
+	schedulerA := ts.NewTransmissionScheduler(nodeA, members, 80*time.Millisecond, 1, testLogger)
+	schedulerB := ts.NewTransmissionScheduler(nodeB, members, 80*time.Millisecond, 1, testLogger)
+
+	serviceA := createMocksAndCapabilityWithScheduler(t, testLogger, mockEVMService, sharedForwarder, schedulerA)
+	serviceB := createMocksAndCapabilityWithScheduler(t, testLogger, mockEVMService, sharedForwarder, schedulerB)
+
+	reportMetadata := createTestReportMetadata()
+	encodedReportMetadata, err := reportMetadata.Encode()
+	require.NoError(t, err)
+
+	receiver := testutils.NewAddress().Bytes()
+	reqA := &evm.WriteReportRequest{
+		Receiver: receiver,
+		Report: &workflowpb.ReportResponse{
+			RawReport:     encodedReportMetadata,
+			ReportContext: []byte{},
+			Sigs:          generateRandomSignatures(),
+		},
+	}
+	reqB := &evm.WriteReportRequest{
+		Receiver: receiver,
+		Report: &workflowpb.ReportResponse{
+			RawReport:     encodedReportMetadata,
+			ReportContext: []byte{},
+			Sigs:          generateRandomSignatures(),
+		},
+	}
+
+	metadata := createTestRequestMetadata(reportMetadata)
+	transmissionID, err := getTransmissionID(metadata.WorkflowExecutionID, reqA)
+	require.NoError(t, err)
+
+	require.ElementsMatch(t, []int{0, 1}, []int{
+		schedulerA.GetQueuePosition(transmissionID.GetDebugID()),
+		schedulerB.GetQueuePosition(transmissionID.GetDebugID()),
+	})
+
+	var invokeCount atomic.Int64
+	sharedForwarder.EXPECT().
+		GetTransmissionInfo(mock.Anything, transmissionID).
+		RunAndReturn(func(context.Context, contracts.TransmissionID) (contracts.TransmissionInfo, error) {
+			if invokeCount.Load() >= 1 {
+				return contracts.TransmissionInfo{
+					Success:  true,
+					State:    contracts.TransmissionStateSucceeded,
+					GasLimit: big.NewInt(EnoughReceiverGas),
+				}, nil
+			}
+			return contracts.TransmissionInfo{
+				Success: false,
+				State:   contracts.TransmissionStateNotAttempted,
+			}, nil
+		}).
+		Maybe()
+	sharedForwarder.EXPECT().
+		InvokeOnReport(mock.Anything, common.BytesToAddress(receiver), mock.Anything, nonNilPositiveGasCfgMatcher()).
+		RunAndReturn(func(context.Context, common.Address, *workflowpb.ReportResponse, *evm.GasConfig) (*evmtypes.TransactionResult, error) {
+			callN := invokeCount.Add(1)
+			txHash := evmtypes.Hash(test.RandomBytes(32))
+			return &evmtypes.TransactionResult{
+				TxHash:           txHash,
+				TxStatus:         evmtypes.TxSuccess,
+				TxIdempotencyKey: fmt.Sprintf("test-idempotency-key-%d", callN),
+			}, nil
+		}).
+		Once()
+	sharedForwarder.EXPECT().
+		GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return([]*evmtypes.Log{{
+			TxHash:      evmtypes.Hash(test.RandomBytes(32)),
+			Data:        successLogData(),
+			BlockNumber: big.NewInt(100),
+		}}, nil).
+		Maybe()
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, 2)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		_, err := serviceA.WriteReport(ctx, metadata, reqA)
+		errCh <- err
+	}()
+	go func() {
+		defer wg.Done()
+		_, err := serviceB.WriteReport(ctx, metadata, reqB)
+		errCh <- err
+	}()
+	wg.Wait()
+	close(errCh)
+
+	for writeErr := range errCh {
+		require.NoError(t, writeErr)
+	}
+
+	require.EqualValues(t, 1, invokeCount.Load(), "only one node should submit for the same transmissionID")
+}
+
 func TestGetTransmissionID(t *testing.T) {
 	t.Parallel()
 	workflowExecutionID := hex.EncodeToString(test.RandomBytes(32))
@@ -1731,6 +1932,74 @@ func toReceiptGasInfo(receipt evmtypes.Receipt) evmtypes.ReceiptGasInfo {
 	}
 }
 
+func TestFetchTransactionReceiptAndCreateReplyL1FeeFeatureFlag(t *testing.T) {
+	t.Parallel()
+
+	activeFrom := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	activeUntil := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+	testCases := []struct {
+		name               string
+		executionTimestamp time.Time
+		expectedGasInfo    evmtypes.ReceiptGasInfo
+	}{
+		{
+			name:               "inactive flag omits L1 fee",
+			executionTimestamp: activeFrom.Add(-time.Second),
+			expectedGasInfo: evmtypes.ReceiptGasInfo{
+				GasUsed:           1000,
+				EffectiveGasPrice: big.NewInt(2),
+			},
+		},
+		{
+			name:               "active flag includes L1 fee",
+			executionTimestamp: activeFrom,
+			expectedGasInfo: evmtypes.ReceiptGasInfo{
+				GasUsed:           1000,
+				EffectiveGasPrice: big.NewInt(2),
+				L1Fee:             big.NewInt(500),
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			lggr := logger.Test(t)
+			mockEVMService := mocks2.NewEVMService(t)
+			txHash := evmtypes.Hash(test.RandomBytes(32))
+			receipt := evmtypes.Receipt{
+				Status:            1,
+				TxHash:            txHash,
+				GasUsed:           tc.expectedGasInfo.GasUsed,
+				EffectiveGasPrice: tc.expectedGasInfo.EffectiveGasPrice,
+				L1Fee:             big.NewInt(500),
+			}
+
+			mockEVMService.EXPECT().
+				GetTransactionReceipt(mock.Anything, evmtypes.GeTransactionReceiptRequest{Hash: txHash, IsExternal: false}).
+				Return(&receipt, nil)
+			mockEVMService.EXPECT().
+				CalculateTransactionFee(mock.Anything, tc.expectedGasInfo).
+				Return(&evmtypes.TransactionFee{TransactionFee: big.NewInt(2500)}, nil)
+
+			wr := &WriteReport{
+				EVMService: mockEVMService,
+				lggr:       logger.Sugared(lggr),
+				writeReportL1FeeActive: limits.NewRangeLimiter(settings.Range[commoncfg.Timestamp]{
+					Lower: commoncfg.NewTimestamp(activeFrom),
+					Upper: commoncfg.NewTimestamp(activeUntil),
+				}),
+				executionTimestamp: tc.executionTimestamp,
+			}
+
+			reply, err := wr.fetchTransactionReceiptAndCreateReply(t.Context(), txHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS, nil)
+			require.NoError(t, err)
+			require.Equal(t, pb.NewBigIntFromInt(big.NewInt(2500)), reply.TransactionFee)
+		})
+	}
+}
+
 func createMocksAndCapability(t *testing.T, lggr logger.Logger) (*mocks2.EVMService, *mocks.CREForwarderClient, *EVM) {
 	mockEVMService := mocks2.NewEVMService(t)
 	mockForwarderClient := mocks.NewCREForwarderClient(t)
@@ -1764,6 +2033,31 @@ func createMocksAndCapability(t *testing.T, lggr logger.Logger) (*mocks2.EVMServ
 	t.Cleanup(func() { assert.NoError(t, service.Close()) })
 	require.NotNil(t, service.txGasLimit)
 	return mockEVMService, mockForwarderClient, service
+}
+
+func createMocksAndCapabilityWithScheduler(
+	t *testing.T,
+	lggr logger.Logger,
+	evmService types.EVMService,
+	forwarderClient contracts.CREForwarderClient,
+	scheduler ts.TransmissionScheduler,
+) *EVM {
+	t.Helper()
+
+	service := &EVM{
+		keystoneForwarderAddress: common.BytesToAddress(test.RandomBytes(20)),
+		forwarderClient:          forwarderClient,
+		lggr:                     logger.Sugared(lggr),
+		EVMService:               evmService,
+		ReceiverGasMinimum:       ConfiguredReceiverGasMinimum,
+		chainSelector:            1,
+		beholderProcessor:        test.NopBeholderProcessor{},
+		messageBuilder:           monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		transmissionScheduler:    scheduler,
+	}
+	require.NoError(t, service.initLimiters(limits.Factory{Logger: lggr}))
+	t.Cleanup(func() { assert.NoError(t, service.Close()) })
+	return service
 }
 
 func equalWriteReportReply(t *testing.T, expected *evm.WriteReportReply, actual *evm.WriteReportReply) {

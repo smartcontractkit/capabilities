@@ -3,6 +3,7 @@ package monitoring
 import (
 	"encoding/hex"
 	"fmt"
+	"strconv"
 
 	sdkpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	"go.opentelemetry.io/otel/attribute"
@@ -35,6 +36,31 @@ func (m *MessageBuilder) BuildWriteReportInitiated(tc TelemetryContext, req *apt
 	return &WriteReportInitiated{
 		Req:              convertWriteReportRequest(req),
 		ExecutionContext: m.BuildExecutionContext(tc),
+	}
+}
+
+func (m *MessageBuilder) BuildViewInitiated(tc TelemetryContext, req *aptoscap.ViewRequest) *ViewInitiated {
+	return &ViewInitiated{
+		Req:              convertViewRequest(req),
+		ExecutionContext: m.BuildExecutionContext(tc),
+	}
+}
+
+func (m *MessageBuilder) BuildViewSuccess(tc TelemetryContext, req *aptoscap.ViewRequest, responseLen uint64) *ViewSuccess {
+	return &ViewSuccess{
+		Req:              convertViewRequest(req),
+		ResponseLen:      responseLen,
+		ExecutionContext: m.BuildExecutionContext(tc),
+	}
+}
+
+func (m *MessageBuilder) BuildViewError(tc TelemetryContext, req *aptoscap.ViewRequest, summary, cause string, isUserError bool) ErrorMessage {
+	return &ViewError{
+		Req:              convertViewRequest(req),
+		ExecutionContext: m.BuildExecutionContext(tc),
+		Summary:          summary,
+		Cause:            cause,
+		IsUserError:      isUserError,
 	}
 }
 
@@ -99,6 +125,26 @@ func (m *MessageBuilder) BuildWriteReportP2pConfigIncomplete(tc TelemetryContext
 	}
 }
 
+func (m *MessageBuilder) BuildWriteReportTxInfoRetrievalPhase(tc TelemetryContext, phase string, result string, phaseDurationMs int64, txHash, transmitter, lookupType string) *WriteReportTxInfoRetrievalPhase {
+	return &WriteReportTxInfoRetrievalPhase{
+		Phase:            phase,
+		Result:           result,
+		PhaseDurationMs:  phaseDurationMs,
+		TxHash:           txHash,
+		Transmitter:      transmitter,
+		LookupType:       lookupType,
+		ExecutionContext: m.BuildExecutionContext(tc),
+	}
+}
+
+func (m *MessageBuilder) BuildWriteReportInvokeOnReportDuration(tc TelemetryContext, durationMs int64, txStatus int32) *WriteReportInvokeOnReportDuration {
+	return &WriteReportInvokeOnReportDuration{
+		DurationMs:       durationMs,
+		TxStatus:         txStatus,
+		ExecutionContext: m.BuildExecutionContext(tc),
+	}
+}
+
 func convertWriteReportRequest(req *aptoscap.WriteReportRequest) *WriteReportRequest {
 	if req == nil {
 		return nil
@@ -115,6 +161,22 @@ func convertWriteReportRequest(req *aptoscap.WriteReportRequest) *WriteReportReq
 			RawReport:     req.Report.RawReport,
 			Sigs:          convertAttributedSignature(req.Report.Sigs),
 		}
+	}
+	return msg
+}
+
+func convertViewRequest(req *aptoscap.ViewRequest) *ViewRequest {
+	if req == nil || req.Payload == nil || req.Payload.Module == nil {
+		return nil
+	}
+
+	msg := &ViewRequest{
+		ModuleAddress: req.Payload.Module.Address,
+		ModuleName:    req.Payload.Module.Name,
+		Function:      req.Payload.Function,
+	}
+	if req.LedgerVersion != nil {
+		msg.RequestedLedgerVersion = req.LedgerVersion
 	}
 	return msg
 }
@@ -144,7 +206,7 @@ func convertAttributedSignature(attributedSignatures []*sdkpb.AttributedSignatur
 
 func (r *WriteReportInitiated) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
-		attribute.String("receiver", getReceiver(r.Req.GetReceiver())),
+		attribute.String("receiver", bytesToHexOrPlaceholder(r.Req.GetReceiver(), "nil receiver")),
 	}, r.ExecutionContext.LogAttributes()...)
 }
 
@@ -152,9 +214,36 @@ func (r *WriteReportInitiated) MetricAttributes() []attribute.KeyValue {
 	return r.ExecutionContext.MetricsAttributes()
 }
 
+func (r *ViewInitiated) LogAttributes() []attribute.KeyValue {
+	return append(viewRequestLogAttributes(r.Req), r.ExecutionContext.LogAttributes()...)
+}
+
+func (r *ViewInitiated) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *ViewSuccess) LogAttributes() []attribute.KeyValue {
+	return append(append(viewRequestLogAttributes(r.Req), attribute.String("response_len", strconv.FormatUint(r.GetResponseLen(), 10))), r.ExecutionContext.LogAttributes()...)
+}
+
+func (r *ViewSuccess) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *ViewError) LogAttributes() []attribute.KeyValue {
+	return append(append(viewRequestLogAttributes(r.Req),
+		attribute.String("summary", r.GetSummary()),
+		attribute.Bool("isUserError", r.GetIsUserError()),
+	), r.ExecutionContext.LogAttributes()...)
+}
+
+func (r *ViewError) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
 func (r *WriteReportSuccess) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
-		attribute.String("receiver", getReceiver(r.Req.GetReceiver())),
+		attribute.String("receiver", bytesToHexOrPlaceholder(r.Req.GetReceiver(), "nil receiver")),
 	}, r.ExecutionContext.LogAttributes()...)
 }
 
@@ -164,7 +253,7 @@ func (r *WriteReportSuccess) MetricAttributes() []attribute.KeyValue {
 
 func (r *WriteReportError) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
-		attribute.String("receiver", getReceiver(r.Req.GetReceiver())),
+		attribute.String("receiver", bytesToHexOrPlaceholder(r.Req.GetReceiver(), "nil receiver")),
 		attribute.String("summary", r.GetSummary()),
 		attribute.Bool("isUserError", r.GetIsUserError()),
 	}, r.ExecutionContext.LogAttributes()...)
@@ -176,7 +265,7 @@ func (r *WriteReportError) MetricAttributes() []attribute.KeyValue {
 
 func (r *WriteReportTxFeeCalculationError) LogAttributes() []attribute.KeyValue {
 	attrs := []attribute.KeyValue{
-		attribute.String("receiver", getReceiver(r.Req.GetReceiver())),
+		attribute.String("receiver", bytesToHexOrPlaceholder(r.Req.GetReceiver(), "nil receiver")),
 		attribute.String("summary", r.GetSummary()),
 	}
 	if r.GetTxHash() != "" {
@@ -199,7 +288,7 @@ func (r *WriteReportSuccessfulEarlyReturn) MetricAttributes() []attribute.KeyVal
 
 func (r *WriteReportDuplicateTx) LogAttributes() []attribute.KeyValue {
 	attrs := []attribute.KeyValue{
-		attribute.String("receiver", getReceiver(r.Req.GetReceiver())),
+		attribute.String("receiver", bytesToHexOrPlaceholder(r.Req.GetReceiver(), "nil receiver")),
 	}
 	if r.GetDuplicateTxHash() != "" {
 		attrs = append(attrs, attribute.String("duplicate_tx_hash", r.GetDuplicateTxHash()))
@@ -235,9 +324,43 @@ func (r *WriteReportP2PConfigIncomplete) MetricAttributes() []attribute.KeyValue
 	return r.ExecutionContext.MetricsAttributes()
 }
 
-func getReceiver(receiver []byte) string {
-	if receiver != nil {
-		return hex.EncodeToString(receiver)
+func (r *WriteReportTxInfoRetrievalPhase) MetricAttributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
+		attribute.String("phase", r.GetPhase()),
+		attribute.String("result", r.GetResult()),
+		attribute.String("lookup_type", r.GetLookupType()),
+	}, r.ExecutionContext.MetricsAttributes()...)
+}
+
+func (r *WriteReportInvokeOnReportDuration) MetricAttributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
+		attribute.String("tx_status", strconv.FormatInt(int64(r.GetTxStatus()), 10)),
+	}, r.ExecutionContext.MetricsAttributes()...)
+}
+
+func bytesToHexOrPlaceholder(value []byte, placeholder string) string {
+	if value != nil {
+		return hex.EncodeToString(value)
 	}
-	return "nil receiver"
+	return placeholder
+}
+
+func viewRequestLogAttributes(req *ViewRequest) []attribute.KeyValue {
+	if req == nil {
+		return []attribute.KeyValue{
+			attribute.String("module_address", "nil module"),
+			attribute.String("module_name", ""),
+			attribute.String("function", ""),
+		}
+	}
+
+	attrs := []attribute.KeyValue{
+		attribute.String("module_address", bytesToHexOrPlaceholder(req.GetModuleAddress(), "nil module")),
+		attribute.String("module_name", req.GetModuleName()),
+		attribute.String("function", req.GetFunction()),
+	}
+	if req.RequestedLedgerVersion != nil {
+		attrs = append(attrs, attribute.String("requested_ledger_version", strconv.FormatUint(req.GetRequestedLedgerVersion(), 10)))
+	}
+	return attrs
 }
