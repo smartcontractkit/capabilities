@@ -163,6 +163,15 @@ func InitialiseTransmissionScheduler(
 		return TransmissionScheduler{}, errors.New("capabilityInfo DON is empty")
 	}
 
+	seen := make(map[p2ptypes.PeerID]struct{}, len(don.Members))
+	for _, m := range don.Members {
+		if _, dup := seen[m]; dup {
+			lggr.Errorw("duplicate peer ID in DON members", "peerID", m.String())
+			return TransmissionScheduler{}, fmt.Errorf("duplicate peer ID %s in DON members", m.String())
+		}
+		seen[m] = struct{}{}
+	}
+
 	var donPeerIDs []p2ptypes.PeerID
 	myPeerID := localNode.PeerID
 	donPeerIDs = append(donPeerIDs, don.Members...)
