@@ -125,6 +125,26 @@ func (m *MessageBuilder) BuildWriteReportP2pConfigIncomplete(tc TelemetryContext
 	}
 }
 
+func (m *MessageBuilder) BuildWriteReportTxInfoRetrievalPhase(tc TelemetryContext, phase string, result string, phaseDurationMs int64, txHash, transmitter, lookupType string) *WriteReportTxInfoRetrievalPhase {
+	return &WriteReportTxInfoRetrievalPhase{
+		Phase:            phase,
+		Result:           result,
+		PhaseDurationMs:  phaseDurationMs,
+		TxHash:           txHash,
+		Transmitter:      transmitter,
+		LookupType:       lookupType,
+		ExecutionContext: m.BuildExecutionContext(tc),
+	}
+}
+
+func (m *MessageBuilder) BuildWriteReportInvokeOnReportDuration(tc TelemetryContext, durationMs int64, txStatus int32) *WriteReportInvokeOnReportDuration {
+	return &WriteReportInvokeOnReportDuration{
+		DurationMs:       durationMs,
+		TxStatus:         txStatus,
+		ExecutionContext: m.BuildExecutionContext(tc),
+	}
+}
+
 func convertWriteReportRequest(req *aptoscap.WriteReportRequest) *WriteReportRequest {
 	if req == nil {
 		return nil
@@ -302,6 +322,20 @@ func (r *WriteReportP2PConfigIncomplete) LogAttributes() []attribute.KeyValue {
 
 func (r *WriteReportP2PConfigIncomplete) MetricAttributes() []attribute.KeyValue {
 	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *WriteReportTxInfoRetrievalPhase) MetricAttributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
+		attribute.String("phase", r.GetPhase()),
+		attribute.String("result", r.GetResult()),
+		attribute.String("lookup_type", r.GetLookupType()),
+	}, r.ExecutionContext.MetricsAttributes()...)
+}
+
+func (r *WriteReportInvokeOnReportDuration) MetricAttributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
+		attribute.String("tx_status", strconv.FormatInt(int64(r.GetTxStatus()), 10)),
+	}, r.ExecutionContext.MetricsAttributes()...)
 }
 
 func bytesToHexOrPlaceholder(value []byte, placeholder string) string {

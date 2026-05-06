@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"math/big"
 	"slices"
 	"strings"
@@ -169,7 +170,8 @@ func (wr *writeReport) execute(
 	}
 	wr.lggr = wr.lggr.With("transmissionID", transmissionID.GetDebugID())
 
-	txInfoRetriever := NewTxInfoRetriever(wr.forwarderClient, wr.lggr, transmissionID, wr.forwarderAddress.String(), requestStartTime, wr.txSearchStartingBuffer, request.Report)
+	txInfoRetriever := NewTxInfoRetriever(wr.forwarderClient, wr.lggr, transmissionID, wr.forwarderAddress.String(), requestStartTime, wr.txSearchStartingBuffer, request.Report,
+		WithTxInfoRetrieverMonitoring(wr.beholderProcessor, wr.messageBuilder, telemetryContext))
 
 	queuePosition := wr.transmissionScheduler.GetQueuePosition(transmissionID.GetDebugID())
 	orderedTransmitters := wr.getOrderedTransmitters(transmissionID.GetDebugID(), wr.p2pConfig)
@@ -209,11 +211,19 @@ func (wr *writeReport) execute(
 
 	wr.lggr.Debugw("Submitting WriteReport transaction", "executionID", metadata.WorkflowExecutionID, "receiver", hex.EncodeToString(request.Receiver[:]))
 
+	invokeOnReportStart := time.Now()
 	txReply, err := wr.forwarderClient.InvokeOnReport(ctx, request.Receiver, request.Report, request.GasConfig)
 	if err != nil {
 		wr.lggr.Errorw("InvokeOnReport failed", "error", err)
 		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed to invoke forwarder report: %w", err)
 	}
+	invokeOnReportDuration := time.Since(invokeOnReportStart)
+	monitoring.EmitInitiated(ctx, wr.lggr, wr.beholderProcessor, wr.messageBuilder.BuildWriteReportInvokeOnReportDuration(
+		telemetryContext,
+		int64(math.Max(float64(invokeOnReportDuration.Milliseconds()), 0)),
+		int32(txReply.TxStatus), //nolint:gosec // txReply.TxStatus is a small enum value: 0, 1, 2.
+	))
+
 	wr.lggr.Debugw("InvokeOnReport returned", "txHash", txReply.TxHash, "txStatus", txReply.TxStatus)
 
 	// Resolve V_ours up-front so the post-submit forwarder read pins to it; reading at >=V_ours

@@ -14,6 +14,7 @@ import (
 	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/metering"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/monitoring"
@@ -205,7 +206,27 @@ func buildFakeTransactionWithSigs(t *testing.T, txHash string, success bool, seq
 	return &aptostypes.Transaction{Data: []byte(txJSON)}
 }
 
-func newTestTxInfoRetriever(t *testing.T, mockClient *CREForwarderClient_mock, targetReportMetadata ocrtypes.Metadata, requestStartTime time.Time) TxInfoRetriever {
+// monitoring
+type recordingTxInfoProcessor struct {
+	messages []*monitoring.WriteReportTxInfoRetrievalPhase
+}
+
+func (r *recordingTxInfoProcessor) Process(_ context.Context, msg proto.Message, _ ...any) error {
+	if phaseMsg, ok := msg.(*monitoring.WriteReportTxInfoRetrievalPhase); ok {
+		r.messages = append(r.messages, phaseMsg)
+	}
+	return nil
+}
+
+func txInfoRetrieverMonitoringOption(processor *recordingTxInfoProcessor) TxInfoRetrieverOption {
+	return WithTxInfoRetrieverMonitoring(
+		processor,
+		monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		monitoring.TelemetryContext{},
+	)
+}
+
+func newTestTxInfoRetriever(t *testing.T, mockClient *CREForwarderClient_mock, targetReportMetadata ocrtypes.Metadata, requestStartTime time.Time) (TxInfoRetriever, *recordingTxInfoProcessor) {
 	t.Helper()
 	rawExecID, _ := hex.DecodeString(targetReportMetadata.ExecutionID)
 	reportIDBytes, _ := hex.DecodeString(targetReportMetadata.ReportID)
@@ -219,7 +240,8 @@ func newTestTxInfoRetriever(t *testing.T, mockClient *CREForwarderClient_mock, t
 		RawReport:     encodedReport,
 		Sigs:          fixedTestSignatures(),
 	}
-	return NewTxInfoRetriever(mockClient, logger.Test(t), tid, testForwarderAddr.String(), requestStartTime, 1*time.Minute, report)
+	processor := &recordingTxInfoProcessor{}
+	return NewTxInfoRetriever(mockClient, logger.Test(t), tid, testForwarderAddr.String(), requestStartTime, 1*time.Minute, report, txInfoRetrieverMonitoringOption(processor)), processor
 }
 
 func computeTransmissionIDStr(t *testing.T, rm ocrtypes.Metadata) string {
@@ -269,6 +291,17 @@ func (h *testHelper) mockSearchTx(t *testing.T, addr aptos_sdk.AccountAddress, t
 	t.Helper()
 	return h.forwarderClient.On("GetTransmitterTransactions", mock.Anything, addr, mock.Anything, mock.Anything).
 		Return([]*aptostypes.Transaction{tx}, nil)
+}
+
+type recordingWriteReportProcessor struct {
+	invokeDurations []*monitoring.WriteReportInvokeOnReportDuration
+}
+
+func (r *recordingWriteReportProcessor) Process(_ context.Context, msg proto.Message, _ ...any) error {
+	if invokeDurationMsg, ok := msg.(*monitoring.WriteReportInvokeOnReportDuration); ok {
+		r.invokeDurations = append(r.invokeDurations, invokeDurationMsg)
+	}
+	return nil
 }
 
 // --- Tests ---
@@ -399,6 +432,27 @@ func TestWriteReport_Execute(t *testing.T) {
 		_, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
 		require.NotNil(t, capErr)
 		require.Contains(t, capErr.Error(), "failed to invoke forwarder report")
+	})
+
+	t.Run("InvokeOnReport duration metric includes tx status", func(t *testing.T) {
+		h := newTestHelper(t)
+		_, reqMeta, req := newReportFixture(t)
+		processor := &recordingWriteReportProcessor{}
+		h.aptos.beholderProcessor = processor
+
+		h.mockTransmission(TransmissionInfo{Success: false}).Once()
+		h.mockInvokeOnReport(&aptostypes.SubmitTransactionReply{TxStatus: aptostypes.TxSuccess, TxHash: "0xabc"}, nil)
+		h.mockTransmission(TransmissionInfo{Success: true, Transmitter: testTransmitter})
+		h.mockTransactionByHash("0xabc", testGasUsed, testGasUnitPrice)
+
+		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
+		require.Nil(t, capErr)
+		require.Equal(t, aptoscap.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
+
+		require.Len(t, processor.invokeDurations, 1)
+		invokeDuration := processor.invokeDurations[0]
+		require.EqualValues(t, aptostypes.TxSuccess, invokeDuration.GetTxStatus())
+		require.NotNil(t, invokeDuration.GetExecutionContext())
 	})
 
 	t.Run("Submit reverts but transmission succeeded - resolves real hash", func(t *testing.T) {

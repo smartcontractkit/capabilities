@@ -219,8 +219,8 @@ github.com/hashicorp/go-bexpr v0.1.10 h1:9kuI5PFotCboP3dkDYFr/wi0gg0QVbSNz5oFRpx
 github.com/hashicorp/go-bexpr v0.1.10/go.mod h1:oxlubA2vC/gFVfX1A6JGp7ls7uCDlfJn732ehYYg+g0=
 github.com/hashicorp/go-hclog v1.6.3 h1:Qr2kF+eVWjTiYmU7Y31tYlP1h0q/X3Nl3tPGdaB11/k=
 github.com/hashicorp/go-hclog v1.6.3/go.mod h1:W4Qnvbt70Wk/zYJryRzDRU/4r0kIg0PVHBcfoyhpF5M=
-github.com/hashicorp/go-plugin v1.7.0 h1:YghfQH/0QmPNc/AZMTFE3ac8fipZyZECHdDPshfk+mA=
-github.com/hashicorp/go-plugin v1.7.0/go.mod h1:BExt6KEaIYx804z8k4gRzRLEvxKVb+kn0NMcihqOqb8=
+github.com/hashicorp/go-plugin v1.8.0 h1:ie8S6RRY8RvB2usYZv+AAZ/wBvx2AU5p5QeP5j/FORs=
+github.com/hashicorp/go-plugin v1.8.0/go.mod h1:BExt6KEaIYx804z8k4gRzRLEvxKVb+kn0NMcihqOqb8=
 github.com/hashicorp/yamux v0.1.2 h1:XtB8kyFOyHXYVFnwT5C3+Bdo8gArse7j2AQ0DA0Uey8=
 github.com/hashicorp/yamux v0.1.2/go.mod h1:C+zze2n6e/7wshOZep2A70/aQU6QBRWJO/G6FT1wIns=
 github.com/holiman/billy v0.0.0-20250707135307-f2f9b9aae7db h1:IZUYC/xb3giYwBLMnr8d0TGTzPKFGNTCGgGLoyeX330=
@@ -472,8 +472,8 @@ github.com/smartcontractkit/capabilities/libs v0.0.0-20260424175010-06da873ab11e
 github.com/smartcontractkit/capabilities/libs v0.0.0-20260424175010-06da873ab11e/go.mod h1:XvJaSvx50oJwYmmTVgwQCGjXy4P7kf2tL/Ib46juFqI=
 github.com/smartcontractkit/chain-selectors v1.0.91 h1:Aip7IZTv40RtbHgZ9mTjm5KyhYrpPefG7iVMzLZ27M4=
 github.com/smartcontractkit/chain-selectors v1.0.91/go.mod h1:qy7whtgG5g+7z0jt0nRyii9bLND9m15NZTzuQPkMZ5w=
-github.com/smartcontractkit/chainlink-common v0.11.2-0.20260502001235-cfe1cc77332f h1:VjzK9YM8x2bvYNURfPh67AR/uvn6CGpWlCUXUg92ZT8=
-github.com/smartcontractkit/chainlink-common v0.11.2-0.20260502001235-cfe1cc77332f/go.mod h1:ohOxnxpzD382PS3nN4zhdJmWD+rsBh8zTLGGHhTdJCE=
+github.com/smartcontractkit/chainlink-common v0.11.2-0.20260505124104-72181f5345ce h1:eoeTZYsKKgU8DaNm92p56bC8PQ1fjZCRyWzBko/hZdY=
+github.com/smartcontractkit/chainlink-common v0.11.2-0.20260505124104-72181f5345ce/go.mod h1:G2AII0QmWzXx8Ag9IKnGN3h/gwwNnhHUOCviJievdvo=
 github.com/smartcontractkit/chainlink-common/keystore v1.0.2 h1:AWisx4JT3QV8tcgh6J5NCrex+wAgTYpWyHsyNPSXzsQ=
 github.com/smartcontractkit/chainlink-common/keystore v1.0.2/go.mod h1:rSkIHdomyak3YnUtXLenl6poIq8q0V3UZPiiyYqPdGA=
 github.com/smartcontractkit/chainlink-common/pkg/chipingress v0.0.10 h1:FJAFgXS9oqASnkS03RE1HQwYQQxrO4l46O5JSzxqLgg=
