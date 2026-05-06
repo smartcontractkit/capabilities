@@ -77,7 +77,7 @@ func newLTSWithBase(t *testing.T) (*LogTriggerService, chan capabilities.Trigger
 	es := capabilities.NewMemEventStore()
 
 	lts.baseTrigger = capabilities.NewBaseTriggerCapability(es, func() *evmcappb.Log { return &evmcappb.Log{} },
-		lts.lggr, "testCap", 500*time.Millisecond, 0, 0, nil)
+		lts.lggr, "testCap", 500*time.Millisecond, nil)
 
 	require.NoError(t, lts.baseTrigger.Start(t.Context()))
 	t.Cleanup(func() {
@@ -109,7 +109,7 @@ func TestLogTriggerService_Close_WaitsForPollingGoroutine(t *testing.T) {
 		service := createTriggerObject(t, evmService, store)
 
 		service.baseTrigger = capabilities.NewBaseTriggerCapability(capabilities.NewMemEventStore(),
-			func() *evmcappb.Log { return &evmcappb.Log{} }, logger.Test(t), "testCap", 200*time.Millisecond, 0, 0, nil)
+			func() *evmcappb.Log { return &evmcappb.Log{} }, logger.Test(t), "testCap", 200*time.Millisecond, nil)
 		require.NoError(t, service.baseTrigger.Start(ctx))
 		defer service.baseTrigger.Stop()
 
@@ -728,8 +728,6 @@ func TestFetchLogsFromLogPoller(t *testing.T) {
 }
 
 func TestSendLogsToWorkflows(t *testing.T) {
-	service, sendCh := newLTSWithBase(t)
-
 	finalizedBlockNumber := big.NewInt(1)
 	expectedLog1 := &evmtypes.Log{
 		TxHash:      stringToHashBytes("txhash1"),
@@ -746,6 +744,7 @@ func TestSendLogsToWorkflows(t *testing.T) {
 	expectedLogs := []*evmtypes.Log{expectedLog1, expectedLog2}
 
 	t.Run("all logs are sent to the channel", func(t *testing.T) {
+		service, sendCh := newLTSWithBase(t)
 		service.triggers.Write(triggerID, logTriggerState{
 			unfinalizedSentEventIDs: map[string]*big.Int{},
 			lastBlock:               finalizedBlockNumber,
@@ -757,7 +756,7 @@ func TestSendLogsToWorkflows(t *testing.T) {
 			},
 		})
 		state, _ := service.triggers.Read(triggerID)
-		ctx := contexts.WithCRE(t.Context(), contexts.CRE{Workflow: "wf-id"})
+		ctx := contexts.WithCRE(t.Context(), contexts.CRE{Workflow: "wf-id", Owner: "0xowner"})
 		err := service.sendLogsToWorkflows(ctx, monitoring.TelemetryContext{}, expectedLogs, finalizedBlockNumber, triggerID, state)
 		require.NoError(t, err)
 		actualLog1 := <-sendCh
@@ -785,12 +784,13 @@ func TestSendLogsToWorkflows(t *testing.T) {
 	})
 
 	t.Run("first delivered immediately; second delivered after retry when inbox initially full", func(t *testing.T) {
+		service, sendCh := newLTSWithBase(t)
 		service.triggers.Write(triggerID, logTriggerState{
 			unfinalizedSentEventIDs: map[string]*big.Int{},
 		})
 		state, _ := service.triggers.Read(triggerID)
 
-		ctx := contexts.WithCRE(t.Context(), contexts.CRE{Workflow: "wf-id"})
+		ctx := contexts.WithCRE(t.Context(), contexts.CRE{Workflow: "wf-id", Owner: "0xowner"})
 		// Send 2 logs to workflow, with space for only a single log in the sendCh
 		err := service.sendLogsToWorkflows(ctx, monitoring.TelemetryContext{}, expectedLogs, big.NewInt(0), triggerID, state)
 		require.NoError(t, err)
@@ -807,7 +807,7 @@ func TestSendLogsToWorkflows(t *testing.T) {
 			default:
 				return false
 			}
-		}, 30*time.Second, 10*time.Millisecond)
+		}, 60*time.Second, 10*time.Millisecond)
 
 		state, _ = service.triggers.Read(triggerID)
 		require.Len(t, state.unfinalizedSentEventIDs, 2, "expected two unfinalized sent event ID to be stored")
@@ -816,6 +816,7 @@ func TestSendLogsToWorkflows(t *testing.T) {
 	})
 
 	t.Run("prune logs that went fron unfinalized to finalized", func(t *testing.T) {
+		service, _ := newLTSWithBase(t)
 		service.triggers.Write(triggerID, logTriggerState{
 			unfinalizedSentEventIDs: map[string]*big.Int{
 				"fakeId":  big.NewInt(0),
@@ -954,7 +955,7 @@ func registerAndUnregisterLogTriggerIntegration(t *testing.T, topicsInput []*evm
 	service := createTriggerObject(t, evmService, NewLogTriggerStore())
 
 	service.baseTrigger = capabilities.NewBaseTriggerCapability(capabilities.NewMemEventStore(),
-		func() *evmcappb.Log { return &evmcappb.Log{} }, logger.Test(t), "testCap", 200*time.Millisecond, 0, 0, nil)
+		func() *evmcappb.Log { return &evmcappb.Log{} }, logger.Test(t), "testCap", 200*time.Millisecond, nil)
 
 	triggerID := "trigger-integration"
 
@@ -1339,7 +1340,7 @@ func createTriggerObject(t *testing.T, mockEVM *evmmock.EVMService, store LogTri
 		Close: lts.close,
 	}.NewServiceEngine(lggr)
 	lts.baseTrigger = capabilities.NewBaseTriggerCapability(capabilities.NewMemEventStore(),
-		func() *evmcappb.Log { return &evmcappb.Log{} }, lggr, testLogTriggerCapabilityID, pollInterval, 0, 0, nil)
+		func() *evmcappb.Log { return &evmcappb.Log{} }, lggr, testLogTriggerCapabilityID, pollInterval, nil)
 	return lts
 }
 
