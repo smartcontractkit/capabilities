@@ -195,7 +195,7 @@ func TestWriteReport_InputValidation(t *testing.T) {
 				Receiver: key.PublicKey().Bytes(),
 				Report: &workflowpb.ReportResponse{
 					RawReport:     encodedReportMetadata,
-					ReportContext: []byte{},
+					ReportContext: RandomBytes(reportContextLen),
 					Sigs:          generateRandomSignatures(),
 				},
 			},
