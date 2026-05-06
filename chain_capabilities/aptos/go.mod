@@ -4,10 +4,10 @@ go 1.26.2
 
 require (
 	github.com/aptos-labs/aptos-go-sdk v1.12.1
-	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260326144415-41024ab8bbe1
+	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260506120716-0f130af45608
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260424175010-06da873ab11e
 	github.com/smartcontractkit/chain-selectors v1.0.89
-	github.com/smartcontractkit/chainlink-aptos v0.0.0-20260424112027-f932111b88ac
+	github.com/smartcontractkit/chainlink-aptos v0.0.0-20260506112908-f0d993b5bd6d
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260420204255-a3f3bdd56877
 )
 
@@ -21,6 +21,7 @@ require (
 	github.com/jpillora/backoff v1.0.0 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
+	go.uber.org/goleak v1.3.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 )
 
@@ -57,7 +58,7 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
 	github.com/hashicorp/go-hclog v1.6.3 // indirect
-	github.com/hashicorp/go-plugin v1.7.0 // indirect
+	github.com/hashicorp/go-plugin v1.8.0 // indirect
 	github.com/hashicorp/yamux v0.1.2 // indirect
 	github.com/hasura/go-graphql-client v0.15.1 // indirect
 	github.com/hdevalence/ed25519consensus v0.2.0 // indirect
@@ -88,7 +89,7 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1 // indirect
 	github.com/scylladb/go-reflectx v1.0.1 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
-	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260422155819-52b7a5a49a35
+	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260506120607-7f10be016c89
 	github.com/smartcontractkit/chainlink-common/pkg/chipingress v0.0.10 // indirect
 	github.com/smartcontractkit/chainlink-protos/linking-service/go v0.0.0-20251002192024-d2ad9222409b // indirect
 	github.com/smartcontractkit/chainlink-protos/node-platform v0.0.0-20260205130626-db2a2aab956b // indirect
@@ -120,7 +121,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.43.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.uber.org/zap v1.27.1 // indirect
+	go.uber.org/zap v1.28.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	golang.org/x/crypto v0.50.0
 	golang.org/x/exp v0.0.0-20260218203240-3dfff04db8fa // indirect
