@@ -31,6 +31,17 @@ message WriteReportTxFeeCalculationError {
   monitoring.ExecutionContext execution_context = 20;
 }
 
+message WriteReportSuccessfulEarlyReturn {
+  monitoring.ExecutionContext execution_context = 20;
+}
+
+message WriteReportDuplicateTx {
+  WriteReportRequest req = 1;
+  string duplicate_transmission_signature = 2;
+  string transmission_signature = 3;
+  monitoring.ExecutionContext execution_context = 20;
+}
+
 message WriteReportRequest {
   repeated AccountMeta remaining_accounts = 1; // accounts that are required by the receiver to accept the report
   bytes receiver = 2; // 32 bytes receiver

@@ -155,7 +155,7 @@ func (wr *WriteReport) executeWriteReport(
 			return wr.transmissionInfoProvider.GetTransmissionInfo(ctx, transmissionID)
 		})
 	} else {
-		transmissionInfo, err = wr.pollTransmissionInfo(ctx, transmissionID, queuePosition)
+		transmissionInfo, err = wr.pollTransmissionInfo(ctx, transmissionID, queuePosition, telemetryContext)
 	}
 
 	if err != nil {
@@ -192,7 +192,7 @@ func (wr *WriteReport) executeWriteReport(
 	}
 
 	wr.lggr.Debugw("Submitting transaction for report", "executionID", metadata.WorkflowExecutionID)
-	_, err = wr.forwarderClient.InvokeOnReport(
+	submitReply, err := wr.forwarderClient.InvokeOnReport(
 		ctx,
 		receiver,
 		request.GetRemainingAccounts(),
@@ -233,6 +233,10 @@ func (wr *WriteReport) executeWriteReport(
 	switch last.State {
 	case TransmissionStateSucceeded:
 		wr.lggr.Infow("WriteReport succeeded", "executionID", metadata.WorkflowExecutionID, "signature", last.Signature.String())
+		if submitReply != nil && last.Signature != solana.Signature(submitReply.Signature) {
+			monitoring.LogAndEmitSuccess(ctx, "WriteReport sent a duplicate transaction - report already submitted by another node", wr.lggr, wr.beholderProcessor,
+				wr.messageBuilder.BuildWriteReportDuplicateTx(telemetryContext, request, last.Signature.String(), solana.Signature(submitReply.Signature).String()))
+		}
 		return wr.successWriteReportReply(&last.Signature), meteringMetadata, nil
 
 	case TransmissionStateFailed:
@@ -336,6 +340,7 @@ func (wr *WriteReport) pollTransmissionInfo(
 	ctx context.Context,
 	transmissionID [32]byte,
 	queuePosition int,
+	telemetryContext monitoring.TelemetryContext,
 ) (lastValid TransmissionInfo, err error) {
 	delay := time.Duration(queuePosition) * wr.transmissionScheduler.DeltaStage
 	wr.lggr.Infow("Polling until slot or state change", "delay", delay, "deltaStage", wr.transmissionScheduler.DeltaStage)
@@ -347,7 +352,13 @@ func (wr *WriteReport) pollTransmissionInfo(
 	defer func() {
 		stageTimer.Stop()
 		if !deltaStagePassed && hadSuccessfulPoll {
-			wr.lggr.Infow("Transmission found before delta stage has passed")
+			monitoring.LogAndEmitSuccess(
+				ctx,
+				"Transmission found before delta stage has passed",
+				wr.lggr,
+				wr.beholderProcessor,
+				wr.messageBuilder.BuildWriteReportSuccessfulEarlyReturn(telemetryContext),
+			)
 		}
 	}()
 

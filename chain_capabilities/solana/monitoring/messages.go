@@ -177,6 +177,10 @@ func convertWriteReportRequest(req *solanacappb.WriteReportRequest) *WriteReport
 func convertRemainingAccounts(accs []*solanacappb.AccountMeta) []*AccountMeta {
 	ret := []*AccountMeta{}
 	for _, acc := range accs {
+		if acc == nil {
+			ret = append(ret, nil)
+			continue
+		}
 		ret = append(ret, &AccountMeta{
 			PublicKey:  acc.PublicKey,
 			IsWritable: acc.IsWritable,
@@ -209,5 +213,20 @@ func (m *MessageBuilder) BuildWriteReportError(tc TelemetryContext, req *solanac
 		Summary:          summary,
 		Cause:            cause,
 		IsUserError:      isUserError,
+	}
+}
+
+func (m *MessageBuilder) BuildWriteReportSuccessfulEarlyReturn(tc TelemetryContext) Message {
+	return &WriteReportSuccessfulEarlyReturn{
+		ExecutionContext: m.BuildExecutionContext(tc),
+	}
+}
+
+func (m *MessageBuilder) BuildWriteReportDuplicateTx(tc TelemetryContext, req *solanacappb.WriteReportRequest, duplicateTransmissionSignature, transmissionSignature string) Message {
+	return &WriteReportDuplicateTx{
+		Req:                           convertWriteReportRequest(req),
+		ExecutionContext:              m.BuildExecutionContext(tc),
+		DuplicateTransmissionSignature: duplicateTransmissionSignature,
+		TransmissionSignature:         transmissionSignature,
 	}
 }

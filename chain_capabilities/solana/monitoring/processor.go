@@ -38,6 +38,10 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 		if err := p.metrics.OnWriteReportSuccess(ctx, msg); err != nil {
 			return fmt.Errorf("failed to publish WriteReportSuccess metrics: %w", err)
 		}
+	case *WriteReportSuccessfulEarlyReturn:
+		if err := p.metrics.OnWriteReportSuccessfulEarlyReturn(ctx, msg); err != nil {
+			return fmt.Errorf("failed to publish WriteReportSuccessfulEarlyReturn metrics: %w", err)
+		}
 	case *WriteReportError:
 		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
 			return fmt.Errorf("failed to emit WriteReportError log: %w", err)
@@ -46,6 +50,20 @@ func (p *processor) Process(ctx context.Context, m proto.Message, attrKVs ...any
 			if err := p.metrics.OnWriteReportError(ctx, msg); err != nil {
 				return fmt.Errorf("failed to publish WriteReportError metrics: %w", err)
 			}
+		}
+	case *WriteReportTxFeeCalculationError:
+		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
+			return fmt.Errorf("failed to emit WriteReportTxFeeCalculationError log: %w", err)
+		}
+		if err := p.metrics.OnWriteReportTxFeeCalculationError(ctx, msg); err != nil {
+			return fmt.Errorf("failed to publish WriteReportTxFeeCalculationError metrics: %w", err)
+		}
+	case *WriteReportDuplicateTx:
+		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {
+			return fmt.Errorf("failed to emit WriteReportDuplicateTx log: %w", err)
+		}
+		if err := p.metrics.OnWriteReportDuplicateTx(ctx, msg); err != nil {
+			return fmt.Errorf("failed to publish WriteReportDuplicateTx metrics: %w", err)
 		}
 	case *LogTriggerInitiated:
 		if err := p.emitter.EmitWithLog(ctx, msg, attrKVs...); err != nil {

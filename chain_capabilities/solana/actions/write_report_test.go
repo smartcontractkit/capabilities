@@ -173,7 +173,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		expectedError := "some error"
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
-		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(&TransmissionInfo{}, errors.New(expectedError))
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(TransmissionInfo{}, errors.New(expectedError))
 		_, err := helper.solana.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &solcap.WriteReportRequest{
 			Receiver: key.PublicKey().Bytes(),
 			Report: &workflowpb.ReportResponse{
@@ -190,10 +190,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		testLogger := logger.Test(t)
 		helper := createMocksAndCapability(t, testLogger)
 
-		transmissionInfo := &TransmissionInfo{
-			State: TransmissionStateSucceeded,
-		}
-		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(transmissionInfo, nil)
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(TransmissionInfo{State: TransmissionStateSucceeded}, nil)
 
 		reportMetadata := createTestReportMetadata()
 
@@ -220,7 +217,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			Report:   signedReport,
 		}
 		capabilitiesMetadata := createTestRequestMetadata(reportMetadata)
-		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(&TransmissionInfo{
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(TransmissionInfo{
 			State: TransmissionStateNotAttempted,
 		}, nil).Once()
 
@@ -228,10 +225,9 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			Signature: soltypes.Signature(sig),
 		}, nil)
 
-		transmissionInfo := &TransmissionInfo{
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(TransmissionInfo{
 			State: TransmissionStateSucceeded,
-		}
-		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(transmissionInfo, nil).Once()
+		}, nil).Once()
 
 		txFeeInLamports := uint64(5000)
 		helper.solanaService.On("GetTransaction", mock.Anything, mock.Anything).Return(&soltypes.GetTransactionReply{
@@ -353,7 +349,7 @@ func TestWriteReport_MeteringMetadata(t *testing.T) {
 		}
 		capabilitiesMetadata := createTestRequestMetadata(reportMetadata)
 
-		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(&TransmissionInfo{
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(TransmissionInfo{
 			State: TransmissionStateNotAttempted,
 		}, nil).Once()
 
@@ -361,7 +357,7 @@ func TestWriteReport_MeteringMetadata(t *testing.T) {
 			Signature: soltypes.Signature(sig),
 		}, nil)
 
-		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(&TransmissionInfo{
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(TransmissionInfo{
 			State: TransmissionStateSucceeded,
 		}, nil).Once()
 
@@ -397,7 +393,7 @@ func TestWriteReport_MeteringMetadata(t *testing.T) {
 		}
 		capabilitiesMetadata := createTestRequestMetadata(reportMetadata)
 
-		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(&TransmissionInfo{
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(TransmissionInfo{
 			State: TransmissionStateNotAttempted,
 		}, nil).Once()
 
@@ -405,7 +401,7 @@ func TestWriteReport_MeteringMetadata(t *testing.T) {
 			Signature: soltypes.Signature(sig),
 		}, nil)
 
-		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(&TransmissionInfo{
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(TransmissionInfo{
 			State:     TransmissionStateFailed,
 			Signature: sig,
 		}, nil).Once()
@@ -443,7 +439,7 @@ func TestWriteReport_MeteringMetadata(t *testing.T) {
 		}
 		capabilitiesMetadata := createTestRequestMetadata(reportMetadata)
 
-		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(&TransmissionInfo{
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(TransmissionInfo{
 			State: TransmissionStateNotAttempted,
 		}, nil).Once()
 
@@ -451,7 +447,7 @@ func TestWriteReport_MeteringMetadata(t *testing.T) {
 			Signature: soltypes.Signature(sig),
 		}, nil)
 
-		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(&TransmissionInfo{
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(TransmissionInfo{
 			State: TransmissionStateSucceeded,
 		}, nil).Once()
 
@@ -471,7 +467,7 @@ func TestWriteReport_MeteringMetadata(t *testing.T) {
 		testLogger := logger.Test(t)
 		helper := createMocksAndCapability(t, testLogger)
 
-		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(&TransmissionInfo{
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(TransmissionInfo{
 			State: TransmissionStateSucceeded,
 		}, nil)
 
@@ -538,7 +534,7 @@ func TestPollTransmissionInfo_RaceConditions_Solana(t *testing.T) {
 			Maybe()
 
 		var transmissionID [32]byte
-		info, err := wr.pollTransmissionInfo(ctx, transmissionID, 1)
+		info, err := wr.pollTransmissionInfo(ctx, transmissionID, 1, monitoring.TelemetryContext{})
 		require.NoError(t, err)
 		require.True(t, chainStateUpdated.Load(), "chain state should have updated before stage timer returned")
 		require.Equal(t, TransmissionStateSucceeded, info.State)
@@ -561,7 +557,7 @@ func TestPollTransmissionInfo_RaceConditions_Solana(t *testing.T) {
 			Maybe()
 
 		var transmissionID [32]byte
-		_, err := wr.pollTransmissionInfo(ctx, transmissionID, 2)
+		_, err := wr.pollTransmissionInfo(ctx, transmissionID, 2, monitoring.TelemetryContext{})
 		require.Greater(t, rpcCalls.Load(), int64(0))
 		require.Error(t, err)
 	})
