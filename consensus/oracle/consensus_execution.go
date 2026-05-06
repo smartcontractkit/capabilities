@@ -99,11 +99,11 @@ func handleFieldsMapAggregation(
 					fields := obs.GetMapValue().GetFields()
 					obsForKey = append(obsForKey, fields[key])
 				default:
-					lggr.Debugf("unsupported observation type at index %d for key %s: %T", i, key, obs.Value)
+					lggr.Debugw("unsupported observation type", "observationIndex", i, "key", key, "valueType", fmt.Sprintf("%T", obs.Value))
 					continue
 				}
 			} else {
-				lggr.Debugf("ignoring nil observation at index %d for key %s", i, key)
+				lggr.Debugw("ignoring nil observation", "observationIndex", i, "key", key)
 			}
 		}
 
@@ -113,7 +113,7 @@ func handleFieldsMapAggregation(
 			case *valuespb.Value_MapValue:
 				defaultForKey = defaultValue.GetMapValue().GetFields()[key]
 			default:
-				lggr.Debugf("missing default for key: %s", key)
+				lggr.Debugw("missing default for key", "key", key)
 			}
 		}
 
@@ -337,7 +337,7 @@ func handleCommonSuffixAggregation(lggr logger.Logger, observationSlices []*valu
 	for i, obsProto := range observationSlices {
 		reversed, err := reverseListValue(obsProto)
 		if err != nil {
-			lggr.Warnf("skipping observations at index %d: %s", i, err)
+			lggr.Warnw("skipping observations", "observationIndex", i, "err", err)
 			continue
 		}
 		reversedObservations = append(reversedObservations, reversed)
@@ -385,7 +385,7 @@ func handleCommonPrefixAggregation(
 					maxListLength = len(list.GetFields())
 				}
 			default:
-				lggr.Warnf("value at index %d is of type %T", i, obsProto.Value)
+				lggr.Warnw("unexpected observation value type", "observationIndex", i, "valueType", fmt.Sprintf("%T", obsProto.Value))
 				continue
 			}
 		}
@@ -496,7 +496,7 @@ func getMedian[T any](
 		unwrapped, err := unwrap(v)
 		if err != nil {
 			// It's possible the value could be corrupt and fail to unwrap, so skip and log warning as this should not happen
-			lggr.Warnf("failed to unwrap observation during median calculation: %s", err)
+			lggr.Warnw("failed to unwrap observation during median calculation", "err", err)
 		} else {
 			unwrappedValues = append(unwrappedValues, unwrapped)
 		}

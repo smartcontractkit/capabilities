@@ -21,12 +21,59 @@ func (_m *RequestsHandler) EXPECT() *RequestsHandler_Expecter {
 	return &RequestsHandler_Expecter{mock: &_m.Mock}
 }
 
-// CompleteRequest provides a mock function with given fields: id, report
-func (_m *RequestsHandler) CompleteRequest(id string, report *types.RequestReport) error {
+// CompleteHashableRequest provides a mock function with given fields: id, report
+func (_m *RequestsHandler) CompleteHashableRequest(id string, report *types.HashableRequestReport) error {
 	ret := _m.Called(id, report)
 
 	if len(ret) == 0 {
-		panic("no return value specified for CompleteRequest")
+		panic("no return value specified for CompleteHashableRequest")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(string, *types.HashableRequestReport) error); ok {
+		r0 = rf(id, report)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// RequestsHandler_CompleteHashableRequest_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CompleteHashableRequest'
+type RequestsHandler_CompleteHashableRequest_Call struct {
+	*mock.Call
+}
+
+// CompleteHashableRequest is a helper method to define mock.On call
+//   - id string
+//   - report *types.HashableRequestReport
+func (_e *RequestsHandler_Expecter) CompleteHashableRequest(id interface{}, report interface{}) *RequestsHandler_CompleteHashableRequest_Call {
+	return &RequestsHandler_CompleteHashableRequest_Call{Call: _e.mock.On("CompleteHashableRequest", id, report)}
+}
+
+func (_c *RequestsHandler_CompleteHashableRequest_Call) Run(run func(id string, report *types.HashableRequestReport)) *RequestsHandler_CompleteHashableRequest_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(string), args[1].(*types.HashableRequestReport))
+	})
+	return _c
+}
+
+func (_c *RequestsHandler_CompleteHashableRequest_Call) Return(_a0 error) *RequestsHandler_CompleteHashableRequest_Call {
+	_c.Call.Return(_a0)
+	return _c
+}
+
+func (_c *RequestsHandler_CompleteHashableRequest_Call) RunAndReturn(run func(string, *types.HashableRequestReport) error) *RequestsHandler_CompleteHashableRequest_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// CompleteProtoRequest provides a mock function with given fields: id, report
+func (_m *RequestsHandler) CompleteProtoRequest(id string, report *types.RequestReport) error {
+	ret := _m.Called(id, report)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CompleteProtoRequest")
 	}
 
 	var r0 error
@@ -39,31 +86,31 @@ func (_m *RequestsHandler) CompleteRequest(id string, report *types.RequestRepor
 	return r0
 }
 
-// RequestsHandler_CompleteRequest_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CompleteRequest'
-type RequestsHandler_CompleteRequest_Call struct {
+// RequestsHandler_CompleteProtoRequest_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CompleteProtoRequest'
+type RequestsHandler_CompleteProtoRequest_Call struct {
 	*mock.Call
 }
 
-// CompleteRequest is a helper method to define mock.On call
+// CompleteProtoRequest is a helper method to define mock.On call
 //   - id string
 //   - report *types.RequestReport
-func (_e *RequestsHandler_Expecter) CompleteRequest(id interface{}, report interface{}) *RequestsHandler_CompleteRequest_Call {
-	return &RequestsHandler_CompleteRequest_Call{Call: _e.mock.On("CompleteRequest", id, report)}
+func (_e *RequestsHandler_Expecter) CompleteProtoRequest(id interface{}, report interface{}) *RequestsHandler_CompleteProtoRequest_Call {
+	return &RequestsHandler_CompleteProtoRequest_Call{Call: _e.mock.On("CompleteProtoRequest", id, report)}
 }
 
-func (_c *RequestsHandler_CompleteRequest_Call) Run(run func(id string, report *types.RequestReport)) *RequestsHandler_CompleteRequest_Call {
+func (_c *RequestsHandler_CompleteProtoRequest_Call) Run(run func(id string, report *types.RequestReport)) *RequestsHandler_CompleteProtoRequest_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		run(args[0].(string), args[1].(*types.RequestReport))
 	})
 	return _c
 }
 
-func (_c *RequestsHandler_CompleteRequest_Call) Return(_a0 error) *RequestsHandler_CompleteRequest_Call {
+func (_c *RequestsHandler_CompleteProtoRequest_Call) Return(_a0 error) *RequestsHandler_CompleteProtoRequest_Call {
 	_c.Call.Return(_a0)
 	return _c
 }
 
-func (_c *RequestsHandler_CompleteRequest_Call) RunAndReturn(run func(string, *types.RequestReport) error) *RequestsHandler_CompleteRequest_Call {
+func (_c *RequestsHandler_CompleteProtoRequest_Call) RunAndReturn(run func(string, *types.RequestReport) error) *RequestsHandler_CompleteProtoRequest_Call {
 	_c.Call.Return(run)
 	return _c
 }

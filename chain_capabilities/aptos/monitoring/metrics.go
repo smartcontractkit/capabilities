@@ -13,6 +13,12 @@ func ns(name string) string { return fmt.Sprintf("apt_capability_%s", name) }
 
 // Metrics holds all per-method instruments
 type Metrics struct {
+	ViewSuccess struct {
+		basic commoncapbeholder.MetricsCapBasic
+	}
+	ViewError struct {
+		basic commoncapbeholder.MetricsCapBasic
+	}
 	WriteReportSuccess struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
@@ -40,6 +46,18 @@ type Metrics struct {
 func NewMetrics() (Metrics, error) {
 	m := Metrics{}
 	var err error
+
+	viewSuccess := commoncapbeholder.NewMetricsInfoCapBasic(ns("view_success"), commonbeholder.ToSchemaFullName(&ViewSuccess{}))
+	m.ViewSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(viewSuccess)
+	if err != nil {
+		return Metrics{}, fmt.Errorf("failed to create view success metric: %w", err)
+	}
+
+	viewErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("view_error"), commonbeholder.ToSchemaFullName(&ViewError{}))
+	m.ViewError.basic, err = commoncapbeholder.NewMetricsCapBasic(viewErr)
+	if err != nil {
+		return Metrics{}, fmt.Errorf("failed to create view error metric: %w", err)
+	}
 
 	wrSuccess := commoncapbeholder.NewMetricsInfoCapBasic(ns("write_report_success"), commonbeholder.ToSchemaFullName(&WriteReportSuccess{}))
 	m.WriteReportSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(wrSuccess)
@@ -84,6 +102,18 @@ func NewMetrics() (Metrics, error) {
 	}
 
 	return m, nil
+}
+
+func (m *Metrics) OnViewSuccess(ctx context.Context, msg *ViewSuccess) error {
+	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
+	m.ViewSuccess.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
+	return nil
+}
+
+func (m *Metrics) OnViewError(ctx context.Context, msg *ViewError) error {
+	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
+	m.ViewError.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
+	return nil
 }
 
 func (m *Metrics) OnWriteReportSuccess(ctx context.Context, msg *WriteReportSuccess) error {
