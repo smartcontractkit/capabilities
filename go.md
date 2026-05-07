@@ -11,7 +11,7 @@ flowchart LR
 	capabilities/chain_capabilities/evm --> chainlink-evm
 	click capabilities/chain_capabilities/evm href "https://github.com/smartcontractkit/capabilities"
 	capabilities/chain_capabilities/solana --> capabilities/chain_capabilities/common
-	capabilities/chain_capabilities/solana --> chainlink-solana/integration-tests
+	capabilities/chain_capabilities/solana --> chainlink-solana/contracts
 	click capabilities/chain_capabilities/solana href "https://github.com/smartcontractkit/capabilities"
 	capabilities/consensus --> capabilities/libs
 	capabilities/consensus --> cre-sdk-go
@@ -151,16 +151,11 @@ flowchart LR
 	chainlink-solana/contracts --> chainlink-testing-framework/framework
 	chainlink-solana/contracts --> chainlink-tron/relayer
 	click chainlink-solana/contracts href "https://github.com/smartcontractkit/chainlink-solana"
-	chainlink-solana/integration-tests --> chainlink-solana/contracts
-	chainlink-solana/integration-tests --> chainlink-testing-framework/framework/components/fake
-	click chainlink-solana/integration-tests href "https://github.com/smartcontractkit/chainlink-solana"
 	chainlink-sui --> chainlink-aptos
 	chainlink-sui --> chainlink-ccip
 	click chainlink-sui href "https://github.com/smartcontractkit/chainlink-sui"
 	chainlink-testing-framework/framework
 	click chainlink-testing-framework/framework href "https://github.com/smartcontractkit/chainlink-testing-framework"
-	chainlink-testing-framework/framework/components/fake
-	click chainlink-testing-framework/framework/components/fake href "https://github.com/smartcontractkit/chainlink-testing-framework"
 	chainlink-ton --> chainlink-ccip
 	chainlink-ton --> chainlink-common/pkg/monitoring
 	chainlink-ton --> chainlink-framework/metrics
@@ -280,15 +275,8 @@ flowchart LR
 	subgraph chainlink-solana-repo[chainlink-solana]
 		 chainlink-solana
 		 chainlink-solana/contracts
-		 chainlink-solana/integration-tests
 	end
 	click chainlink-solana-repo href "https://github.com/smartcontractkit/chainlink-solana"
-
-	subgraph chainlink-testing-framework-repo[chainlink-testing-framework]
-		 chainlink-testing-framework/framework
-		 chainlink-testing-framework/framework/components/fake
-	end
-	click chainlink-testing-framework-repo href "https://github.com/smartcontractkit/chainlink-testing-framework"
 
 	subgraph cre-sdk-go-repo[cre-sdk-go]
 		 cre-sdk-go
@@ -305,5 +293,5 @@ flowchart LR
 	click tdh2-repo href "https://github.com/smartcontractkit/tdh2"
 
 	classDef outline stroke-dasharray:6,fill:none;
-	class capabilities-repo,chainlink-ccip-repo,chainlink-common-repo,chainlink-evm-repo,chainlink-framework-repo,chainlink-protos-repo,chainlink-solana-repo,chainlink-testing-framework-repo,cre-sdk-go-repo,tdh2-repo outline
+	class capabilities-repo,chainlink-ccip-repo,chainlink-common-repo,chainlink-evm-repo,chainlink-framework-repo,chainlink-protos-repo,chainlink-solana-repo,cre-sdk-go-repo,tdh2-repo outline
 ```
