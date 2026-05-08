@@ -12,7 +12,6 @@ require (
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260420204255-a3f3bdd56877
 	github.com/smartcontractkit/chainlink-solana v1.1.2-0.20260420191419-ea62f88cbdb4
 	github.com/smartcontractkit/chainlink-solana/contracts v0.0.0-20260421131224-c46cbfe7bc6c
-	github.com/smartcontractkit/chainlink-solana/integration-tests v0.0.0-20260421131224-c46cbfe7bc6c
 	github.com/smartcontractkit/libocr v0.0.0-20260403184524-b6409238958d
 	github.com/stretchr/testify v1.11.1
 	go.opentelemetry.io/otel v1.43.0
@@ -65,6 +64,7 @@ require (
 	github.com/go-playground/validator/v10 v10.30.1 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
+	github.com/gogo/protobuf v1.3.3 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/flatbuffers v25.2.10+incompatible // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
@@ -73,6 +73,7 @@ require (
 	github.com/grafana/otel-profiling-go v0.5.1 // indirect
 	github.com/grafana/pyroscope-go v1.2.8 // indirect
 	github.com/grafana/pyroscope-go/godeltaprof v0.1.9 // indirect
+	github.com/graph-gophers/graphql-go v1.5.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus v1.0.1 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
@@ -121,7 +122,9 @@ require (
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.66.1 // indirect
 	github.com/prometheus/procfs v0.16.1 // indirect
+	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
+	github.com/rs/cors v1.11.1 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
 	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1 // indirect
 	github.com/scylladb/go-reflectx v1.0.1 // indirect
@@ -140,6 +143,7 @@ require (
 	github.com/streamingfast/logging v0.0.0-20230608130331-f22c91403091 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/supranational/blst v0.3.16 // indirect
+	github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
