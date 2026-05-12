@@ -14,6 +14,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives"
 	solprimitives "github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives/solana"
 	"github.com/smartcontractkit/chainlink-solana/contracts"
+	ks_forwarder "github.com/smartcontractkit/chainlink-solana/contracts/generated/keystone_forwarder"
 	codecv1 "github.com/smartcontractkit/chainlink-solana/pkg/solana/codec/v1"
 	lptypes "github.com/smartcontractkit/chainlink-solana/pkg/solana/logpoller/types"
 )
@@ -92,17 +93,17 @@ func (p *OnChainTransmissionInfoProvider) GetTransmissionInfo(ctx context.Contex
 		return TransmissionInfo{}, fmt.Errorf("execution state account has no binary data")
 	}
 
-	_, parsedTransmissionID, execSuccess, err := parseExecutionStateAccount(raw)
+	execState, err := ks_forwarder.ParseAccount_ExecutionState(raw)
 	if err != nil {
 		return TransmissionInfo{}, fmt.Errorf("failed to parse execution state account: %w", err)
 	}
 
-	if !bytes.Equal(parsedTransmissionID[:], transmissionID[:]) {
+	if !bytes.Equal(execState.TransmissionId[:], transmissionID[:]) {
 		return TransmissionInfo{}, fmt.Errorf("execution state transmission id mismatch")
 	}
 
 	var state TransmissionState
-	if execSuccess {
+	if execState.Success {
 		state = TransmissionStateSucceeded
 	} else {
 		state = TransmissionStateFailed
