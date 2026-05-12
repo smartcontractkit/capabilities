@@ -214,7 +214,7 @@ func (wr *WriteReport) executeWriteReport(
 		}
 		// If still NotAttempted, execution state account may not be committed yet.
 		if ti.State == TransmissionStateNotAttempted {
-			return TransmissionInfo{}, errors.New("tx submitted but transmission info not yet visible, retrying")
+			return TransmissionInfo{}, errors.New("tx submitted but execution state not yet visible on-chain, retrying")
 		}
 		return ti, nil
 	})

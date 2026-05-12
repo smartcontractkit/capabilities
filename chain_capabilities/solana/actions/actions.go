@@ -36,9 +36,9 @@ type Solana struct {
 
 func NewSolana(ctx context.Context, cfg *config.Config, s types.SolanaService, messageBuilder *monitoring.MessageBuilder, beholderProcessor beholder.ProtoProcessor, lggr logger.Logger, limitsFactory limits.Factory, transmissionScheduler ts.TransmissionScheduler, chainSelector uint64) (*Solana, error) {
 	client := newForwarderClient(s, lggr, cfg.CREForwarderAddress, cfg.CREForwarderState, cfg.Transmitter)
-	provider, err := newLogsTransmissionStatusProvider(ctx, cfg.CREForwarderAddress, s)
+	provider, err := newOnChainTransmissionInfoProvider(ctx, cfg.CREForwarderAddress, cfg.CREForwarderState, s)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create logs transmission status provider: %w", err)
+		return nil, fmt.Errorf("failed to create on-chain transmission info provider: %w", err)
 	}
 	sol := &Solana{
 		SolanaService:            s,
