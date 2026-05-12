@@ -3,7 +3,6 @@ package actions
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/gagliardetto/solana-go"
@@ -15,7 +14,6 @@ import (
 	solprimitives "github.com/smartcontractkit/chainlink-common/pkg/types/query/primitives/solana"
 	"github.com/smartcontractkit/chainlink-solana/contracts"
 	ks_forwarder "github.com/smartcontractkit/chainlink-solana/contracts/generated/keystone_forwarder"
-	codecv1 "github.com/smartcontractkit/chainlink-solana/pkg/solana/codec/v1"
 	lptypes "github.com/smartcontractkit/chainlink-solana/pkg/solana/logpoller/types"
 )
 
@@ -136,33 +134,14 @@ func signatureFromInProgressLogs(inProgressLogs []*soltypes.Log) (solana.Signatu
 }
 
 func (lr *logReader) registerInProgressFilter(ctx context.Context) error {
-	var idl codecv1.IDL
-	if err := json.Unmarshal([]byte(contracts.FetchForwarderIDL()), &idl); err != nil {
-		return fmt.Errorf("unexpected error: invalid Forwarder IDL, error: %w", err)
-	}
-
-	eventIdl, err := codecv1.ExtractEventIDL(eventReportInProgress, idl)
-	if err != nil {
-		return fmt.Errorf("failed to extract event IDL %s: %w", eventReportInProgress, err)
-	}
-
-	lpEventIdl := lptypes.EventIdl{
-		Event: eventIdl,
-		Types: idl.Types,
-	}
-
-	contractIdlJSON, err := json.Marshal(lpEventIdl)
-	if err != nil {
-		return fmt.Errorf("failed to marshal event IDL %s: %w", eventReportInProgress, err)
-	}
-
+	idlJSON := []byte(contracts.FetchForwarderIDL())
 	sigInProgress := soltypes.EventSignature(lptypes.NewEventSignatureFromName(eventReportInProgress))
-	err = lr.RegisterLogTracking(ctx, soltypes.LPFilterQuery{
+	err := lr.RegisterLogTracking(ctx, soltypes.LPFilterQuery{
 		Name:            eventReportInProgress + "_" + lr.forwarderProgramID.String(),
 		Address:         soltypes.PublicKey(lr.forwarderProgramID),
 		EventName:       eventReportInProgress,
 		EventSig:        sigInProgress,
-		ContractIdlJSON: contractIdlJSON,
+		ContractIdlJSON: idlJSON,
 		SubkeyPaths:     [][]string{transmissionLogSubkeyPath},
 		IncludeReverted: true,
 	})
