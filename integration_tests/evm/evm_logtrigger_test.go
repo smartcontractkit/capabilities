@@ -21,6 +21,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder/beholdertest"
+	"github.com/smartcontractkit/chainlink-common/pkg/utils/tests"
 	"github.com/smartcontractkit/chainlink/v2/core/logger"
 
 	"github.com/stretchr/testify/require"
@@ -220,6 +221,7 @@ func Test_LogTriggerMultipleTopics(t *testing.T) {
 // Test_LogTriggerMultipleAddressesAndTopics tests the log trigger with events emitted from multiple contract addresses
 // dismissing any non-matching events.
 func Test_LogTriggerMultipleAddressesAndTopics(t *testing.T) {
+	tests.SkipFlakey(t, "https://smartcontract-it.atlassian.net/browse/CRE-4325")
 	message1 := "Data for log trigger from contract 1 (topic 2 = 42)"
 	message2 := "Data for log trigger from contract 2 (topic 2 = 23)"
 	matchingMsgs := []string{message1, message2}

@@ -38,9 +38,7 @@ jobs:
 
       - name: Setup Tests DB
         shell: bash
-        run: |
-          go get github.com/smartcontractkit/chainlink/v2/core/store/cmd/preparetest@859e4a2d4f60223787c9ad699a8c0e4a64304cfb
-          go run github.com/smartcontractkit/chainlink/v2/core/store/cmd/preparetest
+        run: go -C integration_tests tool preparetest
         env:
           CL_DATABASE_URL: ${{ env.DB_URL }}
 
