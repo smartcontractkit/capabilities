@@ -3,9 +3,14 @@ package actions
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/gagliardetto/solana-go"
+	"github.com/gagliardetto/solana-go/rpc"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	soltypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/solana"
@@ -75,20 +80,22 @@ func (p *OnChainTransmissionInfoProvider) GetTransmissionInfo(ctx context.Contex
 		},
 	})
 	if err != nil {
-		return TransmissionInfo{}, fmt.Errorf("failed to get execution state account: %w", err)
-	}
-
-	if reply.Value == nil {
-		sig, sigErr := signatureFromInProgressLogs(inProgressLogs)
-		if sigErr != nil {
-			return TransmissionInfo{}, sigErr
+		if isExecutionStateAccountMissing(err) {
+			reply = &soltypes.GetAccountInfoReply{}
+		} else {
+			return TransmissionInfo{}, fmt.Errorf("failed to get execution state account: %w", err)
 		}
-		return TransmissionInfo{State: TransmissionStateFailed, Signature: sig}, nil
 	}
 
-	raw, ok := accountDataBytes(reply.Value)
-	if !ok || len(raw) == 0 {
-		return TransmissionInfo{}, fmt.Errorf("execution state account has no binary data")
+	sig, sigErr := signatureFromInProgressLogs(inProgressLogs)
+	if sigErr != nil {
+		return TransmissionInfo{}, sigErr
+	}
+
+	raw, haveBinary := accountDataBytesForTransmission(reply)
+	if !haveBinary {
+		// ReportInProgress but no decodable account payload (reverted tx, or missing data on wire).
+		return TransmissionInfo{State: TransmissionStateFailed, Signature: sig}, nil
 	}
 
 	execState, err := ks_forwarder.ParseAccount_ExecutionState(raw)
@@ -107,15 +114,44 @@ func (p *OnChainTransmissionInfoProvider) GetTransmissionInfo(ctx context.Contex
 		state = TransmissionStateFailed
 	}
 
-	sig, err := signatureFromInProgressLogs(inProgressLogs)
-	if err != nil {
-		return TransmissionInfo{}, err
-	}
-
 	return TransmissionInfo{
 		State:     state,
 		Signature: sig,
 	}, nil
+}
+
+// accountDataBytesForTransmission returns raw program data for Anchor parsing. Prefers
+// AsDecodedBinary; if empty (e.g. jsonParsed-only path), decodes Solana's ["base64","base64"] from AsJSON.
+func accountDataBytesForTransmission(reply *soltypes.GetAccountInfoReply) ([]byte, bool) {
+	if reply == nil || reply.Value == nil || reply.Value.Data == nil {
+		return nil, false
+	}
+	d := reply.Value.Data
+	if len(d.AsDecodedBinary) > 0 {
+		return d.AsDecodedBinary, true
+	}
+	raw, err := accountDataBytesFromJSON(d.AsJSON)
+	if err != nil || len(raw) == 0 {
+		return nil, false
+	}
+	return raw, true
+}
+
+func accountDataBytesFromJSON(asJSON []byte) ([]byte, error) {
+	if len(asJSON) == 0 {
+		return nil, fmt.Errorf("empty account data json")
+	}
+	var arr []string
+	if err := json.Unmarshal(asJSON, &arr); err == nil && len(arr) >= 2 && arr[1] == "base64" {
+		return base64.StdEncoding.DecodeString(arr[0])
+	}
+	var wrapped struct {
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(asJSON, &wrapped); err == nil && len(wrapped.Data) > 0 {
+		return accountDataBytesFromJSON(wrapped.Data)
+	}
+	return nil, fmt.Errorf("could not extract base64 account data from json")
 }
 
 func signatureFromInProgressLogs(inProgressLogs []*soltypes.Log) (solana.Signature, error) {
@@ -189,4 +225,18 @@ func accountDataBytes(acc *soltypes.Account) ([]byte, bool) {
 		return acc.Data.AsDecodedBinary, true
 	}
 	return nil, false
+}
+
+func isExecutionStateAccountMissing(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, rpc.ErrNotFound) {
+		return true
+	}
+	s := strings.ToLower(err.Error())
+	if !strings.Contains(s, "not found") {
+		return false
+	}
+	return strings.Contains(s, "account info") || strings.Contains(s, "getaccountinfo")
 }
