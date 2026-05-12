@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -31,9 +32,18 @@ func DeployCapability(t *testing.T, capabilityName string) (string, error) {
 }
 
 // CleanupCapabilitiesDir removes any capabilities built by the test
+// Deprecated: Use RemoveCapabilitiesDir
 func CleanupCapabilitiesDir(lggr logger.Logger) {
 	err := os.RemoveAll(CapabilitiesDir)
 	if err != nil {
 		lggr.Errorf("Failed to remove directory: %v", err)
+	}
+}
+
+// RemoveCapabilitiesDir removes any capabilities built by the test.
+// To be scheduled on t.CleanUp.
+func RemoveCapabilitiesDir(t *testing.T) func() {
+	return func() {
+		assert.NoError(t, os.RemoveAll(CapabilitiesDir))
 	}
 }

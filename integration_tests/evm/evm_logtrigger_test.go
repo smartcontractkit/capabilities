@@ -21,7 +21,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder/beholdertest"
-	"github.com/smartcontractkit/chainlink/v2/core/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 
 	"github.com/stretchr/testify/require"
 
@@ -306,10 +306,8 @@ func assertLogTriggerWorks(t *testing.T, eventName string, workflowName string, 
 	verifyNonMatchingIgnored bool) {
 	ctx := t.Context()
 	beholderTester := beholdertest.NewObserver(t)
-	lggr, obs := logger.TestLoggerObserved(t, zapcore.InfoLevel) // change this to debug to print all logs from the trigger/log poller if needed to debug
-	defer func() {
-		utils.CleanupCapabilitiesDir(lggr)
-	}()
+	lggr, obs := logger.TestObserved(t, zapcore.InfoLevel) // change this to debug to print all logs from the trigger/log poller if needed to debug
+	t.Cleanup(utils.RemoveCapabilitiesDir(t))
 
 	workflowPath, err := filepath.Abs("./workflow")
 	require.NoError(t, err)
