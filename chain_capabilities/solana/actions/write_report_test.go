@@ -182,20 +182,20 @@ func TestWriteReport_InputValidation(t *testing.T) {
 	})
 	t.Run("Short workflow name should pass validation when report and request match", func(t *testing.T) {
 		reportMetadata := createTestReportMetadata()
-		// 4 hex chars (2 bytes) — shorter than the full 20, triggers padWorkflowName
+		// 4 hex chars — shorter than the full 20-char workflow name field; Encode pads
+		// the copy during serialization and Decode restores the 20-char form for comparison.
 		reportMetadata.WorkflowName = "aabb"
 		encodedReportMetadata, encErr := reportMetadata.Encode()
 		require.NoError(t, encErr)
-		// Request and report carry the same WorkflowName, so validation must not
-		// reject the name. This fails today because padWorkflowName pads with '0'
-		// (0x30) while validateInputsAndReportMetadata pads with 0x00 null bytes.
+		// Request and report use the same unpadded WorkflowName on metadata; validation pads
+		// the request name the same way as metadata encoding (ASCII "0" to 20 chars).
 		err := helper.solana.validateInputsAndReportMetadata(
 			createTestRequestMetadata(reportMetadata),
 			&solcap.WriteReportRequest{
 				Receiver: key.PublicKey().Bytes(),
 				Report: &workflowpb.ReportResponse{
 					RawReport:     encodedReportMetadata,
-					ReportContext: []byte{},
+					ReportContext: RandomBytes(reportContextLen),
 					Sigs:          generateRandomSignatures(),
 				},
 			},
@@ -236,7 +236,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		expectedError := "some error"
 		reportMetadata := createTestReportMetadata()
 		encodedReportMetadata, _ := reportMetadata.Encode()
-		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(&TransmissionInfo{}, errors.New(expectedError))
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(TransmissionInfo{}, errors.New(expectedError))
 		_, err := helper.solana.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &solcap.WriteReportRequest{
 			Receiver: key.PublicKey().Bytes(),
 			Report: &workflowpb.ReportResponse{
@@ -253,7 +253,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 		testLogger := logger.Test(t)
 		helper := createMocksAndCapability(t, testLogger)
 
-		transmissionInfo := &TransmissionInfo{
+		transmissionInfo := TransmissionInfo{
 			State: TransmissionStateSucceeded,
 		}
 		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(transmissionInfo, nil)
@@ -283,7 +283,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			Report:   signedReport,
 		}
 		capabilitiesMetadata := createTestRequestMetadata(reportMetadata)
-		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(&TransmissionInfo{
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(TransmissionInfo{
 			State: TransmissionStateNotAttempted,
 		}, nil).Once()
 
@@ -291,7 +291,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			Signature: soltypes.Signature(sig),
 		}, nil)
 
-		transmissionInfo := &TransmissionInfo{
+		transmissionInfo := TransmissionInfo{
 			State: TransmissionStateSucceeded,
 		}
 		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(transmissionInfo, nil).Once()
@@ -415,7 +415,7 @@ func TestWriteReport_MeteringMetadata(t *testing.T) {
 		}
 		capabilitiesMetadata := createTestRequestMetadata(reportMetadata)
 
-		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(&TransmissionInfo{
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(TransmissionInfo{
 			State: TransmissionStateNotAttempted,
 		}, nil).Once()
 
@@ -423,7 +423,7 @@ func TestWriteReport_MeteringMetadata(t *testing.T) {
 			Signature: soltypes.Signature(sig),
 		}, nil)
 
-		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(&TransmissionInfo{
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(TransmissionInfo{
 			State: TransmissionStateSucceeded,
 		}, nil).Once()
 
@@ -459,7 +459,7 @@ func TestWriteReport_MeteringMetadata(t *testing.T) {
 		}
 		capabilitiesMetadata := createTestRequestMetadata(reportMetadata)
 
-		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(&TransmissionInfo{
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(TransmissionInfo{
 			State: TransmissionStateNotAttempted,
 		}, nil).Once()
 
@@ -467,7 +467,7 @@ func TestWriteReport_MeteringMetadata(t *testing.T) {
 			Signature: soltypes.Signature(sig),
 		}, nil)
 
-		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(&TransmissionInfo{
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(TransmissionInfo{
 			State:     TransmissionStateFailed,
 			Signature: sig,
 		}, nil).Once()
@@ -505,7 +505,7 @@ func TestWriteReport_MeteringMetadata(t *testing.T) {
 		}
 		capabilitiesMetadata := createTestRequestMetadata(reportMetadata)
 
-		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(&TransmissionInfo{
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(TransmissionInfo{
 			State: TransmissionStateNotAttempted,
 		}, nil).Once()
 
@@ -513,7 +513,7 @@ func TestWriteReport_MeteringMetadata(t *testing.T) {
 			Signature: soltypes.Signature(sig),
 		}, nil)
 
-		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(&TransmissionInfo{
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(TransmissionInfo{
 			State: TransmissionStateSucceeded,
 		}, nil).Once()
 
@@ -533,7 +533,7 @@ func TestWriteReport_MeteringMetadata(t *testing.T) {
 		testLogger := logger.Test(t)
 		helper := createMocksAndCapability(t, testLogger)
 
-		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(&TransmissionInfo{
+		helper.transmissionInfoProvider.On("GetTransmissionInfo", mock.Anything, mock.Anything).Return(TransmissionInfo{
 			State: TransmissionStateSucceeded,
 		}, nil)
 
