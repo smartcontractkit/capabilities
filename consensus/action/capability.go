@@ -555,29 +555,23 @@ func (c *consensusCapability) validateRequestSize(ctx context.Context, lggr logg
 		"totalSizeBytes", int(totalSize))
 
 	// Get the limit to log it
-	limit, limitErr := c.maxRequestSizeBytes.Limit(ctx)
-	if limitErr != nil {
-		lggr.Warnw("failed to get limit, proceeding with check", "err", limitErr)
+	limit, err := c.maxRequestSizeBytes.Limit(ctx)
+	if err != nil {
+		lggr.Warnw("failed to get limit, proceeding with check", "err", err)
 	} else {
 		lggr.Debugw("retrieved limit", "limitBytes", int(limit))
 	}
 
 	err = c.maxRequestSizeBytes.Check(ctx, totalSize)
 	if err != nil {
-		if errors.Is(err, limits.ErrorBoundLimited[config.Size]{}) {
-			var limitErr limits.ErrorBoundLimited[config.Size]
-			if errors.As(err, &limitErr) {
-				lggr.Warnw("request size exceeds limit",
-					"totalSizeBytes", int(totalSize),
-					"limitBytes", int(limitErr.Limit),
-					"excessBytes", int(totalSize-limitErr.Limit),
-					"inputSizeBytes", inputSize,
-					"metadataSizeBytes", metadataSize)
-			} else {
-				lggr.Warnw("request size exceeds limit",
-					"totalSizeBytes", int(totalSize),
-					"err", err)
-			}
+		if limitErr, ok := errors.AsType[limits.ErrorBoundLimited[config.Size]](err); ok {
+			lggr.Warnw("request size exceeds limit",
+				"totalSizeBytes", int(totalSize),
+				"limitBytes", int(limitErr.Limit),
+				"excessBytes", int(totalSize-limitErr.Limit),
+				"inputSizeBytes", inputSize,
+				"metadataSizeBytes", metadataSize,
+				"err", err)
 			return int(totalSize), caperrors.NewPublicUserError(fmt.Errorf("request size %d bytes exceeds maximum allowed size: %w", totalSize, err), caperrors.InvalidArgument)
 		}
 		return int(totalSize), caperrors.NewPublicSystemError(fmt.Errorf("unexpected error checking request size limit: %w", err), caperrors.Internal)
