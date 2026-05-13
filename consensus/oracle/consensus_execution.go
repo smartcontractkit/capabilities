@@ -18,9 +18,11 @@ import (
 )
 
 var (
-	ErrNoValuesMetThreshold                         = errors.New("no values met f+1 threshold")
-	ErrMoreThanOneValidOutcomeForIdenticalConsensus = errors.New("not identical, multiple values with f+1 occurrences")
-	ErrInsufficientObservations                     = errors.New("insufficient observations to reach consensus")
+	ErrNoValuesMetThreshold                              = errors.New("no values met f+1 threshold")
+	ErrNoValuesMetFPlusOneThresholdForIdenticalConsensus = errors.New("no values met f+1 threshold for identical consensus")
+	ErrMoreThanOneValidOutcomeForIdenticalConsensus      = errors.New("not identical, multiple values with f+1 occurrences")
+	ErrInsufficientObservations                          = errors.New("insufficient observations to reach consensus")
+	ErrNoSingleValueTypeMeetsThreshold                   = errors.New("no single value type meets the minimum observation threshold")
 )
 
 // Constants for type names used in aggregation logic.
@@ -43,24 +45,25 @@ func CalculateOutcomeForObservations(
 	consensusDescriptor *sdk.ConsensusDescriptor,
 	defaultValue *valuespb.Value,
 	f int,
+	errorsMigrationFlag bool,
 ) (*valuespb.Value, error) {
 	switch desc := consensusDescriptor.GetDescriptor_().(type) {
 	case *sdk.ConsensusDescriptor_Aggregation:
 		aggregation := consensusDescriptor.GetAggregation()
 		switch aggregation {
 		case sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL:
-			return handleIdenticalAggregation(lggr, observations, f)
+			return handleIdenticalAggregation(lggr, observations, f, errorsMigrationFlag)
 		case sdk.AggregationType_AGGREGATION_TYPE_MEDIAN:
-			return handleMedianAggregation(lggr, observations, f)
+			return handleMedianAggregation(lggr, observations, f, errorsMigrationFlag)
 		case sdk.AggregationType_AGGREGATION_TYPE_COMMON_PREFIX:
-			return handleCommonPrefixAggregation(lggr, observations, f)
+			return handleCommonPrefixAggregation(lggr, observations, f, errorsMigrationFlag)
 		case sdk.AggregationType_AGGREGATION_TYPE_COMMON_SUFFIX:
-			return handleCommonSuffixAggregation(lggr, observations, f)
+			return handleCommonSuffixAggregation(lggr, observations, f, errorsMigrationFlag)
 		default:
 			return nil, fmt.Errorf("unknown aggregation type: %s", aggregation)
 		}
 	case *sdk.ConsensusDescriptor_FieldsMap:
-		return handleFieldsMapAggregation(lggr, observations, desc.FieldsMap.GetFields(), defaultValue, f)
+		return handleFieldsMapAggregation(lggr, observations, desc.FieldsMap.GetFields(), defaultValue, f, errorsMigrationFlag)
 	default:
 		return nil, fmt.Errorf("unknown consensus descriptor type: %T", desc)
 	}
@@ -72,6 +75,7 @@ func handleFieldsMapAggregation(
 	desc map[string]*sdk.ConsensusDescriptor,
 	defaultValue *valuespb.Value,
 	f int,
+	errorsMigrationFlag bool,
 ) (*valuespb.Value, error) {
 	if len(observations) < f+1 {
 		return nil, ErrInsufficientObservations
@@ -117,7 +121,7 @@ func handleFieldsMapAggregation(
 			}
 		}
 
-		aggregated, err = CalculateOutcomeForObservations(lggr, obsForKey, d, defaultForKey, f)
+		aggregated, err = CalculateOutcomeForObservations(lggr, obsForKey, d, defaultForKey, f, errorsMigrationFlag)
 		if err == nil {
 			result[key] = aggregated
 			continue
@@ -138,6 +142,7 @@ func handleMedianAggregation(
 	lggr logger.Logger,
 	observations []*valuespb.Value,
 	f int,
+	errorsMigrationFlag bool,
 ) (*valuespb.Value, error) {
 	var (
 		medianResult *valuespb.Value
@@ -147,7 +152,7 @@ func handleMedianAggregation(
 	// The Report function is guaranteed to receive at least 2f+1 distinct attributed
 	// observations. By assumption, up to f of these may be faulty, which includes
 	// being malformed. Conversely, there have to be at least f+1 valid observations.
-	filtered, medianType, err := filterObservations(observations, f+1)
+	filtered, medianType, err := filterObservations(observations, f+1, errorsMigrationFlag)
 	if err != nil {
 		return nil, err
 	}
@@ -283,7 +288,8 @@ func handleMedianAggregation(
 	return medianResult, nil
 }
 
-func handleIdenticalAggregation(_ logger.Logger, values []*valuespb.Value, f int) (*valuespb.Value, error) {
+func handleIdenticalAggregation(_ logger.Logger, values []*valuespb.Value, f int,
+	errorMigrationsFlag bool) (*valuespb.Value, error) {
 	n := len(values)
 	if n == 0 {
 		return nil, errors.New("input slice cannot be empty for identical aggregation")
@@ -323,6 +329,9 @@ func handleIdenticalAggregation(_ logger.Logger, values []*valuespb.Value, f int
 	}
 
 	if uniqueCandidate == nil {
+		if errorMigrationsFlag {
+			return nil, ErrNoValuesMetFPlusOneThresholdForIdenticalConsensus
+		}
 		return nil, ErrNoValuesMetThreshold
 	}
 
@@ -332,7 +341,8 @@ func handleIdenticalAggregation(_ logger.Logger, values []*valuespb.Value, f int
 // handleCommonSuffixAggregation reverses the underlying lists in the slice of
 // observations and delegates logic to handleCommonPrefixAggregation and then
 // reverses the result a final time.
-func handleCommonSuffixAggregation(lggr logger.Logger, observationSlices []*valuespb.Value, f int) (*valuespb.Value, error) {
+func handleCommonSuffixAggregation(lggr logger.Logger, observationSlices []*valuespb.Value, f int,
+	errorMigrationsFlag bool) (*valuespb.Value, error) {
 	var reversedObservations []*valuespb.Value
 	for i, obsProto := range observationSlices {
 		reversed, err := reverseListValue(obsProto)
@@ -343,7 +353,7 @@ func handleCommonSuffixAggregation(lggr logger.Logger, observationSlices []*valu
 		reversedObservations = append(reversedObservations, reversed)
 	}
 
-	commonPrefixOfReversed, err := handleCommonPrefixAggregation(lggr, reversedObservations, f)
+	commonPrefixOfReversed, err := handleCommonPrefixAggregation(lggr, reversedObservations, f, errorMigrationsFlag)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find common prefix of reversed lists: %w", err)
 	}
@@ -362,7 +372,7 @@ func handleCommonSuffixAggregation(lggr logger.Logger, observationSlices []*valu
 // observation at the current index matches the consensus value.
 //
 // The process stops when either:
-// 1. The identical aggregation fails to reach the f+1 threshold (ErrNoValuesMetThreshold).
+// 1. The identical aggregation fails to reach the f+1 threshold (ErrNoValuesMetFPlusOneThreshold).
 // 2. The number of remaining consensus-matching lists drops below the f+1 threshold.
 //
 // This ensures that the common prefix is robustly determined by the longest sequence
@@ -371,6 +381,7 @@ func handleCommonPrefixAggregation(
 	lggr logger.Logger,
 	observations []*valuespb.Value,
 	f int,
+	errorMigrationsFlag bool,
 ) (*valuespb.Value, error) {
 	// Transform slice of values to slice of lists
 	var currentLists []*valuespb.List
@@ -407,7 +418,7 @@ func handleCommonPrefixAggregation(
 			}
 		}
 
-		identicalValue, err := handleIdenticalAggregation(lggr, elementsAtIndex, f)
+		identicalValue, err := handleIdenticalAggregation(lggr, elementsAtIndex, f, errorMigrationsFlag)
 		if err != nil {
 			// Consensus failed at this index, so the common prefix ends here.
 			break
@@ -442,7 +453,7 @@ func handleCommonPrefixAggregation(
 // filterObservations returns all the observations that meet the minimum observation
 // threshold of the same underlying type.  Errors if no single type meets the
 // threshold.
-func filterObservations(observationProtos []*valuespb.Value, minObservations int) ([]*valuespb.Value, reflect.Type, error) {
+func filterObservations(observationProtos []*valuespb.Value, minObservations int, errorsMigrationFlag bool) ([]*valuespb.Value, reflect.Type, error) {
 	if len(observationProtos) < minObservations {
 		return nil, nil, fmt.Errorf("insufficient observations (%d) to meet minimum (%d)", len(observationProtos), minObservations)
 	}
@@ -469,6 +480,10 @@ func filterObservations(observationProtos []*valuespb.Value, minObservations int
 	}
 
 	if dominantType == nil {
+		if errorsMigrationFlag {
+			return nil, nil, ErrNoSingleValueTypeMeetsThreshold
+		}
+
 		return nil, nil, ErrNoValuesMetThreshold
 	}
 

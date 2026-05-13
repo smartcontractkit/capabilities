@@ -228,3 +228,115 @@ func Test_Transmit_ReturnsUserError_When_More_Than_One_Valid_Outcome(t *testing.
 	require.NoError(t, err)
 	require.True(t, sendResponseCalled)
 }
+
+func Test_Transmit_ReturnsUserError_When_No_Values_Met_FPlus1_IdenticalConsensus(t *testing.T) {
+	lggr := logger.Test(t)
+	sendResponseCalled := false
+
+	configDigest := [32]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
+		0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x20}
+	seqNr := uint64(2)
+	report := []byte("test-report-failure")
+	signatures := []types.AttributedOnchainSignature{
+		{Signature: []byte("signature-2"), Signer: commontypes.OracleID(2)},
+	}
+
+	failureMsg := "identical consensus: no cluster reached f+1"
+	sendResponse := func(ctx context.Context, response oracle.ConsensusResponse) {
+		sendResponseCalled = true
+		require.Equal(t, "test-request-id-failure", response.ReqID)
+		require.Equal(t, seqNr, response.SeqNr)
+		require.Error(t, response.Err)
+		var capError caperrors.Error
+		ok := errors.As(response.Err, &capError)
+		require.True(t, ok)
+		require.Contains(t, response.Err.Error(), failureMsg)
+		require.Equal(t, capError.Visibility(), caperrors.VisibilityPublic)
+		require.Equal(t, capError.Origin(), caperrors.OriginUser)
+		require.Equal(t, capError.Code(), caperrors.ConsensusFailed)
+
+		require.Empty(t, response.ConfigDigest)
+		require.Empty(t, response.ReportContext)
+		require.Empty(t, response.RawReport)
+		require.Empty(t, response.Sigs)
+	}
+
+	transmitter := NewContractTransmitter(lggr, sendResponse)
+
+	info := &structpb.Struct{
+		Fields: map[string]*structpb.Value{
+			plugin.InfoRequestID:               structpb.NewStringValue("test-request-id-failure"),
+			plugin.InfoConsensusFailureMessage: structpb.NewStringValue(failureMsg),
+			plugin.InfoConsensusFailureCode: structpb.NewStringValue(
+				oracletypes.ConsensusFailureCode_NO_VALUES_MET_FPLUS1_THRESHOLD_FOR_IDENTICAL_CONSENSUS.String(),
+			),
+		},
+	}
+	infoBytes, err := proto.Marshal(info)
+	require.NoError(t, err)
+
+	rwi := ocr3types.ReportWithInfo[[]byte]{
+		Report: report,
+		Info:   infoBytes,
+	}
+
+	err = transmitter.Transmit(context.Background(), configDigest, seqNr, rwi, signatures)
+	require.NoError(t, err)
+	require.True(t, sendResponseCalled)
+}
+
+func Test_Transmit_ReturnsUserError_When_No_Single_Value_Type_Met_FPlus1(t *testing.T) {
+	lggr := logger.Test(t)
+	sendResponseCalled := false
+
+	configDigest := [32]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
+		0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x20}
+	seqNr := uint64(2)
+	report := []byte("test-report-failure")
+	signatures := []types.AttributedOnchainSignature{
+		{Signature: []byte("signature-2"), Signer: commontypes.OracleID(2)},
+	}
+
+	failureMsg := "median: no single dominant value type"
+	sendResponse := func(ctx context.Context, response oracle.ConsensusResponse) {
+		sendResponseCalled = true
+		require.Equal(t, "test-request-id-failure", response.ReqID)
+		require.Equal(t, seqNr, response.SeqNr)
+		require.Error(t, response.Err)
+		var capError caperrors.Error
+		ok := errors.As(response.Err, &capError)
+		require.True(t, ok)
+		require.Contains(t, response.Err.Error(), failureMsg)
+		require.Equal(t, capError.Visibility(), caperrors.VisibilityPublic)
+		require.Equal(t, capError.Origin(), caperrors.OriginUser)
+		require.Equal(t, capError.Code(), caperrors.ConsensusFailed)
+
+		require.Empty(t, response.ConfigDigest)
+		require.Empty(t, response.ReportContext)
+		require.Empty(t, response.RawReport)
+		require.Empty(t, response.Sigs)
+	}
+
+	transmitter := NewContractTransmitter(lggr, sendResponse)
+
+	info := &structpb.Struct{
+		Fields: map[string]*structpb.Value{
+			plugin.InfoRequestID:               structpb.NewStringValue("test-request-id-failure"),
+			plugin.InfoConsensusFailureMessage: structpb.NewStringValue(failureMsg),
+			plugin.InfoConsensusFailureCode: structpb.NewStringValue(
+				oracletypes.ConsensusFailureCode_NO_SINGLE_VALUE_TYPE_MET_FPLUS1_THRESHOLD_FOR_CONSENSUS.String(),
+			),
+		},
+	}
+	infoBytes, err := proto.Marshal(info)
+	require.NoError(t, err)
+
+	rwi := ocr3types.ReportWithInfo[[]byte]{
+		Report: report,
+		Info:   infoBytes,
+	}
+
+	err = transmitter.Transmit(context.Background(), configDigest, seqNr, rwi, signatures)
+	require.NoError(t, err)
+	require.True(t, sendResponseCalled)
+}
