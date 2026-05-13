@@ -961,8 +961,12 @@ func readType[T any](ctx context.Context, reader ConsensusHandler, request ctype
 }
 
 func (e *EVM) isUserError(err error) bool {
-	return !errors.Is(err, context.DeadlineExceeded) &&
-		!errors.Is(err, multinode.ErrNodeError)
+	return !errors.Is(err, context.DeadlineExceeded) && !isEVMNodeInfraError(err)
+}
+
+func isEVMNodeInfraError(err error) bool {
+	return errors.Is(err, multinode.ErrNodeError) ||
+		strings.Contains(err.Error(), multinode.ErrNodeError.Error())
 }
 
 func isRevertError(err error) bool {

@@ -211,6 +211,14 @@ func TestIsUserError(t *testing.T) {
 			expected: false,
 		},
 		{
+			name: "grpc-style node error without ErrNodeError wrap is system error",
+			err: fmt.Errorf(
+				"rpc error: code = Unknown desc = %s",
+				multinode.ErrNodeError.Error(),
+			),
+			expected: false,
+		},
+		{
 			name:     "generic error is user error",
 			err:      fmt.Errorf("some other error"),
 			expected: true,
