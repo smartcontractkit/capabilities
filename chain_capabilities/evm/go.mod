@@ -8,11 +8,11 @@ require (
 	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260317175318-b042efa4107b
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260424175010-06da873ab11e
 	github.com/smartcontractkit/chain-selectors v1.0.91
-	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260513173345-634428240266
+	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260514185211-b277d0842836
 	github.com/smartcontractkit/chainlink-evm v0.3.4-0.20260410162948-2dca02f24e98
 	github.com/smartcontractkit/chainlink-evm/gethwrappers v0.0.0-20251022073203-7d8ae8cf67c1
 	github.com/smartcontractkit/chainlink-framework/multinode v0.0.0-20260410144512-ca02ad6ed16a
-	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260420204255-a3f3bdd56877
+	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260514104516-a827acdffe43
 	github.com/stretchr/testify v1.11.1
 	go.opentelemetry.io/otel v1.43.0
 	go.uber.org/zap v1.27.1
@@ -95,6 +95,8 @@ require (
 	github.com/smartcontractkit/chainlink-protos/linking-service/go v0.0.0-20251002192024-d2ad9222409b // indirect
 	github.com/smartcontractkit/chainlink-protos/node-platform v0.0.0-20260205130626-db2a2aab956b // indirect
 	github.com/smartcontractkit/chainlink-protos/workflows/go v0.0.0-20260323124644-faea187e6997 // indirect
+	github.com/stellar/go-stellar-sdk v0.5.0 // indirect
+	github.com/stellar/go-xdr v0.0.0-20260312225820-cc2b0611aabf // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/supranational/blst v0.3.16-0.20250831170142-f48500c1fdbe // indirect
 	github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d // indirect
