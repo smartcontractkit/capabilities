@@ -13,6 +13,8 @@ flowchart LR
 	capabilities/chain_capabilities/solana --> capabilities/chain_capabilities/common
 	capabilities/chain_capabilities/solana --> chainlink-solana/contracts
 	click capabilities/chain_capabilities/solana href "https://github.com/smartcontractkit/capabilities"
+	capabilities/chain_capabilities/stellar --> capabilities/libs
+	click capabilities/chain_capabilities/stellar href "https://github.com/smartcontractkit/capabilities"
 	capabilities/consensus --> capabilities/libs
 	capabilities/consensus --> cre-sdk-go
 	click capabilities/consensus href "https://github.com/smartcontractkit/capabilities"
@@ -208,6 +210,7 @@ flowchart LR
 		 capabilities/chain_capabilities/common
 		 capabilities/chain_capabilities/evm
 		 capabilities/chain_capabilities/solana
+		 capabilities/chain_capabilities/stellar
 		 capabilities/consensus
 		 capabilities/cron
 		 capabilities/http_action
