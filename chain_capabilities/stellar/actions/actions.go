@@ -27,6 +27,7 @@ func (s *Stellar) GetLatestLedger(_ context.Context, _ capabilities.RequestMetad
 	return nil, caperrors.NewPublicSystemError(fmt.Errorf("unimplemented"), caperrors.Unknown)
 }
 
-func (s *Stellar) ReadContract(_ context.Context, _ capabilities.RequestMetadata, _ *stellarcap.ReadContractRequest) (*capabilities.ResponseAndMetadata[*stellarcap.ReadContractResponse], caperrors.Error) {
+func (s *Stellar) ReadContract(_ context.Context, _ capabilities.RequestMetadata, protoReq *stellarcap.ReadContractRequest) (*capabilities.ResponseAndMetadata[*stellarcap.ReadContractResponse], caperrors.Error) {
+	_, _ = stellarcap.ConvertReadContractRequestFromProto(protoReq)
 	return nil, caperrors.NewPublicSystemError(fmt.Errorf("unimplemented"), caperrors.Unknown)
 }
