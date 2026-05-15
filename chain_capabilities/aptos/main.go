@@ -284,7 +284,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	}
 	c.lggr.Debugw("Initialised transmission scheduler", "deltaStage", cfg.DeltaStage)
 
-	c.Aptos, err = actions.NewAptos(cfg, p2pConfig, aptosService, c.consensusHandler, messageBuilder, processor, c.lggr, limits.Factory{Logger: c.lggr}, scheduler, c.chainSelector)
+	c.Aptos, err = actions.NewAptos(cfg, p2pConfig, aptosService, c.consensusHandler, messageBuilder, processor, c.lggr, c.limitsFactory, scheduler, c.chainSelector)
 	if err != nil {
 		c.lggr.Errorw("failed to create Aptos actions", "error", err)
 		return fmt.Errorf("failed to create Aptos actions: %w", err)
