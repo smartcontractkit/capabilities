@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -33,6 +34,7 @@ import (
 	evmcapserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
+	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
@@ -43,9 +45,15 @@ const CapabilityName = "evm"
 type capabilityGRPCService struct {
 	capabilities.CapabilityInfo
 	chainSelector uint64
+	chainID       uint64
 	capability
 	lggr          logger.Logger
 	limitsFactory limits.Factory
+
+	heartbeat        *monitoring.PluginHeartbeat
+	stopCh           services.StopChan
+	wg               sync.WaitGroup
+	heartbeatCadence time.Duration
 }
 
 type capability struct {
@@ -81,6 +89,14 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return fmt.Errorf("failed to create metrics: %w", err)
 	}
 
+	heartbeat, err := monitoring.NewPluginHeartbeat()
+	if err != nil {
+		return fmt.Errorf("failed to create plugin heartbeat metrics: %w", err)
+	}
+	c.heartbeat = heartbeat
+	c.stopCh = make(services.StopChan)
+	c.heartbeatCadence = monitoring.DefaultPluginHeartbeatCadence()
+
 	processor, err := monitoring.NewProcessor(c.lggr, metrics)
 	if err != nil {
 		return fmt.Errorf("failed to create monitoring proto processor: %w", err)
@@ -98,6 +114,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	}
 
 	c.chainSelector = cs
+	c.chainID = cfg.ChainID
 	c.id = "evm" + ":ChainSelector:" + strconv.FormatUint(cs, 10) + "@1.0.0"
 
 	chainInfo, err := relayer.GetChainInfo(ctx)
@@ -221,14 +238,41 @@ func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Confi
 	return &cfg, nil
 }
 
-func (c *capabilityGRPCService) Start(_ context.Context) error {
+func (c *capabilityGRPCService) Start(ctx context.Context) error {
 	c.lggr.Infof("Start %s", CapabilityName)
+	if c.heartbeat != nil {
+		c.heartbeat.SetAlive(ctx, c.chainID, true)
+		c.wg.Add(1)
+		go c.heartbeatLoop(ctx)
+	}
 	return nil
 }
 
 func (c *capabilityGRPCService) Close() error {
 	c.lggr.Infof("Closing %s", CapabilityName)
+	if c.heartbeat != nil {
+		close(c.stopCh)
+		c.wg.Wait()
+		c.heartbeat.SetAlive(context.Background(), c.chainID, false)
+	}
 	return errors.Join(c.EVM.Close(), c.requestPoller.Close(), c.consensusHandler.Close(), c.oracle.Close(context.Background()), c.triggerService.Close(), c.heightProvider.Close())
+}
+
+func (c *capabilityGRPCService) heartbeatLoop(ctx context.Context) {
+	defer c.wg.Done()
+
+	ticker := time.NewTicker(c.heartbeatCadence)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-c.stopCh:
+			return
+		case <-ticker.C:
+			c.heartbeat.Pulse(ctx, c.chainID)
+			c.lggr.Debugw("evm capability plugin heartbeat", "chainSelector", c.chainSelector, "chainID", c.chainID)
+		}
+	}
 }
 
 func (c *capabilityGRPCService) HealthReport() map[string]error {
