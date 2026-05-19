@@ -128,7 +128,7 @@ func Test_handleCommonPrefixAggregation(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			lggr := logger.Test(t)
-			got, err := handleCommonPrefixAggregation(lggr, tc.giveValues, tc.f)
+			got, err := handleCommonPrefixAggregation(lggr, tc.giveValues, tc.f, false)
 
 			if tc.wantErr != "" {
 				require.Error(t, err)
@@ -226,7 +226,7 @@ func Test_handleCommonSuffixAggregation(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			lggr := logger.Test(t)
-			got, err := handleCommonSuffixAggregation(lggr, tc.giveValues, tc.f)
+			got, err := handleCommonSuffixAggregation(lggr, tc.giveValues, tc.f, false)
 
 			if tc.wantErr != "" {
 				require.Error(t, err)

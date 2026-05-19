@@ -55,6 +55,7 @@ const expectedMetadataString = "requestId=01020304050607080910111213141516171819
 
 // makeOutcomeTestObs builds a single AttributedObservation for direct Outcome() tests.
 // If isError is true the observation carries an error string; otherwise it carries an int64 value.
+// When updateErrorHandlingFlag is true the plugin errors migration is enabled.
 func makeOutcomeTestObs(
 	t *testing.T,
 	reqID string,
@@ -63,6 +64,7 @@ func makeOutcomeTestObs(
 	observerID uint8,
 	isError bool,
 	removeLibUseInFailureMessageFormattingFlag bool,
+	updateErrorHandlingFlag bool,
 ) libocrtypes.AttributedObservation {
 	t.Helper()
 
@@ -92,6 +94,7 @@ func makeOutcomeTestObs(
 		Input:      simpleInputs,
 		ReceivedAt: timestamppb.New(time.Now()),
 		RemoveLibUseInFailureMessageFormattingFlag: removeLibUseInFailureMessageFormattingFlag,
+		UpdateErrorHandlingFlag:                    updateErrorHandlingFlag,
 	}
 
 	obsProto := &oracletypes.Observation{
@@ -118,6 +121,16 @@ func extractSingleFailureMessage(t *testing.T, outcomeBytes ocr3types.Outcome) s
 	return failure.FailureMessage
 }
 
+func extractSingleFailureCode(t *testing.T, outcomeBytes ocr3types.Outcome) oracletypes.ConsensusFailureCode {
+	t.Helper()
+	outcome := &oracletypes.Outcome{}
+	require.NoError(t, proto.Unmarshal(outcomeBytes, outcome))
+	require.Len(t, outcome.Outcomes, 1, "expected exactly one consensus outcome")
+	failure := outcome.Outcomes[0].GetFailure()
+	require.NotNil(t, failure, "expected a failed consensus outcome, got a success")
+	return failure.GetCode()
+}
+
 // Test_Outcome_PlusOneErrors checks that when every observation carries
 // RemoveLibUseInFailureMessageFormatting=true and f+1 errors are received, Outcome() embeds the per-field
 // metadata string ("Consensus metadata: requestId=...") and the descriptor type
@@ -136,11 +149,11 @@ func Test_Outcome_PlusOneErrors(t *testing.T) {
 
 	// 2f+1 = 5 observations: 3 errors (= f+1) and 2 values, all with RemoveLibUseInFailureMessageFormatting=true.
 	attributed := []libocrtypes.AttributedObservation{
-		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 0, true, true),
-		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 1, true, true),
-		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 2, true, true),
-		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 3, false, true),
-		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 4, false, true),
+		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 0, true, true, false),
+		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 1, true, true, false),
+		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 2, true, true, false),
+		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 3, false, true, false),
+		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 4, false, true, false),
 	}
 
 	qBytes, err := proto.Marshal(&oracletypes.Query{RequestIDs: []string{reqID}})
@@ -176,11 +189,11 @@ func Test_Outcome_AggregationFailure(t *testing.T) {
 	// Five distinct values with IDENTICAL aggregation: no value reaches the f+1=3 threshold,
 	// so CalculateOutcomeForObservations returns an aggregation error.
 	attributed := []libocrtypes.AttributedObservation{
-		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 0, false, true),
-		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 1, false, true),
-		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 2, false, true),
-		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 3, false, true),
-		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 4, false, true),
+		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 0, false, true, false),
+		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 1, false, true, false),
+		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 2, false, true, false),
+		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 3, false, true, false),
+		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 4, false, true, false),
 	}
 
 	qBytes, err := proto.Marshal(&oracletypes.Query{RequestIDs: []string{reqID}})
@@ -214,11 +227,11 @@ func Test_Outcome_RemoveLibUseInFailureMessageFormatting(t *testing.T) {
 
 	t.Run("f_plus_one_errors", func(t *testing.T) {
 		attributed := []libocrtypes.AttributedObservation{
-			makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 0, true, true),
-			makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 1, true, true),
-			makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 2, true, true),
-			makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 3, false, true),
-			makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 4, false, true),
+			makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 0, true, true, false),
+			makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 1, true, true, false),
+			makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 2, true, true, false),
+			makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 3, false, true, false),
+			makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 4, false, true, false),
 		}
 
 		qBytes, err := proto.Marshal(&oracletypes.Query{RequestIDs: []string{reqID}})
@@ -238,11 +251,11 @@ func Test_Outcome_RemoveLibUseInFailureMessageFormatting(t *testing.T) {
 
 	t.Run("aggregation_failure", func(t *testing.T) {
 		attributed := []libocrtypes.AttributedObservation{
-			makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 0, false, true),
-			makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 1, false, true),
-			makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 2, false, true),
-			makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 3, false, true),
-			makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 4, false, true),
+			makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 0, false, true, true),
+			makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 1, false, true, true),
+			makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 2, false, true, true),
+			makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 3, false, true, true),
+			makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 4, false, true, true),
 		}
 
 		qBytes, err := proto.Marshal(&oracletypes.Query{RequestIDs: []string{reqID}})
@@ -253,9 +266,67 @@ func Test_Outcome_RemoveLibUseInFailureMessageFormatting(t *testing.T) {
 
 		msg := extractSingleFailureMessage(t, outcomeBytes)
 		want := fmt.Sprintf(
-			"consensus calculation failed: no values met f+1 threshold; Consensus metadata: %s; Descriptor type: AGGREGATION_TYPE_IDENTICAL; Values received: [0,10,20,30,40]; Errors received: []",
+			"consensus calculation failed: no values met f+1 threshold for identical consensus; Consensus metadata: %s; Descriptor type: AGGREGATION_TYPE_IDENTICAL; Values received: [0,10,20,30,40]; Errors received: []",
 			expectedMetadataString,
 		)
 		assert.Equal(t, want, msg)
+	})
+}
+
+// Test_Outcome_IdenticalConsensus_failureCodes documents how ConsensusFailureCode is chosen for
+// identical-consensus threshold failures depending on RequestObservation.update_error_handling_flag.
+func Test_Outcome_IdenticalConsensus_failureCodes(t *testing.T) {
+	t.Parallel()
+
+	lggr := logger.Test(t)
+	ctx := context.Background()
+
+	const testF, testN = 2, 7
+	reportingPlugin, _ := createReportingPlugin(t, lggr, testF, testN, 5, defaultMaxLengthBytes)
+
+	md := testMetaData()
+	reqID := md.RequestID()
+
+	qBytes, err := proto.Marshal(&oracletypes.Query{RequestIDs: []string{reqID}})
+	require.NoError(t, err)
+
+	fiveDistinctIdentical := []libocrtypes.AttributedObservation{
+		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 0, false, true, true),
+		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 1, false, true, true),
+		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 2, false, true, true),
+		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 3, false, true, true),
+		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 4, false, true, true),
+	}
+
+	t.Run("no wire flag on observations uses dedicated identical-consensus failure code", func(t *testing.T) {
+		t.Parallel()
+
+		outcomeBytes, err := reportingPlugin.Outcome(ctx, ocr3types.OutcomeContext{SeqNr: 1}, qBytes, fiveDistinctIdentical)
+		require.NoError(t, err)
+
+		code := extractSingleFailureCode(t, outcomeBytes)
+		assert.Equal(t, oracletypes.ConsensusFailureCode_NO_VALUES_MET_FPLUS1_THRESHOLD_FOR_IDENTICAL_CONSENSUS, code)
+	})
+
+	t.Run("all observations set update error handling flag falls back to generic calculation failed", func(t *testing.T) {
+		t.Parallel()
+
+		legacy := []libocrtypes.AttributedObservation{
+			makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 0, false, true, false),
+			makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 1, false, true, false),
+			makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 2, false, true, false),
+			makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 3, false, true, false),
+			makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL, 4, false, true, false),
+		}
+
+		outcomeBytes, err := reportingPlugin.Outcome(ctx, ocr3types.OutcomeContext{SeqNr: 1}, qBytes, legacy)
+		require.NoError(t, err)
+
+		code := extractSingleFailureCode(t, outcomeBytes)
+		assert.Equal(t, oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED, code)
+
+		msg := extractSingleFailureMessage(t, outcomeBytes)
+		assert.Contains(t, msg, "consensus calculation failed: no values met f+1 threshold;")
+		assert.NotContains(t, msg, "no values met f+1 threshold for identical consensus")
 	})
 }
