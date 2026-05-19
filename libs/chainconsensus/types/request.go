@@ -273,14 +273,9 @@ func (r *HashableRequest[T]) captureObservationHash() ([HashLength]byte, Observa
 		return [HashLength]byte{}, obErr, nil
 	}
 
-	rawPayload, err := proto.MarshalOptions{Deterministic: true}.Marshal(observation)
+	reportData, err := reportDataForObservation(r.workflowExecutionID, r.reference, r.metadata, observation)
 	if err != nil {
-		return [HashLength]byte{}, nil, fmt.Errorf("failed to marshal observation: %w", err)
-	}
-
-	reportData, err := commoncap.ResponseToReportData(r.workflowExecutionID, r.reference, rawPayload, r.metadata)
-	if err != nil {
-		return [HashLength]byte{}, nil, fmt.Errorf("failed to convert response to report data: %w", err)
+		return [HashLength]byte{}, nil, err
 	}
 	r.obsLock.Lock()
 	defer r.obsLock.Unlock()

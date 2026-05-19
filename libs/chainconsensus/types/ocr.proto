@@ -20,6 +20,7 @@ enum ObservationType {
   AGGREGATABLE = 3;
   ERROR = 4;
   HASHABLE = 5;
+  VOLATILE = 6;
 }
 
 message Query {
@@ -31,6 +32,20 @@ message AggregatableObservation {
   values.v1.Decimal value = 2;
 }
 
+message VolatileObservation {
+  int64 height = 1;
+  bytes hash = 2;
+}
+
+message VolatileObservations {
+  repeated VolatileObservation observations = 1;
+  // Errors are not eventually consistent for volatile calls, so they can not be presented as RequestObservation.error,
+  // but must be passed along with successful observations.
+  // At the same time, different RPCs can return different errors msg for the same failure (different RPC clients), so
+  // it's acceptable to aggregate multiple errors into one.
+  bytes error = 2;
+}
+
 message RequestObservation {
   oneof observation {
     google.protobuf.Empty lockableToBlock = 1;
@@ -38,6 +53,7 @@ message RequestObservation {
     AggregatableObservation aggregatable = 3;
     bytes error = 4;
     bytes hashable = 5;
+    VolatileObservations volatile = 6;
   }
 }
 

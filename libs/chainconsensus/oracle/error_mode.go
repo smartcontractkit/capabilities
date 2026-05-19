@@ -8,6 +8,8 @@ import (
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 )
 
+var errInsufficientErrorOb = fmt.Errorf("insufficient number of errors")
+
 // modeForError returns a slice of common errors for a given request when:
 // 1. The total number of observations is at least (N+F)/2+1, and
 // 2. The number of observed errors is at least F+1.
@@ -30,11 +32,16 @@ func modeForError(N, F int, requestID string, aos []attributedObservation) ([][]
 		totalNum++
 		// non error observations must contribute to the total num, as we need to track number of nodes that reported
 		// observation for the request.
-		if _, isError := requestObservation.Observation.(*types.RequestObservation_Error); !isError {
-			continue
+		var observedErr []byte
+		switch tReqOb := requestObservation.Observation.(type) {
+		case *types.RequestObservation_Error:
+			observedErr = tReqOb.Error
+		case *types.RequestObservation_Volatile:
+			if tReqOb.Volatile != nil {
+				observedErr = tReqOb.Volatile.Error
+			}
 		}
 
-		observedErr := requestObservation.GetError()
 		if len(observedErr) == 0 {
 			continue
 		}
@@ -80,7 +87,7 @@ func modeForError(N, F int, requestID string, aos []attributedObservation) ([][]
 	}
 
 	if count < F+1 {
-		return nil, fmt.Errorf("insufficient number of errors: expected %d, got %d", F+1, count)
+		return nil, fmt.Errorf("%w: expected %d, got %d", errInsufficientErrorOb, F+1, count)
 	}
 
 	return result, nil
