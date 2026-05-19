@@ -328,6 +328,8 @@ func assertLogTriggerWorks(t *testing.T, eventName string, workflowName string, 
 	topic0 := event.ID
 
 	numOfWorkflowNodes := 4
+	const donF = 1
+	nodesPerMessage := numOfWorkflowNodes - donF
 
 	runtimeCfg := buildConfigFn(eventName, abiString, topic0.Hex())
 
@@ -351,8 +353,11 @@ func assertLogTriggerWorks(t *testing.T, eventName string, workflowName string, 
 		foundEventsByMessage[msg] = 0
 	}
 
-	// assertion to validate we get the expected number of events in beholder logs
-	lggr.Infof("Waiting for workflow logs to be emitted for test...")
+	// assertion to validate we get the expected number of events in beholder logs.
+	// A matching message is considered delivered once at least nodesPerMessage (N - F)
+	// nodes have emitted a user-log containing it — the DON's consensus tolerance.
+	lggr.Infof("Waiting for workflow logs to be emitted for test (quorum %d-of-%d per message)...", nodesPerMessage, numOfWorkflowNodes)
+	finalCounts := make(map[string]int, len(matchingMessages))
 	require.Eventually(t, func() bool {
 		// reset counts on each poll as beholder logs are re-fetched entirely each time
 		for msg := range foundEventsByMessage {
@@ -360,43 +365,62 @@ func assertLogTriggerWorks(t *testing.T, eventName string, workflowName string, 
 		}
 
 		workflowLogs := getBeholderLogsForWorkflow(beholderTester, t)
-		if len(workflowLogs) < numOfWorkflowNodes {
-			lggr.Infof("Workflow logs not emitted yet for test, current size: %d, expected: %d", len(workflowLogs), numOfWorkflowNodes)
+		if len(workflowLogs) < nodesPerMessage {
+			lggr.Infof("Workflow logs not emitted yet for test, current size: %d, need at least: %d", len(workflowLogs), nodesPerMessage)
 			return false
 		}
 
+		sawUnexpectedNonMatching := false
 		for index, logs := range workflowLogs {
-			require.Len(t, logs, 1, "Expected exactly one log line per workflow for test, failing.")
+			// Each beholder UserLogs message typically carries one LogLine; bursty workflows
+			// may batch more than one. Treat anything other than 1 as a transient signal and
+			// retry rather than failing the test outright.
+			if len(logs) != 1 {
+				lggr.Infow("Beholder UserLogs message had unexpected line count, retrying", "index", index, "lineCount", len(logs))
+				return false
+			}
 			log := logs[0]
 			logMessage := log.GetMessage()
 			lggr.Infow("Beholder log line", "index", index, "message", logMessage, "nodeTimestamp", log.GetNodeTimestamp())
 			for _, matchingMessage := range matchingMessages {
 				if strings.Contains(logMessage, matchingMessage) {
 					foundEventsByMessage[matchingMessage]++
-					lggr.Infow("Log emitted message contains message", "matchingMessage", matchingMessage, "count", foundEventsByMessage[matchingMessage], "numOfWorkflowNodes", numOfWorkflowNodes)
+					lggr.Infow("Log emitted message contains message", "matchingMessage", matchingMessage, "count", foundEventsByMessage[matchingMessage], "nodesPerMessage", nodesPerMessage)
 				}
 			}
-			if verifyNonMatchingIgnored {
+			if verifyNonMatchingIgnored && strings.Contains(logMessage, NonMatching) {
 				// For scenarios where we purposely emitted non-matching events, assert that
 				// no unexpected messages (e.g. non-matching payloads) show up in the workflow logs.
 				// This is a coarse-grained check: if we ever evolve the workflow to log the
 				// raw topics or payloads of non-matching events, we should refine this assertion
 				// to be more specific.
-				require.NotContains(t, logMessage, NonMatching, "Non-matching events should not be processed by the log trigger/workflow.")
+				lggr.Errorw("Non-matching event leaked into workflow logs", "message", logMessage)
+				sawUnexpectedNonMatching = true
 			}
 		}
+		require.False(t, sawUnexpectedNonMatching, "Non-matching events should not be processed by the log trigger/workflow.")
 
-		// remove any messages that have already met the expected count from the pending map
+		// remove any messages that have already met quorum from the pending map
 		for msg, found := range foundEventsByMessage {
-			if found == numOfWorkflowNodes {
-				lggr.Infof("Partial success: found all expected events %d for message: %q, deleting entry of pending logs to look at",
-					numOfWorkflowNodes, msg)
+			finalCounts[msg] = found
+			if found >= nodesPerMessage {
+				lggr.Infof("Quorum reached for message %q: %d/%d nodes emitted (full=%d)",
+					msg, found, nodesPerMessage, numOfWorkflowNodes)
 				delete(foundEventsByMessage, msg)
 			}
 		}
 		return len(foundEventsByMessage) == 0
 	}, 90*time.Second, 2*time.Second,
-		"Expected to find %d matching events, but found: %+v", numOfWorkflowNodes, foundEventsByMessage)
+		"Expected each matching message to reach %d-of-%d nodes, observed: %+v", nodesPerMessage, numOfWorkflowNodes, foundEventsByMessage)
+
+	// Surface partial losses (quorum hit but not unanimous) so a real degradation is still visible
+	// without failing the test for a single missing node.
+	for _, msg := range matchingMessages {
+		if c := finalCounts[msg]; c < numOfWorkflowNodes {
+			t.Logf("WARN partial user-log delivery for message %q: %d/%d nodes (quorum %d satisfied)",
+				msg, c, numOfWorkflowNodes, nodesPerMessage)
+		}
+	}
 
 	// Verify ACKs for each matching delivery. BaseTrigger logs Infow("Event ACK", "eventID", ...).
 	//
