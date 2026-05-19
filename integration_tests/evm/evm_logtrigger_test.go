@@ -404,25 +404,45 @@ func assertLogTriggerWorks(t *testing.T, eventName string, workflowName string, 
 	//
 	// We locate ACKs by tx hash embedded in eventID; for each matching message there must be a
 	// tx in matchingTxs whose log carried that message.
+	require.NotEmpty(t, matchingMessages, "test case must declare at least one matching message")
+	type ackTarget struct {
+		msg    string
+		txHash string // 0x-prefixed for logging
+		txHex  string // lowercase, no 0x prefix; substring we look for in eventID
+	}
+	targets := make([]ackTarget, 0, len(matchingMessages))
+	for _, msg := range matchingMessages {
+		tx := findTxForMatchingMessage(matchingTxs, msg)
+		require.NotNilf(t, tx, "no emitted tx found for matching message %q (emitEventsFn must return txs for matching emits)", msg)
+		hashHex := tx.Hash().Hex()
+		targets = append(targets, ackTarget{
+			msg:    msg,
+			txHash: hashHex,
+			txHex:  strings.TrimPrefix(strings.ToLower(hashHex), "0x"),
+		})
+	}
+
+	matchedTxHashes := make(map[string]string, len(targets))
 	require.Eventually(t, func() bool {
-		require.NotEmpty(t, matchingMessages)
-		matchCount := 0
-		for _, msg := range matchingMessages {
-			txForMsg := findTxForMatchingMessage(matchingTxs, msg)
-			require.NotNil(t, txForMsg, "no emitted tx found for matching message %q (emitEventsFn must return txs for matching emits)", msg)
-			txHex := strings.TrimPrefix(strings.ToLower(txForMsg.Hash().Hex()), "0x")
-			for _, log := range obs.FilterMessageSnippet("Event ACK").All() {
-				if eventAckLogContainsTxHash(log, txHex) {
-					matchCount++
-					t.Logf("found matching ACK log for message %q tx %s eventID=%v", msg, txForMsg.Hash().Hex(), log.ContextMap()["eventID"])
+		ackLogs := obs.FilterMessageSnippet("Event ACK").All()
+		matched := 0
+		for _, target := range targets {
+			for _, log := range ackLogs {
+				if eventAckLogContainsTxHash(log, target.txHex) {
+					matched++
+					if _, seen := matchedTxHashes[target.txHash]; !seen {
+						matchedTxHashes[target.txHash] = fmt.Sprint(log.ContextMap()["eventID"])
+					}
 					break
 				}
 			}
 		}
-		expected := len(matchingMessages)
-		t.Logf("ACK log matchCount=%d, expected=%d (one per matching workflow message)", matchCount, expected)
-		return matchCount == expected
-	}, 90*time.Second, 1*time.Second, "expected ACK logs for each matching workflow message")
+		return matched == len(targets)
+	}, 90*time.Second, 1*time.Second, "expected ACK logs for each matching workflow message; matched so far: %v", matchedTxHashes)
+
+	for _, target := range targets {
+		t.Logf("ACK matched for message %q tx %s eventID=%s", target.msg, target.txHash, matchedTxHashes[target.txHash])
+	}
 }
 
 // findTxForMatchingMessage returns the first tx whose corresponding receipt log should carry the
