@@ -29,7 +29,7 @@ func (s *Aptos) View(
 		err := fmt.Errorf("viewRequest is nil")
 		monitoring.LogAndEmitError(ctx, s.lggr, s.beholderProcessor,
 			s.messageBuilder.BuildViewError(telemetryContext, input, "Failed to execute View request", err.Error(), false))
-		return nil, capcommon.GetError(err, false)
+		return nil, capcommon.NewUserError(err)
 	}
 
 	payload, err := aptoscap.ConvertViewPayloadFromProto(input.Payload)
