@@ -51,8 +51,8 @@ func NewReportingPluginFactory(lggr logger.Logger, metrics *metrics.Metrics, s *
 	maxRequestOutcomeSize int,
 ) (*factory, error) {
 	return &factory{
-		store:                    s,
-		observationQuorumTracker: observationQuorumTracker,
+		store:                                 s,
+		observationQuorumTracker:              observationQuorumTracker,
 		setRequestTimeout:                     setRequestTimeout,
 		lggr:                                  logger.Named(lggr, "ConsensusCapabilityPluginFactory"),
 		metrics:                               metrics,

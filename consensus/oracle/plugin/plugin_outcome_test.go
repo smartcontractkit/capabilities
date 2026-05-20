@@ -18,9 +18,9 @@ import (
 	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	pbtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
-	pbtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
