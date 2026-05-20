@@ -73,13 +73,15 @@ func (r *ConsensusRequest) SendTimeout(ctx context.Context) {
 	var timeoutErr caperrors.Error
 	if !r.observationQuorumTracker.ReachedQuorum(r.RequestID) {
 		maxObs := r.observationQuorumTracker.MaxObservations(r.RequestID)
+		// Sufficient observations have not been received before the request expired, this is a system error as it
+		// indicates workflows are out of sync across the nodes.
 		timeoutErr = caperrors.NewPublicSystemError(
 			fmt.Errorf("insufficient observations: received at most %d observations before request expired, requestID %s", maxObs, r.RequestID),
 			caperrors.InsufficientObservations,
 		)
 	} else {
-
-		// HERE should this be user error? tbc
+		// If the timeout is exceeded for any other reason than insufficient observations this indicates a system error
+		// which needs investigation.  No foreseeable user error could cause this.
 		timeoutErr = caperrors.NewPublicSystemError(
 			fmt.Errorf("timeout exceeded: could not process consensus request before expiry, requestID %s", r.RequestID),
 			caperrors.DeadlineExceeded,
@@ -94,9 +96,7 @@ func (r *ConsensusRequest) SendTimeout(ctx context.Context) {
 }
 
 func (r *ConsensusRequest) forgetObservationQuorumTracking() {
-	if r.observationQuorumTracker != nil {
-		r.observationQuorumTracker.Forget(r.RequestID)
-	}
+	r.observationQuorumTracker.Forget(r.RequestID)
 }
 
 func (r *ConsensusRequest) ID() string {
