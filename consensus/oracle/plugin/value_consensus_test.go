@@ -1059,7 +1059,7 @@ func createReportingPlugin(t *testing.T, lggr logger.Logger, f int, n int,
 	metricsInstance, err := metrics.NewMetrics()
 	require.NoError(t, err)
 
-	reportingPlugin, err := plugin.NewReportingPlugin(lggr, metricsInstance, f, n, reqStore, nil, &pbtypes.ReportingPluginConfig{
+	reportingPlugin, err := plugin.NewReportingPlugin(lggr, metricsInstance, f, n, reqStore, oracle.NewObservationQuorumTracker(), &pbtypes.ReportingPluginConfig{
 		MaxQueryLengthBytes:              defaultMaxLengthBytes,
 		MaxObservationLengthBytes:        defaultMaxLengthBytes,
 		MaxOutcomeLengthBytes:            defaultMaxLengthBytes,
