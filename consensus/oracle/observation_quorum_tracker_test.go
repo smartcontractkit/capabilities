@@ -42,15 +42,3 @@ func TestObservationQuorumTracker_Forget(t *testing.T) {
 	require.False(t, tracker.ReachedQuorum(requestID))
 	require.Equal(t, 0, tracker.MaxObservations(requestID))
 }
-
-func TestObservationQuorumTracker_NilSafe(t *testing.T) {
-	t.Parallel()
-
-	var tracker *ObservationQuorumTracker
-	require.NotPanics(t, func() {
-		tracker.Record("id", 1, 2)
-		require.False(t, tracker.ReachedQuorum("id"))
-		require.Equal(t, 0, tracker.MaxObservations("id"))
-		tracker.Forget("id")
-	})
-}

@@ -21,10 +21,6 @@ func NewObservationQuorumTracker() *ObservationQuorumTracker {
 // Record updates the highest observation count seen for requestID. quorumThreshold is the
 // minimum count required to calculate an outcome (2f+1 for this capability).
 func (t *ObservationQuorumTracker) Record(requestID string, observationCount, quorumThreshold int) {
-	if t == nil {
-		return
-	}
-
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -38,10 +34,6 @@ func (t *ObservationQuorumTracker) Record(requestID string, observationCount, qu
 
 // ReachedQuorum reports whether requestID has ever met the observation quorum threshold.
 func (t *ObservationQuorumTracker) ReachedQuorum(requestID string) bool {
-	if t == nil {
-		return false
-	}
-
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.reachedQuorum[requestID]
@@ -49,10 +41,6 @@ func (t *ObservationQuorumTracker) ReachedQuorum(requestID string) bool {
 
 // MaxObservations returns the highest observation count recorded for requestID.
 func (t *ObservationQuorumTracker) MaxObservations(requestID string) int {
-	if t == nil {
-		return 0
-	}
-
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.maxObservations[requestID]
@@ -60,10 +48,6 @@ func (t *ObservationQuorumTracker) MaxObservations(requestID string) int {
 
 // Forget removes tracking state for a completed or timed-out request.
 func (t *ObservationQuorumTracker) Forget(requestID string) {
-	if t == nil {
-		return
-	}
-
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	delete(t.reachedQuorum, requestID)
