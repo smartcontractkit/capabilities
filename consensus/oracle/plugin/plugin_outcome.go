@@ -45,11 +45,13 @@ func (r *reportingPlugin) Outcome(ctx context.Context, outctx ocr3types.OutcomeC
 
 	requestIDToObservations := groupAttributedObservationsByRequestID(lggr, attributedObservations)
 
+	observationQuorumThreshold := 2*r.f + 1
 	for _, requestID := range requestsQuery.RequestIDs {
 		observations := requestIDToObservations[requestID]
+		r.observationQuorumTracker.Record(requestID, len(observations), observationQuorumThreshold)
 
 		// 2f+1 or more observations have been received, calculate the outcome for the request
-		if len(observations) >= 2*r.f+1 {
+		if len(observations) >= observationQuorumThreshold {
 			hasCapacity, err := r.addRequestOutcomeToBatch(ctx, lggr, requestID, observations, outcomeBatch)
 			if err != nil {
 				return nil, fmt.Errorf("failed to add request outcome to batch for request %s: %w", requestID, err)
