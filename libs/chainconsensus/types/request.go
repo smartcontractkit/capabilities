@@ -14,7 +14,6 @@ import (
 
 	commonMon "github.com/smartcontractkit/capabilities/libs/monitoring"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 )
 
@@ -232,7 +231,7 @@ func (o ObservationError) Err() error {
 type HashableRequest[T proto.Message] interface {
 	Request
 	GetObservationByReportData(reportData Hash) (T, bool)
-	GetMetadata() capabilities.ResponseMetadata
+	GetMetadata() commoncap.ResponseMetadata
 }
 
 // ECHashableRequest is an eventually consistent hashable request request, whose payload can be hashed to be used in hash-based consensus.
