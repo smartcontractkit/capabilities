@@ -2,6 +2,7 @@ package plugin_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -11,11 +12,15 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/smartcontractkit/capabilities/consensus/metrics"
 	"github.com/smartcontractkit/capabilities/consensus/oracle"
 	"github.com/smartcontractkit/capabilities/consensus/oracle/plugin"
 	oracletypes "github.com/smartcontractkit/capabilities/consensus/oracle/types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	pbtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
+	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/requests"
+	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 
 	"github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
@@ -329,4 +334,59 @@ func Test_Outcome_IdenticalConsensus_failureCodes(t *testing.T) {
 		assert.Contains(t, msg, "consensus calculation failed: no values met f+1 threshold;")
 		assert.NotContains(t, msg, "no values met f+1 threshold for identical consensus")
 	})
+}
+
+func Test_Outcome_RecordsObservationQuorumForTimeoutClassification(t *testing.T) {
+	t.Parallel()
+
+	lggr := logger.Test(t)
+	ctx := context.Background()
+
+	const testF, testN = 2, 7
+	tracker := oracle.NewObservationQuorumTracker()
+	reqStore := requests.NewStore[*oracle.ConsensusRequest]()
+
+	metricsInstance, err := metrics.NewMetrics()
+	require.NoError(t, err)
+
+	reportingPlugin, err := plugin.NewReportingPlugin(lggr, metricsInstance, testF, testN, reqStore, tracker, &pbtypes.ReportingPluginConfig{
+		MaxQueryLengthBytes:       defaultMaxLengthBytes,
+		MaxObservationLengthBytes: defaultMaxLengthBytes,
+		MaxOutcomeLengthBytes:     defaultMaxLengthBytes,
+		MaxReportLengthBytes:      defaultMaxLengthBytes,
+		MaxReportCount:            defaultMaxReportCount,
+	}, "evm", defaultMaxLengthBytes)
+	require.NoError(t, err)
+
+	md := testMetaData()
+	reqID := md.RequestID()
+
+	qBytes, err := proto.Marshal(&oracletypes.Query{RequestIDs: []string{reqID}})
+	require.NoError(t, err)
+
+	// Fewer than 2f+1 observations.
+	attributed := []libocrtypes.AttributedObservation{
+		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 0, false, true, true),
+		makeOutcomeTestObs(t, reqID, md, sdk.AggregationType_AGGREGATION_TYPE_MEDIAN, 1, false, true, true),
+	}
+
+	_, err = reportingPlugin.Outcome(ctx, ocr3types.OutcomeContext{SeqNr: 1}, qBytes, attributed)
+	require.NoError(t, err)
+	require.False(t, tracker.ReachedQuorum(reqID))
+	require.Equal(t, 2, tracker.MaxObservations(reqID))
+
+	req := oracle.NewConsensusRequest(
+		&sdk.SimpleConsensusInputs{},
+		time.Now(),
+		time.Now().Add(time.Second),
+		make(chan oracle.ConsensusResponse, 1),
+		md,
+		tracker,
+	)
+	req.SendTimeout(ctx)
+
+	resp := <-req.CallbackCh
+	var capErr caperrors.Error
+	require.True(t, errors.As(resp.Err, &capErr))
+	require.Equal(t, caperrors.InsufficientObservations, capErr.Code())
 }

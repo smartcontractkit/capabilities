@@ -71,6 +71,8 @@ type consensusCapability struct {
 	reqHandler    *requests.Handler[*oracle.ConsensusRequest, oracle.ConsensusResponse]
 	limitsFactory limits.Factory
 
+	observationQuorumTracker *oracle.ObservationQuorumTracker
+
 	requestTimeout     time.Duration
 	requestTimeoutLock sync.RWMutex
 
@@ -106,11 +108,12 @@ func NewConsensusCapability(lggr logger.Logger, clock clockwork.Clock, responseC
 		})
 
 	return &consensusCapability{
-		lggr:          lggr,
-		reqStore:      reqStore,
-		reqHandler:    requests.NewHandler(lggr, reqStore, clock, responseCacheExpiry),
-		metrics:       metrics,
-		limitsFactory: limitsFactory,
+		lggr:                     lggr,
+		reqStore:                 reqStore,
+		reqHandler:               requests.NewHandler(lggr, reqStore, clock, responseCacheExpiry),
+		metrics:                  metrics,
+		limitsFactory:            limitsFactory,
+		observationQuorumTracker: oracle.NewObservationQuorumTracker(),
 	}, nil
 }
 
@@ -129,7 +132,9 @@ func (c *consensusCapability) Initialise(ctx context.Context, dependencies core.
 		return fmt.Errorf("error setting consensus capability configuration: %w", err)
 	}
 
-	reportingPlugin, err := plugin.NewReportingPluginFactory(c.lggr, c.metrics, c.reqStore, c.SetRequestTimeout,
+	reportingPlugin, err := plugin.NewReportingPluginFactory(c.lggr, c.metrics, c.reqStore,
+		c.observationQuorumTracker,
+		c.SetRequestTimeout,
 		defaultKeyBundleIDForValueConsensus, c.maxRequestOutcomeSize)
 	if err != nil {
 		return fmt.Errorf("error when creating reporting plugin factory: %w", err)
@@ -405,7 +410,7 @@ func (c *consensusCapability) sendRequest(ctx context.Context, input *sdk.Simple
 
 	c.reqHandler.SendRequest(ctx,
 		oracle.NewConsensusRequest(input, time.Now(), time.Now().Add(requestTimeout), callbackChan,
-			consensusRequestMetaData,
+			consensusRequestMetaData, c.observationQuorumTracker,
 		))
 	return callbackChan
 }

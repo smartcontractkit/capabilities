@@ -30,7 +30,8 @@ const (
 type SetRequestTimeout func(timeout time.Duration)
 
 type factory struct {
-	store *requests.Store[*oracle.ConsensusRequest]
+	store                    *requests.Store[*oracle.ConsensusRequest]
+	observationQuorumTracker *oracle.ObservationQuorumTracker
 
 	// Request timeout is set by the plugin factory and used by the reporting plugin to set the timeout for requests
 	// created in the capability
@@ -45,11 +46,13 @@ type factory struct {
 }
 
 func NewReportingPluginFactory(lggr logger.Logger, metrics *metrics.Metrics, s *requests.Store[*oracle.ConsensusRequest],
+	observationQuorumTracker *oracle.ObservationQuorumTracker,
 	setRequestTimeout SetRequestTimeout, defaultKeyBundleIDForConsensusFailure string,
 	maxRequestOutcomeSize int,
 ) (*factory, error) {
 	return &factory{
 		store:                                 s,
+		observationQuorumTracker:              observationQuorumTracker,
 		setRequestTimeout:                     setRequestTimeout,
 		lggr:                                  logger.Named(lggr, "ConsensusCapabilityPluginFactory"),
 		metrics:                               metrics,
@@ -100,8 +103,8 @@ func (o *factory) NewReportingPlugin(_ context.Context, config ocr3types.Reporti
 		configProto.HistoricalOutcomeExpirySeqNrSpan = defaultHistoricalOutcomeExpirySeqNrSpan
 	}
 
-	rp, err := NewReportingPlugin(o.lggr, o.metrics, config.F, config.N, o.store, &configProto, o.defaultKeyBundleIDForConsensusFailure,
-		o.maxRequestOutcomeSize)
+	rp, err := NewReportingPlugin(o.lggr, o.metrics, config.F, config.N, o.store, o.observationQuorumTracker, &configProto,
+		o.defaultKeyBundleIDForConsensusFailure, o.maxRequestOutcomeSize)
 	rpInfo := ocr3types.ReportingPluginInfo{
 		Name: "Consensus Capability Plugin",
 		Limits: ocr3types.ReportingPluginLimits{

@@ -61,7 +61,7 @@ func newSliceCr(t *testing.T, observation []byte, def []byte, metaData oracle.Co
 		Descriptors: &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL}},
 	}
 
-	return oracle.NewConsensusRequest(serializeDeserialize(t, simpleConsensusInputs), time.Now(), time.Now().Add(1*time.Hour).UTC(), nil, metaData)
+	return oracle.NewConsensusRequest(serializeDeserialize(t, simpleConsensusInputs), time.Now(), time.Now().Add(1*time.Hour).UTC(), nil, metaData, nil)
 }
 
 func Test_InsufficientIdenticalObservations(t *testing.T) {
@@ -228,7 +228,7 @@ func Test_MismatchedNonLeaderConsensusDescriptor(t *testing.T) {
 			Descriptors: &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL}},
 		}
 
-		return oracle.NewConsensusRequest(simpleConsensusInputs, time.Now().Add(1*time.Hour).UTC(), time.Now(), nil, metaData)
+		return oracle.NewConsensusRequest(simpleConsensusInputs, time.Now().Add(1*time.Hour).UTC(), time.Now(), nil, metaData, nil)
 	}
 
 	protocolRoundTests := map[string]*consensusPluginTest{
@@ -679,7 +679,7 @@ func newIdenticalCr(t *testing.T, observation int64, metaData oracle.ConsensusRe
 		Descriptors: &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL}},
 	}
 
-	return oracle.NewConsensusRequest(serializeDeserialize(t, simpleConsensusInputs), time.Now(), time.Now().Add(1*time.Hour).UTC(), nil, metaData)
+	return oracle.NewConsensusRequest(serializeDeserialize(t, simpleConsensusInputs), time.Now(), time.Now().Add(1*time.Hour).UTC(), nil, metaData, nil)
 }
 
 func newIdenticalValueCr(t *testing.T, observation values.Value, metaData oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
@@ -688,7 +688,7 @@ func newIdenticalValueCr(t *testing.T, observation values.Value, metaData oracle
 		Descriptors: &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL}},
 	}
 
-	return oracle.NewConsensusRequest(serializeDeserialize(t, simpleConsensusInputs), time.Now(), time.Now().Add(1*time.Hour).UTC(), nil, metaData)
+	return oracle.NewConsensusRequest(serializeDeserialize(t, simpleConsensusInputs), time.Now(), time.Now().Add(1*time.Hour).UTC(), nil, metaData, nil)
 }
 
 func newIdenticalCrWithDefault(t *testing.T, observation int64, defaultObs int64, metaData oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
@@ -698,7 +698,7 @@ func newIdenticalCrWithDefault(t *testing.T, observation int64, defaultObs int64
 		Descriptors: &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL}},
 	}
 
-	return oracle.NewConsensusRequest(serializeDeserialize(t, simpleConsensusInputs), time.Now(), time.Now().Add(1*time.Hour).UTC(), nil, metaData)
+	return oracle.NewConsensusRequest(serializeDeserialize(t, simpleConsensusInputs), time.Now(), time.Now().Add(1*time.Hour).UTC(), nil, metaData, nil)
 }
 
 func newCr(t *testing.T, observation int64, metaData oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
@@ -707,7 +707,7 @@ func newCr(t *testing.T, observation int64, metaData oracle.ConsensusRequestMeta
 		Descriptors: &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_MEDIAN}},
 	}
 
-	return oracle.NewConsensusRequest(serializeDeserialize(t, simpleConsensusInputs), time.Now(), time.Now().Add(1*time.Hour).UTC(), nil, metaData)
+	return oracle.NewConsensusRequest(serializeDeserialize(t, simpleConsensusInputs), time.Now(), time.Now().Add(1*time.Hour).UTC(), nil, metaData, nil)
 }
 
 func serializeDeserialize(t *testing.T, simpleConsensusInputs *sdk.SimpleConsensusInputs) *sdk.SimpleConsensusInputs {
@@ -728,7 +728,7 @@ func newCrWithError(t *testing.T, crErr error, metaData oracle.ConsensusRequestM
 		Descriptors: &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_MEDIAN}},
 	}
 
-	return oracle.NewConsensusRequest(serializeDeserialize(t, simpleConsensusInputs), time.Now(), time.Now().Add(1*time.Hour).UTC(), nil, metaData)
+	return oracle.NewConsensusRequest(serializeDeserialize(t, simpleConsensusInputs), time.Now(), time.Now().Add(1*time.Hour).UTC(), nil, metaData, nil)
 }
 
 func newCrWithErrorAndDefault(t *testing.T, crErr error, def int64, metaData oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
@@ -740,7 +740,7 @@ func newCrWithErrorAndDefault(t *testing.T, crErr error, def int64, metaData ora
 		Descriptors: &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_MEDIAN}},
 	}
 
-	return oracle.NewConsensusRequest(serializeDeserialize(t, simpleConsensusInputs), time.Now(), time.Now().Add(1*time.Hour).UTC(), nil, metaData)
+	return oracle.NewConsensusRequest(serializeDeserialize(t, simpleConsensusInputs), time.Now(), time.Now().Add(1*time.Hour).UTC(), nil, metaData, nil)
 }
 
 func newCrWithObsAndDef(t *testing.T, observation int64, def int64, metaData oracle.ConsensusRequestMetadata) *oracle.ConsensusRequest {
@@ -750,7 +750,7 @@ func newCrWithObsAndDef(t *testing.T, observation int64, def int64, metaData ora
 		Descriptors: &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_MEDIAN}},
 	}
 
-	return oracle.NewConsensusRequest(serializeDeserialize(t, simpleConsensusInputs), time.Now(), time.Now().Add(1*time.Hour).UTC(), nil, metaData)
+	return oracle.NewConsensusRequest(serializeDeserialize(t, simpleConsensusInputs), time.Now(), time.Now().Add(1*time.Hour).UTC(), nil, metaData, nil)
 }
 
 // nillable observation and nillable default value, -1 indicates the value should be set as nil
@@ -781,7 +781,7 @@ func newNillableCr(t *testing.T, observation int64, def int64, metaData oracle.C
 		}
 	}
 
-	return oracle.NewConsensusRequest(serializeDeserialize(t, simpleConsensusInputs), time.Now(), time.Now().Add(1*time.Hour).UTC(), nil, metaData)
+	return oracle.NewConsensusRequest(serializeDeserialize(t, simpleConsensusInputs), time.Now(), time.Now().Add(1*time.Hour).UTC(), nil, metaData, nil)
 }
 
 type pluginAndRequestStore struct {
@@ -1059,7 +1059,7 @@ func createReportingPlugin(t *testing.T, lggr logger.Logger, f int, n int,
 	metricsInstance, err := metrics.NewMetrics()
 	require.NoError(t, err)
 
-	reportingPlugin, err := plugin.NewReportingPlugin(lggr, metricsInstance, f, n, reqStore, &pbtypes.ReportingPluginConfig{
+	reportingPlugin, err := plugin.NewReportingPlugin(lggr, metricsInstance, f, n, reqStore, oracle.NewObservationQuorumTracker(), &pbtypes.ReportingPluginConfig{
 		MaxQueryLengthBytes:              defaultMaxLengthBytes,
 		MaxObservationLengthBytes:        defaultMaxLengthBytes,
 		MaxOutcomeLengthBytes:            defaultMaxLengthBytes,
