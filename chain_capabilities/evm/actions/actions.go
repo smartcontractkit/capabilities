@@ -199,7 +199,7 @@ func (e *EVM) CallContract(
 
 type HashableRequest[T proto.Message] interface {
 	ctypes.Request
-	GetObservationByReportData(reportData [ctypes.HashLength]byte) (T, bool)
+	GetObservationByReportData(reportData ctypes.Hash) (T, bool)
 	GetMetadata() capabilities.ResponseMetadata
 }
 

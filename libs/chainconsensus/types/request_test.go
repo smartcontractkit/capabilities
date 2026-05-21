@@ -189,7 +189,7 @@ func TestHashableRequest_GetOCRObservation(t *testing.T) {
 			return payload2, nil
 		})
 
-		requireCorrectObservation := func(t *testing.T, expectedPayload proto.Message) [HashLength]byte {
+		requireCorrectObservation := func(t *testing.T, expectedPayload proto.Message) Hash {
 			require.NoError(t, r.CaptureObservation(t.Context()))
 			ob, err := r.GetOCRObservation()
 			require.NoError(t, err)
@@ -261,7 +261,7 @@ func TestLockableToBlockHashableRequest_LockToABlock_delegatesToHashableRequest(
 	})
 
 	// gracefully handles GetObservationByReportData before the lock
-	_, ok := r.GetObservationByReportData([HashLength]byte{})
+	_, ok := r.GetObservationByReportData(Hash{})
 	require.False(t, ok)
 	hashable := r.LockToABlock(height).(*HashableRequest[*wrapperspb.StringValue])
 	require.NoError(t, hashable.CaptureObservation(t.Context()))
@@ -275,7 +275,7 @@ func TestLockableToBlockHashableRequest_LockToABlock_delegatesToHashableRequest(
 	require.NoError(t, err)
 	require.Equal(t, want[:], hashOb.Hashable)
 
-	var key [HashLength]byte
+	var key Hash
 	copy(key[:], hashOb.Hashable)
 	got, ok := r.GetObservationByReportData(key)
 	require.True(t, ok)

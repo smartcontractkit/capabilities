@@ -82,7 +82,7 @@ func TestVolatileRequest_GetOCRObservation(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, expectedHash[:], vo.Hash)
 
-		var key [HashLength]byte
+		var key Hash
 		copy(key[:], vo.Hash)
 		actualPayload, ok := r.GetObservationByReportData(key)
 		require.True(t, ok)
@@ -211,10 +211,10 @@ func requireVolatileObservationsSortedByHash(t *testing.T, observations []*Volat
 	}
 }
 
-func hashVolatilePayload(wf, ref string, meta commoncap.ResponseMetadata, payload proto.Message) ([HashLength]byte, error) {
+func hashVolatilePayload(wf, ref string, meta commoncap.ResponseMetadata, payload proto.Message) (Hash, error) {
 	payloadAsBytes, err := proto.MarshalOptions{Deterministic: true}.Marshal(payload)
 	if err != nil {
-		return [HashLength]byte{}, err
+		return Hash{}, err
 	}
 	return commoncap.ResponseToReportData(wf, ref, payloadAsBytes, meta)
 }

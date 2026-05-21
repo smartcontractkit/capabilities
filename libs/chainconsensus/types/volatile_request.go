@@ -45,7 +45,7 @@ type VolatileRequest[T proto.Message] struct {
 	id                  string
 	observe             func(context.Context) (T, int64, error)
 	mu                  sync.RWMutex
-	observations        map[[HashLength]byte]volatileObservationEntry[T]
+	observations        map[Hash]volatileObservationEntry[T]
 	latestErr           ObservationError
 	lggr                logger.SugaredLogger
 }
@@ -62,7 +62,7 @@ func NewVolatileRequest[T proto.Message](
 		metadata:            metadata,
 		id:                  commonMon.RequestID(workflowExecutionID, reference),
 		observe:             observe,
-		observations:        make(map[[HashLength]byte]volatileObservationEntry[T]),
+		observations:        make(map[Hash]volatileObservationEntry[T]),
 		lggr:                lggr,
 	}
 }
@@ -87,14 +87,14 @@ func reportDataForObservation[T proto.Message](
 	workflowExecutionID, reference string,
 	metadata commoncap.ResponseMetadata,
 	observation T,
-) ([HashLength]byte, error) {
+) (Hash, error) {
 	rawPayload, err := proto.MarshalOptions{Deterministic: true}.Marshal(observation)
 	if err != nil {
-		return [HashLength]byte{}, fmt.Errorf("failed to marshal observation: %w", err)
+		return Hash{}, fmt.Errorf("failed to marshal observation: %w", err)
 	}
 	reportData, err := commoncap.ResponseToReportData(workflowExecutionID, reference, rawPayload, metadata)
 	if err != nil {
-		return [HashLength]byte{}, fmt.Errorf("failed to convert response to report data: %w", err)
+		return Hash{}, fmt.Errorf("failed to convert response to report data: %w", err)
 	}
 	return reportData, nil
 }
@@ -162,7 +162,7 @@ func (r *VolatileRequest[T]) GetOCRObservation() (*RequestObservation, error) {
 		}, nil
 	}
 
-	keys := make([][HashLength]byte, 0, len(r.observations))
+	keys := make([]Hash, 0, len(r.observations))
 	for k := range r.observations {
 		keys = append(keys, k)
 	}
@@ -184,7 +184,7 @@ func (r *VolatileRequest[T]) GetOCRObservation() (*RequestObservation, error) {
 }
 
 // GetObservationByReportData returns the proto observation for a previously captured report-data hash, if present.
-func (r *VolatileRequest[T]) GetObservationByReportData(reportData [HashLength]byte) (T, bool) {
+func (r *VolatileRequest[T]) GetObservationByReportData(reportData Hash) (T, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 

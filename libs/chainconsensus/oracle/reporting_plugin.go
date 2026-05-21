@@ -312,7 +312,7 @@ func (rp *reportingPlugin) ValidateObservation(_ context.Context, outctx ocr3typ
 				return fmt.Errorf("volatile observation is nil for request ID %s. OracleID: %d", requestID, ao.Observer)
 			}
 
-			observationsSet := make(map[[ctypes.HashLength]byte]struct{}, len(tRequestOb.Volatile.Observations))
+			observationsSet := make(map[ctypes.Hash]struct{}, len(tRequestOb.Volatile.Observations))
 			if len(tRequestOb.Volatile.Observations) > ctypes.MaxNumberOfVolatileObservations {
 				return fmt.Errorf("too many volatile observations for request ID %s: got %d, expected at most %d. OracleID: %d", requestID, len(tRequestOb.Volatile.Observations), ctypes.MaxNumberOfVolatileObservations, ao.Observer)
 			}
@@ -330,7 +330,7 @@ func (rp *reportingPlugin) ValidateObservation(_ context.Context, outctx ocr3typ
 					return fmt.Errorf("invalid hash length for volatile observation of request ID %s: got %d, expected %d. OracleID: %d", requestID, len(volatileOb.Hash), ctypes.HashLength, ao.Observer)
 				}
 
-				key := [ctypes.HashLength]byte(volatileOb.Hash)
+				key := ctypes.Hash(volatileOb.Hash)
 				if _, ok := observationsSet[key]; ok {
 					return fmt.Errorf("duplicate volatile observation for request ID %s: hash %s. OracleID: %d", requestID, hex.EncodeToString(volatileOb.Hash), ao.Observer)
 				}
@@ -583,7 +583,7 @@ func (rp *reportingPlugin) agreeOnHashableValue(requestID string, aos []attribut
 				continue
 			}
 
-			var key [ctypes.HashLength]byte
+			var key ctypes.Hash
 			if len(requestOb.GetHashable()) != ctypes.HashLength {
 				// should not happen due to validation, but just in case, we don't want to panic here.
 				if !yield(ob.Observer, nil) {
@@ -636,14 +636,14 @@ func isVolatileCandidateABetter(a, b *volatileOutcomeCandidate) bool {
 }
 
 type volatileOutcomeCandidate struct {
-	hash         [ctypes.HashLength]byte
+	hash         ctypes.Hash
 	supporters   int
 	lowestOracle commontypes.OracleID
 	heights      []int64
 }
 
 func (rp *reportingPlugin) agreeOnVolatileValue(requestID string, aos []attributedObservation) (*ctypes.RequestOutcome, error) {
-	candidates := make(map[[ctypes.HashLength]byte]volatileOutcomeCandidate)
+	candidates := make(map[ctypes.Hash]volatileOutcomeCandidate)
 	var totalNum int
 	for _, ao := range aos {
 		requestOb, ok := ao.Observation.Observations[requestID]
@@ -661,7 +661,7 @@ func (rp *reportingPlugin) agreeOnVolatileValue(requestID string, aos []attribut
 			if vo == nil || len(vo.Hash) != ctypes.HashLength {
 				continue
 			}
-			key := [ctypes.HashLength]byte(vo.Hash)
+			key := ctypes.Hash(vo.Hash)
 			stats, ok := candidates[key]
 			if !ok {
 				stats = volatileOutcomeCandidate{
