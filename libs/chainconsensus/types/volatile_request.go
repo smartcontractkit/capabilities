@@ -1,9 +1,11 @@
 package types
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 
 	"google.golang.org/protobuf/proto"
@@ -12,6 +14,7 @@ import (
 	commonMon "github.com/smartcontractkit/capabilities/libs/monitoring"
 
 	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
 
 // MaxNumberOfVolatileObservations defines a hard cap on the number of unique observations retained for a VolatileRequest to prevent unbounded memory growth.
@@ -44,12 +47,14 @@ type VolatileRequest[T proto.Message] struct {
 	mu                  sync.RWMutex
 	observations        map[[HashLength]byte]volatileObservationEntry[T]
 	latestErr           ObservationError
+	lggr                logger.SugaredLogger
 }
 
 func NewVolatileRequest[T proto.Message](
 	workflowExecutionID, reference string,
 	metadata commoncap.ResponseMetadata,
 	observe func(context.Context) (T, int64, error),
+	lggr logger.SugaredLogger,
 ) *VolatileRequest[T] {
 	return &VolatileRequest[T]{
 		workflowExecutionID: workflowExecutionID,
@@ -58,6 +63,7 @@ func NewVolatileRequest[T proto.Message](
 		id:                  commonMon.RequestID(workflowExecutionID, reference),
 		observe:             observe,
 		observations:        make(map[[HashLength]byte]volatileObservationEntry[T]),
+		lggr:                lggr,
 	}
 }
 
@@ -121,7 +127,10 @@ func (r *VolatileRequest[T]) CaptureObservation(ctx context.Context) error {
 		r.observations[reportData] = existing
 	} else {
 		if len(r.observations) >= MaxNumberOfVolatileObservations {
-			return fmt.Errorf("cannot capture observation for report data %x: max number of unique observations reached", reportData)
+			err = fmt.Errorf("cannot capture observation for report data %x: max number of unique observations reached", reportData)
+			r.lggr.Criticalw("Request captured too many observations. This should never occur in production. Most likely something is wrong with RPC/Polling Period/Request Timeout. "+
+				"If you see this log, reach out to Chainlink team", "err", err)
+			return err
 		}
 		r.observations[reportData] = volatileObservationEntry[T]{
 			observation: observation,
@@ -157,6 +166,9 @@ func (r *VolatileRequest[T]) GetOCRObservation() (*RequestObservation, error) {
 	for k := range r.observations {
 		keys = append(keys, k)
 	}
+	sort.Slice(keys, func(i, j int) bool {
+		return bytes.Compare(keys[i][:], keys[j][:]) < 0
+	})
 	vo.Observations = make([]*VolatileObservation, 0, len(keys))
 	for _, key := range keys {
 		ent := r.observations[key]

@@ -1,6 +1,7 @@
 package types
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"testing"
@@ -16,6 +17,7 @@ import (
 	commonMon "github.com/smartcontractkit/capabilities/libs/monitoring"
 
 	commoncap "github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 )
 
 func TestNewVolatileRequest(t *testing.T) {
@@ -23,7 +25,7 @@ func TestNewVolatileRequest(t *testing.T) {
 	meta := testResponseMetadata()
 	r := NewVolatileRequest(wf, ref, meta, func(context.Context) (*emptypb.Empty, int64, error) {
 		return nil, 0, nil
-	})
+	}, logger.TestSugared(t))
 	require.Equal(t, commonMon.RequestID(wf, ref), r.ID())
 	require.Equal(t, meta, r.GetMetadata())
 }
@@ -32,7 +34,7 @@ func TestVolatileRequest_GetOCRObservation(t *testing.T) {
 	t.Run("no observation yet", func(t *testing.T) {
 		r := NewVolatileRequest("wf", "ref", testResponseMetadata(), func(context.Context) (*emptypb.Empty, int64, error) {
 			return nil, 0, nil
-		})
+		}, logger.TestSugared(t))
 		ob, err := r.GetOCRObservation()
 		require.Nil(t, err)
 		require.Nil(t, ob)
@@ -41,7 +43,7 @@ func TestVolatileRequest_GetOCRObservation(t *testing.T) {
 	t.Run("observation error is surfaced in VolatileObservations", func(t *testing.T) {
 		r := NewVolatileRequest("wf", "ref", testResponseMetadata(), func(context.Context) (*emptypb.Empty, int64, error) {
 			return nil, 0, assert.AnError
-		})
+		}, logger.TestSugared(t))
 		require.Error(t, r.CaptureObservation(t.Context()))
 		ob, err := r.GetOCRObservation()
 		require.NoError(t, err)
@@ -60,7 +62,7 @@ func TestVolatileRequest_GetOCRObservation(t *testing.T) {
 		const wantHeight int64 = 12345
 		r := NewVolatileRequest(wf, ref, meta, func(context.Context) (*wrapperspb.StringValue, int64, error) {
 			return payload, wantHeight, nil
-		})
+		}, logger.TestSugared(t))
 
 		require.NoError(t, r.CaptureObservation(t.Context()))
 		ob, err := r.GetOCRObservation()
@@ -99,7 +101,7 @@ func TestVolatileRequest_GetOCRObservation(t *testing.T) {
 			}
 
 			return payload, 5, nil
-		})
+		}, logger.TestSugared(t))
 
 		require.NoError(t, r.CaptureObservation(t.Context()))
 		require.NoError(t, r.CaptureObservation(t.Context()))
@@ -123,7 +125,7 @@ func TestVolatileRequest_GetOCRObservation(t *testing.T) {
 				return p2, 2, nil
 			}
 			return p1, 1, nil
-		})
+		}, logger.TestSugared(t))
 		require.NoError(t, r.CaptureObservation(t.Context()))
 		require.NoError(t, r.CaptureObservation(t.Context()))
 
@@ -136,17 +138,16 @@ func TestVolatileRequest_GetOCRObservation(t *testing.T) {
 		require.NoError(t, err)
 		h2, err := hashVolatilePayload(wf, ref, meta, p2)
 		require.NoError(t, err)
-		if string(h1[:]) < string(h2[:]) {
-			require.Equal(t, int64(1), volOb.Observations[0].Height)
-			require.Equal(t, h1[:], volOb.Observations[0].Hash)
-			require.Equal(t, int64(2), volOb.Observations[1].Height)
-			require.Equal(t, h2[:], volOb.Observations[1].Hash)
-		} else {
-			require.Equal(t, int64(2), volOb.Observations[0].Height)
-			require.Equal(t, h2[:], volOb.Observations[0].Hash)
-			require.Equal(t, int64(1), volOb.Observations[1].Height)
-			require.Equal(t, h1[:], volOb.Observations[1].Hash)
+		require.NotEqual(t, 0, bytes.Compare(h1[:], h2[:]))
+
+		heightByHash := map[string]int64{
+			string(h1[:]): 1,
+			string(h2[:]): 2,
 		}
+		for _, vo := range volOb.Observations {
+			require.Equal(t, heightByHash[string(vo.Hash)], vo.Height)
+		}
+		requireVolatileObservationsSortedByHash(t, volOb.Observations)
 	})
 
 	t.Run("clears error on successful observation", func(t *testing.T) {
@@ -159,7 +160,7 @@ func TestVolatileRequest_GetOCRObservation(t *testing.T) {
 				return nil, 0, assert.AnError
 			}
 			return payload, 7, nil
-		})
+		}, logger.TestSugared(t))
 		require.ErrorIs(t, r.CaptureObservation(t.Context()), assert.AnError)
 		fail = false
 		require.NoError(t, r.CaptureObservation(t.Context()))
@@ -174,7 +175,7 @@ func TestVolatileRequest_GetOCRObservation(t *testing.T) {
 	t.Run("invalid metadata fails when building report data", func(t *testing.T) {
 		r := NewVolatileRequest("wf", "ref", commoncap.ResponseMetadata{}, func(context.Context) (*emptypb.Empty, int64, error) {
 			return &emptypb.Empty{}, 1, nil
-		})
+		}, logger.TestSugared(t))
 		err := r.CaptureObservation(t.Context())
 		require.Error(t, err)
 		require.ErrorContains(t, err, "failed to convert response to report data: failed to extract metering from metadata: unexpected number of metering records received from peer")
@@ -187,7 +188,7 @@ func TestVolatileRequest_GetOCRObservation(t *testing.T) {
 		r := NewVolatileRequest(wf, ref, meta, func(context.Context) (*wrapperspb.StringValue, int64, error) {
 			n++
 			return &wrapperspb.StringValue{Value: fmt.Sprintf("payload-%d", n)}, int64(n), nil
-		})
+		}, logger.TestSugared(t))
 		for i := 0; i < MaxNumberOfVolatileObservations; i++ {
 			require.NoError(t, r.CaptureObservation(t.Context()), "capture %d", i)
 		}
@@ -198,7 +199,16 @@ func TestVolatileRequest_GetOCRObservation(t *testing.T) {
 		require.NoError(t, err)
 		volOb := ob.Observation.(*RequestObservation_Volatile).Volatile
 		require.Len(t, volOb.Observations, MaxNumberOfVolatileObservations)
+		requireVolatileObservationsSortedByHash(t, volOb.Observations)
 	})
+}
+
+func requireVolatileObservationsSortedByHash(t *testing.T, observations []*VolatileObservation) {
+	t.Helper()
+	for i := 1; i < len(observations); i++ {
+		require.Less(t, bytes.Compare(observations[i-1].Hash, observations[i].Hash), 0,
+			"observations must be sorted by hash in ascending byte order")
+	}
 }
 
 func hashVolatilePayload(wf, ref string, meta commoncap.ResponseMetadata, payload proto.Message) ([HashLength]byte, error) {
