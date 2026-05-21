@@ -52,7 +52,7 @@ type capability struct {
 	*actions.EVM
 	id               string
 	requestPoller    *poller.Poller
-	consensusHandler *chainconsensus.Handler
+	consensusHandler chainconsensus.Handler
 	oracle           core.Oracle
 	triggerService   *trigger.LogTriggerService
 	heightProvider   *height.Provider

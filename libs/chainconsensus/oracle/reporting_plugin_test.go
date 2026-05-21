@@ -197,7 +197,7 @@ func TestObservation(t *testing.T) {
 			},
 		}
 		id = "wf_h:ref_h"
-		hashableWithObs := types.NewHashableRequest("wf_h", "ref_h", testMetadata, func(context.Context) (*emptypb.Empty, error) {
+		hashableWithObs := types.NewECHashableRequest("wf_h", "ref_h", testMetadata, func(context.Context) (*emptypb.Empty, error) {
 			return nil, nil
 		})
 		hashableWithObs.SetObservation(&emptypb.Empty{})

@@ -35,7 +35,7 @@ type volatileObservationEntry[T proto.Message] struct {
 }
 
 // VolatileRequest is an observable request for observations that change frequently and cannot be locked to a block.
-// It retains all unique observations keyed by the same report-data hash as HashableRequest, keeping the maximum height
+// It retains all unique observations keyed by the same report-data hash as ECHashableRequest, keeping the maximum height
 // per hash, the latest capture error, and exposes hashes (not aggregated payloads) for OCR.
 // Assumes that all errors are transient or eventually consistent, and thus clears the latest error on a successful observation.
 type VolatileRequest[T proto.Message] struct {

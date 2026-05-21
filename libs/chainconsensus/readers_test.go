@@ -1,4 +1,4 @@
-package capcommon
+package chainconsensus
 
 import (
 	"context"
