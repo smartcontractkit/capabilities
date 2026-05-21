@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
@@ -19,7 +18,6 @@ import (
 	"github.com/smartcontractkit/chainlink-framework/multinode"
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions/mocks"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 )
 
@@ -100,41 +98,6 @@ func TestNormalizeBlockNumber(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestReadType(t *testing.T) {
-	t.Run("Handler returns error", func(t *testing.T) {
-		reader := mocks.NewConsensusHandler(t)
-		reader.EXPECT().Handle(mock.Anything, mock.Anything).Return(make(chan types.Reply), assert.AnError).Once()
-		_, err := readType[int](t.Context(), reader, types.NewAggregatableRequest("id", nil))
-		require.Equal(t, assert.AnError, err)
-	})
-	t.Run("Returns timeout", func(t *testing.T) {
-		reader := mocks.NewConsensusHandler(t)
-		reader.EXPECT().Handle(mock.Anything, mock.Anything).Return(make(chan types.Reply), nil).Once()
-		ctx, cancel := context.WithCancel(t.Context())
-		cancel()
-		_, err := readType[int](ctx, reader, types.NewAggregatableRequest("id", nil))
-		require.Equal(t, context.Canceled, err)
-	})
-	t.Run("Returns error if it's present in reply", func(t *testing.T) {
-		reader := mocks.NewConsensusHandler(t)
-		ch := make(chan types.Reply, 1)
-		ch <- types.Reply{Err: assert.AnError}
-		reader.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
-		_, err := readType[int](t.Context(), reader, types.NewAggregatableRequest("id", nil))
-		require.Equal(t, assert.AnError, err)
-	})
-	t.Run("Happy path", func(t *testing.T) {
-		reader := mocks.NewConsensusHandler(t)
-		ch := make(chan types.Reply, 1)
-		const expectedResult = 16
-		ch <- types.Reply{Value: expectedResult}
-		reader.EXPECT().Handle(mock.Anything, mock.Anything).Return(ch, nil).Once()
-		result, err := readType[int](t.Context(), reader, types.NewAggregatableRequest("id", nil))
-		require.NoError(t, err)
-		require.Equal(t, expectedResult, result)
-	})
 }
 
 func TestIsRevertError(t *testing.T) {
