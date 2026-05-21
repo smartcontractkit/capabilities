@@ -39,6 +39,7 @@ message RequestObservation {
   google.protobuf.Timestamp received_at = 3;
 
   bool remove_lib_use_in_failure_message_formatting_flag = 4; // remove use of libraries in failure message formatting; flag to be removed after rollout
+  bool update_error_handling_flag = 5; // migrate system errors to user errors; flag to be removed after rollout
 }
 
 message Observation {
@@ -81,6 +82,13 @@ enum ConsensusFailureCode {
   // The user should investigate the source of volatility in their data and consider if identical consensus is the right
   // approach for their use case.
   MORE_THAN_ONE_VALID_OUTCOME_FOR_IDENTICAL_CONSENSUS = 5;
+  // There were no clusters of F+1 identical observations, so consensus could not be achieved. This can occur when the
+  // caller of the capability is attempting to achieve identical consensus on a volatile data source.
+  NO_VALUES_MET_FPLUS1_THRESHOLD_FOR_IDENTICAL_CONSENSUS = 6;
+  // There were no clusters of F+1 observations with the same value type, so consensus could not be achieved.
+  // Indicates an error in the workflow logic, such that the workflow is not producing a consistent value type for the
+  // same request across observers.
+  NO_SINGLE_VALUE_TYPE_MET_FPLUS1_THRESHOLD_FOR_CONSENSUS = 7;
 }
 
 message ConsensusFailedOutcome {

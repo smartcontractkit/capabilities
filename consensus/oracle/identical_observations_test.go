@@ -182,7 +182,7 @@ func TestHandleIdenticalAggregation(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			lggr := logger.Test(t)
-			got, err := handleIdenticalAggregation(lggr, tc.inputValues, tc.f)
+			got, err := handleIdenticalAggregation(lggr, tc.inputValues, tc.f, false)
 
 			if tc.wantErr != "" {
 				require.Error(t, err)
@@ -254,7 +254,7 @@ func Test_filterObservations(t *testing.T) {
 			minObservations:      3,
 			expectedObservations: nil,
 			expectedType:         nil,
-			expectedError:        errors.New("no values met f+1 threshold"),
+			expectedError:        errors.New("no single value type meets the minimum observation threshold"),
 		},
 		{
 			name: "dominant type is TypeNil",
@@ -266,7 +266,7 @@ func Test_filterObservations(t *testing.T) {
 			minObservations:      2,
 			expectedObservations: nil,
 			expectedType:         nil,
-			expectedError:        errors.New("no values met f+1 threshold"),
+			expectedError:        errors.New("no single value type meets the minimum observation threshold"),
 		},
 		{
 			name: "all observations are of dominant type",
@@ -304,7 +304,7 @@ func Test_filterObservations(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			actualObservations, actualType, err := filterObservations(tc.observationProtos, tc.minObservations)
+			actualObservations, actualType, err := filterObservations(tc.observationProtos, tc.minObservations, true)
 
 			if tc.expectedError != nil {
 				require.Error(t, err)
