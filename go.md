@@ -2,6 +2,8 @@
 ```mermaid
 flowchart LR
 
+	capabilities --> capabilities/libs
+	click capabilities href "https://github.com/smartcontractkit/capabilities"
 	capabilities/chain_capabilities/aptos --> capabilities/chain_capabilities/common
 	capabilities/chain_capabilities/aptos --> chainlink-aptos
 	click capabilities/chain_capabilities/aptos href "https://github.com/smartcontractkit/capabilities"
@@ -236,6 +238,7 @@ flowchart LR
 	click wsrpc href "https://github.com/smartcontractkit/wsrpc"
 
 	subgraph capabilities-repo[capabilities]
+		 capabilities
 		 capabilities/chain_capabilities/aptos
 		 capabilities/chain_capabilities/common
 		 capabilities/chain_capabilities/evm
