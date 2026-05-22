@@ -23,6 +23,7 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/utils"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	solanacappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -40,6 +41,7 @@ import (
 )
 
 func TestSolanaLogTrigger(t *testing.T) {
+	t.Skip("TODO PLEX-3036 - re-enable one CI is supported")
 	dbURL := sqltest.TestURL(t)
 	db := sqltest.NewDB(t, dbURL)
 	lggr := logger.Test(t)
@@ -146,6 +148,7 @@ func TestSolanaLogTrigger(t *testing.T) {
 }
 
 func TestSolanaLogTriggerWithSubkeyPaths(t *testing.T) {
+	t.Skip("TODO PLEX-3036 - re-enable one CI is supported")
 	dbURL := sqltest.TestURL(t)
 	db := sqltest.NewDB(t, dbURL)
 	lggr := logger.Test(t)
@@ -273,6 +276,7 @@ func TestSolanaLogTriggerWithSubkeyPaths(t *testing.T) {
 }
 
 func TestSolanaLogTrigger_UnhappyPaths(t *testing.T) {
+	t.Skip("TODO PLEX-3036 - re-enable one CI is supported")
 	dbURL := sqltest.TestURL(t)
 	db := sqltest.NewDB(t, dbURL)
 	lggr := logger.Test(t)
@@ -461,6 +465,7 @@ func TestSolanaLogTrigger_UnhappyPaths(t *testing.T) {
 }
 
 func TestSolanaLogTrigger_NoEventsReceived(t *testing.T) {
+	t.Skip("TODO PLEX-3036 - re-enable one CI is supported")
 	dbURL := sqltest.TestURL(t)
 	db := sqltest.NewDB(t, dbURL)
 	lggr := logger.Test(t)
@@ -541,6 +546,7 @@ func TestSolanaLogTrigger_NoEventsReceived(t *testing.T) {
 }
 
 func TestSolanaLogTrigger_CPIEvent(t *testing.T) {
+	t.Skip("TODO PLEX-3036 - re-enable one CI is supported")
 	dbURL := sqltest.TestURL(t)
 	db := sqltest.NewDB(t, dbURL)
 	lggr := logger.Test(t)
@@ -644,6 +650,7 @@ func TestSolanaLogTrigger_CPIEvent(t *testing.T) {
 }
 
 func TestSolanaLogTrigger_FilterExcludesAllEvents(t *testing.T) {
+	t.Skip("TODO PLEX-3036 - re-enable one CI is supported")
 	dbURL := sqltest.TestURL(t)
 	db := sqltest.NewDB(t, dbURL)
 	lggr := logger.Test(t)
