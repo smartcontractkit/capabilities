@@ -224,7 +224,7 @@ func (wr *writeReport) execute(
 		int32(txReply.TxStatus), //nolint:gosec // txReply.TxStatus is a small enum value: 0, 1, 2.
 	))
 
-	wr.lggr.Debugw("InvokeOnReport returned", "txHash", txReply.TxHash, "txStatus", txReply.TxStatus)
+	wr.lggr.Debugw("InvokeOnReport returned", "txHash", txReply.TxHash, "txStatus", txReply.TxStatus, "txIdempotencyKey", txReply.TxIdempotencyKey)
 
 	// Resolve V_ours up-front so the post-submit forwarder read pins to it; reading at >=V_ours
 	// avoids stale-fullnode false negatives.
@@ -408,7 +408,7 @@ func (wr *writeReport) getTxnInfoFromChain(ctx context.Context, txHash string) (
 		return 0, 0, "", fmt.Errorf("transaction %s has no committed ledger version", txHash)
 	}
 	if reply.Transaction.Data == nil {
-		return 0, 0, "", fmt.Errorf("transaction %s has nil data", txHash)
+		return *reply.Transaction.Version, 0, "", fmt.Errorf("transaction %s has nil data", txHash)
 	}
 	var txData userTxData
 	if err := json.Unmarshal(reply.Transaction.Data, &txData); err != nil {
@@ -511,7 +511,6 @@ func (s *Aptos) isUserError(err error) bool {
 
 // pollTransmissionInfo returns the final state of the transmission at this point of the transmission schedule,
 // taking into account previous nodes in the queue.
-// TODO: copied from evm, can be reused
 func (wr *writeReport) pollTransmissionInfo(
 	ctx context.Context,
 	transmissionID TransmissionID,

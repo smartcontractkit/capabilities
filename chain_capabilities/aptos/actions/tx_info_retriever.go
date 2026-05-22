@@ -298,8 +298,7 @@ func (thr *TxInfoRetriever) emitTxInfoRetrievalPhase(ctx context.Context, lookup
 func (thr *TxInfoRetriever) GetSuccessfulTransmissionInfo(ctx context.Context, transmitter aptos_sdk.AccountAddress) (TransmissionTxInfo, error) {
 	thr.lggr.Debugw("GetSuccessfulTransmissionInfo called", "transmitter", transmitter.String())
 
-	// Phase 1: fetch latest transactions with no limit (nil) so the RPC returns its default page.
-	// Derive pageSize from the response for subsequent phases.
+	// Phase 1: fetch latest transactions with defaultPageSize to get the most recent page.
 	phase1Start := time.Now()
 	pageSize := defaultPageSize
 	thr.lggr.Debugw("GetSuccessfulTransmissionInfo phase 1 - quick probe (pageSize)", "pageSize", pageSize)
@@ -319,7 +318,6 @@ func (thr *TxInfoRetriever) GetSuccessfulTransmissionInfo(ctx context.Context, t
 		return TransmissionTxInfo{}, fmt.Errorf("failed to get transmitter transactions during phase 1: %w", err)
 	}
 	thr.lggr.Debugw("GetSuccessfulTransmissionInfo phase 1 fetched", "txCount", len(txns))
-	// TODO: emit metric to potentially capture duration of phase1 fetch (how much time does this take fetch take)
 	phase1Result := thr.scanTransactions(txns, true)
 	if phase1Result.TxHash != "" {
 		thr.lggr.Debugw("GetSuccessfulTransmissionInfo found in phase 1", "txHash", phase1Result.TxHash)
@@ -450,7 +448,7 @@ func (thr *TxInfoRetriever) GetFailedTransmissionInfo(ctx context.Context, trans
 	return TransmissionTxInfo{}, fmt.Errorf("no matching failed transaction found for transmission %s", thr.transmissionID.GetDebugID())
 }
 
-// matchesTransmissionByReport checks if a transaction's receiver, raw_report, and signatures
+// matchesTransmissionByReport checks if a transaction's receiver and raw_report
 // match exactly what this node would submit.
 func (thr *TxInfoRetriever) matchesTransmissionByReport(arguments []interface{}) bool {
 	if len(arguments) < 3 {

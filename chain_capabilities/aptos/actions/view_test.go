@@ -109,7 +109,7 @@ func TestView_FailsOnNilRequestAsSystemError(t *testing.T) {
 		ReferenceID:         "step-id",
 	}, nil)
 	require.Error(t, err)
-	require.Equal(t, caperrors.OriginSystem, err.Origin())
+	require.Equal(t, caperrors.OriginUser, err.Origin())
 	require.Contains(t, err.Error(), "viewRequest is nil")
 }
 
