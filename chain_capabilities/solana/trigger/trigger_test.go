@@ -141,10 +141,10 @@ func waitForTriggerPollingStop(t *testing.T, logCh <-chan capabilities.TriggerAn
 }
 
 func stopRegisteredTrigger(
+	ctx context.Context,
 	t *testing.T,
 	service *SolanaLogTriggerService,
 	mockSolana *mocks.SolanaService,
-	ctx context.Context,
 	triggerID string,
 	request *solanacappb.FilterLogTriggerRequest,
 	logCh <-chan capabilities.TriggerAndId[*solanacappb.Log],
@@ -183,7 +183,7 @@ func TestRegisterLogTrigger(t *testing.T) {
 		require.NotNil(t, ch)
 
 		time.Sleep(10 * time.Millisecond)
-		stopRegisteredTrigger(t, service, mockSolana, ctx, testTriggerID, request, ch)
+		stopRegisteredTrigger(ctx, t, service, mockSolana, testTriggerID, request, ch)
 		mockSolana.AssertExpectations(t)
 	})
 
@@ -233,7 +233,7 @@ func TestRegisterLogTrigger(t *testing.T) {
 		assert.Contains(t, err.Error(), "is already registered")
 		assert.Nil(t, ch2)
 
-		stopRegisteredTrigger(t, service, mockSolana, ctx, testTriggerID, request, ch1)
+		stopRegisteredTrigger(ctx, t, service, mockSolana, testTriggerID, request, ch1)
 		mockSolana.AssertExpectations(t)
 	})
 
@@ -1045,7 +1045,7 @@ func TestSolanaLogTriggerService_Integration(t *testing.T) {
 		require.NotNil(t, ch)
 
 		time.Sleep(10 * time.Millisecond)
-		stopRegisteredTrigger(t, service, mockSolana, ctx, testTriggerID, request, ch)
+		stopRegisteredTrigger(ctx, t, service, mockSolana, testTriggerID, request, ch)
 
 		mockSolana.AssertExpectations(t)
 	})
