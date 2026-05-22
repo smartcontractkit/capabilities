@@ -120,6 +120,10 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./.github/scripts/support-private-gomods.sh
 
+      - name: Install Solana CLI
+        if: matrix.projects == 'solana'
+        run: ./.github/scripts/install-solana-ci.sh
+
       - name: Unit Test ${{ matrix.projects }}
         run: ./nx run ${{ matrix.projects }}:test
 
@@ -158,6 +162,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./.github/scripts/support-private-gomods.sh
+
+      - name: Install Solana CLI
+        if: matrix.projects == 'solana'
+        run: ./.github/scripts/install-solana-ci.sh
 
       - name: Race Test ${{ matrix.projects }}
         run: ./nx run ${{ matrix.projects }}:race

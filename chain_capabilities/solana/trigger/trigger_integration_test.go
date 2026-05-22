@@ -41,7 +41,6 @@ import (
 )
 
 func TestSolanaLogTrigger(t *testing.T) {
-	t.Skip("TODO PLEX-3036 - re-enable one CI is supported")
 	dbURL := sqltest.TestURL(t)
 	db := sqltest.NewDB(t, dbURL)
 	lggr := logger.Test(t)
@@ -148,7 +147,6 @@ func TestSolanaLogTrigger(t *testing.T) {
 }
 
 func TestSolanaLogTriggerWithSubkeyPaths(t *testing.T) {
-	t.Skip("TODO PLEX-3036 - re-enable one CI is supported")
 	dbURL := sqltest.TestURL(t)
 	db := sqltest.NewDB(t, dbURL)
 	lggr := logger.Test(t)
@@ -276,7 +274,6 @@ func TestSolanaLogTriggerWithSubkeyPaths(t *testing.T) {
 }
 
 func TestSolanaLogTrigger_UnhappyPaths(t *testing.T) {
-	t.Skip("TODO PLEX-3036 - re-enable one CI is supported")
 	dbURL := sqltest.TestURL(t)
 	db := sqltest.NewDB(t, dbURL)
 	lggr := logger.Test(t)
@@ -465,7 +462,6 @@ func TestSolanaLogTrigger_UnhappyPaths(t *testing.T) {
 }
 
 func TestSolanaLogTrigger_NoEventsReceived(t *testing.T) {
-	t.Skip("TODO PLEX-3036 - re-enable one CI is supported")
 	dbURL := sqltest.TestURL(t)
 	db := sqltest.NewDB(t, dbURL)
 	lggr := logger.Test(t)
@@ -546,7 +542,6 @@ func TestSolanaLogTrigger_NoEventsReceived(t *testing.T) {
 }
 
 func TestSolanaLogTrigger_CPIEvent(t *testing.T) {
-	t.Skip("TODO PLEX-3036 - re-enable one CI is supported")
 	dbURL := sqltest.TestURL(t)
 	db := sqltest.NewDB(t, dbURL)
 	lggr := logger.Test(t)
@@ -650,7 +645,6 @@ func TestSolanaLogTrigger_CPIEvent(t *testing.T) {
 }
 
 func TestSolanaLogTrigger_FilterExcludesAllEvents(t *testing.T) {
-	t.Skip("TODO PLEX-3036 - re-enable one CI is supported")
 	dbURL := sqltest.TestURL(t)
 	db := sqltest.NewDB(t, dbURL)
 	lggr := logger.Test(t)
