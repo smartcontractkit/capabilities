@@ -85,7 +85,9 @@ func setupTest(t *testing.T) (*SolanaLogTriggerService, *mocks.SolanaService) {
 
 	store := NewSolanaLogTriggerStore()
 
-	lggr := logger.Test(t)
+	// Use Nop logger: RegisterLogTrigger starts background polling goroutines that
+	// may outlive a subtest. logger.Test(t) panics if those goroutines log after t ends.
+	lggr := logger.Nop()
 
 	opts := LogTriggerServiceOpts{
 		SolanaService:                   mockSolanaService,
@@ -116,6 +118,44 @@ func createTestRequest() *solanacappb.FilterLogTriggerRequest {
 	}
 }
 
+func testRequestMetadata() capabilities.RequestMetadata {
+	return capabilities.RequestMetadata{
+		WorkflowID:    testWorkflowID,
+		WorkflowOwner: testWorkflowOwner,
+	}
+}
+
+func waitForTriggerPollingStop(t *testing.T, logCh <-chan capabilities.TriggerAndId[*solanacappb.Log]) {
+	t.Helper()
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case _, ok := <-logCh:
+			if !ok {
+				return
+			}
+		case <-deadline:
+			t.Fatal("timeout waiting for trigger polling to stop")
+		}
+	}
+}
+
+func stopRegisteredTrigger(
+	t *testing.T,
+	service *SolanaLogTriggerService,
+	mockSolana *mocks.SolanaService,
+	ctx context.Context,
+	triggerID string,
+	request *solanacappb.FilterLogTriggerRequest,
+	logCh <-chan capabilities.TriggerAndId[*solanacappb.Log],
+) {
+	t.Helper()
+	mockSolana.On("UnregisterLogTracking", mock.Anything, mock.AnythingOfType("string")).Return(nil).Maybe()
+	err := service.UnregisterLogTrigger(ctx, triggerID, testRequestMetadata(), request)
+	require.Nil(t, err)
+	waitForTriggerPollingStop(t, logCh)
+}
+
 func createTestLog(blockNumber int64, address solana.PublicKey) *solana.Log {
 	return &solana.Log{
 		Address:     address,
@@ -137,12 +177,13 @@ func TestRegisterLogTrigger(t *testing.T) {
 		mockSolana.On("RegisterLogTracking", mock.Anything, mock.AnythingOfType("solana.LPFilterQuery")).Return(nil).Once()
 		mockSolana.On("QueryTrackedLogs", mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
 
-		ch, err := service.RegisterLogTrigger(ctx, testTriggerID, capabilities.RequestMetadata{WorkflowID: testWorkflowID, WorkflowOwner: testWorkflowOwner}, request)
+		ch, err := service.RegisterLogTrigger(ctx, testTriggerID, testRequestMetadata(), request)
 
 		require.Nil(t, err)
 		require.NotNil(t, ch)
 
 		time.Sleep(10 * time.Millisecond)
+		stopRegisteredTrigger(t, service, mockSolana, ctx, testTriggerID, request, ch)
 		mockSolana.AssertExpectations(t)
 	})
 
@@ -180,18 +221,19 @@ func TestRegisterLogTrigger(t *testing.T) {
 		mockSolana.On("QueryTrackedLogs", mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
 
 		// First registration should succeed
-		ch1, err := service.RegisterLogTrigger(ctx, testTriggerID, capabilities.RequestMetadata{WorkflowID: testWorkflowID, WorkflowOwner: testWorkflowOwner}, request)
+		ch1, err := service.RegisterLogTrigger(ctx, testTriggerID, testRequestMetadata(), request)
 		require.Nil(t, err)
 		require.NotNil(t, ch1)
 
 		time.Sleep(10 * time.Millisecond)
 
 		// Second registration with same ID should fail
-		ch2, err := service.RegisterLogTrigger(ctx, testTriggerID, capabilities.RequestMetadata{WorkflowID: testWorkflowID, WorkflowOwner: testWorkflowOwner}, request)
+		ch2, err := service.RegisterLogTrigger(ctx, testTriggerID, testRequestMetadata(), request)
 		require.NotNil(t, err)
 		assert.Contains(t, err.Error(), "is already registered")
 		assert.Nil(t, ch2)
 
+		stopRegisteredTrigger(t, service, mockSolana, ctx, testTriggerID, request, ch1)
 		mockSolana.AssertExpectations(t)
 	})
 
@@ -221,14 +263,15 @@ func TestUnregisterLogTrigger(t *testing.T) {
 		mockSolana.On("UnregisterLogTracking", mock.Anything, mock.AnythingOfType("string")).Return(nil).Once()
 
 		// Register first
-		_, err := service.RegisterLogTrigger(ctx, testTriggerID, capabilities.RequestMetadata{WorkflowID: testWorkflowID, WorkflowOwner: testWorkflowOwner}, request)
+		logCh, err := service.RegisterLogTrigger(ctx, testTriggerID, testRequestMetadata(), request)
 		require.Nil(t, err)
 
 		time.Sleep(10 * time.Millisecond)
 
 		// Then unregister
-		err = service.UnregisterLogTrigger(ctx, testTriggerID, capabilities.RequestMetadata{WorkflowID: testWorkflowID, WorkflowOwner: testWorkflowOwner}, request)
+		err = service.UnregisterLogTrigger(ctx, testTriggerID, testRequestMetadata(), request)
 		require.Nil(t, err)
+		waitForTriggerPollingStop(t, logCh)
 
 		mockSolana.AssertExpectations(t)
 	})
@@ -237,7 +280,7 @@ func TestUnregisterLogTrigger(t *testing.T) {
 		service, mockSolana := setupTest(t)
 		request := createTestRequest()
 
-		err := service.UnregisterLogTrigger(ctx, "", capabilities.RequestMetadata{WorkflowID: testWorkflowID, WorkflowOwner: testWorkflowOwner}, request)
+		err := service.UnregisterLogTrigger(ctx, "", testRequestMetadata(), request)
 
 		require.NotNil(t, err)
 		assert.Contains(t, err.Error(), "no triggerID provided")
@@ -265,15 +308,16 @@ func TestUnregisterLogTrigger(t *testing.T) {
 		mockSolana.On("UnregisterLogTracking", mock.Anything, mock.AnythingOfType("string")).Return(errors.New("unregister failed")).Once()
 
 		// Register first
-		_, err := service.RegisterLogTrigger(ctx, testTriggerID, capabilities.RequestMetadata{WorkflowID: testWorkflowID, WorkflowOwner: testWorkflowOwner}, request)
+		logCh, err := service.RegisterLogTrigger(ctx, testTriggerID, testRequestMetadata(), request)
 		require.Nil(t, err)
 
 		time.Sleep(10 * time.Millisecond)
 
-		// Then unregister should fail
-		err = service.UnregisterLogTrigger(ctx, testTriggerID, capabilities.RequestMetadata{WorkflowID: testWorkflowID, WorkflowOwner: testWorkflowOwner}, request)
+		// Then unregister should fail (cancel still runs before RPC error)
+		err = service.UnregisterLogTrigger(ctx, testTriggerID, testRequestMetadata(), request)
 		require.NotNil(t, err)
 		assert.Contains(t, err.Error(), "failed to unregister log-tracking")
+		waitForTriggerPollingStop(t, logCh)
 
 		mockSolana.AssertExpectations(t)
 	})
@@ -996,11 +1040,12 @@ func TestSolanaLogTriggerService_Integration(t *testing.T) {
 		mockSolana.On("GetSlotHeight", mock.Anything, mock.Anything).Return(&solana.GetSlotHeightReply{Height: 102}, nil).Maybe()
 		mockSolana.On("QueryTrackedLogs", mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
 
-		ch, err := service.RegisterLogTrigger(ctx, testTriggerID, capabilities.RequestMetadata{WorkflowID: testWorkflowID, WorkflowOwner: testWorkflowOwner}, request)
+		ch, err := service.RegisterLogTrigger(ctx, testTriggerID, testRequestMetadata(), request)
 		require.Nil(t, err)
 		require.NotNil(t, ch)
 
 		time.Sleep(10 * time.Millisecond)
+		stopRegisteredTrigger(t, service, mockSolana, ctx, testTriggerID, request, ch)
 
 		mockSolana.AssertExpectations(t)
 	})
