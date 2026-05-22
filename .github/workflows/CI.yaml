@@ -124,7 +124,19 @@ jobs:
         if: matrix.projects == 'solana'
         run: ./.github/scripts/install-solana-ci.sh
 
+      - name: Setup Test DB
+        if: matrix.projects == 'solana'
+        id: setup-testdb
+        uses: ./.github/actions/setup-testdb
+
+      - name: Unit Test solana
+        if: matrix.projects == 'solana'
+        run: ./nx run solana:test
+        env:
+          CL_DATABASE_URL: ${{ steps.setup-testdb.outputs.cl-db-url }}
+
       - name: Unit Test ${{ matrix.projects }}
+        if: matrix.projects != 'solana'
         run: ./nx run ${{ matrix.projects }}:test
 
       - name: Upload Unit Tests Artifacts
@@ -167,7 +179,19 @@ jobs:
         if: matrix.projects == 'solana'
         run: ./.github/scripts/install-solana-ci.sh
 
+      - name: Setup Test DB
+        if: matrix.projects == 'solana'
+        id: setup-testdb
+        uses: ./.github/actions/setup-testdb
+
+      - name: Race Test solana
+        if: matrix.projects == 'solana'
+        run: ./nx run solana:race
+        env:
+          CL_DATABASE_URL: ${{ steps.setup-testdb.outputs.cl-db-url }}
+
       - name: Race Test ${{ matrix.projects }}
+        if: matrix.projects != 'solana'
         run: ./nx run ${{ matrix.projects }}:race
 
 
