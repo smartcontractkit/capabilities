@@ -17,7 +17,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
-	solana "github.com/smartcontractkit/chainlink-common/pkg/types/chains/solana"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/chains/solana"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query"
 
@@ -172,6 +172,7 @@ func TestRegisterLogTrigger(t *testing.T) {
 	})
 
 	t.Run("duplicate trigger ID registration", func(t *testing.T) {
+		t.Skip("TODO PLEX-3036 - re-enable once CI is supported")
 		service, mockSolana := setupTest(t)
 		request := createTestRequest()
 
@@ -209,6 +210,7 @@ func TestRegisterLogTrigger(t *testing.T) {
 }
 
 func TestUnregisterLogTrigger(t *testing.T) {
+	t.Skip("TODO PLEX-3036 - re-enable once CI is supported")
 	ctx := context.Background()
 
 	t.Run("successful unregistration", func(t *testing.T) {
@@ -492,6 +494,7 @@ func TestLogTriggerSubkeyFilters(t *testing.T) {
 }
 
 func TestStartPolling(t *testing.T) {
+	t.Skip("TODO PLEX-3036 - re-enable once CI is supported")
 	t.Run("processes new blocks correctly", func(t *testing.T) {
 		service, mockSolana := setupTest(t)
 		baseCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
