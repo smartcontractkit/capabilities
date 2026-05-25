@@ -59,7 +59,7 @@ func (rpf *ReportingPluginFactory) NewReportingPlugin(
 	}
 
 	return newReportingPlugin(cfg, rpf.logger, rpf.blocksProvider, rpf.requestsStore, rpf.metrics), ocr3types.ReportingPluginInfo{
-		Name: "evm-reads-oracle",
+		Name: rpf.logger.Name() + ".chain-reads-oracle",
 		Limits: ocr3types.ReportingPluginLimits{
 			MaxQueryLength:       int(offchainCfg.MaxQueryLengthBytes),
 			MaxObservationLength: int(offchainCfg.MaxObservationLengthBytes),

@@ -1591,60 +1591,60 @@ func TestIsVolatileCandidateBetter(t *testing.T) {
 		{
 			name: "more supporters wins regardless of height",
 			a: volatileOutcomeCandidate{
-				hash: types.Hash{1}, supporters: 5, lowestOracle: 9, heights: []int64{1},
+				hash: types.Hash{1}, supporters: 5, lowestOracle: 9, heights: []uint64{1},
 			},
 			b: volatileOutcomeCandidate{
-				hash: types.Hash{2}, supporters: 3, lowestOracle: 1, heights: []int64{1_000_000},
+				hash: types.Hash{2}, supporters: 3, lowestOracle: 1, heights: []uint64{1_000_000},
 			},
 			want: true,
 		},
 		{
 			name: "equal supporters higher median height wins",
 			a: volatileOutcomeCandidate{
-				hash: types.Hash{1}, supporters: 3, lowestOracle: 5, heights: []int64{30, 1},
+				hash: types.Hash{1}, supporters: 3, lowestOracle: 5, heights: []uint64{30, 1},
 			},
 			b: volatileOutcomeCandidate{
-				hash: types.Hash{2}, supporters: 3, lowestOracle: 1, heights: []int64{10, 10},
+				hash: types.Hash{2}, supporters: 3, lowestOracle: 1, heights: []uint64{10, 10},
 			},
 			want: true,
 		},
 		{
 			name: "equal supporters higher median height wins (height order does not matter)",
 			a: volatileOutcomeCandidate{
-				hash: types.Hash{1}, supporters: 3, lowestOracle: 5, heights: []int64{1, 30},
+				hash: types.Hash{1}, supporters: 3, lowestOracle: 5, heights: []uint64{1, 30},
 			},
 			b: volatileOutcomeCandidate{
-				hash: types.Hash{2}, supporters: 3, lowestOracle: 1, heights: []int64{10, 10},
+				hash: types.Hash{2}, supporters: 3, lowestOracle: 1, heights: []uint64{10, 10},
 			},
 			want: true,
 		},
 		{
 			name: "equal supporters equal median uses lower oracle id",
 			a: volatileOutcomeCandidate{
-				hash: types.Hash{2}, supporters: 2, lowestOracle: 2, heights: []int64{100, 200},
+				hash: types.Hash{2}, supporters: 2, lowestOracle: 2, heights: []uint64{100, 200},
 			},
 			b: volatileOutcomeCandidate{
-				hash: types.Hash{1}, supporters: 2, lowestOracle: 7, heights: []int64{150, 150},
+				hash: types.Hash{1}, supporters: 2, lowestOracle: 7, heights: []uint64{150, 150},
 			},
 			want: true,
 		},
 		{
 			name: "tie on supporters median oracle uses lexicographically smaller hash",
 			a: volatileOutcomeCandidate{
-				hash: types.Hash{1}, supporters: 2, lowestOracle: 4, heights: []int64{10, 20},
+				hash: types.Hash{1}, supporters: 2, lowestOracle: 4, heights: []uint64{10, 20},
 			},
 			b: volatileOutcomeCandidate{
-				hash: types.Hash{2}, supporters: 2, lowestOracle: 4, heights: []int64{10, 20},
+				hash: types.Hash{2}, supporters: 2, lowestOracle: 4, heights: []uint64{10, 20},
 			},
 			want: true,
 		},
 		{
 			name: "single observation median odd count",
 			a: volatileOutcomeCandidate{
-				hash: types.Hash{1}, supporters: 1, lowestOracle: 0, heights: []int64{42, 41, 1},
+				hash: types.Hash{1}, supporters: 1, lowestOracle: 0, heights: []uint64{42, 41, 1},
 			},
 			b: volatileOutcomeCandidate{
-				hash: types.Hash{2}, supporters: 1, lowestOracle: 0, heights: []int64{50, 40, 39},
+				hash: types.Hash{2}, supporters: 1, lowestOracle: 0, heights: []uint64{50, 40, 39},
 			},
 			want: true,
 		},

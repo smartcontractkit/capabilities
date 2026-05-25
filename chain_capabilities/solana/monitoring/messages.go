@@ -4,11 +4,13 @@ import (
 	"fmt"
 
 	solgo "github.com/gagliardetto/solana-go"
-	solcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
-	sdkpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	"go.opentelemetry.io/otel/attribute"
 
+	solcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
+	sdkpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
+
 	"github.com/mr-tron/base58"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	solanacappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -164,8 +166,7 @@ func convertWriteReportRequest(req *solanacappb.WriteReportRequest) *WriteReport
 		Receiver:          req.Receiver,
 		RemainingAccounts: convertRemainingAccounts(req.RemainingAccounts),
 		ComputeConfig: &ComputeConfig{
-			ComputeLimit:    req.GetComputeConfig().GetComputeLimit(),
-			ComputeMaxPrice: req.GetComputeConfig().GetComputeMaxPrice(),
+			ComputeLimit: req.GetComputeConfig().GetComputeLimit(),
 		},
 	}
 	if req.Report != nil {

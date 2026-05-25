@@ -31,7 +31,7 @@ const MaxNumberOfVolatileObservations = 1000
 // volatileObservationEntry stores a successful observation and the highest block height seen for its report-data hash.
 type volatileObservationEntry[T proto.Message] struct {
 	observation T
-	height      int64
+	height      uint64
 }
 
 // VolatileRequest is an observable request for observations that change frequently and cannot be locked to a block.
@@ -43,7 +43,7 @@ type VolatileRequest[T proto.Message] struct {
 	reference           string
 	metadata            commoncap.ResponseMetadata
 	id                  string
-	observe             func(context.Context) (T, int64, error)
+	observe             func(context.Context) (T, uint64, error)
 	mu                  sync.RWMutex
 	observations        map[Hash]volatileObservationEntry[T]
 	latestErr           ObservationError
@@ -53,7 +53,7 @@ type VolatileRequest[T proto.Message] struct {
 func NewVolatileRequest[T proto.Message](
 	workflowExecutionID, reference string,
 	metadata commoncap.ResponseMetadata,
-	observe func(context.Context) (T, int64, error),
+	observe func(context.Context) (T, uint64, error),
 	lggr logger.SugaredLogger,
 ) *VolatileRequest[T] {
 	return &VolatileRequest[T]{
@@ -68,6 +68,7 @@ func NewVolatileRequest[T proto.Message](
 }
 
 var _ ObservableRequest = (*VolatileRequest[*emptypb.Empty])(nil)
+var _ HashableRequest[*emptypb.Empty] = (*VolatileRequest[*emptypb.Empty])(nil)
 
 // ID returns the request identifier derived from workflow execution ID and reference.
 func (r *VolatileRequest[T]) ID() string {

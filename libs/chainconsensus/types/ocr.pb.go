@@ -242,7 +242,7 @@ func (x *AggregatableObservation) GetValue() *pb.Decimal {
 
 type VolatileObservation struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Height        int64                  `protobuf:"varint,1,opt,name=height,proto3" json:"height,omitempty"`
+	Height        uint64                 `protobuf:"varint,1,opt,name=height,proto3" json:"height,omitempty"`
 	Hash          []byte                 `protobuf:"bytes,2,opt,name=hash,proto3" json:"hash,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -278,7 +278,7 @@ func (*VolatileObservation) Descriptor() ([]byte, []int) {
 	return file_ocr_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *VolatileObservation) GetHeight() int64 {
+func (x *VolatileObservation) GetHeight() uint64 {
 	if x != nil {
 		return x.Height
 	}
@@ -935,7 +935,7 @@ const file_ocr_proto_rawDesc = "" +
 	"\x06method\x18\x01 \x01(\tR\x06method\x12(\n" +
 	"\x05value\x18\x02 \x01(\v2\x12.values.v1.DecimalR\x05value\"A\n" +
 	"\x13VolatileObservation\x12\x16\n" +
-	"\x06height\x18\x01 \x01(\x03R\x06height\x12\x12\n" +
+	"\x06height\x18\x01 \x01(\x04R\x06height\x12\x12\n" +
 	"\x04hash\x18\x02 \x01(\fR\x04hash\"\x83\x01\n" +
 	"\x14VolatileObservations\x12U\n" +
 	"\fobservations\x18\x01 \x03(\v21.chain_capabilities.evm.types.VolatileObservationR\fobservations\x12\x14\n" +

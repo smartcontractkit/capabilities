@@ -33,7 +33,7 @@ message AggregatableObservation {
 }
 
 message VolatileObservation {
-  int64 height = 1;
+  uint64 height = 1;
   bytes hash = 2;
 }
 

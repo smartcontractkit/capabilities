@@ -23,7 +23,7 @@ import (
 func TestNewVolatileRequest(t *testing.T) {
 	wf, ref := "workflow-exec-id-volatile", "ref-id-volatile"
 	meta := testResponseMetadata()
-	r := NewVolatileRequest(wf, ref, meta, func(context.Context) (*emptypb.Empty, int64, error) {
+	r := NewVolatileRequest(wf, ref, meta, func(context.Context) (*emptypb.Empty, uint64, error) {
 		return nil, 0, nil
 	}, logger.TestSugared(t))
 	require.Equal(t, commonMon.RequestID(wf, ref), r.ID())
@@ -32,7 +32,7 @@ func TestNewVolatileRequest(t *testing.T) {
 
 func TestVolatileRequest_GetOCRObservation(t *testing.T) {
 	t.Run("no observation yet", func(t *testing.T) {
-		r := NewVolatileRequest("wf", "ref", testResponseMetadata(), func(context.Context) (*emptypb.Empty, int64, error) {
+		r := NewVolatileRequest("wf", "ref", testResponseMetadata(), func(context.Context) (*emptypb.Empty, uint64, error) {
 			return nil, 0, nil
 		}, logger.TestSugared(t))
 		ob, err := r.GetOCRObservation()
@@ -41,7 +41,7 @@ func TestVolatileRequest_GetOCRObservation(t *testing.T) {
 	})
 
 	t.Run("observation error is surfaced in VolatileObservations", func(t *testing.T) {
-		r := NewVolatileRequest("wf", "ref", testResponseMetadata(), func(context.Context) (*emptypb.Empty, int64, error) {
+		r := NewVolatileRequest("wf", "ref", testResponseMetadata(), func(context.Context) (*emptypb.Empty, uint64, error) {
 			return nil, 0, assert.AnError
 		}, logger.TestSugared(t))
 		require.Error(t, r.CaptureObservation(t.Context()))
@@ -59,8 +59,8 @@ func TestVolatileRequest_GetOCRObservation(t *testing.T) {
 		wf, ref := "wf-volatile-success", "ref-volatile-success"
 		meta := testResponseMetadata()
 		payload := &wrapperspb.StringValue{Value: "deterministic-volatile-payload"}
-		const wantHeight int64 = 12345
-		r := NewVolatileRequest(wf, ref, meta, func(context.Context) (*wrapperspb.StringValue, int64, error) {
+		const wantHeight uint64 = 12345
+		r := NewVolatileRequest(wf, ref, meta, func(context.Context) (*wrapperspb.StringValue, uint64, error) {
 			return payload, wantHeight, nil
 		}, logger.TestSugared(t))
 
@@ -94,7 +94,7 @@ func TestVolatileRequest_GetOCRObservation(t *testing.T) {
 		meta := testResponseMetadata()
 		payload := &wrapperspb.StringValue{Value: "same-payload"}
 		callsCounter := 0
-		r := NewVolatileRequest(wf, ref, meta, func(context.Context) (*wrapperspb.StringValue, int64, error) {
+		r := NewVolatileRequest(wf, ref, meta, func(context.Context) (*wrapperspb.StringValue, uint64, error) {
 			if callsCounter == 0 {
 				callsCounter++
 				return payload, 10, nil
@@ -110,7 +110,7 @@ func TestVolatileRequest_GetOCRObservation(t *testing.T) {
 		require.NoError(t, err)
 		volOb := ob.Observation.(*RequestObservation_Volatile).Volatile
 		require.Len(t, volOb.Observations, 1)
-		require.Equal(t, int64(10), volOb.Observations[0].Height)
+		require.Equal(t, uint64(10), volOb.Observations[0].Height)
 	})
 
 	t.Run("two distinct payloads sorted by hash", func(t *testing.T) {
@@ -119,7 +119,7 @@ func TestVolatileRequest_GetOCRObservation(t *testing.T) {
 		p1 := &wrapperspb.StringValue{Value: "a-payload"}
 		p2 := &wrapperspb.StringValue{Value: "b-payload"}
 		var round int
-		r := NewVolatileRequest(wf, ref, meta, func(context.Context) (*wrapperspb.StringValue, int64, error) {
+		r := NewVolatileRequest(wf, ref, meta, func(context.Context) (*wrapperspb.StringValue, uint64, error) {
 			round++
 			if round == 1 {
 				return p2, 2, nil
@@ -140,7 +140,7 @@ func TestVolatileRequest_GetOCRObservation(t *testing.T) {
 		require.NoError(t, err)
 		require.NotEqual(t, 0, bytes.Compare(h1[:], h2[:]))
 
-		heightByHash := map[string]int64{
+		heightByHash := map[string]uint64{
 			string(h1[:]): 1,
 			string(h2[:]): 2,
 		}
@@ -155,7 +155,7 @@ func TestVolatileRequest_GetOCRObservation(t *testing.T) {
 		meta := testResponseMetadata()
 		payload := &wrapperspb.StringValue{Value: "mixed-payload"}
 		fail := true
-		r := NewVolatileRequest(wf, ref, meta, func(context.Context) (*wrapperspb.StringValue, int64, error) {
+		r := NewVolatileRequest(wf, ref, meta, func(context.Context) (*wrapperspb.StringValue, uint64, error) {
 			if fail {
 				return nil, 0, assert.AnError
 			}
@@ -173,7 +173,7 @@ func TestVolatileRequest_GetOCRObservation(t *testing.T) {
 	})
 
 	t.Run("invalid metadata fails when building report data", func(t *testing.T) {
-		r := NewVolatileRequest("wf", "ref", commoncap.ResponseMetadata{}, func(context.Context) (*emptypb.Empty, int64, error) {
+		r := NewVolatileRequest("wf", "ref", commoncap.ResponseMetadata{}, func(context.Context) (*emptypb.Empty, uint64, error) {
 			return &emptypb.Empty{}, 1, nil
 		}, logger.TestSugared(t))
 		err := r.CaptureObservation(t.Context())
@@ -184,10 +184,10 @@ func TestVolatileRequest_GetOCRObservation(t *testing.T) {
 	t.Run("max unique observations rejects additional capture", func(t *testing.T) {
 		wf, ref := "wf-volatile-max", "ref-volatile-max"
 		meta := testResponseMetadata()
-		var n int
-		r := NewVolatileRequest(wf, ref, meta, func(context.Context) (*wrapperspb.StringValue, int64, error) {
+		var n uint64
+		r := NewVolatileRequest(wf, ref, meta, func(context.Context) (*wrapperspb.StringValue, uint64, error) {
 			n++
-			return &wrapperspb.StringValue{Value: fmt.Sprintf("payload-%d", n)}, int64(n), nil
+			return &wrapperspb.StringValue{Value: fmt.Sprintf("payload-%d", n)}, n, nil
 		}, logger.TestSugared(t))
 		for i := 0; i < MaxNumberOfVolatileObservations; i++ {
 			require.NoError(t, r.CaptureObservation(t.Context()), "capture %d", i)
