@@ -101,13 +101,13 @@ func TestGetRequest(t *testing.T) {
 }
 
 func TestCompleteRequest(t *testing.T) {
-	newHandler := func(t *testing.T, lggr logger.Logger, poller Poller) *Handler {
-		handler := NewHandler(lggr, poller, test.GetConsensusMetrics(t), time.Second)
-		require.NoError(t, handler.Start(t.Context()))
+	newHandler := func(t *testing.T, lggr logger.Logger, poller Poller) *handler {
+		h := newHandler(lggr, poller, test.GetConsensusMetrics(t), time.Second)
+		require.NoError(t, h.Start(t.Context()))
 		t.Cleanup(func() {
-			require.NoError(t, handler.Close())
+			require.NoError(t, h.Close())
 		})
-		return handler
+		return h
 	}
 
 	t.Run("Happy Path", func(t *testing.T) {

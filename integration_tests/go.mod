@@ -301,7 +301,7 @@ require (
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/sigurn/crc16 v0.0.0-20211026045750-20ab5afb07e3 // indirect
 	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260317175318-b042efa4107b // indirect
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20260521160049-149d45f7be19 // indirect
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20260521172254-c4b42d8c0edf // indirect
 	github.com/smartcontractkit/chainlink-aptos v0.0.0-20260507123701-77fc93b573bb // indirect
 	github.com/smartcontractkit/chainlink-automation v0.8.1 // indirect
 	github.com/smartcontractkit/chainlink-ccip v0.1.1-solana.0.20260428205619-2db1389501a1 // indirect

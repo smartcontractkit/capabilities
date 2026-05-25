@@ -14,6 +14,7 @@ import (
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
 	chain_selectors "github.com/smartcontractkit/chain-selectors"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	aptoscapserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -68,7 +69,7 @@ type capability struct {
 	*actions.Aptos
 	id               string
 	requestPoller    *poller.Poller
-	consensusHandler *chainconsensus.Handler
+	consensusHandler chainconsensus.Handler
 	oracle           core.Oracle
 	heightProvider   *height.Provider
 }

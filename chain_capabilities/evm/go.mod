@@ -6,7 +6,7 @@ require (
 	github.com/ethereum/go-ethereum v1.17.0
 	github.com/google/go-cmp v0.7.0
 	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260317175318-b042efa4107b
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20260521160049-149d45f7be19
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20260521172254-c4b42d8c0edf
 	github.com/smartcontractkit/chain-selectors v1.0.100
 	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260514185211-b277d0842836
 	github.com/smartcontractkit/chainlink-evm v0.3.4-0.20260410162948-2dca02f24e98
@@ -178,7 +178,7 @@ require (
 	github.com/prometheus/procfs v0.16.1 // indirect
 	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1 // indirect
 	github.com/scylladb/go-reflectx v1.0.1 // indirect
-	github.com/shopspring/decimal v1.4.0
+	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/smartcontractkit/freeport v0.1.3-0.20250716200817-cb5dfd0e369e // indirect
 	github.com/smartcontractkit/grpc-proxy v0.0.0-20240830132753-a7e17fec5ab7 // indirect
 	github.com/smartcontractkit/libocr v0.0.0-20260130195252-6e18e2a30acc

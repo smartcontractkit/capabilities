@@ -143,7 +143,7 @@ func testResponseMetadata() commoncap.ResponseMetadata {
 func TestNewHashableRequest(t *testing.T) {
 	wf, ref := "workflow-exec-id", "ref-id"
 	meta := testResponseMetadata()
-	r := NewHashableRequest(wf, ref, meta, func(context.Context) (*emptypb.Empty, error) {
+	r := NewECHashableRequest(wf, ref, meta, func(context.Context) (*emptypb.Empty, error) {
 		return nil, nil
 	})
 	require.Equal(t, commonMon.RequestID(wf, ref), r.ID())
@@ -152,7 +152,7 @@ func TestNewHashableRequest(t *testing.T) {
 
 func TestHashableRequest_GetOCRObservation(t *testing.T) {
 	t.Run("no observation yet", func(t *testing.T) {
-		r := NewHashableRequest("wf", "ref", testResponseMetadata(), func(context.Context) (*emptypb.Empty, error) {
+		r := NewECHashableRequest("wf", "ref", testResponseMetadata(), func(context.Context) (*emptypb.Empty, error) {
 			return nil, nil
 		})
 		ob, err := r.GetOCRObservation()
@@ -161,7 +161,7 @@ func TestHashableRequest_GetOCRObservation(t *testing.T) {
 	})
 
 	t.Run("observation error is surfaced as RequestObservation_Error", func(t *testing.T) {
-		r := NewHashableRequest("wf", "ref", testResponseMetadata(), func(context.Context) (*emptypb.Empty, error) {
+		r := NewECHashableRequest("wf", "ref", testResponseMetadata(), func(context.Context) (*emptypb.Empty, error) {
 			return nil, assert.AnError
 		})
 		require.Error(t, r.CaptureObservation(t.Context()))
@@ -180,7 +180,7 @@ func TestHashableRequest_GetOCRObservation(t *testing.T) {
 		payload1 := &wrapperspb.StringValue{Value: "deterministic-payload-1"}
 		payload2 := &wrapperspb.StringValue{Value: "deterministic-payload-2"}
 		var counter int
-		r := NewHashableRequest(wf, ref, meta, func(context.Context) (*wrapperspb.StringValue, error) {
+		r := NewECHashableRequest(wf, ref, meta, func(context.Context) (*wrapperspb.StringValue, error) {
 			if counter == 0 {
 				counter++
 				return payload1, nil
@@ -220,7 +220,7 @@ func TestHashableRequest_GetOCRObservation(t *testing.T) {
 	})
 
 	t.Run("invalid metadata fails when building report data", func(t *testing.T) {
-		r := NewHashableRequest("wf", "ref", commoncap.ResponseMetadata{}, func(context.Context) (*emptypb.Empty, error) {
+		r := NewECHashableRequest("wf", "ref", commoncap.ResponseMetadata{}, func(context.Context) (*emptypb.Empty, error) {
 			return &emptypb.Empty{}, nil
 		})
 		require.NoError(t, r.CaptureObservation(t.Context()))
@@ -263,7 +263,7 @@ func TestLockableToBlockHashableRequest_LockToABlock_delegatesToHashableRequest(
 	// gracefully handles GetObservationByReportData before the lock
 	_, ok := r.GetObservationByReportData(Hash{})
 	require.False(t, ok)
-	hashable := r.LockToABlock(height).(*HashableRequest[*wrapperspb.StringValue])
+	hashable := r.LockToABlock(height).(*ECHashableRequest[*wrapperspb.StringValue])
 	require.NoError(t, hashable.CaptureObservation(t.Context()))
 
 	ob, err := hashable.GetOCRObservation()
