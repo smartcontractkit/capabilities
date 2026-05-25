@@ -31,7 +31,6 @@ const (
 	testTriggerID         = "test-trigger-1"
 	testWorkflowID        = "test-workflow-1"
 	testWorkflowOwner     = "test-owner-1"
-	testPollInterval      = 50 * time.Millisecond
 	testChannelBufferSize = 100
 	testAddress           = "11111111111111111111111111111112"
 	testEventName         = "TestEvent"
@@ -91,9 +90,9 @@ func waitForTriggerRegistered(t *testing.T, service *SolanaLogTriggerService, tr
 }
 
 func startPollingAsync(
+	ctx context.Context,
 	t *testing.T,
 	service *SolanaLogTriggerService,
-	ctx context.Context,
 	telemetryContext monitoring.TelemetryContext,
 	config *solanacappb.FilterLogTriggerRequest,
 	triggerID string,
@@ -554,7 +553,7 @@ func TestStartPolling(t *testing.T) {
 			TsStart:         time.Now().UnixMilli(),
 			RequestMetadata: meta,
 		}
-		startPollingAsync(t, service, ctx, telemetryContext, config, triggerID, startingBlock, logCh)
+		startPollingAsync(ctx, t, service, telemetryContext, config, triggerID, startingBlock, logCh)
 
 		receivedLogs := make([]*solanacappb.Log, 0)
 		for i := 0; i < len(expectedLogs); i++ {
@@ -589,7 +588,7 @@ func TestStartPolling(t *testing.T) {
 		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
 
 		telemetryContext := createTestTelemetryContext()
-		startPollingAsync(t, service, ctx, telemetryContext, config, triggerID, startingBlock, logCh)
+		startPollingAsync(ctx, t, service, telemetryContext, config, triggerID, startingBlock, logCh)
 
 		select {
 		case <-logCh:
@@ -634,7 +633,7 @@ func TestStartPolling(t *testing.T) {
 		mockSolanaService.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return(nil, errors.New("query failed")).Maybe()
 
 		telemetryContext := createTestTelemetryContext()
-		startPollingAsync(t, service, ctx, telemetryContext, config, triggerID, startingBlock, logCh)
+		startPollingAsync(ctx, t, service, telemetryContext, config, triggerID, startingBlock, logCh)
 
 		select {
 		case <-logCh:
@@ -665,7 +664,7 @@ func TestStartPolling(t *testing.T) {
 		meta = testRequestMetadata()
 		ctx = meta.ContextWithCRE(ctx)
 		telemetryContext := createTestTelemetryContext()
-		startPollingAsync(t, service, ctx, telemetryContext, config, triggerID, startingBlock, logCh)
+		startPollingAsync(ctx, t, service, telemetryContext, config, triggerID, startingBlock, logCh)
 
 		select {
 		case response := <-logCh:
@@ -691,7 +690,7 @@ func TestStartPolling(t *testing.T) {
 		meta := testRequestMetadata()
 		ctx = meta.ContextWithCRE(ctx)
 		telemetryContext := createTestTelemetryContext()
-		startPollingAsync(t, service, ctx, telemetryContext, config, triggerID, startingBlock, logCh)
+		startPollingAsync(ctx, t, service, telemetryContext, config, triggerID, startingBlock, logCh)
 
 		tests.AssertEventually(t, func() bool {
 			for _, call := range mockSolana.Calls {
@@ -749,7 +748,7 @@ func TestStartPolling(t *testing.T) {
 		meta = testRequestMetadata()
 		ctx = meta.ContextWithCRE(ctx)
 		telemetryContext := createTestTelemetryContext()
-		startPollingAsync(t, service, ctx, telemetryContext, config, triggerID, startingBlock, logCh)
+		startPollingAsync(ctx, t, service, telemetryContext, config, triggerID, startingBlock, logCh)
 
 		// Don't read from channel to force it to fill up
 		<-ctx.Done()
@@ -807,7 +806,7 @@ func TestStartPolling(t *testing.T) {
 		meta := testRequestMetadata()
 		ctx = meta.ContextWithCRE(ctx)
 		telemetryContext := createTestTelemetryContext()
-		startPollingAsync(t, service, ctx, telemetryContext, config, triggerID, startingBlock, logCh)
+		startPollingAsync(ctx, t, service, telemetryContext, config, triggerID, startingBlock, logCh)
 
 		select {
 		case <-logCh:
@@ -856,7 +855,7 @@ func TestStartPolling(t *testing.T) {
 		meta = testRequestMetadata()
 		ctx = meta.ContextWithCRE(ctx)
 		telemetryContext := createTestTelemetryContext()
-		startPollingAsync(t, service, ctx, telemetryContext, config, triggerID, startingBlock, logCh)
+		startPollingAsync(ctx, t, service, telemetryContext, config, triggerID, startingBlock, logCh)
 
 		// Should eventually receive a log after recovering from transient error
 		select {
@@ -894,7 +893,7 @@ func TestStartPolling(t *testing.T) {
 		meta = testRequestMetadata()
 		ctx = meta.ContextWithCRE(ctx)
 		telemetryContext := createTestTelemetryContext()
-		startPollingAsync(t, service, ctx, telemetryContext, config, triggerID, startingBlock, logCh)
+		startPollingAsync(ctx, t, service, telemetryContext, config, triggerID, startingBlock, logCh)
 
 		// Collect what we can - test passes if no panic
 		<-ctx.Done()
