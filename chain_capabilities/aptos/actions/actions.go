@@ -7,6 +7,9 @@ import (
 	"time"
 
 	aptos_sdk "github.com/aptos-labs/aptos-go-sdk"
+
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
@@ -24,18 +27,11 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/config"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/monitoring"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
-	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 )
-
-type ConsensusHandler interface {
-	// Handle returns a channel to the result of request.GetObservation().
-	// This result is consistent across all nodes in the DON, even if individual RPC states differ.
-	Handle(ctx context.Context, request ctypes.Request) (<-chan ctypes.Reply, error)
-}
 
 type Aptos struct {
 	types.AptosService
-	ConsensusHandler       ConsensusHandler
+	ConsensusHandler       chainconsensus.RequestHandler
 	forwarderClient        CREForwarderClient
 	forwarderAddress       aptos_sdk.AccountAddress
 	lggr                   logger.SugaredLogger
@@ -49,7 +45,7 @@ type Aptos struct {
 	messageBuilder         *monitoring.MessageBuilder
 }
 
-func NewAptos(cfg *config.Config, p2pConfig map[string]string, aptosService types.AptosService, consensusHandler ConsensusHandler, messageBuilder *monitoring.MessageBuilder, beholderProcessor beholder.ProtoProcessor, lggr logger.Logger, limitsFactory limits.Factory, transmissionScheduler ts.TransmissionScheduler, chainSelector uint64) (*Aptos, error) {
+func NewAptos(cfg *config.Config, p2pConfig map[string]string, aptosService types.AptosService, consensusHandler chainconsensus.RequestHandler, messageBuilder *monitoring.MessageBuilder, beholderProcessor beholder.ProtoProcessor, lggr logger.Logger, limitsFactory limits.Factory, transmissionScheduler ts.TransmissionScheduler, chainSelector uint64) (*Aptos, error) {
 	if aptosService == nil {
 		return nil, fmt.Errorf("aptos service is required")
 	}
