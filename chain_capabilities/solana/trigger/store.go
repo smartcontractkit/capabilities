@@ -1,15 +1,14 @@
 package trigger
 
 import (
-	"context"
 	"sync"
 
 	solanacappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
 )
 
 type solanaLogTriggerState struct {
-	cancelFunc context.CancelFunc
-	filter     *solanacappb.FilterLogTriggerRequest
+	stopPolling func()
+	filter      *solanacappb.FilterLogTriggerRequest
 }
 
 type solanaLogTriggerStore struct {
