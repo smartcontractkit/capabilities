@@ -42,7 +42,7 @@ import (
 
 type EVM struct {
 	types.EVMService
-	ConsensusHandler         chainconsensus.Handler
+	consensusHandler         chainconsensus.RequestHandler
 	chainSelector            uint64
 	keystoneForwarderAddress common.Address
 	forwarderClient          contracts.CREForwarderClient
@@ -64,7 +64,7 @@ type EVM struct {
 }
 
 func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, beholderProcessor beholder.ProtoProcessor,
-	messageBuilder *monitoring.MessageBuilder, handler chainconsensus.Handler, chainSelector uint64, limitsFactory limits.Factory, transmissionScheduler ts.TransmissionScheduler) (*EVM, caperrors.Error) {
+	messageBuilder *monitoring.MessageBuilder, handler chainconsensus.RequestHandler, chainSelector uint64, limitsFactory limits.Factory, transmissionScheduler ts.TransmissionScheduler) (*EVM, caperrors.Error) {
 	keystoneForwarderAddress := common.HexToAddress(cfg.CREForwarderAddress)
 	if keystoneForwarderAddress == (common.Address{}) {
 		return &EVM{}, caperrors.NewPublicSystemError(errors.New("keystone forwarder address is not set"), caperrors.Unknown)
@@ -83,7 +83,7 @@ func NewEVM(cfg config.Config, evmService types.EVMService, lggr logger.Logger, 
 		lggr:                     logger.Sugared(lggr),
 		beholderProcessor:        beholderProcessor,
 		messageBuilder:           messageBuilder,
-		ConsensusHandler:         handler,
+		consensusHandler:         handler,
 		chainSelector:            chainSelector,
 		transmissionScheduler:    transmissionScheduler,
 	}
@@ -213,7 +213,7 @@ func (e *EVM) callContractV2(ctx context.Context, meta capabilities.RequestMetad
 		})
 	}
 
-	return chainconsensus.ReadHashableRequestReport(ctx, e.ConsensusHandler, request)
+	return chainconsensus.ReadHashableRequestReport(ctx, e.consensusHandler, request)
 }
 
 func (e *EVM) callContractV1(ctx context.Context, meta capabilities.RequestMetadata, needsBlockHeightConsensus bool,
@@ -227,7 +227,7 @@ func (e *EVM) callContractV1(ctx context.Context, meta capabilities.RequestMetad
 		})
 	}
 
-	data, err := chainconsensus.ReadType[[]byte](ctx, e.ConsensusHandler, request)
+	data, err := chainconsensus.ReadType[[]byte](ctx, e.consensusHandler, request)
 	if err != nil {
 		return nil, err
 	}
@@ -404,7 +404,7 @@ func (e *EVM) filterLogsV2(ctx context.Context, meta capabilities.RequestMetadat
 		})
 	}
 
-	return chainconsensus.ReadHashableRequestReport(ctx, e.ConsensusHandler, request)
+	return chainconsensus.ReadHashableRequestReport(ctx, e.consensusHandler, request)
 }
 
 func (e *EVM) FilterLogs(ctx context.Context, meta capabilities.RequestMetadata, req *evm.FilterLogsRequest) (*capabilities.ResponseAndMetadata[*evm.FilterLogsReply], caperrors.Error) {
@@ -478,7 +478,7 @@ func (e *EVM) balanceAtV2(ctx context.Context, meta capabilities.RequestMetadata
 		})
 	}
 
-	return chainconsensus.ReadHashableRequestReport(ctx, e.ConsensusHandler, request)
+	return chainconsensus.ReadHashableRequestReport(ctx, e.consensusHandler, request)
 }
 
 func (e *EVM) BalanceAt(ctx context.Context, meta capabilities.RequestMetadata, req *evm.BalanceAtRequest) (*capabilities.ResponseAndMetadata[*evm.BalanceAtReply], caperrors.Error) {
@@ -563,7 +563,7 @@ func (e *EVM) EstimateGas(ctx context.Context, meta capabilities.RequestMetadata
 		}, nil
 	})
 
-	rawEstimate, err := chainconsensus.ReadDecimal(ctx, e.ConsensusHandler, request)
+	rawEstimate, err := chainconsensus.ReadDecimal(ctx, e.consensusHandler, request)
 	if err != nil {
 		isUserError := e.isUserError(err)
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor,
@@ -620,7 +620,7 @@ func (e *EVM) getTransactionByHashV2(ctx context.Context, meta capabilities.Requ
 	request := ctypes.NewECHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, metering.GetResponseMetadata(metering.GetTransactionByHash), func(ctx context.Context) (*evm.GetTransactionByHashReply, error) {
 		return e.getTransactionByHashObserve(ctx, hash)
 	})
-	return chainconsensus.ReadHashableRequestReport[*evm.GetTransactionByHashReply](ctx, e.ConsensusHandler, request)
+	return chainconsensus.ReadHashableRequestReport[*evm.GetTransactionByHashReply](ctx, e.consensusHandler, request)
 }
 
 func (e *EVM) GetTransactionByHash(ctx context.Context, meta capabilities.RequestMetadata, req *evm.GetTransactionByHashRequest) (*capabilities.ResponseAndMetadata[*evm.GetTransactionByHashReply], caperrors.Error) {
@@ -692,7 +692,7 @@ func (e *EVM) getTransactionReceiptV2(ctx context.Context, meta capabilities.Req
 	request := ctypes.NewECHashableRequest(meta.WorkflowExecutionID, meta.ReferenceID, metering.GetResponseMetadata(metering.GetTransactionReceipt), func(ctx context.Context) (*evm.GetTransactionReceiptReply, error) {
 		return e.getTransactionReceiptObserve(ctx, hash)
 	})
-	return chainconsensus.ReadHashableRequestReport[*evm.GetTransactionReceiptReply](ctx, e.ConsensusHandler, request)
+	return chainconsensus.ReadHashableRequestReport[*evm.GetTransactionReceiptReply](ctx, e.consensusHandler, request)
 }
 
 func (e *EVM) GetTransactionReceipt(ctx context.Context, meta capabilities.RequestMetadata, req *evm.GetTransactionReceiptRequest) (*capabilities.ResponseAndMetadata[*evm.GetTransactionReceiptReply], caperrors.Error) {
@@ -762,7 +762,7 @@ func (e *EVM) headerByNumberV2(ctx context.Context, meta capabilities.RequestMet
 		})
 	}
 
-	return chainconsensus.ReadHashableRequestReport(ctx, e.ConsensusHandler, request)
+	return chainconsensus.ReadHashableRequestReport(ctx, e.consensusHandler, request)
 }
 
 func (e *EVM) HeaderByNumber(
@@ -881,7 +881,7 @@ func getCallBlockNumber(requestedBlockNumber rpc.BlockNumber, chainHeight *ctype
 }
 
 func (e *EVM) readProto(ctx context.Context, request ctypes.Request, into proto.Message) (err error) {
-	data, err := chainconsensus.ReadType[[]byte](ctx, e.ConsensusHandler, request)
+	data, err := chainconsensus.ReadType[[]byte](ctx, e.consensusHandler, request)
 	if err != nil {
 		return err
 	}
