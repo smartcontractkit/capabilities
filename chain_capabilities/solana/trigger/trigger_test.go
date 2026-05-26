@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -685,7 +686,15 @@ func TestStartPolling(t *testing.T) {
 		startingBlock := int64(100)
 		logCh := make(chan capabilities.TriggerAndId[*solanacappb.Log], 10)
 
-		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
+		polled := make(chan struct{}, 1)
+		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).
+			Run(func(_ context.Context, _ []query.Expression, _ query.LimitAndSort) {
+				select {
+				case polled <- struct{}{}:
+				default:
+				}
+			}).
+			Return([]*solana.Log{}, nil).Maybe()
 
 		meta := testRequestMetadata()
 		ctx = meta.ContextWithCRE(ctx)
@@ -693,12 +702,12 @@ func TestStartPolling(t *testing.T) {
 		startPollingAsync(ctx, t, service, telemetryContext, config, triggerID, startingBlock, logCh)
 
 		tests.AssertEventually(t, func() bool {
-			for _, call := range mockSolana.Calls {
-				if call.Method == "QueryTrackedLogs" {
-					return true
-				}
+			select {
+			case <-polled:
+				return true
+			default:
+				return false
 			}
-			return false
 		})
 		cancel()
 	})
@@ -793,11 +802,11 @@ func TestStartPolling(t *testing.T) {
 		}
 		emptyLogs := []*solana.Log{}
 
-		queryCallCount := 0
+		var queryCallCount atomic.Int32
 		mockSolanaService.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).
 			RunAndReturn(func(_ context.Context, _ []query.Expression, _ query.LimitAndSort) ([]*solana.Log, error) {
-				queryCallCount++
-				if queryCallCount == 1 {
+				queryCallCount.Add(1)
+				if queryCallCount.Load() == 1 {
 					return firstBatchLogs, nil
 				}
 				return emptyLogs, nil
@@ -814,7 +823,7 @@ func TestStartPolling(t *testing.T) {
 			t.Fatal("Timeout waiting for first log")
 		}
 
-		tests.AssertEventually(t, func() bool { return queryCallCount >= 2 })
+		tests.AssertEventually(t, func() bool { return queryCallCount.Load() >= 2 })
 		cancel()
 	})
 
