@@ -701,15 +701,11 @@ func TestStartPolling(t *testing.T) {
 		telemetryContext := createTestTelemetryContext()
 		startPollingAsync(ctx, t, service, telemetryContext, config, triggerID, startingBlock, logCh)
 
-		tests.AssertEventually(t, func() bool {
-			select {
-			case <-polled:
-				return true
-			default:
-				return false
-			}
-		})
+		<-polled
 		cancel()
+
+		_, ok := <-logCh
+		require.False(t, ok, "logCh should be closed after context cancellation")
 	})
 
 	t.Run("drops events when channel is full", func(t *testing.T) {
