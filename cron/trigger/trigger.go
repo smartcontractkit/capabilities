@@ -42,7 +42,8 @@ var cronTriggerInfo = capabilities.MustNewCapabilityInfo(
 )
 
 type Config struct {
-	FastestScheduleIntervalSeconds int `json:"fastestScheduleIntervalSeconds"`
+	FastestScheduleIntervalSeconds int    `json:"fastestScheduleIntervalSeconds"`
+	CapabilityDonID                uint32 `json:"capabilityDonId"`
 }
 
 type Response struct {
@@ -69,6 +70,7 @@ type Service struct {
 	labeler                 custmsg.MessageEmitter
 	metrics                 *Metrics
 	orgResolver             orgresolver.OrgResolver
+	capabilityDonID         uint32
 }
 
 func (s *Service) RegisterLegacyTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *crontypedapi.Config) (<-chan capabilities.TriggerAndId[*crontypedapi.LegacyPayload], caperrors.Error) { //nolint:staticcheck
@@ -169,6 +171,7 @@ func (s *Service) Initialise(ctx context.Context, dependencies core.StandardCapa
 		return fmt.Errorf("failed to create limiter: %w", err)
 	}
 	s.fastestScheduleInterval = limiter
+	s.capabilityDonID = cronConfig.CapabilityDonID
 
 	s.multiTriggerFlag, err = limits.MakeRangeLimiter(s.limitsFactory, cresettings.Default.PerWorkflow.FeatureMultiTriggerExecutionIDsActivePeriod)
 	if err != nil {
@@ -294,13 +297,19 @@ func (s *Service) RegisterTrigger(ctx context.Context, triggerID string, metadat
 					events.KeyWorkflowExecutionID, workflowExecutionID,
 					events.KeyWorkflowOwner, metadata.WorkflowOwner,
 					events.KeyWorkflowName, displayWorkflowName,
-					events.KeyDonID, strconv.Itoa(int(metadata.WorkflowDonID)),
 					events.KeyDonVersion, strconv.Itoa(int(metadata.WorkflowDonConfigVersion)),
 					events.KeyOrganizationID, orgID,
 					events.KeyWorkflowRegistryChainSelector, metadata.WorkflowRegistryChainSelector,
 					events.KeyWorkflowRegistryAddress, metadata.WorkflowRegistryAddress,
 					events.KeyEngineVersion, metadata.EngineVersion,
 				)
+				donID := s.capabilityDonID
+				if donID == 0 {
+					donID = metadata.WorkflowDonID
+				}
+				if donID > 0 {
+					labeler = labeler.With(events.KeyDonID, strconv.FormatUint(uint64(donID), 10))
+				}
 				if emitErr := events.EmitTriggerExecutionStarted(ctx, labeler); emitErr != nil {
 					s.lggr.Errorw("failed to emit trigger execution started event", "err", emitErr, "triggerID", triggerID, "workflowExecutionID", workflowExecutionID)
 					// Continue with execution even if event emission fails

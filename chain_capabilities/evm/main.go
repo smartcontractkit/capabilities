@@ -144,7 +144,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	capabilityID := fmt.Sprintf("%s (%d)", c.id, cfg.ChainID)
 	c.triggerService, err = trigger.NewLogTriggerService(evmRelayer, trigger.NewLogTriggerStore(), c.lggr, capabilityID, processor, messageBuilder,
 		cfg.LogTriggerPollInterval, cfg.LogTriggerSendChannelBufferSize, cfg.LogTriggerLimitQueryLogSize, c.limitsFactory,
-		dependencies.OrgResolver, dependencies.TriggerEventStore)
+		dependencies.OrgResolver, dependencies.TriggerEventStore, cfg.CapabilityDonID)
 	if err != nil {
 		return fmt.Errorf("error when creating trigger: %w", err)
 	}

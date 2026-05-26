@@ -36,6 +36,7 @@ type connectorHandler struct {
 	lggr                     logger.Logger
 	gatewayConnector         core.GatewayConnector
 	config                   ServiceConfig
+	capabilityDonID          uint32
 	requestCache             *requestCache
 	workflowStore            *workflowStore
 	gatewayMetadataPublisher GatewayMetadataPublisher
@@ -45,12 +46,13 @@ type connectorHandler struct {
 	orgResolver              orgresolver.OrgResolver // Optional org resolver for fetching organization IDs
 }
 
-func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config ServiceConfig,
+func NewConnectorHandler(lggr logger.Logger, gc core.GatewayConnector, config ServiceConfig, capabilityDonID uint32,
 	workflowStore *workflowStore, gatewayMetadataPublisher GatewayMetadataPublisher, requestCache *requestCache, metrics *Metrics, orgResolver orgresolver.OrgResolver) (*connectorHandler, error) {
 	return &connectorHandler{
 		lggr:                     logger.Named(lggr, HandlerName),
 		gatewayConnector:         gc,
 		config:                   config,
+		capabilityDonID:          capabilityDonID,
 		workflowStore:            workflowStore,
 		gatewayMetadataPublisher: gatewayMetadataPublisher,
 		requestCache:             requestCache,
@@ -299,8 +301,14 @@ func (h *connectorHandler) processTrigger(ctx context.Context, gatewayID string,
 		events.KeyWorkflowRegistryChainSelector, workflowMetadata.WorkflowRegistryChainSelector,
 		events.KeyWorkflowRegistryAddress, workflowMetadata.WorkflowRegistryAddress,
 		events.KeyEngineVersion, workflowMetadata.EngineVersion,
-		events.KeyDonID, strconv.Itoa(int(workflowMetadata.WorkflowDONID)),
 	)
+	donID := h.capabilityDonID
+	if donID == 0 {
+		donID = workflowMetadata.WorkflowDONID
+	}
+	if donID > 0 {
+		labeler = labeler.With(events.KeyDonID, strconv.FormatUint(uint64(donID), 10))
+	}
 
 	// Try to fetch organization ID if org resolver is available
 	if h.orgResolver != nil && workflowMetadata.WorkflowOwner != "" {
@@ -394,7 +402,7 @@ func (h *connectorHandler) populateMetadataFromWorkflow(workflowID string, metad
 		metadata.WorkflowRegistryChainSelector = w.metadata.WorkflowRegistryChainSelector
 		metadata.WorkflowRegistryAddress = w.metadata.WorkflowRegistryAddress
 		metadata.EngineVersion = w.metadata.EngineVersion
-		metadata.WorkflowDONID = w.metadata.WorkflowDONID
+		metadata.WorkflowDONID = w.metadata.WorkflowDONID // here, we need to source the DonID for the trigger not just the workflow
 		l.Debugw("Retrieved workflow metadata",
 			"workflowID", workflowID,
 			"workflowOwner", metadata.WorkflowOwner,

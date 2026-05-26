@@ -65,6 +65,7 @@ type LogTriggerService struct {
 	eventRateLimit             limits.RateLimiter
 	eventPayloadSizeLimiter    limits.BoundLimiter[commoncfg.Size]
 	orgResolver                orgresolver.OrgResolver // Optional org resolver for fetching organization IDs
+	capabilityDonID            uint32
 }
 
 // NewLogTriggerService creates a new instance of logTriggerService.
@@ -74,7 +75,9 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 	logTriggerSendChannelBufferSize uint64,
 	logTriggerLimitQueryLogSize uint64, limitsFactory limits.Factory,
 	orgResolver orgresolver.OrgResolver,
-	triggerEventStore capabilities.EventStore) (*LogTriggerService, error) {
+	triggerEventStore capabilities.EventStore,
+	capabilityDonID uint32,
+) (*LogTriggerService, error) {
 	if capabilityID == "" {
 		return nil, fmt.Errorf("capabilityID must be non-empty")
 	}
@@ -109,6 +112,7 @@ func NewLogTriggerService(evmService types.EVMService, store LogTriggerStore, lg
 		logTriggerSendChannelBufferSize: currentSendChannelBufferSize,
 		limitAndSort:                    limitAndSort,
 		orgResolver:                     orgResolver,
+		capabilityDonID:                 capabilityDonID,
 	}
 	if lts.orgResolver == nil {
 		lts.lggr.Warn("OrgResolver is nil, EVM log trigger capability will not be able to fetch organization ID")
@@ -476,9 +480,12 @@ func (lts *LogTriggerService) sendLogsToWorkflows(ctx context.Context, telemetry
 			events.KeyWorkflowName, displayWorkflowName,
 		)
 
-		// add DON metadata if available
-		if telemetryContext.WorkflowDonID != 0 {
-			labeler = labeler.With(events.KeyDonID, strconv.Itoa(int(telemetryContext.WorkflowDonID)))
+		donID := lts.capabilityDonID
+		if donID == 0 {
+			donID = telemetryContext.WorkflowDonID
+		}
+		if donID > 0 {
+			labeler = labeler.With(events.KeyDonID, strconv.FormatUint(uint64(donID), 10))
 		}
 		if telemetryContext.WorkflowDonConfigVersion != 0 {
 			labeler = labeler.With(events.KeyDonVersion, strconv.Itoa(int(telemetryContext.WorkflowDonConfigVersion)))

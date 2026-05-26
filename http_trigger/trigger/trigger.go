@@ -48,6 +48,7 @@ type service struct {
 	services.StateMachine
 	lggr             logger.SugaredLogger
 	cfg              ServiceConfig
+	capabilityDonID  uint32
 	connectorHandler ConnectorHandler
 	metrics          *Metrics
 	limitsFactory    limits.Factory
@@ -61,6 +62,14 @@ func NewService(lggr logger.Logger, limitsFactory limits.Factory) *service {
 	}
 }
 
+// DonID is set in the capability registry
+// We need to know which DON the plugin belongs to here
+
+// We have the core node, which is a binary initializer
+// it initializes things called plugins (these are the binaries)
+// The core node is deployed into many different DONs
+// The core node is what is shared; but if a core node is shared
+// my assumption is that each plugin will belong to a separate DON
 func (s *service) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
 	s.lggr.Debugw("Initialising http trigger capability", "config", dependencies.Config)
 
@@ -72,6 +81,7 @@ func (s *service) Initialise(ctx context.Context, dependencies core.StandardCapa
 		}
 	}
 	s.cfg = applyDefaults(serviceConfig)
+	s.capabilityDonID = s.cfg.CapabilityDonID
 	s.orgResolver = dependencies.OrgResolver
 	if s.orgResolver == nil {
 		s.lggr.Warn("OrgResolver is nil, HTTP trigger capability will not be able to fetch organization ID")
@@ -84,7 +94,7 @@ func (s *service) Initialise(ctx context.Context, dependencies core.StandardCapa
 	}
 	metadataPublisher := NewGatewayMetadataPublisher(s.lggr, dependencies.GatewayConnector, workflowStore, s.cfg, s.metrics)
 	requestCache := newRequestCache(s.lggr, dependencies.Store, time.Duration(s.cfg.RequestCacheTTL)*time.Second)
-	s.connectorHandler, err = NewConnectorHandler(s.lggr, dependencies.GatewayConnector, s.cfg, workflowStore, metadataPublisher, requestCache, s.metrics, s.orgResolver)
+	s.connectorHandler, err = NewConnectorHandler(s.lggr, dependencies.GatewayConnector, s.cfg, s.capabilityDonID, workflowStore, metadataPublisher, requestCache, s.metrics, s.orgResolver)
 	if err != nil {
 		return err
 	}

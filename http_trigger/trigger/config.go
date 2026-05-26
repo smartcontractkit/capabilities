@@ -24,6 +24,7 @@ type ServiceConfig struct {
 	// RequestCacheTTL is the time-to-live for cached request responses in milliseconds.
 	// Used for idempotency - cached responses are returned for duplicate requests within this time window.
 	RequestCacheTTL uint32 `json:"requestCacheTTL"`
+	CapabilityDonID uint32 `json:"capabilityDonId"`
 }
 
 type GatewayConnectionConfig struct {
