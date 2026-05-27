@@ -123,8 +123,7 @@ func (fc *forwarderClient) InvokeOnReport(ctx context.Context, receiver solana.P
 	var resolvedComputeConfig *soltypes.ComputeConfig
 	if gasConfig != nil {
 		resolvedComputeConfig = &soltypes.ComputeConfig{
-			ComputeLimit:    &gasConfig.ComputeLimit,
-			ComputeMaxPrice: &gasConfig.ComputeMaxPrice,
+			ComputeLimit: &gasConfig.ComputeLimit,
 		}
 	}
 

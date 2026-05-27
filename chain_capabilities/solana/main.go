@@ -189,7 +189,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	c.requestPoller = poller.NewPoller(c.lggr, consensusMetrics, cfg.ObservationPollerWorkersCount, cfg.ObservationPollPeriod)
 	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, cfg.UnknownRequestsTTL)
 
-	c.Solana, err = actions.NewSolana(ctx, cfg, solService, messageBuilder, processor, c.lggr, c.limitsFactory, scheduler, c.chainSelector)
+	c.Solana, err = actions.NewSolana(ctx, cfg, solService, messageBuilder, processor, c.lggr, c.limitsFactory, scheduler, c.chainSelector, c.consensusHandler)
 	if err != nil {
 		return err
 	}
