@@ -5,8 +5,8 @@ go 1.26.2
 require (
 	github.com/gagliardetto/solana-go v1.14.0
 	github.com/mr-tron/base58 v1.2.0
-	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260521172254-c4b42d8c0edf
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20260521172254-c4b42d8c0edf
+	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260525175237-4ef43191e53c
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20260525175237-4ef43191e53c
 	github.com/smartcontractkit/chain-selectors v1.0.98
 	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260511105412-c0c74c7c893e
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260420204255-a3f3bdd56877
