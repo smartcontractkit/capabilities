@@ -207,7 +207,6 @@ func TestRegisterLogTrigger(t *testing.T) {
 	})
 
 	t.Run("duplicate trigger ID registration", func(t *testing.T) {
-		t.Skip("TODO PLEX-3036 - re-enable once CI is supported")
 		service, mockSolana := setupTest(t)
 		request := createTestRequest()
 
@@ -529,7 +528,6 @@ func TestLogTriggerSubkeyFilters(t *testing.T) {
 }
 
 func TestStartPolling(t *testing.T) {
-	t.Skip("TODO PLEX-3036 - re-enable once CI is supported")
 	t.Run("processes new blocks correctly", func(t *testing.T) {
 		service, mockSolana := setupTest(t)
 		baseCtx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
@@ -679,7 +677,6 @@ func TestStartPolling(t *testing.T) {
 
 	t.Run("closes channel on context cancellation", func(t *testing.T) {
 		service, mockSolana := setupTest(t)
-		ctx, cancel := context.WithCancel(t.Context())
 
 		config := createTestRequest()
 		triggerID := "test-trigger"
@@ -697,15 +694,16 @@ func TestStartPolling(t *testing.T) {
 			Return([]*solana.Log{}, nil).Maybe()
 
 		meta := testRequestMetadata()
-		ctx = meta.ContextWithCRE(ctx)
+		ctx := meta.ContextWithCRE(t.Context())
 		telemetryContext := createTestTelemetryContext()
+
+		t.Cleanup(func() {
+			_, ok := <-logCh
+			require.False(t, ok, "logCh should be closed after context cancellation")
+		})
 		startPollingAsync(ctx, t, service, telemetryContext, config, triggerID, startingBlock, logCh)
 
 		<-polled
-		cancel()
-
-		_, ok := <-logCh
-		require.False(t, ok, "logCh should be closed after context cancellation")
 	})
 
 	t.Run("drops events when channel is full", func(t *testing.T) {
@@ -781,8 +779,8 @@ func TestStartPolling(t *testing.T) {
 		service, err := NewLogTriggerService(opts)
 		require.NoError(t, err)
 
-		ctx, cancel := context.WithCancel(t.Context())
-		defer cancel()
+		meta := testRequestMetadata()
+		ctx := meta.ContextWithCRE(t.Context())
 
 		config := createTestRequest()
 		triggerID := "test-trigger"
@@ -808,8 +806,6 @@ func TestStartPolling(t *testing.T) {
 				return emptyLogs, nil
 			}).Maybe()
 
-		meta := testRequestMetadata()
-		ctx = meta.ContextWithCRE(ctx)
 		telemetryContext := createTestTelemetryContext()
 		startPollingAsync(ctx, t, service, telemetryContext, config, triggerID, startingBlock, logCh)
 
@@ -820,7 +816,6 @@ func TestStartPolling(t *testing.T) {
 		}
 
 		tests.AssertEventually(t, func() bool { return queryCallCount.Load() >= 2 })
-		cancel()
 	})
 
 	t.Run("continues polling after transient errors", func(t *testing.T) {
@@ -1021,7 +1016,6 @@ func TestToLogPollerFilter_EdgeCases(t *testing.T) {
 }
 
 func TestSolanaLogTriggerService_Integration(t *testing.T) {
-	t.Skip("TODO PLEX-3036 - fix racy test")
 	t.Run("end to end registration flow", func(t *testing.T) {
 		service, mockSolana := setupTest(t)
 		ctx := t.Context()
@@ -1086,7 +1080,6 @@ func BenchmarkSolanaLogTriggerService_ToLogPollerFilter(b *testing.B) {
 }
 
 func TestSolanaLogTriggerService_NewLogTriggerService(t *testing.T) {
-	t.Skip("TODO PLEX-3036 - fix racy test")
 	t.Run("requires logger", func(t *testing.T) {
 		_, err := NewLogTriggerService(LogTriggerServiceOpts{})
 		assert.Error(t, err)
