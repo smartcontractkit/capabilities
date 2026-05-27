@@ -6,7 +6,7 @@ require (
 	github.com/gagliardetto/solana-go v1.14.0
 	github.com/mr-tron/base58 v1.2.0
 	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260521172254-c4b42d8c0edf
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20260525175122-f2c9061c0488
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20260527135316-bc4a496864fd
 	github.com/smartcontractkit/chain-selectors v1.0.98
 	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260525145233-54e4e11d5562
 	github.com/smartcontractkit/chainlink-framework/multinode v0.0.0-20260326180413-c69f27e37a13
