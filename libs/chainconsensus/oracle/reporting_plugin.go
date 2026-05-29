@@ -37,10 +37,21 @@ var _ ocr3types.ReportingPlugin[[]byte] = (*reportingPlugin)(nil)
 
 type Config struct {
 	ocr3types.ReportingPluginConfig
-	MaxBatchSize         int // max number of requests that this node will try to process in a single round
-	MaxObservationLength int // max length of observation in bytes
-	MaxReportLengthBytes int // max length of report in bytes
-	MaxReportCount       int // max number of reports in a single round
+	MaxBatchSize            int // max number of requests that this node will try to process in a single round
+	MaxObservationLength    int // max length of observation in bytes
+	MaxReportLengthBytes    int // max length of report in bytes
+	MaxReportCount          int // max number of reports in a single round
+	MinResponsesToAggregate int // minimum responses to aggregate to accept a read value; 0 means use F+1
+}
+
+// matchingThreshold returns the minimum number of nodes that must report identical
+// observations for a read value to be accepted. When MinIdenticalObservations is
+// zero the default of F+1 is used.
+func (c Config) matchingThreshold() int {
+	if c.MinResponsesToAggregate > 0 {
+		return c.MinResponsesToAggregate
+	}
+	return c.F + 1
 }
 
 type reportingPlugin struct {
@@ -453,7 +464,7 @@ func (rp *reportingPlugin) agreeOnObservationType(requestID string, aos []attrib
 		}
 	}
 
-	value, _, err := mode[ctypes.ObservationType, ctypes.ObservationType](rp.config.N, rp.config.F, iterator)
+	value, _, err := mode[ctypes.ObservationType, ctypes.ObservationType](rp.config.N, rp.config.F, rp.config.matchingThreshold(), iterator)
 	return value, err
 }
 
@@ -519,18 +530,19 @@ func (rp *reportingPlugin) agreeOnAggregationMethod(requestID string, aos []attr
 		}
 	}
 
-	value, _, err := mode[string, string](rp.config.N, rp.config.F, iterator)
+	value, _, err := mode[string, string](rp.config.N, rp.config.F, rp.config.matchingThreshold(), iterator)
 	return value, err
 }
 
 func (rp *reportingPlugin) agreeOnMissingRequestIDs(aos []attributedObservation) ([]string, error) {
 	counter := make(map[string]int)
 	var result []string
+	minMatching := rp.config.matchingThreshold()
 	for _, ob := range aos {
 		// MissingRequestIDs are guaranteed to be unique per observation by ValidateObservation
 		for _, missingRequestID := range ob.Observation.MissingRequestIDs {
 			counter[missingRequestID]++
-			if counter[missingRequestID] == rp.config.F+1 {
+			if counter[missingRequestID] == minMatching {
 				result = append(result, missingRequestID)
 			}
 		}
@@ -565,7 +577,7 @@ func (rp *reportingPlugin) agreeOnEventuallyConsistentValue(requestID string, ao
 		}
 	}
 
-	return mode[[32]byte, []byte](rp.config.N, rp.config.F, iterator)
+	return mode[[32]byte, []byte](rp.config.N, rp.config.F, rp.config.matchingThreshold(), iterator)
 }
 
 func (rp *reportingPlugin) agreeOnHashableValue(requestID string, aos []attributedObservation) ([]byte, int, error) {
@@ -602,7 +614,7 @@ func (rp *reportingPlugin) agreeOnHashableValue(requestID string, aos []attribut
 		}
 	}
 
-	return mode[[32]byte, []byte](rp.config.N, rp.config.F, iterator)
+	return mode[[32]byte, []byte](rp.config.N, rp.config.F, rp.config.matchingThreshold(), iterator)
 }
 
 func medianUInt64(heights []uint64) float64 {
@@ -687,7 +699,7 @@ func (rp *reportingPlugin) agreeOnVolatileValue(requestID string, aos []attribut
 
 	var best *volatileOutcomeCandidate
 	for _, candidate := range candidates {
-		if candidate.supporters < rp.config.F+1 {
+		if candidate.supporters < rp.config.matchingThreshold() {
 			continue
 		}
 		if best == nil || isVolatileCandidateABetter(&candidate, best) {
@@ -701,7 +713,7 @@ func (rp *reportingPlugin) agreeOnVolatileValue(requestID string, aos []attribut
 		}, best.supporters, nil
 	}
 
-	errPayload, errorCount, err := modeForError(rp.config.N, rp.config.F, requestID, aos)
+	errPayload, errorCount, err := modeForError(rp.config.N, rp.config.F, rp.config.matchingThreshold(), requestID, aos)
 	if err != nil {
 		if errors.Is(err, errInsufficientErrorOb) {
 			return nil, errorCount, errors.New("no volatile outcome candidate reached F+1 supporters")
@@ -796,7 +808,7 @@ func (rp *reportingPlugin) Outcome(
 				Outcome:   &ctypes.RequestOutcome_LockableToBlock{LockableToBlock: &emptypb.Empty{}},
 			})
 		case ctypes.ObservationType_ERROR:
-			requestErrors, identicalCount, err := modeForError(rp.config.N, rp.config.F, requestID, aos)
+			requestErrors, identicalCount, err := modeForError(rp.config.N, rp.config.F, rp.config.matchingThreshold(), requestID, aos)
 			rp.metrics.RecordIdenticalResponseCount(ctx, identicalCount, observationType.String())
 			if err != nil {
 				rp.logger.Infow("Could not determine request error", "requestID", requestID, "err", err)
