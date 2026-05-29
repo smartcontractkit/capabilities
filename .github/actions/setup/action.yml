@@ -38,32 +38,5 @@ runs:
         sudo mv protoc3/bin/* /usr/local/bin/
         sudo mv protoc3/include/* /usr/local/include/
         rm -rf protoc3 protoc-${PROTOC_VERSION}-linux-x86_64.zip
-    - name: Cache NX
-      uses: actions/cache@v4
-      with:
-        path: |
-          .nx
-          ~/.npm
-        key: ${{runner.os}}-nx
-
     - name: Setup nodejs and install nx
       uses: smartcontractkit/.github/actions/setup-nodejs@setup-nodejs/v1
-
-    - name: Set up Go cache keys
-      id: init
-      shell: bash
-      run: |
-        npx nx@22.5.1 init
-        echo "gomodcache=$(go env GOMODCACHE)" >> $GITHUB_OUTPUT
-        echo "gobuildcache=$(go env GOCACHE)" >> $GITHUB_OUTPUT
-
-    - uses: actions/cache@v4
-      name: Cache Go modules and outputs
-      with:
-        path: |
-          ${{ steps.init.outputs.gomodcache }}
-          ${{ steps.init.outputs.gobuildcache }}
-        key: ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-${{inputs.task}}-gomod-${{hashFiles(inputs.go-module-file)}}
-        restore-keys: |
-          ${{runner.os}}-${{inputs.cache-version}}-${{inputs.project}}-${{inputs.task}}
-        save-always: true
