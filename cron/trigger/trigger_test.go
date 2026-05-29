@@ -861,7 +861,7 @@ func testCronTriggerRegisterTrigger(t *testing.T, useTypedAPI bool) {
 			name:              "invalid cron schedule - exceeds maximum fastest",
 			schedule:          everySecond,
 			shouldErr:         true,
-			expectedErrString: "[3]InvalidArgument: maximum fastest cron schedule is 30s",
+			expectedErrString: "[101]LimitExceeded: maximum fastest cron schedule is 30s",
 			errorOrigin:       caperrors.OriginUser,
 		},
 	}
@@ -1268,5 +1268,6 @@ func TestEnforceFastestSchedule_NonUniformSecondsField(t *testing.T) {
 	jobDef := gocron.CronJob(schedule, true)
 	capErr := enforceFastestSchedule(logger.Nop(), jobDef, maximumFastest)
 	require.NotNil(t, capErr, "should reject schedule with 1s gaps")
+	require.Equal(t, caperrors.LimitExceeded, capErr.Code())
 	require.Contains(t, capErr.Error(), "maximum fastest cron schedule is 5s")
 }

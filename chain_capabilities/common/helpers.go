@@ -3,6 +3,7 @@ package capcommon
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/utils/retry"
 
 	commonmon "github.com/smartcontractkit/capabilities/libs/monitoring"
@@ -72,7 +74,16 @@ func GetError(err error, isUserError bool) caperrors.Error {
 
 // NewUserError wraps an error as a public user error.
 func NewUserError(err error) caperrors.Error {
-	return caperrors.NewPublicUserError(err, caperrors.Unknown)
+	return caperrors.NewPublicUserError(err, UserErrorCode(err))
+}
+
+// UserErrorCode returns the appropriate error code for a user-facing error.
+func UserErrorCode(err error) caperrors.ErrorCode {
+	var limitErr limits.LimitError
+	if errors.As(err, &limitErr) {
+		return caperrors.LimitExceeded
+	}
+	return caperrors.Unknown
 }
 
 // WithQuickRetry wraps a simple RPC read with retry logic.

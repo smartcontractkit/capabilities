@@ -19,6 +19,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
+	"github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
@@ -324,6 +325,27 @@ func TestInitialise_NilConfig(t *testing.T) {
 }
 
 func TestSendRequest_ErrorHandling(t *testing.T) {
+	t.Run("client returns limit validation error with LimitExceeded code", func(t *testing.T) {
+		setup := setupServiceTest(t)
+
+		input := &http.Request{
+			Url:           "https://example.com",
+			Method:        "GET",
+			Timeout:       durationpb.New(1000 * time.Millisecond),
+			CacheSettings: &http.CacheSettings{},
+		}
+
+		limitErr := limits.ErrorBoundLimited[config.Size]{Key: "RequestSizeLimit", Limit: 1, Amount: 2}
+		setup.mockClient.Err = common.InputValidationError{Err: limitErr}
+
+		_, err := setup.service.SendRequest(t.Context(), setup.metadata, input)
+		require.Error(t, err)
+
+		var capErr caperrors.Error
+		assert.True(t, errors.As(err, &capErr))
+		assert.Equal(t, caperrors.LimitExceeded, capErr.Code())
+	})
+
 	t.Run("client returns UserError and service returns PublicUserError", func(t *testing.T) {
 		setup := setupServiceTest(t)
 
@@ -334,7 +356,7 @@ func TestSendRequest_ErrorHandling(t *testing.T) {
 			CacheSettings: &http.CacheSettings{},
 		}
 
-		userError := gateway.NewUserError("external endpoint failed")
+		userError := gateway.NewUserError(errors.New("external endpoint failed"))
 		setup.mockClient.Err = userError
 
 		_, err := setup.service.SendRequest(t.Context(), setup.metadata, input)
