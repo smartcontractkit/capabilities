@@ -334,7 +334,7 @@ func (e *WriteReport) pollTransmissionInfo(
 			case contracts.TransmissionStateSucceeded, contracts.TransmissionStateInvalidReceiver:
 				return lastValidInfo, nil
 			case contracts.TransmissionStateFailed:
-				hadEnoughGas, receiverGasBudget := e.attemptHadEnoughGas(request, lastValidInfo)
+				hadEnoughGas, calculatedReceiverGasBudget := e.attemptHadEnoughGas(request, lastValidInfo)
 				// none of the previous nodes will try to resend this transmission, so we can stop polling early
 				if hadEnoughGas {
 					return lastValidInfo, nil
@@ -346,7 +346,7 @@ func (e *WriteReport) pollTransmissionInfo(
 					e.lggr.Infow("Stopping poll - all prior nodes in queue finished their transmission attempts",
 						"queuePosition", queuePosition,
 						"failedAttemptCount", count,
-						"receiverGasBudget", receiverGasBudget,
+						"calculatedReceiverGasBudget", calculatedReceiverGasBudget,
 						"transmissionReceiverGasBudget", lastValidInfo.GasLimit,
 					)
 					return lastValidInfo, nil
