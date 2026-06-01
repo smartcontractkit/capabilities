@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"math"
@@ -119,7 +120,7 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 	validatedInput, err := p.validator.ValidatedRequest(ctx, input)
 	if err != nil {
 		p.metrics.IncrementInputValidationFailures(ctx, lggr)
-		return nil, 0, NewUserError(err.Error())
+		return nil, 0, NewUserError(err)
 	}
 	input = validatedInput
 
@@ -187,11 +188,11 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 			lggr.Errorw("error while receiving response from gateway", "errorMessage", resp.ErrorMessage)
 			if resp.IsExternalEndpointError {
 				p.metrics.IncrementExternalEndpointError(ctx, common.ProxyModeGateway, lggr)
-				return nil, resp.ExternalEndpointLatency, NewUserError(resp.ErrorMessage)
+				return nil, resp.ExternalEndpointLatency, NewUserError(errors.New(resp.ErrorMessage))
 			}
 			if resp.IsValidationError {
 				p.metrics.IncrementInputValidationFailures(ctx, lggr)
-				return nil, resp.ExternalEndpointLatency, NewUserError(resp.ErrorMessage)
+				return nil, resp.ExternalEndpointLatency, NewUserError(errors.New(resp.ErrorMessage))
 			}
 			p.metrics.IncrementExecutionError(ctx, common.ProxyModeGateway, lggr)
 			return nil, resp.ExternalEndpointLatency, fmt.Errorf("gateway returned error: %s", resp.ErrorMessage)
@@ -207,7 +208,7 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 
 		if err := p.validator.ValidateResponseSize(ctx, response.Body); err != nil {
 			p.metrics.IncrementExternalEndpointError(ctx, common.ProxyModeGateway, lggr)
-			return nil, resp.ExternalEndpointLatency, NewUserError(err.Error())
+			return nil, resp.ExternalEndpointLatency, NewUserError(err)
 		}
 
 		return response, resp.ExternalEndpointLatency, nil
@@ -222,7 +223,7 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 			"cause", cause,
 		)
 		return nil, 0, NewUserError(
-			fmt.Sprintf("%s (elapsedMs: %d, timeoutMs: %d): %s", ErrMsgGatewayResponseWait, elapsedMs, timeoutMs, cause),
+			fmt.Errorf("%s (elapsedMs: %d, timeoutMs: %d): %w", ErrMsgGatewayResponseWait, elapsedMs, timeoutMs, cause),
 		)
 	}
 }

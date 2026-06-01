@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -336,15 +337,23 @@ func (lts *SolanaLogTriggerService) RegisterLogTrigger(ctx context.Context, trig
 
 	logCh := make(chan capabilities.TriggerAndId[*solanacappb.Log], lts.logTriggerSendChannelBufferSize)
 
-	pollCtx, cancel := context.WithCancel(context.Background())
-	lts.triggers.Write(triggerID, solanaLogTriggerState{
-		cancelFunc: cancel,
-		filter:     config,
-	})
-
 	lts.srvcEng.Go(func(svcCtx context.Context) {
+		pollCtx, cancel := context.WithCancel(svcCtx)
 		pollCtx = meta.ContextWithCRE(pollCtx)
+
+		pollWG := new(sync.WaitGroup)
+		pollWG.Add(1)
+		lts.triggers.Write(triggerID, solanaLogTriggerState{
+			stopPolling: func() {
+				cancel()
+				pollWG.Wait()
+			},
+			filter: config,
+		})
+
+		defer pollWG.Done()
 		lts.startPolling(pollCtx, telemetryContext, config, triggerID, fromBlock, logCh)
+		lts.triggers.Delete(triggerID)
 	})
 
 	return logCh, nil
@@ -363,7 +372,7 @@ func (lts *SolanaLogTriggerService) UnregisterLogTrigger(ctx context.Context, tr
 	}
 
 	lts.lggr.Debugf("UnregisterLogTrigger triggerID: %s", triggerID)
-	trigger.cancelFunc()
+	trigger.stopPolling()
 	lts.triggers.Delete(triggerID)
 
 	err := lts.SolanaService.UnregisterLogTracking(ctx, lts.generateFilterID(triggerID))
