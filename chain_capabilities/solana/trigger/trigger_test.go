@@ -3,6 +3,8 @@ package trigger
 import (
 	"context"
 	"errors"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -20,6 +22,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/types/chains/solana"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/mocks"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/query"
+	"github.com/smartcontractkit/chainlink-common/pkg/utils/tests"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
@@ -29,7 +32,6 @@ const (
 	testTriggerID         = "test-trigger-1"
 	testWorkflowID        = "test-workflow-1"
 	testWorkflowOwner     = "test-owner-1"
-	testPollInterval      = 50 * time.Millisecond
 	testChannelBufferSize = 100
 	testAddress           = "11111111111111111111111111111112"
 	testEventName         = "TestEvent"
@@ -66,7 +68,7 @@ type NopBeholderProcessor struct{}
 
 func (NopBeholderProcessor) Process(_ context.Context, _ proto.Message, _ ...any) error { return nil }
 
-func createTestMetadata() capabilities.RequestMetadata {
+func testRequestMetadata() capabilities.RequestMetadata {
 	return capabilities.RequestMetadata{
 		WorkflowID:    testWorkflowID,
 		WorkflowOwner: testWorkflowOwner,
@@ -76,8 +78,36 @@ func createTestMetadata() capabilities.RequestMetadata {
 func createTestTelemetryContext() monitoring.TelemetryContext {
 	return monitoring.TelemetryContext{
 		TsStart:         time.Now().UnixMilli(),
-		RequestMetadata: createTestMetadata(),
+		RequestMetadata: testRequestMetadata(),
 	}
+}
+
+func waitForTriggerRegistered(t *testing.T, service *SolanaLogTriggerService, triggerID string) {
+	t.Helper()
+	tests.AssertEventually(t, func() bool {
+		_, ok := service.triggers.Read(triggerID)
+		return ok
+	})
+}
+
+func startPollingAsync(
+	ctx context.Context,
+	t *testing.T,
+	service *SolanaLogTriggerService,
+	telemetryContext monitoring.TelemetryContext,
+	config *solanacappb.FilterLogTriggerRequest,
+	triggerID string,
+	startingBlock int64,
+	logCh chan capabilities.TriggerAndId[*solanacappb.Log],
+) {
+	t.Helper()
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		service.startPolling(ctx, telemetryContext, config, triggerID, startingBlock, logCh)
+	}()
+	t.Cleanup(wg.Wait)
 }
 
 func setupTest(t *testing.T) (*SolanaLogTriggerService, *mocks.SolanaService) {
@@ -127,23 +157,27 @@ func createTestLog(blockNumber int64, address solana.PublicKey) *solana.Log {
 }
 
 func TestRegisterLogTrigger(t *testing.T) {
-	t.Skip("TODO PLEX-3036 - fix racy test")
-	ctx := context.Background()
+	ctx := t.Context()
 
 	t.Run("successful registration", func(t *testing.T) {
 		service, mockSolana := setupTest(t)
 		request := createTestRequest()
 
-		mockSolana.On("GetSlotHeight", mock.Anything, mock.Anything).Return(&solana.GetSlotHeightReply{Height: 150}, nil).Maybe()
-		mockSolana.On("RegisterLogTracking", mock.Anything, mock.AnythingOfType("solana.LPFilterQuery")).Return(nil).Once()
-		mockSolana.On("QueryTrackedLogs", mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
+		mockSolana.EXPECT().GetSlotHeight(mock.Anything, mock.Anything).Return(&solana.GetSlotHeightReply{Height: 150}, nil).Maybe()
+		mockSolana.EXPECT().RegisterLogTracking(mock.Anything, mock.AnythingOfType("solana.LPFilterQuery")).Return(nil).Once()
+		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
+		mockSolana.EXPECT().UnregisterLogTracking(mock.Anything, mock.AnythingOfType("string")).Return(nil).Once()
 
-		ch, err := service.RegisterLogTrigger(ctx, testTriggerID, capabilities.RequestMetadata{WorkflowID: testWorkflowID, WorkflowOwner: testWorkflowOwner}, request)
+		ch, err := service.RegisterLogTrigger(ctx, testTriggerID, testRequestMetadata(), request)
 
 		require.Nil(t, err)
 		require.NotNil(t, ch)
 
-		time.Sleep(10 * time.Millisecond)
+		waitForTriggerRegistered(t, service, testTriggerID)
+
+		err = service.UnregisterLogTrigger(ctx, testTriggerID, testRequestMetadata(), request)
+		require.Nil(t, err)
+
 		mockSolana.AssertExpectations(t)
 	})
 
@@ -151,7 +185,7 @@ func TestRegisterLogTrigger(t *testing.T) {
 		service, mockSolana := setupTest(t)
 		request := createTestRequest()
 
-		_, err := service.RegisterLogTrigger(ctx, "", capabilities.RequestMetadata{WorkflowID: testWorkflowID, WorkflowOwner: testWorkflowOwner}, request)
+		_, err := service.RegisterLogTrigger(ctx, "", testRequestMetadata(), request)
 
 		require.NotNil(t, err)
 		assert.Contains(t, err.Error(), "no triggerID provided")
@@ -165,7 +199,7 @@ func TestRegisterLogTrigger(t *testing.T) {
 		mockSolana.EXPECT().GetSlotHeight(mock.Anything, mock.Anything).Return(&solana.GetSlotHeightReply{Height: 150}, nil).Once()
 		mockSolana.EXPECT().RegisterLogTracking(mock.Anything, mock.AnythingOfType("solana.LPFilterQuery")).Return(errors.New("registration failed")).Once()
 
-		_, err := service.RegisterLogTrigger(ctx, testTriggerID, capabilities.RequestMetadata{WorkflowID: testWorkflowID, WorkflowOwner: testWorkflowOwner}, request)
+		_, err := service.RegisterLogTrigger(ctx, testTriggerID, testRequestMetadata(), request)
 
 		require.NotNil(t, err)
 		assert.Contains(t, err.Error(), "registration failed")
@@ -173,26 +207,28 @@ func TestRegisterLogTrigger(t *testing.T) {
 	})
 
 	t.Run("duplicate trigger ID registration", func(t *testing.T) {
-		t.Skip("TODO PLEX-3036 - re-enable once CI is supported")
 		service, mockSolana := setupTest(t)
 		request := createTestRequest()
 
-		mockSolana.On("GetSlotHeight", mock.Anything, mock.Anything).Return(&solana.GetSlotHeightReply{Height: 150}, nil).Maybe()
-		mockSolana.On("RegisterLogTracking", mock.Anything, mock.AnythingOfType("solana.LPFilterQuery")).Return(nil).Once()
-		mockSolana.On("QueryTrackedLogs", mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
+		mockSolana.EXPECT().GetSlotHeight(mock.Anything, mock.Anything).Return(&solana.GetSlotHeightReply{Height: 150}, nil).Maybe()
+		mockSolana.EXPECT().RegisterLogTracking(mock.Anything, mock.AnythingOfType("solana.LPFilterQuery")).Return(nil).Once()
+		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
 
 		// First registration should succeed
-		ch1, err := service.RegisterLogTrigger(ctx, testTriggerID, capabilities.RequestMetadata{WorkflowID: testWorkflowID, WorkflowOwner: testWorkflowOwner}, request)
+		ch1, err := service.RegisterLogTrigger(ctx, testTriggerID, testRequestMetadata(), request)
 		require.Nil(t, err)
 		require.NotNil(t, ch1)
 
-		time.Sleep(10 * time.Millisecond)
+		waitForTriggerRegistered(t, service, testTriggerID)
 
-		// Second registration with same ID should fail
-		ch2, err := service.RegisterLogTrigger(ctx, testTriggerID, capabilities.RequestMetadata{WorkflowID: testWorkflowID, WorkflowOwner: testWorkflowOwner}, request)
+		ch2, err := service.RegisterLogTrigger(ctx, testTriggerID, testRequestMetadata(), request)
 		require.NotNil(t, err)
 		assert.Contains(t, err.Error(), "is already registered")
 		assert.Nil(t, ch2)
+
+		mockSolana.EXPECT().UnregisterLogTracking(mock.Anything, mock.AnythingOfType("string")).Return(nil).Once()
+		err = service.UnregisterLogTrigger(ctx, testTriggerID, testRequestMetadata(), request)
+		require.Nil(t, err)
 
 		mockSolana.AssertExpectations(t)
 	})
@@ -203,34 +239,52 @@ func TestRegisterLogTrigger(t *testing.T) {
 
 		mockSolana.EXPECT().GetSlotHeight(mock.Anything, mock.Anything).Return(nil, errors.New("block fetch failed")).Once()
 
-		_, err := service.RegisterLogTrigger(ctx, testTriggerID, capabilities.RequestMetadata{WorkflowID: testWorkflowID, WorkflowOwner: testWorkflowOwner}, request)
+		_, err := service.RegisterLogTrigger(ctx, testTriggerID, testRequestMetadata(), request)
 
 		require.NotNil(t, err)
 		mockSolana.AssertExpectations(t)
 	})
+
+	t.Run("service close stops polling without unregister", func(t *testing.T) {
+		service, mockSolana := setupTest(t)
+		request := createTestRequest()
+
+		mockSolana.EXPECT().GetSlotHeight(mock.Anything, mock.Anything).Return(&solana.GetSlotHeightReply{Height: 150}, nil).Maybe()
+		mockSolana.EXPECT().GetFiltersNames(mock.Anything).Return([]string{}, nil).Maybe()
+		mockSolana.EXPECT().RegisterLogTracking(mock.Anything, mock.AnythingOfType("solana.LPFilterQuery")).Return(nil).Once()
+		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
+
+		require.NoError(t, service.Start(ctx))
+
+		ch, err := service.RegisterLogTrigger(ctx, testTriggerID, testRequestMetadata(), request)
+		require.Nil(t, err)
+		require.NotNil(t, ch)
+
+		waitForTriggerRegistered(t, service, testTriggerID)
+
+		require.NoError(t, service.Close())
+	})
 }
 
 func TestUnregisterLogTrigger(t *testing.T) {
-	t.Skip("TODO PLEX-3036 - re-enable once CI is supported")
-	ctx := context.Background()
+	ctx := t.Context()
 
 	t.Run("successful unregistration", func(t *testing.T) {
 		service, mockSolana := setupTest(t)
 		request := createTestRequest()
 
-		mockSolana.On("GetSlotHeight", mock.Anything, mock.Anything).Return(&solana.GetSlotHeightReply{Height: 150}, nil).Maybe()
-		mockSolana.On("RegisterLogTracking", mock.Anything, mock.AnythingOfType("solana.LPFilterQuery")).Return(nil).Once()
-		mockSolana.On("QueryTrackedLogs", mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
-		mockSolana.On("UnregisterLogTracking", mock.Anything, mock.AnythingOfType("string")).Return(nil).Once()
+		mockSolana.EXPECT().GetSlotHeight(mock.Anything, mock.Anything).Return(&solana.GetSlotHeightReply{Height: 150}, nil).Maybe()
+		mockSolana.EXPECT().RegisterLogTracking(mock.Anything, mock.AnythingOfType("solana.LPFilterQuery")).Return(nil).Once()
+		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
+		mockSolana.EXPECT().UnregisterLogTracking(mock.Anything, mock.AnythingOfType("string")).Return(nil).Once()
 
 		// Register first
-		_, err := service.RegisterLogTrigger(ctx, testTriggerID, capabilities.RequestMetadata{WorkflowID: testWorkflowID, WorkflowOwner: testWorkflowOwner}, request)
+		_, err := service.RegisterLogTrigger(ctx, testTriggerID, testRequestMetadata(), request)
 		require.Nil(t, err)
 
-		time.Sleep(10 * time.Millisecond)
+		waitForTriggerRegistered(t, service, testTriggerID)
 
-		// Then unregister
-		err = service.UnregisterLogTrigger(ctx, testTriggerID, capabilities.RequestMetadata{WorkflowID: testWorkflowID, WorkflowOwner: testWorkflowOwner}, request)
+		err = service.UnregisterLogTrigger(ctx, testTriggerID, testRequestMetadata(), request)
 		require.Nil(t, err)
 
 		mockSolana.AssertExpectations(t)
@@ -240,7 +294,7 @@ func TestUnregisterLogTrigger(t *testing.T) {
 		service, mockSolana := setupTest(t)
 		request := createTestRequest()
 
-		err := service.UnregisterLogTrigger(ctx, "", capabilities.RequestMetadata{WorkflowID: testWorkflowID, WorkflowOwner: testWorkflowOwner}, request)
+		err := service.UnregisterLogTrigger(ctx, "", testRequestMetadata(), request)
 
 		require.NotNil(t, err)
 		assert.Contains(t, err.Error(), "no triggerID provided")
@@ -251,7 +305,7 @@ func TestUnregisterLogTrigger(t *testing.T) {
 		service, mockSolana := setupTest(t)
 		request := createTestRequest()
 
-		err := service.UnregisterLogTrigger(ctx, "non-existent-trigger", capabilities.RequestMetadata{WorkflowID: testWorkflowID, WorkflowOwner: testWorkflowOwner}, request)
+		err := service.UnregisterLogTrigger(ctx, "non-existent-trigger", testRequestMetadata(), request)
 
 		require.NotNil(t, err)
 		assert.Contains(t, err.Error(), "no active trigger found")
@@ -262,19 +316,18 @@ func TestUnregisterLogTrigger(t *testing.T) {
 		service, mockSolana := setupTest(t)
 		request := createTestRequest()
 
-		mockSolana.On("GetSlotHeight", mock.Anything, mock.Anything).Return(&solana.GetSlotHeightReply{Height: 150}, nil).Maybe()
-		mockSolana.On("RegisterLogTracking", mock.Anything, mock.AnythingOfType("solana.LPFilterQuery")).Return(nil).Once()
-		mockSolana.On("QueryTrackedLogs", mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
-		mockSolana.On("UnregisterLogTracking", mock.Anything, mock.AnythingOfType("string")).Return(errors.New("unregister failed")).Once()
+		mockSolana.EXPECT().GetSlotHeight(mock.Anything, mock.Anything).Return(&solana.GetSlotHeightReply{Height: 150}, nil).Maybe()
+		mockSolana.EXPECT().RegisterLogTracking(mock.Anything, mock.AnythingOfType("solana.LPFilterQuery")).Return(nil).Once()
+		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
+		mockSolana.EXPECT().UnregisterLogTracking(mock.Anything, mock.AnythingOfType("string")).Return(errors.New("unregister failed")).Once()
 
 		// Register first
-		_, err := service.RegisterLogTrigger(ctx, testTriggerID, capabilities.RequestMetadata{WorkflowID: testWorkflowID, WorkflowOwner: testWorkflowOwner}, request)
+		_, err := service.RegisterLogTrigger(ctx, testTriggerID, testRequestMetadata(), request)
 		require.Nil(t, err)
 
-		time.Sleep(10 * time.Millisecond)
+		waitForTriggerRegistered(t, service, testTriggerID)
 
-		// Then unregister should fail
-		err = service.UnregisterLogTrigger(ctx, testTriggerID, capabilities.RequestMetadata{WorkflowID: testWorkflowID, WorkflowOwner: testWorkflowOwner}, request)
+		err = service.UnregisterLogTrigger(ctx, testTriggerID, testRequestMetadata(), request)
 		require.NotNil(t, err)
 		assert.Contains(t, err.Error(), "failed to unregister log-tracking")
 
@@ -495,16 +548,12 @@ func TestLogTriggerSubkeyFilters(t *testing.T) {
 }
 
 func TestStartPolling(t *testing.T) {
-	t.Skip("TODO PLEX-3036 - re-enable once CI is supported")
 	t.Run("processes new blocks correctly", func(t *testing.T) {
 		service, mockSolana := setupTest(t)
-		baseCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		baseCtx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 		defer cancel()
 
-		meta := capabilities.RequestMetadata{
-			WorkflowID:    testWorkflowID,
-			WorkflowOwner: testWorkflowOwner,
-		}
+		meta := testRequestMetadata()
 		ctx := meta.ContextWithCRE(baseCtx)
 
 		config := createTestRequest()
@@ -518,12 +567,13 @@ func TestStartPolling(t *testing.T) {
 		}
 
 		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return(expectedLogs, nil).Once()
+		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
 
 		telemetryContext := monitoring.TelemetryContext{
 			TsStart:         time.Now().UnixMilli(),
 			RequestMetadata: meta,
 		}
-		go service.startPolling(ctx, telemetryContext, config, triggerID, startingBlock, logCh)
+		startPollingAsync(ctx, t, service, telemetryContext, config, triggerID, startingBlock, logCh)
 
 		receivedLogs := make([]*solanacappb.Log, 0)
 		for i := 0; i < len(expectedLogs); i++ {
@@ -543,10 +593,10 @@ func TestStartPolling(t *testing.T) {
 
 	t.Run("skips when no new blocks", func(t *testing.T) {
 		service, mockSolana := setupTest(t)
-		baseCtx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		baseCtx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 		defer cancel()
 
-		meta := createTestMetadata()
+		meta := testRequestMetadata()
 		ctx := meta.ContextWithCRE(baseCtx)
 
 		config := createTestRequest()
@@ -555,10 +605,10 @@ func TestStartPolling(t *testing.T) {
 		logCh := make(chan capabilities.TriggerAndId[*solanacappb.Log], 10)
 
 		// Return empty logs to simulate no new blocks
-		mockSolana.On("QueryTrackedLogs", mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
+		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
 
 		telemetryContext := createTestTelemetryContext()
-		go service.startPolling(ctx, telemetryContext, config, triggerID, startingBlock, logCh)
+		startPollingAsync(ctx, t, service, telemetryContext, config, triggerID, startingBlock, logCh)
 
 		select {
 		case <-logCh:
@@ -589,10 +639,10 @@ func TestStartPolling(t *testing.T) {
 		service, err := NewLogTriggerService(opts)
 		require.NoError(t, err)
 
-		baseCtx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		baseCtx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 		defer cancel()
 
-		meta := createTestMetadata()
+		meta := testRequestMetadata()
 		ctx := meta.ContextWithCRE(baseCtx)
 
 		config := createTestRequest()
@@ -600,10 +650,10 @@ func TestStartPolling(t *testing.T) {
 		startingBlock := int64(100)
 		logCh := make(chan capabilities.TriggerAndId[*solanacappb.Log], 10)
 
-		mockSolanaService.On("QueryTrackedLogs", mock.Anything, mock.Anything, mock.Anything).Return(nil, errors.New("query failed")).Maybe()
+		mockSolanaService.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return(nil, errors.New("query failed")).Maybe()
 
 		telemetryContext := createTestTelemetryContext()
-		go service.startPolling(ctx, telemetryContext, config, triggerID, startingBlock, logCh)
+		startPollingAsync(ctx, t, service, telemetryContext, config, triggerID, startingBlock, logCh)
 
 		select {
 		case <-logCh:
@@ -616,10 +666,10 @@ func TestStartPolling(t *testing.T) {
 
 	t.Run("updates lastProcessedBlock correctly", func(t *testing.T) {
 		service, mockSolana := setupTest(t)
-		baseCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		baseCtx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 		defer cancel()
 
-		meta := createTestMetadata()
+		meta := testRequestMetadata()
 		ctx := meta.ContextWithCRE(baseCtx)
 
 		config := createTestRequest()
@@ -629,12 +679,12 @@ func TestStartPolling(t *testing.T) {
 
 		firstBatch := []*solana.Log{createTestLog(101, testPublicKey)}
 
-		mockSolana.On("QueryTrackedLogs", mock.Anything, mock.Anything, mock.Anything).Return(firstBatch, nil).Maybe()
+		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return(firstBatch, nil).Maybe()
 
-		meta = createTestMetadata()
+		meta = testRequestMetadata()
 		ctx = meta.ContextWithCRE(ctx)
 		telemetryContext := createTestTelemetryContext()
-		go service.startPolling(ctx, telemetryContext, config, triggerID, startingBlock, logCh)
+		startPollingAsync(ctx, t, service, telemetryContext, config, triggerID, startingBlock, logCh)
 
 		select {
 		case response := <-logCh:
@@ -648,31 +698,33 @@ func TestStartPolling(t *testing.T) {
 
 	t.Run("closes channel on context cancellation", func(t *testing.T) {
 		service, mockSolana := setupTest(t)
-		ctx, cancel := context.WithCancel(context.Background())
 
 		config := createTestRequest()
 		triggerID := "test-trigger"
 		startingBlock := int64(100)
 		logCh := make(chan capabilities.TriggerAndId[*solanacappb.Log], 10)
 
-		mockSolana.On("QueryTrackedLogs", mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
+		polled := make(chan struct{}, 1)
+		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).
+			Run(func(_ context.Context, _ []query.Expression, _ query.LimitAndSort) {
+				select {
+				case polled <- struct{}{}:
+				default:
+				}
+			}).
+			Return([]*solana.Log{}, nil).Maybe()
 
-		meta := createTestMetadata()
-		ctx = meta.ContextWithCRE(ctx)
+		meta := testRequestMetadata()
+		ctx := meta.ContextWithCRE(t.Context())
 		telemetryContext := createTestTelemetryContext()
-		go service.startPolling(ctx, telemetryContext, config, triggerID, startingBlock, logCh)
 
-		time.Sleep(10 * time.Millisecond)
-		cancel()
+		t.Cleanup(func() {
+			_, ok := <-logCh
+			require.False(t, ok, "logCh should be closed after context cancellation")
+		})
+		startPollingAsync(ctx, t, service, telemetryContext, config, triggerID, startingBlock, logCh)
 
-		select {
-		case _, ok := <-logCh:
-			if ok {
-				t.Fatal("Channel should be closed when context is cancelled")
-			}
-		case <-time.After(50 * time.Millisecond):
-			t.Fatal("Channel was not closed in time")
-		}
+		<-polled
 	})
 
 	t.Run("drops events when channel is full", func(t *testing.T) {
@@ -695,10 +747,10 @@ func TestStartPolling(t *testing.T) {
 		service, err := NewLogTriggerService(opts)
 		require.NoError(t, err)
 
-		baseCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		baseCtx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 		defer cancel()
 
-		meta := createTestMetadata()
+		meta := testRequestMetadata()
 		ctx := meta.ContextWithCRE(baseCtx)
 
 		config := createTestRequest()
@@ -715,12 +767,12 @@ func TestStartPolling(t *testing.T) {
 			createTestLog(105, testPublicKey),
 		}
 
-		mockSolanaService.On("QueryTrackedLogs", mock.Anything, mock.Anything, mock.Anything).Return(manyLogs, nil).Maybe()
+		mockSolanaService.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return(manyLogs, nil).Maybe()
 
-		meta = createTestMetadata()
+		meta = testRequestMetadata()
 		ctx = meta.ContextWithCRE(ctx)
 		telemetryContext := createTestTelemetryContext()
-		go service.startPolling(ctx, telemetryContext, config, triggerID, startingBlock, logCh)
+		startPollingAsync(ctx, t, service, telemetryContext, config, triggerID, startingBlock, logCh)
 
 		// Don't read from channel to force it to fill up
 		<-ctx.Done()
@@ -748,8 +800,8 @@ func TestStartPolling(t *testing.T) {
 		service, err := NewLogTriggerService(opts)
 		require.NoError(t, err)
 
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		meta := testRequestMetadata()
+		ctx := meta.ContextWithCRE(t.Context())
 
 		config := createTestRequest()
 		triggerID := "test-trigger"
@@ -765,20 +817,18 @@ func TestStartPolling(t *testing.T) {
 		}
 		emptyLogs := []*solana.Log{}
 
-		queryCallCount := 0
-		mockSolanaService.On("QueryTrackedLogs", mock.Anything, mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
-			queryCallCount++
-		}).Return(func(ctx context.Context, expressions []query.Expression, limitAndSort query.LimitAndSort) []*solana.Log {
-			if queryCallCount == 1 {
-				return firstBatchLogs
-			}
-			return emptyLogs
-		}, nil).Maybe()
+		var queryCallCount atomic.Int32
+		mockSolanaService.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).
+			RunAndReturn(func(_ context.Context, _ []query.Expression, _ query.LimitAndSort) ([]*solana.Log, error) {
+				queryCallCount.Add(1)
+				if queryCallCount.Load() == 1 {
+					return firstBatchLogs, nil
+				}
+				return emptyLogs, nil
+			}).Maybe()
 
-		meta := createTestMetadata()
-		ctx = meta.ContextWithCRE(ctx)
 		telemetryContext := createTestTelemetryContext()
-		go service.startPolling(ctx, telemetryContext, config, triggerID, startingBlock, logCh)
+		startPollingAsync(ctx, t, service, telemetryContext, config, triggerID, startingBlock, logCh)
 
 		select {
 		case <-logCh:
@@ -786,10 +836,7 @@ func TestStartPolling(t *testing.T) {
 			t.Fatal("Timeout waiting for first log")
 		}
 
-		time.Sleep(50 * time.Millisecond)
-		cancel()
-
-		assert.GreaterOrEqual(t, queryCallCount, 2, "Should have polled at least twice")
+		tests.AssertEventually(t, func() bool { return queryCallCount.Load() >= 2 })
 	})
 
 	t.Run("continues polling after transient errors", func(t *testing.T) {
@@ -811,10 +858,10 @@ func TestStartPolling(t *testing.T) {
 		service, err := NewLogTriggerService(opts)
 		require.NoError(t, err)
 
-		baseCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		baseCtx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 		defer cancel()
 
-		meta := createTestMetadata()
+		meta := testRequestMetadata()
 		ctx := meta.ContextWithCRE(baseCtx)
 
 		config := createTestRequest()
@@ -823,13 +870,13 @@ func TestStartPolling(t *testing.T) {
 		logCh := make(chan capabilities.TriggerAndId[*solanacappb.Log], 10)
 
 		// First call fails, second succeeds
-		mockSolanaService.On("QueryTrackedLogs", mock.Anything, mock.Anything, mock.Anything).Return(nil, errors.New("transient error")).Once()
-		mockSolanaService.On("QueryTrackedLogs", mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{createTestLog(101, testPublicKey)}, nil).Maybe()
+		mockSolanaService.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return(nil, errors.New("transient error")).Once()
+		mockSolanaService.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{createTestLog(101, testPublicKey)}, nil).Maybe()
 
-		meta = createTestMetadata()
+		meta = testRequestMetadata()
 		ctx = meta.ContextWithCRE(ctx)
 		telemetryContext := createTestTelemetryContext()
-		go service.startPolling(ctx, telemetryContext, config, triggerID, startingBlock, logCh)
+		startPollingAsync(ctx, t, service, telemetryContext, config, triggerID, startingBlock, logCh)
 
 		// Should eventually receive a log after recovering from transient error
 		select {
@@ -844,10 +891,10 @@ func TestStartPolling(t *testing.T) {
 
 	t.Run("handles nil log in query results", func(t *testing.T) {
 		service, mockSolana := setupTest(t)
-		baseCtx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		baseCtx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 		defer cancel()
 
-		meta := createTestMetadata()
+		meta := testRequestMetadata()
 		ctx := meta.ContextWithCRE(baseCtx)
 
 		config := createTestRequest()
@@ -862,12 +909,12 @@ func TestStartPolling(t *testing.T) {
 			createTestLog(102, testPublicKey),
 		}
 
-		mockSolana.On("QueryTrackedLogs", mock.Anything, mock.Anything, mock.Anything).Return(logsWithNil, nil).Maybe()
+		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return(logsWithNil, nil).Maybe()
 
-		meta = createTestMetadata()
+		meta = testRequestMetadata()
 		ctx = meta.ContextWithCRE(ctx)
 		telemetryContext := createTestTelemetryContext()
-		go service.startPolling(ctx, telemetryContext, config, triggerID, startingBlock, logCh)
+		startPollingAsync(ctx, t, service, telemetryContext, config, triggerID, startingBlock, logCh)
 
 		// Collect what we can - test passes if no panic
 		<-ctx.Done()
@@ -990,22 +1037,25 @@ func TestToLogPollerFilter_EdgeCases(t *testing.T) {
 }
 
 func TestSolanaLogTriggerService_Integration(t *testing.T) {
-	t.Skip("TODO PLEX-3036 - fix racy test")
 	t.Run("end to end registration flow", func(t *testing.T) {
 		service, mockSolana := setupTest(t)
-		ctx := context.Background()
+		ctx := t.Context()
 
 		request := createTestRequest()
 
-		mockSolana.On("RegisterLogTracking", mock.Anything, mock.AnythingOfType("solana.LPFilterQuery")).Return(nil).Once()
-		mockSolana.On("GetSlotHeight", mock.Anything, mock.Anything).Return(&solana.GetSlotHeightReply{Height: 102}, nil).Maybe()
-		mockSolana.On("QueryTrackedLogs", mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
+		mockSolana.EXPECT().RegisterLogTracking(mock.Anything, mock.AnythingOfType("solana.LPFilterQuery")).Return(nil).Once()
+		mockSolana.EXPECT().GetSlotHeight(mock.Anything, mock.Anything).Return(&solana.GetSlotHeightReply{Height: 102}, nil).Maybe()
+		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
+		mockSolana.EXPECT().UnregisterLogTracking(mock.Anything, mock.AnythingOfType("string")).Return(nil).Once()
 
-		ch, err := service.RegisterLogTrigger(ctx, testTriggerID, capabilities.RequestMetadata{WorkflowID: testWorkflowID, WorkflowOwner: testWorkflowOwner}, request)
+		ch, err := service.RegisterLogTrigger(ctx, testTriggerID, testRequestMetadata(), request)
 		require.Nil(t, err)
 		require.NotNil(t, ch)
 
-		time.Sleep(10 * time.Millisecond)
+		waitForTriggerRegistered(t, service, testTriggerID)
+
+		err = service.UnregisterLogTrigger(ctx, testTriggerID, testRequestMetadata(), request)
+		require.Nil(t, err)
 
 		mockSolana.AssertExpectations(t)
 	})
@@ -1051,7 +1101,6 @@ func BenchmarkSolanaLogTriggerService_ToLogPollerFilter(b *testing.B) {
 }
 
 func TestSolanaLogTriggerService_NewLogTriggerService(t *testing.T) {
-	t.Skip("TODO PLEX-3036 - fix racy test")
 	t.Run("requires logger", func(t *testing.T) {
 		_, err := NewLogTriggerService(LogTriggerServiceOpts{})
 		assert.Error(t, err)
@@ -1274,7 +1323,7 @@ func TestCleanUpStaleFilters(t *testing.T) {
 
 	t.Run("service does not support GetFiltersNames", func(t *testing.T) {
 		service, mockSolana := setupTest(t)
-		mockSolana.On("GetFiltersNames", mock.Anything).Return([]string{}, nil)
+		mockSolana.EXPECT().GetFiltersNames(mock.Anything).Return([]string{}, nil)
 		// The mock doesn't implement FilterNamesGetter, so cleanup should be skipped
 		service.cleanUpStaleFilters(t.Context())
 		// No panic, no error - just silently skips
@@ -1286,37 +1335,37 @@ func TestRegisterLogTrigger_InputValidation(t *testing.T) {
 
 	t.Run("nil config returns user error", func(t *testing.T) {
 		service, mockSolana := setupTest(t)
-		mockSolana.On("GetSlotHeight", mock.Anything, mock.Anything).Return(&solana.GetSlotHeightReply{Height: 100}, nil).Maybe()
+		mockSolana.EXPECT().GetSlotHeight(mock.Anything, mock.Anything).Return(&solana.GetSlotHeightReply{Height: 100}, nil).Maybe()
 
-		_, err := service.RegisterLogTrigger(t.Context(), testTriggerID, capabilities.RequestMetadata{WorkflowID: testWorkflowID, WorkflowOwner: testWorkflowOwner}, nil)
+		_, err := service.RegisterLogTrigger(t.Context(), testTriggerID, testRequestMetadata(), nil)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "config cannot be nil")
 	})
 
 	t.Run("invalid address returns user error", func(t *testing.T) {
 		service, mockSolana := setupTest(t)
-		mockSolana.On("GetSlotHeight", mock.Anything, mock.Anything).Return(&solana.GetSlotHeightReply{Height: 100}, nil).Maybe()
+		mockSolana.EXPECT().GetSlotHeight(mock.Anything, mock.Anything).Return(&solana.GetSlotHeightReply{Height: 100}, nil).Maybe()
 
 		config := &solanacappb.FilterLogTriggerRequest{
 			Address:   []byte{1, 2, 3},
 			EventName: "TestEvent",
 			Name:      "test-filter",
 		}
-		_, err := service.RegisterLogTrigger(t.Context(), testTriggerID, capabilities.RequestMetadata{WorkflowID: testWorkflowID, WorkflowOwner: testWorkflowOwner}, config)
+		_, err := service.RegisterLogTrigger(t.Context(), testTriggerID, testRequestMetadata(), config)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "invalid address length")
 	})
 
 	t.Run("empty event name returns user error", func(t *testing.T) {
 		service, mockSolana := setupTest(t)
-		mockSolana.On("GetSlotHeight", mock.Anything, mock.Anything).Return(&solana.GetSlotHeightReply{Height: 100}, nil).Maybe()
+		mockSolana.EXPECT().GetSlotHeight(mock.Anything, mock.Anything).Return(&solana.GetSlotHeightReply{Height: 100}, nil).Maybe()
 
 		config := &solanacappb.FilterLogTriggerRequest{
 			Address:   make([]byte, 32),
 			EventName: "",
 			Name:      "test-filter",
 		}
-		_, err := service.RegisterLogTrigger(t.Context(), testTriggerID, capabilities.RequestMetadata{WorkflowID: testWorkflowID, WorkflowOwner: testWorkflowOwner}, config)
+		_, err := service.RegisterLogTrigger(t.Context(), testTriggerID, testRequestMetadata(), config)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "event name cannot be empty")
 	})
