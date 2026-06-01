@@ -423,25 +423,47 @@ func (e *WriteReport) attemptHadEnoughGas(request *evm.WriteReportRequest, info 
 	return info.GasLimit.Uint64() > receiverGasBudget, receiverGasBudget
 }
 
+func unrecoverableTxLogMessage(state contracts.TransmissionState, attemptedLocally bool) string {
+	const remote = "Returning without a transmission attempt - prior transmission by another node"
+	const local = "Transaction written to the forwarder, but"
+	switch state {
+	case contracts.TransmissionStateInvalidReceiver:
+		if attemptedLocally {
+			return local + " receiver was marked as invalid"
+		}
+		return remote + " marked receiver as invalid"
+	case contracts.TransmissionStateFailed:
+		if attemptedLocally {
+			return local + " failed to execute at the receiver contract"
+		}
+		return remote + " failed at the receiver contract"
+	default:
+		if attemptedLocally {
+			return local + " failed to be written to the consumer contract"
+		}
+		return remote + " in unrecoverable state"
+	}
+}
+
 func (e *WriteReport) processUnrecoverableTxState(ctx context.Context, request *evm.WriteReportRequest, txHash evmtypes.Hash, transmissionState contracts.TransmissionState, transmissionID contracts.TransmissionID, txAttemptedLocally bool) (*evm.WriteReportReply, error) {
 	var message *string
 	if transmissionState == contracts.TransmissionStateInvalidReceiver {
 		message = getInvalidReceiverMessage(transmissionID.Receiver[:])
 	} else {
-		message = capcommon.Ptr(UnknownIssueExecutingReceiverContractMessage)
+		message = new(UnknownIssueExecutingReceiverContractMessage)
 	}
 
-	if !txAttemptedLocally {
-		e.lggr.Infow("Returning without a transmission attempt - transmission already attempted, receiver was marked as invalid", "message", message)
+	if txAttemptedLocally {
+		e.lggr.Errorw(unrecoverableTxLogMessage(transmissionState, txAttemptedLocally), "txHash", common.Bytes2Hex(txHash[:]), "message", message, "receiver", common.Bytes2Hex(request.Receiver))
 	} else {
-		e.lggr.Errorw("Transaction written to the forwarder, but failed to be written to the consumer contract", "receiver", common.Bytes2Hex(request.Receiver), "message", message, "transmissionState", transmissionState)
+		e.lggr.Infow(unrecoverableTxLogMessage(transmissionState, txAttemptedLocally), "txHash", common.Bytes2Hex(txHash[:]), "message", message, "receiver", common.Bytes2Hex(request.Receiver))
 	}
 
 	return e.fetchTransactionReceiptAndCreateReply(ctx, txHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED, message)
 }
 
 func getInvalidReceiverMessage(receiver []byte) *string {
-	return capcommon.Ptr(fmt.Sprintf("Invalid receiver: %s", common.Bytes2Hex(receiver)))
+	return new(fmt.Sprintf("Invalid receiver: %s", common.Bytes2Hex(receiver)))
 }
 
 func getTransmissionID(workflowExecutionID string, request *evm.WriteReportRequest) (contracts.TransmissionID, error) {
@@ -485,7 +507,7 @@ func (e *WriteReport) fetchTransactionReceiptAndCreateReply(ctx context.Context,
 	}
 	message := errorMessage
 	if receiverStatus == evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED && errorMessage == nil {
-		message = capcommon.Ptr("receiver contract execution failure")
+		message = new("receiver contract execution failure")
 	}
 
 	txStatus := evm.TxStatus_TX_STATUS_SUCCESS
