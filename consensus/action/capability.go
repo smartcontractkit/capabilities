@@ -577,7 +577,7 @@ func (c *consensusCapability) validateRequestSize(ctx context.Context, lggr logg
 				"inputSizeBytes", inputSize,
 				"metadataSizeBytes", metadataSize,
 				"err", err)
-			return int(totalSize), caperrors.NewPublicUserError(fmt.Errorf("request size %d bytes exceeds maximum allowed size: %w", totalSize, err), caperrors.InvalidArgument)
+			return int(totalSize), caperrors.NewLimitExceededError(fmt.Sprintf("request size %d bytes exceeds maximum allowed size", totalSize), err)
 		}
 		return int(totalSize), caperrors.NewPublicSystemError(fmt.Errorf("unexpected error checking request size limit: %w", err), caperrors.Internal)
 	}

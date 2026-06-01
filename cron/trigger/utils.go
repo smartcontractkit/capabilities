@@ -42,7 +42,7 @@ func enforceFastestSchedule(lggr logger.Logger, jobDef gocron.JobDefinition, max
 
 	for i := 1; i < len(nextRuns); i++ {
 		if nextRuns[i].Before(nextRuns[i-1].Add(maximumFastest)) {
-			return caperrors.NewPublicUserError(fmt.Errorf("maximum fastest cron schedule is %s", maximumFastest.String()), caperrors.InvalidArgument)
+			return caperrors.NewPublicUserError(fmt.Errorf("maximum fastest cron schedule is %s", maximumFastest.String()), caperrors.LimitExceeded)
 		}
 	}
 
