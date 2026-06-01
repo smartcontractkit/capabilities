@@ -120,7 +120,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 	if err != nil {
 		return nil, capabilities.ResponseMetadata{}, err
 	}
-	e.lggr = e.lggr.With("transmissionID", transmissionID)
+	e.lggr = e.lggr.With(transmissionID.LogAttrs()...)
 
 	ctx = contexts.WithChainSelector(ctx, e.chainSelector)
 	if request.GasConfig == nil || request.GasConfig.GasLimit == 0 {
@@ -169,8 +169,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 			return nil, capabilities.ResponseMetadata{}, err
 		}
 
-		e.lggr.Infow("Transmission already done by another node but failed due to invalid receiver, not reattempting", "txHash", common.Bytes2Hex(txHash[:]))
-		reply, err := e.processUnrecoverableTxState(ctx, request, *txHash, transmissionInfo.State, transmissionID, false)
+		reply, err := e.processUnrecoverableTxState(ctx, *txHash, transmissionInfo.State, transmissionID, false)
 		return reply, capabilities.ResponseMetadata{}, err
 	case contracts.TransmissionStateFailed:
 		hadEnoughGas, calculatedReceiverGasBudget := e.attemptHadEnoughGas(request, transmissionInfo)
@@ -186,7 +185,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 			}
 
 			e.lggr.Infow("Returning without a transmission attempt - transmission already attempted and failed with sufficient gas limit", "transmissionTxHash", common.Bytes2Hex(txHash[:]), "receiverGasBudget", calculatedReceiverGasBudget, "transmissionReceiverGasBudget", transmissionInfo.GasLimit)
-			reply, err := e.processUnrecoverableTxState(ctx, request, *txHash, transmissionInfo.State, transmissionID, false)
+			reply, err := e.processUnrecoverableTxState(ctx, *txHash, transmissionInfo.State, transmissionID, false)
 			return reply, capabilities.ResponseMetadata{}, err
 		}
 		monitoring.LogAndEmitSuccess(ctx, "Retrying failed transmission after prior attempt had insufficient receiver gas", e.lggr, e.beholderProcessor,
@@ -264,7 +263,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 			}
 			txHash = originalTxHash
 		}
-		reply, err := e.processUnrecoverableTxState(ctx, request, *txHash, newTransmissionInfo.State, transmissionID, true)
+		reply, err := e.processUnrecoverableTxState(ctx, *txHash, newTransmissionInfo.State, transmissionID, true)
 		return reply, meteringMetadata, err
 	default:
 		errorMsg := getInvalidStateErrorMessage(newTransmissionInfo.State)
@@ -445,7 +444,7 @@ func unrecoverableTxLogMessage(state contracts.TransmissionState, attemptedLocal
 	}
 }
 
-func (e *WriteReport) processUnrecoverableTxState(ctx context.Context, request *evm.WriteReportRequest, txHash evmtypes.Hash, transmissionState contracts.TransmissionState, transmissionID contracts.TransmissionID, txAttemptedLocally bool) (*evm.WriteReportReply, error) {
+func (e *WriteReport) processUnrecoverableTxState(ctx context.Context, txHash evmtypes.Hash, transmissionState contracts.TransmissionState, transmissionID contracts.TransmissionID, txAttemptedLocally bool) (*evm.WriteReportReply, error) {
 	var message *string
 	if transmissionState == contracts.TransmissionStateInvalidReceiver {
 		message = getInvalidReceiverMessage(transmissionID.Receiver[:])
@@ -454,9 +453,9 @@ func (e *WriteReport) processUnrecoverableTxState(ctx context.Context, request *
 	}
 
 	if txAttemptedLocally {
-		e.lggr.Errorw(unrecoverableTxLogMessage(transmissionState, txAttemptedLocally), "txHash", common.Bytes2Hex(txHash[:]), "message", message, "receiver", common.Bytes2Hex(request.Receiver))
+		e.lggr.Errorw(unrecoverableTxLogMessage(transmissionState, txAttemptedLocally), "txHash", common.Bytes2Hex(txHash[:]), "message", message)
 	} else {
-		e.lggr.Infow(unrecoverableTxLogMessage(transmissionState, txAttemptedLocally), "txHash", common.Bytes2Hex(txHash[:]), "message", message, "receiver", common.Bytes2Hex(request.Receiver))
+		e.lggr.Infow(unrecoverableTxLogMessage(transmissionState, txAttemptedLocally), "txHash", common.Bytes2Hex(txHash[:]), "message", message)
 	}
 
 	return e.fetchTransactionReceiptAndCreateReply(ctx, txHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED, message)
@@ -717,7 +716,7 @@ func (thr *TxHashRetriever) GetSuccessfulTransmissionHash(ctx context.Context) (
 		}
 	}
 
-	thr.lggr.Errorw("No successful transmission found", append(thr.transmissionID.GetIDPartsForDebugging(), "txCount", len(details), "transactions", details.String())...)
+	thr.lggr.Errorw("No successful transmission found", append(thr.transmissionID.LogAttrs(), "txCount", len(details), "transactions", details.String())...)
 	return nil, fmt.Errorf("no successful transmission found for: %s. Found %d transactions (all failed): %s",
 		thr.transmissionID.GetDebugID(), len(details), details)
 }
@@ -760,7 +759,7 @@ func (thr *TxHashRetriever) GetFailedTransmissionHashWithCount(ctx context.Conte
 	lggrKeyValues := append([]any{
 		"txCount", len(details),
 		"selectedTxHash", hex.EncodeToString(details[earliestIdx].TxHash[:]),
-	}, thr.transmissionID.GetIDPartsForDebugging()...)
+	}, thr.transmissionID.LogAttrs()...)
 	thr.lggr.Debugw("Returning earliest failed transmission", lggrKeyValues...)
 
 	return &details[earliestIdx].TxHash, len(details), nil
