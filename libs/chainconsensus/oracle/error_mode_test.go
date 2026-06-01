@@ -81,13 +81,13 @@ func TestErrorMode(t *testing.T) {
 				ExpectedResult: []string{"happy-path-error"},
 				ExpectedCount:  2, // "happy-path-error" seen by 2 nodes
 			},
-		{
-			Name:           "Happy path: returns slice of most common errors",
-			F:              2,
-			ObservedErrors: []string{"error-1", "error-2", "error-2", "error-3", "error-4"},
-			ExpectedResult: []string{"error-2", "error-1"},
-			ExpectedCount:  3, // accumulated count: "error-2"(2) + "error-1"(1) = 3, just enough to reach F+1=3
-		},
+			{
+				Name:           "Happy path: returns slice of most common errors",
+				F:              2,
+				ObservedErrors: []string{"error-1", "error-2", "error-2", "error-3", "error-4"},
+				ExpectedResult: []string{"error-2", "error-1"},
+				ExpectedCount:  3, // accumulated count: "error-2"(2) + "error-1"(1) = 3, just enough to reach F+1=3
+			},
 		}
 		for _, tc := range testCases {
 			t.Run(tc.Name, func(t *testing.T) {
