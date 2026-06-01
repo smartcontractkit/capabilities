@@ -235,8 +235,8 @@ github.com/scylladb/go-reflectx v1.0.1 h1:b917wZM7189pZdlND9PbIJ6NQxfDPfBvUaQ7cj
 github.com/scylladb/go-reflectx v1.0.1/go.mod h1:rWnOfDIRWBGN0miMLIcoPt/Dhi2doCMZqwMCJ3KupFc=
 github.com/shopspring/decimal v1.4.0 h1:bxl37RwXBklmTi0C79JfXCEBD1cqqHt0bbgBAGFp81k=
 github.com/shopspring/decimal v1.4.0/go.mod h1:gawqmDU56v4yIKSwfBSFip1HdCCXN8/+DMd9qYNcwME=
-github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260521172254-c4b42d8c0edf h1:DM2sli3mkh+mFrt1HfEHCj2mRd/yr+GGbnGIwzr9bIs=
-github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260521172254-c4b42d8c0edf/go.mod h1:KkraahK2OHQheYMhEISVl+dTm4tH8ui9bv0apR5cBJg=
+github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260601161303-0b4b1ac1c3fb h1:rS8SazTuMNU2dX8D3lPw8dBUIl1nZdcfojIQsBxeC68=
+github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260601161303-0b4b1ac1c3fb/go.mod h1:bdh6ANWBJiDEC8tp66ZyLxdfTJSdb00Bgu38Fb+nWyE=
 github.com/smartcontractkit/capabilities/libs v0.0.0-20260521172254-c4b42d8c0edf h1:ZQR113C/6YhAKHioe1S3UovH+SkNs7l/NLBoyvjuKpM=
 github.com/smartcontractkit/capabilities/libs v0.0.0-20260521172254-c4b42d8c0edf/go.mod h1:3blTp8qDW4fvhtou8tJnM9q9U1eeUK5NvHpzifxObQs=
 github.com/smartcontractkit/chain-selectors v1.0.100 h1:wpiSpmI/eFjY+wx/nPr5VuNF4hki0prIBMKEaQWn3g4=
