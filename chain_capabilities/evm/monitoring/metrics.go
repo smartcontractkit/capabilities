@@ -98,6 +98,9 @@ type Metrics struct {
 	WriteReportDuplicateTx struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
+	WriteReportInsufficientGasRetry struct {
+		basic commoncapbeholder.MetricsCapBasic
+	}
 	LogTriggerSuccess struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
@@ -208,6 +211,11 @@ func NewMetrics() (Metrics, error) {
 	m.WriteReportDuplicateTx.basic, err = commoncapbeholder.NewMetricsCapBasic(wrDuplicateTx)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create write report duplicate tx metric: %w", err)
+	}
+	wrInsufficientGasRetry := commoncapbeholder.NewMetricsInfoCapBasic(ns("write_report_insufficient_gas_retry"), commonbeholder.ToSchemaFullName(&WriteReportInsufficientGasRetry{}))
+	m.WriteReportInsufficientGasRetry.basic, err = commoncapbeholder.NewMetricsCapBasic(wrInsufficientGasRetry)
+	if err != nil {
+		return Metrics{}, fmt.Errorf("failed to create write report insufficient gas retry metric: %w", err)
 	}
 
 	// -- LogTrigger --
@@ -367,6 +375,12 @@ func (m *Metrics) OnWriteReportInvalidTransmissionState(ctx context.Context, msg
 func (m *Metrics) OnWriteReportDuplicateTx(ctx context.Context, msg *WriteReportDuplicateTx) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
 	m.WriteReportDuplicateTx.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
+	return nil
+}
+
+func (m *Metrics) OnWriteReportInsufficientGasRetry(ctx context.Context, msg *WriteReportInsufficientGasRetry) error {
+	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
+	m.WriteReportInsufficientGasRetry.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
 	return nil
 }
 
@@ -628,6 +642,19 @@ func (r *WriteReportDuplicateTx) LogAttributes() []attribute.KeyValue {
 }
 
 func (r *WriteReportDuplicateTx) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *WriteReportInsufficientGasRetry) LogAttributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
+		attribute.String("receiver", getReceiver(r.Req.GetReceiver())),
+		attribute.Int64("queue_position", int64(r.GetQueuePosition())),
+		attribute.Int64("receiver_gas_budget", int64(r.GetReceiverGasBudget())),
+		attribute.Int64("transmission_receiver_gas_budget", int64(r.GetTransmissionReceiverGasBudget())),
+	}, r.ExecutionContext.LogAttributes()...)
+}
+
+func (r *WriteReportInsufficientGasRetry) MetricAttributes() []attribute.KeyValue {
 	return r.ExecutionContext.MetricsAttributes()
 }
 
