@@ -313,6 +313,10 @@ func (e *WriteReport) pollTransmissionInfo(
 	hadSuccessfulPoll := false
 	defer func() {
 		stageTimer.Stop()
+		if ctx.Err() != nil {
+			e.lggr.Infow("Timed out before a valid transmission state was found")
+		}
+
 		if !deltaStagePassed && hadSuccessfulPoll {
 			monitoring.LogAndEmitSuccess(
 				ctx,
