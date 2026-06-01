@@ -16,6 +16,7 @@ type ConsensusMetrics interface {
 	RecordOutcomeChainHeight(ctx context.Context, height *ctypes.ChainHeight)
 	RecordRoundObservationSize(ctx context.Context, size int)
 	RecordRequestObservationSize(ctx context.Context, size int)
+	RecordIdenticalResponseCount(ctx context.Context, count int, observationType string)
 
 	// metrics for consensus' poller
 	RecordQueueSize(ctx context.Context, size int)
@@ -30,17 +31,31 @@ type ConsensusMetrics interface {
 var prefixes = []string{"evm_", "chain_"}
 
 func MetricViews() []sdkmetric.View {
-	instrumentNames := []string{
-		"capability_consensus_round_observation_size",
-		"capability_consensus_request_observation_size",
+	type instrumentView struct {
+		name       string
+		boundaries []float64
+	}
+	instruments := []instrumentView{
+		{
+			name:       "capability_consensus_round_observation_size",
+			boundaries: []float64{0, 10, 100, 1000, 10000, 100000, 1000000},
+		},
+		{
+			name:       "capability_consensus_request_observation_size",
+			boundaries: []float64{0, 10, 100, 1000, 10000, 100000, 1000000},
+		},
+		{
+			name:       "capability_consensus_identical_response_count",
+			boundaries: []float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
+		},
 	}
 	var views []sdkmetric.View
 	for _, prefix := range prefixes {
-		for _, name := range instrumentNames {
+		for _, inst := range instruments {
 			views = append(views, sdkmetric.NewView(
-				sdkmetric.Instrument{Name: prefix + name},
+				sdkmetric.Instrument{Name: prefix + inst.name},
 				sdkmetric.Stream{Aggregation: sdkmetric.AggregationExplicitBucketHistogram{
-					Boundaries: []float64{0, 10, 100, 1000, 10000, 100000, 1000000},
+					Boundaries: inst.boundaries,
 				}},
 			))
 		}

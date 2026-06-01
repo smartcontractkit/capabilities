@@ -15,7 +15,8 @@ var errInsufficientErrorOb = fmt.Errorf("insufficient number of errors")
 // 2. The number of observed errors is at least F+1.
 // If no single error was observed by at least F+1 nodes, it returns a slice
 // of the most frequently observed errors whose combined observation count equals F+1.
-func modeForError(N, F int, requestID string, aos []attributedObservation) ([][]byte, error) {
+// The returned int is the count of the most frequently observed error(s) (not necessarily identical).
+func modeForError(N, F int, requestID string, aos []attributedObservation) ([][]byte, int, error) {
 	type keyT [sha256.Size]byte
 	counters := make(map[keyT]*counter[[]byte])
 	var totalNum int
@@ -61,7 +62,7 @@ func modeForError(N, F int, requestID string, aos []attributedObservation) ([][]
 
 	expectedObservations := byzQuorumSize(N, F)
 	if totalNum < expectedObservations {
-		return nil, fmt.Errorf("insufficient number of observations: expected %d, got %d", expectedObservations, totalNum)
+		return nil, 0, fmt.Errorf("insufficient number of observations: expected %d, got %d", expectedObservations, totalNum)
 	}
 
 	sortedCounters := make([]counter[[]byte], 0, len(counters))
@@ -87,8 +88,8 @@ func modeForError(N, F int, requestID string, aos []attributedObservation) ([][]
 	}
 
 	if count < F+1 {
-		return nil, fmt.Errorf("%w: expected %d, got %d", errInsufficientErrorOb, F+1, count)
+		return nil, count, fmt.Errorf("%w: expected %d, got %d", errInsufficientErrorOb, F+1, count)
 	}
 
-	return result, nil
+	return result, count, nil
 }

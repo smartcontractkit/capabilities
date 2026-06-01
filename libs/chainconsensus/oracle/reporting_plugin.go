@@ -455,7 +455,8 @@ func (rp *reportingPlugin) agreeOnObservationType(requestID string, aos []attrib
 		}
 	}
 
-	return mode[ctypes.ObservationType, ctypes.ObservationType](rp.config.N, rp.config.F, iterator)
+	value, _, err := mode[ctypes.ObservationType, ctypes.ObservationType](rp.config.N, rp.config.F, iterator)
+	return value, err
 }
 
 func (rp *reportingPlugin) aggregateValue(requestID string, aos []attributedObservation) (*pb.Decimal, error) {
@@ -520,7 +521,8 @@ func (rp *reportingPlugin) agreeOnAggregationMethod(requestID string, aos []attr
 		}
 	}
 
-	return mode[string, string](rp.config.N, rp.config.F, iterator)
+	value, _, err := mode[string, string](rp.config.N, rp.config.F, iterator)
+	return value, err
 }
 
 func (rp *reportingPlugin) agreeOnMissingRequestIDs(aos []attributedObservation) ([]string, error) {
@@ -540,7 +542,7 @@ func (rp *reportingPlugin) agreeOnMissingRequestIDs(aos []attributedObservation)
 	return result, nil
 }
 
-func (rp *reportingPlugin) agreeOnEventuallyConsistentValue(requestID string, aos []attributedObservation) ([]byte, error) {
+func (rp *reportingPlugin) agreeOnEventuallyConsistentValue(requestID string, aos []attributedObservation) ([]byte, int, error) {
 	iterator := func(yield func(commontypes.OracleID, *observation[[32]byte, []byte]) bool) {
 		for _, ob := range aos {
 			requestOb, ok := ob.Observation.Observations[requestID]
@@ -568,7 +570,7 @@ func (rp *reportingPlugin) agreeOnEventuallyConsistentValue(requestID string, ao
 	return mode[[32]byte, []byte](rp.config.N, rp.config.F, iterator)
 }
 
-func (rp *reportingPlugin) agreeOnHashableValue(requestID string, aos []attributedObservation) ([]byte, error) {
+func (rp *reportingPlugin) agreeOnHashableValue(requestID string, aos []attributedObservation) ([]byte, int, error) {
 	iterator := func(yield func(commontypes.OracleID, *observation[[32]byte, []byte]) bool) {
 		for _, ob := range aos {
 			requestOb, ok := ob.Observation.Observations[requestID]
@@ -642,7 +644,7 @@ type volatileOutcomeCandidate struct {
 	heights      []int64
 }
 
-func (rp *reportingPlugin) agreeOnVolatileValue(requestID string, aos []attributedObservation) (*ctypes.RequestOutcome, error) {
+func (rp *reportingPlugin) agreeOnVolatileValue(requestID string, aos []attributedObservation) (*ctypes.RequestOutcome, int, error) {
 	candidates := make(map[ctypes.Hash]volatileOutcomeCandidate)
 	var totalNum int
 	for _, ao := range aos {
@@ -682,7 +684,7 @@ func (rp *reportingPlugin) agreeOnVolatileValue(requestID string, aos []attribut
 	expectedObs := byzQuorumSize(rp.config.N, rp.config.F)
 
 	if totalNum < expectedObs {
-		return nil, fmt.Errorf("insufficient number of observations: expected %d, got %d", expectedObs, totalNum)
+		return nil, 0, fmt.Errorf("insufficient number of observations: expected %d, got %d", expectedObs, totalNum)
 	}
 
 	var best *volatileOutcomeCandidate
@@ -698,19 +700,19 @@ func (rp *reportingPlugin) agreeOnVolatileValue(requestID string, aos []attribut
 	if best != nil {
 		return &ctypes.RequestOutcome{
 			Outcome: &ctypes.RequestOutcome_Hashable{Hashable: best.hash[:]},
-		}, nil
+		}, best.supporters, nil
 	}
 
-	errPayload, err := modeForError(rp.config.N, rp.config.F, requestID, aos)
+	errPayload, errorCount, err := modeForError(rp.config.N, rp.config.F, requestID, aos)
 	if err != nil {
 		if errors.Is(err, errInsufficientErrorOb) {
-			return nil, errors.New("no volatile outcome candidate reached F+1 supporters")
+			return nil, errorCount, errors.New("no volatile outcome candidate reached F+1 supporters")
 		}
-		return nil, err
+		return nil, errorCount, err
 	}
 	return &ctypes.RequestOutcome{
 		Outcome: &ctypes.RequestOutcome_Error{Error: &ctypes.RequestError{Errors: errPayload}},
-	}, nil
+	}, errorCount, nil
 }
 
 func (rp *reportingPlugin) agreeOnChainHeight(aos []attributedObservation) (*ctypes.ChainHeight, error) {
@@ -731,7 +733,7 @@ type attributedObservation struct {
 }
 
 func (rp *reportingPlugin) Outcome(
-	_ context.Context,
+	ctx context.Context,
 	outctx ocr3types.OutcomeContext,
 	rawQuery types.Query,
 	rawAOs []types.AttributedObservation,
@@ -780,7 +782,8 @@ func (rp *reportingPlugin) Outcome(
 				Outcome:   &ctypes.RequestOutcome_Aggregatable{Aggregatable: value},
 			})
 		case ctypes.ObservationType_EVENTUALLY_CONSISTENT:
-			value, err := rp.agreeOnEventuallyConsistentValue(requestID, aos)
+			value, identicalCount, err := rp.agreeOnEventuallyConsistentValue(requestID, aos)
+			rp.metrics.RecordIdenticalResponseCount(ctx, identicalCount, observationType.String())
 			if err != nil {
 				rp.logger.Infow("Could not determine request value", "requestID", requestID, "err", err)
 				continue
@@ -795,7 +798,8 @@ func (rp *reportingPlugin) Outcome(
 				Outcome:   &ctypes.RequestOutcome_LockableToBlock{LockableToBlock: &emptypb.Empty{}},
 			})
 		case ctypes.ObservationType_ERROR:
-			requestErrors, err := modeForError(rp.config.N, rp.config.F, requestID, aos)
+			requestErrors, identicalCount, err := modeForError(rp.config.N, rp.config.F, requestID, aos)
+			rp.metrics.RecordIdenticalResponseCount(ctx, identicalCount, observationType.String())
 			if err != nil {
 				rp.logger.Infow("Could not determine request error", "requestID", requestID, "err", err)
 				continue
@@ -805,18 +809,19 @@ func (rp *reportingPlugin) Outcome(
 				Outcome:   &ctypes.RequestOutcome_Error{Error: &ctypes.RequestError{Errors: requestErrors}},
 			})
 		case ctypes.ObservationType_HASHABLE:
-			value, err := rp.agreeOnHashableValue(requestID, aos)
+			value, identicalCount, err := rp.agreeOnHashableValue(requestID, aos)
+			rp.metrics.RecordIdenticalResponseCount(ctx, identicalCount, observationType.String())
 			if err != nil {
 				rp.logger.Infow("Could not determine request hashable value", "requestID", requestID, "err", err)
 				continue
 			}
-
 			outcome.Outcomes = append(outcome.Outcomes, &ctypes.RequestOutcome{
 				RequestID: requestID,
 				Outcome:   &ctypes.RequestOutcome_Hashable{Hashable: value},
 			})
 		case ctypes.ObservationType_VOLATILE:
-			volatileOutcome, err := rp.agreeOnVolatileValue(requestID, aos)
+			volatileOutcome, identicalCount, err := rp.agreeOnVolatileValue(requestID, aos)
+			rp.metrics.RecordIdenticalResponseCount(ctx, identicalCount, observationType.String())
 			if err != nil {
 				rp.logger.Infow("Could not determine volatile request outcome", "requestID", requestID, "err", err)
 				continue

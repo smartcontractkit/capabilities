@@ -890,6 +890,7 @@ func TestAgreeOnEventuallyConsistentValue(t *testing.T) {
 		nodesObservations [][]byte
 		expectedError     string
 		expectedValue     []byte
+		expectedCount     int
 	}{
 		{
 			name: "insufficient total number of observations",
@@ -898,6 +899,7 @@ func TestAgreeOnEventuallyConsistentValue(t *testing.T) {
 				[]byte("value1"),
 			},
 			expectedError: "insufficient number of observations: expected 3, got 2",
+			expectedCount: 0, // totalNum gate fires before any counting
 		},
 		{
 			name: "insufficient number of identical observations",
@@ -908,6 +910,7 @@ func TestAgreeOnEventuallyConsistentValue(t *testing.T) {
 				[]byte("value4"),
 			},
 			expectedError: "insufficient number of identical observations: expected 2, got 1",
+			expectedCount: 1, // best candidate has 1 supporter, needs F+1=2
 		},
 		{
 			name: "prefer value observed by oracle with lowest id",
@@ -918,6 +921,7 @@ func TestAgreeOnEventuallyConsistentValue(t *testing.T) {
 				[]byte("value1"),
 			},
 			expectedValue: []byte("value1"),
+			expectedCount: 2, // "value1" and "value2" both have 2 supporters; "value1" wins on lowest oracle id
 		},
 		{
 			name: "happy path",
@@ -928,6 +932,7 @@ func TestAgreeOnEventuallyConsistentValue(t *testing.T) {
 				[]byte("value4"),
 			},
 			expectedValue: []byte("value2"),
+			expectedCount: 2, // "value2" seen by 2 nodes
 		},
 	}
 	for _, tc := range testCases {
@@ -946,7 +951,8 @@ func TestAgreeOnEventuallyConsistentValue(t *testing.T) {
 					},
 				})
 			}
-			value, err := plugin.agreeOnEventuallyConsistentValue(id, nodesObservations)
+			value, actualCount, err := plugin.agreeOnEventuallyConsistentValue(id, nodesObservations)
+			require.Equal(t, tc.expectedCount, actualCount)
 			if tc.expectedError == "" {
 				require.NoError(t, err)
 				require.Equal(t, tc.expectedValue, value)
@@ -969,6 +975,7 @@ func TestAgreeOnHashableValue(t *testing.T) {
 		wrongLength       []bool   // if true, use Hashable with 31-byte payload (invalid length)
 		expectedError     string
 		expectedValue     []byte
+		expectedCount     int
 	}{
 		{
 			name: "insufficient total number of observations",
@@ -977,6 +984,7 @@ func TestAgreeOnHashableValue(t *testing.T) {
 				hash32(1),
 			},
 			expectedError: "insufficient number of observations: expected 3, got 2",
+			expectedCount: 0, // totalNum gate fires before any counting
 		},
 		{
 			name: "insufficient number of identical observations",
@@ -987,6 +995,7 @@ func TestAgreeOnHashableValue(t *testing.T) {
 				hash32(4),
 			},
 			expectedError: "insufficient number of identical observations: expected 2, got 1",
+			expectedCount: 1, // best candidate has 1 supporter, needs F+1=2
 		},
 		{
 			name: "prefer hash observed by oracle with lowest id when counts tie",
@@ -997,6 +1006,7 @@ func TestAgreeOnHashableValue(t *testing.T) {
 				hash32(1),
 			},
 			expectedValue: hash32(1),
+			expectedCount: 2, // hash32(1) and hash32(2) both have 2 supporters; hash32(1) wins on lowest oracle id
 		},
 		{
 			name: "happy path",
@@ -1007,6 +1017,7 @@ func TestAgreeOnHashableValue(t *testing.T) {
 				hash32(0xDD),
 			},
 			expectedValue: hash32(0xBB),
+			expectedCount: 2, // hash32(0xBB) seen by 2 nodes
 		},
 		{
 			name: "wrong observation type and wrong length are ignored",
@@ -1019,6 +1030,7 @@ func TestAgreeOnHashableValue(t *testing.T) {
 			useWrongType:  []bool{true, false, false, false},
 			wrongLength:   []bool{false, false, true, false},
 			expectedValue: hash32(1),
+			expectedCount: 2, // wrong-type and wrong-length yield nil in mode; hash32(1) at positions 1 and 3 = 2 supporters
 		},
 	}
 	for _, tc := range testCases {
@@ -1046,7 +1058,8 @@ func TestAgreeOnHashableValue(t *testing.T) {
 					},
 				})
 			}
-			value, err := plugin.agreeOnHashableValue(id, nodesObservations)
+			value, actualCount, err := plugin.agreeOnHashableValue(id, nodesObservations)
+			require.Equal(t, tc.expectedCount, actualCount)
 			if tc.expectedError == "" {
 				require.NoError(t, err)
 				require.Equal(t, tc.expectedValue, value)
@@ -1068,6 +1081,7 @@ func TestAgreeOnVolatileValue(t *testing.T) {
 		expectedError  string
 		expectedHash   []byte
 		expectedErrors [][]byte // error outcome (modeForError on Volatile.Error); nil if not expected
+		expectedCount  int
 	}{
 		{
 			name: "insufficient total number of observations",
@@ -1080,6 +1094,7 @@ func TestAgreeOnVolatileValue(t *testing.T) {
 				}}},
 			},
 			expectedError: "insufficient number of observations: expected 3, got 2",
+			expectedCount: 0, // totalNum gate fires before any candidate counting
 		},
 		{
 			name: "happy path",
@@ -1097,7 +1112,8 @@ func TestAgreeOnVolatileValue(t *testing.T) {
 					Observations: []*types.VolatileObservation{{Hash: hash32(3), Height: 4}},
 				}}},
 			},
-			expectedHash: hash32(2),
+			expectedHash:  hash32(2),
+			expectedCount: 2, // hash32(2) supported by 2 nodes
 		},
 		{
 			name: "tie-break prefers candidate with lower lowestOracle when supporter counts and median heights tie",
@@ -1115,7 +1131,8 @@ func TestAgreeOnVolatileValue(t *testing.T) {
 					Observations: []*types.VolatileObservation{{Hash: hash32(1), Height: 10}},
 				}}},
 			},
-			expectedHash: hash32(1),
+			expectedHash:  hash32(1),
+			expectedCount: 2, // hash32(1) wins on lowest oracle id; both candidates have 2 supporters
 		},
 		{
 			name: "tie-break prefers candidate with higher median height when supporter counts tie",
@@ -1133,7 +1150,8 @@ func TestAgreeOnVolatileValue(t *testing.T) {
 					Observations: []*types.VolatileObservation{{Hash: hash32(2), Height: 20}},
 				}}},
 			},
-			expectedHash: hash32(2),
+			expectedHash:  hash32(2),
+			expectedCount: 2, // hash32(2) wins on higher median height; both candidates have 2 supporters
 		},
 		{
 			name: "wrong observation type and wrong hash length are ignored",
@@ -1149,7 +1167,8 @@ func TestAgreeOnVolatileValue(t *testing.T) {
 					Observations: []*types.VolatileObservation{{Hash: hash32(1), Height: 4}},
 				}}},
 			},
-			expectedHash: hash32(1),
+			expectedHash:  hash32(1),
+			expectedCount: 2, // wrong-type and wrong-length skip candidate registration; hash32(1) at positions 1 and 3 = 2 supporters
 		},
 		{
 			name: "no hash quorum and no volatile errors yields error",
@@ -1168,6 +1187,7 @@ func TestAgreeOnVolatileValue(t *testing.T) {
 				}}},
 			},
 			expectedError: "no volatile outcome candidate reached F+1 supporters",
+			expectedCount: 0, // no volatile errors observed, modeForError has empty sortedCounters
 		},
 		{
 			name: "no hash quorum but shared Volatile.Error yields error outcome",
@@ -1186,6 +1206,7 @@ func TestAgreeOnVolatileValue(t *testing.T) {
 				}}},
 			},
 			expectedErrors: [][]byte{[]byte("boom")},
+			expectedCount:  3, // "boom" seen by all 3 nodes, modeForError identicalCount = 3
 		},
 	}
 	for _, tc := range testCases {
@@ -1205,7 +1226,8 @@ func TestAgreeOnVolatileValue(t *testing.T) {
 					},
 				})
 			}
-			outcome, err := plugin.agreeOnVolatileValue(id, nodesObservations)
+			outcome, actualCount, err := plugin.agreeOnVolatileValue(id, nodesObservations)
+			require.Equal(t, tc.expectedCount, actualCount)
 			if tc.expectedError != "" {
 				require.EqualError(t, err, tc.expectedError)
 				require.Nil(t, outcome)

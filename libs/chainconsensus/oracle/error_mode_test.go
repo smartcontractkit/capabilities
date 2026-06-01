@@ -51,37 +51,43 @@ func TestErrorMode(t *testing.T) {
 			ObservedErrors []string
 			ExpectedResult []string
 			ExpectedError  string
+			ExpectedCount  int
 		}{
 			{
 				Name:           "Insufficient number of valid observations",
 				F:              1,
 				ObservedErrors: []string{"error-1", "error-2"},
 				ExpectedError:  "insufficient number of observations: expected 3, got 2",
+				ExpectedCount:  0, // totalNum gate fires before any counting
 			},
 			{
 				Name:           "Insufficient number of observations: request is not present or nil",
 				F:              1,
 				ObservedErrors: []string{"error-1", requestNotPresent, requestIsNil},
 				ExpectedError:  "insufficient number of observations: expected 3, got 1",
+				ExpectedCount:  0, // totalNum gate fires before any counting
 			},
 			{
 				Name:           "Insufficient number of valid errors",
 				F:              1,
 				ObservedErrors: []string{"error-1", nonError, nonError, emptyError},
 				ExpectedError:  "insufficient number of errors: expected 2, got 1",
+				ExpectedCount:  1, // "error-1" was seen by 1 node; non-error and empty-error are excluded
 			},
 			{
 				Name:           "Happy path F+1 identical errors",
 				F:              1,
 				ObservedErrors: []string{"another-error", "happy-path-error", "happy-path-error"},
 				ExpectedResult: []string{"happy-path-error"},
+				ExpectedCount:  2, // "happy-path-error" seen by 2 nodes
 			},
-			{
-				Name:           "Happy path: returns slice of most common errors",
-				F:              2,
-				ObservedErrors: []string{"error-1", "error-2", "error-2", "error-3", "error-4"},
-				ExpectedResult: []string{"error-2", "error-1"},
-			},
+		{
+			Name:           "Happy path: returns slice of most common errors",
+			F:              2,
+			ObservedErrors: []string{"error-1", "error-2", "error-2", "error-3", "error-4"},
+			ExpectedResult: []string{"error-2", "error-1"},
+			ExpectedCount:  3, // accumulated count: "error-2"(2) + "error-1"(1) = 3, just enough to reach F+1=3
+		},
 		}
 		for _, tc := range testCases {
 			t.Run(tc.Name, func(t *testing.T) {
@@ -95,12 +101,13 @@ func TestErrorMode(t *testing.T) {
 						Observation: strToObservation(ob),
 					}
 				}
-				rawActualErrors, err := modeForError(N, tc.F, requestID, aos)
+				rawActualErrors, actualCount, err := modeForError(N, tc.F, requestID, aos)
 				if tc.ExpectedError != "" {
 					require.ErrorContains(t, err, tc.ExpectedError)
 				} else {
 					require.NoError(t, err)
 				}
+				require.Equal(t, tc.ExpectedCount, actualCount)
 				var actualErrors []string
 				for _, actualError := range rawActualErrors {
 					actualErrors = append(actualErrors, string(actualError))

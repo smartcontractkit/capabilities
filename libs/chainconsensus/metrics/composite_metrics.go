@@ -32,6 +32,12 @@ func (m compositeMetrics) RecordRequestObservationSize(ctx context.Context, size
 	}
 }
 
+func (m compositeMetrics) RecordIdenticalResponseCount(ctx context.Context, count int, observationType string) {
+	for _, metric := range m.metrics {
+		metric.RecordIdenticalResponseCount(ctx, count, observationType)
+	}
+}
+
 func (m compositeMetrics) RecordQueueSize(ctx context.Context, size int) {
 	for _, metric := range m.metrics {
 		metric.RecordQueueSize(ctx, size)
