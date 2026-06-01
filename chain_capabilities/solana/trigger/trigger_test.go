@@ -244,6 +244,26 @@ func TestRegisterLogTrigger(t *testing.T) {
 		require.NotNil(t, err)
 		mockSolana.AssertExpectations(t)
 	})
+
+	t.Run("service close stops polling without unregister", func(t *testing.T) {
+		service, mockSolana := setupTest(t)
+		request := createTestRequest()
+
+		mockSolana.EXPECT().GetSlotHeight(mock.Anything, mock.Anything).Return(&solana.GetSlotHeightReply{Height: 150}, nil).Maybe()
+		mockSolana.EXPECT().GetFiltersNames(mock.Anything).Return([]string{}, nil).Maybe()
+		mockSolana.EXPECT().RegisterLogTracking(mock.Anything, mock.AnythingOfType("solana.LPFilterQuery")).Return(nil).Once()
+		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
+
+		require.NoError(t, service.Start(ctx))
+
+		ch, err := service.RegisterLogTrigger(ctx, testTriggerID, testRequestMetadata(), request)
+		require.Nil(t, err)
+		require.NotNil(t, ch)
+
+		waitForTriggerRegistered(t, service, testTriggerID)
+
+		require.NoError(t, service.Close())
+	})
 }
 
 func TestUnregisterLogTrigger(t *testing.T) {
@@ -547,6 +567,7 @@ func TestStartPolling(t *testing.T) {
 		}
 
 		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return(expectedLogs, nil).Once()
+		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
 
 		telemetryContext := monitoring.TelemetryContext{
 			TsStart:         time.Now().UnixMilli(),

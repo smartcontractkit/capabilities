@@ -341,7 +341,7 @@ func (lts *SolanaLogTriggerService) RegisterLogTrigger(ctx context.Context, trig
 		pollCtx, cancel := context.WithCancel(svcCtx)
 		pollCtx = meta.ContextWithCRE(pollCtx)
 
-		var pollWG sync.WaitGroup
+		pollWG := new(sync.WaitGroup)
 		pollWG.Add(1)
 		lts.triggers.Write(triggerID, solanaLogTriggerState{
 			stopPolling: func() {
@@ -353,6 +353,7 @@ func (lts *SolanaLogTriggerService) RegisterLogTrigger(ctx context.Context, trig
 
 		defer pollWG.Done()
 		lts.startPolling(pollCtx, telemetryContext, config, triggerID, fromBlock, logCh)
+		lts.triggers.Delete(triggerID)
 	})
 
 	return logCh, nil
