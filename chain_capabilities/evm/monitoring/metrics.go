@@ -648,9 +648,9 @@ func (r *WriteReportDuplicateTx) MetricAttributes() []attribute.KeyValue {
 func (r *WriteReportInsufficientGasRetry) LogAttributes() []attribute.KeyValue {
 	return append([]attribute.KeyValue{
 		attribute.String("receiver", getReceiver(r.Req.GetReceiver())),
-		attribute.Int64("queue_position", int64(r.GetQueuePosition())),
-		attribute.Int64("receiver_gas_budget", int64(r.GetReceiverGasBudget())),
-		attribute.Int64("transmission_receiver_gas_budget", int64(r.GetTransmissionReceiverGasBudget())),
+		attribute.Int64("queue_position", int64(r.GetQueuePosition())),                                   //nolint:gosec // G115: EVM gas fits int64 for logging
+		attribute.Int64("receiver_gas_budget", int64(r.GetReceiverGasBudget())),                          //nolint:gosec // G115: EVM gas fits int64 for logging
+		attribute.Int64("transmission_receiver_gas_budget", int64(r.GetTransmissionReceiverGasBudget())), //nolint:gosec // G115: EVM gas fits int64 for logging
 	}, r.ExecutionContext.LogAttributes()...)
 }
 
