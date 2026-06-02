@@ -85,3 +85,11 @@ message AttributedSignature {
 message WriteReportSuccessfulEarlyReturn {
   monitoring.ExecutionContext execution_context = 20;
 }
+
+message WriteReportInsufficientGasRetry {
+  WriteReportRequest req = 1;
+  uint64 receiver_gas_budget = 2;
+  uint64 transmission_receiver_gas_budget = 3;
+  int32 queue_position = 4;
+  monitoring.ExecutionContext execution_context = 20;
+}
