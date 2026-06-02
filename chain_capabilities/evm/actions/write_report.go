@@ -151,7 +151,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 	case contracts.TransmissionStateSucceeded:
 		txHash, err := txHashRetriever.GetSuccessfulTransmissionHash(ctx)
 		if err != nil {
-			e.lggr.Errorw("Returning without a transmission attempt - report already onchain, but failed to retrieve its txHash", "error", err.Error())
+			e.lggr.Errorw("Returning without a transmission attempt - prior node transmission succeeded, but failed to retrieve its txHash", "error", err.Error())
 			return nil, capabilities.ResponseMetadata{}, err
 		}
 
@@ -169,7 +169,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 			return nil, capabilities.ResponseMetadata{}, err
 		}
 
-		e.lggr.Infow("Returning without a transmission attempt - prior transmission by another node marked receiver as invalid", "txHash", common.Bytes2Hex(txHash[:]))
+		e.lggr.Infow("Returning without a transmission attempt - prior node transmission marked receiver as invalid", "txHash", common.Bytes2Hex(txHash[:]))
 		reply, err := e.buildRevertReplyFromTx(ctx, *txHash, transmissionInfo, transmissionID)
 		return reply, capabilities.ResponseMetadata{}, err
 	case contracts.TransmissionStateFailed:
@@ -180,12 +180,12 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 				if errors.Is(err, ErrUnexpectedSuccessfulTransmission) {
 					monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportInvalidTransmissionState(telemetryContext, request, transmissionInfo, "WriteReport unexpected successful transmission", err.Error()))
 				} else {
-					e.lggr.Errorw("Returning without a transmission attempt - transmission already attempted, but failed to retrieve its tx hash", "error", err.Error(), "receiverGasBudget", calculatedReceiverGasBudget, "transmissionReceiverGasBudget", transmissionInfo.GasLimit)
+					e.lggr.Errorw("Returning without a transmission attempt - prior node transmission failed even though it had sufficient gas, but failed to retrieve its tx hash", "error", err.Error(), "receiverGasBudget", calculatedReceiverGasBudget, "transmissionReceiverGasBudget", transmissionInfo.GasLimit)
 				}
 				return nil, capabilities.ResponseMetadata{}, err
 			}
 
-			e.lggr.Infow("Returning without a transmission attempt - transmission already attempted and failed with sufficient gas limit", "txHash", common.Bytes2Hex(txHash[:]), "receiverGasBudget", calculatedReceiverGasBudget, "transmissionReceiverGasBudget", transmissionInfo.GasLimit)
+			e.lggr.Infow("Returning without a transmission attempt - prior node transmission failed even though it had sufficient gas sufficient gas", "txHash", common.Bytes2Hex(txHash[:]), "receiverGasBudget", calculatedReceiverGasBudget, "transmissionReceiverGasBudget", transmissionInfo.GasLimit)
 			reply, err := e.buildRevertReplyFromTx(ctx, *txHash, transmissionInfo, transmissionID)
 			return reply, capabilities.ResponseMetadata{}, err
 		}
