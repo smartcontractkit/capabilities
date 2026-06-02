@@ -165,7 +165,7 @@ func TestRegisterLogTrigger(t *testing.T) {
 
 		mockSolana.EXPECT().GetSlotHeight(mock.Anything, mock.Anything).Return(&solana.GetSlotHeightReply{Height: 150}, nil).Maybe()
 		mockSolana.EXPECT().RegisterLogTracking(mock.Anything, mock.AnythingOfType("solana.LPFilterQuery")).Return(nil).Once()
-		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
+		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
 		mockSolana.EXPECT().UnregisterLogTracking(mock.Anything, mock.AnythingOfType("string")).Return(nil).Once()
 
 		ch, err := service.RegisterLogTrigger(ctx, testTriggerID, testRequestMetadata(), request)
@@ -212,7 +212,7 @@ func TestRegisterLogTrigger(t *testing.T) {
 
 		mockSolana.EXPECT().GetSlotHeight(mock.Anything, mock.Anything).Return(&solana.GetSlotHeightReply{Height: 150}, nil).Maybe()
 		mockSolana.EXPECT().RegisterLogTracking(mock.Anything, mock.AnythingOfType("solana.LPFilterQuery")).Return(nil).Once()
-		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
+		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
 
 		// First registration should succeed
 		ch1, err := service.RegisterLogTrigger(ctx, testTriggerID, testRequestMetadata(), request)
@@ -252,7 +252,7 @@ func TestRegisterLogTrigger(t *testing.T) {
 		mockSolana.EXPECT().GetSlotHeight(mock.Anything, mock.Anything).Return(&solana.GetSlotHeightReply{Height: 150}, nil).Maybe()
 		mockSolana.EXPECT().GetFiltersNames(mock.Anything).Return([]string{}, nil).Maybe()
 		mockSolana.EXPECT().RegisterLogTracking(mock.Anything, mock.AnythingOfType("solana.LPFilterQuery")).Return(nil).Once()
-		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
+		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
 
 		require.NoError(t, service.Start(ctx))
 
@@ -275,7 +275,7 @@ func TestUnregisterLogTrigger(t *testing.T) {
 
 		mockSolana.EXPECT().GetSlotHeight(mock.Anything, mock.Anything).Return(&solana.GetSlotHeightReply{Height: 150}, nil).Maybe()
 		mockSolana.EXPECT().RegisterLogTracking(mock.Anything, mock.AnythingOfType("solana.LPFilterQuery")).Return(nil).Once()
-		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
+		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
 		mockSolana.EXPECT().UnregisterLogTracking(mock.Anything, mock.AnythingOfType("string")).Return(nil).Once()
 
 		// Register first
@@ -318,7 +318,7 @@ func TestUnregisterLogTrigger(t *testing.T) {
 
 		mockSolana.EXPECT().GetSlotHeight(mock.Anything, mock.Anything).Return(&solana.GetSlotHeightReply{Height: 150}, nil).Maybe()
 		mockSolana.EXPECT().RegisterLogTracking(mock.Anything, mock.AnythingOfType("solana.LPFilterQuery")).Return(nil).Once()
-		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
+		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
 		mockSolana.EXPECT().UnregisterLogTracking(mock.Anything, mock.AnythingOfType("string")).Return(errors.New("unregister failed")).Once()
 
 		// Register first
@@ -566,8 +566,8 @@ func TestStartPolling(t *testing.T) {
 			createTestLog(102, testPublicKey),
 		}
 
-		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return(expectedLogs, nil).Once()
-		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
+		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(expectedLogs, nil).Once()
+		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
 
 		telemetryContext := monitoring.TelemetryContext{
 			TsStart:         time.Now().UnixMilli(),
@@ -605,7 +605,7 @@ func TestStartPolling(t *testing.T) {
 		logCh := make(chan capabilities.TriggerAndId[*solanacappb.Log], 10)
 
 		// Return empty logs to simulate no new blocks
-		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
+		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
 
 		telemetryContext := createTestTelemetryContext()
 		startPollingAsync(ctx, t, service, telemetryContext, config, triggerID, startingBlock, logCh)
@@ -650,7 +650,7 @@ func TestStartPolling(t *testing.T) {
 		startingBlock := int64(100)
 		logCh := make(chan capabilities.TriggerAndId[*solanacappb.Log], 10)
 
-		mockSolanaService.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return(nil, errors.New("query failed")).Maybe()
+		mockSolanaService.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, errors.New("query failed")).Maybe()
 
 		telemetryContext := createTestTelemetryContext()
 		startPollingAsync(ctx, t, service, telemetryContext, config, triggerID, startingBlock, logCh)
@@ -679,7 +679,7 @@ func TestStartPolling(t *testing.T) {
 
 		firstBatch := []*solana.Log{createTestLog(101, testPublicKey)}
 
-		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return(firstBatch, nil).Maybe()
+		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(firstBatch, nil).Maybe()
 
 		meta = testRequestMetadata()
 		ctx = meta.ContextWithCRE(ctx)
@@ -705,8 +705,8 @@ func TestStartPolling(t *testing.T) {
 		logCh := make(chan capabilities.TriggerAndId[*solanacappb.Log], 10)
 
 		polled := make(chan struct{}, 1)
-		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).
-			Run(func(_ context.Context, _ []query.Expression, _ query.LimitAndSort) {
+		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Run(func(_ context.Context, _ []query.Expression, _ query.LimitAndSort, _ string) {
 				select {
 				case polled <- struct{}{}:
 				default:
@@ -767,7 +767,7 @@ func TestStartPolling(t *testing.T) {
 			createTestLog(105, testPublicKey),
 		}
 
-		mockSolanaService.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return(manyLogs, nil).Maybe()
+		mockSolanaService.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(manyLogs, nil).Maybe()
 
 		meta = testRequestMetadata()
 		ctx = meta.ContextWithCRE(ctx)
@@ -818,8 +818,8 @@ func TestStartPolling(t *testing.T) {
 		emptyLogs := []*solana.Log{}
 
 		var queryCallCount atomic.Int32
-		mockSolanaService.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).
-			RunAndReturn(func(_ context.Context, _ []query.Expression, _ query.LimitAndSort) ([]*solana.Log, error) {
+		mockSolanaService.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			RunAndReturn(func(_ context.Context, _ []query.Expression, _ query.LimitAndSort, _ string) ([]*solana.Log, error) {
 				queryCallCount.Add(1)
 				if queryCallCount.Load() == 1 {
 					return firstBatchLogs, nil
@@ -870,8 +870,8 @@ func TestStartPolling(t *testing.T) {
 		logCh := make(chan capabilities.TriggerAndId[*solanacappb.Log], 10)
 
 		// First call fails, second succeeds
-		mockSolanaService.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return(nil, errors.New("transient error")).Once()
-		mockSolanaService.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{createTestLog(101, testPublicKey)}, nil).Maybe()
+		mockSolanaService.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil, errors.New("transient error")).Once()
+		mockSolanaService.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{createTestLog(101, testPublicKey)}, nil).Maybe()
 
 		meta = testRequestMetadata()
 		ctx = meta.ContextWithCRE(ctx)
@@ -909,7 +909,7 @@ func TestStartPolling(t *testing.T) {
 			createTestLog(102, testPublicKey),
 		}
 
-		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return(logsWithNil, nil).Maybe()
+		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(logsWithNil, nil).Maybe()
 
 		meta = testRequestMetadata()
 		ctx = meta.ContextWithCRE(ctx)
@@ -1045,7 +1045,7 @@ func TestSolanaLogTriggerService_Integration(t *testing.T) {
 
 		mockSolana.EXPECT().RegisterLogTracking(mock.Anything, mock.AnythingOfType("solana.LPFilterQuery")).Return(nil).Once()
 		mockSolana.EXPECT().GetSlotHeight(mock.Anything, mock.Anything).Return(&solana.GetSlotHeightReply{Height: 102}, nil).Maybe()
-		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
+		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
 		mockSolana.EXPECT().UnregisterLogTracking(mock.Anything, mock.AnythingOfType("string")).Return(nil).Once()
 
 		ch, err := service.RegisterLogTrigger(ctx, testTriggerID, testRequestMetadata(), request)

@@ -454,7 +454,7 @@ func (lts *SolanaLogTriggerService) startPolling(ctx context.Context, telemetryC
 				query.NewSortBySequence(query.Asc),
 			)
 
-			logs, err := lts.SolanaService.QueryTrackedLogs(ctx, expressions, limitAndSort)
+			logs, err := lts.SolanaService.QueryTrackedLogs(ctx, expressions, limitAndSort, lts.generateFilterID(triggerID))
 			if err != nil {
 				summary := fmt.Sprintf("Failed to query tracked logs for trigger %s: %v", triggerID, err)
 				lts.logAndEmitError(ctx, telemetryContext, triggerID, summary, err.Error())

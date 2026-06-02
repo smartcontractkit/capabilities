@@ -31,6 +31,7 @@ type logReader struct {
 	types.SolanaService
 	forwarderProgramID solana.PublicKey
 	sigInProgress      soltypes.EventSignature
+	filterName         string
 }
 
 // OnChainTransmissionInfoProvider uses the ExecutionState PDA for success/failure and
@@ -172,8 +173,9 @@ func signatureFromInProgressLogs(inProgressLogs []*soltypes.Log) (solana.Signatu
 func (lr *logReader) registerInProgressFilter(ctx context.Context) error {
 	idlJSON := []byte(contracts.FetchForwarderIDL())
 	sigInProgress := soltypes.EventSignature(lptypes.NewEventSignatureFromName(eventReportInProgress))
+	filterName := eventReportInProgress + "_" + lr.forwarderProgramID.String()
 	err := lr.RegisterLogTracking(ctx, soltypes.LPFilterQuery{
-		Name:            eventReportInProgress + "_" + lr.forwarderProgramID.String(),
+		Name:            filterName,
 		Address:         soltypes.PublicKey(lr.forwarderProgramID),
 		EventName:       eventReportInProgress,
 		EventSig:        sigInProgress,
@@ -186,6 +188,7 @@ func (lr *logReader) registerInProgressFilter(ctx context.Context) error {
 	}
 
 	lr.sigInProgress = sigInProgress
+	lr.filterName = filterName
 	return nil
 }
 
@@ -199,7 +202,7 @@ func (lr *logReader) queryInProgress(ctx context.Context, transmissionID [32]byt
 		}),
 	}
 
-	logs, err := lr.QueryTrackedLogs(ctx, exprs, limit)
+	logs, err := lr.QueryTrackedLogs(ctx, exprs, limit, lr.filterName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query tracked logs: %w", err)
 	}
