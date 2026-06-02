@@ -3,6 +3,7 @@ package contracts_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/big"
 	"testing"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/sha3"
 
 	evmcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	workflowpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
@@ -22,6 +24,7 @@ import (
 	"github.com/smartcontractkit/chainlink-evm/gethwrappers/keystone/generated/forwarder"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
+
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 )
 
@@ -431,4 +434,47 @@ func TestCreForwarderCodecImpl_DecodeQueryTransmissionInfo(t *testing.T) {
 			}
 		}
 	})
+}
+
+// legacyDebugID reproduces the TransmissionID.GetDebugID() implementation as it
+// existed on main, when its output was used to seed the transmission schedule
+// permutation. The seed (and therefore every node's queue position) must not
+// change, so TransmissionID.String() must produce a byte-identical string.
+func legacyDebugID(t contracts.TransmissionID) string {
+	return fmt.Sprintf("receiver: %s, reportID: %s, workflowExecutionID %s",
+		common.Bytes2Hex(t.Receiver[:]),
+		common.Bytes2Hex(t.ReportID[:]),
+		common.Bytes2Hex(t.WorkflowExecutionID[:]))
+}
+
+// transmissionScheduleSeed mirrors the seed derivation in
+// common/transmission_schedule.transmissionScheduleSeed, which is what actually
+// consumes the string and feeds it to the permutation.
+func transmissionScheduleSeed(transmissionID string) [16]byte {
+	hash := sha3.New256()
+	hash.Write([]byte(transmissionID))
+	var key [16]byte
+	copy(key[:], hash.Sum(nil))
+	return key
+}
+
+func TestTransmissionID_ScheduleSeed_MatchesLegacySeed(t *testing.T) {
+	cases := map[string]contracts.TransmissionID{
+		"zero value": {},
+		"all set": {
+			Receiver:            common.BytesToAddress([]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14}),
+			ReportID:            [2]byte{0xab, 0xcd},
+			WorkflowExecutionID: [32]byte{0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa, 0x99, 0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0x00},
+		},
+	}
+
+	for name, id := range cases {
+		t.Run(name, func(t *testing.T) {
+			// The exact string must match, since it is hashed verbatim into the seed.
+			require.Equal(t, legacyDebugID(id), id.String(),
+				"String format drifted from the legacy GetDebugID format used to seed the schedule")
+			// And therefore the derived permutation seed must be identical too.
+			require.Equal(t, transmissionScheduleSeed(legacyDebugID(id)), transmissionScheduleSeed(id.String()))
+		})
+	}
 }

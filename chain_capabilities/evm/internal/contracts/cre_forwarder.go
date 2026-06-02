@@ -332,6 +332,9 @@ func (t TransmissionID) LogAttrs() []any {
 	}
 }
 
+// String returns the string used to seed the transmission schedule permutation.
+// Its exact format must remain stable across releases so that the derived seed (and
+// therefore the queue ordering) stays consistent with other nodes in the DON.
 func (t TransmissionID) String() string {
-	return fmt.Sprintf("receiver=%s reportID=%s workflowExecutionID=%s", t.ReceiverHex(), t.ReportIDHex(), t.WorkflowExecutionIDHex())
+	return fmt.Sprintf("receiver: %s, reportID: %s, workflowExecutionID %s", t.ReceiverHex(), t.ReportIDHex(), t.WorkflowExecutionIDHex())
 }
