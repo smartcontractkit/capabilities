@@ -169,7 +169,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 			return nil, capabilities.ResponseMetadata{}, err
 		}
 
-		e.lggr.Infow("Returning without a transmission attempt - prior transmission by another node marked receiver as invalid", "txHash", common.Bytes2Hex(txHash[:]), "errorMessage", transmissionID.InvalidReceiverMessage())
+		e.lggr.Infow("Returning without a transmission attempt - prior transmission by another node marked receiver as invalid", "txHash", common.Bytes2Hex(txHash[:]))
 		reply, err := e.buildRevertReplyFromTx(ctx, *txHash, transmissionInfo, transmissionID)
 		return reply, capabilities.ResponseMetadata{}, err
 	case contracts.TransmissionStateFailed:
@@ -185,13 +185,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 				return nil, capabilities.ResponseMetadata{}, err
 			}
 
-			e.lggr.Infow(
-				"Returning without a transmission attempt - transmission already attempted and failed with sufficient gas limit",
-				"txHash", common.Bytes2Hex(txHash[:]),
-				"errorMessage", UnknownIssueExecutingReceiverContractMessage,
-				"receiverGasBudget", calculatedReceiverGasBudget,
-				"transmissionReceiverGasBudget", transmissionInfo.GasLimit,
-			)
+			e.lggr.Infow("Returning without a transmission attempt - transmission already attempted and failed with sufficient gas limit", "txHash", common.Bytes2Hex(txHash[:]), "receiverGasBudget", calculatedReceiverGasBudget, "transmissionReceiverGasBudget", transmissionInfo.GasLimit)
 			reply, err := e.buildRevertReplyFromTx(ctx, *txHash, transmissionInfo, transmissionID)
 			return reply, capabilities.ResponseMetadata{}, err
 		}
@@ -272,9 +266,9 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		}
 
 		if newTransmissionInfo.State == contracts.TransmissionStateInvalidReceiver {
-			e.lggr.Errorw("Transaction written to the forwarder, but receiver was marked as invalid", "txHash", common.Bytes2Hex(txHash[:]), "errorMessage", UnknownIssueExecutingReceiverContractMessage)
+			e.lggr.Errorw("Transaction written to the forwarder, but receiver was marked as invalid", "txHash", common.Bytes2Hex(txHash[:]))
 		} else {
-			e.lggr.Errorw("Transaction written to the forwarder, but failed to execute at the receiver contract", "txHash", common.Bytes2Hex(txHash[:]), "errorMessage", transmissionID.InvalidReceiverMessage())
+			e.lggr.Errorw("Transaction written to the forwarder, but failed to execute at the receiver contract", "txHash", common.Bytes2Hex(txHash[:]))
 		}
 
 		reply, err := e.buildRevertReplyFromTx(ctx, *txHash, newTransmissionInfo, transmissionID)
