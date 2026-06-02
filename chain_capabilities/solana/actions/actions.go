@@ -30,6 +30,7 @@ import (
 
 type Solana struct {
 	types.SolanaService
+	readsEnabled             bool
 	forwarderClient          CREForwarderClient
 	transmissionInfoProvider TransmissionInfoProvider
 	lggr                     logger.SugaredLogger
@@ -53,6 +54,7 @@ func NewSolana(ctx context.Context, cfg *config.Config, s types.SolanaService, m
 		return nil, fmt.Errorf("failed to create on-chain transmission info provider: %w", err)
 	}
 	sol := &Solana{
+		readsEnabled:             cfg.ReadsEnabled,
 		SolanaService:            s,
 		chainSelector:            chainSelector,
 		lggr:                     logger.Sugared(lggr),
@@ -71,6 +73,9 @@ func (s *Solana) GetAccountInfoWithOpts(
 	ctx context.Context,
 	metadata capabilities.RequestMetadata,
 	input *solcap.GetAccountInfoWithOptsRequest) (*capabilities.ResponseAndMetadata[*solcap.GetAccountInfoWithOptsReply], caperrors.Error) {
+	if !s.readsEnabled {
+		return nil, caperrors.NewPublicSystemError(errors.New("reads are not available"), caperrors.Internal)
+	}
 	// TODO: implement metrics on higher level PLEX-2918
 	// TODO: implement billing once generalized PLEX-3022
 	request, err := solcap.ConvertGetAccountInfoRequestFromProto(input)

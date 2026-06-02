@@ -17,6 +17,7 @@ type Config struct {
 	ChainID             string        `json:"chainId"`
 	DeltaStage          time.Duration `json:"deltaStage"` // Staggered transmission scheduling delay per queue position
 
+	ReadsEnabled                  bool          `json:"readsEnabled"`
 	ObservationPollerWorkersCount uint          `json:"observationPollerWorkersCount"`
 	ObservationPollPeriod         time.Duration `json:"observationPollPeriod"`
 	UnknownRequestsTTL            time.Duration `json:"unknownRequestsTTL"`
@@ -32,6 +33,7 @@ func (c *Config) UnmarshalJSON(bs []byte) error {
 		ChainID             string        `json:"chainId"`
 		DeltaStage          time.Duration `json:"deltaStage"`
 
+		ReadsEnabled                  bool          `json:"readsEnabled"`
 		ObservationPollerWorkersCount uint          `json:"observationPollerWorkersCount"`
 		ObservationPollPeriod         time.Duration `json:"observationPollPeriod"`
 		UnknownRequestsTTL            time.Duration `json:"unknownRequestsTTL"`
@@ -60,6 +62,7 @@ func (c *Config) UnmarshalJSON(bs []byte) error {
 		return fmt.Errorf("invalid transmitter address: %w", err)
 	}
 
+	c.ReadsEnabled = cfg.ReadsEnabled
 	c.ObservationPollerWorkersCount = cfg.ObservationPollerWorkersCount
 	c.ObservationPollPeriod = cfg.ObservationPollPeriod
 	c.UnknownRequestsTTL = cfg.UnknownRequestsTTL

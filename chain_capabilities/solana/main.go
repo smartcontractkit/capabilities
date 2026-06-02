@@ -11,10 +11,9 @@ import (
 	chain_selectors "github.com/smartcontractkit/chain-selectors"
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
-	"github.com/smartcontractkit/capabilities/libs/chainconsensus/oracle"
-
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
 	consMetrics "github.com/smartcontractkit/capabilities/libs/chainconsensus/metrics"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus/oracle"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus/poller"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
@@ -92,8 +91,11 @@ func (c *capabilityGRPCService) Close() error {
 	}
 
 	if c.oracle != nil {
+		c.lggr.Info("Closing oracle factoring")
 		if err := c.oracle.Close(context.Background()); err != nil {
 			errs = append(errs, err)
+		} else {
+			c.lggr.Info("Closed oracle factoring")
 		}
 	}
 	return errors.Join(errs...)
@@ -182,12 +184,32 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		c.lggr.Infow("DeltaStage not configured, transmission scheduling disabled")
 	}
 
-	consensusMetrics, err := consMetrics.NewConsensusMetrics(chainInfo)
-	if err != nil {
-		return fmt.Errorf("failed to create solana consensus metrics: %w", err)
+	if cfg.ReadsEnabled {
+		consensusMetrics, err := consMetrics.NewConsensusMetrics(chainInfo)
+		if err != nil {
+			return fmt.Errorf("failed to create solana consensus metrics: %w", err)
+		}
+		c.requestPoller = poller.NewPoller(c.lggr, consensusMetrics, cfg.ObservationPollerWorkersCount, cfg.ObservationPollPeriod)
+		c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, cfg.UnknownRequestsTTL)
+		c.oracle, err = dependencies.OracleFactory.NewOracle(ctx, core.OracleArgs{
+			LocalConfig: ocrtypes.LocalConfig{
+				BlockchainTimeout:                  time.Second * 20,
+				ContractConfigTrackerPollInterval:  time.Second * 10,
+				ContractConfigConfirmations:        1,
+				ContractTransmitterTransmitTimeout: time.Second * 10,
+				DatabaseTimeout:                    time.Second * 10,
+				ContractConfigLoadTimeout:          time.Second * 10,
+				DefaultMaxDurationInitialization:   time.Second * 10,
+			},
+			ReportingPluginFactoryService: oracle.NewReportingPluginFactory(logger.Sugared(c.lggr), c.consensusHandler, noopBlocksProvider{}, consensusMetrics),
+			ContractTransmitter:           oracle.NewContractTransmitter(c.lggr, c.consensusHandler),
+		})
+		if err != nil {
+			return fmt.Errorf("error when creating oracle: %w", err)
+		}
+	} else {
+		c.lggr.Warn("Initialising solana oracle required for chain reads is disabled")
 	}
-	c.requestPoller = poller.NewPoller(c.lggr, consensusMetrics, cfg.ObservationPollerWorkersCount, cfg.ObservationPollPeriod)
-	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, cfg.UnknownRequestsTTL)
 
 	c.Solana, err = actions.NewSolana(ctx, cfg, solService, messageBuilder, processor, c.lggr, c.limitsFactory, scheduler, c.chainSelector, c.consensusHandler)
 	if err != nil {
@@ -206,25 +228,11 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return fmt.Errorf("failed to create log trigger service: %w", err)
 	}
 
-	c.oracle, err = dependencies.OracleFactory.NewOracle(ctx, core.OracleArgs{
-		LocalConfig: ocrtypes.LocalConfig{
-			BlockchainTimeout:                  time.Second * 20,
-			ContractConfigTrackerPollInterval:  time.Second * 10,
-			ContractConfigConfirmations:        1,
-			ContractTransmitterTransmitTimeout: time.Second * 10,
-			DatabaseTimeout:                    time.Second * 10,
-			ContractConfigLoadTimeout:          time.Second * 10,
-			DefaultMaxDurationInitialization:   time.Second * 10,
-		},
-		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(logger.Sugared(c.lggr), c.consensusHandler, noopBlocksProvider{}, consensusMetrics),
-		ContractTransmitter:           oracle.NewContractTransmitter(c.lggr, c.consensusHandler),
-	})
-	if err != nil {
-		return fmt.Errorf("error when creating oracle: %w", err)
-	}
-
 	startServices := []interface{ Start(context.Context) error }{c.consensusHandler, c.requestPoller, c.oracle, c.triggerService}
 	for _, service := range startServices {
+		if service == nil {
+			continue
+		}
 		if err := service.Start(ctx); err != nil {
 			return err
 		}
