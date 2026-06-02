@@ -304,6 +304,23 @@ jobs:
       - name: Ensure clean modgraph
         run: git diff --minimal --exit-code
 
+  validate-module-refs:
+    runs-on: ubuntu-latest
+    name: validate-module-refs
+    env:
+      BASE_BRANCH: ${{ github.base_ref || github.event.repository.default_branch || 'main' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch base branch
+        run: git fetch --no-tags origin "${BASE_BRANCH}:refs/remotes/origin/${BASE_BRANCH}"
+
+      - name: Validate intra-repo module pins are reachable from the default branch
+        run: ./script/validate-intra-module-refs.sh "origin/${BASE_BRANCH}"
+
   checks:
     runs-on: ubuntu-latest
     needs:
@@ -314,6 +331,7 @@ jobs:
       - tidy-and-generate
       - integration-tests
       - modgraph
+      - validate-module-refs
     if: always()
     steps:
       - name: All tests ok

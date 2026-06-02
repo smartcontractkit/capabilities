@@ -36,6 +36,10 @@ generate: protoc mockery gomods ## Execute all go:generate commands (including p
 update-common-capabilities: ## Update chain_capabilities/common in aptos/evm/solana. Usage: make update-common-capabilities REF=<branch-or-commit>
 	./script/update-common-capabilities.sh $(REF)
 
+.PHONY: validate-module-refs
+validate-module-refs: ## Verify intra-repo module pins are reachable from the default branch. Usage: make validate-module-refs [BASE_REF=origin/main]
+	./script/validate-intra-module-refs.sh $(BASE_REF)
+
 .PHONY: help
 help: ## Display this help screen.
 	@grep -h -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
