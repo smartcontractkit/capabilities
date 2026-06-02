@@ -101,7 +101,7 @@ func (c *capabilityGRPCService) Close() error {
 	return errors.Join(errs...)
 }
 
-func (c *capabilityGRPCService) AckEvent(ctx context.Context, triggerId string, eventId string, method string) caperrors.Error {
+func (c *capabilityGRPCService) AckEvent(ctx context.Context, triggerID string, eventId string, method string) caperrors.Error {
 	return caperrors.NewError(fmt.Errorf("not implemented"), caperrors.VisibilityPublic, caperrors.OriginSystem, caperrors.Unknown)
 }
 
