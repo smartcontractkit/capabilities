@@ -96,6 +96,7 @@ func (s *Solana) GetAccountInfoWithOpts(
 			return nil, 0, caperrors.NewPublicSystemError(fmt.Errorf("failed to convert response to proto: %w", err), caperrors.Internal)
 		}
 
+		// TODO PLEX-3061: limit response size
 		return response, rawResponse.Slot, nil
 	}, lggr)
 	responseAndMetadata, err := chainconsensus.ReadHashableRequestReport[*solcap.GetAccountInfoWithOptsReply](ctx, s.handler, cReq)
