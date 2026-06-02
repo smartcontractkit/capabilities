@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"io"
 	"strconv"
 	"time"
 
@@ -20,6 +20,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
+	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
@@ -80,25 +81,29 @@ func (c *capabilityGRPCService) Start(_ context.Context) error {
 
 func (c *capabilityGRPCService) Close() error {
 	c.lggr.Infof("Closing %s", CapabilityName)
-	servicesToClose := []interface{ Close() error }{c.consensusHandler, c.requestPoller, c.triggerService}
-	var errs []error
-	for _, service := range servicesToClose {
-		if service != nil {
-			if err := service.Close(); err != nil {
-				errs = append(errs, err)
-			}
-		}
-	}
 
+	var closers []io.Closer
 	if c.oracle != nil {
-		c.lggr.Info("Closing oracle factoring")
-		if err := c.oracle.Close(context.Background()); err != nil {
-			errs = append(errs, err)
-		} else {
+		closers = append(closers, closeFunc(func() error {
+			c.lggr.Info("Closing oracle factoring")
+			err := c.oracle.Close(context.Background())
+			if err != nil {
+				return err
+			}
 			c.lggr.Info("Closed oracle factoring")
-		}
+			return nil
+		}))
 	}
-	return errors.Join(errs...)
+	if c.requestPoller != nil {
+		closers = append(closers, c.requestPoller)
+	}
+	if c.consensusHandler != nil {
+		closers = append(closers, c.consensusHandler)
+	}
+	if c.triggerService != nil {
+		closers = append(closers, c.triggerService)
+	}
+	return services.CloseAll(closers...)
 }
 
 func (c *capabilityGRPCService) AckEvent(ctx context.Context, triggerID string, eventID string, method string) caperrors.Error {
@@ -184,6 +189,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		c.lggr.Infow("DeltaStage not configured, transmission scheduling disabled")
 	}
 
+	var toStart []interface{ Start(context.Context) error }
 	if cfg.ReadsEnabled {
 		consensusMetrics, err := consMetrics.NewConsensusMetrics(chainInfo)
 		if err != nil {
@@ -207,6 +213,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		if err != nil {
 			return fmt.Errorf("error when creating oracle: %w", err)
 		}
+		toStart = append(toStart, c.requestPoller, c.consensusHandler, c.oracle)
 	} else {
 		c.lggr.Warn("Initialising solana oracle required for chain reads is disabled")
 	}
@@ -228,11 +235,8 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return fmt.Errorf("failed to create log trigger service: %w", err)
 	}
 
-	startServices := []interface{ Start(context.Context) error }{c.consensusHandler, c.requestPoller, c.oracle, c.triggerService}
-	for _, service := range startServices {
-		if service == nil {
-			continue
-		}
+	toStart = append(toStart, c.triggerService)
+	for _, service := range toStart {
 		if err := service.Start(ctx); err != nil {
 			return err
 		}
@@ -291,4 +295,10 @@ func (s *capabilityGRPCService) RegisterLogTrigger(
 
 func (s *capabilityGRPCService) UnregisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *solana.FilterLogTriggerRequest) caperrors.Error {
 	return s.triggerService.UnregisterLogTrigger(ctx, triggerID, metadata, input)
+}
+
+type closeFunc func() error
+
+func (f closeFunc) Close() error {
+	return f()
 }
