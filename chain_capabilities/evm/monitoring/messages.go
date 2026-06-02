@@ -142,6 +142,26 @@ func (m *MessageBuilder) BuildWriteReportSuccessfulEarlyReturn(tc TelemetryConte
 	}
 }
 
+func (m *MessageBuilder) BuildWriteReportInsufficientGasRetry(
+	tc TelemetryContext,
+	req *evmcap.WriteReportRequest,
+	receiverGasBudget uint64,
+	transmissionReceiverGasBudget *big.Int,
+	queuePosition int,
+) Message {
+	var transmissionGas uint64
+	if transmissionReceiverGasBudget != nil {
+		transmissionGas = transmissionReceiverGasBudget.Uint64()
+	}
+	return &WriteReportInsufficientGasRetry{
+		Req:                           convertWriteReportRequest(req),
+		ReceiverGasBudget:             receiverGasBudget,
+		TransmissionReceiverGasBudget: transmissionGas,
+		QueuePosition:                 int32(queuePosition), //nolint:gosec // G115: queue size is bounded by DON size
+		ExecutionContext:              m.BuildExecutionContext(tc),
+	}
+}
+
 func (m *MessageBuilder) BuildLogTriggerInitiated(tc TelemetryContext, req *evmcap.FilterLogTriggerRequest) *LogTriggerInitiated {
 	return &LogTriggerInitiated{Req: logTriggerRequestToMonitoring(req), ExecutionContext: m.BuildExecutionContext(tc)}
 }

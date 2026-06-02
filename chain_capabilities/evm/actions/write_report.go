@@ -27,6 +27,7 @@ import (
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
+
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
@@ -172,26 +173,24 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		reply, err := e.processUnrecoverableTxState(ctx, request, *txHash, transmissionInfo.State, transmissionID, false)
 		return reply, capabilities.ResponseMetadata{}, err
 	case contracts.TransmissionStateFailed:
-		txGasLimit := e.ReceiverGasMinimum + contracts.ForwarderContractLogicGasCost
-		if request.GasConfig != nil && request.GasConfig.GasLimit > txGasLimit {
-			txGasLimit = request.GasConfig.GasLimit - contracts.ForwarderContractLogicGasCost
-		}
-		if transmissionInfo.GasLimit != nil && transmissionInfo.GasLimit.Uint64() > txGasLimit {
+		hadEnoughGas, calculatedReceiverGasBudget := e.attemptHadEnoughGas(request, transmissionInfo)
+		if hadEnoughGas {
 			txHash, err := txHashRetriever.GetFailedTransmissionHash(ctx)
 			if err != nil {
 				if errors.Is(err, ErrUnexpectedSuccessfulTransmission) {
 					monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportInvalidTransmissionState(telemetryContext, request, transmissionInfo, "WriteReport unexpected successful transmission", err.Error()))
 				} else {
-					e.lggr.Errorw("Returning without a transmission attempt - transmission already attempted, but failed to retrieve its tx hash", "error", err.Error(), "txGasLimit", txGasLimit, "transmissionGasLimit", transmissionInfo.GasLimit)
+					e.lggr.Errorw("Returning without a transmission attempt - transmission already attempted, but failed to retrieve its tx hash", "error", err.Error(), "receiverGasBudget", calculatedReceiverGasBudget, "transmissionReceiverGasBudget", transmissionInfo.GasLimit)
 				}
 				return nil, capabilities.ResponseMetadata{}, err
 			}
 
-			e.lggr.Infow("Returning without a transmission attempt - transmission already attempted and failed and is beyond gas limit", "transmissionTxHash", common.Bytes2Hex(txHash[:]), "txGasLimit", txGasLimit, "transmissionGasLimit", transmissionInfo.GasLimit)
+			e.lggr.Infow("Returning without a transmission attempt - transmission already attempted and failed with sufficient gas limit", "transmissionTxHash", common.Bytes2Hex(txHash[:]), "receiverGasBudget", calculatedReceiverGasBudget, "transmissionReceiverGasBudget", transmissionInfo.GasLimit)
 			reply, err := e.processUnrecoverableTxState(ctx, request, *txHash, transmissionInfo.State, transmissionID, false)
 			return reply, capabilities.ResponseMetadata{}, err
 		}
-		e.lggr.Infow("Retrying a failed transmission - attempting to push to txmgr", "txGasLimit", txGasLimit, "transmissionGasLimit", transmissionInfo.GasLimit)
+		monitoring.LogAndEmitSuccess(ctx, "Retrying failed transmission after prior attempt had insufficient receiver gas", e.lggr, e.beholderProcessor,
+			e.messageBuilder.BuildWriteReportInsufficientGasRetry(telemetryContext, request, calculatedReceiverGasBudget, transmissionInfo.GasLimit, queuePosition))
 	default:
 		errorMsg := getInvalidStateErrorMessage(transmissionInfo.State)
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportInvalidTransmissionState(telemetryContext, request, transmissionInfo, "WriteReport invalid transmission state", errorMsg))
@@ -335,13 +334,22 @@ func (e *WriteReport) pollTransmissionInfo(
 			case contracts.TransmissionStateSucceeded, contracts.TransmissionStateInvalidReceiver:
 				return lastValidInfo, nil
 			case contracts.TransmissionStateFailed:
-				_, cnt, err := txHashRetriever.GetFailedTransmissionHashWithCount(ctx)
+				hadEnoughGas, calculatedReceiverGasBudget := e.attemptHadEnoughGas(request, lastValidInfo)
+				// none of the previous nodes will try to resend this transmission, so we can stop polling early
+				if hadEnoughGas {
+					return lastValidInfo, nil
+				}
+				_, count, err := txHashRetriever.GetFailedTransmissionHashWithCount(ctx)
 				if err != nil {
 					e.lggr.Debugw("Failed to get tx hash and attempt count during polling", "error", err)
-				} else {
-					if cnt >= int(e.transmissionScheduler.F+1) {
-						return lastValidInfo, nil
-					}
+				} else if count >= queuePosition {
+					e.lggr.Infow("Stopping poll - all prior nodes in queue finished their transmission attempts",
+						"queuePosition", queuePosition,
+						"failedAttemptCount", count,
+						"calculatedReceiverGasBudget", calculatedReceiverGasBudget,
+						"transmissionReceiverGasBudget", lastValidInfo.GasLimit,
+					)
+					return lastValidInfo, nil
 				}
 			case contracts.TransmissionStateNotAttempted:
 			default:
@@ -395,6 +403,20 @@ func (e *WriteReport) pollTransmissionInfo(
 
 func getInvalidStateErrorMessage(state contracts.TransmissionState) string {
 	return fmt.Sprintf("unexpected transmission state: %v", state)
+}
+
+// attemptHadEnoughGas reports whether a prior failed transmission used sufficient receiver gas,
+// meaning a resubmit would not help (e.g. receiver contract revert).
+// The second return value is the receiver gas budget derived from the request.
+func (e *WriteReport) attemptHadEnoughGas(request *evm.WriteReportRequest, info contracts.TransmissionInfo) (bool, uint64) {
+	receiverGasBudget := e.ReceiverGasMinimum + contracts.ForwarderContractLogicGasCost
+	if request.GasConfig != nil && request.GasConfig.GasLimit > receiverGasBudget {
+		receiverGasBudget = request.GasConfig.GasLimit - contracts.ForwarderContractLogicGasCost
+	}
+	if info.GasLimit == nil {
+		return false, receiverGasBudget
+	}
+	return info.GasLimit.Uint64() > receiverGasBudget, receiverGasBudget
 }
 
 func (e *WriteReport) processUnrecoverableTxState(ctx context.Context, request *evm.WriteReportRequest, txHash evmtypes.Hash, transmissionState contracts.TransmissionState, transmissionID contracts.TransmissionID, txAttemptedLocally bool) (*evm.WriteReportReply, error) {

@@ -129,10 +129,10 @@ func getReadError(lggr logger.SugaredLogger, err error) caperrors.Error {
 }
 
 func isUserError(err error) bool {
-	return !errors.Is(err, context.DeadlineExceeded) && !isEVMNodeInfraError(err)
+	return !errors.Is(err, context.DeadlineExceeded) && !isNodeInfraError(err)
 }
 
-func isEVMNodeInfraError(err error) bool {
+func isNodeInfraError(err error) bool {
 	return errors.Is(err, multinode.ErrNodeError) ||
 		strings.Contains(err.Error(), multinode.ErrNodeError.Error())
 }
