@@ -332,10 +332,6 @@ func (t TransmissionID) LogAttrs() []any {
 	}
 }
 
-func (t TransmissionID) GetDebugID() string {
-	return fmt.Sprintf("receiver=%s reportID=%s workflowExecutionID=%s", t.ReceiverHex(), t.ReportIDHex(), t.WorkflowExecutionIDHex())
-}
-
 func (t TransmissionID) String() string {
-	return t.GetDebugID()
+	return fmt.Sprintf("receiver=%s reportID=%s workflowExecutionID=%s", t.ReceiverHex(), t.ReportIDHex(), t.WorkflowExecutionIDHex())
 }

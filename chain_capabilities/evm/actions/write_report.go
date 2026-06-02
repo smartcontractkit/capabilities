@@ -281,7 +281,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 
 // getQueuePosition returns this node's position in the transmission queue, or -1 if not in DON or scheduler not configured
 func (e *WriteReport) getQueuePosition(transmissionID contracts.TransmissionID) int {
-	position := e.transmissionScheduler.GetQueuePosition(transmissionID.GetDebugID())
+	position := e.transmissionScheduler.GetQueuePosition(transmissionID.String())
 	if position < 0 {
 		e.lggr.Warnw("Node not found in DON, proceeding without scheduling")
 	}
@@ -666,12 +666,12 @@ func (thr *TxHashRetriever) fetchAndParseLogs(ctx context.Context) (logDetailsLi
 	}
 
 	if len(logs) == 0 {
-		return nil, fmt.Errorf("no logs found for transmission: %s", thr.transmissionID.GetDebugID())
+		return nil, fmt.Errorf("no logs found for transmission: %s", thr.transmissionID.String())
 	}
 
 	details, err := buildLogDetails(logs)
 	if err != nil {
-		return nil, fmt.Errorf("malformed log data for transmission %s: %w", thr.transmissionID.GetDebugID(), err)
+		return nil, fmt.Errorf("malformed log data for transmission %s: %w", thr.transmissionID.String(), err)
 	}
 
 	return details, nil
@@ -694,7 +694,7 @@ func (thr *TxHashRetriever) GetSuccessfulTransmissionHash(ctx context.Context) (
 
 	thr.lggr.Errorw("No successful transmission found", append(thr.transmissionID.LogAttrs(), "txCount", len(details), "transactions", details.String())...)
 	return nil, fmt.Errorf("no successful transmission found for: %s. Found %d transactions (all failed): %s",
-		thr.transmissionID.GetDebugID(), len(details), details)
+		thr.transmissionID.String(), len(details), details)
 }
 
 // GetFailedTransmissionHash finds and returns the hash of the earliest failed transmission.
@@ -721,7 +721,7 @@ func (thr *TxHashRetriever) GetFailedTransmissionHashWithCount(ctx context.Conte
 	for _, d := range details {
 		if d.IsSuccess {
 			return nil, len(details), fmt.Errorf("%w for: %s, successful tx hash: %s",
-				ErrUnexpectedSuccessfulTransmission, thr.transmissionID.GetDebugID(), hex.EncodeToString(d.TxHash[:]))
+				ErrUnexpectedSuccessfulTransmission, thr.transmissionID.String(), hex.EncodeToString(d.TxHash[:]))
 		}
 	}
 

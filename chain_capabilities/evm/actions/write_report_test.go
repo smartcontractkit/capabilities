@@ -2006,8 +2006,8 @@ func TestExecuteWriteReport_RaceConditionDuplicateInvocations(t *testing.T) {
 	require.NoError(t, err)
 
 	require.ElementsMatch(t, []int{0, 1}, []int{
-		schedulerA.GetQueuePosition(transmissionID.GetDebugID()),
-		schedulerB.GetQueuePosition(transmissionID.GetDebugID()),
+		schedulerA.GetQueuePosition(transmissionID.String()),
+		schedulerB.GetQueuePosition(transmissionID.String()),
 	})
 
 	var invokeCount atomic.Int64
@@ -2325,7 +2325,7 @@ func createReportAndMetadataForQueuePosition(t *testing.T, scheduler *ts.Transmi
 		transmissionID, err := getTransmissionID(requestMetadata.WorkflowExecutionID, request)
 		require.NoError(t, err)
 
-		if scheduler.GetQueuePosition(transmissionID.GetDebugID()) == desiredPosition {
+		if scheduler.GetQueuePosition(transmissionID.String()) == desiredPosition {
 			return report, requestMetadata, transmissionID
 		}
 	}
@@ -2382,7 +2382,7 @@ func setupPollTransmissionInfoForQueuePosition(
 		Report:   signedReport,
 	}
 
-	require.Equal(t, queuePosition, scheduler.GetQueuePosition(transmissionID.GetDebugID()))
+	require.Equal(t, queuePosition, scheduler.GetQueuePosition(transmissionID.String()))
 	return wr, testLogger, mockForwarderClient, request, transmissionID
 }
 
