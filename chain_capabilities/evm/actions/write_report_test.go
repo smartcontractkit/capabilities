@@ -30,6 +30,7 @@ import (
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
+
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts/mocks"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
@@ -721,7 +722,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TxHash:                          receipt.TxHash[:],
 			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
-			ErrorMessage:                    getInvalidReceiverMessage(receiver),
+			ErrorMessage:                    capcommon.Ptr(contracts.TransmissionID{Receiver: common.BytesToAddress(receiver)}.InvalidReceiverMessage()),
 		}, txResult.Response)
 
 		// No metering because we did not submit a new tx locally.
@@ -2193,7 +2194,7 @@ func TestFetchTransactionReceiptAndCreateReplyL1FeeFeatureFlag(t *testing.T) {
 				executionTimestamp: tc.executionTimestamp,
 			}
 
-			reply, err := wr.fetchTransactionReceiptAndCreateReply(t.Context(), txHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS, nil)
+			reply, err := wr.buildSuccessReply(t.Context(), txHash)
 			require.NoError(t, err)
 			require.Equal(t, pb.NewBigIntFromInt(big.NewInt(2500)), reply.TransactionFee)
 		})

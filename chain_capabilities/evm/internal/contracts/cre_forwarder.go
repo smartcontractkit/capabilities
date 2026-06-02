@@ -311,6 +311,10 @@ func (t TransmissionID) ReceiverHex() string {
 	return common.Bytes2Hex(t.Receiver[:])
 }
 
+func (t TransmissionID) InvalidReceiverMessage() string {
+	return "Invalid receiver: " + common.Bytes2Hex(t.Receiver[:])
+}
+
 func (t TransmissionID) ReportIDHex() string {
 	return hex.EncodeToString(t.ReportID[:])
 }
