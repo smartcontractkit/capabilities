@@ -6,10 +6,10 @@ require (
 	github.com/gagliardetto/solana-go v1.14.0
 	github.com/mr-tron/base58 v1.2.0
 	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260317175318-b042efa4107b
-	github.com/smartcontractkit/capabilities/libs v0.0.0-20260223172632-a716db2e04a0
+	github.com/smartcontractkit/capabilities/libs v0.0.0-20260602154159-3bc5aa37c661
 	github.com/smartcontractkit/chain-selectors v1.0.100
-	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260511105412-c0c74c7c893e
-	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260526195338-adcf8013a1b7
+	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260602135221-cc7a5b50532a
+	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260602205251-dec2f370b5ee
 	github.com/smartcontractkit/chainlink-solana v1.1.2-0.20260420191419-ea62f88cbdb4
 	github.com/smartcontractkit/chainlink-solana/contracts v0.0.0-20260421131224-c46cbfe7bc6c
 	github.com/smartcontractkit/libocr v0.0.0-20260403184524-b6409238958d
@@ -83,14 +83,10 @@ require (
 	github.com/hashicorp/yamux v0.1.2 // indirect
 	github.com/holiman/uint256 v1.3.2 // indirect
 	github.com/invopop/jsonschema v0.13.0 // indirect
-	github.com/jackc/chunkreader/v2 v2.0.1 // indirect
-	github.com/jackc/pgconn v1.14.3 // indirect
-	github.com/jackc/pgio v1.0.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
-	github.com/jackc/pgproto3/v2 v2.3.3 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
-	github.com/jackc/pgtype v1.14.4 // indirect
-	github.com/jackc/pgx/v4 v4.18.3 // indirect
+	github.com/jackc/pgx/v5 v5.9.2 // indirect
+	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/jmoiron/sqlx v1.4.0 // indirect
 	github.com/jpillora/backoff v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
@@ -133,7 +129,7 @@ require (
 	github.com/smartcontractkit/chainlink-ccip v0.1.1-solana.0.20260317185256-d5f7db87ae70 // indirect
 	github.com/smartcontractkit/chainlink-ccip/chains/solana v0.0.0-20260310183131-8d0f0e383288 // indirect
 	github.com/smartcontractkit/chainlink-ccip/chains/solana/gobindings v0.0.0-20260310183131-8d0f0e383288 // indirect
-	github.com/smartcontractkit/chainlink-common/pkg/chipingress v0.0.10 // indirect
+	github.com/smartcontractkit/chainlink-common/pkg/chipingress v0.0.11-0.20260601211238-9f526774fef0 // indirect
 	github.com/smartcontractkit/chainlink-framework/metrics v0.0.0-20260521164805-26d78d5e1243 // indirect
 	github.com/smartcontractkit/chainlink-framework/multinode v0.0.0-20260521164805-26d78d5e1243 // indirect
 	github.com/smartcontractkit/chainlink-protos/linking-service/go v0.0.0-20251002192024-d2ad9222409b // indirect
@@ -156,6 +152,7 @@ require (
 	github.com/zeebo/xxh3 v1.0.2 // indirect
 	go.mongodb.org/mongo-driver v1.17.2 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
+	go.opentelemetry.io/contrib/bridges/prometheus v0.68.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.63.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.12.2 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp v0.19.0 // indirect
@@ -174,6 +171,7 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.43.0 // indirect
 	go.opentelemetry.io/otel/trace v1.43.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
+	go.uber.org/goleak v1.3.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/ratelimit v0.3.1 // indirect
 	go.uber.org/zap v1.27.1 // indirect
@@ -202,3 +200,5 @@ replace github.com/gogo/protobuf => github.com/gogo/protobuf v1.3.2
 replace github.com/smartcontractkit/chainlink-common => ../../../chainlink-common
 
 replace github.com/smartcontractkit/chainlink-solana => ../../../chainlink-solana
+
+replace github.com/smartcontractkit/capabilities/chain_capabilities/common => ../common

@@ -164,8 +164,7 @@ func convertWriteReportRequest(req *solanacappb.WriteReportRequest) *WriteReport
 		Receiver:          req.Receiver,
 		RemainingAccounts: convertRemainingAccounts(req.RemainingAccounts),
 		ComputeConfig: &ComputeConfig{
-			ComputeLimit:    req.GetComputeConfig().GetComputeLimit(),
-			ComputeMaxPrice: req.GetComputeConfig().GetComputeMaxPrice(),
+			ComputeLimit: req.GetComputeConfig().GetComputeLimit(),
 		},
 	}
 	if req.Report != nil {

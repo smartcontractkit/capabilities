@@ -361,6 +361,16 @@ func TestToLogPollerFilter(t *testing.T) {
 		assert.Equal(t, expectedPaths, ([][]string)(filter.SubkeyPaths))
 		assert.Equal(t, service.retention, filter.Retention)
 		assert.Equal(t, service.maxLogsKept, filter.MaxLogsKept)
+		assert.False(t, filter.IncludeReverted)
+	})
+
+	t.Run("passes IncludeReverted from request", func(t *testing.T) {
+		request := createTestRequest()
+		request.IncludeReverted = true
+
+		filter, err := service.ToLogPollerFilter(testTriggerID, request)
+		require.NoError(t, err)
+		assert.True(t, filter.IncludeReverted)
 	})
 
 	t.Run("returns error for empty request with invalid address", func(t *testing.T) {
@@ -566,7 +576,7 @@ func TestStartPolling(t *testing.T) {
 			createTestLog(102, testPublicKey),
 		}
 
-		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(expectedLogs, nil).Once()
+		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything, triggerID+SuffixLogTriggerFilterID).Return(expectedLogs, nil).Once()
 		mockSolana.EXPECT().QueryTrackedLogs(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]*solana.Log{}, nil).Maybe()
 
 		telemetryContext := monitoring.TelemetryContext{

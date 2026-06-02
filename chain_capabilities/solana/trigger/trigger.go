@@ -82,7 +82,7 @@ func (lts *SolanaLogTriggerService) ToLogPollerFilter(triggerID string, config *
 		SubkeyPaths:     getSubkeyPaths(config.Subkeys),
 		Retention:       lts.retention,
 		MaxLogsKept:     lts.maxLogsKept,
-		IncludeReverted: true,
+		IncludeReverted: config.IncludeReverted,
 		CPIFilterConfig: cpiFilterConfig,
 	}, nil
 }

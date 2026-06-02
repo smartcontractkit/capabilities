@@ -29,7 +29,7 @@ require (
 	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260601211238-9f526774fef0
 	github.com/smartcontractkit/chainlink-evm v0.3.4-0.20260512150409-b4068bf735e6
 	github.com/smartcontractkit/chainlink-evm/gethwrappers v0.0.0-20260119171452-39c98c3b33cd
-	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260526195338-adcf8013a1b7
+	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260602205251-dec2f370b5ee
 	github.com/smartcontractkit/chainlink-protos/workflows/go v0.0.0-20260528173149-f5b8336b19d9
 	github.com/smartcontractkit/chainlink/v2 v2.29.1-cre-beta.0.0.20260512171733-704bf3201286
 	github.com/smartcontractkit/cre-sdk-go v1.5.0

@@ -18,6 +18,7 @@ import (
 	"github.com/gagliardetto/solana-go"
 	"github.com/gagliardetto/solana-go/rpc"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/contracts"
@@ -144,6 +145,99 @@ func TestSolanaLogTrigger(t *testing.T) {
 	// Clean up
 	require.NoError(t, triggerSvc.Close())
 	_ = lp.Close()
+}
+
+func TestSolanaLogTriggerSupportsDistinctIncludeRevertedFilters(t *testing.T) {
+	dbURL := sqltest.TestURL(t)
+	db := sqltest.NewDB(t, dbURL)
+	lggr := logger.Test(t)
+
+	cfg := config.NewDefault()
+	rpcURL, programID := setupValidatorAndTestContract(t)
+	sc, err := client.NewClient(rpcURL, cfg, 5*time.Second, lggr)
+	require.NoError(t, err)
+
+	mc := client.NewMultiClient(func(context.Context) (client.ReaderWriter, error) {
+		return sc, nil
+	})
+
+	chainID, err := mc.ChainID(t.Context())
+	require.NoError(t, err)
+	orm := logpoller.NewORM(chainID.String(), db, lggr)
+	lp, err := logpoller.New(logger.Sugared(lggr), orm, mc, config.NewDefault(), chainID.String())
+	require.NoError(t, err)
+
+	require.NoError(t, lp.Start(t.Context()))
+	defer func() {
+		_ = lp.Close()
+	}()
+
+	chain := solanamocks.NewChain(t)
+	chain.EXPECT().LogPoller().Return(lp)
+	rel := relayer.NewRelayer(lggr, chain, nil)
+
+	triggerSvc, err := NewLogTriggerService(LogTriggerServiceOpts{
+		SolanaService:                   rel,
+		Logger:                          lggr,
+		Triggers:                        NewSolanaLogTriggerStore(),
+		LogTriggerPollInterval:          1 * time.Second,
+		LogTriggerSendChannelBufferSize: 100,
+		Retention:                       24 * time.Hour,
+		MaxLogsKept:                     1000,
+		LimitsFactory:                   limits.Factory{Logger: lggr},
+		BeholderProcessor:               test.NopBeholderProcessor{},
+		MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+	})
+	require.NoError(t, err)
+
+	idl, err := loadContractIDLJson()
+	require.NoError(t, err)
+
+	address, err := solana.PublicKeyFromBase58(programID)
+	require.NoError(t, err)
+
+	baseFilterRequest := &solanacappb.FilterLogTriggerRequest{
+		Name:            "test_trigger_include_reverted",
+		Address:         address[:],
+		EventName:       "TestEvent",
+		ContractIdlJson: []byte(idl),
+		Subkeys: []*solanacappb.SubkeyConfig{
+			{Path: []string{"U64Value"}},
+		},
+	}
+
+	filterRequestFalse := proto.Clone(baseFilterRequest).(*solanacappb.FilterLogTriggerRequest)
+	filterRequestFalse.IncludeReverted = false
+	includeRevertedFalse, err := triggerSvc.ToLogPollerFilter("include-reverted-false", filterRequestFalse)
+	require.NoError(t, err)
+	require.False(t, includeRevertedFalse.IncludeReverted)
+	require.NoError(t, rel.RegisterLogTracking(t.Context(), *includeRevertedFalse))
+
+	filterRequestTrue := proto.Clone(baseFilterRequest).(*solanacappb.FilterLogTriggerRequest)
+	filterRequestTrue.IncludeReverted = true
+	includeRevertedTrue, err := triggerSvc.ToLogPollerFilter("include-reverted-true", filterRequestTrue)
+	require.NoError(t, err)
+	require.True(t, includeRevertedTrue.IncludeReverted)
+	require.NoError(t, rel.RegisterLogTracking(t.Context(), *includeRevertedTrue))
+
+	filters, err := orm.SelectFilters(t.Context())
+	require.NoError(t, err)
+	require.Len(t, filters, 2)
+
+	filtersByIncludeReverted := make(map[bool]lptypes.Filter)
+	for _, filter := range filters {
+		require.Equal(t, "TestEvent", filter.EventName)
+		require.Equal(t, lptypes.PublicKey(address), filter.Address)
+		require.Equal(t, lptypes.SubKeyPaths{{"U64Value"}}, filter.SubkeyPaths)
+		filtersByIncludeReverted[filter.IncludeReverted] = filter
+	}
+
+	falseFilter, ok := filtersByIncludeReverted[false]
+	require.True(t, ok)
+	trueFilter, ok := filtersByIncludeReverted[true]
+	require.True(t, ok)
+	require.NotEqual(t, falseFilter.ID, trueFilter.ID)
+	require.NotEqual(t, falseFilter.Name, trueFilter.Name)
 }
 
 func TestSolanaLogTriggerWithSubkeyPaths(t *testing.T) {
