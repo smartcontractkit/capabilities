@@ -8,9 +8,9 @@ require (
 	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260317175318-b042efa4107b
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260602154159-3bc5aa37c661
 	github.com/smartcontractkit/chain-selectors v1.0.100
-	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260603162922-1e55c0be6a15
+	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260603183656-aba62bd2ed21
 	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260603162809-d3f4a3c7b58a
-	github.com/smartcontractkit/chainlink-solana v1.3.1-0.20260603163224-3ae9b09d450b
+	github.com/smartcontractkit/chainlink-solana v1.3.1-0.20260603183901-cb1823142783
 	github.com/smartcontractkit/chainlink-solana/contracts v0.0.0-20260421131224-c46cbfe7bc6c
 	github.com/smartcontractkit/libocr v0.0.0-20260403184524-b6409238958d
 	github.com/stretchr/testify v1.11.1
@@ -196,9 +196,3 @@ require (
 )
 
 replace github.com/gogo/protobuf => github.com/gogo/protobuf v1.3.2
-
-replace github.com/smartcontractkit/chainlink-common => ../../../chainlink-common
-
-replace github.com/smartcontractkit/chainlink-solana => ../../../chainlink-solana
-
-replace github.com/smartcontractkit/capabilities/chain_capabilities/common => ../common

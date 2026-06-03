@@ -172,17 +172,19 @@ func TestSolanaLogTriggerQueryIsolationByFilterName(t *testing.T) {
 		_ = lp.Close()
 	}()
 
+	// Only LogPoller is used; avoid Reader() mock expectations that would fail at teardown.
 	chain := solanamocks.NewChain(t)
 	chain.EXPECT().LogPoller().Return(lp)
-	chain.EXPECT().Reader().Return(sc, nil)
 	rel := relayer.NewRelayer(lggr, chain, nil)
 
 	triggerSvc, err := NewLogTriggerService(LogTriggerServiceOpts{
-		SolanaService: rel,
-		Logger:        lggr,
-		Triggers:      NewSolanaLogTriggerStore(),
-		Retention:     24 * time.Hour,
-		MaxLogsKept:   1000,
+		SolanaService:     rel,
+		Logger:            lggr,
+		Triggers:          NewSolanaLogTriggerStore(),
+		Retention:         24 * time.Hour,
+		MaxLogsKept:       1000,
+		BeholderProcessor: test.NopBeholderProcessor{},
+		MessageBuilder:    monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
 	})
 	require.NoError(t, err)
 
@@ -195,9 +197,12 @@ func TestSolanaLogTriggerQueryIsolationByFilterName(t *testing.T) {
 	const triggerAID = "isolation-trigger-a"
 	const triggerBID = "isolation-trigger-b"
 
-	filterA, err := triggerSvc.ToLogPollerFilter(triggerAID, logTriggerSubkeyGteRequest("filter-a", address, idl, 50))
+	reqA := logTriggerSubkeyGteRequest("filter-a", address, idl, 50)
+	reqB := logTriggerSubkeyGteRequest("filter-b", address, idl, 200)
+
+	filterA, err := triggerSvc.ToLogPollerFilter(triggerAID, reqA)
 	require.NoError(t, err)
-	filterB, err := triggerSvc.ToLogPollerFilter(triggerBID, logTriggerSubkeyGteRequest("filter-b", address, idl, 200))
+	filterB, err := triggerSvc.ToLogPollerFilter(triggerBID, reqB)
 	require.NoError(t, err)
 
 	ctx := t.Context()
@@ -210,14 +215,18 @@ func TestSolanaLogTriggerQueryIsolationByFilterName(t *testing.T) {
 	utils.FundAccounts(t, []solana.PrivateKey{signerKeypair}, rpcClient)
 	time.Sleep(time.Second)
 
-	// Ingested only by the low-threshold filter (>= 50, but < 200).
+	// Both filters ingest every matching event; subkey thresholds apply at query time.
 	_, err = emitLogReadTestEvent(t, sc, programID, signerKeypair, 100)
 	require.NoError(t, err)
-	// Ingested by both filters.
 	_, err = emitLogReadTestEvent(t, sc, programID, signerKeypair, 250)
 	require.NoError(t, err)
 
 	solSvc, err := rel.Solana()
+	require.NoError(t, err)
+
+	exprA, err := BuildQueryExpressions(reqA, -1)
+	require.NoError(t, err)
+	exprB, err := BuildQueryExpressions(reqB, -1)
 	require.NoError(t, err)
 
 	limit := query.NewLimitAndSort(query.CountLimit(100), query.NewSortBySequence(query.Asc))
@@ -225,14 +234,14 @@ func TestSolanaLogTriggerQueryIsolationByFilterName(t *testing.T) {
 	filterNameB := triggerBID + SuffixLogTriggerFilterID
 
 	require.Eventually(t, func() bool {
-		logs, qerr := solSvc.QueryTrackedLogs(ctx, nil, limit, filterNameA)
+		logs, qerr := solSvc.QueryTrackedLogs(ctx, exprA, limit, filterNameA)
 		return qerr == nil && len(logs) == 2
-	}, 30*time.Second, 500*time.Millisecond, "filter A should ingest both emitted events")
+	}, 30*time.Second, 500*time.Millisecond, "filter A should return both events matching >= 50")
 
 	require.Eventually(t, func() bool {
-		logs, qerr := solSvc.QueryTrackedLogs(ctx, nil, limit, filterNameB)
+		logs, qerr := solSvc.QueryTrackedLogs(ctx, exprB, limit, filterNameB)
 		return qerr == nil && len(logs) == 1
-	}, 30*time.Second, 500*time.Millisecond, "filter B should only ingest the high-threshold event")
+	}, 30*time.Second, 500*time.Millisecond, "filter B should return only the event matching >= 200")
 }
 
 func logTriggerSubkeyGteRequest(name string, address solana.PublicKey, idl string, threshold uint64) *solanacappb.FilterLogTriggerRequest {
