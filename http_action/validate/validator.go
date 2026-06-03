@@ -34,6 +34,7 @@ type Validator struct {
 	requestSizeLimiter       limits.BoundLimiter[config.Size]
 	connectionTimeoutLimiter limits.BoundLimiter[time.Duration]
 	cacheAgeLimiter          limits.BoundLimiter[time.Duration]
+	mtlsRateLimiter          limits.RateLimiter
 }
 
 // NewValidator creates a new Validator with initialized limiters
@@ -58,12 +59,18 @@ func NewValidator(lggr logger.Logger, limitsFactory limits.Factory) (*Validator,
 		return nil, fmt.Errorf("failed to create cache age limiter: %w", err)
 	}
 
+	mtlsRateLimiter, err := limitsFactory.MakeRateLimiter(cresettings.Default.PerOrg.HTTPAction.MtlsRateLimit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cache age limiter: %w", err)
+	}
+
 	return &Validator{
 		lggr:                     logger.Sugared(logger.Named(lggr, "Validator")),
 		responseSizeLimiter:      responseSizeLimiter,
 		requestSizeLimiter:       requestSizeLimiter,
 		connectionTimeoutLimiter: connectionTimeoutLimiter,
 		cacheAgeLimiter:          cacheAgeLimiter,
+		mtlsRateLimiter:          mtlsRateLimiter,
 	}, nil
 }
 
@@ -87,6 +94,17 @@ func (v *Validator) ValidatedRequest(ctx context.Context, input *http.Request) (
 	}
 	if input.Timeout == nil || input.Timeout.AsDuration() == 0 {
 		input.Timeout = durationpb.New(time.Duration(defaultTimeoutMs) * time.Millisecond)
+	}
+
+	if input.Mtls != nil {
+		if len(input.Mtls.PrivateKey) == 0 || len(input.Mtls.Certificate) == 0 {
+			return nil, fmt.Errorf("mtls requires both a private key and a certificate")
+		}
+
+		err := v.mtlsRateLimiter.AllowErr(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("request not allowed, would exceed rate limits: %w", err)
+		}
 	}
 
 	err := v.validateInputWithLimiters(ctx, input)
@@ -117,6 +135,7 @@ func (v *Validator) ValidatedRequest(ctx context.Context, input *http.Request) (
 		Body:          input.Body,
 		Timeout:       input.Timeout,
 		CacheSettings: cacheSettings,
+		Mtls:          input.Mtls,
 	}
 
 	return req, nil

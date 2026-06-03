@@ -130,6 +130,14 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 	// Set only one of Headers or MultiHeaders on the outgoing request (MultiHeaders if input has it, else Headers).
 	gatewayHeaders, gatewayMultiHeaders := gatewayHeadersFromInput(input)
 
+	var mtls *gc.MtlsAuth
+	if input.Mtls != nil {
+		mtls = &gc.MtlsAuth{
+			PrivateKey:  gc.Secret(input.Mtls.PrivateKey),
+			Certificate: input.Mtls.Certificate,
+		}
+	}
+
 	gatewayReq := gc.OutboundHTTPRequest{
 		WorkflowID:    metadata.WorkflowID,
 		WorkflowOwner: metadata.WorkflowOwner,
@@ -144,6 +152,7 @@ func (p *gatewayOutboundProxy) SendRequest(ctx context.Context, metadata capabil
 			Store:    input.CacheSettings.Store,
 			MaxAgeMs: int32(input.CacheSettings.MaxAge.AsDuration().Milliseconds()), //nolint:gosec // G115
 		},
+		Mtls: mtls,
 	}
 
 	payload, err := json.Marshal(gatewayReq)

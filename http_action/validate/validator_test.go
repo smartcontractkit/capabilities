@@ -215,6 +215,97 @@ func TestValidatedRequest(t *testing.T) {
 	})
 }
 
+func TestValidatedRequestMtlsRateLimit(t *testing.T) {
+	t.Parallel()
+
+	mtlsRequest := func() *http.Request {
+		return &http.Request{
+			Url:     "https://example.com",
+			Method:  "GET",
+			Timeout: durationpb.New(1000 * time.Millisecond),
+			Mtls: &http.MtlsAuth{
+				PrivateKey:  []byte("private-key"),
+				Certificate: []byte("certificate"),
+			},
+		}
+	}
+
+	t.Run("mtls request within burst limit is allowed", func(t *testing.T) {
+		t.Parallel()
+		// Org must be set: the mtls rate limiter is scoped per-org and fails open when the org is missing.
+		ctx := contexts.WithCRE(t.Context(), contexts.CRE{Org: "burst-org", Owner: "test-owner", Workflow: "test-workflow"})
+		validator := testValidator(t)
+
+		// Default MtlsRateLimit allows a burst of 3 (see cresettings.Default.PerOrg.HTTPAction.MtlsRateLimit).
+		burst := cresettings.Default.PerOrg.HTTPAction.MtlsRateLimit.DefaultValue.Burst
+		require.Positive(t, burst)
+		for i := 0; i < burst; i++ {
+			out, err := validator.ValidatedRequest(ctx, mtlsRequest())
+			require.NoError(t, err, "request %d within burst should be allowed", i)
+			require.NotNil(t, out)
+		}
+	})
+
+	t.Run("mtls request exceeding rate limit is rejected", func(t *testing.T) {
+		t.Parallel()
+		ctx := contexts.WithCRE(t.Context(), contexts.CRE{Org: "exceed-org", Owner: "test-owner", Workflow: "test-workflow"})
+		validator := testValidator(t)
+
+		// Exhaust the burst; the rate refills every 30s so it won't replenish during the test.
+		burst := cresettings.Default.PerOrg.HTTPAction.MtlsRateLimit.DefaultValue.Burst
+		for i := 0; i < burst; i++ {
+			_, err := validator.ValidatedRequest(ctx, mtlsRequest())
+			require.NoError(t, err)
+		}
+
+		_, err := validator.ValidatedRequest(ctx, mtlsRequest())
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "would exceed rate limits")
+	})
+
+	t.Run("mtls request missing private key is rejected", func(t *testing.T) {
+		t.Parallel()
+		ctx := contexts.WithCRE(t.Context(), contexts.CRE{Org: "missing-key-org", Owner: "test-owner", Workflow: "test-workflow"})
+		validator := testValidator(t)
+
+		req := mtlsRequest()
+		req.Mtls.PrivateKey = nil
+		_, err := validator.ValidatedRequest(ctx, req)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "mtls requires both a private key and a certificate")
+	})
+
+	t.Run("mtls request missing certificate is rejected", func(t *testing.T) {
+		t.Parallel()
+		ctx := contexts.WithCRE(t.Context(), contexts.CRE{Org: "missing-cert-org", Owner: "test-owner", Workflow: "test-workflow"})
+		validator := testValidator(t)
+
+		req := mtlsRequest()
+		req.Mtls.Certificate = nil
+		_, err := validator.ValidatedRequest(ctx, req)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "mtls requires both a private key and a certificate")
+	})
+
+	t.Run("non-mtls requests are not rate limited", func(t *testing.T) {
+		t.Parallel()
+		ctx := contexts.WithCRE(t.Context(), contexts.CRE{Org: "no-mtls-org", Owner: "test-owner", Workflow: "test-workflow"})
+		validator := testValidator(t)
+
+		// Far more than the burst, none of which carry mtls, so the limiter must not engage.
+		burst := cresettings.Default.PerOrg.HTTPAction.MtlsRateLimit.DefaultValue.Burst
+		for i := 0; i < burst+5; i++ {
+			input := &http.Request{
+				Url:     "https://example.com",
+				Method:  "GET",
+				Timeout: durationpb.New(1000 * time.Millisecond),
+			}
+			_, err := validator.ValidatedRequest(ctx, input)
+			require.NoError(t, err, "non-mtls request %d should not be rate limited", i)
+		}
+	})
+}
+
 func TestRequestHeaders(t *testing.T) {
 	t.Parallel()
 
