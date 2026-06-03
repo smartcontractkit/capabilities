@@ -4,6 +4,7 @@ go 1.26.2
 
 require (
 	github.com/gagliardetto/solana-go v1.14.0
+	github.com/google/go-cmp v0.7.0
 	github.com/mr-tron/base58 v1.2.0
 	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260602135542-db372a4c73d4
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260602135542-db372a4c73d4
@@ -68,7 +69,6 @@ require (
 	github.com/gogo/protobuf v1.3.3 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/flatbuffers v25.2.10+incompatible // indirect
-	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/grafana/otel-profiling-go v0.5.1 // indirect
