@@ -90,7 +90,7 @@ func (c *capabilityGRPCService) Close() error {
 			if err != nil {
 				return err
 			}
-			c.lggr.Info("Closed oracle factoring")
+			c.lggr.Info("Closed oracle factory")
 			return nil
 		}))
 	}
