@@ -85,7 +85,7 @@ func (c *capabilityGRPCService) Close() error {
 	var closers []io.Closer
 	if c.oracle != nil {
 		closers = append(closers, closeFunc(func() error {
-			c.lggr.Info("Closing oracle factoring")
+			c.lggr.Info("Closing oracle factory")
 			err := c.oracle.Close(context.Background())
 			if err != nil {
 				return err
