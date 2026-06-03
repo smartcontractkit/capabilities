@@ -1294,17 +1294,6 @@ func TestValidateFilterConfig(t *testing.T) {
 		assert.Contains(t, err.Error(), "event name cannot be empty")
 	})
 
-	t.Run("empty filter name", func(t *testing.T) {
-		config := &solanacappb.FilterLogTriggerRequest{
-			Address:   make([]byte, 32),
-			EventName: "TestEvent",
-			Name:      "",
-		}
-		err := validateFilterConfig(config)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "filter name cannot be empty")
-	})
-
 	t.Run("empty event idl json", func(t *testing.T) {
 		config := &solanacappb.FilterLogTriggerRequest{
 			Address:   make([]byte, 32),
