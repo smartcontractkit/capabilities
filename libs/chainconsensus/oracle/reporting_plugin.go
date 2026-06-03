@@ -322,10 +322,6 @@ func (rp *reportingPlugin) ValidateObservation(_ context.Context, outctx ocr3typ
 					return fmt.Errorf("volatile observation value is nil for request ID %s. OracleID: %d", requestID, ao.Observer)
 				}
 
-				if volatileOb.Height < 0 {
-					return fmt.Errorf("invalid height in volatile observation for request ID %s: got %d. OracleID: %d", requestID, volatileOb.Height, ao.Observer)
-				}
-
 				if len(volatileOb.Hash) != ctypes.HashLength {
 					return fmt.Errorf("invalid hash length for volatile observation of request ID %s: got %d, expected %d. OracleID: %d", requestID, len(volatileOb.Hash), ctypes.HashLength, ao.Observer)
 				}

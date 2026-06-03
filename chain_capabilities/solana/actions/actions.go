@@ -83,8 +83,8 @@ func (s *Solana) GetAccountInfoWithOpts(
 		return nil, NewUserError(fmt.Errorf("invalid request: %w", err))
 	}
 
-	lggr := s.messageBuilder.RequestLggr(s.lggr, monitoring.TelemetryContext{TsStart: time.Now().Unix(), RequestMetadata: metadata}).With("request", request)
-	lggr.Debugw("Received GetAccountInfoWithOpts request", "request", request)
+	lggr := s.messageBuilder.RequestLggr(s.lggr, monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: metadata}).With("request", request)
+	lggr.Debugw("Received GetAccountInfoWithOpts request")
 	cReq := ctypes.NewVolatileRequest(metadata.WorkflowExecutionID, metadata.ReferenceID, metering.GetResponseMetadata(metering.GetAccountInfo), func(ctx context.Context) (*solcap.GetAccountInfoWithOptsReply, uint64, error) {
 		rawResponse, err := s.SolanaService.GetAccountInfoWithOpts(ctx, request)
 		if err != nil {
