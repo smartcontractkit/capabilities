@@ -8,9 +8,9 @@ require (
 	github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260317175318-b042efa4107b
 	github.com/smartcontractkit/capabilities/libs v0.0.0-20260602154159-3bc5aa37c661
 	github.com/smartcontractkit/chain-selectors v1.0.100
-	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260602135221-cc7a5b50532a
-	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260602205251-dec2f370b5ee
-	github.com/smartcontractkit/chainlink-solana v1.1.2-0.20260420191419-ea62f88cbdb4
+	github.com/smartcontractkit/chainlink-common v0.11.2-0.20260603162922-1e55c0be6a15
+	github.com/smartcontractkit/chainlink-protos/cre/go v0.0.0-20260603162809-d3f4a3c7b58a
+	github.com/smartcontractkit/chainlink-solana v1.3.1-0.20260603163224-3ae9b09d450b
 	github.com/smartcontractkit/chainlink-solana/contracts v0.0.0-20260421131224-c46cbfe7bc6c
 	github.com/smartcontractkit/libocr v0.0.0-20260403184524-b6409238958d
 	github.com/stretchr/testify v1.11.1
