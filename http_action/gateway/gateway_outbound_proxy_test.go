@@ -666,6 +666,77 @@ func TestGatewayOutboundProxy_SendRequest_HeadersAndMultiHeaders(t *testing.T) {
 	})
 }
 
+// TestGatewayOutboundProxy_SendRequest_Mtls verifies the cap http.MtlsAuth is converted and
+// passed through to the outgoing gateway OutboundHTTPRequest.
+func TestGatewayOutboundProxy_SendRequest_Mtls(t *testing.T) {
+	metadata := capabilities.RequestMetadata{
+		WorkflowID:          "wf1",
+		WorkflowExecutionID: "exec1",
+		WorkflowOwner:       "owner1",
+	}
+
+	captureOutgoingRequest := func(t *testing.T, input *http.Request) *gateway_common.OutboundHTTPRequest {
+		capturedCh := make(chan *gateway_common.OutboundHTTPRequest, 1)
+		readyCh := make(chan string, 1)
+		mockConnector := &mockGatewayConnector{
+			GatewayIDsVal: []string{"gateway1"},
+			OnSend:        func(id string) { readyCh <- id },
+			CaptureSendPayload: func(resp *jsonrpc.Response[json.RawMessage]) {
+				if resp.Result == nil {
+					capturedCh <- nil
+					return
+				}
+				var req gateway_common.OutboundHTTPRequest
+				err := json.Unmarshal(*resp.Result, &req)
+				require.NoError(t, err)
+				capturedCh <- &req
+			},
+		}
+		lggr := logger.Test(t)
+		proxy, err := NewGatewayOutboundProxy(mockConnector, common.ServiceConfig{}, lggr, newMetrics(t), newTestValidator(t))
+		require.NoError(t, err)
+		go func() {
+			id := <-readyCh
+			simulateGatewayMessage(t, proxy, id, 200, "ok", "", true)
+		}()
+		_, _, err = proxy.SendRequest(t.Context(), metadata, input, time.Now())
+		require.NoError(t, err)
+		req := <-capturedCh
+		require.NotNil(t, req, "CaptureSendPayload should have been called")
+		return req
+	}
+
+	t.Run("mTLS auth is passed through to gateway request", func(t *testing.T) {
+		input := &http.Request{
+			Url:           "http://example.com",
+			Method:        "GET",
+			Body:          []byte{},
+			Timeout:       durationpb.New(5000 * time.Millisecond),
+			CacheSettings: &http.CacheSettings{},
+			Mtls: &http.MtlsAuth{
+				PrivateKey:  []byte("private-key"),
+				Certificate: []byte("certificate"),
+			},
+		}
+		req := captureOutgoingRequest(t, input)
+		require.NotNil(t, req.Mtls)
+		require.Equal(t, gateway_common.Secret("private-key"), req.Mtls.PrivateKey)
+		require.Equal(t, []byte("certificate"), req.Mtls.Certificate)
+	})
+
+	t.Run("no mTLS auth leaves gateway request Mtls nil", func(t *testing.T) {
+		input := &http.Request{
+			Url:           "http://example.com",
+			Method:        "GET",
+			Body:          []byte{},
+			Timeout:       durationpb.New(5000 * time.Millisecond),
+			CacheSettings: &http.CacheSettings{},
+		}
+		req := captureOutgoingRequest(t, input)
+		require.Nil(t, req.Mtls)
+	})
+}
+
 func TestResponseHeadersFromGateway(t *testing.T) {
 	t.Run("nil Headers and nil MultiHeaders returns empty maps", func(t *testing.T) {
 		resp := &gateway_common.OutboundHTTPResponse{}
