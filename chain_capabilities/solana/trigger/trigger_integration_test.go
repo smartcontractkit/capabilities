@@ -18,7 +18,6 @@ import (
 	"github.com/gagliardetto/solana-go"
 	"github.com/gagliardetto/solana-go/rpc"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/contracts"
@@ -31,6 +30,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/sqlutil/sqltest"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
+	"github.com/smartcontractkit/chainlink-common/pkg/types/query"
 	logreadtest "github.com/smartcontractkit/chainlink-solana/contracts/generated/log_read_test"
 	relayer "github.com/smartcontractkit/chainlink-solana/pkg/solana"
 	"github.com/smartcontractkit/chainlink-solana/pkg/solana/client"
@@ -147,7 +147,7 @@ func TestSolanaLogTrigger(t *testing.T) {
 	_ = lp.Close()
 }
 
-func TestSolanaLogTriggerSupportsDistinctIncludeRevertedFilters(t *testing.T) {
+func TestSolanaLogTriggerQueryIsolationByFilterName(t *testing.T) {
 	dbURL := sqltest.TestURL(t)
 	db := sqltest.NewDB(t, dbURL)
 	lggr := logger.Test(t)
@@ -174,19 +174,15 @@ func TestSolanaLogTriggerSupportsDistinctIncludeRevertedFilters(t *testing.T) {
 
 	chain := solanamocks.NewChain(t)
 	chain.EXPECT().LogPoller().Return(lp)
+	chain.EXPECT().Reader().Return(sc, nil)
 	rel := relayer.NewRelayer(lggr, chain, nil)
 
 	triggerSvc, err := NewLogTriggerService(LogTriggerServiceOpts{
-		SolanaService:                   rel,
-		Logger:                          lggr,
-		Triggers:                        NewSolanaLogTriggerStore(),
-		LogTriggerPollInterval:          1 * time.Second,
-		LogTriggerSendChannelBufferSize: 100,
-		Retention:                       24 * time.Hour,
-		MaxLogsKept:                     1000,
-		LimitsFactory:                   limits.Factory{Logger: lggr},
-		BeholderProcessor:               test.NopBeholderProcessor{},
-		MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		SolanaService: rel,
+		Logger:        lggr,
+		Triggers:      NewSolanaLogTriggerStore(),
+		Retention:     24 * time.Hour,
+		MaxLogsKept:   1000,
 	})
 	require.NoError(t, err)
 
@@ -196,48 +192,71 @@ func TestSolanaLogTriggerSupportsDistinctIncludeRevertedFilters(t *testing.T) {
 	address, err := solana.PublicKeyFromBase58(programID)
 	require.NoError(t, err)
 
-	baseFilterRequest := &solanacappb.FilterLogTriggerRequest{
-		Name:            "test_trigger_include_reverted",
+	const triggerAID = "isolation-trigger-a"
+	const triggerBID = "isolation-trigger-b"
+
+	filterA, err := triggerSvc.ToLogPollerFilter(triggerAID, logTriggerSubkeyGteRequest("filter-a", address, idl, 50))
+	require.NoError(t, err)
+	filterB, err := triggerSvc.ToLogPollerFilter(triggerBID, logTriggerSubkeyGteRequest("filter-b", address, idl, 200))
+	require.NoError(t, err)
+
+	ctx := t.Context()
+	require.NoError(t, rel.RegisterLogTracking(ctx, *filterA))
+	require.NoError(t, rel.RegisterLogTracking(ctx, *filterB))
+
+	signerKeypair, err := solana.NewRandomPrivateKey()
+	require.NoError(t, err)
+	rpcClient := rpc.New(rpcURL)
+	utils.FundAccounts(t, []solana.PrivateKey{signerKeypair}, rpcClient)
+	time.Sleep(time.Second)
+
+	// Ingested only by the low-threshold filter (>= 50, but < 200).
+	_, err = emitLogReadTestEvent(t, sc, programID, signerKeypair, 100)
+	require.NoError(t, err)
+	// Ingested by both filters.
+	_, err = emitLogReadTestEvent(t, sc, programID, signerKeypair, 250)
+	require.NoError(t, err)
+
+	solSvc, err := rel.Solana()
+	require.NoError(t, err)
+
+	limit := query.NewLimitAndSort(query.CountLimit(100), query.NewSortBySequence(query.Asc))
+	filterNameA := triggerAID + SuffixLogTriggerFilterID
+	filterNameB := triggerBID + SuffixLogTriggerFilterID
+
+	require.Eventually(t, func() bool {
+		logs, qerr := solSvc.QueryTrackedLogs(ctx, nil, limit, filterNameA)
+		return qerr == nil && len(logs) == 2
+	}, 30*time.Second, 500*time.Millisecond, "filter A should ingest both emitted events")
+
+	require.Eventually(t, func() bool {
+		logs, qerr := solSvc.QueryTrackedLogs(ctx, nil, limit, filterNameB)
+		return qerr == nil && len(logs) == 1
+	}, 30*time.Second, 500*time.Millisecond, "filter B should only ingest the high-threshold event")
+}
+
+func logTriggerSubkeyGteRequest(name string, address solana.PublicKey, idl string, threshold uint64) *solanacappb.FilterLogTriggerRequest {
+	valueBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(valueBytes, threshold)
+
+	return &solanacappb.FilterLogTriggerRequest{
+		Name:            name,
 		Address:         address[:],
 		EventName:       "TestEvent",
 		ContractIdlJson: []byte(idl),
 		Subkeys: []*solanacappb.SubkeyConfig{
-			{Path: []string{"U64Value"}},
+			{Path: []string{"StrVal"}},
+			{
+				Path: []string{"U64Value"},
+				Comparers: []*solanacappb.ValueComparator{
+					{
+						Value:    valueBytes,
+						Operator: solanacappb.ComparisonOperator_COMPARISON_OPERATOR_GTE,
+					},
+				},
+			},
 		},
 	}
-
-	filterRequestFalse := proto.Clone(baseFilterRequest).(*solanacappb.FilterLogTriggerRequest)
-	filterRequestFalse.IncludeReverted = false
-	includeRevertedFalse, err := triggerSvc.ToLogPollerFilter("include-reverted-false", filterRequestFalse)
-	require.NoError(t, err)
-	require.False(t, includeRevertedFalse.IncludeReverted)
-	require.NoError(t, rel.RegisterLogTracking(t.Context(), *includeRevertedFalse))
-
-	filterRequestTrue := proto.Clone(baseFilterRequest).(*solanacappb.FilterLogTriggerRequest)
-	filterRequestTrue.IncludeReverted = true
-	includeRevertedTrue, err := triggerSvc.ToLogPollerFilter("include-reverted-true", filterRequestTrue)
-	require.NoError(t, err)
-	require.True(t, includeRevertedTrue.IncludeReverted)
-	require.NoError(t, rel.RegisterLogTracking(t.Context(), *includeRevertedTrue))
-
-	filters, err := orm.SelectFilters(t.Context())
-	require.NoError(t, err)
-	require.Len(t, filters, 2)
-
-	filtersByIncludeReverted := make(map[bool]lptypes.Filter)
-	for _, filter := range filters {
-		require.Equal(t, "TestEvent", filter.EventName)
-		require.Equal(t, lptypes.PublicKey(address), filter.Address)
-		require.Equal(t, lptypes.SubKeyPaths{{"U64Value"}}, filter.SubkeyPaths)
-		filtersByIncludeReverted[filter.IncludeReverted] = filter
-	}
-
-	falseFilter, ok := filtersByIncludeReverted[false]
-	require.True(t, ok)
-	trueFilter, ok := filtersByIncludeReverted[true]
-	require.True(t, ok)
-	require.NotEqual(t, falseFilter.ID, trueFilter.ID)
-	require.NotEqual(t, falseFilter.Name, trueFilter.Name)
 }
 
 func TestSolanaLogTriggerWithSubkeyPaths(t *testing.T) {
