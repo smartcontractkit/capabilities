@@ -619,8 +619,8 @@ github.com/shurcooL/sanitized_anchor_name v1.0.0/go.mod h1:1NzhyTcUVG4SuEtjjoZeV
 github.com/sirupsen/logrus v1.2.0/go.mod h1:LxeOpSwHxABJmUn/MG1IvRgCAasNZTLOkJPxbbu5VWo=
 github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260602135542-db372a4c73d4 h1:3yqrDt7eG0q09XwEsRBCDzsFZ0c2z5xYUFVfmLBi8MA=
 github.com/smartcontractkit/capabilities/chain_capabilities/common v0.0.0-20260602135542-db372a4c73d4/go.mod h1:PvKEGpgXj36MV0zvAiPFbmWuITuiInug+ygVMJ+JsWo=
-github.com/smartcontractkit/capabilities/libs v0.0.0-20260602135542-db372a4c73d4 h1:yS513wsePMBCVGlsMoyKb/ilLtOqgq4Md+xDXaKNoRQ=
-github.com/smartcontractkit/capabilities/libs v0.0.0-20260602135542-db372a4c73d4/go.mod h1:LS7F8U2YZNc0Vt8f6SVWUUigGLxdxZMpyC7VCcUTagg=
+github.com/smartcontractkit/capabilities/libs v0.0.0-20260604135015-e9711af26f89 h1:sff0gl1oh8iz+ANmXUpMXyEzF/Q8jYGchsug/FpFG/A=
+github.com/smartcontractkit/capabilities/libs v0.0.0-20260604135015-e9711af26f89/go.mod h1:LS7F8U2YZNc0Vt8f6SVWUUigGLxdxZMpyC7VCcUTagg=
 github.com/smartcontractkit/chain-selectors v1.0.100 h1:wpiSpmI/eFjY+wx/nPr5VuNF4hki0prIBMKEaQWn3g4=
 github.com/smartcontractkit/chain-selectors v1.0.100/go.mod h1:qy7whtgG5g+7z0jt0nRyii9bLND9m15NZTzuQPkMZ5w=
 github.com/smartcontractkit/chainlink-ccip v0.1.1-solana.0.20260317185256-d5f7db87ae70 h1:bpzTG/8qwnbnIQPcilnM8lPd/Or4Q22cnakzawds2NQ=
