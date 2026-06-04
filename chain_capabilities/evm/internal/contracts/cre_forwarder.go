@@ -311,10 +311,30 @@ func (t TransmissionID) ReceiverHex() string {
 	return common.Bytes2Hex(t.Receiver[:])
 }
 
-func (t TransmissionID) GetIDPartsForDebugging() []any {
-	return []any{"receiver", common.Bytes2Hex(t.Receiver[:]), "reportID", common.Bytes2Hex(t.ReportID[:]), "workflowExecutionID", common.Bytes2Hex(t.WorkflowExecutionID[:])}
+func (t TransmissionID) InvalidReceiverMessage() string {
+	return "Invalid receiver: " + common.Bytes2Hex(t.Receiver[:])
 }
 
-func (t TransmissionID) GetDebugID() string {
-	return fmt.Sprintf("receiver: %s, reportID: %s, workflowExecutionID %s", t.ReceiverHex(), common.Bytes2Hex(t.ReportID[:]), common.Bytes2Hex(t.WorkflowExecutionID[:]))
+func (t TransmissionID) ReportIDHex() string {
+	return hex.EncodeToString(t.ReportID[:])
+}
+
+func (t TransmissionID) WorkflowExecutionIDHex() string {
+	return hex.EncodeToString(t.WorkflowExecutionID[:])
+}
+
+// LogAttrs returns compact hex-encoded ID fields for structured logging.
+func (t TransmissionID) LogAttrs() []any {
+	return []any{
+		"receiver", t.ReceiverHex(),
+		"reportID", t.ReportIDHex(),
+		"workflowExecutionID", t.WorkflowExecutionIDHex(),
+	}
+}
+
+// String returns the string used to seed the transmission schedule permutation.
+// Its exact format must remain stable across releases so that the derived seed (and
+// therefore the queue ordering) stays consistent with other nodes in the DON.
+func (t TransmissionID) String() string {
+	return fmt.Sprintf("receiver: %s, reportID: %s, workflowExecutionID %s", t.ReceiverHex(), t.ReportIDHex(), t.WorkflowExecutionIDHex())
 }

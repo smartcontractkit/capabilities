@@ -30,6 +30,7 @@ import (
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
+
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts/mocks"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
@@ -721,7 +722,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 			TxHash:                          receipt.TxHash[:],
 			ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(),
 			TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
-			ErrorMessage:                    getInvalidReceiverMessage(receiver),
+			ErrorMessage:                    capcommon.Ptr(contracts.TransmissionID{Receiver: common.BytesToAddress(receiver)}.InvalidReceiverMessage()),
 		}, txResult.Response)
 
 		// No metering because we did not submit a new tx locally.
@@ -2005,8 +2006,8 @@ func TestExecuteWriteReport_RaceConditionDuplicateInvocations(t *testing.T) {
 	require.NoError(t, err)
 
 	require.ElementsMatch(t, []int{0, 1}, []int{
-		schedulerA.GetQueuePosition(transmissionID.GetDebugID()),
-		schedulerB.GetQueuePosition(transmissionID.GetDebugID()),
+		schedulerA.GetQueuePosition(transmissionID.String()),
+		schedulerB.GetQueuePosition(transmissionID.String()),
 	})
 
 	var invokeCount atomic.Int64
@@ -2193,7 +2194,7 @@ func TestFetchTransactionReceiptAndCreateReplyL1FeeFeatureFlag(t *testing.T) {
 				executionTimestamp: tc.executionTimestamp,
 			}
 
-			reply, err := wr.fetchTransactionReceiptAndCreateReply(t.Context(), txHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS, nil)
+			reply, err := wr.buildSuccessReply(t.Context(), txHash)
 			require.NoError(t, err)
 			require.Equal(t, pb.NewBigIntFromInt(big.NewInt(2500)), reply.TransactionFee)
 		})
@@ -2324,7 +2325,7 @@ func createReportAndMetadataForQueuePosition(t *testing.T, scheduler *ts.Transmi
 		transmissionID, err := getTransmissionID(requestMetadata.WorkflowExecutionID, request)
 		require.NoError(t, err)
 
-		if scheduler.GetQueuePosition(transmissionID.GetDebugID()) == desiredPosition {
+		if scheduler.GetQueuePosition(transmissionID.String()) == desiredPosition {
 			return report, requestMetadata, transmissionID
 		}
 	}
@@ -2381,7 +2382,7 @@ func setupPollTransmissionInfoForQueuePosition(
 		Report:   signedReport,
 	}
 
-	require.Equal(t, queuePosition, scheduler.GetQueuePosition(transmissionID.GetDebugID()))
+	require.Equal(t, queuePosition, scheduler.GetQueuePosition(transmissionID.String()))
 	return wr, testLogger, mockForwarderClient, request, transmissionID
 }
 
