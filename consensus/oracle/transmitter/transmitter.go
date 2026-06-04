@@ -67,6 +67,16 @@ func (c *ContractTransmitter) Transmit(ctx context.Context, configDigest types.C
 			// could occur if the caller is attempting to achieve identical consensus on a value which is relatively volatile
 			// resulting in f+1 nodes seeing value A, and f+1 nodes seeing value B.
 			failureErr = caperrors.NewPublicUserError(errors.New(failureMessageStr), caperrors.ConsensusFailed)
+		case oracletypes.ConsensusFailureCode_NO_VALUES_MET_FPLUS1_THRESHOLD_FOR_IDENTICAL_CONSENSUS:
+			// This is considered to be a user error as the caller of the consensus capability is attempting to achieve
+			// identical consensus on a value which has no valid observation set with >=f+1 observations. For example this
+			// could occur if the caller is attempting to achieve identical consensus on a value which is relatively volatile
+			// resulting in f+1 nodes seeing value A, and f+1 nodes seeing value B.
+			failureErr = caperrors.NewPublicUserError(errors.New(failureMessageStr), caperrors.ConsensusFailed)
+		case oracletypes.ConsensusFailureCode_NO_SINGLE_VALUE_TYPE_MET_FPLUS1_THRESHOLD_FOR_CONSENSUS:
+			// This is considered to be a user error as the workflow is providing observations with different value types
+			// (e.g. some nodes are reporting int256 values, and some nodes are reporting string values) and so consensus cannot be reached.
+			failureErr = caperrors.NewPublicUserError(errors.New(failureMessageStr), caperrors.ConsensusFailed)
 		default:
 			failureErr = caperrors.NewPublicSystemError(errors.New(failureMessageStr), caperrors.ConsensusFailed)
 		}

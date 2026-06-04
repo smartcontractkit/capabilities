@@ -221,7 +221,7 @@ func Test_handleFieldsMapAggregation(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := handleFieldsMapAggregation(lggr, tc.observations, tc.descriptor, tc.defaultValue, tc.f)
+			got, err := handleFieldsMapAggregation(lggr, tc.observations, tc.descriptor, tc.defaultValue, tc.f, false)
 
 			if tc.expectedError != nil {
 				require.Error(t, err)

@@ -6,6 +6,8 @@ import (
 	"math"
 	"time"
 
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	aptoscap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos"
@@ -29,7 +31,7 @@ func (s *Aptos) View(
 		err := fmt.Errorf("viewRequest is nil")
 		monitoring.LogAndEmitError(ctx, s.lggr, s.beholderProcessor,
 			s.messageBuilder.BuildViewError(telemetryContext, input, "Failed to execute View request", err.Error(), false))
-		return nil, capcommon.GetError(err, false)
+		return nil, capcommon.NewUserError(err)
 	}
 
 	payload, err := aptoscap.ConvertViewPayloadFromProto(input.Payload)
@@ -59,7 +61,7 @@ func (s *Aptos) View(
 		return relayerReply.Data, nil
 	})
 
-	data, err := capcommon.ReadType[[]byte](ctx, s.ConsensusHandler, request)
+	data, err := chainconsensus.ReadType[[]byte](ctx, s.ConsensusHandler, request)
 	if err != nil {
 		monitoring.LogAndEmitError(ctx, s.lggr, s.beholderProcessor,
 			s.messageBuilder.BuildViewError(telemetryContext, input, "Failed to execute View request", err.Error(), false))

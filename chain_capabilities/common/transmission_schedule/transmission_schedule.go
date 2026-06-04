@@ -38,6 +38,7 @@ func NewTransmissionScheduler(
 ) TransmissionScheduler {
 	if deltaStage <= 0 {
 		lggr.Debugf("deltaStage is set to a zero/negative value %v using default value of %v.", deltaStage, DefaultDeltaStage)
+		deltaStage = DefaultDeltaStage
 	}
 	return TransmissionScheduler{
 		myPeerID:   myPeerID,
@@ -160,6 +161,15 @@ func InitialiseTransmissionScheduler(
 	if len(don.Members) == 0 {
 		lggr.Errorw("DON has no members when initialising transmission scheduler")
 		return TransmissionScheduler{}, errors.New("capabilityInfo DON is empty")
+	}
+
+	seen := make(map[p2ptypes.PeerID]struct{}, len(don.Members))
+	for _, m := range don.Members {
+		if _, dup := seen[m]; dup {
+			lggr.Errorw("duplicate peer ID in DON members", "peerID", m.String())
+			return TransmissionScheduler{}, fmt.Errorf("duplicate peer ID %s in DON members", m.String())
+		}
+		seen[m] = struct{}{}
 	}
 
 	var donPeerIDs []p2ptypes.PeerID

@@ -47,7 +47,7 @@ func NewService(lggr logger.Logger, limitsFactory limits.Factory) *service {
 }
 
 func (s *service) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
-	s.lggr.Debugf("Initialising %s. config: %s", ServiceName, dependencies.Config)
+	s.lggr.Debugw("Initialising http action capability", "config", dependencies.Config)
 
 	err := json.Unmarshal([]byte(dependencies.Config), &s.cfg)
 	if err != nil {
@@ -111,7 +111,7 @@ func (s *service) Description() string {
 }
 
 func (s *service) SendRequest(ctx context.Context, metadata capabilities.RequestMetadata, input *http.Request) (*capabilities.ResponseAndMetadata[*http.Response], caperrors.Error) {
-	s.lggr.Debugf("Received request with metadata: %v", metadata)
+	s.lggr.Debugw("Received request", "metadata", metadata)
 	ctx = metadata.ContextWithCRE(ctx)
 	startTime := time.Now()
 	s.metrics.IncrementRequestCount(ctx, s.lggr)
@@ -128,13 +128,15 @@ func (s *service) SendRequest(ctx context.Context, metadata capabilities.Request
 		if errors.As(err, &validationErr) {
 			return nil, caperrors.NewPublicUserError(
 				fmt.Errorf("input validation failed for workflowID %s (Owner: %s, Name: %s, ExecutionID: %s): %w",
-					metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowName, metadata.WorkflowExecutionID, err), caperrors.InvalidArgument)
+					metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowName, metadata.WorkflowExecutionID, err),
+				common.UserErrorCode(validationErr.Err))
 		}
 		var userErr gateway.UserError
 		if errors.As(err, &userErr) {
 			return nil, caperrors.NewPublicUserError(
 				fmt.Errorf("request failed for workflowID %s (Owner: %s, Name: %s, ExecutionID: %s): %w",
-					metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowName, metadata.WorkflowExecutionID, err), caperrors.InvalidArgument)
+					metadata.WorkflowID, metadata.WorkflowOwner, metadata.WorkflowName, metadata.WorkflowExecutionID, err),
+				common.UserErrorCode(err))
 		}
 		return nil, caperrors.NewPublicSystemError(
 			fmt.Errorf("request failed for workflowID %s (Owner: %s, Name: %s, ExecutionID: %s): %w",

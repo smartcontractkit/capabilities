@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"go.opentelemetry.io/otel/metric"
+
 	commoncapbeholder "github.com/smartcontractkit/capabilities/libs/monitoring"
 
 	commonbeholder "github.com/smartcontractkit/chainlink-common/pkg/beholder"
@@ -39,6 +41,13 @@ type Metrics struct {
 	}
 	WriteReportP2PConfigIncomplete struct {
 		basic commoncapbeholder.MetricsCapBasic
+	}
+	WriteReportTxInfoRetrievalPhase struct {
+		count         metric.Int64Counter
+		phaseDuration metric.Int64Histogram
+	}
+	WriteReportInvokeOnReportDuration struct {
+		duration metric.Int64Histogram
 	}
 }
 
@@ -101,6 +110,35 @@ func NewMetrics() (Metrics, error) {
 		return Metrics{}, fmt.Errorf("failed to create write report p2p config incomplete metric: %w", err)
 	}
 
+	meter := commonbeholder.GetMeter()
+	txInfoPhaseCount := commonbeholder.MetricInfo{
+		Name:        ns("write_report_tx_info_retrieval_phase_count"),
+		Unit:        "",
+		Description: "The count of Aptos WriteReport tx info retrieval phases by lookup type, phase, and result",
+	}
+	m.WriteReportTxInfoRetrievalPhase.count, err = txInfoPhaseCount.NewInt64Counter(meter)
+	if err != nil {
+		return Metrics{}, fmt.Errorf("failed to create write report tx info retrieval phase count metric: %w", err)
+	}
+	txInfoPhaseDuration := commonbeholder.MetricInfo{
+		Name:        ns("write_report_tx_info_retrieval_phase_duration_ms"),
+		Unit:        "ms",
+		Description: "The duration of Aptos WriteReport tx info retrieval phases by lookup type, phase, and result",
+	}
+	m.WriteReportTxInfoRetrievalPhase.phaseDuration, err = txInfoPhaseDuration.NewInt64Histogram(meter)
+	if err != nil {
+		return Metrics{}, fmt.Errorf("failed to create write report tx info retrieval phase duration metric: %w", err)
+	}
+	invokeOnReportDuration := commonbeholder.MetricInfo{
+		Name:        ns("write_report_invoke_on_report_duration_ms"),
+		Unit:        "ms",
+		Description: "The duration of Aptos WriteReport InvokeOnReport calls by tx status",
+	}
+	m.WriteReportInvokeOnReportDuration.duration, err = invokeOnReportDuration.NewInt64Histogram(meter)
+	if err != nil {
+		return Metrics{}, fmt.Errorf("failed to create write report invoke on report duration metric: %w", err)
+	}
+
 	return m, nil
 }
 
@@ -155,5 +193,18 @@ func (m *Metrics) OnWriteReportTransmitterMismatch(ctx context.Context, msg *Wri
 func (m *Metrics) OnWriteReportP2PConfigIncomplete(ctx context.Context, msg *WriteReportP2PConfigIncomplete) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
 	m.WriteReportP2PConfigIncomplete.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
+	return nil
+}
+
+func (m *Metrics) OnWriteReportTxInfoRetrievalPhase(ctx context.Context, msg *WriteReportTxInfoRetrievalPhase) error {
+	attrs := metric.WithAttributes(msg.MetricAttributes()...)
+	m.WriteReportTxInfoRetrievalPhase.count.Add(ctx, 1, attrs)
+	m.WriteReportTxInfoRetrievalPhase.phaseDuration.Record(ctx, msg.GetPhaseDurationMs(), attrs)
+	return nil
+}
+
+func (m *Metrics) OnWriteReportInvokeOnReportDuration(ctx context.Context, msg *WriteReportInvokeOnReportDuration) error {
+	attrs := metric.WithAttributes(msg.MetricAttributes()...)
+	m.WriteReportInvokeOnReportDuration.duration.Record(ctx, msg.GetDurationMs(), attrs)
 	return nil
 }

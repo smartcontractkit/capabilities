@@ -5,14 +5,14 @@ import ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types
 type HashableRequestReport struct {
 	ConfigDigest               ocrtypes.ConfigDigest
 	SeqNr                      uint64
-	ReportData                 [HashLength]byte
+	ReportData                 Hash
 	AttributedOnchainSignature []ocrtypes.AttributedOnchainSignature
 }
 
 func NewHashableRequestReport(
 	configDigest ocrtypes.ConfigDigest,
 	seqNr uint64,
-	reportData [HashLength]byte,
+	reportData Hash,
 	attributedOnchainSignature []ocrtypes.AttributedOnchainSignature,
 ) *HashableRequestReport {
 	return &HashableRequestReport{

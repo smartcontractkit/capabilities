@@ -23,6 +23,7 @@ type consensusMetrics struct {
 	outcomeChainFinalizedHeight metric.Int64Gauge
 	roundObservationSize        metric.Int64Histogram
 	requestObservationSize      metric.Int64Histogram
+	identicalResponseCount      metric.Int64Histogram
 	queueSize                   metric.Int64Gauge
 	retryQueueSize              metric.Int64Gauge
 	requestCount                metric.Int64Gauge
@@ -83,6 +84,14 @@ func (m *consensusMetrics) init() error {
 		return fmt.Errorf("failed to create request observation size histogram: %w", err)
 	}
 
+	m.identicalResponseCount, err = meter.Int64Histogram(
+		m.prefix+"capability_consensus_identical_response_count",
+		metric.WithDescription("Number of nodes that returned the same response for a capability read request per OCR round"),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create identical response count histogram: %w", err)
+	}
+
 	m.queueSize, err = meter.Int64Gauge(
 		m.prefix+"capability_consensus_queue_size",
 		metric.WithDescription("Number poller queue size"),
@@ -133,6 +142,16 @@ func (m *consensusMetrics) RecordRoundObservationSize(ctx context.Context, size 
 
 func (m *consensusMetrics) RecordRequestObservationSize(ctx context.Context, size int) {
 	m.requestObservationSize.Record(ctx, int64(size), m.chainAttributes())
+}
+
+func (m *consensusMetrics) RecordIdenticalResponseCount(ctx context.Context, count int, observationType string) {
+	m.identicalResponseCount.Record(ctx, int64(count), metric.WithAttributes(
+		attribute.String("chain_id", m.chainInfo.ChainID),
+		attribute.String("family_name", m.chainInfo.FamilyName),
+		attribute.String("network_name", m.chainInfo.NetworkName),
+		attribute.String("network_name_full", m.chainInfo.NetworkNameFull),
+		attribute.String("observation_type", observationType),
+	))
 }
 
 func (m *consensusMetrics) RecordQueueSize(ctx context.Context, size int) {

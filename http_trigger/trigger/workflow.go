@@ -66,11 +66,8 @@ func (s *workflowStore) upsertWorkflow(w *workflow) error {
 		workflowTag:   w.workflowSelector.WorkflowTag,
 	}]
 	if exists {
-		s.lggr.Debugf("Updating existing workflow reference %s/%s/%s. Removing previous workflow %s",
-			w.workflowSelector.WorkflowOwner,
-			w.workflowSelector.WorkflowName,
-			w.workflowSelector.WorkflowTag,
-			workflowID)
+		reference := fmt.Sprintf("%s/%s/%s", w.workflowSelector.WorkflowOwner, w.workflowSelector.WorkflowName, w.workflowSelector.WorkflowTag)
+		s.lggr.Debugw("Updating existing workflow reference and removing previous workflow", "reference", reference, "prevWorkflowID", workflowID)
 		if oldW, ok := s.workflows[workflowID]; ok {
 			oldW.close()
 		}
@@ -144,13 +141,13 @@ func (s *workflowStore) removeWorkflow(workflowID string) error {
 		workflowName:  w.workflowSelector.WorkflowName,
 		workflowTag:   w.workflowSelector.WorkflowTag,
 	})
-	s.lggr.Debugf("Unregistered workflow %s", workflowID)
+	s.lggr.Debugw("Unregistered workflow", "workflowID", workflowID)
 	return nil
 }
 
 func (s *workflowStore) getWorkflowByID(workflowID string) (*workflow, bool) {
 	if err := validateHexPrefixedField("workflowID", workflowID, expectedWorkflowIDLen); err != nil {
-		s.lggr.Debugf("Invalid workflowID in getWorkflowByID: %v", err)
+		s.lggr.Debugw("Invalid workflowID in getWorkflowByID", "error", err)
 		return nil, false
 	}
 
@@ -162,11 +159,11 @@ func (s *workflowStore) getWorkflowByID(workflowID string) (*workflow, bool) {
 
 func (s *workflowStore) getWorkflowIDByReference(workflowOwner, workflowName, workflowTag string) (string, bool) {
 	if err := validateHexPrefixedField("workflowOwner", workflowOwner, expectedWorkflowOwnerLen); err != nil {
-		s.lggr.Debugf("Invalid workflowOwner in getWorkflowIDByReference: %v", err)
+		s.lggr.Debugw("Invalid workflowOwner in getWorkflowIDByReference", "error", err)
 		return "", false
 	}
 	if err := validateHexPrefixedField("workflowName", workflowName, workflowNameHashLength); err != nil {
-		s.lggr.Debugf("Invalid workflowName in getWorkflowIDByReference: %v", err)
+		s.lggr.Debugw("Invalid workflowName in getWorkflowIDByReference", "error", err)
 		return "", false
 	}
 

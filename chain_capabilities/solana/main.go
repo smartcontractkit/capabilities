@@ -4,14 +4,23 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strconv"
+	"time"
 
 	chain_selectors "github.com/smartcontractkit/chain-selectors"
+	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
+
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
+	consMetrics "github.com/smartcontractkit/capabilities/libs/chainconsensus/metrics"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus/oracle"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus/poller"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
+	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
@@ -23,7 +32,6 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/trigger"
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
 
-	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
 	solcapserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana/server"
@@ -48,7 +56,10 @@ type capabilityGRPCService struct {
 
 type capability struct {
 	*actions.Solana
-	id string
+	requestPoller    *poller.Poller
+	consensusHandler chainconsensus.Handler
+	oracle           core.Oracle
+	id               string
 }
 
 var _ solcapserver.ClientCapability = &capabilityGRPCService{}
@@ -70,16 +81,33 @@ func (c *capabilityGRPCService) Start(_ context.Context) error {
 
 func (c *capabilityGRPCService) Close() error {
 	c.lggr.Infof("Closing %s", CapabilityName)
-	if c.triggerService != nil {
-		if err := c.triggerService.Close(); err != nil {
-			return fmt.Errorf("failed to close log trigger service: %w", err)
-		}
+
+	var closers []io.Closer
+	if c.oracle != nil {
+		closers = append(closers, closeFunc(func() error {
+			c.lggr.Info("Closing oracle factory")
+			err := c.oracle.Close(context.Background())
+			if err != nil {
+				return err
+			}
+			c.lggr.Info("Closed oracle factory")
+			return nil
+		}))
 	}
-	return nil
+	if c.requestPoller != nil {
+		closers = append(closers, c.requestPoller)
+	}
+	if c.consensusHandler != nil {
+		closers = append(closers, c.consensusHandler)
+	}
+	if c.triggerService != nil {
+		closers = append(closers, c.triggerService)
+	}
+	return services.CloseAll(closers...)
 }
 
-func (c *capabilityGRPCService) AckEvent(ctx context.Context, triggerId string, eventId string, method string) errors.Error {
-	return errors.NewError(fmt.Errorf("not implemented"), errors.VisibilityPublic, errors.OriginSystem, errors.Unknown)
+func (c *capabilityGRPCService) AckEvent(ctx context.Context, triggerID string, eventID string, method string) caperrors.Error {
+	return caperrors.NewError(fmt.Errorf("not implemented"), caperrors.VisibilityPublic, caperrors.OriginSystem, caperrors.Unknown)
 }
 
 func (c *capabilityGRPCService) HealthReport() map[string]error {
@@ -161,7 +189,36 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		c.lggr.Infow("DeltaStage not configured, transmission scheduling disabled")
 	}
 
-	c.Solana, err = actions.NewSolana(ctx, cfg, solService, messageBuilder, processor, c.lggr, limits.Factory{Logger: c.lggr}, scheduler, c.chainSelector)
+	var toStart []interface{ Start(context.Context) error }
+	if cfg.ReadsEnabled {
+		consensusMetrics, err := consMetrics.NewConsensusMetrics(chainInfo)
+		if err != nil {
+			return fmt.Errorf("failed to create solana consensus metrics: %w", err)
+		}
+		c.requestPoller = poller.NewPoller(c.lggr, consensusMetrics, cfg.ObservationPollerWorkersCount, cfg.ObservationPollPeriod)
+		c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, cfg.UnknownRequestsTTL)
+		c.oracle, err = dependencies.OracleFactory.NewOracle(ctx, core.OracleArgs{
+			LocalConfig: ocrtypes.LocalConfig{
+				BlockchainTimeout:                  time.Second * 20,
+				ContractConfigTrackerPollInterval:  time.Second * 10,
+				ContractConfigConfirmations:        1,
+				ContractTransmitterTransmitTimeout: time.Second * 10,
+				DatabaseTimeout:                    time.Second * 10,
+				ContractConfigLoadTimeout:          time.Second * 10,
+				DefaultMaxDurationInitialization:   time.Second * 10,
+			},
+			ReportingPluginFactoryService: oracle.NewReportingPluginFactory(logger.Sugared(c.lggr), c.consensusHandler, noopBlocksProvider{}, consensusMetrics),
+			ContractTransmitter:           oracle.NewContractTransmitter(c.lggr, c.consensusHandler),
+		})
+		if err != nil {
+			return fmt.Errorf("error when creating oracle: %w", err)
+		}
+		toStart = append(toStart, c.requestPoller, c.consensusHandler, c.oracle)
+	} else {
+		c.lggr.Warn("Initialising solana oracle required for chain reads is disabled")
+	}
+
+	c.Solana, err = actions.NewSolana(ctx, cfg, solService, messageBuilder, processor, c.lggr, c.limitsFactory, scheduler, c.chainSelector, c.consensusHandler)
 	if err != nil {
 		return err
 	}
@@ -178,8 +235,11 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 		return fmt.Errorf("failed to create log trigger service: %w", err)
 	}
 
-	if err := c.triggerService.Start(ctx); err != nil {
-		return fmt.Errorf("failed to start log trigger service: %w", err)
+	toStart = append(toStart, c.triggerService)
+	for _, service := range toStart {
+		if err := service.Start(ctx); err != nil {
+			return err
+		}
 	}
 
 	c.lggr.Infof("Successfully initialised %s", CapabilityName)
@@ -210,6 +270,21 @@ func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Confi
 		return nil, fmt.Errorf("failed to parse Solana capability config: %s err: %w", configStr, err)
 	}
 
+	if cfg.ObservationPollerWorkersCount == 0 {
+		cfg.ObservationPollerWorkersCount = 10
+		c.lggr.Infof("ObservationPollerWorkersCount is zero, setting to %d.", cfg.ObservationPollerWorkersCount)
+	}
+
+	if cfg.ObservationPollPeriod == 0 {
+		cfg.ObservationPollPeriod = 200 * time.Millisecond // 1/2 of Solana's 400 ms block time to ensure volatile request makes observations for every block
+		c.lggr.Infof("ObservationPollPeriod is zero, setting to %s.", cfg.ObservationPollPeriod)
+	}
+
+	if cfg.UnknownRequestsTTL == 0 {
+		cfg.UnknownRequestsTTL = 10 * time.Second
+		c.lggr.Infof("UnknownRequestsTTL is zero, setting to %s.", cfg.UnknownRequestsTTL)
+	}
+
 	return &cfg, nil
 }
 
@@ -220,4 +295,10 @@ func (s *capabilityGRPCService) RegisterLogTrigger(
 
 func (s *capabilityGRPCService) UnregisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *solana.FilterLogTriggerRequest) caperrors.Error {
 	return s.triggerService.UnregisterLogTrigger(ctx, triggerID, metadata, input)
+}
+
+type closeFunc func() error
+
+func (f closeFunc) Close() error {
+	return f()
 }

@@ -6,13 +6,17 @@ const ErrMsgGatewayResponseWait = "request canceled before gateway response"
 // UserError represents an error caused by user input or user endpoint
 // These errors should be surfaced to the user as public errors
 type UserError struct {
-	message string
+	err error
 }
 
 func (e UserError) Error() string {
-	return e.message
+	return e.err.Error()
 }
 
-func NewUserError(message string) UserError {
-	return UserError{message: message}
+func (e UserError) Unwrap() error {
+	return e.err
+}
+
+func NewUserError(err error) UserError {
+	return UserError{err: err}
 }

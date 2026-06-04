@@ -14,6 +14,7 @@ import (
 	p2ptypes "github.com/smartcontractkit/libocr/ragep2p/types"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/metering"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/monitoring"
@@ -205,7 +206,27 @@ func buildFakeTransactionWithSigs(t *testing.T, txHash string, success bool, seq
 	return &aptostypes.Transaction{Data: []byte(txJSON)}
 }
 
-func newTestTxInfoRetriever(t *testing.T, mockClient *CREForwarderClient_mock, targetReportMetadata ocrtypes.Metadata, requestStartTime time.Time) TxInfoRetriever {
+// monitoring
+type recordingTxInfoProcessor struct {
+	messages []*monitoring.WriteReportTxInfoRetrievalPhase
+}
+
+func (r *recordingTxInfoProcessor) Process(_ context.Context, msg proto.Message, _ ...any) error {
+	if phaseMsg, ok := msg.(*monitoring.WriteReportTxInfoRetrievalPhase); ok {
+		r.messages = append(r.messages, phaseMsg)
+	}
+	return nil
+}
+
+func txInfoRetrieverMonitoringOption(processor *recordingTxInfoProcessor) TxInfoRetrieverOption {
+	return WithTxInfoRetrieverMonitoring(
+		processor,
+		monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		monitoring.TelemetryContext{},
+	)
+}
+
+func newTestTxInfoRetriever(t *testing.T, mockClient *CREForwarderClient_mock, targetReportMetadata ocrtypes.Metadata, requestStartTime time.Time) (TxInfoRetriever, *recordingTxInfoProcessor) {
 	t.Helper()
 	rawExecID, _ := hex.DecodeString(targetReportMetadata.ExecutionID)
 	reportIDBytes, _ := hex.DecodeString(targetReportMetadata.ReportID)
@@ -219,7 +240,8 @@ func newTestTxInfoRetriever(t *testing.T, mockClient *CREForwarderClient_mock, t
 		RawReport:     encodedReport,
 		Sigs:          fixedTestSignatures(),
 	}
-	return NewTxInfoRetriever(mockClient, logger.Test(t), tid, testForwarderAddr.String(), requestStartTime, 1*time.Minute, report)
+	processor := &recordingTxInfoProcessor{}
+	return NewTxInfoRetriever(mockClient, logger.Test(t), tid, testForwarderAddr.String(), requestStartTime, 1*time.Minute, report, txInfoRetrieverMonitoringOption(processor)), processor
 }
 
 func computeTransmissionIDStr(t *testing.T, rm ocrtypes.Metadata) string {
@@ -234,7 +256,7 @@ func computeTransmissionIDStr(t *testing.T, rm ocrtypes.Metadata) string {
 // mockTransmission sets GetTransmissionInfo to return the given info.
 // Chain .Once() for single-use registrations.
 func (h *testHelper) mockTransmission(info TransmissionInfo) *mock.Call {
-	return h.forwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).
+	return h.forwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything, mock.Anything).
 		Return(info, nil)
 }
 
@@ -250,9 +272,10 @@ func (h *testHelper) mockTransactionByHashFailed(txHash string, gasUsed, gasUnit
 
 func (h *testHelper) mockTransactionByHashWithVmStatus(txHash string, success bool, gasUsed, gasUnitPrice uint64, vmStatus string) {
 	txData := fmt.Sprintf(`{"Hash":%q,"Success":%t,"GasUsed":%d,"GasUnitPrice":%d,"VmStatus":%q}`, txHash, success, gasUsed, gasUnitPrice, vmStatus)
+	committedVersion := uint64(1)
 	h.aptosService.On("TransactionByHash", mock.Anything, aptostypes.TransactionByHashRequest{Hash: txHash}).Return(
 		&aptostypes.TransactionByHashReply{
-			Transaction: &aptostypes.Transaction{Data: []byte(txData)},
+			Transaction: &aptostypes.Transaction{Data: []byte(txData), Version: &committedVersion},
 		}, nil)
 }
 
@@ -268,6 +291,17 @@ func (h *testHelper) mockSearchTx(t *testing.T, addr aptos_sdk.AccountAddress, t
 	t.Helper()
 	return h.forwarderClient.On("GetTransmitterTransactions", mock.Anything, addr, mock.Anything, mock.Anything).
 		Return([]*aptostypes.Transaction{tx}, nil)
+}
+
+type recordingWriteReportProcessor struct {
+	invokeDurations []*monitoring.WriteReportInvokeOnReportDuration
+}
+
+func (r *recordingWriteReportProcessor) Process(_ context.Context, msg proto.Message, _ ...any) error {
+	if invokeDurationMsg, ok := msg.(*monitoring.WriteReportInvokeOnReportDuration); ok {
+		r.invokeDurations = append(r.invokeDurations, invokeDurationMsg)
+	}
+	return nil
 }
 
 // --- Tests ---
@@ -344,12 +378,37 @@ func TestWriteReport_Execute(t *testing.T) {
 		validateMeteringWriteReport(t, result.ResponseMetadata, testChainSelector, "0.0005")
 	})
 
+	t.Run("Post-submit View is pinned to committed ledger version", func(t *testing.T) {
+		h := newTestHelper(t)
+		_, reqMeta, req := newReportFixture(t)
+		expectedVersion := uint64(42)
+
+		// Pre-submit GetTransmissionInfo runs unpinned (nil ledgerVersion).
+		h.forwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything, (*uint64)(nil)).
+			Return(TransmissionInfo{Success: false}, nil).Once()
+		h.mockInvokeOnReport(&aptostypes.SubmitTransactionReply{TxStatus: aptostypes.TxSuccess, TxHash: "0xabc"}, nil)
+		// TransactionByHash returns Version=42, which must flow through to the post-submit pin.
+		txData := fmt.Sprintf(`{"Hash":%q,"Success":true,"GasUsed":%d,"GasUnitPrice":%d,"VmStatus":"Executed successfully"}`, "0xabc", testGasUsed, testGasUnitPrice)
+		h.aptosService.On("TransactionByHash", mock.Anything, aptostypes.TransactionByHashRequest{Hash: "0xabc"}).Return(
+			&aptostypes.TransactionByHashReply{
+				Transaction: &aptostypes.Transaction{Data: []byte(txData), Version: &expectedVersion},
+			}, nil)
+		// Post-submit GetTransmissionInfo MUST be called with &expectedVersion.
+		h.forwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything, &expectedVersion).
+			Return(TransmissionInfo{Success: true, Transmitter: testTransmitter}, nil).Once()
+
+		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
+		require.Nil(t, capErr)
+		require.Equal(t, aptoscap.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
+		h.forwarderClient.AssertExpectations(t)
+	})
+
 	t.Run("Already transmitted - returns without submitting", func(t *testing.T) {
 		h := newTestHelper(t)
 		rm, reqMeta, req := newReportFixture(t)
 		transmitter := aptos_sdk.AccountAddress{0xCC}
 
-		h.forwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything).
+		h.forwarderClient.On("GetTransmissionInfo", mock.Anything, mock.Anything, mock.Anything).
 			Return(TransmissionInfo{Success: true, Transmitter: transmitter}, nil)
 		h.mockSearchTx(t, transmitter, buildFakeTransaction(t, "0xalready", true, 100, time.Now().UnixMicro(), rm)) // find the already-submitted successful tx
 
@@ -373,6 +432,27 @@ func TestWriteReport_Execute(t *testing.T) {
 		_, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
 		require.NotNil(t, capErr)
 		require.Contains(t, capErr.Error(), "failed to invoke forwarder report")
+	})
+
+	t.Run("InvokeOnReport duration metric includes tx status", func(t *testing.T) {
+		h := newTestHelper(t)
+		_, reqMeta, req := newReportFixture(t)
+		processor := &recordingWriteReportProcessor{}
+		h.aptos.beholderProcessor = processor
+
+		h.mockTransmission(TransmissionInfo{Success: false}).Once()
+		h.mockInvokeOnReport(&aptostypes.SubmitTransactionReply{TxStatus: aptostypes.TxSuccess, TxHash: "0xabc"}, nil)
+		h.mockTransmission(TransmissionInfo{Success: true, Transmitter: testTransmitter})
+		h.mockTransactionByHash("0xabc", testGasUsed, testGasUnitPrice)
+
+		result, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
+		require.Nil(t, capErr)
+		require.Equal(t, aptoscap.TxStatus_TX_STATUS_SUCCESS, result.Response.TxStatus)
+
+		require.Len(t, processor.invokeDurations, 1)
+		invokeDuration := processor.invokeDurations[0]
+		require.EqualValues(t, aptostypes.TxSuccess, invokeDuration.GetTxStatus())
+		require.NotNil(t, invokeDuration.GetExecutionContext())
 	})
 
 	t.Run("Submit reverts but transmission succeeded - resolves real hash", func(t *testing.T) {
@@ -627,8 +707,8 @@ func TestPollTransmissionInfo_RaceConditions_Aptos(t *testing.T) {
 		}()
 
 		mockClient.EXPECT().
-			GetTransmissionInfo(mock.Anything, mock.Anything).
-			RunAndReturn(func(context.Context, TransmissionID) (TransmissionInfo, error) {
+			GetTransmissionInfo(mock.Anything, mock.Anything, mock.Anything).
+			RunAndReturn(func(context.Context, TransmissionID, *uint64) (TransmissionInfo, error) {
 				if chainStateUpdated.Load() {
 					return TransmissionInfo{Success: true, Transmitter: testTransmitter}, nil
 				}
@@ -651,8 +731,8 @@ func TestPollTransmissionInfo_RaceConditions_Aptos(t *testing.T) {
 
 		var rpcCalls atomic.Int64
 		mockClient.EXPECT().
-			GetTransmissionInfo(mock.Anything, mock.Anything).
-			RunAndReturn(func(context.Context, TransmissionID) (TransmissionInfo, error) {
+			GetTransmissionInfo(mock.Anything, mock.Anything, mock.Anything).
+			RunAndReturn(func(context.Context, TransmissionID, *uint64) (TransmissionInfo, error) {
 				rpcCalls.Add(1)
 				return TransmissionInfo{}, errors.New("rpc unavailable")
 			}).

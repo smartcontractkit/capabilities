@@ -4,9 +4,6 @@ outpkg: mocks
 filename: "{{ .InterfaceName | snakecase }}.go"
 fail-on-missing: true
 packages:
-  github.com/smartcontractkit/capabilities/chain_capabilities/evm/actions:
-    interfaces:
-      ConsensusHandler:
   github.com/smartcontractkit/capabilities/chain_capabilities/evm/height:
     interfaces:
       HeaderProvider:

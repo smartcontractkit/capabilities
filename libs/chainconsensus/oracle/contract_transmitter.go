@@ -61,7 +61,7 @@ func (ct *ContractTransmitter) Transmit(
 		if len(reportWithInfo.Report) != ctypes.HashLength {
 			return fmt.Errorf("invalid report length for hashable report: expected %d, got %d", ctypes.HashLength, len(reportWithInfo.Report))
 		}
-		var reportData [ctypes.HashLength]byte
+		var reportData ctypes.Hash
 		copy(reportData[:], reportWithInfo.Report)
 		return ct.requestsStore.CompleteHashableRequest(id, ctypes.NewHashableRequestReport(configDigest, seqNr, reportData, attributedOnchainSignature))
 	default:

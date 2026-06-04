@@ -6,6 +6,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"go.opentelemetry.io/otel/attribute"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 
 	commoncapbeholder "github.com/smartcontractkit/capabilities/libs/monitoring"
 
@@ -14,8 +15,65 @@ import (
 
 func ns(name string) string { return fmt.Sprintf("evm_capability_%s", name) }
 
+const (
+	actionCallContract              = "call_contract"
+	actionFilterLogs                = "filter_logs"
+	actionBalanceAt                 = "balance_at"
+	actionEstimateGas               = "estimate_gas"
+	actionGetTransactionByHash      = "get_transaction_by_hash"
+	actionGetTransactionReceipt     = "get_transaction_receipt"
+	actionHeaderByNumber            = "header_by_number"
+	readActionSuccessMetricEventRef = "chain_capabilities.evm.ReadActionSuccess"
+	readActionErrorMetricEventRef   = "chain_capabilities.evm.ReadActionError"
+)
+
+var readLatencyBucketBoundariesMs = []float64{
+	0, 5, 10, 25, 50, 75, 100,
+	250, 500, 750, 1000,
+	2500, 5000, 7500, 10000,
+	15000, 30000,
+}
+
+func MetricViews() []sdkmetric.View {
+	metricNames := []string{
+		ns("read_success") + "_cap_duration",
+		ns("read_error") + "_cap_duration",
+		ns(actionCallContract+"_success") + "_cap_duration",
+		ns(actionCallContract+"_error") + "_cap_duration",
+		ns(actionFilterLogs+"_success") + "_cap_duration",
+		ns(actionFilterLogs+"_error") + "_cap_duration",
+		ns(actionBalanceAt+"_success") + "_cap_duration",
+		ns(actionBalanceAt+"_error") + "_cap_duration",
+		ns(actionEstimateGas+"_success") + "_cap_duration",
+		ns(actionEstimateGas+"_error") + "_cap_duration",
+		ns(actionGetTransactionByHash+"_success") + "_cap_duration",
+		ns(actionGetTransactionByHash+"_error") + "_cap_duration",
+		ns(actionGetTransactionReceipt+"_success") + "_cap_duration",
+		ns(actionGetTransactionReceipt+"_error") + "_cap_duration",
+		ns(actionHeaderByNumber+"_success") + "_cap_duration",
+		ns(actionHeaderByNumber+"_error") + "_cap_duration",
+	}
+
+	views := make([]sdkmetric.View, 0, len(metricNames))
+	for _, name := range metricNames {
+		views = append(views, sdkmetric.NewView(
+			sdkmetric.Instrument{Name: name},
+			sdkmetric.Stream{Aggregation: sdkmetric.AggregationExplicitBucketHistogram{
+				Boundaries: readLatencyBucketBoundariesMs,
+			}},
+		))
+	}
+	return views
+}
+
 // Metrics holds all per-method instruments
 type Metrics struct {
+	ReadActionSuccess struct {
+		basic commoncapbeholder.MetricsCapBasic
+	}
+	ReadActionError struct {
+		basic commoncapbeholder.MetricsCapBasic
+	}
 	CallContractSuccess struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
@@ -38,6 +96,9 @@ type Metrics struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
 	WriteReportDuplicateTx struct {
+		basic commoncapbeholder.MetricsCapBasic
+	}
+	WriteReportInsufficientGasRetry struct {
 		basic commoncapbeholder.MetricsCapBasic
 	}
 	LogTriggerSuccess struct {
@@ -98,6 +159,17 @@ func NewMetrics() (Metrics, error) {
 	m := Metrics{}
 	var err error
 
+	readActionSuccess := commoncapbeholder.NewMetricsInfoCapBasic(ns("read_success"), readActionSuccessMetricEventRef)
+	m.ReadActionSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(readActionSuccess)
+	if err != nil {
+		return Metrics{}, fmt.Errorf("failed to create read action success metric: %w", err)
+	}
+	readActionErr := commoncapbeholder.NewMetricsInfoCapBasic(ns("read_error"), readActionErrorMetricEventRef)
+	m.ReadActionError.basic, err = commoncapbeholder.NewMetricsCapBasic(readActionErr)
+	if err != nil {
+		return Metrics{}, fmt.Errorf("failed to create read action error metric: %w", err)
+	}
+
 	// -- CallContract --
 	ccSuccess := commoncapbeholder.NewMetricsInfoCapBasic(ns("call_contract_success"), commonbeholder.ToSchemaFullName(&CallContractSuccess{}))
 	m.CallContractSuccess.basic, err = commoncapbeholder.NewMetricsCapBasic(ccSuccess)
@@ -139,6 +211,11 @@ func NewMetrics() (Metrics, error) {
 	m.WriteReportDuplicateTx.basic, err = commoncapbeholder.NewMetricsCapBasic(wrDuplicateTx)
 	if err != nil {
 		return Metrics{}, fmt.Errorf("failed to create write report duplicate tx metric: %w", err)
+	}
+	wrInsufficientGasRetry := commoncapbeholder.NewMetricsInfoCapBasic(ns("write_report_insufficient_gas_retry"), commonbeholder.ToSchemaFullName(&WriteReportInsufficientGasRetry{}))
+	m.WriteReportInsufficientGasRetry.basic, err = commoncapbeholder.NewMetricsCapBasic(wrInsufficientGasRetry)
+	if err != nil {
+		return Metrics{}, fmt.Errorf("failed to create write report insufficient gas retry metric: %w", err)
 	}
 
 	// -- LogTrigger --
@@ -249,13 +326,17 @@ func NewMetrics() (Metrics, error) {
 
 func (m *Metrics) OnCallContractSuccess(ctx context.Context, msg *CallContractSuccess) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.CallContractSuccess.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
+	attrs := msg.MetricAttributes()
+	m.CallContractSuccess.basic.RecordEmit(ctx, start, emit, attrs...)
+	m.recordReadActionSuccess(ctx, actionCallContract, start, emit, attrs...)
 	return nil
 }
 
 func (m *Metrics) OnCallContractError(ctx context.Context, msg *CallContractError) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.CallContractError.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
+	attrs := msg.MetricAttributes()
+	m.CallContractError.basic.RecordEmit(ctx, start, emit, attrs...)
+	m.recordReadActionError(ctx, actionCallContract, start, emit, attrs...)
 	return nil
 }
 
@@ -297,6 +378,12 @@ func (m *Metrics) OnWriteReportDuplicateTx(ctx context.Context, msg *WriteReport
 	return nil
 }
 
+func (m *Metrics) OnWriteReportInsufficientGasRetry(ctx context.Context, msg *WriteReportInsufficientGasRetry) error {
+	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
+	m.WriteReportInsufficientGasRetry.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
+	return nil
+}
+
 // -- LogTrigger --
 
 func (m *Metrics) OnLogTriggerSuccess(ctx context.Context, msg *LogTriggerSuccess) error {
@@ -327,13 +414,17 @@ func (m *Metrics) OnTriggerEventDroppedError(ctx context.Context, msg *LogTrigge
 
 func (m *Metrics) OnFilterLogsSuccess(ctx context.Context, msg *FilterLogsSuccess) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.FilterLogsSuccess.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
+	attrs := msg.MetricAttributes()
+	m.FilterLogsSuccess.basic.RecordEmit(ctx, start, emit, attrs...) //TODO PLEX-2401: once we migrated all panels/alerts to the new metric delete this one
+	m.recordReadActionSuccess(ctx, actionFilterLogs, start, emit, attrs...)
 	return nil
 }
 
 func (m *Metrics) OnFilterLogsError(ctx context.Context, msg *FilterLogsError) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.FilterLogsError.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
+	attrs := msg.MetricAttributes()
+	m.FilterLogsError.basic.RecordEmit(ctx, start, emit, attrs...) //TODO PLEX-2401: once we migrated all panels/alerts to the new metric delete this one
+	m.recordReadActionError(ctx, actionFilterLogs, start, emit, attrs...)
 	return nil
 }
 
@@ -341,13 +432,17 @@ func (m *Metrics) OnFilterLogsError(ctx context.Context, msg *FilterLogsError) e
 
 func (m *Metrics) OnBalanceAtSuccess(ctx context.Context, msg *BalanceAtSuccess) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.BalanceAtSuccess.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
+	attrs := msg.MetricAttributes()
+	m.BalanceAtSuccess.basic.RecordEmit(ctx, start, emit, attrs...) //TODO PLEX-2401: once we migrated all panels/alerts to the new metric delete this one
+	m.recordReadActionSuccess(ctx, actionBalanceAt, start, emit, attrs...)
 	return nil
 }
 
 func (m *Metrics) OnBalanceAtError(ctx context.Context, msg *BalanceAtError) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.BalanceAtError.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
+	attrs := msg.MetricAttributes()
+	m.BalanceAtError.basic.RecordEmit(ctx, start, emit, attrs...) //TODO PLEX-2401: once we migrated all panels/alerts to the new metric delete this one
+	m.recordReadActionError(ctx, actionBalanceAt, start, emit, attrs...)
 	return nil
 }
 
@@ -355,13 +450,17 @@ func (m *Metrics) OnBalanceAtError(ctx context.Context, msg *BalanceAtError) err
 
 func (m *Metrics) OnEstimateGasSuccess(ctx context.Context, msg *EstimateGasSuccess) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.EstimateGasSuccess.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
+	attrs := msg.MetricAttributes()
+	m.EstimateGasSuccess.basic.RecordEmit(ctx, start, emit, attrs...) //TODO PLEX-2401: once we migrated all panels/alerts to the new metric delete this one
+	m.recordReadActionSuccess(ctx, actionEstimateGas, start, emit, attrs...)
 	return nil
 }
 
 func (m *Metrics) OnEstimateGasError(ctx context.Context, msg *EstimateGasError) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.EstimateGasError.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
+	attrs := msg.MetricAttributes()
+	m.EstimateGasError.basic.RecordEmit(ctx, start, emit, attrs...) //TODO PLEX-2401: once we migrated all panels/alerts to the new metric delete this one
+	m.recordReadActionError(ctx, actionEstimateGas, start, emit, attrs...)
 	return nil
 }
 
@@ -369,13 +468,17 @@ func (m *Metrics) OnEstimateGasError(ctx context.Context, msg *EstimateGasError)
 
 func (m *Metrics) OnGetTransactionByHashSuccess(ctx context.Context, msg *GetTransactionByHashSuccess) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.GetTxByHashSuccess.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
+	attrs := msg.MetricAttributes()
+	m.GetTxByHashSuccess.basic.RecordEmit(ctx, start, emit, attrs...) //TODO PLEX-2401: once we migrated all panels/alerts to the new metric delete this one
+	m.recordReadActionSuccess(ctx, actionGetTransactionByHash, start, emit, attrs...)
 	return nil
 }
 
 func (m *Metrics) OnGetTransactionByHashError(ctx context.Context, msg *GetTransactionByHashError) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.GetTxByHashError.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
+	attrs := msg.MetricAttributes()
+	m.GetTxByHashError.basic.RecordEmit(ctx, start, emit, attrs...) //TODO PLEX-2401: once we migrated all panels/alerts to the new metric delete this one
+	m.recordReadActionError(ctx, actionGetTransactionByHash, start, emit, attrs...)
 	return nil
 }
 
@@ -383,13 +486,17 @@ func (m *Metrics) OnGetTransactionByHashError(ctx context.Context, msg *GetTrans
 
 func (m *Metrics) OnGetTransactionReceiptSuccess(ctx context.Context, msg *GetTransactionReceiptSuccess) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.GetReceiptSuccess.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
+	attrs := msg.MetricAttributes()
+	m.GetReceiptSuccess.basic.RecordEmit(ctx, start, emit, attrs...) //TODO PLEX-2401: once we migrated all panels/alerts to the new metric delete this one
+	m.recordReadActionSuccess(ctx, actionGetTransactionReceipt, start, emit, attrs...)
 	return nil
 }
 
 func (m *Metrics) OnGetTransactionReceiptError(ctx context.Context, msg *GetTransactionReceiptError) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.GetReceiptError.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
+	attrs := msg.MetricAttributes()
+	m.GetReceiptError.basic.RecordEmit(ctx, start, emit, attrs...) //TODO PLEX-2401: once we migrated all panels/alerts to the new metric delete this one
+	m.recordReadActionError(ctx, actionGetTransactionReceipt, start, emit, attrs...)
 	return nil
 }
 
@@ -397,13 +504,17 @@ func (m *Metrics) OnGetTransactionReceiptError(ctx context.Context, msg *GetTran
 
 func (m *Metrics) OnHeaderByNumberSuccess(ctx context.Context, msg *HeaderByNumberSuccess) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.HeaderByNumberSuccess.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
+	attrs := msg.MetricAttributes()
+	m.HeaderByNumberSuccess.basic.RecordEmit(ctx, start, emit, attrs...) //TODO PLEX-2401: once we migrated all panels/alerts to the new metric delete this one
+	m.recordReadActionSuccess(ctx, actionHeaderByNumber, start, emit, attrs...)
 	return nil
 }
 
 func (m *Metrics) OnHeaderByNumberError(ctx context.Context, msg *HeaderByNumberError) error {
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
-	m.HeaderByNumberError.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
+	attrs := msg.MetricAttributes()
+	m.HeaderByNumberError.basic.RecordEmit(ctx, start, emit, attrs...) //TODO PLEX-2401: once we migrated all panels/alerts to the new metric delete this one
+	m.recordReadActionError(ctx, actionHeaderByNumber, start, emit, attrs...)
 	return nil
 }
 
@@ -413,6 +524,19 @@ func (m *Metrics) OnTransmissionSchedulerNodeNotFoundInDon(ctx context.Context, 
 	start, emit := msg.ExecutionContext.MetaCapabilityTimestampStart, msg.ExecutionContext.MetaCapabilityTimestampEmit
 	m.TransmissionSchedulerNodeNotFoundInDon.basic.RecordEmit(ctx, start, emit, msg.MetricAttributes()...)
 	return nil
+}
+
+func (m *Metrics) recordReadActionSuccess(ctx context.Context, action string, start, emit uint64, attrKVs ...attribute.KeyValue) {
+	m.ReadActionSuccess.basic.RecordEmit(ctx, start, emit, readActionMetricAttributes(action, attrKVs)...)
+}
+
+func (m *Metrics) recordReadActionError(ctx context.Context, action string, start, emit uint64, attrKVs ...attribute.KeyValue) {
+	m.ReadActionError.basic.RecordEmit(ctx, start, emit, readActionMetricAttributes(action, attrKVs)...)
+}
+
+func readActionMetricAttributes(action string, attrKVs []attribute.KeyValue) []attribute.KeyValue {
+	attrs := append([]attribute.KeyValue{attribute.String("action", action)}, attrKVs...)
+	return commoncapbeholder.DistinctAttributes(attrs)
 }
 
 func (r *CallContractSuccess) LogAttributes() []attribute.KeyValue {
@@ -518,6 +642,19 @@ func (r *WriteReportDuplicateTx) LogAttributes() []attribute.KeyValue {
 }
 
 func (r *WriteReportDuplicateTx) MetricAttributes() []attribute.KeyValue {
+	return r.ExecutionContext.MetricsAttributes()
+}
+
+func (r *WriteReportInsufficientGasRetry) LogAttributes() []attribute.KeyValue {
+	return append([]attribute.KeyValue{
+		attribute.String("receiver", getReceiver(r.Req.GetReceiver())),
+		attribute.Int64("queue_position", int64(r.GetQueuePosition())),                                   //nolint:gosec // G115: EVM gas fits int64 for logging
+		attribute.Int64("receiver_gas_budget", int64(r.GetReceiverGasBudget())),                          //nolint:gosec // G115: EVM gas fits int64 for logging
+		attribute.Int64("transmission_receiver_gas_budget", int64(r.GetTransmissionReceiverGasBudget())), //nolint:gosec // G115: EVM gas fits int64 for logging
+	}, r.ExecutionContext.LogAttributes()...)
+}
+
+func (r *WriteReportInsufficientGasRetry) MetricAttributes() []attribute.KeyValue {
 	return r.ExecutionContext.MetricsAttributes()
 }
 

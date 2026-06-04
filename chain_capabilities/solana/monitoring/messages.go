@@ -4,11 +4,13 @@ import (
 	"fmt"
 
 	solgo "github.com/gagliardetto/solana-go"
-	solcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
-	sdkpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
 	"go.opentelemetry.io/otel/attribute"
 
+	solcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
+	sdkpb "github.com/smartcontractkit/chainlink-protos/cre/go/sdk"
+
 	"github.com/mr-tron/base58"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	solanacappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
@@ -157,26 +159,34 @@ func (m *MessageBuilder) BuildWriteReportInitiated(tc TelemetryContext, req *sol
 }
 
 func convertWriteReportRequest(req *solanacappb.WriteReportRequest) *WriteReportRequest {
-	return &WriteReportRequest{
+	if req == nil {
+		return nil
+	}
+	msg := &WriteReportRequest{
 		Receiver:          req.Receiver,
 		RemainingAccounts: convertRemainingAccounts(req.RemainingAccounts),
-		Report: &ReportResponse{
+		ComputeConfig: &ComputeConfig{
+			ComputeLimit: req.GetComputeConfig().GetComputeLimit(),
+		},
+	}
+	if req.Report != nil {
+		msg.Report = &ReportResponse{
 			ConfigDigest:  req.Report.ConfigDigest,
 			SeqNr:         req.Report.SeqNr,
 			ReportContext: req.Report.ReportContext,
 			RawReport:     req.Report.RawReport,
 			Sigs:          convertAttributedSignature(req.Report.Sigs),
-		},
-		ComputeConfig: &ComputeConfig{
-			ComputeLimit:    req.GetComputeConfig().GetComputeLimit(),
-			ComputeMaxPrice: req.GetComputeConfig().GetComputeMaxPrice(),
-		},
+		}
 	}
+	return msg
 }
 
 func convertRemainingAccounts(accs []*solanacappb.AccountMeta) []*AccountMeta {
 	ret := []*AccountMeta{}
 	for _, acc := range accs {
+		if acc == nil {
+			continue
+		}
 		ret = append(ret, &AccountMeta{
 			PublicKey:  acc.PublicKey,
 			IsWritable: acc.IsWritable,
@@ -187,6 +197,9 @@ func convertRemainingAccounts(accs []*solanacappb.AccountMeta) []*AccountMeta {
 func convertAttributedSignature(attributedSignatures []*sdkpb.AttributedSignature) []*AttributedSignature {
 	convertedSignatures := []*AttributedSignature{}
 	for _, as := range attributedSignatures {
+		if as == nil {
+			continue
+		}
 		convertedSignatures = append(convertedSignatures, &AttributedSignature{
 			Signature: as.Signature,
 			SignerId:  as.SignerId,

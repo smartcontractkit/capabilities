@@ -19,7 +19,8 @@ import (
 var _ ocr3types.ReportingPlugin[[]byte] = (*reportingPlugin)(nil)
 
 type reportingPlugin struct {
-	store *requests.Store[*oracle.ConsensusRequest]
+	store                    *requests.Store[*oracle.ConsensusRequest]
+	observationQuorumTracker *oracle.ObservationQuorumTracker
 
 	f int
 	n int
@@ -41,10 +42,12 @@ type reportingPlugin struct {
 
 // NewReportingPlugin creates a new reporting plugin for the OCR3 capability
 func NewReportingPlugin(lggr logger.Logger, metrics *metrics.Metrics, f int, n int, store *requests.Store[*oracle.ConsensusRequest],
+	observationQuorumTracker *oracle.ObservationQuorumTracker,
 	configProto *ocrtypes.ReportingPluginConfig, defaultKeyBundleIDForConsensusFailure string,
 	maxRequestOutcomeSize int) (*reportingPlugin, error) {
 	return &reportingPlugin{
 		store:                                 store,
+		observationQuorumTracker:              observationQuorumTracker,
 		f:                                     f,
 		n:                                     n,
 		outcomeExpirySeqNrSpan:                configProto.HistoricalOutcomeExpirySeqNrSpan,

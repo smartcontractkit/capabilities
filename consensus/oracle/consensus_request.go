@@ -36,6 +36,8 @@ type ConsensusRequest struct {
 	CallbackCh chan ConsensusResponse
 
 	Metadata ConsensusRequestMetadata
+
+	observationQuorumTracker *ObservationQuorumTracker
 }
 
 func NewConsensusRequest(
@@ -44,18 +46,21 @@ func NewConsensusRequest(
 	expiresAt time.Time,
 	callbackCh chan ConsensusResponse,
 	metadata ConsensusRequestMetadata,
+	observationQuorumTracker *ObservationQuorumTracker,
 ) *ConsensusRequest {
 	return &ConsensusRequest{
-		RequestID:  metadata.RequestID(),
-		Input:      input,
-		ReceivedAt: receivedAt,
-		ExpiresAt:  expiresAt,
-		CallbackCh: callbackCh,
-		Metadata:   metadata,
+		RequestID:                metadata.RequestID(),
+		Input:                    input,
+		ReceivedAt:               receivedAt,
+		ExpiresAt:                expiresAt,
+		CallbackCh:               callbackCh,
+		Metadata:                 metadata,
+		observationQuorumTracker: observationQuorumTracker,
 	}
 }
 
 func (r *ConsensusRequest) SendResponse(ctx context.Context, resp ConsensusResponse) {
+	defer r.forgetObservationQuorumTracking()
 	select {
 	case <-ctx.Done():
 		return
@@ -65,11 +70,33 @@ func (r *ConsensusRequest) SendResponse(ctx context.Context, resp ConsensusRespo
 }
 
 func (r *ConsensusRequest) SendTimeout(ctx context.Context) {
+	var timeoutErr caperrors.Error
+	if !r.observationQuorumTracker.ReachedQuorum(r.RequestID) {
+		maxObs := r.observationQuorumTracker.MaxObservations(r.RequestID)
+		// Sufficient observations have not been received before the request expired, this is a system error as it
+		// indicates workflows are out of sync across the nodes.
+		timeoutErr = caperrors.NewPublicSystemError(
+			fmt.Errorf("insufficient observations: received at most %d observations before request expired, requestID %s", maxObs, r.RequestID),
+			caperrors.InsufficientObservations,
+		)
+	} else {
+		// If the timeout is exceeded for any other reason than insufficient observations this indicates a system error
+		// which needs investigation.  No foreseeable user error could cause this.
+		timeoutErr = caperrors.NewPublicSystemError(
+			fmt.Errorf("timeout exceeded: could not process consensus request before expiry, requestID %s", r.RequestID),
+			caperrors.DeadlineExceeded,
+		)
+	}
+
 	timeoutResponse := ConsensusResponse{
 		ReqID: r.RequestID,
-		Err:   caperrors.NewPublicSystemError(fmt.Errorf("timeout exceeded: could not process consensus request before expiry, requestID %s", r.RequestID), caperrors.DeadlineExceeded),
+		Err:   timeoutErr,
 	}
 	r.SendResponse(ctx, timeoutResponse)
+}
+
+func (r *ConsensusRequest) forgetObservationQuorumTracking() {
+	r.observationQuorumTracker.Forget(r.RequestID)
 }
 
 func (r *ConsensusRequest) ID() string {
@@ -92,6 +119,9 @@ func (r *ConsensusRequest) Copy() *ConsensusRequest {
 
 		// Intentionally not copied, but are thread-safe.
 		CallbackCh: r.CallbackCh,
+
+		// Shared across copies; tracks quorum for the request ID.
+		observationQuorumTracker: r.observationQuorumTracker,
 	}
 }
 

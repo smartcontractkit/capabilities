@@ -3,6 +3,7 @@ package oracle
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"errors"
 	"math/big"
 	"testing"
@@ -196,7 +197,7 @@ func TestObservation(t *testing.T) {
 			},
 		}
 		id = "wf_h:ref_h"
-		hashableWithObs := types.NewHashableRequest("wf_h", "ref_h", testMetadata, func(context.Context) (*emptypb.Empty, error) {
+		hashableWithObs := types.NewECHashableRequest("wf_h", "ref_h", testMetadata, func(context.Context) (*emptypb.Empty, error) {
 			return nil, nil
 		})
 		hashableWithObs.SetObservation(&emptypb.Empty{})
@@ -428,6 +429,145 @@ func TestValidateObservation(t *testing.T) {
 				}),
 			},
 			expectedError: "invalid missing request ids: duplicate missing request ID: 2. OracleID: 0",
+		},
+		{
+			name: "Valid volatile observation (error only)",
+			observations: ocrtypes.AttributedObservation{
+				Observation: mustMarshalProto(&types.Observation{
+					ChainHeight: &types.ChainHeight{Latest: 15, Safe: 10, Finalized: 8},
+					Observations: map[string]*types.RequestObservation{
+						"volatile-req": {
+							Observation: &types.RequestObservation_Volatile{
+								Volatile: &types.VolatileObservations{
+									Error: []byte("upstream unavailable"),
+								},
+							},
+						},
+					},
+				}),
+			},
+			expectedError: "",
+		},
+		{
+			name: "Valid volatile observation with distinct hashes",
+			observations: ocrtypes.AttributedObservation{
+				Observation: mustMarshalProto(&types.Observation{
+					ChainHeight: &types.ChainHeight{Latest: 15, Safe: 10, Finalized: 8},
+					Observations: map[string]*types.RequestObservation{
+						"volatile-req": {
+							Observation: &types.RequestObservation_Volatile{
+								Volatile: &types.VolatileObservations{
+									Observations: []*types.VolatileObservation{
+										{Height: 1, Hash: bytes.Repeat([]byte{1}, types.HashLength)},
+										{Height: 2, Hash: bytes.Repeat([]byte{2}, types.HashLength)},
+									},
+								},
+							},
+						},
+					},
+				}),
+			},
+			expectedError: "",
+		},
+		{
+			name: "Valid volatile observation with error and hashes",
+			observations: ocrtypes.AttributedObservation{
+				Observation: mustMarshalProto(&types.Observation{
+					ChainHeight: &types.ChainHeight{Latest: 15, Safe: 10, Finalized: 8},
+					Observations: map[string]*types.RequestObservation{
+						"volatile-req": {
+							Observation: &types.RequestObservation_Volatile{
+								Volatile: &types.VolatileObservations{
+									Error: []byte("stale RPC error retained"),
+									Observations: []*types.VolatileObservation{
+										{Height: 3, Hash: bytes.Repeat([]byte{3}, types.HashLength)},
+									},
+								},
+							},
+						},
+					},
+				}),
+			},
+			expectedError: "",
+		},
+		{
+			name: "Volatile observation has zero-length hash after proto round-trip",
+			observations: ocrtypes.AttributedObservation{
+				Observation: mustMarshalProto(&types.Observation{
+					ChainHeight: &types.ChainHeight{Latest: 15, Safe: 10, Finalized: 8},
+					Observations: map[string]*types.RequestObservation{
+						"volatile-req": {
+							Observation: &types.RequestObservation_Volatile{
+								Volatile: &types.VolatileObservations{
+									Observations: []*types.VolatileObservation{
+										{Height: 42}, // valid round-trip; hash defaults to empty
+									},
+								},
+							},
+						},
+					},
+				}),
+			},
+			expectedError: "invalid hash length for volatile observation of request ID volatile-req",
+		},
+		{
+			name: "Volatile observation hash wrong length",
+			observations: ocrtypes.AttributedObservation{
+				Observation: mustMarshalProto(&types.Observation{
+					ChainHeight: &types.ChainHeight{Latest: 15, Safe: 10, Finalized: 8},
+					Observations: map[string]*types.RequestObservation{
+						"volatile-req": {
+							Observation: &types.RequestObservation_Volatile{
+								Volatile: &types.VolatileObservations{
+									Observations: []*types.VolatileObservation{
+										{Height: 1, Hash: bytes.Repeat([]byte{9}, types.HashLength-1)},
+									},
+								},
+							},
+						},
+					},
+				}),
+			},
+			expectedError: "invalid hash length for volatile observation of request ID volatile-req",
+		},
+		{
+			name: "Duplicate volatile observations for same hash",
+			observations: ocrtypes.AttributedObservation{
+				Observation: mustMarshalProto(&types.Observation{
+					ChainHeight: &types.ChainHeight{Latest: 15, Safe: 10, Finalized: 8},
+					Observations: map[string]*types.RequestObservation{
+						"volatile-req": {
+							Observation: &types.RequestObservation_Volatile{
+								Volatile: &types.VolatileObservations{
+									Observations: []*types.VolatileObservation{
+										{Height: 1, Hash: bytes.Repeat([]byte{0xaa}, types.HashLength)},
+										{Height: 9, Hash: bytes.Repeat([]byte{0xaa}, types.HashLength)},
+									},
+								},
+							},
+						},
+					},
+				}),
+			},
+			expectedError: "duplicate volatile observation for request ID volatile-req",
+		},
+		{
+			name: "Too many volatile observations",
+			observations: ocrtypes.AttributedObservation{
+				Observation: mustMarshalProto(&types.Observation{
+					ChainHeight: &types.ChainHeight{Latest: 15, Safe: 10, Finalized: 8},
+					Observations: map[string]*types.RequestObservation{
+						"volatile-req": {
+							Observation: &types.RequestObservation_Volatile{
+								Volatile: &types.VolatileObservations{
+									Observations: volatileObservationsOverLimit(),
+								},
+							},
+						},
+					},
+				}),
+			},
+			expectedError: "too many volatile observations for request ID volatile-req",
 		},
 	}
 
@@ -750,6 +890,7 @@ func TestAgreeOnEventuallyConsistentValue(t *testing.T) {
 		nodesObservations [][]byte
 		expectedError     string
 		expectedValue     []byte
+		expectedCount     int
 	}{
 		{
 			name: "insufficient total number of observations",
@@ -758,6 +899,7 @@ func TestAgreeOnEventuallyConsistentValue(t *testing.T) {
 				[]byte("value1"),
 			},
 			expectedError: "insufficient number of observations: expected 3, got 2",
+			expectedCount: 0, // totalNum gate fires before any counting
 		},
 		{
 			name: "insufficient number of identical observations",
@@ -768,6 +910,7 @@ func TestAgreeOnEventuallyConsistentValue(t *testing.T) {
 				[]byte("value4"),
 			},
 			expectedError: "insufficient number of identical observations: expected 2, got 1",
+			expectedCount: 1, // best candidate has 1 supporter, needs F+1=2
 		},
 		{
 			name: "prefer value observed by oracle with lowest id",
@@ -778,6 +921,7 @@ func TestAgreeOnEventuallyConsistentValue(t *testing.T) {
 				[]byte("value1"),
 			},
 			expectedValue: []byte("value1"),
+			expectedCount: 2, // "value1" and "value2" both have 2 supporters; "value1" wins on lowest oracle id
 		},
 		{
 			name: "happy path",
@@ -788,6 +932,7 @@ func TestAgreeOnEventuallyConsistentValue(t *testing.T) {
 				[]byte("value4"),
 			},
 			expectedValue: []byte("value2"),
+			expectedCount: 2, // "value2" seen by 2 nodes
 		},
 	}
 	for _, tc := range testCases {
@@ -806,7 +951,8 @@ func TestAgreeOnEventuallyConsistentValue(t *testing.T) {
 					},
 				})
 			}
-			value, err := plugin.agreeOnEventuallyConsistentValue(id, nodesObservations)
+			value, actualCount, err := plugin.agreeOnEventuallyConsistentValue(id, nodesObservations)
+			require.Equal(t, tc.expectedCount, actualCount)
 			if tc.expectedError == "" {
 				require.NoError(t, err)
 				require.Equal(t, tc.expectedValue, value)
@@ -829,6 +975,7 @@ func TestAgreeOnHashableValue(t *testing.T) {
 		wrongLength       []bool   // if true, use Hashable with 31-byte payload (invalid length)
 		expectedError     string
 		expectedValue     []byte
+		expectedCount     int
 	}{
 		{
 			name: "insufficient total number of observations",
@@ -837,6 +984,7 @@ func TestAgreeOnHashableValue(t *testing.T) {
 				hash32(1),
 			},
 			expectedError: "insufficient number of observations: expected 3, got 2",
+			expectedCount: 0, // totalNum gate fires before any counting
 		},
 		{
 			name: "insufficient number of identical observations",
@@ -847,6 +995,7 @@ func TestAgreeOnHashableValue(t *testing.T) {
 				hash32(4),
 			},
 			expectedError: "insufficient number of identical observations: expected 2, got 1",
+			expectedCount: 1, // best candidate has 1 supporter, needs F+1=2
 		},
 		{
 			name: "prefer hash observed by oracle with lowest id when counts tie",
@@ -857,6 +1006,7 @@ func TestAgreeOnHashableValue(t *testing.T) {
 				hash32(1),
 			},
 			expectedValue: hash32(1),
+			expectedCount: 2, // hash32(1) and hash32(2) both have 2 supporters; hash32(1) wins on lowest oracle id
 		},
 		{
 			name: "happy path",
@@ -867,6 +1017,7 @@ func TestAgreeOnHashableValue(t *testing.T) {
 				hash32(0xDD),
 			},
 			expectedValue: hash32(0xBB),
+			expectedCount: 2, // hash32(0xBB) seen by 2 nodes
 		},
 		{
 			name: "wrong observation type and wrong length are ignored",
@@ -879,6 +1030,7 @@ func TestAgreeOnHashableValue(t *testing.T) {
 			useWrongType:  []bool{true, false, false, false},
 			wrongLength:   []bool{false, false, true, false},
 			expectedValue: hash32(1),
+			expectedCount: 2, // wrong-type and wrong-length yield nil in mode; hash32(1) at positions 1 and 3 = 2 supporters
 		},
 	}
 	for _, tc := range testCases {
@@ -906,12 +1058,187 @@ func TestAgreeOnHashableValue(t *testing.T) {
 					},
 				})
 			}
-			value, err := plugin.agreeOnHashableValue(id, nodesObservations)
+			value, actualCount, err := plugin.agreeOnHashableValue(id, nodesObservations)
+			require.Equal(t, tc.expectedCount, actualCount)
 			if tc.expectedError == "" {
 				require.NoError(t, err)
 				require.Equal(t, tc.expectedValue, value)
 			} else {
 				require.EqualError(t, err, tc.expectedError)
+			}
+		})
+	}
+}
+
+func TestAgreeOnVolatileValue(t *testing.T) {
+	const id = "request_1"
+	hash32 := func(b byte) []byte {
+		return bytes.Repeat([]byte{b}, types.HashLength)
+	}
+	testCases := []struct {
+		name           string
+		observations   []*types.RequestObservation
+		expectedError  string
+		expectedHash   []byte
+		expectedErrors [][]byte // error outcome (modeForError on Volatile.Error); nil if not expected
+		expectedCount  int
+	}{
+		{
+			name: "insufficient total number of observations",
+			observations: []*types.RequestObservation{
+				{Observation: &types.RequestObservation_Volatile{Volatile: &types.VolatileObservations{
+					Observations: []*types.VolatileObservation{{Hash: hash32(1), Height: 0}},
+				}}},
+				{Observation: &types.RequestObservation_Volatile{Volatile: &types.VolatileObservations{
+					Observations: []*types.VolatileObservation{{Hash: hash32(1), Height: 0}},
+				}}},
+			},
+			expectedError: "insufficient number of observations: expected 3, got 2",
+			expectedCount: 0, // totalNum gate fires before any candidate counting
+		},
+		{
+			name: "happy path",
+			observations: []*types.RequestObservation{
+				{Observation: &types.RequestObservation_Volatile{Volatile: &types.VolatileObservations{
+					Observations: []*types.VolatileObservation{{Hash: hash32(1), Height: 1}},
+				}}},
+				{Observation: &types.RequestObservation_Volatile{Volatile: &types.VolatileObservations{
+					Observations: []*types.VolatileObservation{{Hash: hash32(2), Height: 2}},
+				}}},
+				{Observation: &types.RequestObservation_Volatile{Volatile: &types.VolatileObservations{
+					Observations: []*types.VolatileObservation{{Hash: hash32(2), Height: 3}},
+				}}},
+				{Observation: &types.RequestObservation_Volatile{Volatile: &types.VolatileObservations{
+					Observations: []*types.VolatileObservation{{Hash: hash32(3), Height: 4}},
+				}}},
+			},
+			expectedHash:  hash32(2),
+			expectedCount: 2, // hash32(2) supported by 2 nodes
+		},
+		{
+			name: "tie-break prefers candidate with lower lowestOracle when supporter counts and median heights tie",
+			observations: []*types.RequestObservation{
+				{Observation: &types.RequestObservation_Volatile{Volatile: &types.VolatileObservations{
+					Observations: []*types.VolatileObservation{{Hash: hash32(1), Height: 10}},
+				}}},
+				{Observation: &types.RequestObservation_Volatile{Volatile: &types.VolatileObservations{
+					Observations: []*types.VolatileObservation{{Hash: hash32(2), Height: 10}},
+				}}},
+				{Observation: &types.RequestObservation_Volatile{Volatile: &types.VolatileObservations{
+					Observations: []*types.VolatileObservation{{Hash: hash32(2), Height: 10}},
+				}}},
+				{Observation: &types.RequestObservation_Volatile{Volatile: &types.VolatileObservations{
+					Observations: []*types.VolatileObservation{{Hash: hash32(1), Height: 10}},
+				}}},
+			},
+			expectedHash:  hash32(1),
+			expectedCount: 2, // hash32(1) wins on lowest oracle id; both candidates have 2 supporters
+		},
+		{
+			name: "tie-break prefers candidate with higher median height when supporter counts tie",
+			observations: []*types.RequestObservation{
+				{Observation: &types.RequestObservation_Volatile{Volatile: &types.VolatileObservations{
+					Observations: []*types.VolatileObservation{{Hash: hash32(1), Height: 10}},
+				}}},
+				{Observation: &types.RequestObservation_Volatile{Volatile: &types.VolatileObservations{
+					Observations: []*types.VolatileObservation{{Hash: hash32(1), Height: 10}},
+				}}},
+				{Observation: &types.RequestObservation_Volatile{Volatile: &types.VolatileObservations{
+					Observations: []*types.VolatileObservation{{Hash: hash32(2), Height: 20}},
+				}}},
+				{Observation: &types.RequestObservation_Volatile{Volatile: &types.VolatileObservations{
+					Observations: []*types.VolatileObservation{{Hash: hash32(2), Height: 20}},
+				}}},
+			},
+			expectedHash:  hash32(2),
+			expectedCount: 2, // hash32(2) wins on higher median height; both candidates have 2 supporters
+		},
+		{
+			name: "wrong observation type and wrong hash length are ignored",
+			observations: []*types.RequestObservation{
+				{Observation: &types.RequestObservation_LockableToBlock{LockableToBlock: &emptypb.Empty{}}},
+				{Observation: &types.RequestObservation_Volatile{Volatile: &types.VolatileObservations{
+					Observations: []*types.VolatileObservation{{Hash: hash32(1), Height: 1}},
+				}}},
+				{Observation: &types.RequestObservation_Volatile{Volatile: &types.VolatileObservations{
+					Observations: []*types.VolatileObservation{{Hash: hash32(2)[:types.HashLength-1], Height: 3}},
+				}}},
+				{Observation: &types.RequestObservation_Volatile{Volatile: &types.VolatileObservations{
+					Observations: []*types.VolatileObservation{{Hash: hash32(1), Height: 4}},
+				}}},
+			},
+			expectedHash:  hash32(1),
+			expectedCount: 2, // wrong-type and wrong-length skip candidate registration; hash32(1) at positions 1 and 3 = 2 supporters
+		},
+		{
+			name: "no hash quorum and no volatile errors yields error",
+			observations: []*types.RequestObservation{
+				{Observation: &types.RequestObservation_Volatile{Volatile: &types.VolatileObservations{
+					Observations: []*types.VolatileObservation{{Hash: hash32(1), Height: 1}},
+				}}},
+				{Observation: &types.RequestObservation_Volatile{Volatile: &types.VolatileObservations{
+					Observations: []*types.VolatileObservation{{Hash: hash32(2), Height: 1}},
+				}}},
+				{Observation: &types.RequestObservation_Volatile{Volatile: &types.VolatileObservations{
+					Observations: []*types.VolatileObservation{{Hash: hash32(3), Height: 1}},
+				}}},
+				{Observation: &types.RequestObservation_Volatile{Volatile: &types.VolatileObservations{
+					Observations: []*types.VolatileObservation{{Hash: hash32(4), Height: 1}},
+				}}},
+			},
+			expectedError: "no volatile outcome candidate reached F+1 supporters",
+			expectedCount: 0, // no volatile errors observed, modeForError has empty sortedCounters
+		},
+		{
+			name: "no hash quorum but shared Volatile.Error yields error outcome",
+			observations: []*types.RequestObservation{
+				{Observation: &types.RequestObservation_Volatile{Volatile: &types.VolatileObservations{
+					Observations: []*types.VolatileObservation{{Hash: hash32(1), Height: 1}},
+					Error:        []byte("boom"),
+				}}},
+				{Observation: &types.RequestObservation_Volatile{Volatile: &types.VolatileObservations{
+					Observations: []*types.VolatileObservation{{Hash: hash32(2), Height: 1}},
+					Error:        []byte("boom"),
+				}}},
+				{Observation: &types.RequestObservation_Volatile{Volatile: &types.VolatileObservations{
+					Observations: []*types.VolatileObservation{{Hash: hash32(3), Height: 1}},
+					Error:        []byte("boom"),
+				}}},
+			},
+			expectedErrors: [][]byte{[]byte("boom")},
+			expectedCount:  3, // "boom" seen by all 3 nodes, modeForError identicalCount = 3
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			plugin := newReportingPlugin(Config{ReportingPluginConfig: ocr3types.ReportingPluginConfig{F: 1, N: 4}}, logger.Sugared(logger.Test(t)), nil, nil, test.GetConsensusMetrics(t))
+			nodesObservations := make([]attributedObservation, 0, len(tc.observations))
+			for i := range tc.observations {
+				ro := tc.observations[i]
+				nodesObservations = append(nodesObservations, attributedObservation{
+					// G115: integer overflow conversion int -> uint8
+					//nolint:gosec
+					Observer: commontypes.OracleID(i),
+					Observation: &types.Observation{
+						Observations: map[string]*types.RequestObservation{
+							id: ro,
+						},
+					},
+				})
+			}
+			outcome, actualCount, err := plugin.agreeOnVolatileValue(id, nodesObservations)
+			require.Equal(t, tc.expectedCount, actualCount)
+			if tc.expectedError != "" {
+				require.EqualError(t, err, tc.expectedError)
+				require.Nil(t, outcome)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, outcome)
+			if tc.expectedErrors != nil {
+				require.Equal(t, tc.expectedErrors, outcome.GetError().GetErrors())
+			} else {
+				require.Equal(t, tc.expectedHash, outcome.GetHashable())
 			}
 		})
 	}
@@ -991,6 +1318,16 @@ func TestAgreeOnObservationType(t *testing.T) {
 				{Observation: &types.RequestObservation_LockableToBlock{}},
 			},
 			expectedValue: types.ObservationType_HASHABLE,
+		},
+		{
+			name: "Happy path volatile",
+			observations: []types.RequestObservation{
+				{Observation: &types.RequestObservation_Error{}},
+				{Observation: &types.RequestObservation_Volatile{}},
+				{Observation: &types.RequestObservation_Volatile{}},
+				{Observation: &types.RequestObservation_LockableToBlock{}},
+			},
+			expectedValue: types.ObservationType_VOLATILE,
 		},
 	}
 	for _, tc := range testCases {
@@ -1325,10 +1662,98 @@ func newDecimal(coefficient, exponent int32) *valuespb.Decimal {
 	}
 }
 
+func volatileObservationsOverLimit() []*types.VolatileObservation {
+	obs := make([]*types.VolatileObservation, types.MaxNumberOfVolatileObservations+1)
+	for i := range obs {
+		hash := make([]byte, types.HashLength)
+		binary.BigEndian.PutUint64(hash, uint64(i))
+		obs[i] = &types.VolatileObservation{Height: 1, Hash: hash}
+	}
+	return obs
+}
+
 func mustMarshalProto(v proto.Message) []byte {
 	result, err := proto.Marshal(v)
 	if err != nil {
 		panic(err)
 	}
 	return result
+}
+
+func TestIsVolatileCandidateBetter(t *testing.T) {
+	testCases := []struct {
+		name string
+		a, b volatileOutcomeCandidate
+		want bool
+	}{
+		{
+			name: "more supporters wins regardless of height",
+			a: volatileOutcomeCandidate{
+				hash: types.Hash{1}, supporters: 5, lowestOracle: 9, heights: []uint64{1},
+			},
+			b: volatileOutcomeCandidate{
+				hash: types.Hash{2}, supporters: 3, lowestOracle: 1, heights: []uint64{1_000_000},
+			},
+			want: true,
+		},
+		{
+			name: "equal supporters higher median height wins",
+			a: volatileOutcomeCandidate{
+				hash: types.Hash{1}, supporters: 3, lowestOracle: 5, heights: []uint64{30, 1},
+			},
+			b: volatileOutcomeCandidate{
+				hash: types.Hash{2}, supporters: 3, lowestOracle: 1, heights: []uint64{10, 10},
+			},
+			want: true,
+		},
+		{
+			name: "equal supporters higher median height wins (height order does not matter)",
+			a: volatileOutcomeCandidate{
+				hash: types.Hash{1}, supporters: 3, lowestOracle: 5, heights: []uint64{1, 30},
+			},
+			b: volatileOutcomeCandidate{
+				hash: types.Hash{2}, supporters: 3, lowestOracle: 1, heights: []uint64{10, 10},
+			},
+			want: true,
+		},
+		{
+			name: "equal supporters equal median uses lower oracle id",
+			a: volatileOutcomeCandidate{
+				hash: types.Hash{2}, supporters: 2, lowestOracle: 2, heights: []uint64{100, 200},
+			},
+			b: volatileOutcomeCandidate{
+				hash: types.Hash{1}, supporters: 2, lowestOracle: 7, heights: []uint64{150, 150},
+			},
+			want: true,
+		},
+		{
+			name: "tie on supporters median oracle uses lexicographically smaller hash",
+			a: volatileOutcomeCandidate{
+				hash: types.Hash{1}, supporters: 2, lowestOracle: 4, heights: []uint64{10, 20},
+			},
+			b: volatileOutcomeCandidate{
+				hash: types.Hash{2}, supporters: 2, lowestOracle: 4, heights: []uint64{10, 20},
+			},
+			want: true,
+		},
+		{
+			name: "single observation median odd count",
+			a: volatileOutcomeCandidate{
+				hash: types.Hash{1}, supporters: 1, lowestOracle: 0, heights: []uint64{42, 41, 1},
+			},
+			b: volatileOutcomeCandidate{
+				hash: types.Hash{2}, supporters: 1, lowestOracle: 0, heights: []uint64{50, 40, 39},
+			},
+			want: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			a, b := tc.a, tc.b
+			require.Equal(t, tc.want, isVolatileCandidateABetter(&a, &b))
+			// ensure that order of comparison does not matter
+			require.Equal(t, !tc.want, isVolatileCandidateABetter(&b, &a))
+		})
+	}
 }

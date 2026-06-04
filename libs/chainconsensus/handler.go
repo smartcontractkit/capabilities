@@ -20,7 +20,23 @@ type Poller interface {
 	Enqueue(ctx context.Context, request types.ObservableRequest)
 }
 
-type Handler struct {
+type RequestHandler interface {
+	// Handle - returns a channel to the result of `request.GetObservation()`. This result is consistent across all nodes in
+	// the DON, even if individual RPC states differ.
+	Handle(ctx context.Context, request types.Request) (<-chan types.Reply, error)
+}
+
+type Handler interface {
+	RequestHandler
+	Start(context.Context) error
+	Close() error
+	GetRequestIDs(batchSize int) ([]string, error)
+	GetRequest(id string) (types.Request, bool)
+	CompleteProtoRequest(id string, report *types.RequestReport) error
+	CompleteHashableRequest(id string, report *types.HashableRequestReport) error
+}
+
+type handler struct {
 	// service state management
 	services.Service
 	engine *services.Engine
@@ -36,8 +52,12 @@ type Handler struct {
 	unknownRequestTTL               time.Duration
 }
 
-func NewHandler(lggr logger.Logger, poller Poller, metrics metrics.ConsensusMetrics, unknownRequestTTL time.Duration) *Handler {
-	r := &Handler{
+func NewHandler(lggr logger.Logger, poller Poller, metrics metrics.ConsensusMetrics, unknownRequestTTL time.Duration) Handler {
+	return newHandler(lggr, poller, metrics, unknownRequestTTL)
+}
+
+func newHandler(lggr logger.Logger, poller Poller, metrics metrics.ConsensusMetrics, unknownRequestTTL time.Duration) *handler {
+	r := &handler{
 		requests:                        requests.NewStoreWithStatsCollector[*requestCtx](metrics),
 		unknownRequestsResultByID:       make(map[string]*unknownRequest),
 		unknownRequestsOrderedByTimeout: list.New[*unknownRequest](),
@@ -47,7 +67,7 @@ func NewHandler(lggr logger.Logger, poller Poller, metrics metrics.ConsensusMetr
 	}
 
 	r.Service, r.engine = services.Config{
-		Name:  "EVMConsensusHandler",
+		Name:  "ChainConsensusHandler",
 		Start: r.start,
 	}.NewServiceEngine(lggr)
 
@@ -84,13 +104,13 @@ func (r *requestCtx) Copy() *requestCtx {
 	}
 }
 
-func (s *Handler) start(Ctx context.Context) error {
+func (s *handler) start(Ctx context.Context) error {
 	s.engine.GoTick(services.TickerConfig{Initial: time.Second}.NewTicker(time.Second), s.removeExpiredRequests)
 	return nil
 }
 
 // GetRequestIDs - returns `limit` of request IDs in ascending order by number of attempts. Requests remain in the queue.
-func (s *Handler) GetRequestIDs(limit int) ([]string, error) {
+func (s *handler) GetRequestIDs(limit int) ([]string, error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	request, err := s.requests.FirstN(limit)
@@ -109,7 +129,7 @@ func (s *Handler) GetRequestIDs(limit int) ([]string, error) {
 	return requestIDs, nil
 }
 
-func (s *Handler) GetRequest(id string) (types.Request, bool) {
+func (s *handler) GetRequest(id string) (types.Request, bool) {
 	rq := s.requests.Get(id)
 	if rq == nil {
 		return nil, false
@@ -117,7 +137,7 @@ func (s *Handler) GetRequest(id string) (types.Request, bool) {
 	return rq.Request, true
 }
 
-func (s *Handler) CompleteProtoRequest(id string, report *types.RequestReport) error {
+func (s *handler) CompleteProtoRequest(id string, report *types.RequestReport) error {
 	switch report.Report.(type) {
 	case *types.RequestReport_Aggregatable:
 		return s.completeRequest(id, types.Reply{Value: report.GetAggregatable()})
@@ -132,11 +152,11 @@ func (s *Handler) CompleteProtoRequest(id string, report *types.RequestReport) e
 	}
 }
 
-func (s *Handler) CompleteHashableRequest(id string, report *types.HashableRequestReport) error {
+func (s *handler) CompleteHashableRequest(id string, report *types.HashableRequestReport) error {
 	return s.completeRequest(id, types.Reply{Value: report})
 }
 
-func (s *Handler) completeError(id string, protoErrors *types.RequestError) error {
+func (s *handler) completeError(id string, protoErrors *types.RequestError) error {
 	requestErrors := make([]error, len(protoErrors.Errors))
 	for i, protoError := range protoErrors.Errors {
 		requestErrors[i] = types.ObservationError(protoError).Err()
@@ -149,7 +169,7 @@ type LockableToBlockRequest interface {
 	LockToABlock(chainHeight *types.ChainHeight) types.Request
 }
 
-func (s *Handler) lockRequestToABlock(id string, height *types.ChainHeight) error {
+func (s *handler) lockRequestToABlock(id string, height *types.ChainHeight) error {
 	if height == nil {
 		return fmt.Errorf("chain height is nil for report with requestID %s", id)
 	}
@@ -185,7 +205,7 @@ func (s *Handler) lockRequestToABlock(id string, height *types.ChainHeight) erro
 	return nil
 }
 
-func (s *Handler) completeRequest(id string, reply types.Reply) error {
+func (s *handler) completeRequest(id string, reply types.Reply) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	request := s.requests.Get(id)
@@ -208,7 +228,7 @@ func (s *Handler) completeRequest(id string, reply types.Reply) error {
 	return nil
 }
 
-func (s *Handler) Handle(ctx context.Context, request types.Request) (<-chan types.Reply, error) {
+func (s *handler) Handle(ctx context.Context, request types.Request) (<-chan types.Reply, error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	ch := make(chan types.Reply, 1)
@@ -234,7 +254,7 @@ func (s *Handler) Handle(ctx context.Context, request types.Request) (<-chan typ
 	return ch, nil
 }
 
-func (s *Handler) addRequestCtx(requestCtx *requestCtx) error {
+func (s *handler) addRequestCtx(requestCtx *requestCtx) error {
 	err := s.requests.Add(requestCtx)
 	if err != nil {
 		return fmt.Errorf("failed to add request %s: %w", requestCtx.ID(), err)
@@ -246,7 +266,7 @@ func (s *Handler) addRequestCtx(requestCtx *requestCtx) error {
 	return nil
 }
 
-func (s *Handler) removeExpiredRequests(ctx context.Context) {
+func (s *handler) removeExpiredRequests(ctx context.Context) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	now := time.Now()

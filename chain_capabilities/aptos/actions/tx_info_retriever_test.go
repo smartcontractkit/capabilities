@@ -10,7 +10,18 @@ import (
 	"github.com/stretchr/testify/require"
 
 	aptostypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/aptos"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/aptos/monitoring"
 )
+
+func requireTxInfoPhaseEvent(t *testing.T, msg *monitoring.WriteReportTxInfoRetrievalPhase, lookupType TxInfoLookupType, phase TxRetrievalPhase, result TxRetrievalResult, txHash string, transmitter aptos_sdk.AccountAddress) {
+	t.Helper()
+	require.Equal(t, string(phase), msg.GetPhase())
+	require.Equal(t, string(result), msg.GetResult())
+	require.Equal(t, txHash, msg.GetTxHash())
+	require.Equal(t, transmitter.String(), msg.GetTransmitter())
+	require.Equal(t, string(lookupType), msg.GetLookupType())
+}
 
 func TestGetSuccessfulTransmissionInfo(t *testing.T) {
 	t.Parallel()
@@ -21,7 +32,7 @@ func TestGetSuccessfulTransmissionInfo(t *testing.T) {
 		mockClient := NewCREForwarderClient_mock(t)
 		targetReportMetadata, _, _ := newReportFixture(t)
 		requestStartTime := time.Now()
-		thr := newTestTxInfoRetriever(t, mockClient, targetReportMetadata, requestStartTime)
+		thr, processor := newTestTxInfoRetriever(t, mockClient, targetReportMetadata, requestStartTime)
 
 		mockClient.On("GetTransmitterTransactions", mock.Anything, transmitter, mock.Anything, mock.Anything).
 			Return([]*aptostypes.Transaction{}, nil)
@@ -31,13 +42,15 @@ func TestGetSuccessfulTransmissionInfo(t *testing.T) {
 		_, err := thr.GetSuccessfulTransmissionInfo(ctx, transmitter)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get transmitter transactions during phase 1")
+		require.Len(t, processor.messages, 1)
+		requireTxInfoPhaseEvent(t, processor.messages[0], LookupTypeSuccess, LastPagePoll, TxRetrievalResultFetchError, "", transmitter)
 	})
 
 	t.Run("Phase 1 finds - returns gas info", func(t *testing.T) {
 		mockClient := NewCREForwarderClient_mock(t)
 		targetReportMetadata, _, _ := newReportFixture(t)
 		requestStartTime := time.Now()
-		thr := newTestTxInfoRetriever(t, mockClient, targetReportMetadata, requestStartTime)
+		thr, processor := newTestTxInfoRetriever(t, mockClient, targetReportMetadata, requestStartTime)
 
 		recentTs := requestStartTime.UnixMicro()
 		matchingTx := buildFakeTransactionWithGas(t, "0xfound", true, 100, recentTs, targetReportMetadata, 500, 100)
@@ -50,6 +63,8 @@ func TestGetSuccessfulTransmissionInfo(t *testing.T) {
 		require.Equal(t, "0xfound", result.TxHash)
 		require.Equal(t, uint64(500), result.GasUsed)
 		require.Equal(t, uint64(100), result.GasUnitPrice)
+		require.Len(t, processor.messages, 1)
+		requireTxInfoPhaseEvent(t, processor.messages[0], LookupTypeSuccess, LastPagePoll, TxRetrievalResultFound, "0xfound", transmitter)
 	})
 
 	t.Run("Phase 1 misses, Phase 2 finds", func(t *testing.T) {
@@ -57,7 +72,7 @@ func TestGetSuccessfulTransmissionInfo(t *testing.T) {
 		targetReportMetadata, _, _ := newReportFixture(t)
 		randomReportMetadata, _, _ := newReportFixture(t)
 		requestStartTime := time.Now()
-		thr := newTestTxInfoRetriever(t, mockClient, targetReportMetadata, requestStartTime)
+		thr, processor := newTestTxInfoRetriever(t, mockClient, targetReportMetadata, requestStartTime)
 
 		recentTs := requestStartTime.UnixMicro()
 		unrelatedTx := buildFakeTransaction(t, "0xunrelated", true, 200, recentTs, randomReportMetadata)
@@ -73,6 +88,9 @@ func TestGetSuccessfulTransmissionInfo(t *testing.T) {
 		result, err := thr.GetSuccessfulTransmissionInfo(t.Context(), transmitter)
 		require.NoError(t, err)
 		require.Equal(t, "0xfound_in_phase2", result.TxHash)
+		require.Len(t, processor.messages, 2)
+		requireTxInfoPhaseEvent(t, processor.messages[0], LookupTypeSuccess, LastPagePoll, TxRetrievalResultNotFound, "", transmitter)
+		requireTxInfoPhaseEvent(t, processor.messages[1], LookupTypeSuccess, BackwardPoll, TxRetrievalResultFound, "0xfound_in_phase2", transmitter)
 	})
 
 	t.Run("Phase 1 misses, Phase 2 misses but covers time, Phase 3 finds", func(t *testing.T) {
@@ -80,7 +98,7 @@ func TestGetSuccessfulTransmissionInfo(t *testing.T) {
 		targetReportMetadata, _, _ := newReportFixture(t)
 		randomReportMetadata, _, _ := newReportFixture(t)
 		requestStartTime := time.Now()
-		thr := newTestTxInfoRetriever(t, mockClient, targetReportMetadata, requestStartTime)
+		thr, processor := newTestTxInfoRetriever(t, mockClient, targetReportMetadata, requestStartTime)
 
 		recentTs := requestStartTime.UnixMicro()
 		oldTs := requestStartTime.Add(-2 * time.Minute).UnixMicro()
@@ -101,6 +119,10 @@ func TestGetSuccessfulTransmissionInfo(t *testing.T) {
 		result, err := thr.GetSuccessfulTransmissionInfo(t.Context(), transmitter)
 		require.NoError(t, err)
 		require.Equal(t, "0xfound_in_phase3", result.TxHash)
+		require.Len(t, processor.messages, 3)
+		requireTxInfoPhaseEvent(t, processor.messages[0], LookupTypeSuccess, LastPagePoll, TxRetrievalResultNotFound, "", transmitter)
+		requireTxInfoPhaseEvent(t, processor.messages[1], LookupTypeSuccess, BackwardPoll, TxRetrievalResultNotFound, "", transmitter)
+		requireTxInfoPhaseEvent(t, processor.messages[2], LookupTypeSuccess, LatestPagePoll, TxRetrievalResultFound, "0xfound_in_phase3", transmitter)
 	})
 
 	t.Run("Phase 1 misses, skips Phase 2, Phase 3 finds", func(t *testing.T) {
@@ -108,7 +130,7 @@ func TestGetSuccessfulTransmissionInfo(t *testing.T) {
 		targetReportMetadata, _, _ := newReportFixture(t)
 		randomReportMetadata, _, _ := newReportFixture(t)
 		requestStartTime := time.Now()
-		thr := newTestTxInfoRetriever(t, mockClient, targetReportMetadata, requestStartTime)
+		thr, processor := newTestTxInfoRetriever(t, mockClient, targetReportMetadata, requestStartTime)
 
 		oldTs := requestStartTime.Add(-2 * time.Minute).UnixMicro()
 		recentTs := requestStartTime.UnixMicro()
@@ -125,6 +147,9 @@ func TestGetSuccessfulTransmissionInfo(t *testing.T) {
 		result, err := thr.GetSuccessfulTransmissionInfo(t.Context(), transmitter)
 		require.NoError(t, err)
 		require.Equal(t, "0xfound_in_phase3", result.TxHash)
+		require.Len(t, processor.messages, 2)
+		requireTxInfoPhaseEvent(t, processor.messages[0], LookupTypeSuccess, LastPagePoll, TxRetrievalResultNotFound, "", transmitter)
+		requireTxInfoPhaseEvent(t, processor.messages[1], LookupTypeSuccess, LatestPagePoll, TxRetrievalResultFound, "0xfound_in_phase3", transmitter)
 	})
 
 	t.Run("Phase 1 misses, skips Phase 2, Phase 3 fails", func(t *testing.T) {
@@ -132,7 +157,7 @@ func TestGetSuccessfulTransmissionInfo(t *testing.T) {
 		targetReportMetadata, _, _ := newReportFixture(t)
 		randomReportMetadata, _, _ := newReportFixture(t)
 		requestStartTime := time.Now()
-		thr := newTestTxInfoRetriever(t, mockClient, targetReportMetadata, requestStartTime)
+		thr, processor := newTestTxInfoRetriever(t, mockClient, targetReportMetadata, requestStartTime)
 
 		oldTs := requestStartTime.Add(-2 * time.Minute).UnixMicro()
 		unrelatedOldTx := buildFakeTransaction(t, "0xunrelated", true, 50, oldTs, randomReportMetadata)
@@ -146,6 +171,9 @@ func TestGetSuccessfulTransmissionInfo(t *testing.T) {
 		_, err := thr.GetSuccessfulTransmissionInfo(ctx, transmitter)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "matching transmission not found yet")
+		require.Len(t, processor.messages, 2)
+		requireTxInfoPhaseEvent(t, processor.messages[0], LookupTypeSuccess, LastPagePoll, TxRetrievalResultNotFound, "", transmitter)
+		requireTxInfoPhaseEvent(t, processor.messages[1], LookupTypeSuccess, LatestPagePoll, TxRetrievalResultNotFound, "", transmitter)
 	})
 }
 
@@ -158,7 +186,7 @@ func TestGetFailedTransmissionInfo(t *testing.T) {
 		mockClient := NewCREForwarderClient_mock(t)
 		targetRM, _, _ := newReportFixture(t)
 		requestStartTime := time.Now()
-		thr := newTestTxInfoRetriever(t, mockClient, targetRM, requestStartTime)
+		thr, processor := newTestTxInfoRetriever(t, mockClient, targetRM, requestStartTime)
 
 		recentTs := requestStartTime.UnixMicro()
 		matchingTx := buildFakeTransaction(t, "0xfailed_phase1", false, 100, recentTs, targetRM)
@@ -170,13 +198,15 @@ func TestGetFailedTransmissionInfo(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "0xfailed_phase1", result.TxHash)
 		require.Equal(t, "Move abort", result.VmStatus)
+		require.Len(t, processor.messages, 1)
+		requireTxInfoPhaseEvent(t, processor.messages[0], LookupTypeFailed, LastPagePoll, TxRetrievalResultFound, "0xfailed_phase1", transmitter)
 	})
 
 	t.Run("Phase 1 fails - no txns found", func(t *testing.T) {
 		mockClient := NewCREForwarderClient_mock(t)
 		targetRM, _, _ := newReportFixture(t)
 		requestStartTime := time.Now()
-		thr := newTestTxInfoRetriever(t, mockClient, targetRM, requestStartTime)
+		thr, processor := newTestTxInfoRetriever(t, mockClient, targetRM, requestStartTime)
 
 		mockClient.On("GetTransmitterTransactions", mock.Anything, transmitter, mock.Anything, mock.Anything).
 			Return([]*aptostypes.Transaction{}, nil)
@@ -186,6 +216,8 @@ func TestGetFailedTransmissionInfo(t *testing.T) {
 		_, err := thr.GetFailedTransmissionInfo(ctx, transmitter)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "failed to get transmitter transactions during phase 1")
+		require.Len(t, processor.messages, 1)
+		requireTxInfoPhaseEvent(t, processor.messages[0], LookupTypeFailed, LastPagePoll, TxRetrievalResultFetchError, "", transmitter)
 	})
 
 	t.Run("Phase 1 misses, Phase 2 finds", func(t *testing.T) {
@@ -193,7 +225,7 @@ func TestGetFailedTransmissionInfo(t *testing.T) {
 		targetRM, _, _ := newReportFixture(t)
 		otherRM, _, _ := newReportFixture(t)
 		requestStartTime := time.Now()
-		thr := newTestTxInfoRetriever(t, mockClient, targetRM, requestStartTime)
+		thr, processor := newTestTxInfoRetriever(t, mockClient, targetRM, requestStartTime)
 
 		recentTs := requestStartTime.UnixMicro()
 		unrelatedTx := buildFakeTransaction(t, "0xunrelated", false, 200, recentTs, otherRM)
@@ -210,6 +242,9 @@ func TestGetFailedTransmissionInfo(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "0xfailed_phase2", result.TxHash)
 		require.Equal(t, "Move abort", result.VmStatus)
+		require.Len(t, processor.messages, 2)
+		requireTxInfoPhaseEvent(t, processor.messages[0], LookupTypeFailed, LastPagePoll, TxRetrievalResultNotFound, "", transmitter)
+		requireTxInfoPhaseEvent(t, processor.messages[1], LookupTypeFailed, BackwardPoll, TxRetrievalResultFound, "0xfailed_phase2", transmitter)
 	})
 
 	t.Run("Phase 1 misses, skips Phase 2, returns not found", func(t *testing.T) {
@@ -217,7 +252,7 @@ func TestGetFailedTransmissionInfo(t *testing.T) {
 		targetRM, _, _ := newReportFixture(t)
 		otherRM, _, _ := newReportFixture(t)
 		requestStartTime := time.Now()
-		thr := newTestTxInfoRetriever(t, mockClient, targetRM, requestStartTime)
+		thr, processor := newTestTxInfoRetriever(t, mockClient, targetRM, requestStartTime)
 
 		oldTs := requestStartTime.Add(-2 * time.Minute).UnixMicro()
 		unrelatedOldTx := buildFakeTransaction(t, "0xunrelated", false, 50, oldTs, otherRM)
@@ -229,6 +264,8 @@ func TestGetFailedTransmissionInfo(t *testing.T) {
 		_, err := thr.GetFailedTransmissionInfo(t.Context(), transmitter)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "no matching failed transaction found")
+		require.Len(t, processor.messages, 1)
+		requireTxInfoPhaseEvent(t, processor.messages[0], LookupTypeFailed, LastPagePoll, TxRetrievalResultNotFound, "", transmitter)
 	})
 
 	t.Run("Phase 1 misses, Phase 2 misses but covers time, returns not found", func(t *testing.T) {
@@ -236,7 +273,7 @@ func TestGetFailedTransmissionInfo(t *testing.T) {
 		targetRM, _, _ := newReportFixture(t)
 		otherRM, _, _ := newReportFixture(t)
 		requestStartTime := time.Now()
-		thr := newTestTxInfoRetriever(t, mockClient, targetRM, requestStartTime)
+		thr, processor := newTestTxInfoRetriever(t, mockClient, targetRM, requestStartTime)
 
 		recentTs := requestStartTime.UnixMicro()
 		oldTs := requestStartTime.Add(-2 * time.Minute).UnixMicro()
@@ -253,6 +290,9 @@ func TestGetFailedTransmissionInfo(t *testing.T) {
 		_, err := thr.GetFailedTransmissionInfo(t.Context(), transmitter)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "no matching failed transaction found")
+		require.Len(t, processor.messages, 2)
+		requireTxInfoPhaseEvent(t, processor.messages[0], LookupTypeFailed, LastPagePoll, TxRetrievalResultNotFound, "", transmitter)
+		requireTxInfoPhaseEvent(t, processor.messages[1], LookupTypeFailed, BackwardPoll, TxRetrievalResultNotFound, "", transmitter)
 	})
 }
 
@@ -265,7 +305,7 @@ func TestPayloadMatching(t *testing.T) {
 		mockClient := NewCREForwarderClient_mock(t)
 		targetRM, _, _ := newReportFixture(t)
 		requestStartTime := time.Now()
-		thr := newTestTxInfoRetriever(t, mockClient, targetRM, requestStartTime)
+		thr, _ := newTestTxInfoRetriever(t, mockClient, targetRM, requestStartTime)
 
 		// Create a tx with the same metadata IDs but a different report body
 		alteredRM := targetRM

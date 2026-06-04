@@ -23,6 +23,8 @@ func TestEvmConsensusMetrics_AllMetrics(t *testing.T) {
 
 	m.RecordRequestObservationSize(ctx, 84)
 
+	m.RecordIdenticalResponseCount(ctx, 5, "EVENTUALLY_CONSISTENT")
+
 	m.RecordQueueSize(ctx, 7)
 
 	m.RecordRetryQueueSize(ctx, 13)

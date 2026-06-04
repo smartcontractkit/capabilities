@@ -4,6 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/metering"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
+	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -14,6 +20,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
+	"github.com/smartcontractkit/chainlink-framework/multinode"
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
@@ -23,6 +30,7 @@ import (
 
 type Solana struct {
 	types.SolanaService
+	readsEnabled             bool
 	forwarderClient          CREForwarderClient
 	transmissionInfoProvider TransmissionInfoProvider
 	lggr                     logger.SugaredLogger
@@ -32,23 +40,30 @@ type Solana struct {
 	beholderProcessor        beholder.ProtoProcessor
 	messageBuilder           *monitoring.MessageBuilder
 	transmissionScheduler    ts.TransmissionScheduler
+	handler                  chainconsensus.RequestHandler
 }
 
-func NewSolana(ctx context.Context, cfg *config.Config, s types.SolanaService, messageBuilder *monitoring.MessageBuilder, beholderProcessor beholder.ProtoProcessor, lggr logger.Logger, limitsFactory limits.Factory, transmissionScheduler ts.TransmissionScheduler, chainSelector uint64) (*Solana, error) {
+func NewSolana(ctx context.Context, cfg *config.Config, s types.SolanaService, messageBuilder *monitoring.MessageBuilder,
+	beholderProcessor beholder.ProtoProcessor, lggr logger.Logger, limitsFactory limits.Factory,
+	transmissionScheduler ts.TransmissionScheduler, chainSelector uint64,
+	handler chainconsensus.RequestHandler,
+) (*Solana, error) {
 	client := newForwarderClient(s, lggr, cfg.CREForwarderAddress, cfg.CREForwarderState, cfg.Transmitter)
-	provider, err := newLogTransmissionInfoProvider(ctx, lggr, cfg.CREForwarderAddress, s)
+	provider, err := newOnChainTransmissionInfoProvider(ctx, cfg.CREForwarderAddress, cfg.CREForwarderState, s)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create log transmission info provider: %w", err)
+		return nil, fmt.Errorf("failed to create on-chain transmission info provider: %w", err)
 	}
 	sol := &Solana{
+		readsEnabled:             cfg.ReadsEnabled,
 		SolanaService:            s,
+		chainSelector:            chainSelector,
 		lggr:                     logger.Sugared(lggr),
 		forwarderClient:          client,
 		transmissionInfoProvider: provider,
 		messageBuilder:           messageBuilder,
 		beholderProcessor:        beholderProcessor,
 		transmissionScheduler:    transmissionScheduler,
-		chainSelector:            chainSelector,
+		handler:                  handler,
 	}
 
 	return sol, sol.initLimiters(limitsFactory)
@@ -58,8 +73,68 @@ func (s *Solana) GetAccountInfoWithOpts(
 	ctx context.Context,
 	metadata capabilities.RequestMetadata,
 	input *solcap.GetAccountInfoWithOptsRequest) (*capabilities.ResponseAndMetadata[*solcap.GetAccountInfoWithOptsReply], caperrors.Error) {
-	// TODO
-	return nil, GetError(errors.New("unimplemented"), false)
+	if !s.readsEnabled {
+		return nil, caperrors.NewPublicSystemError(errors.New("reads are not available"), caperrors.Internal)
+	}
+	// TODO: implement metrics on higher level PLEX-2918
+	// TODO: implement billing once generalized PLEX-3022
+	request, err := solcap.ConvertGetAccountInfoRequestFromProto(input)
+	if err != nil {
+		return nil, NewUserError(fmt.Errorf("invalid request: %w", err))
+	}
+
+	lggr := s.messageBuilder.RequestLggr(s.lggr, monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: metadata}).With("request", request)
+	lggr.Debugw("Received GetAccountInfoWithOpts request")
+	cReq := ctypes.NewVolatileRequest(metadata.WorkflowExecutionID, metadata.ReferenceID, metering.GetResponseMetadata(metering.GetAccountInfo), func(ctx context.Context) (*solcap.GetAccountInfoWithOptsReply, uint64, error) {
+		rawResponse, err := s.SolanaService.GetAccountInfoWithOpts(ctx, request)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		response, err := solcap.ConvertGetAccountInfoReplyToProto(rawResponse)
+		if err != nil {
+			return nil, 0, caperrors.NewPublicSystemError(fmt.Errorf("failed to convert response to proto: %w", err), caperrors.Internal)
+		}
+
+		// TODO PLEX-3061: limit response size
+		return response, rawResponse.Slot, nil
+	}, lggr)
+	responseAndMetadata, err := chainconsensus.ReadHashableRequestReport[*solcap.GetAccountInfoWithOptsReply](ctx, s.handler, cReq)
+	if err != nil {
+		return nil, getReadError(lggr, fmt.Errorf("failed to GetAccountInfoWithOpts: %w", err))
+	}
+
+	lggr.Debugw("Successfully handled GetAccountInfoWithOpts")
+	return responseAndMetadata, nil
+}
+
+func getReadError(lggr logger.SugaredLogger, err error) caperrors.Error {
+	if err == nil {
+		return nil
+	}
+
+	isUserErr := isUserError(err)
+	capErr := GetError(err, isUserErr)
+
+	// TODO: logging of init, success and error should be move to a higher level
+	lggr = lggr.With("error", err)
+	const msg = "Read operation failed"
+	if isUserErr {
+		lggr.Debug(msg)
+	} else {
+		lggr.Error(msg)
+	}
+
+	return capErr
+}
+
+func isUserError(err error) bool {
+	return !errors.Is(err, context.DeadlineExceeded) && !isNodeInfraError(err)
+}
+
+func isNodeInfraError(err error) bool {
+	return errors.Is(err, multinode.ErrNodeError) ||
+		strings.Contains(err.Error(), multinode.ErrNodeError.Error())
 }
 
 func (s *Solana) GetBalance(

@@ -814,6 +814,82 @@ func (x *WriteReportSuccessfulEarlyReturn) GetExecutionContext() *monitoring.Exe
 	return nil
 }
 
+type WriteReportInsufficientGasRetry struct {
+	state                         protoimpl.MessageState       `protogen:"open.v1"`
+	Req                           *WriteReportRequest          `protobuf:"bytes,1,opt,name=req,proto3" json:"req,omitempty"`
+	ReceiverGasBudget             uint64                       `protobuf:"varint,2,opt,name=receiver_gas_budget,json=receiverGasBudget,proto3" json:"receiver_gas_budget,omitempty"`
+	TransmissionReceiverGasBudget uint64                       `protobuf:"varint,3,opt,name=transmission_receiver_gas_budget,json=transmissionReceiverGasBudget,proto3" json:"transmission_receiver_gas_budget,omitempty"`
+	QueuePosition                 int32                        `protobuf:"varint,4,opt,name=queue_position,json=queuePosition,proto3" json:"queue_position,omitempty"`
+	ExecutionContext              *monitoring.ExecutionContext `protobuf:"bytes,20,opt,name=execution_context,json=executionContext,proto3" json:"execution_context,omitempty"`
+	unknownFields                 protoimpl.UnknownFields
+	sizeCache                     protoimpl.SizeCache
+}
+
+func (x *WriteReportInsufficientGasRetry) Reset() {
+	*x = WriteReportInsufficientGasRetry{}
+	mi := &file_chain_capabilities_evm_monitoring_write_report_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WriteReportInsufficientGasRetry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WriteReportInsufficientGasRetry) ProtoMessage() {}
+
+func (x *WriteReportInsufficientGasRetry) ProtoReflect() protoreflect.Message {
+	mi := &file_chain_capabilities_evm_monitoring_write_report_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WriteReportInsufficientGasRetry.ProtoReflect.Descriptor instead.
+func (*WriteReportInsufficientGasRetry) Descriptor() ([]byte, []int) {
+	return file_chain_capabilities_evm_monitoring_write_report_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *WriteReportInsufficientGasRetry) GetReq() *WriteReportRequest {
+	if x != nil {
+		return x.Req
+	}
+	return nil
+}
+
+func (x *WriteReportInsufficientGasRetry) GetReceiverGasBudget() uint64 {
+	if x != nil {
+		return x.ReceiverGasBudget
+	}
+	return 0
+}
+
+func (x *WriteReportInsufficientGasRetry) GetTransmissionReceiverGasBudget() uint64 {
+	if x != nil {
+		return x.TransmissionReceiverGasBudget
+	}
+	return 0
+}
+
+func (x *WriteReportInsufficientGasRetry) GetQueuePosition() int32 {
+	if x != nil {
+		return x.QueuePosition
+	}
+	return 0
+}
+
+func (x *WriteReportInsufficientGasRetry) GetExecutionContext() *monitoring.ExecutionContext {
+	if x != nil {
+		return x.ExecutionContext
+	}
+	return nil
+}
+
 var File_chain_capabilities_evm_monitoring_write_report_proto protoreflect.FileDescriptor
 
 const file_chain_capabilities_evm_monitoring_write_report_proto_rawDesc = "" +
@@ -878,6 +954,12 @@ const file_chain_capabilities_evm_monitoring_write_report_proto_rawDesc = "" +
 	"\tsignature\x18\x01 \x01(\fR\tsignature\x12\x1b\n" +
 	"\tsigner_id\x18\x02 \x01(\rR\bsignerId\"m\n" +
 	" WriteReportSuccessfulEarlyReturn\x12I\n" +
+	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContext\"\xca\x02\n" +
+	"\x1fWriteReportInsufficientGasRetry\x12<\n" +
+	"\x03req\x18\x01 \x01(\v2*.chain_capabilities.evm.WriteReportRequestR\x03req\x12.\n" +
+	"\x13receiver_gas_budget\x18\x02 \x01(\x04R\x11receiverGasBudget\x12G\n" +
+	" transmission_receiver_gas_budget\x18\x03 \x01(\x04R\x1dtransmissionReceiverGasBudget\x12%\n" +
+	"\x0equeue_position\x18\x04 \x01(\x05R\rqueuePosition\x12I\n" +
 	"\x11execution_context\x18\x14 \x01(\v2\x1c.monitoring.ExecutionContextR\x10executionContextBLZJgithub.com/smartcontractkit/capabilities/chain_capabilities/evm;monitoringb\x06proto3"
 
 var (
@@ -892,7 +974,7 @@ func file_chain_capabilities_evm_monitoring_write_report_proto_rawDescGZIP() []b
 	return file_chain_capabilities_evm_monitoring_write_report_proto_rawDescData
 }
 
-var file_chain_capabilities_evm_monitoring_write_report_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_chain_capabilities_evm_monitoring_write_report_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_chain_capabilities_evm_monitoring_write_report_proto_goTypes = []any{
 	(*WriteReportInitiated)(nil),                   // 0: chain_capabilities.evm.WriteReportInitiated
 	(*WriteReportSuccess)(nil),                     // 1: chain_capabilities.evm.WriteReportSuccess
@@ -906,31 +988,34 @@ var file_chain_capabilities_evm_monitoring_write_report_proto_goTypes = []any{
 	(*ReportResponse)(nil),                         // 9: chain_capabilities.evm.ReportResponse
 	(*AttributedSignature)(nil),                    // 10: chain_capabilities.evm.AttributedSignature
 	(*WriteReportSuccessfulEarlyReturn)(nil),       // 11: chain_capabilities.evm.WriteReportSuccessfulEarlyReturn
-	(*monitoring.ExecutionContext)(nil),            // 12: monitoring.ExecutionContext
+	(*WriteReportInsufficientGasRetry)(nil),        // 12: chain_capabilities.evm.WriteReportInsufficientGasRetry
+	(*monitoring.ExecutionContext)(nil),            // 13: monitoring.ExecutionContext
 }
 var file_chain_capabilities_evm_monitoring_write_report_proto_depIdxs = []int32{
 	7,  // 0: chain_capabilities.evm.WriteReportInitiated.req:type_name -> chain_capabilities.evm.WriteReportRequest
-	12, // 1: chain_capabilities.evm.WriteReportInitiated.execution_context:type_name -> monitoring.ExecutionContext
+	13, // 1: chain_capabilities.evm.WriteReportInitiated.execution_context:type_name -> monitoring.ExecutionContext
 	7,  // 2: chain_capabilities.evm.WriteReportSuccess.req:type_name -> chain_capabilities.evm.WriteReportRequest
-	12, // 3: chain_capabilities.evm.WriteReportSuccess.execution_context:type_name -> monitoring.ExecutionContext
+	13, // 3: chain_capabilities.evm.WriteReportSuccess.execution_context:type_name -> monitoring.ExecutionContext
 	7,  // 4: chain_capabilities.evm.WriteReportError.req:type_name -> chain_capabilities.evm.WriteReportRequest
-	12, // 5: chain_capabilities.evm.WriteReportError.execution_context:type_name -> monitoring.ExecutionContext
+	13, // 5: chain_capabilities.evm.WriteReportError.execution_context:type_name -> monitoring.ExecutionContext
 	7,  // 6: chain_capabilities.evm.WriteReportTxFeeCalculationError.req:type_name -> chain_capabilities.evm.WriteReportRequest
-	12, // 7: chain_capabilities.evm.WriteReportTxFeeCalculationError.execution_context:type_name -> monitoring.ExecutionContext
+	13, // 7: chain_capabilities.evm.WriteReportTxFeeCalculationError.execution_context:type_name -> monitoring.ExecutionContext
 	7,  // 8: chain_capabilities.evm.WriteReportInvalidTransmissionState.req:type_name -> chain_capabilities.evm.WriteReportRequest
-	12, // 9: chain_capabilities.evm.WriteReportInvalidTransmissionState.execution_context:type_name -> monitoring.ExecutionContext
+	13, // 9: chain_capabilities.evm.WriteReportInvalidTransmissionState.execution_context:type_name -> monitoring.ExecutionContext
 	7,  // 10: chain_capabilities.evm.WriteReportDuplicateTx.req:type_name -> chain_capabilities.evm.WriteReportRequest
-	12, // 11: chain_capabilities.evm.WriteReportDuplicateTx.execution_context:type_name -> monitoring.ExecutionContext
-	12, // 12: chain_capabilities.evm.TransmissionSchedulerNodeNotFoundInDon.execution_context:type_name -> monitoring.ExecutionContext
+	13, // 11: chain_capabilities.evm.WriteReportDuplicateTx.execution_context:type_name -> monitoring.ExecutionContext
+	13, // 12: chain_capabilities.evm.TransmissionSchedulerNodeNotFoundInDon.execution_context:type_name -> monitoring.ExecutionContext
 	9,  // 13: chain_capabilities.evm.WriteReportRequest.report:type_name -> chain_capabilities.evm.ReportResponse
 	8,  // 14: chain_capabilities.evm.WriteReportRequest.gas_config:type_name -> chain_capabilities.evm.GasConfig
 	10, // 15: chain_capabilities.evm.ReportResponse.sigs:type_name -> chain_capabilities.evm.AttributedSignature
-	12, // 16: chain_capabilities.evm.WriteReportSuccessfulEarlyReturn.execution_context:type_name -> monitoring.ExecutionContext
-	17, // [17:17] is the sub-list for method output_type
-	17, // [17:17] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	13, // 16: chain_capabilities.evm.WriteReportSuccessfulEarlyReturn.execution_context:type_name -> monitoring.ExecutionContext
+	7,  // 17: chain_capabilities.evm.WriteReportInsufficientGasRetry.req:type_name -> chain_capabilities.evm.WriteReportRequest
+	13, // 18: chain_capabilities.evm.WriteReportInsufficientGasRetry.execution_context:type_name -> monitoring.ExecutionContext
+	19, // [19:19] is the sub-list for method output_type
+	19, // [19:19] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_chain_capabilities_evm_monitoring_write_report_proto_init() }
@@ -945,7 +1030,7 @@ func file_chain_capabilities_evm_monitoring_write_report_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_chain_capabilities_evm_monitoring_write_report_proto_rawDesc), len(file_chain_capabilities_evm_monitoring_write_report_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   12,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -228,27 +228,33 @@ func (o ObservationError) Err() error {
 	return status.FromProto(transmittableErr).Err()
 }
 
-// HashableRequest is an observable request, whose payload can be hashed to be used in hash-based consensus.
+type HashableRequest[T proto.Message] interface {
+	Request
+	GetObservationByReportData(reportData Hash) (T, bool)
+	GetMetadata() commoncap.ResponseMetadata
+}
+
+// ECHashableRequest is an eventually consistent hashable request request, whose payload can be hashed to be used in hash-based consensus.
 // It is the responsibility of the caller to ensure that the payload is deterministic and does not contain any non-deterministic data (e.g. timestamps, random values, etc.)
 // that can cause different nodes to have different hashes for the same request.
-// HashableRequest is newer version of EventuallyConsistentRequest.
+// ECHashableRequest is newer version of EventuallyConsistentRequest.
 // It should be used when the observation can be large and we want to avoid transmitting it multiple times for the same request,
 // by transmitting only the hash of the observation.
-type HashableRequest[T proto.Message] struct {
+type ECHashableRequest[T proto.Message] struct {
 	workflowExecutionID string
 	reference           string
 	metadata            commoncap.ResponseMetadata
 	*observableRequest[T]
-	observations map[[HashLength]byte]T
+	observations map[Hash]T
 	obsLock      sync.RWMutex
 }
 
-func NewHashableRequest[T proto.Message](workflowExecutionID, reference string, metadata commoncap.ResponseMetadata, observe func(context.Context) (T, error)) *HashableRequest[T] {
-	return &HashableRequest[T]{
+func NewECHashableRequest[T proto.Message](workflowExecutionID, reference string, metadata commoncap.ResponseMetadata, observe func(context.Context) (T, error)) *ECHashableRequest[T] {
+	return &ECHashableRequest[T]{
 		workflowExecutionID: workflowExecutionID,
 		reference:           reference,
 		metadata:            metadata,
-		observations:        make(map[[HashLength]byte]T),
+		observations:        make(map[Hash]T),
 		observableRequest: &observableRequest[T]{
 			id:      commonMon.RequestID(workflowExecutionID, reference),
 			observe: observe,
@@ -256,31 +262,26 @@ func NewHashableRequest[T proto.Message](workflowExecutionID, reference string, 
 	}
 }
 
-func (r *HashableRequest[T]) Copy() Request {
+func (r *ECHashableRequest[T]) Copy() Request {
 	// intentionally reuse the same instance, since it's thread safe, and we need to get most recent captured observation
 	return r
 }
 
 var errNoObservation = errors.New("no observation captured yet")
 
-func (r *HashableRequest[T]) captureObservationHash() ([HashLength]byte, ObservationError, error) {
+func (r *ECHashableRequest[T]) captureObservationHash() (Hash, ObservationError, error) {
 	observation, obErr, ok := r.GetObservation()
 	if !ok {
-		return [HashLength]byte{}, nil, errNoObservation
+		return Hash{}, nil, errNoObservation
 	}
 
 	if obErr != nil {
-		return [HashLength]byte{}, obErr, nil
+		return Hash{}, obErr, nil
 	}
 
-	rawPayload, err := proto.MarshalOptions{Deterministic: true}.Marshal(observation)
+	reportData, err := reportDataForObservation(r.workflowExecutionID, r.reference, r.metadata, observation)
 	if err != nil {
-		return [HashLength]byte{}, nil, fmt.Errorf("failed to marshal observation: %w", err)
-	}
-
-	reportData, err := commoncap.ResponseToReportData(r.workflowExecutionID, r.reference, rawPayload, r.metadata)
-	if err != nil {
-		return [HashLength]byte{}, nil, fmt.Errorf("failed to convert response to report data: %w", err)
+		return Hash{}, nil, err
 	}
 	r.obsLock.Lock()
 	defer r.obsLock.Unlock()
@@ -292,7 +293,7 @@ func (r *HashableRequest[T]) captureObservationHash() ([HashLength]byte, Observa
 	return reportData, nil, nil
 }
 
-func (r *HashableRequest[T]) GetOCRObservation() (*RequestObservation, error) {
+func (r *ECHashableRequest[T]) GetOCRObservation() (*RequestObservation, error) {
 	hash, obErr, err := r.captureObservationHash()
 	if err != nil {
 		if errors.Is(err, errNoObservation) {
@@ -310,18 +311,18 @@ func (r *HashableRequest[T]) GetOCRObservation() (*RequestObservation, error) {
 	}, nil
 }
 
-func (r *HashableRequest[T]) GetObservationByReportData(reportData [HashLength]byte) (T, bool) {
+func (r *ECHashableRequest[T]) GetObservationByReportData(reportData Hash) (T, bool) {
 	r.obsLock.RLock()
 	defer r.obsLock.RUnlock()
 	result, ok := r.observations[reportData]
 	return result, ok
 }
 
-func (r *HashableRequest[T]) GetMetadata() commoncap.ResponseMetadata {
+func (r *ECHashableRequest[T]) GetMetadata() commoncap.ResponseMetadata {
 	return r.metadata
 }
 
-// LockableToBlockHashableRequest - is a request type, which combines properties of LockableToBlockRequest and HashableRequest.
+// LockableToBlockHashableRequest - is a request type, which combines properties of LockableToBlockRequest and ECHashableRequest.
 // It allows to capture observation at a specific block height and hash the observation for hash-based consensus.
 type LockableToBlockHashableRequest[T proto.Message] struct {
 	id                  string
@@ -330,7 +331,7 @@ type LockableToBlockHashableRequest[T proto.Message] struct {
 	metadata            commoncap.ResponseMetadata
 	observe             func(context.Context, *ChainHeight) (T, error)
 	hashableReqLock     sync.RWMutex
-	hashableRequest     *HashableRequest[T]
+	hashableRequest     *ECHashableRequest[T]
 }
 
 func NewLockableToBlockHashableRequest[T proto.Message](workflowExecutionID, reference string, metadata commoncap.ResponseMetadata, observe func(context.Context, *ChainHeight) (T, error)) *LockableToBlockHashableRequest[T] {
@@ -354,7 +355,7 @@ func (r *LockableToBlockHashableRequest[T]) LockToABlock(chainHeight *ChainHeigh
 	r.hashableReqLock.Lock()
 	defer r.hashableReqLock.Unlock()
 	if r.hashableRequest == nil {
-		r.hashableRequest = NewHashableRequest(r.workflowExecutionID, r.reference, r.metadata, func(ctx context.Context) (T, error) {
+		r.hashableRequest = NewECHashableRequest(r.workflowExecutionID, r.reference, r.metadata, func(ctx context.Context) (T, error) {
 			return r.observe(ctx, chainHeight)
 		})
 	}
@@ -363,7 +364,9 @@ func (r *LockableToBlockHashableRequest[T]) LockToABlock(chainHeight *ChainHeigh
 
 const HashLength = 32
 
-func (r *LockableToBlockHashableRequest[T]) GetObservationByReportData(reportData [HashLength]byte) (T, bool) {
+type Hash [HashLength]byte
+
+func (r *LockableToBlockHashableRequest[T]) GetObservationByReportData(reportData Hash) (T, bool) {
 	r.hashableReqLock.RLock()
 	defer r.hashableReqLock.RUnlock()
 	if r.hashableRequest == nil {

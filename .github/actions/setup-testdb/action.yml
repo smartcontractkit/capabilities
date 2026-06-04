@@ -1,0 +1,25 @@
+name: Setup Test DB
+description: Setup Postgres and Chainlink test schema for DB-backed tests
+outputs:
+  cl-db-url:
+    description: The value to set CL_DATABASE_URL to while running tests
+    value: postgresql://postgres:postgres@localhost:5432/chainlink_test?sslmode=disable
+
+runs:
+  using: composite
+  steps:
+    - name: Start postgres service
+      run: docker compose up -d
+      shell: bash
+      working-directory: ${{ github.action_path }}/../setup-postgres
+
+    - name: Wait for postgres service to be healthy
+      run: ./wait-for-healthy-postgres.sh
+      shell: bash
+      working-directory: ${{ github.action_path }}/../setup-postgres
+
+    - name: Prepare Test Schema
+      run: go -C integration_tests tool preparetest
+      shell: bash
+      env:
+        CL_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/chainlink_test?sslmode=disable

@@ -161,7 +161,7 @@ func Test_SufficientAndInsufficentReportsInSingleRound(t *testing.T) {
 	md2 := newRequestMetaData()
 	md2.KeyBundleID = "evm"
 
-	expectedFailureCode := oracletypes.ConsensusFailureCode_CONSENSUS_CALCULATION_FAILED
+	expectedFailureCode := oracletypes.ConsensusFailureCode_NO_VALUES_MET_FPLUS1_THRESHOLD_FOR_IDENTICAL_CONSENSUS
 
 	reqToObservations := map[string]*consensusPluginTest{
 		md1.RequestID(): {requests: []*oracle.ConsensusRequest{
@@ -216,7 +216,7 @@ func newRRts(rawBytes []byte, metaData oracle.ConsensusRequestMetadata, recieved
 		Descriptors: &sdk.ConsensusDescriptor{Descriptor_: &sdk.ConsensusDescriptor_Aggregation{Aggregation: sdk.AggregationType_AGGREGATION_TYPE_IDENTICAL}},
 	}
 
-	return oracle.NewConsensusRequest(simpleConsensusInputs, recievedAt, time.Now().Add(1*time.Hour).UTC(), nil, metaData)
+	return oracle.NewConsensusRequest(simpleConsensusInputs, recievedAt, time.Now().Add(1*time.Hour).UTC(), nil, metaData, nil)
 }
 
 func Test_ReportTooLarge_ReturnsFailure(t *testing.T) {
@@ -229,7 +229,7 @@ func Test_ReportTooLarge_ReturnsFailure(t *testing.T) {
 	require.NoError(t, err)
 
 	smallMaxReportLength := uint32(200) // Very small to trigger the error
-	reportingPlugin, err := plugin.NewReportingPlugin(lggr, metricsInstance, f, n, reqStore, &ocrtypes.ReportingPluginConfig{
+	reportingPlugin, err := plugin.NewReportingPlugin(lggr, metricsInstance, f, n, reqStore, oracle.NewObservationQuorumTracker(), &ocrtypes.ReportingPluginConfig{
 		MaxQueryLengthBytes:              1000000,
 		MaxObservationLengthBytes:        1000000,
 		MaxOutcomeLengthBytes:            1000000,
@@ -299,7 +299,7 @@ func Test_ReportWithinLimit_Succeeds(t *testing.T) {
 	metricsInstance, err := metrics.NewMetrics()
 	require.NoError(t, err)
 
-	reportingPlugin, err := plugin.NewReportingPlugin(lggr, metricsInstance, f, n, reqStore, &ocrtypes.ReportingPluginConfig{
+	reportingPlugin, err := plugin.NewReportingPlugin(lggr, metricsInstance, f, n, reqStore, oracle.NewObservationQuorumTracker(), &ocrtypes.ReportingPluginConfig{
 		MaxQueryLengthBytes:              1000000,
 		MaxObservationLengthBytes:        1000000,
 		MaxOutcomeLengthBytes:            1000000,
@@ -369,7 +369,7 @@ func Test_ReportCountLimit(t *testing.T) {
 	require.NoError(t, err)
 
 	maxReportCount := uint32(100)
-	reportingPlugin, err := plugin.NewReportingPlugin(lggr, metricsInstance, f, n, reqStore, &ocrtypes.ReportingPluginConfig{
+	reportingPlugin, err := plugin.NewReportingPlugin(lggr, metricsInstance, f, n, reqStore, oracle.NewObservationQuorumTracker(), &ocrtypes.ReportingPluginConfig{
 		MaxQueryLengthBytes:              1000000,
 		MaxObservationLengthBytes:        1000000,
 		MaxOutcomeLengthBytes:            1000000,

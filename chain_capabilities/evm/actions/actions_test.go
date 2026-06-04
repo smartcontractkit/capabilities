@@ -219,7 +219,7 @@ func runAndReturnHandle(ctx context.Context, req types.Request, chainHeight *typ
 		if len(tObservation.Hashable) != types.HashLength {
 			return nil, fmt.Errorf("unexpected hashable observation length: got %d, want %d", len(tObservation.Hashable), types.HashLength)
 		}
-		var rd [types.HashLength]byte
+		var rd types.Hash
 		copy(rd[:], tObservation.Hashable)
 		reply = types.Reply{Value: types.NewHashableRequestReport(ocrtypes.ConfigDigest{}, 0, rd, nil)}
 	case *types.RequestObservation_Error:

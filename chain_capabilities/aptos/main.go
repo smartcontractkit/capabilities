@@ -14,6 +14,7 @@ import (
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
 	chain_selectors "github.com/smartcontractkit/chain-selectors"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	aptoscapserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/aptos/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -68,7 +69,7 @@ type capability struct {
 	*actions.Aptos
 	id               string
 	requestPoller    *poller.Poller
-	consensusHandler *chainconsensus.Handler
+	consensusHandler chainconsensus.Handler
 	oracle           core.Oracle
 	heightProvider   *height.Provider
 }
@@ -284,7 +285,7 @@ func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies cor
 	}
 	c.lggr.Debugw("Initialised transmission scheduler", "deltaStage", cfg.DeltaStage)
 
-	c.Aptos, err = actions.NewAptos(cfg, p2pConfig, aptosService, c.consensusHandler, messageBuilder, processor, c.lggr, limits.Factory{Logger: c.lggr}, scheduler, c.chainSelector)
+	c.Aptos, err = actions.NewAptos(cfg, p2pConfig, aptosService, c.consensusHandler, messageBuilder, processor, c.lggr, c.limitsFactory, scheduler, c.chainSelector)
 	if err != nil {
 		c.lggr.Errorw("failed to create Aptos actions", "error", err)
 		return fmt.Errorf("failed to create Aptos actions: %w", err)

@@ -71,6 +71,8 @@ type consensusCapability struct {
 	reqHandler    *requests.Handler[*oracle.ConsensusRequest, oracle.ConsensusResponse]
 	limitsFactory limits.Factory
 
+	observationQuorumTracker *oracle.ObservationQuorumTracker
+
 	requestTimeout     time.Duration
 	requestTimeoutLock sync.RWMutex
 
@@ -106,11 +108,12 @@ func NewConsensusCapability(lggr logger.Logger, clock clockwork.Clock, responseC
 		})
 
 	return &consensusCapability{
-		lggr:          lggr,
-		reqStore:      reqStore,
-		reqHandler:    requests.NewHandler(lggr, reqStore, clock, responseCacheExpiry),
-		metrics:       metrics,
-		limitsFactory: limitsFactory,
+		lggr:                     lggr,
+		reqStore:                 reqStore,
+		reqHandler:               requests.NewHandler(lggr, reqStore, clock, responseCacheExpiry),
+		metrics:                  metrics,
+		limitsFactory:            limitsFactory,
+		observationQuorumTracker: oracle.NewObservationQuorumTracker(),
 	}, nil
 }
 
@@ -123,13 +126,15 @@ func (c *consensusCapability) SetRequestTimeout(timeout time.Duration) {
 }
 
 func (c *consensusCapability) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
-	c.lggr.Debugf("Initialising Consensus Capability")
+	c.lggr.Debug("Initialising Consensus Capability")
 
 	if err := c.setConfiguration(dependencies.Config); err != nil {
 		return fmt.Errorf("error setting consensus capability configuration: %w", err)
 	}
 
-	reportingPlugin, err := plugin.NewReportingPluginFactory(c.lggr, c.metrics, c.reqStore, c.SetRequestTimeout,
+	reportingPlugin, err := plugin.NewReportingPluginFactory(c.lggr, c.metrics, c.reqStore,
+		c.observationQuorumTracker,
+		c.SetRequestTimeout,
 		defaultKeyBundleIDForValueConsensus, c.maxRequestOutcomeSize)
 	if err != nil {
 		return fmt.Errorf("error when creating reporting plugin factory: %w", err)
@@ -405,7 +410,7 @@ func (c *consensusCapability) sendRequest(ctx context.Context, input *sdk.Simple
 
 	c.reqHandler.SendRequest(ctx,
 		oracle.NewConsensusRequest(input, time.Now(), time.Now().Add(requestTimeout), callbackChan,
-			consensusRequestMetaData,
+			consensusRequestMetaData, c.observationQuorumTracker,
 		))
 	return callbackChan
 }
@@ -555,30 +560,24 @@ func (c *consensusCapability) validateRequestSize(ctx context.Context, lggr logg
 		"totalSizeBytes", int(totalSize))
 
 	// Get the limit to log it
-	limit, limitErr := c.maxRequestSizeBytes.Limit(ctx)
-	if limitErr != nil {
-		lggr.Warnw("failed to get limit, proceeding with check", "err", limitErr)
+	limit, err := c.maxRequestSizeBytes.Limit(ctx)
+	if err != nil {
+		lggr.Warnw("failed to get limit, proceeding with check", "err", err)
 	} else {
 		lggr.Debugw("retrieved limit", "limitBytes", int(limit))
 	}
 
 	err = c.maxRequestSizeBytes.Check(ctx, totalSize)
 	if err != nil {
-		if errors.Is(err, limits.ErrorBoundLimited[config.Size]{}) {
-			var limitErr limits.ErrorBoundLimited[config.Size]
-			if errors.As(err, &limitErr) {
-				lggr.Warnw("request size exceeds limit",
-					"totalSizeBytes", int(totalSize),
-					"limitBytes", int(limitErr.Limit),
-					"excessBytes", int(totalSize-limitErr.Limit),
-					"inputSizeBytes", inputSize,
-					"metadataSizeBytes", metadataSize)
-			} else {
-				lggr.Warnw("request size exceeds limit",
-					"totalSizeBytes", int(totalSize),
-					"err", err)
-			}
-			return int(totalSize), caperrors.NewPublicUserError(fmt.Errorf("request size %d bytes exceeds maximum allowed size: %w", totalSize, err), caperrors.InvalidArgument)
+		if limitErr, ok := errors.AsType[limits.ErrorBoundLimited[config.Size]](err); ok {
+			lggr.Warnw("request size exceeds limit",
+				"totalSizeBytes", int(totalSize),
+				"limitBytes", int(limitErr.Limit),
+				"excessBytes", int(totalSize-limitErr.Limit),
+				"inputSizeBytes", inputSize,
+				"metadataSizeBytes", metadataSize,
+				"err", err)
+			return int(totalSize), caperrors.NewLimitExceededError(fmt.Sprintf("request size %d bytes exceeds maximum allowed size", totalSize), err)
 		}
 		return int(totalSize), caperrors.NewPublicSystemError(fmt.Errorf("unexpected error checking request size limit: %w", err), caperrors.Internal)
 	}

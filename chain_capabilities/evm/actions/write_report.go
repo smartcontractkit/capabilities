@@ -27,6 +27,7 @@ import (
 
 	capcommon "github.com/smartcontractkit/capabilities/chain_capabilities/common"
 	ts "github.com/smartcontractkit/capabilities/chain_capabilities/common/transmission_schedule"
+
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/internal/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/metering"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/evm/monitoring"
@@ -47,9 +48,11 @@ type WriteReport struct {
 	beholderProcessor beholder.ProtoProcessor
 	messageBuilder    *monitoring.MessageBuilder
 
-	txGasLimit            limits.BoundLimiter[uint64]
-	reportSizeLimit       limits.BoundLimiter[commoncfg.Size]
-	transmissionScheduler ts.TransmissionScheduler
+	txGasLimit             limits.BoundLimiter[uint64]
+	reportSizeLimit        limits.BoundLimiter[commoncfg.Size]
+	writeReportL1FeeActive limits.RangeLimiter[commoncfg.Timestamp]
+	transmissionScheduler  ts.TransmissionScheduler
+	executionTimestamp     time.Time
 }
 
 func (e *EVM) WriteReport(ctx context.Context, metadata capabilities.RequestMetadata, input *evm.WriteReportRequest) (*capabilities.ResponseAndMetadata[*evm.WriteReportReply], caperrors.Error) {
@@ -88,9 +91,11 @@ func (e *EVM) executeWriteReport(ctx context.Context, request *evm.WriteReportRe
 		beholderProcessor: e.beholderProcessor,
 		messageBuilder:    e.messageBuilder,
 
-		txGasLimit:            e.txGasLimit,
-		reportSizeLimit:       e.reportSizeLimit,
-		transmissionScheduler: e.transmissionScheduler,
+		txGasLimit:             e.txGasLimit,
+		reportSizeLimit:        e.reportSizeLimit,
+		writeReportL1FeeActive: e.writeReportL1FeeActive,
+		transmissionScheduler:  e.transmissionScheduler,
+		executionTimestamp:     metadata.ExecutionTimestamp,
 	}
 
 	return wr.executeWriteReport(ctx, request, metadata, telemetryContext)
@@ -115,7 +120,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 	if err != nil {
 		return nil, capabilities.ResponseMetadata{}, err
 	}
-	e.lggr = e.lggr.With("transmissionID", transmissionID)
+	e.lggr = e.lggr.With(transmissionID.LogAttrs()...)
 
 	ctx = contexts.WithChainSelector(ctx, e.chainSelector)
 	if request.GasConfig == nil || request.GasConfig.GasLimit == 0 {
@@ -142,16 +147,16 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 	e.lggr.Infow("Checking transmission status", transmissionInfo.LogAttrs()...)
 	switch transmissionInfo.State {
 	case contracts.TransmissionStateNotAttempted:
-		e.lggr.Infow("transmission not attempted - attempting to push to txmgr")
+		e.lggr.Infow("Transmission not attempted - attempting to push to txmgr")
 	case contracts.TransmissionStateSucceeded:
 		txHash, err := txHashRetriever.GetSuccessfulTransmissionHash(ctx)
 		if err != nil {
-			e.lggr.Errorw("Returning without a transmission attempt - report already onchain, but failed to retrieve its txHash", "error", err.Error())
+			e.lggr.Errorw("Returning without a transmission attempt - prior transmission succeeded, but failed to retrieve its tx hash", "error", err.Error())
 			return nil, capabilities.ResponseMetadata{}, err
 		}
 
-		e.lggr.Infow("Returning without a transmission attempt - report already onchain", "txHash", common.Bytes2Hex(txHash[:]))
-		reply, err := e.fetchTransactionReceiptAndCreateReply(ctx, *txHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS, nil)
+		e.lggr.Infow("Returning without a transmission attempt - prior transmission succeeded", "txHash", common.Bytes2Hex(txHash[:]))
+		reply, err := e.buildSuccessReply(ctx, *txHash)
 		return reply, capabilities.ResponseMetadata{}, err
 	case contracts.TransmissionStateInvalidReceiver:
 		txHash, err := txHashRetriever.GetFailedTransmissionHash(ctx)
@@ -159,35 +164,37 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 			if errors.Is(err, ErrUnexpectedSuccessfulTransmission) {
 				monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportInvalidTransmissionState(telemetryContext, request, transmissionInfo, "WriteReport unexpected successful transmission", err.Error()))
 			} else {
-				e.lggr.Errorw("Transmission already done by another node but failed due to invalid receiver, not reattempting and failed to get its txHash")
+				e.lggr.Errorw("Returning without a transmission attempt - prior transmission marked receiver invalid, but failed to retrieve its tx hash")
 			}
 			return nil, capabilities.ResponseMetadata{}, err
 		}
 
-		e.lggr.Infow("Transmission already done by another node but failed due to invalid receiver, not reattempting", "txHash", common.Bytes2Hex(txHash[:]))
-		reply, err := e.processUnrecoverableTxState(ctx, request, *txHash, transmissionInfo.State, transmissionID, false)
+		e.lggr.Infow("Returning without a transmission attempt - prior transmission marked receiver invalid", "txHash", common.Bytes2Hex(txHash[:]))
+		reply, err := e.buildRevertReplyFromTx(ctx, *txHash, transmissionInfo, transmissionID)
 		return reply, capabilities.ResponseMetadata{}, err
 	case contracts.TransmissionStateFailed:
-		txGasLimit := e.ReceiverGasMinimum + contracts.ForwarderContractLogicGasCost
-		if request.GasConfig != nil && request.GasConfig.GasLimit > txGasLimit {
-			txGasLimit = request.GasConfig.GasLimit - contracts.ForwarderContractLogicGasCost
-		}
-		if transmissionInfo.GasLimit != nil && transmissionInfo.GasLimit.Uint64() > txGasLimit {
+		hadEnoughGas, calculatedReceiverGasBudget := e.attemptHadEnoughGas(request, transmissionInfo)
+		if hadEnoughGas {
 			txHash, err := txHashRetriever.GetFailedTransmissionHash(ctx)
 			if err != nil {
 				if errors.Is(err, ErrUnexpectedSuccessfulTransmission) {
 					monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportInvalidTransmissionState(telemetryContext, request, transmissionInfo, "WriteReport unexpected successful transmission", err.Error()))
 				} else {
-					e.lggr.Errorw("Returning without a transmission attempt - transmission already attempted, but failed to retrieve its tx hash", "error", err.Error(), "txGasLimit", txGasLimit, "transmissionGasLimit", transmissionInfo.GasLimit)
+					e.lggr.Errorw("Returning without a transmission attempt - prior transmission failed with sufficient gas, but failed to retrieve its tx hash", "error", err.Error(), "receiverGasBudget", calculatedReceiverGasBudget, "transmissionReceiverGasBudget", transmissionInfo.GasLimit)
 				}
 				return nil, capabilities.ResponseMetadata{}, err
 			}
 
-			e.lggr.Infow("Returning without a transmission attempt - transmission already attempted and failed and is beyond gas limit", "transmissionTxHash", common.Bytes2Hex(txHash[:]), "txGasLimit", txGasLimit, "transmissionGasLimit", transmissionInfo.GasLimit)
-			reply, err := e.processUnrecoverableTxState(ctx, request, *txHash, transmissionInfo.State, transmissionID, false)
+			e.lggr.Infow("Returning without a transmission attempt - prior transmission failed with sufficient gas",
+				"txHash", common.Bytes2Hex(txHash[:]),
+				"receiverGasBudget", calculatedReceiverGasBudget,
+				"transmissionReceiverGasBudget", transmissionInfo.GasLimit,
+			)
+			reply, err := e.buildRevertReplyFromTx(ctx, *txHash, transmissionInfo, transmissionID)
 			return reply, capabilities.ResponseMetadata{}, err
 		}
-		e.lggr.Infow("Retrying a failed transmission - attempting to push to txmgr", "txGasLimit", txGasLimit, "transmissionGasLimit", transmissionInfo.GasLimit)
+		monitoring.LogAndEmitSuccess(ctx, "Retrying a failed transmission after prior attempt had insufficient receiver gas", e.lggr, e.beholderProcessor,
+			e.messageBuilder.BuildWriteReportInsufficientGasRetry(telemetryContext, request, calculatedReceiverGasBudget, transmissionInfo.GasLimit, queuePosition))
 	default:
 		errorMsg := getInvalidStateErrorMessage(transmissionInfo.State)
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportInvalidTransmissionState(telemetryContext, request, transmissionInfo, "WriteReport invalid transmission state", errorMsg))
@@ -239,12 +246,12 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		}
 		if transactionResult.TxStatus == evmtypes.TxReverted {
 			// Report for this transaction has already been submitted and we sent a duplicate tx onchain which is fine, but wastes ethereum gas
-			monitoring.LogAndEmitSuccess(ctx, "WriteReport sent a duplicate transaction - report already submitted", e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportDuplicateTx(telemetryContext, request, common.Bytes2Hex(transactionResult.TxHash[:]), common.Bytes2Hex((*txHash)[:])))
+			monitoring.LogAndEmitSuccess(ctx, "Made a new transmission attempt - transmission succeeded, but it reverted due to being a duplicate", e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportDuplicateTx(telemetryContext, request, common.Bytes2Hex(transactionResult.TxHash[:]), common.Bytes2Hex((txHash)[:])))
 		} else if transactionResult.TxStatus == evmtypes.TxFatal {
-			e.lggr.Debugw("Transaction failed to get processed, but report was already submitted")
+			e.lggr.Debugw("Made a new transmission attempt - transmission succeeded, but can't find the tx locally")
 		}
-		e.lggr.Debugw("Transaction confirmed", "txIdempotencyKey", transactionResult.TxIdempotencyKey, "txHash", common.Bytes2Hex((*txHash)[:]))
-		reply, err := e.fetchTransactionReceiptAndCreateReply(ctx, *txHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS, nil)
+		e.lggr.Infow("Made a new transmission attempt - transmission succeeded", "txIdempotencyKey", transactionResult.TxIdempotencyKey, "txHash", common.Bytes2Hex((txHash)[:]))
+		reply, err := e.buildSuccessReply(ctx, *txHash)
 		return reply, meteringMetadata, err
 	case contracts.TransmissionStateFailed, contracts.TransmissionStateInvalidReceiver:
 		txHash := &transactionResult.TxHash
@@ -255,13 +262,15 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 				if errors.Is(err, ErrUnexpectedSuccessfulTransmission) {
 					monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportInvalidTransmissionState(telemetryContext, request, transmissionInfo, "WriteReport unexpected successful transmission", err.Error()))
 				} else {
-					e.lggr.Errorw("Sent another tx which also failed - failed to retrieve the tx hash of the first transmission", "error", err.Error(), "originalTxGasLimit", transmissionInfo.GasLimit)
+					e.lggr.Errorw("Made a new transmission attempt - transmission failed, unable to retrieve the first transmission tx hash", "error", err.Error(), "originalTxGasLimit", transmissionInfo.GasLimit, "transmissionState", newTransmissionInfo.State.String(), "txHash", common.Bytes2Hex(txHash[:]))
 				}
 				return nil, capabilities.ResponseMetadata{}, err
 			}
 			txHash = originalTxHash
 		}
-		reply, err := e.processUnrecoverableTxState(ctx, request, *txHash, newTransmissionInfo.State, transmissionID, true)
+		e.lggr.Errorw("Made a new transmission attempt - transmission failed", "txHash", common.Bytes2Hex(txHash[:]), "transmissionState", newTransmissionInfo.State.String())
+
+		reply, err := e.buildRevertReplyFromTx(ctx, *txHash, newTransmissionInfo, transmissionID)
 		return reply, meteringMetadata, err
 	default:
 		errorMsg := getInvalidStateErrorMessage(newTransmissionInfo.State)
@@ -272,7 +281,7 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 
 // getQueuePosition returns this node's position in the transmission queue, or -1 if not in DON or scheduler not configured
 func (e *WriteReport) getQueuePosition(transmissionID contracts.TransmissionID) int {
-	position := e.transmissionScheduler.GetQueuePosition(transmissionID.GetDebugID())
+	position := e.transmissionScheduler.GetQueuePosition(transmissionID.String())
 	if position < 0 {
 		e.lggr.Warnw("Node not found in DON, proceeding without scheduling")
 	}
@@ -310,6 +319,10 @@ func (e *WriteReport) pollTransmissionInfo(
 	hadSuccessfulPoll := false
 	defer func() {
 		stageTimer.Stop()
+		if ctx.Err() != nil {
+			e.lggr.Infow("Timed out before a valid transmission state was found")
+		}
+
 		if !deltaStagePassed && hadSuccessfulPoll {
 			monitoring.LogAndEmitSuccess(
 				ctx,
@@ -331,13 +344,22 @@ func (e *WriteReport) pollTransmissionInfo(
 			case contracts.TransmissionStateSucceeded, contracts.TransmissionStateInvalidReceiver:
 				return lastValidInfo, nil
 			case contracts.TransmissionStateFailed:
-				_, cnt, err := txHashRetriever.GetFailedTransmissionHashWithCount(ctx)
+				hadEnoughGas, calculatedReceiverGasBudget := e.attemptHadEnoughGas(request, lastValidInfo)
+				// none of the previous nodes will try to resend this transmission, so we can stop polling early
+				if hadEnoughGas {
+					return lastValidInfo, nil
+				}
+				_, count, err := txHashRetriever.GetFailedTransmissionHashWithCount(ctx)
 				if err != nil {
 					e.lggr.Debugw("Failed to get tx hash and attempt count during polling", "error", err)
-				} else {
-					if cnt >= int(e.transmissionScheduler.F+1) {
-						return lastValidInfo, nil
-					}
+				} else if count >= queuePosition {
+					e.lggr.Infow("Stopping poll - all prior nodes in queue finished their transmission attempts",
+						"queuePosition", queuePosition,
+						"failedAttemptCount", count,
+						"calculatedReceiverGasBudget", calculatedReceiverGasBudget,
+						"transmissionReceiverGasBudget", lastValidInfo.GasLimit,
+					)
+					return lastValidInfo, nil
 				}
 			case contracts.TransmissionStateNotAttempted:
 			default:
@@ -393,25 +415,18 @@ func getInvalidStateErrorMessage(state contracts.TransmissionState) string {
 	return fmt.Sprintf("unexpected transmission state: %v", state)
 }
 
-func (e *WriteReport) processUnrecoverableTxState(ctx context.Context, request *evm.WriteReportRequest, txHash evmtypes.Hash, transmissionState contracts.TransmissionState, transmissionID contracts.TransmissionID, txAttemptedLocally bool) (*evm.WriteReportReply, error) {
-	var message *string
-	if transmissionState == contracts.TransmissionStateInvalidReceiver {
-		message = getInvalidReceiverMessage(transmissionID.Receiver[:])
-	} else {
-		message = capcommon.Ptr(UnknownIssueExecutingReceiverContractMessage)
+// attemptHadEnoughGas reports whether a prior failed transmission used sufficient receiver gas,
+// meaning a resubmit would not help (e.g. receiver contract revert).
+// The second return value is the receiver gas budget derived from the request.
+func (e *WriteReport) attemptHadEnoughGas(request *evm.WriteReportRequest, info contracts.TransmissionInfo) (bool, uint64) {
+	receiverGasBudget := e.ReceiverGasMinimum + contracts.ForwarderContractLogicGasCost
+	if request.GasConfig != nil && request.GasConfig.GasLimit > receiverGasBudget {
+		receiverGasBudget = request.GasConfig.GasLimit - contracts.ForwarderContractLogicGasCost
 	}
-
-	if !txAttemptedLocally {
-		e.lggr.Infow("Returning without a transmission attempt - transmission already attempted, receiver was marked as invalid", "message", message)
-	} else {
-		e.lggr.Errorw("Transaction written to the forwarder, but failed to be written to the consumer contract", "receiver", common.Bytes2Hex(request.Receiver), "message", message, "transmissionState", transmissionState)
+	if info.GasLimit == nil {
+		return false, receiverGasBudget
 	}
-
-	return e.fetchTransactionReceiptAndCreateReply(ctx, txHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED, message)
-}
-
-func getInvalidReceiverMessage(receiver []byte) *string {
-	return capcommon.Ptr(fmt.Sprintf("Invalid receiver: %s", common.Bytes2Hex(receiver)))
+	return info.GasLimit.Uint64() > receiverGasBudget, receiverGasBudget
 }
 
 func getTransmissionID(workflowExecutionID string, request *evm.WriteReportRequest) (contracts.TransmissionID, error) {
@@ -427,7 +442,19 @@ func getTransmissionID(workflowExecutionID string, request *evm.WriteReportReque
 	}, nil
 }
 
-func (e *WriteReport) fetchTransactionReceiptAndCreateReply(ctx context.Context, txHash evmtypes.Hash, receiverStatus evm.ReceiverContractExecutionStatus, errorMessage *string) (*evm.WriteReportReply, error) {
+func (e *WriteReport) buildSuccessReply(ctx context.Context, txHash evmtypes.Hash) (*evm.WriteReportReply, error) {
+	return e.replyFromReceipt(ctx, txHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_SUCCESS, nil)
+}
+
+func (e *WriteReport) buildRevertReplyFromTx(ctx context.Context, txHash evmtypes.Hash, transmissionInfo contracts.TransmissionInfo, transmissionID contracts.TransmissionID) (*evm.WriteReportReply, error) {
+	errorMessage := UnknownIssueExecutingReceiverContractMessage
+	if transmissionInfo.State == contracts.TransmissionStateInvalidReceiver {
+		errorMessage = transmissionID.InvalidReceiverMessage()
+	}
+	return e.replyFromReceipt(ctx, txHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED, &errorMessage)
+}
+
+func (e *WriteReport) replyFromReceipt(ctx context.Context, txHash evmtypes.Hash, receiverStatus evm.ReceiverContractExecutionStatus, errorMessage *string) (*evm.WriteReportReply, error) {
 	txReceipt, err := capcommon.WithQuickRetry(ctx, e.lggr, func(ctx context.Context) (*evmtypes.Receipt, error) {
 		return e.GetTransactionReceipt(ctx, evmtypes.GeTransactionReceiptRequest{
 			Hash:       txHash,
@@ -437,18 +464,25 @@ func (e *WriteReport) fetchTransactionReceiptAndCreateReply(ctx context.Context,
 	if err != nil {
 		return nil, fmt.Errorf("failed to get transaction receipt: %w", err)
 	}
+	receiptGasInfo := evmtypes.ReceiptGasInfo{
+		GasUsed:           txReceipt.GasUsed,
+		EffectiveGasPrice: txReceipt.EffectiveGasPrice,
+	}
+	if e.includeL1FeeInReceiptFee(ctx) {
+		receiptGasInfo.L1Fee = txReceipt.L1Fee
+	} else {
+		e.lggr.Debugw("WriteReport L1 fee feature flag is inactive; omitting L1 fee from transaction fee calculation")
+	}
+
 	transactionFee, err := capcommon.WithQuickRetry(ctx, e.lggr, func(ctx context.Context) (*evmtypes.TransactionFee, error) {
-		return e.CalculateTransactionFee(ctx, evmtypes.ReceiptGasInfo{
-			GasUsed:           txReceipt.GasUsed,
-			EffectiveGasPrice: txReceipt.EffectiveGasPrice,
-		})
+		return e.CalculateTransactionFee(ctx, receiptGasInfo)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to calculate transaction fee: %w", err)
 	}
 	message := errorMessage
 	if receiverStatus == evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED && errorMessage == nil {
-		message = capcommon.Ptr("receiver contract execution failure")
+		message = new(UnknownIssueExecutingReceiverContractMessage)
 	}
 
 	txStatus := evm.TxStatus_TX_STATUS_SUCCESS
@@ -470,6 +504,16 @@ func (e *WriteReport) fetchTransactionReceiptAndCreateReply(ctx context.Context,
 		ReceiverContractExecutionStatus: &receiverStatus,
 		ErrorMessage:                    message,
 	}, nil
+}
+
+func (e *WriteReport) includeL1FeeInReceiptFee(ctx context.Context) bool {
+	if e.writeReportL1FeeActive == nil {
+		return false
+	}
+	if e.executionTimestamp.IsZero() {
+		e.lggr.Errorw("ExecutionTimestamp is zero")
+	}
+	return e.writeReportL1FeeActive.Check(ctx, commoncfg.NewTimestamp(e.executionTimestamp)) == nil
 }
 
 func (e *EVM) validateInputsAndReportMetadata(requestMetadata capabilities.RequestMetadata, request *evm.WriteReportRequest) error {
@@ -622,12 +666,12 @@ func (thr *TxHashRetriever) fetchAndParseLogs(ctx context.Context) (logDetailsLi
 	}
 
 	if len(logs) == 0 {
-		return nil, fmt.Errorf("no logs found for transmission: %s", thr.transmissionID.GetDebugID())
+		return nil, fmt.Errorf("no logs found for transmission: %s", thr.transmissionID.String())
 	}
 
 	details, err := buildLogDetails(logs)
 	if err != nil {
-		return nil, fmt.Errorf("malformed log data for transmission %s: %w", thr.transmissionID.GetDebugID(), err)
+		return nil, fmt.Errorf("malformed log data for transmission %s: %w", thr.transmissionID.String(), err)
 	}
 
 	return details, nil
@@ -648,9 +692,9 @@ func (thr *TxHashRetriever) GetSuccessfulTransmissionHash(ctx context.Context) (
 		}
 	}
 
-	thr.lggr.Errorw("No successful transmission found", append(thr.transmissionID.GetIDPartsForDebugging(), "txCount", len(details), "transactions", details.String())...)
+	thr.lggr.Errorw("No successful transmission found", append(thr.transmissionID.LogAttrs(), "txCount", len(details), "transactions", details.String())...)
 	return nil, fmt.Errorf("no successful transmission found for: %s. Found %d transactions (all failed): %s",
-		thr.transmissionID.GetDebugID(), len(details), details)
+		thr.transmissionID.String(), len(details), details)
 }
 
 // GetFailedTransmissionHash finds and returns the hash of the earliest failed transmission.
@@ -677,7 +721,7 @@ func (thr *TxHashRetriever) GetFailedTransmissionHashWithCount(ctx context.Conte
 	for _, d := range details {
 		if d.IsSuccess {
 			return nil, len(details), fmt.Errorf("%w for: %s, successful tx hash: %s",
-				ErrUnexpectedSuccessfulTransmission, thr.transmissionID.GetDebugID(), hex.EncodeToString(d.TxHash[:]))
+				ErrUnexpectedSuccessfulTransmission, thr.transmissionID.String(), hex.EncodeToString(d.TxHash[:]))
 		}
 	}
 
@@ -691,7 +735,7 @@ func (thr *TxHashRetriever) GetFailedTransmissionHashWithCount(ctx context.Conte
 	lggrKeyValues := append([]any{
 		"txCount", len(details),
 		"selectedTxHash", hex.EncodeToString(details[earliestIdx].TxHash[:]),
-	}, thr.transmissionID.GetIDPartsForDebugging()...)
+	}, thr.transmissionID.LogAttrs()...)
 	thr.lggr.Debugw("Returning earliest failed transmission", lggrKeyValues...)
 
 	return &details[earliestIdx].TxHash, len(details), nil

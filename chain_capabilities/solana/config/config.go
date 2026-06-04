@@ -16,6 +16,11 @@ type Config struct {
 	Network             string        `json:"network"`
 	ChainID             string        `json:"chainId"`
 	DeltaStage          time.Duration `json:"deltaStage"` // Staggered transmission scheduling delay per queue position
+
+	ReadsEnabled                  bool          `json:"readsEnabled"`
+	ObservationPollerWorkersCount uint          `json:"observationPollerWorkersCount"`
+	ObservationPollPeriod         time.Duration `json:"observationPollPeriod"`
+	UnknownRequestsTTL            time.Duration `json:"unknownRequestsTTL"`
 }
 
 func (c *Config) UnmarshalJSON(bs []byte) error {
@@ -27,6 +32,11 @@ func (c *Config) UnmarshalJSON(bs []byte) error {
 		Network             string        `json:"network"`
 		ChainID             string        `json:"chainId"`
 		DeltaStage          time.Duration `json:"deltaStage"`
+
+		ReadsEnabled                  bool          `json:"readsEnabled"`
+		ObservationPollerWorkersCount uint          `json:"observationPollerWorkersCount"`
+		ObservationPollPeriod         time.Duration `json:"observationPollPeriod"`
+		UnknownRequestsTTL            time.Duration `json:"unknownRequestsTTL"`
 	}
 	var cfg config
 
@@ -51,6 +61,11 @@ func (c *Config) UnmarshalJSON(bs []byte) error {
 	if err != nil {
 		return fmt.Errorf("invalid transmitter address: %w", err)
 	}
+
+	c.ReadsEnabled = cfg.ReadsEnabled
+	c.ObservationPollerWorkersCount = cfg.ObservationPollerWorkersCount
+	c.ObservationPollPeriod = cfg.ObservationPollPeriod
+	c.UnknownRequestsTTL = cfg.UnknownRequestsTTL
 
 	return nil
 }

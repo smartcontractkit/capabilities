@@ -1,9 +1,11 @@
 package oracle
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"sort"
 
@@ -26,9 +28,6 @@ import (
 )
 
 const (
-	// OCRRoundBatchSize - max number of requests that this node will try to process in a single round
-	// TODO PLEX-1569: make configurable
-	OCRRoundBatchSize = 200
 	// OCRRoundMaxBatchSize - defines max number of requests that this node will process in a round, if requested by another node.
 	// Needed to allow graceful roll out of OCRBatchSize increase.
 	OCRRoundMaxBatchSize = 1000
@@ -310,6 +309,32 @@ func (rp *reportingPlugin) ValidateObservation(_ context.Context, outctx ocr3typ
 			if len(tRequestOb.Hashable) != ctypes.HashLength {
 				return fmt.Errorf("invalid hash length for request ID %s: got %d, expected %d. OracleID: %d", requestID, len(tRequestOb.Hashable), ctypes.HashLength, ao.Observer)
 			}
+		case *ctypes.RequestObservation_Volatile:
+			if tRequestOb.Volatile == nil {
+				return fmt.Errorf("volatile observation is nil for request ID %s. OracleID: %d", requestID, ao.Observer)
+			}
+
+			observationsSet := make(map[ctypes.Hash]struct{}, len(tRequestOb.Volatile.Observations))
+			if len(tRequestOb.Volatile.Observations) > ctypes.MaxNumberOfVolatileObservations {
+				return fmt.Errorf("too many volatile observations for request ID %s: got %d, expected at most %d. OracleID: %d", requestID, len(tRequestOb.Volatile.Observations), ctypes.MaxNumberOfVolatileObservations, ao.Observer)
+			}
+
+			for _, volatileOb := range tRequestOb.Volatile.Observations {
+				if volatileOb == nil {
+					return fmt.Errorf("volatile observation value is nil for request ID %s. OracleID: %d", requestID, ao.Observer)
+				}
+
+				if len(volatileOb.Hash) != ctypes.HashLength {
+					return fmt.Errorf("invalid hash length for volatile observation of request ID %s: got %d, expected %d. OracleID: %d", requestID, len(volatileOb.Hash), ctypes.HashLength, ao.Observer)
+				}
+
+				key := ctypes.Hash(volatileOb.Hash)
+				if _, ok := observationsSet[key]; ok {
+					return fmt.Errorf("duplicate volatile observation for request ID %s: hash %s. OracleID: %d", requestID, hex.EncodeToString(volatileOb.Hash), ao.Observer)
+				}
+
+				observationsSet[key] = struct{}{}
+			}
 		}
 	}
 
@@ -416,6 +441,8 @@ func (rp *reportingPlugin) agreeOnObservationType(requestID string, aos []attrib
 				observationType = ctypes.ObservationType_ERROR
 			case *ctypes.RequestObservation_Hashable:
 				observationType = ctypes.ObservationType_HASHABLE
+			case *ctypes.RequestObservation_Volatile:
+				observationType = ctypes.ObservationType_VOLATILE
 			}
 			if !yield(ob.Observer, &observation[ctypes.ObservationType, ctypes.ObservationType]{
 				Key:   observationType,
@@ -426,7 +453,8 @@ func (rp *reportingPlugin) agreeOnObservationType(requestID string, aos []attrib
 		}
 	}
 
-	return mode[ctypes.ObservationType, ctypes.ObservationType](rp.config.N, rp.config.F, iterator)
+	value, _, err := mode[ctypes.ObservationType, ctypes.ObservationType](rp.config.N, rp.config.F, iterator)
+	return value, err
 }
 
 func (rp *reportingPlugin) aggregateValue(requestID string, aos []attributedObservation) (*pb.Decimal, error) {
@@ -491,7 +519,8 @@ func (rp *reportingPlugin) agreeOnAggregationMethod(requestID string, aos []attr
 		}
 	}
 
-	return mode[string, string](rp.config.N, rp.config.F, iterator)
+	value, _, err := mode[string, string](rp.config.N, rp.config.F, iterator)
+	return value, err
 }
 
 func (rp *reportingPlugin) agreeOnMissingRequestIDs(aos []attributedObservation) ([]string, error) {
@@ -511,7 +540,7 @@ func (rp *reportingPlugin) agreeOnMissingRequestIDs(aos []attributedObservation)
 	return result, nil
 }
 
-func (rp *reportingPlugin) agreeOnEventuallyConsistentValue(requestID string, aos []attributedObservation) ([]byte, error) {
+func (rp *reportingPlugin) agreeOnEventuallyConsistentValue(requestID string, aos []attributedObservation) ([]byte, int, error) {
 	iterator := func(yield func(commontypes.OracleID, *observation[[32]byte, []byte]) bool) {
 		for _, ob := range aos {
 			requestOb, ok := ob.Observation.Observations[requestID]
@@ -539,7 +568,7 @@ func (rp *reportingPlugin) agreeOnEventuallyConsistentValue(requestID string, ao
 	return mode[[32]byte, []byte](rp.config.N, rp.config.F, iterator)
 }
 
-func (rp *reportingPlugin) agreeOnHashableValue(requestID string, aos []attributedObservation) ([]byte, error) {
+func (rp *reportingPlugin) agreeOnHashableValue(requestID string, aos []attributedObservation) ([]byte, int, error) {
 	iterator := func(yield func(commontypes.OracleID, *observation[[32]byte, []byte]) bool) {
 		for _, ob := range aos {
 			requestOb, ok := ob.Observation.Observations[requestID]
@@ -554,7 +583,7 @@ func (rp *reportingPlugin) agreeOnHashableValue(requestID string, aos []attribut
 				continue
 			}
 
-			var key [ctypes.HashLength]byte
+			var key ctypes.Hash
 			if len(requestOb.GetHashable()) != ctypes.HashLength {
 				// should not happen due to validation, but just in case, we don't want to panic here.
 				if !yield(ob.Observer, nil) {
@@ -576,6 +605,114 @@ func (rp *reportingPlugin) agreeOnHashableValue(requestID string, aos []attribut
 	return mode[[32]byte, []byte](rp.config.N, rp.config.F, iterator)
 }
 
+func medianUInt64(heights []uint64) float64 {
+	if len(heights) == 0 {
+		return 0
+	}
+	sort.Slice(heights, func(i, j int) bool { return heights[i] < heights[j] })
+	n := len(heights)
+	if n%2 == 1 {
+		return float64(heights[n/2])
+	}
+	return float64(heights[n/2-1]+heights[n/2]) / 2
+}
+
+// isVolatileCandidateABetter returns true if a should win over b (higher supporter count, then higher median height, then lower min oracle id).
+func isVolatileCandidateABetter(a, b *volatileOutcomeCandidate) bool {
+	if a.supporters != b.supporters {
+		return a.supporters > b.supporters
+	}
+
+	aHeight := medianUInt64(a.heights)
+	bHeight := medianUInt64(b.heights)
+	if aHeight != bHeight {
+		return aHeight > bHeight
+	}
+
+	if a.lowestOracle != b.lowestOracle {
+		return a.lowestOracle < b.lowestOracle
+	}
+	return bytes.Compare(a.hash[:], b.hash[:]) < 0
+}
+
+type volatileOutcomeCandidate struct {
+	hash         ctypes.Hash
+	supporters   int
+	lowestOracle commontypes.OracleID
+	heights      []uint64
+}
+
+func (rp *reportingPlugin) agreeOnVolatileValue(requestID string, aos []attributedObservation) (*ctypes.RequestOutcome, int, error) {
+	candidates := make(map[ctypes.Hash]volatileOutcomeCandidate)
+	var totalNum int
+	for _, ao := range aos {
+		requestOb, ok := ao.Observation.Observations[requestID]
+		if !ok || requestOb == nil {
+			continue
+		}
+		totalNum++
+
+		volOb, ok := requestOb.Observation.(*ctypes.RequestObservation_Volatile)
+		if !ok || volOb.Volatile == nil {
+			continue
+		}
+
+		for _, vo := range volOb.Volatile.Observations {
+			if vo == nil || len(vo.Hash) != ctypes.HashLength {
+				continue
+			}
+			key := ctypes.Hash(vo.Hash)
+			stats, ok := candidates[key]
+			if !ok {
+				stats = volatileOutcomeCandidate{
+					hash:         key,
+					supporters:   1,
+					lowestOracle: ao.Observer,
+					heights:      []uint64{vo.Height},
+				}
+			} else {
+				stats.supporters++
+				stats.lowestOracle = min(stats.lowestOracle, ao.Observer)
+				stats.heights = append(stats.heights, vo.Height)
+			}
+			candidates[key] = stats
+		}
+	}
+
+	expectedObs := byzQuorumSize(rp.config.N, rp.config.F)
+
+	if totalNum < expectedObs {
+		return nil, 0, fmt.Errorf("insufficient number of observations: expected %d, got %d", expectedObs, totalNum)
+	}
+
+	var best *volatileOutcomeCandidate
+	for _, candidate := range candidates {
+		if candidate.supporters < rp.config.F+1 {
+			continue
+		}
+		if best == nil || isVolatileCandidateABetter(&candidate, best) {
+			best = &candidate
+		}
+	}
+
+	if best != nil {
+		return &ctypes.RequestOutcome{
+			Outcome: &ctypes.RequestOutcome_Hashable{Hashable: best.hash[:]},
+		}, best.supporters, nil
+	}
+
+	errPayload, errorCount, err := modeForError(rp.config.N, rp.config.F, requestID, aos)
+	if err != nil {
+		if errors.Is(err, errInsufficientErrorOb) {
+			return nil, errorCount, errors.New("no volatile outcome candidate reached F+1 supporters")
+		}
+		return nil, errorCount, err
+	}
+	return &ctypes.RequestOutcome{
+		Outcome: &ctypes.RequestOutcome_Error{Error: &ctypes.RequestError{Errors: errPayload}},
+	}, errorCount, nil
+}
+
 func (rp *reportingPlugin) agreeOnChainHeight(aos []attributedObservation) (*ctypes.ChainHeight, error) {
 	if len(aos) < rp.config.F+1 {
 		return nil, fmt.Errorf("not enough observations to calculate chain height. Got %d, expected at least %d", len(aos), rp.config.F+1)
@@ -594,7 +731,7 @@ type attributedObservation struct {
 }
 
 func (rp *reportingPlugin) Outcome(
-	_ context.Context,
+	ctx context.Context,
 	outctx ocr3types.OutcomeContext,
 	rawQuery types.Query,
 	rawAOs []types.AttributedObservation,
@@ -643,7 +780,8 @@ func (rp *reportingPlugin) Outcome(
 				Outcome:   &ctypes.RequestOutcome_Aggregatable{Aggregatable: value},
 			})
 		case ctypes.ObservationType_EVENTUALLY_CONSISTENT:
-			value, err := rp.agreeOnEventuallyConsistentValue(requestID, aos)
+			value, identicalCount, err := rp.agreeOnEventuallyConsistentValue(requestID, aos)
+			rp.metrics.RecordIdenticalResponseCount(ctx, identicalCount, observationType.String())
 			if err != nil {
 				rp.logger.Infow("Could not determine request value", "requestID", requestID, "err", err)
 				continue
@@ -658,7 +796,8 @@ func (rp *reportingPlugin) Outcome(
 				Outcome:   &ctypes.RequestOutcome_LockableToBlock{LockableToBlock: &emptypb.Empty{}},
 			})
 		case ctypes.ObservationType_ERROR:
-			requestErrors, err := modeForError(rp.config.N, rp.config.F, requestID, aos)
+			requestErrors, identicalCount, err := modeForError(rp.config.N, rp.config.F, requestID, aos)
+			rp.metrics.RecordIdenticalResponseCount(ctx, identicalCount, observationType.String())
 			if err != nil {
 				rp.logger.Infow("Could not determine request error", "requestID", requestID, "err", err)
 				continue
@@ -668,16 +807,28 @@ func (rp *reportingPlugin) Outcome(
 				Outcome:   &ctypes.RequestOutcome_Error{Error: &ctypes.RequestError{Errors: requestErrors}},
 			})
 		case ctypes.ObservationType_HASHABLE:
-			value, err := rp.agreeOnHashableValue(requestID, aos)
+			value, identicalCount, err := rp.agreeOnHashableValue(requestID, aos)
+			rp.metrics.RecordIdenticalResponseCount(ctx, identicalCount, observationType.String())
 			if err != nil {
 				rp.logger.Infow("Could not determine request hashable value", "requestID", requestID, "err", err)
 				continue
 			}
-
 			outcome.Outcomes = append(outcome.Outcomes, &ctypes.RequestOutcome{
 				RequestID: requestID,
 				Outcome:   &ctypes.RequestOutcome_Hashable{Hashable: value},
 			})
+		case ctypes.ObservationType_VOLATILE:
+			volatileOutcome, identicalCount, err := rp.agreeOnVolatileValue(requestID, aos)
+			rp.metrics.RecordIdenticalResponseCount(ctx, identicalCount, observationType.String())
+			if err != nil {
+				rp.logger.Infow("Could not determine volatile request outcome", "requestID", requestID, "err", err)
+				continue
+			}
+			outcome.Outcomes = append(outcome.Outcomes, &ctypes.RequestOutcome{
+				RequestID: requestID,
+				Outcome:   volatileOutcome.Outcome,
+			})
+
 		default:
 			return nil, fmt.Errorf("unsupported observation type: %s", observationType)
 		}

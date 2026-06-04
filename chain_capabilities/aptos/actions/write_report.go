@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"math/big"
 	"slices"
 	"strings"
@@ -169,7 +170,8 @@ func (wr *writeReport) execute(
 	}
 	wr.lggr = wr.lggr.With("transmissionID", transmissionID.GetDebugID())
 
-	txInfoRetriever := NewTxInfoRetriever(wr.forwarderClient, wr.lggr, transmissionID, wr.forwarderAddress.String(), requestStartTime, wr.txSearchStartingBuffer, request.Report)
+	txInfoRetriever := NewTxInfoRetriever(wr.forwarderClient, wr.lggr, transmissionID, wr.forwarderAddress.String(), requestStartTime, wr.txSearchStartingBuffer, request.Report,
+		WithTxInfoRetrieverMonitoring(wr.beholderProcessor, wr.messageBuilder, telemetryContext))
 
 	queuePosition := wr.transmissionScheduler.GetQueuePosition(transmissionID.GetDebugID())
 	orderedTransmitters := wr.getOrderedTransmitters(transmissionID.GetDebugID(), wr.p2pConfig)
@@ -209,16 +211,40 @@ func (wr *writeReport) execute(
 
 	wr.lggr.Debugw("Submitting WriteReport transaction", "executionID", metadata.WorkflowExecutionID, "receiver", hex.EncodeToString(request.Receiver[:]))
 
+	invokeOnReportStart := time.Now()
 	txReply, err := wr.forwarderClient.InvokeOnReport(ctx, request.Receiver, request.Report, request.GasConfig)
 	if err != nil {
 		wr.lggr.Errorw("InvokeOnReport failed", "error", err)
 		return nil, capabilities.ResponseMetadata{}, fmt.Errorf("failed to invoke forwarder report: %w", err)
 	}
-	wr.lggr.Debugw("InvokeOnReport returned", "txHash", txReply.TxHash, "txStatus", txReply.TxStatus)
+	invokeOnReportDuration := time.Since(invokeOnReportStart)
+	monitoring.EmitInitiated(ctx, wr.lggr, wr.beholderProcessor, wr.messageBuilder.BuildWriteReportInvokeOnReportDuration(
+		telemetryContext,
+		int64(math.Max(float64(invokeOnReportDuration.Milliseconds()), 0)),
+		int32(txReply.TxStatus), //nolint:gosec // txReply.TxStatus is a small enum value: 0, 1, 2.
+	))
 
-	// polling here is done immediately after submission
+	wr.lggr.Debugw("InvokeOnReport returned", "txHash", txReply.TxHash, "txStatus", txReply.TxStatus, "txIdempotencyKey", txReply.TxIdempotencyKey)
+
+	// Resolve V_ours up-front so the post-submit forwarder read pins to it; reading at >=V_ours
+	// avoids stale-fullnode false negatives.
+	var ownMeteringMetadata capabilities.ResponseMetadata
+	var pinnedLedgerVersion *uint64
+	ownLedgerVersion, ownFeeInOctas, ownVMStatus, feeErr := wr.getTxnInfoFromChain(ctx, txReply.TxHash)
+	if feeErr != nil {
+		wr.lggr.Errorw("Failed to get transaction fee, using zero for metering", "txHash", txReply.TxHash, "error", feeErr)
+		ownMeteringMetadata = metering.GetResponseMetadataWriteReport(big.NewFloat(0), wr.chainSelector)
+		monitoring.LogAndEmitError(ctx, wr.lggr, wr.beholderProcessor,
+			wr.messageBuilder.BuildWriteReportTxFeeCalculationError(telemetryContext, request, txReply.TxHash, feeErr.Error()))
+	} else {
+		pinnedLedgerVersion = &ownLedgerVersion
+		feeInAPT := aptosOctasToAPT(ownFeeInOctas)
+		ownMeteringMetadata = metering.GetResponseMetadataWriteReport(feeInAPT, wr.chainSelector)
+		wr.lggr.Debugw("WriteReport fee", "feeInAPT", feeInAPT.String(), "feeInOctas", ownFeeInOctas, "ledgerVersion", ownLedgerVersion)
+	}
+
 	newTransmissionInfo, err := capcommon.WithPollingRetry(ctx, wr.lggr, func(ctx context.Context) (TransmissionInfo, error) {
-		readTransmissionInfo, readTransmissionErr := wr.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
+		readTransmissionInfo, readTransmissionErr := wr.forwarderClient.GetTransmissionInfo(ctx, transmissionID, pinnedLedgerVersion)
 		if readTransmissionErr != nil {
 			return TransmissionInfo{}, readTransmissionErr
 		}
@@ -231,19 +257,6 @@ func (wr *writeReport) execute(
 	}
 
 	wr.lggr.Debugw("Post-submission transmission status", "success", newTransmissionInfo.Success, "transmitter", newTransmissionInfo.Transmitter.String())
-
-	var ownMeteringMetadata capabilities.ResponseMetadata
-	ownFeeInOctas, ownVMStatus, feeErr := wr.getTxnInfoFromChain(ctx, txReply.TxHash)
-	if feeErr != nil {
-		wr.lggr.Errorw("Failed to get transaction fee, using zero for metering", "txHash", txReply.TxHash, "error", feeErr)
-		ownMeteringMetadata = metering.GetResponseMetadataWriteReport(big.NewFloat(0), wr.chainSelector)
-		monitoring.LogAndEmitError(ctx, wr.lggr, wr.beholderProcessor,
-			wr.messageBuilder.BuildWriteReportTxFeeCalculationError(telemetryContext, request, txReply.TxHash, feeErr.Error()))
-	} else {
-		feeInAPT := aptosOctasToAPT(ownFeeInOctas)
-		ownMeteringMetadata = metering.GetResponseMetadataWriteReport(feeInAPT, wr.chainSelector)
-		wr.lggr.Debugw("WriteReport fee", "feeInAPT", feeInAPT.String(), "feeInOctas", ownFeeInOctas)
-	}
 
 	switch newTransmissionInfo.Success {
 	case true:
@@ -379,22 +392,29 @@ func isOutOfGas(vmStatus string) bool {
 	return vmStatus == "Out of gas"
 }
 
-// getTxnInfoFromChain returns the transaction fee in octas (gasUsed * gasUnitPrice) and
-// the VM status string by calling AptosService.TransactionByHash and unmarshaling the
-// transaction payload (gas fields and VmStatus).
-func (wr *writeReport) getTxnInfoFromChain(ctx context.Context, txHash string) (uint64, string, error) {
+// getTxnInfoFromChain returns the committed ledger version, fee in octas (gasUsed * gasUnitPrice),
+// and VM status for a submitted tx, looked up via AptosService.TransactionByHash.
+func (wr *writeReport) getTxnInfoFromChain(ctx context.Context, txHash string) (uint64, uint64, string, error) {
 	reply, err := capcommon.WithQuickRetry(ctx, wr.lggr, func(ctx context.Context) (*aptostypes.TransactionByHashReply, error) {
 		return wr.aptosService.TransactionByHash(ctx, aptostypes.TransactionByHashRequest{Hash: txHash})
 	})
 	if err != nil {
-		return 0, "", fmt.Errorf("failed to get transaction by hash: %w", err)
+		return 0, 0, "", fmt.Errorf("failed to get transaction by hash: %w", err)
+	}
+	if reply == nil || reply.Transaction == nil {
+		return 0, 0, "", fmt.Errorf("transaction by hash %s returned empty reply", txHash)
+	}
+	if reply.Transaction.Version == nil {
+		return 0, 0, "", fmt.Errorf("transaction %s has no committed ledger version", txHash)
+	}
+	if reply.Transaction.Data == nil {
+		return *reply.Transaction.Version, 0, "", fmt.Errorf("transaction %s has nil data", txHash)
 	}
 	var txData userTxData
 	if err := json.Unmarshal(reply.Transaction.Data, &txData); err != nil {
-		return 0, "", fmt.Errorf("failed to unmarshal transaction data: %w", err)
+		return 0, 0, "", fmt.Errorf("failed to unmarshal transaction data: %w", err)
 	}
-
-	return txData.GasUsed * txData.GasUnitPrice, txData.VmStatus, nil
+	return *reply.Transaction.Version, txData.GasUsed * txData.GasUnitPrice, txData.VmStatus, nil
 }
 
 func ptrIfNonEmpty(s string) *string {
@@ -491,7 +511,6 @@ func (s *Aptos) isUserError(err error) bool {
 
 // pollTransmissionInfo returns the final state of the transmission at this point of the transmission schedule,
 // taking into account previous nodes in the queue.
-// TODO: copied from evm, can be reused
 func (wr *writeReport) pollTransmissionInfo(
 	ctx context.Context,
 	transmissionID TransmissionID,
@@ -507,7 +526,7 @@ func (wr *writeReport) pollTransmissionInfo(
 	if queuePosition <= 0 {
 		wr.lggr.Debugw("Position 0, doing quick retry poll")
 		transmissionInfo, err := capcommon.WithQuickRetry(ctx, wr.lggr, func(ctx context.Context) (TransmissionInfo, error) {
-			return wr.forwarderClient.GetTransmissionInfo(ctx, transmissionID)
+			return wr.forwarderClient.GetTransmissionInfo(ctx, transmissionID, nil)
 		})
 		if err != nil {
 			wr.lggr.Errorw("Quick retry poll failed", "error", err)
@@ -534,7 +553,7 @@ func (wr *writeReport) pollTransmissionInfo(
 	}()
 
 	for {
-		if info, infoErr := wr.forwarderClient.GetTransmissionInfo(ctx, transmissionID); infoErr != nil {
+		if info, infoErr := wr.forwarderClient.GetTransmissionInfo(ctx, transmissionID, nil); infoErr != nil {
 			wr.lggr.Debugw("GetTransmissionInfo failed during polling", "error", infoErr, "attempt", attempt)
 		} else {
 			hadSuccessfulPoll = true
@@ -545,7 +564,7 @@ func (wr *writeReport) pollTransmissionInfo(
 			}
 		}
 
-		wait := (100 * time.Millisecond) << min(attempt, 5) // up to 3.2s wait
+		wait := (100 * time.Millisecond) << min(attempt, 5) // exponential backoff: 100ms, 200ms, 400ms, 800ms, 1600ms, then capped at 2s
 		if wait > 2*time.Second {
 			wait = 2 * time.Second
 		}
@@ -559,7 +578,7 @@ func (wr *writeReport) pollTransmissionInfo(
 		case <-stageTimer.C:
 			deltaStagePassed = true
 			if !lastValidInfo.Success {
-				if finalInfo, finalErr := wr.forwarderClient.GetTransmissionInfo(ctx, transmissionID); finalErr == nil {
+				if finalInfo, finalErr := wr.forwarderClient.GetTransmissionInfo(ctx, transmissionID, nil); finalErr == nil {
 					hadSuccessfulPoll = true
 					lastValidInfo = finalInfo
 				} else {

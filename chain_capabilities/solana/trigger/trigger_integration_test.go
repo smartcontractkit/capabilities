@@ -22,14 +22,15 @@ import (
 	"github.com/smartcontractkit/capabilities/chain_capabilities/common/test"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/contracts"
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/monitoring"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/utils"
+
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	solanacappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
-	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/sqlutil/sqltest"
+	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	logreadtest "github.com/smartcontractkit/chainlink-solana/contracts/generated/log_read_test"
-	"github.com/smartcontractkit/chainlink-solana/integration-tests/utils"
 	relayer "github.com/smartcontractkit/chainlink-solana/pkg/solana"
 	"github.com/smartcontractkit/chainlink-solana/pkg/solana/client"
 	"github.com/smartcontractkit/chainlink-solana/pkg/solana/config"
@@ -546,7 +547,7 @@ func TestSolanaLogTrigger_CPIEvent(t *testing.T) {
 	lggr := logger.Test(t)
 
 	cfg := config.NewDefault()
-	rpcURL, programID := setupValidatorWithLocalContract(t)
+	rpcURL, programID := setupValidatorAndTestContract(t)
 	sc, err := client.NewClient(rpcURL, cfg, 5*time.Second, lggr)
 	require.NoError(t, err)
 
@@ -754,25 +755,38 @@ func TestSolanaLogTrigger_FilterExcludesAllEvents(t *testing.T) {
 
 const logReadTestProgramID = "J1zQwrBNBngz26jRPNWsUSZMHJwBwpkoDitXRV95LdK4"
 
-// defaultLogReadTestSoPath is the path to the locally built log_read_test.so when
-// chainlink-solana is a sibling of capabilities (e.g. repos/{capabilities,chainlink-solana}).
-const defaultLogReadTestSoPath = "/Users/silaslenihan/Desktop/repos/chainlink-solana/contracts/target/deploy/log_read_test.so"
-
 func setupValidatorAndTestContract(t *testing.T) (string, string) {
 	t.Helper()
-	programPath := downloadLogReadTestProgram(t)
+	programPath := resolveLogReadTestProgram(t)
 	return setupValidatorWithProgram(t, programPath)
 }
 
-func setupValidatorWithLocalContract(t *testing.T) (string, string) {
+func resolveLogReadTestProgram(t *testing.T) string {
 	t.Helper()
-	programPath := os.Getenv("LOG_READ_TEST_SO_PATH")
-	if programPath == "" {
-		programPath = defaultLogReadTestSoPath
+
+	if p := os.Getenv("LOG_READ_TEST_SO_PATH"); p != "" {
+		p = filepath.Clean(p)
+		require.FileExists(t, p, "log_read_test.so not found at LOG_READ_TEST_SO_PATH=%s", p)
+		t.Logf("Using log_read_test.so from LOG_READ_TEST_SO_PATH: %s", p)
+		return p
 	}
-	programPath = filepath.Clean(programPath)
-	require.FileExists(t, programPath, "log_read_test.so not found at %s (build with: cd chainlink-solana && make build_contracts)", programPath)
-	return setupValidatorWithProgram(t, programPath)
+
+	_, thisFile, _, ok := runtime.Caller(0)
+	require.True(t, ok)
+	triggerDir := filepath.Dir(thisFile)
+
+	for _, candidate := range []string{
+		filepath.Join(triggerDir, "test", "log_read_test.so"),
+		filepath.Join(triggerDir, "..", "..", "..", "..", "chainlink-solana", "contracts", "target", "deploy", "log_read_test.so"),
+	} {
+		candidate = filepath.Clean(candidate)
+		if _, err := os.Stat(candidate); err == nil {
+			t.Logf("Using log_read_test.so at %s", candidate)
+			return candidate
+		}
+	}
+
+	return downloadLogReadTestProgram(t)
 }
 
 func setupValidatorWithProgram(t *testing.T, programPath string) (string, string) {
@@ -791,14 +805,6 @@ func setupValidatorWithProgram(t *testing.T, programPath string) (string, string
 // Mirrors chainlink/deployment/utils/solutils/artifacts.go
 func downloadLogReadTestProgram(t *testing.T) string {
 	t.Helper()
-
-	// Temporary: prefer local test binary if present (until solana-artifacts release is ready).
-	_, thisFile, _, _ := runtime.Caller(0)
-	localPath := filepath.Join(filepath.Dir(thisFile), "test", "log_read_test.so")
-	if _, err := os.Stat(localPath); err == nil {
-		t.Logf("Using local log_read_test.so at %s", localPath)
-		return localPath
-	}
 
 	sha := os.Getenv("SOLANA_ARTIFACTS_SHA")
 	if sha == "" {
