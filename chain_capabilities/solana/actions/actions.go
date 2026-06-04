@@ -10,8 +10,8 @@ import (
 
 	"github.com/smartcontractkit/capabilities/chain_capabilities/solana/metering"
 	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
-	commonMon "github.com/smartcontractkit/capabilities/libs/monitoring"
 	ctypes "github.com/smartcontractkit/capabilities/libs/chainconsensus/types"
+	commonMon "github.com/smartcontractkit/capabilities/libs/monitoring"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/beholder"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
@@ -368,6 +368,42 @@ func (s *Solana) GetTransaction(
 	}
 
 	lggr.Debugw("Successfully handled GetTransaction")
+	return responseAndMetadata, nil
+}
+
+func (s *Solana) GetProgramAccounts(
+	ctx context.Context,
+	metadata capabilities.RequestMetadata,
+	input *solcap.GetProgramAccountsRequest) (*capabilities.ResponseAndMetadata[*solcap.GetProgramAccountsReply], caperrors.Error) {
+	if !s.readsEnabled {
+		return nil, caperrors.NewPublicSystemError(errors.New("reads are not available"), caperrors.Internal)
+	}
+	request, err := solcap.ConvertGetProgramAccountsRequestFromProto(input)
+	if err != nil {
+		return nil, NewUserError(fmt.Errorf("invalid request: %w", err))
+	}
+
+	lggr := s.messageBuilder.RequestLggr(s.lggr, monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: metadata}).With("request", request)
+	lggr.Debugw("Received GetProgramAccounts request")
+	cReq := ctypes.NewVolatileRequest(metadata.WorkflowExecutionID, metadata.ReferenceID, metering.GetResponseMetadata(metering.GetAccountInfo), func(ctx context.Context) (*solcap.GetProgramAccountsReply, uint64, error) {
+		rawResponse, err := s.SolanaService.GetProgramAccounts(ctx, *request)
+		if err != nil {
+			return nil, 0, err
+		}
+
+		response, err := solcap.ConvertGetProgramAccountsReplyToProto(rawResponse)
+		if err != nil {
+			return nil, 0, caperrors.NewPublicSystemError(fmt.Errorf("failed to convert response to proto: %w", err), caperrors.Internal)
+		}
+
+		return response, 0, nil
+	}, lggr)
+	responseAndMetadata, err := chainconsensus.ReadHashableRequestReport[*solcap.GetProgramAccountsReply](ctx, s.handler, cReq)
+	if err != nil {
+		return nil, getReadError(lggr, fmt.Errorf("failed to GetProgramAccounts: %w", err))
+	}
+
+	lggr.Debugw("Successfully handled GetProgramAccounts")
 	return responseAndMetadata, nil
 }
 
