@@ -941,7 +941,7 @@ func TestWriteReport_ExecuteWriteReport(t *testing.T) {
 				mockForwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 
 				equalWriteReportReply(t, &evm.WriteReportReply{
-					TxStatus:                        evmcappb.TxStatus_TX_STATUS_SUCCESS,
+					TxStatus:                        evm.TxStatus_TX_STATUS_SUCCESS,
 					TxHash:                          receipt.TxHash[:],
 					ReceiverContractExecutionStatus: evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED.Enum(),
 					TransactionFee:                  pb.NewBigIntFromInt(big.NewInt(2000)),
