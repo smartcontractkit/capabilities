@@ -17,6 +17,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	ocrtypes "github.com/smartcontractkit/chainlink-common/pkg/capabilities/consensus/ocr3/types"
+	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/evm"
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/contexts"
@@ -2197,6 +2198,125 @@ func TestFetchTransactionReceiptAndCreateReplyL1FeeFeatureFlag(t *testing.T) {
 			require.Equal(t, pb.NewBigIntFromInt(big.NewInt(2500)), reply.TransactionFee)
 		})
 	}
+}
+
+// TestReplyFromReceipt_ReceiptErrorIncludesTxHash verifies the format of the error returned when
+// the receipt fetch fails: the message must embed the tx hash as a single 0x-prefixed 64-char
+// lowercase hex string and must wrap the underlying RPC error. This guards against a regression
+// where the hash was double hex-encoded (e.g. fmt "%x" applied to an already hex-encoded string).
+func TestReplyFromReceipt_ReceiptErrorIncludesTxHash(t *testing.T) {
+	t.Parallel()
+
+	lggr := logger.Test(t)
+	mockEVMService := mocks2.NewEVMService(t)
+
+	// Deterministic hash so the exact hex rendering can be asserted.
+	var txHash evmtypes.Hash
+	for i := range txHash {
+		txHash[i] = byte(i)
+	}
+	expectedHashHex := hex.EncodeToString(txHash[:]) // 64 lowercase hex chars, no 0x prefix
+
+	rpcErr := errors.New("rpc error: code = Unknown desc = RPC call failed: not found")
+	mockEVMService.EXPECT().
+		GetTransactionReceipt(mock.Anything, evmtypes.GeTransactionReceiptRequest{Hash: txHash, IsExternal: false}).
+		Return((*evmtypes.Receipt)(nil), rpcErr)
+
+	wr := &WriteReport{
+		EVMService: mockEVMService,
+		lggr:       logger.Sugared(lggr),
+	}
+
+	// Short timeout so the internal retry loop returns the underlying RPC error quickly.
+	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+	defer cancel()
+
+	reply, err := wr.buildSuccessReply(ctx, txHash)
+	require.Nil(t, reply)
+	require.Error(t, err)
+
+	// Exact format: "failed to get transaction receipt for tx hash 0x<64-hex>: <rpc error>".
+	expectedMsg := fmt.Sprintf("failed to get transaction receipt for tx hash 0x%s: %s", expectedHashHex, rpcErr.Error())
+	require.Equal(t, expectedMsg, err.Error())
+
+	// The hash is the 64-char hex of the bytes, present exactly once, not double-encoded.
+	require.Len(t, expectedHashHex, 64)
+	require.Contains(t, err.Error(), "0x"+expectedHashHex)
+	doubleEncoded := hex.EncodeToString([]byte(expectedHashHex)) // what "%x" on an already-hex string produced
+	require.NotContains(t, err.Error(), doubleEncoded)
+
+	// The underlying RPC error must remain unwrappable.
+	require.ErrorIs(t, err, rpcErr)
+}
+
+// TestWriteReport_InvalidReceiverReceiptFetchFailsReturnsUserError verifies that when a prior
+// transmission is marked invalid-receiver and the receipt fetch then fails (e.g. flaky RPC), the
+// call site wraps the build failure into a user error that names the invalid receiver and includes
+// the tx hash. This attributes the failure to the user's contract (not paged as a system error) and
+// lets the user verify the tx on-chain, even though we never managed to build the reply.
+func TestWriteReport_InvalidReceiverReceiptFetchFailsReturnsUserError(t *testing.T) {
+	t.Parallel()
+
+	// Short timeout so the receipt-fetch retry loop returns the underlying RPC error quickly.
+	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+	defer cancel()
+	testLogger := logger.Test(t)
+	evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
+
+	reportMetadata := createTestReportMetadata()
+	encodedReportMetadata, _ := reportMetadata.Encode()
+	receiver := testutils.NewAddress().Bytes()
+
+	// Prior transmission marked invalid receiver => no retry; we attempt to build a reverted reply.
+	mockForwarderClient.
+		On("GetTransmissionInfo", mock.Anything, mock.Anything).
+		Return(contracts.TransmissionInfo{
+			Success:         false,
+			InvalidReceiver: true,
+			State:           contracts.TransmissionStateInvalidReceiver,
+			GasLimit:        big.NewInt(EnoughReceiverGas),
+		}, nil).
+		Once()
+
+	// Tx hash is discovered from processed events (hash retrieval succeeds).
+	txHash := evmtypes.Hash(test.RandomBytes(32))
+	mockForwarderClient.EXPECT().
+		GetReportProcessedEvents(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+		Return([]*evmtypes.Log{{TxHash: txHash, Data: failedLogData(), BlockNumber: big.NewInt(100)}}, nil)
+
+	// Receipt fetch fails (flaky RPC) => the reply cannot be built.
+	rpcErr := errors.New("rpc error: code = Unknown desc = RPC call failed: not found")
+	evmServiceMock.EXPECT().
+		GetTransactionReceipt(mock.Anything, evmtypes.GeTransactionReceiptRequest{Hash: txHash, IsExternal: false}).
+		Return((*evmtypes.Receipt)(nil), rpcErr)
+
+	_, err := service.WriteReport(ctx, createTestRequestMetadata(reportMetadata), &evm.WriteReportRequest{
+		Receiver: receiver,
+		Report: &workflowpb.ReportResponse{
+			RawReport:     encodedReportMetadata,
+			ReportContext: []byte{},
+			Sigs:          generateRandomSignatures(),
+		},
+	})
+	require.Error(t, err)
+
+	// Surfaced as a user error (the user's receiver contract is the cause), not a system error.
+	var capErr caperrors.Error
+	require.True(t, errors.As(err, &capErr))
+	require.Equal(t, caperrors.OriginUser, capErr.Origin())
+
+	// Names the invalid receiver (with the IReceiver hint) and includes the tx hash to verify on-chain.
+	require.Contains(t, err.Error(), contracts.TransmissionID{Receiver: common.BytesToAddress(receiver)}.InvalidReceiverMessage())
+	require.Contains(t, err.Error(), "IReceiver interface")
+	require.Contains(t, err.Error(), "0x"+hex.EncodeToString(txHash[:]))
+	// Framed as the root cause, with the receipt-fetch failure as a secondary error.
+	require.Contains(t, err.Error(), "this is the root cause, but an additional error occurred while fetching more info")
+	// The underlying RPC failure is preserved, not masked by a context timeout.
+	require.Contains(t, err.Error(), rpcErr.Error())
+	require.NotContains(t, err.Error(), "context deadline exceeded")
+
+	// No new tx attempt happened.
+	mockForwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 }
 
 func createMocksAndCapability(t *testing.T, lggr logger.Logger) (*mocks2.EVMService, *mocks.CREForwarderClient, *EVM) {
