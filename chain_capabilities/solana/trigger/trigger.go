@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -311,6 +310,19 @@ func (lts *SolanaLogTriggerService) RegisterLogTrigger(ctx context.Context, trig
 		return nil, caperrors.NewPublicSystemError(fmt.Errorf("failed to create log poller filter: %w", err), caperrors.Internal)
 	}
 
+	// write trigger to store before registering with log poller so that
+	// cleanUpStaleFilters doesn't immediately unregister in a race scenario.
+	pollDone := make(chan struct{})
+	pollCtx, pollCancel := context.WithCancel(context.Background())
+	pollCtx = meta.ContextWithCRE(pollCtx)
+	lts.triggers.Write(triggerID, solanaLogTriggerState{
+		stopPolling: func() {
+			pollCancel()
+			<-pollDone
+		},
+		filter: config,
+	})
+
 	lts.lggr.Debugf("RegisterLogTracking id: %s", lpFilter.Name)
 
 	// Diagnostic: log what we're sending (before gRPC / ToProto)
@@ -328,6 +340,8 @@ func (lts *SolanaLogTriggerService) RegisterLogTrigger(ctx context.Context, trig
 
 	err = lts.SolanaService.RegisterLogTracking(ctx, *lpFilter)
 	if err != nil {
+		pollCancel()
+		lts.triggers.Delete(triggerID)
 		summary := fmt.Sprintf("failed to register log-tracking: '%v' for triggerID: %s", err, triggerID)
 		lts.logAndEmitError(ctx, telemetryContext, triggerID, summary, err.Error())
 		return nil, caperrors.NewPublicSystemError(fmt.Errorf("failed to register log-tracking: '%w' for triggerID: %s", err, triggerID), caperrors.Unknown)
@@ -338,22 +352,11 @@ func (lts *SolanaLogTriggerService) RegisterLogTrigger(ctx context.Context, trig
 	logCh := make(chan capabilities.TriggerAndId[*solanacappb.Log], lts.logTriggerSendChannelBufferSize)
 
 	lts.srvcEng.Go(func(svcCtx context.Context) {
-		pollCtx, cancel := context.WithCancel(svcCtx)
-		pollCtx = meta.ContextWithCRE(pollCtx)
+		context.AfterFunc(svcCtx, pollCancel)
 
-		pollWG := new(sync.WaitGroup)
-		pollWG.Add(1)
-		lts.triggers.Write(triggerID, solanaLogTriggerState{
-			stopPolling: func() {
-				cancel()
-				pollWG.Wait()
-			},
-			filter: config,
-		})
-
-		defer pollWG.Done()
+		defer close(pollDone)
+		defer lts.triggers.Delete(triggerID)
 		lts.startPolling(pollCtx, telemetryContext, config, triggerID, fromBlock, logCh)
-		lts.triggers.Delete(triggerID)
 	})
 
 	return logCh, nil
