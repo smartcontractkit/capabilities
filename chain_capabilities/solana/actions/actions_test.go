@@ -539,6 +539,52 @@ func TestGetProgramAccounts(t *testing.T) {
 		require.NotNil(t, resp.OCRAttestation)
 	})
 
+	t.Run("accounts sorted by pubkey for deterministic hashing", func(t *testing.T) {
+		t.Parallel()
+		helper := newMockedSolana(t, true)
+		program, err := solana.NewRandomPrivateKey()
+		require.NoError(t, err)
+
+		// Build three keys whose raw bytes are deliberately out of order.
+		highKey, err := solana.NewRandomPrivateKey()
+		require.NoError(t, err)
+		lowKey, err := solana.NewRandomPrivateKey()
+		require.NoError(t, err)
+		midKey, err := solana.NewRandomPrivateKey()
+		require.NoError(t, err)
+
+		// Force a deterministic ordering: low < mid < high by assigning first byte.
+		var low, mid, high soltypes.PublicKey
+		lowPK, midPK, highPK := lowKey.PublicKey(), midKey.PublicKey(), highKey.PublicKey()
+		low[0], mid[0], high[0] = 0x10, 0x50, 0xFF
+		copy(low[1:], lowPK[1:])
+		copy(mid[1:], midPK[1:])
+		copy(high[1:], highPK[1:])
+
+		// RPC returns accounts in reverse order (high → mid → low).
+		serviceReply := &soltypes.GetProgramAccountsReply{
+			Value: []*soltypes.KeyedAccount{
+				{Pubkey: high},
+				{Pubkey: mid},
+				{Pubkey: low},
+			},
+		}
+		helper.solanaService.EXPECT().
+			GetProgramAccounts(mock.Anything, mock.Anything).
+			Return(serviceReply, nil).Once()
+
+		resp, err := helper.solana.GetProgramAccounts(t.Context(), capabilities.RequestMetadata{
+			WorkflowExecutionID: "weid", ReferenceID: "ref",
+		}, &solcap.GetProgramAccountsRequest{Program: program.PublicKey().Bytes()})
+		require.NoError(t, err)
+		require.Len(t, resp.Response.Value, 3)
+
+		// After sorting the response must be low → mid → high.
+		require.Equal(t, low[:], resp.Response.Value[0].Pubkey)
+		require.Equal(t, mid[:], resp.Response.Value[1].Pubkey)
+		require.Equal(t, high[:], resp.Response.Value[2].Pubkey)
+	})
+
 	t.Run("service error", func(t *testing.T) {
 		t.Parallel()
 		helper := newMockedSolana(t, true)

@@ -1,10 +1,12 @@
 package actions
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"math/big"
+	"slices"
 	"strings"
 	"time"
 
@@ -22,6 +24,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
+	soltypes "github.com/smartcontractkit/chainlink-common/pkg/types/chains/solana"
 	"github.com/smartcontractkit/chainlink-framework/multinode"
 	valuespb "github.com/smartcontractkit/chainlink-protos/cre/go/values/pb"
 
@@ -390,6 +393,12 @@ func (s *Solana) GetProgramAccounts(
 		if err != nil {
 			return nil, 0, err
 		}
+
+		// getProgramAccounts does not guarantee ordering across RPC nodes.
+		// Sort by pubkey so all nodes produce an identical hash.
+		slices.SortFunc(rawResponse.Value, func(a, b *soltypes.KeyedAccount) int {
+			return bytes.Compare(a.Pubkey[:], b.Pubkey[:])
+		})
 
 		response, err := solcap.ConvertGetProgramAccountsReplyToProto(rawResponse)
 		if err != nil {
