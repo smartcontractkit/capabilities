@@ -88,7 +88,7 @@ func (s *Solana) GetAccountInfoWithOpts(
 	if err != nil {
 		return nil, NewUserError(fmt.Errorf("invalid request: %w", err))
 	}
-
+	request.IsExternal = true
 	lggr := s.messageBuilder.RequestLggr(s.lggr, monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: metadata}).With("request", request)
 	lggr.Debugw("Received GetAccountInfoWithOpts request")
 	cReq := ctypes.NewVolatileRequest(metadata.WorkflowExecutionID, metadata.ReferenceID, metering.GetResponseMetadata(metering.GetAccountInfo), func(ctx context.Context) (*solcap.GetAccountInfoWithOptsReply, uint64, error) {
@@ -237,7 +237,7 @@ func (s *Solana) GetMultipleAccountsWithOpts(
 	if err != nil {
 		return nil, NewUserError(fmt.Errorf("invalid request: %w", err))
 	}
-
+	request.IsExternal = true
 	lggr := s.messageBuilder.RequestLggr(s.lggr, monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: metadata}).With("request", request)
 	lggr.Debugw("Received GetMultipleAccountsWithOpts request")
 	cReq := ctypes.NewVolatileRequest(metadata.WorkflowExecutionID, metadata.ReferenceID, metering.GetResponseMetadata(metering.GetAccountInfo), func(ctx context.Context) (*solcap.GetMultipleAccountsWithOptsReply, uint64, error) {
@@ -349,7 +349,7 @@ func (s *Solana) GetTransaction(
 	if err != nil {
 		return nil, NewUserError(fmt.Errorf("invalid request: %w", err))
 	}
-
+	request.IsExternal = true
 	lggr := s.messageBuilder.RequestLggr(s.lggr, monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: metadata}).With("request", request)
 	lggr.Debugw("Received GetTransaction request")
 	cReq := ctypes.NewECHashableRequest(metadata.WorkflowExecutionID, metadata.ReferenceID, metering.GetResponseMetadata(metering.GetAccountInfo), func(ctx context.Context) (*solcap.GetTransactionReply, error) {
@@ -385,7 +385,7 @@ func (s *Solana) GetProgramAccounts(
 	if err != nil {
 		return nil, NewUserError(fmt.Errorf("invalid request: %w", err))
 	}
-
+	request.IsExternal = true
 	lggr := s.messageBuilder.RequestLggr(s.lggr, monitoring.TelemetryContext{TsStart: time.Now().UnixMilli(), RequestMetadata: metadata}).With("request", request)
 	lggr.Debugw("Received GetProgramAccounts request")
 	cReq := ctypes.NewVolatileRequest(metadata.WorkflowExecutionID, metadata.ReferenceID, metering.GetResponseMetadata(metering.GetAccountInfo), func(ctx context.Context) (*solcap.GetProgramAccountsReply, uint64, error) {
