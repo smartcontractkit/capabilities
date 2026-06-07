@@ -12,6 +12,7 @@ import (
 	"github.com/mr-tron/base58"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
+	capmon "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/monitoring"
 	solanacappb "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
 	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/chains/solana"
@@ -33,6 +34,30 @@ type MessageBuilder struct {
 func NewMessageBuilder(chainInfo types.ChainInfo, capInfo capabilities.CapabilityInfo, nodeAddress string) *MessageBuilder {
 	return &MessageBuilder{
 		MessageBuilder: commonmon.NewMessageBuilder(chainInfo, capInfo, nodeAddress),
+	}
+}
+
+// BuildV2ExecutionContext builds the v2 monitoring ExecutionContext used by the
+// generated server (--with-monitoring) action lifecycle events.
+func (m *MessageBuilder) BuildV2ExecutionContext(tc TelemetryContext) *capmon.ExecutionContext {
+	ec := m.BuildExecutionContext(tc)
+	return &capmon.ExecutionContext{
+		MetaSourceId:                   ec.MetaSourceId,
+		MetaChainFamilyName:            ec.MetaChainFamilyName,
+		MetaChainId:                    ec.MetaChainId,
+		MetaNetworkName:                ec.MetaNetworkName,
+		MetaNetworkNameFull:            ec.MetaNetworkNameFull,
+		MetaWorkflowId:                 ec.MetaWorkflowId,
+		MetaWorkflowOwner:              ec.MetaWorkflowOwner,
+		MetaWorkflowExecutionId:        ec.MetaWorkflowExecutionId,
+		MetaWorkflowName:               ec.MetaWorkflowName,
+		MetaWorkflowDonId:              ec.MetaWorkflowDonId,
+		MetaWorkflowDonConfigVersion:   ec.MetaWorkflowDonConfigVersion,
+		MetaReferenceId:                ec.MetaReferenceId,
+		MetaCapabilityType:             ec.MetaCapabilityType,
+		MetaCapabilityId:               ec.MetaCapabilityId,
+		MetaCapabilityTimestampStart:   ec.MetaCapabilityTimestampStart,
+		MetaCapabilityTimestampEmit:    ec.MetaCapabilityTimestampEmit,
 	}
 }
 
