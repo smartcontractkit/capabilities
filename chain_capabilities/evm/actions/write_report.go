@@ -171,7 +171,12 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 
 		e.lggr.Infow("Returning without a transmission attempt - prior transmission marked receiver invalid", "txHash", common.Bytes2Hex(txHash[:]))
 		reply, err := e.buildRevertReplyFromTx(ctx, *txHash, transmissionInfo, transmissionID)
-		return reply, capabilities.ResponseMetadata{}, err
+		if err != nil {
+			// Surface the known revert reason so the user learns their receiver is invalid even
+			// though the receipt/fee lookup failed (e.g. flaky RPC), as a user error.
+			return nil, capabilities.ResponseMetadata{}, revertReplyBuildError(transmissionInfo, transmissionID, err)
+		}
+		return reply, capabilities.ResponseMetadata{}, nil
 	case contracts.TransmissionStateFailed:
 		hadEnoughGas, calculatedReceiverGasBudget := e.attemptHadEnoughGas(request, transmissionInfo)
 		if hadEnoughGas {
@@ -191,7 +196,12 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 				"transmissionReceiverGasBudget", transmissionInfo.GasLimit,
 			)
 			reply, err := e.buildRevertReplyFromTx(ctx, *txHash, transmissionInfo, transmissionID)
-			return reply, capabilities.ResponseMetadata{}, err
+			if err != nil {
+				// The receiver reverted despite sufficient gas (user contract fault); surface the
+				// reason even if the receipt/fee lookup failed, as a user error.
+				return nil, capabilities.ResponseMetadata{}, revertReplyBuildError(transmissionInfo, transmissionID, err)
+			}
+			return reply, capabilities.ResponseMetadata{}, nil
 		}
 		monitoring.LogAndEmitSuccess(ctx, "Retrying a failed transmission after prior attempt had insufficient receiver gas", e.lggr, e.beholderProcessor,
 			e.messageBuilder.BuildWriteReportInsufficientGasRetry(telemetryContext, request, calculatedReceiverGasBudget, transmissionInfo.GasLimit, queuePosition))
@@ -271,7 +281,12 @@ func (e *WriteReport) executeWriteReport(ctx context.Context, request *evm.Write
 		e.lggr.Errorw("Made a new transmission attempt - transmission failed", "txHash", common.Bytes2Hex(txHash[:]), "transmissionState", newTransmissionInfo.State.String())
 
 		reply, err := e.buildRevertReplyFromTx(ctx, *txHash, newTransmissionInfo, transmissionID)
-		return reply, meteringMetadata, err
+		if err != nil {
+			// Surface the known revert reason (invalid receiver / contract execution failure) so the
+			// user learns the cause even if the receipt/fee lookup failed, as a user error.
+			return nil, meteringMetadata, revertReplyBuildError(newTransmissionInfo, transmissionID, err)
+		}
+		return reply, meteringMetadata, nil
 	default:
 		errorMsg := getInvalidStateErrorMessage(newTransmissionInfo.State)
 		monitoring.LogAndEmitError(ctx, e.lggr, e.beholderProcessor, e.messageBuilder.BuildWriteReportInvalidTransmissionState(telemetryContext, request, newTransmissionInfo, fmt.Sprintf("WriteReport invalid transmission state with tx status: %d", transactionResult.TxStatus), errorMsg))
@@ -447,11 +462,26 @@ func (e *WriteReport) buildSuccessReply(ctx context.Context, txHash evmtypes.Has
 }
 
 func (e *WriteReport) buildRevertReplyFromTx(ctx context.Context, txHash evmtypes.Hash, transmissionInfo contracts.TransmissionInfo, transmissionID contracts.TransmissionID) (*evm.WriteReportReply, error) {
-	errorMessage := UnknownIssueExecutingReceiverContractMessage
-	if transmissionInfo.State == contracts.TransmissionStateInvalidReceiver {
-		errorMessage = transmissionID.InvalidReceiverMessage()
-	}
+	errorMessage := revertReason(transmissionInfo, transmissionID)
 	return e.replyFromReceipt(ctx, txHash, evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED, &errorMessage)
+}
+
+// revertReason returns the user-facing explanation for why a transmission reverted, derived from
+// its state. It is reused both for the reply's ErrorMessage and to enrich the returned error when
+// the reply cannot be built, so the user learns the cause (e.g. an invalid receiver contract) even
+// if the receipt/fee lookup itself failed.
+func revertReason(transmissionInfo contracts.TransmissionInfo, transmissionID contracts.TransmissionID) string {
+	if transmissionInfo.State == contracts.TransmissionStateInvalidReceiver {
+		return transmissionID.InvalidReceiverMessage()
+	}
+	return UnknownIssueExecutingReceiverContractMessage
+}
+
+// revertReplyBuildError is returned when a reverted transmission's reply could not be built. It
+// frames the revert reason as the root cause of the failed write, and surfaces the secondary error
+// hit while fetching more details (e.g. the receipt) so it is not lost. Classified as a user error.
+func revertReplyBuildError(transmissionInfo contracts.TransmissionInfo, transmissionID contracts.TransmissionID, err error) error {
+	return fmt.Errorf("%s %s: this is the root cause, but an additional error occurred while fetching more info: %w", capcommon.UserError, revertReason(transmissionInfo, transmissionID), err)
 }
 
 func (e *WriteReport) replyFromReceipt(ctx context.Context, txHash evmtypes.Hash, receiverStatus evm.ReceiverContractExecutionStatus, errorMessage *string) (*evm.WriteReportReply, error) {
@@ -462,7 +492,10 @@ func (e *WriteReport) replyFromReceipt(ctx context.Context, txHash evmtypes.Hash
 		})
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get transaction receipt: %w", err)
+		// txHash is the final hash carried by this reply (set as reply.TxHash below), so it is safe
+		// to surface here: it lets users locate the tx on-chain when the RPC is flaky, and lets us
+		// filter logs per node by hash. Callers add the user-facing reason (e.g. invalid receiver).
+		return nil, fmt.Errorf("failed to get transaction receipt for tx hash 0x%x: %w", txHash[:], err)
 	}
 	receiptGasInfo := evmtypes.ReceiptGasInfo{
 		GasUsed:           txReceipt.GasUsed,
@@ -478,7 +511,7 @@ func (e *WriteReport) replyFromReceipt(ctx context.Context, txHash evmtypes.Hash
 		return e.CalculateTransactionFee(ctx, receiptGasInfo)
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to calculate transaction fee: %w", err)
+		return nil, fmt.Errorf("failed to calculate transaction fee for tx hash 0x%x: %w", txHash[:], err)
 	}
 	message := errorMessage
 	if receiverStatus == evm.ReceiverContractExecutionStatus_RECEIVER_CONTRACT_EXECUTION_STATUS_REVERTED && errorMessage == nil {
