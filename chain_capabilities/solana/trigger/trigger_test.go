@@ -85,8 +85,8 @@ func createTestTelemetryContext() monitoring.TelemetryContext {
 func waitForTriggerRegistered(t *testing.T, service *SolanaLogTriggerService, triggerID string) {
 	t.Helper()
 	tests.AssertEventually(t, func() bool {
-		_, ok := service.triggers.Read(triggerID)
-		return ok
+		trigger, ok := service.triggers.Read(triggerID)
+		return ok && trigger.stopPolling != nil
 	})
 }
 
@@ -1327,6 +1327,31 @@ func TestCleanUpStaleFilters(t *testing.T) {
 		// The mock doesn't implement FilterNamesGetter, so cleanup should be skipped
 		service.cleanUpStaleFilters(t.Context())
 		// No panic, no error - just silently skips
+	})
+
+	t.Run("preserves filter when trigger is registered", func(t *testing.T) {
+		service, mockSolana := setupTest(t)
+		filterName := testTriggerID + SuffixLogTriggerFilterID
+
+		mockSolana.EXPECT().GetFiltersNames(mock.Anything).Return([]string{filterName}, nil).Once()
+
+		service.triggers.Write(testTriggerID, solanaLogTriggerState{
+			stopPolling: func() {},
+			filter:      createTestRequest(),
+		})
+
+		service.cleanUpStaleFilters(t.Context())
+		mockSolana.AssertNotCalled(t, "UnregisterLogTracking", mock.Anything, mock.Anything)
+	})
+
+	t.Run("removes orphan filter when trigger is not registered", func(t *testing.T) {
+		service, mockSolana := setupTest(t)
+		filterName := testTriggerID + SuffixLogTriggerFilterID
+
+		mockSolana.EXPECT().GetFiltersNames(mock.Anything).Return([]string{filterName}, nil).Once()
+		mockSolana.EXPECT().UnregisterLogTracking(mock.Anything, filterName).Return(nil).Once()
+
+		service.cleanUpStaleFilters(t.Context())
 	})
 }
 
