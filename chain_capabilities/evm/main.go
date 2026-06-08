@@ -252,13 +252,12 @@ func (c *capabilityGRPCService) Ready() error {
 }
 
 func (c *capabilityGRPCService) RegisterToWorkflow(_ context.Context, _ capabilities.RegisterToWorkflowRequest) error {
-	// TODO implement me
-	panic("implement me")
+	return errors.New("not implemented")
 }
 
 func (c *capabilityGRPCService) UnregisterFromWorkflow(_ context.Context, _ capabilities.UnregisterFromWorkflowRequest) error {
 	// TODO implement me
-	panic("implement me")
+	return errors.New("not implemented")
 }
 
 func (c *capabilityGRPCService) RegisterLogTrigger(ctx context.Context, triggerID string, metadata capabilities.RequestMetadata, input *evmcappb.FilterLogTriggerRequest) (<-chan capabilities.TriggerAndId[*evmcappb.Log], caperrors.Error) {
