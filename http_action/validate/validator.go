@@ -11,6 +11,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/actions/http"
 	"github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
+	"github.com/smartcontractkit/chainlink-common/pkg/settings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
 	durationpb "google.golang.org/protobuf/types/known/durationpb"
@@ -30,6 +31,7 @@ const internalError = "internal error"
 // Validator handles validation of HTTP requests and responses with proper limiters
 type Validator struct {
 	lggr                     logger.SugaredLogger
+	settingsGetter           settings.Getter
 	responseSizeLimiter      limits.BoundLimiter[config.Size]
 	requestSizeLimiter       limits.BoundLimiter[config.Size]
 	connectionTimeoutLimiter limits.BoundLimiter[time.Duration]
@@ -66,6 +68,7 @@ func NewValidator(lggr logger.Logger, limitsFactory limits.Factory) (*Validator,
 
 	return &Validator{
 		lggr:                     logger.Sugared(logger.Named(lggr, "Validator")),
+		settingsGetter:           limitsFactory.Settings,
 		responseSizeLimiter:      responseSizeLimiter,
 		requestSizeLimiter:       requestSizeLimiter,
 		connectionTimeoutLimiter: connectionTimeoutLimiter,
@@ -199,4 +202,10 @@ func (v *Validator) validatedCacheSettings(ctx context.Context, cacheSettings *h
 // ValidateResponseSize checks if the response size is within limits
 func (v *Validator) ValidateResponseSize(ctx context.Context, response []byte) error {
 	return v.responseSizeLimiter.Check(ctx, config.SizeOf(response))
+}
+
+// ResolveGatewayProxyDonID returns the configured gateway DON for outbound proxy routing.
+// An empty string means the caller should fall back to PrimaryDonID from the gateway connector.
+func (v *Validator) ResolveGatewayProxyDonID(ctx context.Context) (string, error) {
+	return cresettings.Default.PerWorkflow.HTTPAction.GatewayProxyDonID.GetOrDefault(ctx, v.settingsGetter)
 }
