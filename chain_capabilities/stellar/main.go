@@ -2,22 +2,42 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"strconv"
+	"time"
+
+	chainselectors "github.com/smartcontractkit/chain-selectors"
+	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting2plus/types"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	stellarcapserver "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/stellar/server"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/loop"
+	"github.com/smartcontractkit/chainlink-common/pkg/services"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/limits"
+	"github.com/smartcontractkit/chainlink-common/pkg/types"
 	"github.com/smartcontractkit/chainlink-common/pkg/types/core"
 
-	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/actions"
-	consmetrics "github.com/smartcontractkit/capabilities/libs/chainconsensus/metrics"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus"
+	consMetrics "github.com/smartcontractkit/capabilities/libs/chainconsensus/metrics"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus/oracle"
+	"github.com/smartcontractkit/capabilities/libs/chainconsensus/poller"
 	"github.com/smartcontractkit/capabilities/libs/loopserver"
+
+	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/actions"
+	"github.com/smartcontractkit/capabilities/chain_capabilities/stellar/config"
 )
 
 const (
 	CapabilityName = "stellar"
+
+	// defaultObservationPollPeriod is tuned to roughly half of Stellar's 5-7s ledger close time so
+	// a volatile request makes an observation for (nearly) every ledger during its lifecycle.
+	defaultObservationPollPeriod = 3 * time.Second
+	defaultPollerWorkersCount    = 10
+	defaultUnknownRequestsTTL    = 10 * time.Second
 )
 
 // capabilityGRPCService is the top-level server wrapping the Stellar capability.
@@ -32,6 +52,10 @@ type capabilityGRPCService struct {
 
 type capability struct {
 	*actions.Stellar
+	requestPoller    *poller.Poller
+	consensusHandler chainconsensus.Handler
+	oracle           core.Oracle
+	id               string
 }
 
 var _ stellarcapserver.ClientCapability = &capabilityGRPCService{}
@@ -42,7 +66,7 @@ func main() {
 			lggr:          s.Logger.Named(CapabilityName),
 			limitsFactory: s.LimitsFactory,
 		})
-	}, loop.WithOtelViews(consmetrics.MetricViews()))
+	}, loop.WithOtelViews(consMetrics.MetricViews()))
 }
 
 func (c *capabilityGRPCService) ChainSelector() uint64 {
@@ -50,11 +74,26 @@ func (c *capabilityGRPCService) ChainSelector() uint64 {
 }
 
 func (c *capabilityGRPCService) Start(_ context.Context) error {
-	return fmt.Errorf("unimplemented")
+	c.lggr.Infof("Start %s", CapabilityName)
+	return nil
 }
 
 func (c *capabilityGRPCService) Close() error {
-	return fmt.Errorf("unimplemented")
+	c.lggr.Infof("Closing %s", CapabilityName)
+
+	var closers []io.Closer
+	if c.oracle != nil {
+		closers = append(closers, closeFunc(func() error {
+			return c.oracle.Close(context.Background())
+		}))
+	}
+	if c.requestPoller != nil {
+		closers = append(closers, c.requestPoller)
+	}
+	if c.consensusHandler != nil {
+		closers = append(closers, c.consensusHandler)
+	}
+	return services.CloseAll(closers...)
 }
 
 func (c *capabilityGRPCService) HealthReport() map[string]error {
@@ -70,9 +109,122 @@ func (c *capabilityGRPCService) Description() string {
 }
 
 func (c *capabilityGRPCService) Ready() error {
-	return fmt.Errorf("unimplemented")
+	return nil
 }
 
-func (c *capabilityGRPCService) Initialise(_ context.Context, _ core.StandardCapabilitiesDependencies) error {
-	return fmt.Errorf("unimplemented")
+func (c *capabilityGRPCService) Initialise(ctx context.Context, dependencies core.StandardCapabilitiesDependencies) error {
+	c.lggr.Infof("Initialising %s", CapabilityName)
+
+	cfg, err := c.unmarshalConfig(dependencies.Config)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+
+	relayID := types.NewRelayID(cfg.Network, cfg.ChainID)
+	relayer, err := dependencies.RelayerSet.Get(ctx, relayID)
+	if err != nil {
+		return fmt.Errorf("failed to fetch relayer for chainID %s from relayerSet: %w", cfg.ChainID, err)
+	}
+
+	stellarService, err := relayer.Stellar()
+	if err != nil {
+		return fmt.Errorf("failed to get stellar service: %w", err)
+	}
+
+	if err = c.setSelector(cfg); err != nil {
+		return err
+	}
+	c.id = "stellar:ChainSelector:" + strconv.FormatUint(c.chainSelector, 10) + "@1.0.0"
+
+	var chainInfo types.ChainInfo
+	// protection for e2e tests when we run against a local network
+	if !cfg.IsLocal {
+		chainInfo, err = relayer.GetChainInfo(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to fetch chain info for chainID %s from relayer: %w", cfg.ChainID, err)
+		}
+	}
+
+	var toStart []interface{ Start(context.Context) error }
+	consensusMetrics, err := consMetrics.NewConsensusMetrics(chainInfo)
+	if err != nil {
+		return fmt.Errorf("failed to create stellar consensus metrics: %w", err)
+	}
+	c.requestPoller = poller.NewPoller(c.lggr, consensusMetrics, cfg.ObservationPollerWorkersCount, cfg.ObservationPollPeriod)
+	c.consensusHandler = chainconsensus.NewHandler(c.lggr, c.requestPoller, consensusMetrics, cfg.UnknownRequestsTTL)
+	c.oracle, err = dependencies.OracleFactory.NewOracle(ctx, core.OracleArgs{
+		LocalConfig: ocrtypes.LocalConfig{
+			BlockchainTimeout:                  time.Second * 20,
+			ContractConfigTrackerPollInterval:  time.Second * 10,
+			ContractConfigConfirmations:        1,
+			ContractTransmitterTransmitTimeout: time.Second * 10,
+			DatabaseTimeout:                    time.Second * 10,
+			ContractConfigLoadTimeout:          time.Second * 10,
+			DefaultMaxDurationInitialization:   time.Second * 10,
+		},
+		ReportingPluginFactoryService: oracle.NewReportingPluginFactory(logger.Sugared(c.lggr), c.consensusHandler, noopBlocksProvider{}, consensusMetrics),
+		ContractTransmitter:           oracle.NewContractTransmitter(c.lggr, c.consensusHandler),
+	})
+	if err != nil {
+		return fmt.Errorf("error when creating oracle: %w", err)
+	}
+	toStart = append(toStart, c.requestPoller, c.consensusHandler, c.oracle)
+
+	c.Stellar, err = actions.NewStellar(stellarService, c.lggr, c.chainSelector, c.consensusHandler)
+	if err != nil {
+		return err
+	}
+
+	for _, service := range toStart {
+		if err = service.Start(ctx); err != nil {
+			return err
+		}
+	}
+
+	c.lggr.Infof("Successfully initialised %s", CapabilityName)
+	return nil
+}
+
+func (c *capabilityGRPCService) setSelector(cfg *config.Config) error {
+	// When we run against a local network (e.g. local CRE) we can't resolve the chain selector
+	// since ChainID is environment-specific.
+	if cfg.IsLocal {
+		c.chainSelector = chainselectors.STELLAR_LOCALNET.Selector
+		return nil
+	}
+
+	cs, ok := chainselectors.StellarChainIdToChainSelector()[cfg.ChainID]
+	if !ok {
+		return fmt.Errorf("chain selector not found for chainID: %s", cfg.ChainID)
+	}
+	c.chainSelector = cs
+	return nil
+}
+
+func (c *capabilityGRPCService) unmarshalConfig(configStr string) (*config.Config, error) {
+	var cfg config.Config
+	if err := json.Unmarshal([]byte(configStr), &cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse Stellar capability config: %s err: %w", configStr, err)
+	}
+
+	if cfg.ObservationPollerWorkersCount == 0 {
+		cfg.ObservationPollerWorkersCount = defaultPollerWorkersCount
+		c.lggr.Infof("ObservationPollerWorkersCount is zero, setting to %d.", cfg.ObservationPollerWorkersCount)
+	}
+	if cfg.ObservationPollPeriod == 0 {
+		cfg.ObservationPollPeriod = defaultObservationPollPeriod
+		c.lggr.Infof("ObservationPollPeriod is zero, setting to %s.", cfg.ObservationPollPeriod)
+	}
+	if cfg.UnknownRequestsTTL == 0 {
+		cfg.UnknownRequestsTTL = defaultUnknownRequestsTTL
+		c.lggr.Infof("UnknownRequestsTTL is zero, setting to %s.", cfg.UnknownRequestsTTL)
+	}
+
+	return &cfg, nil
+}
+
+type closeFunc func() error
+
+func (f closeFunc) Close() error {
+	return f()
 }
