@@ -3,7 +3,6 @@ package metering
 import (
 	"fmt"
 	"math/big"
-	"strconv"
 
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
@@ -54,17 +53,25 @@ func GetResponseMetadataWriteReport(fee *big.Float, chainSelector uint64) capabi
 }
 
 func compareStringNumbers(limitStr, actionSpendStr string) (bool, error) {
-	limit, err := strconv.ParseFloat(limitStr, 64)
+	limit, err := parseDecimalString(limitStr)
 	if err != nil {
 		return false, fmt.Errorf("invalid number limit: %w", err)
 	}
 
-	actionSpend, err := strconv.ParseFloat(actionSpendStr, 64)
+	actionSpend, err := parseDecimalString(actionSpendStr)
 	if err != nil {
 		return false, fmt.Errorf("invalid number actionSpend: %w", err)
 	}
 
-	return limit >= actionSpend, nil
+	return limit.Cmp(actionSpend) >= 0, nil
+}
+
+func parseDecimalString(s string) (*big.Rat, error) {
+	r, ok := new(big.Rat).SetString(s)
+	if !ok {
+		return nil, fmt.Errorf("strconv.ParseFloat: parsing %q: invalid syntax", s)
+	}
+	return r, nil
 }
 
 func CheckHasFunds(lggr logger.SugaredLogger, meta capabilities.RequestMetadata, unit string, actionSpendStr string) error {
