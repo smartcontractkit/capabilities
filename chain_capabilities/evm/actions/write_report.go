@@ -530,6 +530,7 @@ func (e *EVM) validateInputsAndReportMetadata(requestMetadata capabilities.Reque
 		return fmt.Errorf("no signatures provided")
 	}
 
+	// TODO: PLEX-3107 move validation to common
 	reportMetadata, err := capcommon.DecodeReportMetadata(request.Report.RawReport)
 	if err != nil {
 		return err

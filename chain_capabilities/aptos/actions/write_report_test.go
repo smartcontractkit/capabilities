@@ -318,6 +318,15 @@ func TestWriteReport_Validation(t *testing.T) {
 		require.NotNil(t, capErr)
 		require.Contains(t, capErr.Error(), "workflowID mismatch")
 	})
+	t.Run("WorkflowID name", func(t *testing.T) {
+		h := newTestHelper(t)
+		_, reqMeta, req := newReportFixture(t)
+		reqMeta.WorkflowName = "some other name"
+
+		_, capErr := h.aptos.WriteReport(t.Context(), reqMeta, req)
+		require.NotNil(t, capErr)
+		require.Contains(t, capErr.Error(), "workflowName in the report does not match WorkflowName in the request metadata")
+	})
 
 	t.Run("Gas config exceeds limit", func(t *testing.T) {
 		h := newTestHelper(t)
