@@ -19,6 +19,7 @@ import (
 	"github.com/smartcontractkit/chainlink-common/pkg/capabilities"
 	caperrors "github.com/smartcontractkit/chainlink-common/pkg/capabilities/errors"
 	solcap "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/chain-capabilities/solana"
+	capmon "github.com/smartcontractkit/chainlink-common/pkg/capabilities/v2/monitoring"
 	commoncfg "github.com/smartcontractkit/chainlink-common/pkg/config"
 	"github.com/smartcontractkit/chainlink-common/pkg/logger"
 	"github.com/smartcontractkit/chainlink-common/pkg/settings/cresettings"
@@ -414,6 +415,19 @@ func (s *Solana) GetProgramAccounts(
 
 	lggr.Debugw("Successfully handled GetProgramAccounts")
 	return responseAndMetadata, nil
+}
+
+func (s *Solana) MonitoringContext() capmon.MonitoringContext {
+	return capmon.MonitoringContext{
+		Logger:    s.lggr,
+		Processor: s.beholderProcessor,
+		ExecCtx: func(metadata capabilities.RequestMetadata, tsStart time.Time) *capmon.ExecutionContext {
+			return s.messageBuilder.BuildV2ExecutionContext(monitoring.TelemetryContext{
+				TsStart:         tsStart.UnixMilli(),
+				RequestMetadata: metadata,
+			})
+		},
+	}
 }
 
 func (s *Solana) initLimiters(limitsFactory limits.Factory) (err error) {
