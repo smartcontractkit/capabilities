@@ -281,6 +281,7 @@ func (s *Solana) validateInputsAndReportMetadata(requestMetadata capabilities.Re
 		return fmt.Errorf("report context has invalid length: got %d, want %d", len(request.Report.ReportContext), reportContextLen)
 	}
 
+	// TODO: PLEX-3107 move validation to common
 	reportMetadata, err := capcommon.DecodeReportMetadata(request.Report.RawReport)
 	if err != nil {
 		return err

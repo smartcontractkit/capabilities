@@ -479,6 +479,7 @@ func (s *Aptos) validateWriteReportInputs(requestMetadata capabilities.RequestMe
 		return fmt.Errorf("no signatures provided")
 	}
 
+	// TODO: PLEX-3107 move validation to common
 	reportMetadata, err := capcommon.DecodeReportMetadata(request.Report.RawReport)
 	if err != nil {
 		return fmt.Errorf("failed to decode report metadata: %w", err)
@@ -500,6 +501,15 @@ func (s *Aptos) validateWriteReportInputs(requestMetadata capabilities.RequestMe
 	if reportMetadata.WorkflowID != requestMetadata.WorkflowID {
 		return fmt.Errorf("workflowID mismatch: report=%s, request=%s",
 			reportMetadata.WorkflowID, requestMetadata.WorkflowID)
+	}
+
+	//	workflowNames are padded to 10 bytes (20 hex chars)
+	reqName := requestMetadata.WorkflowName
+	if len(reqName) < 20 {
+		reqName += strings.Repeat("0", 20-len(reqName))
+	}
+	if reportMetadata.WorkflowName != reqName {
+		return fmt.Errorf("workflowName in the report does not match WorkflowName in the request metadata. Report WorkflowName: %s, request WorkflowName: %s", reportMetadata.WorkflowName, reqName)
 	}
 
 	return nil
