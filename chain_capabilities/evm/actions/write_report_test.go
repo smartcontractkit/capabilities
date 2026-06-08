@@ -2126,145 +2126,161 @@ func TestReplyFromReceipt_ReceiptErrorIncludesTxHash(t *testing.T) {
 	require.ErrorIs(t, err, rpcErr)
 }
 
-// TestWriteReport_InvalidReceiverReceiptFetchFailsReturnsUserError verifies that when a prior
-// transmission is marked invalid-receiver and the receipt fetch then fails (e.g. flaky RPC), the
-// call site wraps the build failure into a user error that names the invalid receiver and includes
-// the tx hash. This attributes the failure to the user's contract (not paged as a system error) and
-// lets the user verify the tx on-chain, even though we never managed to build the reply.
-func TestWriteReport_InvalidReceiverReceiptFetchFailsReturnsUserError(t *testing.T) {
+// TestWriteReport_RevertReceiptFetchFailsReturnsUserError verifies the places where a reverted
+// transmission has a known user-facing reason, but the reverted reply cannot be built because the
+// receipt fetch fails. In all cases the revert reason remains the root user error and the RPC
+// failure is retained as secondary context.
+func TestWriteReport_RevertReceiptFetchFailsReturnsUserError(t *testing.T) {
 	t.Parallel()
 
-	// Short timeout so the receipt-fetch retry loop returns the underlying RPC error quickly.
-	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
-	defer cancel()
-	testLogger := logger.Test(t)
-	evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
-	fixture := newWriteReportTestFixture(t)
+	type testCase struct {
+		name           string
+		setup          func(t *testing.T, evmServiceMock *mocks2.EVMService, mockForwarderClient *mocks.CREForwarderClient, fixture writeReportTestFixture, txHash evmtypes.Hash) error
+		run            func(t *testing.T, ctx context.Context, service *EVM, fixture writeReportTestFixture) (capabilities.ResponseMetadata, error)
+		expectedReason func(fixture writeReportTestFixture) string
+		assertUserErr  func(t *testing.T, service *EVM, err error)
+		assertMetadata func(t *testing.T, metadata capabilities.ResponseMetadata)
+		assertNoInvoke bool
+	}
 
-	// Prior transmission marked invalid receiver => no retry; we attempt to build a reverted reply.
-	mockForwarderClient.
-		On("GetTransmissionInfo", mock.Anything, mock.Anything).
-		Return(contracts.TransmissionInfo{
-			Success:         false,
-			InvalidReceiver: true,
-			State:           contracts.TransmissionStateInvalidReceiver,
-			GasLimit:        big.NewInt(EnoughReceiverGas),
-		}, nil).
-		Once()
+	writeReportCall := func(t *testing.T, ctx context.Context, service *EVM, fixture writeReportTestFixture) (capabilities.ResponseMetadata, error) {
+		t.Helper()
 
-	// Tx hash is discovered from processed events (hash retrieval succeeds).
-	txHash := evmtypes.Hash(test.RandomBytes(32))
-	expectFailedTransmissionEvent(t, mockForwarderClient, txHash)
+		_, err := service.WriteReport(ctx, fixture.metadata, fixture.request)
+		return capabilities.ResponseMetadata{}, err
+	}
 
-	// Receipt fetch fails (flaky RPC) => the reply cannot be built.
-	rpcErr := expectReceiptFetchFailure(t, evmServiceMock, txHash)
+	requireExecuteWriteReportUserError := func(t *testing.T, service *EVM, err error) {
+		t.Helper()
 
-	// Surfaced as a user error (the user's receiver contract is the cause), not a system error.
-	_, err := service.WriteReport(ctx, fixture.metadata, fixture.request)
-	requirePublicUserError(t, err)
-	requireRevertReplyBuildError(t, err, fixture.transmissionID.InvalidReceiverMessage(), txHash, rpcErr)
+		require.Error(t, err)
+		require.True(t, service.isUserErrorWriteReport(err))
+		capErr := GetError(err, service.isUserErrorWriteReport(err))
+		require.Equal(t, caperrors.OriginUser, capErr.Origin())
+	}
 
-	// No new tx attempt happened.
-	mockForwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
-}
+	testCases := []testCase{
+		{
+			name: "prior invalid receiver",
+			setup: func(t *testing.T, evmServiceMock *mocks2.EVMService, mockForwarderClient *mocks.CREForwarderClient, fixture writeReportTestFixture, txHash evmtypes.Hash) error {
+				t.Helper()
 
-// TestWriteReport_FailedWithEnoughGasReceiptFetchFailsReturnsUserError verifies that when a prior
-// transmission failed despite sufficient receiver gas, a receipt-fetch failure still returns the
-// known receiver execution failure as a user error, while preserving the tx hash and RPC failure.
-func TestWriteReport_FailedWithEnoughGasReceiptFetchFailsReturnsUserError(t *testing.T) {
-	t.Parallel()
+				mockForwarderClient.
+					On("GetTransmissionInfo", mock.Anything, mock.Anything).
+					Return(contracts.TransmissionInfo{
+						Success:         false,
+						InvalidReceiver: true,
+						State:           contracts.TransmissionStateInvalidReceiver,
+						GasLimit:        big.NewInt(EnoughReceiverGas),
+					}, nil).
+					Once()
+				expectFailedTransmissionEvent(t, mockForwarderClient, txHash)
+				return expectReceiptFetchFailure(t, evmServiceMock, txHash)
+			},
+			run:            writeReportCall,
+			expectedReason: func(fixture writeReportTestFixture) string { return fixture.transmissionID.InvalidReceiverMessage() },
+			assertUserErr:  func(t *testing.T, _ *EVM, err error) { requirePublicUserError(t, err) },
+			assertNoInvoke: true,
+		},
+		{
+			name: "prior failed transmission with enough gas",
+			setup: func(t *testing.T, evmServiceMock *mocks2.EVMService, mockForwarderClient *mocks.CREForwarderClient, fixture writeReportTestFixture, txHash evmtypes.Hash) error {
+				t.Helper()
 
-	// Short timeout so the receipt-fetch retry loop returns the underlying RPC error quickly.
-	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
-	defer cancel()
-	testLogger := logger.Test(t)
-	evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
-	fixture := newWriteReportTestFixture(t)
+				desiredReceiverGas := uint64(EnoughReceiverGas * 100)
+				fixture.request.GasConfig = &evm.GasConfig{GasLimit: contracts.ForwarderContractLogicGasCost + desiredReceiverGas}
+				mockForwarderClient.
+					On("GetTransmissionInfo", mock.Anything, mock.Anything).
+					Return(contracts.TransmissionInfo{
+						Success:         false,
+						InvalidReceiver: false,
+						State:           contracts.TransmissionStateFailed,
+						GasLimit:        new(big.Int).SetUint64(desiredReceiverGas + 1),
+					}, nil).
+					Once()
+				expectFailedTransmissionEvent(t, mockForwarderClient, txHash)
+				return expectReceiptFetchFailure(t, evmServiceMock, txHash)
+			},
+			run:            writeReportCall,
+			expectedReason: func(writeReportTestFixture) string { return UnknownIssueExecutingReceiverContractMessage },
+			assertUserErr:  func(t *testing.T, _ *EVM, err error) { requirePublicUserError(t, err) },
+			assertNoInvoke: true,
+		},
+		{
+			name: "new failed transmission after local submit",
+			setup: func(t *testing.T, evmServiceMock *mocks2.EVMService, mockForwarderClient *mocks.CREForwarderClient, fixture writeReportTestFixture, txHash evmtypes.Hash) error {
+				t.Helper()
 
-	desiredReceiverGas := uint64(EnoughReceiverGas * 100)
-	writeReportGasLimit := contracts.ForwarderContractLogicGasCost + desiredReceiverGas
-	fixture.request.GasConfig = &evm.GasConfig{GasLimit: writeReportGasLimit}
+				mockForwarderClient.
+					On("GetTransmissionInfo", mock.Anything, fixture.transmissionID).
+					Return(contracts.TransmissionInfo{
+						Success:         false,
+						InvalidReceiver: false,
+						State:           contracts.TransmissionStateNotAttempted,
+					}, nil).
+					Once()
+				mockForwarderClient.
+					On("InvokeOnReport", mock.Anything, fixture.receiver, fixture.request.Report, nonNilPositiveGasCfgMatcher()).
+					Return(&evmtypes.TransactionResult{
+						TxHash:           txHash,
+						TxStatus:         evmtypes.TxSuccess,
+						TxIdempotencyKey: "failed-idempotency-key",
+					}, nil).
+					Once()
+				mockForwarderClient.
+					On("GetTransmissionInfo", mock.Anything, fixture.transmissionID).
+					Return(contracts.TransmissionInfo{
+						Success:         false,
+						InvalidReceiver: false,
+						State:           contracts.TransmissionStateFailed,
+						GasLimit:        big.NewInt(EnoughReceiverGas),
+					}, nil).
+					Once()
+				evmServiceMock.EXPECT().
+					GetTransactionFee(mock.Anything, "failed-idempotency-key").
+					Return(&evmtypes.TransactionFee{TransactionFee: big.NewInt(300)}, nil)
+				return expectReceiptFetchFailure(t, evmServiceMock, txHash)
+			},
+			run: func(t *testing.T, ctx context.Context, service *EVM, fixture writeReportTestFixture) (capabilities.ResponseMetadata, error) {
+				t.Helper()
 
-	// Prior transmission failed with gas above the request's receiver budget => no retry; build a reverted reply.
-	mockForwarderClient.
-		On("GetTransmissionInfo", mock.Anything, mock.Anything).
-		Return(contracts.TransmissionInfo{
-			Success:         false,
-			InvalidReceiver: false,
-			State:           contracts.TransmissionStateFailed,
-			GasLimit:        new(big.Int).SetUint64(desiredReceiverGas + 1),
-		}, nil).
-		Once()
+				reply, responseMetadata, err := service.executeWriteReport(ctx, fixture.request, fixture.metadata, monitoring.TelemetryContext{})
+				require.Nil(t, reply)
+				return responseMetadata, err
+			},
+			expectedReason: func(writeReportTestFixture) string { return UnknownIssueExecutingReceiverContractMessage },
+			assertUserErr:  requireExecuteWriteReportUserError,
+			assertMetadata: func(t *testing.T, metadata capabilities.ResponseMetadata) {
+				t.Helper()
 
-	txHash := evmtypes.Hash(test.RandomBytes(32))
-	expectFailedTransmissionEvent(t, mockForwarderClient, txHash)
+				evmtest.ValidateMeteringWriteReport(t, metadata, 1, "0.0000000000000003")
+			},
+		},
+	}
 
-	rpcErr := expectReceiptFetchFailure(t, evmServiceMock, txHash)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+			defer cancel()
+			ctx = contexts.WithCRE(ctx, contexts.CRE{Workflow: "wf-id"})
 
-	_, err := service.WriteReport(ctx, fixture.metadata, fixture.request)
-	requirePublicUserError(t, err)
-	requireRevertReplyBuildError(t, err, UnknownIssueExecutingReceiverContractMessage, txHash, rpcErr)
+			testLogger := logger.Test(t)
+			evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
+			fixture := newWriteReportTestFixture(t)
+			txHash := evmtypes.Hash(test.RandomBytes(32))
 
-	mockForwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
-}
-
-// TestExecuteWriteReport_NewFailedTransmissionReceiptFetchFailsReturnsUserReasonWithMetering
-// verifies that when this node submits a tx and the on-chain transmission ends failed, receipt
-// lookup failures still return the known receiver execution failure and preserve tx fee metadata.
-func TestExecuteWriteReport_NewFailedTransmissionReceiptFetchFailsReturnsUserReasonWithMetering(t *testing.T) {
-	t.Parallel()
-
-	testLogger := logger.Test(t)
-	evmServiceMock, mockForwarderClient, service := createMocksAndCapability(t, testLogger)
-	fixture := newWriteReportTestFixture(t)
-
-	mockForwarderClient.
-		On("GetTransmissionInfo", mock.Anything, fixture.transmissionID).
-		Return(contracts.TransmissionInfo{
-			Success:         false,
-			InvalidReceiver: false,
-			State:           contracts.TransmissionStateNotAttempted,
-		}, nil).
-		Once()
-
-	txHash := evmtypes.Hash(test.RandomBytes(32))
-	mockForwarderClient.
-		On("InvokeOnReport", mock.Anything, fixture.receiver, fixture.request.Report, nonNilPositiveGasCfgMatcher()).
-		Return(&evmtypes.TransactionResult{
-			TxHash:           txHash,
-			TxStatus:         evmtypes.TxSuccess,
-			TxIdempotencyKey: "failed-idempotency-key",
-		}, nil).
-		Once()
-
-	mockForwarderClient.
-		On("GetTransmissionInfo", mock.Anything, fixture.transmissionID).
-		Return(contracts.TransmissionInfo{
-			Success:         false,
-			InvalidReceiver: false,
-			State:           contracts.TransmissionStateFailed,
-			GasLimit:        big.NewInt(EnoughReceiverGas),
-		}, nil).
-		Once()
-
-	evmServiceMock.EXPECT().
-		GetTransactionFee(mock.Anything, "failed-idempotency-key").
-		Return(&evmtypes.TransactionFee{TransactionFee: big.NewInt(300)}, nil)
-
-	rpcErr := expectReceiptFetchFailure(t, evmServiceMock, txHash)
-
-	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
-	defer cancel()
-	ctx = contexts.WithCRE(ctx, contexts.CRE{Workflow: "wf-id"})
-
-	reply, responseMetadata, err := service.executeWriteReport(ctx, fixture.request, fixture.metadata, monitoring.TelemetryContext{})
-	require.Nil(t, reply)
-	require.Error(t, err)
-	require.True(t, service.isUserErrorWriteReport(err))
-	capErr := GetError(err, service.isUserErrorWriteReport(err))
-	require.Equal(t, caperrors.OriginUser, capErr.Origin())
-	evmtest.ValidateMeteringWriteReport(t, responseMetadata, 1, "0.0000000000000003")
-	requireRevertReplyBuildError(t, err, UnknownIssueExecutingReceiverContractMessage, txHash, rpcErr)
+			rpcErr := tc.setup(t, evmServiceMock, mockForwarderClient, fixture, txHash)
+			responseMetadata, err := tc.run(t, ctx, service, fixture)
+			tc.assertUserErr(t, service, err)
+			requireRevertReplyBuildError(t, err, tc.expectedReason(fixture), txHash, rpcErr)
+			if tc.assertMetadata != nil {
+				tc.assertMetadata(t, responseMetadata)
+			}
+			if tc.assertNoInvoke {
+				mockForwarderClient.AssertNotCalled(t, "InvokeOnReport", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+			}
+		})
+	}
 }
 
 func createMocksAndCapability(t *testing.T, lggr logger.Logger) (*mocks2.EVMService, *mocks.CREForwarderClient, *EVM) {
