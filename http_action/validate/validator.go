@@ -205,7 +205,7 @@ func (v *Validator) ValidateResponseSize(ctx context.Context, response []byte) e
 }
 
 // ResolveGatewayProxyDonID returns the configured gateway DON for outbound proxy routing.
-// An empty string means the caller should fall back to PrimaryDonID from the gateway connector.
+// An empty string means all connected gateways are eligible via GatewayIDsForDon.
 func (v *Validator) ResolveGatewayProxyDonID(ctx context.Context) (string, error) {
 	return cresettings.Default.PerWorkflow.HTTPAction.GatewayProxyDonID.GetOrDefault(ctx, v.settingsGetter)
 }

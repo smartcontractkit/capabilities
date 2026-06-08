@@ -42,6 +42,7 @@ type ResponseValidator interface {
 type RequestValidator interface {
 	ResponseValidator
 	ValidatedRequest(ctx context.Context, input *httpcap.Request) (*httpcap.Request, error)
+	ResolveGatewayProxyDonID(ctx context.Context) (string, error)
 }
 
 // InputValidationError wraps an error from request validation so the action can map it to a user-facing error.
