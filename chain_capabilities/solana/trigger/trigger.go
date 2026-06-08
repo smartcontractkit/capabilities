@@ -327,12 +327,12 @@ func (lts *SolanaLogTriggerService) RegisterLogTrigger(ctx context.Context, trig
 
 	// Diagnostic: log what we're sending (before gRPC / ToProto)
 	hasCPI := lpFilter.CPIFilterConfig != nil
-	lts.lggr.Infow("[DEBUG] RegisterLogTracking sending",
+	lts.lggr.Infow("RegisterLogTracking sending",
 		"filterName", lpFilter.Name,
 		"hasCPIFilterConfig", hasCPI,
 	)
 	if hasCPI {
-		lts.lggr.Infow("[DEBUG] RegisterLogTracking sending CPI config",
+		lts.lggr.Infow("RegisterLogTracking sending CPI config",
 			"filterName", lpFilter.Name,
 			"methodName", lpFilter.CPIFilterConfig.MethodName,
 		)
