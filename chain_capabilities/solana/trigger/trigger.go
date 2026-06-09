@@ -214,6 +214,9 @@ func NewLogTriggerService(opts LogTriggerServiceOpts) (*SolanaLogTriggerService,
 		maxLogsKept:                     opts.MaxLogsKept,
 	}
 
+	// TODO: remove
+	lts.lggr.Info("[DEBUG]SolanaLogTriggerService with trigger guarantees enabled")
+
 	if err := lts.initLimiters(opts.LimitsFactory); err != nil {
 		return nil, err
 	}
