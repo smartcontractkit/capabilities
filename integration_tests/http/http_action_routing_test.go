@@ -238,8 +238,8 @@ func assertRoutedThroughResolvedDon(t *testing.T, ctx context.Context, env multi
 
 	multiGC, ok := env.recordingConnector.GatewayConnector.(core.MultiGatewayConnector)
 	require.True(t, ok)
-	gatewayDonID, err := multiGC.DonIDForGateway(ctx, env.recordingConnector.lastGatewayID)
-	require.NoError(t, err)
+	gatewayDonID, donErr := multiGC.DonIDForGateway(ctx, env.recordingConnector.lastGatewayID)
+	require.NoError(t, donErr)
 	require.Equal(t, env.gatewayProxyDonID, gatewayDonID)
 }
 
