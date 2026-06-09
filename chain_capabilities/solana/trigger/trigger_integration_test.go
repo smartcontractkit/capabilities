@@ -78,6 +78,8 @@ func TestSolanaLogTrigger(t *testing.T) {
 		LimitsFactory:                   limits.Factory{Logger: lggr},
 		BeholderProcessor:               test.NopBeholderProcessor{},
 		MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		TriggerEventStore:               capabilities.NewMemEventStore(),
+		CapabilityID:                    "test-cap",
 	})
 	require.NoError(t, err)
 
@@ -184,6 +186,8 @@ func TestSolanaLogTriggerWithSubkeyPaths(t *testing.T) {
 		LimitsFactory:                   limits.Factory{Logger: lggr},
 		BeholderProcessor:               test.NopBeholderProcessor{},
 		MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		TriggerEventStore:               capabilities.NewMemEventStore(),
+		CapabilityID:                    "test-cap",
 	})
 	require.NoError(t, err)
 
@@ -311,6 +315,8 @@ func TestSolanaLogTrigger_UnhappyPaths(t *testing.T) {
 		LimitsFactory:                   limits.Factory{Logger: lggr},
 		BeholderProcessor:               test.NopBeholderProcessor{},
 		MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		TriggerEventStore:               capabilities.NewMemEventStore(),
+		CapabilityID:                    "test-cap",
 	})
 	require.NoError(t, err)
 
@@ -498,6 +504,8 @@ func TestSolanaLogTrigger_NoEventsReceived(t *testing.T) {
 		MaxLogsKept:                     1000,
 		BeholderProcessor:               test.NopBeholderProcessor{},
 		MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		TriggerEventStore:               capabilities.NewMemEventStore(),
+		CapabilityID:                    "test-cap",
 	})
 	require.NoError(t, err)
 
@@ -579,6 +587,8 @@ func TestSolanaLogTrigger_CPIEvent(t *testing.T) {
 		LimitsFactory:                   limits.Factory{Logger: lggr},
 		BeholderProcessor:               test.NopBeholderProcessor{},
 		MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		TriggerEventStore:               capabilities.NewMemEventStore(),
+		CapabilityID:                    "test-cap",
 	})
 	require.NoError(t, err)
 
@@ -681,6 +691,8 @@ func TestSolanaLogTrigger_FilterExcludesAllEvents(t *testing.T) {
 		MaxLogsKept:                     1000,
 		BeholderProcessor:               test.NopBeholderProcessor{},
 		MessageBuilder:                  monitoring.NewMessageBuilder(types.ChainInfo{}, capabilities.CapabilityInfo{}, ""),
+		TriggerEventStore:               capabilities.NewMemEventStore(),
+		CapabilityID:                    "test-cap",
 	})
 	require.NoError(t, err)
 
