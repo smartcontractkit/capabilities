@@ -39,7 +39,7 @@ const (
 )
 
 const multiDonNodeConfigTemplate = `
-DonID = "workflow_don"
+DonID = "%s"
 AuthMinChallengeLen = 32
 AuthTimestampToleranceSec = 30
 NodeAddress = "%s"
@@ -58,74 +58,14 @@ DonId = "gateway_don_eu"
 URL = "%s"
 `
 
-func multiDonGatewayConfig(gatewayID, publicKey string) string {
-	return fmt.Sprintf(`{
-  "ConnectionManagerConfig": {
-    "AuthChallengeLen": 32,
-    "AuthGatewayId": %q,
-    "AuthTimestampToleranceSec": 30
-  },
-  "NodeServerConfig": {
-    "Path": "/node",
-    "Port": 0,
-    "HandshakeTimeoutMillis": 2000,
-    "MaxRequestBytes": 20000,
-    "ReadTimeoutMillis": 5000,
-    "RequestTimeoutMillis": 5000,
-    "WriteTimeoutMillis": 10000
-  },
-  "UserServerConfig": {
-    "Path": "/user",
-    "Port": 0,
-    "ContentTypeHeader": "application/jsonrpc",
-    "MaxRequestBytes": 20000,
-    "ReadTimeoutMillis": 5000,
-    "RequestTimeoutMillis": 5000,
-    "WriteTimeoutMillis": 10000
-  },
-  "Dons": [
-    {
-      "DonId": "test_don",
-      "F": 1,
-      "Handlers": [
-        {
-          "Name": "http-capabilities",
-          "ServiceName": "workflows",
-          "Config": {
-            "NodeRateLimiter": {
-              "GlobalBurst": 50,
-              "GlobalRPS": 50,
-              "PerSenderBurst": 50,
-              "PerSenderRPS": 50
-            },
-            "UserRateLimiter": {
-              "GlobalBurst": 50,
-              "GlobalRPS": 50,
-              "PerSenderBurst": 50,
-              "PerSenderRPS": 50
-            }
-          }
-        }
-      ],
-      "Members": [
-        {
-          "Address": %q,
-          "Name": "test_node_1"
-        }
-      ]
-    }
-  ]
-}`, gatewayID, publicKey)
-}
-
 type recordingGatewayConnector struct {
-	core.GatewayConnector
+	core.MultiGatewayConnector
 	lastGatewayID string
 }
 
 func (r *recordingGatewayConnector) SendToGateway(ctx context.Context, gatewayID string, resp *jsonrpc.Response[json.RawMessage]) error {
 	r.lastGatewayID = gatewayID
-	return r.GatewayConnector.SendToGateway(ctx, gatewayID, resp)
+	return r.MultiGatewayConnector.SendToGateway(ctx, gatewayID, resp)
 }
 
 type multiDonRoutingEnv struct {
@@ -160,8 +100,8 @@ func setupMultiDonRoutingEnv(
 	publicKey := strings.ToLower(crypto.PubkeyToAddress(privateKey.PublicKey).Hex())
 
 	netClient := newTestNetworkClient(t, listener.Addr().(*net.TCPAddr), lggr)
-	gatewayUS := newTestGatewayFromConfig(t, multiDonGatewayConfig("gateway_us", publicKey), netClient, lggr)
-	gatewayEU := newTestGatewayFromConfig(t, multiDonGatewayConfig("gateway_eu", publicKey), netClient, lggr)
+	gatewayUS := newTestGatewayFromConfig(t, buildHTTPActionGatewayConfig("gateway_us", publicKey), netClient, lggr)
+	gatewayEU := newTestGatewayFromConfig(t, buildHTTPActionGatewayConfig("gateway_eu", publicKey), netClient, lggr)
 
 	if usNodeURL == "" {
 		usNodeURL = fmt.Sprintf("ws://localhost:%d/node", gatewayUS.GetNodePort())
@@ -170,7 +110,7 @@ func setupMultiDonRoutingEnv(
 		euNodeURL = fmt.Sprintf("ws://localhost:%d/node", gatewayEU.GetNodePort())
 	}
 
-	nodeConfig := fmt.Sprintf(multiDonNodeConfigTemplate, publicKey, usNodeURL, euNodeURL)
+	nodeConfig := fmt.Sprintf(multiDonNodeConfigTemplate, testDonName, publicKey, usNodeURL, euNodeURL)
 	var cfg connector.ConnectorConfig
 	require.NoError(t, toml.Unmarshal([]byte(nodeConfig), &cfg))
 
@@ -178,7 +118,9 @@ func setupMultiDonRoutingEnv(
 	require.NoError(t, err)
 	servicetest.Run(t, gc)
 
-	recordingConnector := &recordingGatewayConnector{GatewayConnector: gc}
+	multiGC, ok := any(gc).(core.MultiGatewayConnector)
+	require.True(t, ok, "gateway connector must implement multi-gateway routing")
+	recordingConnector := &recordingGatewayConnector{MultiGatewayConnector: multiGC}
 
 	settingsGetter, err := settings.NewJSONGetter([]byte(fmt.Sprintf(`{
 		"org": {
@@ -236,9 +178,7 @@ func assertRoutedThroughResolvedDon(ctx context.Context, t *testing.T, env multi
 	require.NotEmpty(t, env.recordingConnector.lastGatewayID)
 	require.True(t, strings.HasPrefix(env.recordingConnector.lastGatewayID, wantGatewayPrefix))
 
-	multiGC, ok := env.recordingConnector.GatewayConnector.(core.MultiGatewayConnector)
-	require.True(t, ok)
-	gatewayDonID, donErr := multiGC.DonIDForGateway(ctx, env.recordingConnector.lastGatewayID)
+	gatewayDonID, donErr := env.recordingConnector.DonIDForGateway(ctx, env.recordingConnector.lastGatewayID)
 	require.NoError(t, donErr)
 	require.Equal(t, env.gatewayProxyDonID, gatewayDonID)
 }
