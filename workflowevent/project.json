@@ -32,6 +32,7 @@
         "command": "go mod tidy"
       }
     },
+    "update-libs": {},
     "build": {
       "executor": "nx:run-commands",
       "options": {

@@ -40,6 +40,17 @@
       "inputs": [
         "sharedGlobals"
       ]
+    },
+    "update-libs": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "{projectRoot}",
+        "commands": [
+          "go get github.com/smartcontractkit/capabilities/libs@{args.version}",
+          "{workspaceRoot}/nx run tidy"
+        ],
+        "parallel": false
+      }
     }
   },
   "$schema": "./node_modules/nx/schemas/nx-schema.json"

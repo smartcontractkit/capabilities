@@ -32,6 +32,18 @@
         "command": "go mod tidy"
       }
     },
+    "update-libs": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "{projectRoot}",
+        "commands": [
+          "go get github.com/smartcontractkit/capabilities/libs@{args.version}",
+          "go get github.com/smartcontractkit/capabilities/chain_capabilities/common@{args.version}",
+          "{workspaceRoot}/nx run tidy"
+        ],
+        "parallel": false
+      }
+    },
     "build": {
       "executor": "nx:run-commands",
       "options": {
