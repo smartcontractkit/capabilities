@@ -133,7 +133,7 @@ func (p *Poller) processRequest(request requestToPoll) {
 		requestToPoll: request,
 		LastAttemptAt: time.Now(),
 	})
-	p.metrics.RecordRetryQueueSize(ctx, p.requests.Len())
+	p.metrics.RecordRetryQueueSize(ctx, p.retryQueue.Len())
 	p.mutex.Unlock()
 }
 
