@@ -200,8 +200,8 @@ github.com/scylladb/go-reflectx v1.0.1 h1:b917wZM7189pZdlND9PbIJ6NQxfDPfBvUaQ7cj
 github.com/scylladb/go-reflectx v1.0.1/go.mod h1:rWnOfDIRWBGN0miMLIcoPt/Dhi2doCMZqwMCJ3KupFc=
 github.com/shopspring/decimal v1.4.0 h1:bxl37RwXBklmTi0C79JfXCEBD1cqqHt0bbgBAGFp81k=
 github.com/shopspring/decimal v1.4.0/go.mod h1:gawqmDU56v4yIKSwfBSFip1HdCCXN8/+DMd9qYNcwME=
-github.com/smartcontractkit/capabilities/libs v0.0.0-20260604174211-7f26071a47e0 h1:pFicQMOnjHEc49Kf8hhD/nfqDLwFXu0NQx1rlm7ayVM=
-github.com/smartcontractkit/capabilities/libs v0.0.0-20260604174211-7f26071a47e0/go.mod h1:LS7F8U2YZNc0Vt8f6SVWUUigGLxdxZMpyC7VCcUTagg=
+github.com/smartcontractkit/capabilities/libs v0.0.0-20260609124022-2749e4a32bfb h1:TskymCV/uP2plDgR2PDqGdavIXnR/rK+wxelqAW5u+s=
+github.com/smartcontractkit/capabilities/libs v0.0.0-20260609124022-2749e4a32bfb/go.mod h1:LS7F8U2YZNc0Vt8f6SVWUUigGLxdxZMpyC7VCcUTagg=
 github.com/smartcontractkit/chain-selectors v1.0.100 h1:wpiSpmI/eFjY+wx/nPr5VuNF4hki0prIBMKEaQWn3g4=
 github.com/smartcontractkit/chain-selectors v1.0.100/go.mod h1:qy7whtgG5g+7z0jt0nRyii9bLND9m15NZTzuQPkMZ5w=
 github.com/smartcontractkit/chainlink-common v0.11.2-0.20260529092756-a94bc8ce96d6 h1:hms02zQQ0BPcp9CBwh/xda5KwJWdU0IIA/yjtwyRoA4=

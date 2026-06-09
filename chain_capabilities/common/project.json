@@ -30,6 +30,7 @@
         "cwd": "{projectRoot}",
         "command": "go mod tidy"
       }
-    }
+    },
+    "update-libs": {}
   }
 }
