@@ -559,7 +559,8 @@ func (lts *LogTriggerService) deliverLogReliably(
 	}
 
 	lts.lggr.Infow("Sending log event to pipe", "triggerID", triggerID, "eventID", eventID, "blockNumber", log.BlockNumber, "txHash", log.TxHash)
-	if err := lts.baseTrigger.DeliverEvent(ctx, te, triggerID); err != nil {
+	deliverCtx := lts.contextWithOrgForDelivery(ctx, telemetryContext.RequestMetadata)
+	if err := lts.baseTrigger.DeliverEvent(deliverCtx, te, triggerID); err != nil {
 		summary := fmt.Sprintf("failed to persist/deliver event (triggerID=%s, eventID=%s): %v", triggerID, eventID, err)
 		lts.lggr.Error(summary)
 		monitoring.LogAndEmitError(
