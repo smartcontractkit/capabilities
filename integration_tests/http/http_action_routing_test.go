@@ -136,8 +136,8 @@ type multiDonRoutingEnv struct {
 }
 
 func setupMultiDonRoutingEnv(
-	t *testing.T,
 	ctx context.Context,
+	t *testing.T,
 	lggr logger.Logger,
 	gatewayProxyDonID string,
 	usNodeURL string,
@@ -221,7 +221,7 @@ func multiDonRequestMetadata() capabilities.RequestMetadata {
 	}
 }
 
-func assertRoutedThroughResolvedDon(t *testing.T, ctx context.Context, env multiDonRoutingEnv, wantGatewayPrefix string) {
+func assertRoutedThroughResolvedDon(ctx context.Context, t *testing.T, env multiDonRoutingEnv, wantGatewayPrefix string) {
 	t.Helper()
 
 	output, err := env.httpCapability.SendRequest(ctx, multiDonRequestMetadata(), &httpclient.Request{
@@ -248,22 +248,22 @@ func TestHTTPActionCapability_multiDonGatewayRouting(t *testing.T) {
 	lggr := logger.Test(t)
 
 	t.Run("routes through US gateway when GatewayProxyDonID resolves to gateway_don_us", func(t *testing.T) {
-		env := setupMultiDonRoutingEnv(t, ctx, lggr, gatewayDonUS, "", "")
-		assertRoutedThroughResolvedDon(t, ctx, env, "gateway_us")
+		env := setupMultiDonRoutingEnv(ctx, t, lggr, gatewayDonUS, "", "")
+		assertRoutedThroughResolvedDon(ctx, t, env, "gateway_us")
 	})
 
 	t.Run("routes through EU gateway when GatewayProxyDonID resolves to gateway_don_eu", func(t *testing.T) {
-		env := setupMultiDonRoutingEnv(t, ctx, lggr, gatewayDonEU, "", "")
-		assertRoutedThroughResolvedDon(t, ctx, env, "gateway_eu")
+		env := setupMultiDonRoutingEnv(ctx, t, lggr, gatewayDonEU, "", "")
+		assertRoutedThroughResolvedDon(ctx, t, env, "gateway_eu")
 	})
 
 	t.Run("does not route through other DON gateway when only matching gateway is reachable", func(t *testing.T) {
 		// setup so that only EU DON is reachable
-		env := setupMultiDonRoutingEnv(t, ctx, lggr, gatewayDonEU, "ws://127.0.0.1:1/node", "")
-		assertRoutedThroughResolvedDon(t, ctx, env, "gateway_eu")
+		env := setupMultiDonRoutingEnv(ctx, t, lggr, gatewayDonEU, "ws://127.0.0.1:1/node", "")
+		assertRoutedThroughResolvedDon(ctx, t, env, "gateway_eu")
 
 		// Create new env with unreachable US DON -- expect failure
-		envUS := setupMultiDonRoutingEnv(t, ctx, lggr, gatewayDonUS, "ws://127.0.0.1:1/node", "")
+		envUS := setupMultiDonRoutingEnv(ctx, t, lggr, gatewayDonUS, "ws://127.0.0.1:1/node", "")
 		_, err := envUS.httpCapability.SendRequest(ctx, multiDonRequestMetadata(), &httpclient.Request{
 			Url:    envUS.targetURL,
 			Method: "GET",
